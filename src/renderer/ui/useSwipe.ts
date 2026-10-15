@@ -38,13 +38,17 @@ export function useSwipe({enabled,host,actionFor,onCommit,canStart,onActive}:Opt
   function el(){return host.current;}
   function paint(x:number){
     const node=el();if(!node)return;const s=g.current;s.x=x;
-    const side:SwipeSide=x>0?'right':'left';
-    node.style.setProperty('--swipe-x',`${x}px`);
+    node.style.setProperty('--swipe-x',`${x.toFixed(1)}px`);
     node.style.setProperty('--swipe-p',Math.min(1,Math.abs(x)/s.limit).toFixed(3));
     node.style.setProperty('--swipe-f',(x/Math.max(1,s.width)).toFixed(4));
-    if(x===0){delete node.dataset.swipe;delete node.dataset.swipeAction;}
-    else{node.dataset.swipe=side;node.dataset.swipeAction=latest.current.actionFor(side);}
-    node.toggleAttribute('data-armed',Math.abs(x)>=s.limit);
+    // Attribute writes invalidate selectors (including `:has()` elsewhere), so only touch them when they change.
+    const side=x===0?undefined:x>0?'right':'left';
+    if(node.dataset.swipe!==side){
+      if(side){node.dataset.swipe=side;node.dataset.swipeAction=latest.current.actionFor(side);}
+      else{delete node.dataset.swipe;delete node.dataset.swipeAction;}
+    }
+    const armed=Math.abs(x)>=s.limit;
+    if(node.hasAttribute('data-armed')!==armed)node.toggleAttribute('data-armed',armed);
   }
   function begin(mode:'drag'|'wheel'){
     const node=el();if(!node)return false;const s=g.current;
@@ -68,17 +72,19 @@ export function useSwipe({enabled,host,actionFor,onCommit,canStart,onActive}:Opt
   }
   function track(x:number){const s=g.current;const now=performance.now();s.samples.push([now,x]);while(s.samples.length>2&&now-s.samples[0][0]>100)s.samples.shift();paint(Math.max(-s.width,Math.min(s.width,x)));}
   function release(){
-    const s=g.current;s.detach?.();const node=el();if(!node){clear();return;}
+    const s=g.current;s.detach?.();const node=el();if(!node){clear();return false;}
     const [t0,x0]=s.samples[0]??[0,s.x];const [t1,x1]=s.samples.at(-1)??[0,s.x];
-    const velocity=t1>t0?(x1-x0)/(t1-t0):0;
+    // Velocity only counts if the pointer was still moving; a pause before letting go means the user is deciding.
+    const velocity=t1>t0&&performance.now()-t1<80?(x1-x0)/(t1-t0):0;
     const flick=Math.abs(velocity)>.6&&Math.abs(s.x)>s.limit*.3&&Math.sign(velocity)===Math.sign(s.x);
-    if(Math.abs(s.x)<s.limit&&!flick){settle();return;}
+    if(Math.abs(s.x)<s.limit&&!flick){settle();return false;}
     const side:SwipeSide=s.x>0?'right':'left';const offset=s.x,width=s.width;
     s.mode='fling';node.dataset.swipeState='fling';node.setAttribute('data-armed','');
     node.style.setProperty('--swipe-x',`${Math.sign(offset)*(width+48)}px`);
     latest.current.onCommit(side,offset,width);
     // Usually the element leaves the list right away; if it is still here (the action failed, or the view keeps it), bring it back.
     clearTimeout(s.settleTimer);s.settleTimer=setTimeout(()=>{if(el()?.isConnected&&g.current.mode==='fling'){g.current.x=Math.sign(offset)*(width+48);settle();}},900);
+    return true;
   }
 
   function onPointerDown(e:React.PointerEvent<HTMLElement>){
@@ -137,7 +143,9 @@ export function useSwipe({enabled,host,actionFor,onCommit,canStart,onActive}:Opt
     // Natural scrolling: fingers moving right send a negative deltaX, and the element should follow the fingers.
     s.sx-=dx;track(s.sx);
     clearTimeout(s.wheelTimer);
-    const finish=()=>{s.lockUntil=performance.now()+momentumGap*2;release();};
+    // Only a commit swallows the momentum that follows. A swipe that springs back stays open to input, so pausing
+    // mid-swipe and carrying on works.
+    const finish=()=>{if(release())s.lockUntil=performance.now()+momentumGap*2;};
     // A trackpad has no "finger lifted" event; past 1.4× the threshold commit right away instead of waiting for momentum to fade.
     if(Math.abs(s.x)>=s.limit*1.4){finish();return;}
     s.wheelTimer=setTimeout(finish,momentumGap);

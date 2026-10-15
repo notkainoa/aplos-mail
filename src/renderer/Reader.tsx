@@ -42,7 +42,8 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const card=useRef<HTMLDivElement>(null);
  const swipeAction=(side:SwipeSide)=>(side==='right')===doneRight?'done' as const:'later' as const;
  const swipeable=settings.swipe&&!ghost&&!replySlot&&thread.status!=='trash'&&thread.status!=='spam';
- const swipe=useSwipe({enabled:swipeable,host:card,actionFor:swipeAction,onCommit:(side,x,width)=>triage(swipeAction(side),{x,width}),
+ // The stack hands a committed card to a ghost that keeps flying; split view has none, so let the card leave first.
+ const swipe=useSwipe({enabled:swipeable,host:card,actionFor:swipeAction,onCommit:(side,x,width)=>{const go=()=>triage(swipeAction(side),{x,width});if(stack)go();else setTimeout(go,150);},
   canStart:(target,pointer)=>pointer!=='mouse'||!target.closest(selectableText)});
  const swipeBadge=(side:SwipeSide)=>{const done=swipeAction(side)==='done';return <span data-for={side}>{done?<Check size={17}/>:<Clock size={16}/>}{done?'Done':'Todo'}</span>;};
  const laterPill=<Tooltip key="later" content="Todo" shortcut={'L'}><button className="dock-pill later" aria-label="Move to Todo" onClick={()=>triage('later')}>{doneRight&&<Keys combo="←"/>}<Clock size={17}/><span>Todo</span>{!doneRight&&<Keys combo="→"/>}</button></Tooltip>;

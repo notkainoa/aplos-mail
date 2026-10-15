@@ -280,28 +280,43 @@
 
 /* ---------- Swipe to triage ---------- */
 
+/* The gesture rewrites these on every frame. Registering them as non-inherited keeps that from restyling every
+   descendant (a long email has thousands); the few elements that read them inherit explicitly. Values driven per
+   frame have no transitions, since a transition restarted every frame only makes the element trail the pointer. */
+@property --swipe-x { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --swipe-f { syntax: "<number>"; inherits: false; initial-value: 0; }
+@property --swipe-p { syntax: "<number>"; inherits: false; initial-value: 0; }
+.swipe-reveal, .swipe-reveal::before, .swipe-action, .card-swipe, .card-swipe > span, .reader-card::after { --swipe-p: inherit; }
+.mail-row > .row-body { --swipe-x: inherit; }
+
 .mail-row[data-swipe-state] { overflow: hidden; }
 .mail-row[data-swipe-state] > .row-body {
   transform: translateX(var(--swipe-x, 0px));
-  background: linear-gradient(var(--row-hover), var(--row-hover)), var(--card);
+  will-change: transform;
+  background: var(--card);
   box-shadow: 0 0 0 .5px color-mix(in srgb, var(--ink) 8%, transparent), 0 2px 10px color-mix(in srgb, #000 8%, transparent);
 }
 .mail-row.active[data-swipe-state] > .row-body { background: linear-gradient(var(--row-active), var(--row-active)), var(--card); }
 .mail-row[data-swipe-state="settle"] > .row-body { transition: transform 220ms var(--ease-out-strong); }
-.mail-row[data-swipe-state="fling"] > .row-body { transition: transform 170ms var(--ease-in); }
+.mail-row[data-swipe-state="fling"] > .row-body { transition: transform 180ms var(--ease-release); }
 .mail-row[data-swipe-state] .row-actions { opacity: 0; pointer-events: none; }
 .mail-row[data-swipe-state] .row-time { visibility: visible; }
+.mail-row[data-swipe-state]:not(.checked, .selecting) .row-checkbox { opacity: 0; transform: scale(.7); }
+.mail-row[data-swipe-state]:not(.checked, .selecting) .row-leading > .ui-avatar { opacity: 1; transform: none; }
 .mail-row[data-swipe-state="drag"], .mail-row[data-swipe-state="drag"] * { cursor: grabbing; }
 :is(.mail-row, .reader-card)[data-swipe-action="done"] { --swipe-color: var(--green); }
 :is(.mail-row, .reader-card)[data-swipe-action="later"] { --swipe-color: var(--blue); }
-.swipe-reveal { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 22px; border-radius: inherit; background: var(--card); color: var(--swipe-color); font-weight: 600; }
-.swipe-reveal::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--swipe-color); opacity: calc(.1 + var(--swipe-p, 0) * .16); transition: opacity 120ms var(--ease); }
+.swipe-reveal { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 22px; border-radius: inherit; background: var(--card); color: var(--swipe-color); font-weight: 600; transition: color 140ms var(--ease); }
+.swipe-reveal::before, .swipe-reveal::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--swipe-color); }
+.swipe-reveal::before { opacity: calc(.08 + var(--swipe-p, 0) * .14); will-change: opacity; }
+.swipe-reveal::after { opacity: 0; transition: opacity 140ms var(--ease); }
 .mail-row[data-armed] .swipe-reveal { color: #fff; }
-.mail-row[data-armed] .swipe-reveal::before { opacity: 1; }
+.mail-row[data-armed] .swipe-reveal::after { opacity: 1; }
 .mail-row[data-swipe="left"] .swipe-reveal { justify-content: flex-end; }
-.swipe-action { position: relative; display: none; align-items: center; gap: 7px; transform: scale(calc(.82 + var(--swipe-p, 0) * .18)); transition: transform 160ms var(--ease-spring); }
+.swipe-action { position: relative; z-index: 1; display: none; align-items: center; gap: 7px; transform: scale(calc(.84 + var(--swipe-p, 0) * .16)); will-change: transform; }
 .mail-row[data-swipe="right"] .swipe-action[data-for="right"], .mail-row[data-swipe="left"] .swipe-action[data-for="left"] { display: inline-flex; }
-.mail-row[data-armed] .swipe-action { transform: scale(1.06); }
+.mail-row[data-armed] .swipe-action { transform: scale(1.04); animation: swipe-armed 260ms var(--ease-spring); }
+@keyframes swipe-armed { from { transform: scale(.9); } }
 .low-bundle {
   width: 100%;
   display: flex;
@@ -444,22 +459,23 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 }
 @keyframes fling-down { to { transform: translateY(48px) scale(.94); opacity: 0; } }
 
-/* Dragging the open card. The reader clips it like the fling layer does, so releasing hands over without a jump. */
-.stack-reader { overflow-x: clip; }
+/* Dragging the open card. The reader clips it like the fling layer does, so releasing hands over without a jump.
+   The card gets its own layer while it moves; its lift shadow changes only when a drag starts or ends. */
+:is(.stack-reader, .split-reader) { overflow-x: clip; }
 .reader-card { touch-action: pan-y; }
-.reader-card[data-swipe-state] { transform: translateX(var(--swipe-x, 0px)) rotate(calc(var(--swipe-f, 0) * 6deg)); transform-origin: 50% 120%; z-index: 1; box-shadow: var(--card-edge), 0 12px 40px color-mix(in srgb, #000 calc(var(--swipe-p, 0) * 14%), transparent); }
-.reader-card[data-swipe-state="settle"] { transition: transform 260ms var(--ease-out-strong), box-shadow 260ms var(--ease-out-strong); }
-.reader-card[data-swipe-state="fling"] { transition: transform 170ms var(--ease-in); }
+.reader-card[data-swipe-state] { transform: translateX(var(--swipe-x, 0px)) rotate(calc(var(--swipe-f, 0) * 6deg)); transform-origin: 50% 120%; will-change: transform; z-index: 1; box-shadow: var(--card-edge), 0 14px 36px color-mix(in srgb, #000 12%, transparent); transition: box-shadow 180ms var(--ease); }
+.reader-card[data-swipe-state="settle"] { box-shadow: var(--card-edge); transition: transform 260ms var(--ease-out-strong), box-shadow 260ms var(--ease); }
+.reader-card[data-swipe-state="fling"] { transition: transform 180ms var(--ease-release); }
 .reader-card[data-swipe-state="drag"], .reader-card[data-swipe-state="drag"] * { cursor: grabbing; user-select: none; }
-.reader-card[data-swipe]::after { content: ""; position: absolute; inset: 0; z-index: 2; border-radius: inherit; pointer-events: none; background: var(--swipe-color); opacity: calc(var(--swipe-p, 0) * .08); transition: opacity 120ms var(--ease); }
-.reader-card[data-armed]::after { opacity: .14; }
+.reader-card[data-swipe]::after { content: ""; position: absolute; inset: 0; z-index: 2; border-radius: inherit; pointer-events: none; background: var(--swipe-color); opacity: calc(var(--swipe-p, 0) * .07); will-change: opacity; }
+.reader-card[data-armed]::after { opacity: .12; }
 .card-swipe { position: absolute; top: 72px; left: 24px; right: 24px; z-index: 3; display: flex; pointer-events: none; }
-.card-swipe > span { display: none; align-items: center; gap: 7px; height: 36px; padding: 0 16px 0 13px; border-radius: 18px; background: var(--card); color: var(--swipe-color); box-shadow: var(--glass); font-weight: 600; opacity: min(1, calc(var(--swipe-p, 0) * 1.6 - .1)); transform: scale(calc(.86 + var(--swipe-p, 0) * .14)); transition: transform 160ms var(--ease-spring), background-color 120ms var(--ease), color 120ms var(--ease); }
+.card-swipe > span { display: none; align-items: center; gap: 7px; height: 36px; padding: 0 16px 0 13px; border-radius: 18px; background: var(--card); color: var(--swipe-color); box-shadow: var(--glass); font-weight: 600; opacity: min(1, calc(var(--swipe-p, 0) * 1.6 - .1)); transform: scale(calc(.86 + var(--swipe-p, 0) * .14)); will-change: transform, opacity; transition: background-color 140ms var(--ease), color 140ms var(--ease); }
 /* The badge sits on the trailing edge, the side the card is moving away from. */
 .reader-card[data-swipe="right"] .card-swipe > [data-for="right"] { display: inline-flex; }
 .reader-card[data-swipe="left"] .card-swipe { justify-content: flex-end; }
 .reader-card[data-swipe="left"] .card-swipe > [data-for="left"] { display: inline-flex; }
-.reader-card[data-armed] .card-swipe > span { background: var(--swipe-color); color: #fff; transform: scale(1.06); }
+.reader-card[data-armed] .card-swipe > span { background: var(--swipe-color); color: #fff; transform: scale(1.04); animation: swipe-armed 260ms var(--ease-spring); }
 .stack-reader:has(.reader-card[data-armed][data-swipe-action="done"]) .dock-pill.done,
 .stack-reader:has(.reader-card[data-armed][data-swipe-action="later"]) .dock-pill.later { transform: scale(1.06); background: var(--raised); box-shadow: var(--glass), 0 0 0 2px color-mix(in srgb, var(--swipe-color, var(--green)) 60%, transparent); }
 .stack-reader:has(.reader-card[data-armed][data-swipe-action="later"]) .dock-pill.later { --swipe-color: var(--blue); }

@@ -58,6 +58,8 @@
   --ease-in-out: cubic-bezier(.65, 0, .35, 1);
   --ease-in: cubic-bezier(.5, 0, .75, 0);
   --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
+  /* For something released mid-motion: it keeps its speed instead of easing in from rest. */
+  --ease-release: cubic-bezier(.3, .7, .4, 1);
 
   /* Layers */
   --z-sticky: 5;
