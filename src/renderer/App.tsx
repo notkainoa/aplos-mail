@@ -86,6 +86,8 @@ export function App(){
   return ()=>{unsubscribe();removeEventListener('online',up);removeEventListener('offline',down);};
  },[]);
  useEffect(()=>{if(!popoutThread)localStorage.setItem(askStorageKey,ask?'open':'closed');},[ask]);
+ // The service paces automatic syncs per account, so focusing often is cheap.
+ useEffect(()=>{const onFocus=()=>{void invoke('sync',{auto:true}).catch(()=>{});};window.addEventListener('focus',onFocus);return()=>window.removeEventListener('focus',onFocus);},[]);
  useEffect(()=>{if(!leaving)return;const t=setTimeout(()=>setLeaving(undefined),340);return ()=>clearTimeout(t);},[leaving?.key]);
  useEffect(()=>{if(!duePrompt)return;const t=setTimeout(()=>setDuePrompt(undefined),7000);return ()=>clearTimeout(t);},[duePrompt?.key]);
  useEffect(()=>{if(!state)return;const theme=state.settings.theme;const media=matchMedia('(prefers-color-scheme: dark)');const apply=()=>document.documentElement.dataset.theme=theme==='system'?(media.matches?'dark':'light'):theme;apply();media.addEventListener('change',apply);return ()=>media.removeEventListener('change',apply);},[state?.settings.theme]);

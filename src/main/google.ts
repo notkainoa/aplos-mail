@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import nodemailer from 'nodemailer';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
+import type { SyncContext, SyncResult, ThreadFlags } from '../engine/provider';
 
 export interface GoogleOptions {
   dataDir:string; encrypt?:(value:string)=>Buffer; decrypt?:(value:Buffer)=>string;
@@ -14,6 +15,15 @@ interface GmailPart {partId?:string;mimeType?:string;filename?:string;headers?:{
 interface GmailMessage {id:string;internalDate?:string;labelIds?:string[];snippet?:string;payload?:GmailPart}
 interface GmailThread {id:string;messages?:GmailMessage[]}
 type Json=Record<string,any>;
+class GoogleError extends Error { constructor(message:string,readonly status?:number){super(message);} }
+/** Threads fetched on a first sync, newest first. Older mail is reached through search. */
+export const INITIAL_THREADS=500;
+const SEARCH_THREADS=100;
+/** History pages to follow before a fresh window is cheaper than replaying changes. */
+const MAX_HISTORY_PAGES=20;
+export function labelStatus(labels:string[]):ThreadFlags['status'] {
+  return labels.includes('TRASH')?'trash':labels.includes('SPAM')?'spam':labels.includes('INBOX')?'new':'done';
+}
 const gmail='https://gmail.googleapis.com/gmail/v1/users/me';
 const calendar='https://www.googleapis.com/calendar/v3';
 const enc=encodeURIComponent;
@@ -42,7 +52,7 @@ export function normalizeGmailThread(raw:GmailThread,account:Account):Thread {
     return {id:m.id,from:from.email,fromName:from.name,to:addresses(header(m.payload,'to')),cc:addresses(header(m.payload,'cc')),date,text,html:html||undefined,sent:m.labelIds?.includes('SENT')??false,attachments:parts.filter(p=>!isBodyPart(p)&&(p.filename||p.body?.attachmentId||header(p,'content-id'))).map((p,i)=>({id:`${m.id}:${p.partId??i}`,name:p.filename||'attachment',type:p.mimeType||'application/octet-stream',size:p.body?.size??0,data:p.body?.data?Buffer.from(p.body.data,'base64url').toString('base64'):undefined,gmailAttachmentId:p.body?.attachmentId,messageId:m.id,contentId:header(p,'content-id').replace(/^<|>$/g,'')||undefined}))};
   }).sort((a,b)=>a.date.localeCompare(b.date));
   const labels=[...new Set(items.flatMap(m=>m.labelIds??[]))];
-  return {id:`${account.id}:${raw.id}`,gmailId:raw.id,accountId:account.id,subject:header(items[0]?.payload,'subject')||'(No subject)',summary:htmlText(items.at(-1)?.snippet??'')||messages.at(-1)?.text.slice(0,200)||'',messages,date:messages.at(-1)?.date??new Date().toISOString(),unread:labels.includes('UNREAD'),status:labels.includes('TRASH')?'trash':labels.includes('SPAM')?'spam':labels.includes('INBOX')?'new':'done',importance:labels.includes('IMPORTANT')?'important':'low',bookmarked:labels.includes('STARRED'),replyStatus:'none',labels};
+  return {id:`${account.id}:${raw.id}`,gmailId:raw.id,accountId:account.id,subject:header(items[0]?.payload,'subject')||'(No subject)',summary:htmlText(items.at(-1)?.snippet??'')||messages.at(-1)?.text.slice(0,200)||'',messages,date:messages.at(-1)?.date??new Date().toISOString(),unread:labels.includes('UNREAD'),status:labelStatus(labels),importance:labels.includes('IMPORTANT')?'important':'low',bookmarked:labels.includes('STARRED'),replyStatus:'none',labels};
 }
 
 export async function createGoogle(options:GoogleOptions) {
@@ -71,12 +81,14 @@ export async function createGoogle(options:GoogleOptions) {
   }
   async function fetchJson(url:string,init:RequestInit={}):Promise<Json> {
     let response:Response;
-    try {response=await request(url,{...init,signal:init.signal??AbortSignal.timeout(45000)});}catch {throw new Error('Google could not be reached. Check your internet connection.');}
+    try {response=await request(url,{...init,signal:init.signal??AbortSignal.timeout(45000)});}catch {throw new GoogleError('Google could not be reached. Check your internet connection.');}
     if(!response.ok) {
-      if(response.status===401) throw new Error('Google authorization expired. Reconnect this account.');
-      if(response.status===403) throw new Error('Google denied this operation. Enable Gmail and Calendar APIs and reconnect with the required permissions.');
-      if(response.status===429) throw new Error('Google rate limit reached. Please retry shortly.');
-      throw new Error(`Google request failed (${response.status}). Please retry.`);
+      const status=response.status;
+      if(status===401) throw new GoogleError('Google authorization expired. Reconnect this account.',status);
+      if(status===403) throw new GoogleError('Google denied this operation. Enable Gmail and Calendar APIs and reconnect with the required permissions.',status);
+      if(status===429) throw new GoogleError('Google rate limit reached. Please retry shortly.',status);
+      if(status===404) throw new GoogleError('Google could not find this item.',status);
+      throw new GoogleError(`Google request failed (${status}). Please retry.`,status);
     }
     if(response.status===204)return {};
     try{return await response.json() as Json;}catch{throw new Error('Google returned an unreadable response. Please retry.');}
@@ -104,19 +116,80 @@ export async function createGoogle(options:GoogleOptions) {
     do {const pageUrl=new URL(url);if(next)pageUrl.searchParams.set('pageToken',next);const page=await api(account,pageUrl.toString());items.push(...(Array.isArray(page[key])?page[key]:[]));next=typeof page.nextPageToken==='string'?page.nextPageToken:undefined;} while(next);
     return items;
   }
-  async function threads(account:Account,query?:string) {
-    const url=new URL(`${gmail}/threads`);url.searchParams.set('maxResults','500');url.searchParams.set('includeSpamTrash','true');if(query)url.searchParams.set('q',query);
-    const rows=await pages(account,url.toString(),'threads');const result:Thread[]=[];let cursor=0;
-    await Promise.all(Array.from({length:Math.min(4,rows.length)},async()=>{while(cursor<rows.length){const row=rows[cursor++];const raw=await api(account,`${gmail}/threads/${enc(row.id)}?format=full`) as GmailThread;
-      // Gmail can store a text/HTML body in messages.attachments just like a file.
-      // Resolve those body parts before normalization; ordinary files stay lazy.
-      for(const message of raw.messages??[])for(const part of flatten(message.payload))if(isBodyPart(part)&&part.body?.attachmentId&&!part.body.data){
-        const body=await api(account,`${gmail}/messages/${enc(message.id)}/attachments/${enc(part.body.attachmentId)}`);
-        if(typeof body.data!=='string')throw new Error('Google did not return the complete message body. Retry syncing this account.');
-        part.body={...part.body,data:body.data};
+  const notFound=(error:unknown)=>error instanceof GoogleError&&error.status===404;
+  async function listIds(account:Account,limit:number,query?:string):Promise<string[]> {
+    const ids:string[]=[];let next:string|undefined;
+    do {
+      const url=new URL(`${gmail}/threads`);url.searchParams.set('maxResults',String(Math.min(500,limit-ids.length)));url.searchParams.set('includeSpamTrash','true');
+      if(query)url.searchParams.set('q',query);if(next)url.searchParams.set('pageToken',next);
+      const page=await api(account,url.toString());
+      for(const row of Array.isArray(page.threads)?page.threads:[])if(typeof row.id==='string')ids.push(row.id);
+      next=typeof page.nextPageToken==='string'?page.nextPageToken:undefined;
+    } while(next&&ids.length<limit);
+    return ids.slice(0,limit);
+  }
+  /** Fetch with bounded concurrency; one entry per ID, undefined when the thread no longer exists. */
+  async function each<T>(ids:string[],fn:(id:string)=>Promise<T>):Promise<(T|undefined)[]> {
+    const result:(T|undefined)[]=new Array(ids.length);let cursor=0;
+    await Promise.all(Array.from({length:Math.min(4,ids.length)},async()=>{while(cursor<ids.length){const at=cursor++;
+      try{result[at]=await fn(ids[at]);}catch(error){if(!notFound(error))throw error;result[at]=undefined;}}}));
+    return result;
+  }
+  async function fullThread(account:Account,id:string):Promise<Thread> {
+    const raw=await api(account,`${gmail}/threads/${enc(id)}?format=full`) as GmailThread;
+    // Gmail can store a text/HTML body in messages.attachments just like a file.
+    // Resolve those body parts before normalization; ordinary files stay lazy.
+    for(const message of raw.messages??[])for(const part of flatten(message.payload))if(isBodyPart(part)&&part.body?.attachmentId&&!part.body.data){
+      const body=await api(account,`${gmail}/messages/${enc(message.id)}/attachments/${enc(part.body.attachmentId)}`);
+      if(typeof body.data!=='string')throw new Error('Google did not return the complete message body. Retry syncing this account.');
+      part.body={...part.body,data:body.data};
+    }
+    return normalizeGmailThread(raw,account);
+  }
+  async function flags(account:Account,id:string):Promise<ThreadFlags> {
+    const raw=await api(account,`${gmail}/threads/${enc(id)}?format=minimal`) as GmailThread;
+    const labels=[...new Set((raw.messages??[]).flatMap(m=>m.labelIds??[]))];
+    return {id:`${account.id}:${id}`,unread:labels.includes('UNREAD'),bookmarked:labels.includes('STARRED'),status:labelStatus(labels),labels};
+  }
+  async function fullThreads(account:Account,ids:string[]):Promise<Thread[]> {
+    return (await each(ids,id=>fullThread(account,id))).filter((t):t is Thread=>!!t).sort((a,b)=>b.date.localeCompare(a.date));
+  }
+  async function freshWindow(account:Account):Promise<SyncResult> {
+    // Read the position first so anything that changes while the window downloads is replayed next time.
+    const profile=await api(account,`${gmail}/profile`);
+    const threads=await fullThreads(account,await listIds(account,INITIAL_THREADS));
+    return {threads,flags:[],removed:[],cursor:profile.historyId===undefined?undefined:String(profile.historyId),reset:true};
+  }
+  async function history(account:Account,cursor:string,context:SyncContext):Promise<SyncResult|undefined> {
+    const changed=new Set<string>(),relabeled=new Set<string>();let latest=cursor,next:string|undefined,pages=0;
+    do {
+      const url=new URL(`${gmail}/history`);url.searchParams.set('startHistoryId',cursor);url.searchParams.set('maxResults','500');
+      for(const type of ['messageAdded','messageDeleted','labelAdded','labelRemoved'])url.searchParams.append('historyTypes',type);
+      if(next)url.searchParams.set('pageToken',next);
+      let page:Json;
+      try{page=await api(account,url.toString());}catch(error){if(notFound(error))return undefined;throw error;}
+      for(const record of Array.isArray(page.history)?page.history:[]){
+        for(const key of ['messagesAdded','messagesDeleted'])for(const item of record[key]??[])if(item.message?.threadId)changed.add(item.message.threadId);
+        for(const key of ['labelsAdded','labelsRemoved'])for(const item of record[key]??[])if(item.message?.threadId)relabeled.add(item.message.threadId);
       }
-      result.push(normalizeGmailThread(raw,account));}}));
-    return result.sort((a,b)=>b.date.localeCompare(a.date));
+      if(page.historyId!==undefined)latest=String(page.historyId);
+      next=typeof page.nextPageToken==='string'?page.nextPageToken:undefined;
+      if(++pages>=MAX_HISTORY_PAGES&&next)return undefined;
+    } while(next);
+    const removed:string[]=[],updates:ThreadFlags[]=[];
+    const labelOnly=[...relabeled].filter(id=>!changed.has(id));
+    const known=labelOnly.filter(id=>context.has(`${account.id}:${id}`));
+    // A thread this device never stored only matters once it is in the inbox; then it needs its messages.
+    const discovered=new Set(labelOnly.filter(id=>!context.has(`${account.id}:${id}`)));
+    for(const id of discovered)changed.add(id);
+    (await each(known,id=>flags(account,id))).forEach((value,i)=>{if(value)updates.push(value);else removed.push(`${account.id}:${known[i]}`);});
+    const ids=[...changed],fetched=await each(ids,id=>fullThread(account,id)),threads:Thread[]=[];
+    fetched.forEach((thread,i)=>{
+      const id=`${account.id}:${ids[i]}`;
+      if(!thread){if(context.has(id))removed.push(id);return;}
+      if(!discovered.has(ids[i])||thread.status==='new')threads.push(thread);
+    });
+    return {threads,flags:updates,removed,cursor:latest,reset:false};
   }
   function eventModel(raw:Json,account:Account,calendarId:string):CalendarEvent {
     return {id:`${account.id}:${calendarId}:${raw.id}`,googleId:raw.id,accountId:account.id,calendarId,title:raw.summary??'(Untitled event)',start:raw.start?.dateTime??raw.start?.date??'',end:raw.end?.dateTime??raw.end?.date??'',allDay:Boolean(raw.start?.date),location:raw.location??'',description:raw.description??'',guests:(raw.attendees??[]).map((x:Json)=>x.email).filter(Boolean),url:raw.htmlLink};
@@ -185,8 +258,11 @@ export async function createGoogle(options:GoogleOptions) {
       const token=tokens[accountId];delete tokens[accountId];await persist();
       if(token) {try{await request('https://oauth2.googleapis.com/revoke',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({token:token.refresh_token??token.access_token}),signal:AbortSignal.timeout(10000)});}catch{/* Local disconnect remains effective while offline. */}}
     },
-    sync:(account:Account)=>threads(account),
-    search:(account:Account,query:string)=>threads(account,query),
+    async sync(account:Account,cursor?:string,context:SyncContext={has:()=>false}):Promise<SyncResult> {
+      if(cursor){const result=await history(account,cursor,context);if(result)return result;}
+      return freshWindow(account);
+    },
+    search:async(account:Account,query:string)=>fullThreads(account,await listIds(account,SEARCH_THREADS,query)),
     async updateThread(account:Account,thread:Thread,patch:Partial<Thread>) {
       if(!thread.gmailId) throw new Error('This thread has no Gmail identifier.');
       const url=`${gmail}/threads/${enc(thread.gmailId)}`;

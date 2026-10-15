@@ -1,0 +1,124 @@
+import type { AppState, Thread } from '../shared/types';
+import { transaction, type SqlDatabase } from './sql';
+
+const SCHEMA_VERSION=1;
+const META_KEYS=['settings','selectedAccountId','sync','blockedSenders'] as const;
+/** Small collections keep their array order; threads are always read newest first. */
+const ORDERED=['accounts','drafts','events','conversations'] as const;
+type Ordered=typeof ORDERED[number];
+
+function migrate(db:SqlDatabase) {
+  const version=Number(db.prepare('PRAGMA user_version').get()?.user_version??0);
+  if(version>SCHEMA_VERSION)throw new Error('This mailbox was saved by a newer version of Aplos Mail. Update the app to open it.');
+  if(version===SCHEMA_VERSION)return;
+  transaction(db,()=>{
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS drafts(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS threads(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, date TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS threads_by_account_date ON threads(account_id, date DESC);
+      CREATE TABLE IF NOT EXISTS sync_cursors(account_id TEXT PRIMARY KEY, cursor TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE VIRTUAL TABLE IF NOT EXISTS thread_text USING fts5(id UNINDEXED, account_id UNINDEXED, subject, people, body, tokenize='unicode61 remove_diacritics 2');
+      PRAGMA user_version=${SCHEMA_VERSION};
+    `);
+  });
+}
+
+function searchable(thread:Thread) {
+  const people=thread.messages.flatMap(m=>[m.fromName,m.from,...m.to,...(m.cc??[])]).join(' ');
+  const body=[thread.summary,...thread.messages.map(m=>m.text)].join('\n').slice(0,200_000);
+  return {subject:thread.subject,people,body};
+}
+
+/** Words become prefix terms joined by AND; quotes and FTS operators in user text are neutralized. */
+export function ftsQuery(text:string):string|undefined {
+  const words=text.toLowerCase().match(/[\p{L}\p{N}]+/gu);
+  return words?.length?words.map(word=>`"${word}"*`).join(' '):undefined;
+}
+
+export interface MailStore {
+  load():AppState|undefined;
+  /** Writes only rows that differ from the last load or save, in one transaction. */
+  save(state:AppState):void;
+  /** Thread IDs whose subject, people or text contain every word as a prefix, newest first. */
+  searchText(text:string, accountId?:string, limit?:number):string[];
+  cursor(accountId:string):string|undefined;
+  setCursor(accountId:string, cursor:string|undefined, now?:Date):void;
+  close():void;
+}
+
+export function createMailStore(db:SqlDatabase):MailStore {
+  migrate(db);
+  const written:Record<string,Map<string,string>>={threads:new Map(),meta:new Map(),...Object.fromEntries(ORDERED.map(table=>[table,new Map()]))};
+
+  function load():AppState|undefined {
+    const meta=new Map(db.prepare('SELECT key, value FROM meta').all().map(row=>[String(row.key),String(row.value)]));
+    if(!meta.has('settings'))return;
+    for(const [key,value] of meta)written.meta.set(key,value);
+    const ordered=(table:Ordered)=>db.prepare(`SELECT id, pos, data FROM ${table} ORDER BY pos`).all().map(row=>{
+      written[table].set(String(row.id),`${row.pos}:${row.data}`);return JSON.parse(String(row.data));
+    });
+    const threads=db.prepare('SELECT id, data FROM threads ORDER BY date DESC, id').all().map(row=>{
+      written.threads.set(String(row.id),String(row.data));return JSON.parse(String(row.data)) as Thread;
+    });
+    const value=(key:typeof META_KEYS[number])=>JSON.parse(meta.get(key)!);
+    return {version:1,accounts:ordered('accounts'),threads,drafts:ordered('drafts'),events:ordered('events'),conversations:ordered('conversations'),
+      settings:value('settings'),selectedAccountId:value('selectedAccountId'),sync:value('sync'),blockedSenders:value('blockedSenders')};
+  }
+
+  function save(state:AppState) {
+    // The snapshot of what is on disk only advances after the transaction commits.
+    const after:Array<()=>void>=[];
+    transaction(db,()=>{
+      for(const key of META_KEYS){
+        const json=JSON.stringify(state[key]??null);
+        if(written.meta.get(key)!==json){db.prepare('INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,json);after.push(()=>written.meta.set(key,json));}
+      }
+      for(const table of ORDERED){
+        const seen=new Set<string>(),previous=written[table];
+        (state[table] as Array<{id:string}>).forEach((item,pos)=>{
+          const data=JSON.stringify(item),signature=`${pos}:${data}`;seen.add(item.id);
+          if(previous.get(item.id)===signature)return;
+          db.prepare(`INSERT INTO ${table}(id, pos, data) VALUES(?, ?, ?) ON CONFLICT(id) DO UPDATE SET pos=excluded.pos, data=excluded.data`).run(item.id,pos,data);
+          after.push(()=>previous.set(item.id,signature));
+        });
+        for(const id of [...previous.keys()])if(!seen.has(id)){db.prepare(`DELETE FROM ${table} WHERE id=?`).run(id);after.push(()=>previous.delete(id));}
+      }
+      const seen=new Set<string>(),previous=written.threads;
+      for(const thread of state.threads){
+        const data=JSON.stringify(thread);seen.add(thread.id);
+        if(previous.get(thread.id)===data)continue;
+        db.prepare('INSERT INTO threads(id, account_id, date, status, data) VALUES(?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id, date=excluded.date, status=excluded.status, data=excluded.data')
+          .run(thread.id,thread.accountId,thread.date,thread.status,data);
+        const text=searchable(thread);
+        db.prepare('DELETE FROM thread_text WHERE id=?').run(thread.id);
+        db.prepare('INSERT INTO thread_text(id, account_id, subject, people, body) VALUES(?, ?, ?, ?, ?)').run(thread.id,thread.accountId,text.subject,text.people,text.body);
+        after.push(()=>previous.set(thread.id,data));
+      }
+      for(const id of [...previous.keys()])if(!seen.has(id)){
+        db.prepare('DELETE FROM threads WHERE id=?').run(id);db.prepare('DELETE FROM thread_text WHERE id=?').run(id);after.push(()=>previous.delete(id));
+      }
+    });
+    for(const apply of after)apply();
+  }
+
+  function searchText(text:string, accountId?:string, limit=500):string[] {
+    const query=ftsQuery(text);if(!query)return [];
+    const rows=db.prepare(`SELECT t.id FROM thread_text f JOIN threads t ON t.id=f.id WHERE thread_text MATCH ?${accountId?' AND t.account_id=?':''} ORDER BY t.date DESC LIMIT ?`)
+      .all(...(accountId?[query,accountId,limit]:[query,limit]));
+    return rows.map(row=>String(row.id));
+  }
+
+  return {
+    load, save, searchText,
+    cursor:accountId=>{const row=db.prepare('SELECT cursor FROM sync_cursors WHERE account_id=?').get(accountId);return row?String(row.cursor):undefined;},
+    setCursor(accountId,cursor,now=new Date()){
+      if(cursor===undefined)db.prepare('DELETE FROM sync_cursors WHERE account_id=?').run(accountId);
+      else db.prepare('INSERT INTO sync_cursors(account_id, cursor, updated_at) VALUES(?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET cursor=excluded.cursor, updated_at=excluded.updated_at').run(accountId,cursor,now.toISOString());
+    },
+    close:()=>db.close(),
+  };
+}

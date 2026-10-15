@@ -1,0 +1,64 @@
+import type { AppState, Settings, Thread } from '../shared/types';
+import type { SyncResult, ThreadFlags } from './provider';
+
+type Status=Thread['status'];
+type Mapping=Pick<Settings,'doneAction'|'laterAction'>;
+
+/**
+ * Combine the host's view of a thread with Aplos workflow state.
+ * The host owns trash, spam and inbox membership; Aplos owns Done vs. merely read and Later.
+ */
+export function mergeStatus(local:Status, remote:ThreadFlags['status'], arrived:boolean, settings:Mapping):Status {
+  if(remote==='trash'||remote==='spam')return remote;
+  if(local==='trash'||local==='spam')return remote;
+  if(local==='new')return remote;
+  if(arrived&&remote==='new')return 'new';
+  // Back in the inbox without new mail: only meaningful when the triage action archives,
+  // otherwise the inbox label is expected and the thread stays where the user put it.
+  if(remote==='new')return (local==='done'?settings.doneAction:settings.laterAction)==='archive'?'new':local;
+  return local;
+}
+
+/** A message the user did not send that this device has not seen before. */
+export function hasArrival(local:Thread, remote:Thread):boolean {
+  const known=new Set(local.messages.map(m=>m.id));
+  return remote.messages.some(m=>!m.sent&&!known.has(m.id));
+}
+
+export interface MergeOutcome {
+  /** Threads this device had never stored. */
+  added:Thread[];
+  /** Threads that gained a message from someone else, including added ones. */
+  arrivals:Thread[];
+}
+
+/** Apply one provider sync result to a mutable state snapshot. */
+export function applySync(state:AppState, accountId:string, result:SyncResult):MergeOutcome {
+  const blocked=(t:Thread)=>t.messages.some(m=>state.blockedSenders.includes(m.from.toLowerCase()));
+  const index=new Map(state.threads.map((t,i)=>[t.id,i]));
+  const outcome:MergeOutcome={added:[],arrivals:[]};
+  for(const remote of result.threads){
+    if(remote.accountId!==accountId)continue;
+    if(blocked(remote))remote.status='spam';
+    const at=index.get(remote.id);
+    if(at===undefined){
+      index.set(remote.id,state.threads.length);state.threads.push(remote);
+      outcome.added.push(remote);if(remote.messages.some(m=>!m.sent))outcome.arrivals.push(remote);continue;
+    }
+    const old=state.threads[at],arrived=hasArrival(old,remote);
+    state.threads[at]={...remote,
+      status:mergeStatus(old.status,remote.status as ThreadFlags['status'],arrived,state.settings),
+      summary:old.summary||remote.summary,importance:old.importance,replyStatus:arrived&&old.replyStatus==='awaiting-reply'?'needs-reply':old.replyStatus,
+      todo:old.todo,dueDate:old.dueDate,reminderAt:old.reminderAt,reminderFired:old.reminderFired,bookmarked:remote.bookmarked,
+      hiddenFromHome:arrived?false:old.hiddenFromHome};
+    if(arrived)outcome.arrivals.push(state.threads[at]);
+  }
+  for(const flags of result.flags){
+    const at=index.get(flags.id);if(at===undefined)continue;
+    const old=state.threads[at];
+    state.threads[at]={...old,unread:flags.unread,bookmarked:flags.bookmarked,...(flags.labels?{labels:flags.labels}:{}),
+      status:blocked(old)?'spam':mergeStatus(old.status,flags.status,false,state.settings)};
+  }
+  if(result.removed.length){const gone=new Set(result.removed);state.threads=state.threads.filter(t=>t.accountId!==accountId||!gone.has(t.id));}
+  return outcome;
+}

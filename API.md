@@ -5,7 +5,7 @@ Renderer calls `bridge.invoke<T>(method, payload)`. Every method rejects with a 
 Methods to implement in `src/main/service.ts` (`createService({dataDir, ...options})` returns `{invoke,subscribe,close}`):
 
 - `state.get` → AppState; `capabilities.get` → Capabilities.
-- `settings.update` `{patch:Partial<Settings>}`; `account.select` `{id}`; `account.connect` (Google OAuth); `account.disconnect` `{id}`; `sync` `{accountId?}` → state. `demo.reset` → state.
+- `settings.update` `{patch:Partial<Settings>}`; `account.select` `{id}`; `account.connect` (Google OAuth); `account.disconnect` `{id}`; `sync` `{accountId?,auto?}` → state (`auto:true` is a background sync: paced per account, no busy spinner, skipped if one ran recently). `demo.reset` → state.
 - `thread.update` `{ids:string[],patch:Partial<Thread>}`; `thread.undo` → state; `home.hide` `{ids}`; `search` `{query,accountId?}` → Thread[]. Patch includes status, unread, importance, bookmarked, replyStatus, dueDate, reminderAt, todo.
 - `draft.save` `{draft:Draft}` → Draft (autosave/revision); `draft.delete` `{id}`; `draft.send` `{id}` → state (cancellable delay from settings); `draft.undoSend` `{id}`. Sent demo mail stays local. Google failure retains draft and sets sendError.
 - `ai.summarize` `{threadId}` → updated Thread; `ai.polish` `{html,instruction?}` → `{html}`; `ai.draft` `{instruction,threadId?,draft?}` → Partial<Draft>; `ai.ask` `{conversationId?,message,accountId?}` → Conversation; `ai.cancel` `{requestId?}`; `ai.transcribe` `{audio:string,mimeType:string}` → `{text}` (base64 max 25MB). All AI uses Groq.

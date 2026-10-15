@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AppState, Draft } from '../src/shared/types';
@@ -61,7 +62,7 @@ test('undo send preserves a draft, eventual local sends appear in sent mail',asy
 test('provider failures retain a recoverable draft and pending sends resume after restart',async()=>{
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-send-'));
   const base=await createGoogle({dataDir,clientId:''});let attempts=0;
-  const google={...base,available:true,connect:async()=>({id:'google-test',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true}),sync:async()=>[],getSendAs:async()=>[],send:async()=>{attempts++;throw new Error('Provider unavailable.');}};
+  const google={...base,available:true,connect:async()=>({id:'google-test',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true}),sync:async()=>({threads:[],flags:[],removed:[],reset:true}),getSendAs:async()=>[],send:async()=>{attempts++;throw new Error('Provider unavailable.');}};
   let service=await createService({dataDir,google,groq:createGroq({apiKey:''})});
   try{
     await service.invoke('account.connect');await service.invoke('settings.update',{patch:{undoSeconds:0}});
@@ -70,8 +71,9 @@ test('provider failures retain a recoverable draft and pending sends resume afte
     const failed=(await service.invoke('state.get')).drafts.find((d:Draft)=>d.id==='draft-test');
     assert.equal(failed.html,'<p>Hello from a test.</p>');assert.equal(failed.pendingSendAt,undefined);assert.equal(attempts,1);
     await service.invoke('settings.update',{patch:{undoSeconds:60}});await service.invoke('draft.send',{id:'draft-test'});await service.close();
-    const path=join(dataDir,'state.json'),persisted=JSON.parse(await readFile(path,'utf8')) as AppState;
-    persisted.drafts.find(d=>d.id==='draft-test')!.pendingSendAt=new Date(Date.now()-1000).toISOString();await writeFile(path,JSON.stringify(persisted));
+    const db=new DatabaseSync(join(dataDir,'aplos.db')),row=db.prepare("SELECT data FROM drafts WHERE id='draft-test'").get() as {data:string};
+    const persisted=JSON.parse(row.data) as Draft;persisted.pendingSendAt=new Date(Date.now()-1000).toISOString();
+    db.prepare("UPDATE drafts SET data=? WHERE id='draft-test'").run(JSON.stringify(persisted));db.close();
     service=await createService({dataDir,google,groq:createGroq({apiKey:''})});
     await settle(async()=>Boolean((await service.invoke('state.get')).drafts.find((d:Draft)=>d.id==='draft-test')?.sendError));assert.equal(attempts,2);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
@@ -92,6 +94,8 @@ test('reminders return mail to Home, calendar save is duplicate-aware and search
     await f.service.invoke('calendar.save',{event});const duplicate=await f.service.invoke('calendar.save',{event:{...event,id:'duplicate'}});assert.equal(duplicate.id,'new-event');
     assert.equal((await f.service.invoke('search',{query:'from:maya has:attachment is:unread'})).length,1);
     assert.equal((await f.service.invoke('search',{query:'subject:"community garden"',accountId:'work'})).length,0);
+    const prefix=await f.service.invoke('search',{query:'gard is:unread'}) as {id:string}[];assert.ok(prefix.some(t=>t.id==='garden'));
+    assert.equal((await f.service.invoke('search',{query:'zzqx'})).length,0);
     const attachment=await f.service.invoke('attachment.get',{threadId:'garden',attachmentId:'att-notes'});assert.match(Buffer.from(attachment.data,'base64').toString(),/Community garden/);
   }finally{await f.cleanup();}
 });
@@ -126,7 +130,7 @@ test('sync classifies fresh mail, auto-adds definite events, and preserves edits
   const base=await createGoogle({dataDir,clientId:''});
   let calls=0;
   const template={id:'live-one',accountId:'google-ai',subject:'Review meeting',summary:'Original snippet',messages:[],date:'2026-10-16T12:00:00Z',unread:true,status:'new' as const,importance:'low' as const,bookmarked:false,replyStatus:'none' as const};
-  const google={...base,available:true,connect:async()=>({id:'google-ai',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true,calendarConnected:true}),sync:async()=>[structuredClone(template),{...structuredClone(template),id:'live-two'}],updateThread:async()=>{},getSendAs:async()=>[],listEvents:async()=>[],saveEvent:async(_account:unknown,event:any)=>({...event,googleId:'google-event'})};
+  const google={...base,available:true,connect:async()=>({id:'google-ai',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true,calendarConnected:true}),sync:async()=>({threads:[structuredClone(template),{...structuredClone(template),id:'live-two'}],flags:[],removed:[],reset:true}),updateThread:async()=>{},getSendAs:async()=>[],listEvents:async()=>[],saveEvent:async(_account:unknown,event:any)=>({...event,googleId:'google-event'})};
   const groq={...createGroq({apiKey:''}),available:true,summarize:async(t:{id:string})=>{calls++;if(t.id==='live-two')throw new Error('AI unavailable');return {summary:'A definite review meeting',importance:'important' as const,replyStatus:'needs-reply' as const,todo:'Prepare the review',dueDate:'2026-10-18T12:00:00Z'};},extractEvents:async(t:{id:string})=>t.id==='live-one'?[{title:'Review meeting',start:'2026-10-18T12:00:00Z',end:'2026-10-18T13:00:00Z',allDay:false},{title:'Planning day',start:'2026-10-19',end:'2026-10-20',allDay:true}]:[]};
   const service=await createService({dataDir,google,groq});
   try{
@@ -146,7 +150,7 @@ test('sync classifies fresh mail, auto-adds definite events, and preserves edits
 test('authorized Gmail aliases retain selected identity and signature; unavailable aliases fail safely',async()=>{
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-alias-'));
   const base=await createGoogle({dataDir,clientId:''});let sent:Draft|undefined,settingsUnavailable=false;
-  const google={...base,available:true,connect:async()=>({id:'alias-account',name:'Primary Person',email:'primary@example.com',color:'#123456',provider:'google' as const,connected:true}),sync:async()=>[],
+  const google={...base,available:true,connect:async()=>({id:'alias-account',name:'Primary Person',email:'primary@example.com',color:'#123456',provider:'google' as const,connected:true}),sync:async()=>({threads:[],flags:[],removed:[],reset:true}),
     getSendAs:async()=>{if(settingsUnavailable)throw new Error('Settings unavailable');return [
       {email:'primary@example.com',name:'Primary Person',signature:'<p>Primary signature</p>',isDefault:false},
       {email:'studio@example.com',name:'Studio Person',signature:'<p><strong>Studio signature</strong></p>',isDefault:true},

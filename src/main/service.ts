@@ -5,13 +5,20 @@ import { createStore } from './store';
 import { createGroq } from './groq';
 import { createGoogle } from './google';
 import { symbolRenderer } from './symbols';
+import { applySync } from '../engine/merge';
+import { createGate } from '../engine/gate';
+import { ftsQuery } from '../engine/store';
 
 type Groq = ReturnType<typeof createGroq>;
 type Google = Awaited<ReturnType<typeof createGoogle>>;
 export interface ServiceOptions {
   dataDir:string; desktop?:boolean; encrypt?:(text:string)=>Buffer; decrypt?:(cipher:Buffer)=>string;
   openExternal?:(url:string)=>Promise<unknown>; groq?:Groq; google?:Google; now?:()=>Date; symbolTool?:string;
+  /** Background sync interval for connected accounts; 0 turns it off. */
+  autoSyncMs?:number;
 }
+/** Sending addresses and calendars change rarely, so automatic syncs refresh them at most this often. */
+const EXTRAS_INTERVAL_MS=10*60_000;
 const clone = <T>(v:T):T => structuredClone(v);
 const text = (v:unknown,max=100_000):string => {
   if (typeof v!=='string' || v.length>max) throw new Error('Invalid text or text is too long.');
@@ -126,6 +133,8 @@ export async function createService(options:ServiceOptions) {
   const listeners=new Set<Listener>(),timers=new Map<string,ReturnType<typeof setTimeout>>(),requests=new Map<string,AbortController>(),sending=new Set<string>();
   const jobs=new Set<Promise<void>>();
   const undo:Array<Thread[]> = [];
+  const gate=createGate({now:()=>now().getTime()}),extrasAt=new Map<string,number>();
+  let syncing:Promise<void>|undefined;
   let closed=false;
   const emit=(type:string,payload?:unknown)=>{for(const listener of listeners) {try{listener({type,payload:clone(payload)});}catch{/* A closed renderer must not interrupt persistence. */}}};
   function commit(next:AppState) { store.write(next); state=next; emit('state',state); }
@@ -137,8 +146,16 @@ export async function createService(options:ServiceOptions) {
   function checkReminders() {
     const due=state.threads.filter(t=>t.status==='later'&&t.reminderAt&&!t.reminderFired&&Date.parse(t.reminderAt)<=now().getTime());
     if(!due.length)return;
-    change(s=>{for(const t of s.threads)if(due.some(d=>d.id===t.id)){t.status='new';t.hiddenFromHome=false;t.reminderFired=true;t.unread=true;}});
-    for(const t of due)emit('reminder',{threadId:t.id,title:t.subject});
+    change(s=>{for(const t of s.threads)if(due.some(d=>d.id===t.id)){t.status='new';t.hiddenFromHome=false;t.reminderFired=true;t.unread=true;if(t.labels&&!t.labels.includes('INBOX'))t.labels=[...t.labels,'INBOX'];}});
+    for(const t of due){
+      emit('reminder',{threadId:t.id,title:t.subject});
+      // The host must see the thread back in the inbox too, or the next sync would file it away again.
+      const a=state.accounts.find(x=>x.id===t.accountId),current=state.threads.find(x=>x.id===t.id);
+      if(a?.provider==='google'&&a.connected&&current?.gmailId){
+        const job=google.updateThread(a,current,{status:'new',unread:true,labels:current.labels??['INBOX']}).catch(()=>{emit('error',{message:`A reminder for "${t.subject}" returned it to Home, but Gmail could not be updated. Sync to retry.`});});
+        jobs.add(job);void job.finally(()=>jobs.delete(job));
+      }
+    }
   }
   function sendError(id:string,error:unknown) {
     const message=error instanceof Error?error.message:'Sending failed. Please try again.';
@@ -201,7 +218,8 @@ export async function createService(options:ServiceOptions) {
     }finally{if(recordUndo&&completed.length){undo.push(completed);if(undo.length>50)undo.shift();}}
     return clone(state);
   }
-  async function classifyIncoming(fresh:Thread[],a:Account):Promise<string[]> {
+  /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. */
+  async function classifyIncoming(fresh:Thread[],a:Account,refresh:Set<string>=new Set()):Promise<string[]> {
     if(!fresh.length||!groq.available)return [];
     let cursor=0,classificationFailures=0,calendarFailures=0,cancelled=false;
     try{
@@ -218,7 +236,7 @@ export async function createService(options:ServiceOptions) {
               const classified=threadPatch({importance:result.importance||before.importance,replyStatus:result.replyStatus||before.replyStatus,todo:result.todo,dueDate:result.dueDate});
               if(typeof result.summary==='string')classified.summary=result.summary.slice(0,10_000);
               change(s=>{const current=s.threads.find(t=>t.id===candidate.id);if(!current)return;
-                for(const key of ['importance','replyStatus','todo','dueDate','summary'] as const){
+                for(const key of refresh.has(candidate.id)?['replyStatus','summary'] as const:['importance','replyStatus','todo','dueDate','summary'] as const){
                   // An edit made while Groq was running always wins over its response.
                   if(current[key]===before[key]&&key in classified)(current as any)[key]=classified[key];
                 }
@@ -246,38 +264,56 @@ export async function createService(options:ServiceOptions) {
     for(const message of warnings)emit('error',{message});
     return warnings;
   }
-  async function sync(accountId?:string) {
-    if(state.sync.busy) return clone(state);
-    const accounts=accountId?[account(accountId)]:clone(state.accounts);
-    change(s=>{s.sync={...s.sync,busy:true,error:undefined};});
-    const errors:string[]=[];
-    try{
-      for(const a of accounts.filter(a=>a.provider==='google'&&a.connected)){
-        try{
-          const incoming=await google.sync(a);
-          try{a.sendAs=await google.getSendAs(a);delete a.error;}catch{
-            const message='Gmail sending addresses and signatures are unavailable. Reconnect to grant settings access; the primary address is still available.';
-            a.sendAs=[{email:a.email,name:a.name,signature:'',isDefault:true}];a.error=message;errors.push(message);emit('error',{message});
-          }
-          const fresh=incoming.filter(t=>t.status==='new'&&!state.threads.some(old=>old.id===t.id)&&!t.messages.some(m=>state.blockedSenders.includes(m.from.toLowerCase())));
-          const since=Date.parse(state.sync.lastSync||now().toISOString());
-          const arrivals=incoming.filter(t=>t.unread&&t.status==='new'&&Date.parse(t.date)>since&&!state.threads.some(old=>old.id===t.id)&&!t.messages.some(m=>state.blockedSenders.includes(m.from.toLowerCase())));
-          let events:CalendarEvent[]|undefined;
-          if(a.calendarConnected)try{events=await google.listEvents(a);}catch{/* Mail sync remains available without Calendar permission. */}
-          change(s=>{
-            for(const t of incoming){if(t.messages.some(m=>s.blockedSenders.includes(m.from.toLowerCase())))t.status='spam';const index=s.threads.findIndex(old=>old.id===t.id);if(index<0)s.threads.push(t);else {
-              const old=s.threads[index];s.threads[index]={...t,todo:old.todo,dueDate:old.dueDate,reminderAt:old.reminderAt,reminderFired:old.reminderFired,bookmarked:old.bookmarked,hiddenFromHome:old.hiddenFromHome,importance:old.importance,replyStatus:old.replyStatus,summary:old.summary||t.summary,
-                status:old.status==='later'&&t.status!=='trash'&&t.status!=='spam'?'later':t.status};
-            }}
-            if(events){s.events=s.events.filter(e=>e.accountId!==a.id||!e.googleId);for(const event of events)if(!s.events.some(e=>e.googleId===event.googleId&&e.accountId===event.accountId))s.events.push(event);}
-            const acc=s.accounts.find(x=>x.id===a.id)!;acc.sendAs=a.sendAs;if(a.error)acc.error=a.error;else delete acc.error;
-          });
-          if(state.settings.notifications&&state.settings.accountNotifications[a.id]!==false)for(const t of arrivals.slice(0,3))emit('notification',{title:t.messages.at(-1)?.fromName||'New mail',body:t.subject,threadId:t.id,accountId:a.id});
-          errors.push(...await classifyIncoming(fresh,a));
-        }catch{const message=`Could not sync ${a.email}. Reconnect the account or try again.`;errors.push(message);change(s=>{s.accounts.find(x=>x.id===a.id)!.error=message;});}
+  async function syncAccount(a:Account,manual:boolean,errors:string[]) {
+    const cursor=store.cursor(a.id),local=new Set(state.threads.filter(t=>t.accountId===a.id).map(t=>t.id));
+    const result=await google.sync(a,cursor,{has:id=>local.has(id)});
+    let events:CalendarEvent[]|undefined;
+    if(manual||!cursor||now().getTime()-(extrasAt.get(a.id)??0)>=EXTRAS_INTERVAL_MS){
+      try{a.sendAs=await google.getSendAs(a);delete a.error;}catch{
+        const message='Gmail sending addresses and signatures are unavailable. Reconnect to grant settings access; the primary address is still available.';
+        a.sendAs=[{email:a.email,name:a.name,signature:'',isDefault:true}];a.error=message;errors.push(message);if(manual)emit('error',{message});
       }
-    }finally{change(s=>{s.sync={busy:false,lastSync:now().toISOString(),...(errors.length?{error:errors.join(' ')}:{})};});}
-    checkReminders();return clone(state);
+      if(a.calendarConnected)try{events=await google.listEvents(a);}catch{/* Mail sync remains available without Calendar permission. */}
+      extrasAt.set(a.id,now().getTime());
+    }else{const current=state.accounts.find(x=>x.id===a.id);if(current?.error&&!/sending addresses/.test(current.error))delete a.error;else if(current?.error)a.error=current.error;}
+    const since=Date.parse(state.sync.lastSync||now().toISOString());
+    let outcome!:ReturnType<typeof applySync>;
+    change(s=>{
+      outcome=applySync(s,a.id,result);
+      if(events){s.events=s.events.filter(e=>e.accountId!==a.id||!e.googleId);for(const event of events)if(!s.events.some(e=>e.googleId===event.googleId&&e.accountId===event.accountId))s.events.push(event);}
+      const acc=s.accounts.find(x=>x.id===a.id);if(acc){acc.sendAs=a.sendAs;if(a.error)acc.error=a.error;else delete acc.error;}
+    });
+    // Saved after the mail it covers, so a crash in between only replays changes.
+    store.setCursor(a.id,result.cursor,now());
+    const current=(t:Thread)=>state.threads.find(x=>x.id===t.id);
+    const inbox=outcome.arrivals.map(current).filter((t):t is Thread=>!!t&&t.status==='new');
+    // A first sync downloads existing mail; nothing in it is news.
+    if(cursor&&state.settings.notifications&&state.settings.accountNotifications[a.id]!==false)
+      for(const t of inbox.filter(t=>t.unread&&Date.parse(t.date)>since).slice(0,3))emit('notification',{title:t.messages.at(-1)?.fromName||'New mail',body:t.subject,threadId:t.id,accountId:a.id});
+    const added=new Set(outcome.added.map(t=>t.id));
+    const fresh=outcome.added.map(current).filter((t):t is Thread=>!!t&&t.status==='new');
+    const replies=inbox.filter(t=>!added.has(t.id));
+    errors.push(...await classifyIncoming([...fresh,...replies],a,new Set(replies.map(t=>t.id))));
+  }
+  async function sync(accountId?:string,manual=true):Promise<AppState> {
+    if(syncing){await syncing.catch(()=>{});return clone(state);}
+    const accounts=(accountId?[account(accountId)]:clone(state.accounts)).filter(a=>a.provider==='google'&&a.connected&&gate.ready(a.id,manual));
+    if(!manual&&!accounts.length)return clone(state);
+    const job=(async()=>{
+      // Background syncs stay quiet: no spinner, and errors surface on the account rather than as toasts.
+      if(manual)change(s=>{s.sync={...s.sync,busy:true,error:undefined};});
+      const errors:string[]=[];
+      try{
+        for(const a of accounts){
+          try{await gate.run(a.id,()=>syncAccount(a,manual,errors));}
+          catch{const message=`Could not sync ${a.email}. Reconnect the account or try again.`;errors.push(message);if(state.accounts.some(x=>x.id===a.id))change(s=>{s.accounts.find(x=>x.id===a.id)!.error=message;});}
+        }
+      }finally{if(!closed)change(s=>{s.sync={busy:false,lastSync:now().toISOString(),...(errors.length?{error:errors.join(' ')}:{})};});}
+      if(!closed)checkReminders();
+    })();
+    syncing=job;
+    try{await job;}finally{syncing=undefined;}
+    return clone(state);
   }
   async function invoke(method:string,raw:unknown={}):Promise<any> {
     if(closed)throw new Error('The mailbox is closed.');
@@ -292,9 +328,10 @@ export async function createService(options:ServiceOptions) {
       case 'account.disconnect':{const a=account(text(p.id,300));
         if(state.drafts.some(d=>d.accountId===a.id&&sending.has(d.id)))throw new Error('Wait for the message to finish sending.');
         if(a.provider==='google')await google.disconnect(a.id);
+        store.setCursor(a.id,undefined);gate.forget(a.id);extrasAt.delete(a.id);
         for(const d of state.drafts.filter(d=>d.accountId===a.id))stopSend(d.id);
         change(s=>{s.accounts=s.accounts.filter(x=>x.id!==a.id);s.threads=s.threads.filter(t=>t.accountId!==a.id);s.drafts=s.drafts.filter(d=>d.accountId!==a.id);s.events=s.events.filter(e=>e.accountId!==a.id);if(s.selectedAccountId===a.id)s.selectedAccountId='all';delete s.settings.accountNotifications[a.id];});undo.length=0;return clone(state);}
-      case 'sync':return sync(p.accountId?text(p.accountId,300):undefined);
+      case 'sync':return sync(p.accountId?text(p.accountId,300):undefined,p.auto!==true);
       case 'demo.reset':{
         if(sending.size)throw new Error('Wait for sending to finish before resetting.');
         for(const d of state.drafts)stopSend(d.id);
@@ -318,7 +355,11 @@ export async function createService(options:ServiceOptions) {
         const query=text(p.query,2000).trim(),accountId=p.accountId&&p.accountId!=='all'?text(p.accountId,300):undefined;
         if(accountId)account(accountId);
         const tokens=query.match(/(?:[^\s"]+|"[^"]*")+/g)||[];
-        const matches=state.threads.filter(t=>(!accountId||t.accountId===accountId)&&tokens.every(token=>{
+        const operators=new Set(['from','to','subject','has','is','in','after','before']);
+        const free=tokens.map(token=>token.replace(/"/g,'')).filter(token=>{const colon=token.indexOf(':');return colon<=0||!operators.has(token.slice(0,colon).toLowerCase());});
+        // Words are matched by prefix through the full-text index; text without letters or digits falls back to a substring scan.
+        const indexed=free.length&&ftsQuery(free.join(' '))?new Set(store.searchText(free.join(' '),accountId,5_000)):undefined;
+        const matches=state.threads.filter(t=>(!accountId||t.accountId===accountId)&&(!indexed||indexed.has(t.id))&&tokens.every(token=>{
           const value=token.replace(/"/g,'').toLowerCase(),colon=value.indexOf(':'),key=colon>0?value.slice(0,colon):'',term=colon>0?value.slice(colon+1):value;
           if(key==='from')return t.messages.some(m=>`${m.from} ${m.fromName}`.toLowerCase().includes(term));
           if(key==='to')return t.messages.some(m=>m.to.some(to=>to.toLowerCase().includes(term)));
@@ -327,6 +368,7 @@ export async function createService(options:ServiceOptions) {
           if(key==='is')return term==='unread'?t.unread:term==='read'?!t.unread:term==='starred'||term==='bookmarked'?t.bookmarked:term==='important'?t.importance==='important':t.status===term;
           if(key==='in')return term==='inbox'?t.status==='new':term==='trash'||term==='spam'||term==='later'||term==='done'?t.status===term:term==='sent'?t.messages.some(m=>m.sent):false;
           if(key==='after'||key==='before'){const n=Date.parse(term);return Number.isFinite(n)&&(key==='after'?Date.parse(t.date)>n:Date.parse(t.date)<n);}
+          if(indexed)return true;
           return [t.subject,t.summary,...t.messages.map(m=>`${m.from} ${m.fromName} ${m.text}`)].join(' ').toLowerCase().includes(value);
         }));
         const found=new Map(matches.map(t=>[t.id,t]));
@@ -434,5 +476,7 @@ export async function createService(options:ServiceOptions) {
   store.write(state);checkReminders();
   for(const d of state.drafts)scheduleSend(d);
   const reminderTimer=setInterval(()=>{try{if(!closed)checkReminders();}catch{emit('error',{message:'Reminders could not be saved. Check folder permissions.'});}},30_000);reminderTimer.unref?.();
-  return { invoke, subscribe(listener:Listener){listeners.add(listener);return ()=>{listeners.delete(listener);};}, async close(){closed=true;clearInterval(reminderTimer);for(const id of timers.keys())stopSend(id);for(const controller of requests.values())controller.abort();await Promise.allSettled(jobs);await google.close();listeners.clear();} };
+  const autoSyncMs=options.autoSyncMs??60_000;
+  const syncTimer=autoSyncMs>0?setInterval(()=>{if(!closed)void sync(undefined,false).catch(()=>{});},autoSyncMs):undefined;syncTimer?.unref?.();
+  return { invoke, subscribe(listener:Listener){listeners.add(listener);return ()=>{listeners.delete(listener);};}, async close(){if(closed)return;closed=true;clearInterval(reminderTimer);if(syncTimer)clearInterval(syncTimer);await syncing?.catch(()=>{});for(const id of timers.keys())stopSend(id);for(const controller of requests.values())controller.abort();await Promise.allSettled(jobs);await google.close();listeners.clear();store.close();} };
 }

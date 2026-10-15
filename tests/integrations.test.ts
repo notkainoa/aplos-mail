@@ -78,12 +78,13 @@ test('Google sync paginates, normalizes multipart mail, respects triage mapping,
     if(url.endsWith('/attachments/body-text'))return json({data:Buffer.from([0x63,0x61,0x66,0xe9]).toString('base64url')});
     if(url.endsWith('/attachments/body-html'))return json({data:Buffer.from('<p>Hello Alex</p><img src="cid:image-1">').toString('base64url')});
     if(url.includes('/attachments/'))return json({data:Buffer.from('note').toString('base64url')});
+    if(url.endsWith('/profile'))return json({historyId:'900'});
     if(url.includes('/threads/thread1'))return json(raw);
     if(url.includes('pageToken=next'))return json({threads:[]});
     return json({threads:[{id:'thread1'}],nextPageToken:'next'});
   }});
   try {
-    const synced=await google.sync(account);assert.equal(synced.length,1);const item=synced[0];assert.equal(item.messages[0].from,'sam@example.test');assert.equal(item.messages[0].html,'<p>Hello Alex</p><img src="cid:image-1">');assert.equal(item.messages[0].text,'café');assert.equal(item.messages[0].attachments.length,2);assert.ok(requests.some(r=>r.url.endsWith('/attachments/body-html')));assert.ok(!requests.some(r=>/attachments\/(a1|inline-file)$/.test(r.url)));assert.equal(item.messages[0].attachments[1].contentId,'image-1');assert.ok(requests.some(r=>r.url.includes('pageToken=next')));
+    const result=await google.sync(account);assert.equal(result.reset,true);assert.equal(result.cursor,'900');const synced=result.threads;assert.equal(synced.length,1);const item=synced[0];assert.equal(item.messages[0].from,'sam@example.test');assert.equal(item.messages[0].html,'<p>Hello Alex</p><img src="cid:image-1">');assert.equal(item.messages[0].text,'café');assert.equal(item.messages[0].attachments.length,2);assert.ok(requests.some(r=>r.url.endsWith('/attachments/body-html')));assert.ok(!requests.some(r=>/attachments\/(a1|inline-file)$/.test(r.url)));assert.equal(item.messages[0].attachments[1].contentId,'image-1');assert.ok(requests.some(r=>r.url.includes('pageToken=next')));
     await google.updateThread(account,item,{status:'done',unread:false,labels:['INBOX']});const modify=requests.find(r=>r.url.endsWith('/modify'))!;assert.ok(modify.body.addLabelIds.includes('INBOX'));assert.ok(modify.body.removeLabelIds.includes('UNREAD'));
     const attachment=await google.attachment(account,item,item.messages[0].attachments[0]);assert.equal(Buffer.from(attachment.data!,'base64').toString(),'note');
     const draft:Draft={id:'draft-test',accountId:account.id,threadId:item.id,mode:'reply',to:'sam@example.test',cc:'',bcc:'archive@example.test',subject:'Re: Studio review',html:'<p>Confirmed.</p>',attachments:[attachment],signature:false,updatedAt:new Date().toISOString(),revision:1};
