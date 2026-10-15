@@ -14,3 +14,6 @@
 - Desktop tokens use Electron safeStorage. Browser preview cannot connect/persist Google OAuth tokens; use desktop for connection. GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are absent, so live Google verification remains open.
 - Production launch reads existing environment, optionally augmented from `~/.config/aplos-mail/.env`; development reads ignored workspace `.env`. No env file is included in the app bundle.
 - Signature/footer are assembled at delivery from reviewed settings without changing the draft body. AI never changes mail after the Send action; polish remains reviewable before send.
+- Browser development uses `Aplos Mail Preview` storage, separate from desktop, to avoid concurrent JSON writers overwriting desktop mail. The small JSON store is suitable for a single personal app service; no claim of database-scale mailbox indexing.
+- Keep all-day calendar values as date-only; local calendar display must not interpret them as UTC midnight. Automatic viewing read marks do not enter triage undo history.
+- Production dependency audit found vulnerable Nodemailer 7; upgraded to 10.1.1. A broad npm audit fix unexpectedly downgraded electron-builder; restored the known working lockfile. Production dependencies are rechecked separately; dev tooling advisories remain explicit if unresolved.

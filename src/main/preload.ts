@@ -6,13 +6,13 @@ const allowed = new Set([
   'thread.update','thread.undo','home.hide','search','draft.save','draft.delete','draft.send','draft.undoSend',
   'ai.summarize','ai.polish','ai.draft','ai.ask','ai.cancel','ai.transcribe','conversation.delete',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
-  'window.compose','window.thread','window.claim','window.release','shell.open','file.save','file.open','notification.test',
+  'window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test',
   'system.login','system.defaultMail','system.microphone','app.info',
 ]);
 const listeners=new Set<Listener>();
 const queued:Parameters<Listener>[0][]=[];
 ipcRenderer.on('aplos:event',(_event:Electron.IpcRendererEvent,event:Parameters<Listener>[0])=>{
-  if(!listeners.size&&(event.type==='deep-link'||event.type==='command')){queued.push(event);if(queued.length>50)queued.shift();}
+  if(!listeners.size&&(event.type==='deep-link'||event.type==='command'||event.type==='prepare-close')){queued.push(event);if(queued.length>50)queued.shift();}
   for(const listener of listeners)listener(event);
 });
 const bridge:Bridge = {

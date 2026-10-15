@@ -13,7 +13,7 @@ export const serviceMethods=new Set([
   'ai.summarize','ai.polish','ai.draft','ai.ask','ai.cancel','ai.transcribe','conversation.delete',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
 ]);
-const webMethods=new Set(['window.compose','window.thread','window.claim','window.release','shell.open','file.save','file.open','notification.test','system.login','system.defaultMail','system.microphone','app.info']);
+const webMethods=new Set(['window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test','system.login','system.defaultMail','system.microphone','app.info']);
 const origins=new Set(['http://127.0.0.1:5173','http://localhost:5173','http://127.0.0.1:4317']);
 export function isTrustedRequest(req:Pick<IncomingMessage,'headers'>):boolean {
   return (req.headers.host==='127.0.0.1:4317'||req.headers.host==='localhost:4317')&&(!req.headers.origin||origins.has(req.headers.origin));
@@ -27,7 +27,7 @@ async function readBody(req:IncomingMessage):Promise<{method:string;payload?:unk
 }
 export async function startServer(){
   config({path:join(process.cwd(),'.env'),quiet:true});
-  const service=await createService({dataDir:process.env.APLOS_DATA_DIR||join(homedir(),'Library','Application Support','Aplos Mail'),desktop:false,
+  const service=await createService({dataDir:process.env.APLOS_DATA_DIR||join(homedir(),'Library','Application Support','Aplos Mail Preview'),desktop:false,
     openExternal:async()=>{throw new Error('Open Aplos Mail desktop to connect a Google account.');}});
   const streams=new Set<ServerResponse>();
   const unsubscribe=service.subscribe((event:Parameters<Listener>[0])=>{const frame=`data: ${JSON.stringify(event)}\n\n`;for(const stream of streams)stream.write(frame);});

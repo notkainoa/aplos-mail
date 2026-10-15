@@ -14,6 +14,8 @@ Methods to implement in `src/main/service.ts` (`createService({dataDir, ...optio
 - `attachment.get` `{threadId,attachmentId}` → Attachment with base64 data; `sender.block` `{email}`; `sender.unblock` `{email}`; `thread.unsubscribe` `{id}` → `{url?:string,message:string}` (safe link, no implicit sending).
 - `data.export` → JSON string. Desktop UI can save via native bridge.
 
-Desktop-only bridge methods handled by electron.ts: `window.compose` `{draftId}`; `window.thread` `{threadId}`; `window.claim` `{draftId}` → boolean; `window.release` `{draftId}`; `shell.open` `{url}`; `file.save` `{name,data}`; `file.open` `{name,data}`; `notification.test`; `system.login` `{enabled}`; `system.defaultMail`; `system.microphone`; `app.info`.
+Desktop-only bridge methods handled by electron.ts: `window.compose` `{draftId}`; `window.thread` `{threadId}`; `window.claim` `{draftId}` → boolean; `window.release` `{draftId}`; `window.closeReady`; `window.closeCancel`; `shell.open` `{url}`; `file.save` `{name,data}`; `file.open` `{name,data}`; `notification.test`; `system.login` `{enabled}`; `system.defaultMail`; `system.microphone`; `app.info`. Native close/quit emits `prepare-close`; active compose flushes its latest draft before closeReady, or closeCancel on save failure. Without compose, the app acknowledges immediately.
+
+Automatic thread-view read mutations use `thread.update` with `recordUndo:false` so they cannot replace the user's triage undo. `ai.ask` may include a validated current `draft` context; the original user question is persisted unchanged and proposals are applied only on explicit review.
 
 `src/main/server.ts` runs createService with loopback HTTP POST `/api/invoke` `{method,payload}` → `{result}` or `{error}` and GET `/api/events` SSE. Serve Vite in dev through the same command. Browser renderer uses these two endpoints. Browser-only desktop methods must return clear unsupported messages or sensible web equivalents.
