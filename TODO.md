@@ -4,8 +4,8 @@ Read SPEC.md, DECISIONS.md, PROGRESS.md and this checklist at the start of each 
 
 - [x] M0: locate Avec; staged REA inventory; map observed/candidate features; write spec and decisions.
 - [x] M1: typed domain, original demo, persistent store, service bridge and desktop scaffold.
-- [ ] M2: Home, stack/split reader, mailbox navigation, search, attachments and safe HTML.
-- [ ] M3: triage, Later todos/bookmarks/dates/reminders, importance/reply status, undo and bulk actions.
+- [x] M2: Home, stack/split reader, mailbox navigation, search, attachments and safe HTML.
+- [x] M3: triage, Later todos/bookmarks/dates/reminders, importance/reply status, undo and bulk actions.
 - [ ] M4: rich compose, recipients/signatures/attachments, replies/forwards, autosaved drafts, popouts, send/undo/failure recovery.
 - [ ] M5: Groq-only AI summaries/classification, Ask/history/citations, draft proposals and polish.
 - [ ] M6: Groq voice transcription, microphone choice, voice draft/Ask workflows and cancellation.

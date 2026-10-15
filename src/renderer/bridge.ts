@@ -1,0 +1,24 @@
+import type { Bridge, Listener } from '../shared/types';
+const listeners = new Set<Listener>();
+let source: EventSource|undefined;
+const web:Bridge = {
+  async invoke<T>(method:string,payload?:unknown):Promise<T> {
+    const response=await fetch('http://127.0.0.1:4317/api/invoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({method,payload})});
+    const data=await response.json(); if(data.error)throw new Error(data.error); return data.result as T;
+  },
+  subscribe(listener) {
+    listeners.add(listener);
+    if(!source){source=new EventSource('http://127.0.0.1:4317/api/events');source.onmessage=e=>{try{const event=JSON.parse(e.data);for(const cb of listeners)cb(event);}catch{/* malformed events cannot break the UI */}};}
+    return ()=>{listeners.delete(listener);if(!listeners.size){source?.close();source=undefined;}};
+  }
+};
+export const bridge=window.aplos??web;
+export const invoke=bridge.invoke.bind(bridge);
+export const uid=()=>crypto.randomUUID();
+export const escapeHtml=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+export const plain=(html:string)=>{const d=new DOMParser().parseFromString(html,'text/html');return d.body.textContent??'';};
+export function dateLabel(date:string,withTime=false){const d=new Date(date);if(Number.isNaN(+d))return '';const now=new Date();const same=d.toDateString()===now.toDateString();return same?d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):d.toLocaleDateString([],{month:'short',day:'numeric',...(withTime?{hour:'numeric',minute:'2-digit'}:{})});}
+export function dueLabel(value?:string){if(!value)return 'No due date';const date=new Date(value.slice(0,10)+'T12:00:00');const today=new Date();today.setHours(12,0,0,0);const days=Math.round((+date-+today)/86400000);return days===0?'Due today':days===1?'Due tomorrow':days<0?'Overdue · '+date.toLocaleDateString([],{month:'short',day:'numeric'}):'Due '+date.toLocaleDateString([],{month:'short',day:'numeric'});}
+export async function fileToAttachment(file:File){const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(new Error('Could not read '+file.name));r.readAsDataURL(file);});return {id:uid(),name:file.name,type:file.type||'application/octet-stream',size:file.size,data};}
+export async function saveFile(name:string,data:string,open=false){if(window.aplos)return invoke(open?'file.open':'file.save',{name,data});const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes]));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+export async function openUrl(url:string){if(window.aplos)return invoke('shell.open',{url});if(!/^https?:|^mailto:/i.test(url))throw new Error('Unsupported link');window.open(url,'_blank','noopener,noreferrer');}

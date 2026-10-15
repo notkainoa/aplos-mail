@@ -31,8 +31,11 @@ test('triage, undo, settings and drafts survive a restart; returned state cannot
     await f.service.invoke('thread.update',{ids:['garden','design'],patch:{status:'done'}});
     let state=await f.service.invoke('state.get') as AppState;
     assert.equal(state.threads.find(t=>t.id==='garden')!.unread,false);
+    // Advancing a stack marks the next message read without replacing the user's undo.
+    await f.service.invoke('thread.update',{ids:['trip'],patch:{unread:false},recordUndo:false});
     await f.service.invoke('thread.undo');
     state=await f.service.invoke('state.get');assert.equal(state.threads.find(t=>t.id==='garden')!.status,'new');assert.equal(state.threads.find(t=>t.id==='garden')!.unread,true);
+    assert.equal(state.threads.find(t=>t.id==='trip')!.unread,false);
     const saved=await f.service.invoke('draft.save',{draft:newDraft()});assert.equal(saved.revision,1);
     await f.service.close();
     const reopened=await createService({dataDir:f.dataDir,google:f.google,groq:createGroq({apiKey:''})});
@@ -124,7 +127,7 @@ test('sync classifies fresh mail, auto-adds definite events, and preserves edits
   let calls=0;
   const template={id:'live-one',accountId:'google-ai',subject:'Review meeting',summary:'Original snippet',messages:[],date:'2026-10-16T12:00:00Z',unread:true,status:'new' as const,importance:'low' as const,bookmarked:false,replyStatus:'none' as const};
   const google={...base,available:true,connect:async()=>({id:'google-ai',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true,calendarConnected:true}),sync:async()=>[structuredClone(template),{...structuredClone(template),id:'live-two'}],updateThread:async()=>{},listEvents:async()=>[],saveEvent:async(_account:unknown,event:any)=>({...event,googleId:'google-event'})};
-  const groq={...createGroq({apiKey:''}),available:true,summarize:async(t:{id:string})=>{calls++;if(t.id==='live-two')throw new Error('AI unavailable');return {summary:'A definite review meeting',importance:'important' as const,replyStatus:'needs-reply' as const,todo:'Prepare the review',dueDate:'2026-10-18T12:00:00Z'};},extractEvents:async(t:{id:string})=>t.id==='live-one'?[{title:'Review meeting',start:'2026-10-18T12:00:00Z',end:'2026-10-18T13:00:00Z',allDay:false}]:[]};
+  const groq={...createGroq({apiKey:''}),available:true,summarize:async(t:{id:string})=>{calls++;if(t.id==='live-two')throw new Error('AI unavailable');return {summary:'A definite review meeting',importance:'important' as const,replyStatus:'needs-reply' as const,todo:'Prepare the review',dueDate:'2026-10-18T12:00:00Z'};},extractEvents:async(t:{id:string})=>t.id==='live-one'?[{title:'Review meeting',start:'2026-10-18T12:00:00Z',end:'2026-10-18T13:00:00Z',allDay:false},{title:'Planning day',start:'2026-10-19',end:'2026-10-20',allDay:true}]:[]};
   const service=await createService({dataDir,google,groq});
   try{
     await service.invoke('settings.update',{patch:{autoCalendar:true}});
@@ -132,6 +135,7 @@ test('sync classifies fresh mail, auto-adds definite events, and preserves edits
     const classified=state.threads.find(t=>t.id==='live-one')!;
     assert.equal(classified.summary,'A definite review meeting');assert.equal(classified.replyStatus,'needs-reply');assert.equal(classified.dueDate,'2026-10-18');
     assert.ok(state.events.some(e=>e.title==='Review meeting'&&e.googleId==='google-event'));
+    const allDay=state.events.find(e=>e.title==='Planning day')!;assert.equal(allDay.start,'2026-10-19');assert.equal(allDay.end,'2026-10-20');assert.equal(allDay.allDay,true);
     assert.match(state.sync.error!,/Mail synced.*AI could not classify/);assert.equal(state.accounts.find(a=>a.id==='google-ai')!.error,undefined);
     await service.invoke('thread.update',{ids:['live-one'],patch:{importance:'low',todo:'My own task',replyStatus:'none'}});
     const again=await service.invoke('sync') as AppState,t=again.threads.find(t=>t.id==='live-one')!;
@@ -140,15 +144,19 @@ test('sync classifies fresh mail, auto-adds definite events, and preserves edits
 });
 
 test('AI proposals never send or overwrite drafts; citations are scoped and conversations persist',async()=>{
+  let requestMessages:Array<{content:string}>=[];
   const groq={...createGroq({apiKey:''}),available:true,
     summarize:async()=>({summary:'A volunteer invitation',todo:'Confirm the shift'}),
-    ask:async()=>({role:'assistant' as const,content:'The invitation is in your personal mail.',citations:['garden','design','unknown'],proposal:{html:'<p>Sounds good.</p>'}}),
+    ask:async(messages:Array<{content:string}>)=>{requestMessages=messages;return {role:'assistant' as const,content:'The invitation is in your personal mail.',citations:['garden','design','unknown'],proposal:{html:'<p>Sounds good.</p>'}};},
     draft:async()=>({html:'<p>An original proposal.</p>'}),
   };
   const f=await fixture({groq});
   try{
     const original=(await f.service.invoke('state.get')).drafts;
-    const result=await f.service.invoke('ai.ask',{message:'What should I reply?',accountId:'personal'});
+    const result=await f.service.invoke('ai.ask',{message:'What should I reply?',accountId:'personal',draft:{to:'maya@garden.example',subject:'Saturday',html:'<p>I can bring gloves.</p>',ignoredSecret:'never transmit'}});
+    assert.match(requestMessages[0].content,/I can bring gloves/);assert.ok(!requestMessages[0].content.includes('ignoredSecret'));assert.ok(!requestMessages[0].content.includes('never transmit'));
+    assert.equal(result.messages[0].content,'What should I reply?');
+    await assert.rejects(f.service.invoke('ai.ask',{message:'Edit this',draft:{html:123}}),/Invalid text/);
     assert.deepEqual(result.messages[1].citations,['garden']);assert.ok(result.messages[1].proposal);
     assert.deepEqual((await f.service.invoke('state.get')).drafts,original);
     assert.equal((await f.service.invoke('ai.summarize',{threadId:'garden'})).summary,'A volunteer invitation');
