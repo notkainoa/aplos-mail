@@ -56,7 +56,11 @@ function applyAppearance(state:AppState){
   if(process.platform==='darwin'&&activeIcon!==state.settings.icon){app.dock?.setIcon(join(__dirname,`icon-${state.settings.icon}.png`));activeIcon=state.settings.icon;}
 }
 function createWindow(query?:{draft?:string;thread?:string}){
-  const win=new BrowserWindow({width:query?900:1360,height:query?800:900,minWidth:700,minHeight:520,title:'Aplos Mail',backgroundColor:'#f7f7f2',titleBarStyle:'hiddenInset',trafficLightPosition:{x:18,y:18},show:false,icon:join(__dirname,'icon.png'),webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,spellcheck:true}});
+  const mac=process.platform==='darwin';
+  // macOS: a transparent window base lets the native sidebar material show through the
+  // renderer's transparent sidebar; the content pane paints its own opaque surface.
+  const chrome=mac?{titleBarStyle:'hidden' as const,trafficLightPosition:{x:16,y:14},backgroundColor:'#00000000',vibrancy:'sidebar' as const,visualEffectState:'followWindow' as const}:{titleBarStyle:'hiddenInset' as const,backgroundColor:nativeTheme.shouldUseDarkColors?'#000000':'#e6e5e2'};
+  const win=new BrowserWindow({width:query?900:1360,height:query?800:900,minWidth:query?640:960,minHeight:560,title:'Aplos Mail',...chrome,show:false,icon:join(__dirname,'icon.png'),webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,spellcheck:true}});
   windows.add(win);
   let rendererReady=false;
   win.webContents.on('did-finish-load',()=>{rendererReady=true;});
