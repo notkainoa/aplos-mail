@@ -11,7 +11,7 @@ import { createGroq } from '../src/main/groq';
 import { createService } from '../src/main/service';
 
 const account:Account={id:'g1',name:'Alex',email:'alex@example.test',provider:'google',connected:true,color:'#aaa'};
-const remote=(id:string,patch:Partial<Thread>={}):Thread=>({id:`g1:${id}`,gmailId:id,accountId:'g1',subject:`Thread ${id}`,summary:'',date:'2026-10-14T10:00:00Z',unread:true,status:'new',importance:'important',bookmarked:false,replyStatus:'none',labels:['INBOX','UNREAD'],
+const remote=(id:string,patch:Partial<Thread>={}):Thread=>({id:`g1:${id}`,remoteId:id,accountId:'g1',subject:`Thread ${id}`,summary:'',date:'2026-10-14T10:00:00Z',unread:true,status:'new',importance:'important',bookmarked:false,replyStatus:'none',labels:['INBOX','UNREAD'],
   messages:[{id:`${id}-1`,from:'sam@example.test',fromName:'Sam',to:[account.email],date:'2026-10-14T10:00:00Z',text:'Hello',attachments:[]}],...patch});
 const offline=()=>new GoogleError('Google could not be reached. Check your internet connection.',undefined,true);
 const settle=async(fn:()=>boolean|Promise<boolean>)=>{for(let i=0;i<200;i++){if(await fn())return;await new Promise(r=>setTimeout(r,10));}assert.fail('Timed out waiting');};
@@ -24,11 +24,11 @@ async function harness() {
     next:{threads:[remote('a'),remote('b')],flags:[],removed:[],reset:true,cursor:'1'} as SyncResult};
   const google={...base,available:true,connect:async()=>account,getSendAs:async()=>[],
     sync:async(_a:Account,cursor?:string)=>{if(!control.online)throw offline();const value=structuredClone(control.next);control.next={threads:[],flags:[],removed:[],reset:false,cursor:String(Number(cursor??0)+1)};return value;},
-    updateThread:async(_a:Account,t:Pick<Thread,'gmailId'|'status'>,patch:Partial<Thread>)=>{
+    updateThread:async(_a:Account,t:Pick<Thread,'remoteId'|'status'|'labels'>,patch:Partial<Thread>)=>{
       if(!control.online)throw offline();
       if(control.writesDown)throw new GoogleError('Google request failed (503). Please retry.',503,true);
-      if(control.fail404.has(t.gmailId!))throw new GoogleError('Google could not find this item.',404);
-      calls.push({remoteId:t.gmailId,fromStatus:t.status,patch});
+      if(control.fail404.has(t.remoteId!))throw new GoogleError('Google could not find this item.',404);
+      calls.push({remoteId:t.remoteId,fromStatus:t.status,patch});
     },
     send:async(_a:Account,d:Draft)=>{sends.push(structuredClone(d));if(control.sendError)throw control.sendError;const result={id:'sent-1',threadId:'sent-thread'};control.sent.set(d.messageId!,result);return result;},
     findSent:async(_a:Account,messageId:string)=>control.sent.get(messageId),
@@ -117,7 +117,7 @@ test('an uncertain send is confirmed from Sent mail; an unconfirmed one is never
     await settle(async()=>!(await get(h)).drafts.some(d=>d.id==='d1'));
     state=await get(h);
     assert.equal(h.sends.length,2);assert.equal(h.sends[1].messageId,h.sends[0].messageId,'a retry keeps the same Message-ID');
-    assert.ok(state.threads.some(t=>t.gmailId==='found-thread'&&t.messages.some(m=>m.sent)));
+    assert.ok(state.threads.some(t=>t.remoteId==='found-thread'&&t.messages.some(m=>m.sent)));
     h.control.sendError=new GoogleError('Google request failed (400). Please retry.',400);
     await h.service.invoke('draft.save',{draft:draft('d2')});await h.service.invoke('draft.send',{id:'d2'});
     await settle(async()=>!!(await get(h)).drafts.find(d=>d.id==='d2')?.sendError);
@@ -144,7 +144,25 @@ test('a send interrupted by a crash is settled from Sent mail after restart and 
     await settle(async()=>{const s=await get(h);return !s.drafts.some(d=>d.id==='crash-sent')&&!!s.drafts.find(d=>d.id==='crash-lost')?.sendError;});
     const state=await get(h);
     assert.equal(h.sends.length,0,'nothing is sent again');
-    assert.ok(state.threads.some(t=>t.gmailId==='recovered'));
+    assert.ok(state.threads.some(t=>t.remoteId==='recovered'));
     const lost=state.drafts.find(d=>d.id==='crash-lost')!;assert.match(lost.sendError!,/Check Sent mail/);assert.equal(lost.pendingSendAt,undefined);assert.equal(lost.sendAttemptAt,undefined);
+  }finally{await h.cleanup();}
+});
+
+test('mail saved with Gmail-specific field names opens with provider-neutral ones',async()=>{
+  const h=await harness();
+  try{
+    await h.service.close();
+    const db=new DatabaseSync(join(h.dataDir,'aplos.db'));
+    const row=db.prepare('SELECT data FROM threads WHERE id=?').get('g1:a') as {data:string},t=JSON.parse(row.data);
+    delete t.remoteId;t.gmailId='a';t.messages[0].attachments=[{id:'x',name:'a.pdf',type:'application/pdf',size:1,gmailAttachmentId:'att-1',messageId:'a-1'}];
+    db.prepare('UPDATE threads SET data=? WHERE id=?').run(JSON.stringify(t),'g1:a');db.close();
+    await h.restart();
+    const migrated=(await get(h)).threads.find(x=>x.id==='g1:a')!;
+    assert.equal(migrated.remoteId,'a');assert.equal((migrated as any).gmailId,undefined);
+    assert.equal(migrated.messages[0].attachments[0].remoteId,'att-1');
+    await h.service.invoke('thread.update',{ids:['g1:a'],patch:{bookmarked:true}});
+    await settle(()=>h.calls.length===1);
+    assert.equal(h.calls[0].remoteId,'a','queued changes reach the host with the migrated ID');
   }finally{await h.cleanup();}
 });

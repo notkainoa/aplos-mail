@@ -1,7 +1,8 @@
 import type { AppState, Thread } from '../shared/types';
 import { transaction, type SqlDatabase } from './sql';
+import type { ProviderMemory } from './provider';
 
-const SCHEMA_VERSION=2;
+const SCHEMA_VERSION=3;
 const META_KEYS=['settings','selectedAccountId','sync','blockedSenders'] as const;
 /** Small collections keep their array order; threads are always read newest first. */
 const ORDERED=['accounts','drafts','events','conversations'] as const;
@@ -25,6 +26,8 @@ function migrate(db:SqlDatabase) {
     `);
     // Version 2: provider changes waiting to be sent, in the order they were made.
     if(version<2)db.exec(`CREATE TABLE IF NOT EXISTS ops(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, account_id TEXT NOT NULL, data TEXT NOT NULL);`);
+    // Version 3: provider-owned indexes such as IMAP message locations and Graph delta links.
+    if(version<3)db.exec(`CREATE TABLE IF NOT EXISTS provider_memory(account_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(account_id, key));`);
     db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
   });
 }
@@ -46,10 +49,12 @@ export interface QueuedOp {
   id:string;
   accountId:string;
   threadId:string;
-  /** The host's identifier for the thread (Gmail thread ID). */
+  /** The host's identifier for the thread. */
   remoteId?:string;
   /** Local status before this change, which some hosts need (untrash). */
   fromStatus:Thread['status'];
+  /** Labels or folder roles before this change, which folder-based hosts need to find the messages. */
+  fromLabels?:string[];
   patch:Partial<Thread>;
   createdAt:string;
   attempts:number;
@@ -70,6 +75,7 @@ export interface MailStore {
   searchText(text:string, accountId?:string, limit?:number):string[];
   cursor(accountId:string):string|undefined;
   setCursor(accountId:string, cursor:string|undefined, now?:Date):void;
+  memory:ProviderMemory;
   close():void;
 }
 
@@ -148,6 +154,14 @@ export function createMailStore(db:SqlDatabase):MailStore {
     setCursor(accountId,cursor,now=new Date()){
       if(cursor===undefined)db.prepare('DELETE FROM sync_cursors WHERE account_id=?').run(accountId);
       else db.prepare('INSERT INTO sync_cursors(account_id, cursor, updated_at) VALUES(?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET cursor=excluded.cursor, updated_at=excluded.updated_at').run(accountId,cursor,now.toISOString());
+    },
+    memory:{
+      get:(accountId,key)=>{const row=db.prepare('SELECT value FROM provider_memory WHERE account_id=? AND key=?').get(accountId,key);return row?String(row.value):undefined;},
+      set(accountId,key,value){
+        if(value===undefined)db.prepare('DELETE FROM provider_memory WHERE account_id=? AND key=?').run(accountId,key);
+        else db.prepare('INSERT INTO provider_memory(account_id, key, value) VALUES(?, ?, ?) ON CONFLICT(account_id, key) DO UPDATE SET value=excluded.value').run(accountId,key,value);
+      },
+      clear:accountId=>{db.prepare('DELETE FROM provider_memory WHERE account_id=?').run(accountId);},
     },
     close:()=>db.close(),
   };

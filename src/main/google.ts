@@ -4,7 +4,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import nodemailer from 'nodemailer';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
-import type { SyncContext, SyncResult, ThreadFlags } from '../engine/provider';
+import { ProviderError, type ConnectRequest, type MailProvider, type ProviderCapabilities, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
 
 export interface GoogleOptions {
   dataDir:string; encrypt?:(value:string)=>Buffer; decrypt?:(value:Buffer)=>string;
@@ -16,7 +16,9 @@ interface GmailMessage {id:string;internalDate?:string;labelIds?:string[];snippe
 interface GmailThread {id:string;messages?:GmailMessage[]}
 type Json=Record<string,any>;
 /** `uncertain` means the request may have reached Google even though no answer came back. */
-export class GoogleError extends Error { constructor(message:string,readonly status?:number,readonly uncertain=false){super(message);} }
+export class GoogleError extends ProviderError {}
+const CAPABILITIES:ProviderCapabilities={labels:true,importance:true,aliases:true,signatures:true,calendar:true,serverSearch:true};
+export type GoogleAdapter=MailProvider&Required<Pick<MailProvider,'getSendAs'|'listCalendars'|'listEvents'|'saveEvent'|'deleteEvent'>>;
 /** Threads fetched on a first sync, newest first. Older mail is reached through search. */
 export const INITIAL_THREADS=500;
 const SEARCH_THREADS=100;
@@ -50,13 +52,14 @@ export function normalizeGmailThread(raw:GmailThread,account:Account):Thread {
     const html=parts.filter(p=>p.mimeType==='text/html'&&isBodyPart(p)).map(decode).join('\n');
     const text=parts.filter(p=>p.mimeType==='text/plain'&&isBodyPart(p)).map(decode).join('\n')||htmlText(html)||m.snippet||'';
     const date=new Date(Number(m.internalDate)||Date.parse(header(m.payload,'date'))||Date.now()).toISOString();
-    return {id:m.id,from:from.email,fromName:from.name,to:addresses(header(m.payload,'to')),cc:addresses(header(m.payload,'cc')),date,text,html:html||undefined,sent:m.labelIds?.includes('SENT')??false,attachments:parts.filter(p=>!isBodyPart(p)&&(p.filename||p.body?.attachmentId||header(p,'content-id'))).map((p,i)=>({id:`${m.id}:${p.partId??i}`,name:p.filename||'attachment',type:p.mimeType||'application/octet-stream',size:p.body?.size??0,data:p.body?.data?Buffer.from(p.body.data,'base64url').toString('base64'):undefined,gmailAttachmentId:p.body?.attachmentId,messageId:m.id,contentId:header(p,'content-id').replace(/^<|>$/g,'')||undefined}))};
+    const internetId=header(m.payload,'message-id')||undefined,references=header(m.payload,'references')||undefined;
+    return {id:m.id,...(internetId?{internetId}:{}),...(references?{references}:{}),from:from.email,fromName:from.name,to:addresses(header(m.payload,'to')),cc:addresses(header(m.payload,'cc')),date,text,html:html||undefined,sent:m.labelIds?.includes('SENT')??false,attachments:parts.filter(p=>!isBodyPart(p)&&(p.filename||p.body?.attachmentId||header(p,'content-id'))).map((p,i)=>({id:`${m.id}:${p.partId??i}`,name:p.filename||'attachment',type:p.mimeType||'application/octet-stream',size:p.body?.size??0,data:p.body?.data?Buffer.from(p.body.data,'base64url').toString('base64'):undefined,remoteId:p.body?.attachmentId,messageId:m.id,contentId:header(p,'content-id').replace(/^<|>$/g,'')||undefined}))};
   }).sort((a,b)=>a.date.localeCompare(b.date));
   const labels=[...new Set(items.flatMap(m=>m.labelIds??[]))];
-  return {id:`${account.id}:${raw.id}`,gmailId:raw.id,accountId:account.id,subject:header(items[0]?.payload,'subject')||'(No subject)',summary:htmlText(items.at(-1)?.snippet??'')||messages.at(-1)?.text.slice(0,200)||'',messages,date:messages.at(-1)?.date??new Date().toISOString(),unread:labels.includes('UNREAD'),status:labelStatus(labels),importance:labels.includes('IMPORTANT')?'important':'low',bookmarked:labels.includes('STARRED'),replyStatus:'none',labels};
+  return {id:`${account.id}:${raw.id}`,remoteId:raw.id,accountId:account.id,subject:header(items[0]?.payload,'subject')||'(No subject)',summary:htmlText(items.at(-1)?.snippet??'')||messages.at(-1)?.text.slice(0,200)||'',messages,date:messages.at(-1)?.date??new Date().toISOString(),unread:labels.includes('UNREAD'),status:labelStatus(labels),importance:labels.includes('IMPORTANT')?'important':'low',bookmarked:labels.includes('STARRED'),replyStatus:'none',labels};
 }
 
-export async function createGoogle(options:GoogleOptions) {
+export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter> {
   const request=options.fetch??fetch,clientId=options.clientId??process.env.GOOGLE_CLIENT_ID,clientSecret=options.clientSecret??process.env.GOOGLE_CLIENT_SECRET;
   const path=join(options.dataDir,'google-tokens.enc.json');
   const tokens:Record<string,Token>={};
@@ -193,7 +196,7 @@ export async function createGoogle(options:GoogleOptions) {
     return {threads,flags:updates,removed,cursor:latest,reset:false};
   }
   function eventModel(raw:Json,account:Account,calendarId:string):CalendarEvent {
-    return {id:`${account.id}:${calendarId}:${raw.id}`,googleId:raw.id,accountId:account.id,calendarId,title:raw.summary??'(Untitled event)',start:raw.start?.dateTime??raw.start?.date??'',end:raw.end?.dateTime??raw.end?.date??'',allDay:Boolean(raw.start?.date),location:raw.location??'',description:raw.description??'',guests:(raw.attendees??[]).map((x:Json)=>x.email).filter(Boolean),url:raw.htmlLink};
+    return {id:`${account.id}:${calendarId}:${raw.id}`,remoteId:raw.id,accountId:account.id,calendarId,title:raw.summary??'(Untitled event)',start:raw.start?.dateTime??raw.start?.date??'',end:raw.end?.dateTime??raw.end?.date??'',allDay:Boolean(raw.start?.date),location:raw.location??'',description:raw.description??'',guests:(raw.attendees??[]).map((x:Json)=>x.email).filter(Boolean),url:raw.htmlLink};
   }
   async function listCalendars(account:Account) {return (await pages(account,`${calendar}/users/me/calendarList?maxResults=250`,'items')).map(item=>({id:String(item.id),name:String(item.summaryOverride??item.summary??item.id),accountId:account.id}));}
   async function getSendAs(account:Account):Promise<NonNullable<Account['sendAs']>> {
@@ -209,9 +212,12 @@ export async function createGoogle(options:GoogleOptions) {
     return Array.from(aliases.values());
   }
   return {
+    kind:'google',
     available:Boolean(clientId),
+    unavailableReason:clientId?undefined:'Live Google connection needs Aplos’s own Desktop OAuth client. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the backend environment.',
+    capabilities:()=>CAPABILITIES,
     getSendAs,
-    async connect():Promise<Account> {
+    async connect(_request?:ConnectRequest):Promise<Account> {
       if(!clientId) throw new Error('Set GOOGLE_CLIENT_ID to your own Google Desktop OAuth client ID before connecting.');
       if(!options.encrypt||!options.decrypt) throw new Error('Secure credential storage is unavailable. Connect using the desktop app.');
       if(!options.openExternal) throw new Error('Google sign-in requires the desktop app and a system browser.');
@@ -250,7 +256,7 @@ export async function createGoogle(options:GoogleOptions) {
         const id=`google-${profile.sub}`;
         tokens[id]={access_token:result.access_token,refresh_token:result.refresh_token??tokens[id]?.refresh_token,expiresAt:Date.now()+(Number(result.expires_in)||3600)*1000};
         try{await persist();}catch(error){delete tokens[id];throw error;}
-        const account:Account={id,name:profile.name??profile.email,email:profile.email,provider:'google',color:'#738c80',connected:true,calendarConnected:true};
+        const account:Account={id,name:profile.name??profile.email,email:profile.email,provider:'google',preset:'gmail',capabilities:CAPABILITIES,color:'#738c80',connected:true,calendarConnected:true};
         try{account.sendAs=await getSendAs(account);}catch{account.sendAs=[{email:account.email,name:account.name,signature:'',isDefault:true}];account.error='Gmail sending addresses and signatures are unavailable. Reconnect to grant settings access; using the primary address.';}
         return account;
       } finally {if(timer)clearTimeout(timer);listener.close();server=undefined;cancelConnect=undefined;}
@@ -264,9 +270,9 @@ export async function createGoogle(options:GoogleOptions) {
       return freshWindow(account);
     },
     search:async(account:Account,query:string)=>fullThreads(account,await listIds(account,SEARCH_THREADS,query)),
-    async updateThread(account:Account,thread:Pick<Thread,'gmailId'|'status'>,patch:Partial<Thread>) {
-      if(!thread.gmailId) throw new Error('This thread has no Gmail identifier.');
-      const url=`${gmail}/threads/${enc(thread.gmailId)}`;
+    async updateThread(account:Account,thread:RemoteThread,patch:Partial<Thread>) {
+      if(!thread.remoteId) throw new Error('This thread has no Gmail identifier.');
+      const url=`${gmail}/threads/${enc(thread.remoteId)}`;
       if(patch.status==='trash') await api(account,`${url}/trash`,'POST',{});
       if(thread.status==='trash'&&patch.status&&patch.status!=='trash')await api(account,`${url}/untrash`,'POST',{});
       const addLabelIds:string[]=[],removeLabelIds:string[]=[];
@@ -277,7 +283,7 @@ export async function createGoogle(options:GoogleOptions) {
       if(patch.status){label(patch.labels?patch.labels.includes('INBOX'):patch.status==='new','INBOX');label(patch.status==='spam','SPAM');}
       if(addLabelIds.length||removeLabelIds.length)await api(account,`${url}/modify`,'POST',{addLabelIds,removeLabelIds});
     },
-    async send(account:Account,draft:Draft) {
+    async send(account:Account,draft:Draft,thread?:Thread) {
       if(!draft.to.trim())throw new Error('Add at least one recipient before sending.');
       const fromEmail=draft.fromEmail??account.email;
       for(const value of [draft.to,draft.cc,draft.bcc,draft.subject,fromEmail])if(/[\r\n]/.test(value))throw new Error('Email headers cannot contain line breaks.');
@@ -285,7 +291,7 @@ export async function createGoogle(options:GoogleOptions) {
       if(fromEmail.toLowerCase()!==account.email.toLowerCase()&&!alias)throw new Error('This sending address is not authorized for this account. Sync the account and choose an available address.');
       let gmailId:string|undefined,inReplyTo:string|undefined,references:string|undefined;
       if(draft.threadId&&draft.mode!=='new'&&draft.mode!=='forward'){
-        gmailId=draft.threadId.startsWith(`${account.id}:`)?draft.threadId.slice(account.id.length+1):undefined;
+        gmailId=thread?.remoteId??(draft.threadId.startsWith(`${account.id}:`)?draft.threadId.slice(account.id.length+1):undefined);
         if(gmailId){const raw=await api(account,`${gmail}/threads/${enc(gmailId)}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References`);const payload=raw.messages?.at(-1)?.payload as GmailPart|undefined;inReplyTo=header(payload,'message-id')||undefined;references=[header(payload,'references'),inReplyTo].filter(Boolean).join(' ')||undefined;}
       }
       const transport=nodemailer.createTransport({streamTransport:true,buffer:true,newline:'windows'});
@@ -302,8 +308,8 @@ export async function createGoogle(options:GoogleOptions) {
     },
     async attachment(account:Account,_thread:Thread,attachment:Attachment):Promise<Attachment> {
       if(attachment.data)return attachment;
-      if(!attachment.gmailAttachmentId||!attachment.messageId)throw new Error('This attachment has no downloadable content.');
-      const raw=await api(account,`${gmail}/messages/${enc(attachment.messageId)}/attachments/${enc(attachment.gmailAttachmentId)}`);
+      if(!attachment.remoteId||!attachment.messageId)throw new Error('This attachment has no downloadable content.');
+      const raw=await api(account,`${gmail}/messages/${enc(attachment.messageId)}/attachments/${enc(attachment.remoteId)}`);
       if(typeof raw.data!=='string')throw new Error('Google returned an empty attachment.');
       return {...attachment,data:Buffer.from(raw.data,'base64url').toString('base64')};
     },
@@ -316,12 +322,11 @@ export async function createGoogle(options:GoogleOptions) {
     },
     async saveEvent(account:Account,event:CalendarEvent):Promise<CalendarEvent> {
       if(!event.title.trim()||!Number.isFinite(Date.parse(event.start))||!Number.isFinite(Date.parse(event.end))||Date.parse(event.end)<=Date.parse(event.start))throw new Error('A calendar event needs a title and valid start and end times.');
-      const path=`${calendar}/calendars/${enc(event.calendarId||'primary')}/events${event.googleId?`/${enc(event.googleId)}`:''}`;
-      const raw=await api(account,`${path}?sendUpdates=none`,event.googleId?'PUT':'POST',{summary:event.title,description:event.description,location:event.location,start:event.allDay?{date:event.start.slice(0,10)}:{dateTime:new Date(event.start).toISOString()},end:event.allDay?{date:event.end.slice(0,10)}:{dateTime:new Date(event.end).toISOString()},attendees:event.guests.map(email=>({email}))});
+      const path=`${calendar}/calendars/${enc(event.calendarId||'primary')}/events${event.remoteId?`/${enc(event.remoteId)}`:''}`;
+      const raw=await api(account,`${path}?sendUpdates=none`,event.remoteId?'PUT':'POST',{summary:event.title,description:event.description,location:event.location,start:event.allDay?{date:event.start.slice(0,10)}:{dateTime:new Date(event.start).toISOString()},end:event.allDay?{date:event.end.slice(0,10)}:{dateTime:new Date(event.end).toISOString()},attendees:event.guests.map(email=>({email}))});
       return {...event,...eventModel(raw,account,event.calendarId||'primary'),id:event.id};
     },
-    async deleteEvent(account:Account,event:CalendarEvent) {if(!event.googleId)throw new Error('This event has no Google identifier.');await api(account,`${calendar}/calendars/${enc(event.calendarId)}/events/${enc(event.googleId)}?sendUpdates=none`,'DELETE');},
+    async deleteEvent(account:Account,event:CalendarEvent) {if(!event.remoteId)throw new Error('This event has no Google identifier.');await api(account,`${calendar}/calendars/${enc(event.calendarId)}/events/${enc(event.remoteId)}?sendUpdates=none`,'DELETE');},
     close(){cancelConnect?.();server?.close();}
   };
 }
-export type GoogleAdapter = Awaited<ReturnType<typeof createGoogle>>;

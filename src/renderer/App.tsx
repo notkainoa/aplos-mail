@@ -41,7 +41,7 @@ function useMediaQuery(query:string){
 
 export function App(){
  const [state,setState]=useState<AppState>();
- const [capabilities,setCapabilities]=useState<Capabilities>({groq:false,google:false,desktop:!!window.aplos,version:'0.1.0'});
+ const [capabilities,setCapabilities]=useState<Capabilities>({groq:false,google:false,microsoft:false,desktop:!!window.aplos,version:'0.1.0'});
  const [fatal,setFatal]=useState('');
  const [route,setRoute]=useState<Route>({view:'home',threadId:popoutThread??undefined});
  const [routes,setRoutes]=useState<Route[]>([{view:'home'}]);const [historyIndex,setHistoryIndex]=useState(0);
@@ -114,7 +114,7 @@ export function App(){
   let html='';let to='';let cc='';let subject='';
   if(thread&&last){subject=(mode==='forward'?'Fwd: ':'Re: ')+thread.subject.replace(/^(Re|Fwd):\s*/i,'');if(mode==='forward')html=`<p><br></p><blockquote><p>Forwarded message from ${escapeHtml(last.fromName)} &lt;${escapeHtml(last.from)}&gt;</p><p>${escapeHtml(last.text).replace(/\n/g,'<br>')}</p></blockquote>`;else if(mode!=='new')({to,cc}=replyRecipients(thread,a.email,mode));}
   const alias=a.sendAs?.find(sender=>thread&&last?.to.some(address=>address.toLowerCase().includes(sender.email.toLowerCase())))||a.sendAs?.find(sender=>sender.isDefault)||a.sendAs?.find(sender=>sender.email===a.email);
-  const d:Draft={id:uid(),accountId:a.id,to,cc,bcc:'',subject,html,attachments:[],mode,signature:true,...(a.provider==='google'?{fromEmail:alias?.email||a.email,signatureSource:alias?'gmail' as const:'custom' as const}:{}),updatedAt:new Date().toISOString(),revision:0,...(thread&&mode!=='forward'?{threadId:thread.id}:{}),...proposal};
+  const d:Draft={id:uid(),accountId:a.id,to,cc,bcc:'',subject,html,attachments:[],mode,signature:true,...(a.provider!=='demo'?{fromEmail:alias?.email||a.email,signatureSource:alias&&a.capabilities?.signatures!==false?'account' as const:'custom' as const}:{}),updatedAt:new Date().toISOString(),revision:0,...(thread&&mode!=='forward'?{threadId:thread.id}:{}),...proposal};
   setBusy(thread&&mode!=='forward'?'reply':'draft');
   try{if(thread&&mode==='forward')d.attachments=await Promise.all(thread.messages.at(-1)!.attachments.map(a=>a.data?Promise.resolve(a):invoke<import('../shared/types').Attachment>('attachment.get',{threadId:thread.id,attachmentId:a.id})));const saved=await invoke<Draft>('draft.save',{draft:d});freshDraft.current=saved.id;await openDraft(saved);}catch(e){fail(e);}finally{setBusy('');}
  }

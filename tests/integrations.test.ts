@@ -10,7 +10,7 @@ import { createGoogle, normalizeGmailThread } from '../src/main/google';
 import type { Account, Draft, Thread } from '../src/shared/types';
 
 const account:Account={id:'google-test',name:'Alex',email:'alex@example.test',provider:'google',connected:true,color:'#aaa'};
-const thread:Thread={id:'google-test:thread1',accountId:account.id,gmailId:'thread1',subject:'Studio review',summary:'Review on Friday',messages:[{id:'m1',from:'sam@example.test',fromName:'Sam',to:[account.email],text:'Meet October 16 at 10:00 UTC for one hour.',date:'2026-10-14T10:00:00Z',attachments:[]}],date:'2026-10-14T10:00:00Z',unread:true,status:'new',importance:'important',bookmarked:false,replyStatus:'needs-reply'};
+const thread:Thread={id:'google-test:thread1',accountId:account.id,remoteId:'thread1',subject:'Studio review',summary:'Review on Friday',messages:[{id:'m1',from:'sam@example.test',fromName:'Sam',to:[account.email],text:'Meet October 16 at 10:00 UTC for one hour.',date:'2026-10-14T10:00:00Z',attachments:[]}],date:'2026-10-14T10:00:00Z',unread:true,status:'new',importance:'important',bookmarked:false,replyStatus:'needs-reply'};
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});
 const encrypt=(text:string)=>Buffer.from([...Buffer.from(text)].map(x=>x^0x57));
 const decrypt=(buffer:Buffer)=>Buffer.from([...buffer].map(x=>x^0x57)).toString();
@@ -65,7 +65,7 @@ test('Desktop Google OAuth verifies state and PKCE and persists encrypted tokens
       return json({sub:'test',email:'alex@example.test',name:'Alex'});
     }
   });
-  try {const result=await google.connect();assert.equal(result.id,account.id);assert.deepEqual(result.sendAs?.map(alias=>alias.email),[account.email,'studio@example.test']);assert.equal(result.sendAs?.[1].signature,'<p>Studio</p>');const disk=await readFile(join(dir,'google-tokens.enc.json'),'utf8');assert.ok(!disk.includes('oauth-access-sensitive'));assert.ok(!disk.includes('oauth-refresh-sensitive'));assert.ok(!disk.includes('own-client-secret'));denySettings=true;const fallback=await google.connect();assert.match(fallback.error??'',/primary address/);assert.deepEqual(fallback.sendAs?.map(alias=>alias.email),[account.email]);}
+  try {const result=await google.connect({provider:'google'});assert.equal(result.id,account.id);assert.deepEqual(result.sendAs?.map(alias=>alias.email),[account.email,'studio@example.test']);assert.equal(result.sendAs?.[1].signature,'<p>Studio</p>');const disk=await readFile(join(dir,'google-tokens.enc.json'),'utf8');assert.ok(!disk.includes('oauth-access-sensitive'));assert.ok(!disk.includes('oauth-refresh-sensitive'));assert.ok(!disk.includes('own-client-secret'));denySettings=true;const fallback=await google.connect({provider:'google'});assert.match(fallback.error??'',/primary address/);assert.deepEqual(fallback.sendAs?.map(alias=>alias.email),[account.email]);}
   finally {google.close();await rm(dir,{recursive:true,force:true});}
 });
 
@@ -84,7 +84,7 @@ test('Google sync paginates, normalizes multipart mail, respects triage mapping,
     return json({threads:[{id:'thread1'}],nextPageToken:'next'});
   }});
   try {
-    const result=await google.sync(account);assert.equal(result.reset,true);assert.equal(result.cursor,'900');const synced=result.threads;assert.equal(synced.length,1);const item=synced[0];assert.equal(item.messages[0].from,'sam@example.test');assert.equal(item.messages[0].html,'<p>Hello Alex</p><img src="cid:image-1">');assert.equal(item.messages[0].text,'café');assert.equal(item.messages[0].attachments.length,2);assert.ok(requests.some(r=>r.url.endsWith('/attachments/body-html')));assert.ok(!requests.some(r=>/attachments\/(a1|inline-file)$/.test(r.url)));assert.equal(item.messages[0].attachments[1].contentId,'image-1');assert.ok(requests.some(r=>r.url.includes('pageToken=next')));
+    const result=await google.sync(account,undefined,{has:()=>false});assert.equal(result.reset,true);assert.equal(result.cursor,'900');const synced=result.threads;assert.equal(synced.length,1);const item=synced[0];assert.equal(item.messages[0].from,'sam@example.test');assert.equal(item.messages[0].html,'<p>Hello Alex</p><img src="cid:image-1">');assert.equal(item.messages[0].text,'café');assert.equal(item.messages[0].attachments.length,2);assert.ok(requests.some(r=>r.url.endsWith('/attachments/body-html')));assert.ok(!requests.some(r=>/attachments\/(a1|inline-file)$/.test(r.url)));assert.equal(item.messages[0].attachments[1].contentId,'image-1');assert.ok(requests.some(r=>r.url.includes('pageToken=next')));
     await google.updateThread(account,item,{status:'done',unread:false,labels:['INBOX']});const modify=requests.find(r=>r.url.endsWith('/modify'))!;assert.ok(modify.body.addLabelIds.includes('INBOX'));assert.ok(modify.body.removeLabelIds.includes('UNREAD'));
     const attachment=await google.attachment(account,item,item.messages[0].attachments[0]);assert.equal(Buffer.from(attachment.data!,'base64').toString(),'note');
     const draft:Draft={id:'draft-test',accountId:account.id,threadId:item.id,mode:'reply',to:'sam@example.test',cc:'',bcc:'archive@example.test',subject:'Re: Studio review',html:'<p>Confirmed.</p>',attachments:[attachment],signature:false,updatedAt:new Date().toISOString(),revision:1};
@@ -107,7 +107,7 @@ test('Concurrent Google requests refresh once; Calendar creates, updates and del
   try {
     await Promise.all([google.listCalendars(account),google.listCalendars(account)]);assert.equal(refreshes,1);
     const events=await google.listEvents(account);assert.equal(events[0].title,'Review');
-    const created=await google.saveEvent(account,{...events[0],id:'local-id',googleId:undefined});assert.equal(created.googleId,'event-google');assert.equal(created.id,'local-id');
+    const created=await google.saveEvent(account,{...events[0],id:'local-id',remoteId:undefined});assert.equal(created.remoteId,'event-google');assert.equal(created.id,'local-id');
     await google.saveEvent(account,{...created,title:'Updated'});await google.deleteEvent(account,created);
     assert.ok(requests.some(r=>r.method==='POST'&&r.body.summary==='Review'));assert.ok(requests.some(r=>r.method==='PUT'&&r.body.summary==='Updated'));assert.ok(requests.some(r=>r.method==='DELETE'));assert.ok(requests.filter(r=>r.body).every(r=>r.url.includes('sendUpdates=none')));
   } finally{google.close();await rm(dir,{recursive:true,force:true});}
@@ -116,9 +116,9 @@ test('Concurrent Google requests refresh once; Calendar creates, updates and del
 test('Google requires own OAuth configuration and secure storage; callback times out cleanly',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'aplos-oauth-timeout-'));
   try {
-    const unavailable=await createGoogle({dataDir:dir,clientId:''});await assert.rejects(()=>unavailable.connect(),/GOOGLE_CLIENT_ID/);
-    const insecure=await createGoogle({dataDir:dir,clientId:'own-client'});await assert.rejects(()=>insecure.connect(),/Secure credential storage/);
-    const timed=await createGoogle({dataDir:dir,clientId:'own-client',encrypt,decrypt,openExternal:async()=>{},oauthTimeoutMs:15});await assert.rejects(()=>timed.connect(),/timed out/);timed.close();
+    const unavailable=await createGoogle({dataDir:dir,clientId:''});await assert.rejects(()=>unavailable.connect({provider:'google'}),/GOOGLE_CLIENT_ID/);
+    const insecure=await createGoogle({dataDir:dir,clientId:'own-client'});await assert.rejects(()=>insecure.connect({provider:'google'}),/Secure credential storage/);
+    const timed=await createGoogle({dataDir:dir,clientId:'own-client',encrypt,decrypt,openExternal:async()=>{},oauthTimeoutMs:15});await assert.rejects(()=>timed.connect({provider:'google'}),/timed out/);timed.close();
     const normalized=normalizeGmailThread({id:'empty'},account);assert.equal(normalized.subject,'(No subject)');assert.deepEqual(normalized.messages,[]);
   } finally{await rm(dir,{recursive:true,force:true});}
 });

@@ -62,7 +62,7 @@ export function createStore(dataDir:string):Store {
       try { mail.save(value,ops); }
       catch { throw new Error('The mailbox could not be saved. Check free space and folder permissions.'); }
     },
-    searchText:mail.searchText, cursor:mail.cursor, setCursor:mail.setCursor, ops:mail.ops, close:mail.close,
+    searchText:mail.searchText, cursor:mail.cursor, setCursor:mail.setCursor, ops:mail.ops, memory:mail.memory, close:mail.close,
     writeOps(ops){try{mail.writeOps(ops);}catch{throw new Error('The mailbox could not be saved. Check free space and folder permissions.');}},
   };
 }

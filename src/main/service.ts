@@ -3,17 +3,19 @@ import type { Account, AppState, Attachment, CalendarEvent, Conversation, Draft,
 import { createDemo, defaultSettings } from './demo';
 import { createStore } from './store';
 import { createGroq } from './groq';
-import { createGoogle } from './google';
+import { createGoogle, type GoogleAdapter } from './google';
 import { symbolRenderer } from './symbols';
 import { applySync } from '../engine/merge';
 import { createGate } from '../engine/gate';
 import { ftsQuery, type OpChanges, type QueuedOp } from '../engine/store';
+import type { AccountPreset, ConnectRequest, MailProvider, ProviderKind, ServerSettings } from '../engine/provider';
 
 type Groq = ReturnType<typeof createGroq>;
-type Google = Awaited<ReturnType<typeof createGoogle>>;
 export interface ServiceOptions {
   dataDir:string; desktop?:boolean; encrypt?:(text:string)=>Buffer; decrypt?:(cipher:Buffer)=>string;
-  openExternal?:(url:string)=>Promise<unknown>; groq?:Groq; google?:Google; now?:()=>Date; symbolTool?:string;
+  openExternal?:(url:string)=>Promise<unknown>; groq?:Groq; google?:GoogleAdapter; now?:()=>Date; symbolTool?:string;
+  /** Mail hosts by kind; missing kinds use the built-in adapters. */
+  providers?:Partial<Record<ProviderKind,MailProvider>>;
   /** Background sync interval for connected accounts; 0 turns it off. */
   autoSyncMs?:number;
 }
@@ -21,7 +23,9 @@ export interface ServiceOptions {
 const EXTRAS_INTERVAL_MS=10*60_000;
 /** First retry delay for a queued change the host rejected or could not be reached for; doubles up to 15 minutes. */
 const OP_RETRY_MS=30_000,OP_RETRY_MAX_MS=15*60_000;
-const UNCONFIRMED='Sending was interrupted and Aplos could not confirm that Gmail received this message. Check Sent mail before sending it again.';
+const UNCONFIRMED='Sending was interrupted and Aplos could not confirm that your mail provider received this message. Check Sent mail before sending it again.';
+const PROVIDERS:readonly ProviderKind[]=['google','microsoft','imap','jmap'];
+const PRESETS:readonly AccountPreset[]=['gmail','outlook','icloud','yahoo','aol','fastmail','generic'];
 const uncertain=(error:unknown)=>(error as {uncertain?:unknown})?.uncertain===true;
 const errorStatus=(error:unknown)=>(error as {status?:unknown})?.status;
 const clone = <T>(v:T):T => structuredClone(v);
@@ -53,14 +57,14 @@ const escapeHTML=(value:string)=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<
 function senderIdentity(draft:Draft,account:Account) {
   const email=draft.fromEmail?safeEmail(draft.fromEmail):account.email;
   const alias=account.sendAs?.find(item=>item.email.toLowerCase()===email.toLowerCase());
-  if(email.toLowerCase()!==account.email.toLowerCase()&&(account.provider!=='google'||!alias))throw new Error('Choose an authorized sending address for this account.');
+  if(email.toLowerCase()!==account.email.toLowerCase()&&!alias)throw new Error('Choose an authorized sending address for this account.');
   return {email,name:alias?.name||account.name,signature:alias?.signature||''};
 }
 function outboundHTML(draft:Draft,settings:Settings,account:Account) {
   let html=draft.html;
   const include=draft.signature&&settings.signatureMode!=='never'&&(settings.signatureMode==='always'||draft.mode==='new'||draft.mode==='forward');
   if(include){
-    const signature=draft.signatureSource==='gmail'?(account.provider==='google'?senderIdentity(draft,account).signature:''):escapeHTML(settings.signature).replace(/\r?\n/g,'<br>');
+    const signature=draft.signatureSource==='account'?senderIdentity(draft,account).signature:escapeHTML(settings.signature).replace(/\r?\n/g,'<br>');
     if(signature.trim())html+=`<div data-aplos-signature="true"><br>${signature}</div>`;
   }
   if(settings.footer)html+='<p data-aplos-footer="true">Sent with Aplos Mail</p>';
@@ -121,8 +125,42 @@ function attachments(raw:unknown):Attachment[] {
     if(!Number.isFinite(size)||size<0) throw new Error('Invalid attachment size.');
     total+=size; if(total>25*1024*1024) throw new Error('Attachments must total less than 25 MB.');
     return {id:text(a.id||randomUUID(),200),name:text(a.name,500).replace(/[\r\n]/g,''),type:text(a.type||'application/octet-stream',200),size,data,
-      ...(a.contentId?{contentId:text(a.contentId,200)}:{}),...(a.gmailAttachmentId?{gmailAttachmentId:text(a.gmailAttachmentId,1000)}:{}),...(a.messageId?{messageId:text(a.messageId,1000)}:{})};
+      ...(a.contentId?{contentId:text(a.contentId,200)}:{}),...(a.remoteId?{remoteId:text(a.remoteId,1000)}:{}),...(a.messageId?{messageId:text(a.messageId,1000)}:{})};
   });
+}
+
+function serverSettings(raw:unknown):ServerSettings|undefined {
+  if(raw===undefined||raw===null)return undefined;
+  const source=object(raw);
+  const endpoint=(value:unknown)=>{const e=object(value),host=text(e.host,253).trim().toLowerCase(),port=Number(e.port);
+    if(!/^[a-z0-9.-]+$/.test(host)||!host.includes('.'))throw new Error('Enter a valid server name.');
+    if(!Number.isInteger(port)||port<1||port>65535)throw new Error('Enter a valid port.');
+    if(typeof e.secure!=='boolean')throw new Error('Choose whether the connection uses TLS.');
+    return {host,port,secure:e.secure};};
+  const result:ServerSettings={imap:endpoint(source.imap),smtp:endpoint(source.smtp)};
+  if(source.username)result.username=text(source.username,320).trim();
+  if(source.caldav){const url=new URL(text(source.caldav,2000));if(url.protocol!=='https:')throw new Error('Calendar servers must use HTTPS.');result.caldav=url.href;}
+  return result;
+}
+function connectRequest(p:Record<string,any>):ConnectRequest {
+  const provider=enumValue(p.provider??'google',PROVIDERS);
+  const request:ConnectRequest={provider};
+  if(p.email!==undefined&&p.email!=='')request.email=safeEmail(p.email);
+  if(p.name)request.name=text(p.name,200).replace(/[\r\n]/g,' ').trim();
+  if(p.secret!==undefined&&p.secret!==''){const secret=text(p.secret,4000);if(/[\r\n]/.test(secret))throw new Error('Passwords and tokens cannot contain line breaks.');request.secret=secret;}
+  if(p.preset!==undefined)request.preset=enumValue(p.preset,PRESETS);
+  const server=serverSettings(p.server);if(server)request.server=server;
+  if(p.sessionUrl){const url=new URL(text(p.sessionUrl,2000));if(url.protocol!=='https:')throw new Error('The JMAP session URL must use HTTPS.');request.sessionUrl=url.href;}
+  return request;
+}
+/** Older saves used Gmail-specific field names. */
+function migrateLegacy(state:AppState) {
+  for(const t of state.threads){
+    const legacy=t as Thread&{gmailId?:string};if(legacy.gmailId&&!t.remoteId)t.remoteId=legacy.gmailId;delete legacy.gmailId;
+    for(const m of t.messages)for(const a of m.attachments){const old=a as Attachment&{gmailAttachmentId?:string};if(old.gmailAttachmentId&&!a.remoteId)a.remoteId=old.gmailAttachmentId;delete old.gmailAttachmentId;}
+  }
+  for(const e of state.events){const legacy=e as CalendarEvent&{googleId?:string};if(legacy.googleId&&!e.remoteId)e.remoteId=legacy.googleId;delete legacy.googleId;}
+  for(const d of state.drafts){if((d.signatureSource as string)==='gmail')d.signatureSource='account';for(const a of d.attachments){const old=a as Attachment&{gmailAttachmentId?:string};if(old.gmailAttachmentId&&!a.remoteId)a.remoteId=old.gmailAttachmentId;delete old.gmailAttachmentId;}}
 }
 
 export async function createService(options:ServiceOptions) {
@@ -133,8 +171,13 @@ export async function createService(options:ServiceOptions) {
   state.settings={...clone(defaultSettings),...state.settings};
   state.sync={...state.sync,busy:false};
   for(const thread of state.threads)if(thread.dueDate)thread.dueDate=dateOnly(thread.dueDate);
+  migrateLegacy(state);
   const groq=options.groq||createGroq();
-  const google=options.google||await createGoogle({dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,openExternal:options.openExternal});
+  const providers:Partial<Record<ProviderKind,MailProvider>>={...options.providers};
+  providers.google??=options.google||await createGoogle({dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,openExternal:options.openExternal});
+  /** The mail host behind an account, or nothing for local demo accounts. */
+  const hostOf=(a:Pick<Account,'provider'>|undefined):MailProvider|undefined=>a&&a.provider!=='demo'?providers[a.provider]:undefined;
+  function host(a:Account):MailProvider {const provider=hostOf(a);if(!provider)throw new Error('This account type is not available in this version of Aplos.');return provider;}
   const listeners=new Set<Listener>(),timers=new Map<string,ReturnType<typeof setTimeout>>(),requests=new Map<string,AbortController>(),sending=new Set<string>();
   const jobs=new Set<Promise<void>>();
   const undo:Array<Thread[]> = [];
@@ -172,9 +215,9 @@ export async function createService(options:ServiceOptions) {
   /** The provider change for a local thread edit, or nothing for local-only (demo) mail. */
   function queued(t:Thread,patch:Partial<Thread>):QueuedOp|undefined {
     const a=state.accounts.find(x=>x.id===t.accountId);
-    if(a?.provider!=='google'||!t.gmailId)return;
+    if(!a||!hostOf(a)||!t.remoteId)return;
     const at=now().toISOString();
-    return {id:randomUUID(),accountId:a.id,threadId:t.id,remoteId:t.gmailId,fromStatus:t.status,patch,createdAt:at,attempts:0,nextAt:at};
+    return {id:randomUUID(),accountId:a.id,threadId:t.id,remoteId:t.remoteId,fromStatus:t.status,...(t.labels?{fromLabels:t.labels}:{}),patch,createdAt:at,attempts:0,nextAt:at};
   }
   let flushing:Promise<void>|undefined;
   /**
@@ -191,9 +234,10 @@ export async function createService(options:ServiceOptions) {
           if(closed)break;
           if(held.has(op.accountId))continue;
           const a=state.accounts.find(x=>x.id===op.accountId);
-          if(!a){changeQueue({remove:[op.id]});continue;}
+          const provider=hostOf(a);
+          if(!a||!provider){changeQueue({remove:[op.id]});continue;}
           if(!a.connected||(!force&&Date.parse(op.nextAt)>now().getTime())){held.add(op.accountId);continue;}
-          try{await google.updateThread(a,{gmailId:op.remoteId,status:op.fromStatus},op.patch);changeQueue({remove:[op.id]});progressed=true;}
+          try{await provider.updateThread(a,{remoteId:op.remoteId,status:op.fromStatus,labels:op.fromLabels},op.patch);changeQueue({remove:[op.id]});progressed=true;}
           catch(error){
             // The thread is gone at the host; there is nothing left to change.
             if(errorStatus(error)===404){changeQueue({remove:[op.id]});continue;}
@@ -215,7 +259,7 @@ export async function createService(options:ServiceOptions) {
   }
   async function confirmSent(a:Account,messageId:string|undefined) {
     let found:{id:string;threadId:string}|undefined;
-    if(messageId)try{found=await google.findSent(a,messageId);}catch{/* Unknown is treated like not found: never resend blindly. */}
+    if(messageId)try{found=await host(a).findSent(a,messageId);}catch{/* Unknown is treated like not found: never resend blindly. */}
     if(!found)throw new Error(UNCONFIRMED);
     return found;
   }
@@ -226,7 +270,7 @@ export async function createService(options:ServiceOptions) {
       const message={id:randomUUID(),from:sender.email,fromName:sender.name,to:addresses(d.to),cc:addresses(d.cc),date:sentAt,text:stripHTML(d.html),html:d.html,attachments:d.attachments,sent:true};
       const existing=d.threadId?s.threads.find(t=>t.id===d.threadId):undefined;
       if(existing){existing.messages.push(message);existing.date=sentAt;existing.replyStatus='awaiting-reply';existing.status='done';existing.unread=false;}
-      else s.threads.unshift({id:remote?.threadId?`${a.id}:${remote.threadId}`:randomUUID(),...(remote?.threadId?{gmailId:remote.threadId}:{}),accountId:a.id,subject:d.subject,summary:stripHTML(d.html).slice(0,240),messages:[message],date:sentAt,unread:false,status:'done',importance:'important',bookmarked:false,replyStatus:'awaiting-reply'});
+      else s.threads.unshift({id:remote?.threadId?`${a.id}:${remote.threadId}`:randomUUID(),...(remote?.threadId?{remoteId:remote.threadId}:{}),accountId:a.id,subject:d.subject,summary:stripHTML(d.html).slice(0,240),messages:[message],date:sentAt,unread:false,status:'done',importance:'important',bookmarked:false,replyStatus:'awaiting-reply'});
     });
     emit('sent',{draftId:id,playSound:state.settings.sendSound});
   }
@@ -236,7 +280,7 @@ export async function createService(options:ServiceOptions) {
     sending.add(id);
     try{
       const d=draft(id),a=state.accounts.find(x=>x.id===d.accountId);
-      if(!a||a.provider!=='google')throw new Error(UNCONFIRMED);
+      if(!a||!hostOf(a))throw new Error(UNCONFIRMED);
       const remote=await confirmSent(a,d.messageId);
       let sender:{email:string;name:string};
       try{sender=senderIdentity(d,a);}catch{sender={email:a.email,name:a.name};}
@@ -255,14 +299,16 @@ export async function createService(options:ServiceOptions) {
       if(!a.connected)throw new Error('Reconnect this account before sending.');
       const sender=senderIdentity(d,a);
       d.html=outboundHTML(d,state.settings,a);
-      let remote:{threadId?:string}|undefined;
-      if(a.provider==='google'){
+      let sent:{threadId?:string}|undefined;
+      const provider=hostOf(a);
+      if(provider){
         // Recorded before the request leaves, so a crash mid-send is settled from Sent mail instead of retried.
         change(s=>{s.drafts.find(item=>item.id===id)!.sendAttemptAt=now().toISOString();});
-        try{remote=await google.send(a,d);}
-        catch(error){if(!uncertain(error))throw error;remote=await confirmSent(a,d.messageId);}
+        const original=d.threadId?state.threads.find(t=>t.id===d.threadId):undefined;
+        try{sent=await provider.send(a,d,original&&clone(original));}
+        catch(error){if(!uncertain(error))throw error;sent=await confirmSent(a,d.messageId);}
       }
-      finishSend(id,d,a,sender,remote);
+      finishSend(id,d,a,sender,sent);
     }catch(error){sendError(id,error);}finally{sending.delete(id);}
   }
   function scheduleSend(d:Draft) {
@@ -346,22 +392,22 @@ export async function createService(options:ServiceOptions) {
   }
   async function syncAccount(a:Account,manual:boolean,errors:string[]) {
     const cursor=store.cursor(a.id),local=new Set(state.threads.filter(t=>t.accountId===a.id).map(t=>t.id));
-    const result=await google.sync(a,cursor,{has:id=>local.has(id)});
+    const provider=host(a),result=await provider.sync(a,cursor,{has:id=>local.has(id)});
     let events:CalendarEvent[]|undefined;
     if(manual||!cursor||now().getTime()-(extrasAt.get(a.id)??0)>=EXTRAS_INTERVAL_MS){
-      try{a.sendAs=await google.getSendAs(a);delete a.error;}catch{
-        const message='Gmail sending addresses and signatures are unavailable. Reconnect to grant settings access; the primary address is still available.';
+      try{a.sendAs=provider.getSendAs?await provider.getSendAs(a):a.sendAs?.length?a.sendAs:[{email:a.email,name:a.name,signature:'',isDefault:true}];delete a.error;}catch{
+        const message='Sending addresses and signatures are unavailable. Reconnect to grant settings access; the primary address is still available.';
         a.sendAs=[{email:a.email,name:a.name,signature:'',isDefault:true}];a.error=message;errors.push(message);if(manual)emit('error',{message});
       }
-      if(a.calendarConnected)try{events=await google.listEvents(a);}catch{/* Mail sync remains available without Calendar permission. */}
+      if(a.calendarConnected&&provider.listEvents)try{events=await provider.listEvents(a);}catch{/* Mail sync remains available without Calendar permission. */}
       extrasAt.set(a.id,now().getTime());
-    }else{const current=state.accounts.find(x=>x.id===a.id);if(current?.error&&!/sending addresses/.test(current.error))delete a.error;else if(current?.error)a.error=current.error;}
+    }else{const current=state.accounts.find(x=>x.id===a.id);if(current?.error&&!/sending addresses/i.test(current.error))delete a.error;else if(current?.error)a.error=current.error;}
     const since=Date.parse(state.sync.lastSync||now().toISOString());
     let outcome!:ReturnType<typeof applySync>;
     change(s=>{
       outcome=applySync(s,a.id,result,new Set(queue.filter(op=>op.accountId===a.id).map(op=>op.threadId)));
-      if(events){s.events=s.events.filter(e=>e.accountId!==a.id||!e.googleId);for(const event of events)if(!s.events.some(e=>e.googleId===event.googleId&&e.accountId===event.accountId))s.events.push(event);}
-      const acc=s.accounts.find(x=>x.id===a.id);if(acc){acc.sendAs=a.sendAs;if(a.error)acc.error=a.error;else delete acc.error;}
+      if(events){s.events=s.events.filter(e=>e.accountId!==a.id||!e.remoteId);for(const event of events)if(!s.events.some(e=>e.remoteId===event.remoteId&&e.accountId===event.accountId))s.events.push(event);}
+      const acc=s.accounts.find(x=>x.id===a.id);if(acc){acc.sendAs=a.sendAs;acc.capabilities=provider.capabilities(acc);if(a.error)acc.error=a.error;else delete acc.error;}
     });
     // Saved after the mail it covers, so a crash in between only replays changes.
     store.setCursor(a.id,result.cursor,now());
@@ -379,7 +425,7 @@ export async function createService(options:ServiceOptions) {
     if(syncing){await syncing.catch(()=>{});return clone(state);}
     // Local changes go out before new state comes in, so the host already agrees with what the user did.
     if(queue.length)await flush(manual).catch(()=>{});
-    const accounts=(accountId?[account(accountId)]:clone(state.accounts)).filter(a=>a.provider==='google'&&a.connected&&gate.ready(a.id,manual));
+    const accounts=(accountId?[account(accountId)]:clone(state.accounts)).filter(a=>hostOf(a)&&a.connected&&gate.ready(a.id,manual));
     if(!manual&&!accounts.length)return clone(state);
     const job=(async()=>{
       // Background syncs stay quiet: no spinner, and errors surface on the account rather than as toasts.
@@ -403,14 +449,18 @@ export async function createService(options:ServiceOptions) {
     switch(method){
       case 'state.get':checkReminders();return clone(state);
       case 'symbols.render':return symbols(p.items,p.scale);
-      case 'capabilities.get':return {groq:groq.available,google:google.available,desktop:!!options.desktop,version:'0.1.0'};
+      case 'capabilities.get':return {groq:groq.available,google:!!providers.google?.available,microsoft:!!providers.microsoft?.available,desktop:!!options.desktop,version:'0.1.0'};
       case 'settings.update':change(s=>{s.settings={...s.settings,...settingsPatch(p.patch)};});return clone(state);
       case 'account.select':{const id=text(p.id,300);if(id!=='all')account(id);change(s=>{s.selectedAccountId=id;});return clone(state);}
-      case 'account.connect':{const a=await google.connect();change(s=>{s.accounts=s.accounts.filter(old=>old.id!==a.id);s.accounts.push(a);s.selectedAccountId=a.id;s.settings.onboardingDone=true;});return sync(a.id);}
+      case 'account.connect':{
+        const request=connectRequest(p),provider=providers[request.provider];
+        if(!provider)throw new Error('This account type is not available in this version of Aplos.');
+        if(!provider.available)throw new Error(provider.unavailableReason||'This account type is not configured.');
+        const a=await provider.connect(request);a.capabilities=provider.capabilities(a);change(s=>{s.accounts=s.accounts.filter(old=>old.id!==a.id);s.accounts.push(a);s.selectedAccountId=a.id;s.settings.onboardingDone=true;});return sync(a.id);}
       case 'account.disconnect':{const a=account(text(p.id,300));
         if(state.drafts.some(d=>d.accountId===a.id&&sending.has(d.id)))throw new Error('Wait for the message to finish sending.');
-        if(a.provider==='google')await google.disconnect(a.id);
-        store.setCursor(a.id,undefined);gate.forget(a.id);extrasAt.delete(a.id);
+        await hostOf(a)?.disconnect(a.id);
+        store.setCursor(a.id,undefined);store.memory.clear(a.id);gate.forget(a.id);extrasAt.delete(a.id);
         for(const d of state.drafts.filter(d=>d.accountId===a.id))stopSend(d.id);
         change(s=>{s.accounts=s.accounts.filter(x=>x.id!==a.id);s.threads=s.threads.filter(t=>t.accountId!==a.id);s.drafts=s.drafts.filter(d=>d.accountId!==a.id);s.events=s.events.filter(e=>e.accountId!==a.id);if(s.selectedAccountId===a.id)s.selectedAccountId='all';delete s.settings.accountNotifications[a.id];},{remove:queue.filter(op=>op.accountId===a.id).map(op=>op.id)});undo.length=0;return clone(state);}
       case 'sync':return sync(p.accountId?text(p.accountId,300):undefined,p.auto!==true);
@@ -419,8 +469,8 @@ export async function createService(options:ServiceOptions) {
         for(const d of state.drafts)stopSend(d.id);
         // Reset synthetic data without deleting real connected accounts or their mail.
         const fresh=createDemo(now());
-        for(const a of state.accounts.filter(a=>a.provider==='google'))fresh.accounts.push(a);
-        const live=new Set(fresh.accounts.filter(a=>a.provider==='google').map(a=>a.id));
+        for(const a of state.accounts.filter(a=>a.provider!=='demo'))fresh.accounts.push(a);
+        const live=new Set(fresh.accounts.filter(a=>a.provider!=='demo').map(a=>a.id));
         fresh.threads.push(...state.threads.filter(t=>live.has(t.accountId)));fresh.drafts.push(...state.drafts.filter(d=>live.has(d.accountId)));fresh.events.push(...state.events.filter(e=>live.has(e.accountId)));
         fresh.settings=clone(state.settings);commit(fresh);undo.length=0;for(const d of state.drafts)scheduleSend(d);return clone(state);
       }
@@ -457,7 +507,7 @@ export async function createService(options:ServiceOptions) {
         }));
         const found=new Map(matches.map(t=>[t.id,t]));
         const additions:Thread[]=[];
-        for(const a of state.accounts.filter(a=>a.provider==='google'&&a.connected&&(!accountId||a.id===accountId))){try{for(const t of await google.search(a,query)){if(!found.has(t.id))found.set(t.id,state.threads.find(local=>local.id===t.id)||t);if(!state.threads.some(local=>local.id===t.id))additions.push(t);}}catch{/* Local results remain useful offline. */}}
+        for(const a of state.accounts.filter(a=>a.connected&&(!accountId||a.id===accountId))){const provider=hostOf(a);if(!provider?.capabilities(a).serverSearch)continue;try{for(const t of await provider.search(a,query)){if(!found.has(t.id))found.set(t.id,state.threads.find(local=>local.id===t.id)||t);if(!state.threads.some(local=>local.id===t.id))additions.push(t);}}catch{/* Local results remain useful offline. */}}
         if(additions.length)change(s=>{for(const t of additions)if(!s.threads.some(local=>local.id===t.id))s.threads.push(t);});
         return clone([...found.values()].sort((a,b)=>b.date.localeCompare(a.date)));
       }
@@ -468,7 +518,7 @@ export async function createService(options:ServiceOptions) {
         const next:Draft={id,accountId:d.accountId,to:text(d.to||'',5000),cc:text(d.cc||'',5000),bcc:text(d.bcc||'',5000),subject:text(d.subject||'',2000),html:text(d.html||'',1_000_000),attachments:attachments(d.attachments||[]),
           mode:enumValue(d.mode||'new',['new','reply','reply-all','forward']),signature:!!d.signature,updatedAt:now().toISOString(),revision:(existing?.revision||0)+1};
         if(d.fromEmail!==undefined&&d.fromEmail!=='')next.fromEmail=safeEmail(d.fromEmail);
-        if(d.signatureSource!==undefined)next.signatureSource=enumValue(d.signatureSource,['custom','gmail']);
+        if(d.signatureSource!==undefined)next.signatureSource=enumValue(d.signatureSource==='gmail'?'account':d.signatureSource,['custom','account']);
         senderIdentity(next,a);
         if(d.threadId){const t=thread(text(d.threadId,300));if(t.accountId!==d.accountId)throw new Error('Replies must use the message account.');next.threadId=t.id;}
         change(s=>{s.drafts=s.drafts.filter(item=>item.id!==id);s.drafts.push(next);});return clone(next);
@@ -522,11 +572,11 @@ export async function createService(options:ServiceOptions) {
         const list:Array<{id:string;name:string;accountId:string}>=[];
         for(const a of state.accounts.filter(a=>!p.accountId||p.accountId==='all'||a.id===p.accountId)){
           if(a.provider==='demo')list.push({id:`demo-${a.id}`,name:a.id==='work'?'Work calendar':'Personal calendar',accountId:a.id});
-          else list.push(...await google.listCalendars(a));
+          else {const provider=hostOf(a);if(a.calendarConnected&&provider?.listCalendars)list.push(...await provider.listCalendars(a));}
         }return list;
       }
       case 'calendar.extract':{const t=thread(text(p.threadId,300)),events=await ai(p,signal=>groq.extractEvents(t,signal));
-        const a=account(t.accountId),candidates=events.map(e=>({...e,accountId:t.accountId,threadId:t.id,calendarId:e.calendarId||(a.provider==='google'?'primary':`demo-${t.accountId}`)}));
+        const a=account(t.accountId),candidates=events.map(e=>({...e,accountId:t.accountId,threadId:t.id,calendarId:e.calendarId||(a.calendarConnected&&hostOf(a)?.saveEvent?'primary':`demo-${t.accountId}`)}));
         if(state.settings.autoCalendar)for(const e of candidates)await invoke('calendar.save',{event:{...e,id:e.id||randomUUID()}});
         return candidates;
       }
@@ -537,14 +587,14 @@ export async function createService(options:ServiceOptions) {
         if(e.threadId){thread(text(e.threadId,300));event.threadId=e.threadId;}
         const existing=state.events.find(item=>item.id===event.id);
         if(existing&&existing.accountId!==a.id)throw new Error('An event cannot move between accounts.');
-        if(existing?.googleId)event.googleId=existing.googleId;if(existing?.url)event.url=existing.url;
+        if(existing?.remoteId)event.remoteId=existing.remoteId;if(existing?.url)event.url=existing.url;
         const duplicate=state.events.find(item=>item.id!==event.id&&item.accountId===a.id&&item.calendarId===event.calendarId&&item.title.toLowerCase()===event.title.toLowerCase()&&item.start===start);
         if(duplicate)return clone(duplicate);
-        const saved=a.provider==='google'?await google.saveEvent(a,event):event;
+        const provider=hostOf(a),saved=a.calendarConnected&&provider?.saveEvent&&!event.calendarId.startsWith('demo-')?await provider.saveEvent(a,event):event;
         change(s=>{s.events=s.events.filter(item=>item.id!==saved.id);s.events.push(saved);});return clone(saved);
       }
-      case 'calendar.delete':{const event=state.events.find(e=>e.id===p.id);if(!event)throw new Error('Event not found.');const a=account(event.accountId);if(a.provider==='google')await google.deleteEvent(a,event);change(s=>{s.events=s.events.filter(e=>e.id!==event.id);});return clone(state);}
-      case 'attachment.get':{const t=thread(text(p.threadId,300));const attachment=t.messages.flatMap(m=>m.attachments).find(a=>a.id===p.attachmentId);if(!attachment)throw new Error('Attachment not found.');const a=account(t.accountId);if(attachment.data)return clone(attachment);if(a.provider!=='google')throw new Error('This attachment is unavailable.');return google.attachment(a,t,attachment);}
+      case 'calendar.delete':{const event=state.events.find(e=>e.id===p.id);if(!event)throw new Error('Event not found.');const a=account(event.accountId),provider=hostOf(a);if(event.remoteId&&provider?.deleteEvent)await provider.deleteEvent(a,event);change(s=>{s.events=s.events.filter(e=>e.id!==event.id);});return clone(state);}
+      case 'attachment.get':{const t=thread(text(p.threadId,300));const attachment=t.messages.flatMap(m=>m.attachments).find(a=>a.id===p.attachmentId);if(!attachment)throw new Error('Attachment not found.');const a=account(t.accountId);if(attachment.data)return clone(attachment);const provider=hostOf(a);if(!provider)throw new Error('This attachment is unavailable.');return provider.attachment(a,t,attachment);}
       case 'sender.block':{const email=safeEmail(p.email);const ids=state.threads.filter(t=>t.messages.some(m=>m.from.toLowerCase()===email)).map(t=>t.id);if(ids.length)await updateThreads(ids,{status:'spam'});change(s=>{if(!s.blockedSenders.includes(email))s.blockedSenders.push(email);});return clone(state);}
       case 'sender.unblock':{const email=safeEmail(p.email);change(s=>{s.blockedSenders=s.blockedSenders.filter(item=>item!==email);});return clone(state);}
       case 'thread.unsubscribe':{
@@ -568,5 +618,5 @@ export async function createService(options:ServiceOptions) {
   const reminderTimer=setInterval(()=>{try{if(!closed)checkReminders();}catch{emit('error',{message:'Reminders could not be saved. Check folder permissions.'});}},30_000);reminderTimer.unref?.();
   const autoSyncMs=options.autoSyncMs??60_000;
   const syncTimer=autoSyncMs>0?setInterval(()=>{if(!closed)void sync(undefined,false).catch(()=>{});},autoSyncMs):undefined;syncTimer?.unref?.();
-  return { invoke, subscribe(listener:Listener){listeners.add(listener);return ()=>{listeners.delete(listener);};}, async close(){if(closed)return;closed=true;clearInterval(reminderTimer);if(syncTimer)clearInterval(syncTimer);await syncing?.catch(()=>{});await flushing?.catch(()=>{});for(const id of timers.keys())stopSend(id);for(const controller of requests.values())controller.abort();await Promise.allSettled(jobs);await google.close();listeners.clear();store.close();} };
+  return { invoke, subscribe(listener:Listener){listeners.add(listener);return ()=>{listeners.delete(listener);};}, async close(){if(closed)return;closed=true;clearInterval(reminderTimer);if(syncTimer)clearInterval(syncTimer);await syncing?.catch(()=>{});await flushing?.catch(()=>{});for(const id of timers.keys())stopSend(id);for(const controller of requests.values())controller.abort();await Promise.allSettled(jobs);await Promise.allSettled(Object.values(providers).map(async provider=>provider?.close()));listeners.clear();store.close();} };
 }

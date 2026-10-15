@@ -17,7 +17,7 @@ import { createService } from '../src/main/service';
 
 const temp=(name:string)=>mkdtemp(join(tmpdir(),`aplos-${name}-`));
 const message=(id:string,from='sam@example.test',sent=false)=>({id,from,fromName:'Sam',to:['alex@example.test'],date:'2026-10-14T10:00:00Z',text:`Message ${id} about the studio budget`,attachments:[],sent});
-const thread=(id:string,patch:Partial<Thread>={}):Thread=>({id,accountId:'g',subject:'Studio budget',summary:'',messages:[message(`${id}-m1`)],date:'2026-10-14T10:00:00Z',unread:true,status:'new',importance:'important',bookmarked:false,replyStatus:'none',gmailId:id.split(':')[1],labels:['INBOX','UNREAD'],...patch});
+const thread=(id:string,patch:Partial<Thread>={}):Thread=>({id,accountId:'g',subject:'Studio budget',summary:'',messages:[message(`${id}-m1`)],date:'2026-10-14T10:00:00Z',unread:true,status:'new',importance:'important',bookmarked:false,replyStatus:'none',remoteId:id.split(':')[1],labels:['INBOX','UNREAD'],...patch});
 const empty=(patch:Partial<SyncResult>={}):SyncResult=>({threads:[],flags:[],removed:[],reset:false,...patch});
 
 test('the SQLite store round-trips state, writes only changed rows, searches by word prefix and keeps cursors',async()=>{
