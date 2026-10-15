@@ -1,25 +1,42 @@
 import {useEffect,useRef,useState} from 'react';
-import {ArrowUpRight, Bold, ChevronDown, ChevronsUpDown, Italic, Link, Mic, Paperclip, Reply, ReplyAll, Send, Sparkles, Trash2, Underline, Wand, X, ImageIcon, Square} from './icons';
-import {Button,Checkbox,IconButton,Kbd,Menu,Notice,Select,Spinner,Tooltip,confirmAction,cx,useMenu} from './ui';
+import {ArrowUpRight, Bold, Check, ChevronDown, ChevronsUpDown, Italic, Link, Mic, Paperclip, Reply, ReplyAll, Send, Sparkles, Trash2, Underline, Wand, X, ImageIcon, Square} from './icons';
+import {Avatar,Button,Checkbox,IconButton,Kbd,Menu,Notice,Select,Spinner,Tooltip,confirmAction,cx,dialogOpen,useMenu} from './ui';
 import DOMPurify from 'dompurify';
 import type {Account,Draft,Settings,Thread} from '../shared/types';
 import {bridge,escapeHtml,fileToAttachment,invoke,plain,replyRecipients,uid} from './bridge';
 import {useVoice} from './useVoice';
 import {LevelMeter} from './LevelMeter';
-interface Props {draft:Draft;accounts:Account[];settings:Settings;thread?:Thread;close:()=>void;notify:(text:string)=>void;popout?:boolean;inline?:boolean;fresh?:boolean;closing?:boolean;holdToTalk?:()=>boolean;onChange?:(draft:Draft)=>void}
+interface Props {draft:Draft;accounts:Account[];settings:Settings;thread?:Thread;close:()=>void;notify:(text:string)=>void;popout?:boolean;inline?:boolean;fresh?:boolean;closing?:boolean;holdToTalk?:()=>boolean;onChange?:(draft:Draft)=>void;contacts?:Contact[]}
 const holdDelay=250;
 function splitAddresses(value:string){return value.split(/[,;]/).map(item=>item.trim()).filter(Boolean);}
-function RecipientInput({id,value,onChange,disabled,names,autoFocus,placeholder}:{id:string;value:string;onChange:(value:string)=>void;disabled?:boolean;names:Map<string,string>;autoFocus?:boolean;placeholder?:string}){
-  const [text,setText]=useState('');const input=useRef<HTMLInputElement>(null);
+export type Contact={email:string;name:string};
+/** The bare address inside "Name <address>" or the value itself. */
+export function addressOf(value:string){return (/<([^>]+)>/.exec(value)?.[1]??value).trim();}
+export function validAddress(value:string){return /^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[^\s@<>(),;:"]{2,}$/.test(addressOf(value));}
+function RecipientInput({id,value,onChange,disabled,names,contacts,autoFocus,placeholder}:{id:string;value:string;onChange:(value:string)=>void;disabled?:boolean;names:Map<string,string>;contacts:Contact[];autoFocus?:boolean;placeholder?:string}){
+  const [text,setText]=useState('');const [pick,setPick]=useState(0);const [focused,setFocused]=useState(false);const input=useRef<HTMLInputElement>(null);
   const list=splitAddresses(value);
-  function commit(raw=text){const extra=splitAddresses(raw);setText('');if(extra.length)onChange([...list,...extra].join(', '));}
+  const chosen=new Set(list.map(address=>addressOf(address).toLowerCase()));
+  const query=text.trim().toLowerCase();
+  const suggestions=query?contacts.filter(c=>!chosen.has(c.email.toLowerCase())&&(c.email.toLowerCase().includes(query)||c.name.toLowerCase().split(/\s+/).some(word=>word.startsWith(query))||c.name.toLowerCase().startsWith(query))).slice(0,6):[];
+  const open=focused&&suggestions.length>0;
+  function commit(raw=text){const extra=splitAddresses(raw);setText('');setPick(0);if(extra.length)onChange([...list,...extra].join(', '));}
+  function choose(contact:Contact){commit(contact.name&&contact.name!==contact.email?`${contact.name.replace(/[",<>]/g,'')} <${contact.email}>`:contact.email);input.current?.focus();}
   function label(address:string){const named=/^\s*"?([^"<]+?)"?\s*<([^>]+)>/.exec(address);if(named)return named[1];return names.get(address.toLowerCase())||address;}
   return <div className="recipient-input" onMouseDown={e=>{if(e.target===e.currentTarget){e.preventDefault();input.current?.focus();}}}>
-    {list.map((address,index)=><Tooltip key={address+index} content={address} disabled={label(address)===address}><span className="recipient-chip"><span>{label(address)}</span><button type="button" aria-label={'Remove '+address} disabled={disabled} onClick={()=>onChange(list.filter((_,i)=>i!==index).join(', '))}><X size={10}/></button></span></Tooltip>)}
+    {list.map((address,index)=>{const invalid=!validAddress(address);return <Tooltip key={address+index} content={invalid?'This doesn’t look like an email address':addressOf(address)} disabled={!invalid&&label(address)===address}><span className={cx('recipient-chip',invalid&&'is-invalid')}><span>{label(address)}</span><button type="button" aria-label={'Remove '+address} disabled={disabled} onClick={()=>onChange(list.filter((_,i)=>i!==index).join(', '))}><X size={10}/></button></span></Tooltip>;})}
     <input id={id} ref={input} value={text} disabled={disabled} autoFocus={autoFocus} placeholder={list.length?'':placeholder} autoComplete="off" spellCheck={false}
-      onChange={e=>{const next=e.target.value;if(/[,;]$/.test(next))commit(next.slice(0,-1));else setText(next);}}
-      onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){commit();return;}if((e.key==='Enter'||e.key==='Tab')&&text.trim()){e.preventDefault();commit();}else if(e.key==='Backspace'&&!text&&list.length)onChange(list.slice(0,-1).join(', '));}}
-      onBlur={()=>commit()}/>
+      role="combobox" aria-expanded={open} aria-controls={id+'-suggestions'} aria-autocomplete="list" aria-activedescendant={open?`${id}-option-${pick}`:undefined}
+      onChange={e=>{const next=e.target.value;setPick(0);if(/[,;]$/.test(next))commit(next.slice(0,-1));else setText(next);}}
+      onFocus={()=>setFocused(true)}
+      onKeyDown={e=>{
+        if(open&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();setPick(i=>(i+(e.key==='ArrowDown'?1:-1)+suggestions.length)%suggestions.length);return;}
+        if(open&&e.key==='Escape'){e.preventDefault();e.stopPropagation();setFocused(false);return;}
+        if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){commit();return;}
+        if((e.key==='Enter'||e.key==='Tab')&&text.trim()){e.preventDefault();if(open)choose(suggestions[Math.min(pick,suggestions.length-1)]);else commit();}
+        else if(e.key==='Backspace'&&!text&&list.length)onChange(list.slice(0,-1).join(', '));}}
+      onBlur={()=>{setFocused(false);commit();}}/>
+    {open&&<div className="recipient-suggestions" id={id+'-suggestions'} role="listbox" aria-label="Suggested recipients">{suggestions.map((contact,index)=><div key={contact.email} id={`${id}-option-${index}`} role="option" aria-selected={index===pick} className={cx('recipient-suggestion',index===pick&&'is-active')} onMouseDown={e=>{e.preventDefault();choose(contact);}} onMouseMove={()=>setPick(index)}><Avatar name={contact.name||contact.email} size={22}/><span><strong>{contact.name||contact.email}</strong>{contact.name&&<small>{contact.email}</small>}</span></div>)}</div>}
   </div>;
 }
 function keepImages(previous:string,next:string){
@@ -29,7 +46,7 @@ function keepImages(previous:string,next:string){
   for(const image of Array.from(oldDocument.images)){const source=image.getAttribute('src');if(source&&!sources.has(source)){const paragraph=nextDocument.createElement('p');paragraph.append(nextDocument.importNode(image,true));nextDocument.body.append(paragraph);sources.add(source);}}
   return DOMPurify.sanitize(nextDocument.body.innerHTML);
 }
-export function Compose({draft,accounts,settings,thread,close,notify,popout,inline,fresh,closing,holdToTalk,onChange}:Props){
+export function Compose({draft,accounts,settings,thread,close,notify,popout,inline,fresh,closing,holdToTalk,onChange,contacts=[]}:Props){
   const [form,setForm]=useState<Draft>(draft);const current=useRef(form);const editor=useRef<HTMLDivElement>(null);const file=useRef<HTMLInputElement>(null);const imageInput=useRef<HTMLInputElement>(null);
   const [expanded,setExpanded]=useState(!!(draft.cc||draft.bcc));const [saved,setSaved]=useState(true);const [busy,setBusy]=useState('');const [error,setError]=useState(draft.sendError||'');const [prompt,setPrompt]=useState('');const [showAI,setShowAI]=useState(false);
   const mounted=useRef(true);const dirty=useRef(false);const edits=useRef(0);const saving=useRef<Promise<Draft>>(Promise.resolve(draft));const operation=useRef('');const workVersion=useRef(0);const aiRequest=useRef<string|undefined>(undefined);const terminal=useRef(false);const lastProp=useRef(draft);const terminalJob=useRef<Promise<void>|undefined>(undefined);
@@ -79,9 +96,22 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
   }
   useEffect(()=>{if(!dirty.current||terminal.current)return;const timer=setTimeout(()=>{if(!terminal.current)void save().catch(error=>{if(mounted.current)setError(error.message);});},650);return()=>clearTimeout(timer);},[form]);
   useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(dirty.current&&!window.aplos){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[]);
+  /** Catches the usual mistakes before a message leaves; resolves false when the person wants to fix something. */
+  async function readyToSend(){
+    const d=current.current;
+    const invalid=[d.to,d.cc,d.bcc].flatMap(splitAddresses).find(address=>!validAddress(address));
+    if(invalid){setError(`“${invalid}” doesn’t look like an email address.`);return false;}
+    if(!d.to.trim()&&!d.cc.trim()&&!d.bcc.trim()){setError('Add at least one recipient.');document.getElementById('compose-to')?.focus();return false;}
+    if(!d.subject.trim()&&!await confirmAction({title:'Send without a subject?',message:'A subject helps people find this message later.',confirmLabel:'Send anyway'})){document.getElementById('compose-subject')?.focus();return false;}
+    const written=editor.current?.cloneNode(true) as HTMLElement|undefined;written?.querySelectorAll('blockquote').forEach(quote=>quote.remove());
+    if(!d.attachments.length&&/\b(attached|attachment|attachments|enclosed)\b/i.test(written?.textContent??'')&&!await confirmAction({title:'Send without an attachment?',message:'Your message mentions an attachment, but nothing is attached.',confirmLabel:'Send anyway'}))return false;
+    return true;
+  }
+  const checking=useRef(false);
   async function finish(kind:'close'|'send'|'popout'|'discard'|'native-close'){
     if(terminal.current){if(kind==='native-close'){await terminalJob.current;await invoke(terminal.current?'window.closeReady':'window.closeCancel');}return;}
     if(kind==='send'&&(operation.current||voice.isActive())){setError('Finish the current recording or operation before sending.');return;}
+    if(kind==='send'){if(checking.current)return;checking.current=true;try{if(!await readyToSend())return;}finally{checking.current=false;}if(terminal.current)return;}
     terminal.current=true;stopWork();working(kind);setError('');
     const job=(async()=>{
       try{
@@ -108,7 +138,7 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
   const closeHandler=useRef(()=>finish('native-close'));closeHandler.current=()=>finish('native-close');
   useEffect(()=>bridge.subscribe(event=>{if(event.type==='prepare-close')void closeHandler.current();}),[]);
   useEffect(()=>{mounted.current=true;terminal.current=false;return()=>{mounted.current=false;terminal.current=true;stopWork();};},[]);
-  useEffect(()=>{function keyboard(event:KeyboardEvent){if(event.defaultPrevented||(event.target as HTMLElement)?.closest?.('.ask-panel'))return;if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();void finish('send');}if(event.key==='Escape'){event.stopPropagation();void finish('close');}}window.addEventListener('keydown',keyboard);return()=>window.removeEventListener('keydown',keyboard);});
+  useEffect(()=>{function keyboard(event:KeyboardEvent){if(event.defaultPrevented||dialogOpen()||(event.target as HTMLElement)?.closest?.('.ask-panel'))return;if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();void finish('send');}if(event.key==='Escape'){event.stopPropagation();void finish('close');}}window.addEventListener('keydown',keyboard);return()=>window.removeEventListener('keydown',keyboard);});
   function setBody(html:string,preserveImages=false){const safe=preserveImages?keepImages(current.current.html,html):DOMPurify.sanitize(html);if(editor.current)editor.current.innerHTML=safe;patch({html:safe},true);}
   function applyProposal(proposal:Partial<Draft>){
     const fields:Partial<Draft>={};for(const key of ['to','cc','bcc','subject'] as const)if(typeof proposal[key]==='string'&&proposal[key]!.trim())fields[key]=proposal[key];
@@ -140,7 +170,12 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
     }catch(error){if(workVersion.current===version&&!terminal.current)setError(`Dictation was inserted without polish: ${(error as Error).message}`);}
     finally{if(workVersion.current===version){aiRequest.current=undefined;working('');}}
   },setError);
-  async function attach(files:FileList|null,asImage=false){
+  /** Pasted or dropped files: images that land in the body go inline, everything else is attached. */
+  function receive(files:File[],intoBody:boolean){
+    const images=intoBody?files.filter(item=>item.type.startsWith('image/')):[];const others=files.filter(item=>!images.includes(item));
+    void (async()=>{if(images.length)await attach(images,true);if(others.length)await attach(others);})();
+  }
+  async function attach(files:FileList|File[]|null,asImage=false){
     if(!files||operation.current||terminal.current)return;
     const version=++workVersion.current;working('attach');
     try{for(const item of Array.from(files)){
@@ -202,14 +237,26 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
   const title=form.mode==='new'?'New email':form.mode==='forward'?'Forward':form.mode==='reply-all'?'Reply all':'Reply';
   const senderName=sendingAlias?.name||sendingAccount?.name||'';
   const rootClass=inline?'compose-inline':popout?'compose-popout':'compose-layer'+(closing?' closing':'');
-  return <div className={rootClass} onMouseDown={e=>{if(e.target===e.currentTarget&&!popout&&!inline)void finish('close');}}><section className="composer" role={inline?'region':'dialog'} aria-modal={inline?undefined:true} aria-label={inline?'Reply':'Compose email'}>
+  const [dragging,setDragging]=useState(false);const dragDepth=useRef(0);
+  // Another "write" request while this draft is open brings this one forward instead of opening a second composer.
+  const [nudged,setNudged]=useState(false);
+  useEffect(()=>{let timer:ReturnType<typeof setTimeout>|undefined;const nudge=()=>{setNudged(false);requestAnimationFrame(()=>setNudged(true));clearTimeout(timer);timer=setTimeout(()=>setNudged(false),700);editor.current?.focus();};addEventListener('aplos:compose-nudge',nudge);return()=>{removeEventListener('aplos:compose-nudge',nudge);clearTimeout(timer);};},[]);
+  const [savedFlash,setSavedFlash]=useState(false);const wasSaving=useRef(false);
+  useEffect(()=>{if(!saved){wasSaving.current=true;setSavedFlash(false);return;}if(!wasSaving.current)return;wasSaving.current=false;setSavedFlash(true);const timer=setTimeout(()=>setSavedFlash(false),1600);return()=>clearTimeout(timer);},[saved]);
+  const hasFiles=(e:React.DragEvent)=>Array.from(e.dataTransfer.types).includes('Files');
+  return <div className={rootClass} onMouseDown={e=>{if(e.target===e.currentTarget&&!popout&&!inline)void finish('close');}}><section className={cx('composer',dragging&&'is-dropping',nudged&&'is-nudged')} role={inline?'region':'dialog'} aria-modal={inline?undefined:true} aria-label={inline?'Reply':'Compose email'}
+    onDragEnter={e=>{if(!hasFiles(e))return;e.preventDefault();dragDepth.current++;setDragging(true);}}
+    onDragOver={e=>{if(!hasFiles(e))return;e.preventDefault();e.dataTransfer.dropEffect='copy';}}
+    onDragLeave={e=>{if(!hasFiles(e))return;dragDepth.current=Math.max(0,dragDepth.current-1);if(!dragDepth.current)setDragging(false);}}
+    onDrop={e=>{if(!hasFiles(e))return;e.preventDefault();dragDepth.current=0;setDragging(false);receive(Array.from(e.dataTransfer.files),!!editor.current?.contains(e.target as Node));}}>
+    {dragging&&<div className="compose-drop" aria-hidden="true"><Paperclip size={20}/><span>Drop to attach<small>Images dropped in the message appear inline</small></span></div>}
     <header className="compose-header"><div className="title-with-icon">{inline&&thread&&form.mode!=='forward'?<>
         <Button variant="ghost" className={cx('mode-button',modeMenu.open&&'is-open')} aria-label="Reply type" aria-haspopup="menu" aria-expanded={modeMenu.open} icon={form.mode==='reply-all'?ReplyAll:Reply} iconRight={ChevronDown} onClick={modeMenu.toggle}>{title}</Button>
         <Menu open={modeMenu.open} anchor={modeMenu.anchor} onClose={modeMenu.close} placement="bottom-start" label="Reply type" groups={[[
           {label:'Reply',icon:Reply,checked:form.mode==='reply',onSelect:()=>changeMode('reply')},
           {label:'Reply all',icon:ReplyAll,checked:form.mode==='reply-all',onSelect:()=>changeMode('reply-all')},
         ]]}/>
-      </>:<strong>{title}</strong>}<span className={cx('save-status',!saved&&'is-saving')} aria-live="polite">{!saved&&<><Spinner size={12}/>Saving</>}</span></div>
+      </>:<strong>{title}</strong>}<span className={cx('save-status',!saved&&'is-saving',savedFlash&&'is-saved')} aria-live="polite">{!saved?<><Spinner size={12}/>Saving</>:savedFlash&&<><Check size={12}/>Saved</>}</span></div>
       <div className="actions">
         {!popout&&<IconButton label="Open in separate window" icon={ArrowUpRight} iconSize={18} onClick={()=>void finish('popout')} disabled={!!busy}/>}
         <IconButton label="Discard draft" icon={Trash2} iconSize={17} onClick={async()=>{if(blank()||await confirmAction({title:'Discard this draft?',message:'The draft and its attachments will be deleted.',confirmLabel:'Discard',danger:true}))await finish('discard');}}/>
@@ -218,11 +265,11 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
       </div></header>
     <div className="compose-fields">
       <div className="field-line from-line"><label htmlFor="compose-from">From</label><span className="from-display" aria-hidden="true"><span className="from-avatar" style={{background:sendingAccount?.color}}>{(senderName||fromEmail||'?')[0]?.toUpperCase()}</span><span className="from-name">{senderName}</span><span className="from-email">{fromEmail}</span><ChevronsUpDown size={13}/></span><select id="compose-from" className="from-select" value={JSON.stringify([form.accountId,fromEmail])} disabled={!!busy} onChange={event=>changeSender(event.target.value)}>{!senderAvailable&&<option value={JSON.stringify([form.accountId,fromEmail])} disabled>Unavailable address: {fromEmail}</option>}{accounts.map(account=><optgroup key={account.id} label={account.name+' · '+account.email} disabled={!account.connected||(lockAccount&&account.id!==form.accountId)}>{senders(account).map(alias=><option value={JSON.stringify([account.id,alias.email])} key={alias.email}>{alias.name||account.name} &lt;{alias.email}&gt;{alias.isDefault?' (default)':''}</option>)}</optgroup>)}</select></div>
-      <div className="field-line"><label htmlFor="compose-to">To</label><RecipientInput id="compose-to" autoFocus={!form.to&&!holdToTalk?.()} value={form.to} disabled={!!busy} names={names} placeholder="name@example.com" onChange={to=>patch({to})}/>{!expanded&&<Button variant="text" size="sm" className="cc-toggle" onClick={()=>setExpanded(true)}>Cc/Bcc</Button>}</div>
-      {expanded&&<><div className="field-line field-reveal"><label htmlFor="compose-cc">Cc</label><RecipientInput id="compose-cc" value={form.cc} disabled={!!busy} names={names} onChange={cc=>patch({cc})}/></div><div className="field-line field-reveal"><label htmlFor="compose-bcc">Bcc</label><RecipientInput id="compose-bcc" value={form.bcc} disabled={!!busy} names={names} onChange={bcc=>patch({bcc})}/></div></>}
+      <div className="field-line"><label htmlFor="compose-to">To</label><RecipientInput id="compose-to" autoFocus={!form.to&&!holdToTalk?.()} value={form.to} disabled={!!busy} names={names} contacts={contacts} placeholder="name@example.com" onChange={to=>patch({to})}/>{!expanded&&<Button variant="text" size="sm" className="cc-toggle" onClick={()=>setExpanded(true)}>Cc/Bcc</Button>}</div>
+      {expanded&&<><div className="field-line field-reveal"><label htmlFor="compose-cc">Cc</label><RecipientInput id="compose-cc" value={form.cc} disabled={!!busy} names={names} contacts={contacts} onChange={cc=>patch({cc})}/></div><div className="field-line field-reveal"><label htmlFor="compose-bcc">Bcc</label><RecipientInput id="compose-bcc" value={form.bcc} disabled={!!busy} names={names} contacts={contacts} onChange={bcc=>patch({bcc})}/></div></>}
       <div className="field-line subject-line"><input id="compose-subject" aria-label="Subject" value={form.subject} disabled={!!busy} onChange={e=>patch({subject:e.target.value})} placeholder="Subject"/></div>
     </div>
-    <div className="compose-body">{bodyEmpty(form.html)&&!listening&&!voice.busy&&<div className="compose-placeholder" aria-hidden="true">Hold<Kbd>Space</Kbd>to talk</div>}<div ref={editor} className="rich-editor" contentEditable={!busy} suppressContentEditableWarning role="textbox" aria-label="Message body" aria-multiline="true" onInput={()=>patch({html:editor.current?.innerHTML??''})} onPaste={e=>{e.preventDefault();const html=e.clipboardData.getData('text/html');document.execCommand('insertHTML',false,html?DOMPurify.sanitize(html):escapeHtml(e.clipboardData.getData('text/plain')).replace(/\n/g,'<br>'));patch({html:editor.current?.innerHTML??''});}}/>{signatureOn&&(signatureSource==='gmail'?gmailSignature?<div className="signature-preview" dangerouslySetInnerHTML={{__html:DOMPurify.sanitize(gmailSignature)}}/>:<p className="small muted">{sendingAccount?.sendAs?'No Gmail signature is set for this sending address.':'Gmail signatures are unavailable. Sync or reconnect this account.'}</p>:settings.signature&&<div className="signature-preview">{settings.signature}</div>)}{settings.footer&&<p className="muted small">Sent with Aplos Mail</p>}</div>
+    <div className="compose-body">{bodyEmpty(form.html)&&!listening&&!voice.busy&&<div className="compose-placeholder" aria-hidden="true">Hold<Kbd>Space</Kbd>to talk</div>}<div ref={editor} className="rich-editor" contentEditable={!busy} suppressContentEditableWarning role="textbox" aria-label="Message body" aria-multiline="true" onInput={()=>patch({html:editor.current?.innerHTML??''})} onPaste={e=>{e.preventDefault();const pasted=Array.from(e.clipboardData.files);if(pasted.length){receive(pasted,true);return;}const html=e.clipboardData.getData('text/html');document.execCommand('insertHTML',false,html?DOMPurify.sanitize(html):escapeHtml(e.clipboardData.getData('text/plain')).replace(/\n/g,'<br>'));patch({html:editor.current?.innerHTML??''});}}/>{signatureOn&&(signatureSource==='gmail'?gmailSignature?<div className="signature-preview" dangerouslySetInnerHTML={{__html:DOMPurify.sanitize(gmailSignature)}}/>:<p className="small muted">{sendingAccount?.sendAs?'No Gmail signature is set for this sending address.':'Gmail signatures are unavailable. Sync or reconnect this account.'}</p>:settings.signature&&<div className="signature-preview">{settings.signature}</div>)}{settings.footer&&<p className="muted small">Sent with Aplos Mail</p>}</div>
     {form.attachments.length>0&&<div className="compose-attachments">{form.attachments.map(a=><span className="attachment attachment-enter" key={a.id}><Paperclip size={13}/>{a.name}<span className="muted small">{Math.ceil(a.size/1024)} KB</span><IconButton size="xs" label={'Remove '+a.name} tooltip={false} icon={X} onClick={()=>patch({attachments:form.attachments.filter(x=>x.id!==a.id)})}/></span>)}</div>}
     {sendingAccount?.error&&<Notice tone="amber" className="compose-notice">{sendingAccount.error}</Notice>}
     {error&&<Notice className="compose-notice">{error}</Notice>}

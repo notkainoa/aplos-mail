@@ -1,17 +1,17 @@
-import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,MailOpen,MessageCircle,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
 import type {AppState,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,View} from '../shared/types';
 import {bridge,escapeHtml,invoke,replyRecipients,uid} from './bridge';
-import {Compose} from './Compose';
+import {Compose,addressOf,validAddress,type Contact} from './Compose';
 import {Ask} from './Ask';
 import {Reader} from './Reader';
 import {Calendar,EventEditor} from './Calendar';
 import {Settings} from './Settings';
 import {Sidebar,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
-import {DraftList,MailSection,type RowHandlers,type Triage} from './components/MailList';
+import {DraftList,MailSection,highlightTerms,type RowHandlers,type Triage} from './components/MailList';
 import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog,WelcomeDialog} from './components/Overlays';
-import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useMenu,usePresence,type Icon} from './ui';
+import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Keys,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useMenu,usePresence,type Icon} from './ui';
 
 const titles:Record<View,string>={home:'Home',later:'Later',all:'All mail',drafts:'Drafts',sent:'Sent','needs-reply':'Needs reply','awaiting-reply':'Awaiting reply',trash:'Trash',spam:'Spam',low:'Low importance',calendar:'Calendar',settings:'Settings'};
 const empties:Partial<Record<View,{icon:Icon;title:string;detail?:string}>>={
@@ -27,7 +27,7 @@ const empties:Partial<Record<View,{icon:Icon;title:string;detail?:string}>>={
   all:{icon:MailOpen,title:'No mail here yet'},
 };
 const mac=/Mac/.test(navigator.userAgent);
-const askStorageKey='aplos.askPanel';
+const askStorageKey='aplos.askPanel';const recentSearchKey='aplos.recentSearches';
 const askExamples=['What plans do I have this week?','Which emails still need a reply?','Summarize what changed today.','Draft a friendly follow-up.'];
 const queryParams=new URLSearchParams(location.search);const popoutDraft=queryParams.get('draft');const popoutThread=queryParams.get('thread');
 type Route={view:View;threadId?:string};
@@ -44,7 +44,7 @@ export function App(){
  const [composer,setComposer]=useState<Draft>();const [liveDraft,setLiveDraft]=useState<Draft>();const [composeClosing,setComposeClosing]=useState(false);const [draftBlocked,setDraftBlocked]=useState(false);
  const [laterTab,setLaterTab]=useState<'todos'|'bookmarks'>('todos');
  const [selected,setSelected]=useState<Set<string>>(new Set());
- const [search,setSearch]=useState('');const [searchMode,setSearchMode]=useState(false);const [searchResults,setSearchResults]=useState<Thread[]>([]);const [searching,setSearching]=useState(false);
+ const [search,setSearch]=useState('');const [searchMode,setSearchMode]=useState(false);const [searchResults,setSearchResults]=useState<Thread[]>([]);const [searching,setSearching]=useState(false);const [searchedFor,setSearchedFor]=useState('');
  const [shortcutHelp,setShortcutHelp]=useState(false);
  const [eventEditor,setEventEditor]=useState<Partial<CalendarEvent>|null>(null);
  const [online,setOnline]=useState(navigator.onLine);const [now,setNow]=useState(Date.now());
@@ -59,6 +59,10 @@ export function App(){
  const searchInput=useRef<HTMLInputElement>(null);const eventHandler=useRef<(event:{type:string;payload?:unknown})=>void>(()=>{});
  const searchSeq=useRef(0);const composeRef=useRef<Draft|undefined>(undefined);composeRef.current=composer;
  const undoRef=useRef<()=>void>(noop);
+ // `shown` is false while the pointer drives the list, so the hover highlight is the only cue.
+ const [cursor,setCursor]=useState<{id?:string;shown:boolean}>({shown:false});
+ const [recentSearches,setRecentSearches]=useState<string[]>(()=>{try{const saved=JSON.parse(localStorage.getItem(recentSearchKey)||'[]');return Array.isArray(saved)?saved.filter(q=>typeof q==='string').slice(0,5):[];}catch{return [];}});
+ const selectAnchor=useRef<string|null>(null);const listRef=useRef<HTMLDivElement>(null);const listScroll=useRef(0);
 
  function notify(text:string,undoable=false){toast.show({text,action:undoable?{label:'Undo',shortcut:'Z',run:()=>undoRef.current()}:undefined});}
  function fail(error:unknown){toast.show({text:error instanceof Error?error.message:String(error),tone:'error'});}
@@ -89,9 +93,9 @@ export function App(){
  }
  undoRef.current=()=>void undo();
  async function sync(){setBusy('sync');try{await invoke('sync',{accountId:state?.selectedAccountId==='all'?undefined:state?.selectedAccountId});}catch(e){fail(e);}finally{setBusy('');}}
- async function openDraft(draft:Draft){try{if(draft.pendingSendAt){notify('Undo sending before editing this draft.');return;}if(composer&&composer.id!==draft.id){notify('Close the current draft before opening another.');return;}const claimed=await invoke<boolean>('window.claim',{draftId:draft.id});if(!claimed){notify('This draft is open in another window.');return;}setComposer(draft);}catch(e){fail(e);}}
+ async function openDraft(draft:Draft){try{if(draft.pendingSendAt){notify('Undo sending before editing this draft.');return;}if(composer&&composer.id!==draft.id){nudgeComposer();return;}const claimed=await invoke<boolean>('window.claim',{draftId:draft.id});if(!claimed){notify('This draft is open in another window.');return;}setComposer(draft);}catch(e){fail(e);}}
  async function newDraft(proposal:Partial<Draft>={},thread?:Thread,mode:Draft['mode']='new'){
-  if(!state)return;if(composer){notify('Close the current draft before starting another.');return;}
+  if(!state)return;if(composer){nudgeComposer();return;}
   const last=thread?.messages.at(-1);const a=state.accounts.find(a=>a.id===(thread?.accountId||state.selectedAccountId))||state.accounts[0];if(!a){notify('Connect an account to write email.');return;}
   let html='';let to='';let cc='';let subject='';
   if(thread&&last){subject=(mode==='forward'?'Fwd: ':'Re: ')+thread.subject.replace(/^(Re|Fwd):\s*/i,'');if(mode==='forward')html=`<p><br></p><blockquote><p>Forwarded message from ${escapeHtml(last.fromName)} &lt;${escapeHtml(last.from)}&gt;</p><p>${escapeHtml(last.text).replace(/\n/g,'<br>')}</p></blockquote>`;else if(mode!=='new')({to,cc}=replyRecipients(thread,a.email,mode));}
@@ -100,18 +104,63 @@ export function App(){
   setBusy(thread&&mode!=='forward'?'reply':'draft');
   try{if(thread&&mode==='forward')d.attachments=await Promise.all(thread.messages.at(-1)!.attachments.map(a=>a.data?Promise.resolve(a):invoke<import('../shared/types').Attachment>('attachment.get',{threadId:thread.id,attachmentId:a.id})));const saved=await invoke<Draft>('draft.save',{draft:d});freshDraft.current=saved.id;await openDraft(saved);}catch(e){fail(e);}finally{setBusy('');}
  }
+ function nudgeComposer(){dispatchEvent(new Event('aplos:compose-nudge'));notify('Finish or close this draft to start another.');}
  function closeCompose(){const id=composer?.id;const done=()=>{setComposer(undefined);setLiveDraft(undefined);setComposeClosing(false);if(id)void invoke('window.release',{draftId:id}).catch(()=>{});if(popoutDraft)window.close();};if(!inlineReply&&!popoutDraft&&!reducedMotion()){setComposeClosing(true);setTimeout(done,150);}else done();}
- async function searchMail(value:string){const seq=++searchSeq.current;if(!value.trim()){setSearchResults([]);setSearching(false);return;}setSearching(true);try{const result=await invoke<Thread[]>('search',{query:value,accountId:state?.selectedAccountId});if(searchSeq.current===seq)setSearchResults(result);}catch(e){if(searchSeq.current===seq)fail(e);}finally{if(searchSeq.current===seq)setSearching(false);}}
+ async function searchMail(value:string){const seq=++searchSeq.current;if(!value.trim()){setSearchResults([]);setSearching(false);return;}setSearching(true);try{const result=await invoke<Thread[]>('search',{query:value,accountId:state?.selectedAccountId});if(searchSeq.current===seq){setSearchResults(result);setSearchedFor(value);}}catch(e){if(searchSeq.current===seq)fail(e);}finally{if(searchSeq.current===seq)setSearching(false);}}
  useEffect(()=>{if(!searchMode)return;const t=setTimeout(()=>void searchMail(search),250);return ()=>clearTimeout(t);},[search,searchMode,state?.selectedAccountId]);
  const scoped=useMemo(()=>state?.threads.filter(t=>state.selectedAccountId==='all'||t.accountId===state.selectedAccountId).sort((a,b)=>b.date.localeCompare(a.date))??[],[state?.threads,state?.selectedAccountId]);
  const filtered=useMemo(()=>{
   if(searchMode)return searchResults;
   const v=route.view;return scoped.filter(t=>v==='home'?t.status==='new'&&t.importance==='important'&&!t.hiddenFromHome:v==='later'?laterTab==='bookmarks'?t.bookmarked&&t.status!=='trash'&&t.status!=='spam':t.status==='later':v==='low'?t.importance==='low'&&t.status==='new':v==='needs-reply'||v==='awaiting-reply'?t.replyStatus===v&&t.status!=='trash'&&t.status!=='spam':v==='all'?t.status!=='trash'&&t.status!=='spam':v==='sent'?t.messages.some(m=>m.sent):v==='trash'||v==='spam'?t.status===v:false);
  },[scoped,route.view,laterTab,searchMode,searchResults]);
- const selectedThread=state?.threads.find(t=>t.id===route.threadId)||searchResults.find(t=>t.id===route.threadId);const readerIndex=Math.max(0,filtered.findIndex(t=>t.id===route.threadId));
+ // People this mailbox has exchanged mail with, most frequent first, for recipient suggestions.
+ const contacts=useMemo(()=>{
+  const own=new Set(state?.accounts.flatMap(a=>[a.email,...(a.sendAs??[]).map(s=>s.email)]).map(e=>e.toLowerCase()));
+  const seen=new Map<string,Contact&{count:number;last:string}>();
+  const add=(raw:string,name:string,date:string)=>{const email=addressOf(raw);const key=email.toLowerCase();if(!validAddress(email)||own.has(key))return;const named=name||/^\s*"?([^"<]+?)"?\s*</.exec(raw)?.[1]||'';const entry=seen.get(key);if(entry){entry.count++;if(date>entry.last)entry.last=date;if(!entry.name&&named)entry.name=named;}else seen.set(key,{email,name:named,count:1,last:date});};
+  for(const t of state?.threads??[])for(const m of t.messages){add(m.from,m.fromName,m.date);for(const to of [...m.to,...(m.cc??[])])add(to,'',m.date);}
+  return [...seen.values()].sort((a,b)=>b.count-a.count||b.last.localeCompare(a.last)).map(({email,name})=>({email,name}));
+ },[state?.threads,state?.accounts]);
+ const buckets=useMemo(()=>{
+  const today=new Date().toISOString().slice(0,10);const later=scoped.filter(t=>t.status==='later');
+  return {today,later,low:scoped.filter(t=>t.status==='new'&&t.importance==='low'),
+   homeLater:later.filter(t=>!t.hiddenFromHome&&(!t.dueDate||t.dueDate<=today)),
+   replyHome:scoped.filter(t=>t.replyStatus==='needs-reply'&&t.status==='done'&&!t.hiddenFromHome)};
+ },[scoped]);
+ // The order rows appear on screen, so j/k, ⇧-click ranges and the reader stack all walk the same sequence.
+ const order=useMemo(()=>{
+  if(searchMode)return filtered;
+  if(route.view==='home')return [...filtered,...buckets.homeLater,...buckets.replyHome];
+  if(route.view==='later'&&laterTab==='todos'){const today=buckets.today;return [...filtered.filter(t=>t.dueDate&&t.dueDate<today),...filtered.filter(t=>!t.dueDate),...filtered.filter(t=>t.dueDate&&t.dueDate>=today)];}
+  return filtered;
+ },[filtered,buckets,route.view,laterTab,searchMode]);
+ const searchHints=useMemo(()=>{
+  if(!searchMode)return [];
+  const hints:string[]=[];const counts=new Map<string,number>();
+  for(const t of scoped)for(const m of t.messages)if(!m.sent){const first=(m.fromName||m.from).split(/[\s@]/)[0].toLowerCase();if(first)counts.set(first,(counts.get(first)??0)+1);}
+  if(scoped.some(t=>t.unread))hints.push('is:unread');
+  if(scoped.some(t=>t.messages.some(m=>m.attachments.length)))hints.push('has:attachment');
+  if(scoped.some(t=>t.bookmarked))hints.push('is:bookmarked');
+  const top=[...counts].sort((a,b)=>b[1]-a[1])[0];if(top)hints.push('from:'+top[0]);
+  return hints;
+ },[scoped,searchMode]);
+ const selectedThread=state?.threads.find(t=>t.id===route.threadId)||searchResults.find(t=>t.id===route.threadId);const readerIndex=Math.max(0,order.findIndex(t=>t.id===route.threadId));
  const inlineReply=!!composer&&!!selectedThread&&!popoutDraft&&!popoutThread&&composer.threadId===selectedThread.id&&composer.mode!=='new'&&composer.mode!=='forward';
  function openThread(id:string){if(inlineReply&&id!==selectedThread?.id){notify('Send or close your reply first.');return;}setRoute(r=>({...r,threadId:id}));const t=state?.threads.find(t=>t.id===id);if(t?.unread)void invoke('thread.update',{ids:[id],patch:{unread:false},recordUndo:false}).catch(fail);}
- function nextThread(delta:number){const next=filtered[readerIndex+delta];if(next)openThread(next.id);}
+ function nextThread(delta:number){const next=order[readerIndex+delta];if(next)openThread(next.id);}
+ function moveCursor(delta:number){
+  if(!order.length)return;const at=order.findIndex(t=>t.id===cursor.id);
+  const index=at<0?(delta>0?0:order.length-1):cursor.shown||hoveredId.current?Math.min(order.length-1,Math.max(0,at+delta)):at;
+  setCursor({id:order[index].id,shown:true});
+ }
+ function selectRow(thread:Thread,how:'toggle'|'range'='toggle'){
+  const anchor=selectAnchor.current;const from=anchor?order.findIndex(t=>t.id===anchor):-1;const to=order.findIndex(t=>t.id===thread.id);
+  setSelected(prev=>{const next=new Set(prev);
+   if(how==='range'&&from>=0&&to>=0){for(const t of order.slice(Math.min(from,to),Math.max(from,to)+1))next.add(t.id);}
+   else next.has(thread.id)?next.delete(thread.id):next.add(thread.id);
+   return next;});
+  selectAnchor.current=thread.id;
+ }
  function exitDirection(status:Triage){const doneLeft=state?.settings.triageDirection==='done-left';return status==='done'?(doneLeft?'left':'right'):status==='later'?(doneLeft?'right':'left'):'down';}
  function triage(thread:Thread,status:Triage){
   const current=thread.id===selectedThread?.id;const stack=state?.settings.openMode==='stack';
@@ -120,15 +169,15 @@ export function App(){
   void patch([thread.id],{status},current&&stack?undefined:triageLabels[status],true);
   lastTriage.current={id:thread.id,status,reopen:current};
   setDuePrompt(status==='later'?{id:thread.id,key:Date.now()}:undefined);setEntering(undefined);
-  if(!current)return;
-  if(stack&&!reducedMotion())setLeaving({thread,status,key:Date.now()});
   // Right after an undo the reopened thread may not be back in the list yet, so fall back to its date position.
-  const at=filtered.findIndex(t=>t.id===thread.id);
-  const following=at>=0?filtered[at+1]||filtered[at-1]:filtered.find(t=>t.date<=thread.date)||filtered.at(-1);
+  const at=order.findIndex(t=>t.id===thread.id);
+  const following=at>=0?order[at+1]||order[at-1]:order.find(t=>t.date<=thread.date)||order.at(-1);
+  if(!current){if(cursor.id===thread.id)setCursor(c=>({...c,id:following?.id}));return;}
+  if(stack&&!reducedMotion())setLeaving({thread,status,key:Date.now()});
   if(following&&following.id!==thread.id)setRoute(r=>({...r,threadId:following.id}));else setRoute(r=>({...r,threadId:undefined}));
   if(following?.unread)void invoke('thread.update',{ids:[following.id],patch:{unread:false},recordUndo:false}).catch(()=>{});
  }
- function bulk(status:Triage,label:string){const ids=[...selected];for(const id of ids)hintExit(id,exitDirection(status));void patch(ids,{status},label);}
+ function bulk(status:Triage,label:string){const ids=[...selected];for(const id of ids)hintExit(id,exitDirection(status));if(cursor.id&&selected.has(cursor.id)){const at=order.findIndex(t=>t.id===cursor.id);setCursor(c=>({...c,id:order.slice(at+1).find(t=>!selected.has(t.id))?.id}));}void patch(ids,{status},`${label} · ${ids.length} email${ids.length===1?'':'s'}`);}
  function talk(phase:'start'|'release'){
   if(phase==='start'){
    if(talkHeld.current||!selectedThread)return;talkHeld.current=true;
@@ -138,6 +187,13 @@ export function App(){
  }
  async function setDue(id:string,dueDate:string,label:string){setDuePrompt(undefined);try{await invoke('thread.update',{ids:[id],patch:{dueDate},recordUndo:false});notify(label);}catch(e){fail(e);}}
  function openSearch(){if(replyGuard())return;setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));setTimeout(()=>searchInput.current?.focus(),20);}
+ function closeSearch(){setSearchMode(false);setSearch('');}
+ function rememberSearch(query:string){const value=query.trim();if(!value)return;setRecentSearches(prev=>{const next=[value,...prev.filter(q=>q!==value)].slice(0,5);localStorage.setItem(recentSearchKey,JSON.stringify(next));return next;});}
+ function searchKeys(e:React.KeyboardEvent<HTMLInputElement>){
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(search)setSearch('');else closeSearch();}
+  else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();moveCursor(e.key==='ArrowDown'?1:-1);}
+  else if(e.key==='Enter'&&!e.nativeEvent.isComposing){const target=order.find(t=>t.id===cursor.id&&cursor.shown)||order[0];if(target){e.preventDefault();rememberSearch(search);openThread(target.id);}}
+ }
  function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
  eventHandler.current=event=>{
   if(event.type==='state')setState(event.payload as AppState);
@@ -155,11 +211,16 @@ export function App(){
    if((e.metaKey||e.ctrlKey)&&['k','j',',','/'].includes(e.key)){e.preventDefault();command(e.key==='k'?'search':e.key==='j'?'ask':e.key===','?'settings':'shortcuts');return;}
    if(e.ctrlKey&&!e.metaKey&&!e.altKey&&/^[1-9]$/.test(e.key)&&!composer){const section=sections[Number(e.key)-1];if(section){e.preventDefault();navigate(section.view);}return;}
    if(composer||eventEditor||typing)return;
-   if(e.key==='Escape'){setDuePrompt(undefined);if(selected.size){setSelected(new Set());return;}if(searchMode){setSearchMode(false);setSearch('');}else setRoute(r=>({...r,threadId:undefined}));return;}
+   if(e.key==='Escape'){setDuePrompt(undefined);if(selected.size){setSelected(new Set());return;}if(selectedThread){if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}else if(searchMode){setSearchMode(false);setSearch('');}else if(cursor.shown)setCursor(c=>({...c,shown:false}));return;}
+   if((e.metaKey||e.ctrlKey)&&e.key==='a'&&!selectedThread&&order.length){e.preventDefault();setSelected(new Set(order.map(t=>t.id)));return;}
    if(e.metaKey||e.ctrlKey||e.altKey)return;
-   const t=selectedThread;const hovered=!t&&hoveredId.current?filtered.find(x=>x.id===hoveredId.current):undefined;const subject=t||hovered;
+   const t=selectedThread;const pointed=!t?order.find(x=>x.id===(hoveredId.current||(cursor.shown?cursor.id:undefined))):undefined;const subject=t||pointed;
    if(e.key===' '&&t){e.preventDefault();if(e.repeat||spaceHold.current)return;const hold:{timer?:ReturnType<typeof setTimeout>;fired:boolean}={fired:false};hold.timer=setTimeout(()=>{hold.fired=true;talk('start');},300);spaceHold.current=hold;return;}
-   const keys:Record<string,()=>void>={c:()=>void newDraft(),a:()=>setAsk(true),'/':()=>command('search'),'?':()=>setShortcutHelp(true),'[':()=>command('toggle-sidebar'),z:()=>void undo(),s:()=>{if(filtered[0])openThread(filtered[0].id);},j:()=>nextThread(1),k:()=>nextThread(-1)};
+   const keys:Record<string,()=>void>={c:()=>void newDraft(),a:()=>setAsk(true),'/':()=>command('search'),'?':()=>setShortcutHelp(true),'[':()=>command('toggle-sidebar'),z:()=>void undo(),s:()=>{const first=pointed||order[0];if(first)openThread(first.id);}};
+   // Arrow keys keep scrolling the message while the reader is open.
+   if(t){keys.j=()=>nextThread(1);keys.k=()=>nextThread(-1);}
+   else if(!['settings','calendar'].includes(route.view)){keys.j=keys.ArrowDown=()=>moveCursor(1);keys.k=keys.ArrowUp=()=>moveCursor(-1);}
+   if(pointed){keys.Enter=keys.o=()=>openThread(pointed.id);keys.x=()=>selectRow(pointed,e.shiftKey?'range':'toggle');keys.X=keys.x;}
    if(subject){const doneLeft=state?.settings.triageDirection==='done-left';keys.e=()=>triage(subject,'done');keys.l=()=>triage(subject,'later');keys.b=()=>void patch([subject.id],{bookmarked:!subject.bookmarked},subject.bookmarked?'Bookmark removed':'Bookmarked');keys.u=()=>void patch([subject.id],{unread:!subject.unread});keys['#']=()=>triage(subject,'trash');keys.ArrowLeft=()=>triage(subject,doneLeft?'done':'later');keys.ArrowRight=()=>triage(subject,doneLeft?'later':'done');}
    if(t){keys.r=()=>void newDraft({},t,state?.settings.defaultReply);keys.R=()=>void newDraft({},t,state?.settings.defaultReply==='reply-all'?'reply':'reply-all');keys.f=()=>void newDraft({},t,'forward');}
    if(keys[e.key]){e.preventDefault();keys[e.key]();}
@@ -168,49 +229,55 @@ export function App(){
   addEventListener('keydown',keyboard);addEventListener('keyup',keyup);return ()=>{removeEventListener('keydown',keyboard);removeEventListener('keyup',keyup);};
  });
  const bulkBar=usePresence(selected.size>0);
+ const listShown=!popoutThread&&(!selectedThread||state?.settings.openMode==='split');
+ const listKey=(searchMode?'search':route.view)+(route.view==='later'?laterTab:'');
+ useEffect(()=>{if(route.threadId)setCursor({id:route.threadId,shown:true});},[route.threadId]);
+ useEffect(()=>{setCursor(c=>({...c,shown:false}));selectAnchor.current=null;},[listKey]);
+ useLayoutEffect(()=>{if(listRef.current)listRef.current.scrollTop=0;listScroll.current=0;},[listKey]);
+ // In stack mode the list unmounts behind the reader; put it back where it was before scrolling to the cursor.
+ useLayoutEffect(()=>{if(listShown&&listRef.current)listRef.current.scrollTop=listScroll.current;},[listShown]);
+ useEffect(()=>{if(cursor.shown&&cursor.id&&listShown)document.querySelector(`.mail-row[data-thread-id="${CSS.escape(cursor.id)}"]`)?.scrollIntoView({block:'nearest',behavior:reducedMotion()?'auto':'smooth'});},[cursor,listShown]);
 
  if(!state)return <div className="loading-screen"><span className="app-icon ink large">a</span><h2>{fatal?'Aplos needs a moment.':'Making room for your mail…'}</h2>{fatal?<><p>{fatal}</p><Button variant="primary" onClick={()=>void refresh()}>Try again</Button><p className="small muted">For browser development, run npm run dev.</p></>:<Spinner size={20} className="muted"/>}</div>;
 
  const prefs=state.settings;
- const low=scoped.filter(t=>t.status==='new'&&t.importance==='low');const later=scoped.filter(t=>t.status==='later');
- const homeLater=later.filter(t=>!t.hiddenFromHome&&(!t.dueDate||t.dueDate<=new Date().toISOString().slice(0,10)));
- const replyHome=scoped.filter(t=>t.replyStatus==='needs-reply'&&t.status==='done'&&!t.hiddenFromHome);
+ const {low,later,homeLater,replyHome,today}=buckets;
  const pending=state.drafts.filter(d=>d.pendingSendAt);
  const drafts=state.drafts.filter(d=>!d.pendingSendAt&&(state.selectedAccountId==='all'||d.accountId===state.selectedAccountId));
  function count(view:View){if(view==='home')return scoped.filter(t=>t.status==='new').length+homeLater.length;if(view==='later')return later.length;if(view==='drafts')return drafts.length;if(view==='needs-reply'||view==='awaiting-reply')return scoped.filter(t=>t.replyStatus===view&&t.status!=='trash'&&t.status!=='spam').length;return 0;}
  const heading={title:searchMode?'Search':titles[route.view],count:filtered.length};
- const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
+ const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
  const readerProps={settings:prefs,editEvent:setEventEditor,notify,undo:()=>void undo(),talk,heading};
- const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={filtered.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={status=>triage(selectedThread,status)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} entering={entering?.id===selectedThread.id?entering.from:undefined}/>;
+ const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={status=>triage(selectedThread,status)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} entering={entering?.id===selectedThread.id?entering.from:undefined}/>;
  const ghost=leaving&&prefs.openMode==='stack'&&<div key={leaving.key} className={'fling fling-'+leaving.status} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
  const doneLeft=prefs.triageDirection==='done-left';
  const rows:RowHandlers={
-  activeId:route.threadId,selected,doneLeft,
-  open:t=>openThread(t.id),
-  select:t=>setSelected(prev=>{const next=new Set(prev);next.has(t.id)?next.delete(t.id):next.add(t.id);return next;}),
+  activeId:route.threadId,cursorId:cursor.shown?cursor.id:undefined,selected,doneLeft,
+  highlight:searchMode?highlightTerms(search):undefined,
+  open:t=>{if(searchMode)rememberSearch(search);openThread(t.id);},
+  select:selectRow,
   triage,
   bookmark:t=>void patch([t.id],{bookmarked:!t.bookmarked},t.bookmarked?'Bookmark removed':'Bookmarked'),
   more:(t,anchor)=>{setMenuThread(t);rowMenu.openAt(anchor);},
-  hover:(t,on)=>{if(on)hoveredId.current=t.id;else if(hoveredId.current===t.id)hoveredId.current=null;},
+  hover:(t,on)=>{if(on){hoveredId.current=t.id;if(cursor.id!==t.id||cursor.shown)setCursor({id:t.id,shown:false});}else if(hoveredId.current===t.id)hoveredId.current=null;},
  };
  const group=(title:string,threads:Thread[],action?:React.ReactNode,showCount=true)=><MailSection key={title} title={title} threads={threads} action={action} showCount={showCount} rows={rows}/>;
  const titled=(title:string,body:React.ReactNode)=><section className="mail-section"><header><h2>{title}</h2></header>{body}</section>;
  const emptyFor=(view:View)=>{const spec=searchMode?{icon:Search,title:'No matches yet',detail:'Try fewer words, or a sender’s name.'}:empties[view]??{title:'Nothing here'};return <EmptyState icon={spec.icon} title={spec.title} detail={spec.detail}/>;};
 
- if(popoutDraft)return <><div className="popout-titlebar"/>{composer?<Compose draft={composer} accounts={state.accounts} settings={prefs} thread={state.threads.find(t=>t.id===composer.threadId)} close={closeCompose} notify={notify} onChange={setLiveDraft} popout fresh={freshDraft.current===composer.id}/>:<div className="loading-screen"><h2>{draftBlocked?'This draft is open in another window.':'This draft is no longer available.'}</h2><Button onClick={()=>window.close()}>Close window</Button></div>}<Toaster/><ConfirmHost/></>;
+ if(popoutDraft)return <><div className="popout-titlebar"/>{composer?<Compose draft={composer} accounts={state.accounts} settings={prefs} thread={state.threads.find(t=>t.id===composer.threadId)} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} popout fresh={freshDraft.current===composer.id}/>:<div className="loading-screen"><h2>{draftBlocked?'This draft is open in another window.':'This draft is no longer available.'}</h2><Button onClick={()=>window.close()}>Close window</Button></div>}<Toaster/><ConfirmHost/></>;
 
  const syncing=busy==='sync'||state.sync.busy;
  const listView=!['settings','calendar'].includes(route.view);
- const today=new Date().toISOString().slice(0,10);
- const swipe=<Button variant="pill" icon={Layers} shortcut="S" onClick={()=>{if(filtered[0])openThread(filtered[0].id);}}>One at a time</Button>;
+ const swipe=<Button variant="pill" icon={Layers} shortcut="S" onClick={()=>{if(order[0])openThread(order[0].id);}}>One at a time</Button>;
  const composerLayer=!!composer&&!inlineReply;
  const sidebarHidden=!prefs.sidebar||!!popoutThread;
  const view=route.view;
  const thread=menuThread;
 
  let list:React.ReactNode;
- if(searchMode)list=search?filtered.length?group(`${filtered.length} result${filtered.length===1?'':'s'}`,filtered,undefined,false):!searching&&emptyFor(view):<EmptyState compact icon={Search} title="Search your mail" detail="Senders, subjects and the words inside your messages."/>;
- else if(view==='home')list=<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-bundle" onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><span><strong>Low-importance emails</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></span></button>}{group('Ready when you are',homeLater,<Button variant="text" onClick={()=>void invoke('home.hide',{ids:homeLater.map(t=>t.id)})}>Hide all</Button>)}{group('Waiting on you',replyHome)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&emptyFor('home')}</>;
+ if(searchMode)list=search?filtered.length?group(`${filtered.length} result${filtered.length===1?'':'s'}`,filtered,undefined,false):!searching&&searchedFor===search&&emptyFor(view):<EmptyState compact icon={Search} title="Search your mail" detail="Senders, subjects and the words inside your messages."/>;
+ else if(view==='home')list=<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-bundle" onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><span><strong>Low-importance emails</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></span></button>}{group('Ready when you are',homeLater,<Button variant="text" onClick={()=>{for(const t of homeLater)hintExit(t.id,'down');void invoke('home.hide',{ids:homeLater.map(t=>t.id)}).then(()=>notify(`Hid ${homeLater.length} from Home. They stay in Later.`)).catch(fail);}}>Hide all</Button>)}{group('Waiting on you',replyHome)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&emptyFor('home')}</>;
  else if(view==='drafts')list=titled('Drafts',drafts.length?<DraftList drafts={drafts} open={d=>void openDraft(d)} remove={async d=>{if(!await confirmAction({title:'Delete this draft?',message:'It will be removed from this device and from Gmail drafts.',confirmLabel:'Delete',danger:true}))return;hintExit(d.id,'down');void invoke('draft.delete',{id:d.id}).catch(fail);}}/>:emptyFor('drafts'));
  else if(view==='later'&&laterTab==='todos')list=<>{group('Overdue',filtered.filter(t=>t.dueDate&&t.dueDate<today))}{group('Todos without a specific date',filtered.filter(t=>!t.dueDate))}{group('Upcoming',filtered.filter(t=>t.dueDate&&t.dueDate>=today))}{!filtered.length&&emptyFor('later')}</>;
  else{const title=view==='later'?'Bookmarks':titles[view];list=filtered.length?group(title,filtered,view==='low'?<Button variant="pill" icon={CheckCheck} onClick={()=>{for(const t of filtered)hintExit(t.id,exitDirection('done'));void patch(filtered.map(t=>t.id),{status:'done'},'Low-importance mail marked done');}}>Mark all done</Button>:undefined,false):titled(title,view==='later'?<EmptyState icon={Bookmark} title="No bookmarks" detail="Press B on an email to keep it close."/>:emptyFor(view));}
@@ -225,13 +292,16 @@ export function App(){
   setOpenMode={openMode=>void updateSettings({openMode})} compose={()=>void newDraft()} ask={()=>setAsk(true)}/>
  {state.sync.error&&<div className="sync-error"><WifiOff size={14}/><span>{state.sync.error}</span><Button variant="text" size="sm" onClick={()=>void sync()}>Retry</Button></div>}
  <div className={cx('content-layout',selectedThread&&prefs.openMode==='split'&&'split-layout')}>
- {!popoutThread&&(!selectedThread||prefs.openMode==='split')&&<div className="mail-content">
+ {listShown&&<div className="mail-content" ref={listRef} onScroll={e=>{listScroll.current=e.currentTarget.scrollTop;}}>
  {view==='settings'?<Settings state={state} capabilities={capabilities} onChange={p=>void updateSettings(p)} notify={notify} shortcuts={()=>setShortcutHelp(true)}/>
  :view==='calendar'?<Calendar events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} edit={setEventEditor} onThread={id=>navigate('all',id)}/>
  :<div className="mail-view" key={(searchMode?'search':view)+(view==='later'?laterTab:'')}>
-  {searchMode&&<div className="search-heading"><div className="search-box"><Search size={17}/><input ref={searchInput} autoFocus placeholder="Search your mail" aria-label="Search mail query" value={search} onChange={e=>setSearch(e.target.value)}/>{searching&&<Spinner size={16}/>}<IconButton label="Close search" shortcut="Esc" icon={X} onClick={()=>{setSearchMode(false);setSearch('');}}/></div><p className="search-hints">Try {['is:unread','has:attachment','from:maya'].map(hint=><button key={hint} className={search===hint?'is-active':undefined} onClick={()=>setSearch(hint)}>{hint}</button>)}</p></div>}
+  {searchMode&&<div className="search-heading"><div className="search-box"><Search size={17}/><input ref={searchInput} autoFocus placeholder="Search your mail" aria-label="Search mail query" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={searchKeys}/>{searching&&<Spinner size={16}/>}<IconButton label="Close search" shortcut="Esc" icon={X} onClick={closeSearch}/></div>
+   {!search&&recentSearches.length>0&&<p className="search-hints"><span>Recent</span>{recentSearches.map(hint=><button key={hint} onClick={()=>{setSearch(hint);searchInput.current?.focus();}}>{hint}</button>)}</p>}
+   {searchHints.length>0&&<p className="search-hints"><span>Try</span>{searchHints.map(hint=><button key={hint} className={search===hint?'is-active':undefined} onClick={()=>{setSearch(hint);searchInput.current?.focus();}}>{hint}</button>)}</p>}
+   {search&&filtered.length>0&&<p className="search-hints search-keys"><Keys combo="↑"/><Keys combo="↓"/> to move, <Keys combo="↩"/> to open</p>}</div>}
   {view==='later'&&!searchMode&&<Tabs variant="underline" label="Later groups" className="later-tabs" value={laterTab} onChange={setLaterTab} items={[{id:'todos',label:'Todos',icon:CircleCheck,count:later.length},{id:'bookmarks',label:'Bookmarks',icon:Bookmark,count:scoped.filter(t=>t.bookmarked).length}]}/>}
-  {bulkBar.mounted&&<div className={cx('bulk-toolbar',bulkBar.closing&&'is-closing')}><Checkbox checked={selected.size===filtered.length&&filtered.length>0} indeterminate={selected.size>0&&selected.size<filtered.length} label={`${selected.size||1} selected`} onChange={on=>setSelected(new Set(on?filtered.map(t=>t.id):[]))}/>
+  {bulkBar.mounted&&<div className={cx('bulk-toolbar',bulkBar.closing&&'is-closing')}><Checkbox checked={selected.size===order.length&&order.length>0} indeterminate={selected.size>0&&selected.size<order.length} label={`${selected.size||1} selected`} onChange={on=>setSelected(new Set(on?order.map(t=>t.id):[]))}/>
    <div className="actions"><Button variant="ghost" icon={Check} onClick={()=>bulk('done','Marked done')}>Done</Button><Button variant="ghost" icon={Clock} onClick={()=>bulk('later','Moved to Todo')}>Todo</Button><IconButton label="Move selected to Trash" icon={Trash2} onClick={()=>bulk('trash','Moved to Trash')}/><IconButton label="Clear selection" shortcut="Esc" icon={X} onClick={()=>setSelected(new Set())}/></div></div>}
   {list}
  </div>}
@@ -239,7 +309,7 @@ export function App(){
  {reader}
  {ghost}
  </div>
- {composerLayer&&composer&&<Compose key={composer.id} draft={composer} accounts={state.accounts} settings={prefs} thread={state.threads.find(t=>t.id===composer.threadId)} close={closeCompose} notify={notify} onChange={setLiveDraft} fresh={freshDraft.current===composer.id} closing={composeClosing} holdToTalk={()=>talkHeld.current}/>}
+ {composerLayer&&composer&&<Compose key={composer.id} draft={composer} accounts={state.accounts} settings={prefs} thread={state.threads.find(t=>t.id===composer.threadId)} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} closing={composeClosing} holdToTalk={()=>talkHeld.current}/>}
  {busy==='draft'&&!composer&&<div className="compose-layer"><ComposeSkeleton/></div>}
  <DuePopover prompt={duePrompt} setDue={(id,day,label)=>void setDue(id,day,label)} dismiss={()=>setDuePrompt(undefined)}/>
  </main>

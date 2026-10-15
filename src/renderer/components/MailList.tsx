@@ -1,3 +1,4 @@
+import {useRef} from 'react';
 import {Bookmark,Check,Clock,FileText,MoreHorizontal,Paperclip,Trash2} from '../icons';
 import type {Draft,Thread} from '../../shared/types';
 import {dateLabel,dueLabel,plain} from '../bridge';
@@ -6,15 +7,35 @@ import {Avatar,Badge,Checkbox,Count,IconButton,Keys,Tooltip,cx,useListPresence} 
 export type Triage='done'|'later'|'trash'|'spam';
 export type RowHandlers={
   activeId?:string;
+  cursorId?:string;
+  highlight?:Terms;
   selected:Set<string>;
   doneLeft:boolean;
   open:(thread:Thread)=>void;
-  select:(thread:Thread)=>void;
+  /** `range` extends the selection from the last toggled row, `toggle` flips just this one. */
+  select:(thread:Thread,how?:'toggle'|'range')=>void;
   triage:(thread:Thread,status:Triage)=>void;
   bookmark:(thread:Thread)=>void;
   more:(thread:Thread,anchor:HTMLElement)=>void;
   hover:(thread:Thread,on:boolean)=>void;
 };
+
+/** Words from a search query worth marking in rows; `from:` and `subject:` terms only mark their own field. */
+export function highlightTerms(query:string){
+  const terms={any:[] as string[],from:[] as string[],subject:[] as string[]};
+  for(const token of query.match(/(?:[^\s"]+|"[^"]*")+/g)||[]){
+    const value=token.replace(/"/g,'').trim();const colon=value.indexOf(':');const key=colon>0?value.slice(0,colon).toLowerCase():'';const term=colon>0?value.slice(colon+1):value;
+    if(term.length<2)continue;
+    if(!key)terms.any.push(term);else if(key==='from')terms.from.push(term);else if(key==='subject')terms.subject.push(term);
+  }
+  return terms.any.length||terms.from.length||terms.subject.length?terms:undefined;
+}
+type Terms=NonNullable<ReturnType<typeof highlightTerms>>;
+function Marked({text,terms}:{text:string;terms?:string[]}){
+  if(!terms?.length||!text)return <>{text}</>;
+  const pattern=new RegExp('('+terms.map(t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')','gi');
+  return <>{text.split(pattern).map((part,i)=>i%2?<mark key={i} className="match">{part}</mark>:part)}</>;
+}
 
 /** A titled card of mail rows. Rows leaving after triage slide out and collapse; rows coming back grow in. */
 export function MailSection({title,threads,action,showCount=true,rows}:{title:string;threads:Thread[];action?:React.ReactNode;showCount?:boolean;rows:RowHandlers}){
@@ -30,25 +51,26 @@ function MailRow({thread:t,rows,phase,direction}:{thread:Thread;rows:RowHandlers
   const m=t.messages.at(-1)!;const attachments=t.messages.flatMap(message=>message.attachments);
   const overdue=!!t.dueDate&&t.dueDate<new Date().toISOString().slice(0,10);
   const selected=rows.selected.has(t.id);const selecting=rows.selected.size>0;const exiting=phase==='exit';
+  const shift=useRef(false);const hl=rows.highlight;
   const todo=<Tooltip key="todo" content="Todo" shortcut={rows.doneLeft?'→':'←'}><button className="row-action" aria-label={'Move '+t.subject+' to Todo'} onClick={()=>rows.triage(t,'later')}><Clock size={15}/><Keys combo={rows.doneLeft?'→':'←'} size="sm"/></button></Tooltip>;
   const done=<Tooltip key="done" content="Done" shortcut={rows.doneLeft?'←':'→'}><button className="row-action done" aria-label={'Mark '+t.subject+' done'} onClick={()=>rows.triage(t,'done')}><Check size={15}/><Keys combo={rows.doneLeft?'←':'→'} size="sm"/></button></Tooltip>;
-  return <div className={cx('mail-row',t.unread&&'unread',rows.activeId===t.id&&'active',selected&&'checked',selecting&&'selecting',phase&&'row-'+phase,exiting&&'row-exit-'+direction)} inert={exiting||undefined}
-    onMouseEnter={()=>rows.hover(t,true)} onMouseLeave={()=>rows.hover(t,false)}>
-    <div className="row-leading">
+  return <div data-thread-id={t.id} className={cx('mail-row',t.unread&&'unread',rows.activeId===t.id&&'active',rows.cursorId===t.id&&'is-cursor',selected&&'checked',selecting&&'selecting',phase&&'row-'+phase,exiting&&'row-exit-'+direction)} inert={exiting||undefined}
+    onMouseMove={e=>{if(e.movementX||e.movementY)rows.hover(t,true);}} onMouseLeave={()=>rows.hover(t,false)}>
+    <div className="row-leading" onClickCapture={e=>{shift.current=e.shiftKey;}}>
       <Avatar name={m.fromName||m.from} seed={m.fromName||m.from}/>
-      <Checkbox className="row-checkbox" checked={selected} hideLabel label={'Select '+t.subject} onChange={()=>rows.select(t)}/>
+      <Checkbox className="row-checkbox" checked={selected} hideLabel label={'Select '+t.subject} onChange={()=>rows.select(t,shift.current?'range':'toggle')}/>
     </div>
-    <button className="row-content" onClick={()=>rows.open(t)}>
+    <button className="row-content" onClick={e=>{if(e.shiftKey)rows.select(t,'range');else if(e.metaKey||e.ctrlKey||selecting)rows.select(t,'toggle');else rows.open(t);}}>
       <span className="row-first">
-        <span className="sender">{m.fromName}</span>
+        <span className="sender"><Marked text={m.fromName||m.from} terms={hl&&[...hl.any,...hl.from]}/></span>
         {t.messages.length>1&&<span className="thread-count">{t.messages.length}</span>}
         <span className="row-separator">·</span>
-        <span className="subject">{t.subject}</span>
+        <span className="subject"><Marked text={t.subject} terms={hl&&[...hl.any,...hl.subject]}/></span>
         {t.bookmarked&&<Bookmark size={13} className="row-flag" fill="currentColor"/>}
         <span className="row-time">{t.dueDate&&t.status==='later'?dueLabel(t.dueDate):dateLabel(t.date)}</span>
       </span>
       <span className="row-second">
-        <span className="summary">{t.summary}</span>
+        <span className="summary"><Marked text={t.summary} terms={hl?.any}/></span>
         {t.dueDate&&t.status!=='later'&&<Badge tone={overdue?'red':'blue'} className="row-badge">{dueLabel(t.dueDate)}</Badge>}
         {attachments.slice(0,2).map(a=><Badge key={a.id} icon={Paperclip} className="row-badge attachment-badge">{a.name}</Badge>)}
         {attachments.length>2&&<Badge className="row-badge attachment-badge">{attachments.length-2} more</Badge>}

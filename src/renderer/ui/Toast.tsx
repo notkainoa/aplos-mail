@@ -23,7 +23,7 @@ export const toast={
   show(spec:ToastSpec|string){
     const value=typeof spec==='string'?{text:spec}:spec;
     // Only the newest action stays live: an older "Undo" would no longer undo what it says.
-    const older=value.action?toasts.map(t=>t.action?{...t,action:undefined}:t):toasts;
+    const older=(value.action?toasts.map(t=>t.action?{...t,action:undefined}:t):toasts).filter(t=>value.action||t.action||t.text!==value.text);
     const entry={...value,id:++seq};
     toasts=[...older.filter(t=>!t.leaving),entry].slice(-visible-1);emit();
     return entry.id;

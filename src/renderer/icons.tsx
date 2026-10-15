@@ -58,6 +58,7 @@ export const CalendarDays=symbol(Lucide.CalendarDays,'calendar');
 export const Check=symbol(Lucide.Check,'checkmark');
 export const CheckCheck=symbol(Lucide.CheckCheck,'checkmark.circle');
 export const ChevronDown=symbol(Lucide.ChevronDown,'chevron.down',{ratio:.7});
+export const ChevronUp=symbol(Lucide.ChevronUp,'chevron.up',{ratio:.7});
 export const ChevronLeft=symbol(Lucide.ChevronLeft,'chevron.left',{ratio:.7});
 export const ChevronRight=symbol(Lucide.ChevronRight,'chevron.right',{ratio:.7});
 export const ChevronsLeft=symbol(Lucide.ChevronsLeft,'chevron.left.2',{ratio:.7});

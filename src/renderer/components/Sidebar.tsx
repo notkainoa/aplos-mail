@@ -1,6 +1,7 @@
 import {Archive,ArrowLeft,ArrowRight,CalendarDays,ChevronsUpDown,Clock,CornerUpLeft,FileText,Home,MessageCircle,PanelLeft,Plus,RefreshCw,Send,ShieldAlert,Trash2} from '../icons';
 import type {Account,AppState,View} from '../../shared/types';
 import {Count,IconButton,Keys,Menu,cx,useMenu,type Icon} from '../ui';
+import {showSettingsTab} from '../Settings';
 
 export const sections:{view:View;label:string;icon:Icon;divider?:boolean}[]=[
   {view:'home',label:'Home',icon:Home},{view:'later',label:'Later',icon:Clock},
@@ -52,7 +53,7 @@ export function Sidebar({state,view,count,zen,online,syncing,canBack,canForward,
     <Menu open={accounts.open} anchor={accounts.anchor} onClose={accounts.close} placement="bottom-start" matchWidth label="Accounts" className="account-menu" onError={onError} groups={[
       [{label:'All accounts',checked:state.selectedAccountId==='all',onSelect:()=>selectAccount('all')},
        ...state.accounts.map(a=>({label:accountName(a),hint:a.email,leading:<span className="account-dot" style={{background:a.color}}/>,checked:a.id===state.selectedAccountId,onSelect:()=>selectAccount(a.id)}))],
-      [{label:'Manage accounts',icon:Plus,onSelect:()=>navigate('settings')}],
+      [{label:'Manage accounts',icon:Plus,onSelect:()=>{showSettingsTab('Accounts');navigate('settings');}}],
     ]}/>
     <nav className="main-nav" aria-label="Mailboxes">{sections.map(({view:id,label,icon:NavIcon,divider},index)=>{
       const value=count(id);
