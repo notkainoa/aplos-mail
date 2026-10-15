@@ -81,6 +81,20 @@ export type RemoteThread = Pick<Thread,'remoteId'|'status'|'labels'>;
 
 export interface CalendarInfo { id:string; name:string; accountId:string }
 
+/** Login for a calendar server that shares the mail account's credentials (CalDAV with an app password). */
+export interface CalendarCredentials { url:string; username:string; password:string }
+
+/** Calendar access that mail providers without their own calendar API delegate to (CalDAV). */
+export interface CalendarBackend {
+  /** Resolves when the server accepts the login; rejects with a ProviderError otherwise. */
+  verify(credentials:CalendarCredentials):Promise<void>;
+  listCalendars(credentials:CalendarCredentials, account:Account):Promise<CalendarInfo[]>;
+  /** Events from 30 days ago to one year ahead across all calendars, recurring events expanded. */
+  listEvents(credentials:CalendarCredentials, account:Account):Promise<CalendarEvent[]>;
+  saveEvent(credentials:CalendarCredentials, account:Account, event:CalendarEvent):Promise<CalendarEvent>;
+  deleteEvent(credentials:CalendarCredentials, account:Account, event:CalendarEvent):Promise<void>;
+}
+
 /** A small per-account key-value store that providers use for their own indexes (IMAP UIDs, delta links). */
 export interface ProviderMemory {
   get(accountId:string, key:string):string|undefined;
