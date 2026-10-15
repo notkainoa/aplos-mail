@@ -8,8 +8,15 @@ export function useVoice(deviceId:string,onText:(text:string)=>void|Promise<void
   const recorder=useRef<MediaRecorder|null>(null);const stream=useRef<MediaStream|null>(null);
   const timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);const requestId=useRef<string|undefined>(undefined);
   const callbacks=useRef({onText,onError});callbacks.current={onText,onError};
+  const analyser=useRef<AnalyserNode|null>(null);const audio=useRef<AudioContext|null>(null);
   function update(next:Phase){status.current=next;if(mounted.current)setPhase(next);}
-  function release(){clearTimeout(timer.current);timer.current=undefined;stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;recorder.current=null;}
+  function release(){clearTimeout(timer.current);timer.current=undefined;stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;recorder.current=null;void audio.current?.close().catch(()=>{});audio.current=null;analyser.current=null;}
+  function level(){
+    const node=analyser.current;if(!node)return 0;
+    const data=new Uint8Array(node.fftSize);node.getByteTimeDomainData(data);
+    let sum=0;for(const value of data){const x=(value-128)/128;sum+=x*x;}
+    return Math.min(1,Math.sqrt(sum/data.length)*5);
+  }
   function cancel(){
     generation.current++;
     if(requestId.current)void invoke('ai.cancel',{requestId:requestId.current}).catch(()=>{});
@@ -33,6 +40,7 @@ export function useVoice(deviceId:string,onText:(text:string)=>void|Promise<void
       // Permission prompts may finish after a key release, cancellation or window close.
       if(!active()){localStream.getTracks().forEach(track=>track.stop());return;}
       stream.current=localStream;
+      try{const context=new AudioContext();const node=context.createAnalyser();node.fftSize=256;context.createMediaStreamSource(localStream).connect(node);audio.current=context;analyser.current=node;}catch{/* the level meter is optional */}
       const preferred=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(type=>MediaRecorder.isTypeSupported(type));
       const recording=new MediaRecorder(localStream,preferred?{mimeType:preferred}:undefined);recorder.current=recording;
       const parts:BlobPart[]=[];let size=0;
@@ -60,5 +68,5 @@ export function useVoice(deviceId:string,onText:(text:string)=>void|Promise<void
     }
   }
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;cancel();};},[]);
-  return {recording:phase==='recording',busy:phase==='starting'||phase==='transcribing',preparing:phase==='starting',start,stop,cancel,isActive:()=>status.current!=='idle',toggle:()=>status.current==='recording'?stop():start()};
+  return {recording:phase==='recording',busy:phase==='starting'||phase==='transcribing',preparing:phase==='starting',start,stop,cancel,isActive:()=>status.current!=='idle',level,toggle:()=>status.current==='recording'?stop():start()};
 }

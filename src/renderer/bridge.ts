@@ -22,4 +22,12 @@ export function dateLabel(date:string,withTime=false){const d=new Date(date);if(
 export function dueLabel(value?:string){if(!value)return 'No due date';const date=new Date(value.slice(0,10)+'T12:00:00');const today=new Date();today.setHours(12,0,0,0);const days=Math.round((+date-+today)/86400000);return days===0?'Due today':days===1?'Due tomorrow':days<0?'Overdue · '+date.toLocaleDateString([],{month:'short',day:'numeric'}):'Due '+date.toLocaleDateString([],{month:'short',day:'numeric'});}
 export async function fileToAttachment(file:File){const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(new Error('Could not read '+file.name));r.readAsDataURL(file);});return {id:uid(),name:file.name,type:file.type||'application/octet-stream',size:file.size,data};}
 export async function saveFile(name:string,data:string,open=false){if(window.aplos)return invoke(open?'file.open':'file.save',{name,data});const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes]));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+export function replyRecipients(thread:import('../shared/types').Thread,accountEmail:string,mode:'reply'|'reply-all'){
+  const last=thread.messages.at(-1);if(!last)return {to:'',cc:''};
+  const self=accountEmail.toLowerCase();
+  const to=last.from.toLowerCase()===self?(last.to[0]||''):last.from;
+  const cc=mode==='reply-all'?[...new Set([...last.to,...last.cc??[]])].filter(e=>e.toLowerCase()!==self&&e!==to).join(', '):'';
+  return {to,cc};
+}
+export function isoDay(offset=0){const d=new Date();d.setDate(d.getDate()+offset);return d.toISOString().slice(0,10);}
 export async function openUrl(url:string){if(window.aplos)return invoke('shell.open',{url});if(!/^https?:|^mailto:/i.test(url))throw new Error('Unsupported link');window.open(url,'_blank','noopener,noreferrer');}
