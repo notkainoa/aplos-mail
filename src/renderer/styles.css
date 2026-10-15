@@ -212,19 +212,26 @@
 .mail-row {
   position: relative;
   height: var(--row-height);
+  margin: 0 4px;
+  border-radius: 8px;
+  touch-action: pan-y;
+}
+/* The row is a track; its body holds the content and is what slides when the row is dragged sideways. */
+.row-body {
+  position: relative;
+  height: 100%;
   display: flex;
   align-items: center;
   gap: 16px;
   padding: 0 16px;
-  margin: 0 4px;
-  border-radius: 8px;
+  border-radius: inherit;
 }
 .mail-row { transition: background-color .06s linear; }
 .mail-row:hover, .mail-row.checked, .mail-row.is-cursor { background: var(--row-hover); }
 .mail-row.active { background: var(--row-active); }
 /* Keeps a keyboard-moved row clear of the floating toolbar when it scrolls into view. */
 .mail-row { scroll-margin: calc(var(--toolbar-height) + 8px) 0 16px; }
-.mail-row.is-cursor:not(.active)::after { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--blue); }
+.mail-row.is-cursor:not(.active) > .row-body::after { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--blue); }
 .row-leading { position: relative; width: 28px; height: 28px; flex: none; }
 .row-leading > .ui-avatar { transition: opacity var(--dur-fast) var(--ease), transform var(--dur-base) var(--ease); }
 .row-checkbox { position: absolute; inset: 0; justify-content: center; border-radius: 50%; background: var(--raised); opacity: 0; transform: scale(.7); transition: opacity var(--dur-fast) var(--ease), transform var(--dur-base) var(--ease-spring); }
@@ -270,6 +277,31 @@
 .row-action.on { color: var(--blue); }
 .row-action.more { width: 28px; padding: 0; justify-content: center; }
 .mail-row:hover .row-time { visibility: hidden; }
+
+/* ---------- Swipe to triage ---------- */
+
+.mail-row[data-swipe-state] { overflow: hidden; }
+.mail-row[data-swipe-state] > .row-body {
+  transform: translateX(var(--swipe-x, 0px));
+  background: linear-gradient(var(--row-hover), var(--row-hover)), var(--card);
+  box-shadow: 0 0 0 .5px color-mix(in srgb, var(--ink) 8%, transparent), 0 2px 10px color-mix(in srgb, #000 8%, transparent);
+}
+.mail-row.active[data-swipe-state] > .row-body { background: linear-gradient(var(--row-active), var(--row-active)), var(--card); }
+.mail-row[data-swipe-state="settle"] > .row-body { transition: transform 220ms var(--ease-out-strong); }
+.mail-row[data-swipe-state="fling"] > .row-body { transition: transform 170ms var(--ease-in); }
+.mail-row[data-swipe-state] .row-actions { opacity: 0; pointer-events: none; }
+.mail-row[data-swipe-state] .row-time { visibility: visible; }
+.mail-row[data-swipe-state="drag"], .mail-row[data-swipe-state="drag"] * { cursor: grabbing; }
+:is(.mail-row, .reader-card)[data-swipe-action="done"] { --swipe-color: var(--green); }
+:is(.mail-row, .reader-card)[data-swipe-action="later"] { --swipe-color: var(--blue); }
+.swipe-reveal { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 22px; border-radius: inherit; background: var(--card); color: var(--swipe-color); font-weight: 600; }
+.swipe-reveal::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--swipe-color); opacity: calc(.1 + var(--swipe-p, 0) * .16); transition: opacity 120ms var(--ease); }
+.mail-row[data-armed] .swipe-reveal { color: #fff; }
+.mail-row[data-armed] .swipe-reveal::before { opacity: 1; }
+.mail-row[data-swipe="left"] .swipe-reveal { justify-content: flex-end; }
+.swipe-action { position: relative; display: none; align-items: center; gap: 7px; transform: scale(calc(.82 + var(--swipe-p, 0) * .18)); transition: transform 160ms var(--ease-spring); }
+.mail-row[data-swipe="right"] .swipe-action[data-for="right"], .mail-row[data-swipe="left"] .swipe-action[data-for="left"] { display: inline-flex; }
+.mail-row[data-armed] .swipe-action { transform: scale(1.06); }
 .low-bundle {
   width: 100%;
   display: flex;
@@ -339,7 +371,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 /* Split view keeps a narrow list beside the reader. */
 .split-layout .mail-content { flex: 0 0 360px; max-width: 360px; min-width: 300px; padding-right: 0; }
 .split-layout .mail-content > * { max-width: none; }
-.split-layout .mail-row { gap: 12px; padding: 0 12px; }
+.split-layout .row-body { gap: 12px; padding: 0 12px; }
 .split-layout .sender { max-width: 55%; }
 .split-layout .row-first .subject { display: none; }
 .split-layout .row-first .row-separator { display: none; }
@@ -393,15 +425,45 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .fling > .reader { flex: 1; }
 .ghost .stack-heading, .ghost .reader-dock { visibility: hidden; }
 .fling .reader-card::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; animation: fade .08s ease-out; }
-.fling-done .reader-card { animation: fling-right .24s var(--ease-in) forwards; }
+.fling-to-right .reader-card { animation: fling-right .24s var(--ease-in) forwards; }
+.fling-to-left .reader-card { animation: fling-left .22s var(--ease-in) forwards; }
+.fling-to-down .reader-card { animation: fling-down .2s var(--ease-in) forwards; }
 .fling-done .reader-card::after { background: color-mix(in srgb, var(--green) 22%, transparent); }
-.fling-later .reader-card { animation: fling-left .2s var(--ease-in) forwards; }
-.fling-later .reader-card::after { background: color-mix(in srgb, var(--ink) 12%, transparent); }
-.fling-trash .reader-card, .fling-spam .reader-card { animation: fling-down .2s var(--ease-in) forwards; }
+.fling-later .reader-card::after { background: color-mix(in srgb, var(--blue) 16%, transparent); }
 .fling-trash .reader-card::after, .fling-spam .reader-card::after { background: color-mix(in srgb, var(--red) 14%, transparent); }
-@keyframes fling-right { to { transform: perspective(1400px) translateX(75%) rotateY(-14deg) rotate(4deg); opacity: 0; } }
-@keyframes fling-left { to { transform: perspective(1400px) translateX(-75%) rotateY(14deg) rotate(-4deg); opacity: 0; } }
+/* A dragged card is already moving, so it keeps its speed instead of easing in from rest. */
+.fling.is-dragged .reader-card { transform-origin: 50% 120%; animation-duration: .2s; animation-timing-function: var(--ease-out-strong); }
+.fling.is-dragged .reader-card::after { animation: none; }
+@keyframes fling-right {
+  from { transform: perspective(1400px) translateX(var(--from-x, 0px)) rotateY(0deg) rotate(var(--from-r, 0deg)); }
+  to { transform: perspective(1400px) translateX(calc(var(--from-x, 0px) + 75%)) rotateY(-14deg) rotate(calc(var(--from-r, 0deg) + 4deg)); opacity: 0; }
+}
+@keyframes fling-left {
+  from { transform: perspective(1400px) translateX(var(--from-x, 0px)) rotateY(0deg) rotate(var(--from-r, 0deg)); }
+  to { transform: perspective(1400px) translateX(calc(var(--from-x, 0px) - 75%)) rotateY(14deg) rotate(calc(var(--from-r, 0deg) - 4deg)); opacity: 0; }
+}
 @keyframes fling-down { to { transform: translateY(48px) scale(.94); opacity: 0; } }
+
+/* Dragging the open card. The reader clips it like the fling layer does, so releasing hands over without a jump. */
+.stack-reader { overflow-x: clip; }
+.reader-card { touch-action: pan-y; }
+.reader-card[data-swipe-state] { transform: translateX(var(--swipe-x, 0px)) rotate(calc(var(--swipe-f, 0) * 6deg)); transform-origin: 50% 120%; z-index: 1; box-shadow: var(--card-edge), 0 12px 40px color-mix(in srgb, #000 calc(var(--swipe-p, 0) * 14%), transparent); }
+.reader-card[data-swipe-state="settle"] { transition: transform 260ms var(--ease-out-strong), box-shadow 260ms var(--ease-out-strong); }
+.reader-card[data-swipe-state="fling"] { transition: transform 170ms var(--ease-in); }
+.reader-card[data-swipe-state="drag"], .reader-card[data-swipe-state="drag"] * { cursor: grabbing; user-select: none; }
+.reader-card[data-swipe]::after { content: ""; position: absolute; inset: 0; z-index: 2; border-radius: inherit; pointer-events: none; background: var(--swipe-color); opacity: calc(var(--swipe-p, 0) * .08); transition: opacity 120ms var(--ease); }
+.reader-card[data-armed]::after { opacity: .14; }
+.card-swipe { position: absolute; top: 72px; left: 24px; right: 24px; z-index: 3; display: flex; pointer-events: none; }
+.card-swipe > span { display: none; align-items: center; gap: 7px; height: 36px; padding: 0 16px 0 13px; border-radius: 18px; background: var(--card); color: var(--swipe-color); box-shadow: var(--glass); font-weight: 600; opacity: min(1, calc(var(--swipe-p, 0) * 1.6 - .1)); transform: scale(calc(.86 + var(--swipe-p, 0) * .14)); transition: transform 160ms var(--ease-spring), background-color 120ms var(--ease), color 120ms var(--ease); }
+/* The badge sits on the trailing edge, the side the card is moving away from. */
+.reader-card[data-swipe="right"] .card-swipe > [data-for="right"] { display: inline-flex; }
+.reader-card[data-swipe="left"] .card-swipe { justify-content: flex-end; }
+.reader-card[data-swipe="left"] .card-swipe > [data-for="left"] { display: inline-flex; }
+.reader-card[data-armed] .card-swipe > span { background: var(--swipe-color); color: #fff; transform: scale(1.06); }
+.stack-reader:has(.reader-card[data-armed][data-swipe-action="done"]) .dock-pill.done,
+.stack-reader:has(.reader-card[data-armed][data-swipe-action="later"]) .dock-pill.later { transform: scale(1.06); background: var(--raised); box-shadow: var(--glass), 0 0 0 2px color-mix(in srgb, var(--swipe-color, var(--green)) 60%, transparent); }
+.stack-reader:has(.reader-card[data-armed][data-swipe-action="later"]) .dock-pill.later { --swipe-color: var(--blue); }
+.dock-pill { transition: transform 160ms var(--ease-spring), box-shadow 160ms var(--ease); }
 .reader-header {
   display: flex;
   align-items: flex-start;
@@ -950,6 +1012,9 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 @keyframes row-out-right { 55% { transform: translateX(24%); opacity: 0; height: var(--row-height); } to { transform: translateX(24%); opacity: 0; height: 0; } }
 @keyframes row-out-left { 55% { transform: translateX(-24%); opacity: 0; height: var(--row-height); } to { transform: translateX(-24%); opacity: 0; height: 0; } }
 @keyframes row-out-down { 55% { transform: scale(.97); opacity: 0; height: var(--row-height); } to { transform: scale(.97); opacity: 0; height: 0; } }
+/* A row dragged past the threshold has already left sideways; the action color stays while the gap closes. */
+.mail-row[data-swipe-state="fling"].row-exit { animation: row-out-swiped 220ms var(--ease-in-out) forwards; }
+@keyframes row-out-swiped { 0%, 45% { height: var(--row-height); } to { height: 0; opacity: 0; } }
 :is(.mail-row, .draft-row).row-enter { overflow: hidden; animation: row-in 220ms var(--ease-out-strong); }
 /* The gap opens in the first part only; the rest is a fade, which skips layout and repaint of the rows below. */
 @keyframes row-in { from { height: 0; opacity: 0; } 45% { height: var(--row-height); opacity: 0; } }

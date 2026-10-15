@@ -4,7 +4,7 @@ import type {AppState,CalendarEvent,Capabilities,Draft,Settings as Preferences,T
 import {bridge,escapeHtml,invoke,isoDay,replyRecipients,uid} from './bridge';
 import {Compose,addressOf,validAddress,type Contact} from './Compose';
 import {Ask} from './Ask';
-import {Reader} from './Reader';
+import {Reader,type CardDrag} from './Reader';
 import {Calendar,EventEditor} from './Calendar';
 import {Settings} from './Settings';
 import {Sidebar,sections} from './components/Sidebar';
@@ -59,7 +59,7 @@ export function App(){
  const [eventEditor,setEventEditor]=useState<Partial<CalendarEvent>|null>(null);
  const [online,setOnline]=useState(navigator.onLine);
  const [busy,setBusy]=useState('');const [welcomeError,setWelcomeError]=useState('');
- const [leaving,setLeaving]=useState<{thread:Thread;status:Triage;key:number}>();
+ const [leaving,setLeaving]=useState<{thread:Thread;status:Triage;key:number;to:string;drag?:CardDrag}>();
  const [entering,setEntering]=useState<{id:string;from:string}>();
  const [duePrompt,setDuePrompt]=useState<{id:string;key:number}>();
  const rowMenu=useMenu();const [menuThread,setMenuThread]=useState<Thread>();
@@ -178,7 +178,7 @@ export function App(){
   selectAnchor.current=thread.id;
  }
  function exitDirection(status:Triage){const doneLeft=state?.settings.triageDirection==='done-left';return status==='done'?(doneLeft?'left':'right'):status==='later'?(doneLeft?'right':'left'):'down';}
- function triage(thread:Thread,status:Triage){
+ function triage(thread:Thread,status:Triage,drag?:CardDrag){
   const current=thread.id===selectedThread?.id;const stack=state?.settings.openMode==='stack';
   hintExit(thread.id,exitDirection(status));
   // The stack dock has its own undo button, so the toast would only cover it.
@@ -190,7 +190,7 @@ export function App(){
   const following=at>=0?order[at+1]||order[at-1]:order.find(t=>t.date<=thread.date)||order.at(-1);
   if(lastHovered.current===thread.id)lastHovered.current=following?.id??null;
   if(!current){if(cursor.id===thread.id)setCursor(c=>({...c,id:following?.id}));return;}
-  if(stack&&!reducedMotion())setLeaving({thread,status,key:Date.now()});
+  if(stack&&!reducedMotion())setLeaving({thread,status,key:Date.now(),to:exitDirection(status),drag});
   if(following&&following.id!==thread.id)setRoute(r=>({...r,threadId:following.id}));else setRoute(r=>({...r,threadId:undefined}));
   if(following?.unread)void invoke('thread.update',{ids:[following.id],patch:{unread:false},recordUndo:false}).catch(()=>{});
  }
@@ -311,10 +311,10 @@ export function App(){
  const heading={title:searchMode?'Search':titles[route.view],count:filtered.length};
  const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
  const readerProps={settings:prefs,editEvent:setEventEditor,notify,undo:()=>void undo(),talk,heading};
- const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={status=>triage(selectedThread,status)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} entering={entering?.id===selectedThread.id?entering.from:undefined}/>;
- const ghost=leaving&&prefs.openMode==='stack'&&<div key={leaving.key} className={'fling fling-'+leaving.status} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
+ const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={(status,drag)=>triage(selectedThread,status,drag)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} entering={entering?.id===selectedThread.id?entering.from:undefined}/>;
+ const ghost=leaving&&prefs.openMode==='stack'&&<div key={leaving.key} className={cx('fling','fling-'+leaving.status,'fling-to-'+leaving.to,leaving.drag&&'is-dragged')} style={leaving.drag&&{'--from-x':leaving.drag.x+'px','--from-r':(leaving.drag.x/leaving.drag.width*6).toFixed(2)+'deg'} as React.CSSProperties} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
  const doneLeft=prefs.triageDirection==='done-left';
- const rows:RowHandlers={activeId:route.threadId,cursorId:cursor.shown?cursor.id:undefined,selected,doneLeft,highlight,actions:rowActions};
+ const rows:RowHandlers={activeId:route.threadId,cursorId:cursor.shown?cursor.id:undefined,selected,doneLeft,highlight,swipe:prefs.swipe,actions:rowActions};
  const group=(title:string,threads:Thread[],action?:React.ReactNode,showCount=true)=><MailSection key={title} title={title} threads={threads} action={action} showCount={showCount} rows={rows}/>;
  const titled=(title:string,body:React.ReactNode)=><section className="mail-section"><header><h2>{title}</h2></header>{body}</section>;
  const emptyFor=(view:View)=>{const spec=searchMode?{icon:Search,title:'No matches yet',detail:'Try fewer words, or a sender’s name.'}:empties[view]??{title:'Nothing here'};return <EmptyState icon={spec.icon} title={spec.title} detail={spec.detail}/>;};

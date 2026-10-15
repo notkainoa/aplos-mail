@@ -8,4 +8,5 @@ export {Tabs,type TabItem} from './Tabs';
 export {Toaster,toast,type ToastSpec} from './Toast';
 export {Switch,Checkbox,Select,Field} from './Controls';
 export {Avatar,Badge,Count,Skeleton,EmptyState,Group,GroupRow,Notice,type Tone} from './Display';
+export {useSwipe,type SwipeSide} from './useSwipe';
 export {cx,duration,reducedMotion,usePresence,useLatest,useListPresence,useHandlers,hintExit} from './motion';

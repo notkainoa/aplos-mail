@@ -4,7 +4,7 @@ export const cx=(...parts:(string|false|null|undefined|0)[])=>parts.filter(Boole
 export const reducedMotion=()=>typeof matchMedia!=='undefined'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Durations in ms; keep in sync with the --dur-* tokens in ui.css. */
-export const duration={instant:60,fast:120,base:180,slow:260};
+export const duration={instant:60,fast:120,base:160,slow:200};
 
 /**
  * Keeps an element mounted for `exitMs` after `open` turns false so CSS can play an exit.

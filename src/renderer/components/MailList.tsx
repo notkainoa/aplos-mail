@@ -1,8 +1,8 @@
-import {memo,useRef} from 'react';
+import {memo,useRef,useState} from 'react';
 import {Bookmark,Check,Clock,FileText,MoreHorizontal,Paperclip,RotateCcw,Trash2} from '../icons';
 import type {Draft,Thread} from '../../shared/types';
 import {dateLabel,dueLabel,plain} from '../bridge';
-import {Avatar,Badge,Checkbox,Count,IconButton,Keys,Tooltip,cx,useListPresence} from '../ui';
+import {Avatar,Badge,Checkbox,Count,IconButton,Keys,Tooltip,cx,useListPresence,useSwipe,type SwipeSide} from '../ui';
 import {ymd} from '../calendarTime';
 
 export type Triage='done'|'later'|'trash'|'spam';
@@ -24,6 +24,8 @@ export type RowHandlers={
   highlight?:Terms;
   selected:Set<string>;
   doneLeft:boolean;
+  /** Rows can be dragged or swiped sideways to triage. */
+  swipe:boolean;
   actions:RowActions;
 };
 
@@ -51,12 +53,12 @@ export function MailSection({title,threads,action,showCount=true,rows}:{title:st
   return <section className="mail-section">
     <header><h2>{title}{showCount&&threads.length>0&&<Count value={threads.length} className="section-count"/>}</h2>{action}</header>
     <div className="mail-group">{items.map(({item,phase,direction})=><MailRow key={item.id} thread={item} actions={rows.actions} phase={phase} direction={direction}
-      active={rows.activeId===item.id} cursor={rows.cursorId===item.id} selected={rows.selected.has(item.id)} selecting={rows.selected.size>0} doneLeft={rows.doneLeft} highlight={rows.highlight}/>)}</div>
+      active={rows.activeId===item.id} cursor={rows.cursorId===item.id} selected={rows.selected.has(item.id)} selecting={rows.selected.size>0} doneLeft={rows.doneLeft} swipe={rows.swipe} highlight={rows.highlight}/>)}</div>
   </section>;
 }
 
-type RowProps={thread:Thread;actions:RowActions;phase?:'enter'|'exit';direction?:string;active:boolean;cursor:boolean;selected:boolean;selecting:boolean;doneLeft:boolean;highlight?:Terms};
-const MailRow=memo(function MailRow({thread:t,actions,phase,direction,active,cursor,selected,selecting,doneLeft,highlight:hl}:RowProps){
+type RowProps={thread:Thread;actions:RowActions;phase?:'enter'|'exit';direction?:string;active:boolean;cursor:boolean;selected:boolean;selecting:boolean;doneLeft:boolean;swipe:boolean;highlight?:Terms};
+const MailRow=memo(function MailRow({thread:t,actions,phase,direction,active,cursor,selected,selecting,doneLeft,swipe,highlight:hl}:RowProps){
   const m=t.messages.at(-1)!;
   const sent=m.sent?m:undefined;
   const recipient=sent?.to[0]?.replace(/^\s*"?([^"<]+?)"?\s*<.*$/,'$1');
@@ -66,10 +68,17 @@ const MailRow=memo(function MailRow({thread:t,actions,phase,direction,active,cur
   const overdue=!!due&&due<today;
   const exiting=phase==='exit';
   const shift=useRef(false);const rows=actions;
+  const restorable=t.status==='trash'||t.status==='spam';
+  const rowRef=useRef<HTMLDivElement>(null);const [swiping,setSwiping]=useState(false);
+  const actionFor=(side:SwipeSide):'done'|'later'=>(side==='right')!==doneLeft?'done':'later';
+  const gesture=useSwipe({enabled:swipe&&!restorable&&!selecting&&!exiting,host:rowRef,actionFor,onActive:setSwiping,
+    canStart:target=>!target.closest('.row-actions'),onCommit:side=>rows.triage(t,actionFor(side))});
   const todo=<Tooltip key="todo" content="Todo" shortcut={doneLeft?'→':'←'}><button className="row-action" aria-label={'Move '+t.subject+' to Todo'} onClick={()=>rows.triage(t,'later')}><Clock size={15}/><Keys combo={doneLeft?'→':'←'} size="sm"/></button></Tooltip>;
   const done=<Tooltip key="done" content="Done" shortcut={doneLeft?'←':'→'}><button className="row-action done" aria-label={'Mark '+t.subject+' done'} onClick={()=>rows.triage(t,'done')}><Check size={15}/><Keys combo={doneLeft?'←':'→'} size="sm"/></button></Tooltip>;
-  return <div data-thread-id={t.id} className={cx('mail-row',t.unread&&'unread',active&&'active',cursor&&'is-cursor',selected&&'checked',selecting&&'selecting',phase&&'row-'+phase,exiting&&'row-exit-'+direction)} inert={exiting||undefined}
-    onMouseMove={e=>{if(e.movementX||e.movementY)rows.hover(t,true);}} onMouseLeave={()=>rows.hover(t,false)}>
+  return <div ref={rowRef} data-thread-id={t.id} className={cx('mail-row',t.unread&&'unread',active&&'active',cursor&&'is-cursor',selected&&'checked',selecting&&'selecting',phase&&'row-'+phase,exiting&&'row-exit-'+direction)} inert={exiting||undefined}
+    onMouseMove={e=>{if(e.movementX||e.movementY)rows.hover(t,true);}} onMouseLeave={()=>rows.hover(t,false)} {...gesture}>
+    {swiping&&<SwipeReveal actionFor={actionFor}/>}
+    <div className="row-body">
     <div className="row-leading" onClickCapture={e=>{shift.current=e.shiftKey;}}>
       <Avatar name={recipient||m.fromName||m.from} seed={recipient||m.fromName||m.from}/>
       <Checkbox className="row-checkbox" checked={selected} hideLabel label={'Select '+t.subject} onChange={()=>rows.select(t,shift.current?'range':'toggle')}/>
@@ -91,13 +100,20 @@ const MailRow=memo(function MailRow({thread:t,actions,phase,direction,active,cur
       </span>
     </button>
     <div className="row-actions">
-      {t.status==='trash'||t.status==='spam'?<Tooltip content="Restore to Home"><button className="row-action restore" aria-label={'Restore '+t.subject+' to Home'} onClick={()=>rows.restore(t)}><RotateCcw size={14}/><span>Restore</span></button></Tooltip>:<>
+      {restorable?<Tooltip content="Restore to Home"><button className="row-action restore" aria-label={'Restore '+t.subject+' to Home'} onClick={()=>rows.restore(t)}><RotateCcw size={14}/><span>Restore</span></button></Tooltip>:<>
       <Tooltip content={t.bookmarked?'Remove bookmark':'Bookmark'} shortcut="B"><button className={cx('row-action',t.bookmarked&&'on')} aria-label={(t.bookmarked?'Remove bookmark from ':'Bookmark ')+t.subject} aria-pressed={t.bookmarked} onClick={()=>rows.bookmark(t)}><Bookmark key={String(t.bookmarked)} className={t.bookmarked?'pop':undefined} size={15} fill={t.bookmarked?'currentColor':'none'}/><Keys combo="B" size="sm"/></button></Tooltip>
       {doneLeft?[done,todo]:[todo,done]}</>}
       <IconButton className="row-action more" label={'More actions for '+t.subject} tooltip={false} icon={MoreHorizontal} onClick={e=>rows.more(t,e.currentTarget)}/>
     </div>
+    </div>
   </div>;
 });
+
+/** What a sideways drag will do, shown under the row on the side it uncovers. */
+function SwipeReveal({actionFor}:{actionFor:(side:SwipeSide)=>'done'|'later'}){
+  return <div className="swipe-reveal" aria-hidden="true">{(['right','left'] as const).map(side=>{const action=actionFor(side);return <span key={side} className="swipe-action" data-for={side}>
+    {action==='done'?<Check size={17}/>:<Clock size={17}/>}<span>{action==='done'?'Done':'Todo'}</span></span>;})}</div>;
+}
 
 function draftRecipients(to:string){
   const list=(to.match(/(?:"[^"]*"|[^,;])+/g)||[]).map(s=>s.trim()).filter(Boolean);

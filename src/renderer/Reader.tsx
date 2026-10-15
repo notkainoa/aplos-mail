@@ -3,10 +3,13 @@ import {Ban,Bell,Bookmark,CalendarDays,Check,ChevronDown,ChevronUp,Clock,Downloa
 import type {Attachment,CalendarEvent,Settings,Thread} from '../shared/types';
 import {dateLabel,dueLabel,invoke,openUrl,saveFile} from './bridge';
 import {inlineAttachments,prepareMessageBody} from './mailBody';
-import {Avatar,Button,Dialog,DialogClose,IconButton,Keys,Menu,Notice,Spinner,Tooltip,confirmAction,cx,useMenu,type MenuGroups} from './ui';
+import {Avatar,Button,Dialog,DialogClose,IconButton,Keys,Menu,Notice,Spinner,Tooltip,confirmAction,cx,useMenu,useSwipe,type MenuGroups,type SwipeSide} from './ui';
 type Triage='done'|'later'|'trash'|'spam';
-export function Reader({thread,settings,index,total,back,patch,triage,reply,editEvent,notify,undo,heading,replySlot,ghost,entering,talk}:{thread:Thread;settings:Settings;index:number;total:number;back:()=>void;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;triage:(status:Triage)=>void;reply:(mode:'reply'|'reply-all'|'forward')=>void;editEvent:(event:Partial<CalendarEvent>)=>void;notify:(text:string)=>void;undo:()=>void;standalone?:boolean;heading?:{title:string;count:number};replySlot?:React.ReactNode;ghost?:boolean;entering?:string;talk:(phase:'start'|'release')=>void}){
- const menu=useMenu();const importance=useMenu();const [dates,setDates]=useState(false);const [find,setFind]=useState(false);const [query,setQuery]=useState('');const [busy,setBusy]=useState('');const [preview,setPreview]=useState<Attachment|undefined>();const [error,setError]=useState('');const [remote,setRemote]=useState(settings.remoteImages);const [expanded,setExpanded]=useState<Set<string>>(new Set([thread.messages.at(-1)?.id??'']));const [quotes,setQuotes]=useState<Set<string>>(new Set());const wheel=useRef({sum:0,time:0});const [extracted,setExtracted]=useState<Partial<CalendarEvent>[]|null>(null);
+export type CardDrag={x:number;width:number};
+// Dragging with a mouse would otherwise steal text selection in the message itself; it starts from the card's chrome instead.
+const selectableText='.email-body,.quoted-content,h1,.summary-card p,.thread-todo > span,.extracted-events,.find-bar,.reminder-controls';
+export function Reader({thread,settings,index,total,back,patch,triage,reply,editEvent,notify,undo,heading,replySlot,ghost,entering,talk}:{thread:Thread;settings:Settings;index:number;total:number;back:()=>void;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;triage:(status:Triage,drag?:CardDrag)=>void;reply:(mode:'reply'|'reply-all'|'forward')=>void;editEvent:(event:Partial<CalendarEvent>)=>void;notify:(text:string)=>void;undo:()=>void;standalone?:boolean;heading?:{title:string;count:number};replySlot?:React.ReactNode;ghost?:boolean;entering?:string;talk:(phase:'start'|'release')=>void}){
+ const menu=useMenu();const importance=useMenu();const [dates,setDates]=useState(false);const [find,setFind]=useState(false);const [query,setQuery]=useState('');const [busy,setBusy]=useState('');const [preview,setPreview]=useState<Attachment|undefined>();const [error,setError]=useState('');const [remote,setRemote]=useState(settings.remoteImages);const [expanded,setExpanded]=useState<Set<string>>(new Set([thread.messages.at(-1)?.id??'']));const [quotes,setQuotes]=useState<Set<string>>(new Set());const [extracted,setExtracted]=useState<Partial<CalendarEvent>[]|null>(null);
  const [inlineFiles,setInlineFiles]=useState<Record<string,Attachment>>({});const inlineCache=useRef<Record<string,Attachment>>({});const inlinePending=useRef<Record<string,Promise<Attachment>>>({});const [inlineLoading,setInlineLoading]=useState(false);const [inlineError,setInlineError]=useState('');const [inlineRetry,setInlineRetry]=useState(0);
  const [shownPreview,setShownPreview]=useState<Attachment>();useEffect(()=>{if(preview)setShownPreview(preview);},[preview]);
  useEffect(()=>{setExpanded(new Set([thread.messages.at(-1)?.id??'']));setQuotes(new Set());menu.close();importance.close();setDates(false);setExtracted(null);setError('');setRemote(settings.remoteImages);setPreview(undefined);setQuery('');inlineCache.current={};inlinePending.current={};setInlineFiles({});setInlineError('');},[thread.id]);
@@ -36,7 +39,13 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const summarize=()=>void run('summary',()=>invoke('ai.summarize',{threadId:thread.id}));
  const dueInput=thread.dueDate?.slice(0,10)??'';
  const doneRight=settings.triageDirection!=='done-left';
- const laterPill=<Tooltip key="later" content="Todo" shortcut={'L'}><button className="dock-pill" aria-label="Move to Todo" onClick={()=>triage('later')}>{doneRight&&<Keys combo="←"/>}<Clock size={17}/><span>Todo</span>{!doneRight&&<Keys combo="→"/>}</button></Tooltip>;
+ const card=useRef<HTMLDivElement>(null);
+ const swipeAction=(side:SwipeSide)=>(side==='right')===doneRight?'done' as const:'later' as const;
+ const swipeable=settings.swipe&&!ghost&&!replySlot&&thread.status!=='trash'&&thread.status!=='spam';
+ const swipe=useSwipe({enabled:swipeable,host:card,actionFor:swipeAction,onCommit:(side,x,width)=>triage(swipeAction(side),{x,width}),
+  canStart:(target,pointer)=>pointer!=='mouse'||!target.closest(selectableText)});
+ const swipeBadge=(side:SwipeSide)=>{const done=swipeAction(side)==='done';return <span data-for={side}>{done?<Check size={17}/>:<Clock size={16}/>}{done?'Done':'Todo'}</span>;};
+ const laterPill=<Tooltip key="later" content="Todo" shortcut={'L'}><button className="dock-pill later" aria-label="Move to Todo" onClick={()=>triage('later')}>{doneRight&&<Keys combo="←"/>}<Clock size={17}/><span>Todo</span>{!doneRight&&<Keys combo="→"/>}</button></Tooltip>;
  const donePill=<Tooltip key="done" content="Done" shortcut={'E'}><button className="dock-pill done" aria-label="Mark Done" onClick={()=>triage('done')}>{!doneRight&&<Keys combo="←"/>}<Check size={18}/><span>Done</span>{doneRight&&<Keys combo="→"/>}</button></Tooltip>;
  const replyAll=settings.defaultReply==='reply-all';
  const menuGroups:MenuGroups=[
@@ -57,10 +66,11 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
   onPointerLeave={()=>{setHolding(false);const state=press.current;if(state&&!state.held){clearTimeout(state.timer);press.current=null;}}}
   onClick={()=>{const state=press.current;press.current=null;if(state?.held)return;reply(settings.defaultReply);}}>
   <span><Reply size={17}/>{replyAll?'Reply all':'Reply'}<Keys combo="Space" size="sm"/></span><small>Hold to talk</small></button></Tooltip>;
- return <section className={'reader '+(stack?'stack-reader':'split-reader')+(ghost?' ghost':'')} aria-label={ghost?undefined:'Email thread'} aria-hidden={ghost||undefined} inert={ghost||undefined} onWheel={e=>{if(!settings.swipe||Math.abs(e.deltaX)<Math.abs(e.deltaY)*2)return;const now=Date.now();if(now<wheel.current.time)return;if(now-wheel.current.time>500)wheel.current.sum=0;wheel.current.time=now;wheel.current.sum+=e.deltaX;if(Math.abs(wheel.current.sum)>180){const right=wheel.current.sum>0;wheel.current.sum=0;wheel.current.time=now+1500;triage(right===doneRight?'done':'later');}}}>
+ return <section className={'reader '+(stack?'stack-reader':'split-reader')+(ghost?' ghost':'')} aria-label={ghost?undefined:'Email thread'} aria-hidden={ghost||undefined} inert={ghost||undefined}>
  {stack&&heading&&<div className="stack-heading">{heading.title}<span>{total>1?`${index+1} of ${total}`:heading.count}</span>{total>1&&<span className="stack-keys"><Keys combo="K" size="sm"/><Keys combo="J" size="sm"/></span>}</div>}
  <div className={'deck'+(stack&&index<total-1&&!replySlot?' has-next':'')}>
- <div className={'reader-card'+(entering?' entering-'+entering:'')}>
+ <div ref={card} className={'reader-card'+(entering?' entering-'+entering:'')} {...swipe}>
+ {swipeable&&<div className="card-swipe" aria-hidden="true">{swipeBadge('right')}{swipeBadge('left')}</div>}
  <header className="reader-header"><h1>{thread.subject}</h1><div className="actions">
  <Button variant="ghost" className={cx('importance-button',importance.open&&'is-open')} aria-label="Importance" aria-haspopup="menu" iconRight={ChevronDown} onClick={importance.toggle}>{thread.importance==='important'?'Important':'Low importance'}</Button>
  <Menu open={importance.open} anchor={importance.anchor} onClose={importance.close} placement="bottom-end" label="Importance" className="importance-menu" groups={[(['important','low'] as const).map(level=>({label:level==='important'?'Important':'Low importance',hint:level==='important'?'Shown in Home':'Bundled out of the way',checked:thread.importance===level,onSelect:()=>{if(thread.importance!==level)void patch([thread.id],{importance:level},level==='low'?'Moved to Low importance':'Marked important');}}))]}/>
