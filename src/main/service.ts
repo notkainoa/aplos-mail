@@ -7,7 +7,7 @@ import { createGoogle } from './google';
 import { symbolRenderer } from './symbols';
 import { applySync } from '../engine/merge';
 import { createGate } from '../engine/gate';
-import { ftsQuery } from '../engine/store';
+import { ftsQuery, type OpChanges, type QueuedOp } from '../engine/store';
 
 type Groq = ReturnType<typeof createGroq>;
 type Google = Awaited<ReturnType<typeof createGoogle>>;
@@ -19,6 +19,11 @@ export interface ServiceOptions {
 }
 /** Sending addresses and calendars change rarely, so automatic syncs refresh them at most this often. */
 const EXTRAS_INTERVAL_MS=10*60_000;
+/** First retry delay for a queued change the host rejected or could not be reached for; doubles up to 15 minutes. */
+const OP_RETRY_MS=30_000,OP_RETRY_MAX_MS=15*60_000;
+const UNCONFIRMED='Sending was interrupted and Aplos could not confirm that Gmail received this message. Check Sent mail before sending it again.';
+const uncertain=(error:unknown)=>(error as {uncertain?:unknown})?.uncertain===true;
+const errorStatus=(error:unknown)=>(error as {status?:unknown})?.status;
 const clone = <T>(v:T):T => structuredClone(v);
 const text = (v:unknown,max=100_000):string => {
   if (typeof v!=='string' || v.length>max) throw new Error('Invalid text or text is too long.');
@@ -137,8 +142,20 @@ export async function createService(options:ServiceOptions) {
   let syncing:Promise<void>|undefined;
   let closed=false;
   const emit=(type:string,payload?:unknown)=>{for(const listener of listeners) {try{listener({type,payload:clone(payload)});}catch{/* A closed renderer must not interrupt persistence. */}}};
-  function commit(next:AppState) { store.write(next); state=next; emit('state',state); }
-  function change(fn:(next:AppState)=>void) {const next=clone(state);fn(next);commit(next);}
+  let queue:QueuedOp[]=store.ops();
+  function commit(next:AppState,ops?:OpChanges) {
+    let nextQueue=queue;
+    if(ops){
+      const removed=new Set(ops.remove??[]),put=new Map((ops.put??[]).map(op=>[op.id,op]));
+      nextQueue=[...queue.filter(op=>!removed.has(op.id)).map(op=>put.get(op.id)??op),...[...put.values()].filter(op=>!queue.some(old=>old.id===op.id))];
+    }
+    const pending=nextQueue.length||undefined;
+    if(next.sync.pending!==pending)next.sync={...next.sync,pending};
+    store.write(next,ops);state=next;queue=nextQueue;emit('state',state);
+  }
+  function change(fn:(next:AppState)=>void,ops?:OpChanges) {const next=clone(state);fn(next);commit(next,ops);}
+  /** Queue bookkeeping only touches `sync.pending`, so it skips the full-state clone. */
+  const changeQueue=(ops:OpChanges)=>commit({...state,sync:{...state.sync}},ops);
   function account(id:string):Account {const result=state.accounts.find(a=>a.id===id);if(!result)throw new Error('Account not found.');return clone(result);}
   function thread(id:string):Thread {const result=state.threads.find(t=>t.id===id);if(!result)throw new Error('Message not found.');return clone(result);}
   function draft(id:string):Draft {const result=state.drafts.find(d=>d.id===id);if(!result)throw new Error('Draft not found.');return clone(result);}
@@ -146,20 +163,85 @@ export async function createService(options:ServiceOptions) {
   function checkReminders() {
     const due=state.threads.filter(t=>t.status==='later'&&t.reminderAt&&!t.reminderFired&&Date.parse(t.reminderAt)<=now().getTime());
     if(!due.length)return;
-    change(s=>{for(const t of s.threads)if(due.some(d=>d.id===t.id)){t.status='new';t.hiddenFromHome=false;t.reminderFired=true;t.unread=true;if(t.labels&&!t.labels.includes('INBOX'))t.labels=[...t.labels,'INBOX'];}});
-    for(const t of due){
-      emit('reminder',{threadId:t.id,title:t.subject});
-      // The host must see the thread back in the inbox too, or the next sync would file it away again.
-      const a=state.accounts.find(x=>x.id===t.accountId),current=state.threads.find(x=>x.id===t.id);
-      if(a?.provider==='google'&&a.connected&&current?.gmailId){
-        const job=google.updateThread(a,current,{status:'new',unread:true,labels:current.labels??['INBOX']}).catch(()=>{emit('error',{message:`A reminder for "${t.subject}" returned it to Home, but Gmail could not be updated. Sync to retry.`});});
-        jobs.add(job);void job.finally(()=>jobs.delete(job));
-      }
-    }
+    // The host must see the thread back in the inbox too, or the next sync would file it away again.
+    const ops=due.map(t=>queued(t,{status:'new',unread:true,labels:t.labels&&!t.labels.includes('INBOX')?[...t.labels,'INBOX']:t.labels})).filter((op):op is QueuedOp=>!!op);
+    change(s=>{for(const t of s.threads)if(due.some(d=>d.id===t.id)){t.status='new';t.hiddenFromHome=false;t.reminderFired=true;t.unread=true;if(t.labels&&!t.labels.includes('INBOX'))t.labels=[...t.labels,'INBOX'];}},{put:ops});
+    for(const t of due)emit('reminder',{threadId:t.id,title:t.subject});
+    if(ops.length)kick();
   }
+  /** The provider change for a local thread edit, or nothing for local-only (demo) mail. */
+  function queued(t:Thread,patch:Partial<Thread>):QueuedOp|undefined {
+    const a=state.accounts.find(x=>x.id===t.accountId);
+    if(a?.provider!=='google'||!t.gmailId)return;
+    const at=now().toISOString();
+    return {id:randomUUID(),accountId:a.id,threadId:t.id,remoteId:t.gmailId,fromStatus:t.status,patch,createdAt:at,attempts:0,nextAt:at};
+  }
+  let flushing:Promise<void>|undefined;
+  /**
+   * Send queued changes in order. One account's failure holds back only that account's later changes,
+   * so a thread never receives an older change after a newer one.
+   */
+  function flush(force=false):Promise<void> {
+    if(flushing)return flushing;
+    const run=(async()=>{
+      for(let progressed=true;progressed&&!closed;){
+        progressed=false;
+        const held=new Set<string>();
+        for(const op of [...queue]){
+          if(closed)break;
+          if(held.has(op.accountId))continue;
+          const a=state.accounts.find(x=>x.id===op.accountId);
+          if(!a){changeQueue({remove:[op.id]});continue;}
+          if(!a.connected||(!force&&Date.parse(op.nextAt)>now().getTime())){held.add(op.accountId);continue;}
+          try{await google.updateThread(a,{gmailId:op.remoteId,status:op.fromStatus},op.patch);changeQueue({remove:[op.id]});progressed=true;}
+          catch(error){
+            // The thread is gone at the host; there is nothing left to change.
+            if(errorStatus(error)===404){changeQueue({remove:[op.id]});continue;}
+            const attempts=op.attempts+1,delay=Math.min(OP_RETRY_MAX_MS,OP_RETRY_MS*2**(attempts-1));
+            changeQueue({put:[{...op,attempts,nextAt:new Date(now().getTime()+delay).toISOString(),error:error instanceof Error?error.message:'The mail host could not be updated.'}]});
+            held.add(op.accountId);
+          }
+        }
+        force=false;
+      }
+    })();
+    flushing=run.finally(()=>{flushing=undefined;});
+    return flushing;
+  }
+  function kick() {const job=flush().catch(()=>{emit('error',{message:'Queued changes could not be saved. Check free space and folder permissions.'});});jobs.add(job);void job.finally(()=>jobs.delete(job));}
   function sendError(id:string,error:unknown) {
     const message=error instanceof Error?error.message:'Sending failed. Please try again.';
-    if(state.drafts.some(d=>d.id===id))change(s=>{const d=s.drafts.find(d=>d.id===id)!;delete d.pendingSendAt;d.sendError=message;});
+    if(state.drafts.some(d=>d.id===id))change(s=>{const d=s.drafts.find(d=>d.id===id)!;delete d.pendingSendAt;delete d.sendAttemptAt;d.sendError=message;});
+  }
+  async function confirmSent(a:Account,messageId:string|undefined) {
+    let found:{id:string;threadId:string}|undefined;
+    if(messageId)try{found=await google.findSent(a,messageId);}catch{/* Unknown is treated like not found: never resend blindly. */}
+    if(!found)throw new Error(UNCONFIRMED);
+    return found;
+  }
+  function finishSend(id:string,d:Draft,a:Account,sender:{email:string;name:string},remote?:{threadId?:string}) {
+    const sentAt=now().toISOString();
+    change(s=>{
+      s.drafts=s.drafts.filter(item=>item.id!==id);
+      const message={id:randomUUID(),from:sender.email,fromName:sender.name,to:addresses(d.to),cc:addresses(d.cc),date:sentAt,text:stripHTML(d.html),html:d.html,attachments:d.attachments,sent:true};
+      const existing=d.threadId?s.threads.find(t=>t.id===d.threadId):undefined;
+      if(existing){existing.messages.push(message);existing.date=sentAt;existing.replyStatus='awaiting-reply';existing.status='done';existing.unread=false;}
+      else s.threads.unshift({id:remote?.threadId?`${a.id}:${remote.threadId}`:randomUUID(),...(remote?.threadId?{gmailId:remote.threadId}:{}),accountId:a.id,subject:d.subject,summary:stripHTML(d.html).slice(0,240),messages:[message],date:sentAt,unread:false,status:'done',importance:'important',bookmarked:false,replyStatus:'awaiting-reply'});
+    });
+    emit('sent',{draftId:id,playSound:state.settings.sendSound});
+  }
+  /** A send that was in flight when Aplos stopped: settle it from Sent mail, never by sending again. */
+  async function recoverSend(id:string) {
+    if(sending.has(id))return;
+    sending.add(id);
+    try{
+      const d=draft(id),a=state.accounts.find(x=>x.id===d.accountId);
+      if(!a||a.provider!=='google')throw new Error(UNCONFIRMED);
+      const remote=await confirmSent(a,d.messageId);
+      let sender:{email:string;name:string};
+      try{sender=senderIdentity(d,a);}catch{sender={email:a.email,name:a.name};}
+      finishSend(id,{...d,html:outboundHTML(d,state.settings,a)},a,sender,remote);
+    }catch(error){sendError(id,error);}finally{sending.delete(id);}
   }
   async function deliver(id:string) {
     stopSend(id);
@@ -173,16 +255,14 @@ export async function createService(options:ServiceOptions) {
       if(!a.connected)throw new Error('Reconnect this account before sending.');
       const sender=senderIdentity(d,a);
       d.html=outboundHTML(d,state.settings,a);
-      const remote=a.provider==='google'?await google.send(a,d):undefined;
-      const sentAt=now().toISOString();
-      change(s=>{
-        s.drafts=s.drafts.filter(item=>item.id!==id);
-        const message={id:randomUUID(),from:sender.email,fromName:sender.name,to:addresses(d.to),cc:addresses(d.cc),date:sentAt,text:stripHTML(d.html),html:d.html,attachments:d.attachments,sent:true};
-        const existing=d.threadId?s.threads.find(t=>t.id===d.threadId):undefined;
-        if(existing){existing.messages.push(message);existing.date=sentAt;existing.replyStatus='awaiting-reply';existing.status='done';existing.unread=false;}
-        else s.threads.unshift({id:remote?.threadId?`${a.id}:${remote.threadId}`:randomUUID(),...(remote?.threadId?{gmailId:remote.threadId}:{}),accountId:a.id,subject:d.subject,summary:stripHTML(d.html).slice(0,240),messages:[message],date:sentAt,unread:false,status:'done',importance:'important',bookmarked:false,replyStatus:'awaiting-reply'});
-      });
-      emit('sent',{draftId:id,playSound:state.settings.sendSound});
+      let remote:{threadId?:string}|undefined;
+      if(a.provider==='google'){
+        // Recorded before the request leaves, so a crash mid-send is settled from Sent mail instead of retried.
+        change(s=>{s.drafts.find(item=>item.id===id)!.sendAttemptAt=now().toISOString();});
+        try{remote=await google.send(a,d);}
+        catch(error){if(!uncertain(error))throw error;remote=await confirmSent(a,d.messageId);}
+      }
+      finishSend(id,d,a,sender,remote);
     }catch(error){sendError(id,error);}finally{sending.delete(id);}
   }
   function scheduleSend(d:Draft) {
@@ -210,12 +290,12 @@ export async function createService(options:ServiceOptions) {
       if(patch.status==='new'){p.hiddenFromHome=false;if(t.labels&&!t.labels.includes('INBOX'))p.labels=[...t.labels,'INBOX'];}
       return {thread:t,patch:p};
     });
-    // Commit each successful provider mutation so a later account failure cannot hide it.
-    const completed:Thread[]=[];
-    try{
-      for(const update of updates){const a=account(update.thread.accountId);if(a.provider==='google')await google.updateThread(a,update.thread,update.patch);
-        change(s=>{const index=s.threads.findIndex(t=>t.id===update.thread.id);s.threads[index]={...s.threads[index],...update.patch};});completed.push(update.thread);}
-    }finally{if(recordUndo&&completed.length){undo.push(completed);if(undo.length>50)undo.shift();}}
+    for(const update of updates)account(update.thread.accountId);
+    // Local first, in one transaction with the queued provider changes; the host catches up through the queue.
+    const ops=updates.map(u=>queued(u.thread,u.patch)).filter((op):op is QueuedOp=>!!op);
+    change(s=>{for(const update of updates){const index=s.threads.findIndex(t=>t.id===update.thread.id);s.threads[index]={...s.threads[index],...update.patch};}},{put:ops});
+    if(recordUndo){undo.push(before);if(undo.length>50)undo.shift();}
+    if(ops.length)kick();
     return clone(state);
   }
   /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. */
@@ -279,7 +359,7 @@ export async function createService(options:ServiceOptions) {
     const since=Date.parse(state.sync.lastSync||now().toISOString());
     let outcome!:ReturnType<typeof applySync>;
     change(s=>{
-      outcome=applySync(s,a.id,result);
+      outcome=applySync(s,a.id,result,new Set(queue.filter(op=>op.accountId===a.id).map(op=>op.threadId)));
       if(events){s.events=s.events.filter(e=>e.accountId!==a.id||!e.googleId);for(const event of events)if(!s.events.some(e=>e.googleId===event.googleId&&e.accountId===event.accountId))s.events.push(event);}
       const acc=s.accounts.find(x=>x.id===a.id);if(acc){acc.sendAs=a.sendAs;if(a.error)acc.error=a.error;else delete acc.error;}
     });
@@ -297,6 +377,8 @@ export async function createService(options:ServiceOptions) {
   }
   async function sync(accountId?:string,manual=true):Promise<AppState> {
     if(syncing){await syncing.catch(()=>{});return clone(state);}
+    // Local changes go out before new state comes in, so the host already agrees with what the user did.
+    if(queue.length)await flush(manual).catch(()=>{});
     const accounts=(accountId?[account(accountId)]:clone(state.accounts)).filter(a=>a.provider==='google'&&a.connected&&gate.ready(a.id,manual));
     if(!manual&&!accounts.length)return clone(state);
     const job=(async()=>{
@@ -330,7 +412,7 @@ export async function createService(options:ServiceOptions) {
         if(a.provider==='google')await google.disconnect(a.id);
         store.setCursor(a.id,undefined);gate.forget(a.id);extrasAt.delete(a.id);
         for(const d of state.drafts.filter(d=>d.accountId===a.id))stopSend(d.id);
-        change(s=>{s.accounts=s.accounts.filter(x=>x.id!==a.id);s.threads=s.threads.filter(t=>t.accountId!==a.id);s.drafts=s.drafts.filter(d=>d.accountId!==a.id);s.events=s.events.filter(e=>e.accountId!==a.id);if(s.selectedAccountId===a.id)s.selectedAccountId='all';delete s.settings.accountNotifications[a.id];});undo.length=0;return clone(state);}
+        change(s=>{s.accounts=s.accounts.filter(x=>x.id!==a.id);s.threads=s.threads.filter(t=>t.accountId!==a.id);s.drafts=s.drafts.filter(d=>d.accountId!==a.id);s.events=s.events.filter(e=>e.accountId!==a.id);if(s.selectedAccountId===a.id)s.selectedAccountId='all';delete s.settings.accountNotifications[a.id];},{remove:queue.filter(op=>op.accountId===a.id).map(op=>op.id)});undo.length=0;return clone(state);}
       case 'sync':return sync(p.accountId?text(p.accountId,300):undefined,p.auto!==true);
       case 'demo.reset':{
         if(sending.size)throw new Error('Wait for sending to finish before resetting.');
@@ -346,10 +428,12 @@ export async function createService(options:ServiceOptions) {
       case 'home.hide':return updateThreads(p.ids,{hiddenFromHome:true});
       case 'thread.undo':{
         const previous=undo.at(-1);if(!previous)throw new Error('There is nothing to undo.');
-        for(const old of previous){const current=thread(old.id),a=account(current.accountId),patch:Partial<Thread>={};
+        const restores=previous.map(old=>{const current=thread(old.id),patch:Partial<Thread>={};account(current.accountId);
           for(const key of ['status','unread','importance','bookmarked','replyStatus','dueDate','reminderAt','reminderFired','todo','hiddenFromHome','labels'] as const)(patch as any)[key]=old[key];
-          if(a.provider==='google')await google.updateThread(a,current,patch);change(s=>{const index=s.threads.findIndex(t=>t.id===old.id);s.threads[index]={...s.threads[index],...patch};});}
-        undo.pop();return clone(state);
+          return {current,patch};});
+        const ops=restores.map(r=>queued(r.current,r.patch)).filter((op):op is QueuedOp=>!!op);
+        change(s=>{for(const {current,patch} of restores){const index=s.threads.findIndex(t=>t.id===current.id);s.threads[index]={...s.threads[index],...patch};}},{put:ops});
+        undo.pop();if(ops.length)kick();return clone(state);
       }
       case 'search':{
         const query=text(p.query,2000).trim(),accountId=p.accountId&&p.accountId!=='all'?text(p.accountId,300):undefined;
@@ -397,7 +481,9 @@ export async function createService(options:ServiceOptions) {
         if(!stripHTML(d.html)&&!d.attachments.length)throw new Error('Write a message or add an attachment before sending.');
         const a=account(d.accountId);if(!a.connected)throw new Error('Reconnect this account before sending.');senderIdentity(d,a);
         const pendingSendAt=new Date(now().getTime()+state.settings.undoSeconds*1000).toISOString();
-        change(s=>{const current=s.drafts.find(item=>item.id===d.id)!;current.pendingSendAt=pendingSendAt;delete current.sendError;});scheduleSend({...d,pendingSendAt});return clone(state);
+        // A stable Message-ID lets an interrupted send be found in Sent mail instead of being sent twice.
+        const messageId=d.messageId||`<${randomUUID()}@${senderIdentity(d,a).email.split('@')[1]}>`;
+        change(s=>{const current=s.drafts.find(item=>item.id===d.id)!;current.pendingSendAt=pendingSendAt;current.messageId=messageId;delete current.sendError;});scheduleSend({...d,pendingSendAt});return clone(state);
       }
       case 'draft.undoSend':{const d=draft(text(p.id,300));if(sending.has(d.id))throw new Error('Sending has started; the undo window has ended.');stopSend(d.id);change(s=>{const current=s.drafts.find(item=>item.id===d.id)!;delete current.pendingSendAt;delete current.sendError;});return clone(state);}
       case 'ai.cancel':{for(const [id,controller]of requests)if(!p.requestId||p.requestId===id)controller.abort();return {cancelled:true};}
@@ -474,9 +560,13 @@ export async function createService(options:ServiceOptions) {
     }
   }
   store.write(state);checkReminders();
-  for(const d of state.drafts)scheduleSend(d);
+  for(const d of state.drafts){
+    if(!d.sendAttemptAt){scheduleSend(d);continue;}
+    const job=recoverSend(d.id).catch(()=>{});jobs.add(job);void job.finally(()=>jobs.delete(job));
+  }
+  if(queue.length)kick();
   const reminderTimer=setInterval(()=>{try{if(!closed)checkReminders();}catch{emit('error',{message:'Reminders could not be saved. Check folder permissions.'});}},30_000);reminderTimer.unref?.();
   const autoSyncMs=options.autoSyncMs??60_000;
   const syncTimer=autoSyncMs>0?setInterval(()=>{if(!closed)void sync(undefined,false).catch(()=>{});},autoSyncMs):undefined;syncTimer?.unref?.();
-  return { invoke, subscribe(listener:Listener){listeners.add(listener);return ()=>{listeners.delete(listener);};}, async close(){if(closed)return;closed=true;clearInterval(reminderTimer);if(syncTimer)clearInterval(syncTimer);await syncing?.catch(()=>{});for(const id of timers.keys())stopSend(id);for(const controller of requests.values())controller.abort();await Promise.allSettled(jobs);await google.close();listeners.clear();store.close();} };
+  return { invoke, subscribe(listener:Listener){listeners.add(listener);return ()=>{listeners.delete(listener);};}, async close(){if(closed)return;closed=true;clearInterval(reminderTimer);if(syncTimer)clearInterval(syncTimer);await syncing?.catch(()=>{});await flushing?.catch(()=>{});for(const id of timers.keys())stopSend(id);for(const controller of requests.values())controller.abort();await Promise.allSettled(jobs);await google.close();listeners.clear();store.close();} };
 }

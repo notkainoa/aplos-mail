@@ -32,8 +32,11 @@ export interface MergeOutcome {
   arrivals:Thread[];
 }
 
-/** Apply one provider sync result to a mutable state snapshot. */
-export function applySync(state:AppState, accountId:string, result:SyncResult):MergeOutcome {
+/**
+ * Apply one provider sync result to a mutable state snapshot. Threads in `pending` have local changes
+ * the host has not received yet, so their host-owned flags stay as the user left them.
+ */
+export function applySync(state:AppState, accountId:string, result:SyncResult, pending:ReadonlySet<string>=new Set()):MergeOutcome {
   const blocked=(t:Thread)=>t.messages.some(m=>state.blockedSenders.includes(m.from.toLowerCase()));
   const index=new Map(state.threads.map((t,i)=>[t.id,i]));
   const outcome:MergeOutcome={added:[],arrivals:[]};
@@ -46,6 +49,12 @@ export function applySync(state:AppState, accountId:string, result:SyncResult):M
       outcome.added.push(remote);if(remote.messages.some(m=>!m.sent))outcome.arrivals.push(remote);continue;
     }
     const old=state.threads[at],arrived=hasArrival(old,remote);
+    if(pending.has(remote.id)){
+      state.threads[at]={...remote,status:arrived&&remote.status==='new'?'new':old.status,unread:arrived?remote.unread:old.unread,bookmarked:old.bookmarked,labels:old.labels,
+        summary:old.summary||remote.summary,importance:old.importance,replyStatus:old.replyStatus,todo:old.todo,dueDate:old.dueDate,reminderAt:old.reminderAt,reminderFired:old.reminderFired,hiddenFromHome:arrived?false:old.hiddenFromHome};
+      if(arrived)outcome.arrivals.push(state.threads[at]);
+      continue;
+    }
     state.threads[at]={...remote,
       status:mergeStatus(old.status,remote.status as ThreadFlags['status'],arrived,state.settings),
       summary:old.summary||remote.summary,importance:old.importance,replyStatus:arrived&&old.replyStatus==='awaiting-reply'?'needs-reply':old.replyStatus,
@@ -54,7 +63,7 @@ export function applySync(state:AppState, accountId:string, result:SyncResult):M
     if(arrived)outcome.arrivals.push(state.threads[at]);
   }
   for(const flags of result.flags){
-    const at=index.get(flags.id);if(at===undefined)continue;
+    const at=index.get(flags.id);if(at===undefined||pending.has(flags.id))continue;
     const old=state.threads[at];
     state.threads[at]={...old,unread:flags.unread,bookmarked:flags.bookmarked,...(flags.labels?{labels:flags.labels}:{}),
       status:blocked(old)?'spam':mergeStatus(old.status,flags.status,false,state.settings)};

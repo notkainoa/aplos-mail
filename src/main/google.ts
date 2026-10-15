@@ -15,7 +15,8 @@ interface GmailPart {partId?:string;mimeType?:string;filename?:string;headers?:{
 interface GmailMessage {id:string;internalDate?:string;labelIds?:string[];snippet?:string;payload?:GmailPart}
 interface GmailThread {id:string;messages?:GmailMessage[]}
 type Json=Record<string,any>;
-class GoogleError extends Error { constructor(message:string,readonly status?:number){super(message);} }
+/** `uncertain` means the request may have reached Google even though no answer came back. */
+export class GoogleError extends Error { constructor(message:string,readonly status?:number,readonly uncertain=false){super(message);} }
 /** Threads fetched on a first sync, newest first. Older mail is reached through search. */
 export const INITIAL_THREADS=500;
 const SEARCH_THREADS=100;
@@ -81,14 +82,14 @@ export async function createGoogle(options:GoogleOptions) {
   }
   async function fetchJson(url:string,init:RequestInit={}):Promise<Json> {
     let response:Response;
-    try {response=await request(url,{...init,signal:init.signal??AbortSignal.timeout(45000)});}catch {throw new GoogleError('Google could not be reached. Check your internet connection.');}
+    try {response=await request(url,{...init,signal:init.signal??AbortSignal.timeout(45000)});}catch {throw new GoogleError('Google could not be reached. Check your internet connection.',undefined,true);}
     if(!response.ok) {
       const status=response.status;
       if(status===401) throw new GoogleError('Google authorization expired. Reconnect this account.',status);
       if(status===403) throw new GoogleError('Google denied this operation. Enable Gmail and Calendar APIs and reconnect with the required permissions.',status);
       if(status===429) throw new GoogleError('Google rate limit reached. Please retry shortly.',status);
       if(status===404) throw new GoogleError('Google could not find this item.',status);
-      throw new GoogleError(`Google request failed (${status}). Please retry.`,status);
+      throw new GoogleError(`Google request failed (${status}). Please retry.`,status,status>=500);
     }
     if(response.status===204)return {};
     try{return await response.json() as Json;}catch{throw new Error('Google returned an unreadable response. Please retry.');}
@@ -263,7 +264,7 @@ export async function createGoogle(options:GoogleOptions) {
       return freshWindow(account);
     },
     search:async(account:Account,query:string)=>fullThreads(account,await listIds(account,SEARCH_THREADS,query)),
-    async updateThread(account:Account,thread:Thread,patch:Partial<Thread>) {
+    async updateThread(account:Account,thread:Pick<Thread,'gmailId'|'status'>,patch:Partial<Thread>) {
       if(!thread.gmailId) throw new Error('This thread has no Gmail identifier.');
       const url=`${gmail}/threads/${enc(thread.gmailId)}`;
       if(patch.status==='trash') await api(account,`${url}/trash`,'POST',{});
@@ -288,10 +289,16 @@ export async function createGoogle(options:GoogleOptions) {
         if(gmailId){const raw=await api(account,`${gmail}/threads/${enc(gmailId)}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References`);const payload=raw.messages?.at(-1)?.payload as GmailPart|undefined;inReplyTo=header(payload,'message-id')||undefined;references=[header(payload,'references'),inReplyTo].filter(Boolean).join(' ')||undefined;}
       }
       const transport=nodemailer.createTransport({streamTransport:true,buffer:true,newline:'windows'});
-      const info=await transport.sendMail({from:{name:alias?.name||account.name,address:alias?.email??account.email},to:draft.to,cc:draft.cc||undefined,bcc:draft.bcc||undefined,subject:draft.subject,html:draft.html,text:htmlText(draft.html),inReplyTo,references,attachments:draft.attachments.map(a=>{if(!a.data)throw new Error(`Attachment "${a.name}" has not been downloaded. Reattach it before sending.`);return {filename:a.name,content:Buffer.from(a.data,'base64'),contentType:a.type,cid:a.contentId};}),disableFileAccess:true,disableUrlAccess:true});
+      const info=await transport.sendMail({...(draft.messageId?{messageId:draft.messageId}:{}),from:{name:alias?.name||account.name,address:alias?.email??account.email},to:draft.to,cc:draft.cc||undefined,bcc:draft.bcc||undefined,subject:draft.subject,html:draft.html,text:htmlText(draft.html),inReplyTo,references,attachments:draft.attachments.map(a=>{if(!a.data)throw new Error(`Attachment "${a.name}" has not been downloaded. Reattach it before sending.`);return {filename:a.name,content:Buffer.from(a.data,'base64'),contentType:a.type,cid:a.contentId};}),disableFileAccess:true,disableUrlAccess:true});
       if(!Buffer.isBuffer(info.message))throw new Error('Email could not be encoded for Gmail.');
       const raw=info.message;
       return api(account,`${gmail}/messages/send`,'POST',{raw:raw.toString('base64url'),...(gmailId?{threadId:gmailId}:{})});
+    },
+    /** Find a message we sent by its Message-ID, to settle a send whose outcome is unknown. */
+    async findSent(account:Account,messageId:string):Promise<{id:string;threadId:string}|undefined> {
+      const url=new URL(`${gmail}/messages`);url.searchParams.set('q',`rfc822msgid:${messageId.replace(/^<|>$/g,'')}`);url.searchParams.set('includeSpamTrash','true');url.searchParams.set('maxResults','1');
+      const found=(await api(account,url.toString())).messages?.[0];
+      return typeof found?.id==='string'&&typeof found.threadId==='string'?{id:found.id,threadId:found.threadId}:undefined;
     },
     async attachment(account:Account,_thread:Thread,attachment:Attachment):Promise<Attachment> {
       if(attachment.data)return attachment;

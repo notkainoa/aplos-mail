@@ -1,7 +1,7 @@
 import type { AppState, Thread } from '../shared/types';
 import { transaction, type SqlDatabase } from './sql';
 
-const SCHEMA_VERSION=1;
+const SCHEMA_VERSION=2;
 const META_KEYS=['settings','selectedAccountId','sync','blockedSenders'] as const;
 /** Small collections keep their array order; threads are always read newest first. */
 const ORDERED=['accounts','drafts','events','conversations'] as const;
@@ -12,7 +12,7 @@ function migrate(db:SqlDatabase) {
   if(version>SCHEMA_VERSION)throw new Error('This mailbox was saved by a newer version of Aplos Mail. Update the app to open it.');
   if(version===SCHEMA_VERSION)return;
   transaction(db,()=>{
-    db.exec(`
+    if(version<1)db.exec(`
       CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS drafts(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL);
@@ -22,8 +22,10 @@ function migrate(db:SqlDatabase) {
       CREATE INDEX IF NOT EXISTS threads_by_account_date ON threads(account_id, date DESC);
       CREATE TABLE IF NOT EXISTS sync_cursors(account_id TEXT PRIMARY KEY, cursor TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE VIRTUAL TABLE IF NOT EXISTS thread_text USING fts5(id UNINDEXED, account_id UNINDEXED, subject, people, body, tokenize='unicode61 remove_diacritics 2');
-      PRAGMA user_version=${SCHEMA_VERSION};
     `);
+    // Version 2: provider changes waiting to be sent, in the order they were made.
+    if(version<2)db.exec(`CREATE TABLE IF NOT EXISTS ops(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, account_id TEXT NOT NULL, data TEXT NOT NULL);`);
+    db.exec(`PRAGMA user_version=${SCHEMA_VERSION}`);
   });
 }
 
@@ -39,10 +41,31 @@ export function ftsQuery(text:string):string|undefined {
   return words?.length?words.map(word=>`"${word}"*`).join(' '):undefined;
 }
 
+/** A change already applied locally that still has to reach the mail host. */
+export interface QueuedOp {
+  id:string;
+  accountId:string;
+  threadId:string;
+  /** The host's identifier for the thread (Gmail thread ID). */
+  remoteId?:string;
+  /** Local status before this change, which some hosts need (untrash). */
+  fromStatus:Thread['status'];
+  patch:Partial<Thread>;
+  createdAt:string;
+  attempts:number;
+  nextAt:string;
+  error?:string;
+}
+export interface OpChanges { put?:QueuedOp[]; remove?:string[] }
+
 export interface MailStore {
   load():AppState|undefined;
   /** Writes only rows that differ from the last load or save, in one transaction. */
-  save(state:AppState):void;
+  save(state:AppState, ops?:OpChanges):void;
+  /** Queue changes on their own, in one transaction. */
+  writeOps(ops:OpChanges):void;
+  /** Queued changes, oldest first. */
+  ops():QueuedOp[];
   /** Thread IDs whose subject, people or text contain every word as a prefix, newest first. */
   searchText(text:string, accountId?:string, limit?:number):string[];
   cursor(accountId:string):string|undefined;
@@ -69,10 +92,15 @@ export function createMailStore(db:SqlDatabase):MailStore {
       settings:value('settings'),selectedAccountId:value('selectedAccountId'),sync:value('sync'),blockedSenders:value('blockedSenders')};
   }
 
-  function save(state:AppState) {
+  function applyOps(ops:OpChanges) {
+    for(const op of ops.put??[])db.prepare('INSERT INTO ops(id, account_id, data) VALUES(?, ?, ?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(op.id,op.accountId,JSON.stringify(op));
+    for(const id of ops.remove??[])db.prepare('DELETE FROM ops WHERE id=?').run(id);
+  }
+  function save(state:AppState, ops?:OpChanges) {
     // The snapshot of what is on disk only advances after the transaction commits.
     const after:Array<()=>void>=[];
     transaction(db,()=>{
+      if(ops)applyOps(ops);
       for(const key of META_KEYS){
         const json=JSON.stringify(state[key]??null);
         if(written.meta.get(key)!==json){db.prepare('INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,json);after.push(()=>written.meta.set(key,json));}
@@ -114,6 +142,8 @@ export function createMailStore(db:SqlDatabase):MailStore {
 
   return {
     load, save, searchText,
+    writeOps:ops=>transaction(db,()=>applyOps(ops)),
+    ops:()=>db.prepare('SELECT data FROM ops ORDER BY seq').all().map(row=>JSON.parse(String(row.data)) as QueuedOp),
     cursor:accountId=>{const row=db.prepare('SELECT cursor FROM sync_cursors WHERE account_id=?').get(accountId);return row?String(row.cursor):undefined;},
     setCursor(accountId,cursor,now=new Date()){
       if(cursor===undefined)db.prepare('DELETE FROM sync_cursors WHERE account_id=?').run(accountId);

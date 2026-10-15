@@ -30,7 +30,9 @@ export interface SyncContext {
 export interface MailProvider {
   sync(account:Account, cursor:string|undefined, context:SyncContext):Promise<SyncResult>;
   search(account:Account, query:string):Promise<Thread[]>;
-  updateThread(account:Account, thread:Thread, patch:Partial<Thread>):Promise<void>;
+  updateThread(account:Account, thread:Pick<Thread,'gmailId'|'status'>, patch:Partial<Thread>):Promise<void>;
+  /** Look up a sent message by its Message-ID after a send whose outcome is unknown. */
+  findSent(account:Account, messageId:string):Promise<{id:string;threadId:string}|undefined>;
   send(account:Account, draft:Draft):Promise<{id?:string;threadId?:string}>;
   attachment(account:Account, thread:Thread, attachment:Attachment):Promise<Attachment>;
 }
