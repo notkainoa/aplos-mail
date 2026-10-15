@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {ArrowUpRight,Check,ChevronRight,Download,ExternalLink,HelpCircle,Keyboard,Loader2,Mail,Mic,Monitor,Plus,RefreshCw,ShieldCheck,Trash2,Volume2} from 'lucide-react';
+import {ArrowUpRight,Check,ChevronRight,Download,ExternalLink,HelpCircle,Keyboard,Loader2,Mail,Mic,Monitor,Plus,RefreshCw,ShieldCheck,Trash2,Volume2} from './icons';
 import type {Account,AppState,Capabilities,Settings as Preferences} from '../shared/types';
 import {invoke,openUrl,saveFile} from './bridge';
 export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:AppState;capabilities:Capabilities;onChange:(p:Partial<Preferences>)=>void;notify:(t:string)=>void;shortcuts:()=>void}){

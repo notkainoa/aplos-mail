@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {Bell,Bookmark,CalendarDays,Check,ChevronDown,Clock,Download,ExternalLink,ImageOff,Loader2,MoreHorizontal,Paperclip,RefreshCw,Reply,Search,ShieldAlert,Sparkles,Trash2,Undo2,X} from 'lucide-react';
+import {Bell,Bookmark,CalendarDays,Check,ChevronDown,Clock,Download,ExternalLink,ImageOff,Loader2,MoreHorizontal,Paperclip,RefreshCw,Reply,Search,ShieldAlert,Sparkles,Trash2,Undo2,X} from './icons';
 import type {Attachment,CalendarEvent,Settings,Thread} from '../shared/types';
 import {avatarColor,dateLabel,dueLabel,invoke,openUrl,saveFile} from './bridge';
 import {inlineAttachments,prepareMessageBody} from './mailBody';

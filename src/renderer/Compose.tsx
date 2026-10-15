@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {ArrowUpRight, Bold, Check, ChevronDown, Italic, Link, Loader2, Mic, Paperclip, Send, Sparkles, Trash2, Underline, X, Image as ImageIcon, Square} from 'lucide-react';
+import {ArrowUpRight, Bold, Check, ChevronDown, Italic, Link, Loader2, Mic, Paperclip, Send, Sparkles, Trash2, Underline, X, ImageIcon, Square} from './icons';
 import DOMPurify from 'dompurify';
 import type {Account,Draft,Settings,Thread} from '../shared/types';
 import {bridge,escapeHtml,fileToAttachment,invoke,plain,uid} from './bridge';

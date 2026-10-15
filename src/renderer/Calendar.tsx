@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {CalendarDays,Check,ChevronLeft,ChevronRight,Clock,ExternalLink,Loader2,MapPin,Plus,Trash2,Users,X} from 'lucide-react';
+import {CalendarDays,Check,ChevronLeft,ChevronRight,Clock,ExternalLink,Loader2,MapPin,Plus,Trash2,Users,X} from './icons';
 import type {Account,CalendarEvent,Thread} from '../shared/types';
 import {dateLabel,invoke,openUrl,uid} from './bridge';
 export function EventEditor({event,accounts,onClose,notify}:{event:Partial<CalendarEvent>;accounts:Account[];onClose:()=>void;notify:(s:string)=>void}){

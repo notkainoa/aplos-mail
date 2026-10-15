@@ -46,7 +46,14 @@
     },
     "files": [
       "dist/**/*",
+      "!dist/bin/**",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/bin",
+        "to": "bin"
+      }
     ],
     "mac": {
       "icon": "assets/icon.icns",

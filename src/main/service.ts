@@ -4,12 +4,13 @@ import { createDemo, defaultSettings } from './demo';
 import { createStore } from './store';
 import { createGroq } from './groq';
 import { createGoogle } from './google';
+import { symbolRenderer } from './symbols';
 
 type Groq = ReturnType<typeof createGroq>;
 type Google = Awaited<ReturnType<typeof createGoogle>>;
 export interface ServiceOptions {
   dataDir:string; desktop?:boolean; encrypt?:(text:string)=>Buffer; decrypt?:(cipher:Buffer)=>string;
-  openExternal?:(url:string)=>Promise<unknown>; groq?:Groq; google?:Google; now?:()=>Date;
+  openExternal?:(url:string)=>Promise<unknown>; groq?:Groq; google?:Google; now?:()=>Date; symbolTool?:string;
 }
 const clone = <T>(v:T):T => structuredClone(v);
 const text = (v:unknown,max=100_000):string => {
@@ -114,6 +115,7 @@ function attachments(raw:unknown):Attachment[] {
 
 export async function createService(options:ServiceOptions) {
   const now=options.now||(()=>new Date());
+  const symbols=symbolRenderer(options.symbolTool);
   const store=createStore(options.dataDir);
   let state=store.read()||createDemo(now());
   state.settings={...clone(defaultSettings),...state.settings};
@@ -282,6 +284,7 @@ export async function createService(options:ServiceOptions) {
     const p=object(raw??{});
     switch(method){
       case 'state.get':checkReminders();return clone(state);
+      case 'symbols.render':return symbols(p.items,p.scale);
       case 'capabilities.get':return {groq:groq.available,google:google.available,desktop:!!options.desktop,version:'0.1.0'};
       case 'settings.update':change(s=>{s.settings={...s.settings,...settingsPatch(p.patch)};});return clone(state);
       case 'account.select':{const id=text(p.id,300);if(id!=='all')account(id);change(s=>{s.selectedAccountId=id;});return clone(state);}

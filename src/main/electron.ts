@@ -9,7 +9,7 @@ import {DraftOwnership,draftMutationId} from './desktop-policy';
 import type {AppState,Listener} from '../shared/types';
 
 const methods=new Set([
-  'state.get','capabilities.get','settings.update','account.select','account.connect','account.disconnect','sync','demo.reset',
+  'state.get','capabilities.get','symbols.render','settings.update','account.select','account.connect','account.disconnect','sync','demo.reset',
   'thread.update','thread.undo','home.hide','search','draft.save','draft.delete','draft.send','draft.undoSend',
   'ai.summarize','ai.polish','ai.draft','ai.ask','ai.cancel','ai.transcribe','conversation.delete',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
@@ -151,6 +151,7 @@ else{
       if(process.platform==='darwin')void systemPreferences.askForMediaAccess('microphone').then(callback).catch(()=>callback(false));else callback(true);
     });
     service=await createService({dataDir:process.env.APLOS_DATA_DIR||app.getPath('userData'),desktop:true,openExternal:external,
+      symbolTool:app.isPackaged?join(process.resourcesPath,'bin','aplos-symbols'):join(__dirname,'..','bin','aplos-symbols'),
       encrypt:(value:string)=>{if(!safeStorage.isEncryptionAvailable())throw new Error('macOS secure credential storage is unavailable.');return safeStorage.encryptString(value);},
       decrypt:(value:Buffer)=>{if(!safeStorage.isEncryptionAvailable())throw new Error('Unlock macOS secure credential storage to connect your account.');return safeStorage.decryptString(value);}});
     service.subscribe((event:Parameters<Listener>[0])=>{

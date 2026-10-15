@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {Archive,ArrowLeft,ArrowRight,Bookmark,CalendarDays,Check,CheckCheck,ChevronLeft,ChevronRight,ChevronsLeft,ChevronsRight,ChevronsUpDown,Clock,Columns2,CornerUpLeft,FileText,Home,Inbox,Layers,Loader2,Mail,MessageCircle,PanelLeft,Paperclip,Plus,RectangleVertical,RefreshCw,Search,Send,ShieldAlert,Sparkles,SquarePen,Trash2,WifiOff,X} from 'lucide-react';
+import {Archive,ArrowLeft,ArrowRight,Bookmark,CalendarDays,Check,CheckCheck,ChevronLeft,ChevronRight,ChevronsLeft,ChevronsRight,ChevronsUpDown,Clock,Columns2,CornerUpLeft,FileText,Home,Inbox,Layers,Loader2,Mail,MessageCircle,PanelLeft,Paperclip,Plus,RectangleVertical,RefreshCw,Search,Send,ShieldAlert,Sparkles,SquarePen,Trash2,WifiOff,X} from './icons';
 import type {AppState,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,View} from '../shared/types';
 import {avatarColor,bridge,dateLabel,dueLabel,escapeHtml,invoke,plain,uid} from './bridge';
 import {Compose} from './Compose';
@@ -82,7 +82,7 @@ export function App(){
  const listView=!['settings','calendar'].includes(route.view);
  const demoOnly=state.accounts.every(a=>a.provider==='demo');
  const today=new Date().toISOString().slice(0,10);
- const swipe=<button className="pill-button" onClick={()=>{if(filtered[0])openThread(filtered[0].id);}}><Layers size={14}/>Swipe through them<kbd>S</kbd></button>;
+ const swipe=<button className="pill-button" onClick={()=>{if(filtered[0])openThread(filtered[0].id);}}><Layers size={14}/>One at a time<kbd>S</kbd></button>;
  function titled(title:string,body:React.ReactNode){return <section className="mail-section"><header><h2>{title}</h2></header>{body}</section>;}
  return <div className={'app-shell '+(window.aplos?'desktop ':'')+(mac?'mac ':'')+(!prefs.sidebar||popoutThread?'sidebar-hidden ':'')+(ask?'with-ask':'')}>
  {!popoutThread&&<aside className="sidebar">

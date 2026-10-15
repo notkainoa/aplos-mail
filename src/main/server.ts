@@ -8,7 +8,7 @@ import {createService} from './service';
 import type {Listener} from '../shared/types';
 
 export const serviceMethods=new Set([
-  'state.get','capabilities.get','settings.update','account.select','account.connect','account.disconnect','sync','demo.reset',
+  'state.get','capabilities.get','symbols.render','settings.update','account.select','account.connect','account.disconnect','sync','demo.reset',
   'thread.update','thread.undo','home.hide','search','draft.save','draft.delete','draft.send','draft.undoSend',
   'ai.summarize','ai.polish','ai.draft','ai.ask','ai.cancel','ai.transcribe','conversation.delete',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
@@ -27,7 +27,7 @@ async function readBody(req:IncomingMessage):Promise<{method:string;payload?:unk
 }
 export async function startServer(){
   config({path:join(process.cwd(),'.env'),quiet:true});
-  const service=await createService({dataDir:process.env.APLOS_DATA_DIR||join(homedir(),'Library','Application Support','Aplos Mail Preview'),desktop:false,
+  const service=await createService({dataDir:process.env.APLOS_DATA_DIR||join(homedir(),'Library','Application Support','Aplos Mail Preview'),desktop:false,symbolTool:join(process.cwd(),'dist','bin','aplos-symbols'),
     openExternal:async()=>{throw new Error('Open Aplos Mail desktop to connect a Google account.');}});
   const streams=new Set<ServerResponse>();
   const unsubscribe=service.subscribe((event:Parameters<Listener>[0])=>{const frame=`data: ${JSON.stringify(event)}\n\n`;for(const stream of streams)stream.write(frame);});
