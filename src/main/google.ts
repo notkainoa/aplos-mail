@@ -21,6 +21,9 @@ const header=(part:GmailPart|undefined,name:string)=>part?.headers?.find(h=>h.na
 function address(value:string) { const match=value.match(/^(.*?)\s*<([^<>]+)>\s*$/); return match?{email:match[2],name:match[1].replace(/^"|"$/g,'').trim()}:{email:value.trim(),name:value.split('@')[0]}; }
 function addresses(value:string) {return value.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(v=>address(v).email).filter(Boolean);}
 function flatten(part:GmailPart|undefined):GmailPart[]{return part?[part,...(part.parts??[]).flatMap(flatten)]:[];}
+function isBodyPart(part:GmailPart) {
+  return !part.filename&&!header(part,'content-id')&&!/^attachment(?:;|$)/i.test(header(part,'content-disposition'))&&['text/plain','text/html'].includes(part.mimeType??'');
+}
 function decode(part:GmailPart) {
   if(!part.body?.data)return '';
   const bytes=Buffer.from(part.body.data,'base64url');
@@ -33,10 +36,10 @@ export function normalizeGmailThread(raw:GmailThread,account:Account):Thread {
   const items=raw.messages??[];
   const messages:Message[]=items.map(m=>{
     const parts=flatten(m.payload),from=address(header(m.payload,'from'));
-    const html=parts.filter(p=>p.mimeType==='text/html'&&!p.filename).map(decode).join('\n');
-    const text=parts.filter(p=>p.mimeType==='text/plain'&&!p.filename).map(decode).join('\n')||htmlText(html)||m.snippet||'';
+    const html=parts.filter(p=>p.mimeType==='text/html'&&isBodyPart(p)).map(decode).join('\n');
+    const text=parts.filter(p=>p.mimeType==='text/plain'&&isBodyPart(p)).map(decode).join('\n')||htmlText(html)||m.snippet||'';
     const date=new Date(Number(m.internalDate)||Date.parse(header(m.payload,'date'))||Date.now()).toISOString();
-    return {id:m.id,from:from.email,fromName:from.name,to:addresses(header(m.payload,'to')),cc:addresses(header(m.payload,'cc')),date,text,html:html||undefined,sent:m.labelIds?.includes('SENT')??false,attachments:parts.filter(p=>p.filename||p.body?.attachmentId).map((p,i)=>({id:`${m.id}:${p.partId??i}`,name:p.filename||'attachment',type:p.mimeType||'application/octet-stream',size:p.body?.size??0,data:p.body?.data?Buffer.from(p.body.data,'base64url').toString('base64'):undefined,gmailAttachmentId:p.body?.attachmentId,messageId:m.id,contentId:header(p,'content-id').replace(/^<|>$/g,'')||undefined}))};
+    return {id:m.id,from:from.email,fromName:from.name,to:addresses(header(m.payload,'to')),cc:addresses(header(m.payload,'cc')),date,text,html:html||undefined,sent:m.labelIds?.includes('SENT')??false,attachments:parts.filter(p=>!isBodyPart(p)&&(p.filename||p.body?.attachmentId||header(p,'content-id'))).map((p,i)=>({id:`${m.id}:${p.partId??i}`,name:p.filename||'attachment',type:p.mimeType||'application/octet-stream',size:p.body?.size??0,data:p.body?.data?Buffer.from(p.body.data,'base64url').toString('base64'):undefined,gmailAttachmentId:p.body?.attachmentId,messageId:m.id,contentId:header(p,'content-id').replace(/^<|>$/g,'')||undefined}))};
   }).sort((a,b)=>a.date.localeCompare(b.date));
   const labels=[...new Set(items.flatMap(m=>m.labelIds??[]))];
   return {id:`${account.id}:${raw.id}`,gmailId:raw.id,accountId:account.id,subject:header(items[0]?.payload,'subject')||'(No subject)',summary:htmlText(items.at(-1)?.snippet??'')||messages.at(-1)?.text.slice(0,200)||'',messages,date:messages.at(-1)?.date??new Date().toISOString(),unread:labels.includes('UNREAD'),status:labels.includes('TRASH')?'trash':labels.includes('SPAM')?'spam':labels.includes('INBOX')?'new':'done',importance:labels.includes('IMPORTANT')?'important':'low',bookmarked:labels.includes('STARRED'),replyStatus:'none',labels};
@@ -104,7 +107,15 @@ export async function createGoogle(options:GoogleOptions) {
   async function threads(account:Account,query?:string) {
     const url=new URL(`${gmail}/threads`);url.searchParams.set('maxResults','500');url.searchParams.set('includeSpamTrash','true');if(query)url.searchParams.set('q',query);
     const rows=await pages(account,url.toString(),'threads');const result:Thread[]=[];let cursor=0;
-    await Promise.all(Array.from({length:Math.min(4,rows.length)},async()=>{while(cursor<rows.length){const row=rows[cursor++];const raw=await api(account,`${gmail}/threads/${enc(row.id)}?format=full`);result.push(normalizeGmailThread(raw as GmailThread,account));}}));
+    await Promise.all(Array.from({length:Math.min(4,rows.length)},async()=>{while(cursor<rows.length){const row=rows[cursor++];const raw=await api(account,`${gmail}/threads/${enc(row.id)}?format=full`) as GmailThread;
+      // Gmail can store a text/HTML body in messages.attachments just like a file.
+      // Resolve those body parts before normalization; ordinary files stay lazy.
+      for(const message of raw.messages??[])for(const part of flatten(message.payload))if(isBodyPart(part)&&part.body?.attachmentId&&!part.body.data){
+        const body=await api(account,`${gmail}/messages/${enc(message.id)}/attachments/${enc(part.body.attachmentId)}`);
+        if(typeof body.data!=='string')throw new Error('Google did not return the complete message body. Retry syncing this account.');
+        part.body={...part.body,data:body.data};
+      }
+      result.push(normalizeGmailThread(raw,account));}}));
     return result.sort((a,b)=>b.date.localeCompare(a.date));
   }
   function eventModel(raw:Json,account:Account,calendarId:string):CalendarEvent {

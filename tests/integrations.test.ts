@@ -71,17 +71,19 @@ test('Desktop Google OAuth verifies state and PKCE and persists encrypted tokens
 
 test('Google sync paginates, normalizes multipart mail, respects triage mapping, downloads attachments and sends MIME without SMTP',async()=>{
   const dir=await tokenDir();const requests:{url:string;body:any}[]=[];let sent:any;
-  const raw={id:'thread1',messages:[{id:'m1',internalDate:'1791972000000',labelIds:['INBOX','UNREAD','IMPORTANT'],payload:{headers:[{name:'Subject',value:'Studio review'},{name:'From',value:'"Sam" <sam@example.test>'},{name:'To',value:'Alex <alex@example.test>'},{name:'Message-ID',value:'<original@example.test>'}],mimeType:'multipart/mixed',parts:[{partId:'0',mimeType:'text/plain',body:{data:Buffer.from('Hello Alex').toString('base64url')}},{partId:'1',mimeType:'text/html',body:{data:Buffer.from('<p>Hello Alex</p>').toString('base64url')}},{partId:'2',mimeType:'text/plain',filename:'note.txt',body:{attachmentId:'a1',size:4}}]}}]};
+  const raw={id:'thread1',messages:[{id:'m1',internalDate:'1791972000000',labelIds:['INBOX','UNREAD','IMPORTANT'],payload:{headers:[{name:'Subject',value:'Studio review'},{name:'From',value:'"Sam" <sam@example.test>'},{name:'To',value:'Alex <alex@example.test>'},{name:'Message-ID',value:'<original@example.test>'}],mimeType:'multipart/mixed',parts:[{partId:'0',mimeType:'text/plain',headers:[{name:'Content-Type',value:'text/plain; charset=iso-8859-1'}],body:{attachmentId:'body-text',size:40}},{partId:'1',mimeType:'text/html',body:{attachmentId:'body-html',size:50}},{partId:'2',mimeType:'text/plain',filename:'note.txt',body:{attachmentId:'a1',size:4}},{partId:'3',mimeType:'image/png',filename:'inline.png',headers:[{name:'Content-ID',value:'<image-1>'}],body:{attachmentId:'inline-file',size:4}}]}}]};
   const google=await createGoogle({dataDir:dir,clientId:'own-client',encrypt,decrypt,fetch:async(input,init)=>{
     const url=String(input),body=init?.body?JSON.parse(String(init.body)):undefined;requests.push({url,body});
     if(url.endsWith('/messages/send')) {sent=body;return json({id:'sent-id'});}
+    if(url.endsWith('/attachments/body-text'))return json({data:Buffer.from([0x63,0x61,0x66,0xe9]).toString('base64url')});
+    if(url.endsWith('/attachments/body-html'))return json({data:Buffer.from('<p>Hello Alex</p><img src="cid:image-1">').toString('base64url')});
     if(url.includes('/attachments/'))return json({data:Buffer.from('note').toString('base64url')});
     if(url.includes('/threads/thread1'))return json(raw);
     if(url.includes('pageToken=next'))return json({threads:[]});
     return json({threads:[{id:'thread1'}],nextPageToken:'next'});
   }});
   try {
-    const synced=await google.sync(account);assert.equal(synced.length,1);const item=synced[0];assert.equal(item.messages[0].from,'sam@example.test');assert.equal(item.messages[0].html,'<p>Hello Alex</p>');assert.equal(item.messages[0].attachments.length,1);assert.ok(requests.some(r=>r.url.includes('pageToken=next')));
+    const synced=await google.sync(account);assert.equal(synced.length,1);const item=synced[0];assert.equal(item.messages[0].from,'sam@example.test');assert.equal(item.messages[0].html,'<p>Hello Alex</p><img src="cid:image-1">');assert.equal(item.messages[0].text,'café');assert.equal(item.messages[0].attachments.length,2);assert.ok(requests.some(r=>r.url.endsWith('/attachments/body-html')));assert.ok(!requests.some(r=>/attachments\/(a1|inline-file)$/.test(r.url)));assert.equal(item.messages[0].attachments[1].contentId,'image-1');assert.ok(requests.some(r=>r.url.includes('pageToken=next')));
     await google.updateThread(account,item,{status:'done',unread:false,labels:['INBOX']});const modify=requests.find(r=>r.url.endsWith('/modify'))!;assert.ok(modify.body.addLabelIds.includes('INBOX'));assert.ok(modify.body.removeLabelIds.includes('UNREAD'));
     const attachment=await google.attachment(account,item,item.messages[0].attachments[0]);assert.equal(Buffer.from(attachment.data!,'base64').toString(),'note');
     const draft:Draft={id:'draft-test',accountId:account.id,threadId:item.id,mode:'reply',to:'sam@example.test',cc:'',bcc:'archive@example.test',subject:'Re: Studio review',html:'<p>Confirmed.</p>',attachments:[attachment],signature:false,updatedAt:new Date().toISOString(),revision:1};

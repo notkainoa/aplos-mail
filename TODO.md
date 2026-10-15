@@ -15,3 +15,4 @@ Read SPEC.md, DECISIONS.md, PROGRESS.md and this checklist at the start of each 
 - [x] M10: focused tests/typecheck/build pass; end-to-end interaction checks; package and launch macOS app; document setup/resume and commit.
 - [ ] M11: verify live Gmail connection/sync/send and Google Calendar with Aplos-owned OAuth credentials; verify OS-dependent voice/notifications where granted. Do not claim full parity before this passes.
 - [x] M12: close reference signature gap: authorized Gmail sending aliases, per-address imported signatures, reviewed signature choice and MIME sender validation; focused mocked verification.
+- [x] M13: close reader fidelity gaps: hydrate externally stored Gmail text/HTML bodies, load CID images on demand outside Spam, and collapse real quoted HTML/history; test and verify the actual reader.
