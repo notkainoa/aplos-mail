@@ -1,0 +1,77 @@
+import {useState} from 'react';
+import {ArrowRight,Check,Clock,Mail,Sparkles,X} from '../icons';
+import type {Draft} from '../../shared/types';
+import {isoDay} from '../bridge';
+import {Button,Dialog,DialogHeader,Keys,Notice,Skeleton,Tabs,cx,useLatest,usePresence} from '../ui';
+
+export function ShortcutsDialog({open,close,doneLeft}:{open:boolean;close:()=>void;doneLeft:boolean}){
+  const done=doneLeft?'←':'→';const todo=doneLeft?'→':'←';
+  const tabs:{id:string;rows:[string,string[]][]}[]=[
+    {id:'General',rows:[['Ask or search',['A']],['Talk to Ask',['Hold A']],['Search mail',['/']],['Compose',['C']],['Settings',['⌘ ,']],['Show or hide the sidebar',['[']],['This guide',['?']]]},
+    {id:'Moving around',rows:[['Home',['⌃ 1']],['Later',['⌃ 2']],['All mail',['⌃ 3']],['Drafts',['⌃ 4']],['Start a stack',['S']],['Next email',['J']],['Previous email',['K']],['Close',['Esc']]]},
+    {id:'Email',rows:[['Done',[done,'E']],['Todo',[todo,'L']],['Reply',['Space']],['Reply and dictate',['Hold Space']],['Reply all',['⇧ R']],['Forward',['F']],['Bookmark',['B']],['Read or unread',['U']],['Move to Trash',['#']],['Undo',['Z']]]},
+    {id:'Writing',rows:[['Send',['⌘ ↵']],['Dictate into an empty body',['Hold Space']],['Bold',['⌘ B']],['Italic',['⌘ I']],['Close',['Esc']]]},
+  ];
+  const [tab,setTab]=useState('General');
+  return <Dialog open={open} onClose={close} label="Keyboard shortcuts" className="shortcuts-dialog" instant>
+    <DialogHeader title="Keyboard shortcuts" onClose={close} closeLabel="Close shortcuts"/>
+    <Tabs variant="pill" label="Shortcut groups" value={tab} onChange={setTab} items={tabs.map(t=>({id:t.id,label:t.id}))} className="shortcut-tabs"/>
+    <div className="shortcut-list" role="tabpanel" key={tab}>{tabs.find(t=>t.id===tab)!.rows.map(([label,keys])=><div key={label}><span>{label}</span><span className="shortcut-keys">{keys.map((key,i)=><Keys key={i} combo={key}/>)}</span></div>)}</div>
+    <footer className="shortcuts-footer">Shortcuts pause while you type.</footer>
+  </Dialog>;
+}
+
+export function WelcomeDialog({open,icon,busy,error,connect,explore}:{open:boolean;icon:string;busy:boolean;error:string;connect:()=>void;explore:()=>void}){
+  return <Dialog open={open} onClose={()=>{}} dismissable={false} label="Welcome to Aplos Mail" className="welcome">
+    <span className={'app-icon large '+icon}>a</span>
+    <h1>Your mail,<br/>a little lighter.</h1>
+    <p>A Home you can finish, a place for later,<br/>and a little intelligence when you need it.</p>
+    <div className="welcome-features"><span><Check size={15}/>An inbox you can finish</span><span><Clock size={15}/>Plans that stay in view</span><span><Sparkles size={15}/>Help, powered by Groq</span></div>
+    {error&&<Notice className="welcome-notice">{error}</Notice>}
+    <Button variant="primary" size="lg" icon={Mail} loading={busy} onClick={connect}>Connect with Google</Button>
+    <Button variant="secondary" size="lg" iconRight={ArrowRight} onClick={explore}>Explore the demo</Button>
+    <p className="welcome-footnote">Original sample mail. Nothing is sent to real people.<br/>Your API key stays on this device.</p>
+  </Dialog>;
+}
+
+/** Asks when a Todo should come back. It sits above the Undo toast and drops away when answered. */
+export function DuePopover({prompt,setDue,dismiss}:{prompt?:{id:string;key:number};setDue:(id:string,day:string,label:string)=>void;dismiss:()=>void}){
+  const {mounted,closing}=usePresence(!!prompt);const shown=useLatest(prompt);
+  if(!mounted||!shown)return null;
+  const nextWeek=((8-new Date().getDay())%7)||7;
+  return <div key={shown.key} className={cx('due-popover',closing&&'is-closing')} role="dialog" aria-label="When should this come back?">
+    <span>Due</span>
+    {([['Today',0],['Tomorrow',1],['Next week',nextWeek]] as const).map(([label,offset])=><button key={label} onClick={()=>setDue(shown.id,isoDay(offset),'Due '+label.toLowerCase())}>{label}</button>)}
+    <button className="due-skip" aria-label="No due date" onClick={dismiss}><X size={12}/></button>
+  </div>;
+}
+
+/** Messages waiting out the undo-send delay, each with a draining progress bar. */
+export function PendingSends({drafts,now,seconds,undo}:{drafts:Draft[];now:number;seconds:number;undo:(draft:Draft)=>void}){
+  if(!drafts.length)return null;
+  return <div className="pending-sends">{drafts.map(d=><PendingSend key={d.id} draft={d} now={now} seconds={seconds} undo={undo}/>)}</div>;
+}
+
+function PendingSend({draft,now,seconds,undo}:{draft:Draft;now:number;seconds:number;undo:(draft:Draft)=>void}){
+  const due=+new Date(draft.pendingSendAt!);
+  // Fixed at mount so the once-a-second countdown re-render does not restart the bar.
+  const [bar]=useState(()=>{const ms=Math.max(0,due-Date.now());return {'--send-ms':ms+'ms','--send-start':String(Math.min(1,ms/1000/Math.max(1,seconds)))} as React.CSSProperties;});
+  const left=Math.max(0,Math.ceil((due-now)/1000));
+  return <div className="pending-send" style={bar}>
+    <span className="pending-spinner"/>
+    <span>Sending “{draft.subject||'your message'}”{left>0?' in '+left+'s':'…'}</span>
+    <Button variant="text" className="pending-undo" onClick={()=>undo(draft)}>Undo send</Button>
+    <i className="pending-progress" aria-hidden="true"/>
+  </div>;
+}
+
+export function ComposeSkeleton(){
+  return <div className="composer skeleton" aria-hidden="true">
+    <div className="skeleton-row"><Skeleton width={90}/><span/><Skeleton width={64} height={22} radius={11}/></div>
+    <div className="skeleton-row line"><Skeleton width={40}/><Skeleton width={180}/></div>
+    <div className="skeleton-row line"><Skeleton width={28}/><Skeleton width={120}/></div>
+    <div className="skeleton-row line"><Skeleton width={220}/></div>
+    <div className="skeleton-body"><Skeleton width="62%"/><Skeleton width="44%"/></div>
+    <div className="skeleton-row"><Skeleton width={70}/></div>
+  </div>;
+}

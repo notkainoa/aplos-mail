@@ -1,7 +1,8 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {ChevronsRight,Clock,History,Loader2,Plus,Square,Trash2,ExternalLink,StopCircle,CornerDownLeft} from './icons';
+import {ChevronsRight,Clock,History,Plus,Square,Trash2,ExternalLink,StopCircle,CornerDownLeft} from './icons';
+import {Avatar,Button,IconButton,Kbd,Keys,Notice,Spinner,Tooltip,confirmAction,cx} from './ui';
 import type {Conversation,Draft,Settings,Thread} from '../shared/types';
-import {avatarColor,dateLabel,invoke,uid} from './bridge';
+import {dateLabel,invoke,uid} from './bridge';
 import {useVoice} from './useVoice';
 import {LevelMeter} from './LevelMeter';
 
@@ -30,13 +31,13 @@ export function Ask({open,onClose,onSearch,conversations,threads,accountId,setti
   }
   const askLatest=useRef(ask);askLatest.current=ask;
   function cancelRequest(){const requestId=request.current;if(requestId)void invoke('ai.cancel',{requestId}).catch(error=>{if(mounted.current)setError(error.message);});}
-  function apply(proposal:Partial<Draft>,index:number){
+  async function apply(proposal:Partial<Draft>,index:number){
     const fields:Partial<Draft>={};
     for(const key of ['to','cc','bcc','subject','html'] as const){const value=proposal[key];if(typeof value==='string'&&(key==='html'||value.trim()))fields[key]=value;}
     if(currentDraft){
       if(!onApplyDraft){setError('Close the current draft before opening another proposal.');return;}
       const snapshot=snapshots.current.get(`${id}:${index}`);
-      if(snapshot!==fingerprint(currentDraft)&&!window.confirm('This draft changed since this suggestion was written. Apply the suggestion to the current draft?'))return;
+      if(snapshot!==fingerprint(currentDraft)&&!await confirmAction({title:'Apply this suggestion?',message:'The draft changed since this suggestion was written. Applying it replaces the matching fields.',confirmLabel:'Apply'}))return;
       onApplyDraft(fields);notify('Suggestion applied. Review the draft before sending.');
     }else onDraft(fields);
   }
@@ -79,29 +80,29 @@ export function Ask({open,onClose,onSearch,conversations,threads,accountId,setti
   const showMatches=!!query&&!conversation&&!busy&&!history&&!recording;
   return <aside ref={panel} className="ask-panel" aria-label="Ask Aplos" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(voice.isActive()||request.current){cancelVoice();cancelRequest();}else if(input)setInput('');else onClose();}}}>
     <div className="ask-head">
-      <button className="icon-button ask-collapse" title="Hide Ask" aria-label="Hide Ask" onClick={onClose}><ChevronsRight size={16}/></button>
+      <IconButton className="ask-collapse" label="Hide Ask" shortcut="Esc" icon={ChevronsRight} onClick={onClose}/>
       <div className="ask-column">
-        <div className={'ask-field '+(recording?'recording':'')}>
+        <div className={cx('ask-field',recording&&'recording',busy&&'is-busy')}>
           {recording&&<LevelMeter level={voice.level}/>}
           <textarea ref={field} aria-label="Ask your mailbox" placeholder={voice.preparing?'Getting the microphone ready…':recording?'Recording':'Ask'} rows={1} value={input} readOnly={recording} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();if(query)onSearch(query);return;}if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void ask();}}}/>
-          {busy?<button className="icon-button tiny" title="Cancel AI request" aria-label="Cancel AI request" onClick={cancelRequest}><StopCircle size={16}/></button>
-          :recording?<button className="icon-button tiny" title="Finish recording" aria-label="Finish recording" onClick={voice.stop}><Square size={13}/></button>
-          :voice.busy?<Loader2 size={15} className="spin ask-spinner"/>
-          :query?<button className="ask-send" aria-label="Send question" onClick={()=>void ask()}>Ask<CornerDownLeft size={13}/></button>
-          :<button className="ask-hold" title="Click to record a question" aria-label="Record question" onClick={()=>{autoAsk.current=false;void voice.toggle();}}>Hold<kbd>A</kbd>to talk</button>}
+          {busy?<IconButton size="sm" label="Cancel AI request" shortcut="Esc" icon={StopCircle} onClick={cancelRequest}/>
+          :recording?<IconButton size="sm" label="Finish recording" icon={Square} iconSize={13} onClick={voice.stop}/>
+          :voice.busy?<Spinner size={15} className="ask-spinner"/>
+          :query?<Tooltip content="Ask" detail="⌘ ↵ searches instead" shortcut="↵"><button className="ask-send" aria-label="Send question" onClick={()=>void ask()}>Ask<CornerDownLeft size={13}/></button></Tooltip>
+          :<Tooltip content="Record a question" detail="Or hold A anywhere and release to ask"><button className="ask-hold" aria-label="Record question" onClick={()=>{autoAsk.current=false;void voice.toggle();}}>Hold<Kbd size="sm">A</Kbd>to talk</button></Tooltip>}
         </div>
-        {recording&&<p className="ask-recording-hint">Release to ask<span>·</span><kbd>Esc</kbd>to cancel</p>}
+        {recording&&<p className="ask-recording-hint">Release to ask<span>·</span><Kbd size="sm">Esc</Kbd>to cancel</p>}
         {voice.busy&&!voice.preparing&&<p className="ask-recording-hint quiet">Transcribing with Groq…</p>}
-        {error&&<div className="inline-error" role="alert">{error}</div>}
-        {(conversation||history)&&!showMatches&&<div className="ask-tools"><button className="text-button" disabled={busy} onClick={()=>setHistory(!history)}><History size={14}/>{history?'Back to chat':'History'}</button><button className="text-button" disabled={busy} onClick={()=>{setId(undefined);setHistory(false);setError('');}}><Plus size={14}/>New chat</button></div>}
+        {error&&<Notice className="ask-notice">{error}</Notice>}
+        {(conversation||history)&&!showMatches&&<div className="ask-tools"><Button variant="text" size="sm" icon={History} disabled={busy} onClick={()=>setHistory(!history)}>{history?'Back to chat':'History'}</Button><Button variant="text" size="sm" icon={Plus} disabled={busy} onClick={()=>{setId(undefined);setHistory(false);setError('');}}>New chat</Button></div>}
       </div>
     </div>
     {showMatches?<div className="ask-scroll ask-matches">
-      <button className="ask-match-all" onClick={()=>onSearch(query)}><span className="ask-keys"><kbd>⌘</kbd><kbd>↵</kbd></span>See every result</button>
-      {matches.length?matches.map(t=>{const m=t.messages.at(-1)!;return <button key={t.id} className="ask-match" onClick={()=>onThread(t.id)}><span className="avatar" style={{background:avatarColor(m.fromName||m.from)}}>{(m.fromName||m.from)[0]?.toUpperCase()}</span><span><span className="ask-match-line"><strong>{m.fromName}</strong><span>{dateLabel(t.date)}</span></span><span className="ask-match-subject">{t.subject}</span></span></button>;}):<p className="ask-no-match">No mail matches that yet.</p>}
+      <button className="ask-match-all" onClick={()=>onSearch(query)}><Keys className="ask-keys" combo="⌘ ↵" size="sm"/>See every result</button>
+      {matches.length?matches.map(t=>{const m=t.messages.at(-1)!;return <button key={t.id} className="ask-match" onClick={()=>onThread(t.id)}><Avatar name={m.fromName||m.from} size={26}/><span><span className="ask-match-line"><strong>{m.fromName}</strong><span>{dateLabel(t.date)}</span></span><span className="ask-match-subject">{t.subject}</span></span></button>;}):<p className="ask-no-match">No mail matches that yet.</p>}
     </div>
-    :history?<div className="ask-history">{conversations.length===0&&<p className="muted">A fresh start. Ask your first question.</p>}{[...conversations].reverse().map(c=><div className="history-row" key={c.id}><button onClick={()=>{setId(c.id);setHistory(false);}}><Clock size={14}/><span>{c.title}</span></button><button className="icon-button tiny" title="Delete conversation" aria-label={'Delete conversation '+c.title} disabled={busy} onClick={()=>{void invoke('conversation.delete',{id:c.id}).then(()=>{if(id===c.id)setId(undefined);}).catch(e=>notify(e.message));}}><Trash2 size={14}/></button></div>)}</div>
-    :<div className="ask-scroll">{!conversation&&!busy?<div className="ask-welcome"><p>Hold <kbd>A</kbd> to talk to your mail</p><button className="ask-example" title="Ask this" onClick={()=>void ask(example)}>“{example}”</button>{conversations.length>0&&<button className="text-button ask-history-link" onClick={()=>setHistory(true)}><History size={13}/>Earlier questions</button>}</div>:<>{conversation?.messages.map((m,i)=><div key={i} className={'chat-message '+m.role}><div className="chat-text">{m.content}</div>{!!m.citations?.length&&<div className="citations">{m.citations.map(cid=>{const t=threads.find(t=>t.id===cid);return t&&<button key={cid} onClick={()=>onThread(cid)}><ExternalLink size={12}/><span>{t.subject}</span></button>;})}</div>}{m.proposal&&<div className="proposal"><strong>{m.proposal.subject||'New message'}</strong><p>{m.proposal.to}</p><button className="secondary" onClick={()=>apply(m.proposal!,i)}>{currentDraft?'Apply to open draft':'Open as a draft'}</button></div>}</div>)}{busy&&<><div className="chat-message user"><div className="chat-text">{pending}</div></div><div className="thinking"><span/><span/><span/>Looking through your mail</div></>}<div ref={end}/></>}</div>}
+    :history?<div className="ask-history">{conversations.length===0&&<p className="muted">A fresh start. Ask your first question.</p>}{[...conversations].reverse().map(c=><div className="history-row" key={c.id}><button onClick={()=>{setId(c.id);setHistory(false);}}><Clock size={14}/><span>{c.title}</span></button><IconButton size="xs" label="Delete conversation" aria-label={'Delete conversation '+c.title} icon={Trash2} disabled={busy} onClick={()=>{void invoke('conversation.delete',{id:c.id}).then(()=>{if(id===c.id)setId(undefined);}).catch(e=>notify(e.message));}}/></div>)}</div>
+    :<div className="ask-scroll">{!conversation&&!busy?<div className="ask-welcome"><p>Hold <Kbd>A</Kbd> to talk to your mail</p><button key={exampleIndex} className="ask-example" onClick={()=>void ask(example)}>“{example}”</button>{conversations.length>0&&<Button variant="text" size="sm" icon={History} className="ask-history-link" onClick={()=>setHistory(true)}>Earlier questions</Button>}</div>:<>{conversation?.messages.map((m,i)=><div key={i} className={'chat-message '+m.role}><div className="chat-text">{m.content}</div>{!!m.citations?.length&&<div className="citations">{m.citations.map(cid=>{const t=threads.find(t=>t.id===cid);return t&&<button key={cid} onClick={()=>onThread(cid)}><ExternalLink size={12}/><span>{t.subject}</span></button>;})}</div>}{m.proposal&&<div className="proposal"><strong>{m.proposal.subject||'New message'}</strong><p>{m.proposal.to}</p><Button variant="tinted" size="sm" onClick={()=>void apply(m.proposal!,i)}>{currentDraft?'Apply to open draft':'Open as a draft'}</Button></div>}</div>)}{busy&&<><div className="chat-message user"><div className="chat-text">{pending}</div></div><div className="thinking"><span/><span/><span/>Looking through your mail</div></>}<div ref={end}/></>}</div>}
     {conversation&&<p className="ai-footnote">Answers use the selected mailbox · Powered by Groq</p>}
   </aside>;
 }

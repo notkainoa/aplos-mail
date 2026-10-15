@@ -111,5 +111,6 @@ export const Underline=symbol(Lucide.Underline,'underline');
 export const Undo2=symbol(Lucide.Undo2,'arrow.uturn.backward');
 export const Users=symbol(Lucide.Users,'person.2');
 export const Volume2=symbol(Lucide.Volume2,'speaker.wave.2');
+export const Wand=symbol(Lucide.WandSparkles,'wand.and.stars');
 export const WifiOff=symbol(Lucide.WifiOff,'wifi.slash');
 export const X=symbol(Lucide.X,'xmark');

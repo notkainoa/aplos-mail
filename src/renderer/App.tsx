@@ -1,49 +1,95 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {Archive,ArrowLeft,ArrowRight,Bookmark,CalendarDays,Check,CheckCheck,ChevronsUpDown,CircleCheck,Clock,Columns2,CornerUpLeft,ExternalLink,FileText,Home,Layers,Loader2,Mail,MailOpen,MessageCircle,MoreHorizontal,PanelLeft,Paperclip,Plus,RectangleVertical,RefreshCw,Search,Send,ShieldAlert,Sparkles,SquarePen,Trash2,WifiOff,X} from './icons';
+import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,MailOpen,MessageCircle,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
 import type {AppState,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,View} from '../shared/types';
-import {avatarColor,bridge,dateLabel,dueLabel,escapeHtml,invoke,isoDay,plain,replyRecipients,uid} from './bridge';
+import {bridge,escapeHtml,invoke,replyRecipients,uid} from './bridge';
 import {Compose} from './Compose';
 import {Ask} from './Ask';
 import {Reader} from './Reader';
 import {Calendar,EventEditor} from './Calendar';
 import {Settings} from './Settings';
+import {Sidebar,sections} from './components/Sidebar';
+import {Topbar} from './components/Topbar';
+import {DraftList,MailSection,type RowHandlers,type Triage} from './components/MailList';
+import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog,WelcomeDialog} from './components/Overlays';
+import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useMenu,usePresence,type Icon} from './ui';
 
-const sections:{view:View;label:string;icon:typeof Home;divider?:boolean}[]=[{view:'home',label:'Home',icon:Home},{view:'later',label:'Later',icon:Clock},{view:'all',label:'All mail',icon:Archive,divider:true},{view:'drafts',label:'Drafts',icon:FileText},{view:'sent',label:'Sent',icon:Send},{view:'needs-reply',label:'Needs reply',icon:CornerUpLeft,divider:true},{view:'awaiting-reply',label:'Awaiting reply',icon:MessageCircle},{view:'calendar',label:'Calendar',icon:CalendarDays,divider:true},{view:'trash',label:'Trash',icon:Trash2},{view:'spam',label:'Spam',icon:ShieldAlert}];
 const titles:Record<View,string>={home:'Home',later:'Later',all:'All mail',drafts:'Drafts',sent:'Sent','needs-reply':'Needs reply','awaiting-reply':'Awaiting reply',trash:'Trash',spam:'Spam',low:'Low importance',calendar:'Calendar',settings:'Settings'};
+const empties:Partial<Record<View,{icon:Icon;title:string;detail?:string}>>={
+  home:{icon:CircleCheck,title:'All clear for now',detail:'New mail that matters will land here.'},
+  later:{icon:Clock,title:'Nothing saved for later',detail:'Press ← on an email to keep it as a Todo.'},
+  drafts:{icon:FileText,title:'No drafts',detail:'Press C to start writing.'},
+  'needs-reply':{icon:CornerUpLeft,title:'Nobody is waiting on you'},
+  'awaiting-reply':{icon:MessageCircle,title:'Not waiting on anyone'},
+  sent:{icon:Send,title:'Nothing sent yet'},
+  trash:{icon:Trash2,title:'Trash is empty'},
+  spam:{icon:ShieldAlert,title:'No spam'},
+  low:{icon:Layers,title:'No low-importance mail'},
+  all:{icon:MailOpen,title:'No mail here yet'},
+};
 const mac=/Mac/.test(navigator.userAgent);
 const askStorageKey='aplos.askPanel';
 const askExamples=['What plans do I have this week?','Which emails still need a reply?','Summarize what changed today.','Draft a friendly follow-up.'];
 const queryParams=new URLSearchParams(location.search);const popoutDraft=queryParams.get('draft');const popoutThread=queryParams.get('thread');
 type Route={view:View;threadId?:string};
-type Triage='done'|'later'|'trash'|'spam';
 const triageLabels:Record<Triage,string>={done:'Marked done',later:'Moved to Todo',trash:'Moved to Trash',spam:'Moved to Spam'};
 const noop=()=>{};
-const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 export function App(){
- const [state,setState]=useState<AppState>();const [capabilities,setCapabilities]=useState<Capabilities>({groq:false,google:false,desktop:!!window.aplos,version:'0.1.0'});const [fatal,setFatal]=useState('');const [route,setRoute]=useState<Route>({view:'home',threadId:popoutThread??undefined});const [routes,setRoutes]=useState<Route[]>([{view:'home'}]);const [historyIndex,setHistoryIndex]=useState(0);const [ask,setAsk]=useState(()=>!popoutThread&&localStorage.getItem(askStorageKey)!=='closed');const [composer,setComposer]=useState<Draft>();const [liveDraft,setLiveDraft]=useState<Draft>();const [accountMenu,setAccountMenu]=useState(false);const [laterTab,setLaterTab]=useState<'todos'|'bookmarks'>('todos');const [selected,setSelected]=useState<Set<string>>(new Set());const [search,setSearch]=useState('');const [searchMode,setSearchMode]=useState(false);const [searchResults,setSearchResults]=useState<Thread[]>([]);const [searching,setSearching]=useState(false);const [shortcutHelp,setShortcutHelp]=useState(false);const [eventEditor,setEventEditor]=useState<Partial<CalendarEvent>|null>(null);const [toast,setToast]=useState<{text:string;undo?:boolean;id:number}>();const [online,setOnline]=useState(navigator.onLine);const [now,setNow]=useState(Date.now());const [busy,setBusy]=useState('');const [welcomeError,setWelcomeError]=useState('');const [draftBlocked,setDraftBlocked]=useState(false);const [composeClosing,setComposeClosing]=useState(false);const [leaving,setLeaving]=useState<{thread:Thread;status:Triage;key:number}>();const [entering,setEntering]=useState<{id:string;from:string}>();const [duePrompt,setDuePrompt]=useState<{id:string;key:number}>();const [rowMenu,setRowMenu]=useState<{thread:Thread;x:number;y:number}>();const freshDraft=useRef('');const hoveredId=useRef<string|null>(null);const talkHeld=useRef(false);const spaceHold=useRef<{timer?:ReturnType<typeof setTimeout>;fired:boolean}|null>(null);const lastTriage=useRef<{id:string;status:Triage;reopen:boolean}|null>(null);const searchInput=useRef<HTMLInputElement>(null);const eventHandler=useRef<(event:{type:string;payload?:unknown})=>void>(()=>{});const searchSeq=useRef(0);const composeRef=useRef<Draft|undefined>(undefined);composeRef.current=composer;
- function notify(text:string,undo=false){setToast({text,undo,id:Date.now()});}
+ const [state,setState]=useState<AppState>();
+ const [capabilities,setCapabilities]=useState<Capabilities>({groq:false,google:false,desktop:!!window.aplos,version:'0.1.0'});
+ const [fatal,setFatal]=useState('');
+ const [route,setRoute]=useState<Route>({view:'home',threadId:popoutThread??undefined});
+ const [routes,setRoutes]=useState<Route[]>([{view:'home'}]);const [historyIndex,setHistoryIndex]=useState(0);
+ const [ask,setAsk]=useState(()=>!popoutThread&&localStorage.getItem(askStorageKey)!=='closed');
+ const [composer,setComposer]=useState<Draft>();const [liveDraft,setLiveDraft]=useState<Draft>();const [composeClosing,setComposeClosing]=useState(false);const [draftBlocked,setDraftBlocked]=useState(false);
+ const [laterTab,setLaterTab]=useState<'todos'|'bookmarks'>('todos');
+ const [selected,setSelected]=useState<Set<string>>(new Set());
+ const [search,setSearch]=useState('');const [searchMode,setSearchMode]=useState(false);const [searchResults,setSearchResults]=useState<Thread[]>([]);const [searching,setSearching]=useState(false);
+ const [shortcutHelp,setShortcutHelp]=useState(false);
+ const [eventEditor,setEventEditor]=useState<Partial<CalendarEvent>|null>(null);
+ const [online,setOnline]=useState(navigator.onLine);const [now,setNow]=useState(Date.now());
+ const [busy,setBusy]=useState('');const [welcomeError,setWelcomeError]=useState('');
+ const [leaving,setLeaving]=useState<{thread:Thread;status:Triage;key:number}>();
+ const [entering,setEntering]=useState<{id:string;from:string}>();
+ const [duePrompt,setDuePrompt]=useState<{id:string;key:number}>();
+ const rowMenu=useMenu();const [menuThread,setMenuThread]=useState<Thread>();
+ const freshDraft=useRef('');const hoveredId=useRef<string|null>(null);const talkHeld=useRef(false);
+ const spaceHold=useRef<{timer?:ReturnType<typeof setTimeout>;fired:boolean}|null>(null);
+ const lastTriage=useRef<{id:string;status:Triage;reopen:boolean}|null>(null);
+ const searchInput=useRef<HTMLInputElement>(null);const eventHandler=useRef<(event:{type:string;payload?:unknown})=>void>(()=>{});
+ const searchSeq=useRef(0);const composeRef=useRef<Draft|undefined>(undefined);composeRef.current=composer;
+ const undoRef=useRef<()=>void>(noop);
+
+ function notify(text:string,undoable=false){toast.show({text,action:undoable?{label:'Undo',shortcut:'Z',run:()=>undoRef.current()}:undefined});}
+ function fail(error:unknown){toast.show({text:error instanceof Error?error.message:String(error),tone:'error'});}
  const refresh=useCallback(async()=>{try{setState(await invoke<AppState>('state.get'));setFatal('');}catch(e){setFatal((e as Error).message);}},[]);
- useEffect(()=>{void refresh();void invoke<Capabilities>('capabilities.get').then(setCapabilities).catch(()=>{});const unsubscribe=bridge.subscribe(e=>eventHandler.current(e));const t=setInterval(()=>setNow(Date.now()),1000);const up=()=>setOnline(true);const down=()=>setOnline(false);window.addEventListener('online',up);window.addEventListener('offline',down);return ()=>{unsubscribe();clearInterval(t);window.removeEventListener('online',up);window.removeEventListener('offline',down);};},[]);
+ useEffect(()=>{
+  void refresh();void invoke<Capabilities>('capabilities.get').then(setCapabilities).catch(()=>{});
+  const unsubscribe=bridge.subscribe(e=>eventHandler.current(e));const t=setInterval(()=>setNow(Date.now()),1000);
+  const up=()=>setOnline(true);const down=()=>setOnline(false);addEventListener('online',up);addEventListener('offline',down);
+  return ()=>{unsubscribe();clearInterval(t);removeEventListener('online',up);removeEventListener('offline',down);};
+ },[]);
  useEffect(()=>{if(!popoutThread)localStorage.setItem(askStorageKey,ask?'open':'closed');},[ask]);
  useEffect(()=>{if(!leaving)return;const t=setTimeout(()=>setLeaving(undefined),340);return ()=>clearTimeout(t);},[leaving?.key]);
  useEffect(()=>{if(!duePrompt)return;const t=setTimeout(()=>setDuePrompt(undefined),7000);return ()=>clearTimeout(t);},[duePrompt?.key]);
- useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(undefined),toast.undo?7000:5000);return ()=>clearTimeout(t);},[toast?.id]);
  useEffect(()=>{if(!state)return;const theme=state.settings.theme;const media=matchMedia('(prefers-color-scheme: dark)');const apply=()=>document.documentElement.dataset.theme=theme==='system'?(media.matches?'dark':'light'):theme;apply();media.addEventListener('change',apply);return ()=>media.removeEventListener('change',apply);},[state?.settings.theme]);
  useEffect(()=>{if(!popoutDraft||!state||composer||draftBlocked)return;const draft=state.drafts.find(d=>d.id===popoutDraft);if(draft)void invoke<boolean>('window.claim',{draftId:draft.id}).then(ok=>ok?setComposer(draft):setDraftBlocked(true)).catch(e=>setFatal(e.message));},[!!state,popoutDraft]);
+
  function replyGuard(){if(!inlineReply)return false;notify('Send or close your reply first.');return true;}
  function navigate(view:View,threadId?:string){if(replyGuard())return;const next={view,threadId};setRoute(next);setSearchMode(false);setSelected(new Set());setRoutes(prev=>[...prev.slice(0,historyIndex+1),next]);setHistoryIndex(i=>i+1);}
  function historyMove(delta:number){if(replyGuard())return;const index=historyIndex+delta;if(index<0||index>=routes.length)return;setHistoryIndex(index);setRoute(routes[index]);setSelected(new Set());setSearchMode(false);}
- async function updateSettings(patch:Partial<Preferences>){try{await invoke('settings.update',{patch});}catch(e){notify((e as Error).message);}}
- async function patch(ids:string[],p:Partial<Thread>,label?:string,keepTriage=false){if(!keepTriage)lastTriage.current=null;try{await invoke('thread.update',{ids,patch:p});if(label)notify(label,true);setSelected(new Set());}catch(e){notify((e as Error).message);}}
+ async function updateSettings(patch:Partial<Preferences>){try{await invoke('settings.update',{patch});}catch(e){fail(e);}}
+ async function patch(ids:string[],p:Partial<Thread>,label?:string,keepTriage=false){if(!keepTriage)lastTriage.current=null;try{await invoke('thread.update',{ids,patch:p});if(label)notify(label,true);setSelected(new Set());}catch(e){fail(e);}}
  async function undo(){
-  const last=lastTriage.current;lastTriage.current=null;setDuePrompt(undefined);
+  const last=lastTriage.current;lastTriage.current=null;setDuePrompt(undefined);toast.dismissActions();
   try{await invoke('thread.undo');
    if(last?.reopen&&!inlineReply){setLeaving(undefined);if(!reducedMotion())setEntering({id:last.id,from:last.status==='done'?'right':last.status==='later'?'left':'below'});setRoute(r=>({...r,threadId:last.id}));}
    else notify('Action undone');
-  }catch(e){notify((e as Error).message);}
+  }catch(e){fail(e);}
  }
- async function sync(){setBusy('sync');try{await invoke('sync',{accountId:state?.selectedAccountId==='all'?undefined:state?.selectedAccountId});}catch(e){notify((e as Error).message);}finally{setBusy('');}}
- async function openDraft(draft:Draft){try{if(draft.pendingSendAt){notify('Undo sending before editing this draft.');return;}if(composer&&composer.id!==draft.id){notify('Close the current draft before opening another.');return;}const claimed=await invoke<boolean>('window.claim',{draftId:draft.id});if(!claimed){notify('This draft is open in another window.');return;}setComposer(draft);}catch(e){notify((e as Error).message);}}
+ undoRef.current=()=>void undo();
+ async function sync(){setBusy('sync');try{await invoke('sync',{accountId:state?.selectedAccountId==='all'?undefined:state?.selectedAccountId});}catch(e){fail(e);}finally{setBusy('');}}
+ async function openDraft(draft:Draft){try{if(draft.pendingSendAt){notify('Undo sending before editing this draft.');return;}if(composer&&composer.id!==draft.id){notify('Close the current draft before opening another.');return;}const claimed=await invoke<boolean>('window.claim',{draftId:draft.id});if(!claimed){notify('This draft is open in another window.');return;}setComposer(draft);}catch(e){fail(e);}}
  async function newDraft(proposal:Partial<Draft>={},thread?:Thread,mode:Draft['mode']='new'){
   if(!state)return;if(composer){notify('Close the current draft before starting another.');return;}
   const last=thread?.messages.at(-1);const a=state.accounts.find(a=>a.id===(thread?.accountId||state.selectedAccountId))||state.accounts[0];if(!a){notify('Connect an account to write email.');return;}
@@ -51,10 +97,11 @@ export function App(){
   if(thread&&last){subject=(mode==='forward'?'Fwd: ':'Re: ')+thread.subject.replace(/^(Re|Fwd):\s*/i,'');if(mode==='forward')html=`<p><br></p><blockquote><p>Forwarded message from ${escapeHtml(last.fromName)} &lt;${escapeHtml(last.from)}&gt;</p><p>${escapeHtml(last.text).replace(/\n/g,'<br>')}</p></blockquote>`;else if(mode!=='new')({to,cc}=replyRecipients(thread,a.email,mode));}
   const alias=a.sendAs?.find(sender=>thread&&last?.to.some(address=>address.toLowerCase().includes(sender.email.toLowerCase())))||a.sendAs?.find(sender=>sender.isDefault)||a.sendAs?.find(sender=>sender.email===a.email);
   const d:Draft={id:uid(),accountId:a.id,to,cc,bcc:'',subject,html,attachments:[],mode,signature:true,...(a.provider==='google'?{fromEmail:alias?.email||a.email,signatureSource:alias?'gmail' as const:'custom' as const}:{}),updatedAt:new Date().toISOString(),revision:0,...(thread&&mode!=='forward'?{threadId:thread.id}:{}),...proposal};
-  setBusy(thread&&mode!=='forward'?'reply':'draft');try{if(thread&&mode==='forward')d.attachments=await Promise.all(thread.messages.at(-1)!.attachments.map(a=>a.data?Promise.resolve(a):invoke<import('../shared/types').Attachment>('attachment.get',{threadId:thread.id,attachmentId:a.id})));const saved=await invoke<Draft>('draft.save',{draft:d});freshDraft.current=saved.id;await openDraft(saved);}catch(e){notify((e as Error).message);}finally{setBusy('');}
+  setBusy(thread&&mode!=='forward'?'reply':'draft');
+  try{if(thread&&mode==='forward')d.attachments=await Promise.all(thread.messages.at(-1)!.attachments.map(a=>a.data?Promise.resolve(a):invoke<import('../shared/types').Attachment>('attachment.get',{threadId:thread.id,attachmentId:a.id})));const saved=await invoke<Draft>('draft.save',{draft:d});freshDraft.current=saved.id;await openDraft(saved);}catch(e){fail(e);}finally{setBusy('');}
  }
  function closeCompose(){const id=composer?.id;const done=()=>{setComposer(undefined);setLiveDraft(undefined);setComposeClosing(false);if(id)void invoke('window.release',{draftId:id}).catch(()=>{});if(popoutDraft)window.close();};if(!inlineReply&&!popoutDraft&&!reducedMotion()){setComposeClosing(true);setTimeout(done,150);}else done();}
- async function searchMail(value:string){const seq=++searchSeq.current;if(!value.trim()){setSearchResults([]);setSearching(false);return;}setSearching(true);try{const result=await invoke<Thread[]>('search',{query:value,accountId:state?.selectedAccountId});if(searchSeq.current===seq)setSearchResults(result);}catch(e){if(searchSeq.current===seq)notify((e as Error).message);}finally{if(searchSeq.current===seq)setSearching(false);}}
+ async function searchMail(value:string){const seq=++searchSeq.current;if(!value.trim()){setSearchResults([]);setSearching(false);return;}setSearching(true);try{const result=await invoke<Thread[]>('search',{query:value,accountId:state?.selectedAccountId});if(searchSeq.current===seq)setSearchResults(result);}catch(e){if(searchSeq.current===seq)fail(e);}finally{if(searchSeq.current===seq)setSearching(false);}}
  useEffect(()=>{if(!searchMode)return;const t=setTimeout(()=>void searchMail(search),250);return ()=>clearTimeout(t);},[search,searchMode,state?.selectedAccountId]);
  const scoped=useMemo(()=>state?.threads.filter(t=>state.selectedAccountId==='all'||t.accountId===state.selectedAccountId).sort((a,b)=>b.date.localeCompare(a.date))??[],[state?.threads,state?.selectedAccountId]);
  const filtered=useMemo(()=>{
@@ -63,10 +110,12 @@ export function App(){
  },[scoped,route.view,laterTab,searchMode,searchResults]);
  const selectedThread=state?.threads.find(t=>t.id===route.threadId)||searchResults.find(t=>t.id===route.threadId);const readerIndex=Math.max(0,filtered.findIndex(t=>t.id===route.threadId));
  const inlineReply=!!composer&&!!selectedThread&&!popoutDraft&&!popoutThread&&composer.threadId===selectedThread.id&&composer.mode!=='new'&&composer.mode!=='forward';
- function openThread(id:string){if(inlineReply&&id!==selectedThread?.id){notify('Send or close your reply first.');return;}setRoute(r=>({...r,threadId:id}));const t=state?.threads.find(t=>t.id===id);if(t?.unread)void invoke('thread.update',{ids:[id],patch:{unread:false},recordUndo:false}).catch(e=>notify(e.message));}
+ function openThread(id:string){if(inlineReply&&id!==selectedThread?.id){notify('Send or close your reply first.');return;}setRoute(r=>({...r,threadId:id}));const t=state?.threads.find(t=>t.id===id);if(t?.unread)void invoke('thread.update',{ids:[id],patch:{unread:false},recordUndo:false}).catch(fail);}
  function nextThread(delta:number){const next=filtered[readerIndex+delta];if(next)openThread(next.id);}
+ function exitDirection(status:Triage){const doneLeft=state?.settings.triageDirection==='done-left';return status==='done'?(doneLeft?'left':'right'):status==='later'?(doneLeft?'right':'left'):'down';}
  function triage(thread:Thread,status:Triage){
   const current=thread.id===selectedThread?.id;const stack=state?.settings.openMode==='stack';
+  hintExit(thread.id,exitDirection(status));
   // The stack dock has its own undo button, so the toast would only cover it.
   void patch([thread.id],{status},current&&stack?undefined:triageLabels[status],true);
   lastTriage.current={id:thread.id,status,reopen:current};
@@ -79,123 +128,134 @@ export function App(){
   if(following&&following.id!==thread.id)setRoute(r=>({...r,threadId:following.id}));else setRoute(r=>({...r,threadId:undefined}));
   if(following?.unread)void invoke('thread.update',{ids:[following.id],patch:{unread:false},recordUndo:false}).catch(()=>{});
  }
+ function bulk(status:Triage,label:string){const ids=[...selected];for(const id of ids)hintExit(id,exitDirection(status));void patch(ids,{status},label);}
  function talk(phase:'start'|'release'){
   if(phase==='start'){
    if(talkHeld.current||!selectedThread)return;talkHeld.current=true;
-   const release=()=>{window.removeEventListener('pointerup',release);talk('release');};window.addEventListener('pointerup',release);
+   const release=()=>{removeEventListener('pointerup',release);talk('release');};addEventListener('pointerup',release);
    void newDraft({},selectedThread,state?.settings.defaultReply);
-  }else if(talkHeld.current){talkHeld.current=false;window.dispatchEvent(new Event('aplos:talk-release'));}
+  }else if(talkHeld.current){talkHeld.current=false;dispatchEvent(new Event('aplos:talk-release'));}
  }
- async function setDue(id:string,dueDate:string,label:string){setDuePrompt(undefined);try{await invoke('thread.update',{ids:[id],patch:{dueDate},recordUndo:false});notify(label);}catch(e){notify((e as Error).message);}}
- function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':if(replyGuard())break;setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));setTimeout(()=>searchInput.current?.focus(),20);break;case'ask':setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
+ async function setDue(id:string,dueDate:string,label:string){setDuePrompt(undefined);try{await invoke('thread.update',{ids:[id],patch:{dueDate},recordUndo:false});notify(label);}catch(e){fail(e);}}
+ function openSearch(){if(replyGuard())return;setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));setTimeout(()=>searchInput.current?.focus(),20);}
+ function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
  eventHandler.current=event=>{
   if(event.type==='state')setState(event.payload as AppState);
   else if(event.type==='prepare-close'){if(!composeRef.current)void invoke('window.closeReady').catch(()=>{});}
   else if(event.type==='command')command(String(event.payload));
   else if(event.type==='deep-link'){try{const url=new URL(String(event.payload));if(url.protocol==='mailto:')void newDraft({to:decodeURIComponent(url.pathname),subject:url.searchParams.get('subject')||'',html:escapeHtml(url.searchParams.get('body')||'').replace(/\n/g,'<br>'),cc:url.searchParams.get('cc')||'',bcc:url.searchParams.get('bcc')||''});else if(url.host==='compose')void newDraft({to:url.searchParams.get('to')||'',subject:url.searchParams.get('subject')||'',html:escapeHtml(url.searchParams.get('body')||'')});else if(url.host==='settings')navigate('settings');else if(url.host==='thread')navigate('all',decodeURIComponent(url.pathname.slice(1)));}catch{notify('That link could not be opened.');}}
   else if(event.type==='sent'){notify('Message sent');if((event.payload as {playSound?:boolean})?.playSound){try{const ctx=new AudioContext();const osc=ctx.createOscillator();const gain=ctx.createGain();osc.connect(gain);gain.connect(ctx.destination);osc.frequency.setValueAtTime(540,ctx.currentTime);osc.frequency.exponentialRampToValueAtTime(810,ctx.currentTime+.12);gain.gain.setValueAtTime(.035,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.22);osc.start();osc.stop(ctx.currentTime+.23);osc.onended=()=>void ctx.close();}catch{/* no sound without audio permission */}}}
-  else if(event.type==='send-error'||event.type==='error')notify(typeof event.payload==='string'?event.payload:(event.payload as {message?:string})?.message||'Something needs your attention.');
+  else if(event.type==='send-error'||event.type==='error')toast.show({tone:'error',text:typeof event.payload==='string'?event.payload:(event.payload as {message?:string})?.message||'Something needs your attention.'});
   else if(event.type==='reminder')notify('Reminder: '+(event.payload as {title:string}).title);
  };
- useEffect(()=>{function keyboard(e:KeyboardEvent){const element=e.target as HTMLElement;const typing=['INPUT','TEXTAREA','SELECT'].includes(element.tagName)||element.isContentEditable;if((e.metaKey||e.ctrlKey)&&['k','j',',','/'].includes(e.key)){e.preventDefault();command(e.key==='k'?'search':e.key==='j'?'ask':e.key===','?'settings':'shortcuts');return;}
+ useEffect(()=>{
+  function keyboard(e:KeyboardEvent){
+   const element=e.target as HTMLElement;const typing=['INPUT','TEXTAREA','SELECT'].includes(element.tagName)||element.isContentEditable;
+   if(dialogOpen())return;
+   if((e.metaKey||e.ctrlKey)&&['k','j',',','/'].includes(e.key)){e.preventDefault();command(e.key==='k'?'search':e.key==='j'?'ask':e.key===','?'settings':'shortcuts');return;}
    if(e.ctrlKey&&!e.metaKey&&!e.altKey&&/^[1-9]$/.test(e.key)&&!composer){const section=sections[Number(e.key)-1];if(section){e.preventDefault();navigate(section.view);}return;}
-   if(composer||eventEditor||typing)return;if(e.key==='Escape'){setShortcutHelp(false);setDuePrompt(undefined);setRowMenu(undefined);if(searchMode){setSearchMode(false);setSearch('');}else setRoute(r=>({...r,threadId:undefined}));return;}if(e.metaKey||e.ctrlKey||e.altKey)return;
+   if(composer||eventEditor||typing)return;
+   if(e.key==='Escape'){setDuePrompt(undefined);if(selected.size){setSelected(new Set());return;}if(searchMode){setSearchMode(false);setSearch('');}else setRoute(r=>({...r,threadId:undefined}));return;}
+   if(e.metaKey||e.ctrlKey||e.altKey)return;
    const t=selectedThread;const hovered=!t&&hoveredId.current?filtered.find(x=>x.id===hoveredId.current):undefined;const subject=t||hovered;
    if(e.key===' '&&t){e.preventDefault();if(e.repeat||spaceHold.current)return;const hold:{timer?:ReturnType<typeof setTimeout>;fired:boolean}={fired:false};hold.timer=setTimeout(()=>{hold.fired=true;talk('start');},300);spaceHold.current=hold;return;}
    const keys:Record<string,()=>void>={c:()=>void newDraft(),a:()=>setAsk(true),'/':()=>command('search'),'?':()=>setShortcutHelp(true),'[':()=>command('toggle-sidebar'),z:()=>void undo(),s:()=>{if(filtered[0])openThread(filtered[0].id);},j:()=>nextThread(1),k:()=>nextThread(-1)};
    if(subject){const doneLeft=state?.settings.triageDirection==='done-left';keys.e=()=>triage(subject,'done');keys.l=()=>triage(subject,'later');keys.b=()=>void patch([subject.id],{bookmarked:!subject.bookmarked},subject.bookmarked?'Bookmark removed':'Bookmarked');keys.u=()=>void patch([subject.id],{unread:!subject.unread});keys['#']=()=>triage(subject,'trash');keys.ArrowLeft=()=>triage(subject,doneLeft?'done':'later');keys.ArrowRight=()=>triage(subject,doneLeft?'later':'done');}
    if(t){keys.r=()=>void newDraft({},t,state?.settings.defaultReply);keys.R=()=>void newDraft({},t,state?.settings.defaultReply==='reply-all'?'reply':'reply-all');keys.f=()=>void newDraft({},t,'forward');}
-   if(keys[e.key]){e.preventDefault();keys[e.key]();}}
+   if(keys[e.key]){e.preventDefault();keys[e.key]();}
+  }
   function keyup(e:KeyboardEvent){if(e.key!==' ')return;const hold=spaceHold.current;if(!hold)return;spaceHold.current=null;clearTimeout(hold.timer);if(hold.fired)talk('release');else if(selectedThread&&!composer)void newDraft({},selectedThread,state?.settings.defaultReply);}
-  window.addEventListener('keydown',keyboard);window.addEventListener('keyup',keyup);return ()=>{window.removeEventListener('keydown',keyboard);window.removeEventListener('keyup',keyup);};
+  addEventListener('keydown',keyboard);addEventListener('keyup',keyup);return ()=>{removeEventListener('keydown',keyboard);removeEventListener('keyup',keyup);};
  });
- if(!state)return <div className="loading-screen"><span className="app-icon ink large">a</span><h2>{fatal?'Aplos needs a moment.':'Making room for your mail…'}</h2>{fatal?<><p>{fatal}</p><button className="primary" onClick={()=>void refresh()}>Try again</button><p className="small muted">For browser development, run npm run dev.</p></>:<Loader2 className="spin muted" size={20}/>}</div>;
- const prefs=state.settings;const currentAccount=state.accounts.find(a=>a.id===state.selectedAccountId);const low=scoped.filter(t=>t.status==='new'&&t.importance==='low');const later=scoped.filter(t=>t.status==='later');const homeLater=later.filter(t=>!t.hiddenFromHome&&(!t.dueDate||t.dueDate<=new Date().toISOString().slice(0,10)));const replyHome=scoped.filter(t=>t.replyStatus==='needs-reply'&&t.status==='done'&&!t.hiddenFromHome);const pending=state.drafts.filter(d=>d.pendingSendAt);const drafts=state.drafts.filter(d=>!d.pendingSendAt&&(state.selectedAccountId==='all'||d.accountId===state.selectedAccountId));
+ const bulkBar=usePresence(selected.size>0);
+
+ if(!state)return <div className="loading-screen"><span className="app-icon ink large">a</span><h2>{fatal?'Aplos needs a moment.':'Making room for your mail…'}</h2>{fatal?<><p>{fatal}</p><Button variant="primary" onClick={()=>void refresh()}>Try again</Button><p className="small muted">For browser development, run npm run dev.</p></>:<Spinner size={20} className="muted"/>}</div>;
+
+ const prefs=state.settings;
+ const low=scoped.filter(t=>t.status==='new'&&t.importance==='low');const later=scoped.filter(t=>t.status==='later');
+ const homeLater=later.filter(t=>!t.hiddenFromHome&&(!t.dueDate||t.dueDate<=new Date().toISOString().slice(0,10)));
+ const replyHome=scoped.filter(t=>t.replyStatus==='needs-reply'&&t.status==='done'&&!t.hiddenFromHome);
+ const pending=state.drafts.filter(d=>d.pendingSendAt);
+ const drafts=state.drafts.filter(d=>!d.pendingSendAt&&(state.selectedAccountId==='all'||d.accountId===state.selectedAccountId));
  function count(view:View){if(view==='home')return scoped.filter(t=>t.status==='new').length+homeLater.length;if(view==='later')return later.length;if(view==='drafts')return drafts.length;if(view==='needs-reply'||view==='awaiting-reply')return scoped.filter(t=>t.replyStatus===view&&t.status!=='trash'&&t.status!=='spam').length;return 0;}
  const heading={title:searchMode?'Search':titles[route.view],count:filtered.length};
  const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
  const readerProps={settings:prefs,editEvent:setEventEditor,notify,undo:()=>void undo(),talk,heading};
  const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={filtered.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={status=>triage(selectedThread,status)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} entering={entering?.id===selectedThread.id?entering.from:undefined}/>;
  const ghost=leaving&&prefs.openMode==='stack'&&<div key={leaving.key} className={'fling fling-'+leaving.status} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
- function selectThread(id:string){setSelected(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});}
- function rows(threads:Thread[]){return <div className="mail-group">{threads.map(t=><MailRow key={t.id} thread={t} active={route.threadId===t.id} selected={selected.has(t.id)} doneLeft={prefs.triageDirection==='done-left'} onOpen={()=>openThread(t.id)} onSelect={()=>selectThread(t.id)} onTriage={status=>triage(t,status)} onBookmark={()=>void patch([t.id],{bookmarked:!t.bookmarked},t.bookmarked?'Bookmark removed':'Bookmarked')} onMore={rect=>setRowMenu({thread:t,x:rect.right,y:rect.bottom+4})} onHover={on=>{if(on)hoveredId.current=t.id;else if(hoveredId.current===t.id)hoveredId.current=null;}}/>)}</div>;}
- function group(title:string,threads:Thread[],action?:React.ReactNode,showCount=true){return threads.length?<section className="mail-section"><header><h2>{title}{showCount&&<span>{threads.length}</span>}</h2>{action}</header>{rows(threads)}</section>:null;}
- const empty=<Empty view={route.view} search={searchMode}/>;
- if(popoutDraft)return <><div className="popout-titlebar"/>{composer?<Compose draft={composer} accounts={state.accounts} settings={prefs} thread={state.threads.find(t=>t.id===composer.threadId)} close={closeCompose} notify={notify} onChange={setLiveDraft} popout fresh={freshDraft.current===composer.id}/>:<div className="loading-screen"><h2>{draftBlocked?'This draft is open in another window.':'This draft is no longer available.'}</h2><button onClick={()=>window.close()}>Close window</button></div>}{toast&&<div className="toast" role="status">{toast.text}</div>}</>;
- const accountLabel=currentAccount?currentAccount.provider==='demo'?(currentAccount.id==='work'?'Work':'Personal'):currentAccount.name:'All accounts';
+ const doneLeft=prefs.triageDirection==='done-left';
+ const rows:RowHandlers={
+  activeId:route.threadId,selected,doneLeft,
+  open:t=>openThread(t.id),
+  select:t=>setSelected(prev=>{const next=new Set(prev);next.has(t.id)?next.delete(t.id):next.add(t.id);return next;}),
+  triage,
+  bookmark:t=>void patch([t.id],{bookmarked:!t.bookmarked},t.bookmarked?'Bookmark removed':'Bookmarked'),
+  more:(t,anchor)=>{setMenuThread(t);rowMenu.openAt(anchor);},
+  hover:(t,on)=>{if(on)hoveredId.current=t.id;else if(hoveredId.current===t.id)hoveredId.current=null;},
+ };
+ const group=(title:string,threads:Thread[],action?:React.ReactNode,showCount=true)=><MailSection key={title} title={title} threads={threads} action={action} showCount={showCount} rows={rows}/>;
+ const titled=(title:string,body:React.ReactNode)=><section className="mail-section"><header><h2>{title}</h2></header>{body}</section>;
+ const emptyFor=(view:View)=>{const spec=searchMode?{icon:Search,title:'No matches yet',detail:'Try fewer words, or a sender’s name.'}:empties[view]??{title:'Nothing here'};return <EmptyState icon={spec.icon} title={spec.title} detail={spec.detail}/>;};
+
+ if(popoutDraft)return <><div className="popout-titlebar"/>{composer?<Compose draft={composer} accounts={state.accounts} settings={prefs} thread={state.threads.find(t=>t.id===composer.threadId)} close={closeCompose} notify={notify} onChange={setLiveDraft} popout fresh={freshDraft.current===composer.id}/>:<div className="loading-screen"><h2>{draftBlocked?'This draft is open in another window.':'This draft is no longer available.'}</h2><Button onClick={()=>window.close()}>Close window</Button></div>}<Toaster/><ConfirmHost/></>;
+
  const syncing=busy==='sync'||state.sync.busy;
  const listView=!['settings','calendar'].includes(route.view);
- const demoOnly=state.accounts.every(a=>a.provider==='demo');
  const today=new Date().toISOString().slice(0,10);
- const swipe=<button className="pill-button" onClick={()=>{if(filtered[0])openThread(filtered[0].id);}}><Layers size={14}/>One at a time<kbd>S</kbd></button>;
+ const swipe=<Button variant="pill" icon={Layers} shortcut="S" onClick={()=>{if(filtered[0])openThread(filtered[0].id);}}>One at a time</Button>;
  const composerLayer=!!composer&&!inlineReply;
- const statusLine=!online||state.sync.busy||!!state.sync.error;
- const doneLeft=prefs.triageDirection==='done-left';
- function titled(title:string,body:React.ReactNode){return <section className="mail-section"><header><h2>{title}</h2></header>{body}</section>;}
- const viewTip=(title:string,detail:string)=><span className="rich-tip" role="tooltip"><strong>{title}</strong><span>{detail}</span></span>;
- const nextWeek=((8-new Date().getDay())%7)||7;
- return <div className={'app-shell '+(window.aplos?'desktop ':'')+(mac?'mac ':'')+(!prefs.sidebar||popoutThread?'sidebar-hidden ':'')+(ask?'with-ask':'')}>
- {!popoutThread&&<aside className="sidebar">
- <div className="sidebar-titlebar"><button className="icon-button" title="Hide sidebar ( [ )" aria-label="Hide sidebar" onClick={()=>void updateSettings({sidebar:false})}><PanelLeft size={16}/></button><div className="actions"><button className="icon-button" title="Refresh mail" aria-label="Refresh mail" disabled={syncing} onClick={()=>void sync()}><RefreshCw size={14} className={syncing?'spin':''}/></button><button className="icon-button" title="Back" aria-label="Back" disabled={historyIndex===0} onClick={()=>historyMove(-1)}><ArrowLeft size={16}/></button><button className="icon-button" title="Forward" aria-label="Forward" disabled={historyIndex===routes.length-1} onClick={()=>historyMove(1)}><ArrowRight size={16}/></button></div></div>
- <div className="account-switcher"><button aria-label="Switch account" title={currentAccount?.email||'All accounts'} className="account-trigger" onClick={()=>setAccountMenu(!accountMenu)}><span className="account-stack">{(currentAccount?[currentAccount]:state.accounts.slice(0,2)).map(a=><span key={a.id} className="account-avatar" style={{background:a.color}}>{(a.provider==='demo'?(a.id==='work'?'W':'P'):a.name[0]||'?').toUpperCase()}</span>)}</span><span className="account-name">{accountLabel}</span><ChevronsUpDown size={15}/></button>{accountMenu&&<><div className="dismiss-layer" onClick={()=>setAccountMenu(false)}/><div className="dropdown account-dropdown"><button onClick={()=>{void invoke('account.select',{id:'all'});setAccountMenu(false);}}><span>All accounts</span>{state.selectedAccountId==='all'&&<Check size={14}/>}</button>{state.accounts.map(a=><button key={a.id} onClick={()=>{void invoke('account.select',{id:a.id});setAccountMenu(false);setRoute({view:'home'});}}><span className="account-dot" style={{background:a.color}}/><span>{a.provider==='demo'?(a.id==='work'?'Work':'Personal'):a.name}<small>{a.email}</small></span>{a.id===state.selectedAccountId&&<Check size={14}/>}</button>)}<hr/><button onClick={()=>{setAccountMenu(false);navigate('settings');}}><span>Manage accounts</span><Plus size={14}/></button></div></>}</div>
- <nav className="main-nav" aria-label="Mailboxes">{sections.map(({view,label,icon:Icon,divider},index)=><div key={view} className={divider?'nav-divider':''}><button className={'nav-item '+(route.view===view&&!searchMode?'active':'')} title={index<9?`${label} (⌃${index+1})`:label} onClick={()=>navigate(view)}><Icon size={18}/><span>{label}</span>{index<9&&<span className="nav-keys" aria-hidden="true"><kbd>⌃</kbd><kbd>{index+1}</kbd></span>}{(!prefs.zen||view==='home')&&count(view)>0&&<span className="nav-count">{count(view)}</span>}</button></div>)}</nav>
- <footer className="sidebar-footer">{statusLine&&<div className="sidebar-status"><span className={'sync-dot '+(!online||state.sync.error?'offline':'')}/><span>{!online?'Available offline':state.sync.busy?'Syncing mail…':'Sync needs attention'}</span></div>}<button className={'footer-link '+(route.view==='settings'?'active':'')} onClick={()=>navigate('settings')}>Settings</button><button className="footer-link" onClick={()=>setShortcutHelp(true)}>Keyboard shortcuts</button>{demoOnly&&<span className="footer-note">Demo mail</span>}</footer>
- </aside>}
+ const sidebarHidden=!prefs.sidebar||!!popoutThread;
+ const view=route.view;
+ const thread=menuThread;
+
+ let list:React.ReactNode;
+ if(searchMode)list=search?filtered.length?group(`${filtered.length} result${filtered.length===1?'':'s'}`,filtered,undefined,false):!searching&&emptyFor(view):<EmptyState compact icon={Search} title="Search your mail" detail="Senders, subjects and the words inside your messages."/>;
+ else if(view==='home')list=<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-bundle" onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><span><strong>Low-importance emails</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></span></button>}{group('Ready when you are',homeLater,<Button variant="text" onClick={()=>void invoke('home.hide',{ids:homeLater.map(t=>t.id)})}>Hide all</Button>)}{group('Waiting on you',replyHome)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&emptyFor('home')}</>;
+ else if(view==='drafts')list=titled('Drafts',drafts.length?<DraftList drafts={drafts} open={d=>void openDraft(d)} remove={async d=>{if(!await confirmAction({title:'Delete this draft?',message:'It will be removed from this device and from Gmail drafts.',confirmLabel:'Delete',danger:true}))return;hintExit(d.id,'down');void invoke('draft.delete',{id:d.id}).catch(fail);}}/>:emptyFor('drafts'));
+ else if(view==='later'&&laterTab==='todos')list=<>{group('Overdue',filtered.filter(t=>t.dueDate&&t.dueDate<today))}{group('Todos without a specific date',filtered.filter(t=>!t.dueDate))}{group('Upcoming',filtered.filter(t=>t.dueDate&&t.dueDate>=today))}{!filtered.length&&emptyFor('later')}</>;
+ else{const title=view==='later'?'Bookmarks':titles[view];list=filtered.length?group(title,filtered,view==='low'?<Button variant="pill" icon={CheckCheck} onClick={()=>{for(const t of filtered)hintExit(t.id,exitDirection('done'));void patch(filtered.map(t=>t.id),{status:'done'},'Low-importance mail marked done');}}>Mark all done</Button>:undefined,false):titled(title,view==='later'?<EmptyState icon={Bookmark} title="No bookmarks" detail="Press B on an email to keep it close."/>:emptyFor(view));}
+
+ return <div className={cx('app-shell',window.aplos&&'desktop',mac&&'mac',sidebarHidden&&'sidebar-hidden',ask&&'with-ask')}>
+ {!popoutThread&&<div className="sidebar-slot" inert={sidebarHidden||undefined}><Sidebar state={state} view={searchMode?null:route.view} count={count} zen={prefs.zen} online={online} syncing={syncing}
+  canBack={historyIndex>0} canForward={historyIndex<routes.length-1} navigate={navigate} back={()=>historyMove(-1)} forward={()=>historyMove(1)} sync={()=>void sync()} hide={()=>void updateSettings({sidebar:false})}
+  selectAccount={id=>{void invoke('account.select',{id}).catch(fail);if(id!=='all')setRoute({view:'home'});}} shortcuts={()=>setShortcutHelp(true)} onError={fail}/></div>}
  <main className="workspace">
- <div className="topbar"><div className="topbar-left">{!prefs.sidebar&&!popoutThread&&<button className="tool-button" title="Show sidebar ( [ )" aria-label="Show sidebar" onClick={()=>void updateSettings({sidebar:true})}><PanelLeft size={16}/></button>}{selectedThread&&!popoutThread&&prefs.openMode==='stack'&&<button className="tool-button" title="Back to list (Esc)" aria-label="Back to list" onClick={()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}}><ArrowLeft size={16}/></button>}</div>
- {!popoutThread&&<div className="topbar-actions">{listView&&!composerLayer&&<><div className="view-toggle" role="group" aria-label="Email open mode"><button aria-label="Open emails in a stack" className={prefs.openMode==='stack'?'selected':''} onClick={()=>void updateSettings({openMode:'stack'})}><RectangleVertical size={15}/>{viewTip('Open emails as a stack','One card at a time, with Done and Todo close at hand')}</button><button aria-label="Open emails in split view" className={prefs.openMode==='split'?'selected':''} onClick={()=>void updateSettings({openMode:'split'})}><Columns2 size={15}/>{viewTip('Open emails beside the list','Keep the list in view while you read')}</button></div><span className="toolbar-divider"/></>}<button className="compose-top" title="Compose (C)" onClick={()=>void newDraft()} disabled={busy==='draft'||busy==='reply'}><SquarePen size={16}/><span>Compose</span></button>{!ask&&<button className="ask-pill" title="Ask or search your mail (A)" aria-label="Show Ask" onClick={()=>setAsk(true)}><Search size={15}/><span>Ask</span><kbd>A</kbd><small>Hold to talk</small></button>}</div>}</div>
- {state.sync.error&&<div className="sync-error"><WifiOff size={14}/><span>{state.sync.error}</span><button className="text-button" onClick={()=>void sync()}>Retry</button></div>}
- <div className={'content-layout '+(selectedThread&&prefs.openMode==='split'?'split-layout':'')}>
+ <Topbar showSidebarButton={!prefs.sidebar&&!popoutThread} showBack={!!selectedThread&&!popoutThread&&prefs.openMode==='stack'} showActions={!popoutThread} showModes={listView&&!composerLayer} showAsk={!ask}
+  openMode={prefs.openMode} composeBusy={busy==='draft'||busy==='reply'} showSidebar={()=>void updateSettings({sidebar:true})} back={()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}}
+  setOpenMode={openMode=>void updateSettings({openMode})} compose={()=>void newDraft()} ask={()=>setAsk(true)}/>
+ {state.sync.error&&<div className="sync-error"><WifiOff size={14}/><span>{state.sync.error}</span><Button variant="text" size="sm" onClick={()=>void sync()}>Retry</Button></div>}
+ <div className={cx('content-layout',selectedThread&&prefs.openMode==='split'&&'split-layout')}>
  {!popoutThread&&(!selectedThread||prefs.openMode==='split')&&<div className="mail-content">
- {route.view==='settings'?<Settings state={state} capabilities={capabilities} onChange={p=>void updateSettings(p)} notify={notify} shortcuts={()=>setShortcutHelp(true)}/>:route.view==='calendar'?<Calendar events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} edit={setEventEditor} onThread={id=>navigate('all',id)}/>:<>
- {searchMode&&<div className="search-heading"><div className="search-box"><Search size={17}/><input ref={searchInput} autoFocus placeholder="Search your mail" aria-label="Search mail query" value={search} onChange={e=>setSearch(e.target.value)}/>{searching&&<Loader2 size={16} className="spin"/>}<button className="icon-button" aria-label="Close search" onClick={()=>{setSearchMode(false);setSearch('');}}><X size={16}/></button></div><p className="search-hints">Try <button onClick={()=>setSearch('is:unread')}>is:unread</button><button onClick={()=>setSearch('has:attachment')}>has:attachment</button><button onClick={()=>setSearch('from:maya')}>from:maya</button></p></div>}
- {route.view==='later'&&!searchMode&&<div className="underline-tabs" role="tablist" aria-label="Later groups"><button role="tab" aria-selected={laterTab==='todos'} className={laterTab==='todos'?'active':''} onClick={()=>setLaterTab('todos')}><CircleCheck size={14}/>Todos<span>{later.length}</span></button><button role="tab" aria-selected={laterTab==='bookmarks'} className={laterTab==='bookmarks'?'active':''} onClick={()=>setLaterTab('bookmarks')}><Bookmark size={14}/>Bookmarks<span>{scoped.filter(t=>t.bookmarked).length}</span></button></div>}
- {selected.size>0&&<div className="bulk-toolbar"><label><input type="checkbox" checked={selected.size===filtered.length} onChange={e=>setSelected(new Set(e.target.checked?filtered.map(t=>t.id):[]))}/>{selected.size} selected</label><div className="actions"><button onClick={()=>void patch([...selected],{status:'done'},'Marked done')}><Check size={15}/>Done</button><button onClick={()=>void patch([...selected],{status:'later'},'Moved to Todo')}><Clock size={15}/>Todo</button><button aria-label="Move selected to Trash" onClick={()=>void patch([...selected],{status:'trash'},'Moved to Trash')}><Trash2 size={15}/></button><button aria-label="Clear selection" onClick={()=>setSelected(new Set())}><X size={15}/></button></div></div>}
- {searchMode?(search?filtered.length?group(`${filtered.length} result${filtered.length===1?'':'s'}`,filtered,undefined,false):!searching&&empty:<div className="empty-plain">Search senders, subjects and the words inside your mail.</div>)
- :route.view==='home'?<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-bundle" onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><span><strong>Low-importance emails</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></span></button>}{group('Ready when you are',homeLater,<button className="text-button" onClick={()=>void invoke('home.hide',{ids:homeLater.map(t=>t.id)})}>Hide all</button>)}{group('Waiting on you',replyHome)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&empty}</>
- :route.view==='drafts'?titled('Drafts',drafts.length?<div className="mail-group drafts-list">{drafts.map(d=><div key={d.id} className="draft-row"><button onClick={()=>void openDraft(d)}><span className="draft-avatar"><FileText size={15}/></span><span><span className="row-first"><span className="sender">{d.to||'No recipients yet'}</span><span className="row-separator">·</span><span className="subject">{d.subject||'(No subject)'}</span><span className="row-time">{dateLabel(d.updatedAt)}</span></span><span className="row-second"><span className="summary">{plain(d.html).slice(0,140)||'Empty draft'}</span></span>{d.sendError&&<em className="danger">{d.sendError}</em>}</span></button><button className="icon-button" aria-label={'Delete draft '+d.subject} onClick={()=>{if(confirm('Delete this draft?'))void invoke('draft.delete',{id:d.id}).catch(e=>notify(e.message));}}><Trash2 size={15}/></button></div>)}</div>:empty)
- :route.view==='later'&&laterTab==='todos'?<>{group('Overdue',filtered.filter(t=>t.dueDate&&t.dueDate<today))}{group('Todos without a specific date',filtered.filter(t=>!t.dueDate))}{group('Upcoming',filtered.filter(t=>t.dueDate&&t.dueDate>=today))}{!filtered.length&&empty}</>
- :filtered.length?group(route.view==='later'?'Bookmarks':titles[route.view],filtered,route.view==='low'?<button className="pill-button" onClick={()=>void patch(filtered.map(t=>t.id),{status:'done'},'Low-importance mail marked done')}><CheckCheck size={14}/>Mark all done</button>:undefined,false):titled(route.view==='later'?'Bookmarks':titles[route.view],empty)}
- </>}
+ {view==='settings'?<Settings state={state} capabilities={capabilities} onChange={p=>void updateSettings(p)} notify={notify} shortcuts={()=>setShortcutHelp(true)}/>
+ :view==='calendar'?<Calendar events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} edit={setEventEditor} onThread={id=>navigate('all',id)}/>
+ :<div className="mail-view" key={(searchMode?'search':view)+(view==='later'?laterTab:'')}>
+  {searchMode&&<div className="search-heading"><div className="search-box"><Search size={17}/><input ref={searchInput} autoFocus placeholder="Search your mail" aria-label="Search mail query" value={search} onChange={e=>setSearch(e.target.value)}/>{searching&&<Spinner size={16}/>}<IconButton label="Close search" shortcut="Esc" icon={X} onClick={()=>{setSearchMode(false);setSearch('');}}/></div><p className="search-hints">Try {['is:unread','has:attachment','from:maya'].map(hint=><button key={hint} className={search===hint?'is-active':undefined} onClick={()=>setSearch(hint)}>{hint}</button>)}</p></div>}
+  {view==='later'&&!searchMode&&<Tabs variant="underline" label="Later groups" className="later-tabs" value={laterTab} onChange={setLaterTab} items={[{id:'todos',label:'Todos',icon:CircleCheck,count:later.length},{id:'bookmarks',label:'Bookmarks',icon:Bookmark,count:scoped.filter(t=>t.bookmarked).length}]}/>}
+  {bulkBar.mounted&&<div className={cx('bulk-toolbar',bulkBar.closing&&'is-closing')}><Checkbox checked={selected.size===filtered.length&&filtered.length>0} indeterminate={selected.size>0&&selected.size<filtered.length} label={`${selected.size||1} selected`} onChange={on=>setSelected(new Set(on?filtered.map(t=>t.id):[]))}/>
+   <div className="actions"><Button variant="ghost" icon={Check} onClick={()=>bulk('done','Marked done')}>Done</Button><Button variant="ghost" icon={Clock} onClick={()=>bulk('later','Moved to Todo')}>Todo</Button><IconButton label="Move selected to Trash" icon={Trash2} onClick={()=>bulk('trash','Moved to Trash')}/><IconButton label="Clear selection" shortcut="Esc" icon={X} onClick={()=>setSelected(new Set())}/></div></div>}
+  {list}
+ </div>}
  </div>}
  {reader}
  {ghost}
  </div>
  {composerLayer&&composer&&<Compose key={composer.id} draft={composer} accounts={state.accounts} settings={prefs} thread={state.threads.find(t=>t.id===composer.threadId)} close={closeCompose} notify={notify} onChange={setLiveDraft} fresh={freshDraft.current===composer.id} closing={composeClosing} holdToTalk={()=>talkHeld.current}/>}
  {busy==='draft'&&!composer&&<div className="compose-layer"><ComposeSkeleton/></div>}
- {duePrompt&&<div key={duePrompt.key} className={'due-popover '+(selectedThread&&prefs.openMode==='stack'?'above-dock':'')} role="dialog" aria-label="When should this come back?"><span>Due</span>{([['Today',0],['Tomorrow',1],['Next week',nextWeek]] as const).map(([label,offset])=><button key={label} onClick={()=>void setDue(duePrompt.id,isoDay(offset),'Due '+label.toLowerCase())}>{label}</button>)}<button className="due-skip" aria-label="No due date" onClick={()=>setDuePrompt(undefined)}><X size={12}/></button></div>}
+ <DuePopover prompt={duePrompt} setDue={(id,day,label)=>void setDue(id,day,label)} dismiss={()=>setDuePrompt(undefined)}/>
  </main>
- {!popoutThread&&<div className={'ask-dock '+(ask?'open':'')} inert={!ask||undefined}><Ask open={ask} onClose={()=>setAsk(false)} onSearch={query=>{if(replyGuard())return;setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));}} conversations={state.conversations} threads={state.threads} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} onThread={id=>navigate('all',id)} onDraft={d=>void newDraft(d)} notify={notify} currentDraft={liveDraft||composer} onApplyDraft={p=>{if(!composer)return;setComposer({...liveDraft||composer,...p,id:composer.id,accountId:composer.accountId,mode:composer.mode,threadId:composer.threadId,attachments:(liveDraft||composer).attachments,revision:(liveDraft||composer).revision,updatedAt:new Date().toISOString()});}}/></div>}
- {rowMenu&&<><div className="dismiss-layer" onClick={()=>setRowMenu(undefined)}/><div className="dropdown row-menu" role="menu" style={{top:rowMenu.y,left:Math.max(8,rowMenu.x-240)}}>{[
-  [{label:'Open in separate window',icon:ExternalLink,run:()=>invoke('window.thread',{threadId:rowMenu.thread.id})}],
-  [{label:'Mark '+(rowMenu.thread.unread?'read':'unread'),icon:MailOpen,keys:'U',run:()=>patch([rowMenu.thread.id],{unread:!rowMenu.thread.unread})},{label:rowMenu.thread.importance==='important'?'Move to Low importance':'Mark important',icon:Layers,run:()=>patch([rowMenu.thread.id],{importance:rowMenu.thread.importance==='important'?'low':'important'},rowMenu.thread.importance==='important'?'Moved to Low importance':'Marked important')},{label:rowMenu.thread.replyStatus==='needs-reply'?'Clear Needs reply':'Needs my reply',icon:CornerUpLeft,run:()=>patch([rowMenu.thread.id],{replyStatus:rowMenu.thread.replyStatus==='needs-reply'?'none':'needs-reply'})}],
-  [{label:'Move to Spam',icon:ShieldAlert,run:()=>triage(rowMenu.thread,'spam')},{label:'Move to Trash',icon:Trash2,keys:'#',run:()=>triage(rowMenu.thread,'trash')}]
- ].map((group,g)=><div className="menu-group" key={g}>{group.map(({label,icon:Icon,run,...item})=><button key={label} role="menuitem" className="menu-item" onClick={()=>{setRowMenu(undefined);void Promise.resolve(run()).catch(e=>notify((e as Error).message));}}><Icon size={15}/><span className="menu-text"><span>{label}</span></span>{'keys' in item&&<span className="menu-keys">{item.keys}</span>}</button>)}</div>)}</div></>}
+ {!popoutThread&&<div className={cx('ask-dock',ask&&'open')} inert={!ask||undefined}><Ask open={ask} onClose={()=>setAsk(false)} onSearch={query=>{if(replyGuard())return;setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));}} conversations={state.conversations} threads={state.threads} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} onThread={id=>navigate('all',id)} onDraft={d=>void newDraft(d)} notify={notify} currentDraft={liveDraft||composer} onApplyDraft={p=>{if(!composer)return;setComposer({...liveDraft||composer,...p,id:composer.id,accountId:composer.accountId,mode:composer.mode,threadId:composer.threadId,attachments:(liveDraft||composer).attachments,revision:(liveDraft||composer).revision,updatedAt:new Date().toISOString()});}}/></div>}
+ <Menu open={rowMenu.open} anchor={rowMenu.anchor} onClose={rowMenu.close} placement="bottom-end" label="Email actions" onError={fail} groups={thread?[
+  [{label:'Open in separate window',icon:ExternalLink,onSelect:()=>invoke('window.thread',{threadId:thread.id})}],
+  [{label:'Mark '+(thread.unread?'read':'unread'),icon:MailOpen,keys:'U',onSelect:()=>patch([thread.id],{unread:!thread.unread})},
+   {label:thread.importance==='important'?'Move to Low importance':'Mark important',icon:Layers,onSelect:()=>patch([thread.id],{importance:thread.importance==='important'?'low':'important'},thread.importance==='important'?'Moved to Low importance':'Marked important')},
+   {label:thread.replyStatus==='needs-reply'?'Clear Needs reply':'Needs my reply',icon:CornerUpLeft,onSelect:()=>patch([thread.id],{replyStatus:thread.replyStatus==='needs-reply'?'none':'needs-reply'})}],
+  [{label:'Move to Spam',icon:ShieldAlert,onSelect:()=>triage(thread,'spam')},{label:'Move to Trash',icon:Trash2,keys:'#',danger:true,onSelect:()=>triage(thread,'trash')}],
+ ]:[]}/>
  {eventEditor&&<EventEditor key={eventEditor.id||eventEditor.title||'new'} event={eventEditor} accounts={state.accounts} onClose={()=>setEventEditor(null)} notify={notify}/>}
- {shortcutHelp&&<Shortcuts close={()=>setShortcutHelp(false)} doneLeft={doneLeft}/>}
- {!prefs.onboardingDone&&!popoutThread&&<div className="modal-backdrop welcome-backdrop"><section className="welcome" role="dialog" aria-label="Welcome to Aplos Mail"><span className={'app-icon large '+prefs.icon}>a</span><h1>Your mail,<br/>a little lighter.</h1><p>A Home you can finish, a place for later,<br/>and a little intelligence when you need it.</p><div className="welcome-features"><span><Check size={15}/>An inbox you can finish</span><span><Clock size={15}/>Plans that stay in view</span><span><Sparkles size={15}/>Help, powered by Groq</span></div>{welcomeError&&<div className="inline-error">{welcomeError}</div>}<button className="primary" disabled={busy==='connect'} onClick={async()=>{setBusy('connect');try{await invoke('account.connect');}catch(e){setWelcomeError((e as Error).message);}finally{setBusy('');}}}>{busy==='connect'?<Loader2 size={16} className="spin"/>:<Mail size={16}/>}Connect with Google</button><button className="secondary" onClick={()=>void updateSettings({onboardingDone:true})}>Explore the demo <ArrowRight size={16}/></button><p className="welcome-footnote">Original sample mail. Nothing is sent to real people.<br/>Your API key stays on this device.</p></section></div>}
- {pending.length>0&&<div className="pending-sends">{pending.map(d=><div key={d.id}><span className="pending-spinner"/><span>Sending “{d.subject||'your message'}”{Math.max(0,Math.ceil((+new Date(d.pendingSendAt!)-now)/1000))>0?' in '+Math.max(0,Math.ceil((+new Date(d.pendingSendAt!)-now)/1000))+'s':'…'}</span><button onClick={async()=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){notify((e as Error).message);}}}>Undo send</button></div>)}</div>}
- {toast&&<div className="toast" role="status"><span>{toast.text}</span>{toast.undo&&<button onClick={()=>void undo()}>Undo<kbd>Z</kbd></button>}<button className="toast-dismiss" aria-label="Dismiss notification" onClick={()=>setToast(undefined)}><X size={12}/></button></div>}
+ <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft}/>
+ <WelcomeDialog open={!prefs.onboardingDone&&!popoutThread} icon={prefs.icon} busy={busy==='connect'} error={welcomeError} connect={async()=>{setBusy('connect');try{await invoke('account.connect');}catch(e){setWelcomeError((e as Error).message);}finally{setBusy('');}}} explore={()=>void updateSettings({onboardingDone:true})}/>
+ <PendingSends drafts={pending} now={now} seconds={prefs.undoSeconds} undo={async d=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){fail(e);}}}/>
+ <Toaster/>
+ <ConfirmHost/>
  </div>;
-}
-type RowProps={thread:Thread;active:boolean;selected:boolean;doneLeft:boolean;onOpen:()=>void;onSelect:()=>void;onTriage:(status:Triage)=>void;onBookmark:()=>void;onMore:(rect:DOMRect)=>void;onHover:(on:boolean)=>void};
-function MailRow({thread:t,active,selected,doneLeft,onOpen,onSelect,onTriage,onBookmark,onMore,onHover}:RowProps){
- const m=t.messages.at(-1)!;const attachments=t.messages.flatMap(m=>m.attachments);const overdue=!!t.dueDate&&t.dueDate<new Date().toISOString().slice(0,10);
- const todo=<button key="todo" className="row-action" title="Todo" aria-label={'Move '+t.subject+' to Todo'} onClick={()=>onTriage('later')}><Clock size={15}/><kbd>{doneLeft?'→':'←'}</kbd></button>;
- const done=<button key="done" className="row-action done" title="Done" aria-label={'Mark '+t.subject+' done'} onClick={()=>onTriage('done')}><Check size={15}/><kbd>{doneLeft?'←':'→'}</kbd></button>;
- return <div className={'mail-row '+(t.unread?'unread ':'')+(active?'active ':'')+(selected?'checked':'')} onMouseEnter={()=>onHover(true)} onMouseLeave={()=>onHover(false)}><div className="row-leading"><span className="avatar" style={{background:avatarColor(m.fromName||m.from)}}>{(m.fromName||m.from)[0]?.toUpperCase()}</span><label className="row-checkbox"><input aria-label={'Select '+t.subject} type="checkbox" checked={selected} onChange={onSelect}/></label></div><button className="row-content" onClick={onOpen}><span className="row-first"><span className="sender">{m.fromName}</span>{t.messages.length>1&&<span className="thread-count">{t.messages.length}</span>}<span className="row-separator">·</span><span className="subject">{t.subject}</span>{t.bookmarked&&<Bookmark size={13} className="row-flag" fill="currentColor"/>}<span className="row-time">{t.dueDate&&t.status==='later'?dueLabel(t.dueDate):dateLabel(t.date)}</span></span><span className="row-second"><span className="summary">{t.summary}</span>{t.dueDate&&t.status!=='later'&&<span className={'due-badge '+(overdue?'overdue':'')}>{dueLabel(t.dueDate)}</span>}{attachments.slice(0,2).map(a=><span key={a.id} className="attachment-mini"><Paperclip size={11}/><span>{a.name}</span></span>)}{attachments.length>2&&<span className="attachment-mini">{attachments.length-2} more</span>}</span></button>
- <div className="row-actions"><button className={'row-action '+(t.bookmarked?'on':'')} title={t.bookmarked?'Remove bookmark':'Bookmark'} aria-label={(t.bookmarked?'Remove bookmark from ':'Bookmark ')+t.subject} onClick={onBookmark}><Bookmark size={15} fill={t.bookmarked?'currentColor':'none'}/><kbd>B</kbd></button>{doneLeft?[done,todo]:[todo,done]}<button className="row-action more" aria-label={'More actions for '+t.subject} onClick={e=>onMore(e.currentTarget.getBoundingClientRect())}><MoreHorizontal size={16}/></button></div></div>;
-}
-function Empty({view,search}:{view:View;search:boolean}){const text=search?'No matches yet':view==='home'?'All clear for now':view==='drafts'?'No drafts':view==='later'?'Nothing saved for later':view==='needs-reply'?'Nobody is waiting on you':view==='awaiting-reply'?'Not waiting on anyone':view==='sent'?'Nothing sent yet':view==='trash'?'Trash is empty':view==='spam'?'No spam':view==='low'?'No low-importance mail':'Nothing here';return <div className="empty-plain">{text}</div>;}
-function ComposeSkeleton(){return <div className="composer skeleton" aria-hidden="true"><div className="skeleton-row"><i style={{width:90}}/><span/><i style={{width:64,borderRadius:16}}/></div><div className="skeleton-row line"><i style={{width:40}}/><i style={{width:180}}/></div><div className="skeleton-row line"><i style={{width:28}}/><i style={{width:120}}/></div><div className="skeleton-row line"><i style={{width:220}}/></div><div className="skeleton-body"><i style={{width:'62%'}}/><i style={{width:'44%'}}/></div><div className="skeleton-row"><i style={{width:70}}/></div></div>;}
-function Shortcuts({close,doneLeft}:{close:()=>void;doneLeft:boolean}){
- const done=doneLeft?'←':'→';const todo=doneLeft?'→':'←';
- const tabs:[string,[string,string[]][]][]=[
-  ['General',[['Ask or search',['A']],['Talk to Ask',['Hold A']],['Search mail',['/']],['Compose',['C']],['Settings',['⌘ ,']],['Show or hide the sidebar',['[']],['This guide',['?']]]],
-  ['Moving around',[['Home',['⌃ 1']],['Later',['⌃ 2']],['All mail',['⌃ 3']],['Drafts',['⌃ 4']],['Start a stack',['S']],['Next email',['J']],['Previous email',['K']],['Close',['Esc']]]],
-  ['Email',[['Done',[done,'E']],['Todo',[todo,'L']],['Reply',['Space']],['Reply and dictate',['Hold Space']],['Reply all',['⇧ R']],['Forward',['F']],['Bookmark',['B']],['Read or unread',['U']],['Move to Trash',['#']],['Undo',['Z']]]],
-  ['Writing',[['Send',['⌘ ↵']],['Dictate into an empty body',['Hold Space']],['Bold',['⌘ B']],['Italic',['⌘ I']],['Close',['Esc']]]]
- ];
- const [tab,setTab]=useState(0);
- return <div className="modal-backdrop instant" onMouseDown={e=>{if(e.target===e.currentTarget)close();}}><section className="shortcuts-modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts"><header><h2>Keyboard shortcuts</h2><button className="round-close" autoFocus aria-label="Close shortcuts" onClick={close}><X size={14}/></button></header><div className="pill-tabs shortcut-tabs" role="tablist">{tabs.map(([title],i)=><button key={title} role="tab" aria-selected={tab===i} className={tab===i?'active':''} onClick={()=>setTab(i)}>{title}</button>)}</div><div className="shortcut-list" role="tabpanel">{tabs[tab][1].map(([label,keys])=><div key={label}><span>{label}</span><span className="shortcut-keys">{keys.map((key,i)=><kbd key={i}>{key}</kbd>)}</span></div>)}</div><footer>Shortcuts pause while you type.</footer></section></div>;
 }
