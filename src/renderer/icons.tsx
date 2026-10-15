@@ -108,6 +108,7 @@ export const Square=symbol(Lucide.Square,'square');
 export const SquarePen=symbol(Lucide.SquarePen,'square.and.pencil');
 export const StopCircle=symbol(Lucide.StopCircle,'stop.circle');
 export const Trash2=symbol(Lucide.Trash2,'trash');
+export const RotateCcw=symbol(Lucide.RotateCcw,'arrow.counterclockwise');
 export const Underline=symbol(Lucide.Underline,'underline');
 export const Undo2=symbol(Lucide.Undo2,'arrow.uturn.backward');
 export const Users=symbol(Lucide.Users,'person.2');

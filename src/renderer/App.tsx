@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,MailOpen,MessageCircle,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
 import type {AppState,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,View} from '../shared/types';
-import {bridge,escapeHtml,invoke,replyRecipients,uid} from './bridge';
+import {bridge,escapeHtml,invoke,isoDay,replyRecipients,uid} from './bridge';
 import {Compose,addressOf,validAddress,type Contact} from './Compose';
 import {Ask} from './Ask';
 import {Reader} from './Reader';
@@ -16,7 +16,7 @@ import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Keys,Menu,Spinner,Tabs
 const titles:Record<View,string>={home:'Home',later:'Later',all:'All mail',drafts:'Drafts',sent:'Sent','needs-reply':'Needs reply','awaiting-reply':'Awaiting reply',trash:'Trash',spam:'Spam',low:'Low importance',calendar:'Calendar',settings:'Settings'};
 const empties:Partial<Record<View,{icon:Icon;title:string;detail?:string}>>={
   home:{icon:CircleCheck,title:'All clear for now',detail:'New mail that matters will land here.'},
-  later:{icon:Clock,title:'Nothing saved for later',detail:'Press ← on an email to keep it as a Todo.'},
+  later:{icon:Clock,title:'Nothing saved for later',detail:'Press L on an email to keep it as a Todo.'},
   drafts:{icon:FileText,title:'No drafts',detail:'Press C to start writing.'},
   'needs-reply':{icon:CornerUpLeft,title:'Nobody is waiting on you'},
   'awaiting-reply':{icon:MessageCircle,title:'Not waiting on anyone'},
@@ -33,6 +33,11 @@ const queryParams=new URLSearchParams(location.search);const popoutDraft=queryPa
 type Route={view:View;threadId?:string};
 const triageLabels:Record<Triage,string>={done:'Marked done',later:'Moved to Todo',trash:'Moved to Trash',spam:'Moved to Spam'};
 const noop=()=>{};
+function useMediaQuery(query:string){
+ const [matches,setMatches]=useState(()=>matchMedia(query).matches);
+ useEffect(()=>{const media=matchMedia(query);const update=()=>setMatches(media.matches);update();media.addEventListener('change',update);return ()=>media.removeEventListener('change',update);},[query]);
+ return matches;
+}
 
 export function App(){
  const [state,setState]=useState<AppState>();
@@ -41,6 +46,10 @@ export function App(){
  const [route,setRoute]=useState<Route>({view:'home',threadId:popoutThread??undefined});
  const [routes,setRoutes]=useState<Route[]>([{view:'home'}]);const [historyIndex,setHistoryIndex]=useState(0);
  const [ask,setAsk]=useState(()=>!popoutThread&&localStorage.getItem(askStorageKey)!=='closed');
+ // Matches the CSS breakpoints that collapse the sidebar; while squeezed it opens as an overlay instead.
+ const squeezed=useMediaQuery(ask?'(max-width: 900px)':'(max-width: 700px)');const [peek,setPeek]=useState(false);
+ useEffect(()=>{if(!squeezed)setPeek(false);},[squeezed]);
+ useEffect(()=>{if(peek)requestAnimationFrame(()=>document.querySelector<HTMLElement>('.sidebar-slot .nav-item.active, .sidebar-slot .nav-item')?.focus());},[peek]);
  const [composer,setComposer]=useState<Draft>();const [liveDraft,setLiveDraft]=useState<Draft>();const [composeClosing,setComposeClosing]=useState(false);const [draftBlocked,setDraftBlocked]=useState(false);
  const [laterTab,setLaterTab]=useState<'todos'|'bookmarks'>('todos');
  const [selected,setSelected]=useState<Set<string>>(new Set());
@@ -89,7 +98,7 @@ export function App(){
   try{await invoke('thread.undo');
    if(last?.reopen&&!inlineReply){setLeaving(undefined);if(!reducedMotion())setEntering({id:last.id,from:last.status==='done'?'right':last.status==='later'?'left':'below'});setRoute(r=>({...r,threadId:last.id}));}
    else notify('Action undone');
-  }catch(e){fail(e);}
+  }catch(e){if(/nothing to undo/i.test((e as Error).message))notify('Nothing to undo');else fail(e);}
  }
  undoRef.current=()=>void undo();
  async function sync(){setBusy('sync');try{await invoke('sync',{accountId:state?.selectedAccountId==='all'?undefined:state?.selectedAccountId});}catch(e){fail(e);}finally{setBusy('');}}
@@ -122,18 +131,22 @@ export function App(){
   return [...seen.values()].sort((a,b)=>b.count-a.count||b.last.localeCompare(a.last)).map(({email,name})=>({email,name}));
  },[state?.threads,state?.accounts]);
  const buckets=useMemo(()=>{
-  const today=new Date().toISOString().slice(0,10);const later=scoped.filter(t=>t.status==='later');
+  const today=isoDay();const later=scoped.filter(t=>t.status==='later');
   return {today,later,low:scoped.filter(t=>t.status==='new'&&t.importance==='low'),
    homeLater:later.filter(t=>!t.hiddenFromHome&&(!t.dueDate||t.dueDate<=today)),
    replyHome:scoped.filter(t=>t.replyStatus==='needs-reply'&&t.status==='done'&&!t.hiddenFromHome)};
  },[scoped]);
+ const todoGroups=useMemo(()=>{
+  const today=buckets.today;const dated=filtered.filter(t=>t.dueDate).sort((a,b)=>a.dueDate!.localeCompare(b.dueDate!));
+  return {overdue:dated.filter(t=>t.dueDate!<today),today:dated.filter(t=>t.dueDate!.slice(0,10)===today),upcoming:dated.filter(t=>t.dueDate!.slice(0,10)>today),undated:filtered.filter(t=>!t.dueDate)};
+ },[filtered,buckets.today]);
  // The order rows appear on screen, so j/k, ⇧-click ranges and the reader stack all walk the same sequence.
  const order=useMemo(()=>{
   if(searchMode)return filtered;
   if(route.view==='home')return [...filtered,...buckets.homeLater,...buckets.replyHome];
-  if(route.view==='later'&&laterTab==='todos'){const today=buckets.today;return [...filtered.filter(t=>t.dueDate&&t.dueDate<today),...filtered.filter(t=>!t.dueDate),...filtered.filter(t=>t.dueDate&&t.dueDate>=today)];}
+  if(route.view==='later'&&laterTab==='todos')return [...todoGroups.overdue,...todoGroups.today,...todoGroups.upcoming,...todoGroups.undated];
   return filtered;
- },[filtered,buckets,route.view,laterTab,searchMode]);
+ },[filtered,buckets,todoGroups,route.view,laterTab,searchMode]);
  const searchHints=useMemo(()=>{
   if(!searchMode)return [];
   const hints:string[]=[];const counts=new Map<string,number>();
@@ -194,7 +207,7 @@ export function App(){
   else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();moveCursor(e.key==='ArrowDown'?1:-1);}
   else if(e.key==='Enter'&&!e.nativeEvent.isComposing){const target=order.find(t=>t.id===cursor.id&&cursor.shown)||order[0];if(target){e.preventDefault();rememberSearch(search);openThread(target.id);}}
  }
- function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
+ function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':if(squeezed)setPeek(v=>!v);else void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
  eventHandler.current=event=>{
   if(event.type==='state')setState(event.payload as AppState);
   else if(event.type==='prepare-close'){if(!composeRef.current)void invoke('window.closeReady').catch(()=>{});}
@@ -208,6 +221,7 @@ export function App(){
   function keyboard(e:KeyboardEvent){
    const element=e.target as HTMLElement;const typing=['INPUT','TEXTAREA','SELECT'].includes(element.tagName)||element.isContentEditable;
    if(dialogOpen())return;
+   if(e.key==='Escape'&&squeezed&&peek){e.preventDefault();setPeek(false);return;}
    if((e.metaKey||e.ctrlKey)&&['k','j',',','/'].includes(e.key)){e.preventDefault();command(e.key==='k'?'search':e.key==='j'?'ask':e.key===','?'settings':'shortcuts');return;}
    if(e.ctrlKey&&!e.metaKey&&!e.altKey&&/^[1-9]$/.test(e.key)&&!composer){const section=sections[Number(e.key)-1];if(section){e.preventDefault();navigate(section.view);}return;}
    if(composer||eventEditor||typing)return;
@@ -258,6 +272,7 @@ export function App(){
   select:selectRow,
   triage,
   bookmark:t=>void patch([t.id],{bookmarked:!t.bookmarked},t.bookmarked?'Bookmark removed':'Bookmarked'),
+  restore:t=>{hintExit(t.id,'down');void patch([t.id],{status:'new'},'Restored to Home');},
   more:(t,anchor)=>{setMenuThread(t);rowMenu.openAt(anchor);},
   hover:(t,on)=>{if(on){hoveredId.current=t.id;if(cursor.id!==t.id||cursor.shown)setCursor({id:t.id,shown:false});}else if(hoveredId.current===t.id)hoveredId.current=null;},
  };
@@ -271,7 +286,7 @@ export function App(){
  const listView=!['settings','calendar'].includes(route.view);
  const swipe=<Button variant="pill" icon={Layers} shortcut="S" onClick={()=>{if(order[0])openThread(order[0].id);}}>One at a time</Button>;
  const composerLayer=!!composer&&!inlineReply;
- const sidebarHidden=!prefs.sidebar||!!popoutThread;
+ const sidebarHidden=!!popoutThread||(squeezed?!peek:!prefs.sidebar);const peeking=squeezed&&peek&&!popoutThread;
  const view=route.view;
  const thread=menuThread;
 
@@ -279,16 +294,17 @@ export function App(){
  if(searchMode)list=search?filtered.length?group(`${filtered.length} result${filtered.length===1?'':'s'}`,filtered,undefined,false):!searching&&searchedFor===search&&emptyFor(view):<EmptyState compact icon={Search} title="Search your mail" detail="Senders, subjects and the words inside your messages."/>;
  else if(view==='home')list=<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-bundle" onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><span><strong>Low-importance emails</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></span></button>}{group('Ready when you are',homeLater,<Button variant="text" onClick={()=>{for(const t of homeLater)hintExit(t.id,'down');void invoke('home.hide',{ids:homeLater.map(t=>t.id)}).then(()=>notify(`Hid ${homeLater.length} from Home. They stay in Later.`)).catch(fail);}}>Hide all</Button>)}{group('Waiting on you',replyHome)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&emptyFor('home')}</>;
  else if(view==='drafts')list=titled('Drafts',drafts.length?<DraftList drafts={drafts} open={d=>void openDraft(d)} remove={async d=>{if(!await confirmAction({title:'Delete this draft?',message:'It will be removed from this device and from Gmail drafts.',confirmLabel:'Delete',danger:true}))return;hintExit(d.id,'down');void invoke('draft.delete',{id:d.id}).catch(fail);}}/>:emptyFor('drafts'));
- else if(view==='later'&&laterTab==='todos')list=<>{group('Overdue',filtered.filter(t=>t.dueDate&&t.dueDate<today))}{group('Todos without a specific date',filtered.filter(t=>!t.dueDate))}{group('Upcoming',filtered.filter(t=>t.dueDate&&t.dueDate>=today))}{!filtered.length&&emptyFor('later')}</>;
+ else if(view==='later'&&laterTab==='todos')list=<>{group('Overdue',todoGroups.overdue)}{group('Today',todoGroups.today)}{group('Upcoming',todoGroups.upcoming)}{group('No due date',todoGroups.undated)}{!filtered.length&&emptyFor('later')}</>;
  else{const title=view==='later'?'Bookmarks':titles[view];list=filtered.length?group(title,filtered,view==='low'?<Button variant="pill" icon={CheckCheck} onClick={()=>{for(const t of filtered)hintExit(t.id,exitDirection('done'));void patch(filtered.map(t=>t.id),{status:'done'},'Low-importance mail marked done');}}>Mark all done</Button>:undefined,false):titled(title,view==='later'?<EmptyState icon={Bookmark} title="No bookmarks" detail="Press B on an email to keep it close."/>:emptyFor(view));}
 
- return <div className={cx('app-shell',window.aplos&&'desktop',mac&&'mac',sidebarHidden&&'sidebar-hidden',ask&&'with-ask')}>
- {!popoutThread&&<div className="sidebar-slot" inert={sidebarHidden||undefined}><Sidebar state={state} view={searchMode?null:route.view} count={count} zen={prefs.zen} online={online} syncing={syncing}
-  canBack={historyIndex>0} canForward={historyIndex<routes.length-1} navigate={navigate} back={()=>historyMove(-1)} forward={()=>historyMove(1)} sync={()=>void sync()} hide={()=>void updateSettings({sidebar:false})}
-  selectAccount={id=>{void invoke('account.select',{id}).catch(fail);if(id!=='all')setRoute({view:'home'});}} shortcuts={()=>setShortcutHelp(true)} onError={fail}/></div>}
+ return <div className={cx('app-shell',window.aplos&&'desktop',mac&&'mac',sidebarHidden&&'sidebar-hidden',peeking&&'sidebar-peek',ask&&'with-ask')}>
+ {peeking&&<div className="sidebar-scrim" onPointerDown={()=>setPeek(false)}/>}
+ {!popoutThread&&<div className="sidebar-slot" inert={sidebarHidden||undefined} onKeyDown={e=>{if(peeking&&e.key==='Escape'){e.stopPropagation();setPeek(false);}}}><Sidebar state={state} view={searchMode?null:route.view} count={count} zen={prefs.zen} online={online} syncing={syncing}
+  canBack={historyIndex>0} canForward={historyIndex<routes.length-1} navigate={view=>{setPeek(false);navigate(view);}} back={()=>historyMove(-1)} forward={()=>historyMove(1)} sync={()=>void sync()} hide={()=>{if(squeezed)setPeek(false);else void updateSettings({sidebar:false});}}
+  selectAccount={id=>{void invoke('account.select',{id}).catch(fail);if(id!=='all')setRoute({view:'home'});}} shortcuts={()=>{setPeek(false);setShortcutHelp(true);}} onError={fail}/></div>}
  <main className="workspace">
- <Topbar showSidebarButton={!prefs.sidebar&&!popoutThread} showBack={!!selectedThread&&!popoutThread&&prefs.openMode==='stack'} showActions={!popoutThread} showModes={listView&&!composerLayer} showAsk={!ask}
-  openMode={prefs.openMode} composeBusy={busy==='draft'||busy==='reply'} showSidebar={()=>void updateSettings({sidebar:true})} back={()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}}
+ <Topbar showSidebarButton={sidebarHidden&&!popoutThread} showBack={!!selectedThread&&!popoutThread&&prefs.openMode==='stack'} showActions={!popoutThread} showModes={listView&&!composerLayer} showAsk={!ask}
+  openMode={prefs.openMode} composeBusy={busy==='draft'||busy==='reply'} showSidebar={()=>{if(squeezed)setPeek(true);else void updateSettings({sidebar:true});}} back={()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}}
   setOpenMode={openMode=>void updateSettings({openMode})} compose={()=>void newDraft()} ask={()=>setAsk(true)}/>
  {state.sync.error&&<div className="sync-error"><WifiOff size={14}/><span>{state.sync.error}</span><Button variant="text" size="sm" onClick={()=>void sync()}>Retry</Button></div>}
  <div className={cx('content-layout',selectedThread&&prefs.openMode==='split'&&'split-layout')}>

@@ -15,6 +15,8 @@
   background: var(--canvas);
   box-shadow: -.5px 0 0 color-mix(in srgb, var(--ink) 10%, transparent);
   z-index: 1;
+  /* Layouts inside respond to the space left after the sidebar and Ask, not the window. */
+  container: workspace / inline-size;
 }
 .sidebar-hidden .workspace { box-shadow: none; }
 .content-layout { position: relative; flex: 1; display: flex; min-height: 0; min-width: 0; }
@@ -236,11 +238,14 @@
 .row-separator { color: var(--faint); }
 .row-flag { color: var(--dim); }
 .row-time { margin-left: 12px; flex: none; color: var(--dim); font-variant-numeric: tabular-nums; }
+.row-time.is-due { color: var(--blue); }
+.row-time.is-overdue { color: var(--red); }
 .summary { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
 .thread-count { flex: none; font-size: 12px; color: var(--dim); }
 .row-actions {
   position: absolute;
-  top: 7px;
+  top: 0;
+  bottom: 0;
   right: 10px;
   isolation: isolate;
   display: flex;
@@ -251,8 +256,8 @@
   transition: opacity .06s linear;
 }
 /* Fade the row text out under the pills so they read as floating on the row. */
-.row-actions::before { content: ""; position: absolute; z-index: -1; inset: -2px -10px -2px -36px; background: linear-gradient(to right, transparent, var(--row-hover) 32px); }
-.mail-row.active .row-actions::before { background: linear-gradient(to right, transparent, var(--row-active) 32px); }
+.row-actions::before { content: ""; position: absolute; z-index: -1; inset: 0 -10px 0 -48px; border-radius: 0 8px 8px 0; background: linear-gradient(to right, transparent, var(--row-hover) 40px); }
+.mail-row.active .row-actions::before { background: linear-gradient(to right, transparent, var(--row-active) 40px); }
 .mail-row:is(:hover, .is-cursor) .row-actions, .row-actions:focus-within { opacity: 1; pointer-events: auto; }
 .mail-row.is-cursor .row-time { visibility: hidden; }
 .row-action { height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 9px; border-radius: 14px; background: var(--card); color: var(--ink-2); box-shadow: var(--glass); }
@@ -260,6 +265,7 @@
 .row-action:active { transform: scale(.95); }
 .row-action .ui-kbd { height: 20px; min-width: 20px; padding: 0 4px; border-radius: 6px; font-size: 11px; }
 .row-action.done { color: var(--green); }
+.row-action.restore { padding: 0 11px 0 10px; font-size: 13px; }
 .row-action.on { color: var(--blue); }
 .row-action.more { width: 28px; padding: 0; justify-content: center; }
 .mail-row:hover .row-time { visibility: hidden; }
@@ -343,6 +349,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .split-layout .row-badge { display: none; }
 .split-layout .row-action .ui-keys { display: none; }
 .split-layout .row-action { padding: 0; width: 28px; justify-content: center; }
+.split-layout .row-action.restore > span { display: none; }
 .split-layout .low-bundle small { display: none; }
 
 /* ---------- Reader ---------- */
@@ -416,6 +423,8 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .thread-heading { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
 .summary-card { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--hover); color: var(--ink-2); }
 .summary-card p { flex: 1; }
+.summary-cta { flex: 1; text-align: left; color: var(--dim); border-radius: 4px; transition: color var(--dur-fast); }
+.summary-cta:hover:not(:disabled) { color: var(--accent); }
 .ai-symbol { display: inline-flex; color: var(--blue); margin-top: 3px; }
 .summary-card .ui-icon-btn { margin: -2px -4px -2px 0; }
 .summary-card p { animation: fade var(--dur-slow) var(--ease); }
@@ -560,7 +569,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .level-meter i { width: 3px; height: 14px; border-radius: 2px; background: currentColor; transform: scaleY(.3); transition: transform .09s linear; }
 .ask-matches { padding: 6px 8px 16px 40px; }
 .ask-match-all { width: 100%; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 8px; border-radius: var(--radius-control); color: var(--dim); font-size: 13px; text-align: left; }
-.ask-match-all:hover, .ask-match:hover { background: var(--hover); color: var(--ink); }
+.ask-match-all:hover, .ask-match:hover, .ask-match:focus-visible { background: var(--hover); color: var(--ink); }
 .ask-match { width: 100%; display: flex; align-items: flex-start; gap: 10px; padding: 8px; border-radius: var(--radius-control); text-align: left; }
 .ask-match .ui-avatar { margin-top: 1px; }
 .ask-match > span:last-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -673,8 +682,8 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .field-line input, .field-line select { flex: 1; max-width: none; height: 46px; padding: 0; border: 0; border-radius: 0; background: transparent; outline: 0; }
 .field-line select { background-image: none; padding-right: 0; }
 .field-line > :is(svg, .sym) { color: var(--dim); }
-.compose-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 10px; user-select: text; }
-.rich-editor { min-height: 160px; outline: 0; line-height: 22px; overflow-wrap: anywhere; }
+.compose-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 10px; user-select: text; cursor: text; }
+.rich-editor { min-height: 88px; outline: 0; line-height: 22px; overflow-wrap: anywhere; }
 .rich-editor:empty::before { content: attr(data-placeholder); color: var(--faint); pointer-events: none; }
 .rich-editor p { margin: 0 0 12px; }
 .rich-editor blockquote { border-left: 2px solid var(--line); padding-left: 12px; margin: 16px 0; color: var(--dim); }
@@ -954,18 +963,34 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 @media (max-width: 1080px) {
   :root { --sidebar-width: 220px; --ask-width: 320px; }
   .with-ask .compose-top span { display: none; }
-  .with-ask .split-layout .mail-content { display: none; }
   .with-ask .attachment-badge { display: none; }
+}
+@container workspace (max-width: 940px) {
+  .split-layout .mail-content { flex-basis: 300px; min-width: 280px; max-width: 300px; }
+}
+/* Below this the reader would be too narrow to read beside a list, so split view shows the reader alone. */
+@container workspace (max-width: 700px) {
+  .split-layout .mail-content { display: none; }
+}
+@container workspace (max-width: 680px) {
+  .settings-page { grid-template-columns: 1fr; gap: 8px; }
+  .settings-nav { position: static; padding-top: 0; flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .settings-nav .ui-tab { width: auto; flex: none; }
+}
+@container workspace (max-width: 780px) {
   .calendar-layout { grid-template-columns: 1fr; }
   .calendar-month { border-right: 0; border-bottom: 1px solid var(--line-soft); }
 }
 @media (max-width: 900px) {
   .with-ask .sidebar-slot { width: 0; }
   .desktop.mac.with-ask .topbar { padding-left: 84px; }
-  .split-layout .mail-content { display: none; }
   .dock-reply { min-width: 140px; }
   .reader-scroll { padding: 14px 18px 24px; }
 }
+.sidebar-scrim { position: fixed; inset: 0; z-index: 64; background: color-mix(in srgb, #000 12%, transparent); animation: fade var(--dur-base) var(--ease); }
+.app-shell.sidebar-peek .sidebar-slot { position: fixed; inset: 0 auto 0 0; z-index: 65; width: var(--sidebar-width); background: var(--sidebar-fill); box-shadow: var(--glass-raised); animation: sidebar-in 200ms var(--ease-out-strong); }
+@keyframes sidebar-in { from { transform: translateX(-24px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .app-shell.sidebar-peek .sidebar-slot, .sidebar-scrim { animation: none; } }
 @media (max-width: 700px) {
   .sidebar-slot { width: 0; }
   .desktop.mac .topbar { padding-left: 84px; }
@@ -976,9 +1001,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
   .compose-top span { display: none; }
   .sender { max-width: 45%; }
   .attachment-badge { display: none; }
-  .settings-page { grid-template-columns: 1fr; gap: 8px; }
-  .settings-nav { position: static; padding-top: 0; flex-direction: row; overflow-x: auto; }
-  .settings-nav .ui-tab { width: auto; }
   .compose-footer .signature-toggle, .signature-source, .compose-footer .signature-sep { display: none; }
   .message-content { padding-left: 0; }
   .welcome { padding: 28px 24px; }

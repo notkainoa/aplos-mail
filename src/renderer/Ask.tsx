@@ -5,6 +5,7 @@ import type {Conversation,Draft,Settings,Thread} from '../shared/types';
 import {dateLabel,invoke,uid} from './bridge';
 import {useVoice} from './useVoice';
 import {LevelMeter} from './LevelMeter';
+import {Marked} from './components/MailList';
 
 const holdDelay=220;
 type Props={open:boolean;onClose:()=>void;onSearch:(query:string)=>void;conversations:Conversation[];threads:Thread[];accountId:string;settings:Settings;examples:string[];onThread:(id:string)=>void;onDraft:(draft:Partial<Draft>)=>void;notify:(t:string)=>void;currentDraft?:Draft;onApplyDraft?:(proposal:Partial<Draft>)=>void};
@@ -84,7 +85,7 @@ export function Ask({open,onClose,onSearch,conversations,threads,accountId,setti
       <div className="ask-column">
         <div className={cx('ask-field',recording&&'recording',busy&&'is-busy')}>
           {recording&&<LevelMeter level={voice.level}/>}
-          <textarea ref={field} aria-label="Ask your mailbox" placeholder={voice.preparing?'Getting the microphone ready…':recording?'Recording':'Ask'} rows={1} value={input} readOnly={recording} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();if(query)onSearch(query);return;}if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void ask();}}}/>
+          <textarea ref={field} aria-label="Ask your mailbox" placeholder={voice.preparing?'Getting the microphone ready…':recording?'Recording':'Ask'} rows={1} value={input} readOnly={recording} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='ArrowDown'&&showMatches&&matches.length&&!e.shiftKey){e.preventDefault();panel.current?.querySelector<HTMLElement>('.ask-match')?.focus();return;}if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();if(query)onSearch(query);return;}if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();void ask();}}}/>
           {busy?<IconButton size="sm" label="Cancel AI request" shortcut="Esc" icon={StopCircle} onClick={cancelRequest}/>
           :recording?<IconButton size="sm" label="Finish recording" icon={Square} iconSize={13} onClick={voice.stop}/>
           :voice.busy?<Spinner size={15} className="ask-spinner"/>
@@ -97,9 +98,13 @@ export function Ask({open,onClose,onSearch,conversations,threads,accountId,setti
         {(conversation||history)&&!showMatches&&<div className="ask-tools"><Button variant="text" size="sm" icon={History} disabled={busy} onClick={()=>setHistory(!history)}>{history?'Back to chat':'History'}</Button><Button variant="text" size="sm" icon={Plus} disabled={busy} onClick={()=>{setId(undefined);setHistory(false);setError('');}}>New chat</Button></div>}
       </div>
     </div>
-    {showMatches?<div className="ask-scroll ask-matches">
+    {showMatches?<div className="ask-scroll ask-matches" onKeyDown={e=>{
+      if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;
+      const items=[...e.currentTarget.querySelectorAll<HTMLElement>('.ask-match')];const index=items.indexOf(document.activeElement as HTMLElement);if(index<0)return;
+      e.preventDefault();if(e.key==='ArrowUp'&&index===0)field.current?.focus();else items[Math.min(items.length-1,index+(e.key==='ArrowDown'?1:-1))]?.focus();
+    }}>
       <button className="ask-match-all" onClick={()=>onSearch(query)}><Keys className="ask-keys" combo="⌘ ↵" size="sm"/>See every result</button>
-      {matches.length?matches.map(t=>{const m=t.messages.at(-1)!;return <button key={t.id} className="ask-match" onClick={()=>onThread(t.id)}><Avatar name={m.fromName||m.from} size={26}/><span><span className="ask-match-line"><strong>{m.fromName}</strong><span>{dateLabel(t.date)}</span></span><span className="ask-match-subject">{t.subject}</span></span></button>;}):<p className="ask-no-match">No mail matches that yet.</p>}
+      {matches.length?matches.map(t=>{const m=t.messages.at(-1)!;const words=query.split(/\s+/).filter(w=>w.length>1);return <button key={t.id} className="ask-match" onClick={()=>onThread(t.id)}><Avatar name={m.fromName||m.from} size={26}/><span><span className="ask-match-line"><strong><Marked text={m.fromName||m.from} terms={words}/></strong><span>{dateLabel(t.date)}</span></span><span className="ask-match-subject"><Marked text={t.subject} terms={words}/></span></span></button>;}):<p className="ask-no-match">No mail matches that yet.</p>}
     </div>
     :history?<div className="ask-history">{conversations.length===0&&<p className="muted">A fresh start. Ask your first question.</p>}{[...conversations].reverse().map(c=><div className="history-row" key={c.id}><button onClick={()=>{setId(c.id);setHistory(false);}}><Clock size={14}/><span>{c.title}</span></button><IconButton size="xs" label="Delete conversation" aria-label={'Delete conversation '+c.title} icon={Trash2} disabled={busy} onClick={()=>{void invoke('conversation.delete',{id:c.id}).then(()=>{if(id===c.id)setId(undefined);}).catch(e=>notify(e.message));}}/></div>)}</div>
     :<div className="ask-scroll">{!conversation&&!busy?<div className="ask-welcome"><p>Hold <Kbd>A</Kbd> to talk to your mail</p><button key={exampleIndex} className="ask-example" onClick={()=>void ask(example)}>“{example}”</button>{conversations.length>0&&<Button variant="text" size="sm" icon={History} className="ask-history-link" onClick={()=>setHistory(true)}>Earlier questions</Button>}</div>:<>{conversation?.messages.map((m,i)=><div key={i} className={'chat-message '+m.role}><div className="chat-text">{m.content}</div>{!!m.citations?.length&&<div className="citations">{m.citations.map(cid=>{const t=threads.find(t=>t.id===cid);return t&&<button key={cid} onClick={()=>onThread(cid)}><ExternalLink size={12}/><span>{t.subject}</span></button>;})}</div>}{m.proposal&&<div className="proposal"><strong>{m.proposal.subject||'New message'}</strong><p>{m.proposal.to}</p><Button variant="tinted" size="sm" onClick={()=>void apply(m.proposal!,i)}>{currentDraft?'Apply to open draft':'Open as a draft'}</Button></div>}</div>)}{busy&&<><div className="chat-message user"><div className="chat-text">{pending}</div></div><div className="thinking"><span/><span/><span/>Looking through your mail</div></>}<div ref={end}/></>}</div>}

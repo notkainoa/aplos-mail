@@ -53,11 +53,31 @@ export function createDemo(now = new Date()):AppState {
     spam:'This is a synthetic unwanted message used to demonstrate the Spam folder. No links or offers here are real.',
     sent:'Hi team,\nThanks for the thoughtful discussion. I will send the next draft on Thursday. Please add any remaining questions before then.\nAlex',
   };
+  const summaries:Record<string,string> = {
+    garden:'Maya asks for help planting the herb beds at the community garden on Saturday at 10 am. Bring gloves.',
+    design:'Jordan has two layout directions ready and wants your preference by tomorrow.',
+    trip:'The cabin is booked. Sam will bring Friday dinner and asks you to sort out breakfast.',
+    invoice:'Drew finished the October illustrations and needs the invoice approved to close the project.',
+    coffee:'Nadia will send two meeting times for next week.',
+    library:'Two of your holds are waiting at the Maple Library front desk until the end of the week.',
+    review:'Project review on Friday at 2 pm in the Oak room. Bring one question.',
+    class:'A seat opened in the Tuesday evening pottery class. Reply to reserve it.',
+    lunch:'Leah asks you to pick a quiet lunch spot for six with vegetarian choices.',
+    delivery:'Your parcel arrives tomorrow between 10 am and 2 pm.',
+    digest:'Three habits for teams: protect quiet work, write decisions down, end meetings with a next step.',
+    receipt:'A $28.40 receipt from Cedar Market.',
+    workshop:'Avery shared the workshop notes and would like to hear how the exercises go.',
+    museum:'Mira suggests a Sunday afternoon at the new exhibition.',
+    newsletter:'New autumn walks: a short loop, a hill route and a cafe stop.',
+    old:'The old room booking was cancelled. The updated invitation has the right room.',
+    spam:'An unsolicited prize announcement.',
+    sent:'You thanked the team and promised the next draft on Thursday.',
+  };
   const threads:Thread[] = rows.map(([id,accountId,fromName,from,subject,patch],index) => {
     const date=stamp(-Math.floor(index/3)); const text=bodies[id];
-    return { id, accountId, subject, summary:text.split('\n').filter(Boolean)[1] || text, date, unread:index<8,
+    return { id, accountId, subject, summary:summaries[id] ?? text, date, unread:index<8,
       status:'new', importance:'important', bookmarked:false, replyStatus:'none', ...patch,
-      messages:[{ id:`message-${id}`, from, fromName, to:[accountId==='work'?'alex@studio.example':'alex@home.example'],
+      messages:[{ id:`message-${id}`, from, fromName, to:[id==='sent'?'Studio team <team@studio.example>':accountId==='work'?'alex@studio.example':'alex@home.example'],
         date,text,html:text.split('\n').map(line=>`<p>${line}</p>`).join(''),attachments:id==='garden'?[attachment]:[],sent:id==='sent' }] };
   });
   return { version:1, accounts:[
