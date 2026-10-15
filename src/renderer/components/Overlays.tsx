@@ -39,7 +39,7 @@ export function DuePopover({prompt,setDue,dismiss}:{prompt?:{id:string;key:numbe
   const {mounted,closing}=usePresence(!!prompt);const shown=useLatest(prompt);
   if(!mounted||!shown)return null;
   const nextWeek=((8-new Date().getDay())%7)||7;
-  return <div key={shown.key} className={cx('due-popover',closing&&'is-closing')} role="dialog" aria-label="When should this come back?">
+  return <div key={shown.key} className={cx('due-popover ui-surface',closing&&'is-closing')} role="dialog" aria-label="When should this come back?">
     <span>Due</span>
     {([['Today',0],['Tomorrow',1],['Next week',nextWeek]] as const).map(([label,offset])=><button key={label} onClick={()=>setDue(shown.id,isoDay(offset),'Due '+label.toLowerCase())}>{label}</button>)}
     <button className="due-skip" aria-label="No due date" onClick={dismiss}><X size={12}/></button>
@@ -57,7 +57,7 @@ function PendingSend({draft,now,seconds,undo}:{draft:Draft;now:number;seconds:nu
   // Fixed at mount so the once-a-second countdown re-render does not restart the bar.
   const [bar]=useState(()=>{const ms=Math.max(0,due-Date.now());return {'--send-ms':ms+'ms','--send-start':String(Math.min(1,ms/1000/Math.max(1,seconds)))} as React.CSSProperties;});
   const left=Math.max(0,Math.ceil((due-now)/1000));
-  return <div className="pending-send" style={bar}>
+  return <div className="pending-send ui-surface" style={bar}>
     <span className="pending-spinner"/>
     <span>Sending “{draft.subject||'your message'}”{left>0?' in '+left+'s':'…'}</span>
     <Button variant="text" className="pending-undo" onClick={()=>undo(draft)}>Undo send</Button>

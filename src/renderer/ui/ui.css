@@ -86,6 +86,29 @@
 }
 .ui-kbd-sm { min-width: 18px; height: 18px; padding: 0 4px; font-size: var(--text-xs); }
 
+/* ---------- Floating surface ---------- */
+
+/* The one material every floating surface uses; see --surface-* in tokens.css. */
+.ui-surface, .ui-menu-surface, .ui-tooltip, .ui-toast {
+  background: var(--surface);
+  backdrop-filter: var(--surface-blur);
+  -webkit-backdrop-filter: var(--surface-blur);
+  box-shadow: var(--surface-shadow);
+  color: var(--ink);
+}
+.ui-surface { border-radius: var(--surface-radius); }
+.ui-surface-item {
+  min-height: var(--item-height);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--item-radius);
+  text-align: left;
+  transition: background-color var(--dur-instant) linear;
+}
+.ui-surface-item:is(:hover, .is-active) { background: var(--item-hover); }
+
 /* ---------- Tooltip ---------- */
 
 .ui-tip-anchor { display: contents; }
@@ -97,10 +120,6 @@
   gap: 2px;
   padding: 5px 9px;
   border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--raised) 94%, transparent);
-  backdrop-filter: blur(20px) saturate(1.5);
-  -webkit-backdrop-filter: blur(20px) saturate(1.5);
-  box-shadow: var(--glass-raised);
   font-size: var(--text-sm);
   line-height: 16px;
   color: var(--ink);
@@ -122,29 +141,24 @@
 .ui-popover.is-closing { animation: scale-out 100ms var(--ease-in) forwards; pointer-events: none; }
 .ui-menu-surface {
   min-width: 220px;
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--card) 86%, transparent);
-  backdrop-filter: blur(24px) saturate(1.6);
-  -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  box-shadow: var(--glass-raised);
-  color: var(--ink);
+  border-radius: var(--surface-radius);
   overflow: hidden;
 }
 .ui-menu { outline: 0; max-height: calc(100vh - 32px); overflow: auto; }
-.ui-menu-group { padding: 5px; }
-.ui-menu-group + .ui-menu-group { border-top: 1px solid var(--line-soft); }
+.ui-menu-group { padding: var(--surface-inset); }
+.ui-menu-group + .ui-menu-group { border-top: 1px solid var(--surface-line); }
 .ui-menu-item {
-  min-height: 32px;
+  min-height: var(--item-height);
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
-  border-radius: 7px;
+  border-radius: var(--item-radius);
   text-align: left;
   transition: background-color var(--dur-instant) linear;
 }
 .ui-menu-item > :is(svg, .sym):first-child { color: var(--dim); }
-.ui-menu-item.is-active { background: var(--hover); }
+.ui-menu-item.is-active { background: var(--item-hover); }
 .ui-menu-item.is-chosen { animation: menu-blink 90ms steps(2, jump-none); }
 @keyframes menu-blink { 0% { background: var(--press); } 50% { background: transparent; } 100% { background: var(--press); } }
 .ui-menu-item.is-danger, .ui-menu-item.is-danger > :is(svg, .sym):first-child { color: var(--red); }
@@ -165,9 +179,8 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
+  /* No backdrop blur: over the Ask column Chromium paints a mirrored ghost of the list into it. */
   background: var(--scrim);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   animation: fade var(--dur-base) var(--ease);
 }
 .ui-dialog {
@@ -176,8 +189,9 @@
   overflow: auto;
   outline: 0;
   border-radius: var(--radius-sheet);
-  background: var(--card);
-  box-shadow: var(--glass-raised);
+  background: var(--surface-solid);
+  box-shadow: var(--surface-shadow);
+  color: var(--ink);
   animation: dialog-in 220ms var(--ease-out-strong);
 }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
@@ -251,39 +265,37 @@
   --depth: 0;
   grid-area: 1 / 1;
   position: relative;
-  min-height: 50px;
+  min-height: 48px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 8px 8px 8px 16px;
-  border-radius: var(--radius-card);
-  background: rgba(28, 27, 26, .9);
-  color: #fff;
+  gap: 12px;
+  padding: 7px 7px 7px 16px;
+  border-radius: var(--surface-radius);
   font-weight: 500;
-  backdrop-filter: blur(14px) saturate(1.4);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  box-shadow: 0 6px 18px -4px rgba(0, 0, 0, .25), 0 0 0 .5px rgba(255, 255, 255, .06);
   pointer-events: auto;
   transform-origin: 50% 100%;
   transform: translateY(calc(var(--depth) * -9px)) scale(calc(1 - var(--depth) * .045));
   transition: transform var(--dur-slow) var(--ease-out-strong), opacity var(--dur-base);
   animation: toast-in 300ms var(--ease-out-strong);
 }
-:root[data-theme=dark] .ui-toast { background: rgba(62, 61, 59, .92); }
 .ui-toast:not([data-front]) > * { opacity: 0; transition: opacity var(--dur-fast); }
+.ui-toast:has(.ui-toast-action) { padding-right: 6px; }
 .ui-toaster.is-expanded .ui-toast { transform: translateY(calc(var(--depth) * (-100% - 8px))); }
 .ui-toaster.is-expanded .ui-toast > * { opacity: 1; }
 .ui-toast.is-hidden { opacity: 0; pointer-events: none; }
 .ui-toast.is-leaving { animation: toast-out var(--dur-base) var(--ease-in) forwards; pointer-events: none; }
-.ui-toast.is-error { background: color-mix(in srgb, var(--red) 82%, #000); }
+.ui-toast.is-error { color: var(--red); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(18px) scale(.96); } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(10px) scale(.97); } }
 .ui-toast-text { flex: 1; min-width: 0; }
-.ui-toast-action { height: 34px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; border-radius: var(--radius-control); background: rgba(255, 255, 255, .14); color: #fff; }
-.ui-toast-action:hover { background: rgba(255, 255, 255, .22); }
+/* The action reads as the blue text button used by every other prompt on the toast axis. */
+.ui-toast-action { height: 34px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 7px 0 12px; border-radius: var(--radius-control); color: var(--blue); font-weight: 500; }
+.ui-toast-action:not(:has(.ui-keys)) { padding-right: 12px; }
+.ui-toast-action:hover { background: var(--blue-soft); }
 .ui-toast-action:active { transform: scale(.96); }
-.ui-toast-action .ui-kbd { background: rgba(255, 255, 255, .18); color: #fff; }
-.ui-toast-dismiss { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; background: rgba(68, 68, 68, .75); backdrop-filter: blur(10px); box-shadow: 0 2px 4px rgba(0, 0, 0, .25); opacity: 0 !important; transform: scale(.8); }
+.ui-toast-action .ui-kbd { background: var(--blue-soft); color: var(--blue); }
+.ui-toast-dismiss { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--dim); background: var(--surface-solid); box-shadow: var(--glass); opacity: 0 !important; transform: scale(.8); }
+.ui-toast-dismiss:hover { color: var(--ink); }
 .ui-toast:hover > .ui-toast-dismiss, .ui-toast-dismiss:focus-visible { opacity: 1 !important; transform: none; }
 
 /* ---------- Switch and checkbox ---------- */

@@ -34,7 +34,8 @@ function Sheet({onClose,label,className,instant,dismissable=true,children,closin
   useEffect(()=>{
     openCount++;const previous=document.activeElement as HTMLElement|null;
     const el=panel.current;
-    if(el&&!el.contains(document.activeElement)){const first=el.querySelector<HTMLElement>('[autofocus],[data-autofocus]')??el.querySelector<HTMLElement>(focusable);(first??el).focus({preventScroll:true});}
+    // Without an explicit autofocus target the sheet itself takes focus, so the close button does not open with a focus ring.
+    if(el&&!el.contains(document.activeElement))(el.querySelector<HTMLElement>('[autofocus],[data-autofocus]')??el).focus({preventScroll:true});
     return()=>{openCount--;if(previous?.isConnected)previous.focus({preventScroll:true});};
   },[]);
   function keydown(event:React.KeyboardEvent){
@@ -42,7 +43,7 @@ function Sheet({onClose,label,className,instant,dismissable=true,children,closin
     else if(event.key==='Tab'&&panel.current){
       const items=[...panel.current.querySelectorAll<HTMLElement>(focusable)].filter(item=>item.offsetParent!==null);
       if(items.length){const first=items[0],last=items.at(-1)!;
-        if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+        if(event.shiftKey&&(document.activeElement===first||document.activeElement===panel.current)){event.preventDefault();last.focus();}
         else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}
     }
     // Keys typed inside a dialog never reach the mailbox shortcuts.
@@ -53,8 +54,13 @@ function Sheet({onClose,label,className,instant,dismissable=true,children,closin
   </div>;
 }
 
+/** The one close control every dialog uses. */
+export function DialogClose({label='Close',onClick}:{label?:string;onClick:()=>void}){
+  return <button className="ui-round-close" aria-label={label} onClick={onClick}><X size={13}/></button>;
+}
+
 export function DialogHeader({title,onClose,closeLabel='Close'}:{title:React.ReactNode;onClose:()=>void;closeLabel?:string}){
-  return <header className="ui-dialog-header"><h2>{title}</h2><button className="ui-round-close" aria-label={closeLabel} onClick={onClose}><X size={13}/></button></header>;
+  return <header className="ui-dialog-header"><h2>{title}</h2><DialogClose label={closeLabel} onClick={onClose}/></header>;
 }
 
 /* ---------- Confirmation ---------- */

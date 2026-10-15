@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {CalendarDays,Check,ChevronLeft,ChevronRight,Clock,ExternalLink,MapPin,Plus,Trash2,Users,X} from './icons';
 import type {Account,CalendarEvent} from '../shared/types';
 import {invoke,openUrl,uid} from './bridge';
-import {Button,Checkbox,Dialog,EmptyState,Field,IconButton,Notice,Select,confirmAction,cx} from './ui';
+import {Button,Checkbox,Dialog,DialogClose,EmptyState,Field,IconButton,Notice,Select,confirmAction,cx} from './ui';
 import {addDays,clock,dayKey,localInput,moveStart,parseGuests,setAllDay as withAllDay,slotOn,timeRange} from './calendarTime';
 
 export function EventEditor({event,accounts,onClose,notify}:{event:Partial<CalendarEvent>;accounts:Account[];onClose:()=>void;notify:(s:string)=>void}){
@@ -17,7 +17,7 @@ export function EventEditor({event,accounts,onClose,notify}:{event:Partial<Calen
  const setAllDay=(allDay:boolean)=>setValue(v=>withAllDay(v,allDay));
  async function save(){setBusy(true);try{if(!value.title.trim())throw new Error('Give this event a title.');if(backwards)throw new Error('End time must be after start time.');if(badGuests.length)throw new Error(`Check ${badGuests.length===1?'this guest address':'these guest addresses'}: ${badGuests.join(', ')}`);await invoke('calendar.save',{event:{...value,guests}});notify('Calendar updated');close();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  return <Dialog open={open} onClose={close} label="Calendar event" className="event-editor">
-  <header><div className="title-with-icon"><CalendarDays size={19}/><strong>{event.id?'Event details':'Add to calendar'}</strong></div><IconButton label="Close event" shortcut="Esc" icon={X} onClick={close}/></header>
+  <header><div className="title-with-icon"><CalendarDays size={19}/><strong>{event.id?'Event details':'Add to calendar'}</strong></div><DialogClose label="Close event" onClick={close}/></header>
   <div className="event-fields">
    <input className="event-title" aria-label="Event title" placeholder="Event title" autoFocus value={value.title} onChange={e=>setValue({...value,title:e.target.value})}/>
    <div className="field-grid">
