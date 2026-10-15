@@ -22,6 +22,17 @@ export function usePresence(open:boolean,exitMs:number=duration.fast){
   return {mounted:mounted||open,closing:!open&&mounted};
 }
 
+/**
+ * Returns an object with the same functions that never changes identity but always calls the latest
+ * version, so memoized children are not re-rendered just because a parent recreated its handlers.
+ * The set of keys must stay the same between renders.
+ */
+export function useHandlers<T extends Record<string,(...args:any[])=>any>>(handlers:T):T{
+  const latest=useRef(handlers);latest.current=handlers;
+  const [stable]=useState(()=>{const out:Record<string,(...args:unknown[])=>unknown>={};for(const key of Object.keys(handlers))out[key]=(...args)=>latest.current[key](...args);return out as T;});
+  return stable;
+}
+
 /** Remembers the last non-empty value so exiting content can keep rendering what it showed. */
 export function useLatest<T>(value:T|undefined|null){
   const last=useRef(value);

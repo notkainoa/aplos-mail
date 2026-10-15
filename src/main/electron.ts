@@ -50,9 +50,13 @@ function command(value:string){const win=BrowserWindow.getFocusedWindow()||main;
 function focusMain(){if(!main||main.isDestroyed())main=createWindow();if(main.isMinimized())main.restore();main.show();main.focus();}
 function handleLink(raw:string){try{const url=new URL(raw);if(!['mailto:','aplos:'].includes(url.protocol)||raw.length>10000)return;if(service)focusMain();if(!main||main.webContents.isLoading())pendingLinks.push(raw);else{focusMain();main.webContents.send('aplos:event',{type:'deep-link',payload:raw});}}catch{/* Ignore invalid OS links. */}}
 function finishQuit(){if(closing)return;closing=true;void Promise.resolve(service?.close()).finally(()=>app.quit());}
+// Runs on every state change. Assigning themeSource, even to the same value, resets the macOS app appearance
+// and notifies theme observers, and the badge redraws the Dock tile, so only touch what actually changed.
+let activeBadge=-1;
 function applyAppearance(state:AppState){
-  nativeTheme.themeSource=state.settings.theme;
-  app.setBadgeCount(state.settings.zen?0:state.threads.filter(thread=>thread.unread&&thread.status==='new').length);
+  if(nativeTheme.themeSource!==state.settings.theme)nativeTheme.themeSource=state.settings.theme;
+  const badge=state.settings.zen?0:state.threads.filter(thread=>thread.unread&&thread.status==='new').length;
+  if(badge!==activeBadge){app.setBadgeCount(badge);activeBadge=badge;}
   if(process.platform==='darwin'&&activeIcon!==state.settings.icon){app.dock?.setIcon(join(__dirname,`icon-${state.settings.icon}.png`));activeIcon=state.settings.icon;}
 }
 function createWindow(query?:{draft?:string;thread?:string}){

@@ -9,9 +9,9 @@ import {Calendar,EventEditor} from './Calendar';
 import {Settings} from './Settings';
 import {Sidebar,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
-import {DraftList,MailSection,highlightTerms,type RowHandlers,type Triage} from './components/MailList';
+import {DraftList,MailSection,highlightTerms,type RowActions,type RowHandlers,type Triage} from './components/MailList';
 import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog,WelcomeDialog} from './components/Overlays';
-import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Keys,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useMenu,usePresence,type Icon} from './ui';
+import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Keys,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useHandlers,useMenu,usePresence,type Icon} from './ui';
 
 const titles:Record<View,string>={home:'Home',later:'Later',all:'All mail',drafts:'Drafts',sent:'Sent','needs-reply':'Needs reply','awaiting-reply':'Awaiting reply',trash:'Trash',spam:'Spam',low:'Low importance',calendar:'Calendar',settings:'Settings'};
 const empties:Partial<Record<View,{icon:Icon;title:string;detail?:string}>>={
@@ -50,19 +50,21 @@ export function App(){
  const squeezed=useMediaQuery(ask?'(max-width: 900px)':'(max-width: 700px)');const [peek,setPeek]=useState(false);
  useEffect(()=>{if(!squeezed)setPeek(false);},[squeezed]);
  useEffect(()=>{if(peek)requestAnimationFrame(()=>document.querySelector<HTMLElement>('.sidebar-slot .nav-item.active, .sidebar-slot .nav-item')?.focus());},[peek]);
- const [composer,setComposer]=useState<Draft>();const [liveDraft,setLiveDraft]=useState<Draft>();const [composeClosing,setComposeClosing]=useState(false);const [draftBlocked,setDraftBlocked]=useState(false);
+ // The draft as typed lives in a ref: keeping it in state re-rendered the whole app on every keystroke.
+ const [composer,setComposer]=useState<Draft>();const liveDraft=useRef<Draft|undefined>(undefined);const setLiveDraft=useCallback((draft?:Draft)=>{liveDraft.current=draft;},[]);const [composeClosing,setComposeClosing]=useState(false);const [draftBlocked,setDraftBlocked]=useState(false);
  const [laterTab,setLaterTab]=useState<'todos'|'bookmarks'>('todos');
  const [selected,setSelected]=useState<Set<string>>(new Set());
  const [search,setSearch]=useState('');const [searchMode,setSearchMode]=useState(false);const [searchResults,setSearchResults]=useState<Thread[]>([]);const [searching,setSearching]=useState(false);const [searchedFor,setSearchedFor]=useState('');
  const [shortcutHelp,setShortcutHelp]=useState(false);
  const [eventEditor,setEventEditor]=useState<Partial<CalendarEvent>|null>(null);
- const [online,setOnline]=useState(navigator.onLine);const [now,setNow]=useState(Date.now());
+ const [online,setOnline]=useState(navigator.onLine);
  const [busy,setBusy]=useState('');const [welcomeError,setWelcomeError]=useState('');
  const [leaving,setLeaving]=useState<{thread:Thread;status:Triage;key:number}>();
  const [entering,setEntering]=useState<{id:string;from:string}>();
  const [duePrompt,setDuePrompt]=useState<{id:string;key:number}>();
  const rowMenu=useMenu();const [menuThread,setMenuThread]=useState<Thread>();
- const freshDraft=useRef('');const hoveredId=useRef<string|null>(null);const talkHeld=useRef(false);
+ // Hover is tracked in refs so pointing at rows does not re-render the app; `lastHovered` is where J/K continue from.
+ const freshDraft=useRef('');const hoveredId=useRef<string|null>(null);const lastHovered=useRef<string|null>(null);const talkHeld=useRef(false);
  const spaceHold=useRef<{timer?:ReturnType<typeof setTimeout>;fired:boolean}|null>(null);
  const lastTriage=useRef<{id:string;status:Triage;reopen:boolean}|null>(null);
  const searchInput=useRef<HTMLInputElement>(null);const eventHandler=useRef<(event:{type:string;payload?:unknown})=>void>(()=>{});
@@ -72,15 +74,16 @@ export function App(){
  const [cursor,setCursor]=useState<{id?:string;shown:boolean}>({shown:false});
  const [recentSearches,setRecentSearches]=useState<string[]>(()=>{try{const saved=JSON.parse(localStorage.getItem(recentSearchKey)||'[]');return Array.isArray(saved)?saved.filter(q=>typeof q==='string').slice(0,5):[];}catch{return [];}});
  const selectAnchor=useRef<string|null>(null);const listRef=useRef<HTMLDivElement>(null);const listScroll=useRef(0);
+ const workspaceRef=useRef<HTMLElement>(null);const workspaceLeft=useRef<number|null>(null);const workspaceSlide=useRef<Animation|undefined>(undefined);
 
  function notify(text:string,undoable=false){toast.show({text,action:undoable?{label:'Undo',shortcut:'Z',run:()=>undoRef.current()}:undefined});}
  function fail(error:unknown){toast.show({text:error instanceof Error?error.message:String(error),tone:'error'});}
  const refresh=useCallback(async()=>{try{setState(await invoke<AppState>('state.get'));setFatal('');}catch(e){setFatal((e as Error).message);}},[]);
  useEffect(()=>{
   void refresh();void invoke<Capabilities>('capabilities.get').then(setCapabilities).catch(()=>{});
-  const unsubscribe=bridge.subscribe(e=>eventHandler.current(e));const t=setInterval(()=>setNow(Date.now()),1000);
+  const unsubscribe=bridge.subscribe(e=>eventHandler.current(e));
   const up=()=>setOnline(true);const down=()=>setOnline(false);addEventListener('online',up);addEventListener('offline',down);
-  return ()=>{unsubscribe();clearInterval(t);removeEventListener('online',up);removeEventListener('offline',down);};
+  return ()=>{unsubscribe();removeEventListener('online',up);removeEventListener('offline',down);};
  },[]);
  useEffect(()=>{if(!popoutThread)localStorage.setItem(askStorageKey,ask?'open':'closed');},[ask]);
  useEffect(()=>{if(!leaving)return;const t=setTimeout(()=>setLeaving(undefined),340);return ()=>clearTimeout(t);},[leaving?.key]);
@@ -162,9 +165,9 @@ export function App(){
  function openThread(id:string){if(inlineReply&&id!==selectedThread?.id){notify('Send or close your reply first.');return;}setRoute(r=>({...r,threadId:id}));const t=state?.threads.find(t=>t.id===id);if(t?.unread)void invoke('thread.update',{ids:[id],patch:{unread:false},recordUndo:false}).catch(fail);}
  function nextThread(delta:number){const next=order[readerIndex+delta];if(next)openThread(next.id);}
  function moveCursor(delta:number){
-  if(!order.length)return;const at=order.findIndex(t=>t.id===cursor.id);
+  if(!order.length)return;const from=cursor.shown?cursor.id:lastHovered.current??cursor.id;const at=order.findIndex(t=>t.id===from);
   const index=at<0?(delta>0?0:order.length-1):cursor.shown||hoveredId.current?Math.min(order.length-1,Math.max(0,at+delta)):at;
-  setCursor({id:order[index].id,shown:true});
+  lastHovered.current=null;setCursor({id:order[index].id,shown:true});
  }
  function selectRow(thread:Thread,how:'toggle'|'range'='toggle'){
   const anchor=selectAnchor.current;const from=anchor?order.findIndex(t=>t.id===anchor):-1;const to=order.findIndex(t=>t.id===thread.id);
@@ -185,6 +188,7 @@ export function App(){
   // Right after an undo the reopened thread may not be back in the list yet, so fall back to its date position.
   const at=order.findIndex(t=>t.id===thread.id);
   const following=at>=0?order[at+1]||order[at-1]:order.find(t=>t.date<=thread.date)||order.at(-1);
+  if(lastHovered.current===thread.id)lastHovered.current=following?.id??null;
   if(!current){if(cursor.id===thread.id)setCursor(c=>({...c,id:following?.id}));return;}
   if(stack&&!reducedMotion())setLeaving({thread,status,key:Date.now()});
   if(following&&following.id!==thread.id)setRoute(r=>({...r,threadId:following.id}));else setRoute(r=>({...r,threadId:undefined}));
@@ -245,37 +249,72 @@ export function App(){
  const bulkBar=usePresence(selected.size>0);
  const listShown=!popoutThread&&(!selectedThread||state?.settings.openMode==='split');
  const listKey=(searchMode?'search':route.view)+(route.view==='later'?laterTab:'');
- useEffect(()=>{if(route.threadId)setCursor({id:route.threadId,shown:true});},[route.threadId]);
- useEffect(()=>{setCursor(c=>({...c,shown:false}));selectAnchor.current=null;},[listKey]);
- useLayoutEffect(()=>{if(listRef.current)listRef.current.scrollTop=0;listScroll.current=0;},[listKey]);
+ useEffect(()=>{if(route.threadId){lastHovered.current=null;setCursor({id:route.threadId,shown:true});}},[route.threadId]);
+ useEffect(()=>{setCursor(c=>({...c,shown:false}));selectAnchor.current=null;lastHovered.current=null;},[listKey]);
+ // Writing scrollTop forces a synchronous layout of the new view, so skip it when the list is already at the top.
+ useLayoutEffect(()=>{if(listRef.current&&listScroll.current)listRef.current.scrollTop=0;listScroll.current=0;},[listKey]);
  // In stack mode the list unmounts behind the reader; put it back where it was before scrolling to the cursor.
  useLayoutEffect(()=>{if(listShown&&listRef.current)listRef.current.scrollTop=listScroll.current;},[listShown]);
+ // When the sidebar shows or hides, the workspace jumps to its new place once and then slides there from the
+ // old one with a transform, in step with the sidebar's own CSS slide.
+ useLayoutEffect(()=>{
+  const el=workspaceRef.current;if(!el)return;
+  const left=el.offsetLeft,prev=workspaceLeft.current;workspaceLeft.current=left;
+  if(prev===null||prev===left||reducedMotion())return;
+  workspaceSlide.current?.cancel();
+  workspaceSlide.current=el.animate([{transform:`translateX(${prev-left}px)`},{transform:'none'}],{duration:200,easing:'cubic-bezier(.16,1,.3,1)'});
+ },[!!state,squeezed,peek,state?.settings.sidebar]);
  useEffect(()=>{if(cursor.shown&&cursor.id&&listShown)document.querySelector(`.mail-row[data-thread-id="${CSS.escape(cursor.id)}"]`)?.scrollIntoView({block:'nearest',behavior:reducedMotion()?'auto':'smooth'});},[cursor,listShown]);
+
+ // Derived data and stable handlers for the memoized panes. Cursor moves, hovers and typing then re-render
+ // only what changed instead of the sidebar, Ask and every row.
+ const highlight=useMemo(()=>searchMode?highlightTerms(search):undefined,[searchMode,search]);
+ const drafts=useMemo(()=>state?.drafts.filter(d=>!d.pendingSendAt&&(state.selectedAccountId==='all'||d.accountId===state.selectedAccountId))??[],[state?.drafts,state?.selectedAccountId]);
+ const pending=useMemo(()=>state?.drafts.filter(d=>d.pendingSendAt)??[],[state?.drafts]);
+ const counts=useMemo(()=>{
+  const replies=(view:View)=>scoped.filter(t=>t.replyStatus===view&&t.status!=='trash'&&t.status!=='spam').length;
+  return {home:scoped.filter(t=>t.status==='new').length+buckets.homeLater.length,later:buckets.later.length,drafts:drafts.length,'needs-reply':replies('needs-reply'),'awaiting-reply':replies('awaiting-reply')} as Partial<Record<View,number>>;
+ },[scoped,buckets,drafts]);
+ const rowActions=useHandlers<RowActions>({
+  open:t=>{if(searchMode)rememberSearch(search);openThread(t.id);},
+  select:(t,how)=>selectRow(t,how),
+  triage:(t,status)=>triage(t,status),
+  bookmark:t=>void patch([t.id],{bookmarked:!t.bookmarked},t.bookmarked?'Bookmark removed':'Bookmarked'),
+  restore:t=>{hintExit(t.id,'down');void patch([t.id],{status:'new'},'Restored to Home');},
+  more:(t,anchor)=>{setMenuThread(t);rowMenu.openAt(anchor);},
+  hover:(t,on)=>{if(on){hoveredId.current=t.id;lastHovered.current=t.id;if(cursor.shown)setCursor({id:t.id,shown:false});}else if(hoveredId.current===t.id)hoveredId.current=null;},
+ });
+ const sidebarActions=useHandlers({
+  navigate:(view:View)=>{setPeek(false);navigate(view);},back:()=>historyMove(-1),forward:()=>historyMove(1),sync:()=>void sync(),
+  hide:()=>{if(squeezed)setPeek(false);else void updateSettings({sidebar:false});},
+  selectAccount:(id:string)=>{void invoke('account.select',{id}).catch(fail);if(id!=='all')setRoute({view:'home'});},
+  shortcuts:()=>{setPeek(false);setShortcutHelp(true);},onError:(error:Error)=>fail(error),
+ });
+ const topbarActions=useHandlers({
+  showSidebar:()=>{if(squeezed)setPeek(true);else void updateSettings({sidebar:true});},
+  back:()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));},
+  setOpenMode:(openMode:Preferences['openMode'])=>void updateSettings({openMode}),
+  compose:()=>void newDraft(),ask:()=>setAsk(true),
+ });
+ const askActions=useHandlers({
+  onClose:()=>setAsk(false),
+  onSearch:(query:string)=>{if(replyGuard())return;setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));},
+  onThread:(id:string)=>navigate('all',id),onDraft:(draft:Partial<Draft>)=>void newDraft(draft),notify:(text:string)=>notify(text),
+  currentDraft:()=>liveDraft.current||composer,
+  onApplyDraft:(p:Partial<Draft>)=>{if(!composer)return;const base=liveDraft.current||composer;setComposer({...base,...p,id:composer.id,accountId:composer.accountId,mode:composer.mode,threadId:composer.threadId,attachments:base.attachments,revision:base.revision,updatedAt:new Date().toISOString()});},
+ });
 
  if(!state)return <div className="loading-screen"><span className="app-icon ink large">a</span><h2>{fatal?'Aplos needs a moment.':'Making room for your mail…'}</h2>{fatal?<><p>{fatal}</p><Button variant="primary" onClick={()=>void refresh()}>Try again</Button><p className="small muted">For browser development, run npm run dev.</p></>:<Spinner size={20} className="muted"/>}</div>;
 
  const prefs=state.settings;
  const {low,later,homeLater,replyHome,today}=buckets;
- const pending=state.drafts.filter(d=>d.pendingSendAt);
- const drafts=state.drafts.filter(d=>!d.pendingSendAt&&(state.selectedAccountId==='all'||d.accountId===state.selectedAccountId));
- function count(view:View){if(view==='home')return scoped.filter(t=>t.status==='new').length+homeLater.length;if(view==='later')return later.length;if(view==='drafts')return drafts.length;if(view==='needs-reply'||view==='awaiting-reply')return scoped.filter(t=>t.replyStatus===view&&t.status!=='trash'&&t.status!=='spam').length;return 0;}
  const heading={title:searchMode?'Search':titles[route.view],count:filtered.length};
  const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
  const readerProps={settings:prefs,editEvent:setEventEditor,notify,undo:()=>void undo(),talk,heading};
  const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={status=>triage(selectedThread,status)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} entering={entering?.id===selectedThread.id?entering.from:undefined}/>;
  const ghost=leaving&&prefs.openMode==='stack'&&<div key={leaving.key} className={'fling fling-'+leaving.status} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
  const doneLeft=prefs.triageDirection==='done-left';
- const rows:RowHandlers={
-  activeId:route.threadId,cursorId:cursor.shown?cursor.id:undefined,selected,doneLeft,
-  highlight:searchMode?highlightTerms(search):undefined,
-  open:t=>{if(searchMode)rememberSearch(search);openThread(t.id);},
-  select:selectRow,
-  triage,
-  bookmark:t=>void patch([t.id],{bookmarked:!t.bookmarked},t.bookmarked?'Bookmark removed':'Bookmarked'),
-  restore:t=>{hintExit(t.id,'down');void patch([t.id],{status:'new'},'Restored to Home');},
-  more:(t,anchor)=>{setMenuThread(t);rowMenu.openAt(anchor);},
-  hover:(t,on)=>{if(on){hoveredId.current=t.id;if(cursor.id!==t.id||cursor.shown)setCursor({id:t.id,shown:false});}else if(hoveredId.current===t.id)hoveredId.current=null;},
- };
+ const rows:RowHandlers={activeId:route.threadId,cursorId:cursor.shown?cursor.id:undefined,selected,doneLeft,highlight,actions:rowActions};
  const group=(title:string,threads:Thread[],action?:React.ReactNode,showCount=true)=><MailSection key={title} title={title} threads={threads} action={action} showCount={showCount} rows={rows}/>;
  const titled=(title:string,body:React.ReactNode)=><section className="mail-section"><header><h2>{title}</h2></header>{body}</section>;
  const emptyFor=(view:View)=>{const spec=searchMode?{icon:Search,title:'No matches yet',detail:'Try fewer words, or a sender’s name.'}:empties[view]??{title:'Nothing here'};return <EmptyState icon={spec.icon} title={spec.title} detail={spec.detail}/>;};
@@ -299,13 +338,11 @@ export function App(){
 
  return <div className={cx('app-shell',window.aplos&&'desktop',mac&&'mac',sidebarHidden&&'sidebar-hidden',peeking&&'sidebar-peek',ask&&'with-ask')}>
  {peeking&&<div className="sidebar-scrim" onPointerDown={()=>setPeek(false)}/>}
- {!popoutThread&&<div className="sidebar-slot" inert={sidebarHidden||undefined} onKeyDown={e=>{if(peeking&&e.key==='Escape'){e.stopPropagation();setPeek(false);}}}><Sidebar state={state} view={searchMode?null:route.view} count={count} zen={prefs.zen} online={online} syncing={syncing}
-  canBack={historyIndex>0} canForward={historyIndex<routes.length-1} navigate={view=>{setPeek(false);navigate(view);}} back={()=>historyMove(-1)} forward={()=>historyMove(1)} sync={()=>void sync()} hide={()=>{if(squeezed)setPeek(false);else void updateSettings({sidebar:false});}}
-  selectAccount={id=>{void invoke('account.select',{id}).catch(fail);if(id!=='all')setRoute({view:'home'});}} shortcuts={()=>{setPeek(false);setShortcutHelp(true);}} onError={fail}/></div>}
- <main className="workspace">
+ {!popoutThread&&<div className="sidebar-slot" inert={sidebarHidden||undefined} onKeyDown={e=>{if(peeking&&e.key==='Escape'){e.stopPropagation();setPeek(false);}}}><Sidebar state={state} view={searchMode?null:route.view} counts={counts} zen={prefs.zen} online={online} syncing={syncing}
+  canBack={historyIndex>0} canForward={historyIndex<routes.length-1} {...sidebarActions}/></div>}
+ <main className="workspace" ref={workspaceRef}>
  <Topbar showSidebarButton={sidebarHidden&&!popoutThread} showBack={!!selectedThread&&!popoutThread&&prefs.openMode==='stack'} showActions={!popoutThread} showModes={listView&&!composerLayer} showAsk={!ask}
-  openMode={prefs.openMode} composeBusy={busy==='draft'||busy==='reply'} showSidebar={()=>{if(squeezed)setPeek(true);else void updateSettings({sidebar:true});}} back={()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}}
-  setOpenMode={openMode=>void updateSettings({openMode})} compose={()=>void newDraft()} ask={()=>setAsk(true)}/>
+  openMode={prefs.openMode} composeBusy={busy==='draft'||busy==='reply'} {...topbarActions}/>
  {state.sync.error&&<div className="sync-error"><WifiOff size={14}/><span>{state.sync.error}</span><Button variant="text" size="sm" onClick={()=>void sync()}>Retry</Button></div>}
  <div className={cx('content-layout',selectedThread&&prefs.openMode==='split'&&'split-layout')}>
  {listShown&&<div className="mail-content" ref={listRef} onScroll={e=>{listScroll.current=e.currentTarget.scrollTop;}}>
@@ -329,7 +366,7 @@ export function App(){
  {busy==='draft'&&!composer&&<div className="compose-layer"><ComposeSkeleton/></div>}
  <DuePopover prompt={duePrompt} setDue={(id,day,label)=>void setDue(id,day,label)} dismiss={()=>setDuePrompt(undefined)}/>
  </main>
- {!popoutThread&&<div className={cx('ask-dock',ask&&'open')} inert={!ask||undefined}><Ask open={ask} onClose={()=>setAsk(false)} onSearch={query=>{if(replyGuard())return;setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));}} conversations={state.conversations} threads={state.threads} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} onThread={id=>navigate('all',id)} onDraft={d=>void newDraft(d)} notify={notify} currentDraft={liveDraft||composer} onApplyDraft={p=>{if(!composer)return;setComposer({...liveDraft||composer,...p,id:composer.id,accountId:composer.accountId,mode:composer.mode,threadId:composer.threadId,attachments:(liveDraft||composer).attachments,revision:(liveDraft||composer).revision,updatedAt:new Date().toISOString()});}}/></div>}
+ {!popoutThread&&<div className={cx('ask-dock',ask&&'open')} inert={!ask||undefined}><Ask open={ask} conversations={state.conversations} threads={state.threads} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} hasDraft={!!composer} {...askActions}/></div>}
  <Menu open={rowMenu.open} anchor={rowMenu.anchor} onClose={rowMenu.close} placement="bottom-end" label="Email actions" onError={fail} groups={thread?[
   [{label:'Open in separate window',icon:ExternalLink,onSelect:()=>invoke('window.thread',{threadId:thread.id})}],
   [{label:'Mark '+(thread.unread?'read':'unread'),icon:MailOpen,keys:'U',onSelect:()=>patch([thread.id],{unread:!thread.unread})},
@@ -340,7 +377,7 @@ export function App(){
  {eventEditor&&<EventEditor key={eventEditor.id||eventEditor.title||'new'} event={eventEditor} accounts={state.accounts} onClose={()=>setEventEditor(null)} notify={notify}/>}
  <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft}/>
  <WelcomeDialog open={!prefs.onboardingDone&&!popoutThread} icon={prefs.icon} busy={busy==='connect'} error={welcomeError} connect={async()=>{setBusy('connect');try{await invoke('account.connect');}catch(e){setWelcomeError((e as Error).message);}finally{setBusy('');}}} explore={()=>void updateSettings({onboardingDone:true})}/>
- <PendingSends drafts={pending} now={now} seconds={prefs.undoSeconds} undo={async d=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){fail(e);}}}/>
+ <PendingSends drafts={pending} seconds={prefs.undoSeconds} undo={async d=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){fail(e);}}}/>
  <Toaster/>
  <ConfirmHost/>
  </div>;

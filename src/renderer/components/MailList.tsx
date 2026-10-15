@@ -1,4 +1,4 @@
-import {useRef} from 'react';
+import {memo,useRef} from 'react';
 import {Bookmark,Check,Clock,FileText,MoreHorizontal,Paperclip,RotateCcw,Trash2} from '../icons';
 import type {Draft,Thread} from '../../shared/types';
 import {dateLabel,dueLabel,plain} from '../bridge';
@@ -6,12 +6,8 @@ import {Avatar,Badge,Checkbox,Count,IconButton,Keys,Tooltip,cx,useListPresence} 
 import {ymd} from '../calendarTime';
 
 export type Triage='done'|'later'|'trash'|'spam';
-export type RowHandlers={
-  activeId?:string;
-  cursorId?:string;
-  highlight?:Terms;
-  selected:Set<string>;
-  doneLeft:boolean;
+/** Row callbacks. Pass a stable object (see `useHandlers`) so unchanged rows skip re-rendering. */
+export type RowActions={
   open:(thread:Thread)=>void;
   /** `range` extends the selection from the last toggled row, `toggle` flips just this one. */
   select:(thread:Thread,how?:'toggle'|'range')=>void;
@@ -21,6 +17,14 @@ export type RowHandlers={
   restore:(thread:Thread)=>void;
   more:(thread:Thread,anchor:HTMLElement)=>void;
   hover:(thread:Thread,on:boolean)=>void;
+};
+export type RowHandlers={
+  activeId?:string;
+  cursorId?:string;
+  highlight?:Terms;
+  selected:Set<string>;
+  doneLeft:boolean;
+  actions:RowActions;
 };
 
 /** Words from a search query worth marking in rows; `from:` and `subject:` terms only mark their own field. */
@@ -46,11 +50,13 @@ export function MailSection({title,threads,action,showCount=true,rows}:{title:st
   if(!items.length)return null;
   return <section className="mail-section">
     <header><h2>{title}{showCount&&threads.length>0&&<Count value={threads.length} className="section-count"/>}</h2>{action}</header>
-    <div className="mail-group">{items.map(({item,phase,direction})=><MailRow key={item.id} thread={item} rows={rows} phase={phase} direction={direction}/>)}</div>
+    <div className="mail-group">{items.map(({item,phase,direction})=><MailRow key={item.id} thread={item} actions={rows.actions} phase={phase} direction={direction}
+      active={rows.activeId===item.id} cursor={rows.cursorId===item.id} selected={rows.selected.has(item.id)} selecting={rows.selected.size>0} doneLeft={rows.doneLeft} highlight={rows.highlight}/>)}</div>
   </section>;
 }
 
-function MailRow({thread:t,rows,phase,direction}:{thread:Thread;rows:RowHandlers;phase?:'enter'|'exit';direction?:string}){
+type RowProps={thread:Thread;actions:RowActions;phase?:'enter'|'exit';direction?:string;active:boolean;cursor:boolean;selected:boolean;selecting:boolean;doneLeft:boolean;highlight?:Terms};
+const MailRow=memo(function MailRow({thread:t,actions,phase,direction,active,cursor,selected,selecting,doneLeft,highlight:hl}:RowProps){
   const m=t.messages.at(-1)!;
   const sent=m.sent?m:undefined;
   const recipient=sent?.to[0]?.replace(/^\s*"?([^"<]+?)"?\s*<.*$/,'$1');
@@ -58,11 +64,11 @@ function MailRow({thread:t,rows,phase,direction}:{thread:Thread;rows:RowHandlers
   const attachments=t.messages.flatMap(message=>message.attachments);
   const today=ymd(new Date());const due=t.dueDate?.slice(0,10);
   const overdue=!!due&&due<today;
-  const selected=rows.selected.has(t.id);const selecting=rows.selected.size>0;const exiting=phase==='exit';
-  const shift=useRef(false);const hl=rows.highlight;
-  const todo=<Tooltip key="todo" content="Todo" shortcut={rows.doneLeft?'→':'←'}><button className="row-action" aria-label={'Move '+t.subject+' to Todo'} onClick={()=>rows.triage(t,'later')}><Clock size={15}/><Keys combo={rows.doneLeft?'→':'←'} size="sm"/></button></Tooltip>;
-  const done=<Tooltip key="done" content="Done" shortcut={rows.doneLeft?'←':'→'}><button className="row-action done" aria-label={'Mark '+t.subject+' done'} onClick={()=>rows.triage(t,'done')}><Check size={15}/><Keys combo={rows.doneLeft?'←':'→'} size="sm"/></button></Tooltip>;
-  return <div data-thread-id={t.id} className={cx('mail-row',t.unread&&'unread',rows.activeId===t.id&&'active',rows.cursorId===t.id&&'is-cursor',selected&&'checked',selecting&&'selecting',phase&&'row-'+phase,exiting&&'row-exit-'+direction)} inert={exiting||undefined}
+  const exiting=phase==='exit';
+  const shift=useRef(false);const rows=actions;
+  const todo=<Tooltip key="todo" content="Todo" shortcut={doneLeft?'→':'←'}><button className="row-action" aria-label={'Move '+t.subject+' to Todo'} onClick={()=>rows.triage(t,'later')}><Clock size={15}/><Keys combo={doneLeft?'→':'←'} size="sm"/></button></Tooltip>;
+  const done=<Tooltip key="done" content="Done" shortcut={doneLeft?'←':'→'}><button className="row-action done" aria-label={'Mark '+t.subject+' done'} onClick={()=>rows.triage(t,'done')}><Check size={15}/><Keys combo={doneLeft?'←':'→'} size="sm"/></button></Tooltip>;
+  return <div data-thread-id={t.id} className={cx('mail-row',t.unread&&'unread',active&&'active',cursor&&'is-cursor',selected&&'checked',selecting&&'selecting',phase&&'row-'+phase,exiting&&'row-exit-'+direction)} inert={exiting||undefined}
     onMouseMove={e=>{if(e.movementX||e.movementY)rows.hover(t,true);}} onMouseLeave={()=>rows.hover(t,false)}>
     <div className="row-leading" onClickCapture={e=>{shift.current=e.shiftKey;}}>
       <Avatar name={recipient||m.fromName||m.from} seed={recipient||m.fromName||m.from}/>
@@ -87,11 +93,11 @@ function MailRow({thread:t,rows,phase,direction}:{thread:Thread;rows:RowHandlers
     <div className="row-actions">
       {t.status==='trash'||t.status==='spam'?<Tooltip content="Restore to Home"><button className="row-action restore" aria-label={'Restore '+t.subject+' to Home'} onClick={()=>rows.restore(t)}><RotateCcw size={14}/><span>Restore</span></button></Tooltip>:<>
       <Tooltip content={t.bookmarked?'Remove bookmark':'Bookmark'} shortcut="B"><button className={cx('row-action',t.bookmarked&&'on')} aria-label={(t.bookmarked?'Remove bookmark from ':'Bookmark ')+t.subject} aria-pressed={t.bookmarked} onClick={()=>rows.bookmark(t)}><Bookmark key={String(t.bookmarked)} className={t.bookmarked?'pop':undefined} size={15} fill={t.bookmarked?'currentColor':'none'}/><Keys combo="B" size="sm"/></button></Tooltip>
-      {rows.doneLeft?[done,todo]:[todo,done]}</>}
+      {doneLeft?[done,todo]:[todo,done]}</>}
       <IconButton className="row-action more" label={'More actions for '+t.subject} tooltip={false} icon={MoreHorizontal} onClick={e=>rows.more(t,e.currentTarget)}/>
     </div>
   </div>;
-}
+});
 
 function draftRecipients(to:string){
   const list=(to.match(/(?:"[^"]*"|[^,;])+/g)||[]).map(s=>s.trim()).filter(Boolean);

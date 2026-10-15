@@ -1,3 +1,4 @@
+import {memo} from 'react';
 import {ArrowLeft,Columns2,PanelLeft,RectangleVertical,Search,SquarePen} from '../icons';
 import type {Settings} from '../../shared/types';
 import {Button,IconButton,Keys,Tabs,Tooltip} from '../ui';
@@ -8,7 +9,7 @@ type TopbarProps={
   showSidebar:()=>void;back:()=>void;setOpenMode:(mode:Settings['openMode'])=>void;compose:()=>void;ask:()=>void;
 };
 
-export function Topbar({showSidebarButton,showBack,showActions,showModes,showAsk,openMode,composeBusy,showSidebar,back,setOpenMode,compose,ask}:TopbarProps){
+export const Topbar=memo(function Topbar({showSidebarButton,showBack,showActions,showModes,showAsk,openMode,composeBusy,showSidebar,back,setOpenMode,compose,ask}:TopbarProps){
   return <div className="topbar">
     <div className="topbar-left">
       {showSidebarButton&&<IconButton label="Show sidebar" shortcut="[" icon={PanelLeft} onClick={showSidebar}/>}
@@ -23,4 +24,4 @@ export function Topbar({showSidebarButton,showBack,showActions,showModes,showAsk
       {showAsk&&<Tooltip content="Ask or search your mail" detail="Tap A to type · hold A to talk"><button className="ask-pill" aria-label="Show Ask" onClick={ask}><Search size={15}/><span>Ask</span><Keys combo="A" size="sm"/><small>Hold to talk</small></button></Tooltip>}
     </div>}
   </div>;
-}
+});

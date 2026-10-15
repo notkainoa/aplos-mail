@@ -192,7 +192,7 @@
   background: var(--surface-solid);
   box-shadow: var(--surface-shadow);
   color: var(--ink);
-  animation: dialog-in 220ms var(--ease-out-strong);
+  animation: dialog-in 180ms var(--ease-out-strong);
 }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
 .ui-dialog-backdrop.is-instant, .ui-dialog-backdrop.is-instant > .ui-dialog { animation: none; }
@@ -276,7 +276,7 @@
   transform-origin: 50% 100%;
   transform: translateY(calc(var(--depth) * -9px)) scale(calc(1 - var(--depth) * .045));
   transition: transform var(--dur-slow) var(--ease-out-strong), opacity var(--dur-base);
-  animation: toast-in 300ms var(--ease-out-strong);
+  animation: toast-in 240ms var(--ease-out-strong);
 }
 .ui-toast:not([data-front]) > * { opacity: 0; transition: opacity var(--dur-fast); }
 .ui-toast:has(.ui-toast-action) { padding-right: 6px; }
@@ -363,7 +363,7 @@
 @keyframes count-pop { from { transform: translateY(-40%); opacity: 0; } }
 .ui-skeleton { display: block; height: 12px; border-radius: var(--radius-sm); background: linear-gradient(90deg, var(--raised) 30%, color-mix(in srgb, var(--raised) 88%, var(--ink)) 50%, var(--raised) 70%) 0 0 / 220% 100%; animation: shimmer 1.3s linear infinite; }
 .ui-empty { min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 32px; text-align: center; color: var(--dim); animation: rise var(--dur-slow) var(--ease); }
-.ui-empty-icon { width: 44px; height: 44px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--hover); color: var(--dim); animation: empty-icon 420ms var(--ease-spring) 60ms backwards; }
+.ui-empty-icon { width: 44px; height: 44px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--hover); color: var(--dim); animation: empty-icon 320ms var(--ease-spring) 60ms backwards; }
 @keyframes empty-icon { from { transform: scale(.6); opacity: 0; } }
 .ui-empty strong { color: var(--ink); font-weight: 500; font-size: 15px; }
 .ui-empty p { max-width: 340px; font-size: var(--text-md); }

@@ -32,11 +32,13 @@
   overflow: hidden auto;
   scrollbar-width: none;
 }
-/* The slot animates its width so hiding the sidebar slides the workspace over instead of jumping. */
-.sidebar-slot { flex: none; display: flex; width: var(--sidebar-width); overflow: hidden; transition: width 240ms var(--ease-out-strong); }
-.sidebar-hidden .sidebar-slot { width: 0; transition-timing-function: var(--ease-in-out); }
-.sidebar-slot > .sidebar { transition: opacity var(--dur-base) var(--ease); }
-.sidebar-hidden .sidebar-slot > .sidebar { opacity: 0; }
+/* The slot's width changes in one step; the sidebar slides with a transform while App slides the workspace
+   from its old position (FLIP), so no frame relayouts the mail list. */
+.sidebar-slot { flex: none; display: flex; width: var(--sidebar-width); overflow: hidden; }
+.sidebar-hidden .sidebar-slot { width: 0; overflow: visible; }
+.sidebar-slot > .sidebar { transition: transform var(--dur-dock) var(--ease-out-strong); }
+.sidebar-hidden .sidebar-slot > .sidebar { transform: translateX(-100%); visibility: hidden; transition: transform var(--dur-dock) var(--ease-out-strong), visibility 0s linear var(--dur-dock); }
+.sidebar-peek .sidebar-slot > .sidebar { transition: none; }
 .sidebar-titlebar {
   height: 40px;
   flex: none;
@@ -129,11 +131,10 @@
   gap: 12px;
   padding: 0 8px 0 var(--pad);
   background: var(--toolbar-fill);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
   -webkit-app-region: drag;
 }
-.desktop.mac .topbar { transition: padding-left 240ms var(--ease-out-strong); }
 .desktop.mac.sidebar-hidden .topbar { padding-left: 84px; }
 .topbar button, .topbar input { -webkit-app-region: no-drag; }
 .topbar-left, .topbar-actions { display: flex; align-items: center; gap: 4px; min-width: 0; }
@@ -519,9 +520,12 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 
 /* ---------- Ask panel ---------- */
 
-/* The dock animates its width so the mail column narrows while the panel grows in. */
-.ask-dock { width: 0; flex: none; display: flex; overflow: hidden; z-index: 2; transition: width .25s var(--ease-in-out); }
-.ask-dock.open { width: var(--ask-width); transition: width .22s var(--ease-out-strong); }
+/* The dock takes its width in one step and the panel slides over it with a transform; animating the width
+   would relayout the whole mail column on every frame. Closed, the panel waits off the right edge. */
+.ask-dock { position: relative; width: 0; flex: none; z-index: 2; }
+.ask-dock.open { width: var(--ask-width); }
+.ask-dock > .ask-panel { position: absolute; inset: 0 0 0 auto; transform: translateX(100%); visibility: hidden; transition: transform var(--dur-fast) var(--ease-in), visibility 0s linear var(--dur-fast); }
+.ask-dock.open > .ask-panel { transform: none; visibility: visible; transition: transform var(--dur-dock) var(--ease-out-strong); }
 .ask-panel {
   width: var(--ask-width);
   flex: none;
@@ -781,7 +785,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .due-popover > button:active { transform: scale(.96); }
 .due-popover > .due-skip { width: 34px; padding: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); }
 .pending-sends { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); z-index: 115; display: flex; flex-direction: column; gap: 8px; width: min(400px, calc(100vw - 40px)); }
-.pending-send { position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 7px 7px 7px 16px; font-weight: 500; animation: toast-in 300ms var(--ease-out-strong); }
+.pending-send { position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 7px 7px 7px 16px; font-weight: 500; animation: toast-in 240ms var(--ease-out-strong); }
 .pending-send > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pending-undo.ui-btn-text { height: 34px; padding: 0 12px; border-radius: var(--radius-control); color: var(--blue); font-weight: 500; }
 .pending-undo.ui-btn-text:hover:not(:disabled) { background: var(--blue-soft); color: var(--blue); }
@@ -940,14 +944,15 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 
 /* Rows leaving after triage slide toward their destination, then the gap closes. */
 :is(.mail-row, .draft-row).row-exit { pointer-events: none; overflow: hidden; }
-:is(.mail-row, .draft-row).row-exit-right { animation: row-out-right 260ms var(--ease-in-out) forwards; }
-:is(.mail-row, .draft-row).row-exit-left { animation: row-out-left 260ms var(--ease-in-out) forwards; }
-:is(.mail-row, .draft-row).row-exit-down { animation: row-out-down 260ms var(--ease-in-out) forwards; }
+:is(.mail-row, .draft-row).row-exit-right { animation: row-out-right 200ms var(--ease-in-out) forwards; }
+:is(.mail-row, .draft-row).row-exit-left { animation: row-out-left 200ms var(--ease-in-out) forwards; }
+:is(.mail-row, .draft-row).row-exit-down { animation: row-out-down 200ms var(--ease-in-out) forwards; }
 @keyframes row-out-right { 55% { transform: translateX(24%); opacity: 0; height: var(--row-height); } to { transform: translateX(24%); opacity: 0; height: 0; } }
 @keyframes row-out-left { 55% { transform: translateX(-24%); opacity: 0; height: var(--row-height); } to { transform: translateX(-24%); opacity: 0; height: 0; } }
 @keyframes row-out-down { 55% { transform: scale(.97); opacity: 0; height: var(--row-height); } to { transform: scale(.97); opacity: 0; height: 0; } }
-:is(.mail-row, .draft-row).row-enter { overflow: hidden; animation: row-in 300ms var(--ease-out-strong); }
-@keyframes row-in { from { height: 0; opacity: 0; } 50% { opacity: 0; } }
+:is(.mail-row, .draft-row).row-enter { overflow: hidden; animation: row-in 220ms var(--ease-out-strong); }
+/* The gap opens in the first part only; the rest is a fade, which skips layout and repaint of the rows below. */
+@keyframes row-in { from { height: 0; opacity: 0; } 45% { height: var(--row-height); opacity: 0; } }
 
 /* Disclosure chevrons turn when their menu is open. */
 .importance-button.ui-btn-ghost { color: var(--dim); }
@@ -994,8 +999,9 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 @media (max-width: 700px) {
   .sidebar-slot { width: 0; }
   .desktop.mac .topbar { padding-left: 84px; }
-  .ask-dock { position: fixed; inset: 0 0 0 auto; z-index: 60; transition: none; }
-  .ask-dock.open { width: min(360px, 100vw); box-shadow: var(--glass-raised); }
+  .ask-dock { position: fixed; inset: 0 0 0 auto; z-index: 60; }
+  .ask-dock.open { width: min(360px, 100vw); }
+  .ask-dock > .ask-panel { box-shadow: var(--glass-raised); }
   .ask-panel { width: min(360px, 100vw); }
   .topbar .ui-tabs-segmented, .toolbar-divider { display: none; }
   .compose-top span { display: none; }

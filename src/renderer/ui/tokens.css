@@ -50,8 +50,9 @@
   /* Motion. Hover feedback is near-instant; surfaces enter quickly and leave faster. */
   --dur-instant: 60ms;
   --dur-fast: 120ms;
-  --dur-base: 180ms;
-  --dur-slow: 260ms;
+  --dur-base: 160ms;
+  --dur-slow: 200ms;
+  --dur-dock: 200ms;
   --ease: cubic-bezier(.2, .8, .2, 1);
   --ease-out-strong: cubic-bezier(.16, 1, .3, 1);
   --ease-in-out: cubic-bezier(.65, 0, .35, 1);
@@ -126,7 +127,7 @@
    */
   --surface: color-mix(in srgb, var(--card) 84%, transparent);
   --surface-solid: var(--card);
-  --surface-blur: blur(24px) saturate(1.7);
+  --surface-blur: blur(16px) saturate(1.7);
   --surface-shadow: var(--glass-raised);
   --surface-radius: var(--radius-card);
   --surface-inset: 5px;
@@ -209,7 +210,7 @@ button {
   background: none;
   cursor: default;
   padding: 0;
-  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast), transform var(--dur-fast) var(--ease), filter var(--dur-fast);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast), transform var(--dur-fast) var(--ease);
 }
 button:disabled { opacity: .4; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [contenteditable]:focus-visible {

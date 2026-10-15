@@ -1,3 +1,4 @@
+import {memo} from 'react';
 import {Archive,ArrowLeft,ArrowRight,CalendarDays,ChevronsUpDown,Clock,CornerUpLeft,FileText,Home,MessageCircle,PanelLeft,Plus,RefreshCw,Send,ShieldAlert,Trash2} from '../icons';
 import type {Account,AppState,View} from '../../shared/types';
 import {Count,IconButton,Keys,Menu,cx,useMenu,type Icon} from '../ui';
@@ -16,7 +17,7 @@ function accountInitial(account:Account){return (account.provider==='demo'?(acco
 type SidebarProps={
   state:AppState;
   view:View|null;
-  count:(view:View)=>number;
+  counts:Partial<Record<View,number>>;
   zen:boolean;
   online:boolean;
   syncing:boolean;
@@ -30,7 +31,7 @@ type SidebarProps={
   onError:(error:Error)=>void;
 };
 
-export function Sidebar({state,view,count,zen,online,syncing,canBack,canForward,navigate,back,forward,sync,hide,selectAccount,shortcuts,onError}:SidebarProps){
+export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing,canBack,canForward,navigate,back,forward,sync,hide,selectAccount,shortcuts,onError}:SidebarProps){
   const accounts=useMenu();
   const current=state.accounts.find(a=>a.id===state.selectedAccountId);
   const shown=current?[current]:state.accounts.slice(0,2);
@@ -56,7 +57,7 @@ export function Sidebar({state,view,count,zen,online,syncing,canBack,canForward,
       [{label:'Manage accounts',icon:Plus,onSelect:()=>{showSettingsTab('Accounts');navigate('settings');}}],
     ]}/>
     <nav className="main-nav" aria-label="Mailboxes">{sections.map(({view:id,label,icon:NavIcon,divider},index)=>{
-      const value=count(id);
+      const value=counts[id]??0;
       return <div key={id} className={divider?'nav-divider':undefined}>
         <button className={cx('nav-item',view===id&&'active')} aria-current={view===id?'page':undefined} onClick={()=>navigate(id)}>
           <NavIcon size={18}/><span className="nav-label">{label}</span>
@@ -72,4 +73,4 @@ export function Sidebar({state,view,count,zen,online,syncing,canBack,canForward,
       {demoOnly&&<span className="footer-note">Demo mail</span>}
     </footer>
   </aside>;
-}
+});

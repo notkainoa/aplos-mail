@@ -8,4 +8,4 @@ export {Tabs,type TabItem} from './Tabs';
 export {Toaster,toast,type ToastSpec} from './Toast';
 export {Switch,Checkbox,Select,Field} from './Controls';
 export {Avatar,Badge,Count,Skeleton,EmptyState,Group,GroupRow,Notice,type Tone} from './Display';
-export {cx,duration,reducedMotion,usePresence,useLatest,useListPresence,hintExit} from './motion';
+export {cx,duration,reducedMotion,usePresence,useLatest,useListPresence,useHandlers,hintExit} from './motion';

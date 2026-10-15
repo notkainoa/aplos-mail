@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useRef,useState} from 'react';
+import {memo,useEffect,useMemo,useRef,useState} from 'react';
 import {ChevronsRight,Clock,History,Plus,Square,Trash2,ExternalLink,StopCircle,CornerDownLeft} from './icons';
 import {Avatar,Button,IconButton,Kbd,Keys,Notice,Spinner,Tooltip,confirmAction,cx} from './ui';
 import type {Conversation,Draft,Settings,Thread} from '../shared/types';
@@ -8,8 +8,8 @@ import {LevelMeter} from './LevelMeter';
 import {Marked} from './components/MailList';
 
 const holdDelay=220;
-type Props={open:boolean;onClose:()=>void;onSearch:(query:string)=>void;conversations:Conversation[];threads:Thread[];accountId:string;settings:Settings;examples:string[];onThread:(id:string)=>void;onDraft:(draft:Partial<Draft>)=>void;notify:(t:string)=>void;currentDraft?:Draft;onApplyDraft?:(proposal:Partial<Draft>)=>void};
-export function Ask({open,onClose,onSearch,conversations,threads,accountId,settings,examples,onThread,onDraft,notify,currentDraft,onApplyDraft}:Props){
+type Props={open:boolean;onClose:()=>void;onSearch:(query:string)=>void;conversations:Conversation[];threads:Thread[];accountId:string;settings:Settings;examples:string[];onThread:(id:string)=>void;onDraft:(draft:Partial<Draft>)=>void;notify:(t:string)=>void;currentDraft:()=>Draft|undefined;hasDraft:boolean;onApplyDraft:(proposal:Partial<Draft>)=>void};
+export const Ask=memo(function Ask({open,onClose,onSearch,conversations,threads,accountId,settings,examples,onThread,onDraft,notify,currentDraft,hasDraft,onApplyDraft}:Props){
   const [id,setId]=useState<string|undefined>();const [input,setInput]=useState('');const [busy,setBusy]=useState(false);const [history,setHistory]=useState(false);const [error,setError]=useState('');const [pending,setPending]=useState('');
   const end=useRef<HTMLDivElement>(null);const field=useRef<HTMLTextAreaElement>(null);const [exampleIndex,setExampleIndex]=useState(()=>Math.floor(Math.random()*examples.length));const panel=useRef<HTMLElement>(null);const conversation=conversations.find(c=>c.id===id);
   const mounted=useRef(true);const request=useRef<string|undefined>(undefined);const snapshots=useRef(new Map<string,string>());
@@ -21,10 +21,10 @@ export function Ask({open,onClose,onSearch,conversations,threads,accountId,setti
   useEffect(()=>{end.current?.scrollIntoView({behavior:'smooth'});},[conversation?.messages.length,busy]);
   async function ask(text=input){
     if(!text.trim()||request.current||voice.isActive())return;
-    const requestId=uid();request.current=requestId;const snapshot=fingerprint(currentDraft);
+    const requestId=uid();request.current=requestId;const draft=currentDraft();const snapshot=fingerprint(draft);
     setBusy(true);setError('');setPending(text);setInput('');setHistory(false);
     try{
-      const result=await invoke<Conversation>('ai.ask',{conversationId:id,message:text,accountId,draft:currentDraft,requestId});
+      const result=await invoke<Conversation>('ai.ask',{conversationId:id,message:text,accountId,draft,requestId});
       if(!mounted.current||request.current!==requestId)return;
       snapshots.current.set(`${result.id}:${result.messages.length-1}`,snapshot);setId(result.id);
     }catch(error){if(mounted.current&&request.current===requestId){setError((error as Error).message);setInput(text);}}
@@ -35,10 +35,10 @@ export function Ask({open,onClose,onSearch,conversations,threads,accountId,setti
   async function apply(proposal:Partial<Draft>,index:number){
     const fields:Partial<Draft>={};
     for(const key of ['to','cc','bcc','subject','html'] as const){const value=proposal[key];if(typeof value==='string'&&(key==='html'||value.trim()))fields[key]=value;}
-    if(currentDraft){
-      if(!onApplyDraft){setError('Close the current draft before opening another proposal.');return;}
+    const draft=currentDraft();
+    if(draft){
       const snapshot=snapshots.current.get(`${id}:${index}`);
-      if(snapshot!==fingerprint(currentDraft)&&!await confirmAction({title:'Apply this suggestion?',message:'The draft changed since this suggestion was written. Applying it replaces the matching fields.',confirmLabel:'Apply'}))return;
+      if(snapshot!==fingerprint(draft)&&!await confirmAction({title:'Apply this suggestion?',message:'The draft changed since this suggestion was written. Applying it replaces the matching fields.',confirmLabel:'Apply'}))return;
       onApplyDraft(fields);notify('Suggestion applied. Review the draft before sending.');
     }else onDraft(fields);
   }
@@ -54,7 +54,7 @@ export function Ask({open,onClose,onSearch,conversations,threads,accountId,setti
       if(event.key==='Escape'&&(hold.current||voice.isActive())&&!panel.current?.contains(target)){event.preventDefault();cancelVoice();return;}
       if(event.code!=='KeyA'||event.metaKey||event.ctrlKey||event.altKey||['INPUT','TEXTAREA','SELECT'].includes(target.tagName)||target.isContentEditable)return;
       if(event.repeat){if(hold.current)event.preventDefault();return;}
-      if(request.current||(currentDraft&&!panel.current?.contains(target)))return;
+      if(request.current||(hasDraft&&!panel.current?.contains(target)))return;
       event.preventDefault();
       const state:{timer?:ReturnType<typeof setTimeout>;recording:boolean}={recording:false};
       state.timer=setTimeout(()=>{state.recording=true;autoAsk.current=true;void voice.start();},holdDelay);
@@ -107,7 +107,7 @@ export function Ask({open,onClose,onSearch,conversations,threads,accountId,setti
       {matches.length?matches.map(t=>{const m=t.messages.at(-1)!;const words=query.split(/\s+/).filter(w=>w.length>1);return <button key={t.id} className="ask-match" onClick={()=>onThread(t.id)}><Avatar name={m.fromName||m.from} size={26}/><span><span className="ask-match-line"><strong><Marked text={m.fromName||m.from} terms={words}/></strong><span>{dateLabel(t.date)}</span></span><span className="ask-match-subject"><Marked text={t.subject} terms={words}/></span></span></button>;}):<p className="ask-no-match">No mail matches that yet.</p>}
     </div>
     :history?<div className="ask-history">{conversations.length===0&&<p className="muted">A fresh start. Ask your first question.</p>}{[...conversations].reverse().map(c=><div className="history-row" key={c.id}><button onClick={()=>{setId(c.id);setHistory(false);}}><Clock size={14}/><span>{c.title}</span></button><IconButton size="xs" label="Delete conversation" aria-label={'Delete conversation '+c.title} icon={Trash2} disabled={busy} onClick={()=>{void invoke('conversation.delete',{id:c.id}).then(()=>{if(id===c.id)setId(undefined);}).catch(e=>notify(e.message));}}/></div>)}</div>
-    :<div className="ask-scroll">{!conversation&&!busy?<div className="ask-welcome"><p>Hold <Kbd>A</Kbd> to talk to your mail</p><button key={exampleIndex} className="ask-example" onClick={()=>void ask(example)}>“{example}”</button>{conversations.length>0&&<Button variant="text" size="sm" icon={History} className="ask-history-link" onClick={()=>setHistory(true)}>Earlier questions</Button>}</div>:<>{conversation?.messages.map((m,i)=><div key={i} className={'chat-message '+m.role}><div className="chat-text">{m.content}</div>{!!m.citations?.length&&<div className="citations">{m.citations.map(cid=>{const t=threads.find(t=>t.id===cid);return t&&<button key={cid} onClick={()=>onThread(cid)}><ExternalLink size={12}/><span>{t.subject}</span></button>;})}</div>}{m.proposal&&<div className="proposal"><strong>{m.proposal.subject||'New message'}</strong><p>{m.proposal.to}</p><Button variant="tinted" size="sm" onClick={()=>void apply(m.proposal!,i)}>{currentDraft?'Apply to open draft':'Open as a draft'}</Button></div>}</div>)}{busy&&<><div className="chat-message user"><div className="chat-text">{pending}</div></div><div className="thinking"><span/><span/><span/>Looking through your mail</div></>}<div ref={end}/></>}</div>}
+    :<div className="ask-scroll">{!conversation&&!busy?<div className="ask-welcome"><p>Hold <Kbd>A</Kbd> to talk to your mail</p><button key={exampleIndex} className="ask-example" onClick={()=>void ask(example)}>“{example}”</button>{conversations.length>0&&<Button variant="text" size="sm" icon={History} className="ask-history-link" onClick={()=>setHistory(true)}>Earlier questions</Button>}</div>:<>{conversation?.messages.map((m,i)=><div key={i} className={'chat-message '+m.role}><div className="chat-text">{m.content}</div>{!!m.citations?.length&&<div className="citations">{m.citations.map(cid=>{const t=threads.find(t=>t.id===cid);return t&&<button key={cid} onClick={()=>onThread(cid)}><ExternalLink size={12}/><span>{t.subject}</span></button>;})}</div>}{m.proposal&&<div className="proposal"><strong>{m.proposal.subject||'New message'}</strong><p>{m.proposal.to}</p><Button variant="tinted" size="sm" onClick={()=>void apply(m.proposal!,i)}>{hasDraft?'Apply to open draft':'Open as a draft'}</Button></div>}</div>)}{busy&&<><div className="chat-message user"><div className="chat-text">{pending}</div></div><div className="thinking"><span/><span/><span/>Looking through your mail</div></>}<div ref={end}/></>}</div>}
     {conversation&&<p className="ai-footnote">Answers use the selected mailbox · Powered by Groq</p>}
   </aside>;
-}
+});

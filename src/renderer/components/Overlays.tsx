@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
 import {ArrowRight,Check,Clock,Mail,Sparkles,X} from '../icons';
 import type {Draft} from '../../shared/types';
 import {isoDay} from '../bridge';
@@ -47,7 +47,10 @@ export function DuePopover({prompt,setDue,dismiss}:{prompt?:{id:string;key:numbe
 }
 
 /** Messages waiting out the undo-send delay, each with a draining progress bar. */
-export function PendingSends({drafts,now,seconds,undo}:{drafts:Draft[];now:number;seconds:number;undo:(draft:Draft)=>void}){
+export function PendingSends({drafts,seconds,undo}:{drafts:Draft[];seconds:number;undo:(draft:Draft)=>void}){
+  // The countdown ticks here, and only while something is waiting, so the rest of the app does not re-render every second.
+  const [now,setNow]=useState(Date.now);
+  useEffect(()=>{if(!drafts.length)return;setNow(Date.now());const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[drafts.length>0]);
   if(!drafts.length)return null;
   return <div className="pending-sends">{drafts.map(d=><PendingSend key={d.id} draft={d} now={now} seconds={seconds} undo={undo}/>)}</div>;
 }
