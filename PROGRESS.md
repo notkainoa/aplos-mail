@@ -33,3 +33,15 @@ Live synthetic Groq checks passed: summary, draft, polish, Ask with exact citati
 ## 2026-10-14 — M7/M8
 
 Calendar editor/schedule and Groq event proposals work through the same service; duplicate-aware save and configurable automatic extraction are implemented. Browser created a synthetic event and verified persisted fields; all-day dates remain local date-only to prevent timezone drift. Google OAuth/Gmail/Calendar implementations are original and use Aplos credentials, loopback PKCE/state, encrypted refresh tokens, paginated mail, attachments and generated MIME. Mocked integration tests exercise real local OAuth callback behavior, token refresh, mail normalization/mutations/send and Calendar operations. Live Google is not verified: own client credentials are absent. M11 remains unchecked.
+
+## 2026-10-14 — desktop acceptance in progress
+
+Production `.app` builds and launches. Native Cmd+N opens compose; native immediate Cmd+W after editing persists the latest text; reopened draft moves to a real separate native window; edited popout survives whole-app Cmd+Q at revision 3. The close test reads persisted state only after asynchronous handshake settles. Browser verified live Ask → explicit draft proposal → open draft → revised proposal applied to the same draft with recipient retained. Appearance light/dark, zen counts, search attachment filter and calendar event persistence verified. Production dependency audit: zero vulnerabilities; all 18 tests pass. ASAR scan reports zero bundled .env files and no Groq key bytes in app code.
+
+Final reference-gap audit found the observed Gmail per-sending-address signature behavior was not yet represented by custom global signature. Added M12 rather than silently narrowing parity; implementation and focused verification underway. Google live remains blocked by missing Aplos-owned OAuth client configuration.
+
+## 2026-10-14 — M9/M12
+
+Settings, native menus/shortcuts, three original dynamic Dock icons, light/dark/system and zen preferences, login/default-mail actions, mailto/aplos deep links, per-account notifications, data export and truthful local-build update status implemented. Browser verified theme changes, zen hiding all but Home counts, undo-delay setting and accounts screen. Native shortcuts launched composer and Home; closing windows/quit saves first. Actual OS microphone/notification permission proof remains in M11.
+
+Closed signature parity gap with original Google settings/sendAs integration. Only authorized verified aliases appear; selected alias/name drives MIME sender, and per-address Gmail signature preview is sanitized. Existing drafts retain custom-signature behavior; new Google drafts choose the relevant default/reply alias. Server rejects unauthorized and cross-account senders. Missing settings scope leaves primary-address mail usable with a visible warning. REA focused signature boundary trace: `ev_16966762d62997c2b3c9e3f99d6761090820e176ac1761a897cbe461d0df2325`; static candidate evidence, live Google not inferred. Extended existing MIME/OAuth tests plus one meaningful service identity regression: all 19 tests and typecheck pass.

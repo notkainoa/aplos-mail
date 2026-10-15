@@ -37,10 +37,19 @@ function enumValue<const T extends string>(v:unknown,values:readonly T[]):T {
 }
 const stripHTML=(html:string)=>html.replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim();
 const escapeHTML=(value:string)=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]!));
-function outboundHTML(draft:Draft,settings:Settings) {
+function senderIdentity(draft:Draft,account:Account) {
+  const email=draft.fromEmail?safeEmail(draft.fromEmail):account.email;
+  const alias=account.sendAs?.find(item=>item.email.toLowerCase()===email.toLowerCase());
+  if(email.toLowerCase()!==account.email.toLowerCase()&&(account.provider!=='google'||!alias))throw new Error('Choose an authorized sending address for this account.');
+  return {email,name:alias?.name||account.name,signature:alias?.signature||''};
+}
+function outboundHTML(draft:Draft,settings:Settings,account:Account) {
   let html=draft.html;
   const include=draft.signature&&settings.signatureMode!=='never'&&(settings.signatureMode==='always'||draft.mode==='new'||draft.mode==='forward');
-  if(include&&settings.signature.trim())html+=`<div data-aplos-signature="true"><br>${escapeHTML(settings.signature).replace(/\r?\n/g,'<br>')}</div>`;
+  if(include){
+    const signature=draft.signatureSource==='gmail'?(account.provider==='google'?senderIdentity(draft,account).signature:''):escapeHTML(settings.signature).replace(/\r?\n/g,'<br>');
+    if(signature.trim())html+=`<div data-aplos-signature="true"><br>${signature}</div>`;
+  }
   if(settings.footer)html+='<p data-aplos-footer="true">Sent with Aplos Mail</p>';
   return html;
 }
@@ -143,12 +152,13 @@ export async function createService(options:ServiceOptions) {
     try {
       const d=clone(original),a=account(d.accountId);
       if(!a.connected)throw new Error('Reconnect this account before sending.');
-      d.html=outboundHTML(d,state.settings);
+      const sender=senderIdentity(d,a);
+      d.html=outboundHTML(d,state.settings,a);
       const remote=a.provider==='google'?await google.send(a,d):undefined;
       const sentAt=now().toISOString();
       change(s=>{
         s.drafts=s.drafts.filter(item=>item.id!==id);
-        const message={id:randomUUID(),from:a.email,fromName:a.name,to:addresses(d.to),cc:addresses(d.cc),date:sentAt,text:stripHTML(d.html),html:d.html,attachments:d.attachments,sent:true};
+        const message={id:randomUUID(),from:sender.email,fromName:sender.name,to:addresses(d.to),cc:addresses(d.cc),date:sentAt,text:stripHTML(d.html),html:d.html,attachments:d.attachments,sent:true};
         const existing=d.threadId?s.threads.find(t=>t.id===d.threadId):undefined;
         if(existing){existing.messages.push(message);existing.date=sentAt;existing.replyStatus='awaiting-reply';existing.status='done';existing.unread=false;}
         else s.threads.unshift({id:remote?.threadId?`${a.id}:${remote.threadId}`:randomUUID(),...(remote?.threadId?{gmailId:remote.threadId}:{}),accountId:a.id,subject:d.subject,summary:stripHTML(d.html).slice(0,240),messages:[message],date:sentAt,unread:false,status:'done',importance:'important',bookmarked:false,replyStatus:'awaiting-reply'});
@@ -243,6 +253,10 @@ export async function createService(options:ServiceOptions) {
       for(const a of accounts.filter(a=>a.provider==='google'&&a.connected)){
         try{
           const incoming=await google.sync(a);
+          try{a.sendAs=await google.getSendAs(a);delete a.error;}catch{
+            const message='Gmail sending addresses and signatures are unavailable. Reconnect to grant settings access; the primary address is still available.';
+            a.sendAs=[{email:a.email,name:a.name,signature:'',isDefault:true}];a.error=message;errors.push(message);emit('error',{message});
+          }
           const fresh=incoming.filter(t=>t.status==='new'&&!state.threads.some(old=>old.id===t.id)&&!t.messages.some(m=>state.blockedSenders.includes(m.from.toLowerCase())));
           const since=Date.parse(state.sync.lastSync||now().toISOString());
           const arrivals=incoming.filter(t=>t.unread&&t.status==='new'&&Date.parse(t.date)>since&&!state.threads.some(old=>old.id===t.id)&&!t.messages.some(m=>state.blockedSenders.includes(m.from.toLowerCase())));
@@ -254,7 +268,7 @@ export async function createService(options:ServiceOptions) {
                 status:old.status==='later'&&t.status!=='trash'&&t.status!=='spam'?'later':t.status};
             }}
             if(events){s.events=s.events.filter(e=>e.accountId!==a.id||!e.googleId);for(const event of events)if(!s.events.some(e=>e.googleId===event.googleId&&e.accountId===event.accountId))s.events.push(event);}
-            const acc=s.accounts.find(x=>x.id===a.id)!;delete acc.error;
+            const acc=s.accounts.find(x=>x.id===a.id)!;acc.sendAs=a.sendAs;if(a.error)acc.error=a.error;else delete acc.error;
           });
           if(state.settings.notifications&&state.settings.accountNotifications[a.id]!==false)for(const t of arrivals.slice(0,3))emit('notification',{title:t.messages.at(-1)?.fromName||'New mail',body:t.subject,threadId:t.id,accountId:a.id});
           errors.push(...await classifyIncoming(fresh,a));
@@ -319,11 +333,14 @@ export async function createService(options:ServiceOptions) {
         return clone([...found.values()].sort((a,b)=>b.date.localeCompare(a.date)));
       }
       case 'draft.save':{
-        const d=object(p.draft),id=d.id?text(d.id,300):randomUUID(),existing=state.drafts.find(item=>item.id===id);account(text(d.accountId,300));
+        const d=object(p.draft),id=d.id?text(d.id,300):randomUUID(),existing=state.drafts.find(item=>item.id===id),a=account(text(d.accountId,300));
         if(existing?.pendingSendAt)throw new Error('Undo send before editing this draft.');
         if(existing&&Number(d.revision)<existing.revision)throw new Error('This draft changed in another window. Reopen it before editing.');
         const next:Draft={id,accountId:d.accountId,to:text(d.to||'',5000),cc:text(d.cc||'',5000),bcc:text(d.bcc||'',5000),subject:text(d.subject||'',2000),html:text(d.html||'',1_000_000),attachments:attachments(d.attachments||[]),
           mode:enumValue(d.mode||'new',['new','reply','reply-all','forward']),signature:!!d.signature,updatedAt:now().toISOString(),revision:(existing?.revision||0)+1};
+        if(d.fromEmail!==undefined&&d.fromEmail!=='')next.fromEmail=safeEmail(d.fromEmail);
+        if(d.signatureSource!==undefined)next.signatureSource=enumValue(d.signatureSource,['custom','gmail']);
+        senderIdentity(next,a);
         if(d.threadId){const t=thread(text(d.threadId,300));if(t.accountId!==d.accountId)throw new Error('Replies must use the message account.');next.threadId=t.id;}
         change(s=>{s.drafts=s.drafts.filter(item=>item.id!==id);s.drafts.push(next);});return clone(next);
       }
@@ -333,7 +350,7 @@ export async function createService(options:ServiceOptions) {
         if(!addresses(d.to).length)throw new Error('Add at least one recipient.');
         validRecipients(d.to);validRecipients(d.cc);validRecipients(d.bcc);
         if(!stripHTML(d.html)&&!d.attachments.length)throw new Error('Write a message or add an attachment before sending.');
-        if(!account(d.accountId).connected)throw new Error('Reconnect this account before sending.');
+        const a=account(d.accountId);if(!a.connected)throw new Error('Reconnect this account before sending.');senderIdentity(d,a);
         const pendingSendAt=new Date(now().getTime()+state.settings.undoSeconds*1000).toISOString();
         change(s=>{const current=s.drafts.find(item=>item.id===d.id)!;current.pendingSendAt=pendingSendAt;delete current.sendError;});scheduleSend({...d,pendingSendAt});return clone(state);
       }

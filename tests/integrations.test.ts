@@ -52,19 +52,20 @@ test('Groq protects secrets in errors, supports cancellation, and sends audio as
 });
 
 test('Desktop Google OAuth verifies state and PKCE and persists encrypted tokens',async()=>{
-  const dir=await mkdtemp(join(tmpdir(),'aplos-oauth-test-'));let authUrl:URL|undefined;
+  const dir=await mkdtemp(join(tmpdir(),'aplos-oauth-test-'));let authUrl:URL|undefined;let denySettings=false;
   const google=await createGoogle({dataDir:dir,clientId:'own-desktop-client',clientSecret:'own-client-secret',encrypt,decrypt,
     openExternal:async(url)=>{
-      authUrl=new URL(url);const callback=new URL(authUrl.searchParams.get('redirect_uri')!);assert.equal(callback.hostname,'127.0.0.1');
+      authUrl=new URL(url);assert.ok(authUrl.searchParams.get('scope')?.includes('https://www.googleapis.com/auth/gmail.settings.basic'));const callback=new URL(authUrl.searchParams.get('redirect_uri')!);assert.equal(callback.hostname,'127.0.0.1');
       callback.searchParams.set('state','bad');callback.searchParams.set('code','intercepted');assert.equal((await fetch(callback)).status,400);
       callback.searchParams.set('state',authUrl.searchParams.get('state')!);callback.searchParams.set('code','test-code');assert.equal((await fetch(callback)).status,200);
     },
     fetch:async(input,init)=>{
+      if(String(input).includes('/settings/sendAs'))return denySettings?json({},403):json({sendAs:[{sendAsEmail:account.email,displayName:'Alex',isPrimary:true,signature:'<p>Alex</p>'},{sendAsEmail:'studio@example.test',displayName:'Studio',signature:'<p>Studio</p>',isDefault:true,verificationStatus:'accepted'},{sendAsEmail:'pending@example.test',verificationStatus:'pending'}]});
       if(String(input).includes('/token')){const values=new URLSearchParams(init?.body as URLSearchParams);assert.equal(values.get('client_id'),'own-desktop-client');assert.equal(values.get('code'),'test-code');assert.equal(createHash('sha256').update(values.get('code_verifier')!).digest('base64url'),authUrl!.searchParams.get('code_challenge'));return json({access_token:'oauth-access-sensitive',refresh_token:'oauth-refresh-sensitive',expires_in:3600});}
       return json({sub:'test',email:'alex@example.test',name:'Alex'});
     }
   });
-  try {const result=await google.connect();assert.equal(result.id,account.id);const disk=await readFile(join(dir,'google-tokens.enc.json'),'utf8');assert.ok(!disk.includes('oauth-access-sensitive'));assert.ok(!disk.includes('oauth-refresh-sensitive'));assert.ok(!disk.includes('own-client-secret'));}
+  try {const result=await google.connect();assert.equal(result.id,account.id);assert.deepEqual(result.sendAs?.map(alias=>alias.email),[account.email,'studio@example.test']);assert.equal(result.sendAs?.[1].signature,'<p>Studio</p>');const disk=await readFile(join(dir,'google-tokens.enc.json'),'utf8');assert.ok(!disk.includes('oauth-access-sensitive'));assert.ok(!disk.includes('oauth-refresh-sensitive'));assert.ok(!disk.includes('own-client-secret'));denySettings=true;const fallback=await google.connect();assert.match(fallback.error??'',/primary address/);assert.deepEqual(fallback.sendAs?.map(alias=>alias.email),[account.email]);}
   finally {google.close();await rm(dir,{recursive:true,force:true});}
 });
 
@@ -84,7 +85,8 @@ test('Google sync paginates, normalizes multipart mail, respects triage mapping,
     await google.updateThread(account,item,{status:'done',unread:false,labels:['INBOX']});const modify=requests.find(r=>r.url.endsWith('/modify'))!;assert.ok(modify.body.addLabelIds.includes('INBOX'));assert.ok(modify.body.removeLabelIds.includes('UNREAD'));
     const attachment=await google.attachment(account,item,item.messages[0].attachments[0]);assert.equal(Buffer.from(attachment.data!,'base64').toString(),'note');
     const draft:Draft={id:'draft-test',accountId:account.id,threadId:item.id,mode:'reply',to:'sam@example.test',cc:'',bcc:'archive@example.test',subject:'Re: Studio review',html:'<p>Confirmed.</p>',attachments:[attachment],signature:false,updatedAt:new Date().toISOString(),revision:1};
-    await google.send(account,draft);assert.equal(sent.threadId,'thread1');const mail=await simpleParser(Buffer.from(sent.raw,'base64url'));assert.equal(mail.subject,'Re: Studio review');assert.equal(mail.inReplyTo,'<original@example.test>');assert.equal(mail.attachments[0].content.toString(),'note');assert.match(mail.bcc&&!Array.isArray(mail.bcc)?mail.bcc.text:'',/archive@example.test/);
+    const aliasAccount={...account,sendAs:[{email:'studio@example.test',name:'Studio',signature:'<p>Studio</p>',isDefault:true}]};await google.send(aliasAccount,{...draft,fromEmail:'studio@example.test'});assert.equal(sent.threadId,'thread1');const mail=await simpleParser(Buffer.from(sent.raw,'base64url'));assert.equal(mail.from?.value[0].address,'studio@example.test');assert.equal(mail.from?.value[0].name,'Studio');assert.equal(mail.subject,'Re: Studio review');assert.equal(mail.inReplyTo,'<original@example.test>');assert.equal(mail.attachments[0].content.toString(),'note');assert.match(mail.bcc&&!Array.isArray(mail.bcc)?mail.bcc.text:'',/archive@example.test/);
+    await assert.rejects(()=>google.send(aliasAccount,{...draft,fromEmail:'unauthorized@example.test'}),/not authorized/);
     await assert.rejects(()=>google.send(account,{...draft,subject:'Bad\r\nBcc: victim@example.test'}),/line breaks/);
   } finally {google.close();await rm(dir,{recursive:true,force:true});}
 });

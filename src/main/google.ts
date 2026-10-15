@@ -111,8 +111,21 @@ export async function createGoogle(options:GoogleOptions) {
     return {id:`${account.id}:${calendarId}:${raw.id}`,googleId:raw.id,accountId:account.id,calendarId,title:raw.summary??'(Untitled event)',start:raw.start?.dateTime??raw.start?.date??'',end:raw.end?.dateTime??raw.end?.date??'',allDay:Boolean(raw.start?.date),location:raw.location??'',description:raw.description??'',guests:(raw.attendees??[]).map((x:Json)=>x.email).filter(Boolean),url:raw.htmlLink};
   }
   async function listCalendars(account:Account) {return (await pages(account,`${calendar}/users/me/calendarList?maxResults=250`,'items')).map(item=>({id:String(item.id),name:String(item.summaryOverride??item.summary??item.id),accountId:account.id}));}
+  async function getSendAs(account:Account):Promise<NonNullable<Account['sendAs']>> {
+    const response=await api(account,`${gmail}/settings/sendAs`);
+    if(!Array.isArray(response.sendAs))throw new Error('Gmail sending addresses and signatures were unavailable. Reconnect this account; only its primary address can be used.');
+    const aliases=new Map<string,NonNullable<Account['sendAs']>[number]>();
+    for(const item of response.sendAs){
+      if(typeof item.sendAsEmail!=='string'||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(item.sendAsEmail))continue;
+      if(!item.isPrimary&&item.sendAsEmail.toLowerCase()!==account.email.toLowerCase()&&item.verificationStatus!=='accepted')continue;
+      aliases.set(item.sendAsEmail.toLowerCase(),{email:item.sendAsEmail,name:typeof item.displayName==='string'?item.displayName.replace(/[\r\n]/g,' '):account.name,signature:typeof item.signature==='string'?item.signature:'',isDefault:item.isDefault===true});
+    }
+    if(!aliases.has(account.email.toLowerCase()))aliases.set(account.email.toLowerCase(),{email:account.email,name:account.name,signature:'',isDefault:!Array.from(aliases.values()).some(a=>a.isDefault)});
+    return Array.from(aliases.values());
+  }
   return {
     available:Boolean(clientId),
+    getSendAs,
     async connect():Promise<Account> {
       if(!clientId) throw new Error('Set GOOGLE_CLIENT_ID to your own Google Desktop OAuth client ID before connecting.');
       if(!options.encrypt||!options.decrypt) throw new Error('Secure credential storage is unavailable. Connect using the desktop app.');
@@ -142,7 +155,7 @@ export async function createGoogle(options:GoogleOptions) {
         redirect=`http://127.0.0.1:${address.port}/oauth/callback`;
         timer=setTimeout(()=>rejectCode(new Error('Google sign-in timed out. Please try again.')),options.oauthTimeoutMs??180000);
         const auth=new URL('https://accounts.google.com/o/oauth2/v2/auth');
-        const params={client_id:clientId,redirect_uri:redirect,response_type:'code',scope:'openid email profile https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events',state,code_challenge:challenge,code_challenge_method:'S256',access_type:'offline',prompt:'consent'};
+        const params={client_id:clientId,redirect_uri:redirect,response_type:'code',scope:'openid email profile https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events',state,code_challenge:challenge,code_challenge_method:'S256',access_type:'offline',prompt:'consent'};
         auth.search=new URLSearchParams(params).toString();await options.openExternal(auth.toString());
         const code=await codePromise;
         const result=await fetchJson('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:clientId,redirect_uri:redirect,grant_type:'authorization_code',code_verifier:verifier,...(clientSecret?{client_secret:clientSecret}:{})})});
@@ -152,7 +165,9 @@ export async function createGoogle(options:GoogleOptions) {
         const id=`google-${profile.sub}`;
         tokens[id]={access_token:result.access_token,refresh_token:result.refresh_token??tokens[id]?.refresh_token,expiresAt:Date.now()+(Number(result.expires_in)||3600)*1000};
         try{await persist();}catch(error){delete tokens[id];throw error;}
-        return {id,name:profile.name??profile.email,email:profile.email,provider:'google',color:'#738c80',connected:true,calendarConnected:true};
+        const account:Account={id,name:profile.name??profile.email,email:profile.email,provider:'google',color:'#738c80',connected:true,calendarConnected:true};
+        try{account.sendAs=await getSendAs(account);}catch{account.sendAs=[{email:account.email,name:account.name,signature:'',isDefault:true}];account.error='Gmail sending addresses and signatures are unavailable. Reconnect to grant settings access; using the primary address.';}
+        return account;
       } finally {if(timer)clearTimeout(timer);listener.close();server=undefined;cancelConnect=undefined;}
     },
     async disconnect(accountId:string) {
@@ -176,14 +191,17 @@ export async function createGoogle(options:GoogleOptions) {
     },
     async send(account:Account,draft:Draft) {
       if(!draft.to.trim())throw new Error('Add at least one recipient before sending.');
-      for(const value of [draft.to,draft.cc,draft.bcc,draft.subject,account.email])if(/[\r\n]/.test(value))throw new Error('Email headers cannot contain line breaks.');
+      const fromEmail=draft.fromEmail??account.email;
+      for(const value of [draft.to,draft.cc,draft.bcc,draft.subject,fromEmail])if(/[\r\n]/.test(value))throw new Error('Email headers cannot contain line breaks.');
+      const alias=account.sendAs?.find(item=>item.email.toLowerCase()===fromEmail.toLowerCase());
+      if(fromEmail.toLowerCase()!==account.email.toLowerCase()&&!alias)throw new Error('This sending address is not authorized for this account. Sync the account and choose an available address.');
       let gmailId:string|undefined,inReplyTo:string|undefined,references:string|undefined;
       if(draft.threadId&&draft.mode!=='new'&&draft.mode!=='forward'){
         gmailId=draft.threadId.startsWith(`${account.id}:`)?draft.threadId.slice(account.id.length+1):undefined;
         if(gmailId){const raw=await api(account,`${gmail}/threads/${enc(gmailId)}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References`);const payload=raw.messages?.at(-1)?.payload as GmailPart|undefined;inReplyTo=header(payload,'message-id')||undefined;references=[header(payload,'references'),inReplyTo].filter(Boolean).join(' ')||undefined;}
       }
       const transport=nodemailer.createTransport({streamTransport:true,buffer:true,newline:'windows'});
-      const info=await transport.sendMail({from:{name:account.name,address:account.email},to:draft.to,cc:draft.cc||undefined,bcc:draft.bcc||undefined,subject:draft.subject,html:draft.html,text:htmlText(draft.html),inReplyTo,references,attachments:draft.attachments.map(a=>{if(!a.data)throw new Error(`Attachment "${a.name}" has not been downloaded. Reattach it before sending.`);return {filename:a.name,content:Buffer.from(a.data,'base64'),contentType:a.type,cid:a.contentId};}),disableFileAccess:true,disableUrlAccess:true});
+      const info=await transport.sendMail({from:{name:alias?.name||account.name,address:alias?.email??account.email},to:draft.to,cc:draft.cc||undefined,bcc:draft.bcc||undefined,subject:draft.subject,html:draft.html,text:htmlText(draft.html),inReplyTo,references,attachments:draft.attachments.map(a=>{if(!a.data)throw new Error(`Attachment "${a.name}" has not been downloaded. Reattach it before sending.`);return {filename:a.name,content:Buffer.from(a.data,'base64'),contentType:a.type,cid:a.contentId};}),disableFileAccess:true,disableUrlAccess:true});
       if(!Buffer.isBuffer(info.message))throw new Error('Email could not be encoded for Gmail.');
       const raw=info.message;
       return api(account,`${gmail}/messages/send`,'POST',{raw:raw.toString('base64url'),...(gmailId?{threadId:gmailId}:{})});

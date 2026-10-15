@@ -11,6 +11,7 @@ Read SPEC.md, DECISIONS.md, PROGRESS.md and this checklist at the start of each 
 - [x] M6: Groq voice transcription, microphone choice, voice draft/Ask workflows and cancellation.
 - [x] M7: calendar commitments, schedule/event editor, duplicate detection, Google adapter and auto-add preferences.
 - [x] M8: account onboarding/switching, Gmail OAuth/sync/search/mutations/attachments/send, secure token persistence and reconnect.
-- [ ] M9: settings, keyboard shortcuts/native menus, themes/icons/zen, mailto/deep links, notifications and desktop polish.
+- [x] M9: settings, keyboard shortcuts/native menus, themes/icons/zen, mailto/deep links, notifications and desktop polish.
 - [ ] M10: focused tests/typecheck/build pass; end-to-end interaction checks; package and launch macOS app; document setup/resume and commit.
 - [ ] M11: verify live Gmail connection/sync/send and Google Calendar with Aplos-owned OAuth credentials; verify OS-dependent voice/notifications where granted. Do not claim full parity before this passes.
+- [x] M12: close reference signature gap: authorized Gmail sending aliases, per-address imported signatures, reviewed signature choice and MIME sender validation; focused mocked verification.

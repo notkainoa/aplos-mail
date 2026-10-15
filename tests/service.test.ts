@@ -61,7 +61,7 @@ test('undo send preserves a draft, eventual local sends appear in sent mail',asy
 test('provider failures retain a recoverable draft and pending sends resume after restart',async()=>{
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-send-'));
   const base=await createGoogle({dataDir,clientId:''});let attempts=0;
-  const google={...base,available:true,connect:async()=>({id:'google-test',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true}),sync:async()=>[],send:async()=>{attempts++;throw new Error('Provider unavailable.');}};
+  const google={...base,available:true,connect:async()=>({id:'google-test',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true}),sync:async()=>[],getSendAs:async()=>[],send:async()=>{attempts++;throw new Error('Provider unavailable.');}};
   let service=await createService({dataDir,google,groq:createGroq({apiKey:''})});
   try{
     await service.invoke('account.connect');await service.invoke('settings.update',{patch:{undoSeconds:0}});
@@ -126,7 +126,7 @@ test('sync classifies fresh mail, auto-adds definite events, and preserves edits
   const base=await createGoogle({dataDir,clientId:''});
   let calls=0;
   const template={id:'live-one',accountId:'google-ai',subject:'Review meeting',summary:'Original snippet',messages:[],date:'2026-10-16T12:00:00Z',unread:true,status:'new' as const,importance:'low' as const,bookmarked:false,replyStatus:'none' as const};
-  const google={...base,available:true,connect:async()=>({id:'google-ai',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true,calendarConnected:true}),sync:async()=>[structuredClone(template),{...structuredClone(template),id:'live-two'}],updateThread:async()=>{},listEvents:async()=>[],saveEvent:async(_account:unknown,event:any)=>({...event,googleId:'google-event'})};
+  const google={...base,available:true,connect:async()=>({id:'google-ai',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true,calendarConnected:true}),sync:async()=>[structuredClone(template),{...structuredClone(template),id:'live-two'}],updateThread:async()=>{},getSendAs:async()=>[],listEvents:async()=>[],saveEvent:async(_account:unknown,event:any)=>({...event,googleId:'google-event'})};
   const groq={...createGroq({apiKey:''}),available:true,summarize:async(t:{id:string})=>{calls++;if(t.id==='live-two')throw new Error('AI unavailable');return {summary:'A definite review meeting',importance:'important' as const,replyStatus:'needs-reply' as const,todo:'Prepare the review',dueDate:'2026-10-18T12:00:00Z'};},extractEvents:async(t:{id:string})=>t.id==='live-one'?[{title:'Review meeting',start:'2026-10-18T12:00:00Z',end:'2026-10-18T13:00:00Z',allDay:false},{title:'Planning day',start:'2026-10-19',end:'2026-10-20',allDay:true}]:[]};
   const service=await createService({dataDir,google,groq});
   try{
@@ -140,6 +140,34 @@ test('sync classifies fresh mail, auto-adds definite events, and preserves edits
     await service.invoke('thread.update',{ids:['live-one'],patch:{importance:'low',todo:'My own task',replyStatus:'none'}});
     const again=await service.invoke('sync') as AppState,t=again.threads.find(t=>t.id==='live-one')!;
     assert.equal(calls,2);assert.equal(t.importance,'low');assert.equal(t.todo,'My own task');assert.equal(t.replyStatus,'none');
+  }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
+});
+
+test('authorized Gmail aliases retain selected identity and signature; unavailable aliases fail safely',async()=>{
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-alias-'));
+  const base=await createGoogle({dataDir,clientId:''});let sent:Draft|undefined,settingsUnavailable=false;
+  const google={...base,available:true,connect:async()=>({id:'alias-account',name:'Primary Person',email:'primary@example.com',color:'#123456',provider:'google' as const,connected:true}),sync:async()=>[],
+    getSendAs:async()=>{if(settingsUnavailable)throw new Error('Settings unavailable');return [
+      {email:'primary@example.com',name:'Primary Person',signature:'<p>Primary signature</p>',isDefault:false},
+      {email:'studio@example.com',name:'Studio Person',signature:'<p><strong>Studio signature</strong></p>',isDefault:true},
+    ];},send:async(_account:unknown,d:Draft)=>{sent=structuredClone(d);return {id:'sent-alias-message',threadId:'sent-alias-thread'};}};
+  const service=await createService({dataDir,google,groq:createGroq({apiKey:''})});
+  try{
+    const connected=await service.invoke('account.connect') as AppState;assert.equal(connected.accounts.find(a=>a.id==='alias-account')!.sendAs!.length,2);
+    await service.invoke('settings.update',{patch:{undoSeconds:0,signature:'Custom <signature>',signatureMode:'always'}});
+    const input={...newDraft('alias-account'),fromEmail:'studio@example.com',signatureSource:'gmail' as const,signature:true};
+    const saved=await service.invoke('draft.save',{draft:input}) as Draft;assert.equal(saved.fromEmail,input.fromEmail);assert.equal(saved.signatureSource,'gmail');
+    await assert.rejects(service.invoke('draft.save',{draft:{...input,id:'untrusted-from',fromEmail:'intruder@example.com'}}),/authorized sending address/);
+    await assert.rejects(service.invoke('draft.save',{draft:{...input,id:'cross-account',threadId:'garden'}}),/message account/);
+    await service.invoke('draft.send',{id:input.id});await settle(async()=>!(await service.invoke('state.get')).drafts.some((d:Draft)=>d.id===input.id));
+    assert.equal(sent!.fromEmail,'studio@example.com');assert.ok(sent!.html.includes('<strong>Studio signature</strong>'));assert.ok(!sent!.html.includes('Custom'));
+    const state=await service.invoke('state.get') as AppState,message=state.threads.find(t=>t.gmailId==='sent-alias-thread')!.messages[0];assert.equal(message.from,'studio@example.com');assert.equal(message.fromName,'Studio Person');
+    const custom=await service.invoke('draft.save',{draft:{...input,id:'custom-signature',signatureSource:'custom'}});await service.invoke('draft.send',{id:custom.id});
+    await settle(async()=>!(await service.invoke('state.get')).drafts.some((d:Draft)=>d.id===custom.id));assert.ok(sent!.html.includes('Custom &lt;signature&gt;'));assert.ok(!sent!.html.includes('Studio signature'));
+    await service.invoke('draft.save',{draft:{...input,id:'revoked-alias'}});settingsUnavailable=true;
+    const refreshed=await service.invoke('sync') as AppState;const account=refreshed.accounts.find(a=>a.id==='alias-account')!;
+    assert.equal(account.sendAs!.length,1);assert.equal(account.sendAs![0].email,account.email);assert.match(account.error!,/sending addresses and signatures/);
+    await assert.rejects(service.invoke('draft.send',{id:'revoked-alias'}),/authorized sending address/);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
 });
 
