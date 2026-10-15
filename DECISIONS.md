@@ -1,0 +1,11 @@
+# Decisions
+
+## 2026-10-14
+
+- Keep the existing workspace and choose **Aplos Mail** as the original product name; do not copy Avec branding, artwork, fixture mail, code or backend credentials.
+- Use REA for behavior evidence. The initial ASAR analysis hit a 20-second deadline; reuse its retained inventory, then inspect individual modules. Native dependency integrity mismatch is a recorded limitation, not ignored evidence.
+- Choose Electron + React + TypeScript: matches desktop interaction needs and supports fast visual verification through a local dev server. Use a small explicit service bridge and one persistent JSON store initially rather than a database framework.
+- The shell initially lacks GROQ_API_KEY but workspace .env contains it. Load dotenv into the backend environment, ignore it, never display/commit/bundle it. Groq is the only AI provider, including transcription.
+- Use original local demo accounts/mail to verify all reversible flows without contacting real recipients. Implement Gmail/Calendar using Aplos-owned OAuth configuration; never borrow Avec's access or identity. Live integration proof remains explicit if credentials are unavailable.
+- Reproduce observed production UX and behavior, not internal development galleries/diagnostic APIs or vendor telemetry. Feature-flag candidates require further focused investigation before expanding scope.
+- Reference UI inspection is read-only navigation; do not send, delete, triage or unsubscribe reference mail. Keep extracted materials outside the repository.
