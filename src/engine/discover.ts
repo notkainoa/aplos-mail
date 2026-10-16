@@ -16,6 +16,8 @@ export interface Discovery {
   source:string;
   /** What the user needs to sign in, in plain words. */
   help?:string;
+  /** Set when Aplos cannot connect this kind of account yet, with the reason in plain words. */
+  unsupported?:string;
 }
 
 export interface DiscoverOptions { fetch?:typeof fetch; signal?:AbortSignal }
@@ -47,6 +49,11 @@ const KNOWN:[RegExp,HostedPreset][]=[
   [new RegExp(`^yahoo\\.${COUNTRY_TLD}$`),'yahoo'],[/^(ymail|rocketmail)\.com$/,'yahoo'],
   [new RegExp(`^aol\\.${COUNTRY_TLD}$`),'aol'],[/^aim\.com$/,'aol'],
 ];
+const PROTON_DOMAINS=new Set(['proton.me','protonmail.com','protonmail.ch','pm.me']);
+const PROTON_MX=/(^|\.)protonmail\.ch$/;
+const PROTON_NOTE='Proton Mail only works with other mail apps through Proton Mail Bridge, which Aplos does not support yet.';
+/** Published configs that point at this computer or a private network describe a local bridge, not a mail server. */
+const LOCAL_HOST=/^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+|0\.\d+\.\d+\.\d+)$/;
 /** Preset for a consumer mail domain whose settings are known without any lookup. */
 export function knownDomain(domain:string):HostedPreset|undefined {
   return FASTMAIL_DOMAINS.has(domain)?'fastmail':KNOWN.find(([pattern])=>pattern.test(domain))?.[1];
@@ -101,7 +108,7 @@ export function parseAutoconfig(xml:string, email:string):ServerSettings|undefin
       const host=normalizeDomain(fill(text(s.hostname))),port=Number(text(s.port)),socket=text(s.socketType).trim().toUpperCase();
       // Plain-text connections would send the password unencrypted, so only TLS and STARTTLS entries count.
       const secure=socket==='SSL'||socket==='TLS'?true:socket==='STARTTLS'?false:undefined;
-      if(!host||!Number.isInteger(port)||port<1||port>65535||secure===undefined)return undefined;
+      if(!host||LOCAL_HOST.test(host)||!Number.isInteger(port)||port<1||port>65535||secure===undefined)return undefined;
       return {host,port,secure,username:fill(text(s.username))};
     }).filter(s=>s!==undefined);
     return servers.find(s=>s.secure)??servers[0];
@@ -138,11 +145,13 @@ export function splitEmail(input:string):{email:string;local:string;domain:strin
  */
 export async function discoverAccount(input:string, options:DiscoverOptions={}):Promise<Discovery> {
   const {email,domain}=splitEmail(input),dns:DnsOptions={fetch:options.fetch,signal:options.signal};
+  if(PROTON_DOMAINS.has(domain))return {email,domain,provider:'imap',preset:'generic',confidence:'known',source:`${domain} is a Proton Mail address`,unsupported:PROTON_NOTE};
   const known=knownDomain(domain);
   if(known)return fromPreset(email,domain,known,'known',`${domain} is a ${PRESETS[known].name} address`);
 
   const mx=await resolveDns(domain,'MX',dns);
   for(const host of mx??[]){
+    if(PROTON_MX.test(host))return {email,domain,provider:'imap',preset:'generic',confidence:'mx',source:`MX record ${host}`,unsupported:PROTON_NOTE};
     const preset=mxPreset(host);if(!preset)continue;
     const help=preset==='icloud'?`${PRESETS.icloud.help} Sign in with your Apple Account email address, not ${email}.`:undefined;
     return fromPreset(email,domain,preset,'mx',`MX record ${host}`,help);

@@ -187,3 +187,11 @@ test('DKIM is found through Microsoft CNAMEs, revoked keys fail, and failed look
   assert.equal(down.provider,'unknown');
   assert.deepEqual(status(down),{mx:'unknown',spf:'unknown',dkim:'unknown',dmarc:'unknown','mta-sts':'unknown'});
 });
+
+test('Proton addresses and configs pointing at a local bridge are not offered as mail servers',async()=>{
+  const none=(async()=>{throw new Error('no network expected');}) as unknown as typeof fetch;
+  const proton=await discoverAccount('kim@proton.me',{fetch:none});
+  assert.match(proton.unsupported!,/Bridge/);
+  const bridge='<clientConfig><emailProvider id="x"><incomingServer type="imap"><hostname>127.0.0.1</hostname><port>1143</port><socketType>STARTTLS</socketType></incomingServer><outgoingServer type="smtp"><hostname>127.0.0.1</hostname><port>1025</port><socketType>STARTTLS</socketType></outgoingServer></emailProvider></clientConfig>';
+  assert.equal(parseAutoconfig(bridge,'kim@example.org'),undefined);
+});

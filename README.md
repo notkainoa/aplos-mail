@@ -17,7 +17,7 @@ npm run package   # release/mac-arm64/Aplos Mail.app
 node scripts/launch.mjs # Launch packaged app with the ignored workspace .env
 ```
 
-Original demo mail works immediately and stays local, including Send. Demo recipients use reserved `.example` addresses. Connect a Google account only when you want real mailbox access; Google Send and calendar changes then affect that account.
+Original demo mail works immediately and stays local, including Send. Demo recipients use reserved `.example` addresses. Connect a real account only when you want real mailbox access; Send and calendar changes then affect that account.
 
 ## AI configuration
 
@@ -33,6 +33,19 @@ Create your own Google Cloud project, enable Gmail API and Google Calendar API, 
 
 The implemented adapter supports mailbox sync/search, label mutations, attachments, verified sending aliases and their Gmail signatures, MIME sending with reply headers and Bcc, calendar listing and event create/update/delete. Alias/signature access uses the Gmail settings scope; a missing grant falls back visibly to the primary address. Live Google verification is **not complete** without Aplos-owned OAuth configuration and an authorized test mailbox. Mocked adapter tests are not a substitute for that verification. Aplos never reuses the reference app’s credentials.
 
+## Connect Outlook, iCloud, Fastmail and other accounts
+
+Choose **Add account** (Settings → Accounts, or the welcome screen) and enter your address. Aplos recognizes common mail domains, looks up a custom domain's MX records over DNS-over-HTTPS, then tries the domain's published autoconfig file and Thunderbird's ISPDB. You can also pick a provider directly.
+
+- **Outlook / Microsoft 365** uses Microsoft Graph with browser sign-in (PKCE, loopback redirect, no client secret). Register your own app in Microsoft Entra under "Mobile and desktop applications" with redirect URI `http://localhost`, allow public client flows, grant `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`, `MailboxSettings.Read`, `User.Read` and `offline_access`, then set `MICROSOFT_CLIENT_ID` (and optionally `MICROSOFT_TENANT`). Saving a calendar event with guests through Outlook sends invitations; Graph has no silent option.
+- **iCloud Mail** uses IMAP/SMTP with an app-specific password from your Apple Account, plus iCloud Calendar over CalDAV. Yahoo and AOL use app passwords. **Other** accepts any IMAP/SMTP server over TLS or STARTTLS, with an optional CalDAV calendar.
+- **Fastmail** uses JMAP with an API token (Settings → Privacy & Security → Connected apps & API tokens; Email and Email submission access). Calendar is not connected for Fastmail yet.
+- Proton Mail needs Proton Mail Bridge, which Aplos does not support yet.
+
+Folder-based hosts (Outlook, IMAP, JMAP) have no labels: Done or Later with the archive action moves mail to the Archive folder, and the read/unread actions leave it in the inbox. Passwords, tokens and refresh tokens are encrypted with Electron safeStorage in per-provider files under the data folder and never reach the renderer or app state. None of these providers has been verified against a live mailbox yet; their tests run against fake servers.
+
+**Custom domain check** (Settings → Accounts) reads a domain's MX, SPF, DKIM, DMARC and MTA-STS records over DNS-over-HTTPS and explains each problem with the record to add.
+
 ## Everyday controls
 
 Use Home’s stack or split view, Done/Later, and `Z` to undo triage. Later separates Todos from Bookmarks, with due dates and reminders. Replies can target the sender or everyone; drafts autosave and support separate windows. Send waits for the configured undo delay. Provider errors preserve a recoverable draft.
@@ -41,7 +54,7 @@ Search supports `from:`, `to:`, `subject:`, `has:attachment`, `is:unread`, `is:b
 
 ## Data and verification
 
-Desktop state is stored under `~/Library/Application Support/Aplos Mail`; browser development uses a separate `Aplos Mail Preview` directory so simultaneous development cannot overwrite desktop mail (override with `APLOS_DATA_DIR`). It is a local SQLite database (`aplos.db`, written in small transactions); a `state.json` from an older build is imported on first launch and kept as `state.json.imported`. Builds from before this change cannot read the database, so run only the current build against the same data folder. OAuth credentials are a separate encrypted file. Mail/drafts are not encrypted at rest by this personal build. Export includes cached mail; keep exports private. Reset Demo preserves connected Google accounts.
+Desktop state is stored under `~/Library/Application Support/Aplos Mail`; browser development uses a separate `Aplos Mail Preview` directory so simultaneous development cannot overwrite desktop mail (override with `APLOS_DATA_DIR`). It is a local SQLite database (`aplos.db`, written in small transactions); a `state.json` from an older build is imported on first launch and kept as `state.json.imported`. Builds from before this change cannot read the database, so run only the current build against the same data folder. OAuth credentials are a separate encrypted file. Mail/drafts are not encrypted at rest by this personal build. Export includes cached mail; keep exports private. Reset Demo preserves connected accounts.
 
 `npm test` covers persistence, triage/undo, reminders, draft concurrency/recovery, delayed sends, validation, scoped AI proposals/citations/cancellation, OAuth PKCE/state, MIME, label mapping, encrypted credentials, calendar mutations, and desktop request/ownership policies. Live Groq was verified with synthetic text and audio. Browser and packaged-app acceptance results, exact remaining blockers, and REA limitations are recorded in `PROGRESS.md` and `TODO.md`.
 

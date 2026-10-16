@@ -36,6 +36,7 @@ export function AddAccountDialog({open,close,capabilities,connected}:{open:boole
   function pick(next:Choice,found?:Discovery){setChoice(next);setDiscovery(found);setServer(found?.server??blankServer);setStep('details');setError('');}
   const discover=()=>run('discover',async()=>{
     const found=await invoke<Discovery>('account.discover',{email:email.trim()});
+    if(found.unsupported)throw new Error(found.unsupported);
     pick(choices.find(c=>c.preset===found.preset&&c.provider===found.provider)??{preset:found.preset,provider:found.provider,label:found.preset},found);
   });
   const oauth=choice&&(choice.provider==='google'||choice.provider==='microsoft');
