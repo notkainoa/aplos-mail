@@ -43,13 +43,30 @@ export interface ThreadPage { epoch:string; rev:number; threads:Thread[]; /** Wh
  * applies changes in order, and asks for a fresh snapshot when it misses one. Older threads arrive in
  * pages; a page never brings back a thread that a later change removed or overwrites a newer copy.
  */
-export function createLiveState(handlers:{update(state:AppState):void; resync():void}) {
+export function createLiveState(handlers:{update(state:AppState):void; /** Request a snapshot; a rejection or a settle without one is retried. */ resync():unknown}, retry={minMs:500,maxMs:30_000}) {
   let state:AppState|undefined;
   /** Changes that arrived before the first snapshot or after a gap, replayed onto the next snapshot. */
   let buffered:StateChanges[]=[];
   let stale=false;
   /** Threads removed since paging began, which an older page must not restore. */
   let removedSincePaging=new Set<string>();
+  /** `attempt` lets a snapshot end the current request, so a request that settles later is ignored. */
+  let inFlight=false,attempt=0,failures=0,lastAttempt=0,timer:ReturnType<typeof setTimeout>|undefined;
+  const clearTimer=()=>{if(timer!==undefined){clearTimeout(timer);timer=undefined;}};
+  function resync() {
+    if(inFlight||!stale)return;
+    clearTimer();inFlight=true;lastAttempt=Date.now();
+    const id=++attempt;
+    let pending:unknown;
+    try{pending=handlers.resync();}catch(error){pending=Promise.reject(error);}
+    const settle=()=>{
+      if(id!==attempt)return;
+      inFlight=false;if(!stale)return;
+      const delay=Math.min(retry.minMs*2**failures,retry.maxMs);failures++;
+      timer=setTimeout(()=>{timer=undefined;resync();},delay);
+    };
+    Promise.resolve(pending).then(settle,settle);
+  }
   function apply(changes:StateChanges) {
     if(state&&!stale){
       const rev=state.rev??0;
@@ -58,16 +75,19 @@ export function createLiveState(handlers:{update(state:AppState):void; resync():
         for(const id of changes.threads?.remove??[])removedSincePaging.add(id);
         state=applyChanges(state,changes);handlers.update(state);return;
       }
-      stale=true;handlers.resync();
+      stale=true;failures=0;lastAttempt=0;
     }
     buffered.push(changes);if(buffered.length>500)buffered.shift();
+    if(stale&&!inFlight&&Date.now()-lastAttempt>=retry.minMs)resync();
   }
   return {
     get state(){return state;},
+    /** Ask for a fresh snapshot now when the copy is behind, instead of waiting for the next retry. */
+    retry:resync,
     /** Replace the copy with a snapshot, then replay newer changes that arrived while it was loading. */
     snapshot(next:AppState) {
       if(state&&!stale&&next.epoch===state.epoch&&(next.rev??0)<(state.rev??0))return;
-      state=next;stale=false;removedSincePaging=new Set();
+      state=next;stale=false;failures=0;clearTimer();attempt++;inFlight=false;removedSincePaging=new Set();
       const pending=buffered.filter(c=>c.epoch===next.epoch&&c.rev>(next.rev??0)).sort((a,b)=>a.rev-b.rev);buffered=[];
       handlers.update(state);
       for(const changes of pending)apply(changes);

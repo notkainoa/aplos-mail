@@ -42,7 +42,8 @@ const mids=(records:MessageRecord[])=>[...new Set(records.map(r=>r.id))].sort().
  *
  * Keys: `ids:<message-id>` → thread key (also for referenced messages not seen yet, so they join on arrival),
  * `t:<key>` → thread record or tombstone, `f:<role>` → UID → message-id map for the folder, `seq` → counter
- * that orders threads by age. Writes are buffered until `flush()`, so a failed operation leaves memory as it was.
+ * that orders threads by age, `p` → threads changed outside sync that the next sync must report.
+ * Writes are buffered until `flush()`, so a failed operation leaves memory as it was.
  */
 export function createIndex(memory:ProviderMemory, accountId:string) {
   const cache=new Map<string,string|undefined>(),dirty=new Set<string>();
@@ -68,6 +69,16 @@ export function createIndex(memory:ProviderMemory, accountId:string) {
     for(let i=0;;i++){const key=createHash('sha256').update(i?`${id}#${i}`:id).digest('base64url').slice(0,16);if(!read(`t:${key}`))return key;}
   }
   function nextSeq() {const n=Number(read<number>('seq')??0)+1;write('seq',n);return n;}
+  function diff():IndexChanges {
+    const result:IndexChanges={changed:[],touched:[],removed:[]};
+    for(const [key,old] of before){
+      if(merged.has(key)){if(old!==null)result.removed.push(key);continue;}
+      const record=thread(key);
+      if(!record?.m.length){if(old!==null)result.removed.push(key);continue;}
+      (old===mids(record.m)?result.touched:result.changed).push(key);
+    }
+    return result;
+  }
   return {
     /** The live thread key for a message-id, following merges. */
     keyOf(id:string):string|undefined {const key=read<string>(`ids:${id}`);return key?resolve(key):undefined;},
@@ -81,12 +92,16 @@ export function createIndex(memory:ProviderMemory, accountId:string) {
     },
     /** Report a thread as changed-or-touched even though nothing in the index moved. */
     touch(key:string) {snapshot(resolve(key));},
-    /** Which thread a message joins: the oldest thread any of its IDs or references already belongs to. */
+    /**
+     * Which thread a message joins: the oldest thread any of its IDs or references already belongs to.
+     * `references` lists References (root first) then In-Reply-To. A new thread's key comes from the root
+     * it names, so an index rebuilt in another order (say, after the root moved folders) gives the same key.
+     */
     link(id:string,references:string[]):string {
       const related=[...new Set([id,...references])];
       const keys=[...new Set(related.map(x=>this.keyOf(x)).filter((k):k is string=>!!k))];
       let key:string;
-      if(!keys.length){key=freshKey(id);snapshot(key);write(`t:${key}`,{n:nextSeq(),m:[]});}
+      if(!keys.length){key=freshKey(references[0]??id);snapshot(key);write(`t:${key}`,{n:nextSeq(),m:[]});}
       else {
         // Keys reserved by references alone have no record yet; they count as the newest.
         const age=(k:string)=>thread(k)?.n??Number.MAX_SAFE_INTEGER;
@@ -129,16 +144,26 @@ export function createIndex(memory:ProviderMemory, accountId:string) {
     },
     /** Make sure the folder map exists for a UIDVALIDITY, e.g. after creating or first moving into a folder. */
     trackFolder(role:Role,v:string) {const folder=read<FolderRecord>(`f:${role}`);if(!folder||folder.v!==v)this.resetFolder(role,v);},
-    /** What changed since this index was opened. */
+    /** What changed since this index was opened, plus threads deferred by earlier operations (which are then cleared). */
     changes():IndexChanges {
-      const result:IndexChanges={changed:[],touched:[],removed:[]};
-      for(const [key,old] of before){
-        if(merged.has(key)){if(old!==null)result.removed.push(key);continue;}
-        const record=thread(key);
-        if(!record?.m.length){if(old!==null)result.removed.push(key);continue;}
-        (old===mids(record.m)?result.touched:result.changed).push(key);
+      const result=diff(),pending=read<string[]>('p')??[];
+      if(!pending.length)return result;
+      const changed=new Set(result.changed),removed=new Set(result.removed);
+      for(const key of pending){
+        const live=resolve(key);if(live!==key)removed.add(key);
+        if(thread(live)?.m.length)changed.add(live);else removed.add(live);
       }
-      return result;
+      for(const key of changed)removed.delete(key);
+      write('p',undefined);
+      return {changed:[...changed],touched:result.touched.filter(k=>!changed.has(k)&&!removed.has(k)),removed:[...removed]};
+    },
+    /**
+     * Outside sync: remember threads whose messages changed (a copy vanished, threads merged) so the next sync
+     * reports them. Threads this operation created are left out; the operation itself returns them.
+     */
+    defer() {
+      const c=diff(),keys=[...c.changed.filter(k=>before.get(k)!==null),...c.removed];
+      if(keys.length)write('p',[...new Set([...(read<string[]>('p')??[]),...keys])]);
     },
     /** Persist buffered writes. */
     flush() {for(const key of dirty)memory.set(accountId,key,cache.get(key));dirty.clear();},

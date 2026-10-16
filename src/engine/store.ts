@@ -62,6 +62,9 @@ export interface QueuedOp {
   error?:string;
 }
 export interface OpChanges { put?:QueuedOp[]; remove?:string[] }
+export interface MemoryWrite { accountId:string; key:string; value:string|undefined }
+/** Provider bookkeeping saved in the same transaction as the state it describes. */
+export interface SaveExtras { memory?:MemoryWrite[]; cursor?:{accountId:string; cursor:string|undefined; now:Date} }
 
 /** What a save actually wrote: changed thread IDs, removed thread IDs, and the other collections or fields that differ. */
 export interface StoreDiff { threads:string[]; removed:string[]; changed:Array<Ordered|typeof META_KEYS[number]> }
@@ -69,7 +72,7 @@ export interface StoreDiff { threads:string[]; removed:string[]; changed:Array<O
 export interface MailStore {
   load():AppState|undefined;
   /** Writes only rows that differ from the last load or save, in one transaction, and reports them. */
-  save(state:AppState, ops?:OpChanges):StoreDiff;
+  save(state:AppState, ops?:OpChanges, extras?:SaveExtras):StoreDiff;
   /** Queue changes on their own, in one transaction. */
   writeOps(ops:OpChanges):void;
   /** Queued changes, oldest first. */
@@ -105,12 +108,22 @@ export function createMailStore(db:SqlDatabase):MailStore {
     for(const op of ops.put??[])db.prepare('INSERT INTO ops(id, account_id, data) VALUES(?, ?, ?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(op.id,op.accountId,JSON.stringify(op));
     for(const id of ops.remove??[])db.prepare('DELETE FROM ops WHERE id=?').run(id);
   }
-  function save(state:AppState, ops?:OpChanges):StoreDiff {
+  function setMemory(accountId:string,key:string,value:string|undefined) {
+    if(value===undefined)db.prepare('DELETE FROM provider_memory WHERE account_id=? AND key=?').run(accountId,key);
+    else db.prepare('INSERT INTO provider_memory(account_id, key, value) VALUES(?, ?, ?) ON CONFLICT(account_id, key) DO UPDATE SET value=excluded.value').run(accountId,key,value);
+  }
+  function setCursor(accountId:string,cursor:string|undefined,now=new Date()) {
+    if(cursor===undefined)db.prepare('DELETE FROM sync_cursors WHERE account_id=?').run(accountId);
+    else db.prepare('INSERT INTO sync_cursors(account_id, cursor, updated_at) VALUES(?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET cursor=excluded.cursor, updated_at=excluded.updated_at').run(accountId,cursor,now.toISOString());
+  }
+  function save(state:AppState, ops?:OpChanges, extras?:SaveExtras):StoreDiff {
     // The snapshot of what is on disk only advances after the transaction commits.
     const after:Array<()=>void>=[];
     const diff:StoreDiff={threads:[],removed:[],changed:[]},changed=new Set<StoreDiff['changed'][number]>();
     transaction(db,()=>{
       if(ops)applyOps(ops);
+      for(const write of extras?.memory??[])setMemory(write.accountId,write.key,write.value);
+      if(extras?.cursor)setCursor(extras.cursor.accountId,extras.cursor.cursor,extras.cursor.now);
       for(const key of META_KEYS){
         const json=JSON.stringify(state[key]??null);
         if(written.meta.get(key)!==json){db.prepare('INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,json);after.push(()=>written.meta.set(key,json));changed.add(key);}
@@ -157,16 +170,10 @@ export function createMailStore(db:SqlDatabase):MailStore {
     writeOps:ops=>transaction(db,()=>applyOps(ops)),
     ops:()=>db.prepare('SELECT data FROM ops ORDER BY seq').all().map(row=>JSON.parse(String(row.data)) as QueuedOp),
     cursor:accountId=>{const row=db.prepare('SELECT cursor FROM sync_cursors WHERE account_id=?').get(accountId);return row?String(row.cursor):undefined;},
-    setCursor(accountId,cursor,now=new Date()){
-      if(cursor===undefined)db.prepare('DELETE FROM sync_cursors WHERE account_id=?').run(accountId);
-      else db.prepare('INSERT INTO sync_cursors(account_id, cursor, updated_at) VALUES(?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET cursor=excluded.cursor, updated_at=excluded.updated_at').run(accountId,cursor,now.toISOString());
-    },
+    setCursor,
     memory:{
       get:(accountId,key)=>{const row=db.prepare('SELECT value FROM provider_memory WHERE account_id=? AND key=?').get(accountId,key);return row?String(row.value):undefined;},
-      set(accountId,key,value){
-        if(value===undefined)db.prepare('DELETE FROM provider_memory WHERE account_id=? AND key=?').run(accountId,key);
-        else db.prepare('INSERT INTO provider_memory(account_id, key, value) VALUES(?, ?, ?) ON CONFLICT(account_id, key) DO UPDATE SET value=excluded.value').run(accountId,key,value);
-      },
+      set:setMemory,
       clear:accountId=>{db.prepare('DELETE FROM provider_memory WHERE account_id=?').run(accountId);},
     },
     close:()=>db.close(),

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CalDavError, createCalDav } from '../src/main/caldav';
-import { parseComponents, parseTime, readEvents, unfold } from '../src/main/ical';
+import { applyFields, parseComponents, parseTime, readEvents, serialize, unfold, zonesOf } from '../src/main/ical';
 import type { Account, CalendarEvent } from '../src/shared/types';
 
 interface Req { url:string; method:string; headers:Record<string,string>; body?:string }
@@ -38,8 +38,11 @@ const nyTz=['BEGIN:VTIMEZONE','TZID:America/New_York','BEGIN:STANDARD','DTSTART:
 const exchangeTz=['BEGIN:VTIMEZONE','TZID:W. Europe Standard Time',
   'BEGIN:STANDARD','DTSTART:16010101T030000','TZOFFSETFROM:+0200','TZOFFSETTO:+0100','RRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=-1SU;BYMONTH=10','END:STANDARD',
   'BEGIN:DAYLIGHT','DTSTART:16010101T020000','TZOFFSETFROM:+0100','TZOFFSETTO:+0200','RRULE:FREQ=YEARLY;INTERVAL=1;BYDAY=-1SU;BYMONTH=3','END:DAYLIGHT','END:VTIMEZONE'];
-const weekly=cal('BEGIN:VEVENT','UID:weekly-1','RECURRENCE-ID:20261005T150000Z','DTSTART:20261005T150000Z','DTEND:20261005T160000Z','SUMMARY:Weekly sync','END:VEVENT',
+const weekly=cal('BEGIN:VEVENT','UID:weekly-1','DTSTART:20261005T150000Z','DTEND:20261005T160000Z','SUMMARY:Weekly sync','END:VEVENT',
   'BEGIN:VEVENT','UID:weekly-1','RECURRENCE-ID:20261012T150000Z','DTSTART:20261012T153000Z','DTEND:20261012T163000Z','SUMMARY:Weekly sync (moved)','END:VEVENT');
+const notes=cal('BEGIN:VEVENT','UID:notes-1','DTSTAMP:20260901T000000Z','DTSTART:20261016T140000Z','DTEND:20261016T143000Z','SUMMARY:Notes',
+  'DESCRIPTION:Line one\\nLine two','LOCATION:Room 4','ATTENDEE;CN=Ana;SCHEDULE-AGENT=CLIENT:mailto:ana@example.test','ATTENDEE;SCHEDULE-AGENT=CLIENT:mailto:ben@example.test',
+  'X-FIXTURE-COLOR:teal','BEGIN:VALARM','ACTION:DISPLAY','TRIGGER:-PT10M','DESCRIPTION:Reminder','END:VALARM','END:VEVENT');
 const weeklyMaster=cal('BEGIN:VEVENT','UID:weekly-1','DTSTAMP:20260901T000000Z','DTSTART;TZID=America/New_York:20261005T110000','DTEND;TZID=America/New_York:20261005T120000','RRULE:FREQ=WEEKLY;BYDAY=MO','SUMMARY:Weekly sync','SEQUENCE:2','END:VEVENT');
 
 function caldavServer() {
@@ -90,7 +93,7 @@ test('events are parsed across time zones, all-day spans, attendees, escapes and
   assert.match(String(report.body),/<C:expand start="20260901T120000Z" end="20271001T120000Z"\/>/);
   assert.match(String(report.body),/<C:time-range start="20260901T120000Z" end="20271001T120000Z"\/>/);
   const by=(title:string)=>events.find(e=>e.title===title)!;
-  assert.deepEqual(by('Planning, budget; and review'),{id:`acct:${home}:standup-1`,accountId:'acct',calendarId:home,title:'Planning, budget; and review',start:'2026-10-16T14:00:00.000Z',end:'2026-10-16T14:30:00.000Z',allDay:false,location:'Room 4',description:'Line one\nLine two with a backslash \\ and a long sentence that continues on a folded line',guests:['ana@example.test','ben@example.test'],remoteId:`${home}standup.ics`});
+  assert.deepEqual(by('Planning, budget; and review'),{id:`acct:${home}:standup-1`,accountId:'acct',calendarId:home,title:'Planning, budget; and review',start:'2026-10-16T14:00:00.000Z',end:'2026-10-16T14:30:00.000Z',allDay:false,location:'Room 4',description:'Line one\nLine two with a backslash \\ and a long sentence that continues on a folded line',guests:['ana@example.test','ben@example.test'],remoteId:`${home}standup.ics`,etag:'"e1"',scheduling:true});
   assert.deepEqual([by('Summer call').start,by('Summer call').end],['2026-10-16T13:00:00.000Z','2026-10-16T14:00:00.000Z']);
   assert.deepEqual([by('Winter call').start,by('Winter call').end],['2026-12-10T14:00:00.000Z','2026-12-10T14:45:00.000Z']);
   assert.deepEqual([by('Trip').start,by('Trip').end,by('Trip').allDay],['2026-10-20','2026-10-22',true]);
@@ -101,6 +104,7 @@ test('events are parsed across time zones, all-day spans, attendees, escapes and
   const weeklies=events.filter(e=>e.title.startsWith('Weekly sync'));
   assert.deepEqual(weeklies.map(e=>[e.id,e.start]),[[`acct:${home}:weekly-1:2026-10-05T15:00:00.000Z`,'2026-10-05T15:00:00.000Z'],[`acct:${home}:weekly-1:2026-10-12T15:00:00.000Z`,'2026-10-12T15:30:00.000Z']]);
   assert.equal(events.length,8);
+  assert.equal(events.filter(e=>e.scheduling).length,1,'only the meeting with an organizer is marked');
 });
 
 test('iCalendar times handle DST gaps, repeated hours and Exchange-style zones', () => {
@@ -129,15 +133,17 @@ test('creating an event PUTs a folded, escaped iCalendar object into the first w
   assert.match(put.url,new RegExp(`^${home.replace(/[.]/g,'\\.')}[0-9a-f-]{36}\\.ics$`));
   assert.equal(put.headers['if-none-match'],'*');
   assert.equal(put.headers['content-type'],'text/calendar; charset=utf-8');
-  assert.deepEqual({...saved,remoteId:undefined},{...draft(),calendarId:home,guests:['ana@example.test'],remoteId:undefined,url:undefined});
+  assert.deepEqual({...saved,remoteId:undefined},{...draft(),calendarId:home,guests:['ana@example.test'],remoteId:undefined,url:undefined,etag:'"n1"'});
   assert.equal(saved.remoteId,put.url);
   const body=put.body!;
   for(const line of body.split('\r\n'))assert.ok(Buffer.byteLength(line)<=75,`line too long: ${line}`);
   assert.ok(body.split('\r\n').some(line=>line.startsWith(' ')),'long description is folded');
   assert.ok(!body.includes('\uFFFD'));
-  for(const line of ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Aplos Mail//EN','CALSCALE:GREGORIAN','DTSTAMP:20261001T120000Z','DTSTART:20261016T120000Z','DTEND:20261016T130000Z','SUMMARY:Lunch\\, then\\; notes','ATTENDEE:mailto:ana@example.test','END:VCALENDAR'])assert.ok(unfold(body).includes(line),line);
+  for(const line of ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Aplos Mail//EN','CALSCALE:GREGORIAN','DTSTAMP:20261001T120000Z','DTSTART:20261016T120000Z','DTEND:20261016T130000Z','SUMMARY:Lunch\\, then\\; notes','ATTENDEE;SCHEDULE-AGENT=CLIENT:mailto:ana@example.test','END:VCALENDAR'])assert.ok(unfold(body).includes(line),line);
   assert.ok(body.endsWith('END:VCALENDAR\r\n'));
+  assert.ok(!/ORGANIZER/.test(body),'no organizer, so the server sends no invitations');
   const [parsed]=readEvents(body);
+  assert.equal(parsed.scheduling,false,'Aplos-written guests stay editable');
   assert.equal(parsed.uid,put.url.split('/').pop()!.replace('.ics',''));
   assert.equal(parsed.description,draft().description);
   assert.equal(parsed.location,'Café Ørsted');
@@ -150,69 +156,156 @@ test('creating an event PUTs a folded, escaped iCalendar object into the first w
   await assert.rejects(createCalDav({fetch,now}).saveEvent(creds,account,draft({calendarId:work})),(e:CalDavError)=>e.status===403);
 });
 
+const stored=(patch:Partial<CalendarEvent>={}):CalendarEvent=>({id:`acct:${home}:notes-1`,accountId:'acct',calendarId:home,title:'Notes',start:'2026-10-16T14:00:00.000Z',end:'2026-10-16T14:30:00.000Z',allDay:false,location:'Room 4',description:'Line one\nLine two',guests:['ana@example.test','ben@example.test'],remoteId:`${home}notes.ics`,etag:'"e1"',...patch});
+
 test('updating keeps unknown properties, uses If-Match and reports conflicts', async () => {
   const s=caldavServer(),dav=createCalDav({fetch:s.fetch,now});
-  const listed=(await dav.listEvents(creds,account)).find(e=>e.id.endsWith(':standup-1'))!;
-  s.routes[`GET ${home}standup.ics`]=()=>new Response(standup,{headers:{etag:'"e1"'}});
+  s.routes[`GET ${home}notes.ics`]=()=>new Response(notes,{headers:{etag:'"e1"'}});
   let put:Req|undefined;
-  s.routes[`PUT ${home}standup.ics`]=req=>{put=req;return new Response(null,{status:204,headers:{etag:'"e1b"'}});};
-  const saved=await dav.saveEvent(creds,account,{...listed,title:'Planning only',guests:['ana@example.test','cy@example.test']});
-  assert.equal(saved.id,listed.id);
-  assert.equal(saved.remoteId,`${home}standup.ics`);
+  s.routes[`PUT ${home}notes.ics`]=req=>{put=req;return new Response(null,{status:204,headers:{etag:'"e1b"'}});};
+  const saved=await dav.saveEvent(creds,account,stored({title:'Notes only',guests:['ana@example.test','cy@example.test']}));
+  assert.equal(saved.id,stored().id);
+  assert.equal(saved.remoteId,`${home}notes.ics`);
+  assert.equal(saved.etag,'"e1b"','the new version is what the next save must match');
   assert.equal(put!.headers['if-match'],'"e1"');
   const lines=unfold(put!.body!);
-  for(const kept of ['UID:standup-1','DTSTART:20261016T140000Z','DTEND:20261016T143000Z','LOCATION:Room 4','ORGANIZER;CN=Kim:mailto:kim@example.test','ATTENDEE;CN=Ana;PARTSTAT=ACCEPTED:mailto:ana@example.test','X-FIXTURE-COLOR:teal','BEGIN:VALARM','TRIGGER:-PT10M','DESCRIPTION:Line one\\nLine two with a backslash \\\\ and a long sentence that continues on a folded line'])assert.ok(lines.includes(kept),kept);
-  assert.ok(lines.includes('SUMMARY:Planning only'));
-  assert.ok(lines.includes('ATTENDEE:mailto:cy@example.test'));
+  for(const kept of ['UID:notes-1','DTSTART:20261016T140000Z','DTEND:20261016T143000Z','LOCATION:Room 4','ATTENDEE;CN=Ana;SCHEDULE-AGENT=CLIENT:mailto:ana@example.test','X-FIXTURE-COLOR:teal','BEGIN:VALARM','TRIGGER:-PT10M','DESCRIPTION:Line one\\nLine two'])assert.ok(lines.includes(kept),kept);
+  assert.ok(lines.includes('SUMMARY:Notes only'));
+  assert.ok(lines.includes('ATTENDEE;SCHEDULE-AGENT=CLIENT:mailto:cy@example.test'));
   assert.ok(!lines.some(l=>l.includes('ben@example.test')));
   assert.ok(lines.includes('DTSTAMP:20261001T120000Z'));
 
-  // Changed on the server since it was listed: the stored ETag no longer matches, so nothing is written.
-  s.routes[`GET ${home}standup.ics`]=()=>new Response(standup,{headers:{etag:'"e9"'}});
+  // Changed on the server since it was listed: the event's ETag no longer matches, so nothing is written.
+  s.routes[`GET ${home}notes.ics`]=()=>new Response(notes,{headers:{etag:'"e9"'}});
   put=undefined;
-  await assert.rejects(dav.saveEvent(creds,account,{...listed,title:'Again'}),(e:CalDavError)=>e.status===412&&e.message==='This event changed on the server. Refresh the calendar and try again.'&&!e.uncertain);
+  await assert.rejects(dav.saveEvent(creds,account,stored({title:'Again'})),(e:CalDavError)=>e.status===412&&e.message==='This event changed on the server. Refresh the calendar and try again.'&&!e.uncertain);
   assert.equal(put,undefined);
 
   // The server itself refuses the precondition.
-  const fresh=createCalDav({fetch:s.fetch,now});
-  s.routes[`PUT ${home}standup.ics`]=()=>new Response(null,{status:412});
-  await assert.rejects(fresh.saveEvent(creds,account,{...listed,title:'Again'}),(e:CalDavError)=>e instanceof CalDavError&&e.status===412);
+  s.routes[`GET ${home}notes.ics`]=()=>new Response(notes,{headers:{etag:'"e1"'}});
+  s.routes[`PUT ${home}notes.ics`]=()=>new Response(null,{status:412});
+  await assert.rejects(dav.saveEvent(creds,account,stored({title:'Again'})),(e:CalDavError)=>e instanceof CalDavError&&e.status===412);
 });
 
-test('repeating events: series edits keep RRULE, single occurrences are refused', async () => {
-  const s=caldavServer(),dav=createCalDav({fetch:s.fetch,now});
-  s.routes[`GET ${home}weekly.ics`]=()=>new Response(weeklyMaster,{headers:{etag:'"r1"'}});
-  let put:Req|undefined;
-  s.routes[`PUT ${home}weekly.ics`]=req=>{put=req;return new Response(null,{status:204});};
-  const series:CalendarEvent={id:`acct:${home}:weekly-1`,accountId:'acct',calendarId:home,title:'Weekly sync',start:'2026-10-05T15:00:00.000Z',end:'2026-10-05T16:00:00.000Z',allDay:false,location:'',description:'',guests:[],remoteId:`${home}weekly.ics`};
-  await dav.saveEvent(creds,account,{...series,title:'Weekly planning'});
-  const lines=unfold(put!.body!);
-  for(const kept of ['RRULE:FREQ=WEEKLY;BYDAY=MO','DTSTART;TZID=America/New_York:20261005T110000','SUMMARY:Weekly planning','SEQUENCE:3'])assert.ok(lines.includes(kept),kept);
-  await dav.saveEvent(creds,account,{...series,start:'2026-10-05T16:00:00.000Z',end:'2026-10-05T17:00:00.000Z'});
-  assert.ok(unfold(put!.body!).includes('DTSTART;TZID=America/New_York:20261005T120000'),'moving the series keeps its zone');
+test('ETag protection survives a restart: the cached event carries the version it was read at', async () => {
+  const s=caldavServer();
+  const listed=(await createCalDav({fetch:s.fetch,now}).listEvents(creds,account)).find(e=>e.id.endsWith(':ny-1'))!;
+  assert.equal(listed.etag,'"e2"');
+  // Someone else edits it while Aplos is closed; a new backend instance has no memory of the old version.
+  s.routes[`GET ${home}ny.ics`]=()=>new Response(cal('BEGIN:VEVENT','UID:ny-1','DTSTART:20261016T130000Z','DTEND:20261016T140000Z','SUMMARY:Summer call (moved room)','END:VEVENT'),{headers:{etag:'"e2-new"'}});
+  s.routes[`PUT ${home}ny.ics`]=()=>new Response(null,{status:204});
+  s.routes[`DELETE ${home}ny.ics`]=()=>new Response(null,{status:204});
+  const restarted=createCalDav({fetch:s.fetch,now});
+  await assert.rejects(restarted.saveEvent(creds,account,{...listed,title:'Mine'}),(e:CalDavError)=>e.status===412);
+  await assert.rejects(restarted.deleteEvent(creds,account,listed),(e:CalDavError)=>e.status===412);
+  assert.equal(s.calls.some(c=>c.method==='PUT'||c.method==='DELETE'),false);
+  // A server that gives no ETag on GET still gets If-Match from the cached copy, so it can refuse the stale write.
+  s.routes[`GET ${home}ny.ics`]=()=>new Response(cal('BEGIN:VEVENT','UID:ny-1','DTSTART:20261016T130000Z','DTEND:20261016T140000Z','SUMMARY:x','END:VEVENT'));
+  s.routes[`PUT ${home}ny.ics`]=()=>new Response(null,{status:412});
+  await assert.rejects(restarted.saveEvent(creds,account,{...listed,title:'Mine'}),(e:CalDavError)=>e.status===412);
+  assert.equal(s.calls.filter(c=>c.method==='PUT').at(-1)?.headers['if-match'],'"e2"');
+});
 
-  put=undefined;
-  const instance={...series,id:`acct:${home}:weekly-1:2026-10-12T15:00:00.000Z`};
-  await assert.rejects(dav.saveEvent(creds,account,{...instance,title:'Just this one'}),/one occurrence of a repeating event/);
-  await assert.rejects(dav.deleteEvent(creds,account,instance),/one occurrence of a repeating event/);
-  assert.equal(put,undefined);
-  assert.equal(s.calls.some(c=>c.method==='DELETE'),false);
+test('repeating events are refused, including a first occurrence listed without RECURRENCE-ID', async () => {
+  const s=caldavServer(),dav=createCalDav({fetch:s.fetch,now});
+  const [first,second]=(await dav.listEvents(creds,account)).filter(e=>e.title.startsWith('Weekly sync'));
+  assert.equal(first.id,`acct:${home}:weekly-1:2026-10-05T15:00:00.000Z`,'the first occurrence does not get the series id');
+  assert.notEqual(first.id,second.id);
+  s.routes[`GET ${home}weekly.ics`]=()=>new Response(weeklyMaster,{headers:{etag:'"e6"'}});
+  s.routes[`PUT ${home}weekly.ics`]=()=>new Response(null,{status:204});
+  s.routes[`DELETE ${home}weekly.ics`]=()=>new Response(null,{status:204});
+  const refused=(e:CalDavError)=>e.status===409&&/repeating event/.test(e.message)&&/calendar app/.test(e.message);
+  for(const event of [first,second,{...first,id:`acct:${home}:weekly-1`}]){
+    await assert.rejects(dav.deleteEvent(creds,account,event),refused);
+    await assert.rejects(dav.saveEvent(creds,account,{...event,title:'Just this one'}),refused);
+  }
+  // A resource holding only an overridden occurrence is refused too.
+  s.routes[`GET ${home}weekly.ics`]=()=>new Response(cal('BEGIN:VEVENT','UID:weekly-1','RECURRENCE-ID:20261012T150000Z','DTSTART:20261012T153000Z','DTEND:20261012T163000Z','SUMMARY:x','END:VEVENT'),{headers:{etag:'"e6"'}});
+  await assert.rejects(dav.deleteEvent(creds,account,second),refused);
+  assert.equal(s.calls.some(c=>c.method==='PUT'||c.method==='DELETE'),false);
+});
+
+test('meetings the server would email attendees about are read-only', async () => {
+  const s=caldavServer(),dav=createCalDav({fetch:s.fetch,now});
+  const meeting=(await dav.listEvents(creds,account)).find(e=>e.id.endsWith(':standup-1'))!;
+  assert.equal(meeting.scheduling,true);
+  s.routes[`GET ${home}standup.ics`]=()=>new Response(standup,{headers:{etag:'"e1"'}});
+  s.routes[`PUT ${home}standup.ics`]=()=>new Response(null,{status:204});
+  s.routes[`DELETE ${home}standup.ics`]=()=>new Response(null,{status:204});
+  const refused=(e:CalDavError)=>e.status===409&&/invited guests/.test(e.message)&&/calendar app/.test(e.message);
+  await assert.rejects(dav.saveEvent(creds,account,{...meeting,title:'Moved'}),refused);
+  await assert.rejects(dav.deleteEvent(creds,account,meeting),refused);
+  // The stored copy decides even when the cached event was not marked (for example, one cached before the flag existed).
+  await assert.rejects(dav.deleteEvent(creds,account,{...meeting,scheduling:undefined}),refused);
+  // Attendees without an organizer still count unless they are marked as handled by the client.
+  s.routes[`GET ${home}standup.ics`]=()=>new Response(cal('BEGIN:VEVENT','UID:standup-1','DTSTART:20261016T140000Z','DTEND:20261016T143000Z','SUMMARY:x','ATTENDEE:mailto:ana@example.test','END:VEVENT'),{headers:{etag:'"e1"'}});
+  await assert.rejects(dav.saveEvent(creds,account,{...meeting,scheduling:undefined,title:'Moved'}),refused);
+  assert.equal(s.calls.some(c=>c.method==='PUT'||c.method==='DELETE'),false);
 });
 
 test('deleting uses the ETag and treats missing events as already deleted', async () => {
   const s=caldavServer(),dav=createCalDav({fetch:s.fetch,now});
-  const event:CalendarEvent={id:`acct:${home}:standup-1`,accountId:'acct',calendarId:home,title:'x',start:'',end:'',allDay:false,location:'',description:'',guests:[],remoteId:`${home}standup.ics`};
-  s.routes[`GET ${home}standup.ics`]=()=>new Response(standup,{headers:{etag:'"e1"'}});
-  s.routes[`DELETE ${home}standup.ics`]=()=>new Response(null,{status:204});
+  const event=stored();
+  s.routes[`GET ${home}notes.ics`]=()=>new Response(notes,{headers:{etag:'"e1"'}});
+  s.routes[`DELETE ${home}notes.ics`]=()=>new Response(null,{status:204});
   await dav.deleteEvent(creds,account,event);
   assert.equal(s.calls.find(c=>c.method==='DELETE')?.headers['if-match'],'"e1"');
-  s.routes[`DELETE ${home}standup.ics`]=()=>new Response(null,{status:404});
+  s.routes[`DELETE ${home}notes.ics`]=()=>new Response(null,{status:404});
   await dav.deleteEvent(creds,account,event);
-  delete s.routes[`GET ${home}standup.ics`];
+  s.routes[`DELETE ${home}notes.ics`]=()=>new Response(null,{status:412});
+  await assert.rejects(dav.deleteEvent(creds,account,event),(e:CalDavError)=>e.status===412);
+  delete s.routes[`GET ${home}notes.ics`];
   const before=s.calls.filter(c=>c.method==='DELETE').length;
   await dav.deleteEvent(creds,account,event);
   assert.equal(s.calls.filter(c=>c.method==='DELETE').length,before,'a 404 on load needs no DELETE');
   await assert.rejects(dav.deleteEvent(creds,account,{...event,remoteId:undefined}),/no calendar server address/);
+});
+
+test('the password only goes to HTTPS addresses, including ones the server names', async () => {
+  const insecure=(e:CalDavError)=>e instanceof CalDavError&&/insecure/.test(e.message)&&!e.uncertain;
+  const sentTo=(s:{calls:Req[]},bad:string)=>s.calls.some(c=>c.url.startsWith(bad));
+  for(const bad of ['http://caldav.example.test/1234/principal/','https://kim:pw@caldav.example.test/1234/principal/']){
+    const s=caldavServer();
+    s.routes['PROPFIND https://caldav.example.test/']=()=>multi(ok('/',`<d:current-user-principal><d:href>${bad}</d:href></d:current-user-principal>`));
+    await assert.rejects(createCalDav({fetch:s.fetch,now}).verify(creds),insecure);
+    assert.equal(sentTo(s,bad),false,bad);
+  }
+  const homeSet=caldavServer();
+  homeSet.routes['PROPFIND https://caldav.example.test/1234/principal/']=()=>multi(ok('/1234/principal/','<cal:calendar-home-set><d:href>http://p07-caldav.example.test/1234/calendars/</d:href></cal:calendar-home-set>'));
+  await assert.rejects(createCalDav({fetch:homeSet.fetch,now}).verify(creds),insecure);
+  assert.equal(sentTo(homeSet,'http:'),false);
+  const collection=caldavServer();
+  collection.routes[`PROPFIND ${part}`]=()=>multi(ok('http://p07-caldav.example.test/1234/calendars/home/','<d:resourcetype><d:collection/><cal:calendar/></d:resourcetype>'));
+  await assert.rejects(createCalDav({fetch:collection.fetch,now}).listEvents(creds,account),insecure);
+  assert.equal(sentTo(collection,'http:'),false);
+  const s=caldavServer();
+  await assert.rejects(createCalDav({fetch:s.fetch,now}).deleteEvent(creds,account,stored({remoteId:'http://p07-caldav.example.test/1234/calendars/home/notes.ics'})),insecure);
+  await assert.rejects(createCalDav({fetch:s.fetch,now}).verify({...creds,url:'http://caldav.example.test/'}),insecure);
+  assert.equal(sentTo(s,'http:'),false);
+});
+
+test('VTIMEZONE zones resolve DST gaps and repeated hours like IANA zones', () => {
+  const zones=zonesOf(parseComponents(cal(...exchangeTz))[0]);
+  const at=(line:string)=>parseTime(parseComponents(`BEGIN:X\r\n${line}\r\nEND:X`)[0].props[0],zones)?.iso;
+  assert.equal(at('DTSTART;TZID=W. Europe Standard Time:20260329T023000'),'2026-03-29T01:30:00.000Z','a skipped time uses the offset before the gap');
+  assert.equal(at('DTSTART;TZID=W. Europe Standard Time:20260329T013000'),'2026-03-29T00:30:00.000Z');
+  assert.equal(at('DTSTART;TZID=W. Europe Standard Time:20260329T030000'),'2026-03-29T01:00:00.000Z');
+  assert.equal(at('DTSTART;TZID=W. Europe Standard Time:20261025T023000'),'2026-10-25T00:30:00.000Z','a repeated hour takes the first occurrence');
+  assert.equal(at('DTSTART;TZID=W. Europe Standard Time:20261025T033000'),'2026-10-25T02:30:00.000Z');
+  assert.equal(at('DTSTART;TZID=W. Europe Standard Time:20260101T000000'),'2025-12-31T23:00:00.000Z');
+});
+
+test('moving a repeating event in a custom zone keeps its TZID and VTIMEZONE so later occurrences keep local time', () => {
+  const doc=parseComponents(cal(...exchangeTz,'BEGIN:VEVENT','UID:w','DTSTART;TZID=W. Europe Standard Time:20261005T110000','DTEND;TZID=W. Europe Standard Time:20261005T120000','RRULE:FREQ=WEEKLY','SUMMARY:Sync','END:VEVENT'));
+  const calendar=doc[0],zones=zonesOf(calendar),vevent=calendar.components.find(c=>c.name==='VEVENT')!;
+  applyFields(vevent,{title:'Sync',location:'',description:'',guests:[],allDay:false,start:'2026-10-05T10:00:00.000Z',end:'2026-10-05T11:00:00.000Z'},now(),zones);
+  const lines=unfold(serialize(doc));
+  for(const kept of ['DTSTART;TZID=W. Europe Standard Time:20261005T120000','DTEND;TZID=W. Europe Standard Time:20261005T130000','RRULE:FREQ=WEEKLY','TZID:W. Europe Standard Time'])assert.ok(lines.includes(kept),kept);
+  const [moved]=readEvents(serialize(doc));
+  assert.deepEqual([moved.start.iso,moved.end.iso],['2026-10-05T10:00:00.000Z','2026-10-05T11:00:00.000Z']);
+  // Winter dates use the standard offset.
+  applyFields(vevent,{title:'Sync',location:'',description:'',guests:[],allDay:false,start:'2026-12-07T10:00:00.000Z',end:'2026-12-07T11:00:00.000Z'},now(),zones);
+  assert.ok(unfold(serialize(doc)).includes('DTSTART;TZID=W. Europe Standard Time:20261207T110000'));
 });
 
 test('errors: a rejected password is certain, network trouble and 5xx are uncertain', async () => {

@@ -11,7 +11,7 @@ const RANDOM=26,CHECK=2;
 const PREFIX='APLOS-WF1';
 /** Hosts store the blob as one small message; Outlook caps app data near 3 MB once base64-encoded. */
 export const MAX_SEALED=2_000_000;
-const MAX_PLAIN=32_000_000;
+export const MAX_PLAIN=32_000_000;
 // 32 MiB of memory and well under a second; the code itself carries 130 bits, so this only slows guessing further.
 const SCRYPT={N:1<<15,r:8,p:1,maxmem:64*1024*1024};
 
@@ -46,17 +46,20 @@ function derive(code:string,salt:Buffer) {
 const b64=(value:Buffer)=>value.toString('base64url');
 
 /** Encrypt a workflow log for storage at the mail host: `APLOS-WF1.<salt>.<check>.<iv>.<ciphertext+tag>`. */
-export function sealWorkflow(log:WorkflowLog, code:string):string {
+export function sealWorkflow(log:WorkflowLog, code:string, maxPlain=MAX_PLAIN):string {
   const salt=randomBytes(16),iv=randomBytes(12),{key,check}=derive(code,salt);
   const header=`${PREFIX}.${b64(salt)}.${b64(check)}.${b64(iv)}`;
+  const tooLarge=()=>new WorkflowCryptoError('Workflow data is too large to sync. Older entries are dropped automatically; try again after the next sync.','size');
+  // Checked here as well as on open, or a log that compresses well would be written and then refused by every reader.
+  const plain=Buffer.from(JSON.stringify(log));if(plain.length>maxPlain)throw tooLarge();
   const cipher=createCipheriv('aes-256-gcm',key,iv);cipher.setAAD(Buffer.from(header));
-  const body=Buffer.concat([cipher.update(deflateRawSync(Buffer.from(JSON.stringify(log)))),cipher.final(),cipher.getAuthTag()]);
+  const body=Buffer.concat([cipher.update(deflateRawSync(plain)),cipher.final(),cipher.getAuthTag()]);
   const sealed=`${header}.${b64(body)}`;
-  if(sealed.length>MAX_SEALED)throw new WorkflowCryptoError('Workflow data is too large to sync. Older entries are dropped automatically; try again after the next sync.','size');
+  if(sealed.length>MAX_SEALED)throw tooLarge();
   return sealed;
 }
 
-export function openWorkflow(blob:string, code:string):WorkflowLog {
+export function openWorkflow(blob:string, code:string, maxPlain=MAX_PLAIN):WorkflowLog {
   const damaged=()=>new WorkflowCryptoError('The synced workflow data in this account is damaged. Syncing from this device will replace it.','damaged');
   if(blob.length>MAX_SEALED)throw new WorkflowCryptoError('The synced workflow data in this account is too large to read.','size');
   const parts=blob.trim().split('.');
@@ -66,11 +69,17 @@ export function openWorkflow(blob:string, code:string):WorkflowLog {
   if(salt.length!==16||check.length!==16||iv.length!==12||body.length<17)throw damaged();
   const derived=derive(code,salt);
   if(!timingSafeEqual(derived.check,check))throw new WorkflowCryptoError('This sync code does not match the one used on your other devices. Enter the code shown on a device that already syncs.','code');
-  let plain:Buffer;
+  let deflated:Buffer,plain:Buffer;
   try{
     const decipher=createDecipheriv('aes-256-gcm',derived.key,iv);decipher.setAAD(Buffer.from(parts.slice(0,4).join('.')));decipher.setAuthTag(body.subarray(-16));
-    plain=inflateRawSync(Buffer.concat([decipher.update(body.subarray(0,-16)),decipher.final()]),{maxOutputLength:MAX_PLAIN});
+    deflated=Buffer.concat([decipher.update(body.subarray(0,-16)),decipher.final()]);
   }catch{throw damaged();}
+  try{plain=inflateRawSync(deflated,{maxOutputLength:maxPlain});}
+  catch(error){
+    // Authenticated data over the limit came from a device with the code (perhaps a newer version), so it is kept, not replaced.
+    if((error as NodeJS.ErrnoException)?.code==='ERR_BUFFER_TOO_LARGE')throw new WorkflowCryptoError('The synced workflow data in this account is too large to read.','size');
+    throw damaged();
+  }
   let parsed:unknown;try{parsed=JSON.parse(plain.toString('utf8'));}catch{throw damaged();}
   return parseWorkflowLog(parsed);
 }

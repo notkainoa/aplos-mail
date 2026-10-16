@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Account, Attachment, Draft, Message, Thread } from '../shared/types';
-import { ProviderError, type CalendarBackend, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import { ProviderError, type AppDataRecord, type CalendarBackend, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
 import { createVault } from './vault';
 
 type Json=Record<string,any>;
@@ -29,11 +29,20 @@ const MAX_CHANGE_PAGES=20;
 const MAX_CHANGES=500;
 const BODY_BYTES=1_000_000;
 const EMAILS_PER_GET=50;
-const APP_MAILBOX='Aplos';
+/** A name users are unlikely to have chosen, so the data copies do not land in the user's own "Aplos" folder. */
+const APP_MAILBOX='Aplos Mail Data';
+/** Marks the emails Aplos stores its workflow data in; a user folder named "Aplos" may hold the user's own mail. */
+const APP_KEYWORD='aplos-app-data';
+const APP_COPIES=20;
+/** Copies of one Message-ID to inspect when reconciling a send (Sent copy, self-addressed copy, leftovers). */
+const SEND_COPIES=20;
+const MAX_REDIRECTS=3;
 const ROLE_LABELS:Record<string,string>={inbox:'INBOX',archive:'ARCHIVE',sent:'SENT',trash:'TRASH',junk:'SPAM',drafts:'DRAFTS'};
+const MAILBOX=['id','name','role','parentId'];
 const LIGHT=['id','threadId','mailboxIds','keywords','from','receivedAt'];
-const FULL=[...LIGHT,'to','cc','subject','receivedAt','messageId','references','preview','textBody','htmlBody','attachments'];
+const FULL=[...LIGHT,'to','cc','subject','messageId','references','preview','textBody','htmlBody','bodyValues','attachments'];
 const BODIES={properties:FULL,fetchHTMLBodyValues:true,fetchTextBodyValues:true,maxBodyValueBytes:BODY_BYTES};
+const COPY=['id','threadId','mailboxIds','keywords'];
 
 interface Credential {token:string;sessionUrl:string}
 interface Session {apiUrl:string;downloadUrl:string;uploadUrl:string;accountId:string;state:string;username:string;maxGet:number;stale?:boolean}
@@ -83,8 +92,15 @@ function pick(responses:any[],id:string,name?:string):Json {
 function mailboxes(list:Json[]):Mailboxes {
   const aplos=list.find(m=>m.name===APP_MAILBOX&&!m.parentId&&!m.role)?.id;
   const byId=new Map(list.map(m=>[m.id,m]));
-  return {list,aplos,role:role=>list.find(m=>m.role===role)?.id,label:id=>{const box=byId.get(id);if(!box||id===aplos)return undefined;return ROLE_LABELS[box.role]??box.name;}};
+  return {list,aplos,role:role=>list.find(m=>m.role===role)?.id,label:id=>{const box=byId.get(id);if(!box)return undefined;return ROLE_LABELS[box.role]??box.name;}};
 }
+/** Throws unless the URL is https without embedded credentials, so the bearer token never travels in clear text. */
+function secure(url:string):URL {
+  let parsed:URL;try{parsed=new URL(url);}catch{throw new JmapError('The mail server sent an invalid address.',400);}
+  if(parsed.protocol!=='https:'||parsed.username||parsed.password)throw new JmapError('The mail server sent an address that does not use a secure https connection.',400);
+  return parsed;
+}
+const filed=(drafts:string,sent:string)=>({[`mailboxIds/${drafts}`]:null,[`mailboxIds/${sent}`]:true,'keywords/$draft':null});
 
 export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
   const request=options.fetch??fetch;
@@ -92,8 +108,20 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
   const sessions=new Map<string,Session>();
 
   async function http(url:string,init:RequestInit={}):Promise<Response> {
-    let response:Response;
-    try{response=await request(url,{...init,signal:init.signal??AbortSignal.timeout(45000)});}catch{throw new JmapError('The mail server could not be reached. Check your internet connection.',undefined,true);}
+    let response:Response,href=url,from=secure(url),current:RequestInit={...init,redirect:'manual',signal:init.signal??AbortSignal.timeout(45000)};
+    for(let hop=0;;hop++){
+      try{response=await request(href,current);}catch{throw new JmapError('The mail server could not be reached. Check your internet connection.',undefined,true);}
+      if(response.type==='opaqueredirect')throw new JmapError('The mail server redirected the request to an address that cannot be checked.',400);
+      const location=response.status>=300&&response.status<400?response.headers.get('location'):null;
+      if(!location)break;
+      if(hop>=MAX_REDIRECTS)throw new JmapError('The mail server redirected the request too many times.',400);
+      const to=secure(new URL(location,href).href),headers=new Headers(current.headers),method=String(current.method??'GET').toUpperCase();
+      // Matches fetch's own redirect rules: credentials stay with their origin, and 301/302 after POST and 303 become GET.
+      if(to.origin!==from.origin)headers.delete('authorization');
+      if(response.status===303&&method!=='HEAD'||(response.status===301||response.status===302)&&method==='POST'){headers.delete('content-type');current={...current,method:'GET',body:undefined};}
+      current={...current,headers};href=to.href;from=to;
+      await response.body?.cancel().catch(()=>undefined);
+    }
     if(response.ok)return response;
     const status=response.status;
     if(status===401||status===403)throw new JmapError('The mail server rejected the API token. Create a token with Email and Email submission access and reconnect this account.',status);
@@ -115,7 +143,7 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
     if(!capabilities[SUBMISSION]||(raw.primaryAccounts?.[SUBMISSION]&&raw.primaryAccounts[SUBMISSION]!==accountId))throw new JmapError('This API token cannot send mail. Create a token with the Email and Email submission scopes and reconnect.',403);
     if(typeof raw.apiUrl!=='string'||typeof raw.downloadUrl!=='string'||typeof raw.uploadUrl!=='string')throw new JmapError('The JMAP session is missing its API addresses.',400);
     // URL templates contain braces that new URL() would percent-encode, so only relative paths are resolved.
-    const absolute=(url:string)=>/^https?:\/\//i.test(url)?url:`${new URL(credential.sessionUrl).origin}${url.startsWith('/')?'':'/'}${url}`;
+    const absolute=(url:string)=>{const value=/^[a-z][a-z\d+.-]*:/i.test(url)?url:`${new URL(credential.sessionUrl).origin}${url.startsWith('/')?'':'/'}${url}`;secure(value);return value;};
     return {apiUrl:absolute(raw.apiUrl),downloadUrl:absolute(raw.downloadUrl),uploadUrl:absolute(raw.uploadUrl),accountId,state:String(raw.state??''),username:String(raw.username??''),maxGet:Math.max(1,Number(capabilities[CORE].maxObjectsInGet)||500)};
   }
   function credential(accountId:string):Credential {
@@ -137,8 +165,19 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
   }
   const api=async(account:Account,calls:Call[])=>invoke(credential(account.id),await session(account.id),calls);
   const maxGet=async(account:Account)=>Math.min((await session(account.id)).maxGet,EMAILS_PER_GET);
+  /** Email/get in batches the server accepts; `size` defaults to the session limit. */
+  async function getEmails(account:Account,ids:string[],args:Json,size?:number):Promise<Json[]> {
+    const limit=size??(await session(account.id)).maxGet;
+    return (await each(chunks([...new Set(ids)],limit),async batch=>pick(await api(account,[['Email/get',{ids:batch,...args},'e']]),'e').list??[])).flat();
+  }
+  /** Thread/get in batches the server accepts. */
+  async function getThreads(account:Account,ids:string[]):Promise<{rows:Json[];notFound:string[]}> {
+    const rows:Json[]=[],notFound:string[]=[];
+    for(const batch of chunks([...new Set(ids)],(await session(account.id)).maxGet)){const t=pick(await api(account,[['Thread/get',{ids:batch},'t']]),'t');rows.push(...t.list??[]);notFound.push(...t.notFound??[]);}
+    return {rows,notFound};
+  }
 
-  async function getMailboxes(account:Account):Promise<Mailboxes> {return mailboxes(pick(await api(account,[['Mailbox/get',{properties:['id','name','role','parentId']},'m']]),'m').list??[]);}
+  async function getMailboxes(account:Account):Promise<Mailboxes> {return mailboxes(pick(await api(account,[['Mailbox/get',{properties:MAILBOX},'m']]),'m').list??[]);}
   async function ensureMailbox(account:Account,boxes:Mailboxes,role:string|undefined,name:string,extra:Json={}):Promise<string> {
     const existing=role?boxes.role(role):undefined;if(existing)return existing;
     const named=boxes.list.find(m=>!m.parentId&&String(m.name).toLowerCase()===name.toLowerCase()&&(role||!m.role));if(named)return named.id;
@@ -152,7 +191,7 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
     return id;
   }
   function own(account:Account) {return new Set([account.email,...(account.sendAs??[]).map(a=>a.email)].map(e=>e.toLowerCase()));}
-  const visible=(boxes:Mailboxes)=>(e:Json)=>!e.keywords?.$draft&&!(boxes.aplos&&e.mailboxIds?.[boxes.aplos]&&Object.keys(e.mailboxIds).length===1);
+  const visible=(e:Json)=>!e.keywords?.$draft&&!e.keywords?.[APP_KEYWORD];
   function isSent(account:Account,boxes:Mailboxes,e:Json) {
     const sent=boxes.role('sent'),inbox=boxes.role('inbox');
     return Boolean(sent&&e.mailboxIds?.[sent])||(own(account).has(String(e.from?.[0]?.email??'').toLowerCase())&&!(inbox&&e.mailboxIds?.[inbox]));
@@ -178,7 +217,7 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
   }
   /** Normalize a JMAP thread; undefined when nothing in it is shown to the user (drafts, Aplos data). */
   function normalize(account:Account,boxes:Mailboxes,threadId:string,all:Json[]):Thread|undefined {
-    const emails=all.filter(visible(boxes));if(!emails.length)return undefined;
+    const emails=all.filter(visible);if(!emails.length)return undefined;
     const flags=threadState(account,boxes,threadId,emails),messages=emails.map(e=>message(account,boxes,e)).sort((a,b)=>a.date.localeCompare(b.date));
     const first=emails.find(e=>e.id===messages[0].id)??emails[0],last=emails.find(e=>e.id===messages.at(-1)!.id)??emails.at(-1)!;
     return {id:flags.id,remoteId:threadId,accountId:account.id,subject:String(first.subject||'(No subject)'),summary:String(last.preview??'').trim()||messages.at(-1)!.text.slice(0,200),messages,date:messages.at(-1)!.date,
@@ -186,37 +225,50 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
   }
   /** Full threads for Thread/get rows, in row order; undefined where nothing is visible. */
   async function loadThreads(account:Account,boxes:Mailboxes,rows:Json[]):Promise<(Thread|undefined)[]> {
-    const byId=new Map<string,Json>(),size=await maxGet(account);
-    const batches=chunks([...new Set(rows.flatMap(r=>r.emailIds??[]))] as string[],size);
-    for(const list of await each(batches,async ids=>pick(await api(account,[['Email/get',{ids,...BODIES},'e']]),'e').list??[]))for(const e of list)byId.set(e.id,e);
+    const byId=new Map<string,Json>();
+    for(const e of await getEmails(account,rows.flatMap(r=>r.emailIds??[]),BODIES,await maxGet(account)))byId.set(e.id,e);
     return rows.map(r=>normalize(account,boxes,r.id,(r.emailIds??[]).map((id:string)=>byId.get(id)).filter(Boolean)));
   }
   async function fetchThreads(account:Account,boxes:Mailboxes,ids:string[]):Promise<Map<string,Thread|undefined>> {
     const result=new Map<string,Thread|undefined>(ids.map(id=>[id,undefined]));
     for(const batch of chunks(ids,(await session(account.id)).maxGet)){
-      const rows=pick(await api(account,[['Thread/get',{ids:batch},'t']]),'t').list??[];
+      const {rows}=await getThreads(account,batch);
       (await loadThreads(account,boxes,rows)).forEach((thread,i)=>result.set(rows[i].id,thread));
     }
     return result;
   }
-  function withoutAppData(boxes:Mailboxes,filter?:Json):Json|undefined {
-    if(!boxes.aplos)return filter;
-    const hidden={inMailboxOtherThan:[boxes.aplos]};
+  function withoutAppData(filter?:Json):Json {
+    const hidden={notKeyword:APP_KEYWORD};
     return filter?{operator:'AND',conditions:[filter,hidden]}:hidden;
   }
+  /** Newest threads matching `filter`, paged within the server's get limit, plus the states read before the first page. */
   async function query(account:Account,filter:Json|undefined,limit:number) {
-    const boxes=await getMailboxes(account),where=withoutAppData(boxes,filter);
-    const r=await api(account,[
-      ['Email/query',{...(where?{filter:where}:{}),sort:[{property:'receivedAt',isAscending:false}],collapseThreads:true,limit},'q'],
-      ['Email/get',{'#ids':{resultOf:'q',name:'Email/query',path:'/ids'},properties:['threadId']},'e'],
-      ['Thread/get',{'#ids':{resultOf:'e',name:'Email/get',path:'/list/*/threadId'}},'t']]);
-    pick(r,'q');const e=pick(r,'e'),t=pick(r,'t');
-    const threads=(await loadThreads(account,boxes,t.list??[])).filter((x):x is Thread=>!!x).sort((a,b)=>b.date.localeCompare(a.date));
-    return {threads,cursor:{email:String(e.state),thread:String(t.state)} as Cursor};
+    const boxes=await getMailboxes(account),where=withoutAppData(filter),size=(await session(account.id)).maxGet,rows=new Map<string,Json>();
+    let cursor:Cursor|undefined,position=0;
+    while(position<limit){
+      const page=Math.min(size,limit-position);
+      // Reading the states before the query means anything that changes while the window loads is replayed later.
+      const r=await api(account,[...(cursor?[]:[['Email/get',{ids:[]},'se'],['Thread/get',{ids:[]},'st']] as Call[]),
+        ['Email/query',{filter:where,sort:[{property:'receivedAt',isAscending:false}],collapseThreads:true,position,limit:page},'q'],
+        ['Email/get',{'#ids':{resultOf:'q',name:'Email/query',path:'/ids'},properties:['threadId']},'e'],
+        ['Thread/get',{'#ids':{resultOf:'e',name:'Email/get',path:'/list/*/threadId'}},'t']]);
+      cursor??={email:String(pick(r,'se').state),thread:String(pick(r,'st').state)};
+      const ids=pick(r,'q').ids??[];pick(r,'e');
+      for(const row of pick(r,'t').list??[])rows.set(row.id,row);
+      position+=ids.length;if(ids.length<page)break;
+    }
+    const threads=(await loadThreads(account,boxes,[...rows.values()])).filter((x):x is Thread=>!!x).sort((a,b)=>b.date.localeCompare(a.date));
+    return {threads,cursor:cursor!};
   }
   async function freshWindow(account:Account):Promise<SyncResult> {
     const {threads,cursor}=await query(account,undefined,INITIAL_THREADS);
-    return {threads,flags:[],removed:[],cursor:JSON.stringify(cursor),reset:true};
+    const window=new Map(threads.map(t=>[t.id,t]));
+    const replay=await changes(account,cursor,{has:id=>window.has(id)});
+    if(!replay)return {threads,flags:[],removed:[],cursor:JSON.stringify(cursor),reset:true};
+    for(const id of replay.removed)window.delete(id);
+    for(const f of replay.flags){const t=window.get(f.id);if(t)window.set(f.id,{...t,unread:f.unread,bookmarked:f.bookmarked,status:f.status,labels:f.labels});}
+    for(const t of replay.threads)window.set(t.id,t);
+    return {threads:[...window.values()].sort((a,b)=>b.date.localeCompare(a.date)),flags:[],removed:replay.removed,cursor:replay.cursor,reset:true};
   }
   async function changes(account:Account,cursor:Cursor,context:SyncContext):Promise<SyncResult|undefined> {
     const updatedEmails=new Set<string>(),destroyedEmails=new Set<string>(),changedThreads=new Set<string>(),goneThreads=new Set<string>();
@@ -225,7 +277,7 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
       while(moreEmail||moreThread){
         if(pages++>=MAX_CHANGE_PAGES)return undefined;
         const calls:Call[]=[];
-        if(!boxes)calls.push(['Mailbox/get',{properties:['id','name','role','parentId']},'m']);
+        if(!boxes)calls.push(['Mailbox/get',{properties:MAILBOX},'m']);
         if(moreEmail)calls.push(['Email/changes',{sinceState:email,maxChanges:MAX_CHANGES},'e']);
         if(moreThread)calls.push(['Thread/changes',{sinceState:thread,maxChanges:MAX_CHANGES},'t']);
         const r=await api(account,calls);
@@ -237,20 +289,23 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
     const local=(id:string)=>`${account.id}:${id}`,removed=new Set<string>(),flags:ThreadFlags[]=[],discovered=new Set<string>();
     for(const id of goneThreads){changedThreads.delete(id);if(context.has(local(id)))removed.add(local(id));}
     const relabeled=[...updatedEmails].filter(id=>!destroyedEmails.has(id));
-    for(const ids of chunks(relabeled,await maxGet(account))){
-      const r=await api(account,[
-        ['Email/get',{ids,properties:['threadId']},'e'],
-        ['Thread/get',{'#ids':{resultOf:'e',name:'Email/get',path:'/list/*/threadId'}},'t'],
-        ['Email/get',{'#ids':{resultOf:'t',name:'Thread/get',path:'/list/*/emailIds'},properties:LIGHT},'l']]);
-      pick(r,'e');const rows=pick(r,'t').list??[],byId=new Map<string,Json>((pick(r,'l').list??[]).map((e:Json)=>[e.id,e]));
-      for(const row of rows){
-        if(changedThreads.has(row.id)||goneThreads.has(row.id))continue;
-        // A thread this device never stored only matters once it is in the inbox; then it needs its messages.
-        if(!context.has(local(row.id))){discovered.add(row.id);continue;}
-        const emails=(row.emailIds??[]).map((id:string)=>byId.get(id)).filter(Boolean).filter(visible(boxes!));
-        if(emails.length)flags.push(threadState(account,boxes!,row.id,emails));else removed.add(local(row.id));
-      }
-      for(const id of pick(r,'t').notFound??[])if(context.has(local(id)))removed.add(local(id));
+    const rows=new Map<string,Json>(),missing=new Set<string>();
+    for(const ids of chunks(relabeled,(await session(account.id)).maxGet)){
+      const r=await api(account,[['Email/get',{ids,properties:['threadId']},'e'],['Thread/get',{'#ids':{resultOf:'e',name:'Email/get',path:'/list/*/threadId'}},'t']]);
+      pick(r,'e');const t=pick(r,'t');
+      for(const row of t.list??[])rows.set(row.id,row);for(const id of t.notFound??[])missing.add(id);
+    }
+    for(const id of missing)if(!rows.has(id)&&context.has(local(id)))removed.add(local(id));
+    const known=[...rows.values()].filter(row=>{
+      if(changedThreads.has(row.id)||goneThreads.has(row.id))return false;
+      // A thread this device never stored only matters once it is in the inbox; then it needs its messages.
+      if(!context.has(local(row.id))){discovered.add(row.id);return false;}
+      return true;
+    });
+    const byId=new Map<string,Json>((await getEmails(account,known.flatMap(row=>row.emailIds??[]),{properties:LIGHT})).map(e=>[e.id,e]));
+    for(const row of known){
+      const emails=(row.emailIds??[]).map((id:string)=>byId.get(id)).filter(Boolean).filter(visible);
+      if(emails.length)flags.push(threadState(account,boxes!,row.id,emails));else removed.add(local(row.id));
     }
     const threads:Thread[]=[];
     for(const [id,value] of await fetchThreads(account,boxes!,[...changedThreads,...discovered])){
@@ -289,13 +344,39 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
     const url=current.downloadUrl.replace('{accountId}',enc(current.accountId)).replace('{blobId}',enc(blobId)).replace('{name}',enc(name||'attachment')).replace('{type}',enc(type||'application/octet-stream'));
     return Buffer.from(await (await http(url,{headers:auth(credential(account.id))})).arrayBuffer());
   }
+  /**
+   * Copies of a message by Message-ID: `sent` proves it went out (a non-draft copy, or a draft with a live
+   * EmailSubmission because the move to Sent failed); `leftovers` are drafts that were never submitted.
+   */
+  async function copies(account:Account,messageId:string,found?:Json[]):Promise<{sent?:Json;leftovers:Json[]}> {
+    let list:Json[];
+    if(found)list=found;
+    else{
+      const r=await api(account,[['Email/query',{filter:{header:['Message-ID',messageId]},limit:SEND_COPIES},'q'],['Email/get',{'#ids':{resultOf:'q',name:'Email/query',path:'/ids'},properties:COPY},'e']]);
+      pick(r,'q');list=pick(r,'e').list??[];
+    }
+    const drafts=list.filter(e=>e.keywords?.$draft);let submitted=new Set<string>();
+    if(drafts.length){
+      const r=await api(account,[['EmailSubmission/query',{filter:{emailIds:drafts.map(e=>e.id)},limit:SEND_COPIES},'q'],
+        ['EmailSubmission/get',{'#ids':{resultOf:'q',name:'EmailSubmission/query',path:'/ids'},properties:['emailId','undoStatus']},'g']]);
+      pick(r,'q');submitted=new Set((pick(r,'g').list??[]).filter((s:Json)=>s.undoStatus!=='canceled').map((s:Json)=>String(s.emailId)));
+    }
+    return {sent:list.find(e=>!e.keywords?.$draft)??list.find(e=>submitted.has(e.id)),leftovers:drafts.filter(e=>!submitted.has(e.id))};
+  }
+  /** Moves a submitted message out of Drafts; a sent message left as a draft is hidden from sync and easy to resend by hand. */
+  async function fileSent(account:Account,id:string,boxes?:Mailboxes) {
+    boxes??=await getMailboxes(account);
+    const drafts=boxes.role('drafts'),sent=await ensureMailbox(account,boxes,'sent','Sent');
+    const result=pick(await api(account,[['Email/set',{update:{[id]:drafts?filed(drafts,sent):{[`mailboxIds/${sent}`]:true,'keywords/$draft':null}}},'f']]),'f');
+    if(result.notUpdated?.[id])throw jmapError(result.notUpdated[id]);
+  }
   async function replyHeaders(account:Account,draft:Draft,thread?:Thread):Promise<{inReplyTo?:string[];references?:string[]}> {
     if(!draft.threadId||draft.mode==='new'||draft.mode==='forward')return {};
     let last:{internetId?:string;references?:string}|undefined=thread?.messages.at(-1);
     const remoteId=thread?.remoteId??(draft.threadId.startsWith(`${account.id}:`)?draft.threadId.slice(account.id.length+1):undefined);
     if(!last?.internetId&&remoteId){
-      const r=await api(account,[['Thread/get',{ids:[remoteId]},'t'],['Email/get',{'#ids':{resultOf:'t',name:'Thread/get',path:'/list/*/emailIds'},properties:['messageId','references','receivedAt']},'e']]);
-      const e=(pick(r,'e').list??[]).sort((a:Json,b:Json)=>String(a.receivedAt).localeCompare(String(b.receivedAt))).at(-1);
+      const {rows}=await getThreads(account,[remoteId]);
+      const e=(await getEmails(account,rows.flatMap(row=>row.emailIds??[]),{properties:['messageId','references','receivedAt']})).sort((a:Json,b:Json)=>String(a.receivedAt).localeCompare(String(b.receivedAt))).at(-1);
       last=e?.messageId?.[0]?{internetId:`<${e.messageId[0]}>`,references:(e.references??[]).map((x:string)=>`<${x}>`).join(' ')}:undefined;
     }
     if(!last?.internetId)return {};
@@ -336,14 +417,13 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
     search:async(account:Account,text:string)=>(await query(account,{text},SEARCH_THREADS)).threads,
     async updateThread(account:Account,thread:RemoteThread,patch:Partial<Thread>) {
       if(!thread.remoteId)throw new Error('This thread has no JMAP identifier.');
-      const r=await api(account,[['Mailbox/get',{properties:['id','name','role','parentId']},'m'],['Thread/get',{ids:[thread.remoteId]},'t'],
-        ['Email/get',{'#ids':{resultOf:'t',name:'Thread/get',path:'/list/*/emailIds'},properties:LIGHT},'e']]);
-      const boxes=mailboxes(pick(r,'m').list??[]);
-      if(!(pick(r,'t').list??[]).length)throw new JmapError('The mail server could not find this item.',404);
-      const emails=(pick(r,'e').list??[]).filter(visible(boxes)).sort((a:Json,b:Json)=>String(a.receivedAt??'').localeCompare(String(b.receivedAt??'')));
+      const r=await api(account,[['Mailbox/get',{properties:MAILBOX},'m'],['Thread/get',{ids:[thread.remoteId]},'t']]);
+      const boxes=mailboxes(pick(r,'m').list??[]),rows=pick(r,'t').list??[];
+      if(!rows.length)throw new JmapError('The mail server could not find this item.',404);
+      const emails=(await getEmails(account,rows.flatMap((row:Json)=>row.emailIds??[]),{properties:LIGHT})).filter(visible).sort((a:Json,b:Json)=>String(a.receivedAt??'').localeCompare(String(b.receivedAt??'')));
       if(!emails.length)throw new JmapError('The mail server could not find this item.',404);
       const update:Record<string,Json>={},set=(id:string,key:string,value:unknown)=>{(update[id]??={})[key]=value;};
-      const inbound=emails.filter((e:Json)=>!isSent(account,boxes,e)),latest=inbound.at(-1)??emails.at(-1);
+      const inbound=emails.filter((e:Json)=>!isSent(account,boxes,e)),latest=inbound.at(-1)??emails.at(-1)!;
       if(patch.unread===false)for(const e of emails)if(!e.keywords?.$seen)set(e.id,'keywords/$seen',true);
       if(patch.unread===true)set(latest.id,'keywords/$seen',null);
       if(patch.bookmarked===true&&!emails.some((e:Json)=>e.keywords?.$flagged))set(latest.id,'keywords/$flagged',true);
@@ -381,10 +461,18 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
       if(!to.length)throw new Error('Add at least one recipient before sending.');
       const fromEmail=draft.fromEmail??account.email;
       for(const value of [draft.to,draft.cc,draft.bcc,draft.subject,fromEmail])if(/[\r\n]/.test(value))throw new Error('Email headers cannot contain line breaks.');
-      const r=await api(account,[['Identity/get',{},'i'],['Mailbox/get',{properties:['id','name','role','parentId']},'m']]);
+      const messageId=bare(draft.messageId||`${randomUUID()}@${fromEmail.split('@')[1]}`);
+      const r=await api(account,[['Identity/get',{},'i'],['Mailbox/get',{properties:MAILBOX},'m'],
+        ['Email/query',{filter:{header:['Message-ID',messageId]},limit:SEND_COPIES},'old'],['Email/get',{'#ids':{resultOf:'old',name:'Email/query',path:'/ids'},properties:COPY},'copies']]);
       const identity=identityFor((pick(r,'i').list??[]).filter((i:Json)=>typeof i.id==='string'&&typeof i.email==='string'),fromEmail);
       if(!identity)throw new Error('This sending address is not authorized for this account. Sync the account and choose an available address.');
       const boxes=mailboxes(pick(r,'m').list??[]);
+      pick(r,'old');const prior=await copies(account,messageId,pick(r,'copies').list??[]);
+      // An earlier attempt already went out; submitting again would deliver the message twice.
+      if(prior.sent){
+        if(prior.sent.keywords?.$draft)await fileSent(account,prior.sent.id,boxes).catch(()=>undefined);
+        return {id:String(prior.sent.id),threadId:String(prior.sent.threadId)};
+      }
       const drafts=await ensureMailbox(account,boxes,'drafts','Drafts'),sentBox=await ensureMailbox(account,boxes,'sent','Sent');
       const alias=account.sendAs?.find(a=>a.email.toLowerCase()===fromEmail.toLowerCase());
       const attachments=[];
@@ -393,56 +481,58 @@ export async function createJmap(options:JmapOptions):Promise<JmapAdapter> {
         if(!blobId)throw new Error(`Attachment "${a.name}" has not been downloaded. Reattach it before sending.`);
         attachments.push({blobId,type:a.type||'application/octet-stream',name:a.name,disposition:a.contentId?'inline':'attachment',...(a.contentId?{cid:a.contentId}:{})});
       }
-      const messageId=bare(draft.messageId||`${randomUUID()}@${fromEmail.split('@')[1]}`);
       const email={mailboxIds:{[drafts]:true},keywords:{$draft:true,$seen:true},from:[{name:alias?.name||(typeof identity.name==='string'&&identity.name)||account.name,email:fromEmail}],
         to,...(cc.length?{cc}:{}),subject:draft.subject,sentAt:jmapDate(),messageId:[messageId],...await replyHeaders(account,draft,thread),
         textBody:[{partId:'text',type:'text/plain'}],htmlBody:[{partId:'html',type:'text/html'}],bodyValues:{text:{value:htmlText(draft.html)},html:{value:draft.html}},attachments};
       // Bcc stays out of the stored message; the envelope alone delivers it.
       const envelope={mailFrom:{email:fromEmail},rcptTo:[...new Set([...to,...cc,...bcc].map(a=>a.email.toLowerCase()))].map(email=>({email}))};
       const result=await api(account,[
-        // Clear drafts left by an earlier attempt that never reached submission, so a retry cannot leave duplicates.
-        ['Email/query',{filter:{operator:'AND',conditions:[{header:['Message-ID',messageId]},{hasKeyword:'$draft'}]}},'old'],
-        ['Email/set',{create:{draft:email},'#destroy':{resultOf:'old',name:'Email/query',path:'/ids'}},'draft'],
-        ['EmailSubmission/set',{create:{send:{identityId:identity.id,emailId:'#draft',envelope}},onSuccessUpdateEmail:{'#send':{[`mailboxIds/${drafts}`]:null,[`mailboxIds/${sentBox}`]:true,'keywords/$draft':null}}},'send']]);
+        // Drafts left by an earlier attempt that never reached submission are replaced, so a retry cannot leave duplicates.
+        ['Email/set',{create:{draft:email},...(prior.leftovers.length?{destroy:prior.leftovers.map(e=>e.id)}:{})},'draft'],
+        ['EmailSubmission/set',{create:{send:{identityId:identity.id,emailId:'#draft',envelope}},onSuccessUpdateEmail:{'#send':filed(drafts,sentBox)}},'send']]);
       const created=pick(result,'draft','Email/set');
       if(!created.created?.draft)throw jmapError(created.notCreated?.draft);
-      const submission=pick(result,'send','EmailSubmission/set');
-      if(!submission.created?.send){
-        await api(account,[['Email/set',{destroy:[created.created.draft.id]},'x']]).catch(()=>undefined);
-        throw jmapError(submission.notCreated?.send);
-      }
-      return {id:String(created.created.draft.id),threadId:String(created.created.draft.threadId)};
+      const id=String(created.created.draft.id),discard=()=>api(account,[['Email/set',{destroy:[id]},'x']]).catch(()=>undefined);
+      let submission:Json;
+      try{submission=pick(result,'send','EmailSubmission/set');}catch(error){if(error instanceof JmapError&&!error.uncertain)await discard();throw error;}
+      if(!submission.created?.send){await discard();throw jmapError(submission.notCreated?.send);}
+      // The move to Sent is a separate implicit Email/set; when it fails the message has still gone out.
+      const moved=result.find(x=>Array.isArray(x)&&x[0]==='Email/set'&&x[2]==='send')?.[1];
+      if(!moved||moved.notUpdated?.[id]||!(id in (moved.updated??{})))await fileSent(account,id,boxes).catch(()=>undefined);
+      return {id,threadId:String(created.created.draft.threadId)};
     },
     async findSent(account:Account,messageId:string) {
-      const r=await api(account,[['Email/query',{filter:{operator:'AND',conditions:[{header:['Message-ID',bare(messageId)]},{notKeyword:'$draft'}]},limit:1},'q'],
-        ['Email/get',{'#ids':{resultOf:'q',name:'Email/query',path:'/ids'},properties:['threadId']},'e']]);
-      pick(r,'q');const found=pick(r,'e').list?.[0];
-      return typeof found?.id==='string'&&typeof found.threadId==='string'?{id:found.id,threadId:found.threadId}:undefined;
+      const {sent}=await copies(account,bare(messageId));
+      if(typeof sent?.id!=='string'||typeof sent.threadId!=='string')return undefined;
+      if(sent.keywords?.$draft)await fileSent(account,sent.id).catch(()=>undefined);
+      return {id:sent.id,threadId:sent.threadId};
     },
     async attachment(account:Account,_thread:Thread,attachment:Attachment):Promise<Attachment> {
       if(attachment.data)return attachment;
       if(!attachment.remoteId)throw new Error('This attachment has no downloadable content.');
       return {...attachment,data:(await download(account,attachment.remoteId,attachment.name,attachment.type)).toString('base64')};
     },
-    async readAppData(account:Account) {
-      const boxes=await getMailboxes(account);if(!boxes.aplos)return undefined;
-      const r=await api(account,[['Email/query',{filter:{inMailbox:boxes.aplos},sort:[{property:'receivedAt',isAscending:false}],limit:1},'q'],
-        ['Email/get',{'#ids':{resultOf:'q',name:'Email/query',path:'/ids'},properties:['attachments']},'e']]);
-      pick(r,'q');const part=pick(r,'e').list?.[0]?.attachments?.[0];
-      if(typeof part?.blobId!=='string')return undefined;
-      return (await download(account,part.blobId,part.name??'aplos-data',part.type??'application/octet-stream')).toString('utf8');
+    async readAppData(account:Account):Promise<AppDataRecord[]> {
+      const r=await api(account,[['Email/query',{filter:{hasKeyword:APP_KEYWORD},sort:[{property:'receivedAt',isAscending:false}],limit:Math.min(APP_COPIES,(await session(account.id)).maxGet)},'q'],
+        ['Email/get',{'#ids':{resultOf:'q',name:'Email/query',path:'/ids'},properties:['keywords','attachments']},'e']]);
+      const order:string[]=pick(r,'q').ids??[],byId=new Map<string,Json>((pick(r,'e').list??[]).map((e:Json)=>[e.id,e]));
+      const owned=order.map(id=>byId.get(id)).filter((e):e is Json=>!!e?.keywords?.[APP_KEYWORD]&&typeof e.attachments?.[0]?.blobId==='string');
+      return each(owned,async e=>{const part=e.attachments[0];return {id:String(e.id),data:(await download(account,part.blobId,part.name??'aplos-data',part.type??'application/octet-stream')).toString('utf8')};});
     },
-    async writeAppData(account:Account,data:string) {
+    async writeAppData(account:Account,data:string,replaces:string[]) {
       const boxes=await getMailboxes(account);
       const box=boxes.aplos??await ensureMailbox(account,boxes,undefined,APP_MAILBOX,{isSubscribed:false});
       const blobId=await upload(account,Buffer.from(data,'utf8'),'application/octet-stream');
-      const email={mailboxIds:{[box]:true},keywords:{$seen:true},from:[{name:'Aplos Mail',email:account.email}],subject:'Aplos Mail data',receivedAt:jmapDate(),
+      const email={mailboxIds:{[box]:true},keywords:{$seen:true,[APP_KEYWORD]:true},from:[{name:'Aplos Mail',email:account.email}],subject:'Aplos Mail data',receivedAt:new Date().toISOString(),
         textBody:[{partId:'text',type:'text/plain'}],bodyValues:{text:{value:'Aplos Mail keeps workflow data here. Leave this message in place.'}},
         attachments:[{blobId,type:'application/octet-stream',name:'aplos-data',disposition:'attachment'}]};
-      // Creation runs before destruction within one Email/set, so a failure never leaves the mailbox empty.
-      const r=await api(account,[['Email/query',{filter:{inMailbox:box}},'q'],['Email/set',{create:{data:email},'#destroy':{resultOf:'q',name:'Email/query',path:'/ids'}},'w']]);
-      pick(r,'q');const result=pick(r,'w');
+      const result=pick(await api(account,[['Email/set',{create:{data:email}},'w']]),'w');
       if(!result.created?.data)throw jmapError(result.notCreated?.data);
+      // Only copies Aplos wrote are destroyed, whatever IDs the caller passes; the new copy exists before any old one goes.
+      const ids=replaces.filter(id=>id!==result.created.data.id);
+      const owned=(await getEmails(account,ids,{properties:['keywords']})).filter(e=>e.keywords?.[APP_KEYWORD]).map(e=>String(e.id));
+      // A copy that cannot be destroyed now is read and merged again on the next round.
+      if(owned.length)pick(await api(account,[['Email/set',{destroy:owned},'x']]),'x');
     },
     close(){sessions.clear();},
   };

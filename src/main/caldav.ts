@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
 import { ProviderError, type CalendarBackend, type CalendarCredentials, type CalendarInfo } from '../engine/provider';
 import type { Account, CalendarEvent } from '../shared/types';
-import { applyFields, createCalendar, parseComponents, prop, readEvents, serialize, timesChanged, utcStamp, zonesOf, type EventFields, type IcalComponent, type ParsedEvent } from './ical';
+import { applyFields, createCalendar, isScheduling, parseComponents, prop, readEvents, serialize, utcStamp, zonesOf, type EventFields, type IcalComponent, type ParsedEvent } from './ical';
 
 export class CalDavError extends ProviderError {}
 
@@ -28,25 +28,29 @@ function statusError(status:number):CalDavError {
   return new CalDavError(`The calendar server returned an error (HTTP ${status}).`,status);
 }
 
+/** Every address the password is sent to, including ones the server names, must be plain HTTPS. */
+function secureUrl(url:string,base?:string):string {
+  let parsed:URL;
+  try{parsed=new URL(url,base);}catch{throw new CalDavError('The calendar server gave an address Aplos could not use.');}
+  if(parsed.protocol!=='https:'||parsed.username||parsed.password)throw new CalDavError('The calendar server gave an insecure address (not plain HTTPS), so Aplos did not send your password to it.');
+  return parsed.toString();
+}
+
 export function createCalDav(options:{fetch?:typeof fetch; now?:()=>Date}={}):CalendarBackend {
   const http=options.fetch??fetch,now=options.now??(()=>new Date());
-  const homes=new Map<string,string>(),etags=new Map<string,string>();
+  const homes=new Map<string,string>();
   const parser=new XMLParser({removeNSPrefix:true,ignoreAttributes:false,attributeNamePrefix:'@_',parseTagValue:false,htmlEntities:true,isArray:name=>['response','propstat','href','comp','privilege'].includes(name)});
 
-  /** Follows redirects itself so the login is kept across hosts, but never from https down to http. */
+  /** Follows redirects itself so the login is kept across hosts, but only ever to HTTPS addresses. */
   async function request(credentials:CalendarCredentials,url:string,method:string,init:{body?:string;headers?:Record<string,string>;allow?:number[]}={}) {
     const authorization=`Basic ${Buffer.from(`${credentials.username}:${credentials.password}`,'utf8').toString('base64')}`;
-    let target=url;
+    let target=secureUrl(url);
     for(let hop=0;hop<6;hop++){
       let response:Response,text:string;
       try{
         response=await http(target,{method,body:init.body,headers:{authorization,...init.headers},redirect:'manual',signal:AbortSignal.timeout(timeout)});
         const location=response.headers.get('location');
-        if([301,302,307,308].includes(response.status)&&location){
-          const next=new URL(location,target);
-          if(new URL(target).protocol==='https:'&&next.protocol!=='https:')throw new CalDavError('The calendar server redirected to an insecure address.');
-          target=next.toString();continue;
-        }
+        if([301,302,307,308].includes(response.status)&&location){target=secureUrl(location,target);continue;}
         text=await response.text();
       }catch(error){
         if(error instanceof CalDavError)throw error;
@@ -118,9 +122,10 @@ export function createCalDav(options:{fetch?:typeof fetch; now?:()=>Date}={}):Ca
     });
   }
 
-  function model(parsed:ParsedEvent,account:Account,calendarId:string,href:string):CalendarEvent {
-    const uid=parsed.uid||href;
-    return {id:`${account.id}:${calendarId}:${uid}${parsed.recurrenceId?`:${parsed.recurrenceId}`:''}`,accountId:account.id,calendarId,title:parsed.title||'(Untitled event)',start:parsed.start.iso,end:parsed.end.iso,allDay:parsed.start.allDay,location:parsed.location,description:parsed.description,guests:parsed.guests,remoteId:href};
+  /** Occurrences of a repeating event always carry their own start in the id, since the first one may lack a RECURRENCE-ID. */
+  function model(parsed:ParsedEvent,account:Account,calendarId:string,href:string,etag:string):CalendarEvent {
+    const uid=parsed.uid||href,occurrence=parsed.recurrenceId??(parsed.recurring?parsed.start.iso:undefined);
+    return {id:`${account.id}:${calendarId}:${uid}${occurrence?`:${occurrence}`:''}`,accountId:account.id,calendarId,title:parsed.title||'(Untitled event)',start:parsed.start.iso,end:parsed.end.iso,allDay:parsed.start.allDay,location:parsed.location,description:parsed.description,guests:parsed.guests,remoteId:href,...(etag?{etag}:{}),...(parsed.scheduling?{scheduling:true}:{})};
   }
 
   async function target(credentials:CalendarCredentials,calendarId:string):Promise<Calendar> {
@@ -133,28 +138,25 @@ export function createCalDav(options:{fetch?:typeof fetch; now?:()=>Date}={}):Ca
   }
 
   /**
-   * Loads the stored resource behind an event. Rejects single occurrences of repeating events (Aplos lists them
-   * expanded, but changing or deleting the resource would affect the whole series) and edits made against an
-   * older copy than the server now holds.
+   * Loads the stored resource behind an event and refuses what Aplos cannot change safely: repeating events (each
+   * listed copy is one expanded occurrence, but the resource is the whole series), meetings the server would email
+   * attendees about, and edits made against an older copy than the server now holds.
    */
-  async function stored(credentials:CalendarCredentials,account:Account,event:CalendarEvent,action:'change'|'delete') {
+  async function stored(credentials:CalendarCredentials,event:CalendarEvent,action:'change'|'delete') {
+    const verb=action==='delete'?'Delete':'Change',meeting=()=>new CalDavError(`This is a meeting with invited guests, so changing it here could email them. ${verb} it in your calendar app.`,409);
+    if(event.scheduling)throw meeting();
     const href=event.remoteId!;
     const {response,text}=await request(credentials,href,'GET',{headers:{accept:'text/calendar'},allow:[404,410]});
     if(response.status===404||response.status===410)return;
     const doc=parseComponents(text),calendar=doc.find(c=>c.name==='VCALENDAR');
     const vevents=calendar?.components.filter(c=>c.name==='VEVENT')??[];
     if(!calendar||!vevents.length)throw new CalDavError('The calendar server returned an event Aplos could not read.');
-    const master=vevents.find(v=>!prop(v,'RECURRENCE-ID'));
-    const recurring=vevents.length>1||!master||Boolean(prop(master,'RRULE')||prop(master,'RDATE'));
-    const uid=prop(master??vevents[0],'UID')?.value.trim()??href;
-    const series=[event.calendarId,parent(href)].some(calendarId=>event.id===`${account.id}:${calendarId}:${uid}`);
-    if(recurring&&(!master||!series))throw new CalDavError(`This is one occurrence of a repeating event. ${action==='delete'?'Delete':'Change'} it in your calendar app; Aplos cannot ${action} single occurrences yet.`);
-    const etag=response.headers.get('etag')??undefined,known=etags.get(href);
-    if(etag&&known&&!sameEtag(etag,known))throw new CalDavError(conflict,412);
-    return {doc,calendar,master:master!,vevents,etag};
+    const master=vevents[0],etag=response.headers.get('etag')??undefined;
+    if(vevents.length>1||['RECURRENCE-ID','RRULE','RDATE'].some(name=>prop(master,name)))throw new CalDavError(`This is a repeating event. ${verb} it in your calendar app; Aplos cannot change repeating events yet.`,409);
+    if(isScheduling(master))throw meeting();
+    if(event.etag&&etag&&!sameEtag(event.etag,etag))throw new CalDavError(conflict,412);
+    return {doc,calendar,master,ifMatch:event.etag??etag};
   }
-
-  function remember(href:string,response:Response) {const etag=response.headers.get('etag');if(etag)etags.set(href,etag);else etags.delete(href);}
 
   return {
     async verify(credentials) {await calendars(credentials,true);},
@@ -167,9 +169,7 @@ export function createCalDav(options:{fetch?:typeof fetch; now?:()=>Date}={}):Ca
         const {text,url}=await request(credentials,calendar.id,'REPORT',{headers:{depth:'1','content-type':xml},body});
         return multistatus(text,url).flatMap(r=>{
           const data=textOf(r.props['calendar-data']),etag=textOf(r.props.getetag);
-          if(!data)return [];
-          if(etag)etags.set(r.href,etag);
-          return readEvents(data).filter(e=>!e.cancelled).map(e=>model(e,account,calendar.id,r.href));
+          return data?readEvents(data).filter(e=>!e.cancelled).map(e=>model(e,account,calendar.id,r.href,etag)):[];
         });
       }));
       return results.flat();
@@ -178,28 +178,23 @@ export function createCalDav(options:{fetch?:typeof fetch; now?:()=>Date}={}):Ca
       const allDay=Boolean(event.allDay),norm=(value:string)=>allDay?String(value).slice(0,10):Number.isFinite(Date.parse(value))?new Date(value).toISOString():'';
       const fields:EventFields={title:String(event.title??'').trim(),location:event.location??'',description:event.description??'',guests:[...new Set((event.guests??[]).map(g=>g.trim()).filter(g=>/^[^\s@<>"]+@[^\s@<>"]+$/.test(g)))],allDay,start:norm(event.start),end:norm(event.end)};
       if(!fields.title||!Number.isFinite(Date.parse(fields.start))||!Number.isFinite(Date.parse(fields.end))||Date.parse(fields.end)<=Date.parse(fields.start))throw new CalDavError('A calendar event needs a title and valid start and end times.');
-      const saved=(calendarId:string,href:string):CalendarEvent=>({...event,...fields,calendarId,remoteId:href,url:undefined,id:event.id,accountId:account.id});
+      const saved=(calendarId:string,href:string,response:Response):CalendarEvent=>({...event,...fields,calendarId,remoteId:href,url:undefined,id:event.id,accountId:account.id,etag:response.headers.get('etag')??undefined});
       if(!event.remoteId){
         const calendar=await target(credentials,event.calendarId);
         const uid=randomUUID(),href=new URL(`${uid}.ics`,calendar.id.endsWith('/')?calendar.id:`${calendar.id}/`).toString();
         const {response}=await request(credentials,href,'PUT',{headers:{'content-type':ics,'if-none-match':'*'},body:createCalendar({...fields,uid},now())});
-        remember(href,response);
-        return saved(calendar.id,href);
+        return saved(calendar.id,href,response);
       }
-      const current=await stored(credentials,account,event,'change');
+      const current=await stored(credentials,event,'change');
       if(!current)throw new CalDavError('This event is no longer on the calendar server. Refresh the calendar.',404);
-      const zones=zonesOf(current.calendar as IcalComponent);
-      if(current.vevents.length>1||prop(current.master,'EXDATE')){if(timesChanged(current.master,fields,zones))throw new CalDavError('This repeating event has changed or skipped occurrences, so Aplos cannot move the series. Change its time in your calendar app.');}
-      applyFields(current.master,fields,now(),zones);
-      const {response}=await request(credentials,event.remoteId,'PUT',{headers:{'content-type':ics,...(current.etag?{'if-match':current.etag}:{})},body:serialize(current.doc)});
-      remember(event.remoteId,response);
-      return saved(event.calendarId&&event.calendarId!=='primary'?event.calendarId:parent(event.remoteId),event.remoteId);
+      applyFields(current.master,fields,now(),zonesOf(current.calendar as IcalComponent));
+      const {response}=await request(credentials,event.remoteId,'PUT',{headers:{'content-type':ics,...(current.ifMatch?{'if-match':current.ifMatch}:{})},body:serialize(current.doc)});
+      return saved(event.calendarId&&event.calendarId!=='primary'?event.calendarId:parent(event.remoteId),event.remoteId,response);
     },
-    async deleteEvent(credentials,account,event) {
+    async deleteEvent(credentials,_account,event) {
       if(!event.remoteId)throw new CalDavError('This event has no calendar server address.');
-      const current=await stored(credentials,account,event,'delete');
-      if(current)await request(credentials,event.remoteId,'DELETE',{headers:current.etag?{'if-match':current.etag}:{},allow:[404,410]});
-      etags.delete(event.remoteId);
+      const current=await stored(credentials,event,'delete');
+      if(current)await request(credentials,event.remoteId,'DELETE',{headers:current.ifMatch?{'if-match':current.ifMatch}:{},allow:[404,410]});
     }
   };
 }

@@ -18,13 +18,13 @@ const decrypt=(buffer:Buffer)=>Buffer.from([...buffer].map(x=>x^0x5a)).toString(
 const json=(body:unknown,status=200,headers:Record<string,string>={})=>new Response(status===204||status===202?null:JSON.stringify(body),{status,headers:{'Content-Type':'application/json',...headers}});
 const FOLDER_IDS:Record<string,string>={inbox:'F-inbox',archive:'F-archive',sentitems:'F-sent',deleteditems:'F-deleted',junkemail:'F-junk',drafts:'F-drafts'};
 
-interface FakeMessage {id:string;conversationId:string;folder:string;subject:string;from:string;to:string[];date:string;isRead:boolean;flagged:boolean;html:string;internetMessageId:string;isDraft?:boolean;attachments?:Json[];references?:string}
+interface FakeMessage {id:string;conversationId:string;folder:string;subject:string;from:string;to:string[];date:string;isRead:boolean;flagged:boolean;html:string;internetMessageId:string;isDraft?:boolean;attachments?:Json[];references?:string;props?:Record<string,string>}
 
 /** A small in-memory Graph mailbox, calendar and token endpoint. Folder deltas replay a change log. */
 function fakeGraph() {
   const messages=new Map<string,FakeMessage>(),events=new Map<string,Json>(),folders:Json[]=[];
   const log:{v:number;folder:string;id:string}[]=[];
-  const s={version:0,gone:false,tokenCalls:0,renameOnMove:false,requests:[] as {method:string;url:string;body?:any}[],mime:[] as string[],messages,events,folders,log};
+  const s={version:0,created:0,gone:false,tokenCalls:0,renameOnMove:false,attachmentPage:0,fail:undefined as undefined|((method:string,url:URL)=>number|undefined),requests:[] as {method:string;url:string;body?:any}[],mime:[] as string[],messages,events,folders,log};
   const touch=(folder:string,id:string)=>log.push({v:++s.version,folder,id});
   const add=(m:FakeMessage)=>{messages.set(m.id,m);touch(m.folder,m.id);};
   const move=(id:string,folder:string,newId=id)=>{const m=messages.get(id)!;touch(m.folder,id);messages.delete(id);m.id=newId;m.folder=folder;messages.set(newId,m);touch(folder,newId);return m;};
@@ -32,7 +32,7 @@ function fakeGraph() {
   const update=(id:string,patch:Partial<FakeMessage>)=>{const m=messages.get(id)!;Object.assign(m,patch);touch(m.folder,id);};
   const parent=(m:FakeMessage)=>FOLDER_IDS[m.folder]??m.folder;
   const light=(m:FakeMessage)=>({id:m.id,conversationId:m.conversationId,receivedDateTime:m.date,isRead:m.isRead,flag:{flagStatus:m.flagged?'flagged':'notFlagged'},from:{emailAddress:{address:m.from}},isDraft:!!m.isDraft,parentFolderId:parent(m)});
-  const full=(m:FakeMessage)=>({...light(m),internetMessageId:m.internetMessageId,subject:m.subject,body:{contentType:'html',content:m.html},bodyPreview:m.html.replace(/<[^>]+>/g,''),
+  const full=(m:FakeMessage)=>({...light(m),createdDateTime:m.date,internetMessageId:m.internetMessageId,subject:m.subject,body:{contentType:'html',content:m.html},bodyPreview:m.html.replace(/<[^>]+>/g,''),
     toRecipients:m.to.map(address=>({emailAddress:{address}})),ccRecipients:[],sentDateTime:m.date,hasAttachments:(m.attachments??[]).some(a=>!a.isInline),inferenceClassification:'focused'});
   const filterValue=(filter:string|null,name:string)=>filter?.match(new RegExp(`${name} eq '((?:[^']|'')*)'`))?.[1].replace(/''/g,"'");
   async function route(method:string,url:URL,body:any,headers:Record<string,string>):Promise<{status:number;body?:any;headers?:Record<string,string>;raw?:Buffer}> {
@@ -42,6 +42,7 @@ function fakeGraph() {
       for(const r of body.requests){const sub=await route(r.method,new URL(`${graph}${r.url}`),r.body,r.headers??{});responses.push({id:r.id,status:sub.status,headers:sub.headers??{},body:sub.body});}
       return {status:200,body:{responses}};
     }
+    const injected=s.fail?.(method,url);if(injected)return {status:injected,body:{error:{code:'ServiceUnavailable'}}};
     assert.match(headers.Prefer??headers.prefer??'',/IdType="ImmutableId"/);
     if((match=path.match(/^\/me\/mailFolders\/(\w+)\/messages\/delta$/))){
       const folder=match[1];
@@ -58,9 +59,14 @@ function fakeGraph() {
     if((match=path.match(/^\/me\/mailFolders\/(\w+)$/))&&method==='GET'){const id=FOLDER_IDS[match[1]];return id?{status:200,body:{id}}:{status:404,body:{error:{code:'ErrorFolderNotFound'}}};}
     if((match=path.match(/^\/me\/mailFolders\/([\w-]+)\/messages$/))){
       const folder=Object.entries(FOLDER_IDS).find(([,id])=>id===match![1])?.[0]??match[1];
-      if(method==='POST'){const id=`app-${messages.size+1}-${Date.now()}`;messages.set(id,{id,conversationId:`c-${id}`,folder,subject:body.subject,from:account.email,to:[],date:new Date().toISOString(),isRead:true,flagged:false,html:'',internetMessageId:`<${id}@x>`,isDraft:true,attachments:body.attachments.map((a:Json,i:number)=>({...a,id:`att-${i}`}))});return {status:201,body:{id}};}
+      if(method==='POST'){
+        const id=`app-${++s.created}`,props=Object.fromEntries((body.singleValueExtendedProperties??[]).map((x:Json)=>[x.id,x.value]));
+        messages.set(id,{id,conversationId:`c-${id}`,folder,subject:body.subject,from:account.email,to:[],date:new Date(Date.UTC(2027,0,1)+s.created*1000).toISOString(),isRead:true,flagged:false,html:'',internetMessageId:`<${id}@x>`,isDraft:true,props,attachments:body.attachments.map((a:Json,i:number)=>({...a,id:`att-${i}`}))});
+        return {status:201,body:{id}};
+      }
       const internet=filterValue(p.get('$filter'),'internetMessageId');
-      const rows=[...messages.values()].filter(m=>m.folder===folder&&(!internet||m.internetMessageId===internet)).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,Number(p.get('$top')??100));
+      const prop=p.get('$filter')?.match(/singleValueExtendedProperties\/Any\(ep: ep\/id eq '([^']+)' and ep\/value eq '([^']+)'\)/);
+      const rows=[...messages.values()].filter(m=>m.folder===folder&&(!internet||m.internetMessageId===internet)&&(!prop||m.props?.[prop[1]]===prop[2])).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,Number(p.get('$top')??100));
       return {status:200,body:{value:rows.map(full)}};
     }
     if(path==='/me/mailFolders'){
@@ -83,8 +89,10 @@ function fakeGraph() {
     }
     if((match=path.match(/^\/me\/messages\/([^/]+)\/attachments$/))){
       const m=messages.get(decodeURIComponent(match[1]));if(!m)return {status:404,body:{}};
-      const selected=p.has('$select');
-      return {status:200,body:{value:(m.attachments??[]).map(a=>selected?{'@odata.type':'#microsoft.graph.fileAttachment',id:a.id,name:a.name,contentType:a.contentType,size:a.size,isInline:!!a.isInline}:{'@odata.type':'#microsoft.graph.fileAttachment',...a})}};
+      const selected=p.has('$select'),skip=Number(p.get('$skip')??0),all=m.attachments??[];
+      const shown=s.attachmentPage?all.slice(skip,skip+s.attachmentPage):all,more=s.attachmentPage&&skip+s.attachmentPage<all.length;
+      const nextLink=more?(()=>{const link=new URL(url);link.searchParams.set('$skip',String(skip+s.attachmentPage));return link.toString();})():undefined;
+      return {status:200,body:{...(nextLink?{'@odata.nextLink':nextLink}:{}),value:shown.map(a=>selected?{'@odata.type':'#microsoft.graph.fileAttachment',id:a.id,name:a.name,contentType:a.contentType,size:a.size,isInline:!!a.isInline}:{'@odata.type':'#microsoft.graph.fileAttachment',...a})}};
     }
     if((match=path.match(/^\/me\/messages\/([^/]+)$/))){
       const id=decodeURIComponent(match[1]),m=messages.get(id);if(!m)return {status:404,body:{error:{code:'ErrorItemNotFound'}}};
@@ -231,11 +239,39 @@ test('First sync groups conversations with folder status, then delta reports arr
 
     fake.remove('m4');fake.remove('m2');
     const deleted=await step(moved.cursor);
-    assert.deepEqual(deleted.removed,[`${account.id}:cC`]);assert.deepEqual(deleted.flags.map(f=>[f.id,f.labels]),[[`${account.id}:cA`,['ARCHIVE']]]);
+    assert.deepEqual(deleted.removed,[`${account.id}:cC`]);assert.deepEqual(deleted.flags,[]);
+    assert.deepEqual(deleted.threads.map(x=>[x.remoteId,x.messages.map(m=>m.id),x.labels]),[['cA',['m1'],['ARCHIVE']]],'a conversation that lost a message comes back in full');
 
     fake.s.gone=true;
     const reset=await step(deleted.cursor);
     assert.equal(reset.reset,true);assert.deepEqual(reset.threads.map(x=>x.remoteId).sort(),['cA','cB','cD']);
+  }finally{await cleanup();}
+});
+
+test('A sync whose conversation fetch fails saves no index, so the retry still delivers the new reply',async()=>{
+  const {fake,memory,provider,cleanup}=await setup();
+  try{
+    seed(fake);
+    const first=await provider.sync(account,undefined,{has:()=>false});
+    const known=new Set(first.threads.map(t=>t.id)),context={has:(id:string)=>known.has(id)},saved=memory.get(account.id,'index');
+    fake.add(msg('m6','cA','inbox',{isRead:false}));
+    fake.s.fail=(method,url)=>method==='GET'&&url.pathname.endsWith('/me/messages')&&url.searchParams.get('$filter')?.includes('conversationId')?503:undefined;
+    await assert.rejects(()=>provider.sync(account,first.cursor,context),(error:unknown)=>error instanceof MicrosoftError&&error.status===503);
+    assert.equal(memory.get(account.id,'index'),saved,'nothing is indexed before its conversation is fetched');
+    fake.s.fail=undefined;
+    const retry=await provider.sync(account,first.cursor,context);
+    assert.deepEqual(retry.threads.map(t=>[t.remoteId,t.messages.map(m=>m.id)]),[['cA',['m1','m2','m6']]]);assert.deepEqual(retry.flags,[]);
+  }finally{await cleanup();}
+});
+
+test('Attachment lists follow continuation pages',async()=>{
+  const {fake,provider,cleanup}=await setup();
+  try{
+    fake.s.attachmentPage=2;
+    fake.add(msg('m1','cA','inbox',{attachments:[1,2,3].map(i=>({id:`a${i}`,name:`file-${i}.txt`,contentType:'text/plain',size:1,contentBytes:Buffer.from(String(i)).toString('base64')}))}));
+    const {threads}=await provider.sync(account,undefined,{has:()=>false});
+    assert.deepEqual(threads[0].messages[0].attachments.map(a=>[a.name,a.remoteId]),[['file-1.txt','a1'],['file-2.txt','a2'],['file-3.txt','a3']]);
+    assert.ok(fake.s.requests.some(r=>decodeURIComponent(r.url).includes('$skip=2')));
   }finally{await cleanup();}
 });
 
@@ -354,20 +390,42 @@ test('Calendar lists, saves and deletes events through Graph',async()=>{
   }finally{await cleanup();}
 });
 
-test('Workflow data round-trips through one message in a hidden Aplos folder',async()=>{
+test('Workflow data keeps every concurrent copy in a hidden folder until a write replaces it',async()=>{
   const {fake,provider,cleanup}=await setup();
   try{
-    assert.equal(await provider.readAppData(account),undefined);
+    assert.deepEqual(await provider.readAppData(account),[]);
     assert.equal(fake.s.folders.length,0,'reading must not create the folder');
-    await provider.writeAppData(account,'ciphertext-v1');
-    await new Promise(r=>setTimeout(r,5));
-    await provider.writeAppData(account,'ciphertext-v2 ünïcode');
-    assert.deepEqual(fake.s.folders.map(f=>[f.displayName,f.isHidden]),[['Aplos',true]]);
+    await provider.writeAppData(account,'ciphertext-v1',[]);
+    await provider.writeAppData(account,'ciphertext-v2 ünïcode',[]);
+    assert.deepEqual(fake.s.folders.map(f=>[f.displayName,f.isHidden]),[['Aplos Mail Data',true]]);
+    const both=await provider.readAppData(account);
+    assert.deepEqual(both.map(r=>r.data),['ciphertext-v2 ünïcode','ciphertext-v1'],'a second writer never deletes the first copy');
+    await provider.writeAppData(account,'merged',both.map(r=>r.id));
+    assert.deepEqual((await provider.readAppData(account)).map(r=>r.data),['merged']);
     assert.equal([...fake.s.messages.values()].filter(m=>m.folder===fake.s.folders[0].id).length,1);
-    assert.equal(await provider.readAppData(account),'ciphertext-v2 ünïcode');
     seed(fake);
     const synced=await provider.sync(account,undefined,{has:()=>false});
     assert.deepEqual(synced.threads.map(t=>t.remoteId).sort(),['cA','cB','cC','cD'],'app data is never synced as mail');
     assert.deepEqual(await provider.search(account,'Aplos'),[]);
+  }finally{await cleanup();}
+});
+
+test('A user folder named Aplos and unmarked messages are never read or deleted as workflow data',async()=>{
+  const {fake,provider,cleanup}=await setup();
+  try{
+    const decoy=[{id:'x1',name:'aplos-data.bin',contentType:'application/octet-stream',size:4,contentBytes:Buffer.from('mine').toString('base64')}];
+    fake.s.folders.push({id:'F-user',displayName:'Aplos',isHidden:false},{id:'F-user2',displayName:'Aplos Mail Data',isHidden:false});
+    fake.add(msg('u1','cU','F-user',{subject:'My Aplos notes',attachments:decoy}));fake.add(msg('u2','cV','F-user2',{attachments:decoy}));
+    assert.deepEqual(await provider.readAppData(account),[]);
+    await provider.writeAppData(account,'v1',['u1','u2']);
+    const hidden=fake.s.folders.find(f=>f.isHidden)!;
+    assert.ok(hidden&&!['F-user','F-user2'].includes(hidden.id),'a visible folder of the same name is not reused');
+    fake.add(msg('u3','cW',hidden.id,{attachments:decoy}));
+    const records=await provider.readAppData(account);
+    assert.deepEqual(records.map(r=>r.data),['v1']);
+    await provider.writeAppData(account,'v2',[records[0].id,'u1','u2','u3']);
+    assert.ok(['u1','u2','u3'].every(id=>fake.s.messages.has(id)),'only marked workflow records are deleted');
+    assert.ok(!fake.s.messages.has(records[0].id));
+    assert.deepEqual((await provider.readAppData(account)).map(r=>r.data),['v2']);
   }finally{await cleanup();}
 });

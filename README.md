@@ -48,7 +48,7 @@ Folder-based hosts (Outlook, IMAP, JMAP) have no labels: Done or Later with the 
 
 ## Use Aplos on more than one device
 
-Settings → Accounts → **Your other devices** keeps Done, Later, todos, due dates and reminders the same everywhere. Turn it on on the first device and copy its sync code; on each other device choose **Enter code**. Aplos stores this data in a hidden folder named "Aplos" in each account (a hidden label in Gmail), encrypted with a key derived from the sync code, so the mail host sees only ciphertext. The code stays in the encrypted credential store on each device. In Gmail the hidden message still appears under All Mail, and replaced copies go to Trash, where Gmail deletes them after 30 days. Outlook, IMAP and JMAP delete replaced copies. Verified with fake servers only.
+Settings → Accounts → **Your other devices** keeps Done, Later, todos, due dates and reminders the same everywhere. Turn it on on the first device and copy its sync code; on each other device choose **Enter code**. Aplos stores this data in a hidden folder named "Aplos Mail Data" in each account (a hidden label in Gmail), encrypted with a key derived from the sync code, so the mail host sees only ciphertext. The code stays in the encrypted credential store on each device. In Gmail the hidden message still appears under All Mail, and replaced copies go to Trash, where Gmail deletes them after 30 days. Outlook, IMAP and JMAP delete replaced copies. Repeating events and meetings with guests are read-only in Aplos; change them in your calendar app. If a send was interrupted and the message is not in Sent mail, Aplos will not send it again on its own; Compose offers **Send anyway** after a warning. Verified with fake servers only.
 
 ## Everyday controls
 

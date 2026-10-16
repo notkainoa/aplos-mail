@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Account, AppState, Thread } from '../src/shared/types';
-import type { MailProvider, SyncResult } from '../src/engine/provider';
+import type { AppDataRecord, MailProvider, SyncResult } from '../src/engine/provider';
 import { createGroq } from '../src/main/groq';
 import { createService } from '../src/main/service';
 
@@ -13,7 +13,8 @@ function mailbox(){
   const account:Account={id:'jmap-1',name:'Riley',email:'riley@fastmail.test',provider:'jmap',connected:true,color:'#888',calendarConnected:false};
   const thread:Thread={id:'jmap-1:t1',remoteId:'t1',accountId:'jmap-1',subject:'Quarterly plan',summary:'',date:'2026-10-14T10:00:00Z',unread:true,status:'new',importance:'important',bookmarked:false,replyStatus:'none',labels:['INBOX','UNREAD'],
     messages:[{id:'m1',internetId:'<plan@example.test>',from:'sam@example.test',fromName:'Sam',to:[account.email],date:'2026-10-14T10:00:00Z',text:'Plan?',attachments:[]}]};
-  const box={blob:undefined as string|undefined,writes:0};
+  let seq=0;
+  const box={copies:[] as AppDataRecord[],writes:0,get blob(){return box.copies[0]?.data;}};
   const device=():MailProvider=>{
     let first=true;
     return {kind:'jmap',available:true,
@@ -21,8 +22,8 @@ function mailbox(){
       connect:async()=>({...account}),disconnect:async()=>{},
       sync:async():Promise<SyncResult>=>{const result:SyncResult={threads:first?[structuredClone(thread)]:[],flags:[],removed:[],reset:first,cursor:'c'};first=false;return result;},
       search:async()=>[],updateThread:async()=>{},findSent:async()=>undefined,send:async()=>({}),attachment:async(_a,_t,file)=>file,
-      readAppData:async()=>box.blob,
-      writeAppData:async(_a,data)=>{box.blob=data;box.writes++;},
+      readAppData:async()=>structuredClone(box.copies),
+      writeAppData:async(_a,data,replaces)=>{box.copies=[{id:`copy${++seq}`,data},...box.copies.filter(c=>!replaces.includes(c.id))];box.writes++;},
       close:async()=>{},
     };
   };
@@ -73,7 +74,7 @@ test('Done, Later and todos follow the user between devices through encrypted ap
     const blob=host.box.blob;
     state=await c.invoke('sync') as AppState;
     assert.match(state.sync.error??'',/does not match/);
-    assert.equal(host.box.blob,blob);
+    assert.equal(host.box.blob,blob);assert.equal(host.box.copies.length,1);
     assert.equal(find(state).status,'new');
 
     await a.invoke('workflow.disable');

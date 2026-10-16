@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkDomain, discoverAccount, parseAutoconfig, type DomainReport } from '../src/engine/discover';
-import { resolveDns } from '../src/engine/dns';
+import { blockedAddress, checkDomain, dohLookup, discoverAccount, parseAutoconfig, publicHost, type DomainReport } from '../src/engine/discover';
+import { duplicateTags, resolveDns } from '../src/engine/dns';
 
 type Zone=Record<string,Partial<Record<'MX'|'TXT'|'CNAME'|'A',string[]>>>;
 const CODES={A:1,CNAME:5,MX:15,TXT:16} as const;
@@ -26,7 +26,9 @@ function fakeNet(zone:Zone, options:{pages?:Record<string,string>; down?:('cloud
     const page=options.pages?.[url.href];
     return page===undefined?new Response('missing',{status:404}):new Response(page,{headers:{'content-type':'text/xml'}});
   };
-  return {fetch:fetch as typeof globalThis.fetch,calls};
+  // Host lookups for vetting discovered servers come from the zone's A records too; unknown names do not resolve.
+  const lookup=async(host:string)=>{const a=zone[host]?.A;if(!a)throw Object.assign(new Error('ENOTFOUND'),{code:'ENOTFOUND'});return a;};
+  return {fetch:fetch as typeof globalThis.fetch,calls,lookup};
 }
 const offline=(async()=>{throw new TypeError('fetch failed');}) as typeof globalThis.fetch;
 
@@ -200,4 +202,85 @@ test('Proton addresses and configs pointing at a local bridge are not offered as
   assert.match(proton.unsupported!,/Bridge/);
   const bridge='<clientConfig><emailProvider id="x"><incomingServer type="imap"><hostname>127.0.0.1</hostname><port>1143</port><socketType>STARTTLS</socketType></incomingServer><outgoingServer type="smtp"><hostname>127.0.0.1</hostname><port>1025</port><socketType>STARTTLS</socketType></outgoingServer></emailProvider></clientConfig>';
   assert.equal(parseAutoconfig(bridge,'kim@example.org'),undefined);
+});
+
+test('discovered hosts on this computer or a private network are dropped, in every spelling', async () => {
+  for(const ip of ['127.0.0.1','127.1','2130706433','0x7f000001','0x7f.1','017700000001','0177.0.0.1','10.1.2.3','172.31.0.1','192.168.1.1','169.254.169.254',
+    '100.64.0.1','0.0.0.0','224.0.0.1','255.255.255.255','::1','[::1]','::','fc00::1','fd12:3456::1','fe80::1%en0','ff02::1','::ffff:127.0.0.1','::ffff:7f00:1','::ffff:10.0.0.1','64:ff9b::a00:1'])
+    assert.equal(blockedAddress(ip),true,ip);
+  for(const ip of ['8.8.8.8','93.184.216.34','2606:4700::1111','::ffff:8.8.8.8'])assert.equal(blockedAddress(ip),false,ip);
+  assert.equal(blockedAddress('mail.example.com'),undefined);
+  const resolve=async(host:string)=>({'evil.example':['93.184.216.34','10.0.0.5'],'v6.example':['fe80::2'],'ok.example':['93.184.216.34','2606:4700::1111']} as Record<string,string[]>)[host]??[];
+  for(const host of ['localhost','mail.localhost','printer.local','db.internal','intranet','127.1','0x7f.1','[::1]','evil.example','v6.example','1.2.3.4.5'])
+    assert.equal(await publicHost(host,resolve),false,host);
+  assert.equal(await publicHost('ok.example',resolve),true);
+  assert.equal(await publicHost('8.8.8.8',async()=>{throw new Error('literals need no lookup');}),true);
+
+  const config=(imap:string,smtp=`smtp.${imap.split('.').slice(1).join('.')||'x.example'}`)=>`<clientConfig><emailProvider id="x"><incomingServer type="imap"><hostname>${imap}</hostname><port>993</port><socketType>SSL</socketType></incomingServer><outgoingServer type="smtp"><hostname>${smtp}</hostname><port>465</port><socketType>SSL</socketType></outgoingServer></emailProvider></clientConfig>`;
+  assert.equal(parseAutoconfig(config('127.1','smtp.x.example'),'a@x.example'),undefined);
+  assert.equal(parseAutoconfig(config('0x7f.1','smtp.x.example'),'a@x.example'),undefined);
+  const url='https://autoconfig.rebind.example/mail/config-v1.1.xml?emailaddress=a%40rebind.example';
+  // An ordinary-looking name in the config that resolves to a private address is not offered.
+  const rebind=fakeNet({'rebind.example':{MX:['10 mx.rebind.example']},'imap.rebind.example':{A:['192.168.0.10']},'smtp.rebind.example':{A:['93.184.216.34']}},
+    {pages:{[url]:config('imap.rebind.example','smtp.rebind.example')}});
+  assert.equal(await publicHost('imap.rebind.example',dohLookup({fetch:rebind.fetch})),false,'the default resolver reads A records over DNS-over-HTTPS');
+  const found=await discoverAccount('a@rebind.example',rebind);
+  assert.equal(found.confidence,'guess');
+  assert.equal(found.server,undefined,'the guessed imap.rebind.example is private too, so no servers are suggested');
+  const fine=fakeNet({'rebind.example':{MX:['10 mx.rebind.example']},'imap.rebind.example':{A:['93.184.216.34']},'smtp.rebind.example':{A:['93.184.216.34']}},
+    {pages:{[url]:config('imap.rebind.example','smtp.rebind.example')}});
+  const vetted=await discoverAccount('a@rebind.example',fine);
+  assert.deepEqual([vetted.confidence,vetted.server?.imap.host],['autoconfig','imap.rebind.example']);
+});
+
+test('autoconfig redirects are followed by hand, and only to public HTTPS hosts', async () => {
+  const start='https://autoconfig.hop.example/mail/config-v1.1.xml?emailaddress=a%40hop.example';
+  const xml='<clientConfig><emailProvider id="x"><incomingServer type="imap"><hostname>mail.hop.example</hostname><port>993</port><socketType>SSL</socketType></incomingServer><outgoingServer type="smtp"><hostname>mail.hop.example</hostname><port>465</port><socketType>SSL</socketType></outgoingServer></emailProvider></clientConfig>';
+  const run=async(redirects:Record<string,string>)=>{
+    const net=fakeNet({'hop.example':{MX:['10 mx.hop.example']},'inside.hop.example':{A:['10.0.0.8']}}),requested:string[]=[];
+    const fetch=(async(input:string|URL|Request,init?:RequestInit)=>{
+      const href=String(input);
+      if(!href.startsWith('https://cloudflare-dns.com/')&&!href.startsWith('https://dns.google/')){
+        requested.push(href);assert.equal(init?.redirect,'manual');
+        if(redirects[href])return new Response(null,{status:302,headers:{location:redirects[href]}});
+        if(href==='https://final.hop.example/config.xml')return new Response(xml);
+        return new Response('missing',{status:404});
+      }
+      return net.fetch(input);
+    }) as typeof globalThis.fetch;
+    return {found:await discoverAccount('a@hop.example',{fetch,lookup:net.lookup}),requested};
+  };
+  const ok=await run({[start]:'/next',['https://autoconfig.hop.example/next']:'https://final.hop.example/config.xml'});
+  assert.deepEqual([ok.found.confidence,ok.found.source],['autoconfig',start]);
+  const http=await run({[start]:'http://final.hop.example/config.xml'});
+  assert.equal(http.found.confidence,'guess');assert.ok(!http.requested.some(u=>u.startsWith('http:')));
+  const inside=await run({[start]:'https://inside.hop.example/config.xml'});
+  assert.equal(inside.found.confidence,'guess');assert.ok(!inside.requested.some(u=>u.includes('inside.hop.example')));
+  const literal=await run({[start]:'https://127.1/config.xml'});
+  assert.ok(!literal.requested.some(u=>u.includes('127.')));
+  const loop=await run({[start]:'https://a.hop.example/1','https://a.hop.example/1':'https://a.hop.example/2','https://a.hop.example/2':'https://a.hop.example/3',
+    'https://a.hop.example/3':'https://final.hop.example/config.xml'});
+  assert.equal(loop.found.confidence,'guess','more than three redirects are not followed');
+});
+
+test('SPF lookups stop at all, and redirect is ignored when all is present', async () => {
+  const includes=Array.from({length:11},(_,i)=>`include:s${i}.senders.example`).join(' ');
+  const plain=(txt:string,over:Zone={})=>checkDomain('plain.example',fakeNet({'plain.example':{MX:['10 mail.plain.example'],TXT:[txt]},...over}));
+  const after=check(await plain(`v=spf1 -all ${includes}`),'spf');
+  assert.equal(after.status,'pass');assert.match(after.detail,/using 0 of 10 DNS lookups/);
+  const heavy={'big.example':{TXT:[`v=spf1 ${includes} -all`]}};
+  const ignored=check(await plain('v=spf1 mx redirect=big.example -all',heavy),'spf');
+  assert.equal(ignored.status,'pass');assert.match(ignored.detail,/using 1 of 10/);
+  assert.equal(check(await plain('v=spf1 mx redirect=big.example',heavy),'spf').status,'fail','without all, the redirect is followed');
+});
+
+test('DMARC records with repeated tags or invalid values fail instead of passing', async () => {
+  assert.deepEqual(duplicateTags('v=DMARC1; p=reject; P=none; pct=banana'),['p']);
+  const dmarc=async(record:string)=>check(await checkDomain('northwind.example',fakeNet(workspace({'_dmarc.northwind.example':{TXT:[record]}}))),'dmarc');
+  const bad=await dmarc('v=DMARC1; p=reject; p=none; pct=banana');
+  assert.equal(bad.status,'fail');assert.match(bad.detail,/repeats p=.*pct=banana/);assert.match(bad.fix!,/v=DMARC1; p=reject/);
+  for(const record of ['v=DMARC1; p=reject; pct=101','v=DMARC1; p=reject; pct=50.5','v=DMARC1; p=reject; sp=deny','v=DMARC1; p=block'])
+    assert.equal((await dmarc(record)).status,'fail',record);
+  const partial=await dmarc('v=DMARC1; p=reject; sp=quarantine; pct=25');
+  assert.equal(partial.status,'pass');assert.match(partial.detail,/only 25%/);
 });

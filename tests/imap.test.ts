@@ -35,6 +35,10 @@ class FakeHost {
   setFlag(id:string,flag:string,on:boolean){const hit=this.find(id)!;if(on)hit.message.flags.add(flag);else hit.message.flags.delete(flag);hit.message.modseq=++this.modseq;}
   expunge(id:string){const hit=this.find(id)!;const f=this.box(hit.folder);f.messages=f.messages.filter(m=>m!==hit.message);this.modseq++;}
   where(id:string){return this.find(id)?.folder;}
+  /** Move a message the way another client would, without telling Aplos. */
+  relocate(id:string,path:string){const hit=this.find(id)!;this.expunge(id);return this.deliver(path,hit.message.raw,[...hit.message.flags],{date:hit.message.date});}
+  /** The server rebuilds a folder: new UIDVALIDITY, UIDs numbered from 1 again. */
+  rebuild(path:string,raws:Buffer[]){const f=this.box(path);f.uidValidity+=1000;f.uidNext=1;f.messages=[];for(const raw of raws)this.deliver(path,raw);}
   session(config:ImapLogin):ImapSession {
     const host=this;let open=false;
     const matches=(m:FakeMessage,q:ImapQuery,f:FakeFolder):boolean=>{
@@ -94,9 +98,20 @@ function memoryMap():ProviderMemory {
 }
 async function compose(options:SendMailOptions){return (await nodemailer.createTransport({streamTransport:true,buffer:true,newline:'windows'}).sendMail(options)).message as Buffer;}
 
-async function harness(opts:{folders?:Array<[string,string?]>;preset?:'icloud'|'yahoo';autoSave?:boolean;calendar?:CalendarBackend}={}) {
+/** Memory whose writes during a sync are held until the caller commits or discards them, as the service does. */
+function stagedMemory() {
+  const base=memoryMap(),held=new Map<string,[string,string,string|undefined]>();let staging=false;
+  const memory:ProviderMemory={
+    get:(a,k)=>held.has(`${a}|${k}`)?held.get(`${a}|${k}`)![2]:base.get(a,k),
+    set:(a,k,v)=>{if(staging)held.set(`${a}|${k}`,[a,k,v]);else base.set(a,k,v);},
+    clear:a=>{base.clear(a);for(const [key,[account]] of [...held])if(account===a)held.delete(key);},
+  };
+  return {memory,begin(){staging=true;},commit(){for(const [a,k,v] of held.values())base.set(a,k,v);held.clear();staging=false;},discard(){held.clear();staging=false;}};
+}
+
+async function harness(opts:{folders?:Array<[string,string?]>;preset?:'icloud'|'yahoo';autoSave?:boolean;calendar?:CalendarBackend;memory?:ProviderMemory}={}) {
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-imap-'));
-  const host=new FakeHost(opts.folders??iCloudFolders()),memory=memoryMap();
+  const host=new FakeHost(opts.folders??iCloudFolders()),memory=opts.memory??memoryMap();
   const smtp={sent:[] as SendMailOptions[],error:undefined as unknown,logins:[] as string[]};
   const sender=(config:{pass:string;user:string}):SmtpSender=>({
     async verify(){smtp.logins.push(config.user);if(config.pass!==PASSWORD)throw Object.assign(new Error('Invalid login: 535 5.7.8 Error: authentication failed'),{code:'EAUTH',responseCode:535,command:'AUTH PLAIN'});},
@@ -347,17 +362,132 @@ test('large messages download only their text; attachments come on demand',async
   }finally{await h.cleanup();}
 });
 
-test('app data lives in one message in a hidden Aplos folder',async()=>{
+test('app data lives in marked messages in a hidden Aplos folder and only merged copies are replaced',async()=>{
   const h=await harness();
   try{
-    assert.equal(await h.imap.readAppData(h.account),undefined);
-    await h.imap.writeAppData(h.account,'{"v":1}');
-    await h.imap.writeAppData(h.account,'{"v":2,"text":"ünïcode"}');
-    assert.equal(await h.imap.readAppData(h.account),'{"v":2,"text":"ünïcode"}');
-    const folder=h.host.box('Aplos');
-    assert.equal(folder.messages.length,1,'the previous copy is deleted');assert.equal(folder.subscribed,false);
+    assert.deepEqual(await h.imap.readAppData(h.account),[]);
+    await h.imap.writeAppData(h.account,'{"v":1}',[]);
+    const folder=h.host.box('Aplos Mail Data');assert.equal(folder.subscribed,false);
+    const [first]=await h.imap.readAppData(h.account);assert.equal(first.data,'{"v":1}');
+    // Two devices write without seeing each other: both copies are kept, newest first.
+    await h.imap.writeAppData(h.account,'{"v":2,"text":"ünïcode"}',[]);
+    const both=await h.imap.readAppData(h.account);
+    assert.deepEqual(both.map(r=>r.data),['{"v":2,"text":"ünïcode"}','{"v":1}']);
+    assert.equal(both[1].id,first.id);
+    // The folder is rebuilt (new UIDVALIDITY, UIDs reordered) and another device writes before this one replaces what it read.
+    h.host.rebuild('Aplos Mail Data',[...folder.messages].reverse().map(m=>m.raw));
+    await h.imap.writeAppData(h.account,'{"v":"other device"}',[]);
+    await h.imap.writeAppData(h.account,'{"v":3}',both.map(r=>r.id));
+    assert.deepEqual((await h.imap.readAppData(h.account)).map(r=>r.data),['{"v":3}','{"v":"other device"}'],'only the merged copies are deleted');
     const result=await h.sync();
     assert.ok(result.threads.every(t=>!t.subject.includes('Aplos')),'app data is never synced as mail');
+  }finally{await h.cleanup();}
+});
+
+test('a user folder named Aplos is never read as app data and its mail is never deleted',async()=>{
+  const h=await harness({folders:[...iCloudFolders(),['Aplos']]});
+  try{
+    h.host.deliver('Aplos',mail({id:'note@me.example',from:ME,subject:'Aplos Mail sync data',body:'my own notes'}));
+    h.host.deliver('Aplos',await compose({messageId:'<lookalike@me.example>',from:ME,to:ME,subject:'Aplos Mail sync data',text:'x',attachments:[{filename:'aplos-data.json',content:'{"v":"user"}'}]}));
+    assert.deepEqual(await h.imap.readAppData(h.account),[]);
+    await h.imap.writeAppData(h.account,'{"v":1}',['note@me.example','lookalike@me.example']);
+    assert.deepEqual((await h.imap.readAppData(h.account)).map(r=>r.data),['{"v":1}']);
+    assert.ok(h.host.find('note@me.example')&&h.host.find('lookalike@me.example'),'user mail stays even when its ID is listed');
+  }finally{await h.cleanup();}
+});
+
+test('a folder rebuilt under a new UIDVALIDITY never redirects triage to the mail that reused a UID',async()=>{
+  const h=await harness();
+  try{
+    const a1=mail({id:'a1@sam.example',from:'sam@example.test'});
+    h.host.deliver('INBOX',a1);
+    const first=await h.sync();
+    const thread=one(first.threads,'Studio review'),remote={remoteId:thread.remoteId,status:thread.status,labels:thread.labels};
+    h.host.rebuild('INBOX',[mail({id:'other@bank.example',from:'bank@example.test',subject:'Statement'}),a1]);
+    assert.equal(h.host.find('other@bank.example')!.message.uid,1,'UID 1 now belongs to unrelated mail');
+    await h.imap.updateThread(h.account,remote,{unread:false,bookmarked:true});
+    assert.deepEqual([...h.host.find('other@bank.example')!.message.flags],[]);
+    assert.deepEqual([...h.host.find('a1@sam.example')!.message.flags].sort(),['\\Flagged','\\Seen']);
+    await h.imap.updateThread(h.account,remote,{status:'done',labels:[]});
+    assert.equal(h.host.where('other@bank.example'),'INBOX');assert.equal(h.host.where('a1@sam.example'),'Archive');
+    const next=await h.sync(first.cursor);
+    assert.deepEqual(next.removed,[]);
+    assert.equal([...next.threads,...next.flags].find(t=>t.id===thread.id)?.status,'done');
+    assert.equal(one(next.threads,'Statement').status,'new');
+  }finally{await h.cleanup();}
+});
+
+test('thread keys come from the root message, so a rebuilt index keeps them after the root moved folders',async()=>{
+  const h=await harness();
+  try{
+    h.host.deliver('INBOX',mail({id:'a1@sam.example',from:'sam@example.test'}));
+    h.host.deliver('INBOX',mail({id:'a2@sam.example',from:'sam@example.test',subject:'Re: Studio review',inReplyTo:'a1@sam.example',references:['a1@sam.example']}));
+    const before=one((await h.sync()).threads,'Studio review');
+    h.host.relocate('a1@sam.example','Archive');
+    h.memory.clear(h.account.id);
+    const after=one((await h.sync()).threads,'Studio review');
+    assert.equal(after.id,before.id);
+    assert.deepEqual(after.messages.map(m=>m.id),['a1@sam.example','a2@sam.example']);
+  }finally{await h.cleanup();}
+});
+
+test('explicit flag changes are always sent, even when the index already agrees',async()=>{
+  const h=await harness();
+  try{
+    h.host.deliver('INBOX',mail({id:'a1@sam.example',from:'sam@example.test'}));
+    const thread=one((await h.sync()).threads,'Studio review'),remote={remoteId:thread.remoteId,status:thread.status,labels:thread.labels};
+    await h.imap.updateThread(h.account,remote,{unread:false,bookmarked:true});
+    // Another client undoes both before Aplos syncs again.
+    h.host.setFlag('a1@sam.example','\\Seen',false);h.host.setFlag('a1@sam.example','\\Flagged',false);
+    await h.imap.updateThread(h.account,remote,{unread:false,bookmarked:true});
+    assert.deepEqual([...h.host.find('a1@sam.example')!.message.flags].sort(),['\\Flagged','\\Seen']);
+  }finally{await h.cleanup();}
+});
+
+test('Message-ID lookups match exactly, not by substring',async()=>{
+  const h=await harness();
+  try{
+    h.host.deliver('Sent Messages',mail({id:'prefixed-1@icloud.example',from:ME,subject:'Other'}),['\\Seen']);
+    assert.equal(await h.imap.findSent(h.account,'<fixed-1@icloud.example>'),undefined);
+    const draft:Draft={id:'d1',accountId:h.account.id,to:'sam@example.test',cc:'',bcc:'',subject:'Hi',html:'<p>Hi</p>',attachments:[],mode:'new',updatedAt:new Date().toISOString(),signature:false,revision:1,messageId:'<fixed-1@icloud.example>'};
+    await h.imap.send(h.account,draft);
+    assert.equal(h.host.box('Sent Messages').messages.length,2,'a look-alike ID does not stop the Sent copy');
+    h.host.deliver('INBOX',mail({id:'a1@sam.example',from:'sam@example.test'}));
+    const thread=one((await h.sync()).threads,'Studio review');
+    h.host.deliver('Archive',mail({id:'xa1@sam.example',from:'sam@example.test',subject:'Look-alike'}));
+    h.host.relocate('a1@sam.example','Junk');
+    await h.imap.updateThread(h.account,{remoteId:thread.remoteId,status:'new',labels:['INBOX']},{unread:false});
+    assert.ok(h.host.find('a1@sam.example')!.message.flags.has('\\Seen'),'the moved message is found where it went');
+    assert.ok(!h.host.find('xa1@sam.example')!.message.flags.has('\\Seen'));
+  }finally{await h.cleanup();}
+});
+
+test('a sync whose memory writes are discarded replays from the old cursor and reports the same changes',async()=>{
+  const staged=stagedMemory(),h=await harness({memory:staged.memory});
+  const sync=async(cursor:string|undefined,keep:boolean)=>{staged.begin();try{return await h.sync(cursor);}finally{if(keep)staged.commit();else staged.discard();}};
+  try{
+    h.host.deliver('INBOX',mail({id:'a1@sam.example',from:'sam@example.test'}));
+    h.host.deliver('Archive',mail({id:'b1@lee.example',from:'lee@example.test',subject:'Invoice'}),['\\Seen']);
+    const first=await sync(undefined,true);
+    const review=one(first.threads,'Studio review'),invoice=one(first.threads,'Invoice');
+    h.host.deliver('INBOX',mail({id:'a2@sam.example',from:'sam@example.test',subject:'Re: Studio review',inReplyTo:'a1@sam.example'}));
+    h.host.expunge('b1@lee.example');
+    let result:SyncResult|undefined;
+    for(const keep of [false,true]){
+      result=await sync(first.cursor,keep);
+      assert.deepEqual(result.threads.map(t=>[t.id,t.messages.map(m=>m.id)]),[[review.id,['a1@sam.example','a2@sam.example']]],`reply reported (kept: ${keep})`);
+      assert.deepEqual(result.removed,[invoice.id],`deletion reported (kept: ${keep})`);
+    }
+    // A copy found missing while changing a thread outside sync is reported by the next sync, even if that sync is replayed.
+    h.host.expunge('a2@sam.example');
+    await h.imap.updateThread(h.account,{remoteId:review.remoteId,status:'new',labels:['INBOX']},{unread:false});
+    for(const keep of [false,true]){
+      const next=await sync(result!.cursor,keep);
+      assert.deepEqual(next.threads.map(t=>[t.id,t.messages.map(m=>m.id)]),[[review.id,['a1@sam.example']]],`lost copy reported (kept: ${keep})`);
+      if(keep)result=next;
+    }
+    const quiet=await sync(result!.cursor,true);
+    assert.deepEqual([quiet.threads,quiet.removed],[[],[]]);
   }finally{await h.cleanup();}
 });
 

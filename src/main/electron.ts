@@ -152,8 +152,11 @@ function engineEvent(event:Parameters<Listener>[0]){
 async function engineInit(dataDir:string):Promise<EngineInit>{
   const init:EngineInit={dataDir,symbolTool:app.isPackaged?join(process.resourcesPath,'bin','aplos-symbols'):join(__dirname,'..','bin','aplos-symbols')};
   const keychain={available:()=>safeStorage.isEncryptionAvailable(),encrypt:(value:string)=>safeStorage.encryptString(value),decrypt:(value:Buffer)=>safeStorage.decryptString(value)};
-  try{const key=await loadDataKey(dataDir,keychain);await migrateCredentials(dataDir,keychain.decrypt,createCipher(key));init.key=key;}
-  catch(error){init.keyError=error instanceof Error?error.message:'macOS secure credential storage is unavailable.';}
+  try{init.key=await loadDataKey(dataDir,keychain);}
+  catch(error){init.keyError=error instanceof Error?error.message:'macOS secure credential storage is unavailable.';return init;}
+  // A credential file that fails to migrate only affects its own accounts, so the key is still handed over.
+  const report=(file:string,error:unknown)=>console.error(`Aplos Mail: could not re-seal ${file}: ${error instanceof Error?error.message:String(error)}`);
+  await migrateCredentials(dataDir,keychain.decrypt,createCipher(init.key),report).catch(error=>report('credentials',error));
   return init;
 }
 async function startEngine(init:EngineInit):Promise<Engine>{
@@ -163,18 +166,31 @@ async function startEngine(init:EngineInit):Promise<Engine>{
     throw new Error('Unsupported engine request.');
   });
   engine.subscribe(engineEvent);
+  let exited=false;
   child.once('exit',()=>{
+    exited=true;
+    // Before ready this also rejects `started`, so the caller of a failed start does the accounting.
     engine.fail(new Error('The mailbox stopped unexpectedly. Aplos is reopening it.'));
     if(service!==engine||closing)return;
-    service=undefined;
-    const now=Date.now();restarts.push(now);while(restarts.length&&now-restarts[0]>60_000)restarts.shift();
-    // A crash loop would hide the real problem behind endless restarts, so give up after a few.
-    if(restarts.length>3){dialog.showErrorBox('Aplos Mail stopped','The mailbox keeps stopping unexpectedly. Quit and reopen Aplos Mail.');return;}
-    void startEngine(init).then(async next=>{service=next;latestState=await next.invoke('state.get') as AppState;applyAppearance(latestState);emit({type:'state',payload:latestState});})
-      .catch(error=>dialog.showErrorBox('Aplos Mail stopped',error instanceof Error?error.message:'The mailbox could not be reopened.'));
+    service=undefined;restartEngine(init);
   });
-  await engine.started;
+  try{await engine.started;}
+  catch(error){if(!exited)child.kill();throw error;}
   return engine;
+}
+/** Replace a stopped engine. Failed starts count too, so a crash loop ends in a dialog instead of retrying forever. */
+function restartEngine(init:EngineInit,lastError?:unknown){
+  if(closing)return;
+  const now=Date.now();restarts.push(now);while(restarts.length&&now-restarts[0]>60_000)restarts.shift();
+  if(restarts.length>3){
+    const detail=lastError instanceof Error?` (${lastError.message})`:'';
+    dialog.showErrorBox('Aplos Mail stopped',`The mailbox keeps stopping unexpectedly${detail}. Quit and reopen Aplos Mail.`);return;
+  }
+  void startEngine(init).then(next=>{
+    if(closing){void next.close();return;}
+    service=next;
+    void next.invoke('state.get').then(state=>{latestState=state as AppState;applyAppearance(latestState);emit({type:'state',payload:latestState});},()=>{/* If it stopped, its exit handler restarts it. */});
+  },error=>{setTimeout(()=>restartEngine(init,error),1000);});
 }
 
 app.setName('Aplos Mail');

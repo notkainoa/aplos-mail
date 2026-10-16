@@ -1,13 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import type { Account, Thread } from '../shared/types';
 import type { MailProvider, ProviderMemory } from '../engine/provider';
-import { keySchemeFor, parseWorkflowLog, reconcileWorkflow, type WorkflowLog, type WorkflowPatch } from '../engine/workflow';
+import { applyLog, compactLog, keySchemeFor, parseWorkflowLog, publishLog, sameLog, workflowEdit, type WorkflowEdit, type WorkflowLog, type WorkflowPatch } from '../engine/workflow';
 import { generateSyncCode, normalizeSyncCode, openWorkflow, sealWorkflow, WorkflowCryptoError } from './workflow-crypto';
 import { createVault } from './vault';
 
 /** Provider memory key for the device's own ID, kept under a pseudo-account that no disconnect clears. */
 const DEVICE='aplos-device';
-const KNOWN='workflow.known',EDITED='workflow.edited';
+/** Per account: pending edits `{gen, items: threadId → WorkflowEdit}`, and `key → stamp` of entries already applied or published. */
+const EDITS='workflow.edits',APPLIED='workflow.applied';
+/** Written by the first version of device sync: the last log seen, and the IDs of edited threads. */
+const LEGACY_KNOWN='workflow.known',LEGACY_EDITED='workflow.edited';
+const MAX_EDITS=20_000;
+
+interface Edits { gen:number; items:Record<string,WorkflowEdit> }
 
 export interface WorkflowSyncOptions {
   dataDir:string;
@@ -20,15 +26,34 @@ export interface WorkflowSyncOptions {
 /**
  * Done, Later, todos, due dates and reminders, shared between devices through each account's hidden
  * "Aplos" folder. The sync code is the only key; it stays in the credential vault and never reaches
- * the host. Edits are remembered until a round has recorded them, so quitting in between loses nothing.
+ * the host. All other state lives in provider memory, whose writes during a round are saved together with
+ * the returned patches, so a round that is interrupted or discarded is simply done again.
  */
 export async function createWorkflowSync(options:WorkflowSyncOptions) {
   const vault=await createVault<string>({dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,file:'workflow-sync.enc.json'});
   const {memory}=options;
   let device=memory.get(DEVICE,'id');
   if(!device){device=randomUUID();memory.set(DEVICE,'id',device);}
-  const edited=(accountId:string)=>{try{const ids=JSON.parse(memory.get(accountId,EDITED)??'[]');return new Set<string>(Array.isArray(ids)?ids:[]);}catch{return new Set<string>();}};
-  const known=(accountId:string):WorkflowLog|undefined=>{const raw=memory.get(accountId,KNOWN);if(!raw)return;try{return parseWorkflowLog(JSON.parse(raw));}catch{return undefined;}};
+  const json=(accountId:string,key:string):unknown=>{const raw=memory.get(accountId,key);if(!raw)return;try{return JSON.parse(raw);}catch{return undefined;}};
+  const edits=(accountId:string):Edits=>{const v=json(accountId,EDITS) as Edits|undefined;return v&&typeof v.gen==='number'&&v.items&&typeof v.items==='object'?v:{gen:0,items:{}};};
+  const appliedMap=(accountId:string):Record<string,string>=>{
+    const v=json(accountId,APPLIED);if(v&&typeof v==='object')return v as Record<string,string>;
+    // Upgrading from the first version: what it had seen counts as applied, so nothing flips back once more.
+    let known:WorkflowLog|undefined;try{const raw=json(accountId,LEGACY_KNOWN);known=raw?parseWorkflowLog(raw):undefined;}catch{/* Start fresh. */}
+    return Object.fromEntries(Object.entries(known?.entries??{}).map(([k,e])=>[k,`${e.at}:${e.device}`]));
+  };
+  const clear=(accountId:string)=>{for(const key of [EDITS,APPLIED,LEGACY_KNOWN,LEGACY_EDITED])memory.set(accountId,key,undefined);};
+  /** Seal, dropping the oldest entries until the log fits what the host can store and every reader accepts. */
+  const seal=(log:WorkflowLog,code:string,now:number)=>{
+    for(;;){
+      try{return {log,data:sealWorkflow(log,code)};}
+      catch(error){
+        const count=Object.keys(log.entries).length;
+        if(!(error instanceof WorkflowCryptoError&&error.reason==='size')||count<2)throw error;
+        log=compactLog(log,now,Math.floor(count/2));
+      }
+    }
+  };
   return {
     get enabled(){return vault.get('code')!==undefined;},
     /** Turn sync on with the code from another device, or a new code for the first device. */
@@ -39,42 +64,62 @@ export async function createWorkflowSync(options:WorkflowSyncOptions) {
       return value;
     },
     code:()=>vault.get('code'),
-    hasEdits:(accountId:string)=>edited(accountId).size>0,
+    hasEdits:(accountId:string)=>Object.keys(edits(accountId).items).length>0||!!memory.get(accountId,LEGACY_EDITED),
     async disable(accountIds:string[]) {
       await vault.delete('code');
-      for(const id of accountIds){memory.set(id,KNOWN,undefined);memory.set(id,EDITED,undefined);}
-    },
-    /** Remember threads whose workflow fields the user changed, for the next round of their account. */
-    noteEdits(threads:Array<Pick<Thread,'id'|'accountId'>>) {
-      if(vault.get('code')===undefined)return;
-      const byAccount=new Map<string,string[]>();
-      for(const t of threads)byAccount.set(t.accountId,[...(byAccount.get(t.accountId)??[]),t.id]);
-      for(const [accountId,ids] of byAccount){const set=edited(accountId);for(const id of ids)set.add(id);memory.set(accountId,EDITED,JSON.stringify([...set].slice(-20_000)));}
+      for(const id of accountIds)clear(id);
     },
     /**
-     * Read the account's synced log, merge this device's edits into it, write it back when it changed,
-     * and return the patches other devices' edits imply for local threads.
+     * Record the user's edits, given the threads as they are right after the edit. Synchronous and
+     * memory-only so it is saved in the same transaction as the edit itself.
+     */
+    noteEdits(threads:Thread[]) {
+      if(vault.get('code')===undefined)return;
+      const at=options.now().getTime(),byAccount=new Map<string,Thread[]>();
+      for(const t of threads)byAccount.set(t.accountId,[...(byAccount.get(t.accountId)??[]),t]);
+      for(const [accountId,list] of byAccount){
+        const state=edits(accountId);
+        for(const t of list){delete state.items[t.id];state.items[t.id]=workflowEdit(t,at,++state.gen);}
+        const ids=Object.keys(state.items);
+        for(const id of ids.slice(0,Math.max(0,ids.length-MAX_EDITS)))delete state.items[id];
+        memory.set(accountId,EDITS,JSON.stringify(state));
+      }
+    },
+    /**
+     * Read every copy of the account's synced log, merge them with this device's edits, write the result
+     * back when it differs (replacing exactly the copies it merged), and return the patches the winning
+     * entries imply for local threads. Apply the patches with no await in between: they are computed from
+     * `threads()` after the last await. Memory is only written after that point too.
      */
     async round(account:Account, provider:MailProvider, threads:()=>Thread[]):Promise<WorkflowPatch[]> {
       const code=vault.get('code');
       if(!code||!provider.readAppData||!provider.writeAppData)return [];
-      const pending=edited(account.id);
-      const blob=await provider.readAppData(account);
-      let remote:WorkflowLog|undefined,replace=false;
-      if(blob!==undefined){
-        try{remote=openWorkflow(blob,code);}
+      const scheme=keySchemeFor(account.provider),now=options.now().getTime(),started=edits(account.id),applied=appliedMap(account.id);
+      const pending=Object.values(started.items),legacy=json(account.id,LEGACY_EDITED);
+      if(Array.isArray(legacy)){const ids=new Set(legacy);for(const t of threads())if(t.accountId===account.id&&ids.has(t.id)&&!started.items[t.id])pending.push(workflowEdit(t,now,-1));}
+      const records=await provider.readAppData(account);
+      const logs:WorkflowLog[]=[],merged:string[]=[],damaged:string[]=[];let unreadable=false;
+      for(const record of records){
+        try{logs.push(openWorkflow(record.data,code));merged.push(record.id);}
         catch(error){
-          // Damaged data is replaced; a different code or a newer format belongs to another device and is left alone.
-          if(error instanceof WorkflowCryptoError&&error.reason==='damaged')replace=true;else throw error;
+          // Damaged copies are replaced; a different code or a newer format belongs to another device and stops the round; a copy too large to read is left alone.
+          if(!(error instanceof WorkflowCryptoError))throw error;
+          if(error.reason==='damaged')damaged.push(record.id);else if(error.reason==='size')unreadable=true;else throw error;
         }
       }
-      const all=threads().filter(t=>t.accountId===account.id);
-      const result=reconcileWorkflow({known:known(account.id),remote,edited:all.filter(t=>pending.has(t.id)),threads:all,device:device!,now:options.now().getTime(),scheme:keySchemeFor(account.provider)});
-      if(result.write||replace)await provider.writeAppData(account,sealWorkflow(result.log,code));
-      memory.set(account.id,KNOWN,JSON.stringify(result.log));
-      // Edits made while this round ran stay queued for the next one.
-      const left=edited(account.id);for(const id of pending)left.delete(id);
-      memory.set(account.id,EDITED,left.size?JSON.stringify([...left]):undefined);
+      const mine=(list:Thread[])=>list.filter(t=>t.accountId===account.id);
+      const built=publishLog({remotes:logs,edits:pending,applied,threads:mine(threads()),seed:!logs.length&&!unreadable,device:device!,now,scheme});
+      let log=built.log;
+      const write=damaged.length>0||(logs.length===1?!sameLog(log,logs[0]):logs.length>1||Object.keys(log.entries).length>0);
+      if(write){const sealed=seal(log,code,now);log=sealed.log;await provider.writeAppData(account,sealed.data,[...merged,...damaged]);}
+      // Everything below runs without awaiting, so it sees edits made during the round and saves with the patches.
+      if(vault.get('code')!==code)return [];
+      const current=edits(account.id),skip=new Set<string>();let acked=0;
+      for(const [id,edit] of Object.entries(current.items)){if(started.items[id]?.gen===edit.gen){delete current.items[id];acked++;}else skip.add(id);}
+      const result=applyLog(log,mine(threads()),applied,{scheme,skip,own:built.own}),marks=JSON.stringify(result.applied);
+      if(acked)memory.set(account.id,EDITS,JSON.stringify(current));
+      if(memory.get(account.id,APPLIED)!==marks)memory.set(account.id,APPLIED,marks);
+      if(legacy!==undefined||memory.get(account.id,LEGACY_KNOWN)!==undefined){memory.set(account.id,LEGACY_KNOWN,undefined);memory.set(account.id,LEGACY_EDITED,undefined);}
       return result.patches;
     },
   };

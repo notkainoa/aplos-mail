@@ -5,7 +5,8 @@ export interface IcalComponent { name:string; props:IcalProp[]; components:IcalC
 /** `iso` is `YYYY-MM-DD` for dates and an ISO UTC string for date-times; `ms` is the UTC instant (midnight UTC for dates). */
 export interface IcalTime { iso:string; allDay:boolean; ms:number }
 export interface EventFields { title:string; location:string; description:string; guests:string[]; allDay:boolean; start:string; end:string }
-export interface ParsedEvent { uid:string; recurrenceId?:string; title:string; location:string; description:string; guests:string[]; start:IcalTime; end:IcalTime; cancelled:boolean }
+/** `recurring` marks one occurrence of a repeating event; `scheduling` marks a meeting the server would email attendees about. */
+export interface ParsedEvent { uid:string; recurrenceId?:string; recurring:boolean; scheduling:boolean; title:string; location:string; description:string; guests:string[]; start:IcalTime; end:IcalTime; cancelled:boolean }
 
 const day=864e5;
 
@@ -106,36 +107,46 @@ function ruleDay(year:number,month:number,rule:Record<string,string>,fallback:nu
   const matches=Array.from({length},(_,i)=>i+1).filter(d=>weekday(d)===target&&(!monthDays.length||monthDays.includes(d)));
   const n=Number(byDay[1]??1);return n<0?matches[matches.length+n]:matches[n-1];
 }
-/** Offset for a wall-clock time from a VTIMEZONE's STANDARD/DAYLIGHT observances (yearly BYMONTH/BYDAY rules and RDATEs). */
-function vtimezoneOffset(vtz:IcalComponent,wall:number):number|undefined {
-  const year=new Date(wall).getUTCFullYear();let best:{onset:number;offset:number}|undefined,first:number|undefined;
+/**
+ * UTC offset at the instant `ms` from a VTIMEZONE's STANDARD/DAYLIGHT observances (yearly BYMONTH/BYDAY rules and RDATEs).
+ * Observance onsets are local times in the offset in force before the change (TZOFFSETFROM).
+ */
+function vtimezoneOffset(vtz:IcalComponent,ms:number):number|undefined {
+  const year=new Date(ms).getUTCFullYear();let best:{at:number;offset:number}|undefined,earliest:{at:number;offset:number}|undefined;
   for(const obs of vtz.components.filter(c=>c.name==='STANDARD'||c.name==='DAYLIGHT')){
-    const start=parseWall(prop(obs,'DTSTART')?.value??''),offset=parseOffset(prop(obs,'TZOFFSETTO')?.value);
-    if(start===undefined||offset===undefined)continue;
-    first??=offset;
+    const start=parseWall(prop(obs,'DTSTART')?.value??''),to=parseOffset(prop(obs,'TZOFFSETTO')?.value),from=parseOffset(prop(obs,'TZOFFSETFROM')?.value)??to;
+    if(start===undefined||to===undefined||from===undefined)continue;
+    if(!earliest||start-from<earliest.at)earliest={at:start-from,offset:from};
     const onsets=[start];
     const rrule=prop(obs,'RRULE');
     if(rrule){
       const rule=Object.fromEntries(rrule.value.split(';').map(part=>part.split('=') as [string,string]).map(([k,v])=>[k.toUpperCase(),v??'']));
       const until=rule.UNTIL?parseWall(rule.UNTIL):undefined,s=new Date(start);
-      if(rule.FREQ==='YEARLY')for(const y of [year-1,year]){
+      if(rule.FREQ==='YEARLY')for(const y of [year-1,year,year+1]){
         const month=rule.BYMONTH?Number(rule.BYMONTH.split(',')[0])-1:s.getUTCMonth(),d=ruleDay(y,month,rule,s.getUTCDate());
         if(d!==undefined)onsets.push(Date.UTC(y,month,d,s.getUTCHours(),s.getUTCMinutes(),s.getUTCSeconds()));
       }
       if(until!==undefined)onsets.splice(0,onsets.length,...onsets.filter(t=>t<=until));
     }
     for(const r of obs.props.filter(p=>p.name==='RDATE'))for(const v of r.value.split(',')){const t=parseWall(v);if(t!==undefined)onsets.push(t);}
-    for(const onset of onsets)if(onset>=start&&onset<=wall&&(!best||onset>best.onset))best={onset,offset};
+    for(const onset of onsets){const at=onset-from;if(onset>=start&&at<=ms&&(!best||at>best.at))best={at,offset:to};}
   }
-  return best?.offset??first;
+  return best?.offset??earliest?.offset;
+}
+
+/** An offset-at-instant function for a TZID: the IANA zone it names, else its VTIMEZONE. */
+function offsetFor(tzid:string|undefined,zones:Map<string,IcalComponent>):((ms:number)=>number)|undefined {
+  if(!tzid)return;
+  const iana=ianaZone(tzid);
+  if(iana)return ms=>zoneOffset(ms,iana);
+  const vtz=zones.get(tzid);
+  if(vtz&&vtimezoneOffset(vtz,0)!==undefined)return ms=>vtimezoneOffset(vtz,ms)!;
 }
 
 /** Resolves a wall-clock time to UTC. Unknown TZIDs without a usable VTIMEZONE are treated as floating (this computer's zone). */
 function toUtc(wall:number,tzid:string|undefined,zones:Map<string,IcalComponent>):number {
-  const iana=tzid?ianaZone(tzid):undefined;
-  if(iana)return wallToUtc(wall,ms=>zoneOffset(ms,iana));
-  const vtz=tzid?zones.get(tzid):undefined,offset=vtz&&vtimezoneOffset(vtz,wall);
-  if(offset!==undefined)return wall-offset;
+  const offsetAt=offsetFor(tzid,zones);
+  if(offsetAt)return wallToUtc(wall,offsetAt);
   const d=new Date(wall);return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),d.getUTCHours(),d.getUTCMinutes(),d.getUTCSeconds()).getTime();
 }
 
@@ -173,15 +184,24 @@ function mailto(p:IcalProp):string {
   try{return decodeURIComponent(value.slice(7)).trim();}catch{return value.slice(7).trim();}
 }
 
+/**
+ * A scheduling object (RFC 6638): the server sends invitations or cancellations when it changes. Attendees marked
+ * SCHEDULE-AGENT=CLIENT without an ORGANIZER are the plain guest lists Aplos itself writes.
+ */
+export const isScheduling=(vevent:IcalComponent)=>Boolean(prop(vevent,'ORGANIZER'))||vevent.props.some(p=>p.name==='ATTENDEE'&&(p.params['SCHEDULE-AGENT']??'').toUpperCase()!=='CLIENT');
+
 export function readEvents(data:string):ParsedEvent[] {
   const out:ParsedEvent[]=[];
   for(const calendar of parseComponents(data).filter(c=>c.name==='VCALENDAR')){
-    const zones=zonesOf(calendar);
-    for(const vevent of calendar.components.filter(c=>c.name==='VEVENT')){
+    const zones=zonesOf(calendar),vevents=calendar.components.filter(c=>c.name==='VEVENT');
+    const uid=(v:IcalComponent)=>prop(v,'UID')?.value.trim()??'';
+    for(const vevent of vevents){
       const {start,end}=eventTimes(vevent,zones);
       if(!start||!end)continue;
       const guests=[...new Set(vevent.props.filter(p=>p.name==='ATTENDEE').map(mailto).filter(Boolean))];
-      out.push({uid:prop(vevent,'UID')?.value.trim()??'',recurrenceId:parseTime(prop(vevent,'RECURRENCE-ID'),zones)?.iso,title:text(vevent,'SUMMARY'),location:text(vevent,'LOCATION'),description:text(vevent,'DESCRIPTION'),guests,start,end,cancelled:prop(vevent,'STATUS')?.value.trim().toUpperCase()==='CANCELLED'});
+      // Expanded CalDAV results may leave RECURRENCE-ID off the first occurrence (RFC 4791 section 9.6.5), so siblings count too.
+      const recurring=['RECURRENCE-ID','RRULE','RDATE'].some(name=>prop(vevent,name))||vevents.some(v=>v!==vevent&&uid(v)===uid(vevent));
+      out.push({uid:uid(vevent),recurrenceId:parseTime(prop(vevent,'RECURRENCE-ID'),zones)?.iso,recurring,scheduling:isScheduling(vevent),title:text(vevent,'SUMMARY'),location:text(vevent,'LOCATION'),description:text(vevent,'DESCRIPTION'),guests,start,end,cancelled:prop(vevent,'STATUS')?.value.trim().toUpperCase()==='CANCELLED'});
     }
   }
   return out;
@@ -189,12 +209,14 @@ export function readEvents(data:string):ParsedEvent[] {
 
 // ---- writing ----
 
-function timeProp(name:string,value:string,allDay:boolean,tzid?:string):IcalProp {
+/** Writes in the event's own zone (IANA or its VTIMEZONE) so a repeating event keeps its local time across DST; otherwise UTC. */
+function timeProp(name:string,value:string,allDay:boolean,tzid?:string,zones:Map<string,IcalComponent>=new Map()):IcalProp {
   if(allDay)return makeProp(name,value.slice(0,10).replace(/-/g,''),{VALUE:'DATE'});
-  const ms=Date.parse(value),zone=tzid?ianaZone(tzid):undefined;
-  return zone?makeProp(name,compact(ms+zoneOffset(ms,zone)),{TZID:tzid!}):makeProp(name,utcStamp(ms));
+  const ms=Date.parse(value),offsetAt=offsetFor(tzid,zones);
+  return offsetAt?makeProp(name,compact(ms+offsetAt(ms)),{TZID:tzid!}):makeProp(name,utcStamp(ms));
 }
-const attendee=(email:string)=>makeProp('ATTENDEE',`mailto:${email}`);
+// Guests are written without an ORGANIZER and with SCHEDULE-AGENT=CLIENT so the server never emails them (RFC 6638 section 7.1).
+const attendee=(email:string)=>makeProp('ATTENDEE',`mailto:${email}`,{'SCHEDULE-AGENT':'CLIENT'});
 
 export function createCalendar(fields:EventFields&{uid:string},now:Date):string {
   const props=[makeProp('UID',fields.uid),makeProp('DTSTAMP',utcStamp(now.getTime())),timeProp('DTSTART',fields.start,fields.allDay),timeProp('DTEND',fields.end,fields.allDay),makeProp('SUMMARY',escapeText(fields.title))];
@@ -220,7 +242,7 @@ export function applyFields(vevent:IcalComponent,fields:EventFields,now:Date,zon
   if(prop(vevent,'LAST-MODIFIED'))out.push(makeProp('LAST-MODIFIED',stamp));
   const sequence=prop(vevent,'SEQUENCE');
   if(sequence)out.push(makeProp('SEQUENCE',String((parseInt(sequence.value,10)||0)+1)));
-  if(timesChanged(vevent,fields,zones)){const tzid=prop(vevent,'DTSTART')?.params.TZID;out.push(timeProp('DTSTART',fields.start,fields.allDay,tzid),timeProp('DTEND',fields.end,fields.allDay,prop(vevent,'DTEND')?.params.TZID??tzid));}
+  if(timesChanged(vevent,fields,zones)){const tzid=prop(vevent,'DTSTART')?.params.TZID;out.push(timeProp('DTSTART',fields.start,fields.allDay,tzid,zones),timeProp('DTEND',fields.end,fields.allDay,prop(vevent,'DTEND')?.params.TZID??tzid,zones));}
   else out.push(...vevent.props.filter(p=>p.name==='DTSTART'||p.name==='DTEND'||p.name==='DURATION'));
   for(const [name,value] of [['SUMMARY',fields.title],['LOCATION',fields.location],['DESCRIPTION',fields.description]] as const){
     const old=prop(vevent,name);

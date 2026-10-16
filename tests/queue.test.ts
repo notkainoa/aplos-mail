@@ -112,10 +112,16 @@ test('an uncertain send is confirmed from Sent mail; an unconfirmed one is never
     let state=await get(h);
     assert.equal(h.sends.length,1);assert.match(state.drafts.find(d=>d.id==='d1')!.sendError!,/could not confirm/);
     assert.ok(/^<[0-9a-f-]+@example\.test>$/.test(h.sends[0].messageId!),'a stable Message-ID on the sender domain');
-    // The user retries while the outcome is still unknown: Sent is checked first, then the same Message-ID goes out again.
+    // A plain retry while the outcome is unknown checks Sent and stops: not finding it does not prove it was lost.
     await h.service.invoke('draft.save',{draft:{...draft('d1'),subject:'Edited after the failure',revision:state.drafts.find(d=>d.id==='d1')!.revision}});
     await h.service.invoke('draft.send',{id:'d1'});
+    await settle(async()=>{const d=(await get(h)).drafts.find(d=>d.id==='d1');return !!d?.sendError&&!d.pendingSendAt;});
+    assert.equal(h.sends.length,1,'an unresolved attempt is never resubmitted by an ordinary retry');
+    assert.match((await get(h)).drafts.find(d=>d.id==='d1')!.sendError!,/Send anyway/);
+    // Only the explicit duplicate-risk choice submits again, with the same Message-ID.
+    await h.service.invoke('draft.send',{id:'d1',resend:true});
     await settle(async()=>h.sends.length===2&&!!(await get(h)).drafts.find(d=>d.id==='d1')?.sendError&&!(await get(h)).drafts.find(d=>d.id==='d1')?.pendingSendAt);
+    assert.equal((await get(h)).drafts.find(d=>d.id==='d1')!.resendConfirmed,undefined,'the choice covers one attempt only');
     assert.equal(h.sends[1].messageId,h.sends[0].messageId,'editing an unconfirmed draft keeps the Message-ID of the attempt');
     // Now Gmail has it: the next retry finds it in Sent and does not submit again.
     h.control.sent.set(h.sends[0].messageId!,{id:'m',threadId:'found-thread'});

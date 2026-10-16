@@ -140,11 +140,15 @@ test('Gmail keeps workflow data in one message under a hidden Aplos label that s
     }
     if(path==='/messages')return json({messages:[...messages.values()].filter(m=>m.labelIds.includes(url.searchParams.get('labelIds')!)&&!m.labelIds.includes('TRASH')).map(m=>({id:m.id,threadId:m.threadId}))});
     if((match=path.match(/^\/messages\/(\w+)\/trash$/))){const m=messages.get(match[1])!;m.labelIds.push('TRASH');record('labelsAdded',m);return json({id:m.id});}
-    if((match=path.match(/^\/messages\/(\w+)$/))){const m=messages.get(match[1]);if(!m)return json({},404);assert.equal(url.searchParams.get('format'),'raw');return json({id:m.id,threadId:m.threadId,labelIds:m.labelIds,internalDate:m.internalDate,raw:m.raw});}
+    if((match=path.match(/^\/messages\/(\w+)$/))){
+      const m=messages.get(match[1]),format=url.searchParams.get('format');if(!m)return json({},404);
+      if(format==='metadata'){const wanted=url.searchParams.getAll('metadataHeaders').map(h=>h.toLowerCase());return json({id:m.id,threadId:m.threadId,labelIds:m.labelIds,internalDate:m.internalDate,payload:{headers:m.headers.filter(h=>wanted.includes(h.name.toLowerCase()))}});}
+      assert.equal(format,'raw');return json({id:m.id,threadId:m.threadId,labelIds:m.labelIds,internalDate:m.internalDate,raw:m.raw});
+    }
     if(path==='/profile')return json({historyId:String(historyId)});
     if(path==='/history'){const since=Number(url.searchParams.get('startHistoryId'));return json({history:history.filter(h=>Number(h.id)>since),historyId:String(historyId)});}
     if(path==='/threads'){
-      const q=url.searchParams.get('q')??'',hidden=q.includes('-label:Aplos')?labels.find(l=>l.name==='Aplos')?.id:undefined;
+      const q=url.searchParams.get('q')??'',hidden=q.includes('-label:aplos-mail-data')?labels.find(l=>l.name==='Aplos Mail Data')?.id:undefined;
       return json({threads:[...new Set([...messages.values()].map(m=>m.threadId))].filter(id=>!hidden||!threadOf(id).messages.some(m=>m.labelIds.includes(hidden))).map(id=>({id}))});
     }
     if((match=path.match(/^\/threads\/(\w+)$/)))return json(threadOf(match[1]));
@@ -154,24 +158,33 @@ test('Gmail keeps workflow data in one message under a hidden Aplos label that s
   const fresh=await createGoogle({dataDir:dir,clientId:'own-client',encrypt,decrypt,fetch:fetcher});
   const has=(id:string)=>id===`${account.id}:t1`;
   try{
-    assert.equal(await google.readAppData(account),undefined);
+    assert.deepEqual(await google.readAppData(account),[]);
     assert.ok(!requests.some(r=>r.method==='POST'),'reading creates nothing');
     const first=await google.sync(account,undefined,{has:()=>false});assert.deepEqual(first.threads.map(t=>t.remoteId),['t1']);
-    await google.writeAppData(account,'APLOS-WF1.first');
-    await google.writeAppData(account,'second ünïcode\r\n=3D');
-    const label=labels.find(l=>l.name==='Aplos')!;
+    await google.writeAppData(account,'APLOS-WF1.first',[]);
+    assert.deepEqual(await google.readAppData(account),[{id:'app2',data:'APLOS-WF1.first'}]);
+    await google.writeAppData(account,'second ünïcode\r\n=3D',['app2']);
+    const label=labels.find(l=>l.name==='Aplos Mail Data')!;
     assert.deepEqual([label.labelListVisibility,label.messageListVisibility],['labelHide','hide']);
     assert.equal(labels.filter(l=>l.type==='user').length,1,'the label is created once');
     assert.ok(requests.filter(r=>r.url.pathname.endsWith('/insert')).every(r=>JSON.stringify(r.body.labelIds)===JSON.stringify([label.id])),'inserted without INBOX or UNREAD');
-    assert.deepEqual([...messages.values()].filter(m=>m.labelIds.includes(label.id)).map(m=>[m.id,m.labelIds.includes('TRASH')]),[['app2',true],['app3',false]],'older copy is trashed');
+    assert.deepEqual([...messages.values()].filter(m=>m.labelIds.includes(label.id)).map(m=>[m.id,m.labelIds.includes('TRASH')]),[['app2',true],['app3',false]],'the copy that was read and merged is trashed');
     assert.ok(!requests.some(r=>r.method==='DELETE'),'gmail.modify cannot delete');
-    assert.equal(await google.readAppData(account),'second ünïcode\r\n=3D');
-    assert.equal(await fresh.readAppData(account),'second ünïcode\r\n=3D');
+    assert.deepEqual(await fresh.readAppData(account),[{id:'app3',data:'second ünïcode\r\n=3D'}]);
+    // Another device that read app2 writes too: it may replace only app2, so app3 survives and both are read, newest first.
+    await fresh.writeAppData(account,'third',['app2']);
+    messages.set('user1',{id:'user1',threadId:'ut1',labelIds:[label.id],internalDate:String(Date.now()+99),raw:Buffer.from('Subject: Mine\r\n\r\nmy own mail').toString('base64url'),text:'my own mail',headers:[{name:'Subject',value:'Mine'}]});
+    assert.deepEqual(await google.readAppData(account),[{id:'app4',data:'third'},{id:'app3',data:'second ünïcode\r\n=3D'}],'mail the user filed under a same-named label is not app data');
+    assert.ok(!requests.some(r=>r.url.pathname.endsWith('/user1')&&r.url.searchParams.get('format')==='raw'),'and is never downloaded');
+    await google.writeAppData(account,'merged',['app4','app3']);
+    assert.deepEqual([...messages.values()].filter(m=>m.labelIds.includes(label.id)&&!m.labelIds.includes('TRASH')).map(m=>m.id),['user1','app6'],'only the merged copies are trashed');
+    assert.deepEqual(await google.readAppData(account),[{id:'app6',data:'merged'}]);
+    messages.delete('user1');// The rest checks how sync treats app data, not mail the user filed themselves.
     const next=await google.sync(account,first.cursor,{has});assert.deepEqual([next.threads,next.flags,next.removed],[[],[],[]]);
     // Without the label ID cached, the marker header still keeps the app-data threads out.
     const other=await createGoogle({dataDir:dir,clientId:'own-client',encrypt,decrypt,fetch:fetcher});
     try{const replay=await other.sync(account,first.cursor,{has});assert.deepEqual([replay.threads,replay.removed],[[],[]]);assert.deepEqual((await other.search(account,'aplos')).map(t=>t.remoteId),['t1'],'search skips app-data threads');}finally{other.close();}
     const window=await google.sync(account,undefined,{has:()=>false});assert.deepEqual(window.threads.map(t=>t.remoteId),['t1']);
-    assert.equal(requests.filter(r=>r.url.pathname.endsWith('/threads')).at(-1)!.url.searchParams.get('q'),'-label:Aplos');
+    assert.equal(requests.filter(r=>r.url.pathname.endsWith('/threads')).at(-1)!.url.searchParams.get('q'),'-label:aplos-mail-data');
   }finally{google.close();fresh.close();await rm(dir,{recursive:true,force:true});}
 });

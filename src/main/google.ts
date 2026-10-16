@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import nodemailer from 'nodemailer';
 import { simpleParser } from 'mailparser';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
-import { ProviderError, type ConnectRequest, type MailProvider, type ProviderCapabilities, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import { ProviderError, type AppDataRecord, type ConnectRequest, type MailProvider, type ProviderCapabilities, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
 
 export interface GoogleOptions {
   dataDir:string; encrypt?:(value:string)=>Buffer; decrypt?:(value:Buffer)=>string;
@@ -26,7 +26,8 @@ const SEARCH_THREADS=100;
 /** History pages to follow before a fresh window is cheaper than replaying changes. */
 const MAX_HISTORY_PAGES=20;
 /** App data is one message under a hidden user label, marked by a header so sync can recognise it without the label ID. */
-const APP_LABEL='Aplos',APP_HEADER='X-Aplos-Data',APP_FILE='aplos-data.txt';
+/** Named so it cannot be a label the user made; Gmail search spells spaces as hyphens. */
+const APP_LABEL='Aplos Mail Data',APP_QUERY='-label:aplos-mail-data',APP_HEADER='X-Aplos-Data',APP_FILE='aplos-data.txt';
 const MAX_APP_DATA=3_000_000;
 export function labelStatus(labels:string[]):ThreadFlags['status'] {
   return labels.includes('TRASH')?'trash':labels.includes('SPAM')?'spam':labels.includes('INBOX')?'new':'done';
@@ -130,7 +131,7 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
     const ids:string[]=[];let next:string|undefined;
     do {
       const url=new URL(`${gmail}/threads`);url.searchParams.set('maxResults',String(Math.min(500,limit-ids.length)));url.searchParams.set('includeSpamTrash','true');
-      url.searchParams.set('q',query??`-label:${APP_LABEL}`);if(next)url.searchParams.set('pageToken',next);
+      url.searchParams.set('q',query??APP_QUERY);if(next)url.searchParams.set('pageToken',next);
       const page=await api(account,url.toString());
       for(const row of Array.isArray(page.threads)?page.threads:[])if(typeof row.id==='string')ids.push(row.id);
       next=typeof page.nextPageToken==='string'?page.nextPageToken:undefined;
@@ -203,7 +204,7 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
     });
     return {threads,flags:updates,removed,cursor:latest,reset:false};
   }
-  /** The hidden "Aplos" label's ID, created hidden from the label list and message list when asked. */
+  /** The hidden "Aplos Mail Data" label's ID, created hidden from the label list and message list when asked. */
   async function appLabel(account:Account,create:boolean):Promise<string|undefined> {
     const cached=appLabels.get(account.id);if(cached)return cached;
     const find=async()=>((await api(account,`${gmail}/labels`)).labels??[]).find((l:Json)=>l.type==='user'&&String(l.name).toLowerCase()===APP_LABEL.toLowerCase())?.id as string|undefined;
@@ -358,21 +359,24 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
       return {...event,...eventModel(raw,account,event.calendarId||'primary'),id:event.id};
     },
     async deleteEvent(account:Account,event:CalendarEvent) {if(!event.remoteId)throw new Error('This event has no Google identifier.');await api(account,`${calendar}/calendars/${enc(event.calendarId)}/events/${enc(event.remoteId)}?sendUpdates=none`,'DELETE');},
-    async readAppData(account:Account):Promise<string|undefined> {
+    async readAppData(account:Account):Promise<AppDataRecord[]> {
       return withAppLabel(account,false,async label=>{
-        if(!label)return undefined;
-        // Normally one message; a write interrupted before trashing leaves more, and the newest wins.
-        const ids=(await appMessages(account,label)).slice(0,5);
-        const rows=(await each(ids,id=>api(account,`${gmail}/messages/${enc(id)}?format=raw`))).filter((r):r is Json=>typeof r?.raw==='string');
-        for(const row of rows.sort((a,b)=>Number(b.internalDate??0)-Number(a.internalDate??0))){
+        if(!label)return [];
+        // Normally one message; concurrent writers or an interrupted trash leave more, and the caller merges them all.
+        // Metadata first, so mail the user filed under a label of the same name is never downloaded or touched.
+        const ids=await appMessages(account,label),meta=await each(ids,id=>api(account,`${gmail}/messages/${enc(id)}?format=metadata&metadataHeaders=${APP_HEADER}`));
+        const owned=ids.filter((_,i)=>header(meta[i]?.payload,APP_HEADER));
+        const rows=await each(owned,id=>api(account,`${gmail}/messages/${enc(id)}?format=raw`)),records:{id:string;data:string;at:number}[]=[];
+        for(const [i,row] of rows.entries()){
+          if(typeof row?.raw!=='string')continue;
           const mail=await simpleParser(Buffer.from(row.raw,'base64url'),{skipTextToHtml:true,skipImageLinks:true,skipTextLinks:true});
           const file=mail.headers.has(APP_HEADER.toLowerCase())?mail.attachments.find(a=>a.filename===APP_FILE):undefined;
-          if(file)return file.content.toString('utf8');
+          if(file)records.push({id:owned[i],data:file.content.toString('utf8'),at:Number(row.internalDate??0)});
         }
-        return undefined;
+        return records.sort((a,b)=>b.at-a.at).map(({id,data})=>({id,data}));
       });
     },
-    async writeAppData(account:Account,data:string) {
+    async writeAppData(account:Account,data:string,replaces:string[]) {
       if(Buffer.byteLength(data)>MAX_APP_DATA)throw new Error('Workflow data is too large to sync through Gmail.');
       const transport=nodemailer.createTransport({streamTransport:true,buffer:true,newline:'windows'});
       const info=await transport.sendMail({from:{name:'Aplos Mail',address:account.email},to:account.email,subject:'Aplos sync data — do not edit',text:'Aplos Mail keeps encrypted workflow data for this account here. Deleting this message resets it.',
@@ -382,9 +386,9 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
       await withAppLabel(account,true,async label=>{
         // Only the label: no INBOX or UNREAD, so the message never shows up as new mail.
         const created=await api(account,`${gmail}/messages/insert?internalDateSource=receivedTime`,'POST',{raw,labelIds:[label!]});
-        const old=(await appMessages(account,label!)).filter(id=>id!==created.id);
-        // gmail.modify cannot delete messages, so older copies go to Trash. The newest copy wins on read, so a failed trash is retried next write.
-        try{await each(old,id=>api(account,`${gmail}/messages/${enc(id)}/trash`,'POST',{}));}catch{/* See above. */}
+        // Only the copies the caller merged: another device's copy written meanwhile must survive until it is read.
+        // gmail.modify cannot delete messages, so they go to Trash; a failed trash leaves a copy the next round merges and replaces again.
+        try{await each(replaces.filter(id=>id!==created.id),id=>api(account,`${gmail}/messages/${enc(id)}/trash`,'POST',{}));}catch{/* See above. */}
       });
     },
     close(){cancelConnect?.();server?.close();}

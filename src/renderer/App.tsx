@@ -81,9 +81,10 @@ export function App(){
  function notify(text:string,undoable=false){toast.show({text,action:undoable?{label:'Undo',shortcut:'Z',run:()=>undoRef.current()}:undefined});}
  function fail(error:unknown){toast.show({text:error instanceof Error?error.message:String(error),tone:'error'});}
  // The window keeps its own copy of the mailbox: the newest threads first, older ones in pages, then changes as they happen.
- const loadSeq=useRef(0);const refreshRef=useRef<()=>Promise<void>>(async()=>{});
- const live=useMemo(()=>createLiveState({update:setState,resync:()=>void refreshRef.current()}),[]);
- const refresh=useCallback(async()=>{
+ const loadSeq=useRef(0);const refreshRef=useRef<(rethrow?:boolean)=>Promise<void>>(async()=>{});
+ // A resync rethrows so the live copy retries with backoff instead of staying behind.
+ const live=useMemo(()=>createLiveState({update:setState,resync:()=>refreshRef.current(true)}),[]);
+ const refresh=useCallback(async(rethrow=false)=>{
   const seq=++loadSeq.current;
   try{
    const first=await invoke<AppState>('state.get',popoutDraft||popoutThread?{}:{threadLimit:400});if(seq!==loadSeq.current)return;
@@ -94,7 +95,7 @@ export function App(){
     if(seq!==loadSeq.current||!live.page(page))break;
     next=page.next;
    }
-  }catch(e){if(seq===loadSeq.current)setFatal((e as Error).message);}
+  }catch(e){if(seq===loadSeq.current)setFatal((e as Error).message);if(rethrow)throw e;}
  },[live]);
  refreshRef.current=refresh;
  useEffect(()=>{

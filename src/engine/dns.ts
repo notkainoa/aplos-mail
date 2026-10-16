@@ -1,6 +1,6 @@
 /** DNS lookups over HTTPS (JSON API), so they work wherever `fetch` does: desktop, browser preview and mobile. */
 
-export type DnsType='MX'|'TXT'|'CNAME'|'A';
+export type DnsType='MX'|'TXT'|'CNAME'|'A'|'AAAA';
 export interface DnsOptions {
   fetch?:typeof fetch;
   signal?:AbortSignal;
@@ -10,7 +10,7 @@ export interface DnsOptions {
 
 /** Tried in order; the next one is used only when the previous could not answer. */
 export const DOH_RESOLVERS=['https://cloudflare-dns.com/dns-query','https://dns.google/resolve'];
-const TYPE_CODES:Record<DnsType,number>={A:1,CNAME:5,MX:15,TXT:16};
+const TYPE_CODES:Record<DnsType,number>={A:1,CNAME:5,MX:15,TXT:16,AAAA:28};
 
 interface DohAnswer { name?:string; type?:number; data?:string; TTL?:number }
 interface DohResponse { Status?:number; Answer?:DohAnswer[] }
@@ -84,9 +84,21 @@ export async function resolveDns(name:string, type:DnsType, options:DnsOptions={
   return undefined;
 }
 
-/** Splits `k=v; k=v` tag lists (DKIM, DMARC, MTA-STS) into a map with lowercase keys. */
+/** Every `k=v` pair of a tag list in order, keys lowercased, repeats kept. */
+export function tagList(record:string):[string,string][] {
+  return record.split(';').flatMap(part=>{const at=part.indexOf('='),key=at<0?'':part.slice(0,at).trim().toLowerCase();return key?[[key,part.slice(at+1).trim()] as [string,string]]:[];});
+}
+
+/** Keys that appear more than once; DKIM and DMARC treat such records as invalid. */
+export function duplicateTags(record:string):string[] {
+  const seen=new Set<string>(),dupes=new Set<string>();
+  for(const [key] of tagList(record))(seen.has(key)?dupes:seen).add(key);
+  return [...dupes];
+}
+
+/** Splits `k=v; k=v` tag lists (DKIM, DMARC, MTA-STS) into a map with lowercase keys; the first of repeated keys wins. */
 export function parseTags(record:string):Record<string,string> {
   const tags:Record<string,string>={};
-  for(const part of record.split(';')){const at=part.indexOf('=');if(at<0)continue;const key=part.slice(0,at).trim().toLowerCase();if(key&&!(key in tags))tags[key]=part.slice(at+1).trim();}
+  for(const [key,value] of tagList(record))if(!(key in tags))tags[key]=value;
   return tags;
 }

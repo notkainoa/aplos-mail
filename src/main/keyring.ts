@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /**
@@ -41,6 +41,7 @@ export function createCipher(key:Uint8Array):Cipher {
  */
 export async function loadDataKey(dataDir:string, keychain:Keychain):Promise<Buffer> {
   if(!keychain.available())throw new Error('macOS secure credential storage is unavailable.');
+  await mkdir(dataDir,{recursive:true,mode:0o700});
   const path=join(dataDir,KEY_FILE);
   if(existsSync(path)){
     let key:Buffer;
@@ -57,24 +58,26 @@ export async function loadDataKey(dataDir:string, keychain:Keychain):Promise<Buf
 
 /**
  * Re-seal credential files written before the data key existed. Entries the keychain cannot open stay
- * as they are, so the account asks to reconnect instead of losing the evidence.
+ * as they are, so the account asks to reconnect instead of losing the evidence. A file that cannot be
+ * read or rewritten is reported through `failed` and skipped; the other files still migrate.
  */
-export async function migrateCredentials(dataDir:string, legacy:(cipher:Buffer)=>string, cipher:Cipher):Promise<number> {
+export async function migrateCredentials(dataDir:string, legacy:(cipher:Buffer)=>string, cipher:Cipher, failed:(file:string,error:unknown)=>void=()=>{}):Promise<number> {
   let names:string[]=[];
   try{names=(await readdir(dataDir)).filter(name=>name.endsWith('.enc.json'));}catch{return 0;}
   let migrated=0;
   for(const name of names){
     const path=join(dataDir,name);
-    let entries:Record<string,string>;
-    try{entries=JSON.parse(await readFile(path,'utf8'));}catch{continue;}
-    if(!entries||typeof entries!=='object')continue;
-    let changed=false;
-    for(const [id,value] of Object.entries(entries)){
-      if(typeof value!=='string')continue;
-      const raw=Buffer.from(value,'base64');if(isSealed(raw))continue;
-      try{entries[id]=cipher.encrypt(legacy(raw)).toString('base64');changed=true;migrated++;}catch{/* Left for the account to report. */}
-    }
-    if(changed){await writeFile(`${path}.tmp`,JSON.stringify(entries),{mode:0o600});await rename(`${path}.tmp`,path);}
+    try{
+      const entries=JSON.parse(await readFile(path,'utf8')) as Record<string,unknown>;
+      if(!entries||typeof entries!=='object')throw new Error('Not a credential file.');
+      let changed=0;
+      for(const [id,value] of Object.entries(entries)){
+        if(typeof value!=='string')continue;
+        const raw=Buffer.from(value,'base64');if(isSealed(raw))continue;
+        try{entries[id]=cipher.encrypt(legacy(raw)).toString('base64');changed++;}catch{/* Left for the account to report. */}
+      }
+      if(changed){await writeFile(`${path}.tmp`,JSON.stringify(entries),{mode:0o600});await rename(`${path}.tmp`,path);migrated+=changed;}
+    }catch(error){failed(name,error);}
   }
   return migrated;
 }

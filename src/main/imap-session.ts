@@ -1,5 +1,6 @@
-import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from 'imapflow';
+import { ImapFlow, type FetchMessageObject, type ImapFlowOptions, type MessageStructureObject } from 'imapflow';
 import nodemailer, { type SendMailOptions } from 'nodemailer';
+import { ProviderError } from '../engine/provider';
 
 export interface ImapLogin {host:string; port:number; secure:boolean; user:string; pass:string}
 export interface SmtpLogin {host:string; port:number; secure:boolean; user:string; pass:string}
@@ -31,10 +32,15 @@ export interface ImapSession {
   fetch(path:string, range:string, query:ImapFetchQuery, options?:{bySequence?:boolean; changedSince?:string}):Promise<ImapFetched[]>;
   /** UIDs of matching messages. */
   search(path:string, query:ImapQuery):Promise<number[]>;
+  /** Rejects with a ProviderError when the server does not apply the change. */
   flags(path:string, uids:number[], action:'add'|'remove', flags:string[]):Promise<void>;
-  /** MOVE (or COPY + \Deleted + EXPUNGE). The map is source UID → destination UID when the server reports COPYUID. */
+  /**
+   * MOVE, or COPY + \Deleted + UID EXPUNGE with UIDPLUS. Without either the source copies are only marked \Deleted
+   * (left for the server or another client to expunge), because a plain EXPUNGE removes every \Deleted message.
+   * The map is source UID → destination UID when the server reports COPYUID.
+   */
   move(path:string, uids:number[], destination:string):Promise<{uidValidity?:string; map?:Map<number,number>}>;
-  /** Mark \Deleted and expunge just these UIDs. */
+  /** Mark \Deleted and expunge just these UIDs (UIDPLUS); without UIDPLUS they are only marked \Deleted. */
   remove(path:string, uids:number[]):Promise<void>;
   append(path:string, raw:Buffer, flags:string[], date?:Date):Promise<{uid?:number; uidValidity?:string}>;
   /** One decoded MIME part (text parts converted to UTF-8). */
@@ -49,7 +55,7 @@ export interface SmtpSender {
 }
 
 /** Headers needed for threading and for showing messages too large to download whole. */
-export const HEADER_FIELDS=['message-id','in-reply-to','references','from','to','cc','subject','date'];
+export const HEADER_FIELDS=['message-id','in-reply-to','references','from','to','cc','subject','date','x-aplos-data'];
 
 function leaves(node:MessageStructureObject|undefined):ImapPart[] {
   if(!node)return [];
@@ -59,14 +65,20 @@ function leaves(node:MessageStructureObject|undefined):ImapPart[] {
 function fetched(m:FetchMessageObject):ImapFetched {
   return {uid:m.uid,flags:[...(m.flags??[])],size:m.size,date:m.internalDate?new Date(m.internalDate).toISOString():undefined,modseq:m.modseq!==undefined?String(m.modseq):undefined,headers:m.headers,source:m.source,parts:m.bodyStructure?leaves(m.bodyStructure):undefined};
 }
-const ensure=<T>(value:T|false|undefined,what:string):T=>{if(value===false||value===undefined)throw Object.assign(new Error(`The mail server refused to ${what}.`),{refused:true});return value;};
-
 /** Production IMAP session over imapflow. Logging is off so credentials and mail never reach logs. */
-export function imapflowSession(config:ImapLogin):ImapSession {
-  const client=new ImapFlow({host:config.host,port:config.port,secure:config.secure,doSTARTTLS:config.secure?undefined:true,auth:{user:config.user,pass:config.pass},
+export function imapflowSession(config:ImapLogin,create:(options:ImapFlowOptions)=>ImapFlow=o=>new ImapFlow(o)):ImapSession {
+  const client=create({host:config.host,port:config.port,secure:config.secure,doSTARTTLS:config.secure?undefined:true,auth:{user:config.user,pass:config.pass},
     logger:false,disableAutoIdle:true,connectionTimeout:20_000,greetingTimeout:15_000,socketTimeout:120_000,clientInfo:{name:'Aplos Mail'}});
   // An unhandled 'error' event would crash the process; failures still reject the pending command.
   client.on('error',()=>{});
+  // imapflow reports a refused command as false (or undefined) rather than throwing. When the connection is gone
+  // the command may still have run, so that case is uncertain.
+  const ensure=<T>(value:T|false|undefined,what:string):T=>{
+    if(value!==false&&value!==undefined)return value;
+    throw client.usable?new ProviderError(`The mail server refused to ${what}.`):new ProviderError(`The connection to the mail server was lost while trying to ${what}.`,undefined,true);
+  };
+  // RFC 9051 folds MOVE and UIDPLUS into IMAP4rev2, so a rev2 session has both without advertising them.
+  const has=(capability:string)=>client.capabilities.has(capability)||client.enabled.has('IMAP4REV2')||(client.capabilities.has('IMAP4rev2')&&!client.capabilities.has('IMAP4rev1'));
   async function locked<T>(path:string,fn:()=>Promise<T>):Promise<T> {const lock=await client.getMailboxLock(path);try{return await fn();}finally{lock.release();}}
   return {
     connect:()=>client.connect(),
@@ -92,9 +104,22 @@ export function imapflowSession(config:ImapLogin):ImapSession {
       });
     },
     search(path,query){return locked(path,async()=>ensure(await client.search(query,{uid:true}),'search'));},
-    flags(path,uids,action,flags){return locked(path,async()=>{const set=uids.join(',');if(action==='add')await client.messageFlagsAdd(set,flags,{uid:true});else await client.messageFlagsRemove(set,flags,{uid:true});});},
-    move(path,uids,destination){return locked(path,async()=>{const r=ensure(await client.messageMove(uids.join(','),destination,{uid:true}),'move the messages');return {uidValidity:r.uidValidity!==undefined?String(r.uidValidity):undefined,map:r.uidMap};});},
-    remove(path,uids){return locked(path,async()=>{ensure(await client.messageDelete(uids.join(','),{uid:true})||undefined,'delete the messages');});},
+    flags(path,uids,action,flags){return locked(path,async()=>{const set=uids.join(',');ensure((action==='add'?await client.messageFlagsAdd(set,flags,{uid:true}):await client.messageFlagsRemove(set,flags,{uid:true}))||undefined,'change the message flags');});},
+    move(path,uids,destination){
+      return locked(path,async()=>{
+        const set=uids.join(',');let r;
+        if(has('MOVE')||has('UIDPLUS'))r=ensure(await client.messageMove(set,destination,{uid:true}),'move the messages');
+        else{r=ensure(await client.messageCopy(set,destination,{uid:true}),'copy the messages');ensure(await client.messageFlagsAdd(set,['\\Deleted'],{uid:true})||undefined,'remove the moved messages from their folder');}
+        return {uidValidity:r.uidValidity!==undefined?String(r.uidValidity):undefined,map:r.uidMap};
+      });
+    },
+    remove(path,uids){
+      return locked(path,async()=>{
+        const set=uids.join(',');
+        if(has('UIDPLUS'))ensure(await client.messageDelete(set,{uid:true})||undefined,'delete the messages');
+        else ensure(await client.messageFlagsAdd(set,['\\Deleted'],{uid:true})||undefined,'delete the messages');
+      });
+    },
     async append(path,raw,flags,date){const r=ensure(await client.append(path,raw,flags,date),'save the message');return {uid:r.uid,uidValidity:r.uidValidity!==undefined?String(r.uidValidity):undefined};},
     download(path,uid,part,maxBytes){
       return locked(path,async()=>{

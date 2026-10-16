@@ -10,6 +10,7 @@ import { createJmap, JmapError, JMAP_PRESETS } from '../src/main/jmap';
 type Json=Record<string,any>;
 const SESSION=JMAP_PRESETS.fastmail.sessionUrl,TOKEN='fmu1-test-token-not-real';
 const xor=(b:Buffer)=>Buffer.from(b.map(x=>x^0x5a));
+const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 
 /** A small in-memory JMAP server covering the methods the adapter calls. */
 class FakeJmap {
@@ -26,16 +27,23 @@ class FakeJmap {
   blobs=new Map<string,{data:Buffer;type:string}>();
   submissions:Json[]=[];
   log:{v:number;kind:'email'|'thread';id:string;op:'created'|'updated'|'destroyed'}[]=[];
-  version=0;minState=0;pageSize=Infinity;
-  calls:Json[][]=[];auth:string[]=[];
+  version=0;minState=0;pageSize=Infinity;maxGet=1000;
+  calls:Json[][]=[];auth:string[]=[];requests:{url:string;auth:string;redirect?:string;method:string;body?:string}[]=[];
   offline=false;httpStatus=0;methodError='';rejectSubmission=false;
+  /** The implicit Email/set after a submission fails, leaving the sent message as a draft. */
+  failImplicitMove=false;
+  /** The next request that submits mail is processed but its response never arrives. */
+  loseResponse=false;
+  sessionPatch:Json={};
+  redirects=new Map<string,[number,string]>();
+  after?:(name:string)=>void;
   private next=100;
   id(prefix:string){return `${prefix}${this.next++}`;}
   emailIds(threadId:string){return [...this.emails.values()].filter(e=>e.threadId===threadId).sort((a,b)=>a.receivedAt.localeCompare(b.receivedAt)).map(e=>e.id);}
   record(kind:'email'|'thread',id:string,op:'created'|'updated'|'destroyed'){this.log.push({v:++this.version,kind,id,op});}
   add(e:Json){
     const fresh=!this.emailIds(e.threadId).length;
-    const email:Json={keywords:{},to:[{name:'Alex',email:'alex@example.test'}],cc:[],references:null,attachments:[],preview:String(e.text??'').slice(0,80),
+    const email:Json={keywords:{},to:[{name:'Alex',email:'alex@example.test'}],cc:[],references:null,attachments:[],preview:String(e.text??'').slice(0,10),
       textBody:[{partId:'1',type:'text/plain'}],htmlBody:e.html?[{partId:'2',type:'text/html'}]:[{partId:'1',type:'text/plain'}],
       bodyValues:{'1':{value:e.text??''},...(e.html?{'2':{value:e.html}}:{})},...e};
     delete email.text;delete email.html;
@@ -87,8 +95,21 @@ class FakeJmap {
     }
     return out;
   }
+  /** Only the requested properties, like a real server; body values only for the parts the fetch flags ask for. */
+  project(e:Json,args:Json):Json {
+    const out:Json=args.properties?Object.fromEntries(['id',...args.properties].filter(p=>p in e).map(p=>[p,structuredClone(e[p])])):structuredClone(e);
+    if('bodyValues' in out){
+      const parts=new Set([...(args.fetchTextBodyValues?e.textBody??[]:[]),...(args.fetchHTMLBodyValues?e.htmlBody??[]:[])].map((p:Json)=>p.partId));
+      out.bodyValues=Object.fromEntries(Object.entries(e.bodyValues??{}).filter(([k])=>parts.has(k)));
+    }
+    return out;
+  }
   handle(name:string,args:Json,responses:any[],creations:Map<string,string>,id:string):any[] {
+    const out=this.method(name,args,responses,creations,id);this.after?.(name);return out;
+  }
+  method(name:string,args:Json,responses:any[],creations:Map<string,string>,id:string):any[] {
     if(this.methodError)return [['error',{type:this.methodError},id]];
+    if(name.endsWith('/get')&&(args.ids?.length??0)>this.maxGet)return [['error',{type:'requestTooLarge'},id]];
     const state=String(this.version);
     switch(name){
       case 'Mailbox/get':return [[name,{state:'m1',list:structuredClone(this.mailboxes),notFound:[]},id]];
@@ -101,12 +122,21 @@ class FakeJmap {
       case 'Email/query':{
         let list=[...this.emails.values()].filter(e=>this.matches(e,args.filter)).sort((a,b)=>b.receivedAt.localeCompare(a.receivedAt));
         if(args.collapseThreads){const seen=new Set();list=list.filter(e=>!seen.has(e.threadId)&&seen.add(e.threadId));}
-        return [[name,{queryState:state,ids:list.slice(0,args.limit??Infinity).map(e=>e.id)},id]];
+        const position=args.position??0;
+        return [[name,{queryState:state,position,total:list.length,ids:list.slice(position,position+(args.limit??Infinity)).map(e=>e.id)},id]];
       }
       case 'Email/get':{
         const ids:string[]=args.ids??[];
-        const list=ids.filter(x=>this.emails.has(x)).map(x=>{const e=structuredClone(this.emails.get(x)!);if(!args.fetchTextBodyValues)delete e.bodyValues;return e;});
+        const list=ids.filter(x=>this.emails.has(x)).map(x=>this.project(this.emails.get(x)!,args));
         return [[name,{state,list,notFound:ids.filter(x=>!this.emails.has(x))},id]];
+      }
+      case 'EmailSubmission/query':{
+        const list=this.submissions.filter(s=>!args.filter?.emailIds||args.filter.emailIds.includes(s.emailId));
+        return [[name,{queryState:'q1',position:0,ids:list.slice(0,args.limit??Infinity).map(s=>s.id)},id]];
+      }
+      case 'EmailSubmission/get':{
+        const ids:string[]=args.ids??[],list=this.submissions.filter(s=>ids.includes(s.id)).map(s=>({id:s.id,emailId:s.emailId,undoStatus:s.undoStatus??'final'}));
+        return [[name,{state:'s1',list,notFound:ids.filter(x=>!list.some(s=>s.id===x))},id]];
       }
       case 'Thread/get':{
         const ids=[...new Set(args.ids as string[])],found=ids.filter(t=>this.emailIds(t).length);
@@ -136,7 +166,8 @@ class FakeJmap {
           const patch=args.onSuccessUpdateEmail?.[`#${key}`];if(patch)updates[sub.emailId]=patch;
         }
         out.push([name,{created,notCreated},id]);
-        if(Object.keys(updates).length)out.push(...this.handle('Email/set',{update:updates},responses,creations,id));
+        if(Object.keys(updates).length&&this.failImplicitMove)out.push(['Email/set',{newState:String(this.version),updated:{},notUpdated:Object.fromEntries(Object.keys(updates).map(k=>[k,{type:'serverFail'}]))},id]);
+        else if(Object.keys(updates).length)out.push(...this.handle('Email/set',{update:updates},responses,creations,id));
         return out;
       }
       default:return [['error',{type:'unknownMethod'},id]];
@@ -144,20 +175,26 @@ class FakeJmap {
   }
   fetch=async(input:string|URL|Request,init:RequestInit={}):Promise<Response>=>{
     const url=String(input),json=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
+    const headers=new Headers(init.headers),authorization=headers.get('authorization')??'';
+    this.requests.push({url,auth:authorization,redirect:init.redirect,method:init.method??'GET',body:typeof init.body==='string'?init.body:undefined});
     if(this.offline)throw new TypeError('fetch failed');
-    this.auth.push(String((init.headers as Record<string,string>)?.Authorization??''));
-    if((init.headers as Record<string,string>)?.Authorization!==`Bearer ${TOKEN}`)return new Response('',{status:401});
+    const hop=this.redirects.get(url);if(hop)return new Response(null,{status:hop[0],headers:{Location:hop[1]}});
+    if(url.startsWith('https://cdn.test/'))return new Response('cdn bytes');
+    if(!url.startsWith('https://'))return new Response('plain http was used',{status:200});
+    this.auth.push(authorization);
+    if(authorization!==`Bearer ${TOKEN}`)return new Response('',{status:401});
     if(this.httpStatus)return new Response('',{status:this.httpStatus});
-    if(url===SESSION)return json({capabilities:Object.fromEntries(this.capabilities.map(c=>[c,c.endsWith('core')?{maxObjectsInGet:1000,maxCallsInRequest:16}:{}])),
+    if(url===SESSION)return json({capabilities:Object.fromEntries(this.capabilities.map(c=>[c,c.endsWith('core')?{maxObjectsInGet:this.maxGet,maxCallsInRequest:16}:{}])),
       accounts:{acc1:{name:'alex@example.test',isPersonal:true,accountCapabilities:{}}},primaryAccounts:Object.fromEntries(this.capabilities.map(c=>[c,'acc1'])),
-      username:'alex@example.test',apiUrl:'https://api.test/jmap/api/',downloadUrl:'https://api.test/jmap/download/{accountId}/{blobId}/{name}?type={type}',uploadUrl:'https://api.test/jmap/upload/{accountId}/',eventSourceUrl:'https://api.test/events',state:'s1'});
-    if(url==='https://api.test/jmap/upload/acc1/'){const blobId=this.id('blob-'),data=Buffer.from(init.body as Uint8Array);this.blobs.set(blobId,{data,type:String((init.headers as Record<string,string>)['Content-Type'])});return json({accountId:'acc1',blobId,type:'application/octet-stream',size:data.length});}
+      username:'alex@example.test',apiUrl:'https://api.test/jmap/api/',downloadUrl:'https://api.test/jmap/download/{accountId}/{blobId}/{name}?type={type}',uploadUrl:'https://api.test/jmap/upload/{accountId}/',eventSourceUrl:'https://api.test/events',state:'s1',...this.sessionPatch});
+    if(url==='https://api.test/jmap/upload/acc1/'){const blobId=this.id('blob-'),data=Buffer.from(init.body as Uint8Array);this.blobs.set(blobId,{data,type:String(headers.get('content-type'))});return json({accountId:'acc1',blobId,type:'application/octet-stream',size:data.length});}
     const download=url.match(/^https:\/\/api\.test\/jmap\/download\/acc1\/([^/]+)\//);
     if(download){const blob=this.blobs.get(decodeURIComponent(download[1]));return blob?new Response(new Uint8Array(blob.data)):new Response('',{status:404});}
-    if(url==='https://api.test/jmap/api/'){
+    if(url==='https://api.test/jmap/api/'||url==='https://api.test/jmap/moved/'){
       const body=JSON.parse(String(init.body));this.calls.push(body.methodCalls);
       const responses:any[]=[],creations=new Map<string,string>();
       for(const [name,args,id] of body.methodCalls)responses.push(...this.handle(name,this.resolve(args,responses),responses,creations,id));
+      if(this.loseResponse&&body.methodCalls.some((c:any[])=>c[0]==='EmailSubmission/set')){this.loseResponse=false;throw new TypeError('fetch failed');}
       return json({methodResponses:responses,sessionState:'s1'});
     }
     return new Response('',{status:404});
@@ -230,6 +267,8 @@ test('first sync normalizes threads, status and role labels and skips drafts',as
     assert.equal(Buffer.from(file.data!,'base64').toString(),'menu bytes');
     const get=h.server.called('Email/get').find(a=>a.fetchHTMLBodyValues)!;
     assert.equal(get.fetchTextBodyValues,true);assert.equal(get.maxBodyValueBytes,1_000_000);
+    assert.ok(get.properties.includes('bodyValues'),'body values are requested explicitly');
+    assert.equal(by.get('T2')!.messages[0].text,'Draft report attached','the full body, not the short preview');
     const q=h.server.called('Email/query')[0];
     assert.equal(q.collapseThreads,true);assert.equal(q.limit,500);assert.deepEqual(q.sort,[{property:'receivedAt',isAscending:false}]);
   }finally{await h.cleanup();}
@@ -325,9 +364,10 @@ test('send creates the draft with our Message-ID, submits it and moves it to Sen
     const result=await h.jmap.send(h.account,draft({messageId:'<our-id@example.test>',mode:'reply',threadId:thread.id,bcc:'boss@example.test',fromEmail:'alex@work.test',
       attachments:[{id:'a1',name:'notes.txt',type:'text/plain',size:5,data:Buffer.from('notes').toString('base64')}]}),thread);
     const request=h.server.calls.at(-1)!;
-    assert.deepEqual(request.map(c=>c[0]),['Email/query','Email/set','EmailSubmission/set'],'draft and submission travel together');
+    assert.deepEqual(request.map(c=>c[0]),['Email/set','EmailSubmission/set'],'draft and submission travel together');
+    assert.deepEqual(h.server.calls.at(-2)!.map(c=>c[0]),['Identity/get','Mailbox/get','Email/query','Email/get'],'earlier copies are looked up with identities and mailboxes');
     assert.equal(h.server.calls.length-before,2,'identities and mailboxes, then the send itself');
-    const created=request[1][1].create.draft;
+    const created=request[0][1].create.draft;
     assert.deepEqual(created.messageId,['our-id@example.test']);assert.deepEqual(created.inReplyTo,['m1@example.test']);assert.deepEqual(created.references,['m1@example.test']);
     assert.deepEqual(created.from,[{name:'Alex at Work',email:'alex@work.test'}]);assert.equal(created.bcc,undefined,'Bcc is not written into the message');
     assert.equal(created.bodyValues.text.value,'Hi there');assert.equal(created.bodyValues.html.value,'<p>Hi there</p>');
@@ -386,27 +426,144 @@ test('search queries the server and returns full threads',async()=>{
     const threads=await h.jmap.search(h.account,'friday');
     assert.deepEqual(threads.map(t=>t.remoteId),['T1']);assert.equal(threads[0].messages[0].text,'Lunch on Friday?');
     const q=h.server.called('Email/query').at(-1)!;
-    assert.deepEqual(q.filter,{text:'friday'});assert.equal(q.limit,100);assert.equal(q.collapseThreads,true);
+    assert.deepEqual(q.filter,{operator:'AND',conditions:[{text:'friday'},{notKeyword:'aplos-app-data'}]});assert.equal(q.limit,100);assert.equal(q.collapseThreads,true);
   }finally{await h.cleanup();}
 });
 
-test('app data lives in a hidden Aplos mailbox, replaces itself and never shows up as mail',async()=>{
+test('app data copies live in a hidden Aplos mailbox, are all listed newest first and only replaced copies go',async()=>{
   const h=await harness();
   try{
     const account:Account=h.account;
-    assert.equal(await h.jmap.readAppData(account),undefined);
+    assert.deepEqual(await h.jmap.readAppData(account),[]);
     const first=await h.jmap.sync(account,undefined,{has:()=>false});
-    await h.jmap.writeAppData(account,'{"v":1}');
-    const box=h.server.mailboxes.find(m=>m.name==='Aplos')!;
+    await h.jmap.writeAppData(account,'{"v":1}',[]);
+    const box=h.server.mailboxes.find(m=>m.name==='Aplos Mail Data')!;
     assert.equal(box.isSubscribed,false);
-    await h.jmap.writeAppData(account,'{"v":2,"note":"ünïcode"}');
-    assert.equal([...h.server.emails.values()].filter(e=>e.mailboxIds[box.id]).length,1,'the previous copy is destroyed');
-    assert.equal(await h.jmap.readAppData(account),'{"v":2,"note":"ünïcode"}');
+    await sleep(5);await h.jmap.writeAppData(account,'{"v":2,"note":"ünïcode"}',[]);
+    const both=await h.jmap.readAppData(account);
+    assert.deepEqual(both.map(r=>r.data),['{"v":2,"note":"ünïcode"}','{"v":1}'],'copies written at the same time are all returned');
+    await sleep(5);await h.jmap.writeAppData(account,'{"v":"other device"}',[]);
+    await sleep(5);await h.jmap.writeAppData(account,'{"v":3}',both.map(r=>r.id));
+    assert.deepEqual((await h.jmap.readAppData(account)).map(r=>r.data),['{"v":3}','{"v":"other device"}'],'a copy written after the read survives');
+    assert.equal([...h.server.emails.values()].filter(e=>e.mailboxIds[box.id]).length,2);
     const next=await h.jmap.sync(account,first.cursor,has(first.threads));
     assert.deepEqual(next.threads,[]);assert.deepEqual(next.removed,[]);
     const fresh=await h.jmap.sync(account,undefined,{has:()=>false});
     assert.deepEqual(fresh.threads.map(t=>t.remoteId).sort(),['T1','T2','T3','T4']);
-    assert.deepEqual(h.server.called('Email/query').at(-1)!.filter,{inMailboxOtherThan:[box.id]});
+    assert.deepEqual(h.server.called('Email/query').at(-1)!.filter,{notKeyword:'aplos-app-data'});
     assert.equal((await h.jmap.search(account,'Aplos Mail')).length,0);
+  }finally{await h.cleanup();}
+});
+
+test('a user folder named Aplos is never read or emptied and its mail still syncs',async()=>{
+  const h=await harness();
+  try{
+    h.server.mailboxes.push({id:'mb-user-aplos',name:'Aplos',role:null,parentId:null});
+    h.server.add({id:'eu',threadId:'TU',mailboxIds:{'mb-user-aplos':true},from:[{name:'Kim',email:'kim@example.test'}],subject:'Aplos project',receivedAt:'2026-10-14T09:00:00Z',messageId:['mu@example.test'],text:'Plans',
+      attachments:[{partId:'3',blobId:'blob-menu',name:'menu.pdf',type:'application/pdf',size:10}]});
+    assert.deepEqual(await h.jmap.readAppData(h.account),[],'user mail is not app data');
+    await h.jmap.writeAppData(h.account,'{"v":1}',['eu']);
+    assert.ok(h.server.emails.has('eu'),'user mail is never destroyed, even when asked');
+    assert.deepEqual((await h.jmap.readAppData(h.account)).map(r=>r.data),['{"v":1}']);
+    assert.equal([...h.server.emails.values()].filter(e=>e.mailboxIds['mb-user-aplos']).length,1,'data copies go to Aplos’s own mailbox, not the user folder');
+    const fresh=await h.jmap.sync(h.account,undefined,{has:()=>false});
+    const tu=fresh.threads.find(t=>t.remoteId==='TU')!;
+    assert.deepEqual(tu.messages.map(m=>m.id),['eu']);assert.ok(tu.labels?.includes('Aplos'));
+    assert.equal(fresh.threads.length,5,'the data copy itself stays hidden');
+  }finally{await h.cleanup();}
+});
+
+test('a send whose answer was lost after submission is found and never submitted again',async()=>{
+  const h=await harness();
+  try{
+    h.server.failImplicitMove=true;h.server.loseResponse=true;
+    await assert.rejects(h.jmap.send(h.account,draft({messageId:'<lost@example.test>'})),(e:JmapError)=>e.uncertain);
+    const copy=()=>[...h.server.emails.values()].filter(e=>e.messageId?.includes('lost@example.test'));
+    assert.equal(h.server.submissions.length,1);assert.equal(copy()[0].keywords.$draft,true,'the move to Sent failed');
+    h.server.failImplicitMove=false;
+    const found=await h.jmap.findSent(h.account,'<lost@example.test>');
+    assert.deepEqual(found,{id:copy()[0].id,threadId:copy()[0].threadId},'a submitted draft counts as sent');
+    assert.deepEqual(Object.keys(copy()[0].mailboxIds),['mb-sent']);assert.equal(copy()[0].keywords.$draft,undefined,'and is filed in Sent');
+    assert.deepEqual(await h.jmap.send(h.account,draft({messageId:'<lost@example.test>'})),found);
+    assert.equal(h.server.submissions.length,1);assert.equal(copy().length,1);
+
+    h.server.failImplicitMove=true;h.server.loseResponse=true;
+    await assert.rejects(h.jmap.send(h.account,draft({messageId:'<again@example.test>'})));
+    const again=[...h.server.emails.values()].find(e=>e.messageId?.includes('again@example.test'))!;
+    h.server.failImplicitMove=false;
+    assert.deepEqual(await h.jmap.send(h.account,draft({messageId:'<again@example.test>'})),{id:again.id,threadId:again.threadId},'a retry returns the submitted copy');
+    assert.equal(h.server.submissions.length,2);assert.ok(h.server.emails.has(again.id),'a submitted draft is never destroyed');
+
+    h.server.failImplicitMove=true;
+    const ok=await h.jmap.send(h.account,draft({messageId:'<moved@example.test>'}));
+    const moved=h.server.emails.get(ok.id!)!;
+    assert.deepEqual(Object.keys(moved.mailboxIds),['mb-sent'],'a failed implicit move is repaired');assert.equal(moved.keywords.$draft,undefined);
+  }finally{await h.cleanup();}
+});
+
+test('mail that arrives while a fresh window loads is replayed into it',async()=>{
+  const h=await harness();
+  try{
+    let query=0,threads=0;
+    h.server.after=name=>{
+      if(name==='Email/query'&&!query++)h.server.add({id:'e10',threadId:'T7',mailboxIds:{'mb-inbox':true},from:[{name:'New',email:'new@example.test'}],subject:'Arrived',receivedAt:'2026-10-14T16:00:00Z',messageId:['m10@example.test'],text:'Just now'});
+      if(name==='Thread/get'&&query&&!threads++)h.server.add({id:'e11',threadId:'T1',mailboxIds:{'mb-inbox':true},from:[{name:'Sam',email:'sam@example.test'}],subject:'Re: Lunch',receivedAt:'2026-10-14T17:00:00Z',messageId:['m11@example.test'],text:'Also'});
+    };
+    const result=await h.jmap.sync(h.account,undefined,{has:()=>false});
+    h.server.after=undefined;
+    assert.equal(result.reset,true);
+    assert.deepEqual(result.threads.map(t=>t.remoteId),['T1','T7','T2','T4','T3']);
+    assert.deepEqual(result.threads[0].messages.map(m=>m.id),['e1','e11']);
+    assert.deepEqual(JSON.parse(result.cursor!),{email:String(h.server.version),thread:String(h.server.version)});
+    const next=await h.jmap.sync(h.account,result.cursor,has(result.threads));
+    assert.deepEqual([next.threads,next.flags,next.removed],[[],[],[]]);
+  }finally{await h.cleanup();}
+});
+
+test('getters stay within the server limit for large windows and long threads',async()=>{
+  const h=await harness({seed:false});
+  try{
+    h.server.maxGet=256;
+    for(let i=0;i<259;i++)h.server.add({id:`s${i}`,threadId:`TS${i}`,mailboxIds:{'mb-inbox':true},from:[{name:'S',email:'s@example.test'}],subject:`n${i}`,receivedAt:new Date(Date.UTC(2026,8,1,0,i)).toISOString(),messageId:[`s${i}@example.test`],text:'x'});
+    for(let i=0;i<300;i++)h.server.add({id:`b${i}`,threadId:'TB',mailboxIds:{'mb-inbox':true},from:[{name:'B',email:'b@example.test'}],subject:'Long',receivedAt:new Date(Date.UTC(2026,7,1,0,i)).toISOString(),messageId:[`b${i}@example.test`],text:'y'});
+    await h.jmap.close();
+    const first=await h.jmap.sync(h.account,undefined,{has:()=>false});
+    assert.equal(first.threads.length,260);
+    assert.equal(first.threads.find(t=>t.remoteId==='TB')!.messages.length,300);
+    assert.deepEqual(h.server.called('Email/query').map(q=>[q.position,q.limit]),[[0,256],[256,244]]);
+    await h.jmap.updateThread(h.account,{remoteId:'TB',status:'new'},{unread:false});
+    assert.ok([...h.server.emails.values()].filter(e=>e.threadId==='TB').every(e=>e.keywords.$seen));
+    for(let i=0;i<260;i++)h.server.update(i<259?`s${i}`:'b0',{'keywords/$flagged':true});
+    const next=await h.jmap.sync(h.account,first.cursor,has(first.threads));
+    assert.equal(next.flags.length,260);assert.ok(next.flags.every(f=>f.bookmarked));
+    const sizes=h.server.calls.flat().filter(c=>c[0].endsWith('/get')).map(c=>c[1].ids?.length??0);
+    assert.ok(Math.max(...sizes)<=256);
+  }finally{await h.cleanup();}
+});
+
+test('every server address must be https and redirects never downgrade or leak the token',async()=>{
+  const h=await harness();
+  try{
+    const plain=()=>h.server.requests.filter(r=>!r.url.startsWith('https://'));
+    h.server.sessionPatch={apiUrl:'http://api.test/jmap/api/'};
+    await assert.rejects(h.jmap.connect({provider:'jmap',preset:'fastmail',secret:TOKEN}),/https/);
+    h.server.sessionPatch={uploadUrl:'https://user:pw@api.test/jmap/upload/{accountId}/'};
+    await assert.rejects(h.jmap.connect({provider:'jmap',preset:'fastmail',secret:TOKEN}),/https/);
+    h.server.sessionPatch={};
+    h.server.redirects.set('https://api.test/jmap/api/',[307,'http://api.test/jmap/api/']);
+    await assert.rejects(h.jmap.sync(h.account,undefined,{has:()=>false}),/https/);
+    assert.deepEqual(plain(),[],'nothing is sent over plain http');
+    assert.ok(h.server.requests.every(r=>r.redirect==='manual'));
+    h.server.redirects.set('https://api.test/jmap/api/',[308,'/jmap/moved/']);
+    assert.equal((await h.jmap.sync(h.account,undefined,{has:()=>false})).threads.length,4,'an https redirect keeps method, body and token');
+    const moved=h.server.requests.filter(r=>r.url==='https://api.test/jmap/moved/');
+    assert.ok(moved.length&&moved.every(r=>r.method==='POST'&&r.body&&r.auth===`Bearer ${TOKEN}`));
+    h.server.redirects.set('https://api.test/jmap/download/acc1/blob-menu/menu.pdf?type=application%2Fpdf',[302,'https://cdn.test/menu']);
+    const t1=(await h.jmap.search(h.account,'friday'))[0];
+    assert.equal(Buffer.from((await h.jmap.attachment(h.account,t1,t1.messages[0].attachments[0])).data!,'base64').toString(),'cdn bytes');
+    assert.equal(h.server.requests.find(r=>r.url==='https://cdn.test/menu')!.auth,'','the token stays with its origin');
+    h.server.redirects.set('https://api.test/jmap/api/',[307,'https://api.test/jmap/loop/']);h.server.redirects.set('https://api.test/jmap/loop/',[307,'https://api.test/jmap/api/']);
+    await assert.rejects(h.jmap.sync(h.account,undefined,{has:()=>false}),/too many/);
+    assert.deepEqual(plain(),[]);
   }finally{await h.cleanup();}
 });

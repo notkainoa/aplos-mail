@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import nodemailer, { type SendMailOptions } from 'nodemailer';
 import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
-import { ProviderError, type CalendarBackend, type CalendarCredentials, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type ProviderMemory, type RemoteThread, type ServerSettings, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import { ProviderError, type AppDataRecord, type CalendarBackend, type CalendarCredentials, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type ProviderMemory, type RemoteThread, type ServerSettings, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
 import { createVault } from './vault';
 import { createIndex, normalizeId, referenceIds, type ImapIndex, type MessageRecord, type Role } from './imap-index';
 import { imapflowSession, nodemailerSender, type ImapBox, type ImapFetched, type ImapLogin, type ImapSession, type SmtpLogin, type SmtpSender } from './imap-session';
@@ -44,7 +44,9 @@ const ROLE_LABEL:Record<Role,string>={inbox:'INBOX',archive:'ARCHIVE',sent:'SENT
 const PREFERENCE:Role[]=['inbox','archive','junk','trash','sent'];
 /** Messages up to this size are downloaded whole; larger ones only their text, attachments on demand. */
 export const MAX_SOURCE=1_000_000;
-const MAX_INLINE=256_000,MAX_ATTACHMENT=50_000_000,SEARCH_THREADS=100,APP_FOLDER='Aplos',APP_FILE='aplos-data.json';
+const MAX_INLINE=256_000,MAX_ATTACHMENT=50_000_000,SEARCH_THREADS=100,APP_FOLDER='Aplos Mail Data',APP_FILE='aplos-data.json';
+/** Marks app-data messages Aplos wrote, so a user folder that shares the name is never read or cleaned up. */
+const APP_HEADER='X-Aplos-Data',APP_MARK='workflow/1';
 const PARSE={skipTextToHtml:true,skipImageLinks:true,skipTextLinks:true,keepCidLinks:true} as const;
 const NETWORK=new Set(['ECONNREFUSED','ECONNRESET','ENOTFOUND','EAI_AGAIN','ETIMEDOUT','ETIMEOUT','EPIPE','EHOSTUNREACH','ENETUNREACH','CONNECT_TIMEOUT','GREETING_TIMEOUT','UPGRADE_TIMEOUT','NoConnection','EConnectionClosed','ClosedAfterConnectText','ClosedAfterConnectTLS','StateLogout','ESOCKET','ECONNECTION','EDNS']);
 /** SMTP failures that happen before any message data could have been accepted. */
@@ -72,6 +74,10 @@ function addresses(value:AddressObject|AddressObject[]|undefined):string[] {
   return (Array.isArray(value)?value:value?[value]:[]).flatMap(v=>v.value).flatMap(a=>a.group?a.group:[a]).map(a=>a.address??'').filter(Boolean);
 }
 function htmlText(html:string) {return html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,'').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\s+/g,' ').trim();}
+function headerId(headers:Buffer|undefined):string|undefined {
+  const match=/^message-id:[ \t]*(.*)$/im.exec(headers?.toString('utf8').replace(/\r?\n[ \t]+/g,' ')??'');
+  return normalizeId(match?.[1]);
+}
 function parseCursor(cursor:string|undefined):Cursor|undefined {
   if(!cursor)return;
   try{const value=JSON.parse(cursor) as Cursor;return value?.v===1&&value.f&&typeof value.f==='object'?value:undefined;}catch{return undefined;}
@@ -194,6 +200,11 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
     return Promise.all(rows.map(row=>meta(row,role,v,account)));
   }
   const add=(idx:ImapIndex,m:Meta)=>{const key=idx.link(m.record.id,m.references);idx.put(key,m.record);return key;};
+  /** UIDs whose Message-ID is exactly `id`. SEARCH HEADER matches substrings, so candidates are checked. */
+  async function withId(session:ImapSession,path:string,id:string,deleted=false):Promise<number[]> {
+    const uids=await session.search(path,{header:{'message-id':id}});if(!uids.length)return [];
+    return (await session.fetch(path,uidSet(uids),{headers:true})).filter(r=>(deleted||!r.flags.includes('\\Deleted'))&&headerId(r.headers)===id).map(r=>r.uid);
+  }
   function message(record:MessageRecord,parsed:ParsedMail|undefined,body:{text:string;html?:string},attachments:Attachment[]):Parsed {
     const from=parsed?.from?.value[0];
     const references=referenceIds(parsed?.references).map(r=>`<${r}>`).join(' ')||undefined;
@@ -217,11 +228,13 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
     return message(record,parsed,{text,html},attachments);
   }
   /** Full threads for the given keys. Copies that vanished meanwhile are dropped; `emptied` lists threads left with none. */
-  async function build(session:ImapSession,boxes:Boxes,idx:ImapIndex,account:Account,keys:string[]):Promise<{threads:Thread[];emptied:string[]}> {
+  async function build(session:ImapSession,boxes:Boxes,idx:ImapIndex,account:Account,keys:string[],validity:Partial<Record<Role,string>>={}):Promise<{threads:Thread[];emptied:string[]}> {
     const cache=new Map<string,Parsed>(),wanted=new Map<string,MessageRecord>();
     for(const key of keys)for(const r of idx.records(key))wanted.set(loc(r),r);
-    for(const [role,records] of groupBy([...wanted.values()],r=>r.f)){
+    for(const [role,all] of groupBy([...wanted.values()],r=>r.f)){
       const path=boxes[role];if(!path)continue;
+      // Copies indexed under another UIDVALIDITY would fetch whatever now has their UID.
+      const v=validity[role]??(await session.open(path)).uidValidity,records=all.filter(r=>r.v===v);
       const small=records.filter(r=>r.z<=MAX_SOURCE),large=records.filter(r=>r.z>MAX_SOURCE);
       for(let i=0;i<small.length;i+=50){
         const batch=small.slice(i,i+50);
@@ -288,20 +301,23 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
   }
 
   // ---- Changing messages ----
-  /** Confirm where a thread's copies are, finding moved ones by Message-ID. */
+  /**
+   * Confirm where a thread's copies are, finding moved ones by Message-ID. A folder rebuilt under a new UIDVALIDITY
+   * can give a cached UID to unrelated mail, so cached UIDs count only under the folder's current UIDVALIDITY.
+   */
   async function locate(session:ImapSession,boxes:Boxes,idx:ImapIndex,key:string):Promise<MessageRecord[]> {
-    const lost:MessageRecord[]=[];
+    const lost:MessageRecord[]=[],current=new Map<Role,string>();
+    const validity=async(role:Role,path:string)=>{let v=current.get(role);if(v===undefined){v=(await session.open(path)).uidValidity;current.set(role,v);idx.trackFolder(role,v);}return v;};
     for(const [role,records] of groupBy(idx.records(key),r=>r.f)){
-      const path=boxes[role];
-      const present=path?new Set(await session.search(path,{uid:uidSet(records.map(r=>r.u))})):new Set<number>();
-      for(const r of records)if(!present.has(r.u)){idx.drop(r.f,r.v,r.u,r.id);lost.push(r);}
+      const path=boxes[role],v=path?await validity(role,path):undefined,valid=records.filter(r=>r.v===v);
+      const present=path&&valid.length?new Set(await session.search(path,{uid:uidSet(valid.map(r=>r.u))})):new Set<number>();
+      for(const r of records)if(r.v!==v||!present.has(r.u)){idx.drop(r.f,r.v,r.u,r.id);lost.push(r);}
     }
     for(const r of lost){
       if(synthetic(r.id)||idx.records(key).some(x=>x.id===r.id))continue;
       for(const role of SYNC_ROLES){
         const path=boxes[role];if(!path)continue;
-        const uids=await session.search(path,{header:{'message-id':r.id}});if(!uids.length)continue;
-        const v=idx.folder(role)?.v??(await session.open(path)).uidValidity;idx.trackFolder(role,v);
+        const v=await validity(role,path),uids=await withId(session,path,r.id);if(!uids.length)continue;
         idx.put(key,{...r,f:role,v,u:Math.max(...uids)});break;
       }
     }
@@ -316,14 +332,15 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
       const v=result.uidValidity??(await session.open(destination)).uidValidity;idx.trackFolder(target,v);
       for(const r of group){
         let uid=result.map?.get(r.u);
-        if(uid===undefined&&!synthetic(r.id)){const found=await session.search(destination,{header:{'message-id':r.id}});if(found.length)uid=Math.max(...found);}
+        if(uid===undefined&&!synthetic(r.id)){const found=await withId(session,destination,r.id);if(found.length)uid=Math.max(...found);}
         if(uid===undefined)idx.drop(r.f,r.v,r.u,r.id);else idx.update(key,r,{f:target,v,u:uid});
       }
     }
   }
+  /** Always stored, even where the index already agrees: another client may have changed the flag since. */
   async function setFlag(session:ImapSession,boxes:Boxes,idx:ImapIndex,key:string,records:MessageRecord[],flag:'\\Seen'|'\\Flagged',on:boolean) {
     const field=flag==='\\Seen'?'seen':'flagged';
-    for(const [role,group] of groupBy(records.filter(r=>r[field]!==on),r=>r.f)){
+    for(const [role,group] of groupBy(records,r=>r.f)){
       const path=boxes[role];if(!path)continue;
       await session.flags(path,group.map(r=>r.u),on?'add':'remove',[flag]);
       for(const r of group)idx.update(key,r,{[field]:on});
@@ -347,6 +364,13 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
     // Unsubscribed folders stay out of sight in ordinary mail apps.
     try{await session.unsubscribe(APP_FOLDER);}catch{/* Visibility is cosmetic. */}
     return (await roles(entry,session,true)).aplos??APP_FOLDER;
+  }
+  /** App-data messages Aplos wrote (by their marker header), newest first, with their Message-IDs. */
+  async function appRecords(session:ImapSession,path:string):Promise<Array<{id:string;uid:number}>> {
+    const uids=await session.search(path,{header:{[APP_HEADER.toLowerCase()]:APP_MARK}});if(!uids.length)return [];
+    const marked=new RegExp(`^${APP_HEADER}:[ \\t]*${APP_MARK}[ \\t]*$`,'im');
+    const rows=(await session.fetch(path,uidSet(uids),{headers:true})).filter(r=>!r.flags.includes('\\Deleted')&&marked.test(r.headers?.toString('utf8')??''));
+    return rows.sort((a,b)=>b.uid-a.uid).flatMap(r=>{const id=headerId(r.headers);return id?[{id,uid:r.uid}]:[];});
   }
   function calendarLogin(account:Account):{backend:CalendarBackend;credentials:CalendarCredentials} {
     const url=account.server?.caldav,password=vault.get(account.id);
@@ -402,8 +426,10 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
           next.f[role]=result.cursor;synced++;if(result.reset)resets++;
         }
         const changes=idx.changes(),has=(key:string)=>context.has(`${account.id}:${key}`);
-        const built=await build(session,boxes,idx,account,[...changes.changed,...changes.touched.filter(k=>!has(k))]);
+        const validity=Object.fromEntries(Object.entries(next.f).map(([role,c])=>[role,c.v]));
+        const built=await build(session,boxes,idx,account,[...changes.changed,...changes.touched.filter(k=>!has(k))],validity);
         const flags=changes.touched.filter(has).flatMap(k=>{const records=idx.records(k);return records.length?[imapFlags(account.id,k,records)]:[];});
+        // The only index write of a sync, made before it returns: the service stages it with the threads and cursor.
         idx.flush();
         return {threads:built.threads,flags,removed:[...new Set([...changes.removed,...built.emptied])].map(k=>`${account.id}:${k}`),cursor:JSON.stringify(next),reset:!previous||(synced>0&&resets===synced)};
       });
@@ -423,7 +449,7 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
           keys.add(known?idx.keyOf(known)??add(idx,m):add(idx,m));
         }
         const {threads}=await build(session,boxes,idx,account,[...keys]);
-        idx.flush();
+        idx.defer();idx.flush();
         return threads.sort((a,b)=>b.date.localeCompare(a.date));
       });
     },
@@ -453,7 +479,7 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
             records=idx.records(key);
           }
           if(patch.bookmarked!==undefined)await setFlag(session,boxes,idx,key,patch.bookmarked?latest(records):records,'\\Flagged',patch.bookmarked);
-        }finally{idx.flush();}
+        }finally{idx.defer();idx.flush();}
       });
     },
     async send(account:Account,draft:Draft,thread?:Thread) {
@@ -475,14 +501,14 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
       catch(error){throw smtpFailure(error,preset,account.server?.smtp.host);}
       finally{sender.close();}
       // Recorded first so the Sent copy, synced later, joins the thread this send reports.
-      const threadId=await locked(account.id,async()=>{const idx=index(account);const key=idx.link(id,[...(existing?idx.records(existing).map(r=>r.id).slice(-1):[]),...referenceIds(references)]);idx.flush();return key;});
+      const threadId=await locked(account.id,async()=>{const idx=index(account);const key=idx.link(id,[...referenceIds(references),...(existing?idx.records(existing).map(r=>r.id).slice(-1):[])]);idx.defer();idx.flush();return key;});
       // iCloud does not file mail sent over SMTP in Sent Messages; other hosts may, so give them a moment first.
       const delay=options.sentCopyDelayMs??(preset==='icloud'?0:4000);
       try{
         if(delay)await sleep(delay);
         await run(account,async(session,entry)=>{
           const sent=(await roles(entry,session)).sent;if(!sent)return;
-          if((await session.search(sent,{header:{'message-id':id}})).length)return;
+          if((await withId(session,sent,id,true)).length)return;
           await session.append(sent,await compose(mail),['\\Seen'],mail.date as Date);
         });
       }catch{/* The message was delivered; a missing Sent copy must not turn that into a failure. */}
@@ -494,9 +520,9 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
         const boxes=await roles(entry,session);
         for(const role of ['sent','all'] as const){
           const path=boxes[role];if(!path)continue;
-          const uids=await session.search(path,{header:{'message-id':id}});if(!uids.length)continue;
+          const uids=await withId(session,path,id,true);if(!uids.length)continue;
           const idx=index(account);let key=idx.keyOf(id);
-          if(!key){const v=(await session.open(path)).uidValidity;const [m]=await metas(session,path,'sent',v,String(Math.max(...uids)),account);key=idx.link(id,m?.references??[]);idx.flush();}
+          if(!key){const v=(await session.open(path)).uidValidity;const [m]=await metas(session,path,'sent',v,String(Math.max(...uids)),account);key=idx.link(id,m?.references??[]);idx.defer();idx.flush();}
           return {id,threadId:key};
         }
         return undefined;
@@ -510,7 +536,7 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
         const boxes=await roles(entry,session),idx=index(account),key=idx.keyOf(messageId)??thread.remoteId;
         const copies=(key?idx.records(key):[]).filter(r=>r.id===messageId).sort((a,b)=>PREFERENCE.indexOf(a.f)-PREFERENCE.indexOf(b.f));
         for(const r of copies){
-          const path=boxes[r.f];if(!path)continue;
+          const path=boxes[r.f];if(!path||(await session.open(path)).uidValidity!==r.v)continue;
           if(remote.startsWith('part:')){const data=await session.download(path,r.u,remote.slice(5),MAX_ATTACHMENT);if(data)return {...attachment,size:data.length,data:data.toString('base64')};continue;}
           const row=(await session.fetch(path,String(r.u),{source:true}))[0];if(!row?.source)continue;
           const file=(await simpleParser(row.source,PARSE)).attachments[Number(remote.replace(/^index:/,''))];
@@ -523,22 +549,28 @@ export async function createImap(options:ImapOptions):Promise<ImapAdapter> {
     listEvents:async account=>{const c=calendarLogin(account);return c.backend.listEvents(c.credentials,account);},
     saveEvent:async(account:Account,event:CalendarEvent)=>{const c=calendarLogin(account);return c.backend.saveEvent(c.credentials,account,event);},
     deleteEvent:async(account:Account,event:CalendarEvent)=>{const c=calendarLogin(account);return c.backend.deleteEvent(c.credentials,account,event);},
-    async readAppData(account:Account) {
+    // Record IDs are Message-IDs, resolved to UIDs only when deleting, so they stay valid across UIDVALIDITY changes.
+    async readAppData(account:Account):Promise<AppDataRecord[]> {
       return run(account,async(session,entry)=>{
-        const path=await appFolder(session,entry,false);if(!path)return undefined;
-        const uids=await session.search(path,{all:true});if(!uids.length)return undefined;
-        const row=(await session.fetch(path,String(Math.max(...uids)),{source:true}))[0];if(!row?.source)return undefined;
-        return (await simpleParser(row.source,PARSE)).attachments.find(a=>a.filename===APP_FILE)?.content.toString('utf8');
+        const path=await appFolder(session,entry,false);if(!path)return [];
+        const found:AppDataRecord[]=[],seen=new Set<string>();
+        for(const r of await appRecords(session,path)){
+          if(seen.has(r.id))continue;seen.add(r.id);
+          const row=(await session.fetch(path,String(r.uid),{source:true}))[0];if(!row?.source)continue;
+          const data=(await simpleParser(row.source,PARSE)).attachments.find(a=>a.filename===APP_FILE)?.content.toString('utf8');
+          if(data!==undefined)found.push({id:r.id,data});
+        }
+        return found;
       });
     },
-    async writeAppData(account:Account,data:string) {
+    async writeAppData(account:Account,data:string,replaces:string[]) {
       await run(account,async(session,entry)=>{
-        const path=(await appFolder(session,entry,true))!;
-        const previous=await session.search(path,{all:true});
-        const raw=await compose({from:{name:'Aplos Mail',address:account.email},to:account.email,subject:'Aplos Mail sync data',text:'Aplos Mail keeps its settings for this account here. Deleting this message resets them.',date:new Date(),
-          attachments:[{filename:APP_FILE,content:data,contentType:'application/json'}]});
-        const appended=await session.append(path,raw,['\\Seen']);
-        const stale=previous.filter(uid=>uid!==appended.uid);
+        const path=(await appFolder(session,entry,true))!,id=`aplos-data-${randomUUID()}@${account.email.split('@')[1]}`;
+        const raw=await compose({messageId:`<${id}>`,headers:{[APP_HEADER]:APP_MARK},from:{name:'Aplos Mail',address:account.email},to:account.email,subject:'Aplos Mail sync data',
+          text:'Aplos Mail keeps its settings for this account here. Deleting this message resets them.',date:new Date(),attachments:[{filename:APP_FILE,content:data,contentType:'application/json'}]});
+        await session.append(path,raw,['\\Seen']);
+        const drop=new Set(replaces.map(normalizeId).filter((x):x is string=>!!x&&x!==id));if(!drop.size)return;
+        const stale=(await appRecords(session,path)).filter(r=>drop.has(r.id)).map(r=>r.uid);
         if(stale.length)await session.remove(path,stale);
       });
     },

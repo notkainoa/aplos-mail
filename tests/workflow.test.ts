@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactLog, emptyWorkflowLog, keySchemeFor, mergeLogs, reconcileWorkflow, recordLocal, sameLog, threadKey, workflowPatches, type WorkflowLog } from '../src/engine/workflow';
+import { applyLog, compactLog, emptyWorkflowLog, keySchemeFor, mergeLogs, publishLog, sameLog, threadKey, workflowEdit, workflowPatch, type WorkflowEntry, type WorkflowLog } from '../src/engine/workflow';
 import { generateSyncCode, normalizeSyncCode, openWorkflow, sealWorkflow, WorkflowCryptoError } from '../src/main/workflow-crypto';
 import type { Message, Thread } from '../src/shared/types';
 
@@ -8,7 +8,8 @@ const DAY=86_400_000,T0=Date.parse('2026-10-20T12:00:00Z');
 const mail=(id:string,date:string,extra:Partial<Message>={}):Message=>({id,from:'sam@example.test',fromName:'Sam',to:['alex@example.test'],date,text:'Hi',attachments:[],internetId:`<${id}@example.test>`,...extra});
 const thread=(remoteId:string,patch:Partial<Thread>={}):Thread=>({id:`acct:${remoteId}`,accountId:'acct',remoteId,subject:'Hello',summary:'',messages:[mail(`${remoteId}-1`,'2026-10-01T10:00:00Z')],date:'2026-10-01T10:00:00Z',
   unread:false,status:'new',importance:'important',bookmarked:false,replyStatus:'none',...patch});
-const apply=(threads:Thread[],patches:{threadId:string;patch:Partial<Thread>}[])=>threads.map(t=>({...t,...patches.find(p=>p.threadId===t.id)?.patch}));
+const entry=(status:'new'|'done'|'later',at:number,device='mac',extra={}):WorkflowEntry=>({fields:{status,replyStatus:'none',...extra},at,device});
+const publish=(edits:Thread[],opts:Partial<Parameters<typeof publishLog>[0]>={})=>publishLog({remotes:[],edits:edits.map((t,i)=>workflowEdit(t,T0,i+1)),applied:{},threads:[],seed:false,device:'mac',now:T0,...opts});
 
 test('thread keys are host thread IDs, except IMAP which keys by the root Message-ID every device sees',()=>{
   assert.equal(keySchemeFor('google'),'thread');assert.equal(keySchemeFor('microsoft'),'thread');assert.equal(keySchemeFor('jmap'),'thread');assert.equal(keySchemeFor('imap'),'message');
@@ -21,68 +22,69 @@ test('thread keys are host thread IDs, except IMAP which keys by the root Messag
   assert.equal(threadKey(thread('x',{remoteId:undefined,messages:[]})),undefined);
 });
 
-test('recording edits adds entries only for real changes; Trash and Spam are host state',()=>{
-  const plain=thread('a'),later=thread('b',{status:'later',todo:'Call Sam',dueDate:'2026-10-25'}),trashed=thread('c',{status:'trash',todo:'x'});
-  const log=recordLocal(emptyWorkflowLog(),[plain,later,trashed],'mac',T0);
-  assert.deepEqual(Object.keys(log.entries),['t:a','t:b']);
-  assert.deepEqual(log.entries['t:b'],{fields:{status:'later',replyStatus:'none',dueDate:'2026-10-25',todo:'Call Sam'},at:T0,device:'mac'});
-  assert.equal(recordLocal(log,[later],'mac',T0+5).entries['t:b'].at,T0,'unchanged fields keep their entry');
-  const done=recordLocal(log,[{...later,status:'done',todo:undefined,dueDate:undefined}],'mac',T0-50);
-  assert.deepEqual(done.entries['t:b'].fields,{status:'done',replyStatus:'none'});
-  assert.equal(done.entries['t:b'].at,T0+1,'an edit is never older than the entry it replaces');
-  assert.equal(recordLocal(log,[{...plain,reminderFired:false,hiddenFromHome:false,todo:''}],'mac',T0+9).entries['t:a'].at,T0,'false and empty values count as unset');
+test('edits are published with the time they were made; Trash, Spam and no-op edits add nothing',()=>{
+  const later=thread('b',{status:'later',todo:'Call Sam',dueDate:'2026-10-25'});
+  assert.deepEqual(workflowEdit(later,T0-5000,3),{keys:{thread:'t:b',message:'m:b-1@example.test'},fields:{status:'later',replyStatus:'none',dueDate:'2026-10-25',todo:'Call Sam'},at:T0-5000,gen:3});
+  assert.equal(workflowEdit(thread('c',{status:'trash',todo:'x'}),T0,1).fields,undefined);
+  const {log}=publishLog({remotes:[],edits:[workflowEdit(later,T0-5000,1),workflowEdit(thread('c',{status:'spam'}),T0,2)],applied:{},threads:[],seed:false,device:'mac',now:T0+DAY});
+  assert.deepEqual(log.entries,{'t:b':{fields:{status:'later',replyStatus:'none',dueDate:'2026-10-25',todo:'Call Sam'},at:T0-5000,device:'mac'}},'edit time, not round time');
+  const remote:WorkflowLog={version:1,entries:{'t:b':entry('later',T0-9000,'phone',{dueDate:'2026-10-25',todo:'Call Sam'})}};
+  assert.deepEqual(publish([later],{remotes:[remote]}).own,{},'an edit matching the shared state adds nothing');
+  // This device applied the phone's entry at T0+50; an edit after that wins although this clock says T0.
+  assert.equal(publish([thread('b',{status:'done'})],{remotes:[{version:1,entries:{'t:b':entry('later',T0+50,'phone')}}],applied:{'t:b':`${T0+50}:phone`}}).log.entries['t:b'].at,T0+51);
+  assert.equal(publish([thread('b',{status:'done'})],{remotes:[{version:1,entries:{'t:b':entry('later',T0+50,'phone')}}]}).log.entries['t:b'].device,'phone','an edit made before seeing a newer entry loses to it');
+  assert.equal(publish([thread('k',{remoteId:undefined,messages:[]})]).log.entries['t:k'],undefined);
+});
+
+test('the first device seeds its existing Later, todos and reminders; plain threads stay out',()=>{
+  const threads=[thread('a',{status:'later'}),thread('b',{status:'done'}),thread('c',{todo:'Pay',dueDate:'2026-11-01'}),thread('d',{reminderAt:'2026-11-02T09:00:00Z'}),thread('e')];
+  const {log,own}=publishLog({remotes:[],edits:[],applied:{},threads,seed:true,device:'mac',now:T0});
+  assert.deepEqual(Object.keys(log.entries).sort(),['t:a','t:c','t:d']);
+  assert.equal(own['t:a'].at,Date.parse('2026-10-01T10:00:00Z'),'seeded at the last message, so any real edit after triage wins');
+  assert.deepEqual(Object.keys(publishLog({remotes:[emptyWorkflowLog()],edits:[],applied:{},threads,seed:false,device:'mac',now:T0}).log.entries),[],'a joining device does not seed');
 });
 
 test('merging is last-writer-wins, commutative, associative and idempotent',()=>{
-  const at=(status:'new'|'done'|'later',time:number,device:string,todo?:string)=>({fields:{status,replyStatus:'none' as const,...(todo?{todo}:{})},at:time,device});
-  const a:WorkflowLog={version:1,entries:{x:at('done',T0,'mac'),y:at('later',T0+5,'mac'),z:at('done',T0,'mac','one')}};
-  const b:WorkflowLog={version:1,entries:{x:at('later',T0+1,'phone'),w:at('done',T0,'phone'),z:at('done',T0,'mac','two')}};
-  const c:WorkflowLog={version:1,entries:{x:at('new',T0+1,'zed'),y:at('done',T0+2,'phone')}};
+  const a:WorkflowLog={version:1,entries:{x:entry('done',T0),y:entry('later',T0+5),z:entry('done',T0,'mac',{todo:'one'})}};
+  const b:WorkflowLog={version:1,entries:{x:entry('later',T0+1,'phone'),w:entry('done',T0,'phone'),z:entry('done',T0,'mac',{todo:'two'})}};
+  const c:WorkflowLog={version:1,entries:{x:entry('new',T0+1,'zed'),y:entry('done',T0+2,'phone')}};
   const ab=mergeLogs(a,b);
   assert.equal(ab.entries.x.fields.status,'later');assert.equal(ab.entries.y.fields.status,'later');assert.equal(ab.entries.w.device,'phone');
   assert.equal(ab.entries.z.fields.todo,'two','identical time and device fall back to the fields, so both sides agree');
   assert.ok(sameLog(ab,mergeLogs(b,a)));
-  assert.ok(sameLog(mergeLogs(mergeLogs(a,b),c),mergeLogs(a,mergeLogs(b,c))));
+  assert.ok(sameLog(mergeLogs(mergeLogs(a,b),c),mergeLogs(a,mergeLogs(b,c))));assert.ok(sameLog(mergeLogs(a,b,c),mergeLogs(c,a,b)));
   assert.equal(mergeLogs(ab,c).entries.x.device,'zed','ties on time go to the larger device ID');
   assert.ok(sameLog(mergeLogs(ab,ab),ab));
 });
 
-test('two devices converge, and an entry already known is not applied again',()=>{
-  const threads=[thread('a'),thread('b')];
-  // Mac marks a as Later; the phone, on its first round, takes the host log rather than overriding it.
-  const mac=reconcileWorkflow({edited:[{...threads[0],status:'later',todo:'Reply'}],threads,device:'mac',now:T0});
-  assert.equal(mac.write,true);assert.deepEqual(mac.patches,[]);
-  const phoneBefore=apply(threads,[{threadId:'acct:a',patch:{status:'done'}}]);// mail sync saw the archive as Done
-  const phone=reconcileWorkflow({remote:mac.log,edited:[],threads:phoneBefore,device:'phone',now:T0+DAY});
-  assert.deepEqual(phone.patches,[{threadId:'acct:a',patch:{status:'later',todo:'Reply'}}]);assert.equal(phone.write,false);
-  let phoneThreads=apply(phoneBefore,phone.patches);
-  // The phone clears the todo and marks b Done; the Mac picks both up.
-  const edited=[{...phoneThreads[0],todo:undefined},{...phoneThreads[1],status:'done' as const}];phoneThreads=apply(phoneThreads,edited.map(t=>({threadId:t.id,patch:t})));
-  const phone2=reconcileWorkflow({known:phone.log,remote:mac.log,edited,threads:phoneThreads,device:'phone',now:T0+2*DAY});
-  assert.equal(phone2.write,true);assert.deepEqual(phone2.patches,[]);
-  const macThreads=apply(threads,[{threadId:'acct:a',patch:{status:'later',todo:'Reply'}}]);
-  const mac2=reconcileWorkflow({known:mac.log,remote:phone2.log,edited:[],threads:macThreads,device:'mac',now:T0+3*DAY});
-  assert.deepEqual(mac2.patches,[{threadId:'acct:a',patch:{todo:undefined}},{threadId:'acct:b',patch:{status:'done'}}]);
-  assert.ok(sameLog(mac2.log,phone2.log));assert.equal(mac2.write,false);
-  // The user moves b back to the inbox in another mail app; the known Done entry does not undo that.
-  const moved=apply(apply(macThreads,mac2.patches),[{threadId:'acct:b',patch:{status:'new'}}]);
-  assert.deepEqual(reconcileWorkflow({known:mac2.log,remote:phone2.log,edited:[],threads:moved,device:'mac',now:T0+4*DAY}).patches,[]);
+test('compaction keeps a floor, so a dropped Done does not bring back an older Later held elsewhere',()=>{
+  const log:WorkflowLog={version:1,entries:{oldDone:entry('done',T0-200*DAY),oldLater:entry('later',T0-200*DAY),oldTodo:entry('done',T0-200*DAY,'mac',{todo:'x'}),recent:entry('done',T0-DAY),newest:entry('new',T0)}};
+  const compacted=compactLog(log,T0);
+  assert.deepEqual(Object.keys(compacted.entries).sort(),['newest','oldLater','oldTodo','recent']);assert.equal(compacted.floor,T0-200*DAY);
+  assert.deepEqual(Object.keys(compactLog(log,T0,2).entries).sort(),['newest','recent']);assert.equal(compactLog(log,T0,2).floor,T0-200*DAY);
+  // x was Later, then Done at T0-190d; compaction drops the Done. A stale copy or an old pending edit with the Later must not return.
+  const shared=compactLog({version:1,entries:{x:entry('done',T0-190*DAY,'phone')}},T0),stale:WorkflowLog={version:1,entries:{x:entry('later',T0-195*DAY)}};
+  assert.equal(shared.entries.x,undefined);assert.equal(mergeLogs(shared,stale).entries.x,undefined);assert.equal(mergeLogs(stale,shared).entries.x,undefined);
+  assert.equal(publish([thread('x',{status:'later'})],{remotes:[shared],now:T0}).log.entries['t:x']?.fields.status,'later','an edit newer than the floor still counts');
+  const old=publishLog({remotes:[{version:1,entries:{},floor:T0-DAY}],edits:[workflowEdit(thread('x',{status:'later'}),T0-2*DAY,1)],applied:{},threads:[],seed:false,device:'mac',now:T0});
+  assert.equal(old.log.entries['t:x'],undefined,'an edit older than what was compacted away is not taken in');
+  assert.equal(mergeLogs(shared,{version:1,entries:{x:entry('later',T0)}}).entries.x.fields.status,'later');
 });
 
-test('mail that arrived after an edit keeps the thread on Home, but the todo still syncs',()=>{
-  const log=recordLocal(emptyWorkflowLog(),[thread('a',{status:'done',hiddenFromHome:true,todo:'Pay'})],'mac',T0);
-  const local=thread('a',{messages:[mail('a-1','2026-10-01T10:00:00Z'),mail('a-2',new Date(T0+1000).toISOString())]});
-  assert.deepEqual(workflowPatches(log,[local]),[{threadId:'acct:a',patch:{todo:'Pay'}}]);
-  const sentAfter=thread('a',{messages:[mail('a-1','2026-10-01T10:00:00Z'),mail('a-2',new Date(T0+1000).toISOString(),{sent:true})]});
-  assert.deepEqual(workflowPatches(log,[sentAfter]),[{threadId:'acct:a',patch:{status:'done',hiddenFromHome:true,todo:'Pay'}}],'own replies do not count as arrivals');
-  assert.deepEqual(workflowPatches(log,[thread('a',{status:'spam'})]),[],'Trash and Spam are left alone');
-});
-
-test('compaction drops old entries that say nothing beyond host state, then caps by recency',()=>{
-  const e=(status:'new'|'done'|'later',at:number,extra={})=>({fields:{status,replyStatus:'none' as const,...extra},at,device:'mac'});
-  const log:WorkflowLog={version:1,entries:{oldDone:e('done',T0-200*DAY),oldLater:e('later',T0-200*DAY),oldTodo:e('done',T0-200*DAY,{todo:'x'}),recent:e('done',T0-DAY),newest:e('new',T0)}};
-  assert.deepEqual(Object.keys(compactLog(log,T0).entries).sort(),['newest','oldLater','oldTodo','recent']);
-  assert.deepEqual(Object.keys(compactLog(log,T0,2).entries).sort(),['newest','recent']);
+test('each winning entry applies once, including to threads that arrive later, and arrivals keep Home state',()=>{
+  const log:WorkflowLog={version:1,entries:{'t:a':entry('later',T0,'phone',{todo:'Reply'}),'t:b':entry('done',T0,'phone')}};
+  let result=applyLog(log,[thread('a')],{});
+  assert.deepEqual(result.patches,[{threadId:'acct:a',patch:{status:'later',todo:'Reply'}}]);assert.deepEqual(result.applied,{'t:a':`${T0}:phone`});
+  assert.deepEqual(applyLog(log,[thread('a',{status:'new'})],result.applied).patches,[],'not applied twice, so a move back elsewhere sticks');
+  result=applyLog(log,[thread('a'),thread('b')],result.applied);
+  assert.deepEqual(result.patches,[{threadId:'acct:b',patch:{status:'done'}}],'a thread downloaded after the round that fetched its entry');
+  assert.deepEqual(applyLog(log,[thread('b')],{},{skip:new Set(['acct:b'])}),{patches:[],applied:{}},'a thread edited during the round is left alone and not marked');
+  assert.deepEqual(applyLog({version:1,entries:{}},[thread('a')],{'t:a':'1:x'}).applied,{},'marks for compacted keys are dropped');
+  const done=entry('done',T0,'mac',{hiddenFromHome:true,todo:'Pay'});
+  assert.deepEqual(workflowPatch(done,thread('a',{messages:[mail('a-1','2026-10-01T10:00:00Z'),mail('a-2',new Date(T0+1000).toISOString())]})),{todo:'Pay'});
+  assert.deepEqual(workflowPatch(done,thread('a',{messages:[mail('a-1','2026-10-01T10:00:00Z'),mail('a-2',new Date(T0+1000).toISOString(),{sent:true})]})),{status:'done',hiddenFromHome:true,todo:'Pay'},'own replies do not count as arrivals');
+  assert.equal(workflowPatch(done,thread('a',{status:'spam'})),undefined,'Trash and Spam are left alone');
+  assert.deepEqual(workflowPatch(entry('new',T0),thread('a',{todo:'x',reminderFired:true})),{todo:undefined,reminderFired:false},'cleared fields are patched');
 });
 
 test('sync codes are grouped, unambiguous and forgiving to type',()=>{
@@ -95,7 +97,7 @@ test('sync codes are grouped, unambiguous and forgiving to type',()=>{
 });
 
 test('sealed workflow data round-trips and rejects the wrong code, tampering and oversize input',()=>{
-  const code=generateSyncCode(),log=recordLocal(emptyWorkflowLog(),[thread('a',{status:'later',todo:'Ünïcode todo',reminderAt:'2026-10-21T09:00:00Z'})],'mac',T0);
+  const code=generateSyncCode(),log:WorkflowLog={version:1,entries:{'t:a':entry('later',T0,'mac',{todo:'Ünïcode todo',reminderAt:'2026-10-21T09:00:00Z'})},floor:T0-DAY};
   const blob=sealWorkflow(log,code);
   assert.match(blob,/^APLOS-WF1\.[\w-]+\.[\w-]+\.[\w-]+\.[\w-]+$/);assert.ok(!blob.includes('todo')&&!blob.includes('acct'),'no plaintext');
   assert.notEqual(sealWorkflow(log,code),blob,'fresh salt and IV each time');
@@ -111,4 +113,10 @@ test('sealed workflow data round-trips and rejects the wrong code, tampering and
   // A full log of 20,000 entries still fits the size cap.
   const big:WorkflowLog={version:1,entries:Object.fromEntries(Array.from({length:20_000},(_,i)=>[`t:18f${i.toString(16).padStart(13,'0')}`,{fields:{status:i%2?'done':'later',replyStatus:'none',...(i%3?{}:{todo:`Follow up ${i}`})},at:T0+i,device:'mac-1234'}]))};
   assert.equal(Object.keys(openWorkflow(sealWorkflow(big,code),code).entries).length,20_000);
+});
+
+test('a log over the plaintext limit is refused when sealing, and a valid one over a reader limit is "size", not damaged',()=>{
+  const code=generateSyncCode(),log:WorkflowLog={version:1,entries:{'t:a':entry('later',T0,'mac',{todo:'x'.repeat(5000)})}};
+  assert.throws(()=>sealWorkflow(log,code,1000),(e:unknown)=>e instanceof WorkflowCryptoError&&e.reason==='size','compresses below the sealed cap, but readers would refuse it');
+  assert.throws(()=>openWorkflow(sealWorkflow(log,code),code,1000),(e:unknown)=>e instanceof WorkflowCryptoError&&e.reason==='size');
 });

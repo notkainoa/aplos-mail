@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, randomBytes } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
-import { ProviderError, type CalendarInfo, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import { ProviderError, type AppDataRecord, type CalendarInfo, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
 import { createVault } from './vault';
 
 export interface MicrosoftOptions extends ProviderEnvironment { clientId?:string; tenant?:string; oauthTimeoutMs?:number }
@@ -35,7 +35,12 @@ const ROLES:Record<string,string>={inbox:'INBOX',archive:'ARCHIVE',sentitems:'SE
 const TRACKED=['inbox','archive','sentitems','deleteditems','junkemail'];
 const LIGHT='id,conversationId,receivedDateTime,isRead,flag,from,isDraft';
 const FULL='id,conversationId,internetMessageId,subject,body,bodyPreview,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,isRead,flag,hasAttachments,parentFolderId,isDraft,inferenceClassification';
-const APP_FOLDER='Aplos',APP_FILE='aplos-data.bin';
+/** Attachment list pages per message; anything past this is not a real mail. */
+const MAX_ATTACHMENT_PAGES=20;
+const APP_FOLDER='Aplos Mail Data',APP_FILE='aplos-data.bin';
+/** Named property on every workflow record, so only messages Aplos wrote are ever read or deleted. */
+const APP_PROPERTY='String {8d4b6f0e-3a91-4c57-b2e8-61f0c9a7d354} Name AplosWorkflowRecord',APP_MARK='1';
+const APP_FILTER=`singleValueExtendedProperties/Any(ep: ep/id eq '${APP_PROPERTY}' and ep/value eq '${APP_MARK}')`;
 const enc=encodeURIComponent;
 /** OData option names keep their `$`; values are percent-encoded. */
 const q=(params:Record<string,string|undefined>)=>Object.entries(params).filter(([,v])=>v!==undefined).map(([k,v])=>`${k}=${enc(v!)}`).join('&');
@@ -100,7 +105,7 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
   if(!/^[\w.-]+$/.test(tenant))throw new Error('MICROSOFT_TENANT must be a tenant ID, domain, "common", "organizations" or "consumers".');
   const login=`https://login.microsoftonline.com/${tenant}/oauth2/v2.0`;
   const vault=await createVault<Token>({dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,file:'microsoft-tokens.enc.json'});
-  const refreshes=new Map<string,Promise<string>>(),indexes=new Map<string,MailIndex>(),zones=new Map<string,string>();
+  const refreshes=new Map<string,Promise<string>>(),zones=new Map<string,string>();
   let servers:Server[]=[],cancelConnect:(()=>void)|undefined;
   const memory={
     get:(account:Account,key:string)=>options.memory?.get(account.id,key),
@@ -165,9 +170,9 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
     if(!response.ok){let body:Json|undefined;try{body=await response.json() as Json;}catch{/* Error bodies are optional. */}throw failure(response.status,body,response.headers.get('retry-after'));}
     try{return Buffer.from(await response.arrayBuffer());}catch{throw new MicrosoftError('The connection to Microsoft dropped before it answered. Please retry.',undefined,true);}
   }
-  async function pages(account:Account,path:string,prefer?:string[]):Promise<Json[]> {
+  async function pages(account:Account,path:string,prefer?:string[],limit=Infinity):Promise<Json[]> {
     const items:Json[]=[];let next:string|undefined=path;
-    while(next){const page=await api(account,next,'GET',undefined,prefer);items.push(...(Array.isArray(page.value)?page.value:[]));next=typeof page['@odata.nextLink']==='string'?page['@odata.nextLink']:undefined;}
+    for(let n=0;next&&n<limit;n++){const page=await api(account,next,'GET',undefined,prefer);items.push(...(Array.isArray(page.value)?page.value:[]));next=typeof page['@odata.nextLink']==='string'?page['@odata.nextLink']:undefined;}
     return items;
   }
   async function pool<T,R>(items:T[],limit:number,fn:(item:T)=>Promise<R>):Promise<R[]> {
@@ -190,12 +195,9 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
   const ok=(r:SubResult)=>{if(r.status>=200&&r.status<300)return r.body;throw failure(r.status,r.body,r.headers['Retry-After']??r.headers['retry-after']);};
   const missing=(r:SubResult)=>r.status===404;
 
-  function indexOf(account:Account):MailIndex {
-    let index=indexes.get(account.id);
-    if(!index){index=createIndex();index.load(memory.get(account,'index'));indexes.set(account.id,index);}
-    return index;
-  }
-  const saveIndex=(account:Account)=>memory.set(account,'index',indexOf(account).dump());
+  // Loaded fresh for every call rather than cached: memory is the only copy that a failed sync rolls back.
+  const loadIndex=(account:Account):MailIndex=>{const index=createIndex();index.load(memory.get(account,'index'));return index;};
+  const saveIndex=(account:Account,index:MailIndex)=>memory.set(account,'index',index.dump());
   /** Well-known folder name → folder ID, for reading `parentFolderId`. */
   async function folderIds(account:Account,refresh=false):Promise<Record<string,string>> {
     if(!refresh){try{const saved=JSON.parse(memory.get(account,'folders')??'') as Record<string,string>;if(saved&&typeof saved.inbox==='string')return saved;}catch{/* Resolve again below. */}}
@@ -209,29 +211,34 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
   const folderName=(ids:Record<string,string>,parentFolderId:unknown)=>Object.entries(ids).find(([,id])=>id===parentFolderId)?.[0]??'';
 
   /** Full conversations, refreshing the index entries of every message they contain. */
-  async function fullThreads(account:Account,conversations:string[]):Promise<Map<string,Thread|undefined>> {
-    const ids=await folderIds(account),index=indexOf(account),result=new Map<string,Thread|undefined>();
+  async function fullThreads(account:Account,conversations:string[],index:MailIndex):Promise<Map<string,Thread|undefined>> {
+    const ids=await folderIds(account),result=new Map<string,Thread|undefined>();
     const responses=await batch(account,conversations.map(c=>({method:'GET',url:`/me/messages?${q({$filter:`conversationId eq ${quote(c)}`,$select:FULL,$top:'100'})}`})));
     const lists=await pool(responses,4,async r=>{const body=ok(r),items:Json[]=Array.isArray(body.value)?body.value:[];if(typeof body['@odata.nextLink']==='string')items.push(...await pages(account,body['@odata.nextLink']));return items.filter(m=>!m.isDraft&&typeof m.id==='string');});
     const all=lists.flat(),attachments=new Map<string,Attachment[]>();
     const withFiles=all.filter(m=>m.hasAttachments||(m.body?.contentType==='html'&&/\bcid:/i.test(String(m.body.content??''))));
     const listed=await batch(account,withFiles.map(m=>({method:'GET',url:`/me/messages/${enc(m.id)}/attachments?$select=id,name,contentType,size,isInline`})));
+    const listings=await pool(listed,4,async r=>{
+      if(missing(r))return undefined;
+      const body=ok(r),rows:Json[]=Array.isArray(body.value)?[...body.value]:[];
+      if(typeof body['@odata.nextLink']==='string')rows.push(...await pages(account,body['@odata.nextLink'],undefined,MAX_ATTACHMENT_PAGES));
+      return rows;
+    });
     const inline:{message:string;attachment:Attachment}[]=[];
-    listed.forEach((r,i)=>{
-      if(missing(r))return;const message=String(withFiles[i].id);
-      const rows=(ok(r).value??[]).filter((a:Json)=>typeof a.id==='string'&&a['@odata.type']!=='#microsoft.graph.referenceAttachment');
+    listings.forEach((listing,i)=>{
+      if(!listing)return;const message=String(withFiles[i].id);
+      const rows=listing.filter((a:Json)=>typeof a.id==='string'&&a['@odata.type']!=='#microsoft.graph.referenceAttachment');
       attachments.set(message,rows.map((a:Json)=>{const attachment:Attachment={id:`${message}:${a.id}`,name:String(a.name||'attachment'),type:String(a.contentType||'application/octet-stream'),size:Number(a.size)||0,remoteId:a.id,messageId:message};
         if(a.isInline&&attachment.size<=INLINE_LIMIT&&a['@odata.type']!=='#microsoft.graph.itemAttachment')inline.push({message,attachment});return attachment;}));
     });
     const bodies=await batch(account,inline.map(({message,attachment})=>({method:'GET',url:`/me/messages/${enc(message)}/attachments/${enc(attachment.remoteId!)}`})));
-    bodies.forEach((r,i)=>{if(r.status!==200)return;const a=inline[i].attachment;if(typeof r.body.contentBytes==='string')a.data=r.body.contentBytes;if(typeof r.body.contentId==='string')a.contentId=r.body.contentId.replace(/^<|>$/g,'');});
+    bodies.forEach((r,i)=>{if(r.status===429||r.status>=500)ok(r);if(r.status!==200)return;const a=inline[i].attachment;if(typeof r.body.contentBytes==='string')a.data=r.body.contentBytes;if(typeof r.body.contentId==='string')a.contentId=r.body.contentId.replace(/^<|>$/g,'');});
     conversations.forEach((c,i)=>{
       for(const [id] of index.entries(c))index.delete(id);
       const rows=lists[i].map(message=>({message,folder:folderName(ids,message.parentFolderId),attachments:attachments.get(message.id)}));
       for(const row of rows)index.set(row.message.id,entryOf(row.message,row.folder,account));
       result.set(c,rows.length?normalizeGraphConversation(c,rows,account):undefined);
     });
-    saveIndex(account);
     return result;
   }
   async function follow(account:Account,url:string):Promise<{items:Json[];link:string}|undefined> {
@@ -245,8 +252,8 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
     }
     return undefined;
   }
-  async function freshWindow(account:Account):Promise<SyncResult> {
-    const ids=await folderIds(account,true),tracked=TRACKED.filter(f=>ids[f]),index=indexOf(account);
+  async function freshWindow(account:Account,index:MailIndex):Promise<SyncResult> {
+    const ids=await folderIds(account,true),tracked=TRACKED.filter(f=>ids[f]);
     // Delta cannot be limited to the newest N, so find the date of the Nth newest message and start each folder's delta there.
     const newest=await batch(account,tracked.map(f=>({method:'GET',url:`/me/mailFolders/${f}/messages?${q({$top:String(INITIAL_MESSAGES),$orderby:'receivedDateTime desc',$select:'receivedDateTime'})}`})));
     const dates=newest.flatMap(r=>(ok(r).value??[]).map((m:Json)=>String(m.receivedDateTime??''))).filter(Boolean).sort().reverse();
@@ -258,8 +265,7 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
       links[folder]=round.link;
       for(const m of round.items)if(!m['@removed']&&!m.isDraft&&typeof m.id==='string'&&typeof m.conversationId==='string'){index.set(m.id,entryOf(m,folder,account));conversations.add(m.conversationId);}
     }
-    saveIndex(account);
-    const threads=[...(await fullThreads(account,[...conversations])).values()].filter((t):t is Thread=>!!t).sort((a,b)=>b.date.localeCompare(a.date));
+    const threads=[...(await fullThreads(account,[...conversations],index)).values()].filter((t):t is Thread=>!!t).sort((a,b)=>b.date.localeCompare(a.date));
     return {threads,flags:[],removed:[],cursor:JSON.stringify({v:1,links}),reset:true};
   }
   function parseCursor(cursor:string,tracked:string[]):Record<string,string>|undefined {
@@ -269,10 +275,14 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
       return Object.values(links).every(l=>typeof l==='string'&&l.startsWith(`${graph}/`))?links as Record<string,string>:undefined;
     }catch{return undefined;}
   }
-  async function incremental(account:Account,cursor:string,context:SyncContext):Promise<SyncResult|undefined> {
+  async function incremental(account:Account,cursor:string,context:SyncContext,index:MailIndex):Promise<SyncResult|undefined> {
     const ids=await folderIds(account),tracked=TRACKED.filter(f=>ids[f]),links=parseCursor(cursor,tracked);
     if(!links)return undefined;
-    const index=indexOf(account),next:Record<string,string>={},arrived=new Set<string>(),touched=new Set<string>(),removals:{id:string;folder:string}[]=[],unknown=new Set<string>();
+    const next:Record<string,string>={},arrived=new Set<string>(),touched=new Set<string>(),removals:{id:string;folder:string}[]=[],unknown=new Set<string>();
+    // Conversations that lost a message: their stored copy still shows it, so flags alone cannot describe them.
+    const shrunk=new Set<string>();
+    const changed=(previous:Entry|undefined,entry:Entry)=>{if(!previous){arrived.add(entry.c);return;}touched.add(entry.c);if(previous.c!==entry.c){touched.add(previous.c);shrunk.add(previous.c);arrived.add(entry.c);}};
+    const gone=(id:string,previous:Entry|undefined)=>{if(!previous)return;index.delete(id);touched.add(previous.c);shrunk.add(previous.c);};
     for(const folder of tracked){
       const round=await follow(account,links[folder]);if(!round)return undefined;next[folder]=round.link;
       for(const m of round.items){
@@ -281,8 +291,7 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
         if(m.isDraft)continue;
         const previous=index.get(m.id);
         if(!previous&&typeof m.conversationId!=='string'){unknown.add(m.id);continue;}
-        const entry=entryOf(m,folder,account,previous);index.set(m.id,entry);
-        if(previous){touched.add(entry.c);if(previous.c!==entry.c)touched.add(previous.c);}else arrived.add(entry.c);
+        const entry=entryOf(m,folder,account,previous);index.set(m.id,entry);changed(previous,entry);
       }
     }
     // A move reports @removed in the old folder and an addition in the new one; only removals not seen elsewhere need a lookup.
@@ -290,20 +299,18 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
     const lookups=await batch(account,pending.map(id=>({method:'GET',url:`/me/messages/${enc(id)}?$select=${LIGHT},parentFolderId`})));
     lookups.forEach((r,i)=>{
       const id=pending[i],previous=index.get(id);
-      if(missing(r)){if(previous){index.delete(id);touched.add(previous.c);}return;}
-      const m=ok(r);if(m.isDraft||typeof m.conversationId!=='string'){if(previous){index.delete(id);touched.add(previous.c);}return;}
-      const entry=entryOf(m,folderName(ids,m.parentFolderId),account,previous);index.set(id,entry);
-      if(previous){touched.add(entry.c);if(previous.c!==entry.c)touched.add(previous.c);}else arrived.add(entry.c);
+      if(missing(r)){gone(id,previous);return;}
+      const m=ok(r);if(m.isDraft||typeof m.conversationId!=='string'){gone(id,previous);return;}
+      const entry=entryOf(m,folderName(ids,m.parentFolderId),account,previous);index.set(id,entry);changed(previous,entry);
     });
-    saveIndex(account);
     const removed:string[]=[],flags:ThreadFlags[]=[],full:string[]=[];
     for(const c of new Set([...arrived,...touched])){
       const id=`${account.id}:${c}`,entries=index.entries(c).map(([,e])=>e);
       if(!entries.length){if(context.has(id))removed.push(id);continue;}
-      if(arrived.has(c)||!context.has(id))full.push(c);else flags.push(describe(account,c,entries));
+      if(arrived.has(c)||shrunk.has(c)||!context.has(id))full.push(c);else flags.push(describe(account,c,entries));
     }
     const threads:Thread[]=[];
-    for(const [c,thread] of await fullThreads(account,full)){
+    for(const [c,thread] of await fullThreads(account,full,index)){
       const id=`${account.id}:${c}`;
       if(!thread){if(context.has(id))removed.push(id);continue;}
       // A thread this device never stored only matters once it is in the inbox, unless it gained mail.
@@ -312,13 +319,13 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
     return {threads,flags,removed,cursor:JSON.stringify({v:1,links:next}),reset:false};
   }
   /** Index entries for a conversation, asking Outlook when this device has not indexed it. */
-  async function conversationEntries(account:Account,conversationId:string):Promise<(readonly [string,Entry])[]> {
-    const index=indexOf(account);let entries=index.entries(conversationId);
+  async function conversationEntries(account:Account,index:MailIndex,conversationId:string):Promise<(readonly [string,Entry])[]> {
+    let entries=index.entries(conversationId);
     if(entries.length)return entries;
     const ids=await folderIds(account);
     for(const m of await pages(account,`/me/messages?${q({$filter:`conversationId eq ${quote(conversationId)}`,$select:`${LIGHT},parentFolderId`,$top:'100'})}`))
       if(!m.isDraft&&typeof m.id==='string')index.set(m.id,entryOf(m,folderName(ids,m.parentFolderId),account));
-    saveIndex(account);entries=index.entries(conversationId);
+    saveIndex(account,index);entries=index.entries(conversationId);
     return entries;
   }
   function destination(e:Entry,status:Thread['status'],inInbox:boolean):string|undefined {
@@ -343,17 +350,23 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
     return zone;
   }
   async function appFolder(account:Account,create:boolean):Promise<string|undefined> {
-    const saved=memory.get(account,'appFolder');if(saved)return saved;
-    const found=(await pages(account,'/me/mailFolders?includeHiddenFolders=true&$select=id,displayName&$top=100')).find(f=>f.displayName===APP_FOLDER);
+    const saved=memory.get(account,'dataFolder');if(saved)return saved;
+    // Only a hidden folder can be one Aplos created; a visible folder of the same name belongs to the user.
+    const found=(await pages(account,'/me/mailFolders?includeHiddenFolders=true&$select=id,displayName,isHidden&$top=100')).find(f=>f.displayName===APP_FOLDER&&f.isHidden===true);
     let id=typeof found?.id==='string'?found.id:undefined;
     if(!id&&create)id=String((await api(account,'/me/mailFolders','POST',{displayName:APP_FOLDER,isHidden:true})).id);
-    if(id)memory.set(account,'appFolder',id);
+    if(id)memory.set(account,'dataFolder',id);
     return id;
+  }
+  /** Workflow records in the folder, newest first. The marker filter keeps any other message out. */
+  async function appRecords(account:Account,folder:string):Promise<{id:string;created:string}[]> {
+    const rows=await pages(account,`/me/mailFolders/${enc(folder)}/messages?${q({$filter:APP_FILTER,$select:'id,createdDateTime',$top:'100'})}`);
+    return rows.filter(m=>typeof m.id==='string').map(m=>({id:String(m.id),created:String(m.createdDateTime??'')})).sort((a,b)=>b.created.localeCompare(a.created)||b.id.localeCompare(a.id));
   }
   /** Run an app-data step, forgetting a cached folder the user deleted and trying once more. */
   async function withAppFolder<T>(account:Account,create:boolean,fn:(folder:string|undefined)=>Promise<T>):Promise<T> {
     try{return await fn(await appFolder(account,create));}
-    catch(error){if(!(error instanceof MicrosoftError&&error.status===404)||!memory.get(account,'appFolder'))throw error;memory.set(account,'appFolder',undefined);return fn(await appFolder(account,create));}
+    catch(error){if(!(error instanceof MicrosoftError&&error.status===404)||!memory.get(account,'dataFolder'))throw error;memory.set(account,'dataFolder',undefined);return fn(await appFolder(account,create));}
   }
   async function findSent(account:Account,messageId:string):Promise<{id:string;threadId:string}|undefined> {
     const id=`<${messageId.trim().replace(/^<|>$/g,'')}>`,query=q({$filter:`internetMessageId eq ${quote(id)}`,$select:'id,conversationId',$top:'1'});
@@ -429,23 +442,28 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
       } finally {if(timer)clearTimeout(timer);for(const s of servers)s.close();servers=[];cancelConnect=undefined;}
     },
     // Microsoft has no token revocation endpoint for this flow; forgetting the tokens locally is the disconnect.
-    async disconnect(accountId:string) {await vault.delete(accountId);options.memory?.clear(accountId);indexes.delete(accountId);zones.delete(accountId);},
+    async disconnect(accountId:string) {await vault.delete(accountId);options.memory?.clear(accountId);zones.delete(accountId);},
     async sync(account:Account,cursor?:string,context:SyncContext={has:()=>false}):Promise<SyncResult> {
+      // The index is saved only alongside a complete result, so a failed round replays from the old cursor with the old index.
+      const index=loadIndex(account);let result:SyncResult|undefined;
       if(cursor){
-        try{const result=await incremental(account,cursor,context);if(result)return result;}
+        try{result=await incremental(account,cursor,context,index);}
         catch(error){if(!(error instanceof MicrosoftError&&(error.status===410||error.status===404)))throw error;}
       }
-      return freshWindow(account);
+      result??=await freshWindow(account,index);
+      saveIndex(account,index);
+      return result;
     },
     async search(account:Account,query:string):Promise<Thread[]> {
       const rows=(await api(account,`/me/messages?${q({$search:`"${query.replace(/["\\]/g,' ').trim()}"`,$top:String(SEARCH_MESSAGES),$select:'id,conversationId,isDraft,parentFolderId'})}`)).value??[];
-      const hidden=memory.get(account,'appFolder');
+      const hidden=memory.get(account,'dataFolder');
       const conversations=[...new Set<string>(rows.filter((m:Json)=>!m.isDraft&&typeof m.conversationId==='string'&&(!hidden||m.parentFolderId!==hidden)).map((m:Json)=>m.conversationId))];
-      return [...(await fullThreads(account,conversations)).values()].filter((t):t is Thread=>!!t).sort((a,b)=>b.date.localeCompare(a.date));
+      // Search results stay out of the index: a message indexed here would look already delivered to the next sync.
+      return [...(await fullThreads(account,conversations,createIndex())).values()].filter((t):t is Thread=>!!t).sort((a,b)=>b.date.localeCompare(a.date));
     },
     async updateThread(account:Account,thread:RemoteThread,patch:Partial<Thread>) {
       if(!thread.remoteId)throw new Error('This thread has no Outlook identifier.');
-      const index=indexOf(account);let entries=await conversationEntries(account,thread.remoteId);
+      const index=loadIndex(account);let entries=await conversationEntries(account,index,thread.remoteId);
       if(!entries.length)throw new MicrosoftError('Outlook could not find this conversation.',404);
       if(patch.status){
         const inInbox=patch.labels?patch.labels.includes('INBOX'):patch.status==='new';
@@ -456,7 +474,7 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
           if(missing(r)){index.delete(id);return;}
           const body=ok(r),next=typeof body.id==='string'?body.id:id;
           index.delete(id);index.set(next,{...e,f:to});
-        });}finally{saveIndex(account);}
+        });}finally{saveIndex(account,index);}
         entries=index.entries(thread.remoteId);
       }
       const latest=(list:typeof entries)=>{const inbound=list.filter(([,e])=>!e.o);return [...(inbound.length?inbound:list)].sort((a,b)=>a[1].d.localeCompare(b[1].d)).at(-1);};
@@ -467,7 +485,7 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
       if(patch.bookmarked===true&&!entries.some(([,e])=>e.g)){const last=latest(entries);if(last)changes.push({id:last[0],body:{flag:{flagStatus:'flagged'}},apply:x=>({...x,g:true})});}
       if(!changes.length)return;
       const results=await batch(account,changes.map(c=>({method:'PATCH',url:`/me/messages/${enc(c.id)}`,body:c.body})));
-      try{results.forEach((r,i)=>{const {id,apply}=changes[i];if(missing(r)){index.delete(id);return;}ok(r);const e=index.get(id);if(e)index.set(id,apply(e));});}finally{saveIndex(account);}
+      try{results.forEach((r,i)=>{const {id,apply}=changes[i];if(missing(r)){index.delete(id);return;}ok(r);const e=index.get(id);if(e)index.set(id,apply(e));});}finally{saveIndex(account,index);}
     },
     async send(account:Account,draft:Draft,thread?:Thread) {
       if(!draft.to.trim())throw new Error('Add at least one recipient before sending.');
@@ -518,22 +536,30 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
       return {...event,...eventModel(raw,account,calendarId),id:event.id};
     },
     async deleteEvent(account:Account,event:CalendarEvent) {if(!event.remoteId)throw new Error('This event has no Outlook identifier.');await api(account,`/me/events/${enc(event.remoteId)}`,'DELETE');},
-    async readAppData(account:Account):Promise<string|undefined> {
+    async readAppData(account:Account):Promise<AppDataRecord[]> {
       return withAppFolder(account,false,async folder=>{
-        if(!folder)return undefined;
-        const newest=(await api(account,`/me/mailFolders/${enc(folder)}/messages?${q({$orderby:'createdDateTime desc',$top:'1',$select:'id'})}`)).value?.[0];
-        if(typeof newest?.id!=='string')return undefined;
-        const file=((await api(account,`/me/messages/${enc(newest.id)}/attachments`)).value??[]).find((a:Json)=>a.name===APP_FILE&&typeof a.contentBytes==='string');
-        return file?Buffer.from(file.contentBytes,'base64').toString('utf8'):undefined;
+        if(!folder)return [];
+        const copies=await pool(await appRecords(account,folder),4,async ({id}):Promise<AppDataRecord|undefined>=>{
+          let rows:Json[];
+          try{rows=(await api(account,`/me/messages/${enc(id)}/attachments`)).value??[];}
+          // Another device replaced this copy after it was listed.
+          catch(error){if(error instanceof MicrosoftError&&error.status===404)return undefined;throw error;}
+          const file=rows.find(a=>a.name===APP_FILE&&typeof a.contentBytes==='string');
+          return file?{id,data:Buffer.from(file.contentBytes,'base64').toString('utf8')}:undefined;
+        });
+        return copies.filter((c):c is AppDataRecord=>!!c);
       });
     },
-    async writeAppData(account:Account,data:string) {
+    async writeAppData(account:Account,data:string,replaces:string[]) {
       const content=Buffer.from(data,'utf8').toString('base64');
       if(content.length>MAX_APP_DATA)throw new Error('Workflow data is too large to sync through Outlook.');
       await withAppFolder(account,true,async folder=>{
-        const created=await api(account,`/me/mailFolders/${enc(folder!)}/messages`,'POST',{subject:'Aplos Mail private data',body:{contentType:'text',content:'Private Aplos Mail data. Do not edit.'},attachments:[{'@odata.type':'#microsoft.graph.fileAttachment',name:APP_FILE,contentType:'application/octet-stream',contentBytes:content}]});
-        const old=(await pages(account,`/me/mailFolders/${enc(folder!)}/messages?$select=id&$top=100`)).map(m=>String(m.id)).filter(id=>id!==created.id);
-        // Older copies are only clutter: the newest one wins on read, so failed deletes are retried next write.
+        const created=await api(account,`/me/mailFolders/${enc(folder!)}/messages`,'POST',{subject:'Aplos Mail private data',body:{contentType:'text',content:'Private Aplos Mail data. Do not edit.'},
+          singleValueExtendedProperties:[{id:APP_PROPERTY,value:APP_MARK}],attachments:[{'@odata.type':'#microsoft.graph.fileAttachment',name:APP_FILE,contentType:'application/octet-stream',contentBytes:content}]});
+        if(!replaces.length)return;
+        const ours=new Set((await appRecords(account,folder!)).map(r=>r.id));
+        const old=[...new Set(replaces)].filter(id=>id!==created.id&&ours.has(id));
+        // A copy left behind is read and merged again next round, so failed deletes need no retry here.
         try{await batch(account,old.map(id=>({method:'DELETE',url:`/me/messages/${enc(id)}`})));}catch{/* See above. */}
       });
     },

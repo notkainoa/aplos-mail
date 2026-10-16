@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import type { AccountPreset, ProviderKind, ServerSettings } from './provider';
-import { normalizeDomain, parseTags, resolveDns, timeoutSignal, type DnsOptions, type DnsType } from './dns';
+import { duplicateTags, normalizeDomain, parseTags, resolveDns, timeoutSignal, type DnsOptions, type DnsType } from './dns';
 
 /** How Aplos should connect an address, and how sure it is. */
 export interface Discovery {
@@ -20,7 +20,7 @@ export interface Discovery {
   unsupported?:string;
 }
 
-export interface DiscoverOptions { fetch?:typeof fetch; signal?:AbortSignal }
+export interface DiscoverOptions { fetch?:typeof fetch; signal?:AbortSignal; /** Resolves discovered hosts to vet them; defaults to the system resolver. */ lookup?:HostResolver }
 
 type HostedPreset=Exclude<AccountPreset,'generic'>;
 interface PresetInfo { provider:ProviderKind; name:string; server?:ServerSettings; sessionUrl?:string; help:string }
@@ -52,8 +52,96 @@ const KNOWN:[RegExp,HostedPreset][]=[
 const PROTON_DOMAINS=new Set(['proton.me','protonmail.com','protonmail.ch','pm.me']);
 const PROTON_MX=/(^|\.)protonmail\.ch$/;
 const PROTON_NOTE='Proton Mail only works with other mail apps through Proton Mail Bridge, which Aplos does not support yet.';
-/** Published configs that point at this computer or a private network describe a local bridge, not a mail server. */
-const LOCAL_HOST=/^(localhost|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+|0\.\d+\.\d+\.\d+)$/;
+// ---------------------------------------------------------------------------------------------------------
+// Public-host checks. Discovered settings come from files and DNS the domain owner controls, so a hostile
+// config could aim the user's password at this computer or the local network. Only discovered hosts are
+// checked: servers the user types by hand may legitimately be on a LAN.
+
+/** Addresses a host name resolves to; rejects when it cannot be resolved. */
+export type HostResolver=(host:string)=>Promise<string[]>;
+/**
+ * A and AAAA records over DNS-over-HTTPS, since the engine must run without Node. Desktop callers should pass
+ * the system resolver (`node:dns/promises` lookup with `all:true`), which also sees split-horizon names.
+ */
+export function dohLookup(options:DnsOptions={}):HostResolver {
+  return async host=>{
+    const [a,aaaa]=await Promise.all([resolveDns(host,'A',options),resolveDns(host,'AAAA',options)]);
+    if(!a&&!aaaa)throw new Error(`Couldn't resolve ${host}`);
+    return [...a??[],...aaaa??[]];
+  };
+}
+
+/** IPv4 literal as a 32-bit number, accepting the forms `inet_aton` and URL parsers do (`127.1`, `0x7f.1`, `017700000001`). */
+export function parseIPv4(text:string):number|undefined {
+  const parts=text.split('.');if(parts.length>4||parts.some(p=>!p))return undefined;
+  const nums=parts.map(p=>/^0x[0-9a-f]*$/i.test(p)?parseInt(p.slice(2)||'0',16):/^0[0-7]*$/.test(p)?parseInt(p,8):/^[1-9]\d*$/.test(p)?Number(p):NaN);
+  if(nums.some(n=>!Number.isFinite(n)))return undefined;
+  const last=nums.pop()!;if(nums.some(n=>n>255)||last>=2**(8*(4-nums.length)))return undefined;
+  return nums.reduce((acc,n,i)=>acc+n*2**(8*(3-i)),0)+last;
+}
+
+/** IPv6 literal (brackets and zone allowed) as 16 bytes. */
+export function parseIPv6(text:string):number[]|undefined {
+  let s=text.replace(/^\[(.*)\]$/,'$1').replace(/%.*$/,'');if(!s.includes(':'))return undefined;
+  const tail:number[]=[];
+  const v4=/^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(s);
+  if(v4){const n=/^\d+(\.\d+){3}$/.test(v4[2])&&v4[2].split('.').every(p=>Number(p)<=255)?parseIPv4(v4[2]):undefined;if(n===undefined)return undefined;
+    tail.push(n>>>24,(n>>>16)&255,(n>>>8)&255,n&255);s=v4[1].endsWith('::')?v4[1]:v4[1].slice(0,-1);}
+  const halves=s.split('::');if(halves.length>2)return undefined;
+  const groups=(h:string)=>h?h.split(':'):[];
+  const head=groups(halves[0]),rest=halves.length===2?groups(halves[1]):[],want=8-tail.length/2;
+  if([...head,...rest].some(g=>!/^[0-9a-f]{1,4}$/i.test(g)))return undefined;
+  const fill=want-head.length-rest.length;if(halves.length===2?fill<1:fill!==0)return undefined;
+  const words=[...head,...Array(halves.length===2?fill:0).fill('0'),...rest].map(g=>parseInt(g,16));
+  return [...words.flatMap(w=>[w>>8,w&255]),...tail];
+}
+
+const V4_BLOCKED:[number,number][]=[[0x00000000,8],[0x0a000000,8],[0x64400000,10],[0x7f000000,8],[0xa9fe0000,16],[0xac100000,12],
+  [0xc0000000,24],[0xc0a80000,16],[0xc6120000,15],[0xe0000000,4],[0xf0000000,4]];
+const v4Blocked=(n:number)=>V4_BLOCKED.some(([base,bits])=>Math.floor(n/2**(32-bits))===Math.floor(base/2**(32-bits)));
+function v6Blocked(b:number[]):boolean {
+  const zero=(from:number,to:number)=>b.slice(from,to).every(x=>x===0),v4=(at:number)=>b[at]*2**24+b[at+1]*2**16+b[at+2]*2**8+b[at+3];
+  if(zero(0,10)&&b[10]===0xff&&b[11]===0xff)return v4Blocked(v4(12));
+  if(zero(0,12))return true;// ::, ::1 and deprecated IPv4-compatible forms
+  if(b[0]===0x00&&b[1]===0x64&&b[2]===0xff&&b[3]===0x9b&&zero(4,12))return v4Blocked(v4(12));// NAT64
+  if(b[0]===0x20&&b[1]===0x02)return v4Blocked(v4(2));// 6to4
+  return (b[0]&0xfe)===0xfc||(b[0]===0xfe&&b[1]>=0x80)||b[0]===0xff;// fc00::/7, fe80::/10 and fec0::/10, ff00::/8
+}
+
+/** Whether an address literal is loopback, private, link-local, CGNAT, unspecified, multicast or reserved; undefined for non-literals. */
+export function blockedAddress(text:string):boolean|undefined {
+  const v6=parseIPv6(text);if(v6)return v6Blocked(v6);
+  const v4=parseIPv4(text);return v4===undefined?undefined:v4Blocked(v4);
+}
+
+const LOCAL_NAME=/(^|\.)(localhost|local|internal|localdomain|home\.arpa|lan|intranet)$/;
+/** The checks that need no lookup: local-only names and every IP literal in a non-public range. */
+function publicName(host:string):boolean {
+  const name=host.trim().toLowerCase().replace(/\.$/,'');
+  if(!name)return false;
+  const literal=blockedAddress(name);if(literal!==undefined)return !literal;
+  // Names whose last label is numeric are parsed as IPv4 by URL parsers, so they are never treated as plain names.
+  if(!name.includes('.')||LOCAL_NAME.test(name)||/(^|\.)(0x[0-9a-f]*|\d+)$/i.test(name))return false;
+  return true;
+}
+
+/**
+ * Whether a discovered server host is safe to send credentials to: not a local name, not a non-public IP literal,
+ * and not resolving to any non-public address. A name that does not resolve is allowed, since nothing can connect to it.
+ */
+export async function publicHost(host:string, resolve:HostResolver=dohLookup()):Promise<boolean> {
+  if(!publicName(host))return false;
+  if(blockedAddress(host.trim())!==undefined)return true;
+  let addresses:string[];try{addresses=await resolve(host.trim().toLowerCase().replace(/\.$/,''));}catch{return true;}
+  return addresses.every(a=>blockedAddress(a)===false);
+}
+
+async function publicServer(server:ServerSettings, resolve?:HostResolver):Promise<boolean> {
+  let caldav:string|undefined;
+  if(server.caldav){try{const url=new URL(server.caldav);if(url.protocol!=='https:')return false;caldav=url.hostname;}catch{return false;}}
+  const hosts=[server.imap.host,server.smtp.host,...(caldav?[caldav]:[])];
+  return (await Promise.all(hosts.map(h=>publicHost(h,resolve)))).every(Boolean);
+}
 /** Preset for a consumer mail domain whose settings are known without any lookup. */
 export function knownDomain(domain:string):HostedPreset|undefined {
   return FASTMAIL_DOMAINS.has(domain)?'fastmail':KNOWN.find(([pattern])=>pattern.test(domain))?.[1];
@@ -108,7 +196,7 @@ export function parseAutoconfig(xml:string, email:string):ServerSettings|undefin
       const host=normalizeDomain(fill(text(s.hostname))),port=Number(text(s.port)),socket=text(s.socketType).trim().toUpperCase();
       // Plain-text connections would send the password unencrypted, so only TLS and STARTTLS entries count.
       const secure=socket==='SSL'||socket==='TLS'?true:socket==='STARTTLS'?false:undefined;
-      if(!host||LOCAL_HOST.test(host)||!Number.isInteger(port)||port<1||port>65535||secure===undefined)return undefined;
+      if(!host||!publicName(host)||!Number.isInteger(port)||port<1||port>65535||secure===undefined)return undefined;
       return {host,port,secure,username:fill(text(s.username))};
     }).filter(s=>s!==undefined);
     return servers.find(s=>s.secure)??servers[0];
@@ -120,14 +208,24 @@ export function parseAutoconfig(xml:string, email:string):ServerSettings|undefin
   return settings;
 }
 
+const MAX_REDIRECTS=3;
+const hostResolver=(options:DiscoverOptions)=>options.lookup??dohLookup({fetch:options.fetch,signal:options.signal});
 async function fetchAutoconfig(url:string, email:string, options:DiscoverOptions):Promise<ServerSettings|undefined> {
-  if(!url.startsWith('https://'))return undefined;
   try{
-    const response=await (options.fetch??globalThis.fetch)(url,{headers:{accept:'application/xml, text/xml;q=0.9, */*;q=0.1'},signal:timeoutSignal(options.signal,8000)});
-    // A redirect to plain HTTP could have been tampered with on the way.
-    if(!response.ok||(response.url&&!response.url.startsWith('https://')))return undefined;
-    const body=await response.text();
-    return body.length>1_000_000?undefined:parseAutoconfig(body,email);
+    let next=new URL(url);
+    for(let hop=0;hop<=MAX_REDIRECTS;hop++){
+      // Each hop is vetted before it is requested: plain HTTP could be tampered with, and a private host would be a request into the local network.
+      if(next.protocol!=='https:'||!await publicHost(next.hostname,hostResolver(options)))return undefined;
+      const response=await (options.fetch??globalThis.fetch)(next.href,{redirect:'manual',headers:{accept:'application/xml, text/xml;q=0.9, */*;q=0.1'},signal:timeoutSignal(options.signal,8000)});
+      if([301,302,303,307,308].includes(response.status)){
+        const location=response.headers.get('location');if(!location)return undefined;
+        next=new URL(location,next);continue;
+      }
+      if(!response.ok)return undefined;
+      const body=await response.text(),settings=body.length>1_000_000?undefined:parseAutoconfig(body,email);
+      return settings&&await publicServer(settings,hostResolver(options))?settings:undefined;
+    }
+    return undefined;
   }catch{return undefined;}
 }
 
@@ -169,8 +267,9 @@ export async function discoverAccount(input:string, options:DiscoverOptions={}):
     return {email,domain,provider:'imap',preset:'generic',server,confidence:'autoconfig',source:urls[index],help:GENERIC_HELP};
   }
 
+  const guess={imap:tls(`imap.${domain}`,993,true),smtp:tls(`smtp.${domain}`,465,true)};
   return {email,domain,provider:'imap',preset:'generic',confidence:'guess',source:'common host names',
-    server:{imap:tls(`imap.${domain}`,993,true),smtp:tls(`smtp.${domain}`,465,true)},
+    ...(await publicServer(guess,hostResolver(options))?{server:guess}:{}),
     help:`Aplos couldn't find published settings for ${domain}, so these are common guesses. Check the server names with your mail provider. ${GENERIC_HELP}`};
 }
 
@@ -232,6 +331,11 @@ function spfTerm(term:string) {
   return {qualifier,name,value};
 }
 const isAll=(term:string)=>spfTerm(term).name==='all';
+/** The terms a receiver evaluates: nothing after `all`, and no `redirect` when there is an `all` (RFC 7208 5.1, 6.1). */
+function liveSpfTerms(record:string):string[] {
+  const terms=spfTerms(record),all=terms.findIndex(isAll);
+  return all<0?terms:terms.slice(0,all).filter(t=>spfTerm(t).name!=='redirect');
+}
 
 /** Rebuilds an SPF record with `include` added just before the closing `all` (or `~all` when there is none). */
 function withInclude(record:string, include:string):string {
@@ -253,7 +357,7 @@ interface SpfWalk { lookups:number; includes:Set<string>; broken:string[]; parti
 
 /** Counts the DNS lookups a receiver would make, following include and redirect targets until the limit is passed. */
 async function walkSpf(record:string, walk:SpfWalk, dns:(name:string,type:DnsType)=>Promise<string[]|undefined>, depth:number):Promise<void> {
-  for(const raw of spfTerms(record)){
+  for(const raw of liveSpfTerms(record)){
     const term=spfTerm(raw);if(!SPF_LOOKUPS.has(term.name))continue;
     walk.lookups++;if(walk.lookups>10)return;
     if((term.name!=='include'&&term.name!=='redirect')||!term.value||term.value.includes('%'))continue;
@@ -276,9 +380,9 @@ async function spfCheck(domain:string, txt:string[]|undefined, preset:AccountPre
   if(records.length>1)return {...base,status:'fail',detail:`${domain} has ${records.length} SPF records. Receivers treat that as an error and ignore all of them.`,
     fix:`Replace them with a single TXT record: ${mergeSpf(records)}`,records};
 
-  const record=records[0],terms=spfTerms(record),issues:{status:CheckStatus;text:string}[]=[],fixes:string[]=[];
-  const top=terms.filter(t=>SPF_LOOKUPS.has(spfTerm(t).name)).length;
-  const walk:SpfWalk={lookups:0,includes:new Set(terms.map(spfTerm).filter(t=>t.name==='include'||t.name==='redirect').map(t=>t.value.toLowerCase())),broken:[],partial:false};
+  const record=records[0],terms=spfTerms(record),live=liveSpfTerms(record),issues:{status:CheckStatus;text:string}[]=[],fixes:string[]=[];
+  const top=live.filter(t=>SPF_LOOKUPS.has(spfTerm(t).name)).length;
+  const walk:SpfWalk={lookups:0,includes:new Set(live.map(spfTerm).filter(t=>t.name==='include'||t.name==='redirect').map(t=>t.value.toLowerCase())),broken:[],partial:false};
   if(top<=10)await walkSpf(record,walk,dns,0);else walk.lookups=top;
   if(walk.lookups>10){
     issues.push({status:'fail',text:`It needs more than 10 DNS lookups${top>10?'':' once its includes are followed'}, which is SPF's limit, so receivers reject it as broken.`});
@@ -349,7 +453,13 @@ function dmarcCheck(domain:string, txt:string[]|undefined):DomainCheck {
   const tags=parseTags(records[0]),policy=tags.p?.toLowerCase(),pct=tags.pct===undefined?100:Number(tags.pct);
   const reports=tags.rua?` Reports go to ${tags.rua.replace(/mailto:/gi,'')}.`:' It has no rua= address, so nobody receives reports about mail sent as your domain.';
   const partial=pct<100?` It applies to only ${pct}% of failing mail.`:'';
-  if(policy!=='none'&&policy!=='quarantine'&&policy!=='reject')return {...base,status:'fail',detail:'The DMARC record has no valid p= policy, so receivers ignore it.',fix:`Change the record to: ${suggested}`,records};
+  const POLICIES=['none','quarantine','reject'],dupes=duplicateTags(records[0]),problems:string[]=[];
+  if(dupes.length)problems.push(`it repeats ${dupes.map(t=>`${t}=`).join(', ')}`);
+  if(!policy||!POLICIES.includes(policy))problems.push('it has no valid p= policy (none, quarantine or reject)');
+  if(tags.sp!==undefined&&!POLICIES.includes(tags.sp.toLowerCase()))problems.push(`sp=${tags.sp} is not none, quarantine or reject`);
+  if(tags.pct!==undefined&&!(/^\d{1,3}$/.test(tags.pct)&&pct<=100))problems.push(`pct=${tags.pct} is not a whole number from 0 to 100`);
+  if(problems.length)return {...base,status:'fail',detail:`The DMARC record is invalid: ${problems.join('; ')}. Receivers may ignore it.`,
+    fix:`Change the record so each tag appears once with a valid value, such as: ${policy&&POLICIES.includes(policy)?`v=DMARC1; p=${policy}${tags.rua?`; rua=${tags.rua}`:''}`:suggested}`,records};
   if(policy==='none')return {...base,status:'warn',detail:`The policy is p=none, which only monitors: mail pretending to be from ${domain} is still delivered.${reports}`,
     fix:'Once reports show your own mail passing, change p=none to p=quarantine (and later p=reject).',records};
   return {...base,status:'pass',detail:`Mail that fails the checks is ${policy==='reject'?'rejected':'sent to spam'}.${partial}${reports}`,records};

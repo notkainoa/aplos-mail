@@ -95,7 +95,15 @@ export interface CalendarBackend {
   deleteEvent(credentials:CalendarCredentials, account:Account, event:CalendarEvent):Promise<void>;
 }
 
-/** A small per-account key-value store that providers use for their own indexes (IMAP UIDs, delta links). */
+/** One stored copy of workflow app data; `id` is the host's identifier for that copy. */
+export interface AppDataRecord { id:string; data:string }
+
+/**
+ * A small per-account key-value store that providers use for their own indexes (IMAP UIDs, delta links).
+ * Writes made while `sync` (or a workflow round) runs are held back and saved in the same transaction
+ * as the mail they describe, so a failed or interrupted sync replays from the previous cursor with the
+ * previous index. Reads inside that call see its own writes.
+ */
 export interface ProviderMemory {
   get(accountId:string, key:string):string|undefined;
   set(accountId:string, key:string, value:string|undefined):void;
@@ -139,9 +147,17 @@ export interface MailProvider {
   listEvents?(account:Account):Promise<CalendarEvent[]>;
   saveEvent?(account:Account, event:CalendarEvent):Promise<CalendarEvent>;
   deleteEvent?(account:Account, event:CalendarEvent):Promise<void>;
-  /** Read and replace a small private blob kept in a hidden folder or label named "Aplos" (workflow sync). */
-  readAppData?(account:Account):Promise<string|undefined>;
-  writeAppData?(account:Account, data:string):Promise<void>;
+  /**
+   * Every copy of the small private blob kept in the account's hidden Aplos storage (workflow sync),
+   * newest first. Several copies exist when devices wrote at the same time; callers merge them all.
+   * Only records Aplos itself created count: a user folder that happens to share the name is never read.
+   */
+  readAppData?(account:Account):Promise<AppDataRecord[]>;
+  /**
+   * Store a new copy, then delete exactly the copies listed in `replaces` (ones the caller read and merged).
+   * Anything else in the storage, including a concurrent writer's new copy, stays.
+   */
+  writeAppData?(account:Account, data:string, replaces:string[]):Promise<void>;
   close():void|Promise<void>;
 }
 

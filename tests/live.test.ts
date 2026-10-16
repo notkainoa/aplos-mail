@@ -90,6 +90,20 @@ test('a window copy replays early changes, ignores old ones, resyncs on a gap an
   assert.equal(live.state!.threads[0],unchanged,'unchanged threads keep their identity');
 });
 
+test('a failed resync is retried with backoff until the copy catches up to the latest change',async()=>{
+  let calls=0,latest=base([thread('a','2026-10-14')],3);
+  const live=createLiveState({update:()=>{},resync:async()=>{calls++;if(calls===1)throw new Error('engine restarting');live.snapshot(latest);}},{minMs:10,maxMs:40});
+  live.snapshot(base([thread('a','2026-10-14')],1));
+  live.apply({epoch:'e1',rev:3,selectedAccountId:'gap'});
+  assert.equal(calls,1);
+  live.apply({epoch:'e1',rev:4,selectedAccountId:'newest'});
+  assert.equal(calls,1,'changes while a request is running do not start another');
+  latest={...latest,selectedAccountId:'gap'};
+  for(let i=0;i<100&&live.state!.rev!==4;i++)await new Promise(r=>setTimeout(r,5));
+  assert.equal(calls,2,'the failed request was retried once');
+  assert.equal(live.state!.rev,4);assert.equal(live.state!.selectedAccountId,'newest','buffered changes replay onto the retried snapshot');
+});
+
 /** Two ends of an in-memory channel shaped like the utility process port. */
 function channel():[Port,Port,()=>void] {
   const {port1,port2}=new MessageChannel();
