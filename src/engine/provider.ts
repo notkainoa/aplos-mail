@@ -111,10 +111,10 @@ export interface ProviderMemory {
 }
 
 /** Shared dependencies every provider factory receives. */
-export interface ProviderEnvironment {
+export interface ProviderEnvironment<Cipher=Uint8Array> {
   dataDir:string;
-  encrypt?:(value:string)=>Buffer;
-  decrypt?:(value:Buffer)=>string;
+  encrypt?:(value:string)=>Cipher;
+  decrypt?:(value:Cipher)=>string;
   openExternal?:(url:string)=>Promise<unknown>;
   fetch?:typeof fetch;
   memory?:ProviderMemory;

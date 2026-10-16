@@ -9,7 +9,7 @@ type Call=[name:string,args:Json,id:string];
 export class JmapError extends ProviderError {
   constructor(message:string,status?:number,uncertain=false,readonly type?:string){super(message,status,uncertain);}
 }
-export type JmapOptions=ProviderEnvironment&{calendar?:CalendarBackend};
+export type JmapOptions=ProviderEnvironment<Buffer>&{calendar?:CalendarBackend};
 export type JmapAdapter=MailProvider&Required<Pick<MailProvider,'getSendAs'|'readAppData'|'writeAppData'>>;
 export const JMAP_PRESETS={
   fastmail:{

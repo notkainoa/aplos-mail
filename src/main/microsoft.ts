@@ -5,7 +5,7 @@ import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from 
 import { ProviderError, type AppDataRecord, type CalendarInfo, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
 import { createVault } from './vault';
 
-export interface MicrosoftOptions extends ProviderEnvironment { clientId?:string; tenant?:string; oauthTimeoutMs?:number }
+export interface MicrosoftOptions extends ProviderEnvironment<Buffer> { clientId?:string; tenant?:string; oauthTimeoutMs?:number }
 interface Token {access_token:string;refresh_token?:string;expiresAt:number}
 type Json=Record<string,any>;
 /** Where a message sits and the flags needed to describe its thread without refetching it. */

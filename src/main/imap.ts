@@ -12,7 +12,7 @@ export type { ImapBox, ImapFetched, ImapFetchQuery, ImapFolder, ImapLogin, ImapP
 /** `uncertain` means the request may have reached the server even though no answer came back. */
 export class ImapError extends ProviderError {}
 export type ImapPreset='icloud'|'yahoo'|'aol';
-export interface ImapOptions extends ProviderEnvironment {
+export interface ImapOptions extends ProviderEnvironment<Buffer> {
   calendar?:CalendarBackend;
   client?:(config:ImapLogin)=>ImapSession;
   smtp?:(config:SmtpLogin)=>SmtpSender;

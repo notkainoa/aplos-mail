@@ -17,9 +17,9 @@ const event=(id:string,start:string):CalendarEvent=>({id,accountId:'j1',calendar
 
 async function harness() {
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-safety-'));
-  const control={syncs:0,fail:false,hold:undefined as Promise<void>|undefined,started:undefined as (()=>void)|undefined,events:[] as CalendarEvent[],env:undefined as ProviderEnvironment|undefined,
+  const control={syncs:0,fail:false,hold:undefined as Promise<void>|undefined,started:undefined as (()=>void)|undefined,events:[] as CalendarEvent[],env:undefined as ProviderEnvironment<Buffer>|undefined,
     next:{threads:[thread('a')],flags:[],removed:[],reset:true,cursor:'c1'} as SyncResult};
-  const fake=(env:ProviderEnvironment):MailProvider=>{control.env=env;return {
+  const fake=(env:ProviderEnvironment<Buffer>):MailProvider=>{control.env=env;return {
     kind:'jmap',available:true,capabilities:()=>({labels:false,importance:false,aliases:false,signatures:false,calendar:true,serverSearch:false}),
     connect:async()=>account,disconnect:async()=>{},
     async sync(a){

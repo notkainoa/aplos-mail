@@ -1,17 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ProviderMemory } from '../engine/provider';
 import type { MemoryWrite } from '../engine/store';
-
-export interface MemoryStage {
-  /** Run `fn` with memory writes held in this stage; reads inside it see them. */
-  run<T>(fn:()=>T):T;
-  /** The held writes, or undefined when another writer changed a key this stage read or wrote. */
-  writes():MemoryWrite[]|undefined;
-  /** Mark the writes saved by the caller's transaction. */
-  committed():void;
-  /** Drop the writes; later writes from leftover callbacks go straight to storage. */
-  discard():void;
-}
+import type { MemoryStage } from '../engine/ports';
+export type { MemoryStage } from '../engine/ports';
 
 /**
  * Provider memory whose writes during a sync are saved together with the mail they describe.
