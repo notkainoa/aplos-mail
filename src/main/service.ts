@@ -8,7 +8,12 @@ import { symbolRenderer } from './symbols';
 import { applySync } from '../engine/merge';
 import { createGate } from '../engine/gate';
 import { ftsQuery, type OpChanges, type QueuedOp } from '../engine/store';
-import type { AccountPreset, ConnectRequest, MailProvider, ProviderKind, ServerSettings } from '../engine/provider';
+import { checkDomain, discoverAccount } from '../engine/discover';
+import type { AccountPreset, ConnectRequest, MailProvider, ProviderEnvironment, ProviderKind, ServerSettings } from '../engine/provider';
+import { createMicrosoft } from './microsoft';
+import { createImap } from './imap';
+import { createJmap } from './jmap';
+import { createCalDav } from './caldav';
 
 type Groq = ReturnType<typeof createGroq>;
 export interface ServiceOptions {
@@ -16,6 +21,8 @@ export interface ServiceOptions {
   openExternal?:(url:string)=>Promise<unknown>; groq?:Groq; google?:GoogleAdapter; now?:()=>Date; symbolTool?:string;
   /** Mail hosts by kind; missing kinds use the built-in adapters. */
   providers?:Partial<Record<ProviderKind,MailProvider>>;
+  /** Network access for discovery and DNS checks; tests pass a fake. */
+  fetch?:typeof fetch;
   /** Background sync interval for connected accounts; 0 turns it off. */
   autoSyncMs?:number;
 }
@@ -26,6 +33,7 @@ const OP_RETRY_MS=30_000,OP_RETRY_MAX_MS=15*60_000;
 const UNCONFIRMED='Sending was interrupted and Aplos could not confirm that your mail provider received this message. Check Sent mail before sending it again.';
 const PROVIDERS:readonly ProviderKind[]=['google','microsoft','imap','jmap'];
 const PRESETS:readonly AccountPreset[]=['gmail','outlook','icloud','yahoo','aol','fastmail','generic'];
+const unconfirmed=()=>Object.assign(new Error(UNCONFIRMED),{unconfirmed:true});
 const uncertain=(error:unknown)=>(error as {uncertain?:unknown})?.uncertain===true;
 const errorStatus=(error:unknown)=>(error as {status?:unknown})?.status;
 const clone = <T>(v:T):T => structuredClone(v);
@@ -129,6 +137,12 @@ function attachments(raw:unknown):Attachment[] {
   });
 }
 
+/** Server addresses are settings, not secrets: a password embedded in the URL is refused. */
+function webAddress(value:unknown):URL {
+  let url:URL;try{url=new URL(text(value,2000).trim());}catch{throw new Error('Enter a valid server address.');}
+  if(url.username||url.password)throw new Error('Enter the password in the password field, not in the server address.');
+  return url;
+}
 function serverSettings(raw:unknown):ServerSettings|undefined {
   if(raw===undefined||raw===null)return undefined;
   const source=object(raw);
@@ -139,7 +153,7 @@ function serverSettings(raw:unknown):ServerSettings|undefined {
     return {host,port,secure:e.secure};};
   const result:ServerSettings={imap:endpoint(source.imap),smtp:endpoint(source.smtp)};
   if(source.username)result.username=text(source.username,320).trim();
-  if(source.caldav){const url=new URL(text(source.caldav,2000));if(url.protocol!=='https:')throw new Error('Calendar servers must use HTTPS.');result.caldav=url.href;}
+  if(source.caldav){const url=webAddress(source.caldav);if(url.protocol!=='https:')throw new Error('Calendar servers must use HTTPS.');result.caldav=url.href;}
   return result;
 }
 function connectRequest(p:Record<string,any>):ConnectRequest {
@@ -150,7 +164,7 @@ function connectRequest(p:Record<string,any>):ConnectRequest {
   if(p.secret!==undefined&&p.secret!==''){const secret=text(p.secret,4000);if(/[\r\n]/.test(secret))throw new Error('Passwords and tokens cannot contain line breaks.');request.secret=secret;}
   if(p.preset!==undefined)request.preset=enumValue(p.preset,PRESETS);
   const server=serverSettings(p.server);if(server)request.server=server;
-  if(p.sessionUrl){const url=new URL(text(p.sessionUrl,2000));if(url.protocol!=='https:')throw new Error('The JMAP session URL must use HTTPS.');request.sessionUrl=url.href;}
+  if(p.sessionUrl){const url=webAddress(p.sessionUrl);if(url.protocol!=='https:')throw new Error('The JMAP session URL must use HTTPS.');request.sessionUrl=url.href;}
   return request;
 }
 /** Older saves used Gmail-specific field names. */
@@ -175,6 +189,17 @@ export async function createService(options:ServiceOptions) {
   const groq=options.groq||createGroq();
   const providers:Partial<Record<ProviderKind,MailProvider>>={...options.providers};
   providers.google??=options.google||await createGoogle({dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,openExternal:options.openExternal});
+  const env:ProviderEnvironment={dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,openExternal:options.openExternal,fetch:options.fetch,memory:store.memory};
+  /** Why a built-in adapter failed to start; one unreadable credential file must not stop the app or the other hosts. */
+  const brokenProviders=new Map<ProviderKind,string>();
+  const builtIn:Array<[ProviderKind,()=>Promise<MailProvider>]>=[
+    ['microsoft',()=>createMicrosoft(env)],
+    ['imap',()=>createImap({...env,calendar:createCalDav({fetch:options.fetch})})],
+    ['jmap',()=>createJmap(env)],
+  ];
+  await Promise.all(builtIn.filter(([kind])=>!providers[kind]).map(async([kind,make])=>{
+    try{providers[kind]=await make();}catch(error){brokenProviders.set(kind,error instanceof Error?error.message:'This account type could not start.');}
+  }));
   /** The mail host behind an account, or nothing for local demo accounts. */
   const hostOf=(a:Pick<Account,'provider'>|undefined):MailProvider|undefined=>a&&a.provider!=='demo'?providers[a.provider]:undefined;
   function host(a:Account):MailProvider {const provider=hostOf(a);if(!provider)throw new Error('This account type is not available in this version of Aplos.');return provider;}
@@ -186,12 +211,18 @@ export async function createService(options:ServiceOptions) {
   let closed=false;
   const emit=(type:string,payload?:unknown)=>{for(const listener of listeners) {try{listener({type,payload:clone(payload)});}catch{/* A closed renderer must not interrupt persistence. */}}};
   let queue:QueuedOp[]=store.ops();
+  /**
+   * Threads changed locally while an account's sync is in flight. Its response was read before those
+   * changes reached the host, so it must not overwrite them even after their queued ops have flushed.
+   */
+  const touched=new Map<string,Set<string>>();
   function commit(next:AppState,ops?:OpChanges) {
     let nextQueue=queue;
     if(ops){
       const removed=new Set(ops.remove??[]),put=new Map((ops.put??[]).map(op=>[op.id,op]));
       nextQueue=[...queue.filter(op=>!removed.has(op.id)).map(op=>put.get(op.id)??op),...[...put.values()].filter(op=>!queue.some(old=>old.id===op.id))];
     }
+    for(const op of ops?.put??[])touched.get(op.accountId)?.add(op.threadId);
     const pending=nextQueue.length||undefined;
     if(next.sync.pending!==pending)next.sync={...next.sync,pending};
     store.write(next,ops);state=next;queue=nextQueue;emit('state',state);
@@ -215,9 +246,15 @@ export async function createService(options:ServiceOptions) {
   /** The provider change for a local thread edit, or nothing for local-only (demo) mail. */
   function queued(t:Thread,patch:Partial<Thread>):QueuedOp|undefined {
     const a=state.accounts.find(x=>x.id===t.accountId);
-    if(!a||!hostOf(a)||!t.remoteId)return;
+    // Real accounts queue even while their adapter is missing, so nothing is lost until it returns.
+    if(!a||a.provider==='demo'||!t.remoteId)return;
     const at=now().toISOString();
     return {id:randomUUID(),accountId:a.id,threadId:t.id,remoteId:t.remoteId,fromStatus:t.status,...(t.labels?{fromLabels:t.labels}:{}),patch,createdAt:at,attempts:0,nextAt:at};
+  }
+  const defaults=new Map<string,string>();
+  async function defaultCalendar(a:Account,provider:MailProvider):Promise<string|undefined> {
+    if(defaults.has(a.id))return defaults.get(a.id);
+    try{const id=(await provider.listCalendars?.(a))?.find(c=>c.primary)?.id;if(id)defaults.set(a.id,id);return id;}catch{return undefined;}
   }
   let flushing:Promise<void>|undefined;
   /**
@@ -235,10 +272,12 @@ export async function createService(options:ServiceOptions) {
           if(held.has(op.accountId))continue;
           const a=state.accounts.find(x=>x.id===op.accountId);
           const provider=hostOf(a);
-          if(!a||!provider){changeQueue({remove:[op.id]});continue;}
-          if(!a.connected||(!force&&Date.parse(op.nextAt)>now().getTime())){held.add(op.accountId);continue;}
-          try{await provider.updateThread(a,{remoteId:op.remoteId,status:op.fromStatus,labels:op.fromLabels},op.patch);changeQueue({remove:[op.id]});progressed=true;}
+          if(!a||a.provider==='demo'){changeQueue({remove:[op.id]});continue;}
+          if(!provider||!a.connected||(!force&&Date.parse(op.nextAt)>now().getTime())){held.add(op.accountId);continue;}
+          try{await provider.updateThread(a,{remoteId:op.remoteId,status:op.fromStatus,labels:op.fromLabels},op.patch);if(queue.some(o=>o.id===op.id))changeQueue({remove:[op.id]});progressed=true;}
           catch(error){
+            // Disconnect may have discarded this change while the host was answering; it must not come back.
+            if(!queue.some(o=>o.id===op.id))continue;
             // The thread is gone at the host; there is nothing left to change.
             if(errorStatus(error)===404){changeQueue({remove:[op.id]});continue;}
             const attempts=op.attempts+1,delay=Math.min(OP_RETRY_MAX_MS,OP_RETRY_MS*2**(attempts-1));
@@ -255,19 +294,21 @@ export async function createService(options:ServiceOptions) {
   function kick() {const job=flush().catch(()=>{emit('error',{message:'Queued changes could not be saved. Check free space and folder permissions.'});});jobs.add(job);void job.finally(()=>jobs.delete(job));}
   function sendError(id:string,error:unknown) {
     const message=error instanceof Error?error.message:'Sending failed. Please try again.';
-    if(state.drafts.some(d=>d.id===id))change(s=>{const d=s.drafts.find(d=>d.id===id)!;delete d.pendingSendAt;delete d.sendAttemptAt;d.sendError=message;});
+    // An attempt whose outcome is unknown keeps its marker and Message-ID, so every retry checks Sent first.
+    const unresolved=(error as {unconfirmed?:unknown})?.unconfirmed===true;
+    if(state.drafts.some(d=>d.id===id))change(s=>{const d=s.drafts.find(d=>d.id===id)!;delete d.pendingSendAt;if(!unresolved)delete d.sendAttemptAt;d.sendError=message;});
   }
   async function confirmSent(a:Account,messageId:string|undefined) {
     let found:{id:string;threadId:string}|undefined;
     if(messageId)try{found=await host(a).findSent(a,messageId);}catch{/* Unknown is treated like not found: never resend blindly. */}
-    if(!found)throw new Error(UNCONFIRMED);
+    if(!found)throw unconfirmed();
     return found;
   }
   function finishSend(id:string,d:Draft,a:Account,sender:{email:string;name:string},remote?:{threadId?:string}) {
     const sentAt=now().toISOString();
     change(s=>{
       s.drafts=s.drafts.filter(item=>item.id!==id);
-      const message={id:randomUUID(),from:sender.email,fromName:sender.name,to:addresses(d.to),cc:addresses(d.cc),date:sentAt,text:stripHTML(d.html),html:d.html,attachments:d.attachments,sent:true};
+      const message={id:randomUUID(),from:sender.email,fromName:sender.name,to:addresses(d.to),cc:addresses(d.cc),date:sentAt,text:stripHTML(d.html),html:d.html,attachments:d.attachments,sent:true,...(d.messageId?{internetId:d.messageId}:{})};
       const existing=d.threadId?s.threads.find(t=>t.id===d.threadId):undefined;
       if(existing){existing.messages.push(message);existing.date=sentAt;existing.replyStatus='awaiting-reply';existing.status='done';existing.unread=false;}
       else s.threads.unshift({id:remote?.threadId?`${a.id}:${remote.threadId}`:randomUUID(),...(remote?.threadId?{remoteId:remote.threadId}:{}),accountId:a.id,subject:d.subject,summary:stripHTML(d.html).slice(0,240),messages:[message],date:sentAt,unread:false,status:'done',importance:'important',bookmarked:false,replyStatus:'awaiting-reply'});
@@ -280,7 +321,7 @@ export async function createService(options:ServiceOptions) {
     sending.add(id);
     try{
       const d=draft(id),a=state.accounts.find(x=>x.id===d.accountId);
-      if(!a||!hostOf(a))throw new Error(UNCONFIRMED);
+      if(!a||!hostOf(a))throw unconfirmed();
       const remote=await confirmSent(a,d.messageId);
       let sender:{email:string;name:string};
       try{sender=senderIdentity(d,a);}catch{sender={email:a.email,name:a.name};}
@@ -300,8 +341,14 @@ export async function createService(options:ServiceOptions) {
       const sender=senderIdentity(d,a);
       d.html=outboundHTML(d,state.settings,a);
       let sent:{threadId?:string}|undefined;
-      const provider=hostOf(a);
-      if(provider){
+      if(a.provider!=='demo'){
+        const provider=host(a);
+        // An earlier attempt with this Message-ID may have reached the host; check Sent before submitting again.
+        if(d.sendAttemptAt&&d.messageId){
+          let earlier:{id:string;threadId:string}|undefined;
+          try{earlier=await provider.findSent(a,d.messageId);}catch{throw unconfirmed();}
+          if(earlier){finishSend(id,d,a,sender,earlier);return;}
+        }
         // Recorded before the request leaves, so a crash mid-send is settled from Sent mail instead of retried.
         change(s=>{s.drafts.find(item=>item.id===id)!.sendAttemptAt=now().toISOString();});
         const original=d.threadId?state.threads.find(t=>t.id===d.threadId):undefined;
@@ -333,6 +380,8 @@ export async function createService(options:ServiceOptions) {
       if(action==='read')p.unread=false;
       if(action==='unread')p.unread=true;
       if(action==='archive'&&t.labels)p.labels=t.labels.filter(l=>l!=='INBOX');
+      // Read/unread actions keep the thread where it is; an explicit label set stops hosts from inferring an archive.
+      else if(action&&t.labels)p.labels=[...t.labels];
       if(patch.status==='new'){p.hiddenFromHome=false;if(t.labels&&!t.labels.includes('INBOX'))p.labels=[...t.labels,'INBOX'];}
       return {thread:t,patch:p};
     });
@@ -391,6 +440,10 @@ export async function createService(options:ServiceOptions) {
     return warnings;
   }
   async function syncAccount(a:Account,manual:boolean,errors:string[]) {
+    const changedDuring=new Set<string>();touched.set(a.id,changedDuring);
+    try{await syncAccountOnce(a,manual,errors,changedDuring);}finally{if(touched.get(a.id)===changedDuring)touched.delete(a.id);}
+  }
+  async function syncAccountOnce(a:Account,manual:boolean,errors:string[],changedDuring:Set<string>) {
     const cursor=store.cursor(a.id),local=new Set(state.threads.filter(t=>t.accountId===a.id).map(t=>t.id));
     const provider=host(a),result=await provider.sync(a,cursor,{has:id=>local.has(id)});
     let events:CalendarEvent[]|undefined;
@@ -405,7 +458,10 @@ export async function createService(options:ServiceOptions) {
     const since=Date.parse(state.sync.lastSync||now().toISOString());
     let outcome!:ReturnType<typeof applySync>;
     change(s=>{
-      outcome=applySync(s,a.id,result,new Set(queue.filter(op=>op.accountId===a.id).map(op=>op.threadId)));
+      outcome=applySync(s,a.id,result,new Set([...queue.filter(op=>op.accountId===a.id).map(op=>op.threadId),...changedDuring]));
+      // A message sent without a host thread ID was kept as a local copy; drop it once the host's copy arrives.
+      const arrived=new Set(result.threads.flatMap(t=>t.messages.map(m=>m.internetId)).filter((id):id is string=>!!id));
+      if(arrived.size)s.threads=s.threads.filter(t=>t.accountId!==a.id||!!t.remoteId||!t.messages.every(m=>m.sent&&m.internetId&&arrived.has(m.internetId)));
       if(events){s.events=s.events.filter(e=>e.accountId!==a.id||!e.remoteId);for(const event of events)if(!s.events.some(e=>e.remoteId===event.remoteId&&e.accountId===event.accountId))s.events.push(event);}
       const acc=s.accounts.find(x=>x.id===a.id);if(acc){acc.sendAs=a.sendAs;acc.capabilities=provider.capabilities(acc);if(a.error)acc.error=a.error;else delete acc.error;}
     });
@@ -454,13 +510,19 @@ export async function createService(options:ServiceOptions) {
       case 'account.select':{const id=text(p.id,300);if(id!=='all')account(id);change(s=>{s.selectedAccountId=id;});return clone(state);}
       case 'account.connect':{
         const request=connectRequest(p),provider=providers[request.provider];
-        if(!provider)throw new Error('This account type is not available in this version of Aplos.');
+        if(!provider)throw new Error(brokenProviders.get(request.provider)||'This account type is not available in this version of Aplos.');
         if(!provider.available)throw new Error(provider.unavailableReason||'This account type is not configured.');
         const a=await provider.connect(request);a.capabilities=provider.capabilities(a);change(s=>{s.accounts=s.accounts.filter(old=>old.id!==a.id);s.accounts.push(a);s.selectedAccountId=a.id;s.settings.onboardingDone=true;});return sync(a.id);}
+      case 'account.discover':return discoverAccount(safeEmail(p.email),{fetch:options.fetch});
+      case 'domain.check':{
+        const domain=text(p.domain,320).trim();
+        const provider=p.provider===undefined?undefined:enumValue(p.provider,[...PROVIDERS,'unknown'] as const);
+        return checkDomain(domain,{fetch:options.fetch,provider});
+      }
       case 'account.disconnect':{const a=account(text(p.id,300));
         if(state.drafts.some(d=>d.accountId===a.id&&sending.has(d.id)))throw new Error('Wait for the message to finish sending.');
         await hostOf(a)?.disconnect(a.id);
-        store.setCursor(a.id,undefined);store.memory.clear(a.id);gate.forget(a.id);extrasAt.delete(a.id);
+        store.setCursor(a.id,undefined);store.memory.clear(a.id);gate.forget(a.id);extrasAt.delete(a.id);defaults.delete(a.id);
         for(const d of state.drafts.filter(d=>d.accountId===a.id))stopSend(d.id);
         change(s=>{s.accounts=s.accounts.filter(x=>x.id!==a.id);s.threads=s.threads.filter(t=>t.accountId!==a.id);s.drafts=s.drafts.filter(d=>d.accountId!==a.id);s.events=s.events.filter(e=>e.accountId!==a.id);if(s.selectedAccountId===a.id)s.selectedAccountId='all';delete s.settings.accountNotifications[a.id];},{remove:queue.filter(op=>op.accountId===a.id).map(op=>op.id)});undo.length=0;return clone(state);}
       case 'sync':return sync(p.accountId?text(p.accountId,300):undefined,p.auto!==true);
@@ -517,6 +579,8 @@ export async function createService(options:ServiceOptions) {
         if(existing&&Number(d.revision)<existing.revision)throw new Error('This draft changed in another window. Reopen it before editing.');
         const next:Draft={id,accountId:d.accountId,to:text(d.to||'',5000),cc:text(d.cc||'',5000),bcc:text(d.bcc||'',5000),subject:text(d.subject||'',2000),html:text(d.html||'',1_000_000),attachments:attachments(d.attachments||[]),
           mode:enumValue(d.mode||'new',['new','reply','reply-all','forward']),signature:!!d.signature,updatedAt:now().toISOString(),revision:(existing?.revision||0)+1};
+        // An unconfirmed earlier attempt stays tied to its Message-ID across edits, so a retry checks Sent first.
+        if(existing?.sendAttemptAt&&existing.messageId){next.messageId=existing.messageId;next.sendAttemptAt=existing.sendAttemptAt;if(existing.sendError)next.sendError=existing.sendError;}
         if(d.fromEmail!==undefined&&d.fromEmail!=='')next.fromEmail=safeEmail(d.fromEmail);
         if(d.signatureSource!==undefined)next.signatureSource=enumValue(d.signatureSource==='gmail'?'account':d.signatureSource,['custom','account']);
         senderIdentity(next,a);
@@ -588,9 +652,12 @@ export async function createService(options:ServiceOptions) {
         const existing=state.events.find(item=>item.id===event.id);
         if(existing&&existing.accountId!==a.id)throw new Error('An event cannot move between accounts.');
         if(existing?.remoteId)event.remoteId=existing.remoteId;if(existing?.url)event.url=existing.url;
+        const provider=hostOf(a),remoteCalendar=a.calendarConnected&&provider?.saveEvent&&!event.calendarId.startsWith('demo-');
+        // Synced events carry the real calendar ID; the alias must resolve to it or duplicates go unnoticed.
+        if(remoteCalendar&&event.calendarId==='primary')event.calendarId=await defaultCalendar(a,provider!)??'primary';
         const duplicate=state.events.find(item=>item.id!==event.id&&item.accountId===a.id&&item.calendarId===event.calendarId&&item.title.toLowerCase()===event.title.toLowerCase()&&item.start===start);
         if(duplicate)return clone(duplicate);
-        const provider=hostOf(a),saved=a.calendarConnected&&provider?.saveEvent&&!event.calendarId.startsWith('demo-')?await provider.saveEvent(a,event):event;
+        const saved=remoteCalendar?await provider!.saveEvent!(a,event):event;
         change(s=>{s.events=s.events.filter(item=>item.id!==saved.id);s.events.push(saved);});return clone(saved);
       }
       case 'calendar.delete':{const event=state.events.find(e=>e.id===p.id);if(!event)throw new Error('Event not found.');const a=account(event.accountId),provider=hostOf(a);if(event.remoteId&&provider?.deleteEvent)await provider.deleteEvent(a,event);change(s=>{s.events=s.events.filter(e=>e.id!==event.id);});return clone(state);}

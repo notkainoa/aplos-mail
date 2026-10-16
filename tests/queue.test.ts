@@ -20,17 +20,18 @@ async function harness() {
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-queue-'));
   const base=await createGoogle({dataDir,clientId:''});
   const calls:Array<{remoteId?:string;fromStatus:string;patch:Partial<Thread>}>=[],sends:Draft[]=[];
-  const control={online:true,writesDown:false,fail404:new Set<string>(),sendError:undefined as Error|undefined,sent:new Map<string,{id:string;threadId:string}>(),
+  const control={online:true,writesDown:false,syncHold:undefined as Promise<void>|undefined,updateHold:undefined as Promise<void>|undefined,sendResult:undefined as {id?:string;threadId?:string}|undefined,fail404:new Set<string>(),sendError:undefined as Error|undefined,sent:new Map<string,{id:string;threadId:string}>(),
     next:{threads:[remote('a'),remote('b')],flags:[],removed:[],reset:true,cursor:'1'} as SyncResult};
-  const google={...base,available:true,connect:async()=>account,getSendAs:async()=>[],
-    sync:async(_a:Account,cursor?:string)=>{if(!control.online)throw offline();const value=structuredClone(control.next);control.next={threads:[],flags:[],removed:[],reset:false,cursor:String(Number(cursor??0)+1)};return value;},
+  const google={...base,available:true,connect:async()=>account,disconnect:async()=>{},getSendAs:async()=>[],
+    sync:async(_a:Account,cursor?:string)=>{if(!control.online)throw offline();const value=structuredClone(control.next);await control.syncHold;control.next={threads:[],flags:[],removed:[],reset:false,cursor:String(Number(cursor??0)+1)};return value;},
     updateThread:async(_a:Account,t:Pick<Thread,'remoteId'|'status'|'labels'>,patch:Partial<Thread>)=>{
+      await control.updateHold;
       if(!control.online)throw offline();
       if(control.writesDown)throw new GoogleError('Google request failed (503). Please retry.',503,true);
       if(control.fail404.has(t.remoteId!))throw new GoogleError('Google could not find this item.',404);
       calls.push({remoteId:t.remoteId,fromStatus:t.status,patch});
     },
-    send:async(_a:Account,d:Draft)=>{sends.push(structuredClone(d));if(control.sendError)throw control.sendError;const result={id:'sent-1',threadId:'sent-thread'};control.sent.set(d.messageId!,result);return result;},
+    send:async(_a:Account,d:Draft)=>{sends.push(structuredClone(d));if(control.sendError)throw control.sendError;const result={id:'sent-1',threadId:'sent-thread'};control.sent.set(d.messageId!,result);return control.sendResult??result;},
     findSent:async(_a:Account,messageId:string)=>control.sent.get(messageId),
   };
   const open=()=>createService({dataDir,google,groq:createGroq({apiKey:''}),autoSyncMs:0});
@@ -111,12 +112,17 @@ test('an uncertain send is confirmed from Sent mail; an unconfirmed one is never
     let state=await get(h);
     assert.equal(h.sends.length,1);assert.match(state.drafts.find(d=>d.id==='d1')!.sendError!,/could not confirm/);
     assert.ok(/^<[0-9a-f-]+@example\.test>$/.test(h.sends[0].messageId!),'a stable Message-ID on the sender domain');
-    // Now Gmail did receive it: the next uncertain failure finds it in Sent.
+    // The user retries while the outcome is still unknown: Sent is checked first, then the same Message-ID goes out again.
+    await h.service.invoke('draft.save',{draft:{...draft('d1'),subject:'Edited after the failure',revision:state.drafts.find(d=>d.id==='d1')!.revision}});
+    await h.service.invoke('draft.send',{id:'d1'});
+    await settle(async()=>h.sends.length===2&&!!(await get(h)).drafts.find(d=>d.id==='d1')?.sendError&&!(await get(h)).drafts.find(d=>d.id==='d1')?.pendingSendAt);
+    assert.equal(h.sends[1].messageId,h.sends[0].messageId,'editing an unconfirmed draft keeps the Message-ID of the attempt');
+    // Now Gmail has it: the next retry finds it in Sent and does not submit again.
     h.control.sent.set(h.sends[0].messageId!,{id:'m',threadId:'found-thread'});
     await h.service.invoke('draft.send',{id:'d1'});
     await settle(async()=>!(await get(h)).drafts.some(d=>d.id==='d1'));
     state=await get(h);
-    assert.equal(h.sends.length,2);assert.equal(h.sends[1].messageId,h.sends[0].messageId,'a retry keeps the same Message-ID');
+    assert.equal(h.sends.length,2,'a message found in Sent is never submitted again');
     assert.ok(state.threads.some(t=>t.remoteId==='found-thread'&&t.messages.some(m=>m.sent)));
     h.control.sendError=new GoogleError('Google request failed (400). Please retry.',400);
     await h.service.invoke('draft.save',{draft:draft('d2')});await h.service.invoke('draft.send',{id:'d2'});
@@ -145,7 +151,7 @@ test('a send interrupted by a crash is settled from Sent mail after restart and 
     const state=await get(h);
     assert.equal(h.sends.length,0,'nothing is sent again');
     assert.ok(state.threads.some(t=>t.remoteId==='recovered'));
-    const lost=state.drafts.find(d=>d.id==='crash-lost')!;assert.match(lost.sendError!,/Check Sent mail/);assert.equal(lost.pendingSendAt,undefined);assert.equal(lost.sendAttemptAt,undefined);
+    const lost=state.drafts.find(d=>d.id==='crash-lost')!;assert.match(lost.sendError!,/Check Sent mail/);assert.equal(lost.pendingSendAt,undefined);assert.ok(lost.sendAttemptAt,'the unresolved attempt stays marked so a retry checks Sent first');
   }finally{await h.cleanup();}
 });
 
@@ -164,5 +170,64 @@ test('mail saved with Gmail-specific field names opens with provider-neutral one
     await h.service.invoke('thread.update',{ids:['g1:a'],patch:{bookmarked:true}});
     await settle(()=>h.calls.length===1);
     assert.equal(h.calls[0].remoteId,'a','queued changes reach the host with the migrated ID');
+  }finally{await h.cleanup();}
+});
+
+const gate=()=>{let open!:()=>void;const promise=new Promise<void>(r=>{open=r;});return {promise,open};};
+
+test('read-only triage keeps the thread in the host inbox',async()=>{
+  const h=await harness();
+  try{
+    await h.service.invoke('settings.update',{patch:{doneAction:'read',laterAction:'unread'}});
+    await h.service.invoke('thread.update',{ids:['g1:a'],patch:{status:'done'}});
+    await h.service.invoke('thread.update',{ids:['g1:b'],patch:{status:'later'}});
+    await settle(()=>h.calls.length===2);
+    for(const call of h.calls)assert.ok(call.patch.labels?.includes('INBOX'),'the host is told the thread stays in the inbox');
+  }finally{await h.cleanup();}
+});
+
+test('a sync answer read before a change reached the host cannot undo it',async()=>{
+  const h=await harness();
+  try{
+    await h.service.invoke('settings.update',{patch:{doneAction:'archive'}});
+    const hold=gate();h.control.syncHold=hold.promise;
+    h.control.next={threads:[],flags:[{id:'g1:a',unread:true,bookmarked:false,status:'new',labels:['INBOX','UNREAD']}],removed:[],reset:false,cursor:'9'};
+    const syncing=h.service.invoke('sync');
+    await new Promise(r=>setTimeout(r,20));
+    await h.service.invoke('thread.update',{ids:['g1:a'],patch:{status:'done'}});
+    await settle(async()=>h.calls.length===1&&(await get(h)).sync.pending===undefined);
+    hold.open();await syncing;
+    assert.equal((await get(h)).threads.find(t=>t.id==='g1:a')!.status,'done');
+  }finally{h.control.syncHold=undefined;await h.cleanup();}
+});
+
+test('a change discarded by disconnect does not come back when the host answers late',async()=>{
+  const h=await harness();
+  try{
+    const hold=gate();h.control.updateHold=hold.promise;h.control.writesDown=true;
+    await h.service.invoke('thread.update',{ids:['g1:a'],patch:{bookmarked:true}});
+    await new Promise(r=>setTimeout(r,20));
+    await h.service.invoke('account.disconnect',{id:'g1'});
+    hold.open();await new Promise(r=>setTimeout(r,50));
+    assert.equal((await get(h)).sync.pending,undefined,'nothing is queued for the removed account');
+    await h.restart();
+    assert.equal((await get(h)).sync.pending,undefined);
+  }finally{h.control.updateHold=undefined;await h.cleanup();}
+});
+
+test('a sent message the host gave no thread for is replaced by the host copy on the next sync',async()=>{
+  const h=await harness();
+  try{
+    await h.service.invoke('settings.update',{patch:{undoSeconds:0}});
+    h.control.sendResult={};
+    await h.service.invoke('draft.save',{draft:draft('p1')});await h.service.invoke('draft.send',{id:'p1'});
+    await settle(async()=>!(await get(h)).drafts.some(d=>d.id==='p1'));
+    const local=(await get(h)).threads.find(t=>t.subject==='Subject p1')!;
+    assert.equal(local.remoteId,undefined);
+    const messageId=h.sends[0].messageId!;
+    h.control.next={threads:[remote('host-copy',{subject:'Subject p1',status:'done',unread:false,labels:['SENT'],messages:[{id:'hm',from:'alex@example.test',fromName:'Alex',to:['reader@example.test'],date:'2026-10-14T11:00:00Z',text:'Hello',attachments:[],sent:true,internetId:messageId}]})],flags:[],removed:[],reset:false,cursor:'7'};
+    await h.service.invoke('sync');
+    const copies=(await get(h)).threads.filter(t=>t.subject==='Subject p1');
+    assert.deepEqual(copies.map(t=>t.remoteId),['host-copy'],'one thread, linked to the host');
   }finally{await h.cleanup();}
 });

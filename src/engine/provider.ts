@@ -79,7 +79,7 @@ export interface ConnectRequest {
 /** The part of a local thread a provider needs to change it at the host. */
 export type RemoteThread = Pick<Thread,'remoteId'|'status'|'labels'>;
 
-export interface CalendarInfo { id:string; name:string; accountId:string }
+export interface CalendarInfo { id:string; name:string; accountId:string; /** The calendar `'primary'` stands for. */ primary?:boolean }
 
 /** Login for a calendar server that shares the mail account's credentials (CalDAV with an app password). */
 export interface CalendarCredentials { url:string; username:string; password:string }

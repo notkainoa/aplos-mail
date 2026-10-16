@@ -21,16 +21,15 @@ export function ShortcutsDialog({open,close,doneLeft}:{open:boolean;close:()=>vo
   </Dialog>;
 }
 
-export function WelcomeDialog({open,icon,busy,error,connect,explore}:{open:boolean;icon:string;busy:boolean;error:string;connect:()=>void;explore:()=>void}){
+export function WelcomeDialog({open,icon,connect,explore}:{open:boolean;icon:string;connect:()=>void;explore:()=>void}){
   return <Dialog open={open} onClose={()=>{}} dismissable={false} label="Welcome to Aplos Mail" className="welcome">
     <span className={'app-icon large '+icon}>a</span>
     <h1>Your mail,<br/>a little lighter.</h1>
     <p>A Home you can finish, a place for later,<br/>and a little intelligence when you need it.</p>
     <div className="welcome-features"><span><Check size={15}/>An inbox you can finish</span><span><Clock size={15}/>Plans that stay in view</span><span><Sparkles size={15}/>Help, powered by Groq</span></div>
-    {error&&<Notice className="welcome-notice">{error}</Notice>}
-    <Button variant="primary" size="lg" icon={Mail} loading={busy} onClick={connect}>Connect with Google</Button>
+    <Button variant="primary" size="lg" icon={Mail} onClick={connect}>Add your email account</Button>
     <Button variant="secondary" size="lg" iconRight={ArrowRight} onClick={explore}>Explore the demo</Button>
-    <p className="welcome-footnote">Original sample mail. Nothing is sent to real people.<br/>Your API key stays on this device.</p>
+    <p className="welcome-footnote">Works with Gmail, Outlook, iCloud, Fastmail, Yahoo, AOL and other IMAP mail.<br/>The demo uses original sample mail. Nothing is sent to real people.</p>
   </Dialog>;
 }
 

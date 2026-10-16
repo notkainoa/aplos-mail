@@ -11,6 +11,7 @@ import {Sidebar,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
 import {DraftList,MailSection,highlightTerms,type RowActions,type RowHandlers,type Triage} from './components/MailList';
 import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog,WelcomeDialog} from './components/Overlays';
+import {AddAccountDialog} from './components/AddAccount';
 import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Keys,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useHandlers,useMenu,usePresence,type Icon} from './ui';
 
 const titles:Record<View,string>={home:'Home',later:'Later',all:'All mail',drafts:'Drafts',sent:'Sent','needs-reply':'Needs reply','awaiting-reply':'Awaiting reply',trash:'Trash',spam:'Spam',low:'Low importance',calendar:'Calendar',settings:'Settings'};
@@ -58,7 +59,7 @@ export function App(){
  const [shortcutHelp,setShortcutHelp]=useState(false);
  const [eventEditor,setEventEditor]=useState<Partial<CalendarEvent>|null>(null);
  const [online,setOnline]=useState(navigator.onLine);
- const [busy,setBusy]=useState('');const [welcomeError,setWelcomeError]=useState('');
+ const [busy,setBusy]=useState('');const [welcomeAdding,setWelcomeAdding]=useState(false);
  const [leaving,setLeaving]=useState<{thread:Thread;status:Triage;key:number;to:string;drag?:CardDrag}>();
  const [entering,setEntering]=useState<{id:string;from:string}>();
  const [duePrompt,setDuePrompt]=useState<{id:string;key:number}>();
@@ -378,7 +379,8 @@ export function App(){
  ]:[]}/>
  {eventEditor&&<EventEditor key={eventEditor.id||eventEditor.title||'new'} event={eventEditor} accounts={state.accounts} onClose={()=>setEventEditor(null)} notify={notify}/>}
  <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft}/>
- <WelcomeDialog open={!prefs.onboardingDone&&!popoutThread} icon={prefs.icon} busy={busy==='connect'} error={welcomeError} connect={async()=>{setBusy('connect');try{await invoke('account.connect');}catch(e){setWelcomeError((e as Error).message);}finally{setBusy('');}}} explore={()=>void updateSettings({onboardingDone:true})}/>
+ <WelcomeDialog open={!prefs.onboardingDone&&!popoutThread&&!welcomeAdding} icon={prefs.icon} connect={()=>setWelcomeAdding(true)} explore={()=>void updateSettings({onboardingDone:true})}/>
+ <AddAccountDialog open={welcomeAdding} close={()=>setWelcomeAdding(false)} capabilities={capabilities} connected={()=>notify('Account connected')}/>
  <PendingSends drafts={pending} seconds={prefs.undoSeconds} undo={async d=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){fail(e);}}}/>
  <Toaster/>
  <ConfirmHost/>

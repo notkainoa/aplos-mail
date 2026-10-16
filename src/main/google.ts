@@ -95,7 +95,8 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
       throw new GoogleError(`Google request failed (${status}). Please retry.`,status,status>=500);
     }
     if(response.status===204)return {};
-    try{return await response.json() as Json;}catch{throw new Error('Google returned an unreadable response. Please retry.');}
+    // A 2xx whose body was lost may still have been applied, so the outcome is unknown.
+    try{return await response.json() as Json;}catch{throw new GoogleError('Google returned an unreadable response. Please retry.',response.status,true);}
   }
   async function access(id:string):Promise<string> {
     const token=tokens[id];
@@ -198,7 +199,7 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
   function eventModel(raw:Json,account:Account,calendarId:string):CalendarEvent {
     return {id:`${account.id}:${calendarId}:${raw.id}`,remoteId:raw.id,accountId:account.id,calendarId,title:raw.summary??'(Untitled event)',start:raw.start?.dateTime??raw.start?.date??'',end:raw.end?.dateTime??raw.end?.date??'',allDay:Boolean(raw.start?.date),location:raw.location??'',description:raw.description??'',guests:(raw.attendees??[]).map((x:Json)=>x.email).filter(Boolean),url:raw.htmlLink};
   }
-  async function listCalendars(account:Account) {return (await pages(account,`${calendar}/users/me/calendarList?maxResults=250`,'items')).map(item=>({id:String(item.id),name:String(item.summaryOverride??item.summary??item.id),accountId:account.id}));}
+  async function listCalendars(account:Account) {return (await pages(account,`${calendar}/users/me/calendarList?maxResults=250`,'items')).map(item=>({id:String(item.id),name:String(item.summaryOverride??item.summary??item.id),accountId:account.id,...(item.primary===true?{primary:true}:{})}));}
   async function getSendAs(account:Account):Promise<NonNullable<Account['sendAs']>> {
     const response=await api(account,`${gmail}/settings/sendAs`);
     if(!Array.isArray(response.sendAs))throw new Error('Gmail sending addresses and signatures were unavailable. Reconnect this account; only its primary address can be used.');
