@@ -2,6 +2,7 @@ import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'rea
 import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,MailOpen,MessageCircle,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
 import type {AppState,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,View} from '../shared/types';
 import {bridge,escapeHtml,invoke,isoDay,replyRecipients,uid} from './bridge';
+import {createLiveState,threadOrder,type StateChanges,type ThreadPage} from '../shared/live';
 import {Compose,addressOf,validAddress,type Contact} from './Compose';
 import {Ask} from './Ask';
 import {Reader,type CardDrag} from './Reader';
@@ -79,7 +80,23 @@ export function App(){
 
  function notify(text:string,undoable=false){toast.show({text,action:undoable?{label:'Undo',shortcut:'Z',run:()=>undoRef.current()}:undefined});}
  function fail(error:unknown){toast.show({text:error instanceof Error?error.message:String(error),tone:'error'});}
- const refresh=useCallback(async()=>{try{setState(await invoke<AppState>('state.get'));setFatal('');}catch(e){setFatal((e as Error).message);}},[]);
+ // The window keeps its own copy of the mailbox: the newest threads first, older ones in pages, then changes as they happen.
+ const loadSeq=useRef(0);const refreshRef=useRef<()=>Promise<void>>(async()=>{});
+ const live=useMemo(()=>createLiveState({update:setState,resync:()=>void refreshRef.current()}),[]);
+ const refresh=useCallback(async()=>{
+  const seq=++loadSeq.current;
+  try{
+   const first=await invoke<AppState>('state.get',popoutDraft||popoutThread?{}:{threadLimit:400});if(seq!==loadSeq.current)return;
+   live.snapshot(first);setFatal('');
+   let next:{date:string;id:string}|undefined=first.threadCount&&first.threads.length<first.threadCount?[...first.threads].sort(threadOrder).at(-1):undefined;
+   while(next&&seq===loadSeq.current){
+    const page=await invoke<ThreadPage>('threads.page',{before:{date:next.date,id:next.id},limit:2000});
+    if(seq!==loadSeq.current||!live.page(page))break;
+    next=page.next;
+   }
+  }catch(e){if(seq===loadSeq.current)setFatal((e as Error).message);}
+ },[live]);
+ refreshRef.current=refresh;
  useEffect(()=>{
   void refresh();void invoke<Capabilities>('capabilities.get').then(setCapabilities).catch(()=>{});
   const unsubscribe=bridge.subscribe(e=>eventHandler.current(e));
@@ -216,7 +233,8 @@ export function App(){
  }
  function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':if(squeezed)setPeek(v=>!v);else void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
  eventHandler.current=event=>{
-  if(event.type==='state')setState(event.payload as AppState);
+  if(event.type==='state')live.snapshot(event.payload as AppState);
+  else if(event.type==='changes')live.apply(event.payload as StateChanges);
   else if(event.type==='prepare-close'){if(!composeRef.current)void invoke('window.closeReady').catch(()=>{});}
   else if(event.type==='command')command(String(event.payload));
   else if(event.type==='deep-link'){try{const url=new URL(String(event.payload));if(url.protocol==='mailto:')void newDraft({to:decodeURIComponent(url.pathname),subject:url.searchParams.get('subject')||'',html:escapeHtml(url.searchParams.get('body')||'').replace(/\n/g,'<br>'),cc:url.searchParams.get('cc')||'',bcc:url.searchParams.get('bcc')||''});else if(url.host==='compose')void newDraft({to:url.searchParams.get('to')||'',subject:url.searchParams.get('subject')||'',html:escapeHtml(url.searchParams.get('body')||'')});else if(url.host==='settings')navigate('settings');else if(url.host==='thread')navigate('all',decodeURIComponent(url.pathname.slice(1)));}catch{notify('That link could not be opened.');}}

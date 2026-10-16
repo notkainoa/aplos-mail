@@ -3,7 +3,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSyn
 import { join } from 'node:path';
 import type { AppState } from '../shared/types';
 import type { SqlDatabase, SqlValue } from '../engine/sql';
-import { createMailStore, type MailStore, type OpChanges } from '../engine/store';
+import { createMailStore, type MailStore, type OpChanges, type StoreDiff } from '../engine/store';
 
 export function openDatabase(path:string):SqlDatabase {
   const db=new DatabaseSync(path);
@@ -37,7 +37,7 @@ function readLegacy(path:string):AppState {
   }
 }
 
-export interface Store extends Omit<MailStore,'load'|'save'> { read():AppState|undefined; write(value:AppState, ops?:OpChanges):void; path:string }
+export interface Store extends Omit<MailStore,'load'|'save'> { read():AppState|undefined; write(value:AppState, ops?:OpChanges):StoreDiff; path:string }
 
 /** The local mailbox database. A pre-SQLite `state.json` is imported once and kept beside it. */
 export function createStore(dataDir:string):Store {
@@ -59,7 +59,7 @@ export function createStore(dataDir:string):Store {
     path,
     read(){const value=initial;initial=undefined;return value??mail.load();},
     write(value,ops){
-      try { mail.save(value,ops); }
+      try { return mail.save(value,ops); }
       catch { throw new Error('The mailbox could not be saved. Check free space and folder permissions.'); }
     },
     searchText:mail.searchText, cursor:mail.cursor, setCursor:mail.setCursor, ops:mail.ops, memory:mail.memory, close:mail.close,

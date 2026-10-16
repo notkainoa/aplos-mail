@@ -1,15 +1,17 @@
-import {app,BrowserWindow,dialog,ipcMain,Menu,Notification,safeStorage,shell,systemPreferences,nativeTheme,session,type IpcMainInvokeEvent,type MenuItemConstructorOptions} from 'electron';
+import {app,BrowserWindow,dialog,ipcMain,Menu,Notification,safeStorage,shell,systemPreferences,nativeTheme,session,utilityProcess,type IpcMainInvokeEvent,type MenuItemConstructorOptions} from 'electron';
 import {config} from 'dotenv';
 import {writeFile,mkdtemp} from 'node:fs/promises';
 import {join,basename,extname,resolve} from 'node:path';
 import {homedir,tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
-import {createService} from './service';
+import {connectEngine,type EngineInit} from './engine-rpc';
+import {createCipher,loadDataKey,migrateCredentials} from './keyring';
+import {applyChanges,type StateChanges} from '../shared/live';
 import {DraftOwnership,draftMutationId} from './desktop-policy';
 import type {AppState,Listener} from '../shared/types';
 
 const methods=new Set([
-  'state.get','capabilities.get','symbols.render','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',
+  'state.get','threads.page','capabilities.get','symbols.render','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',
   'thread.update','thread.undo','home.hide','search','draft.save','draft.delete','draft.send','draft.undoSend',
   'ai.summarize','ai.polish','ai.draft','ai.ask','ai.cancel','ai.transcribe','conversation.delete',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
@@ -25,7 +27,11 @@ const pendingLinks:string[]=[];
 const pendingClose=new Set<number>();
 const permittedClose=new Set<number>();
 let main:BrowserWindow|undefined;
-let service:Awaited<ReturnType<typeof createService>>;
+type Engine=ReturnType<typeof connectEngine>;
+/** The mailbox engine in its utility process; replaced if that process stops unexpectedly. */
+let service:Engine|undefined;
+let started=false;
+const restarts:number[]=[];
 let latestState:AppState|undefined;
 let closing=false;
 let quitting=false;
@@ -48,7 +54,7 @@ async function external(raw:unknown){
 function emit(event:Parameters<Listener>[0]){for(const win of windows)if(!win.isDestroyed())win.webContents.send('aplos:event',event);}
 function command(value:string){const win=BrowserWindow.getFocusedWindow()||main;win?.webContents.send('aplos:event',{type:'command',payload:value});}
 function focusMain(){if(!main||main.isDestroyed())main=createWindow();if(main.isMinimized())main.restore();main.show();main.focus();}
-function handleLink(raw:string){try{const url=new URL(raw);if(!['mailto:','aplos:'].includes(url.protocol)||raw.length>10000)return;if(service)focusMain();if(!main||main.webContents.isLoading())pendingLinks.push(raw);else{focusMain();main.webContents.send('aplos:event',{type:'deep-link',payload:raw});}}catch{/* Ignore invalid OS links. */}}
+function handleLink(raw:string){try{const url=new URL(raw);if(!['mailto:','aplos:'].includes(url.protocol)||raw.length>10000)return;if(started)focusMain();if(!main||main.webContents.isLoading())pendingLinks.push(raw);else{focusMain();main.webContents.send('aplos:event',{type:'deep-link',payload:raw});}}catch{/* Ignore invalid OS links. */}}
 function finishQuit(){if(closing)return;closing=true;void Promise.resolve(service?.close()).finally(()=>app.quit());}
 // Runs on every state change. Assigning themeSource, even to the same value, resets the macOS app appearance
 // and notifies theme observers, and the badge redraws the Dock tile, so only touch what actually changed.
@@ -118,7 +124,7 @@ async function invokeNative(event:IpcMainInvokeEvent,method:string,input:unknown
   if(method==='window.closeCancel'){pendingClose.delete(win.id);win.setEnabled(true);quitting=false;return true;}
   if(method==='app.info')return {name:'Aplos Mail',version:app.getVersion(),desktop:true,update:'This build updates from source. Automatic updates are not configured.'};
   if(method==='shell.open'){await external(payload.url);return true;}
-  if(method==='window.compose'){const id=text(payload.draftId,'draft ID',200);const state=await service.invoke('state.get') as AppState;if(!state.drafts.some(draft=>draft.id===id))throw new Error('Save this draft before opening a separate window.');popout('draft',id,win.id);return true;}
+  if(method==='window.compose'){const id=text(payload.draftId,'draft ID',200);if(!latestState?.drafts.some(draft=>draft.id===id))throw new Error('Save this draft before opening a separate window.');popout('draft',id,win.id);return true;}
   if(method==='window.thread'){popout('thread',text(payload.threadId,'thread ID',200),win.id);return true;}
   if(method==='window.claim'){const id=text(payload.draftId,'draft ID',200);return claims.claim(id,win.id);}
   if(method==='window.release'){const id=text(payload.draftId,'draft ID',200);if(claims.release(id,win.id))emit({type:'draft-owner',payload:{draftId:id}});return true;}
@@ -136,15 +142,50 @@ async function invokeNative(event:IpcMainInvokeEvent,method:string,input:unknown
   throw new Error('Unsupported desktop method.');
 }
 
+function engineEvent(event:Parameters<Listener>[0]){
+  if(event.type==='changes'){const changes=event.payload as StateChanges;if(latestState?.epoch===changes.epoch){latestState=applyChanges(latestState,changes);applyAppearance(latestState);}}
+  if(event.type==='reminder'){const payload=event.payload as {threadId:string;title:string};const thread=latestState?.threads.find(item=>item.id===payload.threadId);if(latestState?.settings.notifications&&(!thread||latestState.settings.accountNotifications[thread.accountId]!==false))notify('Aplos Mail reminder',payload.title,payload.threadId);}
+  if(event.type==='notification'){const payload=event.payload as {title?:string;body?:string;threadId?:string};if(latestState?.settings.notifications)notify(payload.title||'Aplos Mail',payload.body||'You have a reminder.',payload.threadId);}
+  emit(event);
+}
+/** Unwrap the credential key with the keychain and re-seal credentials saved before it existed. */
+async function engineInit(dataDir:string):Promise<EngineInit>{
+  const init:EngineInit={dataDir,symbolTool:app.isPackaged?join(process.resourcesPath,'bin','aplos-symbols'):join(__dirname,'..','bin','aplos-symbols')};
+  const keychain={available:()=>safeStorage.isEncryptionAvailable(),encrypt:(value:string)=>safeStorage.encryptString(value),decrypt:(value:Buffer)=>safeStorage.decryptString(value)};
+  try{const key=await loadDataKey(dataDir,keychain);await migrateCredentials(dataDir,keychain.decrypt,createCipher(key));init.key=key;}
+  catch(error){init.keyError=error instanceof Error?error.message:'macOS secure credential storage is unavailable.';}
+  return init;
+}
+async function startEngine(init:EngineInit):Promise<Engine>{
+  const child=utilityProcess.fork(join(__dirname,'engine.cjs'),[],{serviceName:'Aplos Mail Engine',env:process.env});
+  const engine=connectEngine({post:message=>child.postMessage(message),listen:handler=>child.on('message',handler)},init,async(method,args)=>{
+    if(method==='openExternal'){await external(args[0]);return true;}
+    throw new Error('Unsupported engine request.');
+  });
+  engine.subscribe(engineEvent);
+  child.once('exit',()=>{
+    engine.fail(new Error('The mailbox stopped unexpectedly. Aplos is reopening it.'));
+    if(service!==engine||closing)return;
+    service=undefined;
+    const now=Date.now();restarts.push(now);while(restarts.length&&now-restarts[0]>60_000)restarts.shift();
+    // A crash loop would hide the real problem behind endless restarts, so give up after a few.
+    if(restarts.length>3){dialog.showErrorBox('Aplos Mail stopped','The mailbox keeps stopping unexpectedly. Quit and reopen Aplos Mail.');return;}
+    void startEngine(init).then(async next=>{service=next;latestState=await next.invoke('state.get') as AppState;applyAppearance(latestState);emit({type:'state',payload:latestState});})
+      .catch(error=>dialog.showErrorBox('Aplos Mail stopped',error instanceof Error?error.message:'The mailbox could not be reopened.'));
+  });
+  await engine.started;
+  return engine;
+}
+
 app.setName('Aplos Mail');
 const locked=app.requestSingleInstanceLock();
 if(!locked)app.quit();
 else{
   app.on('open-url',(event,url)=>{event.preventDefault();handleLink(url);});
   app.on('second-instance',(_event,argv)=>{focusMain();for(const arg of argv)if(/^(mailto|aplos):/i.test(arg))handleLink(arg);});
-  app.on('activate',()=>{if(service)focusMain();});
+  app.on('activate',()=>{if(started)focusMain();});
   app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit();});
-  app.on('before-quit',event=>{if(service&&!closing){event.preventDefault();quitting=true;if(!windows.size)finishQuit();else for(const win of windows)win.close();}});
+  app.on('before-quit',event=>{if(started&&!closing){event.preventDefault();quitting=true;if(!windows.size)finishQuit();else for(const win of windows)win.close();}});
   void app.whenReady().then(async()=>{
     config({path:app.isPackaged?join(homedir(),'.config','aplos-mail','.env'):join(process.cwd(),'.env'),quiet:true});
     app.setAboutPanelOptions({applicationName:'Aplos Mail',applicationVersion:app.getVersion(),copyright:'Independent software. Built with original code and design.'});
@@ -154,27 +195,18 @@ else{
       if(!trustedURL(contents.getURL())||permission!=='media'||media.mediaTypes?.includes('video')){callback(false);return;}
       if(process.platform==='darwin')void systemPreferences.askForMediaAccess('microphone').then(callback).catch(()=>callback(false));else callback(true);
     });
-    service=await createService({dataDir:process.env.APLOS_DATA_DIR||app.getPath('userData'),desktop:true,openExternal:external,
-      symbolTool:app.isPackaged?join(process.resourcesPath,'bin','aplos-symbols'):join(__dirname,'..','bin','aplos-symbols'),
-      encrypt:(value:string)=>{if(!safeStorage.isEncryptionAvailable())throw new Error('macOS secure credential storage is unavailable.');return safeStorage.encryptString(value);},
-      decrypt:(value:Buffer)=>{if(!safeStorage.isEncryptionAvailable())throw new Error('Unlock macOS secure credential storage to connect your account.');return safeStorage.decryptString(value);}});
-    service.subscribe((event:Parameters<Listener>[0])=>{
-      if(event.type==='state'){latestState=event.payload as AppState;applyAppearance(latestState);}
-      if(event.type==='reminder'){const payload=event.payload as {threadId:string;title:string};const thread=latestState?.threads.find(item=>item.id===payload.threadId);if(latestState?.settings.notifications&&(!thread||latestState.settings.accountNotifications[thread.accountId]!==false))notify('Aplos Mail reminder',payload.title,payload.threadId);}
-      if(event.type==='notification'){const payload=event.payload as {title?:string;body?:string;threadId?:string};if(latestState?.settings.notifications)notify(payload.title||'Aplos Mail',payload.body||'You have a reminder.',payload.threadId);}
-      emit(event);
-    });
+    service=await startEngine(await engineInit(process.env.APLOS_DATA_DIR||app.getPath('userData')));
     ipcMain.handle('aplos:invoke',async(event,method:unknown,payload:unknown)=>{
       assertCaller(event);if(typeof method!=='string')throw new Error('Invalid application method.');
       if(nativeMethods.has(method))return invokeNative(event,method,payload);
       if(!methods.has(method))throw new Error('Unsupported application method.');
       const draftId=draftMutationId(method,payload);
       if(draftId)claims.assertEditable(draftId,BrowserWindow.fromWebContents(event.sender)!.id);
+      if(!service)throw new Error('The mailbox is restarting. Try again in a moment.');
       return service.invoke(method,payload);
     });
-    const initialState=await service.invoke('state.get') as AppState;
-    latestState=initialState;
-    applyAppearance(initialState);
+    latestState=await service.invoke('state.get') as AppState;
+    applyAppearance(latestState);started=true;
     menus();main=createWindow();
     app.setAsDefaultProtocolClient('aplos');
     for(const arg of process.argv)if(/^(mailto|aplos):/i.test(arg))handleLink(arg);

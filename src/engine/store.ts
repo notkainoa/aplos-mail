@@ -63,10 +63,13 @@ export interface QueuedOp {
 }
 export interface OpChanges { put?:QueuedOp[]; remove?:string[] }
 
+/** What a save actually wrote: changed thread IDs, removed thread IDs, and the other collections or fields that differ. */
+export interface StoreDiff { threads:string[]; removed:string[]; changed:Array<Ordered|typeof META_KEYS[number]> }
+
 export interface MailStore {
   load():AppState|undefined;
-  /** Writes only rows that differ from the last load or save, in one transaction. */
-  save(state:AppState, ops?:OpChanges):void;
+  /** Writes only rows that differ from the last load or save, in one transaction, and reports them. */
+  save(state:AppState, ops?:OpChanges):StoreDiff;
   /** Queue changes on their own, in one transaction. */
   writeOps(ops:OpChanges):void;
   /** Queued changes, oldest first. */
@@ -102,14 +105,15 @@ export function createMailStore(db:SqlDatabase):MailStore {
     for(const op of ops.put??[])db.prepare('INSERT INTO ops(id, account_id, data) VALUES(?, ?, ?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(op.id,op.accountId,JSON.stringify(op));
     for(const id of ops.remove??[])db.prepare('DELETE FROM ops WHERE id=?').run(id);
   }
-  function save(state:AppState, ops?:OpChanges) {
+  function save(state:AppState, ops?:OpChanges):StoreDiff {
     // The snapshot of what is on disk only advances after the transaction commits.
     const after:Array<()=>void>=[];
+    const diff:StoreDiff={threads:[],removed:[],changed:[]},changed=new Set<StoreDiff['changed'][number]>();
     transaction(db,()=>{
       if(ops)applyOps(ops);
       for(const key of META_KEYS){
         const json=JSON.stringify(state[key]??null);
-        if(written.meta.get(key)!==json){db.prepare('INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,json);after.push(()=>written.meta.set(key,json));}
+        if(written.meta.get(key)!==json){db.prepare('INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,json);after.push(()=>written.meta.set(key,json));changed.add(key);}
       }
       for(const table of ORDERED){
         const seen=new Set<string>(),previous=written[table];
@@ -117,9 +121,9 @@ export function createMailStore(db:SqlDatabase):MailStore {
           const data=JSON.stringify(item),signature=`${pos}:${data}`;seen.add(item.id);
           if(previous.get(item.id)===signature)return;
           db.prepare(`INSERT INTO ${table}(id, pos, data) VALUES(?, ?, ?) ON CONFLICT(id) DO UPDATE SET pos=excluded.pos, data=excluded.data`).run(item.id,pos,data);
-          after.push(()=>previous.set(item.id,signature));
+          after.push(()=>previous.set(item.id,signature));changed.add(table);
         });
-        for(const id of [...previous.keys()])if(!seen.has(id)){db.prepare(`DELETE FROM ${table} WHERE id=?`).run(id);after.push(()=>previous.delete(id));}
+        for(const id of [...previous.keys()])if(!seen.has(id)){db.prepare(`DELETE FROM ${table} WHERE id=?`).run(id);after.push(()=>previous.delete(id));changed.add(table);}
       }
       const seen=new Set<string>(),previous=written.threads;
       for(const thread of state.threads){
@@ -130,13 +134,15 @@ export function createMailStore(db:SqlDatabase):MailStore {
         const text=searchable(thread);
         db.prepare('DELETE FROM thread_text WHERE id=?').run(thread.id);
         db.prepare('INSERT INTO thread_text(id, account_id, subject, people, body) VALUES(?, ?, ?, ?, ?)').run(thread.id,thread.accountId,text.subject,text.people,text.body);
-        after.push(()=>previous.set(thread.id,data));
+        after.push(()=>previous.set(thread.id,data));diff.threads.push(thread.id);
       }
       for(const id of [...previous.keys()])if(!seen.has(id)){
-        db.prepare('DELETE FROM threads WHERE id=?').run(id);db.prepare('DELETE FROM thread_text WHERE id=?').run(id);after.push(()=>previous.delete(id));
+        db.prepare('DELETE FROM threads WHERE id=?').run(id);db.prepare('DELETE FROM thread_text WHERE id=?').run(id);after.push(()=>previous.delete(id));diff.removed.push(id);
       }
     });
     for(const apply of after)apply();
+    diff.changed=[...changed];
+    return diff;
   }
 
   function searchText(text:string, accountId?:string, limit=500):string[] {

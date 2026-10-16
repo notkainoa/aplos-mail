@@ -7,7 +7,8 @@ import { createGoogle, type GoogleAdapter } from './google';
 import { symbolRenderer } from './symbols';
 import { applySync } from '../engine/merge';
 import { createGate } from '../engine/gate';
-import { ftsQuery, type OpChanges, type QueuedOp } from '../engine/store';
+import { ftsQuery, type OpChanges, type QueuedOp, type StoreDiff } from '../engine/store';
+import { threadOrder, type StateChanges, type ThreadPage } from '../shared/live';
 import { checkDomain, discoverAccount } from '../engine/discover';
 import type { AccountPreset, ConnectRequest, MailProvider, ProviderEnvironment, ProviderKind, ServerSettings } from '../engine/provider';
 import { createMicrosoft } from './microsoft';
@@ -209,6 +210,8 @@ export async function createService(options:ServiceOptions) {
   const gate=createGate({now:()=>now().getTime()}),extrasAt=new Map<string,number>();
   let syncing:Promise<void>|undefined;
   let closed=false;
+  /** Windows follow commits by number; a new epoch after a restart tells them to reload. */
+  const epoch=randomUUID();let rev=0;state.epoch=epoch;state.rev=rev;
   const emit=(type:string,payload?:unknown)=>{for(const listener of listeners) {try{listener({type,payload:clone(payload)});}catch{/* A closed renderer must not interrupt persistence. */}}};
   let queue:QueuedOp[]=store.ops();
   /**
@@ -225,7 +228,18 @@ export async function createService(options:ServiceOptions) {
     for(const op of ops?.put??[])touched.get(op.accountId)?.add(op.threadId);
     const pending=nextQueue.length||undefined;
     if(next.sync.pending!==pending)next.sync={...next.sync,pending};
-    store.write(next,ops);state=next;queue=nextQueue;emit('state',state);
+    const diff=store.write(next,ops);state=next;queue=nextQueue;
+    state.epoch=epoch;state.rev=rev;
+    publish(diff);
+  }
+  /** Tell windows what the save changed, rather than resending the whole mailbox. */
+  function publish(diff:StoreDiff) {
+    if(!diff.threads.length&&!diff.removed.length&&!diff.changed.length)return;
+    state.rev=++rev;
+    const changes:StateChanges={epoch,rev};
+    if(diff.threads.length||diff.removed.length){const ids=new Set(diff.threads);changes.threads={put:state.threads.filter(t=>ids.has(t.id)),remove:diff.removed};}
+    for(const key of diff.changed)(changes as unknown as Record<string,unknown>)[key]=state[key];
+    emit('changes',changes);
   }
   function change(fn:(next:AppState)=>void,ops?:OpChanges) {const next=clone(state);fn(next);commit(next,ops);}
   /** Queue bookkeeping only touches `sync.pending`, so it skips the full-state clone. */
@@ -503,7 +517,20 @@ export async function createService(options:ServiceOptions) {
     if(closed)throw new Error('The mailbox is closed.');
     const p=object(raw??{});
     switch(method){
-      case 'state.get':checkReminders();return clone(state);
+      case 'state.get':{
+        checkReminders();
+        // A window can start from the newest threads and read the rest in pages.
+        const limit=p.threadLimit===undefined?0:Math.max(1,Math.min(100_000,Math.floor(Number(p.threadLimit))||1));
+        if(!limit||state.threads.length<=limit)return clone(state);
+        return {...clone({...state,threads:[...state.threads].sort(threadOrder).slice(0,limit)}),threadCount:state.threads.length};
+      }
+      case 'threads.page':{
+        const before=object(p.before),date=text(before.date,100),id=text(before.id,1000),limit=Math.max(1,Math.min(5_000,Math.floor(Number(p.limit))||500));
+        const older=[...state.threads].sort(threadOrder).filter(t=>threadOrder(t,{date,id})>0);
+        const threads=older.slice(0,limit),last=threads.at(-1);
+        const page:ThreadPage={epoch,rev,threads:clone(threads),...(older.length>limit&&last?{next:{date:last.date,id:last.id}}:{})};
+        return page;
+      }
       case 'symbols.render':return symbols(p.items,p.scale);
       case 'capabilities.get':return {groq:groq.available,google:!!providers.google?.available,microsoft:!!providers.microsoft?.available,desktop:!!options.desktop,version:'0.1.0'};
       case 'settings.update':change(s=>{s.settings={...s.settings,...settingsPatch(p.patch)};});return clone(state);

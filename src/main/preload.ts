@@ -2,7 +2,7 @@ import {contextBridge,ipcRenderer} from 'electron';
 import type {Bridge,Listener} from '../shared/types';
 
 const allowed = new Set([
-  'state.get','capabilities.get','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',
+  'state.get','threads.page','capabilities.get','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',
   'thread.update','thread.undo','home.hide','search','draft.save','draft.delete','draft.send','draft.undoSend',
   'ai.summarize','ai.polish','ai.draft','ai.ask','ai.cancel','ai.transcribe','conversation.delete',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
