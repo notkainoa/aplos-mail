@@ -116,10 +116,10 @@ export function App(){
  function navigate(view:View,threadId?:string){if(replyGuard())return;const next={view,threadId};setRoute(next);setSearchMode(false);setSelected(new Set());setRoutes(prev=>[...prev.slice(0,historyIndex+1),next]);setHistoryIndex(i=>i+1);}
  function historyMove(delta:number){if(replyGuard())return;const index=historyIndex+delta;if(index<0||index>=routes.length)return;setHistoryIndex(index);setRoute(routes[index]);setSelected(new Set());setSearchMode(false);}
  async function updateSettings(patch:Partial<Preferences>){try{await invoke('settings.update',{patch});}catch(e){fail(e);}}
- async function patch(ids:string[],p:Partial<Thread>,label?:string,keepTriage=false){if(!keepTriage)lastTriage.current=null;try{await invoke('thread.update',{ids,patch:p});if(label)notify(label,true);setSelected(new Set());}catch(e){fail(e);}}
+ async function patch(ids:string[],p:Partial<Thread>,label?:string,keepTriage=false){if(!keepTriage)lastTriage.current=null;try{await invoke('thread.update',{ids,patch:p,compact:true});if(label)notify(label,true);setSelected(new Set());}catch(e){fail(e);}}
  async function undo(){
   const last=lastTriage.current;lastTriage.current=null;setDuePrompt(undefined);toast.dismissActions();
-  try{await invoke('thread.undo');
+  try{await invoke('thread.undo',{compact:true});
    if(last?.reopen&&!inlineReply){setLeaving(undefined);if(!reducedMotion())setEntering({id:last.id,from:last.status==='done'?'right':last.status==='later'?'left':'below'});setRoute(r=>({...r,threadId:last.id}));}
    else notify('Action undone');
   }catch(e){if(/nothing to undo/i.test((e as Error).message))notify('Nothing to undo');else fail(e);}
@@ -183,7 +183,7 @@ export function App(){
  },[scoped,searchMode]);
  const selectedThread=state?.threads.find(t=>t.id===route.threadId)||searchResults.find(t=>t.id===route.threadId);const readerIndex=Math.max(0,order.findIndex(t=>t.id===route.threadId));
  const inlineReply=!!composer&&!!selectedThread&&!popoutDraft&&!popoutThread&&composer.threadId===selectedThread.id&&composer.mode!=='new'&&composer.mode!=='forward';
- function openThread(id:string){if(inlineReply&&id!==selectedThread?.id){notify('Send or close your reply first.');return;}setRoute(r=>({...r,threadId:id}));const t=state?.threads.find(t=>t.id===id);if(t?.unread)void invoke('thread.update',{ids:[id],patch:{unread:false},recordUndo:false}).catch(fail);}
+ function openThread(id:string){if(inlineReply&&id!==selectedThread?.id){notify('Send or close your reply first.');return;}setRoute(r=>({...r,threadId:id}));const t=state?.threads.find(t=>t.id===id);if(t?.unread)void invoke('thread.update',{ids:[id],patch:{unread:false},recordUndo:false,compact:true}).catch(fail);}
  function nextThread(delta:number){const next=order[readerIndex+delta];if(next)openThread(next.id);}
  function moveCursor(delta:number){
   if(!order.length)return;const from=cursor.shown?cursor.id:lastHovered.current??cursor.id;const at=order.findIndex(t=>t.id===from);
@@ -213,7 +213,7 @@ export function App(){
   if(!current){if(cursor.id===thread.id)setCursor(c=>({...c,id:following?.id}));return;}
   if(stack&&!reducedMotion())setLeaving({thread,status,key:Date.now(),to:exitDirection(status),drag});
   if(following&&following.id!==thread.id)setRoute(r=>({...r,threadId:following.id}));else setRoute(r=>({...r,threadId:undefined}));
-  if(following?.unread)void invoke('thread.update',{ids:[following.id],patch:{unread:false},recordUndo:false}).catch(()=>{});
+  if(following?.unread)void invoke('thread.update',{ids:[following.id],patch:{unread:false},recordUndo:false,compact:true}).catch(()=>{});
  }
  function bulk(status:Triage,label:string){const ids=[...selected];for(const id of ids)hintExit(id,exitDirection(status));if(cursor.id&&selected.has(cursor.id)){const at=order.findIndex(t=>t.id===cursor.id);setCursor(c=>({...c,id:order.slice(at+1).find(t=>!selected.has(t.id))?.id}));}void patch(ids,{status},`${label} · ${ids.length} email${ids.length===1?'':'s'}`);}
  function talk(phase:'start'|'release'){
@@ -223,7 +223,7 @@ export function App(){
    void newDraft({},selectedThread,state?.settings.defaultReply);
   }else if(talkHeld.current){talkHeld.current=false;dispatchEvent(new Event('aplos:talk-release'));}
  }
- async function setDue(id:string,dueDate:string,label:string){setDuePrompt(undefined);try{await invoke('thread.update',{ids:[id],patch:{dueDate},recordUndo:false});notify(label);}catch(e){fail(e);}}
+ async function setDue(id:string,dueDate:string,label:string){setDuePrompt(undefined);try{await invoke('thread.update',{ids:[id],patch:{dueDate},recordUndo:false,compact:true});notify(label);}catch(e){fail(e);}}
  function openSearch(){if(replyGuard())return;setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));setTimeout(()=>searchInput.current?.focus(),20);}
  function closeSearch(){setSearchMode(false);setSearch('');}
  function rememberSearch(query:string){const value=query.trim();if(!value)return;setRecentSearches(prev=>{const next=[value,...prev.filter(q=>q!==value)].slice(0,5);localStorage.setItem(recentSearchKey,JSON.stringify(next));return next;});}
@@ -353,7 +353,7 @@ export function App(){
 
  let list:React.ReactNode;
  if(searchMode)list=search?filtered.length?group(`${filtered.length} result${filtered.length===1?'':'s'}`,filtered,undefined,false):!searching&&searchedFor===search&&emptyFor(view):<EmptyState compact icon={Search} title="Search your mail" detail="Senders, subjects and the words inside your messages."/>;
- else if(view==='home')list=<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-bundle" onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><span><strong>Low-importance emails</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></span></button>}{group('Ready when you are',homeLater,<Button variant="text" onClick={()=>{for(const t of homeLater)hintExit(t.id,'down');void invoke('home.hide',{ids:homeLater.map(t=>t.id)}).then(()=>notify(`Hid ${homeLater.length} from Home. They stay in Later.`)).catch(fail);}}>Hide all</Button>)}{group('Waiting on you',replyHome)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&emptyFor('home')}</>;
+ else if(view==='home')list=<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-bundle" onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><span><strong>Low-importance emails</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></span></button>}{group('Ready when you are',homeLater,<Button variant="text" onClick={()=>{for(const t of homeLater)hintExit(t.id,'down');void invoke('home.hide',{ids:homeLater.map(t=>t.id),compact:true}).then(()=>notify(`Hid ${homeLater.length} from Home. They stay in Later.`)).catch(fail);}}>Hide all</Button>)}{group('Waiting on you',replyHome)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&emptyFor('home')}</>;
  else if(view==='drafts')list=titled('Drafts',drafts.length?<DraftList drafts={drafts} open={d=>void openDraft(d)} remove={async d=>{if(!await confirmAction({title:'Delete this draft?',message:'It will be removed from this device and from your account’s drafts.',confirmLabel:'Delete',danger:true}))return;hintExit(d.id,'down');void invoke('draft.delete',{id:d.id}).catch(fail);}}/>:emptyFor('drafts'));
  else if(view==='later'&&laterTab==='todos')list=<>{group('Overdue',todoGroups.overdue)}{group('Today',todoGroups.today)}{group('Upcoming',todoGroups.upcoming)}{group('No due date',todoGroups.undated)}{!filtered.length&&emptyFor('later')}</>;
  else{const title=view==='later'?'Bookmarks':titles[view];list=filtered.length?group(title,filtered,view==='low'?<Button variant="pill" icon={CheckCheck} onClick={()=>{for(const t of filtered)hintExit(t.id,exitDirection('done'));void patch(filtered.map(t=>t.id),{status:'done'},'Low-importance mail marked done');}}>Mark all done</Button>:undefined,false):titled(title,view==='later'?<EmptyState icon={Bookmark} title="No bookmarks" detail="Press B on an email to keep it close."/>:emptyFor(view));}

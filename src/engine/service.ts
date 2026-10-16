@@ -385,7 +385,7 @@ export async function createEngineService(options:EngineOptions) {
     try {const result=await fn(controller.signal);if(controller.signal.aborted)throw new Error('AI request cancelled.');return result;}
     finally{requests.delete(id);emit('ai.end',{requestId:id});}
   }
-  async function updateThreads(ids:string[],patch:Partial<Thread>,recordUndo=true) {
+  async function updateThreads(ids:string[],patch:Partial<Thread>,recordUndo=true,compact=false) {
     if(!Array.isArray(ids)||!ids.length||ids.length>1_000)throw new Error('Choose one or more messages.');
     const before=[...new Set(ids)].map(id=>thread(text(id,300)));
     const updates=before.map(t=>{
@@ -403,10 +403,11 @@ export async function createEngineService(options:EngineOptions) {
     // Local first, in one transaction with the queued provider changes; the host catches up through the queue.
     const ops=updates.map(u=>queued(u.thread,u.patch)).filter((op):op is QueuedOp=>!!op);
     const stage=noteWorkflow(updates.map(u=>({...u.thread,...u.patch})),patch);
-    change(s=>{for(const update of updates){const index=s.threads.findIndex(t=>t.id===update.thread.id);s.threads[index]={...s.threads[index],...update.patch};}},{put:ops},{stage});
+    const replacements=new Map(updates.map(u=>[u.thread.id,{...u.thread,...u.patch}]));
+    commit({...state,threads:state.threads.map(t=>replacements.get(t.id)??t)},{put:ops},{stage});
     if(recordUndo){undo.push(before);if(undo.length>50)undo.shift();}
     if(ops.length)kick();
-    return clone(state);
+    return compact?{epoch,rev}:clone(state);
   }
   /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. */
   async function classifyIncoming(fresh:Thread[],a:Account,refresh:Set<string>=new Set()):Promise<string[]> {
@@ -600,8 +601,8 @@ export async function createEngineService(options:EngineOptions) {
         fresh.threads.push(...state.threads.filter(t=>live.has(t.accountId)));fresh.drafts.push(...state.drafts.filter(d=>live.has(d.accountId)));fresh.events.push(...state.events.filter(e=>live.has(e.accountId)));
         fresh.settings=clone(state.settings);commit(fresh);undo.length=0;for(const d of state.drafts)scheduleSend(d);return clone(state);
       }
-      case 'thread.update':return updateThreads(p.ids,threadPatch(p.patch),p.recordUndo!==false);
-      case 'home.hide':return updateThreads(p.ids,{hiddenFromHome:true});
+      case 'thread.update':return updateThreads(p.ids,threadPatch(p.patch),p.recordUndo!==false,p.compact===true);
+      case 'home.hide':return updateThreads(p.ids,{hiddenFromHome:true},true,p.compact===true);
       case 'thread.undo':{
         const previous=undo.at(-1);if(!previous)throw new Error('There is nothing to undo.');
         const restores=previous.map(old=>{const current=thread(old.id),patch:Partial<Thread>={};account(current.accountId);
@@ -609,8 +610,9 @@ export async function createEngineService(options:EngineOptions) {
           return {current,patch};});
         const ops=restores.map(r=>queued(r.current,r.patch)).filter((op):op is QueuedOp=>!!op);
         const stage=noteWorkflow(restores.map(r=>({...r.current,...r.patch})));
-        change(s=>{for(const {current,patch} of restores){const index=s.threads.findIndex(t=>t.id===current.id);s.threads[index]={...s.threads[index],...patch};}},{put:ops},{stage});
-        undo.pop();if(ops.length)kick();return clone(state);
+        const replacements=new Map(restores.map(r=>[r.current.id,{...r.current,...r.patch}]));
+        commit({...state,threads:state.threads.map(t=>replacements.get(t.id)??t)},{put:ops},{stage});
+        undo.pop();if(ops.length)kick();return p.compact===true?{epoch,rev}:clone(state);
       }
       case 'search':{
         const query=text(p.query,2000).trim(),accountId=p.accountId&&p.accountId!=='all'?text(p.accountId,300):undefined;

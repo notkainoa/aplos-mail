@@ -7,6 +7,11 @@
 - Emulated provider results prove application integration only. Live Groq evaluations use synthetic content and the backend GROQ_API_KEY; record semantic failures honestly. M11 stays unchecked until authorized real mailbox and OS acceptance happens.
 - Keep a small eight-case factual evaluation corpus with deterministic outcome assertions instead of adding another AI judge or adopting Inbox Zero code. Run it explicitly against Groq; ordinary tests never spend API quota. Reports contain case outcomes/model/timing and synthetic assertion failures, never credentials.
 - Context limits must preserve complete JSON and the latest user question. Drop older history and fit complete thread excerpts to the request budget; admit citations only from excerpts actually sent. Tell the model its view is partial. Oversized composition input fails clearly instead of sending a malformed fragment. Long individual threads retain recent messages within a bounded context; this is not whole-mailbox retrieval.
+- Large-mailbox evidence must include the real packaged UI. The first 10k-thread import did not finish after 210 seconds (stopped; exploratory run overlapped tests), and the first desktop attempt exhausted its 60-second Home-row deadline while the renderer used about 1 GB. Keep those failures distinct from successful measurements.
+- Avoid scanning FTS for nonexistent old rows during first ingestion; reuse hot statements and skip reindexing when only flags/workflow changed. Keep the existing schema and retain indexed subject/body/people/account updates and deletion semantics.
+- Triage/Undo now replace only touched thread objects. The renderer requests `compact:true` acknowledgements and follows existing change events; default state-returning calls remain compatible. This avoids cloning/transferring the entire mailbox for routine actions.
+- Window sections above 200 rows using their existing fixed row height and a small overscan. Preserve scroll geometry, native wheel/trackpad scrolling and keyboard cursor movement; keep small-list presence animations. Do not add a UI framework or claim bodies are loaded on demand.
+- Verification desktop processes use distinct Chromium profiles as well as temporary engine data. They can run alongside the normal installed app without sharing its instance lock or browser storage.
 
 ## 2026-10-14
 

@@ -29,7 +29,7 @@ async function launch(){
   const listener=createServer();await new Promise(r=>listener.listen(0,'127.0.0.1',r));port=listener.address().port;await new Promise(r=>listener.close(r));
   const log=await open(join(dataDir,'desktop.log'),'a');
   const env={...process.env,APLOS_DATA_DIR:dataDir};delete env.ELECTRON_RUN_AS_NODE;
-  child=spawn(executable,[`--remote-debugging-port=${port}`,'--remote-debugging-address=127.0.0.1'],{env,detached:process.argv.includes('--keep-open'),stdio:['ignore',log.fd,log.fd]});
+  child=spawn(executable,[`--user-data-dir=${join(dataDir,'chromium')}`,`--remote-debugging-port=${port}`,'--remote-debugging-address=127.0.0.1'],{env,detached:process.argv.includes('--keep-open'),stdio:['ignore',log.fd,log.fd]});
   child.on('error',()=>{});await log.close();
   const target=await until(async()=>{if(child.exitCode!==null)throw new Error('Desktop exited');return (await targets()).find(t=>t.type==='page'&&t.url.startsWith('file:'));},'desktop launch');
   const client=await connect(target);await until(()=>client.evaluate('Boolean(window.aplos&&document.querySelector("main"))'),'rendered desktop');return client;

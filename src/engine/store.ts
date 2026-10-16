@@ -88,6 +88,9 @@ export interface MailStore {
 export function createMailStore(db:SqlDatabase):MailStore {
   migrate(db);
   const written:Record<string,Map<string,string>>={threads:new Map(),meta:new Map(),...Object.fromEntries(ORDERED.map(table=>[table,new Map()]))};
+  const upsertThread=db.prepare('INSERT INTO threads(id, account_id, date, status, data) VALUES(?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id, date=excluded.date, status=excluded.status, data=excluded.data');
+  const deleteText=db.prepare('DELETE FROM thread_text WHERE id=?');
+  const insertText=db.prepare('INSERT INTO thread_text(id, account_id, subject, people, body) VALUES(?, ?, ?, ?, ?)');
 
   function load():AppState|undefined {
     const meta=new Map(db.prepare('SELECT key, value FROM meta').all().map(row=>[String(row.key),String(row.value)]));
@@ -141,16 +144,20 @@ export function createMailStore(db:SqlDatabase):MailStore {
       const seen=new Set<string>(),previous=written.threads;
       for(const thread of state.threads){
         const data=JSON.stringify(thread);seen.add(thread.id);
-        if(previous.get(thread.id)===data)continue;
-        db.prepare('INSERT INTO threads(id, account_id, date, status, data) VALUES(?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id, date=excluded.date, status=excluded.status, data=excluded.data')
-          .run(thread.id,thread.accountId,thread.date,thread.status,data);
+        const before=previous.get(thread.id);
+        if(before===data)continue;
+        upsertThread.run(thread.id,thread.accountId,thread.date,thread.status,data);
         const text=searchable(thread);
-        db.prepare('DELETE FROM thread_text WHERE id=?').run(thread.id);
-        db.prepare('INSERT INTO thread_text(id, account_id, subject, people, body) VALUES(?, ?, ?, ?, ?)').run(thread.id,thread.accountId,text.subject,text.people,text.body);
+        const old=before?JSON.parse(before) as Thread:undefined,oldText=old?searchable(old):undefined;
+        // New rows have no old FTS entry to scan for. Flags and triage do not change indexed text.
+        if(!oldText||old!.accountId!==thread.accountId||oldText.subject!==text.subject||oldText.people!==text.people||oldText.body!==text.body){
+          if(old)deleteText.run(thread.id);
+          insertText.run(thread.id,thread.accountId,text.subject,text.people,text.body);
+        }
         after.push(()=>previous.set(thread.id,data));diff.threads.push(thread.id);
       }
       for(const id of [...previous.keys()])if(!seen.has(id)){
-        db.prepare('DELETE FROM threads WHERE id=?').run(id);db.prepare('DELETE FROM thread_text WHERE id=?').run(id);after.push(()=>previous.delete(id));diff.removed.push(id);
+        db.prepare('DELETE FROM threads WHERE id=?').run(id);deleteText.run(id);after.push(()=>previous.delete(id));diff.removed.push(id);
       }
     });
     for(const apply of after)apply();

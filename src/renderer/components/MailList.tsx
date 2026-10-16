@@ -1,4 +1,4 @@
-import {memo,useRef,useState} from 'react';
+import {memo,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {Bookmark,Check,Clock,FileText,MoreHorizontal,Paperclip,RotateCcw,Trash2} from '../icons';
 import type {Draft,Thread} from '../../shared/types';
 import {dateLabel,dueLabel,plain} from '../bridge';
@@ -47,14 +47,55 @@ export function Marked({text,terms}:{text:string;terms?:string[]}){
 }
 
 /** A titled card of mail rows. Rows leaving after triage slide out and collapse; rows coming back grow in. */
+const noThreads:Thread[]=[];
 export function MailSection({title,threads,action,showCount=true,rows}:{title:string;threads:Thread[];action?:React.ReactNode;showCount?:boolean;rows:RowHandlers}){
-  const items=useListPresence(threads,thread=>thread.id);
-  if(!items.length)return null;
+  const items=useListPresence(threads.length>200?noThreads:threads,thread=>thread.id);
+  if(!threads.length&&!items.length)return null;
   return <section className="mail-section">
     <header><h2>{title}{showCount&&threads.length>0&&<Count value={threads.length} className="section-count"/>}</h2>{action}</header>
-    <div className="mail-group">{items.map(({item,phase,direction})=><MailRow key={item.id} thread={item} actions={rows.actions} phase={phase} direction={direction}
-      active={rows.activeId===item.id} cursor={rows.cursorId===item.id} selected={rows.selected.has(item.id)} selecting={rows.selected.size>0} doneLeft={rows.doneLeft} swipe={rows.swipe} highlight={rows.highlight}/>)}</div>
+    {threads.length>200?<WindowedMailRows threads={threads} rows={rows}/>:<div className="mail-group">{presentRows(items,rows)}</div>}
   </section>;
+}
+
+function PresentMailRows({threads,rows}:{threads:Thread[];rows:RowHandlers}) {
+  const items=useListPresence(threads,thread=>thread.id);
+  return <>{presentRows(items,rows)}</>;
+}
+const presentRows=(items:Array<{item:Thread;phase?:'enter'|'exit';direction?:string}>,rows:RowHandlers)=>items.map(({item,phase,direction})=><MailRow key={item.id} thread={item} actions={rows.actions} phase={phase} direction={direction}
+  active={rows.activeId===item.id} cursor={rows.cursorId===item.id} selected={rows.selected.has(item.id)} selecting={rows.selected.size>0} doneLeft={rows.doneLeft} swipe={rows.swipe} highlight={rows.highlight}/>);
+
+/** Fixed-height rows keep the scrollbar and keyboard order while only nearby rows mount. */
+function WindowedMailRows({threads,rows}:{threads:Thread[];rows:RowHandlers}) {
+  const group=useRef<HTMLDivElement>(null),measure=useRef<()=>void>(()=>{});
+  const [range,setRange]=useState({start:0,end:40,height:56});
+  useLayoutEffect(()=>{
+    const node=group.current,scroll=node?.closest<HTMLElement>('.mail-content');if(!node||!scroll)return;
+    let frame=0;
+    const height=parseFloat(getComputedStyle(node).getPropertyValue('--row-height'))||56;
+    const update=()=>{
+      const offset=scroll.getBoundingClientRect().top-node.getBoundingClientRect().top-8;
+      const count=Math.ceil(scroll.clientHeight/height)+16;
+      const start=Math.max(0,Math.min(threads.length-count,Math.floor(offset/height)-8)),end=Math.min(threads.length,start+count);
+      setRange(old=>old.start===start&&old.end===end&&old.height===height?old:{start,end,height});
+    };
+    const schedule=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(update);};
+    measure.current=update;update();scroll.addEventListener('scroll',schedule,{passive:true});
+    const resize=new ResizeObserver(schedule);resize.observe(scroll);
+    return()=>{cancelAnimationFrame(frame);resize.disconnect();scroll.removeEventListener('scroll',schedule);measure.current=()=>{};};
+  },[threads.length]);
+  useLayoutEffect(()=>{
+    if(!rows.cursorId)return;const index=threads.findIndex(t=>t.id===rows.cursorId);
+    if(index<0||(index>=range.start&&index<range.end))return;
+    const node=group.current,scroll=node?.closest<HTMLElement>('.mail-content');if(!node||!scroll)return;
+    scroll.scrollTop+=node.getBoundingClientRect().top-scroll.getBoundingClientRect().top+8+index*range.height-scroll.clientHeight/2;
+    measure.current();
+  },[rows.cursorId]);
+  const visible=useMemo(()=>threads.slice(range.start,range.end),[threads,range.start,range.end]);
+  return <div className="mail-group" ref={group} data-virtual-count={threads.length}>
+    <div aria-hidden="true" style={{height:range.start*range.height}}/>
+    <PresentMailRows key={range.start} threads={visible} rows={rows}/>
+    <div aria-hidden="true" style={{height:Math.max(0,threads.length-range.end)*range.height}}/>
+  </div>;
 }
 
 type RowProps={thread:Thread;actions:RowActions;phase?:'enter'|'exit';direction?:string;active:boolean;cursor:boolean;selected:boolean;selecting:boolean;doneLeft:boolean;swipe:boolean;highlight?:Terms};

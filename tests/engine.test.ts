@@ -23,15 +23,16 @@ const empty=(patch:Partial<SyncResult>={}):SyncResult=>({threads:[],flags:[],rem
 test('the SQLite store round-trips state, writes only changed rows, searches by word prefix and keeps cursors',async()=>{
   const dir=await temp('store');
   try{
-    const db=openDatabase(join(dir,'aplos.db'));let writes=0;
-    const counting={...db,prepare(sql:string){const statement=db.prepare(sql);return /^(INSERT|UPDATE|DELETE)/.test(sql)?{...statement,run:(...p:any[])=>{writes++;return statement.run(...p);}}:statement;}};
+    const db=openDatabase(join(dir,'aplos.db'));let writes=0,ftsDeletes=0;
+    const counting={...db,prepare(sql:string){const statement=db.prepare(sql);return /^(INSERT|UPDATE|DELETE)/.test(sql)?{...statement,run:(...p:any[])=>{writes++;if(sql.startsWith('DELETE FROM thread_text'))ftsDeletes++;return statement.run(...p);}}:statement;}};
     const store=createMailStore(counting);
     const state=createDemo(new Date('2026-10-14T12:00:00Z'));
     store.save(state);
+    assert.equal(ftsDeletes,0,'fresh ingestion never scans the existing FTS table to delete a nonexistent entry');
     const first=writes;writes=0;
     store.save(state);assert.equal(writes,0,'an unchanged snapshot writes nothing');
     const next=structuredClone(state);next.threads[0].unread=!next.threads[0].unread;next.settings.theme='dark';
-    store.save(next);assert.equal(writes,4,'one thread row, its two search-index statements and one setting');assert.ok(first>writes);
+    store.save(next);assert.equal(writes,2,'a flag-only edit writes its thread row and setting without rebuilding search');assert.ok(first>writes);
     const loaded=store.load()!;
     assert.equal(loaded.threads.length,state.threads.length);assert.equal(loaded.settings.theme,'dark');assert.deepEqual(loaded.accounts,state.accounts);
     assert.deepEqual(loaded.threads.map(t=>t.date),[...loaded.threads.map(t=>t.date)].sort().reverse());
@@ -40,6 +41,8 @@ test('the SQLite store round-trips state, writes only changed rows, searches by 
     assert.ok(store.searchText(garden.messages[0].fromName.split(' ')[0]).includes('garden'),'sender names are indexed');
     assert.deepEqual(store.searchText('"gard" OR *'),store.searchText('gard OR'),'FTS syntax in user text is treated as words');
     assert.equal(store.searchText('gard',garden.accountId==='work'?'personal':'work').includes('garden'),false,'account filter applies');
+    const edited=next.threads.find(t=>t.id==='garden')!;edited.subject='Needlefinch migration';edited.summary='';edited.messages=edited.messages.map(m=>({...m,text:'Replacement searchable content.'}));
+    store.save(next);assert.ok(store.searchText('needlefinch').includes('garden'));assert.ok(!store.searchText('community garden').includes('garden'),'body edits replace stale search terms');
     next.threads=next.threads.filter(t=>t.id!=='garden');store.save(next);assert.equal(store.searchText('gard').includes('garden'),false,'removed threads leave the index');
     store.setCursor('g','42');assert.equal(store.cursor('g'),'42');store.setCursor('g',undefined);assert.equal(store.cursor('g'),undefined);
     store.close();
