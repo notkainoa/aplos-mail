@@ -178,6 +178,12 @@ test('DKIM is found through Microsoft CNAMEs, revoked keys fail, and failed look
 
   const revoked=await checkDomain('northwind.example',fakeNet(workspace({'google._domainkey.northwind.example':{TXT:['v=DKIM1; k=rsa; p=']}})));
   assert.equal(check(revoked,'dkim').status,'fail');assert.match(check(revoked,'dkim').detail,/revoked/);
+  // A selector that points at the host but resolves to a revoked key is not reported as found.
+  const rotated=await checkDomain('contoso.example',fakeNet({...contoso,
+    'selector2._domainkey.contoso.example':{CNAME:['selector2-contoso-example._domainkey.contoso.onmicrosoft.com']},
+    'selector2-contoso-example._domainkey.contoso.onmicrosoft.com':{TXT:['v=DKIM1; k=rsa; p=']}}));
+  assert.equal(check(rotated,'dkim').status,'pass');
+  assert.match(check(rotated,'dkim').detail,/^Found a DKIM key at selector1\._domainkey \(it points to Microsoft\)\. The key at selector2\._domainkey is empty/);
 
   const unknownHost=await checkDomain('plain.example',fakeNet({'plain.example':{MX:['10 mail.plain.example'],TXT:['v=spf1 mx -all']}}));
   assert.deepEqual([unknownHost.provider,check(unknownHost,'dkim').status,check(unknownHost,'spf').status],['unknown','warn','pass']);

@@ -122,3 +122,56 @@ test('Google requires own OAuth configuration and secure storage; callback times
     const normalized=normalizeGmailThread({id:'empty'},account);assert.equal(normalized.subject,'(No subject)');assert.deepEqual(normalized.messages,[]);
   } finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('Gmail keeps workflow data in one message under a hidden Aplos label that sync never shows',async()=>{
+  type Stored={id:string;threadId:string;labelIds:string[];internalDate:string;raw?:string;headers:{name:string;value:string}[];text:string};
+  const dir=await tokenDir(),labels:Record<string,any>[]=[{id:'INBOX',name:'INBOX',type:'system'}],messages=new Map<string,Stored>(),history:Record<string,any>[]=[];
+  const requests:{method:string;url:URL;body:any}[]=[];let historyId=100;
+  messages.set('m1',{id:'m1',threadId:'t1',labelIds:['INBOX'],internalDate:'1791972000000',text:'Hello',headers:[{name:'Subject',value:'Hello'},{name:'From',value:'Sam <sam@example.test>'},{name:'Message-ID',value:'<m1@example.test>'}]});
+  const record=(key:string,m:Stored)=>history.push({id:String(++historyId),[key]:[{message:{id:m.id,threadId:m.threadId,labelIds:[...m.labelIds]}}]});
+  const threadOf=(id:string)=>({id,messages:[...messages.values()].filter(m=>m.threadId===id).map(m=>({id:m.id,internalDate:m.internalDate,labelIds:m.labelIds,payload:{headers:m.headers,mimeType:'text/plain',body:{data:Buffer.from(m.text).toString('base64url')}}}))});
+  const fetcher:typeof fetch=async(input,init)=>{
+    const url=new URL(String(input)),method=init?.method??'GET',body=init?.body?JSON.parse(String(init.body)):undefined,path=url.pathname.replace('/gmail/v1/users/me','');requests.push({method,url,body});let match:RegExpMatchArray|null;
+    if(path==='/labels'){if(method==='POST'){const label={id:`Label_${labels.length}`,type:'user',...body};labels.push(label);return json(label);}return json({labels});}
+    if(path==='/messages/insert'){
+      const mail=await simpleParser(Buffer.from(body.raw,'base64url')),n=messages.size+1;
+      const m:Stored={id:`app${n}`,threadId:`at${n}`,labelIds:[...body.labelIds],internalDate:String(Date.now()+n),raw:body.raw,text:mail.text??'',headers:mail.headerLines.map(h=>({name:h.line.slice(0,h.line.indexOf(':')),value:h.line.slice(h.line.indexOf(':')+1).trim()}))};
+      messages.set(m.id,m);record('messagesAdded',m);return json({id:m.id,threadId:m.threadId,labelIds:m.labelIds});
+    }
+    if(path==='/messages')return json({messages:[...messages.values()].filter(m=>m.labelIds.includes(url.searchParams.get('labelIds')!)&&!m.labelIds.includes('TRASH')).map(m=>({id:m.id,threadId:m.threadId}))});
+    if((match=path.match(/^\/messages\/(\w+)\/trash$/))){const m=messages.get(match[1])!;m.labelIds.push('TRASH');record('labelsAdded',m);return json({id:m.id});}
+    if((match=path.match(/^\/messages\/(\w+)$/))){const m=messages.get(match[1]);if(!m)return json({},404);assert.equal(url.searchParams.get('format'),'raw');return json({id:m.id,threadId:m.threadId,labelIds:m.labelIds,internalDate:m.internalDate,raw:m.raw});}
+    if(path==='/profile')return json({historyId:String(historyId)});
+    if(path==='/history'){const since=Number(url.searchParams.get('startHistoryId'));return json({history:history.filter(h=>Number(h.id)>since),historyId:String(historyId)});}
+    if(path==='/threads'){
+      const q=url.searchParams.get('q')??'',hidden=q.includes('-label:Aplos')?labels.find(l=>l.name==='Aplos')?.id:undefined;
+      return json({threads:[...new Set([...messages.values()].map(m=>m.threadId))].filter(id=>!hidden||!threadOf(id).messages.some(m=>m.labelIds.includes(hidden))).map(id=>({id}))});
+    }
+    if((match=path.match(/^\/threads\/(\w+)$/)))return json(threadOf(match[1]));
+    return json({error:`${method} ${path}`},500);
+  };
+  const google=await createGoogle({dataDir:dir,clientId:'own-client',encrypt,decrypt,fetch:fetcher});
+  const fresh=await createGoogle({dataDir:dir,clientId:'own-client',encrypt,decrypt,fetch:fetcher});
+  const has=(id:string)=>id===`${account.id}:t1`;
+  try{
+    assert.equal(await google.readAppData(account),undefined);
+    assert.ok(!requests.some(r=>r.method==='POST'),'reading creates nothing');
+    const first=await google.sync(account,undefined,{has:()=>false});assert.deepEqual(first.threads.map(t=>t.remoteId),['t1']);
+    await google.writeAppData(account,'APLOS-WF1.first');
+    await google.writeAppData(account,'second ünïcode\r\n=3D');
+    const label=labels.find(l=>l.name==='Aplos')!;
+    assert.deepEqual([label.labelListVisibility,label.messageListVisibility],['labelHide','hide']);
+    assert.equal(labels.filter(l=>l.type==='user').length,1,'the label is created once');
+    assert.ok(requests.filter(r=>r.url.pathname.endsWith('/insert')).every(r=>JSON.stringify(r.body.labelIds)===JSON.stringify([label.id])),'inserted without INBOX or UNREAD');
+    assert.deepEqual([...messages.values()].filter(m=>m.labelIds.includes(label.id)).map(m=>[m.id,m.labelIds.includes('TRASH')]),[['app2',true],['app3',false]],'older copy is trashed');
+    assert.ok(!requests.some(r=>r.method==='DELETE'),'gmail.modify cannot delete');
+    assert.equal(await google.readAppData(account),'second ünïcode\r\n=3D');
+    assert.equal(await fresh.readAppData(account),'second ünïcode\r\n=3D');
+    const next=await google.sync(account,first.cursor,{has});assert.deepEqual([next.threads,next.flags,next.removed],[[],[],[]]);
+    // Without the label ID cached, the marker header still keeps the app-data threads out.
+    const other=await createGoogle({dataDir:dir,clientId:'own-client',encrypt,decrypt,fetch:fetcher});
+    try{const replay=await other.sync(account,first.cursor,{has});assert.deepEqual([replay.threads,replay.removed],[[],[]]);assert.deepEqual((await other.search(account,'aplos')).map(t=>t.remoteId),['t1'],'search skips app-data threads');}finally{other.close();}
+    const window=await google.sync(account,undefined,{has:()=>false});assert.deepEqual(window.threads.map(t=>t.remoteId),['t1']);
+    assert.equal(requests.filter(r=>r.url.pathname.endsWith('/threads')).at(-1)!.url.searchParams.get('q'),'-label:Aplos');
+  }finally{google.close();fresh.close();await rm(dir,{recursive:true,force:true});}
+});

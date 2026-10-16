@@ -322,7 +322,8 @@ async function dkimCheck(domain:string, preset:AccountPreset, dns:(name:string,t
     return {selector,failed:!txt&&!cname,keys,cname:cname?.[0],revoked:keys.some(k=>(parseTags(k).p??'').replace(/\s+/g,'')==='')};
   }));
   const records=probes.flatMap(p=>[...(p.cname?[`${p.selector}._domainkey CNAME ${p.cname}`]:[]),...p.keys.map(k=>`${p.selector}._domainkey TXT ${k.length>80?`${k.slice(0,77)}...`:k}`)]);
-  const good=probes.filter(p=>(p.keys.length&&!p.revoked)||(p.cname&&target?.test(p.cname)));
+  // A CNAME to the host does not make a selector good when the key it leads to is revoked.
+  const good=probes.filter(p=>!p.revoked&&(p.keys.length||(p.cname&&target?.test(p.cname))));
   const revoked=probes.filter(p=>p.revoked);
   const label=(list:typeof probes)=>list.map(p=>`${p.selector}._domainkey`).join(', ');
   if(good.length){

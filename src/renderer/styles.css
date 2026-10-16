@@ -1114,6 +1114,9 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .domain-check { display: flex; flex-direction: column; gap: 12px; padding-bottom: 14px; }
 .domain-check form { display: flex; gap: 8px; max-width: 420px; }
 .domain-check input { flex: 1; min-height: 30px; }
+.sync-code-entry { display: flex; gap: 8px; }
+.sync-code-entry input { width: 230px; min-height: 30px; font-family: var(--font-mono, ui-monospace, monospace); text-transform: uppercase; }
+.sync-code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; letter-spacing: .02em; user-select: all; white-space: nowrap; }
 .domain-results { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; }
 .domain-results li { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
 .domain-results li > .ui-badge { flex: none; min-width: 58px; justify-content: center; }

@@ -438,8 +438,9 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
       return freshWindow(account);
     },
     async search(account:Account,query:string):Promise<Thread[]> {
-      const rows=(await api(account,`/me/messages?${q({$search:`"${query.replace(/["\\]/g,' ').trim()}"`,$top:String(SEARCH_MESSAGES),$select:'id,conversationId,isDraft'})}`)).value??[];
-      const conversations=[...new Set<string>(rows.filter((m:Json)=>!m.isDraft&&typeof m.conversationId==='string').map((m:Json)=>m.conversationId))];
+      const rows=(await api(account,`/me/messages?${q({$search:`"${query.replace(/["\\]/g,' ').trim()}"`,$top:String(SEARCH_MESSAGES),$select:'id,conversationId,isDraft,parentFolderId'})}`)).value??[];
+      const hidden=memory.get(account,'appFolder');
+      const conversations=[...new Set<string>(rows.filter((m:Json)=>!m.isDraft&&typeof m.conversationId==='string'&&(!hidden||m.parentFolderId!==hidden)).map((m:Json)=>m.conversationId))];
       return [...(await fullThreads(account,conversations)).values()].filter((t):t is Thread=>!!t).sort((a,b)=>b.date.localeCompare(a.date));
     },
     async updateThread(account:Account,thread:RemoteThread,patch:Partial<Thread>) {

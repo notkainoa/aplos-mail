@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import nodemailer from 'nodemailer';
+import { simpleParser } from 'mailparser';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
 import { ProviderError, type ConnectRequest, type MailProvider, type ProviderCapabilities, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
 
@@ -18,12 +19,15 @@ type Json=Record<string,any>;
 /** `uncertain` means the request may have reached Google even though no answer came back. */
 export class GoogleError extends ProviderError {}
 const CAPABILITIES:ProviderCapabilities={labels:true,importance:true,aliases:true,signatures:true,calendar:true,serverSearch:true};
-export type GoogleAdapter=MailProvider&Required<Pick<MailProvider,'getSendAs'|'listCalendars'|'listEvents'|'saveEvent'|'deleteEvent'>>;
+export type GoogleAdapter=MailProvider&Required<Pick<MailProvider,'getSendAs'|'listCalendars'|'listEvents'|'saveEvent'|'deleteEvent'|'readAppData'|'writeAppData'>>;
 /** Threads fetched on a first sync, newest first. Older mail is reached through search. */
 export const INITIAL_THREADS=500;
 const SEARCH_THREADS=100;
 /** History pages to follow before a fresh window is cheaper than replaying changes. */
 const MAX_HISTORY_PAGES=20;
+/** App data is one message under a hidden user label, marked by a header so sync can recognise it without the label ID. */
+const APP_LABEL='Aplos',APP_HEADER='X-Aplos-Data',APP_FILE='aplos-data.txt';
+const MAX_APP_DATA=3_000_000;
 export function labelStatus(labels:string[]):ThreadFlags['status'] {
   return labels.includes('TRASH')?'trash':labels.includes('SPAM')?'spam':labels.includes('INBOX')?'new':'done';
 }
@@ -65,7 +69,7 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
   const tokens:Record<string,Token>={};
   let server:Server|undefined, cancelConnect:(()=>void)|undefined;
   let persistChain=Promise.resolve();
-  const refreshes=new Map<string,Promise<string>>();
+  const refreshes=new Map<string,Promise<string>>(),appLabels=new Map<string,string>();
   if(options.decrypt) {
     try {
       const encrypted=JSON.parse(await readFile(path,'utf8')) as Record<string,string>;
@@ -126,7 +130,7 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
     const ids:string[]=[];let next:string|undefined;
     do {
       const url=new URL(`${gmail}/threads`);url.searchParams.set('maxResults',String(Math.min(500,limit-ids.length)));url.searchParams.set('includeSpamTrash','true');
-      if(query)url.searchParams.set('q',query);if(next)url.searchParams.set('pageToken',next);
+      url.searchParams.set('q',query??`-label:${APP_LABEL}`);if(next)url.searchParams.set('pageToken',next);
       const page=await api(account,url.toString());
       for(const row of Array.isArray(page.threads)?page.threads:[])if(typeof row.id==='string')ids.push(row.id);
       next=typeof page.nextPageToken==='string'?page.nextPageToken:undefined;
@@ -140,8 +144,10 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
       try{result[at]=await fn(ids[at]);}catch(error){if(!notFound(error))throw error;result[at]=undefined;}}}));
     return result;
   }
-  async function fullThread(account:Account,id:string):Promise<Thread> {
+  /** Undefined for the app-data thread, which is never shown as mail. */
+  async function fullThread(account:Account,id:string):Promise<Thread|undefined> {
     const raw=await api(account,`${gmail}/threads/${enc(id)}?format=full`) as GmailThread;
+    if(raw.messages?.some(m=>header(m.payload,APP_HEADER)))return undefined;
     // Gmail can store a text/HTML body in messages.attachments just like a file.
     // Resolve those body parts before normalization; ordinary files stay lazy.
     for(const message of raw.messages??[])for(const part of flatten(message.payload))if(isBodyPart(part)&&part.body?.attachmentId&&!part.body.data){
@@ -166,7 +172,7 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
     return {threads,flags:[],removed:[],cursor:profile.historyId===undefined?undefined:String(profile.historyId),reset:true};
   }
   async function history(account:Account,cursor:string,context:SyncContext):Promise<SyncResult|undefined> {
-    const changed=new Set<string>(),relabeled=new Set<string>();let latest=cursor,next:string|undefined,pages=0;
+    const changed=new Set<string>(),relabeled=new Set<string>(),hidden=appLabels.get(account.id);let latest=cursor,next:string|undefined,pages=0;
     do {
       const url=new URL(`${gmail}/history`);url.searchParams.set('startHistoryId',cursor);url.searchParams.set('maxResults','500');
       for(const type of ['messageAdded','messageDeleted','labelAdded','labelRemoved'])url.searchParams.append('historyTypes',type);
@@ -174,8 +180,9 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
       let page:Json;
       try{page=await api(account,url.toString());}catch(error){if(notFound(error))return undefined;throw error;}
       for(const record of Array.isArray(page.history)?page.history:[]){
-        for(const key of ['messagesAdded','messagesDeleted'])for(const item of record[key]??[])if(item.message?.threadId)changed.add(item.message.threadId);
-        for(const key of ['labelsAdded','labelsRemoved'])for(const item of record[key]??[])if(item.message?.threadId)relabeled.add(item.message.threadId);
+        const keep=(item:Json)=>item.message?.threadId&&!(hidden&&item.message.labelIds?.includes(hidden));
+        for(const key of ['messagesAdded','messagesDeleted'])for(const item of record[key]??[])if(keep(item))changed.add(item.message.threadId);
+        for(const key of ['labelsAdded','labelsRemoved'])for(const item of record[key]??[])if(keep(item))relabeled.add(item.message.threadId);
       }
       if(page.historyId!==undefined)latest=String(page.historyId);
       next=typeof page.nextPageToken==='string'?page.nextPageToken:undefined;
@@ -195,6 +202,29 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
       if(!discovered.has(ids[i])||thread.status==='new')threads.push(thread);
     });
     return {threads,flags:updates,removed,cursor:latest,reset:false};
+  }
+  /** The hidden "Aplos" label's ID, created hidden from the label list and message list when asked. */
+  async function appLabel(account:Account,create:boolean):Promise<string|undefined> {
+    const cached=appLabels.get(account.id);if(cached)return cached;
+    const find=async()=>((await api(account,`${gmail}/labels`)).labels??[]).find((l:Json)=>l.type==='user'&&String(l.name).toLowerCase()===APP_LABEL.toLowerCase())?.id as string|undefined;
+    let id=await find();
+    if(!id&&create){
+      try{id=String((await api(account,`${gmail}/labels`,'POST',{name:APP_LABEL,labelListVisibility:'labelHide',messageListVisibility:'hide'})).id);}
+      catch(error){if(!(error instanceof GoogleError&&error.status===409))throw error;id=await find();}
+    }
+    if(id)appLabels.set(account.id,id);
+    return id;
+  }
+  /** Run an app-data step, forgetting a cached label the user deleted and trying once more. */
+  async function withAppLabel<T>(account:Account,create:boolean,fn:(label:string|undefined)=>Promise<T>):Promise<T> {
+    try{return await fn(await appLabel(account,create));}
+    // Gmail answers 400 (invalid label) or 404 for a label ID that no longer exists.
+    catch(error){if(!(error instanceof GoogleError&&(error.status===400||error.status===404))||!appLabels.has(account.id))throw error;appLabels.delete(account.id);return fn(await appLabel(account,create));}
+  }
+  /** App-data messages under the label, outside Trash and Spam. */
+  async function appMessages(account:Account,label:string):Promise<string[]> {
+    const url=new URL(`${gmail}/messages`);url.searchParams.set('labelIds',label);url.searchParams.set('maxResults','50');
+    return ((await api(account,url.toString())).messages??[]).map((m:Json)=>m.id).filter((id:unknown):id is string=>typeof id==='string');
   }
   function eventModel(raw:Json,account:Account,calendarId:string):CalendarEvent {
     return {id:`${account.id}:${calendarId}:${raw.id}`,remoteId:raw.id,accountId:account.id,calendarId,title:raw.summary??'(Untitled event)',start:raw.start?.dateTime??raw.start?.date??'',end:raw.end?.dateTime??raw.end?.date??'',allDay:Boolean(raw.start?.date),location:raw.location??'',description:raw.description??'',guests:(raw.attendees??[]).map((x:Json)=>x.email).filter(Boolean),url:raw.htmlLink};
@@ -263,7 +293,7 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
       } finally {if(timer)clearTimeout(timer);listener.close();server=undefined;cancelConnect=undefined;}
     },
     async disconnect(accountId:string) {
-      const token=tokens[accountId];delete tokens[accountId];await persist();
+      const token=tokens[accountId];delete tokens[accountId];appLabels.delete(accountId);await persist();
       if(token) {try{await request('https://oauth2.googleapis.com/revoke',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({token:token.refresh_token??token.access_token}),signal:AbortSignal.timeout(10000)});}catch{/* Local disconnect remains effective while offline. */}}
     },
     async sync(account:Account,cursor?:string,context:SyncContext={has:()=>false}):Promise<SyncResult> {
@@ -328,6 +358,35 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
       return {...event,...eventModel(raw,account,event.calendarId||'primary'),id:event.id};
     },
     async deleteEvent(account:Account,event:CalendarEvent) {if(!event.remoteId)throw new Error('This event has no Google identifier.');await api(account,`${calendar}/calendars/${enc(event.calendarId)}/events/${enc(event.remoteId)}?sendUpdates=none`,'DELETE');},
+    async readAppData(account:Account):Promise<string|undefined> {
+      return withAppLabel(account,false,async label=>{
+        if(!label)return undefined;
+        // Normally one message; a write interrupted before trashing leaves more, and the newest wins.
+        const ids=(await appMessages(account,label)).slice(0,5);
+        const rows=(await each(ids,id=>api(account,`${gmail}/messages/${enc(id)}?format=raw`))).filter((r):r is Json=>typeof r?.raw==='string');
+        for(const row of rows.sort((a,b)=>Number(b.internalDate??0)-Number(a.internalDate??0))){
+          const mail=await simpleParser(Buffer.from(row.raw,'base64url'),{skipTextToHtml:true,skipImageLinks:true,skipTextLinks:true});
+          const file=mail.headers.has(APP_HEADER.toLowerCase())?mail.attachments.find(a=>a.filename===APP_FILE):undefined;
+          if(file)return file.content.toString('utf8');
+        }
+        return undefined;
+      });
+    },
+    async writeAppData(account:Account,data:string) {
+      if(Buffer.byteLength(data)>MAX_APP_DATA)throw new Error('Workflow data is too large to sync through Gmail.');
+      const transport=nodemailer.createTransport({streamTransport:true,buffer:true,newline:'windows'});
+      const info=await transport.sendMail({from:{name:'Aplos Mail',address:account.email},to:account.email,subject:'Aplos sync data — do not edit',text:'Aplos Mail keeps encrypted workflow data for this account here. Deleting this message resets it.',
+        headers:{[APP_HEADER]:'workflow'},attachments:[{filename:APP_FILE,content:data,contentType:'application/octet-stream',contentTransferEncoding:'quoted-printable'}],disableFileAccess:true,disableUrlAccess:true});
+      if(!Buffer.isBuffer(info.message))throw new Error('Workflow data could not be encoded for Gmail.');
+      const raw=info.message.toString('base64url');
+      await withAppLabel(account,true,async label=>{
+        // Only the label: no INBOX or UNREAD, so the message never shows up as new mail.
+        const created=await api(account,`${gmail}/messages/insert?internalDateSource=receivedTime`,'POST',{raw,labelIds:[label!]});
+        const old=(await appMessages(account,label!)).filter(id=>id!==created.id);
+        // gmail.modify cannot delete messages, so older copies go to Trash. The newest copy wins on read, so a failed trash is retried next write.
+        try{await each(old,id=>api(account,`${gmail}/messages/${enc(id)}/trash`,'POST',{}));}catch{/* See above. */}
+      });
+    },
     close(){cancelConnect?.();server?.close();}
   };
 }

@@ -365,5 +365,9 @@ test('Workflow data round-trips through one message in a hidden Aplos folder',as
     assert.deepEqual(fake.s.folders.map(f=>[f.displayName,f.isHidden]),[['Aplos',true]]);
     assert.equal([...fake.s.messages.values()].filter(m=>m.folder===fake.s.folders[0].id).length,1);
     assert.equal(await provider.readAppData(account),'ciphertext-v2 ünïcode');
+    seed(fake);
+    const synced=await provider.sync(account,undefined,{has:()=>false});
+    assert.deepEqual(synced.threads.map(t=>t.remoteId).sort(),['cA','cB','cC','cD'],'app data is never synced as mail');
+    assert.deepEqual(await provider.search(account,'Aplos'),[]);
   }finally{await cleanup();}
 });

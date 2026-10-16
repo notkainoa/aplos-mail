@@ -42,9 +42,13 @@ Choose **Add account** (Settings → Accounts, or the welcome screen) and enter 
 - **Fastmail** uses JMAP with an API token (Settings → Privacy & Security → Connected apps & API tokens; Email and Email submission access). Calendar is not connected for Fastmail yet.
 - Proton Mail needs Proton Mail Bridge, which Aplos does not support yet.
 
-Folder-based hosts (Outlook, IMAP, JMAP) have no labels: Done or Later with the archive action moves mail to the Archive folder, and the read/unread actions leave it in the inbox. Passwords, tokens and refresh tokens are encrypted with Electron safeStorage in per-provider files under the data folder and never reach the renderer or app state. None of these providers has been verified against a live mailbox yet; their tests run against fake servers.
+Folder-based hosts (Outlook, IMAP, JMAP) have no labels: Done or Later with the archive action moves mail to the Archive folder, and the read/unread actions leave it in the inbox. Passwords, tokens and refresh tokens are encrypted in per-provider files under the data folder with a key that the macOS keychain protects (`engine-key.bin`), and never reach the renderer or app state. None of these providers has been verified against a live mailbox yet; their tests run against fake servers.
 
 **Custom domain check** (Settings → Accounts) reads a domain's MX, SPF, DKIM, DMARC and MTA-STS records over DNS-over-HTTPS and explains each problem with the record to add.
+
+## Use Aplos on more than one device
+
+Settings → Accounts → **Your other devices** keeps Done, Later, todos, due dates and reminders the same everywhere. Turn it on on the first device and copy its sync code; on each other device choose **Enter code**. Aplos stores this data in a hidden folder named "Aplos" in each account (a hidden label in Gmail), encrypted with a key derived from the sync code, so the mail host sees only ciphertext. The code stays in the encrypted credential store on each device. In Gmail the hidden message still appears under All Mail, and replaced copies go to Trash, where Gmail deletes them after 30 days. Outlook, IMAP and JMAP delete replaced copies. Verified with fake servers only.
 
 ## Everyday controls
 

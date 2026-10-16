@@ -5,6 +5,7 @@ import {invoke,saveFile} from './bridge';
 import {Avatar,Badge,Button,Group,GroupRow,Notice,Select,Switch,Tabs,Tooltip,confirmAction,cx} from './ui';
 import {AddAccountDialog} from './components/AddAccount';
 import {DomainCheck} from './components/DomainCheck';
+import {DeviceSync} from './components/DeviceSync';
 
 const categories=['General','Mail','Calendar','Notifications','Accounts','Help & about'] as const;
 export type SettingsCategory=typeof categories[number];
@@ -80,6 +81,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <Group title="For each account">{state.accounts.map(a=><GroupRow key={a.id} label={a.name} description={a.email}><Switch label={'Notifications for '+a.email} checked={s.accountNotifications[a.id]!==false} onChange={on=>onChange({accountNotifications:{...s.accountNotifications,[a.id]:on}})}/></GroupRow>)}</Group>
   </>}
   {tab==='Accounts'&&<Group title="Your accounts">{accountRows}<GroupRow label="Refresh all accounts" description={state.sync.pending?`${state.sync.pending} change${state.sync.pending===1?'':'s'} waiting to reach your mail provider. They are sent automatically when it can be reached.`:state.sync.lastSync?'Last checked '+new Date(state.sync.lastSync).toLocaleString():'Mail stays available offline.'}><Button variant="secondary" size="sm" icon={RefreshCw} loading={state.sync.busy||busy==='sync'} onClick={()=>void run('sync',()=>invoke('sync'))}>Sync now</Button></GroupRow></Group>}
+  {tab==='Accounts'&&<Group title="Your other devices"><DeviceSync notify={notify}/></Group>}
   {tab==='Accounts'&&<Group title="Custom domain"><p className="group-note">Check that a domain you send from has the mail records its host needs, so your messages are trusted and delivered.</p><DomainCheck initial={customDomain}/></Group>}
   {tab==='Help & about'&&<>
    <div className="about-card"><span className={'app-icon large '+s.icon}>a</span><h2>Aplos Mail</h2><p>A little less inbox. A little more life.</p><span className="version">Version {capabilities.version} · {capabilities.desktop?'macOS desktop':'Browser preview'}</span></div>

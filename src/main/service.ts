@@ -15,6 +15,7 @@ import { createMicrosoft } from './microsoft';
 import { createImap } from './imap';
 import { createJmap } from './jmap';
 import { createCalDav } from './caldav';
+import { createWorkflowSync } from './workflow-sync';
 
 type Groq = ReturnType<typeof createGroq>;
 export interface ServiceOptions {
@@ -29,6 +30,9 @@ export interface ServiceOptions {
 }
 /** Sending addresses and calendars change rarely, so automatic syncs refresh them at most this often. */
 const EXTRAS_INTERVAL_MS=10*60_000;
+/** Automatic syncs share Done, Later and todos with other devices at most this often, unless something changed here. */
+const WORKFLOW_INTERVAL_MS=5*60_000;
+const WORKFLOW_KEYS=['status','replyStatus','dueDate','reminderAt','reminderFired','todo','hiddenFromHome'] as const;
 /** First retry delay for a queued change the host rejected or could not be reached for; doubles up to 15 minutes. */
 const OP_RETRY_MS=30_000,OP_RETRY_MAX_MS=15*60_000;
 const UNCONFIRMED='Sending was interrupted and Aplos could not confirm that your mail provider received this message. Check Sent mail before sending it again.';
@@ -201,6 +205,11 @@ export async function createService(options:ServiceOptions) {
   await Promise.all(builtIn.filter(([kind])=>!providers[kind]).map(async([kind,make])=>{
     try{providers[kind]=await make();}catch(error){brokenProviders.set(kind,error instanceof Error?error.message:'This account type could not start.');}
   }));
+  let workflow:Awaited<ReturnType<typeof createWorkflowSync>>|undefined,workflowError:string|undefined;
+  try{workflow=await createWorkflowSync({dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,memory:store.memory,now});}
+  catch(error){workflowError=error instanceof Error?error.message:'Device sync could not start.';}
+  const workflowAt=new Map<string,number>();
+  const noteWorkflow=(threads:Thread[],patch?:Partial<Thread>)=>{if(!patch||WORKFLOW_KEYS.some(key=>key in patch))workflow?.noteEdits(threads);};
   /** The mail host behind an account, or nothing for local demo accounts. */
   const hostOf=(a:Pick<Account,'provider'>|undefined):MailProvider|undefined=>a&&a.provider!=='demo'?providers[a.provider]:undefined;
   function host(a:Account):MailProvider {const provider=hostOf(a);if(!provider)throw new Error('This account type is not available in this version of Aplos.');return provider;}
@@ -254,6 +263,7 @@ export async function createService(options:ServiceOptions) {
     // The host must see the thread back in the inbox too, or the next sync would file it away again.
     const ops=due.map(t=>queued(t,{status:'new',unread:true,labels:t.labels&&!t.labels.includes('INBOX')?[...t.labels,'INBOX']:t.labels})).filter((op):op is QueuedOp=>!!op);
     change(s=>{for(const t of s.threads)if(due.some(d=>d.id===t.id)){t.status='new';t.hiddenFromHome=false;t.reminderFired=true;t.unread=true;if(t.labels&&!t.labels.includes('INBOX'))t.labels=[...t.labels,'INBOX'];}},{put:ops});
+    noteWorkflow(due);
     for(const t of due)emit('reminder',{threadId:t.id,title:t.subject});
     if(ops.length)kick();
   }
@@ -403,6 +413,7 @@ export async function createService(options:ServiceOptions) {
     // Local first, in one transaction with the queued provider changes; the host catches up through the queue.
     const ops=updates.map(u=>queued(u.thread,u.patch)).filter((op):op is QueuedOp=>!!op);
     change(s=>{for(const update of updates){const index=s.threads.findIndex(t=>t.id===update.thread.id);s.threads[index]={...s.threads[index],...update.patch};}},{put:ops});
+    noteWorkflow(before,patch);
     if(recordUndo){undo.push(before);if(undo.length>50)undo.shift();}
     if(ops.length)kick();
     return clone(state);
@@ -489,7 +500,18 @@ export async function createService(options:ServiceOptions) {
     const added=new Set(outcome.added.map(t=>t.id));
     const fresh=outcome.added.map(current).filter((t):t is Thread=>!!t&&t.status==='new');
     const replies=inbox.filter(t=>!added.has(t.id));
+    await syncWorkflow(a,provider,manual,errors);
     errors.push(...await classifyIncoming([...fresh,...replies],a,new Set(replies.map(t=>t.id))));
+  }
+  /** Share Done, Later, todos and reminders with this account's other devices, then apply theirs. */
+  async function syncWorkflow(a:Account,provider:MailProvider,manual:boolean,errors:string[]) {
+    if(!workflow?.enabled||!provider.readAppData)return;
+    if(!manual&&!workflow.hasEdits(a.id)&&now().getTime()-(workflowAt.get(a.id)??0)<WORKFLOW_INTERVAL_MS)return;
+    try{
+      const patches=await workflow.round(a,provider,()=>state.threads);
+      workflowAt.set(a.id,now().getTime());
+      if(patches.length&&state.accounts.some(x=>x.id===a.id))change(s=>{for(const {threadId,patch} of patches){const index=s.threads.findIndex(t=>t.id===threadId);if(index>=0)s.threads[index]={...s.threads[index],...patch};}});
+    }catch(error){errors.push(`Done, Later and todos could not sync with your other devices for ${a.email}. ${error instanceof Error?error.message:''}`.trim());}
   }
   async function sync(accountId?:string,manual=true):Promise<AppState> {
     if(syncing){await syncing.catch(()=>{});return clone(state);}
@@ -572,7 +594,7 @@ export async function createService(options:ServiceOptions) {
           return {current,patch};});
         const ops=restores.map(r=>queued(r.current,r.patch)).filter((op):op is QueuedOp=>!!op);
         change(s=>{for(const {current,patch} of restores){const index=s.threads.findIndex(t=>t.id===current.id);s.threads[index]={...s.threads[index],...patch};}},{put:ops});
-        undo.pop();if(ops.length)kick();return clone(state);
+        noteWorkflow(restores.map(r=>r.current));undo.pop();if(ops.length)kick();return clone(state);
       }
       case 'search':{
         const query=text(p.query,2000).trim(),accountId=p.accountId&&p.accountId!=='all'?text(p.accountId,300):undefined;
@@ -627,6 +649,15 @@ export async function createService(options:ServiceOptions) {
         change(s=>{const current=s.drafts.find(item=>item.id===d.id)!;current.pendingSendAt=pendingSendAt;current.messageId=messageId;delete current.sendError;});scheduleSend({...d,pendingSendAt});return clone(state);
       }
       case 'draft.undoSend':{const d=draft(text(p.id,300));if(sending.has(d.id))throw new Error('Sending has started; the undo window has ended.');stopSend(d.id);change(s=>{const current=s.drafts.find(item=>item.id===d.id)!;delete current.pendingSendAt;delete current.sendError;});return clone(state);}
+      case 'workflow.status':return {enabled:!!workflow?.enabled,available:!!workflow&&!!options.encrypt,...(workflowError?{error:workflowError}:{})};
+      case 'workflow.enable':{
+        if(!workflow)throw new Error(workflowError||'Device sync is unavailable.');
+        const code=await workflow.enable(p.code===undefined?undefined:text(p.code,200));workflowAt.clear();
+        void sync(undefined,true).catch(()=>{});
+        return {code};
+      }
+      case 'workflow.code':{const code=workflow?.code();if(!code)throw new Error('Device sync is off.');return {code};}
+      case 'workflow.disable':await workflow?.disable(state.accounts.map(a=>a.id));workflowAt.clear();return {enabled:false};
       case 'ai.cancel':{for(const [id,controller]of requests)if(!p.requestId||p.requestId===id)controller.abort();return {cancelled:true};}
       case 'ai.summarize':{
         const t=thread(text(p.threadId,300));const result=await ai(p,signal=>groq.summarize(t,signal));

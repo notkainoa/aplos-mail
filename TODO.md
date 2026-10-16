@@ -31,5 +31,5 @@ Read SPEC.md, DECISIONS.md, PROGRESS.md and this checklist at the start of each 
 - [x] M26: engine extraction: move the service into a platform-free `src/engine` that runs in an Electron utilityProcess, with paged thread queries and change events to the renderer instead of whole-state broadcasts.
 - [x] M27: account setup by address (MX over DNS-over-HTTPS → Google, Microsoft, iCloud or autoconfig) and a DNS checker for custom domains (SPF, DKIM, DMARC).
 - [x] M28: Microsoft Graph adapter (Outlook, Microsoft 365); IMAP/SMTP adapter (iCloud, Yahoo, AOL, generic) with CalDAV calendars; JMAP adapter (Fastmail); add-account dialog. Verified against fake servers only; live Outlook needs `MICROSOFT_CLIENT_ID`, live iCloud/Fastmail need a test mailbox.
-- [ ] M29: workflow log (Done, Later, todos, due dates, reminders) synced between devices through an encrypted hidden mailbox folder.
+- [x] M29: workflow log (Done, Later, todos, due dates, reminders) synced between devices through an encrypted hidden mailbox folder.
 - [x] M30: mobile portability spike: the engine bundles for a neutral platform and runs in JavaScriptCore (see MOBILE.md).
