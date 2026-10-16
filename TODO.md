@@ -13,7 +13,7 @@ Read SPEC.md, DECISIONS.md, PROGRESS.md and this checklist at the start of each 
 - [x] M8: account onboarding/switching, Gmail OAuth/sync/search/mutations/attachments/send, secure token persistence and reconnect.
 - [x] M9: settings, keyboard shortcuts/native menus, themes/icons/zen, mailto/deep links, notifications and desktop polish.
 - [x] M10: focused tests/typecheck/build pass; end-to-end interaction checks; package and launch macOS app; document setup/resume and commit.
-- [ ] M11: verify live Gmail connection/sync/send and Google Calendar with Aplos-owned OAuth credentials; verify OS-dependent voice/notifications where granted. Do not claim full parity before this passes.
+- [ ] M11: verify live Gmail connection/sync/send and Google Calendar with Aplos-owned OAuth credentials; verify the added Outlook/IMAP/JMAP/CalDAV providers and cross-device workflow sync with authorized test mailboxes; verify OS-dependent voice/notifications where granted. Do not claim full parity before this passes.
 - [x] M12: close reference signature gap: authorized Gmail sending aliases, per-address imported signatures, reviewed signature choice and MIME sender validation; focused mocked verification.
 - [x] M13: close reader fidelity gaps: hydrate externally stored Gmail text/HTML bodies, load CID images on demand outside Spam, and collapse real quoted HTML/history; test and verify the actual reader.
 - [x] M14: visual parity with the reference look: hidden title bar with inset traffic lights, native sidebar vibrancy, translucent blurred toolbar, persistent docked Ask panel, 56px rows on rounded cards, floating glass reader dock, inline compose card, pill tabs, matching light/dark palettes; verified side by side in browser and the packaged desktop build.
@@ -33,3 +33,4 @@ Read SPEC.md, DECISIONS.md, PROGRESS.md and this checklist at the start of each 
 - [x] M28: Microsoft Graph adapter (Outlook, Microsoft 365); IMAP/SMTP adapter (iCloud, Yahoo, AOL, generic) with CalDAV calendars; JMAP adapter (Fastmail); add-account dialog. Verified against fake servers only; live Outlook needs `MICROSOFT_CLIENT_ID`, live iCloud/Fastmail need a test mailbox.
 - [x] M29: workflow log (Done, Later, todos, due dates, reminders) synced between devices through an encrypted hidden mailbox folder.
 - [x] M30: mobile portability spike: the engine bundles for a neutral platform and runs in JavaScriptCore (see MOBILE.md).
+- [x] M31: final release acceptance without mailbox credentials: rerun all tests/typecheck/audit, rebuild, exercise the packaged bridge and UI, verify immediate popout-close saves and engine/restart recovery, check bundle secrets, install the current app and record remaining live prerequisites.

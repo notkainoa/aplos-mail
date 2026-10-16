@@ -62,6 +62,8 @@ Desktop state is stored under `~/Library/Application Support/Aplos Mail`; browse
 
 `npm test` covers persistence, triage/undo, reminders, draft concurrency/recovery, delayed sends, validation, scoped AI proposals/citations/cancellation, OAuth PKCE/state, MIME, label mapping, encrypted credentials, calendar mutations, and desktop request/ownership policies. Live Groq was verified with synthetic text and audio. Browser and packaged-app acceptance results, exact remaining blockers, and REA limitations are recorded in `PROGRESS.md` and `TODO.md`.
 
+After packaging, quit any running Aplos Mail instance and run `node scripts/verify-release.mjs` for a repeatable check of the actual release bundle. It uses a fresh temporary demo mailbox, checks the renderer/preload/engine bridge, search/paging, triage/Undo, attachments, local send/Undo, calendar, popout ownership and immediate-close draft saving, then kills the engine and restarts the desktop to verify recovery. It never connects a mailbox or sends external email. The temporary folder retains its log and JSON report. Add `--live-ai` to verify Groq summaries, proofreading, proposals, Ask/citations, calendar extraction and transcription of generated speech with an existing backend key. Add `--keep-open` to leave the isolated test app running for manual inspection; quit it afterward. The test enables a temporary loopback debugging port only for its own app process.
+
 This is a local personal build. It has no automatic distribution/update server or Developer ID notarization. Rebuild to update.
 
 ## Resume work

@@ -95,7 +95,6 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
     saving.current=job;return job;
   }
   useEffect(()=>{if(!dirty.current||terminal.current)return;const timer=setTimeout(()=>{if(!terminal.current)void save().catch(error=>{if(mounted.current)setError(error.message);});},650);return()=>clearTimeout(timer);},[form]);
-  useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(dirty.current&&!window.aplos){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[]);
   /** Catches the usual mistakes before a message leaves; resolves false when the person wants to fix something. */
   async function readyToSend(){
     const d=current.current;
@@ -136,6 +135,9 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
     })();terminalJob.current=job;await job;
   }
   const closeHandler=useRef(()=>finish('native-close'));closeHandler.current=()=>finish('native-close');
+  // A renderer-initiated window.close() can reach beforeunload without the native close event.
+  // Hold that path too, then ask main to close this window only after the draft has reached storage.
+  useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(!dirty.current||terminal.current)return;event.preventDefault();event.returnValue='';if(window.aplos)void closeHandler.current();};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[]);
   useEffect(()=>bridge.subscribe(event=>{if(event.type==='prepare-close')void closeHandler.current();}),[]);
   useEffect(()=>{mounted.current=true;terminal.current=false;return()=>{mounted.current=false;terminal.current=true;stopWork();};},[]);
   useEffect(()=>{function keyboard(event:KeyboardEvent){if(event.defaultPrevented||dialogOpen()||(event.target as HTMLElement)?.closest?.('.ask-panel'))return;if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();void finish('send');}if(event.key==='Escape'){event.stopPropagation();void finish('close');}}window.addEventListener('keydown',keyboard);return()=>window.removeEventListener('keydown',keyboard);});

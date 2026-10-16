@@ -120,7 +120,8 @@ function menus(){
 }
 async function invokeNative(event:IpcMainInvokeEvent,method:string,input:unknown){
   const payload=record(input),win=BrowserWindow.fromWebContents(event.sender)!;
-  if(method==='window.closeReady'){if(!pendingClose.has(win.id))return false;pendingClose.delete(win.id);permittedClose.add(win.id);win.setEnabled(true);setImmediate(()=>{if(!win.isDestroyed())win.close();});return true;}
+  // Also accepts the save acknowledgement from a renderer-initiated close held at beforeunload.
+  if(method==='window.closeReady'){pendingClose.delete(win.id);permittedClose.add(win.id);win.setEnabled(true);setImmediate(()=>{if(!win.isDestroyed())win.close();});return true;}
   if(method==='window.closeCancel'){pendingClose.delete(win.id);win.setEnabled(true);quitting=false;return true;}
   if(method==='app.info')return {name:'Aplos Mail',version:app.getVersion(),desktop:true,update:'This build updates from source. Automatic updates are not configured.'};
   if(method==='shell.open'){await external(payload.url);return true;}

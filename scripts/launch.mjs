@@ -5,6 +5,8 @@ import {config} from 'dotenv';
 config({path:resolve('.env'),quiet:true});
 const executable=resolve('release/mac-arm64/Aplos Mail.app/Contents/MacOS/Aplos Mail');
 if(!existsSync(executable)){console.error('Run npm run package first.');process.exit(1);}
-const child=spawn(executable,[],{env:process.env,stdio:'inherit'});
+// Terminal hosts may use Electron as Node themselves. Do not pass that mode to the desktop app.
+const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
+const child=spawn(executable,process.argv.slice(2),{env,stdio:'inherit'});
 child.on('error',e=>{console.error(e.message);process.exitCode=1;});
 child.on('exit',code=>{process.exitCode=code??0;});
