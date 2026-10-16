@@ -5,6 +5,8 @@
 - Interpret “go for it” as approval for the report's three immediate recommendations: provider emulation, focused Groq evaluations and large synthetic mailbox measurements. Keep personal desktop scope; defer reusable automation rules and hosted infrastructure.
 - Write all implementation and fixtures independently. Use our existing adapter injection seams rather than introducing configurable production OAuth/API origins. A development-only loopback emulator will accept only known provider origins, validate OAuth state/PKCE, and refuse external delivery. Real provider credentials and normal desktop storage must never enter this mode.
 - Emulated provider results prove application integration only. Live Groq evaluations use synthetic content and the backend GROQ_API_KEY; record semantic failures honestly. M11 stays unchecked until authorized real mailbox and OS acceptance happens.
+- Keep a small eight-case factual evaluation corpus with deterministic outcome assertions instead of adding another AI judge or adopting Inbox Zero code. Run it explicitly against Groq; ordinary tests never spend API quota. Reports contain case outcomes/model/timing and synthetic assertion failures, never credentials.
+- Context limits must preserve complete JSON and the latest user question. Drop older history and fit complete thread excerpts to the request budget; admit citations only from excerpts actually sent. Tell the model its view is partial. Oversized composition input fails clearly instead of sending a malformed fragment. Long individual threads retain recent messages within a bounded context; this is not whole-mailbox retrieval.
 
 ## 2026-10-14
 
