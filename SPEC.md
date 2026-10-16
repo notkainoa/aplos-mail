@@ -41,3 +41,7 @@ Limits: broad REA pass timed out after retaining inventory and some syntax facts
 ## Completion definition
 
 Every TODO acceptance item checked with evidence, focused tests pass, production desktop builds and launches. Missing Google OAuth credentials or OS access can block live verification, but do not block completing independent implementation and demo verification. Record the exact remaining blocker honestly.
+
+## Inbox Zero research follow-up (2026-10-16)
+
+User approved the report's immediate hardening recommendations: independently implement local Google/Microsoft emulation, focused Groq quality evaluations and large-mailbox verification. These are Aplos design choices inspired by public architecture research, not observed Avec requirements. Keep the current local desktop architecture. Reusable automation rules, hosted services and distribution infrastructure remain future options, not part of this increment. Emulation is development-only, uses original synthetic mail and real adapter/OAuth paths, and cannot satisfy M11 live-provider acceptance.

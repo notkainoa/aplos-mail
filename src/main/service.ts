@@ -18,7 +18,7 @@ export interface ServiceOptions {
   dataDir:string; desktop?:boolean; encrypt?:(text:string)=>Buffer; decrypt?:(cipher:Buffer)=>string;
   openExternal?:(url:string)=>Promise<unknown>; groq?:Groq; google?:GoogleAdapter; now?:()=>Date; symbolTool?:string;
   /** Mail hosts by kind, or factories given the service's provider environment; missing kinds use the built-in adapters. */
-  providers?:Partial<Record<ProviderKind,MailProvider|((env:ProviderEnvironment<Buffer>)=>MailProvider)>>;
+  providers?:Partial<Record<ProviderKind,MailProvider|((env:ProviderEnvironment<Buffer>)=>MailProvider|Promise<MailProvider>)>>;
   /** Network access for discovery and DNS checks; tests pass a fake. */
   fetch?:typeof fetch;
   /** Background sync interval for connected accounts; 0 turns it off. */
@@ -32,7 +32,7 @@ export async function createService(options:ServiceOptions) {
   const staged=createStagedMemory(store.memory);
   const env:ProviderEnvironment<Buffer>={dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,openExternal:options.openExternal,fetch:options.fetch,memory:staged.memory};
   const providers:Partial<Record<ProviderKind,MailProvider>>={};
-  for(const [kind,given] of Object.entries(options.providers??{}) as Array<[ProviderKind,MailProvider|((env:ProviderEnvironment<Buffer>)=>MailProvider)]>)providers[kind]=typeof given==='function'?given(env):given;
+  for(const [kind,given] of Object.entries(options.providers??{}) as Array<[ProviderKind,MailProvider|((env:ProviderEnvironment<Buffer>)=>MailProvider|Promise<MailProvider>)]>)providers[kind]=typeof given==='function'?await given(env):given;
   providers.google??=options.google||await createGoogle({dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,openExternal:options.openExternal});
   /** Why a built-in adapter failed to start; one unreadable credential file must not stop the app or the other hosts. */
   const brokenProviders=new Map<ProviderKind,string>();

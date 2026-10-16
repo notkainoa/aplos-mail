@@ -9,6 +9,7 @@
   "main": "dist/main/electron.cjs",
   "scripts": {
     "dev": "tsx src/main/server.ts",
+    "dev:emulated": "tsx scripts/dev-emulated.ts",
     "desktop": "npm run build && electron .",
     "build": "tsc --noEmit && vite build && node scripts/build-main.mjs",
     "typecheck": "tsc --noEmit",

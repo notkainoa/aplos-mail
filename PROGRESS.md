@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-10-16 — M32 isolated provider emulation
+
+Implemented an original development-only loopback protocol emulator for Google and Microsoft, used through the real adapters' existing fetch/openExternal seams. It validates authorization-code PKCE and redirect identity, issues short initial grants to force token refresh, rotates refresh tokens, serves original mail, tracks Gmail history/Graph folder deltas, applies triage and holds MIME delivery locally. Only `.test`/`.example` recipients are accepted; unknown provider origins, discovery and other provider types are refused. Production API origins and OAuth configuration are unchanged. Session credentials use an ephemeral AES-GCM key and temporary directory, removed on shutdown. AI is off by default; an explicit live-AI flag uses Groq only.
+
+`npm run dev:emulated` launches the ordinary renderer and application HTTP API. That server now accepts an injected service and optional random port/no-Vite mode for verification; its default origin restrictions and ordinary preview storage remain. Provider factories can initialize asynchronously so they receive the real staged provider-memory port.
+
+Evidence: `tests/emulation.test.ts` passes onboarding for both providers through HTTP, four real adapter PKCE exchanges, forced refresh/rotation, initial and incremental mail, a rejected write followed by durable queue recovery, Undo, account authorization errors and reconnect, MIME sends kept inside the emulator, and encrypted credential/database reuse after service restart. Five existing account/desktop policy tests also pass; TypeScript passes. Through the collaborative browser at 1280×800, used the real onboarding → Google → Continue flow, then Settings → Accounts → Outlook → Continue; both accounts showed Connected, Google Home displayed the two synthetic threads, and neither checked view overflowed. A first test run collided with the open preview's fixed port; changed integration verification to an automatically assigned port rather than requiring the development app to stop. M11 remains open; none of this is live provider acceptance.
+
 ## 2026-10-14 — M0
 
 Located Avec and identified Electron, packaged renderer/preload/main modules and original version. Used REA inventory, safe temporary extraction, retained module paging and focused preload module inspection; recovered from broad-analysis timeout without repeating it. Read-only runtime confirms Home/Later/all-mail/drafts/sent/reply-status/trash/spam, stack/split, appearance/system/voice and mail preferences. Mapped features and remaining external verification in SPEC.md and TODO.md. Local dotenv key presence checked without disclosing it. No implementation copied.

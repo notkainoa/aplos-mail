@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-10-16 — Inbox Zero research follow-up
+
+- Interpret “go for it” as approval for the report's three immediate recommendations: provider emulation, focused Groq evaluations and large synthetic mailbox measurements. Keep personal desktop scope; defer reusable automation rules and hosted infrastructure.
+- Write all implementation and fixtures independently. Use our existing adapter injection seams rather than introducing configurable production OAuth/API origins. A development-only loopback emulator will accept only known provider origins, validate OAuth state/PKCE, and refuse external delivery. Real provider credentials and normal desktop storage must never enter this mode.
+- Emulated provider results prove application integration only. Live Groq evaluations use synthetic content and the backend GROQ_API_KEY; record semantic failures honestly. M11 stays unchecked until authorized real mailbox and OS acceptance happens.
+
 ## 2026-10-14
 
 - Keep the existing workspace and choose **Aplos Mail** as the original product name; do not copy Avec branding, artwork, fixture mail, code or backend credentials.
