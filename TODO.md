@@ -37,3 +37,4 @@ Read SPEC.md, DECISIONS.md, PROGRESS.md and this checklist at the start of each 
 - [x] M32: isolated Google/Microsoft provider emulation through the real adapters and application API; exercise OAuth/PKCE, token refresh, initial/incremental sync, triage retry, local send and reconnect without external mailbox access; provide a repeatable development launcher.
 - [x] M33: a small repeatable Groq evaluation set for factual accuracy, dates, citations, missing evidence and injected email instructions; record actual live outcomes and fix findings without treating canned responses as model acceptance.
 - [x] M34: large synthetic mailbox ingestion/search/paging/update/restart measurements, fix material bottlenecks, then rerun tests, package and desktop acceptance; document measurements and limitations.
+- [x] M35: daily-driver polish — bookmarking files New mail into Later → Bookmarks and off Home; tighten list/reader/settings spacing; verify in the collaborative preview.

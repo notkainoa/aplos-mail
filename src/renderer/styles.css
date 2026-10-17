@@ -83,7 +83,7 @@
 .account-avatar + .account-avatar { inset: auto -3px -3px auto; width: 12px; height: 12px; font-size: 7px; box-shadow: 0 0 0 1.5px var(--sidebar-fill); }
 .desktop.mac .account-avatar + .account-avatar { box-shadow: 0 0 0 1.5px rgba(80, 80, 80, .6); }
 .account-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.main-nav { display: flex; flex-direction: column; }
+.main-nav { display: flex; flex-direction: column; margin-top: 4px; }
 .nav-item {
   width: 100%;
   height: 32px;
@@ -196,11 +196,12 @@
 }
 .mail-content > * { max-width: 960px; margin-left: auto; margin-right: auto; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 40px; margin-bottom: 4px; }
-.mail-section { margin-bottom: 24px; }
-.mail-section > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; padding: 0 4px 0 2px; }
+.mail-section { margin-bottom: 20px; }
+.mail-section.is-plain { margin-top: 4px; }
+.mail-section > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; padding: 0 8px; }
 .mail-section > header h2 { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .mail-section > header h2 > span { color: var(--dim); font-weight: 400; }
-.mail-section > header .ui-btn-pill { margin-right: auto; margin-left: -2px; }
+.mail-section > header .ui-btn-pill { margin-right: auto; margin-left: 4px; }
 .mail-section > header:has(.ui-btn-pill) { justify-content: flex-start; }
 .mail-group {
   background: var(--card);
@@ -237,7 +238,7 @@
 .row-checkbox { position: absolute; inset: 0; justify-content: center; border-radius: 50%; background: var(--raised); opacity: 0; transform: scale(.7); transition: opacity var(--dur-fast) var(--ease), transform var(--dur-base) var(--ease-spring); }
 .mail-row:is(:hover, .checked, .selecting) .row-checkbox, .row-checkbox:focus-within { opacity: 1; transform: none; }
 .mail-row:is(:hover, .checked, .selecting) .row-leading > .ui-avatar { opacity: 0; transform: scale(.7); }
-.row-content { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 2px; text-align: left; }
+.row-content { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 3px; text-align: left; }
 .row-first, .row-second { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 .sender { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
 .subject { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -322,14 +323,13 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 18px 20px 18px 16px;
-  margin: -16px 0 24px;
+  padding: 16px 20px 16px 16px;
+  margin: 0 0 20px;
   text-align: left;
   background: var(--card);
   border-radius: var(--radius-card);
   box-shadow: var(--card-edge);
 }
-.mail-section + .low-bundle { margin-top: -16px; }
 .low-bundle:hover { background: color-mix(in srgb, var(--card) 92%, var(--ink)); }
 .low-count { width: 28px; height: 28px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; background: var(--hover); color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .low-bundle > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -444,7 +444,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .fling-to-left .reader-card { animation: fling-left .22s var(--ease-in) forwards; }
 .fling-to-down .reader-card { animation: fling-down .2s var(--ease-in) forwards; }
 .fling-done .reader-card::after { background: color-mix(in srgb, var(--green) 22%, transparent); }
-.fling-later .reader-card::after { background: color-mix(in srgb, var(--blue) 16%, transparent); }
+.fling-later .reader-card::after, .fling-bookmark .reader-card::after { background: color-mix(in srgb, var(--blue) 16%, transparent); }
 .fling-trash .reader-card::after, .fling-spam .reader-card::after { background: color-mix(in srgb, var(--red) 14%, transparent); }
 /* A dragged card is already moving, so it keeps its speed instead of easing in from rest. */
 .fling.is-dragged .reader-card { transform-origin: 50% 120%; animation-duration: .2s; animation-timing-function: var(--ease-out-strong); }
@@ -484,7 +484,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  margin: 0 16px 0 28px;
+  margin: 0 28px;
   padding: 16px 0;
   border-bottom: 1px solid var(--line-soft);
 }
@@ -612,7 +612,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
   background: var(--ask-fill);
   box-shadow: inset .5px 0 0 color-mix(in srgb, var(--ink) 10%, transparent);
 }
-.ask-head { padding: 7px 8px 0 4px; display: flex; align-items: flex-start; gap: 2px; -webkit-app-region: drag; }
+.ask-head { padding: 8px 12px 0 8px; display: flex; align-items: flex-start; gap: 4px; -webkit-app-region: drag; }
 .ask-head > * { -webkit-app-region: no-drag; }
 .ask-collapse { margin-top: 3px; }
 .ask-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -1015,7 +1015,8 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 /* A view fades up slightly when you switch mailboxes or tabs. */
 .mail-view { animation: view-in var(--dur-slow) var(--ease-out-strong); }
 @keyframes view-in { from { opacity: 0; transform: translateY(4px); } }
-.later-tabs { min-height: 40px; margin-bottom: 4px; padding: 0 2px; }
+.later-tabs { min-height: 36px; margin-bottom: 8px; padding: 0 8px; }
+.bookmarks-view .row-flag { display: none; }
 .section-count { color: var(--dim); font-weight: 400; }
 .row-badge { max-width: 130px; flex: 0 1 auto; }
 .row-badge:not(.attachment-badge) { flex: none; max-width: none; }
@@ -1058,9 +1059,9 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 @container workspace (max-width: 700px) {
   .split-layout .mail-content { display: none; }
 }
-@container workspace (max-width: 680px) {
+@container workspace (max-width: 520px) {
   .settings-page { grid-template-columns: 1fr; gap: 8px; }
-  .settings-nav { position: static; padding-top: 0; flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .settings-nav { position: static; padding-top: 0; flex-direction: row; flex-wrap: wrap; overflow-x: auto; scrollbar-width: none; }
   .settings-nav .ui-tab { width: auto; flex: none; }
 }
 @container workspace (max-width: 780px) {

@@ -371,7 +371,7 @@
 .ui-empty.is-compact { min-height: 140px; padding: 20px; }
 .ui-empty.is-compact .ui-empty-icon { width: 36px; height: 36px; margin-bottom: 6px; }
 .ui-group { margin-bottom: 24px; }
-.ui-group > header { min-height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 2px; }
+.ui-group > header { min-height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 8px; }
 .ui-group > header h2 { font-weight: 500; }
 .ui-group-card { padding: 0 16px; background: var(--card); border-radius: var(--radius-card); box-shadow: var(--card-edge); }
 .ui-group-row { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }

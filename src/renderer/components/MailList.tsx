@@ -48,11 +48,11 @@ export function Marked({text,terms}:{text:string;terms?:string[]}){
 
 /** A titled card of mail rows. Rows leaving after triage slide out and collapse; rows coming back grow in. */
 const noThreads:Thread[]=[];
-export function MailSection({title,threads,action,showCount=true,rows}:{title:string;threads:Thread[];action?:React.ReactNode;showCount?:boolean;rows:RowHandlers}){
+export function MailSection({title,threads,action,showCount=true,rows,plain}: {title:string;threads:Thread[];action?:React.ReactNode;showCount?:boolean;rows:RowHandlers;plain?:boolean}){
   const items=useListPresence(threads.length>200?noThreads:threads,thread=>thread.id);
   if(!threads.length&&!items.length)return null;
-  return <section className="mail-section">
-    <header><h2>{title}{showCount&&threads.length>0&&<Count value={threads.length} className="section-count"/>}</h2>{action}</header>
+  return <section className={cx('mail-section',plain&&'is-plain')}>
+    {!plain&&<header><h2>{title}{showCount&&threads.length>0&&<Count value={threads.length} className="section-count"/>}</h2>{action}</header>}
     {threads.length>200?<WindowedMailRows threads={threads} rows={rows}/>:<div className="mail-group">{presentRows(items,rows)}</div>}
   </section>;
 }

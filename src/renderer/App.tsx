@@ -1,6 +1,7 @@
 import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,MailOpen,MessageCircle,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
 import type {AppState,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,View} from '../shared/types';
+import {bookmarkLeavesList,isBookmark,isHomeLow,threadInView} from '../shared/mailbox';
 import {bridge,escapeHtml,invoke,isoDay,replyRecipients,uid} from './bridge';
 import {createLiveState,threadOrder,type StateChanges,type ThreadPage} from '../shared/live';
 import {Compose,addressOf,validAddress,type Contact} from './Compose';
@@ -34,6 +35,7 @@ const askExamples=['What plans do I have this week?','Which emails still need a 
 const queryParams=new URLSearchParams(location.search);const popoutDraft=queryParams.get('draft');const popoutThread=queryParams.get('thread');
 type Route={view:View;threadId?:string};
 const triageLabels:Record<Triage,string>={done:'Marked done',later:'Moved to Todo',trash:'Moved to Trash',spam:'Moved to Spam'};
+type FlingKind=Triage|'bookmark';
 const noop=()=>{};
 function useMediaQuery(query:string){
  const [matches,setMatches]=useState(()=>matchMedia(query).matches);
@@ -61,14 +63,14 @@ export function App(){
  const [eventEditor,setEventEditor]=useState<Partial<CalendarEvent>|null>(null);
  const [online,setOnline]=useState(navigator.onLine);
  const [busy,setBusy]=useState('');const [welcomeAdding,setWelcomeAdding]=useState(false);
- const [leaving,setLeaving]=useState<{thread:Thread;status:Triage;key:number;to:string;drag?:CardDrag}>();
+ const [leaving,setLeaving]=useState<{thread:Thread;status:FlingKind;key:number;to:string;drag?:CardDrag}>();
  const [entering,setEntering]=useState<{id:string;from:string}>();
  const [duePrompt,setDuePrompt]=useState<{id:string;key:number}>();
  const rowMenu=useMenu();const [menuThread,setMenuThread]=useState<Thread>();
  // Hover is tracked in refs so pointing at rows does not re-render the app; `lastHovered` is where J/K continue from.
  const freshDraft=useRef('');const hoveredId=useRef<string|null>(null);const lastHovered=useRef<string|null>(null);const talkHeld=useRef(false);
  const spaceHold=useRef<{timer?:ReturnType<typeof setTimeout>;fired:boolean}|null>(null);
- const lastTriage=useRef<{id:string;status:Triage;reopen:boolean}|null>(null);
+ const lastTriage=useRef<{id:string;status:FlingKind;reopen:boolean}|null>(null);
  const searchInput=useRef<HTMLInputElement>(null);const eventHandler=useRef<(event:{type:string;payload?:unknown})=>void>(()=>{});
  const searchSeq=useRef(0);const composeRef=useRef<Draft|undefined>(undefined);composeRef.current=composer;
  const undoRef=useRef<()=>void>(noop);
@@ -144,7 +146,7 @@ export function App(){
  const scoped=useMemo(()=>state?.threads.filter(t=>state.selectedAccountId==='all'||t.accountId===state.selectedAccountId).sort((a,b)=>b.date.localeCompare(a.date))??[],[state?.threads,state?.selectedAccountId]);
  const filtered=useMemo(()=>{
   if(searchMode)return searchResults;
-  const v=route.view;return scoped.filter(t=>v==='home'?t.status==='new'&&t.importance==='important'&&!t.hiddenFromHome:v==='later'?laterTab==='bookmarks'?t.bookmarked&&t.status!=='trash'&&t.status!=='spam':t.status==='later':v==='low'?t.importance==='low'&&t.status==='new':v==='needs-reply'||v==='awaiting-reply'?t.replyStatus===v&&t.status!=='trash'&&t.status!=='spam':v==='all'?t.status!=='trash'&&t.status!=='spam':v==='sent'?t.messages.some(m=>m.sent):v==='trash'||v==='spam'?t.status===v:false);
+  const v=route.view;return scoped.filter(t=>threadInView(t,v,laterTab));
  },[scoped,route.view,laterTab,searchMode,searchResults]);
  // People this mailbox has exchanged mail with, most frequent first, for recipient suggestions.
  const contacts=useMemo(()=>{
@@ -156,7 +158,7 @@ export function App(){
  },[state?.threads,state?.accounts]);
  const buckets=useMemo(()=>{
   const today=isoDay();const later=scoped.filter(t=>t.status==='later');
-  return {today,later,low:scoped.filter(t=>t.status==='new'&&t.importance==='low'),
+  return {today,later,low:scoped.filter(isHomeLow),
    homeLater:later.filter(t=>!t.hiddenFromHome&&(!t.dueDate||t.dueDate<=today)),
    replyHome:scoped.filter(t=>t.replyStatus==='needs-reply'&&t.status==='done'&&!t.hiddenFromHome)};
  },[scoped]);
@@ -215,6 +217,24 @@ export function App(){
   if(following&&following.id!==thread.id)setRoute(r=>({...r,threadId:following.id}));else setRoute(r=>({...r,threadId:undefined}));
   if(following?.unread)void invoke('thread.update',{ids:[following.id],patch:{unread:false},recordUndo:false,compact:true}).catch(()=>{});
  }
+ function toggleBookmark(thread:Thread){
+  const next=!thread.bookmarked;
+  const leaves=!searchMode&&bookmarkLeavesList(thread,next,route.view,laterTab);
+  const current=thread.id===selectedThread?.id;const stack=state?.settings.openMode==='stack';
+  if(leaves)hintExit(thread.id,'down');
+  const label=next?'Saved to Bookmarks':'Removed from Bookmarks';
+  void patch([thread.id],{bookmarked:next},leaves&&current&&stack?undefined:label,leaves);
+  if(!leaves)return;
+  lastTriage.current={id:thread.id,status:'bookmark',reopen:current};
+  setEntering(undefined);
+  const at=order.findIndex(t=>t.id===thread.id);
+  const following=at>=0?order[at+1]||order[at-1]:order.find(t=>t.date<=thread.date)||order.at(-1);
+  if(lastHovered.current===thread.id)lastHovered.current=following?.id??null;
+  if(!current){if(cursor.id===thread.id)setCursor(c=>({...c,id:following?.id}));return;}
+  if(stack&&!reducedMotion())setLeaving({thread,status:'bookmark',key:Date.now(),to:'down'});
+  if(following&&following.id!==thread.id)setRoute(r=>({...r,threadId:following.id}));else setRoute(r=>({...r,threadId:undefined}));
+  if(following?.unread)void invoke('thread.update',{ids:[following.id],patch:{unread:false},recordUndo:false,compact:true}).catch(()=>{});
+ }
  function bulk(status:Triage,label:string){const ids=[...selected];for(const id of ids)hintExit(id,exitDirection(status));if(cursor.id&&selected.has(cursor.id)){const at=order.findIndex(t=>t.id===cursor.id);setCursor(c=>({...c,id:order.slice(at+1).find(t=>!selected.has(t.id))?.id}));}void patch(ids,{status},`${label} · ${ids.length} email${ids.length===1?'':'s'}`);}
  function talk(phase:'start'|'release'){
   if(phase==='start'){
@@ -261,7 +281,7 @@ export function App(){
    if(t){keys.j=()=>nextThread(1);keys.k=()=>nextThread(-1);}
    else if(!['settings','calendar'].includes(route.view)){keys.j=keys.ArrowDown=()=>moveCursor(1);keys.k=keys.ArrowUp=()=>moveCursor(-1);}
    if(pointed){keys.Enter=keys.o=()=>openThread(pointed.id);keys.x=()=>selectRow(pointed,e.shiftKey?'range':'toggle');keys.X=keys.x;}
-   if(subject){const doneLeft=state?.settings.triageDirection==='done-left';keys.e=()=>triage(subject,'done');keys.l=()=>triage(subject,'later');keys.b=()=>void patch([subject.id],{bookmarked:!subject.bookmarked},subject.bookmarked?'Bookmark removed':'Bookmarked');keys.u=()=>void patch([subject.id],{unread:!subject.unread});keys['#']=()=>triage(subject,'trash');keys.ArrowLeft=()=>triage(subject,doneLeft?'done':'later');keys.ArrowRight=()=>triage(subject,doneLeft?'later':'done');}
+   if(subject){const doneLeft=state?.settings.triageDirection==='done-left';keys.e=()=>triage(subject,'done');keys.l=()=>triage(subject,'later');keys.b=()=>toggleBookmark(subject);keys.u=()=>void patch([subject.id],{unread:!subject.unread});keys['#']=()=>triage(subject,'trash');keys.ArrowLeft=()=>triage(subject,doneLeft?'done':'later');keys.ArrowRight=()=>triage(subject,doneLeft?'later':'done');}
    if(t){keys.r=()=>void newDraft({},t,state?.settings.defaultReply);keys.R=()=>void newDraft({},t,state?.settings.defaultReply==='reply-all'?'reply':'reply-all');keys.f=()=>void newDraft({},t,'forward');}
    if(keys[e.key]){e.preventDefault();keys[e.key]();}
   }
@@ -295,13 +315,13 @@ export function App(){
  const pending=useMemo(()=>state?.drafts.filter(d=>d.pendingSendAt)??[],[state?.drafts]);
  const counts=useMemo(()=>{
   const replies=(view:View)=>scoped.filter(t=>t.replyStatus===view&&t.status!=='trash'&&t.status!=='spam').length;
-  return {home:scoped.filter(t=>t.status==='new').length+buckets.homeLater.length,later:buckets.later.length,drafts:drafts.length,'needs-reply':replies('needs-reply'),'awaiting-reply':replies('awaiting-reply')} as Partial<Record<View,number>>;
+  return {home:scoped.filter(t=>t.status==='new'&&!t.bookmarked).length+buckets.homeLater.length,later:buckets.later.length,drafts:drafts.length,'needs-reply':replies('needs-reply'),'awaiting-reply':replies('awaiting-reply')} as Partial<Record<View,number>>;
  },[scoped,buckets,drafts]);
  const rowActions=useHandlers<RowActions>({
   open:t=>{if(searchMode)rememberSearch(search);openThread(t.id);},
   select:(t,how)=>selectRow(t,how),
   triage:(t,status)=>triage(t,status),
-  bookmark:t=>void patch([t.id],{bookmarked:!t.bookmarked},t.bookmarked?'Bookmark removed':'Bookmarked'),
+  bookmark:t=>toggleBookmark(t),
   restore:t=>{hintExit(t.id,'down');void patch([t.id],{status:'new'},'Restored to Home');},
   more:(t,anchor)=>{setMenuThread(t);rowMenu.openAt(anchor);},
   hover:(t,on)=>{if(on){hoveredId.current=t.id;lastHovered.current=t.id;if(cursor.shown)setCursor({id:t.id,shown:false});}else if(hoveredId.current===t.id)hoveredId.current=null;},
@@ -333,11 +353,11 @@ export function App(){
  const heading={title:searchMode?'Search':titles[route.view],count:filtered.length};
  const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
  const readerProps={settings:prefs,editEvent:setEventEditor,notify,undo:()=>void undo(),talk,heading};
- const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={(status,drag)=>triage(selectedThread,status,drag)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} entering={entering?.id===selectedThread.id?entering.from:undefined}/>;
+ const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={(status,drag)=>triage(selectedThread,status,drag)} bookmark={()=>toggleBookmark(selectedThread)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} entering={entering?.id===selectedThread.id?entering.from:undefined}/>;
  const ghost=leaving&&prefs.openMode==='stack'&&<div key={leaving.key} className={cx('fling','fling-'+leaving.status,'fling-to-'+leaving.to,leaving.drag&&'is-dragged')} style={leaving.drag&&{'--from-x':leaving.drag.x+'px','--from-r':(leaving.drag.x/leaving.drag.width*6).toFixed(2)+'deg'} as React.CSSProperties} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
  const doneLeft=prefs.triageDirection==='done-left';
  const rows:RowHandlers={activeId:route.threadId,cursorId:cursor.shown?cursor.id:undefined,selected,doneLeft,highlight,swipe:prefs.swipe,actions:rowActions};
- const group=(title:string,threads:Thread[],action?:React.ReactNode,showCount=true)=><MailSection key={title} title={title} threads={threads} action={action} showCount={showCount} rows={rows}/>;
+ const group=(title:string,threads:Thread[],action?:React.ReactNode,showCount=true,plain=false)=><MailSection key={title} title={title} threads={threads} action={action} showCount={showCount} rows={rows} plain={plain}/>;
  const titled=(title:string,body:React.ReactNode)=><section className="mail-section"><header><h2>{title}</h2></header>{body}</section>;
  const emptyFor=(view:View)=>{const spec=searchMode?{icon:Search,title:'No matches yet',detail:'Try fewer words, or a sender’s name.'}:empties[view]??{title:'Nothing here'};return <EmptyState icon={spec.icon} title={spec.title} detail={spec.detail}/>;};
 
@@ -356,7 +376,7 @@ export function App(){
  else if(view==='home')list=<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-bundle" onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><span><strong>Low-importance emails</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></span></button>}{group('Ready when you are',homeLater,<Button variant="text" onClick={()=>{for(const t of homeLater)hintExit(t.id,'down');void invoke('home.hide',{ids:homeLater.map(t=>t.id),compact:true}).then(()=>notify(`Hid ${homeLater.length} from Home. They stay in Later.`)).catch(fail);}}>Hide all</Button>)}{group('Waiting on you',replyHome)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&emptyFor('home')}</>;
  else if(view==='drafts')list=titled('Drafts',drafts.length?<DraftList drafts={drafts} open={d=>void openDraft(d)} remove={async d=>{if(!await confirmAction({title:'Delete this draft?',message:'It will be removed from this device and from your account’s drafts.',confirmLabel:'Delete',danger:true}))return;hintExit(d.id,'down');void invoke('draft.delete',{id:d.id}).catch(fail);}}/>:emptyFor('drafts'));
  else if(view==='later'&&laterTab==='todos')list=<>{group('Overdue',todoGroups.overdue)}{group('Today',todoGroups.today)}{group('Upcoming',todoGroups.upcoming)}{group('No due date',todoGroups.undated)}{!filtered.length&&emptyFor('later')}</>;
- else{const title=view==='later'?'Bookmarks':titles[view];list=filtered.length?group(title,filtered,view==='low'?<Button variant="pill" icon={CheckCheck} onClick={()=>{for(const t of filtered)hintExit(t.id,exitDirection('done'));void patch(filtered.map(t=>t.id),{status:'done'},'Low-importance mail marked done');}}>Mark all done</Button>:undefined,false):titled(title,view==='later'?<EmptyState icon={Bookmark} title="No bookmarks" detail="Press B on an email to keep it close."/>:emptyFor(view));}
+ else{const title=view==='later'?'Bookmarks':titles[view];list=filtered.length?group(title,filtered,view==='low'?<Button variant="pill" icon={CheckCheck} onClick={()=>{for(const t of filtered)hintExit(t.id,exitDirection('done'));void patch(filtered.map(t=>t.id),{status:'done'},'Low-importance mail marked done');}}>Mark all done</Button>:undefined,false,view==='later'):titled(title,view==='later'?<EmptyState icon={Bookmark} title="No bookmarks" detail="Press B on an email to save it here. It leaves Home until you remove the bookmark."/>:emptyFor(view));}
 
  return <div className={cx('app-shell',window.aplos&&'desktop',mac&&'mac',sidebarHidden&&'sidebar-hidden',peeking&&'sidebar-peek',ask&&'with-ask')}>
  {peeking&&<div className="sidebar-scrim" onPointerDown={()=>setPeek(false)}/>}
@@ -370,12 +390,12 @@ export function App(){
  {listShown&&<div className="mail-content" ref={listRef} onScroll={e=>{listScroll.current=e.currentTarget.scrollTop;}}>
  {view==='settings'?<Settings state={state} capabilities={capabilities} onChange={p=>void updateSettings(p)} notify={notify} shortcuts={()=>setShortcutHelp(true)}/>
  :view==='calendar'?<Calendar events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} edit={setEventEditor} onThread={id=>navigate('all',id)}/>
- :<div className="mail-view" key={(searchMode?'search':view)+(view==='later'?laterTab:'')}>
+ :<div className={cx('mail-view',view==='later'&&laterTab==='bookmarks'&&'bookmarks-view')} key={(searchMode?'search':view)+(view==='later'?laterTab:'')}>
   {searchMode&&<div className="search-heading"><div className="search-box"><Search size={17}/><input ref={searchInput} autoFocus placeholder="Search your mail" aria-label="Search mail query" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={searchKeys}/>{searching&&<Spinner size={16}/>}<IconButton label="Close search" shortcut="Esc" icon={X} onClick={closeSearch}/></div>
    {!search&&recentSearches.length>0&&<p className="search-hints"><span>Recent</span>{recentSearches.map(hint=><button key={hint} onClick={()=>{setSearch(hint);searchInput.current?.focus();}}>{hint}</button>)}</p>}
    {searchHints.length>0&&<p className="search-hints"><span>Try</span>{searchHints.map(hint=><button key={hint} className={search===hint?'is-active':undefined} onClick={()=>{setSearch(hint);searchInput.current?.focus();}}>{hint}</button>)}</p>}
    {search&&filtered.length>0&&<p className="search-hints search-keys"><Keys combo="↑"/><Keys combo="↓"/> to move, <Keys combo="↩"/> to open</p>}</div>}
-  {view==='later'&&!searchMode&&<Tabs variant="underline" label="Later groups" className="later-tabs" value={laterTab} onChange={setLaterTab} items={[{id:'todos',label:'Todos',icon:CircleCheck,count:later.length},{id:'bookmarks',label:'Bookmarks',icon:Bookmark,count:scoped.filter(t=>t.bookmarked).length}]}/>}
+  {view==='later'&&!searchMode&&<Tabs variant="underline" label="Later groups" className="later-tabs" value={laterTab} onChange={setLaterTab} items={[{id:'todos',label:'Todos',icon:CircleCheck,count:later.length},{id:'bookmarks',label:'Bookmarks',icon:Bookmark,count:scoped.filter(isBookmark).length}]}/>}
   {bulkBar.mounted&&<div className={cx('bulk-toolbar ui-surface',bulkBar.closing&&'is-closing')}><Checkbox checked={selected.size===order.length&&order.length>0} indeterminate={selected.size>0&&selected.size<order.length} label={`${selected.size||1} selected`} onChange={on=>setSelected(new Set(on?order.map(t=>t.id):[]))}/>
    <div className="actions"><Button variant="ghost" icon={Check} onClick={()=>bulk('done','Marked done')}>Done</Button><Button variant="ghost" icon={Clock} onClick={()=>bulk('later','Moved to Todo')}>Todo</Button><IconButton label="Move selected to Trash" icon={Trash2} onClick={()=>bulk('trash','Moved to Trash')}/><IconButton label="Clear selection" shortcut="Esc" icon={X} onClick={()=>setSelected(new Set())}/></div></div>}
   {list}
@@ -392,6 +412,7 @@ export function App(){
  <Menu open={rowMenu.open} anchor={rowMenu.anchor} onClose={rowMenu.close} placement="bottom-end" label="Email actions" onError={fail} groups={thread?[
   [{label:'Open in separate window',icon:ExternalLink,onSelect:()=>invoke('window.thread',{threadId:thread.id})}],
   [{label:'Mark '+(thread.unread?'read':'unread'),icon:MailOpen,keys:'U',onSelect:()=>patch([thread.id],{unread:!thread.unread})},
+   {label:thread.bookmarked?'Remove bookmark':'Save to Bookmarks',icon:Bookmark,keys:'B',onSelect:()=>toggleBookmark(thread)},
    {label:thread.importance==='important'?'Move to Low importance':'Mark important',icon:Layers,onSelect:()=>patch([thread.id],{importance:thread.importance==='important'?'low':'important'},thread.importance==='important'?'Moved to Low importance':'Marked important')},
    {label:thread.replyStatus==='needs-reply'?'Clear Needs reply':'Needs my reply',icon:CornerUpLeft,onSelect:()=>patch([thread.id],{replyStatus:thread.replyStatus==='needs-reply'?'none':'needs-reply'})}],
   [{label:'Move to Spam',icon:ShieldAlert,onSelect:()=>triage(thread,'spam')},{label:'Move to Trash',icon:Trash2,keys:'#',danger:true,onSelect:()=>triage(thread,'trash')}],

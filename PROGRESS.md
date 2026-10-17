@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-16 — M35 bookmarks leave Home, everyday spacing
+
+Bookmarking a Home thread now files it into Later → Bookmarks and drops it from Home New (and the low-importance bundle). Status stays `new`; only `bookmarked` changes. Shared `isHomeNew` / `isBookmark` / `bookmarkLeavesList` helpers drive the Home count, list filters and stack advance. Later todos still appear on Home’s ready section when starred.
+
+Verified in the collaborative preview at 1280×800 against demo mail (no external send): Jordan Park “A quieter home for our project” bookmarked from the stack. Home count 8→7, stack 6→5, toast “Saved to Bookmarks”; Later → Bookmarks showed 6 threads including Jordan, with a single Bookmarks tab and no duplicate heading. Settings kept a readable side nav (Help & about fully visible) at this width. Compose and Calendar opened without layout overflow. Typecheck passed; **154 tests pass**, including two mailbox placement tests. M11 remains unchecked.
+
 ## 2026-10-16 — M34 large-mailbox verification and measured fixes
 
 Added `npm run bench:mailbox` with 10,000 original synthetic threads, 20,000 messages and approximately 2,000 characters of plain text plus HTML per message. The repeatable runner verifies ingestion, account-scoped and selective FTS search, five changed-row writes, reopen persistence, initial/paged snapshots without missing/duplicate IDs, and compact triage/Undo with one changed thread per event. One lighter 10k-thread/20k-message case runs in the ordinary suite. Reports stay under ignored `artifacts/`; `--keep` retains only its synthetic temporary database for desktop verification.

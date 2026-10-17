@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-10-16 — Bookmarks leave Home
+
+- Bookmarking is filing, not a leftover Home flag. Important or low new mail that is bookmarked leaves Home New and the low bundle, and lives in Later → Bookmarks. Status stays `new` so the provider is not archived. Unbookmarking still-new mail returns it to Home. Later todos stay on Home’s ready section even when starred.
+- Stack bookmarking flings the card down and advances like triage. Skip the toast when the dock already shows undo, same as Done/Todo. The Bookmarks tab is a plain list: no second “Bookmarks” heading and no redundant row flag.
+- Settings keep a side category list until the workspace is 520px wide so “Help & about” is not clipped. Collapse to wrapping pills only below that.
+
 ## 2026-10-16 — Inbox Zero research follow-up
 
 - Interpret “go for it” as approval for the report's three immediate recommendations: provider emulation, focused Groq evaluations and large synthetic mailbox measurements. Keep personal desktop scope; defer reusable automation rules and hosted infrastructure.
