@@ -1,6 +1,7 @@
 import type { Account, AppState, Attachment, CalendarEvent, Conversation, Draft, Listener, Settings, Thread } from '../shared/types';
 import { createDemo, defaultSettings } from './demo';
 import { applySync } from './merge';
+import { olderInboxDuplicates } from './duplicates';
 import { createGate } from './gate';
 import { ftsQuery, type OpChanges, type QueuedOp, type SaveExtras, type StoreDiff } from './store';
 import { threadOrder, type StateChanges, type ThreadPage } from '../shared/live';
@@ -488,16 +489,27 @@ export async function createEngineService(options:EngineOptions) {
     // Disconnected (or reconnected) while the host was answering: this result belongs to the old account.
     if(!live(a.id,generation)){stage.discard();return;}
     const since=Date.parse(state.sync.lastSync||now().toISOString());
-    let outcome!:ReturnType<typeof applySync>;
-    change(s=>{
-      outcome=applySync(s,a.id,result,new Set([...queue.filter(op=>op.accountId===a.id).map(op=>op.threadId),...changedDuring]));
-      // A message sent without a host thread ID was kept as a local copy; drop it once the host's copy arrives.
-      const arrived=new Set(result.threads.flatMap(t=>t.messages.map(m=>m.internetId)).filter((id):id is string=>!!id));
-      if(arrived.size)s.threads=s.threads.filter(t=>t.accountId!==a.id||!!t.remoteId||!t.messages.every(m=>m.sent&&m.internetId&&arrived.has(m.internetId)));
-      // Occurrences of a recurring event share the host's ID, so events are told apart by their own.
-      if(events){s.events=s.events.filter(e=>e.accountId!==a.id||!e.remoteId);for(const event of events)if(!s.events.some(e=>e.id===event.id))s.events.push(event);}
-      const acc=s.accounts.find(x=>x.id===a.id);if(acc){acc.sendAs=a.sendAs;acc.capabilities=provider.capabilities(acc);if(a.error)acc.error=a.error;else delete acc.error;}
-    },undefined,{stage,cursor:{accountId:a.id,cursor:result.cursor,now:now()}});
+    const protectedIds=new Set([...queue.filter(op=>op.accountId===a.id).map(op=>op.threadId),...changedDuring]);
+    const s=clone(state);
+    const duplicateOps:QueuedOp[]=[];
+    const outcome=applySync(s,a.id,result,protectedIds);
+    // A message sent without a host thread ID was kept as a local copy; drop it once the host's copy arrives.
+    const arrived=new Set(result.threads.flatMap(t=>t.messages.map(m=>m.internetId)).filter((id):id is string=>!!id));
+    if(arrived.size)s.threads=s.threads.filter(t=>t.accountId!==a.id||!!t.remoteId||!t.messages.every(m=>m.sent&&m.internetId&&arrived.has(m.internetId)));
+    // Occurrences of a recurring event share the host's ID, so events are told apart by their own.
+    if(events){s.events=s.events.filter(e=>e.accountId!==a.id||!e.remoteId);for(const event of events)if(!s.events.some(e=>e.id===event.id))s.events.push(event);}
+    const acc=s.accounts.find(x=>x.id===a.id);if(acc){acc.sendAs=a.sendAs;acc.capabilities=provider.capabilities(acc);if(a.error)acc.error=a.error;else delete acc.error;}
+    const older=olderInboxDuplicates(s.threads,a.id,new Set(outcome.arrivals.map(t=>t.id)),protectedIds);
+    for(const t of older){
+      // Always archive an exact duplicate, independently of the user's Done/read mapping.
+      const patch:Partial<Thread>={status:'done',labels:(t.labels??[]).filter(l=>l!=='INBOX')};
+      const op=queued(t,patch);if(op)duplicateOps.push(op);
+      Object.assign(t,patch);
+    }
+    if(older.length&&workflow?.enabled)stage.run(()=>workflow.noteEdits(older));
+    // Incoming mail, duplicate archives, provider indexes and cursor survive a crash together.
+    commit(s,{put:duplicateOps},{stage,cursor:{accountId:a.id,cursor:result.cursor,now:now()}});
+    if(duplicateOps.length)kick();
     const current=(t:Thread)=>state.threads.find(x=>x.id===t.id);
     const inbox=outcome.arrivals.map(current).filter((t):t is Thread=>!!t&&t.status==='new');
     // A first sync downloads existing mail; nothing in it is news.

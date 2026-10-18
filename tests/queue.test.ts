@@ -16,7 +16,7 @@ const remote=(id:string,patch:Partial<Thread>={}):Thread=>({id:`g1:${id}`,remote
 const offline=()=>new GoogleError('Google could not be reached. Check your internet connection.',undefined,true);
 const settle=async(fn:()=>boolean|Promise<boolean>)=>{for(let i=0;i<200;i++){if(await fn())return;await new Promise(r=>setTimeout(r,10));}assert.fail('Timed out waiting');};
 
-async function harness() {
+async function harness(summarized?:string[]) {
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-queue-'));
   const base=await createGoogle({dataDir,clientId:''});
   const calls:Array<{remoteId?:string;fromStatus:string;patch:Partial<Thread>}>=[],sends:Draft[]=[];
@@ -34,7 +34,8 @@ async function harness() {
     send:async(_a:Account,d:Draft)=>{sends.push(structuredClone(d));if(control.sendError)throw control.sendError;const result={id:'sent-1',threadId:'sent-thread'};control.sent.set(d.messageId!,result);return control.sendResult??result;},
     findSent:async(_a:Account,messageId:string)=>control.sent.get(messageId),
   };
-  const open=()=>createService({dataDir,google,groq:createGroq({apiKey:''}),autoSyncMs:0});
+  const groq=createGroq({apiKey:''});
+  const open=()=>createService({dataDir,google,groq:summarized?{...groq,available:true,summarize:async(t:Thread)=>{summarized.push(t.id);return {summary:'Original synthetic summary'};}}:groq,autoSyncMs:0});
   let service=await open();
   await service.invoke('account.connect');
   return {dataDir,control,calls,sends,get service(){return service;},
@@ -42,6 +43,39 @@ async function harness() {
     async cleanup(){await service.close();await rm(dataDir,{recursive:true,force:true});}};
 }
 const get=async(h:{service:{invoke:(m:string,p?:unknown)=>Promise<any>}})=>await h.service.invoke('state.get') as AppState;
+
+test('incoming exact copies archive the older inbox thread durably before notifications and classification',async()=>{
+  const summarized:string[]=[],h=await harness(summarized);
+  try{
+    await h.service.invoke('settings.update',{patch:{doneAction:'unread'}});
+    summarized.length=0;
+    const events:Array<{type:string;payload?:any}>=[];
+    h.service.subscribe(e=>events.push(e));
+    h.control.writesDown=true;
+    const latest=remote('latest',{subject:'Thread a',date:'2099-10-18T13:00:00Z'});
+    latest.messages[0].date=latest.date;
+    const middle=structuredClone(latest);middle.id='g1:middle';middle.remoteId='middle';middle.date='2099-10-18T12:00:00Z';middle.messages[0].id='middle-1';middle.messages[0].date=middle.date;
+    h.control.next={threads:[latest,middle],flags:[],removed:[],reset:false,cursor:'3'};
+    let state=await h.service.invoke('sync') as AppState;
+    assert.deepEqual(state.threads.filter(t=>t.accountId==='g1'&&t.status==='new').map(t=>t.id).sort(),['g1:b','g1:latest']);
+    assert.equal(state.threads.find(t=>t.id==='g1:a')!.labels?.includes('INBOX'),false);
+    assert.equal(state.threads.find(t=>t.id==='g1:a')!.unread,true,'archive preserves read state regardless of Done mapping');
+    assert.deepEqual(summarized,['g1:latest']);
+    assert.deepEqual(events.filter(e=>e.type==='notification').map(e=>e.payload.threadId),['g1:latest']);
+    await settle(async()=>(await get(h)).sync.pending===2);
+    await h.restart();
+    assert.equal((await get(h)).sync.pending,2,'both archives survive restart');
+    h.control.next={threads:[remote('a'),middle],flags:[],removed:[],reset:false,cursor:'4'};
+    state=await h.service.invoke('sync') as AppState;
+    assert.equal(state.threads.find(t=>t.id==='g1:a')!.status,'done','stale host state cannot undo a queued archive');
+    h.control.writesDown=false;
+    await h.service.invoke('sync');
+    assert.equal((await get(h)).sync.pending,undefined);
+    assert.deepEqual(h.calls.map(c=>c.remoteId).sort(),['a','middle']);
+    assert.ok(h.calls.every(c=>c.patch.status==='done'&&!c.patch.labels?.includes('INBOX')&&c.patch.unread===undefined));
+    assert.equal((await get(h)).threads.filter(t=>['g1:a','g1:middle','g1:latest'].includes(t.id)).length,3,'archived copies remain in All mail');
+  }finally{await h.cleanup();}
+});
 
 test('triage works offline, survives a restart, and reaches the host in order once it is back',async()=>{
   const h=await harness();

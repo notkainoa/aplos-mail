@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-10-18 — M36 newest exact inbox copy
+
+Incoming sync now compares complete thread content within the account's downloaded inbox, keeps the latest exact copy and archives older copies to All mail. Subject, sender/name, To/Cc, full text/HTML/quoted history, sent direction and known attachment bytes must match; transport IDs, dates, summaries and workflow metadata do not participate in equality. Changed history, missing bodies and undownloaded attachment bytes remain untouched. The operation compares separate threads; duplicate messages already grouped into one provider thread remain together. Flag-only syncs do not sweep old mail, and pending/concurrent local edits are protected.
+
+Archives preserve read state, bookmarks and todo metadata and explicitly remove INBOX regardless of the Done/read preference. The incoming state, archive operations, sync cursor and provider-memory writes commit together; workflow edits use the same stage. Only surviving inbox copies notify or receive automatic classification. Older archived copies remain locally searchable and readable; the existing queue retries host updates after failures/restarts.
+
+Verification: **157 tests pass**, zero failures/skips; `npm run typecheck` and `npm run package` pass. Added two focused matching tests and one service regression covering initial/incremental/out-of-order/equal-time batches, people/content/history differences, account/folder boundaries, unknown/different/identical attachment bytes, notification/classification filtering, read-state preservation, restart durability and failed host writes. Extended existing application HTTP/OAuth emulation to verify actual Gmail and Outlook adapters archive the older copy, retain the newer one and converge after another sync with Done configured as read. These are isolated synthetic mailboxes, not live-provider acceptance.
+
+`node scripts/verify-release.mjs` passed all **11 non-AI packaged checks**, including desktop launch, native bridge/change events, local send/Undo, immediate popout-close persistence, engine crash/restart and desktop restart. No external message was sent and no live account was connected. Built package: `release/mac-arm64/Aplos Mail.app`; the installed app was not replaced. M11 remains open for the existing external account/OS prerequisites.
+
 ## 2026-10-16 — M35 bookmarks leave Home, everyday spacing
 
 Bookmarking a Home thread now files it into Later → Bookmarks and drops it from Home New (and the low-importance bundle). Status stays `new`; only `bookmarked` changes. Shared `isHomeNew` / `isBookmark` / `bookmarkLeavesList` helpers drive the Home count, list filters and stack advance. Later todos still appear on Home’s ready section when starred.

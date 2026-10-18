@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-10-18 — Keep the newest exact inbox copy
+
+- User-requested Aplos behavior, independent of reference research: during incoming sync, compare complete thread content within the same account and archive older exact copies. Match subject, sender/name, To/Cc, full text/HTML/quoted history, sent direction and attachment metadata/bytes; ignore delivery identifiers, timestamps and AI/workflow fields. No AI or network classification is needed for equality.
+- Compare whole threads, never just their latest reply, so different conversation history cannot be archived accidentally. Unknown attachment bytes or empty bodies do not prove equality. This does not remove duplicate messages inside a provider-grouped thread; providers currently expose archive operations on whole threads. Only locally downloaded inbox threads are compared.
+- Keep the latest delivery timestamp; tied timestamps prefer a newly observed copy, then a stable thread ID within a batch. Handle initial downloads and late/out-of-order batches. Flag-only syncs do not sweep existing mail. Pending local edits and edits made during sync are protected.
+- Archive explicitly even when Done is configured as read/unread; preserve read state, bookmarks and todo metadata on the archived copy, which remains in All mail. Save archives and durable provider operations with the incoming mail/cursor/index transaction. Note automatic workflow edits in the same stage. Notify/classify only surviving inbox copies. Do not claim live-provider acceptance from local emulation.
+
 ## 2026-10-16 — Bookmarks leave Home
 
 - Bookmarking is filing, not a leftover Home flag. Important or low new mail that is bookmarked leaves Home New and the low bundle, and lives in Later → Bookmarks. Status stays `new` so the provider is not archived. Unbookmarking still-new mail returns it to Home. Later todos stay on Home’s ready section even when starred.

@@ -42,6 +42,18 @@ test('real application API and provider adapters handle local OAuth, refresh, sy
       assert.ok((await invoke('state.get')).accounts.find((a:{id:string})=>a.id===identity.id).error);
       await invoke('account.connect',{provider});await invoke('sync',{accountId:identity.id});
       assert.equal((await invoke('state.get')).accounts.find((a:{id:string})=>a.id===identity.id).error,undefined);
+      // Exact-copy cleanup reaches each real adapter's archive operation, even with a read-only Done mapping.
+      await invoke('settings.update',{patch:{doneAction:'read'}});
+      session.emulator.add(provider,'arrival-copy');
+      const original=session.emulator.mail[provider].get('arrival')!,copy=session.emulator.mail[provider].get('arrival-copy')!;
+      copy.subject=original.subject;copy.text=original.text;copy.date=new Date(Date.parse(original.date)+1000).toISOString();
+      await invoke('sync',{accountId:identity.id});
+      await until(async()=>!(await invoke('state.get')).sync.pending);
+      assert.ok(!session.emulator.mail[provider].get('arrival')!.labels.includes('INBOX'));
+      assert.ok(session.emulator.mail[provider].get('arrival-copy')!.labels.includes('INBOX'));
+      await invoke('sync',{accountId:identity.id});
+      assert.equal((await invoke('state.get')).threads.find((t:{id:string})=>t.id===`${identity.id}:arrival`).status,'done');
+      await invoke('settings.update',{patch:{doneAction:'archive'}});
       await invoke('settings.update',{patch:{undoSeconds:0}});
       const draft:Draft={id:`send-${provider}`,accountId:identity.id,to:'reader@verification.example',cc:'',bcc:'',subject:`Synthetic ${provider} send`,html:'<p>This message stays inside the local emulator.</p>',attachments:[],mode:'new',signature:false,updatedAt:new Date().toISOString(),revision:0};
       await invoke('draft.save',{draft});await invoke('draft.send',{id:draft.id});
