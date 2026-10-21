@@ -318,3 +318,6 @@ Ask is now a streamed, tool-using agent over Groq: search/read mail, calendar ra
 
 ## Ask providers and parallel tools (2026-10-21)
 Ask can run on Groq, OpenRouter or OpenCode Go (Settings → General → AI → Ask provider / Ask model), and a step's tool calls now run concurrently. Verified: typecheck, full test suite including 4 new provider tests (OpenRouter streaming comments, usage and error chunks, credits error, tool-only catalog; OpenCode Go endpoint, user agent, session header and chat-only catalog; setting migration, routing and missing-key message) and a concurrency test. Live OpenRouter/OpenCode Go checks wait for the owner's keys (`npm run eval:ask -- --model=openrouter:…`).
+
+## Settings → AI pass (2026-10-21)
+New AI tab: provider cards with key status and setup help, searchable model picker, live connection check, and the Groq-only features listed. Verified: typecheck, full test suite (connection check covered in the provider test), headless Chromium screenshots in dark and light at 1440 px and 900 px, picker search plus keyboard selection, and a live check against Groq (Qwen3.8 27B, "Works · 160 ms").

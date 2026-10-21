@@ -178,3 +178,9 @@
 - Non-Groq providers get a 100 K-character context budget and 4,096 output tokens (reasoning models need room); Groq stays at 48 K / 2,048 for its free-tier per-minute limit.
 - Parallel tools: all tool calls from one model step now run concurrently and return in the order asked (up to 6 per step), and the system prompt asks models to batch independent lookups. GPT-OSS on Groq still emits one call at a time; Qwen, Claude, Kimi, GLM and similar batch.
 - Not verified live: OpenRouter and OpenCode Go (no keys configured for Aplos; the opencode CLI's own login was deliberately not reused). Fake-server tests cover request shape, headers, streaming quirks, catalogs and routing.
+
+## 2026-10-21 — Settings → AI
+- AI moved out of General into its own Settings tab. Ask's provider is three cards (Groq, OpenRouter, OpenCode Go) with a selection ring that glides between them and a Ready / Needs a key status; picking one without a key shows how to add it (copyable variable name, link to the provider's key page) instead of hiding the choice.
+- The model is a searchable picker (Recommended, then All models with a count) instead of a native select, because OpenRouter offers about 400 tool-capable models. Arrows, Enter and Esc work; keys typed in it never reach the app's shortcuts; short lists jump by first letter.
+- "Check connection" (`ai.test`) sends one tiny request asking the chosen model to call a `ping` tool and reports the time, or warns when the model replied without using the tool. It runs only on click and includes no mail.
+- An "Also on Groq" group shows that summaries, drafts, plans and voice still use Groq and whether its key is set.

@@ -80,6 +80,11 @@ test('the Ask setting picks the provider; a missing key says which variable to s
     const catalog=await service.invoke('ai.models') as Array<{id:string;available:boolean;models:{id:string}[]}>;
     assert.deepEqual(catalog.map(p=>[p.id,p.available]),[['groq',false],['openrouter',true],['opencode-go',false]]);
     assert.deepEqual(catalog[1].models.map(m=>m.id),['anthropic/claude-haiku-5.5']);
+    // The connection check asks for one tool call and reports whether the model made it.
+    const fakeCalls:ChatRequest[]=[];fake.chat=async req=>{fakeCalls.push(req);return {content:'',toolCalls:[{id:'p',name:'ping',arguments:'{}'}]};};
+    const check=await service.invoke('ai.test',{model:'openrouter:anthropic/claude-haiku-5.5'}) as {ms:number;tools:boolean};
+    assert.equal(check.tools,true);assert.equal(fakeCalls[0].tools?.[0].name,'ping');assert.equal(fakeCalls[0].model,'anthropic/claude-haiku-5.5');
+    await assert.rejects(service.invoke('ai.test',{model:'opencode-go:kimi-k3'}),/OPENCODE_API_KEY/);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
   assert.deepEqual(parseAskModel('openrouter:qwen/qwen3.8-flash:free'),{provider:'openrouter',model:'qwen/qwen3.8-flash:free'});
 });

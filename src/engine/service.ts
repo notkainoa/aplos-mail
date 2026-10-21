@@ -11,7 +11,7 @@ import type { EngineOptions, MemoryStage } from './ports';
 import { runAgent } from './agent';
 import { createAskSession, type AskProgress } from './ask';
 import { localNow } from './proposals';
-import { askProvider, askProviders, defaultAskModel, parseAskModel } from '../shared/ask';
+import { askProvider, askProviders, defaultAskModel, parseAskModel, type AskProviderId } from '../shared/ask';
 
 // The alphabet/padding has already been validated before this size calculation.
 const base64Bytes=(value:string)=>Math.floor(value.replace(/=+$/,'').length*3/4);
@@ -415,6 +415,12 @@ export async function createEngineService(options:EngineOptions) {
     if(additions.length)change(s=>{for(const t of additions)if(!s.threads.some(local=>local.id===t.id))s.threads.push(t);});
     return [...found.values()].sort((a,b)=>b.date.localeCompare(a.date));
   }
+  /** Where Ask's model runs; a provider without its key says which variable to set. */
+  function askTransport(id:AskProviderId) {
+    const transport=id==='groq'?{available:groq.available,chat:groq.chat}:options.chats?.[id],provider=askProvider(id);
+    if(!transport?.available)throw new Error(`Add ${provider.env} to the backend environment to use ${provider.label}, or choose another Ask model in Settings.`);
+    return transport;
+  }
   async function ai<T>(payload:Record<string,any>,fn:(signal:AbortSignal)=>Promise<T>):Promise<T> {
     const id=payload.requestId?text(payload.requestId,200):randomUUID();
     if(requests.has(id))throw new Error('This AI request is already running.');
@@ -744,9 +750,7 @@ export async function createEngineService(options:EngineOptions) {
           clock:localNow(timeZone,now()),view,threadId:openId,selectedIds,draft,
           userText:conversation.messages.filter(m=>m.role==='user').map(m=>m.content).join('\n'),
         });
-        const choice=parseAskModel(state.settings.askModel)??parseAskModel(defaultAskModel)!,provider=askProvider(choice.provider);
-        const transport=choice.provider==='groq'?{available:groq.available,chat:groq.chat}:options.chats?.[choice.provider];
-        if(!transport?.available)throw new Error(`Add ${provider.env} to the backend environment to use ${provider.label}, or choose another Ask model in Settings.`);
+        const choice=parseAskModel(state.settings.askModel)??parseAskModel(defaultAskModel)!,transport=askTransport(choice.provider);
         const model=`${choice.provider}:${choice.model}`;
         const progress=session.stream((event:AskProgress)=>emit('ai.progress',{requestId,...event}));
         const result=await ai({...p,requestId},signal=>runAgent({chat:transport.chat,model:choice.model,session:conversation.id,signal,tools:session.tools,onEvent:progress.onEvent,
@@ -758,6 +762,15 @@ export async function createEngineService(options:EngineOptions) {
         const answer=session.finish(result,model,message);
         conversation.messages.push(answer);conversation.updatedAt=now().toISOString();
         change(s=>{s.conversations=s.conversations.filter(c=>c.id!==conversation!.id);s.conversations.push(conversation!);});return clone(conversation);
+      }
+      case 'ai.test':{
+        // One tiny request asking the model to call a tool, so a pass means Ask's tools will work too. No mail is sent.
+        const choice=parseAskModel(p.model);if(!choice)throw new Error('Choose an Ask model.');
+        const transport=askTransport(choice.provider),started=now().getTime();
+        const turn=await ai(p,signal=>transport.chat({model:choice.model,maxTokens:1024,toolChoice:'auto',
+          tools:[{name:'ping',description:'Confirms that the connection works.',parameters:{type:'object',properties:{}}}],
+          messages:[{role:'system',content:'You are checking a connection. Call the ping tool once, then stop.'},{role:'user',content:'Check the connection.'}]},{signal}));
+        return {ms:now().getTime()-started,tools:turn.toolCalls.some(call=>call.name==='ping')};
       }
       case 'ai.models':{
         // What Settings can offer: each provider, whether its key is set, and the tool-capable models it lists now.

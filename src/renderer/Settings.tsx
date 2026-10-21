@@ -6,9 +6,9 @@ import {Avatar,Badge,Button,Group,GroupRow,Notice,Select,Switch,Tabs,Tooltip,con
 import {AddAccountDialog} from './components/AddAccount';
 import {DomainCheck} from './components/DomainCheck';
 import {DeviceSync} from './components/DeviceSync';
-import {askProviders,defaultAskModel,parseAskModel,type AskModelInfo,type AskProviderId} from '../shared/ask';
+import {AiSettings} from './components/AiSettings';
 
-const categories=['General','Mail','Calendar','Notifications','Accounts','Help & about'] as const;
+const categories=['General','Mail','Calendar','AI','Notifications','Accounts','Help & about'] as const;
 export type SettingsCategory=typeof categories[number];
 type Category=SettingsCategory;
 const mailboxActions:[string,string][]=[['archive','Archive'],['read','Keep in inbox (read)'],['unread','Keep in inbox (unread)']];
@@ -27,27 +27,6 @@ function SignatureField({value,onSave}:{value:string;onSave:(value:string)=>void
  useEffect(()=>{if(pending.current===null)return;const timer=setTimeout(flush,600);return()=>clearTimeout(timer);},[text,flush]);
  useEffect(()=>flush,[flush]);
  return <textarea className="signature-setting" aria-label="Email signature" rows={4} value={text} placeholder={'Your name\nA line or two about you'} onFocus={()=>{focused.current=true;}} onBlur={()=>{focused.current=false;flush();}} onChange={e=>{pending.current=e.target.value;setText(e.target.value);}}/>;
-}
-
-type AskCatalog={id:AskProviderId;label:string;env:string;description:string;available:boolean;models:AskModelInfo[]}[];
-/** Ask's provider and model. Lists come from the engine (live where the provider publishes one); keys stay in the backend. */
-function AskModelSetting({value,onChange}:{value:string;onChange:(value:string)=>void}){
- const [catalog,setCatalog]=useState<AskCatalog>();
- useEffect(()=>{let live=true;void invoke<AskCatalog>('ai.models').then(list=>{if(live)setCatalog(list);}).catch(()=>{});return()=>{live=false;};},[]);
- const providers:AskCatalog=catalog??askProviders.map(p=>({...p,models:[...p.models],available:true}));
- const ref=parseAskModel(value)??parseAskModel(defaultAskModel)!;
- const provider=providers.find(p=>p.id===ref.provider)??providers[0];
- // A model chosen earlier that the list no longer shows stays selectable rather than silently switching.
- const models=provider.models.some(m=>m.id===ref.model)?provider.models:[{id:ref.model,label:ref.model},...provider.models];
- const model=models.find(m=>m.id===ref.model);
- return <>
-  <GroupRow label="Ask provider" description={provider.available?provider.description:`Add ${provider.env} to the backend environment (.env) to use ${provider.label}.`}>
-   <Select label="Ask provider" value={provider.id} options={providers.map(p=>({value:p.id,label:p.available?p.label:`${p.label} · no key`,disabled:false}))} onChange={id=>{const next=providers.find(p=>p.id===id);if(next?.models[0])onChange(`${id}:${next.models[0].id}`);}}/>
-  </GroupRow>
-  <GroupRow label="Ask model" description={model?.description??`${models.length} models that can use tools.`}>
-   <Select label="Ask model" value={ref.model} options={models.map(m=>({value:m.id,label:m.label,disabled:false}))} onChange={id=>onChange(`${provider.id}:${id}`)}/>
-  </GroupRow>
- </>;
 }
 
 export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:AppState;capabilities:Capabilities;onChange:(p:Partial<Preferences>)=>void;notify:(t:string)=>void;shortcuts:()=>void}){
@@ -86,9 +65,6 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
     <GroupRow label="Microphone" description="Record instructions and questions. Audio is transcribed by Groq.">{devices.length?<Select label="Microphone" value={s.microphone} options={[['','Default input'],...devices.map(d=>[d.deviceId,d.label||'Microphone'] as [string,string])]} onChange={microphone=>onChange({microphone})}/>:<Button variant="secondary" size="sm" icon={Mic} loading={busy==='microphone'} onClick={()=>void microphones()}>Allow access</Button>}</GroupRow>
     {toggle('Send sound','Play a gentle sound after sending.','sendSound')}
    </Group>
-   <Group title="AI">
-    <AskModelSetting value={s.askModel} onChange={askModel=>onChange({askModel})}/>
-   </Group>
   </>}
   {tab==='Mail'&&<>
    <Group title="Triage & inbox">{choice('Triage direction','Arrow keys, swipe gestures and action positions.','triageDirection',[['done-right','Done → · ← Later'],['done-left','← Done · Later →']])}{toggle('Drag to triage','Drag an email or the open card sideways, or swipe with two fingers on your trackpad.','swipe')}</Group>
@@ -102,6 +78,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <Group title="Plans from your mail">{toggle('Automatically add plans','Groq detects meetings, reservations and flights during sync. Review your calendar regularly.','autoCalendar')}{toggle('Show Google’s Gmail events','Include events Google has created from your mail.','gmailEvents')}</Group>
    <Group title="Calendar access">{accountRows}<p className="group-note">Google and Outlook accounts include their calendars. iCloud calendars use the same app-specific password. Aplos never sends invitations without your action.</p></Group>
   </>}
+  {tab==='AI'&&<AiSettings value={s.askModel} groqReady={capabilities.groq} onChange={askModel=>onChange({askModel})}/>}
   {tab==='Notifications'&&<>
    <Group title="Desktop notifications">{toggle('Show notifications','Get a heads-up when new mail arrives.','notifications')}<GroupRow label="Test notification" description="Click the notification to return to Aplos."><Button variant="secondary" size="sm" loading={busy==='notification'} onClick={()=>void run('notification',()=>invoke('notification.test'))}>Send test</Button></GroupRow></Group>
    <Group title="For each account">{state.accounts.map(a=><GroupRow key={a.id} label={a.name} description={a.email}><Switch label={'Notifications for '+a.email} checked={s.accountNotifications[a.id]!==false} onChange={on=>onChange({accountNotifications:{...s.accountNotifications,[a.id]:on}})}/></GroupRow>)}</Group>

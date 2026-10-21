@@ -4,7 +4,7 @@ import type {Bridge,Listener} from '../shared/types';
 const allowed = new Set([
   'state.get','threads.page','capabilities.get','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',
   'thread.update','thread.undo','home.hide','search','draft.save','draft.delete','draft.send','draft.undoSend',
-  'ai.summarize','ai.polish','ai.draft','ai.ask','ai.models','ai.cancel','ai.transcribe','conversation.delete','workflow.status','workflow.enable','workflow.code','workflow.disable',
+  'ai.summarize','ai.polish','ai.draft','ai.ask','ai.models','ai.test','ai.cancel','ai.transcribe','conversation.delete','workflow.status','workflow.enable','workflow.code','workflow.disable',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
   'window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test',
   'system.login','system.defaultMail','system.microphone','app.info','symbols.render',
