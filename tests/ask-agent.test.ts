@@ -80,7 +80,7 @@ test('a tool-call round trip streams steps and text, cites only seen mail and pe
     const answer=result.messages.at(-1)!;
     assert.equal(answer.content,'Maya wants help planting herb beds on Saturday [^1] and invented .');
     assert.deepEqual(answer.citations,['garden']);
-    assert.equal(answer.model,'openai/gpt-oss-120b');
+    assert.equal(answer.model,'groq:openai/gpt-oss-120b');
     assert.deepEqual(answer.steps?.map(s=>[s.tool,s.label,s.status]),[['search_mail','Searched mail for “garden”','done']]);
     assert.ok((answer.steps![0].count??0)>=1);
     // The model got tools on the first call, the clock and view in the system prompt, and streamed.
@@ -243,4 +243,19 @@ test('the context budget trims old tool results and history before the current q
   assert.ok(messages.some(m=>m.role==='user'&&m.content==='latest question'));
   assert.match((messages.find(m=>m.role==='tool') as {content:string}).content,/trimmed/);
   assert.equal((messages.at(-1) as {content:string}).content,big,'the newest result is kept whole when it fits');
+});
+
+test('tool calls from one step run at the same time and come back in the order asked',async()=>{
+  const started:number[]=[];let last:ChatMessage[]=[];
+  const slow=(name:string,ms:number):AgentTool=>({spec:{name,description:'',parameters:{type:'object'}},label:()=>name,run:async()=>{started.push(Date.now());await new Promise(r=>setTimeout(r,ms));return {data:name};}});
+  let turn=0;
+  const chat=async(request:{messages:ChatMessage[]})=>{last=request.messages;return turn++===0
+    ?{content:'',toolCalls:[{id:'a',name:'mail',arguments:'{}'},{id:'b',name:'calendar',arguments:'{}'}]}
+    :{content:'Both done.',toolCalls:[]};};
+  const t0=Date.now();
+  const result=await runAgent({chat,model:'m',tools:[slow('mail',150),slow('calendar',150)],messages:[{role:'user',content:'q'}]});
+  assert.ok(Date.now()-t0<280,'the two 150 ms tools overlapped');
+  assert.ok(Math.abs(started[0]-started[1])<50);
+  assert.deepEqual(last.filter(m=>m.role==='tool').map(m=>[(m as {tool_call_id:string}).tool_call_id,m.content]),[['a','"mail"'],['b','"calendar"']]);
+  assert.deepEqual(result.steps.map(s=>s.label),['mail','calendar']);
 });

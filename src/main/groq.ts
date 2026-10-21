@@ -1,5 +1,6 @@
 import type { CalendarEvent, Draft, SuggestedAction, Thread } from '../shared/types';
-import type { ChatOptions, ChatRequest, ChatTurn } from '../engine/agent';
+import { providerRequest, readChatStream, streamChat } from './llm';
+export { readChatStream };
 import { threadLinks } from '../shared/mailbox';
 import { calendarEvent, draftProposal as proposal, localNow } from '../engine/proposals';
 export { threadLinks, localNow };
@@ -38,32 +39,10 @@ export function suggestedAction(value:unknown,thread:Thread,links=threadLinks(th
 export function createGroq(options:GroqOptions = {}) {
   const key=options.apiKey ?? process.env.GROQ_API_KEY;
   const request=options.fetch ?? fetch;
-  /** The checked response; errors never carry provider response bodies, only a known code where one helps. */
-  async function send(path:string,body:BodyInit,signal?:AbortSignal,json=true):Promise<Response> {
-    if(!key) throw new Error('Set GROQ_API_KEY in the main process to enable AI.');
-    let response:Response;
-    try {
-      response=await request(`https://api.groq.com/openai/v1/${path}`,{method:'POST',headers:{Authorization:`Bearer ${key}`,...(json?{'Content-Type':'application/json'}:{})},body,signal:AbortSignal.any([AbortSignal.timeout(90000),...(signal?[signal]:[])])});
-    } catch {
-      if(signal?.aborted) throw new Error('AI request cancelled.');
-      throw new Error('Groq could not complete the request. Check your connection and try again.');
-    }
-    if(!response.ok) {
-      if(response.status===401) throw new Error('Groq rejected the API key. Check GROQ_API_KEY.');
-      if(response.status===429) {
-        // Ask waits out a short limit window; other callers just report it.
-        const seconds=Number(response.headers.get('retry-after'));
-        // A long wait means a daily or larger quota, not the per-minute window.
-        const message=Number.isFinite(seconds)&&seconds>90?`Groq’s usage limit for this model is reached. Try again in about ${Math.ceil(seconds/60)} minutes, or choose another Ask model in Settings.`:'Groq rate limit reached. Please try again shortly.';
-        throw Object.assign(new Error(message),{code:'rate_limited',...(Number.isFinite(seconds)&&seconds>=0?{retryAfterMs:seconds*1000}:{})});
-      }
-      const code=await response.json().then(value=>(value as {error?:{code?:unknown}})?.error?.code,()=>undefined);
-      if(code==='tool_use_failed') throw Object.assign(new Error('Groq could not read a tool call. Please try again.'),{code});
-      if(code==='model_not_found'||code==='model_decommissioned'||response.status===404) throw new Error('This Groq model is not available right now. Choose another Ask model in Settings.');
-      throw new Error(`Groq request failed (${response.status}). Please try again.`);
-    }
-    return response;
-  }
+  const send=(path:string,body:BodyInit,signal?:AbortSignal,json=true)=>
+    providerRequest({name:'Groq',env:'GROQ_API_KEY',baseUrl:'https://api.groq.com/openai/v1',apiKey:key,fetch:request},path,body,signal,json);
+  const sendChat=(path:string,body:BodyInit,signal?:AbortSignal,headers?:Record<string,string>)=>
+    providerRequest({name:'Groq',env:'GROQ_API_KEY',baseUrl:'https://api.groq.com/openai/v1',apiKey:key,fetch:request},path,body,signal,true,'POST',headers);
   async function call(path:string,body:BodyInit,signal?:AbortSignal,json=true):Promise<Record<string,unknown>> {
     const response=await send(path,body,signal,json);
     try {return await response.json() as Record<string,unknown>;}
@@ -87,19 +66,7 @@ export function createGroq(options:GroqOptions = {}) {
   return {
     available:Boolean(key),
     /** One streamed chat/completions call with OpenAI-compatible tools; text arrives through `onText`. */
-    async chat(chat:ChatRequest,{signal,onText}:ChatOptions={}):Promise<ChatTurn> {
-      const body={model:chat.model,messages:chat.messages,stream:true,temperature:0.3,max_completion_tokens:chat.maxTokens??2048,
-        ...(chat.model.startsWith('openai/gpt-oss-')?{reasoning_effort:'low'}:{}),
-        ...(chat.tools?.length?{tools:chat.tools.map(t=>({type:'function',function:t})),tool_choice:chat.toolChoice??'auto'}:{})};
-      const response=await send('chat/completions',JSON.stringify(body),signal);
-      if(!response.body) throw new Error('Groq returned an invalid response. Please try again.');
-      try {return await readChatStream(response.body,onText,signal);}
-      catch(error) {
-        if(signal?.aborted) throw new Error('AI request cancelled.');
-        if((error as {code?:unknown}).code) throw error;
-        throw new Error('Groq stopped while answering. Please try again.');
-      }
-    },
+    chat:streamChat(sendChat,{name:'Groq',extra:request=>request.model.startsWith('openai/gpt-oss-')?{reasoning_effort:'low'}:{}}),
     async summarize(thread:Thread,signal?:AbortSignal):Promise<Partial<Thread>> {
       // Links and attachment names are offered so the model can point at one; validation below keeps it to these.
       const links=threadLinks(thread),attachments=thread.messages.flatMap(m=>m.attachments.map(a=>({id:a.id.slice(0,300),name:a.name.slice(0,200),type:a.type.slice(0,100)}))).slice(0,20);
@@ -140,49 +107,3 @@ export function createGroq(options:GroqOptions = {}) {
   };
 }
 export type GroqAdapter = ReturnType<typeof createGroq>;
-
-/**
- * Reads an OpenAI-style SSE completion: text deltas go to `onText`; tool calls are assembled by index
- * whether they arrive whole or in fragments. `finish_reason` is not required (Groq sometimes omits it).
- */
-export async function readChatStream(body:ReadableStream<Uint8Array>,onText?:(text:string)=>void,signal?:AbortSignal):Promise<ChatTurn> {
-  const reader=body.getReader(),decoder=new TextDecoder();
-  let buffer='',content='',finishReason:string|undefined,usage:ChatTurn['usage'];
-  const calls:{id?:string;name:string;arguments:string}[]=[];
-  const line=(raw:string)=>{
-    if(!raw.startsWith('data:'))return;
-    const data=raw.slice(5).trim();if(!data||data==='[DONE]')return;
-    let chunk:Record<string,any>;try{chunk=JSON.parse(data);}catch{return;}
-    const error=chunk.error??chunk.x_groq?.error;
-    if(error)throw Object.assign(new Error('Groq stopped while answering.'),typeof error==='object'&&error?.code==='tool_use_failed'?{code:'tool_use_failed'}:{});
-    const counted=chunk.x_groq?.usage??chunk.usage;
-    if(counted&&typeof counted.prompt_tokens==='number')usage={prompt:counted.prompt_tokens,completion:Number(counted.completion_tokens)||0};
-    const choice=chunk.choices?.[0];if(!choice)return;
-    const delta=choice.delta??{};
-    if(typeof delta.content==='string'&&delta.content){content+=delta.content;onText?.(delta.content);}
-    for(const part of Array.isArray(delta.tool_calls)?delta.tool_calls:[]){
-      const index=Number.isInteger(part?.index)?part.index:calls.length;
-      const call=calls[index]??={name:'',arguments:''};
-      if(typeof part.id==='string')call.id=part.id;
-      if(typeof part.function?.name==='string')call.name+=part.function.name;
-      if(typeof part.function?.arguments==='string')call.arguments+=part.function.arguments;
-    }
-    if(typeof choice.finish_reason==='string')finishReason=choice.finish_reason;
-  };
-  let stop:(()=>void)|undefined;
-  const aborted=signal?new Promise<never>((_,reject)=>{stop=()=>reject(new Error('AI request cancelled.'));if(signal.aborted)stop();else signal.addEventListener('abort',stop,{once:true});}):undefined;
-  aborted?.catch(()=>{});
-  try{
-    for(;;){
-      const {done,value}=await (aborted?Promise.race([reader.read(),aborted]):reader.read());
-      if(done)break;
-      buffer+=decoder.decode(value,{stream:true});
-      for(let at=buffer.indexOf('\n');at>=0;at=buffer.indexOf('\n')){line(buffer.slice(0,at).replace(/\r$/,''));buffer=buffer.slice(at+1);}
-    }
-    buffer+=decoder.decode();if(buffer.trim())line(buffer.trim());
-  }finally{
-    if(stop)signal?.removeEventListener('abort',stop);
-    void reader.cancel().catch(()=>{});
-  }
-  return {content,toolCalls:calls.filter(c=>c&&c.name).map((c,i)=>({id:c.id??`call_${i}`,name:c.name,arguments:c.arguments})),finishReason,...(usage?{usage}:{})};
-}

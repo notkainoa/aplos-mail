@@ -1,5 +1,6 @@
 import type { Account, AppState, CalendarEvent, Draft, Thread } from '../shared/types';
 import type { Chat } from './agent';
+import type { AskModelInfo, AskProviderId } from '../shared/ask';
 import type { MailProvider, ProviderKind, ProviderMemory } from './provider';
 import type { MailStore, MemoryWrite, OpChanges, SaveExtras, StoreDiff } from './store';
 import type { WorkflowPatch } from './workflow';
@@ -33,6 +34,9 @@ export interface Intelligence {
   transcribe(audio:string,mimeType:string,signal?:AbortSignal):Promise<{text:string}>;
 }
 
+/** A provider Ask can run on. `models` lists what it currently offers for tool use. */
+export interface ChatProvider { readonly available:boolean; chat:Chat; models?(signal?:AbortSignal):Promise<AskModelInfo[]> }
+
 /** The encrypted workflow transport is injected together with its platform vault and crypto. */
 export interface WorkflowSync {
   readonly enabled:boolean;
@@ -50,6 +54,8 @@ export interface EngineOptions {
   providers:Partial<Record<ProviderKind,MailProvider>>;
   brokenProviders?:Map<ProviderKind,string>;
   groq:Intelligence;
+  /** Ask's other providers; Groq's comes from `groq`. */
+  chats?:Partial<Record<AskProviderId,ChatProvider>>;
   workflow?:WorkflowSync;
   workflowError?:string;
   /** Whether the injected workflow vault has secure credential storage. */

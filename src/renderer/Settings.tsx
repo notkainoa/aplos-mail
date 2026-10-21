@@ -6,7 +6,7 @@ import {Avatar,Badge,Button,Group,GroupRow,Notice,Select,Switch,Tabs,Tooltip,con
 import {AddAccountDialog} from './components/AddAccount';
 import {DomainCheck} from './components/DomainCheck';
 import {DeviceSync} from './components/DeviceSync';
-import {askModels} from '../shared/ask';
+import {askProviders,defaultAskModel,parseAskModel,type AskModelInfo,type AskProviderId} from '../shared/ask';
 
 const categories=['General','Mail','Calendar','Notifications','Accounts','Help & about'] as const;
 export type SettingsCategory=typeof categories[number];
@@ -27,6 +27,27 @@ function SignatureField({value,onSave}:{value:string;onSave:(value:string)=>void
  useEffect(()=>{if(pending.current===null)return;const timer=setTimeout(flush,600);return()=>clearTimeout(timer);},[text,flush]);
  useEffect(()=>flush,[flush]);
  return <textarea className="signature-setting" aria-label="Email signature" rows={4} value={text} placeholder={'Your name\nA line or two about you'} onFocus={()=>{focused.current=true;}} onBlur={()=>{focused.current=false;flush();}} onChange={e=>{pending.current=e.target.value;setText(e.target.value);}}/>;
+}
+
+type AskCatalog={id:AskProviderId;label:string;env:string;description:string;available:boolean;models:AskModelInfo[]}[];
+/** Ask's provider and model. Lists come from the engine (live where the provider publishes one); keys stay in the backend. */
+function AskModelSetting({value,onChange}:{value:string;onChange:(value:string)=>void}){
+ const [catalog,setCatalog]=useState<AskCatalog>();
+ useEffect(()=>{let live=true;void invoke<AskCatalog>('ai.models').then(list=>{if(live)setCatalog(list);}).catch(()=>{});return()=>{live=false;};},[]);
+ const providers:AskCatalog=catalog??askProviders.map(p=>({...p,models:[...p.models],available:true}));
+ const ref=parseAskModel(value)??parseAskModel(defaultAskModel)!;
+ const provider=providers.find(p=>p.id===ref.provider)??providers[0];
+ // A model chosen earlier that the list no longer shows stays selectable rather than silently switching.
+ const models=provider.models.some(m=>m.id===ref.model)?provider.models:[{id:ref.model,label:ref.model},...provider.models];
+ const model=models.find(m=>m.id===ref.model);
+ return <>
+  <GroupRow label="Ask provider" description={provider.available?provider.description:`Add ${provider.env} to the backend environment (.env) to use ${provider.label}.`}>
+   <Select label="Ask provider" value={provider.id} options={providers.map(p=>({value:p.id,label:p.available?p.label:`${p.label} · no key`,disabled:false}))} onChange={id=>{const next=providers.find(p=>p.id===id);if(next?.models[0])onChange(`${id}:${next.models[0].id}`);}}/>
+  </GroupRow>
+  <GroupRow label="Ask model" description={model?.description??`${models.length} models that can use tools.`}>
+   <Select label="Ask model" value={ref.model} options={models.map(m=>({value:m.id,label:m.label,disabled:false}))} onChange={id=>onChange(`${provider.id}:${id}`)}/>
+  </GroupRow>
+ </>;
 }
 
 export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:AppState;capabilities:Capabilities;onChange:(p:Partial<Preferences>)=>void;notify:(t:string)=>void;shortcuts:()=>void}){
@@ -66,7 +87,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
     {toggle('Send sound','Play a gentle sound after sending.','sendSound')}
    </Group>
    <Group title="AI">
-    {choice('Ask model',`${askModels.find(m=>m.id===s.askModel)?.description??askModels[0].description} All AI runs on Groq.`,'askModel',askModels.map(m=>[m.id,m.label] as [string,string]))}
+    <AskModelSetting value={s.askModel} onChange={askModel=>onChange({askModel})}/>
    </Group>
   </>}
   {tab==='Mail'&&<>
@@ -92,7 +113,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <div className="about-card"><span className={'app-icon large '+s.icon}>a</span><h2>Aplos Mail</h2><p>A little less inbox. A little more life.</p><span className="version">Version {capabilities.version} · {capabilities.desktop?'macOS desktop':'Browser preview'}</span></div>
    <Group title="A few useful things">
     <GroupRow label="Keyboard shortcuts" description="Make light work of your inbox."><Button variant="secondary" size="sm" icon={Keyboard} shortcut="?" onClick={shortcuts}>View shortcuts</Button></GroupRow>
-    <GroupRow label="AI connection" description="Only Groq is used for AI and transcription."><Badge tone={capabilities.groq?'green':'amber'}>{capabilities.groq?'Groq configured':'GROQ_API_KEY needed'}</Badge></GroupRow>
+    <GroupRow label="AI connection" description="Groq runs summaries, polish and transcription. Ask can also use OpenRouter or OpenCode Go."><Badge tone={capabilities.groq?'green':'amber'}>{capabilities.groq?'Groq configured':'GROQ_API_KEY needed'}</Badge></GroupRow>
     <GroupRow label="Updates" description="This personal build updates when you rebuild the app."><span className="muted small">Local development build</span></GroupRow>
     <GroupRow label="Export local data" description="Includes your cached mail and drafts. Keep it somewhere private."><Button variant="secondary" size="sm" icon={Download} loading={busy==='export'} onClick={()=>void run('export',async()=>{const data=await invoke<string>('data.export');await saveFile('aplos-export.json',btoa(unescape(encodeURIComponent(data))));notify('Export prepared');})}>Export</Button></GroupRow>
     <GroupRow label="Reset demo mail" description="Replace local demo accounts with fresh original examples."><Button variant="danger" size="sm" loading={busy==='reset'} onClick={async()=>{if(await confirmAction({title:'Reset demo mail?',message:'Demo accounts and demo drafts return to their original examples. Connected accounts are preserved.',confirmLabel:'Reset demo',danger:true}))void run('reset',()=>invoke('demo.reset'));}}>Reset demo</Button></GroupRow>

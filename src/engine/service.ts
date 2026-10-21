@@ -11,7 +11,7 @@ import type { EngineOptions, MemoryStage } from './ports';
 import { runAgent } from './agent';
 import { createAskSession, type AskProgress } from './ask';
 import { localNow } from './proposals';
-import { askModelIds, defaultAskModel } from '../shared/ask';
+import { askProvider, askProviders, defaultAskModel, parseAskModel } from '../shared/ask';
 
 // The alphabet/padding has already been validated before this size calculation.
 const base64Bytes=(value:string)=>Math.floor(value.replace(/=+$/,'').length*3/4);
@@ -104,7 +104,7 @@ function threadPatch(raw:unknown):Partial<Thread> {
 }
 function settingsPatch(raw:unknown):Partial<Settings> {
   const source=object(raw),patch:Partial<Settings>={};
-  const choices:Partial<Record<keyof Settings,readonly string[]>>={theme:['light','dark','system'],sidebarStyle:['normal','minimized'],triageDirection:['done-right','done-left'],doneAction:['archive','read','unread'],laterAction:['archive','read','unread'],lowAction:['archive','read','unread'],defaultReply:['reply','reply-all'],signatureMode:['always','new','never'],icon:['ink','sage','clay'],askModel:askModelIds};
+  const choices:Partial<Record<keyof Settings,readonly string[]>>={theme:['light','dark','system'],sidebarStyle:['normal','minimized'],triageDirection:['done-right','done-left'],doneAction:['archive','read','unread'],laterAction:['archive','read','unread'],lowAction:['archive','read','unread'],defaultReply:['reply','reply-all'],signatureMode:['always','new','never'],icon:['ink','sage','clay']};
   for(const key of Object.keys(defaultSettings) as (keyof Settings)[]) {
     if(!(key in source)) continue;
     const val=source[key];
@@ -116,6 +116,8 @@ function settingsPatch(raw:unknown):Partial<Settings> {
     } else if(key==='accountNotifications') {
       const entries=object(val); if(Object.values(entries).some(v=>typeof v!=='boolean')) throw new Error('Invalid notification preferences.');
       patch.accountNotifications=Object.fromEntries(Object.entries(entries).map(([k,v])=>[text(k,200),v]));
+    } else if(key==='askModel') {
+      const ref=parseAskModel(val); if(!ref) throw new Error('Choose an Ask model.'); patch.askModel=`${ref.provider}:${ref.model}`;
     } else (patch as any)[key]=text(val,key==='signature'?20_000:1_000);
   }
   return patch;
@@ -184,8 +186,8 @@ export async function createEngineService(options:EngineOptions) {
   // Split view and the top bar layout were removed; drop their old settings from stored state.
   delete (state.settings as Settings&{openMode?:unknown}).openMode;
   delete (state.settings as Settings&{layout?:unknown}).layout;
-  // An Ask model Groq retired (or this build no longer offers) falls back to the default.
-  if(!askModelIds.includes(state.settings.askModel))state.settings.askModel=defaultAskModel;
+  // Ask models are `provider:model`; a bare Groq ID from an earlier build keeps working, anything unreadable falls back.
+  {const ref=parseAskModel(state.settings.askModel);state.settings.askModel=ref?`${ref.provider}:${ref.model}`:defaultAskModel;}
   state.sync={...state.sync,busy:false};
   for(const thread of state.threads)if(thread.dueDate)thread.dueDate=dateOnly(thread.dueDate);
   migrateLegacy(state);
@@ -742,15 +744,30 @@ export async function createEngineService(options:EngineOptions) {
           clock:localNow(timeZone,now()),view,threadId:openId,selectedIds,draft,
           userText:conversation.messages.filter(m=>m.role==='user').map(m=>m.content).join('\n'),
         });
-        const model=state.settings.askModel;
+        const choice=parseAskModel(state.settings.askModel)??parseAskModel(defaultAskModel)!,provider=askProvider(choice.provider);
+        const transport=choice.provider==='groq'?{available:groq.available,chat:groq.chat}:options.chats?.[choice.provider];
+        if(!transport?.available)throw new Error(`Add ${provider.env} to the backend environment to use ${provider.label}, or choose another Ask model in Settings.`);
+        const model=`${choice.provider}:${choice.model}`;
         const progress=session.stream((event:AskProgress)=>emit('ai.progress',{requestId,...event}));
-        const result=await ai({...p,requestId},signal=>runAgent({chat:groq.chat,model,signal,tools:session.tools,onEvent:progress.onEvent,budget:48_000,
+        const result=await ai({...p,requestId},signal=>runAgent({chat:transport.chat,model:choice.model,session:conversation.id,signal,tools:session.tools,onEvent:progress.onEvent,
+          // Groq's free tier counts every token per minute, so its requests stay smaller.
+          budget:choice.provider==='groq'?48_000:100_000,
           messages:[{role:'system',content:session.system()},...session.history(earlier),{role:'user',content:message}]})).finally(()=>progress.close());
         // Token use per answer, for live checks against Groq's per-minute limits; the panel ignores it.
         emit('ai.progress',{requestId,type:'usage',...result.usage});
         const answer=session.finish(result,model,message);
         conversation.messages.push(answer);conversation.updatedAt=now().toISOString();
         change(s=>{s.conversations=s.conversations.filter(c=>c.id!==conversation!.id);s.conversations.push(conversation!);});return clone(conversation);
+      }
+      case 'ai.models':{
+        // What Settings can offer: each provider, whether its key is set, and the tool-capable models it lists now.
+        return Promise.all(askProviders.map(async info=>{
+          const transport=info.id==='groq'?undefined:options.chats?.[info.id];
+          const available=info.id==='groq'?groq.available:!!transport?.available;
+          let models=[...info.models];
+          if(transport?.models)try{const live=await transport.models();if(live.length)models=live;}catch{/* The curated list still works offline. */}
+          return {id:info.id,label:info.label,env:info.env,description:info.description,available,models};
+        }));
       }
       case 'ai.transcribe':{
         const audio=text(p.audio,35_000_000);if(!audio||!/^[A-Za-z0-9+/]*={0,2}$/.test(audio)||base64Bytes(audio)>25*1024*1024)throw new Error('Audio must be a base64 recording smaller than 25 MB.');

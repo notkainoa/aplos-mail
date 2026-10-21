@@ -3,7 +3,7 @@ import {CalendarDays,Clock,CornerDownLeft,FileText,Gear,History,Home,Keyboard,Me
 import {Avatar,Button,IconButton,Kbd,Keys,Notice,Spinner,Tooltip,confirmAction,cx,dialogOpen,type Icon} from './ui';
 import type {Account,AskStep,CalendarEvent,Conversation,Draft,Settings,Thread} from '../shared/types';
 import {bridge,dateLabel,invoke,uid} from './bridge';
-import {askModels} from '../shared/ask';
+import {askModelLabel} from '../shared/ask';
 import {AskDraftCard,AskSources,AskSteps,AskTriageCard,Prose} from './AskAnswer';
 import {useVoice} from './useVoice';
 import {LevelMeter} from './LevelMeter';
@@ -172,7 +172,7 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
   const recording=voice.recording||voice.preparing;const transcribing=voice.busy&&!voice.preparing;
   const chat=!!conversation||busy;const activeItem=items[active];
   const byId=useMemo(()=>new Map(threads.map(t=>[t.id,t])),[threads]);
-  const modelName=askModels.find(m=>m.id===settings.askModel)?.label??askModels[0].label;
+  const modelName=useMemo(()=>{const label=askModelLabel(settings.askModel);return `${label.provider} ${label.model}`;},[settings.askModel]);
   const body=history?<div className="ask-history">{conversations.length===0&&<p className="ask-empty">A fresh start. Ask your first question.</p>}{[...conversations].reverse().map(c=><div className="ask-history-row" key={c.id}><button onClick={()=>{setId(c.id);setHistory(false);field.current?.focus();}}><History size={14}/><span>{c.title}</span></button><IconButton size="xs" label="Delete conversation" aria-label={'Delete conversation '+c.title} icon={Trash2} disabled={busy} onClick={()=>{void invoke('conversation.delete',{id:c.id}).then(()=>{if(id===c.id)setId(undefined);}).catch(e=>notify(e.message));}}/></div>)}</div>
     :items.length?<div className="ask-list" role="listbox" aria-label={query?'Matches':'Suggestions'}>
       {!query&&<p className="ask-welcome">Hold <Kbd size="sm">A</Kbd> anywhere to talk, release to ask.</p>}
@@ -226,6 +226,6 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
       <IconButton className="ask-collapse" label="Close Ask" shortcut="⌘ J" icon={X} onClick={onClose}/>
     </div>
     <div ref={scroller} className="ask-scroll">{body}</div>
-    {chat&&<p className="ask-footnote">Answers use the selected mailbox · Groq {modelName}</p>}
+    {chat&&<p className="ask-footnote">Answers use the selected mailbox · {modelName}</p>}
   </aside>;
 });

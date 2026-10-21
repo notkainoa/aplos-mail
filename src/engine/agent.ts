@@ -13,7 +13,8 @@ export type ChatMessage =
   | {role:'system'|'user'; content:string}
   | {role:'assistant'; content:string|null; tool_calls?:{id:string;type:'function';function:{name:string;arguments:string}}[]}
   | {role:'tool'; tool_call_id:string; name:string; content:string};
-export interface ChatRequest { model:string; messages:ChatMessage[]; tools?:ToolSpec[]; toolChoice?:'auto'|'none'; maxTokens?:number }
+/** `session` is a stable ID per conversation, for providers that route or cache by it. */
+export interface ChatRequest { model:string; messages:ChatMessage[]; tools?:ToolSpec[]; toolChoice?:'auto'|'none'; maxTokens?:number; session?:string }
 export interface ChatTurn { content:string; toolCalls:ToolCall[]; finishReason?:string; usage?:{prompt:number;completion:number} }
 export interface ChatOptions { signal?:AbortSignal; onText?:(text:string)=>void }
 export type Chat = (request:ChatRequest,options:ChatOptions)=>Promise<ChatTurn>;
@@ -30,7 +31,7 @@ export class ToolError extends Error {}
 
 export type AgentEvent = {type:'text';text:string}|{type:'reset'}|{type:'step';step:AskStep};
 export interface AgentOptions {
-  chat:Chat; model:string; messages:ChatMessage[]; tools:AgentTool[];
+  chat:Chat; model:string; messages:ChatMessage[]; tools:AgentTool[]; session?:string;
   signal?:AbortSignal;
   /** Model calls, including the final answer. The last one is made without tools. */
   maxSteps?:number;
@@ -77,7 +78,7 @@ function parseArgs(raw:string):Record<string,unknown>|undefined {
 
 export async function runAgent(options:AgentOptions):Promise<AgentResult> {
   const {chat,model,tools,onEvent}=options;
-  const maxSteps=Math.max(1,options.maxSteps??6),maxCalls=options.maxCallsPerStep??4,budget=options.budget??120_000;
+  const maxSteps=Math.max(1,options.maxSteps??6),maxCalls=options.maxCallsPerStep??6,budget=options.budget??120_000;
   const totalMs=options.totalTimeoutMs??120_000,deadline=Date.now()+totalMs,total=AbortSignal.timeout(totalMs);
   const messages=[...options.messages];const historyEnd=Math.max(1,messages.findLastIndex(m=>m.role==='user'));
   const specs=tools.map(t=>t.spec),byName=new Map(tools.map(t=>[t.spec.name,t]));
@@ -100,7 +101,7 @@ export async function runAgent(options:AgentOptions):Promise<AgentResult> {
     const signal=AbortSignal.any([total,stepSignal,...(options.signal?[options.signal]:[])]);
     let streamed=false,turn:ChatTurn;
     try{
-      turn=await chat({model,messages,...(specs.length?{tools:specs,toolChoice:last?'none':'auto'}:{})},{signal,onText:text=>{if(!text)return;streamed=true;onEvent?.({type:'text',text});}});
+      turn=await chat({model,messages,...(options.session?{session:options.session}:{}),...(specs.length?{tools:specs,toolChoice:last?'none':'auto'}:{})},{signal,onText:text=>{if(!text)return;streamed=true;onEvent?.({type:'text',text});}});
     }catch(error){
       if(streamed)onEvent?.({type:'reset'});
       // Groq's free tier allows a few thousand tokens a minute; wait out the window when it fits in the time left, then repeat this step.
@@ -126,34 +127,32 @@ export async function runAgent(options:AgentOptions):Promise<AgentResult> {
     if(last){if(turn.content.trim())return {content:turn.content.trim(),steps,usage};break;}
     const calls=turn.toolCalls.map((c,i)=>({...c,id:c.id||`call_${index}_${i}`}));
     messages.push({role:'assistant',content:turn.content||null,tool_calls:calls.map(c=>({id:c.id,type:'function' as const,function:{name:c.name,arguments:c.arguments||'{}'}}))});
-    for(const [i,call] of calls.entries()){
-      const id=`s${++callCount}`,tool=byName.get(call.name),args=parseArgs(call.arguments);
-      let content:string;
-      if(i>=maxCalls){content=JSON.stringify({error:`Only ${maxCalls} tool calls are run per step. Call the rest next.`});}
-      else if(!tool){content=JSON.stringify({error:`Unknown tool "${call.name.slice(0,60)}". Use only the listed tools.`});step({id,tool:'unknown',label:'Tried an unknown tool',status:'error'});}
-      else if(!args){content=JSON.stringify({error:'Arguments must be a JSON object matching the tool schema.'});step({id,tool:call.name,label:tool.label({}),status:'error'});}
-      else{
-        const key=call.name+JSON.stringify(args),label=tool.label(args);
-        const repeat=seen.get(key);
-        if(repeat){content=repeat;}
-        else{
-          step({id,tool:call.name,label,status:'running'});
-          try{
-            const result=await tool.run(args,AbortSignal.any([total,...(options.signal?[options.signal]:[])]));
-            content=JSON.stringify(result.data??null);
-            if(content.length>RESULT_LIMIT)content=content.slice(0,RESULT_LIMIT)+'…(truncated)';
-            seen.set(key,content);
-            step({id,tool:call.name,label:result.label??label,...(result.count!==undefined?{count:result.count}:{}),status:'done'});
-          }catch(error){
-            if(options.signal?.aborted||total.aborted)return fail(stepSignal,error);
-            // Tool problems go back to the model so it can correct the call; nothing internal leaks.
-            content=JSON.stringify({error:error instanceof ToolError?error.message:'This tool failed. Try again differently or answer with what you have.'});
-            step({id,tool:call.name,label,status:'error'});
-          }
-        }
+    // Independent calls from one step run at the same time; results go back in the order the model asked.
+    const toolSignal=AbortSignal.any([total,...(options.signal?[options.signal]:[])]);
+    const run=async(call:typeof calls[number],i:number,id:string):Promise<string>=>{
+      const tool=byName.get(call.name),args=parseArgs(call.arguments);
+      if(i>=maxCalls)return JSON.stringify({error:`Only ${maxCalls} tool calls are run per step. Call the rest next.`});
+      if(!tool){step({id,tool:'unknown',label:'Tried an unknown tool',status:'error'});return JSON.stringify({error:`Unknown tool "${call.name.slice(0,60)}". Use only the listed tools.`});}
+      if(!args){step({id,tool:call.name,label:tool.label({}),status:'error'});return JSON.stringify({error:'Arguments must be a JSON object matching the tool schema.'});}
+      const key=call.name+JSON.stringify(args),label=tool.label(args);
+      const repeat=seen.get(key);if(repeat)return repeat;
+      step({id,tool:call.name,label,status:'running'});
+      try{
+        const result=await tool.run(args,toolSignal);
+        let content=JSON.stringify(result.data??null);
+        if(content.length>RESULT_LIMIT)content=content.slice(0,RESULT_LIMIT)+'…(truncated)';
+        seen.set(key,content);
+        step({id,tool:call.name,label:result.label??label,...(result.count!==undefined?{count:result.count}:{}),status:'done'});
+        return content;
+      }catch(error){
+        if(toolSignal.aborted)return fail(stepSignal,error);
+        // Tool problems go back to the model so it can correct the call; nothing internal leaks.
+        step({id,tool:call.name,label,status:'error'});
+        return JSON.stringify({error:error instanceof ToolError?error.message:'This tool failed. Try again differently or answer with what you have.'});
       }
-      messages.push({role:'tool',tool_call_id:call.id,name:call.name,content});
-    }
+    };
+    const results=await Promise.all(calls.map((call,i)=>run(call,i,`s${++callCount}`)));
+    calls.forEach((call,i)=>messages.push({role:'tool',tool_call_id:call.id,name:call.name,content:results[i]}));
   }
   return {content:'I couldn’t finish looking this up within the step limit. Try a narrower question.',steps,stopped:'max-steps',usage};
 }

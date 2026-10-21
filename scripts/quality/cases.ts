@@ -4,10 +4,9 @@ import type { Thread } from '../../src/shared/types';
 import { runAgent } from '../../src/engine/agent';
 import { createAskSession } from '../../src/engine/ask';
 import { localNow } from '../../src/engine/proposals';
-import { defaultAskModel } from '../../src/shared/ask';
 
-/** The Ask model under evaluation; GROQ_ASK_MODEL picks another verified one. */
-export const askModel=process.env.GROQ_ASK_MODEL??defaultAskModel;
+/** The Groq model Ask is evaluated with; GROQ_ASK_MODEL picks another verified one. */
+export const askModel=process.env.GROQ_ASK_MODEL??'openai/gpt-oss-120b';
 /** Ask's real agent loop and tools over synthetic threads, with a plain word search standing in for the index. */
 async function ask(ai:GroqAdapter,question:string,threads:Thread[]) {
   const words=(query:string)=>query.toLowerCase().split(/\s+/).filter(w=>w&&!w.includes(':'));

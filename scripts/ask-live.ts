@@ -6,17 +6,17 @@ import type { Conversation } from '../src/shared/types';
 import { createService } from '../src/main/service';
 import { createGoogle } from '../src/main/google';
 import { createGroq } from '../src/main/groq';
-import { askModelIds } from '../src/shared/ask';
+import { defaultAskModel, parseAskModel } from '../src/shared/ask';
 
 /**
  * An explicit live check of Ask's agent loop against Groq on fresh original demo mail in a temporary
- * folder. Nothing is sent and no real mailbox is touched. Usage: npm run eval:ask -- --model=openai/gpt-oss-20b
+ * folder. Nothing is sent and no real mailbox is touched. Usage: npm run eval:ask -- --model=openrouter:anthropic/claude-haiku-5.5
+ * (provider:model; Groq is the default and the key for the chosen provider must be in the environment).
  */
 config({quiet:true});
 const groq=createGroq();
-if(!groq.available)throw new Error('Set GROQ_API_KEY in the backend environment to run the live Ask check.');
-const model=process.argv.find(a=>a.startsWith('--model='))?.slice(8)??askModelIds[0];
-if(!askModelIds.includes(model))throw new Error(`Choose one of: ${askModelIds.join(', ')}`);
+const model=process.argv.find(a=>a.startsWith('--model='))?.slice(8)??defaultAskModel;
+if(!parseAskModel(model))throw new Error('Give --model as provider:model, e.g. groq:openai/gpt-oss-120b.');
 const dataDir=await mkdtemp(join(tmpdir(),'aplos-ask-live-'));
 const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq});
 let usage:{calls?:number;prompt?:number;completion?:number}={};
