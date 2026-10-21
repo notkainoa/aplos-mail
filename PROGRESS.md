@@ -309,3 +309,6 @@ Added a Navigation setting with a new default top bar layout: account switcher, 
 
 ## Top bar removed (2026-10-21)
 Reverted the top bar layout (TopNav, corner tools, Navigation setting, styles); the sidebar is back as the only layout. Kept the Home reply rules and the sidebar without Needs reply/Awaiting reply. Verified: typecheck, 165 tests, headless screenshot of Home with the sidebar.
+
+## Minimized sidebar (2026-10-21)
+Added a Sidebar setting (Normal/Minimized). Minimized hides the sidebar and puts its contents in a compact menu behind a ☰ button at the top left; menu items can show counts. Verified: typecheck, 165 tests, headless screenshots of the menu (dark, light, 820px) and Settings, and `[` opening the menu.

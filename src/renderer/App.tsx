@@ -9,7 +9,7 @@ import {Ask} from './Ask';
 import {Reader,type CardDrag} from './Reader';
 import {Calendar,EventEditor} from './Calendar';
 import {Settings} from './Settings';
-import {Sidebar,sections} from './components/Sidebar';
+import {Sidebar,SidebarMenu,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
 import {DraftList,MailSection,actionIcon,highlightTerms,nudgeFocus,prepareFocusMove,useFocusGlide,type RowActions,type RowHandlers,type Triage} from './components/MailList';
 import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog,WelcomeDialog} from './components/Overlays';
@@ -293,7 +293,7 @@ export function App(){
   else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();moveCursor(e.key==='ArrowDown'?1:-1);}
   else if(e.key==='Enter'&&!e.nativeEvent.isComposing){const target=focused;if(target){e.preventDefault();rememberSearch(search);openThread(target.id);}}
  }
- function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':if(!popoutThread&&!popoutDraft)setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':if(squeezed)setPeek(v=>!v);else void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
+ function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':if(!popoutThread&&!popoutDraft)setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':if(state?.settings.sidebarStyle==='minimized'){document.querySelector<HTMLElement>('.sidebar-menu-trigger')?.click();break;}if(squeezed)setPeek(v=>!v);else void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
  eventHandler.current=event=>{
   if(event.type==='state')live.snapshot(event.payload as AppState);
   else if(event.type==='changes')live.apply(event.payload as StateChanges);
@@ -352,7 +352,7 @@ export function App(){
   if(prev===null||prev===left||reducedMotion())return;
   workspaceSlide.current?.cancel();
   workspaceSlide.current=el.animate([{transform:`translateX(${prev-left}px)`},{transform:'none'}],{duration:200,easing:'cubic-bezier(.16,1,.3,1)'});
- },[!!state,squeezed,peek,state?.settings.sidebar]);
+ },[!!state,squeezed,peek,state?.settings.sidebar,state?.settings.sidebarStyle]);
  // Keep the focused card at a steady place and glide between cards.
  useFocusGlide(listRef,focusId,listShown);
 
@@ -419,7 +419,9 @@ export function App(){
  const listView=!['settings','calendar'].includes(route.view);
  const swipe=<Button variant="pill" icon={Layers} shortcut="S" onClick={()=>{if(order[0])openThread(order[0].id);}}>Swipe through them</Button>;
  const composerLayer=!!composer&&!inlineReply;
- const sidebarHidden=!!popoutThread||(squeezed?!peek:!prefs.sidebar);const peeking=squeezed&&peek&&!popoutThread;
+ // Minimized, the sidebar is gone and its contents live in a menu at the top left.
+ const minimized=prefs.sidebarStyle==='minimized'&&!popoutThread;
+ const sidebarHidden=!!popoutThread||minimized||(squeezed?!peek:!prefs.sidebar);const peeking=squeezed&&peek&&!popoutThread&&!minimized;
  const view=route.view;
  const thread=menuThread;
 
@@ -432,10 +434,11 @@ export function App(){
 
  return <div className={cx('app-shell',window.aplos&&'desktop',mac&&'mac',sidebarHidden&&'sidebar-hidden',peeking&&'sidebar-peek',ask&&!popoutThread&&'with-ask')}>
  {peeking&&<div className="sidebar-scrim" onPointerDown={()=>setPeek(false)}/>}
- {!popoutThread&&<div className="sidebar-slot" inert={sidebarHidden||undefined} onKeyDown={e=>{if(peeking&&e.key==='Escape'){e.stopPropagation();setPeek(false);}}}><Sidebar state={state} view={searchMode?null:route.view} counts={counts} zen={prefs.zen} online={online} syncing={syncing}
+ {!popoutThread&&!minimized&&<div className="sidebar-slot" inert={sidebarHidden||undefined} onKeyDown={e=>{if(peeking&&e.key==='Escape'){e.stopPropagation();setPeek(false);}}}><Sidebar state={state} view={searchMode?null:route.view} counts={counts} zen={prefs.zen} online={online} syncing={syncing}
   canBack={historyIndex>0} canForward={historyIndex<routes.length-1} {...sidebarActions}/></div>}
  <main className="workspace" ref={workspaceRef}>
- <Topbar showSidebarButton={sidebarHidden&&!popoutThread} showBack={!!selectedThread&&!popoutThread} showActions={!popoutThread}
+ <Topbar menu={minimized&&<SidebarMenu state={state} view={searchMode?null:route.view} counts={counts} zen={prefs.zen} online={online} syncing={syncing} navigate={sidebarActions.navigate} sync={sidebarActions.sync} selectAccount={sidebarActions.selectAccount} shortcuts={sidebarActions.shortcuts} onError={sidebarActions.onError}/>}
+  showSidebarButton={sidebarHidden&&!popoutThread} showBack={!!selectedThread&&!popoutThread} showActions={!popoutThread}
   showAsk={!ask}
   composeBusy={busy==='draft'||busy==='reply'} {...topbarActions}/>
  {state.sync.error&&<div className="sync-error"><WifiOff size={14}/><span>{state.sync.error}</span><Button variant="text" size="sm" onClick={()=>void sync()}>Retry</Button></div>}
@@ -471,7 +474,7 @@ export function App(){
   [{label:'Move to Spam',icon:ShieldAlert,onSelect:()=>triage(thread,'spam')},{label:'Move to Trash',icon:Trash2,keys:'#',danger:true,onSelect:()=>triage(thread,'trash')}],
  ]:[]}/>
  {eventEditor&&<EventEditor key={eventEditor.id||eventEditor.title||'new'} event={eventEditor} accounts={state.accounts} onClose={()=>setEventEditor(null)} notify={notify}/>}
- <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft}/>
+ <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft} minimized={minimized}/>
  <WelcomeDialog open={!prefs.onboardingDone&&!popoutThread&&!welcomeAdding} icon={prefs.icon} connect={()=>setWelcomeAdding(true)} explore={()=>void updateSettings({onboardingDone:true})}/>
  <AddAccountDialog open={welcomeAdding} close={()=>setWelcomeAdding(false)} capabilities={capabilities} connected={()=>notify('Account connected')}/>
  <PendingSends drafts={pending} seconds={prefs.undoSeconds} undo={async d=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){fail(e);}}}/>

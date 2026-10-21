@@ -167,6 +167,7 @@
 .ui-menu-text > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-menu-text small { font-size: var(--text-sm); line-height: 15px; color: var(--dim); }
 .ui-menu-keys { flex: none; font-size: var(--text-sm); color: var(--faint); letter-spacing: .02em; }
+.ui-menu-count { flex: none; min-width: 16px; text-align: right; font-size: var(--text-sm); font-variant-numeric: tabular-nums; color: var(--dim); }
 .ui-menu-check { color: var(--blue); }
 
 /* ---------- Dialog ---------- */

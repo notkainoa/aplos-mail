@@ -53,6 +53,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <Group title="Appearance">
     {choice('Theme','A comfortable place for your mail.','theme',[['light','Light'],['dark','Dark'],['system','Match system']])}
     <GroupRow label="App icon" description="An original mark, in your favorite shade."><div className="icon-choices" role="radiogroup" aria-label="App icon">{(['ink','sage','clay'] as const).map(c=><Tooltip key={c} content={c[0].toUpperCase()+c.slice(1)}><button role="radio" aria-checked={s.icon===c} aria-label={c+' icon'} className={cx('app-icon',c,s.icon===c&&'selected')} onClick={()=>onChange({icon:c})}>a{s.icon===c&&<Check size={11}/>}</button></Tooltip>)}</div></GroupRow>
+    {choice('Sidebar','A full sidebar, or everything in a small menu at the top left.','sidebarStyle',[['normal','Normal'],['minimized','Minimized']])}
     {toggle('Zen mode','Show only the Home count in the sidebar.','zen')}
    </Group>
    <Group title="System">

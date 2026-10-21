@@ -94,6 +94,7 @@ export const MessageCircle=symbol(Lucide.MessageCircle,'bubble.left');
 export const Mic=symbol(Lucide.Mic,'mic');
 export const Monitor=symbol(Lucide.Monitor,'desktopcomputer');
 export const MoreHorizontal=symbol(Lucide.MoreHorizontal,'ellipsis');
+export const MenuLines=symbol(Lucide.Menu,'line.3.horizontal');
 export const PanelLeft=symbol(Lucide.PanelLeft,'sidebar.left');
 export const Paperclip=symbol(Lucide.Paperclip,'paperclip');
 export const Plus=symbol(Lucide.Plus,'plus');

@@ -537,6 +537,9 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 /* Menus */
 .account-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .account-menu { min-width: 240px; }
+.sidebar-menu { min-width: 220px; }
+.sidebar-menu .menu-dot { width: 15px; height: 15px; flex: none; display: grid; place-items: center; }
+.sidebar-menu .menu-dot .account-dot { width: 9px; height: 9px; }
 .thread-menu { min-width: 260px; }
 .importance-menu { min-width: 200px; }
 

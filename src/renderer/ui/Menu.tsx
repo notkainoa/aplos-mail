@@ -13,6 +13,8 @@ export type MenuItem={
   hint?:string;
   /** Leading avatar or swatch instead of an icon. */
   leading?:React.ReactNode;
+  /** A count shown at the trailing edge, like the sidebar's. */
+  count?:number;
   checked?:boolean;
   danger?:boolean;
   disabled?:boolean;
@@ -69,6 +71,7 @@ function MenuList({groups,label,onClose,onError}:{groups:MenuGroups;label?:strin
         onPointerMove={()=>{if(chosen<0&&!item.disabled&&active!==i)setActive(i);}} onClick={()=>choose(i)}>
         {item.leading??(ItemIcon&&<ItemIcon size={15}/>)}
         <span className="ui-menu-text"><span>{item.label}</span>{item.hint&&<small>{item.hint}</small>}</span>
+        {!!item.count&&<span className="ui-menu-count">{item.count}</span>}
         {item.keys&&<span className="ui-menu-keys">{item.keys}</span>}
         {item.checked&&<Check size={14} className="ui-menu-check"/>}
       </div>;

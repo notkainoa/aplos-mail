@@ -1,5 +1,5 @@
 import {memo} from 'react';
-import {Archive,ArrowLeft,ArrowRight,CalendarDays,ChevronsUpDown,Clock,FileText,Home,PanelLeft,Plus,RefreshCw,Send,ShieldAlert,Trash2} from '../icons';
+import {Archive,ArrowLeft,ArrowRight,CalendarDays,ChevronsUpDown,Clock,FileText,Gear,Home,Keyboard,MenuLines,PanelLeft,Plus,RefreshCw,Send,ShieldAlert,Trash2,Users} from '../icons';
 import type {Account,AppState,View} from '../../shared/types';
 import {Count,IconButton,Keys,Menu,cx,useMenu,type Icon} from '../ui';
 import {showSettingsTab} from '../Settings';
@@ -72,4 +72,39 @@ export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing
       {demoOnly&&<span className="footer-note">Demo mail</span>}
     </footer>
   </aside>;
+});
+
+type SidebarMenuProps={
+  state:AppState;
+  view:View|null;
+  counts:Partial<Record<View,number>>;
+  zen:boolean;
+  online:boolean;
+  syncing:boolean;
+  navigate:(view:View)=>void;
+  sync:()=>void;
+  selectAccount:(id:string)=>void;
+  shortcuts:()=>void;
+  onError:(error:Error)=>void;
+};
+
+/** The minimized sidebar: everything the sidebar holds, in one small menu at the top left. */
+export const SidebarMenu=memo(function SidebarMenu({state,view,counts,zen,online,syncing,navigate,sync,selectAccount,shortcuts,onError}:SidebarMenuProps){
+  const menu=useMenu();
+  const status=!online?'Available offline':state.sync.busy?'Syncing mail…':state.sync.error?'Sync needs attention':undefined;
+  const mailbox=(from:number,to:number)=>sections.slice(from,to).map(({view:id,label,icon})=>{
+    const value=counts[id]??0;
+    return {label,icon,checked:view===id,count:(!zen||id==='home')&&value>0?value:undefined,onSelect:()=>navigate(id)};
+  });
+  return <>
+    <IconButton label="Mailboxes" shortcut="[" icon={MenuLines} active={menu.open} className="sidebar-menu-trigger" aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle}/>
+    <Menu open={menu.open} anchor={menu.anchor} onClose={menu.close} placement="bottom-start" label="Mailboxes" className="sidebar-menu" onError={onError} groups={[
+      state.accounts.length>1?[{label:'All accounts',icon:Users,checked:state.selectedAccountId==='all',onSelect:()=>selectAccount('all')},
+        ...state.accounts.map(a=>({label:accountName(a),leading:<span className="menu-dot"><span className="account-dot" style={{background:a.color}}/></span>,checked:a.id===state.selectedAccountId,onSelect:()=>selectAccount(a.id)}))]:[],
+      mailbox(0,2),mailbox(2,5),mailbox(5,8),
+      [{label:'Refresh mail',icon:RefreshCw,hint:status,disabled:syncing,onSelect:sync},
+       {label:'Settings',icon:Gear,keys:'⌘ ,',checked:view==='settings',onSelect:()=>navigate('settings')},
+       {label:'Keyboard shortcuts',icon:Keyboard,keys:'?',onSelect:shortcuts}],
+    ]}/>
+  </>;
 });
