@@ -133,3 +133,26 @@ export function shiftAnchor(view:CalendarView,anchor:string,delta:number){
   const last=new Date(target.getFullYear(),target.getMonth()+1,0).getDate();target.setDate(Math.min(d.getDate(),last));
   return ymd(target);
 }
+
+type Proposal=Partial<CalendarEvent>&{start:string;end:string};
+const dayOfEvent=(e:{start:string;allDay?:boolean})=>e.allDay||e.start.length===10?e.start.slice(0,10):ymd(new Date(e.start));
+
+/**
+ * What the open email means for Today: a plan found in it that is not on a calendar yet (shown as a ghost),
+ * or else the event already saved from it. Either way Today moves to that day.
+ */
+export function emailContext(threadId:string|undefined,events:CalendarEvent[],plans:Partial<CalendarEvent>[]|undefined):{day:string;proposal?:Proposal;saved?:CalendarEvent}|undefined{
+  if(!threadId)return;
+  const saved=events.filter(e=>e.threadId===threadId).sort((a,b)=>a.start.localeCompare(b.start));
+  const known=(p:Partial<CalendarEvent>)=>saved.some(e=>e.start===p.start||(!!p.title&&e.title.toLowerCase()===p.title.toLowerCase()&&dayOfEvent(e)===dayOfEvent(p as Proposal)));
+  const proposal=plans?.find((p):p is Proposal=>!!p.start&&!!p.end&&+new Date(p.end)>+new Date(p.start)&&!known(p));
+  if(proposal)return {day:dayOfEvent(proposal),proposal};
+  if(saved[0])return {day:dayOfEvent(saved[0]),saved:saved[0]};
+}
+
+/** Timed plans that overlap a proposed time. All-day plans block no time, so they never clash. */
+export function clashes<T extends Pick<CalendarEvent,'id'|'start'|'end'|'allDay'>>(proposal:{id?:string;start:string;end:string;allDay?:boolean},events:T[]):T[]{
+  if(proposal.allDay)return [];
+  const start=+new Date(proposal.start),end=+new Date(proposal.end);
+  return events.filter(e=>!e.allDay&&e.id!==proposal.id&&+new Date(e.start)<end&&+new Date(e.end)>start);
+}

@@ -7,7 +7,8 @@ import {createLiveState,threadOrder,type StateChanges,type ThreadPage} from '../
 import {Compose,addressOf,validAddress,type Contact} from './Compose';
 import {Ask} from './Ask';
 import {Reader,type CardDrag} from './Reader';
-import {Calendar,EventEditor} from './Calendar';
+import {Calendar,EventEditor,TodayPanel} from './Calendar';
+import {rememberPlans} from './detectedPlans';
 import {Settings} from './Settings';
 import {Sidebar,SidebarMenu,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
@@ -51,6 +52,8 @@ export function App(){
  const [route,setRoute]=useState<Route>({view:'home',threadId:popoutThread??undefined});
  const [routes,setRoutes]=useState<Route[]>([{view:'home'}]);const [historyIndex,setHistoryIndex]=useState(0);
  const [ask,setAsk]=useState(()=>!popoutThread&&!popoutDraft&&localStorage.getItem(askStorageKey)!=='closed');
+ // The dock shows Ask (the default) or Today, one day of every calendar beside the mail.
+ const [dockTab,setDockTab]=useState<'ask'|'today'>('ask');
  // Matches the CSS breakpoints that collapse the sidebar; while squeezed it opens as an overlay instead.
  const squeezed=useMediaQuery(ask?'(max-width: 900px)':'(max-width: 700px)');const [peek,setPeek]=useState(false);
  useEffect(()=>{if(!squeezed)setPeek(false);},[squeezed]);
@@ -233,6 +236,7 @@ export function App(){
   setActionBusy(thread.id);
   try{
    const events=await invoke<Partial<CalendarEvent>[]>('calendar.extract',{threadId:thread.id,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
+   rememberPlans(thread.id,events);
    const event=events[0];
    if(!event)notify('No event with a clear date and time was found.');
    // Extraction takes a moment; if the user has moved on, offer the event instead of opening over their work.
@@ -240,6 +244,15 @@ export function App(){
    else toast.show({text:`Event ready: ${event.title||thread.subject}`,action:{label:'Review',run:()=>setEventEditor(event)}});
   }catch(e){fail(e);}finally{setActionBusy(undefined);}
  }
+ /** Today's "Find it": Groq looks for the plan and Today draws it beside the mail; nothing opens or saves. */
+ async function findPlans(thread:Thread){
+  if(actionBusy)return;
+  setActionBusy(thread.id);
+  try{const events=await invoke<Partial<CalendarEvent>[]>('calendar.extract',{threadId:thread.id,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});rememberPlans(thread.id,events);if(!events.length)notify('No event with a clear date and time was found.');}
+  catch(e){fail(e);}finally{setActionBusy(undefined);}
+ }
+ /** ⇧A opens the dock on Today, or closes it when Today is already showing. */
+ function toggleToday(){if(popoutThread||popoutDraft)return;if(ask&&dockTab==='today')setAsk(false);else{setDockTab('today');setAsk(true);}}
  function selectRow(thread:Thread,how:'toggle'|'range'='toggle'){
   const anchor=selectAnchor.current;const from=anchor?order.findIndex(t=>t.id===anchor):-1;const to=order.findIndex(t=>t.id===thread.id);
   setSelected(prev=>{const next=new Set(prev);
@@ -299,7 +312,7 @@ export function App(){
   else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();moveCursor(e.key==='ArrowDown'?1:-1);}
   else if(e.key==='Enter'&&!e.nativeEvent.isComposing){const target=focused;if(target){e.preventDefault();rememberSearch(search);openThread(target.id);}}
  }
- function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':if(!popoutThread&&!popoutDraft)setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':if(state?.settings.sidebarStyle==='minimized'){document.querySelector<HTMLElement>('.sidebar-menu-trigger')?.click();break;}if(squeezed)setPeek(v=>!v);else void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
+ function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':if(!popoutThread&&!popoutDraft){if(ask&&dockTab==='ask')setAsk(false);else{setDockTab('ask');setAsk(true);}}break;case'today':toggleToday();break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':if(state?.settings.sidebarStyle==='minimized'){document.querySelector<HTMLElement>('.sidebar-menu-trigger')?.click();break;}if(squeezed)setPeek(v=>!v);else void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
  eventHandler.current=event=>{
   if(event.type==='state')live.snapshot(event.payload as AppState);
   else if(event.type==='changes')live.apply(event.payload as StateChanges);
@@ -323,6 +336,7 @@ export function App(){
    if(e.key==='Escape'){setDuePrompt(undefined);if(selected.size){setSelected(new Set());return;}if(selectedThread){if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}else if(searchMode){setSearchMode(false);setSearch('');}return;}
    if((e.metaKey||e.ctrlKey)&&e.key==='a'&&!selectedThread&&order.length){e.preventDefault();setSelected(new Set(order.map(t=>t.id)));return;}
    if(e.metaKey||e.ctrlKey||e.altKey)return;
+   if(e.shiftKey&&e.key.toLowerCase()==='a'){e.preventDefault();toggleToday();return;}
    const t=selectedThread;const pointed=!t&&!['settings','calendar'].includes(route.view)?focused:undefined;const subject=t||pointed;
    if(e.key===' '&&t){e.preventDefault();if(e.repeat||spaceHold.current)return;const hold:{timer?:ReturnType<typeof setTimeout>;fired:boolean}={fired:false};hold.timer=setTimeout(()=>{hold.fired=true;talk('start');},300);spaceHold.current=hold;return;}
    const keys:Record<string,()=>void>={c:()=>void newDraft(),'/':()=>command('search'),'?':()=>setShortcutHelp(true),'[':()=>command('toggle-sidebar'),z:()=>void undo(),s:()=>{const first=pointed||order[0];if(first)openThread(first.id);}};
@@ -399,8 +413,11 @@ export function App(){
  });
  // Emails whose suggested step is a calendar event that is not on a calendar yet.
  const calendarSuggestions=useMemo(()=>!state||route.view!=='calendar'?noThreads:state.threads.filter(t=>(state.selectedAccountId==='all'||t.accountId===state.selectedAccountId)&&!['trash','spam'].includes(t.status)&&liveAction(t)?.kind==='calendar'&&!state.events.some(e=>e.threadId===t.id)),[state?.threads,state?.events,state?.selectedAccountId,route.view]);
+ const todayActions=useHandlers({
+  edit:(event:Partial<CalendarEvent>)=>setEventEditor(event),onThread:(id:string)=>navigate('all',id),onFind:(thread:Thread)=>void findPlans(thread),
+ });
  const askActions=useHandlers({
-  onOpen:()=>setAsk(true),onClose:()=>setAsk(false),
+  onOpen:()=>{setDockTab('ask');setAsk(true);},onClose:()=>setAsk(false),
   onSearch:(query:string)=>{if(replyGuard())return;setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));},
   onCommand:(name:string)=>command(name),onEditEvent:(event:Partial<CalendarEvent>)=>setEventEditor(event),
   onThread:(id:string)=>navigate('all',id),onDraft:(draft:Partial<Draft>)=>void newDraft(draft),notify:(text:string)=>notify(text),
@@ -431,6 +448,8 @@ export function App(){
 
  const syncing=busy==='sync'||state.sync.busy;
  const listView=!['settings','calendar'].includes(route.view);
+ // Today follows the email that is open, or the one the list cursor is on.
+ const todayThread=selectedThread??(listView?focused:undefined);
  const swipe=<Button variant="pill" icon={Layers} shortcut="S" onClick={()=>{if(order[0])openThread(order[0].id);}}>Swipe through them</Button>;
  const composerLayer=!!composer&&!inlineReply;
  // Minimized, the sidebar is gone and its contents live in a menu at the top left.
@@ -478,7 +497,14 @@ export function App(){
  {busy==='draft'&&!composer&&<div className="compose-layer"><ComposeSkeleton/></div>}
  <DuePopover prompt={duePrompt} setDue={(id,day,label)=>void setDue(id,day,label)} dismiss={()=>setDuePrompt(undefined)}/>
  </main>
- {!popoutThread&&<div className={cx('ask-dock',ask&&'open')} inert={!ask||undefined}><Ask open={ask} conversations={state.conversations} threads={state.threads} events={state.events} accounts={state.accounts} contacts={contacts} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} hasDraft={!!composer} {...askActions}/></div>}
+ {!popoutThread&&<div className={cx('ask-dock',ask&&'open')} inert={!ask||undefined}><div className="dock-panel">
+  <div className="dock-head">
+   <Tabs variant="segmented" label="Dock" className="dock-tabs" value={dockTab} onChange={setDockTab} items={[{id:'ask',label:'Ask',tooltip:{title:'Ask me anything',detail:'Tap A · ⌘ J'}},{id:'today',label:'Today',tooltip:{title:'Today beside your mail',detail:'⇧ A'}}]}/>
+   <IconButton label="Close" shortcut="⌘ J" icon={X} onClick={()=>setAsk(false)}/>
+  </div>
+  <div className="dock-body" hidden={dockTab!=='ask'}><Ask open={ask&&dockTab==='ask'} conversations={state.conversations} threads={state.threads} events={state.events} accounts={state.accounts} contacts={contacts} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} hasDraft={!!composer} {...askActions}/></div>
+  {dockTab==='today'&&<div className="dock-body"><TodayPanel events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} hidden={prefs.hiddenCalendars} thread={todayThread} finding={!!todayThread&&actionBusy===todayThread.id} {...todayActions}/></div>}
+ </div></div>}
  <Menu open={rowMenu.open} anchor={rowMenu.anchor} onClose={rowMenu.close} placement="bottom-end" label="Email actions" onError={fail} groups={thread?[
   [{label:'Open in separate window',icon:ExternalLink,onSelect:()=>invoke('window.thread',{threadId:thread.id})}],
   [{label:'Mark '+(thread.unread?'read':'unread'),icon:MailOpen,keys:'U',onSelect:()=>patch([thread.id],{unread:!thread.unread})},

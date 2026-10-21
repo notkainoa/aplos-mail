@@ -2,9 +2,12 @@ import {memo,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {CalendarDays,Check,ChevronLeft,ChevronRight,Clock,ExternalLink,Mail,MapPin,Plus,SquarePen,Trash2,Users,X} from './icons';
 import type {Account,CalendarEvent,CalendarInfo,Thread} from '../shared/types';
 import {invoke,openUrl,uid} from './bridge';
-import {Button,Checkbox,Dialog,DialogClose,Field,IconButton,Notice,Popover,Select,Spinner,Tabs,confirmAction,cx,dialogOpen,toast,useHandlers,useLatest} from './ui';
+import {Button,Checkbox,Dialog,DialogClose,Field,IconButton,Notice,Popover,Select,Spinner,Tabs,confirmAction,cx,dialogOpen,duration,reducedMotion,toast,useHandlers,useLatest} from './ui';
 import {addDays,clock,dayKey,localInput,moveStart,parseGuests,setAllDay as withAllDay,shortClock,shortRange,slotOn,timeRange,ymd} from './calendarTime';
-import {allDayLanes,calendarIndex,eventsOnDay,layoutDay,mergeCalendars,shiftAnchor,viewDays,visibleEvents,type CalendarSource,type CalendarView} from './calendarLayout';
+import {allDayLanes,calendarIndex,clashes,emailContext,eventsOnDay,layoutDay,mergeCalendars,shiftAnchor,viewDays,visibleEvents,type CalendarSource,type CalendarView} from './calendarLayout';
+import {fadeIn,flip,hourLimits,openingHour,usePeriodSlide,usePeriodSwipe,zoomHour,zoomScroll,type Box} from './calendarMotion';
+import {usePlans} from './detectedPlans';
+import {liveAction} from '../shared/mailbox';
 
 export function EventEditor({event,accounts,onClose,notify}:{event:Partial<CalendarEvent>;accounts:Account[];onClose:()=>void;notify:(s:string)=>void}){
  const [value,setValue]=useState<CalendarEvent>(()=>({id:event.id||uid(),accountId:event.accountId||accounts[0]?.id,calendarId:'primary',title:'',...slotOn(new Date()),allDay:false,location:'',description:'',guests:[],...event}));const [calendars,setCalendars]=useState<{id:string;name:string;accountId:string}[]>([]);const [busy,setBusy]=useState(false);const [error,setError]=useState('');
@@ -44,7 +47,7 @@ export function EventEditor({event,accounts,onClose,notify}:{event:Partial<Calen
 }
 
 
-const HOUR=48;const SNAP=15;const viewStorageKey='aplos.calendar.view';const lastCalendarKey='aplos.calendar.last';
+const SNAP=15;const viewStorageKey='aplos.calendar.view';const lastCalendarKey='aplos.calendar.last';
 const viewLabels:Record<CalendarView,string>={day:'Day',week:'Week',month:'Month'};
 const todayKey=()=>ymd(new Date());
 const dateOf=(day:string)=>new Date(day+'T00:00:00');
@@ -73,67 +76,53 @@ function useNow(){
   return now;
 }
 
+/** The pixels per hour a time grid was last pinched to, per place it appears. */
+function useHourHeight(key:string,fallback:number){
+  const [hour,setHour]=useState(()=>{const saved=Number(localStorage.getItem(key));return saved>=hourLimits.min&&saved<=hourLimits.max?saved:fallback;});
+  useEffect(()=>{const timer=setTimeout(()=>localStorage.setItem(key,String(hour)),300);return ()=>clearTimeout(timer);},[hour]);
+  return [hour,setHour] as const;
+}
+
 type SourceOf=(event:Pick<CalendarEvent,'accountId'|'calendarId'>)=>CalendarSource|undefined;
 /** An event being created: where it sits and which calendar it goes to. */
 type DraftEvent={start:string;end:string;allDay:boolean;calendar:string;anchor?:HTMLElement};
-type CalendarProps={events:CalendarEvent[];accounts:Account[];accountId:string;hidden:string[];suggestions:Thread[];busyId?:string;
-  /** Shortcuts pause while the composer is open. */ paused:boolean;
-  edit:(event:Partial<CalendarEvent>)=>void;onThread:(id:string)=>void;onSchedule:(thread:Thread)=>void;onHidden:(keys:string[])=>void};
+type Slide=React.RefObject<{direction:number;from?:number}|null>;
+
+// The page and Today ask for the calendar list together; one request serves both until the accounts change.
+let calendarList:{key:string;promise:Promise<CalendarInfo[]>}|undefined;
+function loadCalendars(key:string){
+  if(calendarList?.key!==key){const entry={key,promise:invoke<CalendarInfo[]>('calendar.list',{accountId:'all'}).catch(()=>{if(calendarList===entry)calendarList=undefined;return [] as CalendarInfo[];})};calendarList=entry;}
+  return calendarList.promise;
+}
+
+type ModelOptions={events:CalendarEvent[];accounts:Account[];accountId:string;hidden:string[];edit:(event:Partial<CalendarEvent>)=>void;onThread:(id:string)=>void};
 
 /**
- * The Calendar page: every calendar of every account in one week, day or month view, with a mini
- * month and the calendar list on the left. Plans are created by dragging on the grid, moved by
- * dragging and resized from their lower edge; nothing is saved without an explicit action.
+ * What the Calendar page and Today share: the combined calendars, the events in view, the open event and the
+ * plan being drawn, saving moves with Undo, and the two popovers. Each place keeps its own copy of this state.
  */
-export const Calendar=memo(function Calendar({events,accounts,accountId,hidden,suggestions,busyId,paused,edit,onThread,onSchedule,onHidden}:CalendarProps){
-  const [view,setViewState]=useState<CalendarView>(()=>{const saved=localStorage.getItem(viewStorageKey);return saved==='day'||saved==='month'?saved:'week';});
-  const [anchor,setAnchor]=useState(todayKey);
+function useCalendarModel({events,accounts,accountId,hidden,edit,onThread}:ModelOptions){
   const [listed,setListed]=useState<CalendarInfo[]>([]);
   const [moved,setMoved]=useState<Record<string,{start:string;end:string}>>({});
   const [selection,setSelection]=useState<{id:string;anchor:HTMLElement}|null>(null);
   const [draft,setDraft]=useState<DraftEvent|null>(null);const [draftNode,setDraftNode]=useState<HTMLElement|null>(null);
-  const [narrow,setNarrow]=useState(false);const [railOpen,setRailOpen]=useState(false);
-  const page=useRef<HTMLDivElement>(null);const railButton=useRef<HTMLButtonElement>(null);
   const accountsKey=accounts.map(a=>a.id+(a.calendarConnected?'+':'')).join();
-  useEffect(()=>{let live=true;invoke<CalendarInfo[]>('calendar.list',{accountId:'all'}).then(list=>{if(live)setListed(list);}).catch(()=>{});return ()=>{live=false;};},[accountsKey]);
-  // Beside a narrow window (or Ask), the mini month and calendar list move into a popover.
-  useLayoutEffect(()=>{const el=page.current;if(!el)return;const observer=new ResizeObserver(([entry])=>setNarrow(entry.contentRect.width<880));observer.observe(el);return ()=>observer.disconnect();},[]);
+  useEffect(()=>{let live=true;void loadCalendars(accountsKey).then(list=>{if(live)setListed(list);});return ()=>{live=false;};},[accountsKey]);
   const sources=useMemo(()=>mergeCalendars(accounts,listed,events),[accounts,listed,events]);
   const sourceOf=useMemo(()=>calendarIndex(sources),[sources]);
   const scoped=useMemo(()=>sources.filter(s=>accountId==='all'||s.accountId===accountId),[sources,accountId]);
   const shown=useMemo(()=>visibleEvents(events,sourceOf,accountId,hidden).map(e=>moved[e.id]?{...e,...moved[e.id]}:e),[events,sourceOf,accountId,hidden,moved]);
-  const days=useMemo(()=>viewDays(view,anchor),[view,anchor]);
-  const busyDays=useMemo(()=>{const set=new Set<string>();for(const e of shown){if(e.allDay){for(let d=e.start.slice(0,10),n=0;(d<e.end.slice(0,10)||n===0)&&n<62;d=addDays(d,1),n++)set.add(d);}else set.add(dayKey(e.start));}return set;},[shown]);
-  const selected=selection&&shown.find(e=>e.id===selection.id);
-  const [title,year]=rangeTitle(view,days,anchor);
-
-  function setView(next:CalendarView){setViewState(next);localStorage.setItem(viewStorageKey,next);setSelection(null);setDraft(null);}
-  const go=(day:string)=>{setAnchor(day);setSelection(null);setDraft(null);};
-  const shift=(delta:number)=>go(shiftAnchor(view,anchor,delta));
+  const selected=selection?shown.find(e=>e.id===selection.id):undefined;
   // New plans go to the calendar used last, while it is shown; otherwise the default calendar of the chosen account.
-  function defaultCalendar(){
+  function defaultCalendar(accountHint?:string){
     const visible=scoped.filter(s=>!hidden.includes(s.key));const last=localStorage.getItem(lastCalendarKey);
-    return (visible.find(s=>s.key===last)??visible.find(s=>s.primary)??visible[0]??scoped[0])?.key;
+    return (accountHint&&visible.find(s=>s.accountId===accountHint&&s.primary)||visible.find(s=>s.key===last)||visible.find(s=>s.primary)||visible[0]||scoped[0])?.key;
   }
   function startDraft(start:Date|string,end:Date|string,allDay:boolean,where?:HTMLElement){
     const calendar=defaultCalendar();if(!calendar){toast.show({text:'Connect a calendar in Settings → Accounts first.'});return;}
     setSelection(null);
     setDraft({start:typeof start==='string'?start:start.toISOString(),end:typeof end==='string'?end:end.toISOString(),allDay,calendar,anchor:where});
   }
-  function newEvent(){
-    const day=days.includes(todayKey())?todayKey():anchor;const slot=slotOn(dateOf(day));
-    if(view==='month')startDraft(slot.start,slot.end,false,page.current?.querySelector<HTMLElement>(`[data-cell="${day}"]`)??undefined);
-    else{if(!days.includes(day))go(day);startDraft(slot.start,slot.end,false);}
-  }
-  const handlers=useHandlers({
-    open:(event:CalendarEvent,element:HTMLElement)=>{setDraft(null);setSelection(current=>current?.id===event.id?null:{id:event.id,anchor:element});},
-    edit:(event:CalendarEvent)=>{setSelection(null);edit(events.find(e=>e.id===event.id)??event);},
-    create:(start:Date|string,end:Date|string,allDay:boolean,where?:HTMLElement)=>startDraft(start,end,allDay,where),
-    change:(event:CalendarEvent,start:string,end:string)=>void reschedule(event.id,start,end),
-    day:(day:string)=>{setView('day');go(day);},
-    pick:(day:string)=>go(day),
-    draftNode:(node:HTMLElement|null)=>setDraftNode(node),
-  });
   async function reschedule(id:string,start:string,end:string,undo=true){
     const original=events.find(e=>e.id===id);if(!original)return;
     setMoved(m=>({...m,[id]:{start,end}}));
@@ -148,6 +137,80 @@ export const Calendar=memo(function Calendar({events,accounts,accountId,hidden,s
     setSelection(null);
     try{await invoke('calendar.delete',{id:event.id});toast.show({text:'Event deleted'});}catch(e){toast.show({tone:'error',text:(e as Error).message});}
   }
+  const handlers=useHandlers({
+    open:(event:CalendarEvent,element:HTMLElement)=>{setDraft(null);setSelection(current=>current?.id===event.id?null:{id:event.id,anchor:element});},
+    edit:(event:CalendarEvent)=>{setSelection(null);edit(events.find(e=>e.id===event.id)??event);},
+    create:(start:Date|string,end:Date|string,allDay:boolean,where?:HTMLElement)=>startDraft(start,end,allDay,where),
+    change:(event:CalendarEvent,start:string,end:string)=>void reschedule(event.id,start,end),
+    draftNode:(node:HTMLElement|null)=>setDraftNode(node),
+  });
+  const draftSource=draft?sources.find(s=>s.key===draft.calendar):undefined;
+  const draftAnchor=draft?.anchor??draftNode;
+  // Popovers keep their last content while they fade out, with the same scale and fade as every Aplos popover.
+  const card=useLatest(selected);const lastDraft=useLatest(draft);
+  const popovers=<>
+    <Popover open={!!selected} anchor={selection?.anchor} onClose={()=>setSelection(null)} placement="right-start" gap={8} className="ui-surface cal-popover" role="dialog" label="Event">
+      {card&&<EventCard event={card} source={sourceOf(card)} account={accounts.find(a=>a.id===card.accountId)} onEdit={()=>handlers.edit(card)} onDelete={()=>void remove(card)} onThread={onThread} onClose={()=>setSelection(null)}/>}
+    </Popover>
+    <Popover open={!!draft&&!!draftAnchor} anchor={draftAnchor} onClose={()=>setDraft(null)} placement="right-start" gap={8} className="ui-surface cal-popover" role="dialog" label="New event">
+      {lastDraft&&<QuickCreate key={lastDraft.start+lastDraft.allDay} draft={lastDraft} sources={scoped} accounts={accounts}
+        onCalendar={calendar=>setDraft(d=>d&&{...d,calendar})} onClose={()=>setDraft(null)}
+        onMore={value=>{setDraft(null);edit(value);}}/>}
+    </Popover>
+  </>;
+  return {sources,sourceOf,scoped,shown,selection,selected,draft,setDraft,setSelection,startDraft,defaultCalendar,remove,handlers,popovers,draftColor:draftSource?.color,overlay:!!draft||!!selection};
+}
+
+type CalendarProps={events:CalendarEvent[];accounts:Account[];accountId:string;hidden:string[];suggestions:Thread[];busyId?:string;
+  /** Shortcuts pause while the composer is open. */ paused:boolean;
+  edit:(event:Partial<CalendarEvent>)=>void;onThread:(id:string)=>void;onSchedule:(thread:Thread)=>void;onHidden:(keys:string[])=>void};
+
+/**
+ * The Calendar page: every calendar of every account in one week, day or month view, with a mini
+ * month and the calendar list on the left. Plans are created by dragging on the grid, moved by
+ * dragging and resized from their lower edge; nothing is saved without an explicit action.
+ */
+export const Calendar=memo(function Calendar({events,accounts,accountId,hidden,suggestions,busyId,paused,edit,onThread,onSchedule,onHidden}:CalendarProps){
+  const model=useCalendarModel({events,accounts,accountId,hidden,edit,onThread});
+  const {sourceOf,scoped,shown,selected,handlers}=model;
+  const [view,setViewState]=useState<CalendarView>(()=>{const saved=localStorage.getItem(viewStorageKey);return saved==='day'||saved==='month'?saved:'week';});
+  const [anchor,setAnchor]=useState(todayKey);
+  const [narrow,setNarrow]=useState(false);const [railOpen,setRailOpen]=useState(false);
+  const [hour,setHour]=useHourHeight('aplos.calendar.hour',48);
+  // The view that was just left stays on screen for a moment, fading under the new one.
+  const [leaving,setLeaving]=useState<{view:CalendarView;anchor:string;id:number}|null>(null);
+  const [nowSignal,setNowSignal]=useState(0);
+  const page=useRef<HTMLDivElement>(null);const railButton=useRef<HTMLButtonElement>(null);
+  const slide=useRef<{direction:number;from?:number}|null>(null);const scrollMemo=useRef<number|null>(null);
+  useLayoutEffect(()=>{const el=page.current;if(!el)return;const observer=new ResizeObserver(([entry])=>setNarrow(entry.contentRect.width<880));observer.observe(el);return ()=>observer.disconnect();},[]);
+  useEffect(()=>{if(!leaving)return;const timer=setTimeout(()=>setLeaving(null),duration.base+40);return ()=>clearTimeout(timer);},[leaving]);
+  const days=useMemo(()=>viewDays(view,anchor),[view,anchor]);
+  const busyDays=useMemo(()=>{const set=new Set<string>();for(const e of shown){if(e.allDay){for(let d=e.start.slice(0,10),n=0;(d<e.end.slice(0,10)||n===0)&&n<62;d=addDays(d,1),n++)set.add(d);}else set.add(dayKey(e.start));}return set;},[shown]);
+  const [title,year]=rangeTitle(view,days,anchor);
+
+  function setView(next:CalendarView){
+    if(next===view)return;
+    if(!reducedMotion())setLeaving({view,anchor,id:Date.now()});
+    setViewState(next);localStorage.setItem(viewStorageKey,next);model.setSelection(null);model.setDraft(null);
+  }
+  /** Moves to the period holding `day`; the grid slides in from the side of travel (or from where a swipe left it). */
+  function go(day:string,from?:number){
+    const next=viewDays(view,day)[0];
+    if(next!==days[0])slide.current={direction:next>days[0]?1:-1,from};
+    setAnchor(day);model.setSelection(null);model.setDraft(null);
+  }
+  const shift=(delta:number,from?:number)=>go(shiftAnchor(view,anchor,delta),from);
+  function goToday(){go(todayKey());setNowSignal(n=>n+1);}
+  function newEvent(){
+    const day=days.includes(todayKey())?todayKey():anchor;const slot=slotOn(dateOf(day));
+    if(view==='month')model.startDraft(slot.start,slot.end,false,page.current?.querySelector<HTMLElement>(`[data-cell="${day}"]`)??undefined);
+    else{if(!days.includes(day))go(day);model.startDraft(slot.start,slot.end,false);}
+  }
+  const pageHandlers=useHandlers({
+    day:(day:string)=>{setView('day');go(day);},
+    pick:(day:string)=>go(day),
+    page:(direction:1|-1,offset:number)=>shift(direction,direction*Math.min(160,(page.current?.offsetWidth??800)*.25)+offset*.2),
+  });
   function toggle(key:string){onHidden(hidden.includes(key)?hidden.filter(k=>k!==key):[...hidden,key]);}
   /** Shows only one calendar of those in view, or everything again when it already is the only one. */
   function only(key:string){
@@ -160,12 +223,12 @@ export const Calendar=memo(function Calendar({events,accounts,accountId,hidden,s
     function keydown(e:KeyboardEvent){
       if(paused||dialogOpen()||e.defaultPrevented||e.metaKey||e.ctrlKey||e.altKey)return;
       const element=e.target as HTMLElement;
-      if(['INPUT','TEXTAREA','SELECT'].includes(element.tagName)||element.isContentEditable)return;
+      if(['INPUT','TEXTAREA','SELECT'].includes(element.tagName)||element.isContentEditable||element.closest?.('.ask-dock'))return;
       // A focused control keeps Enter, Space and arrows; a focused event keeps Enter for itself.
       if(element.closest?.('button,[role=tab],[role=checkbox],[role=button]')&&element.matches(':focus-visible')&&['Enter',' ','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;
-      const keys:Record<string,()=>void>={t:()=>go(todayKey()),d:()=>setView('day'),w:()=>setView('week'),m:()=>setView('month'),
+      const keys:Record<string,()=>void>={t:goToday,d:()=>setView('day'),w:()=>setView('week'),m:()=>setView('month'),
         j:()=>shift(1),k:()=>shift(-1),ArrowRight:()=>shift(1),ArrowLeft:()=>shift(-1),n:newEvent};
-      if(selected){keys.e=keys.Enter=()=>handlers.edit(selected);if(!selected.scheduling)keys.Backspace=keys.Delete=()=>void remove(selected);}
+      if(selected){keys.e=keys.Enter=()=>handlers.edit(selected);if(!selected.scheduling)keys.Backspace=keys.Delete=()=>void model.remove(selected);}
       const run=keys[e.key];if(run){e.preventDefault();run();}
     }
     addEventListener('keydown',keydown);return ()=>removeEventListener('keydown',keydown);
@@ -173,7 +236,7 @@ export const Calendar=memo(function Calendar({events,accounts,accountId,hidden,s
 
   const visibleKeys=new Set(scoped.filter(s=>!hidden.includes(s.key)).map(s=>s.key));
   const rail=<div className="cal-rail-body">
-    <MiniMonth anchor={anchor} range={days} busy={busyDays} onPick={handlers.pick}/>
+    <MiniMonth anchor={anchor} range={days} busy={busyDays} onPick={pageHandlers.pick}/>
     <CalendarList accounts={accounts} sources={scoped} visible={visibleKeys} onToggle={toggle} onOnly={only}/>
     {suggestions.length>0&&<section className="cal-suggestions" aria-label="Plans found in your mail">
       <h3>From your mail</h3>
@@ -184,10 +247,13 @@ export const Calendar=memo(function Calendar({events,accounts,accountId,hidden,s
       <p className="cal-rail-note">Groq reads the email and fills in the event. Nothing is added until you save it.</p>
     </section>}
   </div>;
-  const draftSource=draft?scoped.find(s=>s.key===draft.calendar)??sources.find(s=>s.key===draft.calendar):undefined;
-  const draftAnchor=draft?.anchor??draftNode;
-  // Popovers keep their last content while they fade out.
-  const card=useLatest(selected);const lastDraft=useLatest(draft);
+  const grid=(v:CalendarView,a:string,copy=false)=>{
+    const shownDays=copy?viewDays(v,a):days;
+    const common={days:shownDays,events:shown,sourceOf,selectedId:copy?undefined:model.selection?.id,draft:copy?null:model.draft,draftColor:model.draftColor,overlay:model.overlay,
+      periodKey:v+shownDays[0],slide,copy,...handlers,day:pageHandlers.day,onPage:pageHandlers.page};
+    return v==='month'?<MonthGrid {...common} anchor={a}/>
+      :<TimeGrid {...common} hour={hour} onHour={setHour} scrollMemo={scrollMemo} nowSignal={nowSignal}/>;
+  };
 
   return <div ref={page} className={cx('calendar-page',narrow&&'is-narrow')}>
     {!narrow&&<aside className="cal-rail" aria-label="Calendars">{rail}</aside>}
@@ -196,7 +262,7 @@ export const Calendar=memo(function Calendar({events,accounts,accountId,hidden,s
         {narrow&&<IconButton ref={railButton} label="Calendars" icon={CalendarDays} active={railOpen} onClick={()=>setRailOpen(v=>!v)}/>}
         <h1 className="cal-title" aria-live="polite"><strong>{title}</strong> <span>{year}</span></h1>
         <div className="cal-nav">
-          <Button variant="secondary" size="sm" className="cal-today" tooltip={{content:'Today',shortcut:'T'}} onClick={()=>go(todayKey())}>Today</Button>
+          <Button variant="secondary" size="sm" className="cal-today" tooltip={{content:'Today',shortcut:'T'}} onClick={goToday}>Today</Button>
           <IconButton size="sm" label={`Previous ${view}`} shortcut="K" icon={ChevronLeft} onClick={()=>shift(-1)}/>
           <IconButton size="sm" label={`Next ${view}`} shortcut="J" icon={ChevronRight} onClick={()=>shift(1)}/>
         </div>
@@ -206,54 +272,112 @@ export const Calendar=memo(function Calendar({events,accounts,accountId,hidden,s
           <Button variant="pill" icon={Plus} shortcut="N" className="cal-new" onClick={newEvent}>New event</Button>
         </div>
       </header>
-      {view==='month'
-        ?<MonthGrid days={days} anchor={anchor} events={shown} sourceOf={sourceOf} selectedId={selection?.id} draft={draft} draftColor={draftSource?.color} overlay={!!draft||!!selection} {...handlers}/>
-        :<TimeGrid days={days} events={shown} sourceOf={sourceOf} selectedId={selection?.id} draft={draft} draftColor={draftSource?.color} overlay={!!draft||!!selection} {...handlers}/>}
+      <div className="cal-stage">
+        {leaving&&<div key={leaving.id} className="cal-stage-leaving" aria-hidden="true" inert>{grid(leaving.view,leaving.anchor,true)}</div>}
+        <div key={view} className="cal-stage-current">{grid(view,anchor)}</div>
+      </div>
     </section>
     {narrow&&<Popover open={railOpen} anchor={railButton.current} onClose={()=>setRailOpen(false)} placement="bottom-start" className="ui-surface cal-rail-popover" label="Calendars">{rail}</Popover>}
-    <Popover open={!!selected&&!!selection} anchor={selection?.anchor} onClose={()=>setSelection(null)} placement="right-start" gap={8} className="ui-surface cal-popover" role="dialog" label="Event">
-      {card&&<EventCard event={card} source={sourceOf(card)} account={accounts.find(a=>a.id===card.accountId)} onEdit={()=>handlers.edit(card)} onDelete={()=>void remove(card)} onThread={onThread} onClose={()=>setSelection(null)}/>}
-    </Popover>
-    <Popover open={!!draft&&!!draftAnchor} anchor={draftAnchor} onClose={()=>setDraft(null)} placement="right-start" gap={8} className="ui-surface cal-popover" role="dialog" label="New event">
-      {lastDraft&&<QuickCreate key={lastDraft.start+lastDraft.allDay} draft={lastDraft} sources={scoped} accounts={accounts}
-        onCalendar={calendar=>setDraft(d=>d&&{...d,calendar})} onClose={()=>setDraft(null)}
-        onMore={value=>{setDraft(null);edit(value);}}/>}
-    </Popover>
+    {model.popovers}
   </div>;
 });
 
 type GridProps={days:string[];events:CalendarEvent[];sourceOf:SourceOf;selectedId?:string;draft:DraftEvent|null;draftColor?:string;
   /** A popover is open: a plain click on the grid only closes it. */ overlay:boolean;
+  /** Changes whenever the days in view change; the grid slides then, in the direction `slide` holds. */ periodKey:string;slide:Slide;
+  /** A still copy of the view just left, fading out under the new one. */ copy?:boolean;
   open:(event:CalendarEvent,element:HTMLElement)=>void;edit:(event:CalendarEvent)=>void;create:(start:Date|string,end:Date|string,allDay:boolean,where?:HTMLElement)=>void;
-  change:(event:CalendarEvent,start:string,end:string)=>void;day:(day:string)=>void;draftNode:(node:HTMLElement|null)=>void};
+  change:(event:CalendarEvent,start:string,end:string)=>void;draftNode:(node:HTMLElement|null)=>void;
+  day?:(day:string)=>void;onPage:(direction:1|-1,offset:number)=>void};
+type TimeGridProps=GridProps&{hour:number;onHour:(hour:number)=>void;scrollMemo:React.RefObject<number|null>;nowSignal?:number;
+  /** Today in the dock: no day header, a narrower gutter, all-day plans only when there are some. */ compact?:boolean;
+  /** A plan found in the open email, drawn as a dashed outline; clashing events are marked. */ proposal?:{start:string;end:string;allDay:boolean;title:string;color?:string;open:()=>void};
+  clashIds?:Set<string>;focusId?:string;
+  /** Scrolls smoothly to this time when it changes. */ revealAt?:string};
 type Gesture={kind:'create'|'move'|'resize';dismiss?:boolean;pointer:number;x:number;y:number;moved:boolean;index:number;day:string;start:number;end:number;origin:number;grab:number;event?:CalendarEvent;element?:HTMLElement};
-type Preview={kind:Gesture['kind'];id?:string;index:number;start:number;end:number};
+/** The block that follows the pointer. `from` is where it started, for Escape to take it back. */
+type Preview={kind:Gesture['kind'];id?:string;index:number;start:number;end:number;phase:'drag'|'return';from:{index:number;start:number;end:number}};
 
+const proposalId='\u0000proposal';
 const eventStyle=(color?:string)=>({'--c':color??'var(--blue)'}) as React.CSSProperties;
 
-/** Week and day views: a sticky row of days and all-day plans over a 24-hour grid. */
-const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,draftColor,overlay,open,edit,create,change,day:showDay,draftNode}:GridProps){
+/** Week and day views (and Today in the dock): a sticky row of days and all-day plans over a 24-hour grid. */
+const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,draftColor,overlay,periodKey,slide,copy,open,edit,create,change,day:showDay,draftNode,onPage,
+  hour,onHour,scrollMemo,nowSignal,compact,proposal,clashIds,focusId,revealAt}:TimeGridProps){
   const now=useNow();const today=ymd(now);
-  const scroller=useRef<HTMLDivElement>(null);const columns=useRef<HTMLDivElement>(null);const allDayRow=useRef<HTMLDivElement>(null);
+  const root=useRef<HTMLDivElement>(null);const scroller=useRef<HTMLDivElement>(null);const sticky=useRef<HTMLDivElement>(null);
+  const columns=useRef<HTMLDivElement>(null);const allDayRow=useRef<HTMLDivElement>(null);const dayTrack=useRef<HTMLDivElement>(null);const ghost=useRef<HTMLDivElement>(null);
   const gesture=useRef<Gesture|null>(null);const [preview,setPreview]=useState<Preview|null>(null);
-  const placed=useMemo(()=>days.map(day=>layoutDay(events,day)),[days,events]);
+  // A proposal from the open email takes a column of its own beside what it clashes with.
+  const placed=useMemo(()=>days.map(day=>layoutDay(proposal&&!proposal.allDay?[...events,{...proposal,id:proposalId} as unknown as CalendarEvent]:events,day)),[days,events,proposal?.start,proposal?.end,proposal?.allDay]);
   const {bars,lanes}=useMemo(()=>allDayLanes(events,days),[events,days]);
   const zone=useMemo(zoneName,[]);
-  // Open on the working day, moved later when today's current time would be out of sight.
-  useLayoutEffect(()=>{const el=scroller.current;if(!el)return;const shown=(el.clientHeight-110)/HOUR;const hour=new Date().getHours()+new Date().getMinutes()/60;
-    el.scrollTop=Math.max(0,(days.includes(todayKey())&&hour>7+shown-1?hour-shown/2:7)*HOUR-12);},[days.length,days.includes(todayKey())]);
+  const tracks=()=>[dayTrack.current,allDayRow.current,columns.current].filter((el):el is HTMLDivElement=>!!el);
+  usePeriodSlide(periodKey,tracks,slide);
+  // Pinch (⌘/ctrl + wheel) changes the hour height and keeps the time under the pointer where it is.
+  const zoom=useRef<{pointerY:number;scrollTop:number;from:number}|null>(null);const hourNow=useRef(hour);hourNow.current=hour;
+  usePeriodSwipe({host:root,tracks,enabled:!copy,onCommit:onPage,onZoom:(deltaY,clientY)=>{
+    const el=scroller.current;if(!el)return;const next=zoomHour(hourNow.current,deltaY);if(next===hourNow.current)return;
+    zoom.current??={pointerY:clientY-el.getBoundingClientRect().top,scrollTop:el.scrollTop,from:hourNow.current};hourNow.current=next;onHour(next);
+  }});
+  useLayoutEffect(()=>{const z=zoom.current,el=scroller.current;zoom.current=null;if(!z||!el)return;
+    el.scrollTop=zoomScroll({scrollTop:z.scrollTop,pointerY:z.pointerY,bodyTop:sticky.current?.offsetHeight??0,from:z.from,to:hour});},[hour]);
+  // Opening glides from midnight to now, or to the first plan if it is earlier; later visits keep their place.
+  const opening=useRef(0);
+  const target=(useNowHour:boolean)=>{
+    const nowHour=days.includes(todayKey())&&useNowHour?now.getHours()+now.getMinutes()/60:undefined;
+    const starts=placed.flat().map(p=>p.start/60);const first=starts.length?Math.min(...starts):undefined;
+    return openingHour(nowHour,first);
+  };
+  useLayoutEffect(()=>{
+    const el=scroller.current;if(!el)return;
+    if(scrollMemo.current!==null){el.scrollTop=scrollMemo.current;return;}
+    if(copy)return;
+    const top=target(true)*hour;scrollMemo.current=top;
+    if(reducedMotion())el.scrollTop=top;else opening.current=requestAnimationFrame(()=>el.scrollTo({top,behavior:'smooth'}));
+  },[]);
+  useEffect(()=>{if(!nowSignal)return;scroller.current?.scrollTo({top:Math.max(0,(now.getHours()+now.getMinutes()/60-1.5)*hour),behavior:reducedMotion()?'auto':'smooth'});},[nowSignal]);
+  // A plan from the open email wins over the opening glide.
+  useEffect(()=>{if(!revealAt)return;const el=scroller.current;if(!el)return;cancelAnimationFrame(opening.current);const at=minutesInto(revealAt,dayKey(revealAt))/60;
+    el.scrollTo({top:Math.max(0,(at-1.25)*hour),behavior:reducedMotion()?'auto':'smooth'});},[revealAt]);
   useEffect(()=>{
-    function cancel(e:KeyboardEvent){if(e.key==='Escape'&&gesture.current){e.preventDefault();e.stopPropagation();gesture.current=null;setPreview(null);}}
+    function cancel(e:KeyboardEvent){
+      const g=gesture.current;if(e.key!=='Escape'||!g)return;
+      e.preventDefault();e.stopPropagation();gesture.current=null;
+      // A cancelled move or resize glides back to where it started, then lets go.
+      setPreview(p=>p&&g.moved&&g.kind!=='create'&&!reducedMotion()?{...p,...p.from,phase:'return'}:null);
+    }
     addEventListener('keydown',cancel,true);return ()=>removeEventListener('keydown',cancel,true);
   },[]);
-  useEffect(()=>{if(!draft||draft.allDay)return;requestAnimationFrame(()=>scroller.current?.querySelector('.cal-draft')?.scrollIntoView({block:'nearest'}));},[draft?.start]);
+  useEffect(()=>{if(preview?.phase!=='return')return;const timer=setTimeout(()=>setPreview(null),duration.slow+20);return ()=>clearTimeout(timer);},[preview?.phase]);
+  useEffect(()=>{if(!draft||draft.allDay)return;requestAnimationFrame(()=>scroller.current?.querySelector('.cal-draft')?.scrollIntoView({block:'nearest',behavior:reducedMotion()?'auto':'smooth'}));},[draft?.start]);
+
+  // FLIP: when the layout of the days in view changes (a drop, a calendar shown or hidden, a save), every event
+  // glides from where it was drawn to its new place. A dropped event settles out of the lifted block with a spring.
+  const boxes=useRef(new Map<string,Box>());const measured=useRef({placed:null as unknown,period:'',hour:0});const dropped=useRef<{id:string;box:Box}|null>(null);
+  useLayoutEffect(()=>{
+    const host=columns.current;if(!host||copy)return;
+    const drop=dropped.current;dropped.current=null;const m=measured.current;
+    const layoutChanged=m.placed!==placed,samePeriod=m.period===periodKey&&m.hour===hour;
+    if(!layoutChanged&&!drop&&m.hour===hour)return;
+    const next=new Map<string,Box>();const animate=samePeriod&&m.placed!==null;
+    for(const el of host.querySelectorAll<HTMLElement>('.cal-column > .cal-event[data-event-id]')){
+      const column=el.parentElement!;const key=el.dataset.eventId+'|'+el.dataset.day;
+      const box={x:column.offsetLeft+column.clientLeft+el.offsetLeft,y:el.offsetTop,w:el.offsetWidth,h:el.offsetHeight};next.set(key,box);
+      if(drop&&drop.id===el.dataset.eventId)flip(el,drop.box,box,{spring:true,visual:true});
+      else if(animate&&layoutChanged){const before=boxes.current.get(key);if(before)flip(el,before,box);else fadeIn(el);}
+    }
+    boxes.current=next;measured.current={placed,period:periodKey,hour};
+  },[placed,periodKey,hour,preview]);
+  useEffect(()=>{const host=columns.current;if(!host)return;const observer=new ResizeObserver(()=>{measured.current={...measured.current,period:''};});observer.observe(host);return ()=>observer.disconnect();},[]);
+
   function point(e:{clientX:number;clientY:number}){
     const r=columns.current!.getBoundingClientRect();const index=Math.max(0,Math.min(days.length-1,Math.floor((e.clientX-r.left)/(r.width/days.length))));
-    return {index,minutes:Math.max(0,Math.min(1440,(e.clientY-r.top)/HOUR*60))};
+    return {index,minutes:Math.max(0,Math.min(1440,(e.clientY-r.top)/hour*60))};
   }
   function down(e:React.PointerEvent<HTMLDivElement>){
-    if(e.button!==0||gesture.current)return;
-    const target=e.target as HTMLElement;if(target.closest('.cal-draft'))return;
+    if(e.button!==0||gesture.current||copy)return;
+    const target=e.target as HTMLElement;if(target.closest('.cal-draft,.cal-proposal'))return;
     const block=target.closest<HTMLElement>('[data-event-id]');const p=point(e);
     if(block){
       const event=events.find(x=>x.id===block.dataset.eventId);if(!event)return;
@@ -267,70 +391,84 @@ const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,dra
   }
   function move(e:React.PointerEvent<HTMLDivElement>){
     const g=gesture.current;if(!g||g.pointer!==e.pointerId)return;
-    if(!g.moved){if(Math.hypot(e.clientX-g.x,e.clientY-g.y)<4||g.event?.scheduling)return;g.moved=true;}
+    const first=!g.moved;
+    if(first){if(Math.hypot(e.clientX-g.x,e.clientY-g.y)<4||g.event?.scheduling)return;g.moved=true;}
     const box=scroller.current!.getBoundingClientRect();
-    if(e.clientY<box.top+64)scroller.current!.scrollTop-=10;else if(e.clientY>box.bottom-32)scroller.current!.scrollTop+=10;
+    if(e.clientY<box.top+(compact?24:64))scroller.current!.scrollTop-=10;else if(e.clientY>box.bottom-32)scroller.current!.scrollTop+=10;
     const p=point(e);const snap=(m:number)=>Math.round(m/SNAP)*SNAP;
+    const from={index:days.indexOf(g.day),start:g.origin,end:g.kind==='create'?g.origin+SNAP:Math.min(1440,minutesInto(g.event!.end,g.day))};
     if(g.kind==='create'){const at=snap(p.minutes);g.start=Math.min(g.origin,at);g.end=Math.max(g.origin+SNAP,at);if(g.end-g.start<SNAP)g.end=g.start+SNAP;}
-    else if(g.kind==='move'){const length=g.end-g.start;g.start=Math.max(0,Math.min(1440-SNAP,snap(p.minutes-g.grab)));g.index=p.index;setPreview({kind:'move',id:g.event!.id,index:g.index,start:g.start,end:g.start+length});return;}
+    else if(g.kind==='move'){const length=g.end-g.origin;g.start=Math.max(0,Math.min(1440-SNAP,snap(p.minutes-g.grab)));g.index=p.index;setPreview({kind:'move',id:g.event!.id,index:g.index,start:g.start,end:g.start+length,phase:'drag',from:{...from,end:from.start+length}});return;}
     else g.end=Math.max(g.start+SNAP,Math.min(1440,snap(p.minutes)));
-    setPreview({kind:g.kind,id:g.event?.id,index:g.index,start:g.start,end:g.end});
+    setPreview({kind:g.kind,id:g.event?.id,index:g.index,start:g.start,end:g.end,phase:'drag',from});
   }
   function up(e:React.PointerEvent<HTMLDivElement>){
     const g=gesture.current;if(!g||g.pointer!==e.pointerId)return;
-    gesture.current=null;setPreview(null);
+    gesture.current=null;
     if(g.kind==='create'){
+      setPreview(null);
       // A click makes an hour-long plan; a drag makes exactly what was drawn.
       if(!g.moved&&g.dismiss)return;
       const start=g.moved?g.start:g.origin,end=g.moved?g.end:Math.min(1440,g.origin+60);
       create(wall(g.day,start),wall(g.day,end),false);return;
     }
     const event=g.event!;
-    if(!g.moved){open(event,g.element!);return;}
+    if(!g.moved){setPreview(null);open(event,g.element!);return;}
+    // The real event takes over from the lifted block exactly where it is drawn, then settles.
+    const lifted=ghost.current?.firstElementChild?.getBoundingClientRect(),host=columns.current?.getBoundingClientRect();
+    if(lifted&&host)dropped.current={id:event.id,box:{x:lifted.left-host.left,y:lifted.top-host.top,w:lifted.width,h:lifted.height}};
+    setPreview(null);
     if(g.kind==='resize'){if(g.end!==minutesInto(event.end,g.day))change(event,event.start,wall(g.day,g.end).toISOString());return;}
     const shift=+wall(days[g.index],g.start)-+wall(g.day,g.origin);
     if(shift)change(event,new Date(+new Date(event.start)+shift).toISOString(),new Date(+new Date(event.end)+shift).toISOString());
   }
-  function cancel(){gesture.current=null;setPreview(null);}
+  function cancel(){const g=gesture.current;gesture.current=null;setPreview(p=>p&&g?.moved&&g.kind!=='create'&&!reducedMotion()?{...p,...p.from,phase:'return'}:null);}
   function allDayCreate(e:React.MouseEvent<HTMLDivElement>){
-    if((e.target as HTMLElement).closest('.cal-bar'))return;
+    if((e.target as HTMLElement).closest('.cal-bar')||copy)return;
     const r=e.currentTarget.getBoundingClientRect();const index=Math.max(0,Math.min(days.length-1,Math.floor((e.clientX-r.left)/(r.width/days.length))));
     create(days[index],addDays(days[index],1),true,allDayRow.current?.querySelectorAll<HTMLElement>('.cal-allday-cell')[index]);
   }
-  const block=(e:CalendarEvent,day:string,box:{top:number;height:number;left:string;width:string},extra?:string)=>{
+  const block=(e:CalendarEvent,day:string,box:{top:number;height:number;left:string;width:string},extra?:string|false)=>{
     const short=box.height<34;const endsToday=dayKey(new Date(+new Date(e.end)-1).toISOString())===day;
-    return <div key={e.id+day} data-event-id={e.id} data-day={day} role="button" tabIndex={0} aria-label={`${e.title}, ${timeRange(e)}`}
-      className={cx('cal-event',short&&'is-short',+new Date(e.end)<+now&&'is-past',selectedId===e.id&&'is-selected',e.scheduling&&'is-locked',extra)}
+    return <div key={e.id+day} data-event-id={e.id} data-day={day} role="button" tabIndex={copy?-1:0} aria-label={`${e.title}, ${timeRange(e)}`}
+      className={cx('cal-event',short&&'is-short',+new Date(e.end)<+now&&'is-past',selectedId===e.id&&'is-selected',e.scheduling&&'is-locked',clashIds?.has(e.id)&&'is-clash',focusId===e.id&&'is-focus',extra)}
       style={{...eventStyle(sourceOf(e)?.color),top:box.top,height:box.height,left:box.left,width:box.width}}
       onKeyDown={k=>{if(k.key==='Enter'||k.key===' '){k.preventDefault();k.stopPropagation();open(e,k.currentTarget);}}}>
       <strong>{e.title||'Untitled'}</strong>{short?<span>{shortClock(e.start)}</span>:<span>{shortRange(e)}</span>}{!short&&box.height>=64&&e.location&&<span>{e.location}</span>}
       {!e.scheduling&&endsToday&&<i className="cal-resize" aria-hidden="true"/>}
     </div>;
   };
-  const nowTop=(now.getHours()*60+now.getMinutes())/60*HOUR;
+  const nowTop=(now.getHours()*60+now.getMinutes())/60*hour;
   const todayIndex=days.indexOf(today);
-  return <div className={cx('cal-time',days.length===1&&'is-day')} style={{'--days':days.length,'--hour':HOUR+'px'} as React.CSSProperties}>
-    <div className="cal-scroll" ref={scroller}>
-      <div className="cal-sticky">
-        <div className="cal-days">
+  const dragged=preview?.id?events.find(x=>x.id===preview.id):undefined;
+  const showAllDay=!compact||bars.length>0||!!draft?.allDay||!!proposal?.allDay;
+  return <div ref={root} className={cx('cal-time',days.length===1&&'is-day',compact&&'is-compact')} style={{'--days':days.length,'--hour':hour+'px'} as React.CSSProperties}>
+    <div className="cal-scroll" ref={scroller} onScroll={e=>{if(!copy)scrollMemo.current=e.currentTarget.scrollTop;}}>
+      <div className="cal-sticky" ref={sticky}>
+        {!compact&&<div className="cal-days">
           <span className="cal-zone">{zone}</span>
-          {days.map(day=><button key={day} className={cx('cal-dayhead',day===today&&'is-today',day<today&&'is-past')} onClick={()=>showDay(day)} aria-label={dayLabel(day,{weekday:'long',month:'long',day:'numeric'})}>
-            <span>{dayLabel(day,{weekday:'short'})}</span><strong>{Number(day.slice(8))}</strong>
-          </button>)}
-        </div>
-        <div className="cal-allday">
+          <div className="cal-clip"><div className="cal-days-track" ref={dayTrack}>
+            {days.map(day=><button key={day} className={cx('cal-dayhead',day===today&&'is-today',day<today&&'is-past')} onClick={()=>showDay?.(day)} aria-label={dayLabel(day,{weekday:'long',month:'long',day:'numeric'})}>
+              <span>{dayLabel(day,{weekday:'short'})}</span><strong>{Number(day.slice(8))}</strong>
+            </button>)}
+          </div></div>
+        </div>}
+        {showAllDay&&<div className="cal-allday">
           <span className="cal-gutter-label">All day</span>
-          <div className="cal-allday-grid" ref={allDayRow} style={{'--lanes':Math.max(1,lanes)} as React.CSSProperties} onDoubleClick={allDayCreate}>
-            {days.map((day,i)=><span key={day} className="cal-allday-cell" style={{gridColumn:i+1}}>{draft?.allDay&&draft.start===day&&<span className="cal-bar cal-draft" style={eventStyle(draftColor)} ref={draftNode}>New event</span>}</span>)}
-            {bars.map(({event:e,from,to,lane})=><button key={e.id} className={cx('cal-bar',selectedId===e.id&&'is-selected',e.end.slice(0,10)<=today&&'is-past')} style={{...eventStyle(sourceOf(e)?.color),gridColumn:`${from+1} / ${to+2}`,gridRow:lane+1}}
+          <div className="cal-clip"><div className="cal-allday-grid" ref={allDayRow} style={{'--lanes':Math.max(1,lanes)} as React.CSSProperties} onDoubleClick={allDayCreate}>
+            {days.map((day,i)=><span key={day} className="cal-allday-cell" style={{gridColumn:i+1}}>
+              {draft?.allDay&&draft.start===day&&<span className="cal-bar cal-draft" style={eventStyle(draftColor)} ref={draftNode}>New event</span>}
+              {proposal?.allDay&&proposal.start.slice(0,10)===day&&<button className="cal-bar cal-proposal" style={eventStyle(proposal.color)} onClick={proposal.open}>{proposal.title||'Proposed plan'}</button>}
+            </span>)}
+            {bars.map(({event:e,from,to,lane})=><button key={e.id} className={cx('cal-bar',selectedId===e.id&&'is-selected',e.end.slice(0,10)<=today&&'is-past',focusId===e.id&&'is-focus')} style={{...eventStyle(sourceOf(e)?.color),gridColumn:`${from+1} / ${to+2}`,gridRow:lane+1}}
               onClick={ev=>open(e,ev.currentTarget)} onDoubleClick={ev=>{ev.stopPropagation();edit(e);}}>{e.title||'Untitled'}</button>)}
-          </div>
-        </div>
+          </div></div>
+        </div>}
       </div>
-      <div className="cal-body" style={{height:24*HOUR}}>
-        <div className="cal-gutter" aria-hidden="true">{Array.from({length:23},(_,i)=><span key={i} style={{top:(i+1)*HOUR}}>{hourLabel(i+1)}</span>)}
+      <div className="cal-body" style={{height:24*hour}}>
+        <div className="cal-gutter" aria-hidden="true">{Array.from({length:23},(_,i)=><span key={i} style={{top:(i+1)*hour}}>{hourLabel(i+1)}</span>)}
           {todayIndex>=0&&<time className="cal-now-label" style={{top:nowTop}}>{clock(now.toISOString())}</time>}</div>
-        <div className="cal-columns" ref={columns} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}
+        <div className="cal-clip"><div className="cal-columns" ref={columns} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}
           onDoubleClick={e=>{const el=(e.target as HTMLElement).closest<HTMLElement>('[data-event-id]');const event=el&&events.find(x=>x.id===el.dataset.eventId);if(event)edit(event);}}>
           {todayIndex>=0&&<div className="cal-now-faint" style={{top:nowTop}}/>}
           {days.map((day,i)=><div key={day} className={cx('cal-column',day===today&&'is-today')}>
@@ -338,46 +476,116 @@ const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,dra
               const dragging=preview&&preview.id===p.event.id&&preview.kind!=='create';
               // Overlapping plans cascade: each reaches into its neighbour's column, and later ones sit on top.
               const last=p.column+p.span>=p.columns||days.length===1;const width=last?p.span/p.columns:Math.min((p.columns-p.column)/p.columns,p.span*1.7/p.columns);
-              const box={top:p.start/60*HOUR+1,height:Math.max(18,(p.end-p.start)/60*HOUR-2),left:`calc(${p.column/p.columns*100}% + 1px)`,width:`calc(${width*100}% - ${last?6:3}px)`};
-              return block(p.event,day,box,dragging?'is-origin':undefined);
+              const box={top:p.start/60*hour+1,height:Math.max(18,(p.end-p.start)/60*hour-2),left:`calc(${p.column/p.columns*100}% + 1px)`,width:`calc(${width*100}% - ${last?6:3}px)`};
+              if(p.event.id===proposalId&&proposal)return <button key="proposal" className="cal-proposal" style={{...eventStyle(proposal.color),...box,width:`calc(${p.span/p.columns*100}% - 6px)`}} onClick={proposal.open}
+                aria-label={`Proposed: ${proposal.title}, ${timeRange(proposal)}. Open the editor`}><strong>{proposal.title||'Proposed plan'}</strong><span>{shortRange(proposal)}</span></button>;
+              return block(p.event,day,box,!!dragging&&'is-origin');
             })}
-            {preview&&preview.index===i&&(()=>{const e=preview.id?events.find(x=>x.id===preview.id):undefined;
-              const box={top:preview.start/60*HOUR+1,height:Math.max(18,(preview.end-preview.start)/60*HOUR-2),left:'1px',width:'calc(100% - 6px)'};
-              const ghost={start:wall(day,preview.start).toISOString(),end:wall(day,preview.end).toISOString(),allDay:false};
-              return <div className="cal-event is-dragging" style={{...eventStyle(e?sourceOf(e)?.color:draftColor),...box}} aria-hidden="true"><strong>{e?.title||'New event'}</strong><span>{shortRange(ghost)}</span></div>;})()}
             {draft&&!draft.allDay&&dayKey(draft.start)===day&&!preview&&(()=>{const start=minutesInto(draft.start,day),end=Math.min(1440,minutesInto(draft.end,day));
-              return <div ref={draftNode} className="cal-event cal-draft" style={{...eventStyle(draftColor),top:start/60*HOUR+1,height:Math.max(18,(end-start)/60*HOUR-2),left:'1px',width:'calc(100% - 6px)'}}><strong>New event</strong><span>{shortRange(draft)}</span></div>;})()}
+              return <div ref={draftNode} className="cal-event cal-draft" style={{...eventStyle(draftColor),top:start/60*hour+1,height:Math.max(18,(end-start)/60*hour-2),left:'1px',width:'calc(100% - 6px)'}}><strong>New event</strong><span>{shortRange(draft)}</span></div>;})()}
             {day===today&&<div className="cal-now" style={{top:nowTop}}/>}
           </div>)}
-        </div>
+          {preview&&(()=>{
+            // One block follows the pointer across days; it snaps to quarter hours and glides between them.
+            const span={start:wall(days[preview.index],preview.start).toISOString(),end:wall(days[preview.index],preview.end).toISOString(),allDay:false};
+            return <div ref={ghost} aria-hidden="true" className={cx('cal-ghost',preview.kind==='create'?'is-drawing':'is-lifted',preview.phase==='return'&&'is-returning')}
+              style={{...eventStyle(dragged?sourceOf(dragged)?.color:draftColor),height:Math.max(18,(preview.end-preview.start)/60*hour-2),transform:`translate(${preview.index*100}%,${preview.start/60*hour+1}px)`}}>
+              <div className="cal-event is-dragging"><strong>{dragged?.title||'New event'}</strong><span>{shortRange(span)}</span></div>
+            </div>;})()}
+        </div></div>
       </div>
     </div>
   </div>;
 });
 
 /** Month view: six weeks of days, each with as many plans as fit and a count of the rest. */
-const MonthGrid=memo(function MonthGrid({days,anchor,events,sourceOf,selectedId,draft,draftColor,open,create,day:showDay,draftNode}:GridProps&{anchor:string}){
-  const grid=useRef<HTMLDivElement>(null);const [rowHeight,setRowHeight]=useState(110);const today=todayKey();
+const MonthGrid=memo(function MonthGrid({days,anchor,events,sourceOf,selectedId,draft,draftColor,periodKey,slide,copy,open,create,day:showDay,draftNode,onPage}:GridProps&{anchor:string}){
+  const root=useRef<HTMLDivElement>(null);const grid=useRef<HTMLDivElement>(null);const [rowHeight,setRowHeight]=useState(110);const today=todayKey();
+  const tracks=()=>grid.current?[grid.current]:[];
+  usePeriodSlide(periodKey,tracks,slide);
+  usePeriodSwipe({host:root,tracks,enabled:!copy,onCommit:onPage});
   useLayoutEffect(()=>{const el=grid.current;if(!el)return;const observer=new ResizeObserver(([entry])=>setRowHeight(entry.contentRect.height/6));observer.observe(el);return ()=>observer.disconnect();},[]);
   const fit=Math.max(1,Math.floor((rowHeight-30)/21));const month=anchor.slice(0,7);
-  return <div className="cal-month">
+  return <div className="cal-month" ref={root}>
     <div className="cal-month-head">{days.slice(0,7).map(day=><span key={day}>{dayLabel(day,{weekday:'short'})}</span>)}</div>
-    <div className="cal-month-grid" ref={grid}>
+    <div className="cal-clip cal-month-clip"><div className="cal-month-grid" ref={grid}>
       {days.map(day=>{
         const list=eventsOnDay(events,day);const visible=list.length>fit?list.slice(0,fit-1):list;const more=list.length-visible.length;
         const first=day.endsWith('-01');
         return <div key={day} data-cell={day} className={cx('cal-cell',day.slice(0,7)!==month&&'is-outside',day===today&&'is-today',day<today&&'is-past')}
           onDoubleClick={e=>{if((e.target as HTMLElement).closest('.cal-chip,.cal-more'))return;const slot=slotOn(dateOf(day));create(slot.start,slot.end,false,e.currentTarget);}}>
-          <button className="cal-cell-day" aria-label={dayLabel(day,{weekday:'long',month:'long',day:'numeric'})} onClick={()=>showDay(day)}>{first?dayLabel(day,{month:'short',day:'numeric'}):Number(day.slice(8))}</button>
+          <button className="cal-cell-day" aria-label={dayLabel(day,{weekday:'long',month:'long',day:'numeric'})} onClick={()=>showDay?.(day)}>{first?dayLabel(day,{month:'short',day:'numeric'}):Number(day.slice(8))}</button>
           {visible.map(e=><button key={e.id} className={cx('cal-chip',e.allDay&&'is-allday',selectedId===e.id&&'is-selected')} style={eventStyle(sourceOf(e)?.color)} onClick={ev=>open(e,ev.currentTarget)}>
             {!e.allDay&&<i/>}<span>{e.title||'Untitled'}</span>{!e.allDay&&<time>{shortClock(e.start)}</time>}
           </button>)}
           {draft&&dayKey(draft.start)===day&&<span ref={draftNode} className="cal-chip is-allday cal-draft" style={eventStyle(draftColor)}><span>New event</span></span>}
-          {more>0&&<button className="cal-more" onClick={()=>showDay(day)}>{more} more</button>}
+          {more>0&&<button className="cal-more" onClick={()=>showDay?.(day)}>{more} more</button>}
         </div>;
       })}
-    </div>
+    </div></div>
   </div>;
+});
+
+type TodayProps={events:CalendarEvent[];accounts:Account[];accountId:string;hidden:string[];
+  /** The email open in the reader, if any; its plans steer the day shown. */ thread?:Thread;finding:boolean;
+  edit:(event:Partial<CalendarEvent>)=>void;onThread:(id:string)=>void;onFind:(thread:Thread)=>void};
+
+/**
+ * Today in the dock: one day of every visible calendar, beside the mail. It follows the open email: a plan
+ * found in it shows as a dashed outline on its day, with clashes marked; one click opens the editor on it.
+ */
+export const TodayPanel=memo(function TodayPanel({events,accounts,accountId,hidden,thread,finding,edit,onThread,onFind}:TodayProps){
+  const model=useCalendarModel({events,accounts,accountId,hidden,edit,onThread});
+  const [day,setDay]=useState(todayKey);const [picking,setPicking]=useState(false);
+  const [hour,setHour]=useHourHeight('aplos.today.hour',44);
+  const slide=useRef<{direction:number;from?:number}|null>(null);const scrollMemo=useRef<number|null>(null);const dateButton=useRef<HTMLButtonElement>(null);
+  const plans=usePlans(thread?.id);
+  const context=useMemo(()=>emailContext(thread?.id,model.shown,plans),[thread?.id,model.shown,plans]);
+  const days=useMemo(()=>[day],[day]);
+  function go(next:string,from?:number){if(next===day)return;slide.current={direction:next>day?1:-1,from};setDay(next);model.setSelection(null);model.setDraft(null);}
+  // An email with a plan moves Today to that day; the plan or its saved event scrolls into view.
+  useEffect(()=>{if(context)go(context.day);},[thread?.id,context?.day]);
+  const proposal=context?.proposal;
+  const clashing=useMemo(()=>proposal?clashes(proposal,model.shown):[],[proposal,model.shown]);
+  const clashIds=useMemo(()=>new Set(clashing.map(e=>e.id)),[clashing]);
+  const proposalColor=proposal&&thread?model.sources.find(s=>s.key===model.defaultCalendar(thread.accountId))?.color:undefined;
+  const prefill=()=>proposal&&thread&&edit({...proposal,threadId:thread.id,accountId:thread.accountId});
+  const handlers=useHandlers({page:(direction:1|-1,offset:number)=>go(addDays(day,direction),direction*90+offset*.2),open:()=>prefill()});
+  const isToday=day===todayKey();
+  const mayHavePlan=thread&&!context&&liveAction(thread)?.kind==='calendar';
+  return <section className="today-panel" aria-label="Today" onKeyDown={e=>{
+    const el=e.target as HTMLElement;if(['INPUT','TEXTAREA','SELECT'].includes(el.tagName)||e.metaKey||e.ctrlKey||e.altKey)return;
+    const step:Record<string,number>={ArrowLeft:-1,ArrowRight:1};
+    if(e.key in step&&!el.closest('.cal-event,[role=tab]')){e.preventDefault();e.stopPropagation();go(addDays(day,step[e.key]));}
+    else if(e.key==='t'){e.stopPropagation();go(todayKey());}
+  }}>
+    <header className="today-head">
+      <button ref={dateButton} className="today-date" aria-haspopup="dialog" aria-expanded={picking} onClick={()=>setPicking(v=>!v)}>
+        <strong>{isToday?'Today':dayLabel(day,{weekday:'long'})}</strong><span>{dayLabel(day,isToday?{weekday:'long',month:'short',day:'numeric'}:{month:'short',day:'numeric'})}</span>
+      </button>
+      <span className="actions">
+        {!isToday&&<Button variant="text" size="sm" onClick={()=>go(todayKey())}>Today</Button>}
+        <IconButton size="sm" label="Previous day" shortcut="←" icon={ChevronLeft} onClick={()=>go(addDays(day,-1))}/>
+        <IconButton size="sm" label="Next day" shortcut="→" icon={ChevronRight} onClick={()=>go(addDays(day,1))}/>
+      </span>
+    </header>
+    <Popover open={picking} anchor={dateButton.current} onClose={()=>setPicking(false)} placement="bottom-start" className="ui-surface today-picker" label="Choose a day">
+      <MiniMonth anchor={day} range={days} busy={new Set()} onPick={next=>{go(next);setPicking(false);}}/>
+    </Popover>
+    {proposal&&<div className={cx('today-context',clashing.length>0&&'has-clash')}>
+      <p className="today-context-title"><CalendarDays size={14}/><span>From this email</span></p>
+      <button className="today-context-plan" onClick={prefill}><strong>{proposal.title||'A plan'}</strong><span>{dayLabel(dayKey(proposal.start.length===10?proposal.start+'T00:00:00':proposal.start),{weekday:'short',month:'short',day:'numeric'})} · {timeRange({...proposal,allDay:!!proposal.allDay})}</span></button>
+      <p className="today-context-note">{clashing.length?<>Clashes with {clashing.map(e=>e.title).join(', ')}</>:proposal.allDay?'An all-day plan':'You’re free then'}</p>
+      <Button variant="tinted" size="sm" icon={Plus} onClick={prefill}>Add to calendar…</Button>
+    </div>}
+    {context?.saved&&!proposal&&<p className="today-context is-saved"><CalendarDays size={14}/><span>This email’s plan is on your calendar: <strong>{context.saved.title}</strong></span></p>}
+    {mayHavePlan&&<div className="today-context is-quiet"><span>This email mentions a plan.</span><Button variant="text" size="sm" loading={finding} onClick={()=>thread&&onFind(thread)}>Find it</Button></div>}
+    <TimeGrid compact days={days} events={model.shown} sourceOf={model.sourceOf} selectedId={model.selection?.id} draft={model.draft} draftColor={model.draftColor} overlay={model.overlay}
+      periodKey={day} slide={slide} {...model.handlers} onPage={handlers.page} hour={hour} onHour={setHour} scrollMemo={scrollMemo}
+      proposal={proposal&&{...proposal,allDay:!!proposal.allDay,title:proposal.title??'',color:proposalColor,open:handlers.open}} clashIds={clashIds} focusId={context?.saved?.id}
+      revealAt={context&&context.day===day?(proposal?.allDay?undefined:proposal?.start??(context.saved?.allDay?undefined:context.saved?.start)):undefined}/>
+    {model.popovers}
+  </section>;
 });
 
 /** The small month on the left: picks a day for the main view and marks the days in view. */

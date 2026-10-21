@@ -32,20 +32,33 @@
    would relayout the whole mail column on every frame. Closed, the panel waits off the right edge. */
 .ask-dock { position: relative; width: 0; flex: none; z-index: 2; }
 .ask-dock.open { width: var(--ask-width); }
-.ask-dock > .ask-panel { position: absolute; inset: 0 0 0 auto; transform: translateX(100%); visibility: hidden; transition: transform var(--dur-fast) var(--ease-in), visibility 0s linear var(--dur-fast); }
-.ask-dock.open > .ask-panel { transform: none; visibility: visible; transition: transform var(--dur-dock) var(--ease-out-strong); }
-.ask-panel {
+.ask-dock > .dock-panel { position: absolute; inset: 0 0 0 auto; transform: translateX(100%); visibility: hidden; transition: transform var(--dur-fast) var(--ease-in), visibility 0s linear var(--dur-fast); }
+.ask-dock.open > .dock-panel { transform: none; visibility: visible; transition: transform var(--dur-dock) var(--ease-out-strong); }
+/* The dock holds Ask and Today; a small switch at the top chooses between them. */
+.dock-panel {
   width: var(--ask-width);
   display: flex;
   flex-direction: column;
   background: var(--ask-fill);
   box-shadow: inset .5px 0 0 color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.dock-head { flex: none; height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px 0 12px; -webkit-app-region: drag; }
+.dock-head > * { -webkit-app-region: no-drag; }
+.dock-tabs.ui-tabs-segmented .ui-tab { width: auto; padding: 0 12px; font-size: var(--text-sm); font-weight: 500; letter-spacing: var(--tracking-sm); color: var(--dim); }
+.dock-tabs.ui-tabs-segmented .ui-tab.is-selected { color: var(--ink); }
+.dock-body { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: fade var(--dur-base) var(--ease); }
+.dock-body[hidden] { display: none; }
+.ask-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   container: ask / inline-size;
 }
 
 /* ---------- Field ---------- */
 
-.ask-head { padding: 8px 8px 0 12px; display: flex; align-items: flex-start; gap: 4px; -webkit-app-region: drag; }
+.ask-head { padding: 0 12px 0 12px; display: flex; align-items: flex-start; gap: 4px; -webkit-app-region: drag; }
 .ask-head > * { -webkit-app-region: no-drag; }
 .ask-collapse { margin-top: 3px; }
 .ask-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -240,8 +253,8 @@
 @media (max-width: 700px) {
   .ask-dock { position: fixed; inset: 0 0 0 auto; z-index: 60; }
   .ask-dock.open { width: min(360px, 100vw); }
-  .ask-dock > .ask-panel { box-shadow: var(--glass-raised); }
-  .ask-panel { width: min(360px, 100vw); }
+  .ask-dock > .dock-panel { box-shadow: var(--glass-raised); }
+  .dock-panel { width: min(360px, 100vw); }
   .ask-pill > span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .ask-field.is-recording { animation: none; } }

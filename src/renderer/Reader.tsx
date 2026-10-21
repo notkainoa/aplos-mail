@@ -1,4 +1,5 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
+import {rememberPlans} from './detectedPlans';
 import {Ban,Bell,Bookmark,CalendarDays,Check,ChevronDown,ChevronUp,Clock,Download,ExternalLink,Forward,ImageOff,MailOpen,MessageCircle,MoreHorizontal,Paperclip,RefreshCw,Reply,ReplyAll,Search,ShieldAlert,Trash2,Undo2,X,CornerUpLeft} from './icons';
 import type {Attachment,CalendarEvent,Message,Settings,Thread} from '../shared/types';
 import {dateLabel,dueLabel,fullDate,invoke,isoDay,openUrl,saveFile} from './bridge';
@@ -58,7 +59,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const menuGroups:MenuGroups=[
  [{label:'Open in separate window',icon:ExternalLink,onSelect:()=>invoke('window.thread',{threadId:thread.id})}],
  [{label:replyAll?'Reply to sender':'Reply all',icon:replyAll?Reply:ReplyAll,keys:'⇧ R',onSelect:()=>reply(replyAll?'reply':'reply-all')},{label:'Forward',icon:Forward,keys:'F',onSelect:()=>reply('forward')}],
- [{label:'Due date & reminder',icon:Bell,onSelect:openDates},{label:'Find plans in this email',icon:CalendarDays,hint:'Suggest calendar events from dates in the thread',onSelect:()=>run('plans',async()=>{setExtracted(await invoke<Partial<CalendarEvent>[]>('calendar.extract',{threadId:thread.id}));})}],
+ [{label:'Due date & reminder',icon:Bell,onSelect:openDates},{label:'Find plans in this email',icon:CalendarDays,hint:'Suggest calendar events from dates in the thread',onSelect:()=>run('plans',async()=>{const found=await invoke<Partial<CalendarEvent>[]>('calendar.extract',{threadId:thread.id});rememberPlans(thread.id,found);setExtracted(found);})}],
  [{label:'Mark '+(thread.unread?'read':'unread'),icon:MailOpen,keys:'U',onSelect:()=>patch([thread.id],{unread:!thread.unread})},{label:thread.replyStatus==='needs-reply'?'Clear Needs reply':'Needs my reply',icon:CornerUpLeft,onSelect:()=>patch([thread.id],{replyStatus:thread.replyStatus==='needs-reply'?'none':'needs-reply'})},{label:thread.replyStatus==='awaiting-reply'?'Clear Awaiting reply':'Awaiting a reply',icon:MessageCircle,onSelect:()=>patch([thread.id],{replyStatus:thread.replyStatus==='awaiting-reply'?'none':'awaiting-reply'})},{label:'Find in message',icon:Search,onSelect:()=>setFind(true)}],
  [{label:'Block sender',icon:Ban,hint:'Future mail from this address goes to Spam',onSelect:()=>run('block',async()=>{const email=thread.messages[0].from;if(await confirmAction({title:'Block '+email+'?',message:'Their current and future mail will go to Spam. You can unblock them in Settings.',confirmLabel:'Block sender',danger:true}))await invoke('sender.block',{email});})},
   {label:'Unsubscribe',icon:X,onSelect:()=>run('unsubscribe',async()=>{const r=await invoke<{url?:string;message:string}>('thread.unsubscribe',{id:thread.id});if(r.url){if(await confirmAction({title:'Open the unsubscribe page?',message:r.message,confirmLabel:'Open page'}))await openUrl(r.url);}else notify(r.message);})},
