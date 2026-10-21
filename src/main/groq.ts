@@ -23,6 +23,17 @@ export function localNow(timeZone?:string,date=new Date()) {
     return `${noon.toLocaleDateString('en-US',{weekday:'long',timeZone:'UTC'})} ${noon.toISOString().slice(0,10)} ${offsetAt(local)}`;});
   return {now:`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${offset}`,weekday:parts.weekday,timeZone:zone??Intl.DateTimeFormat().resolvedOptions().timeZone,upcoming};
 }
+/**
+ * Each message's own week: the weekday it was sent and the seven dates after it, in the user's zone. "Friday" in a
+ * Monday email is then a lookup rather than weekday arithmetic, which models get wrong now and then.
+ */
+export function messageWeek(sent:string,timeZone?:string){
+  let zone:string|undefined;try{if(timeZone)zone=new Intl.DateTimeFormat('en-US',{timeZone}).resolvedOptions().timeZone;}catch{zone=undefined;}
+  const at=new Date(sent);if(Number.isNaN(+at))return;
+  const day=new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(at);
+  const label=(i:number)=>{const noon=new Date(Date.parse(day+'T12:00:00Z')+i*86400000);return `${noon.toLocaleDateString('en-US',{weekday:'long',timeZone:'UTC'})} ${noon.toISOString().slice(0,10)}`;};
+  return {sentOn:label(0),following:Array.from({length:7},(_,i)=>label(i+1))};
+}
 /** A model-proposed event, or nothing: titles are required, dates must parse, all-day dates are plain days and the end follows the start. */
 function calendarEvent(value:unknown,guest:(email:string)=>boolean):Partial<CalendarEvent>|undefined {
   if(!value||typeof value!=='object'||Array.isArray(value))return;
@@ -34,6 +45,8 @@ function calendarEvent(value:unknown,guest:(email:string)=>boolean):Partial<Cale
   if(!realDay(start)||!realDay(end))return;
   return {title:str(e.title,500).trim(),start,end,allDay,location:str(e.location,1000),description:str(e.description,4000),guests:Array.isArray(e.guests)?[...new Set(e.guests.filter((x):x is string=>typeof x==='string'&&emailPattern.test(x.trim())&&guest(x.trim())).map(x=>x.trim()))]:[]};
 }
+/** The thread for event extraction, each message with its own week (see messageWeek). */
+const dated=(value:ReturnType<typeof context>,timeZone?:string)=>({...value,messages:value.messages.map(m=>({...m,...messageWeek(m.date,timeZone)}))});
 function context(thread:Thread) {
   const value={id:thread.id,subject:thread.subject.slice(0,2000),messages:thread.messages.slice(-12).map(m=>({from:m.from,date:m.date,text:m.text.slice(0,14000)}))};
   // Keep complete JSON and the latest mail rather than cutting a serialized object in half.
@@ -141,7 +154,7 @@ export function createGroq(options:GroqOptions = {}) {
       return {role:'assistant',content:str(result.content,16000),citations:Array.isArray(result.citations)?[...new Set(result.citations.filter((id):id is string=>typeof id==='string'&&known.has(id)))]:[],...(result.proposal?{proposal:proposal(result.proposal)}:{}),...(event?{event}:{})};
     },
     async extractEvents(thread:Thread,signal?:AbortSignal,extra:{timeZone?:string;now?:Date}={}):Promise<Partial<CalendarEvent>[]> {
-      const result=await json('Extract explicitly scheduled future or past commitments: a definite day and time the email states. Do not infer a date if ambiguous or left open. Resolve relative days such as "this Saturday" or "tomorrow" from the date of the message that mentions them; clock.upcoming lists the next 14 dates with their weekdays and UTC offsets in clock.timeZone. Keep any time zone the email states; otherwise use the offset listed beside that date in clock.upcoming. Return {events:[{title,start,end,allDay,location,description,guests}]}. Timed start/end are ISO8601 with timezone; without a stated end use 1 hour. All-day dates YYYY-MM-DD with exclusive end. Return [] if no definite event.',{clock:localNow(extra.timeZone,extra.now),thread:context(thread)},signal);
+      const result=await json('Extract explicitly scheduled future or past commitments: a definite day and time the email states. Do not infer a date if ambiguous or left open. Resolve relative days such as "this Saturday", "Friday" or "tomorrow" from the message that mentions them: each message has sentOn (its own day) and following (the next seven dates with weekdays); "today" is sentOn, "tomorrow" is the first entry of following, and a weekday is the entry of following with that name. Never count weekdays yourself. clock.upcoming lists the next 14 dates with their weekdays and UTC offsets in clock.timeZone. Keep any time zone the email states; otherwise use the offset listed beside that date in clock.upcoming. Return {events:[{title,start,end,allDay,location,description,guests}]}. Timed start/end are ISO8601 with timezone; without a stated end use 1 hour. All-day dates YYYY-MM-DD with exclusive end. Return [] if no definite event.',{clock:localNow(extra.timeZone,extra.now),thread:dated(context(thread),extra.timeZone)},signal);
       return (Array.isArray(result.events)?result.events:[]).map(e=>calendarEvent(e,()=>true)).filter(e=>!!e).map(e=>({...e,accountId:thread.accountId,threadId:thread.id,calendarId:'primary'}));
     },
     async transcribe(audio:string,mimeType:string,signal?:AbortSignal):Promise<{text:string}> {

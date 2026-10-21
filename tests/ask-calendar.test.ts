@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGroq, localNow } from '../src/main/groq';
+import { createGroq, localNow, messageWeek } from '../src/main/groq';
 import type { Thread } from '../src/shared/types';
 
 const thread:Thread={id:'lunch',accountId:'personal',subject:'Lunch soon?',summary:'Leah suggests lunch',messages:[{id:'m1',from:'leah@garden.example',fromName:'Leah Park',to:['me@example.test'],text:'We should get lunch soon.',date:'2026-10-14T10:00:00Z',attachments:[]}],date:'2026-10-14T10:00:00Z',unread:false,status:'new',importance:'important',bookmarked:false,replyStatus:'none'};
@@ -42,4 +42,17 @@ test('Ask event proposals resolve against the local clock and are strictly valid
   assert.match(String(sent[0].system),/event\?:\{title,start,end,allDay/);
   for(const q of ['ends before it starts','unparseable','all-day with a time','no title','impossible day','impossible timed day'])assert.equal((await ask(q)).event,undefined,q);
   assert.deepEqual((await ask('Block Friday')).event?.start,'2026-10-23');
+});
+
+test('each message carries its own week, so "Friday" in a Monday email is a lookup in the reader\'s zone',()=>{
+  // Monday 10:00 in Los Angeles is already Monday 17:00 UTC; late Sunday there is Monday in UTC.
+  const week=messageWeek('2026-10-19T17:00:00.000Z','America/Los_Angeles')!;
+  assert.equal(week.sentOn,'Monday 2026-10-19');
+  assert.equal(week.following[0],'Tuesday 2026-10-20');
+  assert.equal(week.following.find(d=>d.startsWith('Friday')),'Friday 2026-10-23');
+  assert.equal(messageWeek('2026-10-19T05:30:00.000Z','America/Los_Angeles')!.sentOn,'Sunday 2026-10-18');
+  assert.equal(messageWeek('2026-10-19T05:30:00.000Z','Asia/Tokyo')!.sentOn,'Monday 2026-10-19');
+  // Across the end of daylight saving the dates still step one calendar day at a time.
+  assert.deepEqual(messageWeek('2026-10-31T18:00:00.000Z','America/New_York')!.following.slice(0,3),['Sunday 2026-11-01','Monday 2026-11-02','Tuesday 2026-11-03']);
+  assert.equal(messageWeek('not a date'),undefined);
 });

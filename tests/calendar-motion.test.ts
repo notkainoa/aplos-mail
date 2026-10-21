@@ -77,3 +77,10 @@ test('a plan sent to Today for review: the chosen one first, gone after Not now,
   assert.equal(emailContext('garden',[saved],plansToReview(found,garden,new Set([planKey(garden)])))?.proposal,supper);
   assert.deepEqual(emailContext('garden',[saved],plansToReview(found,garden,new Set([planKey(garden),planKey(supper)]))),{day:'2026-10-24',saved});
 });
+
+test('a found plan written with a local offset still matches the same event saved in UTC under another title',()=>{
+  const saved:CalendarEvent={id:'r',accountId:'work',calendarId:'demo-work',title:'Project review',start:'2026-10-23T21:00:00.000Z',end:'2026-10-23T22:00:00.000Z',allDay:false,location:'',description:'',guests:[],threadId:'review'};
+  const plan={title:'Friday review: agenda and room',start:'2026-10-23T14:00:00-07:00',end:'2026-10-23T15:00:00-07:00',allDay:false};
+  assert.deepEqual(emailContext('review',[saved],[plan]),{day:emailContext('review',[saved],undefined)!.day,saved});
+  assert.equal(emailContext('review',[saved],[{...plan,start:'2026-10-23T15:00:00-07:00',end:'2026-10-23T16:00:00-07:00'}])?.proposal?.title,plan.title,'an hour later is a different plan');
+});

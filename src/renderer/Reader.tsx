@@ -1,6 +1,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {rememberPlans,usePlans} from './detectedPlans';
 import {dayKey,timeRange} from './calendarTime';
+import {planSaved} from './calendarLayout';
 import {liveAction} from '../shared/mailbox';
 import {Ban,Bell,Bookmark,CalendarDays,Check,ChevronDown,ChevronUp,Clock,Download,ExternalLink,Forward,ImageOff,MailOpen,MessageCircle,MoreHorizontal,Paperclip,RefreshCw,Reply,ReplyAll,Search,ShieldAlert,Trash2,Undo2,X,CornerUpLeft} from './icons';
 import type {Attachment,CalendarEvent,Message,Settings,Thread} from '../shared/types';
@@ -102,7 +103,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
    </span>
   </div>
   {showPlans&&<div className="ai-plans" aria-label="Plans in this email">{plans.map((plan,i)=>{
-   const saved=events.some(e=>e.threadId===thread.id&&(e.start===plan.start||!!plan.title&&e.title.toLowerCase()===plan.title.toLowerCase()));
+   const saved=planSaved(plan,events.filter(e=>e.threadId===thread.id));
    const day=plan.start?dayKey(plan.start):undefined;const date=day?new Date(day+'T00:00:00'):undefined;
    return <div className={cx('ai-plan',saved&&'is-saved')} key={i}>
     <span className="ai-plan-date" aria-hidden="true">{date?<><small>{date.toLocaleDateString([],{month:'short'})}</small><strong>{date.getDate()}</strong></>:<CalendarDays size={18}/>}</span>

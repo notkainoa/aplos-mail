@@ -144,10 +144,19 @@ const dayOfEvent=(e:{start:string;allDay?:boolean})=>e.allDay||e.start.length===
 export function emailContext(threadId:string|undefined,events:CalendarEvent[],plans:Partial<CalendarEvent>[]|undefined):{day:string;proposal?:Proposal;saved?:CalendarEvent}|undefined{
   if(!threadId)return;
   const saved=events.filter(e=>e.threadId===threadId).sort((a,b)=>a.start.localeCompare(b.start));
-  const known=(p:Partial<CalendarEvent>)=>saved.some(e=>e.start===p.start||(!!p.title&&e.title.toLowerCase()===p.title.toLowerCase()&&dayOfEvent(e)===dayOfEvent(p as Proposal)));
+  const known=(p:Partial<CalendarEvent>)=>planSaved(p,saved);
   const proposal=plans?.find((p):p is Proposal=>!!p.start&&!!p.end&&+new Date(p.end)>+new Date(p.start)&&!known(p));
   if(proposal)return {day:dayOfEvent(proposal),proposal};
   if(saved[0])return {day:dayOfEvent(saved[0]),saved:saved[0]};
+}
+
+/**
+ * Whether a found plan is already one of these saved events: the same moment (Groq writes local offsets, hosts write
+ * UTC, so the strings differ), or the same title on the same day.
+ */
+export function planSaved(p:Partial<CalendarEvent>,saved:CalendarEvent[]){
+  const at=p.start?Date.parse(p.start.length===10?p.start+'T00:00:00':p.start):NaN;
+  return saved.some(e=>e.start===p.start||!Number.isNaN(at)&&!e.allDay&&!p.allDay&&Date.parse(e.start)===at||(!!p.title&&!!p.start&&e.title.toLowerCase()===p.title.toLowerCase()&&dayOfEvent(e)===dayOfEvent(p as Proposal)));
 }
 
 /** Timed plans that overlap a proposed time. All-day plans block no time, so they never clash. */
