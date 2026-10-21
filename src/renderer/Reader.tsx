@@ -81,8 +81,10 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  // The bar floats over the top of the thread and turns into a compact title once the subject scrolls under it.
  const title=useRef<HTMLHeadingElement>(null);const [scrolled,setScrolled]=useState(false);const [moved,setMoved]=useState(false);
  useEffect(()=>{const el=title.current,root=scroller.current;if(!el||!root||ghost)return;const observer=new IntersectionObserver(([entry])=>setScrolled(!entry.isIntersecting&&entry.boundingClientRect.top<(entry.rootBounds?.top??0)+1),{root,rootMargin:'-56px 0px 0px 0px'});observer.observe(el);return()=>observer.disconnect();},[ghost]);
- const duePill=useRef<HTMLButtonElement>(null);
- function openDates(){duePill.current?.scrollIntoView({block:'nearest',behavior:'smooth'});setDates(true);}
+ // The due pill shows only for a due date the email has (found or set); "Due date & reminder" shows it while picking.
+ const duePill=useRef<HTMLButtonElement|null>(null);const [dueAnchor,setDueAnchor]=useState<HTMLButtonElement|null>(null);
+ const dueRef=useCallback((el:HTMLButtonElement|null)=>{duePill.current=el;setDueAnchor(el);},[]);
+ function openDates(){setDates(true);requestAnimationFrame(()=>duePill.current?.scrollIntoView({block:'nearest',behavior:'smooth'}));}
  const due=dayOffset(thread.dueDate);
  const dueTone=due===undefined?'':due<0?'is-overdue':due===0?'is-today':'';
  // Plans Groq found in this email take the place of the "Add to calendar" suggestion, with their details.
@@ -93,15 +95,15 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
     :<button className="ai-summary is-prompt" disabled={!!busy} onClick={summarize}>{busy==='summary'?'Summarizing…':'Summarize this email'}</button>}
    {hasSummary&&<IconButton className={cx('ai-refresh',busy==='summary'&&'is-busy')} label="Summarize again" detail="Summarized with Groq" size="xs" icon={RefreshCw} iconSize={13} disabled={!!busy&&busy!=='summary'} loading={busy==='summary'} onClick={summarize}/>}
   </div>
-  <div className={cx('ai-next',!thread.todo&&'no-todo')}>
+  {(thread.todo||thread.dueDate||dates||thread.reminderAt||action&&!planned)&&<div className={cx('ai-next',!thread.todo&&'no-todo')}>
    {thread.todo&&<span className="ai-todo"><span className="todo-ring" aria-hidden="true"/><span className="ai-todo-text">{thread.todo}</span></span>}
    <span className="ai-controls">
-    <button ref={duePill} className={cx('due-pill',dueTone,!thread.dueDate&&'is-empty',dates&&'is-open')} aria-haspopup="dialog" aria-expanded={dates} onClick={()=>setDates(value=>!value)}>
-     <CalendarDays size={14}/><span>{thread.dueDate?dueLabel(thread.dueDate):'Add due date'}</span><ChevronDown size={12}/></button>
+    {(thread.dueDate||dates)&&<button ref={dueRef} className={cx('due-pill',dueTone,!thread.dueDate&&'is-empty',dates&&'is-open')} aria-haspopup="dialog" aria-expanded={dates} onClick={()=>setDates(value=>!value)}>
+     <CalendarDays size={14}/><span>{thread.dueDate?dueLabel(thread.dueDate):'Add due date'}</span><ChevronDown size={12}/></button>}
     {thread.reminderAt&&<button className="due-pill reminder" aria-label={'Reminder '+fullDate(thread.reminderAt)} onClick={openDates}><Bell size={13}/><span>{dateLabel(thread.reminderAt,true)}</span></button>}
     {!planned&&action}
    </span>
-  </div>
+  </div>}
   {showPlans&&<div className="ai-plans" aria-label="Plans in this email">{plans.map((plan,i)=>{
    const saved=planSaved(plan,events.filter(e=>e.threadId===thread.id));
    const day=plan.start?dayKey(plan.start):undefined;const date=day?new Date(day+'T00:00:00'):undefined;
@@ -161,7 +163,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  {doneRight?donePill:laterPill}
  <IconButton variant="glass" size="lg" className="dock-icon" label="Undo" shortcut="Z" placement="top" icon={Undo2} iconSize={17} onClick={undo}/>
  </footer>}
- {!ghost&&<DuePicker open={dates} anchor={duePill.current} thread={thread} patch={patch} onClose={()=>setDates(false)}/>}
+ {!ghost&&<DuePicker open={dates&&!!dueAnchor} anchor={dueAnchor} thread={thread} patch={patch} onClose={()=>setDates(false)}/>}
  <Dialog open={!!preview} onClose={()=>setPreview(undefined)} label="Attachment preview" className="attachment-preview">{shownPreview&&<><header><strong>{shownPreview.name}</strong><div className="actions"><Button variant="secondary" size="sm" icon={Download} onClick={()=>void saveFile(shownPreview.name,shownPreview.data!)}>Download</Button><DialogClose label="Close preview" onClick={()=>setPreview(undefined)}/></div></header>{shownPreview.type.startsWith('image/')?<img src={`data:${shownPreview.type};base64,${shownPreview.data}`} alt={shownPreview.name}/>:shownPreview.type.startsWith('text/')?<pre>{new TextDecoder().decode(Uint8Array.from(atob(shownPreview.data!),c=>c.charCodeAt(0)))}</pre>:<div className="file-preview-fallback"><Paperclip size={40}/><h2>{shownPreview.name}</h2><p>This file opens best in its own app.</p><Button variant="primary" iconRight={ExternalLink} onClick={()=>void saveFile(shownPreview.name,shownPreview.data!,true).catch(e=>setError(e.message))}>Open file</Button></div>}</>}</Dialog>
  </section>;
 }
