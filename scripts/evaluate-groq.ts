@@ -1,7 +1,7 @@
 import { config } from 'dotenv';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createGroq } from '../src/main/groq';
-import { qualityCases } from './quality/cases';
+import { askModel, qualityCases } from './quality/cases';
 
 config({quiet:true});
 const ai=createGroq();
@@ -15,7 +15,7 @@ for(let run=1;run<=runs;run++)for(const item of qualityCases) {
   results.push({id:item.id,run,passed:!error,ms:Math.round(performance.now()-start),...(error?{error}:{})});
   console.log(`${error?'FAIL':'PASS'} ${run}/${runs} ${item.id}`);
 }
-const report={date:new Date().toISOString(),model:process.env.GROQ_MODEL??'openai/gpt-oss-120b',provider:'Groq',syntheticContentOnly:true,runs,passed:results.filter(r=>r.passed).length,total:results.length,results};
+const report={date:new Date().toISOString(),model:process.env.GROQ_MODEL??'openai/gpt-oss-120b',askModel,provider:'Groq',syntheticContentOnly:true,runs,passed:results.filter(r=>r.passed).length,total:results.length,results};
 await mkdir('artifacts',{recursive:true});await writeFile('artifacts/groq-evaluation.json',JSON.stringify(report,null,2));
 console.log(`${report.passed}/${report.total} passed. Report: artifacts/groq-evaluation.json`);
 if(report.passed!==report.total)process.exitCode=1;

@@ -6,6 +6,7 @@ import {Avatar,Badge,Button,Group,GroupRow,Notice,Select,Switch,Tabs,Tooltip,con
 import {AddAccountDialog} from './components/AddAccount';
 import {DomainCheck} from './components/DomainCheck';
 import {DeviceSync} from './components/DeviceSync';
+import {askModels} from '../shared/ask';
 
 const categories=['General','Mail','Calendar','Notifications','Accounts','Help & about'] as const;
 export type SettingsCategory=typeof categories[number];
@@ -63,6 +64,9 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <Group title="Voice & audio">
     <GroupRow label="Microphone" description="Record instructions and questions. Audio is transcribed by Groq.">{devices.length?<Select label="Microphone" value={s.microphone} options={[['','Default input'],...devices.map(d=>[d.deviceId,d.label||'Microphone'] as [string,string])]} onChange={microphone=>onChange({microphone})}/>:<Button variant="secondary" size="sm" icon={Mic} loading={busy==='microphone'} onClick={()=>void microphones()}>Allow access</Button>}</GroupRow>
     {toggle('Send sound','Play a gentle sound after sending.','sendSound')}
+   </Group>
+   <Group title="AI">
+    {choice('Ask model',`${askModels.find(m=>m.id===s.askModel)?.description??askModels[0].description} All AI runs on Groq.`,'askModel',askModels.map(m=>[m.id,m.label] as [string,string]))}
    </Group>
   </>}
   {tab==='Mail'&&<>

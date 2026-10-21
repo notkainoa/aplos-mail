@@ -20,8 +20,8 @@ async function tokenDir(expired=false) {
   return dir;
 }
 
-test('Groq validates JSON results, constrains citations and uses only its own API',async()=>{
-  const responses=[{summary:'Review Friday',importance:'low',replyStatus:'needs-reply',todo:'Confirm',dueDate:'2026-10-16'}, {content:'Friday review.',citations:[thread.id,'invented',thread.id],proposal:{to:'sam@example.test',html:'<p>Confirmed.</p>',accountId:'injected',pendingSendAt:'now'}},{to:'sam@example.test',html:'<p>Yes.</p>'},{html:'<p>Thank you.</p>'},{events:[{title:'Review',start:'2026-10-16T10:00:00Z',end:'2026-10-16T11:00:00Z',allDay:false,guests:['sam@example.test','invalid']},{title:'Bad',start:'tomorrow',end:'next week'}]}];
+test('Groq validates JSON results and uses only its own API',async()=>{
+  const responses=[{summary:'Review Friday',importance:'low',replyStatus:'needs-reply',todo:'Confirm',dueDate:'2026-10-16'},{to:'sam@example.test',html:'<p>Yes.</p>'},{html:'<p>Thank you.</p>'},{events:[{title:'Review',start:'2026-10-16T10:00:00Z',end:'2026-10-16T11:00:00Z',allDay:false,guests:['sam@example.test','invalid']},{title:'Bad',start:'tomorrow',end:'next week'}]}];
   const fetcher:typeof fetch=async(input,init)=>{
     assert.equal(String(input),'https://api.groq.com/openai/v1/chat/completions');
     assert.equal((init?.headers as Record<string,string>).Authorization,'Bearer mock-secret');
@@ -30,8 +30,6 @@ test('Groq validates JSON results, constrains citations and uses only its own AP
   };
   const groq=createGroq({apiKey:'mock-secret',fetch:fetcher});
   assert.equal((await groq.summarize(thread)).todo,'Confirm');
-  const answer=await groq.ask([{role:'user',content:'When is review?'}],[thread]);
-  assert.deepEqual(answer.citations,[thread.id]);assert.equal(answer.proposal?.html,'<p>Confirmed.</p>');assert.equal(answer.proposal?.accountId,undefined);
   assert.equal((await groq.draft('Confirm',thread)).html,'<p>Yes.</p>');
   assert.equal((await groq.polish('<p>Thanks</p>')).html,'<p>Thank you.</p>');
   const events=await groq.extractEvents(thread);assert.equal(events.length,1);assert.deepEqual(events[0].guests,['sam@example.test']);

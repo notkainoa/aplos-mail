@@ -1,39 +1,11 @@
-import type { AskMessage, CalendarEvent, Draft, SuggestedAction, Thread } from '../shared/types';
+import type { CalendarEvent, Draft, SuggestedAction, Thread } from '../shared/types';
+import type { ChatOptions, ChatRequest, ChatTurn } from '../engine/agent';
 import { threadLinks } from '../shared/mailbox';
-export { threadLinks };
+import { calendarEvent, draftProposal as proposal, localNow } from '../engine/proposals';
+export { threadLinks, localNow };
 
 export interface GroqOptions { fetch?:typeof fetch; apiKey?:string; model?:string }
-/** What Ask needs beyond mail to act on calendar requests: the user's clock and known people. */
-export interface AskContext { timeZone?:string; contacts?:{name:string;email:string}[]; now?:Date }
 const str = (value:unknown, max = 20000) => typeof value === 'string' ? value.slice(0,max) : '';
-const emailPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const dayPattern=/^\d{4}-\d{2}-\d{2}$/;
-// V8 also "parses" phrases like "Friday at 11", so require real ISO 8601 before trusting Date.parse.
-const timePattern=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
-/** Local wall time with its UTC offset, e.g. 2026-10-20T09:15:00-07:00, so "Friday at 11am" resolves in the user's zone. */
-export function localNow(timeZone?:string,date=new Date()) {
-  let zone:string|undefined;try{if(timeZone)zone=new Intl.DateTimeFormat('en-US',{timeZone}).resolvedOptions().timeZone;}catch{zone=undefined;}
-  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:zone,hourCycle:'h23',weekday:'long',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',timeZoneName:'longOffset'}).formatToParts(date).map(p=>[p.type,p.value]));
-  const offset=parts.timeZoneName==='GMT'?'+00:00':parts.timeZoneName.slice(3);
-  // Models are unreliable at weekday arithmetic, so spell out the next two weeks.
-  // Step by calendar day, not 24 h, and give each day its own offset so dates past a daylight-saving change stay right.
-  const offsetAt=(at:Date)=>{const name=new Intl.DateTimeFormat('en-US',{timeZone:zone,timeZoneName:'longOffset'}).formatToParts(at).find(x=>x.type==='timeZoneName')?.value??'GMT';return name==='GMT'?'+00:00':name.slice(3);};
-  const minutes=(offset:string)=>(offset[0]==='-'?-1:1)*(Number(offset.slice(1,3))*60+Number(offset.slice(4,6)));
-  const upcoming=Array.from({length:14},(_,i)=>{const noon=new Date(Date.UTC(+parts.year,+parts.month-1,+parts.day+i+1,12));const local=new Date(+noon-minutes(offset)*60000);
-    return `${noon.toLocaleDateString('en-US',{weekday:'long',timeZone:'UTC'})} ${noon.toISOString().slice(0,10)} ${offsetAt(local)}`;});
-  return {now:`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${offset}`,weekday:parts.weekday,timeZone:zone??Intl.DateTimeFormat().resolvedOptions().timeZone,upcoming};
-}
-/** A model-proposed event, or nothing: titles are required, dates must parse, all-day dates are plain days and the end follows the start. */
-function calendarEvent(value:unknown,guest:(email:string)=>boolean):Partial<CalendarEvent>|undefined {
-  if(!value||typeof value!=='object'||Array.isArray(value))return;
-  const e=value as Record<string,unknown>,allDay=e.allDay===true,start=str(e.start,80),end=str(e.end,80);
-  if(!str(e.title).trim()||Number.isNaN(Date.parse(start))||Number.isNaN(Date.parse(end))||Date.parse(end)<=Date.parse(start))return;
-  if(!(allDay?dayPattern.test(start)&&dayPattern.test(end):timePattern.test(start)&&timePattern.test(end)))return;
-  // Date.parse rolls impossible days over (Feb 30 → Mar 2), so the calendar day itself must survive a round trip.
-  const realDay=(value:string)=>{const day=value.slice(0,10);return new Date(day+'T00:00:00Z').toISOString().slice(0,10)===day;};
-  if(!realDay(start)||!realDay(end))return;
-  return {title:str(e.title,500).trim(),start,end,allDay,location:str(e.location,1000),description:str(e.description,4000),guests:Array.isArray(e.guests)?[...new Set(e.guests.filter((x):x is string=>typeof x==='string'&&emailPattern.test(x.trim())&&guest(x.trim())).map(x=>x.trim()))]:[]};
-}
 function context(thread:Thread) {
   const value={id:thread.id,subject:thread.subject.slice(0,2000),messages:thread.messages.slice(-12).map(m=>({from:m.from,date:m.date,text:m.text.slice(0,14000)}))};
   // Keep complete JSON and the latest mail rather than cutting a serialized object in half.
@@ -62,29 +34,41 @@ export function suggestedAction(value:unknown,thread:Thread,links=threadLinks(th
     default:return;
   }
 }
-function proposal(value:unknown):Partial<Draft> {
-  if (!value || typeof value !== 'object') return {};
-  const data = value as Record<string,unknown>, result:Partial<Draft> = {};
-  for (const key of ['to','cc','bcc','subject','html'] as const) if(typeof data[key]==='string') result[key]=str(data[key]);
-  return result;
-}
 /** Groq is the sole AI provider. This module never returns provider response bodies in errors. */
 export function createGroq(options:GroqOptions = {}) {
   const key=options.apiKey ?? process.env.GROQ_API_KEY;
   const request=options.fetch ?? fetch;
-  async function call(path:string,body:BodyInit,signal?:AbortSignal, json=true):Promise<Record<string,unknown>> {
+  /** The checked response; errors never carry provider response bodies, only a known code where one helps. */
+  async function send(path:string,body:BodyInit,signal?:AbortSignal,json=true):Promise<Response> {
     if(!key) throw new Error('Set GROQ_API_KEY in the main process to enable AI.');
+    let response:Response;
     try {
-      const response=await request(`https://api.groq.com/openai/v1/${path}`,{method:'POST',headers:{Authorization:`Bearer ${key}`,...(json?{'Content-Type':'application/json'}:{})},body,signal:AbortSignal.any([AbortSignal.timeout(90000),...(signal?[signal]:[])])});
-      if(!response.ok) {
-        if(response.status===401) throw new Error('Groq rejected the API key. Check GROQ_API_KEY.');
-        if(response.status===429) throw new Error('Groq rate limit reached. Please try again shortly.');
-        throw new Error(`Groq request failed (${response.status}). Please try again.`);
-      }
-      return await response.json() as Record<string,unknown>;
-    } catch(error) {
+      response=await request(`https://api.groq.com/openai/v1/${path}`,{method:'POST',headers:{Authorization:`Bearer ${key}`,...(json?{'Content-Type':'application/json'}:{})},body,signal:AbortSignal.any([AbortSignal.timeout(90000),...(signal?[signal]:[])])});
+    } catch {
       if(signal?.aborted) throw new Error('AI request cancelled.');
-      if(error instanceof Error && error.message.startsWith('Groq ')) throw error;
+      throw new Error('Groq could not complete the request. Check your connection and try again.');
+    }
+    if(!response.ok) {
+      if(response.status===401) throw new Error('Groq rejected the API key. Check GROQ_API_KEY.');
+      if(response.status===429) {
+        // Ask waits out a short limit window; other callers just report it.
+        const seconds=Number(response.headers.get('retry-after'));
+        // A long wait means a daily or larger quota, not the per-minute window.
+        const message=Number.isFinite(seconds)&&seconds>90?`Groq’s usage limit for this model is reached. Try again in about ${Math.ceil(seconds/60)} minutes, or choose another Ask model in Settings.`:'Groq rate limit reached. Please try again shortly.';
+        throw Object.assign(new Error(message),{code:'rate_limited',...(Number.isFinite(seconds)&&seconds>=0?{retryAfterMs:seconds*1000}:{})});
+      }
+      const code=await response.json().then(value=>(value as {error?:{code?:unknown}})?.error?.code,()=>undefined);
+      if(code==='tool_use_failed') throw Object.assign(new Error('Groq could not read a tool call. Please try again.'),{code});
+      if(code==='model_not_found'||code==='model_decommissioned'||response.status===404) throw new Error('This Groq model is not available right now. Choose another Ask model in Settings.');
+      throw new Error(`Groq request failed (${response.status}). Please try again.`);
+    }
+    return response;
+  }
+  async function call(path:string,body:BodyInit,signal?:AbortSignal,json=true):Promise<Record<string,unknown>> {
+    const response=await send(path,body,signal,json);
+    try {return await response.json() as Record<string,unknown>;}
+    catch {
+      if(signal?.aborted) throw new Error('AI request cancelled.');
       throw new Error('Groq could not complete the request. Check your connection and try again.');
     }
   }
@@ -102,6 +86,20 @@ export function createGroq(options:GroqOptions = {}) {
   }
   return {
     available:Boolean(key),
+    /** One streamed chat/completions call with OpenAI-compatible tools; text arrives through `onText`. */
+    async chat(chat:ChatRequest,{signal,onText}:ChatOptions={}):Promise<ChatTurn> {
+      const body={model:chat.model,messages:chat.messages,stream:true,temperature:0.3,max_completion_tokens:chat.maxTokens??2048,
+        ...(chat.model.startsWith('openai/gpt-oss-')?{reasoning_effort:'low'}:{}),
+        ...(chat.tools?.length?{tools:chat.tools.map(t=>({type:'function',function:t})),tool_choice:chat.toolChoice??'auto'}:{})};
+      const response=await send('chat/completions',JSON.stringify(body),signal);
+      if(!response.body) throw new Error('Groq returned an invalid response. Please try again.');
+      try {return await readChatStream(response.body,onText,signal);}
+      catch(error) {
+        if(signal?.aborted) throw new Error('AI request cancelled.');
+        if((error as {code?:unknown}).code) throw error;
+        throw new Error('Groq stopped while answering. Please try again.');
+      }
+    },
     async summarize(thread:Thread,signal?:AbortSignal):Promise<Partial<Thread>> {
       // Links and attachment names are offered so the model can point at one; validation below keeps it to these.
       const links=threadLinks(thread),attachments=thread.messages.flatMap(m=>m.attachments.map(a=>({id:a.id.slice(0,300),name:a.name.slice(0,200),type:a.type.slice(0,100)}))).slice(0,20);
@@ -119,26 +117,6 @@ export function createGroq(options:GroqOptions = {}) {
       const value=proposal(result);
       if(!value.html) throw new Error('Groq returned an empty draft. Please try again.');
       return value;
-    },
-    async ask(messages:AskMessage[],threads:Thread[],signal?:AbortSignal,extra:AskContext={}):Promise<AskMessage> {
-      const history=messages.slice(-20).map(m=>({role:m.role,content:m.content}));
-      while(JSON.stringify(history).length>40000&&history.length>1)history.shift();
-      while(JSON.stringify(history).length>40000&&history[0]?.content.length)history[0].content=history[0].content.slice(0,Math.floor(history[0].content.length/2));
-      // Small and bounded, so the mailbox budget below still holds.
-      const contacts=(extra.contacts??[]).filter(c=>emailPattern.test(c.email)).slice(0,50).map(c=>({name:c.name.slice(0,80),email:c.email.slice(0,200)}));
-      const input={clock:localNow(extra.timeZone,extra.now),contacts,messages:history,mailbox:[] as Array<ReturnType<typeof context>&{summary:string}>};
-      for(const t of threads.slice(0,100)){
-        const excerpt={...context(t),summary:t.summary.slice(0,1600)};
-        input.mailbox.push(excerpt);
-        if(JSON.stringify(input).length>100000)input.mailbox.pop();
-      }
-      const result=await json('Answer the user using only the supplied mailbox excerpts, which may cover only part of the mailbox and conversation history. JSON keys: content:string, citations:string[] (only exact thread IDs from the supplied mailbox), proposal?:{to,cc,bcc,subject,html}, event?:{title,start,end,allDay,location,description,guests}. In content, refer to emails by sender and subject, never by thread ID; plain text with optional **bold** and "- " bullets. Clearly say when evidence is missing; do not treat absence from these excerpts as proof something never happened. Include a proposal only when the user requests email composition. When you return a proposal or event, keep content to one short sentence; the app shows the details in an editable card. Include an event only when the user asks to schedule, book, plan or add something to a calendar: resolve relative dates such as "Friday at 11am" with clock.upcoming, which lists the next 14 dates with their weekdays after clock.now in clock.timeZone (use the first matching date; "today" is the date of clock.now); timed start/end are ISO 8601 with the UTC offset listed beside that date in clock.upcoming (the clock.now offset for today); all-day start/end are YYYY-MM-DD with an exclusive end; without a stated length use 1 hour (30 minutes for a call or coffee). Use a short title such as "Lunch with Leah". guests holds only email addresses listed in contacts, found in the mailbox, or typed by the user; never guess an address. The user reviews the event before anything is saved, so content says it is ready to review and never that it was booked, added or sent. Never claim an action has already been performed.',input,signal);
-      if(!str(result.content)) throw new Error('Groq returned an empty answer. Please try again.');
-      const known=new Set(input.mailbox.map(t=>t.id));
-      // Guests must be people the mailbox actually knows, or addresses the user typed.
-      const people=new Set([...contacts.map(c=>c.email),...threads.flatMap(t=>t.messages.flatMap(m=>[m.from,...m.to,...(m.cc??[])])),...(history.at(-1)?.content.match(/[^\s@<>(),;:"']+@[^\s@<>(),;:"']+\.[^\s@<>(),;:"']+/g)??[])].map(x=>(/<([^>]+)>/.exec(x)?.[1]??x).trim().toLowerCase()));
-      const event=result.event?calendarEvent(result.event,email=>people.has(email.toLowerCase())):undefined;
-      return {role:'assistant',content:str(result.content,16000),citations:Array.isArray(result.citations)?[...new Set(result.citations.filter((id):id is string=>typeof id==='string'&&known.has(id)))]:[],...(result.proposal?{proposal:proposal(result.proposal)}:{}),...(event?{event}:{})};
     },
     async extractEvents(thread:Thread,signal?:AbortSignal,extra:{timeZone?:string;now?:Date}={}):Promise<Partial<CalendarEvent>[]> {
       const result=await json('Extract explicitly scheduled future or past commitments: a definite day and time the email states. Do not infer a date if ambiguous or left open. Resolve relative days such as "this Saturday" or "tomorrow" from the date of the message that mentions them; clock.upcoming lists the next 14 dates with their weekdays and UTC offsets in clock.timeZone. Keep any time zone the email states; otherwise use the offset listed beside that date in clock.upcoming. Return {events:[{title,start,end,allDay,location,description,guests}]}. Timed start/end are ISO8601 with timezone; without a stated end use 1 hour. All-day dates YYYY-MM-DD with exclusive end. Return [] if no definite event.',{clock:localNow(extra.timeZone,extra.now),thread:context(thread)},signal);
@@ -162,3 +140,49 @@ export function createGroq(options:GroqOptions = {}) {
   };
 }
 export type GroqAdapter = ReturnType<typeof createGroq>;
+
+/**
+ * Reads an OpenAI-style SSE completion: text deltas go to `onText`; tool calls are assembled by index
+ * whether they arrive whole or in fragments. `finish_reason` is not required (Groq sometimes omits it).
+ */
+export async function readChatStream(body:ReadableStream<Uint8Array>,onText?:(text:string)=>void,signal?:AbortSignal):Promise<ChatTurn> {
+  const reader=body.getReader(),decoder=new TextDecoder();
+  let buffer='',content='',finishReason:string|undefined,usage:ChatTurn['usage'];
+  const calls:{id?:string;name:string;arguments:string}[]=[];
+  const line=(raw:string)=>{
+    if(!raw.startsWith('data:'))return;
+    const data=raw.slice(5).trim();if(!data||data==='[DONE]')return;
+    let chunk:Record<string,any>;try{chunk=JSON.parse(data);}catch{return;}
+    const error=chunk.error??chunk.x_groq?.error;
+    if(error)throw Object.assign(new Error('Groq stopped while answering.'),typeof error==='object'&&error?.code==='tool_use_failed'?{code:'tool_use_failed'}:{});
+    const counted=chunk.x_groq?.usage??chunk.usage;
+    if(counted&&typeof counted.prompt_tokens==='number')usage={prompt:counted.prompt_tokens,completion:Number(counted.completion_tokens)||0};
+    const choice=chunk.choices?.[0];if(!choice)return;
+    const delta=choice.delta??{};
+    if(typeof delta.content==='string'&&delta.content){content+=delta.content;onText?.(delta.content);}
+    for(const part of Array.isArray(delta.tool_calls)?delta.tool_calls:[]){
+      const index=Number.isInteger(part?.index)?part.index:calls.length;
+      const call=calls[index]??={name:'',arguments:''};
+      if(typeof part.id==='string')call.id=part.id;
+      if(typeof part.function?.name==='string')call.name+=part.function.name;
+      if(typeof part.function?.arguments==='string')call.arguments+=part.function.arguments;
+    }
+    if(typeof choice.finish_reason==='string')finishReason=choice.finish_reason;
+  };
+  let stop:(()=>void)|undefined;
+  const aborted=signal?new Promise<never>((_,reject)=>{stop=()=>reject(new Error('AI request cancelled.'));if(signal.aborted)stop();else signal.addEventListener('abort',stop,{once:true});}):undefined;
+  aborted?.catch(()=>{});
+  try{
+    for(;;){
+      const {done,value}=await (aborted?Promise.race([reader.read(),aborted]):reader.read());
+      if(done)break;
+      buffer+=decoder.decode(value,{stream:true});
+      for(let at=buffer.indexOf('\n');at>=0;at=buffer.indexOf('\n')){line(buffer.slice(0,at).replace(/\r$/,''));buffer=buffer.slice(at+1);}
+    }
+    buffer+=decoder.decode();if(buffer.trim())line(buffer.trim());
+  }finally{
+    if(stop)signal?.removeEventListener('abort',stop);
+    void reader.cancel().catch(()=>{});
+  }
+  return {content,toolCalls:calls.filter(c=>c&&c.name).map((c,i)=>({id:c.id??`call_${i}`,name:c.name,arguments:c.arguments})),finishReason,...(usage?{usage}:{})};
+}
