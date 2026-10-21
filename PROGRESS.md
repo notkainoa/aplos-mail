@@ -1,5 +1,43 @@
 # Progress
 
+## 2026-10-20 — Second UI pass from owner feedback
+
+- **Ask** is back in the docked right panel, as the owner preferred. It keeps typed mail/command matches, hold-A voice (matched on the typed character), Esc to cancel, ⌘J, and AI calendar event cards stacked for the narrow panel.
+- **Focus list:**
+  - Moving focus glides one card surface between rows, and the summary line scales into the headline. Keyboard moves keep the card at about 30% of the window; held keys coalesce into one sweep; reduced motion is respected; windowing above 200 rows still lays out correctly.
+  - The card shows sender, due chip and relative time, then exactly one big AI line (summary with the action and deadline folded in), then the action bar: one primary AI action, plus quiet Bookmark/Later/Done/more.
+  - New type scale with line-height and tracking tokens.
+- **Suggested actions** (`Thread.action`, presets only):
+  - Groq summarize proposes link, attachment, reply, calendar or read. Validation keeps only visible `<a href>` links from the thread (no comments, head, hidden anchors, `<link>`/`<base>`/`data-href`, unsubscribe or tracking links), existing attachments, prompted replies and concrete events.
+  - `liveAction` re-checks stored actions on render, run and sync, and withdraws them on Spam/Trash.
+  - Space runs the action; Enter/O open the email:
+    - link buttons show their host;
+    - attachments open in the reader's in-app preview;
+    - calendar opens the event editor, or offers a toast if the user has moved on;
+    - reply opens the reader with a suggestion chip whose AI draft fills only the body, never recipients or subject.
+  - `extractEvents` now gets the local clock.
+- **Reader:**
+  - The AI card sits at the very top, above the subject, with the same summary as the Home row. Todo and an editable due pill form a separate section, and the suggested action appears beside them.
+  - Each message shows sender plus a relative date; From/To/Cc live in a hover/click popover.
+  - `dateLabel` returns time, Yesterday, a weekday or a date.
+  - Sparkle/wand icons were removed from the app and from the icon set.
+
+Verification: typecheck passes; **164 tests pass** (new: suggested-action validation, visible-only links, `liveAction` on Spam/Trash and stale links/attachments, action surviving sync, relative dates). The live Groq corpus passed 8/8 after the final prompt and link changes. Each agent and the lead drove the UI in headless Chromium against isolated demo data (dark/light, 1360 and ~900–1000 px wide): the glide frames, the card, Space actions (link host, attachment preview, reply chip drafting live, calendar editor) and the reader card/popovers.
+
+An independent review found seven issues, all fixed:
+- Spam-thread actions could still run.
+- Attachments opened externally on one key.
+- Hidden or comment links counted as "in the thread".
+- Stored actions were never re-checked.
+- Chip drafts could change recipients.
+- Tab could hijack keyboard focus or drop the suggestion.
+- Calendar results could open stale over newer work.
+
+Limits:
+- Real microphone, the packaged desktop app and live provider accounts were not exercised.
+- Anchors inside hidden parent elements are not detected; the visible host on link buttons is the mitigation.
+- The two calendar demo threads are bookmarked, so they appear in All mail rather than Home.
+
 ## 2026-10-20 — M37 Aplos's own UI: focus list and Ask overlay
 
 The owner redirected Aplos from an Avec clone to their own unified mail + calendar client (SPEC.md "Product direction"). Built from their Excalidraw sketches and reference screenshots, keeping the existing palette, tokens, icons and primitives.

@@ -20,7 +20,7 @@
   flex: none;
 }
 .ui-btn:active:not(:disabled) { transform: scale(.97); }
-.ui-btn-sm { height: 28px; padding: 0 10px; font-size: var(--text-md); gap: 6px; }
+.ui-btn-sm { height: 28px; padding: 0 10px; font-size: var(--text-md); letter-spacing: var(--tracking-md); gap: 6px; }
 .ui-btn-lg { height: 40px; padding: 0 18px; border-radius: 20px; }
 .ui-btn-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ui-btn .ui-keys { margin-right: -6px; }
@@ -84,7 +84,7 @@
   background: var(--hover);
   white-space: nowrap;
 }
-.ui-kbd-sm { min-width: 18px; height: 18px; padding: 0 4px; font-size: var(--text-xs); }
+.ui-kbd-sm { min-width: 18px; height: 18px; padding: 0 4px; font-size: var(--text-xs); letter-spacing: var(--tracking-xs); }
 
 /* ---------- Floating surface ---------- */
 

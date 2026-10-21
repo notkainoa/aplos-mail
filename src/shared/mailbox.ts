@@ -1,4 +1,4 @@
-import type {Thread, View} from './types';
+import type {SuggestedAction, Thread, View} from './types';
 
 export type LaterTab='todos'|'bookmarks';
 
@@ -60,4 +60,40 @@ export function shortDue(value:string,now=new Date()){
   const days=Math.round((+date-+today)/86400000);
   if(Number.isNaN(days))return '';
   return days<0?'overdue':days===0?'today':days===1?'by tomorrow':'by '+date.toLocaleDateString([],days<7?{weekday:'short'}:{month:'short',day:'numeric'});
+}
+
+// Unsubscribe pages, preference centers, click-tracking redirects and pixels are never offered as the one-click action.
+const unwantedLink=/unsubscribe|opt-?out|manage[-_ ]?(your[-_ ]?)?(preferences|subscription)|email[-_]?preferences|\/wf\/click|\/ls\/click|\/click\b|^https?:\/\/(click|clicks|links?|lnk|email|e|mg|t|r|go|trk)\.[^/]*\/|redirect|pixel|beacon|open\.gif|list-manage\.|sendgrid\.net|mailchi\.mp/i;
+// Anchors styled out of sight are not links the reader saw.
+const hiddenAnchor=/\bhidden\b|display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0(?![.\d])|opacity\s*:\s*0(?![.\d])|max-height\s*:\s*0(?![.\d])/i;
+/** The http(s) links a reader can actually see: visible <a href> anchors of the HTML part (plain text only when there is no HTML),
+ * never comments, head/style/script content, <link>/<base>/data-href, hidden anchors, unsubscribe or tracking links. */
+export function threadLinks(thread:Thread){
+  const found=new Set<string>();
+  const add=(raw:string)=>{
+    const url=raw.replace(/&amp;/g,'&').replace(/[.,;:!?)\]]+$/,'').trim();
+    if(url.length>500||!/^https?:\/\/[^\s/]+\.[^\s/]+/i.test(url)||unwantedLink.test(url))return;
+    try{const parsed=new URL(url);if(parsed.username||parsed.password)return;}catch{return;}
+    found.add(url);
+  };
+  for(const m of thread.messages){
+    if(m.html?.trim()){
+      const visible=m.html.replace(/<!--[\s\S]*?-->/g,'').replace(/<(head|style|script|title|template|noscript|svg)\b[\s\S]*?<\/\1\s*>/gi,'');
+      for(const anchor of visible.matchAll(/<a\b([^>]*)>/gi)){
+        const attributes=' '+anchor[1];if(hiddenAnchor.test(attributes))continue;
+        const href=/\shref\s*=\s*(?:"(https?:\/\/[^"]+)"|'(https?:\/\/[^']+)')/i.exec(attributes);if(href)add(href[1]??href[2]);
+      }
+    }else for(const match of m.text.matchAll(/https?:\/\/[^\s<>"'`]+/gi))add(match[0]);
+  }
+  return [...found].slice(-20);
+}
+
+/** The suggested action if it is still safe to offer: never on Spam or Trash, and links/attachments must still be in the thread.
+ * Checked again when rendering, running and syncing, because a stored action can outlive the mail it was made from. */
+export function liveAction(thread:Thread):SuggestedAction|undefined{
+  const action=thread.action;
+  if(!action||thread.status==='spam'||thread.status==='trash')return;
+  if(action.kind==='link')return action.url&&threadLinks(thread).includes(action.url)?action:undefined;
+  if(action.kind==='attachment')return thread.messages.some(m=>m.attachments.some(a=>a.id===action.attachmentId))?action:undefined;
+  return action;
 }

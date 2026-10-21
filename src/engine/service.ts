@@ -427,10 +427,12 @@ export async function createEngineService(options:EngineOptions) {
               if(signal.aborted)break;
               const classified=threadPatch({importance:result.importance||before.importance,replyStatus:result.replyStatus||before.replyStatus,todo:result.todo,dueDate:result.dueDate});
               if(typeof result.summary==='string')classified.summary=result.summary.slice(0,10_000);
+              // The suggested action follows the latest mail, like the summary; groq.ts already validated it against the thread.
+              classified.action=result.action;
               change(s=>{const current=s.threads.find(t=>t.id===candidate.id);if(!current)return;
-                for(const key of refresh.has(candidate.id)?['replyStatus','summary'] as const:['importance','replyStatus','todo','dueDate','summary'] as const){
+                for(const key of refresh.has(candidate.id)?['replyStatus','summary','action'] as const:['importance','replyStatus','todo','dueDate','summary','action'] as const){
                   // An edit made while Groq was running always wins over its response.
-                  if(current[key]===before[key]&&key in classified)(current as any)[key]=classified[key];
+                  if(JSON.stringify(current[key])===JSON.stringify(before[key])&&key in classified)(current as any)[key]=classified[key];
                 }
               });
             }catch{if(signal.aborted)break;classificationFailures++;}
@@ -692,7 +694,7 @@ export async function createEngineService(options:EngineOptions) {
       case 'ai.cancel':{for(const [id,controller]of requests)if(!p.requestId||p.requestId===id)controller.abort();return {cancelled:true};}
       case 'ai.summarize':{
         const t=thread(text(p.threadId,300));const result=await ai(p,signal=>groq.summarize(t,signal));
-        const patch=threadPatch(result);if(typeof result.summary==='string')patch.summary=result.summary.slice(0,10_000);
+        const patch=threadPatch(result);if(typeof result.summary==='string')patch.summary=result.summary.slice(0,10_000);patch.action=result.action;
         change(s=>{const index=s.threads.findIndex(item=>item.id===t.id);if(index<0)throw new Error('The message was removed.');s.threads[index]={...s.threads[index],...patch};});return thread(t.id);
       }
       case 'ai.polish':return ai(p,signal=>groq.polish(text(p.html,1_000_000),p.instruction?text(p.instruction,10_000):undefined,signal));
@@ -736,7 +738,7 @@ export async function createEngineService(options:EngineOptions) {
           else {const provider=hostOf(a);if(a.calendarConnected&&provider?.listCalendars)list.push(...await provider.listCalendars(a));}
         }return list;
       }
-      case 'calendar.extract':{const t=thread(text(p.threadId,300)),events=await ai(p,signal=>groq.extractEvents(t,signal));
+      case 'calendar.extract':{const t=thread(text(p.threadId,300)),events=await ai(p,signal=>groq.extractEvents(t,signal,{timeZone:p.timeZone?text(p.timeZone,100):undefined}));
         const a=account(t.accountId),candidates=events.map(e=>({...e,accountId:t.accountId,threadId:t.id,calendarId:e.calendarId||(a.calendarConnected&&hostOf(a)?.saveEvent?'primary':`demo-${t.accountId}`)}));
         if(state.settings.autoCalendar)for(const e of candidates)await invoke('calendar.save',{event:{...e,id:e.id||randomUUID()}});
         return candidates;

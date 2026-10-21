@@ -1,18 +1,26 @@
-import {useEffect,useRef,useState} from 'react';
-import {Ban,Bell,Bookmark,CalendarDays,Check,ChevronDown,ChevronUp,Clock,Download,ExternalLink,Forward,ImageOff,MailOpen,MessageCircle,MoreHorizontal,Paperclip,RefreshCw,Reply,ReplyAll,Search,ShieldAlert,Sparkles,Trash2,Undo2,X,CornerUpLeft} from './icons';
-import type {Attachment,CalendarEvent,Settings,Thread} from '../shared/types';
-import {dateLabel,dueLabel,invoke,openUrl,saveFile} from './bridge';
+import {useCallback,useEffect,useRef,useState} from 'react';
+import {Ban,Bell,Bookmark,CalendarDays,Check,ChevronDown,ChevronUp,Clock,Download,ExternalLink,Forward,ImageOff,MailOpen,MessageCircle,MoreHorizontal,Paperclip,RefreshCw,Reply,ReplyAll,Search,ShieldAlert,Trash2,Undo2,X,CornerUpLeft} from './icons';
+import type {Attachment,CalendarEvent,Message,Settings,Thread} from '../shared/types';
+import {dateLabel,dueLabel,fullDate,invoke,isoDay,openUrl,saveFile} from './bridge';
 import {inlineAttachments,prepareMessageBody} from './mailBody';
-import {Avatar,Button,Dialog,DialogClose,IconButton,Keys,Menu,Notice,Spinner,Tooltip,confirmAction,cx,useMenu,useSwipe,type MenuGroups,type SwipeSide} from './ui';
+import {Avatar,Button,Dialog,DialogClose,IconButton,Keys,Menu,Notice,Popover,Spinner,Tooltip,confirmAction,cx,useMenu,useSwipe,type MenuGroups,type SwipeSide} from './ui';
 type Triage='done'|'later'|'trash'|'spam';
 export type CardDrag={x:number;width:number};
 // Dragging with a mouse would otherwise steal text selection in the message itself; it starts from the card's chrome instead.
-const selectableText='.email-body,.quoted-content,h1,.summary-card p,.thread-todo > span,.extracted-events,.find-bar,.reminder-controls';
-export function Reader({thread,settings,index,total,back,patch,triage,bookmark,reply,editEvent,notify,undo,heading,replySlot,ghost,entering,talk}:{thread:Thread;settings:Settings;index:number;total:number;back:()=>void;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;triage:(status:Triage,drag?:CardDrag)=>void;bookmark?:()=>void;reply:(mode:'reply'|'reply-all'|'forward')=>void;editEvent:(event:Partial<CalendarEvent>)=>void;notify:(text:string)=>void;undo:()=>void;standalone?:boolean;heading?:{title:string;count:number};replySlot?:React.ReactNode;ghost?:boolean;entering?:string;talk:(phase:'start'|'release')=>void}){
+const selectableText='.email-body,.quoted-content,h1,.ai-summary,.ai-todo-text,.extracted-events,.find-bar';
+const capital=(text:string)=>text&&text[0].toUpperCase()+text.slice(1);
+type Person={name:string;email:string};
+/** "Jordan Park <jordan@studio.example>" or a bare address. */
+function person(raw:string):Person{const m=raw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);return m?{name:m[1].trim(),email:m[2].trim()}:{name:'',email:raw.trim()};}
+const dayOffset=(value?:string)=>{if(!value)return undefined;const date=new Date(value.slice(0,10)+'T12:00:00');const today=new Date();today.setHours(12,0,0,0);return Math.round((+date-+today)/86400000);};
+export function Reader({thread,settings,index,total,back,patch,triage,bookmark,reply,editEvent,notify,undo,heading,replySlot,ghost,entering,talk,action,previewId}:{thread:Thread;settings:Settings;index:number;total:number;back:()=>void;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;triage:(status:Triage,drag?:CardDrag)=>void;bookmark?:()=>void;reply:(mode:'reply'|'reply-all'|'forward')=>void;editEvent:(event:Partial<CalendarEvent>)=>void;notify:(text:string)=>void;undo:()=>void;standalone?:boolean;heading?:{title:string;count:number};replySlot?:React.ReactNode;ghost?:boolean;entering?:string;talk:(phase:'start'|'release')=>void;
+ /** The AI-suggested next step, shown in the summary card beside the due date. */action?:React.ReactNode;
+ /** An attachment to preview on open (the suggested action); files only leave Aplos through the preview's own buttons. */previewId?:string}){
  const menu=useMenu();const importance=useMenu();const [dates,setDates]=useState(false);const [find,setFind]=useState(false);const [query,setQuery]=useState('');const [busy,setBusy]=useState('');const [preview,setPreview]=useState<Attachment|undefined>();const [error,setError]=useState('');const [remote,setRemote]=useState(settings.remoteImages);const [expanded,setExpanded]=useState<Set<string>>(new Set([thread.messages.at(-1)?.id??'']));const [quotes,setQuotes]=useState<Set<string>>(new Set());const [extracted,setExtracted]=useState<Partial<CalendarEvent>[]|null>(null);
  const [inlineFiles,setInlineFiles]=useState<Record<string,Attachment>>({});const inlineCache=useRef<Record<string,Attachment>>({});const inlinePending=useRef<Record<string,Promise<Attachment>>>({});const [inlineLoading,setInlineLoading]=useState(false);const [inlineError,setInlineError]=useState('');const [inlineRetry,setInlineRetry]=useState(0);
  const [shownPreview,setShownPreview]=useState<Attachment>();useEffect(()=>{if(preview)setShownPreview(preview);},[preview]);
  useEffect(()=>{setExpanded(new Set([thread.messages.at(-1)?.id??'']));setQuotes(new Set());menu.close();importance.close();setDates(false);setExtracted(null);setError('');setRemote(settings.remoteImages);setPreview(undefined);setQuery('');inlineCache.current={};inlinePending.current={};setInlineFiles({});setInlineError('');},[thread.id]);
+ useEffect(()=>{const file=previewId&&!ghost?thread.messages.flatMap(m=>m.attachments).find(a=>a.id===previewId):undefined;if(file)void attachment(file);},[previewId]);
  useEffect(()=>{let cancelled=false;setInlineLoading(false);setInlineError('');if(thread.status==='spam')return;const files=[...new Map(thread.messages.filter(message=>expanded.has(message.id)).flatMap(inlineAttachments).filter(file=>!inlineCache.current[file.id]).map(file=>[file.id,file])).values()];if(!files.length)return;setInlineLoading(true);let cursor=0;const failures:string[]=[];void Promise.all(Array.from({length:Math.min(3,files.length)},async()=>{while(cursor<files.length&&!cancelled){const file=files[cursor++];// Effects restart while downloads are in flight (expanding, thread refreshes); share the request rather than downloading again.
 const pending=inlinePending.current;const request=pending[file.id]??=invoke<Attachment>('attachment.get',{threadId:thread.id,attachmentId:file.id});request.catch(()=>{if(pending[file.id]===request)delete pending[file.id];});try{const ready=await request;if(!cancelled){inlineCache.current={...inlineCache.current,[ready.id]:ready};setInlineFiles(inlineCache.current);}}catch(error){failures.push(error instanceof Error?error.message:'Inline image unavailable.');}}})).then(()=>{if(!cancelled){setInlineLoading(false);if(failures.length)setInlineError(failures[0]);}});return()=>{cancelled=true;};},[thread.id,thread.status,thread.messages,expanded,inlineRetry]);
  async function run(name:string,fn:()=>Promise<unknown>){setBusy(name);setError('');try{return await fn();}catch(e){setError((e as Error).message);}finally{setBusy('');}}
@@ -24,7 +32,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  function step(delta:number){if(hits)setHit(value=>(value+delta+hits)%hits);}
  useEffect(()=>{
   if(ghost)return;
-  const open=(e:KeyboardEvent)=>{if(!(e.metaKey||e.ctrlKey)||e.key!=='f'||e.altKey)return;if((e.target as HTMLElement|null)?.closest?.('.compose-layer,.compose-inline,.ask-overlay,.ui-dialog'))return;e.preventDefault();setFind(true);requestAnimationFrame(()=>{findInput.current?.focus();findInput.current?.select();});};
+  const open=(e:KeyboardEvent)=>{if(!(e.metaKey||e.ctrlKey)||e.key!=='f'||e.altKey)return;if((e.target as HTMLElement|null)?.closest?.('.compose-layer,.compose-inline,.ask-panel,.ui-dialog'))return;e.preventDefault();setFind(true);requestAnimationFrame(()=>{findInput.current?.focus();findInput.current?.select();});};
   addEventListener('keydown',open);return ()=>removeEventListener('keydown',open);
  },[ghost]);
  // Open collapsed messages that contain the search text, otherwise their matches stay invisible.
@@ -52,7 +60,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const menuGroups:MenuGroups=[
  [{label:'Open in separate window',icon:ExternalLink,onSelect:()=>invoke('window.thread',{threadId:thread.id})}],
  [{label:replyAll?'Reply to sender':'Reply all',icon:replyAll?Reply:ReplyAll,keys:'⇧ R',onSelect:()=>reply(replyAll?'reply':'reply-all')},{label:'Forward',icon:Forward,keys:'F',onSelect:()=>reply('forward')}],
- [{label:'Due date & reminder',icon:Bell,onSelect:()=>setDates(value=>!value)},{label:'Find plans in this email',icon:CalendarDays,hint:'Suggest calendar events from dates in the thread',onSelect:()=>run('plans',async()=>{setExtracted(await invoke<Partial<CalendarEvent>[]>('calendar.extract',{threadId:thread.id}));})}],
+ [{label:'Due date & reminder',icon:Bell,onSelect:openDates},{label:'Find plans in this email',icon:CalendarDays,hint:'Suggest calendar events from dates in the thread',onSelect:()=>run('plans',async()=>{setExtracted(await invoke<Partial<CalendarEvent>[]>('calendar.extract',{threadId:thread.id}));})}],
  [{label:'Mark '+(thread.unread?'read':'unread'),icon:MailOpen,keys:'U',onSelect:()=>patch([thread.id],{unread:!thread.unread})},{label:thread.replyStatus==='needs-reply'?'Clear Needs reply':'Needs my reply',icon:CornerUpLeft,onSelect:()=>patch([thread.id],{replyStatus:thread.replyStatus==='needs-reply'?'none':'needs-reply'})},{label:thread.replyStatus==='awaiting-reply'?'Clear Awaiting reply':'Awaiting a reply',icon:MessageCircle,onSelect:()=>patch([thread.id],{replyStatus:thread.replyStatus==='awaiting-reply'?'none':'awaiting-reply'})},{label:'Find in message',icon:Search,onSelect:()=>setFind(true)}],
  [{label:'Block sender',icon:Ban,hint:'Future mail from this address goes to Spam',onSelect:()=>run('block',async()=>{const email=thread.messages[0].from;if(await confirmAction({title:'Block '+email+'?',message:'Their current and future mail will go to Spam. You can unblock them in Settings.',confirmLabel:'Block sender',danger:true}))await invoke('sender.block',{email});})},
   {label:'Unsubscribe',icon:X,onSelect:()=>run('unsubscribe',async()=>{const r=await invoke<{url?:string;message:string}>('thread.unsubscribe',{id:thread.id});if(r.url){if(await confirmAction({title:'Open the unsubscribe page?',message:r.message,confirmLabel:'Open page'}))await openUrl(r.url);}else notify(r.message);})},
@@ -67,12 +75,42 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
   onPointerLeave={()=>{setHolding(false);const state=press.current;if(state&&!state.held){clearTimeout(state.timer);press.current=null;}}}
   onClick={()=>{const state=press.current;press.current=null;if(state?.held)return;reply(settings.defaultReply);}}>
   <span><Reply size={17}/>{replyAll?'Reply all':'Reply'}<Keys combo="Space" size="sm"/></span><small>Hold to talk</small></button></Tooltip>;
+ // The bar floats over the top of the thread and turns into a compact title once the subject scrolls under it.
+ const title=useRef<HTMLHeadingElement>(null);const [scrolled,setScrolled]=useState(false);const [moved,setMoved]=useState(false);
+ useEffect(()=>{const el=title.current,root=scroller.current;if(!el||!root||ghost)return;const observer=new IntersectionObserver(([entry])=>setScrolled(!entry.isIntersecting&&entry.boundingClientRect.top<(entry.rootBounds?.top??0)+1),{root,rootMargin:'-56px 0px 0px 0px'});observer.observe(el);return()=>observer.disconnect();},[ghost]);
+ const duePill=useRef<HTMLButtonElement>(null);
+ function openDates(){duePill.current?.scrollIntoView({block:'nearest',behavior:'smooth'});setDates(true);}
+ const due=dayOffset(thread.dueDate);
+ const dueTone=due===undefined?'':due<0?'is-overdue':due===0?'is-today':'';
+ const ai=<div className="ai-card">
+  <div className="ai-lede">
+   {hasSummary?<p className="ai-summary" key={thread.summary}>{capital(thread.summary.trim())}</p>
+    :<button className="ai-summary is-prompt" disabled={!!busy} onClick={summarize}>{busy==='summary'?'Summarizing…':'Summarize this email'}</button>}
+   {hasSummary&&<IconButton className={cx('ai-refresh',busy==='summary'&&'is-busy')} label="Summarize again" detail="Summarized with Groq" size="xs" icon={RefreshCw} iconSize={13} disabled={!!busy&&busy!=='summary'} loading={busy==='summary'} onClick={summarize}/>}
+  </div>
+  <div className={cx('ai-next',!thread.todo&&'no-todo')}>
+   {thread.todo&&<span className="ai-todo"><span className="todo-ring" aria-hidden="true"/><span className="ai-todo-text">{thread.todo}</span></span>}
+   <span className="ai-controls">
+    <button ref={duePill} className={cx('due-pill',dueTone,!thread.dueDate&&'is-empty',dates&&'is-open')} aria-haspopup="dialog" aria-expanded={dates} onClick={()=>setDates(value=>!value)}>
+     <CalendarDays size={14}/><span>{thread.dueDate?dueLabel(thread.dueDate):'Add due date'}</span><ChevronDown size={12}/></button>
+    {thread.reminderAt&&<button className="due-pill reminder" aria-label={'Reminder '+fullDate(thread.reminderAt)} onClick={openDates}><Bell size={13}/><span>{dateLabel(thread.reminderAt,true)}</span></button>}
+    {action}
+   </span>
+  </div>
+ </div>;
  return <section className={'reader '+(stack?'stack-reader':'split-reader')+(ghost?' ghost':'')} aria-label={ghost?undefined:'Email thread'} aria-hidden={ghost||undefined} inert={ghost||undefined}>
  {stack&&heading&&<div className="stack-heading">{heading.title}<span>{total>1?`${index+1} of ${total}`:heading.count}</span>{total>1&&<span className="stack-keys"><Keys combo="K" size="sm"/><Keys combo="J" size="sm"/></span>}</div>}
  <div className={'deck'+(stack&&index<total-1&&!replySlot?' has-next':'')}>
  <div ref={card} className={'reader-card'+(entering?' entering-'+entering:'')} {...swipe}>
  {swipeable&&<div className="card-swipe" aria-hidden="true">{swipeBadge('right')}{swipeBadge('left')}</div>}
- <header className="reader-header"><h1>{thread.subject}</h1><div className="actions">
+ {find&&<div className="find-bar"><Search size={15}/><input ref={findInput} autoFocus aria-label="Find in message" value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeFind();}else if(e.key==='Enter'){e.preventDefault();step(e.shiftKey?-1:1);}}} placeholder="Find in this conversation"/>
+  {query.trim().length>0&&<span className={cx('find-count',!hits&&'is-empty')} aria-live="polite">{hits?`${hit+1} of ${hits}`:'No matches'}</span>}
+  <IconButton label="Previous match" shortcut="⇧ ↩" size="sm" icon={ChevronUp} disabled={hits<2} onClick={()=>step(-1)}/><IconButton label="Next match" shortcut="↩" size="sm" icon={ChevronDown} disabled={hits<2} onClick={()=>step(1)}/>
+  <IconButton label="Close find" shortcut="Esc" size="sm" icon={X} onClick={closeFind}/></div>}
+ <div className="reader-frame">
+ <header className={cx('reader-bar',moved&&'is-raised',scrolled&&'is-scrolled')}>
+ <span className="reader-bar-title" aria-hidden="true">{thread.subject||'(No subject)'}</span>
+ <div className="actions">
  <Button variant="ghost" className={cx('importance-button',importance.open&&'is-open')} aria-label="Importance" aria-haspopup="menu" iconRight={ChevronDown} onClick={importance.toggle}>{thread.importance==='important'?'Important':'Low importance'}</Button>
  <Menu open={importance.open} anchor={importance.anchor} onClose={importance.close} placement="bottom-end" label="Importance" className="importance-menu" groups={[(['important','low'] as const).map(level=>({label:level==='important'?'Important':'Low importance',hint:level==='important'?'Shown in Home':'Bundled out of the way',checked:thread.importance===level,onSelect:()=>{if(thread.importance!==level)void patch([thread.id],{importance:level},level==='low'?'Moved to Low importance':'Marked important');}}))]}/>
  <IconButton label="Move to Trash" shortcut="#" icon={Trash2} size="lg" iconSize={18} onClick={()=>triage('trash')}/>
@@ -80,18 +118,24 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  <Menu open={menu.open} anchor={menu.anchor} onClose={menu.close} placement="bottom-end" label="Thread actions" className="thread-menu" groups={menuGroups} onError={e=>setError(e.message)}/>
  {!stack&&<IconButton label="Close" shortcut="Esc" icon={X} size="lg" iconSize={18} onClick={back}/>}
  </div></header>
- {find&&<div className="find-bar"><Search size={15}/><input ref={findInput} autoFocus aria-label="Find in message" value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeFind();}else if(e.key==='Enter'){e.preventDefault();step(e.shiftKey?-1:1);}}} placeholder="Find in this conversation"/>
-  {query.trim().length>0&&<span className={cx('find-count',!hits&&'is-empty')} aria-live="polite">{hits?`${hit+1} of ${hits}`:'No matches'}</span>}
-  <IconButton label="Previous match" shortcut="⇧ ↩" size="sm" icon={ChevronUp} disabled={hits<2} onClick={()=>step(-1)}/><IconButton label="Next match" shortcut="↩" size="sm" icon={ChevronDown} disabled={hits<2} onClick={()=>step(1)}/>
-  <IconButton label="Close find" shortcut="Esc" size="sm" icon={X} onClick={closeFind}/></div>}
- <div className="reader-scroll" ref={scroller}>
- <div className="thread-heading"><div className="summary-card"><span className="ai-symbol"><Sparkles size={14}/></span>{hasSummary?<p key={thread.summary}>{thread.summary}</p>:<button className="summary-cta" disabled={!!busy} onClick={summarize}>{busy==='summary'?'Summarizing…':'Summarize this thread'}</button>}<IconButton label={hasSummary?'Refresh summary':'Summarize'} detail="Summarized with Groq" size="xs" icon={RefreshCw} disabled={!!busy&&busy!=='summary'} loading={busy==='summary'} onClick={summarize}/></div>{thread.todo&&<div className="thread-todo"><Check size={15}/><span>{thread.todo}</span><Button variant="text" className={cx('due-toggle',dates&&'is-open')} aria-expanded={dates} iconRight={ChevronDown} onClick={()=>setDates(!dates)}>{dueLabel(thread.dueDate)}</Button></div>}{(dates||thread.status==='later')&&<div className="reminder-controls"><label><CalendarDays size={14}/>Due<input aria-label="Due date" type="date" value={dueInput} onChange={e=>void patch([thread.id],{dueDate:e.target.value})}/></label><label><Bell size={14}/>Remind<input aria-label="Reminder time" type="datetime-local" value={thread.reminderAt?new Date(+new Date(thread.reminderAt)-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):''} onChange={e=>void patch([thread.id],{reminderAt:e.target.value?new Date(e.target.value).toISOString():'',reminderFired:false})}/></label></div>}</div>
+ <div className="reader-scroll" ref={scroller} onScroll={e=>{const next=e.currentTarget.scrollTop>2;if(next!==moved)setMoved(next);}}>
+ {ai}
+ <h1 ref={title} className="reader-title">{thread.subject||'(No subject)'}</h1>
  {error&&<Notice action={<IconButton label="Dismiss" size="xs" icon={X} tooltip={false} onClick={()=>setError('')}/>}>{error}</Notice>}
  {thread.status==='spam'&&<div className="spam-banner"><ShieldAlert size={17}/><span>This message is in Spam. Links and remote images are disabled until you restore it.</span><Button variant="secondary" size="sm" onClick={()=>void patch([thread.id],{status:'new'})}>Restore</Button></div>}
  {inlineLoading&&<p className="inline-image-status"><Spinner size={12}/> Loading inline images…</p>}{inlineError&&<Notice action={<Button variant="text" size="sm" onClick={()=>setInlineRetry(value=>value+1)}>Retry</Button>}>{inlineError}</Notice>}
- {thread.messages.map(m=>{const open=expanded.has(m.id);const quoted=quotes.has(m.id);const content=prepareMessageBody(m,{remote,spam:thread.status==='spam',inline:inlineFiles,query:needle});const toggle=()=>setExpanded(prev=>{const n=new Set(prev);n.has(m.id)?n.delete(m.id):n.add(m.id);return n;});return <article className={'message '+(!open?'collapsed':'')} key={m.id}><button className="message-heading" onClick={toggle} aria-expanded={open}><Avatar name={m.fromName||m.from} size={24}/><span className="sender-meta"><span className="sender-line"><strong>{m.fromName||m.from}</strong><span className="message-date">{dateLabel(m.date,true)}</span></span><span className={open?'recipients':'preview'}>{open?<>{m.fromName&&<span className="email-address">{m.from} · </span>}to {[...m.to,...(m.cc??[])].join(', ')||'undisclosed recipients'}</>:m.text.slice(0,240)}</span></span></button>{open&&<div className="message-content">{!remote&&content.hasRemoteImages&&thread.status!=='spam'&&<button className="remote-image-button" onClick={()=>setRemote(true)}><ImageOff size={14}/>Remote images hidden · Load images</button>}<div className="email-body" onClick={handleEmailLink} dangerouslySetInnerHTML={{__html:content.body}}/>{content.quoted&&<><Tooltip content={quoted?'Hide quoted text':'Show quoted text'}><button className={cx('quoted-toggle',quoted&&'is-open')} aria-label={quoted?'Hide quoted text':'Show quoted text'} aria-expanded={quoted} onClick={()=>setQuotes(prev=>{const n=new Set(prev);n.has(m.id)?n.delete(m.id):n.add(m.id);return n;})}><MoreHorizontal size={16}/></button></Tooltip>{quoted&&<div className="quoted-content email-body" onClick={handleEmailLink} dangerouslySetInnerHTML={{__html:content.quoted}}/>}</>}{m.attachments.length>0&&<div className="message-attachments">{m.attachments.map(a=><div className="attachment" key={a.id}><button className="attachment-open" onClick={()=>void attachment(a)} disabled={!!busy||thread.status==='spam'}>{busy===a.id?<Spinner size={14}/>:<Paperclip size={14}/>}<span>{a.name}</span><span className="attachment-size">{Math.ceil(a.size/1024)} KB</span></button><IconButton label={'Download '+a.name} size="xs" icon={Download} iconSize={14} disabled={thread.status==='spam'} onClick={()=>void attachment(a,true)}/></div>)}</div>}</div>}</article>;})}
+ {thread.messages.map(m=>{const open=expanded.has(m.id);const quoted=quotes.has(m.id);const content=prepareMessageBody(m,{remote,spam:thread.status==='spam',inline:inlineFiles,query:needle});const name=m.fromName||m.from;const toggle=()=>setExpanded(prev=>{const n=new Set(prev);n.has(m.id)?n.delete(m.id):n.add(m.id);return n;});
+  return <article className={cx('message',!open&&'collapsed')} key={m.id}>
+  <div className="message-heading">
+   <button className="message-toggle" onClick={toggle} aria-expanded={open} aria-label={(open?'Collapse':'Expand')+' message from '+name}/>
+   {open&&!ghost?<Sender message={m}/>:<span className="sender-static"><Avatar name={name} size={28}/><strong>{name}</strong></span>}
+   {!open&&<span className="preview">{m.text.slice(0,240)}</span>}
+   <time className="message-date" dateTime={m.date} title={fullDate(m.date)}>{dateLabel(m.date,true)}</time>
+  </div>
+  {open&&<div className="message-content">{!remote&&content.hasRemoteImages&&thread.status!=='spam'&&<button className="remote-image-button" onClick={()=>setRemote(true)}><ImageOff size={14}/>Remote images hidden · Load images</button>}<div className="email-body" onClick={handleEmailLink} dangerouslySetInnerHTML={{__html:content.body}}/>{content.quoted&&<><Tooltip content={quoted?'Hide quoted text':'Show quoted text'}><button className={cx('quoted-toggle',quoted&&'is-open')} aria-label={quoted?'Hide quoted text':'Show quoted text'} aria-expanded={quoted} onClick={()=>setQuotes(prev=>{const n=new Set(prev);n.has(m.id)?n.delete(m.id):n.add(m.id);return n;})}><MoreHorizontal size={16}/></button></Tooltip>{quoted&&<div className="quoted-content email-body" onClick={handleEmailLink} dangerouslySetInnerHTML={{__html:content.quoted}}/>}</>}{m.attachments.length>0&&<div className="message-attachments">{m.attachments.map(a=><div className="attachment" key={a.id}><button className="attachment-open" onClick={()=>void attachment(a)} disabled={!!busy||thread.status==='spam'}>{busy===a.id?<Spinner size={14}/>:<Paperclip size={14}/>}<span>{a.name}</span><span className="attachment-size">{Math.ceil(a.size/1024)} KB</span></button><IconButton label={'Download '+a.name} size="xs" icon={Download} iconSize={14} disabled={thread.status==='spam'} onClick={()=>void attachment(a,true)}/></div>)}</div>}</div>}</article>;})}
  {extracted&&<div className="extracted-events"><h2>{extracted.length?'Plans found in this conversation':'No definite dates or plans found.'}</h2>{extracted.map((event,i)=><button className="event-proposal" key={i} onClick={()=>editEvent({...event,threadId:thread.id,accountId:thread.accountId})}><span className="event-date-icon"><CalendarDays size={20}/></span><span><strong>{event.title}</strong><small>{event.start?dateLabel(event.start,true):'Choose a time'}{event.location?' · '+event.location:''}</small></span><span className="event-add">Add to calendar</span></button>)}</div>}
  {replySlot}
+ </div>
  </div>
  </div>
  </div>
@@ -102,6 +146,52 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  {doneRight?donePill:laterPill}
  <IconButton variant="glass" size="lg" className="dock-icon" label="Undo" shortcut="Z" placement="top" icon={Undo2} iconSize={17} onClick={undo}/>
  </footer>:<div className="split-reply">{replyButton}</div>}
+ {!ghost&&<DuePicker open={dates} anchor={duePill.current} thread={thread} patch={patch} onClose={()=>setDates(false)}/>}
  <Dialog open={!!preview} onClose={()=>setPreview(undefined)} label="Attachment preview" className="attachment-preview">{shownPreview&&<><header><strong>{shownPreview.name}</strong><div className="actions"><Button variant="secondary" size="sm" icon={Download} onClick={()=>void saveFile(shownPreview.name,shownPreview.data!)}>Download</Button><DialogClose label="Close preview" onClick={()=>setPreview(undefined)}/></div></header>{shownPreview.type.startsWith('image/')?<img src={`data:${shownPreview.type};base64,${shownPreview.data}`} alt={shownPreview.name}/>:shownPreview.type.startsWith('text/')?<pre>{new TextDecoder().decode(Uint8Array.from(atob(shownPreview.data!),c=>c.charCodeAt(0)))}</pre>:<div className="file-preview-fallback"><Paperclip size={40}/><h2>{shownPreview.name}</h2><p>This file opens best in its own app.</p><Button variant="primary" iconRight={ExternalLink} onClick={()=>void saveFile(shownPreview.name,shownPreview.data!,true).catch(e=>setError(e.message))}>Open file</Button></div>}</>}</Dialog>
  </section>;
+}
+
+/** The sender's name; hovering (after a moment) or clicking shows who it was from and to, and when. */
+function Sender({message}:{message:Message}){
+ const trigger=useRef<HTMLButtonElement>(null);const body=useRef<HTMLDivElement>(null);
+ const [open,setOpen]=useState(false);const pinned=useRef(false);const timer=useRef<ReturnType<typeof setTimeout>>(undefined);
+ const [copied,setCopied]=useState('');const [all,setAll]=useState(false);
+ useEffect(()=>()=>clearTimeout(timer.current),[]);
+ const later=(fn:()=>void,ms:number)=>{clearTimeout(timer.current);timer.current=setTimeout(fn,ms);};
+ const close=useCallback(()=>{clearTimeout(timer.current);pinned.current=false;setOpen(false);setAll(false);},[]);
+ const leave=()=>{if(!pinned.current)later(close,220);};
+ const from=person(message.fromName?`${message.fromName} <${message.from}>`:message.from);
+ const name=message.fromName||message.from;
+ async function copy(email:string){try{await navigator.clipboard.writeText(email);setCopied(email);setTimeout(()=>setCopied(value=>value===email?'':value),1400);}catch{/* Clipboard access can be refused; the address stays selectable. */}}
+ const address=(p:Person,key:string)=><button key={key} className={cx('address',copied===p.email&&'is-copied')} onClick={()=>void copy(p.email)} title={'Copy '+p.email}>{p.name&&<span className="address-name">{p.name}</span>}<span className="address-email">{copied===p.email?'Copied':p.email}</span></button>;
+ const group=(label:string,list:string[])=>{if(!list.length)return null;const people=list.map(person);const shown=all?people:people.slice(0,4);
+  return <div className="sender-card-row"><span className="sender-card-label">{label}</span><span className="sender-card-people">{shown.map((p,i)=>address(p,label+i))}{people.length>shown.length&&<button className="address more" onClick={()=>setAll(true)}>{people.length-shown.length} more</button>}</span></div>;};
+ return <>
+  <button ref={trigger} className={cx('sender-trigger',open&&'is-open')} aria-haspopup="dialog" aria-expanded={open}
+   onPointerEnter={e=>{if(e.pointerType!=='mouse')return;if(open)clearTimeout(timer.current);else later(()=>setOpen(true),380);}} onPointerLeave={leave}
+   onClick={e=>{e.stopPropagation();if(open&&pinned.current){close();return;}clearTimeout(timer.current);pinned.current=true;setOpen(true);if(e.detail===0)requestAnimationFrame(()=>body.current?.querySelector<HTMLElement>('button')?.focus());}}>
+   <Avatar name={name} size={28}/><strong>{name}</strong></button>
+  <Popover open={open} anchor={trigger.current} onClose={close} placement="bottom-start" gap={6} className="sender-card ui-surface" role="dialog" label={'Message from '+name}>
+   <div ref={body} className="sender-card-body" onPointerEnter={()=>clearTimeout(timer.current)} onPointerLeave={leave}>
+    <div className="sender-card-head"><Avatar name={name} size={36}/><span className="sender-card-who"><strong>{from.name||from.email}</strong>{address({name:'',email:from.email},'from')}</span></div>
+    {(message.to.length>0||!!message.cc?.length)&&<div className="sender-card-rows">{group('To',message.to)}{group('Cc',message.cc??[])}</div>}
+    {!message.to.length&&!message.cc?.length&&<div className="sender-card-rows"><div className="sender-card-row"><span className="sender-card-label">To</span><span className="sender-card-people muted">Undisclosed recipients</span></div></div>}
+    <time className="sender-card-date" dateTime={message.date}>{fullDate(message.date)}</time>
+   </div>
+  </Popover>
+ </>;
+}
+
+/** Due date and reminder, opened from the due pill in the summary card. */
+function DuePicker({open,anchor,thread,patch,onClose}:{open:boolean;anchor:HTMLElement|null;thread:Thread;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;onClose:()=>void}){
+ const nextWeek=((8-new Date().getDay())%7)||7;
+ const current=thread.dueDate?.slice(0,10)??'';
+ const set=(dueDate:string,label:string)=>{void patch([thread.id],{dueDate},label);onClose();};
+ const reminder=thread.reminderAt?new Date(+new Date(thread.reminderAt)-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):'';
+ return <Popover open={open} anchor={anchor} onClose={onClose} placement="bottom-end" gap={6} className="due-picker ui-surface" role="dialog" label="Due date and reminder">
+  <div className="due-picker-quick">{([['Today',0],['Tomorrow',1],['Next week',nextWeek]] as const).map(([label,offset])=>{const day=isoDay(offset);return <button key={label} className={cx(current===day&&'is-current')} onClick={()=>set(day,'Due '+label.toLowerCase())}>{label}</button>;})}</div>
+  <label className="due-picker-field"><CalendarDays size={14}/><span>Due</span><input aria-label="Due date" type="date" value={current} onChange={e=>void patch([thread.id],{dueDate:e.target.value})}/></label>
+  <label className="due-picker-field"><Bell size={14}/><span>Remind</span><input aria-label="Reminder time" type="datetime-local" value={reminder} onChange={e=>void patch([thread.id],{reminderAt:e.target.value?new Date(e.target.value).toISOString():'',reminderFired:false})}/></label>
+  {(thread.dueDate||thread.reminderAt)&&<button className="due-picker-clear" onClick={()=>{void patch([thread.id],{dueDate:'',reminderAt:''},'Due date removed');onClose();}}>Remove due date{thread.reminderAt?' and reminder':''}</button>}
+ </Popover>;
 }

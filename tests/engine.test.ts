@@ -74,14 +74,14 @@ test('status merge keeps Aplos triage, follows the host for trash, spam and arch
   assert.equal(mergeStatus('new','done',false,read),'done','archived elsewhere');
   assert.equal(mergeStatus('done','trash',false,read),'trash');
   assert.equal(mergeStatus('spam','new',false,read),'new','marked not spam elsewhere');
-  const state={...createDemo(new Date()),threads:[thread('g:a',{status:'done',todo:'Pay',labels:['INBOX']}),thread('g:b'),thread('g:c'),thread('other:x',{accountId:'other'})]} as AppState;
+  const state={...createDemo(new Date()),threads:[thread('g:a',{status:'done',todo:'Pay',labels:['INBOX'],action:{kind:'reply',label:'Reply',prompt:'Confirm the payment date'}}),thread('g:b'),thread('g:c'),thread('other:x',{accountId:'other'})]} as AppState;
   state.settings={...defaultSettings,doneAction:'read'};state.blockedSenders=['spam@example.test'];
   const outcome=applySync(state,'g',empty({
     threads:[thread('g:a',{messages:[message('g:a-m1'),message('g:a-m2')],labels:['INBOX','UNREAD']}),thread('g:new',{messages:[message('n1','spam@example.test')]})],
     flags:[{id:'g:b',unread:false,bookmarked:true,status:'done',labels:[]}],removed:['g:c','other:x'],
   }));
   const by=(id:string)=>state.threads.find(t=>t.id===id);
-  assert.equal(by('g:a')!.status,'new');assert.equal(by('g:a')!.todo,'Pay','workflow fields survive');
+  assert.equal(by('g:a')!.status,'new');assert.equal(by('g:a')!.todo,'Pay','workflow fields survive');assert.equal(by('g:a')!.action?.prompt,'Confirm the payment date','the suggested action survives sync');
   assert.equal(by('g:b')!.unread,false);assert.equal(by('g:b')!.bookmarked,true);assert.equal(by('g:b')!.status,'done');
   assert.equal(by('g:c'),undefined);assert.ok(by('other:x'),'removals are scoped to the synced account');
   assert.equal(by('g:new')!.status,'spam','blocked senders go to spam');

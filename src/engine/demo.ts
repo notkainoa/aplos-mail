@@ -13,20 +13,23 @@ export function createDemo(now = new Date()):AppState {
   const due = (days:number) => {const d=new Date(now);d.setDate(d.getDate()+days);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
   const attachment:Attachment = { id:'att-notes', name:'garden-notes.txt', type:'text/plain', size:88,
     data:'Q29tbXVuaXR5IGdhcmRlbiBwbGFubmluZwpCcmluZyBnbG92ZXMsIGEgd2F0ZXIgYm90dGxlLCBhbmQgaWRlYXMgZm9yIHRoZSBoZXJiIGJlZHMuCg==' };
+  const invoiceFile:Attachment = { id:'att-invoice', name:'invoice-october.txt', type:'text/plain', size:129,
+    data:'UGFwZXIgTGFuZSBpbGx1c3RyYXRpb24gaW52b2ljZSAoZGVtbykKT2N0b2JlciBpbGx1c3RyYXRpb25zOiA2IHBpZWNlcywgJDEsMjAwLjAwClRoaXMgZGVtb25zdHJhdGlvbiBpbnZvaWNlIGlzIG5vdCBhIHJlYWwgYmlsbC4K' };
+  const files:Record<string,Attachment[]> = { garden:[attachment], invoice:[invoiceFile] };
   const rows:Array<[string,string,string,string,string,Partial<Thread>?]> = [
-    ['garden','personal','Maya Chen','maya@garden.example','Saturday in the community garden', { todo:'Confirm the garden volunteer shift', dueDate:due(2), replyStatus:'needs-reply', bookmarked:true }],
-    ['design','work','Jordan Park','jordan@studio.example','A quieter home for our project', { todo:'Review the two layout directions', dueDate:due(1), replyStatus:'needs-reply' }],
-    ['trip','personal','Sam Rivera','sam@friends.example','Cabin weekend: a few loose ends', { replyStatus:'needs-reply', bookmarked:true }],
-    ['invoice','work','Drew Bell','drew@paperlane.example','October illustration invoice', { todo:'Approve the illustration invoice', dueDate:due(-1), status:'later' }],
+    ['garden','personal','Maya Chen','maya@garden.example','Saturday in the community garden', { todo:'Confirm the garden volunteer shift', dueDate:due(2), replyStatus:'needs-reply', bookmarked:true, action:{kind:'calendar',label:'Add to calendar'} }],
+    ['design','work','Jordan Park','jordan@studio.example','A quieter home for our project', { todo:'Review the two layout directions', dueDate:due(1), replyStatus:'needs-reply', action:{kind:'reply',label:'Reply',prompt:'Say which layout direction you prefer'} }],
+    ['trip','personal','Sam Rivera','sam@friends.example','Cabin weekend: a few loose ends', { replyStatus:'needs-reply', bookmarked:true, action:{kind:'reply',label:'Reply',prompt:'Offer to organize breakfast and say whether you need a lift'} }],
+    ['invoice','work','Drew Bell','drew@paperlane.example','October illustration invoice', { todo:'Approve the illustration invoice', dueDate:due(-1), status:'later', action:{kind:'attachment',label:'View invoice',attachmentId:'att-invoice'} }],
     ['coffee','work','Nadia Wells','nadia@studio.example','Coffee and the next chapter', { replyStatus:'awaiting-reply', status:'done' }],
-    ['library','personal','Maple Library','hello@library.example','Your holds are ready to collect', { todo:'Collect two books from the library', dueDate:due(3) }],
-    ['review','work','Theo Kim','theo@studio.example','Friday review: agenda and room', { bookmarked:true }],
-    ['class','personal','Rowan Pottery','classes@pottery.example','A place opened in the evening class', { replyStatus:'needs-reply' }],
-    ['lunch','work','Leah Brooks','leah@studio.example','Lunch plans for the new starters', { status:'later', todo:'Choose a place for team lunch' }],
-    ['delivery','personal','Parcel Trail','updates@parcel.example','Your parcel is on its way', { importance:'low' }],
+    ['library','personal','Maple Library','hello@library.example','Your holds are ready to collect', { todo:'Collect two books from the library', dueDate:due(3), action:{kind:'link',label:'View holds',url:'https://library.example/account/holds'} }],
+    ['review','work','Theo Kim','theo@studio.example','Friday review: agenda and room', { bookmarked:true, action:{kind:'calendar',label:'Add to calendar'} }],
+    ['class','personal','Rowan Pottery','classes@pottery.example','A place opened in the evening class', { replyStatus:'needs-reply', action:{kind:'reply',label:'Reserve seat',prompt:'Ask them to reserve the seat in the Tuesday class'} }],
+    ['lunch','work','Leah Brooks','leah@studio.example','Lunch plans for the new starters', { status:'later', todo:'Choose a place for team lunch', action:{kind:'reply',label:'Suggest a place',prompt:'Suggest a quiet lunch spot for six with vegetarian choices'} }],
+    ['delivery','personal','Parcel Trail','updates@parcel.example','Your parcel is on its way', { importance:'low', action:{kind:'link',label:'Track parcel',url:'https://parcel.example/track/DEMO-2408'} }],
     ['digest','work','Field Notes','digest@fieldnotes.example','Three ideas for thoughtful teams', { importance:'low' }],
     ['receipt','personal','Cedar Market','receipts@cedar.example','Your market receipt', { status:'done', importance:'low' }],
-    ['workshop','work','Avery Stone','avery@learning.example','Workshop follow-up and resources', { status:'later', bookmarked:true, reminderAt:stamp(1,9) }],
+    ['workshop','work','Avery Stone','avery@learning.example','Workshop follow-up and resources', { status:'later', bookmarked:true, reminderAt:stamp(1,9), action:{kind:'read',label:'Read notes'} }],
     ['museum','personal','Mira Patel','mira@friends.example','A museum afternoon next month', { status:'done', bookmarked:true }],
     ['newsletter','personal','Trail Journal','hello@trail.example','New walks for cooler mornings', { importance:'low', status:'later' }],
     ['old','work','Ellis Gray','ellis@studio.example','Old room booking cancelled', { status:'trash', unread:false }],
@@ -37,13 +40,13 @@ export function createDemo(now = new Date()):AppState {
     garden:'Hi Alex,\nWe are gathering at the community garden this Saturday at 10 am. Could you help us plant the herb beds? Bring gloves if you have them. I attached a few notes.\nMaya',
     design:'Hi Alex,\nThe two layout directions are ready for your review. The first gives the story more space; the second puts the weekly plan first. Can you send me your preference by tomorrow?\nJordan',
     trip:'Hello!\nThe cabin is booked. I can bring dinner for Friday if you can organize breakfast. Let me know what works and whether you need a lift.\nSam',
-    invoice:'Hi Alex,\nThe October illustrations are complete. Please approve the invoice when you have a moment so we can close out the project.\nDrew',
+    invoice:'Hi Alex,\nThe October illustrations are complete. Please approve the invoice when you have a moment so we can close out the project. The invoice is attached.\nDrew',
     coffee:'Thanks for the chat this morning. I am checking our calendars and will send two times for next week.\nNadia',
-    library:'Hello Alex,\nTwo books from your hold list are ready at Maple Library. We will keep them at the front desk until the end of the week.',
+    library:'Hello Alex,\nTwo books from your hold list are ready at Maple Library. We will keep them at the front desk until the end of the week.\nSee your holds: https://library.example/account/holds',
     review:'Hi everyone,\nOur project review is Friday at 2 pm in the Oak room. We will spend 20 minutes on the prototype and 10 minutes on next steps. Please bring one question.\nTheo',
     class:'Hi Alex,\nA seat has opened in our Tuesday evening pottery class. The six-week course starts next month. Reply if you would like us to reserve it.\nRowan',
     lunch:'Hi Alex,\nCould you choose somewhere for our welcome lunch? We need a quiet table for six and a couple of vegetarian choices. No rush today.\nLeah',
-    delivery:'Your order has left our local depot. We expect delivery tomorrow between 10 am and 2 pm. Your tracking reference is DEMO-2408.',
+    delivery:'Your order has left our local depot. We expect delivery tomorrow between 10 am and 2 pm. Your tracking reference is DEMO-2408. Follow it at https://parcel.example/track/DEMO-2408',
     digest:'This week: make room for quiet work, write decisions down, and finish meetings with one clear next step. Read at your own pace.',
     receipt:'Thank you for shopping locally. Your total was $28.40. This demonstration receipt does not represent a real transaction.',
     workshop:'Thank you for joining the workshop. Here are the notes: start small, share early, and make the next step visible. I would love to hear how you use the exercises.\nAvery',
@@ -78,7 +81,7 @@ export function createDemo(now = new Date()):AppState {
     return { id, accountId, subject, summary:summaries[id] ?? text, date, unread:index<8,
       status:'new', importance:'important', bookmarked:false, replyStatus:'none', ...patch,
       messages:[{ id:`message-${id}`, from, fromName, to:[id==='sent'?'Studio team <team@studio.example>':accountId==='work'?'alex@studio.example':'alex@home.example'],
-        date,text,html:text.split('\n').map(line=>`<p>${line}</p>`).join(''),attachments:id==='garden'?[attachment]:[],sent:id==='sent' }] };
+        date,text,html:text.split('\n').map(line=>`<p>${line.replace(/https:\/\/\S+/g,url=>`<a href="${url}">${url}</a>`)}</p>`).join(''),attachments:files[id]??[],sent:id==='sent' }] };
   });
   return { version:1, accounts:[
     { id:'work', name:'Alex Morgan', email:'alex@studio.example', color:'#718878', provider:'demo',connected:true,calendarConnected:true },

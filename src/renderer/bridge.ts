@@ -25,7 +25,7 @@ export const plain=(html:string)=>{
   d.body.querySelectorAll('p,div,li,blockquote,h1,h2,h3,tr').forEach(el=>el.append(' '));
   return (d.body.textContent??'').replace(/\s+/g,' ').trim();
 };
-export function dateLabel(date:string,withTime=false){const d=new Date(date);if(Number.isNaN(+d))return '';const now=new Date();const same=d.toDateString()===now.toDateString();return same?d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):d.toLocaleDateString([],{month:'short',day:'numeric',...(withTime?{hour:'numeric',minute:'2-digit'}:{})});}
+export {dateLabel,fullDate} from './dateLabel';
 export function dueLabel(value?:string){if(!value)return 'No due date';const date=new Date(value.slice(0,10)+'T12:00:00');const today=new Date();today.setHours(12,0,0,0);const days=Math.round((+date-+today)/86400000);return days===0?'Due today':days===1?'Due tomorrow':days<0?'Overdue · '+date.toLocaleDateString([],{month:'short',day:'numeric'}):'Due '+date.toLocaleDateString([],{month:'short',day:'numeric'});}
 export async function fileToAttachment(file:File){const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(new Error('Could not read '+file.name));r.readAsDataURL(file);});return {id:uid(),name:file.name,type:file.type||'application/octet-stream',size:file.size,data};}
 export async function saveFile(name:string,data:string,open=false){if(window.aplos)return invoke(open?'file.open':'file.save',{name,data});const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes]));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}

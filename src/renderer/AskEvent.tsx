@@ -6,12 +6,13 @@ import {Avatar,Button,Checkbox,IconButton,Notice,Select,cx} from './ui';
 import {addDays,clock,dayKey,localInput,moveStart,setAllDay,timeRange} from './calendarTime';
 import type {Contact} from './Compose';
 
-const rowHeight=26;const hours=9;
+// A compact window of the day around the slot, sized for the docked Ask panel.
+const rowHeight=24;const hours=6;
 /** Demo accounts keep a local calendar; connected accounts save to their primary host calendar. */
 export const calendarFor=(a:Account)=>a.provider!=='demo'&&a.calendarConnected?'primary':`demo-${a.id}`;
 const dayOf=(iso:string,allDay:boolean)=>new Date(allDay?iso.slice(0,10)+'T00:00:00':iso);
 const longDay=(iso:string,allDay:boolean)=>dayOf(iso,allDay).toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});
-const hourLabel=(h:number)=>new Date(2000,0,1,h).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+const hourLabel=(h:number)=>new Date(2000,0,1,h).toLocaleTimeString([],{hour:'numeric'});
 const validGuest=(x:string)=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x);
 
 type Props={proposal:Partial<CalendarEvent>;accounts:Account[];accountId:string;events:CalendarEvent[];contacts:Contact[];savedId?:string;
@@ -31,7 +32,7 @@ export function AskEvent({proposal,accounts,accountId,events,contacts,savedId,on
   const day=dayKey(value.start);
   const sameDay=events.filter(e=>e.id!==savedId&&e.id!==value.id&&(e.allDay?e.start.slice(0,10)<=day&&e.end.slice(0,10)>day:dayKey(e.start)===day));
   const allDay=sameDay.filter(e=>e.allDay);const timed=sameDay.filter(e=>!e.allDay).sort((a,b)=>a.start.localeCompare(b.start));
-  const startHour=value.allDay?8:new Date(value.start).getHours();const top=Math.max(0,Math.min(24-hours,startHour-2));
+  const startHour=value.allDay?8:new Date(value.start).getHours();const top=Math.max(0,Math.min(24-hours,startHour-1));
   const overlaps=value.allDay?[]:timed.filter(e=>+new Date(e.start)<+new Date(value.end)&&+new Date(e.end)>+new Date(value.start));
   const place=(start:string,end:string)=>{const s=new Date(start),e=new Date(end);const base=new Date(s);base.setHours(top,0,0,0);
     const from=(+s-+base)/3600000,to=Math.min(hours,(+e-+base)/3600000);if(to<=0||from>=hours)return;
@@ -60,8 +61,8 @@ export function AskEvent({proposal,accounts,accountId,events,contacts,savedId,on
         <label className="ask-event-row"><MapPin size={15}/><input aria-label="Location" placeholder="No location" value={value.location} disabled={saved} onChange={e=>setValue({...value,location:e.target.value})}/></label>
         <div className="ask-event-row"><CalendarDays size={15}/><Select variant="field" label="Calendar account" disabled={saved} value={value.accountId} options={options.map(a=>[a.id,a.email] as [string,string])} onChange={id=>{const a=accounts.find(x=>x.id===id);if(a)setValue({...value,accountId:id,calendarId:calendarFor(a)});}}/></div>
         <ul className="ask-event-people">
-          <li><Avatar name={me?.name||'Me'} color={me?.color} size={26}/><span><strong>Me</strong><small>organizer</small></span></li>
-          {value.guests.map(g=>{const name=names.get(g.toLowerCase());return <li key={g}><Avatar name={name||g} size={26}/><span><strong>{name||g}</strong>{name&&<small>{g}</small>}</span>{!saved&&<IconButton size="xs" label={'Remove '+(name||g)} icon={X} onClick={()=>setValue(v=>({...v,guests:v.guests.filter(x=>x!==g)}))}/>}</li>;})}
+          <li><Avatar name={me?.name||'Me'} color={me?.color} size={22}/><span><strong>Me</strong><small>organizer</small></span></li>
+          {value.guests.map(g=>{const name=names.get(g.toLowerCase());return <li key={g}><Avatar name={name||g} size={22}/><span><strong>{name||g}</strong>{name&&<small>{g}</small>}</span>{!saved&&<IconButton size="xs" label={'Remove '+(name||g)} icon={X} onClick={()=>setValue(v=>({...v,guests:v.guests.filter(x=>x!==g)}))}/>}</li>;})}
           {!saved&&<li className="ask-event-add"><span className="ask-event-plus"><Plus size={13}/></span><input list={listId} aria-label="Add a guest" placeholder="Add guest" value={guest} onChange={e=>setGuest(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.stopPropagation();addGuest();}}} onBlur={()=>{if(guest.trim())addGuest();}}/>
             <datalist id={listId}>{contacts.slice(0,40).map(c=><option key={c.email} value={c.email}>{c.name}</option>)}</datalist></li>}
         </ul>

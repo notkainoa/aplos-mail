@@ -27,7 +27,8 @@ export interface Intelligence {
   draft(instruction:string,thread?:Thread,draft?:Partial<Draft>,signal?:AbortSignal):Promise<Partial<Draft>>;
   /** `timeZone` and known `contacts` let Ask resolve calendar requests such as "lunch with Leah Friday at 11". */
   ask(messages:AskMessage[],threads:Thread[],signal?:AbortSignal,context?:{timeZone?:string;contacts?:{name:string;email:string}[]}):Promise<AskMessage>;
-  extractEvents(thread:Thread,signal?:AbortSignal):Promise<Partial<CalendarEvent>[]>;
+  /** `timeZone` resolves relative days ("this Saturday at 10 am") in the user's zone. */
+  extractEvents(thread:Thread,signal?:AbortSignal,context?:{timeZone?:string}):Promise<Partial<CalendarEvent>[]>;
   transcribe(audio:string,mimeType:string,signal?:AbortSignal):Promise<{text:string}>;
 }
 

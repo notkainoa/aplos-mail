@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {ArrowRight,Check,Clock,Mail,Sparkles,X} from '../icons';
+import {ArrowRight,Check,Clock,Mail,MessageCircle,X} from '../icons';
 import type {Draft} from '../../shared/types';
 import {isoDay} from '../bridge';
 import {Button,Dialog,DialogHeader,Keys,Notice,Skeleton,Tabs,cx,useLatest,usePresence} from '../ui';
@@ -8,7 +8,7 @@ export function ShortcutsDialog({open,close,doneLeft}:{open:boolean;close:()=>vo
   const done=doneLeft?'←':'→';const todo=doneLeft?'→':'←';
   const tabs:{id:string;rows:[string,string[]][]}[]=[
     {id:'General',rows:[['Ask me anything',['A','⌘ J']],['Talk to Ask',['Hold A']],['Search mail',['/']],['Compose',['C']],['Settings',['⌘ ,']],['Show or hide the sidebar',['[']],['This guide',['?']]]},
-    {id:'Moving around',rows:[['Home',['⌃ 1']],['Later',['⌃ 2']],['All mail',['⌃ 3']],['Drafts',['⌃ 4']],['Next email',['J','↓']],['Previous email',['K','↑']],['Open the focused email',['Space','↵']],['Swipe through them',['S']],['Select',['X']],['Select all',['⌘ A']],['Close or clear the selection',['Esc']]]},
+    {id:'Moving around',rows:[['Home',['⌃ 1']],['Later',['⌃ 2']],['All mail',['⌃ 3']],['Drafts',['⌃ 4']],['Next email',['J','↓']],['Previous email',['K','↑']],['Open the focused email',['↵','O']],['Suggested action',['Space']],['Swipe through them',['S']],['Select',['X']],['Select all',['⌘ A']],['Close or clear the selection',['Esc']]]},
     {id:'Email',rows:[['Done',[done,'E']],['Later',[todo,'L']],['Reply',['R']],['Reply in the reader',['Space']],['Reply and dictate',['Hold Space']],['Reply all',['⇧ R']],['Forward',['F']],['Bookmark',['B']],['Read or unread',['U']],['More actions',['.']],['Move to Trash',['#']],['Undo',['Z']]]},
     {id:'Ask',rows:[['Move through suggestions',['↑','↓']],['Ask, or open the selected item',['↵']],['Search all mail instead',['⌘ ↵']],['New chat',['⌘ N']],['Stop, clear, then close',['Esc']],['Release to ask, while holding A',['Hold A']]]},
     {id:'Writing',rows:[['Send',['⌘ ↵']],['Dictate into an empty body',['Hold Space']],['Bold',['⌘ B']],['Italic',['⌘ I']],['Close',['Esc']]]},
@@ -27,7 +27,7 @@ export function WelcomeDialog({open,icon,connect,explore}:{open:boolean;icon:str
     <span className={'app-icon large '+icon}>a</span>
     <h1>Your mail,<br/>a little lighter.</h1>
     <p>A Home you can finish, a place for later,<br/>and a little intelligence when you need it.</p>
-    <div className="welcome-features"><span><Check size={15}/>An inbox you can finish</span><span><Clock size={15}/>Plans that stay in view</span><span><Sparkles size={15}/>Help, powered by Groq</span></div>
+    <div className="welcome-features"><span><Check size={15}/>An inbox you can finish</span><span><Clock size={15}/>Plans that stay in view</span><span><MessageCircle size={15}/>Help, powered by Groq</span></div>
     <Button variant="primary" size="lg" icon={Mail} onClick={connect}>Add your email account</Button>
     <Button variant="secondary" size="lg" iconRight={ArrowRight} onClick={explore}>Explore the demo</Button>
     <p className="welcome-footnote">Works with Gmail, Outlook, iCloud, Fastmail, Yahoo, AOL and other IMAP mail.<br/>The demo uses original sample mail. Nothing is sent to real people.</p>

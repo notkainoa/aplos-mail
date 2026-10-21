@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-10-20 — Second UI pass from owner feedback
+
+- Ask returns to the docked right panel (owner preferred it over the centered overlay). The panel keeps typed mail/command matches, hold-A voice (matched on the typed character), and AI calendar event cards laid out vertically for the narrow panel.
+- The focused Home card shows one big line, the AI summary that already folds in the action and deadline. No subject or separate todo line; the subject is a tooltip. Focus moves glide a single card surface between rows and keep it at a steady height in the window.
+- Space runs an AI-suggested primary action; Enter/O always open the email. Actions are presets only (`SuggestedAction`: link, attachment, reply, calendar, read), never generated code, because email is untrusted input. Links must literally appear in the thread (unsubscribe/tracking links excluded), attachments must exist, replies need a prompt, calendar actions need a concrete event; anything else is dropped. Reply opens the reader with a suggestion chip that drafts through the existing AI draft path only when clicked.
+- The reader puts the AI summary (same text as the Home row) big at the top above the subject, with todo and an editable due pill as a separate section of the same card. Sender and a relative date ("Friday 10:00 AM") head each message; addresses live in a hover/click popover. Never use the generic AI sparkle/wand icon anywhere; those icons were removed from the icon set.
+
 ## 2026-10-20 — Aplos's own UI direction
 
 - The owner redirected the product from an Avec clone to their own unified mail + calendar client with AI everywhere (see SPEC.md "Product direction"). Keep Avec's overall feel and the existing palette/tokens; the owner's Excalidraw sketches are suggestions, not pixel specs.

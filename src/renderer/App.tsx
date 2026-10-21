@@ -1,8 +1,8 @@
 import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,MailOpen,MessageCircle,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
-import type {AppState,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,View} from '../shared/types';
-import {bookmarkLeavesList,isBookmark,isHomeLow,threadInView} from '../shared/mailbox';
-import {bridge,escapeHtml,invoke,isoDay,replyRecipients,uid} from './bridge';
+import type {AppState,Attachment,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,View} from '../shared/types';
+import {bookmarkLeavesList,isBookmark,isHomeLow,liveAction,threadInView} from '../shared/mailbox';
+import {bridge,escapeHtml,invoke,isoDay,openUrl,replyRecipients,uid} from './bridge';
 import {createLiveState,threadOrder,type StateChanges,type ThreadPage} from '../shared/live';
 import {Compose,addressOf,validAddress,type Contact} from './Compose';
 import {Ask} from './Ask';
@@ -11,7 +11,7 @@ import {Calendar,EventEditor} from './Calendar';
 import {Settings} from './Settings';
 import {Sidebar,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
-import {DraftList,MailSection,highlightTerms,type RowActions,type RowHandlers,type Triage} from './components/MailList';
+import {DraftList,MailSection,actionIcon,highlightTerms,nudgeFocus,prepareFocusMove,useFocusGlide,type RowActions,type RowHandlers,type Triage} from './components/MailList';
 import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog,WelcomeDialog} from './components/Overlays';
 import {AddAccountDialog} from './components/AddAccount';
 import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Keys,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useHandlers,useMenu,usePresence,type Icon} from './ui';
@@ -30,7 +30,7 @@ const empties:Partial<Record<View,{icon:Icon;title:string;detail?:string}>>={
   all:{icon:MailOpen,title:'No mail here yet'},
 };
 const mac=/Mac/.test(navigator.userAgent);
-const recentSearchKey='aplos.recentSearches';
+const askStorageKey='aplos.askPanel';const recentSearchKey='aplos.recentSearches';
 const askExamples=['What plans do I have this week?','Which emails still need a reply?'];
 const queryParams=new URLSearchParams(location.search);const popoutDraft=queryParams.get('draft');const popoutThread=queryParams.get('thread');
 type Route={view:View;threadId?:string};
@@ -49,9 +49,9 @@ export function App(){
  const [fatal,setFatal]=useState('');
  const [route,setRoute]=useState<Route>({view:'home',threadId:popoutThread??undefined});
  const [routes,setRoutes]=useState<Route[]>([{view:'home'}]);const [historyIndex,setHistoryIndex]=useState(0);
- const [ask,setAsk]=useState(false);
+ const [ask,setAsk]=useState(()=>!popoutThread&&!popoutDraft&&localStorage.getItem(askStorageKey)!=='closed');
  // Matches the CSS breakpoints that collapse the sidebar; while squeezed it opens as an overlay instead.
- const squeezed=useMediaQuery('(max-width: 700px)');const [peek,setPeek]=useState(false);
+ const squeezed=useMediaQuery(ask?'(max-width: 900px)':'(max-width: 700px)');const [peek,setPeek]=useState(false);
  useEffect(()=>{if(!squeezed)setPeek(false);},[squeezed]);
  useEffect(()=>{if(peek)requestAnimationFrame(()=>document.querySelector<HTMLElement>('.sidebar-slot .nav-item.active, .sidebar-slot .nav-item')?.focus());},[peek]);
  // The draft as typed lives in a ref: keeping it in state re-rendered the whole app on every keystroke.
@@ -74,7 +74,9 @@ export function App(){
  const searchSeq=useRef(0);const composeRef=useRef<Draft|undefined>(undefined);composeRef.current=composer;
  const undoRef=useRef<()=>void>(noop);
  // The one focused row of a list. Unset (or gone) falls back to the row at the last focused position.
- const [cursor,setCursor]=useState<string>();const focusAt=useRef(0);const pointerFocus=useRef(false);
+ const [cursor,setCursor]=useState<string>();const focusAt=useRef(0);
+ // The thread whose suggested action is running (an attachment download or a calendar lookup).
+ const [actionBusy,setActionBusy]=useState<string>();const [previewFile,setPreviewFile]=useState<{threadId:string;attachmentId:string}>();const actionTarget=useRef<string|undefined>(undefined);
  // A focused card that was just triaged keeps its look while it leaves, as the next row opens.
  const [departing,setDeparting]=useState<{id:string;order:Thread[]}>();
  const [recentSearches,setRecentSearches]=useState<string[]>(()=>{try{const saved=JSON.parse(localStorage.getItem(recentSearchKey)||'[]');return Array.isArray(saved)?saved.filter(q=>typeof q==='string').slice(0,5):[];}catch{return [];}});
@@ -108,6 +110,7 @@ export function App(){
   return ()=>{unsubscribe();removeEventListener('online',up);removeEventListener('offline',down);};
  },[]);
  // The service paces automatic syncs per account, so focusing often is cheap.
+ useEffect(()=>{if(!popoutThread&&!popoutDraft)localStorage.setItem(askStorageKey,ask?'open':'closed');},[ask]);
  useEffect(()=>{const onFocus=()=>{void invoke('sync',{auto:true}).catch(()=>{});};window.addEventListener('focus',onFocus);return()=>window.removeEventListener('focus',onFocus);},[]);
  useEffect(()=>{if(!leaving)return;const t=setTimeout(()=>setLeaving(undefined),340);return ()=>clearTimeout(t);},[leaving?.key]);
  useEffect(()=>{if(!departing)return;const t=setTimeout(()=>setDeparting(undefined),700);return ()=>clearTimeout(t);},[departing]);
@@ -193,12 +196,43 @@ export function App(){
   return hints;
  },[scoped,searchMode]);
  const selectedThread=state?.threads.find(t=>t.id===route.threadId)||searchResults.find(t=>t.id===route.threadId);const readerIndex=Math.max(0,order.findIndex(t=>t.id===route.threadId));
+ // What a slow suggested action (calendar extraction) should still be about when it finishes.
+ actionTarget.current=selectedThread?.id??focusId;
+ // A preview request belongs to one visit of its thread.
+ useEffect(()=>{if(previewFile&&previewFile.threadId!==route.threadId)setPreviewFile(undefined);},[route.threadId]);
  const inlineReply=!!composer&&!!selectedThread&&!popoutDraft&&!popoutThread&&composer.threadId===selectedThread.id&&composer.mode!=='new'&&composer.mode!=='forward';
  function openThread(id:string){if(inlineReply&&id!==selectedThread?.id){notify('Send or close your reply first.');return;}setRoute(r=>({...r,threadId:id}));const t=state?.threads.find(t=>t.id===id);if(t?.unread)void invoke('thread.update',{ids:[id],patch:{unread:false},recordUndo:false,compact:true}).catch(fail);}
  function nextThread(delta:number){const next=order[readerIndex+delta];if(next)openThread(next.id);}
- function moveCursor(delta:number){
+ // Focus moves glide (see MailList `useFocusGlide`); the ends of the list give a small bump instead of wrapping.
+ function moveCursor(delta:number,repeat=false){
   if(!order.length)return;
-  setCursor(order[Math.min(order.length-1,Math.max(0,focusIndex+delta))].id);
+  const next=focusIndex+delta;
+  if(next<0||next>=order.length){if(!repeat)nudgeFocus(delta);return;}
+  prepareFocusMove('key',order[next].id,repeat);
+  setCursor(order[next].id);
+ }
+ /** Space on a focused email: the AI-suggested step, from presets only. Nothing is sent or saved without a click. */
+ async function runAction(thread:Thread){
+  const action=liveAction(thread);
+  if(!action||action.kind==='read'){openThread(thread.id);return;}
+  if(action.kind==='link'&&action.url){try{await openUrl(action.url);}catch(e){fail(e);}return;}
+  if(action.kind==='reply'){
+   if(composer){nudgeComposer();return;}
+   openThread(thread.id);
+   void newDraft({},thread,state?.settings.defaultReply);return;
+  }
+  // Attachments open in the reader's preview first; leaving Aplos stays an explicit click there.
+  if(action.kind==='attachment'){setPreviewFile({threadId:thread.id,attachmentId:action.attachmentId!});openThread(thread.id);return;}
+  if(actionBusy){if(actionBusy!==thread.id)notify('Still finding the last event. One moment.');return;}
+  setActionBusy(thread.id);
+  try{
+   const events=await invoke<Partial<CalendarEvent>[]>('calendar.extract',{threadId:thread.id,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
+   const event=events[0];
+   if(!event)notify('No event with a clear date and time was found.');
+   // Extraction takes a moment; if the user has moved on, offer the event instead of opening over their work.
+   else if(actionTarget.current===thread.id&&!composeRef.current)setEventEditor(event);
+   else toast.show({text:`Event ready: ${event.title||thread.subject}`,action:{label:'Review',run:()=>setEventEditor(event)}});
+  }catch(e){fail(e);}finally{setActionBusy(undefined);}
  }
  function selectRow(thread:Thread,how:'toggle'|'range'='toggle'){
   const anchor=selectAnchor.current;const from=anchor?order.findIndex(t=>t.id===anchor):-1;const to=order.findIndex(t=>t.id===thread.id);
@@ -287,9 +321,10 @@ export function App(){
    const keys:Record<string,()=>void>={c:()=>void newDraft(),'/':()=>command('search'),'?':()=>setShortcutHelp(true),'[':()=>command('toggle-sidebar'),z:()=>void undo(),s:()=>{const first=pointed||order[0];if(first)openThread(first.id);}};
    // Arrow keys keep scrolling the message while the reader is open.
    if(t){keys.j=()=>nextThread(1);keys.k=()=>nextThread(-1);}
-   else if(!['settings','calendar'].includes(route.view)){keys.j=keys.ArrowDown=()=>moveCursor(1);keys.k=keys.ArrowUp=()=>moveCursor(-1);}
+   else if(!['settings','calendar'].includes(route.view)){keys.j=keys.ArrowDown=()=>moveCursor(1,e.repeat);keys.k=keys.ArrowUp=()=>moveCursor(-1,e.repeat);}
    // The focused row: Space, Enter or O opens it, R replies in the reader, S starts the stack from the top.
-   if(pointed){keys[' ']=keys.Enter=keys.o=()=>openThread(pointed.id);keys.x=()=>selectRow(pointed,e.shiftKey?'range':'toggle');keys.X=keys.x;keys.s=()=>openThread(order[0].id);
+   // Space runs the suggested action (or opens); Enter and O always open the email.
+   if(pointed){keys[' ']=()=>{if(!e.repeat)void runAction(pointed);};keys.Enter=keys.o=()=>openThread(pointed.id);keys.x=()=>selectRow(pointed,e.shiftKey?'range':'toggle');keys.X=keys.x;keys.s=()=>openThread(order[0].id);
     keys.r=()=>{openThread(pointed.id);void newDraft({},pointed,state?.settings.defaultReply);};keys.R=()=>{openThread(pointed.id);void newDraft({},pointed,state?.settings.defaultReply==='reply-all'?'reply':'reply-all');};keys.f=()=>void newDraft({},pointed,'forward');
     keys['.']=()=>{const more=document.querySelector<HTMLElement>(`.mail-row[data-thread-id="${CSS.escape(pointed.id)}"] .card-more`);if(more){setMenuThread(pointed);rowMenu.openAt(more);}};}
    if(subject){const doneLeft=state?.settings.triageDirection==='done-left';keys.e=()=>triage(subject,'done');keys.l=()=>triage(subject,'later');keys.b=()=>toggleBookmark(subject);keys.u=()=>void patch([subject.id],{unread:!subject.unread});keys['#']=()=>triage(subject,'trash');keys.ArrowLeft=()=>triage(subject,doneLeft?'done':'later');keys.ArrowRight=()=>triage(subject,doneLeft?'later':'done');}
@@ -317,16 +352,8 @@ export function App(){
   workspaceSlide.current?.cancel();
   workspaceSlide.current=el.animate([{transform:`translateX(${prev-left}px)`},{transform:'none'}],{duration:200,easing:'cubic-bezier(.16,1,.3,1)'});
  },[!!state,squeezed,peek,state?.settings.sidebar]);
- // Keep the focused card comfortably in view, measured at its settled height rather than mid-expansion.
- useEffect(()=>{
-  // A clicked row keeps its own place under the pointer (see MailList `holdStill`).
-  const scroller=listRef.current;if(pointerFocus.current){pointerFocus.current=false;return;}if(!focusId||!listShown||!scroller)return;
-  const row=scroller.querySelector<HTMLElement>(`.mail-row[data-thread-id="${CSS.escape(focusId)}"]`);if(!row)return;
-  const view=scroller.getBoundingClientRect(),box=row.getBoundingClientRect(),height=row.querySelector<HTMLElement>('.row-body')?.offsetHeight??box.height;
-  const top=view.top+64,bottom=view.bottom-96;
-  const delta=focusIndex===0?-scroller.scrollTop:box.top<top?box.top-top:box.top+height>bottom?Math.min(box.top-top,box.top+height-bottom):0;
-  if(delta)scroller.scrollBy({top:delta,behavior:reducedMotion()?'auto':'smooth'});
- },[focusId,listShown]);
+ // Keep the focused card at a steady place and glide between cards.
+ useFocusGlide(listRef,focusId,listShown);
 
  // Derived data and stable handlers for the memoized panes. Cursor moves, hovers and typing then re-render
  // only what changed instead of the sidebar, Ask and every row.
@@ -344,7 +371,8 @@ export function App(){
   bookmark:t=>toggleBookmark(t),
   restore:t=>{hintExit(t.id,'down');void patch([t.id],{status:'new'},'Restored to Home');},
   more:(t,anchor)=>{setMenuThread(t);rowMenu.openAt(anchor);},
-  focus:t=>{pointerFocus.current=true;setCursor(t.id);},
+  focus:t=>{prepareFocusMove('pointer',t.id);setCursor(t.id);},
+  run:t=>void runAction(t),
  });
  // Beside an open reader a click opens the row straight away; there is no card to focus first.
  const readerRowActions=useMemo<RowActions>(()=>({...rowActions,focus:undefined}),[rowActions]);
@@ -358,13 +386,13 @@ export function App(){
   showSidebar:()=>{if(squeezed)setPeek(true);else void updateSettings({sidebar:true});},
   back:()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));},
   setOpenMode:(openMode:Preferences['openMode'])=>void updateSettings({openMode}),
-  compose:()=>void newDraft(),
+  compose:()=>void newDraft(),ask:()=>setAsk(true),
  });
  const askActions=useHandlers({
   onOpen:()=>setAsk(true),onClose:()=>setAsk(false),
-  onSearch:(query:string)=>{setAsk(false);if(replyGuard())return;setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));},
-  onCommand:(name:string)=>{setAsk(false);command(name);},onEditEvent:(event:Partial<CalendarEvent>)=>{setAsk(false);setEventEditor(event);},
-  onThread:(id:string)=>{setAsk(false);navigate('all',id);},onDraft:(draft:Partial<Draft>)=>{setAsk(false);void newDraft(draft);},notify:(text:string)=>notify(text),
+  onSearch:(query:string)=>{if(replyGuard())return;setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));},
+  onCommand:(name:string)=>command(name),onEditEvent:(event:Partial<CalendarEvent>)=>setEventEditor(event),
+  onThread:(id:string)=>navigate('all',id),onDraft:(draft:Partial<Draft>)=>void newDraft(draft),notify:(text:string)=>notify(text),
   currentDraft:()=>liveDraft.current||composer,
   onApplyDraft:(p:Partial<Draft>)=>{if(!composer)return;const base=liveDraft.current||composer;setComposer({...base,...p,id:composer.id,accountId:composer.accountId,mode:composer.mode,threadId:composer.threadId,attachments:base.attachments,revision:base.revision,updatedAt:new Date().toISOString()});},
  });
@@ -374,13 +402,16 @@ export function App(){
  const prefs=state.settings;
  const {low,later,homeLater,replyHome,today}=buckets;
  const heading={title:searchMode?'Search':titles[route.view],count:filtered.length};
- const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
+ const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current} suggestion={selectedThread?.action?.kind==='reply'?selectedThread.action.prompt:undefined}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
  const readerProps={settings:prefs,editEvent:setEventEditor,notify,undo:()=>void undo(),talk,heading};
- const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={(status,drag)=>triage(selectedThread,status,drag)} bookmark={()=>toggleBookmark(selectedThread)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} entering={entering?.id===selectedThread.id?entering.from:undefined}/>;
+ // The suggested step also sits in the reader's AI card; there Space keeps replying, so it shows no key.
+ const openAction=selectedThread&&liveAction(selectedThread);const suggested=openAction&&openAction.kind!=='read'?openAction:undefined;
+ const readerAction=suggested&&selectedThread&&<Button size="sm" variant="tinted" className="reader-suggested" icon={actionIcon(suggested.kind)} loading={actionBusy===selectedThread.id} onClick={()=>void runAction(selectedThread)}>{suggested.label}</Button>;
+ const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={(status,drag)=>triage(selectedThread,status,drag)} bookmark={()=>toggleBookmark(selectedThread)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} previewId={previewFile?.threadId===selectedThread.id?previewFile.attachmentId:undefined} entering={entering?.id===selectedThread.id?entering.from:undefined} action={readerAction}/>;
  const ghost=leaving&&prefs.openMode==='stack'&&<div key={leaving.key} className={cx('fling','fling-'+leaving.status,'fling-to-'+leaving.to,leaving.drag&&'is-dragged')} style={leaving.drag&&{'--from-x':leaving.drag.x+'px','--from-r':(leaving.drag.x/leaving.drag.width*6).toFixed(2)+'deg'} as React.CSSProperties} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
  const doneLeft=prefs.triageDirection==='done-left';
  // Beside an open reader the list only marks the open row; the card would repeat what the reader shows.
- const rows:RowHandlers={activeId:route.threadId,cursorId:selectedThread?undefined:focusId,departingId:departing?.id,indexOf:orderIndex,selected,doneLeft,highlight,swipe:prefs.swipe,actions:selectedThread?readerRowActions:rowActions};
+ const rows:RowHandlers={activeId:route.threadId,cursorId:selectedThread?undefined:focusId,departingId:departing?.id,busyId:actionBusy,indexOf:orderIndex,selected,doneLeft,highlight,swipe:prefs.swipe,actions:selectedThread?readerRowActions:rowActions};
  const group=(title:string,threads:Thread[],action?:React.ReactNode,showCount=true,plain=false)=><MailSection key={title} title={title} threads={threads} action={action} showCount={showCount} rows={rows} plain={plain}/>;
  const titled=(title:string,body:React.ReactNode)=><section className="mail-section"><header><h2>{title}</h2></header>{body}</section>;
  const emptyFor=(view:View)=>{const spec=searchMode?{icon:Search,title:'No matches yet',detail:'Try fewer words, or a sender’s name.'}:empties[view]??{title:'Nothing here'};return <EmptyState icon={spec.icon} title={spec.title} detail={spec.detail}/>;};
@@ -397,18 +428,18 @@ export function App(){
 
  let list:React.ReactNode;
  if(searchMode)list=search?filtered.length?group(`${filtered.length} result${filtered.length===1?'':'s'}`,filtered,undefined,false):!searching&&searchedFor===search&&emptyFor(view):<EmptyState compact icon={Search} title="Search your mail" detail="Senders, subjects and the words inside your messages."/>;
- else if(view==='home')list=<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-line" style={{'--i':filtered.length-.5} as React.CSSProperties} onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><strong>Low importance</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></button>}{group('Ready when you are',homeLater,<Button variant="text" onClick={()=>{for(const t of homeLater)hintExit(t.id,'down');void invoke('home.hide',{ids:homeLater.map(t=>t.id),compact:true}).then(()=>notify(`Hid ${homeLater.length} from Home. They stay in Later.`)).catch(fail);}}>Hide all</Button>)}{group('Waiting on you',replyHome)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&emptyFor('home')}</>;
+ else if(view==='home')list=<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-line" data-flip="low-line" style={{'--i':filtered.length-.5} as React.CSSProperties} onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><strong>Low importance</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></button>}{group('Ready when you are',homeLater,<Button variant="text" onClick={()=>{for(const t of homeLater)hintExit(t.id,'down');void invoke('home.hide',{ids:homeLater.map(t=>t.id),compact:true}).then(()=>notify(`Hid ${homeLater.length} from Home. They stay in Later.`)).catch(fail);}}>Hide all</Button>)}{group('Waiting on you',replyHome)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&emptyFor('home')}</>;
  else if(view==='drafts')list=titled('Drafts',drafts.length?<DraftList drafts={drafts} open={d=>void openDraft(d)} remove={async d=>{if(!await confirmAction({title:'Delete this draft?',message:'It will be removed from this device and from your account’s drafts.',confirmLabel:'Delete',danger:true}))return;hintExit(d.id,'down');void invoke('draft.delete',{id:d.id}).catch(fail);}}/>:emptyFor('drafts'));
  else if(view==='later'&&laterTab==='todos')list=<>{group('Overdue',todoGroups.overdue)}{group('Today',todoGroups.today)}{group('Upcoming',todoGroups.upcoming)}{group('No due date',todoGroups.undated)}{!filtered.length&&emptyFor('later')}</>;
  else{const title=view==='later'?'Bookmarks':titles[view];list=filtered.length?group(title,filtered,view==='low'?<Button variant="pill" icon={CheckCheck} onClick={()=>{for(const t of filtered)hintExit(t.id,exitDirection('done'));void patch(filtered.map(t=>t.id),{status:'done'},'Low-importance mail marked done');}}>Mark all done</Button>:undefined,false,view==='later'):titled(title,view==='later'?<EmptyState icon={Bookmark} title="No bookmarks" detail="Press B on an email to save it here. It leaves Home until you remove the bookmark."/>:emptyFor(view));}
 
- return <div className={cx('app-shell',window.aplos&&'desktop',mac&&'mac',sidebarHidden&&'sidebar-hidden',peeking&&'sidebar-peek')}>
+ return <div className={cx('app-shell',window.aplos&&'desktop',mac&&'mac',sidebarHidden&&'sidebar-hidden',peeking&&'sidebar-peek',ask&&!popoutThread&&'with-ask')}>
  {peeking&&<div className="sidebar-scrim" onPointerDown={()=>setPeek(false)}/>}
  {!popoutThread&&<div className="sidebar-slot" inert={sidebarHidden||undefined} onKeyDown={e=>{if(peeking&&e.key==='Escape'){e.stopPropagation();setPeek(false);}}}><Sidebar state={state} view={searchMode?null:route.view} counts={counts} zen={prefs.zen} online={online} syncing={syncing}
   canBack={historyIndex>0} canForward={historyIndex<routes.length-1} {...sidebarActions}/></div>}
  <main className="workspace" ref={workspaceRef}>
  <Topbar showSidebarButton={sidebarHidden&&!popoutThread} showBack={!!selectedThread&&!popoutThread&&prefs.openMode==='stack'} showActions={!popoutThread} showModes={listView&&!composerLayer}
-  ask={!popoutThread&&<Ask open={ask} conversations={state.conversations} threads={state.threads} events={state.events} accounts={state.accounts} contacts={contacts} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} hasDraft={!!composer} {...askActions}/>}
+  showAsk={!ask}
   openMode={prefs.openMode} composeBusy={busy==='draft'||busy==='reply'} {...topbarActions}/>
  {state.sync.error&&<div className="sync-error"><WifiOff size={14}/><span>{state.sync.error}</span><Button variant="text" size="sm" onClick={()=>void sync()}>Retry</Button></div>}
  <div className={cx('content-layout',selectedThread&&prefs.openMode==='split'&&'split-layout')}>
@@ -433,6 +464,7 @@ export function App(){
  {busy==='draft'&&!composer&&<div className="compose-layer"><ComposeSkeleton/></div>}
  <DuePopover prompt={duePrompt} setDue={(id,day,label)=>void setDue(id,day,label)} dismiss={()=>setDuePrompt(undefined)}/>
  </main>
+ {!popoutThread&&<div className={cx('ask-dock',ask&&'open')} inert={!ask||undefined}><Ask open={ask} conversations={state.conversations} threads={state.threads} events={state.events} accounts={state.accounts} contacts={contacts} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} hasDraft={!!composer} {...askActions}/></div>}
  <Menu open={rowMenu.open} anchor={rowMenu.anchor} onClose={rowMenu.close} placement="bottom-end" label="Email actions" onError={fail} groups={thread?[
   [{label:'Open in separate window',icon:ExternalLink,onSelect:()=>invoke('window.thread',{threadId:thread.id})}],
   [{label:'Mark '+(thread.unread?'read':'unread'),icon:MailOpen,keys:'U',onSelect:()=>patch([thread.id],{unread:!thread.unread})},
