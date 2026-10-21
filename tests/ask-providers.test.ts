@@ -9,7 +9,8 @@ import type { ChatProvider } from '../src/engine/ports';
 import { createService } from '../src/main/service';
 import { createGoogle } from '../src/main/google';
 import { createGroq } from '../src/main/groq';
-import { createOpenCodeGo, createOpenRouter } from '../src/main/providers';
+import { createCustom, createGemini, createOpenAI, createOpenCodeGo, createOpenRouter } from '../src/main/providers';
+import { createClaude } from '../src/main/anthropic';
 import { parseAskModel } from '../src/shared/ask';
 
 const sse=(lines:string[])=>new Response(new ReadableStream<Uint8Array>({start(c){c.enqueue(new TextEncoder().encode(lines.join('\n')+'\n'));c.close();}}));
@@ -78,8 +79,9 @@ test('the Ask setting picks the provider; a missing key says which variable to s
     await service.invoke('settings.update',{patch:{askModel:'opencode-go:kimi-k3'}});
     await assert.rejects(service.invoke('ai.ask',{message:'Hello'}),/Add OPENCODE_API_KEY .* OpenCode Go/);
     const catalog=await service.invoke('ai.models') as Array<{id:string;available:boolean;models:{id:string}[]}>;
-    assert.deepEqual(catalog.map(p=>[p.id,p.available]),[['groq',false],['openrouter',true],['opencode-go',false]]);
-    assert.deepEqual(catalog[1].models.map(m=>m.id),['anthropic/claude-haiku-5.5']);
+    assert.deepEqual(catalog.map(p=>p.id),['groq','openai','anthropic','gemini','openrouter','opencode-go','custom']);
+    assert.deepEqual(catalog.filter(p=>['groq','openrouter','opencode-go','custom'].includes(p.id)).map(p=>[p.id,p.available]),[['groq',false],['openrouter',true],['opencode-go',false],['custom',false]]);
+    assert.deepEqual(catalog.find(p=>p.id==='openrouter')!.models.map(m=>m.id),['anthropic/claude-haiku-5.5']);
     // The connection check asks for one tool call and reports whether the model made it.
     const fakeCalls:ChatRequest[]=[];fake.chat=async req=>{fakeCalls.push(req);return {content:'',toolCalls:[{id:'p',name:'ping',arguments:'{}'}]};};
     const check=await service.invoke('ai.test',{model:'openrouter:anthropic/claude-haiku-5.5'}) as {ms:number;tools:boolean};
@@ -87,4 +89,79 @@ test('the Ask setting picks the provider; a missing key says which variable to s
     await assert.rejects(service.invoke('ai.test',{model:'opencode-go:kimi-k3'}),/OPENCODE_API_KEY/);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
   assert.deepEqual(parseAskModel('openrouter:qwen/qwen3.8-flash:free'),{provider:'openrouter',model:'qwen/qwen3.8-flash:free'});
+});
+
+test('ChatGPT, Gemini and a custom server use their own endpoints and quirks',async()=>{
+  const ok=()=>sse([data({choices:[{delta:{content:'ok'}}]})]);
+  const openai=recorder(url=>url.endsWith('/models')?new Response(JSON.stringify({data:[{id:'gpt-6-luna'},{id:'gpt-image-2'},{id:'text-embedding-4'},{id:'gpt-7-preview'}]})):ok());
+  const gpt=createOpenAI({apiKey:'oa',fetch:openai.fetch});
+  await gpt.chat({...request,model:'gpt-6-luna'},{});
+  assert.equal(openai.seen[0].url,'https://api.openai.com/v1/chat/completions');
+  assert.equal(openai.seen[0].body!.temperature,undefined,'OpenAI reasoning models reject a temperature');assert.equal(openai.seen[0].body!.reasoning_effort,'low');
+  assert.deepEqual((await gpt.models!()).map(m=>m.id),['gpt-6-luna','gpt-7-preview']);
+  const google=recorder(url=>url.endsWith('/models')?new Response(JSON.stringify({data:[{id:'models/gemini-3.8-flash'},{id:'models/gemini-embedding-2'}]})):ok());
+  const gemini=createGemini({apiKey:'gm',fetch:google.fetch});
+  await gemini.chat({...request,model:'gemini-3.8-flash'},{});
+  assert.equal(google.seen[0].url,'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');assert.equal(google.seen[0].headers.Authorization,'Bearer gm');
+  assert.deepEqual((await gemini.models!()).map(m=>m.id),['gemini-3.8-flash']);
+  const local=recorder(()=>ok());
+  const server=createCustom('http://localhost:11434/v1/',{apiKey:'',fetch:local.fetch});
+  assert.equal(server.available,true,'a local server needs no key');
+  await server.chat({...request,model:'llama3.3'},{});
+  assert.equal(local.seen[0].url,'http://localhost:11434/v1/chat/completions');assert.equal(local.seen[0].headers.Authorization,undefined);
+});
+
+test('Claude streams text, maps tool calls both ways and replays its own blocks',async()=>{
+  const events=(list:Array<[string,unknown]>)=>new Response(list.map(([event,body])=>`event: ${event}\ndata: ${JSON.stringify(body)}\n\n`).join(''),{headers:{'content-type':'text/event-stream'}});
+  const message={id:'msg_1',type:'message',role:'assistant',model:'claude-haiku-5-5',content:[],stop_reason:null,stop_sequence:null,usage:{input_tokens:20,output_tokens:0}};
+  const bodies:Record<string,any>[]=[];
+  const fetch:typeof globalThis.fetch=async(_url,init)=>{bodies.push(JSON.parse(String(init?.body)));return events(bodies.length===1?[
+    ['message_start',{type:'message_start',message}],
+    ['content_block_start',{type:'content_block_start',index:0,content_block:{type:'thinking',thinking:'',signature:''}}],
+    ['content_block_delta',{type:'content_block_delta',index:0,delta:{type:'signature_delta',signature:'sig'}}],
+    ['content_block_stop',{type:'content_block_stop',index:0}],
+    ['content_block_start',{type:'content_block_start',index:1,content_block:{type:'text',text:''}}],
+    ['content_block_delta',{type:'content_block_delta',index:1,delta:{type:'text_delta',text:'Let me look.'}}],
+    ['content_block_stop',{type:'content_block_stop',index:1}],
+    ['content_block_start',{type:'content_block_start',index:2,content_block:{type:'tool_use',id:'toolu_1',name:'search_mail',input:{}}}],
+    ['content_block_delta',{type:'content_block_delta',index:2,delta:{type:'input_json_delta',partial_json:'{"query":"inv'}}],
+    ['content_block_delta',{type:'content_block_delta',index:2,delta:{type:'input_json_delta',partial_json:'oice"}'}}],
+    ['content_block_stop',{type:'content_block_stop',index:2}],
+    ['message_delta',{type:'message_delta',delta:{stop_reason:'tool_use',stop_sequence:null},usage:{output_tokens:30}}],
+    ['message_stop',{type:'message_stop'}],
+  ]:[
+    ['message_start',{type:'message_start',message}],
+    ['message_delta',{type:'message_delta',delta:{stop_reason:'refusal',stop_sequence:null},usage:{output_tokens:1}}],
+    ['message_stop',{type:'message_stop'}],
+  ]);};
+  const claude=createClaude({apiKey:'sk-test',fetch});
+  const text:string[]=[];
+  const turn=await claude.chat({model:'claude-haiku-5-5',messages:[{role:'system',content:'rules'},{role:'user',content:'invoice?'}],tools:request.tools,toolChoice:'auto'},{onText:t=>text.push(t)});
+  assert.deepEqual(text,['Let me look.']);assert.equal(turn.content,'Let me look.');
+  assert.deepEqual(turn.toolCalls,[{id:'toolu_1',name:'search_mail',arguments:'{"query":"invoice"}'}]);
+  assert.equal(bodies[0].system,'rules');assert.equal(bodies[0].tools[0].input_schema.type,'object');assert.deepEqual(bodies[0].tool_choice,{type:'auto'});assert.equal(bodies[0].stream,true);
+  // The next call replays Claude's own blocks (thinking signature included) and returns results in one user turn.
+  await assert.rejects(claude.chat({model:'claude-haiku-5-5',messages:[{role:'system',content:'rules'},{role:'user',content:'invoice?'},
+    {role:'assistant',content:'Let me look.',raw:turn.raw,tool_calls:[{id:'toolu_1',type:'function',function:{name:'search_mail',arguments:'{"query":"invoice"}'}}]},
+    {role:'tool',tool_call_id:'toolu_1',name:'search_mail',content:'{"total":1}'},{role:'system',content:'Answer now.'}],tools:request.tools,toolChoice:'none'},{}),/Claude declined/);
+  const replay=bodies[1].messages;
+  assert.deepEqual(replay[1].content.map((b:{type:string})=>b.type),['thinking','text','tool_use']);assert.equal(replay[1].content[0].signature,'sig');
+  assert.deepEqual(replay[2].content.map((b:{type:string})=>b.type),['tool_result','text']);assert.equal(replay[2].content[0].tool_use_id,'toolu_1');
+  assert.deepEqual(bodies[1].tool_choice,{type:'none'});
+  assert.equal(createClaude({apiKey:''}).available,false);
+});
+
+test('a custom server address must be http or https and routes Ask to that server',async()=>{
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-custom-'));
+  const asked:string[]=[];
+  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),customChat:url=>({available:true,chat:async req=>{asked.push(`${url}|${req.model}`);return {content:'Local answer.',toolCalls:[]};}})});
+  try{
+    await service.invoke('settings.update',{patch:{askModel:'custom:llama3.3'}});
+    await assert.rejects(service.invoke('ai.ask',{message:'Hi'}),/server’s address/);
+    await assert.rejects(service.invoke('settings.update',{patch:{askCustomUrl:'file:///etc/passwd'}}),/http or https/);
+    await assert.rejects(service.invoke('settings.update',{patch:{askCustomUrl:'http://user:pw@localhost:1/v1'}}),/http or https/);
+    await service.invoke('settings.update',{patch:{askCustomUrl:'http://localhost:11434/v1'}});
+    const result=await service.invoke('ai.ask',{message:'Hi'}) as Conversation;
+    assert.equal(result.messages[1].content,'Local answer.');assert.deepEqual(asked,['http://localhost:11434/v1|llama3.3']);
+  }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
 });

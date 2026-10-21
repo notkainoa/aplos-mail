@@ -1,13 +1,14 @@
 import type { ChatProvider } from '../engine/ports';
-import type { AskModelInfo } from '../shared/ask';
+import type { AskModelInfo, AskProviderId } from '../shared/ask';
 import { askProvider } from '../shared/ask';
-import { providerRequest, streamChat, type ProviderTarget } from './llm';
+import { providerRequest, streamChat, type ProviderTarget, type StreamOptions } from './llm';
 
 /** Ask's other providers. Both speak OpenAI-compatible chat/completions with streamed tool calls. */
 export interface ProviderOptions { apiKey?:string; fetch?:typeof fetch; version?:string }
 
 /** Model lists change rarely; refresh at most hourly and fall back to the curated list offline. */
 function cached(load:(signal?:AbortSignal)=>Promise<AskModelInfo[]>,ttl=60*60_000){
+  // A failed load is not cached, so the next open tries again.
   let value:{at:number;models:AskModelInfo[]}|undefined;
   return async(signal?:AbortSignal)=>{
     if(value&&Date.now()-value.at<ttl)return value.models;
@@ -54,4 +55,45 @@ export function createOpenCodeGo(options:ProviderOptions={}):ChatProvider {
       return curated.filter(m=>ids.has(m.id));
     }),
   };
+}
+
+/**
+ * A provider whose chat/completions speaks the OpenAI dialect, with its model list from GET /models.
+ * `keep` picks the chat models out of that list; curated ones come first with their descriptions.
+ */
+function compatible(target:ProviderTarget&{fetch:typeof fetch},id:AskProviderId,{keep=()=>true,stream={}}:{keep?:(id:string)=>boolean;stream?:Omit<StreamOptions,'name'>}={}):ChatProvider {
+  const curated=askProvider(id).models;
+  return {
+    available:!!target.apiKey||!!target.keyOptional,
+    chat:streamChat((path,body,signal,headers)=>providerRequest(target,path,body,signal,true,'POST',headers),{name:target.name,maxTokens:4096,...stream}),
+    models:cached(async signal=>{
+      const response=await providerRequest(target,'models',undefined,signal,false,'GET');
+      const ids=((await response.json() as {data?:Array<{id?:unknown}>}).data??[]).map(m=>String(m.id??'').replace(/^models\//,'')).filter(m=>m&&keep(m));
+      return [...curated.filter(c=>ids.includes(c.id)),...ids.filter(m=>!curated.some(c=>c.id===m)).sort().map(m=>({id:m,label:m}))];
+    },10*60_000),
+  };
+}
+
+/** ChatGPT models through the OpenAI API. Its reasoning models reject a temperature, so none is sent. */
+export function createOpenAI(options:ProviderOptions={}):ChatProvider {
+  const request=options.fetch??fetch;
+  return compatible({name:'OpenAI',env:'OPENAI_API_KEY',baseUrl:'https://api.openai.com/v1',apiKey:options.apiKey??process.env.OPENAI_API_KEY,fetch:request},'openai',{
+    keep:id=>/^(gpt-|o\d|chatgpt-)/.test(id)&&!/(audio|realtime|image|tts|transcribe|search|embedding|moderation|instruct)/.test(id),
+    stream:{temperature:null,extra:()=>({reasoning_effort:'low'})},
+  });
+}
+
+/** Gemini through Google's OpenAI-compatible endpoint, which takes the API key as a bearer token. */
+export function createGemini(options:ProviderOptions={}):ChatProvider {
+  const request=options.fetch??fetch;
+  return compatible({name:'Gemini',env:'GEMINI_API_KEY',baseUrl:'https://generativelanguage.googleapis.com/v1beta/openai',apiKey:options.apiKey??process.env.GEMINI_API_KEY,fetch:request},'gemini',{
+    keep:id=>/^gemini-/.test(id)&&!/(embedding|image|tts|live|audio)/.test(id),
+    stream:{extra:()=>({reasoning_effort:'low'})},
+  });
+}
+
+/** Any OpenAI-compatible server at an address the owner chose in Settings (Ollama, LM Studio, vLLM…). */
+export function createCustom(baseUrl:string,options:ProviderOptions={}):ChatProvider {
+  const request=options.fetch??fetch;
+  return compatible({name:'Your AI server',env:'CUSTOM_AI_API_KEY',baseUrl:baseUrl.replace(/\/+$/,''),apiKey:options.apiKey??process.env.CUSTOM_AI_API_KEY,keyOptional:true,fetch:request},'custom');
 }

@@ -4,14 +4,15 @@ import type { Chat, ChatRequest, ChatTurn } from '../engine/agent';
  * OpenAI-compatible chat transports for Ask (Groq, OpenRouter, OpenCode Go). Keys come only from the backend
  * environment and never reach the renderer. Errors never carry provider response bodies, only a known code.
  */
-export interface ProviderTarget { name:string; env:string; baseUrl:string; apiKey?:string; fetch?:typeof fetch; headers?:Record<string,string> }
+/** `keyOptional` servers (a local model server) are called without Authorization when no key is set. */
+export interface ProviderTarget { name:string; env:string; baseUrl:string; apiKey?:string; keyOptional?:boolean; fetch?:typeof fetch; headers?:Record<string,string> }
 
 export async function providerRequest(target:ProviderTarget,path:string,body:BodyInit|undefined,signal?:AbortSignal,json=true,method='POST',headers:Record<string,string>={}):Promise<Response> {
   const {name,env}=target;
-  if(!target.apiKey) throw new Error(`Set ${env} in the main process to use ${name}.`);
+  if(!target.apiKey&&!target.keyOptional) throw new Error(`Set ${env} in the main process to use ${name}.`);
   let response:Response;
   try {
-    response=await (target.fetch??fetch)(`${target.baseUrl}/${path}`,{method,headers:{Authorization:`Bearer ${target.apiKey}`,...(json?{'Content-Type':'application/json'}:{}),...target.headers,...headers},...(method==='GET'?{}:{body}),signal:AbortSignal.any([AbortSignal.timeout(90000),...(signal?[signal]:[])])});
+    response=await (target.fetch??fetch)(`${target.baseUrl}/${path}`,{method,headers:{...(target.apiKey?{Authorization:`Bearer ${target.apiKey}`}:{}),...(json?{'Content-Type':'application/json'}:{}),...target.headers,...headers},...(method==='GET'?{}:{body}),signal:AbortSignal.any([AbortSignal.timeout(90000),...(signal?[signal]:[])])});
   } catch {
     if(signal?.aborted) throw new Error('AI request cancelled.');
     throw new Error(`${name} could not complete the request. Check your connection and try again.`);
@@ -39,12 +40,14 @@ export interface StreamOptions {
   /** Per-request headers, e.g. a session ID. */
   headers?:(request:ChatRequest)=>Record<string,string>;
   maxTokens?:number;
+  /** Sampling temperature; null leaves it out (OpenAI's reasoning models reject it). */
+  temperature?:number|null;
 }
 type Send=(path:string,body:BodyInit,signal?:AbortSignal,headers?:Record<string,string>)=>Promise<Response>;
 /** A streamed tool-capable chat/completions call over `send`. */
-export function streamChat(send:Send,{name='The AI provider',extra=()=>({}),headers=()=>({}),maxTokens=2048}:StreamOptions={}):Chat {
+export function streamChat(send:Send,{name='The AI provider',extra=()=>({}),headers=()=>({}),maxTokens=2048,temperature=0.3}:StreamOptions={}):Chat {
   return async(chat,{signal,onText}={})=>{
-    const body={model:chat.model,messages:chat.messages,stream:true,temperature:0.3,max_completion_tokens:chat.maxTokens??maxTokens,...extra(chat),
+    const body={model:chat.model,messages:chat.messages.map(({raw:_raw,...m}:{raw?:unknown}&ChatRequest['messages'][number])=>m),stream:true,...(temperature===null?{}:{temperature}),max_completion_tokens:chat.maxTokens??maxTokens,...extra(chat),
       ...(chat.tools?.length?{tools:chat.tools.map(t=>({type:'function',function:t})),tool_choice:chat.toolChoice??'auto'}:{})};
     const response=await send('chat/completions',JSON.stringify(body),signal,headers(chat));
     if(!response.body) throw new Error(`${name} returned an invalid response. Please try again.`);

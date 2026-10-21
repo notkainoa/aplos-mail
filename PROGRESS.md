@@ -321,3 +321,6 @@ Ask can run on Groq, OpenRouter or OpenCode Go (Settings → General → AI → 
 
 ## Settings → AI pass (2026-10-21)
 New AI tab: provider cards with key status and setup help, searchable model picker, live connection check, and the Groq-only features listed. Verified: typecheck, full test suite (connection check covered in the provider test), headless Chromium screenshots in dark and light at 1440 px and 900 px, picker search plus keyboard selection, and a live check against Groq (Qwen3.8 27B, "Works · 160 ms").
+
+## ChatGPT, Claude, Gemini and custom providers for Ask (2026-10-21)
+Settings → AI now offers seven providers. Verified: typecheck, production build, 184 tests (3 new provider tests), headless screenshots of the provider grid and a custom server setup in dark and light. Live checks wait for the owner's keys.

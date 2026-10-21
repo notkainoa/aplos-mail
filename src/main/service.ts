@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { createStore } from './store';
 import { createGroq } from './groq';
-import { createOpenCodeGo, createOpenRouter } from './providers';
+import { createCustom, createGemini, createOpenAI, createOpenCodeGo, createOpenRouter } from './providers';
+import { createClaude } from './anthropic';
 import type { ChatProvider } from '../engine/ports';
 import type { AskProviderId } from '../shared/ask';
 import { createGoogle, type GoogleAdapter } from './google';
@@ -22,6 +23,7 @@ export interface ServiceOptions {
   openExternal?:(url:string)=>Promise<unknown>; groq?:Groq; google?:GoogleAdapter; now?:()=>Date; symbolTool?:string;
   /** Ask's OpenRouter and OpenCode Go transports; tests pass fakes. */
   chats?:Partial<Record<AskProviderId,ChatProvider>>;
+  customChat?:(baseUrl:string)=>ChatProvider;
   /** Mail hosts by kind, or factories given the service's provider environment; missing kinds use the built-in adapters. */
   providers?:Partial<Record<ProviderKind,MailProvider|((env:ProviderEnvironment<Buffer>)=>MailProvider|Promise<MailProvider>)>>;
   /** Network access for discovery and DNS checks; tests pass a fake. */
@@ -29,6 +31,9 @@ export interface ServiceOptions {
   /** Background sync interval for connected accounts; 0 turns it off. */
   autoSyncMs?:number;
 }
+
+/** One transport per custom server address, so its model list cache survives between questions. */
+function customServers(){const made=new Map<string,ChatProvider>();return (url:string)=>{let provider=made.get(url);if(!provider){provider=createCustom(url);made.set(url,provider);}return provider;};}
 
 /** Desktop composition root. The service itself depends only on the engine's typed ports. */
 export async function createService(options:ServiceOptions) {
@@ -55,7 +60,8 @@ export async function createService(options:ServiceOptions) {
   return createEngineService({
     store,staged,providers,brokenProviders,workflow,workflowError,now,
     groq:options.groq||createGroq(),randomUUID,
-    chats:{openrouter:createOpenRouter(),'opencode-go':createOpenCodeGo(),...options.chats},symbols:symbolRenderer(options.symbolTool),
+    chats:{openai:createOpenAI(),anthropic:createClaude(),gemini:createGemini(),openrouter:createOpenRouter(),'opencode-go':createOpenCodeGo(),...options.chats},
+    customChat:options.customChat??customServers(),symbols:symbolRenderer(options.symbolTool),
     desktop:options.desktop,secure:!!options.encrypt,fetch:options.fetch,
     lookup:options.fetch?undefined:async host=>(await lookup(host,{all:true})).map(a=>a.address),
     autoSyncMs:options.autoSyncMs,

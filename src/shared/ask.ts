@@ -1,11 +1,13 @@
 /**
  * Where Ask's model runs. Groq also runs every other AI feature (summaries, polish, transcription); Ask alone can
- * use OpenRouter or an OpenCode Go plan. Keys live only in the backend environment.
+ * use ChatGPT (OpenAI API), Claude, Gemini, OpenRouter, an OpenCode Go plan or a custom OpenAI-compatible server.
+ * Keys live only in the backend environment.
  * The setting is stored as `provider:model`, e.g. `groq:openai/gpt-oss-120b` or `openrouter:anthropic/claude-haiku-5.5`.
  */
-export type AskProviderId='groq'|'openrouter'|'opencode-go';
+export type AskProviderId='groq'|'openai'|'anthropic'|'gemini'|'openrouter'|'opencode-go'|'custom';
 export interface AskModelInfo { id:string; label:string; description?:string }
-export interface AskProviderInfo { id:AskProviderId; label:string; env:string; description:string; models:readonly AskModelInfo[] }
+/** `env` is the backend variable holding the key; a custom server's key is optional, its address is a setting. */
+export interface AskProviderInfo { id:AskProviderId; label:string; env:string; description:string; models:readonly AskModelInfo[]; keyOptional?:boolean }
 
 export const askProviders:readonly AskProviderInfo[]=[
   {id:'groq',label:'Groq',env:'GROQ_API_KEY',description:'Very fast open models. Also runs summaries and transcription.',models:[
@@ -13,6 +15,21 @@ export const askProviders:readonly AskProviderInfo[]=[
     {id:'openai/gpt-oss-120b',label:'GPT-OSS 120B',description:'Most careful with search, dates and drafts.'},
     {id:'openai/gpt-oss-20b',label:'GPT-OSS 20B',description:'Fastest, but slips more often on dates and contacts. Review its cards closely.'},
     {id:'qwen/qwen3.8-27b',label:'Qwen3.8 27B',description:'Careful and accurate in testing. A Groq preview model that may change without notice.'},
+  ]},
+  {id:'openai',label:'ChatGPT',env:'OPENAI_API_KEY',description:'OpenAI’s GPT models through the OpenAI API (billed by OpenAI, separate from a ChatGPT subscription).',models:[
+    {id:'gpt-6-luna',label:'GPT-6 Luna',description:'Fast and inexpensive.'},
+    {id:'gpt-6.1-sol',label:'GPT-6.1 Sol',description:'OpenAI’s strong general model.'},
+    {id:'gpt-6-astra',label:'GPT-6 Astra',description:'Most capable; slower and pricier.'},
+  ]},
+  {id:'anthropic',label:'Claude',env:'ANTHROPIC_API_KEY',description:'Anthropic’s Claude models through the Claude API.',models:[
+    {id:'claude-opus-5-5',label:'Claude Opus 5.5',description:'Anthropic’s most capable everyday model.'},
+    {id:'claude-sonnet-5-5',label:'Claude Sonnet 5.5',description:'Fast and capable; a good balance.'},
+    {id:'claude-haiku-5-5',label:'Claude Haiku 5.5',description:'Quickest and least expensive.'},
+  ]},
+  {id:'gemini',label:'Gemini',env:'GEMINI_API_KEY',description:'Google’s Gemini models through the Gemini API.',models:[
+    {id:'gemini-3.8-flash',label:'Gemini 3.8 Flash',description:'Fast, with a very long context.'},
+    {id:'gemini-4-argon',label:'Gemini 4 Argon',description:'Google’s most capable model.'},
+    {id:'gemini-3.5-flash-lite',label:'Gemini 3.5 Flash Lite',description:'Lightest and least expensive.'},
   ]},
   {id:'openrouter',label:'OpenRouter',env:'OPENROUTER_API_KEY',description:'Hundreds of models on one key, billed by OpenRouter per token.',models:[
     {id:'anthropic/claude-haiku-5.5',label:'Claude Haiku 5.5',description:'Quick and dependable with tools.'},
@@ -31,6 +48,7 @@ export const askProviders:readonly AskProviderInfo[]=[
     {id:'deepseek-v4-pro',label:'DeepSeek V4 Pro'},
     {id:'deepseek-v4.1-flash',label:'DeepSeek V4.1 Flash',description:'Fast and light on the plan’s limits.'},
   ]},
+  {id:'custom',label:'Custom',env:'CUSTOM_AI_API_KEY',keyOptional:true,description:'Any OpenAI-compatible server, such as Ollama, LM Studio or vLLM. Its model must support tool calling.',models:[]},
 ];
 export const defaultAskModel='groq:openai/gpt-oss-120b';
 const modelId=/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;

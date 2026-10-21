@@ -56,6 +56,8 @@ export interface EngineOptions {
   groq:Intelligence;
   /** Ask's other providers; Groq's comes from `groq`. */
   chats?:Partial<Record<AskProviderId,ChatProvider>>;
+  /** A transport for the custom OpenAI-compatible server at the address chosen in Settings. */
+  customChat?:(baseUrl:string)=>ChatProvider;
   workflow?:WorkflowSync;
   workflowError?:string;
   /** Whether the injected workflow vault has secure credential storage. */

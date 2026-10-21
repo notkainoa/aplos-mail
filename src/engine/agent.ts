@@ -11,11 +11,12 @@ export interface ToolSpec { name:string; description:string; parameters:Record<s
 export interface ToolCall { id:string; name:string; arguments:string }
 export type ChatMessage =
   | {role:'system'|'user'; content:string}
-  | {role:'assistant'; content:string|null; tool_calls?:{id:string;type:'function';function:{name:string;arguments:string}}[]}
+  /** `raw` is a provider's own content for this turn (e.g. Claude's thinking blocks), replayed only to that provider. */
+  | {role:'assistant'; content:string|null; tool_calls?:{id:string;type:'function';function:{name:string;arguments:string}}[]; raw?:unknown}
   | {role:'tool'; tool_call_id:string; name:string; content:string};
 /** `session` is a stable ID per conversation, for providers that route or cache by it. */
 export interface ChatRequest { model:string; messages:ChatMessage[]; tools?:ToolSpec[]; toolChoice?:'auto'|'none'; maxTokens?:number; session?:string }
-export interface ChatTurn { content:string; toolCalls:ToolCall[]; finishReason?:string; usage?:{prompt:number;completion:number} }
+export interface ChatTurn { content:string; toolCalls:ToolCall[]; finishReason?:string; usage?:{prompt:number;completion:number}; raw?:unknown }
 export interface ChatOptions { signal?:AbortSignal; onText?:(text:string)=>void }
 export type Chat = (request:ChatRequest,options:ChatOptions)=>Promise<ChatTurn>;
 
@@ -126,7 +127,7 @@ export async function runAgent(options:AgentOptions):Promise<AgentResult> {
     if(streamed)onEvent?.({type:'reset'});
     if(last){if(turn.content.trim())return {content:turn.content.trim(),steps,usage};break;}
     const calls=turn.toolCalls.map((c,i)=>({...c,id:c.id||`call_${index}_${i}`}));
-    messages.push({role:'assistant',content:turn.content||null,tool_calls:calls.map(c=>({id:c.id,type:'function' as const,function:{name:c.name,arguments:c.arguments||'{}'}}))});
+    messages.push({role:'assistant',content:turn.content||null,...(turn.raw!==undefined?{raw:turn.raw}:{}),tool_calls:calls.map(c=>({id:c.id,type:'function' as const,function:{name:c.name,arguments:c.arguments||'{}'}}))});
     // Independent calls from one step run at the same time; results go back in the order the model asked.
     const toolSignal=AbortSignal.any([total,...(options.signal?[options.signal]:[])]);
     const run=async(call:typeof calls[number],i:number,id:string):Promise<string>=>{
