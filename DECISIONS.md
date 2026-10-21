@@ -147,3 +147,8 @@
 - Move the original orchestration and demo into `src/engine`, leaving `src/main/service.ts` as the desktop composition root and keeping its public API compatible. Inject the SQL store, staged memory, provider adapters, Groq, encrypted workflow transport, UUIDs and native symbol rendering through typed interfaces. Keep AsyncLocalStorage, filesystem/vault access, Node crypto/DNS, sockets and environment secrets in the host. Preserve staged-memory atomicity rather than replacing async scopes with a global variable.
 - Provider environment ciphertext defaults to portable Uint8Array; desktop adapters explicitly specialize it to Buffer. The core only measures validated base64 payloads, so it needs no Node decoder. Browser-style numeric timers must work without `.unref()`.
 - Verify the entire engine with a neutral bundle, a browser-libraries-only TypeScript compilation, and actual mail operations in a restricted runtime with Node globals absent. A mobile host still needs real storage, credential, crypto, networking and async-context implementations; this remains a desktop app plus a portability spike, not a completed mobile app.
+
+## 2026-10-21 — One way to open mail
+- Split view is removed (owner: "we don't want it anymore"). Emails always open in the one-at-a-time stack; the toolbar mode picker, the setting and the split styles are gone, and a stored `openMode` is dropped on load.
+- Ask closes with an X at the right end of its header instead of a chevron on the left.
+- Home's distance fade is symmetric and softer (neighbours .84, floor .46); the low-importance line no longer fades and sits on its own soft well so it never reads as another email.

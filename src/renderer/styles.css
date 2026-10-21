@@ -292,11 +292,6 @@
 .search-keys .ui-kbd { height: 18px; min-width: 18px; font-size: 11px; }
 mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; margin: 0 -1px; }
 
-/* Split view keeps a narrow list beside the reader. */
-.split-layout .mail-content { flex: 0 0 360px; max-width: 360px; min-width: 300px; padding-right: 0; }
-.split-layout .mail-content > * { max-width: none; }
-.split-layout .low-bundle small { display: none; }
-
 /* ---------- Reader ---------- */
 
 .reader {
@@ -307,7 +302,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
   padding: calc(var(--toolbar-height) + 8px) var(--pad) 16px;
   gap: 12px;
 }
-.split-layout .reader { padding-left: 12px; }
 .reader-card {
   flex: 1;
   min-height: 0;
@@ -360,7 +354,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 
 /* Dragging the open card. The reader clips it like the fling layer does, so releasing hands over without a jump.
    The card gets its own layer while it moves; its lift shadow changes only when a drag starts or ends. */
-:is(.stack-reader, .split-reader) { overflow-x: clip; }
+.stack-reader { overflow-x: clip; }
 .reader-card { touch-action: pan-y; }
 .reader-card[data-swipe-state] { transform: translateX(var(--swipe-x, 0px)) rotate(calc(var(--swipe-f, 0) * 6deg)); transform-origin: 50% 120%; will-change: transform; z-index: 1; box-shadow: var(--card-edge), 0 14px 36px color-mix(in srgb, #000 12%, transparent); transition: box-shadow 180ms var(--ease); }
 .reader-card[data-swipe-state="settle"] { box-shadow: var(--card-edge); transition: transform 260ms var(--ease-out-strong), box-shadow 260ms var(--ease); }
@@ -737,13 +731,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 
 @media (max-width: 1080px) {
   :root { --sidebar-width: 220px; }
-}
-@container workspace (max-width: 940px) {
-  .split-layout .mail-content { flex-basis: 300px; min-width: 280px; max-width: 300px; }
-}
-/* Below this the reader would be too narrow to read beside a list, so split view shows the reader alone. */
-@container workspace (max-width: 700px) {
-  .split-layout .mail-content { display: none; }
 }
 @container workspace (max-width: 520px) {
   .settings-page { grid-template-columns: 1fr; gap: 8px; }

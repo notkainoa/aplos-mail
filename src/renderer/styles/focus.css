@@ -1,7 +1,7 @@
 /*
  * The focus list: every mailbox view is a calm centered column of one-line rows ("Sender: summary"), and exactly
  * one row, the focused one, opens into a raised card: the sender, then the same summary as one big line, then the
- * suggested action and the triage keys. On Home, rows fade with their distance from the focus: rows carry their
+ * suggested action and the triage keys. On Home, rows fade with their distance from the focus (the low-importance line keeps its own well): rows carry their
  * position as --i and the view the focus position as --f. Motion between rows is driven from MailList.tsx
  * (`useFocusGlide`); nothing here transitions height, so the measured FLIP positions stay exact.
  */
@@ -215,12 +215,14 @@
 
 /* ---------- Home: fade with distance from the focus ---------- */
 
-.focus-fade .mail-row, .focus-fade .low-line {
-  opacity: clamp(.35, calc(1 - max(0, var(--i, 0) - var(--f, 0)) * .11 - clamp(0, var(--f, 0) - var(--i, 0), 1) * .3), 1);
+/* Rows on either side step back evenly: the neighbours stay readable, distant rows settle at a soft floor. */
+.focus-fade .mail-row:not(.is-focus) {
+  opacity: max(.46, calc(.84 - (max(var(--i, 0) - var(--f, 0), var(--f, 0) - var(--i, 0)) - 1) * .07));
 }
-.focus-fade :is(.mail-row, .low-line):hover { opacity: 1; transition-duration: var(--dur-fast); }
+.focus-fade .mail-row:hover { opacity: 1; transition-duration: var(--dur-fast); }
 
-/* The low-importance bundle is one quiet line that opens its own view. */
+/* The low-importance bundle is one quiet line that opens its own view, set on its own soft well so it never
+   reads as another email. */
 .low-line {
   width: 100%;
   height: 40px;
@@ -230,13 +232,15 @@
   margin: 0 0 var(--space-6);
   padding: 0 12px 0 10px;
   border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--ink) 4.5%, transparent);
+  box-shadow: inset 0 0 0 .5px var(--surface-line);
   text-align: left;
   color: var(--dim);
   font-size: var(--text-base);
   letter-spacing: var(--tracking-base);
   transition: opacity var(--dur-slow) var(--ease), background-color var(--dur-instant) linear;
 }
-.low-line:hover { background: var(--hover); color: var(--ink-2); }
+.low-line:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-2); }
 .low-line .low-count { width: 24px; height: 20px; font-size: var(--text-xs); letter-spacing: var(--tracking-xs); }
 .low-line strong { font-weight: 500; color: var(--ink-2); flex: none; }
 .low-line strong::after { content: ":"; color: var(--faint); font-weight: 400; }
@@ -270,7 +274,7 @@
 .draft-row .row-separator { color: var(--faint); }
 .draft-row .summary { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dim); font-size: var(--text-md); letter-spacing: var(--tracking-md); }
 
-/* ---------- Narrow lists (split view, small windows) ---------- */
+/* ---------- Narrow lists (small windows) ---------- */
 
 @container maillist (max-width: 560px) {
   .mail-row .sender { max-width: 50%; }
@@ -283,7 +287,7 @@
 }
 :root[data-theme=dark] .mail-row.is-focus[data-swipe-state] > .row-body { background: var(--raised); border-radius: var(--card-radius); }
 .mail-row.is-focus[data-swipe-state] > .row-body { border-radius: var(--card-radius); }
-.mail-section + .low-line { margin-top: -20px; }
+.mail-section + .low-line { margin-top: calc(8px - var(--space-6)); }
 
 /* ---------- Suggested reply in the composer ---------- */
 

@@ -1,7 +1,7 @@
 import type { AppState, Settings, Thread, Attachment } from '../shared/types';
 
 export const defaultSettings:Settings = {
-  theme:'system', zen:false, openMode:'stack', sidebar:true, triageDirection:'done-right', swipe:true,
+  theme:'system', zen:false, sidebar:true, triageDirection:'done-right', swipe:true,
   doneAction:'archive', laterAction:'read', lowAction:'archive', defaultReply:'reply', signature:'Warmly,\nAlex',
   signatureMode:'new', footer:false, autoPolish:false, undoSeconds:8, sendSound:true, autoCalendar:false,
   gmailEvents:true, notifications:true, accountNotifications:{}, microphone:'default', icon:'ink',

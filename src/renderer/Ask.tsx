@@ -1,5 +1,5 @@
 import {memo,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import {CalendarDays,ChevronsRight,Clock,CornerDownLeft,FileText,Gear,History,Home,Keyboard,MessageCircle,Mic,Plus,Search,Square,SquarePen,Trash2} from './icons';
+import {CalendarDays,Clock,CornerDownLeft,FileText,Gear,History,Home,Keyboard,MessageCircle,Mic,Plus,Search,Square,SquarePen,Trash2,X} from './icons';
 import {Avatar,Button,IconButton,Kbd,Keys,Notice,Spinner,Tooltip,confirmAction,cx,dialogOpen,type Icon} from './ui';
 import type {Account,CalendarEvent,Conversation,Draft,Settings,Thread} from '../shared/types';
 import {dateLabel,invoke,uid} from './bridge';
@@ -171,7 +171,6 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
     :null;
   return <aside ref={panel} className="ask-panel" aria-label="Ask Aplos" onKeyDown={keys}>
     <div className="ask-head">
-      <IconButton className="ask-collapse" label="Hide Ask" shortcut="⌘ J" icon={ChevronsRight} onClick={onClose}/>
       <div className="ask-column">
         <div className={cx('ask-field',recording&&'is-recording',busy&&'is-busy')}>
           {recording&&(voice.preparing?<Spinner size={14}/>:<LevelMeter level={voice.level}/>)}
@@ -191,6 +190,7 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
           {chat&&<Button variant="text" size="sm" icon={Plus} disabled={busy} shortcut="⌘ N" onClick={newChat}>New chat</Button>}
         </div>}
       </div>
+      <IconButton className="ask-collapse" label="Close Ask" shortcut="⌘ J" icon={X} onClick={onClose}/>
     </div>
     <div ref={scroller} className="ask-scroll">{body}</div>
     {chat&&<p className="ask-footnote">Answers use the selected mailbox · Groq</p>}

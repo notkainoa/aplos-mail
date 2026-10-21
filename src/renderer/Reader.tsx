@@ -40,7 +40,6 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  useEffect(()=>{setHits(needle?scroller.current?.querySelectorAll('.email-body mark').length??0:0);setHit(0);},[needle,expanded,quotes,inlineFiles,remote]);
  useEffect(()=>{const marks=[...scroller.current?.querySelectorAll('.email-body mark')??[]];marks.forEach((mark,i)=>mark.classList.toggle('is-current',i===hit));marks[hit]?.scrollIntoView({block:'center',behavior:'smooth'});},[hit,hits]);
  useEffect(()=>{if(!replySlot||!scroller.current)return;const el=scroller.current;requestAnimationFrame(()=>el.scrollTo({top:el.scrollHeight,behavior:'smooth'}));},[!!replySlot]);
- const stack=settings.openMode==='stack';
  // Until Groq summarizes a synced thread, its summary is just the Gmail snippet; repeating it above the body adds nothing.
  const flat=(text:string)=>text.replace(/\s+/g,' ').replace(/(…|\.\.\.)$/,'').trim().toLowerCase();
  const hasSummary=!!thread.summary?.trim()&&!thread.messages.some(m=>flat(m.text).includes(flat(thread.summary)));
@@ -50,8 +49,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const card=useRef<HTMLDivElement>(null);
  const swipeAction=(side:SwipeSide)=>(side==='right')===doneRight?'done' as const:'later' as const;
  const swipeable=settings.swipe&&!ghost&&!replySlot&&thread.status!=='trash'&&thread.status!=='spam';
- // The stack hands a committed card to a ghost that keeps flying; split view has none, so let the card leave first.
- const swipe=useSwipe({enabled:swipeable,host:card,actionFor:swipeAction,onCommit:(side,x,width)=>{const go=()=>triage(swipeAction(side),{x,width});if(stack)go();else setTimeout(go,150);},
+ const swipe=useSwipe({enabled:swipeable,host:card,actionFor:swipeAction,onCommit:(side,x,width)=>triage(swipeAction(side),{x,width}),
   canStart:(target,pointer)=>pointer!=='mouse'||!target.closest(selectableText)});
  const swipeBadge=(side:SwipeSide)=>{const done=swipeAction(side)==='done';return <span data-for={side}>{done?<Check size={17}/>:<Clock size={16}/>}{done?'Done':'Todo'}</span>;};
  const laterPill=<Tooltip key="later" content="Todo" shortcut={'L'}><button className="dock-pill later" aria-label="Move to Todo" onClick={()=>triage('later')}>{doneRight&&<Keys combo="←"/>}<Clock size={17}/><span>Todo</span>{!doneRight&&<Keys combo="→"/>}</button></Tooltip>;
@@ -98,9 +96,9 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
    </span>
   </div>
  </div>;
- return <section className={'reader '+(stack?'stack-reader':'split-reader')+(ghost?' ghost':'')} aria-label={ghost?undefined:'Email thread'} aria-hidden={ghost||undefined} inert={ghost||undefined}>
- {stack&&heading&&<div className="stack-heading">{heading.title}<span>{total>1?`${index+1} of ${total}`:heading.count}</span>{total>1&&<span className="stack-keys"><Keys combo="K" size="sm"/><Keys combo="J" size="sm"/></span>}</div>}
- <div className={'deck'+(stack&&index<total-1&&!replySlot?' has-next':'')}>
+ return <section className={'reader stack-reader'+(ghost?' ghost':'')} aria-label={ghost?undefined:'Email thread'} aria-hidden={ghost||undefined} inert={ghost||undefined}>
+ {heading&&<div className="stack-heading">{heading.title}<span>{total>1?`${index+1} of ${total}`:heading.count}</span>{total>1&&<span className="stack-keys"><Keys combo="K" size="sm"/><Keys combo="J" size="sm"/></span>}</div>}
+ <div className={'deck'+(index<total-1&&!replySlot?' has-next':'')}>
  <div ref={card} className={'reader-card'+(entering?' entering-'+entering:'')} {...swipe}>
  {swipeable&&<div className="card-swipe" aria-hidden="true">{swipeBadge('right')}{swipeBadge('left')}</div>}
  {find&&<div className="find-bar"><Search size={15}/><input ref={findInput} autoFocus aria-label="Find in message" value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeFind();}else if(e.key==='Enter'){e.preventDefault();step(e.shiftKey?-1:1);}}} placeholder="Find in this conversation"/>
@@ -116,7 +114,6 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  <IconButton label="Move to Trash" shortcut="#" icon={Trash2} size="lg" iconSize={18} onClick={()=>triage('trash')}/>
  <IconButton label="More thread actions" tooltip={false} icon={MoreHorizontal} size="lg" iconSize={19} loading={['plans','block','unsubscribe'].includes(busy)} className={menu.open?'is-open':undefined} onClick={menu.toggle}/>
  <Menu open={menu.open} anchor={menu.anchor} onClose={menu.close} placement="bottom-end" label="Thread actions" className="thread-menu" groups={menuGroups} onError={e=>setError(e.message)}/>
- {!stack&&<IconButton label="Close" shortcut="Esc" icon={X} size="lg" iconSize={18} onClick={back}/>}
  </div></header>
  <div className="reader-scroll" ref={scroller} onScroll={e=>{const next=e.currentTarget.scrollTop>2;if(next!==moved)setMoved(next);}}>
  {ai}
@@ -139,13 +136,13 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  </div>
  </div>
  </div>
- {replySlot?null:stack?<footer className="reader-dock" aria-label="Thread actions">
+ {replySlot?null:<footer className="reader-dock" aria-label="Thread actions">
  <IconButton variant="glass" size="lg" className="dock-icon" label={thread.bookmarked?'Remove bookmark':'Save to Bookmarks'} shortcut="B" placement="top" active={thread.bookmarked} onClick={()=>bookmark?bookmark():void patch([thread.id],{bookmarked:!thread.bookmarked})}><Bookmark key={String(thread.bookmarked)} className={thread.bookmarked?'pop':undefined} size={17} fill={thread.bookmarked?'currentColor':'none'}/></IconButton>
  {doneRight?laterPill:donePill}
  {replyButton}
  {doneRight?donePill:laterPill}
  <IconButton variant="glass" size="lg" className="dock-icon" label="Undo" shortcut="Z" placement="top" icon={Undo2} iconSize={17} onClick={undo}/>
- </footer>:<div className="split-reply">{replyButton}</div>}
+ </footer>}
  {!ghost&&<DuePicker open={dates} anchor={duePill.current} thread={thread} patch={patch} onClose={()=>setDates(false)}/>}
  <Dialog open={!!preview} onClose={()=>setPreview(undefined)} label="Attachment preview" className="attachment-preview">{shownPreview&&<><header><strong>{shownPreview.name}</strong><div className="actions"><Button variant="secondary" size="sm" icon={Download} onClick={()=>void saveFile(shownPreview.name,shownPreview.data!)}>Download</Button><DialogClose label="Close preview" onClick={()=>setPreview(undefined)}/></div></header>{shownPreview.type.startsWith('image/')?<img src={`data:${shownPreview.type};base64,${shownPreview.data}`} alt={shownPreview.name}/>:shownPreview.type.startsWith('text/')?<pre>{new TextDecoder().decode(Uint8Array.from(atob(shownPreview.data!),c=>c.charCodeAt(0)))}</pre>:<div className="file-preview-fallback"><Paperclip size={40}/><h2>{shownPreview.name}</h2><p>This file opens best in its own app.</p><Button variant="primary" iconRight={ExternalLink} onClick={()=>void saveFile(shownPreview.name,shownPreview.data!,true).catch(e=>setError(e.message))}>Open file</Button></div>}</>}</Dialog>
  </section>;

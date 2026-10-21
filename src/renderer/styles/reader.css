@@ -305,6 +305,3 @@ p.ai-summary { animation: fade var(--dur-slow) var(--ease); }
 /* Holding the reply pill squeezes it slowly so the hold-to-talk threshold feels physical. */
 .dock-reply.is-holding { transform: scale(.94); transition: transform 300ms var(--ease-out-strong); }
 .dock-reply small { font-size: var(--text-sm); line-height: 16px; opacity: .78; font-weight: 400; }
-.split-reader { position: relative; }
-.split-reply { position: absolute; right: calc(var(--pad) + 16px); bottom: 30px; z-index: 3; animation: rise .2s var(--ease); }
-.split-reply .dock-reply { min-width: 140px; height: 52px; box-shadow: var(--glass-primary), 0 10px 28px -6px rgba(0, 0, 0, .45); }

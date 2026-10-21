@@ -244,34 +244,34 @@ export function App(){
  }
  function exitDirection(status:Triage){const doneLeft=state?.settings.triageDirection==='done-left';return status==='done'?(doneLeft?'left':'right'):status==='later'?(doneLeft?'right':'left'):'down';}
  function triage(thread:Thread,status:Triage,drag?:CardDrag){
-  const current=thread.id===selectedThread?.id;const stack=state?.settings.openMode==='stack';
+  const current=thread.id===selectedThread?.id;
   hintExit(thread.id,exitDirection(status));
   // The stack dock has its own undo button, so the toast would only cover it.
-  void patch([thread.id],{status},current&&stack?undefined:triageLabels[status],true);
+  void patch([thread.id],{status},current?undefined:triageLabels[status],true);
   lastTriage.current={id:thread.id,status,reopen:current};
   setDuePrompt(status==='later'?{id:thread.id,key:Date.now()}:undefined);setEntering(undefined);
   // Right after an undo the reopened thread may not be back in the list yet, so fall back to its date position.
   const at=order.findIndex(t=>t.id===thread.id);
   const following=at>=0?order[at+1]||order[at-1]:order.find(t=>t.date<=thread.date)||order.at(-1);
   if(!current){if(focusId===thread.id){setDeparting({id:thread.id,order});setCursor(following?.id);}return;}
-  if(stack&&!reducedMotion())setLeaving({thread,status,key:Date.now(),to:exitDirection(status),drag});
+  if(!reducedMotion())setLeaving({thread,status,key:Date.now(),to:exitDirection(status),drag});
   if(following&&following.id!==thread.id)setRoute(r=>({...r,threadId:following.id}));else setRoute(r=>({...r,threadId:undefined}));
   if(following?.unread)void invoke('thread.update',{ids:[following.id],patch:{unread:false},recordUndo:false,compact:true}).catch(()=>{});
  }
  function toggleBookmark(thread:Thread){
   const next=!thread.bookmarked;
   const leaves=!searchMode&&bookmarkLeavesList(thread,next,route.view,laterTab);
-  const current=thread.id===selectedThread?.id;const stack=state?.settings.openMode==='stack';
+  const current=thread.id===selectedThread?.id;
   if(leaves)hintExit(thread.id,'down');
   const label=next?'Saved to Bookmarks':'Removed from Bookmarks';
-  void patch([thread.id],{bookmarked:next},leaves&&current&&stack?undefined:label,leaves);
+  void patch([thread.id],{bookmarked:next},leaves&&current?undefined:label,leaves);
   if(!leaves)return;
   lastTriage.current={id:thread.id,status:'bookmark',reopen:current};
   setEntering(undefined);
   const at=order.findIndex(t=>t.id===thread.id);
   const following=at>=0?order[at+1]||order[at-1]:order.find(t=>t.date<=thread.date)||order.at(-1);
   if(!current){if(focusId===thread.id){setDeparting({id:thread.id,order});setCursor(following?.id);}return;}
-  if(stack&&!reducedMotion())setLeaving({thread,status:'bookmark',key:Date.now(),to:'down'});
+  if(!reducedMotion())setLeaving({thread,status:'bookmark',key:Date.now(),to:'down'});
   if(following&&following.id!==thread.id)setRoute(r=>({...r,threadId:following.id}));else setRoute(r=>({...r,threadId:undefined}));
   if(following?.unread)void invoke('thread.update',{ids:[following.id],patch:{unread:false},recordUndo:false,compact:true}).catch(()=>{});
  }
@@ -335,7 +335,7 @@ export function App(){
   addEventListener('keydown',keyboard);addEventListener('keyup',keyup);return ()=>{removeEventListener('keydown',keyboard);removeEventListener('keyup',keyup);};
  });
  const bulkBar=usePresence(selected.size>0);
- const listShown=!popoutThread&&(!selectedThread||state?.settings.openMode==='split');
+ const listShown=!popoutThread&&!selectedThread;
  const listKey=(searchMode?'search':route.view)+(route.view==='later'?laterTab:'');
  useEffect(()=>{if(route.threadId)setCursor(route.threadId);},[route.threadId]);
  useLayoutEffect(()=>{setCursor(route.threadId);focusAt.current=0;selectAnchor.current=null;},[listKey]);
@@ -374,8 +374,6 @@ export function App(){
   focus:t=>{prepareFocusMove('pointer',t.id);setCursor(t.id);},
   run:t=>void runAction(t),
  });
- // Beside an open reader a click opens the row straight away; there is no card to focus first.
- const readerRowActions=useMemo<RowActions>(()=>({...rowActions,focus:undefined}),[rowActions]);
  const sidebarActions=useHandlers({
   navigate:(view:View)=>{setPeek(false);navigate(view);},back:()=>historyMove(-1),forward:()=>historyMove(1),sync:()=>void sync(),
   hide:()=>{if(squeezed)setPeek(false);else void updateSettings({sidebar:false});},
@@ -385,7 +383,6 @@ export function App(){
  const topbarActions=useHandlers({
   showSidebar:()=>{if(squeezed)setPeek(true);else void updateSettings({sidebar:true});},
   back:()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));},
-  setOpenMode:(openMode:Preferences['openMode'])=>void updateSettings({openMode}),
   compose:()=>void newDraft(),ask:()=>setAsk(true),
  });
  const askActions=useHandlers({
@@ -408,10 +405,10 @@ export function App(){
  const openAction=selectedThread&&liveAction(selectedThread);const suggested=openAction&&openAction.kind!=='read'?openAction:undefined;
  const readerAction=suggested&&selectedThread&&<Button size="sm" variant="tinted" className="reader-suggested" icon={actionIcon(suggested.kind)} loading={actionBusy===selectedThread.id} onClick={()=>void runAction(selectedThread)}>{suggested.label}</Button>;
  const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={(status,drag)=>triage(selectedThread,status,drag)} bookmark={()=>toggleBookmark(selectedThread)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} previewId={previewFile?.threadId===selectedThread.id?previewFile.attachmentId:undefined} entering={entering?.id===selectedThread.id?entering.from:undefined} action={readerAction}/>;
- const ghost=leaving&&prefs.openMode==='stack'&&<div key={leaving.key} className={cx('fling','fling-'+leaving.status,'fling-to-'+leaving.to,leaving.drag&&'is-dragged')} style={leaving.drag&&{'--from-x':leaving.drag.x+'px','--from-r':(leaving.drag.x/leaving.drag.width*6).toFixed(2)+'deg'} as React.CSSProperties} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
+ const ghost=leaving&&<div key={leaving.key} className={cx('fling','fling-'+leaving.status,'fling-to-'+leaving.to,leaving.drag&&'is-dragged')} style={leaving.drag&&{'--from-x':leaving.drag.x+'px','--from-r':(leaving.drag.x/leaving.drag.width*6).toFixed(2)+'deg'} as React.CSSProperties} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
  const doneLeft=prefs.triageDirection==='done-left';
  // Beside an open reader the list only marks the open row; the card would repeat what the reader shows.
- const rows:RowHandlers={activeId:route.threadId,cursorId:selectedThread?undefined:focusId,departingId:departing?.id,busyId:actionBusy,indexOf:orderIndex,selected,doneLeft,highlight,swipe:prefs.swipe,actions:selectedThread?readerRowActions:rowActions};
+ const rows:RowHandlers={activeId:route.threadId,cursorId:selectedThread?undefined:focusId,departingId:departing?.id,busyId:actionBusy,indexOf:orderIndex,selected,doneLeft,highlight,swipe:prefs.swipe,actions:rowActions};
  const group=(title:string,threads:Thread[],action?:React.ReactNode,showCount=true,plain=false)=><MailSection key={title} title={title} threads={threads} action={action} showCount={showCount} rows={rows} plain={plain}/>;
  const titled=(title:string,body:React.ReactNode)=><section className="mail-section"><header><h2>{title}</h2></header>{body}</section>;
  const emptyFor=(view:View)=>{const spec=searchMode?{icon:Search,title:'No matches yet',detail:'Try fewer words, or a sender’s name.'}:empties[view]??{title:'Nothing here'};return <EmptyState icon={spec.icon} title={spec.title} detail={spec.detail}/>;};
@@ -438,11 +435,11 @@ export function App(){
  {!popoutThread&&<div className="sidebar-slot" inert={sidebarHidden||undefined} onKeyDown={e=>{if(peeking&&e.key==='Escape'){e.stopPropagation();setPeek(false);}}}><Sidebar state={state} view={searchMode?null:route.view} counts={counts} zen={prefs.zen} online={online} syncing={syncing}
   canBack={historyIndex>0} canForward={historyIndex<routes.length-1} {...sidebarActions}/></div>}
  <main className="workspace" ref={workspaceRef}>
- <Topbar showSidebarButton={sidebarHidden&&!popoutThread} showBack={!!selectedThread&&!popoutThread&&prefs.openMode==='stack'} showActions={!popoutThread} showModes={listView&&!composerLayer}
+ <Topbar showSidebarButton={sidebarHidden&&!popoutThread} showBack={!!selectedThread&&!popoutThread} showActions={!popoutThread}
   showAsk={!ask}
-  openMode={prefs.openMode} composeBusy={busy==='draft'||busy==='reply'} {...topbarActions}/>
+  composeBusy={busy==='draft'||busy==='reply'} {...topbarActions}/>
  {state.sync.error&&<div className="sync-error"><WifiOff size={14}/><span>{state.sync.error}</span><Button variant="text" size="sm" onClick={()=>void sync()}>Retry</Button></div>}
- <div className={cx('content-layout',selectedThread&&prefs.openMode==='split'&&'split-layout')}>
+ <div className="content-layout">
  {listShown&&<div className="mail-content" ref={listRef} onScroll={e=>{listScroll.current=e.currentTarget.scrollTop;}}>
  {view==='settings'?<Settings state={state} capabilities={capabilities} onChange={p=>void updateSettings(p)} notify={notify} shortcuts={()=>setShortcutHelp(true)}/>
  :view==='calendar'?<Calendar events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} edit={setEventEditor} onThread={id=>navigate('all',id)}/>

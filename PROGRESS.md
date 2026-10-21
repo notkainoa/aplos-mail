@@ -300,3 +300,6 @@ Evidence:
 - Updated API.md to describe implemented methods, provider-neutral accounts/queues, workflow sync, paged snapshots/change events and both close paths. Updated MOBILE.md to reflect the completed service boundary and distinguish the portability spike from a running mobile app. No delegated agent work remains active.
 
 M26 is now checked with source and runtime evidence. **M11 is the sole remaining unchecked acceptance item**, for the external account and OS-dependent checks listed above; missing credentials were reconfirmed. Full live-provider/reference parity is not claimed.
+
+## Owner tweaks: no split view, Ask X, softer fade (2026-10-21)
+Removed split view (toolbar picker, setting, reader split branch, styles). Ask's close button is an X on the right. Home rows fade evenly above and below the focus with a higher floor; the low-importance line has a permanent soft background. Verified: typecheck, 164 tests, and headless Chromium screenshots of Home (dark and light), the reader and the Ask header.
