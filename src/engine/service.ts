@@ -100,7 +100,7 @@ function threadPatch(raw:unknown):Partial<Thread> {
 }
 function settingsPatch(raw:unknown):Partial<Settings> {
   const source=object(raw),patch:Partial<Settings>={};
-  const choices:Partial<Record<keyof Settings,readonly string[]>>={theme:['light','dark','system'],layout:['topbar','sidebar'],triageDirection:['done-right','done-left'],doneAction:['archive','read','unread'],laterAction:['archive','read','unread'],lowAction:['archive','read','unread'],defaultReply:['reply','reply-all'],signatureMode:['always','new','never'],icon:['ink','sage','clay']};
+  const choices:Partial<Record<keyof Settings,readonly string[]>>={theme:['light','dark','system'],triageDirection:['done-right','done-left'],doneAction:['archive','read','unread'],laterAction:['archive','read','unread'],lowAction:['archive','read','unread'],defaultReply:['reply','reply-all'],signatureMode:['always','new','never'],icon:['ink','sage','clay']};
   for(const key of Object.keys(defaultSettings) as (keyof Settings)[]) {
     if(!(key in source)) continue;
     const val=source[key];
@@ -177,8 +177,9 @@ export async function createEngineService(options:EngineOptions) {
   const store=options.store;
   let state=store.read()||createDemo(now());
   state.settings={...clone(defaultSettings),...state.settings};
-  // Split view was removed; drop its old setting from stored state.
+  // Split view and the top bar layout were removed; drop their old settings from stored state.
   delete (state.settings as Settings&{openMode?:unknown}).openMode;
+  delete (state.settings as Settings&{layout?:unknown}).layout;
   state.sync={...state.sync,busy:false};
   for(const thread of state.threads)if(thread.dueDate)thread.dueDate=dateOnly(thread.dueDate);
   migrateLegacy(state);

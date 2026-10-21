@@ -40,14 +40,12 @@ export function Tabs<T extends string>({items,value,onChange,variant='pill',labe
     requestAnimationFrame(()=>list.current?.querySelector<HTMLElement>('[data-selected="true"]')?.focus());
   }
   const tabs=semantics==='tabs';
-  // With nothing selected (a page outside the tabs) the first tab is the keyboard entry point.
-  const none=!items.some(item=>item.id===value);
   return <div ref={list} role={tabs?'tablist':'group'} aria-label={label} aria-orientation={tabs&&vertical?'vertical':undefined} className={cx('ui-tabs','ui-tabs-'+variant,className)} onKeyDown={key}>
     {box&&<span className={cx('ui-tabs-indicator',animate&&'is-animated')} aria-hidden="true" style={{transform:`translate(${box.x}px,${box.y}px)`,width:box.w,height:box.h}}/>}
-    {items.map((item,index)=>{
+    {items.map(item=>{
       const selected=item.id===value;const ItemIcon=item.icon;
       const button=<button key={item.id} type="button" role={tabs?'tab':undefined} aria-selected={tabs?selected:undefined} aria-current={!tabs&&selected?'page':undefined} aria-label={item.iconOnly?item.label:undefined}
-        data-selected={selected} tabIndex={selected||none&&index===0?0:-1} className={cx('ui-tab',selected&&'is-selected')} onClick={()=>onChange(item.id)}>
+        data-selected={selected} tabIndex={selected?0:-1} className={cx('ui-tab',selected&&'is-selected')} onClick={()=>onChange(item.id)}>
         {ItemIcon&&<ItemIcon size={variant==='segmented'?15:14}/>}
         {!item.iconOnly&&<span className="ui-tab-label">{item.label}</span>}
         {item.count!==undefined&&<span className="ui-tab-count">{item.count}</span>}

@@ -53,8 +53,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <Group title="Appearance">
     {choice('Theme','A comfortable place for your mail.','theme',[['light','Light'],['dark','Dark'],['system','Match system']])}
     <GroupRow label="App icon" description="An original mark, in your favorite shade."><div className="icon-choices" role="radiogroup" aria-label="App icon">{(['ink','sage','clay'] as const).map(c=><Tooltip key={c} content={c[0].toUpperCase()+c.slice(1)}><button role="radio" aria-checked={s.icon===c} aria-label={c+' icon'} className={cx('app-icon',c,s.icon===c&&'selected')} onClick={()=>onChange({icon:c})}>a{s.icon===c&&<Check size={11}/>}</button></Tooltip>)}</div></GroupRow>
-    {choice('Navigation','Mailboxes as tabs in the top bar, or in a sidebar.','layout',[['topbar','Top bar'],['sidebar','Sidebar']])}
-    {toggle('Zen mode','Show only the Home count beside your mailboxes.','zen')}
+    {toggle('Zen mode','Show only the Home count in the sidebar.','zen')}
    </Group>
    <Group title="System">
     <GroupRow label="Open at login" description="Aplos is ready when your day begins."><Switch label="Open at login" checked={s.launchAtLogin} disabled={busy==='login'} onChange={enabled=>void run('login',async()=>{const result=await invoke<{enabled:boolean}>('system.login',{enabled});onChange({launchAtLogin:result.enabled});})}/></GroupRow>

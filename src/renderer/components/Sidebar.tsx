@@ -30,28 +30,10 @@ type SidebarProps={
   onError:(error:Error)=>void;
 };
 
-type AccountSwitcherProps={state:AppState;navigate:(view:View)=>void;selectAccount:(id:string)=>void;onError:(error:Error)=>void;
-  /** The top bar says "All" where the sidebar has room for "All accounts". */ compact?:boolean};
-
-export function AccountSwitcher({state,navigate,selectAccount,onError,compact}:AccountSwitcherProps){
+export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing,canBack,canForward,navigate,back,forward,sync,hide,selectAccount,shortcuts,onError}:SidebarProps){
   const accounts=useMenu();
   const current=state.accounts.find(a=>a.id===state.selectedAccountId);
   const shown=current?[current]:state.accounts.slice(0,2);
-  return <>
-    <button className={cx('account-trigger',compact&&'is-compact',accounts.open&&'is-open')} aria-label="Switch account" aria-haspopup="menu" aria-expanded={accounts.open} onClick={accounts.toggle}>
-      <span className="account-stack">{shown.map(a=><span key={a.id} className="account-avatar" style={{background:a.color}}>{accountInitial(a)}</span>)}</span>
-      <span className="account-name">{current?accountName(current):compact?'All':'All accounts'}</span>
-      <ChevronsUpDown size={compact?14:15}/>
-    </button>
-    <Menu open={accounts.open} anchor={accounts.anchor} onClose={accounts.close} placement="bottom-start" matchWidth={!compact} label="Accounts" className="account-menu" onError={onError} groups={[
-      [{label:'All accounts',checked:state.selectedAccountId==='all',onSelect:()=>selectAccount('all')},
-       ...state.accounts.map(a=>({label:accountName(a),hint:a.email,leading:<span className="account-dot" style={{background:a.color}}/>,checked:a.id===state.selectedAccountId,onSelect:()=>selectAccount(a.id)}))],
-      [{label:'Manage accounts',icon:Plus,onSelect:()=>{showSettingsTab('Accounts');navigate('settings');}}],
-    ]}/>
-  </>;
-}
-
-export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing,canBack,canForward,navigate,back,forward,sync,hide,selectAccount,shortcuts,onError}:SidebarProps){
   const demoOnly=state.accounts.every(a=>a.provider==='demo');
   const status=!online||state.sync.busy||!!state.sync.error;
   return <aside className="sidebar">
@@ -63,7 +45,16 @@ export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing
         <IconButton label="Forward" icon={ArrowRight} disabled={!canForward} onClick={forward}/>
       </div>
     </div>
-    <AccountSwitcher state={state} navigate={navigate} selectAccount={selectAccount} onError={onError}/>
+    <button className={cx('account-trigger',accounts.open&&'is-open')} aria-label="Switch account" aria-haspopup="menu" aria-expanded={accounts.open} onClick={accounts.toggle}>
+      <span className="account-stack">{shown.map(a=><span key={a.id} className="account-avatar" style={{background:a.color}}>{accountInitial(a)}</span>)}</span>
+      <span className="account-name">{current?accountName(current):'All accounts'}</span>
+      <ChevronsUpDown size={15}/>
+    </button>
+    <Menu open={accounts.open} anchor={accounts.anchor} onClose={accounts.close} placement="bottom-start" matchWidth label="Accounts" className="account-menu" onError={onError} groups={[
+      [{label:'All accounts',checked:state.selectedAccountId==='all',onSelect:()=>selectAccount('all')},
+       ...state.accounts.map(a=>({label:accountName(a),hint:a.email,leading:<span className="account-dot" style={{background:a.color}}/>,checked:a.id===state.selectedAccountId,onSelect:()=>selectAccount(a.id)}))],
+      [{label:'Manage accounts',icon:Plus,onSelect:()=>{showSettingsTab('Accounts');navigate('settings');}}],
+    ]}/>
     <nav className="main-nav" aria-label="Mailboxes">{sections.map(({view:id,label,icon:NavIcon,divider},index)=>{
       const value=counts[id]??0;
       return <div key={id} className={divider?'nav-divider':undefined}>

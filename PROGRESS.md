@@ -306,3 +306,6 @@ Removed split view (toolbar picker, setting, reader split branch, styles). Ask's
 
 ## Top bar navigation experiment (2026-10-21)
 Added a Navigation setting with a new default top bar layout: account switcher, Home/Later/All mail/Drafts tabs, Calendar and a More menu (Sent, Trash, Spam) on the toolbar's left; Settings and shortcuts as bottom-left icons. The Sidebar layout is still available and drops Needs reply/Awaiting reply. Home gains a "No reply yet" section for sent mail unanswered for 3+ days, and Done on already-done mail hides it from Home. Verified: typecheck, 165 tests (new mailbox test for the reply rules), and headless Chromium screenshots of Home (dark, light, narrow), the More and account menus, the reader, Sent, Settings, Calendar and the sidebar layout.
+
+## Top bar removed (2026-10-21)
+Reverted the top bar layout (TopNav, corner tools, Navigation setting, styles); the sidebar is back as the only layout. Kept the Home reply rules and the sidebar without Needs reply/Awaiting reply. Verified: typecheck, 165 tests, headless screenshot of Home with the sidebar.

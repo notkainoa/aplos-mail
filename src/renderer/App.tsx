@@ -11,7 +11,6 @@ import {Calendar,EventEditor} from './Calendar';
 import {Settings} from './Settings';
 import {Sidebar,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
-import {CornerTools,TopNav} from './components/TopNav';
 import {DraftList,MailSection,actionIcon,highlightTerms,nudgeFocus,prepareFocusMove,useFocusGlide,type RowActions,type RowHandlers,type Triage} from './components/MailList';
 import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog,WelcomeDialog} from './components/Overlays';
 import {AddAccountDialog} from './components/AddAccount';
@@ -294,7 +293,7 @@ export function App(){
   else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();moveCursor(e.key==='ArrowDown'?1:-1);}
   else if(e.key==='Enter'&&!e.nativeEvent.isComposing){const target=focused;if(target){e.preventDefault();rememberSearch(search);openThread(target.id);}}
  }
- function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':if(!popoutThread&&!popoutDraft)setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':if(state?.settings.layout==='topbar')break;if(squeezed)setPeek(v=>!v);else void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
+ function command(command:string){if(command.startsWith('thread:')){navigate('all',command.slice(7));return;}switch(command){case'compose':void newDraft();break;case'settings':navigate('settings');break;case'search':openSearch();break;case'ask':if(!popoutThread&&!popoutDraft)setAsk(v=>!v);break;case'shortcuts':setShortcutHelp(true);break;case'toggle-sidebar':if(squeezed)setPeek(v=>!v);else void updateSettings({sidebar:!state?.settings.sidebar});break;case'back':historyMove(-1);break;case'forward':historyMove(1);break;case'refresh':void sync();break;case'undo':void undo();break;default:if(sections.some(s=>s.view===command))navigate(command as View);}}
  eventHandler.current=event=>{
   if(event.type==='state')live.snapshot(event.payload as AppState);
   else if(event.type==='changes')live.apply(event.payload as StateChanges);
@@ -353,7 +352,7 @@ export function App(){
   if(prev===null||prev===left||reducedMotion())return;
   workspaceSlide.current?.cancel();
   workspaceSlide.current=el.animate([{transform:`translateX(${prev-left}px)`},{transform:'none'}],{duration:200,easing:'cubic-bezier(.16,1,.3,1)'});
- },[!!state,squeezed,peek,state?.settings.sidebar,state?.settings.layout]);
+ },[!!state,squeezed,peek,state?.settings.sidebar]);
  // Keep the focused card at a steady place and glide between cards.
  useFocusGlide(listRef,focusId,listShown);
 
@@ -379,7 +378,7 @@ export function App(){
   navigate:(view:View)=>{setPeek(false);navigate(view);},back:()=>historyMove(-1),forward:()=>historyMove(1),sync:()=>void sync(),
   hide:()=>{if(squeezed)setPeek(false);else void updateSettings({sidebar:false});},
   selectAccount:(id:string)=>{void invoke('account.select',{id}).catch(fail);if(id!=='all')setRoute({view:'home'});},
-  shortcuts:()=>{setPeek(false);setShortcutHelp(true);},settings:()=>navigate('settings'),onError:(error:Error)=>fail(error),
+  shortcuts:()=>{setPeek(false);setShortcutHelp(true);},onError:(error:Error)=>fail(error),
  });
  const topbarActions=useHandlers({
   showSidebar:()=>{if(squeezed)setPeek(true);else void updateSettings({sidebar:true});},
@@ -420,9 +419,7 @@ export function App(){
  const listView=!['settings','calendar'].includes(route.view);
  const swipe=<Button variant="pill" icon={Layers} shortcut="S" onClick={()=>{if(order[0])openThread(order[0].id);}}>Swipe through them</Button>;
  const composerLayer=!!composer&&!inlineReply;
- // The top bar layout has no sidebar at all: its navigation sits in the toolbar.
- const topnav=prefs.layout==='topbar'&&!popoutThread;
- const sidebarHidden=!!popoutThread||topnav||(squeezed?!peek:!prefs.sidebar);const peeking=squeezed&&peek&&!popoutThread&&!topnav;
+ const sidebarHidden=!!popoutThread||(squeezed?!peek:!prefs.sidebar);const peeking=squeezed&&peek&&!popoutThread;
  const view=route.view;
  const thread=menuThread;
 
@@ -433,13 +430,12 @@ export function App(){
  else if(view==='later'&&laterTab==='todos')list=<>{group('Overdue',todoGroups.overdue)}{group('Today',todoGroups.today)}{group('Upcoming',todoGroups.upcoming)}{group('No due date',todoGroups.undated)}{!filtered.length&&emptyFor('later')}</>;
  else{const title=view==='later'?'Bookmarks':titles[view];list=filtered.length?group(title,filtered,view==='low'?<Button variant="pill" icon={CheckCheck} onClick={()=>{for(const t of filtered)hintExit(t.id,exitDirection('done'));void patch(filtered.map(t=>t.id),{status:'done'},'Low-importance mail marked done');}}>Mark all done</Button>:undefined,false,view==='later'):titled(title,view==='later'?<EmptyState icon={Bookmark} title="No bookmarks" detail="Press B on an email to save it here. It leaves Home until you remove the bookmark."/>:emptyFor(view));}
 
- return <div className={cx('app-shell',window.aplos&&'desktop',mac&&'mac',sidebarHidden&&'sidebar-hidden',topnav&&'topnav',peeking&&'sidebar-peek',ask&&!popoutThread&&'with-ask')}>
+ return <div className={cx('app-shell',window.aplos&&'desktop',mac&&'mac',sidebarHidden&&'sidebar-hidden',peeking&&'sidebar-peek',ask&&!popoutThread&&'with-ask')}>
  {peeking&&<div className="sidebar-scrim" onPointerDown={()=>setPeek(false)}/>}
- {!popoutThread&&!topnav&&<div className="sidebar-slot" inert={sidebarHidden||undefined} onKeyDown={e=>{if(peeking&&e.key==='Escape'){e.stopPropagation();setPeek(false);}}}><Sidebar state={state} view={searchMode?null:route.view} counts={counts} zen={prefs.zen} online={online} syncing={syncing}
+ {!popoutThread&&<div className="sidebar-slot" inert={sidebarHidden||undefined} onKeyDown={e=>{if(peeking&&e.key==='Escape'){e.stopPropagation();setPeek(false);}}}><Sidebar state={state} view={searchMode?null:route.view} counts={counts} zen={prefs.zen} online={online} syncing={syncing}
   canBack={historyIndex>0} canForward={historyIndex<routes.length-1} {...sidebarActions}/></div>}
  <main className="workspace" ref={workspaceRef}>
- <Topbar nav={topnav&&<TopNav state={state} view={searchMode?null:route.view} counts={counts} zen={prefs.zen} navigate={sidebarActions.navigate} selectAccount={sidebarActions.selectAccount} onError={sidebarActions.onError}/>}
-  showSidebarButton={sidebarHidden&&!popoutThread&&!topnav} showBack={!!selectedThread&&!popoutThread} showActions={!popoutThread}
+ <Topbar showSidebarButton={sidebarHidden&&!popoutThread} showBack={!!selectedThread&&!popoutThread} showActions={!popoutThread}
   showAsk={!ask}
   composeBusy={busy==='draft'||busy==='reply'} {...topbarActions}/>
  {state.sync.error&&<div className="sync-error"><WifiOff size={14}/><span>{state.sync.error}</span><Button variant="text" size="sm" onClick={()=>void sync()}>Retry</Button></div>}
@@ -463,7 +459,6 @@ export function App(){
  </div>
  {composerLayer&&composer&&<Compose key={composer.id} draft={composer} accounts={state.accounts} settings={prefs} thread={state.threads.find(t=>t.id===composer.threadId)} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} closing={composeClosing} holdToTalk={()=>talkHeld.current}/>}
  {busy==='draft'&&!composer&&<div className="compose-layer"><ComposeSkeleton/></div>}
- {topnav&&<CornerTools settingsOpen={route.view==='settings'&&!searchMode} online={online} busy={state.sync.busy} error={!!state.sync.error} settings={sidebarActions.settings} shortcuts={sidebarActions.shortcuts}/>}
  <DuePopover prompt={duePrompt} setDue={(id,day,label)=>void setDue(id,day,label)} dismiss={()=>setDuePrompt(undefined)}/>
  </main>
  {!popoutThread&&<div className={cx('ask-dock',ask&&'open')} inert={!ask||undefined}><Ask open={ask} conversations={state.conversations} threads={state.threads} events={state.events} accounts={state.accounts} contacts={contacts} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} hasDraft={!!composer} {...askActions}/></div>}
@@ -476,7 +471,7 @@ export function App(){
   [{label:'Move to Spam',icon:ShieldAlert,onSelect:()=>triage(thread,'spam')},{label:'Move to Trash',icon:Trash2,keys:'#',danger:true,onSelect:()=>triage(thread,'trash')}],
  ]:[]}/>
  {eventEditor&&<EventEditor key={eventEditor.id||eventEditor.title||'new'} event={eventEditor} accounts={state.accounts} onClose={()=>setEventEditor(null)} notify={notify}/>}
- <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft} sidebar={!topnav}/>
+ <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft}/>
  <WelcomeDialog open={!prefs.onboardingDone&&!popoutThread&&!welcomeAdding} icon={prefs.icon} connect={()=>setWelcomeAdding(true)} explore={()=>void updateSettings({onboardingDone:true})}/>
  <AddAccountDialog open={welcomeAdding} close={()=>setWelcomeAdding(false)} capabilities={capabilities} connected={()=>notify('Account connected')}/>
  <PendingSends drafts={pending} seconds={prefs.undoSeconds} undo={async d=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){fail(e);}}}/>

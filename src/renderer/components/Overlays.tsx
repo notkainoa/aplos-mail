@@ -4,10 +4,10 @@ import type {Draft} from '../../shared/types';
 import {isoDay} from '../bridge';
 import {Button,Dialog,DialogHeader,Keys,Notice,Skeleton,Tabs,cx,useLatest,usePresence} from '../ui';
 
-export function ShortcutsDialog({open,close,doneLeft,sidebar}:{open:boolean;close:()=>void;doneLeft:boolean;sidebar:boolean}){
+export function ShortcutsDialog({open,close,doneLeft}:{open:boolean;close:()=>void;doneLeft:boolean}){
   const done=doneLeft?'←':'→';const todo=doneLeft?'→':'←';
   const tabs:{id:string;rows:[string,string[]][]}[]=[
-    {id:'General',rows:[['Ask me anything',['A','⌘ J']],['Talk to Ask',['Hold A']],['Search mail',['/']],['Compose',['C']],['Settings',['⌘ ,']],...(sidebar?[['Show or hide the sidebar',['[']] as [string,string[]]]:[]),['This guide',['?']]]},
+    {id:'General',rows:[['Ask me anything',['A','⌘ J']],['Talk to Ask',['Hold A']],['Search mail',['/']],['Compose',['C']],['Settings',['⌘ ,']],['Show or hide the sidebar',['[']],['This guide',['?']]]},
     {id:'Moving around',rows:[['Home',['⌃ 1']],['Later',['⌃ 2']],['All mail',['⌃ 3']],['Drafts',['⌃ 4']],['Calendar',['⌃ 6']],['Next email',['J','↓']],['Previous email',['K','↑']],['Open the focused email',['↵','O']],['Suggested action',['Space']],['Swipe through them',['S']],['Select',['X']],['Select all',['⌘ A']],['Close or clear the selection',['Esc']]]},
     {id:'Email',rows:[['Done',[done,'E']],['Later',[todo,'L']],['Reply',['R']],['Reply in the reader',['Space']],['Reply and dictate',['Hold Space']],['Reply all',['⇧ R']],['Forward',['F']],['Bookmark',['B']],['Read or unread',['U']],['More actions',['.']],['Move to Trash',['#']],['Undo',['Z']]]},
     {id:'Ask',rows:[['Move through suggestions',['↑','↓']],['Ask, or open the selected item',['↵']],['Search all mail instead',['⌘ ↵']],['New chat',['⌘ N']],['Stop, clear, then close',['Esc']],['Release to ask, while holding A',['Hold A']]]},

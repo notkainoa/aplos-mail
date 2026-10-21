@@ -136,8 +136,6 @@
   -webkit-app-region: drag;
 }
 .desktop.mac.sidebar-hidden .topbar { padding-left: 84px; }
-.topnav .topbar { padding-left: 12px; }
-.desktop.mac.topnav .topbar { padding-left: 80px; }
 .topbar button, .topbar input { -webkit-app-region: no-drag; }
 .topbar-left, .topbar-actions { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .topbar-actions { margin-left: auto; gap: 6px; }
@@ -729,33 +727,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .importance-button > :is(svg, .sym):last-child { transition: transform var(--dur-base) var(--ease); }
 .importance-button.is-open > :is(svg, .sym):last-child { transform: rotate(180deg); }
 
-/* Top bar layout: the mailboxes live in the toolbar instead of a sidebar. */
-.top-nav { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.account-trigger.is-compact { width: auto; height: 30px; gap: 6px; padding: 0 6px 0 5px; font-size: var(--text-md); }
-.account-trigger.is-compact:is(:hover, .is-open) { background: var(--hover); }
-.account-trigger.is-compact > :is(svg, .sym) { color: var(--faint); }
-.account-trigger.is-compact .account-avatar + .account-avatar { box-shadow: 0 0 0 1.5px var(--canvas); }
-.top-nav-tabs.ui-tabs-segmented { flex: none; }
-.top-nav-tabs.ui-tabs-segmented .ui-tab { width: auto; padding: 0 11px; gap: 5px; font-size: var(--text-md); font-weight: 500; letter-spacing: -.005em; }
-.top-nav-tabs .ui-tab-count { font-weight: 400; color: var(--faint); }
-.top-nav-tabs .ui-tab.is-selected .ui-tab-count { color: var(--dim); }
-.top-nav-icon { color: var(--dim); }
-.top-nav-icon.is-active { color: var(--ink); background: var(--hover); }
-.corner-tools { position: absolute; left: 10px; bottom: 10px; z-index: 18; display: flex; align-items: center; gap: 2px; }
-.corner-tools .ui-icon-btn { color: var(--faint); }
-.corner-tools .ui-icon-btn:hover:not(:disabled) { color: var(--ink); }
-.corner-tools .ui-icon-btn.is-active { color: var(--ink); background: var(--hover); }
-.corner-status { width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--radius-control); }
-@container workspace (max-width: 760px) {
-  .top-nav-tabs .ui-tab-count { display: none; }
-  .top-nav-tabs.ui-tabs-segmented .ui-tab { padding: 0 9px; }
-  .topnav .compose-top span, .topnav .ask-pill small { display: none; }
-}
-@container workspace (max-width: 600px) {
-  .account-trigger.is-compact .account-name { display: none; }
-  .topnav .ask-pill > span { display: none; }
-}
-
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1080px) {
@@ -781,7 +752,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 @media (max-width: 700px) {
   .sidebar-slot { width: 0; }
   .desktop.mac .topbar { padding-left: 84px; }
-  .topbar-left .toolbar-divider { display: none; }
+  .topbar .ui-tabs-segmented, .toolbar-divider { display: none; }
   .compose-top span { display: none; }
   .sender { max-width: 45%; }
   .attachment-badge { display: none; }
