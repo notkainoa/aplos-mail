@@ -1,14 +1,15 @@
 import type { Bridge, Listener } from '../shared/types';
 const listeners = new Set<Listener>();
+const api=`http://127.0.0.1:${import.meta.env.VITE_APLOS_API_PORT||4317}/api`;
 let source: EventSource|undefined;
 const web:Bridge = {
   async invoke<T>(method:string,payload?:unknown):Promise<T> {
-    const response=await fetch('http://127.0.0.1:4317/api/invoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({method,payload})});
+    const response=await fetch(api+'/invoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({method,payload})});
     const data=await response.json(); if(data.error)throw new Error(data.error); return data.result as T;
   },
   subscribe(listener) {
     listeners.add(listener);
-    if(!source){source=new EventSource('http://127.0.0.1:4317/api/events');source.onmessage=e=>{try{const event=JSON.parse(e.data);for(const cb of listeners)cb(event);}catch{/* malformed events cannot break the UI */}};}
+    if(!source){source=new EventSource(api+'/events');source.onmessage=e=>{try{const event=JSON.parse(e.data);for(const cb of listeners)cb(event);}catch{/* malformed events cannot break the UI */}};}
     return ()=>{listeners.delete(listener);if(!listeners.size){source?.close();source=undefined;}};
   }
 };

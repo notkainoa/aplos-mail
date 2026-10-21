@@ -14,8 +14,10 @@ export const serviceMethods=new Set([
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
 ]);
 const webMethods=new Set(['window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test','system.login','system.defaultMail','system.microphone','app.info']);
-const origins=new Set(['http://127.0.0.1:5173','http://localhost:5173','http://127.0.0.1:4317']);
-export function isTrustedRequest(req:Pick<IncomingMessage,'headers'>,port=4317):boolean {
+// Ports can move (APLOS_API_PORT / APLOS_VITE_PORT) so several checkouts can preview side by side.
+const apiPort=Number(process.env.APLOS_API_PORT)||4317,vitePort=Number(process.env.APLOS_VITE_PORT)||5173;
+const origins=new Set([`http://127.0.0.1:${vitePort}`,`http://localhost:${vitePort}`,`http://127.0.0.1:${apiPort}`]);
+export function isTrustedRequest(req:Pick<IncomingMessage,'headers'>,port=apiPort):boolean {
   return (req.headers.host===`127.0.0.1:${port}`||req.headers.host===`localhost:${port}`)&&(!req.headers.origin||origins.has(req.headers.origin));
 }
 async function readBody(req:IncomingMessage):Promise<{method:string;payload?:unknown}> {
@@ -60,10 +62,10 @@ export async function startServer(options:{service?:Awaited<ReturnType<typeof cr
   let stopping=false;
   const close=async()=>{if(stopping)return;stopping=true;process.off('SIGINT',shutdown);process.off('SIGTERM',shutdown);clearInterval(heartbeat);unsubscribe();for(const stream of streams)stream.end();await vite?.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await service.close();await options.onClose?.();};
   try{
-    await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(options.port??4317,'127.0.0.1',()=>{server.off('error',reject);resolve();});});
-    if(options.vite!==false){vite=await createViteServer();await vite.listen();}
+    await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(options.port??apiPort,'127.0.0.1',()=>{server.off('error',reject);resolve();});});
+    if(options.vite!==false){process.env.VITE_APLOS_API_PORT=String((server.address() as {port:number}).port);vite=await createViteServer();await vite.listen();}
   }catch(error){await close();throw error;}
-  if(options.vite!==false)console.log(`Aplos Mail: http://127.0.0.1:5173 (loopback API :${(server.address() as {port:number}).port})`);
+  if(options.vite!==false)console.log(`Aplos Mail: http://127.0.0.1:${vitePort} (loopback API :${(server.address() as {port:number}).port})`);
   function shutdown(){void close().finally(()=>process.exit(0));}process.once('SIGINT',shutdown);process.once('SIGTERM',shutdown);
   return {server,service,close};
 }

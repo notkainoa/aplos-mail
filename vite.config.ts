@@ -1,2 +1,5 @@
 import { defineConfig } from 'vite';
-export default defineConfig({base:'./',server:{host:'127.0.0.1',port:5173,strictPort:true,watch:{ignored:['**/release/**','**/dist/**','**/artifacts/**']}},build:{outDir:'dist/renderer'}});
+// Development ports can move (APLOS_VITE_PORT / APLOS_API_PORT) so several checkouts preview side by side; the CSP follows them.
+const vitePort=Number(process.env.APLOS_VITE_PORT)||5173,apiPort=Number(process.env.VITE_APLOS_API_PORT||process.env.APLOS_API_PORT)||4317;
+export default defineConfig({base:'./',server:{host:'127.0.0.1',port:vitePort,strictPort:true,watch:{ignored:['**/release/**','**/dist/**','**/artifacts/**']}},build:{outDir:'dist/renderer'},
+  plugins:[{name:'aplos-dev-ports',apply:'serve',transformIndexHtml:html=>html.replace('http://127.0.0.1:5173 ws://127.0.0.1:5173 http://127.0.0.1:4317',`http://127.0.0.1:${vitePort} ws://127.0.0.1:${vitePort} http://127.0.0.1:${apiPort}`)}]});

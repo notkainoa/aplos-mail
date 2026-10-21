@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-10-20 — Aplos's own UI direction
+
+- The owner redirected the product from an Avec clone to their own unified mail + calendar client with AI everywhere (see SPEC.md "Product direction"). Keep Avec's overall feel and the existing palette/tokens; the owner's Excalidraw sketches are suggestions, not pixel specs.
+- Home becomes a focus list: exactly one email is focused at a time and expands into a card (sender, due chip, AI summary headline, keyed actions: Bookmark B, Later ←, Open Space/↵, Done →, more). Other mail shows as a single line "Sender: summary"; on Home, rows fade with distance from the focus. Acting on the focused email advances focus to the next one. Space or Enter opens the one-at-a-time reader at that email. Mailbox views reuse the same rows without fading.
+- Ask moves from a docked side panel to a centered overlay over a dimmed app ("Ask me anything", Esc). Tap A to type, hold A to record (the top-bar pill turns into a red Recording state with "Release to ask · Esc to cancel"). Typing shows Ask, matching mail and commands; answers can cite mail, open a proposed draft, or propose a calendar event that is only saved when the user confirms it.
+- Development ports can be moved with `APLOS_API_PORT` / `APLOS_VITE_PORT` (CSP follows) so several checkouts can preview at once with separate `APLOS_DATA_DIR` storage.
+
 ## 2026-10-18 — Keep the newest exact inbox copy
 
 - User-requested Aplos behavior, independent of reference research: during incoming sync, compare complete thread content within the same account and archive older exact copies. Match subject, sender/name, To/Cc, full text/HTML/quoted history, sent direction and attachment metadata/bytes; ignore delivery identifiers, timestamps and AI/workflow fields. No AI or network classification is needed for equality.
