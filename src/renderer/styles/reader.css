@@ -92,6 +92,21 @@ p.ai-summary { animation: fade var(--dur-slow) var(--ease); }
 .todo-ring { width: 14px; height: 14px; margin-top: 3px; flex: none; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--ink) 32%, transparent); }
 .ai-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
 .ai-next.no-todo .ai-controls { margin-left: 0; }
+/* Plans found in the email, with their details, where the "Add to calendar" suggestion was. */
+.ai-plans { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.ai-plan { display: flex; align-items: center; gap: 12px; padding: 8px 10px 8px 8px; border-radius: var(--radius-md); background: var(--card); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent); animation: fade var(--dur-base) var(--ease); }
+:root[data-theme=dark] .ai-plan { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.ai-plan-date { width: 40px; height: 42px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--blue) 12%, transparent); color: var(--blue); }
+.ai-plan-date > small { font-size: 10px; line-height: 12px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; }
+.ai-plan-date > strong { font-size: 18px; line-height: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ai-plan-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ai-plan-text > strong { font-size: var(--text-base); line-height: 20px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.ai-plan-text > span { font-size: var(--text-md); line-height: var(--leading-md); color: var(--dim); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ai-plan-when > span { white-space: nowrap; }
+.ai-plan > .ui-btn { flex: none; }
+.ai-plan.is-saved .ai-plan-date { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); }
+.ai-plan.is-saved > .ui-btn { color: var(--green); }
+@media (prefers-reduced-motion: reduce) { .ai-plan { animation: none; } }
 .due-pill {
   height: 28px;
   display: inline-flex;
@@ -218,15 +233,6 @@ p.ai-summary { animation: fade var(--dur-slow) var(--ease); }
 .spam-banner { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 8px 8px 8px 12px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
 .spam-banner > span { flex: 1; }
 
-.extracted-events { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
-.extracted-events h2 { color: var(--dim); font-weight: 400; }
-.event-proposal { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 14px; border-radius: var(--radius-md); background: var(--raised); text-align: left; box-shadow: var(--card-edge); }
-.event-proposal:hover { background: var(--sunken); }
-.event-proposal > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.event-proposal strong { font-weight: 500; }
-.event-proposal small { font-size: var(--text-md); color: var(--dim); }
-.event-date-icon { color: var(--blue); display: flex; }
-.event-add { font-size: var(--text-md); color: var(--blue); white-space: nowrap; }
 
 /* ---------- Sender details ---------- */
 

@@ -443,7 +443,7 @@ export function App(){
  const heading={title:searchMode?'Search':titles[route.view],count:filtered.length};
  const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current} suggestion={selectedThread?.action?.kind==='reply'?selectedThread.action.prompt:undefined}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
  // A plan found in the reader goes to Today for review; a saved event opens in the editor.
- const readerProps={settings:prefs,editEvent:(event:Partial<CalendarEvent>)=>{if(event.threadId&&!event.id)reviewPlan(event.threadId,event);else setEventEditor(event);},notify,undo:()=>void undo(),talk,heading};
+ const readerProps={settings:prefs,editEvent:(event:Partial<CalendarEvent>)=>{if(event.threadId&&!event.id)reviewPlan(event.threadId,event);else setEventEditor(event);},events:state.events,notify,undo:()=>void undo(),talk,heading};
  // The suggested step also sits in the reader's AI card; there Space keeps replying, so it shows no key.
  const openAction=selectedThread&&liveAction(selectedThread);const suggested=openAction&&openAction.kind!=='read'?openAction:undefined;
  const readerAction=suggested&&selectedThread&&<Button size="sm" variant="tinted" className="reader-suggested" icon={actionIcon(suggested.kind)} loading={actionBusy===selectedThread.id} onClick={()=>void runAction(selectedThread)}>{suggested.label}</Button>;

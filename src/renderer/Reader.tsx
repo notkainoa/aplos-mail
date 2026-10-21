@@ -1,5 +1,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {rememberPlans} from './detectedPlans';
+import {rememberPlans,usePlans} from './detectedPlans';
+import {dayKey,timeRange} from './calendarTime';
+import {liveAction} from '../shared/mailbox';
 import {Ban,Bell,Bookmark,CalendarDays,Check,ChevronDown,ChevronUp,Clock,Download,ExternalLink,Forward,ImageOff,MailOpen,MessageCircle,MoreHorizontal,Paperclip,RefreshCw,Reply,ReplyAll,Search,ShieldAlert,Trash2,Undo2,X,CornerUpLeft} from './icons';
 import type {Attachment,CalendarEvent,Message,Settings,Thread} from '../shared/types';
 import {dateLabel,dueLabel,fullDate,invoke,isoDay,openUrl,saveFile} from './bridge';
@@ -8,19 +10,20 @@ import {Avatar,Button,Dialog,DialogClose,IconButton,Keys,Menu,Notice,Popover,Spi
 type Triage='done'|'later'|'trash'|'spam';
 export type CardDrag={x:number;width:number};
 // Dragging with a mouse would otherwise steal text selection in the message itself; it starts from the card's chrome instead.
-const selectableText='.email-body,.quoted-content,h1,.ai-summary,.ai-todo-text,.extracted-events,.find-bar';
+const selectableText='.email-body,.quoted-content,h1,.ai-summary,.ai-todo-text,.ai-plan-text,.find-bar';
 const capital=(text:string)=>text&&text[0].toUpperCase()+text.slice(1);
 type Person={name:string;email:string};
 /** "Jordan Park <jordan@studio.example>" or a bare address. */
 function person(raw:string):Person{const m=raw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);return m?{name:m[1].trim(),email:m[2].trim()}:{name:'',email:raw.trim()};}
 const dayOffset=(value?:string)=>{if(!value)return undefined;const date=new Date(value.slice(0,10)+'T12:00:00');const today=new Date();today.setHours(12,0,0,0);return Math.round((+date-+today)/86400000);};
-export function Reader({thread,settings,index,total,back,patch,triage,bookmark,reply,editEvent,notify,undo,heading,replySlot,ghost,entering,talk,action,previewId}:{thread:Thread;settings:Settings;index:number;total:number;back:()=>void;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;triage:(status:Triage,drag?:CardDrag)=>void;bookmark?:()=>void;reply:(mode:'reply'|'reply-all'|'forward')=>void;editEvent:(event:Partial<CalendarEvent>)=>void;notify:(text:string)=>void;undo:()=>void;standalone?:boolean;heading?:{title:string;count:number};replySlot?:React.ReactNode;ghost?:boolean;entering?:string;talk:(phase:'start'|'release')=>void;
+export function Reader({thread,settings,index,total,back,patch,triage,bookmark,reply,editEvent,events,notify,undo,heading,replySlot,ghost,entering,talk,action,previewId}:{thread:Thread;settings:Settings;index:number;total:number;back:()=>void;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;triage:(status:Triage,drag?:CardDrag)=>void;bookmark?:()=>void;reply:(mode:'reply'|'reply-all'|'forward')=>void;editEvent:(event:Partial<CalendarEvent>)=>void;
+ /** Calendar events, to tell which of this email's plans are already on a calendar. */events:CalendarEvent[];notify:(text:string)=>void;undo:()=>void;standalone?:boolean;heading?:{title:string;count:number};replySlot?:React.ReactNode;ghost?:boolean;entering?:string;talk:(phase:'start'|'release')=>void;
  /** The AI-suggested next step, shown in the summary card beside the due date. */action?:React.ReactNode;
  /** An attachment to preview on open (the suggested action); files only leave Aplos through the preview's own buttons. */previewId?:string}){
- const menu=useMenu();const importance=useMenu();const [dates,setDates]=useState(false);const [find,setFind]=useState(false);const [query,setQuery]=useState('');const [busy,setBusy]=useState('');const [preview,setPreview]=useState<Attachment|undefined>();const [error,setError]=useState('');const [remote,setRemote]=useState(settings.remoteImages);const [expanded,setExpanded]=useState<Set<string>>(new Set([thread.messages.at(-1)?.id??'']));const [quotes,setQuotes]=useState<Set<string>>(new Set());const [extracted,setExtracted]=useState<Partial<CalendarEvent>[]|null>(null);
+ const menu=useMenu();const importance=useMenu();const [dates,setDates]=useState(false);const [find,setFind]=useState(false);const [query,setQuery]=useState('');const [busy,setBusy]=useState('');const [preview,setPreview]=useState<Attachment|undefined>();const [error,setError]=useState('');const [remote,setRemote]=useState(settings.remoteImages);const [expanded,setExpanded]=useState<Set<string>>(new Set([thread.messages.at(-1)?.id??'']));const [quotes,setQuotes]=useState<Set<string>>(new Set());
  const [inlineFiles,setInlineFiles]=useState<Record<string,Attachment>>({});const inlineCache=useRef<Record<string,Attachment>>({});const inlinePending=useRef<Record<string,Promise<Attachment>>>({});const [inlineLoading,setInlineLoading]=useState(false);const [inlineError,setInlineError]=useState('');const [inlineRetry,setInlineRetry]=useState(0);
  const [shownPreview,setShownPreview]=useState<Attachment>();useEffect(()=>{if(preview)setShownPreview(preview);},[preview]);
- useEffect(()=>{setExpanded(new Set([thread.messages.at(-1)?.id??'']));setQuotes(new Set());menu.close();importance.close();setDates(false);setExtracted(null);setError('');setRemote(settings.remoteImages);setPreview(undefined);setQuery('');inlineCache.current={};inlinePending.current={};setInlineFiles({});setInlineError('');},[thread.id]);
+ useEffect(()=>{setExpanded(new Set([thread.messages.at(-1)?.id??'']));setQuotes(new Set());menu.close();importance.close();setDates(false);setError('');setRemote(settings.remoteImages);setPreview(undefined);setQuery('');inlineCache.current={};inlinePending.current={};setInlineFiles({});setInlineError('');},[thread.id]);
  useEffect(()=>{const file=previewId&&!ghost?thread.messages.flatMap(m=>m.attachments).find(a=>a.id===previewId):undefined;if(file)void attachment(file);},[previewId]);
  useEffect(()=>{let cancelled=false;setInlineLoading(false);setInlineError('');if(thread.status==='spam')return;const files=[...new Map(thread.messages.filter(message=>expanded.has(message.id)).flatMap(inlineAttachments).filter(file=>!inlineCache.current[file.id]).map(file=>[file.id,file])).values()];if(!files.length)return;setInlineLoading(true);let cursor=0;const failures:string[]=[];void Promise.all(Array.from({length:Math.min(3,files.length)},async()=>{while(cursor<files.length&&!cancelled){const file=files[cursor++];// Effects restart while downloads are in flight (expanding, thread refreshes); share the request rather than downloading again.
 const pending=inlinePending.current;const request=pending[file.id]??=invoke<Attachment>('attachment.get',{threadId:thread.id,attachmentId:file.id});request.catch(()=>{if(pending[file.id]===request)delete pending[file.id];});try{const ready=await request;if(!cancelled){inlineCache.current={...inlineCache.current,[ready.id]:ready};setInlineFiles(inlineCache.current);}}catch(error){failures.push(error instanceof Error?error.message:'Inline image unavailable.');}}})).then(()=>{if(!cancelled){setInlineLoading(false);if(failures.length)setInlineError(failures[0]);}});return()=>{cancelled=true;};},[thread.id,thread.status,thread.messages,expanded,inlineRetry]);
@@ -59,7 +62,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const menuGroups:MenuGroups=[
  [{label:'Open in separate window',icon:ExternalLink,onSelect:()=>invoke('window.thread',{threadId:thread.id})}],
  [{label:replyAll?'Reply to sender':'Reply all',icon:replyAll?Reply:ReplyAll,keys:'⇧ R',onSelect:()=>reply(replyAll?'reply':'reply-all')},{label:'Forward',icon:Forward,keys:'F',onSelect:()=>reply('forward')}],
- [{label:'Due date & reminder',icon:Bell,onSelect:openDates},{label:'Find plans in this email',icon:CalendarDays,hint:'Suggest calendar events from dates in the thread',onSelect:()=>run('plans',async()=>{const found=await invoke<Partial<CalendarEvent>[]>('calendar.extract',{threadId:thread.id});rememberPlans(thread.id,found);setExtracted(found);})}],
+ [{label:'Due date & reminder',icon:Bell,onSelect:openDates},{label:'Find plans in this email',icon:CalendarDays,hint:'Suggest calendar events from dates in the thread',onSelect:()=>run('plans',async()=>{const found=await invoke<Partial<CalendarEvent>[]>('calendar.extract',{threadId:thread.id});rememberPlans(thread.id,found);if(!found.length)notify('No definite dates or plans found in this email.');})}],
  [{label:'Mark '+(thread.unread?'read':'unread'),icon:MailOpen,keys:'U',onSelect:()=>patch([thread.id],{unread:!thread.unread})},{label:thread.replyStatus==='needs-reply'?'Clear Needs reply':'Needs my reply',icon:CornerUpLeft,onSelect:()=>patch([thread.id],{replyStatus:thread.replyStatus==='needs-reply'?'none':'needs-reply'})},{label:thread.replyStatus==='awaiting-reply'?'Clear Awaiting reply':'Awaiting a reply',icon:MessageCircle,onSelect:()=>patch([thread.id],{replyStatus:thread.replyStatus==='awaiting-reply'?'none':'awaiting-reply'})},{label:'Find in message',icon:Search,onSelect:()=>setFind(true)}],
  [{label:'Block sender',icon:Ban,hint:'Future mail from this address goes to Spam',onSelect:()=>run('block',async()=>{const email=thread.messages[0].from;if(await confirmAction({title:'Block '+email+'?',message:'Their current and future mail will go to Spam. You can unblock them in Settings.',confirmLabel:'Block sender',danger:true}))await invoke('sender.block',{email});})},
   {label:'Unsubscribe',icon:X,onSelect:()=>run('unsubscribe',async()=>{const r=await invoke<{url?:string;message:string}>('thread.unsubscribe',{id:thread.id});if(r.url){if(await confirmAction({title:'Open the unsubscribe page?',message:r.message,confirmLabel:'Open page'}))await openUrl(r.url);}else notify(r.message);})},
@@ -81,6 +84,8 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  function openDates(){duePill.current?.scrollIntoView({block:'nearest',behavior:'smooth'});setDates(true);}
  const due=dayOffset(thread.dueDate);
  const dueTone=due===undefined?'':due<0?'is-overdue':due===0?'is-today':'';
+ // Plans Groq found in this email take the place of the "Add to calendar" suggestion, with their details.
+ const plans=usePlans(thread.id)?.found??[];const showPlans=plans.length>0;const planned=showPlans&&liveAction(thread)?.kind==='calendar';
  const ai=<div className="ai-card">
   <div className="ai-lede">
    {hasSummary?<p className="ai-summary" key={thread.summary}>{capital(thread.summary.trim())}</p>
@@ -93,9 +98,21 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
     <button ref={duePill} className={cx('due-pill',dueTone,!thread.dueDate&&'is-empty',dates&&'is-open')} aria-haspopup="dialog" aria-expanded={dates} onClick={()=>setDates(value=>!value)}>
      <CalendarDays size={14}/><span>{thread.dueDate?dueLabel(thread.dueDate):'Add due date'}</span><ChevronDown size={12}/></button>
     {thread.reminderAt&&<button className="due-pill reminder" aria-label={'Reminder '+fullDate(thread.reminderAt)} onClick={openDates}><Bell size={13}/><span>{dateLabel(thread.reminderAt,true)}</span></button>}
-    {action}
+    {!planned&&action}
    </span>
   </div>
+  {showPlans&&<div className="ai-plans" aria-label="Plans in this email">{plans.map((plan,i)=>{
+   const saved=events.some(e=>e.threadId===thread.id&&(e.start===plan.start||!!plan.title&&e.title.toLowerCase()===plan.title.toLowerCase()));
+   const day=plan.start?dayKey(plan.start):undefined;const date=day?new Date(day+'T00:00:00'):undefined;
+   return <div className={cx('ai-plan',saved&&'is-saved')} key={i}>
+    <span className="ai-plan-date" aria-hidden="true">{date?<><small>{date.toLocaleDateString([],{month:'short'})}</small><strong>{date.getDate()}</strong></>:<CalendarDays size={18}/>}</span>
+    <span className="ai-plan-text"><strong>{plan.title||'A plan'}</strong>
+     <span className="ai-plan-when">{date?<><span>{date.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'})}{plan.end&&' ·'}</span>{plan.end&&<> <span>{timeRange({start:plan.start!,end:plan.end,allDay:!!plan.allDay})}</span></>}</>:'No time yet'}</span>
+     {(plan.location||!!plan.guests?.length)&&<span>{[plan.location,plan.guests?.length?'With '+plan.guests.slice(0,3).join(', ')+(plan.guests.length>3?` and ${plan.guests.length-3} more`:''):''].filter(Boolean).join(' · ')}</span>}</span>
+    {/* Both go to Today in the dock: a new plan to confirm there, a saved one to see on its day. */}
+    {saved?<Button variant="text" size="sm" icon={Check} onClick={()=>editEvent({...plan,threadId:thread.id,accountId:thread.accountId})}>On your calendar</Button>
+     :<Button variant="tinted" size="sm" icon={CalendarDays} onClick={()=>editEvent({...plan,threadId:thread.id,accountId:thread.accountId})}>Add to calendar</Button>}
+   </div>;})}</div>}
  </div>;
  return <section className={'reader stack-reader'+(ghost?' ghost':'')} aria-label={ghost?undefined:'Email thread'} aria-hidden={ghost||undefined} inert={ghost||undefined}>
  {heading&&<div className="stack-heading">{heading.title}<span>{total>1?`${index+1} of ${total}`:heading.count}</span>{total>1&&<span className="stack-keys"><Keys combo="K" size="sm"/><Keys combo="J" size="sm"/></span>}</div>}
@@ -131,7 +148,6 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
    <time className="message-date" dateTime={m.date} title={fullDate(m.date)}>{dateLabel(m.date,true)}</time>
   </div>
   {open&&<div className="message-content">{!remote&&content.hasRemoteImages&&thread.status!=='spam'&&<button className="remote-image-button" onClick={()=>setRemote(true)}><ImageOff size={14}/>Remote images hidden · Load images</button>}<div className="email-body" onClick={handleEmailLink} dangerouslySetInnerHTML={{__html:content.body}}/>{content.quoted&&<><Tooltip content={quoted?'Hide quoted text':'Show quoted text'}><button className={cx('quoted-toggle',quoted&&'is-open')} aria-label={quoted?'Hide quoted text':'Show quoted text'} aria-expanded={quoted} onClick={()=>setQuotes(prev=>{const n=new Set(prev);n.has(m.id)?n.delete(m.id):n.add(m.id);return n;})}><MoreHorizontal size={16}/></button></Tooltip>{quoted&&<div className="quoted-content email-body" onClick={handleEmailLink} dangerouslySetInnerHTML={{__html:content.quoted}}/>}</>}{m.attachments.length>0&&<div className="message-attachments">{m.attachments.map(a=><div className="attachment" key={a.id}><button className="attachment-open" onClick={()=>void attachment(a)} disabled={!!busy||thread.status==='spam'}>{busy===a.id?<Spinner size={14}/>:<Paperclip size={14}/>}<span>{a.name}</span><span className="attachment-size">{Math.ceil(a.size/1024)} KB</span></button><IconButton label={'Download '+a.name} size="xs" icon={Download} iconSize={14} disabled={thread.status==='spam'} onClick={()=>void attachment(a,true)}/></div>)}</div>}</div>}</article>;})}
- {extracted&&<div className="extracted-events"><h2>{extracted.length?'Plans found in this conversation':'No definite dates or plans found.'}</h2>{extracted.map((event,i)=><button className="event-proposal" key={i} onClick={()=>editEvent({...event,threadId:thread.id,accountId:thread.accountId})}><span className="event-date-icon"><CalendarDays size={20}/></span><span><strong>{event.title}</strong><small>{event.start?dateLabel(event.start,true):'Choose a time'}{event.location?' · '+event.location:''}</small></span><span className="event-add">Add to calendar</span></button>)}</div>}
  {replySlot}
  </div>
  </div>
