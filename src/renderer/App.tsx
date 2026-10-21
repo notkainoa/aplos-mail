@@ -8,7 +8,7 @@ import {Compose,addressOf,validAddress,type Contact} from './Compose';
 import {Ask} from './Ask';
 import {Reader,type CardDrag} from './Reader';
 import {Calendar,EventEditor,TodayPanel} from './Calendar';
-import {rememberPlans} from './detectedPlans';
+import {dismissPlans,rememberPlans} from './detectedPlans';
 import {Settings} from './Settings';
 import {Sidebar,SidebarMenu,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
@@ -54,6 +54,8 @@ export function App(){
  const [ask,setAsk]=useState(()=>!popoutThread&&!popoutDraft&&localStorage.getItem(askStorageKey)!=='closed');
  // The dock shows Ask (the default) or Today, one day of every calendar beside the mail.
  const [dockTab,setDockTab]=useState<'ask'|'today'>('ask');
+ // A plan the user asked to add (Space or "Add to calendar"): Today shows where it would go and waits for Add.
+ const [planReview,setPlanReview]=useState<{threadId:string;plan?:Partial<CalendarEvent>;n:number}>();
  // Matches the CSS breakpoints that collapse the sidebar; while squeezed it opens as an overlay instead.
  const squeezed=useMediaQuery(ask?'(max-width: 900px)':'(max-width: 700px)');const [peek,setPeek]=useState(false);
  useEffect(()=>{if(!squeezed)setPeek(false);},[squeezed]);
@@ -201,6 +203,10 @@ export function App(){
   return hints;
  },[scoped,searchMode]);
  const selectedThread=state?.threads.find(t=>t.id===route.threadId)||searchResults.find(t=>t.id===route.threadId);const readerIndex=Math.max(0,order.findIndex(t=>t.id===route.threadId));
+ // Today stays on the plan being reviewed until the user moves to another email or closes the dock.
+ const followedId=(selectedThread??(!['settings','calendar'].includes(route.view)?focused:undefined))?.id;
+ useEffect(()=>{setPlanReview(r=>r&&followedId&&followedId!==r.threadId?undefined:r);},[followedId]);
+ useEffect(()=>{if(!ask)setPlanReview(undefined);},[ask]);
  // What a slow suggested action (calendar extraction) should still be about when it finishes.
  actionTarget.current=selectedThread?.id??focusId;
  // A preview request belongs to one visit of its thread.
@@ -240,9 +246,14 @@ export function App(){
    const event=events[0];
    if(!event)notify('No event with a clear date and time was found.');
    // Extraction takes a moment; if the user has moved on, offer the event instead of opening over their work.
-   else if(stillHere()&&!composeRef.current)setEventEditor(event);
-   else toast.show({text:`Event ready: ${event.title||thread.subject}`,action:{label:'Review',run:()=>setEventEditor(event)}});
+   else if(stillHere()&&!composeRef.current)reviewPlan(thread.id,event);
+   else toast.show({text:`Event ready: ${event.title||thread.subject}`,action:{label:'Review',run:()=>reviewPlan(thread.id,event)}});
   }catch(e){fail(e);}finally{setActionBusy(undefined);}
+ }
+ /** Today in the dock shows where the plan would go, beside the mail, and waits for Add. A popped-out window has no dock, so it gets the editor. */
+ function reviewPlan(threadId:string,plan:Partial<CalendarEvent>){
+  if(popoutThread||popoutDraft){setEventEditor(plan);return;}
+  dismissPlans(threadId,false);setPlanReview(r=>({threadId,plan,n:(r?.n??0)+1}));setDockTab('today');setAsk(true);
  }
  /** Today's "Find it": Groq looks for the plan and Today draws it beside the mail; nothing opens or saves. */
  async function findPlans(thread:Thread){
@@ -431,7 +442,8 @@ export function App(){
  const {low,later,homeLater,replyHome,followUps,today}=buckets;
  const heading={title:searchMode?'Search':titles[route.view],count:filtered.length};
  const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current} suggestion={selectedThread?.action?.kind==='reply'?selectedThread.action.prompt:undefined}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
- const readerProps={settings:prefs,editEvent:setEventEditor,notify,undo:()=>void undo(),talk,heading};
+ // A plan found in the reader goes to Today for review; a saved event opens in the editor.
+ const readerProps={settings:prefs,editEvent:(event:Partial<CalendarEvent>)=>{if(event.threadId&&!event.id)reviewPlan(event.threadId,event);else setEventEditor(event);},notify,undo:()=>void undo(),talk,heading};
  // The suggested step also sits in the reader's AI card; there Space keeps replying, so it shows no key.
  const openAction=selectedThread&&liveAction(selectedThread);const suggested=openAction&&openAction.kind!=='read'?openAction:undefined;
  const readerAction=suggested&&selectedThread&&<Button size="sm" variant="tinted" className="reader-suggested" icon={actionIcon(suggested.kind)} loading={actionBusy===selectedThread.id} onClick={()=>void runAction(selectedThread)}>{suggested.label}</Button>;
@@ -449,7 +461,7 @@ export function App(){
  const syncing=busy==='sync'||state.sync.busy;
  const listView=!['settings','calendar'].includes(route.view);
  // Today follows the email that is open, or the one the list cursor is on.
- const todayThread=selectedThread??(listView?focused:undefined);
+ const todayThread=(planReview&&state.threads.find(t=>t.id===planReview.threadId))||selectedThread||(listView?focused:undefined);
  const swipe=<Button variant="pill" icon={Layers} shortcut="S" onClick={()=>{if(order[0])openThread(order[0].id);}}>Swipe through them</Button>;
  const composerLayer=!!composer&&!inlineReply;
  // Minimized, the sidebar is gone and its contents live in a menu at the top left.
@@ -503,7 +515,7 @@ export function App(){
    <IconButton label="Close" shortcut="⌘ J" icon={X} onClick={()=>setAsk(false)}/>
   </div>
   <div className="dock-body" hidden={dockTab!=='ask'}><Ask open={ask&&dockTab==='ask'} conversations={state.conversations} threads={state.threads} events={state.events} accounts={state.accounts} contacts={contacts} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} hasDraft={!!composer} {...askActions}/></div>
-  {dockTab==='today'&&<div className="dock-body"><TodayPanel events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} hidden={prefs.hiddenCalendars} thread={todayThread} finding={!!todayThread&&actionBusy===todayThread.id} {...todayActions}/></div>}
+  {dockTab==='today'&&<div className="dock-body"><TodayPanel events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} hidden={prefs.hiddenCalendars} thread={todayThread} review={planReview?.threadId===todayThread?.id?planReview:undefined} finding={!!todayThread&&actionBusy===todayThread.id} {...todayActions}/></div>}
  </div></div>}
  <Menu open={rowMenu.open} anchor={rowMenu.anchor} onClose={rowMenu.close} placement="bottom-end" label="Email actions" onError={fail} groups={thread?[
   [{label:'Open in separate window',icon:ExternalLink,onSelect:()=>invoke('window.thread',{threadId:thread.id})}],

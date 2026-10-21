@@ -156,3 +156,15 @@ export function clashes<T extends Pick<CalendarEvent,'id'|'start'|'end'|'allDay'
   const start=+new Date(proposal.start),end=+new Date(proposal.end);
   return events.filter(e=>!e.allDay&&e.id!==proposal.id&&+new Date(e.start)<end&&+new Date(e.end)>start);
 }
+
+/** Identifies a found plan by its original time and title, so edits made before adding do not change which plan it was. */
+export const planKey=(p:Partial<CalendarEvent>)=>(p.start??'')+'|'+(p.title??'');
+
+/**
+ * The plans Today offers for an email: none after "Not now", the one the user chose first, and never one already
+ * added from Today (whose title or time may have been changed on the way, so it no longer looks like the saved event).
+ */
+export function plansToReview(entry:{found:Partial<CalendarEvent>[];dismissed:boolean}|undefined,chosen:Partial<CalendarEvent>|undefined,added:ReadonlySet<string>){
+  if(!entry||entry.dismissed)return;
+  return (chosen?[chosen,...entry.found]:entry.found).filter(p=>!added.has(planKey(p)));
+}

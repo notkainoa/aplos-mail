@@ -4,9 +4,9 @@ import type {Account,CalendarEvent,CalendarInfo,Thread} from '../shared/types';
 import {invoke,openUrl,uid} from './bridge';
 import {Button,Checkbox,Dialog,DialogClose,Field,IconButton,Notice,Popover,Select,Spinner,Tabs,confirmAction,cx,dialogOpen,duration,reducedMotion,toast,useHandlers,useLatest} from './ui';
 import {addDays,clock,dayKey,localInput,moveStart,parseGuests,setAllDay as withAllDay,shortClock,shortRange,slotOn,timeRange,ymd} from './calendarTime';
-import {allDayLanes,calendarIndex,clashes,emailContext,eventsOnDay,layoutDay,mergeCalendars,shiftAnchor,viewDays,visibleEvents,type CalendarSource,type CalendarView} from './calendarLayout';
+import {allDayLanes,calendarIndex,clashes,emailContext,eventsOnDay,layoutDay,mergeCalendars,planKey,plansToReview,shiftAnchor,viewDays,visibleEvents,type CalendarSource,type CalendarView} from './calendarLayout';
 import {fadeIn,flip,hourLimits,openingHour,usePeriodSlide,usePeriodSwipe,zoomHour,zoomScroll,type Box} from './calendarMotion';
-import {usePlans} from './detectedPlans';
+import {dismissPlans,usePlans} from './detectedPlans';
 import {liveAction} from '../shared/mailbox';
 
 export function EventEditor({event,accounts,onClose,notify}:{event:Partial<CalendarEvent>;accounts:Account[];onClose:()=>void;notify:(s:string)=>void}){
@@ -291,7 +291,9 @@ type GridProps={days:string[];events:CalendarEvent[];sourceOf:SourceOf;selectedI
   day?:(day:string)=>void;onPage:(direction:1|-1,offset:number)=>void};
 type TimeGridProps=GridProps&{hour:number;onHour:(hour:number)=>void;scrollMemo:React.RefObject<number|null>;nowSignal?:number;
   /** Today in the dock: no day header, a narrower gutter, all-day plans only when there are some. */ compact?:boolean;
-  /** A plan found in the open email, drawn as a dashed outline; clashing events are marked. */ proposal?:{start:string;end:string;allDay:boolean;title:string;color?:string;open:()=>void};
+  /** A plan found in the open email, drawn as a dashed outline; clashing events are marked. Dragging it (or its
+   * lower edge) only changes the time it would be added at; nothing is saved until the user adds it. */
+  proposal?:{start:string;end:string;allDay:boolean;title:string;color?:string;open:()=>void;change?:(start:string,end:string)=>void};
   clashIds?:Set<string>;focusId?:string;
   /** Scrolls smoothly to this time when it changes. */ revealAt?:string};
 type Gesture={kind:'create'|'move'|'resize';dismiss?:boolean;pointer:number;x:number;y:number;moved:boolean;index:number;day:string;start:number;end:number;origin:number;grab:number;event?:CalendarEvent;element?:HTMLElement};
@@ -311,6 +313,8 @@ const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,dra
   // A proposal from the open email takes a column of its own beside what it clashes with.
   const placed=useMemo(()=>days.map(day=>layoutDay(proposal&&!proposal.allDay?[...events,{...proposal,id:proposalId} as unknown as CalendarEvent]:events,day)),[days,events,proposal?.start,proposal?.end,proposal?.allDay]);
   const {bars,lanes}=useMemo(()=>allDayLanes(events,days),[events,days]);
+  const proposalEvent=useMemo(()=>proposal&&!proposal.allDay?{id:proposalId,accountId:'',calendarId:'',title:proposal.title,start:proposal.start,end:proposal.end,allDay:false,location:'',description:'',guests:[]} as CalendarEvent:undefined,[proposal?.title,proposal?.start,proposal?.end,proposal?.allDay]);
+  const eventOf=(id:string|undefined)=>id===proposalId?proposalEvent:events.find(x=>x.id===id);
   const zone=useMemo(zoneName,[]);
   const tracks=()=>[dayTrack.current,allDayRow.current,columns.current].filter((el):el is HTMLDivElement=>!!el);
   usePeriodSlide(periodKey,tracks,slide);
@@ -361,7 +365,7 @@ const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,dra
     const layoutChanged=m.placed!==placed,samePeriod=m.period===periodKey&&m.hour===hour;
     if(!layoutChanged&&!drop&&m.hour===hour)return;
     const next=new Map<string,Box>();const animate=samePeriod&&m.placed!==null;
-    for(const el of host.querySelectorAll<HTMLElement>('.cal-column > .cal-event[data-event-id]')){
+    for(const el of host.querySelectorAll<HTMLElement>('.cal-column > [data-event-id]')){
       const column=el.parentElement!;const key=el.dataset.eventId+'|'+el.dataset.day;
       const box={x:column.offsetLeft+column.clientLeft+el.offsetLeft,y:el.offsetTop,w:el.offsetWidth,h:el.offsetHeight};next.set(key,box);
       if(drop&&drop.id===el.dataset.eventId)flip(el,drop.box,box,{spring:true,visual:true});
@@ -377,10 +381,10 @@ const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,dra
   }
   function down(e:React.PointerEvent<HTMLDivElement>){
     if(e.button!==0||gesture.current||copy)return;
-    const target=e.target as HTMLElement;if(target.closest('.cal-draft,.cal-proposal'))return;
+    const target=e.target as HTMLElement;if(target.closest('.cal-draft')||target.closest('.cal-proposal')&&!proposal?.change)return;
     const block=target.closest<HTMLElement>('[data-event-id]');const p=point(e);
     if(block){
-      const event=events.find(x=>x.id===block.dataset.eventId);if(!event)return;
+      const event=eventOf(block.dataset.eventId);if(!event)return;
       const day=block.dataset.day!;const start=Math.max(0,minutesInto(event.start,day)),end=Math.min(1440,minutesInto(event.end,day));
       gesture.current={kind:target.closest('.cal-resize')?'resize':'move',pointer:e.pointerId,x:e.clientX,y:e.clientY,moved:false,index:days.indexOf(day),day,start,end,origin:start,grab:p.minutes-start,event,element:block};
     }else{
@@ -413,14 +417,15 @@ const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,dra
       create(wall(g.day,start),wall(g.day,end),false);return;
     }
     const event=g.event!;
-    if(!g.moved){setPreview(null);open(event,g.element!);return;}
+    if(!g.moved){setPreview(null);if(event.id===proposalId)proposal?.open();else open(event,g.element!);return;}
     // The real event takes over from the lifted block exactly where it is drawn, then settles.
     const lifted=ghost.current?.firstElementChild?.getBoundingClientRect(),host=columns.current?.getBoundingClientRect();
     if(lifted&&host)dropped.current={id:event.id,box:{x:lifted.left-host.left,y:lifted.top-host.top,w:lifted.width,h:lifted.height}};
     setPreview(null);
-    if(g.kind==='resize'){if(g.end!==minutesInto(event.end,g.day))change(event,event.start,wall(g.day,g.end).toISOString());return;}
+    const commit=(start:string,end:string)=>event.id===proposalId?proposal?.change?.(start,end):change(event,start,end);
+    if(g.kind==='resize'){if(g.end!==minutesInto(event.end,g.day))commit(event.start,wall(g.day,g.end).toISOString());return;}
     const shift=+wall(days[g.index],g.start)-+wall(g.day,g.origin);
-    if(shift)change(event,new Date(+new Date(event.start)+shift).toISOString(),new Date(+new Date(event.end)+shift).toISOString());
+    if(shift)commit(new Date(+new Date(event.start)+shift).toISOString(),new Date(+new Date(event.end)+shift).toISOString());
   }
   function cancel(){const g=gesture.current;gesture.current=null;setPreview(p=>p&&g?.moved&&g.kind!=='create'&&!reducedMotion()?{...p,...p.from,phase:'return'}:null);}
   function allDayCreate(e:React.MouseEvent<HTMLDivElement>){
@@ -440,7 +445,7 @@ const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,dra
   };
   const nowTop=(now.getHours()*60+now.getMinutes())/60*hour;
   const todayIndex=days.indexOf(today);
-  const dragged=preview?.id?events.find(x=>x.id===preview.id):undefined;
+  const dragged=eventOf(preview?.id);const draggedColor=preview?.id===proposalId?proposal?.color:dragged?sourceOf(dragged)?.color:draftColor;
   const showAllDay=!compact||bars.length>0||!!draft?.allDay||!!proposal?.allDay;
   return <div ref={root} className={cx('cal-time',days.length===1&&'is-day',compact&&'is-compact')} style={{'--days':days.length,'--hour':hour+'px'} as React.CSSProperties}>
     <div className="cal-scroll" ref={scroller} onScroll={e=>{if(!copy)scrollMemo.current=e.currentTarget.scrollTop;}}>
@@ -477,8 +482,10 @@ const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,dra
               // Overlapping plans cascade: each reaches into its neighbour's column, and later ones sit on top.
               const last=p.column+p.span>=p.columns||days.length===1;const width=last?p.span/p.columns:Math.min((p.columns-p.column)/p.columns,p.span*1.7/p.columns);
               const box={top:p.start/60*hour+1,height:Math.max(18,(p.end-p.start)/60*hour-2),left:`calc(${p.column/p.columns*100}% + 1px)`,width:`calc(${width*100}% - ${last?6:3}px)`};
-              if(p.event.id===proposalId&&proposal)return <button key="proposal" className="cal-proposal" style={{...eventStyle(proposal.color),...box,width:`calc(${p.span/p.columns*100}% - 6px)`}} onClick={proposal.open}
-                aria-label={`Proposed: ${proposal.title}, ${timeRange(proposal)}. Open the editor`}><strong>{proposal.title||'Proposed plan'}</strong><span>{shortRange(proposal)}</span></button>;
+              // A pointer press is handled by the grid (click to edit, drag to move); the click event is for the keyboard.
+              if(p.event.id===proposalId&&proposal)return <button key="proposal" data-event-id={proposalId} data-day={day} className={cx('cal-proposal',!!dragging&&'is-origin',!!proposal.change&&'is-movable')}
+                style={{...eventStyle(proposal.color),...box,width:`calc(${p.span/p.columns*100}% - 6px)`}} onClick={e=>{if(!proposal.change||e.detail===0)proposal.open();}}
+                aria-label={`Proposed: ${proposal.title}, ${timeRange(proposal)}. Open the editor`}><strong>{proposal.title||'Proposed plan'}</strong><span>{shortRange(proposal)}</span>{proposal.change&&<i className="cal-resize" aria-hidden="true"/>}</button>;
               return block(p.event,day,box,!!dragging&&'is-origin');
             })}
             {draft&&!draft.allDay&&dayKey(draft.start)===day&&!preview&&(()=>{const start=minutesInto(draft.start,day),end=Math.min(1440,minutesInto(draft.end,day));
@@ -488,8 +495,8 @@ const TimeGrid=memo(function TimeGrid({days,events,sourceOf,selectedId,draft,dra
           {preview&&(()=>{
             // One block follows the pointer across days; it snaps to quarter hours and glides between them.
             const span={start:wall(days[preview.index],preview.start).toISOString(),end:wall(days[preview.index],preview.end).toISOString(),allDay:false};
-            return <div ref={ghost} aria-hidden="true" className={cx('cal-ghost',preview.kind==='create'?'is-drawing':'is-lifted',preview.phase==='return'&&'is-returning')}
-              style={{...eventStyle(dragged?sourceOf(dragged)?.color:draftColor),height:Math.max(18,(preview.end-preview.start)/60*hour-2),transform:`translate(${preview.index*100}%,${preview.start/60*hour+1}px)`}}>
+            return <div ref={ghost} aria-hidden="true" className={cx('cal-ghost',preview.kind==='create'?'is-drawing':'is-lifted',preview.phase==='return'&&'is-returning',preview.id===proposalId&&'is-proposal')}
+              style={{...eventStyle(draggedColor),height:Math.max(18,(preview.end-preview.start)/60*hour-2),transform:`translate(${preview.index*100}%,${preview.start/60*hour+1}px)`}}>
               <div className="cal-event is-dragging"><strong>{dragged?.title||'New event'}</strong><span>{shortRange(span)}</span></div>
             </div>;})()}
         </div></div>
@@ -528,31 +535,69 @@ const MonthGrid=memo(function MonthGrid({days,anchor,events,sourceOf,selectedId,
 
 type TodayProps={events:CalendarEvent[];accounts:Account[];accountId:string;hidden:string[];
   /** The email open in the reader, if any; its plans steer the day shown. */ thread?:Thread;finding:boolean;
+  /** Space or "Add to calendar" on this email: Today shows the plan (the chosen one first) and focus moves to Add. */
+  review?:{threadId:string;plan?:Partial<CalendarEvent>;n:number};
   edit:(event:Partial<CalendarEvent>)=>void;onThread:(id:string)=>void;onFind:(thread:Thread)=>void};
 
 /**
  * Today in the dock: one day of every visible calendar, beside the mail. It follows the open email: a plan
- * found in it shows as a dashed outline on its day, with clashes marked; one click opens the editor on it.
+ * found in it shows as a dashed outline on its day, with clashes marked, and a card to confirm it. The outline
+ * can be dragged to another time first; nothing is saved until the user presses Add.
  */
-export const TodayPanel=memo(function TodayPanel({events,accounts,accountId,hidden,thread,finding,edit,onThread,onFind}:TodayProps){
+export const TodayPanel=memo(function TodayPanel({events,accounts,accountId,hidden,thread,finding,review,edit,onThread,onFind}:TodayProps){
   const model=useCalendarModel({events,accounts,accountId,hidden,edit,onThread});
   const [day,setDay]=useState(todayKey);const [picking,setPicking]=useState(false);
   const [hour,setHour]=useHourHeight('aplos.today.hour',44);
   const slide=useRef<{direction:number;from?:number}|null>(null);const scrollMemo=useRef<number|null>(null);const dateButton=useRef<HTMLButtonElement>(null);
-  const plans=usePlans(thread?.id);
+  const entry=usePlans(thread?.id);
+  // Plans added from here, so one whose title or time was changed before adding does not come back.
+  const [added,setAdded]=useState<ReadonlySet<string>>(()=>new Set());
+  // The plan the user chose to add comes first, so an email with several plans shows that one.
+  const plans=useMemo(()=>plansToReview(entry,review?.plan,added),[entry,review?.plan,added]);
   const context=useMemo(()=>emailContext(thread?.id,model.shown,plans),[thread?.id,model.shown,plans]);
   const days=useMemo(()=>[day],[day]);
   function go(next:string,from?:number){if(next===day)return;slide.current={direction:next>day?1:-1,from};setDay(next);model.setSelection(null);model.setDraft(null);}
   // An email with a plan moves Today to that day; the plan or its saved event scrolls into view.
-  useEffect(()=>{if(context)go(context.day);},[thread?.id,context?.day]);
-  const proposal=context?.proposal;
-  const clashing=useMemo(()=>proposal?clashes(proposal,model.shown):[],[proposal,model.shown]);
+  useEffect(()=>{if(context)go(context.day);},[thread?.id,context?.day,review?.n]);
+  // Changes made before adding (time, title, calendar) belong to this one plan.
+  const found=context?.proposal;const key=found&&thread?thread.id+'|'+planKey(found):'';
+  const [changes,setChanges]=useState<{key:string;start?:string;end?:string;title?:string;calendar?:string}>({key:''});
+  const own=changes.key===key?changes:{key} as typeof changes;
+  const change=(patch:Omit<typeof changes,'key'>)=>setChanges(c=>({...(c.key===key?c:{key}),...patch}));
+  const proposal=found&&{...found,start:own.start??found.start,end:own.end??found.end};
+  const title=own.title??found?.title??'';
+  const calendar=own.calendar??(thread?model.defaultCalendar(thread.accountId):undefined);const source=model.sources.find(s=>s.key===calendar);
+  const clashing=useMemo(()=>proposal?clashes(proposal,model.shown):[],[proposal?.start,proposal?.end,proposal?.allDay,model.shown]);
   const clashIds=useMemo(()=>new Set(clashing.map(e=>e.id)),[clashing]);
-  const proposalColor=proposal&&thread?model.sources.find(s=>s.key===model.defaultCalendar(thread.accountId))?.color:undefined;
-  const prefill=()=>proposal&&thread&&edit({...proposal,threadId:thread.id,accountId:thread.accountId});
-  const handlers=useHandlers({page:(direction:1|-1,offset:number)=>go(addDays(day,direction),direction*90+offset*.2),open:()=>prefill()});
+  const filled=():Partial<CalendarEvent>|undefined=>proposal&&thread&&{...proposal,title,accountId:source?.accountId??thread.accountId,calendarId:source?.id,threadId:thread.id};
+  // Asked for with Space or "Add to calendar": focus moves to Add, and goes back where it was once settled.
+  const addButton=useRef<HTMLButtonElement>(null);const titleField=useRef<HTMLInputElement>(null);const returnFocus=useRef<HTMLElement|null>(null);
+  useEffect(()=>{
+    if(!review)return;const active=document.activeElement;
+    returnFocus.current=active instanceof HTMLElement&&active!==document.body&&!active.closest('.today-panel')?active:null;
+    let frame=requestAnimationFrame(()=>{frame=requestAnimationFrame(()=>addButton.current?.focus({preventScroll:true}));});
+    return ()=>cancelAnimationFrame(frame);
+  },[review?.n]);
+  function giveBack(){const el=returnFocus.current;returnFocus.current=null;if(el?.isConnected&&document.activeElement?.closest('.today-panel'))el.focus({preventScroll:true});}
+  const [saving,setSaving]=useState(false);
+  async function add(){
+    const event=filled();if(!event||!found||!thread||saving)return;
+    if(!title.trim()){titleField.current?.focus();return;}
+    if(!source){toast.show({text:'Connect a calendar in Settings → Accounts first.'});return;}
+    setSaving(true);
+    try{
+      const saved=await invoke<CalendarEvent>('calendar.save',{event:{...event,id:uid(),title:title.trim(),allDay:!!event.allDay,location:event.location??'',description:event.description??'',guests:event.guests??[]}});
+      const done=planKey(found);setAdded(a=>new Set(a).add(done));giveBack();
+      toast.show({text:`Added “${saved.title}” to ${source.name}`,action:{label:'Undo',run:()=>{
+        void invoke('calendar.delete',{id:saved.id}).then(()=>setAdded(a=>{const next=new Set(a);next.delete(done);return next;})).catch(e=>toast.show({tone:'error',text:(e as Error).message}));}}});
+    }catch(e){toast.show({tone:'error',text:(e as Error).message});}finally{setSaving(false);}
+  }
+  function notNow(){if(!thread)return;dismissPlans(thread.id);giveBack();}
+  const editPlan=()=>{const event=filled();if(event)edit(event);};
+  const handlers=useHandlers({page:(direction:1|-1,offset:number)=>go(addDays(day,direction),direction*90+offset*.2),open:()=>editPlan(),
+    move:(start:string,end:string)=>change({start,end})});
   const isToday=day===todayKey();
-  const mayHavePlan=thread&&!context&&liveAction(thread)?.kind==='calendar';
+  const mayHavePlan=thread&&!context&&!entry?.dismissed&&liveAction(thread)?.kind==='calendar';
   return <section className="today-panel" aria-label="Today" onKeyDown={e=>{
     const el=e.target as HTMLElement;if(['INPUT','TEXTAREA','SELECT'].includes(el.tagName)||e.metaKey||e.ctrlKey||e.altKey)return;
     const step:Record<string,number>={ArrowLeft:-1,ArrowRight:1};
@@ -572,18 +617,29 @@ export const TodayPanel=memo(function TodayPanel({events,accounts,accountId,hidd
     <Popover open={picking} anchor={dateButton.current} onClose={()=>setPicking(false)} placement="bottom-start" className="ui-surface today-picker" label="Choose a day">
       <MiniMonth anchor={day} range={days} busy={new Set()} onPick={next=>{go(next);setPicking(false);}}/>
     </Popover>
-    {proposal&&<div className={cx('today-context',clashing.length>0&&'has-clash')}>
+    {proposal&&thread&&<div key={key} className={cx('today-context','today-confirm',clashing.length>0&&'has-clash')} role="group" aria-label="Add this plan to your calendar" onKeyDown={e=>{
+      // The card keeps its keys: Enter adds from the title, Escape is "Not now", and nothing reaches the mail list behind.
+      if(e.key==='Escape'){e.preventDefault();e.stopPropagation();notNow();return;}
+      if(e.key==='Enter'&&e.target===titleField.current&&!e.nativeEvent.isComposing){e.preventDefault();void add();}
+      if([' ','Enter','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))e.stopPropagation();
+    }}>
       <p className="today-context-title"><CalendarDays size={14}/><span>From this email</span></p>
-      <button className="today-context-plan" onClick={prefill}><strong>{proposal.title||'A plan'}</strong><span>{dayLabel(dayKey(proposal.start.length===10?proposal.start+'T00:00:00':proposal.start),{weekday:'short',month:'short',day:'numeric'})} · {timeRange({...proposal,allDay:!!proposal.allDay})}</span></button>
+      <input ref={titleField} className="today-confirm-title" aria-label="Event title" placeholder="Event title" value={title} onChange={e=>change({title:e.target.value})}/>
+      <p className="cal-card-line today-confirm-when"><Clock size={14}/><span>{dayLabel(dayKey(proposal.start.length===10?proposal.start+'T00:00:00':proposal.start),{weekday:'short',month:'short',day:'numeric'})} · {timeRange({...proposal,allDay:!!proposal.allDay})}</span></p>
+      <div className="cal-card-line cal-quick-calendar"><span className="cal-swatch is-on" style={eventStyle(source?.color)}/>
+        <Select label="Calendar" value={calendar??''} options={model.scoped.map(s=>[s.key,calendarLabel(s,accounts.find(a=>a.id===s.accountId))] as [string,string])} onChange={next=>change({calendar:next})}/></div>
+      {!!proposal.guests?.length&&<p className="cal-card-line"><Users size={14}/><span>Invites {proposal.guests.slice(0,3).join(', ')}{proposal.guests.length>3?` and ${proposal.guests.length-3} more`:''}</span></p>}
       <p className="today-context-note">{clashing.length?<>Clashes with {clashing.map(e=>e.title).join(', ')}</>:proposal.allDay?'An all-day plan':'You’re free then'}</p>
-      <Button variant="tinted" size="sm" icon={Plus} onClick={prefill}>Add to calendar…</Button>
+      {!proposal.allDay&&<p className="today-confirm-hint">Drag the outline to try another time.</p>}
+      <footer><Button variant="text" size="sm" onClick={notNow}>Not now</Button><span className="actions"><Button variant="text" size="sm" onClick={editPlan}>Edit…</Button><Button ref={addButton} variant="primary" size="sm" shortcut="↵" loading={saving} onClick={()=>void add()}>Add</Button></span></footer>
     </div>}
     {context?.saved&&!proposal&&<p className="today-context is-saved"><CalendarDays size={14}/><span>This email’s plan is on your calendar: <strong>{context.saved.title}</strong></span></p>}
+    {thread&&entry?.dismissed&&<div className="today-context is-quiet"><span>This email’s plan is hidden.</span><Button variant="text" size="sm" onClick={()=>dismissPlans(thread.id,false)}>Show</Button></div>}
     {mayHavePlan&&<div className="today-context is-quiet"><span>This email mentions a plan.</span><Button variant="text" size="sm" loading={finding} onClick={()=>thread&&onFind(thread)}>Find it</Button></div>}
     <TimeGrid compact days={days} events={model.shown} sourceOf={model.sourceOf} selectedId={model.selection?.id} draft={model.draft} draftColor={model.draftColor} overlay={model.overlay}
       periodKey={day} slide={slide} {...model.handlers} onPage={handlers.page} hour={hour} onHour={setHour} scrollMemo={scrollMemo}
-      proposal={proposal&&{...proposal,allDay:!!proposal.allDay,title:proposal.title??'',color:proposalColor,open:handlers.open}} clashIds={clashIds} focusId={context?.saved?.id}
-      revealAt={context&&context.day===day?(proposal?.allDay?undefined:proposal?.start??(context.saved?.allDay?undefined:context.saved?.start)):undefined}/>
+      proposal={proposal&&{...proposal,allDay:!!proposal.allDay,title:title||'Proposed plan',color:source?.color,open:handlers.open,change:handlers.move}} clashIds={clashIds} focusId={context?.saved?.id}
+      revealAt={context&&context.day===day?(found?.allDay?undefined:found?.start??(context.saved?.allDay?undefined:context.saved?.start)):undefined}/>
     {model.popovers}
   </section>;
 });

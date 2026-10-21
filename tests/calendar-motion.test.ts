@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CalendarEvent } from '../src/shared/types';
 import { openingHour, resist, swipeDecision, swipeThreshold, zoomHour, zoomScroll, hourLimits } from '../src/renderer/calendarMotion';
-import { clashes, emailContext } from '../src/renderer/calendarLayout';
+import { clashes, emailContext, planKey, plansToReview } from '../src/renderer/calendarLayout';
 
 test('a period swipe turns the page by distance or a quick flick, and otherwise settles back',()=>{
   const width=800;const limit=swipeThreshold(width);
@@ -59,4 +59,21 @@ test('Today follows the open email: a new plan becomes a ghost on its day with i
   assert.deepEqual(clashes({start:at(day,'09:15'),end:at(day,'10:00')},events),[]);
   assert.deepEqual(clashes({...proposal,allDay:true},events),[]);
   assert.deepEqual(clashes({id:'review',start:at(day,'14:00'),end:at(day,'15:00')},events).map(e=>e.id),['polish'],'an event never clashes with itself');
+});
+
+test('a plan sent to Today for review: the chosen one first, gone after Not now, and never offered again once added',()=>{
+  const at=(day:string,time:string)=>new Date(`${day}T${time}:00`).toISOString();
+  const garden={title:'Garden morning',start:at('2026-10-24','10:00'),end:at('2026-10-24','11:00')};
+  const supper={title:'Harvest supper',start:at('2026-10-24','18:00'),end:at('2026-10-24','20:00')};
+  const found={found:[garden,supper],dismissed:false};
+  assert.deepEqual(plansToReview(found,undefined,new Set()),[garden,supper]);
+  // "Add to calendar" on the second plan in the reader shows that one, even though Groq listed it second.
+  assert.equal(emailContext('garden',[],plansToReview(found,supper,new Set()))?.proposal,supper);
+  assert.equal(plansToReview({...found,dismissed:true},supper,new Set()),undefined,'Not now hides the chosen plan too');
+  assert.equal(plansToReview(undefined,undefined,new Set()),undefined);
+  // Added at another time with a new title, the saved event no longer looks like the plan; the next plan follows.
+  const saved:CalendarEvent={id:'s',accountId:'personal',calendarId:'demo-personal',title:'Herb beds',start:at('2026-10-24','11:00'),end:at('2026-10-24','12:30'),allDay:false,location:'',description:'',guests:[],threadId:'garden'};
+  assert.equal(emailContext('garden',[saved],plansToReview(found,garden,new Set()))?.proposal,garden,'without the record it would come back');
+  assert.equal(emailContext('garden',[saved],plansToReview(found,garden,new Set([planKey(garden)])))?.proposal,supper);
+  assert.deepEqual(emailContext('garden',[saved],plansToReview(found,garden,new Set([planKey(garden),planKey(supper)]))),{day:'2026-10-24',saved});
 });
