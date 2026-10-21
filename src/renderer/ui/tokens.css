@@ -13,7 +13,6 @@
 :root {
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --sidebar-width: 248px;
-  --ask-width: 360px;
   --toolbar-height: 48px;
   --pad: 16px;
   --row-height: 56px;
@@ -87,7 +86,6 @@
   --press: color-mix(in srgb, var(--ink) 10%, transparent);
   --sidebar-fill: #e2e1de;
   --sidebar-ink: #100f0f;
-  --ask-fill: #ffffff;
   --blue: #0682fe;
   --blue-fill: #0682fe;
   --blue-ink: #ffffff;
@@ -155,7 +153,6 @@
   --press: color-mix(in srgb, var(--ink) 11%, transparent);
   --sidebar-fill: #484a4c;
   --sidebar-ink: #ecebe6;
-  --ask-fill: #181716;
   --blue: #3e9efe;
   --blue-fill: #245aa6;
   --blue-ink: #f2f8ff;

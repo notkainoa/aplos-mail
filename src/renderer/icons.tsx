@@ -39,7 +39,7 @@ function symbol(fallback:React.ComponentType<any>,name:string,options:{filled?:s
     const key=`${symbolName}:${box}:${point}:${options.weight??'regular'}`;
     request(key);
     const data=loaded.get(key);
-    if(!data){const Fallback=fallback;return <Fallback size={size} className={className} fill={fill} style={style} {...rest}/>;}
+    if(!data){const Fallback=fallback;return <Fallback size={size} className={className} fill={fill??'none'} style={style} {...rest}/>;}
     return <i aria-hidden="true" className={"sym"+(className?" "+className:"")} style={{width:box,height:box,WebkitMaskImage:`url(${data})`,maskImage:`url(${data})`,...style}}/>;
   };
   Icon.displayName=`Symbol(${name})`;

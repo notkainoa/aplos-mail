@@ -7,9 +7,10 @@ import {Button,Dialog,DialogHeader,Keys,Notice,Skeleton,Tabs,cx,useLatest,usePre
 export function ShortcutsDialog({open,close,doneLeft}:{open:boolean;close:()=>void;doneLeft:boolean}){
   const done=doneLeft?'←':'→';const todo=doneLeft?'→':'←';
   const tabs:{id:string;rows:[string,string[]][]}[]=[
-    {id:'General',rows:[['Ask or search',['A']],['Talk to Ask',['Hold A']],['Search mail',['/']],['Compose',['C']],['Settings',['⌘ ,']],['Show or hide the sidebar',['[']],['This guide',['?']]]},
-    {id:'Moving around',rows:[['Home',['⌃ 1']],['Later',['⌃ 2']],['All mail',['⌃ 3']],['Drafts',['⌃ 4']],['Start a stack',['S']],['Next email',['J']],['Previous email',['K']],['Close',['Esc']]]},
-    {id:'Email',rows:[['Done',[done,'E']],['Todo',[todo,'L']],['Reply',['Space']],['Reply and dictate',['Hold Space']],['Reply all',['⇧ R']],['Forward',['F']],['Bookmark',['B']],['Read or unread',['U']],['Move to Trash',['#']],['Undo',['Z']]]},
+    {id:'General',rows:[['Ask me anything',['A','⌘ J']],['Talk to Ask',['Hold A']],['Search mail',['/']],['Compose',['C']],['Settings',['⌘ ,']],['Show or hide the sidebar',['[']],['This guide',['?']]]},
+    {id:'Moving around',rows:[['Home',['⌃ 1']],['Later',['⌃ 2']],['All mail',['⌃ 3']],['Drafts',['⌃ 4']],['Next email',['J','↓']],['Previous email',['K','↑']],['Open the focused email',['Space','↵']],['Swipe through them',['S']],['Select',['X']],['Select all',['⌘ A']],['Close or clear the selection',['Esc']]]},
+    {id:'Email',rows:[['Done',[done,'E']],['Later',[todo,'L']],['Reply',['R']],['Reply in the reader',['Space']],['Reply and dictate',['Hold Space']],['Reply all',['⇧ R']],['Forward',['F']],['Bookmark',['B']],['Read or unread',['U']],['More actions',['.']],['Move to Trash',['#']],['Undo',['Z']]]},
+    {id:'Ask',rows:[['Move through suggestions',['↑','↓']],['Ask, or open the selected item',['↵']],['Search all mail instead',['⌘ ↵']],['New chat',['⌘ N']],['Stop, clear, then close',['Esc']],['Release to ask, while holding A',['Hold A']]]},
     {id:'Writing',rows:[['Send',['⌘ ↵']],['Dictate into an empty body',['Hold Space']],['Bold',['⌘ B']],['Italic',['⌘ I']],['Close',['Esc']]]},
   ];
   const [tab,setTab]=useState('General');

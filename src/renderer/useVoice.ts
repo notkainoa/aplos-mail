@@ -64,7 +64,8 @@ export function useVoice(deviceId:string,onText:(text:string)=>void|Promise<void
       recording.start(250);update('recording');timer.current=setTimeout(stop,120000);
     }catch(error){
       localStream?.getTracks().forEach(track=>track.stop());
-      if(active()){release();update('idle');callbacks.current.onError(error instanceof Error?error.message:'Microphone access is required.');}
+      if(active()){release();update('idle');const name=(error as {name?:string})?.name;
+        callbacks.current.onError(name==='NotAllowedError'||name==='SecurityError'?'Microphone access is off. Allow Aplos Mail in System Settings › Privacy & Security › Microphone, then try again.':name==='NotFoundError'||name==='OverconstrainedError'?'No microphone found. Connect one or choose another in Settings.':name==='NotReadableError'?'The microphone is busy in another app.':error instanceof Error?error.message:'Microphone access is required.');}
     }
   }
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;cancel();};},[]);

@@ -24,7 +24,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  function step(delta:number){if(hits)setHit(value=>(value+delta+hits)%hits);}
  useEffect(()=>{
   if(ghost)return;
-  const open=(e:KeyboardEvent)=>{if(!(e.metaKey||e.ctrlKey)||e.key!=='f'||e.altKey)return;if((e.target as HTMLElement|null)?.closest?.('.compose-layer,.compose-inline,.ask-dock,.ui-dialog'))return;e.preventDefault();setFind(true);requestAnimationFrame(()=>{findInput.current?.focus();findInput.current?.select();});};
+  const open=(e:KeyboardEvent)=>{if(!(e.metaKey||e.ctrlKey)||e.key!=='f'||e.altKey)return;if((e.target as HTMLElement|null)?.closest?.('.compose-layer,.compose-inline,.ask-overlay,.ui-dialog'))return;e.preventDefault();setFind(true);requestAnimationFrame(()=>{findInput.current?.focus();findInput.current?.select();});};
   addEventListener('keydown',open);return ()=>removeEventListener('keydown',open);
  },[ghost]);
  // Open collapsed messages that contain the search text, otherwise their matches stay invisible.

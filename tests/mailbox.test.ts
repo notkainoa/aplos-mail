@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createDemo} from '../src/engine/demo';
-import {bookmarkLeavesList,isBookmark,isHomeLow,isHomeNew,threadInView} from '../src/shared/mailbox';
+import {bookmarkLeavesList,isBookmark,isHomeLow,isHomeNew,shortDue,shortSender,threadInView} from '../src/shared/mailbox';
 import type {Thread} from '../src/shared/types';
 
 const demo=createDemo(new Date(2026,9,15,12));
@@ -37,4 +37,22 @@ test('bookmarking a Home thread files it away; unbookmarking files it out of Boo
   const after:Thread={...design,bookmarked:true};
   assert.equal(isHomeNew(after),false);
   assert.equal(isBookmark(after),true);
+});
+
+test('focus-list lines name people by first name and keep organizations whole',()=>{
+  assert.equal(shortSender('Jordan Park','jordan@studio.example'),'Jordan');
+  assert.equal(shortSender('Leah Brooks','Leah Brooks <leah.b@studio.example>'),'Leah');
+  assert.equal(shortSender('Maple Library','holds@maplelibrary.example'),'Maple Library');
+  assert.equal(shortSender('Trail Journal','hello@trail.example'),'Trail Journal');
+  assert.equal(shortSender('','updates@service.example'),'updates');
+  for(const thread of demo.threads)for(const message of thread.messages)assert.ok(shortSender(message.fromName,message.from).length>0);
+});
+
+test('due chips stay short and relative to today',()=>{
+  const now=new Date(2026,9,20,9);
+  assert.equal(shortDue('2026-10-20',now),'today');
+  assert.equal(shortDue('2026-10-21',now),'by tomorrow');
+  assert.equal(shortDue('2026-10-18',now),'overdue');
+  assert.match(shortDue('2026-10-23',now),/^by \S+$/);
+  assert.match(shortDue('2026-11-12',now),/^by .*12/);
 });

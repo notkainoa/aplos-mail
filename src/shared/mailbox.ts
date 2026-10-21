@@ -44,3 +44,20 @@ export function bookmarkLeavesList(thread:Thread,nextBookmarked:boolean,view:Vie
   }
   return view==='later'&&laterTab==='bookmarks'&&isBookmark(thread);
 }
+
+/** A person's first name ("Jordan" for Jordan Park <jordan@…>); organizations and unclear names stay whole. */
+export function shortSender(name:string,address:string){
+  const words=name.trim().split(/\s+/).filter(Boolean);
+  const local=((/<([^>]+)>/.exec(address)?.[1]||address).split('@')[0]||'').toLowerCase().replace(/[^a-z]/g,'');
+  if(!words.length)return local||address;
+  const person=words.length>=2&&words.length<=3&&words.every(w=>/^\p{Lu}[\p{Ll}'’-]+$/u.test(w))
+    &&words.some(w=>local.includes(w.toLowerCase().replace(/[^a-z]/g,'')));
+  return person?words[0]:name.trim();
+}
+/** Short due chip text: "today", "by tomorrow", "by Fri", "by Oct 22", "overdue". */
+export function shortDue(value:string,now=new Date()){
+  const date=new Date(value.slice(0,10)+'T12:00:00');const today=new Date(now);today.setHours(12,0,0,0);
+  const days=Math.round((+date-+today)/86400000);
+  if(Number.isNaN(days))return '';
+  return days<0?'overdue':days===0?'today':days===1?'by tomorrow':'by '+date.toLocaleDateString([],days<7?{weekday:'short'}:{month:'short',day:'numeric'});
+}

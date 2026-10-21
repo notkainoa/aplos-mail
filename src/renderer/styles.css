@@ -150,23 +150,6 @@
   white-space: nowrap;
 }
 .compose-top:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
-.ask-pill {
-  height: 32px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px 0 10px;
-  border-radius: var(--radius-pill);
-  color: var(--ink);
-  background: var(--card);
-  box-shadow: var(--glass);
-  white-space: nowrap;
-}
-.ask-pill:hover { background: var(--raised); }
-.ask-pill > :is(svg, .sym) { color: var(--ink-2); }
-.ask-pill > span { font-weight: 500; }
-.ask-pill kbd { height: 18px; min-width: 18px; font-size: 11px; margin-left: 2px; }
-.ask-pill small { font-size: 13px; color: var(--dim); }
 .sync-error {
   position: absolute;
   z-index: 19;
@@ -203,81 +186,7 @@
 .mail-section > header h2 > span { color: var(--dim); font-weight: 400; }
 .mail-section > header .ui-btn-pill { margin-right: auto; margin-left: 4px; }
 .mail-section > header:has(.ui-btn-pill) { justify-content: flex-start; }
-.mail-group {
-  background: var(--card);
-  border-radius: var(--radius-card);
-  box-shadow: var(--card-edge);
-  padding: 8px 0;
-  overflow: hidden;
-}
-.mail-row {
-  position: relative;
-  height: var(--row-height);
-  margin: 0 4px;
-  border-radius: 8px;
-  touch-action: pan-y;
-}
-/* The row is a track; its body holds the content and is what slides when the row is dragged sideways. */
-.row-body {
-  position: relative;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 16px;
-  border-radius: inherit;
-}
-.mail-row { transition: background-color .06s linear; }
-.mail-row:hover, .mail-row.checked, .mail-row.is-cursor { background: var(--row-hover); }
-.mail-row.active { background: var(--row-active); }
-/* Keeps a keyboard-moved row clear of the floating toolbar when it scrolls into view. */
-.mail-row { scroll-margin: calc(var(--toolbar-height) + 8px) 0 16px; }
-.mail-row.is-cursor:not(.active) > .row-body::after { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--blue); }
-.row-leading { position: relative; width: 28px; height: 28px; flex: none; }
-.row-leading > .ui-avatar { transition: opacity var(--dur-fast) var(--ease), transform var(--dur-base) var(--ease); }
-.row-checkbox { position: absolute; inset: 0; justify-content: center; border-radius: 50%; background: var(--raised); opacity: 0; transform: scale(.7); transition: opacity var(--dur-fast) var(--ease), transform var(--dur-base) var(--ease-spring); }
-.mail-row:is(:hover, .checked, .selecting) .row-checkbox, .row-checkbox:focus-within { opacity: 1; transform: none; }
-.mail-row:is(:hover, .checked, .selecting) .row-leading > .ui-avatar { opacity: 0; transform: scale(.7); }
-.row-content { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 3px; text-align: left; }
-.row-first, .row-second { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
-.sender { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
-.subject { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.mail-row .sender, .mail-row .subject { color: var(--ink-2); }
-.unread .sender, .unread .subject { color: var(--ink); font-weight: 600; }
-.row-separator { color: var(--faint); }
-.row-flag { color: var(--dim); }
-.row-time { margin-left: 12px; flex: none; color: var(--dim); font-variant-numeric: tabular-nums; }
-.row-time.is-due { color: var(--blue); }
-.row-time.is-overdue { color: var(--red); }
-.summary { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
-.thread-count { flex: none; font-size: 12px; color: var(--dim); }
-.row-actions {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 10px;
-  isolation: isolate;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .06s linear;
-}
-/* Fade the row text out under the pills so they read as floating on the row. */
-.row-actions::before { content: ""; position: absolute; z-index: -1; inset: 0 -10px 0 -48px; border-radius: 0 8px 8px 0; background: linear-gradient(to right, transparent, var(--row-hover) 40px); }
-.mail-row.active .row-actions::before { background: linear-gradient(to right, transparent, var(--row-active) 40px); }
-.mail-row:is(:hover, .is-cursor) .row-actions, .row-actions:focus-within { opacity: 1; pointer-events: auto; }
-.mail-row.is-cursor .row-time { visibility: hidden; }
-.row-action { height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 9px; border-radius: 14px; background: var(--card); color: var(--ink-2); box-shadow: var(--glass); }
-.row-action:hover { background: var(--raised); color: var(--ink); }
-.row-action:active { transform: scale(.95); }
-.row-action .ui-kbd { height: 20px; min-width: 20px; padding: 0 4px; border-radius: 6px; font-size: 11px; }
-.row-action.done { color: var(--green); }
-.row-action.restore { padding: 0 11px 0 10px; font-size: 13px; }
-.row-action.on { color: var(--blue); }
-.row-action.more { width: 28px; padding: 0; justify-content: center; }
-.mail-row:hover .row-time { visibility: hidden; }
+/* Mail groups and rows live in styles/focus.css. */
 
 /* ---------- Swipe to triage ---------- */
 
@@ -386,16 +295,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 /* Split view keeps a narrow list beside the reader. */
 .split-layout .mail-content { flex: 0 0 360px; max-width: 360px; min-width: 300px; padding-right: 0; }
 .split-layout .mail-content > * { max-width: none; }
-.split-layout .row-body { gap: 12px; padding: 0 12px; }
-.split-layout .sender { max-width: 55%; }
-.split-layout .row-first .subject { display: none; }
-.split-layout .row-first .row-separator { display: none; }
-.split-layout .row-first .sender { flex: 1; max-width: none; }
-.split-layout .row-second .summary::before { content: none; }
-.split-layout .row-badge { display: none; }
-.split-layout .row-action .ui-keys { display: none; }
-.split-layout .row-action { padding: 0; width: 28px; justify-content: center; }
-.split-layout .row-action.restore > span { display: none; }
 .split-layout .low-bundle small { display: none; }
 
 /* ---------- Reader ---------- */
@@ -596,100 +495,10 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .split-reply .dock-reply { min-width: 140px; height: 52px; box-shadow: var(--glass-primary), 0 10px 28px -6px rgba(0, 0, 0, .45); }
 .dock-reply small { font-size: 12px; line-height: 16px; opacity: .78; font-weight: 400; }
 
-/* ---------- Ask panel ---------- */
+/* ---------- Level meter (dictation) ---------- */
 
-/* The dock takes its width in one step and the panel slides over it with a transform; animating the width
-   would relayout the whole mail column on every frame. Closed, the panel waits off the right edge. */
-.ask-dock { position: relative; width: 0; flex: none; z-index: 2; }
-.ask-dock.open { width: var(--ask-width); }
-.ask-dock > .ask-panel { position: absolute; inset: 0 0 0 auto; transform: translateX(100%); visibility: hidden; transition: transform var(--dur-fast) var(--ease-in), visibility 0s linear var(--dur-fast); }
-.ask-dock.open > .ask-panel { transform: none; visibility: visible; transition: transform var(--dur-dock) var(--ease-out-strong); }
-.ask-panel {
-  width: var(--ask-width);
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  background: var(--ask-fill);
-  box-shadow: inset .5px 0 0 color-mix(in srgb, var(--ink) 10%, transparent);
-}
-.ask-head { padding: 8px 12px 0 8px; display: flex; align-items: flex-start; gap: 4px; -webkit-app-region: drag; }
-.ask-head > * { -webkit-app-region: no-drag; }
-.ask-collapse { margin-top: 3px; }
-.ask-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.ask-field {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  min-height: 34px;
-  padding: 3px 4px 3px 14px;
-  border-radius: 17px;
-  background: var(--raised);
-  box-shadow: var(--card-edge);
-  transition: box-shadow .15s var(--ease);
-}
-:root[data-theme=dark] .ask-field { background: #262524; }
-.ask-field:focus-within { box-shadow: var(--card-edge), 0 0 0 2px color-mix(in srgb, var(--blue) 45%, transparent); }
-.ask-field.recording, :root[data-theme=dark] .ask-field.recording { align-items: center; background: #d6392c; color: #fff; box-shadow: 0 2px 8px rgba(214, 57, 44, .35); }
-.ask-field.recording textarea::placeholder { color: #fff; font-weight: 500; }
-.ask-field textarea { flex: 1; min-height: 28px; max-height: 132px; padding: 4px 0; border: 0; border-radius: 0; background: transparent; outline: 0; resize: none; line-height: 20px; }
-.ask-field .ui-icon-btn { margin-bottom: 2px; }
-.ask-field.recording .ui-icon-btn { color: #fff; margin: 0; }
-.ask-field.recording .ui-icon-btn:hover { background: rgba(255, 255, 255, .18); }
-.ask-send { height: 26px; margin-bottom: 1px; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 10px; border-radius: 13px; background: var(--blue-fill); color: var(--blue-ink); box-shadow: var(--glass-primary); font-size: 13px; font-weight: 500; }
-.ask-send:hover { filter: brightness(1.08); }
-.ask-send { animation: scale-in var(--dur-fast) var(--ease-out-strong); }
-.ask-send:active, .ask-hold:active { transform: scale(.95); }
-.ask-hold { height: 28px; display: flex; align-items: center; gap: 5px; padding: 0 8px 0 4px; color: var(--dim); font-size: 13px; white-space: nowrap; }
-.ask-hold:hover { color: var(--ink); }
-.ask-spinner { margin: 0 6px 7px; color: var(--dim); }
-.ask-recording-hint { display: flex; align-items: center; gap: 5px; padding: 0 12px; font-size: 12px; line-height: 16px; color: var(--red); }
-.ask-recording-hint kbd { height: 16px; min-width: 16px; padding: 0 4px; font-size: 10px; color: inherit; background: color-mix(in srgb, var(--red) 16%, transparent); }
-.ask-recording-hint.quiet { color: var(--dim); }
 .level-meter { display: inline-flex; align-items: center; gap: 2px; height: 16px; flex: none; }
 .level-meter i { width: 3px; height: 14px; border-radius: 2px; background: currentColor; transform: scaleY(.3); transition: transform .09s linear; }
-.ask-matches { padding: 6px 8px 16px 40px; }
-.ask-match-all { width: 100%; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 8px; border-radius: var(--radius-control); color: var(--dim); font-size: 13px; text-align: left; }
-.ask-match-all:hover, .ask-match:hover, .ask-match:focus-visible { background: var(--hover); color: var(--ink); }
-.ask-match { width: 100%; display: flex; align-items: flex-start; gap: 10px; padding: 8px; border-radius: var(--radius-control); text-align: left; }
-.ask-match .ui-avatar { margin-top: 1px; }
-.ask-match > span:last-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.ask-match-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.ask-match-line strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ask-match-line span { flex: none; font-size: 12px; color: var(--dim); }
-.ask-match-subject { font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ask-no-match { padding: 10px 8px; color: var(--dim); font-size: 13px; }
-.ask-history-link { margin-top: 14px; }
-.ask-notice { margin: 0 4px; }
-.ask-tools { display: flex; align-items: center; gap: 16px; padding: 2px 12px 0; min-height: 22px; font-size: 13px; }
-.recording { color: var(--red) !important; }
-.recording-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); animation: pulse .8s infinite; flex: none; }
-.ask-scroll, .ask-history { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 20px; user-select: text; }
-.ask-welcome { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 0; text-align: center; user-select: none; }
-.ask-welcome p { display: flex; align-items: center; gap: 6px; font-weight: 500; }
-.ask-example { color: var(--dim); padding: 2px 8px; border-radius: 6px; animation: fade .4s var(--ease); }
-.ask-example:hover { color: var(--ink); }
-.chat-message { margin-bottom: 20px; overflow-wrap: anywhere; line-height: 22px; animation: fade .2s var(--ease); }
-.chat-message.user { margin-left: 40px; padding: 8px 14px; border-radius: 18px 18px 6px 18px; background: var(--raised); box-shadow: var(--card-edge); }
-.chat-text { white-space: pre-wrap; }
-.citations { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
-.citations button { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: var(--radius-control); background: var(--raised); color: var(--ink-2); text-align: left; font-size: 13px; box-shadow: var(--card-edge); }
-.citations button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.citations button:hover { background: var(--sunken); }
-.citations :is(svg, .sym) { color: var(--dim); }
-.proposal { margin-top: 10px; padding: 12px 14px; border-radius: var(--radius-card); background: var(--raised); box-shadow: var(--card-edge); display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
-.proposal strong { font-weight: 500; }
-.proposal p { color: var(--dim); font-size: 13px; }
-.proposal .ui-btn { margin-top: 8px; align-self: flex-start; }
-.thinking { display: flex; align-items: center; gap: 4px; color: var(--dim); font-size: 13px; }
-.thinking > span { width: 4px; height: 4px; border-radius: 50%; background: var(--dim); animation: pulse 1s infinite; }
-.thinking > span:nth-child(2) { animation-delay: .15s; }
-.thinking > span:nth-child(3) { animation-delay: .3s; margin-right: 6px; }
-.history-row { display: flex; align-items: center; border-radius: var(--radius-control); padding-right: 4px; }
-.history-row:hover { background: var(--hover); }
-.history-row > button:first-child { flex: 1; min-width: 0; height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 10px; text-align: left; }
-.history-row > button:first-child > :is(svg, .sym) { color: var(--dim); }
-.history-row > button:first-child > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ai-footnote { padding: 8px 16px 10px; font-size: 11px; line-height: 14px; color: var(--faint); text-align: center; }
 
 /* ---------- Compose ---------- */
 
@@ -1006,10 +815,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .all-day { margin-top: 14px; }
 
-/* ---------- Composer alongside Ask ---------- */
-
-.with-ask .compose-footer .signature-toggle, .with-ask .compose-footer .signature-toggle + .signature-sep { display: none; }
-
 /* ---------- List motion ---------- */
 
 /* A view fades up slightly when you switch mailboxes or tabs. */
@@ -1048,9 +853,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1080px) {
-  :root { --sidebar-width: 220px; --ask-width: 320px; }
-  .with-ask .compose-top span { display: none; }
-  .with-ask .attachment-badge { display: none; }
+  :root { --sidebar-width: 220px; }
 }
 @container workspace (max-width: 940px) {
   .split-layout .mail-content { flex-basis: 300px; min-width: 280px; max-width: 300px; }
@@ -1069,8 +872,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
   .calendar-month { border-right: 0; border-bottom: 1px solid var(--line-soft); }
 }
 @media (max-width: 900px) {
-  .with-ask .sidebar-slot { width: 0; }
-  .desktop.mac.with-ask .topbar { padding-left: 84px; }
   .dock-reply { min-width: 140px; }
   .reader-scroll { padding: 14px 18px 24px; }
 }
@@ -1081,10 +882,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 @media (max-width: 700px) {
   .sidebar-slot { width: 0; }
   .desktop.mac .topbar { padding-left: 84px; }
-  .ask-dock { position: fixed; inset: 0 0 0 auto; z-index: 60; }
-  .ask-dock.open { width: min(360px, 100vw); }
-  .ask-dock > .ask-panel { box-shadow: var(--glass-raised); }
-  .ask-panel { width: min(360px, 100vw); }
   .topbar .ui-tabs-segmented, .toolbar-divider { display: none; }
   .compose-top span { display: none; }
   .sender { max-width: 45%; }
