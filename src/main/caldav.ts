@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
-import { ProviderError, type CalendarBackend, type CalendarCredentials, type CalendarInfo } from '../engine/provider';
+import { ProviderError, calendarColor, type CalendarBackend, type CalendarCredentials, type CalendarInfo } from '../engine/provider';
 import type { Account, CalendarEvent } from '../shared/types';
 import { applyFields, createCalendar, isScheduling, parseComponents, prop, readEvents, serialize, utcStamp, zonesOf, type EventFields, type IcalComponent, type ParsedEvent } from './ical';
 
@@ -17,7 +17,7 @@ const textOf=(value:unknown):string=>typeof value==='string'?value.trim():value&
 const isObject=(value:unknown):value is Json=>Boolean(value)&&typeof value==='object';
 const parent=(href:string)=>href.replace(/[^/]*$/,'');
 const sameEtag=(a:string,b:string)=>a.replace(/^W\//,'')===b.replace(/^W\//,'');
-const propfindBody=(props:string)=>`<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop>${props}</D:prop></D:propfind>`;
+const propfindBody=(props:string)=>`<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="http://apple.com/ns/ical/"><D:prop>${props}</D:prop></D:propfind>`;
 
 function statusError(status:number):CalDavError {
   if(status===401)return new CalDavError('The calendar server rejected the password.',401);
@@ -106,7 +106,7 @@ export function createCalDav(options:{fetch?:typeof fetch; now?:()=>Date}={}):Ca
   async function calendars(credentials:CalendarCredentials,fresh=false):Promise<Calendar[]> {
     const key=`${credentials.url}\n${credentials.username}`,where=await home(credentials,fresh);
     let found;
-    try{found=await propfind(credentials,where.url,'1','<D:resourcetype/><D:displayname/><C:supported-calendar-component-set/><D:current-user-privilege-set/>');}
+    try{found=await propfind(credentials,where.url,'1','<D:resourcetype/><D:displayname/><C:supported-calendar-component-set/><D:current-user-privilege-set/><A:calendar-color/>');}
     catch(error){
       if(error instanceof CalDavError&&(error.status===401||error.status===404))homes.delete(key);
       if(where.cached&&error instanceof CalDavError&&error.status===404)return calendars(credentials,true);
@@ -118,7 +118,8 @@ export function createCalDav(options:{fetch?:typeof fetch; now?:()=>Date}={}):Ca
       const writable=!isObject(privileges)||list(privileges.privilege).some((p:Json)=>isObject(p)&&['write','write-content','bind','all'].some(k=>k in p));
       let name=textOf(r.props.displayname);
       if(!name)try{name=decodeURIComponent(new URL(r.href).pathname.split('/').filter(Boolean).pop()??'Calendar');}catch{name='Calendar';}
-      return {id:r.href,name,accountId:'',events:!components.length||components.includes('VEVENT'),writable};
+      const color=calendarColor(textOf(r.props['calendar-color']));
+      return {id:r.href,name,accountId:'',...(color?{color}:{}),events:!components.length||components.includes('VEVENT'),writable};
     });
   }
 
@@ -160,7 +161,7 @@ export function createCalDav(options:{fetch?:typeof fetch; now?:()=>Date}={}):Ca
 
   return {
     async verify(credentials) {await calendars(credentials,true);},
-    async listCalendars(credentials,account) {const list=(await calendars(credentials)).filter(c=>c.events),first=list.find(c=>c.writable);return list.map(c=>({id:c.id,name:c.name,accountId:account.id,...(c===first?{primary:true}:{})}));},
+    async listCalendars(credentials,account) {const list=(await calendars(credentials)).filter(c=>c.events),first=list.find(c=>c.writable);return list.map(c=>({id:c.id,name:c.name,accountId:account.id,...(c.color?{color:c.color}:{}),...(c===first?{primary:true}:{})}));},
     async listEvents(credentials,account) {
       const at=now(),min=new Date(at.getTime()-30*864e5),max=new Date(at);max.setUTCFullYear(max.getUTCFullYear()+1);
       const range=`start="${utcStamp(min.getTime())}" end="${utcStamp(max.getTime())}"`;

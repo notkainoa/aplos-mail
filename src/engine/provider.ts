@@ -1,4 +1,4 @@
-import type { Account, Attachment, CalendarEvent, Draft, Thread } from '../shared/types';
+import type { Account, Attachment, CalendarEvent, CalendarInfo, Draft, Thread } from '../shared/types';
 
 export type ProviderKind = 'google'|'microsoft'|'imap'|'jmap';
 
@@ -79,7 +79,9 @@ export interface ConnectRequest {
 /** The part of a local thread a provider needs to change it at the host. */
 export type RemoteThread = Pick<Thread,'remoteId'|'status'|'labels'>;
 
-export interface CalendarInfo { id:string; name:string; accountId:string; /** The calendar `'primary'` stands for. */ primary?:boolean }
+export type { CalendarInfo } from '../shared/types';
+/** A host's calendar colour as `#rrggbb`; CalDAV servers often add an alpha byte. */
+export const calendarColor=(value:unknown)=>typeof value==='string'&&/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value.trim())?value.trim().slice(0,7).toLowerCase():undefined;
 
 /** Login for a calendar server that shares the mail account's credentials (CalDAV with an app password). */
 export interface CalendarCredentials { url:string; username:string; password:string }

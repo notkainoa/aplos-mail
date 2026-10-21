@@ -1,5 +1,5 @@
-import type { Account, AppState, Attachment, CalendarEvent, Conversation, Draft, Listener, Settings, Thread } from '../shared/types';
-import { createDemo, defaultSettings } from './demo';
+import type { Account, AppState, Attachment, CalendarEvent, CalendarInfo, Conversation, Draft, Listener, Settings, Thread } from '../shared/types';
+import { createDemo, defaultSettings, demoCalendars } from './demo';
 import { applySync } from './merge';
 import { olderInboxDuplicates } from './duplicates';
 import { createGate } from './gate';
@@ -112,6 +112,8 @@ function settingsPatch(raw:unknown):Partial<Settings> {
     } else if(key==='accountNotifications') {
       const entries=object(val); if(Object.values(entries).some(v=>typeof v!=='boolean')) throw new Error('Invalid notification preferences.');
       patch.accountNotifications=Object.fromEntries(Object.entries(entries).map(([k,v])=>[text(k,200),v]));
+    } else if(key==='hiddenCalendars') {
+      if(!Array.isArray(val)||val.length>1_000) throw new Error('Invalid hidden calendars.'); patch.hiddenCalendars=[...new Set(val.map(item=>text(item,1_400)))];
     } else (patch as any)[key]=text(val,key==='signature'?20_000:1_000);
   }
   return patch;
@@ -735,10 +737,11 @@ export async function createEngineService(options:EngineOptions) {
       }
       case 'conversation.delete':change(s=>{s.conversations=s.conversations.filter(c=>c.id!==p.id);});return clone(state);
       case 'calendar.list':{
-        const list:Array<{id:string;name:string;accountId:string}>=[];
-        for(const a of state.accounts.filter(a=>!p.accountId||p.accountId==='all'||a.id===p.accountId)){
-          if(a.provider==='demo')list.push({id:`demo-${a.id}`,name:a.id==='work'?'Work calendar':'Personal calendar',accountId:a.id});
-          else {const provider=hostOf(a);if(a.calendarConnected&&provider?.listCalendars)list.push(...await provider.listCalendars(a));}
+        // Every account at once (the Calendar page) skips a host that cannot answer; one account reports its error.
+        const every=!p.accountId||p.accountId==='all',list:CalendarInfo[]=[];
+        for(const a of state.accounts.filter(a=>every||a.id===p.accountId)){
+          if(a.provider==='demo'){const own=demoCalendars.filter(c=>c.accountId===a.id);list.push(...(own.length?own:[{id:`demo-${a.id}`,name:'Calendar',accountId:a.id,primary:true}]).map(c=>({...c})));}
+          else {const provider=hostOf(a);if(a.calendarConnected&&provider?.listCalendars)try{list.push(...await provider.listCalendars(a));}catch(error){if(!every)throw error;}}
         }return list;
       }
       case 'calendar.extract':{const t=thread(text(p.threadId,300)),events=await ai(p,signal=>groq.extractEvents(t,signal,{timeZone:p.timeZone?text(p.timeZone,100):undefined}));

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import nodemailer from 'nodemailer';
 import { simpleParser } from 'mailparser';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
-import { ProviderError, type AppDataRecord, type ConnectRequest, type MailProvider, type ProviderCapabilities, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import { ProviderError, calendarColor, type AppDataRecord, type ConnectRequest, type MailProvider, type ProviderCapabilities, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
 
 export interface GoogleOptions {
   dataDir:string; encrypt?:(value:string)=>Buffer; decrypt?:(value:Buffer)=>string;
@@ -230,7 +230,7 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
   function eventModel(raw:Json,account:Account,calendarId:string):CalendarEvent {
     return {id:`${account.id}:${calendarId}:${raw.id}`,remoteId:raw.id,accountId:account.id,calendarId,title:raw.summary??'(Untitled event)',start:raw.start?.dateTime??raw.start?.date??'',end:raw.end?.dateTime??raw.end?.date??'',allDay:Boolean(raw.start?.date),location:raw.location??'',description:raw.description??'',guests:(raw.attendees??[]).map((x:Json)=>x.email).filter(Boolean),url:raw.htmlLink};
   }
-  async function listCalendars(account:Account) {return (await pages(account,`${calendar}/users/me/calendarList?maxResults=250`,'items')).map(item=>({id:String(item.id),name:String(item.summaryOverride??item.summary??item.id),accountId:account.id,...(item.primary===true?{primary:true}:{})}));}
+  async function listCalendars(account:Account) {return (await pages(account,`${calendar}/users/me/calendarList?maxResults=250`,'items')).map(item=>({id:String(item.id),name:String(item.summaryOverride??item.summary??item.id),accountId:account.id,...(calendarColor(item.backgroundColor)?{color:calendarColor(item.backgroundColor)}:{}),...(item.primary===true?{primary:true}:{})}));}
   async function getSendAs(account:Account):Promise<NonNullable<Account['sendAs']>> {
     const response=await api(account,`${gmail}/settings/sendAs`);
     if(!Array.isArray(response.sendAs))throw new Error('Gmail sending addresses and signatures were unavailable. Reconnect this account; only its primary address can be used.');

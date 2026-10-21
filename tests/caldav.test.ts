@@ -54,7 +54,7 @@ function caldavServer() {
     [`PROPFIND ${part}`]:()=>multi(
       ok('/1234/calendars/','<d:resourcetype><d:collection/></d:resourcetype>'),
       ok('/1234/calendars/work/','<d:resourcetype><d:collection/><cal:calendar/></d:resourcetype><d:displayname>Work</d:displayname><cal:supported-calendar-component-set><cal:comp name="VEVENT"/></cal:supported-calendar-component-set><d:current-user-privilege-set><d:privilege><d:read/></d:privilege></d:current-user-privilege-set>'),
-      `<d:response><d:href>/1234/calendars/home/</d:href><d:propstat><d:prop><resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype><d:displayname>Home &amp; Family</d:displayname><cal:supported-calendar-component-set><cal:comp name="VEVENT"/><cal:comp name="VTODO"/></cal:supported-calendar-component-set><d:current-user-privilege-set><d:privilege><d:read/></d:privilege><d:privilege><d:write/></d:privilege></d:current-user-privilege-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`,
+      `<d:response><d:href>/1234/calendars/home/</d:href><d:propstat><d:prop><resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype><d:displayname>Home &amp; Family</d:displayname><calendar-color xmlns="http://apple.com/ns/ical/">#B0657FFF</calendar-color><cal:supported-calendar-component-set><cal:comp name="VEVENT"/><cal:comp name="VTODO"/></cal:supported-calendar-component-set><d:current-user-privilege-set><d:privilege><d:read/></d:privilege><d:privilege><d:write/></d:privilege></d:current-user-privilege-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`,
       ok('/1234/calendars/tasks/','<d:resourcetype><d:collection/><cal:calendar/></d:resourcetype><d:displayname>Tasks</d:displayname><cal:supported-calendar-component-set><cal:comp name="VTODO"/></cal:supported-calendar-component-set>'),
       ok('/1234/calendars/inbox/','<d:resourcetype><d:collection/><cal:schedule-inbox/></d:resourcetype>')),
     [`REPORT ${home}`]:()=>multi(
@@ -75,7 +75,7 @@ test('discovery follows the redirect to the partition host and lists only event 
   const s=caldavServer(),dav=createCalDav({fetch:s.fetch,now});
   await dav.verify(creds);
   const calendars=await dav.listCalendars(creds,account);
-  assert.deepEqual(calendars,[{id:work,name:'Work',accountId:'acct'},{id:home,name:'Home & Family',accountId:'acct',primary:true}],'the first writable calendar is the default');
+  assert.deepEqual(calendars,[{id:work,name:'Work',accountId:'acct'},{id:home,name:'Home & Family',accountId:'acct',color:'#b0657f',primary:true}],'the first writable calendar is the default, with the server colour minus its alpha');
   assert.equal(s.calls.filter(c=>c.url.endsWith('/principal/')).length,1,'discovery is cached after verify');
   const first=s.calls[0];
   assert.equal(first.headers.authorization,`Basic ${Buffer.from('kim@example.test:app-pass').toString('base64')}`);

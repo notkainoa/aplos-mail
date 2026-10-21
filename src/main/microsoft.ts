@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, randomBytes } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
-import { ProviderError, type AppDataRecord, type CalendarInfo, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import { ProviderError, calendarColor, type AppDataRecord, type CalendarInfo, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
 import { createVault } from './vault';
 
 export interface MicrosoftOptions extends ProviderEnvironment<Buffer> { clientId?:string; tenant?:string; oauthTimeoutMs?:number }
@@ -343,7 +343,7 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
     return {id:`${account.id}:${calendarId}:${raw.id}`,remoteId:raw.id,accountId:account.id,calendarId,title:raw.subject||'(Untitled event)',start:time(raw.start),end:time(raw.end),allDay,location:raw.location?.displayName??'',
       description:raw.body?.contentType==='html'?htmlText(String(raw.body.content??'')):String(raw.body?.content??raw.bodyPreview??'').trim(),guests:(raw.attendees??[]).map((a:Json)=>a.emailAddress?.address).filter(Boolean),url:raw.webLink};
   }
-  async function listCalendars(account:Account):Promise<CalendarInfo[]> {return (await pages(account,'/me/calendars?$select=id,name,isDefaultCalendar&$top=100')).map(c=>({id:String(c.id),name:String(c.name??c.id),accountId:account.id,...(c.isDefaultCalendar===true?{primary:true}:{})}));}
+  async function listCalendars(account:Account):Promise<CalendarInfo[]> {return (await pages(account,'/me/calendars?$select=id,name,isDefaultCalendar,hexColor&$top=100')).map(c=>({id:String(c.id),name:String(c.name??c.id),accountId:account.id,...(calendarColor(c.hexColor)?{color:calendarColor(c.hexColor)}:{}),...(c.isDefaultCalendar===true?{primary:true}:{})}));}
   async function timeZone(account:Account):Promise<string> {
     let zone=zones.get(account.id);
     if(!zone){try{const value=(await api(account,'/me/mailboxSettings/timeZone')).value;zone=typeof value==='string'&&value?value:'UTC';}catch{zone='UTC';}zones.set(account.id,zone);}

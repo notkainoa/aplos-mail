@@ -1,12 +1,22 @@
-import type { AppState, Settings, Thread, Attachment } from '../shared/types';
+import type { AppState, Attachment, CalendarEvent, CalendarInfo, Settings, Thread } from '../shared/types';
 
 export const defaultSettings:Settings = {
   theme:'system', zen:false, sidebar:true, sidebarStyle:'normal', triageDirection:'done-right', swipe:true,
   doneAction:'archive', laterAction:'read', lowAction:'archive', defaultReply:'reply', signature:'Warmly,\nAlex',
   signatureMode:'new', footer:false, autoPolish:false, undoSeconds:8, sendSound:true, autoCalendar:false,
   gmailEvents:true, notifications:true, accountNotifications:{}, microphone:'default', icon:'ink',
-  launchAtLogin:false, remoteImages:false, onboardingDone:false,
+  launchAtLogin:false, remoteImages:false, onboardingDone:false, hiddenCalendars:[],
 };
+
+/** The demo accounts' local calendars. Each account's first calendar is its default. */
+export const demoCalendars:CalendarInfo[] = [
+  { id:'demo-work', name:'Work', accountId:'work', primary:true, color:'#5b7fa6' },
+  { id:'demo-work-team', name:'Team', accountId:'work', color:'#8a74b0' },
+  { id:'demo-work-focus', name:'Focus time', accountId:'work', color:'#4f9488' },
+  { id:'demo-personal', name:'Personal', accountId:'personal', primary:true, color:'#c07a5a' },
+  { id:'demo-personal-family', name:'Family', accountId:'personal', color:'#bf9638' },
+  { id:'demo-personal-fitness', name:'Fitness', accountId:'personal', color:'#5f9a62' },
+];
 
 export function createDemo(now = new Date()):AppState {
   const stamp = (days:number,hour=10) => { const d=new Date(now); d.setDate(d.getDate()+days); d.setHours(hour,0,0,0); return d.toISOString(); };
@@ -76,6 +86,32 @@ export function createDemo(now = new Date()):AppState {
     spam:'Unsolicited prize announcement',
     sent:'Thanked the team and promised the next draft on Thursday',
   };
+  // Original plans spread over the current week (Sunday first), so the combined calendar has something to show.
+  const week = (day:number,hour:number,minute=0) => { const d=new Date(now); d.setDate(d.getDate()-d.getDay()+day); d.setHours(hour,minute,0,0); return d.toISOString(); };
+  const weekDay = (day:number) => due(day-now.getDay());
+  const plans:Array<[string,string,string,string,string,string,Partial<CalendarEvent>?]> = [
+    ...[1,2,3,4,5].map(day=>[`standup-${day}`,'work','demo-work-team','Standup',week(day,9),week(day,9,15),{location:'Video call'}] as [string,string,string,string,string,string,Partial<CalendarEvent>]),
+    ['planning','work','demo-work-team','Weekly planning',week(1,9,30),week(1,10,15),{description:'Pick the three things that matter this week.'}],
+    ['critique','work','demo-work','Design critique',week(1,13),week(1,14),{location:'Studio, second floor',guests:['jordan@studio.example','nadia@studio.example']}],
+    ['layouts','work','demo-work','Layout review with Jordan',week(2,10),week(2,11),{guests:['jordan@studio.example']}],
+    ['brief','work','demo-work-focus','Write the project brief',week(2,10),week(2,12)],
+    ['one-on-one','work','demo-work-team','1:1 with Nadia',week(2,14,30),week(2,15)],
+    ['deep-work','work','demo-work-focus','Focus block',week(3,9),week(3,11,30),{description:'Notifications off.'}],
+    ['welcome-lunch','work','demo-work-team','Welcome lunch for new starters',week(3,12),week(3,13),{location:'Green Table',guests:['leah@studio.example']}],
+    ['invoice-check','work','demo-work','Invoice check-in with Drew',week(4,16),week(4,16,30),{location:'Phone'}],
+    ['retro','work','demo-work-team','Team retro',week(5,10),week(5,10,45)],
+    ['polish','work','demo-work-focus','Prototype polish',week(5,14),week(5,16,30)],
+    ['offsite','work','demo-work','Offsite prep',weekDay(4),weekDay(6),{allDay:true}],
+    ['run','personal','demo-personal-fitness','Run club',week(1,18,30),week(1,19,30),{location:'River path'}],
+    ['dinner','personal','demo-personal','Dinner with Sam',week(2,19),week(2,21),{location:'Lantern Kitchen',guests:['sam@friends.example']}],
+    ['swim','personal','demo-personal-fitness','Morning swim',week(3,7),week(3,8)],
+    ['dentist','personal','demo-personal','Dentist',week(3,12,30),week(3,13,15),{location:'Bright Smile Dental'}],
+    ['yoga','personal','demo-personal-fitness','Yoga',week(4,18),week(4,19)],
+    ['birthday','personal','demo-personal-family','Rosa’s birthday',weekDay(4),weekDay(5),{allDay:true}],
+    ['cabin','personal','demo-personal-family','Cabin weekend',weekDay(5),weekDay(8),{allDay:true,location:'Pine Hollow',guests:['sam@friends.example']}],
+    ['market','personal','demo-personal','Farmers market',week(0,10),week(0,11,30),{location:'Cedar Square'}],
+  ];
+  const events:CalendarEvent[] = plans.map(([id,accountId,calendarId,title,start,end,patch])=>({ id:`plan-${id}`, accountId, calendarId, title, start, end, allDay:false, location:'', description:'', guests:[], ...patch }));
   const threads:Thread[] = rows.map(([id,accountId,fromName,from,subject,patch],index) => {
     const date=stamp(-Math.floor(index/3)); const text=bodies[id];
     return { id, accountId, subject, summary:summaries[id] ?? text, date, unread:index<8,
@@ -88,6 +124,6 @@ export function createDemo(now = new Date()):AppState {
     { id:'personal', name:'Alex Morgan', email:'alex@home.example', color:'#b38b71', provider:'demo',connected:true,calendarConnected:true },
   ], threads, drafts:[{ id:'draft-welcome',accountId:'work',to:'jordan@studio.example',cc:'',bcc:'',subject:'Re: A quieter home for our project',
     html:'<p>Hi Jordan,</p><p>I like the direction with more room for the story. A few thoughts to follow.</p>', attachments:[],threadId:'design',mode:'reply',updatedAt:now.toISOString(),signature:false,revision:1 }],
-    events:[{id:'event-review',accountId:'work',threadId:'review',calendarId:'demo-work',title:'Project review',start:stamp(2,14),end:stamp(2,15),allDay:false,location:'Oak room',description:'Review the prototype and agree on next steps.',guests:['theo@studio.example']}],
+    events:[...events,{id:'event-review',accountId:'work',threadId:'review',calendarId:'demo-work',title:'Project review',start:stamp(2,14),end:stamp(2,15),allDay:false,location:'Oak room',description:'Review the prototype and agree on next steps.',guests:['theo@studio.example']}],
     conversations:[],settings:structuredClone(defaultSettings),selectedAccountId:'all',sync:{busy:false},blockedSenders:[] };
 }

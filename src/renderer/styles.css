@@ -646,42 +646,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 
 /* ---------- Calendar ---------- */
 
-.calendar-page { max-width: 1040px; margin: 0 auto; }
-.calendar-page > .page-heading { padding: 0 2px; }
-.calendar-layout { display: grid; grid-template-columns: 1.35fr 1fr; min-height: 440px; overflow: hidden; background: var(--card); border-radius: var(--radius-card); box-shadow: var(--card-edge); }
-.calendar-month { padding: 16px 20px 20px; border-right: 1px solid var(--line-soft); }
-.calendar-month > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.calendar-month h2 { font-size: 16px; }
-.month-title { animation: fade var(--dur-base) var(--ease); }
-.calendar-month header .actions { gap: 4px; }
-.today-button.ui-btn { border-radius: var(--radius-pill); }
-.calendar-grid.from-right { animation: month-from-right var(--dur-slow) var(--ease-out-strong); }
-.calendar-grid.from-left { animation: month-from-left var(--dur-slow) var(--ease-out-strong); }
-@keyframes month-from-right { from { opacity: 0; transform: translateX(24px); } }
-@keyframes month-from-left { from { opacity: 0; transform: translateX(-24px); } }
-.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.day-name { margin-bottom: 4px; font-size: 12px; text-align: center; color: var(--dim); }
-.calendar-grid > button { min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 10px; font-variant-numeric: tabular-nums; }
-.calendar-grid > button { transition: background-color var(--dur-instant) linear, box-shadow var(--dur-fast); }
-.calendar-grid > button:hover { background: var(--hover); }
-.calendar-grid > button:active { transform: scale(.95); }
-.calendar-grid .selected-day { background: var(--card) !important; box-shadow: var(--glass); }
-.calendar-grid .today > span { min-width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 13px; background: var(--blue-fill); color: var(--blue-ink); font-weight: 600; }
-.event-dots { height: 4px; display: flex; gap: 3px; }
-.event-dots > i { width: 4px; height: 4px; border-radius: 50%; background: var(--blue); }
-.calendar-key { display: flex; align-items: center; gap: 7px; margin-top: 16px; font-size: 12px; color: var(--dim); }
-.calendar-key > i { width: 5px; height: 5px; border-radius: 50%; background: var(--blue); }
-.calendar-key { flex-wrap: wrap; white-space: nowrap; }
-.calendar-key .calendar-hint { margin-left: auto; opacity: .75; }
-.day-agenda { padding: 20px; animation: fade var(--dur-base) var(--ease); }
-.day-agenda > .eyebrow { margin-bottom: 16px; font-size: 14px; color: var(--ink); }
-.agenda-event { position: relative; margin-bottom: 14px; padding: 10px 12px 10px 16px; border-radius: 10px; background: var(--hover); }
-.agenda-event::before { content: ""; position: absolute; left: 6px; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--blue); }
-.event-time { font-size: 12px; color: var(--dim); }
-.event-detail-button { display: flex; flex-direction: column; gap: 4px; padding: 2px 0; text-align: left; }
-.event-detail-button strong { font-weight: 500; }
-.event-detail-button > span { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); }
-.agenda-event > .ui-btn { margin-top: 4px; color: var(--blue); }
 .event-editor { width: 540px; max-height: 95dvh; }
 .event-editor > header, .event-editor > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 10px 10px 18px; }
 .event-editor > header strong { font-weight: 500; }
@@ -739,10 +703,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
   .settings-page { grid-template-columns: 1fr; gap: 8px; }
   .settings-nav { position: static; padding-top: 0; flex-direction: row; flex-wrap: wrap; overflow-x: auto; scrollbar-width: none; }
   .settings-nav .ui-tab { width: auto; flex: none; }
-}
-@container workspace (max-width: 780px) {
-  .calendar-layout { grid-template-columns: 1fr; }
-  .calendar-month { border-right: 0; border-bottom: 1px solid var(--line-soft); }
 }
 @media (max-width: 900px) {
   .dock-reply { min-width: 140px; }

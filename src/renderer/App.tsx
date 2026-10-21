@@ -37,6 +37,7 @@ type Route={view:View;threadId?:string};
 const triageLabels:Record<Triage,string>={done:'Marked done',later:'Moved to Todo',trash:'Moved to Trash',spam:'Moved to Spam'};
 type FlingKind=Triage|'bookmark';
 const noop=()=>{};
+const noThreads:Thread[]=[];
 function useMediaQuery(query:string){
  const [matches,setMatches]=useState(()=>matchMedia(query).matches);
  useEffect(()=>{const media=matchMedia(query);const update=()=>setMatches(media.matches);update();media.addEventListener('change',update);return ()=>media.removeEventListener('change',update);},[query]);
@@ -81,6 +82,7 @@ export function App(){
  const [departing,setDeparting]=useState<{id:string;order:Thread[]}>();
  const [recentSearches,setRecentSearches]=useState<string[]>(()=>{try{const saved=JSON.parse(localStorage.getItem(recentSearchKey)||'[]');return Array.isArray(saved)?saved.filter(q=>typeof q==='string').slice(0,5):[];}catch{return [];}});
  const selectAnchor=useRef<string|null>(null);const listRef=useRef<HTMLDivElement>(null);const listScroll=useRef(0);
+ const viewNow=useRef(route.view);viewNow.current=route.view;
  const workspaceRef=useRef<HTMLElement>(null);const workspaceLeft=useRef<number|null>(null);const workspaceSlide=useRef<Animation|undefined>(undefined);
 
  function notify(text:string,undoable=false){toast.show({text,action:undoable?{label:'Undo',shortcut:'Z',run:()=>undoRef.current()}:undefined});}
@@ -223,6 +225,10 @@ export function App(){
   }
   // Attachments open in the reader's preview first; leaving Aplos stays an explicit click there.
   if(action.kind==='attachment'){setPreviewFile({threadId:thread.id,attachmentId:action.attachmentId!});openThread(thread.id);return;}
+  await findEvent(thread,()=>actionTarget.current===thread.id);
+ }
+ /** Groq finds the plan in an email and the editor opens on it; nothing is saved until the user does. */
+ async function findEvent(thread:Thread,stillHere:()=>boolean){
   if(actionBusy){if(actionBusy!==thread.id)notify('Still finding the last event. One moment.');return;}
   setActionBusy(thread.id);
   try{
@@ -230,7 +236,7 @@ export function App(){
    const event=events[0];
    if(!event)notify('No event with a clear date and time was found.');
    // Extraction takes a moment; if the user has moved on, offer the event instead of opening over their work.
-   else if(actionTarget.current===thread.id&&!composeRef.current)setEventEditor(event);
+   else if(stillHere()&&!composeRef.current)setEventEditor(event);
    else toast.show({text:`Event ready: ${event.title||thread.subject}`,action:{label:'Review',run:()=>setEventEditor(event)}});
   }catch(e){fail(e);}finally{setActionBusy(undefined);}
  }
@@ -377,7 +383,8 @@ export function App(){
  const sidebarActions=useHandlers({
   navigate:(view:View)=>{setPeek(false);navigate(view);},back:()=>historyMove(-1),forward:()=>historyMove(1),sync:()=>void sync(),
   hide:()=>{if(squeezed)setPeek(false);else void updateSettings({sidebar:false});},
-  selectAccount:(id:string)=>{void invoke('account.select',{id}).catch(fail);if(id!=='all')setRoute({view:'home'});},
+  // The Calendar stays open and filters to the chosen account; mail views start again from its Home.
+  selectAccount:(id:string)=>{void invoke('account.select',{id}).catch(fail);if(id!=='all'&&route.view!=='calendar')setRoute({view:'home'});},
   shortcuts:()=>{setPeek(false);setShortcutHelp(true);},onError:(error:Error)=>fail(error),
  });
  const topbarActions=useHandlers({
@@ -385,6 +392,13 @@ export function App(){
   back:()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));},
   compose:()=>void newDraft(),ask:()=>setAsk(true),
  });
+ const calendarActions=useHandlers({
+  edit:(event:Partial<CalendarEvent>)=>setEventEditor(event),onThread:(id:string)=>navigate('all',id),
+  onSchedule:(thread:Thread)=>void findEvent(thread,()=>viewNow.current==='calendar'),
+  onHidden:(keys:string[])=>void updateSettings({hiddenCalendars:keys}),
+ });
+ // Emails whose suggested step is a calendar event that is not on a calendar yet.
+ const calendarSuggestions=useMemo(()=>!state||route.view!=='calendar'?noThreads:state.threads.filter(t=>(state.selectedAccountId==='all'||t.accountId===state.selectedAccountId)&&!['trash','spam'].includes(t.status)&&liveAction(t)?.kind==='calendar'&&!state.events.some(e=>e.threadId===t.id)),[state?.threads,state?.events,state?.selectedAccountId,route.view]);
  const askActions=useHandlers({
   onOpen:()=>setAsk(true),onClose:()=>setAsk(false),
   onSearch:(query:string)=>{if(replyGuard())return;setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));},
@@ -443,9 +457,9 @@ export function App(){
   composeBusy={busy==='draft'||busy==='reply'} {...topbarActions}/>
  {state.sync.error&&<div className="sync-error"><WifiOff size={14}/><span>{state.sync.error}</span><Button variant="text" size="sm" onClick={()=>void sync()}>Retry</Button></div>}
  <div className="content-layout">
- {listShown&&<div className="mail-content" ref={listRef} onScroll={e=>{listScroll.current=e.currentTarget.scrollTop;}}>
+ {listShown&&view==='calendar'&&<Calendar events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} hidden={prefs.hiddenCalendars} suggestions={calendarSuggestions} busyId={actionBusy} paused={!!composer||shortcutHelp} {...calendarActions}/>}
+ {listShown&&view!=='calendar'&&<div className="mail-content" ref={listRef} onScroll={e=>{listScroll.current=e.currentTarget.scrollTop;}}>
  {view==='settings'?<Settings state={state} capabilities={capabilities} onChange={p=>void updateSettings(p)} notify={notify} shortcuts={()=>setShortcutHelp(true)}/>
- :view==='calendar'?<Calendar events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} edit={setEventEditor} onThread={id=>navigate('all',id)}/>
  :<div className={cx('mail-view',view==='later'&&laterTab==='bookmarks'&&'bookmarks-view',view==='home'&&!searchMode&&!selectedThread&&'focus-fade')} style={{'--f':Math.max(0,focusIndex)} as React.CSSProperties} key={(searchMode?'search':view)+(view==='later'?laterTab:'')}>
   {searchMode&&<div className="search-heading"><div className="search-box"><Search size={17}/><input ref={searchInput} autoFocus placeholder="Search your mail" aria-label="Search mail query" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={searchKeys}/>{searching&&<Spinner size={16}/>}<IconButton label="Close search" shortcut="Esc" icon={X} onClick={closeSearch}/></div>
    {!search&&recentSearches.length>0&&<p className="search-hints"><span>Recent</span>{recentSearches.map(hint=><button key={hint} onClick={()=>{setSearch(hint);searchInput.current?.focus();}}>{hint}</button>)}</p>}

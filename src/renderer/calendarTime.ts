@@ -25,6 +25,19 @@ export function timeRange(event:Pick<CalendarEvent,'start'|'end'|'allDay'>){
   return `${clock(event.start)} – ${clock(event.end)}`;
 }
 
+/** A time without ":00" and, when asked, without AM/PM: "10", "9:30 AM". */
+function compactClock(iso:string,period:boolean){
+  const d=new Date(iso);
+  return new Intl.DateTimeFormat([],{hour:'numeric',minute:d.getMinutes()?'2-digit':undefined}).formatToParts(d).filter(p=>period||p.type!=='dayPeriod').map(p=>p.value).join('').trim();
+}
+export const shortClock=(iso:string)=>compactClock(iso,true);
+/** "10 – 11 AM", "11:30 AM – 1 PM": the dense form for event blocks. */
+export function shortRange(event:Pick<CalendarEvent,'start'|'end'|'allDay'>){
+  if(event.allDay||dayKey(event.start)!==dayKey(event.end))return timeRange(event);
+  const period=(iso:string)=>new Intl.DateTimeFormat([],{hour:'numeric'}).formatToParts(new Date(iso)).find(p=>p.type==='dayPeriod')?.value;
+  return `${compactClock(event.start,period(event.start)!==period(event.end))} – ${compactClock(event.end,true)}`;
+}
+
 type Span=Pick<CalendarEvent,'start'|'end'|'allDay'>;
 
 /** Moving the start keeps the event's length, the way people expect from a calendar. */
