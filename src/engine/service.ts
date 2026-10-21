@@ -100,7 +100,7 @@ function threadPatch(raw:unknown):Partial<Thread> {
 }
 function settingsPatch(raw:unknown):Partial<Settings> {
   const source=object(raw),patch:Partial<Settings>={};
-  const choices:Partial<Record<keyof Settings,readonly string[]>>={theme:['light','dark','system'],triageDirection:['done-right','done-left'],doneAction:['archive','read','unread'],laterAction:['archive','read','unread'],lowAction:['archive','read','unread'],defaultReply:['reply','reply-all'],signatureMode:['always','new','never'],icon:['ink','sage','clay']};
+  const choices:Partial<Record<keyof Settings,readonly string[]>>={theme:['light','dark','system'],layout:['topbar','sidebar'],triageDirection:['done-right','done-left'],doneAction:['archive','read','unread'],laterAction:['archive','read','unread'],lowAction:['archive','read','unread'],defaultReply:['reply','reply-all'],signatureMode:['always','new','never'],icon:['ink','sage','clay']};
   for(const key of Object.keys(defaultSettings) as (keyof Settings)[]) {
     if(!(key in source)) continue;
     const val=source[key];
@@ -325,7 +325,7 @@ export async function createEngineService(options:EngineOptions) {
       s.drafts=s.drafts.filter(item=>item.id!==id);
       const message={id:randomUUID(),from:sender.email,fromName:sender.name,to:addresses(d.to),cc:addresses(d.cc),date:sentAt,text:stripHTML(d.html),html:d.html,attachments:d.attachments,sent:true,...(d.messageId?{internetId:d.messageId}:{})};
       const existing=d.threadId?s.threads.find(t=>t.id===d.threadId):undefined;
-      if(existing){existing.messages.push(message);existing.date=sentAt;existing.replyStatus='awaiting-reply';existing.status='done';existing.unread=false;}
+      if(existing){existing.messages.push(message);existing.date=sentAt;existing.replyStatus='awaiting-reply';existing.status='done';existing.hiddenFromHome=false;existing.unread=false;}
       else s.threads.unshift({id:remote?.threadId?`${a.id}:${remote.threadId}`:randomUUID(),...(remote?.threadId?{remoteId:remote.threadId}:{}),accountId:a.id,subject:d.subject,summary:stripHTML(d.html).slice(0,240),messages:[message],date:sentAt,unread:false,status:'done',importance:'important',bookmarked:false,replyStatus:'awaiting-reply'});
     });
     emit('sent',{draftId:id,playSound:state.settings.sendSound});

@@ -12,6 +12,19 @@ export function isHomeLow(thread:Thread){
   return thread.status==='new'&&thread.importance==='low'&&!thread.bookmarked;
 }
 
+/** Done mail that still needs your reply comes back to Home's "Waiting on you". */
+export function isReplyDue(thread:Thread){
+  return thread.replyStatus==='needs-reply'&&thread.status==='done'&&!thread.hiddenFromHome;
+}
+
+/** Days without an answer before a thread you're waiting on shows on Home as a follow-up. */
+export const FOLLOW_UP_DAYS=3;
+
+/** Mail you sent that nobody has answered for a few days, so Home can nudge a follow-up. */
+export function isFollowUp(thread:Thread,now=Date.now()){
+  return thread.replyStatus==='awaiting-reply'&&thread.status==='done'&&!thread.hiddenFromHome&&now-Date.parse(thread.date)>=FOLLOW_UP_DAYS*86400000;
+}
+
 export function isLaterTodo(thread:Thread){
   return thread.status==='later';
 }

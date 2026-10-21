@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createDemo} from '../src/engine/demo';
-import {bookmarkLeavesList,isBookmark,isHomeLow,isHomeNew,shortDue,shortSender,threadInView} from '../src/shared/mailbox';
+import {bookmarkLeavesList,isBookmark,isFollowUp,isHomeLow,isHomeNew,isReplyDue,shortDue,shortSender,threadInView} from '../src/shared/mailbox';
 import type {Thread} from '../src/shared/types';
 
 const demo=createDemo(new Date(2026,9,15,12));
@@ -55,4 +55,17 @@ test('due chips stay short and relative to today',()=>{
   assert.equal(shortDue('2026-10-18',now),'overdue');
   assert.match(shortDue('2026-10-23',now),/^by \S+$/);
   assert.match(shortDue('2026-11-12',now),/^by .*12/);
+});
+
+test('Home keeps reply work: done mail that needs a reply, and sent mail unanswered for a few days',()=>{
+  const sent=byId('sent');const now=Date.parse(sent.date);const day=86400000;
+  assert.equal(sent.replyStatus,'awaiting-reply');
+  assert.equal(isFollowUp(sent,now+2*day),false);
+  assert.equal(isFollowUp(sent,now+3*day),true);
+  assert.equal(isFollowUp({...sent,hiddenFromHome:true},now+5*day),false);
+  assert.equal(isFollowUp({...sent,replyStatus:'needs-reply'},now+5*day),false);
+  const design=byId('design');
+  assert.equal(isReplyDue({...design,status:'done'}),true);
+  assert.equal(isReplyDue({...design,status:'done',hiddenFromHome:true}),false);
+  assert.equal(isReplyDue(design),false);
 });
