@@ -140,10 +140,10 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  <Menu open={menu.open} anchor={menu.anchor} onClose={menu.close} placement="bottom-end" label="Thread actions" className="thread-menu" groups={menuGroups} onError={e=>setError(e.message)}/>
  </div>}</header>
  <div className="reader-scroll" ref={scroller} onScroll={e=>{const next=e.currentTarget.scrollTop>2;if(next!==moved)setMoved(next);}}>
+ {thread.status==='spam'&&<div className="spam-banner"><ShieldAlert size={17}/><span>This message is in Spam. Links and remote images are disabled until you restore it.</span></div>}
  {ai}
  <h1 ref={title} className="reader-title">{thread.subject||'(No subject)'}</h1>
  {error&&<Notice action={<IconButton label="Dismiss" size="xs" icon={X} tooltip={false} onClick={()=>setError('')}/>}>{error}</Notice>}
- {thread.status==='spam'&&<div className="spam-banner"><ShieldAlert size={17}/><span>This message is in Spam. Links and remote images are disabled until you restore it.</span></div>}
  {inlineLoading&&<p className="inline-image-status"><Spinner size={12}/> Loading inline images…</p>}{inlineError&&<Notice action={<Button variant="text" size="sm" onClick={()=>setInlineRetry(value=>value+1)}>Retry</Button>}>{inlineError}</Notice>}
  {thread.messages.map(m=>{const open=expanded.has(m.id);const quoted=quotes.has(m.id);const content=prepareMessageBody(m,{remote,spam:thread.status==='spam',inline:inlineFiles,query:needle});const name=m.fromName||m.from;const toggle=()=>setExpanded(prev=>{const n=new Set(prev);n.has(m.id)?n.delete(m.id):n.add(m.id);return n;});
   return <article className={cx('message',!open&&'collapsed')} key={m.id}>
