@@ -327,7 +327,7 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
         {!popout&&<IconButton label="Open in separate window" icon={ArrowUpRight} iconSize={18} onClick={()=>void finish('popout')} disabled={!!busy}/>}
         <IconButton label="Discard draft" icon={Trash2} iconSize={17} onClick={async()=>{if(blank()||await confirmAction({title:'Discard this draft?',message:'The draft and its attachments will be deleted.',confirmLabel:'Discard',danger:true}))await finish('discard');}}/>
         {popout&&<IconButton label="Close" shortcut="Esc" icon={X} iconSize={18} onClick={()=>void finish('close')}/>}
-        {listening?<Button variant="primary" className="send-button is-recording" tooltip={{content:'Finish recording',detail:'Esc to cancel'}} onClick={voice.stop}><LevelMeter level={voice.level} bars={4}/>Done</Button>
+        {listening?<Button variant="primary" className="send-button is-recording" tooltip={{content:'Finish recording',detail:'Esc to cancel'}} onClick={voice.stop}><LevelMeter level={voice.level} bars={4}/>Recording</Button>
         :<Button variant="primary" className={cx('send-button',form.to.trim()&&'ready')} icon={Send} loading={busy==='send'||voice.busy} tooltip={{content:form.to.trim()?'Send':'Add a recipient to send',shortcut:'⌘ ↵'}} onClick={()=>void finish('send')} disabled={sendDisabled}>Send</Button>}
       </div></header>
     <div className="compose-fields">
