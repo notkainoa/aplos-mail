@@ -333,4 +333,5 @@
 .mail-row .summary.is-arriving { animation: fade var(--dur-slow) var(--ease); }
 @media (prefers-reduced-motion: reduce) {
   .mail-row .summary.is-summarizing, .mail-row.is-focus .summary.is-summarizing { animation: none; background: none; color: var(--faint); }
+  .mail-row .summary.is-arriving { animation: none; }
 }

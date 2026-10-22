@@ -790,10 +790,13 @@ export async function createEngineService(options:EngineOptions) {
       case 'workflow.code':{const code=workflow?.code();if(!code)throw new Error('Device sync is off.');return {code};}
       case 'workflow.disable':await workflow?.disable(state.accounts.map(a=>a.id));workflowAt.clear();return {enabled:false};
       case 'ai.cancel':{for(const [id,controller]of requests)if(!p.requestId||p.requestId===id)controller.abort();return {cancelled:true};}
+      case 'ai.summarizing':return [...summarizing.keys()];
       case 'ai.summarize':{
         const id=text(p.threadId,300);
         // Sync or another window may already be summarizing this email; that answer is enough unless it failed.
         if(summarizing.has(id)&&await summarizedElsewhere(id))return thread(id);
+        // Background requests (on open, from the list) leave an email alone once it has a summary.
+        if(p.onlyIfMissing===true&&hasRealSummary(thread(id)))return thread(id);
         const t=thread(id);const result=await ai(p,signal=>tracked(id,()=>writer('summary').summarize(t,signal)));
         const patch=threadPatch(result);if(typeof result.summary==='string')patch.summary=result.summary.slice(0,10_000);patch.action=result.action;
         // The model only fills a to-do or due date that is empty, and judges importance and reply state only the first

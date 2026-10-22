@@ -50,7 +50,8 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  // An email without a real summary yet is summarized on open; the card shows that work, or why it failed.
  const job=useSummaryJob(thread.id);
  const hasSummary=hasRealSummary(thread);
- useEffect(()=>{if(!ghost)summarizeIfNeeded(thread);},[thread.id,ghost]);
+ // A request from the list that fails leaves no job behind, so the open email then asks for itself.
+ useEffect(()=>{if(!ghost)summarizeIfNeeded(thread);},[thread.id,ghost,!job]);
  // While the model works, a placeholder holds the to-do's place; what it finds fades in rather than popping in.
  const pending=!hasSummary&&!job?.error;const waited=useRef<{id:string;next:boolean;todo:boolean;due:boolean}>(undefined);
  const resummarize=()=>void summarize(thread.id).then(error=>{if(error)notify(describeSummaryError(error,summaryProvider(settings.summaryModel)).title+'. The previous summary is kept.');});

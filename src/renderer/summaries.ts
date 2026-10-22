@@ -18,32 +18,46 @@ const set=(id:string,job:SummaryJob)=>{jobs.set(id,job);notify();};
 let watching=false;
 function watch(){
   if(watching)return;watching=true;
+  // Sync may have started before this window was listening; ask what is in flight, minus anything that ends meanwhile.
+  const ended=new Set<string>();
   bridge.subscribe(event=>{
     if(event.type!=='ai.summarizing')return;
     const {threadId,active}=event.payload as {threadId:string;active:boolean};
-    if(active)working.add(threadId);else working.delete(threadId);notify();
+    if(active){working.add(threadId);ended.delete(threadId);}else{working.delete(threadId);ended.add(threadId);}notify();
   });
+  void invoke<string[]>('ai.summarizing').then(ids=>{for(const id of ids)if(!ended.has(id))working.add(id);notify();},()=>{});
 }
 const subscribe=(listener:()=>void)=>{watch();listeners.add(listener);return ()=>{listeners.delete(listener);};};
 export function useSummaryJob(threadId:string){return useSyncExternalStore(subscribe,()=>jobs.get(threadId));}
 /** Whether this email's summary is being written right now, whoever asked. */
 export function useSummarizing(threadId:string){return useSyncExternalStore(subscribe,()=>working.has(threadId)||!!jobs.get(threadId)?.running);}
 
-/** Resolves to the error message, or undefined once the thread has a fresh summary. A call while one is running does nothing. */
-export async function summarize(threadId:string):Promise<string|undefined>{
+/** Emails the list failed to summarize: the list won't ask again this session, but opening one still does. */
+const listFailed=new Set<string>();
+
+/**
+ * Resolves to the error message, or undefined once the thread has a fresh summary. A call while one is running does
+ * nothing. Background requests (`ifMissing`) leave an email alone if it got a summary meanwhile; Retry and
+ * "Summarize again" don't.
+ */
+export async function summarize(threadId:string,{ifMissing=false,fromList=false}={}):Promise<string|undefined>{
   if(jobs.get(threadId)?.running)return;
   set(threadId,{running:true});
-  try{await invoke('ai.summarize',{threadId});set(threadId,{running:false,done:true});return;}
-  catch(error){const message=error instanceof Error&&error.message?error.message:'The AI provider could not summarize this email.';set(threadId,{running:false,error:message});return message;}
+  try{await invoke('ai.summarize',{threadId,...(ifMissing?{onlyIfMissing:true}:{})});set(threadId,{running:false,done:true});return;}
+  catch(error){
+    const message=error instanceof Error&&error.message?error.message:'The AI provider could not summarize this email.';
+    if(fromList){jobs.delete(threadId);listFailed.add(threadId);notify();}else set(threadId,{running:false,error:message});
+    return message;
+  }
 }
 /** Summarize on open, once per session; a retry is the user's call. */
-export function summarizeIfNeeded(thread:Thread){if(!hasRealSummary(thread)&&!jobs.has(thread.id))void summarize(thread.id);}
+export function summarizeIfNeeded(thread:Thread){if(!hasRealSummary(thread)&&!jobs.has(thread.id))void summarize(thread.id,{ifMissing:true});}
 
 // Rows on screen without a summary are summarized two at a time. After a failure (often no key or a rate limit)
 // the list waits a minute before going on with the rest; opening an email still asks, and shows why it failed.
 const queue:string[]=[];let active=0,pausedUntil=0,resume:ReturnType<typeof setTimeout>|undefined;
 export function summarizeRow(thread:Thread){
-  if(hasRealSummary(thread)||jobs.has(thread.id)||queue.includes(thread.id))return;
+  if(hasRealSummary(thread)||jobs.has(thread.id)||listFailed.has(thread.id)||queue.includes(thread.id))return;
   queue.push(thread.id);pump();
 }
 function pump(){
@@ -51,6 +65,6 @@ function pump(){
   if(wait>0){resume??=setTimeout(()=>{resume=undefined;pump();},wait);return;}
   while(active<2&&queue.length){
     const id=queue.shift()!;if(jobs.has(id))continue;
-    active++;void summarize(id).then(error=>{if(error)pausedUntil=Date.now()+60_000;}).finally(()=>{active--;pump();});
+    active++;void summarize(id,{ifMissing:true,fromList:true}).then(error=>{if(error)pausedUntil=Date.now()+60_000;}).finally(()=>{active--;pump();});
   }
 }
