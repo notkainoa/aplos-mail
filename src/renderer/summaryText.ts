@@ -1,8 +1,4 @@
-import type {Thread} from '../shared/types';
-
-const flat=(text:string)=>text.replace(/\s+/g,' ').replace(/(…|\.\.\.)$/,'').trim().toLowerCase();
-/** Until Groq summarizes a synced thread, its summary is just the Gmail snippet; that isn't a summary worth showing. */
-export function hasRealSummary(thread:Thread){return !!thread.summary?.trim()&&!thread.messages.some(m=>flat(m.text).includes(flat(thread.summary)));}
+export {hasRealSummary} from '../shared/summary';
 
 export type SummaryProblem={title:string;detail:string};
 /** Turns an engine error into a short reason for the card and an explanation for its details popover. */

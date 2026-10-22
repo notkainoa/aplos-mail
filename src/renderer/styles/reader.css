@@ -82,7 +82,23 @@ p.ai-summary { animation: fade var(--dur-slow) var(--ease); }
   animation: ai-glimmer 1.8s linear infinite;
 }
 @keyframes ai-glimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
-@media (prefers-reduced-motion: reduce) { .ai-summary.is-pending { animation: none; background: none; color: var(--faint); } }
+/* Where the to-do usually sits, a bar with the same sweep; what Groq finds fades in after it. */
+.ai-next.is-placeholder { flex-wrap: nowrap; }
+.ai-next.is-placeholder .todo-ring { margin-top: 0; opacity: .5; }
+.ai-skeleton {
+  width: min(260px, 60%);
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(100deg, var(--hover) 40%, color-mix(in srgb, var(--ink) 12%, transparent) 50%, var(--hover) 60%) 0 0 / 300% 100%;
+  animation: ai-glimmer 1.8s linear infinite;
+}
+.ai-next.is-arriving { animation: ai-arrive var(--dur-slow) var(--ease-out-strong); }
+@keyframes ai-arrive { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .ai-summary.is-pending { animation: none; background: none; color: var(--faint); }
+  .ai-skeleton { animation: none; }
+  .ai-next.is-arriving { animation: fade var(--dur-slow) var(--ease); }
+}
 .ai-failed { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; animation: fade var(--dur-slow) var(--ease); }
 .ai-failed-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .ai-failed-text strong { font-size: 15px; line-height: 20px; font-weight: 600; letter-spacing: -.15px; color: var(--ink); }

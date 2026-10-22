@@ -223,3 +223,28 @@ test('validation prevents malformed recipients, settings, calendar ranges and st
     const exported=JSON.parse(await f.service.invoke('data.export'));assert.equal(exported.version,1);assert.equal(exported.accounts[0].access_token,undefined);
   }finally{await f.cleanup();}
 });
+
+test('summarizing again keeps the owner’s due date, to-do, importance and reply state',async()=>{
+  let answer:Record<string,unknown>={};
+  const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>({...answer})};
+  const f=await fixture({groq});
+  const garden=async()=>(await f.service.invoke('state.get') as AppState).threads.find(t=>t.id==='garden')!;
+  try{
+    const body=(await garden()).messages[0].text;
+    // Never summarized yet: the summary is just the email's own text, so Groq judges everything that is empty.
+    answer={summary:body.slice(0,60),action:null};await f.service.invoke('ai.summarize',{threadId:'garden'});
+    await f.service.invoke('thread.update',{ids:['garden'],patch:{todo:null,dueDate:'2031-05-05',importance:'important',replyStatus:'none'}});
+    answer={summary:'A volunteer invitation',importance:'low',replyStatus:'needs-reply',todo:'Confirm the shift',dueDate:'2030-01-02',action:null};
+    await f.service.invoke('ai.summarize',{threadId:'garden'});
+    let t=await garden();
+    assert.equal(t.summary,'A volunteer invitation');assert.equal(t.importance,'low');assert.equal(t.replyStatus,'needs-reply');
+    assert.equal(t.todo,'Confirm the shift');assert.equal(t.dueDate,'2031-05-05');
+    // Summarized for real now: a second pass only refreshes the summary.
+    await f.service.invoke('thread.update',{ids:['garden'],patch:{todo:'My own note',importance:'important',replyStatus:'none'}});
+    answer={summary:'Help plant herbs on Saturday',importance:'low',replyStatus:'needs-reply',todo:'Something else',dueDate:'2030-01-02',action:null};
+    await f.service.invoke('ai.summarize',{threadId:'garden'});
+    t=await garden();
+    assert.equal(t.summary,'Help plant herbs on Saturday');assert.equal(t.todo,'My own note');assert.equal(t.dueDate,'2031-05-05');
+    assert.equal(t.importance,'important');assert.equal(t.replyStatus,'none');
+  }finally{await f.cleanup();}
+});

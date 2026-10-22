@@ -1,5 +1,6 @@
 import type { Account, AppState, Attachment, CalendarEvent, CalendarInfo, Conversation, Draft, Listener, Settings, Thread } from '../shared/types';
 import { createDemo, defaultSettings, demoCalendars } from './demo';
+import { hasRealSummary } from '../shared/summary';
 import { applySync } from './merge';
 import { olderInboxDuplicates } from './duplicates';
 import { createGate } from './gate';
@@ -730,7 +731,12 @@ export async function createEngineService(options:EngineOptions) {
       case 'ai.summarize':{
         const t=thread(text(p.threadId,300));const result=await ai(p,signal=>groq.summarize(t,signal));
         const patch=threadPatch(result);if(typeof result.summary==='string')patch.summary=result.summary.slice(0,10_000);patch.action=result.action;
-        change(s=>{const index=s.threads.findIndex(item=>item.id===t.id);if(index<0)throw new Error('The message was removed.');s.threads[index]={...s.threads[index],...patch};});return thread(t.id);
+        // Groq only fills a to-do or due date that is empty, and judges importance and reply state only the first
+        // time; after that they may be the owner's. Anything edited while Groq was working wins, as in sync.
+        const keys=['summary','action',...(hasRealSummary(t)?[]:['importance','replyStatus'] as const),...(t.todo?[]:['todo'] as const),...(t.dueDate?[]:['dueDate'] as const)] as const;
+        change(s=>{const current=s.threads.find(item=>item.id===t.id);if(!current)throw new Error('The message was removed.');
+          for(const key of keys)if(key in patch&&JSON.stringify(current[key])===JSON.stringify(t[key]))(current as any)[key]=patch[key];
+        });return thread(t.id);
       }
       case 'ai.polish':return ai(p,signal=>groq.polish(text(p.html,1_000_000),p.instruction?text(p.instruction,10_000):undefined,signal));
       case 'ai.draft':return ai(p,signal=>groq.draft(text(p.instruction,20_000),p.threadId?thread(text(p.threadId,300)):undefined,p.draft,signal));

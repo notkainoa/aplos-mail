@@ -50,6 +50,8 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const job=useSummaryJob(thread.id);
  const hasSummary=hasRealSummary(thread)||!!job?.done&&!!thread.summary?.trim();
  useEffect(()=>{if(!ghost)summarizeIfNeeded(thread);},[thread.id,ghost]);
+ // While Groq works, a placeholder holds the to-do's place; what it finds fades in rather than popping in.
+ const pending=!hasSummary&&!job?.error;const waited=useRef<string>(undefined);
  const resummarize=()=>void summarize(thread.id).then(error=>{if(error)notify(describeSummaryError(error).title+'. The previous summary is kept.');});
  const dueInput=thread.dueDate?.slice(0,10)??'';
  const doneRight=settings.triageDirection!=='done-left';
@@ -91,6 +93,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const dueTone=due===undefined?'':due<0?'is-overdue':due===0?'is-today':'';
  // Plans Groq found in this email take the place of the "Add to calendar" suggestion, with their details.
  const plans=usePlans(thread.id)?.found??[];const showPlans=plans.length>0;const planned=showPlans&&liveAction(thread)?.kind==='calendar';
+ const hasNext=!!(thread.todo||thread.dueDate||dates||thread.reminderAt||action&&!planned);if(pending&&!hasNext)waited.current=thread.id;
  const ai=<div className="ai-card">
   <div className="ai-lede">
    {hasSummary?<p className="ai-summary" key={thread.summary}>{capital(thread.summary.trim())}</p>
@@ -98,7 +101,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
     :<p className="ai-summary is-pending" role="status">Summarizing…</p>}
    {hasSummary&&<IconButton className={cx('ai-refresh',job?.running&&'is-busy')} label="Summarize again" detail="Summarized with Groq" size="xs" icon={RefreshCw} iconSize={13} loading={job?.running} onClick={resummarize}/>}
   </div>
-  {(thread.todo||thread.dueDate||dates||thread.reminderAt||action&&!planned)&&<div className={cx('ai-next',!thread.todo&&'no-todo')}>
+  {hasNext?<div className={cx('ai-next',!thread.todo&&'no-todo',waited.current===thread.id&&!pending&&'is-arriving')}>
    {thread.todo&&<span className="ai-todo"><span className="todo-ring" aria-hidden="true"/><span className="ai-todo-text">{thread.todo}</span></span>}
    <span className="ai-controls">
     {(thread.dueDate||dates)&&<button ref={dueRef} className={cx('due-pill',dueTone,!thread.dueDate&&'is-empty',dates&&'is-open')} aria-haspopup="dialog" aria-expanded={dates} onClick={()=>setDates(value=>!value)}>
@@ -106,7 +109,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
     {thread.reminderAt&&<button className="due-pill reminder" aria-label={'Reminder '+fullDate(thread.reminderAt)} onClick={openDates}><Bell size={13}/><span>{dateLabel(thread.reminderAt,true)}</span></button>}
     {!planned&&action}
    </span>
-  </div>}
+  </div>:pending&&<div className="ai-next is-placeholder" aria-hidden="true"><span className="todo-ring"/><span className="ai-skeleton"/></div>}
   {showPlans&&<div className="ai-plans" aria-label="Plans in this email">{plans.map((plan,i)=>{
    const saved=planSaved(plan,events.filter(e=>e.threadId===thread.id));
    const day=plan.start?dayKey(plan.start):undefined;const date=day?new Date(day+'T00:00:00'):undefined;

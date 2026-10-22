@@ -1,7 +1,7 @@
 import {useSyncExternalStore} from 'react';
 import type {Thread} from '../shared/types';
 import {invoke} from './bridge';
-import {hasRealSummary} from './summaryText';
+import {hasRealSummary} from '../shared/summary';
 export {describeSummaryError,hasRealSummary} from './summaryText';
 
 /**
