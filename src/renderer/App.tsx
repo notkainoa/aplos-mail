@@ -349,18 +349,22 @@ export function App(){
    if(e.metaKey||e.ctrlKey||e.altKey)return;
    if(e.shiftKey&&e.key.toLowerCase()==='a'){e.preventDefault();toggleToday();return;}
    const t=selectedThread;const pointed=!t&&!['settings','calendar'].includes(route.view)?focused:undefined;const subject=t||pointed;
-   if(e.key===' '&&t){e.preventDefault();if(e.repeat||spaceHold.current)return;const hold:{timer?:ReturnType<typeof setTimeout>;fired:boolean}={fired:false};hold.timer=setTimeout(()=>{hold.fired=true;talk('start');},300);spaceHold.current=hold;return;}
+   // Trash and Spam only offer Restore, so the triage, reply and action keys stay quiet there.
+   const binned=subject?.status==='trash'||subject?.status==='spam';
+   if(e.key===' '&&t){if(binned)return;e.preventDefault();if(e.repeat||spaceHold.current)return;const hold:{timer?:ReturnType<typeof setTimeout>;fired:boolean}={fired:false};hold.timer=setTimeout(()=>{hold.fired=true;talk('start');},300);spaceHold.current=hold;return;}
    const keys:Record<string,()=>void>={c:()=>void newDraft(),'/':()=>command('search'),'?':()=>setShortcutHelp(true),'[':()=>command('toggle-sidebar'),z:()=>void undo(),s:()=>{const first=pointed||order[0];if(first)openThread(first.id);}};
    // Arrow keys keep scrolling the message while the reader is open.
    if(t){keys.j=()=>nextThread(1);keys.k=()=>nextThread(-1);}
    else if(!['settings','calendar'].includes(route.view)){keys.j=keys.ArrowDown=()=>moveCursor(1,e.repeat);keys.k=keys.ArrowUp=()=>moveCursor(-1,e.repeat);}
    // The focused row: Space, Enter or O opens it, R replies in the reader, S starts the stack from the top.
    // Space runs the suggested action (or opens); Enter and O always open the email.
-   if(pointed){keys[' ']=()=>{if(!e.repeat)void runAction(pointed);};keys.Enter=keys.o=()=>openThread(pointed.id);keys.x=()=>selectRow(pointed,e.shiftKey?'range':'toggle');keys.X=keys.x;keys.s=()=>openThread(order[0].id);
+   if(pointed&&!binned){keys[' ']=()=>{if(!e.repeat)void runAction(pointed);};
     keys.r=()=>{openThread(pointed.id);void newDraft({},pointed,state?.settings.defaultReply);};keys.R=()=>{openThread(pointed.id);void newDraft({},pointed,state?.settings.defaultReply==='reply-all'?'reply':'reply-all');};keys.f=()=>void newDraft({},pointed,'forward');
+   }
+   if(pointed){keys.Enter=keys.o=()=>openThread(pointed.id);keys.x=()=>selectRow(pointed,e.shiftKey?'range':'toggle');keys.X=keys.x;keys.s=()=>openThread(order[0].id);
     keys['.']=()=>{const more=document.querySelector<HTMLElement>(`.mail-row[data-thread-id="${CSS.escape(pointed.id)}"] .card-more`);if(more){setMenuThread(pointed);rowMenu.openAt(more);}};}
-   if(subject){const doneLeft=state?.settings.triageDirection==='done-left';keys.e=()=>triage(subject,'done');keys.l=()=>triage(subject,'later');keys.b=()=>toggleBookmark(subject);keys.u=()=>void patch([subject.id],{unread:!subject.unread});keys['#']=()=>triage(subject,'trash');keys.ArrowLeft=()=>triage(subject,doneLeft?'done':'later');keys.ArrowRight=()=>triage(subject,doneLeft?'later':'done');}
-   if(t){keys.r=()=>void newDraft({},t,state?.settings.defaultReply);keys.R=()=>void newDraft({},t,state?.settings.defaultReply==='reply-all'?'reply':'reply-all');keys.f=()=>void newDraft({},t,'forward');}
+   if(subject&&!binned){const doneLeft=state?.settings.triageDirection==='done-left';keys.e=()=>triage(subject,'done');keys.l=()=>triage(subject,'later');keys.b=()=>toggleBookmark(subject);keys.u=()=>void patch([subject.id],{unread:!subject.unread});keys['#']=()=>triage(subject,'trash');keys.ArrowLeft=()=>triage(subject,doneLeft?'done':'later');keys.ArrowRight=()=>triage(subject,doneLeft?'later':'done');}
+   if(t&&!binned){keys.r=()=>void newDraft({},t,state?.settings.defaultReply);keys.R=()=>void newDraft({},t,state?.settings.defaultReply==='reply-all'?'reply':'reply-all');keys.f=()=>void newDraft({},t,'forward');}
    if(keys[e.key]){e.preventDefault();keys[e.key]();}
   }
   function keyup(e:KeyboardEvent){if(e.key!==' ')return;const hold=spaceHold.current;if(!hold)return;spaceHold.current=null;clearTimeout(hold.timer);if(hold.fired)talk('release');else if(selectedThread&&!composer)void newDraft({},selectedThread,state?.settings.defaultReply);}
@@ -450,7 +454,7 @@ export function App(){
  // The suggested step also sits in the reader's AI card; there Space keeps replying, so it shows no key.
  const openAction=selectedThread&&liveAction(selectedThread);const suggested=openAction&&openAction.kind!=='read'?openAction:undefined;
  const readerAction=suggested&&selectedThread&&<Button size="sm" variant="tinted" className="reader-suggested" icon={actionIcon(suggested.kind)} loading={actionBusy===selectedThread.id} onClick={()=>void runAction(selectedThread)}>{suggested.label}</Button>;
- const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} triage={(status,drag)=>triage(selectedThread,status,drag)} bookmark={()=>toggleBookmark(selectedThread)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} previewId={previewFile?.threadId===selectedThread.id?previewFile.attachmentId:undefined} entering={entering?.id===selectedThread.id?entering.from:undefined} action={readerAction}/>;
+ const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} restore={()=>void patch([selectedThread.id],{status:'new'},'Restored to Home').then(()=>navigate('home',selectedThread.id))} triage={(status,drag)=>triage(selectedThread,status,drag)} bookmark={()=>toggleBookmark(selectedThread)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} previewId={previewFile?.threadId===selectedThread.id?previewFile.attachmentId:undefined} entering={entering?.id===selectedThread.id?entering.from:undefined} action={readerAction}/>;
  const ghost=leaving&&<div key={leaving.key} className={cx('fling','fling-'+leaving.status,'fling-to-'+leaving.to,leaving.drag&&'is-dragged')} style={leaving.drag&&{'--from-x':leaving.drag.x+'px','--from-r':(leaving.drag.x/leaving.drag.width*6).toFixed(2)+'deg'} as React.CSSProperties} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
  const doneLeft=prefs.triageDirection==='done-left';
  // Beside an open reader the list only marks the open row; the card would repeat what the reader shows.

@@ -3,7 +3,7 @@ import {rememberPlans,usePlans} from './detectedPlans';
 import {dayKey,timeRange} from './calendarTime';
 import {planSaved} from './calendarLayout';
 import {liveAction} from '../shared/mailbox';
-import {Ban,Bell,Bookmark,CalendarDays,Check,ChevronDown,ChevronUp,Clock,Download,ExternalLink,Forward,ImageOff,MailOpen,MessageCircle,MoreHorizontal,Paperclip,RefreshCw,Reply,ReplyAll,Search,ShieldAlert,Trash2,Undo2,X,CornerUpLeft} from './icons';
+import {Ban,Bell,Bookmark,CalendarDays,Check,ChevronDown,ChevronUp,Clock,Download,ExternalLink,Forward,ImageOff,MailOpen,MessageCircle,MoreHorizontal,Paperclip,RefreshCw,Reply,ReplyAll,Search,ShieldAlert,Trash2,Undo2,X,CornerUpLeft,RotateCcw} from './icons';
 import type {Attachment,CalendarEvent,Message,Settings,Thread} from '../shared/types';
 import {dateLabel,dueLabel,fullDate,invoke,isoDay,openUrl,saveFile} from './bridge';
 import {inlineAttachments,prepareMessageBody} from './mailBody';
@@ -17,7 +17,7 @@ type Person={name:string;email:string};
 /** "Jordan Park <jordan@studio.example>" or a bare address. */
 function person(raw:string):Person{const m=raw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);return m?{name:m[1].trim(),email:m[2].trim()}:{name:'',email:raw.trim()};}
 const dayOffset=(value?:string)=>{if(!value)return undefined;const date=new Date(value.slice(0,10)+'T12:00:00');const today=new Date();today.setHours(12,0,0,0);return Math.round((+date-+today)/86400000);};
-export function Reader({thread,settings,index,total,back,patch,triage,bookmark,reply,editEvent,events,notify,undo,heading,replySlot,ghost,entering,talk,action,previewId}:{thread:Thread;settings:Settings;index:number;total:number;back:()=>void;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;triage:(status:Triage,drag?:CardDrag)=>void;bookmark?:()=>void;reply:(mode:'reply'|'reply-all'|'forward')=>void;editEvent:(event:Partial<CalendarEvent>)=>void;
+export function Reader({thread,settings,index,total,back,patch,restore,triage,bookmark,reply,editEvent,events,notify,undo,heading,replySlot,ghost,entering,talk,action,previewId}:{thread:Thread;settings:Settings;index:number;total:number;back:()=>void;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;restore?:()=>void;triage:(status:Triage,drag?:CardDrag)=>void;bookmark?:()=>void;reply:(mode:'reply'|'reply-all'|'forward')=>void;editEvent:(event:Partial<CalendarEvent>)=>void;
  /** Calendar events, to tell which of this email's plans are already on a calendar. */events:CalendarEvent[];notify:(text:string)=>void;undo:()=>void;standalone?:boolean;heading?:{title:string;count:number};replySlot?:React.ReactNode;ghost?:boolean;entering?:string;talk:(phase:'start'|'release')=>void;
  /** The AI-suggested next step, shown in the summary card beside the due date. */action?:React.ReactNode;
  /** An attachment to preview on open (the suggested action); files only leave Aplos through the preview's own buttons. */previewId?:string}){
@@ -53,7 +53,10 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const doneRight=settings.triageDirection!=='done-left';
  const card=useRef<HTMLDivElement>(null);
  const swipeAction=(side:SwipeSide)=>(side==='right')===doneRight?'done' as const:'later' as const;
- const swipeable=settings.swipe&&!ghost&&!replySlot&&thread.status!=='trash'&&thread.status!=='spam';
+ // Mail in Trash or Spam offers only Restore; everything else comes back once it is restored.
+ const binned=thread.status==='trash'||thread.status==='spam';
+ const restoreThread=()=>restore?restore():void patch([thread.id],{status:'new'},'Restored to Home');
+ const swipeable=settings.swipe&&!ghost&&!replySlot&&!binned;
  const swipe=useSwipe({enabled:swipeable,host:card,actionFor:swipeAction,onCommit:(side,x,width)=>triage(swipeAction(side),{x,width}),
   canStart:(target,pointer)=>pointer!=='mouse'||!target.closest(selectableText)});
  const swipeBadge=(side:SwipeSide)=>{const done=swipeAction(side)==='done';return <span data-for={side}>{done?<Check size={17}/>:<Clock size={16}/>}{done?'Done':'Todo'}</span>;};
@@ -88,14 +91,14 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const due=dayOffset(thread.dueDate);
  const dueTone=due===undefined?'':due<0?'is-overdue':due===0?'is-today':'';
  // Plans Groq found in this email take the place of the "Add to calendar" suggestion, with their details.
- const plans=usePlans(thread.id)?.found??[];const showPlans=plans.length>0;const planned=showPlans&&liveAction(thread)?.kind==='calendar';
+ const plans=usePlans(thread.id)?.found??[];const showPlans=plans.length>0&&!binned;const planned=showPlans&&liveAction(thread)?.kind==='calendar';
  const ai=<div className="ai-card">
   <div className="ai-lede">
    {hasSummary?<p className="ai-summary" key={thread.summary}>{capital(thread.summary.trim())}</p>
     :<button className="ai-summary is-prompt" disabled={!!busy} onClick={summarize}>{busy==='summary'?'Summarizing…':'Summarize this email'}</button>}
    {hasSummary&&<IconButton className={cx('ai-refresh',busy==='summary'&&'is-busy')} label="Summarize again" detail="Summarized with Groq" size="xs" icon={RefreshCw} iconSize={13} disabled={!!busy&&busy!=='summary'} loading={busy==='summary'} onClick={summarize}/>}
   </div>
-  {(thread.todo||thread.dueDate||dates||thread.reminderAt||action&&!planned)&&<div className={cx('ai-next',!thread.todo&&'no-todo')}>
+  {!binned&&(thread.todo||thread.dueDate||dates||thread.reminderAt||action&&!planned)&&<div className={cx('ai-next',!thread.todo&&'no-todo')}>
    {thread.todo&&<span className="ai-todo"><span className="todo-ring" aria-hidden="true"/><span className="ai-todo-text">{thread.todo}</span></span>}
    <span className="ai-controls">
     {(thread.dueDate||dates)&&<button ref={dueRef} className={cx('due-pill',dueTone,!thread.dueDate&&'is-empty',dates&&'is-open')} aria-haspopup="dialog" aria-expanded={dates} onClick={()=>setDates(value=>!value)}>
@@ -129,18 +132,18 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  <div className="reader-frame">
  <header className={cx('reader-bar',moved&&'is-raised',scrolled&&'is-scrolled')}>
  <span className="reader-bar-title" aria-hidden="true">{thread.subject||'(No subject)'}</span>
- <div className="actions">
+ {!binned&&<div className="actions">
  <Button variant="ghost" className={cx('importance-button',importance.open&&'is-open')} aria-label="Importance" aria-haspopup="menu" iconRight={ChevronDown} onClick={importance.toggle}>{thread.importance==='important'?'Important':'Low importance'}</Button>
  <Menu open={importance.open} anchor={importance.anchor} onClose={importance.close} placement="bottom-end" label="Importance" className="importance-menu" groups={[(['important','low'] as const).map(level=>({label:level==='important'?'Important':'Low importance',hint:level==='important'?'Shown in Home':'Bundled out of the way',checked:thread.importance===level,onSelect:()=>{if(thread.importance!==level)void patch([thread.id],{importance:level},level==='low'?'Moved to Low importance':'Marked important');}}))]}/>
  <IconButton label="Move to Trash" shortcut="#" icon={Trash2} size="lg" iconSize={18} onClick={()=>triage('trash')}/>
  <IconButton label="More thread actions" tooltip={false} icon={MoreHorizontal} size="lg" iconSize={19} loading={['plans','block','unsubscribe'].includes(busy)} className={menu.open?'is-open':undefined} onClick={menu.toggle}/>
  <Menu open={menu.open} anchor={menu.anchor} onClose={menu.close} placement="bottom-end" label="Thread actions" className="thread-menu" groups={menuGroups} onError={e=>setError(e.message)}/>
- </div></header>
+ </div>}</header>
  <div className="reader-scroll" ref={scroller} onScroll={e=>{const next=e.currentTarget.scrollTop>2;if(next!==moved)setMoved(next);}}>
  {ai}
  <h1 ref={title} className="reader-title">{thread.subject||'(No subject)'}</h1>
  {error&&<Notice action={<IconButton label="Dismiss" size="xs" icon={X} tooltip={false} onClick={()=>setError('')}/>}>{error}</Notice>}
- {thread.status==='spam'&&<div className="spam-banner"><ShieldAlert size={17}/><span>This message is in Spam. Links and remote images are disabled until you restore it.</span><Button variant="secondary" size="sm" onClick={()=>void patch([thread.id],{status:'new'})}>Restore</Button></div>}
+ {thread.status==='spam'&&<div className="spam-banner"><ShieldAlert size={17}/><span>This message is in Spam. Links and remote images are disabled until you restore it.</span></div>}
  {inlineLoading&&<p className="inline-image-status"><Spinner size={12}/> Loading inline images…</p>}{inlineError&&<Notice action={<Button variant="text" size="sm" onClick={()=>setInlineRetry(value=>value+1)}>Retry</Button>}>{inlineError}</Notice>}
  {thread.messages.map(m=>{const open=expanded.has(m.id);const quoted=quotes.has(m.id);const content=prepareMessageBody(m,{remote,spam:thread.status==='spam',inline:inlineFiles,query:needle});const name=m.fromName||m.from;const toggle=()=>setExpanded(prev=>{const n=new Set(prev);n.has(m.id)?n.delete(m.id):n.add(m.id);return n;});
   return <article className={cx('message',!open&&'collapsed')} key={m.id}>
@@ -156,7 +159,9 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  </div>
  </div>
  </div>
- {replySlot?null:<footer className="reader-dock" aria-label="Thread actions">
+ {replySlot?null:binned?<footer className="reader-dock" aria-label="Thread actions">
+ <button className="dock-pill restore" onClick={restoreThread}><RotateCcw size={17}/><span>Restore</span></button>
+ </footer>:<footer className="reader-dock" aria-label="Thread actions">
  <IconButton variant="glass" size="lg" className="dock-icon" label={thread.bookmarked?'Remove bookmark':'Save to Bookmarks'} shortcut="B" placement="top" active={thread.bookmarked} onClick={()=>bookmark?bookmark():void patch([thread.id],{bookmarked:!thread.bookmarked})}><Bookmark key={String(thread.bookmarked)} className={thread.bookmarked?'pop':undefined} size={17} fill={thread.bookmarked?'currentColor':'none'}/></IconButton>
  {doneRight?laterPill:donePill}
  {replyButton}
