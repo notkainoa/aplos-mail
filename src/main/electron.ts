@@ -58,12 +58,26 @@ function handleLink(raw:string){try{const url=new URL(raw);if(!['mailto:','aplos
 function finishQuit(){if(closing)return;closing=true;void Promise.resolve(service?.close()).finally(()=>app.quit());}
 // Runs on every state change. Assigning themeSource, even to the same value, resets the macOS app appearance
 // and notifies theme observers, and the badge redraws the Dock tile, so only touch what actually changed.
-let activeBadge=-1;
+let activeBadge=-1,activeTheme:AppState['settings']['theme']|undefined,syncingTheme=false;
 function applyAppearance(state:AppState){
-  if(nativeTheme.themeSource!==state.settings.theme)nativeTheme.themeSource=state.settings.theme;
+  if(activeTheme!==state.settings.theme){activeTheme=state.settings.theme;syncTheme(true);}
   const badge=state.settings.zen?0:state.threads.filter(thread=>thread.unread&&thread.status==='new').length;
   if(badge!==activeBadge){app.setBadgeCount(badge);activeBadge=badge;}
   if(process.platform==='darwin'&&activeIcon!==state.settings.icon){app.dock?.setIcon(join(__dirname,`icon-${state.settings.icon}.png`));activeIcon=state.settings.icon;}
+}
+// The macOS sidebar material can keep the appearance it was drawn with when a change slips past it,
+// leaving dark glass under light-theme text (or the reverse). When the setting or the system
+// appearance changes, re-assert the app appearance if it drifted and redraw the material;
+// when a window comes forward, do so only if it drifted.
+function syncTheme(redraw:boolean){
+  if(!activeTheme||syncingTheme)return;
+  syncingTheme=true;
+  try{
+    const drifted=activeTheme!=='system'&&nativeTheme.shouldUseDarkColors!==(activeTheme==='dark');
+    if(drifted&&nativeTheme.themeSource===activeTheme)nativeTheme.themeSource='system';
+    if(nativeTheme.themeSource!==activeTheme)nativeTheme.themeSource=activeTheme;
+    if(process.platform==='darwin'&&(redraw||drifted))for(const win of windows)if(!win.isDestroyed()){win.setVibrancy(null);win.setVibrancy('sidebar');}
+  }finally{syncingTheme=false;}
 }
 function createWindow(query?:{draft?:string;thread?:string}){
   const mac=process.platform==='darwin';
@@ -85,6 +99,7 @@ function createWindow(query?:{draft?:string;thread?:string}){
   });
   win.webContents.on('will-prevent-unload',event=>{if(permittedClose.has(win.id)||closing)event.preventDefault();});
   win.once('ready-to-show',()=>win.show());
+  win.on('focus',()=>syncTheme(false));
   win.webContents.on('will-navigate',(event,url)=>{if(!trustedURL(url)){event.preventDefault();void external(url).catch(()=>{});}});
   win.webContents.on('will-redirect',(event,url)=>{if(!trustedURL(url))event.preventDefault();});
   win.webContents.setWindowOpenHandler(({url})=>{void external(url).catch(()=>{});return {action:'deny'};});
@@ -224,6 +239,7 @@ else{
     });
     latestState=await service.invoke('state.get') as AppState;
     applyAppearance(latestState);started=true;
+    nativeTheme.on('updated',()=>syncTheme(true));
     menus();main=createWindow();
     app.setAsDefaultProtocolClient('aplos');
     for(const arg of process.argv)if(/^(mailto|aplos):/i.test(arg))handleLink(arg);
