@@ -415,7 +415,7 @@ export function App(){
  const topbarActions=useHandlers({
   showSidebar:()=>{if(squeezed)setPeek(true);else void updateSettings({sidebar:true});},
   back:()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));},
-  compose:()=>void newDraft(),ask:()=>setAsk(true),
+  compose:()=>void newDraft(),ask:()=>{setDockTab('ask');setAsk(true);},calendar:()=>{setDockTab('today');setAsk(true);},
  });
  const calendarActions=useHandlers({
   edit:(event:Partial<CalendarEvent>)=>setEventEditor(event),onThread:(id:string)=>navigate('all',id),
@@ -514,7 +514,7 @@ export function App(){
  </main>
  {!popoutThread&&<div className={cx('ask-dock',ask&&'open')} inert={!ask||undefined}><div className="dock-panel">
   <div className="dock-head">
-   <Tabs variant="segmented" label="Dock" className="dock-tabs" value={dockTab} onChange={setDockTab} items={[{id:'ask',label:'Ask',tooltip:{title:'Ask me anything',detail:'Tap A · ⌘ J'}},{id:'today',label:'Today',tooltip:{title:'Today beside your mail',detail:'⇧ A'}}]}/>
+   <Tabs variant="segmented" label="Dock" className="dock-tabs" value={dockTab} onChange={setDockTab} items={[{id:'ask',label:'Ask',tooltip:{title:'Ask me anything',detail:'Tap A · ⌘ J'}},{id:'today',label:'Calendar',tooltip:{title:'Calendar beside your mail',detail:'⇧ A'}}]}/>
    <IconButton label="Close" shortcut="⌘ J" icon={X} onClick={()=>setAsk(false)}/>
   </div>
   <div className="dock-body" hidden={dockTab!=='ask'}><Ask open={ask&&dockTab==='ask'} conversations={state.conversations} threads={state.threads} events={state.events} accounts={state.accounts} contacts={contacts} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} hasDraft={!!composer} {...askActions}/></div>
