@@ -50,10 +50,10 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  // An email without a real summary yet is summarized on open; the card shows that work, or why it failed.
  const job=useSummaryJob(thread.id);
  const hasSummary=hasRealSummary(thread);
- useEffect(()=>{if(!ghost)summarizeIfNeeded(thread);},[thread.id,ghost]);
+ useEffect(()=>{if(!ghost)summarizeIfNeeded(thread,settings.summaryModel);},[thread.id,ghost]);
  // While the model works, a placeholder holds the to-do's place; what it finds fades in rather than popping in.
  const pending=!hasSummary&&!job?.error;const waited=useRef<{id:string;next:boolean;todo:boolean;due:boolean}>(undefined);
- const resummarize=()=>void summarize(thread.id).then(error=>{if(error)notify(describeSummaryError(error,summaryProvider(settings.summaryModel)).title+'. The previous summary is kept.');});
+ const resummarize=()=>void summarize(thread.id,{summaryModel:settings.summaryModel}).then(error=>{if(error)notify(describeSummaryError(error,summaryProvider(settings.summaryModel)).title+'. The previous summary is kept.');});
  const dueInput=thread.dueDate?.slice(0,10)??'';
  const doneRight=settings.triageDirection!=='done-left';
  const card=useRef<HTMLDivElement>(null);
@@ -104,7 +104,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const ai=<div className="ai-card">
   <div className="ai-lede">
    {hasSummary?<p className="ai-summary" key={thread.summary}>{capital(thread.summary.trim())}</p>
-    :job?.error?<SummaryFailure error={job.error} provider={summaryProvider(settings.summaryModel)} retry={()=>void summarize(thread.id)}/>
+    :job?.error?<SummaryFailure error={job.error} provider={job.provider??summaryProvider(settings.summaryModel)} retry={()=>void summarize(thread.id,{summaryModel:settings.summaryModel})}/>
     :<p className="ai-summary is-pending" role="status">Summarizing…</p>}
    {hasSummary&&<IconButton className={cx('ai-refresh',job?.running&&'is-busy')} label="Summarize again" detail={`With ${askModelLabel(settings.summaryModel,'summary').provider}`} size="xs" icon={RefreshCw} iconSize={13} loading={job?.running} onClick={resummarize}/>}
   </div>
