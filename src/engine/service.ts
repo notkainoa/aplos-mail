@@ -1,5 +1,6 @@
 import type { Account, AppState, Attachment, CalendarEvent, CalendarInfo, Conversation, Draft, Listener, Settings, Thread } from '../shared/types';
 import { createDemo, defaultSettings, demoCalendars } from './demo';
+import { hasRealSummary } from '../shared/summary';
 import { applySync } from './merge';
 import { olderInboxDuplicates } from './duplicates';
 import { createGate } from './gate';
@@ -504,6 +505,24 @@ export async function createEngineService(options:EngineOptions) {
     if(ops.length)kick();
     return compact?{epoch,rev}:clone(state);
   }
+  type SummaryRun={input:Thread;work:Promise<Partial<Thread>>};
+  /** Emails being summarized right now, with the thread each run was given. */
+  const summarizing=new Map<string,SummaryRun>();
+  /**
+   * One summary per email at a time. A request for the same messages shares the running one (its failure too);
+   * one that includes newer mail waits for it to finish, then summarizes the email as it is then. Returns the
+   * thread that was summarized, so callers keep edits made since then.
+   */
+  async function tracked(threadId:string,work:(t:Thread)=>Promise<Partial<Thread>>):Promise<{input:Thread;result:Partial<Thread>}>{
+    const latest=thread(threadId).messages.at(-1)?.id;
+    for(let run=summarizing.get(threadId);run;run=summarizing.get(threadId)){
+      if(run.input.messages.at(-1)?.id===latest)return {input:run.input,result:await run.work};
+      await run.work.catch(()=>{});
+    }
+    const input=thread(threadId),run={input,work:work(input)};summarizing.set(threadId,run);emit('ai.summarizing',{threadId,active:true});
+    const done=()=>{if(summarizing.get(threadId)===run){summarizing.delete(threadId);emit('ai.summarizing',{threadId,active:false});}};
+    run.work.then(done,done);return {input,result:await run.work};
+  }
   /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. Threads in `summaryOnly` (Spam) take just the summary. */
   async function classifyIncoming(fresh:Thread[],a:Account,refresh:Set<string>=new Set(),summaryOnly:Set<string>=new Set()):Promise<string[]> {
     if(!fresh.length)return [];
@@ -520,16 +539,17 @@ export async function createEngineService(options:EngineOptions) {
             if(!state.threads.some(t=>t.id===candidate.id))continue;
             const before=thread(candidate.id);
             if(summaries)try{
-              const result=await writer('summary').summarize(before,signal);
+              // A reader request for the same messages is shared; edits it already made win, as below.
+              const {input:base,result}=await tracked(candidate.id,t=>writer('summary').summarize(t,signal));
               if(signal.aborted)break;
-              const classified=threadPatch({importance:result.importance||before.importance,replyStatus:result.replyStatus||before.replyStatus,todo:result.todo,dueDate:result.dueDate});
+              const classified=threadPatch({importance:result.importance||base.importance,replyStatus:result.replyStatus||base.replyStatus,todo:result.todo,dueDate:result.dueDate});
               if(typeof result.summary==='string')classified.summary=result.summary.slice(0,10_000);
               // The suggested action follows the latest mail, like the summary; writer.ts already validated it against the thread.
               classified.action=result.action;
               change(s=>{const current=s.threads.find(t=>t.id===candidate.id);if(!current)return;
                 for(const key of summaryOnly.has(candidate.id)?['summary'] as const:refresh.has(candidate.id)?['replyStatus','summary','action'] as const:['importance','replyStatus','todo','dueDate','summary','action'] as const){
                   // An edit made while the model was running always wins over its response.
-                  if(JSON.stringify(current[key])===JSON.stringify(before[key])&&key in classified)(current as any)[key]=classified[key];
+                  if(JSON.stringify(current[key])===JSON.stringify(base[key])&&key in classified){(current as any)[key]=classified[key];if(key==='summary')current.aiSummary=true;}
                 }
               });
             }catch{if(signal.aborted)break;classificationFailures++;}
@@ -772,9 +792,16 @@ export async function createEngineService(options:EngineOptions) {
       case 'workflow.disable':await workflow?.disable(state.accounts.map(a=>a.id));workflowAt.clear();return {enabled:false};
       case 'ai.cancel':{for(const [id,controller]of requests)if(!p.requestId||p.requestId===id)controller.abort();return {cancelled:true};}
       case 'ai.summarize':{
-        const t=thread(text(p.threadId,300));const result=await ai(p,signal=>writer('summary').summarize(t,signal));
+        const id=text(p.threadId,300);
+        // Sync or another window may already be summarizing these messages; that run is shared.
+        const {input:t,result}=await ai(p,signal=>tracked(id,input=>writer('summary').summarize(input,signal)));
         const patch=threadPatch(result);if(typeof result.summary==='string')patch.summary=result.summary.slice(0,10_000);patch.action=result.action;
-        change(s=>{const index=s.threads.findIndex(item=>item.id===t.id);if(index<0)throw new Error('The message was removed.');s.threads[index]={...s.threads[index],...patch};});return thread(t.id);
+        // The model only fills a to-do or due date that is empty, and judges importance and reply state only the first
+        // time; after that they may be the owner's. Anything edited while the model was working wins, as in sync.
+        const keys=['summary','action',...(hasRealSummary(t)?[]:['importance','replyStatus'] as const),...(t.todo?[]:['todo'] as const),...(t.dueDate?[]:['dueDate'] as const)] as const;
+        change(s=>{const current=s.threads.find(item=>item.id===t.id);if(!current)throw new Error('The message was removed.');
+          for(const key of keys)if(key in patch&&JSON.stringify(current[key])===JSON.stringify(t[key])){(current as any)[key]=patch[key];if(key==='summary')current.aiSummary=true;}
+        });return thread(t.id);
       }
       case 'ai.polish':return ai(p,signal=>writer('draft').polish(text(p.html,1_000_000),p.instruction?text(p.instruction,10_000):undefined,signal));
       case 'ai.draft':return ai(p,signal=>writer('draft').draft(text(p.instruction,20_000),p.threadId?thread(text(p.threadId,300)):undefined,p.draft,signal));

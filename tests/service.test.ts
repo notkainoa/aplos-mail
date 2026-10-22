@@ -223,3 +223,59 @@ test('validation prevents malformed recipients, settings, calendar ranges and st
     const exported=JSON.parse(await f.service.invoke('data.export'));assert.equal(exported.version,1);assert.equal(exported.accounts[0].access_token,undefined);
   }finally{await f.cleanup();}
 });
+
+test('summarizing again keeps the owner’s due date, to-do, importance and reply state',async()=>{
+  let answer:Record<string,unknown>={};
+  const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>({...answer})};
+  // Stored as a provider would sync it: the summary is just the email's opening words, not from Groq.
+  const seed=await fixture();const dataDir=seed.dataDir;await seed.service.close();
+  const db=new DatabaseSync(join(dataDir,'aplos.db')),row=db.prepare("SELECT data FROM threads WHERE id='garden'").get() as {data:string};
+  const stored=JSON.parse(row.data);stored.summary=stored.messages[0].text.slice(0,60);
+  db.prepare("UPDATE threads SET data=? WHERE id='garden'").run(JSON.stringify(stored));db.close();
+  const service=await createService({dataDir,google:seed.google,groq});
+  const garden=async()=>(await service.invoke('state.get') as AppState).threads.find(t=>t.id==='garden')!;
+  try{
+    // Never summarized yet, so Groq judges importance and reply state, and fills what is empty.
+    await service.invoke('thread.update',{ids:['garden'],patch:{todo:null,dueDate:'2031-05-05',importance:'important',replyStatus:'none'}});
+    answer={summary:'A volunteer invitation',importance:'low',replyStatus:'needs-reply',todo:'Confirm the shift',dueDate:'2030-01-02',action:null};
+    await service.invoke('ai.summarize',{threadId:'garden'});
+    let t=await garden();
+    assert.equal(t.summary,'A volunteer invitation');assert.equal(t.importance,'low');assert.equal(t.replyStatus,'needs-reply');
+    assert.equal(t.todo,'Confirm the shift');assert.equal(t.dueDate,'2031-05-05');
+    // Summarized for real now: a second pass only refreshes the summary.
+    await service.invoke('thread.update',{ids:['garden'],patch:{todo:'My own note',importance:'important',replyStatus:'none'}});
+    answer={summary:'Help plant herbs on Saturday',importance:'low',replyStatus:'needs-reply',todo:'Something else',dueDate:'2030-01-02',action:null};
+    await service.invoke('ai.summarize',{threadId:'garden'});
+    t=await garden();
+    assert.equal(t.summary,'Help plant herbs on Saturday');assert.equal(t.todo,'My own note');assert.equal(t.dueDate,'2031-05-05');
+    assert.equal(t.importance,'important');assert.equal(t.replyStatus,'none');
+  }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
+});
+
+test('a second summary request for the same email waits for the first instead of asking Groq again',async()=>{
+  let calls=0,release!:()=>void;const gate=new Promise<void>(r=>{release=r;});
+  const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>{calls++;await gate;return {summary:'Help plant herbs on Saturday'};}};
+  const f=await fixture({groq});
+  const events:{threadId:string;active:boolean}[]=[];f.service.subscribe(event=>{if(event.type==='ai.summarizing')events.push(event.payload as {threadId:string;active:boolean});});
+  try{
+    const first=f.service.invoke('ai.summarize',{threadId:'garden'}),second=f.service.invoke('ai.summarize',{threadId:'garden'});
+    await settle(async()=>events.length===1);release();
+    const result=await second;await first;
+    assert.equal(result.summary,'Help plant herbs on Saturday');assert.equal(result.aiSummary,true);
+    assert.equal(calls,1);
+    assert.deepEqual(events,[{threadId:'garden',active:true},{threadId:'garden',active:false}]);
+  }finally{await f.cleanup();}
+});
+
+test('a request that overlaps a failed summary run reports the failure instead of the old summary',async()=>{
+  let calls=0,fail!:()=>void;const gate=new Promise<void>((_,reject)=>{fail=()=>reject(new Error('Groq rate limit reached. Please try again shortly.'));});
+  const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>{calls++;await gate;return {summary:'Never used'};}};
+  const f=await fixture({groq});
+  try{
+    // The demo email already has a real summary; a retry during a failing run must not pass that off as fresh.
+    const first=f.service.invoke('ai.summarize',{threadId:'garden'}),second=f.service.invoke('ai.summarize',{threadId:'garden'});
+    await settle(async()=>calls===1);fail();
+    await assert.rejects(first,/rate limit/);await assert.rejects(second,/rate limit/);
+    assert.equal(calls,1);
+  }finally{await f.cleanup();}
+});

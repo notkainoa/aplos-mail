@@ -52,14 +52,14 @@ export function applySync(state:AppState, accountId:string, result:SyncResult, p
     const old=state.threads[at],arrived=hasArrival(old,remote);
     if(pending.has(remote.id)){
       state.threads[at]={...remote,status:arrived&&remote.status==='new'?'new':old.status,unread:arrived?remote.unread:old.unread,bookmarked:old.bookmarked,labels:old.labels,
-        summary:old.summary||remote.summary,importance:old.importance,replyStatus:old.replyStatus,todo:old.todo,dueDate:old.dueDate,action:old.action,reminderAt:old.reminderAt,reminderFired:old.reminderFired,hiddenFromHome:arrived?false:old.hiddenFromHome};
+        summary:old.summary||remote.summary,aiSummary:old.summary?old.aiSummary:undefined,importance:old.importance,replyStatus:old.replyStatus,todo:old.todo,dueDate:old.dueDate,action:old.action,reminderAt:old.reminderAt,reminderFired:old.reminderFired,hiddenFromHome:arrived?false:old.hiddenFromHome};
       state.threads[at].action=liveAction(state.threads[at]);
       if(arrived)outcome.arrivals.push(state.threads[at]);
       continue;
     }
     state.threads[at]={...remote,
       status:mergeStatus(old.status,remote.status as ThreadFlags['status'],arrived,state.settings),
-      summary:old.summary||remote.summary,importance:old.importance,replyStatus:arrived&&old.replyStatus==='awaiting-reply'?'needs-reply':old.replyStatus,
+      summary:old.summary||remote.summary,aiSummary:old.summary?old.aiSummary:undefined,importance:old.importance,replyStatus:arrived&&old.replyStatus==='awaiting-reply'?'needs-reply':old.replyStatus,
       todo:old.todo,dueDate:old.dueDate,action:old.action,reminderAt:old.reminderAt,reminderFired:old.reminderFired,bookmarked:remote.bookmarked,
       hiddenFromHome:arrived?false:old.hiddenFromHome};
     state.threads[at].action=liveAction(state.threads[at]);

@@ -72,9 +72,43 @@
   overflow-wrap: anywhere;
 }
 p.ai-summary { animation: fade var(--dur-slow) var(--ease); }
-.ai-summary.is-prompt { text-align: left; color: var(--faint); border-radius: 6px; transition: color var(--dur-fast) var(--ease); }
-.ai-summary.is-prompt:hover:not(:disabled) { color: var(--dim); }
-.ai-summary.is-prompt:disabled { opacity: 1; animation: pulse 1.6s var(--ease-in-out) infinite; }
+/* While Groq writes the summary, a band of light sweeps across the placeholder text. */
+.ai-summary.is-pending {
+  width: fit-content;
+  color: transparent;
+  background: linear-gradient(100deg, var(--faint) 40%, var(--ink) 50%, var(--faint) 60%) 0 0 / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: ai-glimmer 1.8s linear infinite;
+}
+@keyframes ai-glimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+/* Where the to-do usually sits, a bar with the same sweep; what Groq finds fades in after it. */
+.ai-next.is-placeholder { flex-wrap: nowrap; }
+.ai-next.is-placeholder .todo-ring, .ai-todo.is-placeholder .todo-ring { margin-top: 0; opacity: .5; }
+.ai-todo.is-placeholder { align-items: center; }
+.ai-skeleton {
+  width: min(260px, 60%);
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(100deg, var(--hover) 40%, color-mix(in srgb, var(--ink) 12%, transparent) 50%, var(--hover) 60%) 0 0 / 300% 100%;
+  animation: ai-glimmer 1.8s linear infinite;
+}
+.ai-next.is-arriving, .ai-todo.is-arriving, .due-pill.is-arriving { animation: ai-arrive var(--dur-slow) var(--ease-out-strong); }
+@keyframes ai-arrive { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .ai-summary.is-pending { animation: none; background: none; color: var(--faint); }
+  .ai-skeleton, .ai-failed, .ai-next.is-arriving, .ai-todo.is-arriving, .due-pill.is-arriving { animation: none; }
+}
+.ai-failed { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; animation: fade var(--dur-slow) var(--ease); }
+.ai-failed-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ai-failed-text strong { font-size: 15px; line-height: 20px; font-weight: 600; letter-spacing: -.15px; color: var(--ink); }
+.ai-failed-text span { font-size: var(--text-md); line-height: 18px; color: var(--dim); }
+.ai-failed-help.ui-icon-btn { color: var(--faint); }
+.ai-failed-help.ui-icon-btn.is-open { background: var(--hover); color: var(--ink); }
+.ai-failed-card { width: 300px; max-width: calc(100vw - 16px); padding: 14px; display: flex; flex-direction: column; gap: 6px; user-select: text; }
+.ai-failed-card strong { font-size: 14px; line-height: 19px; font-weight: 600; }
+.ai-failed-card p { font-size: var(--text-md); line-height: 18px; color: var(--dim); text-wrap: pretty; }
+.ai-failed-card code { margin-top: 4px; padding: 7px 9px; border-radius: 8px; background: var(--hover); font-size: 11.5px; line-height: 16px; color: var(--dim); overflow-wrap: anywhere; }
 .ai-refresh.ui-icon-btn { margin: 3px -6px 0 0; color: var(--faint); opacity: 0; transition: opacity var(--dur-base) var(--ease), background-color var(--dur-fast); }
 .ai-card:hover .ai-refresh, .ai-refresh:focus-visible, .ai-refresh.is-busy { opacity: 1; }
 
