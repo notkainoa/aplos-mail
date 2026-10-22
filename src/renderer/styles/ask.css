@@ -96,6 +96,8 @@
 .ask-chip:active { transform: scale(.95); }
 .ask-chip.is-go { padding: 0 8px 0 10px; background: var(--blue-fill); color: var(--blue-ink); box-shadow: var(--glass-primary); animation: scale-in var(--dur-fast) var(--ease-out-strong); }
 .ask-chip.is-go:hover { filter: brightness(1.08); }
+.ask-chip.ask-talk { gap: 4px; padding: 0 8px; font-size: var(--text-sm); color: var(--faint); }
+.ask-chip.ask-talk:hover { color: var(--ink-2); }
 .ask-chip.is-recording { background: rgba(255, 255, 255, .2); color: #fff; }
 .ask-chip.is-recording:hover { background: rgba(255, 255, 255, .3); }
 .ask-spinner { margin: 0 6px 6px; color: var(--dim); }
@@ -112,8 +114,7 @@
 /* ---------- Body ---------- */
 
 .ask-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.ask-list, .ask-history { padding: 10px 8px 16px; }
-.ask-welcome { display: flex; align-items: center; gap: 5px; padding: 2px 10px 6px; font-size: var(--text-md); color: var(--dim); }
+.ask-list { padding: 10px 8px 16px; }
 .ask-group { padding: 10px 10px 4px; font-size: var(--text-sm); font-weight: 500; color: var(--faint); }
 .ask-item {
   width: 100%;
@@ -144,11 +145,6 @@
 .ask-item .ui-keys { flex: none; }
 .ask-item-keys { opacity: .75; }
 .ask-empty { padding: 10px; color: var(--dim); font-size: var(--text-md); }
-.ask-history-row { display: flex; align-items: center; padding-right: 4px; border-radius: var(--item-radius); }
-.ask-history-row:hover { background: var(--item-hover); }
-.ask-history-row > button:first-child { flex: 1; min-width: 0; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px; text-align: left; }
-.ask-history-row > button:first-child > :is(svg, .sym) { color: var(--dim); }
-.ask-history-row > button:first-child > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- Conversation ---------- */
 

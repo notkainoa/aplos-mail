@@ -1,6 +1,6 @@
 import {memo,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import {CalendarDays,Clock,CornerDownLeft,FileText,Gear,History,Home,Keyboard,MessageCircle,Mic,Plus,Search,Square,SquarePen,Trash2} from './icons';
-import {Avatar,Button,IconButton,Kbd,Keys,Notice,Spinner,Tooltip,confirmAction,cx,dialogOpen,type Icon} from './ui';
+import {CalendarDays,Clock,CornerDownLeft,FileText,Gear,History,Home,Keyboard,MessageCircle,Plus,Search,Square,SquarePen} from './icons';
+import {Avatar,Button,Kbd,Keys,Notice,Spinner,Tooltip,confirmAction,cx,dialogOpen,type Icon} from './ui';
 import type {Account,AskStep,CalendarEvent,Conversation,Draft,Settings,Thread} from '../shared/types';
 import {bridge,dateLabel,invoke,uid} from './bridge';
 import {askModelLabel} from '../shared/ask';
@@ -13,6 +13,9 @@ import {showSettingsTab} from './Settings';
 import type {Contact} from './Compose';
 
 const holdDelay=220;
+// Emails opened from Ask, newest first: picked from its matches or clicked in an answer.
+const openedKey='aplos.askOpened';const openedLimit=20;
+function loadOpened(){try{const saved=JSON.parse(localStorage.getItem(openedKey)||'[]');return Array.isArray(saved)?saved.filter((id):id is string=>typeof id==='string').slice(0,openedLimit):[];}catch{return [];}}
 const timeZone=Intl.DateTimeFormat().resolvedOptions().timeZone;
 type Props={open:boolean;onOpen:()=>void;onClose:()=>void;onSearch:(query:string)=>void;onCommand:(command:string)=>void;
   conversations:Conversation[];threads:Thread[];events:CalendarEvent[];accounts:Account[];contacts:Contact[];accountId:string;settings:Settings;examples:string[];
@@ -35,12 +38,13 @@ const commands:{id:string;label:string;icon:Icon;keys?:string;words?:string}[]=[
 
 // The typed character, so layouts other than QWERTY use the key labelled A.
 const isA=(event:KeyboardEvent)=>event.key.toLowerCase()==='a';
+const inScope=(accountId:string)=>(t:Thread)=>(accountId==='all'||t.accountId===accountId)&&t.status!=='trash'&&t.status!=='spam';
 const typingIn=(el:HTMLElement)=>['INPUT','TEXTAREA','SELECT'].includes(el.tagName)||el.isContentEditable;
 
 /** The docked Ask panel. Tap A to type, hold A anywhere to talk and release to ask; nothing acts without a click. */
 export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conversations,threads,events,accounts,contacts,accountId,settings,examples,onThread,onDraft,notify,currentDraft,hasDraft,onApplyDraft,onEditEvent,currentContext}:Props){
-  const [id,setId]=useState<string|undefined>();const [input,setInput]=useState('');const [busy,setBusy]=useState(false);const [history,setHistory]=useState(false);const [error,setError]=useState('');const [pending,setPending]=useState('');
-  const [active,setActive]=useState(-1);const [held,setHeld]=useState(false);const [saved,setSaved]=useState<Record<string,string>>({});const [live,setLive]=useState<Live|undefined>();
+  const [id,setId]=useState<string|undefined>();const [input,setInput]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [pending,setPending]=useState('');
+  const [active,setActive]=useState(-1);const [held,setHeld]=useState(false);const [saved,setSaved]=useState<Record<string,string>>({});const [live,setLive]=useState<Live|undefined>();const [opened,setOpened]=useState(loadOpened);
   const field=useRef<HTMLTextAreaElement>(null);const panel=useRef<HTMLElement>(null);const scroller=useRef<HTMLDivElement>(null);const conversation=conversations.find(c=>c.id===id);
   const mounted=useRef(true);const request=useRef<string|undefined>(undefined);const snapshots=useRef(new Map<string,string>());
   const openRef=useRef(open);openRef.current=open;const returnFocus=useRef<HTMLElement|null>(null);const firstRender=useRef(true);
@@ -50,13 +54,13 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
   // Opening focuses the field (not at launch, and not while A is still held); closing gives focus back.
   useLayoutEffect(()=>{
     if(firstRender.current){firstRender.current=false;return;}
-    if(open){if(!panel.current?.contains(document.activeElement))returnFocus.current=document.activeElement as HTMLElement|null;if(!hold.current)requestAnimationFrame(()=>field.current?.focus());}
+    if(open){if(!panel.current?.contains(document.activeElement))returnFocus.current=document.activeElement as HTMLElement|null;if(!hold.current)requestAnimationFrame(()=>field.current?.focus({preventScroll:true}));}
     else if(panel.current?.contains(document.activeElement)){const back=returnFocus.current;if(back?.isConnected&&back!==document.body)back.focus();else(document.activeElement as HTMLElement).blur();}
   },[open]);
   async function ask(text=input){
     if(!text.trim()||request.current||voice.isActive())return;
     const requestId=uid();request.current=requestId;const draft=currentDraft();const snapshot=fingerprint(draft);
-    setBusy(true);setError('');setPending(text.trim());setInput('');setHistory(false);setLive({text:'',steps:[],cites:[]});
+    setBusy(true);setError('');setPending(text.trim());setInput('');setLive({text:'',steps:[],cites:[]});
     try{
       const result=await invoke<Conversation>('ai.ask',{conversationId:id,message:text,accountId,draft,requestId,timeZone,context:currentContext()});
       if(!mounted.current||request.current!==requestId)return;
@@ -80,6 +84,10 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
   }),[]);
   const askLatest=useRef(ask);askLatest.current=ask;
   function cancelRequest(){const requestId=request.current;if(requestId)void invoke('ai.cancel',{requestId}).catch(error=>{if(mounted.current)setError(error.message);});}
+  function openThread(threadId:string){
+    setOpened(prev=>{const next=[threadId,...prev.filter(x=>x!==threadId)].slice(0,openedLimit);localStorage.setItem(openedKey,JSON.stringify(next));return next;});
+    onThread(threadId);
+  }
   async function apply(proposal:Partial<Draft>,index:number){
     const fields:Partial<Draft>={};
     for(const key of ['to','cc','bcc','subject','html'] as const){const value=proposal[key];if(typeof value==='string'&&(key==='html'||value.trim()))fields[key]=value;}
@@ -109,7 +117,7 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
   }
   function release(){
     const state=hold.current;if(!state)return;hold.current=null;clearTimeout(state.timer);setHeld(false);
-    if(state.recording)voice.stop();else requestAnimationFrame(()=>field.current?.focus());
+    if(state.recording)voice.stop();else requestAnimationFrame(()=>field.current?.focus({preventScroll:true}));
   }
   useEffect(()=>{
     const down=(event:KeyboardEvent)=>{
@@ -131,35 +139,38 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
   const matches=useMemo(()=>{
     if(!query||conversation)return [];
     const words=query.toLowerCase().split(/\s+/).filter(Boolean);
-    return threads.filter(t=>(accountId==='all'||t.accountId===accountId)&&t.status!=='trash'&&t.status!=='spam').filter(t=>{const text=[t.subject,t.summary,...t.messages.map(m=>m.fromName+' '+m.from)].join(' ').toLowerCase();return words.every(word=>text.includes(word));}).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+    return threads.filter(inScope(accountId)).filter(t=>{const text=[t.subject,t.summary,...t.messages.map(m=>m.fromName+' '+m.from)].join(' ').toLowerCase();return words.every(word=>text.includes(word));}).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
   },[query,threads,accountId,!!conversation]);
   const commandItem=(c:typeof commands[number]):Item=>({key:'cmd-'+c.id,group:'Commands',icon:<c.icon size={15}/>,label:c.label,keys:c.keys,run:()=>onCommand(c.id)});
   // A calendar example with someone this mailbox actually writes to shows that Ask can schedule too.
   const suggestions=useMemo(()=>{const person=contacts.find(c=>/^\p{Lu}\p{L}+ \p{L}/u.test(c.name))?.name.split(' ')[0];return [...examples,person?`Book lunch with ${person} Friday at noon`:'Add lunch on Friday at noon to my calendar'];},[examples,contacts]);
   const voiceBusy=voice.recording||voice.busy;
+  const recentMail=useMemo(()=>{const byThread=new Map(threads.map(t=>[t.id,t]));return opened.map(x=>byThread.get(x)).filter((t):t is Thread=>!!t&&inScope(accountId)(t));},[opened,threads,accountId]);
+  const mailItem=(group:string,terms:string[]=[])=>(t:Thread):Item=>{const m=t.messages.at(-1)!;return {key:group+t.id,group,icon:<Avatar name={m.fromName||m.from} size={22}/>,label:<span className="ask-item-mail"><strong><Marked text={m.fromName||m.from} terms={terms}/></strong><span><Marked text={t.subject} terms={terms}/></span></span>,detail:dateLabel(t.date),run:()=>openThread(t.id)};};
   const items=useMemo<Item[]>(()=>{
-    if(conversation||busy||history||voiceBusy)return [];
-    if(!query)return [
-      ...suggestions.map((example,i):Item=>({key:'ex'+i,group:'Try asking',icon:<MessageCircle size={15}/>,label:example,run:()=>void askLatest.current(example)})),
+    if(conversation||busy||voiceBusy)return [];
+    // First time, examples; after that, recent chats and the emails last opened from Ask.
+    if(!query)return !conversations.length&&!recentMail.length?suggestions.map((example,i):Item=>({key:'ex'+i,group:'Try asking',icon:<MessageCircle size={15}/>,label:example,run:()=>void askLatest.current(example)})):[
       ...[...conversations].reverse().slice(0,3).map((c):Item=>({key:'c'+c.id,group:'Recent',icon:<History size={15}/>,label:c.title,run:()=>{setId(c.id);setInput('');field.current?.focus();}})),
+      ...recentMail.map(mailItem('Last searched')),
     ];
     const words=query.toLowerCase().split(/\s+/).filter(Boolean);const terms=query.split(/\s+/).filter(w=>w.length>1);
     return [
       {key:'ask',icon:<MessageCircle size={15}/>,label:<>Ask <strong>“{query}”</strong></>,run:()=>void askLatest.current()},
-      ...matches.map((t):Item=>{const m=t.messages.at(-1)!;return {key:'t'+t.id,group:'Mail',icon:<Avatar name={m.fromName||m.from} size={22}/>,label:<span className="ask-item-mail"><strong><Marked text={m.fromName||m.from} terms={terms}/></strong><span><Marked text={t.subject} terms={terms}/></span></span>,detail:dateLabel(t.date),run:()=>onThread(t.id)};}),
+      ...matches.map(mailItem('Mail',terms)),
       {key:'search',group:'Mail',icon:<Search size={15}/>,label:<>Search all mail</>,keys:'⌘ ↵',run:()=>onSearch(query)},
       ...commands.filter(c=>words.every(w=>(c.label+' '+(c.words??'')).toLowerCase().split(/\s+/).some(x=>x.startsWith(w)))).map(commandItem),
     ];
-  },[query,matches,conversations,suggestions,!!conversation,busy,history,voiceBusy]);
+  },[query,matches,conversations,recentMail,suggestions,!!conversation,busy,voiceBusy]);
   // Typed text highlights "Ask" so Enter asks; with nothing typed no row is chosen until the arrows move.
   useEffect(()=>setActive(query?0:-1),[query,items.length]);
   useEffect(()=>{panel.current?.querySelector('.ask-item.is-active')?.scrollIntoView({block:'nearest'});},[active]);
   // A new answer scrolls so its question sits at the top, rather than jumping to the end of a long reply.
   useLayoutEffect(()=>{const box=scroller.current;const last=box&&[...box.querySelectorAll<HTMLElement>('.ask-msg.user')].at(-1);if(box&&last)box.scrollTo({top:last.offsetTop-12,behavior:open?'smooth':'auto'});},[conversation?.messages.length,busy,id]);
-  function newChat(){if(busy)return;setId(undefined);setHistory(false);setError('');setInput('');field.current?.focus();}
+  function newChat(){if(busy)return;setId(undefined);setError('');setInput('');field.current?.focus();}
   function keys(event:React.KeyboardEvent){
     if(event.key==='Escape'){event.preventDefault();event.stopPropagation();
-      if(voice.isActive()||request.current||hold.current){cancelVoice();cancelRequest();}else if(history)setHistory(false);else if(input)setInput('');else onClose();return;}
+      if(voice.isActive()||request.current||hold.current){cancelVoice();cancelRequest();}else if(input)setInput('');else onClose();return;}
     if((event.metaKey||event.ctrlKey)&&event.key==='n'){event.preventDefault();event.stopPropagation();newChat();return;}
     // Plain keys typed or pressed in Ask never reach the mail list's shortcuts; ⌘ and ⌃ shortcuts still do.
     if(!event.metaKey&&!event.ctrlKey)event.stopPropagation();
@@ -174,9 +185,7 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
   const chat=!!conversation||busy;const activeItem=items[active];
   const byId=useMemo(()=>new Map(threads.map(t=>[t.id,t])),[threads]);
   const modelName=useMemo(()=>{const label=askModelLabel(settings.askModel);return `${label.provider} ${label.model}`;},[settings.askModel]);
-  const body=history?<div className="ask-history">{conversations.length===0&&<p className="ask-empty">A fresh start. Ask your first question.</p>}{[...conversations].reverse().map(c=><div className="ask-history-row" key={c.id}><button onClick={()=>{setId(c.id);setHistory(false);field.current?.focus();}}><History size={14}/><span>{c.title}</span></button><IconButton size="xs" label="Delete conversation" aria-label={'Delete conversation '+c.title} icon={Trash2} disabled={busy} onClick={()=>{void invoke('conversation.delete',{id:c.id}).then(()=>{if(id===c.id)setId(undefined);}).catch(e=>notify(e.message));}}/></div>)}</div>
-    :items.length?<div className="ask-list" role="listbox" aria-label={query?'Matches':'Suggestions'}>
-      {!query&&<p className="ask-welcome">Hold <Kbd size="sm">A</Kbd> anywhere to talk, release to ask.</p>}
+  const body=items.length?<div className="ask-list" role="listbox" aria-label={query?'Matches':'Suggestions'}>
       {items.map((item,i)=><div key={item.key} className="ask-item-wrap">
         {item.group&&item.group!==items[i-1]?.group&&<p className="ask-group">{item.group}</p>}
         <button role="option" aria-selected={i===active} tabIndex={-1} className={cx('ask-item',i===active&&'is-active',item.key==='ask'&&'is-ask')} onPointerMove={()=>{if(active!==i)setActive(i);}} onMouseDown={e=>e.preventDefault()} onClick={item.run}>
@@ -189,17 +198,17 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
     :chat?<div className="ask-chat">{conversation?.messages.map((m,i)=><div key={i} className={'ask-msg '+m.role}>
       {m.role==='assistant'?<>
         {!!m.steps?.length&&<AskSteps steps={m.steps}/>}
-        <div className="ask-msg-text"><Prose text={m.content} cite={n=>byId.get(m.citations?.[n-1]??'')} onThread={onThread}/></div>
-        {!!m.citations?.length&&<AskSources citations={m.citations} threads={byId} onThread={onThread}/>}
+        <div className="ask-msg-text"><Prose text={m.content} cite={n=>byId.get(m.citations?.[n-1]??'')} onThread={openThread}/></div>
+        {!!m.citations?.length&&<AskSources citations={m.citations} threads={byId} onThread={openThread}/>}
         {m.proposal&&<AskDraftCard proposal={m.proposal} threads={byId} hasDraft={hasDraft} onApply={()=>void apply(m.proposal!,i)}/>}
         {m.event&&<AskEvent key={`${id}:${i}`} proposal={m.event} accounts={accounts} accountId={accountId} events={events} contacts={contacts} savedId={saved[`${id}:${i}`]} onSaved={eventId=>setSaved(s=>({...s,[`${id}:${i}`]:eventId}))} notify={notify} onEdit={onEditEvent} onCalendar={()=>onCommand('calendar')}/>}
-        {m.triage&&<AskTriageCard triage={m.triage} threads={byId} notify={notify} onThread={onThread}/>}
+        {m.triage&&<AskTriageCard triage={m.triage} threads={byId} notify={notify} onThread={openThread}/>}
       </>:<div className="ask-msg-text">{m.content}</div>}
     </div>)}
     {busy&&<><div className="ask-msg user"><div className="ask-msg-text">{pending}</div></div>
       <div className="ask-msg assistant is-live" aria-live="polite" aria-busy="true">
         {/* Working: steps and a live line. Answering: the steps fold into one line above the streaming text. */}
-        {live?.text?<>{!!live.steps.length&&<AskSteps steps={live.steps}/>}<div className="ask-msg-text is-streaming"><Prose text={live.text} cite={n=>byId.get(live.cites[n-1]??'')} onThread={onThread} streaming/></div></>
+        {live?.text?<>{!!live.steps.length&&<AskSteps steps={live.steps}/>}<div className="ask-msg-text is-streaming"><Prose text={live.text} cite={n=>byId.get(live.cites[n-1]??'')} onThread={openThread} streaming/></div></>
         :<AskSteps steps={live?.steps??[]} live/>}
       </div></>}</div>
     :null;
@@ -208,21 +217,18 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
       <div className="ask-column">
         <div className={cx('ask-field',recording&&'is-recording',busy&&'is-busy')}>
           {recording&&(voice.preparing?<Spinner size={14}/>:<LevelMeter level={voice.level}/>)}
-          <textarea ref={field} aria-label="Ask me anything" rows={1} value={input} readOnly={recording||transcribing} onChange={e=>{setInput(e.target.value);if(history)setHistory(false);}} onKeyDown={fieldKeys}
+          <textarea ref={field} aria-label="Ask me anything" rows={1} value={input} readOnly={recording||transcribing} onChange={e=>setInput(e.target.value)} onKeyDown={fieldKeys}
             placeholder={voice.preparing?'Starting the mic…':recording?'Listening…':transcribing?'Transcribing…':conversation?'Ask a follow-up':'Ask me anything'}/>
           {busy?<button className="ask-chip" onClick={cancelRequest}>Stop</button>
           :recording?<button className="ask-chip is-recording" onClick={()=>{setHeld(false);if(hold.current){clearTimeout(hold.current.timer);hold.current=null;}voice.stop();}}><Square size={10}/>Done</button>
           :transcribing?<Spinner size={15} className="ask-spinner"/>
           :query?<Tooltip content={activeItem&&activeItem.key!=='ask'?'Open the selected item':'Ask'} detail="⌘ ↵ searches mail instead" shortcut="↵"><button className="ask-chip is-go" onClick={()=>{if(activeItem)activeItem.run();else void ask();}}>{activeItem&&activeItem.key!=='ask'?'Open':'Ask'}<CornerDownLeft size={12}/></button></Tooltip>
-          :<IconButton size="sm" className="ask-mic" label="Talk instead" detail="Or hold A anywhere" icon={Mic} onClick={()=>{autoAsk.current=false;setError('');void voice.toggle();}}/>}
+          :<Tooltip content="Talk instead" detail="Click, or hold A anywhere and release to ask"><button className="ask-chip ask-talk" onClick={()=>{autoAsk.current=false;setError('');void voice.toggle();}}>Hold <Kbd size="sm">A</Kbd> to talk</button></Tooltip>}
         </div>
         {recording&&<p className="ask-hint is-recording" role="status">{held?<>Release <Kbd size="sm">A</Kbd> to ask</>:<>Recording, press Done to finish</>}<span>·</span><Kbd size="sm">Esc</Kbd> to cancel</p>}
         {transcribing&&<p className="ask-hint" role="status">Transcribing with Groq…</p>}
         {error&&<Notice className="ask-notice">{error}</Notice>}
-        {(chat||history||conversations.length>0)&&!query&&<div className="ask-tools">
-          {conversations.length>0&&<Button variant="text" size="sm" icon={History} disabled={busy} onClick={()=>setHistory(!history)}>{history?'Back':'History'}</Button>}
-          {chat&&<Button variant="text" size="sm" icon={Plus} disabled={busy} shortcut="⌘ N" onClick={newChat}>New chat</Button>}
-        </div>}
+        {chat&&!query&&<div className="ask-tools"><Button variant="text" size="sm" icon={Plus} disabled={busy} shortcut="⌘ N" onClick={newChat}>New chat</Button></div>}
       </div>
     </div>
     <div ref={scroller} className="ask-scroll">{body}</div>
