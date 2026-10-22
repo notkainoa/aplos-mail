@@ -440,10 +440,15 @@ export async function createEngineService(options:EngineOptions) {
   }
   /** The model a feature uses, from Settings → AI. */
   function choice(feature:AiFeature){return parseFeatureModel(feature,state.settings[aiFeature(feature).setting])??parseFeatureModel(feature,aiFeature(feature).fallback)!;}
-  /** Whether a feature's provider is set up, so background work (sorting new mail) can skip quietly when it isn't. */
-  function ready(feature:AiFeature){
+  /**
+   * Whether a feature's provider can answer now, so background work (sorting new mail) skips quietly when it can't.
+   * A local app (Ollama, LM Studio) counts only while it is running; otherwise every request would fail.
+   */
+  async function ready(feature:AiFeature){
     const {provider}=choice(feature);if(provider==='groq')return groq.available;
-    return provider==='custom'&&!state.settings.askCustomUrl?false:!!chatProvider(provider)?.available;
+    if(provider==='custom'&&!state.settings.askCustomUrl)return false;
+    const transport=chatProvider(provider);if(!transport?.available)return false;
+    return transport.status?(await transport.status().catch(()=>({running:false}))).running:true;
   }
   /** Summaries, drafts and plans on the feature's provider. Groq keeps its own JSON-mode call. */
   function writer(feature:'summary'|'draft'|'plan') {
@@ -496,7 +501,10 @@ export async function createEngineService(options:EngineOptions) {
   }
   /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. */
   async function classifyIncoming(fresh:Thread[],a:Account,refresh:Set<string>=new Set()):Promise<string[]> {
-    if(!fresh.length||!ready('summary'))return [];
+    if(!fresh.length)return [];
+    // Summaries and plans can run on different providers, so each is checked on its own.
+    const summaries=await ready('summary'),plans=state.settings.autoCalendar&&!!a.calendarConnected&&await ready('plan');
+    if(!summaries&&!plans)return [];
     let cursor=0,classificationFailures=0,calendarFailures=0,cancelled=false;
     try{
       await ai({requestId:`sync-ai-${a.id}`},async signal=>{
@@ -506,12 +514,12 @@ export async function createEngineService(options:EngineOptions) {
             const candidate=fresh[cursor++];
             if(!state.threads.some(t=>t.id===candidate.id))continue;
             const before=thread(candidate.id);
-            try{
+            if(summaries)try{
               const result=await writer('summary').summarize(before,signal);
               if(signal.aborted)break;
               const classified=threadPatch({importance:result.importance||before.importance,replyStatus:result.replyStatus||before.replyStatus,todo:result.todo,dueDate:result.dueDate});
               if(typeof result.summary==='string')classified.summary=result.summary.slice(0,10_000);
-              // The suggested action follows the latest mail, like the summary; groq.ts already validated it against the thread.
+              // The suggested action follows the latest mail, like the summary; writer.ts already validated it against the thread.
               classified.action=result.action;
               change(s=>{const current=s.threads.find(t=>t.id===candidate.id);if(!current)return;
                 for(const key of refresh.has(candidate.id)?['replyStatus','summary','action'] as const:['importance','replyStatus','todo','dueDate','summary','action'] as const){
@@ -520,7 +528,7 @@ export async function createEngineService(options:EngineOptions) {
                 }
               });
             }catch{if(signal.aborted)break;classificationFailures++;}
-            if(state.settings.autoCalendar&&a.calendarConnected&&!signal.aborted&&ready('plan')){
+            if(plans&&state.settings.autoCalendar&&!signal.aborted){
               try{
                 const extracted=await writer('plan').extractEvents(before,signal);
                 for(const event of extracted){

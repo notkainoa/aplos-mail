@@ -247,9 +247,10 @@ test('summaries, drafts, plans and voice each run on the model chosen for them',
   const asked:ChatRequest[]=[],heard:string[]=[];
   // Claude has no JSON mode, so its reply may wrap the object in prose; the writer still reads it.
   const claude:ChatProvider={available:true,chat:async req=>{asked.push(req);return {content:String(req.messages[0].content).includes('Proofread')?'{"html":"<p>Polished.</p>"}':'Here it is: {"summary":"Wants a layout pick by Friday","importance":"important","replyStatus":"needs-reply"}',toolCalls:[]};}};
+  const gemini:ChatProvider={available:true,chat:async req=>{asked.push(req);return {content:'```json\n{"events":[]}\n```',toolCalls:[]};}};
   const openai:ChatProvider={available:true,chat:claude.chat,transcribe:async(_audio,_type,model)=>{heard.push(model);return {text:'Hello there'};}};
   const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>{throw new Error('Summaries must not use Groq here.');}};
-  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq,chats:{anthropic:claude,openai,gemini:{available:false,chat:claude.chat}}});
+  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq,chats:{anthropic:claude,openai,gemini,openrouter:{available:false,chat:claude.chat}}});
   try{
     const settings=(await service.invoke('state.get') as AppState).settings;
     assert.deepEqual([settings.summaryModel,settings.draftModel,settings.planModel,settings.voiceModel],['groq:openai/gpt-oss-120b','groq:openai/gpt-oss-120b','groq:openai/gpt-oss-120b','groq:whisper-large-v3-turbo']);
@@ -263,8 +264,14 @@ test('summaries, drafts, plans and voice each run on the model chosen for them',
     assert.deepEqual(heard,['gpt-4o-mini-transcribe']);
     // Voice needs a provider with speech to text; a provider without its key says what to set.
     await assert.rejects(service.invoke('settings.update',{patch:{voiceModel:'anthropic:claude-haiku-5-5'}}),/Voice model on Groq or ChatGPT/);
+    // A long email is refused rather than polished in part and cut short; nothing is sent.
+    await assert.rejects(service.invoke('ai.polish',{html:`<p>${'x'.repeat(40_001)}</p>`}),/too long to polish/);
+    assert.equal(asked.length,2);
     await service.invoke('settings.update',{patch:{planModel:'gemini:gemini-3.8-flash'}});
-    await assert.rejects(service.invoke('calendar.extract',{threadId}),/Add GEMINI_API_KEY/);
+    assert.deepEqual(await service.invoke('calendar.extract',{threadId}),[]);
+    assert.equal(asked[2].model,'gemini-3.8-flash');assert.equal(asked[2].json,true);
+    await service.invoke('settings.update',{patch:{planModel:'openrouter:z-ai/glm-5.3'}});
+    await assert.rejects(service.invoke('calendar.extract',{threadId}),/Add OPENROUTER_API_KEY/);
     const catalog=await service.invoke('ai.models') as Array<{id:string;voiceModels?:{id:string}[]}>;
     assert.deepEqual(catalog.filter(p=>p.voiceModels).map(p=>p.id),['groq','openai']);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
@@ -281,4 +288,23 @@ test('OpenAI transcribes with the chosen model and lists its speech models; JSON
   assert.deepEqual(fetchCalls,[{url:'https://api.openai.com/v1/audio/transcriptions',model:'whisper-1'}]);
   await gpt.chat({model:'gpt-6-luna',json:true,messages:[{role:'user',content:'hi'}]},{});
   assert.deepEqual(openai.seen.at(-1)!.body!.response_format,{type:'json_object'});
+});
+
+test('background sorting waits for a local app that is not running, and runs once it is',async()=>{
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-local-ready-'));
+  const base=await createGoogle({dataDir,clientId:''});
+  let running=false,calls=0,round=0;
+  const fresh=()=>({id:`local-${++round}`,accountId:'google-local',subject:'Lunch',summary:'Snippet',messages:[],date:'2026-10-16T12:00:00Z',unread:true,status:'new' as const,importance:'low' as const,bookmarked:false,replyStatus:'none' as const});
+  const google={...base,available:true,connect:async()=>({id:'google-local',name:'Test',email:'local@example.com',color:'#123456',provider:'google' as const,connected:true}),
+    sync:async()=>({threads:[fresh()],flags:[],removed:[],reset:false}),updateThread:async()=>{},getSendAs:async()=>[]};
+  const ollama:ChatProvider={available:true,status:async()=>({running}),chat:async()=>{calls++;return {content:'{"summary":"Lunch on Friday","importance":"important","replyStatus":"none"}',toolCalls:[]};}};
+  const service=await createService({dataDir,google,groq:createGroq({apiKey:''}),serverChat:()=>ollama});
+  try{
+    await service.invoke('settings.update',{patch:{summaryModel:'ollama:qwen3'}});
+    const stopped=await service.invoke('account.connect') as AppState;
+    assert.equal(calls,0);assert.equal(stopped.sync.error,undefined);
+    running=true;
+    const started=await service.invoke('sync') as AppState;
+    assert.equal(calls,1);assert.equal(started.threads.find(t=>t.id==='local-2')!.summary,'Lunch on Friday');
+  }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
 });

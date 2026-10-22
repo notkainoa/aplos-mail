@@ -373,3 +373,5 @@ Recent rows without icons and with a remove X, the follow-up field at the bottom
 
 ## AI settings: providers and a model per feature (2026-10-21)
 Settings → AI now has Providers (status rows that open to show setup or what each offers) and Models (Ask, Summaries, Drafts, Plans, Voice, each picked from any set-up provider; Voice from Groq or OpenAI speech models). The engine routes each feature to its model; prompts moved to `engine/writer.ts`; OpenAI transcription added. Verified: typecheck, 199 tests (2 new: per-feature routing with fake Claude/OpenAI transports, OpenAI speech models/transcription/JSON mode), renderer build, headless screenshots in dark and light at docked-Ask and wide widths with a synthetic Groq key (no external AI calls), and choosing a Voice model by keyboard saved it. Non-Groq providers for summaries/drafts/plans/voice are not verified live.
+
+Review fixes (cubic, PR #6): background sorting waits for a stopped Ollama/LM Studio; Summaries and Plans gated separately; polish refuses over-long email instead of truncating; Reader tooltip and README wording; plan routing test now reaches a fake Gemini. 200 tests pass.

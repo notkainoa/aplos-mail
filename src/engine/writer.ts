@@ -41,6 +41,8 @@ export function suggestedAction(value:unknown,thread:Thread,links=threadLinks(th
     default:return;
   }
 }
+/** Characters of HTML polish accepts; the whole body goes to the model and comes back. */
+const polishLimit=40_000;
 export type Writer=ReturnType<typeof createWriter>;
 /** `name` is the provider shown in errors, e.g. "Claude". */
 export function createWriter(json:JsonCall,name='The AI provider') {
@@ -53,9 +55,14 @@ export function createWriter(json:JsonCall,name='The AI provider') {
       return {summary:str(result.summary,1600),importance:result.importance==='low'?'low':'important',replyStatus:result.replyStatus==='needs-reply'||result.replyStatus==='awaiting-reply'?result.replyStatus:'none',todo:str(result.todo,1000)||undefined,dueDate:typeof result.dueDate==='string' && /^\d{4}-\d{2}-\d{2}/.test(result.dueDate)&&!Number.isNaN(Date.parse(result.dueDate))?result.dueDate:undefined,action:suggestedAction(result.action,thread,links)};
     },
     async polish(html:string,instruction?:string,signal?:AbortSignal):Promise<{html:string}> {
-      const result=await json('Proofread email while preserving meaning, facts, recipients and formatting. Return {html:string}. Do not invent commitments.',{html:html.slice(0,40000),instruction:instruction??'Improve spelling, grammar and clarity.'},signal);
-      if(!str(result.html)) throw new Error(`${name} returned an empty email. Please try again.`);
-      return {html:str(result.html,40000)};
+      // The result replaces the whole body, so a long email is refused rather than polished in part and cut short.
+      if(html.length>polishLimit) throw new Error('This email is too long to polish. Shorten it, or polish it yourself.');
+      const result=await json('Proofread email while preserving meaning, facts, recipients and formatting. Return {html:string}. Do not invent commitments.',{html,instruction:instruction??'Improve spelling, grammar and clarity.'},signal);
+      const polished=typeof result.html==='string'?result.html:'';
+      if(!polished.trim()) throw new Error(`${name} returned an empty email. Please try again.`);
+      // Polishing barely changes length; anything far longer is not the same email.
+      if(polished.length>polishLimit*1.25) throw new Error(`${name} returned a much longer email than it was given. Please try again.`);
+      return {html:polished};
     },
     async draft(instruction:string,thread?:Thread,draft?:Partial<Draft>,signal?:AbortSignal):Promise<Partial<Draft>> {
       const result=await json('Write an email proposal matching the user request. JSON keys: to,cc,bcc,subject,html (strings). Leave unknown addresses empty. Include only the email body in html. Do not send anything.',{instruction,thread:thread?context(thread):undefined,draft},signal);
