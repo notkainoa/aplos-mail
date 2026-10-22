@@ -19,8 +19,8 @@ export const Topbar=memo(function Topbar({menu,showSidebarButton,showBack,showAc
       {showActions&&<Button variant="ghost" className="compose-top" icon={SquarePen} shortcut="C" disabled={composeBusy} tooltip={{content:'New email'}} onClick={compose}>Compose</Button>}
     </div>
     {showActions&&<div className="topbar-actions">
-      {showAsk&&<IconButton label="Calendar" shortcut="⇧ A" icon={CalendarDays} onClick={calendar}/>}
       {showAsk&&<Tooltip content="Ask me anything" detail="Tap A to type · hold A to talk" shortcut="⌘ J"><button className="ask-pill" aria-label="Show Ask" onClick={ask}><Search size={15}/><span>Ask</span><Keys combo="A" size="sm"/><small>Hold to talk</small></button></Tooltip>}
+      {showAsk&&<Tooltip content="Calendar" detail="Your day beside your mail" shortcut="⇧ A"><button className="ask-pill calendar-pill" aria-label="Show Calendar" onClick={calendar}><CalendarDays size={15}/></button></Tooltip>}
     </div>}
   </div>;
 });
