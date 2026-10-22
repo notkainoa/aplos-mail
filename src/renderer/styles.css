@@ -470,7 +470,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .compose-attachments { flex: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 16px; }
 .compose-attachments .attachment { gap: 8px; padding-right: 2px; }
 .compose-ai, .link-editor { flex: none; display: flex; align-items: center; gap: 10px; margin: 0 12px 8px; padding: 0 6px 0 12px; height: 40px; border-radius: var(--radius-control); background: var(--blue-soft); color: var(--blue); }
-.compose-ai input, .link-editor input { flex: 1; height: 100%; padding: 0; border: 0; background: transparent; outline: 0; color: var(--ink); }
+.link-editor input { flex: 1; height: 100%; padding: 0; border: 0; background: transparent; outline: 0; color: var(--ink); }
 .compose-ai .ui-btn, .link-editor .ui-btn { color: var(--blue); font-weight: 500; }
 .compose-ai .ui-btn:hover:not(:disabled), .link-editor .ui-btn:hover:not(:disabled) { background: var(--blue-soft); color: var(--blue); }
 .compose-strip { animation: slide-down var(--dur-base) var(--ease-out-strong); }
@@ -582,8 +582,9 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .skeleton-row > span { flex: 1; }
 .skeleton-body { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 18px 0; border-top: 1px solid var(--line-soft); }
 .compose-inline .composer.skeleton { min-height: 300px; }
-.compose-popout { height: calc(100dvh - 38px); display: flex; background: var(--card); }
-.compose-popout .composer { max-width: none; height: 100%; border-radius: 0; box-shadow: none; animation: none; }
+.compose-popout { height: calc(100dvh - 38px); display: flex; flex-direction: column; background: var(--card); }
+.compose-popout .composer { flex: 1; min-height: 0; max-width: none; height: auto; border-radius: 0; box-shadow: none; animation: none; }
+.compose-popout .compose-hint, .compose-inline .compose-hint { align-self: center; width: fit-content; margin: 6px auto 8px; }
 .popout-titlebar { height: 38px; background: var(--card); -webkit-app-region: drag; }
 .attachment-enter { animation: scale-in var(--dur-base) var(--ease-out-strong); }
 

@@ -44,6 +44,14 @@ function RecipientInput({id,value,onChange,disabled,names,contacts,autoFocus,pla
     {open&&<div className="recipient-suggestions ui-surface" id={id+'-suggestions'} role="listbox" aria-label="Suggested recipients">{suggestions.map((contact,index)=><div key={contact.email} id={`${id}-option-${index}`} role="option" aria-selected={index===pick} className={cx('recipient-suggestion ui-surface-item',index===pick&&'is-active')} onMouseDown={e=>{e.preventDefault();choose(contact);}} onMouseMove={()=>setPick(index)}><Avatar name={contact.name||contact.email} size={22}/><span><strong>{contact.name||contact.email}</strong>{contact.name&&<small>{contact.email}</small>}</span></div>)}</div>}
   </div>;
 }
+/** Dictation goes above a quoted message at the end of the body (a forward's original), or at the very end. */
+function withDictation(previous:string,html:string){
+  const doc=new DOMParser().parseFromString(previous,'text/html');const quote=doc.body.lastElementChild;
+  if(quote?.tagName!=='BLOCKQUOTE')return previous+html;
+  // Keep the blank line a forward leaves above the quote between the new text and the quote.
+  const blank=quote.previousElementSibling;const at=blank&&!blank.textContent?.trim()&&!blank.querySelector('img')?blank:quote;
+  at.insertAdjacentHTML('beforebegin',html);return doc.body.innerHTML;
+}
 function keepImages(previous:string,next:string){
   const oldDocument=new DOMParser().parseFromString(previous,'text/html');
   const nextDocument=new DOMParser().parseFromString(DOMPurify.sanitize(next),'text/html');
@@ -154,15 +162,22 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
     })();terminalJob.current=job;await job;
   }
   /**
-   * Every way out of the composer (Esc, the backdrop, going elsewhere in the app) comes here. Something written in
-   * this session asks whether to keep it as a draft or delete it; resolves false when the person keeps editing.
+   * Every way out of the composer (Esc, the backdrop, going elsewhere in the app) comes here. A new draft with something
+   * in it asks whether to keep it or delete it; resolves false when the person keeps editing.
    */
   const leaving=useRef<Promise<boolean>|null>(null);
   function leave(){
     leaving.current??=(async()=>{
       try{
         if(terminal.current){await terminalJob.current;return terminal.current;}
-        if(!blank()&&(fresh||edits.current>0)){
+        // Finish a recording or transcription first, so what was said lands in the draft before deciding about it.
+        if(voice.isActive()){
+          const state=hold.current;if(state){clearTimeout(state.timer);state.cancelled=true;}
+          voice.stop();
+          for(const until=Date.now()+20000;voice.isActive()&&mounted.current&&Date.now()<until;)await new Promise(resolve=>setTimeout(resolve,100));
+        }
+        // Only a draft started in this session asks; one reopened from Drafts is already saved there, edits included.
+        if(fresh&&!blank()){
           const choice=await chooseAction({title:'Save this draft?',message:'Keep it in Drafts to finish later, or delete it.',confirmLabel:'Save draft',cancelLabel:'Keep editing',alternateLabel:'Delete'});
           if(!choice)return false;
           if(choice==='alternate'){await finish('discard');return terminal.current;}
@@ -208,9 +223,9 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
     if(terminal.current||!text.trim())return;
     const version=++workVersion.current;const html=`<p>${escapeHtml(text.trim()).replace(/\n/g,'<br>')}</p>`;const previous=editor.current?.innerHTML??current.current.html;
     // Persist the transcript immediately so closing during polish cannot discard it.
-    setBody(previous+html);
+    setBody(withDictation(previous,html));
     try{
-      if(settings.autoPolish){const requestId=uid();aiRequest.current=requestId;working('polish');const result=await invoke<{html:string}>('ai.polish',{html,instruction:'Proofread this dictated email text. Preserve its meaning and do not add a greeting or signature.',requestId});if(workVersion.current!==version||terminal.current)return;setBody(previous+DOMPurify.sanitize(result.html));}
+      if(settings.autoPolish){const requestId=uid();aiRequest.current=requestId;working('polish');const result=await invoke<{html:string}>('ai.polish',{html,instruction:'Proofread this dictated email text. Preserve its meaning and do not add a greeting or signature.',requestId});if(workVersion.current!==version||terminal.current)return;setBody(withDictation(previous,DOMPurify.sanitize(result.html)));}
     }catch(error){if(workVersion.current===version&&!terminal.current)setError(`Dictation was inserted without polish: ${(error as Error).message}`);}
     finally{if(workVersion.current===version){aiRequest.current=undefined;working('');}}
   },setError);
@@ -234,9 +249,11 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
   function quote(){
     const node=getSelection()?.anchorNode;const element=node instanceof Element?node:node?.parentElement;
     const block=element?.closest('blockquote');const inside=!!block&&!!editor.current?.contains(block);
-    // formatBlock can't lift a quoted list back out, so unwrap that one by hand.
-    if(inside&&block.querySelector('ul,ol,p,div')){if(operation.current||terminal.current)return;block.replaceWith(...Array.from(block.childNodes));patch({html:editor.current?.innerHTML??''});}
-    else format('formatBlock',inside?'p':'blockquote');
+    const blocks=inside?Array.from(block.children).filter(child=>/^(P|DIV|UL|OL|BLOCKQUOTE)$/.test(child.tagName)):[];
+    // A quoted list (what Quote makes of one) is lifted back out by hand, since formatBlock can't. A quote of
+    // paragraphs, such as a forward's original, isn't undone; Quote then quotes the line inside it.
+    if(blocks.length&&blocks.every(child=>/^(UL|OL)$/.test(child.tagName))){if(operation.current||terminal.current)return;block!.replaceWith(...Array.from(block!.childNodes));patch({html:editor.current?.innerHTML??''});}
+    else format('formatBlock',inside&&!blocks.length?'p':'blockquote');
   }
   function bodyEmpty(html=editor.current?.innerHTML??current.current.html){return !plain(html).trim()&&!/<img/i.test(html);}
   function blank(){const d=current.current;return bodyEmpty()&&!d.attachments.length&&(d.mode!=='new'||(!d.to.trim()&&!d.cc.trim()&&!d.bcc.trim()&&!d.subject.trim()));}
@@ -279,8 +296,8 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
       if(state){event.preventDefault();return;}
       const target=event.target as HTMLElement;
       if(dialogOpen()||target.tagName==='SELECT'||target.closest?.('.ask-panel,.ui-popover'))return;
-      // Outside the composer (an inline reply sits in the reader) Space keeps its usual job in other fields and controls.
-      if(!rootRef.current?.contains(target)&&(['INPUT','TEXTAREA','BUTTON'].includes(target.tagName)||target.isContentEditable))return;
+      // Outside the composer (an inline reply sits in the reader) Space keeps its usual jobs, scrolling included, once the reply has text.
+      if(!rootRef.current?.contains(target)&&(['INPUT','TEXTAREA','BUTTON'].includes(target.tagName)||target.isContentEditable||!bodyEmpty()))return;
       if(event.repeat||operation.current||terminal.current||voice.isActive())return;
       event.preventDefault();press('key',target);
     };
@@ -393,9 +410,9 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
       <Button variant="text" size="sm" icon={Paperclip} className="attach-button" loading={busy==='attach'} onClick={()=>file.current?.click()}>Attach</Button>
     </div></footer>
     <input type="file" ref={file} hidden multiple onChange={e=>{void attach(e.target.files);e.target.value='';}}/><input type="file" ref={imageInput} hidden accept="image/*" onChange={e=>{void attach(e.target.files,true);e.target.value='';}}/>
-  </section>{!popout&&!inline&&<button type="button" className={cx('compose-hint',listening&&'is-listening')} disabled={!!busy&&!listening} aria-live="polite"
+  </section><button type="button" className={cx('compose-hint',listening&&'is-listening')} disabled={!!busy&&!listening} aria-live="polite"
     onMouseDown={e=>e.preventDefault()} onPointerDown={e=>{if(e.button!==0||hold.current)return;if(voice.isActive())voice.stop();else if(!operation.current&&!terminal.current)press('pointer');}} onClick={e=>{if(e.detail===0)voice.toggle();}}>
-    <span className="compose-hint-text" key={listening?'listening':voice.busy?'busy':'idle'}>{listening?<>{hold.current?.source==='key'?<>Release<Kbd>Space</Kbd>to transcribe</>:hold.current?'Release to transcribe':'Click to transcribe'}<span className="compose-hint-gap"/><Kbd>Esc</Kbd>to cancel</>
+    <span className="compose-hint-text" key={voice.preparing?'preparing':listening?'listening':voice.busy?'busy':'idle'}>{voice.preparing?<>Getting the microphone ready…<span className="compose-hint-gap"/><Kbd>Esc</Kbd>to cancel</>:listening?<>{hold.current?.source==='key'?<>Release<Kbd>Space</Kbd>to transcribe</>:hold.current?'Release to transcribe':'Click to transcribe'}<span className="compose-hint-gap"/><Kbd>Esc</Kbd>to cancel</>
       :voice.busy?<><Spinner size={14}/>Transcribing with {askModelLabel(settings.voiceModel,'voice').provider}…</>
-      :<>Hold<Kbd>Space</Kbd>to talk</>}</span></button>}</div>;
+      :<>Hold<Kbd>Space</Kbd>to talk</>}</span></button></div>;
 }

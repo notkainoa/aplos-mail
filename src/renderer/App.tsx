@@ -127,7 +127,13 @@ export function App(){
 
  const composeExit=useRef<(()=>Promise<boolean>)|null>(null);
  /** Going elsewhere closes an open composer first (it asks about anything written); `then` runs only once it has closed. */
- function leaveCompose(then:()=>void){if(!composer||popoutDraft||!composeExit.current){then();return;}void composeExit.current().then(left=>{if(left)then();});}
+ // Clicks made while the composer is deciding replace each other, so only the last one goes anywhere.
+ const pendingLeave=useRef<(()=>void)|null>(null);
+ function leaveCompose(then:()=>void){
+  if(!composer||popoutDraft||!composeExit.current){then();return;}
+  const waiting=!!pendingLeave.current;pendingLeave.current=then;if(waiting)return;
+  void composeExit.current().then(left=>{const next=pendingLeave.current;pendingLeave.current=null;if(left)next?.();},()=>{pendingLeave.current=null;});
+ }
  function navigate(view:View,threadId?:string){leaveCompose(()=>{const next={view,threadId};setRoute(next);setSearchMode(false);setSelected(new Set());setRoutes(prev=>[...prev.slice(0,historyIndex+1),next]);setHistoryIndex(i=>i+1);});}
  function historyMove(delta:number){const index=historyIndex+delta;if(index<0||index>=routes.length)return;leaveCompose(()=>{setHistoryIndex(index);setRoute(routes[index]);setSelected(new Set());setSearchMode(false);});}
  async function updateSettings(patch:Partial<Preferences>){try{await invoke('settings.update',{patch});}catch(e){fail(e);}}
