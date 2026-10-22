@@ -175,6 +175,7 @@
   flex: 1;
   min-width: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: var(--toolbar-height) var(--pad) 32px;
 }
 .mail-content > * { max-width: 960px; margin-left: auto; margin-right: auto; }
@@ -618,7 +619,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 /* ---------- Settings ---------- */
 
 .settings-page { max-width: 880px; margin: 0 auto; padding-top: 4px; display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 28px; align-items: start; }
-.settings-nav { position: sticky; top: 0; padding-top: 32px; }
+.settings-nav { position: sticky; top: calc(var(--toolbar-height) + 32px); margin-top: 32px; }
 .settings-nav .ui-tab { width: 100%; }
 .settings-content { min-width: 0; animation: settings-in var(--dur-slow) var(--ease-out-strong); }
 @keyframes settings-in { from { opacity: 0; transform: translateY(6px); } }
@@ -701,7 +702,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 }
 @container workspace (max-width: 520px) {
   .settings-page { grid-template-columns: 1fr; gap: 8px; }
-  .settings-nav { position: static; padding-top: 0; flex-direction: row; flex-wrap: wrap; overflow-x: auto; scrollbar-width: none; }
+  .settings-nav { position: static; margin-top: 0; flex-direction: row; flex-wrap: wrap; overflow-x: auto; scrollbar-width: none; }
   .settings-nav .ui-tab { width: auto; flex: none; }
 }
 @media (max-width: 900px) {
