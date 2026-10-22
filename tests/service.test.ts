@@ -267,6 +267,23 @@ test('a second summary request for the same email waits for the first instead of
   }finally{await f.cleanup();}
 });
 
+test('background summary requests skip emails that already have one, and in-flight summaries can be listed',async()=>{
+  let calls=0,release!:()=>void;const gate=new Promise<void>(r=>{release=r;});
+  const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>{calls++;await gate;return {summary:'A fresh summary'};}};
+  const f=await fixture({groq});
+  try{
+    // The demo email already has a real summary, so a background request leaves it alone.
+    assert.notEqual((await f.service.invoke('ai.summarize',{threadId:'garden',onlyIfMissing:true})).summary,'A fresh summary');
+    assert.equal(calls,0);
+    assert.deepEqual(await f.service.invoke('ai.summarizing'),[]);
+    const running=f.service.invoke('ai.summarize',{threadId:'garden'});
+    await settle(async()=>calls===1);
+    assert.deepEqual(await f.service.invoke('ai.summarizing'),['garden']);
+    release();assert.equal((await running).summary,'A fresh summary');
+    assert.deepEqual(await f.service.invoke('ai.summarizing'),[]);
+  }finally{await f.cleanup();}
+});
+
 test('a request that overlaps a failed summary run reports the failure instead of the old summary',async()=>{
   let calls=0,fail!:()=>void;const gate=new Promise<void>((_,reject)=>{fail=()=>reject(new Error('Groq rate limit reached. Please try again shortly.'));});
   const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>{calls++;await gate;return {summary:'Never used'};}};

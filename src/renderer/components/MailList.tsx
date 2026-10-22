@@ -1,10 +1,11 @@
-import {memo,useLayoutEffect,useMemo,useRef,useState} from 'react';
+import {memo,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {ArrowUpRight,Bookmark,CalendarDays,Check,Clock,FileText,MailOpen,MoreHorizontal,Paperclip,Reply,RotateCcw,Trash2} from '../icons';
 import type {Draft,SuggestedAction,Thread} from '../../shared/types';
 import {liveAction,shortDue,shortSender} from '../../shared/mailbox';
 import {dateLabel,dueLabel,plain} from '../bridge';
 import {Avatar,Badge,Button,Checkbox,Count,IconButton,cx,reducedMotion,useListPresence,useSwipe,type Icon,type SwipeSide} from '../ui';
 import {ymd} from '../calendarTime';
+import {cancelRow,hasRealSummary,summarizeRow,useSummarizing} from '../summaries';
 
 export type Triage='done'|'later'|'trash'|'spam';
 /** Row callbacks. Pass a stable object (see `useHandlers`) so unchanged rows skip re-rendering. */
@@ -287,7 +288,16 @@ const MailRow=memo(function MailRow({thread:t,actions:rows,phase,direction,index
   const focus=cursor,at=index;
   const attached=t.messages.some(message=>message.attachments.length>0);
   const today=ymd(new Date());const due=t.dueDate?.slice(0,10);const overdue=!!due&&due<today;
-  const headline=capital(t.summary.trim())||t.subject||'(No subject)';
+  // Until the model has summarized it, a row shows the subject, dimmed, rather than the email's opening words passing for
+  // a summary; it shimmers while the model works and the summary fades in. Rows on screen ask for one after a moment.
+  const real=hasRealSummary(t),working=useSummarizing(t.id);
+  // Only a summary that arrives while the row is on screen fades in, not one it already had.
+  const [shownUnsummarized,setShownUnsummarized]=useState(!real);useEffect(()=>{if(!real)setShownUnsummarized(true);},[real]);
+  const headline=real?capital(t.summary.trim()):t.subject||'(No subject)';
+  // Only rows actually on screen ask (short lists mount every row); one that scrolls away stops waiting.
+  const [onScreen,setOnScreen]=useState(false);
+  useEffect(()=>{const el=rowRef.current;if(real||!el)return;const seen=new IntersectionObserver(([entry])=>setOnScreen(entry.isIntersecting));seen.observe(el);return ()=>seen.disconnect();},[real]);
+  useEffect(()=>{if(real||!onScreen||exiting||t.status==='trash')return;const timer=setTimeout(()=>summarizeRow(t),1500);return ()=>{clearTimeout(timer);cancelRow(t.id);};},[t.id,real,onScreen,exiting,t.status]);
   const shift=useRef(false);
   const restorable=t.status==='trash'||t.status==='spam';
   const rowRef=useRef<HTMLDivElement>(null),bodyRef=useRef<HTMLDivElement>(null);const [swiping,setSwiping]=useState(false);
@@ -321,7 +331,7 @@ const MailRow=memo(function MailRow({thread:t,actions:rows,phase,direction,index
         <span className="row-line">
           <span className="sender"><Marked text={focus?name:short} terms={hl&&[...hl.any,...hl.from]}/></span>
           {focus&&t.messages.length>1&&<span className="thread-count">{t.messages.length}</span>}
-          <span className="summary" title={t.subject||undefined}>{hl&&!focus&&<span className="subject"><Marked text={t.subject} terms={subjectTerms}/></span>}<Marked text={headline} terms={hl?.any}/></span>
+          <span className={cx('summary',!real&&'is-unsummarized',!real&&working&&'is-summarizing',real&&shownUnsummarized&&'is-arriving')} title={t.subject||undefined}>{hl&&!focus&&real&&<span className="subject"><Marked text={t.subject} terms={subjectTerms}/></span>}<Marked text={headline} terms={real?hl?.any:subjectTerms||undefined}/></span>
           <span className="row-meta">
             {t.bookmarked&&<Bookmark size={13} className="row-flag" fill="currentColor"/>}
             {chip}

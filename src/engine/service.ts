@@ -506,7 +506,7 @@ export async function createEngineService(options:EngineOptions) {
     return compact?{epoch,rev}:clone(state);
   }
   type SummaryRun={input:Thread;work:Promise<Partial<Thread>>};
-  /** Emails being summarized right now, with the thread each run was given. */
+  /** Emails being summarized right now (the list shows them), with the thread each run was given. */
   const summarizing=new Map<string,SummaryRun>();
   /**
    * One summary per email at a time. A request for the same messages shares the running one (its failure too);
@@ -791,8 +791,11 @@ export async function createEngineService(options:EngineOptions) {
       case 'workflow.code':{const code=workflow?.code();if(!code)throw new Error('Device sync is off.');return {code};}
       case 'workflow.disable':await workflow?.disable(state.accounts.map(a=>a.id));workflowAt.clear();return {enabled:false};
       case 'ai.cancel':{for(const [id,controller]of requests)if(!p.requestId||p.requestId===id)controller.abort();return {cancelled:true};}
+      case 'ai.summarizing':return [...summarizing.keys()];
       case 'ai.summarize':{
         const id=text(p.threadId,300);
+        // Background requests (on open, from the list) leave an email alone once it has a summary.
+        if(p.onlyIfMissing===true&&hasRealSummary(thread(id)))return thread(id);
         // Sync or another window may already be summarizing these messages; that run is shared.
         const {input:t,result}=await ai(p,signal=>tracked(id,input=>writer('summary').summarize(input,signal)));
         const patch=threadPatch(result);if(typeof result.summary==='string')patch.summary=result.summary.slice(0,10_000);patch.action=result.action;

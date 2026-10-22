@@ -320,3 +320,18 @@
 
 /* The destination host of a link action, quieter than its label. */
 .card-primary .card-host { margin-left: 6px; font-weight: 400; opacity: .72; }
+
+/* A row Groq hasn't summarized shows its subject, dimmed; it shimmers while Groq works and the summary fades in. */
+.mail-row .summary.is-unsummarized, .mail-row.is-focus .summary.is-unsummarized { color: var(--faint); }
+.mail-row .summary.is-summarizing, .mail-row.is-focus .summary.is-summarizing {
+  color: transparent;
+  background: linear-gradient(100deg, var(--faint) 40%, var(--ink) 50%, var(--faint) 60%) 0 0 / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: ai-glimmer 1.8s linear infinite;
+}
+.mail-row .summary.is-arriving { animation: fade var(--dur-slow) var(--ease); }
+@media (prefers-reduced-motion: reduce) {
+  .mail-row .summary.is-summarizing, .mail-row.is-focus .summary.is-summarizing { animation: none; background: none; color: var(--faint); }
+  .mail-row .summary.is-arriving { animation: none; }
+}
