@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {ArrowUpRight,Check,ChevronDown,ChevronsUpDown,Copy,KeyRound,Search} from '../icons';
 import {Button,Group,GroupRow,Popover,Spinner,cx} from '../ui';
 import {aiFeatures,askProvider,askProviders,askServerSetting,isAskServer,parseAskModel,voiceProviders,type AiFeature,type AiModelSetting,type AskModelInfo,type AskProviderId,type AskServerId} from '../../shared/ask';
@@ -74,12 +74,12 @@ const addressHelp:Record<AskServerId,string>={
   lmstudio:'Leave empty for LM Studio on this Mac. Another machine works too; the mail you use AI on is sent there.',
   custom:'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1. The mail you use AI on is sent to this server. An optional key goes in CUSTOM_AI_API_KEY.',
 };
-/** A server's address. Saved on Enter or when leaving the field; the engine validates it. Empty means the default. */
+/** A server's address. Saved when leaving the field (Enter leaves it); the engine validates it. Empty means the default. */
 function ServerAddress({id,value,placeholder,onChange}:{id:AskServerId;value:string;placeholder:string;onChange:(url:string)=>void}){
   const [text,setText]=useState(value);useEffect(()=>setText(value),[value]);
   const save=()=>{if(text.trim()!==value)onChange(text.trim());};
   return <GroupRow label="Server address" description={addressHelp[id]}>
-    <input className="ai-address" aria-label="Server address" spellCheck={false} placeholder={placeholder} value={text} onChange={e=>setText(e.target.value)} onBlur={save} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();save();(e.target as HTMLInputElement).blur();}e.stopPropagation();}}/>
+    <input className="ai-address" aria-label="Server address" spellCheck={false} placeholder={placeholder} value={text} onChange={e=>setText(e.target.value)} onBlur={save} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();(e.target as HTMLInputElement).blur();}e.stopPropagation();}}/>
   </GroupRow>;
 }
 
@@ -149,8 +149,13 @@ function ModelPicker({feature,label,providers,value,onChange}:{feature:AiFeature
   function show(next:boolean){if(next){setQuery('');}setOpen(next);}
   useEffect(()=>{if(open&&!query)setActive(Math.max(0,flat.findIndex(isCurrent)));},[open]);
   useEffect(()=>{if(open)listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({block:'nearest'});},[active,open]);
-  // Focus moves into the search so typing searches instead of reaching the app's shortcuts.
-  useEffect(()=>{if(!open)return;const frame=requestAnimationFrame(()=>search.current?.focus({preventScroll:true}));return()=>cancelAnimationFrame(frame);},[open]);
+  // Focus moves into the search the moment it mounts, so typing searches instead of reaching the app's shortcuts.
+  // The surface stays hidden until it is positioned, so focus is retried for a few frames until it takes.
+  const searchRef=useCallback((el:HTMLInputElement|null)=>{
+    search.current=el;let tries=0;
+    const focus=()=>{if(!el?.isConnected||document.activeElement===el)return;el.focus({preventScroll:true});if(document.activeElement!==el&&++tries<10)requestAnimationFrame(focus);};
+    focus();
+  },[]);
   function choose(o:Option){onChange(`${o.provider}:${o.id}`);setOpen(false);trigger.current?.focus({preventScroll:true});}
   function keys(event:React.KeyboardEvent){
     if(!event.metaKey&&!event.ctrlKey&&event.key!=='Escape')event.stopPropagation();
@@ -159,11 +164,17 @@ function ModelPicker({feature,label,providers,value,onChange}:{feature:AiFeature
   }
   let index=-1;
   return <>
-    <button ref={trigger} type="button" className={cx('ai-model-trigger',open&&'is-open')} aria-haspopup="listbox" aria-expanded={open} aria-label={`${label} model: ${current?.label??'none'} on ${provider?.label??''}`} onClick={()=>show(!open)} onKeyDown={event=>{if(event.key==='ArrowDown'&&!open){event.preventDefault();show(true);}}}>
+    <button ref={trigger} type="button" className={cx('ai-model-trigger',open&&'is-open')} aria-haspopup="listbox" aria-expanded={open} aria-label={`${label} model: ${current?.label??'none'} on ${provider?.label??''}`} onClick={()=>show(!open)} onKeyDown={event=>{
+      // Keys pressed while the list is still appearing belong to the picker, not the app's shortcuts.
+      if(open&&!event.metaKey&&!event.ctrlKey&&event.key!=='Escape'){
+        event.stopPropagation();
+        if(event.key.length===1){event.preventDefault();setQuery(q=>q+event.key);setActive(0);}
+      }
+      if(event.key==='ArrowDown'&&!open){event.preventDefault();show(true);}}}>
       <span><strong>{current?.label??'Choose a model'}</strong><small>{provider?.label}</small></span><ChevronsUpDown size={13}/>
     </button>
     <Popover open={open} anchor={trigger.current} onClose={()=>setOpen(false)} placement="bottom-end" className="ui-surface ai-model-picker" label={`${label} models`} onKeyDown={keys}>
-      <label className="ai-model-search"><Search size={14}/><input ref={search} aria-controls={listId} aria-activedescendant={flat[active]?`${listId}-${active}`:undefined} placeholder={custom&&!voice?'Search models or type a name':`Search ${voice?'speech ':''}models`} value={query} onChange={e=>{setQuery(e.target.value);setActive(0);}}/></label>
+      <label className="ai-model-search"><Search size={14}/><input ref={searchRef} aria-controls={listId} aria-activedescendant={flat[active]?`${listId}-${active}`:undefined} placeholder={custom&&!voice?'Search models or type a name':`Search ${voice?'speech ':''}models`} value={query} onChange={e=>{setQuery(e.target.value);setActive(0);}}/></label>
       <div ref={listRef} id={listId} className="ai-model-list" role="listbox" aria-label="Models">
         {groups.map(group=><div key={group.provider.id+(group.items[0]?.typed?'-typed':'')} role="group" aria-label={group.provider.label}>
           {!group.items[0]?.typed&&<p className="ai-model-group">{group.provider.label}{!ready(group.provider)&&<span className="is-missing">{group.provider.keyOptional?'Not running':'Not set up'}</span>}</p>}
