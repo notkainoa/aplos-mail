@@ -66,28 +66,35 @@ export function DialogHeader({title,onClose,closeLabel='Close'}:{title:React.Rea
 /* ---------- Confirmation ---------- */
 
 type ConfirmOptions={title:string;message?:string;confirmLabel?:string;cancelLabel?:string;danger?:boolean};
-type Pending=ConfirmOptions&{resolve:(ok:boolean)=>void;id:number};
+type ChoiceOptions=ConfirmOptions&{/** A third, destructive choice set apart on the left, such as "Delete". */alternateLabel:string};
+type Choice='confirm'|'alternate'|null;
+type Pending=ConfirmOptions&{alternateLabel?:string;resolve:(choice:Choice)=>void;id:number};
 let pending:Pending|null=null;const listeners=new Set<()=>void>();
 const emit=()=>{for(const listener of listeners)listener();};
 
 /** An in-app replacement for window.confirm that matches the rest of the interface. */
 export function confirmAction(options:ConfirmOptions){
-  return new Promise<boolean>(resolve=>{pending?.resolve(false);pending={...options,resolve,id:Date.now()};emit();});
+  return chooseAction(options).then(choice=>choice==='confirm');
+}
+/** A confirmation with a third way out; resolves null when the person cancels. */
+export function chooseAction(options:ChoiceOptions|ConfirmOptions){
+  return new Promise<Choice>(resolve=>{pending?.resolve(null);pending={...options,resolve,id:Date.now()};emit();});
 }
 
 export function ConfirmHost(){
   const current=useSyncExternalStore(listener=>{listeners.add(listener);return()=>listeners.delete(listener);},()=>pending,()=>pending);
   const [shown,setShown]=useState<Pending|null>(null);
   useEffect(()=>{if(current)setShown(current);},[current]);
-  function settle(ok:boolean){if(!current)return;current.resolve(ok);pending=null;emit();}
+  function settle(choice:Choice){if(!current)return;current.resolve(choice);pending=null;emit();}
   const view=current??shown;
-  return <Dialog open={!!current} onClose={()=>settle(false)} label={view?.title??'Confirm'} className="ui-confirm">
+  return <Dialog open={!!current} onClose={()=>settle(null)} label={view?.title??'Confirm'} className="ui-confirm">
     {view&&<>
       <h2>{view.title}</h2>
       {view.message&&<p>{view.message}</p>}
       <footer>
-        <Button variant="secondary" onClick={()=>settle(false)}>{view.cancelLabel??'Cancel'}</Button>
-        <Button variant={view.danger?'danger':'primary'} data-autofocus onClick={()=>settle(true)}>{view.confirmLabel??'OK'}</Button>
+        {view.alternateLabel&&<Button variant="danger" className="ui-confirm-alternate" onClick={()=>settle('alternate')}>{view.alternateLabel}</Button>}
+        <Button variant="secondary" onClick={()=>settle(null)}>{view.cancelLabel??'Cancel'}</Button>
+        <Button variant={view.danger?'danger':'primary'} data-autofocus onClick={()=>settle('confirm')}>{view.confirmLabel??'OK'}</Button>
       </footer>
     </>}
   </Dialog>;

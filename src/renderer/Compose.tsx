@@ -1,7 +1,7 @@
 import {askModelLabel} from '../shared/ask';
 import {useEffect,useRef,useState} from 'react';
 import {ArrowUpRight, Bold, Check, ChevronDown, ChevronsUpDown, Italic, Link, List, ListOrdered, Paperclip, Reply, ReplyAll, Send, SpellCheck, Strikethrough, TextQuote, Trash2, Underline, X, ImageIcon} from './icons';
-import {Avatar,Button,Checkbox,IconButton,Kbd,Menu,Notice,Select,Spinner,Tooltip,confirmAction,cx,dialogOpen,reducedMotion,useMenu} from './ui';
+import {Avatar,Button,Checkbox,IconButton,Kbd,Menu,Notice,Select,Spinner,Tooltip,chooseAction,confirmAction,cx,dialogOpen,reducedMotion,useMenu} from './ui';
 import DOMPurify from 'dompurify';
 import type {Account,Draft,SendAs,Settings,Thread} from '../shared/types';
 import {bridge,escapeHtml,fileToAttachment,invoke,plain,replyRecipients,uid} from './bridge';
@@ -9,7 +9,9 @@ import {useVoice} from './useVoice';
 import {LevelMeter} from './LevelMeter';
 interface Props {draft:Draft;accounts:Account[];settings:Settings;thread?:Thread;close:()=>void;notify:(text:string)=>void;popout?:boolean;inline?:boolean;fresh?:boolean;closing?:boolean;holdToTalk?:()=>boolean;onChange?:(draft:Draft)=>void;contacts?:Contact[];
   /** An AI-suggested instruction for this reply ("Say which layout direction you prefer"), offered as a one-click draft. */
-  suggestion?:string}
+  suggestion?:string;
+  /** Filled with this composer's way out, so the app can close it before going somewhere else. */
+  exitRef?:React.MutableRefObject<(()=>Promise<boolean>)|null>}
 const holdDelay=250;
 function splitAddresses(value:string){return value.split(/[,;]/).map(item=>item.trim()).filter(Boolean);}
 export type Contact={email:string;name:string};
@@ -64,7 +66,7 @@ function VoiceGlow({active,level}:{active:boolean;level:()=>number}){
   },[active]);
   return <span ref={glow} className="compose-glow" aria-hidden="true"/>;
 }
-export function Compose({draft,accounts,settings,thread,close,notify,popout,inline,fresh,closing,holdToTalk,onChange,contacts=[],suggestion}:Props){
+export function Compose({draft,accounts,settings,thread,close,notify,popout,inline,fresh,closing,holdToTalk,onChange,contacts=[],suggestion,exitRef}:Props){
   const [form,setForm]=useState<Draft>(draft);const current=useRef(form);const editor=useRef<HTMLDivElement>(null);const file=useRef<HTMLInputElement>(null);const imageInput=useRef<HTMLInputElement>(null);
   const [expanded,setExpanded]=useState(!!(draft.cc||draft.bcc));const [saved,setSaved]=useState(true);const [busy,setBusy]=useState('');const [error,setError]=useState(draft.sendError||'');const [suggested,setSuggested]=useState(suggestion);
   const mounted=useRef(true);const dirty=useRef(false);const edits=useRef(0);const saving=useRef<Promise<Draft>>(Promise.resolve(draft));const operation=useRef('');const workVersion=useRef(0);const aiRequest=useRef<string|undefined>(undefined);const terminal=useRef(false);const lastProp=useRef(draft);const terminalJob=useRef<Promise<void>|undefined>(undefined);const resend=useRef(false);
@@ -151,13 +153,34 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
       }
     })();terminalJob.current=job;await job;
   }
+  /**
+   * Every way out of the composer (Esc, the backdrop, going elsewhere in the app) comes here. Something written in
+   * this session asks whether to keep it as a draft or delete it; resolves false when the person keeps editing.
+   */
+  const leaving=useRef<Promise<boolean>|null>(null);
+  function leave(){
+    leaving.current??=(async()=>{
+      try{
+        if(terminal.current){await terminalJob.current;return terminal.current;}
+        if(!blank()&&(fresh||edits.current>0)){
+          const choice=await chooseAction({title:'Save this draft?',message:'Keep it in Drafts to finish later, or delete it.',confirmLabel:'Save draft',cancelLabel:'Keep editing',alternateLabel:'Delete'});
+          if(!choice)return false;
+          if(choice==='alternate'){await finish('discard');return terminal.current;}
+        }
+        await finish('close');return terminal.current;
+      }finally{leaving.current=null;}
+    })();
+    return leaving.current;
+  }
+  const leaveRef=useRef(leave);leaveRef.current=leave;
+  useEffect(()=>{if(!exitRef)return;const exit=()=>leaveRef.current();exitRef.current=exit;return()=>{if(exitRef.current===exit)exitRef.current=null;};},[exitRef]);
   const closeHandler=useRef(()=>finish('native-close'));closeHandler.current=()=>finish('native-close');
   // A renderer-initiated window.close() can reach beforeunload without the native close event.
   // Hold that path too, then ask main to close this window only after the draft has reached storage.
   useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(!dirty.current||terminal.current)return;event.preventDefault();event.returnValue='';if(window.aplos)void closeHandler.current();};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[]);
   useEffect(()=>bridge.subscribe(event=>{if(event.type==='prepare-close')void closeHandler.current();}),[]);
   useEffect(()=>{mounted.current=true;terminal.current=false;return()=>{mounted.current=false;terminal.current=true;stopWork();};},[]);
-  useEffect(()=>{function keyboard(event:KeyboardEvent){if(event.defaultPrevented||dialogOpen()||(event.target as HTMLElement)?.closest?.('.ask-panel'))return;if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();void finish('send');}if(event.key==='Escape'){event.stopPropagation();void finish('close');}}window.addEventListener('keydown',keyboard);return()=>window.removeEventListener('keydown',keyboard);});
+  useEffect(()=>{function keyboard(event:KeyboardEvent){if(event.defaultPrevented||dialogOpen()||(event.target as HTMLElement)?.closest?.('.ask-panel'))return;if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();event.stopPropagation();void finish('send');}if(event.key==='Escape'){event.stopPropagation();void leave();}}window.addEventListener('keydown',keyboard);return()=>window.removeEventListener('keydown',keyboard);});
   function setBody(html:string,preserveImages=false){const safe=preserveImages?keepImages(current.current.html,html):DOMPurify.sanitize(html);if(editor.current)editor.current.innerHTML=safe;patch({html:safe},true);}
   // Tab and the chip act only while the chip is on screen, and the suggestion is kept if the draft could not start.
   function suggestionShown(){return !!suggested&&!busy&&!listening&&bodyEmpty(form.html);}
@@ -309,7 +332,7 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
   // Focusing the editor only scrolls its first line into view; reveal the whole reply card under the thread.
   const rootRef=useRef<HTMLDivElement>(null);
   useEffect(()=>{if(!inline)return;const frame=requestAnimationFrame(()=>rootRef.current?.scrollIntoView({block:'nearest',behavior:reducedMotion()?'auto':'smooth'}));return()=>cancelAnimationFrame(frame);},[]);
-  return <div ref={rootRef} className={rootClass} onMouseDown={e=>{if(e.target===e.currentTarget&&!popout&&!inline)void finish('close');}}><section className={cx('composer',dragging&&'is-dropping',nudged&&'is-nudged',listening&&'is-listening')} role={inline?'region':'dialog'} aria-modal={inline?undefined:true} aria-label={inline?'Reply':'Compose email'}
+  return <div ref={rootRef} className={rootClass} onMouseDown={e=>{if(e.target===e.currentTarget&&!popout&&!inline)void leave();}}><section className={cx('composer',dragging&&'is-dropping',nudged&&'is-nudged',listening&&'is-listening')} role={inline?'region':'dialog'} aria-modal={inline?undefined:true} aria-label={inline?'Reply':'Compose email'}
     onDragEnter={e=>{if(!hasFiles(e))return;e.preventDefault();dragDepth.current++;setDragging(true);}}
     onDragOver={e=>{if(!hasFiles(e))return;e.preventDefault();e.dataTransfer.dropEffect='copy';}}
     onDragLeave={e=>{if(!hasFiles(e))return;dragDepth.current=Math.max(0,dragDepth.current-1);if(!dragDepth.current)setDragging(false);}}
@@ -326,7 +349,7 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
       <div className="actions">
         {!popout&&<IconButton label="Open in separate window" icon={ArrowUpRight} iconSize={18} onClick={()=>void finish('popout')} disabled={!!busy}/>}
         <IconButton label="Discard draft" icon={Trash2} iconSize={17} onClick={async()=>{if(blank()||await confirmAction({title:'Discard this draft?',message:'The draft and its attachments will be deleted.',confirmLabel:'Discard',danger:true}))await finish('discard');}}/>
-        {popout&&<IconButton label="Close" shortcut="Esc" icon={X} iconSize={18} onClick={()=>void finish('close')}/>}
+        {popout&&<IconButton label="Close" shortcut="Esc" icon={X} iconSize={18} onClick={()=>void leave()}/>}
         {listening?<Button variant="primary" className="send-button is-recording" tooltip={{content:'Finish recording',detail:'Esc to cancel'}} onClick={voice.stop}><LevelMeter level={voice.level} bars={4}/>Recording</Button>
         :<Button variant="primary" className={cx('send-button',form.to.trim()&&'ready')} icon={Send} loading={busy==='send'||voice.busy} tooltip={{content:form.to.trim()?'Send':'Add a recipient to send',shortcut:'⌘ ↵'}} onClick={()=>void finish('send')} disabled={sendDisabled}>Send</Button>}
       </div></header>
