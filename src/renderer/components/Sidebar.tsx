@@ -73,7 +73,7 @@ export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing
         <button className={cx('footer-link','footer-calendar',view==='calendar'&&'active')} aria-current={view==='calendar'?'page':undefined} onClick={()=>navigate('calendar')}>
           <CalendarDays size={18}/><span className="nav-label">Calendar</span><Keys combo="⌃ 6" size="sm" className="nav-keys"/>
         </button>
-        <IconButton label="Settings" shortcut="⌘ ," placement="top" icon={Gear} iconSize={16} active={view==='settings'} onClick={()=>navigate('settings')}/>
+        <IconButton label="Settings" shortcut="⌘ ," placement="top" icon={Gear} iconSize={16} className={cx(view==='settings'&&'is-active')} aria-current={view==='settings'?'page':undefined} onClick={()=>navigate('settings')}/>
         <IconButton label="Help" icon={HelpCircle} iconSize={16} active={help.open} aria-haspopup="menu" aria-expanded={help.open} onClick={help.toggle}/>
       </div>
       <Menu open={help.open} anchor={help.anchor} onClose={help.close} placement="top-end" label="Help" onError={onError} groups={[[
