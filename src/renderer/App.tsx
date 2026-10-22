@@ -125,9 +125,17 @@ export function App(){
  useEffect(()=>{if(!state)return;const theme=state.settings.theme;const media=matchMedia('(prefers-color-scheme: dark)');const apply=()=>document.documentElement.dataset.theme=theme==='system'?(media.matches?'dark':'light'):theme;apply();media.addEventListener('change',apply);return ()=>media.removeEventListener('change',apply);},[state?.settings.theme]);
  useEffect(()=>{if(!popoutDraft||!state||composer||draftBlocked)return;const draft=state.drafts.find(d=>d.id===popoutDraft);if(draft)void invoke<boolean>('window.claim',{draftId:draft.id}).then(ok=>ok?setComposer(draft):setDraftBlocked(true)).catch(e=>setFatal(e.message));},[!!state,popoutDraft]);
 
- function replyGuard(){if(!inlineReply)return false;notify('Send or close your reply first.');return true;}
- function navigate(view:View,threadId?:string){if(replyGuard())return;const next={view,threadId};setRoute(next);setSearchMode(false);setSelected(new Set());setRoutes(prev=>[...prev.slice(0,historyIndex+1),next]);setHistoryIndex(i=>i+1);}
- function historyMove(delta:number){if(replyGuard())return;const index=historyIndex+delta;if(index<0||index>=routes.length)return;setHistoryIndex(index);setRoute(routes[index]);setSelected(new Set());setSearchMode(false);}
+ const composeExit=useRef<(()=>Promise<boolean>)|null>(null);
+ /** Going elsewhere closes an open composer first (it asks about anything written); `then` runs only once it has closed. */
+ // Clicks made while the composer is deciding replace each other, so only the last one goes anywhere.
+ const pendingLeave=useRef<(()=>void)|null>(null);
+ function leaveCompose(then:()=>void){
+  if(!composer||popoutDraft||!composeExit.current){then();return;}
+  const waiting=!!pendingLeave.current;pendingLeave.current=then;if(waiting)return;
+  void composeExit.current().then(left=>{const next=pendingLeave.current;pendingLeave.current=null;if(left)next?.();},()=>{pendingLeave.current=null;});
+ }
+ function navigate(view:View,threadId?:string){leaveCompose(()=>{const next={view,threadId};setRoute(next);setSearchMode(false);setSelected(new Set());setRoutes(prev=>[...prev.slice(0,historyIndex+1),next]);setHistoryIndex(i=>i+1);});}
+ function historyMove(delta:number){const index=historyIndex+delta;if(index<0||index>=routes.length)return;leaveCompose(()=>{setHistoryIndex(index);setRoute(routes[index]);setSelected(new Set());setSearchMode(false);});}
  async function updateSettings(patch:Partial<Preferences>){try{await invoke('settings.update',{patch});}catch(e){fail(e);}}
  async function patch(ids:string[],p:Partial<Thread>,label?:string,keepTriage=false){if(!keepTriage)lastTriage.current=null;try{await invoke('thread.update',{ids,patch:p,compact:true});if(label)notify(label,true);setSelected(new Set());return true;}catch(e){fail(e);return false;}}
  async function undo(){
@@ -212,7 +220,7 @@ export function App(){
  // A preview request belongs to one visit of its thread.
  useEffect(()=>{if(previewFile&&previewFile.threadId!==route.threadId)setPreviewFile(undefined);},[route.threadId]);
  const inlineReply=!!composer&&!!selectedThread&&!popoutDraft&&!popoutThread&&composer.threadId===selectedThread.id&&composer.mode!=='new'&&composer.mode!=='forward';
- function openThread(id:string){if(inlineReply&&id!==selectedThread?.id){notify('Send or close your reply first.');return;}setRoute(r=>({...r,threadId:id}));const t=state?.threads.find(t=>t.id===id);if(t?.unread)void invoke('thread.update',{ids:[id],patch:{unread:false},recordUndo:false,compact:true}).catch(fail);}
+ function openThread(id:string){if(inlineReply&&id===selectedThread?.id)return;leaveCompose(()=>{setRoute(r=>({...r,threadId:id}));const t=state?.threads.find(t=>t.id===id);if(t?.unread)void invoke('thread.update',{ids:[id],patch:{unread:false},recordUndo:false,compact:true}).catch(fail);});}
  function nextThread(delta:number){const next=order[readerIndex+delta];if(next)openThread(next.id);}
  // Focus moves glide (see MailList `useFocusGlide`); the ends of the list give a small bump instead of wrapping.
  function moveCursor(delta:number,repeat=false){
@@ -315,7 +323,7 @@ export function App(){
   }else if(talkHeld.current){talkHeld.current=false;dispatchEvent(new Event('aplos:talk-release'));}
  }
  async function setDue(id:string,dueDate:string,label:string){setDuePrompt(undefined);try{await invoke('thread.update',{ids:[id],patch:{dueDate},recordUndo:false,compact:true});notify(label);}catch(e){fail(e);}}
- function openSearch(){if(replyGuard())return;setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));setTimeout(()=>searchInput.current?.focus(),20);}
+ function openSearch(){leaveCompose(()=>{setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));setTimeout(()=>searchInput.current?.focus(),20);});}
  function closeSearch(){setSearchMode(false);setSearch('');}
  function rememberSearch(query:string){const value=query.trim();if(!value)return;setRecentSearches(prev=>{const next=[value,...prev.filter(q=>q!==value)].slice(0,5);localStorage.setItem(recentSearchKey,JSON.stringify(next));return next;});}
  function searchKeys(e:React.KeyboardEvent<HTMLInputElement>){
@@ -344,7 +352,7 @@ export function App(){
    if((e.metaKey||e.ctrlKey)&&['k','j',',','/'].includes(e.key)){e.preventDefault();command(e.key==='k'?'search':e.key==='j'?'ask':e.key===','?'settings':'shortcuts');return;}
    if(e.ctrlKey&&!e.metaKey&&!e.altKey&&/^[1-9]$/.test(e.key)&&!composer){const section=sections[Number(e.key)-1];if(section){e.preventDefault();navigate(section.view);}return;}
    if(composer||eventEditor||typing||control)return;
-   if(e.key==='Escape'){setDuePrompt(undefined);if(selected.size){setSelected(new Set());return;}if(selectedThread){if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}else if(searchMode){setSearchMode(false);setSearch('');}return;}
+   if(e.key==='Escape'){setDuePrompt(undefined);if(selected.size){setSelected(new Set());return;}if(selectedThread)setRoute(r=>({...r,threadId:undefined}));else if(searchMode){setSearchMode(false);setSearch('');}return;}
    if((e.metaKey||e.ctrlKey)&&e.key==='a'&&!selectedThread&&order.length){e.preventDefault();setSelected(new Set(order.map(t=>t.id)));return;}
    if(e.metaKey||e.ctrlKey||e.altKey)return;
    if(e.shiftKey&&e.key.toLowerCase()==='a'){e.preventDefault();toggleToday();return;}
@@ -419,7 +427,7 @@ export function App(){
  });
  const topbarActions=useHandlers({
   showSidebar:()=>{if(squeezed)setPeek(true);else void updateSettings({sidebar:true});},
-  back:()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));},
+  back:()=>leaveCompose(()=>setRoute(r=>({...r,threadId:undefined}))),
   compose:()=>void newDraft(),ask:()=>{setDockTab('ask');setAsk(true);},calendar:()=>{setDockTab('today');setAsk(true);},
  });
  const calendarActions=useHandlers({
@@ -434,7 +442,7 @@ export function App(){
  });
  const askActions=useHandlers({
   onOpen:()=>{setDockTab('ask');setAsk(true);},onClose:()=>setAsk(false),
-  onSearch:(query:string)=>{if(replyGuard())return;setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));},
+  onSearch:(query:string)=>leaveCompose(()=>{setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));}),
   onCommand:(name:string)=>command(name),onEditEvent:(event:Partial<CalendarEvent>)=>setEventEditor(event),
   onThread:(id:string)=>navigate('all',id),notify:(text:string)=>notify(text),
   // A reply proposal opens against its email, like Reply does.
@@ -449,13 +457,13 @@ export function App(){
  const prefs=state.settings;
  const {low,later,homeLater,replyHome,followUps,today}=buckets;
  const heading={title:searchMode?'Search':titles[route.view],count:filtered.length};
- const replySlot=inlineReply&&composer?<Compose key={composer.id} inline draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current} suggestion={selectedThread?.action?.kind==='reply'?selectedThread.action.prompt:undefined}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
+ const replySlot=inlineReply&&composer?<Compose key={composer.id} inline exitRef={composeExit} draft={composer} accounts={state.accounts} settings={prefs} thread={selectedThread} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} holdToTalk={()=>talkHeld.current} suggestion={selectedThread?.action?.kind==='reply'?selectedThread.action.prompt:undefined}/>:busy==='reply'&&!composer?<div className="compose-inline"><ComposeSkeleton/></div>:undefined;
  // A plan found in the reader goes to Today for review; a saved event opens in the editor.
  const readerProps={settings:prefs,editEvent:(event:Partial<CalendarEvent>)=>{if(event.threadId&&!event.id)reviewPlan(event.threadId,event);else setEventEditor(event);},events:state.events,notify,undo:()=>void undo(),talk,heading};
  // The suggested step also sits in the reader's AI card; there Space keeps replying, so it shows no key.
  const openAction=selectedThread&&liveAction(selectedThread);const suggested=openAction&&openAction.kind!=='read'?openAction:undefined;
  const readerAction=suggested&&selectedThread&&<Button size="sm" variant="tinted" className="reader-suggested" icon={actionIcon(suggested.kind)} loading={actionBusy===selectedThread.id} onClick={()=>void runAction(selectedThread)}>{suggested.label}</Button>;
- const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} restore={()=>void patch([selectedThread.id],{status:'new'},'Restored to Home').then(ok=>{if(ok)navigate('home',selectedThread.id);})} triage={(status,drag)=>triage(selectedThread,status,drag)} bookmark={()=>toggleBookmark(selectedThread)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} previewId={previewFile?.threadId===selectedThread.id?previewFile.attachmentId:undefined} entering={entering?.id===selectedThread.id?entering.from:undefined} action={readerAction}/>;
+ const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else leaveCompose(()=>setRoute(r=>({...r,threadId:undefined})));}} patch={patch} restore={()=>void patch([selectedThread.id],{status:'new'},'Restored to Home').then(ok=>{if(ok)navigate('home',selectedThread.id);})} triage={(status,drag)=>triage(selectedThread,status,drag)} bookmark={()=>toggleBookmark(selectedThread)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} previewId={previewFile?.threadId===selectedThread.id?previewFile.attachmentId:undefined} entering={entering?.id===selectedThread.id?entering.from:undefined} action={readerAction}/>;
  const ghost=leaving&&<div key={leaving.key} className={cx('fling','fling-'+leaving.status,'fling-to-'+leaving.to,leaving.drag&&'is-dragged')} style={leaving.drag&&{'--from-x':leaving.drag.x+'px','--from-r':(leaving.drag.x/leaving.drag.width*6).toFixed(2)+'deg'} as React.CSSProperties} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
  const doneLeft=prefs.triageDirection==='done-left';
  // Beside an open reader the list only marks the open row; the card would repeat what the reader shows.
@@ -515,7 +523,7 @@ export function App(){
  {reader}
  {ghost}
  </div>
- {composerLayer&&composer&&<Compose key={composer.id} draft={composer} accounts={state.accounts} settings={prefs} thread={state.threads.find(t=>t.id===composer.threadId)} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} closing={composeClosing} holdToTalk={()=>talkHeld.current}/>}
+ {composerLayer&&composer&&<Compose key={composer.id} exitRef={composeExit} draft={composer} accounts={state.accounts} settings={prefs} thread={state.threads.find(t=>t.id===composer.threadId)} close={closeCompose} notify={notify} onChange={setLiveDraft} contacts={contacts} fresh={freshDraft.current===composer.id} closing={composeClosing} holdToTalk={()=>talkHeld.current}/>}
  {busy==='draft'&&!composer&&<div className="compose-layer"><ComposeSkeleton/></div>}
  <DuePopover prompt={duePrompt} setDue={(id,day,label)=>void setDue(id,day,label)} dismiss={()=>setDuePrompt(undefined)}/>
  </main>

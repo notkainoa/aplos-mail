@@ -208,6 +208,7 @@
 .ui-confirm h2 { font-size: var(--text-lg); line-height: 22px; }
 .ui-confirm p { margin-top: 6px; color: var(--dim); user-select: text; }
 .ui-confirm footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.ui-confirm-alternate { margin-right: auto; }
 
 /* ---------- Tabs ---------- */
 
