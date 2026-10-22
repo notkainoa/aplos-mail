@@ -431,7 +431,10 @@ export function App(){
   onOpen:()=>{setDockTab('ask');setAsk(true);},onClose:()=>setAsk(false),
   onSearch:(query:string)=>{if(replyGuard())return;setSearch(query);setSearchMode(true);setRoute(r=>({...r,threadId:undefined}));},
   onCommand:(name:string)=>command(name),onEditEvent:(event:Partial<CalendarEvent>)=>setEventEditor(event),
-  onThread:(id:string)=>navigate('all',id),onDraft:(draft:Partial<Draft>)=>void newDraft(draft),notify:(text:string)=>notify(text),
+  onThread:(id:string)=>navigate('all',id),notify:(text:string)=>notify(text),
+  // A reply proposal opens against its email, like Reply does.
+  onDraft:(draft:Partial<Draft>)=>{const thread=draft.threadId?state?.threads.find(t=>t.id===draft.threadId):undefined;void newDraft(draft,thread,thread?draft.mode??'reply':'new');},
+  currentContext:()=>({view:route.view,threadId:actionTarget.current,selectedIds:[...selected].slice(0,50)}),
   currentDraft:()=>liveDraft.current||composer,
   onApplyDraft:(p:Partial<Draft>)=>{if(!composer)return;const base=liveDraft.current||composer;setComposer({...base,...p,id:composer.id,accountId:composer.accountId,mode:composer.mode,threadId:composer.threadId,attachments:base.attachments,revision:base.revision,updatedAt:new Date().toISOString()});},
  });

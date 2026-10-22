@@ -176,20 +176,23 @@ test('authorized Gmail aliases retain selected identity and signature; unavailab
 });
 
 test('AI proposals never send or overwrite drafts; citations are scoped and conversations persist',async()=>{
-  let requestMessages:Array<{content:string}>=[];
+  let requestMessages:unknown[]=[];let turn=0;
   const groq={...createGroq({apiKey:''}),available:true,
     summarize:async()=>({summary:'A volunteer invitation',todo:'Confirm the shift'}),
-    ask:async(messages:Array<{content:string}>)=>{requestMessages=messages;return {role:'assistant' as const,content:'The invitation is in your personal mail.',citations:['garden','design','unknown'],proposal:{html:'<p>Sounds good.</p>'}};},
+    // First a draft proposal for the open email, then an answer citing it and a ref the model never saw.
+    chat:async(request:{messages:unknown[]})=>{requestMessages=request.messages;return turn++%2===0
+      ?{content:'',toolCalls:[{id:'1',name:'propose_draft',arguments:JSON.stringify({to:'maya@garden.example',body:'Sounds good.',reply_to:'m1'})}]}
+      :{content:'The invitation is in your personal mail [m1][m9].',toolCalls:[]};},
     draft:async()=>({html:'<p>An original proposal.</p>'}),
   };
   const f=await fixture({groq});
   try{
     const original=(await f.service.invoke('state.get')).drafts;
-    const result=await f.service.invoke('ai.ask',{message:'What should I reply?',accountId:'personal',draft:{to:'maya@garden.example',subject:'Saturday',html:'<p>I can bring gloves.</p>',ignoredSecret:'never transmit'}});
-    assert.match(requestMessages[0].content,/I can bring gloves/);assert.ok(!requestMessages[0].content.includes('ignoredSecret'));assert.ok(!requestMessages[0].content.includes('never transmit'));
+    const result=await f.service.invoke('ai.ask',{message:'What should I reply?',accountId:'personal',context:{threadId:'garden'},draft:{to:'maya@garden.example',subject:'Saturday',html:'<p>I can bring gloves.</p>',ignoredSecret:'never transmit'}});
+    const sent=JSON.stringify(requestMessages);assert.match(sent,/I can bring gloves/);assert.ok(!sent.includes('ignoredSecret'));assert.ok(!sent.includes('never transmit'));
     assert.equal(result.messages[0].content,'What should I reply?');
     await assert.rejects(f.service.invoke('ai.ask',{message:'Edit this',draft:{html:123}}),/Invalid text/);
-    assert.deepEqual(result.messages[1].citations,['garden']);assert.ok(result.messages[1].proposal);
+    assert.deepEqual(result.messages[1].citations,['garden']);assert.deepEqual(result.messages[1].proposal,{html:'<p>Sounds good.</p>',to:'maya@garden.example',threadId:'garden',mode:'reply'});
     assert.deepEqual((await f.service.invoke('state.get')).drafts,original);
     assert.equal((await f.service.invoke('ai.summarize',{threadId:'garden'})).summary,'A volunteer invitation');
     await f.service.invoke('ai.draft',{instruction:'Draft a reply'});assert.deepEqual((await f.service.invoke('state.get')).drafts,original);

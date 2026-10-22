@@ -6,8 +6,10 @@ import {Avatar,Badge,Button,Group,GroupRow,Notice,Select,Switch,Tabs,Tooltip,con
 import {AddAccountDialog} from './components/AddAccount';
 import {DomainCheck} from './components/DomainCheck';
 import {DeviceSync} from './components/DeviceSync';
+import {AiSettings} from './components/AiSettings';
+import {askServerSetting} from '../shared/ask';
 
-const categories=['General','Mail','Calendar','Notifications','Accounts','Help & about'] as const;
+const categories=['General','Mail','Calendar','AI','Notifications','Accounts','Help & about'] as const;
 export type SettingsCategory=typeof categories[number];
 type Category=SettingsCategory;
 const mailboxActions:[string,string][]=[['archive','Archive'],['read','Keep in inbox (read)'],['unread','Keep in inbox (unread)']];
@@ -77,6 +79,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <Group title="Plans from your mail">{toggle('Automatically add plans','Groq detects meetings, reservations and flights during sync. Review your calendar regularly.','autoCalendar')}{toggle('Show Google’s Gmail events','Include events Google has created from your mail.','gmailEvents')}</Group>
    <Group title="Calendar access">{accountRows}<p className="group-note">Google and Outlook accounts include their calendars. iCloud calendars use the same app-specific password. Aplos never sends invitations without your action.</p></Group>
   </>}
+  {tab==='AI'&&<AiSettings value={s.askModel} groqReady={capabilities.groq} servers={{ollama:s.askOllamaUrl,lmstudio:s.askLmStudioUrl,custom:s.askCustomUrl}} onChange={askModel=>onChange({askModel})} onServer={(id,url)=>onChange({[askServerSetting[id]]:url})}/>}
   {tab==='Notifications'&&<>
    <Group title="Desktop notifications">{toggle('Show notifications','Get a heads-up when new mail arrives.','notifications')}<GroupRow label="Test notification" description="Click the notification to return to Aplos."><Button variant="secondary" size="sm" loading={busy==='notification'} onClick={()=>void run('notification',()=>invoke('notification.test'))}>Send test</Button></GroupRow></Group>
    <Group title="For each account">{state.accounts.map(a=><GroupRow key={a.id} label={a.name} description={a.email}><Switch label={'Notifications for '+a.email} checked={s.accountNotifications[a.id]!==false} onChange={on=>onChange({accountNotifications:{...s.accountNotifications,[a.id]:on}})}/></GroupRow>)}</Group>
@@ -88,7 +91,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <div className="about-card"><span className={'app-icon large '+s.icon}>a</span><h2>Aplos Mail</h2><p>A little less inbox. A little more life.</p><span className="version">Version {capabilities.version} · {capabilities.desktop?'macOS desktop':'Browser preview'}</span></div>
    <Group title="A few useful things">
     <GroupRow label="Keyboard shortcuts" description="Make light work of your inbox."><Button variant="secondary" size="sm" icon={Keyboard} shortcut="?" onClick={shortcuts}>View shortcuts</Button></GroupRow>
-    <GroupRow label="AI connection" description="Only Groq is used for AI and transcription."><Badge tone={capabilities.groq?'green':'amber'}>{capabilities.groq?'Groq configured':'GROQ_API_KEY needed'}</Badge></GroupRow>
+    <GroupRow label="AI connection" description="Groq runs summaries, polish and transcription. Ask can also use OpenRouter or OpenCode Go."><Badge tone={capabilities.groq?'green':'amber'}>{capabilities.groq?'Groq configured':'GROQ_API_KEY needed'}</Badge></GroupRow>
     <GroupRow label="Updates" description="This personal build updates when you rebuild the app."><span className="muted small">Local development build</span></GroupRow>
     <GroupRow label="Export local data" description="Includes your cached mail and drafts. Keep it somewhere private."><Button variant="secondary" size="sm" icon={Download} loading={busy==='export'} onClick={()=>void run('export',async()=>{const data=await invoke<string>('data.export');await saveFile('aplos-export.json',btoa(unescape(encodeURIComponent(data))));notify('Export prepared');})}>Export</Button></GroupRow>
     <GroupRow label="Reset demo mail" description="Replace local demo accounts with fresh original examples."><Button variant="danger" size="sm" loading={busy==='reset'} onClick={async()=>{if(await confirmAction({title:'Reset demo mail?',message:'Demo accounts and demo drafts return to their original examples. Connected accounts are preserved.',confirmLabel:'Reset demo',danger:true}))void run('reset',()=>invoke('demo.reset'));}}>Reset demo</Button></GroupRow>

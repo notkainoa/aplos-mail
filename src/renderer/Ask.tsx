@@ -1,25 +1,32 @@
 import {memo,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {CalendarDays,Clock,CornerDownLeft,FileText,Gear,History,Home,Keyboard,MessageCircle,Mic,Plus,Search,Square,SquarePen,Trash2} from './icons';
 import {Avatar,Button,IconButton,Kbd,Keys,Notice,Spinner,Tooltip,confirmAction,cx,dialogOpen,type Icon} from './ui';
-import type {Account,CalendarEvent,Conversation,Draft,Settings,Thread} from '../shared/types';
-import {dateLabel,invoke,uid} from './bridge';
+import type {Account,AskStep,CalendarEvent,Conversation,Draft,Settings,Thread} from '../shared/types';
+import {bridge,dateLabel,invoke,uid} from './bridge';
+import {askModelLabel} from '../shared/ask';
+import {AskDraftCard,AskSources,AskSteps,AskTriageCard,Prose} from './AskAnswer';
 import {useVoice} from './useVoice';
 import {LevelMeter} from './LevelMeter';
 import {Marked} from './components/MailList';
 import {AskEvent} from './AskEvent';
+import {showSettingsTab} from './Settings';
 import type {Contact} from './Compose';
 
 const holdDelay=220;
 const timeZone=Intl.DateTimeFormat().resolvedOptions().timeZone;
 type Props={open:boolean;onOpen:()=>void;onClose:()=>void;onSearch:(query:string)=>void;onCommand:(command:string)=>void;
   conversations:Conversation[];threads:Thread[];events:CalendarEvent[];accounts:Account[];contacts:Contact[];accountId:string;settings:Settings;examples:string[];
-  onThread:(id:string)=>void;onDraft:(draft:Partial<Draft>)=>void;notify:(t:string)=>void;currentDraft:()=>Draft|undefined;hasDraft:boolean;onApplyDraft:(proposal:Partial<Draft>)=>void;onEditEvent:(event:Partial<CalendarEvent>)=>void};
+  onThread:(id:string)=>void;onDraft:(draft:Partial<Draft>)=>void;notify:(t:string)=>void;currentDraft:()=>Draft|undefined;hasDraft:boolean;onApplyDraft:(proposal:Partial<Draft>)=>void;onEditEvent:(event:Partial<CalendarEvent>)=>void;
+  /** What the user is looking at, so "summarize this" needs no search. */
+  currentContext:()=>{view:string;threadId?:string;selectedIds?:string[]}};
+/** The answer being written: streamed text, tool steps and the sources cited so far. */
+type Live={text:string;steps:AskStep[];cites:string[]};
 type Item={key:string;group?:string;icon:React.ReactNode;label:React.ReactNode;detail?:React.ReactNode;keys?:string;run:()=>void};
 const commands:{id:string;label:string;icon:Icon;keys?:string;words?:string}[]=[
   {id:'compose',label:'Compose',icon:SquarePen,keys:'C',words:'new email write'},
   {id:'home',label:'Go to Home',icon:Home,keys:'⌃ 1',words:'inbox'},
   {id:'later',label:'Go to Later',icon:Clock,keys:'⌃ 2',words:'todo bookmarks'},
-  {id:'calendar',label:'Go to Calendar',icon:CalendarDays,keys:'⌃ 8',words:'events schedule plans'},
+  {id:'calendar',label:'Go to Calendar',icon:CalendarDays,keys:'⌃ 6',words:'events schedule plans'},
   {id:'drafts',label:'Go to Drafts',icon:FileText,keys:'⌃ 4'},
   {id:'settings',label:'Go to Settings',icon:Gear,keys:'⌘ ,',words:'preferences accounts'},
   {id:'search',label:'Search all mail',icon:Search,keys:'/',words:'find'},
@@ -31,9 +38,9 @@ const isA=(event:KeyboardEvent)=>event.key.toLowerCase()==='a';
 const typingIn=(el:HTMLElement)=>['INPUT','TEXTAREA','SELECT'].includes(el.tagName)||el.isContentEditable;
 
 /** The docked Ask panel. Tap A to type, hold A anywhere to talk and release to ask; nothing acts without a click. */
-export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conversations,threads,events,accounts,contacts,accountId,settings,examples,onThread,onDraft,notify,currentDraft,hasDraft,onApplyDraft,onEditEvent}:Props){
+export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conversations,threads,events,accounts,contacts,accountId,settings,examples,onThread,onDraft,notify,currentDraft,hasDraft,onApplyDraft,onEditEvent,currentContext}:Props){
   const [id,setId]=useState<string|undefined>();const [input,setInput]=useState('');const [busy,setBusy]=useState(false);const [history,setHistory]=useState(false);const [error,setError]=useState('');const [pending,setPending]=useState('');
-  const [active,setActive]=useState(-1);const [held,setHeld]=useState(false);const [saved,setSaved]=useState<Record<string,string>>({});
+  const [active,setActive]=useState(-1);const [held,setHeld]=useState(false);const [saved,setSaved]=useState<Record<string,string>>({});const [live,setLive]=useState<Live|undefined>();
   const field=useRef<HTMLTextAreaElement>(null);const panel=useRef<HTMLElement>(null);const scroller=useRef<HTMLDivElement>(null);const conversation=conversations.find(c=>c.id===id);
   const mounted=useRef(true);const request=useRef<string|undefined>(undefined);const snapshots=useRef(new Map<string,string>());
   const openRef=useRef(open);openRef.current=open;const returnFocus=useRef<HTMLElement|null>(null);const firstRender=useRef(true);
@@ -49,25 +56,41 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
   async function ask(text=input){
     if(!text.trim()||request.current||voice.isActive())return;
     const requestId=uid();request.current=requestId;const draft=currentDraft();const snapshot=fingerprint(draft);
-    setBusy(true);setError('');setPending(text.trim());setInput('');setHistory(false);
+    setBusy(true);setError('');setPending(text.trim());setInput('');setHistory(false);setLive({text:'',steps:[],cites:[]});
     try{
-      const result=await invoke<Conversation>('ai.ask',{conversationId:id,message:text,accountId,draft,requestId,timeZone});
+      const result=await invoke<Conversation>('ai.ask',{conversationId:id,message:text,accountId,draft,requestId,timeZone,context:currentContext()});
       if(!mounted.current||request.current!==requestId)return;
       snapshots.current.set(`${result.id}:${result.messages.length-1}`,snapshot);setId(result.id);
     }catch(error){if(mounted.current&&request.current===requestId){setError((error as Error).message);setInput(text);}}
-    finally{if(mounted.current&&request.current===requestId){request.current=undefined;setBusy(false);setPending('');}}
+    finally{if(mounted.current&&request.current===requestId){request.current=undefined;setBusy(false);setPending('');setLive(undefined);}}
   }
+  // Progress for the running answer streams in as engine events; anything for another request is ignored.
+  useEffect(()=>bridge.subscribe(event=>{
+    if(event.type!=='ai.progress')return;
+    const p=event.payload as {requestId?:string;type:string;text?:string;step?:AskStep;index?:number;threadId?:string};
+    if(!p||p.requestId!==request.current)return;
+    setLive(current=>{
+      if(!current)return current;
+      if(p.type==='text'&&p.text)return {...current,text:current.text+p.text};
+      if(p.type==='reset')return {...current,text:'',cites:[]};
+      if(p.type==='cite'&&p.index&&p.threadId){const cites=[...current.cites];cites[p.index-1]=p.threadId;return {...current,cites};}
+      if(p.type==='step'&&p.step){const steps=current.steps.filter(s=>s.id!==p.step!.id);const at=current.steps.findIndex(s=>s.id===p.step!.id);steps.splice(at<0?steps.length:at,0,p.step);return {...current,steps};}
+      return current;
+    });
+  }),[]);
   const askLatest=useRef(ask);askLatest.current=ask;
   function cancelRequest(){const requestId=request.current;if(requestId)void invoke('ai.cancel',{requestId}).catch(error=>{if(mounted.current)setError(error.message);});}
   async function apply(proposal:Partial<Draft>,index:number){
     const fields:Partial<Draft>={};
     for(const key of ['to','cc','bcc','subject','html'] as const){const value=proposal[key];if(typeof value==='string'&&(key==='html'||value.trim()))fields[key]=value;}
+    // A reply opens against its email so it threads and picks the right account.
+    const reply=proposal.threadId&&threads.some(t=>t.id===proposal.threadId)?{threadId:proposal.threadId,mode:proposal.mode??'reply' as const}:{};
     const draft=currentDraft();
     if(draft){
       const snapshot=snapshots.current.get(`${id}:${index}`);
       if(snapshot!==fingerprint(draft)&&!await confirmAction({title:'Apply this suggestion?',message:'The draft changed since this suggestion was written. Applying it replaces the matching fields.',confirmLabel:'Apply'}))return;
       onApplyDraft(fields);notify('Suggestion applied. Review the draft before sending.');
-    }else onDraft(fields);
+    }else onDraft({...fields,...reply});
   }
   const voice=useVoice(settings.microphone,text=>{
     const auto=autoAsk.current;autoAsk.current=false;
@@ -149,6 +172,8 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
   }
   const recording=voice.recording||voice.preparing;const transcribing=voice.busy&&!voice.preparing;
   const chat=!!conversation||busy;const activeItem=items[active];
+  const byId=useMemo(()=>new Map(threads.map(t=>[t.id,t])),[threads]);
+  const modelName=useMemo(()=>{const label=askModelLabel(settings.askModel);return `${label.provider} ${label.model}`;},[settings.askModel]);
   const body=history?<div className="ask-history">{conversations.length===0&&<p className="ask-empty">A fresh start. Ask your first question.</p>}{[...conversations].reverse().map(c=><div className="ask-history-row" key={c.id}><button onClick={()=>{setId(c.id);setHistory(false);field.current?.focus();}}><History size={14}/><span>{c.title}</span></button><IconButton size="xs" label="Delete conversation" aria-label={'Delete conversation '+c.title} icon={Trash2} disabled={busy} onClick={()=>{void invoke('conversation.delete',{id:c.id}).then(()=>{if(id===c.id)setId(undefined);}).catch(e=>notify(e.message));}}/></div>)}</div>
     :items.length?<div className="ask-list" role="listbox" aria-label={query?'Matches':'Suggestions'}>
       {!query&&<p className="ask-welcome">Hold <Kbd size="sm">A</Kbd> anywhere to talk, release to ask.</p>}
@@ -162,12 +187,21 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
       {!!query&&!matches.length&&<p className="ask-empty">No mail matches that yet.</p>}
     </div>
     :chat?<div className="ask-chat">{conversation?.messages.map((m,i)=><div key={i} className={'ask-msg '+m.role}>
-      <div className="ask-msg-text">{m.role==='assistant'?<Prose text={m.content}/>:m.content}</div>
-      {!!m.citations?.length&&<div className="ask-citations">{m.citations.map(cid=>{const t=threads.find(t=>t.id===cid);const last=t?.messages.at(-1);return t&&<button key={cid} onClick={()=>onThread(cid)}><Avatar name={last?.fromName||last?.from||t.subject} size={18}/><span>{t.subject}</span></button>;})}</div>}
-      {m.proposal&&<div className="ask-draft"><span className="ask-draft-icon"><SquarePen size={15}/></span><span><strong>{m.proposal.subject||'New message'}</strong>{m.proposal.to&&<small>To {m.proposal.to}</small>}</span><Button variant="tinted" size="sm" onClick={()=>void apply(m.proposal!,i)}>{hasDraft?'Apply':'Open draft'}</Button></div>}
-      {m.event&&<AskEvent key={`${id}:${i}`} proposal={m.event} accounts={accounts} accountId={accountId} events={events} contacts={contacts} savedId={saved[`${id}:${i}`]} onSaved={eventId=>setSaved(s=>({...s,[`${id}:${i}`]:eventId}))} notify={notify} onEdit={onEditEvent} onCalendar={()=>onCommand('calendar')}/>}
+      {m.role==='assistant'?<>
+        {!!m.steps?.length&&<AskSteps steps={m.steps}/>}
+        <div className="ask-msg-text"><Prose text={m.content} cite={n=>byId.get(m.citations?.[n-1]??'')} onThread={onThread}/></div>
+        {!!m.citations?.length&&<AskSources citations={m.citations} threads={byId} onThread={onThread}/>}
+        {m.proposal&&<AskDraftCard proposal={m.proposal} threads={byId} hasDraft={hasDraft} onApply={()=>void apply(m.proposal!,i)}/>}
+        {m.event&&<AskEvent key={`${id}:${i}`} proposal={m.event} accounts={accounts} accountId={accountId} events={events} contacts={contacts} savedId={saved[`${id}:${i}`]} onSaved={eventId=>setSaved(s=>({...s,[`${id}:${i}`]:eventId}))} notify={notify} onEdit={onEditEvent} onCalendar={()=>onCommand('calendar')}/>}
+        {m.triage&&<AskTriageCard triage={m.triage} threads={byId} notify={notify} onThread={onThread}/>}
+      </>:<div className="ask-msg-text">{m.content}</div>}
     </div>)}
-    {busy&&<><div className="ask-msg user"><div className="ask-msg-text">{pending}</div></div><div className="ask-thinking"><span className="ask-dots"><i/><i/><i/></span>Looking through your mail</div></>}</div>
+    {busy&&<><div className="ask-msg user"><div className="ask-msg-text">{pending}</div></div>
+      <div className="ask-msg assistant is-live" aria-live="polite" aria-busy="true">
+        {/* Working: steps and a live line. Answering: the steps fold into one line above the streaming text. */}
+        {live?.text?<>{!!live.steps.length&&<AskSteps steps={live.steps}/>}<div className="ask-msg-text is-streaming"><Prose text={live.text} cite={n=>byId.get(live.cites[n-1]??'')} onThread={onThread} streaming/></div></>
+        :<AskSteps steps={live?.steps??[]} live/>}
+      </div></>}</div>
     :null;
   return <aside ref={panel} className="ask-panel" aria-label="Ask Aplos" onKeyDown={keys}>
     <div className="ask-head">
@@ -192,15 +226,6 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
       </div>
     </div>
     <div ref={scroller} className="ask-scroll">{body}</div>
-    {chat&&<p className="ask-footnote">Answers use the selected mailbox · Groq</p>}
+    {chat&&<p className="ask-footnote">Answers use the selected mailbox · <button onClick={()=>{showSettingsTab('AI');onCommand('settings');}} title="Change the Ask model in Settings">{modelName}</button></p>}
   </aside>;
 });
-
-/** Answers may use light Markdown: **bold** and "-" bullets. Everything else stays plain text. */
-function Prose({text}:{text:string}){
-  const inline=(line:string)=>line.split(/\*\*(.+?)\*\*/g).map((part,i)=>i%2?<strong key={i}>{part}</strong>:part);
-  const blocks:React.ReactNode[]=[];let list:string[]=[];
-  const flush=()=>{if(list.length)blocks.push(<ul key={blocks.length}>{list.map((item,i)=><li key={i}>{inline(item)}</li>)}</ul>);list=[];};
-  for(const line of text.split('\n')){const bullet=/^\s*[-*•]\s+(.*)$/.exec(line);if(bullet){list.push(bullet[1]);continue;}flush();if(line.trim())blocks.push(<p key={blocks.length}>{inline(line)}</p>);}
-  flush();return <>{blocks}</>;
-}
