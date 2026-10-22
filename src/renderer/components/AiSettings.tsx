@@ -27,7 +27,7 @@ export function AiSettings({settings,groqReady,onChange}:{settings:Settings;groq
       {providers.map(p=><ProviderRow key={p.id} provider={p} loading={!catalog} address={isAskServer(p.id)?settings[askServerSetting[p.id]]:undefined}
         onAddress={url=>isAskServer(p.id)&&onChange({[askServerSetting[p.id]]:url})} onRetry={()=>setRound(n=>n+1)}/>)}
     </Group>
-    <p className="group-note ai-note"><KeyRound size={13}/>Keys stay in the backend environment. Nothing is sent from your mailbox without your click.</p>
+    <p className="group-note ai-note"><KeyRound size={13}/>Keys stay in the backend. New mail goes to your Summaries model as it arrives, and to your Plans model when plans are added automatically; everything else runs only when you use it.</p>
   </div>;
 }
 
@@ -174,7 +174,7 @@ function ModelPicker({feature,label,providers,value,onChange}:{feature:AiFeature
       <span><strong>{current?.label??'Choose a model'}</strong><small>{provider?.label}</small></span><ChevronsUpDown size={13}/>
     </button>
     <Popover open={open} anchor={trigger.current} onClose={()=>setOpen(false)} placement="bottom-end" className="ui-surface ai-model-picker" label={`${label} models`} onKeyDown={keys}>
-      <label className="ai-model-search"><Search size={14}/><input ref={searchRef} aria-controls={listId} aria-activedescendant={flat[active]?`${listId}-${active}`:undefined} placeholder={custom&&!voice?'Search models or type a name':`Search ${voice?'speech ':''}models`} value={query} onChange={e=>{setQuery(e.target.value);setActive(0);}}/></label>
+      <label className="ai-model-search"><Search size={14}/><input ref={searchRef} role="combobox" aria-expanded={open} aria-autocomplete="list" aria-controls={listId} aria-activedescendant={flat[active]?`${listId}-${active}`:undefined} placeholder={custom&&!voice?'Search models or type a name':`Search ${voice?'speech ':''}models`} value={query} onChange={e=>{setQuery(e.target.value);setActive(0);}}/></label>
       <div ref={listRef} id={listId} className="ai-model-list" role="listbox" aria-label="Models">
         {groups.map(group=><div key={group.provider.id+(group.items[0]?.typed?'-typed':'')} role="group" aria-label={group.provider.label}>
           {!group.items[0]?.typed&&<p className="ai-model-group">{group.provider.label}{!ready(group.provider)&&<span className="is-missing">{group.provider.keyOptional?'Not running':'Not set up'}</span>}</p>}

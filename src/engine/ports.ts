@@ -62,6 +62,8 @@ export interface EngineOptions {
   providers:Partial<Record<ProviderKind,MailProvider>>;
   brokenProviders?:Map<ProviderKind,string>;
   groq:Intelligence;
+  /** A Groq model an older setup chose with GROQ_MODEL; it seeds Summaries, Drafts and Plans the first time those settings exist. */
+  groqModel?:string;
   /** The other AI providers; Groq's comes from `groq`. */
   chats?:Partial<Record<AskProviderId,ChatProvider>>;
   /** A transport for Ollama, LM Studio or a custom OpenAI-compatible server at the address in Settings. */

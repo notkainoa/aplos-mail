@@ -83,10 +83,13 @@ export const aiFeatures:readonly {id:AiFeature;setting:AiModelSetting;label:stri
   {id:'voice',setting:'voiceModel',label:'Voice',description:'Turns what you say into text.',fallback:'groq:whisper-large-v3-turbo'},
 ];
 export const aiFeature=(id:AiFeature)=>aiFeatures.find(f=>f.id===id)!;
-/** A stored choice for `feature`, normalized; unreadable values (or a voice model on a provider without speech) give undefined. */
+/** Speech-to-text model IDs (Whisper, OpenAI's transcribe models); chat features can't use them, nor Voice anything else. */
+const speechModel=/whisper|transcribe/i;
+/** A stored choice for `feature`, normalized; unreadable values or the wrong kind of model give undefined. */
 export function parseFeatureModel(feature:AiFeature,value:unknown){
   const ref=parseAskModel(value);
-  if(!ref||(feature==='voice'&&!isVoiceProvider(ref.provider)))return;
+  if(!ref)return;
+  if(feature==='voice'?!isVoiceProvider(ref.provider)||!speechModel.test(ref.model):speechModel.test(ref.model))return;
   return ref;
 }
 const modelId=/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;

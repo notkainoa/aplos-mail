@@ -25,14 +25,14 @@ export function createGroq(options:GroqOptions = {}) {
     }
   }
   /** One JSON-mode completion. `model` is the feature's choice in Settings → AI; scripts fall back to GROQ_MODEL. */
-  async function json(instruction:string,input:unknown,signal?:AbortSignal,chosen?:string) {
+  async function json(instruction:string,input:unknown,signal?:AbortSignal,chosen?:string,maxTokens=4096) {
     const model=chosen??options.model??process.env.GROQ_MODEL??'openai/gpt-oss-120b';
     const serialized=JSON.stringify(input);
     if(serialized.length>100000)throw new Error('The selected AI context is too large. Shorten the draft or instruction and try again.');
-    const result=await call('chat/completions',JSON.stringify({model,...(model.startsWith('openai/gpt-oss-')?{reasoning_effort:'low'}:{}),temperature:0.2,max_completion_tokens:4096,response_format:{type:'json_object'},messages:[{role:'system',content:jsonSystem+instruction},{role:'user',content:serialized}]}),signal);
+    const result=await call('chat/completions',JSON.stringify({model,...(model.startsWith('openai/gpt-oss-')?{reasoning_effort:'low'}:{}),temperature:0.2,max_completion_tokens:maxTokens,response_format:{type:'json_object'},messages:[{role:'system',content:jsonSystem+instruction},{role:'user',content:serialized}]}),signal);
     return jsonObject((result.choices as {message?:{content?:string}}[])?.[0]?.message?.content??'','Groq');
   }
-  const writer=(model?:string)=>createWriter((instruction,input,signal)=>json(instruction,input,signal,model),'Groq');
+  const writer=(model?:string)=>createWriter((instruction,input,signal,options)=>json(instruction,input,signal,model,options?.maxTokens),'Groq');
   return {
     available:Boolean(key),
     /** One streamed chat/completions call with OpenAI-compatible tools; text arrives through `onText`. */

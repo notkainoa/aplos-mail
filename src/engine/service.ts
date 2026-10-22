@@ -191,12 +191,17 @@ export async function createEngineService(options:EngineOptions) {
   const symbols=options.symbols??(async()=>({}));
   const store=options.store;
   let state=store.read()||createDemo(now());
+  // Feature models a stored state has never had; Summaries, Drafts and Plans then follow GROQ_MODEL if the host set it.
+  const unsetModels=new Set(aiFeatures.filter(f=>!(f.setting in (state.settings??{}))).map(f=>f.id));
   state.settings={...clone(defaultSettings),...state.settings};
   // Split view and the top bar layout were removed; drop their old settings from stored state.
   delete (state.settings as Settings&{openMode?:unknown}).openMode;
   delete (state.settings as Settings&{layout?:unknown}).layout;
   // Feature models are `provider:model`; a bare Groq ID from an earlier build keeps working, anything unreadable falls back.
-  for(const f of aiFeatures){const ref=parseFeatureModel(f.id,state.settings[f.setting]);state.settings[f.setting]=ref?`${ref.provider}:${ref.model}`:f.fallback;}
+  for(const f of aiFeatures){
+    const seeded=options.groqModel&&unsetModels.has(f.id)&&f.id!=='ask'&&f.id!=='voice'?parseFeatureModel(f.id,`groq:${options.groqModel}`):undefined;
+    const ref=seeded??parseFeatureModel(f.id,state.settings[f.setting]);state.settings[f.setting]=ref?`${ref.provider}:${ref.model}`:f.fallback;
+  }
   state.sync={...state.sync,busy:false};
   for(const thread of state.threads)if(thread.dueDate)thread.dueDate=dateOnly(thread.dueDate);
   migrateLegacy(state);

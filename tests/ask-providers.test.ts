@@ -12,7 +12,10 @@ import { createGroq } from '../src/main/groq';
 import { createCustom, createGemini, createLmStudio, createOpenAI, createOpenCodeGo, createOpenRouter } from '../src/main/providers';
 import { createOllama } from '../src/main/ollama';
 import { createClaude } from '../src/main/anthropic';
-import { parseAskModel } from '../src/shared/ask';
+import { parseAskModel, parseFeatureModel } from '../src/shared/ask';
+import { createWriter, jsonObject } from '../src/engine/writer';
+import { createDemo } from '../src/engine/demo';
+import { writeFile } from 'node:fs/promises';
 
 const sse=(lines:string[])=>new Response(new ReadableStream<Uint8Array>({start(c){c.enqueue(new TextEncoder().encode(lines.join('\n')+'\n'));c.close();}}));
 const data=(value:unknown)=>`data: ${JSON.stringify(value)}\n`;
@@ -327,4 +330,46 @@ test('new Spam is summarized, but its triage fields stay put and no plans are ad
     assert.equal(t.importance,'low');assert.equal(t.replyStatus,'none');assert.equal(t.todo,undefined);
     assert.equal(extracted,0);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
+});
+
+test('replies without a JSON mode still parse: thinking, fences, prose and braces inside strings',()=>{
+  assert.deepEqual(jsonObject('<think>Maybe {"summary":"wrong"}? No.</think>{"summary":"Right"}'),{summary:'Right'});
+  assert.deepEqual(jsonObject('Sure:\n```json\n{"html":"<p>Hi</p>"}\n```\nDone.'),{html:'<p>Hi</p>'});
+  assert.deepEqual(jsonObject('Here is {the} result: {"summary":"Uses a } brace","n":{"a":1}} hope it helps'),{summary:'Uses a } brace',n:{a:1}});
+  assert.throws(()=>jsonObject('No JSON here, sorry.','Claude'),/Claude returned an invalid response/);
+  assert.throws(()=>jsonObject('[1,2]'),/invalid response/);
+});
+
+test('polish keeps inline images out of the request, sizes its budget to the email, and refuses a reply that drops one',async()=>{
+  const image='data:image/png;base64,'+'A'.repeat(60_000);
+  const seen:{input:any;maxTokens?:number}[]=[];let drop=false;
+  const writer=createWriter(async(_instruction,input:any,_signal,options)=>{seen.push({input,maxTokens:options?.maxTokens});return {html:drop?'<p>Hello.</p>':input.html.replace('helo','hello')};},'Claude');
+  const html=`<p>helo</p><img src="${image}">`+'<p>x</p>'.repeat(2_000);
+  const out=await writer.polish(html);
+  assert.ok(out.html.startsWith('<p>hello</p>'));assert.ok(out.html.includes(image));
+  assert.ok(!JSON.stringify(seen[0].input).includes('base64'));assert.ok(seen[0].maxTokens!>4096);
+  drop=true;await assert.rejects(writer.polish(html),/Claude left out an image/);
+});
+
+test('each feature only takes its kind of model, and an older GROQ_MODEL carries over to Summaries, Drafts and Plans',async()=>{
+  assert.equal(parseFeatureModel('voice','groq:openai/gpt-oss-120b'),undefined);
+  assert.equal(parseFeatureModel('summary','openai:whisper-1'),undefined);
+  assert.deepEqual(parseFeatureModel('voice','openai:gpt-4o-transcribe'),{provider:'openai',model:'gpt-4o-transcribe'});
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-groq-model-'));
+  // A state saved before per-feature models existed.
+  const legacy=createDemo(new Date('2026-10-01T12:00:00Z')) as any;
+  for(const key of ['summaryModel','draftModel','planModel','voiceModel'])delete legacy.settings[key];
+  legacy.settings.askModel='groq:openai/gpt-oss-120b';
+  await writeFile(join(dataDir,'state.json'),JSON.stringify(legacy));
+  const before=process.env.GROQ_MODEL;process.env.GROQ_MODEL='openai/gpt-oss-20b';
+  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''})});
+  try{
+    const s=(await service.invoke('state.get') as AppState).settings;
+    assert.deepEqual([s.askModel,s.summaryModel,s.draftModel,s.planModel,s.voiceModel],['groq:openai/gpt-oss-120b','groq:openai/gpt-oss-20b','groq:openai/gpt-oss-20b','groq:openai/gpt-oss-20b','groq:whisper-large-v3-turbo']);
+    await assert.rejects(service.invoke('settings.update',{patch:{voiceModel:'groq:openai/gpt-oss-120b'}}),/Voice model/);
+    await assert.rejects(service.invoke('settings.update',{patch:{summaryModel:'openai:whisper-1'}}),/model for summaries/);
+  }finally{
+    if(before===undefined)delete process.env.GROQ_MODEL;else process.env.GROQ_MODEL=before;
+    await service.close();await rm(dataDir,{recursive:true,force:true});
+  }
 });
