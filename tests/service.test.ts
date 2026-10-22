@@ -248,3 +248,17 @@ test('summarizing again keeps the owner’s due date, to-do, importance and repl
     assert.equal(t.importance,'important');assert.equal(t.replyStatus,'none');
   }finally{await f.cleanup();}
 });
+
+test('a second summary request for the same email waits for the first instead of asking Groq again',async()=>{
+  let calls=0,release!:()=>void;const gate=new Promise<void>(r=>{release=r;});
+  const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>{calls++;await gate;return {summary:'Help plant herbs on Saturday'};}};
+  const f=await fixture({groq});
+  const events:{threadId:string;active:boolean}[]=[];f.service.subscribe(event=>{if(event.type==='ai.summarizing')events.push(event.payload as {threadId:string;active:boolean});});
+  try{
+    const first=f.service.invoke('ai.summarize',{threadId:'garden'}),second=f.service.invoke('ai.summarize',{threadId:'garden'});
+    await settle(async()=>events.length===1);release();
+    assert.equal((await second).summary,'Help plant herbs on Saturday');await first;
+    assert.equal(calls,1);
+    assert.deepEqual(events,[{threadId:'garden',active:true},{threadId:'garden',active:false}]);
+  }finally{await f.cleanup();}
+});

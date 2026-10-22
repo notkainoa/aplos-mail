@@ -1,19 +1,33 @@
 import {useSyncExternalStore} from 'react';
 import type {Thread} from '../shared/types';
-import {invoke} from './bridge';
+import {bridge,invoke} from './bridge';
 import {hasRealSummary} from '../shared/summary';
 export {describeSummaryError,hasRealSummary} from './summaryText';
 
 /**
- * Summaries requested from the reader this session. Opening an email whose summary is only its own text asks Groq
- * once; a failure stays on the card (with its reason) until Retry, so reopening the email doesn't ask again.
+ * Summaries requested from the reader or the list this session. Opening an email whose summary is only its own text
+ * asks Groq once; a failure stays on the card (with its reason) until Retry, so reopening the email doesn't ask again.
  */
 export type SummaryJob={running:boolean;error?:string;done?:boolean};
 const jobs=new Map<string,SummaryJob>();
+/** Emails the engine reports Groq is summarizing, including those from sync. */
+const working=new Set<string>();
 const listeners=new Set<()=>void>();
-const set=(id:string,job:SummaryJob)=>{jobs.set(id,job);for(const listener of listeners)listener();};
-const subscribe=(listener:()=>void)=>{listeners.add(listener);return ()=>{listeners.delete(listener);};};
+const notify=()=>{for(const listener of listeners)listener();};
+const set=(id:string,job:SummaryJob)=>{jobs.set(id,job);notify();};
+let watching=false;
+function watch(){
+  if(watching)return;watching=true;
+  bridge.subscribe(event=>{
+    if(event.type!=='ai.summarizing')return;
+    const {threadId,active}=event.payload as {threadId:string;active:boolean};
+    if(active)working.add(threadId);else working.delete(threadId);notify();
+  });
+}
+const subscribe=(listener:()=>void)=>{watch();listeners.add(listener);return ()=>{listeners.delete(listener);};};
 export function useSummaryJob(threadId:string){return useSyncExternalStore(subscribe,()=>jobs.get(threadId));}
+/** Whether Groq is writing this email's summary right now, whoever asked. */
+export function useSummarizing(threadId:string){return useSyncExternalStore(subscribe,()=>working.has(threadId)||!!jobs.get(threadId)?.running);}
 
 /** Resolves to the error message, or undefined once the thread has a fresh summary. A call while one is running does nothing. */
 export async function summarize(threadId:string):Promise<string|undefined>{
@@ -24,3 +38,17 @@ export async function summarize(threadId:string):Promise<string|undefined>{
 }
 /** Summarize on open, once per session; a retry is the user's call. */
 export function summarizeIfNeeded(thread:Thread){if(!hasRealSummary(thread)&&!jobs.has(thread.id))void summarize(thread.id);}
+
+// Rows on screen without a summary are summarized two at a time. After a failure (often no key or a rate limit)
+// the list stops asking for a minute; opening an email still asks, and shows why it failed.
+const queue:string[]=[];let active=0,pausedUntil=0;
+export function summarizeRow(thread:Thread){
+  if(hasRealSummary(thread)||jobs.has(thread.id)||queue.includes(thread.id)||Date.now()<pausedUntil)return;
+  queue.push(thread.id);pump();
+}
+function pump(){
+  while(active<2&&queue.length){
+    const id=queue.shift()!;if(jobs.has(id))continue;
+    active++;void summarize(id).then(error=>{if(error){pausedUntil=Date.now()+60_000;queue.length=0;}}).finally(()=>{active--;pump();});
+  }
+}
