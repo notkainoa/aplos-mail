@@ -63,7 +63,7 @@ export async function createService(options:ServiceOptions) {
   catch(error){workflowError=error instanceof Error?error.message:'Device sync could not start.';}
   return createEngineService({
     store,staged,providers,brokenProviders,workflow,workflowError,now,
-    groq:options.groq||createGroq(),randomUUID,
+    groq:options.groq||createGroq(),groqModel:options.groq?undefined:process.env.GROQ_MODEL,randomUUID,
     chats:{openai:createOpenAI(),anthropic:createClaude(),gemini:createGemini(),openrouter:createOpenRouter(),'opencode-go':createOpenCodeGo(),...options.chats},
     serverChat:options.serverChat??servers(),symbols:symbolRenderer(options.symbolTool),
     desktop:options.desktop,secure:!!options.encrypt,fetch:options.fetch,

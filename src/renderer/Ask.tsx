@@ -261,7 +261,7 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
           :<Tooltip content="Talk instead" detail="Click to start, or hold and release to ask"><button className="ask-chip ask-talk" onMouseDown={e=>e.preventDefault()} onPointerDown={e=>{if(e.button===0)press('pointer');}} onClick={e=>{if(e.detail===0)listen(false);}}>Hold <Kbd size="sm">A</Kbd> to talk</button></Tooltip>}
         </div>
         {recording&&<p className="ask-hint is-recording" role="status">{held==='key'?<>Release <Kbd size="sm">A</Kbd> to ask</>:held==='pointer'?<>Release to ask</>:<>Recording, press Done to finish</>}<span>·</span><Kbd size="sm">Esc</Kbd> to cancel</p>}
-        {transcribing&&<p className="ask-hint" role="status">Transcribing with Groq…</p>}
+        {transcribing&&<p className="ask-hint" role="status">Transcribing with {askModelLabel(settings.voiceModel,'voice').provider}…</p>}
         {error&&<Notice className="ask-notice">{error}</Notice>}
       </div>
     </div>

@@ -12,7 +12,10 @@ import { createGroq } from '../src/main/groq';
 import { createCustom, createGemini, createLmStudio, createOpenAI, createOpenCodeGo, createOpenRouter } from '../src/main/providers';
 import { createOllama } from '../src/main/ollama';
 import { createClaude } from '../src/main/anthropic';
-import { parseAskModel } from '../src/shared/ask';
+import { parseAskModel, parseFeatureModel } from '../src/shared/ask';
+import { createWriter, jsonObject } from '../src/engine/writer';
+import { createDemo } from '../src/engine/demo';
+import { writeFile } from 'node:fs/promises';
 
 const sse=(lines:string[])=>new Response(new ReadableStream<Uint8Array>({start(c){c.enqueue(new TextEncoder().encode(lines.join('\n')+'\n'));c.close();}}));
 const data=(value:unknown)=>`data: ${JSON.stringify(value)}\n`;
@@ -240,4 +243,157 @@ test('local servers default to their usual ports and report whether they are run
     assert.ok(used.includes('ollama http://studio-mac.local:11434'));
     await assert.rejects(service.invoke('settings.update',{patch:{askLmStudioUrl:'ftp://x'}}),/http or https/);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
+});
+
+test('summaries, drafts, plans and voice each run on the model chosen for them',async()=>{
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-features-'));
+  const asked:ChatRequest[]=[],heard:string[]=[];
+  // Claude has no JSON mode, so its reply may wrap the object in prose; the writer still reads it.
+  const claude:ChatProvider={available:true,chat:async req=>{asked.push(req);return {content:String(req.messages[0].content).includes('Proofread')?'{"html":"<p>Polished.</p>"}':'Here it is: {"summary":"Wants a layout pick by Friday","importance":"important","replyStatus":"needs-reply"}',toolCalls:[]};}};
+  const gemini:ChatProvider={available:true,chat:async req=>{asked.push(req);return {content:'```json\n{"events":[]}\n```',toolCalls:[]};}};
+  const openai:ChatProvider={available:true,chat:claude.chat,transcribe:async(_audio,_type,model)=>{heard.push(model);return {text:'Hello there'};}};
+  const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>{throw new Error('Summaries must not use Groq here.');}};
+  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq,chats:{anthropic:claude,openai,gemini,openrouter:{available:false,chat:claude.chat}}});
+  try{
+    const settings=(await service.invoke('state.get') as AppState).settings;
+    assert.deepEqual([settings.summaryModel,settings.draftModel,settings.planModel,settings.voiceModel],['groq:openai/gpt-oss-120b','groq:openai/gpt-oss-120b','groq:openai/gpt-oss-120b','groq:whisper-large-v3-turbo']);
+    await service.invoke('settings.update',{patch:{summaryModel:'anthropic:claude-haiku-5-5',draftModel:'anthropic:claude-sonnet-5-5',voiceModel:'openai:gpt-4o-mini-transcribe'}});
+    const threadId=(await service.invoke('state.get') as AppState).threads[0].id;
+    assert.equal((await service.invoke('ai.summarize',{threadId}) as {summary:string}).summary,'Wants a layout pick by Friday');
+    assert.equal(asked[0].model,'claude-haiku-5-5');assert.equal(asked[0].json,true);assert.equal(asked[0].tools,undefined);
+    assert.deepEqual(await service.invoke('ai.polish',{html:'<p>polish me</p>'}),{html:'<p>Polished.</p>'});
+    assert.equal(asked[1].model,'claude-sonnet-5-5');
+    assert.deepEqual(await service.invoke('ai.transcribe',{audio:'AAAA',mimeType:'audio/webm'}),{text:'Hello there'});
+    assert.deepEqual(heard,['gpt-4o-mini-transcribe']);
+    // Voice needs a provider with speech to text; a provider without its key says what to set.
+    await assert.rejects(service.invoke('settings.update',{patch:{voiceModel:'anthropic:claude-haiku-5-5'}}),/Voice model on Groq or ChatGPT/);
+    // A long email is refused rather than polished in part and cut short; nothing is sent.
+    await assert.rejects(service.invoke('ai.polish',{html:`<p>${'x'.repeat(40_001)}</p>`}),/too long to polish/);
+    assert.equal(asked.length,2);
+    await service.invoke('settings.update',{patch:{planModel:'gemini:gemini-3.8-flash'}});
+    assert.deepEqual(await service.invoke('calendar.extract',{threadId}),[]);
+    assert.equal(asked[2].model,'gemini-3.8-flash');assert.equal(asked[2].json,true);
+    await service.invoke('settings.update',{patch:{planModel:'openrouter:z-ai/glm-5.3'}});
+    await assert.rejects(service.invoke('calendar.extract',{threadId}),/Add OPENROUTER_API_KEY/);
+    const catalog=await service.invoke('ai.models') as Array<{id:string;voiceModels?:{id:string}[]}>;
+    assert.deepEqual(catalog.filter(p=>p.voiceModels).map(p=>p.id),['groq','openai']);
+  }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
+});
+
+test('OpenAI transcribes with the chosen model and lists its speech models; JSON requests turn on JSON mode',async()=>{
+  const openai=recorder(url=>url.endsWith('/models')?new Response(JSON.stringify({data:[{id:'gpt-6-luna'},{id:'gpt-4o-mini-transcribe'},{id:'whisper-1'},{id:'gpt-4o-transcribe-diarize'},{id:'gpt-realtime-transcribe'}]})):url.endsWith('/audio/transcriptions')?new Response(JSON.stringify({text:'hi'})):sse([data({choices:[{delta:{content:'{}'}}]})]));
+  const gpt=createOpenAI({apiKey:'oa',fetch:openai.fetch});
+  assert.deepEqual((await gpt.voiceModels!()).map(m=>m.id),['gpt-4o-mini-transcribe','whisper-1']);
+  assert.deepEqual((await gpt.models!()).map(m=>m.id),['gpt-6-luna']);
+  const fetchCalls:{url:string;model:FormDataEntryValue|null}[]=[];
+  const voice=createOpenAI({apiKey:'oa',fetch:async(input,init)=>{fetchCalls.push({url:String(input),model:(init?.body as FormData).get('model')});return new Response(JSON.stringify({text:'hi'}));}});
+  assert.deepEqual(await voice.transcribe!('AAAA','audio/webm','whisper-1'),{text:'hi'});
+  assert.deepEqual(fetchCalls,[{url:'https://api.openai.com/v1/audio/transcriptions',model:'whisper-1'}]);
+  await gpt.chat({model:'gpt-6-luna',json:true,messages:[{role:'user',content:'hi'}]},{});
+  assert.deepEqual(openai.seen.at(-1)!.body!.response_format,{type:'json_object'});
+});
+
+test('background sorting waits for a local app that is not running, and runs once it is',async()=>{
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-local-ready-'));
+  const base=await createGoogle({dataDir,clientId:''});
+  let running=false,calls=0,round=0;
+  const fresh=()=>({id:`local-${++round}`,accountId:'google-local',subject:'Lunch',summary:'Snippet',messages:[],date:'2026-10-16T12:00:00Z',unread:true,status:'new' as const,importance:'low' as const,bookmarked:false,replyStatus:'none' as const});
+  const google={...base,available:true,connect:async()=>({id:'google-local',name:'Test',email:'local@example.com',color:'#123456',provider:'google' as const,connected:true}),
+    sync:async()=>({threads:[fresh()],flags:[],removed:[],reset:false}),updateThread:async()=>{},getSendAs:async()=>[]};
+  const ollama:ChatProvider={available:true,status:async()=>({running}),chat:async()=>{calls++;return {content:'{"summary":"Lunch on Friday","importance":"important","replyStatus":"none"}',toolCalls:[]};}};
+  const service=await createService({dataDir,google,groq:createGroq({apiKey:''}),serverChat:()=>ollama});
+  try{
+    await service.invoke('settings.update',{patch:{summaryModel:'ollama:qwen3'}});
+    const stopped=await service.invoke('account.connect') as AppState;
+    assert.equal(calls,0);assert.equal(stopped.sync.error,undefined);
+    running=true;
+    const started=await service.invoke('sync') as AppState;
+    assert.equal(calls,1);assert.equal(started.threads.find(t=>t.id==='local-2')!.summary,'Lunch on Friday');
+  }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
+});
+
+test('new Spam is summarized, but its triage fields stay put and no plans are added from it',async()=>{
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-spam-ai-'));
+  const base=await createGoogle({dataDir,clientId:''});
+  let extracted=0;
+  const spam={id:'spam-1',accountId:'google-spam',subject:'You won',summary:'Snippet',messages:[],date:'2026-10-16T12:00:00Z',unread:true,status:'spam' as const,importance:'low' as const,bookmarked:false,replyStatus:'none' as const,labels:['SPAM']};
+  const google={...base,available:true,connect:async()=>({id:'google-spam',name:'Test',email:'spam@example.com',color:'#123456',provider:'google' as const,connected:true,calendarConnected:true}),
+    sync:async()=>({threads:[structuredClone(spam)],flags:[],removed:[],reset:true}),updateThread:async()=>{},getSendAs:async()=>[],listEvents:async()=>[]};
+  const groq={...createGroq({apiKey:''}),available:true,
+    summarize:async()=>({summary:'Claims a prize; likely a scam',importance:'important' as const,replyStatus:'needs-reply' as const,todo:'Claim prize'}),
+    extractEvents:async()=>{extracted++;return [];}};
+  const service=await createService({dataDir,google,groq});
+  try{
+    await service.invoke('settings.update',{patch:{autoCalendar:true}});
+    const state=await service.invoke('account.connect') as AppState,t=state.threads.find(t=>t.id==='spam-1')!;
+    assert.equal(t.status,'spam');assert.equal(t.summary,'Claims a prize; likely a scam');
+    assert.equal(t.importance,'low');assert.equal(t.replyStatus,'none');assert.equal(t.todo,undefined);
+    assert.equal(extracted,0);
+  }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
+});
+
+test('replies without a JSON mode still parse: thinking, fences, prose and braces inside strings',()=>{
+  assert.deepEqual(jsonObject('<think>Maybe {"summary":"wrong"}? No.</think>{"summary":"Right"}'),{summary:'Right'});
+  assert.deepEqual(jsonObject('Sure:\n```json\n{"html":"<p>Hi</p>"}\n```\nDone.'),{html:'<p>Hi</p>'});
+  assert.deepEqual(jsonObject('Here is {the} result: {"summary":"Uses a } brace","n":{"a":1}} hope it helps'),{summary:'Uses a } brace',n:{a:1}});
+  assert.throws(()=>jsonObject('No JSON here, sorry.','Claude'),/Claude returned an invalid response/);
+  assert.throws(()=>jsonObject('[1,2]'),/invalid response/);
+});
+
+test('polish keeps inline images out of the request, sizes its budget to the email, and refuses a reply that drops one',async()=>{
+  const image='data:image/png;base64,'+'A'.repeat(60_000);
+  const seen:{input:any;maxTokens?:number}[]=[];let drop=false;
+  const writer=createWriter(async(_instruction,input:any,_signal,options)=>{seen.push({input,maxTokens:options?.maxTokens});return {html:drop?'<p>Hello.</p>':input.html.replace('helo','hello')};},'Claude');
+  const html=`<p>helo</p><img src="${image}">`+'<p>x</p>'.repeat(2_000);
+  const out=await writer.polish(html);
+  assert.ok(out.html.startsWith('<p>hello</p>'));assert.ok(out.html.includes(image));
+  assert.ok(!JSON.stringify(seen[0].input).includes('base64'));assert.ok(seen[0].maxTokens!>4096);
+  drop=true;await assert.rejects(writer.polish(html),/Claude left out an image/);
+});
+
+test('each feature only takes its kind of model, and an older GROQ_MODEL carries over to Summaries, Drafts and Plans',async()=>{
+  assert.equal(parseFeatureModel('voice','groq:openai/gpt-oss-120b'),undefined);
+  assert.equal(parseFeatureModel('summary','openai:whisper-1'),undefined);
+  assert.deepEqual(parseFeatureModel('voice','openai:gpt-4o-transcribe'),{provider:'openai',model:'gpt-4o-transcribe'});
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-groq-model-'));
+  // A state saved before per-feature models existed.
+  const legacy=createDemo(new Date('2026-10-01T12:00:00Z')) as any;
+  for(const key of ['summaryModel','draftModel','planModel','voiceModel'])delete legacy.settings[key];
+  legacy.settings.askModel='groq:openai/gpt-oss-120b';
+  await writeFile(join(dataDir,'state.json'),JSON.stringify(legacy));
+  const before=process.env.GROQ_MODEL;process.env.GROQ_MODEL='openai/gpt-oss-20b';
+  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''})});
+  try{
+    const s=(await service.invoke('state.get') as AppState).settings;
+    assert.deepEqual([s.askModel,s.summaryModel,s.draftModel,s.planModel,s.voiceModel],['groq:openai/gpt-oss-120b','groq:openai/gpt-oss-20b','groq:openai/gpt-oss-20b','groq:openai/gpt-oss-20b','groq:whisper-large-v3-turbo']);
+    await assert.rejects(service.invoke('settings.update',{patch:{voiceModel:'groq:openai/gpt-oss-120b'}}),/Voice model/);
+    await assert.rejects(service.invoke('settings.update',{patch:{summaryModel:'openai:whisper-1'}}),/model for summaries/);
+  }finally{
+    if(before===undefined)delete process.env.GROQ_MODEL;else process.env.GROQ_MODEL=before;
+    await service.close();await rm(dataDir,{recursive:true,force:true});
+  }
+});
+
+test('final review: JSON is read without altering it, stray braces are skipped, and long polishes fit their provider',async()=>{
+  // A pure JSON reply keeps "<think>" text inside it.
+  assert.deepEqual(jsonObject('{"html":"<p>Write <think>x</think> tags</p>"}'),{html:'<p>Write <think>x</think> tags</p>'});
+  assert.deepEqual(jsonObject('Use { to start. {"summary":"x"}'),{summary:'x'});
+  assert.deepEqual(jsonObject('He said "hi {there" {"summary":"x"}'),{summary:'x'});
+  // Polish budget stays at 4096 for emails that fit before (per-minute plans count it), and grows for long ones.
+  const budgets:number[]=[];
+  const writer=createWriter(async(_i,input:any,_s,options)=>{budgets.push(options!.maxTokens!);return {html:input.html};});
+  await writer.polish('<p>'+'a'.repeat(9_000)+'</p>');await writer.polish('<p>'+'a'.repeat(30_000)+'</p>');
+  assert.equal(budgets[0],4096);assert.ok(budgets[1]>4096&&budgets[1]<10_000);
+  // Ollama grows its context only for a JSON request that needs it; Ask keeps the fixed size.
+  const sent:any[]=[];
+  const ollama=createOllama('http://localhost:11434',{fetch:async(_url,init)=>{sent.push(JSON.parse(String(init!.body)));return new Response('{"message":{"content":"{}"},"done":true}\n');}});
+  await ollama.chat({model:'qwen3',json:true,maxTokens:9000,messages:[{role:'user',content:'x'.repeat(40_000)}]},{});
+  await ollama.chat({model:'qwen3',messages:[{role:'user',content:'x'.repeat(40_000)}]},{});
+  assert.ok(sent[0].options.num_ctx>16384);assert.equal(sent[0].options.num_predict,9000);
+  assert.equal(sent[1].options.num_ctx,16384);assert.equal(sent[1].options.num_predict,undefined);
+});
+
+test('a request over a per-minute plan limit (413) says so plainly',async()=>{
+  const groq=createGroq({apiKey:'k',fetch:async()=>new Response('{"error":{"message":"Request too large"}}',{status:413})});
+  await assert.rejects(groq.polish('<p>Hello</p>'),/too much text for Groq’s per-minute limit/);
 });

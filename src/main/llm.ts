@@ -1,7 +1,7 @@
 import type { Chat, ChatRequest, ChatTurn } from '../engine/agent';
 
 /**
- * OpenAI-compatible chat transports for Ask (Groq, OpenRouter, OpenCode Go). Keys come only from the backend
+ * OpenAI-compatible chat transports (Groq, OpenAI, Gemini, OpenRouter, OpenCode Go, local servers). Keys come only from the backend
  * environment and never reach the renderer. Errors never carry provider response bodies, only a known code.
  */
 /** `keyOptional` servers (a local model server) are called without Authorization when no key is set. */
@@ -20,17 +20,39 @@ export async function providerRequest(target:ProviderTarget,path:string,body:Bod
   }
   if(response.ok) return response;
   if(response.status===401||response.status===403) throw new Error(`${name} rejected the API key. Check ${env}.`);
-  if(response.status===402) throw new Error(`${name} has no credits left on this account. Add credits or choose another Ask model in Settings.`);
+  if(response.status===413) throw new Error(`This is too much text for ${name}’s per-minute limit on your plan. Try a shorter email, or choose another model in Settings → AI.`);
+  if(response.status===402) throw new Error(`${name} has no credits left on this account. Add credits or choose another model in Settings → AI.`);
   if(response.status===429) {
     // Ask waits out a short limit window; other callers just report it. A long wait means a daily or plan quota.
     const seconds=Number(response.headers.get('retry-after'));
-    const message=Number.isFinite(seconds)&&seconds>90?`${name}’s usage limit for this model is reached. Try again in about ${Math.ceil(seconds/60)} minutes, or choose another Ask model in Settings.`:`${name} rate limit reached. Please try again shortly.`;
+    const message=Number.isFinite(seconds)&&seconds>90?`${name}’s usage limit for this model is reached. Try again in about ${Math.ceil(seconds/60)} minutes, or choose another model in Settings → AI.`:`${name} rate limit reached. Please try again shortly.`;
     throw Object.assign(new Error(message),{code:'rate_limited',...(Number.isFinite(seconds)&&seconds>=0?{retryAfterMs:seconds*1000}:{})});
   }
   const code=await response.json().then(value=>(value as {error?:{code?:unknown}})?.error?.code,()=>undefined);
   if(code==='tool_use_failed') throw Object.assign(new Error(`${name} could not read a tool call. Please try again.`),{code});
-  if(code==='model_not_found'||code==='model_decommissioned'||response.status===404) throw new Error(`This ${name} model is not available right now. Choose another Ask model in Settings.`);
+  if(code==='model_not_found'||code==='model_decommissioned'||response.status===404) throw new Error(`This ${name} model is not available right now. Choose another model in Settings → AI.`);
   throw new Error(`${name} request failed (${response.status}). Please try again.`);
+}
+
+/** Speech to text through an OpenAI-style audio/transcriptions endpoint (Groq, OpenAI). */
+export async function transcribeAudio(send:(path:string,body:BodyInit,signal?:AbortSignal,json?:boolean)=>Promise<Response>,audio:string,mimeType:string,model:string,name:string,signal?:AbortSignal):Promise<{text:string}> {
+  if(!/^[A-Za-z0-9+/]*={0,2}$/.test(audio)) throw new Error('Audio must be valid base64.');
+  if(audio.length>35_000_000) throw new Error('Audio must be smaller than 25 MB.');
+  const bytes=Buffer.from(audio,'base64');
+  if(!bytes.length||bytes.length>25*1024*1024) throw new Error('Audio must contain between 1 byte and 25 MB.');
+  const formats:Record<string,string>={'audio/webm':'webm','audio/mp4':'m4a','audio/mpeg':'mp3','audio/wav':'wav','audio/x-wav':'wav','audio/ogg':'ogg','video/webm':'webm'};
+  const type=mimeType.split(';')[0].trim();
+  if(!formats[type]) throw new Error('Unsupported audio format. Use WebM, MP4, MP3, WAV or Ogg.');
+  const form=new FormData();
+  form.append('file',new Blob([new Uint8Array(bytes)],{type}),`dictation.${formats[type]}`);
+  form.append('model',model); form.append('response_format','json');
+  const response=await send('audio/transcriptions',form,signal,false);
+  const result=await response.json().catch(()=>{
+    if(signal?.aborted) throw new Error('AI request cancelled.');
+    throw new Error(`${name} could not complete the request. Check your connection and try again.`);
+  }) as {text?:unknown};
+  if(typeof result?.text!=='string') throw new Error(`${name} returned an invalid transcription.`);
+  return {text:result.text};
 }
 
 export interface StreamOptions {
@@ -43,12 +65,14 @@ export interface StreamOptions {
   maxTokens?:number;
   /** Sampling temperature; null leaves it out (OpenAI's reasoning models reject it). */
   temperature?:number|null;
+  /** The provider accepts `response_format: json_object`, used when a request asks for JSON. */
+  jsonMode?:boolean;
 }
 type Send=(path:string,body:BodyInit,signal?:AbortSignal,headers?:Record<string,string>)=>Promise<Response>;
 /** A streamed tool-capable chat/completions call over `send`. */
-export function streamChat(send:Send,{name='The AI provider',extra=()=>({}),headers=()=>({}),maxTokens=2048,temperature=0.3}:StreamOptions={}):Chat {
+export function streamChat(send:Send,{name='The AI provider',extra=()=>({}),headers=()=>({}),maxTokens=2048,temperature=0.3,jsonMode=false}:StreamOptions={}):Chat {
   return async(chat,{signal,onText}={})=>{
-    const body={model:chat.model,messages:chat.messages.map(({raw:_raw,...m}:{raw?:unknown}&ChatRequest['messages'][number])=>m),stream:true,...(temperature===null?{}:{temperature}),max_completion_tokens:chat.maxTokens??maxTokens,...extra(chat),
+    const body={model:chat.model,messages:chat.messages.map(({raw:_raw,...m}:{raw?:unknown}&ChatRequest['messages'][number])=>m),stream:true,...(temperature===null?{}:{temperature}),max_completion_tokens:chat.maxTokens??maxTokens,...(chat.json&&jsonMode?{response_format:{type:'json_object'}}:{}),...extra(chat),
       ...(chat.tools?.length?{tools:chat.tools.map(t=>({type:'function',function:t})),tool_choice:chat.toolChoice??'auto'}:{})};
     const response=await send('chat/completions',JSON.stringify(body),signal,headers(chat));
     if(!response.body) throw new Error(`${name} returned an invalid response. Please try again.`);

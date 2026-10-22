@@ -4,7 +4,7 @@ import type { ChatProvider } from '../engine/ports';
 import { askProvider, type AskModelInfo } from '../shared/ask';
 
 /**
- * Claude for Ask through the official SDK and the Messages API. Ask's loop speaks OpenAI-style messages, so this
+ * Claude through the official SDK and the Messages API. Ask's loop speaks OpenAI-style messages, so this
  * maps them: tool calls become `tool_use` blocks, tool results one `tool_result` user turn, and each assistant
  * turn Claude wrote is replayed with its own content blocks (thinking included) as the API expects.
  */
@@ -41,9 +41,9 @@ function failure(error:unknown,signal?:AbortSignal):Error {
   if(error instanceof Anthropic.AuthenticationError||error instanceof Anthropic.PermissionDeniedError)return new Error('Claude rejected the API key. Check ANTHROPIC_API_KEY.');
   if(error instanceof Anthropic.RateLimitError){
     const seconds=Number(error.headers?.get?.('retry-after'));
-    return Object.assign(new Error(Number.isFinite(seconds)&&seconds>90?`Claude’s usage limit is reached. Try again in about ${Math.ceil(seconds/60)} minutes, or choose another Ask model in Settings.`:'Claude rate limit reached. Please try again shortly.'),{code:'rate_limited',...(Number.isFinite(seconds)?{retryAfterMs:seconds*1000}:{})});
+    return Object.assign(new Error(Number.isFinite(seconds)&&seconds>90?`Claude’s usage limit is reached. Try again in about ${Math.ceil(seconds/60)} minutes, or choose another model in Settings → AI.`:'Claude rate limit reached. Please try again shortly.'),{code:'rate_limited',...(Number.isFinite(seconds)?{retryAfterMs:seconds*1000}:{})});
   }
-  if(error instanceof Anthropic.NotFoundError)return new Error('This Claude model is not available right now. Choose another Ask model in Settings.');
+  if(error instanceof Anthropic.NotFoundError)return new Error('This Claude model is not available right now. Choose another model in Settings → AI.');
   if(error instanceof Anthropic.APIConnectionError)return new Error('Claude could not complete the request. Check your connection and try again.');
   if(error instanceof Anthropic.APIError)return new Error(error.status===529?'Claude is overloaded right now. Please try again shortly.':`Claude request failed (${error.status??'error'}). Please try again.`);
   return new Error('Claude stopped while answering. Please try again.');
@@ -68,7 +68,7 @@ export function createClaude(options:AnthropicOptions={}):ChatProvider {
         },{signal});
         for await(const event of stream)if(event.type==='content_block_delta'&&event.delta.type==='text_delta'&&event.delta.text)onText?.(event.delta.text);
         const message=await stream.finalMessage();
-        if(message.stop_reason==='refusal')throw Object.assign(new Error('Claude declined to answer this. Try rephrasing, or choose another Ask model.'),{code:'refusal'});
+        if(message.stop_reason==='refusal')throw Object.assign(new Error('Claude declined to answer this. Try rephrasing, or choose another model in Settings → AI.'),{code:'refusal'});
         // A tool call cut off by the output limit may be incomplete, so it is not run.
         const truncated=message.stop_reason==='max_tokens';
         return {

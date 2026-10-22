@@ -288,8 +288,8 @@ const MailRow=memo(function MailRow({thread:t,actions:rows,phase,direction,index
   const focus=cursor,at=index;
   const attached=t.messages.some(message=>message.attachments.length>0);
   const today=ymd(new Date());const due=t.dueDate?.slice(0,10);const overdue=!!due&&due<today;
-  // Until Groq has summarized it, a row shows the subject, dimmed, rather than the email's opening words passing for
-  // a summary; it shimmers while Groq works and the summary fades in. Rows on screen ask for one after a moment.
+  // Until the model has summarized it, a row shows the subject, dimmed, rather than the email's opening words passing for
+  // a summary; it shimmers while the model works and the summary fades in. Rows on screen ask for one after a moment.
   const real=hasRealSummary(t),working=useSummarizing(t.id),waited=useRef(false);if(!real)waited.current=true;
   const headline=real?capital(t.summary.trim()):t.subject||'(No subject)';
   useEffect(()=>{if(real||exiting||t.status==='trash')return;const timer=setTimeout(()=>summarizeRow(t),1500);return ()=>clearTimeout(timer);},[t.id,real,exiting,t.status]);
