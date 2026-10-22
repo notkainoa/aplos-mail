@@ -13,10 +13,13 @@ const categories=['General','Mail','Calendar','AI','Notifications','Accounts','H
 export type SettingsCategory=typeof categories[number];
 type Category=SettingsCategory;
 const mailboxActions:[string,string][]=[['archive','Archive'],['read','Keep in inbox (read)'],['unread','Keep in inbox (unread)']];
-const tabKey='aplos.settingsTab';
-function storedTab():Category{const value=localStorage.getItem(tabKey);return (categories as readonly string[]).includes(value??'')?value as Category:'General';}
+const tabKey='aplos.settingsTab',leftKey='aplos.settingsLeftAt';
+// Coming back within a few minutes resumes the same tab; after that Settings starts fresh on General.
+const resumeMs=5*60_000;
+function storedTab():Category{const value=localStorage.getItem(tabKey);const left=Number(localStorage.getItem(leftKey));if(left&&Date.now()-left>resumeMs)return 'General';return (categories as readonly string[]).includes(value??'')?value as Category:'General';}
+function markLeft(){localStorage.setItem(leftKey,String(Date.now()));}
 /** Choose which settings category opens next (or switch it now if Settings is showing). */
-export function showSettingsTab(tab:Category){localStorage.setItem(tabKey,tab);dispatchEvent(new CustomEvent<Category>('aplos:settings-tab',{detail:tab}));}
+export function showSettingsTab(tab:Category){localStorage.setItem(tabKey,tab);localStorage.removeItem(leftKey);dispatchEvent(new CustomEvent<Category>('aplos:settings-tab',{detail:tab}));}
 
 async function inputDevices(){return (await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audioinput');}
 
@@ -33,6 +36,7 @@ function SignatureField({value,onSave}:{value:string;onSave:(value:string)=>void
 export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:AppState;capabilities:Capabilities;onChange:(p:Partial<Preferences>)=>void;notify:(t:string)=>void;shortcuts:()=>void}){
  const [tab,setTabState]=useState<Category>(storedTab);const [busy,setBusy]=useState('');const [adding,setAdding]=useState(false);const [devices,setDevices]=useState<MediaDeviceInfo[]>([]);const [error,setError]=useState('');const s=state.settings;
  function setTab(next:Category){localStorage.setItem(tabKey,next);setTabState(next);setError('');}
+ useEffect(()=>{localStorage.removeItem(leftKey);addEventListener('pagehide',markLeft);return()=>{removeEventListener('pagehide',markLeft);markLeft();};},[]);
  useEffect(()=>{const change=(event:Event)=>{setTabState((event as CustomEvent<Category>).detail);setError('');};addEventListener('aplos:settings-tab',change);return()=>removeEventListener('aplos:settings-tab',change);},[]);
  // Device labels are only readable after access was granted, so a labeled list means we can show it right away.
  useEffect(()=>{const media=navigator.mediaDevices;if(!media?.enumerateDevices)return;let live=true;
