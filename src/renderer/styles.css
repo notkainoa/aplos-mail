@@ -113,6 +113,10 @@
 .footer-link { height: 27px; display: flex; align-items: center; padding: 0 8px; border-radius: var(--radius-sm); text-align: left; color: color-mix(in srgb, var(--sidebar-ink) 82%, transparent); transition: background-color var(--dur-fast), color var(--dur-fast); }
 .footer-link:hover { color: var(--sidebar-ink); background: color-mix(in srgb, var(--sidebar-ink) 5%, transparent); }
 .footer-link.active { color: var(--sidebar-ink); background: color-mix(in srgb, var(--sidebar-ink) 10%, transparent); }
+.footer-calendar { height: 32px; gap: 9px; }
+.footer-calendar > :is(svg, .sym) { color: color-mix(in srgb, var(--sidebar-ink) 80%, transparent); }
+.footer-calendar .nav-label { flex: 1; }
+.footer-calendar:hover .nav-keys { display: inline-flex; animation: fade var(--dur-fast) var(--ease); }
 .sidebar-status { display: flex; align-items: center; gap: 7px; padding: 0 6px 8px; font-size: 12px; line-height: 16px; color: color-mix(in srgb, var(--sidebar-ink) 55%, transparent); }
 .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex: none; }
 .sync-dot.offline { background: var(--amber); }
