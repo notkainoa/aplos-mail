@@ -107,7 +107,8 @@
 .nav-divider { position: relative; margin-top: 17px; }
 .nav-divider::before { content: ""; position: absolute; top: -9px; left: 8px; right: 8px; height: 1px; background: color-mix(in srgb, var(--sidebar-ink) 11%, transparent); }
 .sidebar-footer { margin-top: auto; padding: 20px 0 0; display: flex; flex-direction: column; align-items: stretch; }
-.sidebar-footer-row { display: flex; align-items: center; justify-content: space-between; }
+.sidebar-footer-row { display: flex; align-items: center; gap: 4px; }
+.sidebar-footer-row .footer-link { flex: 1; }
 .footer-link { height: 27px; display: flex; align-items: center; padding: 0 8px; border-radius: var(--radius-sm); text-align: left; color: color-mix(in srgb, var(--sidebar-ink) 82%, transparent); transition: background-color var(--dur-fast), color var(--dur-fast); }
 .footer-link:hover { color: var(--sidebar-ink); background: color-mix(in srgb, var(--sidebar-ink) 5%, transparent); }
 .footer-link.active { color: var(--sidebar-ink); background: color-mix(in srgb, var(--sidebar-ink) 10%, transparent); }
