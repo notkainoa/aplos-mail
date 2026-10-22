@@ -1,27 +1,28 @@
 import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {ArrowUpRight,Check,ChevronsUpDown,Copy,KeyRound,Search} from '../icons';
 import {Badge,Button,Group,GroupRow,Popover,Spinner,cx} from '../ui';
-import {askProvider,askProviders,defaultAskModel,parseAskModel,type AskModelInfo,type AskProviderId} from '../../shared/ask';
+import {askProvider,askProviders,defaultAskModel,isAskServer,parseAskModel,type AskModelInfo,type AskProviderId,type AskServerId} from '../../shared/ask';
 import {invoke,openUrl,uid} from '../bridge';
 
-type Catalog={id:AskProviderId;label:string;env:string;description:string;available:boolean;keyOptional?:boolean;models:AskModelInfo[]}[];
+type Catalog={id:AskProviderId;label:string;env:string;description:string;available:boolean;keyOptional?:boolean;models:AskModelInfo[];address?:string;defaultAddress?:string;running?:boolean;version?:string}[];
+export type AskServers=Record<AskServerId,string>;
 /** Stands in for a custom server's model until the owner picks or types one. */
 const UNSET='choose-a-model';
-const keyPages:Record<AskProviderId,string>={groq:'https://console.groq.com/keys',openai:'https://platform.openai.com/api-keys',anthropic:'https://platform.claude.com/settings/keys',gemini:'https://aistudio.google.com/apikey',openrouter:'https://openrouter.ai/settings/keys','opencode-go':'https://opencode.ai/console',custom:''};
-const shortDescriptions:Record<AskProviderId,string>={groq:'Very fast open models. Also runs the rest of Aplos’s AI.',openai:'GPT models on your OpenAI API key.',anthropic:'Claude Opus, Sonnet and Haiku.',gemini:'Gemini models from Google AI Studio.',openrouter:'Hundreds of models on one key.','opencode-go':'Your OpenCode Go plan’s models.',custom:'Ollama, LM Studio or any OpenAI-compatible server.'};
+const keyPages:Record<AskProviderId,string>={groq:'https://console.groq.com/keys',openai:'https://platform.openai.com/api-keys',anthropic:'https://platform.claude.com/settings/keys',gemini:'https://aistudio.google.com/apikey',openrouter:'https://openrouter.ai/settings/keys','opencode-go':'https://opencode.ai/console',ollama:'',lmstudio:'',custom:''};
+const shortDescriptions:Record<AskProviderId,string>={groq:'Very fast open models. Also runs the rest of Aplos’s AI.',openai:'GPT models on your OpenAI API key.',anthropic:'Claude Opus, Sonnet and Haiku.',gemini:'Gemini models from Google AI Studio.',openrouter:'Hundreds of models on one key.','opencode-go':'Your OpenCode Go plan’s models.',ollama:'Local models on this Mac. Mail stays here.',lmstudio:'Local models on this Mac. Mail stays here.',custom:'Any OpenAI-compatible server.'};
 
 /** Settings → AI: where Ask runs, which model, a real connection check, and what else uses Groq. */
-export function AiSettings({value,groqReady,customUrl,onChange,onCustomUrl}:{value:string;groqReady:boolean;customUrl:string;onChange:(value:string)=>void;onCustomUrl:(url:string)=>void}){
-  const [catalog,setCatalog]=useState<Catalog>();
-  // Reloaded when the custom server's address changes, so its models appear.
-  useEffect(()=>{let live=true;void invoke<Catalog>('ai.models').then(list=>{if(live)setCatalog(list);}).catch(()=>{});return()=>{live=false;};},[customUrl]);
+export function AiSettings({value,groqReady,servers,onChange,onServer}:{value:string;groqReady:boolean;servers:AskServers;onChange:(value:string)=>void;onServer:(id:AskServerId,url:string)=>void}){
+  const [catalog,setCatalog]=useState<Catalog>();const [round,setRound]=useState(0);
+  // Reloaded when a server address changes or on Try again, so a server that just started shows its models.
+  useEffect(()=>{let live=true;void invoke<Catalog>('ai.models').then(list=>{if(live)setCatalog(list);}).catch(()=>{});return()=>{live=false;};},[servers.ollama,servers.lmstudio,servers.custom,round]);
   const providers:Catalog=catalog??askProviders.map(p=>({...p,models:[...p.models],available:p.id==='groq'?groqReady:false}));
   const ref=parseAskModel(value)??parseAskModel(defaultAskModel)!;
   const provider=providers.find(p=>p.id===ref.provider)??providers[0];
   // A model chosen earlier that the list no longer shows stays visible rather than silently switching.
   const models=provider.models.some(m=>m.id===ref.model)||ref.model===UNSET?provider.models:[{id:ref.model,label:ref.model},...provider.models];
   const model=models.find(m=>m.id===ref.model);
-  const custom=provider.id==='custom';
+  const custom=provider.id==='custom',server=isAskServer(provider.id)?provider.id:undefined,local=server==='ollama'||server==='lmstudio';
   function pickProvider(id:AskProviderId){
     if(id===provider.id)return;
     const next=providers.find(p=>p.id===id);const first=next?.models[0]??askProvider(id).models[0];
@@ -31,10 +32,11 @@ export function AiSettings({value,groqReady,customUrl,onChange,onCustomUrl}:{val
     <Group title="Ask">
       <div className="ai-providers-wrap">
         <ProviderCards providers={providers} value={provider.id} loading={!catalog} onChange={pickProvider}/>
-        {catalog&&!provider.available&&!custom&&<KeySetup key={provider.id} provider={provider}/>}
+        {catalog&&!provider.available&&!server&&<KeySetup key={provider.id} provider={provider}/>}
+        {catalog&&local&&!provider.running&&<LocalSetup key={provider.id} id={provider.id as 'ollama'|'lmstudio'} address={provider.address??''} onRetry={()=>setRound(n=>n+1)}/>}
       </div>
-      {custom&&<ServerAddress value={customUrl} onChange={onCustomUrl}/>}
-      <GroupRow label="Model" description={model?.description??(custom?(models.length?'From your server. It must support tool calling.':'Type the model name your server uses, e.g. llama3.3.'):models.length>8?`${models.length} models on ${provider.label} can use Ask’s tools.`:undefined)}>
+      {server&&<ServerAddress key={server} id={server} value={servers[server]} placeholder={askProvider(server).defaultAddress??'http://localhost:11434/v1'} onChange={url=>onServer(server,url)}/>}
+      <GroupRow label="Model" description={model?.description??(local?(models.length?`On ${provider.label}${provider.version?` ${provider.version}`:''}. Only models that can use tools are listed.`:provider.running?localEmpty[provider.id as 'ollama'|'lmstudio']:`Start ${provider.label} to see its models.`):custom?(models.length?'From your server. It must support tool calling.':'Type the model name your server uses, e.g. llama3.3.'):models.length>8?`${models.length} models on ${provider.label} can use Ask’s tools.`:undefined)}>
         <ModelPicker provider={provider} models={models} value={ref.model===UNSET?'':ref.model} allowAny={custom} onChange={id=>onChange(`${provider.id}:${id}`)}/>
       </GroupRow>
       <ConnectionCheck key={value} model={value} ready={provider.available&&ref.model!==UNSET}/>
@@ -70,7 +72,7 @@ function ProviderCards({providers,value,loading,onChange}:{providers:Catalog;val
     {providers.map(p=>{const selected=p.id===value;return <button key={p.id} type="button" role="radio" aria-checked={selected} tabIndex={selected?0:-1} className={cx('ai-provider',selected&&'is-selected')} onClick={()=>onChange(p.id)}>
       <span className="ai-provider-head"><strong>{p.label}</strong>{selected&&<span className="ai-provider-check"><Check size={11}/></span>}</span>
       <span className="ai-provider-text">{shortDescriptions[p.id]}</span>
-      <span className={cx('ai-provider-status',loading?'is-loading':p.available?'is-ready':'is-missing')}><i/>{loading?'Checking…':p.available?'Ready':p.keyOptional?'Needs an address':'Needs a key'}</span>
+      <span className={cx('ai-provider-status',loading?'is-loading':p.available?'is-ready':'is-missing')}><i/>{loading?'Checking…':p.running!==undefined?(p.running?'Running':'Not running'):p.available?'Ready':p.keyOptional?'Needs an address':'Needs a key'}</span>
     </button>;})}
   </div>;
 }
@@ -88,13 +90,37 @@ function KeySetup({provider}:{provider:Catalog[number]}){
   </div>;
 }
 
-/** The custom server's address. Saved on Enter or when leaving the field; the engine validates it. */
-function ServerAddress({value,onChange}:{value:string;onChange:(url:string)=>void}){
+const localEmpty={ollama:'No models that can use tools yet. Pull one in Terminal, e.g. ollama pull qwen3.',lmstudio:'No models that can use tools yet. Download one in LM Studio, e.g. Qwen3.'};
+const addressHelp:Record<AskServerId,string>={
+  ollama:'Leave empty for Ollama on this Mac. Another machine works too; the mail you ask about is sent there.',
+  lmstudio:'Leave empty for LM Studio on this Mac. Another machine works too; the mail you ask about is sent there.',
+  custom:'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1. The mail you ask about is sent to this server. An optional key goes in CUSTOM_AI_API_KEY.',
+};
+/** A server's address. Saved on Enter or when leaving the field; the engine validates it. Empty means the default. */
+function ServerAddress({id,value,placeholder,onChange}:{id:AskServerId;value:string;placeholder:string;onChange:(url:string)=>void}){
   const [text,setText]=useState(value);useEffect(()=>setText(value),[value]);
   const save=()=>{if(text.trim()!==value)onChange(text.trim());};
-  return <GroupRow label="Server address" description="Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1. The mail you ask about is sent to this server. An optional key goes in CUSTOM_AI_API_KEY.">
-    <input className="ai-address" aria-label="Server address" spellCheck={false} placeholder="http://localhost:11434/v1" value={text} onChange={e=>setText(e.target.value)} onBlur={save} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();save();(e.target as HTMLInputElement).blur();}e.stopPropagation();}}/>
+  return <GroupRow label="Server address" description={addressHelp[id]}>
+    <input className="ai-address" aria-label="Server address" spellCheck={false} placeholder={placeholder} value={text} onChange={e=>setText(e.target.value)} onBlur={save} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();save();(e.target as HTMLInputElement).blur();}e.stopPropagation();}}/>
   </GroupRow>;
+}
+
+const localApps={
+  ollama:{name:'Ollama',download:'https://ollama.com/download',steps:'Open the Ollama app (or run it in Terminal), then pull a model that can use tools.',command:'ollama pull qwen3'},
+  lmstudio:{name:'LM Studio',download:'https://lmstudio.ai',steps:'Open LM Studio and start its local server (Developer → Start server), then download a model that can use tools.',command:'lms server start'},
+};
+/** When a local app isn't answering: what to start, a command to copy, and a way to check again. */
+function LocalSetup({id,address,onRetry}:{id:'ollama'|'lmstudio';address:string;onRetry:()=>void}){
+  const app=localApps[id];const [copied,setCopied]=useState(false);const [checking,setChecking]=useState(false);
+  async function copy(){try{await navigator.clipboard.writeText(app.command);setCopied(true);setTimeout(()=>setCopied(false),1600);}catch{/* The command is still on screen. */}}
+  return <div className="ai-setup" role="status">
+    <p><strong>{app.name} isn’t running{address?<> at <code>{address.replace(/^https?:\/\//,'')}</code></>:''}.</strong> {app.steps}</p>
+    <div className="ai-setup-actions">
+      <button type="button" className={cx('ai-env',copied&&'is-copied')} onClick={()=>void copy()} aria-label={`Copy ${app.command}`}><code>{app.command}</code><span>{copied?<><Check size={12}/>Copied</>:<><Copy size={12}/>Copy</>}</span></button>
+      <Button variant="secondary" size="sm" loading={checking} onClick={()=>{setChecking(true);onRetry();setTimeout(()=>setChecking(false),900);}}>Try again</Button>
+      <Button variant="text" size="sm" iconRight={ArrowUpRight} onClick={()=>void openUrl(app.download)}>Get {app.name}</Button>
+    </div>
+  </div>;
 }
 
 /** A searchable list of models. Arrows move, Enter picks, Esc closes; the selected model is checked. */
@@ -161,7 +187,7 @@ function ConnectionCheck({model,ready}:{model:string;ready:boolean}){
     catch(e){if(request.current===requestId)setCheck({state:'error',message:(e as Error).message});}
     finally{if(request.current===requestId)request.current=undefined;}
   }
-  const seconds=(ms:number)=>ms<1000?`${Math.round(ms/10)*10} ms`:`${(ms/1000).toFixed(1)} s`;
+  const seconds=(ms:number)=>ms<10?'under 10 ms':ms<1000?`${Math.round(ms/10)*10} ms`:`${(ms/1000).toFixed(1)} s`;
   return <GroupRow label="Check connection" description="Sends one tiny request and asks the model to use a tool, the way Ask does. No mail is included.">
     <span className={cx('ai-check',`is-${check.state==='ok'&&!check.tools?'warn':check.state}`)} role="status" aria-live="polite">
       {check.state==='running'&&<><Spinner size={13}/>Checking…</>}

@@ -324,3 +324,6 @@ New AI tab: provider cards with key status and setup help, searchable model pick
 
 ## ChatGPT, Claude, Gemini and custom providers for Ask (2026-10-21)
 Settings → AI now offers seven providers. Verified: typecheck, production build, 184 tests (3 new provider tests), headless screenshots of the provider grid and a custom server setup in dark and light. Live checks wait for the owner's keys.
+
+## Ollama and LM Studio (2026-10-21)
+First-class local providers with running status, setup help, changeable addresses and tool-capable model lists. Verified: typecheck, 187 tests (3 new), headless screenshots against a stand-in Ollama (Running, model picker, connection check, an Ask answer through it) and LM Studio's not-running state. Real-app checks wait for the owner.

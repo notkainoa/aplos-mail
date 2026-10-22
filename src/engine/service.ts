@@ -11,7 +11,7 @@ import type { EngineOptions, MemoryStage } from './ports';
 import { runAgent } from './agent';
 import { createAskSession, type AskProgress } from './ask';
 import { localNow } from './proposals';
-import { askProvider, askProviders, defaultAskModel, parseAskModel, type AskProviderId } from '../shared/ask';
+import { askProvider, askProviders, askServerSetting, defaultAskModel, isAskServer, parseAskModel, type AskProviderId, type AskServerId } from '../shared/ask';
 
 // The alphabet/padding has already been validated before this size calculation.
 const base64Bytes=(value:string)=>Math.floor(value.replace(/=+$/,'').length*3/4);
@@ -116,10 +116,10 @@ function settingsPatch(raw:unknown):Partial<Settings> {
     } else if(key==='accountNotifications') {
       const entries=object(val); if(Object.values(entries).some(v=>typeof v!=='boolean')) throw new Error('Invalid notification preferences.');
       patch.accountNotifications=Object.fromEntries(Object.entries(entries).map(([k,v])=>[text(k,200),v]));
-    } else if(key==='askCustomUrl') {
+    } else if(key==='askCustomUrl'||key==='askOllamaUrl'||key==='askLmStudioUrl') {
       const value=text(val,500).trim();
       if(value){let url:URL;try{url=new URL(value);}catch{throw new Error('Enter the server address, e.g. http://localhost:11434/v1.');}if(!/^https?:$/.test(url.protocol)||url.username||url.password)throw new Error('Use an http or https address without a password in it.');}
-      patch.askCustomUrl=value;
+      patch[key]=value;
     } else if(key==='askModel') {
       const ref=parseAskModel(val); if(!ref) throw new Error('Choose an Ask model.'); patch.askModel=`${ref.provider}:${ref.model}`;
     } else (patch as any)[key]=text(val,key==='signature'?20_000:1_000);
@@ -419,10 +419,12 @@ export async function createEngineService(options:EngineOptions) {
     if(additions.length)change(s=>{for(const t of additions)if(!s.threads.some(local=>local.id===t.id))s.threads.push(t);});
     return [...found.values()].sort((a,b)=>b.date.localeCompare(a.date));
   }
+  /** A server provider's address: the setting, or the app's default local port. */
+  function serverUrl(id:AskServerId){return state.settings[askServerSetting[id]]||askProvider(id).defaultAddress||'';}
   /** Where Ask's model runs; a provider without its key says which variable to set. */
   function chatProvider(id:AskProviderId) {
     if(id==='groq')return {available:groq.available,chat:groq.chat};
-    if(id==='custom')return state.settings.askCustomUrl?options.customChat?.(state.settings.askCustomUrl):undefined;
+    if(isAskServer(id)){const url=serverUrl(id);return url?options.serverChat?.(id,url):undefined;}
     return options.chats?.[id];
   }
   function askTransport(id:AskProviderId) {
@@ -786,10 +788,14 @@ export async function createEngineService(options:EngineOptions) {
         // What Settings can offer: each provider, whether its key is set, and the tool-capable models it lists now.
         return Promise.all(askProviders.map(async info=>{
           const transport=info.id==='groq'?undefined:chatProvider(info.id);
-          const available=info.id==='groq'?groq.available:!!transport?.available;
+          let available=info.id==='groq'?groq.available:!!transport?.available;
+          // A local app counts as ready only while it is actually running.
+          const status=transport?.status?await transport.status().catch(():{running:boolean;version?:string}=>({running:false})):undefined;
+          if(status)available=status.running;
           let models=[...info.models];
-          if(transport?.models)try{const live=await transport.models();if(live.length)models=live;}catch{/* The curated list still works offline. */}
-          return {id:info.id,label:info.label,env:info.env,description:info.description,keyOptional:!!info.keyOptional,available,models};
+          if(transport?.models&&available!==false)try{const live=await transport.models();if(live.length||isAskServer(info.id))models=live;}catch{/* The curated list still works offline. */}
+          return {id:info.id,label:info.label,env:info.env,description:info.description,keyOptional:!!info.keyOptional,available,models,
+            ...(isAskServer(info.id)?{address:serverUrl(info.id),defaultAddress:info.defaultAddress??''}:{}),...(status?{running:status.running,...(status.version?{version:status.version}:{})}:{})};
         }));
       }
       case 'ai.transcribe':{

@@ -1,13 +1,17 @@
 /**
  * Where Ask's model runs. Groq also runs every other AI feature (summaries, polish, transcription); Ask alone can
- * use ChatGPT (OpenAI API), Claude, Gemini, OpenRouter, an OpenCode Go plan or a custom OpenAI-compatible server.
+ * use ChatGPT (OpenAI API), Claude, Gemini, OpenRouter, an OpenCode Go plan, Ollama or LM Studio on this Mac,
+ * or a custom OpenAI-compatible server.
  * Keys live only in the backend environment.
  * The setting is stored as `provider:model`, e.g. `groq:openai/gpt-oss-120b` or `openrouter:anthropic/claude-haiku-5.5`.
  */
-export type AskProviderId='groq'|'openai'|'anthropic'|'gemini'|'openrouter'|'opencode-go'|'custom';
+export type AskProviderId='groq'|'openai'|'anthropic'|'gemini'|'openrouter'|'opencode-go'|'ollama'|'lmstudio'|'custom';
+/** Providers that run on a server the owner points at (usually this Mac), with no key needed. */
+export type AskServerId='ollama'|'lmstudio'|'custom';
 export interface AskModelInfo { id:string; label:string; description?:string }
 /** `env` is the backend variable holding the key; a custom server's key is optional, its address is a setting. */
-export interface AskProviderInfo { id:AskProviderId; label:string; env:string; description:string; models:readonly AskModelInfo[]; keyOptional?:boolean }
+export interface AskProviderInfo { id:AskProviderId; label:string; env:string; description:string; models:readonly AskModelInfo[]; keyOptional?:boolean;
+  /** Where a local app listens by default; the owner can change it in Settings. */ defaultAddress?:string }
 
 export const askProviders:readonly AskProviderInfo[]=[
   {id:'groq',label:'Groq',env:'GROQ_API_KEY',description:'Very fast open models. Also runs summaries and transcription.',models:[
@@ -48,6 +52,8 @@ export const askProviders:readonly AskProviderInfo[]=[
     {id:'deepseek-v4-pro',label:'DeepSeek V4 Pro'},
     {id:'deepseek-v4.1-flash',label:'DeepSeek V4.1 Flash',description:'Fast and light on the plan’s limits.'},
   ]},
+  {id:'ollama',label:'Ollama',env:'OLLAMA_API_KEY',keyOptional:true,defaultAddress:'http://localhost:11434',description:'Models running on this Mac with Ollama. Mail stays on your machine.',models:[]},
+  {id:'lmstudio',label:'LM Studio',env:'LM_STUDIO_API_KEY',keyOptional:true,defaultAddress:'http://localhost:1234',description:'Models running on this Mac with LM Studio. Mail stays on your machine.',models:[]},
   {id:'custom',label:'Custom',env:'CUSTOM_AI_API_KEY',keyOptional:true,description:'Any OpenAI-compatible server, such as Ollama, LM Studio or vLLM. Its model must support tool calling.',models:[]},
 ];
 export const defaultAskModel='groq:openai/gpt-oss-120b';
@@ -64,6 +70,9 @@ export function parseAskModel(value:unknown):{provider:AskProviderId;model:strin
   return {provider,model};
 }
 export const askProvider=(id:AskProviderId)=>askProviders.find(p=>p.id===id)!;
+export const isAskServer=(id:AskProviderId):id is AskServerId=>id==='ollama'||id==='lmstudio'||id==='custom';
+/** The setting holding each server's address; empty means the app's default address. */
+export const askServerSetting={ollama:'askOllamaUrl',lmstudio:'askLmStudioUrl',custom:'askCustomUrl'} as const;
 /** "Groq · GPT-OSS 120B", or the raw ID for a model outside the curated list. */
 export function askModelLabel(value:string){
   const ref=parseAskModel(value)??parseAskModel(defaultAskModel)!;const provider=askProvider(ref.provider);

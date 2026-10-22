@@ -5,7 +5,8 @@ import type { Chat, ChatRequest, ChatTurn } from '../engine/agent';
  * environment and never reach the renderer. Errors never carry provider response bodies, only a known code.
  */
 /** `keyOptional` servers (a local model server) are called without Authorization when no key is set. */
-export interface ProviderTarget { name:string; env:string; baseUrl:string; apiKey?:string; keyOptional?:boolean; fetch?:typeof fetch; headers?:Record<string,string> }
+export interface ProviderTarget { name:string; env:string; baseUrl:string; apiKey?:string; keyOptional?:boolean; fetch?:typeof fetch; headers?:Record<string,string>;
+  /** Shown when the server can't be reached at all (a local app that isn't running). */ offline?:string }
 
 export async function providerRequest(target:ProviderTarget,path:string,body:BodyInit|undefined,signal?:AbortSignal,json=true,method='POST',headers:Record<string,string>={}):Promise<Response> {
   const {name,env}=target;
@@ -15,7 +16,7 @@ export async function providerRequest(target:ProviderTarget,path:string,body:Bod
     response=await (target.fetch??fetch)(`${target.baseUrl}/${path}`,{method,headers:{...(target.apiKey?{Authorization:`Bearer ${target.apiKey}`}:{}),...(json?{'Content-Type':'application/json'}:{}),...target.headers,...headers},...(method==='GET'?{}:{body}),signal:AbortSignal.any([AbortSignal.timeout(90000),...(signal?[signal]:[])])});
   } catch {
     if(signal?.aborted) throw new Error('AI request cancelled.');
-    throw new Error(`${name} could not complete the request. Check your connection and try again.`);
+    throw new Error(target.offline??`${name} could not complete the request. Check your connection and try again.`);
   }
   if(response.ok) return response;
   if(response.status===401||response.status===403) throw new Error(`${name} rejected the API key. Check ${env}.`);

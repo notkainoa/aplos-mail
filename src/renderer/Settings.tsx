@@ -7,6 +7,7 @@ import {AddAccountDialog} from './components/AddAccount';
 import {DomainCheck} from './components/DomainCheck';
 import {DeviceSync} from './components/DeviceSync';
 import {AiSettings} from './components/AiSettings';
+import {askServerSetting} from '../shared/ask';
 
 const categories=['General','Mail','Calendar','AI','Notifications','Accounts','Help & about'] as const;
 export type SettingsCategory=typeof categories[number];
@@ -78,7 +79,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <Group title="Plans from your mail">{toggle('Automatically add plans','Groq detects meetings, reservations and flights during sync. Review your calendar regularly.','autoCalendar')}{toggle('Show Google’s Gmail events','Include events Google has created from your mail.','gmailEvents')}</Group>
    <Group title="Calendar access">{accountRows}<p className="group-note">Google and Outlook accounts include their calendars. iCloud calendars use the same app-specific password. Aplos never sends invitations without your action.</p></Group>
   </>}
-  {tab==='AI'&&<AiSettings value={s.askModel} groqReady={capabilities.groq} customUrl={s.askCustomUrl} onChange={askModel=>onChange({askModel})} onCustomUrl={askCustomUrl=>onChange({askCustomUrl})}/>}
+  {tab==='AI'&&<AiSettings value={s.askModel} groqReady={capabilities.groq} servers={{ollama:s.askOllamaUrl,lmstudio:s.askLmStudioUrl,custom:s.askCustomUrl}} onChange={askModel=>onChange({askModel})} onServer={(id,url)=>onChange({[askServerSetting[id]]:url})}/>}
   {tab==='Notifications'&&<>
    <Group title="Desktop notifications">{toggle('Show notifications','Get a heads-up when new mail arrives.','notifications')}<GroupRow label="Test notification" description="Click the notification to return to Aplos."><Button variant="secondary" size="sm" loading={busy==='notification'} onClick={()=>void run('notification',()=>invoke('notification.test'))}>Send test</Button></GroupRow></Group>
    <Group title="For each account">{state.accounts.map(a=><GroupRow key={a.id} label={a.name} description={a.email}><Switch label={'Notifications for '+a.email} checked={s.accountNotifications[a.id]!==false} onChange={on=>onChange({accountNotifications:{...s.accountNotifications,[a.id]:on}})}/></GroupRow>)}</Group>

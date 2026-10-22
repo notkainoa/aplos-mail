@@ -6,7 +6,7 @@ export const defaultSettings:Settings = {
   doneAction:'archive', laterAction:'read', lowAction:'archive', defaultReply:'reply', signature:'Warmly,\nAlex',
   signatureMode:'new', footer:false, autoPolish:false, undoSeconds:8, sendSound:true, autoCalendar:false,
   gmailEvents:true, notifications:true, accountNotifications:{}, microphone:'default', icon:'ink',
-  launchAtLogin:false, remoteImages:false, onboardingDone:false, askModel:defaultAskModel, askCustomUrl:'',
+  launchAtLogin:false, remoteImages:false, onboardingDone:false, askModel:defaultAskModel, askCustomUrl:'', askOllamaUrl:'', askLmStudioUrl:'',
 };
 
 export function createDemo(now = new Date()):AppState {

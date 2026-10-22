@@ -9,7 +9,8 @@ import type { ChatProvider } from '../src/engine/ports';
 import { createService } from '../src/main/service';
 import { createGoogle } from '../src/main/google';
 import { createGroq } from '../src/main/groq';
-import { createCustom, createGemini, createOpenAI, createOpenCodeGo, createOpenRouter } from '../src/main/providers';
+import { createCustom, createGemini, createLmStudio, createOpenAI, createOpenCodeGo, createOpenRouter } from '../src/main/providers';
+import { createOllama } from '../src/main/ollama';
 import { createClaude } from '../src/main/anthropic';
 import { parseAskModel } from '../src/shared/ask';
 
@@ -79,7 +80,7 @@ test('the Ask setting picks the provider; a missing key says which variable to s
     await service.invoke('settings.update',{patch:{askModel:'opencode-go:kimi-k3'}});
     await assert.rejects(service.invoke('ai.ask',{message:'Hello'}),/Add OPENCODE_API_KEY .* OpenCode Go/);
     const catalog=await service.invoke('ai.models') as Array<{id:string;available:boolean;models:{id:string}[]}>;
-    assert.deepEqual(catalog.map(p=>p.id),['groq','openai','anthropic','gemini','openrouter','opencode-go','custom']);
+    assert.deepEqual(catalog.map(p=>p.id),['groq','openai','anthropic','gemini','openrouter','opencode-go','ollama','lmstudio','custom']);
     assert.deepEqual(catalog.filter(p=>['groq','openrouter','opencode-go','custom'].includes(p.id)).map(p=>[p.id,p.available]),[['groq',false],['openrouter',true],['opencode-go',false],['custom',false]]);
     assert.deepEqual(catalog.find(p=>p.id==='openrouter')!.models.map(m=>m.id),['anthropic/claude-haiku-5.5']);
     // The connection check asks for one tool call and reports whether the model made it.
@@ -154,7 +155,7 @@ test('Claude streams text, maps tool calls both ways and replays its own blocks'
 test('a custom server address must be http or https and routes Ask to that server',async()=>{
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-custom-'));
   const asked:string[]=[];
-  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),customChat:url=>({available:true,chat:async req=>{asked.push(`${url}|${req.model}`);return {content:'Local answer.',toolCalls:[]};}})});
+  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),serverChat:(_id,url)=>({available:true,chat:async req=>{asked.push(`${url}|${req.model}`);return {content:'Local answer.',toolCalls:[]};}})});
   try{
     await service.invoke('settings.update',{patch:{askModel:'custom:llama3.3'}});
     await assert.rejects(service.invoke('ai.ask',{message:'Hi'}),/server’s address/);
@@ -163,5 +164,80 @@ test('a custom server address must be http or https and routes Ask to that serve
     await service.invoke('settings.update',{patch:{askCustomUrl:'http://localhost:11434/v1'}});
     const result=await service.invoke('ai.ask',{message:'Hi'}) as Conversation;
     assert.equal(result.messages[1].content,'Local answer.');assert.deepEqual(asked,['http://localhost:11434/v1|llama3.3']);
+  }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
+});
+
+test('Ollama: native chat with a larger context, tool calls both ways, tool-capable models and a clear offline message',async()=>{
+  const seen:{url:string;body?:any}[]=[];
+  const ndjson=(lines:unknown[])=>new Response(lines.map(l=>JSON.stringify(l)).join('\n')+'\n');
+  const fetch:typeof globalThis.fetch=async(input,init)=>{
+    const url=String(input);seen.push({url,...(init?.body?{body:JSON.parse(String(init.body))}:{})});
+    if(url.endsWith('/api/version'))return new Response(JSON.stringify({version:'0.13.2'}));
+    if(url.endsWith('/api/tags'))return new Response(JSON.stringify({models:[{name:'qwen3:latest',details:{parameter_size:'8.2B',quantization_level:'Q4_K_M'}},{name:'nomic-embed-text:latest'},{name:'old-model:7b'}]}));
+    if(url.endsWith('/api/show')){const model=JSON.parse(String(init?.body)).model;return new Response(JSON.stringify(model.startsWith('qwen3')?{capabilities:['completion','tools','thinking']}:model.startsWith('nomic')?{capabilities:['embedding']}:{}));}
+    if(JSON.parse(String(init?.body)).model==='missing')return new Response(JSON.stringify({error:'model "missing" not found, try pulling it first'}),{status:404});
+    return ndjson([{message:{role:'assistant',content:'Looking'},done:false},{message:{role:'assistant',content:'.'},done:false},
+      {message:{role:'assistant',content:'',tool_calls:[{function:{name:'search_mail',arguments:{query:'invoice'}}}]},done:false},
+      {message:{role:'assistant',content:''},done:true,done_reason:'stop',prompt_eval_count:900,eval_count:40}]);
+  };
+  const ollama=createOllama('http://localhost:11434/v1/',{fetch,apiKey:''});
+  assert.deepEqual(await ollama.status!(),{running:true,version:'0.13.2'});
+  assert.deepEqual((await ollama.models!()).map(m=>[m.id,m.label,m.description]),[['old-model:7b','old-model:7b',undefined],['qwen3:latest','qwen3','8.2B · Q4_K_M']]);
+  const text:string[]=[];
+  const turn=await ollama.chat({model:'qwen3:latest',tools:request.tools,toolChoice:'auto',messages:[{role:'system',content:'rules'},{role:'user',content:'invoice?'},
+    {role:'assistant',content:null,tool_calls:[{id:'a',type:'function',function:{name:'read_thread',arguments:'{"ref":"m1"}'}}]},{role:'tool',tool_call_id:'a',name:'read_thread',content:'{"subject":"x"}'}]},{onText:t=>text.push(t)});
+  assert.deepEqual(text,['Looking','.']);assert.equal(turn.content,'Looking.');
+  assert.deepEqual(turn.toolCalls,[{id:'call_0',name:'search_mail',arguments:'{"query":"invoice"}'}]);assert.deepEqual(turn.usage,{prompt:900,completion:40});
+  const chat=seen.find(s=>s.url==='http://localhost:11434/api/chat')!.body;
+  assert.equal(chat.options.num_ctx,16384);assert.equal(chat.think,false);assert.equal(chat.stream,true);assert.equal(chat.tools[0].function.name,'search_mail');
+  assert.deepEqual(chat.messages[2],{role:'assistant',content:'',tool_calls:[{function:{name:'read_thread',arguments:{ref:'m1'}}}]});
+  assert.deepEqual(chat.messages[3],{role:'tool',tool_name:'read_thread',content:'{"subject":"x"}'});
+  await ollama.chat({model:'qwen3:latest',tools:request.tools,toolChoice:'none',messages:[{role:'user',content:'q'}]},{});
+  assert.equal(seen.filter(s=>s.url.endsWith('/api/chat')).at(-1)!.body.tools,undefined,'the final step sends no tools');
+  await assert.rejects(ollama.chat({model:'missing',messages:[{role:'user',content:'q'}]},{}),/ollama pull/);
+  const down=createOllama('http://localhost:11434',{fetch:async()=>{throw new TypeError('fetch failed');}});
+  assert.deepEqual(await down.status!(),{running:false});
+  await assert.rejects(down.chat({model:'qwen3',messages:[{role:'user',content:'q'}]},{}),/Ollama isn’t running at localhost:11434/);
+});
+
+test('LM Studio: OpenAI-compatible chat, tool-trained models from its REST API, and an older-version fallback',async()=>{
+  const seen:{url:string;headers:Record<string,string>}[]=[];let v1=true;
+  const fetch:typeof globalThis.fetch=async(input,init)=>{
+    const url=String(input);seen.push({url,headers:{...(init?.headers as Record<string,string>)}});
+    if(url.endsWith('/api/v1/models'))return v1?new Response(JSON.stringify({models:[
+      {key:'qwen/qwen3-8b',display_name:'Qwen3 8B',type:'llm',params_string:'8B',quantization:{name:'Q4_K_M'},loaded_instances:[{id:'x'}],capabilities:{vision:false,trained_for_tool_use:true}},
+      {key:'some/base-model',display_name:'Base',type:'llm',loaded_instances:[],capabilities:{vision:false,trained_for_tool_use:false}},
+      {key:'nomic-embed',type:'embedding',loaded_instances:[]}]})):new Response('not found',{status:404});
+    if(url.endsWith('/v1/models'))return new Response(JSON.stringify({data:[{id:'qwen/qwen3-8b'},{id:'text-embedding-nomic'}]}));
+    return sse([data({choices:[{delta:{content:'Hi'}}]})]);
+  };
+  const studio=createLmStudio('http://localhost:1234',{fetch,apiKey:''});
+  assert.deepEqual(await studio.status!(),{running:true});
+  assert.deepEqual(await studio.models!(),[{id:'qwen/qwen3-8b',label:'Qwen3 8B',description:'8B · Q4_K_M · loaded'}]);
+  v1=false;assert.deepEqual((await studio.models!()).map(m=>m.id),['qwen/qwen3-8b']);
+  assert.equal((await studio.chat({...request,model:'qwen/qwen3-8b'},{})).content,'Hi');
+  const chat=seen.find(s=>s.url.endsWith('/chat/completions'))!;
+  assert.equal(chat.url,'http://localhost:1234/v1/chat/completions');assert.equal(chat.headers.Authorization,undefined,'auth is off by default');
+  const down=createLmStudio('http://localhost:1234',{fetch:async()=>{throw new TypeError('fetch failed');}});
+  assert.deepEqual(await down.status!(),{running:false});
+  await assert.rejects(down.chat({...request,model:'x'},{}),/LM Studio isn’t answering at localhost:1234/);
+});
+
+test('local servers default to their usual ports and report whether they are running',async()=>{
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-local-'));const used:string[]=[];
+  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),
+    serverChat:(id,url)=>{used.push(`${id} ${url}`);return {available:true,chat:async()=>({content:'ok',toolCalls:[]}),status:async()=>({running:id==='ollama',...(id==='ollama'?{version:'0.13.2'}:{})}),models:async()=>id==='ollama'?[{id:'qwen3:latest',label:'qwen3'}]:[]};}});
+  try{
+    type Entry={id:string;available:boolean;running?:boolean;address?:string;defaultAddress?:string;version?:string;models:{id:string}[]};
+    const catalog=await service.invoke('ai.models') as Entry[];
+    const ollama=catalog.find(p=>p.id==='ollama')!,studio=catalog.find(p=>p.id==='lmstudio')!;
+    assert.deepEqual([ollama.running,ollama.available,ollama.address,ollama.version,ollama.models.map(m=>m.id)],[true,true,'http://localhost:11434','0.13.2',['qwen3:latest']]);
+    assert.deepEqual([studio.running,studio.available,studio.address],[false,false,'http://localhost:1234']);
+    await service.invoke('settings.update',{patch:{askOllamaUrl:'http://studio-mac.local:11434'}});
+    await service.invoke('settings.update',{patch:{askModel:'ollama:qwen3:latest'}});
+    assert.equal((await service.invoke('state.get') as AppState).settings.askModel,'ollama:qwen3:latest');
+    await service.invoke('ai.ask',{message:'Hi'});
+    assert.ok(used.includes('ollama http://studio-mac.local:11434'));
+    await assert.rejects(service.invoke('settings.update',{patch:{askLmStudioUrl:'ftp://x'}}),/http or https/);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
 });

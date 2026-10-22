@@ -92,8 +92,40 @@ export function createGemini(options:ProviderOptions={}):ChatProvider {
   });
 }
 
-/** Any OpenAI-compatible server at an address the owner chose in Settings (Ollama, LM Studio, vLLM…). */
+/** Any OpenAI-compatible server at an address the owner chose in Settings (vLLM, llama.cpp, a proxy…). */
 export function createCustom(baseUrl:string,options:ProviderOptions={}):ChatProvider {
   const request=options.fetch??fetch;
   return compatible({name:'Your AI server',env:'CUSTOM_AI_API_KEY',baseUrl:baseUrl.replace(/\/+$/,''),apiKey:options.apiKey??process.env.CUSTOM_AI_API_KEY,keyOptional:true,fetch:request},'custom');
+}
+
+/**
+ * LM Studio. Chat goes through its OpenAI-compatible /v1/chat/completions (its native chat API has no custom tools);
+ * the model list comes from the native /api/v1/models, keeping language models trained for tool use. Requests for an
+ * unloaded model load it on demand. Auth is off by default; a token from Server Settings goes in LM_STUDIO_API_KEY.
+ */
+export function createLmStudio(baseUrl:string,options:ProviderOptions={}):ChatProvider {
+  const request=options.fetch??fetch,root=baseUrl.replace(/\/+$/,'').replace(/\/v1$/,''),apiKey=options.apiKey??process.env.LM_STUDIO_API_KEY;
+  const target:ProviderTarget={name:'LM Studio',env:'LM_STUDIO_API_KEY',baseUrl:`${root}/v1`,apiKey,keyOptional:true,fetch:request,offline:`LM Studio isn’t answering at ${root.replace(/^https?:\/\//,'')}. Open LM Studio and start its server, or change its address in Settings → AI.`};
+  const auth:Record<string,string>=apiKey?{Authorization:`Bearer ${apiKey}`}:{};
+  return {
+    available:true,
+    async status(signal){
+      try{const response=await request(`${root}/v1/models`,{headers:auth,signal:AbortSignal.any([AbortSignal.timeout(3_000),...(signal?[signal]:[])])});return {running:response.ok};}
+      catch{return {running:false};}
+    },
+    chat:streamChat((path,body,signal,headers)=>providerRequest(target,path,body,signal,true,'POST',headers),{name:'LM Studio',maxTokens:4096}),
+    models:async signal=>{
+      const response=await request(`${root}/api/v1/models`,{headers:auth,signal:AbortSignal.any([AbortSignal.timeout(5_000),...(signal?[signal]:[])])});
+      if(!response.ok){
+        // Older LM Studio without the v1 REST API: every model it serves.
+        const fallback=await providerRequest(target,'models',undefined,signal,false,'GET');
+        return ((await fallback.json() as {data?:Array<{id?:unknown}>}).data??[]).map(m=>String(m.id??'')).filter(id=>id&&!/embed/i.test(id)).map(id=>({id,label:id}));
+      }
+      const data=(await response.json() as {models?:Array<{key?:string;display_name?:string;type?:string;params_string?:string;quantization?:{name?:string};loaded_instances?:unknown[];capabilities?:{trained_for_tool_use?:boolean}}>}).models??[];
+      return data.filter(m=>m.type==='llm'&&typeof m.key==='string'&&m.capabilities?.trained_for_tool_use===true).map(m=>{
+        const detail=[m.params_string,m.quantization?.name,m.loaded_instances?.length?'loaded':''].filter(Boolean).join(' · ');
+        return {id:m.key!,label:m.display_name||m.key!,...(detail?{description:detail}:{})};
+      });
+    },
+  };
 }

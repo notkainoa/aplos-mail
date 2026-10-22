@@ -1,6 +1,6 @@
 import type { Account, AppState, CalendarEvent, Draft, Thread } from '../shared/types';
 import type { Chat } from './agent';
-import type { AskModelInfo, AskProviderId } from '../shared/ask';
+import type { AskModelInfo, AskProviderId, AskServerId } from '../shared/ask';
 import type { MailProvider, ProviderKind, ProviderMemory } from './provider';
 import type { MailStore, MemoryWrite, OpChanges, SaveExtras, StoreDiff } from './store';
 import type { WorkflowPatch } from './workflow';
@@ -35,7 +35,9 @@ export interface Intelligence {
 }
 
 /** A provider Ask can run on. `models` lists what it currently offers for tool use. */
-export interface ChatProvider { readonly available:boolean; chat:Chat; models?(signal?:AbortSignal):Promise<AskModelInfo[]> }
+export interface ChatProvider { readonly available:boolean; chat:Chat; models?(signal?:AbortSignal):Promise<AskModelInfo[]>;
+  /** Local servers: whether the app is running and answering, and its version when it says. */
+  status?(signal?:AbortSignal):Promise<{running:boolean;version?:string}> }
 
 /** The encrypted workflow transport is injected together with its platform vault and crypto. */
 export interface WorkflowSync {
@@ -56,8 +58,8 @@ export interface EngineOptions {
   groq:Intelligence;
   /** Ask's other providers; Groq's comes from `groq`. */
   chats?:Partial<Record<AskProviderId,ChatProvider>>;
-  /** A transport for the custom OpenAI-compatible server at the address chosen in Settings. */
-  customChat?:(baseUrl:string)=>ChatProvider;
+  /** A transport for Ollama, LM Studio or a custom OpenAI-compatible server at the address in Settings. */
+  serverChat?:(id:AskServerId,baseUrl:string)=>ChatProvider;
   workflow?:WorkflowSync;
   workflowError?:string;
   /** Whether the injected workflow vault has secure credential storage. */
