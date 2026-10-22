@@ -158,6 +158,8 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
     return()=>{window.removeEventListener('keydown',down,true);window.removeEventListener('keyup',up);window.removeEventListener('pointerup',pointerUp);window.removeEventListener('pointercancel',pointerUp);window.removeEventListener('blur',blur);};
   });
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;cancelRequest();};},[]);
+  // The menu hangs off the clock button; once that is gone (panel closed, last chat removed) the menu goes too.
+  const hasChats=conversations.length>0;useEffect(()=>{if(!open||!hasChats)recentMenu.close();},[open,hasChats]);
   const query=input.trim();
   const matches=useMemo(()=>{
     if(!query||conversation)return [];
