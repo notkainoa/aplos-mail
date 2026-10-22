@@ -23,17 +23,19 @@
 .ask-pill:active { transform: scale(.97); }
 .ask-pill > :is(svg, .sym) { color: var(--ink-2); }
 .ask-pill > span { font-weight: 500; }
+.calendar-pill { width: 32px; padding: 0; justify-content: center; }
 .ask-pill .ui-kbd { margin-left: 2px; }
 .ask-pill small { font-size: var(--text-md); color: var(--dim); }
 
 /* ---------- Dock ---------- */
 
-/* The dock takes its width in one step and the panel slides over it with a transform; animating the width
-   would relayout the whole mail column on every frame. Closed, the panel waits off the right edge. */
-.ask-dock { position: relative; width: 0; flex: none; z-index: 2; }
-.ask-dock.open { width: var(--ask-width); }
-.ask-dock > .dock-panel { position: absolute; inset: 0 0 0 auto; transform: translateX(100%); visibility: hidden; transition: transform var(--dur-fast) var(--ease-in), visibility 0s linear var(--dur-fast); }
-.ask-dock.open > .dock-panel { transform: none; visibility: visible; transition: transform var(--dur-dock) var(--ease-out-strong); }
+/* The dock's width animates and the full-width panel is pinned to its right edge, so the panel slides in
+   exactly as the mail column gives way, with no empty strip between them. The mail list is virtualized,
+   so the per-frame relayout stays small. */
+.ask-dock { position: relative; width: 0; flex: none; z-index: 2; overflow: clip; transition: width var(--dur-fast) var(--ease-in); }
+.ask-dock.open { width: var(--ask-width); transition: width var(--dur-dock) var(--ease-out-strong); }
+.ask-dock > .dock-panel { position: absolute; inset: 0 0 0 auto; visibility: hidden; transition: visibility 0s linear var(--dur-fast); }
+.ask-dock.open > .dock-panel { visibility: visible; transition: none; }
 /* The dock holds Ask and Today; a small switch at the top chooses between them. */
 .dock-panel {
   width: var(--ask-width);
@@ -44,6 +46,9 @@
 }
 .dock-head { flex: none; height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px 0 12px; -webkit-app-region: drag; }
 .dock-head > * { -webkit-app-region: no-drag; }
+.dock-head-start { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dock-head-tools { display: flex; align-items: center; gap: 2px; }
+.ask-recent-menu { max-width: 300px; }
 .dock-tabs.ui-tabs-segmented .ui-tab { width: auto; padding: 0 12px; font-size: var(--text-sm); font-weight: 500; letter-spacing: var(--tracking-sm); color: var(--dim); }
 .dock-tabs.ui-tabs-segmented .ui-tab.is-selected { color: var(--ink); }
 .dock-body { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: fade var(--dur-base) var(--ease); }
@@ -96,6 +101,8 @@
 .ask-chip:active { transform: scale(.95); }
 .ask-chip.is-go { padding: 0 8px 0 10px; background: var(--blue-fill); color: var(--blue-ink); box-shadow: var(--glass-primary); animation: scale-in var(--dur-fast) var(--ease-out-strong); }
 .ask-chip.is-go:hover { filter: brightness(1.08); }
+.ask-chip.ask-talk { gap: 4px; padding: 0 8px; font-size: var(--text-sm); color: var(--faint); }
+.ask-chip.ask-talk:hover { color: var(--ink-2); }
 .ask-chip.is-recording { background: rgba(255, 255, 255, .2); color: #fff; }
 .ask-chip.is-recording:hover { background: rgba(255, 255, 255, .3); }
 .ask-spinner { margin: 0 6px 6px; color: var(--dim); }
@@ -105,15 +112,14 @@
 .ask-hint .ui-kbd { color: inherit; }
 .ask-hint.is-recording .ui-kbd { background: color-mix(in srgb, var(--red) 15%, transparent); }
 .ask-notice { margin: 0 4px; animation: slide-down var(--dur-base) var(--ease-out-strong); }
-.ask-tools { display: flex; align-items: center; gap: 14px; padding: 0 8px; min-height: 22px; }
-.ask-tools .ui-btn-text { color: var(--dim); }
-.ask-tools .ui-btn-text:hover:not(:disabled) { color: var(--ink); }
+/* In a chat the field sits at the bottom, under the conversation. */
+.ask-panel.is-chat .ask-head { order: 2; padding: 8px 12px 0; -webkit-app-region: no-drag; }
+.ask-panel.is-chat .ask-footnote { order: 3; }
 
 /* ---------- Body ---------- */
 
 .ask-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.ask-list, .ask-history { padding: 10px 8px 16px; }
-.ask-welcome { display: flex; align-items: center; gap: 5px; padding: 2px 10px 6px; font-size: var(--text-md); color: var(--dim); }
+.ask-list { padding: 10px 8px 16px; }
 .ask-group { padding: 10px 10px 4px; font-size: var(--text-sm); font-weight: 500; color: var(--faint); }
 .ask-item {
   width: 100%;
@@ -129,6 +135,12 @@
 }
 .ask-item:hover, .ask-item.is-active { background: var(--item-hover); color: var(--ink); }
 .ask-item:active { transform: scale(.995); }
+/* Recent chats carry a remove button at the trailing edge, outside the row's own button. */
+.ask-item-row { position: relative; }
+.ask-item-row.has-remove > .ask-item { padding: 0 36px 0 10px; }
+.ask-item-row.has-remove:hover > .ask-item { background: var(--item-hover); color: var(--ink); }
+.ask-item-remove { position: absolute; right: 6px; top: 50%; translate: 0 -50%; color: var(--faint); }
+.ask-item-remove:hover { color: var(--ink); }
 .ask-item-icon { width: 22px; display: flex; align-items: center; justify-content: center; flex: none; color: var(--dim); }
 .ask-item.is-active .ask-item-icon { color: var(--ink); }
 .ask-item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -144,11 +156,6 @@
 .ask-item .ui-keys { flex: none; }
 .ask-item-keys { opacity: .75; }
 .ask-empty { padding: 10px; color: var(--dim); font-size: var(--text-md); }
-.ask-history-row { display: flex; align-items: center; padding-right: 4px; border-radius: var(--item-radius); }
-.ask-history-row:hover { background: var(--item-hover); }
-.ask-history-row > button:first-child { flex: 1; min-width: 0; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px; text-align: left; }
-.ask-history-row > button:first-child > :is(svg, .sym) { color: var(--dim); }
-.ask-history-row > button:first-child > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- Conversation ---------- */
 
