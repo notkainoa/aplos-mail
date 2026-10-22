@@ -1,5 +1,9 @@
 # Progress
 
+## 2026-10-21 — Sidebar material follows the app theme
+
+Owner report: with macOS dark and Aplos light, the sidebar kept dark glass under light-theme text. Not reproduced here: live switches, relaunch, hidden/minimised windows, dev and packaged builds all redrew correctly (sampled on screen with macOS dark; flipping macOS appearance was not possible without System Events permission). Main now re-asserts `nativeTheme.themeSource` when the native appearance drifts from the setting and rebuilds the `sidebar` vibrancy on theme changes, system appearance changes, and on window focus if drifted. Typecheck and 197 tests pass; light→dark→light rechecked on screen.
+
 ## 2026-10-20 — Second UI pass from owner feedback
 
 - **Ask** is back in the docked right panel, as the owner preferred. It keeps typed mail/command matches, hold-A voice (matched on the typed character), Esc to cancel, ⌘J, and AI calendar event cards stacked for the narrow panel.
