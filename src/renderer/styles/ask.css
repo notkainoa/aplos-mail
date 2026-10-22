@@ -304,7 +304,7 @@
 
 /* ---------- Beside Ask ---------- */
 
-.with-ask .compose-footer .signature-toggle, .with-ask .compose-footer .signature-toggle + .signature-sep { display: none; }
+.with-ask .compose-signature { display: none; }
 @media (max-width: 1080px) {
   :root { --ask-width: 320px; }
   .with-ask .compose-top span, .with-ask .ask-pill small { display: none; }

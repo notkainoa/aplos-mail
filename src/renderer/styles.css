@@ -400,8 +400,9 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 }
 .composer {
   width: 100%;
-  max-width: 640px;
+  max-width: clamp(640px, 72%, 800px);
   height: min(720px, 100%);
+  container: composer / inline-size;
   display: flex;
   flex-direction: column;
   background: var(--card);
@@ -460,6 +461,9 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .rich-editor p { margin: 0 0 12px; }
 .rich-editor blockquote { border-left: 2px solid var(--line); padding-left: 12px; margin: 16px 0; color: var(--dim); }
 .rich-editor img { max-width: 100%; height: auto; }
+.rich-editor :is(ul, ol) { margin: 0 0 12px; padding-left: 22px; }
+.rich-editor ul { list-style: disc; }
+.rich-editor ol { list-style: decimal; }
 .signature-preview { margin-top: 18px; color: var(--dim); white-space: pre-line; }
 .compose-body > .small { margin-top: 12px; }
 .compose-attachments { flex: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 16px; }
@@ -470,15 +474,41 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .compose-ai .ui-btn:hover:not(:disabled), .link-editor .ui-btn:hover:not(:disabled) { background: var(--blue-soft); color: var(--blue); }
 .compose-strip { animation: slide-down var(--dur-base) var(--ease-out-strong); }
 .compose-notice { margin: 0 12px 8px; flex: none; }
-.compose-footer { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 48px; padding: 0 10px 0 16px; }
-.compose-footer .actions { gap: 2px; }
-.compose-footer .separator { margin: 0 8px; }
+.compose-footer { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 54px; padding: 0 12px 0 10px; }
+.compose-footer .actions { gap: 2px; min-width: 0; }
+.compose-footer .separator { height: 18px; margin: 0 6px; }
+.compose-footer .ui-icon-btn { width: 32px; height: 32px; color: var(--dim); }
+.compose-footer .ui-icon-btn:hover:not(:disabled) { color: var(--ink); }
+.compose-footer .ui-btn-text { height: 32px; padding: 0 8px; font-size: var(--text-base); letter-spacing: var(--tracking-base); }
+.compose-footer .ui-btn-text > :is(svg, .sym) { margin-left: -1px; }
+.compose-signature { display: contents; }
 .signature-toggle { padding: 0 6px; color: var(--dim); }
-.signature-toggle .ui-checkbox-label { font-size: 13px; }
-.signature-source { height: 26px; font-size: 12px; }
-.compose-footer .ui-btn-text { padding: 4px 8px; }
-.compose-hint { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 13px; }
-.compose-hint span { color: var(--faint); }
+.signature-toggle .ui-checkbox-label { font-size: var(--text-base); letter-spacing: var(--tracking-base); }
+.signature-source { height: 28px; font-size: 13px; }
+/* Fewer formatting tools when the card is narrow; beside Ask the signature controls are hidden, which leaves more room. */
+@container composer (max-width: 740px) { .compose-footer:has(.signature-source) .tool-extra { display: none; } }
+@container composer (max-width: 660px) { .compose-footer .tool-extra { display: none; } }
+@container composer (min-width: 561px) { .with-ask .compose-footer .tool-extra { display: flex; } }
+@container composer (max-width: 520px) { .compose-signature { display: none; } }
+.compose-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  color: var(--ink);
+  font-size: 15px;
+  letter-spacing: var(--tracking-md);
+  user-select: none;
+  touch-action: none;
+  transition: background-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.compose-hint:hover:not(:disabled) { background: var(--hover); }
+.compose-hint:active:not(:disabled) { transform: scale(.97); }
+.compose-hint:disabled { opacity: .5; }
+.compose-hint .ui-kbd { min-width: 24px; height: 24px; padding: 0 7px; font-size: 14px; }
+.compose-hint.is-listening { color: var(--red); }
 .compose-layer.closing { animation: fade-out .15s var(--ease-in-out) forwards; pointer-events: none; }
 
 /* Inline reply card inside the reader */
@@ -506,12 +536,18 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 
 /* Sender line: a styled display with the native select laid over it */
 .from-line { position: relative; }
-.from-display { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.from-display { min-width: 0; max-width: 100%; height: 34px; display: flex; align-items: center; gap: 8px; margin-left: -6px; padding: 0 8px 0 6px; border-radius: var(--radius-control); color: var(--ink); transition: background-color var(--dur-fast) var(--ease); }
+.from-display:hover:not(:disabled), .from-display.is-open { background: var(--hover); }
 .from-avatar { width: 22px; height: 22px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 600; background: var(--blue-fill); }
 .from-name { font-weight: 500; white-space: nowrap; }
 .from-email { min-width: 0; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .from-display > :is(svg, .sym) { color: var(--faint); flex: none; }
-.field-line select.from-select { position: absolute; inset: 0 0 0 60px; width: calc(100% - 60px); height: 100%; opacity: 0; cursor: pointer; }
+/* The sender menu: a quiet check in its own column, then the avatar, name and address. */
+.from-menu { min-width: 260px; }
+.from-menu .ui-menu-item { position: relative; gap: 10px; padding: 6px 14px 6px 32px; }
+.from-menu .ui-menu-check { position: absolute; left: 11px; color: var(--ink); }
+.from-menu .from-avatar { width: 26px; height: 26px; font-size: 12px; }
+.from-menu .ui-menu-text > span { font-size: var(--text-md); }
 .subject-line input { font-weight: 500; }
 .subject-line input::placeholder { font-weight: 400; }
 
@@ -722,7 +758,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
   .compose-top span { display: none; }
   .sender { max-width: 45%; }
   .attachment-badge { display: none; }
-  .compose-footer .signature-toggle, .signature-source, .compose-footer .signature-sep { display: none; }
+  .compose-signature { display: none; }
   .message-content { padding-left: 0; }
   .welcome { padding: 28px 24px; }
 }
