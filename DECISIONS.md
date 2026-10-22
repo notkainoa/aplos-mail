@@ -211,7 +211,7 @@
 ## 2026-10-21 — Settings → AI
 - AI moved out of General into its own Settings tab. Ask's provider is three cards (Groq, OpenRouter, OpenCode Go) with a selection ring that glides between them and a Ready / Needs a key status; picking one without a key shows how to add it (copyable variable name, link to the provider's key page) instead of hiding the choice.
 - The model is a searchable picker (Recommended, then All models with a count) instead of a native select, because OpenRouter offers about 400 tool-capable models. Arrows, Enter and Esc work; keys typed in it never reach the app's shortcuts; short lists jump by first letter.
-- "Check connection" (`ai.test`) sends one tiny request asking the chosen model to call a `ping` tool and reports the time, or warns when the model replied without using the tool. It runs only on click and includes no mail.
+- "Test Ask" (`ai.test`) sends one tiny request asking the chosen model to call a `ping` tool and reports the time, or warns when the model replied without using the tool. It runs only on click and includes no mail.
 - An "Also on Groq" group shows that summaries, drafts, plans and voice still use Groq and whether its key is set.
 
 ## 2026-10-21 — More Ask providers: ChatGPT, Claude, Gemini, custom

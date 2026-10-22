@@ -76,7 +76,7 @@ export type AiFeature='ask'|'summary'|'draft'|'plan'|'voice';
 export type AiModelSetting='askModel'|'summaryModel'|'draftModel'|'planModel'|'voiceModel';
 /** What the owner picks a model for in Settings → AI. `voice` lists speech-to-text models; the rest chat models. */
 export const aiFeatures:readonly {id:AiFeature;setting:AiModelSetting;label:string;description:string;fallback:string}[]=[
-  {id:'ask',setting:'askModel',label:'Ask',description:'Answers questions and prepares drafts and events. Needs a model that can use tools.',fallback:defaultAskModel},
+  {id:'ask',setting:'askModel',label:'Ask',description:'Answers questions and prepares drafts and events.',fallback:defaultAskModel},
   {id:'summary',setting:'summaryModel',label:'Summaries',description:'Sorts and summarizes each new email.',fallback:'groq:openai/gpt-oss-120b'},
   {id:'draft',setting:'draftModel',label:'Drafts',description:'Writes and polishes drafts.',fallback:'groq:openai/gpt-oss-120b'},
   {id:'plan',setting:'planModel',label:'Plans',description:'Finds meetings and trips in mail for your calendar.',fallback:'groq:openai/gpt-oss-120b'},

@@ -17,9 +17,10 @@
 .ai-provider-head:hover { background: var(--hover); }
 .ai-provider-head:focus-visible { outline: 2px solid color-mix(in srgb, var(--blue) 55%, transparent); outline-offset: -2px; }
 .ai-provider-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ai-provider-name strong { display: block; }
 .ai-provider-name strong { font-weight: 400; }
-.ai-provider-name small { margin-top: 1px; font-size: var(--text-sm); line-height: 16px; color: var(--dim); }
-.ai-provider-chevron { flex: none; color: var(--faint); transition: transform var(--dur-base) var(--ease-out-strong); }
+.ai-provider-name small { margin-top: 1px; font-size: var(--text-sm); line-height: 16px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-provider-chevron { flex: none; width: 14px; color: var(--dim); transition: transform var(--dur-base) var(--ease-out-strong); }
 .ai-provider-row.is-open .ai-provider-chevron { transform: rotate(180deg); }
 .ai-provider-panel { padding: 0 0 12px; animation: slide-down var(--dur-base) var(--ease-out-strong); }
 .ai-provider-panel > .ui-group-row { min-height: 0; padding: 4px 0 2px; border-bottom: 0; flex-direction: column; align-items: stretch; gap: 8px; }
@@ -66,15 +67,15 @@
 /* ---------- Model picker ---------- */
 
 .ai-model-trigger {
-  width: 210px; max-width: 100%; min-width: 0; height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 12px;
-  border-radius: var(--radius-control); background: var(--hover); color: var(--ink); text-align: left;
+  max-width: 320px; min-width: 0; height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px;
+  border-radius: var(--radius-control); background: transparent; color: var(--ink); text-align: left;
   transition: background-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
-.ai-model-trigger:hover, .ai-model-trigger.is-open { background: var(--press); }
-.ai-model-trigger:focus-visible { outline: 0; box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 50%, transparent); }
-.ai-model-trigger > span { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 16px; }
-.ai-model-trigger strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ai-model-trigger small { font-size: var(--text-xs); line-height: 14px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-model-trigger:hover, .ai-model-trigger.is-open { background: var(--hover); }
+.ai-model-trigger:focus-visible { outline: 0; box-shadow: var(--focus-ring); }
+.ai-model-trigger > span { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+.ai-model-trigger strong { min-width: 0; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-model-trigger small { flex: none; font-size: var(--text-sm); color: var(--dim); }
 .ai-model-trigger > :is(svg, .sym) { flex: none; color: var(--dim); }
 
 .ai-model-picker { width: 380px; max-width: calc(100vw - 24px); padding: 6px; display: flex; flex-direction: column; }
@@ -105,7 +106,8 @@
 .ai-check.is-error { color: var(--red); }
 .ai-check-mark { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 50%; background: var(--green); color: #fff; animation: ai-pop 320ms var(--ease-spring); }
 
-.ai-note { display: flex; align-items: center; gap: 7px; padding: 0 8px; }
+.ai-note { display: flex; align-items: flex-start; gap: 8px; padding: 14px 8px 0; }
+.ai-note > :is(svg, .sym) { margin-top: 2px; }
 .ai-note > :is(svg, .sym) { flex: none; color: var(--faint); }
 
 .ai-address { width: 260px; max-width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: var(--radius-control); background: var(--hover); color: var(--ink); font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace; outline: 0; transition: box-shadow var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease); }

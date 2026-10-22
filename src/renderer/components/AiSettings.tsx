@@ -19,15 +19,15 @@ export function AiSettings({settings,groqReady,onChange}:{settings:Settings;groq
   const providers:Provider[]=catalog??askProviders.map(p=>({...p,models:[...p.models],...(voiceProviders[p.id]?{voiceModels:[...voiceProviders[p.id]!]}:{}),available:p.id==='groq'?groqReady:false}));
   const ask=parseAskModel(settings.askModel);
   return <div className="ai-settings">
-    <Group title="Providers">
-      {providers.map(p=><ProviderRow key={p.id} provider={p} loading={!catalog} address={isAskServer(p.id)?settings[askServerSetting[p.id]]:undefined}
-        onAddress={url=>isAskServer(p.id)&&onChange({[askServerSetting[p.id]]:url})} onRetry={()=>setRound(n=>n+1)}/>)}
-    </Group>
     <Group title="Models">
       {aiFeatures.map(f=><FeatureRow key={f.id} feature={f} providers={providers} loading={!catalog} value={settings[f.setting]} onChange={value=>onChange({[f.setting]:value} as Partial<Record<AiModelSetting,string>>)}/>)}
       <ConnectionCheck key={settings.askModel} model={settings.askModel} ready={!!ask&&ask.model!==UNSET&&!!providers.find(p=>p.id===ask.provider)?.available}/>
     </Group>
-    <p className="group-note ai-note"><KeyRound size={13}/>Keys stay in the backend environment and never reach this window. Nothing is sent from your mailbox without your click.</p>
+    <Group title="Providers">
+      {providers.map(p=><ProviderRow key={p.id} provider={p} loading={!catalog} address={isAskServer(p.id)?settings[askServerSetting[p.id]]:undefined}
+        onAddress={url=>isAskServer(p.id)&&onChange({[askServerSetting[p.id]]:url})} onRetry={()=>setRound(n=>n+1)}/>)}
+    </Group>
+    <p className="group-note ai-note"><KeyRound size={13}/>Keys stay in the backend environment. Nothing is sent from your mailbox without your click.</p>
   </div>;
 }
 
@@ -106,7 +106,7 @@ function FeatureRow({feature,providers,loading,value,onChange}:{feature:typeof a
   const ref=parseAskModel(value)??parseAskModel(feature.fallback)!;
   const provider=providers.find(p=>p.id===ref.provider)!;
   const missing=!loading&&!(provider.available&&provider.running!==false);
-  return <GroupRow label={feature.label} description={<>{feature.description}{missing&&<span className="ai-feature-missing"> {provider.label} isn’t {provider.keyOptional?'running':'set up'} yet; see Providers above.</span>}</>}>
+  return <GroupRow label={feature.label} description={<>{feature.description}{missing&&<span className="ai-feature-missing"> {provider.label} isn’t {provider.keyOptional?'running':'set up'} yet; see Providers below.</span>}</>}>
     <ModelPicker feature={feature.id} label={feature.label} providers={providers} value={ref} onChange={onChange}/>
   </GroupRow>;
 }
@@ -193,12 +193,12 @@ function ConnectionCheck({model,ready}:{model:string;ready:boolean}){
     finally{if(request.current===requestId)request.current=undefined;}
   }
   const seconds=(ms:number)=>ms<10?'under 10 ms':ms<1000?`${Math.round(ms/10)*10} ms`:`${(ms/1000).toFixed(1)} s`;
-  return <GroupRow label="Check Ask" description="Sends one tiny request and asks Ask’s model to use a tool, the way Ask does. No mail is included.">
+  return <GroupRow label="Test Ask" description="Sends one tiny request and asks Ask’s model to use a tool, the way Ask does. No mail is included.">
     <span className={cx('ai-check',`is-${check.state==='ok'&&!check.tools?'warn':check.state}`)} role="status" aria-live="polite">
-      {check.state==='running'&&<><Spinner size={13}/>Checking…</>}
+      {check.state==='running'&&<><Spinner size={13}/>Testing…</>}
       {check.state==='ok'&&(check.tools?<><span className="ai-check-mark"><Check size={11}/></span>Works · {seconds(check.ms)}</>:<>Replied in {seconds(check.ms)}, but didn’t use the tool. Ask may not work well with this model.</>)}
       {check.state==='error'&&check.message}
     </span>
-    <Button variant="secondary" size="sm" disabled={!ready||check.state==='running'} onClick={()=>void run()}>{check.state==='ok'||check.state==='error'?'Check again':'Check'}</Button>
+    <Button variant="secondary" size="sm" disabled={!ready||check.state==='running'} onClick={()=>void run()}>{check.state==='ok'||check.state==='error'?'Test again':'Test'}</Button>
   </GroupRow>;
 }
