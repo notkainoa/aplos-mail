@@ -476,6 +476,8 @@ export function App(){
  const minimized=prefs.sidebarStyle==='minimized'&&!popoutThread;
  const sidebarHidden=!!popoutThread||minimized||(squeezed?!peek:!prefs.sidebar);const peeking=squeezed&&peek&&!popoutThread&&!minimized;
  const view=route.view;
+ // Bulk actions follow what is selected (search can mix folders): Trash only restores, Spam also takes Done and Trash.
+ const picked=state.threads.filter(t=>selected.has(t.id));const pickedTrash=picked.some(t=>t.status==='trash'),pickedSpam=picked.some(t=>t.status==='spam'),pickedMail=picked.some(t=>t.status!=='trash'&&t.status!=='spam');
  const thread=menuThread;
 
  let list:React.ReactNode;
@@ -506,7 +508,7 @@ export function App(){
    {search&&filtered.length>0&&<p className="search-hints search-keys"><Keys combo="↑"/><Keys combo="↓"/> to move, <Keys combo="↩"/> to open</p>}</div>}
   {view==='later'&&!searchMode&&<Tabs variant="underline" label="Later groups" className="later-tabs" value={laterTab} onChange={setLaterTab} items={[{id:'todos',label:'Todos',icon:CircleCheck,count:later.length},{id:'bookmarks',label:'Bookmarks',icon:Bookmark,count:scoped.filter(isBookmark).length}]}/>}
   {bulkBar.mounted&&<div className={cx('bulk-toolbar ui-surface',bulkBar.closing&&'is-closing')}><Checkbox checked={selected.size===order.length&&order.length>0} indeterminate={selected.size>0&&selected.size<order.length} label={`${selected.size||1} selected`} onChange={on=>setSelected(new Set(on?order.map(t=>t.id):[]))}/>
-   <div className="actions">{view==='trash'||view==='spam'?<Button variant="ghost" icon={RotateCcw} onClick={()=>bulk('new','Restored to Home')}>Restore</Button>:null}{view!=='trash'&&<Button variant="ghost" icon={Check} onClick={()=>bulk('done','Marked done')}>Done</Button>}{view!=='trash'&&view!=='spam'&&<Button variant="ghost" icon={Clock} onClick={()=>bulk('later','Moved to Todo')}>Todo</Button>}{view!=='trash'&&<IconButton label="Move selected to Trash" icon={Trash2} onClick={()=>bulk('trash','Moved to Trash')}/>}<IconButton label="Clear selection" shortcut="Esc" icon={X} onClick={()=>setSelected(new Set())}/></div></div>}
+   <div className="actions">{!pickedMail&&(pickedTrash||pickedSpam)&&<Button variant="ghost" icon={RotateCcw} onClick={()=>bulk('new','Restored to Home')}>Restore</Button>}{!pickedTrash&&<Button variant="ghost" icon={Check} onClick={()=>bulk('done','Marked done')}>Done</Button>}{!pickedTrash&&!pickedSpam&&<Button variant="ghost" icon={Clock} onClick={()=>bulk('later','Moved to Todo')}>Todo</Button>}{!pickedTrash&&<IconButton label="Move selected to Trash" icon={Trash2} onClick={()=>bulk('trash','Moved to Trash')}/>}<IconButton label="Clear selection" shortcut="Esc" icon={X} onClick={()=>setSelected(new Set())}/></div></div>}
   {list}
  </div>}
  </div>}
