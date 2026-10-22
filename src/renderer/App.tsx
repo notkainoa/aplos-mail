@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,MailOpen,MessageCircle,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
+import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,MailOpen,MessageCircle,RotateCcw,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
 import type {AppState,Attachment,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,View} from '../shared/types';
 import {bookmarkLeavesList,isBookmark,isFollowUp,isHomeLow,isReplyDue,liveAction,threadInView} from '../shared/mailbox';
 import {bridge,escapeHtml,invoke,isoDay,openUrl,replyRecipients,uid} from './bridge';
@@ -129,7 +129,7 @@ export function App(){
  function navigate(view:View,threadId?:string){if(replyGuard())return;const next={view,threadId};setRoute(next);setSearchMode(false);setSelected(new Set());setRoutes(prev=>[...prev.slice(0,historyIndex+1),next]);setHistoryIndex(i=>i+1);}
  function historyMove(delta:number){if(replyGuard())return;const index=historyIndex+delta;if(index<0||index>=routes.length)return;setHistoryIndex(index);setRoute(routes[index]);setSelected(new Set());setSearchMode(false);}
  async function updateSettings(patch:Partial<Preferences>){try{await invoke('settings.update',{patch});}catch(e){fail(e);}}
- async function patch(ids:string[],p:Partial<Thread>,label?:string,keepTriage=false){if(!keepTriage)lastTriage.current=null;try{await invoke('thread.update',{ids,patch:p,compact:true});if(label)notify(label,true);setSelected(new Set());}catch(e){fail(e);}}
+ async function patch(ids:string[],p:Partial<Thread>,label?:string,keepTriage=false){if(!keepTriage)lastTriage.current=null;try{await invoke('thread.update',{ids,patch:p,compact:true});if(label)notify(label,true);setSelected(new Set());return true;}catch(e){fail(e);return false;}}
  async function undo(){
   const last=lastTriage.current;lastTriage.current=null;setDuePrompt(undefined);toast.dismissActions();
   try{await invoke('thread.undo',{compact:true});
@@ -306,7 +306,7 @@ export function App(){
   if(following&&following.id!==thread.id)setRoute(r=>({...r,threadId:following.id}));else setRoute(r=>({...r,threadId:undefined}));
   if(following?.unread)void invoke('thread.update',{ids:[following.id],patch:{unread:false},recordUndo:false,compact:true}).catch(()=>{});
  }
- function bulk(status:Triage,label:string){const ids=[...selected];for(const id of ids)hintExit(id,exitDirection(status));if(focusId&&selected.has(focusId))setCursor((order.slice(focusIndex+1).find(t=>!selected.has(t.id))||order.slice(0,focusIndex).reverse().find(t=>!selected.has(t.id)))?.id);void patch(ids,{status},`${label} · ${ids.length} email${ids.length===1?'':'s'}`);}
+ function bulk(status:Triage|'new',label:string){const ids=[...selected];for(const id of ids)hintExit(id,status==='new'?'down':exitDirection(status));if(focusId&&selected.has(focusId))setCursor((order.slice(focusIndex+1).find(t=>!selected.has(t.id))||order.slice(0,focusIndex).reverse().find(t=>!selected.has(t.id)))?.id);void patch(ids,{status},`${label} · ${ids.length} email${ids.length===1?'':'s'}`);}
  function talk(phase:'start'|'release'){
   if(phase==='start'){
    if(talkHeld.current||!selectedThread)return;talkHeld.current=true;
@@ -349,7 +349,7 @@ export function App(){
    if(e.metaKey||e.ctrlKey||e.altKey)return;
    if(e.shiftKey&&e.key.toLowerCase()==='a'){e.preventDefault();toggleToday();return;}
    const t=selectedThread;const pointed=!t&&!['settings','calendar'].includes(route.view)?focused:undefined;const subject=t||pointed;
-   // Trash and Spam only offer Restore, so the triage, reply and action keys stay quiet there.
+   // Trash only offers Restore and Spam adds Done and Trash, so the other triage, reply and action keys stay quiet there. Undo (Z) still works.
    const binned=subject?.status==='trash'||subject?.status==='spam';
    if(e.key===' '&&t){if(binned)return;e.preventDefault();if(e.repeat||spaceHold.current)return;const hold:{timer?:ReturnType<typeof setTimeout>;fired:boolean}={fired:false};hold.timer=setTimeout(()=>{hold.fired=true;talk('start');},300);spaceHold.current=hold;return;}
    const keys:Record<string,()=>void>={c:()=>void newDraft(),'/':()=>command('search'),'?':()=>setShortcutHelp(true),'[':()=>command('toggle-sidebar'),z:()=>void undo(),s:()=>{const first=pointed||order[0];if(first)openThread(first.id);}};
@@ -364,6 +364,7 @@ export function App(){
    if(pointed){keys.Enter=keys.o=()=>openThread(pointed.id);keys.x=()=>selectRow(pointed,e.shiftKey?'range':'toggle');keys.X=keys.x;keys.s=()=>openThread(order[0].id);
     keys['.']=()=>{const more=document.querySelector<HTMLElement>(`.mail-row[data-thread-id="${CSS.escape(pointed.id)}"] .card-more`);if(more){setMenuThread(pointed);rowMenu.openAt(more);}};}
    if(subject&&!binned){const doneLeft=state?.settings.triageDirection==='done-left';keys.e=()=>triage(subject,'done');keys.l=()=>triage(subject,'later');keys.b=()=>toggleBookmark(subject);keys.u=()=>void patch([subject.id],{unread:!subject.unread});keys['#']=()=>triage(subject,'trash');keys.ArrowLeft=()=>triage(subject,doneLeft?'done':'later');keys.ArrowRight=()=>triage(subject,doneLeft?'later':'done');}
+   if(subject?.status==='spam'){keys.e=()=>triage(subject,'done');keys['#']=()=>triage(subject,'trash');}
    if(t&&!binned){keys.r=()=>void newDraft({},t,state?.settings.defaultReply);keys.R=()=>void newDraft({},t,state?.settings.defaultReply==='reply-all'?'reply':'reply-all');keys.f=()=>void newDraft({},t,'forward');}
    if(keys[e.key]){e.preventDefault();keys[e.key]();}
   }
@@ -454,7 +455,7 @@ export function App(){
  // The suggested step also sits in the reader's AI card; there Space keeps replying, so it shows no key.
  const openAction=selectedThread&&liveAction(selectedThread);const suggested=openAction&&openAction.kind!=='read'?openAction:undefined;
  const readerAction=suggested&&selectedThread&&<Button size="sm" variant="tinted" className="reader-suggested" icon={actionIcon(suggested.kind)} loading={actionBusy===selectedThread.id} onClick={()=>void runAction(selectedThread)}>{suggested.label}</Button>;
- const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} restore={()=>void patch([selectedThread.id],{status:'new'},'Restored to Home').then(()=>navigate('home',selectedThread.id))} triage={(status,drag)=>triage(selectedThread,status,drag)} bookmark={()=>toggleBookmark(selectedThread)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} previewId={previewFile?.threadId===selectedThread.id?previewFile.attachmentId:undefined} entering={entering?.id===selectedThread.id?entering.from:undefined} action={readerAction}/>;
+ const reader=selectedThread&&<Reader key={selectedThread.id} {...readerProps} thread={selectedThread} index={readerIndex} total={order.length} back={()=>{if(popoutThread)window.close();else if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));}} patch={patch} restore={()=>void patch([selectedThread.id],{status:'new'},'Restored to Home').then(ok=>{if(ok)navigate('home',selectedThread.id);})} triage={(status,drag)=>triage(selectedThread,status,drag)} bookmark={()=>toggleBookmark(selectedThread)} reply={mode=>void newDraft({},selectedThread,mode)} standalone={!!popoutThread} replySlot={replySlot} previewId={previewFile?.threadId===selectedThread.id?previewFile.attachmentId:undefined} entering={entering?.id===selectedThread.id?entering.from:undefined} action={readerAction}/>;
  const ghost=leaving&&<div key={leaving.key} className={cx('fling','fling-'+leaving.status,'fling-to-'+leaving.to,leaving.drag&&'is-dragged')} style={leaving.drag&&{'--from-x':leaving.drag.x+'px','--from-r':(leaving.drag.x/leaving.drag.width*6).toFixed(2)+'deg'} as React.CSSProperties} aria-hidden="true"><Reader ghost {...readerProps} thread={leaving.thread} index={0} total={1} back={noop} patch={async()=>{}} triage={noop} reply={noop}/></div>;
  const doneLeft=prefs.triageDirection==='done-left';
  // Beside an open reader the list only marks the open row; the card would repeat what the reader shows.
@@ -505,7 +506,7 @@ export function App(){
    {search&&filtered.length>0&&<p className="search-hints search-keys"><Keys combo="↑"/><Keys combo="↓"/> to move, <Keys combo="↩"/> to open</p>}</div>}
   {view==='later'&&!searchMode&&<Tabs variant="underline" label="Later groups" className="later-tabs" value={laterTab} onChange={setLaterTab} items={[{id:'todos',label:'Todos',icon:CircleCheck,count:later.length},{id:'bookmarks',label:'Bookmarks',icon:Bookmark,count:scoped.filter(isBookmark).length}]}/>}
   {bulkBar.mounted&&<div className={cx('bulk-toolbar ui-surface',bulkBar.closing&&'is-closing')}><Checkbox checked={selected.size===order.length&&order.length>0} indeterminate={selected.size>0&&selected.size<order.length} label={`${selected.size||1} selected`} onChange={on=>setSelected(new Set(on?order.map(t=>t.id):[]))}/>
-   <div className="actions"><Button variant="ghost" icon={Check} onClick={()=>bulk('done','Marked done')}>Done</Button><Button variant="ghost" icon={Clock} onClick={()=>bulk('later','Moved to Todo')}>Todo</Button><IconButton label="Move selected to Trash" icon={Trash2} onClick={()=>bulk('trash','Moved to Trash')}/><IconButton label="Clear selection" shortcut="Esc" icon={X} onClick={()=>setSelected(new Set())}/></div></div>}
+   <div className="actions">{view==='trash'||view==='spam'?<Button variant="ghost" icon={RotateCcw} onClick={()=>bulk('new','Restored to Home')}>Restore</Button>:null}{view!=='trash'&&<Button variant="ghost" icon={Check} onClick={()=>bulk('done','Marked done')}>Done</Button>}{view!=='trash'&&view!=='spam'&&<Button variant="ghost" icon={Clock} onClick={()=>bulk('later','Moved to Todo')}>Todo</Button>}{view!=='trash'&&<IconButton label="Move selected to Trash" icon={Trash2} onClick={()=>bulk('trash','Moved to Trash')}/>}<IconButton label="Clear selection" shortcut="Esc" icon={X} onClick={()=>setSelected(new Set())}/></div></div>}
   {list}
  </div>}
  </div>}

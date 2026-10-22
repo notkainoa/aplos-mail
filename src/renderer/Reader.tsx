@@ -17,7 +17,7 @@ type Person={name:string;email:string};
 /** "Jordan Park <jordan@studio.example>" or a bare address. */
 function person(raw:string):Person{const m=raw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);return m?{name:m[1].trim(),email:m[2].trim()}:{name:'',email:raw.trim()};}
 const dayOffset=(value?:string)=>{if(!value)return undefined;const date=new Date(value.slice(0,10)+'T12:00:00');const today=new Date();today.setHours(12,0,0,0);return Math.round((+date-+today)/86400000);};
-export function Reader({thread,settings,index,total,back,patch,restore,triage,bookmark,reply,editEvent,events,notify,undo,heading,replySlot,ghost,entering,talk,action,previewId}:{thread:Thread;settings:Settings;index:number;total:number;back:()=>void;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;restore?:()=>void;triage:(status:Triage,drag?:CardDrag)=>void;bookmark?:()=>void;reply:(mode:'reply'|'reply-all'|'forward')=>void;editEvent:(event:Partial<CalendarEvent>)=>void;
+export function Reader({thread,settings,index,total,back,patch,restore,triage,bookmark,reply,editEvent,events,notify,undo,heading,replySlot,ghost,entering,talk,action,previewId}:{thread:Thread;settings:Settings;index:number;total:number;back:()=>void;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<unknown>;restore?:()=>void;triage:(status:Triage,drag?:CardDrag)=>void;bookmark?:()=>void;reply:(mode:'reply'|'reply-all'|'forward')=>void;editEvent:(event:Partial<CalendarEvent>)=>void;
  /** Calendar events, to tell which of this email's plans are already on a calendar. */events:CalendarEvent[];notify:(text:string)=>void;undo:()=>void;standalone?:boolean;heading?:{title:string;count:number};replySlot?:React.ReactNode;ghost?:boolean;entering?:string;talk:(phase:'start'|'release')=>void;
  /** The AI-suggested next step, shown in the summary card beside the due date. */action?:React.ReactNode;
  /** An attachment to preview on open (the suggested action); files only leave Aplos through the preview's own buttons. */previewId?:string}){
@@ -53,7 +53,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const doneRight=settings.triageDirection!=='done-left';
  const card=useRef<HTMLDivElement>(null);
  const swipeAction=(side:SwipeSide)=>(side==='right')===doneRight?'done' as const:'later' as const;
- // Mail in Trash or Spam offers only Restore; everything else comes back once it is restored.
+ // Trash offers only Restore and Spam adds Done and Trash; everything else comes back once it is restored. Undo stays.
  const binned=thread.status==='trash'||thread.status==='spam';
  const restoreThread=()=>restore?restore():void patch([thread.id],{status:'new'},'Restored to Home');
  const swipeable=settings.swipe&&!ghost&&!replySlot&&!binned;
@@ -160,7 +160,10 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  </div>
  </div>
  {replySlot?null:binned?<footer className="reader-dock" aria-label="Thread actions">
+ {thread.status==='spam'&&<IconButton variant="glass" size="lg" className="dock-icon" label="Move to Trash" shortcut="#" placement="top" icon={Trash2} iconSize={17} onClick={()=>triage('trash')}/>}
  <button className="dock-pill restore" onClick={restoreThread}><RotateCcw size={17}/><span>Restore</span></button>
+ {thread.status==='spam'&&<Tooltip content="Done" shortcut={'E'}><button className="dock-pill done" aria-label="Mark Done" onClick={()=>triage('done')}><Check size={18}/><span>Done</span></button></Tooltip>}
+ <IconButton variant="glass" size="lg" className="dock-icon" label="Undo" shortcut="Z" placement="top" icon={Undo2} iconSize={17} onClick={undo}/>
  </footer>:<footer className="reader-dock" aria-label="Thread actions">
  <IconButton variant="glass" size="lg" className="dock-icon" label={thread.bookmarked?'Remove bookmark':'Save to Bookmarks'} shortcut="B" placement="top" active={thread.bookmarked} onClick={()=>bookmark?bookmark():void patch([thread.id],{bookmarked:!thread.bookmarked})}><Bookmark key={String(thread.bookmarked)} className={thread.bookmarked?'pop':undefined} size={17} fill={thread.bookmarked?'currentColor':'none'}/></IconButton>
  {doneRight?laterPill:donePill}
@@ -205,7 +208,7 @@ function Sender({message}:{message:Message}){
 }
 
 /** Due date and reminder, opened from the due pill in the summary card. */
-function DuePicker({open,anchor,thread,patch,onClose}:{open:boolean;anchor:HTMLElement|null;thread:Thread;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<void>;onClose:()=>void}){
+function DuePicker({open,anchor,thread,patch,onClose}:{open:boolean;anchor:HTMLElement|null;thread:Thread;patch:(ids:string[],p:Partial<Thread>,label?:string)=>Promise<unknown>;onClose:()=>void}){
  const nextWeek=((8-new Date().getDay())%7)||7;
  const current=thread.dueDate?.slice(0,10)??'';
  const set=(dueDate:string,label:string)=>{void patch([thread.id],{dueDate},label);onClose();};

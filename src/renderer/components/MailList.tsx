@@ -333,7 +333,9 @@ const MailRow=memo(function MailRow({thread:t,actions:rows,phase,direction,index
       {focus&&<div className="card-actions">
         {!restorable&&<Button size="sm" variant="primary" icon={ActionIcon} shortcut="Space" className="card-primary" loading={busy} onClick={()=>rows.run(t)} tooltip={{...actionHint(action,t),placement:'bottom'}}>{action?.label||'Open'}{action?.kind==='link'&&<span className="card-host">{linkHost(action.url)}</span>}</Button>}
         <span className="card-spacer"/>
-        {restorable?<Button variant="ghost" size="sm" icon={RotateCcw} className="card-btn" onClick={()=>rows.restore(t)}>Restore</Button>
+        {restorable?<>{t.status==='spam'&&<IconButton className="card-btn" size="sm" label="Move to Trash" shortcut="#" icon={Trash2} onClick={()=>rows.triage(t,'trash')}/>}
+          <Button variant="ghost" size="sm" icon={RotateCcw} className="card-btn" onClick={()=>rows.restore(t)}>Restore</Button>
+          {t.status==='spam'&&<Button variant="ghost" size="sm" icon={Check} className="card-btn card-done" onClick={()=>rows.triage(t,'done')} tooltip={{content:'Mark done',shortcut:'E'}}>Done</Button>}</>
         :<><Button variant="ghost" size="sm" icon={Bookmark} iconFill={t.bookmarked?'currentColor':'none'} className={cx('card-btn card-bookmark',t.bookmarked&&'is-on')} shortcut="B" aria-label={t.bookmarked?'Remove bookmark':'Bookmark'} aria-pressed={t.bookmarked} onClick={()=>rows.bookmark(t)} tooltip={{content:t.bookmarked?'Remove bookmark':'Bookmark',shortcut:'B'}}/>
           {doneLeft?done:later}{doneLeft?later:done}</>}
         {!restorable&&<IconButton className="card-more" size="sm" label="More actions" shortcut="." icon={MoreHorizontal} onClick={e=>rows.more(t,e.currentTarget)}/>}
