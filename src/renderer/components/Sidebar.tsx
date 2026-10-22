@@ -7,8 +7,11 @@ import {showSettingsTab} from '../Settings';
 export const sections:{view:View;label:string;icon:Icon;divider?:boolean}[]=[
   {view:'home',label:'Home',icon:Home},{view:'later',label:'Later',icon:Clock},
   {view:'all',label:'All mail',icon:Archive,divider:true},{view:'drafts',label:'Drafts',icon:FileText},{view:'sent',label:'Sent',icon:Send},
-  {view:'calendar',label:'Calendar',icon:CalendarDays,divider:true},{view:'trash',label:'Trash',icon:Trash2},{view:'spam',label:'Spam',icon:ShieldAlert},
+  {view:'calendar',label:'Calendar',icon:CalendarDays},{view:'trash',label:'Trash',icon:Trash2,divider:true},{view:'spam',label:'Spam',icon:ShieldAlert},
 ];
+
+/** Calendar isn't a mailbox, so the sidebar shows it in the footer; it keeps its place here for ⌃6. */
+const mailboxes=sections.filter(s=>s.view!=='calendar');
 
 export function accountName(account:Account){return account.provider==='demo'?(account.id==='work'?'Work':'Personal'):account.name;}
 function accountInitial(account:Account){return (account.provider==='demo'?(account.id==='work'?'W':'P'):account.name[0]||'?').toUpperCase();}
@@ -54,8 +57,8 @@ export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing
        ...state.accounts.map(a=>({label:accountName(a),hint:a.email,leading:<span className="account-dot" style={{background:a.color}}/>,checked:a.id===state.selectedAccountId,onSelect:()=>selectAccount(a.id)}))],
       [{label:'Manage accounts',icon:Plus,onSelect:()=>{showSettingsTab('Accounts');navigate('settings');}}],
     ]}/>
-    <nav className="main-nav" aria-label="Mailboxes">{sections.map(({view:id,label,icon:NavIcon,divider},index)=>{
-      const value=counts[id]??0;
+    <nav className="main-nav" aria-label="Mailboxes">{mailboxes.map(({view:id,label,icon:NavIcon,divider})=>{
+      const value=counts[id]??0,index=sections.findIndex(s=>s.view===id);
       return <div key={id} className={divider?'nav-divider':undefined}>
         <button className={cx('nav-item',view===id&&'active')} aria-current={view===id?'page':undefined} onClick={()=>navigate(id)}>
           <NavIcon size={18}/><span className="nav-label">{label}</span>
@@ -67,7 +70,10 @@ export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing
     <footer className="sidebar-footer">
       {status&&<div className="sidebar-status"><span className={cx('sync-dot',(!online||state.sync.error)&&'offline',state.sync.busy&&'busy')}/><span>{!online?'Available offline':state.sync.busy?'Syncing mail…':'Sync needs attention'}</span></div>}
       <div className="sidebar-footer-row">
-        <button className={cx('footer-link',view==='settings'&&'active')} onClick={()=>navigate('settings')}>Settings</button>
+        <button className={cx('footer-link','footer-calendar',view==='calendar'&&'active')} aria-current={view==='calendar'?'page':undefined} onClick={()=>navigate('calendar')}>
+          <CalendarDays size={18}/><span className="nav-label">Calendar</span><Keys combo="⌃ 6" size="sm" className="nav-keys"/>
+        </button>
+        <IconButton label="Settings" shortcut="⌘ ," placement="top" icon={Gear} iconSize={16} active={view==='settings'} onClick={()=>navigate('settings')}/>
         <IconButton label="Help" icon={HelpCircle} iconSize={16} active={help.open} aria-haspopup="menu" aria-expanded={help.open} onClick={help.toggle}/>
       </div>
       <Menu open={help.open} anchor={help.anchor} onClose={help.close} placement="top-end" label="Help" onError={onError} groups={[[
@@ -96,7 +102,7 @@ type SidebarMenuProps={
 export const SidebarMenu=memo(function SidebarMenu({state,view,counts,zen,online,syncing,navigate,sync,selectAccount,shortcuts,onError}:SidebarMenuProps){
   const menu=useMenu();
   const status=!online?'Available offline':state.sync.busy?'Syncing mail…':state.sync.error?'Sync needs attention':undefined;
-  const mailbox=(from:number,to:number)=>sections.slice(from,to).map(({view:id,label,icon})=>{
+  const mailbox=(from:number,to:number)=>mailboxes.slice(from,to).map(({view:id,label,icon})=>{
     const value=counts[id]??0;
     return {label,icon,checked:view===id,count:(!zen||id==='home')&&value>0?value:undefined,onSelect:()=>navigate(id)};
   });
@@ -105,8 +111,9 @@ export const SidebarMenu=memo(function SidebarMenu({state,view,counts,zen,online
     <Menu open={menu.open} anchor={menu.anchor} onClose={menu.close} placement="bottom-start" label="Mailboxes" className="sidebar-menu" onError={onError} groups={[
       state.accounts.length>1?[{label:'All accounts',icon:Users,checked:state.selectedAccountId==='all',onSelect:()=>selectAccount('all')},
         ...state.accounts.map(a=>({label:accountName(a),leading:<span className="menu-dot"><span className="account-dot" style={{background:a.color}}/></span>,checked:a.id===state.selectedAccountId,onSelect:()=>selectAccount(a.id)}))]:[],
-      mailbox(0,2),mailbox(2,5),mailbox(5,8),
-      [{label:'Refresh mail',icon:RefreshCw,hint:status,disabled:syncing,onSelect:sync},
+      mailbox(0,2),mailbox(2,5),mailbox(5,7),
+      [{label:'Calendar',icon:CalendarDays,keys:'⌃ 6',checked:view==='calendar',onSelect:()=>navigate('calendar')},
+       {label:'Refresh mail',icon:RefreshCw,hint:status,disabled:syncing,onSelect:sync},
        {label:'Settings',icon:Gear,keys:'⌘ ,',checked:view==='settings',onSelect:()=>navigate('settings')},
        {label:'Keyboard shortcuts',icon:Keyboard,keys:'?',onSelect:shortcuts}],
     ]}/>
