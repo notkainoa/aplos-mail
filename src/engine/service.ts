@@ -467,14 +467,22 @@ export async function createEngineService(options:EngineOptions) {
     if(ops.length)kick();
     return compact?{epoch,rev}:clone(state);
   }
-  /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. Threads in `summaryOnly` (Spam) take just the summary. */
   /** Emails Groq is summarizing right now, so a second request waits instead of asking twice. */
-  const summarizing=new Map<string,Promise<unknown>>();
-  function tracked<T>(threadId:string,work:Promise<T>):Promise<T>{
-    summarizing.set(threadId,work);emit('ai.summarizing',{threadId,active:true});
-    const done=()=>{if(summarizing.get(threadId)===work){summarizing.delete(threadId);emit('ai.summarizing',{threadId,active:false});}};
-    work.then(done,done);return work;
+  const summarizing=new Map<string,Promise<Partial<Thread>>>();
+  function tracked(threadId:string,work:()=>Promise<Partial<Thread>>):Promise<Partial<Thread>>{
+    const existing=summarizing.get(threadId);if(existing)return existing;
+    const running=work();summarizing.set(threadId,running);emit('ai.summarizing',{threadId,active:true});
+    const done=()=>{if(summarizing.get(threadId)===running){summarizing.delete(threadId);emit('ai.summarizing',{threadId,active:false});}};
+    running.then(done,done);return running;
   }
+  /** Waits out a summary already being written for this email; true when that left it with a real summary (or removed it). */
+  async function summarizedElsewhere(threadId:string){
+    let waited=false;
+    for(let running=summarizing.get(threadId);running;running=summarizing.get(threadId)){waited=true;await running.catch(()=>{});}
+    if(!waited)return false;
+    const current=state.threads.find(t=>t.id===threadId);return !current||hasRealSummary(current);
+  }
+  /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. Threads in `summaryOnly` (Spam) take just the summary. */
   async function classifyIncoming(fresh:Thread[],a:Account,refresh:Set<string>=new Set(),summaryOnly:Set<string>=new Set()):Promise<string[]> {
     if(!fresh.length||!groq.available)return [];
     let cursor=0,classificationFailures=0,calendarFailures=0,cancelled=false;
@@ -487,18 +495,21 @@ export async function createEngineService(options:EngineOptions) {
             if(!state.threads.some(t=>t.id===candidate.id))continue;
             const before=thread(candidate.id);
             try{
-              const result=await tracked(candidate.id,groq.summarize(before,signal));
-              if(signal.aborted)break;
-              const classified=threadPatch({importance:result.importance||before.importance,replyStatus:result.replyStatus||before.replyStatus,todo:result.todo,dueDate:result.dueDate});
-              if(typeof result.summary==='string')classified.summary=result.summary.slice(0,10_000);
-              // The suggested action follows the latest mail, like the summary; groq.ts already validated it against the thread.
-              classified.action=result.action;
-              change(s=>{const current=s.threads.find(t=>t.id===candidate.id);if(!current)return;
-                for(const key of summaryOnly.has(candidate.id)?['summary'] as const:refresh.has(candidate.id)?['replyStatus','summary','action'] as const:['importance','replyStatus','todo','dueDate','summary','action'] as const){
-                  // An edit made while Groq was running always wins over its response.
-                  if(JSON.stringify(current[key])===JSON.stringify(before[key])&&key in classified){(current as any)[key]=classified[key];if(key==='summary')current.aiSummary=true;}
-                }
-              });
+              // The reader may already be summarizing it; then its answer stands.
+              if(!(summarizing.has(candidate.id)&&await summarizedElsewhere(candidate.id))){
+                const result=await tracked(candidate.id,()=>groq.summarize(before,signal));
+                if(signal.aborted)break;
+                const classified=threadPatch({importance:result.importance||before.importance,replyStatus:result.replyStatus||before.replyStatus,todo:result.todo,dueDate:result.dueDate});
+                if(typeof result.summary==='string')classified.summary=result.summary.slice(0,10_000);
+                // The suggested action follows the latest mail, like the summary; groq.ts already validated it against the thread.
+                classified.action=result.action;
+                change(s=>{const current=s.threads.find(t=>t.id===candidate.id);if(!current)return;
+                  for(const key of summaryOnly.has(candidate.id)?['summary'] as const:refresh.has(candidate.id)?['replyStatus','summary','action'] as const:['importance','replyStatus','todo','dueDate','summary','action'] as const){
+                    // An edit made while Groq was running always wins over its response.
+                    if(JSON.stringify(current[key])===JSON.stringify(before[key])&&key in classified){(current as any)[key]=classified[key];if(key==='summary')current.aiSummary=true;}
+                  }
+                });
+              }
             }catch{if(signal.aborted)break;classificationFailures++;}
             if(state.settings.autoCalendar&&a.calendarConnected&&!signal.aborted){
               try{
@@ -740,8 +751,8 @@ export async function createEngineService(options:EngineOptions) {
       case 'ai.summarize':{
         const id=text(p.threadId,300);
         // Sync or another window may already be summarizing this email; that answer is enough unless it failed.
-        const running=summarizing.get(id);if(running){await running.catch(()=>{});if(hasRealSummary(thread(id)))return thread(id);}
-        const t=thread(id);const result=await ai(p,signal=>tracked(id,groq.summarize(t,signal)));
+        if(summarizing.has(id)&&await summarizedElsewhere(id))return thread(id);
+        const t=thread(id);const result=await ai(p,signal=>tracked(id,()=>groq.summarize(t,signal)));
         const patch=threadPatch(result);if(typeof result.summary==='string')patch.summary=result.summary.slice(0,10_000);patch.action=result.action;
         // Groq only fills a to-do or due date that is empty, and judges importance and reply state only the first
         // time; after that they may be the owner's. Anything edited while Groq was working wins, as in sync.
