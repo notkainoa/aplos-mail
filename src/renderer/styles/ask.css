@@ -28,12 +28,13 @@
 
 /* ---------- Dock ---------- */
 
-/* The dock takes its width in one step and the panel slides over it with a transform; animating the width
-   would relayout the whole mail column on every frame. Closed, the panel waits off the right edge. */
-.ask-dock { position: relative; width: 0; flex: none; z-index: 2; }
-.ask-dock.open { width: var(--ask-width); }
-.ask-dock > .dock-panel { position: absolute; inset: 0 0 0 auto; transform: translateX(100%); visibility: hidden; transition: transform var(--dur-fast) var(--ease-in), visibility 0s linear var(--dur-fast); }
-.ask-dock.open > .dock-panel { transform: none; visibility: visible; transition: transform var(--dur-dock) var(--ease-out-strong); }
+/* The dock's width animates and the full-width panel is pinned to its right edge, so the panel slides in
+   exactly as the mail column gives way, with no empty strip between them. The mail list is virtualized,
+   so the per-frame relayout stays small. */
+.ask-dock { position: relative; width: 0; flex: none; z-index: 2; overflow: clip; transition: width var(--dur-fast) var(--ease-in); }
+.ask-dock.open { width: var(--ask-width); transition: width var(--dur-dock) var(--ease-out-strong); }
+.ask-dock > .dock-panel { position: absolute; inset: 0 0 0 auto; visibility: hidden; transition: visibility 0s linear var(--dur-fast); }
+.ask-dock.open > .dock-panel { visibility: visible; transition: none; }
 /* The dock holds Ask and Today; a small switch at the top chooses between them. */
 .dock-panel {
   width: var(--ask-width);

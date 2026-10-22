@@ -41,14 +41,17 @@ const isA=(event:KeyboardEvent)=>event.key.toLowerCase()==='a';
 const inScope=(accountId:string)=>(t:Thread)=>(accountId==='all'||t.accountId===accountId)&&t.status!=='trash'&&t.status!=='spam';
 const typingIn=(el:HTMLElement)=>['INPUT','TEXTAREA','SELECT'].includes(el.tagName)||el.isContentEditable;
 
-/** The docked Ask panel. Tap A to type, hold A anywhere to talk and release to ask; nothing acts without a click. */
+/** Where a hold began: A outside any field, A inside Ask's own field (a tap still types the letter) or the talk chip. */
+type Hold={timer?:ReturnType<typeof setTimeout>;recording:boolean;source:'key'|'field'|'pointer';key:string};
+
+/** The docked Ask panel. Tap A to type, hold A anywhere (even in Ask's field) or the talk chip to talk and release to ask; nothing acts without a click. */
 export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conversations,threads,events,accounts,contacts,accountId,settings,examples,onThread,onDraft,notify,currentDraft,hasDraft,onApplyDraft,onEditEvent,currentContext}:Props){
   const [id,setId]=useState<string|undefined>();const [input,setInput]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [pending,setPending]=useState('');
-  const [active,setActive]=useState(-1);const [held,setHeld]=useState(false);const [saved,setSaved]=useState<Record<string,string>>({});const [live,setLive]=useState<Live|undefined>();const [opened,setOpened]=useState(loadOpened);
+  const [active,setActive]=useState(-1);const [held,setHeld]=useState<''|'key'|'pointer'>('');const [saved,setSaved]=useState<Record<string,string>>({});const [live,setLive]=useState<Live|undefined>();const [opened,setOpened]=useState(loadOpened);
   const field=useRef<HTMLTextAreaElement>(null);const panel=useRef<HTMLElement>(null);const scroller=useRef<HTMLDivElement>(null);const conversation=conversations.find(c=>c.id===id);
   const mounted=useRef(true);const request=useRef<string|undefined>(undefined);const snapshots=useRef(new Map<string,string>());
   const openRef=useRef(open);openRef.current=open;const returnFocus=useRef<HTMLElement|null>(null);const firstRender=useRef(true);
-  const hold=useRef<{timer?:ReturnType<typeof setTimeout>;recording:boolean}|null>(null);const autoAsk=useRef(false);
+  const hold=useRef<Hold|null>(null);const autoAsk=useRef(false);const prefix=useRef('');
   function fingerprint(draft?:Draft){return draft?JSON.stringify([draft.id,draft.to,draft.cc,draft.bcc,draft.subject,draft.html,draft.attachments.map(a=>a.id)]):'';}
   useEffect(()=>{const area=field.current;if(!area)return;area.style.height='auto';area.style.height=Math.min(area.scrollHeight,132)+'px';},[input]);
   // Opening focuses the field (not at launch, and not while A is still held); closing gives focus back.
@@ -100,39 +103,53 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
       onApplyDraft(fields);notify('Suggestion applied. Review the draft before sending.');
     }else onDraft({...fields,...reply});
   }
+  // What was spoken follows anything already typed, so "summarize the email from" + "Jordan" asks the whole sentence.
   const voice=useVoice(settings.microphone,text=>{
     const auto=autoAsk.current;autoAsk.current=false;
-    if(auto&&text.trim()){setInput(text);setTimeout(()=>void askLatest.current(text),0);return;}// ask once the recorder settles to idle
+    const said=[prefix.current,text.trim()].filter(Boolean).join(' ');prefix.current='';
+    if(auto&&text.trim()){setInput(said);setTimeout(()=>void askLatest.current(said),0);return;}// ask once the recorder settles to idle
     if(auto){setError('I didn’t catch that. Try again, a little closer to the mic.');return;}
-    setInput(text);field.current?.focus();
+    setInput(said);field.current?.focus();
   },message=>{setError(message);if(!openRef.current)onOpen();});
-  function cancelVoice(){autoAsk.current=false;setHeld(false);if(hold.current){clearTimeout(hold.current.timer);hold.current=null;}voice.cancel();}
-  // A short tap on A opens and focuses the panel; a hold opens it, records, and asks on release.
-  function press(){
+  function listen(auto:boolean){autoAsk.current=auto;prefix.current=field.current?.value.trim()??'';setError('');void voice.start();}
+  function cancelVoice(){autoAsk.current=false;setHeld('');if(hold.current){clearTimeout(hold.current.timer);hold.current=null;}voice.cancel();}
+  // A tap on A opens and focuses the panel (in Ask's field it types the letter; on the chip it starts talking);
+  // a hold opens it, records, and asks on release.
+  function press(source:Hold['source'],key=''){
     if(hold.current)return;
-    const state:{timer?:ReturnType<typeof setTimeout>;recording:boolean}={recording:false};
-    state.timer=setTimeout(()=>{if(request.current||voice.isActive())return;state.recording=true;autoAsk.current=true;setHeld(true);setError('');void voice.start();},holdDelay);
+    const state:Hold={recording:false,source,key};
+    state.timer=setTimeout(()=>{if(request.current||voice.isActive())return;state.recording=true;setHeld(source==='pointer'?'pointer':'key');listen(true);},holdDelay);
     hold.current=state;
     if(!openRef.current)onOpen();
   }
+  // The letter held back while deciding between a tap and a hold, typed the way the keyboard would have.
+  function type(key:string){const area=field.current;if(!area)return;area.focus({preventScroll:true});document.execCommand('insertText',false,key);}
   function release(){
-    const state=hold.current;if(!state)return;hold.current=null;clearTimeout(state.timer);setHeld(false);
-    if(state.recording)voice.stop();else requestAnimationFrame(()=>field.current?.focus({preventScroll:true}));
+    const state=hold.current;if(!state)return;hold.current=null;clearTimeout(state.timer);setHeld('');
+    if(state.recording)voice.stop();
+    else if(state.source==='field')type(state.key);
+    else if(state.source==='pointer')listen(false);
+    else requestAnimationFrame(()=>field.current?.focus({preventScroll:true}));
   }
   useEffect(()=>{
     const down=(event:KeyboardEvent)=>{
-      const target=event.target as HTMLElement;
+      const target=event.target as HTMLElement;const inField=target===field.current;
+      // Fast typing presses the next key before A comes up: type the A first so the letters stay in order.
+      if(hold.current?.source==='field'&&!hold.current.recording&&!isA(event)){const state=hold.current;hold.current=null;clearTimeout(state.timer);type(state.key);}
       // While A is held its repeats belong to Ask, even once focus has moved into the panel.
       if(hold.current&&isA(event)){event.preventDefault();event.stopPropagation();return;}
       if(event.key==='Escape'&&(hold.current||voice.isActive())&&!panel.current?.contains(target)){event.preventDefault();event.stopPropagation();cancelVoice();return;}
-      if(!isA(event)||event.repeat||event.metaKey||event.ctrlKey||event.altKey||event.shiftKey||dialogOpen()||hasDraft||typingIn(target))return;
-      event.preventDefault();event.stopPropagation();press();
+      if(!isA(event)||event.repeat||event.isComposing||event.metaKey||event.ctrlKey||event.altKey||event.shiftKey||dialogOpen())return;
+      if(inField?field.current!.readOnly:hasDraft||typingIn(target))return;
+      event.preventDefault();event.stopPropagation();press(inField?'field':'key',event.key);
     };
-    const up=(event:KeyboardEvent)=>{if(isA(event)&&hold.current)release();};
-    const blur=()=>{if(hold.current?.recording)release();else if(hold.current){clearTimeout(hold.current.timer);hold.current=null;}};
+    const up=(event:KeyboardEvent)=>{if(isA(event)&&hold.current&&hold.current.source!=='pointer')release();};
+    // The chip turns into Done once recording starts, so its release is heard on the window.
+    const pointerUp=()=>{if(hold.current?.source==='pointer')release();};
+    const blur=()=>{const state=hold.current;if(!state)return;if(state.recording||state.source==='field')release();else{clearTimeout(state.timer);hold.current=null;}};
     // Capture so the list's own shortcuts never see a press that belongs to Ask.
-    window.addEventListener('keydown',down,true);window.addEventListener('keyup',up);window.addEventListener('blur',blur);
-    return()=>{window.removeEventListener('keydown',down,true);window.removeEventListener('keyup',up);window.removeEventListener('blur',blur);};
+    window.addEventListener('keydown',down,true);window.addEventListener('keyup',up);window.addEventListener('pointerup',pointerUp);window.addEventListener('pointercancel',pointerUp);window.addEventListener('blur',blur);
+    return()=>{window.removeEventListener('keydown',down,true);window.removeEventListener('keyup',up);window.removeEventListener('pointerup',pointerUp);window.removeEventListener('pointercancel',pointerUp);window.removeEventListener('blur',blur);};
   });
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;cancelRequest();};},[]);
   const query=input.trim();
@@ -220,12 +237,12 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
           <textarea ref={field} aria-label="Ask me anything" rows={1} value={input} readOnly={recording||transcribing} onChange={e=>setInput(e.target.value)} onKeyDown={fieldKeys}
             placeholder={voice.preparing?'Starting the mic…':recording?'Listening…':transcribing?'Transcribing…':conversation?'Ask a follow-up':'Ask me anything'}/>
           {busy?<button className="ask-chip" onClick={cancelRequest}>Stop</button>
-          :recording?<button className="ask-chip is-recording" onClick={()=>{setHeld(false);if(hold.current){clearTimeout(hold.current.timer);hold.current=null;}voice.stop();}}><Square size={10}/>Done</button>
+          :recording?<button className="ask-chip is-recording" onClick={()=>{setHeld('');if(hold.current){clearTimeout(hold.current.timer);hold.current=null;}voice.stop();}}><Square size={10}/>Done</button>
           :transcribing?<Spinner size={15} className="ask-spinner"/>
           :query?<Tooltip content={activeItem&&activeItem.key!=='ask'?'Open the selected item':'Ask'} detail="⌘ ↵ searches mail instead" shortcut="↵"><button className="ask-chip is-go" onClick={()=>{if(activeItem)activeItem.run();else void ask();}}>{activeItem&&activeItem.key!=='ask'?'Open':'Ask'}<CornerDownLeft size={12}/></button></Tooltip>
-          :<Tooltip content="Talk instead" detail="Click, or hold A anywhere and release to ask"><button className="ask-chip ask-talk" onClick={()=>{autoAsk.current=false;setError('');void voice.toggle();}}>Hold <Kbd size="sm">A</Kbd> to talk</button></Tooltip>}
+          :<Tooltip content="Talk instead" detail="Click to start, or hold and release to ask"><button className="ask-chip ask-talk" onMouseDown={e=>e.preventDefault()} onPointerDown={e=>{if(e.button===0)press('pointer');}} onClick={e=>{if(e.detail===0)listen(false);}}>Hold <Kbd size="sm">A</Kbd> to talk</button></Tooltip>}
         </div>
-        {recording&&<p className="ask-hint is-recording" role="status">{held?<>Release <Kbd size="sm">A</Kbd> to ask</>:<>Recording, press Done to finish</>}<span>·</span><Kbd size="sm">Esc</Kbd> to cancel</p>}
+        {recording&&<p className="ask-hint is-recording" role="status">{held==='key'?<>Release <Kbd size="sm">A</Kbd> to ask</>:held==='pointer'?<>Release to ask</>:<>Recording, press Done to finish</>}<span>·</span><Kbd size="sm">Esc</Kbd> to cancel</p>}
         {transcribing&&<p className="ask-hint" role="status">Transcribing with Groq…</p>}
         {error&&<Notice className="ask-notice">{error}</Notice>}
         {chat&&!query&&<div className="ask-tools"><Button variant="text" size="sm" icon={Plus} disabled={busy} shortcut="⌘ N" onClick={newChat}>New chat</Button></div>}

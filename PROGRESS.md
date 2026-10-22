@@ -357,3 +357,6 @@ Merged `t3/unified-calendar` (Calendar page, motion, Today in the dock) and `t3/
 
 ## Ask empty state and opening slide (2026-10-21)
 Fixed the app jumping sideways when Ask opens, moved "Hold A to talk" into the field (clickable, replacing the mic), removed History, and split the empty panel into "Try asking" for first use and "Recent" + "Last searched" afterwards. Verified: typecheck, 197 tests, headless Chromium frame sampling while opening (workspace stays put, shell scroll 0 every frame), screenshots of the first-use and returning panels, and an email opened from Ask's matches showing under "Last searched". The "Recent" chat list was not exercised live (no chats in the test storage); its code path is unchanged.
+
+## Ask slide and hold-to-talk follow-up (2026-10-21)
+The panel and mail column now move together when Ask opens (no empty strip), the talk chip records on click or hold, and holding A records from inside Ask's field. Verified: typecheck, test suite, headless Chromium frame sampling while opening (0 px between mail column and panel on every frame), and with a fake microphone: chip click → recording → Done, chip hold → "Release to ask" → stops on release, A held in the field → recording → stops on release, "banana" and a rolled-over "a"+"s" type normally. Transcription itself was not exercised (no Groq key in the test environment).
