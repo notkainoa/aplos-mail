@@ -1,9 +1,9 @@
 import type { ChatProvider } from '../engine/ports';
 import type { AskModelInfo, AskProviderId } from '../shared/ask';
-import { askProvider } from '../shared/ask';
-import { providerRequest, streamChat, type ProviderTarget, type StreamOptions } from './llm';
+import { askProvider, voiceProviders } from '../shared/ask';
+import { providerRequest, streamChat, transcribeAudio, type ProviderTarget, type StreamOptions } from './llm';
 
-/** Ask's other providers. Both speak OpenAI-compatible chat/completions with streamed tool calls. */
+/** The providers besides Groq and Claude. All speak OpenAI-compatible chat/completions with streamed tool calls. */
 export interface ProviderOptions { apiKey?:string; fetch?:typeof fetch; version?:string }
 
 /** Model lists change rarely; refresh at most hourly and fall back to the curated list offline. */
@@ -61,16 +61,22 @@ export function createOpenCodeGo(options:ProviderOptions={}):ChatProvider {
  * A provider whose chat/completions speaks the OpenAI dialect, with its model list from GET /models.
  * `keep` picks the chat models out of that list; curated ones come first with their descriptions.
  */
-function compatible(target:ProviderTarget&{fetch:typeof fetch},id:AskProviderId,{keep=()=>true,stream={}}:{keep?:(id:string)=>boolean;stream?:Omit<StreamOptions,'name'>}={}):ChatProvider {
+function compatible(target:ProviderTarget&{fetch:typeof fetch},id:AskProviderId,{keep=()=>true,voice,stream={}}:{keep?:(id:string)=>boolean;voice?:(id:string)=>boolean;stream?:Omit<StreamOptions,'name'>}={}):ChatProvider {
   const curated=askProvider(id).models;
+  const ids=cached(async signal=>{
+    const response=await providerRequest(target,'models',undefined,signal,false,'GET');
+    return ((await response.json() as {data?:Array<{id?:unknown}>}).data??[]).map(m=>String(m.id??'').replace(/^models\//,'')).filter(Boolean).map(m=>({id:m,label:m}));
+  },10*60_000);
+  const listed=(curated:readonly AskModelInfo[],live:AskModelInfo[])=>[...curated.filter(c=>live.some(m=>m.id===c.id)),...live.filter(m=>!curated.some(c=>c.id===m.id)).sort((a,b)=>a.id.localeCompare(b.id))];
+  const send=(path:string,body:BodyInit|undefined,signal?:AbortSignal,json=true)=>providerRequest(target,path,body,signal,json);
   return {
     available:!!target.apiKey||!!target.keyOptional,
     chat:streamChat((path,body,signal,headers)=>providerRequest(target,path,body,signal,true,'POST',headers),{name:target.name,maxTokens:4096,...stream}),
-    models:cached(async signal=>{
-      const response=await providerRequest(target,'models',undefined,signal,false,'GET');
-      const ids=((await response.json() as {data?:Array<{id?:unknown}>}).data??[]).map(m=>String(m.id??'').replace(/^models\//,'')).filter(m=>m&&keep(m));
-      return [...curated.filter(c=>ids.includes(c.id)),...ids.filter(m=>!curated.some(c=>c.id===m)).sort().map(m=>({id:m,label:m}))];
-    },10*60_000),
+    models:async signal=>listed(curated,(await ids(signal)).filter(m=>keep(m.id))),
+    ...(voice?{
+      transcribe:(audio:string,mimeType:string,model:string,signal?:AbortSignal)=>transcribeAudio(send,audio,mimeType,model,target.name,signal),
+      voiceModels:async(signal?:AbortSignal)=>listed(voiceProviders[id]??[],(await ids(signal)).filter(m=>voice(m.id))),
+    }:{}),
   };
 }
 
@@ -79,7 +85,9 @@ export function createOpenAI(options:ProviderOptions={}):ChatProvider {
   const request=options.fetch??fetch;
   return compatible({name:'OpenAI',env:'OPENAI_API_KEY',baseUrl:'https://api.openai.com/v1',apiKey:options.apiKey??process.env.OPENAI_API_KEY,fetch:request},'openai',{
     keep:id=>/^(gpt-|o\d|chatgpt-)/.test(id)&&!/(audio|realtime|image|tts|transcribe|search|embedding|moderation|instruct)/.test(id),
-    stream:{temperature:null,extra:()=>({reasoning_effort:'low'})},
+    // Speech-to-text models for Voice; diarizing variants answer in another shape.
+    voice:id=>/(transcribe|whisper)/.test(id)&&!/(realtime|diarize)/.test(id),
+    stream:{temperature:null,jsonMode:true,extra:()=>({reasoning_effort:'low'})},
   });
 }
 
@@ -88,7 +96,7 @@ export function createGemini(options:ProviderOptions={}):ChatProvider {
   const request=options.fetch??fetch;
   return compatible({name:'Gemini',env:'GEMINI_API_KEY',baseUrl:'https://generativelanguage.googleapis.com/v1beta/openai',apiKey:options.apiKey??process.env.GEMINI_API_KEY,fetch:request},'gemini',{
     keep:id=>/^gemini-/.test(id)&&!/(embedding|image|tts|live|audio)/.test(id),
-    stream:{extra:()=>({reasoning_effort:'low'})},
+    stream:{jsonMode:true,extra:()=>({reasoning_effort:'low'})},
   });
 }
 

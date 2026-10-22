@@ -11,7 +11,8 @@ import type { EngineOptions, MemoryStage } from './ports';
 import { runAgent } from './agent';
 import { createAskSession, type AskProgress } from './ask';
 import { localNow } from './proposals';
-import { askProvider, askProviders, askServerSetting, defaultAskModel, isAskServer, parseAskModel, type AskProviderId, type AskServerId } from '../shared/ask';
+import { aiFeature, aiFeatures, askProvider, askProviders, askServerSetting, isAskServer, parseFeatureModel, voiceProviders, type AiFeature, type AskProviderId, type AskServerId } from '../shared/ask';
+import { chatJson, createWriter } from './writer';
 
 // The alphabet/padding has already been validated before this size calculation.
 const base64Bytes=(value:string)=>Math.floor(value.replace(/=+$/,'').length*3/4);
@@ -122,8 +123,10 @@ function settingsPatch(raw:unknown):Partial<Settings> {
       const value=text(val,500).trim();
       if(value){let url:URL;try{url=new URL(value);}catch{throw new Error('Enter the server address, e.g. http://localhost:11434/v1.');}if(!/^https?:$/.test(url.protocol)||url.username||url.password)throw new Error('Use an http or https address without a password in it.');}
       patch[key]=value;
-    } else if(key==='askModel') {
-      const ref=parseAskModel(val); if(!ref) throw new Error('Choose an Ask model.'); patch.askModel=`${ref.provider}:${ref.model}`;
+    } else if(aiFeatures.some(f=>f.setting===key)) {
+      const feature=aiFeatures.find(f=>f.setting===key)!,ref=parseFeatureModel(feature.id,val);
+      if(!ref) throw new Error(feature.id==='ask'?'Choose an Ask model.':feature.id==='voice'?'Choose a Voice model on Groq or ChatGPT.':`Choose a model for ${feature.label.toLowerCase()}.`);
+      patch[feature.setting]=`${ref.provider}:${ref.model}`;
     } else (patch as any)[key]=text(val,key==='signature'?20_000:1_000);
   }
   return patch;
@@ -192,8 +195,8 @@ export async function createEngineService(options:EngineOptions) {
   // Split view and the top bar layout were removed; drop their old settings from stored state.
   delete (state.settings as Settings&{openMode?:unknown}).openMode;
   delete (state.settings as Settings&{layout?:unknown}).layout;
-  // Ask models are `provider:model`; a bare Groq ID from an earlier build keeps working, anything unreadable falls back.
-  {const ref=parseAskModel(state.settings.askModel);state.settings.askModel=ref?`${ref.provider}:${ref.model}`:defaultAskModel;}
+  // Feature models are `provider:model`; a bare Groq ID from an earlier build keeps working, anything unreadable falls back.
+  for(const f of aiFeatures){const ref=parseFeatureModel(f.id,state.settings[f.setting]);state.settings[f.setting]=ref?`${ref.provider}:${ref.model}`:f.fallback;}
   state.sync={...state.sync,busy:false};
   for(const thread of state.threads)if(thread.dueDate)thread.dueDate=dateOnly(thread.dueDate);
   migrateLegacy(state);
@@ -423,7 +426,7 @@ export async function createEngineService(options:EngineOptions) {
   }
   /** A server provider's address: the setting, or the app's default local port. */
   function serverUrl(id:AskServerId){return state.settings[askServerSetting[id]]||askProvider(id).defaultAddress||'';}
-  /** Where Ask's model runs; a provider without its key says which variable to set. */
+  /** A provider's transport; a provider without its key says which variable to set. */
   function chatProvider(id:AskProviderId) {
     if(id==='groq')return {available:groq.available,chat:groq.chat};
     if(isAskServer(id)){const url=serverUrl(id);return url?options.serverChat?.(id,url):undefined;}
@@ -431,9 +434,34 @@ export async function createEngineService(options:EngineOptions) {
   }
   function askTransport(id:AskProviderId) {
     const transport=chatProvider(id),provider=askProvider(id);
-    if(id==='custom'&&!state.settings.askCustomUrl)throw new Error('Add your server’s address in Settings → AI, or choose another Ask model.');
-    if(!transport?.available)throw new Error(`Add ${provider.env} to the backend environment to use ${provider.label}, or choose another Ask model in Settings.`);
+    if(id==='custom'&&!state.settings.askCustomUrl)throw new Error('Add your server’s address in Settings → AI, or choose another model.');
+    if(!transport?.available)throw new Error(`Add ${provider.env} to the backend environment to use ${provider.label}, or choose another model in Settings → AI.`);
     return transport;
+  }
+  /** The model a feature uses, from Settings → AI. */
+  function choice(feature:AiFeature){return parseFeatureModel(feature,state.settings[aiFeature(feature).setting])??parseFeatureModel(feature,aiFeature(feature).fallback)!;}
+  /** Whether a feature's provider is set up, so background work (sorting new mail) can skip quietly when it isn't. */
+  function ready(feature:AiFeature){
+    const {provider}=choice(feature);if(provider==='groq')return groq.available;
+    return provider==='custom'&&!state.settings.askCustomUrl?false:!!chatProvider(provider)?.available;
+  }
+  /** Summaries, drafts and plans on the feature's provider. Groq keeps its own JSON-mode call. */
+  function writer(feature:'summary'|'draft'|'plan') {
+    const {provider,model}=choice(feature);
+    if(provider==='groq')return {
+      summarize:(t:Thread,signal?:AbortSignal)=>groq.summarize(t,signal,model),
+      polish:(html:string,instruction:string|undefined,signal?:AbortSignal)=>groq.polish(html,instruction,signal,model),
+      draft:(instruction:string,t:Thread|undefined,d:Partial<Draft>|undefined,signal?:AbortSignal)=>groq.draft(instruction,t,d,signal,model),
+      extractEvents:(t:Thread,signal?:AbortSignal,context:{timeZone?:string}={})=>groq.extractEvents(t,signal,{...context,model}),
+    };
+    return createWriter(chatJson(askTransport(provider).chat,model,askProvider(provider).label),askProvider(provider).label);
+  }
+  function transcribe(audio:string,mimeType:string,signal?:AbortSignal) {
+    const {provider,model}=choice('voice');
+    if(provider==='groq')return groq.transcribe(audio,mimeType,signal,model);
+    const transport=askTransport(provider);
+    if(!transport.transcribe)throw new Error(`${askProvider(provider).label} can’t turn speech into text. Choose a Groq or ChatGPT Voice model in Settings → AI.`);
+    return transport.transcribe(audio,mimeType,model,signal);
   }
   async function ai<T>(payload:Record<string,any>,fn:(signal:AbortSignal)=>Promise<T>):Promise<T> {
     const id=payload.requestId?text(payload.requestId,200):randomUUID();
@@ -468,7 +496,7 @@ export async function createEngineService(options:EngineOptions) {
   }
   /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. */
   async function classifyIncoming(fresh:Thread[],a:Account,refresh:Set<string>=new Set()):Promise<string[]> {
-    if(!fresh.length||!groq.available)return [];
+    if(!fresh.length||!ready('summary'))return [];
     let cursor=0,classificationFailures=0,calendarFailures=0,cancelled=false;
     try{
       await ai({requestId:`sync-ai-${a.id}`},async signal=>{
@@ -479,7 +507,7 @@ export async function createEngineService(options:EngineOptions) {
             if(!state.threads.some(t=>t.id===candidate.id))continue;
             const before=thread(candidate.id);
             try{
-              const result=await groq.summarize(before,signal);
+              const result=await writer('summary').summarize(before,signal);
               if(signal.aborted)break;
               const classified=threadPatch({importance:result.importance||before.importance,replyStatus:result.replyStatus||before.replyStatus,todo:result.todo,dueDate:result.dueDate});
               if(typeof result.summary==='string')classified.summary=result.summary.slice(0,10_000);
@@ -487,14 +515,14 @@ export async function createEngineService(options:EngineOptions) {
               classified.action=result.action;
               change(s=>{const current=s.threads.find(t=>t.id===candidate.id);if(!current)return;
                 for(const key of refresh.has(candidate.id)?['replyStatus','summary','action'] as const:['importance','replyStatus','todo','dueDate','summary','action'] as const){
-                  // An edit made while Groq was running always wins over its response.
+                  // An edit made while the model was running always wins over its response.
                   if(JSON.stringify(current[key])===JSON.stringify(before[key])&&key in classified)(current as any)[key]=classified[key];
                 }
               });
             }catch{if(signal.aborted)break;classificationFailures++;}
-            if(state.settings.autoCalendar&&a.calendarConnected&&!signal.aborted){
+            if(state.settings.autoCalendar&&a.calendarConnected&&!signal.aborted&&ready('plan')){
               try{
-                const extracted=await groq.extractEvents(before,signal);
+                const extracted=await writer('plan').extractEvents(before,signal);
                 for(const event of extracted){
                   if(signal.aborted||!state.settings.autoCalendar)break;
                   if(!event.title||!event.start||!event.end||!Number.isFinite(Date.parse(event.start))||Date.parse(event.end)<=Date.parse(event.start))continue;
@@ -728,12 +756,12 @@ export async function createEngineService(options:EngineOptions) {
       case 'workflow.disable':await workflow?.disable(state.accounts.map(a=>a.id));workflowAt.clear();return {enabled:false};
       case 'ai.cancel':{for(const [id,controller]of requests)if(!p.requestId||p.requestId===id)controller.abort();return {cancelled:true};}
       case 'ai.summarize':{
-        const t=thread(text(p.threadId,300));const result=await ai(p,signal=>groq.summarize(t,signal));
+        const t=thread(text(p.threadId,300));const result=await ai(p,signal=>writer('summary').summarize(t,signal));
         const patch=threadPatch(result);if(typeof result.summary==='string')patch.summary=result.summary.slice(0,10_000);patch.action=result.action;
         change(s=>{const index=s.threads.findIndex(item=>item.id===t.id);if(index<0)throw new Error('The message was removed.');s.threads[index]={...s.threads[index],...patch};});return thread(t.id);
       }
-      case 'ai.polish':return ai(p,signal=>groq.polish(text(p.html,1_000_000),p.instruction?text(p.instruction,10_000):undefined,signal));
-      case 'ai.draft':return ai(p,signal=>groq.draft(text(p.instruction,20_000),p.threadId?thread(text(p.threadId,300)):undefined,p.draft,signal));
+      case 'ai.polish':return ai(p,signal=>writer('draft').polish(text(p.html,1_000_000),p.instruction?text(p.instruction,10_000):undefined,signal));
+      case 'ai.draft':return ai(p,signal=>writer('draft').draft(text(p.instruction,20_000),p.threadId?thread(text(p.threadId,300)):undefined,p.draft,signal));
       case 'ai.ask':{
         const message=text(p.message,20_000).trim();if(!message)throw new Error('Write a question first.');
         let conversation:Conversation|undefined=p.conversationId?state.conversations.find(c=>c.id===p.conversationId):undefined;
@@ -764,12 +792,12 @@ export async function createEngineService(options:EngineOptions) {
           clock:localNow(timeZone,now()),view,threadId:openId,selectedIds,draft,
           userText:conversation.messages.filter(m=>m.role==='user').map(m=>m.content).join('\n'),
         });
-        const choice=parseAskModel(state.settings.askModel)??parseAskModel(defaultAskModel)!,transport=askTransport(choice.provider);
-        const model=`${choice.provider}:${choice.model}`;
+        const ask=choice('ask'),transport=askTransport(ask.provider);
+        const model=`${ask.provider}:${ask.model}`;
         const progress=session.stream((event:AskProgress)=>emit('ai.progress',{requestId,...event}));
-        const result=await ai({...p,requestId},signal=>runAgent({chat:transport.chat,model:choice.model,session:conversation.id,signal,tools:session.tools,onEvent:progress.onEvent,
+        const result=await ai({...p,requestId},signal=>runAgent({chat:transport.chat,model:ask.model,session:conversation.id,signal,tools:session.tools,onEvent:progress.onEvent,
           // Groq's free tier counts every token per minute, so its requests stay smaller.
-          budget:choice.provider==='groq'?48_000:100_000,
+          budget:ask.provider==='groq'?48_000:100_000,
           messages:[{role:'system',content:session.system()},...session.history(earlier),{role:'user',content:message}]})).finally(()=>progress.close());
         // Token use per answer, for live checks against Groq's per-minute limits; the panel ignores it.
         emit('ai.progress',{requestId,type:'usage',...result.usage});
@@ -779,30 +807,31 @@ export async function createEngineService(options:EngineOptions) {
       }
       case 'ai.test':{
         // One tiny request asking the model to call a tool, so a pass means Ask's tools will work too. No mail is sent.
-        const choice=parseAskModel(p.model);if(!choice)throw new Error('Choose an Ask model.');
-        const transport=askTransport(choice.provider),started=now().getTime();
-        const turn=await ai(p,signal=>transport.chat({model:choice.model,maxTokens:1024,toolChoice:'auto',
+        const picked=parseFeatureModel('ask',p.model);if(!picked)throw new Error('Choose an Ask model.');
+        const transport=askTransport(picked.provider),started=now().getTime();
+        const turn=await ai(p,signal=>transport.chat({model:picked.model,maxTokens:1024,toolChoice:'auto',
           tools:[{name:'ping',description:'Confirms that the connection works.',parameters:{type:'object',properties:{}}}],
           messages:[{role:'system',content:'You are checking a connection. Call the ping tool once, then stop.'},{role:'user',content:'Check the connection.'}]},{signal}));
         return {ms:now().getTime()-started,tools:turn.toolCalls.some(call=>call.name==='ping')};
       }
       case 'ai.models':{
-        // What Settings can offer: each provider, whether its key is set, and the tool-capable models it lists now.
+        // What Settings can offer: each provider, whether it is set up, its tool-capable models and any speech models.
         return Promise.all(askProviders.map(async info=>{
           const transport=info.id==='groq'?undefined:chatProvider(info.id);
           let available=info.id==='groq'?groq.available:!!transport?.available;
           // A local app counts as ready only while it is actually running.
           const status=transport?.status?await transport.status().catch(():{running:boolean;version?:string}=>({running:false})):undefined;
           if(status)available=status.running;
-          let models=[...info.models];
+          let models=[...info.models],voiceModels=voiceProviders[info.id]?[...voiceProviders[info.id]!]:undefined;
           if(transport?.models&&available!==false)try{const live=await transport.models();if(live.length||isAskServer(info.id))models=live;}catch{/* The curated list still works offline. */}
-          return {id:info.id,label:info.label,env:info.env,description:info.description,keyOptional:!!info.keyOptional,available,models,
+          if(transport?.voiceModels&&available)try{const live=await transport.voiceModels();if(live.length)voiceModels=live;}catch{/* As above. */}
+          return {id:info.id,label:info.label,env:info.env,description:info.description,keyOptional:!!info.keyOptional,available,models,...(voiceModels?{voiceModels}:{}),
             ...(isAskServer(info.id)?{address:serverUrl(info.id),defaultAddress:info.defaultAddress??''}:{}),...(status?{running:status.running,...(status.version?{version:status.version}:{})}:{})};
         }));
       }
       case 'ai.transcribe':{
         const audio=text(p.audio,35_000_000);if(!audio||!/^[A-Za-z0-9+/]*={0,2}$/.test(audio)||base64Bytes(audio)>25*1024*1024)throw new Error('Audio must be a base64 recording smaller than 25 MB.');
-        return ai(p,signal=>groq.transcribe(audio,text(p.mimeType,200),signal));
+        return ai(p,signal=>transcribe(audio,text(p.mimeType,200),signal));
       }
       case 'conversation.delete':change(s=>{s.conversations=s.conversations.filter(c=>c.id!==p.id);});return clone(state);
       case 'calendar.list':{
@@ -813,7 +842,7 @@ export async function createEngineService(options:EngineOptions) {
           else {const provider=hostOf(a);if(a.calendarConnected&&provider?.listCalendars)try{list.push(...await provider.listCalendars(a));}catch(error){if(!every)throw error;}}
         }return list;
       }
-      case 'calendar.extract':{const t=thread(text(p.threadId,300)),events=await ai(p,signal=>groq.extractEvents(t,signal,{timeZone:p.timeZone?text(p.timeZone,100):undefined}));
+      case 'calendar.extract':{const t=thread(text(p.threadId,300)),events=await ai(p,signal=>writer('plan').extractEvents(t,signal,{timeZone:p.timeZone?text(p.timeZone,100):undefined}));
         const a=account(t.accountId),candidates=events.map(e=>({...e,accountId:t.accountId,threadId:t.id,calendarId:e.calendarId||(a.calendarConnected&&hostOf(a)?.saveEvent?'primary':`demo-${t.accountId}`)}));
         if(state.settings.autoCalendar)for(const e of candidates)await invoke('calendar.save',{event:{...e,id:e.id||randomUUID()}});
         return candidates;

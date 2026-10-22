@@ -42,7 +42,7 @@ export function createOllama(baseUrl:string,options:OllamaOptions={}):ChatProvid
       // Ollama has no tool_choice; the final no-tools step simply sends no tools.
       const tools=chat.toolChoice==='none'?[]:chat.tools??[];
       const response=await call('api/chat',{body:{model:chat.model,messages:toOllama(chat.messages),stream:true,think:false,keep_alive:'10m',
-        options:{num_ctx:options.contextTokens??16384,temperature:0.3},...(tools.length?{tools:tools.map(t=>({type:'function',function:t}))}:{})}},signal);
+        options:{num_ctx:options.contextTokens??16384,temperature:0.3},...(chat.json?{format:'json'}:{}),...(tools.length?{tools:tools.map(t=>({type:'function',function:t}))}:{})}},signal);
       if(!response.body)throw new Error('Ollama returned an invalid response. Please try again.');
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',content='',usage:ChatTurn['usage'];
       const calls:ChatTurn['toolCalls']=[];

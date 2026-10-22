@@ -241,3 +241,44 @@ test('local servers default to their usual ports and report whether they are run
     await assert.rejects(service.invoke('settings.update',{patch:{askLmStudioUrl:'ftp://x'}}),/http or https/);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
 });
+
+test('summaries, drafts, plans and voice each run on the model chosen for them',async()=>{
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-features-'));
+  const asked:ChatRequest[]=[],heard:string[]=[];
+  // Claude has no JSON mode, so its reply may wrap the object in prose; the writer still reads it.
+  const claude:ChatProvider={available:true,chat:async req=>{asked.push(req);return {content:String(req.messages[0].content).includes('Proofread')?'{"html":"<p>Polished.</p>"}':'Here it is: {"summary":"Wants a layout pick by Friday","importance":"important","replyStatus":"needs-reply"}',toolCalls:[]};}};
+  const openai:ChatProvider={available:true,chat:claude.chat,transcribe:async(_audio,_type,model)=>{heard.push(model);return {text:'Hello there'};}};
+  const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>{throw new Error('Summaries must not use Groq here.');}};
+  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq,chats:{anthropic:claude,openai,gemini:{available:false,chat:claude.chat}}});
+  try{
+    const settings=(await service.invoke('state.get') as AppState).settings;
+    assert.deepEqual([settings.summaryModel,settings.draftModel,settings.planModel,settings.voiceModel],['groq:openai/gpt-oss-120b','groq:openai/gpt-oss-120b','groq:openai/gpt-oss-120b','groq:whisper-large-v3-turbo']);
+    await service.invoke('settings.update',{patch:{summaryModel:'anthropic:claude-haiku-5-5',draftModel:'anthropic:claude-sonnet-5-5',voiceModel:'openai:gpt-4o-mini-transcribe'}});
+    const threadId=(await service.invoke('state.get') as AppState).threads[0].id;
+    assert.equal((await service.invoke('ai.summarize',{threadId}) as {summary:string}).summary,'Wants a layout pick by Friday');
+    assert.equal(asked[0].model,'claude-haiku-5-5');assert.equal(asked[0].json,true);assert.equal(asked[0].tools,undefined);
+    assert.deepEqual(await service.invoke('ai.polish',{html:'<p>polish me</p>'}),{html:'<p>Polished.</p>'});
+    assert.equal(asked[1].model,'claude-sonnet-5-5');
+    assert.deepEqual(await service.invoke('ai.transcribe',{audio:'AAAA',mimeType:'audio/webm'}),{text:'Hello there'});
+    assert.deepEqual(heard,['gpt-4o-mini-transcribe']);
+    // Voice needs a provider with speech to text; a provider without its key says what to set.
+    await assert.rejects(service.invoke('settings.update',{patch:{voiceModel:'anthropic:claude-haiku-5-5'}}),/Voice model on Groq or ChatGPT/);
+    await service.invoke('settings.update',{patch:{planModel:'gemini:gemini-3.8-flash'}});
+    await assert.rejects(service.invoke('calendar.extract',{threadId}),/Add GEMINI_API_KEY/);
+    const catalog=await service.invoke('ai.models') as Array<{id:string;voiceModels?:{id:string}[]}>;
+    assert.deepEqual(catalog.filter(p=>p.voiceModels).map(p=>p.id),['groq','openai']);
+  }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
+});
+
+test('OpenAI transcribes with the chosen model and lists its speech models; JSON requests turn on JSON mode',async()=>{
+  const openai=recorder(url=>url.endsWith('/models')?new Response(JSON.stringify({data:[{id:'gpt-6-luna'},{id:'gpt-4o-mini-transcribe'},{id:'whisper-1'},{id:'gpt-4o-transcribe-diarize'},{id:'gpt-realtime-transcribe'}]})):url.endsWith('/audio/transcriptions')?new Response(JSON.stringify({text:'hi'})):sse([data({choices:[{delta:{content:'{}'}}]})]));
+  const gpt=createOpenAI({apiKey:'oa',fetch:openai.fetch});
+  assert.deepEqual((await gpt.voiceModels!()).map(m=>m.id),['gpt-4o-mini-transcribe','whisper-1']);
+  assert.deepEqual((await gpt.models!()).map(m=>m.id),['gpt-6-luna']);
+  const fetchCalls:{url:string;model:FormDataEntryValue|null}[]=[];
+  const voice=createOpenAI({apiKey:'oa',fetch:async(input,init)=>{fetchCalls.push({url:String(input),model:(init?.body as FormData).get('model')});return new Response(JSON.stringify({text:'hi'}));}});
+  assert.deepEqual(await voice.transcribe!('AAAA','audio/webm','whisper-1'),{text:'hi'});
+  assert.deepEqual(fetchCalls,[{url:'https://api.openai.com/v1/audio/transcriptions',model:'whisper-1'}]);
+  await gpt.chat({model:'gpt-6-luna',json:true,messages:[{role:'user',content:'hi'}]},{});
+  assert.deepEqual(openai.seen.at(-1)!.body!.response_format,{type:'json_object'});
+});

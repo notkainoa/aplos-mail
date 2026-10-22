@@ -354,3 +354,6 @@ Calmer working state, one card shape, a calendar-style event preview that confir
 
 ## Merge: calendar + Ask into main (2026-10-21)
 Merged `t3/unified-calendar` (Calendar page, motion, Today in the dock) and `t3/ask-agent` (tool-using Ask, providers) onto the minimized-sidebar branch. Conflicts: settings defaults/whitelist/type (both `hiddenCalendars` and the `ask*` settings kept), and `groq.ts`, whose calendar helpers had moved to `engine/proposals.ts`; `messageWeek` moved there too.
+
+## AI settings: providers and a model per feature (2026-10-21)
+Settings → AI now has Providers (status rows that open to show setup or what each offers) and Models (Ask, Summaries, Drafts, Plans, Voice, each picked from any set-up provider; Voice from Groq or OpenAI speech models). The engine routes each feature to its model; prompts moved to `engine/writer.ts`; OpenAI transcription added. Verified: typecheck, 199 tests (2 new: per-feature routing with fake Claude/OpenAI transports, OpenAI speech models/transcription/JSON mode), renderer build, headless screenshots in dark and light at docked-Ask and wide widths with a synthetic Groq key (no external AI calls), and choosing a Voice model by keyboard saved it. Non-Groq providers for summaries/drafts/plans/voice are not verified live.

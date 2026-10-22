@@ -1,9 +1,9 @@
 /**
- * Where Ask's model runs. Groq also runs every other AI feature (summaries, polish, transcription); Ask alone can
- * use ChatGPT (OpenAI API), Claude, Gemini, OpenRouter, an OpenCode Go plan, Ollama or LM Studio on this Mac,
- * or a custom OpenAI-compatible server.
+ * The AI providers the owner sets up in Settings → AI, and which model each AI feature uses. Groq is the default for
+ * everything; any feature can run on ChatGPT (OpenAI API), Claude, Gemini, OpenRouter, an OpenCode Go plan, Ollama or
+ * LM Studio on this Mac, or a custom OpenAI-compatible server. Voice needs a speech-to-text API (Groq or OpenAI).
  * Keys live only in the backend environment.
- * The setting is stored as `provider:model`, e.g. `groq:openai/gpt-oss-120b` or `openrouter:anthropic/claude-haiku-5.5`.
+ * Each choice is stored as `provider:model`, e.g. `groq:openai/gpt-oss-120b` or `openrouter:anthropic/claude-haiku-5.5`.
  */
 export type AskProviderId='groq'|'openai'|'anthropic'|'gemini'|'openrouter'|'opencode-go'|'ollama'|'lmstudio'|'custom';
 /** Providers that run on a server the owner points at (usually this Mac), with no key needed. */
@@ -14,7 +14,7 @@ export interface AskProviderInfo { id:AskProviderId; label:string; env:string; d
   /** Where a local app listens by default; the owner can change it in Settings. */ defaultAddress?:string }
 
 export const askProviders:readonly AskProviderInfo[]=[
-  {id:'groq',label:'Groq',env:'GROQ_API_KEY',description:'Very fast open models. Also runs summaries and transcription.',models:[
+  {id:'groq',label:'Groq',env:'GROQ_API_KEY',description:'Very fast open models, and speech to text. The default for every feature.',models:[
     // Verified live for tool use on 2026-10-21.
     {id:'openai/gpt-oss-120b',label:'GPT-OSS 120B',description:'Most careful with search, dates and drafts.'},
     {id:'openai/gpt-oss-20b',label:'GPT-OSS 20B',description:'Fastest, but slips more often on dates and contacts. Review its cards closely.'},
@@ -57,6 +57,38 @@ export const askProviders:readonly AskProviderInfo[]=[
   {id:'custom',label:'Custom',env:'CUSTOM_AI_API_KEY',keyOptional:true,description:'Any OpenAI-compatible server, such as Ollama, LM Studio or vLLM. Its model must support tool calling.',models:[]},
 ];
 export const defaultAskModel='groq:openai/gpt-oss-120b';
+
+/** Speech-to-text models. Only these providers have a transcription API. */
+export const voiceProviders:Partial<Record<AskProviderId,readonly AskModelInfo[]>>={
+  groq:[
+    {id:'whisper-large-v3-turbo',label:'Whisper Large v3 Turbo',description:'Fast and accurate. The default.'},
+    {id:'whisper-large-v3',label:'Whisper Large v3',description:'A little more accurate; a little slower.'},
+  ],
+  openai:[
+    {id:'gpt-4o-mini-transcribe',label:'GPT-4o mini Transcribe',description:'Fast and inexpensive.'},
+    {id:'gpt-4o-transcribe',label:'GPT-4o Transcribe',description:'OpenAI’s most accurate.'},
+    {id:'whisper-1',label:'Whisper',description:'OpenAI’s original speech model.'},
+  ],
+};
+export const isVoiceProvider=(id:AskProviderId)=>!!voiceProviders[id];
+
+export type AiFeature='ask'|'summary'|'draft'|'plan'|'voice';
+export type AiModelSetting='askModel'|'summaryModel'|'draftModel'|'planModel'|'voiceModel';
+/** What the owner picks a model for in Settings → AI. `voice` lists speech-to-text models; the rest chat models. */
+export const aiFeatures:readonly {id:AiFeature;setting:AiModelSetting;label:string;description:string;fallback:string}[]=[
+  {id:'ask',setting:'askModel',label:'Ask',description:'Answers questions and prepares drafts and events. Needs a model that can use tools.',fallback:defaultAskModel},
+  {id:'summary',setting:'summaryModel',label:'Summaries',description:'Sorts and summarizes each new email.',fallback:'groq:openai/gpt-oss-120b'},
+  {id:'draft',setting:'draftModel',label:'Drafts',description:'Writes and polishes drafts.',fallback:'groq:openai/gpt-oss-120b'},
+  {id:'plan',setting:'planModel',label:'Plans',description:'Finds meetings and trips in mail for your calendar.',fallback:'groq:openai/gpt-oss-120b'},
+  {id:'voice',setting:'voiceModel',label:'Voice',description:'Turns what you say into text.',fallback:'groq:whisper-large-v3-turbo'},
+];
+export const aiFeature=(id:AiFeature)=>aiFeatures.find(f=>f.id===id)!;
+/** A stored choice for `feature`, normalized; unreadable values (or a voice model on a provider without speech) give undefined. */
+export function parseFeatureModel(feature:AiFeature,value:unknown){
+  const ref=parseAskModel(value);
+  if(!ref||(feature==='voice'&&!isVoiceProvider(ref.provider)))return;
+  return ref;
+}
 const modelId=/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
 
 /** `provider:model`; a bare Groq model ID from earlier builds still reads as Groq. */
@@ -74,7 +106,8 @@ export const isAskServer=(id:AskProviderId):id is AskServerId=>id==='ollama'||id
 /** The setting holding each server's address; empty means the app's default address. */
 export const askServerSetting={ollama:'askOllamaUrl',lmstudio:'askLmStudioUrl',custom:'askCustomUrl'} as const;
 /** "Groq · GPT-OSS 120B", or the raw ID for a model outside the curated list. */
-export function askModelLabel(value:string){
-  const ref=parseAskModel(value)??parseAskModel(defaultAskModel)!;const provider=askProvider(ref.provider);
-  return {provider:provider.label,model:provider.models.find(m=>m.id===ref.model)?.label??ref.model};
+export function askModelLabel(value:string,feature:AiFeature='ask'){
+  const ref=parseFeatureModel(feature,value)??parseAskModel(aiFeature(feature).fallback)!;const provider=askProvider(ref.provider);
+  const models=feature==='voice'?voiceProviders[ref.provider]??[]:provider.models;
+  return {provider:provider.label,model:models.find(m=>m.id===ref.model)?.label??ref.model};
 }
