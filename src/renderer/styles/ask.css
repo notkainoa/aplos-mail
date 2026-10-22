@@ -23,6 +23,7 @@
 .ask-pill:active { transform: scale(.97); }
 .ask-pill > :is(svg, .sym) { color: var(--ink-2); }
 .ask-pill > span { font-weight: 500; }
+.calendar-pill { width: 32px; padding: 0; justify-content: center; }
 .ask-pill .ui-kbd { margin-left: 2px; }
 .ask-pill small { font-size: var(--text-md); color: var(--dim); }
 
