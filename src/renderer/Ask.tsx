@@ -9,6 +9,7 @@ import {useVoice} from './useVoice';
 import {LevelMeter} from './LevelMeter';
 import {Marked} from './components/MailList';
 import {AskEvent} from './AskEvent';
+import {showSettingsTab} from './Settings';
 import type {Contact} from './Compose';
 
 const holdDelay=220;
@@ -197,9 +198,9 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
     </div>)}
     {busy&&<><div className="ask-msg user"><div className="ask-msg-text">{pending}</div></div>
       <div className="ask-msg assistant is-live" aria-live="polite" aria-busy="true">
-        {!!live?.steps.length&&<AskSteps steps={live.steps} live/>}
-        {live?.text?<div className="ask-msg-text is-streaming"><Prose text={live.text} cite={n=>byId.get(live.cites[n-1]??'')} onThread={onThread} streaming/></div>
-        :!live?.steps.some(s=>s.status==='running')&&<div className="ask-thinking"><span className="ask-dots"><i/><i/><i/></span>{live?.steps.length?'Putting it together':'Thinking'}</div>}
+        {/* Working: steps and a live line. Answering: the steps fold into one line above the streaming text. */}
+        {live?.text?<>{!!live.steps.length&&<AskSteps steps={live.steps}/>}<div className="ask-msg-text is-streaming"><Prose text={live.text} cite={n=>byId.get(live.cites[n-1]??'')} onThread={onThread} streaming/></div></>
+        :<AskSteps steps={live?.steps??[]} live/>}
       </div></>}</div>
     :null;
   return <aside ref={panel} className="ask-panel" aria-label="Ask Aplos" onKeyDown={keys}>
@@ -226,6 +227,6 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
       <IconButton className="ask-collapse" label="Close Ask" shortcut="⌘ J" icon={X} onClick={onClose}/>
     </div>
     <div ref={scroller} className="ask-scroll">{body}</div>
-    {chat&&<p className="ask-footnote">Answers use the selected mailbox · {modelName}</p>}
+    {chat&&<p className="ask-footnote">Answers use the selected mailbox · <button onClick={()=>{showSettingsTab('AI');onCommand('settings');}} title="Change the Ask model in Settings">{modelName}</button></p>}
   </aside>;
 });

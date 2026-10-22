@@ -1,6 +1,6 @@
 import {memo,useMemo,useState} from 'react';
 import {Bookmark,CalendarDays,Check,ChevronRight,CircleCheck,Clock,FileText,Inbox,Search,SquarePen,Undo2,Users} from './icons';
-import {Avatar,Button,Checkbox,Notice,Spinner,Tooltip,cx,type Icon} from './ui';
+import {Avatar,Button,Checkbox,Notice,Tooltip,cx,type Icon} from './ui';
 import type {AskStep,AskTriage,Draft,Thread} from '../shared/types';
 import {invoke,plain} from './bridge';
 
@@ -22,22 +22,37 @@ function summary(steps:AskStep[]){
   return text[0].toUpperCase()+text.slice(1);
 }
 
-/** Tool steps as compact lines. Live while answering; afterwards one line that opens the list. */
+/** What the live line says while nothing is running: before any tool, "Thinking"; after them, "Writing". */
+const idle=(steps:AskStep[])=>steps.length?'Writing the answer':'Thinking';
+/**
+ * Ask's working state and its tool steps. Live: finished steps sit quietly above one shimmering line for what is
+ * happening now. Finished (or once the answer streams): a single summary line that opens the list.
+ */
 export function AskSteps({steps,live}:{steps:AskStep[];live?:boolean}){
   const [open,setOpen]=useState(false);
   // A finished wait is not part of the answer.
   const shown=steps.filter(s=>s.tool!=='wait'||s.status==='running');
+  if(live){
+    const done=shown.filter(s=>s.status!=='running'),running=shown.filter(s=>s.status==='running');
+    return <ol className="ask-steps is-live" aria-label="Working">
+      {done.map(s=><Step key={s.id} step={s}/>)}
+      {running.length?running.map(s=><Step key={s.id} step={s}/>):<li className="ask-step is-running"><span className="ask-step-icon"><i className="ask-pulse"/></span><span className="ask-step-label">{idle(shown)}</span></li>}
+    </ol>;
+  }
   if(!shown.length)return null;
-  const expanded=live||open;
-  return <div className={cx('ask-steps',live&&'is-live')}>
-    {!live&&<button className={cx('ask-steps-toggle',open&&'is-open')} aria-expanded={open} onClick={()=>setOpen(!open)}><ChevronRight size={12}/><span>{summary(shown)}</span></button>}
-    {expanded&&<ol className="ask-steps-list">{shown.map(s=>{const Glyph=stepIcons[s.tool]??Search;return <li key={s.id} className={cx('ask-step','is-'+s.status)}>
-      <span className="ask-step-icon">{s.status==='running'?<Spinner size={12}/>:<Glyph size={13}/>}</span>
-      <span className="ask-step-label">{s.label}</span>
-      {s.count!==undefined&&s.status==='done'&&<span className="ask-step-count">{s.count}</span>}
-      {s.status==='error'&&<span className="ask-step-count">didn’t work</span>}
-    </li>;})}</ol>}
+  return <div className="ask-steps">
+    <button className={cx('ask-steps-toggle',open&&'is-open')} aria-expanded={open} onClick={()=>setOpen(!open)}><span>{summary(shown)}</span><ChevronRight size={11}/></button>
+    {open&&<ol className="ask-steps-list">{shown.map(s=><Step key={s.id} step={s}/>)}</ol>}
   </div>;
+}
+function Step({step}:{step:AskStep}){
+  const Glyph=stepIcons[step.tool]??Search;
+  return <li className={cx('ask-step','is-'+step.status)}>
+    <span className="ask-step-icon">{step.status==='running'?<i className="ask-pulse"/>:<Glyph size={12}/>}</span>
+    <span className="ask-step-label">{step.label}</span>
+    {step.count!==undefined&&step.status==='done'&&<span className="ask-step-count">{step.count}</span>}
+    {step.status==='error'&&<span className="ask-step-count">didn’t work</span>}
+  </li>;
 }
 
 type Cite=(index:number)=>Thread|undefined;
@@ -84,11 +99,10 @@ export function AskDraftCard({proposal,threads,hasDraft,onApply}:{proposal:Parti
   const subject=proposal.subject||(reply?'Re: '+reply.subject.replace(/^(Re|Fwd):\s*/i,''):'New message');
   const to=proposal.to||(reply?reply.messages.at(-1)?.fromName||reply.messages.at(-1)?.from:'');
   return <div className="ask-card ask-draft">
-    <header><SquarePen size={14}/><span>{reply?'Reply draft':'Draft'}</span></header>
-    <strong className="ask-card-title">{subject}</strong>
-    {to&&<small className="ask-draft-to">To {to}</small>}
+    <header className="ask-card-kind"><SquarePen size={13}/><span>{reply?'Reply':'New email'}</span></header>
+    <div className="ask-draft-head"><strong className="ask-card-title">{subject}</strong>{to&&<small>To {to}</small>}</div>
     {preview&&<p className="ask-draft-preview">{preview}</p>}
-    <footer><span className="muted small">Nothing is sent until you send it</span><Button variant="primary" size="sm" onClick={onApply}>{hasDraft?'Apply to draft':'Open draft'}</Button></footer>
+    <footer><span className="ask-card-note">Not sent until you send it</span><Button variant="primary" size="sm" onClick={onApply}>{hasDraft?'Apply to draft':'Open draft'}</Button></footer>
   </div>;
 }
 
@@ -112,9 +126,9 @@ export function AskTriageCard({triage,threads,notify,onThread}:{triage:AskTriage
   }
   async function undo(){setBusy(true);setError('');try{await invoke('thread.undo',{compact:true});setUndoable(false);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   if(!list.length)return null;
-  return <div className={cx('ask-card ask-triage',applied&&'is-applied')}>
-    <header>{applied?<Check size={14} className="ask-event-check"/>:<copy.icon size={14}/>}<span>{applied?copy.applied:copy.title}</span></header>
-    {triage.reason&&<p className="ask-triage-reason">{triage.reason}</p>}
+  return <div className={cx('ask-card ask-triage',applied&&'is-done')}>
+    <header className="ask-card-kind">{applied?<Check size={13} className="ask-card-check"/>:<copy.icon size={13}/>}<span>{applied?copy.applied:copy.title}</span></header>
+    {triage.reason&&!applied&&<p className="ask-triage-reason">{triage.reason}</p>}
     <ul className="ask-triage-list">{list.map(t=>{const last=t.messages.at(-1);const name=last?.fromName||last?.from||'';const on=!skip.has(t.id);
       return <li key={t.id} className={cx(!on&&'is-skipped')}>
         <Checkbox label={`Include ${t.subject}`} hideLabel checked={on} disabled={busy||applied} onChange={next=>setSkip(s=>{const copy=new Set(s);if(next)copy.delete(t.id);else copy.add(t.id);return copy;})}/>
@@ -122,8 +136,8 @@ export function AskTriageCard({triage,threads,notify,onThread}:{triage:AskTriage
       </li>;})}</ul>
     {error&&<Notice>{error}</Notice>}
     <footer>
-      {applied?<><span className="muted small">{chosen.length} email{chosen.length===1?'':'s'}</span>{undoable&&<Button variant="secondary" size="sm" icon={Undo2} loading={busy} onClick={()=>void undo()}>Undo</Button>}</>
-      :<><span className="muted small">{chosen.length} of {list.length} selected</span><Button variant="primary" size="sm" icon={Check} loading={busy} disabled={!chosen.length} onClick={()=>void run()}>{copy.verb(chosen.length)}</Button></>}
+      {applied?<><span className="ask-card-note">{chosen.length} email{chosen.length===1?'':'s'}</span>{undoable&&<Button variant="text" size="sm" icon={Undo2} loading={busy} onClick={()=>void undo()}>Undo</Button>}</>
+      :<><span className="ask-card-note">{chosen.length} of {list.length} selected</span><Button variant="primary" size="sm" icon={Check} loading={busy} disabled={!chosen.length} onClick={()=>void run()}>{copy.verb(chosen.length)}</Button></>}
     </footer>
   </div>;
 }

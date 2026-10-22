@@ -327,3 +327,6 @@ Settings → AI now offers seven providers. Verified: typecheck, production buil
 
 ## Ollama and LM Studio (2026-10-21)
 First-class local providers with running status, setup help, changeable addresses and tool-capable model lists. Verified: typecheck, 187 tests (3 new), headless screenshots against a stand-in Ollama (Running, model picker, connection check, an Ask answer through it) and LM Studio's not-running state. Real-app checks wait for the owner.
+
+## Ask panel refinement (2026-10-21)
+Calmer working state, one card shape, a calendar-style event preview that confirms when added (with Undo), and a model link in the footnote. Verified: typecheck, full test suite, live Groq (Qwen3.8 27B) on demo data with headless screenshots of the empty panel, the working state, an answer, the event card before and after adding, a draft and triage, in dark and light. The added test event was removed from the preview afterwards.
