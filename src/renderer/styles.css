@@ -4,7 +4,8 @@
 
 /* ---------- Shell ---------- */
 
-.app-shell { height: 100dvh; display: flex; overflow: hidden; background: var(--sidebar-fill); }
+/* Clip, not hidden: a hidden box can still be scrolled, and focusing into the docked panel mid-slide would shift the whole app. */
+.app-shell { height: 100dvh; display: flex; overflow: clip; background: var(--sidebar-fill); }
 .app-shell.desktop.mac { background: transparent; }
 .workspace {
   position: relative;
