@@ -109,8 +109,10 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
     :<p className="ai-summary is-pending" role="status">Summarizing…</p>}
    {hasSummary&&<IconButton className={cx('ai-refresh',job?.running&&'is-busy')} label="Summarize again" detail={`With ${askModelLabel(settings.summaryModel,'summary').provider}`} size="xs" icon={RefreshCw} iconSize={13} loading={job?.running} onClick={resummarize}/>}
   </div>
-  {hasNext?<div className={cx('ai-next',!thread.todo&&'no-todo',seen&&!seen.next&&'is-arriving')}>
-   {thread.todo&&<span className={cx('ai-todo',seen?.next&&!seen.todo&&'is-arriving')}><span className="todo-ring" aria-hidden="true"/><span className="ai-todo-text">{thread.todo}</span></span>}
+  {hasNext?<div className={cx('ai-next',!thread.todo&&!pending&&'no-todo',seen&&!seen.next&&'is-arriving')}>
+   {thread.todo?<span className={cx('ai-todo',seen?.next&&!seen.todo&&'is-arriving')}><span className="todo-ring" aria-hidden="true"/><span className="ai-todo-text">{thread.todo}</span></span>
+    // A to-do may still come; hold its place beside the date or action already shown.
+    :pending&&<span className="ai-todo is-placeholder" aria-hidden="true"><span className="todo-ring"/><span className="ai-skeleton"/></span>}
    <span className="ai-controls">
     {(thread.dueDate||dates)&&<button ref={dueRef} className={cx('due-pill',dueTone,!thread.dueDate&&'is-empty',dates&&'is-open',seen?.next&&!seen.due&&thread.dueDate&&'is-arriving')} aria-haspopup="dialog" aria-expanded={dates} onClick={()=>setDates(value=>!value)}>
      <CalendarDays size={14}/><span>{thread.dueDate?dueLabel(thread.dueDate):'Add due date'}</span><ChevronDown size={12}/></button>}

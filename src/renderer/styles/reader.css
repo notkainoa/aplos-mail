@@ -84,7 +84,8 @@ p.ai-summary { animation: fade var(--dur-slow) var(--ease); }
 @keyframes ai-glimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 /* Where the to-do usually sits, a bar with the same sweep; what Groq finds fades in after it. */
 .ai-next.is-placeholder { flex-wrap: nowrap; }
-.ai-next.is-placeholder .todo-ring { margin-top: 0; opacity: .5; }
+.ai-next.is-placeholder .todo-ring, .ai-todo.is-placeholder .todo-ring { margin-top: 0; opacity: .5; }
+.ai-todo.is-placeholder { align-items: center; }
 .ai-skeleton {
   width: min(260px, 60%);
   height: 10px;
