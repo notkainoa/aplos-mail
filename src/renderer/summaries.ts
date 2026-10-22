@@ -19,13 +19,13 @@ let watching=false;
 function watch(){
   if(watching)return;watching=true;
   // Sync may have started before this window was listening; ask what is in flight, minus anything that ends meanwhile.
-  const ended=new Set<string>();
+  let ended:Set<string>|undefined=new Set();
   bridge.subscribe(event=>{
     if(event.type!=='ai.summarizing')return;
     const {threadId,active}=event.payload as {threadId:string;active:boolean};
-    if(active){working.add(threadId);ended.delete(threadId);}else{working.delete(threadId);ended.add(threadId);}notify();
+    if(active){working.add(threadId);ended?.delete(threadId);}else{working.delete(threadId);ended?.add(threadId);}notify();
   });
-  void invoke<string[]>('ai.summarizing').then(ids=>{for(const id of ids)if(!ended.has(id))working.add(id);notify();},()=>{});
+  void invoke<string[]>('ai.summarizing').then(ids=>{for(const id of ids)if(!ended!.has(id))working.add(id);notify();},()=>{}).finally(()=>{ended=undefined;});
 }
 const subscribe=(listener:()=>void)=>{watch();listeners.add(listener);return ()=>{listeners.delete(listener);};};
 export function useSummaryJob(threadId:string){return useSyncExternalStore(subscribe,()=>jobs.get(threadId));}
@@ -60,6 +60,8 @@ export function summarizeRow(thread:Thread){
   if(hasRealSummary(thread)||jobs.has(thread.id)||listFailed.has(thread.id)||queue.includes(thread.id))return;
   queue.push(thread.id);pump();
 }
+/** A row that scrolls away or leaves stops waiting, so rows on screen go first. */
+export function cancelRow(threadId:string){const at=queue.indexOf(threadId);if(at>=0)queue.splice(at,1);}
 function pump(){
   const wait=pausedUntil-Date.now();
   if(wait>0){resume??=setTimeout(()=>{resume=undefined;pump();},wait);return;}

@@ -5,7 +5,7 @@ import {liveAction,shortDue,shortSender} from '../../shared/mailbox';
 import {dateLabel,dueLabel,plain} from '../bridge';
 import {Avatar,Badge,Button,Checkbox,Count,IconButton,cx,reducedMotion,useListPresence,useSwipe,type Icon,type SwipeSide} from '../ui';
 import {ymd} from '../calendarTime';
-import {hasRealSummary,summarizeRow,useSummarizing} from '../summaries';
+import {cancelRow,hasRealSummary,summarizeRow,useSummarizing} from '../summaries';
 
 export type Triage='done'|'later'|'trash'|'spam';
 /** Row callbacks. Pass a stable object (see `useHandlers`) so unchanged rows skip re-rendering. */
@@ -294,7 +294,10 @@ const MailRow=memo(function MailRow({thread:t,actions:rows,phase,direction,index
   // Only a summary that arrives while the row is on screen fades in, not one it already had.
   const [shownUnsummarized,setShownUnsummarized]=useState(!real);useEffect(()=>{if(!real)setShownUnsummarized(true);},[real]);
   const headline=real?capital(t.summary.trim()):t.subject||'(No subject)';
-  useEffect(()=>{if(real||exiting||t.status==='trash')return;const timer=setTimeout(()=>summarizeRow(t),1500);return ()=>clearTimeout(timer);},[t.id,real,exiting,t.status]);
+  // Only rows actually on screen ask (short lists mount every row); one that scrolls away stops waiting.
+  const [onScreen,setOnScreen]=useState(false);
+  useEffect(()=>{const el=rowRef.current;if(real||!el)return;const seen=new IntersectionObserver(([entry])=>setOnScreen(entry.isIntersecting));seen.observe(el);return ()=>seen.disconnect();},[real]);
+  useEffect(()=>{if(real||!onScreen||exiting||t.status==='trash')return;const timer=setTimeout(()=>summarizeRow(t),1500);return ()=>{clearTimeout(timer);cancelRow(t.id);};},[t.id,real,onScreen,exiting,t.status]);
   const shift=useRef(false);
   const restorable=t.status==='trash'||t.status==='spam';
   const rowRef=useRef<HTMLDivElement>(null),bodyRef=useRef<HTMLDivElement>(null);const [swiping,setSwiping]=useState(false);
