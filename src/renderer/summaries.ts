@@ -2,13 +2,15 @@ import {useSyncExternalStore} from 'react';
 import type {Thread} from '../shared/types';
 import {bridge,invoke} from './bridge';
 import {hasRealSummary} from '../shared/summary';
+import {summaryProvider,type SummaryProvider} from './summaryText';
 export {describeSummaryError,hasRealSummary,summaryProvider,type SummaryProvider} from './summaryText';
 
 /**
  * Summaries requested from the reader or the list this session. Opening an email whose summary is only its own text
  * asks once; a failure stays on the card (with its reason) until Retry, so reopening the email doesn't ask again.
  */
-export type SummaryJob={running:boolean;error?:string;done?:boolean};
+/** A failure keeps the provider it was asked of, so its explanation stays right after the model changes. */
+export type SummaryJob={running:boolean;error?:string;provider?:SummaryProvider;done?:boolean};
 const jobs=new Map<string,SummaryJob>();
 /** Emails the engine reports being summarized, including those from sync. */
 const working=new Set<string>();
@@ -40,18 +42,19 @@ const listFailed=new Set<string>();
  * nothing. Background requests (`ifMissing`) leave an email alone if it got a summary meanwhile; Retry and
  * "Summarize again" don't.
  */
-export async function summarize(threadId:string,{ifMissing=false,fromList=false}={}):Promise<string|undefined>{
+export async function summarize(threadId:string,{ifMissing=false,fromList=false,summaryModel}:{ifMissing?:boolean;fromList?:boolean;summaryModel?:string}={}):Promise<string|undefined>{
   if(jobs.get(threadId)?.running)return;
+  const provider=summaryProvider(summaryModel);
   set(threadId,{running:true});
   try{await invoke('ai.summarize',{threadId,...(ifMissing?{onlyIfMissing:true}:{})});set(threadId,{running:false,done:true});return;}
   catch(error){
     const message=error instanceof Error&&error.message?error.message:'The AI provider could not summarize this email.';
-    if(fromList){jobs.delete(threadId);listFailed.add(threadId);notify();}else set(threadId,{running:false,error:message});
+    if(fromList){jobs.delete(threadId);listFailed.add(threadId);notify();}else set(threadId,{running:false,error:message,provider});
     return message;
   }
 }
 /** Summarize on open, once per session; a retry is the user's call. */
-export function summarizeIfNeeded(thread:Thread){if(!hasRealSummary(thread)&&!jobs.has(thread.id))void summarize(thread.id,{ifMissing:true});}
+export function summarizeIfNeeded(thread:Thread,summaryModel?:string){if(!hasRealSummary(thread)&&!jobs.has(thread.id))void summarize(thread.id,{ifMissing:true,summaryModel});}
 
 // Rows on screen without a summary are summarized two at a time. After a failure (often no key or a rate limit)
 // the list waits a minute before going on with the rest; opening an email still asks, and shows why it failed.
