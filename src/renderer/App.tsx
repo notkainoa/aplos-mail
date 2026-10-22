@@ -53,7 +53,7 @@ export function App(){
  const [routes,setRoutes]=useState<Route[]>([{view:'home'}]);const [historyIndex,setHistoryIndex]=useState(0);
  const [ask,setAsk]=useState(()=>!popoutThread&&!popoutDraft&&localStorage.getItem(askStorageKey)!=='closed');
  // The dock shows Ask (the default) or Today, one day of every calendar beside the mail.
- const [dockTab,setDockTab]=useState<'ask'|'today'>('ask');
+ const [dockTab,setDockTab]=useState<'ask'|'today'>('ask');const [askTools,setAskTools]=useState<HTMLDivElement|null>(null);
  // A plan the user asked to add (Space or "Add to calendar"): Today shows where it would go and waits for Add.
  const [planReview,setPlanReview]=useState<{threadId:string;plan?:Partial<CalendarEvent>;n:number}>();
  // Matches the CSS breakpoints that collapse the sidebar; while squeezed it opens as an overlay instead.
@@ -419,7 +419,7 @@ export function App(){
  const topbarActions=useHandlers({
   showSidebar:()=>{if(squeezed)setPeek(true);else void updateSettings({sidebar:true});},
   back:()=>{if(!replyGuard())setRoute(r=>({...r,threadId:undefined}));},
-  compose:()=>void newDraft(),ask:()=>setAsk(true),
+  compose:()=>void newDraft(),ask:()=>{setDockTab('ask');setAsk(true);},calendar:()=>{setDockTab('today');setAsk(true);},
  });
  const calendarActions=useHandlers({
   edit:(event:Partial<CalendarEvent>)=>setEventEditor(event),onThread:(id:string)=>navigate('all',id),
@@ -518,10 +518,10 @@ export function App(){
  </main>
  {!popoutThread&&<div className={cx('ask-dock',ask&&'open')} inert={!ask||undefined}><div className="dock-panel">
   <div className="dock-head">
-   <Tabs variant="segmented" label="Dock" className="dock-tabs" value={dockTab} onChange={setDockTab} items={[{id:'ask',label:'Ask',tooltip:{title:'Ask me anything',detail:'Tap A · ⌘ J'}},{id:'today',label:'Today',tooltip:{title:'Today beside your mail',detail:'⇧ A'}}]}/>
+   <div className="dock-head-start"><Tabs variant="segmented" label="Dock" className="dock-tabs" value={dockTab} onChange={setDockTab} items={[{id:'ask',label:'Ask',tooltip:{title:'Ask me anything',detail:'Tap A · ⌘ J'}},{id:'today',label:'Calendar',tooltip:{title:'Calendar beside your mail',detail:'⇧ A'}}]}/><div className="dock-head-tools" ref={setAskTools}/></div>
    <IconButton label="Close" shortcut="⌘ J" icon={X} onClick={()=>setAsk(false)}/>
   </div>
-  <div className="dock-body" hidden={dockTab!=='ask'}><Ask open={ask&&dockTab==='ask'} conversations={state.conversations} threads={state.threads} events={state.events} accounts={state.accounts} contacts={contacts} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} hasDraft={!!composer} {...askActions}/></div>
+  <div className="dock-body" hidden={dockTab!=='ask'}><Ask open={ask&&dockTab==='ask'} toolsSlot={dockTab==='ask'?askTools:null} conversations={state.conversations} threads={state.threads} events={state.events} accounts={state.accounts} contacts={contacts} accountId={state.selectedAccountId} settings={prefs} examples={askExamples} hasDraft={!!composer} {...askActions}/></div>
   {dockTab==='today'&&<div className="dock-body"><TodayPanel events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} hidden={prefs.hiddenCalendars} thread={todayThread} review={planReview?.threadId===todayThread?.id?planReview:undefined} finding={!!todayThread&&actionBusy===todayThread.id} {...todayActions}/></div>}
  </div></div>}
  <Menu open={rowMenu.open} anchor={rowMenu.anchor} onClose={rowMenu.close} placement="bottom-end" label="Email actions" onError={fail} groups={thread?[

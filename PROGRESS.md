@@ -1,5 +1,9 @@
 # Progress
 
+## 2026-10-21 — Sidebar material follows the app theme
+
+Owner report: with macOS dark and Aplos light, the sidebar kept dark glass under light-theme text. Not reproduced here: live switches, relaunch, hidden/minimised windows, dev and packaged builds all redrew correctly (sampled on screen with macOS dark; flipping macOS appearance was not possible without System Events permission). Main now re-asserts `nativeTheme.themeSource` when the native appearance drifts from the setting and rebuilds the `sidebar` vibrancy on theme changes, system appearance changes, and on window focus if drifted. Typecheck and 197 tests pass; light→dark→light rechecked on screen.
+
 ## 2026-10-20 — Second UI pass from owner feedback
 
 - **Ask** is back in the docked right panel, as the owner preferred. It keeps typed mail/command matches, hold-A voice (matched on the typed character), Esc to cancel, ⌘J, and AI calendar event cards stacked for the narrow panel.
@@ -354,3 +358,15 @@ Calmer working state, one card shape, a calendar-style event preview that confir
 
 ## Merge: calendar + Ask into main (2026-10-21)
 Merged `t3/unified-calendar` (Calendar page, motion, Today in the dock) and `t3/ask-agent` (tool-using Ask, providers) onto the minimized-sidebar branch. Conflicts: settings defaults/whitelist/type (both `hiddenCalendars` and the `ask*` settings kept), and `groq.ts`, whose calendar helpers had moved to `engine/proposals.ts`; `messageWeek` moved there too.
+
+## Sidebar footer help menu (2026-10-21)
+The sidebar footer is now one row: Settings on the left, a question mark on the right that opens a menu with Keyboard shortcuts and About Aplos Mail (which opens Settings → Help & about). The "Demo mail" note is gone. Verified: typecheck, full test suite, and a headless preview on isolated demo storage checking the row layout, the menu items, and that About lands on the Help & about tab.
+
+## Ask empty state and opening slide (2026-10-21)
+Fixed the app jumping sideways when Ask opens, moved "Hold A to talk" into the field (clickable, replacing the mic), removed History, and split the empty panel into "Try asking" for first use and "Recent" + "Last searched" afterwards. Verified: typecheck, 197 tests, headless Chromium frame sampling while opening (workspace stays put, shell scroll 0 every frame), screenshots of the first-use and returning panels, and an email opened from Ask's matches showing under "Last searched". The "Recent" chat list was not exercised live (no chats in the test storage); its code path is unchanged.
+
+## Ask slide and hold-to-talk follow-up (2026-10-21)
+The panel and mail column now move together when Ask opens (no empty strip), the talk chip records on click or hold, and holding A records from inside Ask's field. Verified: typecheck, test suite, headless Chromium frame sampling while opening (0 px between mail column and panel on every frame), and with a fake microphone: chip click → recording → Done, chip hold → "Release to ask" → stops on release, A held in the field → recording → stops on release, "banana" and a rolled-over "a"+"s" type normally. Transcription itself was not exercised (no Groq key in the test environment).
+
+## Ask chat controls (2026-10-21)
+Recent rows without icons and with a remove X, the follow-up field at the bottom of a chat, and New chat + Recent chats beside the dock tabs. Verified: typecheck, test suite, and in the packaged app on a demo sandbox (`APLOS_DATA_DIR`, chats created live with Groq): no icons on Recent rows, X removes a chat and the next one moves up, the Recent chats menu lists all chats and opens the one picked, the field sits below the conversation in a chat, the plus starts a new chat.

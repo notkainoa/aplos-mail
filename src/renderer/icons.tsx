@@ -84,6 +84,7 @@ export const History=symbol(Lucide.History,'clock.arrow.circlepath');
 export const Home=symbol(Lucide.Home,'house');
 export const ImageOff=symbol(Lucide.ImageOff,'photo');
 export const ImageIcon=symbol(Lucide.Image,'photo');
+export const Info=symbol(Lucide.Info,'info.circle');
 export const Inbox=symbol(Lucide.Inbox,'tray');
 export const Italic=symbol(Lucide.Italic,'italic');
 export const Keyboard=symbol(Lucide.Keyboard,'keyboard');
