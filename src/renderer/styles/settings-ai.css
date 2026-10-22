@@ -9,6 +9,9 @@
 
 .ai-provider-row { border-bottom: 1px solid var(--line-soft); }
 .ai-provider-row:last-child { border-bottom: 0; }
+/* The hover fill reaches the card's sides, so the first and last rows keep a little room above and below it. */
+.ai-provider-row:first-child { padding-top: 6px; }
+.ai-provider-row:last-child { padding-bottom: 6px; }
 .ai-provider-head {
   width: calc(100% + 16px); min-height: 56px; margin: 0 -8px; padding: 9px 8px; display: flex; align-items: center; gap: 14px;
   border-radius: var(--radius-sm); text-align: left; color: var(--ink);
