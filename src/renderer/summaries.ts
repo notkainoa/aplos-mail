@@ -40,15 +40,17 @@ export async function summarize(threadId:string):Promise<string|undefined>{
 export function summarizeIfNeeded(thread:Thread){if(!hasRealSummary(thread)&&!jobs.has(thread.id))void summarize(thread.id);}
 
 // Rows on screen without a summary are summarized two at a time. After a failure (often no key or a rate limit)
-// the list stops asking for a minute; opening an email still asks, and shows why it failed.
-const queue:string[]=[];let active=0,pausedUntil=0;
+// the list waits a minute before going on with the rest; opening an email still asks, and shows why it failed.
+const queue:string[]=[];let active=0,pausedUntil=0,resume:ReturnType<typeof setTimeout>|undefined;
 export function summarizeRow(thread:Thread){
-  if(hasRealSummary(thread)||jobs.has(thread.id)||queue.includes(thread.id)||Date.now()<pausedUntil)return;
+  if(hasRealSummary(thread)||jobs.has(thread.id)||queue.includes(thread.id))return;
   queue.push(thread.id);pump();
 }
 function pump(){
+  const wait=pausedUntil-Date.now();
+  if(wait>0){resume??=setTimeout(()=>{resume=undefined;pump();},wait);return;}
   while(active<2&&queue.length){
     const id=queue.shift()!;if(jobs.has(id))continue;
-    active++;void summarize(id).then(error=>{if(error){pausedUntil=Date.now()+60_000;queue.length=0;}}).finally(()=>{active--;pump();});
+    active++;void summarize(id).then(error=>{if(error)pausedUntil=Date.now()+60_000;}).finally(()=>{active--;pump();});
   }
 }

@@ -291,8 +291,8 @@ const MailRow=memo(function MailRow({thread:t,actions:rows,phase,direction,index
   // Until Groq has summarized it, a row shows the subject, dimmed, rather than the email's opening words passing for
   // a summary; it shimmers while Groq works and the summary fades in. Rows on screen ask for one after a moment.
   const real=hasRealSummary(t),working=useSummarizing(t.id),waited=useRef(false);if(!real)waited.current=true;
-  const headline=real?capital(t.summary.trim()):t.subject||capital(t.summary.trim())||'(No subject)';
-  useEffect(()=>{if(real||exiting||t.status==='trash')return;const timer=setTimeout(()=>summarizeRow(t),1500);return ()=>clearTimeout(timer);},[t.id,real]);
+  const headline=real?capital(t.summary.trim()):t.subject||'(No subject)';
+  useEffect(()=>{if(real||exiting||t.status==='trash')return;const timer=setTimeout(()=>summarizeRow(t),1500);return ()=>clearTimeout(timer);},[t.id,real,exiting,t.status]);
   const shift=useRef(false);
   const restorable=t.status==='trash'||t.status==='spam';
   const rowRef=useRef<HTMLDivElement>(null),bodyRef=useRef<HTMLDivElement>(null);const [swiping,setSwiping]=useState(false);
@@ -326,7 +326,7 @@ const MailRow=memo(function MailRow({thread:t,actions:rows,phase,direction,index
         <span className="row-line">
           <span className="sender"><Marked text={focus?name:short} terms={hl&&[...hl.any,...hl.from]}/></span>
           {focus&&t.messages.length>1&&<span className="thread-count">{t.messages.length}</span>}
-          <span className={cx('summary',!real&&'is-unsummarized',!real&&working&&'is-summarizing',real&&waited.current&&'is-arriving')} title={t.subject||undefined}>{hl&&!focus&&real&&<span className="subject"><Marked text={t.subject} terms={subjectTerms}/></span>}<Marked text={headline} terms={hl?.any}/></span>
+          <span className={cx('summary',!real&&'is-unsummarized',!real&&working&&'is-summarizing',real&&waited.current&&'is-arriving')} title={t.subject||undefined}>{hl&&!focus&&real&&<span className="subject"><Marked text={t.subject} terms={subjectTerms}/></span>}<Marked text={headline} terms={real?hl?.any:subjectTerms||undefined}/></span>
           <span className="row-meta">
             {t.bookmarked&&<Bookmark size={13} className="row-flag" fill="currentColor"/>}
             {chip}

@@ -48,7 +48,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  useEffect(()=>{if(!replySlot||!scroller.current)return;const el=scroller.current;requestAnimationFrame(()=>el.scrollTo({top:el.scrollHeight,behavior:'smooth'}));},[!!replySlot]);
  // An email without a real summary yet is summarized on open; the card shows that work, or why it failed.
  const job=useSummaryJob(thread.id);
- const hasSummary=hasRealSummary(thread)||!!job?.done&&!!thread.summary?.trim();
+ const hasSummary=hasRealSummary(thread);
  useEffect(()=>{if(!ghost)summarizeIfNeeded(thread);},[thread.id,ghost]);
  // While Groq works, a placeholder holds the to-do's place; what it finds fades in rather than popping in.
  const pending=!hasSummary&&!job?.error;const waited=useRef<{id:string;next:boolean;todo:boolean;due:boolean}>(undefined);
