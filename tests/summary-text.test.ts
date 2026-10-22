@@ -20,4 +20,6 @@ test('a summary that is only the email’s own text does not count',()=>{
   assert.equal(hasRealSummary(thread('We are gathering at the garden this Saturday…')),false);
   assert.equal(hasRealSummary(thread('')),false);
   assert.equal(hasRealSummary(thread('Help plant the herb beds Saturday at 10 am')),true);
+  // A summary Groq wrote counts even when it repeats a sentence from the email.
+  assert.equal(hasRealSummary({...thread('We are gathering at the garden this Saturday at 10 am'),aiSummary:true}),true);
 });

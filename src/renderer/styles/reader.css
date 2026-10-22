@@ -92,12 +92,11 @@ p.ai-summary { animation: fade var(--dur-slow) var(--ease); }
   background: linear-gradient(100deg, var(--hover) 40%, color-mix(in srgb, var(--ink) 12%, transparent) 50%, var(--hover) 60%) 0 0 / 300% 100%;
   animation: ai-glimmer 1.8s linear infinite;
 }
-.ai-next.is-arriving { animation: ai-arrive var(--dur-slow) var(--ease-out-strong); }
+.ai-next.is-arriving, .ai-todo.is-arriving, .due-pill.is-arriving { animation: ai-arrive var(--dur-slow) var(--ease-out-strong); }
 @keyframes ai-arrive { from { opacity: 0; transform: translateY(4px); } }
 @media (prefers-reduced-motion: reduce) {
   .ai-summary.is-pending { animation: none; background: none; color: var(--faint); }
-  .ai-skeleton { animation: none; }
-  .ai-next.is-arriving { animation: fade var(--dur-slow) var(--ease); }
+  .ai-skeleton, .ai-failed, .ai-next.is-arriving, .ai-todo.is-arriving, .due-pill.is-arriving { animation: none; }
 }
 .ai-failed { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; animation: fade var(--dur-slow) var(--ease); }
 .ai-failed-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

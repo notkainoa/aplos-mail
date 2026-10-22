@@ -496,7 +496,7 @@ export async function createEngineService(options:EngineOptions) {
               change(s=>{const current=s.threads.find(t=>t.id===candidate.id);if(!current)return;
                 for(const key of summaryOnly.has(candidate.id)?['summary'] as const:refresh.has(candidate.id)?['replyStatus','summary','action'] as const:['importance','replyStatus','todo','dueDate','summary','action'] as const){
                   // An edit made while Groq was running always wins over its response.
-                  if(JSON.stringify(current[key])===JSON.stringify(before[key])&&key in classified)(current as any)[key]=classified[key];
+                  if(JSON.stringify(current[key])===JSON.stringify(before[key])&&key in classified){(current as any)[key]=classified[key];if(key==='summary')current.aiSummary=true;}
                 }
               });
             }catch{if(signal.aborted)break;classificationFailures++;}
@@ -739,7 +739,7 @@ export async function createEngineService(options:EngineOptions) {
       case 'ai.cancel':{for(const [id,controller]of requests)if(!p.requestId||p.requestId===id)controller.abort();return {cancelled:true};}
       case 'ai.summarize':{
         const id=text(p.threadId,300);
-        // Sync may already be summarizing this email; its answer is enough unless it failed.
+        // Sync or another window may already be summarizing this email; that answer is enough unless it failed.
         const running=summarizing.get(id);if(running){await running.catch(()=>{});if(hasRealSummary(thread(id)))return thread(id);}
         const t=thread(id);const result=await ai(p,signal=>tracked(id,groq.summarize(t,signal)));
         const patch=threadPatch(result);if(typeof result.summary==='string')patch.summary=result.summary.slice(0,10_000);patch.action=result.action;
@@ -747,7 +747,7 @@ export async function createEngineService(options:EngineOptions) {
         // time; after that they may be the owner's. Anything edited while Groq was working wins, as in sync.
         const keys=['summary','action',...(hasRealSummary(t)?[]:['importance','replyStatus'] as const),...(t.todo?[]:['todo'] as const),...(t.dueDate?[]:['dueDate'] as const)] as const;
         change(s=>{const current=s.threads.find(item=>item.id===t.id);if(!current)throw new Error('The message was removed.');
-          for(const key of keys)if(key in patch&&JSON.stringify(current[key])===JSON.stringify(t[key]))(current as any)[key]=patch[key];
+          for(const key of keys)if(key in patch&&JSON.stringify(current[key])===JSON.stringify(t[key])){(current as any)[key]=patch[key];if(key==='summary')current.aiSummary=true;}
         });return thread(t.id);
       }
       case 'ai.polish':return ai(p,signal=>groq.polish(text(p.html,1_000_000),p.instruction?text(p.instruction,10_000):undefined,signal));
