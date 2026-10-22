@@ -354,3 +354,6 @@ Calmer working state, one card shape, a calendar-style event preview that confir
 
 ## Merge: calendar + Ask into main (2026-10-21)
 Merged `t3/unified-calendar` (Calendar page, motion, Today in the dock) and `t3/ask-agent` (tool-using Ask, providers) onto the minimized-sidebar branch. Conflicts: settings defaults/whitelist/type (both `hiddenCalendars` and the `ask*` settings kept), and `groq.ts`, whose calendar helpers had moved to `engine/proposals.ts`; `messageWeek` moved there too.
+
+## Sidebar footer help menu (2026-10-21)
+The sidebar footer is now one row: Settings on the left, a question mark on the right that opens a menu with Keyboard shortcuts and About Aplos Mail (which opens Settings → Help & about). The "Demo mail" note is gone. Verified: typecheck, full test suite, and a headless preview on isolated demo storage checking the row layout, the menu items, and that About lands on the Help & about tab.
