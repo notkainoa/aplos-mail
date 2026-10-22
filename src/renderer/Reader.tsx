@@ -1,6 +1,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {rememberPlans,usePlans} from './detectedPlans';
-import {describeSummaryError,hasRealSummary,summarize,summarizeIfNeeded,useSummaryJob} from './summaries';
+import {askModelLabel} from '../shared/ask';
+import {describeSummaryError,hasRealSummary,summarize,summarizeIfNeeded,summaryProvider,useSummaryJob,type SummaryProvider} from './summaries';
 import {dayKey,timeRange} from './calendarTime';
 import {planSaved} from './calendarLayout';
 import {liveAction} from '../shared/mailbox';
@@ -50,9 +51,9 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const job=useSummaryJob(thread.id);
  const hasSummary=hasRealSummary(thread);
  useEffect(()=>{if(!ghost)summarizeIfNeeded(thread);},[thread.id,ghost]);
- // While Groq works, a placeholder holds the to-do's place; what it finds fades in rather than popping in.
+ // While the model works, a placeholder holds the to-do's place; what it finds fades in rather than popping in.
  const pending=!hasSummary&&!job?.error;const waited=useRef<{id:string;next:boolean;todo:boolean;due:boolean}>(undefined);
- const resummarize=()=>void summarize(thread.id).then(error=>{if(error)notify(describeSummaryError(error).title+'. The previous summary is kept.');});
+ const resummarize=()=>void summarize(thread.id).then(error=>{if(error)notify(describeSummaryError(error,summaryProvider(settings.summaryModel)).title+'. The previous summary is kept.');});
  const dueInput=thread.dueDate?.slice(0,10)??'';
  const doneRight=settings.triageDirection!=='done-left';
  const card=useRef<HTMLDivElement>(null);
@@ -97,15 +98,15 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  // Plans Groq found in this email take the place of the "Add to calendar" suggestion, with their details.
  const plans=usePlans(thread.id)?.found??[];const showPlans=plans.length>0&&!binned;const planned=showPlans&&liveAction(thread)?.kind==='calendar';
  const hasNext=!binned&&!!(thread.todo||thread.dueDate||dates||thread.reminderAt||action&&!planned);
- // What the card showed while Groq worked; only what it adds afterwards fades in.
+ // What the card showed while the model worked; only what it adds afterwards fades in.
  if(pending)waited.current={id:thread.id,next:hasNext,todo:!!thread.todo,due:!!thread.dueDate};
  const seen=waited.current?.id===thread.id&&!pending?waited.current:undefined;
  const ai=<div className="ai-card">
   <div className="ai-lede">
    {hasSummary?<p className="ai-summary" key={thread.summary}>{capital(thread.summary.trim())}</p>
-    :job?.error?<SummaryFailure error={job.error} retry={()=>void summarize(thread.id)}/>
+    :job?.error?<SummaryFailure error={job.error} provider={summaryProvider(settings.summaryModel)} retry={()=>void summarize(thread.id)}/>
     :<p className="ai-summary is-pending" role="status">Summarizing…</p>}
-   {hasSummary&&<IconButton className={cx('ai-refresh',job?.running&&'is-busy')} label="Summarize again" detail="Summarized with Groq" size="xs" icon={RefreshCw} iconSize={13} loading={job?.running} onClick={resummarize}/>}
+   {hasSummary&&<IconButton className={cx('ai-refresh',job?.running&&'is-busy')} label="Summarize again" detail={`With ${askModelLabel(settings.summaryModel,'summary').provider}`} size="xs" icon={RefreshCw} iconSize={13} loading={job?.running} onClick={resummarize}/>}
   </div>
   {hasNext?<div className={cx('ai-next',!thread.todo&&'no-todo',seen&&!seen.next&&'is-arriving')}>
    {thread.todo&&<span className={cx('ai-todo',seen?.next&&!seen.todo&&'is-arriving')}><span className="todo-ring" aria-hidden="true"/><span className="ai-todo-text">{thread.todo}</span></span>}
@@ -216,9 +217,9 @@ function Sender({message}:{message:Message}){
  </>;
 }
 
-/** Takes the summary's place when Groq couldn't write one: the reason, a retry and, behind "?", what to do about it. */
-function SummaryFailure({error,retry}:{error:string;retry:()=>void}){
- const [open,setOpen]=useState(false);const [help,setHelp]=useState<HTMLButtonElement|null>(null);const problem=describeSummaryError(error);
+/** Takes the summary's place when the model couldn't write one: the reason, a retry and, behind "?", what to do about it. */
+function SummaryFailure({error,provider,retry}:{error:string;provider:SummaryProvider;retry:()=>void}){
+ const [open,setOpen]=useState(false);const [help,setHelp]=useState<HTMLButtonElement|null>(null);const problem=describeSummaryError(error,provider);
  return <div className="ai-failed" role="alert">
   <div className="ai-failed-text"><strong>Couldn’t summarize this email</strong><span>{problem.title}</span></div>
   <IconButton ref={setHelp} className={cx('ai-failed-help',open&&'is-open')} label="Why did this fail?" tooltip={!open} size="sm" icon={HelpCircle} iconSize={16} aria-haspopup="dialog" aria-expanded={open} onClick={()=>setOpen(value=>!value)}/>

@@ -7,7 +7,7 @@ import {AddAccountDialog} from './components/AddAccount';
 import {DomainCheck} from './components/DomainCheck';
 import {DeviceSync} from './components/DeviceSync';
 import {AiSettings} from './components/AiSettings';
-import {askServerSetting} from '../shared/ask';
+import {askModelLabel} from '../shared/ask';
 
 const categories=['General','Mail','Calendar','AI','Notifications','Accounts','Help & about'] as const;
 export type SettingsCategory=typeof categories[number];
@@ -67,23 +67,23 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
     <GroupRow label="Default email app" description="Open email links from other apps in Aplos."><Button variant="secondary" size="sm" iconRight={ArrowUpRight} loading={busy==='default'} onClick={()=>void run('default',async()=>{const result=await invoke<{success:boolean}>('system.defaultMail');if(!result.success)throw new Error('macOS could not change the default email app. Choose Aplos in your default mail app settings.');notify('Aplos registered for email links');})}>Set as default</Button></GroupRow>
    </Group>
    <Group title="Voice & audio">
-    <GroupRow label="Microphone" description="Record instructions and questions. Audio is transcribed by Groq.">{devices.length?<Select label="Microphone" value={s.microphone} options={[['','Default input'],...devices.map(d=>[d.deviceId,d.label||'Microphone'] as [string,string])]} onChange={microphone=>onChange({microphone})}/>:<Button variant="secondary" size="sm" icon={Mic} loading={busy==='microphone'} onClick={()=>void microphones()}>Allow access</Button>}</GroupRow>
+    <GroupRow label="Microphone" description={`Record instructions and questions. Audio is transcribed by ${askModelLabel(s.voiceModel,'voice').provider}.`}>{devices.length?<Select label="Microphone" value={s.microphone} options={[['','Default input'],...devices.map(d=>[d.deviceId,d.label||'Microphone'] as [string,string])]} onChange={microphone=>onChange({microphone})}/>:<Button variant="secondary" size="sm" icon={Mic} loading={busy==='microphone'} onClick={()=>void microphones()}>Allow access</Button>}</GroupRow>
     {toggle('Send sound','Play a gentle sound after sending.','sendSound')}
    </Group>
   </>}
   {tab==='Mail'&&<>
    <Group title="Triage & inbox">{choice('Triage direction','Arrow keys, swipe gestures and action positions.','triageDirection',[['done-right','Done → · ← Later'],['done-left','← Done · Later →']])}{toggle('Drag to triage','Drag an email or the open card sideways, or swipe with two fingers on your trackpad.','swipe')}</Group>
    <Group title="Actions in your mailbox">{choice('When I mark Done','Choose how your mail provider’s inbox follows along.','doneAction',mailboxActions)}{choice('When I mark Later','Aplos keeps it in your Later list.','laterAction',mailboxActions)}{choice('Low-importance Done','Keep background mail out of the way.','lowAction',mailboxActions)}</Group>
-   <Group title="Writing & sending">{choice('Default reply action','Choose who receives a reply by default.','defaultReply',[['reply','Reply'],['reply-all','Reply all']])}{choice('Undo send','Hold messages briefly before delivery.','undoSeconds',[['0','Off'],['5','5 seconds'],['10','10 seconds'],['20','20 seconds'],['30','30 seconds']])}{toggle('Auto-polish','Polish voice drafts with Groq before you review them.','autoPolish')}{toggle('Aplos footer','Add “Sent with Aplos Mail” to messages.','footer')}</Group>
+   <Group title="Writing & sending">{choice('Default reply action','Choose who receives a reply by default.','defaultReply',[['reply','Reply'],['reply-all','Reply all']])}{choice('Undo send','Hold messages briefly before delivery.','undoSeconds',[['0','Off'],['5','5 seconds'],['10','10 seconds'],['20','20 seconds'],['30','30 seconds']])}{toggle('Auto-polish','Polish voice drafts with your Drafts model before you review them.','autoPolish')}{toggle('Aplos footer','Add “Sent with Aplos Mail” to messages.','footer')}</Group>
    <Group title="Signature">{choice('Include signature','Use your own plain-text signature.','signatureMode',[['always','Every message'],['new','New messages & forwards'],['never','Never']])}<SignatureField value={s.signature} onSave={signature=>onChange({signature})}/></Group>
    <Group title="Reading">{toggle('Load remote images','Images can reveal that an email was opened.','remoteImages')}</Group>
    <Group title="Blocked senders">{state.blockedSenders.length?state.blockedSenders.map(email=><GroupRow key={email} label={email} description="Future messages are kept in Spam."><Button variant="secondary" size="sm" loading={busy==='unblock:'+email} onClick={()=>void run('unblock:'+email,()=>invoke('sender.unblock',{email}))}>Unblock</Button></GroupRow>):<p className="group-note">No blocked senders. Use a thread’s menu to block someone.</p>}</Group>
   </>}
   {tab==='Calendar'&&<>
-   <Group title="Plans from your mail">{toggle('Automatically add plans','Groq detects meetings, reservations and flights during sync. Review your calendar regularly.','autoCalendar')}{toggle('Show Google’s Gmail events','Include events Google has created from your mail.','gmailEvents')}</Group>
+   <Group title="Plans from your mail">{toggle('Automatically add plans','Your Plans model (Settings → AI) detects meetings, reservations and flights during sync. Review your calendar regularly.','autoCalendar')}{toggle('Show Google’s Gmail events','Include events Google has created from your mail.','gmailEvents')}</Group>
    <Group title="Calendar access">{accountRows}<p className="group-note">Google and Outlook accounts include their calendars. iCloud calendars use the same app-specific password. Aplos never sends invitations without your action.</p></Group>
   </>}
-  {tab==='AI'&&<AiSettings value={s.askModel} groqReady={capabilities.groq} servers={{ollama:s.askOllamaUrl,lmstudio:s.askLmStudioUrl,custom:s.askCustomUrl}} onChange={askModel=>onChange({askModel})} onServer={(id,url)=>onChange({[askServerSetting[id]]:url})}/>}
+  {tab==='AI'&&<AiSettings settings={s} groqReady={capabilities.groq} onChange={onChange}/>}
   {tab==='Notifications'&&<>
    <Group title="Desktop notifications">{toggle('Show notifications','Get a heads-up when new mail arrives.','notifications')}<GroupRow label="Test notification" description="Click the notification to return to Aplos."><Button variant="secondary" size="sm" loading={busy==='notification'} onClick={()=>void run('notification',()=>invoke('notification.test'))}>Send test</Button></GroupRow></Group>
    <Group title="For each account">{state.accounts.map(a=><GroupRow key={a.id} label={a.name} description={a.email}><Switch label={'Notifications for '+a.email} checked={s.accountNotifications[a.id]!==false} onChange={on=>onChange({accountNotifications:{...s.accountNotifications,[a.id]:on}})}/></GroupRow>)}</Group>
@@ -95,7 +95,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <div className="about-card"><span className={'app-icon large '+s.icon}>a</span><h2>Aplos Mail</h2><p>A little less inbox. A little more life.</p><span className="version">Version {capabilities.version} · {capabilities.desktop?'macOS desktop':'Browser preview'}</span></div>
    <Group title="A few useful things">
     <GroupRow label="Keyboard shortcuts" description="Make light work of your inbox."><Button variant="secondary" size="sm" icon={Keyboard} shortcut="?" onClick={shortcuts}>View shortcuts</Button></GroupRow>
-    <GroupRow label="AI connection" description="Groq runs summaries, polish and transcription. Ask can also use OpenRouter or OpenCode Go."><Badge tone={capabilities.groq?'green':'amber'}>{capabilities.groq?'Groq configured':'GROQ_API_KEY needed'}</Badge></GroupRow>
+    <GroupRow label="AI" description="Providers and the model each feature uses are in Settings → AI."><Button variant="secondary" size="sm" onClick={()=>showSettingsTab('AI')}>Open AI settings</Button></GroupRow>
     <GroupRow label="Updates" description="This personal build updates when you rebuild the app."><span className="muted small">Local development build</span></GroupRow>
     <GroupRow label="Export local data" description="Includes your cached mail and drafts. Keep it somewhere private."><Button variant="secondary" size="sm" icon={Download} loading={busy==='export'} onClick={()=>void run('export',async()=>{const data=await invoke<string>('data.export');await saveFile('aplos-export.json',btoa(unescape(encodeURIComponent(data))));notify('Export prepared');})}>Export</Button></GroupRow>
     <GroupRow label="Reset demo mail" description="Replace local demo accounts with fresh original examples."><Button variant="danger" size="sm" loading={busy==='reset'} onClick={async()=>{if(await confirmAction({title:'Reset demo mail?',message:'Demo accounts and demo drafts return to their original examples. Connected accounts are preserved.',confirmLabel:'Reset demo',danger:true}))void run('reset',()=>invoke('demo.reset'));}}>Reset demo</Button></GroupRow>
