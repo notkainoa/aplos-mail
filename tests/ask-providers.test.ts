@@ -373,3 +373,27 @@ test('each feature only takes its kind of model, and an older GROQ_MODEL carries
     await service.close();await rm(dataDir,{recursive:true,force:true});
   }
 });
+
+test('final review: JSON is read without altering it, stray braces are skipped, and long polishes fit their provider',async()=>{
+  // A pure JSON reply keeps "<think>" text inside it.
+  assert.deepEqual(jsonObject('{"html":"<p>Write <think>x</think> tags</p>"}'),{html:'<p>Write <think>x</think> tags</p>'});
+  assert.deepEqual(jsonObject('Use { to start. {"summary":"x"}'),{summary:'x'});
+  assert.deepEqual(jsonObject('He said "hi {there" {"summary":"x"}'),{summary:'x'});
+  // Polish budget stays at 4096 for emails that fit before (per-minute plans count it), and grows for long ones.
+  const budgets:number[]=[];
+  const writer=createWriter(async(_i,input:any,_s,options)=>{budgets.push(options!.maxTokens!);return {html:input.html};});
+  await writer.polish('<p>'+'a'.repeat(9_000)+'</p>');await writer.polish('<p>'+'a'.repeat(30_000)+'</p>');
+  assert.equal(budgets[0],4096);assert.ok(budgets[1]>4096&&budgets[1]<10_000);
+  // Ollama grows its context only for a JSON request that needs it; Ask keeps the fixed size.
+  const sent:any[]=[];
+  const ollama=createOllama('http://localhost:11434',{fetch:async(_url,init)=>{sent.push(JSON.parse(String(init!.body)));return new Response('{"message":{"content":"{}"},"done":true}\n');}});
+  await ollama.chat({model:'qwen3',json:true,maxTokens:9000,messages:[{role:'user',content:'x'.repeat(40_000)}]},{});
+  await ollama.chat({model:'qwen3',messages:[{role:'user',content:'x'.repeat(40_000)}]},{});
+  assert.ok(sent[0].options.num_ctx>16384);assert.equal(sent[0].options.num_predict,9000);
+  assert.equal(sent[1].options.num_ctx,16384);assert.equal(sent[1].options.num_predict,undefined);
+});
+
+test('a request over a per-minute plan limit (413) says so plainly',async()=>{
+  const groq=createGroq({apiKey:'k',fetch:async()=>new Response('{"error":{"message":"Request too large"}}',{status:413})});
+  await assert.rejects(groq.polish('<p>Hello</p>'),/too much text for Groq’s per-minute limit/);
+});

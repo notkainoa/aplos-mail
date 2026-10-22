@@ -32,6 +32,12 @@ export function createOllama(baseUrl:string,options:OllamaOptions={}):ChatProvid
     if(response.status===429)throw Object.assign(new Error('Ollama is busy. Please try again shortly.'),{code:'rate_limited'});
     throw new Error(`Ollama request failed (${response.status}). Please try again.`);
   }
+  /**
+   * Context for prompt and reply together. Ask keeps the fixed size; a JSON request (summary, draft, polish, plan) grows
+   * it only when it needs more, such as a long email to polish, since Ollama reloads the model whenever the size changes.
+   */
+  const base=options.contextTokens??16384;
+  const context=(chat:ChatRequest)=>chat.json?Math.min(32768,Math.max(base,Math.ceil(JSON.stringify(chat.messages).length/3)+(chat.maxTokens??2048))):base;
   return {
     available:true,
     async status(signal){
@@ -42,7 +48,7 @@ export function createOllama(baseUrl:string,options:OllamaOptions={}):ChatProvid
       // Ollama has no tool_choice; the final no-tools step simply sends no tools.
       const tools=chat.toolChoice==='none'?[]:chat.tools??[];
       const response=await call('api/chat',{body:{model:chat.model,messages:toOllama(chat.messages),stream:true,think:false,keep_alive:'10m',
-        options:{num_ctx:options.contextTokens??16384,temperature:0.3},...(chat.json?{format:'json'}:{}),...(tools.length?{tools:tools.map(t=>({type:'function',function:t}))}:{})}},signal);
+        options:{num_ctx:context(chat),temperature:0.3,...(chat.json&&chat.maxTokens?{num_predict:chat.maxTokens}:{})},...(chat.json?{format:'json'}:{}),...(tools.length?{tools:tools.map(t=>({type:'function',function:t}))}:{})}},signal);
       if(!response.body)throw new Error('Ollama returned an invalid response. Please try again.');
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',content='',usage:ChatTurn['usage'];
       const calls:ChatTurn['toolCalls']=[];

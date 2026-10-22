@@ -61,8 +61,9 @@ export function createWriter(json:JsonCall,name='The AI provider') {
       const slim=html.replace(/data:[a-z]+\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi,url=>`aplos-inline-${images.push(url)-1}-image`);
       // The result replaces the whole body, so a long email is refused rather than polished in part and cut short.
       if(slim.length>polishLimit) throw new Error('This email is too long to polish. Shorten it, or polish it yourself.');
-      // The reply is the whole email again, so its budget follows the email's size (HTML runs about 3 characters a token).
-      const maxTokens=Math.min(32_000,Math.max(4096,Math.ceil(slim.length/3)+2048));
+      // The reply is the whole email again, so a long email gets a bigger budget (about 4 characters a token). It stays at
+      // 4096 for emails that fit before, since per-minute plans (Groq's free tier) count the budget against their limit.
+      const maxTokens=Math.max(4096,Math.ceil(slim.length/4)+1024);
       const result=await json('Proofread email while preserving meaning, facts, recipients and formatting. Keep every tag attribute, link and image src exactly as given. Return {html:string}. Do not invent commitments.',{html:slim,instruction:instruction??'Improve spelling, grammar and clarity.'},signal,{maxTokens});
       const polished=typeof result.html==='string'?result.html:'';
       if(!polished.trim()) throw new Error(`${name} returned an empty email. Please try again.`);
@@ -90,11 +91,14 @@ export function createWriter(json:JsonCall,name='The AI provider') {
  * balanced `{…}` from the last back.
  */
 export function jsonObject(content:string,name='The AI provider'):Record<string,unknown> {
+  const read=(candidate:string)=>{try{const parsed=JSON.parse(candidate.trim());return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed as Record<string,unknown>:undefined;}catch{return undefined;}};
+  // A reply that is already JSON is taken as is, so text inside it (even "<think>") is never altered.
+  const whole=read(content);if(whole)return whole;
   const text=content.replace(/<think>[\s\S]*?<\/think>/gi,'').trim();
   const fenced=/```(?:json)?\s*([\s\S]*?)```/i.exec(text)?.[1];
-  for(const candidate of [text,...(fenced?[fenced]:[]),...balancedObjects(text).reverse()]){
-    try{const parsed=JSON.parse(candidate.trim());if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))return parsed as Record<string,unknown>;}catch{/* Try the next candidate. */}
-  }
+  for(const candidate of [text,...(fenced?[fenced]:[]),...balancedObjects(text).reverse()]){const value=read(candidate);if(value)return value;}
+  // A stray "{" in the prose can hide the object from the scan above, so try again from each brace, earliest first.
+  for(let at=text.indexOf('{');at>=0;at=text.indexOf('{',at+1)){const value=read(balancedObjects(text.slice(at))[0]??'');if(value)return value;}
   throw new Error(`${name} returned an invalid response. Please try again.`);
 }
 /** Top-level `{…}` spans, skipping braces inside JSON strings. */

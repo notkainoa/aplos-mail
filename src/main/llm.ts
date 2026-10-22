@@ -20,6 +20,7 @@ export async function providerRequest(target:ProviderTarget,path:string,body:Bod
   }
   if(response.ok) return response;
   if(response.status===401||response.status===403) throw new Error(`${name} rejected the API key. Check ${env}.`);
+  if(response.status===413) throw new Error(`This is too much text for ${name}’s per-minute limit on your plan. Try a shorter email, or choose another model in Settings → AI.`);
   if(response.status===402) throw new Error(`${name} has no credits left on this account. Add credits or choose another model in Settings → AI.`);
   if(response.status===429) {
     // Ask waits out a short limit window; other callers just report it. A long wait means a daily or plan quota.

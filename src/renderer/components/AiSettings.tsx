@@ -151,9 +151,11 @@ function ModelPicker({feature,label,providers,value,onChange}:{feature:AiFeature
   useEffect(()=>{if(open)listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({block:'nearest'});},[active,open]);
   // Focus moves into the search the moment it mounts, so typing searches instead of reaching the app's shortcuts.
   // The surface stays hidden until it is positioned, so focus is retried for a few frames until it takes.
+  const openRef=useRef(open);openRef.current=open;
   const searchRef=useCallback((el:HTMLInputElement|null)=>{
     search.current=el;let tries=0;
-    const focus=()=>{if(!el?.isConnected||document.activeElement===el)return;el.focus({preventScroll:true});if(document.activeElement!==el&&++tries<10)requestAnimationFrame(focus);};
+    // Stops once the picker closes, so a late retry never pulls focus into a closing list.
+    const focus=()=>{if(!openRef.current||!el?.isConnected||document.activeElement===el)return;el.focus({preventScroll:true});if(document.activeElement!==el&&++tries<10)requestAnimationFrame(focus);};
     focus();
   },[]);
   function choose(o:Option){onChange(`${o.provider}:${o.id}`);setOpen(false);trigger.current?.focus({preventScroll:true});}
