@@ -49,6 +49,21 @@ function keepImages(previous:string,next:string){
   for(const image of Array.from(oldDocument.images)){const source=image.getAttribute('src');if(source&&!sources.has(source)){const paragraph=nextDocument.createElement('p');paragraph.append(nextDocument.importNode(image,true));nextDocument.body.append(paragraph);sources.add(source);}}
   return DOMPurify.sanitize(nextDocument.body.innerHTML);
 }
+/** The red edge while dictating; it brightens with the voice, written straight to the element so React doesn't render every frame. */
+function VoiceGlow({active,level}:{active:boolean;level:()=>number}){
+  const glow=useRef<HTMLSpanElement>(null);const read=useRef(level);read.current=level;
+  useEffect(()=>{
+    let frame=0;let shown=Number(glow.current?.style.opacity||0);const still=reducedMotion();
+    const draw=()=>{
+      const target=active?still?.8:.45+read.current()*.55:0;
+      shown+=(target-shown)*(active?.2:.14);
+      if(glow.current)glow.current.style.opacity=shown<.01&&!active?'0':shown.toFixed(3);
+      if(active||shown>=.01)frame=requestAnimationFrame(draw);
+    };
+    frame=requestAnimationFrame(draw);return()=>cancelAnimationFrame(frame);
+  },[active]);
+  return <span ref={glow} className="compose-glow" aria-hidden="true"/>;
+}
 export function Compose({draft,accounts,settings,thread,close,notify,popout,inline,fresh,closing,holdToTalk,onChange,contacts=[],suggestion}:Props){
   const [form,setForm]=useState<Draft>(draft);const current=useRef(form);const editor=useRef<HTMLDivElement>(null);const file=useRef<HTMLInputElement>(null);const imageInput=useRef<HTMLInputElement>(null);
   const [expanded,setExpanded]=useState(!!(draft.cc||draft.bcc));const [saved,setSaved]=useState(true);const [busy,setBusy]=useState('');const [error,setError]=useState(draft.sendError||'');const [suggested,setSuggested]=useState(suggestion);
@@ -203,7 +218,7 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
   function bodyEmpty(html=editor.current?.innerHTML??current.current.html){return !plain(html).trim()&&!/<img/i.test(html);}
   function blank(){const d=current.current;return bodyEmpty()&&!d.attachments.length&&(d.mode!=='new'||(!d.to.trim()&&!d.cc.trim()&&!d.bcc.trim()&&!d.subject.trim()));}
   // Holding Space anywhere in the composer (or the talk button under it) dictates; a quick tap still does what Space would.
-  type Hold={timer?:ReturnType<typeof setTimeout>;recording:boolean;source:'key'|'pointer';target?:HTMLElement};
+  type Hold={timer?:ReturnType<typeof setTimeout>;recording:boolean;source:'key'|'pointer';target?:HTMLElement;cancelled?:boolean};
   const hold=useRef<Hold|null>(null);
   useEffect(()=>{
     if(holdToTalk?.()){hold.current={recording:true,source:'key'};void voice.start();}
@@ -221,13 +236,17 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
   }
   function release(tap:boolean){
     const state=hold.current;if(!state)return;hold.current=null;clearTimeout(state.timer);
+    if(state.cancelled)return;
     if(state.recording)voice.stop();
     else if(tap&&state.source==='pointer')void voice.start();
     else if(tap)tapSpace(state.target);
   }
+  /** Esc drops the recording (or its transcription) instead of closing the draft. The held key stays claimed until it comes up. */
+  function cancelVoice(){const state=hold.current;if(state){clearTimeout(state.timer);state.cancelled=true;}voice.cancel();}
   useEffect(()=>{
     const down=(event:KeyboardEvent)=>{
       const state=hold.current;
+      if(event.key==='Escape'&&((state&&!state.cancelled)||voice.isActive())&&!dialogOpen()){event.preventDefault();event.stopImmediatePropagation();cancelVoice();return;}
       if(event.key!==' '){
         // Fast typing presses the next key before Space comes up: type the space first so the letters stay in order.
         if(state?.source==='key'&&!state.recording)release(true);
@@ -290,11 +309,12 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
   // Focusing the editor only scrolls its first line into view; reveal the whole reply card under the thread.
   const rootRef=useRef<HTMLDivElement>(null);
   useEffect(()=>{if(!inline)return;const frame=requestAnimationFrame(()=>rootRef.current?.scrollIntoView({block:'nearest',behavior:reducedMotion()?'auto':'smooth'}));return()=>cancelAnimationFrame(frame);},[]);
-  return <div ref={rootRef} className={rootClass} onMouseDown={e=>{if(e.target===e.currentTarget&&!popout&&!inline)void finish('close');}}><section className={cx('composer',dragging&&'is-dropping',nudged&&'is-nudged')} role={inline?'region':'dialog'} aria-modal={inline?undefined:true} aria-label={inline?'Reply':'Compose email'}
+  return <div ref={rootRef} className={rootClass} onMouseDown={e=>{if(e.target===e.currentTarget&&!popout&&!inline)void finish('close');}}><section className={cx('composer',dragging&&'is-dropping',nudged&&'is-nudged',listening&&'is-listening')} role={inline?'region':'dialog'} aria-modal={inline?undefined:true} aria-label={inline?'Reply':'Compose email'}
     onDragEnter={e=>{if(!hasFiles(e))return;e.preventDefault();dragDepth.current++;setDragging(true);}}
     onDragOver={e=>{if(!hasFiles(e))return;e.preventDefault();e.dataTransfer.dropEffect='copy';}}
     onDragLeave={e=>{if(!hasFiles(e))return;dragDepth.current=Math.max(0,dragDepth.current-1);if(!dragDepth.current)setDragging(false);}}
     onDrop={e=>{if(!hasFiles(e))return;e.preventDefault();dragDepth.current=0;setDragging(false);receive(Array.from(e.dataTransfer.files),!!editor.current?.contains(e.target as Node));}}>
+    <VoiceGlow active={listening} level={voice.level}/>
     {dragging&&<div className="compose-drop" aria-hidden="true"><Paperclip size={20}/><span>Drop to attach<small>Images dropped in the message appear inline</small></span></div>}
     <header className="compose-header"><div className="title-with-icon">{inline&&thread&&form.mode!=='forward'?<>
         <Button variant="ghost" className={cx('mode-button',modeMenu.open&&'is-open')} aria-label="Reply type" aria-haspopup="menu" aria-expanded={modeMenu.open} icon={form.mode==='reply-all'?ReplyAll:Reply} iconRight={ChevronDown} onClick={modeMenu.toggle}>{title}</Button>
@@ -307,7 +327,8 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
         {!popout&&<IconButton label="Open in separate window" icon={ArrowUpRight} iconSize={18} onClick={()=>void finish('popout')} disabled={!!busy}/>}
         <IconButton label="Discard draft" icon={Trash2} iconSize={17} onClick={async()=>{if(blank()||await confirmAction({title:'Discard this draft?',message:'The draft and its attachments will be deleted.',confirmLabel:'Discard',danger:true}))await finish('discard');}}/>
         {popout&&<IconButton label="Close" shortcut="Esc" icon={X} iconSize={18} onClick={()=>void finish('close')}/>}
-        <Button variant="primary" className={cx('send-button',form.to.trim()&&'ready')} icon={Send} loading={busy==='send'} tooltip={{content:form.to.trim()?'Send':'Add a recipient to send',shortcut:'⌘ ↵'}} onClick={()=>void finish('send')} disabled={sendDisabled}>Send</Button>
+        {listening?<Button variant="primary" className="send-button is-recording" tooltip={{content:'Finish recording',detail:'Esc to cancel'}} onClick={voice.stop}><LevelMeter level={voice.level} bars={4}/>Done</Button>
+        :<Button variant="primary" className={cx('send-button',form.to.trim()&&'ready')} icon={Send} loading={busy==='send'||voice.busy} tooltip={{content:form.to.trim()?'Send':'Add a recipient to send',shortcut:'⌘ ↵'}} onClick={()=>void finish('send')} disabled={sendDisabled}>Send</Button>}
       </div></header>
     <div className="compose-fields">
       <div className="field-line from-line"><label htmlFor="compose-from">From</label><button type="button" id="compose-from" className={cx('from-display',fromMenu.open&&'is-open')} aria-haspopup="menu" aria-expanded={fromMenu.open} disabled={!!busy} onClick={fromMenu.toggle}>{senderAvatar(sendingAccount,senderName||fromEmail)}<span className="from-name">{senderName}</span><span className="from-email">{fromEmail}</span><ChevronsUpDown size={13}/></button>
@@ -326,7 +347,6 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
       if(!await confirmAction({title:'Send this message again?',message:'If the earlier attempt was delivered, recipients will get two copies. Check Sent mail first if you can.',confirmLabel:'Send anyway',danger:true}))return;
       resend.current=true;await finish('send');resend.current=false;
     }}>Send anyway</Button>:undefined}>{error}</Notice>}
-    {(listening||voice.busy)&&<div className="compose-voice compose-strip" role="status">{listening?<><LevelMeter level={voice.level}/><span>{voice.preparing?'Getting the microphone ready…':hold.current?`Listening · release ${hold.current.source==='key'?'Space ':''}to finish`:'Listening…'}</span><Button variant="ghost" size="sm" onClick={voice.stop}>Finish</Button><Button variant="ghost" size="sm" onClick={()=>{hold.current=null;voice.cancel();}}>Cancel</Button></>:<><Spinner size={14}/><span>Transcribing with {askModelLabel(settings.voiceModel,'voice').provider}…</span></>}</div>}
     {(busy==='polish'||busy==='draft')&&<div className="compose-ai compose-strip"><Spinner size={15}/><span>{busy==='polish'?'Polishing…':'Writing…'}</span><Button variant="ghost" size="sm" onClick={()=>{stopWork();working('');}}>Cancel</Button></div>}
     {showLink&&<div className="link-editor compose-strip"><Link size={15}/><input autoFocus aria-label="Link URL" placeholder="https://…" value={link} onChange={e=>setLink(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();insertLink();}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();setShowLink(false);}}}/><Button variant="ghost" size="sm" disabled={!link.trim()} onClick={insertLink}>Insert link</Button><Button variant="ghost" size="sm" onClick={()=>setShowLink(false)}>Cancel</Button></div>}
     <footer className="compose-footer"><div className="actions compose-tools">
@@ -350,7 +370,9 @@ export function Compose({draft,accounts,settings,thread,close,notify,popout,inli
       <Button variant="text" size="sm" icon={Paperclip} className="attach-button" loading={busy==='attach'} onClick={()=>file.current?.click()}>Attach</Button>
     </div></footer>
     <input type="file" ref={file} hidden multiple onChange={e=>{void attach(e.target.files);e.target.value='';}}/><input type="file" ref={imageInput} hidden accept="image/*" onChange={e=>{void attach(e.target.files,true);e.target.value='';}}/>
-  </section>{!popout&&!inline&&<button type="button" className={cx('compose-hint',listening&&'is-listening')} disabled={!!busy&&!listening}
+  </section>{!popout&&!inline&&<button type="button" className={cx('compose-hint',listening&&'is-listening')} disabled={!!busy&&!listening} aria-live="polite"
     onMouseDown={e=>e.preventDefault()} onPointerDown={e=>{if(e.button!==0||hold.current)return;if(voice.isActive())voice.stop();else if(!operation.current&&!terminal.current)press('pointer');}} onClick={e=>{if(e.detail===0)voice.toggle();}}>
-    {listening?hold.current?.source==='key'?<>Release<Kbd>Space</Kbd>to finish</>:hold.current?'Release to finish':'Click to finish':<>Hold<Kbd>Space</Kbd>to talk</>}</button>}</div>;
+    <span className="compose-hint-text" key={listening?'listening':voice.busy?'busy':'idle'}>{listening?<>{hold.current?.source==='key'?<>Release<Kbd>Space</Kbd>to transcribe</>:hold.current?'Release to transcribe':'Click to transcribe'}<span className="compose-hint-gap"/><Kbd>Esc</Kbd>to cancel</>
+      :voice.busy?<><Spinner size={14}/>Transcribing with {askModelLabel(settings.voiceModel,'voice').provider}…</>
+      :<>Hold<Kbd>Space</Kbd>to talk</>}</span></button>}</div>;
 }
