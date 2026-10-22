@@ -240,8 +240,8 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
     :null;
   // In a chat the field moves to the bottom, under the conversation; New chat and Recent chats sit beside the dock's tabs.
   const tools=toolsSlot&&open&&createPortal(<>
-    {chat&&<IconButton size="sm" label="New chat" shortcut="⌘ N" icon={Plus} disabled={busy} onClick={newChat}/>}
     {conversations.length>0&&<IconButton size="sm" label="Recent chats" icon={History} active={recentMenu.open} disabled={busy} onClick={recentMenu.toggle}/>}
+    {chat&&<IconButton size="sm" label="New chat" shortcut="⌘ N" icon={Plus} disabled={busy} onClick={newChat}/>}
     <Menu open={recentMenu.open} anchor={recentMenu.anchor} onClose={recentMenu.close} placement="bottom-start" label="Recent chats" className="ask-recent-menu"
       groups={[[...conversations].reverse().map(c=>({label:c.title,checked:c.id===id,onSelect:()=>openChat(c.id)}))]}/>
   </>,toolsSlot);
