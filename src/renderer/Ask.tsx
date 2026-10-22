@@ -1,6 +1,7 @@
 import {memo,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import {CalendarDays,Clock,CornerDownLeft,FileText,Gear,History,Home,Keyboard,MessageCircle,Plus,Search,Square,SquarePen} from './icons';
-import {Avatar,Button,Kbd,Keys,Notice,Spinner,Tooltip,confirmAction,cx,dialogOpen,type Icon} from './ui';
+import {createPortal} from 'react-dom';
+import {CalendarDays,Clock,CornerDownLeft,FileText,Gear,History,Home,Keyboard,MessageCircle,Plus,Search,Square,SquarePen,X} from './icons';
+import {Avatar,IconButton,Kbd,Keys,Menu,Notice,Spinner,Tooltip,confirmAction,cx,dialogOpen,useMenu,type Icon} from './ui';
 import type {Account,AskStep,CalendarEvent,Conversation,Draft,Settings,Thread} from '../shared/types';
 import {bridge,dateLabel,invoke,uid} from './bridge';
 import {askModelLabel} from '../shared/ask';
@@ -21,10 +22,12 @@ type Props={open:boolean;onOpen:()=>void;onClose:()=>void;onSearch:(query:string
   conversations:Conversation[];threads:Thread[];events:CalendarEvent[];accounts:Account[];contacts:Contact[];accountId:string;settings:Settings;examples:string[];
   onThread:(id:string)=>void;onDraft:(draft:Partial<Draft>)=>void;notify:(t:string)=>void;currentDraft:()=>Draft|undefined;hasDraft:boolean;onApplyDraft:(proposal:Partial<Draft>)=>void;onEditEvent:(event:Partial<CalendarEvent>)=>void;
   /** What the user is looking at, so "summarize this" needs no search. */
-  currentContext:()=>{view:string;threadId?:string;selectedIds?:string[]}};
+  currentContext:()=>{view:string;threadId?:string;selectedIds?:string[]};
+  /** The dock header beside the Ask/Calendar tabs, where Ask puts New chat and Recent chats. */
+  toolsSlot?:HTMLElement|null};
 /** The answer being written: streamed text, tool steps and the sources cited so far. */
 type Live={text:string;steps:AskStep[];cites:string[]};
-type Item={key:string;group?:string;icon:React.ReactNode;label:React.ReactNode;detail?:React.ReactNode;keys?:string;run:()=>void};
+type Item={key:string;group?:string;icon?:React.ReactNode;remove?:()=>void;label:React.ReactNode;detail?:React.ReactNode;keys?:string;run:()=>void};
 const commands:{id:string;label:string;icon:Icon;keys?:string;words?:string}[]=[
   {id:'compose',label:'Compose',icon:SquarePen,keys:'C',words:'new email write'},
   {id:'home',label:'Go to Home',icon:Home,keys:'⌃ 1',words:'inbox'},
@@ -45,7 +48,8 @@ const typingIn=(el:HTMLElement)=>['INPUT','TEXTAREA','SELECT'].includes(el.tagNa
 type Hold={timer?:ReturnType<typeof setTimeout>;recording:boolean;source:'key'|'field'|'pointer';key:string};
 
 /** The docked Ask panel. Tap A to type, hold A anywhere (even in Ask's field) or the talk chip to talk and release to ask; nothing acts without a click. */
-export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conversations,threads,events,accounts,contacts,accountId,settings,examples,onThread,onDraft,notify,currentDraft,hasDraft,onApplyDraft,onEditEvent,currentContext}:Props){
+export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conversations,threads,events,accounts,contacts,accountId,settings,examples,onThread,onDraft,notify,currentDraft,hasDraft,onApplyDraft,onEditEvent,currentContext,toolsSlot}:Props){
+  const recentMenu=useMenu();
   const [id,setId]=useState<string|undefined>();const [input,setInput]=useState('');const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [pending,setPending]=useState('');
   const [active,setActive]=useState(-1);const [held,setHeld]=useState<''|'key'|'pointer'>('');const [saved,setSaved]=useState<Record<string,string>>({});const [live,setLive]=useState<Live|undefined>();const [opened,setOpened]=useState(loadOpened);
   const field=useRef<HTMLTextAreaElement>(null);const panel=useRef<HTMLElement>(null);const scroller=useRef<HTMLDivElement>(null);const conversation=conversations.find(c=>c.id===id);
@@ -91,6 +95,8 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
     setOpened(prev=>{const next=[threadId,...prev.filter(x=>x!==threadId)].slice(0,openedLimit);localStorage.setItem(openedKey,JSON.stringify(next));return next;});
     onThread(threadId);
   }
+  function openChat(chatId:string){setId(chatId);setInput('');field.current?.focus();}
+  function removeChat(chatId:string){void invoke('conversation.delete',{id:chatId}).then(()=>{if(mounted.current&&id===chatId)setId(undefined);}).catch(e=>notify(e.message));}
   async function apply(proposal:Partial<Draft>,index:number){
     const fields:Partial<Draft>={};
     for(const key of ['to','cc','bcc','subject','html'] as const){const value=proposal[key];if(typeof value==='string'&&(key==='html'||value.trim()))fields[key]=value;}
@@ -168,7 +174,7 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
     if(conversation||busy||voiceBusy)return [];
     // First time, examples; after that, recent chats and the emails last opened from Ask.
     if(!query)return !conversations.length&&!recentMail.length?suggestions.map((example,i):Item=>({key:'ex'+i,group:'Try asking',icon:<MessageCircle size={15}/>,label:example,run:()=>void askLatest.current(example)})):[
-      ...[...conversations].reverse().slice(0,3).map((c):Item=>({key:'c'+c.id,group:'Recent',icon:<History size={15}/>,label:c.title,run:()=>{setId(c.id);setInput('');field.current?.focus();}})),
+      ...[...conversations].reverse().slice(0,3).map((c):Item=>({key:'c'+c.id,group:'Recent',label:c.title,run:()=>openChat(c.id),remove:()=>removeChat(c.id)})),
       ...recentMail.map(mailItem('Last searched')),
     ];
     const words=query.toLowerCase().split(/\s+/).filter(Boolean);const terms=query.split(/\s+/).filter(w=>w.length>1);
@@ -205,11 +211,14 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
   const body=items.length?<div className="ask-list" role="listbox" aria-label={query?'Matches':'Suggestions'}>
       {items.map((item,i)=><div key={item.key} className="ask-item-wrap">
         {item.group&&item.group!==items[i-1]?.group&&<p className="ask-group">{item.group}</p>}
-        <button role="option" aria-selected={i===active} tabIndex={-1} className={cx('ask-item',i===active&&'is-active',item.key==='ask'&&'is-ask')} onPointerMove={()=>{if(active!==i)setActive(i);}} onMouseDown={e=>e.preventDefault()} onClick={item.run}>
-          <span className="ask-item-icon">{item.icon}</span><span className="ask-item-label">{item.label}</span>
-          {item.detail&&<span className="ask-item-detail">{item.detail}</span>}
-          {i===active?<Keys combo="↵" size="sm"/>:item.keys&&<Keys combo={item.keys} size="sm" className="ask-item-keys"/>}
-        </button></div>)}
+        <div className={cx('ask-item-row',item.remove&&'has-remove')}>
+          <button role="option" aria-selected={i===active} tabIndex={-1} className={cx('ask-item',i===active&&'is-active',item.key==='ask'&&'is-ask')} onPointerMove={()=>{if(active!==i)setActive(i);}} onMouseDown={e=>e.preventDefault()} onClick={item.run}>
+            {item.icon&&<span className="ask-item-icon">{item.icon}</span>}<span className="ask-item-label">{item.label}</span>
+            {item.detail&&<span className="ask-item-detail">{item.detail}</span>}
+            {i===active?<Keys combo="↵" size="sm"/>:item.keys&&<Keys combo={item.keys} size="sm" className="ask-item-keys"/>}
+          </button>
+          {item.remove&&<IconButton size="xs" className="ask-item-remove" label="Remove from Recent" tooltip={false} icon={X} tabIndex={-1} onMouseDown={e=>e.preventDefault()} onClick={item.remove}/>}
+        </div></div>)}
       {!!query&&!matches.length&&<p className="ask-empty">No mail matches that yet.</p>}
     </div>
     :chat?<div className="ask-chat">{conversation?.messages.map((m,i)=><div key={i} className={'ask-msg '+m.role}>
@@ -229,7 +238,14 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
         :<AskSteps steps={live?.steps??[]} live/>}
       </div></>}</div>
     :null;
-  return <aside ref={panel} className="ask-panel" aria-label="Ask Aplos" onKeyDown={keys}>
+  // In a chat the field moves to the bottom, under the conversation; New chat and Recent chats sit beside the dock's tabs.
+  const tools=toolsSlot&&open&&createPortal(<>
+    {chat&&<IconButton size="sm" label="New chat" shortcut="⌘ N" icon={Plus} disabled={busy} onClick={newChat}/>}
+    {conversations.length>0&&<IconButton size="sm" label="Recent chats" icon={History} active={recentMenu.open} disabled={busy} onClick={recentMenu.toggle}/>}
+    <Menu open={recentMenu.open} anchor={recentMenu.anchor} onClose={recentMenu.close} placement="bottom-start" label="Recent chats" className="ask-recent-menu"
+      groups={[[...conversations].reverse().map(c=>({label:c.title,checked:c.id===id,onSelect:()=>openChat(c.id)}))]}/>
+  </>,toolsSlot);
+  return <aside ref={panel} className={cx('ask-panel',chat&&'is-chat')} aria-label="Ask Aplos" onKeyDown={keys}>{tools}
     <div className="ask-head">
       <div className="ask-column">
         <div className={cx('ask-field',recording&&'is-recording',busy&&'is-busy')}>
@@ -245,7 +261,6 @@ export const Ask=memo(function Ask({open,onOpen,onClose,onSearch,onCommand,conve
         {recording&&<p className="ask-hint is-recording" role="status">{held==='key'?<>Release <Kbd size="sm">A</Kbd> to ask</>:held==='pointer'?<>Release to ask</>:<>Recording, press Done to finish</>}<span>·</span><Kbd size="sm">Esc</Kbd> to cancel</p>}
         {transcribing&&<p className="ask-hint" role="status">Transcribing with Groq…</p>}
         {error&&<Notice className="ask-notice">{error}</Notice>}
-        {chat&&!query&&<div className="ask-tools"><Button variant="text" size="sm" icon={Plus} disabled={busy} shortcut="⌘ N" onClick={newChat}>New chat</Button></div>}
       </div>
     </div>
     <div ref={scroller} className="ask-scroll">{body}</div>

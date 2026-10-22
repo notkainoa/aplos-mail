@@ -46,6 +46,9 @@
 }
 .dock-head { flex: none; height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px 0 12px; -webkit-app-region: drag; }
 .dock-head > * { -webkit-app-region: no-drag; }
+.dock-head-start { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dock-head-tools { display: flex; align-items: center; gap: 2px; }
+.ask-recent-menu { max-width: 300px; }
 .dock-tabs.ui-tabs-segmented .ui-tab { width: auto; padding: 0 12px; font-size: var(--text-sm); font-weight: 500; letter-spacing: var(--tracking-sm); color: var(--dim); }
 .dock-tabs.ui-tabs-segmented .ui-tab.is-selected { color: var(--ink); }
 .dock-body { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: fade var(--dur-base) var(--ease); }
@@ -109,9 +112,9 @@
 .ask-hint .ui-kbd { color: inherit; }
 .ask-hint.is-recording .ui-kbd { background: color-mix(in srgb, var(--red) 15%, transparent); }
 .ask-notice { margin: 0 4px; animation: slide-down var(--dur-base) var(--ease-out-strong); }
-.ask-tools { display: flex; align-items: center; gap: 14px; padding: 0 8px; min-height: 22px; }
-.ask-tools .ui-btn-text { color: var(--dim); }
-.ask-tools .ui-btn-text:hover:not(:disabled) { color: var(--ink); }
+/* In a chat the field sits at the bottom, under the conversation. */
+.ask-panel.is-chat .ask-head { order: 2; padding: 8px 12px 0; -webkit-app-region: no-drag; }
+.ask-panel.is-chat .ask-footnote { order: 3; }
 
 /* ---------- Body ---------- */
 
@@ -132,6 +135,12 @@
 }
 .ask-item:hover, .ask-item.is-active { background: var(--item-hover); color: var(--ink); }
 .ask-item:active { transform: scale(.995); }
+/* Recent chats carry a remove button at the trailing edge, outside the row's own button. */
+.ask-item-row { position: relative; }
+.ask-item-row.has-remove > .ask-item { padding: 0 36px 0 10px; }
+.ask-item-row.has-remove:hover > .ask-item { background: var(--item-hover); color: var(--ink); }
+.ask-item-remove { position: absolute; right: 6px; top: 50%; translate: 0 -50%; color: var(--faint); }
+.ask-item-remove:hover { color: var(--ink); }
 .ask-item-icon { width: 22px; display: flex; align-items: center; justify-content: center; flex: none; color: var(--dim); }
 .ask-item.is-active .ask-item-icon { color: var(--ink); }
 .ask-item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
