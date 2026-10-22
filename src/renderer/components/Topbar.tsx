@@ -1,5 +1,5 @@
 import {memo} from 'react';
-import {ArrowLeft,PanelLeft,Search,SquarePen} from '../icons';
+import {ArrowLeft,CalendarDays,PanelLeft,Search,SquarePen} from '../icons';
 import {Button,IconButton,Keys,Tooltip} from '../ui';
 
 type TopbarProps={
@@ -7,18 +7,19 @@ type TopbarProps={
   showSidebarButton:boolean;showBack:boolean;showActions:boolean;
   /** The Ask pill, shown while the Ask panel is closed. */ showAsk:boolean;
   composeBusy:boolean;
-  showSidebar:()=>void;back:()=>void;compose:()=>void;ask:()=>void;
+  showSidebar:()=>void;back:()=>void;compose:()=>void;ask:()=>void;calendar:()=>void;
 };
 
-export const Topbar=memo(function Topbar({menu,showSidebarButton,showBack,showActions,showAsk,composeBusy,showSidebar,back,compose,ask}:TopbarProps){
+export const Topbar=memo(function Topbar({menu,showSidebarButton,showBack,showActions,showAsk,composeBusy,showSidebar,back,compose,ask,calendar}:TopbarProps){
   return <div className="topbar">
     <div className="topbar-left">
       {menu}
       {!menu&&showSidebarButton&&<IconButton label="Show sidebar" shortcut="[" icon={PanelLeft} onClick={showSidebar}/>}
       {showBack&&<IconButton label="Back to list" shortcut="Esc" icon={ArrowLeft} onClick={back}/>}
+      {showActions&&<Button variant="ghost" className="compose-top" icon={SquarePen} shortcut="C" disabled={composeBusy} tooltip={{content:'New email'}} onClick={compose}>Compose</Button>}
     </div>
     {showActions&&<div className="topbar-actions">
-      <Button variant="ghost" className="compose-top" icon={SquarePen} shortcut="C" disabled={composeBusy} tooltip={{content:'New email'}} onClick={compose}>Compose</Button>
+      {showAsk&&<IconButton label="Calendar" shortcut="⇧ A" icon={CalendarDays} onClick={calendar}/>}
       {showAsk&&<Tooltip content="Ask me anything" detail="Tap A to type · hold A to talk" shortcut="⌘ J"><button className="ask-pill" aria-label="Show Ask" onClick={ask}><Search size={15}/><span>Ask</span><Keys combo="A" size="sm"/><small>Hold to talk</small></button></Tooltip>}
     </div>}
   </div>;
