@@ -308,3 +308,23 @@ test('background sorting waits for a local app that is not running, and runs onc
     assert.equal(calls,1);assert.equal(started.threads.find(t=>t.id==='local-2')!.summary,'Lunch on Friday');
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
 });
+
+test('new Spam is summarized, but its triage fields stay put and no plans are added from it',async()=>{
+  const dataDir=await mkdtemp(join(tmpdir(),'aplos-spam-ai-'));
+  const base=await createGoogle({dataDir,clientId:''});
+  let extracted=0;
+  const spam={id:'spam-1',accountId:'google-spam',subject:'You won',summary:'Snippet',messages:[],date:'2026-10-16T12:00:00Z',unread:true,status:'spam' as const,importance:'low' as const,bookmarked:false,replyStatus:'none' as const,labels:['SPAM']};
+  const google={...base,available:true,connect:async()=>({id:'google-spam',name:'Test',email:'spam@example.com',color:'#123456',provider:'google' as const,connected:true,calendarConnected:true}),
+    sync:async()=>({threads:[structuredClone(spam)],flags:[],removed:[],reset:true}),updateThread:async()=>{},getSendAs:async()=>[],listEvents:async()=>[]};
+  const groq={...createGroq({apiKey:''}),available:true,
+    summarize:async()=>({summary:'Claims a prize; likely a scam',importance:'important' as const,replyStatus:'needs-reply' as const,todo:'Claim prize'}),
+    extractEvents:async()=>{extracted++;return [];}};
+  const service=await createService({dataDir,google,groq});
+  try{
+    await service.invoke('settings.update',{patch:{autoCalendar:true}});
+    const state=await service.invoke('account.connect') as AppState,t=state.threads.find(t=>t.id==='spam-1')!;
+    assert.equal(t.status,'spam');assert.equal(t.summary,'Claims a prize; likely a scam');
+    assert.equal(t.importance,'low');assert.equal(t.replyStatus,'none');assert.equal(t.todo,undefined);
+    assert.equal(extracted,0);
+  }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
+});
