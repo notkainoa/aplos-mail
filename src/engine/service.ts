@@ -466,8 +466,8 @@ export async function createEngineService(options:EngineOptions) {
     if(ops.length)kick();
     return compact?{epoch,rev}:clone(state);
   }
-  /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. */
-  async function classifyIncoming(fresh:Thread[],a:Account,refresh:Set<string>=new Set()):Promise<string[]> {
+  /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. Threads in `summaryOnly` (Spam) take just the summary. */
+  async function classifyIncoming(fresh:Thread[],a:Account,refresh:Set<string>=new Set(),summaryOnly:Set<string>=new Set()):Promise<string[]> {
     if(!fresh.length||!groq.available)return [];
     let cursor=0,classificationFailures=0,calendarFailures=0,cancelled=false;
     try{
@@ -486,7 +486,7 @@ export async function createEngineService(options:EngineOptions) {
               // The suggested action follows the latest mail, like the summary; groq.ts already validated it against the thread.
               classified.action=result.action;
               change(s=>{const current=s.threads.find(t=>t.id===candidate.id);if(!current)return;
-                for(const key of refresh.has(candidate.id)?['replyStatus','summary','action'] as const:['importance','replyStatus','todo','dueDate','summary','action'] as const){
+                for(const key of summaryOnly.has(candidate.id)?['summary'] as const:refresh.has(candidate.id)?['replyStatus','summary','action'] as const:['importance','replyStatus','todo','dueDate','summary','action'] as const){
                   // An edit made while Groq was running always wins over its response.
                   if(JSON.stringify(current[key])===JSON.stringify(before[key])&&key in classified)(current as any)[key]=classified[key];
                 }
@@ -576,8 +576,10 @@ export async function createEngineService(options:EngineOptions) {
     const added=new Set(outcome.added.map(t=>t.id));
     const fresh=outcome.added.map(current).filter((t):t is Thread=>!!t&&t.status==='new');
     const replies=inbox.filter(t=>!added.has(t.id));
+    // New Spam gets a summary too, so it can be judged without opening it; its triage fields stay untouched.
+    const spam=outcome.added.map(current).filter((t):t is Thread=>!!t&&t.status==='spam');
     await syncWorkflow(a,provider,manual,errors,generation);
-    errors.push(...await classifyIncoming([...fresh,...replies],a,new Set(replies.map(t=>t.id))));
+    errors.push(...await classifyIncoming([...fresh,...replies,...spam],a,new Set(replies.map(t=>t.id)),new Set(spam.map(t=>t.id))));
   }
   /** Share Done, Later, todos and reminders with this account's other devices, then apply theirs. */
   async function syncWorkflow(a:Account,provider:MailProvider,manual:boolean,errors:string[],generation:number) {
