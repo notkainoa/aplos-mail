@@ -1,9 +1,10 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {rememberPlans,usePlans} from './detectedPlans';
+import {describeSummaryError,hasRealSummary,summarize,summarizeIfNeeded,useSummaryJob} from './summaries';
 import {dayKey,timeRange} from './calendarTime';
 import {planSaved} from './calendarLayout';
 import {liveAction} from '../shared/mailbox';
-import {Ban,Bell,Bookmark,CalendarDays,Check,ChevronDown,ChevronUp,Clock,Download,ExternalLink,Forward,ImageOff,MailOpen,MessageCircle,MoreHorizontal,Paperclip,RefreshCw,Reply,ReplyAll,Search,ShieldAlert,Trash2,Undo2,X,CornerUpLeft} from './icons';
+import {Ban,Bell,Bookmark,CalendarDays,Check,ChevronDown,ChevronUp,Clock,Download,ExternalLink,Forward,HelpCircle,ImageOff,MailOpen,MessageCircle,MoreHorizontal,Paperclip,RefreshCw,Reply,ReplyAll,RotateCcw,Search,ShieldAlert,Trash2,Undo2,X,CornerUpLeft} from './icons';
 import type {Attachment,CalendarEvent,Message,Settings,Thread} from '../shared/types';
 import {dateLabel,dueLabel,fullDate,invoke,isoDay,openUrl,saveFile} from './bridge';
 import {inlineAttachments,prepareMessageBody} from './mailBody';
@@ -45,10 +46,11 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  useEffect(()=>{setHits(needle?scroller.current?.querySelectorAll('.email-body mark').length??0:0);setHit(0);},[needle,expanded,quotes,inlineFiles,remote]);
  useEffect(()=>{const marks=[...scroller.current?.querySelectorAll('.email-body mark')??[]];marks.forEach((mark,i)=>mark.classList.toggle('is-current',i===hit));marks[hit]?.scrollIntoView({block:'center',behavior:'smooth'});},[hit,hits]);
  useEffect(()=>{if(!replySlot||!scroller.current)return;const el=scroller.current;requestAnimationFrame(()=>el.scrollTo({top:el.scrollHeight,behavior:'smooth'}));},[!!replySlot]);
- // Until Groq summarizes a synced thread, its summary is just the Gmail snippet; repeating it above the body adds nothing.
- const flat=(text:string)=>text.replace(/\s+/g,' ').replace(/(…|\.\.\.)$/,'').trim().toLowerCase();
- const hasSummary=!!thread.summary?.trim()&&!thread.messages.some(m=>flat(m.text).includes(flat(thread.summary)));
- const summarize=()=>void run('summary',()=>invoke('ai.summarize',{threadId:thread.id}));
+ // An email without a real summary yet is summarized on open; the card shows that work, or why it failed.
+ const job=useSummaryJob(thread.id);
+ const hasSummary=hasRealSummary(thread)||!!job?.done&&!!thread.summary?.trim();
+ useEffect(()=>{if(!ghost)summarizeIfNeeded(thread);},[thread.id,ghost]);
+ const resummarize=()=>void summarize(thread.id).then(error=>{if(error)notify(describeSummaryError(error).title+'. The previous summary is kept.');});
  const dueInput=thread.dueDate?.slice(0,10)??'';
  const doneRight=settings.triageDirection!=='done-left';
  const card=useRef<HTMLDivElement>(null);
@@ -92,8 +94,9 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  const ai=<div className="ai-card">
   <div className="ai-lede">
    {hasSummary?<p className="ai-summary" key={thread.summary}>{capital(thread.summary.trim())}</p>
-    :<button className="ai-summary is-prompt" disabled={!!busy} onClick={summarize}>{busy==='summary'?'Summarizing…':'Summarize this email'}</button>}
-   {hasSummary&&<IconButton className={cx('ai-refresh',busy==='summary'&&'is-busy')} label="Summarize again" detail="Summarized with Groq" size="xs" icon={RefreshCw} iconSize={13} disabled={!!busy&&busy!=='summary'} loading={busy==='summary'} onClick={summarize}/>}
+    :job?.error?<SummaryFailure error={job.error} retry={()=>void summarize(thread.id)}/>
+    :<p className="ai-summary is-pending" role="status">Summarizing…</p>}
+   {hasSummary&&<IconButton className={cx('ai-refresh',job?.running&&'is-busy')} label="Summarize again" detail="Summarized with Groq" size="xs" icon={RefreshCw} iconSize={13} loading={job?.running} onClick={resummarize}/>}
   </div>
   {(thread.todo||thread.dueDate||dates||thread.reminderAt||action&&!planned)&&<div className={cx('ai-next',!thread.todo&&'no-todo')}>
    {thread.todo&&<span className="ai-todo"><span className="todo-ring" aria-hidden="true"/><span className="ai-todo-text">{thread.todo}</span></span>}
@@ -197,6 +200,21 @@ function Sender({message}:{message:Message}){
    </div>
   </Popover>
  </>;
+}
+
+/** Takes the summary's place when Groq couldn't write one: the reason, a retry and, behind "?", what to do about it. */
+function SummaryFailure({error,retry}:{error:string;retry:()=>void}){
+ const [open,setOpen]=useState(false);const [help,setHelp]=useState<HTMLButtonElement|null>(null);const problem=describeSummaryError(error);
+ return <div className="ai-failed" role="alert">
+  <div className="ai-failed-text"><strong>Couldn’t summarize this email</strong><span>{problem.title}</span></div>
+  <IconButton ref={setHelp} className={cx('ai-failed-help',open&&'is-open')} label="Why did this fail?" tooltip={!open} size="sm" icon={HelpCircle} iconSize={16} aria-haspopup="dialog" aria-expanded={open} onClick={()=>setOpen(value=>!value)}/>
+  <Button variant="secondary" size="sm" icon={RotateCcw} onClick={retry}>Retry</Button>
+  <Popover open={open} anchor={help} onClose={()=>setOpen(false)} placement="bottom-end" gap={6} className="ai-failed-card ui-surface" role="dialog" label="Why the summary failed">
+   <strong>{problem.title}</strong>
+   <p>{problem.detail}</p>
+   <code>{error}</code>
+  </Popover>
+ </div>;
 }
 
 /** Due date and reminder, opened from the due pill in the summary card. */
