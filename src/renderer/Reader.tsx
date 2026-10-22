@@ -101,6 +101,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
  // What the card showed while the model worked; only what it adds afterwards fades in.
  if(pending)waited.current={id:thread.id,next:hasNext,todo:!!thread.todo,due:!!thread.dueDate};
  const seen=waited.current?.id===thread.id&&!pending?waited.current:undefined;
+ // While summarizing, an empty to-do slot shows a placeholder beside any date or action already there.
  const ai=<div className="ai-card">
   <div className="ai-lede">
    {hasSummary?<p className="ai-summary" key={thread.summary}>{capital(thread.summary.trim())}</p>
@@ -110,7 +111,6 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
   </div>
   {hasNext?<div className={cx('ai-next',!thread.todo&&!pending&&'no-todo',seen&&!seen.next&&'is-arriving')}>
    {thread.todo?<span className={cx('ai-todo',seen?.next&&!seen.todo&&'is-arriving')}><span className="todo-ring" aria-hidden="true"/><span className="ai-todo-text">{thread.todo}</span></span>
-    // A to-do may still come; hold its place beside the date or action already shown.
     :pending&&<span className="ai-todo is-placeholder" aria-hidden="true"><span className="todo-ring"/><span className="ai-skeleton"/></span>}
    <span className="ai-controls">
     {(thread.dueDate||dates)&&<button ref={dueRef} className={cx('due-pill',dueTone,!thread.dueDate&&'is-empty',dates&&'is-open',seen?.next&&!seen.due&&thread.dueDate&&'is-arriving')} aria-haspopup="dialog" aria-expanded={dates} onClick={()=>setDates(value=>!value)}>
