@@ -1,88 +1,66 @@
-import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import {ArrowUpRight,Check,ChevronsUpDown,Copy,KeyRound,Search} from '../icons';
-import {Badge,Button,Group,GroupRow,Popover,Spinner,cx} from '../ui';
-import {askProvider,askProviders,defaultAskModel,isAskServer,parseAskModel,type AskModelInfo,type AskProviderId,type AskServerId} from '../../shared/ask';
+import {useCallback,useEffect,useRef,useState} from 'react';
+import {ArrowUpRight,Check,ChevronDown,ChevronsUpDown,Copy,KeyRound,Search} from '../icons';
+import {Button,Group,GroupRow,Popover,Spinner,cx} from '../ui';
+import {aiFeatures,askProvider,askProviders,askServerSetting,isAskServer,parseAskModel,voiceProviders,type AiFeature,type AiModelSetting,type AskModelInfo,type AskProviderId,type AskServerId} from '../../shared/ask';
+import type {Settings} from '../../shared/types';
 import {invoke,openUrl,uid} from '../bridge';
 
-type Catalog={id:AskProviderId;label:string;env:string;description:string;available:boolean;keyOptional?:boolean;models:AskModelInfo[];address?:string;defaultAddress?:string;running?:boolean;version?:string}[];
-export type AskServers=Record<AskServerId,string>;
-/** Stands in for a custom server's model until the owner picks or types one. */
+type Provider={id:AskProviderId;label:string;env:string;description:string;available:boolean;keyOptional?:boolean;models:AskModelInfo[];voiceModels?:AskModelInfo[];address?:string;defaultAddress?:string;running?:boolean;version?:string};
+/** A placeholder an earlier build stored for a custom server before a model was typed. */
 const UNSET='choose-a-model';
 const keyPages:Record<AskProviderId,string>={groq:'https://console.groq.com/keys',openai:'https://platform.openai.com/api-keys',anthropic:'https://platform.claude.com/settings/keys',gemini:'https://aistudio.google.com/apikey',openrouter:'https://openrouter.ai/settings/keys','opencode-go':'https://opencode.ai/console',ollama:'',lmstudio:'',custom:''};
-const shortDescriptions:Record<AskProviderId,string>={groq:'Very fast open models. Also runs the rest of Aplos’s AI.',openai:'GPT models on your OpenAI API key.',anthropic:'Claude Opus, Sonnet and Haiku.',gemini:'Gemini models from Google AI Studio.',openrouter:'Hundreds of models on one key.','opencode-go':'Your OpenCode Go plan’s models.',ollama:'Local models on this Mac. Mail stays here.',lmstudio:'Local models on this Mac. Mail stays here.',custom:'Any OpenAI-compatible server.'};
+const shortDescriptions:Record<AskProviderId,string>={groq:'Very fast open models, and speech to text.',openai:'GPT models and speech to text on your OpenAI API key.',anthropic:'Claude Opus, Sonnet and Haiku.',gemini:'Gemini models from Google AI Studio.',openrouter:'Hundreds of models on one key.','opencode-go':'Your OpenCode Go plan’s models.',ollama:'Local models on this Mac. Mail stays here.',lmstudio:'Local models on this Mac. Mail stays here.',custom:'Any OpenAI-compatible server.'};
 
-/** Settings → AI: where Ask runs, which model, a real connection check, and what else uses Groq. */
-export function AiSettings({value,groqReady,servers,onChange,onServer}:{value:string;groqReady:boolean;servers:AskServers;onChange:(value:string)=>void;onServer:(id:AskServerId,url:string)=>void}){
-  const [catalog,setCatalog]=useState<Catalog>();const [round,setRound]=useState(0);
+/** Settings → AI: the providers the owner has set up, then which model each feature uses. */
+export function AiSettings({settings,groqReady,onChange}:{settings:Settings;groqReady:boolean;onChange:(patch:Partial<Settings>)=>void}){
+  const [catalog,setCatalog]=useState<Provider[]>();const [round,setRound]=useState(0);
   // Reloaded when a server address changes or on Try again, so a server that just started shows its models.
-  useEffect(()=>{let live=true;void invoke<Catalog>('ai.models').then(list=>{if(live)setCatalog(list);}).catch(()=>{});return()=>{live=false;};},[servers.ollama,servers.lmstudio,servers.custom,round]);
-  const providers:Catalog=catalog??askProviders.map(p=>({...p,models:[...p.models],available:p.id==='groq'?groqReady:false}));
-  const ref=parseAskModel(value)??parseAskModel(defaultAskModel)!;
-  const provider=providers.find(p=>p.id===ref.provider)??providers[0];
-  // A model chosen earlier that the list no longer shows stays visible rather than silently switching.
-  const models=provider.models.some(m=>m.id===ref.model)||ref.model===UNSET?provider.models:[{id:ref.model,label:ref.model},...provider.models];
-  const model=models.find(m=>m.id===ref.model);
-  const custom=provider.id==='custom',server=isAskServer(provider.id)?provider.id:undefined,local=server==='ollama'||server==='lmstudio';
-  function pickProvider(id:AskProviderId){
-    if(id===provider.id)return;
-    const next=providers.find(p=>p.id===id);const first=next?.models[0]??askProvider(id).models[0];
-    onChange(`${id}:${first?.id??UNSET}`);
-  }
+  useEffect(()=>{let live=true;void invoke<Provider[]>('ai.models').then(list=>{if(live)setCatalog(list);}).catch(()=>{});return()=>{live=false;};},[settings.askOllamaUrl,settings.askLmStudioUrl,settings.askCustomUrl,round]);
+  const providers:Provider[]=catalog??askProviders.map(p=>({...p,models:[...p.models],...(voiceProviders[p.id]?{voiceModels:[...voiceProviders[p.id]!]}:{}),available:p.id==='groq'?groqReady:false}));
+  const ask=parseAskModel(settings.askModel);
   return <div className="ai-settings">
-    <Group title="Ask">
-      <div className="ai-providers-wrap">
-        <ProviderCards providers={providers} value={provider.id} loading={!catalog} onChange={pickProvider}/>
-        {catalog&&!provider.available&&!server&&<KeySetup key={provider.id} provider={provider}/>}
-        {catalog&&local&&!provider.running&&<LocalSetup key={provider.id} id={provider.id as 'ollama'|'lmstudio'} address={provider.address??''} onRetry={()=>setRound(n=>n+1)}/>}
-      </div>
-      {server&&<ServerAddress key={server} id={server} value={servers[server]} placeholder={askProvider(server).defaultAddress??'http://localhost:11434/v1'} onChange={url=>onServer(server,url)}/>}
-      <GroupRow label="Model" description={model?.description??(local?(models.length?`On ${provider.label}${provider.version?` ${provider.version}`:''}. Only models that can use tools are listed.`:provider.running?localEmpty[provider.id as 'ollama'|'lmstudio']:`Start ${provider.label} to see its models.`):custom?(models.length?'From your server. It must support tool calling.':'Type the model name your server uses, e.g. llama3.3.'):models.length>8?`${models.length} models on ${provider.label} can use Ask’s tools.`:undefined)}>
-        <ModelPicker provider={provider} models={models} value={ref.model===UNSET?'':ref.model} allowAny={custom} onChange={id=>onChange(`${provider.id}:${id}`)}/>
-      </GroupRow>
-      <ConnectionCheck key={value} model={value} ready={provider.available&&ref.model!==UNSET}/>
+    <Group title="Models">
+      {aiFeatures.map(f=><FeatureRow key={f.id} feature={f} providers={providers} loading={!catalog} value={settings[f.setting]} onChange={value=>onChange({[f.setting]:value} as Partial<Record<AiModelSetting,string>>)}/>)}
+      <ConnectionCheck key={settings.askModel} model={settings.askModel} ready={!!ask&&ask.model!==UNSET&&!!providers.find(p=>p.id===ask.provider)?.available}/>
     </Group>
-    <Group title="Also on Groq">
-      <GroupRow label="Summaries, drafts and plans" description="Sorts and summarizes new mail, polishes drafts and finds plans in email."><Status ready={groqReady}/></GroupRow>
-      <GroupRow label="Voice" description="Hold A to talk. Groq Whisper turns speech into text."><Status ready={groqReady}/></GroupRow>
+    <Group title="Providers">
+      {providers.map(p=><ProviderRow key={p.id} provider={p} loading={!catalog} address={isAskServer(p.id)?settings[askServerSetting[p.id]]:undefined}
+        onAddress={url=>isAskServer(p.id)&&onChange({[askServerSetting[p.id]]:url})} onRetry={()=>setRound(n=>n+1)}/>)}
     </Group>
-    <p className="group-note ai-note"><KeyRound size={13}/>Keys stay in the backend environment and never reach this window. Nothing is sent from your mailbox without your click.</p>
+    <p className="group-note ai-note"><KeyRound size={13}/>Keys stay in the backend. New mail goes to your Summaries model as it arrives, and to your Plans model when plans are added automatically; everything else runs only when you use it.</p>
   </div>;
 }
 
-const Status=({ready}:{ready:boolean})=>ready?<Badge tone="green">Ready</Badge>:<Badge tone="amber">Needs GROQ_API_KEY</Badge>;
+const statusText=(p:Provider,loading:boolean)=>loading?'Checking…':p.running!==undefined?(p.running?'Running':'Not running'):p.available?'Ready':p.keyOptional?'Needs an address':'Needs a key';
 
-/** Three choices as cards. The selection ring glides to the chosen card. */
-function ProviderCards({providers,value,loading,onChange}:{providers:Catalog;value:AskProviderId;loading:boolean;onChange:(id:AskProviderId)=>void}){
-  const list=useRef<HTMLDivElement>(null);
-  const [ring,setRing]=useState<{x:number;y:number;w:number;h:number}|null>(null);const [animate,setAnimate]=useState(false);
-  useLayoutEffect(()=>{
-    const root=list.current;if(!root)return;
-    const measure=()=>{const el=root.querySelector<HTMLElement>('[aria-checked="true"]');setRing(el?{x:el.offsetLeft,y:el.offsetTop,w:el.offsetWidth,h:el.offsetHeight}:null);};
-    measure();const observer=new ResizeObserver(measure);observer.observe(root);return()=>observer.disconnect();
-  },[value]);
-  // No glide on first paint, only between choices.
-  useLayoutEffect(()=>{if(ring&&!animate){const frame=requestAnimationFrame(()=>setAnimate(true));return()=>cancelAnimationFrame(frame);}},[ring]);
-  function key(event:React.KeyboardEvent){
-    const at=providers.findIndex(p=>p.id===value);const step=event.key==='ArrowRight'||event.key==='ArrowDown'?1:event.key==='ArrowLeft'||event.key==='ArrowUp'?-1:0;
-    if(!step)return;event.preventDefault();const next=providers[(at+step+providers.length)%providers.length];onChange(next.id);
-    requestAnimationFrame(()=>list.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus());
-  }
-  return <div ref={list} className="ai-providers" role="radiogroup" aria-label="Ask provider" onKeyDown={key}>
-    {ring&&<span className={cx('ai-provider-ring',animate&&'is-animated')} aria-hidden="true" style={{transform:`translate(${ring.x}px,${ring.y}px)`,width:ring.w,height:ring.h}}/>}
-    {providers.map(p=>{const selected=p.id===value;return <button key={p.id} type="button" role="radio" aria-checked={selected} tabIndex={selected?0:-1} className={cx('ai-provider',selected&&'is-selected')} onClick={()=>onChange(p.id)}>
-      <span className="ai-provider-head"><strong>{p.label}</strong>{selected&&<span className="ai-provider-check"><Check size={11}/></span>}</span>
-      <span className="ai-provider-text">{shortDescriptions[p.id]}</span>
-      <span className={cx('ai-provider-status',loading?'is-loading':p.available?'is-ready':'is-missing')}><i/>{loading?'Checking…':p.running!==undefined?(p.running?'Running':'Not running'):p.available?'Ready':p.keyOptional?'Needs an address':'Needs a key'}</span>
-    </button>;})}
+/** One provider: its status, and on opening what it needs (a key, an address, a running app) or what it offers. */
+function ProviderRow({provider:p,loading,address,onAddress,onRetry}:{provider:Provider;loading:boolean;address?:string;onAddress:(url:string)=>void;onRetry:()=>void}){
+  const [open,setOpen]=useState(false);const [panelId]=useState(()=>'provider-'+uid());
+  const server=isAskServer(p.id)?p.id:undefined,local=server==='ollama'||server==='lmstudio';
+  const count=p.models.length,speech=p.voiceModels?.length;
+  const summary=p.available&&(!local||p.running)?[count?`${count} model${count===1?'':'s'}${local?' that can use tools':''}`:local?'No models that can use tools yet':'',speech?'speech to text':'',p.version?`version ${p.version}`:''].filter(Boolean).join(' · '):'';
+  return <div className={cx('ai-provider-row',open&&'is-open')}>
+    <button type="button" className="ai-provider-head" aria-expanded={open} aria-controls={panelId} onClick={()=>setOpen(o=>!o)}>
+      <span className="ai-provider-name"><strong>{p.label}</strong><small>{shortDescriptions[p.id]}</small></span>
+      <span className={cx('ai-provider-status',loading?'is-loading':p.available&&p.running!==false?'is-ready':'is-missing')}><i/>{statusText(p,loading)}</span>
+      <ChevronDown size={14} className="ai-provider-chevron"/>
+    </button>
+    {open&&<div id={panelId} className="ai-provider-panel">
+      {summary&&<p className="ai-provider-summary">{summary}{!server&&<> · key in <code>{p.env}</code></>}</p>}
+      {!loading&&!p.available&&!server&&<KeySetup provider={p}/>}
+      {server&&<ServerAddress id={server} value={address??''} placeholder={askProvider(server).defaultAddress??'http://localhost:11434/v1'} onChange={onAddress}/>}
+      {!loading&&local&&!p.running&&<LocalSetup id={server as 'ollama'|'lmstudio'} address={p.address??''} onRetry={onRetry}/>}
+      {!loading&&local&&p.running&&!count&&<p className="ai-provider-summary">{localEmpty[server as 'ollama'|'lmstudio']}</p>}
+    </div>}
   </div>;
 }
 
-/** What to do when the chosen provider has no key: the variable to set and where to get a key. */
-function KeySetup({provider}:{provider:Catalog[number]}){
+/** What to do when a provider has no key: the variable to set and where to get a key. */
+function KeySetup({provider}:{provider:Provider}){
   const [copied,setCopied]=useState(false);
   async function copy(){try{await navigator.clipboard.writeText(`${provider.env}=`);setCopied(true);setTimeout(()=>setCopied(false),1600);}catch{/* Clipboard access can be refused; the name is still on screen. */}}
   return <div className="ai-setup" role="status">
-    <p><strong>Add your {provider.label} key to finish.</strong> Ask won’t answer with {provider.label} until it is set. Put it in the backend <code>.env</code>, then restart Aplos.</p>
+    <p><strong>Add your {provider.label} key to use it.</strong> Put it in the backend <code>.env</code>, then restart Aplos.</p>
     <div className="ai-setup-actions">
       <button type="button" className={cx('ai-env',copied&&'is-copied')} onClick={()=>void copy()} aria-label={`Copy ${provider.env}`}><code>{provider.env}=</code><span>{copied?<><Check size={12}/>Copied</>:<><Copy size={12}/>Copy</>}</span></button>
       <Button variant="text" size="sm" iconRight={ArrowUpRight} onClick={()=>void openUrl(keyPages[provider.id])}>Get a key</Button>
@@ -92,16 +70,16 @@ function KeySetup({provider}:{provider:Catalog[number]}){
 
 const localEmpty={ollama:'No models that can use tools yet. Pull one in Terminal, e.g. ollama pull qwen3.',lmstudio:'No models that can use tools yet. Download one in LM Studio, e.g. Qwen3.'};
 const addressHelp:Record<AskServerId,string>={
-  ollama:'Leave empty for Ollama on this Mac. Another machine works too; the mail you ask about is sent there.',
-  lmstudio:'Leave empty for LM Studio on this Mac. Another machine works too; the mail you ask about is sent there.',
-  custom:'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1. The mail you ask about is sent to this server. An optional key goes in CUSTOM_AI_API_KEY.',
+  ollama:'Leave empty for Ollama on this Mac. Another machine works too; the mail you use AI on is sent there.',
+  lmstudio:'Leave empty for LM Studio on this Mac. Another machine works too; the mail you use AI on is sent there.',
+  custom:'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1. The mail you use AI on is sent to this server. An optional key goes in CUSTOM_AI_API_KEY.',
 };
-/** A server's address. Saved on Enter or when leaving the field; the engine validates it. Empty means the default. */
+/** A server's address. Saved when leaving the field (Enter leaves it); the engine validates it. Empty means the default. */
 function ServerAddress({id,value,placeholder,onChange}:{id:AskServerId;value:string;placeholder:string;onChange:(url:string)=>void}){
   const [text,setText]=useState(value);useEffect(()=>setText(value),[value]);
   const save=()=>{if(text.trim()!==value)onChange(text.trim());};
   return <GroupRow label="Server address" description={addressHelp[id]}>
-    <input className="ai-address" aria-label="Server address" spellCheck={false} placeholder={placeholder} value={text} onChange={e=>setText(e.target.value)} onBlur={save} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();save();(e.target as HTMLInputElement).blur();}e.stopPropagation();}}/>
+    <input className="ai-address" aria-label="Server address" spellCheck={false} placeholder={placeholder} value={text} onChange={e=>setText(e.target.value)} onBlur={save} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();(e.target as HTMLInputElement).blur();}e.stopPropagation();}}/>
   </GroupRow>;
 }
 
@@ -123,61 +101,101 @@ function LocalSetup({id,address,onRetry}:{id:'ollama'|'lmstudio';address:string;
   </div>;
 }
 
-/** A searchable list of models. Arrows move, Enter picks, Esc closes; the selected model is checked. */
-function ModelPicker({provider,models,value,allowAny,onChange}:{provider:Catalog[number];models:AskModelInfo[];value:string;allowAny?:boolean;onChange:(id:string)=>void}){
-  const trigger=useRef<HTMLButtonElement>(null);const listRef=useRef<HTMLDivElement>(null);
+/** One feature's model, chosen from every provider that is set up. Its provider not being ready shows in amber. */
+function FeatureRow({feature,providers,loading,value,onChange}:{feature:typeof aiFeatures[number];providers:Provider[];loading:boolean;value:string;onChange:(value:string)=>void}){
+  const ref=parseAskModel(value)??parseAskModel(feature.fallback)!;
+  const provider=providers.find(p=>p.id===ref.provider)!;
+  const missing=!loading&&!(provider.available&&provider.running!==false);
+  return <GroupRow label={feature.label} description={<>{feature.description}{missing&&<span className="ai-feature-missing"> {provider.label} isn’t {provider.keyOptional?'running':'set up'} yet; see Providers below.</span>}</>}>
+    <ModelPicker feature={feature.id} label={feature.label} providers={providers} value={ref} onChange={onChange}/>
+  </GroupRow>;
+}
+
+/** Big catalogs (OpenRouter) show their recommended models until the owner searches. */
+const COLLAPSE=12;
+type Option={provider:AskProviderId;id:string;label:string;description?:string;typed?:boolean};
+/** A searchable list of models grouped by provider. Arrows move, Enter picks, Esc closes; the selected model is checked. */
+function ModelPicker({feature,label,providers,value,onChange}:{feature:AiFeature;label:string;providers:Provider[];value:{provider:AskProviderId;model:string};onChange:(value:string)=>void}){
+  const trigger=useRef<HTMLButtonElement>(null);const listRef=useRef<HTMLDivElement>(null);const search=useRef<HTMLInputElement>(null);
   const [open,setOpen]=useState(false);const [query,setQuery]=useState('');const [active,setActive]=useState(0);const [listId]=useState(()=>'models-'+uid());
-  const curated=useMemo(()=>new Set(askProvider(provider.id).models.map(m=>m.id)),[provider.id]);
+  const voice=feature==='voice';
+  const listOf=(p:Provider)=>voice?p.voiceModels??[]:p.models;
+  const curatedOf=(id:AskProviderId)=>voice?voiceProviders[id]??[]:askProvider(id).models;
+  const ready=(p:Provider)=>p.available&&p.running!==false;
+  // Providers that are set up, plus the current model's own so a choice made earlier stays visible.
+  const usable=providers.filter(p=>(ready(p)&&listOf(p).length)||p.id===value.provider||(!voice&&p.id==='custom'&&ready(p)));
+  const isCurrent=(o:{provider:AskProviderId;id:string})=>o.provider===value.provider&&o.id===value.model;
   const words=query.toLowerCase().split(/\s+/).filter(Boolean);
-  const shown=useMemo(()=>models.filter(m=>words.every(w=>`${m.label} ${m.id} ${m.description??''}`.toLowerCase().includes(w))),[models,query]);
-  const groups=[{title:'Recommended',items:shown.filter(m=>curated.has(m.id))},{title:curated.size&&shown.some(m=>curated.has(m.id))?'All models':'',items:shown.filter(m=>!curated.has(m.id))}].filter(g=>g.items.length);
-  // A custom server may not list its models, so any typed name can be used.
-  const typed=query.trim();const extra=allowAny&&typed&&/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(typed)&&!models.some(m=>m.id===typed)?[{id:typed,label:`Use “${typed}”`,description:'A model name your server knows'}]:[];
-  if(extra.length)groups.push({title:'',items:extra});
-  const flat=groups.flatMap(g=>g.items);const current=models.find(m=>m.id===value);
-  const searchable=models.length>8||!!allowAny;
+  const groups=usable.map(p=>{
+    let items:Option[]=listOf(p).map(m=>({provider:p.id,...m}));
+    if(p.id===value.provider&&value.model!==UNSET&&!items.some(isCurrent))items.unshift({provider:p.id,id:value.model,label:value.model});
+    let hidden=0;
+    if(words.length)items=items.filter(m=>words.every(w=>`${m.label} ${m.id} ${m.description??''} ${p.label}`.toLowerCase().includes(w)));
+    else if(items.length>COLLAPSE){
+      const curated=new Set(curatedOf(p.id).map(m=>m.id));const kept=items.filter(m=>curated.has(m.id)||isCurrent(m));
+      if(kept.length){hidden=items.length-kept.length;items=kept;}
+    }
+    return {provider:p,items,hidden};
+  }).filter(g=>g.items.length||g.hidden);
+  // A custom server may not list its models, so any typed name can be used there.
+  const typed=query.trim(),custom=usable.find(p=>p.id==='custom'&&ready(p));
+  if(!voice&&custom&&typed&&/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(typed)&&!custom.models.some(m=>m.id===typed))
+    groups.push({provider:custom,items:[{provider:'custom',id:typed,label:`Use “${typed}”`,description:'A model name your server knows',typed:true}],hidden:0});
+  const flat=groups.flatMap(g=>g.items);
+  const provider=providers.find(p=>p.id===value.provider);
+  const current=listOf(provider??providers[0]).find(m=>m.id===value.model)??(value.model===UNSET?undefined:{id:value.model,label:value.model});
+  const unset=providers.filter(p=>!ready(p)&&(!voice||voiceProviders[p.id])&&p.id!==value.provider).map(p=>p.label);
   // Opening starts from the full list with the current model highlighted.
-  function show(next:boolean){
-    if(next){const order=[...models.filter(m=>curated.has(m.id)),...models.filter(m=>!curated.has(m.id))];setQuery('');setActive(Math.max(0,order.findIndex(m=>m.id===value)));}
-    setOpen(next);
-  }
+  function show(next:boolean){if(next){setQuery('');}setOpen(next);}
+  useEffect(()=>{if(open&&!query)setActive(Math.max(0,flat.findIndex(isCurrent)));},[open]);
   useEffect(()=>{if(open)listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({block:'nearest'});},[active,open]);
-  // Focus moves into the picker so typing searches (or jumps) instead of reaching the app's shortcuts.
-  const search=useRef<HTMLInputElement>(null);
-  useEffect(()=>{if(!open)return;const frame=requestAnimationFrame(()=>(search.current??listRef.current)?.focus({preventScroll:true}));return()=>cancelAnimationFrame(frame);},[open]);
-  function choose(id:string){onChange(id);setOpen(false);trigger.current?.focus({preventScroll:true});}
+  // Focus moves into the search the moment it mounts, so typing searches instead of reaching the app's shortcuts.
+  // The surface stays hidden until it is positioned, so focus is retried for a few frames until it takes.
+  const openRef=useRef(open);openRef.current=open;
+  const searchRef=useCallback((el:HTMLInputElement|null)=>{
+    search.current=el;let tries=0;
+    // Stops once the picker closes, so a late retry never pulls focus into a closing list.
+    const focus=()=>{if(!openRef.current||!el?.isConnected||document.activeElement===el)return;el.focus({preventScroll:true});if(document.activeElement!==el&&++tries<10)requestAnimationFrame(focus);};
+    focus();
+  },[]);
+  function choose(o:Option){onChange(`${o.provider}:${o.id}`);setOpen(false);trigger.current?.focus({preventScroll:true});}
   function keys(event:React.KeyboardEvent){
     if(!event.metaKey&&!event.ctrlKey&&event.key!=='Escape')event.stopPropagation();
-    // A short list without search jumps to the first model starting with the typed letter.
-    if(!searchable&&event.key.length===1&&/\S/.test(event.key)){const at=flat.findIndex(m=>m.label.toLowerCase().startsWith(event.key.toLowerCase()));if(at>=0)setActive(at);return;}
     if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();if(!flat.length)return;const step=event.key==='ArrowDown'?1:-1;setActive(i=>(i+step+flat.length)%flat.length);}
-    else if(event.key==='Enter'){event.preventDefault();const item=flat[active];if(item)choose(item.id);}
-    else if(event.key==='Home'&&!searchable){event.preventDefault();setActive(0);}else if(event.key==='End'&&!searchable){event.preventDefault();setActive(flat.length-1);}
+    else if(event.key==='Enter'){event.preventDefault();const item=flat[active];if(item)choose(item);}
   }
   let index=-1;
   return <>
-    <button ref={trigger} type="button" className={cx('ai-model-trigger',open&&'is-open')} aria-haspopup="listbox" aria-expanded={open} onClick={()=>show(!open)} onKeyDown={event=>{if(event.key==='ArrowDown'&&!open){event.preventDefault();show(true);}}}>
-      <span><strong>{current?.label??(value||'Choose a model')}</strong>{current&&current.label!==current.id&&<small>{current.id}</small>}</span><ChevronsUpDown size={13}/>
+    <button ref={trigger} type="button" className={cx('ai-model-trigger',open&&'is-open')} aria-haspopup="listbox" aria-expanded={open} aria-label={`${label} model: ${current?.label??'none'} on ${provider?.label??''}`} onClick={()=>show(!open)} onKeyDown={event=>{
+      // Keys pressed while the list is still appearing belong to the picker, not the app's shortcuts.
+      if(open&&!event.metaKey&&!event.ctrlKey&&event.key!=='Escape'){
+        event.stopPropagation();
+        if(event.key.length===1){event.preventDefault();setQuery(q=>q+event.key);setActive(0);}
+      }
+      if(event.key==='ArrowDown'&&!open){event.preventDefault();show(true);}}}>
+      <span><strong>{current?.label??'Choose a model'}</strong><small>{provider?.label}</small></span><ChevronsUpDown size={13}/>
     </button>
-    <Popover open={open} anchor={trigger.current} onClose={()=>setOpen(false)} placement="bottom-end" className="ui-surface ai-model-picker" label={`${provider.label} models`} onKeyDown={keys}>
-      {searchable&&<label className="ai-model-search"><Search size={14}/><input ref={search} aria-controls={listId} aria-activedescendant={flat[active]?`${listId}-${active}`:undefined} placeholder={allowAny?(models.length?`Search ${models.length} models or type a name`:'Type a model name'):`Search ${models.length} models`} value={query} onChange={e=>{setQuery(e.target.value);setActive(0);}}/></label>}
-      <div ref={listRef} id={listId} className="ai-model-list" role="listbox" tabIndex={searchable?-1:0} aria-label="Models">
-        {groups.map(group=><div key={group.title||'all'} role="group" aria-label={group.title||undefined}>
-          {group.title&&groups.length>1&&<p className="ai-model-group">{group.title}{group.title==='All models'&&<span>{group.items.length}</span>}</p>}
-          {group.items.map(m=>{index++;const i=index;const selected=m.id===value;
-            return <div key={m.id} id={`${listId}-${i}`} role="option" aria-selected={selected} data-active={i===active} className={cx('ui-surface-item ai-model',i===active&&'is-active',selected&&'is-selected')} onPointerMove={()=>{if(active!==i)setActive(i);}} onMouseDown={e=>e.preventDefault()} onClick={()=>choose(m.id)}>
+    <Popover open={open} anchor={trigger.current} onClose={()=>setOpen(false)} placement="bottom-end" className="ui-surface ai-model-picker" label={`${label} models`} onKeyDown={keys}>
+      <label className="ai-model-search"><Search size={14}/><input ref={searchRef} role="combobox" aria-expanded={open} aria-autocomplete="list" aria-controls={listId} aria-activedescendant={flat[active]?`${listId}-${active}`:undefined} placeholder={custom&&!voice?'Search models or type a name':`Search ${voice?'speech ':''}models`} value={query} onChange={e=>{setQuery(e.target.value);setActive(0);}}/></label>
+      <div ref={listRef} id={listId} className="ai-model-list" role="listbox" aria-label="Models">
+        {groups.map(group=><div key={group.provider.id+(group.items[0]?.typed?'-typed':'')} role="group" aria-label={group.provider.label}>
+          {!group.items[0]?.typed&&<p className="ai-model-group">{group.provider.label}{!ready(group.provider)&&<span className="is-missing">{group.provider.keyOptional?'Not running':'Not set up'}</span>}</p>}
+          {group.items.map(m=>{index++;const i=index;const selected=isCurrent(m);
+            return <div key={m.id} id={`${listId}-${i}`} role="option" aria-selected={selected} data-active={i===active} className={cx('ui-surface-item ai-model',i===active&&'is-active',selected&&'is-selected')} onPointerMove={()=>{if(active!==i)setActive(i);}} onMouseDown={e=>e.preventDefault()} onClick={()=>choose(m)}>
               <span className="ai-model-check">{selected&&<Check size={13}/>}</span>
               <span className="ai-model-text"><strong>{m.label}</strong><small>{m.description??m.id}</small></span>
             </div>;})}
+          {group.hidden>0&&<p className="ai-model-more">{group.hidden} more on {group.provider.label}. Type to search them.</p>}
         </div>)}
-        {!flat.length&&<p className="ai-model-empty">{query?`No models match “${query}”.`:'Your server didn’t list any models.'}</p>}
+        {!flat.length&&<p className="ai-model-empty">{query?`No models match “${query}”.`:'No providers with models are set up yet.'}</p>}
       </div>
+      {unset.length>0&&<p className="ai-model-foot">{voice?`${unset.join(', ')} also ${unset.length===1?'does':'do'} speech to text once set up.`:`Also available once set up: ${unset.join(', ')}.`}</p>}
     </Popover>
   </>;
 }
 
 type Check={state:'idle'}|{state:'running'}|{state:'ok';ms:number;tools:boolean}|{state:'error';message:string};
-/** A real request to the chosen model, so a key or model problem shows here rather than mid-question. */
+/** A real request to Ask's model, so a key or model problem shows here rather than mid-question. */
 function ConnectionCheck({model,ready}:{model:string;ready:boolean}){
   const [check,setCheck]=useState<Check>({state:'idle'});const request=useRef<string|undefined>(undefined);
   useEffect(()=>()=>{if(request.current)void invoke('ai.cancel',{requestId:request.current}).catch(()=>{});},[]);
@@ -188,12 +206,12 @@ function ConnectionCheck({model,ready}:{model:string;ready:boolean}){
     finally{if(request.current===requestId)request.current=undefined;}
   }
   const seconds=(ms:number)=>ms<10?'under 10 ms':ms<1000?`${Math.round(ms/10)*10} ms`:`${(ms/1000).toFixed(1)} s`;
-  return <GroupRow label="Check connection" description="Sends one tiny request and asks the model to use a tool, the way Ask does. No mail is included.">
+  return <GroupRow label="Test Ask" description="Sends one tiny request and asks Ask’s model to use a tool, the way Ask does. No mail is included.">
     <span className={cx('ai-check',`is-${check.state==='ok'&&!check.tools?'warn':check.state}`)} role="status" aria-live="polite">
-      {check.state==='running'&&<><Spinner size={13}/>Checking…</>}
+      {check.state==='running'&&<><Spinner size={13}/>Testing…</>}
       {check.state==='ok'&&(check.tools?<><span className="ai-check-mark"><Check size={11}/></span>Works · {seconds(check.ms)}</>:<>Replied in {seconds(check.ms)}, but didn’t use the tool. Ask may not work well with this model.</>)}
       {check.state==='error'&&check.message}
     </span>
-    <Button variant="secondary" size="sm" disabled={!ready||check.state==='running'} onClick={()=>void run()}>{check.state==='ok'||check.state==='error'?'Check again':'Check'}</Button>
+    <Button variant="secondary" size="sm" disabled={!ready||check.state==='running'} onClick={()=>void run()}>{check.state==='ok'||check.state==='error'?'Test again':'Test'}</Button>
   </GroupRow>;
 }

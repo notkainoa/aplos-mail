@@ -1,3 +1,4 @@
+import {askModelLabel} from '../shared/ask';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {rememberPlans,usePlans} from './detectedPlans';
 import {dayKey,timeRange} from './calendarTime';
@@ -96,7 +97,7 @@ const pending=inlinePending.current;const request=pending[file.id]??=invoke<Atta
   <div className="ai-lede">
    {hasSummary?<p className="ai-summary" key={thread.summary}>{capital(thread.summary.trim())}</p>
     :<button className="ai-summary is-prompt" disabled={!!busy} onClick={summarize}>{busy==='summary'?'Summarizing…':'Summarize this email'}</button>}
-   {hasSummary&&<IconButton className={cx('ai-refresh',busy==='summary'&&'is-busy')} label="Summarize again" detail="Summarized with Groq" size="xs" icon={RefreshCw} iconSize={13} disabled={!!busy&&busy!=='summary'} loading={busy==='summary'} onClick={summarize}/>}
+   {hasSummary&&<IconButton className={cx('ai-refresh',busy==='summary'&&'is-busy')} label="Summarize again" detail={`With ${askModelLabel(settings.summaryModel,'summary').provider}`} size="xs" icon={RefreshCw} iconSize={13} disabled={!!busy&&busy!=='summary'} loading={busy==='summary'} onClick={summarize}/>}
   </div>
   {!binned&&(thread.todo||thread.dueDate||dates||thread.reminderAt||action&&!planned)&&<div className={cx('ai-next',!thread.todo&&'no-todo')}>
    {thread.todo&&<span className="ai-todo"><span className="todo-ring" aria-hidden="true"/><span className="ai-todo-text">{thread.todo}</span></span>}

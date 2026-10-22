@@ -21,23 +21,29 @@ export interface MemoryStage {
 }
 export interface StagedMemory { memory:ProviderMemory; stage():MemoryStage }
 
-/** Groq is the sole implementation. Configuration and secrets belong to the host. */
+/**
+ * Groq, the default provider for every AI feature. `model` is the feature's Groq model from Settings → AI; the other
+ * providers run summaries, drafts and plans through `writer.ts` over their `chat`. Configuration and secrets belong to the host.
+ */
 export interface Intelligence {
   readonly available:boolean;
-  summarize(thread:Thread,signal?:AbortSignal):Promise<Partial<Thread>>;
-  polish(html:string,instruction?:string,signal?:AbortSignal):Promise<{html:string}>;
-  draft(instruction:string,thread?:Thread,draft?:Partial<Draft>,signal?:AbortSignal):Promise<Partial<Draft>>;
+  summarize(thread:Thread,signal?:AbortSignal,model?:string):Promise<Partial<Thread>>;
+  polish(html:string,instruction?:string,signal?:AbortSignal,model?:string):Promise<{html:string}>;
+  draft(instruction:string,thread?:Thread,draft?:Partial<Draft>,signal?:AbortSignal,model?:string):Promise<Partial<Draft>>;
   /** One streamed, tool-capable chat call; Ask's agent loop (`agent.ts`) drives it. */
   chat:Chat;
   /** `timeZone` resolves relative days ("this Saturday at 10 am") in the user's zone. */
-  extractEvents(thread:Thread,signal?:AbortSignal,context?:{timeZone?:string}):Promise<Partial<CalendarEvent>[]>;
-  transcribe(audio:string,mimeType:string,signal?:AbortSignal):Promise<{text:string}>;
+  extractEvents(thread:Thread,signal?:AbortSignal,context?:{timeZone?:string;model?:string}):Promise<Partial<CalendarEvent>[]>;
+  transcribe(audio:string,mimeType:string,signal?:AbortSignal,model?:string):Promise<{text:string}>;
 }
 
-/** A provider Ask can run on. `models` lists what it currently offers for tool use. */
+/** A provider an AI feature can run on. `models` lists the chat models it currently offers for tool use. */
 export interface ChatProvider { readonly available:boolean; chat:Chat; models?(signal?:AbortSignal):Promise<AskModelInfo[]>;
   /** Local servers: whether the app is running and answering, and its version when it says. */
-  status?(signal?:AbortSignal):Promise<{running:boolean;version?:string}> }
+  status?(signal?:AbortSignal):Promise<{running:boolean;version?:string}>;
+  /** Speech to text, for providers with a transcription API; `voiceModels` lists what it offers now. */
+  transcribe?(audio:string,mimeType:string,model:string,signal?:AbortSignal):Promise<{text:string}>;
+  voiceModels?(signal?:AbortSignal):Promise<AskModelInfo[]> }
 
 /** The encrypted workflow transport is injected together with its platform vault and crypto. */
 export interface WorkflowSync {
@@ -56,7 +62,9 @@ export interface EngineOptions {
   providers:Partial<Record<ProviderKind,MailProvider>>;
   brokenProviders?:Map<ProviderKind,string>;
   groq:Intelligence;
-  /** Ask's other providers; Groq's comes from `groq`. */
+  /** A Groq model an older setup chose with GROQ_MODEL; it seeds Summaries, Drafts and Plans the first time those settings exist. */
+  groqModel?:string;
+  /** The other AI providers; Groq's comes from `groq`. */
   chats?:Partial<Record<AskProviderId,ChatProvider>>;
   /** A transport for Ollama, LM Studio or a custom OpenAI-compatible server at the address in Settings. */
   serverChat?:(id:AskServerId,baseUrl:string)=>ChatProvider;

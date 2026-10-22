@@ -1,12 +1,12 @@
 import type { AppState, Attachment, CalendarEvent, CalendarInfo, Settings, Thread } from '../shared/types';
-import { defaultAskModel } from '../shared/ask';
+import { aiFeature, defaultAskModel } from '../shared/ask';
 
 export const defaultSettings:Settings = {
   theme:'system', zen:false, sidebar:true, sidebarStyle:'normal', triageDirection:'done-right', swipe:true,
   doneAction:'archive', laterAction:'read', lowAction:'archive', defaultReply:'reply', signature:'Warmly,\nAlex',
   signatureMode:'new', footer:false, autoPolish:false, undoSeconds:8, sendSound:true, autoCalendar:false,
   gmailEvents:true, notifications:true, accountNotifications:{}, microphone:'default', icon:'ink',
-  launchAtLogin:false, remoteImages:false, onboardingDone:false, hiddenCalendars:[], askModel:defaultAskModel, askCustomUrl:'', askOllamaUrl:'', askLmStudioUrl:'',
+  launchAtLogin:false, remoteImages:false, onboardingDone:false, hiddenCalendars:[], askModel:defaultAskModel, summaryModel:aiFeature('summary').fallback, draftModel:aiFeature('draft').fallback, planModel:aiFeature('plan').fallback, voiceModel:aiFeature('voice').fallback, askCustomUrl:'', askOllamaUrl:'', askLmStudioUrl:'',
 };
 
 /** The demo accounts' local calendars. Each account's first calendar is its default. */

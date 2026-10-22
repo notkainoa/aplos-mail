@@ -244,7 +244,7 @@ export const Calendar=memo(function Calendar({events,accounts,accountId,hidden,s
         <span><strong>{t.messages[0]?.fromName||t.subject}</strong><small>{t.summary||t.subject}</small></span>
         {busyId===t.id?<Spinner size={13}/>:<Plus size={14}/>}
       </button>)}
-      <p className="cal-rail-note">Groq reads the email and fills in the event. Nothing is added until you save it.</p>
+      <p className="cal-rail-note">AI reads the email and fills in the event. Nothing is added until you save it.</p>
     </section>}
   </div>;
   const grid=(v:CalendarView,a:string,copy=false)=>{

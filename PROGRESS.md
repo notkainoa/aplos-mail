@@ -370,3 +370,10 @@ The panel and mail column now move together when Ask opens (no empty strip), the
 
 ## Ask chat controls (2026-10-21)
 Recent rows without icons and with a remove X, the follow-up field at the bottom of a chat, and New chat + Recent chats beside the dock tabs. Verified: typecheck, test suite, and in the packaged app on a demo sandbox (`APLOS_DATA_DIR`, chats created live with Groq): no icons on Recent rows, X removes a chat and the next one moves up, the Recent chats menu lists all chats and opens the one picked, the field sits below the conversation in a chat, the plus starts a new chat.
+
+## AI settings: providers and a model per feature (2026-10-21)
+Settings → AI now has Providers (status rows that open to show setup or what each offers) and Models (Ask, Summaries, Drafts, Plans, Voice, each picked from any set-up provider; Voice from Groq or OpenAI speech models). The engine routes each feature to its model; prompts moved to `engine/writer.ts`; OpenAI transcription added. Verified: typecheck, 199 tests (2 new: per-feature routing with fake Claude/OpenAI transports, OpenAI speech models/transcription/JSON mode), renderer build, headless screenshots in dark and light at docked-Ask and wide widths with a synthetic Groq key (no external AI calls), and choosing a Voice model by keyboard saved it. Non-Groq providers for summaries/drafts/plans/voice are not verified live.
+
+Review fixes (cubic, PR #6): background sorting waits for a stopped Ollama/LM Studio; Summaries and Plans gated separately; polish refuses over-long email instead of truncating; Reader tooltip and README wording; plan routing test now reaches a fake Gemini. 200 tests pass.
+
+Pre-merge recheck: merged main (Spam summaries; Spam never gets plans), independent review fixes (lenient JSON, polish images/budget, model-kind validation, GROQ_MODEL carry-over, privacy note, picker focus/combobox, single address save). 204 tests pass.

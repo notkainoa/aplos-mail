@@ -15,7 +15,8 @@ export type ChatMessage =
   | {role:'assistant'; content:string|null; tool_calls?:{id:string;type:'function';function:{name:string;arguments:string}}[]; raw?:unknown}
   | {role:'tool'; tool_call_id:string; name:string; content:string};
 /** `session` is a stable ID per conversation, for providers that route or cache by it. */
-export interface ChatRequest { model:string; messages:ChatMessage[]; tools?:ToolSpec[]; toolChoice?:'auto'|'none'; maxTokens?:number; session?:string }
+/** `json` asks for a single JSON object (summaries, drafts, plans); providers with a JSON mode turn it on. */
+export interface ChatRequest { model:string; messages:ChatMessage[]; tools?:ToolSpec[]; toolChoice?:'auto'|'none'; maxTokens?:number; session?:string; json?:boolean }
 export interface ChatTurn { content:string; toolCalls:ToolCall[]; finishReason?:string; usage?:{prompt:number;completion:number}; raw?:unknown }
 export interface ChatOptions { signal?:AbortSignal; onText?:(text:string)=>void }
 export type Chat = (request:ChatRequest,options:ChatOptions)=>Promise<ChatTurn>;

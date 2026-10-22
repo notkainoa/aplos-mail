@@ -129,7 +129,7 @@ function menus(){
     {label:'View',submenu:[item('Toggle Sidebar','CmdOrCtrl+Shift+S','toggle-sidebar'),item('Search Mail','CmdOrCtrl+K','search'),item('Ask Aplos','CmdOrCtrl+J','ask'),item('Refresh Mail','CmdOrCtrl+R','refresh'),{type:'separator'},item('Home','CmdOrCtrl+1','home'),item('Later','CmdOrCtrl+2','later'),item('All Mail','CmdOrCtrl+3','all'),item('Calendar','CmdOrCtrl+4','calendar'),{type:'separator'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'},...(!app.isPackaged?[{role:'toggleDevTools'} as MenuItemConstructorOptions]:[])]},
     {label:'Navigate',submenu:[item('Back','CmdOrCtrl+[','back'),item('Forward','CmdOrCtrl+]','forward')]},
     {role:'windowMenu'},
-    {role:'help',submenu:[item('Keyboard Shortcuts','CmdOrCtrl+/','shortcuts'),{label:'About Aplos Mail',click:()=>{void dialog.showMessageBox({type:'info',title:'Aplos Mail',message:`Aplos Mail ${app.getVersion()}`,detail:'An independent desktop inbox. AI features use Groq. This build updates from its source distribution.'});}}]},
+    {role:'help',submenu:[item('Keyboard Shortcuts','CmdOrCtrl+/','shortcuts'),{label:'About Aplos Mail',click:()=>{void dialog.showMessageBox({type:'info',title:'Aplos Mail',message:`Aplos Mail ${app.getVersion()}`,detail:'An independent desktop inbox. AI features use Groq by default, or the providers you choose in Settings. This build updates from its source distribution.'});}}]},
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
