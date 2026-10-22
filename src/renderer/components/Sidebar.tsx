@@ -1,5 +1,5 @@
 import {memo} from 'react';
-import {Archive,ArrowLeft,ArrowRight,CalendarDays,ChevronsUpDown,Clock,FileText,Gear,Home,Keyboard,MenuLines,PanelLeft,Plus,RefreshCw,Send,ShieldAlert,Trash2,Users} from '../icons';
+import {Archive,ArrowLeft,ArrowRight,CalendarDays,ChevronsUpDown,Clock,FileText,Gear,HelpCircle,Home,Info,Keyboard,MenuLines,PanelLeft,Plus,RefreshCw,Send,ShieldAlert,Trash2,Users} from '../icons';
 import type {Account,AppState,View} from '../../shared/types';
 import {Count,IconButton,Keys,Menu,cx,useMenu,type Icon} from '../ui';
 import {showSettingsTab} from '../Settings';
@@ -31,10 +31,9 @@ type SidebarProps={
 };
 
 export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing,canBack,canForward,navigate,back,forward,sync,hide,selectAccount,shortcuts,onError}:SidebarProps){
-  const accounts=useMenu();
+  const accounts=useMenu();const help=useMenu();
   const current=state.accounts.find(a=>a.id===state.selectedAccountId);
   const shown=current?[current]:state.accounts.slice(0,2);
-  const demoOnly=state.accounts.every(a=>a.provider==='demo');
   const status=!online||state.sync.busy||!!state.sync.error;
   return <aside className="sidebar">
     <div className="sidebar-titlebar">
@@ -67,9 +66,14 @@ export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing
     })}</nav>
     <footer className="sidebar-footer">
       {status&&<div className="sidebar-status"><span className={cx('sync-dot',(!online||state.sync.error)&&'offline',state.sync.busy&&'busy')}/><span>{!online?'Available offline':state.sync.busy?'Syncing mail…':'Sync needs attention'}</span></div>}
-      <button className={cx('footer-link',view==='settings'&&'active')} onClick={()=>navigate('settings')}>Settings</button>
-      <button className="footer-link" onClick={shortcuts}>Keyboard shortcuts</button>
-      {demoOnly&&<span className="footer-note">Demo mail</span>}
+      <div className="sidebar-footer-row">
+        <button className={cx('footer-link',view==='settings'&&'active')} onClick={()=>navigate('settings')}>Settings</button>
+        <IconButton label="Help" icon={HelpCircle} iconSize={16} active={help.open} aria-haspopup="menu" aria-expanded={help.open} onClick={help.toggle}/>
+      </div>
+      <Menu open={help.open} anchor={help.anchor} onClose={help.close} placement="top-end" label="Help" onError={onError} groups={[[
+        {label:'Keyboard shortcuts',icon:Keyboard,keys:'?',onSelect:shortcuts},
+        {label:'About Aplos Mail',icon:Info,onSelect:()=>{showSettingsTab('Help & about');navigate('settings');}},
+      ]]}/>
     </footer>
   </aside>;
 });

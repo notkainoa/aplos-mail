@@ -4,7 +4,8 @@
 
 /* ---------- Shell ---------- */
 
-.app-shell { height: 100dvh; display: flex; overflow: hidden; background: var(--sidebar-fill); }
+/* Clip, not hidden: a hidden box can still be scrolled, and focusing into the docked panel mid-slide would shift the whole app. */
+.app-shell { height: 100dvh; display: flex; overflow: clip; background: var(--sidebar-fill); }
 .app-shell.desktop.mac { background: transparent; }
 .workspace {
   position: relative;
@@ -106,11 +107,12 @@
 .nav-count { font-size: 12px; color: color-mix(in srgb, var(--sidebar-ink) 60%, transparent); font-variant-numeric: tabular-nums; }
 .nav-divider { position: relative; margin-top: 17px; }
 .nav-divider::before { content: ""; position: absolute; top: -9px; left: 8px; right: 8px; height: 1px; background: color-mix(in srgb, var(--sidebar-ink) 11%, transparent); }
-.sidebar-footer { margin-top: auto; padding: 20px 0 2px; display: flex; flex-direction: column; align-items: flex-start; }
+.sidebar-footer { margin-top: auto; padding: 20px 0 0; display: flex; flex-direction: column; align-items: stretch; }
+.sidebar-footer-row { display: flex; align-items: center; gap: 4px; }
+.sidebar-footer-row .footer-link { flex: 1; }
 .footer-link { height: 27px; display: flex; align-items: center; padding: 0 8px; border-radius: var(--radius-sm); text-align: left; color: color-mix(in srgb, var(--sidebar-ink) 82%, transparent); transition: background-color var(--dur-fast), color var(--dur-fast); }
 .footer-link:hover { color: var(--sidebar-ink); background: color-mix(in srgb, var(--sidebar-ink) 5%, transparent); }
 .footer-link.active { color: var(--sidebar-ink); background: color-mix(in srgb, var(--sidebar-ink) 10%, transparent); }
-.footer-note { padding: 2px 8px 0; font-size: 11px; line-height: 16px; color: color-mix(in srgb, var(--sidebar-ink) 45%, transparent); }
 .sidebar-status { display: flex; align-items: center; gap: 7px; padding: 0 6px 8px; font-size: 12px; line-height: 16px; color: color-mix(in srgb, var(--sidebar-ink) 55%, transparent); }
 .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex: none; }
 .sync-dot.offline { background: var(--amber); }

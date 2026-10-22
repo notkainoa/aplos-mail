@@ -96,7 +96,8 @@ export function createGemini(options:ProviderOptions={}):ChatProvider {
   const request=options.fetch??fetch;
   return compatible({name:'Gemini',env:'GEMINI_API_KEY',baseUrl:'https://generativelanguage.googleapis.com/v1beta/openai',apiKey:options.apiKey??process.env.GEMINI_API_KEY,fetch:request},'gemini',{
     keep:id=>/^gemini-/.test(id)&&!/(embedding|image|tts|live|audio)/.test(id),
-    stream:{jsonMode:true,extra:()=>({reasoning_effort:'low'})},
+    // Gemini's OpenAI endpoint documents schema-based structured output, not JSON mode, so JSON comes from the prompt.
+    stream:{extra:()=>({reasoning_effort:'low'})},
   });
 }
 
