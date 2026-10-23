@@ -313,7 +313,6 @@
 .suggestion-chip:hover { background: color-mix(in srgb, var(--blue) 22%, transparent); }
 .suggestion-chip:active { transform: scale(.98); }
 .compose-suggestion .ui-icon-btn { color: var(--faint); }
-.compose-footer .write-toggle.is-active { color: var(--blue); }
 
 /* The suggested step inside the reader's AI card. */
 .reader-suggested { height: 28px; border-radius: var(--radius-control); font-weight: 600; letter-spacing: var(--tracking-md); }

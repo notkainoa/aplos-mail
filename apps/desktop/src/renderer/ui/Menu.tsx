@@ -66,7 +66,7 @@ function MenuList({groups,label,onClose,onError}:{groups:MenuGroups;label?:strin
     onPointerLeave={()=>{if(chosen<0)setActive(-1);}}>
     {clean.map((group,g)=><div className="ui-menu-group" role="group" key={g}>{group.map(item=>{
       const i=++index;const ItemIcon=item.icon;
-      return <div key={item.label} id={'menu-item-'+i} role={item.checked===undefined?'menuitem':'menuitemradio'} aria-checked={item.checked} aria-disabled={item.disabled||undefined}
+      return <div key={i+item.label} id={'menu-item-'+i} role={item.checked===undefined?'menuitem':'menuitemradio'} aria-checked={item.checked} aria-disabled={item.disabled||undefined}
         className={cx('ui-menu-item',item.danger&&'is-danger',item.disabled&&'is-disabled',active===i&&'is-active',chosen===i&&'is-chosen')}
         onPointerMove={()=>{if(chosen<0&&!item.disabled&&active!==i)setActive(i);}} onClick={()=>choose(i)}>
         {item.leading??(ItemIcon&&<ItemIcon size={15}/>)}
