@@ -1,5 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {ArrowUpRight,Check,ChevronDown,ChevronsUpDown,Copy,KeyRound,Search} from '../icons';
+import {ApiKeyField,useKeyStore,type KeyInfo,type KeyStore} from './ApiKey';
 import {Button,Group,GroupRow,Popover,Spinner,cx} from '../ui';
 import {aiFeatures,askProvider,askProviders,askServerSetting,isAskServer,parseAskModel,voiceProviders,type AiFeature,type AiModelSetting,type AskModelInfo,type AskProviderId,type AskServerId} from '../../shared/ask';
 import type {Settings} from '../../shared/types';
@@ -8,12 +9,13 @@ import {invoke,openUrl,uid} from '../bridge';
 type Provider={id:AskProviderId;label:string;env:string;description:string;available:boolean;keyOptional?:boolean;models:AskModelInfo[];voiceModels?:AskModelInfo[];address?:string;defaultAddress?:string;running?:boolean;version?:string};
 /** A placeholder an earlier build stored for a custom server before a model was typed. */
 const UNSET='choose-a-model';
-const keyPages:Record<AskProviderId,string>={groq:'https://console.groq.com/keys',openai:'https://platform.openai.com/api-keys',anthropic:'https://platform.claude.com/settings/keys',gemini:'https://aistudio.google.com/apikey',openrouter:'https://openrouter.ai/settings/keys','opencode-go':'https://opencode.ai/console',ollama:'',lmstudio:'',custom:''};
 const shortDescriptions:Record<AskProviderId,string>={groq:'Very fast open models, and speech to text.',openai:'GPT models and speech to text on your OpenAI API key.',anthropic:'Claude Opus, Sonnet and Haiku.',gemini:'Gemini models from Google AI Studio.',openrouter:'Hundreds of models on one key.','opencode-go':'Your OpenCode Go plan’s models.',ollama:'Local models on this Mac. Mail stays here.',lmstudio:'Local models on this Mac. Mail stays here.',custom:'Any OpenAI-compatible server.'};
 
 /** Settings → AI: the providers the owner has set up, then which model each feature uses. */
 export function AiSettings({settings,groqReady,onChange}:{settings:Settings;groqReady:boolean;onChange:(patch:Partial<Settings>)=>void}){
-  const [catalog,setCatalog]=useState<Provider[]>();const [round,setRound]=useState(0);
+  const [catalog,setCatalog]=useState<Provider[]>();const [round,setRound]=useState(0);const {store,update}=useKeyStore();
+  // A saved or removed key changes which providers are ready and what they list, so the catalog reloads.
+  const keyChanged=(id:AskProviderId,info:KeyInfo)=>{update(id,info);setRound(n=>n+1);};
   // Reloaded when a server address changes or on Try again, so a server that just started shows its models.
   useEffect(()=>{let live=true;void invoke<Provider[]>('ai.models').then(list=>{if(live)setCatalog(list);}).catch(()=>{});return()=>{live=false;};},[settings.askOllamaUrl,settings.askLmStudioUrl,settings.askCustomUrl,round]);
   const providers:Provider[]=catalog??askProviders.map(p=>({...p,models:[...p.models],...(voiceProviders[p.id]?{voiceModels:[...voiceProviders[p.id]!]}:{}),available:p.id==='groq'?groqReady:false}));
@@ -24,17 +26,17 @@ export function AiSettings({settings,groqReady,onChange}:{settings:Settings;groq
       <ConnectionCheck key={settings.askModel} model={settings.askModel} ready={!!ask&&ask.model!==UNSET&&!!providers.find(p=>p.id===ask.provider)?.available}/>
     </Group>
     <Group title="Providers">
-      {providers.map(p=><ProviderRow key={p.id} provider={p} loading={!catalog} address={isAskServer(p.id)?settings[askServerSetting[p.id]]:undefined}
+      {providers.map(p=><ProviderRow key={p.id} provider={p} loading={!catalog} address={isAskServer(p.id)?settings[askServerSetting[p.id]]:undefined} store={store} onKey={info=>keyChanged(p.id,info)}
         onAddress={url=>isAskServer(p.id)&&onChange({[askServerSetting[p.id]]:url})} onRetry={()=>setRound(n=>n+1)}/>)}
     </Group>
-    <p className="group-note ai-note"><KeyRound size={13}/>Keys stay in the backend. New mail goes to your Summaries model as it arrives, and to your Plans model when plans are added automatically; everything else runs only when you use it.</p>
+    <p className="group-note ai-note"><KeyRound size={13}/>Keys you save are encrypted with your macOS keychain, used only by the app’s backend and never shown again. New mail goes to your Summaries model as it arrives, and to your Plans model when plans are added automatically; everything else runs only when you use it.</p>
   </div>;
 }
 
 const statusText=(p:Provider,loading:boolean)=>loading?'Checking…':p.running!==undefined?(p.running?'Running':'Not running'):p.available?'Ready':p.keyOptional?'Needs an address':'Needs a key';
 
 /** One provider: its status, and on opening what it needs (a key, an address, a running app) or what it offers. */
-function ProviderRow({provider:p,loading,address,onAddress,onRetry}:{provider:Provider;loading:boolean;address?:string;onAddress:(url:string)=>void;onRetry:()=>void}){
+function ProviderRow({provider:p,loading,address,store,onKey,onAddress,onRetry}:{provider:Provider;loading:boolean;address?:string;store?:KeyStore;onKey:(info:KeyInfo)=>void;onAddress:(url:string)=>void;onRetry:()=>void}){
   const [open,setOpen]=useState(false);const [panelId]=useState(()=>'provider-'+uid());
   const server=isAskServer(p.id)?p.id:undefined,local=server==='ollama'||server==='lmstudio';
   const count=p.models.length,speech=p.voiceModels?.length;
@@ -46,25 +48,12 @@ function ProviderRow({provider:p,loading,address,onAddress,onRetry}:{provider:Pr
       <ChevronDown size={14} className="ai-provider-chevron"/>
     </button>
     {open&&<div id={panelId} className="ai-provider-panel">
-      {summary&&<p className="ai-provider-summary">{summary}{!server&&<> · key in <code>{p.env}</code></>}</p>}
-      {!loading&&!p.available&&!server&&<KeySetup provider={p}/>}
+      {summary&&<p className="ai-provider-summary">{summary}</p>}
       {server&&<ServerAddress id={server} value={address??''} placeholder={askProvider(server).defaultAddress??'http://localhost:11434/v1'} onChange={onAddress}/>}
       {!loading&&local&&!p.running&&<LocalSetup id={server as 'ollama'|'lmstudio'} address={p.address??''} onRetry={onRetry}/>}
       {!loading&&local&&p.running&&!count&&<p className="ai-provider-summary">{localEmpty[server as 'ollama'|'lmstudio']}</p>}
+      {store&&<GroupRow className="ai-key-row" label={server?'API key (optional)':'API key'} description={server?'Only if the server asks for one.':undefined}><ApiKeyField provider={p.id} info={store.providers[p.id]??{}} store={store} onChange={onKey}/></GroupRow>}
     </div>}
-  </div>;
-}
-
-/** What to do when a provider has no key: the variable to set and where to get a key. */
-function KeySetup({provider}:{provider:Provider}){
-  const [copied,setCopied]=useState(false);
-  async function copy(){try{await navigator.clipboard.writeText(`${provider.env}=`);setCopied(true);setTimeout(()=>setCopied(false),1600);}catch{/* Clipboard access can be refused; the name is still on screen. */}}
-  return <div className="ai-setup" role="status">
-    <p><strong>Add your {provider.label} key to use it.</strong> Put it in the backend <code>.env</code>, then restart Aplos.</p>
-    <div className="ai-setup-actions">
-      <button type="button" className={cx('ai-env',copied&&'is-copied')} onClick={()=>void copy()} aria-label={`Copy ${provider.env}`}><code>{provider.env}=</code><span>{copied?<><Check size={12}/>Copied</>:<><Copy size={12}/>Copy</>}</span></button>
-      <Button variant="text" size="sm" iconRight={ArrowUpRight} onClick={()=>void openUrl(keyPages[provider.id])}>Get a key</Button>
-    </div>
   </div>;
 }
 
@@ -72,7 +61,7 @@ const localEmpty={ollama:'No models that can use tools yet. Pull one in Terminal
 const addressHelp:Record<AskServerId,string>={
   ollama:'Leave empty for Ollama on this Mac. Another machine works too; the mail you use AI on is sent there.',
   lmstudio:'Leave empty for LM Studio on this Mac. Another machine works too; the mail you use AI on is sent there.',
-  custom:'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1. The mail you use AI on is sent to this server. An optional key goes in CUSTOM_AI_API_KEY.',
+  custom:'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1. The mail you use AI on is sent to this server.',
 };
 /** A server's address. Saved when leaving the field (Enter leaves it); the engine validates it. Empty means the default. */
 function ServerAddress({id,value,placeholder,onChange}:{id:AskServerId;value:string;placeholder:string;onChange:(url:string)=>void}){

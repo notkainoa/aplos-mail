@@ -7,6 +7,7 @@ import {AddAccountDialog} from './components/AddAccount';
 import {DomainCheck} from './components/DomainCheck';
 import {DeviceSync} from './components/DeviceSync';
 import {AiSettings} from './components/AiSettings';
+import {showWelcome} from './components/Welcome';
 import {askModelLabel} from '../shared/ask';
 
 const categories=['General','Mail','Calendar','AI','Notifications','Accounts','Help & about'] as const;
@@ -96,11 +97,12 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
    <Group title="A few useful things">
     <GroupRow label="Keyboard shortcuts" description="Make light work of your inbox."><Button variant="secondary" size="sm" icon={Keyboard} shortcut="?" onClick={shortcuts}>View shortcuts</Button></GroupRow>
     <GroupRow label="AI" description="Providers and the model each feature uses are in Settings → AI."><Button variant="secondary" size="sm" onClick={()=>showSettingsTab('AI')}>Open AI settings</Button></GroupRow>
+    <GroupRow label="Welcome and setup" description="Add an account, an AI key and the microphone, one step at a time."><Button variant="secondary" size="sm" onClick={showWelcome}>Show welcome</Button></GroupRow>
     <GroupRow label="Updates" description="This personal build updates when you rebuild the app."><span className="muted small">Local development build</span></GroupRow>
     <GroupRow label="Export local data" description="Includes your cached mail and drafts. Keep it somewhere private."><Button variant="secondary" size="sm" icon={Download} loading={busy==='export'} onClick={()=>void run('export',async()=>{const data=await invoke<string>('data.export');await saveFile('aplos-export.json',btoa(unescape(encodeURIComponent(data))));notify('Export prepared');})}>Export</Button></GroupRow>
     <GroupRow label="Reset demo mail" description="Replace local demo accounts with fresh original examples."><Button variant="danger" size="sm" loading={busy==='reset'} onClick={async()=>{if(await confirmAction({title:'Reset demo mail?',message:'Demo accounts and demo drafts return to their original examples. Connected accounts are preserved.',confirmLabel:'Reset demo',danger:true}))void run('reset',()=>invoke('demo.reset'));}}>Reset demo</Button></GroupRow>
    </Group>
-   <p className="small muted about-note"><ShieldCheck size={14}/>Your API key stays in the backend environment. Email is sent only when you choose Send. Aplos is an independent personal project.</p>
+   <p className="small muted about-note"><ShieldCheck size={14}/>AI keys are encrypted with your macOS keychain. Email is sent only when you choose Send. Aplos is an independent personal project.</p>
   </>}
   </div>
  </div>;

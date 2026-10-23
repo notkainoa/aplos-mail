@@ -2,13 +2,15 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, ChatRequest, ChatTurn } from '../engine/agent';
 import type { ChatProvider } from '../engine/ports';
 import { askProvider, type AskModelInfo } from '../shared/ask';
+import { missingKey, readKey, redact, rejected, type ApiKey } from './llm';
 
 /**
  * Claude through the official SDK and the Messages API. Ask's loop speaks OpenAI-style messages, so this
  * maps them: tool calls become `tool_use` blocks, tool results one `tool_result` user turn, and each assistant
  * turn Claude wrote is replayed with its own content blocks (thinking included) as the API expects.
  */
-export interface AnthropicOptions { apiKey?:string; fetch?:typeof fetch }
+/** `apiKey` is a key or a resolver read per request; without one ANTHROPIC_API_KEY is used. */
+export interface AnthropicOptions { apiKey?:ApiKey; fetch?:typeof fetch }
 
 type Blocks=Anthropic.ContentBlockParam[];
 function toClaude(messages:ChatMessage[]){
@@ -38,7 +40,7 @@ function toClaude(messages:ChatMessage[]){
 /** The SDK's typed errors mapped to the same messages and codes the other providers use. */
 function failure(error:unknown,signal?:AbortSignal):Error {
   if(signal?.aborted||error instanceof Anthropic.APIUserAbortError)return new Error('AI request cancelled.');
-  if(error instanceof Anthropic.AuthenticationError||error instanceof Anthropic.PermissionDeniedError)return new Error('Claude rejected the API key. Check ANTHROPIC_API_KEY.');
+  if(error instanceof Anthropic.AuthenticationError||error instanceof Anthropic.PermissionDeniedError)return new Error(rejected('Claude'));
   if(error instanceof Anthropic.RateLimitError){
     const seconds=Number(error.headers?.get?.('retry-after'));
     return Object.assign(new Error(Number.isFinite(seconds)&&seconds>90?`Claude’s usage limit is reached. Try again in about ${Math.ceil(seconds/60)} minutes, or choose another model in Settings → AI.`:'Claude rate limit reached. Please try again shortly.'),{code:'rate_limited',...(Number.isFinite(seconds)?{retryAfterMs:seconds*1000}:{})});
@@ -50,13 +52,34 @@ function failure(error:unknown,signal?:AbortSignal):Error {
 }
 
 export function createClaude(options:AnthropicOptions={}):ChatProvider {
-  const apiKey=options.apiKey??process.env.ANTHROPIC_API_KEY;
-  // Ask runs its own wait-and-retry for rate limits, so the SDK retries only once.
-  const client=apiKey?new Anthropic({apiKey,maxRetries:1,timeout:90_000,...(options.fetch?{fetch:options.fetch}:{})}):undefined;
+  // One client per key, made again when the key saved in Settings changes.
+  let made:{key:string;client:Anthropic}|undefined;
+  const current=()=>{
+    const apiKey=readKey(options.apiKey,'ANTHROPIC_API_KEY');if(!apiKey){made=undefined;return undefined;}
+    // Ask runs its own wait-and-retry for rate limits, so the SDK retries only once.
+    if(made?.key!==apiKey)made={key:apiKey,client:new Anthropic({apiKey,maxRetries:1,timeout:90_000,...(options.fetch?{fetch:options.fetch}:{})})};
+    return made.client;
+  };
   return {
-    available:!!client,
+    get available(){return !!current();},
+    /** One page of the model list, so a refused key shows Anthropic's own reason. */
+    async check(signal){
+      const client=current();if(!client)throw new Error(missingKey('Claude'));
+      try{await client.models.list({limit:1},{signal,maxRetries:0,timeout:20_000});}
+      catch(error){
+        if(signal?.aborted)throw new Error('AI request cancelled.');
+        if(error instanceof Anthropic.APIConnectionError)throw new Error('Couldn’t reach Claude. Check your connection and try again.');
+        if(error instanceof Anthropic.APIError){
+          const said=(error.error as {error?:{message?:unknown}}|undefined)?.error?.message;
+          const head=error.status===401||error.status===403?'Claude didn’t accept this key':`Claude answered ${error.status??'with an error'}`;
+          throw new Error(`${head}${typeof said==='string'&&said?`: ${redact(said.slice(0,240),made?.key)}`:'.'}`);
+        }
+        throw new Error('Claude could not check the key. Please try again.');
+      }
+    },
     async chat(request:ChatRequest,{signal,onText}={}):Promise<ChatTurn> {
-      if(!client)throw new Error('Set ANTHROPIC_API_KEY in the main process to use Claude.');
+      const client=current();
+      if(!client)throw new Error(missingKey('Claude'));
       const {system,messages}=toClaude(request.messages);
       try{
         const stream=client.messages.stream({
@@ -79,7 +102,7 @@ export function createClaude(options:AnthropicOptions={}):ChatProvider {
       }catch(error){if((error as {code?:unknown}).code==='refusal')throw error;throw failure(error,signal);}
     },
     async models():Promise<AskModelInfo[]> {
-      const curated=askProvider('anthropic').models;
+      const curated=askProvider('anthropic').models,client=current();
       if(!client)return [...curated];
       const live:string[]=[];for await(const model of client.models.list())live.push(model.id);
       return [...curated.filter(m=>live.includes(m.id)),...live.filter(id=>!curated.some(m=>m.id===id)).map(id=>({id,label:id}))];

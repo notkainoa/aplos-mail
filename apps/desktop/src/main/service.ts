@@ -5,6 +5,7 @@ import { createGroq } from './groq';
 import { createCustom, createGemini, createLmStudio, createOpenAI, createOpenCodeGo, createOpenRouter } from './providers';
 import { createOllama } from './ollama';
 import { createClaude } from './anthropic';
+import { createAiKeys, type AiKeys } from './ai-keys';
 import type { ChatProvider } from '../engine/ports';
 import type { AskProviderId, AskServerId } from '../shared/ask';
 import { createGoogle, type GoogleAdapter } from './google';
@@ -31,12 +32,14 @@ export interface ServiceOptions {
   fetch?:typeof fetch;
   /** Background sync interval for connected accounts; 0 turns it off. */
   autoSyncMs?:number;
+  /** Where AI keys fall back to when none is saved in Settings; the process environment by default. */
+  env?:Record<string,string|undefined>;
 }
 
-/** One transport per server and address, so a model list cache survives between questions. */
-function servers(){
+/** One transport per server and address, so a model list cache survives between questions. Keys are read per request. */
+function servers(keys:AiKeys){
   const made=new Map<string,ChatProvider>(),build={ollama:createOllama,lmstudio:createLmStudio,custom:createCustom};
-  return (id:AskServerId,url:string)=>{const key=`${id} ${url}`;let provider=made.get(key);if(!provider){provider=build[id](url);made.set(key,provider);}return provider;};
+  return (id:AskServerId,url:string)=>{const key=`${id} ${url}`;let provider=made.get(key);if(!provider){provider=build[id](url,{apiKey:()=>keys.resolve(id)});made.set(key,provider);}return provider;};
 }
 
 /** Desktop composition root. The service itself depends only on the engine's typed ports. */
@@ -61,11 +64,13 @@ export async function createService(options:ServiceOptions) {
   let workflow:Awaited<ReturnType<typeof createWorkflowSync>>|undefined,workflowError:string|undefined;
   try{workflow=await createWorkflowSync({dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,memory:staged.memory,now});}
   catch(error){workflowError=error instanceof Error?error.message:'Device sync could not start.';}
+  const keys=await createAiKeys({dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,env:options.env});
+  const key=(id:AskProviderId)=>({apiKey:()=>keys.resolve(id)});
   return createEngineService({
-    store,staged,providers,brokenProviders,workflow,workflowError,now,
-    groq:options.groq||createGroq(),groqModel:options.groq?undefined:process.env.GROQ_MODEL,randomUUID,
-    chats:{openai:createOpenAI(),anthropic:createClaude(),gemini:createGemini(),openrouter:createOpenRouter(),'opencode-go':createOpenCodeGo(),...options.chats},
-    serverChat:options.serverChat??servers(),symbols:symbolRenderer(options.symbolTool),
+    store,staged,providers,brokenProviders,workflow,workflowError,now,keys,
+    groq:options.groq||createGroq(key('groq')),groqModel:options.groq?undefined:process.env.GROQ_MODEL,randomUUID,
+    chats:{openai:createOpenAI(key('openai')),anthropic:createClaude(key('anthropic')),gemini:createGemini(key('gemini')),openrouter:createOpenRouter(key('openrouter')),'opencode-go':createOpenCodeGo(key('opencode-go')),...options.chats},
+    serverChat:options.serverChat??servers(keys),symbols:symbolRenderer(options.symbolTool),
     desktop:options.desktop,secure:!!options.encrypt,fetch:options.fetch,
     lookup:options.fetch?undefined:async host=>(await lookup(host,{all:true})).map(a=>a.address),
     autoSyncMs:options.autoSyncMs,

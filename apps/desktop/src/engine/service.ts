@@ -441,7 +441,7 @@ export async function createEngineService(options:EngineOptions) {
   function askTransport(id:AskProviderId) {
     const transport=chatProvider(id),provider=askProvider(id);
     if(id==='custom'&&!state.settings.askCustomUrl)throw new Error('Add your server’s address in Settings → AI, or choose another model.');
-    if(!transport?.available)throw new Error(`Add ${provider.env} to the backend environment to use ${provider.label}, or choose another model in Settings → AI.`);
+    if(!transport?.available)throw new Error(`Add your ${provider.label} key in Settings → AI to use ${provider.label}, or choose another model.`);
     return transport;
   }
   /** The model a feature uses, from Settings → AI. */
@@ -859,6 +859,28 @@ export async function createEngineService(options:EngineOptions) {
           tools:[{name:'ping',description:'Confirms that the connection works.',parameters:{type:'object',properties:{}}}],
           messages:[{role:'system',content:'You are checking a connection. Call the ping tool once, then stop.'},{role:'user',content:'Check the connection.'}]},{signal}));
         return {ms:now().getTime()-started,tools:turn.toolCalls.some(call=>call.name==='ping')};
+      }
+      case 'ai.keys':{
+        // Where each provider's key comes from and its last four characters; never the key itself.
+        const keys=options.keys;
+        return {secure:!!keys?.secure,...(keys?.error?{error:keys.error}:{}),providers:Object.fromEntries(askProviders.map(info=>[info.id,keys?.info(info.id)??{}]))};
+      }
+      case 'ai.key.set':case 'ai.key.delete':{
+        const keys=options.keys,id=enumValue(p.provider,askProviders.map(info=>info.id));
+        if(!keys?.secure)throw new Error(keys?.error??'Keys can only be saved in the Aplos Mail desktop app. Here, set the key in the backend environment instead.');
+        if(method==='ai.key.set')await keys.set(id,text(p.key,2_000));else await keys.delete(id);
+        return keys.info(id);
+      }
+      case 'ai.key.test':{
+        // One cheap request with the provider's current key (usually its model list). No mail is sent.
+        const id=enumValue(p.provider,askProviders.map(info=>info.id)),info=askProvider(id);
+        const transport=id==='groq'?groq:chatProvider(id);
+        if(!transport)throw new Error(id==='custom'?'Add your server’s address first.':`${info.label} isn’t available in this version of Aplos.`);
+        if(!transport.available)throw new Error(`Add your ${info.label} key first.`);
+        if(!transport.check)throw new Error(`${info.label} can’t be checked from here.`);
+        const started=now().getTime();
+        await ai(p,signal=>transport.check!(signal));
+        return {ms:now().getTime()-started};
       }
       case 'ai.models':{
         // What Settings can offer: each provider, whether it is set up, its tool-capable models and any speech models.
