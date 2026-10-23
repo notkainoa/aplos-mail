@@ -1,12 +1,10 @@
 # Progress
 
-## 2026-10-23 — Website deployment (Cloudflare Pages)
+## 2026-10-23 — Website deployment (Vercel)
 
-- Added `.github/workflows/web-deploy.yml`: on PRs and pushes to `main` that touch `apps/web/**`, `packages/**`, root package files or the workflow, it installs only the site workspace, builds, and runs `wrangler pages deploy`. PRs get a preview at the branch alias plus one sticky comment with the URL; `main` deploys to production. Fork PRs are skipped; with no secrets the job passes and does nothing.
-- Added `apps/web/public/_headers` (nosniff, referrer policy, frame deny, immutable cache for hashed assets). README documents the setup.
-- **Evidence.** `npm ci --workspace @aplos/web --include-workspace-root` resolves (dry run), `npm run web:build` succeeds and copies `_headers` into `dist`, the workflow parses as YAML.
-- **Cloudflare set up from the owner's Wrangler login.** Created Pages project `aplos-mail` (production branch `main`) with `wrangler@3`; `wrangler@4 pages project create` instead deployed a blank placeholder Worker, which I deleted. Set the `CLOUDFLARE_ACCOUNT_ID` repo secret. Ran the workflow's exact deploy command locally as a preview: `https://t3-monorepo-website.aplos-mail.pages.dev` serves `/` and `/privacy/` with 200, the security headers, immutable asset caching, and Cloudflare's `x-robots-tag: noindex` on previews. URL extraction from Wrangler's output picks the stable branch alias. The first TLS handshake on a new project subdomain took about a minute.
-- **Not verified.** `CLOUDFLARE_API_TOKEN` is not set yet (a Wrangler OAuth login should not be stored as a CI secret), so the workflow itself has not run in Actions and the PR comment step is untested. Production (`main`) deploy has not been run.
+- Owner first asked for Cloudflare Pages, then switched to Vercel. Cloudflare was fully removed: Pages project and a stray placeholder Worker deleted, `CLOUDFLARE_ACCOUNT_ID` repo secret deleted, workflow and `_headers` removed from the repo.
+- Vercel project `aplos-mail` created from the owner's CLI login and connected to the GitHub repo (Git integration, no Actions). Settings applied through the API: Root Directory `apps/web` (source files outside root on), Vite, Node 22, Web Analytics and Speed Insights toggled off, deployment protection on previews only so production is public. `apps/web/vercel.json` holds install command, headers, caching and the ignore-build check. The CLI's `.gitignore` edit (`.env*` after `!.env.example`) would have hidden `.env.example`; replaced with just `.vercel`.
+- Read `apps/web/README.md` "Deployment" for details. Evidence for the first Vercel build is in the entry below this one once the PR build has run.
 
 ## 2026-10-22 — Website second pass: always dark, richer
 

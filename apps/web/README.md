@@ -13,18 +13,12 @@ npm run web:preview   # serve the built output
 - The privacy page is a draft with bracketed to-dos. Finish it before Google or Microsoft OAuth verification.
 - `src/assets/shots/*.webp` are real screenshots of the app on its original demo data. `scripts/capture-screenshots.mjs` recreates them headlessly (instructions are at its top).
 
-## Deployment (Cloudflare Pages)
+## Deployment (Vercel)
 
-`.github/workflows/web-deploy.yml` builds the site and deploys it with Wrangler direct upload. It only runs when a change touches `apps/web/**`, `packages/**`, the root `package.json`/`package-lock.json` or the workflow itself.
+The Vercel project `aplos-mail` is connected to this GitHub repository through Vercel's Git integration, so there is no workflow or secret in the repo.
 
-- Pull request: preview deployment at `https://<branch>.<project>.pages.dev`, URL posted (and kept up to date) as a comment on the PR. Fork PRs are skipped because they cannot read secrets.
-- Push to `main`: production deployment.
-- Without the secrets below the job passes and does nothing.
-
-One-time setup:
-
-1. Create the Pages project with `main` as the production branch: `npx wrangler@3 pages project create aplos-mail --production-branch main` (after `npx wrangler login`; run it outside the repo, and use Wrangler 3 because version 4 turns this command into a Worker deploy), or in the dashboard as a Direct Upload project. The project `aplos-mail` already exists on the owner's Cloudflare account. If you pick another name, set the repo variable `CLOUDFLARE_PAGES_PROJECT`.
-2. Create an API token (My Profile → API Tokens → Custom) with `Account → Cloudflare Pages → Edit`.
-3. Add repo secrets: `gh secret set CLOUDFLARE_API_TOKEN` and `gh secret set CLOUDFLARE_ACCOUNT_ID` (the account ID is on the Cloudflare dashboard overview page).
-
-`public/_headers` sets basic security headers and long-lived caching for hashed assets. A custom domain is added in the Pages project settings; nothing in the repo needs to change.
+- Pull request: Vercel builds a preview and comments the URL on the PR. Previews sit behind Vercel login (deployment protection).
+- Merge to `main`: production deployment, publicly reachable.
+- `vercel.json` (in this folder) sets the install command (only the site's dependencies, Electron is skipped), security headers, long-lived caching for hashed assets, and an ignored-build command: a deploy is skipped unless the last commit touched `apps/web`, `packages/` or the root `package.json` / `package-lock.json`. That check looks at the latest commit only, so a push of several commits where only an earlier one touched the site is skipped; redeploy from the Vercel dashboard if that happens.
+- Project settings (set once through the API, not in the repo): Root Directory `apps/web` with source files outside the root enabled, framework Vite, Node 22, Web Analytics and Speed Insights off, deployment protection on previews only.
+- A custom domain is added in the Vercel project settings; nothing in the repo needs to change.
