@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-22 — Website second pass: always dark, richer
+
+- Owner feedback: too plain; take inspiration from animations.dev, aiforui.dev and Linear's site; always dark. Looked at all three headlessly (screenshots only, nothing copied).
+- Changes in `apps/web`: dark-only tokens and screenshots (light variants removed), sticky translucent bar, green ambient glow and a framed hero window that fades out, a working Home demo (`Triage.tsx`), a tile layout (calendar and Ask screenshots bleeding off their tiles, keycaps, provider and account chips), scroll-in reveals, glossy accent button.
+- **Evidence.** Rebuilt and served the build on its own port; headless checks: no console errors or warnings and no failed requests at 1440 and 390 for both pages; page width equals the viewport on mobile (glows are viewport-sized, so nothing scrolls sideways). The demo was driven with real key presses: → marks Done and advances, ← and Space in quick succession each advance, Z restores the last card, five presses reach "Inbox finished.", Start over resets, buttons work by click, and the page scroll did not move on Space. `npm run typecheck` and `npm test` re-run from the root (see the PR for counts). Fixed from review: wrapped card header on phones, hero crop slivers on mobile, the Ask screenshot floating mid-tile, an orphan `?` keycap.
+
 ## 2026-10-22 — Monorepo and first website
 
 - **Monorepo.** Moved the app to `apps/desktop` with `git mv` (history follows; 100% renames), added `apps/web` and an empty `packages/`, and a root `package.json` with workspaces and proxy scripts. Code changes outside moves: a small `src/main/env.ts` (loads `.env` from the working directory and the repo root), `scripts/launch.mjs` resolving paths from its own location plus a root shim, `verify:release` / `verify:large` npm scripts, `electron` pinned to `44.7.2`, and doc path updates (README, AGENTS.md, MOBILE.md).
