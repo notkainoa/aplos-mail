@@ -51,6 +51,8 @@ export function App(){
  const [fatal,setFatal]=useState('');
  const [route,setRoute]=useState<Route>({view:'home',threadId:popoutThread??undefined});
  const [routes,setRoutes]=useState<Route[]>([{view:'home'}]);const [historyIndex,setHistoryIndex]=useState(0);
+ // Where Escape returns to from Settings: the last place outside it, open thread included.
+ const beforeSettings=useRef<Route>({view:'home'});if(route.view!=='settings')beforeSettings.current=route;
  const [ask,setAsk]=useState(()=>!popoutThread&&!popoutDraft&&localStorage.getItem(askStorageKey)!=='closed');
  // The dock shows Ask (the default) or Today, one day of every calendar beside the mail.
  const [dockTab,setDockTab]=useState<'ask'|'today'>('ask');const [askTools,setAskTools]=useState<HTMLDivElement|null>(null);
@@ -351,6 +353,7 @@ export function App(){
    if(e.key==='Escape'&&squeezed&&peek){e.preventDefault();setPeek(false);return;}
    if((e.metaKey||e.ctrlKey)&&['k','j',',','/'].includes(e.key)){e.preventDefault();command(e.key==='k'?'search':e.key==='j'?'ask':e.key===','?'settings':'shortcuts');return;}
    if(e.ctrlKey&&!e.metaKey&&!e.altKey&&/^[1-9]$/.test(e.key)&&!composer){const section=sections[Number(e.key)-1];if(section){e.preventDefault();navigate(section.view);}return;}
+   if(e.key==='Escape'&&route.view==='settings'&&!composer&&!eventEditor){e.preventDefault();if(typing)element.blur();else navigate(beforeSettings.current.view,beforeSettings.current.threadId);return;}
    if(composer||eventEditor||typing||control)return;
    if(e.key==='Escape'){setDuePrompt(undefined);if(selected.size){setSelected(new Set());return;}if(selectedThread)setRoute(r=>({...r,threadId:undefined}));else if(searchMode){setSearchMode(false);setSearch('');}return;}
    if((e.metaKey||e.ctrlKey)&&e.key==='a'&&!selectedThread&&order.length){e.preventDefault();setSelected(new Set(order.map(t=>t.id)));return;}
