@@ -23,7 +23,7 @@ npm run web:preview   # serve the built output
 
 One-time setup:
 
-1. Create the Pages project with `main` as the production branch: `npx wrangler@4 pages project create aplos-mail --production-branch main` (after `npx wrangler login`), or in the dashboard as a Direct Upload project. If you pick another name, set the repo variable `CLOUDFLARE_PAGES_PROJECT`.
+1. Create the Pages project with `main` as the production branch: `npx wrangler@3 pages project create aplos-mail --production-branch main` (after `npx wrangler login`; run it outside the repo, and use Wrangler 3 because version 4 turns this command into a Worker deploy), or in the dashboard as a Direct Upload project. The project `aplos-mail` already exists on the owner's Cloudflare account. If you pick another name, set the repo variable `CLOUDFLARE_PAGES_PROJECT`.
 2. Create an API token (My Profile → API Tokens → Custom) with `Account → Cloudflare Pages → Edit`.
 3. Add repo secrets: `gh secret set CLOUDFLARE_API_TOKEN` and `gh secret set CLOUDFLARE_ACCOUNT_ID` (the account ID is on the Cloudflare dashboard overview page).
 
