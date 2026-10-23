@@ -24,6 +24,17 @@ export interface AppState { version:1; accounts:Account[]; threads:Thread[]; dra
   /** Engine run and commit count of this copy; not saved. */ epoch?:string; rev?:number;
   /** Total threads when this copy holds only the newest ones. */ threadCount?:number }
 export interface Capabilities { groq:boolean; google:boolean; microsoft:boolean; desktop:boolean; version:string }
+/** In-app update state, from the main process (`update.status`, `update` events). */
+export type UpdateStatus =
+  |{state:'disabled';reason:string}
+  |{state:'idle'}
+  |{state:'checking'}
+  |{state:'current'}
+  |{state:'downloading';version:string;percent?:number}
+  |{state:'ready';version:string}
+  |{state:'error';message:string};
+/** `dismissed`: the owner chose Later for the ready update; the notice stays hidden until a manual check or the next launch. */
+export interface UpdateInfo { currentVersion:string; status:UpdateStatus; lastCheck?:string; dismissed?:boolean }
 export type Listener = (event:{type:string; payload?:unknown})=>void;
 export interface Bridge { invoke<T=unknown>(method:string,payload?:unknown):Promise<T>; subscribe(listener:Listener):()=>void }
 declare global { interface Window { aplos?:Bridge } }

@@ -1,5 +1,6 @@
 {
   "name": "aplos-mail-monorepo",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Aplos Mail: desktop app, website and shared packages",
@@ -24,6 +25,9 @@
     "verify:large": "npm run verify:large -w @aplos/desktop",
     "web": "npm run dev -w @aplos/web",
     "web:build": "npm run build -w @aplos/web",
-    "web:preview": "npm run preview -w @aplos/web"
+    "web:preview": "npm run preview -w @aplos/web",
+    "release": "node scripts/release.mjs",
+    "release:build": "npm run release:build -w @aplos/desktop",
+    "update-feed": "npm run update-feed -w @aplos/desktop --"
   }
 }

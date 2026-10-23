@@ -26,6 +26,8 @@ npm run desktop   # Build and run Electron
 npm run typecheck # every workspace
 npm test          # every workspace
 npm run package   # apps/desktop/release/mac-arm64/Aplos Mail.app
+npm run release:build # DMG + ZIP for arm64 and x64, plus latest-mac.yml, in apps/desktop/release
+npm run release -- patch # bump the version, commit and tag (see RELEASING.md)
 node scripts/launch.mjs # Launch packaged app with the ignored workspace .env
 npm run web       # Website dev server: http://127.0.0.1:5273
 npm run web:build # Build the website to apps/web/dist
@@ -34,6 +36,10 @@ npm run web:build # Build the website to apps/web/dist
 Put the ignored `.env` at the repo root (`apps/desktop/.env` also works). `npm run verify:release` and `npm run verify:large` run the post-package checks described below.
 
 Original demo mail works immediately and stays local, including Send. Demo recipients use reserved `.example` addresses. Connect a real account only when you want real mailbox access; Send and calendar changes then affect that account.
+
+## Releases and updates
+
+Pushing a `vX.Y.Z` tag builds signed (when the certificate secrets exist), notarized DMGs and ZIPs on GitHub Actions and publishes them to a draft GitHub Release; see [RELEASING.md](RELEASING.md). Installed copies check GitHub Releases a minute after launch and every 6 hours, download in the background and offer **Restart** / **Later**; nothing installs until you choose Restart. electron-updater on macOS can only install an update into an app signed with a Developer ID, so updates are switched off (with the reason in Settings → General) in development, the browser preview, and unsigned or ad-hoc signed builds, including every build made before the owner's certificate is configured.
 
 ## AI configuration
 

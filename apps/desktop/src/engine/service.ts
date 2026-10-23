@@ -1,6 +1,7 @@
 import type { Account, AppState, Attachment, CalendarEvent, CalendarInfo, Conversation, Draft, Listener, Settings, Thread } from '../shared/types';
 import { createDemo, defaultSettings, demoCalendars } from './demo';
 import { hasRealSummary } from '../shared/summary';
+import { appVersion } from '../shared/version';
 import { applySync } from './merge';
 import { olderInboxDuplicates } from './duplicates';
 import { createGate } from './gate';
@@ -702,7 +703,7 @@ export async function createEngineService(options:EngineOptions) {
         return page;
       }
       case 'symbols.render':return symbols(p.items,p.scale);
-      case 'capabilities.get':return {groq:groq.available,google:!!providers.google?.available,microsoft:!!providers.microsoft?.available,desktop:!!options.desktop,version:'0.1.0'};
+      case 'capabilities.get':return {groq:groq.available,google:!!providers.google?.available,microsoft:!!providers.microsoft?.available,desktop:!!options.desktop,version:appVersion};
       case 'settings.update':change(s=>{s.settings={...s.settings,...settingsPatch(p.patch)};});return clone(state);
       case 'account.select':{const id=text(p.id,300);if(id!=='all')account(id);change(s=>{s.selectedAccountId=id;});return clone(state);}
       case 'account.connect':{

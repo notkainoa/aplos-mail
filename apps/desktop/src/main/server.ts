@@ -5,6 +5,7 @@ import {pathToFileURL} from 'node:url';
 import {loadDevEnv} from './env';
 import {createServer as createViteServer} from 'vite';
 import {createService} from './service';
+import {appVersion} from '../shared/version';
 import type {Listener} from '../shared/types';
 
 export const serviceMethods=new Set([
@@ -46,7 +47,8 @@ export async function startServer(options:{service?:Awaited<ReturnType<typeof cr
       try{
         if(!req.headers['content-type']?.startsWith('application/json')){json(415,{error:'Use application/json.'});return;}
         const {method,payload}=await readBody(req);
-        if(method==='app.info'){json(200,{result:{name:'Aplos Mail',version:'0.1.0',desktop:false,update:'This development build updates from source.'}});return;}
+        if(method==='app.info'){json(200,{result:{name:'Aplos Mail',version:appVersion,desktop:false}});return;}
+        if(method==='update.status'||method==='update.check'){json(200,{result:{currentVersion:appVersion,status:{state:'disabled',reason:'Updates are off in the browser preview.'}}});return;}
         if(method==='window.claim'){json(200,{result:true});return;}
         if(method==='window.release'){json(200,{result:true});return;}
         if(webMethods.has(method))throw new Error('This action requires the Aplos Mail desktop app.');
