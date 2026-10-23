@@ -1,5 +1,7 @@
 # Mobile portability spike (M30)
 
+Paths below are relative to `apps/desktop` since the repo became a monorepo.
+
 Question: can an iOS/Android app reuse the Aplos mail engine, with no server, the way the desktop app does?
 
 ## What was checked (2026-10-16)

@@ -2,7 +2,7 @@ import {createServer,type IncomingMessage,type ServerResponse} from 'node:http';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {config} from 'dotenv';
+import {loadDevEnv} from './env';
 import {createServer as createViteServer} from 'vite';
 import {createService} from './service';
 import type {Listener} from '../shared/types';
@@ -28,7 +28,7 @@ async function readBody(req:IncomingMessage):Promise<{method:string;payload?:unk
   return input;
 }
 export async function startServer(options:{service?:Awaited<ReturnType<typeof createService>>;onClose?:()=>Promise<void>;loadEnv?:boolean;port?:number;vite?:boolean}={}){
-  if(options.loadEnv!==false)config({path:join(process.cwd(),'.env'),quiet:true});
+  if(options.loadEnv!==false)loadDevEnv();
   const service=options.service??await createService({dataDir:process.env.APLOS_DATA_DIR||join(homedir(),'Library','Application Support','Aplos Mail Preview'),desktop:false,symbolTool:join(process.cwd(),'dist','bin','aplos-symbols'),
     openExternal:async()=>{throw new Error('Open Aplos Mail desktop to connect a Google account.');}});
   const streams=new Set<ServerResponse>();

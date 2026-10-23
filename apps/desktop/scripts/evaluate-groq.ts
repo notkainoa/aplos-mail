@@ -1,9 +1,9 @@
-import { config } from 'dotenv';
+import { loadDevEnv } from '../src/main/env';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createGroq } from '../src/main/groq';
 import { askModel, qualityCases } from './quality/cases';
 
-config({quiet:true});
+loadDevEnv();
 const ai=createGroq();
 if(!ai.available)throw new Error('Set GROQ_API_KEY in the backend environment to run live evaluations.');
 const runs=Number(process.argv.find(a=>a.startsWith('--runs='))?.split('=')[1]??1);

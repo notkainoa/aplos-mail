@@ -1,5 +1,6 @@
 import {app,BrowserWindow,dialog,ipcMain,Menu,Notification,safeStorage,shell,systemPreferences,nativeTheme,session,utilityProcess,type IpcMainInvokeEvent,type MenuItemConstructorOptions} from 'electron';
 import {config} from 'dotenv';
+import {loadDevEnv} from './env';
 import {writeFile,mkdtemp} from 'node:fs/promises';
 import {join,basename,extname,resolve} from 'node:path';
 import {homedir,tmpdir} from 'node:os';
@@ -219,7 +220,7 @@ else{
   app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit();});
   app.on('before-quit',event=>{if(started&&!closing){event.preventDefault();quitting=true;if(!windows.size)finishQuit();else for(const win of windows)win.close();}});
   void app.whenReady().then(async()=>{
-    config({path:app.isPackaged?join(homedir(),'.config','aplos-mail','.env'):join(process.cwd(),'.env'),quiet:true});
+    if(app.isPackaged)config({path:join(homedir(),'.config','aplos-mail','.env'),quiet:true});else loadDevEnv();
     app.setAboutPanelOptions({applicationName:'Aplos Mail',applicationVersion:app.getVersion(),copyright:'Independent software. Built with original code and design.'});
     session.defaultSession.setPermissionCheckHandler((contents,permission)=>Boolean(contents&&trustedURL(contents.getURL())&&permission==='media'));
     session.defaultSession.setPermissionRequestHandler((contents,permission,callback,details)=>{
