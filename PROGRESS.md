@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-10-23 — Website deployment (Cloudflare Pages)
+
+- Added `.github/workflows/web-deploy.yml`: on PRs and pushes to `main` that touch `apps/web/**`, `packages/**`, root package files or the workflow, it installs only the site workspace, builds, and runs `wrangler pages deploy`. PRs get a preview at the branch alias plus one sticky comment with the URL; `main` deploys to production. Fork PRs are skipped; with no secrets the job passes and does nothing.
+- Added `apps/web/public/_headers` (nosniff, referrer policy, frame deny, immutable cache for hashed assets). README documents the setup.
+- **Evidence.** `npm ci --workspace @aplos/web --include-workspace-root` resolves (dry run), `npm run web:build` succeeds and copies `_headers` into `dist`, the workflow parses as YAML.
+- **Not verified.** The workflow has not run against real Cloudflare: no credentials exist on this machine. Needs the Pages project, API token and two repo secrets (README, "Deployment"). Preview URL extraction (grep of Wrangler output) and the PR comment step are untested until the first real run.
+
 ## 2026-10-22 — Website second pass: always dark, richer
 
 - Owner feedback: too plain; take inspiration from animations.dev, aiforui.dev and Linear's site; always dark. Looked at all three headlessly (screenshots only, nothing copied).
