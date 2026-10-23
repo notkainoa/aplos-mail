@@ -4,7 +4,10 @@
 
 - Owner first asked for Cloudflare Pages, then switched to Vercel. Cloudflare was fully removed: Pages project and a stray placeholder Worker deleted, `CLOUDFLARE_ACCOUNT_ID` repo secret deleted, workflow and `_headers` removed from the repo.
 - Vercel project `aplos-mail` created from the owner's CLI login and connected to the GitHub repo (Git integration, no Actions). Settings applied through the API: Root Directory `apps/web` (source files outside root on), Vite, Node 22, Web Analytics and Speed Insights toggled off, deployment protection on previews only so production is public. `apps/web/vercel.json` holds install command, headers, caching and the ignore-build check. The CLI's `.gitignore` edit (`.env*` after `!.env.example`) would have hidden `.env.example`; replaced with just `.vercel`.
-- Read `apps/web/README.md` "Deployment" for details. Evidence for the first Vercel build is in the entry below this one once the PR build has run.
+- **Cleanup of my own mistake.** The failed Wrangler runs (executed inside the repo) auto-configured `apps/web`: added `@cloudflare/vite-plugin` and `wrangler` to `apps/web/package.json`, touched `vite.config.ts`, and rewrote about 8,000 lines of `package-lock.json`. My `git add -A` committed that. Reverted all three files to their state in d6211f6; `git diff d6211f6..HEAD` for them and for `apps/desktop` is now empty, the lockfile is in sync (`npm install --package-lock-only` changes nothing), and `tsc` and the web build pass.
+- **Evidence.** The Vercel Git integration built the PR commit: install (28 packages, no Electron), `tsc --noEmit && vite build`, Ready in 9 to 16 s. Via `vercel curl`, the preview returns 200 for `/` and `/privacy/` with nosniff, referrer-policy and frame-deny headers; unauthenticated requests get a 302 to Vercel login. The ignore-build command ran on the build. One earlier Production deployment failed (older branch `t3/3fb59dd1` built when the repo was first connected, before Root Directory was set); nothing is live from it.
+- **Not verified.** The ignore-build skip path (a commit that does not touch the site) and the production deploy on merge to `main`; both only show up after merge or on a docs-only push.
+- Details: `apps/web/README.md`, "Deployment".
 
 ## 2026-10-22 — Website second pass: always dark, richer
 
