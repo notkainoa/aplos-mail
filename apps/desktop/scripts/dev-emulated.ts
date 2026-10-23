@@ -1,9 +1,9 @@
-import { config } from 'dotenv';
+import { loadDevEnv } from '../src/main/env';
 import { startServer } from '../src/main/server';
 import { createEmulatedSession } from './emulation/session';
 
 const liveAI=process.argv.includes('--live-ai');
-if(liveAI)config({quiet:true});
+if(liveAI)loadDevEnv();
 const session=await createEmulatedSession(liveAI);
 try {
   const service=await session.createService();

@@ -8,3 +8,4 @@ release/
 !.env.example
 coverage/
 artifacts/
+.vercel

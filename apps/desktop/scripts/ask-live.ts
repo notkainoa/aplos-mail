@@ -1,4 +1,4 @@
-import { config } from 'dotenv';
+import { loadDevEnv } from '../src/main/env';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +13,7 @@ import { defaultAskModel, parseAskModel } from '../src/shared/ask';
  * folder. Nothing is sent and no real mailbox is touched. Usage: npm run eval:ask -- --model=openrouter:anthropic/claude-haiku-5.5
  * (provider:model; Groq is the default and the key for the chosen provider must be in the environment).
  */
-config({quiet:true});
+loadDevEnv();
 const groq=createGroq();
 const model=process.argv.find(a=>a.startsWith('--model='))?.slice(8)??defaultAskModel;
 if(!parseAskModel(model))throw new Error('Give --model as provider:model, e.g. groq:openai/gpt-oss-120b.');

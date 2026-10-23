@@ -1,0 +1,9 @@
+import {defineConfig} from 'vite';
+import {resolve} from 'node:path';
+// Two static pages (landing, privacy). Each is its own HTML entry, so the build is plain files with no router or server.
+export default defineConfig({
+  base:'./',
+  server:{host:'127.0.0.1',port:Number(process.env.APLOS_WEB_PORT)||5273,strictPort:true},
+  preview:{host:'127.0.0.1',port:Number(process.env.APLOS_WEB_PORT)||5273,strictPort:true},
+  build:{outDir:'dist',rollupOptions:{input:{main:resolve(import.meta.dirname,'index.html'),privacy:resolve(import.meta.dirname,'privacy/index.html')}}}
+});

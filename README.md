@@ -1,8 +1,19 @@
-<img src="assets/icon.svg" width="64" height="64" alt="Aplos Mail">
+<img src="apps/desktop/assets/icon.svg" width="64" height="64" alt="Aplos Mail">
 
 # Aplos Mail
 
 An original macOS email app with a focused inbox, Later todos/bookmarks, rich drafts, Groq intelligence, and calendar commitments. Built from scratch after staged REA behavior investigation of an installed reference app. No reference code, artwork, branding, tokens, or mailbox contents are included.
+
+## Layout
+
+An npm-workspaces monorepo. Run every command from the repo root.
+
+| Path | What it is |
+|---|---|
+| `apps/desktop` | The Electron app (macOS now; Windows and Linux would be more electron-builder targets). Its source, tests, scripts, assets and build config live here. Paths elsewhere in these docs, such as `src/engine` or `scripts/verify-release.mjs`, are relative to this folder. |
+| `apps/web` | The marketing website and a draft privacy policy (Vite + React, static output). See `apps/web/README.md`. |
+| `packages/` | Reserved for shared code, such as the platform-neutral engine when an iOS app needs it (see DECISIONS.md). |
+| `scripts/launch.mjs` | Root shim for the desktop launcher. |
 
 ## Run
 
@@ -12,10 +23,15 @@ Requires Node 22.12+ and macOS arm64 for the packaged desktop build.
 npm install
 npm run dev       # Browser preview: http://127.0.0.1:5173
 npm run desktop   # Build and run Electron
-npm test
-npm run package   # release/mac-arm64/Aplos Mail.app
+npm run typecheck # every workspace
+npm test          # every workspace
+npm run package   # apps/desktop/release/mac-arm64/Aplos Mail.app
 node scripts/launch.mjs # Launch packaged app with the ignored workspace .env
+npm run web       # Website dev server: http://127.0.0.1:5273
+npm run web:build # Build the website to apps/web/dist
 ```
+
+Put the ignored `.env` at the repo root (`apps/desktop/.env` also works). `npm run verify:release` and `npm run verify:large` run the post-package checks described below.
 
 Original demo mail works immediately and stays local, including Send. Demo recipients use reserved `.example` addresses. Connect a real account only when you want real mailbox access; Send and calendar changes then affect that account.
 
@@ -68,9 +84,9 @@ Desktop state is stored under `~/Library/Application Support/Aplos Mail`; browse
 
 `npm test` covers persistence, triage/undo, reminders, draft concurrency/recovery, delayed sends, validation, scoped AI proposals/citations/cancellation, OAuth PKCE/state, MIME, label mapping, encrypted credentials, calendar mutations, and desktop request/ownership policies. Live Groq was verified with synthetic text and audio. Browser and packaged-app acceptance results, exact remaining blockers, and REA limitations are recorded in `PROGRESS.md` and `TODO.md`.
 
-After packaging, run `node scripts/verify-release.mjs` for a repeatable check of the actual release bundle. It uses a fresh temporary demo mailbox and separate Chromium profile, checks the renderer/preload/engine bridge, search/paging, triage/Undo, attachments, local send/Undo, calendar, popout ownership and immediate-close draft saving, then kills the engine and restarts the desktop to verify recovery. It never connects a mailbox or sends external email. The temporary folder retains its log and JSON report. Add `--live-ai` to verify Groq summaries, proofreading, proposals, Ask/citations, calendar extraction and transcription of generated speech with an existing backend key. Add `--keep-open` to leave the isolated test app running for manual inspection; quit it afterward. The test enables a temporary loopback debugging port only for its own app process.
+After packaging, run `npm run verify:release` for a repeatable check of the actual release bundle. It uses a fresh temporary demo mailbox and separate Chromium profile, checks the renderer/preload/engine bridge, search/paging, triage/Undo, attachments, local send/Undo, calendar, popout ownership and immediate-close draft saving, then kills the engine and restarts the desktop to verify recovery. It never connects a mailbox or sends external email. The temporary folder retains its log and JSON report. Add `--live-ai` to verify Groq summaries, proofreading, proposals, Ask/citations, calendar extraction and transcription of generated speech with an existing backend key. Add `--keep-open` to leave the isolated test app running for manual inspection; quit it afterward. The test enables a temporary loopback debugging port only for its own app process.
 
-`npm run bench:mailbox -- --label=optimized --keep` creates 10,000 original synthetic threads with 20,000 messages, approximately 2,000 characters of text plus HTML per message. It measures ingestion, search, changed-row writes, database reopen, service startup, paging and compact triage/Undo. Results go to ignored `artifacts/mailbox-optimized.json`. `--count=N` changes the size; omit `--keep` to remove its temporary database automatically. The ordinary suite includes one lighter 10,000-thread regression. After packaging, `node scripts/verify-large-mailbox.mjs` uses the retained default fixture to verify actual desktop windowing, scrolling to both ends, keyboard navigation, search and compact mutations, with a separate Chromium profile. Only synthetic demo accounts are accepted. Its report is `artifacts/large-desktop-verification.json`; no live mailbox is used. Measurements are host/fixture-specific; benchmark peak RSS includes harness copies, not just the app. The engine and renderer still cache message bodies in memory; windowing limits mounted rows, not mailbox memory.
+`npm run bench:mailbox -- --label=optimized --keep` creates 10,000 original synthetic threads with 20,000 messages, approximately 2,000 characters of text plus HTML per message. It measures ingestion, search, changed-row writes, database reopen, service startup, paging and compact triage/Undo. Results go to ignored `artifacts/mailbox-optimized.json`. `--count=N` changes the size; omit `--keep` to remove its temporary database automatically. The ordinary suite includes one lighter 10,000-thread regression. After packaging, `npm run verify:large` uses the retained default fixture to verify actual desktop windowing, scrolling to both ends, keyboard navigation, search and compact mutations, with a separate Chromium profile. Only synthetic demo accounts are accepted. Its report is `artifacts/large-desktop-verification.json`; no live mailbox is used. Measurements are host/fixture-specific; benchmark peak RSS includes harness copies, not just the app. The engine and renderer still cache message bodies in memory; windowing limits mounted rows, not mailbox memory.
 
 This is a local personal build. It has no automatic distribution/update server or Developer ID notarization. Rebuild to update.
 
