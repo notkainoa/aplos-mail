@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import icon from './assets/icon-512.webp';
 import {Airmail,Footer,Header} from './Chrome';
+import {AllowRunArt,DockArt,DownloadsArt,DragArt,FinderArt,InstallerArt,WelcomeArt} from './InstallArt';
 import {Rise} from './Live';
 import {detect,type Detected} from './platform';
 import {findFile,megabytes,release,type File,type Offer,type Os,type Target} from './release';
@@ -79,7 +80,7 @@ export function Download() {
               // Keyed by position: the steps change with the system, but the page's reveal keeps watching the same items.
               <li key={i} data-reveal style={delay(i*90)}>
                 <div className="dl-art" data-ui><Art file={file??findFile('mac-arm64')} /></div>
-                <p><span className="dl-num">{i+1}</span>{text(file??findFile('mac-arm64'))}</p>
+                <p>{text(file??findFile('mac-arm64'))}</p>
               </li>
             ))}
           </ol>
@@ -129,81 +130,22 @@ function Status({file,started,stalled,onStart}:{file:Offer;started:boolean;stall
   );
 }
 
-// Install steps for each system, each with a small drawing in the app's own style.
+// Install steps for each system, each with a close-up drawing from InstallArt.
 type Step=[(props:{file:File})=>React.ReactElement,(file:File)=>React.ReactNode];
 const steps:Record<Os,Step[]>={
   mac:[
-    [Downloads,f=><>Open <b>{f.name.replace(/-[\d.]+-\w+(?=\.dmg)/,'')}</b> from your <b>Downloads</b> folder.</>],
-    [DragToApplications,()=><>Drag <b>Aplos Mail</b> into your <b>Applications</b> folder.</>],
-    [Welcome,()=><>Open <b>Aplos Mail</b> from Applications and add your accounts.</>],
+    [DockArt,f=><>Open <b>{f.name.replace(/-[\d.]+-\w+(?=\.dmg)/,'')}</b> from your <b>Downloads</b> folder</>],
+    [DragArt,()=><>Drag the <b>Aplos Mail</b> icon into your <b>Applications</b> folder</>],
+    [()=><FinderArt />,()=><>Open <b>Aplos Mail</b> from your <b>Applications</b> folder</>],
   ],
   win:[
-    [Downloads,()=><>Open <b>Aplos Mail Setup</b> from your <b>Downloads</b> folder.</>],
-    [Installer,()=><>The installer puts Aplos Mail in your <b>Start</b> menu. It takes under a minute.</>],
-    [Welcome,()=><>Open <b>Aplos Mail</b> and add your accounts.</>],
+    [DownloadsArt,()=><>Open <b>Aplos Mail Setup</b> from your <b>Downloads</b> folder</>],
+    [InstallerArt,()=><>Let the installer finish. It takes <b>under a minute</b></>],
+    [WelcomeArt,()=><>Open <b>Aplos Mail</b> from the <b>Start</b> menu and add your accounts</>],
   ],
   linux:[
-    [Downloads,()=><>Find the <b>AppImage</b> in your <b>Downloads</b> folder.</>],
-    [AllowRun,()=><>In its <b>Properties</b>, allow it to run as a program.</>],
-    [Welcome,()=><>Open <b>Aplos Mail</b> and add your accounts.</>],
+    [DownloadsArt,()=><>Find the <b>AppImage</b> in your <b>Downloads</b> folder</>],
+    [AllowRunArt,()=><>In its <b>Properties</b>, allow it to <b>run as a program</b></>],
+    [WelcomeArt,()=><>Open <b>Aplos Mail</b> and add your accounts</>],
   ],
 };
-
-function Downloads({file}:{file:File}) {
-  const rows=[[file.name,megabytes(file.size)],['trip-photos.zip','84 MB'],['october-invoice.pdf','212 KB']];
-  return (
-    <div className="art-window art-downloads">
-      <p className="art-title">Downloads</p>
-      <ul>
-        {rows.map(([name,size],i)=>(
-          <li key={name} className={i===0?'is-picked':''}>
-            <span className={`art-file${i===0?' is-ours':''}`} aria-hidden="true">{i===0&&<img src={icon} alt="" />}</span>
-            <span className="art-name">{name}</span><span className="art-size">{size}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function DragToApplications() {
-  return (
-    <div className="art-window art-drag">
-      <img className="art-drag-icon" src={icon} alt="" />
-      <svg className="art-arrow" viewBox="0 0 80 16" aria-hidden="true"><path d="M2 8h70m0 0-6-5m6 5-6 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4 5" /></svg>
-      <span className="art-folder" aria-hidden="true"><svg viewBox="0 0 64 52"><path d="M4 10a4 4 0 0 1 4-4h16l6 6h26a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z" fill="currentColor" /><path d="M4 18h56v26a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z" fill="currentColor" opacity=".75" /></svg>Applications</span>
-    </div>
-  );
-}
-
-function Installer() {
-  return (
-    <div className="art-window art-install">
-      <img src={icon} alt="" />
-      <p className="art-title">Installing Aplos Mail</p>
-      <span className="art-progress" aria-hidden="true"><i /></span>
-    </div>
-  );
-}
-
-function AllowRun({file}:{file:File}) {
-  return (
-    <div className="art-window art-allow">
-      <p className="art-title">{file.name} Properties</p>
-      <p className="art-row">Allow executing file as program<span className="art-switch" aria-hidden="true" /></p>
-    </div>
-  );
-}
-
-function Welcome() {
-  return (
-    <div className="art-window art-welcome">
-      <img src={icon} alt="" />
-      <p className="art-title">Welcome to Aplos Mail</p>
-      <span className="art-account is-primary">Add Google account</span>
-      <span className="art-account">Add Microsoft account</span>
-      <span className="art-account">Other mail (IMAP)</span>
-    </div>
-  );
-}
-

@@ -506,56 +506,156 @@ main > section:first-child { margin-top: clamp(96px, 11vw, 168px); }
 /* The steps sit where the sky meets the page, like the app window on the home page. */
 .dl-steps { width: var(--width); margin: clamp(56px, 7vw, 96px) auto 0; }
 .dl-steps ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); margin: 0; padding: 0; list-style: none; }
-.dl-steps li p { margin-top: 18px; max-width: 22em; font-size: 1rem; color: var(--ink-2); }
-.dl-steps b { color: var(--ink); font-weight: 600; }
-.dl-num { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 10px; border-radius: 50%; background: var(--app-chip); color: var(--ink); font-size: 0.8125rem; font-weight: 600; vertical-align: 1px; }
-.dl-art { display: grid; place-items: center; aspect-ratio: 4 / 3; padding: 24px; border-radius: 18px; background: var(--app-canvas); box-shadow: var(--app-window); overflow: hidden; }
+.dl-steps li p { margin: 22px auto 0; max-width: 19em; text-align: center; font-size: 1.0625rem; line-height: 1.5; color: var(--dim); }
+.dl-steps b { color: var(--ink); font-weight: 500; }
 
-/* Small drawings of each step, in the app's colors */
-.art-window { width: 100%; max-width: 300px; padding: 14px; border-radius: 12px; background: var(--app-card); box-shadow: var(--app-glass); font-size: 0.8125rem; color: var(--ink); }
-.art-title { font-weight: 600; font-size: 0.8125rem; margin-bottom: 10px; }
-.art-downloads ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
-.art-downloads li { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; color: var(--dim); }
-.art-downloads li.is-picked { background: var(--app-blue); color: var(--app-blue-ink); }
-.art-file { width: 22px; height: 26px; flex: none; border-radius: 4px; background: var(--app-chip); display: grid; place-items: center; }
-.art-file.is-ours { background: none; }
-.art-file img { width: 24px; border-radius: 5px; }
-.art-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.art-size { font-size: 0.75rem; opacity: 0.8; }
-.art-drag { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 24px 22px; }
-.art-drag-icon { width: 64px; border-radius: 14px; }
-.art-arrow { width: 72px; color: var(--dim); }
-.art-folder { display: grid; justify-items: center; gap: 6px; color: var(--app-blue); }
-.art-folder svg { width: 60px; }
-.art-folder { font-size: 0.75rem; }
-.art-folder, .art-folder * { font-weight: 500; }
-.art-install, .art-welcome { display: grid; justify-items: center; text-align: center; padding: 20px 18px; }
-.art-install img, .art-welcome img { width: 44px; margin-bottom: 10px; border-radius: 10px; }
-.art-progress { position: relative; width: 100%; height: 6px; border-radius: 3px; background: var(--app-chip); overflow: hidden; }
-.art-progress i { position: absolute; inset: 0; border-radius: inherit; background: var(--app-blue); transform-origin: 0 50%; transform: scaleX(0.62); }
-.art-allow .art-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border-radius: 8px; background: var(--app-chip); text-align: left; }
-.art-switch { position: relative; width: 32px; height: 19px; flex: none; border-radius: 10px; background: var(--app-blue); }
-.art-switch::after { content: ''; position: absolute; top: 2px; right: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; }
-.art-account { width: 100%; padding: 7px 10px; border-radius: 8px; background: var(--app-chip); margin-top: 6px; }
-.art-account.is-primary { background: var(--app-blue); color: var(--app-blue-ink); font-weight: 500; }
+/* Install drawings: a big, cropped close-up of the computer per step, on a soft square tile. Sizes are container units. */
+.dl-art { --tile: #f1f1ef; --raised: #fbfbfa; --win: #ffffff; --line: rgba(0, 0, 0, 0.08); --text: #2b2b2b; --soft: #8a8a88; container-type: inline-size; aspect-ratio: 1; border-radius: 22px; background: var(--tile); overflow: hidden; }
+@media (prefers-color-scheme: dark) {
+  .dl-art { --tile: #1b1a19; --raised: #2a2928; --win: #242322; --line: rgba(255, 255, 255, 0.09); --text: #ecebe6; --soft: #8f8d86; }
+}
+.art { position: relative; width: 100%; height: 100%; color: var(--text); font-family: var(--font); line-height: 1.2; }
+.art img { display: block; }
 
-/* Each drawing plays its step once it is on screen: the file is picked, the icon travels to the folder, the bar fills. */
+/* Downloads in the Dock */
+.art-tip {
+  position: absolute; z-index: 1; left: 12cqw; top: 13cqw; padding: 2.4cqw 6cqw; border-radius: 99px;
+  background: var(--raised); box-shadow: 0 0 0 1px var(--line), 0 3cqw 6cqw -3cqw rgba(0, 0, 0, 0.25);
+  font-size: 6.6cqw; font-weight: 600; letter-spacing: -0.01em;
+}
+.art-dock-bar {
+  position: absolute; left: -10cqw; top: 35cqw; width: 98cqw; height: 52cqw; border-radius: 14cqw;
+  background: var(--raised); box-shadow: 0 0 0 1px var(--line), 0 7cqw 14cqw -7cqw rgba(0, 0, 0, 0.3), inset 0 0 0 1.6cqw color-mix(in srgb, var(--tile) 50%, transparent);
+}
+.art-dock-sep { position: absolute; left: 18cqw; top: 10cqw; bottom: 10cqw; width: 0.7cqw; border-radius: 1cqw; background: var(--soft); opacity: 0.6; }
+.art-stack { position: absolute; left: 29cqw; top: 9cqw; width: 30cqw; height: 32cqw; transform-origin: 50% 100%; }
+.art-stack-folder { position: absolute; left: 0; bottom: 0; width: 100%; }
+.art-stack-doc {
+  position: absolute; left: 21%; top: 2%; width: 58%; aspect-ratio: 0.8; display: grid; place-items: center;
+  border-radius: 1.8cqw; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 1.5cqw 3cqw rgba(0, 0, 0, 0.2);
+}
+.art-stack-doc img { width: 72%; border-radius: 22%; }
+.art-trash { position: absolute; left: 66cqw; top: 13cqw; width: 23cqw; color: var(--soft); }
+
+/* Into Applications */
+.art-glow { position: absolute; left: 20cqw; right: 20cqw; top: 26cqw; bottom: 2cqw; border-radius: 50%; background: #2f8ff0; filter: blur(13cqw); opacity: 0.8; }
+.art-dots {
+  position: absolute; inset: 6cqw 8cqw; opacity: 0.4; clip-path: ellipse(44% 46% at 50% 58%);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Ccircle cx='2' cy='2' r='1' fill='%23ffffff'/%3E%3C/svg%3E") 0 0 / 2.4cqw 2.4cqw;
+}
+.art-drag-folder { position: absolute; left: 29cqw; bottom: 12cqw; width: 42cqw; transform-origin: 50% 100%; }
+.art-carry { position: absolute; left: 38cqw; top: 9cqw; width: 31cqw; transform: rotate(-7deg); }
+.art-drag-icon { width: 100%; border-radius: 23%; box-shadow: 0 3cqw 6cqw -2cqw rgba(13, 27, 42, 0.35); }
+.art-hand { position: absolute; left: 60cqw; top: 31cqw; width: 15cqw; filter: drop-shadow(0 0.6cqw 1cqw rgba(0, 0, 0, 0.25)); }
+.art-echo { filter: opacity(0.35); }
+.art-echo-1 { transform: translate(3cqw, 9cqw); }
+.art-echo-2 { transform: translate(2cqw, 17cqw); filter: opacity(0.22); }
+
+/* A window, cropped by the tile */
+.art-win {
+  position: absolute; left: 9cqw; top: 15cqw; width: 120cqw; height: 72cqw; overflow: hidden;
+  border-radius: 3.6cqw; background: var(--win); box-shadow: 0 0 0 1px var(--line), 0 8cqw 16cqw -8cqw rgba(0, 0, 0, 0.35);
+  font-size: 3.4cqw;
+}
+.art-win-bar { position: relative; display: flex; align-items: center; gap: 1.6cqw; height: 9cqw; padding: 0 3.4cqw; }
+.art-win-bar i { width: 2.6cqw; height: 2.6cqw; border-radius: 50%; background: #ff5f57; }
+.art-win-bar i:nth-child(2) { background: #febc2e; }
+.art-win-bar i:nth-child(3) { background: #28c840; }
+.art-win-bar b { margin-left: 28cqw; font-weight: 600; }
+.art-win-bar.is-pc { padding-top: 0.6cqw; }
+.art-win-bar.is-pc b { margin-left: 2cqw; }
+.art-win-controls { position: absolute; left: 70cqw; color: var(--soft); letter-spacing: 0.1em; }
+.art-finder.is-files .art-win-body { grid-template-columns: 30cqw 52cqw 1fr; }
+.art-finder.is-files .art-win-bar .art-win-controls { left: 72cqw; }
+.art-win-body { display: grid; grid-template-columns: 30cqw 40cqw 1fr; height: calc(100% - 9cqw); }
+.art-side, .art-list { margin: 0; padding: 1cqw 2cqw; list-style: none; }
+.art-side { background: color-mix(in srgb, var(--tile) 70%, transparent); }
+.art-side li, .art-list li { display: flex; align-items: center; gap: 2cqw; height: 6.6cqw; padding: 0 2cqw; border-radius: 1.6cqw; white-space: nowrap; }
+.art-side .art-side-label { height: 5cqw; font-size: 2.8cqw; color: var(--soft); }
+.art-side .is-on { background: color-mix(in srgb, var(--text) 9%, transparent); }
+.art-list { position: relative; }
+.art-list li { position: relative; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
+.art-list li span, .art-list li img { width: 3.6cqw; height: 3.6cqw; flex: none; border-radius: 0.9cqw; }
+.art-list .is-ours { color: #fff; }
+.art-list .art-sel { position: absolute; z-index: 0; left: 2cqw; right: 2cqw; top: calc(1cqw + var(--pick) * 6.6cqw); background: #0a64e0; }
+.art-preview { display: grid; justify-items: start; align-content: start; gap: 1cqw; padding: 5cqw 4cqw; border-left: 1px solid var(--line); min-width: 0; }
+.art-preview img { width: 24cqw; margin-bottom: 3cqw; border-radius: 22%; box-shadow: 0 2cqw 4cqw -1cqw rgba(0, 0, 0, 0.25); }
+.art-preview b { max-width: 40cqw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 3.8cqw; font-weight: 600; }
+.art-preview span { color: var(--soft); }
+.art-pointer { position: absolute; z-index: 2; left: 58cqw; top: 41cqw; width: 5cqw; }
+
+/* A single window, for the installer, permissions and first launch */
+.art-win-sheet { left: 12cqw; top: 14cqw; width: 100cqw; height: 100cqw; display: flex; flex-direction: column; align-items: flex-start; gap: 2.4cqw; padding: 9cqw 8cqw; font-size: 4cqw; }
+.art-win-sheet img { width: 17cqw; margin-bottom: 2cqw; border-radius: 22%; }
+.art-win-sheet b { font-size: 6cqw; font-weight: 600; letter-spacing: -0.01em; }
+.art-caption { color: var(--soft); max-width: 72cqw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.art-progress { position: relative; width: 70cqw; height: 2.2cqw; margin-top: 3cqw; border-radius: 2cqw; background: color-mix(in srgb, var(--text) 10%, transparent); overflow: hidden; }
+.art-progress i { position: absolute; inset: 0; border-radius: inherit; background: #0a64e0; transform-origin: 0 50%; transform: scaleX(0.64); }
+.art-row { display: flex; align-items: center; justify-content: space-between; gap: 4cqw; width: 72cqw; margin-top: 4cqw; padding: 3.4cqw; border-radius: 2.4cqw; background: color-mix(in srgb, var(--text) 6%, transparent); }
+.art-switch { position: relative; width: 10cqw; height: 6cqw; flex: none; border-radius: 3cqw; background: #0a64e0; }
+.art-switch::after { content: ''; position: absolute; top: 0.6cqw; right: 0.6cqw; width: 4.8cqw; height: 4.8cqw; border-radius: 50%; background: #fff; box-shadow: 0 0.4cqw 1cqw rgba(0, 0, 0, 0.25); }
+.art-pointer-switch { left: 74cqw; top: 54cqw; }
+.art-account { width: 72cqw; padding: 2.8cqw 3.4cqw; border-radius: 2.4cqw; background: color-mix(in srgb, var(--text) 7%, transparent); }
+.art-account.is-primary { margin-top: 2cqw; background: #0a64e0; color: #fff; font-weight: 500; }
+
+/* Each drawing plays its step on a loop once it is on screen. */
 @media (prefers-reduced-motion: no-preference) {
-  .dl-steps li.is-in .art-downloads li.is-picked { animation: pick 700ms var(--ease-out) 500ms backwards; }
-  @keyframes pick { from { background: transparent; color: var(--dim); } }
-  .dl-steps li.is-in .art-drag-icon { animation: carry 3.6s var(--ease-in-out) 600ms infinite; }
+  .is-in .art-stack { animation: dock-bounce 5s var(--ease-out) 300ms infinite; }
+  @keyframes dock-bounce { 0%, 30%, 100% { transform: none; } 10% { transform: translateY(-9cqw); } 20% { transform: translateY(-3.5cqw); } }
+  .is-in .art-tip { animation: tip 5s var(--ease-out) 300ms infinite backwards; }
+  @keyframes tip { 0%, 26% { opacity: 0; transform: translateY(2cqw) scale(0.96); } 34%, 90% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+
+  .is-in .art-carry { animation: carry 4.8s var(--ease-in-out) 400ms infinite; }
   @keyframes carry {
-    0%, 12% { transform: none; opacity: 1; }
-    55% { transform: translateX(var(--carry, 150px)) scale(0.55); opacity: 1; }
-    62%, 80% { transform: translateX(var(--carry, 150px)) scale(0.4); opacity: 0; }
+    0%, 14% { transform: rotate(-7deg); opacity: 1; }
+    48% { transform: translate(-3cqw, 27cqw) scale(0.56); opacity: 1; }
+    58% { transform: translate(-3cqw, 40cqw) scale(0.5); opacity: 1; }
+    60% { opacity: 0; }
+    82% { transform: translateY(-5cqw) rotate(-7deg); opacity: 0; }
+    100% { transform: rotate(-7deg); opacity: 1; }
+  }
+  .is-in .art-hand { animation: hand 4.8s var(--ease-in-out) 400ms infinite backwards; }
+  .is-in .art-echo-1 { animation-delay: 480ms; }
+  .is-in .art-echo-2 { animation-delay: 560ms; }
+  @keyframes hand {
+    0%, 14% { transform: none; opacity: 1; }
+    50% { transform: translate(-8cqw, 29cqw); opacity: 1; }
+    62% { transform: translate(-6cqw, 25cqw); opacity: 0; }
+    82% { transform: translateY(-5cqw); opacity: 0; }
     100% { transform: none; opacity: 1; }
   }
-  .dl-steps li.is-in .art-folder svg { animation: take 3.6s var(--ease-out) 600ms infinite; }
-  @keyframes take { 0%, 52% { transform: none; } 60% { transform: scale(1.08); } 72%, 100% { transform: none; } }
-  .dl-steps li.is-in .art-progress i { animation: fill 2.8s var(--ease-in-out) 400ms infinite; }
-  @keyframes fill { from { transform: scaleX(0); } 70%, to { transform: scaleX(1); } }
-  .dl-steps li.is-in .art-switch::after { animation: flip 600ms var(--ease-out) 700ms backwards; }
-  @keyframes flip { from { transform: translateX(-13px); } }
+  .is-in .art-drag-folder { animation: take 4.8s var(--ease-out) 400ms infinite; }
+  @keyframes take { 0%, 50%, 70%, 100% { transform: none; } 57% { transform: scale(1.07, 1.05); } }
+
+  .is-in .art-finder .art-sel { animation: select 5.2s var(--ease-in-out) 300ms infinite; }
+  @keyframes select {
+    0%, 16% { transform: translateY(calc(var(--pick) * -6.6cqw)); background: color-mix(in srgb, var(--text) 12%, transparent); }
+    30% { transform: none; background: color-mix(in srgb, var(--text) 12%, transparent); }
+    34%, 100% { transform: none; background: #0a64e0; }
+  }
+  .is-in .art-finder .is-ours { animation: ours 5.2s linear 300ms infinite; }
+  @keyframes ours { 0%, 32% { color: var(--text); } 34%, 100% { color: #fff; } }
+  .is-in .art-finder .art-pointer { animation: point 5.2s var(--ease-out) 300ms infinite; }
+  @keyframes point {
+    0%, 10% { transform: translate(22cqw, 34cqw); opacity: 0; }
+    16% { opacity: 1; }
+    36%, 100% { transform: none; }
+    46%, 54% { transform: scale(0.86); }
+    50%, 58% { transform: none; }
+    90% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  .is-in .art-finder:has(.art-pointer) .art-preview img { animation: launch 5.2s var(--ease-out) 300ms infinite; }
+  @keyframes launch { 0%, 58%, 76%, 100% { transform: none; } 64% { transform: scale(1.08); } }
+
+  .is-in .art-progress i { animation: fill 3.2s var(--ease-in-out) 300ms infinite; }
+  @keyframes fill { 0% { transform: scaleX(0.04); } 75%, 100% { transform: scaleX(1); } }
+  .is-in .art-switch { animation: switch-bg 3.6s var(--ease-out) 300ms infinite; }
+  @keyframes switch-bg { 0%, 34% { background: color-mix(in srgb, var(--text) 22%, transparent); } 40%, 100% { background: #0a64e0; } }
+  .is-in .art-switch::after { animation: switch-knob 3.6s var(--ease-out) 300ms infinite; }
+  @keyframes switch-knob { 0%, 34% { transform: translateX(-4cqw); } 42%, 100% { transform: none; } }
+  .is-in .art-pointer-switch { animation: press 3.6s var(--ease-out) 300ms infinite; }
+  @keyframes press { 0%, 8% { transform: translate(12cqw, 18cqw); opacity: 0; } 14% { opacity: 1; } 28% { transform: none; } 33% { transform: scale(0.86); } 38%, 100% { transform: none; } 90% { opacity: 1; } 100% { opacity: 0; } }
 }
 
 /* Every version, one card per system */
