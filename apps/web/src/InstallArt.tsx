@@ -9,7 +9,7 @@ import {megabytes,type File} from './release';
 function Outlined({children}:{children:React.ReactNode}) {
   return <><g fill="none" stroke="#111" strokeWidth="2.6" strokeLinejoin="round">{children}</g><g fill="#fff">{children}</g></>;
 }
-export function GrabHand({className}:{className?:string}) {
+function GrabHand({className}:{className?:string}) {
   return (
     <svg className={className} viewBox="0 0 32 32" aria-hidden="true">
       <Outlined>

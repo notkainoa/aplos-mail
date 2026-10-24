@@ -29,6 +29,7 @@ export function Ask() {
   const [typed,setTyped]=useState('');
   const [words,setWords]=useState(0);
   const [booking,setBooking]=useState<'open'|'added'|'dismissed'>('open');
+  const [run,setRun]=useState(0); // counts asks, so asking the same question again replays it
   const timer=useRef(0);
   const panel=useRef<HTMLDivElement>(null);
   // Hold to talk: while A (or the hint) is held the panel listens; on release it "hears" the next sample question.
@@ -55,14 +56,16 @@ export function Ask() {
     };
     typeNext();
     return ()=>window.clearTimeout(timer.current);
-  },[asked]);
+  },[asked,run]);
 
-  const ask=(i:number)=>{setTyped('');setWords(0);setBooking('open');setAsked(i);};
+  const ask=(i:number)=>{window.clearTimeout(timer.current);setTyped('');setWords(0);setBooking('open');setAsked(i);setRun(n=>n+1);};
   const clear=()=>{window.clearTimeout(timer.current);setAsked(null);setTyped('');setWords(0);};
+  // The pressed suggestion or clear button goes away with the view it was in; keep keyboard focus in the panel.
+  const keepFocus=()=>requestAnimationFrame(()=>{if(document.activeElement===document.body)panel.current?.focus({preventScroll:true});});
   const listen=()=>{
     if(hold.current.on)return;
     hold.current.on=true;hold.current.since=performance.now();
-    clear();setListening(true);
+    setListening(true);
   };
   const release=()=>{
     if(!hold.current.on)return;
@@ -97,10 +100,10 @@ export function Ask() {
   },[]);
 
   return (
-    <div className="askp" data-ui ref={panel}>
+    <div className="askp" data-ui ref={panel} tabIndex={-1}>
       <div className="askp-top">
         <div className="askp-tabs" aria-hidden="true"><span className="on">Ask</span><span>Calendar</span></div>
-        {asked!==null&&<button type="button" className="askp-clear" onClick={clear} aria-label="Clear the question">
+        {asked!==null&&<button type="button" className="askp-clear" onClick={()=>{clear();keepFocus();}} aria-label="Clear the question">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
         </button>}
       </div>
@@ -118,10 +121,10 @@ export function Ask() {
         ? <div className="askp-body" key="list">
             <p className="askp-label">Try asking</p>
             <ul className="askp-list">
-              {questions.map(([q],i)=><li key={q}><button type="button" onClick={()=>ask(i)}><Bubble />{q}</button></li>)}
+              {questions.map(([q],i)=><li key={q}><button type="button" onClick={()=>{ask(i);keepFocus();}}><Bubble />{q}</button></li>)}
             </ul>
           </div>
-        : <div className="askp-body" key={`a${asked}`} aria-live="polite">
+        : <div className="askp-body" key={`a${asked}-${run}`}>
             <p className="askp-answer">
               {answer!.text.split(' ').map((word,i)=><span key={i} className={i<words?'w on':'w'}>{word} </span>)}
             </p>
@@ -134,8 +137,8 @@ export function Ask() {
                 <span>{answer!.proposal.when} · {answer!.proposal.calendar}</span>
               </div>
               {booking==='open'&&<div className="askp-event-actions">
-                <button type="button" className="act" onClick={()=>setBooking('dismissed')} tabIndex={done?0:-1}>Not now</button>
-                <button type="button" className="act act-primary" onClick={()=>setBooking('added')} tabIndex={done?0:-1}>Add to calendar</button>
+                <button type="button" className="act" onClick={()=>{setBooking('dismissed');keepFocus();}} tabIndex={done?0:-1}>Not now</button>
+                <button type="button" className="act act-primary" onClick={()=>{setBooking('added');keepFocus();}} tabIndex={done?0:-1}>Add to calendar</button>
               </div>}
               {booking==='added'&&<p className="askp-event-state" role="status">
                 <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -144,6 +147,8 @@ export function Ask() {
               {booking==='dismissed'&&<p className="askp-event-state" role="status">Nothing was added.</p>}
             </div>}
           </div>}
+      {/* One region that stays mounted, so screen readers hear the answer once it is complete. */}
+      <p className="sr" aria-live="polite">{done?answer!.text:''}</p>
     </div>
   );
 }

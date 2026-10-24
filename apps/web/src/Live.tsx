@@ -38,7 +38,7 @@ export function KeyList() {
 }
 
 // The app's segmented control. The selected card slides by clipping one full-width layer, so nothing resizes.
-export function Segmented<T extends string>({label,options,value,onChange,className}:{label:string;options:readonly T[];value:T;onChange:(v:T)=>void;className?:string}) {
+function Segmented<T extends string>({label,options,value,onChange}:{label:string;options:readonly T[];value:T;onChange:(v:T)=>void}) {
   const row=useRef<HTMLDivElement>(null);
   const [clip,setClip]=useState<string|null>(null);
   useEffect(()=>{
@@ -51,10 +51,10 @@ export function Segmented<T extends string>({label,options,value,onChange,classN
     return ()=>window.removeEventListener('resize',measure);
   },[value]);
   return (
-    <div className={`picker-tabs${className?` ${className}`:''}`} data-ui role="tablist" aria-label={label} ref={row}>
+    <div className="picker-tabs" data-ui role="group" aria-label={label} ref={row}>
       {clip&&<span className="picker-pill" aria-hidden="true" style={{clipPath:clip}} />}
       {options.map(o=>(
-        <button key={o} type="button" role="tab" aria-selected={o===value} data-value={o} onClick={()=>onChange(o)}>{o}</button>
+        <button key={o} type="button" aria-pressed={o===value} data-value={o} onClick={()=>onChange(o)}>{o}</button>
       ))}
     </div>
   );
@@ -75,7 +75,7 @@ export function ProviderPicker() {
   return (
     <div className="picker">
       <Segmented label="AI feature" options={features} value={feature} onChange={setFeature} />
-      <p className="providers" aria-label={`Provider for ${feature}`}>
+      <p className="providers" role="group" aria-label={`Provider for ${feature}`}>
         {providers.map((p,i)=>{
           const off=feature==='Voice'&&!speech.has(p);
           return (
@@ -91,7 +91,7 @@ export function ProviderPicker() {
           );
         })}
       </p>
-      <p className="picker-result" aria-live="polite"><span key={`${feature}${provider}`}>{what} go to {where}</span></p>
+      <p className="picker-result" aria-live="polite"><span key={`${feature}${provider}`}>{what} go to {where}{feature==='Voice'?' Only Groq and OpenAI turn speech into text.':''}</span></p>
     </div>
   );
 }

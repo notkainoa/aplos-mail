@@ -28,7 +28,7 @@ export function Landing() {
             </p>
             <div className="cta" data-reveal style={delay(160)}>
               <a className="button" href={releasesUrl}>Download for Mac</a>
-              <p className="note">For Macs with Apple silicon.</p>
+              <p className="note">For Macs with Apple silicon or Intel.</p>
             </div>
           </div>
           <HeroIcon src={icon} alt="The Aplos Mail icon: an airmail envelope in a blue sky above a green hill." />
@@ -111,7 +111,7 @@ export function Landing() {
             <p data-reveal style={delay(70)}>Works with {accounts}. No Aplos server ever sees your mail.</p>
             <div className="cta" data-reveal style={delay(140)}>
               <a className="button" href={releasesUrl}>Download for Mac</a>
-              <p className="note">For Macs with Apple silicon. Windows and Linux later.</p>
+              <p className="note">For Macs with Apple silicon or Intel, on macOS 12 or later. Windows and Linux later.</p>
             </div>
           </div>
           <img className="finish-icon" src={icon} width="512" height="512" alt="" loading="lazy" data-reveal style={delay(120)} />

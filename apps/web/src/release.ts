@@ -20,7 +20,7 @@ export const release={
   notesUrl:`${repoUrl}/releases/tag/v${version}`,
   allUrl:`${repoUrl}/releases`,
   platforms:[
-    {os:'mac',name:'macOS',requires:'For macOS 13 Ventura and newer. Updates install themselves.',files:[
+    {os:'mac',name:'macOS',requires:'For macOS 12 Monterey and newer. Updates install themselves.',files:[
       file('mac-arm64','Apple silicon',`Aplos-Mail-${version}-arm64.dmg`,148_300_000),
       file('mac-x64','Intel',`Aplos-Mail-${version}-x64.dmg`,156_900_000),
     ]},

@@ -47,14 +47,22 @@ export function Tour({id,eager,focus=0}:{id:TourId;eager?:boolean;focus?:number}
   // Only once someone reaches for the window are the screens one click away fetched.
   const warm=()=>mount(spots.flatMap(s=>s.to?[s.to]:[]));
   const show=(to:string)=>{setWas(shown);setShown(to);};
+  // A screen is ready once its picture loads, or fails to: then its alt text stands in, and the spot still works.
+  const arrive=(name:string)=>{loaded.current.add(name);if(name===want&&name!==shown)show(name);};
   const go=(to:string)=>{setWant(to);mount([to]);if(loaded.current.has(to))show(to);};
+  const pressed=useRef(false); // a spot was just pressed; its button goes away with the screen it was on
   const press=(spot:Spot)=>{
-    if(spot.to)go(spot.to);
+    if(spot.to){pressed.current=true;go(spot.to);}
     else if(spot.ask!==undefined)window.dispatchEvent(new CustomEvent('aplos:ask',{detail:spot.ask}));
   };
   const close=spots.find(s=>s.label===closeLabel);
 
-  useEffect(()=>{if(want===shown)warm();},[shown]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{
+    if(want===shown)warm();
+    // Keep keyboard focus in the window when the pressed spot disappears, so Tab and Escape keep working.
+    if(pressed.current&&(!document.activeElement||document.activeElement===document.body))root.current?.focus({preventScroll:true});
+    pressed.current=false;
+  },[shown]); // eslint-disable-line react-hooks/exhaustive-deps
   // When the window first comes into view, its clickable spots light up once in turn, so it reads as something to press.
   useEffect(()=>{
     const observer=new IntersectionObserver(([entry])=>{
@@ -72,14 +80,14 @@ export function Tour({id,eager,focus=0}:{id:TourId;eager?:boolean;focus?:number}
   },[focus]);
 
   return (
-    <div className={`tour${glint?' is-glint':''}`} ref={root} onPointerEnter={warm} onFocus={warm} onPointerDown={warm}
+    <div className={`tour${glint?' is-glint':''}`} ref={root} tabIndex={-1} onPointerEnter={warm} onFocus={warm} onPointerDown={warm}
       onKeyDown={event=>{if(event.key==='Escape'&&close){event.stopPropagation();press(close);}}}>
       <div className="tour-stage" style={{aspectRatio:`${tour.width} / ${tour.height}`}}
         onClick={event=>{if(close&&!(event.target as Element).closest('.spot'))press(close);}}>
         {[...mounted].map(name=>(
           <div key={name} className={`tour-frame${name===shown?' is-on':name===was?' is-was':''}`} aria-hidden={name!==shown}>
             <Shot name={`${id}-${name}`} alt={`Aplos Mail showing ${names[name]??name}.`} width={tour.width} height={tour.height} eager={eager||name!==tour.start}
-              onLoad={()=>{loaded.current.add(name);if(name===want&&name!==shown)show(name);}} />
+              onLoad={()=>arrive(name)} onError={()=>arrive(name)} />
           </div>
         ))}
         {spots.map((spot,i)=>(

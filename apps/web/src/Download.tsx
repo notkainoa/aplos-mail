@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import icon from './assets/icon-512.webp';
 import {Airmail,Footer,Header} from './Chrome';
 import {AllowRunArt,DockArt,DownloadsArt,DragArt,FinderArt,InstallerArt,WelcomeArt} from './InstallArt';
@@ -24,11 +24,13 @@ export function Download() {
   const [stalled,setStalled]=useState(false); // long enough that, if nothing happened, the visitor should be offered a retry
   const file=target?findFile(target):null;
 
+  const autoTimer=useRef(0),stallTimer=useRef(0);
   const start=(chosen:File)=>{
     // Sample data points at files that do not exist yet, so nothing is fetched until there is a real release.
     if(!release.sample)window.location.assign(chosen.url);
     setStarted(true);setStalled(false);
-    window.setTimeout(()=>setStalled(true),3500);
+    window.clearTimeout(stallTimer.current);
+    stallTimer.current=window.setTimeout(()=>setStalled(true),3500);
   };
 
   useEffect(()=>{
@@ -36,17 +38,22 @@ export function Download() {
     void detect().then(result=>{
       if(!live)return;
       setFound(result);setTarget(result.target);
-      if(result.target)window.setTimeout(()=>live&&start(findFile(result.target!)),700);
+      // Only start by itself when the build is known; a wrong guess would download a file that cannot run.
+      if(result.target&&result.sure)autoTimer.current=window.setTimeout(()=>start(findFile(result.target!)),700);
     });
-    return ()=>{live=false;};
+    return ()=>{live=false;window.clearTimeout(autoTimer.current);window.clearTimeout(stallTimer.current);};
   },[]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const choose=(next:Target)=>{setTarget(next);setStarted(false);setStalled(false);};
-  const auto=found?.target&&target===found.target;
+  const choose=(next:Target)=>{
+    window.clearTimeout(autoTimer.current);window.clearTimeout(stallTimer.current);
+    setTarget(next);setStarted(false);setStalled(false);
+  };
   const os:Os=file?.platform.os??'mac';
-  const title=!found?'Getting your download ready':found.mobile?'Aplos Mail is for your computer':file?'Your download is on its way':'Download Aplos Mail';
-  const lead=!found?' ':found.mobile
+  const guessed=!!found&&!found.sure&&!!file;
+  const title=!found?'Getting your download ready':found.mobile?'Aplos Mail is for your computer':file&&!guessed?'Your download is on its way':'Download Aplos Mail';
+  const lead=!found?'\u00a0':found.mobile
     ?'Open this page on your computer and the right version downloads by itself. Every version is listed below.'
+    :guessed&&file?.platform.os==='mac'?'Most Macs made since 2020 have Apple silicon. If yours has an Intel chip, choose Intel below.'
     :file?`Aplos Mail ${release.version} for ${file.platform.name}, ${file.label}. It takes about a minute to install.`
     :'Pick the version for your computer below.';
 
@@ -60,7 +67,7 @@ export function Download() {
           <h1 id="dl-title" key={title}><Rise text={title} /></h1>
           <p className="dl-lead" data-reveal style={delay(80)} aria-live="polite">{lead}</p>
           <div className="dl-actions" data-reveal style={delay(160)}>
-            {file&&<Status file={file} started={started&&!!auto} stalled={stalled} onStart={()=>start(file)} />}
+            {file&&<Status file={file} started={started} stalled={stalled} onStart={()=>start(file)} />}
             <a className="dl-pill" href="#all"><span>All versions</span><svg className="dl-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10m0 0-4-4m4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></a>
           </div>
           {/* Always rendered, so the page's reveal sees it; it shows once there is a version to name. */}
@@ -72,6 +79,7 @@ export function Download() {
               </optgroup>)}
             </select>
           </label>
+          {release.sample&&<p className="dl-sample">Preview with sample data. Aplos Mail isn’t released yet, so nothing downloads.</p>}
         </section>
         <section className="dl-steps" aria-labelledby="steps-title">
           <h2 id="steps-title" className="sr">How to install</h2>
@@ -79,7 +87,7 @@ export function Download() {
             {steps[os].map(([Art,text],i)=>(
               // Keyed by position: the steps change with the system, but the page's reveal keeps watching the same items.
               <li key={i} data-reveal style={delay(i*90)}>
-                <div className="dl-art" data-ui><Art file={file??findFile('mac-arm64')} /></div>
+                <div className="dl-art" data-ui aria-hidden="true"><Art file={file??findFile('mac-arm64')} /></div>
                 <p>{text(file??findFile('mac-arm64'))}</p>
               </li>
             ))}
@@ -101,7 +109,7 @@ export function Download() {
                 <div className="dl-files">
                   {p.files.map(f=>(
                     <a key={f.target} className={`dl-file${f.target===found?.target?' is-yours':''}`} href={f.url} download
-                      onClick={event=>{if(release.sample)event.preventDefault();choose(f.target);start(f);}}>
+                      onClick={event=>{event.preventDefault();choose(f.target);start(f);}}>
                       <DownloadIcon /><span>{f.label} <small>{f.kind}</small></span><small>{megabytes(f.size)}</small>
                     </a>
                   ))}
