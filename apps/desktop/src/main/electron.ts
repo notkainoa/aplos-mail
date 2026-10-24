@@ -9,6 +9,8 @@ import {connectEngine,type EngineInit} from './engine-rpc';
 import {createCipher,loadDataKey,migrateCredentials} from './keyring';
 import {applyChanges,type StateChanges} from '../shared/live';
 import {DraftOwnership,draftMutationId} from './desktop-policy';
+import {UpdateController,disabledReason,teamIdentifier,type Updater} from './updates';
+import {spawnSync} from 'node:child_process';
 import type {AppState,Listener} from '../shared/types';
 
 const methods=new Set([
@@ -17,7 +19,7 @@ const methods=new Set([
   'ai.summarize','ai.summarizing','ai.polish','ai.draft','ai.ask','ai.models','ai.test','ai.keys','ai.key.set','ai.key.delete','ai.key.test','ai.cancel','ai.transcribe','conversation.delete','workflow.status','workflow.enable','workflow.code','workflow.disable',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
 ]);
-const nativeMethods=new Set(['window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test','system.login','system.defaultMail','system.microphone','app.info']);
+const nativeMethods=new Set(['window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test','system.login','system.defaultMail','system.microphone','app.info','update.status','update.check','update.restart','update.later']);
 const rendererFile=resolve(__dirname,'../renderer/index.html');
 const rendererURL=pathToFileURL(rendererFile);
 const devURL=process.env.APLOS_RENDERER_URL;
@@ -36,7 +38,9 @@ const restarts:number[]=[];
 let latestState:AppState|undefined;
 let closing=false;
 let quitting=false;
-let activeIcon:string|undefined;
+let updates:UpdateController|undefined;
+/** Set by Restart: the normal quit (drafts saved, engine closed) ends by installing the update instead of quitting. */
+let installUpdate=false;
 
 function trustedURL(raw:string):boolean{
   try{const url=new URL(raw);return devURL?url.origin===new URL(devURL).origin:url.protocol==='file:'&&url.pathname===rendererURL.pathname;}catch{return false;}
@@ -56,7 +60,7 @@ function emit(event:Parameters<Listener>[0]){for(const win of windows)if(!win.is
 function command(value:string){const win=BrowserWindow.getFocusedWindow()||main;win?.webContents.send('aplos:event',{type:'command',payload:value});}
 function focusMain(){if(!main||main.isDestroyed())main=createWindow();if(main.isMinimized())main.restore();main.show();main.focus();}
 function handleLink(raw:string){try{const url=new URL(raw);if(!['mailto:','aplos:'].includes(url.protocol)||raw.length>10000)return;if(started)focusMain();if(!main||main.webContents.isLoading())pendingLinks.push(raw);else{focusMain();main.webContents.send('aplos:event',{type:'deep-link',payload:raw});}}catch{/* Ignore invalid OS links. */}}
-function finishQuit(){if(closing)return;closing=true;void Promise.resolve(service?.close()).finally(()=>app.quit());}
+function finishQuit(){if(closing)return;closing=true;void Promise.resolve(service?.close()).finally(()=>{updates?.stop();if(!(installUpdate&&updates?.install()))app.quit();});}
 // Runs on every state change. Assigning themeSource, even to the same value, resets the macOS app appearance
 // and notifies theme observers, and the badge redraws the Dock tile, so only touch what actually changed.
 let activeBadge=-1,activeTheme:AppState['settings']['theme']|undefined,syncingTheme=false;
@@ -64,7 +68,6 @@ function applyAppearance(state:AppState){
   if(activeTheme!==state.settings.theme){activeTheme=state.settings.theme;syncTheme(true);}
   const badge=state.settings.zen?0:state.threads.filter(thread=>thread.unread&&thread.status==='new').length;
   if(badge!==activeBadge){app.setBadgeCount(badge);activeBadge=badge;}
-  if(process.platform==='darwin'&&activeIcon!==state.settings.icon){app.dock?.setIcon(join(__dirname,`icon-${state.settings.icon}.png`));activeIcon=state.settings.icon;}
 }
 // The macOS sidebar material can keep the appearance it was drawn with when a change slips past it,
 // leaving dark glass under light-theme text (or the reverse). When the setting or the system
@@ -124,22 +127,58 @@ function notify(title:string,body:string,threadId?:string){
 function menus(){
   const item=(label:string,accelerator:string|undefined,value:string):MenuItemConstructorOptions=>({label,accelerator,click:()=>command(value)});
   const template:MenuItemConstructorOptions[]=[
-    {label:app.name,submenu:[{role:'about'},item('Settings…','CmdOrCtrl+,','settings'),{type:'separator'},{role:'services'},{type:'separator'},{role:'hide'},{role:'hideOthers'},{role:'unhide'},{type:'separator'},{role:'quit'}]},
+    {label:app.name,submenu:[{role:'about'},{label:'Check for Updates…',click:()=>void checkManually()},item('Settings…','CmdOrCtrl+,','settings'),{type:'separator'},{role:'services'},{type:'separator'},{role:'hide'},{role:'hideOthers'},{role:'unhide'},{type:'separator'},{role:'quit'}]},
     {label:'File',submenu:[item('New Message','CmdOrCtrl+N','compose'),{type:'separator'},{role:'close'}]},
     {label:'Edit',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'pasteAndMatchStyle'},{role:'selectAll'},{type:'separator'},item('Undo Mail Action','CmdOrCtrl+Shift+Z','undo')]},
     {label:'View',submenu:[item('Toggle Sidebar','CmdOrCtrl+Shift+S','toggle-sidebar'),item('Search Mail','CmdOrCtrl+K','search'),item('Ask Aplos','CmdOrCtrl+J','ask'),item('Refresh Mail','CmdOrCtrl+R','refresh'),{type:'separator'},item('Home','CmdOrCtrl+1','home'),item('Later','CmdOrCtrl+2','later'),item('All Mail','CmdOrCtrl+3','all'),item('Calendar','CmdOrCtrl+4','calendar'),{type:'separator'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'},...(!app.isPackaged?[{role:'toggleDevTools'} as MenuItemConstructorOptions]:[])]},
     {label:'Navigate',submenu:[item('Back','CmdOrCtrl+[','back'),item('Forward','CmdOrCtrl+]','forward')]},
     {role:'windowMenu'},
-    {role:'help',submenu:[item('Keyboard Shortcuts','CmdOrCtrl+/','shortcuts'),{label:'About Aplos Mail',click:()=>{void dialog.showMessageBox({type:'info',title:'Aplos Mail',message:`Aplos Mail ${app.getVersion()}`,detail:'An independent desktop inbox. AI features use Groq by default, or the providers you choose in Settings. This build updates from its source distribution.'});}}]},
+    {role:'help',submenu:[item('Keyboard Shortcuts','CmdOrCtrl+/','shortcuts'),{label:'About Aplos Mail',click:()=>{void dialog.showMessageBox({type:'info',title:'Aplos Mail',message:`Aplos Mail ${app.getVersion()}`,detail:'An independent desktop inbox. AI features use Groq by default, or the providers you choose in Settings.'});}}]},
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+/** The running .app bundle (…/Aplos Mail.app/Contents/MacOS/Aplos Mail → …/Aplos Mail.app). */
+function bundlePath(){return resolve(process.execPath,'..','..','..');}
+function createUpdates(){
+  const devFeed=!app.isPackaged&&process.env.APLOS_UPDATE_DEV==='1';
+  const log=(line:string)=>console.log(`Aplos Mail: ${line}`);
+  const disabled=disabledReason({platform:process.platform,packaged:app.isPackaged,devFeed,bundlePath:bundlePath(),teamId:()=>{
+    const result=spawnSync('/usr/bin/codesign',['--display','--verbose=2',bundlePath()],{encoding:'utf8'});
+    return teamIdentifier(`${result.stdout}\n${result.stderr}`);
+  }});
+  return new UpdateController({currentVersion:app.getVersion(),disabled,log,emit:info=>emit({type:'update',payload:info}),updater:()=>{
+    // Loaded only when updates can run, so development and unsigned builds never start electron-updater.
+    const {autoUpdater}=require('electron-updater') as typeof import('electron-updater');
+    autoUpdater.logger={info:(m:unknown)=>log(`updater: ${String(m)}`),warn:(m:unknown)=>log(`updater warning: ${String(m)}`),error:(m:unknown)=>log(`updater error: ${String(m)}`),debug:()=>{}};
+    // dev-app-update.yml in apps/desktop points at `npm run update-feed`.
+    if(devFeed)autoUpdater.forceDevUpdateConfig=true;
+    return autoUpdater as unknown as Updater;
+  }});
+}
+function restartToUpdate(){
+  if(!updates?.ready)return;
+  installUpdate=true;app.quit();
+}
+async function checkManually(){
+  if(!updates)return;
+  const info=await updates.check(true),status=info.status;
+  const show=(message:string,detail?:string)=>void dialog.showMessageBox({type:'info',title:'Aplos Mail',message,detail});
+  if(status.state==='current')show('You’re up to date',`Aplos Mail ${info.currentVersion} is the newest version.`);
+  else if(status.state==='downloading')show(`Aplos Mail ${status.version} is downloading`,'You can restart to update when it is ready.');
+  else if(status.state==='ready'){focusMain();}
+  else if(status.state==='disabled')show('Automatic updates are off',status.reason);
+  else if(status.state==='error')show('Couldn’t check for updates',status.message);
 }
 async function invokeNative(event:IpcMainInvokeEvent,method:string,input:unknown){
   const payload=record(input),win=BrowserWindow.fromWebContents(event.sender)!;
   // Also accepts the save acknowledgement from a renderer-initiated close held at beforeunload.
   if(method==='window.closeReady'){pendingClose.delete(win.id);permittedClose.add(win.id);win.setEnabled(true);setImmediate(()=>{if(!win.isDestroyed())win.close();});return true;}
-  if(method==='window.closeCancel'){pendingClose.delete(win.id);win.setEnabled(true);quitting=false;return true;}
-  if(method==='app.info')return {name:'Aplos Mail',version:app.getVersion(),desktop:true,update:'This build updates from source. Automatic updates are not configured.'};
+  if(method==='window.closeCancel'){pendingClose.delete(win.id);win.setEnabled(true);quitting=false;installUpdate=false;return true;}
+  if(method==='app.info')return {name:'Aplos Mail',version:app.getVersion(),desktop:true};
+  if(method==='update.status')return updates!.info();
+  if(method==='update.check')return updates!.check(true);
+  if(method==='update.later'){updates!.later();return updates!.info();}
+  if(method==='update.restart'){restartToUpdate();return true;}
   if(method==='shell.open'){await external(payload.url);return true;}
   if(method==='window.compose'){const id=text(payload.draftId,'draft ID',200);if(!latestState?.drafts.some(draft=>draft.id===id))throw new Error('Save this draft before opening a separate window.');popout('draft',id,win.id);return true;}
   if(method==='window.thread'){popout('thread',text(payload.threadId,'thread ID',200),win.id);return true;}
@@ -225,6 +264,8 @@ else{
   app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit();});
   app.on('before-quit',event=>{if(started&&!closing){event.preventDefault();quitting=true;if(!windows.size)finishQuit();else for(const win of windows)win.close();}});
   void app.whenReady().then(async()=>{
+    // A packaged app shows its bundle icon (AppIcon.icon); a development run would otherwise show Electron's.
+    if(!app.isPackaged)app.dock?.setIcon(join(__dirname,'icon.png'));
     if(app.isPackaged)config({path:join(homedir(),'.config','aplos-mail','.env'),quiet:true});else loadDevEnv();
     app.setAboutPanelOptions({applicationName:'Aplos Mail',applicationVersion:app.getVersion(),copyright:'Independent software. Built with original code and design.'});
     session.defaultSession.setPermissionCheckHandler((contents,permission)=>Boolean(contents&&trustedURL(contents.getURL())&&permission==='media'));
@@ -248,6 +289,7 @@ else{
     latestState=await service.invoke('state.get') as AppState;
     applyAppearance(latestState);started=true;
     nativeTheme.on('updated',()=>syncTheme(true));
+    updates=createUpdates();updates.start();
     menus();main=createWindow();
     app.setAsDefaultProtocolClient('aplos');
     for(const arg of process.argv)if(/^(mailto|aplos):/i.test(arg))handleLink(arg);

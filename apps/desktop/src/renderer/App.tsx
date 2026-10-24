@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,MailOpen,MessageCircle,RotateCcw,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
-import type {AppState,Attachment,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,View} from '../shared/types';
+import type {AppState,Attachment,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,UpdateInfo,View} from '../shared/types';
 import {bookmarkLeavesList,isBookmark,isFollowUp,isHomeLow,isReplyDue,liveAction,threadInView} from '../shared/mailbox';
 import {bridge,escapeHtml,invoke,isoDay,openUrl,replyRecipients,uid} from './bridge';
 import {createLiveState,threadOrder,type StateChanges,type ThreadPage} from '../shared/live';
@@ -15,6 +15,8 @@ import {Topbar} from './components/Topbar';
 import {DraftList,MailSection,actionIcon,highlightTerms,nudgeFocus,prepareFocusMove,useFocusGlide,type RowActions,type RowHandlers,type Triage} from './components/MailList';
 import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog} from './components/Overlays';
 import {Welcome} from './components/Welcome';
+import {AppIcon} from './components/AppIcon';
+import {appVersion} from '../shared/version';
 import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Keys,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useHandlers,useMenu,usePresence,type Icon} from './ui';
 
 const titles:Record<View,string>={home:'Home',later:'Later',all:'All mail',drafts:'Drafts',sent:'Sent','needs-reply':'Needs reply','awaiting-reply':'Awaiting reply',trash:'Trash',spam:'Spam',low:'Low importance',calendar:'Calendar',settings:'Settings'};
@@ -47,7 +49,8 @@ function useMediaQuery(query:string){
 
 export function App(){
  const [state,setState]=useState<AppState>();
- const [capabilities,setCapabilities]=useState<Capabilities>({groq:false,google:false,microsoft:false,desktop:!!window.aplos,version:'0.1.0'});
+ const [update,setUpdate]=useState<UpdateInfo>();
+ const [capabilities,setCapabilities]=useState<Capabilities>({groq:false,google:false,microsoft:false,desktop:!!window.aplos,version:appVersion});
  const [fatal,setFatal]=useState('');
  const [route,setRoute]=useState<Route>({view:'home',threadId:popoutThread??undefined});
  const [routes,setRoutes]=useState<Route[]>([{view:'home'}]);const [historyIndex,setHistoryIndex]=useState(0);
@@ -113,13 +116,20 @@ export function App(){
  },[live]);
  refreshRef.current=refresh;
  useEffect(()=>{
-  void refresh();void invoke<Capabilities>('capabilities.get').then(setCapabilities).catch(()=>{});
+  void refresh();void invoke<Capabilities>('capabilities.get').then(setCapabilities).catch(()=>{});void invoke<UpdateInfo>('update.status').then(setUpdate).catch(()=>{});
   const unsubscribe=bridge.subscribe(e=>eventHandler.current(e));
   const up=()=>setOnline(true);const down=()=>setOnline(false);addEventListener('online',up);addEventListener('offline',down);
   return ()=>{unsubscribe();removeEventListener('online',up);removeEventListener('offline',down);};
  },[]);
  // The service paces automatic syncs per account, so focusing often is cheap.
  useEffect(()=>{if(!popoutThread&&!popoutDraft)localStorage.setItem(askStorageKey,ask?'open':'closed');},[ask]);
+ // A downloaded update waits for the owner: Restart applies it, Later (or ×) hides it until a manual check.
+ const readyVersion=update?.status.state==='ready'&&!update.dismissed&&!popoutThread&&!popoutDraft?update.status.version:undefined;
+ useEffect(()=>{
+  if(!readyVersion){toast.dismissKey('update');return;}
+  const later=()=>void invoke('update.later').catch(()=>{});
+  toast.show({key:'update',persistent:true,text:`Aplos ${readyVersion} is ready`,action:{label:'Restart',run:()=>void invoke('update.restart').catch(()=>{})},secondary:{label:'Later',run:later},onDismiss:later});
+ },[readyVersion]);
  useEffect(()=>{const onFocus=()=>{void invoke('sync',{auto:true}).catch(()=>{});};window.addEventListener('focus',onFocus);return()=>window.removeEventListener('focus',onFocus);},[]);
  useEffect(()=>{if(!leaving)return;const t=setTimeout(()=>setLeaving(undefined),340);return ()=>clearTimeout(t);},[leaving?.key]);
  useEffect(()=>{if(!departing)return;const t=setTimeout(()=>setDeparting(undefined),700);return ()=>clearTimeout(t);},[departing]);
@@ -342,6 +352,7 @@ export function App(){
   else if(event.type==='changes')live.apply(event.payload as StateChanges);
   else if(event.type==='prepare-close'){if(!composeRef.current)void invoke('window.closeReady').catch(()=>{});}
   else if(event.type==='command')command(String(event.payload));
+  else if(event.type==='update')setUpdate(event.payload as UpdateInfo);
   else if(event.type==='deep-link'){try{const url=new URL(String(event.payload));if(url.protocol==='mailto:')void newDraft({to:decodeURIComponent(url.pathname),subject:url.searchParams.get('subject')||'',html:escapeHtml(url.searchParams.get('body')||'').replace(/\n/g,'<br>'),cc:url.searchParams.get('cc')||'',bcc:url.searchParams.get('bcc')||''});else if(url.host==='compose')void newDraft({to:url.searchParams.get('to')||'',subject:url.searchParams.get('subject')||'',html:escapeHtml(url.searchParams.get('body')||'')});else if(url.host==='settings')navigate('settings');else if(url.host==='thread')navigate('all',decodeURIComponent(url.pathname.slice(1)));}catch{notify('That link could not be opened.');}}
   else if(event.type==='sent'){notify('Message sent');if((event.payload as {playSound?:boolean})?.playSound){try{const ctx=new AudioContext();const osc=ctx.createOscillator();const gain=ctx.createGain();osc.connect(gain);gain.connect(ctx.destination);osc.frequency.setValueAtTime(540,ctx.currentTime);osc.frequency.exponentialRampToValueAtTime(810,ctx.currentTime+.12);gain.gain.setValueAtTime(.035,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.22);osc.start();osc.stop(ctx.currentTime+.23);osc.onended=()=>void ctx.close();}catch{/* no sound without audio permission */}}}
   else if(event.type==='send-error'||event.type==='error')toast.show({tone:'error',text:typeof event.payload==='string'?event.payload:(event.payload as {message?:string})?.message||'Something needs your attention.'});
@@ -458,7 +469,7 @@ export function App(){
   onApplyDraft:(p:Partial<Draft>)=>{if(!composer)return;const base=liveDraft.current||composer;setComposer({...base,...p,id:composer.id,accountId:composer.accountId,mode:composer.mode,threadId:composer.threadId,attachments:base.attachments,revision:base.revision,updatedAt:new Date().toISOString()});},
  });
 
- if(!state)return <div className="loading-screen"><span className="app-icon ink large">a</span><h2>{fatal?'Aplos needs a moment.':'Making room for your mail…'}</h2>{fatal?<><p>{fatal}</p><Button variant="primary" onClick={()=>void refresh()}>Try again</Button><p className="small muted">For browser development, run npm run dev.</p></>:<Spinner size={20} className="muted"/>}</div>;
+ if(!state)return <div className="loading-screen"><AppIcon size={72}/><h2>{fatal?'Aplos needs a moment.':'Making room for your mail…'}</h2>{fatal?<><p>{fatal}</p><Button variant="primary" onClick={()=>void refresh()}>Try again</Button><p className="small muted">For browser development, run npm run dev.</p></>:<Spinner size={20} className="muted"/>}</div>;
 
  const prefs=state.settings;
  const {low,later,homeLater,replyHome,followUps,today}=buckets;
@@ -514,7 +525,7 @@ export function App(){
  <div className="content-layout">
  {listShown&&view==='calendar'&&<Calendar events={state.events} accounts={state.accounts} accountId={state.selectedAccountId} hidden={prefs.hiddenCalendars} suggestions={calendarSuggestions} busyId={actionBusy} paused={!!composer||shortcutHelp} {...calendarActions}/>}
  {listShown&&view!=='calendar'&&<div className="mail-content" ref={listRef} onScroll={e=>{listScroll.current=e.currentTarget.scrollTop;}}>
- {view==='settings'?<Settings state={state} capabilities={capabilities} onChange={p=>void updateSettings(p)} notify={notify} shortcuts={()=>setShortcutHelp(true)}/>
+ {view==='settings'?<Settings state={state} capabilities={capabilities} update={update} onUpdate={setUpdate} onChange={p=>void updateSettings(p)} notify={notify} shortcuts={()=>setShortcutHelp(true)}/>
  :<div className={cx('mail-view',view==='later'&&laterTab==='bookmarks'&&'bookmarks-view',view==='home'&&!searchMode&&!selectedThread&&'focus-fade')} style={{'--f':Math.max(0,focusIndex)} as React.CSSProperties} key={(searchMode?'search':view)+(view==='later'?laterTab:'')}>
   {searchMode&&<div className="search-heading"><div className="search-box"><Search size={17}/><input ref={searchInput} autoFocus placeholder="Search your mail" aria-label="Search mail query" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={searchKeys}/>{searching&&<Spinner size={16}/>}<IconButton label="Close search" shortcut="Esc" icon={X} onClick={closeSearch}/></div>
    {!search&&recentSearches.length>0&&<p className="search-hints"><span>Recent</span>{recentSearches.map(hint=><button key={hint} onClick={()=>{setSearch(hint);searchInput.current?.focus();}}>{hint}</button>)}</p>}
@@ -551,7 +562,7 @@ export function App(){
  ]:[]}/>
  {eventEditor&&<EventEditor key={eventEditor.id||eventEditor.title||'new'} event={eventEditor} accounts={state.accounts} onClose={()=>setEventEditor(null)} notify={notify}/>}
  <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft} minimized={minimized}/>
- <Welcome open={welcome&&!popoutThread} icon={prefs.icon} capabilities={capabilities} settings={prefs} notify={notify} onSettings={patch=>void updateSettings(patch)}
+ <Welcome open={welcome&&!popoutThread} capabilities={capabilities} settings={prefs} notify={notify} onSettings={patch=>void updateSettings(patch)}
   onFinish={()=>{setWelcome(false);if(!prefs.onboardingDone)void updateSettings({onboardingDone:true});}}/>
  <PendingSends drafts={pending} seconds={prefs.undoSeconds} undo={async d=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){fail(e);}}}/>
  <Toaster/>

@@ -642,29 +642,7 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .loading-screen, .fatal { height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 40px; text-align: center; background: var(--canvas); }
 .loading-screen h2 { font-weight: 400; font-size: 16px; }
 .loading-screen p { color: var(--dim); max-width: 440px; }
-.app-icon {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 11px;
-  font-size: 30px;
-  line-height: 1;
-  font-weight: 500;
-  letter-spacing: -1px;
-  color: #fff;
-  background: linear-gradient(160deg, #3a3937, #100f0f);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, .22), inset 0 1px .5px rgba(255, 255, 255, .3), inset 0 -1px 2px rgba(0, 0, 0, .3);
-}
-.app-icon::before { content: ""; position: absolute; right: 7px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: #3e9efe; box-shadow: 0 0 6px rgba(62, 158, 254, .8); }
-.app-icon.sage { background: linear-gradient(160deg, #5aa7ff, #0663c2); }
-.app-icon.sage::before { background: #fff; box-shadow: 0 0 6px rgba(255, 255, 255, .8); }
-.app-icon.clay { background: linear-gradient(160deg, #f1efe7, #cfcdc4); color: #100f0f; }
-.app-icon.large { width: 72px; height: 72px; border-radius: 18px; font-size: 54px; }
-.app-icon.large::before { width: 10px; height: 10px; right: 12px; top: 12px; }
-.app-icon.selected { outline: 2px solid var(--blue); outline-offset: 3px; }
+.app-icon { display: block; flex: none; -webkit-user-drag: none; }
 .welcome { width: 420px; max-height: 95dvh; padding: 36px 36px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; border-radius: 20px; }
 .welcome .app-icon { margin-bottom: 24px; }
 .welcome h1 { font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: -.5px; }
@@ -714,14 +692,6 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 @keyframes settings-in { from { opacity: 0; transform: translateY(6px); } }
 .group-note { padding: 12px 0; font-size: 12px; line-height: 17px; color: var(--dim); }
 .settings-account-actions { padding: 12px 0; }
-.icon-choices .app-icon { transition: transform var(--dur-base) var(--ease-spring), outline-color var(--dur-fast); }
-.icon-choices .app-icon:hover { transform: scale(1.08); }
-.icon-choices .app-icon:active { transform: scale(.94); }
-.icon-choices .app-icon :is(svg, .sym) { animation: empty-icon 300ms var(--ease-spring); }
-.icon-choices { position: relative; display: flex; gap: 12px; padding: 4px; }
-.icon-choices .app-icon { width: 30px; height: 30px; border-radius: 8px; font-size: 22px; }
-.icon-choices .app-icon::before { width: 4px; height: 4px; right: 5px; top: 5px; }
-.icon-choices :is(svg, .sym) { position: absolute; right: -4px; bottom: -4px; padding: 1px; border-radius: 50%; color: #fff; background: var(--blue-fill); }
 .signature-setting { width: 100%; min-height: 96px; margin: 8px 0 12px; padding: 10px 12px; border-radius: var(--radius-control); background: var(--raised); outline: 0; line-height: 21px; resize: vertical; }
 .settings-account { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
 .settings-account > div { flex: 1; min-width: 0; }

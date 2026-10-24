@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      desktop: ${{ steps.filter.outputs.desktop }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared: &shared
+              - package.json
+              - package-lock.json
+              - packages/**
+              - .github/workflows/ci.yml
+            desktop:
+              - *shared
+              - apps/desktop/**
+              - scripts/**
+            web:
+              - *shared
+              - apps/web/**
+
+  desktop:
+    name: Desktop (typecheck, test, build)
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck -w @aplos/desktop
+      - run: npm test -w @aplos/desktop
+      # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
+      - run: npm run build -w @aplos/desktop
+
+  web:
+    name: Website (typecheck, build)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck -w @aplos/web
+      - run: npm run build -w @aplos/web

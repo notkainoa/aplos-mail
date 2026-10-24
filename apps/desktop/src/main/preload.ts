@@ -7,7 +7,7 @@ const allowed = new Set([
   'ai.summarize','ai.summarizing','ai.polish','ai.draft','ai.ask','ai.models','ai.test','ai.keys','ai.key.set','ai.key.delete','ai.key.test','ai.key.paste','ai.cancel','ai.transcribe','conversation.delete','workflow.status','workflow.enable','workflow.code','workflow.disable',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
   'window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test',
-  'system.login','system.defaultMail','system.microphone','app.info','symbols.render',
+  'system.login','system.defaultMail','system.microphone','app.info','symbols.render','update.status','update.check','update.restart','update.later',
 ]);
 const listeners=new Set<Listener>();
 const queued:Parameters<Listener>[0][]=[];

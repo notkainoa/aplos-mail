@@ -294,6 +294,9 @@
 .ui-toast-action { height: 34px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 7px 0 12px; border-radius: var(--radius-control); color: var(--blue); font-weight: 500; }
 .ui-toast-action:not(:has(.ui-keys)) { padding-right: 12px; }
 .ui-toast-action:hover { background: var(--blue-soft); }
+.ui-toast-action.is-secondary { color: var(--dim); }
+.ui-toast-action.is-secondary:hover { background: var(--hover); color: var(--ink); }
+.ui-toast-action + .ui-toast-action { margin-left: -8px; }
 .ui-toast-action:active { transform: scale(.96); }
 .ui-toast-action .ui-kbd { background: var(--blue-soft); color: var(--blue); }
 .ui-toast-dismiss { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--dim); background: var(--surface-solid); box-shadow: var(--glass); opacity: 0 !important; transform: scale(.8); }

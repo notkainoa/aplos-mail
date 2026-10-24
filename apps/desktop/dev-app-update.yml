@@ -1,0 +1,5 @@
+# Used only by development runs with APLOS_UPDATE_DEV=1 (electron-updater's forceDevUpdateConfig).
+# Start the fake feed first: npm run update-feed -w @aplos/desktop
+provider: generic
+url: http://127.0.0.1:4329/
+updaterCacheDirName: aplos-mail-dev-updater

@@ -1,0 +1,60 @@
+name: Release
+
+# Pushing a tag vX.Y.Z (scripts/release.mjs creates one) builds the macOS artifacts and
+# publishes them to a draft GitHub Release for the owner to review. See RELEASING.md.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    name: macOS (arm64 + x64)
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Check the tag matches the app version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="v$(node -p "require('./apps/desktop/package.json').version")"
+          if [ "$version" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match apps/desktop/package.json ($version). Cut releases with npm run release."
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run typecheck -w @aplos/desktop
+      - run: npm test -w @aplos/desktop
+      - name: Build, sign, notarize and publish a draft release
+        # Missing secrets arrive as empty strings; release-build.mjs then makes an ad-hoc signed,
+        # un-notarized build instead of failing. Signing needs CSC_LINK + CSC_KEY_PASSWORD;
+        # notarization additionally needs all three APPLE_* secrets.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run release:publish -w @aplos/desktop
+      - name: Keep the artifacts with the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: aplos-mail-${{ github.ref_name }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest-mac.yml
+          if-no-files-found: error

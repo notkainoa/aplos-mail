@@ -12,7 +12,7 @@ export interface Draft { id:string; accountId:string; fromEmail?:string; signatu
 export interface CalendarEvent { id:string; accountId:string; threadId?:string; calendarId:string; title:string; start:string; end:string; allDay:boolean; location:string; description:string; guests:string[]; remoteId?:string; url?:string; /** Host version this copy was read at; saves fail rather than overwrite a newer one. */ etag?:string; /** The host emails attendees about changes (a meeting), so Aplos leaves it read-only. */ scheduling?:boolean }
 /** One calendar inside an account. `color` is the host's colour when it has one. */
 export interface CalendarInfo { id:string; name:string; accountId:string; /** The calendar `'primary'` stands for. */ primary?:boolean; color?:string }
-export interface Settings { theme:'light'|'dark'|'system'; zen:boolean; sidebar:boolean; sidebarStyle:'normal'|'minimized'; triageDirection:'done-right'|'done-left'; swipe:boolean; doneAction:'archive'|'read'|'unread'; laterAction:'archive'|'read'|'unread'; lowAction:'archive'|'read'|'unread'; defaultReply:'reply'|'reply-all'; signature:string; signatureMode:'always'|'new'|'never'; footer:boolean; autoPolish:boolean; undoSeconds:number; sendSound:boolean; autoCalendar:boolean; gmailEvents:boolean; notifications:boolean; accountNotifications:Record<string,boolean>; microphone:string; icon:'ink'|'sage'|'clay'; launchAtLogin:boolean; remoteImages:boolean; onboardingDone:boolean; /** Calendars left out of the Calendar page, as `calendarKey` values. */ hiddenCalendars:string[]; /** The model each AI feature uses, as `provider:model` (see `aiFeatures` in shared/ask). */ askModel:string; summaryModel:string; draftModel:string; planModel:string; voiceModel:string; /** Address of a custom OpenAI-compatible server for Ask, e.g. http://localhost:11434/v1. */ askCustomUrl:string; /** Ollama's and LM Studio's addresses; empty uses their default local port. */ askOllamaUrl:string; askLmStudioUrl:string }
+export interface Settings { theme:'light'|'dark'|'system'; zen:boolean; sidebar:boolean; sidebarStyle:'normal'|'minimized'; triageDirection:'done-right'|'done-left'; swipe:boolean; doneAction:'archive'|'read'|'unread'; laterAction:'archive'|'read'|'unread'; lowAction:'archive'|'read'|'unread'; defaultReply:'reply'|'reply-all'; signature:string; signatureMode:'always'|'new'|'never'; footer:boolean; autoPolish:boolean; undoSeconds:number; sendSound:boolean; autoCalendar:boolean; gmailEvents:boolean; notifications:boolean; accountNotifications:Record<string,boolean>; microphone:string; launchAtLogin:boolean; remoteImages:boolean; onboardingDone:boolean; /** Calendars left out of the Calendar page, as `calendarKey` values. */ hiddenCalendars:string[]; /** The model each AI feature uses, as `provider:model` (see `aiFeatures` in shared/ask). */ askModel:string; summaryModel:string; draftModel:string; planModel:string; voiceModel:string; /** Address of a custom OpenAI-compatible server for Ask, e.g. http://localhost:11434/v1. */ askCustomUrl:string; /** Ollama's and LM Studio's addresses; empty uses their default local port. */ askOllamaUrl:string; askLmStudioUrl:string }
 /** One tool Ask ran while answering, shown as a compact line. */
 export interface AskStep { id:string; tool:string; label:string; count?:number; status:'running'|'done'|'error' }
 /** Triage Ask prepared for listed threads; applied only when the user confirms. */
@@ -24,6 +24,17 @@ export interface AppState { version:1; accounts:Account[]; threads:Thread[]; dra
   /** Engine run and commit count of this copy; not saved. */ epoch?:string; rev?:number;
   /** Total threads when this copy holds only the newest ones. */ threadCount?:number }
 export interface Capabilities { groq:boolean; google:boolean; microsoft:boolean; desktop:boolean; version:string }
+/** In-app update state, from the main process (`update.status`, `update` events). */
+export type UpdateStatus =
+  |{state:'disabled';reason:string}
+  |{state:'idle'}
+  |{state:'checking'}
+  |{state:'current'}
+  |{state:'downloading';version:string;percent?:number}
+  |{state:'ready';version:string}
+  |{state:'error';message:string};
+/** `dismissed`: the owner chose Later for the ready update; the notice stays hidden until a manual check or the next launch. */
+export interface UpdateInfo { currentVersion:string; status:UpdateStatus; lastCheck?:string; dismissed?:boolean }
 export type Listener = (event:{type:string; payload?:unknown})=>void;
 export interface Bridge { invoke<T=unknown>(method:string,payload?:unknown):Promise<T>; subscribe(listener:Listener):()=>void }
 declare global { interface Window { aplos?:Bridge } }

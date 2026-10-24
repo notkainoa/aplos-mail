@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {ArrowRight,Check,KeyRound,Mail,Mic} from '../icons';
+import {AppIcon} from './AppIcon';
 import type {Capabilities,Settings} from '../../shared/types';
 import {aiFeatures,askProvider,voiceProviders,type AiModelSetting,type AskProviderId} from '../../shared/ask';
 import {invoke} from '../bridge';
@@ -20,7 +21,7 @@ type Microphone='unknown'|'not-determined'|'granted'|'denied'|'restricted'|'aski
  * The first-run flow: welcome, an account (the usual add-account dialog), an AI key, the microphone, then the keys that
  * matter. Each step can be skipped, Escape included; finishing or skipping the last step marks it done for good.
  */
-export function Welcome({open,icon,capabilities,settings,onSettings,onFinish,notify}:{open:boolean;icon:string;capabilities:Capabilities;settings:Settings;onSettings:(patch:Partial<Settings>)=>void;onFinish:()=>void;notify:(text:string)=>void}){
+export function Welcome({open,capabilities,settings,onSettings,onFinish,notify}:{open:boolean;capabilities:Capabilities;settings:Settings;onSettings:(patch:Partial<Settings>)=>void;onFinish:()=>void;notify:(text:string)=>void}){
   const [step,setStep]=useState<Step>('start');const [adding,setAdding]=useState(false);const connected=useRef(false);
   const body=useRef<HTMLDivElement>(null);
   useEffect(()=>{if(open){setStep('start');setAdding(false);}},[open]);
@@ -34,7 +35,7 @@ export function Welcome({open,icon,capabilities,settings,onSettings,onFinish,not
     <Dialog open={open} onClose={step==='start'?onFinish:next} dismissable={false} label="Welcome to Aplos Mail" className={cx('welcome onboarding',adding&&'is-covered')}>
       <div ref={body} className="onboarding-step" key={step}>
         {step==='start'&&<>
-          <span className={'app-icon large '+icon}>a</span>
+          <AppIcon size={72}/>
           <h1>Welcome to Aplos.</h1>
           <p>Your mail and calendar, one calm email at a time.</p>
           <div className="onboarding-actions is-stacked">

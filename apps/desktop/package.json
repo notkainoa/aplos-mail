@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "description": "A calm desktop inbox with Groq intelligence",
-  "author": "Aplos Mail",
+  "author": {
+    "name": "Kainoa Newton",
+    "email": "k@kainoa.me"
+  },
   "license": "MIT",
   "main": "dist/main/electron.cjs",
   "scripts": {
@@ -20,12 +23,18 @@
     "package": "npm run build && electron-builder --mac dir",
     "start": "electron .",
     "verify:release": "node scripts/verify-release.mjs",
-    "verify:large": "node scripts/verify-large-mailbox.mjs"
+    "verify:large": "node scripts/verify-large-mailbox.mjs",
+    "release:build": "npm run build && node scripts/release-build.mjs",
+    "release:publish": "npm run build && node scripts/release-build.mjs --publish always",
+    "update-feed": "node scripts/fake-update-feed.mjs",
+    "dmg-background": "electron scripts/build-dmg-background.cjs",
+    "icon": "node scripts/build-icon.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
     "dompurify": "^3.3.0",
     "dotenv": "^17.2.0",
+    "electron-updater": "^6.8.9",
     "fast-xml-parser": "^5.11.2",
     "imapflow": "^2.4.3",
     "lucide-react": "^0.468.0",
@@ -65,10 +74,23 @@
       }
     ],
     "mac": {
-      "icon": "assets/icon.icns",
+      "icon": "assets/AppIcon.icon",
       "category": "public.app-category.productivity",
       "target": [
-        "dir"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Dictate email and ask questions using Groq transcription.",
@@ -81,8 +103,47 @@
             ]
           }
         ]
-      }
+      },
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "minimumSystemVersion": "12.0"
     },
-    "asar": true
+    "asar": true,
+    "dmg": {
+      "title": "${productName}",
+      "iconSize": 160,
+      "iconTextSize": 14,
+      "contents": [
+        {
+          "x": 200,
+          "y": 190,
+          "type": "file"
+        },
+        {
+          "x": 600,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "sign": false,
+      "writeUpdateInfo": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "notkainoa",
+        "repo": "aplos-mail",
+        "releaseType": "draft"
+      }
+    ],
+    "artifactName": "Aplos-Mail-${version}-${arch}.${ext}"
+  },
+  "homepage": "https://github.com/notkainoa/aplos-mail",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/notkainoa/aplos-mail.git"
   }
 }

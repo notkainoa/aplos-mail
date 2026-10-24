@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {ArrowUpRight,Check,Download,Keyboard,Mic,Plus,RefreshCw,ShieldCheck} from './icons';
-import type {AppState,Capabilities,Settings as Preferences} from '../shared/types';
+import type {AppState,Capabilities,Settings as Preferences,UpdateInfo} from '../shared/types';
 import {invoke,saveFile} from './bridge';
 import {Avatar,Badge,Button,Group,GroupRow,Notice,Select,Switch,Tabs,Tooltip,confirmAction,cx} from './ui';
 import {AddAccountDialog} from './components/AddAccount';
@@ -8,6 +8,7 @@ import {DomainCheck} from './components/DomainCheck';
 import {DeviceSync} from './components/DeviceSync';
 import {AiSettings} from './components/AiSettings';
 import {showWelcome} from './components/Welcome';
+import {AppIcon} from './components/AppIcon';
 import {askModelLabel} from '../shared/ask';
 
 const categories=['General','Mail','Calendar','AI','Notifications','Accounts','Help & about'] as const;
@@ -34,7 +35,24 @@ function SignatureField({value,onSave}:{value:string;onSave:(value:string)=>void
  return <textarea className="signature-setting" aria-label="Email signature" rows={4} value={text} placeholder={'Your name\nA line or two about you'} onFocus={()=>{focused.current=true;}} onBlur={()=>{focused.current=false;flush();}} onChange={e=>{pending.current=e.target.value;setText(e.target.value);}}/>;
 }
 
-export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:AppState;capabilities:Capabilities;onChange:(p:Partial<Preferences>)=>void;notify:(t:string)=>void;shortcuts:()=>void}){
+/** Current version, what the updater is doing and when it last checked. */
+function UpdatesRow({update,busy,check,restart}:{update:UpdateInfo;busy:boolean;check:()=>void;restart:()=>void}){
+ const status=update.status;
+ const checked=update.lastCheck?'Last checked '+new Date(update.lastCheck).toLocaleString():'Not checked yet';
+ const description=status.state==='disabled'?status.reason
+  :status.state==='checking'?'Checking for updates…'
+  :status.state==='downloading'?`Downloading Aplos ${status.version}${status.percent!==undefined?` · ${status.percent}%`:''}…`
+  :status.state==='ready'?`Aplos ${status.version} is ready. Restart to update.`
+  :status.state==='current'?`Up to date · ${checked}`
+  :status.state==='error'?`Couldn’t check: ${status.message} · ${checked}`
+  :`Checks automatically every 6 hours · ${checked}`;
+ return <Group title="Updates"><GroupRow label={`Aplos Mail ${update.currentVersion}`} description={description}>
+  {status.state==='ready'?<Button variant="secondary" size="sm" onClick={restart}>Restart</Button>
+   :status.state!=='disabled'?<Button variant="secondary" size="sm" icon={RefreshCw} loading={busy||status.state==='checking'} onClick={check}>Check now</Button>:undefined}
+ </GroupRow></Group>;
+}
+
+export function Settings({state,capabilities,update,onUpdate,onChange,notify,shortcuts}:{state:AppState;capabilities:Capabilities;update?:UpdateInfo;onUpdate:(info:UpdateInfo)=>void;onChange:(p:Partial<Preferences>)=>void;notify:(t:string)=>void;shortcuts:()=>void}){
  const [tab,setTabState]=useState<Category>(storedTab);const [busy,setBusy]=useState('');const [adding,setAdding]=useState(false);const [devices,setDevices]=useState<MediaDeviceInfo[]>([]);const [error,setError]=useState('');const s=state.settings;
  function setTab(next:Category){localStorage.setItem(tabKey,next);setTabState(next);setError('');}
  useEffect(()=>{localStorage.removeItem(leftKey);addEventListener('pagehide',markLeft);return()=>{removeEventListener('pagehide',markLeft);markLeft();};},[]);
@@ -59,7 +77,6 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
   {tab==='General'&&<>
    <Group title="Appearance">
     {choice('Theme','A comfortable place for your mail.','theme',[['light','Light'],['dark','Dark'],['system','Match system']])}
-    <GroupRow label="App icon" description="An original mark, in your favorite shade."><div className="icon-choices" role="radiogroup" aria-label="App icon">{(['ink','sage','clay'] as const).map(c=><Tooltip key={c} content={c[0].toUpperCase()+c.slice(1)}><button role="radio" aria-checked={s.icon===c} aria-label={c+' icon'} className={cx('app-icon',c,s.icon===c&&'selected')} onClick={()=>onChange({icon:c})}>a{s.icon===c&&<Check size={11}/>}</button></Tooltip>)}</div></GroupRow>
     {choice('Sidebar','A full sidebar, or everything in a small menu at the top left.','sidebarStyle',[['normal','Normal'],['minimized','Minimized']])}
     {toggle('Zen mode','Show only the Home count in the sidebar.','zen')}
    </Group>
@@ -67,6 +84,7 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
     <GroupRow label="Open at login" description="Aplos is ready when your day begins."><Switch label="Open at login" checked={s.launchAtLogin} disabled={busy==='login'} onChange={enabled=>void run('login',async()=>{const result=await invoke<{enabled:boolean}>('system.login',{enabled});onChange({launchAtLogin:result.enabled});})}/></GroupRow>
     <GroupRow label="Default email app" description="Open email links from other apps in Aplos."><Button variant="secondary" size="sm" iconRight={ArrowUpRight} loading={busy==='default'} onClick={()=>void run('default',async()=>{const result=await invoke<{success:boolean}>('system.defaultMail');if(!result.success)throw new Error('macOS could not change the default email app. Choose Aplos in your default mail app settings.');notify('Aplos registered for email links');})}>Set as default</Button></GroupRow>
    </Group>
+   {update&&<UpdatesRow update={update} busy={busy==='update'} check={()=>void run('update',async()=>onUpdate(await invoke<UpdateInfo>('update.check')))} restart={()=>void invoke('update.restart')}/>}
    <Group title="Voice & audio">
     <GroupRow label="Microphone" description={`Record instructions and questions. Audio is transcribed by ${askModelLabel(s.voiceModel,'voice').provider}.`}>{devices.length?<Select label="Microphone" value={s.microphone} options={[['','Default input'],...devices.map(d=>[d.deviceId,d.label||'Microphone'] as [string,string])]} onChange={microphone=>onChange({microphone})}/>:<Button variant="secondary" size="sm" icon={Mic} loading={busy==='microphone'} onClick={()=>void microphones()}>Allow access</Button>}</GroupRow>
     {toggle('Send sound','Play a gentle sound after sending.','sendSound')}
@@ -93,12 +111,11 @@ export function Settings({state,capabilities,onChange,notify,shortcuts}:{state:A
   {tab==='Accounts'&&<Group title="Your other devices"><DeviceSync notify={notify}/></Group>}
   {tab==='Accounts'&&<Group title="Custom domain"><p className="group-note">Check that a domain you send from has the mail records its host needs, so your messages are trusted and delivered.</p><DomainCheck initial={customDomain}/></Group>}
   {tab==='Help & about'&&<>
-   <div className="about-card"><span className={'app-icon large '+s.icon}>a</span><h2>Aplos Mail</h2><p>A little less inbox. A little more life.</p><span className="version">Version {capabilities.version} · {capabilities.desktop?'macOS desktop':'Browser preview'}</span></div>
+   <div className="about-card"><AppIcon size={72}/><h2>Aplos Mail</h2><p>A little less inbox. A little more life.</p><span className="version">Version {capabilities.version} · {capabilities.desktop?'macOS desktop':'Browser preview'}</span></div>
    <Group title="A few useful things">
     <GroupRow label="Keyboard shortcuts" description="Make light work of your inbox."><Button variant="secondary" size="sm" icon={Keyboard} shortcut="?" onClick={shortcuts}>View shortcuts</Button></GroupRow>
     <GroupRow label="AI" description="Providers and the model each feature uses are in Settings → AI."><Button variant="secondary" size="sm" onClick={()=>showSettingsTab('AI')}>Open AI settings</Button></GroupRow>
     <GroupRow label="Welcome and setup" description="Add an account, an AI key and the microphone, one step at a time."><Button variant="secondary" size="sm" onClick={showWelcome}>Show welcome</Button></GroupRow>
-    <GroupRow label="Updates" description="This personal build updates when you rebuild the app."><span className="muted small">Local development build</span></GroupRow>
     <GroupRow label="Export local data" description="Includes your cached mail and drafts. Keep it somewhere private."><Button variant="secondary" size="sm" icon={Download} loading={busy==='export'} onClick={()=>void run('export',async()=>{const data=await invoke<string>('data.export');await saveFile('aplos-export.json',btoa(unescape(encodeURIComponent(data))));notify('Export prepared');})}>Export</Button></GroupRow>
     <GroupRow label="Reset demo mail" description="Replace local demo accounts with fresh original examples."><Button variant="danger" size="sm" loading={busy==='reset'} onClick={async()=>{if(await confirmAction({title:'Reset demo mail?',message:'Demo accounts and demo drafts return to their original examples. Connected accounts are preserved.',confirmLabel:'Reset demo',danger:true}))void run('reset',()=>invoke('demo.reset'));}}>Reset demo</Button></GroupRow>
    </Group>
