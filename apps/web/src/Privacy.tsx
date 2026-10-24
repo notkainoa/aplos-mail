@@ -25,7 +25,7 @@ export function Privacy() {
         <p>If you turn on device sync, Aplos stores small, encrypted records of your Later, todo and reminder state in a hidden folder inside your own mail account. The key comes from a sync code that stays on your devices.</p>
 
         <h2>This website</h2>
-        <p>This website has no analytics, no cookies and no third-party scripts. Downloads are served by GitHub under GitHub’s own privacy terms.</p>
+        <p>This website has no analytics, no cookies and no third-party scripts.</p>
 
         <h2>Your choices</h2>
         <p>You can disconnect an account or delete the app’s data folder at any time. Access granted to Google or Microsoft can also be revoked from your account settings with those providers.</p>

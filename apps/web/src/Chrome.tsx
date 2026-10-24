@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react';
 import icon from '../../desktop/assets/icon-64.png';
-import {releasesUrl,repoUrl} from './site';
+import {repoUrl} from './site';
 
 type Theme='light'|'dark';
 const systemTheme=():Theme=>matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
@@ -45,7 +45,7 @@ export function Header({home}:{home:string}) {
           <a href={`${home}privacy/`}>Privacy</a>
         </nav>
         <ThemeToggle />
-        <a className="button button-small" href={releasesUrl}>Download for Mac</a>
+        <span className="soon soon-small">Coming soon</span>
       </div>
     </header>
   );

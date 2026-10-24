@@ -4,6 +4,7 @@
 
 - Restyled `apps/web` to match the app icon and tokens (see DECISIONS, "Website brand pass"): sky, paper and grass fields joined by the airmail band, Fraunces headings, real icon in the nav, hero, favicon and share image, light and dark with matching app screenshots, a bigger live Home demo, keycaps that press with the real keys, a typographic provider list instead of chips, and a closing wordmark at full width. Privacy page uses the same header, fields and footer.
 - Evidence: `npm run typecheck` and `npm run web:build` pass from the repo root. Headless Chromium at 1440, 768 and 390 px in light and dark on both pages: no console errors or failed requests, no horizontal scroll, one `h1`, no heading over two lines, every `[data-reveal]` element revealed, small-text contrast at or above 4.5:1 after fixing the notes on sky and grass, the Triage avatar and its primary button. Interactions tested headlessly: Home demo keys and undo, finished state, caps pressing with the real keys, theme toggle and persistence across reload, reduced motion (icon drift off). Screenshots for review are in `apps/web/docs/`.
+- Follow-up the same day: removed every download button and the `releasesUrl` export; the nav, hero and close now show "Coming soon" until there is a release, and the privacy page's line about downloads is gone.
 - Not done: no Lighthouse run, no real-device or Safari check.
 
 ## 2026-10-23 — Website deployment (Vercel)

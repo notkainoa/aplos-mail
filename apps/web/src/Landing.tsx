@@ -2,7 +2,6 @@ import {useEffect,useState} from 'react';
 import {Footer,Header,Shot} from './Chrome';
 import {Triage} from './Triage';
 import {useReveal} from './reveal';
-import {releasesUrl} from './site';
 import heroIcon from './assets/brand/icon-640.webp';
 
 const delay=(ms:number)=>({'--d':`${ms}ms`} as React.CSSProperties);
@@ -54,8 +53,8 @@ export function Landing() {
               comes with a short summary of what it says and what it needs from you.
             </p>
             <div className="cta" data-reveal style={delay(140)}>
-              <a className="button" href={releasesUrl}>Download for Mac</a>
-              <p className="note">Apple silicon. Windows and Linux coming later.</p>
+              <span className="soon">Coming soon to Mac</span>
+              <p className="note">Apple silicon. Windows and Linux later.</p>
             </div>
           </div>
           <div className="hero-icon" data-reveal style={delay(200)}><img src={heroIcon} width="640" height="640" alt="The Aplos Mail app icon: an airmail envelope flying over a green hill." /></div>
@@ -139,8 +138,8 @@ export function Landing() {
         <section className="close wrap">
           <h2 data-reveal>An inbox you can finish.</h2>
           <div className="cta" data-reveal style={delay(100)}>
-            <a className="button" href={releasesUrl}>Download for Mac</a>
-            <p className="note">Requires a Mac with Apple silicon. Windows and Linux coming later.</p>
+            <span className="soon">Coming soon to Mac</span>
+            <p className="note">Requires a Mac with Apple silicon. Windows and Linux later.</p>
           </div>
         </section>
         <Footer home="./" />

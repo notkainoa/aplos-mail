@@ -80,8 +80,8 @@ p { text-wrap: pretty; }
 .note { font-size: 0.9375rem; color: color-mix(in srgb, currentColor 86%, transparent); }
 .grass .note { color: inherit; }
 
-/* Fields: a whole stretch of the page changes colour. Each sets its own ground, ink and button. */
-.field { background: var(--bg); color: var(--fg); --btn: var(--fg); --btn-ink: var(--bg); }
+/* Fields: a whole stretch of the page changes colour. Each sets its own ground and ink. */
+.field { background: var(--bg); color: var(--fg); }
 .sky { --bg: var(--sky); --fg: var(--sky-ink); }
 .soft { --bg: var(--soft); --fg: var(--soft-ink); }
 .grass { --bg: var(--grass); --fg: var(--grass-ink); }
@@ -104,14 +104,9 @@ p { text-wrap: pretty; }
 .theme:active { transform: scale(0.94); }
 @media (hover: hover) and (pointer: fine) { .theme:hover { background: color-mix(in srgb, currentColor 12%, transparent); } }
 
-.button {
-  display: inline-flex; align-items: center; justify-content: center; height: 52px; padding: 0 28px; border-radius: 14px;
-  background: var(--btn); color: var(--btn-ink); font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; text-decoration: none;
-  transition: transform 160ms var(--ease-out), background-color 160ms ease;
-}
-.button-small { height: 40px; padding: 0 16px; border-radius: 10px; font-size: 0.9375rem; }
-.button:active { transform: scale(0.97); }
-@media (hover: hover) and (pointer: fine) { .button:hover { background: color-mix(in srgb, var(--btn) 84%, var(--bg)); } }
+/* The app is not released yet, so there is no download: a plain status, not a button. */
+.soon { display: inline-flex; align-items: center; height: 52px; padding: 0 24px; border-radius: 14px; background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+.soon-small { height: 40px; padding: 0 16px; border-radius: 10px; font-size: 0.9375rem; }
 
 kbd { display: inline-block; min-width: 1.7em; padding: 0.05em 0.5em; border-radius: 6px; background: var(--chip); color: inherit; font: 500 0.82em/1.5 var(--font); text-align: center; }
 
@@ -276,7 +271,7 @@ main > section:not(.cal) { margin-top: var(--section); }
 }
 @media (max-width: 560px) {
   /* A whole window is unreadable at phone width, so show the part that matters: the mail list, then the week. */
-  .hero-window .shot { aspect-ratio: 9 / 10; object-position: 72% 0; }
+  .hero-window .shot { aspect-ratio: 9 / 10; object-position: 44% 0; }
   .cal-window .shot { aspect-ratio: 1; object-fit: cover; object-position: 78% 0; }
 }
 @media (max-width: 480px) {
