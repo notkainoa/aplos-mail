@@ -1,5 +1,5 @@
 /* The site follows the visitor's appearance, like the app. Its colors come from the app icon, read top to bottom: the page
-   opens in the icon's sky, the airmail envelope's red and blue border frames it, and it closes on the green hill. Text,
+   opens and closes in the icon's sky, and the airmail envelope's red and blue border frames it. Text,
    neutrals and the working demo use the app's own tokens (apps/desktop/src/renderer/ui/tokens.css), so screenshots and page
    belong together. Display type is Newsreader, a text serif with optical sizes, for the letter; everything else is the app's
    SF stack. */
@@ -15,8 +15,6 @@
   --dim: #6e6d6a;
   --sky: #9fd3ff;
   --sky-ink: #0d1b2a;
-  --hill: #b9d29e;
-  --hill-ink: #16200c;
   --accent: #0755dc;
   --accent-hover: #0647b8;
   --accent-ink: #ffffff;
@@ -49,8 +47,6 @@
     --dim: #8f8d86;
     --sky: #11263d;
     --sky-ink: #e9f1fa;
-    --hill: #1d2716;
-    --hill-ink: #e6ecda;
     --accent: #4fa3ff;
     --accent-hover: #74b6ff;
     --accent-ink: #04111f;
@@ -190,18 +186,18 @@ main > section:first-child { margin-top: clamp(96px, 11vw, 168px); }
 }
 .providers strong { color: var(--ink); font-weight: 560; }
 
-/* The hill: the close and the footer */
-.hill { background: var(--hill); color: var(--hill-ink); }
-.hill .note { color: inherit; opacity: 0.78; }
-.hill-inner {
+/* The close and the footer return to the sky */
+.finish { background: var(--sky); color: var(--sky-ink); }
+.finish .note { color: inherit; opacity: 0.78; }
+.finish-inner {
   width: var(--width); margin: 0 auto; padding-top: var(--section);
   display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--gap); align-items: center;
 }
-.hill .copy { grid-column: 1 / 8; }
-.hill .cta { margin-top: 36px; }
-.hill-icon { grid-column: 9 / 13; justify-self: end; width: 100%; max-width: 260px; }
+.finish .copy { grid-column: 1 / 8; }
+.finish .cta { margin-top: 36px; }
+.finish-icon { grid-column: 9 / 13; justify-self: end; width: 100%; max-width: 260px; }
 
-.foot { background: var(--hill); color: var(--hill-ink); }
+.foot { background: var(--sky); color: var(--sky-ink); }
 .foot-inner {
   width: var(--width); margin: 0 auto; padding: clamp(96px, 11vw, 160px) 0 40px;
   display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 20px 32px;
@@ -294,12 +290,12 @@ main > section:first-child { margin-top: clamp(96px, 11vw, 168px); }
   .hero-icon { grid-column: 1 / 13; grid-row: 1; align-self: start; justify-self: start; max-width: 76px; margin-bottom: 24px; }
   .hero-copy { grid-row: 2; }
   .window { grid-row: 3; grid-column: 1 / 13; }
-  .demo .copy, .demo-stage, .calendar h2, .calendar > p, .ask-shot, .ask .copy, .keys .copy, .keylist, .ai-inner > p, .hill .copy { grid-column: 1 / 13; }
+  .demo .copy, .demo-stage, .calendar h2, .calendar > p, .ask-shot, .ask .copy, .keys .copy, .keylist, .ai-inner > p, .finish .copy { grid-column: 1 / 13; }
   .ai-inner > .providers { grid-column: 1 / 13; }
   .demo-stage, .ask .copy, .keylist { margin-top: 48px; }
   .calendar > p { margin-top: 22px; }
   .ask-shot { max-width: 560px; }
-  .hill-icon { grid-column: 1 / 13; grid-row: 1; justify-self: start; max-width: 120px; margin-bottom: 32px; }
+  .finish-icon { grid-column: 1 / 13; grid-row: 1; justify-self: start; max-width: 120px; margin-bottom: 32px; }
 }
 @media (max-width: 720px) {
   .bar nav { display: none; }

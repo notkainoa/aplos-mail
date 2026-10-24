@@ -8,7 +8,7 @@ npm run web:build     # typecheck and build to apps/web/dist
 npm run web:preview   # serve the built output
 ```
 
-- Styling lives in `src/styles.css`. The brand comes from the app icon, read top to bottom: the hero sits in its sky, the red and blue airmail border opens and closes each page, and the close and footer sit on its green hill. Text colors, neutrals and the demo use the app's own tokens. Headings use Newsreader (`@fontsource-variable/newsreader`, self-hosted, OFL); body text uses the app's system SF stack. `src/Triage.tsx` is the interactive Home demo (click it, then Space, ← →, Z).
+- Styling lives in `src/styles.css`. The brand comes from the app icon, read top to bottom: the page opens and closes in its sky, and the red and blue airmail border frames each page. Text colors, neutrals and the demo use the app's own tokens. Headings use Newsreader (`@fontsource-variable/newsreader`, self-hosted, OFL); body text uses the app's system SF stack. `src/Triage.tsx` is the interactive Home demo (click it, then Space, ← →, Z).
 - Icons are the real app icon, never redrawn: the bar uses `apps/desktop/assets/icon-64.png`; `node scripts/brand-assets.mjs` (instructions at its top) exports `src/assets/icon-512.webp`, `public/favicon.png`, `public/apple-touch-icon.png` and the social card `public/og.png` from the desktop icon PNGs.
 - Replace the placeholder download and repository links in `src/site.ts` before launch.
 - The privacy page is a draft with bracketed to-dos. Finish it before Google or Microsoft OAuth verification.

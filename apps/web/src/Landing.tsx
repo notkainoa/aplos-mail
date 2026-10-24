@@ -105,8 +105,8 @@ export function Landing() {
         </div>
       </section>
 
-      <section className="hill" aria-labelledby="close-title">
-        <div className="hill-inner">
+      <section className="finish" aria-labelledby="close-title">
+        <div className="finish-inner">
           <div className="copy">
             <h2 id="close-title" data-reveal>Aplos Mail for Mac</h2>
             <p data-reveal style={delay(70)}>Works with {accounts}. No Aplos server ever sees your mail.</p>
@@ -115,7 +115,7 @@ export function Landing() {
               <p className="note">For Macs with Apple silicon. Windows and Linux later.</p>
             </div>
           </div>
-          <img className="hill-icon" src={icon} width="512" height="512" alt="" loading="lazy" data-reveal style={delay(120)} />
+          <img className="finish-icon" src={icon} width="512" height="512" alt="" loading="lazy" data-reveal style={delay(120)} />
         </div>
         <Footer home="./" />
       </section>
