@@ -1,8 +1,8 @@
 import icon from './assets/icon-512.webp';
-import {Airmail,Footer,Header,Shot} from './Chrome';
+import {Airmail,Footer,Header} from './Chrome';
 import {Ask} from './Ask';
-import {CalendarViews} from './CalendarViews';
 import {HeroIcon,KeyList,ProviderPicker,Rise} from './Live';
+import {Tour} from './Tour';
 import {Triage} from './Triage';
 import {useReveal} from './reveal';
 import {releasesUrl} from './site';
@@ -33,9 +33,11 @@ export function Landing() {
           </div>
           <HeroIcon src={icon} alt="The Aplos Mail icon: an airmail envelope in a blue sky above a green hill." />
           <div className="window-wrap" data-reveal style={delay(320)}>
-            <div className="window" data-ui>
-              <Shot name="home" alt="Aplos Mail showing one focused email with a summary, the rest of the inbox as single lines, and the Ask panel." width={1240} height={760} eager />
-            </div>
+            <div className="window" data-ui><Tour id="hero" eager focus={0.2} /></div>
+            <p className="note tour-note">
+              <span className="for-pointer">This is the app. Click anything that lights up to look around.</span>
+              <span className="for-touch">This is the app. Tap around, and swipe the window sideways.</span>
+            </p>
           </div>
         </section>
       </div>
@@ -61,7 +63,10 @@ export function Landing() {
             email mentions a plan, Aplos proposes the event and adds it only after you
             confirm.
           </p>
-          <div className="calendar-live" data-reveal style={delay(140)}><CalendarViews /></div>
+          <div className="calendar-live" data-reveal style={delay(140)}>
+            <div className="calendar-shot" data-ui><Tour id="calendar" focus={0.335} /></div>
+            <p className="note tour-note">Switch views, change the week or open any event, right in the window.</p>
+          </div>
         </section>
 
         <section className="ask" aria-labelledby="ask-title">

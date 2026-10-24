@@ -171,10 +171,30 @@ main > section:first-child { margin-top: clamp(96px, 11vw, 168px); }
 .calendar h2 { grid-column: 1 / 7; }
 .calendar > p { grid-column: 8 / 13; max-width: 30em; }
 .calendar-live { grid-column: 1 / 13; margin-top: clamp(40px, 5vw, 64px); }
-.calendar-tabs { margin-bottom: 20px; }
-.calendar-shot { display: grid; overflow: hidden; border-radius: 14px; box-shadow: var(--app-window); }
-.calendar-frame { grid-area: 1 / 1; opacity: 0; transition: opacity 240ms ease; }
-.calendar-frame.is-on { opacity: 1; }
+.calendar-shot { overflow: hidden; border-radius: 14px; box-shadow: var(--app-window); }
+
+/* Screenshots you can click through. The new screen fades in over the one it replaces. */
+.tour { position: relative; }
+.tour-stage { position: relative; display: grid; }
+.tour-frame { grid-area: 1 / 1; visibility: hidden; }
+.tour-frame.is-was { visibility: visible; }
+.tour-frame.is-on { visibility: visible; z-index: 1; animation: fade 180ms ease; }
+.spot { position: absolute; z-index: 2; padding: 0; border: 0; border-radius: 8px; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.spot::after {
+  content: ''; position: absolute; inset: 1px; border-radius: inherit; pointer-events: none;
+  background: color-mix(in srgb, var(--app-blue) 12%, transparent); box-shadow: inset 0 0 0 1.5px var(--app-blue);
+  opacity: 0; transition: opacity 160ms ease, transform 160ms var(--ease-out);
+}
+.spot:focus-visible { outline: none; }
+.spot:focus-visible::after { opacity: 1; }
+.spot:active::after { opacity: 1; transform: scale(0.96); }
+@media (hover: hover) and (pointer: fine) { .spot:hover::after { opacity: 1; } }
+/* When a window first scrolls into view, its spots light up once in turn. */
+.tour.is-glint .spot::after { animation: glint 1000ms var(--ease-in-out) both; animation-delay: calc(var(--i) * 40ms + 150ms); }
+@keyframes glint { 0%, 100% { opacity: 0; } 45% { opacity: 0.85; } }
+.tour-note { margin-top: 32px; text-align: center; }
+.for-touch { display: none; }
+@media (hover: none) { .for-pointer { display: none; } .for-touch { display: inline; } }
 
 /* Ask: the panel, at the size it has in the app, then the claim */
 .ask { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--gap); align-items: center; }
@@ -414,9 +434,11 @@ main > section:first-child { margin-top: clamp(96px, 11vw, 168px); }
 @media (max-width: 720px) {
   .bar nav { display: none; }
   .bar { justify-content: space-between; height: 68px; }
-  /* A whole window is unreadable at phone width, so show the part that matters. */
-  .window .shot img { aspect-ratio: 4 / 5; object-fit: cover; object-position: 36% 0; }
-  .calendar-shot .shot img { aspect-ratio: 1; object-fit: cover; object-position: 92% 0; }
+  /* A whole window is unreadable at phone width, so it keeps a readable size and scrolls sideways. */
+  .tour { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .tour::-webkit-scrollbar { display: none; }
+  .window .tour-stage { width: 240%; }
+  .calendar-shot .tour-stage { width: 260%; }
   .keylist { grid-template-columns: 1fr; gap: 16px; }
   .picker .picker-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 100%; }
   .picker .picker-tabs button { padding: 0 4px; font-size: 0.8125rem; }
@@ -440,6 +462,135 @@ main > section:first-child { margin-top: clamp(96px, 11vw, 168px); }
   .foot-name .rise-part, .askp-sources li, .askp-event { transform: none; }
   .picker-pill { transition: none; }
   .askp-level i { animation: none; transform: scaleY(0.6); }
-  .entering, .leaving { animation: none; }
+  .entering, .leaving, .tour-frame.is-on, .tour.is-glint .spot::after { animation: none; }
   .leaving { display: none; }
+}
+
+/* Download: the sky with the app icon and what is happening, three steps to install, then every version. */
+.dl-sky { --cut: clamp(150px, 15vw, 230px); }
+.dl-hero { width: var(--width); margin: 0 auto; padding-top: clamp(32px, 5vw, 72px); display: flex; flex-direction: column; align-items: center; text-align: center; }
+.dl-app { width: clamp(88px, 10vw, 128px); margin-bottom: 28px; filter: drop-shadow(0 14px 22px rgba(13, 27, 42, 0.2)); }
+.dl-hero h1 { max-width: 12em; font-size: clamp(2.5rem, 5.4vw, 4.75rem); }
+.dl-lead { max-width: 30em; margin-top: 22px; font-size: clamp(1.0625rem, 1.4vw, 1.25rem); line-height: 1.5; min-height: 1.5em; }
+.dl-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 12px; margin-top: 32px; }
+.dl-icon { width: 16px; height: 16px; flex: none; }
+.dl-pill, .dl-badge {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 999px;
+  font: 500 0.9375rem/1 var(--font); color: inherit; text-decoration: none;
+  background: color-mix(in srgb, var(--sky-ink) 8%, transparent);
+}
+.dl-pill { transition: background-color 160ms ease, transform 160ms var(--ease-out); cursor: pointer; border: 0; }
+.dl-pill:active { transform: scale(0.97); }
+.dl-pill-primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+@media (hover: hover) and (pointer: fine) {
+  .dl-pill:hover { background: color-mix(in srgb, var(--sky-ink) 13%, transparent); }
+  .dl-pill-primary:hover { background: var(--accent-hover); }
+}
+/* The status badge: a quiet spinner while the download starts, then a retry if it seems not to have. */
+.dl-badge { background: color-mix(in srgb, var(--ground) 72%, transparent); animation: fade 240ms ease; }
+.dl-badge.is-stalled { animation: badge 420ms var(--ease-out); }
+@keyframes badge { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
+.dl-badge button { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.dl-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid color-mix(in srgb, currentColor 22%, transparent); border-top-color: currentColor; animation: spin 800ms linear infinite; }
+@keyframes spin { to { transform: rotate(1turn); } }
+.dl-choose { margin-top: 14px; }
+.dl-choose[hidden] { display: none; }
+.dl-choose select {
+  appearance: none; height: 34px; padding: 0 30px 0 14px; border: 0; border-radius: 999px; cursor: pointer;
+  font: 400 0.875rem/1 var(--font); color: inherit; opacity: 0.8;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='m1 1 4 4 4-4' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center;
+}
+.dl-choose select:hover { opacity: 1; }
+
+.dl-main { width: var(--width); margin: 0 auto var(--section); }
+/* The steps sit where the sky meets the page, like the app window on the home page. */
+.dl-steps { width: var(--width); margin: clamp(56px, 7vw, 96px) auto 0; }
+.dl-steps ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); margin: 0; padding: 0; list-style: none; }
+.dl-steps li p { margin-top: 18px; max-width: 22em; font-size: 1rem; color: var(--ink-2); }
+.dl-steps b { color: var(--ink); font-weight: 600; }
+.dl-num { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 10px; border-radius: 50%; background: var(--app-chip); color: var(--ink); font-size: 0.8125rem; font-weight: 600; vertical-align: 1px; }
+.dl-art { display: grid; place-items: center; aspect-ratio: 4 / 3; padding: 24px; border-radius: 18px; background: var(--app-canvas); box-shadow: var(--app-window); overflow: hidden; }
+
+/* Small drawings of each step, in the app's colors */
+.art-window { width: 100%; max-width: 300px; padding: 14px; border-radius: 12px; background: var(--app-card); box-shadow: var(--app-glass); font-size: 0.8125rem; color: var(--ink); }
+.art-title { font-weight: 600; font-size: 0.8125rem; margin-bottom: 10px; }
+.art-downloads ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.art-downloads li { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; color: var(--dim); }
+.art-downloads li.is-picked { background: var(--app-blue); color: var(--app-blue-ink); }
+.art-file { width: 22px; height: 26px; flex: none; border-radius: 4px; background: var(--app-chip); display: grid; place-items: center; }
+.art-file.is-ours { background: none; }
+.art-file img { width: 24px; border-radius: 5px; }
+.art-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.art-size { font-size: 0.75rem; opacity: 0.8; }
+.art-drag { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 24px 22px; }
+.art-drag-icon { width: 64px; border-radius: 14px; }
+.art-arrow { width: 72px; color: var(--dim); }
+.art-folder { display: grid; justify-items: center; gap: 6px; color: var(--app-blue); }
+.art-folder svg { width: 60px; }
+.art-folder { font-size: 0.75rem; }
+.art-folder, .art-folder * { font-weight: 500; }
+.art-install, .art-welcome { display: grid; justify-items: center; text-align: center; padding: 20px 18px; }
+.art-install img, .art-welcome img { width: 44px; margin-bottom: 10px; border-radius: 10px; }
+.art-progress { position: relative; width: 100%; height: 6px; border-radius: 3px; background: var(--app-chip); overflow: hidden; }
+.art-progress i { position: absolute; inset: 0; border-radius: inherit; background: var(--app-blue); transform-origin: 0 50%; transform: scaleX(0.62); }
+.art-allow .art-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border-radius: 8px; background: var(--app-chip); text-align: left; }
+.art-switch { position: relative; width: 32px; height: 19px; flex: none; border-radius: 10px; background: var(--app-blue); }
+.art-switch::after { content: ''; position: absolute; top: 2px; right: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; }
+.art-account { width: 100%; padding: 7px 10px; border-radius: 8px; background: var(--app-chip); margin-top: 6px; }
+.art-account.is-primary { background: var(--app-blue); color: var(--app-blue-ink); font-weight: 500; }
+
+/* Each drawing plays its step once it is on screen: the file is picked, the icon travels to the folder, the bar fills. */
+@media (prefers-reduced-motion: no-preference) {
+  .dl-steps li.is-in .art-downloads li.is-picked { animation: pick 700ms var(--ease-out) 500ms backwards; }
+  @keyframes pick { from { background: transparent; color: var(--dim); } }
+  .dl-steps li.is-in .art-drag-icon { animation: carry 3.6s var(--ease-in-out) 600ms infinite; }
+  @keyframes carry {
+    0%, 12% { transform: none; opacity: 1; }
+    55% { transform: translateX(var(--carry, 150px)) scale(0.55); opacity: 1; }
+    62%, 80% { transform: translateX(var(--carry, 150px)) scale(0.4); opacity: 0; }
+    100% { transform: none; opacity: 1; }
+  }
+  .dl-steps li.is-in .art-folder svg { animation: take 3.6s var(--ease-out) 600ms infinite; }
+  @keyframes take { 0%, 52% { transform: none; } 60% { transform: scale(1.08); } 72%, 100% { transform: none; } }
+  .dl-steps li.is-in .art-progress i { animation: fill 2.8s var(--ease-in-out) 400ms infinite; }
+  @keyframes fill { from { transform: scaleX(0); } 70%, to { transform: scaleX(1); } }
+  .dl-steps li.is-in .art-switch::after { animation: flip 600ms var(--ease-out) 700ms backwards; }
+  @keyframes flip { from { transform: translateX(-13px); } }
+}
+
+/* Every version, one card per system */
+.dl-all { margin-top: clamp(112px, 12vw, 176px); display: grid; justify-items: center; text-align: center; }
+.dl-all-lead { margin-top: 18px; color: var(--ink-2); }
+.dl-all-lead a { color: var(--accent); text-underline-offset: 3px; }
+.dl-platforms { display: grid; gap: 14px; width: min(760px, 100%); margin-top: clamp(36px, 4vw, 56px); text-align: left; }
+.dl-platform { padding: clamp(20px, 2.4vw, 28px); border-radius: 18px; background: var(--field); }
+.dl-platform h3 { margin: 0; font: 600 1.25rem/1.25 var(--font); letter-spacing: -0.01em; }
+.dl-platform > p { margin-top: 6px; font-size: 0.9375rem; color: var(--dim); }
+.dl-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.dl-file {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 999px;
+  background: var(--app-chip); color: var(--ink); font-size: 0.9375rem; font-weight: 500; text-decoration: none;
+  transition: background-color 160ms ease, transform 160ms var(--ease-out);
+}
+.dl-file small { font-size: 0.8125rem; font-weight: 400; color: var(--dim); }
+.dl-file:active { transform: scale(0.97); }
+.dl-file.is-yours { background: var(--accent); color: var(--accent-ink); }
+.dl-file.is-yours small { color: inherit; opacity: 0.75; }
+.dl-file-quiet { background: none; color: var(--accent); }
+@media (hover: hover) and (pointer: fine) {
+  .dl-file:hover { background: color-mix(in srgb, var(--ink) 11%, transparent); }
+  .dl-file.is-yours:hover { background: var(--accent-hover); }
+  .dl-file-quiet:hover { background: var(--app-chip); }
+}
+
+@media (max-width: 860px) {
+  .dl-steps ol { grid-template-columns: 1fr; gap: 40px; max-width: 460px; margin: 0 auto; }
+  /* Stacked, the steps are tall, so the sky ends partway down the first one instead. */
+  .dl-sky { --cut: 0px; overflow-x: clip; }
+  .dl-steps { position: relative; }
+  .dl-steps::before { content: ''; position: absolute; z-index: -1; inset: clamp(120px, 34vw, 200px) -50vw 0; background: var(--ground); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dl-spin { animation-duration: 2.4s; }
+  .dl-badge, .dl-badge.is-stalled { animation: none; }
 }

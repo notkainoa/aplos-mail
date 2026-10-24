@@ -45,11 +45,11 @@ export function Footer({home}:{home:string}) {
 const shots=import.meta.glob('./assets/shots/*.webp',{eager:true,import:'default'}) as Record<string,string>;
 
 // Each screenshot exists in the app's light and dark appearance; the page shows the one that matches the visitor's.
-export function Shot({name,alt,width,height,eager,className}:{name:string;alt:string;width:number;height:number;eager?:boolean;className?:string}) {
+export function Shot({name,alt,width,height,eager,className,onLoad}:{name:string;alt:string;width:number;height:number;eager?:boolean;className?:string;onLoad?:()=>void}) {
   return (
     <picture className={`shot${className?` ${className}`:''}`}>
       <source srcSet={shots[`./assets/shots/${name}.webp`]} media="(prefers-color-scheme: dark)" />
-      <img src={shots[`./assets/shots/${name}-light.webp`]} alt={alt} width={width} height={height} loading={eager?'eager':'lazy'} decoding="async" />
+      <img src={shots[`./assets/shots/${name}-light.webp`]} alt={alt} width={width} height={height} loading={eager?'eager':'lazy'} decoding="async" onLoad={onLoad} />
     </picture>
   );
 }

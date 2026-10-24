@@ -71,7 +71,16 @@ export function Ask() {
     const next=hold.current.next;hold.current.next=(next+1)%questions.length;
     ask(next);
   };
-  const listenRef=useRef({listen,release});listenRef.current={listen,release};
+  const listenRef=useRef({listen,release,ask});listenRef.current={listen,release,ask};
+  // The suggestions in the screenshot at the top of the page ask here.
+  useEffect(()=>{
+    const fromTour=(event:Event)=>{
+      panel.current!.scrollIntoView({behavior:reduced()?'auto':'smooth',block:'center'});
+      listenRef.current.ask((event as CustomEvent<number>).detail);
+    };
+    window.addEventListener('aplos:ask',fromTour);
+    return ()=>window.removeEventListener('aplos:ask',fromTour);
+  },[]);
   useEffect(()=>{
     let visible=false;
     const observer=new IntersectionObserver(([entry])=>{visible=entry.isIntersecting;},{threshold:0.5});
