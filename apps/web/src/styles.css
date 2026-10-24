@@ -33,7 +33,6 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --edge: clamp(20px, 4vw, 48px);
   --width: min(1240px, 100% - 2 * var(--edge));
-  --bleed: max(var(--edge), (100vw - 1240px) / 2);
   --section: clamp(112px, 13vw, 200px);
   --gap: clamp(16px, 2vw, 28px);
 }
@@ -116,7 +115,7 @@ kbd {
   background: var(--app-chip); color: var(--ink); font: 500 0.82em/1.5 var(--font);
 }
 
-/* Hero: the icon's sky. The window starts in the sky and lands on the page. */
+/* Hero: the icon's sky. The window, centered under the copy, starts in the sky and lands on the page. */
 .sky { position: relative; isolation: isolate; color: var(--sky-ink); --cut: clamp(96px, 17vw, 280px); }
 .sky::before { content: ''; position: absolute; z-index: -1; inset: 0 0 var(--cut) 0; background: var(--sky); }
 .sky .note { color: inherit; opacity: 0.78; }
@@ -135,8 +134,8 @@ kbd {
 }
 @keyframes drift { 0%, 100% { transform: translateY(0) rotate(-1.5deg); } 50% { transform: translateY(-12px) rotate(1deg); } }
 .window {
-  grid-column: 2 / 13; grid-row: 2; margin-top: clamp(40px, 5vw, 72px); margin-right: calc(-1 * var(--bleed));
-  overflow: hidden; border-radius: 14px 0 0 14px; box-shadow: var(--app-window);
+  grid-column: 1 / 13; grid-row: 2; margin-top: clamp(40px, 5vw, 72px);
+  overflow: hidden; border-radius: 14px; box-shadow: var(--app-window);
 }
 .shot, .shot img { display: block; width: 100%; }
 
