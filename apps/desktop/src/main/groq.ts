@@ -1,5 +1,5 @@
 import type { CalendarEvent, Draft, Thread } from '../shared/types';
-import { providerRequest, readChatStream, streamChat, transcribeAudio } from './llm';
+import { checkKey, providerRequest, readChatStream, readKey, streamChat, transcribeAudio, type ApiKey, type ProviderTarget } from './llm';
 export { readChatStream };
 import { threadLinks } from '../shared/mailbox';
 import { localNow, messageWeek } from '../engine/proposals';
@@ -7,15 +7,14 @@ import { createWriter, jsonObject, jsonSystem } from '../engine/writer';
 export { suggestedAction } from '../engine/writer';
 export { threadLinks, localNow, messageWeek };
 
-export interface GroqOptions { fetch?:typeof fetch; apiKey?:string; model?:string }
+/** `apiKey` is a key or a resolver read per request; without one GROQ_API_KEY is used. */
+export interface GroqOptions { fetch?:typeof fetch; apiKey?:ApiKey; model?:string }
 /** Groq: the default provider for every AI feature. This module never returns provider response bodies in errors. */
 export function createGroq(options:GroqOptions = {}) {
-  const key=options.apiKey ?? process.env.GROQ_API_KEY;
-  const request=options.fetch ?? fetch;
-  const send=(path:string,body:BodyInit,signal?:AbortSignal,json=true)=>
-    providerRequest({name:'Groq',env:'GROQ_API_KEY',baseUrl:'https://api.groq.com/openai/v1',apiKey:key,fetch:request},path,body,signal,json);
-  const sendChat=(path:string,body:BodyInit,signal?:AbortSignal,headers?:Record<string,string>)=>
-    providerRequest({name:'Groq',env:'GROQ_API_KEY',baseUrl:'https://api.groq.com/openai/v1',apiKey:key,fetch:request},path,body,signal,true,'POST',headers);
+  const key=()=>readKey(options.apiKey,'GROQ_API_KEY');
+  const target:ProviderTarget={name:'Groq',env:'GROQ_API_KEY',baseUrl:'https://api.groq.com/openai/v1',apiKey:key,fetch:options.fetch ?? fetch};
+  const send=(path:string,body:BodyInit,signal?:AbortSignal,json=true)=>providerRequest(target,path,body,signal,json);
+  const sendChat=(path:string,body:BodyInit,signal?:AbortSignal,headers?:Record<string,string>)=>providerRequest(target,path,body,signal,true,'POST',headers);
   async function call(path:string,body:BodyInit,signal?:AbortSignal,json=true):Promise<Record<string,unknown>> {
     const response=await send(path,body,signal,json);
     try {return await response.json() as Record<string,unknown>;}
@@ -34,7 +33,8 @@ export function createGroq(options:GroqOptions = {}) {
   }
   const writer=(model?:string)=>createWriter((instruction,input,signal,options)=>json(instruction,input,signal,model,options?.maxTokens),'Groq');
   return {
-    available:Boolean(key),
+    get available(){return Boolean(key());},
+    check:(signal?:AbortSignal)=>checkKey(target,'models',{},signal),
     /** One streamed chat/completions call with OpenAI-compatible tools; text arrives through `onText`. */
     chat:streamChat(sendChat,{name:'Groq',extra:request=>request.model.startsWith('openai/gpt-oss-')?{reasoning_effort:'low'}:{}}),
     summarize:(thread:Thread,signal?:AbortSignal,model?:string)=>writer(model).summarize(thread,signal),

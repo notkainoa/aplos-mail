@@ -13,8 +13,8 @@ const another='or choose another model for Summaries in Settings → AI';
 /** Turns an engine error into a short reason for the card and an explanation for its details popover. */
 export function describeSummaryError(message:string,{label:name,env}:SummaryProvider):SummaryProblem{
   const m=message.toLowerCase();
-  if(m.includes('in the main process to use'))return {title:`${name} isn’t set up`,detail:`Summaries use ${name}, but Aplos didn’t find ${env} when it started. Add the key to the app’s environment and restart Aplos, ${another}.`};
-  if(m.includes('rejected the api key')||m.includes('rejected the request'))return {title:`${name} didn’t accept the API key`,detail:`The ${env} Aplos is using was refused. It may be mistyped, revoked or expired. Replace it and restart Aplos, ${another}.`};
+  if(m.includes('in settings → ai to use'))return {title:`${name} isn’t set up`,detail:`Summaries use ${name}, but no ${name} key is set. Add one in Settings → AI, ${another}.`};
+  if(m.includes('rejected the api key')||m.includes('rejected the request'))return {title:`${name} didn’t accept the API key`,detail:`The ${name} key Aplos is using was refused. It may be mistyped, revoked or expired. Replace it in Settings → AI, ${another}.`};
   if(m.includes('usage limit'))return {title:`${name}’s usage limit is reached`,detail:`This ${name} account has used its allowance for now. Summaries will work again once the limit resets, ${another}.`};
   if(m.includes('rate limit')||m.includes('is busy')||m.includes('overloaded'))return {title:`${name} is busy right now`,detail:`${name} is limiting how many requests Aplos can make at once, often while new mail is being summarized. Wait a moment and retry.`};
   if(m.includes('no credits'))return {title:`${name} has no credits left`,detail:`The ${name} account Aplos uses is out of credits. Add credits and retry, ${another}.`};

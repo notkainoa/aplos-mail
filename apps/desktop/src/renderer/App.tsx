@@ -13,9 +13,9 @@ import {Settings} from './Settings';
 import {Sidebar,SidebarMenu,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
 import {DraftList,MailSection,actionIcon,highlightTerms,nudgeFocus,prepareFocusMove,useFocusGlide,type RowActions,type RowHandlers,type Triage} from './components/MailList';
-import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog,WelcomeDialog} from './components/Overlays';
+import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog} from './components/Overlays';
+import {Welcome} from './components/Welcome';
 import {AppIcon} from './components/AppIcon';
-import {AddAccountDialog} from './components/AddAccount';
 import {appVersion} from '../shared/version';
 import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Keys,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useHandlers,useMenu,usePresence,type Icon} from './ui';
 
@@ -73,7 +73,7 @@ export function App(){
  const [shortcutHelp,setShortcutHelp]=useState(false);
  const [eventEditor,setEventEditor]=useState<Partial<CalendarEvent>|null>(null);
  const [online,setOnline]=useState(navigator.onLine);
- const [busy,setBusy]=useState('');const [welcomeAdding,setWelcomeAdding]=useState(false);
+ const [busy,setBusy]=useState('');const [welcome,setWelcome]=useState(false);const welcomeChecked=useRef(false);
  const [leaving,setLeaving]=useState<{thread:Thread;status:FlingKind;key:number;to:string;drag?:CardDrag}>();
  const [entering,setEntering]=useState<{id:string;from:string}>();
  const [duePrompt,setDuePrompt]=useState<{id:string;key:number}>();
@@ -134,6 +134,9 @@ export function App(){
  useEffect(()=>{if(!leaving)return;const t=setTimeout(()=>setLeaving(undefined),340);return ()=>clearTimeout(t);},[leaving?.key]);
  useEffect(()=>{if(!departing)return;const t=setTimeout(()=>setDeparting(undefined),700);return ()=>clearTimeout(t);},[departing]);
  useEffect(()=>{if(!duePrompt)return;const t=setTimeout(()=>setDuePrompt(undefined),7000);return ()=>clearTimeout(t);},[duePrompt?.key]);
+ // The welcome flow opens once, on the first load of a fresh data folder, and again from Settings → Help & about.
+ useEffect(()=>{if(!state||welcomeChecked.current)return;welcomeChecked.current=true;if(!state.settings.onboardingDone&&!popoutThread&&!popoutDraft)setWelcome(true);},[state]);
+ useEffect(()=>{const show=()=>setWelcome(true);addEventListener('aplos:welcome',show);return()=>removeEventListener('aplos:welcome',show);},[]);
  useEffect(()=>{if(!state)return;const theme=state.settings.theme;const media=matchMedia('(prefers-color-scheme: dark)');const apply=()=>document.documentElement.dataset.theme=theme==='system'?(media.matches?'dark':'light'):theme;apply();media.addEventListener('change',apply);return ()=>media.removeEventListener('change',apply);},[state?.settings.theme]);
  useEffect(()=>{if(!popoutDraft||!state||composer||draftBlocked)return;const draft=state.drafts.find(d=>d.id===popoutDraft);if(draft)void invoke<boolean>('window.claim',{draftId:draft.id}).then(ok=>ok?setComposer(draft):setDraftBlocked(true)).catch(e=>setFatal(e.message));},[!!state,popoutDraft]);
 
@@ -559,8 +562,8 @@ export function App(){
  ]:[]}/>
  {eventEditor&&<EventEditor key={eventEditor.id||eventEditor.title||'new'} event={eventEditor} accounts={state.accounts} onClose={()=>setEventEditor(null)} notify={notify}/>}
  <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft} minimized={minimized}/>
- <WelcomeDialog open={!prefs.onboardingDone&&!popoutThread&&!welcomeAdding} connect={()=>setWelcomeAdding(true)} explore={()=>void updateSettings({onboardingDone:true})}/>
- <AddAccountDialog open={welcomeAdding} close={()=>setWelcomeAdding(false)} capabilities={capabilities} connected={()=>notify('Account connected')}/>
+ <Welcome open={welcome&&!popoutThread} capabilities={capabilities} settings={prefs} notify={notify} onSettings={patch=>void updateSettings(patch)}
+  onFinish={()=>{setWelcome(false);if(!prefs.onboardingDone)void updateSettings({onboardingDone:true});}}/>
  <PendingSends drafts={pending} seconds={prefs.undoSeconds} undo={async d=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){fail(e);}}}/>
  <Toaster/>
  <ConfirmHost/>

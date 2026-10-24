@@ -21,7 +21,8 @@ for(const scheme of ['dark']){ // the site is dark only
     const page=await(await browser.newContext({viewport:{width,height},deviceScaleFactor:2,colorScheme:scheme})).newPage();
     const errors=[];page.on('console',m=>m.type()==='error'&&errors.push(m.text()));page.on('pageerror',e=>errors.push(String(e)));
     await page.goto(url);await page.waitForTimeout(1500);
-    const demo=page.getByText('Explore the demo');if(await demo.count())await demo.click();
+    // A fresh data folder opens the welcome flow; Escape on its first step skips setup.
+    if(await page.getByRole('dialog',{name:'Welcome to Aplos Mail'}).count())await page.keyboard.press('Escape');
     await page.waitForTimeout(1200);return {page,errors};
   };
   let {page,errors}=await open(1240,760);

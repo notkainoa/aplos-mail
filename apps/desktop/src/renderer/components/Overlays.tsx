@@ -1,8 +1,7 @@
 import {useEffect,useState} from 'react';
-import {ArrowRight,Check,Clock,Mail,MessageCircle,X} from '../icons';
+import {X} from '../icons';
 import type {Draft} from '../../shared/types';
 import {isoDay} from '../bridge';
-import {AppIcon} from './AppIcon';
 import {Button,Dialog,DialogHeader,Keys,Notice,Skeleton,Tabs,cx,useLatest,usePresence} from '../ui';
 
 export function ShortcutsDialog({open,close,doneLeft,minimized}:{open:boolean;close:()=>void;doneLeft:boolean;minimized:boolean}){
@@ -21,18 +20,6 @@ export function ShortcutsDialog({open,close,doneLeft,minimized}:{open:boolean;cl
     <Tabs variant="pill" label="Shortcut groups" value={tab} onChange={setTab} items={tabs.map(t=>({id:t.id,label:t.id}))} className="shortcut-tabs"/>
     <div className="shortcut-list" role="tabpanel" key={tab}>{tabs.find(t=>t.id===tab)!.rows.map(([label,keys])=><div key={label}><span>{label}</span><span className="shortcut-keys">{keys.map((key,i)=><Keys key={i} combo={key}/>)}</span></div>)}</div>
     <footer className="shortcuts-footer">Shortcuts pause while you type.</footer>
-  </Dialog>;
-}
-
-export function WelcomeDialog({open,connect,explore}:{open:boolean;connect:()=>void;explore:()=>void}){
-  return <Dialog open={open} onClose={()=>{}} dismissable={false} label="Welcome to Aplos Mail" className="welcome">
-    <AppIcon size={72}/>
-    <h1>Your mail,<br/>a little lighter.</h1>
-    <p>A Home you can finish, a place for later,<br/>and a little intelligence when you need it.</p>
-    <div className="welcome-features"><span><Check size={15}/>An inbox you can finish</span><span><Clock size={15}/>Plans that stay in view</span><span><MessageCircle size={15}/>Help, powered by Groq</span></div>
-    <Button variant="primary" size="lg" icon={Mail} onClick={connect}>Add your email account</Button>
-    <Button variant="secondary" size="lg" iconRight={ArrowRight} onClick={explore}>Explore the demo</Button>
-    <p className="welcome-footnote">Works with Gmail, Outlook, iCloud, Fastmail, Yahoo, AOL and other IMAP mail.<br/>The demo uses original sample mail. Nothing is sent to real people.</p>
   </Dialog>;
 }
 

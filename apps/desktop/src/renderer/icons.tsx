@@ -73,6 +73,7 @@ export const MailOpen=symbol(Lucide.MailOpen,'envelope.open');
 export const ReplyAll=symbol(Lucide.ReplyAll,'arrowshape.turn.up.left.2');
 export const CircleCheck=symbol(Lucide.CircleCheck,'checkmark.circle.fill');
 export const Copy=symbol(Lucide.Copy,'doc.on.doc');
+export const ClipboardPaste=symbol(Lucide.ClipboardPaste,'doc.on.clipboard');
 export const KeyRound=symbol(Lucide.KeyRound,'key');
 export const CornerDownLeft=symbol(Lucide.CornerDownLeft,'return',{ratio:.75});
 export const CornerUpLeft=symbol(Lucide.CornerUpLeft,'arrowshape.turn.up.left');

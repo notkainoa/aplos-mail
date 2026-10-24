@@ -2,7 +2,7 @@
  * The AI providers the owner sets up in Settings → AI, and which model each AI feature uses. Groq is the default for
  * everything; any feature can run on ChatGPT (OpenAI API), Claude, Gemini, OpenRouter, an OpenCode Go plan, Ollama or
  * LM Studio on this Mac, or a custom OpenAI-compatible server. Voice needs a speech-to-text API (Groq or OpenAI).
- * Keys live only in the backend environment.
+ * Keys stay in the backend: saved encrypted from Settings → AI, or read from the environment; `env` names that variable.
  * Each choice is stored as `provider:model`, e.g. `groq:openai/gpt-oss-120b` or `openrouter:anthropic/claude-haiku-5.5`.
  */
 export type AskProviderId='groq'|'openai'|'anthropic'|'gemini'|'openrouter'|'opencode-go'|'ollama'|'lmstudio'|'custom';

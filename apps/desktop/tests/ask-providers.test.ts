@@ -39,7 +39,7 @@ test('OpenRouter streams through comments and its usage chunk, names the app and
   await assert.rejects(createOpenRouter({apiKey:'k',fetch:failing.fetch}).chat(request,{}),(e:Error)=>/OpenRouter stopped/.test(e.message)&&!/disconnected/.test(e.message));
   const broke=recorder(()=>new Response(JSON.stringify({error:{code:402,message:'Insufficient credits'}}),{status:402}));
   await assert.rejects(createOpenRouter({apiKey:'k',fetch:broke.fetch}).chat(request,{}),/OpenRouter has no credits left/);
-  await assert.rejects(createOpenRouter({apiKey:'',fetch}).chat(request,{}),/OPENROUTER_API_KEY/);
+  await assert.rejects(createOpenRouter({apiKey:'',fetch}).chat(request,{}),/Add your OpenRouter key in Settings → AI/);
 });
 
 test('OpenRouter lists only tool-capable models, curated picks first',async()=>{
@@ -81,7 +81,7 @@ test('the Ask setting picks the provider; a missing key says which variable to s
     assert.equal(result.messages[1].content,'From OpenRouter.');assert.equal(result.messages[1].model,'openrouter:anthropic/claude-haiku-5.5');
     assert.equal(asked[0].model,'anthropic/claude-haiku-5.5');assert.equal(asked[0].session,result.id);
     await service.invoke('settings.update',{patch:{askModel:'opencode-go:kimi-k3'}});
-    await assert.rejects(service.invoke('ai.ask',{message:'Hello'}),/Add OPENCODE_API_KEY .* OpenCode Go/);
+    await assert.rejects(service.invoke('ai.ask',{message:'Hello'}),/Add your OpenCode Go key in Settings → AI/);
     const catalog=await service.invoke('ai.models') as Array<{id:string;available:boolean;models:{id:string}[]}>;
     assert.deepEqual(catalog.map(p=>p.id),['groq','openai','anthropic','gemini','openrouter','opencode-go','ollama','lmstudio','custom']);
     assert.deepEqual(catalog.filter(p=>['groq','openrouter','opencode-go','custom'].includes(p.id)).map(p=>[p.id,p.available]),[['groq',false],['openrouter',true],['opencode-go',false],['custom',false]]);
@@ -90,7 +90,7 @@ test('the Ask setting picks the provider; a missing key says which variable to s
     const fakeCalls:ChatRequest[]=[];fake.chat=async req=>{fakeCalls.push(req);return {content:'',toolCalls:[{id:'p',name:'ping',arguments:'{}'}]};};
     const check=await service.invoke('ai.test',{model:'openrouter:anthropic/claude-haiku-5.5'}) as {ms:number;tools:boolean};
     assert.equal(check.tools,true);assert.equal(fakeCalls[0].tools?.[0].name,'ping');assert.equal(fakeCalls[0].model,'anthropic/claude-haiku-5.5');
-    await assert.rejects(service.invoke('ai.test',{model:'opencode-go:kimi-k3'}),/OPENCODE_API_KEY/);
+    await assert.rejects(service.invoke('ai.test',{model:'opencode-go:kimi-k3'}),/OpenCode Go key/);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
   assert.deepEqual(parseAskModel('openrouter:qwen/qwen3.8-flash:free'),{provider:'openrouter',model:'qwen/qwen3.8-flash:free'});
 });
@@ -274,7 +274,7 @@ test('summaries, drafts, plans and voice each run on the model chosen for them',
     assert.deepEqual(await service.invoke('calendar.extract',{threadId}),[]);
     assert.equal(asked[2].model,'gemini-3.8-flash');assert.equal(asked[2].json,true);
     await service.invoke('settings.update',{patch:{planModel:'openrouter:z-ai/glm-5.3'}});
-    await assert.rejects(service.invoke('calendar.extract',{threadId}),/Add OPENROUTER_API_KEY/);
+    await assert.rejects(service.invoke('calendar.extract',{threadId}),/Add your OpenRouter key/);
     const catalog=await service.invoke('ai.models') as Array<{id:string;voiceModels?:{id:string}[]}>;
     assert.deepEqual(catalog.filter(p=>p.voiceModels).map(p=>p.id),['groq','openai']);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
