@@ -1,6 +1,6 @@
 # Aplos Mail website
 
-Static marketing site: a landing page and a draft privacy policy. Vite + React, built to plain files in `dist/`. Always dark. No analytics, cookies or third-party scripts.
+Static marketing site: a landing page and a draft privacy policy. Vite + React, built to plain files in `dist/`. Light and dark, following the system until the visitor picks one (kept in localStorage, no cookies). No analytics or third-party scripts; the display font is self-hosted.
 
 ```sh
 npm run web           # dev server, http://127.0.0.1:5273 (APLOS_WEB_PORT changes the port)
@@ -8,10 +8,11 @@ npm run web:build     # typecheck and build to apps/web/dist
 npm run web:preview   # serve the built output
 ```
 
-- Styling lives in `src/styles.css`. Colors follow the desktop app's dark tokens; the accent is the green of the original app icon. `src/Triage.tsx` is the interactive Home demo (click it, then Space, ← →, Z). The logo and favicon are `apps/desktop/assets/icon-64.png`, exported from the app icon by `node scripts/build-icon.mjs` in `apps/desktop`.
-- Replace the placeholder download and repository links in `src/site.ts` before launch.
+- Styling lives in `src/styles.css`. The page is the app icon laid out top to bottom: sky (hero), a paper middle, grass (the close), with the airmail border of the envelope as the seam. Neutrals, the blue accent and the surfaces inside the demo are the app's own tokens (`apps/desktop/src/renderer/ui/tokens.css`); sky, grass, airmail red and blue are sampled from the icon. Headings use Fraunces (SOFT axis, self-hosted through `@fontsource-variable/fraunces`); everything else is the system font, as in the app. Fields (`.sky`, `.soft`, `.grass`, `.paper`) set their own ground, ink and button colour; `src/Triage.tsx` is the interactive Home demo (click it, then Space, ← →, Z) and the keycaps in "Keyboard on every control" press with the real keys.
+- The icon is never redrawn. `scripts/build-brand.mjs` exports the hero icon (`src/assets/brand/icon-640.webp`), the favicon, the Apple touch icon and the share image (`public/og.png`) from `apps/desktop/assets/icon.png` and `icon-256.png`; run it again after the icon changes (the header and footer use `icon-64.png` directly). The favicon and share image links point at `https://aplos.email`.
+- The share image, favicon and "download" link live outside the copy: the download button is `releasesUrl` in `src/site.ts` (the latest GitHub release).
 - The privacy page is a draft with bracketed to-dos. Finish it before Google or Microsoft OAuth verification.
-- `src/assets/shots/*.webp` are real screenshots of the app on its original demo data. `scripts/capture-screenshots.mjs` recreates them headlessly (instructions are at its top).
+- `src/assets/shots/*-light.webp` and `*-dark.webp` are real screenshots of the app on its original demo data, one pair per theme. `scripts/capture-screenshots.mjs` recreates them headlessly (instructions are at its top).
 
 ## Deployment (Vercel)
 

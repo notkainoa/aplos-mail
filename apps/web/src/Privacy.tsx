@@ -3,7 +3,7 @@ import {Footer,Header} from './Chrome';
 export function Privacy() {
   return (
     <>
-      <Header home="../" />
+      <div className="field paper"><Header home="../" /></div>
       <main className="doc">
         <p className="draft">Draft. This text has not been reviewed and will change before Aplos Mail is released or submitted for Google or Microsoft verification.</p>
         <h1>Privacy policy</h1>
@@ -33,7 +33,10 @@ export function Privacy() {
         <h2>Contact</h2>
         <p><span className="todo">[Contact email to be added.]</span></p>
       </main>
-      <Footer home="../" />
+      <div className="field grass doc-end">
+        <div className="band" />
+        <Footer home="../" />
+      </div>
     </>
   );
 }

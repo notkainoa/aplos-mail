@@ -15,11 +15,11 @@ const sharp=require('sharp');
 const url=process.env.APP_URL??'http://127.0.0.1:5517/';
 const out=resolve(import.meta.dirname,'../src/assets/shots');
 const browser=await chromium.launch(process.env.CHROME?{executablePath:process.env.CHROME}:{});
-const save=async(png,name)=>sharp(png).webp({quality:88,effort:6}).toFile(`${out}/${name}.webp`);
-for(const scheme of ['dark']){ // the site is dark only
+for(const scheme of ['dark','light']){ // the site follows the visitor's theme, so it needs both
+  const save=async(png,name)=>sharp(png).webp({quality:88,effort:6}).toFile(`${out}/${name}-${scheme}.webp`);
   const open=async(width,height)=>{
     const page=await(await browser.newContext({viewport:{width,height},deviceScaleFactor:2,colorScheme:scheme})).newPage();
-    const errors=[];page.on('console',m=>m.type()==='error'&&errors.push(m.text()));page.on('pageerror',e=>errors.push(String(e)));
+    const errors=[];page.on('console',m=>m.type()==='error'&&!m.location().url.endsWith('/favicon.ico')&&errors.push(`${m.text()} ${m.location().url}`));page.on('pageerror',e=>errors.push(String(e)));
     await page.goto(url);await page.waitForTimeout(1500);
     // A fresh data folder opens the welcome flow; Escape on its first step skips setup.
     if(await page.getByRole('dialog',{name:'Welcome to Aplos Mail'}).count())await page.keyboard.press('Escape');

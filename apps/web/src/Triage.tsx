@@ -17,7 +17,7 @@ function Card({mail,onAct,ghost}:{mail:Mail;onAct?:(a:Action)=>void;ghost?:Actio
   return (
     <div className={`mail${ghost?` leaving leaving-${ghost}`:' entering'}`} aria-hidden={ghost?true:undefined}>
       <div className="mail-top">
-        <span className="avatar" style={{background:`hsl(${mail.hue} 42% 38%)`}}>{mail.sender[0]}</span>
+        <span className="avatar" style={{background:`hsl(${mail.hue} 46% 32%)`}}>{mail.sender[0]}</span>
         <span className="sender">{mail.sender}</span>
         <span className="grow" />
         {mail.due&&<span className={`chip${mail.overdue?' chip-alert':''}`}>{mail.due}</span>}
@@ -78,7 +78,7 @@ export function Triage() {
   const hint=focused?'Space replies, ← sets it aside, → marks it done, Z undoes.':'Click the card, then press Space, ← or →.';
 
   return (
-    <div className="triage" tabIndex={0} role="group" aria-label="Try Home. Click, then use Space, the left and right arrow keys and Z." aria-keyshortcuts="Space ArrowLeft ArrowRight Z"
+    <div className="triage" data-ui tabIndex={0} role="group" aria-label="Try Home. Click, then use Space, the left and right arrow keys and Z." aria-keyshortcuts="Space ArrowLeft ArrowRight Z"
       onKeyDown={onKeyDown} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}>
       <div className="triage-head">
         <span>Home</span>
