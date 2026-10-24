@@ -1,4 +1,4 @@
-import {app,BrowserWindow,dialog,ipcMain,Menu,Notification,safeStorage,shell,systemPreferences,nativeTheme,session,utilityProcess,type IpcMainInvokeEvent,type MenuItemConstructorOptions} from 'electron';
+import {app,BrowserWindow,clipboard,dialog,ipcMain,Menu,Notification,safeStorage,shell,systemPreferences,nativeTheme,session,utilityProcess,type IpcMainInvokeEvent,type MenuItemConstructorOptions} from 'electron';
 import {config} from 'dotenv';
 import {loadDevEnv} from './env';
 import {writeFile,mkdtemp} from 'node:fs/promises';
@@ -14,7 +14,7 @@ import type {AppState,Listener} from '../shared/types';
 const methods=new Set([
   'state.get','threads.page','capabilities.get','symbols.render','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',
   'thread.update','thread.undo','home.hide','search','draft.save','draft.delete','draft.send','draft.undoSend',
-  'ai.summarize','ai.summarizing','ai.polish','ai.draft','ai.ask','ai.models','ai.test','ai.cancel','ai.transcribe','conversation.delete','workflow.status','workflow.enable','workflow.code','workflow.disable',
+  'ai.summarize','ai.summarizing','ai.polish','ai.draft','ai.ask','ai.models','ai.test','ai.keys','ai.key.set','ai.key.delete','ai.key.test','ai.cancel','ai.transcribe','conversation.delete','workflow.status','workflow.enable','workflow.code','workflow.disable',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
 ]);
 const nativeMethods=new Set(['window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test','system.login','system.defaultMail','system.microphone','app.info']);
@@ -155,7 +155,12 @@ async function invokeNative(event:IpcMainInvokeEvent,method:string,input:unknown
   if(method==='notification.test'){notify('Aplos Mail','Notifications are ready.');return true;}
   if(method==='system.login'){if(typeof payload.enabled!=='boolean')throw new Error('Choose whether to launch at login.');app.setLoginItemSettings({openAtLogin:payload.enabled});return {enabled:app.getLoginItemSettings().openAtLogin};}
   if(method==='system.defaultMail'){const success=app.setAsDefaultProtocolClient('mailto');return {success};}
-  if(method==='system.microphone'){if(process.platform!=='darwin')return {granted:true};return {granted:await systemPreferences.askForMediaAccess('microphone')};}
+  if(method==='system.microphone'){
+    if(process.platform!=='darwin')return {granted:true,status:'granted'};
+    // `check` reports the current permission without showing the macOS prompt.
+    if(payload.check===true){const status=systemPreferences.getMediaAccessStatus('microphone');return {granted:status==='granted',status};}
+    const granted=await systemPreferences.askForMediaAccess('microphone');return {granted,status:systemPreferences.getMediaAccessStatus('microphone')};
+  }
   throw new Error('Unsupported desktop method.');
 }
 
@@ -231,6 +236,8 @@ else{
     service=await startEngine(await engineInit(process.env.APLOS_DATA_DIR||app.getPath('userData')));
     ipcMain.handle('aplos:invoke',async(event,method:unknown,payload:unknown)=>{
       assertCaller(event);if(typeof method!=='string')throw new Error('Invalid application method.');
+      // Paste reads the clipboard here and hands the key straight to the engine, so it never passes through the renderer.
+      if(method==='ai.key.paste'){if(!service)throw new Error('The mailbox is restarting. Try again in a moment.');return service.invoke('ai.key.set',{provider:(payload as {provider?:unknown}|undefined)?.provider,key:clipboard.readText()});}
       if(nativeMethods.has(method))return invokeNative(event,method,payload);
       if(!methods.has(method))throw new Error('Unsupported application method.');
       const draftId=draftMutationId(method,payload);

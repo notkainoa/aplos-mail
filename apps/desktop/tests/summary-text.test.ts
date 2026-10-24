@@ -16,8 +16,8 @@ test('every provider failure the summary card can hit gets its own reason, namin
   assert.equal(describeSummaryError('Groq request failed (500). Please try again.',groqInfo).title,'Something went wrong');
   // Another provider chosen in Settings → AI is named, with its own key.
   const claude=summaryProvider('anthropic:claude-sonnet-5-5');
-  const missing=describeSummaryError('Set ANTHROPIC_API_KEY in the main process to use Claude.',claude);
-  assert.equal(missing.title,'Claude isn’t set up');assert.match(missing.detail,/ANTHROPIC_API_KEY/);
+  const missing=describeSummaryError('Add your Claude key in Settings → AI to use Claude.',claude);
+  assert.equal(missing.title,'Claude isn’t set up');assert.match(missing.detail,/Claude key .*Settings → AI/);
   assert.equal(describeSummaryError('Claude is overloaded right now. Please try again shortly.',claude).title,'Claude is busy right now');
   assert.equal(describeSummaryError('Ollama isn’t running at localhost:11434. Open Ollama, or change its address in Settings → AI.',summaryProvider('ollama:llama4')).title,'Ollama isn’t running');
 });

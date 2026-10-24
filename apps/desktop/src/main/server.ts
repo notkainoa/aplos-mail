@@ -10,10 +10,10 @@ import type {Listener} from '../shared/types';
 export const serviceMethods=new Set([
   'state.get','threads.page','capabilities.get','symbols.render','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',
   'thread.update','thread.undo','home.hide','search','draft.save','draft.delete','draft.send','draft.undoSend',
-  'ai.summarize','ai.summarizing','ai.polish','ai.draft','ai.ask','ai.models','ai.test','ai.cancel','ai.transcribe','conversation.delete','workflow.status','workflow.enable','workflow.code','workflow.disable',
+  'ai.summarize','ai.summarizing','ai.polish','ai.draft','ai.ask','ai.models','ai.test','ai.keys','ai.key.set','ai.key.delete','ai.key.test','ai.cancel','ai.transcribe','conversation.delete','workflow.status','workflow.enable','workflow.code','workflow.disable',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
 ]);
-const webMethods=new Set(['window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test','system.login','system.defaultMail','system.microphone','app.info']);
+const webMethods=new Set(['ai.key.paste','window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test','system.login','system.defaultMail','system.microphone','app.info']);
 // Ports can move (APLOS_API_PORT / APLOS_VITE_PORT) so several checkouts can preview side by side.
 const apiPort=Number(process.env.APLOS_API_PORT)||4317,vitePort=Number(process.env.APLOS_VITE_PORT)||5173;
 const origins=new Set([`http://127.0.0.1:${vitePort}`,`http://localhost:${vitePort}`,`http://127.0.0.1:${apiPort}`]);

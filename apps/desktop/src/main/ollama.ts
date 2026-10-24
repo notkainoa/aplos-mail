@@ -1,13 +1,15 @@
 import type { ChatMessage, ChatRequest, ChatTurn } from '../engine/agent';
 import type { ChatProvider } from '../engine/ports';
 import type { AskModelInfo } from '../shared/ask';
+import { readKey, type ApiKey } from './llm';
 
 /**
  * Ollama through its native /api/chat, so Ask can raise the context window (Ollama's default can be 4K tokens,
  * which would cut Ask's prompt short) and turn thinking off for quick answers. Streams NDJSON; tool calls carry
  * object arguments and no IDs, so IDs are assigned here and tool results are matched back by tool name.
  */
-export interface OllamaOptions { apiKey?:string; fetch?:typeof fetch; contextTokens?:number }
+/** `apiKey` is a key or a resolver read per request; without one OLLAMA_API_KEY is used. */
+export interface OllamaOptions { apiKey?:ApiKey; fetch?:typeof fetch; contextTokens?:number }
 type Wire={role:string;content:string;tool_calls?:{function:{name:string;arguments:Record<string,unknown>}}[];tool_name?:string};
 
 const host=(baseUrl:string)=>baseUrl.replace(/^https?:\/\//,'').replace(/\/+$/,'');
@@ -20,15 +22,15 @@ function toOllama(messages:ChatMessage[]):Wire[] {
 }
 
 export function createOllama(baseUrl:string,options:OllamaOptions={}):ChatProvider {
-  const root=baseUrl.replace(/\/+$/,'').replace(/\/v1$/,''),request=options.fetch??fetch,apiKey=options.apiKey??process.env.OLLAMA_API_KEY;
+  const root=baseUrl.replace(/\/+$/,'').replace(/\/v1$/,''),request=options.fetch??fetch,key=()=>readKey(options.apiKey,'OLLAMA_API_KEY');
   const offline=`Ollama isn’t running at ${host(root)}. Open Ollama, or change its address in Settings → AI.`;
   async function call(path:string,init:{method?:string;body?:unknown}={},signal?:AbortSignal,timeoutMs=120_000):Promise<Response> {
-    let response:Response;
+    let response:Response;const apiKey=key();
     try{response=await request(`${root}/${path}`,{method:init.method??(init.body?'POST':'GET'),headers:{...(init.body?{'Content-Type':'application/json'}:{}),...(apiKey?{Authorization:`Bearer ${apiKey}`}:{})},...(init.body?{body:JSON.stringify(init.body)}:{}),signal:AbortSignal.any([AbortSignal.timeout(timeoutMs),...(signal?[signal]:[])])});}
     catch{if(signal?.aborted)throw new Error('AI request cancelled.');throw new Error(offline);}
     if(response.ok)return response;
     if(response.status===404)throw new Error('Ollama doesn’t have this model. Pull it first (ollama pull <model>) or choose another in Settings → AI.');
-    if(response.status===401||response.status===403)throw new Error('Ollama rejected the request. Check OLLAMA_API_KEY.');
+    if(response.status===401||response.status===403)throw new Error('Ollama rejected the request. Check its key in Settings → AI.');
     if(response.status===429)throw Object.assign(new Error('Ollama is busy. Please try again shortly.'),{code:'rate_limited'});
     throw new Error(`Ollama request failed (${response.status}). Please try again.`);
   }
@@ -40,6 +42,8 @@ export function createOllama(baseUrl:string,options:OllamaOptions={}):ChatProvid
   const context=(chat:ChatRequest)=>chat.json?Math.min(32768,Math.max(base,Math.ceil(JSON.stringify(chat.messages).length/3)+(chat.maxTokens??2048))):base;
   return {
     available:true,
+    // The version endpoint is open, so the model list (which a protected server guards) checks the key.
+    check:async signal=>{await call('api/tags',{},signal,10_000);},
     async status(signal){
       try{const response=await call('api/version',{},signal,3_000);const value=await response.json() as {version?:unknown};return {running:true,...(typeof value.version==='string'?{version:value.version}:{})};}
       catch{return {running:false};}
