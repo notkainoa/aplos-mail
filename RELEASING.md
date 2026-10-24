@@ -53,6 +53,10 @@ The *Release* workflow checks that the tag matches the app version, runs the typ
 
 To build the artifacts locally instead (no upload): `npm run release:build`. Output goes to `apps/desktop/release/`. Locally the build signs only when `CSC_LINK` or `CSC_NAME` is set in your shell; a certificate in your keychain is never picked up by accident. `npm run package` stays the fast, unsigned, this-Mac-only `.app` build.
 
+The app icon is the Icon Composer file `apps/desktop/assets/AppIcon.icon`; electron-builder compiles it with Xcode's `actool` into `Assets.car` (the macOS 26 icon) plus `icon.icns` for older systems. That needs full Xcode 26 or later, not just the Command Line Tools: run `sudo xcode-select -s /Applications/Xcode.app` once, or prefix the build with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`. The release workflow runs on `macos-26` for the same reason.
+
+The DMG window (800×360, "To install, drag Aplos Mail to Applications") is drawn by `apps/desktop/build/dmg-background.html`. After editing it, run `npm run dmg-background -w apps/desktop` to re-render `build/background.png` and `background@2x.png`, and commit both. Icon positions and size are `build.dmg` in `apps/desktop/package.json`.
+
 ## Checking the draft
 
 On github.com → Releases → the draft:

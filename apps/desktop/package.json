@@ -26,7 +26,8 @@
     "verify:large": "node scripts/verify-large-mailbox.mjs",
     "release:build": "npm run build && node scripts/release-build.mjs",
     "release:publish": "npm run build && node scripts/release-build.mjs --publish always",
-    "update-feed": "node scripts/fake-update-feed.mjs"
+    "update-feed": "node scripts/fake-update-feed.mjs",
+    "dmg-background": "electron scripts/build-dmg-background.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
@@ -72,7 +73,7 @@
       }
     ],
     "mac": {
-      "icon": "assets/icon.icns",
+      "icon": "assets/AppIcon.icon",
       "category": "public.app-category.productivity",
       "target": [
         {
@@ -110,6 +111,22 @@
     },
     "asar": true,
     "dmg": {
+      "title": "${productName}",
+      "iconSize": 160,
+      "iconTextSize": 14,
+      "contents": [
+        {
+          "x": 200,
+          "y": 190,
+          "type": "file"
+        },
+        {
+          "x": 600,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
       "sign": false,
       "writeUpdateInfo": false
     },
