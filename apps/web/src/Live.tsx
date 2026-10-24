@@ -37,6 +37,29 @@ export function KeyList() {
   );
 }
 
+// The app's segmented control. The selected card slides by clipping one full-width layer, so nothing resizes.
+export function Segmented<T extends string>({label,options,value,onChange,className}:{label:string;options:readonly T[];value:T;onChange:(v:T)=>void;className?:string}) {
+  const row=useRef<HTMLDivElement>(null);
+  const [clip,setClip]=useState<string|null>(null);
+  useEffect(()=>{
+    const measure=()=>{
+      const tabs=row.current;const button=tabs?.querySelector<HTMLElement>(`[data-value="${value}"]`);
+      if(tabs&&button)setClip(`inset(${button.offsetTop-3}px ${tabs.clientWidth-button.offsetLeft-button.offsetWidth}px ${tabs.clientHeight-button.offsetTop-button.offsetHeight-3}px ${button.offsetLeft}px round 8px)`);
+    };
+    measure();
+    window.addEventListener('resize',measure);
+    return ()=>window.removeEventListener('resize',measure);
+  },[value]);
+  return (
+    <div className={`picker-tabs${className?` ${className}`:''}`} data-ui role="tablist" aria-label={label} ref={row}>
+      {clip&&<span className="picker-pill" aria-hidden="true" style={{clipPath:clip}} />}
+      {options.map(o=>(
+        <button key={o} type="button" role="tab" aria-selected={o===value} data-value={o} onClick={()=>onChange(o)}>{o}</button>
+      ))}
+    </div>
+  );
+}
+
 // A small copy of Settings → AI: choose the provider for each feature. Voice needs speech-to-text, which only Groq and OpenAI offer here.
 const features=['Summaries','Ask','Drafts','Plans','Voice'] as const;
 type Feature=typeof features[number];
@@ -47,27 +70,11 @@ export function ProviderPicker() {
   const [feature,setFeature]=useState<Feature>('Summaries');
   const [chosen,setChosen]=useState<Record<Feature,string>>({Summaries:'Groq',Ask:'Groq',Drafts:'Groq',Plans:'Groq',Voice:'Groq'});
   const provider=chosen[feature];
-  const tabs=useRef<HTMLDivElement>(null);
-  const [clip,setClip]=useState<string|null>(null);
-  useEffect(()=>{
-    const measure=()=>{
-      const button=tabs.current?.querySelector<HTMLElement>(`[data-feature="${feature}"]`);
-      if(button)setClip(`inset(${button.offsetTop-3}px ${tabs.current!.clientWidth-button.offsetLeft-button.offsetWidth}px ${tabs.current!.clientHeight-button.offsetTop-button.offsetHeight-3}px ${button.offsetLeft}px round 8px)`);
-    };
-    measure();
-    window.addEventListener('resize',measure);
-    return ()=>window.removeEventListener('resize',measure);
-  },[feature]);
   const what=feature==='Voice'?'Voice recordings':feature==='Ask'?'Questions to Ask':feature;
   const where=local.has(provider)?`${provider}, on your Mac. Nothing leaves it.`:provider==='your own server'?'your own server, at the address you set.':`${provider}${provider==='Groq'?', the default':''}, and to no one else.`;
   return (
     <div className="picker">
-      <div className="picker-tabs" data-ui role="tablist" aria-label="AI feature" ref={tabs}>
-        {clip&&<span className="picker-pill" aria-hidden="true" style={{clipPath:clip}} />}
-        {features.map(f=>(
-          <button key={f} type="button" role="tab" aria-selected={f===feature} data-feature={f} onClick={()=>setFeature(f)}>{f}</button>
-        ))}
-      </div>
+      <Segmented label="AI feature" options={features} value={feature} onChange={setFeature} />
       <p className="providers" aria-label={`Provider for ${feature}`}>
         {providers.map((p,i)=>{
           const off=feature==='Voice'&&!speech.has(p);

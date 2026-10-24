@@ -34,6 +34,12 @@ for(scheme of ['dark','light']){ // the site follows the visitor's appearance, s
   await page.mouse.click(1440-23,22); // close the docked Ask panel
   await page.mouse.move(180,760);await page.waitForTimeout(1200); // park the pointer so no tooltip is showing
   await save(await page.screenshot(),'calendar');
+  // The site's calendar switcher shows the same week as a day and as a month too.
+  for(const view of ['Day','Month']){
+    await page.getByText(view,{exact:true}).first().click();
+    await page.mouse.move(180,760);await page.waitForTimeout(1200);
+    await save(await page.screenshot(),`calendar-${view.toLowerCase()}`);
+  }
   if(errors.length)throw new Error(errors.join('\n'));
 }
 await browser.close();

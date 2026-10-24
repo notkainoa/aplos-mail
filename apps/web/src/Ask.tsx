@@ -30,6 +30,10 @@ export function Ask() {
   const [words,setWords]=useState(0);
   const [booking,setBooking]=useState<'open'|'added'|'dismissed'>('open');
   const timer=useRef(0);
+  const panel=useRef<HTMLDivElement>(null);
+  // Hold to talk: while A (or the hint) is held the panel listens; on release it "hears" the next sample question.
+  const [listening,setListening]=useState(false);
+  const hold=useRef({on:false,since:0,next:0});
   const answer=asked===null?null:questions[asked][1];
   const total=answer?answer.text.split(' ').length:0;
   const done=answer!==null&&words>=total;
@@ -55,18 +59,51 @@ export function Ask() {
 
   const ask=(i:number)=>{setTyped('');setWords(0);setBooking('open');setAsked(i);};
   const clear=()=>{window.clearTimeout(timer.current);setAsked(null);setTyped('');setWords(0);};
+  const listen=()=>{
+    if(hold.current.on)return;
+    hold.current.on=true;hold.current.since=performance.now();
+    clear();setListening(true);
+  };
+  const release=()=>{
+    if(!hold.current.on)return;
+    hold.current.on=false;setListening(false);
+    if(performance.now()-hold.current.since<350)return;
+    const next=hold.current.next;hold.current.next=(next+1)%questions.length;
+    ask(next);
+  };
+  const listenRef=useRef({listen,release});listenRef.current={listen,release};
+  useEffect(()=>{
+    let visible=false;
+    const observer=new IntersectionObserver(([entry])=>{visible=entry.isIntersecting;},{threshold:0.5});
+    observer.observe(panel.current!);
+    const down=(event:KeyboardEvent)=>{
+      if(event.key.toLowerCase()!=='a'||event.repeat||!visible||event.metaKey||event.ctrlKey||event.altKey)return;
+      if((event.target as HTMLElement).closest('input, textarea, select, [role="group"]'))return;
+      listenRef.current.listen();
+    };
+    const up=(event:KeyboardEvent)=>{if(event.key.toLowerCase()==='a')listenRef.current.release();};
+    const blur=()=>listenRef.current.release();
+    window.addEventListener('keydown',down);window.addEventListener('keyup',up);window.addEventListener('blur',blur);
+    return ()=>{observer.disconnect();window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',blur);};
+  },[]);
 
   return (
-    <div className="askp" data-ui>
+    <div className="askp" data-ui ref={panel}>
       <div className="askp-top">
         <div className="askp-tabs" aria-hidden="true"><span className="on">Ask</span><span>Calendar</span></div>
         {asked!==null&&<button type="button" className="askp-clear" onClick={clear} aria-label="Clear the question">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
         </button>}
       </div>
-      <div className="askp-field" aria-hidden="true">
-        <span className={typed?'askp-typed':'askp-placeholder'}>{typed||'Ask me anything'}</span>
-        {!typed&&<span className="askp-talk">Hold <kbd>A</kbd> to talk</span>}
+      <div className={`askp-field${listening?' is-listening':''}`}>
+        {listening
+          ? <span className="askp-listening" role="status">Listening<span className="askp-level" aria-hidden="true"><i /><i /><i /><i /><i /></span></span>
+          : <span className={typed?'askp-typed':'askp-placeholder'} aria-hidden="true">{typed||'Ask me anything'}</span>}
+        {!typed&&<button type="button" className="askp-talk" aria-label="Hold to talk"
+          onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);listen();}} onPointerUp={release} onPointerCancel={release}
+          onKeyDown={event=>{if((event.key===' '||event.key==='Enter')&&!event.repeat){event.preventDefault();listen();}}}
+          onKeyUp={event=>{if(event.key===' '||event.key==='Enter')release();}}
+          onContextMenu={event=>event.preventDefault()}>{listening?'Release to ask':<>Hold <kbd>A</kbd> to talk</>}</button>}
       </div>
       {asked===null
         ? <div className="askp-body" key="list">

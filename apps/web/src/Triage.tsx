@@ -10,12 +10,39 @@ const mails:Mail[]=[
   {sender:'Leah',summary:'Pick a quiet lunch spot for six with vegetarian choices',when:'Tuesday',hue:140},
 ];
 type Action='later'|'done'|'reply';
-type Ghost={id:number;mail:Mail;action:Action};
+type Ghost={id:number;mail:Mail;action:Action;x:number};
 const verb:Record<Action,string>={later:'Set aside for Later',done:'Marked Done',reply:'Opened a reply'};
 
-function Card({mail,onAct,ghost}:{mail:Mail;onAct?:(a:Action)=>void;ghost?:Action}) {
+// The card in focus can be dragged sideways, as in the app: past the threshold, or flicked, it goes to Later (left) or Done (right).
+function Card({mail,onAct,ghost,from=0,onDrag}:{mail:Mail;onAct?:(a:Action,x?:number)=>void;ghost?:Action;from?:number;onDrag?:(x:number)=>void}) {
+  const ref=useRef<HTMLDivElement>(null);
+  const drag=useRef<{id:number;x0:number;x:number;lastX:number;lastT:number;v:number;moving:boolean}|null>(null);
+  const place=(x:number,animate:boolean)=>{
+    const el=ref.current!;
+    el.style.transition=animate?'transform 320ms var(--ease-out)':'none';
+    el.style.transform=x?`translateX(${x}px) rotate(${x/30}deg)`:'';
+    onDrag?.(x);
+  };
+  const down=(event:React.PointerEvent)=>{
+    if(ghost||event.button!==0||(event.target as HTMLElement).closest('button'))return;
+    drag.current={id:event.pointerId,x0:event.clientX,x:0,lastX:event.clientX,lastT:event.timeStamp,v:0,moving:false};
+  };
+  const move=(event:React.PointerEvent)=>{
+    const d=drag.current;if(!d||d.id!==event.pointerId)return;
+    const x=event.clientX-d.x0;
+    if(!d.moving){if(Math.abs(x)<6)return;d.moving=true;ref.current!.setPointerCapture(event.pointerId);}
+    const dt=event.timeStamp-d.lastT;if(dt>0)d.v=(event.clientX-d.lastX)/dt;
+    d.lastX=event.clientX;d.lastT=event.timeStamp;d.x=x;place(x,false);
+  };
+  const up=()=>{
+    const d=drag.current;drag.current=null;if(!d?.moving)return;
+    if(Math.abs(d.x)>110||(Math.abs(d.v)>0.5&&Math.abs(d.x)>30&&Math.sign(d.v)===Math.sign(d.x))){onDrag?.(0);onAct?.(d.x<0?'later':'done',d.x);}
+    else place(0,true);
+  };
   return (
-    <div className={`mail${ghost?` leaving leaving-${ghost}`:' entering'}`} aria-hidden={ghost?true:undefined}>
+    <div ref={ref} className={`mail${ghost?` leaving leaving-${ghost}`:' entering'}`} aria-hidden={ghost?true:undefined}
+      style={ghost?{'--x':`${from}px`,'--r':`${from/30}deg`} as React.CSSProperties:undefined}
+      onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
       <div className="mail-top">
         <span className="avatar" style={{background:`hsl(${mail.hue} 42% 38%)`}}>{mail.sender[0]}</span>
         <span className="sender">{mail.sender}</span>
@@ -45,10 +72,16 @@ export function Triage() {
   const ghostId=useRef(0);
   const mail=mails[index];
 
-  const act=useCallback((action:Action)=>{
+  const hints=useRef<HTMLDivElement>(null);
+  const showHints=useCallback((x:number)=>{
+    const [done,later]=hints.current?.children??[];
+    if(done)(done as HTMLElement).style.opacity=String(Math.min(1,Math.max(0,x)/110));
+    if(later)(later as HTMLElement).style.opacity=String(Math.min(1,Math.max(0,-x)/110));
+  },[]);
+  const act=useCallback((action:Action,x=0)=>{
     if(index>=mails.length)return;
     const id=++ghostId.current;
-    setGhosts(g=>[...g,{id,mail:mails[index],action}]);
+    setGhosts(g=>[...g,{id,mail:mails[index],action,x}]);
     window.setTimeout(()=>setGhosts(g=>g.filter(x=>x.id!==id)),340);
     setHistory(h=>[...h,index]);
     setIndex(index+1);
@@ -75,7 +108,8 @@ export function Triage() {
   };
 
   const left=mails.length-index;
-  const hint=focused?'Space replies, ← sets it aside, → marks it done, Z undoes.':'Click the card, then press Space, ← or →.';
+  const touch=typeof window!=='undefined'&&window.matchMedia('(pointer: coarse)').matches;
+  const hint=focused?'Space replies, ← sets it aside, → marks it done, Z undoes.':touch?'Swipe the card: left for Later, right for Done.':'Click the card, then press Space, ← or →, or drag it sideways.';
 
   return (
     <div className="triage" data-ui tabIndex={0} role="group" aria-label="Try Home. Click, then use Space, the left and right arrow keys and Z." aria-keyshortcuts="Space ArrowLeft ArrowRight Z"
@@ -85,9 +119,10 @@ export function Triage() {
         <span>{left>0?`${left} ${left===1?'email':'emails'}`:'Done'}</span>
       </div>
       <div className="triage-stage">
-        {ghosts.map(g=><Card key={`g${g.id}`} mail={g.mail} ghost={g.action} />)}
+        <div className="swipe-hints" ref={hints} aria-hidden="true"><span>Done</span><span>Later</span></div>
+        {ghosts.map(g=><Card key={`g${g.id}`} mail={g.mail} ghost={g.action} from={g.x} />)}
         {mail
-          ? <Card key={index} mail={mail} onAct={act} />
+          ? <Card key={index} mail={mail} onAct={act} onDrag={showHints} />
           : <div className="triage-empty"><p>Inbox finished.</p><button type="button" className="act" tabIndex={-1} onClick={()=>{setIndex(0);setHistory([]);setStatus('');}}>Start over</button></div>}
       </div>
       <ul className="triage-next" aria-hidden="true">

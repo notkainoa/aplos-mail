@@ -1,6 +1,7 @@
 import icon from './assets/icon-512.webp';
 import {Airmail,Footer,Header,Shot} from './Chrome';
 import {Ask} from './Ask';
+import {CalendarViews} from './CalendarViews';
 import {HeroIcon,KeyList,ProviderPicker,Rise} from './Live';
 import {Triage} from './Triage';
 import {useReveal} from './reveal';
@@ -60,9 +61,7 @@ export function Landing() {
             email mentions a plan, Aplos proposes the event and adds it only after you
             confirm.
           </p>
-          <div className="calendar-shot" data-ui data-reveal style={delay(140)}>
-            <Shot name="calendar" alt="A week in the Aplos Mail calendar with events from two accounts, a mini month, the list of calendars and an event found in an email." width={1440} height={860} />
-          </div>
+          <div className="calendar-live" data-reveal style={delay(140)}><CalendarViews /></div>
         </section>
 
         <section className="ask" aria-labelledby="ask-title">
