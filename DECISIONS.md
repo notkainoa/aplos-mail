@@ -1,5 +1,14 @@
 # Decisions
 
+## 2026-10-24 — Website: the app icon's brand, light and dark, clickable screenshots
+
+- **Brand from the icon, not a palette.** Colors are sampled from `AppIcon.icon`'s rasters: the page opens and closes in its sky (`#9fd3ff`, dusk `#11263d` in dark), the airmail envelope's red and blue border frames each page, and the airmail blue is the primary button. Neutrals, ink and every app fragment use the app's own tokens, so page and screenshots match. This replaces the green accent and the always-dark site of 2026-10-22.
+- **Light and dark follow the system, like the app.** Every screenshot exists in both appearances (`name.webp` dark, `name-light.webp` light) and `<picture>` serves the matching one.
+- **Type.** Headings in Newsreader (self-hosted, OFL, optical sizes): a letter face for an airmail brand. Body text keeps the app's SF stack.
+- **Screenshots are the demo.** The hero window and the calendar are app screenshots you click through, not screenshots with controls around them. Links are recorded by `scripts/capture-screenshots.mjs`, which presses every control in the real app (headless, throwaway storage, a fresh browser profile per screen, mark-as-read answered locally so the mailbox never changes) and keeps a link only if the app then matches a captured screen pixel for pixel. Screens that would mislead are left out: Settings (setup warnings in the browser preview), an event whose popover scrolls the grid, and Today.
+- **Download page: built, hidden, sample data.** `/download/` detects the computer, starts the matching file, shows install steps and lists every version. It is unlinked and `noindex` until there is a public release, and never starts a download while `release.sample` is true. Its data should come from GitHub Releases at build time, with a deploy hook on publish; `VISION.md` has the plan and the reasons.
+- **Nothing copied.** The inspiration sites (animations.dev, orchid.ai, aiforui.dev, akeru-bot.com, mastra.ai, email-sdk.dev, gradients.sh; aside.com, diabrowser.com and helium.computer for the download page) were looked at headlessly for feel only. Every drawing is made in code; the only image used is the app icon. No sparkle or wand glyph.
+
 ## 2026-10-23 — One app icon, from Icon Composer
 
 The owner's `apps/desktop/assets/AppIcon.icon` is the only app icon. The Settings "App icon" picker (ink/sage/clay recolors of the old "a" mark) is removed with its `icon` setting: an illustrated icon does not recolor well, and macOS 26 lets people pick Default, Dark, Clear or Tinted for any Icon Composer icon. PNG exports for the site, README and in-app views are generated from the `.icon` (`npm run icon -w apps/desktop`), never edited by hand. Building needs Xcode 26 or later.

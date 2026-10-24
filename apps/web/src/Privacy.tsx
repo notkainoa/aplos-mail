@@ -1,8 +1,11 @@
-import {Footer,Header} from './Chrome';
+import {Airmail,Footer,Header} from './Chrome';
+import {useReveal} from './reveal';
 
 export function Privacy() {
+  useReveal();
   return (
     <>
+      <Airmail />
       <Header home="../" />
       <main className="doc">
         <p className="draft">Draft. This text has not been reviewed and will change before Aplos Mail is released or submitted for Google or Microsoft verification.</p>
