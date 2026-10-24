@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-10-23 — One app icon, from Icon Composer
+
+The owner's `apps/desktop/assets/AppIcon.icon` is the only app icon. The Settings "App icon" picker (ink/sage/clay recolors of the old "a" mark) is removed with its `icon` setting: an illustrated icon does not recolor well, and macOS 26 lets people pick Default, Dark, Clear or Tinted for any Icon Composer icon. PNG exports for the site, README and in-app views are generated from the `.icon` (`npm run icon -w apps/desktop`), never edited by hand. Building needs Xcode 26 or later.
+
 ## 2026-10-23 — Release pipeline and auto-update
 
 - **Artifacts.** electron-builder builds a DMG (what people download) and a ZIP (what electron-updater needs on macOS) for arm64 and x64, plus `latest-mac.yml`. Names have no spaces (`Aplos-Mail-X.Y.Z-arch.ext`), because GitHub rewrites spaces in asset names and the feed would point at files that do not exist. `npm run package` stays the fast this-Mac `dir` build; `npm run release:build` makes the full set. The asar, `extraResources` bin and `extendInfo` are unchanged.

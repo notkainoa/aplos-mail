@@ -1,4 +1,4 @@
-<img src="apps/desktop/assets/icon.svg" width="64" height="64" alt="Aplos Mail">
+<img src="apps/desktop/assets/icon.png" width="64" height="64" alt="Aplos Mail">
 
 # Aplos Mail
 

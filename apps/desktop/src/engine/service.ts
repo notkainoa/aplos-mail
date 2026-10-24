@@ -107,7 +107,7 @@ function threadPatch(raw:unknown):Partial<Thread> {
 }
 function settingsPatch(raw:unknown):Partial<Settings> {
   const source=object(raw),patch:Partial<Settings>={};
-  const choices:Partial<Record<keyof Settings,readonly string[]>>={theme:['light','dark','system'],sidebarStyle:['normal','minimized'],triageDirection:['done-right','done-left'],doneAction:['archive','read','unread'],laterAction:['archive','read','unread'],lowAction:['archive','read','unread'],defaultReply:['reply','reply-all'],signatureMode:['always','new','never'],icon:['ink','sage','clay']};
+  const choices:Partial<Record<keyof Settings,readonly string[]>>={theme:['light','dark','system'],sidebarStyle:['normal','minimized'],triageDirection:['done-right','done-left'],doneAction:['archive','read','unread'],laterAction:['archive','read','unread'],lowAction:['archive','read','unread'],defaultReply:['reply','reply-all'],signatureMode:['always','new','never']};
   for(const key of Object.keys(defaultSettings) as (keyof Settings)[]) {
     if(!(key in source)) continue;
     const val=source[key];

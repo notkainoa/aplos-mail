@@ -8,7 +8,7 @@ npm run web:build     # typecheck and build to apps/web/dist
 npm run web:preview   # serve the built output
 ```
 
-- Styling lives in `src/styles.css`. Colors follow the desktop app's dark tokens; the accent is the green of the app icon. `src/Triage.tsx` is the interactive Home demo (click it, then Space, ← →, Z). The icon is imported from `apps/desktop/assets/icon.svg`.
+- Styling lives in `src/styles.css`. Colors follow the desktop app's dark tokens; the accent is the green of the original app icon. `src/Triage.tsx` is the interactive Home demo (click it, then Space, ← →, Z). The logo and favicon are `apps/desktop/assets/icon-64.png`, exported from the app icon by `node scripts/build-icon.mjs` in `apps/desktop`.
 - Replace the placeholder download and repository links in `src/site.ts` before launch.
 - The privacy page is a draft with bracketed to-dos. Finish it before Google or Microsoft OAuth verification.
 - `src/assets/shots/*.webp` are real screenshots of the app on its original demo data. `scripts/capture-screenshots.mjs` recreates them headlessly (instructions are at its top).

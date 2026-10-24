@@ -7,8 +7,6 @@ await build({entryPoints:['src/main/engine-host.ts'],outfile:'dist/main/engine.c
 await build({entryPoints:['src/main/preload.ts'],outfile:'dist/main/preload.cjs',bundle:true,platform:'node',format:'cjs',target:'node22',external:['electron'],sourcemap:false});
 await copyFile('assets/icon.png','dist/main/icon.png');
 
-for(const variant of ['ink','sage','clay'])await copyFile(`assets/icon-${variant}.png`,`dist/main/icon-${variant}.png`);
-
 // Universal (arm64 + x86_64) so both release architectures get a working helper.
 if(process.platform==='darwin'){
   await mkdir('dist/bin',{recursive:true});

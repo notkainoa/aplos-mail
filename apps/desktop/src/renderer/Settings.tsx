@@ -7,6 +7,7 @@ import {AddAccountDialog} from './components/AddAccount';
 import {DomainCheck} from './components/DomainCheck';
 import {DeviceSync} from './components/DeviceSync';
 import {AiSettings} from './components/AiSettings';
+import {AppIcon} from './components/AppIcon';
 import {askModelLabel} from '../shared/ask';
 
 const categories=['General','Mail','Calendar','AI','Notifications','Accounts','Help & about'] as const;
@@ -75,7 +76,6 @@ export function Settings({state,capabilities,update,onUpdate,onChange,notify,sho
   {tab==='General'&&<>
    <Group title="Appearance">
     {choice('Theme','A comfortable place for your mail.','theme',[['light','Light'],['dark','Dark'],['system','Match system']])}
-    <GroupRow label="App icon" description="An original mark, in your favorite shade."><div className="icon-choices" role="radiogroup" aria-label="App icon">{(['ink','sage','clay'] as const).map(c=><Tooltip key={c} content={c[0].toUpperCase()+c.slice(1)}><button role="radio" aria-checked={s.icon===c} aria-label={c+' icon'} className={cx('app-icon',c,s.icon===c&&'selected')} onClick={()=>onChange({icon:c})}>a{s.icon===c&&<Check size={11}/>}</button></Tooltip>)}</div></GroupRow>
     {choice('Sidebar','A full sidebar, or everything in a small menu at the top left.','sidebarStyle',[['normal','Normal'],['minimized','Minimized']])}
     {toggle('Zen mode','Show only the Home count in the sidebar.','zen')}
    </Group>
@@ -110,11 +110,10 @@ export function Settings({state,capabilities,update,onUpdate,onChange,notify,sho
   {tab==='Accounts'&&<Group title="Your other devices"><DeviceSync notify={notify}/></Group>}
   {tab==='Accounts'&&<Group title="Custom domain"><p className="group-note">Check that a domain you send from has the mail records its host needs, so your messages are trusted and delivered.</p><DomainCheck initial={customDomain}/></Group>}
   {tab==='Help & about'&&<>
-   <div className="about-card"><span className={'app-icon large '+s.icon}>a</span><h2>Aplos Mail</h2><p>A little less inbox. A little more life.</p><span className="version">Version {capabilities.version} · {capabilities.desktop?'macOS desktop':'Browser preview'}</span></div>
+   <div className="about-card"><AppIcon size={72}/><h2>Aplos Mail</h2><p>A little less inbox. A little more life.</p><span className="version">Version {capabilities.version} · {capabilities.desktop?'macOS desktop':'Browser preview'}</span></div>
    <Group title="A few useful things">
     <GroupRow label="Keyboard shortcuts" description="Make light work of your inbox."><Button variant="secondary" size="sm" icon={Keyboard} shortcut="?" onClick={shortcuts}>View shortcuts</Button></GroupRow>
     <GroupRow label="AI" description="Providers and the model each feature uses are in Settings → AI."><Button variant="secondary" size="sm" onClick={()=>showSettingsTab('AI')}>Open AI settings</Button></GroupRow>
-    <GroupRow label="Updates" description="This personal build updates when you rebuild the app."><span className="muted small">Local development build</span></GroupRow>
     <GroupRow label="Export local data" description="Includes your cached mail and drafts. Keep it somewhere private."><Button variant="secondary" size="sm" icon={Download} loading={busy==='export'} onClick={()=>void run('export',async()=>{const data=await invoke<string>('data.export');await saveFile('aplos-export.json',btoa(unescape(encodeURIComponent(data))));notify('Export prepared');})}>Export</Button></GroupRow>
     <GroupRow label="Reset demo mail" description="Replace local demo accounts with fresh original examples."><Button variant="danger" size="sm" loading={busy==='reset'} onClick={async()=>{if(await confirmAction({title:'Reset demo mail?',message:'Demo accounts and demo drafts return to their original examples. Connected accounts are preserved.',confirmLabel:'Reset demo',danger:true}))void run('reset',()=>invoke('demo.reset'));}}>Reset demo</Button></GroupRow>
    </Group>

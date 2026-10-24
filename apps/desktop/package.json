@@ -27,7 +27,8 @@
     "release:build": "npm run build && node scripts/release-build.mjs",
     "release:publish": "npm run build && node scripts/release-build.mjs --publish always",
     "update-feed": "node scripts/fake-update-feed.mjs",
-    "dmg-background": "electron scripts/build-dmg-background.cjs"
+    "dmg-background": "electron scripts/build-dmg-background.cjs",
+    "icon": "node scripts/build-icon.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",

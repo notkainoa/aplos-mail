@@ -38,7 +38,6 @@ const restarts:number[]=[];
 let latestState:AppState|undefined;
 let closing=false;
 let quitting=false;
-let activeIcon:string|undefined;
 let updates:UpdateController|undefined;
 /** Set by Restart: the normal quit (drafts saved, engine closed) ends by installing the update instead of quitting. */
 let installUpdate=false;
@@ -69,7 +68,6 @@ function applyAppearance(state:AppState){
   if(activeTheme!==state.settings.theme){activeTheme=state.settings.theme;syncTheme(true);}
   const badge=state.settings.zen?0:state.threads.filter(thread=>thread.unread&&thread.status==='new').length;
   if(badge!==activeBadge){app.setBadgeCount(badge);activeBadge=badge;}
-  if(process.platform==='darwin'&&activeIcon!==state.settings.icon){app.dock?.setIcon(join(__dirname,`icon-${state.settings.icon}.png`));activeIcon=state.settings.icon;}
 }
 // The macOS sidebar material can keep the appearance it was drawn with when a change slips past it,
 // leaving dark glass under light-theme text (or the reverse). When the setting or the system
@@ -261,6 +259,8 @@ else{
   app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit();});
   app.on('before-quit',event=>{if(started&&!closing){event.preventDefault();quitting=true;if(!windows.size)finishQuit();else for(const win of windows)win.close();}});
   void app.whenReady().then(async()=>{
+    // A packaged app shows its bundle icon (AppIcon.icon); a development run would otherwise show Electron's.
+    if(!app.isPackaged)app.dock?.setIcon(join(__dirname,'icon.png'));
     if(app.isPackaged)config({path:join(homedir(),'.config','aplos-mail','.env'),quiet:true});else loadDevEnv();
     app.setAboutPanelOptions({applicationName:'Aplos Mail',applicationVersion:app.getVersion(),copyright:'Independent software. Built with original code and design.'});
     session.defaultSession.setPermissionCheckHandler((contents,permission)=>Boolean(contents&&trustedURL(contents.getURL())&&permission==='media'));

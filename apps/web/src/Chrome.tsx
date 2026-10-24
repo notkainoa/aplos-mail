@@ -1,4 +1,4 @@
-import icon from '../../desktop/assets/icon.svg';
+import icon from '../../desktop/assets/icon-64.png';
 import {releasesUrl,repoUrl} from './site';
 
 export function Header({home}:{home:string}) {

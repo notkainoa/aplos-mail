@@ -14,6 +14,7 @@ import {Sidebar,SidebarMenu,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
 import {DraftList,MailSection,actionIcon,highlightTerms,nudgeFocus,prepareFocusMove,useFocusGlide,type RowActions,type RowHandlers,type Triage} from './components/MailList';
 import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog,WelcomeDialog} from './components/Overlays';
+import {AppIcon} from './components/AppIcon';
 import {AddAccountDialog} from './components/AddAccount';
 import {appVersion} from '../shared/version';
 import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Keys,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useHandlers,useMenu,usePresence,type Icon} from './ui';
@@ -465,7 +466,7 @@ export function App(){
   onApplyDraft:(p:Partial<Draft>)=>{if(!composer)return;const base=liveDraft.current||composer;setComposer({...base,...p,id:composer.id,accountId:composer.accountId,mode:composer.mode,threadId:composer.threadId,attachments:base.attachments,revision:base.revision,updatedAt:new Date().toISOString()});},
  });
 
- if(!state)return <div className="loading-screen"><span className="app-icon ink large">a</span><h2>{fatal?'Aplos needs a moment.':'Making room for your mail…'}</h2>{fatal?<><p>{fatal}</p><Button variant="primary" onClick={()=>void refresh()}>Try again</Button><p className="small muted">For browser development, run npm run dev.</p></>:<Spinner size={20} className="muted"/>}</div>;
+ if(!state)return <div className="loading-screen"><AppIcon size={72}/><h2>{fatal?'Aplos needs a moment.':'Making room for your mail…'}</h2>{fatal?<><p>{fatal}</p><Button variant="primary" onClick={()=>void refresh()}>Try again</Button><p className="small muted">For browser development, run npm run dev.</p></>:<Spinner size={20} className="muted"/>}</div>;
 
  const prefs=state.settings;
  const {low,later,homeLater,replyHome,followUps,today}=buckets;
@@ -558,7 +559,7 @@ export function App(){
  ]:[]}/>
  {eventEditor&&<EventEditor key={eventEditor.id||eventEditor.title||'new'} event={eventEditor} accounts={state.accounts} onClose={()=>setEventEditor(null)} notify={notify}/>}
  <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft} minimized={minimized}/>
- <WelcomeDialog open={!prefs.onboardingDone&&!popoutThread&&!welcomeAdding} icon={prefs.icon} connect={()=>setWelcomeAdding(true)} explore={()=>void updateSettings({onboardingDone:true})}/>
+ <WelcomeDialog open={!prefs.onboardingDone&&!popoutThread&&!welcomeAdding} connect={()=>setWelcomeAdding(true)} explore={()=>void updateSettings({onboardingDone:true})}/>
  <AddAccountDialog open={welcomeAdding} close={()=>setWelcomeAdding(false)} capabilities={capabilities} connected={()=>notify('Account connected')}/>
  <PendingSends drafts={pending} seconds={prefs.undoSeconds} undo={async d=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){fail(e);}}}/>
  <Toaster/>

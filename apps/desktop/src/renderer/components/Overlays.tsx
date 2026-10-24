@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import {ArrowRight,Check,Clock,Mail,MessageCircle,X} from '../icons';
 import type {Draft} from '../../shared/types';
 import {isoDay} from '../bridge';
+import {AppIcon} from './AppIcon';
 import {Button,Dialog,DialogHeader,Keys,Notice,Skeleton,Tabs,cx,useLatest,usePresence} from '../ui';
 
 export function ShortcutsDialog({open,close,doneLeft,minimized}:{open:boolean;close:()=>void;doneLeft:boolean;minimized:boolean}){
@@ -23,9 +24,9 @@ export function ShortcutsDialog({open,close,doneLeft,minimized}:{open:boolean;cl
   </Dialog>;
 }
 
-export function WelcomeDialog({open,icon,connect,explore}:{open:boolean;icon:string;connect:()=>void;explore:()=>void}){
+export function WelcomeDialog({open,connect,explore}:{open:boolean;connect:()=>void;explore:()=>void}){
   return <Dialog open={open} onClose={()=>{}} dismissable={false} label="Welcome to Aplos Mail" className="welcome">
-    <span className={'app-icon large '+icon}>a</span>
+    <AppIcon size={72}/>
     <h1>Your mail,<br/>a little lighter.</h1>
     <p>A Home you can finish, a place for later,<br/>and a little intelligence when you need it.</p>
     <div className="welcome-features"><span><Check size={15}/>An inbox you can finish</span><span><Clock size={15}/>Plans that stay in view</span><span><MessageCircle size={15}/>Help, powered by Groq</span></div>
