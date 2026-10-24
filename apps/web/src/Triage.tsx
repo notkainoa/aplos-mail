@@ -78,7 +78,7 @@ export function Triage() {
   const hint=focused?'Space replies, ← sets it aside, → marks it done, Z undoes.':'Click the card, then press Space, ← or →.';
 
   return (
-    <div className="triage" tabIndex={0} role="group" aria-label="Try Home. Click, then use Space, the left and right arrow keys and Z." aria-keyshortcuts="Space ArrowLeft ArrowRight Z"
+    <div className="triage" data-ui tabIndex={0} role="group" aria-label="Try Home. Click, then use Space, the left and right arrow keys and Z." aria-keyshortcuts="Space ArrowLeft ArrowRight Z"
       onKeyDown={onKeyDown} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}>
       <div className="triage-head">
         <span>Home</span>

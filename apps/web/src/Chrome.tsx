@@ -1,20 +1,25 @@
 import icon from '../../desktop/assets/icon-64.png';
 import {releasesUrl,repoUrl} from './site';
 
+// The red and blue border of the airmail envelope in the app icon. It opens the page and closes it, like an envelope.
+export function Airmail() {
+  return <div className="airmail" aria-hidden="true" />;
+}
+
 export function Header({home}:{home:string}) {
   return (
     <header className="bar">
-      <div className="bar-inner">
-        <a className="wordmark" href={home} aria-label="Aplos Mail, home">
-          <img src={icon} width="28" height="28" alt="" />
-          <span>Aplos Mail</span>
-        </a>
-        <nav aria-label="Main">
-          <a href={`${home}#features`}>Features</a>
-          <a href={`${home}privacy/`}>Privacy</a>
-        </nav>
-        <a className="button button-small" href={releasesUrl}>Download for Mac</a>
-      </div>
+      <a className="wordmark" href={home} aria-label="Aplos Mail, home">
+        <img src={icon} width="30" height="30" alt="" />
+        <span>Aplos Mail</span>
+      </a>
+      <nav aria-label="Main">
+        <a href={`${home}#home`}>Inbox</a>
+        <a href={`${home}#calendar`}>Calendar</a>
+        <a href={`${home}#ai`}>AI</a>
+        <a href={`${home}privacy/`}>Privacy</a>
+      </nav>
+      <a className="button button-small" href={releasesUrl}>Download</a>
     </header>
   );
 }
@@ -22,21 +27,28 @@ export function Header({home}:{home:string}) {
 export function Footer({home}:{home:string}) {
   return (
     <footer className="foot">
-      <a className="wordmark" href={home}>
-        <img src={icon} width="24" height="24" alt="" />
-        <span>Aplos Mail</span>
-      </a>
-      <nav aria-label="Footer">
-        <a href={`${home}privacy/`}>Privacy</a>
-        <a href={repoUrl}>GitHub</a>
-      </nav>
-      <p>Independent software for Mac. Windows and Linux are planned.</p>
+      <div className="foot-inner">
+        <a className="foot-name" href={home}>Aplos Mail</a>
+        <nav aria-label="Footer">
+          <a href={releasesUrl}>Download</a>
+          <a href={`${home}privacy/`}>Privacy</a>
+          <a href={repoUrl}>GitHub</a>
+        </nav>
+        <p>Independent software for Mac. Windows and Linux are planned.</p>
+      </div>
+      <Airmail />
     </footer>
   );
 }
 
 const shots=import.meta.glob('./assets/shots/*.webp',{eager:true,import:'default'}) as Record<string,string>;
 
+// Each screenshot exists in the app's light and dark appearance; the page shows the one that matches the visitor's.
 export function Shot({name,alt,width,height,eager,className}:{name:string;alt:string;width:number;height:number;eager?:boolean;className?:string}) {
-  return <img className={`shot${className?` ${className}`:''}`} src={shots[`./assets/shots/${name}.webp`]} alt={alt} width={width} height={height} loading={eager?'eager':'lazy'} decoding="async" />;
+  return (
+    <picture className={`shot${className?` ${className}`:''}`}>
+      <source srcSet={shots[`./assets/shots/${name}.webp`]} media="(prefers-color-scheme: dark)" />
+      <img src={shots[`./assets/shots/${name}-light.webp`]} alt={alt} width={width} height={height} loading={eager?'eager':'lazy'} decoding="async" />
+    </picture>
+  );
 }

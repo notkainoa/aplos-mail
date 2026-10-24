@@ -1,6 +1,6 @@
 # Aplos Mail website
 
-Static marketing site: a landing page and a draft privacy policy. Vite + React, built to plain files in `dist/`. Always dark. No analytics, cookies or third-party scripts.
+Static marketing site: a landing page and a draft privacy policy. Vite + React, built to plain files in `dist/`. Light or dark, following the visitor's system appearance like the app. No analytics, cookies or third-party scripts.
 
 ```sh
 npm run web           # dev server, http://127.0.0.1:5273 (APLOS_WEB_PORT changes the port)
@@ -8,10 +8,11 @@ npm run web:build     # typecheck and build to apps/web/dist
 npm run web:preview   # serve the built output
 ```
 
-- Styling lives in `src/styles.css`. Colors follow the desktop app's dark tokens; the accent is the green of the original app icon. `src/Triage.tsx` is the interactive Home demo (click it, then Space, ← →, Z). The logo and favicon are `apps/desktop/assets/icon-64.png`, exported from the app icon by `node scripts/build-icon.mjs` in `apps/desktop`.
+- Styling lives in `src/styles.css`. The brand comes from the app icon, read top to bottom: the hero sits in its sky, the red and blue airmail border opens and closes each page, and the close and footer sit on its green hill. Text colors, neutrals and the demo use the app's own tokens. Headings use Newsreader (`@fontsource-variable/newsreader`, self-hosted, OFL); body text uses the app's system SF stack. `src/Triage.tsx` is the interactive Home demo (click it, then Space, ← →, Z).
+- Icons are the real app icon, never redrawn: the bar uses `apps/desktop/assets/icon-64.png`; `node scripts/brand-assets.mjs` (instructions at its top) exports `src/assets/icon-512.webp`, `public/favicon.png`, `public/apple-touch-icon.png` and the social card `public/og.png` from the desktop icon PNGs.
 - Replace the placeholder download and repository links in `src/site.ts` before launch.
 - The privacy page is a draft with bracketed to-dos. Finish it before Google or Microsoft OAuth verification.
-- `src/assets/shots/*.webp` are real screenshots of the app on its original demo data. `scripts/capture-screenshots.mjs` recreates them headlessly (instructions are at its top).
+- `src/assets/shots/*.webp` are real screenshots of the app on its original demo data, in dark (`name.webp`) and light (`name-light.webp`); the page shows the one matching the visitor's appearance. `scripts/capture-screenshots.mjs` recreates them headlessly (instructions are at its top).
 
 ## Deployment (Vercel)
 

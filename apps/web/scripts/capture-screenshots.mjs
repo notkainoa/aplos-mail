@@ -15,8 +15,9 @@ const sharp=require('sharp');
 const url=process.env.APP_URL??'http://127.0.0.1:5517/';
 const out=resolve(import.meta.dirname,'../src/assets/shots');
 const browser=await chromium.launch(process.env.CHROME?{executablePath:process.env.CHROME}:{});
-const save=async(png,name)=>sharp(png).webp({quality:88,effort:6}).toFile(`${out}/${name}.webp`);
-for(const scheme of ['dark']){ // the site is dark only
+const save=async(png,name)=>sharp(png).webp({quality:88,effort:6}).toFile(`${out}/${name}${scheme==='light'?'-light':''}.webp`);
+let scheme;
+for(scheme of ['dark','light']){ // the site follows the visitor's appearance, so each shot exists in both
   const open=async(width,height)=>{
     const page=await(await browser.newContext({viewport:{width,height},deviceScaleFactor:2,colorScheme:scheme})).newPage();
     const errors=[];page.on('console',m=>m.type()==='error'&&errors.push(m.text()));page.on('pageerror',e=>errors.push(String(e)));
