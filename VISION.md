@@ -6,7 +6,7 @@ Where things are headed once their prerequisites exist. Each item says what is w
 
 `apps/web/download/` (aplos.email/download/) is the page every download button should eventually lead to. It detects the visitor's computer, starts the matching download, shows three install steps for that system, and lists every version further down.
 
-**Today it is a preview.** Nothing links to it and it is marked `noindex`; the only way in is typing the URL. Its data in `apps/web/src/release.ts` is sample data (version, date, sizes, and Windows and Linux builds that do not exist). While `release.sample` is `true` the page never starts a download by itself and the file buttons do nothing. Add `?platform=mac-x64` (or `mac-arm64`, `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`) to the URL to preview another system.
+**Today it is a preview.** Nothing links to it and it is marked `noindex`; the only way in is typing the URL. Its data in `apps/web/src/release.ts` is sample data (version, date, sizes, and Windows and Linux builds that do not exist). While `release.sample` is `true` the page says it is a preview, and nothing ever downloads: the automatic start and every file button only update the page. Add `?platform=mac-x64` (or `mac-arm64`, `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`) to the URL to preview another system.
 
 **When the first public release is published:**
 

@@ -1,6 +1,6 @@
 # Aplos Mail website
 
-Static marketing site: a landing page and a draft privacy policy. Vite + React, built to plain files in `dist/`. Light or dark, following the visitor's system appearance like the app. No analytics, cookies or third-party scripts.
+Static marketing site: a landing page, a draft privacy policy and a download page that is not linked yet. Vite + React, built to plain files in `dist/`. Light or dark, following the visitor's system appearance like the app. No analytics, cookies or third-party scripts.
 
 ```sh
 npm run web           # dev server, http://127.0.0.1:5273 (APLOS_WEB_PORT changes the port)
