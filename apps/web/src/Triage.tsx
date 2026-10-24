@@ -25,10 +25,10 @@ function Card({mail,onAct,ghost}:{mail:Mail;onAct?:(a:Action)=>void;ghost?:Actio
       </div>
       <p className="summary">{mail.summary}</p>
       <div className="actions">
-        <button type="button" tabIndex={-1} className="act act-primary" onClick={()=>onAct?.('reply')}>Reply <kbd>Space</kbd></button>
+        <button type="button" tabIndex={-1} className={`act act-primary${ghost==='reply'?' is-pressed':''}`} onClick={()=>onAct?.('reply')}>Reply <kbd>Space</kbd></button>
         <span className="grow" />
-        <button type="button" tabIndex={-1} className="act" onClick={()=>onAct?.('later')}>Later <kbd>←</kbd></button>
-        <button type="button" tabIndex={-1} className="act" onClick={()=>onAct?.('done')}>Done <kbd>→</kbd></button>
+        <button type="button" tabIndex={-1} className={`act${ghost==='later'?' is-pressed':''}`} onClick={()=>onAct?.('later')}>Later <kbd>←</kbd></button>
+        <button type="button" tabIndex={-1} className={`act${ghost==='done'?' is-pressed':''}`} onClick={()=>onAct?.('done')}>Done <kbd>→</kbd></button>
       </div>
     </div>
   );

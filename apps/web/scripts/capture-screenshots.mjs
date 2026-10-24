@@ -28,7 +28,6 @@ for(scheme of ['dark','light']){ // the site follows the visitor's appearance, s
   };
   let {page,errors}=await open(1240,760);
   await save(await page.screenshot(),'home');
-  await save(await page.screenshot({clip:{x:880,y:0,width:360,height:230}}),'ask');
   if(errors.length)throw new Error(errors.join('\n'));
   ({page,errors}=await open(1440,860));
   await page.getByText('Calendar',{exact:true}).first().click();await page.waitForTimeout(1200);

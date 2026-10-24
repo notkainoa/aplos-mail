@@ -1,4 +1,5 @@
 import icon from '../../desktop/assets/icon-64.png';
+import {Rise} from './Live';
 import {releasesUrl,repoUrl} from './site';
 
 // The red and blue border of the airmail envelope in the app icon. It opens the page and closes it, like an envelope.
@@ -28,7 +29,7 @@ export function Footer({home}:{home:string}) {
   return (
     <footer className="foot">
       <div className="foot-inner">
-        <a className="foot-name" href={home}>Aplos Mail</a>
+        <a className="foot-name" href={home} data-reveal><Rise text="Aplos Mail" by="letter" step={35} /></a>
         <nav aria-label="Footer">
           <a href={releasesUrl}>Download</a>
           <a href={`${home}privacy/`}>Privacy</a>

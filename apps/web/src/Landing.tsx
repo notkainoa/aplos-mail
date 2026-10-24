@@ -1,5 +1,7 @@
 import icon from './assets/icon-512.webp';
 import {Airmail,Footer,Header,Shot} from './Chrome';
+import {Ask} from './Ask';
+import {HeroIcon,KeyList,ProviderPicker,Rise} from './Live';
 import {Triage} from './Triage';
 import {useReveal} from './reveal';
 import {releasesUrl} from './site';
@@ -7,9 +9,6 @@ import {releasesUrl} from './site';
 const Key=({children}:{children:string}) => <kbd>{children}</kbd>;
 const delay=(ms:number)=>({'--d':`${ms}ms`} as React.CSSProperties);
 
-const keys:[string,string][]=[['Space','The email’s main action, like Reply'],['←','Set it aside for Later'],['→','Mark it Done'],['Z','Undo the last action'],['B','Bookmark'],['A','Ask, or hold it to talk'],['C','Compose'],['?','Every shortcut in the app']];
-// Names keep their words together so a line never breaks inside one.
-const providers=['OpenAI','Claude','Gemini','OpenRouter','OpenCode Go','Ollama','LM Studio','your own server'].map(name=>name.replaceAll(' ','\u00a0'));
 const accounts='Gmail, Outlook, iCloud, Fastmail and any IMAP account';
 
 export function Landing() {
@@ -21,7 +20,7 @@ export function Landing() {
         <Header home="./" />
         <section className="hero" aria-labelledby="hero-title">
           <div className="hero-copy">
-            <h1 id="hero-title" data-reveal>Finish your inbox, one email at a time.</h1>
+            <h1 id="hero-title"><Rise text="Finish your inbox, one email at a time." /></h1>
             <p className="lead" data-reveal style={delay(80)}>
               Aplos Mail is a keyboard-first Mac app for email and calendar. Every message
               arrives with a short summary of what it says and what it needs from you.
@@ -31,9 +30,11 @@ export function Landing() {
               <p className="note">For Macs with Apple silicon.</p>
             </div>
           </div>
-          <img className="hero-icon" src={icon} width="512" height="512" alt="The Aplos Mail icon: an airmail envelope in a blue sky above a green hill." />
-          <div className="window" data-ui data-reveal style={delay(240)}>
-            <Shot name="home" alt="Aplos Mail showing one focused email with a summary, the rest of the inbox as single lines, and the Ask panel." width={1240} height={760} eager />
+          <HeroIcon src={icon} alt="The Aplos Mail icon: an airmail envelope in a blue sky above a green hill." />
+          <div className="window-wrap" data-reveal style={delay(320)}>
+            <div className="window" data-ui>
+              <Shot name="home" alt="Aplos Mail showing one focused email with a summary, the rest of the inbox as single lines, and the Ask panel." width={1240} height={760} eager />
+            </div>
           </div>
         </section>
       </div>
@@ -65,9 +66,7 @@ export function Landing() {
         </section>
 
         <section className="ask" aria-labelledby="ask-title">
-          <div className="ask-shot" data-ui data-reveal>
-            <Shot name="ask" alt="The Ask panel with an input, a hold-A-to-talk hint and suggested questions." width={360} height={230} />
-          </div>
+          <div className="ask-live" data-reveal><Ask /></div>
           <div className="copy">
             <h2 id="ask-title" data-reveal style={delay(70)}>Ask your mail anything</h2>
             <p data-reveal style={delay(140)}>
@@ -75,6 +74,7 @@ export function Landing() {
               calendar, cites the messages it used, and drafts replies for you to review.
               It never sends anything on its own.
             </p>
+            <p className="note" data-reveal style={delay(210)}>Pick a question to see how it answers.</p>
           </div>
         </section>
 
@@ -82,12 +82,9 @@ export function Landing() {
           <div className="copy">
             <h2 id="keys-title" data-reveal>A key for every action</h2>
             <p data-reveal style={delay(70)}>Your hands stay on the keyboard from the first email to the last.</p>
+            <p className="note" data-reveal style={delay(140)}>Try them: press any of these keys.</p>
           </div>
-          <dl className="keylist" data-ui>
-            {keys.map(([key,label],i)=>(
-              <div key={key} data-reveal style={delay(60+i*40)}><dt><kbd>{key}</kbd></dt><dd>{label}</dd></div>
-            ))}
-          </dl>
+          <KeyList />
         </section>
       </main>
 
@@ -96,12 +93,10 @@ export function Landing() {
           <h2 id="ai-title" data-reveal>AI that stays out of the way</h2>
           <p data-reveal style={delay(70)}>
             Summaries, Ask, drafts, plans and voice run on Groq by default. Pick a
-            different provider for any of them in Settings. A message goes only to the
+            different provider for any of them in Settings, the way you can here. A message goes only to the
             provider you chose for that feature, and your keys stay on your Mac.
           </p>
-          <p className="providers" data-reveal style={delay(140)} aria-label="Supported providers">
-            <strong>Groq</strong>, {providers.slice(0,-1).join(', ')} or {providers[providers.length-1]}.
-          </p>
+          <div className="ai-picker" data-reveal style={delay(140)}><ProviderPicker /></div>
         </div>
       </section>
 

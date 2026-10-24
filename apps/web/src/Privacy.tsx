@@ -1,6 +1,8 @@
 import {Airmail,Footer,Header} from './Chrome';
+import {useReveal} from './reveal';
 
 export function Privacy() {
+  useReveal();
   return (
     <>
       <Airmail />
