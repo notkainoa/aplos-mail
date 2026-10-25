@@ -81,7 +81,7 @@ test('overlapping events share columns, widen into free space, and all-day event
 
 test('the demo has several coloured calendars per account, every demo event belongs to one, and hidden calendars persist',async()=>{
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-calendar-'));
-  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''})});
+  const service=await createService({demo:true,dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''})});
   try{
     const state=await service.invoke('state.get') as AppState;
     const list=await service.invoke('calendar.list',{accountId:'all'}) as CalendarInfo[];

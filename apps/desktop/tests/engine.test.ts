@@ -152,7 +152,7 @@ test('service sync resumes from the stored cursor, keeps Done across syncs, noti
   const cursors:(string|undefined)[]=[],notes:string[]=[];let next:SyncResult=empty({reset:true,cursor:'1',threads:[thread('g1:a',{accountId:'g1'}),thread('g1:b',{accountId:'g1'})]});
   const google={...base,available:true,connect:async()=>({...account,id:'g1'}),getSendAs:async()=>[],updateThread:async()=>{},
     sync:async(_a:Account,cursor?:string)=>{cursors.push(cursor);const value=structuredClone(next);next=empty({cursor:String(Number(cursor??0)+1)});return value;}};
-  let service=await createService({dataDir,google,groq:createGroq({apiKey:''}),autoSyncMs:0});
+  let service=await createService({demo:true,dataDir,google,groq:createGroq({apiKey:''}),autoSyncMs:0});
   service.subscribe(event=>{if(event.type==='notification')notes.push((event.payload as {threadId:string}).threadId);});
   try{
     await service.invoke('account.connect');
@@ -164,7 +164,7 @@ test('service sync resumes from the stored cursor, keeps Done across syncs, noti
     assert.deepEqual(cursors,[undefined,'1']);assert.equal(state.threads.find(t=>t.id==='g1:a')!.status,'done','Done survives a sync that still sees the inbox label');
     await service.invoke('sync',{auto:true});assert.equal(cursors.length,2,'a background sync right after another one waits');
     await service.close();
-    service=await createService({dataDir,google,groq:createGroq({apiKey:''}),autoSyncMs:0});
+    service=await createService({demo:true,dataDir,google,groq:createGroq({apiKey:''}),autoSyncMs:0});
     service.subscribe(event=>{if(event.type==='notification')notes.push((event.payload as {threadId:string}).threadId);});
     next=empty({cursor:'9',threads:[thread('g1:a',{accountId:'g1',date:'2099-01-01T00:00:00Z',messages:[message('g1:a-m1'),message('g1:a-m2')]})]});
     state=await service.invoke('sync',{auto:true}) as AppState;

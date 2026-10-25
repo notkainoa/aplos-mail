@@ -2,7 +2,7 @@
 // controls in each screenshot lead to which other screenshot, so the site can let visitors click through them.
 //
 //   1. Start the app on its own ports with throwaway storage:
-//        APLOS_API_PORT=4517 APLOS_VITE_PORT=5517 APLOS_DATA_DIR=$(mktemp -d) npm run dev
+//        APLOS_API_PORT=4517 APLOS_VITE_PORT=5517 APLOS_DATA_DIR=$(mktemp -d) npm run dev:demo
 //   2. Run this script from a folder where `playwright` and `sharp` are installed
 //      (they are not dependencies of the repo):
 //        CAPTURE_DEPS=/path/to/that/folder node apps/web/scripts/capture-screenshots.mjs

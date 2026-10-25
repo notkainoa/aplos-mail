@@ -11,7 +11,7 @@ serveEngine({post:message=>parent.postMessage(message),listen:handler=>parent.on
   const cipher=init.key?createCipher(init.key):undefined;
   const missing=()=>new Error(init.keyError||'macOS secure credential storage is unavailable.');
   return createService({
-    dataDir:init.dataDir,desktop:true,symbolTool:init.symbolTool,
+    dataDir:init.dataDir,desktop:true,symbolTool:init.symbolTool,demo:process.env.APLOS_DEMO==='1',
     openExternal:url=>call('openExternal',url),
     encrypt:value=>{if(!cipher)throw missing();return cipher.encrypt(value);},
     decrypt:value=>{if(!cipher)throw missing();return cipher.decrypt(value);},

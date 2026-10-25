@@ -35,7 +35,7 @@ async function harness(summarized?:string[]) {
     findSent:async(_a:Account,messageId:string)=>control.sent.get(messageId),
   };
   const groq=createGroq({apiKey:''});
-  const open=()=>createService({dataDir,google,groq:summarized?{...groq,available:true,summarize:async(t:Thread)=>{summarized.push(t.id);return {summary:'Original synthetic summary'};}}:groq,autoSyncMs:0});
+  const open=()=>createService({demo:true,dataDir,google,groq:summarized?{...groq,available:true,summarize:async(t:Thread)=>{summarized.push(t.id);return {summary:'Original synthetic summary'};}}:groq,autoSyncMs:0});
   let service=await open();
   await service.invoke('account.connect');
   return {dataDir,control,calls,sends,get service(){return service;},

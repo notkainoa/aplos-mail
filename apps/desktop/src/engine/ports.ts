@@ -101,4 +101,6 @@ export interface EngineOptions {
   fetch?:typeof fetch;
   lookup?:(host:string)=>Promise<string[]>;
   autoSyncMs?:number;
+  /** Start a data folder that has never been saved with the original demo (development and tests); otherwise it starts empty. */
+  demo?:boolean;
 }

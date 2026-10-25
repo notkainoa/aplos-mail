@@ -49,13 +49,13 @@ export const Sidebar=memo(function Sidebar({state,view,counts,zen,online,syncing
     </div>
     <button className={cx('account-trigger',accounts.open&&'is-open')} aria-label="Switch account" aria-haspopup="menu" aria-expanded={accounts.open} onClick={accounts.toggle}>
       <span className="account-stack">{shown.map(a=><span key={a.id} className="account-avatar" style={{background:a.color}}>{accountInitial(a)}</span>)}</span>
-      <span className="account-name">{current?accountName(current):'All accounts'}</span>
+      <span className="account-name">{current?accountName(current):state.accounts.length?'All accounts':'No accounts yet'}</span>
       <ChevronsUpDown size={15}/>
     </button>
     <Menu open={accounts.open} anchor={accounts.anchor} onClose={accounts.close} placement="bottom-start" matchWidth label="Accounts" className="account-menu" onError={onError} groups={[
-      [{label:'All accounts',checked:state.selectedAccountId==='all',onSelect:()=>selectAccount('all')},
-       ...state.accounts.map(a=>({label:accountName(a),hint:a.email,leading:<span className="account-dot" style={{background:a.color}}/>,checked:a.id===state.selectedAccountId,onSelect:()=>selectAccount(a.id)}))],
-      [{label:'Manage accounts',icon:Plus,onSelect:()=>{showSettingsTab('Accounts');navigate('settings');}}],
+      state.accounts.length?[{label:'All accounts',checked:state.selectedAccountId==='all',onSelect:()=>selectAccount('all')},
+       ...state.accounts.map(a=>({label:accountName(a),hint:a.email,leading:<span className="account-dot" style={{background:a.color}}/>,checked:a.id===state.selectedAccountId,onSelect:()=>selectAccount(a.id)}))]:[],
+      [{label:state.accounts.length?'Manage accounts':'Add an account',icon:Plus,onSelect:()=>{showSettingsTab('Accounts');navigate('settings');}}],
     ]}/>
     <nav className="main-nav" aria-label="Mailboxes">{mailboxes.map(({view:id,label,icon:NavIcon,divider})=>{
       const value=counts[id]??0,index=sections.findIndex(s=>s.view===id);

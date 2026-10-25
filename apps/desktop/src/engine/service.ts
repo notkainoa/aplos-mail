@@ -1,5 +1,5 @@
 import type { Account, AppState, Attachment, CalendarEvent, CalendarInfo, Conversation, Draft, Listener, Settings, Thread } from '../shared/types';
-import { createDemo, defaultSettings, demoCalendars } from './demo';
+import { createDemo, createEmpty, defaultSettings, demoCalendars } from './demo';
 import { hasRealSummary } from '../shared/summary';
 import { appVersion } from '../shared/version';
 import { applySync } from './merge';
@@ -192,7 +192,8 @@ export async function createEngineService(options:EngineOptions) {
   const now=options.now||(()=>new Date());
   const symbols=options.symbols??(async()=>({}));
   const store=options.store;
-  let state=store.read()||createDemo(now());
+  // Saved data, demo or real, is never replaced; a fresh install has nothing until the owner chooses.
+  let state=store.read()||(options.demo?createDemo(now()):createEmpty());
   // Feature models a stored state has never had; Summaries, Drafts and Plans then follow GROQ_MODEL if the host set it.
   const unsetModels=new Set(aiFeatures.filter(f=>!(f.setting in (state.settings??{}))).map(f=>f.id));
   state.settings={...clone(defaultSettings),...state.settings};
@@ -729,12 +730,12 @@ export async function createEngineService(options:EngineOptions) {
       case 'demo.reset':{
         if(sending.size)throw new Error('Wait for sending to finish before resetting.');
         for(const d of state.drafts)stopSend(d.id);
-        // Reset synthetic data without deleting real connected accounts or their mail.
+        // Load or reset synthetic data without deleting real connected accounts, their mail, Ask history or blocked senders.
         const fresh=createDemo(now());
         for(const a of state.accounts.filter(a=>a.provider!=='demo'))fresh.accounts.push(a);
         const live=new Set(fresh.accounts.filter(a=>a.provider!=='demo').map(a=>a.id));
         fresh.threads.push(...state.threads.filter(t=>live.has(t.accountId)));fresh.drafts.push(...state.drafts.filter(d=>live.has(d.accountId)));fresh.events.push(...state.events.filter(e=>live.has(e.accountId)));
-        fresh.settings=clone(state.settings);commit(fresh);undo.length=0;for(const d of state.drafts)scheduleSend(d);return clone(state);
+        fresh.settings=clone(state.settings);fresh.conversations=clone(state.conversations);fresh.blockedSenders=[...state.blockedSenders];commit(fresh);undo.length=0;for(const d of state.drafts)scheduleSend(d);return clone(state);
       }
       case 'thread.update':return updateThreads(p.ids,threadPatch(p.patch),p.recordUndo!==false,p.compact===true);
       case 'home.hide':return updateThreads(p.ids,{hiddenFromHome:true},true,p.compact===true);

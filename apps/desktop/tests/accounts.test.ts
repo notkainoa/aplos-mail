@@ -49,7 +49,7 @@ const dohFetch=(async(input:string|URL|Request)=>{
 test('a folder-based account connects with its preset, archives by moving out of the inbox, and disconnects cleanly',async()=>{
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-accounts-'));
   const host=folderHost();
-  const service=await createService({dataDir,providers:{imap:host.provider},groq:createGroq({apiKey:''}),autoSyncMs:0,fetch:dohFetch});
+  const service=await createService({demo:true,dataDir,providers:{imap:host.provider},groq:createGroq({apiKey:''}),autoSyncMs:0,fetch:dohFetch});
   try{
     await assert.rejects(service.invoke('account.connect',{provider:'imap',preset:'icloud',email:'riley@icloud.test',secret:'line\nbreak'}),/line breaks/);
     let state=await service.invoke('account.connect',{provider:'imap',preset:'icloud',email:'Riley@iCloud.test',secret:'abcd-efgh-ijkl-mnop'}) as AppState;
@@ -78,7 +78,7 @@ test('a folder-based account connects with its preset, archives by moving out of
 
 test('address discovery and the domain checker answer through the backend',async()=>{
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-accounts-'));
-  const service=await createService({dataDir,groq:createGroq({apiKey:''}),autoSyncMs:0,fetch:dohFetch});
+  const service=await createService({demo:true,dataDir,groq:createGroq({apiKey:''}),autoSyncMs:0,fetch:dohFetch});
   try{
     const known=await service.invoke('account.discover',{email:'kim@outlook.com'});
     assert.equal(known.provider,'microsoft');

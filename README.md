@@ -22,6 +22,7 @@ Requires Node 22.12+ and macOS arm64 for the packaged desktop build.
 ```sh
 npm install
 npm run dev       # Browser preview: http://127.0.0.1:5173
+npm run dev:demo  # The same, but a never-used data folder starts with demo mail (APLOS_DEMO=1)
 npm run desktop   # Build and run Electron
 npm run typecheck # every workspace
 npm test          # every workspace
@@ -35,7 +36,7 @@ npm run web:build # Build the website to apps/web/dist
 
 Put the ignored `.env` at the repo root (`apps/desktop/.env` also works). `npm run verify:release` and `npm run verify:large` run the post-package checks described below.
 
-Original demo mail works immediately and stays local, including Send. Demo recipients use reserved `.example` addresses. Connect a real account only when you want real mailbox access; Send and calendar changes then affect that account.
+A fresh install starts empty. Original demo mail is there when you ask for it (Try demo mail on the welcome, the empty Home, or Settings → Help & about → Load demo mail) and stays local, including Send. Demo recipients use reserved `.example` addresses. Connect a real account only when you want real mailbox access; Send and calendar changes then affect that account.
 
 ## Releases and updates
 
@@ -53,7 +54,7 @@ Groq is the default for every AI feature: Groq-hosted `openai/gpt-oss-120b` for 
 
 A key saved in Settings wins. Without one, the backend falls back to the provider's environment variable (`GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `OPENCODE_API_KEY`, `OLLAMA_API_KEY`, `LM_STUDIO_API_KEY`, `CUSTOM_AI_API_KEY`), and Settings shows it as "From GROQ_API_KEY". Development loads an ignored project `.env` into that environment; packaged launches optionally load `~/.config/aplos-mail/.env` (restrict it with `chmod 600`); the package never contains `.env`. The browser preview has no keychain, so it can't save keys and says so; there, use the environment. See `.env.example`; never put real keys in source or a renderer build. `npm run eval:ask -- --model=openrouter:anthropic/claude-haiku-5.5` checks one provider live on demo data; the scripts read the environment only.
 
-**First run.** A fresh data folder opens a short welcome: add an account (or look around with demo mail), connect an AI provider (Groq first, with a link to get a key; skippable), allow the microphone for hold-to-talk now or later, and the four keys that matter. Every step is keyboard-driven and Escape skips it. It runs once; Settings → Help & about → Show welcome opens it again.
+**First run.** A fresh data folder has no accounts and no mail. It opens a short welcome over the empty app: add an account (a small "Try demo mail" link in the corner loads the demo instead), connect an AI provider (Groq first, with a link to get a key; skippable), allow the microphone for hold-to-talk now or later, and the four keys that matter. Every step is keyboard-driven and Escape skips it. It runs once; Settings → Help & about → Show welcome opens it again. Skipping it leaves an empty Home that offers the same two choices.
 
 Microphone recording requires macOS permission; the app explains permission failures. Voice recordings are capped at two minutes and transcribed by the Voice model chosen in Settings → AI (Groq by default); cancel discards the recording.
 
@@ -92,7 +93,7 @@ Desktop state is stored under `~/Library/Application Support/Aplos Mail`; browse
 
 `npm test` covers persistence, triage/undo, reminders, draft concurrency/recovery, delayed sends, validation, scoped AI proposals/citations/cancellation, OAuth PKCE/state, MIME, label mapping, encrypted credentials, calendar mutations, and desktop request/ownership policies. Live Groq was verified with synthetic text and audio. Browser and packaged-app acceptance results, exact remaining blockers, and REA limitations are recorded in `PROGRESS.md` and `TODO.md`.
 
-After packaging, run `npm run verify:release` for a repeatable check of the actual release bundle. It uses a fresh temporary demo mailbox and separate Chromium profile, checks the renderer/preload/engine bridge, search/paging, triage/Undo, attachments, local send/Undo, calendar, popout ownership and immediate-close draft saving, then kills the engine and restarts the desktop to verify recovery. It never connects a mailbox or sends external email. The temporary folder retains its log and JSON report. Add `--live-ai` to verify Groq summaries, proofreading, proposals, Ask/citations, calendar extraction and transcription of generated speech with an existing backend key. Add `--keep-open` to leave the isolated test app running for manual inspection; quit it afterward. The test enables a temporary loopback debugging port only for its own app process.
+After packaging, run `npm run verify:release` for a repeatable check of the actual release bundle. It uses a fresh temporary mailbox (checks the empty first run, then loads the demo through the welcome link) and separate Chromium profile, checks the renderer/preload/engine bridge, search/paging, triage/Undo, attachments, local send/Undo, calendar, popout ownership and immediate-close draft saving, then kills the engine and restarts the desktop to verify recovery. It never connects a mailbox or sends external email. The temporary folder retains its log and JSON report. Add `--live-ai` to verify Groq summaries, proofreading, proposals, Ask/citations, calendar extraction and transcription of generated speech with an existing backend key. Add `--keep-open` to leave the isolated test app running for manual inspection; quit it afterward. The test enables a temporary loopback debugging port only for its own app process.
 
 `npm run bench:mailbox -- --label=optimized --keep` creates 10,000 original synthetic threads with 20,000 messages, approximately 2,000 characters of text plus HTML per message. It measures ingestion, search, changed-row writes, database reopen, service startup, paging and compact triage/Undo. Results go to ignored `artifacts/mailbox-optimized.json`. `--count=N` changes the size; omit `--keep` to remove its temporary database automatically. The ordinary suite includes one lighter 10,000-thread regression. After packaging, `npm run verify:large` uses the retained default fixture to verify actual desktop windowing, scrolling to both ends, keyboard navigation, search and compact mutations, with a separate Chromium profile. Only synthetic demo accounts are accepted. Its report is `artifacts/large-desktop-verification.json`; no live mailbox is used. Measurements are host/fixture-specific; benchmark peak RSS includes harness copies, not just the app. The engine and renderer still cache message bodies in memory; windowing limits mounted rows, not mailbox memory.
 

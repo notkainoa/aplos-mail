@@ -11,6 +11,7 @@
   ],
   "scripts": {
     "dev": "npm run dev -w @aplos/desktop",
+    "dev:demo": "npm run dev:demo -w @aplos/desktop",
     "dev:emulated": "npm run dev:emulated -w @aplos/desktop --",
     "eval:groq": "npm run eval:groq -w @aplos/desktop --",
     "eval:ask": "npm run eval:ask -w @aplos/desktop --",

@@ -653,7 +653,11 @@ mark.match { background: color-mix(in srgb, var(--amber) 28%, transparent); colo
 .welcome > .ui-btn { width: 100%; margin-top: 8px; }
 .welcome-notice { align-self: stretch; text-align: left; }
 .welcome-footnote { margin-top: 20px; font-size: 12px; line-height: 17px; color: var(--faint); }
-.onboarding { width: 460px; padding: 32px 32px 14px; }
+.onboarding { position: relative; width: 460px; padding: 32px 32px 14px; }
+/* Demo mail is offered, not promoted: a small text link in the card's corner. */
+.empty-start .ui-empty-action { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.empty-start .ui-btn-text { font-size: var(--text-sm); color: var(--faint); }
+.onboarding-demo { position: absolute; top: 14px; right: 18px; font-size: var(--text-sm); color: var(--faint); }
 .onboarding.is-covered { visibility: hidden; }
 .ui-dialog-backdrop:has(> .onboarding.is-covered) { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .onboarding-step { width: 100%; display: flex; flex-direction: column; align-items: center; animation: view-in var(--dur-base) var(--ease-out-strong); }

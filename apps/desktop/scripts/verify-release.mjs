@@ -42,10 +42,12 @@ async function check(name,fn){await fn();checks.push(name);console.log('PASS '+n
 let client;
 try{
   client=await launch();
+  const fresh=await client.invoke('state.get');
+  await check('first run starts empty and opens the welcome flow',async()=>{assert.deepEqual([fresh.accounts.length,fresh.threads.length,fresh.drafts.length,fresh.events.length],[0,0,0,0]);assert.equal(fresh.settings.onboardingDone,false);await until(()=>client.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Welcome to Aplos Mail"]\')'),'welcome dialog');assert.ok(await client.evaluate('!!document.querySelector(".empty-start")'),'empty Home state');});
+  await check('the welcome demo link loads the demo',async()=>{await client.evaluate('document.querySelector(".onboarding-demo").click()');await until(async()=>(await client.invoke('state.get')).accounts.length===2,'demo accounts');});
   const initial=await client.invoke('state.get');
   assert.ok(initial.accounts.every(a=>a.provider==='demo'),'Refusing to test a real account');
   await check('packaged UI, preload and secure engine start',async()=>{assert.equal(initial.accounts.length,2);assert.equal(initial.threads.length,18);assert.ok(await client.evaluate('document.querySelector("main").getBoundingClientRect().width>0'));assert.equal(await client.evaluate('typeof window.require'), 'undefined');});
-  await check('first run opens the welcome flow',async()=>{assert.equal(initial.settings.onboardingDone,false);await until(()=>client.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Welcome to Aplos Mail"]\')'),'welcome dialog');});
   await client.invoke('settings.update',{patch:{onboardingDone:true}});
   // A synthetic key only; it is never sent anywhere (Test is not run) and is removed again.
   await check('AI keys save encrypted and reveal only their last four characters',async()=>{const fake='release-synthetic-key-0000-wxyz';const listed=await client.invoke('ai.keys');assert.equal(listed.secure,true);

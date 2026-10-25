@@ -12,6 +12,7 @@
   "main": "dist/main/electron.cjs",
   "scripts": {
     "dev": "tsx src/main/server.ts",
+    "dev:demo": "APLOS_DEMO=1 tsx src/main/server.ts",
     "dev:emulated": "tsx scripts/dev-emulated.ts",
     "eval:groq": "tsx scripts/evaluate-groq.ts",
     "eval:ask": "tsx scripts/ask-live.ts",

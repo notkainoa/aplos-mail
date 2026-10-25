@@ -32,7 +32,7 @@ async function harness() {
     listEvents:async()=>structuredClone(control.events),
     search:async()=>[],updateThread:async()=>{},findSent:async()=>undefined,send:async()=>({}),attachment:async(_a,_t,x)=>x,close(){},
   };};
-  const service=await createService({dataDir,providers:{jmap:fake},groq:createGroq({apiKey:''}),autoSyncMs:0});
+  const service=await createService({demo:true,dataDir,providers:{jmap:fake},groq:createGroq({apiKey:''}),autoSyncMs:0});
   await service.invoke('account.connect',{provider:'jmap'});
   const db=()=>{const d=new DatabaseSync(join(dataDir,'aplos.db'));try{return {
     index:d.prepare("SELECT value FROM provider_memory WHERE account_id='j1' AND key='index'").get()?.value as string|undefined,

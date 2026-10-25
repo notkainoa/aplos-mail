@@ -71,7 +71,7 @@ test('the Ask setting picks the provider; a missing key says which variable to s
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-providers-'));
   const asked:ChatRequest[]=[];
   const fake:ChatProvider={available:true,chat:async req=>{asked.push(req);return {content:'From OpenRouter.',toolCalls:[]};},models:async()=>[{id:'anthropic/claude-haiku-5.5',label:'Claude Haiku 5.5'}]};
-  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),chats:{openrouter:fake,'opencode-go':{available:false,chat:fake.chat}}});
+  const service=await createService({demo:true,dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),chats:{openrouter:fake,'opencode-go':{available:false,chat:fake.chat}}});
   try{
     await service.invoke('settings.update',{patch:{askModel:'openai/gpt-oss-20b'}});
     assert.equal((await service.invoke('state.get') as AppState).settings.askModel,'groq:openai/gpt-oss-20b');
@@ -158,7 +158,7 @@ test('Claude streams text, maps tool calls both ways and replays its own blocks'
 test('a custom server address must be http or https and routes Ask to that server',async()=>{
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-custom-'));
   const asked:string[]=[];
-  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),serverChat:(_id,url)=>({available:true,chat:async req=>{asked.push(`${url}|${req.model}`);return {content:'Local answer.',toolCalls:[]};}})});
+  const service=await createService({demo:true,dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),serverChat:(_id,url)=>({available:true,chat:async req=>{asked.push(`${url}|${req.model}`);return {content:'Local answer.',toolCalls:[]};}})});
   try{
     await service.invoke('settings.update',{patch:{askModel:'custom:llama3.3'}});
     await assert.rejects(service.invoke('ai.ask',{message:'Hi'}),/server’s address/);
@@ -228,7 +228,7 @@ test('LM Studio: OpenAI-compatible chat, tool-trained models from its REST API, 
 
 test('local servers default to their usual ports and report whether they are running',async()=>{
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-local-'));const used:string[]=[];
-  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),
+  const service=await createService({demo:true,dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),
     serverChat:(id,url)=>{used.push(`${id} ${url}`);return {available:true,chat:async()=>({content:'ok',toolCalls:[]}),status:async()=>({running:id==='ollama',...(id==='ollama'?{version:'0.13.2'}:{})}),models:async()=>id==='ollama'?[{id:'qwen3:latest',label:'qwen3'}]:[]};}});
   try{
     type Entry={id:string;available:boolean;running?:boolean;address?:string;defaultAddress?:string;version?:string;models:{id:string}[]};
@@ -253,7 +253,7 @@ test('summaries, drafts, plans and voice each run on the model chosen for them',
   const gemini:ChatProvider={available:true,chat:async req=>{asked.push(req);return {content:'```json\n{"events":[]}\n```',toolCalls:[]};}};
   const openai:ChatProvider={available:true,chat:claude.chat,transcribe:async(_audio,_type,model)=>{heard.push(model);return {text:'Hello there'};}};
   const groq={...createGroq({apiKey:''}),available:true,summarize:async()=>{throw new Error('Summaries must not use Groq here.');}};
-  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq,chats:{anthropic:claude,openai,gemini,openrouter:{available:false,chat:claude.chat}}});
+  const service=await createService({demo:true,dataDir,google:await createGoogle({dataDir,clientId:''}),groq,chats:{anthropic:claude,openai,gemini,openrouter:{available:false,chat:claude.chat}}});
   try{
     const settings=(await service.invoke('state.get') as AppState).settings;
     assert.deepEqual([settings.summaryModel,settings.draftModel,settings.planModel,settings.voiceModel],['groq:openai/gpt-oss-120b','groq:openai/gpt-oss-120b','groq:openai/gpt-oss-120b','groq:whisper-large-v3-turbo']);
@@ -301,7 +301,7 @@ test('background sorting waits for a local app that is not running, and runs onc
   const google={...base,available:true,connect:async()=>({id:'google-local',name:'Test',email:'local@example.com',color:'#123456',provider:'google' as const,connected:true}),
     sync:async()=>({threads:[fresh()],flags:[],removed:[],reset:false}),updateThread:async()=>{},getSendAs:async()=>[]};
   const ollama:ChatProvider={available:true,status:async()=>({running}),chat:async()=>{calls++;return {content:'{"summary":"Lunch on Friday","importance":"important","replyStatus":"none"}',toolCalls:[]};}};
-  const service=await createService({dataDir,google,groq:createGroq({apiKey:''}),serverChat:()=>ollama});
+  const service=await createService({demo:true,dataDir,google,groq:createGroq({apiKey:''}),serverChat:()=>ollama});
   try{
     await service.invoke('settings.update',{patch:{summaryModel:'ollama:qwen3'}});
     const stopped=await service.invoke('account.connect') as AppState;
@@ -322,7 +322,7 @@ test('new Spam is summarized, but its triage fields stay put and no plans are ad
   const groq={...createGroq({apiKey:''}),available:true,
     summarize:async()=>({summary:'Claims a prize; likely a scam',importance:'important' as const,replyStatus:'needs-reply' as const,todo:'Claim prize'}),
     extractEvents:async()=>{extracted++;return [];}};
-  const service=await createService({dataDir,google,groq});
+  const service=await createService({demo:true,dataDir,google,groq});
   try{
     await service.invoke('settings.update',{patch:{autoCalendar:true}});
     const state=await service.invoke('account.connect') as AppState,t=state.threads.find(t=>t.id==='spam-1')!;
@@ -362,7 +362,7 @@ test('each feature only takes its kind of model, and an older GROQ_MODEL carries
   legacy.settings.askModel='groq:openai/gpt-oss-120b';
   await writeFile(join(dataDir,'state.json'),JSON.stringify(legacy));
   const before=process.env.GROQ_MODEL;process.env.GROQ_MODEL='openai/gpt-oss-20b';
-  const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''})});
+  const service=await createService({demo:true,dataDir,google:await createGoogle({dataDir,clientId:''})});
   try{
     const s=(await service.invoke('state.get') as AppState).settings;
     assert.deepEqual([s.askModel,s.summaryModel,s.draftModel,s.planModel,s.voiceModel],['groq:openai/gpt-oss-120b','groq:openai/gpt-oss-20b','groq:openai/gpt-oss-20b','groq:openai/gpt-oss-20b','groq:whisper-large-v3-turbo']);

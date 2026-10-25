@@ -47,7 +47,7 @@ test('mail orchestration runs without process, Buffer, require or Node timer han
   const store=createStore(dataDir);
   let service:Awaited<ReturnType<typeof createEngineService>>|undefined;
   try{
-    service=await create({store,staged:createStagedMemory(store.memory),providers:{},groq:createGroq({apiKey:''}),secure:false,randomUUID,autoSyncMs:0});
+    service=await create({store,staged:createStagedMemory(store.memory),providers:{},groq:createGroq({apiKey:''}),secure:false,randomUUID,autoSyncMs:0,demo:true});
     const initial=await service.invoke('state.get');assert.equal(initial.threads.length,18);
     assert.equal(runInNewContext('typeof process+","+typeof Buffer+","+typeof require',context),'undefined,undefined,undefined');
     await service.invoke('thread.update',{ids:['garden'],patch:{status:'later',todo:'Portable orchestration'}});

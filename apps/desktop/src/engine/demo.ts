@@ -19,6 +19,11 @@ export const demoCalendars:CalendarInfo[] = [
   { id:'demo-personal-fitness', name:'Fitness', accountId:'personal', color:'#5f9a62' },
 ];
 
+/** A fresh install: no accounts and no mail until the owner adds an account or asks for the demo. */
+export function createEmpty():AppState {
+  return { version:1, accounts:[], threads:[], drafts:[], events:[], conversations:[], settings:structuredClone(defaultSettings), selectedAccountId:'all', sync:{busy:false}, blockedSenders:[] };
+}
+
 export function createDemo(now = new Date()):AppState {
   const stamp = (days:number,hour=10) => { const d=new Date(now); d.setDate(d.getDate()+days); d.setHours(hour,0,0,0); return d.toISOString(); };
   const due = (days:number) => {const d=new Date(now);d.setDate(d.getDate()+days);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};

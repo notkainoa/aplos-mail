@@ -34,6 +34,8 @@ export interface ServiceOptions {
   autoSyncMs?:number;
   /** Where AI keys fall back to when none is saved in Settings; the process environment by default. */
   env?:Record<string,string|undefined>;
+  /** Start a data folder that has never been saved with the original demo mail instead of empty (APLOS_DEMO=1, tests). */
+  demo?:boolean;
 }
 
 /** One transport per server and address, so a model list cache survives between questions. Keys are read per request. */
@@ -73,6 +75,6 @@ export async function createService(options:ServiceOptions) {
     serverChat:options.serverChat??servers(keys),symbols:symbolRenderer(options.symbolTool),
     desktop:options.desktop,secure:!!options.encrypt,fetch:options.fetch,
     lookup:options.fetch?undefined:async host=>(await lookup(host,{all:true})).map(a=>a.address),
-    autoSyncMs:options.autoSyncMs,
+    autoSyncMs:options.autoSyncMs,demo:options.demo,
   });
 }

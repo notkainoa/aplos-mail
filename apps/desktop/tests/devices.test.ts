@@ -33,7 +33,7 @@ function mailbox(){
 const keychain={encrypt:(v:string)=>Buffer.from(`kc:${v}`),decrypt:(b:Buffer)=>b.toString().slice(3)};
 
 async function open(dir:string,provider:MailProvider){
-  const service=await createService({dataDir:dir,providers:{jmap:provider},groq:createGroq({apiKey:''}),autoSyncMs:0,...keychain});
+  const service=await createService({demo:true,dataDir:dir,providers:{jmap:provider},groq:createGroq({apiKey:''}),autoSyncMs:0,...keychain});
   await service.invoke('account.connect',{provider:'jmap',email:'riley@fastmail.test',secret:'token'});
   return service;
 }
@@ -88,7 +88,7 @@ test('Done, Later and todos follow the user between devices through encrypted ap
 
 test('device sync needs the desktop credential vault',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'aplos-device-web-'));
-  const service=await createService({dataDir:dir,groq:createGroq({apiKey:''}),autoSyncMs:0});
+  const service=await createService({demo:true,dataDir:dir,groq:createGroq({apiKey:''}),autoSyncMs:0});
   try{
     assert.equal((await service.invoke('workflow.status')).available,false);
     await assert.rejects(service.invoke('workflow.enable'),/desktop app/);

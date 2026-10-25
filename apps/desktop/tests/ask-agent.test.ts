@@ -33,7 +33,7 @@ function scripted(turns:Array<unknown[]|((body:Body)=>unknown[])>){
 async function fixture(groq:ReturnType<typeof createGroq>){
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-ask-'));
   const google=await createGoogle({dataDir,clientId:''});
-  const service=await createService({dataDir,google,groq});
+  const service=await createService({demo:true,dataDir,google,groq});
   const events:{type:string;payload?:any}[]=[];service.subscribe(event=>events.push(event));
   return {service,events,async cleanup(){await service.close();await rm(dataDir,{recursive:true,force:true});}};
 }

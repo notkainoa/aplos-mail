@@ -7,7 +7,7 @@ import {AddAccountDialog} from './components/AddAccount';
 import {DomainCheck} from './components/DomainCheck';
 import {DeviceSync} from './components/DeviceSync';
 import {AiSettings} from './components/AiSettings';
-import {showWelcome} from './components/Welcome';
+import {loadDemo,showWelcome} from './components/Welcome';
 import {AppIcon} from './components/AppIcon';
 import {askModelLabel} from '../shared/ask';
 
@@ -53,7 +53,7 @@ function UpdatesRow({update,busy,check,restart}:{update:UpdateInfo;busy:boolean;
 }
 
 export function Settings({state,capabilities,update,onUpdate,onChange,notify,shortcuts}:{state:AppState;capabilities:Capabilities;update?:UpdateInfo;onUpdate:(info:UpdateInfo)=>void;onChange:(p:Partial<Preferences>)=>void;notify:(t:string)=>void;shortcuts:()=>void}){
- const [tab,setTabState]=useState<Category>(storedTab);const [busy,setBusy]=useState('');const [adding,setAdding]=useState(false);const [devices,setDevices]=useState<MediaDeviceInfo[]>([]);const [error,setError]=useState('');const s=state.settings;
+ const [tab,setTabState]=useState<Category>(storedTab);const [busy,setBusy]=useState('');const [adding,setAdding]=useState(false);const [devices,setDevices]=useState<MediaDeviceInfo[]>([]);const [error,setError]=useState('');const s=state.settings;const hasDemo=state.accounts.some(a=>a.provider==='demo');
  function setTab(next:Category){localStorage.setItem(tabKey,next);setTabState(next);setError('');}
  useEffect(()=>{localStorage.removeItem(leftKey);addEventListener('pagehide',markLeft);return()=>{removeEventListener('pagehide',markLeft);markLeft();};},[]);
  useEffect(()=>{const change=(event:Event)=>{setTabState((event as CustomEvent<Category>).detail);setError('');};addEventListener('aplos:settings-tab',change);return()=>removeEventListener('aplos:settings-tab',change);},[]);
@@ -66,7 +66,8 @@ export function Settings({state,capabilities,update,onUpdate,onChange,notify,sho
  type BooleanKey={[K in keyof Preferences]:Preferences[K] extends boolean?K:never}[keyof Preferences];
  const toggle=(label:string,description:string,key:BooleanKey)=><GroupRow label={label} description={description}><Switch label={label} checked={!!s[key]} onChange={value=>onChange({[key]:value})}/></GroupRow>;
  const choice=(label:string,description:string,key:keyof Preferences,options:[string,string][])=><GroupRow label={label} description={description}><Select label={label} value={String(s[key])} options={options} onChange={value=>onChange({[key]:key==='undoSeconds'?Number(value):value})}/></GroupRow>;
- const accountRows=<>{state.accounts.map(a=><div className="settings-account" key={a.id}><Avatar name={a.name} color={a.color}/><div><span>{a.name}</span><p>{a.email}</p>{a.error&&<p className="danger">{a.error}</p>}</div><Badge tone={a.provider==='demo'?'neutral':a.connected?'green':'amber'}>{a.provider==='demo'?'Local demo':a.connected?'Connected':'Reconnect required'}</Badge>{a.provider!=='demo'&&<Button variant="text" className="danger" onClick={async()=>{if(await confirmAction({title:'Disconnect '+a.email+'?',message:'Local cached mail for this account will be removed from Aplos. Nothing changes in your mailbox.',confirmLabel:'Disconnect',danger:true}))void run('disconnect',()=>invoke('account.disconnect',{id:a.id}));}}>Disconnect</Button>}</div>)}
+ const accountRows=<>{state.accounts.map(a=><div className="settings-account" key={a.id}><Avatar name={a.name} color={a.color}/><div><span>{a.name}</span><p>{a.email}</p>{a.error&&<p className="danger">{a.error}</p>}</div><Badge tone={a.provider==='demo'?'neutral':a.connected?'green':'amber'}>{a.provider==='demo'?'Local demo':a.connected?'Connected':'Reconnect required'}</Badge>{a.provider==='demo'?<Button variant="text" className="danger" onClick={async()=>{if(await confirmAction({title:'Remove '+a.email+'?',message:'Its sample mail, drafts and events are removed. You can load demo mail again from Help & about.',confirmLabel:'Remove',danger:true}))void run('disconnect',()=>invoke('account.disconnect',{id:a.id}));}}>Remove</Button>
+   :<Button variant="text" className="danger" onClick={async()=>{if(await confirmAction({title:'Disconnect '+a.email+'?',message:'Local cached mail for this account will be removed from Aplos. Nothing changes in your mailbox.',confirmLabel:'Disconnect',danger:true}))void run('disconnect',()=>invoke('account.disconnect',{id:a.id}));}}>Disconnect</Button>}</div>)}
   <div className="settings-account-actions"><Button variant="secondary" icon={Plus} disabled={!!busy} onClick={()=>setAdding(true)}>Add account</Button></div>
   <AddAccountDialog open={adding} close={()=>setAdding(false)} capabilities={capabilities} connected={()=>notify('Account connected')}/></>;
  const customDomain=state.accounts.map(a=>a.email.split('@')[1]?.toLowerCase()).find(domain=>domain&&!/^(gmail|googlemail|outlook|hotmail|live|msn|icloud|me|mac|yahoo|ymail|aol|fastmail)\./.test(domain)&&!domain.endsWith('.test'));
@@ -117,7 +118,8 @@ export function Settings({state,capabilities,update,onUpdate,onChange,notify,sho
     <GroupRow label="AI" description="Providers and the model each feature uses are in Settings → AI."><Button variant="secondary" size="sm" onClick={()=>showSettingsTab('AI')}>Open AI settings</Button></GroupRow>
     <GroupRow label="Welcome and setup" description="Add an account, an AI key and the microphone, one step at a time."><Button variant="secondary" size="sm" onClick={showWelcome}>Show welcome</Button></GroupRow>
     <GroupRow label="Export local data" description="Includes your cached mail and drafts. Keep it somewhere private."><Button variant="secondary" size="sm" icon={Download} loading={busy==='export'} onClick={()=>void run('export',async()=>{const data=await invoke<string>('data.export');await saveFile('aplos-export.json',btoa(unescape(encodeURIComponent(data))));notify('Export prepared');})}>Export</Button></GroupRow>
-    <GroupRow label="Reset demo mail" description="Replace local demo accounts with fresh original examples."><Button variant="danger" size="sm" loading={busy==='reset'} onClick={async()=>{if(await confirmAction({title:'Reset demo mail?',message:'Demo accounts and demo drafts return to their original examples. Connected accounts are preserved.',confirmLabel:'Reset demo',danger:true}))void run('reset',()=>invoke('demo.reset'));}}>Reset demo</Button></GroupRow>
+    {hasDemo?<GroupRow label="Reset demo mail" description="Replace local demo accounts with fresh original examples."><Button variant="danger" size="sm" loading={busy==='reset'} onClick={async()=>{if(await confirmAction({title:'Reset demo mail?',message:'Demo accounts and demo drafts return to their original examples. Connected accounts are preserved.',confirmLabel:'Reset demo',danger:true}))void run('reset',loadDemo);}}>Reset demo</Button></GroupRow>
+     :<GroupRow label="Load demo mail" description="Add two local demo accounts with original sample mail and calendars. Your own accounts are not touched."><Button variant="secondary" size="sm" loading={busy==='reset'} onClick={()=>void run('reset',async()=>{await loadDemo();notify('Demo mail loaded');})}>Load demo</Button></GroupRow>}
    </Group>
    <p className="small muted about-note"><ShieldCheck size={14}/>AI keys are encrypted with your macOS keychain. Email is sent only when you choose Send. Aplos is an independent personal project.</p>
   </>}

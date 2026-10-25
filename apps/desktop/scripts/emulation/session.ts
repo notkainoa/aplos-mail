@@ -21,7 +21,7 @@ export async function createEmulatedSession(liveAI=false) {
   const encrypt=(text:string)=>{const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv);const bytes=Buffer.concat([cipher.update(text,'utf8'),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),bytes]);};
   const decrypt=(bytes:Buffer)=>{const cipher=createDecipheriv('aes-256-gcm',key,bytes.subarray(0,12));cipher.setAuthTag(bytes.subarray(12,28));return Buffer.concat([cipher.update(bytes.subarray(28)),cipher.final()]).toString();};
   return {dataDir,emulator,
-    createService:()=>createService({dataDir,encrypt,decrypt,openExternal:emulator.authorize,fetch:emulator.fetch,autoSyncMs:0,
+    createService:()=>createService({demo:true,dataDir,encrypt,decrypt,openExternal:emulator.authorize,fetch:emulator.fetch,autoSyncMs:0,
       groq:createGroq(liveAI?{}:{apiKey:''}),
       // Every provider request uses the emulator, including OAuth and token refresh.
       providers:{

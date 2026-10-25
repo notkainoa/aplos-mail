@@ -12,7 +12,7 @@ import { createGroq } from '../src/main/groq';
 async function fixture(overrides:Partial<ServiceOptions>={}) {
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-service-'));
   const google=await createGoogle({dataDir,clientId:''});
-  const service=await createService({dataDir,google,groq:createGroq({apiKey:''}),...overrides});
+  const service=await createService({demo:true,dataDir,google,groq:createGroq({apiKey:''}),...overrides});
   return {dataDir,google,service,async cleanup(){await service.close();await rm(dataDir,{recursive:true,force:true});}};
 }
 async function settle(fn:()=>Promise<boolean>) {
@@ -39,7 +39,7 @@ test('triage, undo, settings and drafts survive a restart; returned state cannot
     assert.equal(state.threads.find(t=>t.id==='trip')!.unread,false);
     const saved=await f.service.invoke('draft.save',{draft:newDraft()});assert.equal(saved.revision,1);
     await f.service.close();
-    const reopened=await createService({dataDir:f.dataDir,google:f.google,groq:createGroq({apiKey:''})});
+    const reopened=await createService({demo:true,dataDir:f.dataDir,google:f.google,groq:createGroq({apiKey:''})});
     try{const restored=await reopened.invoke('state.get') as AppState;assert.equal(restored.settings.theme,'dark');assert.equal(restored.drafts.find(d=>d.id==='draft-test')!.html,saved.html);}finally{await reopened.close();}
   }finally{await f.cleanup();}
 });
@@ -63,7 +63,7 @@ test('provider failures retain a recoverable draft and pending sends resume afte
   const dataDir=await mkdtemp(join(tmpdir(),'aplos-send-'));
   const base=await createGoogle({dataDir,clientId:''});let attempts=0;
   const google={...base,available:true,connect:async()=>({id:'google-test',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true}),sync:async()=>({threads:[],flags:[],removed:[],reset:true}),getSendAs:async()=>[],send:async()=>{attempts++;throw new Error('Provider unavailable.');}};
-  let service=await createService({dataDir,google,groq:createGroq({apiKey:''})});
+  let service=await createService({demo:true,dataDir,google,groq:createGroq({apiKey:''})});
   try{
     await service.invoke('account.connect');await service.invoke('settings.update',{patch:{undoSeconds:0}});
     await service.invoke('draft.save',{draft:newDraft('google-test')});await service.invoke('draft.send',{id:'draft-test'});
@@ -74,7 +74,7 @@ test('provider failures retain a recoverable draft and pending sends resume afte
     const db=new DatabaseSync(join(dataDir,'aplos.db')),row=db.prepare("SELECT data FROM drafts WHERE id='draft-test'").get() as {data:string};
     const persisted=JSON.parse(row.data) as Draft;persisted.pendingSendAt=new Date(Date.now()-1000).toISOString();
     db.prepare("UPDATE drafts SET data=? WHERE id='draft-test'").run(JSON.stringify(persisted));db.close();
-    service=await createService({dataDir,google,groq:createGroq({apiKey:''})});
+    service=await createService({demo:true,dataDir,google,groq:createGroq({apiKey:''})});
     await settle(async()=>Boolean((await service.invoke('state.get')).drafts.find((d:Draft)=>d.id==='draft-test')?.sendError));assert.equal(attempts,2);
   }finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
 });
@@ -132,7 +132,7 @@ test('sync classifies fresh mail, auto-adds definite events, and preserves edits
   const template={id:'live-one',accountId:'google-ai',subject:'Review meeting',summary:'Original snippet',messages:[],date:'2026-10-16T12:00:00Z',unread:true,status:'new' as const,importance:'low' as const,bookmarked:false,replyStatus:'none' as const};
   const google={...base,available:true,connect:async()=>({id:'google-ai',name:'Test',email:'test@example.com',color:'#123456',provider:'google' as const,connected:true,calendarConnected:true}),sync:async()=>({threads:[structuredClone(template),{...structuredClone(template),id:'live-two'}],flags:[],removed:[],reset:true}),updateThread:async()=>{},getSendAs:async()=>[],listEvents:async()=>[],saveEvent:async(_account:unknown,event:any)=>({...event,remoteId:'google-event'})};
   const groq={...createGroq({apiKey:''}),available:true,summarize:async(t:{id:string})=>{calls++;if(t.id==='live-two')throw new Error('AI unavailable');return {summary:'A definite review meeting',importance:'important' as const,replyStatus:'needs-reply' as const,todo:'Prepare the review',dueDate:'2026-10-18T12:00:00Z'};},extractEvents:async(t:{id:string})=>t.id==='live-one'?[{title:'Review meeting',start:'2026-10-18T12:00:00Z',end:'2026-10-18T13:00:00Z',allDay:false},{title:'Planning day',start:'2026-10-19',end:'2026-10-20',allDay:true}]:[]};
-  const service=await createService({dataDir,google,groq});
+  const service=await createService({demo:true,dataDir,google,groq});
   try{
     await service.invoke('settings.update',{patch:{autoCalendar:true}});
     const state=await service.invoke('account.connect') as AppState;
@@ -155,7 +155,7 @@ test('authorized Gmail aliases retain selected identity and signature; unavailab
       {email:'primary@example.com',name:'Primary Person',signature:'<p>Primary signature</p>',isDefault:false},
       {email:'studio@example.com',name:'Studio Person',signature:'<p><strong>Studio signature</strong></p>',isDefault:true},
     ];},send:async(_account:unknown,d:Draft)=>{sent=structuredClone(d);return {id:'sent-alias-message',threadId:'sent-alias-thread'};}};
-  const service=await createService({dataDir,google,groq:createGroq({apiKey:''})});
+  const service=await createService({demo:true,dataDir,google,groq:createGroq({apiKey:''})});
   try{
     const connected=await service.invoke('account.connect') as AppState;assert.equal(connected.accounts.find(a=>a.id==='alias-account')!.sendAs!.length,2);
     await service.invoke('settings.update',{patch:{undoSeconds:0,signature:'Custom <signature>',signatureMode:'always'}});
@@ -196,7 +196,7 @@ test('AI proposals never send or overwrite drafts; citations are scoped and conv
     assert.deepEqual((await f.service.invoke('state.get')).drafts,original);
     assert.equal((await f.service.invoke('ai.summarize',{threadId:'garden'})).summary,'A volunteer invitation');
     await f.service.invoke('ai.draft',{instruction:'Draft a reply'});assert.deepEqual((await f.service.invoke('state.get')).drafts,original);
-    await f.service.close();const reopened=await createService({dataDir:f.dataDir,google:f.google,groq});
+    await f.service.close();const reopened=await createService({demo:true,dataDir:f.dataDir,google:f.google,groq});
     try{assert.equal((await reopened.invoke('state.get')).conversations[0].id,result.id);}finally{await reopened.close();}
   }finally{await f.cleanup();}
 });
@@ -232,7 +232,7 @@ test('summarizing again keeps the owner’s due date, to-do, importance and repl
   const db=new DatabaseSync(join(dataDir,'aplos.db')),row=db.prepare("SELECT data FROM threads WHERE id='garden'").get() as {data:string};
   const stored=JSON.parse(row.data);stored.summary=stored.messages[0].text.slice(0,60);
   db.prepare("UPDATE threads SET data=? WHERE id='garden'").run(JSON.stringify(stored));db.close();
-  const service=await createService({dataDir,google:seed.google,groq});
+  const service=await createService({demo:true,dataDir,google:seed.google,groq});
   const garden=async()=>(await service.invoke('state.get') as AppState).threads.find(t=>t.id==='garden')!;
   try{
     // Never summarized yet, so Groq judges importance and reply state, and fills what is empty.

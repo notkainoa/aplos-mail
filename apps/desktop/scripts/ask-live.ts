@@ -18,7 +18,7 @@ const groq=createGroq();
 const model=process.argv.find(a=>a.startsWith('--model='))?.slice(8)??defaultAskModel;
 if(!parseAskModel(model))throw new Error('Give --model as provider:model, e.g. groq:openai/gpt-oss-120b.');
 const dataDir=await mkdtemp(join(tmpdir(),'aplos-ask-live-'));
-const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq});
+const service=await createService({demo:true,dataDir,google:await createGoogle({dataDir,clientId:''}),groq});
 let usage:{calls?:number;prompt?:number;completion?:number}={};
 service.subscribe(event=>{const p=event.payload as {type?:string;step?:{tool:string;label:string;status:string}};if(event.type==='ai.progress'&&p?.type==='usage')usage=p;if(event.type==='ai.progress'&&p?.step?.tool==='wait'&&p.step.status==='running')console.log(`  … ${p.step.label}`);});
 const questions:Array<[string,Record<string,unknown>?]>=[

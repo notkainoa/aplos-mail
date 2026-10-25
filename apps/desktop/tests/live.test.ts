@@ -16,7 +16,7 @@ import { createVault } from '../src/main/vault';
 
 const temp=(name:string)=>mkdtemp(join(tmpdir(),`aplos-${name}-`));
 async function service(dataDir:string) {
-  return createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),autoSyncMs:0});
+  return createService({demo:true,dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),autoSyncMs:0});
 }
 /** Every thread of a mailbox read the way a window does: the newest first, then the rest in pages. */
 async function readPaged(invoke:(method:string,payload?:unknown)=>Promise<unknown>, limit:number) {

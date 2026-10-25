@@ -17,12 +17,16 @@ const steps:Step[]=['start','ai','mic','done'];
 const keyed:AskProviderId[]=['groq','openai','anthropic','gemini','openrouter','opencode-go'];
 type Microphone='unknown'|'not-determined'|'granted'|'denied'|'restricted'|'asking';
 
+/** The demo is only ever loaded on request: from the welcome, the empty Home or Settings. Real accounts are kept. */
+export async function loadDemo(){await invoke('demo.reset');}
+
 /**
  * The first-run flow: welcome, an account (the usual add-account dialog), an AI key, the microphone, then the keys that
  * matter. Each step can be skipped, Escape included; finishing or skipping the last step marks it done for good.
+ * Demo mail is a quiet corner link that loads the demo when clicked, offered only while there is none.
  */
-export function Welcome({open,capabilities,settings,onSettings,onFinish,notify}:{open:boolean;capabilities:Capabilities;settings:Settings;onSettings:(patch:Partial<Settings>)=>void;onFinish:()=>void;notify:(text:string)=>void}){
-  const [step,setStep]=useState<Step>('start');const [adding,setAdding]=useState(false);const connected=useRef(false);
+export function Welcome({open,capabilities,settings,canDemo,onSettings,onFinish,notify}:{open:boolean;capabilities:Capabilities;settings:Settings;canDemo:boolean;onSettings:(patch:Partial<Settings>)=>void;onFinish:()=>void;notify:(text:string)=>void}){
+  const [step,setStep]=useState<Step>('start');const [adding,setAdding]=useState(false);const [demoBusy,setDemoBusy]=useState(false);const connected=useRef(false);
   const body=useRef<HTMLDivElement>(null);
   useEffect(()=>{if(open){setStep('start');setAdding(false);}},[open]);
   // Each step puts focus on its main action, so Enter moves on and Tab starts from there.
@@ -30,6 +34,10 @@ export function Welcome({open,capabilities,settings,onSettings,onFinish,notify}:
   useEffect(()=>{if(!open||adding)return;const frame=requestAnimationFrame(()=>{const el=body.current;(el?.querySelector<HTMLElement>('[data-autofocus]:not([disabled])')??el?.closest<HTMLElement>('[role="dialog"]'))?.focus({preventScroll:true});});return()=>cancelAnimationFrame(frame);},[step,open,adding]);
   const next=()=>{const i=steps.indexOf(step);if(i>=steps.length-1)onFinish();else setStep(steps[i+1]);};
   const index=steps.indexOf(step);
+  async function tryDemo(){
+    setDemoBusy(true);
+    try{await loadDemo();setStep('ai');}catch(e){notify((e as Error).message);}finally{setDemoBusy(false);}
+  }
   return <>
     {/* Stays mounted under the add-account dialog, hidden, so closing that one returns focus here rather than to the page. */}
     <Dialog open={open} onClose={step==='start'?onFinish:next} dismissable={false} label="Welcome to Aplos Mail" className={cx('welcome onboarding',adding&&'is-covered')}>
@@ -38,11 +46,11 @@ export function Welcome({open,capabilities,settings,onSettings,onFinish,notify}:
           <AppIcon size={72}/>
           <h1>Welcome to Aplos.</h1>
           <p>Your mail and calendar, one calm email at a time.</p>
+          {canDemo&&<Button variant="text" size="sm" className="onboarding-demo" loading={demoBusy} tooltip={{content:"Look around with sample mail",detail:"Two original demo accounts. Nothing is sent to real people."}} onClick={()=>void tryDemo()}>Try demo mail</Button>}
           <div className="onboarding-actions is-stacked">
-            <Button variant="primary" size="lg" icon={Mail} data-autofocus onClick={()=>{connected.current=false;setAdding(true);}}>Add an account</Button>
-            <Button variant="secondary" size="lg" iconRight={ArrowRight} onClick={()=>setStep('ai')}>Look around with demo mail</Button>
+            <Button variant="primary" size="lg" icon={Mail} data-autofocus disabled={demoBusy} onClick={()=>{connected.current=false;setAdding(true);}}>Add an account</Button>
           </div>
-          <p className="welcome-footnote">Gmail, Outlook, iCloud, Fastmail, Yahoo, AOL and other IMAP mail.<br/>The demo uses original sample mail. Nothing is sent to real people.</p>
+          <p className="welcome-footnote">Gmail, Outlook, iCloud, Fastmail, Yahoo, AOL and other IMAP mail.</p>
         </>}
         {step==='ai'&&<AiStep settings={settings} onSettings={onSettings} onNext={next}/>}
         {step==='mic'&&<MicStep desktop={capabilities.desktop} onNext={next}/>}

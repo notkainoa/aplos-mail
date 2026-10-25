@@ -30,7 +30,7 @@ async function readBody(req:IncomingMessage):Promise<{method:string;payload?:unk
 }
 export async function startServer(options:{service?:Awaited<ReturnType<typeof createService>>;onClose?:()=>Promise<void>;loadEnv?:boolean;port?:number;vite?:boolean}={}){
   if(options.loadEnv!==false)loadDevEnv();
-  const service=options.service??await createService({dataDir:process.env.APLOS_DATA_DIR||join(homedir(),'Library','Application Support','Aplos Mail Preview'),desktop:false,symbolTool:join(process.cwd(),'dist','bin','aplos-symbols'),
+  const service=options.service??await createService({dataDir:process.env.APLOS_DATA_DIR||join(homedir(),'Library','Application Support','Aplos Mail Preview'),desktop:false,symbolTool:join(process.cwd(),'dist','bin','aplos-symbols'),demo:process.env.APLOS_DEMO==='1',
     openExternal:async()=>{throw new Error('Open Aplos Mail desktop to connect a Google account.');}});
   const streams=new Set<ServerResponse>();
   const unsubscribe=service.subscribe((event:Parameters<Listener>[0])=>{const frame=`data: ${JSON.stringify(event)}\n\n`;for(const stream of streams)stream.write(frame);});

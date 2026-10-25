@@ -71,7 +71,7 @@ test('saved keys are encrypted on disk, survive a restart and fall back to the e
 test('the renderer sees only the key’s source and last four characters, never the key',async()=>{
   const dataDir=await folder();
   try{
-    const service=await createService({dataDir,...sealer(),google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),autoSyncMs:0,env:{GEMINI_API_KEY:FROM_ENV}});
+    const service=await createService({demo:true,dataDir,...sealer(),google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),autoSyncMs:0,env:{GEMINI_API_KEY:FROM_ENV}});
     try{
       const info=await service.invoke('ai.key.set',{provider:'anthropic',key:SAVED});
       assert.deepEqual(info,{source:'saved',last4:'wxyz'});
@@ -86,7 +86,7 @@ test('the renderer sees only the key’s source and last four characters, never 
       await assert.rejects(service.invoke('ai.key.test',{provider:'openai'}),/Add your ChatGPT key first/);
     }finally{await service.close();}
     // The browser preview has no keychain: saving explains where keys can be saved.
-    const preview=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),autoSyncMs:0,env:{}});
+    const preview=await createService({demo:true,dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),autoSyncMs:0,env:{}});
     try{
       assert.equal((await preview.invoke('ai.keys') as {secure:boolean}).secure,false);
       await assert.rejects(preview.invoke('ai.key.set',{provider:'groq',key:SAVED}),/only be saved in the Aplos Mail desktop app/);
@@ -105,7 +105,7 @@ test('a refused key shows the provider’s own reason with the key removed',asyn
 
 test('the welcome flow runs once on a fresh data folder and stays finished after a restart',async()=>{
   const dataDir=await folder();
-  const open=async()=>createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),autoSyncMs:0,env:{}});
+  const open=async()=>createService({demo:true,dataDir,google:await createGoogle({dataDir,clientId:''}),groq:createGroq({apiKey:''}),autoSyncMs:0,env:{}});
   try{
     let service=await open();
     try{assert.equal((await service.invoke('state.get') as AppState).settings.onboardingDone,false);await service.invoke('settings.update',{patch:{onboardingDone:true}});}

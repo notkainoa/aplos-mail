@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
-import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,MailOpen,MessageCircle,RotateCcw,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
+import {Bookmark,Check,CheckCheck,CircleCheck,Clock,CornerUpLeft,ExternalLink,FileText,Layers,Mail,MailOpen,MessageCircle,RotateCcw,Search,Send,ShieldAlert,Trash2,WifiOff,X} from './icons';
 import type {AppState,Attachment,CalendarEvent,Capabilities,Draft,Settings as Preferences,Thread,UpdateInfo,View} from '../shared/types';
 import {bookmarkLeavesList,isBookmark,isFollowUp,isHomeLow,isReplyDue,liveAction,threadInView} from '../shared/mailbox';
 import {bridge,escapeHtml,invoke,isoDay,openUrl,replyRecipients,uid} from './bridge';
@@ -14,7 +14,8 @@ import {Sidebar,SidebarMenu,sections} from './components/Sidebar';
 import {Topbar} from './components/Topbar';
 import {DraftList,MailSection,actionIcon,highlightTerms,nudgeFocus,prepareFocusMove,useFocusGlide,type RowActions,type RowHandlers,type Triage} from './components/MailList';
 import {ComposeSkeleton,DuePopover,PendingSends,ShortcutsDialog} from './components/Overlays';
-import {Welcome} from './components/Welcome';
+import {Welcome,loadDemo} from './components/Welcome';
+import {AddAccountDialog} from './components/AddAccount';
 import {AppIcon} from './components/AppIcon';
 import {appVersion} from '../shared/version';
 import {Button,Checkbox,ConfirmHost,EmptyState,IconButton,Keys,Menu,Spinner,Tabs,Toaster,confirmAction,cx,dialogOpen,hintExit,reducedMotion,toast,useHandlers,useMenu,usePresence,type Icon} from './ui';
@@ -73,7 +74,7 @@ export function App(){
  const [shortcutHelp,setShortcutHelp]=useState(false);
  const [eventEditor,setEventEditor]=useState<Partial<CalendarEvent>|null>(null);
  const [online,setOnline]=useState(navigator.onLine);
- const [busy,setBusy]=useState('');const [welcome,setWelcome]=useState(false);const welcomeChecked=useRef(false);
+ const [busy,setBusy]=useState('');const [welcome,setWelcome]=useState(false);const [addingAccount,setAddingAccount]=useState(false);const [demoBusy,setDemoBusy]=useState(false);const welcomeChecked=useRef(false);
  const [leaving,setLeaving]=useState<{thread:Thread;status:FlingKind;key:number;to:string;drag?:CardDrag}>();
  const [entering,setEntering]=useState<{id:string;from:string}>();
  const [duePrompt,setDuePrompt]=useState<{id:string;key:number}>();
@@ -506,7 +507,12 @@ export function App(){
  const thread=menuThread;
 
  let list:React.ReactNode;
- if(searchMode)list=search?filtered.length?group(`${filtered.length} result${filtered.length===1?'':'s'}`,filtered,undefined,false):!searching&&searchedFor===search&&emptyFor(view):<EmptyState compact icon={Search} title="Search your mail" detail="Senders, subjects and the words inside your messages."/>;
+ // Nothing is connected yet (setup skipped, or every account removed): say so, and offer the same two ways in as the welcome.
+ if(!state.accounts.length&&!searchMode)list=<EmptyState className="empty-start" icon={Mail} title="No mail yet" detail="Add an account to bring in your mail and calendar." action={<>
+  <Button variant="primary" icon={Mail} onClick={()=>setAddingAccount(true)}>Add an account</Button>
+  <Button variant="text" size="sm" loading={demoBusy} onClick={()=>{setDemoBusy(true);void loadDemo().catch(fail).finally(()=>setDemoBusy(false));}}>or try demo mail</Button>
+ </>}/>;
+ else if(searchMode)list=search?filtered.length?group(`${filtered.length} result${filtered.length===1?'':'s'}`,filtered,undefined,false):!searching&&searchedFor===search&&emptyFor(view):<EmptyState compact icon={Search} title="Search your mail" detail="Senders, subjects and the words inside your messages."/>;
  else if(view==='home')list=<>{group('New',filtered,swipe)}{low.length>0&&<button className="low-line" data-flip="low-line" style={{'--i':filtered.length-.5} as React.CSSProperties} onClick={()=>navigate('low')}><span className="low-count">{low.length}</span><strong>Low importance</strong><small>{[...new Set(low.map(t=>t.messages[0].fromName))].join(', ')}</small></button>}{group('Ready when you are',homeLater,<Button variant="text" onClick={()=>{for(const t of homeLater)hintExit(t.id,'down');void invoke('home.hide',{ids:homeLater.map(t=>t.id),compact:true}).then(()=>notify(`Hid ${homeLater.length} from Home. They stay in Later.`)).catch(fail);}}>Hide all</Button>)}{group('Waiting on you',replyHome)}{group('No reply yet',followUps)}{!filtered.length&&!low.length&&!homeLater.length&&!replyHome.length&&!followUps.length&&emptyFor('home')}</>;
  else if(view==='drafts')list=titled('Drafts',drafts.length?<DraftList drafts={drafts} open={d=>void openDraft(d)} remove={async d=>{if(!await confirmAction({title:'Delete this draft?',message:'It will be removed from this device and from your account’s drafts.',confirmLabel:'Delete',danger:true}))return;hintExit(d.id,'down');void invoke('draft.delete',{id:d.id}).catch(fail);}}/>:emptyFor('drafts'));
  else if(view==='later'&&laterTab==='todos')list=<>{group('Overdue',todoGroups.overdue)}{group('Today',todoGroups.today)}{group('Upcoming',todoGroups.upcoming)}{group('No due date',todoGroups.undated)}{!filtered.length&&emptyFor('later')}</>;
@@ -562,8 +568,9 @@ export function App(){
  ]:[]}/>
  {eventEditor&&<EventEditor key={eventEditor.id||eventEditor.title||'new'} event={eventEditor} accounts={state.accounts} onClose={()=>setEventEditor(null)} notify={notify}/>}
  <ShortcutsDialog open={shortcutHelp} close={()=>setShortcutHelp(false)} doneLeft={doneLeft} minimized={minimized}/>
- <Welcome open={welcome&&!popoutThread} capabilities={capabilities} settings={prefs} notify={notify} onSettings={patch=>void updateSettings(patch)}
+ <Welcome open={welcome&&!popoutThread} capabilities={capabilities} settings={prefs} canDemo={!state.accounts.some(a=>a.provider==='demo')} notify={notify} onSettings={patch=>void updateSettings(patch)}
   onFinish={()=>{setWelcome(false);if(!prefs.onboardingDone)void updateSettings({onboardingDone:true});}}/>
+ <AddAccountDialog open={addingAccount} close={()=>setAddingAccount(false)} capabilities={capabilities} connected={()=>notify('Account connected')}/>
  <PendingSends drafts={pending} seconds={prefs.undoSeconds} undo={async d=>{try{await invoke('draft.undoSend',{id:d.id});notify('Send cancelled. Your draft is safe.');}catch(e){fail(e);}}}/>
  <Toaster/>
  <ConfirmHost/>
