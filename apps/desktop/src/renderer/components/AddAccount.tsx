@@ -71,7 +71,7 @@ export function AddAccountDialog({open,close,capabilities,connected}:{open:boole
       {discovery?.help&&discovery.confidence!=='known'&&<p className="small muted">{discovery.help}</p>}
       {oauth?<>
         <p>You’ll sign in with {choice!.provider==='google'?'Google':'Microsoft'} in your browser, then come back here. Aplos asks only for mail{choice!.provider==='microsoft'?', calendar and profile':' and calendar'} access.</p>
-        {unavailable&&<p className="configuration-note">{choice!.provider==='google'?'Live Google connection needs Aplos’s own Desktop OAuth client. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the backend environment, then restart.':'Outlook needs Aplos’s own Microsoft app registration. Set MICROSOFT_CLIENT_ID in the backend environment, then restart.'}</p>}
+        {unavailable&&<p className="configuration-note">{choice!.provider==='google'?capabilities.googleUnavailable||'Google sign-in isn’t available in this build.':capabilities.microsoftUnavailable||'Outlook sign-in isn’t available in this build.'}</p>}
       </>:<>
         <Field label="Email address"><input type="email" value={email} autoCapitalize="off" spellCheck={false} onChange={e=>setEmail(e.target.value)}/></Field>
         {choice?.preset==='generic'&&<Field label="Your name" hint="Shown to people you write to."><input value={name} onChange={e=>setName(e.target.value)}/></Field>}

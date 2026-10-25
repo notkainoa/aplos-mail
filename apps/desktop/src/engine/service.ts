@@ -676,7 +676,7 @@ export async function createEngineService(options:EngineOptions) {
       try{
         for(const a of accounts){
           try{await gate.run(a.id,()=>syncAccount(a,manual,errors));}
-          catch{const message=`Could not sync ${a.email}. Reconnect the account or try again.`;errors.push(message);if(state.accounts.some(x=>x.id===a.id))change(s=>{s.accounts.find(x=>x.id===a.id)!.error=message;});}
+          catch(error){const reason=error instanceof Error&&error.message?error.message.trim().replace(/\.?$/,'.'):'';console.error(`sync ${a.email} failed:`,error);const message=`Could not sync ${a.email}. ${reason?reason+' ':''}Reconnect the account or try again.`;errors.push(message);if(state.accounts.some(x=>x.id===a.id))change(s=>{s.accounts.find(x=>x.id===a.id)!.error=message;});}
         }
       }finally{if(!closed)change(s=>{s.sync={busy:false,lastSync:now().toISOString(),...(errors.length?{error:errors.join(' ')}:{})};});}
       if(!closed)checkReminders();
@@ -704,7 +704,7 @@ export async function createEngineService(options:EngineOptions) {
         return page;
       }
       case 'symbols.render':return symbols(p.items,p.scale);
-      case 'capabilities.get':return {groq:groq.available,google:!!providers.google?.available,microsoft:!!providers.microsoft?.available,desktop:!!options.desktop,version:appVersion};
+      case 'capabilities.get':return {groq:groq.available,google:!!providers.google?.available,microsoft:!!providers.microsoft?.available,desktop:!!options.desktop,version:appVersion,googleUnavailable:providers.google?.unavailableReason,microsoftUnavailable:providers.microsoft?.unavailableReason};
       case 'settings.update':change(s=>{s.settings={...s.settings,...settingsPatch(p.patch)};});return clone(state);
       case 'account.select':{const id=text(p.id,300);if(id!=='all')account(id);change(s=>{s.selectedAccountId=id;});return clone(state);}
       case 'account.connect':{

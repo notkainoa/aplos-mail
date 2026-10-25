@@ -1,6 +1,6 @@
 {
   "name": "@aplos/desktop",
-  "version": "0.2.0",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "description": "A calm desktop inbox with Groq intelligence",
@@ -25,8 +25,8 @@
     "start": "electron .",
     "verify:release": "node scripts/verify-release.mjs",
     "verify:large": "node scripts/verify-large-mailbox.mjs",
-    "release:build": "npm run build && node scripts/release-build.mjs",
-    "release:publish": "npm run build && node scripts/release-build.mjs --publish always",
+    "release:build": "APLOS_RELEASE_BUILD=1 npm run build && node scripts/release-build.mjs",
+    "release:publish": "APLOS_RELEASE_BUILD=1 npm run build && node scripts/release-build.mjs --publish always",
     "update-feed": "node scripts/fake-update-feed.mjs",
     "dmg-background": "electron scripts/build-dmg-background.cjs",
     "icon": "node scripts/build-icon.mjs"

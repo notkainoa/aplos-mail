@@ -6,10 +6,13 @@ import nodemailer from 'nodemailer';
 import { simpleParser } from 'mailparser';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
 import { ProviderError, calendarColor, type AppDataRecord, type ConnectRequest, type MailProvider, type ProviderCapabilities, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import { bundledOAuth, oauthClient, releaseBuild, type OAuthClient } from './oauth-config';
 
 export interface GoogleOptions {
   dataDir:string; encrypt?:(value:string)=>Buffer; decrypt?:(value:Buffer)=>string;
-  openExternal?:(url:string)=>Promise<unknown>; fetch?:typeof fetch; clientId?:string; clientSecret?:string; oauthTimeoutMs?:number;
+  openExternal?:(url:string)=>Promise<unknown>; fetch?:typeof fetch; clientId?:string; clientSecret?:string; oauthTimeoutMs?:number; /** Waits between rate-limit retries; tests pass a no-op. */ sleep?:(ms:number)=>Promise<void>;
+  /** The client inlined at release build time; defaults to `bundledOAuth.google`. */
+  bundled?:OAuthClient;
 }
 interface Token {access_token:string;refresh_token?:string;expiresAt:number}
 interface GmailPart {partId?:string;mimeType?:string;filename?:string;headers?:{name:string;value:string}[];body?:{data?:string;size?:number;attachmentId?:string};parts?:GmailPart[]}
@@ -64,8 +67,12 @@ export function normalizeGmailThread(raw:GmailThread,account:Account):Thread {
   return {id:`${account.id}:${raw.id}`,remoteId:raw.id,accountId:account.id,subject:header(items[0]?.payload,'subject')||'(No subject)',summary:htmlText(items.at(-1)?.snippet??'')||messages.at(-1)?.text.slice(0,200)||'',messages,date:messages.at(-1)?.date??new Date().toISOString(),unread:labels.includes('UNREAD'),status:labelStatus(labels),importance:labels.includes('IMPORTANT')?'important':'low',bookmarked:labels.includes('STARRED'),replyStatus:'none',labels};
 }
 
+const googleUnavailable=releaseBuild?'Google sign-in isn’t available in this build.':'Google sign-in isn’t available in this build. Developers: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (Aplos’s own Desktop OAuth client) in .env, then restart.';
+
 export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter> {
-  const request=options.fetch??fetch,clientId=options.clientId??process.env.GOOGLE_CLIENT_ID,clientSecret=options.clientSecret??process.env.GOOGLE_CLIENT_SECRET;
+  const request=options.fetch??fetch;
+  const client=options.clientId!==undefined?{clientId:options.clientId,clientSecret:options.clientSecret}:oauthClient(process.env.GOOGLE_CLIENT_ID,process.env.GOOGLE_CLIENT_SECRET,options.bundled??bundledOAuth.google);
+  const clientId=client.clientId,clientSecret=client.clientSecret;
   const path=join(options.dataDir,'google-tokens.enc.json');
   const tokens:Record<string,Token>={};
   let server:Server|undefined, cancelConnect:(()=>void)|undefined;
@@ -88,20 +95,42 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
     persistChain=operation.catch(()=>{});
     try {await operation;} catch {throw new Error('Google credentials could not be saved securely. Check the data directory.');}
   }
+  const sleep=options.sleep??((ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms)));
+  /** Google's own words for a failed request: the API, its reason code and message. Never contains credentials. */
+  async function googleDetail(url:string,response:Response):Promise<{reason:string;text:string}> {
+    const api=/gmail\.googleapis/.test(url)?'Gmail':/calendar/.test(url)?'Google Calendar':/oauth2|accounts\.google/.test(url)?'Google sign-in':'Google';
+    let reason='',message='';
+    try{const body=await response.json() as Json;const error=body?.error;
+      if(typeof error==='string'){reason=error;message=typeof body.error_description==='string'?body.error_description:'';}
+      else if(error&&typeof error==='object'){reason=String(error.errors?.[0]?.reason??error.details?.find?.((d:Json)=>d?.reason)?.reason??error.status??'');message=typeof error.message==='string'?error.message:'';}
+    }catch{/* Not JSON. */}
+    message=message.replace(/\s+/g,' ').trim().slice(0,300);
+    return {reason,text:`${api}${reason?` (${reason})`:''}${message?`: ${message.replace(/\.?$/,'.')}`:'.'}`};
+  }
+  const RATE_REASONS=/^(rateLimitExceeded|userRateLimitExceeded|RATE_LIMIT_EXCEEDED|RESOURCE_EXHAUSTED|quotaExceeded|concurrentLimitExceeded)$/;
   async function fetchJson(url:string,init:RequestInit={}):Promise<Json> {
-    let response:Response;
-    try {response=await request(url,{...init,signal:init.signal??AbortSignal.timeout(45000)});}catch {throw new GoogleError('Google could not be reached. Check your internet connection.',undefined,true);}
-    if(!response.ok) {
-      const status=response.status;
-      if(status===401) throw new GoogleError('Google authorization expired. Reconnect this account.',status);
-      if(status===403) throw new GoogleError('Google denied this operation. Enable Gmail and Calendar APIs and reconnect with the required permissions.',status);
-      if(status===429) throw new GoogleError('Google rate limit reached. Please retry shortly.',status);
+    for(let attempt=0;;attempt++){
+      let response:Response;
+      try {response=await request(url,{...init,signal:init.signal??AbortSignal.timeout(45000)});}catch {throw new GoogleError('Google could not be reached. Check your internet connection.',undefined,true);}
+      if(response.ok){
+        if(response.status===204)return {};
+        // A 2xx whose body was lost may still have been applied, so the outcome is unknown.
+        try{return await response.json() as Json;}catch{throw new GoogleError('Google returned an unreadable response. Please retry.',response.status,true);}
+      }
+      const status=response.status,detail=await googleDetail(url,response);
+      // Gmail and Calendar answer per-user rate limits with 403 as well as 429. The request was refused before it ran, so retrying is safe.
+      const limited=status===429||(status===403&&RATE_REASONS.test(detail.reason));
+      if(limited&&attempt<5){
+        const after=Number(response.headers.get('retry-after'));
+        await sleep(Number.isFinite(after)&&after>0?Math.min(after*1000,30000):Math.min(16000,1000*2**attempt)+Math.floor(Math.random()*500));
+        continue;
+      }
+      if(limited)throw new GoogleError(`Google rate limit reached. Please retry shortly. ${detail.text}`,429);
+      if(status===401) throw new GoogleError(`Google authorization expired. Reconnect this account. ${detail.text}`,status);
+      if(status===403) throw new GoogleError(`Google denied this request. ${detail.text}`,status);
       if(status===404) throw new GoogleError('Google could not find this item.',status);
-      throw new GoogleError(`Google request failed (${status}). Please retry.`,status,status>=500);
+      throw new GoogleError(`Google request failed (${status}). Please retry. ${detail.text}`,status,status>=500);
     }
-    if(response.status===204)return {};
-    // A 2xx whose body was lost may still have been applied, so the outcome is unknown.
-    try{return await response.json() as Json;}catch{throw new GoogleError('Google returned an unreadable response. Please retry.',response.status,true);}
   }
   async function access(id:string):Promise<string> {
     const token=tokens[id];
@@ -246,11 +275,11 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
   return {
     kind:'google',
     available:Boolean(clientId),
-    unavailableReason:clientId?undefined:'Live Google connection needs Aplos’s own Desktop OAuth client. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the backend environment.',
+    unavailableReason:clientId?undefined:googleUnavailable,
     capabilities:()=>CAPABILITIES,
     getSendAs,
     async connect(_request?:ConnectRequest):Promise<Account> {
-      if(!clientId) throw new Error('Set GOOGLE_CLIENT_ID to your own Google Desktop OAuth client ID before connecting.');
+      if(!clientId) throw new Error(googleUnavailable);
       if(!options.encrypt||!options.decrypt) throw new Error('Secure credential storage is unavailable. Connect using the desktop app.');
       if(!options.openExternal) throw new Error('Google sign-in requires the desktop app and a system browser.');
       if(server) throw new Error('A Google sign-in is already in progress.');
