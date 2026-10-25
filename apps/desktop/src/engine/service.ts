@@ -675,7 +675,7 @@ export async function createEngineService(options:EngineOptions) {
       try{
         for(const a of accounts){
           try{await gate.run(a.id,()=>syncAccount(a,manual,errors));}
-          catch{const message=`Could not sync ${a.email}. Reconnect the account or try again.`;errors.push(message);if(state.accounts.some(x=>x.id===a.id))change(s=>{s.accounts.find(x=>x.id===a.id)!.error=message;});}
+          catch(error){const reason=error instanceof Error&&error.message?error.message.trim().replace(/\.?$/,'.'):'';console.error(`sync ${a.email} failed:`,error);const message=`Could not sync ${a.email}. ${reason?reason+' ':''}Reconnect the account or try again.`;errors.push(message);if(state.accounts.some(x=>x.id===a.id))change(s=>{s.accounts.find(x=>x.id===a.id)!.error=message;});}
         }
       }finally{if(!closed)change(s=>{s.sync={busy:false,lastSync:now().toISOString(),...(errors.length?{error:errors.join(' ')}:{})};});}
       if(!closed)checkReminders();
