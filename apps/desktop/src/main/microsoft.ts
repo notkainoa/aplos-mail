@@ -4,6 +4,7 @@ import nodemailer from 'nodemailer';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
 import { ProviderError, calendarColor, type AppDataRecord, type CalendarInfo, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
 import { createVault } from './vault';
+import { bundledOAuth, oauthClient, releaseBuild } from './oauth-config';
 
 export interface MicrosoftOptions extends ProviderEnvironment<Buffer> { clientId?:string; tenant?:string; oauthTimeoutMs?:number }
 interface Token {access_token:string;refresh_token?:string;expiresAt:number}
@@ -99,8 +100,10 @@ function createIndex() {
 }
 type MailIndex=ReturnType<typeof createIndex>;
 
+const microsoftUnavailable=releaseBuild?'Outlook sign-in isn’t available in this build.':'Outlook sign-in isn’t available in this build. Developers: register an app in Microsoft Entra with the “Mobile and desktop applications” platform, redirect URI http://localhost, public client flows allowed and no client secret, then set MICROSOFT_CLIENT_ID (and optionally MICROSOFT_TENANT) in .env and restart.';
+
 export async function createMicrosoft(options:MicrosoftOptions):Promise<MicrosoftAdapter> {
-  const request=options.fetch??fetch,clientId=options.clientId??process.env.MICROSOFT_CLIENT_ID;
+  const request=options.fetch??fetch,clientId=options.clientId??oauthClient(process.env.MICROSOFT_CLIENT_ID,undefined,bundledOAuth.microsoft).clientId;
   const tenant=options.tenant??process.env.MICROSOFT_TENANT??'common';
   if(!/^[\w.-]+$/.test(tenant))throw new Error('MICROSOFT_TENANT must be a tenant ID, domain, "common", "organizations" or "consumers".');
   const login=`https://login.microsoftonline.com/${tenant}/oauth2/v2.0`;
@@ -393,11 +396,11 @@ export async function createMicrosoft(options:MicrosoftOptions):Promise<Microsof
   return {
     kind:'microsoft',
     available:Boolean(clientId),
-    unavailableReason:clientId?undefined:'Live Outlook connection needs Aplos’s own Microsoft app registration. Register an app in Microsoft Entra with the “Mobile and desktop applications” platform, redirect URI http://localhost, public client flows allowed and no client secret, then set MICROSOFT_CLIENT_ID (and optionally MICROSOFT_TENANT) in the backend environment.',
+    unavailableReason:clientId?undefined:microsoftUnavailable,
     capabilities:()=>CAPABILITIES,
     async getSendAs(account:Account) {return [{email:account.email,name:account.name,signature:'',isDefault:true}];},
     async connect(_request?:ConnectRequest):Promise<Account> {
-      if(!clientId)throw new Error('Set MICROSOFT_CLIENT_ID to your own Microsoft app registration before connecting.');
+      if(!clientId)throw new Error(microsoftUnavailable);
       if(!vault.secure)throw new Error('Secure credential storage is unavailable. Connect using the desktop app.');
       if(!options.openExternal)throw new Error('Microsoft sign-in requires the desktop app and a system browser.');
       if(servers.length)throw new Error('A Microsoft sign-in is already in progress.');
