@@ -6,10 +6,13 @@ import nodemailer from 'nodemailer';
 import { simpleParser } from 'mailparser';
 import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
 import { ProviderError, calendarColor, type AppDataRecord, type ConnectRequest, type MailProvider, type ProviderCapabilities, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import { bundledOAuth, oauthClient, releaseBuild, type OAuthClient } from './oauth-config';
 
 export interface GoogleOptions {
   dataDir:string; encrypt?:(value:string)=>Buffer; decrypt?:(value:Buffer)=>string;
   openExternal?:(url:string)=>Promise<unknown>; fetch?:typeof fetch; clientId?:string; clientSecret?:string; oauthTimeoutMs?:number;
+  /** The client inlined at release build time; defaults to `bundledOAuth.google`. */
+  bundled?:OAuthClient;
 }
 interface Token {access_token:string;refresh_token?:string;expiresAt:number}
 interface GmailPart {partId?:string;mimeType?:string;filename?:string;headers?:{name:string;value:string}[];body?:{data?:string;size?:number;attachmentId?:string};parts?:GmailPart[]}
@@ -64,8 +67,12 @@ export function normalizeGmailThread(raw:GmailThread,account:Account):Thread {
   return {id:`${account.id}:${raw.id}`,remoteId:raw.id,accountId:account.id,subject:header(items[0]?.payload,'subject')||'(No subject)',summary:htmlText(items.at(-1)?.snippet??'')||messages.at(-1)?.text.slice(0,200)||'',messages,date:messages.at(-1)?.date??new Date().toISOString(),unread:labels.includes('UNREAD'),status:labelStatus(labels),importance:labels.includes('IMPORTANT')?'important':'low',bookmarked:labels.includes('STARRED'),replyStatus:'none',labels};
 }
 
+const googleUnavailable=releaseBuild?'Google sign-in isn’t available in this build.':'Google sign-in isn’t available in this build. Developers: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (Aplos’s own Desktop OAuth client) in .env, then restart.';
+
 export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter> {
-  const request=options.fetch??fetch,clientId=options.clientId??process.env.GOOGLE_CLIENT_ID,clientSecret=options.clientSecret??process.env.GOOGLE_CLIENT_SECRET;
+  const request=options.fetch??fetch;
+  const client=options.clientId!==undefined?{clientId:options.clientId,clientSecret:options.clientSecret}:oauthClient(process.env.GOOGLE_CLIENT_ID,process.env.GOOGLE_CLIENT_SECRET,options.bundled??bundledOAuth.google);
+  const clientId=client.clientId,clientSecret=client.clientSecret;
   const path=join(options.dataDir,'google-tokens.enc.json');
   const tokens:Record<string,Token>={};
   let server:Server|undefined, cancelConnect:(()=>void)|undefined;
@@ -246,11 +253,11 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
   return {
     kind:'google',
     available:Boolean(clientId),
-    unavailableReason:clientId?undefined:'Live Google connection needs Aplos’s own Desktop OAuth client. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the backend environment.',
+    unavailableReason:clientId?undefined:googleUnavailable,
     capabilities:()=>CAPABILITIES,
     getSendAs,
     async connect(_request?:ConnectRequest):Promise<Account> {
-      if(!clientId) throw new Error('Set GOOGLE_CLIENT_ID to your own Google Desktop OAuth client ID before connecting.');
+      if(!clientId) throw new Error(googleUnavailable);
       if(!options.encrypt||!options.decrypt) throw new Error('Secure credential storage is unavailable. Connect using the desktop app.');
       if(!options.openExternal) throw new Error('Google sign-in requires the desktop app and a system browser.');
       if(server) throw new Error('A Google sign-in is already in progress.');

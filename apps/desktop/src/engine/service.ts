@@ -703,7 +703,7 @@ export async function createEngineService(options:EngineOptions) {
         return page;
       }
       case 'symbols.render':return symbols(p.items,p.scale);
-      case 'capabilities.get':return {groq:groq.available,google:!!providers.google?.available,microsoft:!!providers.microsoft?.available,desktop:!!options.desktop,version:appVersion};
+      case 'capabilities.get':return {groq:groq.available,google:!!providers.google?.available,microsoft:!!providers.microsoft?.available,desktop:!!options.desktop,version:appVersion,googleUnavailable:providers.google?.unavailableReason,microsoftUnavailable:providers.microsoft?.unavailableReason};
       case 'settings.update':change(s=>{s.settings={...s.settings,...settingsPatch(p.patch)};});return clone(state);
       case 'account.select':{const id=text(p.id,300);if(id!=='all')account(id);change(s=>{s.selectedAccountId=id;});return clone(state);}
       case 'account.connect':{

@@ -30,10 +30,18 @@ To sign and notarize, you need an Apple Developer Program membership (paid, indi
 | `APPLE_ID` | Your Apple Account email |
 | `APPLE_APP_SPECIFIC_PASSWORD` | The password from step 4 |
 | `APPLE_TEAM_ID` | The Team ID from step 5 |
+| `GOOGLE_CLIENT_ID` | Aplos's Google **Desktop app** OAuth client ID (Google Cloud → APIs & Services → Credentials) |
+| `GOOGLE_CLIENT_SECRET` | That client's secret |
+| `MICROSOFT_CLIENT_ID` | Optional. Aplos's Microsoft Entra app (client) ID; leave unset until Outlook sign-in should ship |
 
 `CSC_LINK` + `CSC_KEY_PASSWORD` turn on signing; the three `APPLE_*` secrets additionally turn on notarization. If only some `APPLE_*` secrets are set, the build fails rather than shipping a half-configured release. `GITHUB_TOKEN` is provided by Actions; the workflow asks for `contents: write` so it can create the draft release.
 
-No Google or Microsoft secrets are needed at build time: the app reads `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_ID` at runtime (a packaged app reads `~/.config/aplos-mail/.env`). Where those live for a public release is still an open decision (see DECISIONS.md).
+**OAuth clients are built into release builds**, so someone who downloads the DMG can click Continue with Google without any setup. `npm run release:build` and `release:publish` set `APLOS_RELEASE_BUILD=1`, and `scripts/build-main.mjs` then inlines `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_ID` from the build environment into `dist/main/engine.cjs` (inside the asar) with esbuild `define`. They are never written to a file in the repo and never logged. Google treats a Desktop app client secret as non-confidential, so shipping it is the normal setup for installed apps (see DECISIONS.md).
+
+- On CI (`CI` set), a release build without `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` **fails** so a release that cannot sign in never ships. Set `APLOS_ALLOW_NO_GOOGLE=1` for an intentionally unconfigured build. A local `npm run release:build` only warns.
+- `MICROSOFT_CLIENT_ID` may be missing; Outlook then shows "Outlook sign-in isn't available in this build."
+- At runtime a value in `.env` (development) or `~/.config/aplos-mail/.env` (packaged) still wins over the built-in client, so you can test another client without rebuilding.
+- `npm run build`, `npm run package` and CI's `npm run build` never read these variables; their apps use `.env` only and show the unavailable state (with a developer hint) when it has none.
 
 ## Cutting a release
 

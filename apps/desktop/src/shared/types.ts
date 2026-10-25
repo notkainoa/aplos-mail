@@ -23,7 +23,7 @@ export interface Conversation { id:string; title:string; messages:AskMessage[]; 
 export interface AppState { version:1; accounts:Account[]; threads:Thread[]; drafts:Draft[]; events:CalendarEvent[]; conversations:Conversation[]; settings:Settings; selectedAccountId:string; sync:{busy:boolean; lastSync?:string; error?:string; pending?:number}; blockedSenders:string[];
   /** Engine run and commit count of this copy; not saved. */ epoch?:string; rev?:number;
   /** Total threads when this copy holds only the newest ones. */ threadCount?:number }
-export interface Capabilities { groq:boolean; google:boolean; microsoft:boolean; desktop:boolean; version:string }
+export interface Capabilities { groq:boolean; google:boolean; microsoft:boolean; desktop:boolean; version:string; googleUnavailable?:string; microsoftUnavailable?:string }
 /** In-app update state, from the main process (`update.status`, `update` events). */
 export type UpdateStatus =
   |{state:'disabled';reason:string}
