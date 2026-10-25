@@ -10,7 +10,7 @@ import { bundledOAuth, oauthClient, releaseBuild, type OAuthClient } from './oau
 
 export interface GoogleOptions {
   dataDir:string; encrypt?:(value:string)=>Buffer; decrypt?:(value:Buffer)=>string;
-  openExternal?:(url:string)=>Promise<unknown>; fetch?:typeof fetch; clientId?:string; clientSecret?:string; oauthTimeoutMs?:number;
+  openExternal?:(url:string)=>Promise<unknown>; fetch?:typeof fetch; clientId?:string; clientSecret?:string; oauthTimeoutMs?:number; /** Waits between rate-limit retries; tests pass a no-op. */ sleep?:(ms:number)=>Promise<void>;
   /** The client inlined at release build time; defaults to `bundledOAuth.google`. */
   bundled?:OAuthClient;
 }
@@ -95,20 +95,42 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
     persistChain=operation.catch(()=>{});
     try {await operation;} catch {throw new Error('Google credentials could not be saved securely. Check the data directory.');}
   }
+  const sleep=options.sleep??((ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms)));
+  /** Google's own words for a failed request: the API, its reason code and message. Never contains credentials. */
+  async function googleDetail(url:string,response:Response):Promise<{reason:string;text:string}> {
+    const api=/gmail\.googleapis/.test(url)?'Gmail':/calendar/.test(url)?'Google Calendar':/oauth2|accounts\.google/.test(url)?'Google sign-in':'Google';
+    let reason='',message='';
+    try{const body=await response.json() as Json;const error=body?.error;
+      if(typeof error==='string'){reason=error;message=typeof body.error_description==='string'?body.error_description:'';}
+      else if(error&&typeof error==='object'){reason=String(error.errors?.[0]?.reason??error.details?.find?.((d:Json)=>d?.reason)?.reason??error.status??'');message=typeof error.message==='string'?error.message:'';}
+    }catch{/* Not JSON. */}
+    message=message.replace(/\s+/g,' ').trim().slice(0,300);
+    return {reason,text:`${api}${reason?` (${reason})`:''}${message?`: ${message.replace(/\.?$/,'.')}`:'.'}`};
+  }
+  const RATE_REASONS=/^(rateLimitExceeded|userRateLimitExceeded|RATE_LIMIT_EXCEEDED|RESOURCE_EXHAUSTED|quotaExceeded|concurrentLimitExceeded)$/;
   async function fetchJson(url:string,init:RequestInit={}):Promise<Json> {
-    let response:Response;
-    try {response=await request(url,{...init,signal:init.signal??AbortSignal.timeout(45000)});}catch {throw new GoogleError('Google could not be reached. Check your internet connection.',undefined,true);}
-    if(!response.ok) {
-      const status=response.status;
-      if(status===401) throw new GoogleError('Google authorization expired. Reconnect this account.',status);
-      if(status===403) throw new GoogleError('Google denied this operation. Enable Gmail and Calendar APIs and reconnect with the required permissions.',status);
-      if(status===429) throw new GoogleError('Google rate limit reached. Please retry shortly.',status);
+    for(let attempt=0;;attempt++){
+      let response:Response;
+      try {response=await request(url,{...init,signal:init.signal??AbortSignal.timeout(45000)});}catch {throw new GoogleError('Google could not be reached. Check your internet connection.',undefined,true);}
+      if(response.ok){
+        if(response.status===204)return {};
+        // A 2xx whose body was lost may still have been applied, so the outcome is unknown.
+        try{return await response.json() as Json;}catch{throw new GoogleError('Google returned an unreadable response. Please retry.',response.status,true);}
+      }
+      const status=response.status,detail=await googleDetail(url,response);
+      // Gmail and Calendar answer per-user rate limits with 403 as well as 429. The request was refused before it ran, so retrying is safe.
+      const limited=status===429||(status===403&&RATE_REASONS.test(detail.reason));
+      if(limited&&attempt<5){
+        const after=Number(response.headers.get('retry-after'));
+        await sleep(Number.isFinite(after)&&after>0?Math.min(after*1000,30000):Math.min(16000,1000*2**attempt)+Math.floor(Math.random()*500));
+        continue;
+      }
+      if(limited)throw new GoogleError(`Google rate limit reached. Please retry shortly. ${detail.text}`,429);
+      if(status===401) throw new GoogleError(`Google authorization expired. Reconnect this account. ${detail.text}`,status);
+      if(status===403) throw new GoogleError(`Google denied this request. ${detail.text}`,status);
       if(status===404) throw new GoogleError('Google could not find this item.',status);
-      throw new GoogleError(`Google request failed (${status}). Please retry.`,status,status>=500);
+      throw new GoogleError(`Google request failed (${status}). Please retry. ${detail.text}`,status,status>=500);
     }
-    if(response.status===204)return {};
-    // A 2xx whose body was lost may still have been applied, so the outcome is unknown.
-    try{return await response.json() as Json;}catch{throw new GoogleError('Google returned an unreadable response. Please retry.',response.status,true);}
   }
   async function access(id:string):Promise<string> {
     const token=tokens[id];

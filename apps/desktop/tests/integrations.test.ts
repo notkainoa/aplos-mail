@@ -186,3 +186,20 @@ test('Gmail keeps workflow data in one message under a hidden Aplos label that s
     assert.equal(requests.filter(r=>r.url.pathname.endsWith('/threads')).at(-1)!.url.searchParams.get('q'),'-label:aplos-mail-data');
   }finally{google.close();fresh.close();await rm(dir,{recursive:true,force:true});}
 });
+
+test('Google rate limits sent as 403 are retried, and other refusals show Google\'s own reason',async()=>{
+  const dir=await tokenDir();let profileCalls=0;const waits:number[]=[];
+  const limited=()=>json({error:{code:403,message:'User-rate limit exceeded.  Retry after 2026-10-25T03:00:00Z',errors:[{reason:'userRateLimitExceeded'}]}},403);
+  const google=await createGoogle({dataDir:dir,clientId:'own-client',encrypt,decrypt,sleep:async ms=>{waits.push(ms);},fetch:async input=>{
+    const url=String(input);
+    if(url.endsWith('/profile'))return ++profileCalls<3?limited():json({historyId:'7'});
+    if(url.includes('/threads?'))return json({threads:[]});
+    if(url.includes('/settings/sendAs'))return json({error:{code:403,message:'Request had insufficient authentication scopes.',status:'PERMISSION_DENIED',details:[{reason:'ACCESS_TOKEN_SCOPE_INSUFFICIENT'}]}},403);
+    return json({});
+  }});
+  try {
+    const result=await google.sync(account,undefined,{has:()=>false});
+    assert.equal(result.cursor,'7');assert.equal(profileCalls,3);assert.equal(waits.length,2,'two backoffs before the third attempt succeeds');
+    await assert.rejects(()=>google.getSendAs(account),(error:Error)=>/Google denied this request\. Gmail \(ACCESS_TOKEN_SCOPE_INSUFFICIENT\): Request had insufficient authentication scopes\./.test(error.message));
+  } finally {google.close();await rm(dir,{recursive:true,force:true});}
+});
