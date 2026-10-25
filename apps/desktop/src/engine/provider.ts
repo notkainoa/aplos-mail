@@ -33,6 +33,8 @@ export interface SyncResult {
 export interface SyncContext {
   /** Whether this device already stores the thread, so providers can skip refetching unchanged bodies. */
   has(threadId:string):boolean;
+  /** A first sync reports threads downloaded out of the threads it will fetch, for the setup screen. */
+  progress?(fetched:number,target:number):void;
 }
 
 /** What a host supports, so the engine and UI only offer what works. */

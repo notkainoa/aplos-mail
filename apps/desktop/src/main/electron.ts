@@ -14,12 +14,12 @@ import {spawnSync} from 'node:child_process';
 import type {AppState,Listener} from '../shared/types';
 
 const methods=new Set([
-  'state.get','threads.page','capabilities.get','symbols.render','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',
+  'state.get','threads.page','capabilities.get','symbols.render','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset','setup.run','setup.status',
   'thread.update','thread.undo','home.hide','search','draft.save','draft.delete','draft.send','draft.undoSend',
   'ai.summarize','ai.summarizing','ai.polish','ai.draft','ai.ask','ai.models','ai.test','ai.keys','ai.key.set','ai.key.delete','ai.key.test','ai.cancel','ai.transcribe','conversation.delete','workflow.status','workflow.enable','workflow.code','workflow.disable',
   'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
 ]);
-const nativeMethods=new Set(['window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test','system.login','system.defaultMail','system.microphone','app.info','update.status','update.check','update.restart','update.later']);
+const nativeMethods=new Set(['onboarding.open','onboarding.finish','window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test','system.login','system.defaultMail','system.microphone','app.info','update.status','update.check','update.restart','update.later']);
 const rendererFile=resolve(__dirname,'../renderer/index.html');
 const rendererURL=pathToFileURL(rendererFile);
 const devURL=process.env.APLOS_RENDERER_URL;
@@ -30,6 +30,8 @@ const pendingLinks:string[]=[];
 const pendingClose=new Set<number>();
 const permittedClose=new Set<number>();
 let main:BrowserWindow|undefined;
+/** The first-run window: its own small window, shown instead of the mail window until setup is finished. */
+let onboarding:BrowserWindow|undefined;
 type Engine=ReturnType<typeof connectEngine>;
 /** The mailbox engine in its utility process; replaced if that process stops unexpectedly. */
 let service:Engine|undefined;
@@ -58,7 +60,25 @@ async function external(raw:unknown){
 }
 function emit(event:Parameters<Listener>[0]){for(const win of windows)if(!win.isDestroyed())win.webContents.send('aplos:event',event);}
 function command(value:string){const win=BrowserWindow.getFocusedWindow()||main;win?.webContents.send('aplos:event',{type:'command',payload:value});}
-function focusMain(){if(!main||main.isDestroyed())main=createWindow();if(main.isMinimized())main.restore();main.show();main.focus();}
+function focusMain(){
+  // Until setup is done there is no mail window; the onboarding window answers the Dock, links and notifications.
+  if((!main||main.isDestroyed())&&onboarding&&!onboarding.isDestroyed()){onboarding.show();onboarding.focus();return;}
+  openMain();
+}
+function openMain(){if(!main||main.isDestroyed())main=createWindow();if(main.isMinimized())main.restore();main.show();main.focus();return main;}
+function openOnboarding(){
+  if(onboarding&&!onboarding.isDestroyed()){onboarding.show();onboarding.focus();return;}
+  const win=createWindow({onboarding:'1'});onboarding=win;
+  // Closing it is the same as finishing: the owner lands in the app rather than in no window at all.
+  win.on('closed',()=>{if(onboarding===win)onboarding=undefined;if(!main&&!quitting&&!closing)void finishOnboarding();});
+}
+/** Marks setup done, opens the mail window and closes the onboarding window once the mail window can be shown. */
+async function finishOnboarding(){
+  if(latestState&&!latestState.settings.onboardingDone)await service?.invoke('settings.update',{patch:{onboardingDone:true}}).catch(()=>{});
+  const existing=main&&!main.isDestroyed(),win=openMain(),done=onboarding;
+  const close=()=>{if(done&&!done.isDestroyed())done.close();};
+  if(existing)close();else win.once('ready-to-show',close);
+}
 function handleLink(raw:string){try{const url=new URL(raw);if(!['mailto:','aplos:'].includes(url.protocol)||raw.length>10000)return;if(started)focusMain();if(!main||main.webContents.isLoading())pendingLinks.push(raw);else{focusMain();main.webContents.send('aplos:event',{type:'deep-link',payload:raw});}}catch{/* Ignore invalid OS links. */}}
 function finishQuit(){if(closing)return;closing=true;void Promise.resolve(service?.close()).finally(()=>{updates?.stop();if(!(installUpdate&&updates?.install()))app.quit();});}
 // Runs on every state change. Assigning themeSource, even to the same value, resets the macOS app appearance
@@ -83,8 +103,9 @@ function syncTheme(redraw:boolean){
     if(process.platform==='darwin'&&(redraw||drifted))for(const win of windows)if(!win.isDestroyed()){win.setVibrancy(null);win.setVibrancy('sidebar');}
   }finally{syncingTheme=false;}
 }
-function createWindow(query?:{draft?:string;thread?:string}){
+function createWindow(query?:{draft?:string;thread?:string;onboarding?:string}){
   const mac=process.platform==='darwin';
+  if(query?.onboarding)return onboardingWindow({onboarding:query.onboarding});
   // macOS: a transparent window base lets the native sidebar material show through the
   // renderer's transparent sidebar; the content pane paints its own opaque surface.
   const chrome=mac?{titleBarStyle:'hidden' as const,trafficLightPosition:{x:16,y:14},backgroundColor:'#00000000',vibrancy:'sidebar' as const,visualEffectState:'followWindow' as const}:{titleBarStyle:'hiddenInset' as const,backgroundColor:nativeTheme.shouldUseDarkColors?'#000000':'#e6e5e2'};
@@ -110,6 +131,24 @@ function createWindow(query?:{draft?:string;thread?:string}){
   win.webContents.on('did-finish-load',()=>{if(latestState)win.webContents.send('aplos:event',{type:'state',payload:latestState});if(win===main)for(const link of pendingLinks.splice(0))win.webContents.send('aplos:event',{type:'deep-link',payload:link});});
   win.on('closed',()=>{windows.delete(win);pendingClose.delete(win.id);permittedClose.delete(win.id);for(const id of claims.releaseWindow(win.id))emit({type:'draft-owner',payload:{draftId:id}});for(const[key,popout]of popouts)if(popout===win)popouts.delete(key);if(main===win)main=undefined;if(quitting&&!windows.size)finishQuit();});
   if(devURL){const url=new URL(devURL);if(query)for(const[key,value]of Object.entries(query))url.searchParams.set(key,value);void win.loadURL(url.href);}
+  else void win.loadFile(rendererFile,{query});
+  return win;
+}
+/** A small, fixed window with its own content edge to edge, like a browser's first run. */
+function onboardingWindow(query:{onboarding:string}){
+  const dark=nativeTheme.shouldUseDarkColors;
+  const win=new BrowserWindow({width:720,height:560,resizable:false,maximizable:false,fullscreenable:false,center:true,title:'Welcome to Aplos Mail',
+    titleBarStyle:'hiddenInset',trafficLightPosition:{x:18,y:18},backgroundColor:dark?'#181716':'#ffffff',show:false,icon:join(__dirname,'icon.png'),
+    webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,spellcheck:false}});
+  windows.add(win);
+  win.once('ready-to-show',()=>win.show());
+  win.on('focus',()=>syncTheme(false));
+  win.webContents.on('will-navigate',(event,url)=>{if(!trustedURL(url)){event.preventDefault();void external(url).catch(()=>{});}});
+  win.webContents.on('will-redirect',(event,url)=>{if(!trustedURL(url))event.preventDefault();});
+  win.webContents.setWindowOpenHandler(({url})=>{void external(url).catch(()=>{});return {action:'deny'};});
+  win.webContents.on('did-finish-load',()=>{if(latestState)win.webContents.send('aplos:event',{type:'state',payload:latestState});});
+  win.on('closed',()=>{windows.delete(win);if(quitting&&!windows.size)finishQuit();});
+  if(devURL){const url=new URL(devURL);url.searchParams.set('onboarding',query.onboarding);void win.loadURL(url.href);}
   else void win.loadFile(rendererFile,{query});
   return win;
 }
@@ -174,6 +213,8 @@ async function invokeNative(event:IpcMainInvokeEvent,method:string,input:unknown
   // Also accepts the save acknowledgement from a renderer-initiated close held at beforeunload.
   if(method==='window.closeReady'){pendingClose.delete(win.id);permittedClose.add(win.id);win.setEnabled(true);setImmediate(()=>{if(!win.isDestroyed())win.close();});return true;}
   if(method==='window.closeCancel'){pendingClose.delete(win.id);win.setEnabled(true);quitting=false;installUpdate=false;return true;}
+  if(method==='onboarding.open'){openOnboarding();return true;}
+  if(method==='onboarding.finish'){await finishOnboarding();return true;}
   if(method==='app.info')return {name:'Aplos Mail',version:app.getVersion(),desktop:true};
   if(method==='update.status')return updates!.info();
   if(method==='update.check')return updates!.check(true);
@@ -290,7 +331,7 @@ else{
     applyAppearance(latestState);started=true;
     nativeTheme.on('updated',()=>syncTheme(true));
     updates=createUpdates();updates.start();
-    menus();main=createWindow();
+    menus();if(latestState.settings.onboardingDone)main=createWindow();else openOnboarding();
     app.setAsDefaultProtocolClient('aplos');
     for(const arg of process.argv)if(/^(mailto|aplos):/i.test(arg))handleLink(arg);
   }).catch(error=>{dialog.showErrorBox('Aplos Mail could not start',error instanceof Error?error.message:'An unknown startup error occurred.');app.quit();});

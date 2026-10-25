@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useState} from 'react';
 import {ArrowLeft,ArrowRight,ArrowUpRight,Mail} from '../icons';
 import type {Capabilities} from '../../shared/types';
 import type {AccountPreset,ProviderKind,ServerSettings} from '../../engine/provider';
@@ -27,11 +27,20 @@ const credential:Partial<Record<AccountPreset,{label:string;help:string;url?:str
 const blankServer:ServerSettings={imap:{host:'',port:993,secure:true},smtp:{host:'',port:465,secure:true}};
 
 export function AddAccountDialog({open,close,capabilities,connected}:{open:boolean;close:()=>void;capabilities:Capabilities;connected:()=>void}){
+  return <Dialog open={open} onClose={close} label="Add an account" className="add-account">
+    <AddAccountForm capabilities={capabilities} header={title=><DialogHeader title={title} onClose={close}/>} connected={()=>{connected();close();}}/>
+  </Dialog>;
+}
+
+/**
+ * Choosing a host and connecting it. The settings dialog wraps it; onboarding shows it as a full page (`setup`), where the
+ * first sync starts in the background so the owner can carry on with the next step.
+ */
+export function AddAccountForm({capabilities,header,connected,setup=false}:{capabilities:Capabilities;header:(title:string)=>React.ReactNode;connected:()=>void;setup?:boolean}){
   const [step,setStep]=useState<'start'|'details'>('start');
   const [email,setEmail]=useState('');const [secret,setSecret]=useState('');const [name,setName]=useState('');
   const [choice,setChoice]=useState<Choice>();const [server,setServer]=useState<ServerSettings>(blankServer);const [discovery,setDiscovery]=useState<Discovery>();
   const [busy,setBusy]=useState('');const [error,setError]=useState('');
-  useEffect(()=>{if(open)return;setStep('start');setSecret('');setError('');setBusy('');setDiscovery(undefined);setChoice(undefined);},[open]);
   async function run(label:string,fn:()=>Promise<void>){setBusy(label);setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setBusy('');}}
   function pick(next:Choice,found?:Discovery){setChoice(next);setDiscovery(found);setServer(found?.server??blankServer);setStep('details');setError('');}
   const discover=()=>run('discover',async()=>{
@@ -47,7 +56,8 @@ export function AddAccountDialog({open,close,capabilities,connected}:{open:boole
     if(!oauth){request.email=email.trim();request.secret=secret;if(name.trim())request.name=name.trim();}
     if(choice.preset==='generic')request.server={...server,caldav:server.caldav&&server.caldav!=='https://'?server.caldav:undefined};
     if(discovery?.sessionUrl&&choice.provider==='jmap')request.sessionUrl=discovery.sessionUrl;
-    await invoke('account.connect',request);setSecret('');connected();close();
+    if(setup)request.setup=true;
+    await invoke('account.connect',request);setSecret('');connected();
   });
   const info=choice?credential[choice.preset]:undefined;
   const endpoint=(key:'imap'|'smtp',label:string)=><div className="server-fields">
@@ -56,8 +66,8 @@ export function AddAccountDialog({open,close,capabilities,connected}:{open:boole
     <Field label="Security"><Select label={`${label} security`} variant="field" value={server[key].secure?'tls':'starttls'} options={[['tls','TLS'],['starttls','STARTTLS']]} onChange={value=>setServer(s=>({...s,[key]:{...s[key],secure:value==='tls'}}))}/></Field>
   </div>;
   const ready=!!choice&&(oauth?!unavailable:!!email.trim()&&!!secret&&(choice.preset!=='generic'||(!!server.imap.host&&!!server.smtp.host)));
-  return <Dialog open={open} onClose={close} label="Add an account" className="add-account">
-    <DialogHeader title={step==='start'?'Add an account':choice?.label==='Other'?'Other mail account':`Connect ${choice?.label}`} onClose={close}/>
+  return <>
+    {header(step==='start'?'Add an account':choice?.label==='Other'?'Other mail account':`Connect ${choice?.label}`)}
     {error&&<Notice>{error}</Notice>}
     {step==='start'?<>
       <form className="add-account-email" onSubmit={e=>{e.preventDefault();if(email.trim())void discover();}}>
@@ -88,5 +98,5 @@ export function AddAccountDialog({open,close,capabilities,connected}:{open:boole
         <Button variant="primary" loading={busy==='connect'} disabled={!ready||!!busy} onClick={()=>void connect()}>{oauth?`Continue with ${choice!.provider==='google'?'Google':'Microsoft'}`:'Connect'}</Button>
       </footer>
     </div>}
-  </Dialog>;
+  </>;
 }

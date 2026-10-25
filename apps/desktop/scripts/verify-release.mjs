@@ -43,8 +43,15 @@ let client;
 try{
   client=await launch();
   const fresh=await client.invoke('state.get');
-  await check('first run starts empty and opens the welcome flow',async()=>{assert.deepEqual([fresh.accounts.length,fresh.threads.length,fresh.drafts.length,fresh.events.length],[0,0,0,0]);assert.equal(fresh.settings.onboardingDone,false);await until(()=>client.evaluate('!!document.querySelector(\'[role="dialog"][aria-label="Welcome to Aplos Mail"]\')'),'welcome dialog');assert.ok(await client.evaluate('!!document.querySelector(".empty-start")'),'empty Home state');});
-  await check('the welcome demo link loads the demo',async()=>{await client.evaluate('document.querySelector(".onboarding-demo").click()');await until(async()=>(await client.invoke('state.get')).accounts.length===2,'demo accounts');});
+  // First run: only the onboarding window (`?onboarding`), over an empty mailbox; the mail window opens when it finishes.
+  await check('first run starts empty in its own onboarding window',async()=>{assert.deepEqual([fresh.accounts.length,fresh.threads.length,fresh.drafts.length,fresh.events.length],[0,0,0,0]);assert.equal(fresh.settings.onboardingDone,false);await until(()=>client.evaluate('!!document.querySelector(".onboarding-window")'),'onboarding window');const pages=(await targets()).filter(t=>t.type==='page'&&t.url.startsWith('file:'));assert.equal(pages.length,1,'no mail window yet');assert.match(pages[0].url,/onboarding=1/);assert.ok(await client.evaluate('innerWidth<=720&&innerHeight<=560'),'the onboarding window is the small one');});
+  await check('the onboarding demo link loads the demo',async()=>{await client.evaluate('document.querySelector(".onboarding-demo").click()');await until(async()=>(await client.invoke('state.get')).accounts.length===2,'demo accounts');});
+  await check('finishing onboarding opens the mail window and closes onboarding',async()=>{
+    await client.evaluate('void window.aplos.invoke("onboarding.finish"),true');
+    const target=await until(async()=>{const pages=(await targets()).filter(t=>t.type==='page'&&t.url.startsWith('file:'));return pages.length===1&&!/onboarding=1/.test(pages[0].url)&&pages[0];},'mail window replaces onboarding');
+    client=await connect(target);await until(()=>client.evaluate('Boolean(window.aplos&&document.querySelector(".app-shell"))'),'mail window rendered');
+    assert.equal((await client.invoke('state.get')).settings.onboardingDone,true);
+  });
   const initial=await client.invoke('state.get');
   assert.ok(initial.accounts.every(a=>a.provider==='demo'),'Refusing to test a real account');
   await check('packaged UI, preload and secure engine start',async()=>{assert.equal(initial.accounts.length,2);assert.equal(initial.threads.length,18);assert.ok(await client.evaluate('document.querySelector("main").getBoundingClientRect().width>0'));assert.equal(await client.evaluate('typeof window.require'), 'undefined');});

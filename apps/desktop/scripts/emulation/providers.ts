@@ -4,7 +4,7 @@ import { simpleParser } from 'mailparser';
 
 type Kind='google'|'microsoft';
 interface Mail {id:string;thread:string;subject:string;text:string;date:string;from:string;to:string[];internetId:string;labels:string[]}
-interface Fault {kind:Kind;method:string;path:string;status:number}
+interface Fault {kind:Kind;method:string;path:string;status:number;body?:unknown}
 const graph='https://graph.microsoft.com/v1.0';
 const folders:Record<string,string>={inbox:'INBOX',archive:'ARCHIVE',sentitems:'SENT',deleteditems:'TRASH',junkemail:'SPAM',drafts:'DRAFTS'};
 const origins=new Map([
@@ -15,7 +15,8 @@ const origins=new Map([
 export const emulatedIdentity=(kind:Kind)=>({id:kind==='google'?'google-local':'microsoft-local',email:`alex@${kind}.example.test`,name:'Alex Local'});
 
 /** Original, deliberately small protocol emulator. No request can reach an external provider. */
-export async function startProviderEmulator() {
+/** `threads` adds that many synthetic Google threads; `latencyMs` delays every request, so progress can be watched. */
+export async function startProviderEmulator({threads=0,latencyMs=0}:{threads?:number;latencyMs?:number}={}) {
   const mail={google:new Map<string,Mail>(),microsoft:new Map<string,Mail>()};
   const changes:{kind:Kind;version:number;id:string;before:string[]}[]=[];
   const codes=new Map<string,{kind:Kind;challenge:string;redirect:string}>();
@@ -25,14 +26,16 @@ export async function startProviderEmulator() {
   const put=(kind:Kind,message:Mail)=>{const before=mail[kind].get(message.id)?.labels??[];mail[kind].set(message.id,message);changes.push({kind,version:++version,id:message.id,before});};
   const add=(kind:Kind,id:string,text='Please review the original studio plan.')=>put(kind,{id,thread:id,subject:`Studio plan ${id}`,text,date:new Date().toISOString(),from:'ari@studio.example.test',to:[emulatedIdentity(kind).email],internetId:`<${id}@studio.example.test>`,labels:['INBOX','UNREAD','IMPORTANT']});
   for(const kind of ['google','microsoft'] as const){add(kind,'studio');add(kind,'walk','The neighborhood walk is confirmed for November 20, 2026 at 15:00 UTC.');}
+  for(let i=1;i<=threads;i++)add('google',`note-${i}`,`Original synthetic note ${i} about the studio calendar.`);
   const gmailMessage=(m:Mail)=>({id:m.id,threadId:m.thread,labelIds:m.labels,internalDate:String(Date.parse(m.date)),snippet:m.text,payload:{mimeType:'text/plain',headers:[{name:'From',value:m.from},{name:'To',value:m.to.join(', ')},{name:'Subject',value:m.subject},{name:'Message-ID',value:m.internetId}],body:{data:Buffer.from(m.text).toString('base64url')}}});
   const graphMessage=(m:Mail)=>({id:m.id,conversationId:m.thread,internetMessageId:m.internetId,subject:m.subject,body:{contentType:'text',content:m.text},bodyPreview:m.text,from:{emailAddress:{address:m.from,name:'Ari'}},toRecipients:m.to.map(address=>({emailAddress:{address}})),ccRecipients:[],receivedDateTime:m.date,sentDateTime:m.date,isRead:!m.labels.includes('UNREAD'),flag:{flagStatus:m.labels.includes('STARRED')?'flagged':'notFlagged'},parentFolderId:Object.keys(folders).find(f=>m.labels.includes(folders[f]))??'archive',isDraft:false,hasAttachments:false});
   const json=(data:unknown,status=200)=>new Response(status===204||status===202?null:JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
   async function route(kind:Kind,url:URL,method:string,body:string,headers:Headers):Promise<Response> {
     stats.requests++;
+    if(latencyMs)await new Promise(resolve=>setTimeout(resolve,latencyMs));
     const path=url.pathname,p=url.searchParams;
     const failed=faults.findIndex(f=>f.kind===kind&&f.method===method&&path.includes(f.path));
-    if(failed>=0)return json({error:{code:'EmulatedFailure'}},faults.splice(failed,1)[0].status);
+    if(failed>=0){const fault=faults.splice(failed,1)[0];return json(fault.body??{error:{code:'EmulatedFailure'}},fault.status);}
     if(path.endsWith('/auth')||path.endsWith('/authorize')) {
       const redirect=p.get('redirect_uri')??'',callback=new URL(redirect);
       if(callback.protocol!=='http:'||!['localhost','127.0.0.1'].includes(callback.hostname)||callback.username||callback.password||!callback.port||p.get('client_id')!=='emulated-aplos'||p.get('code_challenge_method')!=='S256'||!p.get('state')||!p.get('code_challenge'))return json({error:'invalid_authorization_request'},400);
@@ -141,7 +144,7 @@ export async function startProviderEmulator() {
     return fetch(target,{...init,redirect:'manual'});
   };
   return {origin,fetch:request,stats,mail,add,
-    failNext(kind:Kind,method:string,path:string,status=503){faults.push({kind,method,path,status});},
+    failNext(kind:Kind,method:string,path:string,status=503,body?:unknown){faults.push({kind,method,path,status,body});},
     async authorize(url:string){
       const expected=new URL(url).searchParams.get('redirect_uri');const response=await request(url);
       const location=response.headers.get('location');if(response.status!==302||!location||!expected)throw new Error('Emulated authorization failed.');

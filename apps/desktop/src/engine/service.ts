@@ -1,4 +1,4 @@
-import type { Account, AppState, Attachment, CalendarEvent, CalendarInfo, Conversation, Draft, Listener, Settings, Thread } from '../shared/types';
+import type { Account, AccountSyncProgress, AppState, Attachment, CalendarEvent, CalendarInfo, Conversation, Draft, Listener, Settings, SetupProgress, Thread } from '../shared/types';
 import { createDemo, createEmpty, defaultSettings, demoCalendars } from './demo';
 import { hasRealSummary } from '../shared/summary';
 import { appVersion } from '../shared/version';
@@ -21,6 +21,9 @@ const base64Bytes=(value:string)=>Math.floor(value.replace(/=+$/,'').length*3/4)
 
 /** Sending addresses and calendars change rarely, so automatic syncs refresh them at most this often. */
 const EXTRAS_INTERVAL_MS=10*60_000;
+/** The setup screen waits for AI on this many of the newest Home emails, for at most SETUP_AI_MS; the rest continue in the background. */
+export const SETUP_AI_LIMIT=40;
+export const SETUP_AI_MS=60_000;
 /** Automatic syncs share Done, Later and todos with other devices at most this often, unless something changed here. */
 const WORKFLOW_INTERVAL_MS=5*60_000;
 const WORKFLOW_KEYS=['status','replyStatus','dueDate','reminderAt','reminderFired','todo','hiddenFromHome'] as const;
@@ -526,14 +529,14 @@ export async function createEngineService(options:EngineOptions) {
     run.work.then(done,done);return {input,result:await run.work};
   }
   /** Threads in `refresh` already have the user's triage; only their summary and reply state follow new mail. Threads in `summaryOnly` (Spam) take just the summary. */
-  async function classifyIncoming(fresh:Thread[],a:Account,refresh:Set<string>=new Set(),summaryOnly:Set<string>=new Set()):Promise<string[]> {
+  async function classifyIncoming(fresh:Thread[],a:Account,refresh:Set<string>=new Set(),summaryOnly:Set<string>=new Set(),run:{requestId?:string;onEach?:()=>void}={}):Promise<string[]> {
     if(!fresh.length)return [];
     // Summaries and plans can run on different providers, so each is checked on its own.
     const summaries=await ready('summary'),plans=state.settings.autoCalendar&&!!a.calendarConnected&&await ready('plan');
     if(!summaries&&!plans)return [];
     let cursor=0,classificationFailures=0,calendarFailures=0,cancelled=false;
     try{
-      await ai({requestId:`sync-ai-${a.id}`},async signal=>{
+      await ai({requestId:run.requestId??`sync-ai-${a.id}`},async signal=>{
         // Bound concurrency while keeping a first sync responsive for larger mailboxes.
         await Promise.all(Array.from({length:Math.min(3,fresh.length)},async()=>{
           while(cursor<fresh.length&&!signal.aborted){
@@ -566,6 +569,7 @@ export async function createEngineService(options:EngineOptions) {
                 }
               }catch{if(signal.aborted)break;calendarFailures++;}
             }
+            run.onEach?.();
           }
         }));
         return undefined;
@@ -577,6 +581,65 @@ export async function createEngineService(options:EngineOptions) {
     if(cancelled)warnings.push(`Mail synced for ${a.email}; automatic AI processing was cancelled.`);
     for(const message of warnings)emit('error',{message});
     return warnings;
+  }
+  /** Accounts connected during setup: their first sync skips the AI pass, which `setup.run` does once keys are set. */
+  const deferAI=new Set<string>();
+  /** The latest sync progress per account, kept for whichever window asks (`setup.status`). */
+  const progress=new Map<string,AccountSyncProgress>();
+  let setup:SetupProgress={state:'idle',accounts:[]};let setupJob:Promise<SetupProgress>|undefined;let setupEmit:ReturnType<typeof setTimeout>|undefined;
+  const realAccounts=()=>state.accounts.filter(a=>a.provider!=='demo');
+  function setupSnapshot():SetupProgress {
+    return {...setup,accounts:realAccounts().map(a=>({...(progress.get(a.id)??{accountId:a.id,email:a.email,phase:'waiting' as const})}))};
+  }
+  /** Progress events are coalesced, so a 500-thread download is a handful of updates rather than 500. */
+  function emitSetup(now=false){
+    if(now){if(setupEmit)clearTimeout(setupEmit);setupEmit=undefined;emit('setup.progress',setupSnapshot());return;}
+    setupEmit??=setTimeout(()=>{setupEmit=undefined;if(!closed)emit('setup.progress',setupSnapshot());},120);
+  }
+  function report(a:Account,patch:Partial<AccountSyncProgress>){
+    const previous=progress.get(a.id)??{accountId:a.id,email:a.email,phase:'waiting' as const};
+    progress.set(a.id,{...previous,...patch,accountId:a.id,email:a.email});emitSetup(patch.phase==='done'||patch.phase==='error');
+  }
+  /**
+   * The end of onboarding: a full sync of every connected account, then AI over the newest Home emails so the main
+   * window opens populated. The AI wait is capped; whatever is left is summarized in the background.
+   */
+  async function runSetup():Promise<SetupProgress> {
+    const accounts=realAccounts();
+    for(const a of accounts){deferAI.add(a.id);if(progress.get(a.id)?.phase==='error')progress.delete(a.id);}
+    setup={state:'syncing',accounts:[]};emitSetup(true);
+    try{
+      // A sync started when the account was connected may still be running; then everything syncs once more, so
+      // an account whose connect-time sync was skipped or failed is covered too.
+      if(syncing)await syncing.catch(()=>{});
+      await sync(undefined,true);
+      const failed=new Set(accounts.filter(a=>progress.get(a.id)?.phase==='error').map(a=>a.id));
+      const ok=accounts.filter(a=>!failed.has(a.id)&&state.accounts.some(x=>x.id===a.id));
+      const unsummarized=state.threads.filter(t=>ok.some(a=>a.id===t.accountId)&&(t.status==='new'||t.status==='spam')&&!hasRealSummary(t)).sort(threadOrder);
+      const home=unsummarized.filter(t=>t.status==='new').slice(0,SETUP_AI_LIMIT),homeIds=new Set(home.map(t=>t.id));
+      const rest=unsummarized.filter(t=>!homeIds.has(t.id));
+      if(!unsummarized.length)setup={...setup,ai:{state:'done',done:0,total:0,background:0}};
+      else if(!await ready('summary'))setup={...setup,ai:{state:'skipped',done:0,total:home.length,background:0}};
+      else{
+        let done=0;setup={...setup,state:'summarizing',ai:{state:'running',done,total:home.length,background:rest.length}};emitSetup(true);
+        const tick=()=>{done++;setup={...setup,ai:{...setup.ai!,done}};emitSetup();};
+        const pass=(threads:Thread[],tag:string,onEach?:()=>void)=>Promise.all(ok.map(a=>{
+          const mine=threads.filter(t=>t.accountId===a.id);
+          return classifyIncoming(mine,a,new Set(),new Set(mine.filter(t=>t.status==='spam').map(t=>t.id)),{requestId:`${tag}-${a.id}`,onEach});
+        }));
+        let timer:ReturnType<typeof setTimeout>|undefined;
+        const capped=await Promise.race([pass(home,'setup-ai',tick).then(()=>false),new Promise<boolean>(resolve=>{timer=setTimeout(()=>resolve(true),SETUP_AI_MS);})]);
+        if(timer)clearTimeout(timer);
+        // The rest of the mailbox, and any Home email the cap cut off, keeps going after the main window opens.
+        if(rest.length){const job=pass(rest,'setup-rest').then(()=>{},()=>{});jobs.add(job);void job.finally(()=>jobs.delete(job));}
+        setup={...setup,ai:{state:capped?'partial':'done',done,total:home.length,background:rest.length}};
+      }
+      setup={...setup,state:failed.size?'failed':'done'};
+    }catch(error){
+      setup={...setup,state:'failed'};emit('error',{message:error instanceof Error?error.message:'Setup could not finish.'});
+    }finally{for(const a of accounts)deferAI.delete(a.id);}
+    emitSetup(true);
+    return setupSnapshot();
   }
   async function syncAccount(a:Account,manual:boolean,errors:string[]) {
     const changedDuring=new Set<string>();touched.set(a.id,changedDuring);
@@ -593,16 +656,17 @@ export async function createEngineService(options:EngineOptions) {
     const cursor=store.cursor(a.id),local=new Set(state.threads.filter(t=>t.accountId===a.id).map(t=>t.id));
     const provider=host(a),stage=staged.stage();
     let events:CalendarEvent[]|undefined,result:SyncResult;
+    report(a,{phase:'mail',error:undefined});
     try{
       // Index writes made by the provider here are saved only together with the mail and cursor below.
       result=await stage.run(async()=>{
-        const result=await provider.sync(a,cursor,{has:id=>local.has(id)});
+        const result=await provider.sync(a,cursor,{has:id=>local.has(id),progress:(fetched,target)=>report(a,{fetched,target})});
         if(manual||!cursor||now().getTime()-(extrasAt.get(a.id)??0)>=EXTRAS_INTERVAL_MS){
           try{a.sendAs=provider.getSendAs?await provider.getSendAs(a):a.sendAs?.length?a.sendAs:[{email:a.email,name:a.name,signature:'',isDefault:true}];delete a.error;}catch{
             const message='Sending addresses and signatures are unavailable. Reconnect to grant settings access; the primary address is still available.';
             a.sendAs=[{email:a.email,name:a.name,signature:'',isDefault:true}];a.error=message;errors.push(message);if(manual)emit('error',{message});
           }
-          if(a.calendarConnected&&provider.listEvents)try{events=await provider.listEvents(a);}catch{/* Mail sync remains available without Calendar permission. */}
+          if(a.calendarConnected&&provider.listEvents)try{report(a,{phase:'calendar'});events=await provider.listEvents(a);}catch{/* Mail sync remains available without Calendar permission. */}
           extrasAt.set(a.id,now().getTime());
         }else{const current=state.accounts.find(x=>x.id===a.id);if(current?.error&&!/sending addresses/i.test(current.error))delete a.error;else if(current?.error)a.error=current.error;}
         return result;
@@ -642,7 +706,10 @@ export async function createEngineService(options:EngineOptions) {
     const replies=inbox.filter(t=>!added.has(t.id));
     // New Spam gets a summary too, so it can be judged without opening it; its triage fields stay untouched.
     const spam=outcome.added.map(current).filter((t):t is Thread=>!!t&&t.status==='spam');
+    report(a,{phase:'done'});
     await syncWorkflow(a,provider,manual,errors,generation);
+    // Mail connected during setup waits for its AI pass until the owner has had the chance to add a key (`setup.run`).
+    if(deferAI.has(a.id))return;
     errors.push(...await classifyIncoming([...fresh,...replies,...spam],a,new Set(replies.map(t=>t.id)),new Set(spam.map(t=>t.id))));
   }
   /** Share Done, Later, todos and reminders with this account's other devices, then apply theirs. */
@@ -676,7 +743,7 @@ export async function createEngineService(options:EngineOptions) {
       try{
         for(const a of accounts){
           try{await gate.run(a.id,()=>syncAccount(a,manual,errors));}
-          catch(error){const reason=error instanceof Error&&error.message?error.message.trim().replace(/\.?$/,'.'):'';console.error(`sync ${a.email} failed:`,error);const message=`Could not sync ${a.email}. ${reason?reason+' ':''}Reconnect the account or try again.`;errors.push(message);if(state.accounts.some(x=>x.id===a.id))change(s=>{s.accounts.find(x=>x.id===a.id)!.error=message;});}
+          catch(error){const reason=error instanceof Error&&error.message?error.message.trim().replace(/\.?$/,'.'):'';console.error(`sync ${a.email} failed:`,error);const message=`Could not sync ${a.email}. ${reason?reason+' ':''}Reconnect the account or try again.`;errors.push(message);report(a,{phase:'error',error:message});if(state.accounts.some(x=>x.id===a.id))change(s=>{s.accounts.find(x=>x.id===a.id)!.error=message;});}
         }
       }finally{if(!closed)change(s=>{s.sync={busy:false,lastSync:now().toISOString(),...(errors.length?{error:errors.join(' ')}:{})};});}
       if(!closed)checkReminders();
@@ -705,13 +772,21 @@ export async function createEngineService(options:EngineOptions) {
       }
       case 'symbols.render':return symbols(p.items,p.scale);
       case 'capabilities.get':return {groq:groq.available,google:!!providers.google?.available,microsoft:!!providers.microsoft?.available,desktop:!!options.desktop,version:appVersion,googleUnavailable:providers.google?.unavailableReason,microsoftUnavailable:providers.microsoft?.unavailableReason};
-      case 'settings.update':change(s=>{s.settings={...s.settings,...settingsPatch(p.patch)};});return clone(state);
+      case 'settings.update':{
+        const patch=settingsPatch(p.patch);change(s=>{s.settings={...s.settings,...patch};});
+        // Onboarding closed without its loading screen: later syncs of accounts connected there classify as usual.
+        if(patch.onboardingDone===true&&!setupJob)deferAI.clear();
+        return clone(state);
+      }
       case 'account.select':{const id=text(p.id,300);if(id!=='all')account(id);change(s=>{s.selectedAccountId=id;});return clone(state);}
       case 'account.connect':{
         const request=connectRequest(p),provider=providers[request.provider];
         if(!provider)throw new Error(brokenProviders.get(request.provider)||'This account type is not available in this version of Aplos.');
         if(!provider.available)throw new Error(provider.unavailableReason||'This account type is not configured.');
-        const a=await provider.connect(request);a.capabilities=provider.capabilities(a);bumpGeneration(a.id);change(s=>{s.accounts=s.accounts.filter(old=>old.id!==a.id);s.accounts.push(a);s.selectedAccountId=a.id;s.settings.onboardingDone=true;});return sync(a.id);}
+        const a=await provider.connect(request);a.capabilities=provider.capabilities(a);bumpGeneration(a.id);change(s=>{s.accounts=s.accounts.filter(old=>old.id!==a.id);s.accounts.push(a);s.selectedAccountId=a.id;});
+        // From onboarding the first sync starts now and runs while the owner finishes setup; its AI pass waits for `setup.run`.
+        if(p.setup===true){deferAI.add(a.id);progress.delete(a.id);const job=sync(a.id).then(()=>{},()=>{});jobs.add(job);void job.finally(()=>jobs.delete(job));return clone(state);}
+        return sync(a.id);}
       // The system resolver also sees internal names that public DNS-over-HTTPS cannot, so private targets are caught.
       case 'account.discover':return discoverAccount(safeEmail(p.email),{fetch:options.fetch,...(options.lookup?{lookup:options.lookup}:{})});
       case 'domain.check':{
@@ -726,6 +801,8 @@ export async function createEngineService(options:EngineOptions) {
         store.setCursor(a.id,undefined);staged.memory.clear(a.id);gate.forget(a.id);extrasAt.delete(a.id);defaults.delete(a.id);
         for(const d of state.drafts.filter(d=>d.accountId===a.id))stopSend(d.id);
         change(s=>{s.accounts=s.accounts.filter(x=>x.id!==a.id);s.threads=s.threads.filter(t=>t.accountId!==a.id);s.drafts=s.drafts.filter(d=>d.accountId!==a.id);s.events=s.events.filter(e=>e.accountId!==a.id);if(s.selectedAccountId===a.id)s.selectedAccountId='all';delete s.settings.accountNotifications[a.id];},{remove:queue.filter(op=>op.accountId===a.id).map(op=>op.id)});undo.length=0;return clone(state);}
+      case 'setup.run':return setupJob??=runSetup().finally(()=>{setupJob=undefined;});
+      case 'setup.status':return setupSnapshot();
       case 'sync':return sync(p.accountId?text(p.accountId,300):undefined,p.auto!==true);
       case 'demo.reset':{
         if(sending.size)throw new Error('Wait for sending to finish before resetting.');

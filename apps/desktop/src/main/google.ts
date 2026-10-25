@@ -168,10 +168,10 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
     return ids.slice(0,limit);
   }
   /** Fetch with bounded concurrency; one entry per ID, undefined when the thread no longer exists. */
-  async function each<T>(ids:string[],fn:(id:string)=>Promise<T>):Promise<(T|undefined)[]> {
-    const result:(T|undefined)[]=new Array(ids.length);let cursor=0;
+  async function each<T>(ids:string[],fn:(id:string)=>Promise<T>,progress?:(done:number,total:number)=>void):Promise<(T|undefined)[]> {
+    const result:(T|undefined)[]=new Array(ids.length);let cursor=0,done=0;
     await Promise.all(Array.from({length:Math.min(4,ids.length)},async()=>{while(cursor<ids.length){const at=cursor++;
-      try{result[at]=await fn(ids[at]);}catch(error){if(!notFound(error))throw error;result[at]=undefined;}}}));
+      try{result[at]=await fn(ids[at]);}catch(error){if(!notFound(error))throw error;result[at]=undefined;}progress?.(++done,ids.length);}}));
     return result;
   }
   /** Undefined for the app-data thread, which is never shown as mail. */
@@ -192,13 +192,14 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
     const labels=[...new Set((raw.messages??[]).flatMap(m=>m.labelIds??[]))];
     return {id:`${account.id}:${id}`,unread:labels.includes('UNREAD'),bookmarked:labels.includes('STARRED'),status:labelStatus(labels),labels};
   }
-  async function fullThreads(account:Account,ids:string[]):Promise<Thread[]> {
-    return (await each(ids,id=>fullThread(account,id))).filter((t):t is Thread=>!!t).sort((a,b)=>b.date.localeCompare(a.date));
+  async function fullThreads(account:Account,ids:string[],progress?:(done:number,total:number)=>void):Promise<Thread[]> {
+    return (await each(ids,id=>fullThread(account,id),progress)).filter((t):t is Thread=>!!t).sort((a,b)=>b.date.localeCompare(a.date));
   }
-  async function freshWindow(account:Account):Promise<SyncResult> {
+  async function freshWindow(account:Account,context:SyncContext):Promise<SyncResult> {
     // Read the position first so anything that changes while the window downloads is replayed next time.
     const profile=await api(account,`${gmail}/profile`);
-    const threads=await fullThreads(account,await listIds(account,INITIAL_THREADS));
+    const ids=await listIds(account,INITIAL_THREADS);context.progress?.(0,ids.length);
+    const threads=await fullThreads(account,ids,context.progress);
     return {threads,flags:[],removed:[],cursor:profile.historyId===undefined?undefined:String(profile.historyId),reset:true};
   }
   async function history(account:Account,cursor:string,context:SyncContext):Promise<SyncResult|undefined> {
@@ -328,7 +329,7 @@ export async function createGoogle(options:GoogleOptions):Promise<GoogleAdapter>
     },
     async sync(account:Account,cursor?:string,context:SyncContext={has:()=>false}):Promise<SyncResult> {
       if(cursor){const result=await history(account,cursor,context);if(result)return result;}
-      return freshWindow(account);
+      return freshWindow(account,context);
     },
     search:async(account:Account,query:string)=>fullThreads(account,await listIds(account,SEARCH_THREADS,query)),
     async updateThread(account:Account,thread:RemoteThread,patch:Partial<Thread>) {
