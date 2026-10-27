@@ -1,153 +1,84 @@
 # Aplos revamp: the roadmap
 
-Written 2026-10-27 on branch `revamp`. This is a plan. Nothing in it is built yet, and nothing goes to main until you merge it.
+Written 2026-10-27 on branch `revamp`, and rewritten the same day after your answers. This is a plan. Nothing in it is built yet, and nothing goes to main until you merge it.
 
-Read down to the "Reference" heading. That takes about ten minutes. Everything after it is for the coding threads.
+Read down to "Reference". The rest is for the coding threads.
 
 ## In plain English
 
-Today Aplos cannot finish syncing a real Gmail account. It keeps your whole mailbox in memory, it stops when you close the window, and some screens and wording still resemble Avec. The revamp fixes these problems in one coordinated push.
+Today Aplos cannot finish a real Gmail sync, keeps your whole mailbox in memory, stops when you close the window, and still resembles Avec. The revamp rebuilds the engine, the mail connections and every screen at once, and ships them as one redesigned version. There is no separate quick Gmail fix. That fix is part of the rebuild.
 
-Three AI coding threads work at the same time. The Engine thread builds the new foundation. The Providers & Sync thread makes Gmail, iCloud, Fastmail, calendars and Outlook work. The UI thread builds every screen. A second agent checks each piece of work, and each thread gives you something to try at every step.
+First, for two or three days, one thread writes the shared rules: the folder layout, every command the screens can send to the engine, the database layout and the design tokens. Then about 25 small lanes of work run at once, each in its own folders. Then the pieces are joined and checked on practice servers, test accounts and your mail. Last, you use Aplos daily and the threads fix what you find.
 
-There are three releases. 0.2.4 fixes Gmail in about a week. 0.3.0 puts a new engine under today's screens in about six weeks. 0.4.0 adds the new look and everything else in about fourteen weeks, or seventeen to eighteen if reviews and live checks run slow. Google's review of Aplos runs alongside and may take months. Until Google approves, Gmail works for you and up to 100 invited testers.
-
-Your part is eight decisions below, or the defaults if you don't answer. You also set up a few accounts and forms for Google, spend about two hours on Google paperwork, record one short demo video, and try each build by hand where a machine can't judge.
+Six threads run the lanes. One of them, the Integrator, merges everything and sends you one short summary a day. Expect a daily-use build in about two and a half weeks and a finished version in about three and a half. Nothing costs money.
 
 ## What the new Aplos will be
 
-- Gmail shows your inbox within seconds and downloads the rest in the background, inside Google's limits even across several Macs.
-- iCloud and Fastmail deliver new mail within seconds.
-- Calendars sync only what changed and keep meeting links.
-- Your mail lives in a database on your Mac that opens in milliseconds, even with 100,000 messages. Restarts no longer reload everything.
-- Closing the window leaves Aplos in the menu bar, so new mail, reminders and scheduled sends keep working. ⌘Q quits fully.
-- Each email displays in a sealed frame that can't track you. Remote images stay blocked until you allow them for a message or sender.
-- Background AI jobs run only after you agree. Groq stays the default.
-- The new look is called Skypaper. The email is a paper sheet on a sky-blue background, with ink-blue accents, a serif font for AI text, and one "carried off" animation when you finish an email.
-- ⌘K opens a real command palette, and a new onboarding window replaces today's setup.
-- Outlook is built but stays switched off until you register an app with Microsoft.
+- Gmail shows your inbox in seconds and fills in the rest quietly, inside Google's limits. When Google refuses, Aplos waits and logs Google's reason.
+- Gmail asks for a one-click reconnect each week, because the Google project stays in Testing mode. Aplos warns you a day ahead and loses nothing.
+- iCloud and Fastmail get new mail within seconds. Calendars sync only what changed. Outlook works once you register a free Microsoft app.
+- Mail lives in a database on your Mac that opens in milliseconds at 100,000 messages.
+- Closing the window leaves Aplos in the menu bar, so mail, reminders and scheduled sends keep working.
+- Each email shows in a sealed frame that can't track you.
+- Background AI runs only after you agree. Groq stays the default.
+- The look follows the revised mockups: quiet gray and white, roomy type, ink blue for the main action, a serif for AI text, no sky and no stripe, and a much simpler reader, reply and compose.
 
-Some things stay the same. No Aplos server holds your mail, and nothing syncs while the Mac sleeps.
+## The plan in days
 
-## Timeline in plain words
+Day 1 is the day you say go. If that is 28 October, day 18 is 14 November.
 
-Week 0 is the week of the Gmail fix. Week 1 starts the main work.
+| Phase | Days | What happens | What you see |
+|---|---|---|---|
+| 0. Freeze the shared rules | 1-3 | One thread writes the rules. Three reviewers try to break them first. | A short "frozen" note |
+| 1. Wide fan-out | 4-13 | About 25 lanes build at once on demo mail and practice servers | Main screens on demo mail around day 9 |
+| 2. Join and check | 11-18 | Screens switch to the real engine; live checks on test accounts, then your mail | The new Aplos on your mail around day 15 |
+| 3. Daily use | 18-25 | You use it as your only mail app; fixes every day or two | Done when a week passes with nothing blocking |
 
-| When | Release | What you can try |
-|---|---|---|
-| End of week 0 or early week 1 | 0.2.4 | Your real Gmail finishes its first sync. The screens and engine are today's. |
-| From week 2 | 0.3.0 betas | Early builds of the new engine, for you and invited testers only. Closing the window keeps Aplos in the menu bar. |
-| About week 6 | 0.3.0 | Gmail as your daily mail app on the new engine, still with today's screens. |
-| Weeks 6 to 13 | 0.3.x betas | The new look, screen by screen, on your real mail from about week 7. iCloud and Fastmail from about week 9. |
-| About week 12.5 | Release candidate | One build you use as your only mail app for seven days. |
-| About week 14 | 0.4.0 | Everything. This version can go public if you choose. |
+The longest chain runs through Gmail. The database write path is ready around day 6, Gmail passes on the practice server around day 11, and live checks run on days 12 to 15. The screens meet it at the release candidate around day 17. A mistake in the shared rules, a Gmail surprise or slow joining could stretch this to about five weeks.
 
-If reviews and live checks run slow, 0.4.0 lands around week 17 or 18. Google's approval comes in weeks 10 to 14 at best, and it could take months. It decides when strangers can sign in to Gmail without a warning. It doesn't hold up 0.4.0.
+## Decisions already made
 
-## Top decisions
+- No 0.2.4. Pacing, subjects first, text on open, a stop on `quotaExceeded` and no retries are built into the rebuild.
+- The website and privacy page live on aplos.email (`apps/web`, Vercel).
+- The Google project stays in Testing mode: up to 100 listed test users and a reconnect every 7 days, made smooth.
+- Nothing that costs money: no Google verification, no CASA, no paid services, no new domains. Opening Gmail to strangers is for later, if ever.
+- Keep the Gmail filter permission.
+- One repo, no releases repo. You get local or private draft builds. Going public later is your call, after a secret and history scan and a LICENSE file.
+- Automatic live checks use throwaway test accounts only.
+- Ink blue and a serif for AI text, inside the revised look.
 
-If you don't answer, the default applies and the threads proceed on it. Decisions 1 to 5 are the most urgent, because Google's calendar depends on them. The numbers match the rest of the plans. All 60 decisions, with their sources, are in section 6.
+## Decisions for you
 
-### 1. Ship the quick Gmail fix, 0.2.4, now?
+Silence means the default.
 
-- (a) Yes, within a week. This is the default.
-- (b) No, wait about six weeks for the rebuild.
+1. **How many threads?** Default six: Engine, Providers, UI-core, UI-screens, Platform and website, Integrator. Five makes the Engine thread also judge every merge. Four, with one UI thread, adds about four days.
+2. **How do you review?** Default once per phase, about behaviour, never code: a day-3 note, demo screens on day 9, an hour on real mail around day 15, then daily use. Per-lane review adds about 25 reviews.
+3. **The weekly Gmail reconnect.** Default a quiet line in the sidebar a day before it expires, then one click. Options: add a Mac notification, or say nothing until it expires.
+4. **Where do live Gmail checks run?** Default on this Mac at set times, so no Google token sits on GitHub. Nightly on GitHub needs you to refresh a token there weekly.
+5. **Going public.** Default: the threads prepare the scan, notices and a draft LICENSE (GPL-3.0 app, MIT contract) during phase 3, and you decide later.
 
-Option (a) costs a few days of work that the rebuild later replaces, and it logs exactly why Google refuses requests. If loading a conversation's text on open takes more than two days to build, 0.2.4 downloads text for only the newest 25 conversations instead.
+## What you need to do
 
-### 2. Which domain hosts the website and privacy page?
+All free.
 
-- (a) A subdomain of a domain you already own. This is the default.
-- (b) A new domain for Aplos.
-- (c) Wait.
+- [ ] Day 1: say go; answer the decisions or keep the defaults.
+- [ ] Day 1: finish the Home ordering discussion in the mockups thread, so its DESIGN-CHANGES list can be folded into DESIGN.md before the UI threads start.
+- [ ] Day 1: create one or two throwaway Gmail accounts and add them to the Google project's test users. Confirm the 6,000 units a minute limit in the Cloud console.
+- [ ] Days 1-3: a separate free Groq key for tests, a free Microsoft Entra app, and a check of Vercel's production branch. Optional: a Fastmail OAuth client and an iCloud app-specific password.
+- [ ] Days 3, 9 and 15: the phase reviews.
+- [ ] Days 14-16: about an hour of live checks on your own Gmail, including one send to yourself.
+- [ ] Every 7 days: reconnect Gmail for you and the test accounts, about two minutes.
+- [ ] From day 18: use it daily and report what bothers you.
+- [ ] When happy: merge `revamp` and publish. Later, if you like: make the repo public.
 
-Google accepts a privacy page only on your own domain, so its review can't start without one. Option (a) takes an hour. Option (b) looks cleaner and costs a small yearly fee. Option (c) blocks Google verification, so Gmail stays limited to listed testers.
-
-### 3. Switch the Google project from Testing to Production, unverified, in week 1?
-
-- (a) Yes, in week 1. This is the default.
-- (b) Wait for Google's approval.
-
-Option (a) ends the forced Gmail reconnect every 7 days and lets the nightly checks run. Gmail sign-in then shows an "unverified app" screen, and Google caps new users at 100. Option (b) keeps the weekly reconnects for weeks or months.
-
-### 4. Start Google's review, and pay for its security assessment?
-
-- (a) Start the brand check now, submit the full review around week 6, and pay about $540 to $4,500 a year for the CASA security assessment. This is the default.
-- (b) Never verify, and stay capped at 100 users.
-- (c) Try for a local-only exemption first.
-
-Option (a) lets strangers eventually sign in without a warning. Option (b) suits a private app for you and a few testers. Option (c) has likely failed for others and may lose weeks.
-
-### 5. Keep the permission that lets Aplos create Gmail filters?
-
-- (a) Yes, so Block and "skip Inbox" rules keep working while your Mac sleeps. This is the default. Aplos never asks for the broader permission that can delete all your email.
-- (b) Ask per rule.
-- (c) No, and drop that permission.
-
-Option (c) shrinks Google's review, but rules then act only while Aplos runs. Answer this before about week 6, because the permissions can't change once the review is submitted.
-
-### 6. Where do downloads and updates come from while the code is private?
-
-- (a) A separate public repository that holds only releases. This is the default.
-- (b) Make the code public now.
-- (c) Host the files yourself.
-
-Option (a) works for anyone and exposes no code. Its name is permanent, because every installed copy remembers it. Option (b) exposes history nobody has audited. Option (c) costs money and setup work.
-
-### 7. Which mailboxes may the automatic live checks use?
-
-- (a) Throwaway test accounts for small read-only checks in the cloud each night, plus checks on your own account that you run by hand on your Mac. This is the default.
-- (b) Only checks you run by hand on your Mac.
-- (c) Fakes only.
-
-Your real mailbox is never used in the cloud. Option (a) catches a Google or Apple change within a day. Option (b) keeps all secrets off the cloud, but problems show up later. Option (c) can't catch a real-world change, and results from fakes never count as proof.
-
-### 10. Ink blue, and a serif font for AI text?
-
-- (a) Ink blue `#0b5394`, and the Newsreader serif for summaries and Ask, after a one-day look test you judge in week 3.5. This is the default.
-- (b) Keep today's blue.
-- (c) No serif, and mark AI text by colour instead.
-
-Option (a) separates Aplos most clearly from Avec. Option (b) leaves the main colour close to Avec's. Either way, the colour or font is one setting to change later. If you don't judge the look test within two days, the threads use Newsreader.
-
-Decisions 8 (three threads or four) and 9 (one big 0.4.0, with betas in between) and decisions 11 to 60 all have defaults in section 6.
-
-## What you need to do, and when
-
-Most items take minutes. Google's steps have long waits, so they come first.
-
-- [ ] Day 1 or 2: answer the decisions above, or let the defaults stand.
-- [ ] Day 1 or 2: pick a domain and point it at the website.
-- [ ] Day 1: create the public `aplos-mail-releases` repository and a fine-grained token named `RELEASES_REPO_TOKEN`. This takes about 30 minutes.
-- [ ] Day 1: check which branch Vercel publishes as production.
-- [ ] Week 0: confirm in the Google Cloud console that the limit is 6,000 units a minute per user. This takes about 10 minutes.
-- [ ] Week 0 or 1: run the live check on your own Gmail, then merge, tag and publish 0.2.4.
-- [ ] Week 1: switch the Google project to Production, verify the domain in Search Console, and add it to the consent screen.
-- [ ] Week 1: create a throwaway Gmail test account and a separate Groq key for the nightly checks, and register a Microsoft Entra app for Outlook.
-- [ ] Week 1: close the lid for a minute on a packaged build.
-- [ ] Week 1 or 2: fill in the consent-screen branding, with the name, final icon, contacts and a role contact address.
-
-Later steps, which the threads will remind you about when they come up:
-
-- [ ] Week 3.5: judge the serif look test.
-- [ ] Week 6: submit Google's review, then merge and tag 0.3.0. Pay a CASA lab between weeks 6 and 10.
-- [ ] Weeks 7 to 9: try the new screens on your real mail and run a few live checks by hand.
-- [ ] Weeks 12.5 to 13.5: use the release candidate as your only mail app for a week.
-- [ ] Week 14: sign off, merge `revamp`, and publish 0.4.0.
-
-The full calendar, with every small check, is in section 5.
-
-Agents never merge to main, publish a release, send external mail, change repository visibility or rotate a credential. Those stay with you.
+Agents never merge to main, publish, send external mail, change repository visibility or rotate a credential.
 
 ## Top risks
 
-- Google may take months. Until it approves, Gmail works only for you and up to 100 invited testers, behind a warning. The domain, privacy page and evidence pack start in week 1, the review goes in at week 6, and nothing else waits on approval.
-- Three threads produce work faster than one person can review it. Each milestone gets one batched review with a checklist written ahead, and a week-4 review checks the pace.
-- If the new mail database isn't ready by the end of week 3, 0.3.0 slips by the same amount. The thread that needs it builds it and reports any slip the same day.
-- Moving your mail into the new database could lose or duplicate messages. The import never touches the old file, resumes after a crash, and gets a rollback rehearsal on your real data.
-- 0.2.4 could reach testers before emails display in the sealed frame. If the stopgap misses 0.2.4, keep 0.2.4 to yourself until the stopgap or 0.3.0 ships.
-
-Section 7 lists all twelve risks.
+- Wrong shared rules would force rework everywhere. Three reviewers attack them before the freeze, and later changes only add.
+- Joining 25 lanes surfaces bugs. The real engine runs the stand-in engine's tests from day 4, and the switch happens on day 11.
+- One Gmail test account allows 6,000 units a minute, and its token expires weekly. Practice servers carry most testing, and live runs follow your reconnect.
+- Your review time is scarce, so reviews are per phase.
 
 ---
 
@@ -155,280 +86,443 @@ Section 7 lists all twelve risks.
 
 Everything below is reference. You don't need to read it.
 
-The integrator wrote this roadmap after the four workstream plans were critiqued, revised and reconciled with each other. PR #21 stays unmerged. This file schedules the work. The binding decisions live in `plans/ARCHITECTURE.md` (ARCH) and `plans/DESIGN.md` (DESIGN), and the detail lives in plans 10, 20, 30 and 40. Section numbers match the references in the other plans.
+This roadmap schedules the work. The binding decisions live in `plans/ARCHITECTURE.md` (ARCH) and `plans/DESIGN.md` (DESIGN, with `mockups/DESIGN-CHANGES.md` revision 2 folded in before the UI threads start). The detail lives in plans 10, 20, 30 and 40. Their milestone names (E0-E8, PV0-PV11, U0-U9, Q0-Q8) are kept as citations. This roadmap re-cuts them into lanes. Section 10 lists the edits plans 10-40 need to match it.
 
-**Names used below.** Engine milestones are E0-E8 (plan 10), provider milestones PV0-PV11 (plan 20), UI milestones U0-U9 (plan 30), and platform milestones Q0-Q8 (plan 40). ARCH's own milestones are M0-M10, and plan 10 section 4.0 and plan 20 section 4 map them. Week 0 is the 0.2.4 hotfix week. Week 1 starts with the engine's file move.
+**Names.** A *lane* is a unit of work with exclusive file ownership and one Claude Code workflow (or a short series of them). A *thread* is a long-lived T3 Code thread that runs several lanes in parallel. Day 1 is the owner's "go". Days are calendar days, because agents work around the clock and the owner's reviews are the human clock.
 
-## 1. What each release contains
+## 1. Phase 0: what gets frozen, in what order
 
-- **0.2.4, end of week 0 or early week 1.** Real Gmail finishes a first sync. Aplos paces itself under Google's limit of 6,000 units a minute, so Google stops refusing it and making it start over. It downloads subjects first and fetches a conversation's text when you open it. When Google reports the daily limit, Aplos stops instead of retrying, and it logs Google's exact reason for any refusal. The screens and engine stay as they are.
-- **0.3.0, about week 6.** A new engine runs under today's screens. Mail lives in a real database that opens in milliseconds at any size, and restarts no longer reload everything. Closing the window keeps Aplos in the menu bar, so mail, reminders and scheduled sends keep working. The rebuilt Gmail connection shows the inbox in seconds and fills in the rest in the background. A shared budget keeps several Macs within Google's allowance together. U0 removes the Avec-like wording, and Electron's security fuses are on.
-- **Weeks 6-13, on beta builds you choose to install.** The new look arrives screen by screen, on real mail from about week 7. Then come the sealed email frame, an AI queue that runs only after you agree, scheduled sends and undo that never send twice, iCloud and Fastmail with instant new mail (about week 9), calendars that sync only what changed, a new onboarding window with an accurate first-sync screen, and Outlook, built but switched off until Microsoft gives Aplos an app ID.
-- **0.4.0, about week 14.** Everything together, after a seven-day stress run of the engine and your own seven-day dogfood week on the same build.
+Phase 0 freezes exactly the things that every lane reads and no lane may change alone. After the freeze, every lane can code against them with exclusive file ownership. Target two days, plan for three. The Engine thread leads, the Integrator signs off, and the other threads prepare in their own worktrees on new files only.
 
-No Aplos server holds your mail, Groq stays the default AI, and nothing syncs while the Mac sleeps.
+### 1.1 The restructure chain (day 1, serial, about one day)
 
-## 2. The execution threads
+Nothing else touches existing files while this runs. Each step is its own commit, merged by merge commit and listed in `.git-blame-ignore-revs` where mechanical.
 
-You asked for one UI thread and one or two architecture threads. The plan uses three threads, two for architecture (ARCH section 15 calls them P and S) and one for the UI. Plan 40's platform work is split between the Engine thread (tooling, CI, security, releases) and the UI thread (website). A fourth thread runs only if the week-4 review finds the Engine thread behind (plan 10 Decision 11, plan 40 decision L).
-
-Each thread is one long-lived T3 Code thread with its own worktree. It splits each milestone into Claude Code work packages, each with one agent and one worktree. An agent that did not write a result checks it. Each milestone opens one pull request into `revamp` with evidence attached. Models follow your rule. Claude does all UI work (Opus for complex screens, Sonnet for routine ones), Opus does hard or security-sensitive work, and cheaper models do searches, test runs and mechanical edits.
-
-| Thread | ARCH name | Owns | Milestones (each mapped to exactly one thread) | Agent-days |
-|---|---|---|---|---|
-| Engine | P | Contract, store import and legacy bridge, live windows, email HTML, AI queue, outbox and timers, local doorway, hardening; plus tooling, CI, Electron hardening, releases, open-source readiness | E0, E1, E2b, E3, E4, E5, E6, E7, E8; Q0-main, Q0, Q1a, Q1b, Q2, Q3, Q4, Q6, Q7a, Q7b, Q8 | about 97-126 |
-| Providers & Sync | S | Store schema, governor, account actors, every provider adapter, emulators, OAuth readiness, Google verification engineering | PV0 (and the 0.2.4 train), E2a, PV1a, PV1b, PV2, PV3, PV4, PV5, PV6, PV7, PV8, PV9, PV10, PV11 | about 125-133 |
-| UI | (UI) | Every screen, tokens, lint rules, the design skill, the screenshot harness, onboarding, and the website copy | `srcdoc` slice (ARCH M0 stopgap), U0, U1, U2, U3, U4, U5, U6, U7, U8, U9; Q5A-main, Q5A, Q5B | about 69-100 |
-
-E2a sits on Providers & Sync because it is the store schema and write path that plan 20's Gmail rebuild (PV3) needs by the end of week 3. The thread that uses it builds it (plan 10 section 4.0). Everything else in plan 10 belongs to the Engine thread.
-
-Agent-days are not the limit. Your review time, the live checks and Google's calendar are.
-
-## 3. One unified timeline
-
-### 3.1 Week by week (nominal)
-
-Weeks are elapsed time. "Owner" is what needs you that week. Section 5 has the full list.
-
-| Week | Engine thread | Providers & Sync thread | UI thread | Releases and handoffs |
-|---|---|---|---|---|
-| **0** | E0 logger (2-3 d); Q0-main releases-home switch (1 d); Q1a prep (`format-merge.mjs`) | **PV0** Gmail fix on `hotfix/0.2.4` (5-7 d) | `srcdoc` slice (about 1 d); Q5A-main site truth and privacy page (1-2 d) | 0.2.4 train: PV0, plus E0, `srcdoc`, Q0-main and Q5A-main only if ready. Owner: decisions, domain, releases repo, 6,000-unit check |
-| **1** | **Freeze window** (days 1-2): main merged, engine rename, Q1a format, contract skeleton, codemod, Q1b. Then E1 (resident mode, registry, fixture); Q0 rest; Q2 hardening; Q3 starts | PV0 live check and tail; PV1a Gmail emulator starts; joins E1 after the move | U0 trust fixes (from about 1.2); U1 foundations (from 1.5) | **0.2.4** tagged from main. **C0 contract preview** on E1 day 5. Owner: Production switch, Search Console, branding |
-| **2** | E1 finishes; Q2; Q3 | **E2a** store schema and write path; PV1a | U0; U1 | **C1 contract freeze** (end of week 2): fixture engine, conformance suite, ports including `ProviderAdapter`. First beta (fuses and resident mode) |
-| **3** | **E2b** importer, legacy bridge, bodies, search; E4 spikes; Q4; Q6 (CASA pack first) | **E2a hard date** (end of week 3); PV2 governor; **PV3** Gmail rebuild starts on a stub governor | U1 ends; **U2** typed client and data layer (from 2.5) | Store API handed to PV3 |
-| **4** | E2b ends (4.5); **E3** live windows; E4 sealed email box; Q7a | PV2; PV3 | U2 ends; **U3** identity (from 3.5) | **Week-4 review** of thread load (extra thread or not) |
-| **5** | E3; E4; E5 AI queue starts (5.5) | PV2 merges; PV3 live work; PV1b fakes as needed | U3 ends (5.5); serif look test; **U4** motion | Owner: PV3 live Gmail checks, demo video, scope justifications |
-| **6** | **E3 acceptance** (about 6-6.5); E4; E5; **E6** outbox and timers | **PV3 Gmail daily-driver gate**; PV4 Gmail writes; PV6 IMAP and iCloud | U4; **U5** shell and Home | **0.3.0** (ARCH M3) tagged from main after you merge `revamp`. Google review submitted |
-| **7** | E4 ends (7.5); E5 ends (7.5); E6; Q7b | PV4; PV6; PV7 JMAP; PV8 recurrence and CalDAV | U4 ends; **WP5.6 flip to the real engine** (6-7); **U8** onboarding (from 7); U6 reader (from 7.5) | Flip: the "renderer on windows" report unblocks E8's clean-up |
-| **8** | E6 ends; slack week (catch-up) | PV6; PV7; PV8; PV9 calendars; PV10 Outlook (dark) | U5 ends (8.5); U8; U6 | Owner: one real send with a mid-send kill (E6) |
-| **9** | **E7** local doorway and diagnostics; Q5B handed to UI | **PV6 + PV7 multi-provider gate**; PV9; PV10 | U8 ends; U6; **U7** palette, Ask, Settings, Calendar | Owner: iCloud and Fastmail live; real Google onboarding check |
-| **10** | E7; **E8** hardening starts; Q8 gate prep | PV9 and PV10 end; **PV11** hardening | U6 ends; U7; Q5B claims | CASA lab and fixes run (weeks 6-12) |
-| **11** | E8 (rehearsal soak, faults, shim removal) | PV11 | U7 ends (11.5) | Engine's own work done (about 11.5) |
-| **12** | E8 ends; Q8 | PV11 ends | **U9** clean-up, accessibility, performance (from 11.5) | **0.4.0 release candidate** cut (about 12.5) |
-| **13** | Release soak on the candidate; Q8 checklist | Soak with real test accounts | Dogfood week; VoiceOver and IME checks | Owner: dogfood week, sleep and wake cycles, second-Mac update |
-| **14** | Fixes only | Fixes only | Fixes only | **0.4.0** tagged from main after you merge `revamp` |
-
-### 3.2 Critical path and handoff points
-
-There are two critical chains. They meet at the 0.4.0 release candidate.
-
-1. **Gmail on the new engine, to 0.3.0.** The chain runs PV0, the freeze window, E1's move, E2a by the end of week 3, PV2 and PV3, PV3's live Gmail gate (week 5-6), and then 0.3.0. A slip in E2a moves 0.3.0 by the same amount, so the thread reports it the same day.
-2. **The new screens, to 0.4.0.** The chain runs the freeze window, C1 (end of week 2), U2, U3, U4, U5, the flip after E3 (week 6-7), U8, U6 and U7, U9, the shared release candidate, and then 0.4.0. This chain is the longest. The UI trails the engine by two to three weeks.
-
-Google's calendar is outside our control. It runs through the domain, the brand check, the video, submission (week 6), CASA (weeks 6-12) and approval (week 10-14 at best). It decides when strangers can sign in to Gmail without a warning. It does not gate 0.4.0.
-
-| Handoff | When | From and to | What passes |
+| Step | Commit | Owner | Source |
 |---|---|---|---|
-| 0.2.4 train | Week 0-1 | Providers & Sync to main | PV0, plus any ready slice (E0, `srcdoc`, Q0-main, Q5A-main); PV0 never waits |
-| Freeze window | Week 1, days 1-2 | Engine to everyone | Step 0 merges main into `revamp`; rename and imports; Q1a format; contract skeleton; codemod (the only rewrite of renderer call sites); Q1b; then the `service.ts` split |
-| C0 preview | E1 day 5 | Engine to UI | Method names, schemas, typed client, fixture serving three calls |
-| C1 freeze | E1 day 10 (end of week 2) | Engine to UI and Providers | Full contract, fixture engine with every scenario, conformance suite, ports including `ProviderAdapter`, status vocabulary |
-| E2a store | End of week 3 | Providers (E2a) to Providers (PV3) | Schema, `store.commit`, change log |
-| E2b bridge | Week 4.5 | Engine to everyone | Today's screens and older providers running on the new database (reads and writes) |
-| 0.3.0 | About week 6 | All to main | E1, E2a, E2b, PV3; today's screens on the bridge |
-| E3 to flip | Weeks 6-7 | Engine to UI (WP5.6) | Real live windows pass the same tests as the fixture; dev builds switch by one flag |
-| Flip to E8 | Week 7 | UI to Engine | "Renderer on windows" report; E8 can remove the old bridge |
-| E4, E5, E6 | Weeks 7.5-8 | Engine to UI and Providers | Sealed frame (U6), real `Setup/*`, consent and demo calls (U8, by week 9), submissions and drafts (PV4, U6) |
-| Release candidate | About week 12.5 | All to owner | One build for the engine soak and your dogfood week |
+| 0 | NOTICE in `plans/STATUS.md`: restructure started | Engine | |
+| 1 | Rename and imports: `apps/desktop/src/engine` to `packages/engine/src`, with today's engine files under `packages/engine/src/legacy/`; the shared files to `packages/contract/src/legacy/`; today's renderer to `apps/desktop/src/renderer/legacy/`; re-export stubs where needed; workspaces, tsconfig paths, Vite alias, esbuild bundling `@aplos/*`; recursive portability test; `npm run package` and `verify-release.mjs` pass | Engine | Plan 10 E1 item 1 and section 3, amended |
+| 2 | Prettier format commit over the moved tree, proved by identical minified output | Platform prepares, lands in the slot | Plan 40 Q1a |
+| 3 | Split `apps/desktop/src/main/electron.ts` into owned modules: `windows.ts`, `lifecycle.ts`, `protocol.ts`, `menu-bar.ts`, `native-methods.ts`, `security.ts`, `updater.ts`, `engine-host.ts`. Code moves only. | Engine | Plan 10 section 3 and E1 |
+| 4 | ESLint flat config, bulk suppressions, import boundaries, pre-commit hook, `static` job | Platform prepares, lands in the slot | Plan 40 Q1b |
 
-### 3.3 Release train
+The legacy folders keep building and keep their tests green. They are read-only reference until Phase 2 deletes them. There is no typed-client codemod over today's 53 `invoke(` sites and no legacy bridge, because no release ships today's screens on the new engine (section 10 lists the plan edits).
 
-| Release | Week | Branch | Contents |
+### 1.2 The frozen artifacts (days 2-3, parallel on new files)
+
+| # | Artifact | Path | Written by | Reviewed by |
+|---|---|---|---|---|
+| F1 | Contract v1: every method name with zod input and output schemas, all frames (`state`, `window`, `progress`, `reset`, host channel) with `{dbEpoch, seq}` tokens and receipts, error types, the classified-error record, the status vocabulary including `paused(until, reason)`, `backfilling(n of m)` and the new `reconnectBy` time, the `Setup/status` shape, the Thread row with `partial`, `Mail/frame`, capability flags, the `Settings` schema with its `ui` object and per-feature AI provider and model, the logger event catalog | `packages/contract/src/**` | Engine | All three reviewers |
+| F2 | Generated allowlists and the typed client `api.*`; the registry drives `preload.ts`, `engine-host.ts` and `server.ts` | `packages/contract/generated/**`, `src/client/**` | Engine | Platform |
+| F3 | Ports: `ProviderAdapter` with `CalendarAdapter` and `findSent`, `GovernorPort`, `AccountActorHost`, `SendPort` with `NotSentError`, `DraftSyncPort`, `ProviderPort.openThread`, `Clock`, deadline-source registration, `KeyProvider`, `MailHtml`, `Logger`, `StorePort`, `bucketFor` | `packages/engine/src/ports.ts` | Engine, from Providers' proposal for the provider ports | Providers |
+| F4 | Database: migration framework, `mail.db` schema 0001 (ARCH 3.2 plus plan 20's review items: recurrence id on `events`, `message_folders` keyed for IMAP placements, `sync_state`, `governor_state`, the account's token-grant time), the `store.commit` signature and a minimal working commit that writes `changes` and bumps `seq` | `packages/engine/src/store/migrations/0001*`, `store/port.ts` | Engine | Providers |
+| F5 | Method dispatch table mapping every contract method to one module file (`methods/<area>.ts`), each a stub that throws `NotImplemented`, so lanes fill their own file and never edit the shared table | `packages/engine/src/methods/index.ts` | Engine | Integrator |
+| F6 | Stand-in engine answering every method on the `demo` and `empty` scenarios, the `Fixture/control` signatures, and the conformance suite layout. Lane `eng-contract` fills in the other scenarios during Phase 1 | `packages/contract-fixture/**`, `packages/contract/tests/conformance/**` | Engine | UI-core |
+| F7 | Logger and redacting log sink at final paths | `packages/engine/src/diag/log.ts`, `apps/desktop/src/host/logsink.ts` | Engine | Platform |
+| F8 | `APLOS_TEST=1` and `APLOS_DATA_DIR` honoured in main (isolated data, no single-instance lock, no Dock or menu-bar item, windows created hidden) and the pinned Playwright base | `main/lifecycle.ts`, `tests/e2e/playwright.config.ts` | Engine, Platform | Integrator |
+| F9 | Design tokens from the revised DESIGN.md (`tokens.json`, generator, `tokens.css`, `motion.ts`, contrast pairs), the design lint rules, the `aplos-design` skill v1, the component list with frozen props, the `CommandRegistry` interface, and the renderer data-hook signatures (`useView`, `useRow`, `api`, receipts) | `apps/desktop/src/renderer/{ui,commands,data}/**` (interfaces), `scripts/design/**`, `tools/lint/design/**`, `.claude/skills/aplos-design/**` | UI-core | UI-screens |
+| F10 | Ownership map, path-ownership CI check, `plans/STATUS.md` | `plans/OWNERS.md`, `scripts/audit/owners-check.mjs` | Integrator, Platform | Everyone |
+
+### 1.3 The freeze review (day 3, half a day)
+
+Three adversarial reviewers, each a fresh agent given the artifacts but not the authors' reasoning, try to find what cannot be expressed:
+
+- The UI reviewer walks every mockup screen and DESIGN section 5 and 7 and lists each behaviour the contract or data hooks cannot express. It also checks plan 30's twelve asks (plan 10 section 4.1 table).
+- The Providers reviewer runs Gmail, IMAP, JMAP, Graph and CalDAV through `ProviderAdapter`, `GovernorPort` and schema 0001 on paper, including the weekly reconnect and the lease.
+- The security and platform reviewer checks the registry tags and scopes, the transports, `Mail/frame`, the log catalog against ARCH 11 and 12, and the 400,000-byte engine budget.
+
+The Engine thread fixes every gap. The Integrator tags `contract-v1` on `revamp` and posts FROZEN in STATUS.md. After that, changes are additive within `v:1`, proposed with CONTRACT-CHANGE-PROPOSED, and made only by lane `eng-contract`.
+
+### 1.4 What the other threads do during Phase 0
+
+| Thread | Phase 0 work |
+|---|---|
+| Providers | Propose `ProviderAdapter`, the status vocabulary and the reconnect fields by the morning of day 2; review schema 0001; build the Gmail emulator in `packages/emulators/gmail` until it reproduces 0.2.3's failure; write each lane's test plan |
+| UI-core | F9, in its own worktree, merged after step 4 |
+| UI-screens | Map each mockup screen to its DESIGN section and the contract methods it needs, and send the gaps to the UI reviewer; plan PR #21's absorption; draft harness scenarios |
+| Platform and website | Prepare Q1a and Q1b for their slots; CI slots (`check:tokens`, `check:contrast`, `check:identity`, `test:visual`, `test:perf`); the owners check; after step 2, start the website in `apps/web` |
+| Integrator | STATUS.md, OWNERS.md, git identity checks, the freeze checklist, the three reviewers, the merge procedure |
+
+> **What this means:** For two or three days one thread restructures the code and writes the shared rules while everyone else prepares. Three reviewers try to break the rules before they freeze, because a mistake there costs the most later.
+
+## 2. The lanes
+
+Each lane owns its paths exclusively. A pull request that touches a path outside its lane fails the owners check unless the owning lane approved it. "Needs" lists only real dependencies after the freeze. Before a dependency lands, the lane codes against the frozen port with a stub or the stand-in engine.
+
+### 2.1 Engine thread
+
+| Lane | Owns | Implements | Needs | Days |
+|---|---|---|---|---|
+| `eng-contract` | `packages/contract/**`, `packages/contract-fixture/**`, `packages/engine/src/{runtime/**,methods/index.ts,methods/session.ts,methods/settings.ts}`, `host/transports/port.ts`, `main/engine-host.ts`, `main/server.ts`, generated part of `preload.ts` | Plan 10 section 4.1 and E1 items 3, 6, 7; the transport half of E3 (direct `MessagePort`, main out of the data path); ARCH 9 | Phase 0 lead | 1-3, then 4-10 |
+| `eng-store` | `packages/engine/src/store/**` (incl. `store/import/**`), `packages/engine/bench/**` | Plan 10 E2 deliverables 1-11 and "The import"; ARCH 3 | F4 | 4-10 (real commit, ids, change log by 6; bodies, search, retention by 9; importer by 10) |
+| `eng-views` | `packages/engine/src/views/**`, `methods/{view,thread,operation}.ts` | Plan 10 E3 (view specs, window engine, holds, receipts, `Thread/act`, `Operation/undo`); ARCH 9.2 | Real store from day 6 | 4-11 (conformance green on the real engine by 11) |
+| `eng-time` | `packages/engine/src/{outbox,clock}/**`, `methods/{submission,draft,outbox,later,reminder,notification}.ts` | Plan 10 E6 (submissions, undo and send later, overdue, drafts, one timer loop, notification outbox); ARCH 7 | Real store | 4-10 |
+| `eng-ai` | `packages/engine/src/ai/**`, `methods/{ai,ask,setup,demo,consent,queue}.ts`, `apps/desktop/src/host/ai/**` (today's `main/{groq,llm,ollama,anthropic,ai-keys}.ts` move here) | Plan 10 E5 (jobs, AI governor and budget, consent, heuristic Home, `Setup/*`, `Demo/*`); ARCH 8 | Real store; `eng-views` for Home ranks | 4-11 |
+| `eng-html` | `packages/mail-html/**`, `host/protocol/**`, `host/proxy/**`, `main/protocol.ts`, `methods/mail.ts` | Plan 10 E4 (sanitizer, `Mail/frame`, tokens, image proxy); ARCH 10 | Bodies from `eng-store` | 4-10 |
+| `eng-host` | `main/{lifecycle,menu-bar,windows,native-methods}.ts`, `host/{lifecycle,power,lock,crash}.ts`, `packages/engine/src/selftest.ts`, `host/transports/{socket,http}.ts`, `host/{mcp,cli}/**`, `packages/engine/src/diag/bundle/**`, `methods/{diagnostics,listener,clients}.ts` | Plan 10 E1 items 4-5 (resident mode, lock, wake, parked, self-test) and E7 (socket, loopback HTTP, clients and scopes, OpenAPI, MCP, diagnostics); ARCH 2, 11, 12.3 | none beyond freeze | 4-12 (resident by 7, doorway by 12) |
+
+### 2.2 Providers thread
+
+| Lane | Owns | Implements | Needs | Days |
+|---|---|---|---|---|
+| `prov-emu` | `packages/emulators/**`, `apps/desktop/scripts/live/**`, `scripts/smoke/probes/**` | Plan 20 PV1a, PV1b, sections 5.4-5.5 (live harness, experiments register) | none | 1-9 (Gmail by 4, IMAP by 5, JMAP and DAV by 6, Graph by 7, live runner by 9) |
+| `prov-gov` | `packages/engine/src/sync/**`, `host/providers/shared/**`, `host/providers/oauth/**` (today's `main/oauth-config.ts`), `methods/{account,sync}.ts` | Plan 20 PV2 and the lease; the free parts of PV5 (client resolution for source builds, scope manifest and its test, granted-scope handling); the weekly-reconnect engine side (grant time, `reconnectBy`, `login_hint`, reconnect without resync, queued local changes kept) | Real store | 4-9 (shared HTTP client and classifier by 5, governor by 7, accounts by 9) |
+| `prov-gmail` | `host/providers/google/{client,sync,history,bodies,search,workflow,classify}.ts` | Plan 20 PV3 with every PV0 deliverable and acceptance item folded in (pacing, four error classes, `quotaExceeded` stop, no retries, metadata-first window, lazy bodies, cheap history rule, search on Enter, granted scopes, exact-reason logging, EX1-EX3) | Gmail emulator; real store; real governor from day 7 (stub before) | 4-12 (emulator gate by 11) |
+| `prov-gmail-write` | `host/providers/google/{send,drafts,filters,unsubscribe}.ts`, `methods/unsubscribe.ts` | Plan 20 PV4 | `prov-gmail` client by 6; `eng-time` submissions and drafts | 6-12 |
+| `prov-imap` | `host/providers/imap/**` (today's `main/imap*.ts`) | Plan 20 PV6 with SMTP and IMAP drafts | IMAP emulator; real store; `eng-time` | 5-12 |
+| `prov-jmap` | `host/providers/jmap/**` | Plan 20 PV7 | JMAP emulator | 6-11 |
+| `prov-cal` | `packages/engine/src/calendar/**`, `host/providers/caldav/**`, `host/providers/{google,microsoft}/calendar*.ts`, `methods/event.ts` | Plan 20 PV8 and PV9 | DAV emulator; Google calendar emulator | 5-13 |
+| `prov-graph` | `host/providers/microsoft/**` except calendar files | Plan 20 PV10; live once the owner's free Entra app exists | Graph emulator; `eng-time` | 7-13 |
+
+### 2.3 UI-core thread
+
+| Lane | Owns | Implements | Needs | Days |
+|---|---|---|---|---|
+| `ui-foundation` | `renderer/ui/**`, `renderer/commands/**`, `scripts/design/**`, `tools/lint/design/**`, `.claude/skills/aplos-design/**`, `tests/visual/**`, `tests/perf/**`, fonts | Plan 30 U1 and U3 (tokens, lint, skill, registry, harness with the hover-never-shifts check, components); U0's checks (banned strings, identity, AGENTS.md rule, retiring "match the reference" decisions); DESIGN 4, 6, 12 as revised | Revised DESIGN.md | 1-3 (F9), then 4-9 |
+| `ui-shell` | `renderer/{data,shell,motion}/**`, `renderer/App.tsx`, `renderer/main.tsx`, `renderer/bridge.ts` | Plan 30 U2 and section 4.1 (data layer), U4 (motion as revised), U5's shell, sidebar, pane header, status slot, toasts and trays, and WP5.6 (the switch to the real engine, run in Phase 2); the reconnect note in the status slot | F6, F9; `eng-views` for the switch | 4-11 |
+| `ui-home` | `renderer/screens/{home,later,lists,done}/**` | Plan 30 U5's screens (Home, Later, All mail, Drafts, Sent, Trash, Spam, labels, the new Done place, one-by-one, empty states); DESIGN 7.2-7.4, 7.14 | `ui-foundation` components; `ui-shell` hooks | 5-12 |
+| `ui-reader` | `renderer/screens/{reader,compose}/**`, `renderer/mailframe/**` | Plan 30 U6 and section 4.4 (reader, mail frame on `srcdoc` against the stand-in engine until `eng-html` lands, inline reply, compose, outbox and undo tray); DESIGN 7.5-7.6 | `eng-html` for the real frame; `eng-time` for real send states | 5-13 |
+
+### 2.4 UI-screens thread
+
+| Lane | Owns | Implements | Needs | Days |
+|---|---|---|---|---|
+| `ui-onboard` | `renderer/onboarding/**`, `main/windows/onboarding.ts` | Plan 30 U8 (onboarding window, first-sync screen, consent, demo on request, PR #21's screens absorbed by path, Appendix C findings); the reconnect sheet; DESIGN 7.11-7.12 as revised | `eng-ai` `Setup/*` for Phase 2; `prov-gov` status facts | 5-12 |
+| `ui-calendar` | `renderer/screens/calendar/**` | Plan 30 U7's Calendar; DESIGN 7.8 | `prov-cal` fields (frozen in F1) | 6-12 |
+| `ui-settings` | `renderer/screens/settings/**` | Plan 30 U7's Settings (accounts with reconnect, AI providers and a model per feature, appearance, keyboard, tools on this Mac, diagnostics, retention); DESIGN 7.10 | `eng-host` listener methods; `eng-ai` provider table | 6-12 |
+| `ui-ask` | `renderer/screens/{ask,today,palette,search}/**` | Plan 30 U7's command palette, search, Ask dock and Today; DESIGN 7.7, 7.9 | `eng-ai` Ask frames | 6-13 |
+
+### 2.5 Platform and website thread
+
+| Lane | Owns | Implements | Needs | Days |
+|---|---|---|---|---|
+| `plat-ci` | `.github/workflows/ci.yml`, `tools/lint/**` except `design/`, `tests/e2e/**`, `budgets.json`, `scripts/audit/**`, `scripts/smoke/**` except probes | Plan 40 Q1 (Phase 0 slots), Q3 (CI, emulator E2E, budget register), Q4 (AI eval replay, live smoke runner on throwaway accounts) | none | 1-3, then 4-12 |
+| `plat-release` | `apps/desktop/build/**` except the DMG background, `main/{security,updater}.ts`, `.github/workflows/release.yml`, `scripts/{release,verify-release,release-build}.mjs`, `RELEASING.md`, `THIRD_PARTY_NOTICES*`, `LICENSE` draft, `docs/release-checklist.md` | Plan 40 Q0 without the releases repo, Q2 (fuses, permission handler, CSP stages, unfused E2E build), Q7a and Q7b (draft releases in this repo, verifier, beta channel, Keychain evidence), Q6 without CASA or the paid name search, Q8's release gate | `eng-host` self-test; `eng-html` for the CSP stage 2 | 4-14, OSS prep in Phase 3 |
+| `web` | `apps/web/**`, `apps/desktop/build/dmg-background.html` | Plan 40 Q5A and Q5B; remove the stripe and fix untrue claims only; the full site redesign waits for the new logo (owner, 2026-10-27); the privacy page on aplos.email with Google's Limited Use sentence, what is stored, what leaves the Mac, no telemetry and how to delete data; Gmail described as available to invited testers | F9 tokens | 2-8 |
+
+### 2.6 After Phase 1
+
+| Work | Implements | Who | Days |
 |---|---|---|---|
-| 0.2.4 | 0-1 | `hotfix/0.2.4`, merged to main | Gmail paced and lazy; plus ready slices |
-| 0.3.0-beta.N | 2 onward | tagged from `revamp` | Fuses, resident mode, the new engine as it lands; for you and invited testers only |
-| 0.3.0 | about 6 | `revamp` merged to main | ARCH M3: new store, Gmail rebuild, U0 wording fixes, hardening |
-| 0.3.x-beta.N | 6-13 | tagged from `revamp` | New screens after the flip, providers as they pass; a stable 0.3.x only if you ask |
-| 0.4.0 | about 14 | `revamp` merged to main | Everything; one candidate passed both the seven-day soak and the dogfood week |
+| Switch to the real engine | Plan 30 WP5.6 | `ui-shell` with the Integrator | 11-13 |
+| End-to-end journeys on emulators | Plan 40 Q3 emulator E2E | `plat-ci`, Integrator | 12-16 |
+| Live checks | Plan 20 section 5.4; PV3, PV6, PV7, PV9 live gates | Lanes run tier R on test accounts; the owner runs checks on their own accounts | 12-16 |
+| Delete legacy folders and old provider files | Plan 10 E8 item 4, plan 20 section 3.1 | Integrator with each owning lane | 14-17 |
+| Hardening and soak | Plan 10 E8, plan 20 PV11 (soak runs in the background during Phase 3) | Engine, Providers | 15-25 |
+| Accessibility, performance, release candidate | Plan 30 U9, plan 40 Q8 | `ui-foundation`, `plat-release`, Integrator | 15-18 |
 
-### 3.4 Totals
+> **What this means:** 26 lanes, each owning its own folders, built against the frozen rules. Most finish within about 10 days. The Gmail lane and the reader take longest.
 
-- The nominal plan takes about 14 weeks from the start of week 1 to 0.4.0, plus the 0.2.4 week before it.
-- The pessimistic plan takes about 17-18 weeks. It assumes about two days of review wait per milestone, one failed live check, a serif or motion rework, and the Engine thread running 1.5 weeks late in weeks 4-8, which plan 10 already allows for.
-- Gmail becomes a daily driver in week 5 nominally, and likely week 6. iCloud and Fastmail arrive about week 9 (ARCH says 8; plan 20's estimate is 9).
-- Google approval is outside our control. It comes in weeks 10-14 at best and could take months.
-- Total effort is about 290-360 agent-days across the three threads.
+## 3. Dependency graph
 
-## 4. Branch and merge strategy
+Solid arrows are hard dependencies. Dashed arrows mean the lane starts on a stub or the stand-in engine and swaps in the real piece when it lands.
 
-**The branches.**
+```mermaid
+flowchart LR
+  P0["Phase 0 freeze, days 1-3"]
+  subgraph ENG["Engine thread"]
+    contract["eng-contract"]
+    store["eng-store"]
+    views["eng-views"]
+    time["eng-time"]
+    ai["eng-ai"]
+    html["eng-html"]
+    host["eng-host"]
+  end
+  subgraph PROV["Providers thread"]
+    emu["prov-emu"]
+    gov["prov-gov"]
+    gmail["prov-gmail"]
+    gwrite["prov-gmail-write"]
+    imap["prov-imap"]
+    jmap["prov-jmap"]
+    cal["prov-cal"]
+    outlook["prov-graph"]
+  end
+  subgraph UIC["UI-core thread"]
+    found["ui-foundation"]
+    shell["ui-shell"]
+    home["ui-home"]
+    reader["ui-reader"]
+  end
+  subgraph UIS["UI-screens thread"]
+    onboard["ui-onboard"]
+    calui["ui-calendar"]
+    settings["ui-settings"]
+    ask["ui-ask"]
+  end
+  subgraph PLAT["Platform and website thread"]
+    ci["plat-ci"]
+    rel["plat-release"]
+    web["web"]
+  end
+  P0 --> contract & store & views & time & ai & html & host
+  P0 --> gov & gmail & imap & jmap & cal & outlook
+  P0 --> found & shell
+  P0 --> ci & rel & web
+  emu --> gmail & imap & jmap & cal & outlook
+  store --> views & time & ai & html & gov & gmail & imap & jmap & cal & outlook
+  gov -.-> gmail & imap & jmap & cal & outlook
+  gmail --> gwrite
+  time --> gwrite & imap & outlook
+  found --> home & reader & onboard & calui & settings & ask & web
+  shell --> home & reader & onboard & calui & settings & ask
+  html -.-> reader
+  time -.-> reader
+  ai -.-> onboard & ask & settings
+  host --> rel
+  views --> FLIP["Switch to real engine, days 11-13"]
+  contract --> FLIP
+  FLIP --> E2E["End-to-end on emulators, days 12-16"]
+  gmail --> LIVE["Live checks, days 12-16"]
+  imap & jmap & cal --> LIVE
+  E2E & LIVE --> RC["Release candidate, day 17-18"]
+  ci --> E2E
+  rel --> RC
+  RC --> DOG["Daily use, days 18-25"]
+```
 
-- `main` holds only released code. Only you merge into it. Stable releases (0.2.4, 0.3.0, 0.4.0) are tagged from main (RELEASING.md).
-- `hotfix/0.2.4` is the one 0.2.4 train, cut from main at `72095ff` and owned by plan 20's PV0. Each slice is built on its own short branch from main and joins by pull request. The slices are `hotfix/0.2.4-gmail` (PV0), `hotfix/0.2.4-log` (E0), `hotfix/0.2.4-srcdoc` (UI), `hotfix/0.2.4-releases-home` (Q0-main) and `hotfix/0.2.4-site` (Q5A-main). PV0 never waits for a slice. A slice that misses the train ships later or lands only on `revamp`. The website slice may go to main on its own, because it changes no app code.
-- `revamp` is the integration branch. Every work pull request targets it.
-- Work branches are `rv/<workstream>/<slug>`, meaning `rv/engine/...`, `rv/providers/...` and `rv/ui/...`. Examples are `rv/engine/e1-move`, `rv/providers/pv3-gmail`, `rv/ui/u3-identity` and `rv/engine/q1a-format`. The prefix is not `revamp/...` because Git stores branches like folders, so a branch called `revamp` cannot also have branches inside it. The same rule applies one level down. A branch name is never a folder of another, so work packages are siblings with hyphens (`rv/engine/e1-wp1.1-move`), never `rv/engine/e1-move/wp1.1`.
+## 4. Critical path and day plan
 
-**How work merges.**
+### 4.1 The critical path
 
-- Each work package has its own git worktree. Work-package pull requests target their milestone branch. The milestone branch opens one pull request into `revamp` once its evidence is attached. Evidence means test output, benchmarks, and headless screenshots attached with `gh pr create --attach`, never committed.
-- Mechanical commits (the rename, the format commit) merge by merge commit or fast-forward and are listed in `.git-blame-ignore-revs`. Everything else squashes.
-- After each main release, `revamp` absorbs main. Anything cut from main before the format commit comes back through plan 40's `scripts/audit/format-merge.mjs`. Each thread merges `revamp` into its open branch at the start of each milestone. Long-lived branches use merges, not rebases.
-- The freeze window (week 1, days 1-2, about 24 hours) is the only time the threads stop. Nothing else touches `src/engine`, `src/main`, `src/shared` or renderer call sites while it runs.
-- Each milestone gets one batched review after local checks pass. Nobody re-triggers Cubic after every fix.
-- Commits are authored as Kainoa Newton <k@kainoa.me>. Threads flag any other `git config user.email` before committing. PR #21 is never merged. The UI absorbs its screens by path in U8, and you close it as superseded.
+1. **Gmail chain, the longest.** Freeze (day 3), then `eng-store`'s real `store.commit`, ids and change log (day 6), then `prov-gmail` on the real store and, from day 7, the real governor, to the emulator gate (day 11). Then scheduled live runs on the throwaway accounts (days 12-14) and the owner's hand-run check on their own Gmail (days 14-15). Fixes and the release candidate follow (days 17-18), then a week of daily use (days 18-25).
+2. **Screens chain, close behind.** Freeze with F9 (day 3), then components and data hooks (days 4-8), then screens on the stand-in engine (days 5-13). `eng-views` passes the conformance suite on the real engine (day 11), the switch follows (days 11-13), then end-to-end on emulators (days 12-15) and the owner's look check on real mail (day 15). It meets the Gmail chain at the release candidate.
+3. **Near-critical.** `ui-reader` (needs `eng-html` and `eng-time`), `prov-cal` (largest provider scope after Gmail), and `prov-imap` (iCloud live pass).
 
-**What goes to main, and when.**
+### 4.2 Range
 
-| When | What | How |
+| Case | Daily-use build | Finished version | Assumes |
+|---|---|---|---|
+| Best | day 15 | day 22 | No contract gaps, Gmail live passes first time, reviews same day |
+| Likely | day 17-18 | day 25 | One contract addition, one Gmail live fix, a day of review wait per phase |
+| Slow | day 25 | day 35 | A contract change that breaks lanes, a second cause behind Gmail's refusals, a design rework, agent rate limits |
+
+### 4.3 Owner touchpoints by day
+
+| Day | Event |
+|---|---|
+| 1 | Go; decisions; design questions; test accounts and test users; Groq key; Entra app; Vercel check; 6,000-unit check |
+| 3 | Freeze note (5 lines, optional read) |
+| 9-10 | Look review: main screens on demo mail in the browser preview, about 30 minutes |
+| 7, 14, 21 | Weekly Gmail reconnect for you and the test accounts |
+| 14-16 | Live checks by hand, about an hour, from the Integrator's checklist: your own Gmail, one real send to yourself with a mid-send kill, iCloud and Fastmail if you have them, a real onboarding, keys with focus inside an email, and a one-minute lid close |
+| 17-18 | Install the release candidate; start daily use |
+| 18-25 | Daily use; a quick VoiceOver and input-method check; one weekly reconnect happens inside this week, which tests the reconnect flow for real |
+| 25 | Sign off; merge `revamp` into main and publish when you choose |
+
+## 5. Threads
+
+### 5.1 Mapping
+
+| Thread | Lanes | Peak concurrent workflows | Models |
+|---|---|---|---|
+| Engine | `eng-contract`, `eng-store`, `eng-views`, `eng-time`, `eng-ai`, `eng-html`, `eng-host` | 7 | Opus for the contract, store, views, outbox, sanitizer, proxy and doorway security; Sonnet for scoped work; cheap models for mechanical moves |
+| Providers | `prov-emu`, `prov-gov`, `prov-gmail`, `prov-gmail-write`, `prov-imap`, `prov-jmap`, `prov-cal`, `prov-graph` | 8 (graph and gmail-write start later) | Opus for the governor, Gmail sync, lease and recurrence; Sonnet or strong open-weight models for emulators and well-specified adapters |
+| UI-core | `ui-foundation`, `ui-shell`, `ui-home`, `ui-reader` | 4 | Claude only: Opus for the data layer, motion, Home, reader and mail frame; Sonnet for routine work |
+| UI-screens | `ui-onboard`, `ui-calendar`, `ui-settings`, `ui-ask` | 4 | Claude only: Opus for onboarding and Calendar layout; Sonnet for Settings and routine screens |
+| Platform and website | `plat-ci`, `plat-release`, `web` | 3 | Opus for hardening and release security; Claude for the website; cheap models for CI plumbing |
+| Integrator | none; merges, the full suite, the conformance burn-down, Phase 2 lead, owner digests | 1 plus reviewers | Opus for judgement; Haiku for test runs and summaries |
+
+### 5.2 Why six
+
+- **Merge conflicts** depend on path ownership, not on thread count. The owners check makes cross-lane edits fail in CI, so more lanes do not mean more conflicts. Thread count matters for coordination. Each orchestrating thread keeps at most about eight workflows in view.
+- **UI gets two threads** because it is the second-longest chain and Claude-only. One thread holds the shared UI foundation and the two hardest screens. The other holds four independent screens. With one UI thread, eight UI workflows would queue behind one orchestrator and the screens chain would become the longest by about four days.
+- **The Integrator is separate** because merging about 50 small pull requests a day, running the full suite and guarding conformance is a full-time job. The Engine thread changes the contract, so it should not also judge every merge.
+- **Owner load.** The owner reads one daily digest from the Integrator and four phase reviews, not six streams. Fewer threads would not cut that reading; more would raise merge-queue pressure on the Integrator.
+
+## 6. Bottlenecks and what the plan does about them
+
+| Bottleneck | Mitigation |
+|---|---|
+| Contract and schema freeze quality | Three adversarial reviewers from the consumers' side, the 4.1 checklist of UI asks, Providers walking every adapter through the ports, additive-only changes after the freeze, one owner (`eng-contract`) |
+| Merge conflicts | Exclusive paths in `plans/OWNERS.md` enforced by `owners-check`; one shared dispatch table frozen with one file per lane; small PRs (one work package, ideally under 500 changed lines excluding generated files); lanes merge `revamp` into their branch before each PR; the Integrator merges continuously |
+| Gmail quota for live tests | Emulators first: the Gmail emulator must reproduce 0.2.3's failure before anything is tested on it. Live runs are scheduled, read-only first, each under 3,000 units a minute, on one or two throwaway accounts (per-user quota, so a second account doubles the room). Runs follow the weekly reconnect. |
+| Testing mode's 7-day tokens | Weekly reconnect ritual covers the owner and test accounts together; the live runner checks `reconnectBy` before starting and skips with a clear message |
+| Owner review time | Per-phase reviews with checklists written ahead; plain-English summaries; the owner judges behaviour and feel, never code; agents verify everything a machine can |
+| Integration bugs | The conformance suite runs against both the stand-in and the real engine from day 4, with a shrinking expected-fail list; the switch happens on day 11, not at the end; daily end-to-end on emulators from day 12; providers not ready by day 16 ship switched off rather than holding the release |
+| Machine and CI limits | Many agents share one Mac. Lanes run targeted tests; only the Integrator runs the full suite. GitHub Actions runs on pushes to `revamp` only, Linux only, to stay within free minutes; macOS jobs run on demand. If the owner allows it, the Linux MacBook Air can serve as a free self-hosted runner. |
+| Agent rate limits | Threads start the critical lanes first (`eng-store`, `prov-gmail`, `eng-views`, `ui-shell`, `ui-reader`) and stagger the rest |
+| Design still moving | DESIGN-CHANGES is folded into DESIGN.md before UI threads launch; tokens live in one file; the mockups are the visual target |
+| Token cost | Acceptable per the owner. Threads still avoid overlapping agents and do not fan out work that is not parallel. |
+
+## 7. Branch and merge strategy
+
+- `main` holds released code only. Nothing goes to main until the owner merges `revamp` for the redesigned release. Agents never merge into main.
+- `revamp` is the integration branch. Lanes open pull requests into it. Only the Integrator merges them, after typecheck, tests, `npm run check`, the owners check and the conformance run pass. The one exception is STATUS.md entries, which any thread pushes directly (`git pull --no-rebase` first, never force).
+- Lane branches are `rv/<lane>/<slug>`, for example `rv/eng-store/commit`, `rv/prov-gmail/history`, `rv/ui-home/triage`. Each runs in its own git worktree. Thread coordination branches are `rv/thread/<name>`. No branch name is ever a folder of another, so there is never a branch named exactly `rv/<lane>` or `rv/thread`. `rv/ui/mockups` stays as the design thread's branch.
+- At launch, the `mockups/` folder from `rv/ui/mockups` is merged into `revamp` as read-only visual reference.
+- Merge style: Phase 0's mechanical commits merge by merge commit and go into `.git-blame-ignore-revs`. Everything else squashes, naming the lane and work package. Long-lived branches take `revamp` by merge, never rebase. Nobody force-pushes a shared branch.
+- Evidence (test output, numbers, headless screenshots in both themes) goes in the PR with `gh pr create --attach`, never committed. Review is batched per lane milestone, and nobody re-triggers Cubic after every fix.
+- Contract changes go only through `eng-contract`, labelled `contract-change`, additive within `v:1`.
+- Builds: local packaged builds, or `v0.3.0-beta.N` draft releases in this private repo on the owner's go-ahead. The owner installs them by hand. The stable redesigned release is proposed as 0.3.0, tagged from main after the owner merges.
+- Commits are authored as Kainoa Newton <k@kainoa.me>. Threads flag any other `git config user.email` before committing. PR #21 is never merged; `ui-onboard` absorbs its screens by path and the owner closes it.
+
+> **What this means:** Every lane works on its own branches and its own folders. One thread merges everything into `revamp`, so the shared branch stays green. Main changes once, when you choose.
+
+## 8. Decisions
+
+### 8.1 Answered by the owner on 2026-10-27
+
+| Old # | Question | Answer |
 |---|---|---|
-| Week 0-1 | The 0.2.4 train | Pull request from `hotfix/0.2.4`; you merge and tag |
-| About week 6 | 0.3.0 | You merge `revamp` into main; tag from main |
-| Weeks 6-13 | Nothing, unless you ask for a stable 0.3.x | Urgent fixes for 0.3.0 users go on a `hotfix/0.3.x` branch off main, then back to `revamp` |
-| About week 14 | 0.4.0 | You merge `revamp`; tag from main |
+| 1 | Ship 0.2.4 now? | No. The Gmail fix is built into the rebuild |
+| 2 | Which domain? | aplos.email, already owned; `apps/web` on Vercel |
+| 3 | Testing to Production? | Stay in Testing. 100 test users, weekly reconnect, made smooth |
+| 4 | Google review and CASA? | No. Nothing that costs money. See 8.4 |
+| 5 | Keep the Gmail filter permission? | Yes |
+| 6 | Where do downloads come from? | This repo. No releases repo. Public later, the owner's call |
+| 7 | Which mailboxes may automatic live checks use? | Throwaway test accounts only |
+| 8 | How many threads? | Replaced by new decision N1 |
+| 9 | One big release with betas? | Yes, one redesigned release, no 0.3.0/0.4.0 split |
+| 10 | Ink blue and a serif for AI? | Yes, inside the revised look |
+| 11 | Strangers download 0.2.4? | Moot |
+| 12 | Register Microsoft now? | Yes, a free Entra app, personal and work accounts, no publisher verification |
+| 43 | Ship U0's wording fixes early? | Moot, no interim release |
+| 56 | When does the code go public? | When the redesigned version is ready, the owner's decision then |
+| 59 | Professional name search? | No, it costs money. Later, if ever |
 
-**Beta tags.** Threads may cut `vX.Y.Z-beta.N` tags from `revamp` with `scripts/release.mjs --allow-branch`. Each one goes to the public releases repository as a prerelease, only on your go-ahead, and never touches the stable feed. Nobody has verified whether electron-updater 6.8.9 treats `-beta.N` as a prerelease. Q0 checks it.
+### 8.2 New decisions (defaults apply)
 
-**One release rule.** Until the UI flips to the real engine (week 6-7), screens that run only on the stand-in engine stay behind a development flag. Any beta or stable build before the flip, 0.3.0 included, uses today's screens on the legacy bridge. A release never shows demo mail in place of your mail.
+| # | Question | Default |
+|---|---|---|
+| N1 | How many threads? | Six: Engine, Providers, UI-core, UI-screens, Platform and website, Integrator |
+| N2 | How does the owner review? | Per phase, behaviour only, with checklists, plus one daily digest |
+| N3 | The weekly Gmail reconnect | Status-area line a day ahead, one-click reconnect with `login_hint`, no resync, local changes kept |
+| N4 | Where do live Gmail checks run? | On this Mac at scheduled times; no Google tokens on GitHub |
+| N5 | Going public | Threads prepare the scan, history check, notices and LICENSE draft in Phase 3; the owner decides later |
 
-> **What this means:** Main changes only three times, each when you merge: 0.2.4, 0.3.0 and 0.4.0. Betas let you try work in progress without touching the stable app.
+The owner answered the four mockup questions on 2026-10-27: drop the app icon from the app (a new logo comes later), redesign the website only after the new logo exists, call the design "Paper", and show account dots only when two or more accounts are connected. Home's ordering rules are still being discussed in the mockups thread.
 
-## 5. Owner actions, full calendar
-
-The checklist near the top is the short version. This table adds why each action matters and where it comes from. Sources are plan 40 sections 4A and External prerequisites, plan 20 External prerequisites, ARCH External prerequisites, and each plan's owner-run checks.
-
-| When | Action | Why, and what it unblocks | Source |
-|---|---|---|---|
-| Day 1-2 | Answer the top decisions (silence means the defaults) | Everything starts on the defaults | All |
-| Day 1-2 | Pick a domain and point it at the website (decision 2, plan 40 decision M) | Google only accepts a privacy page on your own domain; starts the review clock | Plan 40 §4A row 1 |
-| Day 1 | Create the public `aplos-mail-releases` repository and a fine-grained token, `RELEASES_REPO_TOKEN` (about 30 min) | Downloads and auto-update work for anyone while the code stays private | Plan 40 Q0 |
-| Day 1 | Check which branch Vercel publishes as production | Decides whether site fixes must go to main | Plan 40 Q5A [U] |
-| Week 0 | Confirm 6,000 units a minute per user in the Google Cloud console (10 min) | PV0's pacing assumes it | ARCH M0; plan 20 PV0 |
-| Week 0-1 | Run PV0's live check on your own Gmail (local, by hand); merge the 0.2.4 train and tag it; publish the draft | 0.2.4 ships | Plan 20 PV0 |
-| Week 1 | Switch the Google project from Testing to Production, unverified (ARCH Decision 2) | Ends 7-day token expiry; shows the "unverified" screen; caps new users at 100 | Plan 40 §4A row 4 |
-| Week 1 | Verify the domain in Search Console; add it on the consent screen | Needed for the brand check | Plan 40 §4A row 2 |
-| Week 1-2 | Consent-screen branding (name, final icon, contacts); a role contact address (plan 40 decision I) | Brand verification (2-3 business days) | Plan 40 §4A rows 5-6 |
-| Week 1 | Create a throwaway Gmail test account and a separate Groq key, stored as GitHub environment secrets (plan 40 decision G); check your plan's CI minutes (plan 40 decision H) | Nightly read-only checks without touching your mailbox or AI allowance | Plan 40 Q4 |
-| Week 1 | Register a Microsoft Entra app (plan 20 Decision 2) | Outlook can be tested within a day; otherwise it stays dark | Plan 20 PV10 |
-| Any time before inviting others | Request a Fastmail OAuth client | Fastmail sign-in for people other than you | Plan 20 |
-| Week 1 | Close the lid for a minute on a packaged build | Checks wake handling (E1) | Plan 10 E1 |
-| Week 3.5 | Serif look test (Newsreader against the system font; Newsreader if no answer in two days) | Locks the AI voice | Plan 30 U3; DESIGN Decision 3 |
-| Week 5-6 | Live Gmail checks for PV3, with an agent beside you | The Gmail daily-driver gate | Plan 20 PV3 |
-| Week 5-6 | Settle the filter permission (decision 5); record the unlisted demo video from an agent's shot list; approve scope justifications | Nothing can change after submission | Plan 40 §4A row 7 |
-| Week 6 | Submit Google's restricted-scope review; approve the 0.3.0 merge and tag; fill update-matrix rows on two Macs | Google's clock starts; 0.3.0 ships | Plan 40 §4A row 8; Q7a |
-| Weeks 6-10 | Choose and pay a CASA lab; the threads fix its findings (weeks 8-12) | Required for restricted Gmail scopes | Plan 40 §4A rows 9-10 |
-| Week 7 | Feel the motion on a packaged build (U4); try the new screens on real mail after the flip | Only you can judge feel | Plan 30 |
-| Week 7.5 | Hand-check keys with focus inside an email (packaged app) | Unknown until checked; a fallback exists | Plan 10 E4; plan 30 U6 |
-| Week 8 | One real send to yourself, with a mid-send kill, on Gmail and iCloud | Proves no double send | Plan 10 E6 |
-| Week 9 | iCloud and Fastmail live checks; connect a real Google account through the new onboarding | Multi-provider gate; onboarding honesty | Plan 20 PV6-PV7; plan 30 U8 |
-| Weeks 12.5-13.5 | Dogfood week on the release candidate; sleep and battery cycles; VoiceOver and one IME check; update from 0.3.x to 0.4.0 on the second Mac | The final gate | Plans 10 E8, 30 U9, 40 Q8 |
-| Week 14 | Sign the release gate; merge `revamp`; tag and publish 0.4.0 | Release | Plan 40 Q8 |
-| After 0.4.0 (your choice) | Licence, public history, contributor terms, public flip; professional name search first | Open source, if and when you want it | Plan 40 C-F, J; Q6, Q8 |
-| Yearly | CASA renewal | Keeps Gmail verified | Plan 40 §4A row 12 |
-
-Agents never drive visible windows, send external mail, change repository visibility, publish a release or rotate a credential.
-
-## 6. Decisions for you
-
-The six documents hold about seventy decisions. Many repeat each other, so this section merges them. If you do not answer, every recommended default applies, and the plans already proceed on them. The top part of this file explains decisions 1-7 and 10 in full.
-
-### 6.1 Decisions 1-10
+### 8.3 Still open with defaults (from the plans)
 
 | # | Question | Default | Source |
 |---|---|---|---|
-| 1 | Ship the quick Gmail fix, 0.2.4, now? | Yes, within a week | ARCH Decision 1; plan 20 Decision 7 |
-| 2 | Which domain hosts the website and privacy page? | A subdomain of a domain you already own | Plan 40 decision M |
-| 3 | Move the Google project from Testing to Production (unverified) now? | Yes, in week 1 | ARCH Decision 2 |
-| 4 | Start Google's review, and pay for CASA? | Brand check now, full review about week 6, about $540-$4,500 a year for CASA | Plan 20 Decision 1; plan 40 §4A |
-| 5 | Keep the permission that lets Aplos create Gmail filters? | Yes; keep today's Gmail permission level and never ask for the broader "delete all your email" one. Answer before about week 6 | Plan 20 Decision 4; ARCH Decision 3 |
-| 6 | Where do downloads and updates come from while the code is private? | A separate public releases-only repository | ARCH Decision 11; plan 40 decision B |
-| 7 | Which mailboxes may automatic live checks use? | Throwaway test accounts in the cloud for small read-only nightly checks, plus owner-run checks on your own account; your real mailbox is never used in CI | Plan 20 Decision 3; plan 40 decision G |
-| 8 | How many threads? | Three (Engine, Providers & Sync, UI), revisited at the week-4 review | Plan 40 decision L; plan 10 Decision 11 |
-| 9 | One big 0.4.0 around week 14, with betas in between? | Yes | Plan 30 Decisions 3 and 12; plan 10 Decision 9; this roadmap |
-| 10 | The look: ink blue, and a serif voice for the AI? | Ink blue `#0b5394`, and Newsreader for summaries and Ask after a one-day look test at week 3.5; Newsreader if no answer within two days | DESIGN Decisions 2 and 3; plan 30 Decision 2 |
+| 13 | First sync size | Newest 500 Inbox conversations and 30 days of Sent, then quiet backfill to 90 days | ARCH D4 |
+| 14 | Menu-bar residency | Menu bar only when the last window closes; start hidden at login; ⌘Q quits | ARCH D5; plan 10 D1 |
+| 15 | Warn on ⌘Q with pending work | Yes, naming how many | Plan 10 D2 |
+| 16 | Reminder due while asleep | Fire on wake, "was due 9:00" | Plan 10 D3 |
+| 17 | Scheduled send due while off | Ask after 5 minutes' grace | ARCH D9 |
+| 18 | Message text kept on the Mac | 90 days plus opened, starred or unread, capped at 2 GB | ARCH D6 |
+| 19 | Encrypt beyond FileVault | No | ARCH D7 |
+| 20 | Remote images | Blocked until allowed per message or sender | ARCH D8 |
+| 21 | Old `aplos.db` after import | Kept until the redesigned release is stable, then "Remove old copy" offered | Plan 10 D4 |
+| 22 | Damaged database | Stop, keep the file, offer Export, Restore or Rebuild | Plan 10 D6 |
+| 23 | Local doorway on by default | Off until "Allow tools on this Mac" | Plan 10 D5 |
+| 24 | Ask 0.2.x users for AI consent again | Yes, once | Plan 10 D7 |
+| 25 | Free Gemini keys and mail | Never for mail until marked paid | Plan 10 D8 |
+| 26 | Background AI per day | 150,000 tokens, adjustable | ARCH D13 |
+| 27 | If engine work runs long, what waits | The doorway's MCP and CLI extras, then the AI queue's extras; never the sealed frame, outbox or views | Plan 10 D10, revised |
+| 28 | Background helper after ⌘Q | Not now | ARCH D14 |
+| 29 | Phone app | Later, as a remote for the Mac | ARCH D10 |
+| 30 | Hosted push relay | Not now | ARCH D15 |
+| 31 | Unsubscribe | One-click after you confirm, else email, else open the page | Plan 20 D5 |
+| 32 | Repeating-event edits | "This event" and "all events" first | Plan 20 D6 |
+| 33, 34 | Skypaper, cool sky neutrals | Superseded by the revised "quiet paper" direction (DESIGN-CHANGES) | DESIGN D1, D4 |
+| 35 | Reader top | Sender, then the big summary, then one row of actions, then the message | DESIGN D5 as revised |
+| 36 | Done on mail needing a reply | Leaves Home with a "Remind me if no reply" toast | DESIGN D6 |
+| 37 | Where arrow keys triage | Home, the reader and one-by-one | DESIGN D7 |
+| 38 | Key hints | Hidden until hover or ⌘, except Space; hover never moves anything | DESIGN D8 as revised |
+| 39 | Ask dock on first run | Closed, then remembered | DESIGN D9 |
+| 40 | ⌘K | A command palette; `/` for search | DESIGN D10 |
+| 41 | Home focus letter height | Fixed | DESIGN D11 |
+| 42 | Reader margin rail | Removed by the revision; single reading column | DESIGN D12 as revised |
+| 44 | PR #21 | Absorb its screens; the owner closes it | Plan 30 D4 |
+| 45 | Visual baselines | A small golden set plus same-machine comparison | Plan 30 D5 |
+| 46 | Small undrawn surfaces | The UI threads may design them inside DESIGN; the owner reads the copy at the day-9 and day-15 reviews | Plan 30 D6 |
+| 47 | Tap versus hold on R and A | Tap acts; hold adds dictation; 250 ms | Plan 30 D7 |
+| 48 | How the owner tries builds | Browser preview on day 9, packaged builds from day 15 | Plan 30 D8, revised |
+| 49 | Daily-use week before main | Yes | Plan 30 D9 |
+| 50 | Onboarding look | Small separate window, no sky and no app icon (owner, 2026-10-27) | Plan 30 D10 as revised |
+| 51 | Open Aplos after setup | On a clean finish only | Plan 30 D11 |
+| 52 | Reformat in one commit | Yes, in Phase 0 | Plan 40 A |
+| 53 | Licence | GPL-3.0 for the app and engine, MIT for `packages/contract`; `UNLICENSED` until the owner chooses | ARCH D12; plan 40 C |
+| 54 | History when public | Decided at the time; this repo goes public as is after the scan, or after an in-place rewrite | Plan 40 D, revised |
+| 55 | Contributor agreement | DCO sign-off | Plan 40 E |
+| 57 | CI cost | Free minutes only: Linux on pushes to `revamp`, macOS on demand | Plan 40 H, revised |
+| 58 | Published contact address | A free forwarding address on aplos.email, plus GitHub private reporting once public | Plan 40 I, revised |
+| 60 | Drop unproven website claims | Yes | Plan 40 K |
 
-**Decision 8, how many threads.** The options are (a) three threads, revisited at the week-4 review, (b) four, with a separate platform and quality thread, or (c) four, with an extra engine thread for the email box and local doorway. Option (a) keeps merge traffic and your review load lowest. Options (b) and (c) finish some pieces about two weeks sooner, at the cost of more parallel reviews and more colliding edits.
+### 8.4 Later, if ever
 
-**Decision 9, one big 0.4.0.** In option (a), the screens start on a stand-in engine in week 2 and switch to the real one around week 6-7. 0.4.0 ships once the engine soak and your dogfood week pass on one build, about week 14, with betas in between and a stable 0.3.x only if you ask. Option (b) ships 0.4.0 at week 11 with unfinished screens. Option (c) also ships stable 0.3.x releases as each engine piece lands. Option (a) ships one coherent release. Option (b) is earlier but ships a half-new look. Option (c) gets features to stable users sooner but shows a half-changed design.
+Opening Gmail to people outside the test-user list needs Google's restricted-scope review and a yearly CASA assessment, which costs money (the old calendar was removed from plan 40). It is off the active plan. Nothing in the build prevents it later, because the scope manifest, privacy page and no-telemetry rule stay in place. Until then the website says Gmail is available to invited testers, while iCloud, Fastmail and other IMAP accounts work for anyone who has the app.
 
-### 6.2 Decisions 11-60 (defaults apply)
-
-| # | Question | Default | Source |
-|---|---|---|---|
-| 11 | May strangers download 0.2.4 before Google approves? | Yes, invite-only: Gmail for up to 100 listed testers; other mail for anyone | Plan 40 N |
-| 12 | Register Microsoft now? | Yes, personal and work accounts; skip publisher verification for now | Plan 20 D2 |
-| 13 | How much mail does the first sync fetch? | Newest 500 Inbox conversations and 30 days of Sent, then quiet backfill to 90 days | ARCH D4 |
-| 14 | Menu-bar residency when the last window closes? | Yes, menu bar only (Dock icon goes); start hidden at login; ⌘Q quits fully | ARCH D5; plan 10 D1 |
-| 15 | Warn on ⌘Q with scheduled sends or reminders waiting? | Yes, naming how many | Plan 10 D2 |
-| 16 | A reminder came due while the Mac slept? | Fire on wake, saying "was due 9:00" | Plan 10 D3 |
-| 17 | A scheduled send came due while the Mac was off? | Ask after 5 minutes' grace | ARCH D9 |
-| 18 | How much message text stays on the Mac? | 90 days plus opened, starred or unread, capped at 2 GB | ARCH D6 |
-| 19 | Encrypt the database beyond FileVault? | No | ARCH D7 |
-| 20 | Remote images? | Blocked until allowed per message or sender | ARCH D8 |
-| 21 | The old `aplos.db` after the move? | Kept until 0.4.0 is stable, then "Remove old copy" offered | Plan 10 D4 |
-| 22 | If the database is damaged? | Stop, keep the damaged file, offer Export, Restore or Rebuild | Plan 10 D6 |
-| 23 | Local doorway for tools on by default? | Off until "Allow tools on this Mac" | Plan 10 D5 |
-| 24 | Ask 0.2.x users for AI consent again? | Yes, once, naming provider and model | Plan 10 D7 |
-| 25 | Free Gemini keys and mail? | Never for mail until you mark the key as paid | Plan 10 D8 |
-| 26 | Background AI per day? | 150,000 tokens, adjustable | ARCH D13 |
-| 27 | If engine work runs long, what waits? | The sealed email box's tail (a safe stopgap exists), then the AI queue, then the doorway's extras | Plan 10 D10 |
-| 28 | Background helper that syncs after ⌘Q? | Only if quitting-stops-sync becomes a daily annoyance or a phone needs it | ARCH D14 |
-| 29 | Phone app? | Later, as a remote for your Mac; it does not work while every Mac sleeps | ARCH D10 |
-| 30 | Hosted push relay? | Not now; revisit only with a phone | ARCH D15 |
-| 31 | Unsubscribe? | One-click after you confirm, else email the sender, else open the page | Plan 20 D5 |
-| 32 | Repeating-event edits? | "This event" and "all events" first; "this and following" a release later | Plan 20 D6 |
-| 33 | Adopt Skypaper? | Yes | DESIGN D1 |
-| 34 | Cool sky neutrals instead of warm greys? | Yes | DESIGN D4 |
-| 35 | Reader top? | Sender and date line, then the big summary, then the subject | DESIGN D5 |
-| 36 | Done on mail that still needs a reply? | Leaves Home, with a "Remind me if no reply" toast | DESIGN D6 |
-| 37 | Where arrow keys triage? | Only on Home, in the reader and one-by-one | DESIGN D7 |
-| 38 | Key hints? | Hidden until hover or ⌘, except Space; a "Show all key hints" setting | DESIGN D8 |
-| 39 | Ask dock on first run? | Closed, then remembered | DESIGN D9 |
-| 40 | ⌘K? | A real command palette; `/` for search | DESIGN D10 |
-| 41 | Home focus letter height? | Fixed, 160 px, summary two lines on Home only | DESIGN D11 |
-| 42 | Reader margin rail? | Yes | DESIGN D12 |
-| 43 | Ship U0's wording fixes early? | Yes, with 0.3.0 (no interim palette) | Plan 30 D1 |
-| 44 | PR #21? | Absorb its screens; you close it as superseded | Plan 30 D4 |
-| 45 | Visual baselines? | A small golden set plus same-machine comparison | Plan 30 D5 |
-| 46 | May the UI thread design small undrawn surfaces? | Yes, inside Skypaper; you read the copy at U7 and U8 | Plan 30 D6 |
-| 47 | Tap versus hold on R and A? | Tap acts instantly; holding adds dictation; one 250 ms threshold | Plan 30 D7 |
-| 48 | How you try each milestone? | A local packaged build | Plan 30 D8 |
-| 49 | Dogfood week before main? | Yes, seven days | Plan 30 D9 |
-| 50 | Onboarding look? | Separate small window, sky full-bleed under the title bar, one paper sheet with a 16 px margin; demo only from a small top-right button; empty fresh install (settled by your wishes; DESIGN 7.11 amended) | Plan 30 D10 |
-| 51 | Open Aplos automatically after setup? | Yes, on a clean finish only; it waits whenever anything went wrong; you can always enter early | Plan 30 D11 |
-| 52 | Reformat every file in one commit? | Yes, inside the week-1 freeze window | Plan 40 A |
-| 53 | Licence? | GPL-3.0 for the app and engine, MIT for `packages/contract`; `UNLICENSED` until you choose | ARCH D12; plan 40 C |
-| 54 | Public history? | A fresh, curated history; the private repository stays your archive | Plan 40 D |
-| 55 | Contributor agreement? | DCO sign-off | Plan 40 E |
-| 56 | When does the code go public? | With 0.4.0, after the audits pass | Plan 40 F |
-| 57 | CI cost while private? | Linux for almost everything; Mac only on merges, tags and nightly | Plan 40 H |
-| 58 | Published contact address? | A role address on your domain plus GitHub private reporting | Plan 40 I |
-| 59 | Professional name search? | Yes, before going public | Plan 40 J |
-| 60 | Drop unproven website claims? | Yes | Plan 40 K |
-
-## 7. All risks
+## 9. All risks
 
 | # | Risk | What the plan does about it |
 |---|---|---|
-| 1 | Google takes months. Until approval, Gmail works for you and up to 100 invited testers behind a warning. | The domain, privacy page and evidence pack start in week 1; the review goes in at week 6; nothing else waits on approval. |
-| 2 | Your time is the real limit. Three threads produce faster than one person can review. | One batched review per milestone, checklists written ahead, a week-4 pace review. |
-| 3 | The Gmail chain slips. If the store schema (E2a) misses the end of week 3, 0.3.0 slips with it. | E2a is small and sits on the thread that needs it, and that thread reports a slip the same day. |
-| 4 | The Engine thread is overloaded in weeks 4-8. | A fixed order for what waits (the email box's tail first), slack at week 8, and an optional fourth thread. |
-| 5 | The stand-in engine and the real one drift apart. | One test suite both must pass, and the switch to the real engine at week 6-7, not at the end. |
-| 6 | Moving mail into the new database loses or duplicates something. | The import never touches the old file and resumes after a kill; property tests; a rollback drill on your real data. |
-| 7 | The first week's file move collides with the Gmail fix. | One 0.2.4 branch merged first, a format-aware merge helper, a 24-hour freeze window. |
-| 8 | Keys may not work with focus inside an email (unverified). | A hand check, and a fallback that relays only scrolling keys. |
-| 9 | A second cause hides behind the Gmail 403. | 0.2.4 logs Google's exact reason; the Gmail rebuild passes only on your real account. |
-| 10 | 0.2.4 reaches testers while emails still render unsealed. | The `srcdoc` stopgap joins 0.2.4 if ready; if not, keep 0.2.4 to yourself until it or 0.3.0 ships. |
-| 11 | Going public exposes history or secrets. | A fresh curated history, secret scans of every branch, a provenance gate, no ritual secret rotation. |
-| 12 | Outlook cannot be tested without a Microsoft registration. | The thread builds it against a faithful fake and keeps it switched off. |
+| 1 | A frozen-contract mistake forces rework | Adversarial review before the freeze; additive changes only; one owner |
+| 2 | Integration bugs at the switch | Shared conformance suite from day 4; switch on day 11; daily end-to-end on emulators |
+| 3 | A second cause hides behind Gmail's 403 | Exact-reason logging from day 1 of `prov-gmail`; live acceptance on the owner's account |
+| 4 | Live Gmail quota and weekly token expiry slow testing | Emulator first; scheduled live runs; two test accounts; runs follow the reconnect |
+| 5 | The importer loses or duplicates local data | Reads `aplos.db` read-only; resumes after a kill; property tests; an owner-run rehearsal on a copy with a content-free report |
+| 6 | Owner review becomes the bottleneck | Per-phase reviews, checklists, daily digest |
+| 7 | One Mac cannot run 25 lanes' tests at once | Targeted tests per lane; full suite only by the Integrator; optional self-hosted Linux runner |
+| 8 | Design changes arrive mid-build | Fold before launch; tokens in one file; screen lanes follow the mockups |
+| 9 | Keys may not work with focus inside an email | A hand check on days 14-16 and a fallback that relays only scrolling keys |
+| 10 | A provider lane runs late | It ships switched off; the release does not wait for Outlook or calendar extras |
+| 11 | Going public exposes history or secrets | Secret scan of every branch and a history check before the owner decides |
+| 12 | Old code lingers and confuses agents | Legacy code sits in `legacy/` folders from day 1 and is deleted in Phase 2 |
 
-## 8. Document map
+## 10. Changes the other plans need
+
+A later pass aligns plans 10-40, ARCH and DESIGN to this roadmap. These are the edits.
+
+**Plan 10 (engine).**
+1. Remove E0's `hotfix/0.2.4-log` branch and main-path files; the logger and sink become Phase 0 artifact F7 at final paths.
+2. Replace E1's freeze window with section 1 here: no step 0 merge from main (main does not change), legacy code moved into `legacy/` folders, `electron.ts` split in Phase 0, no typed-client codemod over today's 53 `invoke(` sites, `format-merge.mjs` dropped.
+3. Collapse C0 and C1 into one freeze at the end of Phase 0 (day 3) with the three-reviewer gate; the stand-in engine answers every method at the freeze and gains its scenarios in Phase 1.
+4. Delete the legacy bridge (section 4.2, `assembleLegacyState`, `legacyStoreAdapter`, the legacy op kind) and the `service.ts` split (WP1.2). E8's shim removal becomes "delete the legacy folders".
+5. Merge E2a back into one store lane (`eng-store`), schema 0001 frozen in Phase 0; keep the importer.
+6. Re-cut E1-E8 into lanes `eng-contract`, `eng-store`, `eng-views`, `eng-time`, `eng-ai`, `eng-html`, `eng-host`; weeks become days; 0.2.4, 0.3.0 and 0.4.0 become one redesigned release (proposed 0.3.0).
+7. Decisions: D9 settled by design; D10 revised (the doorway's extras wait first, never the sealed frame); D11 replaced by N1.
+8. Add the `reconnectBy` account fact to the contract and `Setup/status`; branch names to `rv/<lane>/<slug>`.
+
+**Plan 20 (providers).**
+1. Remove PV0 as a milestone and the whole `hotfix/0.2.4` train; move PV0's deliverables and its emulator acceptance items into PV3 (`prov-gmail`) and PV2 (`prov-gov`), and keep EX1 and EX2 in `prov-gmail`.
+2. Remove PV5's verification and CASA track, brand verification, demo video and scope justifications; keep client resolution, the scope manifest and its test, and granted-scope handling in `prov-gov`.
+3. Add the weekly-reconnect engine behaviour to `prov-gov` (grant time, `reconnectBy`, `login_hint`, no resync, queued changes kept) and live-runner checks for expiring tokens.
+4. Re-cut PV1-PV10 into the eight `prov-*` lanes; PV11 moves to Phases 2-3; weeks become days.
+5. Decision answers: 1 no review or CASA; 2 the owner registers a free Entra app; 3 throwaway accounts only, runs local by default (N4); 4 keep filters; 7 moot.
+6. Drop the dependency on the legacy bridge; a provider not ready by day 16 ships switched off.
+7. Section 5.4: Testing-mode expiry applies to test accounts; delete "the Production switch unblocks the harness". Section 6: drop Google-review risks, add weekly expiry. Section 7: drop the releases repository and CASA documents.
+
+**Plan 30 (UI).**
+1. Start from DESIGN.md with DESIGN-CHANGES folded in and the mockups as the visual target. Remove the sky, horizon, post edge, sky moments, `post` and `drain` motions and the margin rail from U3, U4, U5, U6 and U8.
+2. Drop U0 as a milestone; move its banned-string test, identity check, AGENTS.md rule and DECISIONS retirement into `ui-foundation`; map the ten known defects to tests in the new screens.
+3. Drop the `srcdoc` hotfix slice; `MailFrame` keeps its props and uses `srcdoc` on the stand-in engine until `eng-html` lands.
+4. Re-cut U1-U8 into the eight `ui-*` lanes; U9 moves to Phases 2-3; WP5.6 runs on day 11-13; weeks become days.
+5. Add F9 to Phase 0 (tokens, lint, skill v1, component props, `CommandRegistry`, data-hook signatures), the hover-never-shifts harness check, and the reconnect surfaces (status line, reconnect sheet, Settings account row).
+6. Decisions: D1 moot; D2 answered; D3 and D12 answered (one release); D8 per-phase; D10 revised; the serif look test becomes part of the day-9 review.
+7. Q5A and Q5B move to the Platform and website thread.
+
+**Plan 40 (platform).**
+1. Remove Q0-main, the releases repository, `RELEASES_REPO_TOKEN`, decision B and every "public releases repo" line; drafts publish to this repo.
+2. Remove section 4A's active calendar, Q6.8's CASA pack and decision J's name search; keep a short "later, if ever" note.
+3. Decision answers: M aplos.email; N moot; L replaced by the Platform and website thread; F the owner's call when ready, same repo; D decided at flip time; G throwaway accounts, local runs by default; H free minutes only.
+4. Q1a and Q1b run inside Phase 0; drop `format-merge.mjs`. Add `owners-check.mjs`.
+5. Q5A: privacy page on aplos.email; replace "invite-only until Google approves" with "available to invited testers"; restyle the site to the revised design without the stripe.
+6. Re-cut into `plat-ci`, `plat-release` and `web`; section 5's chart becomes days; Q8's public-flip rehearsal becomes optional.
+
+**ARCHITECTURE.md.** Record the answers to Decisions 1, 2, 3, 11 and 12; rewrite 12.5 (Testing mode, 100 test users, 7-day tokens, reconnect requirement, verification only "later, if ever"); 14 item 7 (same repo); 15 (drop M0 as a release, fold it into M3, drop the legacy-bridge stage, phases in days); add amendment AM-5 for these changes and the reconnect fact in 6.4; trim External prerequisites to the free items; update the plain-English timeline.
+
+**DESIGN.md.** Fold `mockups/DESIGN-CHANGES.md` revision 2 in before the UI threads launch, including the owner's answers to its section 10. Mark Decisions 1, 4 and 12 superseded, 2 and 3 answered; remove the sky from 7.11-7.12 and 7.16; add the reconnect line, sheet and copy to 7.1, 7.10 and 7.15; replace section 15's delivery order with the lane mapping.
+
+## 11. Document map
 
 | File | What it is for |
 |---|---|
 | `plans/README.md` | The start page and reading path |
-| `plans/overview.html` | Visual overview: timeline, how the parts fit, the look |
-| `plans/00-roadmap.md` | This file: your decisions and calendar on top; threads, the unified timeline, branches and every decision below |
-| `plans/ARCHITECTURE.md` | Binding engine architecture: storage, sync, governor, contract, security, ARCH's M0-M10 path; amendments AM-1 to AM-4 (section 16A) |
-| `plans/DESIGN.md` | Binding design language (Skypaper), every screen, the keyboard map, voice, enforcement; 7.11-7.12 amended for your onboarding wishes |
-| `plans/10-engine-foundation.md` | Engine thread plan: E0-E8, the contract and stand-in engine, the legacy bridge, the freeze window |
-| `plans/20-providers-sync.md` | Providers & Sync plan: PV0-PV11, the 0.2.4 Gmail fix, the adapter port, emulators, live checks, Google verification engineering |
-| `plans/30-ui-revamp.md` | UI thread plan: U0-U9, data layer, motion, mail frame, onboarding, accessibility and performance |
-| `plans/40-platform-quality.md` | Platform plan: Q0-Q8, formatting, CI, hardening, releases, open-source readiness, the Google owner-action calendar |
-| `plans/50-thread-briefs.md` | The launch messages for the three threads, the launch checklist and launch decisions |
-| `plans/proposals/arch-*.md` | The three competing architecture proposals that ARCH chose between (superseded) |
-| `plans/proposals/design-*.md` | The three competing design directions that DESIGN chose between (superseded) |
-| `plans/_council/CONTEXT.md` | Shared facts that override research, owner rules, and the plain-English contract |
-| `plans/_council/critic-*-sonnet.md` | Critiques of each workstream plan, with revision logs |
-| `plans/_council/judge-*.md` | Independent judges' scorecards for the architecture and design choices |
-| `plans/_council/task-*.md`, `run-critics.sh`, `*.log` | Briefs and run logs of the planning agents (process records only) |
+| `plans/overview.html` | Visual overview: phases in days, threads, the decisions |
+| `plans/00-roadmap.md` | This file: your part on top; the freeze, lanes, graph, days, threads, branches and decisions below |
+| `plans/50-thread-briefs.md` | The six launch briefs and the launch checklist |
+| `plans/ARCHITECTURE.md` | Binding engine architecture |
+| `plans/DESIGN.md` | Binding design language, revised by `mockups/DESIGN-CHANGES.md` |
+| `plans/10-engine-foundation.md` | Engine detail, cited by E-numbers |
+| `plans/20-providers-sync.md` | Providers detail, cited by PV-numbers |
+| `plans/30-ui-revamp.md` | UI detail, cited by U-numbers |
+| `plans/40-platform-quality.md` | Platform detail, cited by Q-numbers |
+| `plans/STATUS.md` | Created at launch; the append-only coordination log |
+| `plans/OWNERS.md` | Created at launch; the path ownership map from section 2 |
+| `mockups/` (from `rv/ui/mockups`) | The visual target for every screen |
+| `plans/proposals/`, `plans/_council/` | Superseded proposals, critiques, judges and agent briefs; `_council/CONTEXT.md` holds shared facts |

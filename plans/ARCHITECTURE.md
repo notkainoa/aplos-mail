@@ -6,17 +6,19 @@ Chief architect's decision document, 2026-10-27, branch `revamp`. Planning only:
 
 ## In plain English
 
-Aplos has never finished syncing a real Gmail account. Google limits how much work an app can do per person per minute. Aplos asks for about ten minutes of work at once, Google refuses, and Aplos starts over. The app also keeps the whole mailbox in memory, forgets changes when it restarts, and stops fetching mail when you close the window.
+Aplos has never finished syncing a real Gmail account. Google caps the work an app can do per person per minute. Aplos asks for about ten minutes of work at once, Google refuses, and Aplos starts over. The app also keeps the whole mailbox in memory, forgets changes on restart, and stops fetching mail when you close the window.
 
-This document is the final plan for the engine. The engine is the part that talks to your mail providers, stores your mail and feeds the screens. The plan repairs the existing engine in place instead of rebuilding it.
+This is the final plan for the engine, the part that talks to your mail providers and stores your mail. It repairs the existing engine in place instead of rebuilding it.
 
-What changes for you. In about one week, a small update (0.2.4) makes Gmail work in a limited way. By about week five, Gmail is ready for daily use. iCloud and Fastmail follow by about week eight. Closing the window keeps Aplos in the menu bar, so mail, reminders and scheduled sends keep working. Remote images stay off until you allow them.
+What changes for you. There is no separate quick fix. The Gmail fix is part of the rebuild, which ships as one redesigned version. The shared rules freeze in about three days, and Gmail passes live checks on test accounts by day 15. Closing the window keeps Aplos in the menu bar, so mail, reminders and scheduled sends keep working.
+
+Gmail stays in Google's Testing mode, so you reconnect once a week. Nothing here costs money.
 
 What stays the same. No Aplos server holds your mail, Groq stays the default AI, and nothing syncs while your Mac sleeps.
 
-You need to answer 15 questions below. Questions 2, 3 and 11 matter first.
+Questions 1, 2, 3, 11 and 12 below have answers. The other ten keep their defaults.
 
-> **What this means:** Gmail works well in about five weeks, built in small steps you can reverse.
+> **What this means:** Gmail works well on your own mail by about day 15.
 
 ## 0. How the winner was chosen
 
@@ -24,7 +26,7 @@ You need to answer 15 questions below. Questions 2, 3 and 11 matter first.
 
 **My own check.** I re-read the evidence the free-model judges cite instead of trusting their scores. The numbers hold: 6,000 units per user per project per minute and the new prices (`RC/protocols/proto-google.md` §1.1); 0.04-0.07 ms list pages (`RC/gaps/storage-engine-benchmark.md` §0); 0.12 ms windows against 39 ms full ID lists at 100k threads (`RC/gaps/engine-contract-rpc-stack.md` §3.2); 53 MB idle footprint today against 17 MB for a Node daemon (`RC/gaps/macos-daemon-lifecycle.md` §2). Two research claims are outdated: A1 is blocked on a provisioning profile and on need, not on signing (daemon report §0.3 predates CONTEXT); and phone-to-desktop-host has strong precedent outside email (`RC/gaps/phone-mac-connectivity.md` §0 overturns `RC/SYNTH-architecture.md` §0.3).
 
-**Why evolve wins.** Sync quality comes from the data model and the governor, not the topology, and the 6-10 week foundation is the same for every topology (`RC/SYNTH-architecture.md` §2, §0.4). So the deciding questions are: which plan gets real Gmail working soonest, which keeps local edits and incoming mail in agreement, and which leaves risky choices late and reversible. Only evolve answers all three: a week-one patch, a replay-plus-fence model for effective state (§4.5 there) that the local-server plan omits, and a purely additive B → A0 → A1 path (§11.5).
+**Why evolve wins.** Sync quality comes from the data model and the governor, not the topology, and the 6-10 week foundation is the same for every topology (`RC/SYNTH-architecture.md` §2, §0.4). So the deciding questions are: which plan gets real Gmail working soonest, which keeps local edits and incoming mail in agreement, and which leaves risky choices late and reversible. Only evolve answers all three: an early Gmail fix inside the rebuild, a replay-plus-fence model for effective state (§4.5 there) that the local-server plan omits, and a purely additive B → A0 → A1 path (§11.5).
 
 **What is grafted in.**
 
@@ -38,7 +40,7 @@ You need to answer 15 questions below. Questions 2, 3 and 11 matter first.
 | Portable | Per-device connection discipline for iCloud | §13 |
 | Judges | Keep the provider's original body form so sanitizer fixes reach old mail without spending quota | §3.3 |
 
-**What is rejected.** The portable plan as a target (shared Gmail quota, months of phone work, CloudKit profiles, leases failing open; `RC/gaps/phone-mac-connectivity.md` §5); the local-server plan's ordering, which bundles resident mode with the listener and so delays timed features to about week 8-12; any LaunchAgent before a real need.
+**What is rejected.** The portable plan as a target (shared Gmail quota, months of phone work, CloudKit profiles, leases failing open; `RC/gaps/phone-mac-connectivity.md` §5); the local-server plan's ordering, which bundles resident mode with the listener and so delays timed features until late in the build; any LaunchAgent before a real need.
 
 > **What this means:** We take the plan that gets real Gmail working first and stops changes flipping back, then borrow the best ideas from the other two.
 
@@ -129,7 +131,7 @@ Following `RC/gaps/macos-daemon-lifecycle.md` §9:
 
 ### 3.1 Decisions
 
-- **A new file, `mail.db`, next to today's `aplos.db`.** A fresh file allows `auto_vacuum=INCREMENTAL`, which cannot be added later without a full `VACUUM`, and keeps `aplos.db` as an untouched rollback copy until 0.4.0 is stable.
+- **A new file, `mail.db`, next to today's `aplos.db`.** A fresh file allows `auto_vacuum=INCREMENTAL`, which cannot be added later without a full `VACUUM`, and keeps `aplos.db` as an untouched rollback copy until the redesigned release is stable.
 - **Driver: `node:sqlite`.** better-sqlite3 is only 6-8% faster on commits and the switch is now one adapter file [V `RC/gaps/storage-engine-benchmark.md` §0.3, §6]. Extend the `SqlDatabase` port with `Uint8Array` values and `iterate()`. CI asserts `sqlite_version()` ≥ 3.43 and FTS5 present, because `node:sqlite` follows Electron's SQLite (§7 there). Switch to better-sqlite3 only if encryption is required, the engine moves to a runtime whose SQLite we do not control (A1's SEA), or `node:sqlite` regresses.
 - **Ids.** Contract ids stay strings (`accountId:remoteId` for threads), so the roughly 60 renderer call sites keep working. Internally every row has an integer rowid. **Message rowids are date-ordered**: `internal_date_seconds × 4096 + n`, which turns newest-first search into `ORDER BY rowid DESC` (0.05 ms instead of 32-40 ms [V storage §0.5]). Use the provider's internal date, never the `Date:` header, and treat the id as opaque.
 
@@ -349,7 +351,7 @@ Thread rows built from one message carry `complete=0`. **Opening a thread** fetc
 
 **Auth.** Loopback + PKCE (already right); `prompt=select_account` with `login_hint`, never forced consent (D21); check `sub` on reconnect so another Google account cannot silently replace this one; store granted scopes and refuse to connect without `gmail.modify` (D5); `invalid_grant`/`admin_policy_enforced` → `needsReauth` (D4); refresh token and client id stored as one bundle, refreshes serialized.
 
-**Rejected:** `https://mail.google.com/` for IMAP bulk sync and IDLE: a second code path and a "permanently delete all your email" consent line for the same verification cost (`RC/SYNTH-architecture.md` §3.2). Revisit only if live data after M3 shows quota still dominates (Decision 3).
+**Rejected:** `https://mail.google.com/` for IMAP bulk sync and IDLE: a second code path and a "permanently delete all your email" consent line for the same restricted-scope cost (`RC/SYNTH-architecture.md` §3.2). Revisit only if live data after M3 shows quota still dominates (Decision 3).
 
 ### 5.2 Microsoft Graph (ships dark until a client id exists)
 
@@ -426,7 +428,7 @@ Classification reads the provider's reason **and** message text, because Gmail's
 
 ### 6.4 Persistence and status
 
-Cooldowns, daily blocks and AIMD targets persist in `governor_state`. The `gate.ts` single-flight and spacing rules fold into the actor. One status vocabulary drives retry policy and the UI: `starting`, `ok`, `syncing`, `backfilling (n of m)`, `paused (until, reason)`, `needsReauth`, `needsPermission`, `needsAdmin`, `misconfigured`, `offline`, `error`. Only `offline` and `paused` resume automatically (Geary's rule, `RC/SYNTH-architecture.md` §9).
+Cooldowns, daily blocks and AIMD targets persist in `governor_state`. The `gate.ts` single-flight and spacing rules fold into the actor. One status vocabulary drives retry policy and the UI: `starting`, `ok`, `syncing`, `backfilling (n of m)`, `paused (until, reason)`, `needsReauth`, `needsPermission`, `needsAdmin`, `misconfigured`, `offline`, `error`. Only `offline` and `paused` resume automatically (Geary's rule, `RC/SYNTH-architecture.md` §9). Each Google account also carries `reconnectBy`, the token's grant time plus 7 days while the Google project is in Testing mode (12.5), so the UI can warn a day ahead. `needsReauth` still means the token has already expired. A reconnect passes `login_hint`, does not resync, and keeps queued local changes.
 
 ### 6.5 Several devices on one quota: the primary-device lease
 
@@ -546,7 +548,7 @@ Adopt the tested design in `RC/gaps/electron-email-html-isolation.md` §7. Today
 
 **Keyboard and links.** Main intercepts keys with `before-input-event` when `focusedFrame` is a mail frame and relays them to the renderer's shortcut registry; keys are never forwarded from the frame. Whether this fires for out-of-process frames is **[U]**: hand-check it in the packaged app before M4 closes; the fallback is a non-destructive relay from the frame script (J/K, scroll, Esc; never E, Space or R). `setWindowOpenHandler` opens links externally or routes mailto to Compose; `will-frame-navigate` cancels everything else. Pop-out and print use a `WebContentsView` with `javascript:false`.
 
-**Stopgap (M0).** A same-origin `srcdoc` frame without scripts and with an inner meta CSP: far better than today, acceptable while the owner is the only user, replaced in M4.
+**Stopgap.** The stand-in engine and the UI lanes use a same-origin `srcdoc` frame without scripts and with an inner meta CSP until M4's `aplos-mail://` frames land. No release ships it.
 
 > **What this means:** Each email displays in an isolated frame that cannot reach your files or the network. Scripts never run, and remote images stay off until you load them.
 
@@ -590,7 +592,7 @@ Image proxy SSRF rules (§10); CalDAV same-registrable-domain redirects (§5.5);
 
 ### 12.5 Google policy
 
-Both Gmail scopes are restricted, mail goes to LLM servers, so plan for verification **and** CASA (`RC/protocols/proto-google.md` §8.2). This is an owner action, not engineering (see External prerequisites).
+The Google project stays in Testing mode (owner decision, 2026-10-27). Only listed test users (up to 100) can sign in, and refresh tokens expire after 7 days, so every account needs a reconnect each week. The engine records the token grant time, exposes `reconnectBy` (6.4) and keeps the reconnect to one click with no resync. Both Gmail scopes are restricted and mail goes to LLM servers, so opening Gmail to people outside the test list would need Google's restricted-scope review and a yearly CASA assessment (`RC/protocols/proto-google.md` §8.2). Both cost money, so they are off the plan: later, if ever. The scope manifest, the privacy page on aplos.email and the no-telemetry rule stay in place, so nothing in the build prevents that later.
 
 > **What this means:** Only your own Mac user can reach the local connection. Each tool needs its own revocable key, and sending needs separate permission.
 
@@ -619,45 +621,45 @@ The repository is private today but should be able to go public. That shapes the
 3. **Secrets hygiene.** Before going public, scan the full git history for keys (for example gitleaks), confirm `.env` was never committed, and keep signing and OAuth secrets in CI only.
 4. **Tests without the owner's mailbox.** CI relies on the demo engine, a Gmail quota emulator, an IMAP server fixture, Graph and JMAP fakes and a hostile-HTML corpus. Live acceptance stays an owner step; mocked Google never counts (AGENTS.md).
 5. **The contract is a public API.** `packages/contract` and `openapi.json` document how to build CLIs, agents and clients; the golden-file test guards compatibility.
-6. **No telemetry**, which also keeps CASA scope small.
-7. **Distribution:** a public releases repository now (Decision 11).
+6. **No telemetry**, which also keeps a later Google review small.
+7. **Distribution:** one repository and no releases repository (Decision 11). Builds are local or private drafts for now, and the repository goes public later at the owner's call, after a secret and history scan.
 8. **Licence and brand** are separate (Decision 12); the name and the sky, envelope and hill icon stay reserved, and "Airmail" is never used (`RC/gaps/identity-collision-audit.md`).
 
 > **What this means:** The code is built as if strangers will read it one day, with no secrets in it, no borrowed code and tests that work without your mailbox.
 
 ## 15. Migration from today's code, step by step
 
-Two architecture threads: **S** owns store, sync, governor and providers (M2, M3, M7, M8); **P** owns platform, contract, HTML, AI, outbox and listener (M1, M4, M5, M6, M9). Every build stays launchable through a compatibility layer; `aplos.db` stays until 0.4.0 is stable. Live acceptance uses real accounts; emulators only support development.
+The roadmap (`plans/00-roadmap.md`) sets the schedule in days. Phase 0 (days 1-3) restructures the code and freezes the shared rules, Phase 1 (days 4-13) builds in parallel lanes, Phase 2 (days 11-18) joins the pieces and checks them, and Phase 3 (days 18-25) is the owner's daily use. The M-names below stay as milestone names and acceptance tests, and each maps to lanes: `eng-*` for the engine, `prov-*` for providers and `ui-*` for screens. One redesigned release ships, proposed as 0.3.0 (AM-5). `aplos.db` stays until that release is stable. Live acceptance uses throwaway test accounts first, then the owner's own accounts by hand. Emulators only support development.
 
-**M0: make Gmail real (week 0-1, release 0.2.4), old model.** First window of 40 threads (≈4,800 units) at concurrency 1; a 60 s pause on rate 403s instead of per-request retries; `quotaExceeded` and sends never retried; no Spam or Trash; `invalid_grant` → Reconnect; granted-scope check; server search on Enter only (10 threads); the `srcdoc` stopgap; a redacted log recording Google's exact reason. Owner: confirm 6,000 units/min in Cloud console; Decision 2. **Acceptance:** a real Gmail first sync completes and any refusal's reason is logged. If the old model cannot hold a thin window, wait for M3 and record that in PROGRESS.md.
+**M0: folded into M3 (no 0.2.4).** The separate Gmail hotfix is dropped. Google's exact refusal reason is logged from the first day of `prov-gmail`, through the redacting log (Phase 0 artifact F7). The rest of M0 becomes acceptance items of M3: a 60 s pause on rate 403s instead of per-request retries; `quotaExceeded` and sends never retried; no Spam or Trash; `invalid_grant` → Reconnect; granted-scope check; server search on Enter only (10 threads). Owner, on day 1: confirm 6,000 units/min in the Cloud console and add the throwaway test accounts as test users.
 
-**M1: groundwork (week 1-2).** Split `service.ts` (961 lines) along its seams with tests green; create `packages/contract` (registry with today's method names, generated allowlists, a host-agreement test); move `src/engine` to `packages/engine` in one mechanical commit before the threads diverge; fuses, macOS 13, resident mode, wake hooks, lockfile, BLOBs and `iterate()` in the SQL port, the SQLite CI check. **Freeze the contract and ship a fixture engine (demo data) for the UI thread.** **Acceptance:** closing the window keeps sync and reminders running in the packaged app; fuses confirmed in the binary; the agreement test passes.
+**M1: groundwork (Phase 0, days 1-3; lanes to day 10).** The restructure chain: rename and imports, with today's engine, shared files and renderer moved into `legacy/` folders; the `electron.ts` split; the format and lint commits; `packages/contract` (registry with today's method names, generated allowlists, a host-agreement test) and `packages/engine`, moved in one mechanical commit before the lanes diverge. `service.ts` is not split. Then, in lanes: fuses, macOS 13, resident mode, wake hooks and lockfile (`eng-host`, by day 7), BLOBs and `iterate()` in the SQL port, the SQLite CI check. **Freeze the contract and ship a stand-in engine (demo data) for the UI threads at the end of Phase 0 (day 3).** **Acceptance:** closing the window keeps sync and reminders running in the packaged app; fuses confirmed in the binary; the agreement test passes.
 
-**M2: new store (week 2-3).** Schema (§3.2), import (§3.8), persisted change log, bodies, paced FTS, and a compatibility assembler (`state.get` and `threads.page` serve body-less rows from SQL; the Reader uses `MessageBody/get`). **Acceptance:** an original benchmark script shows first page under 1 ms and all unread counts under 10 ms at 200k messages; kill mid-import resumes; restart no longer re-snapshots; the rollback drill restores 0.2.x; a replay property test proves `snapshot(seq0) + changes == snapshot(seqN)` (Bulwark shipped two delta bugs).
+**M2: new store (days 4-10, `eng-store`).** Schema (§3.2, frozen in Phase 0), import (§3.8), persisted change log, bodies, paced FTS. There is no compatibility assembler, because no release runs the old screens on the new store. **Acceptance:** an original benchmark script shows first page under 1 ms and all unread counts under 10 ms at 200k messages; kill mid-import resumes; restart no longer re-snapshots; the rollback drill restores 0.2.x; a replay property test proves `snapshot(seq0) + changes == snapshot(seqN)` (Bulwark shipped two delta bugs).
 
-**M3: governor and Gmail rewrite (week 3-5, release 0.3.0).** Governor, taxonomy, status vocabulary, AIMD, persisted state; account actors; Gmail P0-P5; history incremental; generation sweep; per-message labels and coalesced ops; replay plus fence; `needsReauth`; primary-device lease. **Acceptance (live, real account):** first 50 threads under 15 s; 500 threads in about 3 minutes; zero refusals; kill mid-backfill resumes from the page; a bulk archive in Gmail web costs under 100 sync units; classified errors in the log. **Gmail daily-driver gate.**
+**M3: governor and Gmail rewrite (days 4-12, emulator gate on day 11; `prov-gov`, `prov-gmail`).** Governor, taxonomy, status vocabulary, AIMD, persisted state; account actors; Gmail P0-P5; history incremental; generation sweep; per-message labels and coalesced ops; replay plus fence; `needsReauth`; primary-device lease; the weekly reconnect (6.4, 12.5). The M0 rules above are acceptance items here. **Acceptance (emulator gate by day 11, then live on throwaway test accounts on days 12-14 and by hand on the owner's Gmail on days 14-16):** first 50 threads under 15 s; 500 threads in about 3 minutes; zero refusals; kill mid-backfill resumes from the page; a bulk archive in Gmail web costs under 100 sync units; classified errors in the log; a reconnect after token expiry keeps queued local changes and does not resync. **Gmail daily-driver gate.**
 
-**M4: windows and HTML isolation (week 4-6, overlapping M3).** Contract steps 3-4 with the UI thread: `View/watch`, receipts, direct MessagePort, main's `latestState` removed; `aplos-mail://` frames, `packages/mail-html`, image proxy, CSP tightening. **Acceptance:** shortcuts work with focus inside a mail frame (hand-verified in the packaged app); the isolation report's hostile vectors (inline script, `onerror`, meta refresh, `<link>` prefetch, `url()` trackers, forms) leak nothing; a 100k-thread fixture reads through bounded windows.
+**M4: windows and HTML isolation (days 4-11; `eng-views`, `eng-contract`, `eng-html`).** Contract steps 3-4 with the UI threads: `View/watch`, receipts, direct MessagePort, main's `latestState` removed; `aplos-mail://` frames, `packages/mail-html`, image proxy, CSP tightening. **Acceptance:** shortcuts work with focus inside a mail frame (hand-verified in the packaged app); the isolation report's hostile vectors (inline script, `onerror`, meta refresh, `<link>` prefetch, `url()` trackers, forms) leak nothing; a 100k-thread fixture reads through bounded windows.
 
-**M5: AI queue, heuristic Home, consent (week 5-6).** `jobs`, AI governor, `ai_usage`, buckets, consent card, `trainsOnInputs`, `deferAI` removed. **Acceptance:** with AI unreachable Home is ordered; no job enqueues before consent; a Groq 429 pauses the queue and says why; the PR #21 close-at-any-moment scenarios pass as tests.
+**M5: AI queue, heuristic Home, consent (days 4-11, `eng-ai`).** `jobs`, AI governor, `ai_usage`, buckets, consent card, `trainsOnInputs`, `deferAI` removed. **Acceptance:** with AI unreachable Home is ordered; no job enqueues before consent; a Groq 429 pauses the queue and says why; the PR #21 close-at-any-moment scenarios pass as tests.
 
-**M6: outbox, drafts, timers (week 6-7).** `submissions`, uncertain handling, Gmail and IMAP drafts, one timer loop, notification outbox. **Acceptance:** killing the engine before the marker, after the marker and after provider acceptance causes no duplicate and no silent loss (emulated provider, plus one real send to an owner-controlled address); an overdue send suspends.
+**M6: outbox, drafts, timers (days 4-10, `eng-time`).** `submissions`, uncertain handling, Gmail and IMAP drafts, one timer loop, notification outbox. **Acceptance:** killing the engine before the marker, after the marker and after provider acceptance causes no duplicate and no silent loss (emulated provider, plus one real send to an owner-controlled address); an overdue send suspends.
 
-**M7: IMAP, iCloud, JMAP, CalDAV (week 7-8).** Two-connection actors, host table, capability ladder, `imapflow` upgrade, EventSource, CalDAV sync tokens, recurrence module. **Acceptance (live, owner's iCloud and Fastmail):** new mail appears within seconds; an archive made on the phone arrives; iCloud stays at two connections or fewer per device role; a long sync never blocks triage. **Multi-provider daily-driver gate.**
+**M7: IMAP, iCloud, JMAP, CalDAV (days 5-13; `prov-imap`, `prov-jmap`, `prov-cal`).** Two-connection actors, host table, capability ladder, `imapflow` upgrade, EventSource, CalDAV sync tokens, recurrence module. **Acceptance (live, owner's iCloud and Fastmail):** new mail appears within seconds; an archive made on the phone arrives; iCloud stays at two connections or fewer per device role; a long sync never blocks triage. **Multi-provider daily-driver gate.**
 
-**M8: Graph and Google Calendar (week 8-9).** Graph scheduler and unfiltered delta (dark until a client id exists), Google Calendar sync tokens and `patch`, Graph and JMAP drafts. **Acceptance:** emulator proof of Graph's 4-in-flight and 429 handling; live Calendar edits keep Meet links and RSVPs.
+**M8: Graph and Google Calendar (days 5-13; `prov-graph`, `prov-cal`).** Graph scheduler and unfiltered delta (dark until the owner's free Entra app exists), Google Calendar sync tokens and `patch`, Graph and JMAP drafts. **Acceptance:** emulator proof of Graph's 4-in-flight and 429 handling; live Calendar edits keep Meet links and RSVPs.
 
-**M9: listener and diagnostics (week 9-10).** A0 socket and HTTP bindings with tokens, OpenAPI golden test, MCP adapter (read, draft), browser preview on the tokenised binding, diagnostics bundle, queue inspector, Swift spike. **Acceptance:** unauthenticated, wrong-Host and wrong-Origin requests are refused; revocation is immediate; the OpenAPI diff test runs in CI.
+**M9: listener and diagnostics (days 4-12, `eng-host`).** A0 socket and HTTP bindings with tokens, OpenAPI golden test, MCP adapter (read, draft), browser preview on the tokenised binding, diagnostics bundle, queue inspector, Swift spike. **Acceptance:** unauthenticated, wrong-Host and wrong-Origin requests are refused; revocation is immediate; the OpenAPI diff test runs in CI.
 
-**M10: hardening (week 10-11; release 0.4.0 at about week 14, see AM-3).** Seven-day soak with sleep/wake and battery cycles; fault injection (drops, 403/429 storms, corrupt page, disk full); second-Mac update test; shims removed. **Acceptance:** zero duplicate sends, zero ghost threads after a forced cursor expiry, flat memory over 24 hours, a clean 0.3.x → 0.4.0 update.
+**M10: hardening (Phases 2 and 3, days 14-25).** Legacy folders deleted (days 14-17); fault injection (drops, 403/429 storms, corrupt page, disk full); second-Mac update test; a seven-day soak with sleep/wake and battery cycles, running in the background in Phase 3 (days 18-25). **Acceptance:** zero duplicate sends, zero ghost threads after a forced cursor expiry, flat memory over 24 hours, a clean update from 0.2.3 to the release candidate.
 
-**Top risks.** External prerequisites (Google, Microsoft, Fastmail); a second cause behind the 403 (M0 logs it); change-log bugs (replay test); unverified OOPIF keyboard routing (hand check, fallback); two threads colliding (M1 split, contract freeze); listener mistakes (§12.3 as acceptance plus a review before any LAN exposure).
+**Top risks.** The weekly Gmail reconnect and the free Entra app (the only external prerequisites); a second cause behind the 403 (`prov-gmail` logs it from day 1); change-log bugs (replay test); unverified OOPIF keyboard routing (hand check, fallback); lanes colliding (Phase 0 restructure, exclusive paths, contract freeze); listener mistakes (§12.3 as acceptance plus a review before any LAN exposure).
 
 **After M10, only on triggers:** A1 (§2.6, 3.5-5 weeks); A2 host half (2-4 weeks) plus a phone client (months); CloudKit (2-4 weeks after profiles).
 
-**Effort.** About 11 weeks nominal (9-14), matching 6-10 weeks of foundation plus 1-2 for A0 (`RC/SYNTH-architecture.md` §11). Gmail daily-driver about week 5; plus iCloud and Fastmail about week 8. Live verification, not coding, is the constraint.
+**Effort and schedule.** About 25 days from the owner's go to a finished version (best 22, slow 35; roadmap 4.2). The Gmail chain is the longest: the real store commit by day 6, Gmail passing on the emulator by day 11, live checks on days 12-15. A daily-use build comes around day 17-18. Live verification, not coding, is the constraint.
 
-> **What this means:** You get a quick Gmail fix in week one and a daily-use Gmail app around week five. Each later step adds one provider or safety feature without breaking earlier ones.
+> **What this means:** You get one redesigned release. Gmail runs on your own mail around day 15, and a finished version follows around day 25. Each lane adds one provider or safety feature without breaking the others.
 
 ## 16. Architecture decision records
 
@@ -676,7 +678,7 @@ Format: context / options / choice / consequences.
 | 09 Governor | 0.2.3 has two retry layers and retries daily quota (`RC/SYNTH-architecture.md` §0.9) | Per-adapter retries; one governor | One per account, priced lanes, single retry layer, AIMD, persisted | Every adapter's I/O wrapper rewritten |
 | 10 Cross-device budget | Divide-by-devices leaves no headroom (`plans/_council/judge-arch-deepseek.md`) | Divide; separate projects; lease | Primary-device lease + AIMD | Heavy work on one Mac per account |
 | 11 Effective state | Clone and `touched` heuristics flip changes back (`RC/SYNTH-architecture.md` §4.5) | UI overlays; replay + fence | Replay pending ops in the sync transaction + fence | Ops must be replayable pure functions |
-| 12 Contract | Allowlist copied 3×, untyped IPC, epoch resets (`RC/gaps/engine-contract-rpc-stack.md` §1) | JMAP envelope; REST; JMAP semantics + RPC; tRPC/oRPC | JMAP semantics, RPC envelope, zod registry, live windows | 1.5-3 weeks renderer migration; OpenAPI for Swift and agents |
+| 12 Contract | Allowlist copied 3×, untyped IPC, epoch resets (`RC/gaps/engine-contract-rpc-stack.md` §1) | JMAP envelope; REST; JMAP semantics + RPC; tRPC/oRPC | JMAP semantics, RPC envelope, zod registry, live windows | renderer rebuilt on the typed client (`ui-shell` lane); OpenAPI for Swift and agents |
 | 13 Transports | All sub-millisecond (`RC/gaps/macos-daemon-lifecycle.md` §7) | — | MessagePort for windows; 0600 socket for CLI/MCP; loopback HTTP+SSE | Main leaves the data path; tokens never in renderer |
 | 14 Email HTML | No script-free cross-origin height (`RC/gaps/electron-email-html-isolation.md` §0) | `srcdoc`; custom-origin OOPIF + one script; view per message | `aplos-mail://` OOPIF, hash-pinned reporter, engine sanitizer | +22-35 MB per thread; keyboard needs a hand check |
 | 15 Remote images | Tracking pixels report reads | Load; block | Block by default; DNS-pinned proxy on opt-in; no remote fonts | Some newsletters plain until allowed |
@@ -695,10 +697,11 @@ Recorded by the integrator after the four workstream plans were reconciled (`pla
 
 - **AM-1, opening a Gmail thread (plan 20 §2, "A1").** The engine cannot know a thread's message count before opening it, and learning it costs a 40-unit probe that loses on conversations. Opening a thread and body prefetch therefore use `threads.get?format=full` (120 units); `messages.get?format=full` (60) is used only when the engine already knows the thread has exactly one message. The port is thread-granular (`ProviderPort.openThread`, plan 10 §7.1). This supersedes §5.1's "two or more messages" sentence; nothing else in §5.1 changes. DECISIONS.md at E2a.
 - **AM-2, packages (ADR-19).** Two test-support workspaces are added: `packages/contract-fixture` (the stand-in engine on demo data that the UI thread and CI share; its data never counts against the engine's 400 KB budget) and `packages/emulators` (provider emulators, fault kit, fake clock; test-only, never bundled). Provider adapters stay in the app at `apps/desktop/src/host/providers/<name>/`, with their dependencies in `apps/desktop/package.json`; the neutral actors, governor, lanes and recurrence module live in `packages/engine/src/{sync,calendar}/**` and reach adapters only through ports. A `packages/providers` workspace is allowed later only when a second consumer needs the adapters. DECISIONS.md at E1.
-- **AM-3, release timing (§15).** 0.3.0 is M3 at about week 5-6 (plan 10's E1, E2a, E2b and plan 20's PV3), with today's screens on the legacy bridge. 0.4.0 is M10 **plus the UI's last step (plan 30 U9)**: the seven-day soak and the owner's dogfood week share one release candidate, so 0.4.0 lands at about **week 14** nominal (about 17 pessimistic) instead of week 11. Stable releases are tagged from main after the owner merges `revamp`; beta tags may be cut from `revamp`.
+- **AM-3, release timing (§15). Superseded by AM-5.** It put 0.3.0 at M3 on the old screens and 0.4.0 at about week 14. AM-5 replaces both with one redesigned release.
 - **AM-4, the silent baseline (§4.2 rule 6, §5.1).** `baseline_done_at` marks the end of the **first window** (P1, the newest ~50 Inbox threads), never the end of backfill. Pages from P2 onward are backfill: they never create notifications and never count as new mail. The first-sync screen's "found" count is an optional estimate, shown only when the provider gives one.
+- **AM-5, the roadmap's schedule and the owner's answers (§6.4, §12.5, §14, §15, Decisions 1, 2, 3, 11, 12).** Recorded 2026-10-27 from the owner's answers and `plans/00-roadmap.md`. (1) No 0.2.4 hotfix. M0 folds into M3, and its log becomes Phase 0 artifact F7. (2) No legacy bridge and no typed-client codemod, because no release ships today's screens on the new engine. Legacy code sits in `legacy/` folders from Phase 0 and is deleted in Phase 2. (3) One redesigned release, proposed as 0.3.0, replaces 0.2.4, 0.3.0 and 0.4.0. It is tagged from main after the owner merges `revamp`, and builds before that are local or private drafts in this repo. (4) The Google project stays in Testing mode, with up to 100 test users and tokens that expire after 7 days. The engine exposes a per-account `reconnectBy` fact (6.4). There is no Google verification and no CASA, and nothing in the plan costs money (12.5). (5) One repository and no releases repository. (6) The schedule is in days, by phase and lane. M1 to M10 keep their names and acceptance, mapped to lanes in §15. DECISIONS.md at Phase 0.
 
-> **What this means:** Four small corrections from lining the plans up, including 0.4.0 moving to about week 14 so the new screens ship with the new engine.
+> **What this means:** Five small corrections from lining the plans up and recording the owner's answers, including one redesigned release in place of three.
 
 ## 17. Non-goals
 
@@ -719,11 +722,11 @@ Recorded by the integrator after the four workstream plans were reconciled (`pla
 
 ## Decisions for you
 
-Each question has a recommended default. The plan uses the defaults unless you say otherwise.
+Each question has a recommended default. The plan uses the defaults unless you say otherwise. Questions 1, 2, 3, 11 and 12 were answered on 2026-10-27, and the answers are marked.
 
-1. **Ship a quick Gmail fix (0.2.4) before the rebuild?** Yes or no. **Default is yes.** Real Gmail works within a week. No saves a few days of work but delays real Gmail by about five weeks.
-2. **Move the Google sign-in project from Testing to Production (unverified) now?** Yes, or wait for verification. **Default is yes.** You stop reconnecting every 7 days, but Google shows an "unverified app" screen and caps new users at 100.
-3. **Which Gmail permission should Aplos ask for?** Today's level, or a broader one. **Default is today's level.** The broader one syncs big mailboxes faster, but Google's screen then says Aplos can "permanently delete all your email". Settle this before Google's review.
+1. **Ship a quick Gmail fix (0.2.4) before the rebuild?** Answered 2026-10-27: no. There is no 0.2.4. The Gmail fix is built into the rebuild (AM-5).
+2. **Move the Google sign-in project from Testing to Production (unverified) now?** Answered 2026-10-27: no, stay in Testing mode. Up to 100 listed test users can sign in, and you reconnect every 7 days, made smooth (a note a day ahead, one click, no resync). There is no Google verification and no CASA, because nothing may cost money. Opening Gmail to others is later, if ever (12.5).
+3. **Which Gmail permission should Aplos ask for?** Answered 2026-10-27: keep today's level, including the filter permission (`gmail.settings.basic`). The broader one stays rejected (ADR-03).
 4. **How much mail should the first sync fetch?** The newest 500 Inbox conversations plus 30 days of Sent, then 90 days in the background; only 14 days; or everything. **Default is the first.** Your inbox appears in seconds. Fetching everything takes hours under Google's limit.
 5. **Keep Aplos running in the menu bar when you close the window, and start hidden at login?** Both; menu bar only; or neither. **Default is both,** and ⌘Q quits fully. Mail, reminders and scheduled sends keep working. With neither, they stop when the window closes.
 6. **How much message text stays on this Mac?** 90 days plus anything opened, starred or unread, up to 2 GB; everything; or a smaller cap. **Default is the first.** Keeping everything allows full offline reading but grows to many gigabytes.
@@ -731,23 +734,23 @@ Each question has a recommended default. The plan uses the defaults unless you s
 8. **Block remote images by default?** Block until you allow them, or always load them through a safe proxy. **Default is block.** Blocking stops senders learning when you read. Loading looks nicer but leaks that.
 9. **What happens when your Mac was off at a scheduled send time?** Ask you, or send on wake. **Default is ask,** after 5 minutes' grace. Asking avoids stale mail arriving hours late.
 10. **When should the phone app start, and must it work while every Mac sleeps?** After the local connection is solid, as a remote for your Mac, and no; or earlier with its own engine. **Default is the first.** It is cheap, but it sees mail only while a Mac is awake. Its own engine works during sleep but costs months.
-11. **Where do updates come from while the code is private?** A separate public releases repository, or make the code public sooner. **Default is the releases repository.** Downloads and auto-update work without exposing code.
-12. **Which licence when Aplos goes open source?** MIT or Apache (anyone may reuse it, even in closed apps); GPL-3.0 (copies must stay open); or AGPL-3.0 (also covers hosted services). **Default is GPL-3.0 for the app and engine, and MIT for `packages/contract`.** Your name and icon stay yours under any licence.
+11. **Where do updates come from while the code is private?** Answered 2026-10-27: this repo, with no releases repository. Builds are local or private draft releases that you install by hand. Downloads and auto-update from a public repo wait until the code goes public.
+12. **Which licence when Aplos goes open source?** Answered 2026-10-27 in part: the repo goes public later, at your call, after a secret and history scan. The licence is not chosen yet. The repo stays `UNLICENSED` until you choose, and the default stays GPL-3.0 for the app and engine and MIT for `packages/contract`. Your name and icon stay yours under any licence.
 13. **How much background AI per day?** 150,000 tokens, adjustable; unlimited; or off until you ask. **Default is 150,000.** That fits Groq's free daily allowance. Unlimited can hit Groq's daily limit. Off means no automatic summaries.
 14. **Build a background helper that keeps syncing after ⌘Q?** Only when quitting becomes a daily annoyance or a phone needs it; or right after the local connection. **Default is only on need.** It costs 3.5 to 5 weeks and an Apple provisioning profile.
 15. **Is a hosted push relay ever acceptable?** Never; or later, only for phone alerts while Macs sleep, with no mail content. **Default is not now.** A relay is a server Aplos must run, and it may widen Google's security review.
 
-> **What this means:** If you say nothing, the plan uses every default. Answer 2, 3 and 11 first.
+> **What this means:** Decisions 1, 2, 3, 11 and 12 have answers. If you say nothing on the rest, the plan uses every default.
 
 ## External prerequisites (owner actions, not decisions)
 
-- Google: confirm 6,000 units/min in Cloud console (M0); start brand verification, the privacy policy with the Limited Use statement and the demo video after M3; budget for CASA.
-- Microsoft: register an Entra public client and start publisher verification before M8 can leave the dark state.
-- Fastmail: request OAuth client registration before distributing to others.
+- Google, on day 1: create one or two throwaway Gmail accounts, add them to the project's test users, and confirm 6,000 units/min in the Cloud console. Every 7 days, reconnect Gmail for you and the test accounts.
+- Microsoft: register a free Entra public client (personal and work accounts, no publisher verification) before `prov-graph` can leave the dark state.
+- Optional, free: a Fastmail OAuth client and an iCloud app-specific password for live checks.
+- Groq: a separate free key for tests. For other providers, confirm no-training terms before they are mail-eligible.
 - Apple: a Developer ID provisioning profile with `keychain-access-groups` and CloudKit only when A1 or CloudKit is scheduled.
-- Groq, OpenRouter and other providers: confirm no-training terms before they are mail-eligible.
 
-> **What this means:** These are forms and accounts only you can set up. Outlook stays switched off until Microsoft is set up.
+> **What this means:** All free. Outlook stays switched off until the Entra app exists.
 
 ## Evidence index
 

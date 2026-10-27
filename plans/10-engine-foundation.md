@@ -10,33 +10,53 @@ Written 2026-10-27 on branch `revamp`. Planning only: nothing here is implemente
 
 The engine holds your mail, talks to providers, remembers what you did and tells the screens what to show. Today it keeps the whole mailbox in memory, forgets changes when it restarts, and stops when you close the window.
 
-This plan rebuilds the engine in nine small steps. Your mail moves into a proper database that opens in milliseconds at any size, and the old file is never touched, so you can go back. Screens load small windows of rows, so a 100,000-message mailbox feels like a 100-message one. Emails display in an isolated frame. AI work runs in a queue that starts only after you agree and never slows syncing. Scheduled sends, undo send, reminders and Later run on one clock that survives restarts. Last, a locked local connection lets tools and a future phone app use the same engine.
+This plan rebuilds the engine in nine pieces, built by seven lanes of work in parallel. Your mail moves into a database that opens in milliseconds at any size, and the old file is never touched, so you can go back. Screens load small windows of rows, so a 100,000-message mailbox feels small. Emails show in a sealed frame. AI work runs in a queue that starts only after you agree. Scheduled sends, undo send, reminders and Later share one clock that survives restarts. A locked local connection lets tools use the same engine.
 
-What changes for you. Mail keeps working with the window closed, an archived email stays archived, and a stalled sync can be explained. Screen work starts in week two against a stand-in engine. Today's screens keep working throughout.
-
-Nothing here reaches main until you say so. You need to answer 11 questions below.
+What changes for you. In the first three days the Engine thread writes the shared rules and a stand-in engine, so screen work starts on day 4. The real engine passes the same tests by day 11. There is no quick fix and no bridge for today's screens. The new screens replace them. Nothing costs money, and nothing reaches main until you say so.
 
 ## Decisions for you
 
-Each question has a recommended default. The plan uses the defaults unless you say otherwise. Architecture decisions 5, 6, 7, 9, 13 and 14 also apply. Decisions 9 and 10 change the schedule most.
+Each question has a recommended default. The plan uses the defaults unless you say otherwise. Architecture decisions 5, 6, 7, 9, 13 and 14 also apply. The roadmap settles decisions 9, 10 and 11 (marked below), so eight questions stay open.
 
 | # | Question | Options | Recommended | What happens |
 |---|---|---|---|---|
 | 1 | When the last window closes, should the Dock icon go and Aplos live in the menu bar? | (a) Menu bar only; (b) keep the Dock icon | **(a)** | (a) shows Aplos is still working, and ⌘Q still quits fully. (b) feels normal but leaves people unsure whether mail is syncing. |
 | 2 | Warn on ⌘Q when scheduled sends or reminders are waiting? | (a) Warn, with the count; (b) quit silently | **(a)** | (a) costs one click and stops a send from missing its time. |
 | 3 | A reminder came due while the Mac slept. What happens on wake? | (a) Fire at once, "was due 9:00"; (b) wait until you open Aplos | **(a)** | (a) never loses a reminder. (b) can leave one unseen for hours. Sends ask first instead (architecture decision 9). |
-| 4 | What happens to the old `aplos.db` after the move? | (a) Keep it until 0.4.0 is stable, then offer "Remove old copy"; (b) delete it after 30 days; (c) keep it forever | **(a)** | (a) keeps the way back and never deletes without you. (b) removes the backup on a timer. (c) wastes disk. Going back loses only what you did locally after the move. |
+| 4 | What happens to the old `aplos.db` after the move? | (a) Keep it until the redesigned release is stable, then offer "Remove old copy"; (b) delete it after 30 days; (c) keep it forever | **(a)** | (a) keeps the way back and never deletes without you. (b) removes the backup on a timer. (c) wastes disk. Going back loses only what you did locally after the move. |
 | 5 | Is the local connection for tools on by default in the shipped app? | (a) Off until you switch on "Allow tools on this Mac"; (b) on, with a key per tool | **(a)** | (a) exposes nothing on a fresh install. (b) runs a listener you did not ask for. Developer builds have it on. |
 | 6 | If the mail database is damaged, what happens? | (a) Stop, keep the damaged file, and offer Export report, Restore backup or Rebuild from your provider; (b) rebuild automatically | **(a)** | (a) protects drafts and scheduled sends that exist only on this Mac. (b) can lose them silently. |
 | 7 | Ask 0.2.x users for AI consent again on upgrade? | (a) Ask once, naming provider and model; (b) treat today's use as consent | **(a)** | (a) is one card and makes later AI use provably consented. (b) skips the card but leaves consent unproven. |
 | 8 | Free Gemini keys may train on what you send. How should Aplos treat a Gemini key? | (a) Never use it for mail until you tick "this is a paid key"; (b) trust it | **(a)** | (a) is safe, and Ask still works on non-mail content. (b) may send mail to a provider that trains on it. |
-| 9 | When may the UI thread start building against the planned engine commands? | (a) From a preview at about day 5, against a stand-in engine, then switch to the real one; (b) wait for the real store (about week 5) | **(a)** | (a) overlaps UI and engine work. (b) idles the UI for about three weeks. |
-| 10 | If engine work runs long, which piece waits? | (a) The isolated email frame (E4); (b) the AI queue (E5); (c) everything shifts later | **(a)** | (a) keeps sending, storage and live lists on time, because today's frame is safe enough for one user. (b) leaves Home without budgeted AI. (c) delays Gmail and the other providers. |
-| 11 | Run an extra architecture thread for the email frame (E4) and the local connection (E7)? | (a) No, keep two architecture threads and revisit at week 4; (b) yes, from the start | **(a)** | (a) keeps your review load low. (b) finishes those pieces about two weeks sooner but risks colliding edits. |
+| 9 | When may the UI thread start building against the planned engine commands? | (a) From day 4, against the stand-in engine that Phase 0 freezes on day 3, then switch to the real one; (b) wait for the real engine (day 11) | **(a)** | Settled by the roadmap, 2026-10-27: (a). The UI starts on day 4, and the switch to the real engine happens on days 11 to 13. (b) would idle the UI until day 11. |
+| 10 | If engine work runs long, which piece waits? | (a) The doorway's MCP and CLI extras (E7), then the AI queue's extras (E5); (b) the isolated email frame (E4); (c) everything shifts later | **(a)** | Settled by the roadmap, 2026-10-27, and revised: (a). It keeps sending, storage, live lists and the sealed frame on time, and the sealed frame, outbox and views never wait. (b) leaves email in today's weaker frame. (c) delays Gmail and the other providers. |
+| 11 | Run an extra architecture thread for the email frame (E4) and the local connection (E7)? | Replaced by the roadmap's decision N1, how many threads | Six threads | Settled by the roadmap, 2026-10-27: Engine, Providers, UI-core, UI-screens, Platform and website, and the Integrator. The Engine thread runs seven lanes. |
+
+## Lanes and phases
+
+`plans/00-roadmap.md` is the source of truth for sequencing. Where this plan's older week numbers, release steps or branch names disagree with it, the roadmap wins. Day 1 is the owner's "go", and days are calendar days. The milestones E0 to E8 stay as citations. Each one now runs as part of the Phase 0 freeze or as one of the seven `eng-*` lanes of the Engine thread (roadmap 1 and 2.1).
+
+| Milestone | Content | Lane or artifact | Phase and days |
+|---|---|---|---|
+| E0 | Logger, redacting sink, classified-error record, event catalog | Phase 0 artifact F7 | Phase 0, days 2-3 |
+| E1 items 0-1 | Restructure chain and the rename-and-imports commit | Engine thread, steps 0 to 4 | Phase 0, day 1 |
+| E1 items 2, 3, 6, 7 | `electron.ts` split, registry and typed client, stand-in engine, conformance suite, freeze C1 | Phase 0 step 3 and F1, F2, F5, F6; then `eng-contract` | Phase 0, days 1-3; other scenarios, control channel and preview host on days 4-10 |
+| E1 items 4-5 | Resident mode, lock, wake, parked state, self-test | `eng-host` | days 4-7 |
+| E2 | Schema 0001 and a minimal working `store.commit` | Phase 0 artifact F4 | Phase 0, days 2-3 |
+| E2 | Real commit, ids, change log; bodies, search, retention; importer, benchmark | `eng-store` | days 4-10 (commit by 6, bodies and retention by 9, importer by 10) |
+| E3 | View specs, window engine, holds, receipts, `Thread/act`, `Operation/undo` | `eng-views` | days 4-11 (conformance green on the real engine by 11) |
+| E3 | Direct `MessagePort`, main out of the data path, host channel | `eng-contract` | days 4-10 |
+| E4 | Sanitizer, `Mail/frame`, tokens, image proxy | `eng-html` | days 4-10 |
+| E5 | Jobs, AI governor and budget, consent, heuristic Home, `Setup/*`, `Demo/*` | `eng-ai` | days 4-11 |
+| E6 | Submissions, undo and send later, drafts, one timer loop, notification outbox | `eng-time` | days 4-10 |
+| E7 | Socket, loopback HTTP, clients and scopes, OpenAPI, MCP, diagnostics | `eng-host` | days 4-12 (doorway by 12) |
+| E8 | Legacy deletion, fault injection, hardening, seven-day soak | Integrator with each lane; Engine thread | Phase 2 (deletion days 14-17, hardening and rehearsal days 15-18); soak in the background in Phase 3 (days 18-25) |
+
+Plan 10 writes F1 to F8 (the Platform thread shares F8). The Integrator and Platform write F10, the ownership map. F1 includes the `reconnectBy` account fact, the `Setup/status` shape and the `Settings` schema with its `ui` object and a provider and model per AI feature. Three reviewers attack F1 to F9 on day 3 (4.1), and then the Integrator tags `contract-v1`.
 
 ## 1. Scope and non-goals
 
-**In scope (the whole engine core).** (1) The normalized store, migrations and import (ARCH 3). (2) The change log and live windows (ARCH 3.5, 9.2). (3) The typed contract and registry in `packages/contract` (ARCH 9). (4) Transports: direct `MessagePort`, Unix socket, loopback HTTP, with the A2 phone binding only as a reserved extension point. (5) The AI queue, budget, consent, heuristic buckets and `Setup/*` replacing `deferAI` (ARCH 8). (6) Timed features: outbox, undo and send later, Later and reminders, one timer loop, notification outbox (ARCH 7). (7) Lifecycle: resident menu-bar engine, lock, wake, crash parking, watchdogs (ARCH 2). (8) Diagnostics: redacted logs, event catalog, content-free bundle, queue inspector (ARCH 11). (9) Engine-side HTML: sanitizer, render tokens, image proxy, headers (ARCH 10). (10) A demo-data fixture engine implementing the whole v1 contract (4.1). (11) The temporary legacy bridge that keeps today's screens and the not-yet-rewritten providers working on the new store (4.2).
+**In scope (the whole engine core).** (1) The normalized store, migrations and import (ARCH 3). (2) The change log and live windows (ARCH 3.5, 9.2). (3) The typed contract and registry in `packages/contract` (ARCH 9). (4) Transports: direct `MessagePort`, Unix socket, loopback HTTP, with the A2 phone binding only as a reserved extension point. (5) The AI queue, budget, consent, heuristic buckets and `Setup/*` replacing `deferAI` (ARCH 8). (6) Timed features: outbox, undo and send later, Later and reminders, one timer loop, notification outbox (ARCH 7). (7) Lifecycle: resident menu-bar engine, lock, wake, crash parking, watchdogs (ARCH 2). (8) Diagnostics: redacted logs, event catalog, content-free bundle, queue inspector (ARCH 11). (9) Engine-side HTML: sanitizer, render tokens, image proxy, headers (ARCH 10). (10) A demo-data fixture engine implementing the whole v1 contract (4.1). (11) The Phase 0 restructure, which moves today's engine, shared files and renderer into `legacy/` folders as read-only reference until Phase 2 deletes them (4.2).
 
 **Non-goals.**
 - Per-provider protocol code, the governor's implementation, account-actor sync logic, OAuth, provider-side drafts, filters, calendar sync (plan 20). This plan defines the ports they implement (7.1).
@@ -68,9 +88,9 @@ All **[V]** against main at `72095ff`.
 ```
 packages/contract/          zod schemas, registry, generated files, typed client, WindowStore        [10]
   src/schemas/, src/registry.ts (~500 lines), src/client/, generated/ (methods.generated.ts, openapi.json),
-  src/legacy/ (today's shared/{types,ask,mailbox,summary,live}.ts, moved in E1, deleted in E8)
+  src/legacy/ (today's shared/{types,ask,mailbox,summary,live}.ts, moved in Phase 0 step 1, deleted in Phase 2)
 packages/engine/            neutral core, no Node or Electron                     [10; 20 owns sync/** and calendar/**]
-  src/{store,views,outbox,ai,runtime,methods,diag}/, src/ports.ts (ProviderAdapter, Provider, Governor,
+  src/{store,views,outbox,ai,runtime,methods,diag}/, src/legacy/ (today's engine, read-only), src/ports.ts (ProviderAdapter, Provider, Governor,
   Send, DraftSync, Clock, KeyProvider, MailHtml ports), src/sync/**, src/calendar/** (recurrence), bench/, tests/
 packages/mail-html/         sanitizer: pure JS, no DOM, no Node, bundled separately                   [10]
 packages/contract-fixture/  stand-in engine on demo data; same conformance suite as the real engine   [10]
@@ -79,19 +99,20 @@ apps/desktop/src/host/      Node adapters: sqlite.ts, transports/{port,socket,ht
                             lifecycle.ts, menu-bar.ts, power.ts, lock.ts, logsink.ts, crash.ts, mcp/, cli/,
                             providers/{google,microsoft,imap,jmap,caldav,shared}/                     [10; providers/ is 20]
 apps/desktop/src/shared/    one-line re-export stubs of the moved legacy files, so renderer and main imports
-                            keep working; removed in E8
-apps/desktop/src/main/      electron.ts is split in E1 into windows.ts, lifecycle.ts, protocol.ts,
-                            menu-bar.ts, native-methods.ts
+                            keep working; removed in Phase 2
+apps/desktop/src/main/      electron.ts is split in Phase 0 step 3 into windows.ts, lifecycle.ts, protocol.ts,
+                            menu-bar.ts, native-methods.ts, security.ts, updater.ts, engine-host.ts
+apps/desktop/src/renderer/legacy/   today's renderer, read-only until Phase 2
 ```
 
-**Package locations (settled).** ARCH ADR-19 names three packages (`contract`, `engine`, `mail-html`). This plan adds two test-support packages and decides where adapters live, as an amendment to ADR-19 (recorded in ARCH's amendments section on 2026-10-27, and in DECISIONS.md at E1). Plan 20 section 3.1 uses the same paths:
+**Package locations (settled).** ARCH ADR-19 names three packages (`contract`, `engine`, `mail-html`). This plan adds two test-support packages and decides where adapters live, as an amendment to ADR-19 (recorded in ARCH's amendments section on 2026-10-27, and in DECISIONS.md in Phase 0). Plan 20 section 3.1 uses the same paths:
 - `packages/contract-fixture`: added because the UI thread and CI share it and its demo data must stay out of the 400 KB core budget (4.1).
 - **Provider adapters stay in the app**, at `apps/desktop/src/host/providers/<name>/` (plan 20 proposed `packages/providers`; rejected for now). Adapters need Node (`imapflow`, `net`, `fetch`), so they cannot sit in the neutral `packages/engine`, and ARCH names no fourth shipping package. Their dependencies are declared in `apps/desktop/package.json`, which is the only manifest electron-builder reads, so keeping them there avoids a packaging break. Actors, governor, lanes and the status machine are neutral and live in `packages/engine/src/sync/**`, reaching adapters only through the ports in `packages/engine/src/ports.ts`. Promotion to a `packages/providers` workspace is a later mechanical move, allowed only when a second consumer (a CLI, or A1's SEA engine) needs the adapters.
-- E1 creates the empty `host/providers/` folder and its lint boundary. The existing adapters (`google.ts`, `imap*.ts`, `jmap.ts`, `microsoft.ts`, `caldav.ts`, `ical.ts`) stay in `src/main/` and are moved by plan 20 inside each provider's rewrite PR, so the E1 window moves no provider code.
+- Phase 0 creates the empty `host/providers/` folder and its lint boundary. The existing adapters (`google.ts`, `imap*.ts`, `jmap.ts`, `microsoft.ts`, `caldav.ts`, `ical.ts`) stay in `src/main/`, so the restructure moves no provider code. Each `prov-*` lane moves its adapters inside its own rewrite, and Phase 2 deletes the old files.
 - `packages/emulators` is shared by plans 10, 20 and 40, is test-only and is never bundled into the app. It does not count against ADR-19's "shared code" rule because nothing ships from it.
 - The framework-neutral client lives at `@aplos/contract/client`, not in a fifth package, so `packages/contract` keeps zod as its only runtime dependency.
 
-**Build and packaging wiring (E1, a deliverable not an assumption).** Workspace packages are **internal source packages**: `exports` point at TypeScript source, no separate build step. `scripts/build-main.mjs` uses `packages:'external'`, which would leave `@aplos/*` unbundled and missing from the packaged app, so the build marks only third-party packages external (an `external` list or a plugin that bundles `@aplos/*`) **[U: esbuild may apply tsconfig paths before the external check; the packaged `verify-release.mjs` run settles it]**. `tsx` resolves workspace packages through the npm symlinks; Vite gets an alias for the renderer; `tsconfig` gains `paths` and `references`. Third-party dependencies of package code (zod) are declared once in the package's own manifest and checked by `verify-release.mjs` to be present in `app.asar`; adapter dependencies stay in `apps/desktop/package.json`.
+**Build and packaging wiring (Phase 0 step 1, a deliverable not an assumption).** Workspace packages are **internal source packages**: `exports` point at TypeScript source, no separate build step. `scripts/build-main.mjs` uses `packages:'external'`, which would leave `@aplos/*` unbundled and missing from the packaged app, so the build marks only third-party packages external (an `external` list or a plugin that bundles `@aplos/*`) **[U: esbuild may apply tsconfig paths before the external check; the packaged `verify-release.mjs` run settles it]**. `tsx` resolves workspace packages through the npm symlinks; Vite gets an alias for the renderer; `tsconfig` gains `paths` and `references`. Third-party dependencies of package code (zod) are declared once in the package's own manifest and checked by `verify-release.mjs` to be present in `app.asar`; adapter dependencies stay in `apps/desktop/package.json`.
 
 | Path | Plan 10 | Plan 20 | Plan 30 | Plan 40 |
 |---|---|---|---|---|
@@ -100,11 +121,11 @@ apps/desktop/src/main/      electron.ts is split in E1 into windows.ts, lifecycl
 | `packages/engine/src/{store,views,outbox,ai,runtime,methods,diag}` | owns | consumes | none | lint rules |
 | `packages/engine/src/sync/**`, `packages/engine/src/calendar/**`, `host/providers/**`, provider files in `src/main` (until each moves) | defines ports | owns | none | none |
 | `packages/emulators/**` | consumes (kill-point harness) | owns | none | consumes in CI |
-| `main/electron.ts` split modules | lifecycle, protocol, menu-bar, native methods | none | window creation, onboarding window | fuses, permission handlers, updater |
-| `renderer/**` | the typed-client codemod and import fix-ups in E1 only | none | owns | none |
+| `main/electron.ts` split modules (Phase 0 step 3) | `eng-host` (lifecycle, windows, menu-bar, native-methods), `eng-contract` (engine-host, server), `eng-html` (protocol) | none | onboarding window | `plat-release` (security, updater) |
+| `renderer/**` | the move to `renderer/legacy/` in Phase 0 step 1 only | none | owns | none |
 | `PROGRESS.md`, `DECISIONS.md`, `TODO.md` | append per milestone | append | append | append |
 
-**Engine-bundle budget.** The neutral engine stays under 400,000 bytes. No report measured zod plus the engine [I]; E1 does. If over: `zod/mini` and tree-shaking; validate at the host boundary only; then a measured, recorded budget increase. A failing portability test is never silenced.
+**Engine-bundle budget.** The neutral engine stays under 400,000 bytes. No report measured zod plus the engine [I]; the freeze review does. If over: `zod/mini` and tree-shaking; validate at the host boundary only; then a measured, recorded budget increase. A failing portability test is never silenced.
 
 > **What this means:** Each folder has one owner, and the places where plans meet are named in advance. The engine core stays portable so a phone version remains possible.
 
@@ -112,53 +133,49 @@ apps/desktop/src/main/      electron.ts is split in E1 into windows.ts, lifecycl
 
 ### 4.0 Overview and mapping to ARCH's M-milestones
 
-| Milestone | ARCH M | Goal | Thread | ARCH nominal weeks | Plan weeks | Agent-days | Release |
-|---|---|---|---|---|---|---|---|
-| E0 | M0 (logging only) | Redacted log and error-record shape | P | 0-1 | 0-1 | 2-3 | 0.2.4 if ready (joins PV0's train; PV0 never waits) |
-| E1 | M1 | Packages, registry, resident mode, fixture engine, contract preview C0 and freeze C1 | P (S joins after WP1.1) | 1-2 | 1-2 (C0 day 5, C1 day 10) | 9-12 | with plan 40's fuses |
-| E2a | M2 | Schema, migrations, ids, `store.commit`, rollups, change log | S | 2-3 | 1.5-3 (hard date: end of week 3) | 5-6 | |
-| E2b | M2 | Importer, legacy bridge, bodies, paced FTS, retention, benchmark | P | 2-3 | 2.5-4.5 | 9-11 | **0.3.0** with plan 20's M3 |
-| E3 | M4 (engine half) | Live windows, direct MessagePort, main out of the data path | P | 4-6 | 4-6.5 | 10-12 | 0.3.x, when the owner approves |
-| E4 | M4 (HTML half) | Engine-side HTML: sanitizer, tokens, image proxy | P | 4-6 | 4-7.5 (slack: needed by plan 30's U6 at week 7) | 8-10 | 0.3.x or 0.4.0 |
-| E5 | M5 | AI queue, budget, consent, heuristic Home, `Setup/*` | P | 5-6 | 5.5-7.5 | 6-8 | |
-| E6 | M6 | Outbox, drafts, one timer loop, notification outbox | P | 6-7 | 6-8 | 7-9 | |
-| E7 | M9 | Local listener, OpenAPI, MCP, diagnostics bundle | P | 9-10 | 9-10.5 | 8-10 | |
-| E8 | M10 (engine half) | Hardening, soak, fault injection, shim removal | P with S and plan 20 | 10-11 | 10-11.5 (release soak on the shared candidate, weeks 12.5-13.5) | 5-7 plus 7-day soak | **0.4.0** (about week 14, with plan 30's U9) |
+| Milestone | ARCH M | Goal | Lane or artifact | Phase and days | Agent-days |
+|---|---|---|---|---|---|
+| E0 | M0 (logging only) | Redacted log and error-record shape | F7 | Phase 0, days 2-3 | 2-3 |
+| E1 | M1 | Restructure, registry, stand-in engine and freeze C1; then resident mode and self-test | Phase 0 chain, F1-F8; then `eng-host`, `eng-contract` | days 1-3; resident mode by day 7 | re-estimated at the freeze (the `service.ts` split and the codemod are gone) |
+| E2 | M2 | Schema, migrations, ids, `store.commit`, rollups, change log, bodies, paced FTS, retention, importer, benchmark | F4, then `eng-store` | schema in Phase 0; days 4-10 | 10-12 |
+| E3 | M4 (engine half) | Live windows, direct MessagePort, main out of the data path | `eng-views`, `eng-contract` | days 4-11 | 10-12 |
+| E4 | M4 (HTML half) | Engine-side HTML: sanitizer, tokens, image proxy | `eng-html` | days 4-10 | 8-10 |
+| E5 | M5 | AI queue, budget, consent, heuristic Home, `Setup/*` | `eng-ai` | days 4-11 | 6-8 |
+| E6 | M6 | Outbox, drafts, one timer loop, notification outbox | `eng-time` | days 4-10 | 7-9 |
+| E7 | M9 | Local listener, OpenAPI, MCP, diagnostics bundle | `eng-host` | days 4-12 | 8-10 |
+| E8 | M10 (engine half) | Hardening, soak, fault injection, deleting the legacy code | Integrator with each lane; Engine thread | Phases 2-3, days 14-25 (soak in the background in Phase 3) | 5-7 plus a 7-day soak |
 
-The rest of ARCH's list is not plan 10's: M0's Gmail patch (plan 20), M3, M7 and M8 (plan 20, S thread), the UI (plan 30), fuses and CI (plan 40). ARCH M4 is two milestones here because the work splits cleanly: E3 is data and transport, E4 is email display.
+The rest of ARCH's list is not plan 10's: the Gmail fix, which now lives in M3 (plan 20, `prov-gmail` and `prov-gov`), M7 and M8 (plan 20), the UI (plan 30), fuses and CI (plan 40). ARCH M4 is two milestones here because the work splits cleanly: E3 is data and transport, E4 is email display.
 
-**Releases, reconciled with ARCH section 15 and `plans/00-roadmap.md`.** 0.2.4 is ARCH's M0: plan 20's PV0 on one `hotfix/0.2.4` branch cut from main, which E0 (and plan 30's `srcdoc` stopgap and plan 40's Q0-main and Q5A-main) join only if ready; PV0 never waits for them. **0.3.0 is ARCH's M3 at about week 5-6: E1, E2a, E2b and plan 20's PV3.** The renderer stays on the legacy state through the bridge (4.2) and the new engine ships underneath it; E3 to E6 are not required for 0.3.0. They reach the owner on beta tags cut from `revamp` as each passes its acceptance; a stable 0.3.x is cut only if the owner asks. **0.4.0 is M10 plus plan 30's U9, about week 14:** the engine's own E8 work ends around week 11.5, and the release soak runs on the one release candidate the UI's dogfood week also uses (plan 30 Decision 12; ARCH amendment of 2026-10-27). Stable releases are tagged from main after the owner merges `revamp`; only betas are tagged from `revamp`. (An earlier draft of this plan tied 0.3.0 to E3; that disagreed with ARCH and is withdrawn.)
+**One release.** There is no 0.2.4 hotfix, no 0.3.0 on the old screens and no 0.4.0. The engine ships inside one redesigned release, proposed as 0.3.0, together with plans 20, 30 and 40 (ARCH amendment AM-5; roadmap 7). Builds before it are local packaged builds or `v0.3.0-beta.N` draft releases in this private repo, installed by hand on the owner's go-ahead. The stable release is tagged from main after the owner merges `revamp`.
 
-**Effort and load.** About **69-88 agent-days** across both engine threads (ARCH 15: **S** owns store and sync, **P** owns platform, contract, HTML, AI, outbox, listener). Only E2a is S-thread work, because S must start plan 20's M3 in week 3; the importer, bridge, bodies, FTS and benchmark (E2b) go to P. Effort is working-day equivalents with several agents in parallel; live verification and the owner's review, not coding, are the constraint (ARCH 15). Honest load check: P carries about 63-81 agent-days over roughly 55 working days, so it works only with two to four agents in parallel per milestone and the plan expects E3 to E6 to finish up to about 1.5 weeks after ARCH's nominal dates. That sits inside ARCH's 9-14 week range, and P is free in weeks 8-9 (M7 and M8 belong to S), which is where slack lands.
+**Effort and load.** The earlier estimate was 69-88 agent-days. Dropping the `service.ts` split, the typed-client codemod and the legacy bridge (4-5 days on its own) removes part of it, and the lanes re-estimate at the freeze. Effort is working-day equivalents with several agents in parallel. Live verification and the owner's review, not coding, are the constraint (ARCH 15). Seven lanes run in parallel under one thread, which keeps at most about eight workflows in view (roadmap 5.2). The critical lanes start first (`eng-store`, then `eng-views`) and the others start staggered, to stay inside agent rate limits.
 
-**Priority and slip rule.** Consumers set the order: plan 20's drafts work needs E6's `submissions` and drafts table in weeks 5-7; plan 30's U6 needs E4 and E6 from week 7.5; U8 builds on the fixture from week 7 and needs E5's real `Setup/*`, consent and `Demo/*` by about week 9. If P falls behind, drop work in this order, last first: E4's tail (it has a safe stopgap in M0's `srcdoc` frame, Decision 10), E5, then E7's MCP/CLI and Swift spike. E3 and E6 are never slipped for E4. E6's timer loop does not wait for E5 (6.1), so E6 may run before E5.
+**Priority and slip rule.** Consumers set the order. `prov-gmail` and `eng-views` need `eng-store`'s real `store.commit`, ids and change log by day 6. `ui-reader` needs `eng-html` and `eng-time` for real frames and send states. `ui-onboard` builds on the stand-in engine and needs `eng-ai`'s real `Setup/*`, consent and `Demo/*` in Phase 2. If the Engine thread falls behind, work waits in this order, first item first: the MCP and CLI extras of E7, then the extras of E5's queue (Decision 10, revised). The sealed frame (E4), the outbox (E6) and the views (E3) never wait. E6's timer loop does not wait for E5 (6.1), so `eng-time` can run before `eng-ai`.
 
 "Adversarial" means a different agent, given the code and acceptance criteria but not the author's conclusions, briefed to make a named check fail.
 
-> **What this means:** Nine steps, each tied to one of the architecture's milestones, with 0.3.0 arriving around week five or six. The engine's own work ends around week eleven, and 0.4.0 ships around week fourteen, once the new screens are finished and tested together with it. The plan is honest that one engine thread is stretched in weeks 4 to 8 and says what waits first if it runs long.
+> **What this means:** Nine steps, each tied to one of the architecture's milestones. A three-day freeze comes first, and seven lanes then build in parallel on days 4 to 12. If the work runs long, the doorway's extras wait first. The sealed frame, outbox and views never do.
 
 ### 4.1 The contract fixture: shape, milestone and handoff
 
-This is the piece that lets plan 30 start in week 2. It is explicit here because three plans depend on it.
+This is the piece that lets plan 30 start on day 4. It is explicit here because three plans depend on it.
 
 **What it is.** `packages/contract-fixture` exports `createFixtureEngine({scenario, seed, clock})`. It implements the whole v1 contract of `packages/contract` against demo data held in memory, behind the same `EngineConnection` interface the real engine's transports implement (`connect(): {call(method,args), subscribe(frames), close()}`). It has no Node or Electron imports, so it runs in Electron, in the browser preview and in a plain test. It is test-support: nothing from it is bundled into the shipped app, and its demo data never enters the 400,000-byte engine budget.
 
 **Shape.**
 - **Verbs implemented:** every method in the registry, including `Session/get` (with a `hasAccounts` flag so main chooses the onboarding window or the mail window), `View/watch|move|unwatch|hold|release|query`, `Thread/get|act`, `Operation/undo`, `MessageBody/get|prefetch`, `Mail/frame` and its release, `Draft/*`, `Submission/set`, `Outbox/pending`, `Setup/begin|end|status`, `Ai/request`, `Ask/run` with `progress` frames, `Settings/*` including the `ui` object, `Account/connect|reconnect|grantPermissions|lease` and the rest of `Account/*`, `Sync/request` with fake statuses, `Unsubscribe/run` (today's `thread.unsubscribe`), `Event/set {scope: occurrence|series|following}`, `Event/rsvp`, `Demo/load|reset|remove`, `Queue/list`, `Diagnostics/preview`. Names and schemas of the plan 20 methods (`Account/*`, `Unsubscribe/run`, `Event/*`) are frozen at C1; their real behaviour arrives with PV3 (accounts), PV4 (unsubscribe) and PV8-PV9 (events and RSVP).
-- **`Setup/status` shape** (plan 30 section 8.1 item 12): per account `{state, firstWindow: {found?, read, total}, ai: {sorted, total, capped, failed}, backfill: {read, target}, pausedUntil?, reasonCode}`. `firstWindow.found` is an optional estimate, present only when the provider gives one; `firstWindow.total` is the first-window target (about 50 threads), never the mailbox size; `firstWindow` is complete when plan 20 sets `baseline_done_at`; `ai` appears only with stored consent and a provider; `backfill` never gates anything.
+- **`Setup/status` shape** (plan 30 section 8.1 item 12): per account `{state, firstWindow: {found?, read, total}, ai: {sorted, total, capped, failed}, backfill: {read, target}, pausedUntil?, reconnectBy?, reasonCode}`. `firstWindow.found` is an optional estimate, present only when the provider gives one; `firstWindow.total` is the first-window target (about 50 threads), never the mailbox size; `firstWindow` is complete when plan 20 sets `baseline_done_at`; `ai` appears only with stored consent and a provider; `backfill` never gates anything. `reconnectBy` is the account's token grant time plus 7 days while the Google project is in Testing mode, and is absent for other providers, so the UI can warn a day ahead (ARCH 6.4; roadmap N3).
 - **Frames:** `state`, `window`, `progress`, `reset`, host-channel events (`notify`, `badge`, `appearance`, `reminder`), with `{dbEpoch, seq}` tokens and receipts that arrive before, after or with the frame (the orderings plan 30's overlay must survive).
 - **Windows** run over an in-memory sort with real `holdIds` behaviour and the 4-per-second coalescing, so UI timing is realistic.
-- **Scenarios:** `empty`, `demo` (today's demo data), `small-10k`, `large-100k` (seeded generator, shared with `bench/store-bench.ts` in E2), `offline`, `needs-reauth`, `backfilling`, `rate-limited`, `partial-threads` (rows with `partial:true`), `send-uncertain`, `send-suspended`, `ai-off`, `ai-budget-spent`, `setup-partial`, `parked`.
+- **Scenarios:** the stand-in answers `empty` and `demo` at the freeze, and `eng-contract` adds the rest in Phase 1 (days 4-10). The full list is `empty`, `demo` (today's demo data), `small-10k`, `large-100k` (seeded generator, shared with `bench/store-bench.ts` in E2), `offline`, `needs-reauth`, `backfilling`, `rate-limited`, `partial-threads` (rows with `partial:true`), `send-uncertain`, `send-suspended`, `ai-off`, `ai-budget-spent`, `setup-partial`, `parked`.
 - **Test-only control channel** `Fixture/control` (compiled out of production, absent from the registry and OpenAPI): force a status or rate-limit pause, fail the next write, set a submission state, advance setup progress, set the clock (`APLOS_NOW`), replay a frame ordering. This is what plan 30's harness (`plans/30-ui-revamp.md` section 8.1 item 1) asked for.
-- **Transports:** (1) in-process for tests; (2) a `MessagePort` pair in Electron dev, so plan 30's typed client is exercised on the same path production uses; (3) a **dev-only loopback HTTP and SSE binding for the browser preview**, built in E1 by turning `src/main/server.ts` into a thin host that serves either the fixture or the real engine. It already requires a random per-run token that the Vite dev proxy adds server-side, closing today's gap (the preview has a `Host` and `Origin` allowlist but no token). E7 later hardens it with the full request matrix; it does not introduce it.
-- **Conformance:** `packages/contract/tests/conformance/` runs one suite against any `EngineConnection`: ordering, `holdIds`, coalescing, receipts, error types, `cannotCalculateChanges`, `reset`. The fixture passes at C1; the real engine passes the same file in E3. A fixture-only assertion fails CI, so the two cannot drift.
+- **Transports:** (1) in-process for tests; (2) a `MessagePort` pair in Electron dev, so plan 30's typed client is exercised on the same path production uses; (3) a **dev-only loopback HTTP and SSE binding for the browser preview**, built by `eng-contract` in Phase 1 (the registry already drives `server.ts` at F2) by turning `src/main/server.ts` into a thin host that serves either the fixture or the real engine. It already requires a random per-run token that the Vite dev proxy adds server-side, closing today's gap (the preview has a `Host` and `Origin` allowlist but no token). E7 later hardens it with the full request matrix; it does not introduce it.
+- **Conformance:** `packages/contract/tests/conformance/` runs one suite against any `EngineConnection`: ordering, `holdIds`, coalescing, receipts, error types, `cannotCalculateChanges`, `reset`. The stand-in passes at the freeze (C1); the real engine runs the same file from day 4 with a shrinking expected-fail list and passes it in E3 by day 11. A fixture-only assertion fails CI, so the two cannot drift.
 
-**Milestones.**
-- **C0 preview, E1 day 5.** The registry's method names with zod schemas, the typed client skeleton, the generated allowlists and the fixture serving `Session/get`, `View/watch` and `Thread/get` on the `demo` scenario. Plan 30's U2 can start its data layer against it. Everything is marked provisional.
-- **C1 freeze, targeted for E1 day 10 (end of week 2; E1's remaining splits and lifecycle work may run to day 12 without moving C1).** The full list above, the conformance suite green, and the review gate below passed.
-- After C1, changes are additive within `v:1`, through a contract PR both threads approve. A needed breaking change bumps `v` and is a plan 30 conversation, not a quiet edit.
+**Milestone.** One freeze, **C1, at the end of Phase 0 (day 3)**, replaces the earlier C0 preview and day-10 freeze. At C1 the stand-in engine answers every method on `empty` and `demo`, the conformance suite is green on it, and the freeze review below has passed. The Integrator then tags `contract-v1`. After C1, changes are additive within `v:1`, proposed with CONTRACT-CHANGE-PROPOSED and made only by `eng-contract`. A needed breaking change bumps `v` and is a conversation with the UI threads, not a quiet edit.
 
-**Review gate for C1.** A reviewer briefed from DESIGN section 5 and ARCH 9.2 asks "which UI behaviour cannot be expressed in this contract?", and plan 30's owner signs the freeze. The gate also checks plan 30's twelve asks (`plans/30-ui-revamp.md` section 8.1) against the contract:
+**Freeze review.** Three reviewers, each a fresh agent given the artifacts but not the authors' reasoning, run the gate (roadmap 1.3). The UI reviewer, briefed from DESIGN section 5 and ARCH 9.2, asks "which UI behaviour cannot be expressed in this contract?" and signs for plan 30. The Providers reviewer runs Gmail, IMAP, JMAP, Graph and CalDAV through `ProviderAdapter`, `GovernorPort` and schema 0001, including the weekly reconnect. The security and platform reviewer checks the registry tags and scopes, the transports, `Mail/frame`, the log catalog and the 400,000-byte budget. The gate also checks plan 30's twelve asks (`plans/30-ui-revamp.md` section 8.1) against the contract:
 
 | Plan 30 ask | Contract home | Notes |
 |---|---|---|
@@ -169,117 +186,112 @@ This is the piece that lets plan 30 start in week 2. It is explicit here because
 | 5 submissions and a draft-changed-elsewhere signal | E6; `Draft/changed` frame | |
 | 6 setup and AI governance | `Setup/begin|end|status` (wire name `Setup/end`; DESIGN 7.11's old `setup.end` spelling is retired), `Consent/*`, per-account `aiAllowed`, daily cap in Settings; the primary-device lease and override are plan 20's, exposed as `Account/lease` | |
 | 7 `Ask/run` citations `{n, messageId, quote}` | E5 | |
-| 8 `ui` settings object, retention and resident-mode toggles | `Settings` schema in E1 (fields), behaviour in E1 and E2b | |
-| 9 diagnostics, queue inspector, parked event, capability flags | E7; the `parked` event and `Session/get` capabilities in E1 | |
-| 10 `APLOS_TEST=1` in main | E1 lifecycle work (isolated userData, no single-instance lock, Dock icon, menu-bar item or login item; windows created `show:false`) | Plan 40 consumes it in E2E |
+| 8 `ui` settings object, retention and resident-mode toggles | `Settings` schema in F1 (fields), behaviour in `eng-host` and `eng-store` | |
+| 9 diagnostics, queue inspector, parked event, capability flags | E7; the `parked` event and `Session/get` capabilities in F1 | |
+| 10 `APLOS_TEST=1` in main | F8 in Phase 0 (isolated userData, no single-instance lock, Dock icon, menu-bar item or login item; windows created `show:false`) | Plan 40 consumes it in E2E |
 | 11 empty start and demo on request | `Demo/load|reset|remove` and `Session/get.hasAccounts` in the registry at C1; real behaviour in E5 item 7 | The fixture honours it from C1 |
 | 12 `Setup/status` shape | Shape above; real counts in E5 from plan 20's checkpoints | |
 
 The contract's **Thread row** also carries `partial: boolean` (true while a row was built from one metadata message and its message count is unknown, ARCH 5.1, plan 20 section 2), so the UI never shows "1 message" for a twelve-message thread.
 
-**Handoff.** (1) A README in the package listing verbs, scenarios and the control channel. (2) The conformance suite. (3) The change process above. (4) The typed-client codemod over the 53 renderer `invoke(` sites in 15 files is **plan 10's, run in E1's freeze window, and is the only mechanical rewrite of renderer call sites**; plan 30's U2 verifies and completes it and builds `renderer/data/` on top (plan 30 section 4.1 step 1 and U2 agree). (5) After E3, the flip from fixture to real is a flag; plan 30 flips dev builds to `engineWindows` in its WP5.6 as soon as E3's conformance run is green (about week 6), not at U9, so the real engine meets the real UI weeks earlier (7.2).
+**Handoff.** (1) A README in the package listing verbs, scenarios and the control channel. (2) The conformance suite. (3) The change process above. (4) There is no typed-client codemod over today's 53 renderer `invoke(` sites. Plan 30's new screens call `api.*` from F2, and the old renderer stays read-only in `renderer/legacy/` until Phase 2 deletes it. (5) After E3, the switch from stand-in to real is a flag. `ui-shell` runs it with the Integrator on days 11 to 13, as soon as the real engine's conformance run is green (7.2).
 
-> **What this means:** The stand-in engine is a complete, test-checked copy of the engine's behaviour on demo data. The screens team gets a preview on day five and a frozen version on day ten, with knobs to force every awkward situation, and later switches to the real engine with one flag.
+> **What this means:** The stand-in engine is a complete, test-checked copy of the engine's behaviour on demo data. The screens team gets a frozen version on day three, with knobs to force every awkward situation, and later switches to the real engine with one flag.
 
-### 4.2 The legacy bridge: keeping 0.2.x screens and non-Gmail providers working (E2b to E8)
+### 4.2 The legacy bridge: dropped
 
-The migration is only safe if every legacy path keeps working while storage changes underneath it. Until plan 30 flips the renderer to real windows (its WP5.6, right after E3, about week 6-7) and plan 20 rewrites IMAP, JMAP, Graph and CalDAV (PV6-PV10, ARCH M7 and M8, weeks 6-10), the legacy `createService` runs on top of `mail.db`. Release and beta builds cut before the flip keep the renderer's legacy loader on this bridge.
+An earlier draft kept today's screens and the not-yet-rewritten providers running on `mail.db` through a translator (`assembleLegacyState`, `legacyStoreAdapter`, a legacy op kind and a split of `service.ts`). The roadmap deletes all of it, because no release ships today's screens on the new engine.
 
-**Design.**
-- **Reads.** `assembleLegacyState(limit)` builds `AppState` from SQL: the newest `limit` threads (400 for the renderer's `state.get {threadLimit:400}`, up to 2,000 for the service's own working set), body-less rows; the Reader fetches text through `MessageBody/get`. `{dbEpoch, seq}` is mapped to the legacy `{epoch, rev}` so a restart no longer forces a re-snapshot, and legacy `changes` events are produced from the commit's change set.
-- **Writes.** Today the service calls `store.save(diff)` with a `StoreDiff` (changed and removed threads, drafts, accounts, settings, conversations). In the bridge that call is replaced by `legacyStoreAdapter.save(diff)`, which translates one `StoreDiff` into one `store.commit` (upserting threads, messages, bodies and workflow state by natural key, writing `changes`). Drafts, settings and conversations map to their tables. `service.ts` stays unaware of SQL.
-- **Capped working set.** The legacy sync merge (`engine/merge.ts`) must never treat "absent from the capped state" as "deleted on the server". The adapter therefore applies deletions only for ids the provider reports as removed, and a sync that returns threads outside the working set is upserted by natural key, not appended. Legacy providers that rely on a full list for deletion (IMAP, JMAP) run in `full-list` mode: the adapter reads the account's remote ids from SQL for that comparison.
-- **Gmail.** Until plan 20's M3 lands, the legacy Gmail sync (with M0's thin first window) writes through the same adapter. M3 replaces it by writing through `store.commit` directly.
-- **Lifetime.** Created in E2b, shrinks as plan 20 replaces each provider and plan 30 reaches windows, and is deleted in E8 (`assembleLegacyState`, the adapter, `contract/src/legacy`, the legacy op kind).
+- Today's engine files sit in `packages/engine/src/legacy/`, the shared files in `packages/contract/src/legacy/` and today's renderer in `apps/desktop/src/renderer/legacy/`. They keep building and their tests stay green, and they are read-only reference.
+- The new lanes write straight to `store.commit`. `prov-*` lanes replace each provider, and `ui-shell` switches the new screens to the real engine on days 11 to 13.
+- Phase 2 deletes the legacy folders and the old provider files (E8 item 4).
 
-**Acceptance (E2b).**
-- The full existing node test suite (`tests/service.test.ts`, `sync-safety`, `queue`, `workflow`, `scale`) passes against `mail.db` through the bridge with no test deleted.
-- IMAP and JMAP emulator runs of a 5,000-thread mailbox with a 2,000-thread working set produce no duplicate, no false deletion and the same final state as the legacy store.
-- A 0.2.x renderer build runs against the bridge: it lists, triages, saves a draft and reconnects after an engine kill without a full re-snapshot.
-- Kill the engine mid-save: the next start shows the pre-save or the post-save state, never half.
+> **What this means:** There is no temporary translator. The old code stays beside the new code as reference, and it is deleted once the new screens run on the real engine.
 
-> **What this means:** For about five weeks the old screens and the older providers run on top of the new database through a translator. It is temporary, it is tested like everything else, and it is what lets you keep using Aplos while the foundation changes.
-
-### E0. Observability stopgap (ARCH M0)
+### E0. Logger and log sink (ARCH M0, Phase 0 artifact F7)
 
 **Goal.** Make the next real Gmail failure explain itself. Today a rate-limit 403 is retried and swallowed and no log exists (`RC/protocols/proto-google.md` §1; ARCH 11).
 
 **Deliverables.**
-- **Where it lands.** E0 is cut from main, where `packages/` is empty and `host/` does not exist. The logger goes in `apps/desktop/src/engine/diag/log.ts` and the sink in `apps/desktop/src/main/logsink.ts`; E1's pure-rename commit moves them to `packages/engine/src/diag/` and `apps/desktop/src/host/`. Nothing in E0 may import from a path E1 creates.
+- **Where it lands.** Directly at final paths on `revamp` in Phase 0: the logger in `packages/engine/src/diag/log.ts` and the sink in `apps/desktop/src/host/logsink.ts`. There is no hotfix branch, and nothing goes to main.
 - `Logger` port and `diag/log.ts`: `event(id, fields)` with `id` from a typed catalog (`sync.gmail.request_refused`, `governor.paused`, `send.uncertain`) and a zod schema per event, so an unlisted field cannot be logged.
 - Host sink `logsink.ts`: JSON lines in `~/Library/Logs/Aplos Mail/`, 10 MB x 5 rotation, files 0600, directory 0700.
 - Root redaction by allowlist: no tokens, keys, `Authorization`, bodies, subjects or snippets; addresses as salted hashes (per-install salt in `meta`); provider error text passes a redactor that hashes anything address-shaped and truncates to 300 characters.
 - The classified-error record `{class, reason, status, code, retryAfterMs, providerMessage}` as a contract type, so plan 20's governor fills the same shape later.
 
-**Ownership and dependencies.** Plan 10 writes logger, sink, catalog; plan 20's PV0 adds the Gmail call-site log lines, coded against E0's `Logger` interface. If E0 is not ready when PV0 is, PV0 binds that interface to a minimal redacted stub and E0 follows later; PV0 never waits. Branch off main (section 9). The classified-error record is defined in the logger module on main and moves to `packages/contract` at E1 with the rename.
+**Ownership and dependencies.** Plan 10 writes the logger, sink and catalog. `prov-gmail` adds the Gmail call-site log lines against the frozen `Logger` port (F3) and logs Google's exact reason from its first day. The classified-error record is part of contract v1 (F1), so plan 20's governor fills the same shape.
 
 **Acceptance.**
 - A unit test pushes a fake 403 `{reason:"rateLimitExceeded", message:"User-rate limit exceeded"}` through a stub call site and asserts one line with that reason and status 403 and no address, token or subject.
 - Canary test: fixtures with `CANARY-xxxx` in subjects, bodies and tokens drive sync, send and error paths; grep over the log directory finds zero.
 - File modes and rotation at a small injected cap are asserted. Output pasted into PROGRESS.md.
 
-**Estimate.** 2-3 days.
+**Estimate.** 2-3 agent-days, Phase 0 days 2-3, in parallel with F1.
 
 **Work packages.** WP0.1 (one agent): catalog, schemas, logger, redactor. WP0.2 (one agent): sink and rotation. Adversarial: a second agent writes ten hostile log calls (token inside an error message, address inside a URL, subject inside a thrown error's `cause`, nested bodies) and must make any appear in a file.
 
 > **What this means:** Aplos learns to keep a private, safe diary of what Google actually said. It holds no email content, so it can be shared.
 
-### E1. Groundwork: packages, registry, resident mode, fixture engine (ARCH M1)
+### E1. Groundwork: restructure, registry, resident mode, stand-in engine (ARCH M1)
 
-**Goal.** Create the structure everything builds on, keep every commit launchable, and give the UI thread a contract preview by day 5 and a frozen contract plus a stand-in engine by the end of week 2 (Decision 9; 4.1).
+**Goal.** Create the structure everything builds on, keep every commit launchable, and hand the other threads a frozen contract plus a stand-in engine at the end of Phase 0 (day 3), so every lane starts on day 4 (Decision 9; 4.1).
 
 **Deliverables.**
-0. **Day-1 sequence (the freeze window, section 9).** In order, each its own commit, plans 20, 30 and 40 rebasing after each: **step 0, merge main into `revamp`** (0.2.4 if it has merged, otherwise whatever main holds by day 5; a late hotfix slice comes in afterwards through plan 40's `format-merge.mjs`); (a) this plan's rename-and-imports commit (item 1); (b) **plan 40's Q1a format commit** over the post-move tree; (c) the `packages/contract` skeleton; (d) the typed-client codemod (item 3), on formatted code; (e) plan 40's Q1b (lint, suppressions on final paths, hook); then the `service.ts` split (item 2) begins. `.git-blame-ignore-revs` lists (b). Q1a is path-agnostic, so if it is ready before the move the two may swap; what must never happen is Q1b before the move or the format commit after the codemod. Plan 40 states the same order (its Q1 freeze-window table and section 5, point 1).
-1. **Mechanical move (days 1-2), one commit that is a rename plus import-specifier edits only; no other content change.**
-   - `git mv apps/desktop/src/engine packages/engine/src`; workspaces `@aplos/engine`, `@aplos/contract` as internal source packages; tsconfig `paths` and Vite alias.
+0. **Phase 0 restructure chain (day 1, serial; roadmap 1.1).** Nothing else touches existing files while it runs. Each step is its own commit, merged by merge commit and listed in `.git-blame-ignore-revs` where mechanical. Step 0 is a NOTICE in `plans/STATUS.md`. Step 1 is this plan's rename-and-imports commit (item 1). Step 2 is plan 40's Q1a format commit over the moved tree. Step 3 is the `electron.ts` split (item 2). Step 4 is plan 40's Q1b (lint, suppressions on final paths, hook). Main does not change, so there is no merge of main, no typed-client codemod and no `format-merge.mjs`. The `packages/contract` skeleton is part of F1, written in parallel on new files on days 2 to 3. Plan 40 states the same order.
+1. **Mechanical move (step 1), one commit that is a rename plus import-specifier edits only; no other content change.**
+   - `git mv apps/desktop/src/engine packages/engine/src/legacy`, so today's engine files sit under `packages/engine/src/legacy/`; workspaces `@aplos/engine`, `@aplos/contract` as internal source packages; tsconfig `paths` and Vite alias.
    - The engine's `src/shared` dependencies move with it: `types`, `ask`, `mailbox`, `summary`, `live` go to `packages/contract/src/legacy/`, and `apps/desktop/src/shared/<name>.ts` becomes a one-line re-export stub so renderer and main imports compile unchanged. The provider types that `shared/types.ts` takes from `engine/provider` (`AccountPreset`, `ProviderCapabilities`, `ProviderKind`, `ServerSettings`) move to `contract/src/legacy/provider-types.ts` and `engine/provider.ts` re-exports them, which prevents a contract-to-engine cycle.
+   - Today's renderer moves to `apps/desktop/src/renderer/legacy/`.
    - `shared/version.ts` stays in the app (it re-exports `apps/desktop/package.json`); the engine receives `appVersion` through `EngineInit`, a one-line change at `service.ts:4`.
-   - A checked-in script (`scripts/codemod-imports.mjs`) rewrites the roughly 40 importers (`src/main`, `tests`, `scripts`, and the renderer's `AddAccount.tsx` and `DomainCheck.tsx`, which import `engine/discover` and move to `@aplos/engine/discover` until plan 30's U2 puts them behind `Account/discover`).
+   - A checked-in script (`scripts/codemod-imports.mjs`) rewrites the roughly 40 importers (`src/main`, `tests`, `scripts`, and the renderer's `AddAccount.tsx` and `DomainCheck.tsx`, which import `engine/discover` and move to `@aplos/engine/discover` until the new onboarding screens put them behind `Account/discover`). It rewrites import specifiers only. It is not the typed-client codemod.
    - `tests/portability.test.ts` moves to `packages/engine/tests/`, **walks `src/` recursively from one `src/index.ts` entry** (today it lists the folder's top-level files, so subfolders would be silently skipped), forbids `electron` and `node:` imports, and gets a negative test that plants a `node:fs` import in a subfolder and expects failure. Its checks of `src/main/store`, `groq` and `memory-stage` stay in `apps/desktop/tests/engine-host.test.ts`.
    - Build wiring as section 3 describes (esbuild bundling `@aplos/*`, tsx, Vite, electron-builder dependencies), proven by `npm run package` and `verify-release.mjs`.
-2. **Split `service.ts` along its seams, tests green per commit.** First, serially, a `RuntimeCtx` (state, publish and emit, listeners, timers, requests, store, clock, id source, `account()`, options) is introduced inside the existing closure and the seam functions are rewritten to take it, with no file moves (the seams share closure variables, so they cannot be cut out in parallel). Then one agent per seam moves its code, merged in order. Seams [V]: validation (`:58-130`); state, publish, epoch (`:225-267`); op flush and sync (about `:290-340`); drafts, send, timers (`:339-410`, `:758-790`, `:953-959`); Ask and AI (`:479-560`, `:816-916`); calendar (`:916-950`). Target: `runtime/` plus `methods/<area>.ts`, no module over about 300 lines.
-3. **Registry steps 1 and 2** (`RC/gaps/engine-contract-rpc-stack.md` §7): zod input schemas for the 47 engine and 19 desktop methods; `host: engine|desktop`; generated `methods.generated.ts` imported by preload (which never imports zod); `electron.ts` and `server.ts` sets derived from it; a host-agreement test; a typed client (`api.thread.update(...)`) and the codemod over the **53 renderer `invoke(` sites in 15 files**, which is this plan's work and not plan 30's U2 (4.1). Hand-written validators are replaced one method at a time keeping their human sentences. `z.config({jitless:true})` in the renderer (CSP forbids eval).
-4. **Resident mode and lifecycle** (`RC/gaps/macos-daemon-lifecycle.md` §9; ARCH 2.2-2.4):
+   - The legacy folders keep building and their tests stay green. They are read-only reference until Phase 2 deletes them (E8 item 4).
+2. **Split `electron.ts` (step 3).** Split `apps/desktop/src/main/electron.ts` into `windows.ts`, `lifecycle.ts`, `protocol.ts`, `menu-bar.ts`, `native-methods.ts`, `security.ts`, `updater.ts` and `engine-host.ts`. Code moves only, and tests stay green. After the split each module belongs to one lane (roadmap 2.1 and 2.5). `service.ts` is not split. It stays whole in `packages/engine/src/legacy/`, and the lanes reimplement its behaviour against the ports. Its seams [V] show which lane takes each behaviour: validation (`:58-130`) goes to the registry in `eng-contract`; state, publish and epoch (`:225-267`) go to `eng-views` and `eng-store`; op flush and sync (about `:290-340`) go to `prov-gov`; drafts, send and timers (`:339-410`, `:758-790`, `:953-959`) go to `eng-time`; Ask and AI (`:479-560`, `:816-916`) go to `eng-ai`; calendar (`:916-950`) goes to `prov-cal`.
+3. **Registry steps 1 and 2** (`RC/gaps/engine-contract-rpc-stack.md` §7; artifacts F1 and F2, `eng-contract`): zod input schemas for the 47 engine and 19 desktop methods; `host: engine|desktop`; generated `methods.generated.ts` imported by preload (which never imports zod); `engine-host.ts` and `server.ts` sets derived from it; a host-agreement test; a typed client (`api.thread.update(...)`). There is no codemod over today's 53 renderer `invoke(` sites. The new screens call `api.*`, and the old renderer stays in `renderer/legacy/`. The human sentences of today's hand-written validators carry over into the schemas, so UI-visible wording does not change. `z.config({jitless:true})` in the renderer (CSP forbids eval).
+4. **Resident mode and lifecycle** (`eng-host`, days 4-7; `RC/gaps/macos-daemon-lifecycle.md` §9; ARCH 2.2-2.4):
    - closing the last window keeps main and engine alive; accessory activation policy with no window (Decision 1); menu-bar item with sync state, Open Aplos, Pause sync for 1 hour, Quit Aplos completely; ⌘Q is a full quit with the pending-work warning (Decision 2); `wasOpenedAtLogin` starts windowless (the login item is registered through the existing `system.login` method);
    - `powerMonitor` `resume` and `unlock-screen` call `engine.wake()`; a wall-clock jump over 30 s between 1 s ticks is the fallback;
    - `run/aplos.lock` (pid and start time; dead-pid locks reclaimed) so a second engine on the same data refuses to start; the browser preview keeps its own data directory (AGENTS.md);
    - states `starting | ready | parked`; 3 s drain on quit or update; the 3-exits-in-60-s guard extended to `parked` with "Export diagnostics / Try again" (the report arrives in E7; until then it reveals the log folder); the `parked` event and `Session/get` capabilities are in the contract from C1;
    - event-loop-delay monitor (log p99 over 500 ms) and an actor-heartbeat supervisor that restarts a silent actor alone after 2 minutes (plan 20 builds actors).
-5. **SQL port and self-test:** `Uint8Array` values and `iterate()`. One function, `packages/engine/src/selftest.ts`, asserts `sqlite_version()` at least 3.43, FTS5 present and `contentless_delete` working, because `node:sqlite` follows Electron's SQLite (`RC/gaps/storage-engine-benchmark.md` §7). It has two launchers: CI runs it inside Electron's own Node (plan 40's `ELECTRON_RUN_AS_NODE=1` job, unpackaged), and the packaged app runs it as `Aplos Mail --selftest`, a main-process flag that forks the engine `utilityProcess`, prints JSON and exits. The packaged launcher must not use `ELECTRON_RUN_AS_NODE`, because plan 40's fuses turn that off. A **`KeyProvider` port** carries the data key (today `EngineInit.key`), keeping A1 cheap.
-6. **Fixture engine, preview host and freeze (4.1).** `packages/contract-fixture`, the conformance suite, `src/main/server.ts` reduced to a thin host serving the fixture or the real engine with a per-run token, contract preview **C0 on day 5** and freeze **C1 on day 10**.
-7. **Records.** The ADR-19 amendment (section 3), the frozen list and C1 are written to DECISIONS.md.
+5. **SQL port and self-test** (`eng-host` for the self-test, `eng-store` for the port): `Uint8Array` values and `iterate()`. One function, `packages/engine/src/selftest.ts`, asserts `sqlite_version()` at least 3.43, FTS5 present and `contentless_delete` working, because `node:sqlite` follows Electron's SQLite (`RC/gaps/storage-engine-benchmark.md` §7). It has two launchers: CI runs it inside Electron's own Node (plan 40's `ELECTRON_RUN_AS_NODE=1` job, unpackaged), and the packaged app runs it as `Aplos Mail --selftest`, a main-process flag that forks the engine `utilityProcess`, prints JSON and exits. The packaged launcher must not use `ELECTRON_RUN_AS_NODE`, because plan 40's fuses turn that off. A **`KeyProvider` port** (F3) carries the data key (today `EngineInit.key`), keeping A1 cheap.
+6. **Stand-in engine, preview host and freeze (4.1).** `packages/contract-fixture` (F6) and the conformance suite, plus `src/main/server.ts` as a thin host serving the stand-in or the real engine with a per-run token (`eng-contract`, Phase 1). The freeze C1 comes at the end of Phase 0 (day 3). There is no C0 preview.
+7. **Records.** The ADR-19 amendment (section 3), the frozen list and C1 are written to DECISIONS.md in Phase 0.
 
-**Ownership.** Plan 10 owns `packages/*`, `host/*` and the split `main` modules. Plan 40 writes fuses and plist. Plan 30 is touched only by the codemod and import fix-ups, and supplies the menu-bar glyph; E1 ships a plain-letter placeholder, never a sparkle, wand or star.
+**Ownership.** Plan 10 owns `packages/*`, `host/*` and the split `main` modules named in section 3. Plan 40 writes fuses and plist. Plan 30 is touched only by the legacy move in step 1, and it supplies the menu-bar glyph; E1 ships a plain-letter placeholder, never a sparkle, wand or star.
 
-**Dependencies.** Plan 40's Q1a and Q1b inside the freeze window (item 0) and its fuses and macOS 13 for the packaged resident-mode check; the rest proceeds without them.
+**Dependencies.** Plan 40's Q1a and Q1b land in their Phase 0 slots (steps 2 and 4). Its fuses and macOS 13 are needed for the packaged resident-mode check (day 7). The rest proceeds without them.
 
-**Acceptance.**
-- `typecheck` and `test` pass at every split commit; no test deleted without a replacement.
+**Acceptance.** By the freeze (day 3):
+- `typecheck` and `test` pass at every restructure commit; no test deleted without a replacement.
 - `npm run package` builds, `verify-release.mjs` finds `@aplos/*` code and zod in the packaged bundles, and the packaged app starts and lists demo mail (the build-wiring proof).
-- Host-agreement test: preload, `electron.ts` and `server.ts` equal the generated set (66/47/47 drift gone).
+- Host-agreement test: preload, `engine-host.ts` and `server.ts` equal the generated set (66/47/47 drift gone).
 - Portability test passes recursively, fails on the planted subfolder import, and engine plus zod size is recorded against 400,000 bytes.
+- Conformance suite green on the stand-in engine; the three-reviewer gate passed; C1 and the frozen list recorded in DECISIONS.md.
+
+In Phase 1 (`eng-host` by day 7, `eng-contract` by day 10):
 - Packaged app: a hidden-start launch (`--start-hidden`, no visible window driven), closing the only window leaves main and the engine alive, and a reminder due in 60 s fires with no window (`scripts/verify-resident.mjs`, output attached). `Aplos Mail --selftest` prints a passing JSON report.
 - A second engine on the same data exits with a clear message; a stale lock is reclaimed. A fake clock jump of 31 s triggers one `engine.wake()`; the real `powerMonitor` path is checked once by the owner closing the lid for a minute.
-- The browser preview refuses a request without the dev token and serves the fixture's `demo` scenario headlessly through the typed client.
-- Conformance suite green on the fixture; C0 and C1 and the frozen list recorded in DECISIONS.md.
+- The browser preview refuses a request without the dev token and serves the stand-in's `demo` scenario headlessly through the typed client.
 
-**Estimate.** 9-12 days.
+**Estimate.** Phase 0 is days 1 to 3, and `eng-host` finishes resident mode by day 7. The agent-days are re-estimated at the freeze, because the `service.ts` split and the codemod are gone.
 
 **Work packages.**
-- WP1.1 (one agent, first, serial): move, shared-file relocation, import codemod, portability test, build wiring. Adversarial: confirm the rename (`git diff -M --stat`), that the non-rename diff touches only import and export specifier lines, `git log --follow` on five files, and that `npm run package` and `verify-release.mjs` pass.
-- WP1.2a (one agent, serial, after WP1.1): the `RuntimeCtx` introduction. WP1.2b (fan out, one agent per seam, own worktrees, merged in order): the six seams, no behaviour change. Adversarial: a differential test runs old and new service over `tests/service.test.ts` and the demo scenario and asserts identical state transitions.
-- WP1.3 (fan out by method area): schemas, generator, agreement test, typed client and codemod. Adversarial: fuzz each schema with invalid inputs and compare error sentences with today's; any changed UI-visible sentence fails.
+- WP1.1 (one agent, first, serial): move, shared-file relocation, import rewrite, portability test, build wiring. Adversarial: confirm the rename (`git diff -M --stat`), that the non-rename diff touches only import and export specifier lines, `git log --follow` on five files, and that `npm run package` and `verify-release.mjs` pass.
+- WP1.2 (one agent, serial, after WP1.1): the `electron.ts` split. Code moves only. Adversarial: the packaged app starts and lists demo mail, and the non-move diff is empty.
+- WP1.3 (fan out by method area): schemas, generator, agreement test, typed client. Adversarial: fuzz each schema with invalid inputs and compare error sentences with today's; any changed UI-visible sentence fails.
 - WP1.4 (two agents): lifecycle, lock, menu bar, quit flow. Adversarial: kill the engine at each startup step; the next launch must recover.
 - WP1.5 (one agent): SQL port, selftest and CI checks, run against Electron's own SQLite.
-- WP1.6 (two agents plus a reviewer): fixture, control channel, conformance suite, preview host. The reviewer asks "which UI behaviour cannot be expressed in this contract?" and checks the table in 4.1; every gap is fixed before C1. S thread joins after WP1.1 to start E2a.
+- WP1.6 (two agents plus the three reviewers): stand-in engine, control channel, conformance suite, preview host. The reviewers check the table in 4.1, and every gap is fixed before C1.
 
-> **What this means:** Week 2 ends with a tidy layout, Aplos alive in the menu bar, one list of allowed commands instead of three, and a stand-in engine so screen work can begin. Behaviour stays the same; structure changes.
+> **What this means:** By day 3 there is a tidy layout, one list of allowed commands instead of three, and a stand-in engine, so screen work can begin on day 4. The old code stays beside the new code under `legacy/` folders. Aplos is alive in the menu bar by day 7.
 
-### E2. The new store: E2a and E2b (ARCH M2)
+### E2. The new store (ARCH M2)
 
 **Goal.** Replace the in-memory mailbox with the normalized `mail.db` of ARCH 3.2, import today's data safely, and persist the change log, so restarts stop forcing re-snapshots and a 200,000-message mailbox opens in milliseconds.
 
-**Two halves, two threads.** **E2a (S thread, hard date end of week 3)** is deliverables 1 to 5: migrations, the `mail.db` schema, ids, `store.commit` with rollups, and the change log, so plan 20 can start its M3 on a stable store API. **E2b (P thread, weeks 2.5-4.5)** is deliverables 6 to 11 plus the legacy bridge (4.2): bodies, paced FTS, retention, the benchmark, the importer and the bridge. Splitting keeps S free for plan 20 and uses P's idle week 3. 0.3.0 needs both halves.
+**One lane.** `eng-store` owns all of E2, days 4-10. Schema 0001 and a minimal working `store.commit` are Phase 0 artifact F4, written by the Engine thread and reviewed by Providers. The real commit with rollups, ids and the change log is due on day 6, because `prov-gmail` and `eng-views` wait for it. Bodies, paced FTS and retention follow by day 9, and the importer and benchmark by day 10.
 
 **Deliverables.**
 1. **Migration framework.** `packages/engine/src/store/migrations/NNNN_name.ts`, `PRAGMA user_version`, a checksum row per applied migration to catch edited history, engine-only (ARCH 2.6), a failed migration parks the engine (ARCH 3.7), `mail.db.pre-<version>` copies before later migrations (last two kept). A newer schema refuses to open with today's sentence (`store.ts:13`).
@@ -289,7 +301,7 @@ The migration is only safe if every legacy path keeps working while storage chan
 5. **Change log.** `changes(seq, type, id, op)` in the same transaction as every write; one coarse `*` entry per backfill page; compaction at 50,000 entries or 30 days with a recorded floor; opaque `{dbEpoch, seq}` tokens with an HMAC for network clients; `dbEpoch` changes only on creation, reset or restore. `T/changes` returns `{oldState, newState, hasMore, upserted[], destroyed[]}` or `cannotCalculateChanges` below the floor (`RC/gaps/engine-contract-rpc-stack.md` §5.2, §7 step 3).
 6. **Bodies and attachments** (ARCH 3.3): one record `{text, html, cidMap, quotedRanges}` of the provider's original content, codec 1 zstd-3, 2 gzip, 0 raw, with a runtime probe falling back to gzip (zstd is experimental in Node 24 [V storage §6]). Attachments are files under `attachments/.noindex/`, never base64 over IPC. Content-addressed body files are rejected (32% more disk, 4.5x slower opens [M storage §0.4]).
 7. **Paced FTS.** One contentless FTS5 table in the main file, `detail=full`, no prefix index, body capped at 16 KB, subject and people in full. An idle loop indexes 100 messages per batch for messages lacking the `fts` bit (a partial index makes the backlog free and restart-proof), inserting FTS rows last in each transaction (1.5-1.8x faster [M storage §5.1]) and pausing while a sync commit or interactive call is in flight. Newest-first local search is `ORDER BY rowid DESC` (0.05 ms against 32-40 ms [M storage §0.5]).
-8. **Legacy bridge** (4.2): `assembleLegacyState(limit)` for reads and `legacyStoreAdapter.save(diff)` for writes, so the 0.2.x renderer, the legacy service and the non-Gmail providers keep working on `mail.db` until plan 30 reaches windows and plan 20's M7 and M8 land; E8 deletes it. The open-thread rule is behind a thread-granular port: `ProviderPort.openThread(account, remoteThreadId, {knownCount?})` returns all of a thread's messages and bodies, and the adapter picks `threads.get` or `messages.get` (plan 20 section 2: `threads.get?format=full` on open unless the engine already knows the thread has one message). The engine neither knows nor cares which call is made, so ARCH 5.1's two-or-more-messages wording, which cannot be evaluated before a count exists, is replaced by plan 20's rule in DECISIONS.md at E2a. Rows with `complete=0` surface as `partial:true` (4.1).
+8. **Open-thread port and partial rows.** The open-thread rule sits behind a thread-granular port: `ProviderPort.openThread(account, remoteThreadId, {knownCount?})` returns all of a thread's messages and bodies, and the adapter picks `threads.get` or `messages.get` (plan 20 section 2: `threads.get?format=full` on open unless the engine already knows the thread has one message). The engine neither knows nor cares which call is made, so ARCH 5.1's two-or-more-messages wording, which cannot be evaluated before a count exists, is replaced by plan 20's rule in DECISIONS.md in Phase 0 (ARCH amendment AM-1). Rows with `complete=0` surface as `partial:true` (4.1).
 9. **Retention** (ARCH 3.6, Decision 6): bodies kept 90 days plus anything opened, starred or unread, 2 GB cap evicted by `last_read_at`; eviction never runs during backfill, then paced `incremental_vacuum`; a WAL supervisor checkpoints when idle and flags WAL over 256 MB (a busy reader grew it to 104-938 MB in 2.5 s [M storage §4.4]).
 10. **`bench/store-bench.ts`**: an original generator of 50,000 threads and 200,000 messages; real-mailbox counts and sizes (no content) calibrate caps (`RC/gaps/storage-engine-benchmark.md` §8).
 11. **The importer** (below).
@@ -305,7 +317,7 @@ Source: `aplos.db` opened read-only, never written or renamed. A pre-SQLite `sta
 | `drafts(data)` | `drafts`; a draft with `pendingSendAt` becomes a `queued` submission with `not_before`; one with `sendAttemptAt` and a `messageId` and no confirmation becomes `uncertain` and queues a Sent check |
 | `conversations`, `provider_memory` | unchanged |
 | `events(data)` | `calendars`, `events` best-effort; the next calendar sync (plan 20) restores truth |
-| `ops(data)` | `ops` with `kind='legacy.thread.patch'`, drained or translated by plan 20's M3 before 0.3.0 |
+| `ops(data)` | native `ops` (ARCH 4.3's replay model); the importer translates each pending op, with `prov-gov` reviewing the mapping, and counts any it cannot translate in the content-free import report |
 | `sync_cursors` | `sync_state(scope='history')` with `phase='needs_reconcile'` and `generation` bumped, so Gmail runs a generation sweep instead of trusting an old cursor (ARCH 4.2 rule 3) |
 | `threads(data)` | `threads`, `messages`, `message_folders` (from `labels`), `thread_folders`, `bodies`, `attachments`, `thread_workflow` (status, bookmark, reply status, due, reminder, todo, hidden; importance to `rank_bucket`), `summaries` (`input_hash` from message ids and text hash) |
 | `thread_text` FTS | not copied; the paced job rebuilds it |
@@ -314,24 +326,23 @@ Source: `aplos.db` opened read-only, never written or renamed. A pre-SQLite `sta
 
 One transaction per table family, then per 500 threads, with `meta.import_state={family,lastKey}` written inside each, so a kill resumes at the next unit; writes are keyed by natural ids so re-running a unit is harmless. At the end `meta.imported_from`, `import_done` and a fresh `dbEpoch`. The engine reports `starting` with a progress object (copy "Moving your mail, n of N" is plan 30's). Gmail accounts then reconcile with a generation sweep (plan 20).
 
-**Ownership.** Plan 10: E2a on the S thread, E2b on the P thread. Plan 20 reviews the schema before E2a merges and consumes `store.commit`, `sync_state`, `governor_state`, `sync_failures`, `provider_memory`.
+**Ownership.** Plan 10: `eng-store`. Plan 20 reviews the schema in Phase 0 (F4) and consumes `store.commit`, `sync_state`, `governor_state`, `sync_failures`, `provider_memory`.
 
-**Dependencies.** E1's WP1.1 (the move) for both halves; E1's ports for the bridge. Plan 20 needs the schema, `store.commit` and the change log at the start of its M3 (week 3); that is E2a's hard deadline, and if E2a slips the slip is reported the same day because M3 is the critical path. Plan 40: CI runs the SQLite check and the benchmark gate. Plan 40's expectation of a seeded store generator "at M1" is met by `bench/store-bench.ts` in E2b and by the fixture's generator in E1 (4.1), which share one seeded source.
+**Dependencies.** F3 and F4 from Phase 0. `prov-gmail` and `eng-views` need the real `store.commit`, ids and change log by day 6. The Gmail chain is the critical path (roadmap 4.1), so a slip is reported the same day. Plan 40: CI runs the SQLite check and the benchmark gate. Plan 40's expectation of a seeded store generator "at M1" is met by `bench/store-bench.ts` and by the stand-in engine's generator (4.1), which share one seeded source.
 
-**Acceptance.** E2a closes on the replay property test, the restart-keeps-`dbEpoch` check, the rollup checks and the id allocator test; E2b on everything else.
+**Acceptance.** The replay property test, the restart-keeps-`dbEpoch` check, the rollup checks and the id allocator test close by day 6 with the real commit. Everything else closes by day 10.
 - `bench/store-bench.ts` on the owner's Mac at 200,000 messages, numbers in PROGRESS.md, against targets set from `RC/gaps/storage-engine-benchmark.md` §0 (research value in brackets): first 50-row page p50 under 1 ms [0.04-0.07]; all unread counts under 10 ms [5]; label-change commit p50 under 1 ms [0.2]; page commits with FTS deferred at least 3,000 msgs/s [11,469 without FTS; this schema adds rollups and `changes`, so the first run recalibrates]; cold open to first rows under 50 ms [about 10]; engine RSS after the first page under 120 MB [65]; local newest-50 search under 5 ms.
 - Replay property test: a seeded generator applies upserts, deletes, label moves and rollups (seed printed on failure) and asserts `snapshot(seq0)+changes == snapshot(seqN)` over 1,000 sequences, including coarse entries and the below-floor case (Bulwark shipped two delta bugs, `RC/arch/extra-bulwark-legacy-proxy.md`).
 - Restart keeps `dbEpoch`, and `T/changes` from the old token returns only the delta.
 - Kill-mid-import: an engine child is killed at 20 seeded points in a 50,000-thread import; each restart resumes and the final counts and a content hash of sampled threads equal an uninterrupted import.
 - Rollback drill: a test opens the untouched `aplos.db` with a frozen copy of main's `createMailStore` (`tests/fixtures/legacy-store.ts`) and asserts `load()` equals the original; the owner repeats it once on a copy of the real data with a v0.2.3 build (counts only).
-- Bridge acceptance as listed in 4.2 (existing suite green through the bridge; IMAP and JMAP emulator runs with a capped working set; a 0.2.x renderer build works; a kill mid-save leaves a whole state).
 - Import edge cases: messages with no provider id, inline-base64 attachments written to files, and 1970 and 2099 dates all import; the id allocator never repeats an id across 10,000 out-of-order inserts.
 - Rollups: a trashed reply does not trash the conversation; drafts do not change counts; counts equal an independent slow query. Eviction refetches through a stub provider and never runs while an actor reports `backfilling`.
 
-**Estimate.** E2a 5-6 days; E2b 9-11 days (the bridge is about 4-5 of those); total 14-17 days, up from the 8-10 an earlier draft gave before the bridge was counted.
+**Estimate.** 10-12 agent-days in one lane (14-17 before the bridge was dropped), days 4-10.
 
-**Work packages.** E2a, S thread: WP2.1 (one senior agent): migrations, schema, ids, `store.commit`, rollups (the costliest-mistake part). WP2.2: change log, tokens, replay test. E2b, P thread: WP2.3: bodies, FTS job, retention. WP2.4 (two agents, by table family): importer. WP2.5 (one agent, then a reviewer): the legacy bridge, reads and writes. WP2.6: benchmark and CI gate.
-Adversarial: (a) an agent corrupts the importer's input (missing messages, duplicate ids, 3,000-message threads, dangling labels, dates in 1970 and 2099) and must get a clean import or a clear error, never a crash or silent loss; (b) an agent feeds rollups out-of-order batches and compares to a slow reference; (c) a reviewer reads `store.commit` for any write outside the transaction; (d) for the bridge, an agent replays recorded legacy `StoreDiff` streams from the existing sync tests into `mail.db` and compares `assembleLegacyState` with the legacy store's own load, field by field.
+**Work packages.** WP2.1 (one senior agent): migrations, schema, ids, `store.commit`, rollups (the costliest-mistake part). WP2.2: change log, tokens, replay test. WP2.3: bodies, FTS job, retention. WP2.4 (two agents, by table family): importer. WP2.5: benchmark and CI gate.
+Adversarial: (a) an agent corrupts the importer's input (missing messages, duplicate ids, 3,000-message threads, dangling labels, dates in 1970 and 2099) and must get a clean import or a clear error, never a crash or silent loss; (b) an agent feeds rollups out-of-order batches and compares to a slow reference; (c) a reviewer reads `store.commit` for any write outside the transaction.
 
 > **What this means:** Your mail moves into a database built for speed. It opens in milliseconds at any size, restarts remember where they left off, and the old file stays untouched as a way back.
 
@@ -345,23 +356,22 @@ Adversarial: (a) an agent corrupts the importer's input (missing messages, dupli
 3. **Holds** (DESIGN section 5 rule 6): `View/hold {windowId, ids}` and `View/release`; held rows keep their positions until released or about 2 s after the client's last activity signal, so an AI re-rank never moves the row being triaged. Rank is a bucket, not a score (ARCH 8.2).
 4. **Commands and receipts.** `Thread/act {opId, ids, action}` applies inside one commit, enqueues the provider op (replay model, ARCH 4.3) and returns `receipt {opId, appliedState}`; the client drops its overlay once a window reaches that state. `Operation/undo` enqueues the inverse operation, never a delayed commit (DESIGN rule 11). `Session/get` returns `{apiVersion, appVersion, schemaVersion, dbEpoch, capabilities}`. `state` frames coalesce over 50-250 ms; `progress` is ephemeral and never logged; `reset {reason}` re-opens windows.
 5. **Direct MessagePort.** Main creates a `MessageChannelMain` per window, transfers one port to the engine and one through preload; preload checks the generated allowlist; ports go only to a window's trusted main frame (mail frames fail `assertCaller` by design) (ARCH 9.4, 12.1). Binary data moves as transferable `ArrayBuffer`, never base64, which removes the 25 MB base64 `ai.transcribe` payload.
-6. **Main leaves the data path.** `latestState` is deleted. Main keeps native methods (`window.*`, `file.*`, `system.*`, `update.*`) and receives typed **host-channel** events from the engine: `notify`, `badge {count}`, `appearance {theme}`, `openExternal`, `reminder`. `window.compose` validates its draft through main's own engine connection (`Draft/get`) instead of the mirror (`electron.ts:183`). **The legacy renderer keeps working without the mirror:** main relays legacy `state` and `changes` events statelessly, and the `did-finish-load` re-send (`electron.ts:110`) goes because the renderer already calls `state.get` on mount (`App.tsx:107`) **[V on main; re-checked by the legacy-renderer test below]**. So the mirror can go in E3, weeks before plan 30's U9 cutover; plan 30's U9 note that plan 10 removes it "at the same time" is relaxed (7.2).
+6. **Main leaves the data path.** `latestState` is deleted. Main keeps native methods (`window.*`, `file.*`, `system.*`, `update.*`) and receives typed **host-channel** events from the engine: `notify`, `badge {count}`, `appearance {theme}`, `openExternal`, `reminder`. `window.compose` validates its draft through main's own engine connection (`Draft/get`) instead of the mirror (`electron.ts:183`). The `did-finish-load` re-send (`electron.ts:110`) goes with it, because the new renderer reads state through windows.
 7. **Client runtime** in `@aplos/contract/client`: connection with `since` resume (and `Last-Event-ID` over HTTP), row cache, `WindowStore` replacing `shared/live.ts`. Plan 30 wraps it in React hooks. `MessageBody/prefetch {ids}` with cancel serves DESIGN rule 9.
-8. The real engine passes E1's conformance suite; the UI flips from fixture to real by flag, and plan 30 is asked to flip its dev builds to `engineWindows` as soon as that suite is green (7.2).
+8. The real engine passes E1's conformance suite; the UI switches from the stand-in engine to the real one by flag on days 11 to 13 (`ui-shell` with the Integrator; 7.2).
 
 **Ownership.** Plan 10: views, client runtime, port wiring, host channel. Plan 30: React side and window creation. Plan 40 reviews `assertCaller` and port handoff.
 
-**Dependencies.** E2a for the compiler and window queries (WP3.1 can start on the E2a schema while E2b finishes); E2b for the bridge; E1's freeze. Plan 30 migrates in parallel against the fixture. Plan 20 supplies account status and backfill state for gating (the status vocabulary of ARCH 6.4 is a contract type defined here).
+**Dependencies.** Schema 0001 (F4) for the compiler, and `eng-store`'s real commit from day 6 (WP3.1 starts on the schema); the Phase 0 freeze. Plan 30 builds against the stand-in engine in parallel. Plan 20 supplies account status and backfill state for gating (the status vocabulary of ARCH 6.4 is a contract type defined here).
 
 **Acceptance.**
 - Conformance suite passes on the real engine with the fixture's assertions.
 - At 100,000 threads: window re-run p95 under 1 ms [0.12 ms, `RC/gaps/engine-contract-rpc-stack.md` §3.2]; `View/move` p95 under 5 ms; `Thread/act` plus receipt p95 under 4 ms (inside DESIGN's 8 ms key-to-state budget); window open at most 200 rows and under 150 KB.
 - Burst: 10 `Thread/act` in 2 s return 10 receipts, at most one window update per 250 ms, no held row moves.
 - A grep test fails if `latestState` or a whole-state mirror exists in `src/main`; a payload test fails on any engine-to-renderer message over 256 KB outside blob routes.
-- A legacy-renderer smoke test (the 0.2.x screens through the bridge) lists, triages and reconnects after an engine kill with `latestState` gone.
 - Kill the engine: windows reconnect and resume with the same `dbEpoch`, no re-snapshot. A second window gets its own port; closing one leaves the other's windows and holds untouched.
 
-**Estimate.** 10-12 days.
+**Estimate.** 10-12 agent-days: `eng-views` on days 4-11, with `eng-contract` carrying the transport half to day 10.
 
 **Work packages.** WP3.1 (senior agent): compiler, keyset queries, `EXPLAIN QUERY PLAN` assertions. WP3.2: window engine, coalescing, holds. WP3.3: commands, receipts, undo, session, frames. WP3.4: port wiring, preload, host channel, `latestState` removal. WP3.5: client runtime and migration notes for plan 30.
 Adversarial: (a) a "storm" agent runs a 100,000-message backfill with three windows open, measuring CPU and frames; (b) a "stale overlay" agent replays random command and frame interleavings against a model; (c) a "port hijack" agent tries to get a port from a mail frame, a devtools page or another origin, and must fail.
@@ -381,9 +391,9 @@ Adversarial: (a) a "storm" agent runs a 100,000-message backfill with three wind
 6. **Image proxy** (host adapter, never in the neutral core): resolve DNS once and connect to the resolved address with the original name as SNI and `Host`; refuse loopback, private, link-local, CGNAT (100.64/10), ULA, multicast, unspecified, benchmarking (198.18/15), and IPv4-mapped or NAT64 forms of any of those; follow redirects manually (at most 3, each revalidated); ports 80 and 443; size and pixel caps with dimensions read from the header; PNG, JPEG, GIF and WebP only (no SVG); no cookies or `Referer`; timeouts; a per-token request budget. Images load on view only; remote fonts never load.
 7. **Main-side glue:** a session `webRequest` backstop cancelling any http, https, ws or wss request whose initiator is `'null'` or whose frame URL starts with `aplos-mail:` (one listener per event **[U]**, so plan 40 and plan 10 share one handler module); `setWindowOpenHandler` and `will-frame-navigate` per ARCH 10; pop-out and print in a `WebContentsView` with `javascript:false`; the `before-input-event` key relay for focus inside a mail frame. Whether that fires for out-of-process frames is **[U]** and is hand-checked in the packaged app before E4 closes; the fallback is a non-destructive relay from the frame script (J/K, scroll, Esc; never E, Space or R). The shortcut registry is plan 30's.
 
-**Ownership.** Plan 10: `packages/mail-html`, `host/protocol/`, render and proxy code, `main/protocol.ts`. Plan 30: frame element, host chrome. Plan 40: reviews headers and the `webRequest` handler, and edits the host-page CSP (ARCH 12.1) once the frame exists. The M0 `srcdoc` stopgap is plan 30's; this replaces it.
+**Ownership.** Plan 10: `packages/mail-html`, `host/protocol/`, render and proxy code, `main/protocol.ts`. Plan 30: frame element, host chrome. Plan 40: reviews headers and the `webRequest` handler, and edits the host-page CSP (ARCH 12.1) once the frame exists. The stand-in's `srcdoc` frame is plan 30's; this replaces it.
 
-**Dependencies.** E2 (stored originals) and E3 (control connection) for the render pipeline and relay. The parser spike, sanitizer, hostile corpus, leak harness and SSRF classifier (WP4.1 to WP4.3 and WP4.5) need neither, and are started in weeks 3-4 as agents free up, which is what makes E4's slack real. **E4 is the milestone that slips first (4.0, Decision 10)**; plan 30's U6 needs the real frame at week 7, and until then the M0 `srcdoc` stopgap stands.
+**Dependencies.** E2 (stored originals, bodies from `eng-store` by day 9) and E3 (control connection) for the render pipeline and relay. The parser spike, sanitizer, hostile corpus, leak harness and SSRF classifier (WP4.1 to WP4.3 and WP4.5) need neither, so `eng-html` starts them on day 4. E4 does not slip (Decision 10, revised). `ui-reader` uses the `srcdoc` frame on the stand-in engine until the real frame lands, around day 10.
 
 **Acceptance.**
 - **Hostile corpus**, at least 60 original messages: inline scripts and handlers, `javascript:` and `data:` URLs, meta refresh, `<link>` prefetch, preconnect, CSS `url()`, `@import`, `@font-face`, `image-set()`, `<base>`, SVG script and `foreignObject`, auto-submit forms, nested iframes, `object` and `embed`, mXSS mutation payloads, 100,000-element nesting, 5 MB single lines, malformed encodings, 1x1 and hidden pixels, open-redirect image URLs.
@@ -393,7 +403,7 @@ Adversarial: (a) a "storm" agent runs a 100,000-message backfill with three wind
 - Old-mail test: change a rule, bump the version, re-open a stored message with no provider call. The 13th render evicts the oldest.
 - Keyboard-relay hand-check in the packaged app recorded in PROGRESS.md (owner step, or a background Cua-driver run on the exact window that never raises it); if neither is possible, the fallback relay ships and the gap is recorded.
 
-**Estimate.** 8-10 days.
+**Estimate.** 8-10 agent-days in `eng-html`, days 4-10.
 
 **Work packages.** WP4.1: parser spike. WP4.2: sanitizer. WP4.3: corpus and leak harness. WP4.4: render pipeline, tokens, LRU, relay. WP4.5: image proxy and SSRF classifier with table-driven tests.
 Adversarial: a time-boxed "bypass" agent, given only the allowlist and headers, tries any script execution, outbound request or storage write from a corpus message (each success becomes a corpus entry and a fix); another audits the SSRF classifier against RFC 6890 and the IPv6 special-use registry.
@@ -406,7 +416,7 @@ Adversarial: a time-boxed "bypass" agent, given only the allowlist and headers, 
 
 **Deliverables.**
 1. **Jobs:** the `jobs` runner with singleton key `summary:<thread>:<input_hash>` (content-keyed: a label change does not invalidate it, a new reply does), priority (visible Home, then unread Inbox newest first; never Spam, Trash or a baseline account), backoff, dead letter after 5 attempts, 1-2 concurrent jobs per provider, `running` returns to `queued` on restart (ARCH 2.3). Kinds: `summary`, `classify`, `plan`, `suggest-action`. Background jobs run with **no tools**, mail wrapped as quoted untrusted text, output validated against preset `SuggestedAction` kinds (ARCH 8.5).
-2. **AI governor and budget:** per provider and model, RPM, TPM and TPD learned from response headers, `Retry-After` honoured; a daily-token 429 stops that model's queue until reset with a visible reason; `ai_usage` per day, provider, model, lane; a background cap of 150,000 tokens a day by default (ARCH decision 13); interactive Ask, draft, polish and transcribe are never starved. All SDKs run with `maxRetries: 0` (Anthropic and OpenAI SDKs retry by default; `main/anthropic.ts` changes), so this governor is the single AI retry layer. Provider transports stay in `main/groq.ts`, `llm.ts`, `ollama.ts`, `anthropic.ts` and gain a response-header callback.
+2. **AI governor and budget:** per provider and model, RPM, TPM and TPD learned from response headers, `Retry-After` honoured; a daily-token 429 stops that model's queue until reset with a visible reason; `ai_usage` per day, provider, model, lane; a background cap of 150,000 tokens a day by default (ARCH decision 13); interactive Ask, draft, polish and transcribe are never starved. All SDKs run with `maxRetries: 0` (Anthropic and OpenAI SDKs retry by default; `main/anthropic.ts` changes), so this governor is the single AI retry layer. Provider transports move to `apps/desktop/src/host/ai/` (today's `main/{groq,llm,ollama,anthropic,ai-keys}.ts`) and gain a response-header callback.
 3. **Consent:** `consent(scope, version, provider, granted_at)` plus per-account `ai_allowed`; enqueueing checks stored consent; changing provider or scope bumps the version and pauses background AI until re-consent. Each provider carries `trainsOnInputs`; mail content never goes to one marked true; free-tier Gemini is true unless the owner marks the key paid (Decision 8); Ollama and LM Studio are local. 0.2.x installs see the card once (Decision 7).
 4. **Heuristic Home** (ARCH 8.2): pure `bucketFor(headers, labels, correspondents, invite)` in `ai/buckets.ts` using `List-Unsubscribe`, `Precedence: bulk`, `Auto-Submitted`, no-reply senders, Gmail `CATEGORY_*` and `IMPORTANT`, direct versus cc, known correspondent, an existing user reply, invitations. Plan 20's ingest calls it inside the sync commit and stores `rank_source='heuristic'`; AI may later set `'ai'`; user and rule choices win. A thread is never held back for AI.
 5. **`Setup/begin|end|status`** replacing `deferAI` (DESIGN 7.11-7.12, Appendix C): deferral is the account's silent baseline (`baseline_done_at` null) plus consent, not an in-memory set. `Setup/end` is idempotent and always enqueues a one-shot backfill of unsummarised threads (visible Home first, including reply refresh); every job has its own id and singleton key so Retry cannot collide; disconnect deletes the account's queued jobs; a connect resolving after `Setup/end` is classified normally. `Setup/status` returns the per-account shape of 4.1 (first window found as an optional estimate, read and total; AI sorted, capped and failed; backfill; `pausedUntil`; a reason code) and collects errors, so "Done" can say "partly done".
@@ -415,7 +425,7 @@ Adversarial: a time-boxed "bypass" agent, given only the allowlist and headers, 
 
 **Ownership.** Plan 10. Plan 20 calls `bucketFor` and supplies the headers (ARCH 5.1's field mask already lists them). Plan 30 builds the consent card, onboarding and Settings → AI.
 
-**Dependencies.** E1, E2 and the E3 contract surface; plan 20's `baseline_done_at` (a stub actor until PV3). Plan 30's U8 builds on the fixture from week 7 and needs the real `Setup/*`, consent and `Demo/*` by about week 9, so E5 may run after E6 only if it still lands by then (4.0).
+**Dependencies.** F1 to F4 and `eng-store`'s real commit (day 6); `eng-views` for Home ranks; plan 20's `baseline_done_at` (a stub actor until `prov-gov` lands). `ui-onboard` builds on the stand-in engine and needs the real `Setup/*`, consent and `Demo/*` in Phase 2, so `eng-ai` (days 4-11) may run after `eng-time` if it still lands by then.
 
 **Acceptance.**
 - With the AI transport rejecting or never answering, Home orders by bucket and date and rows appear without waiting.
@@ -425,7 +435,7 @@ Adversarial: a time-boxed "bypass" agent, given only the allowlist and headers, 
 - Background provider calls have `tools` undefined; a malicious summary yields only text or a preset action. A free-tier Gemini mail job is refused with a plain reason.
 - Every SDK client is built with retries off; a stub returning 500 counts exactly one attempt.
 
-**Estimate.** 6-8 days.
+**Estimate.** 6-8 agent-days in `eng-ai`, days 4-11.
 
 **Work packages.** WP5.1 jobs. WP5.2 AI governor and usage, fake-clock tests. WP5.3 consent and `trainsOnInputs`. WP5.4 buckets with a 60-case header table. WP5.5 `Setup/*` and the PR #21 tests. WP5.6 interactive path and blobs.
 Adversarial: one agent tries the worst orderings of close, reopen, retry, disconnect and reconnect to leave a consented account with no AI; another tries to get mail text to a `trainsOnInputs` provider by switching providers mid-queue.
@@ -447,7 +457,7 @@ Adversarial: one agent tries the worst orderings of close, reopen, retry, discon
 
 **Ownership.** Plan 10; plan 20 implements `send`, `findSent`, `DraftSyncPort`; plan 30 writes the copy for suspended, uncertain and failed states from the engine's sentences.
 
-**Dependencies.** E2 and E3's contract surface. **Not** E5: the timer loop has a registry, and `jobs.next_at` registers itself when E5 lands, so E6 can run first (plan 20's PV4 needs `submissions` and the drafts table in weeks 5-7). Plan 20's emulated providers with fault injection.
+**Dependencies.** E2 and E3's contract surface. **Not** E5: the timer loop has a registry, and `jobs.next_at` registers itself when E5 lands, so E6 can run first (`prov-gmail-write` starts on day 6 against the frozen `SendPort` and `DraftSyncPort`). Plan 20's emulated providers with fault injection.
 
 **Acceptance.**
 - **Kill-point matrix:** the engine child is killed at four named points per provider emulator (before the marker; after it and before bytes; after bytes and before acknowledgement; after acceptance and before the local commit). On restart there is never a duplicate delivery (the emulator counts) and never a silent loss: each ends `sent`, `failed` with a visible reason, or `uncertain` with the prompt. Kill points exist only in test builds; a release-bundle grep asserts their strings are absent.
@@ -457,7 +467,7 @@ Adversarial: one agent tries the worst orderings of close, reopen, retry, discon
 - Notifications: 50 simulated syncs with a crash between written and posted yield exactly one notification per message.
 - Draft CAS: two saves with the same base, one wins and the other gets `stateMismatch`; a remote edit raises the three-way choice.
 
-**Estimate.** 7-9 days.
+**Estimate.** 7-9 agent-days in `eng-time`, days 4-10.
 
 **Work packages.** WP6.1 (senior agent): state machine, marker, uncertain and `findSent`. WP6.2: timer loop and deadline sources. WP6.3: drafts CAS and port scheduling. WP6.4: notification outbox. WP6.5: kill-point harness shared with plan 20's emulators.
 Adversarial: a "double send" agent tries to produce two deliveries (kill points, retries, undo racing send, clocks jumping, two engines); a "lost mail" agent hunts any path ending with no state and no message to the user.
@@ -475,7 +485,7 @@ Adversarial: a "double send" agent tries to produce two deliveries (kill points,
 4. **Listener switch:** off in release builds until "Allow tools on this Mac" is on (Decision 5); `Listener/set` and `Clients/*` back the pane plan 30 builds.
 5. **OpenAPI:** `z.toJSONSchema` into `packages/contract/generated/openapi.json` with a golden-file CI diff (EmailEngine's discipline, `RC/SYNTH-architecture.md` §6) and a schema lint for the wire rules (discriminated unions of named objects, no tuples, `Date`, `Map` or `BigInt`, no transforms, open string enums).
 6. **MCP adapter and CLI** in `host/mcp/`, `host/cli/` (a stdio server over the socket): tools generated from methods tagged `read` or `draft`; `send` and destructive actions need an explicit grant and an in-app confirmation (the engine emits the request; the dialog is plan 30's).
-7. **Browser preview** on the hardened binding: E1 already made `server.ts` a thin host with a per-run token added by the Vite dev proxy; E7 swaps it onto the real loopback listener (item 2), reads the token from a 0600 file, and puts it through the request matrix below. The browser never holds the token. Preview keeps its own data directory (AGENTS.md).
+7. **Browser preview** on the hardened binding: `eng-contract` already made `server.ts` a thin host with a per-run token added by the Vite dev proxy; E7 swaps it onto the real loopback listener (item 2), reads the token from a 0600 file, and puts it through the request matrix below. The browser never holds the token. Preview keeps its own data directory (AGENTS.md).
 8. **Diagnostics** (ARCH 11): complete event catalog; ring buffers of 500 events per account and folder snapshotted into every UI error; a verbose protocol log (headers only, `Authorization` and `Cookie` removed, no bodies) that switches itself off after 15 minutes; the **bundle**, where a zod `.strict()` schema is the only way anything enters (versions, per-account status and cursor ages, governor targets and pauses, units per minute, queue depths, recent classified errors, event-loop delay, DB, WAL and FTS-backlog sizes), previewed before saving and never uploaded; a **queue inspector** (`Queue/list|retry|discard` for ops, jobs, submissions); `crashReporter.start({uploadToServer:false})` with dumps staying local (the bundle lists count and dates only).
 9. **Swift spike** (1-2 days, outside the product): a client generated by `swift-openapi-generator` calls `View/query`, consumes SSE, and records how unknown string-enum values decode (`RC/gaps/engine-contract-rpc-stack.md` §9); the result goes in DECISIONS.md before any phone is scheduled.
 
@@ -490,7 +500,7 @@ Adversarial: a "double send" agent tries to produce two deliveries (kill points,
 - **Stalled-sync drill:** a stub provider returning throttle, auth and offline failures in turn yields a bundle showing quota, auth or network correctly; a canary test seeds subjects, bodies, addresses and tokens and greps the bundle: zero hits.
 - Preview works headlessly through the tokenised binding and the token never appears in the page, console or network log. The Swift spike compiles and prints the first window.
 
-**Estimate.** 8-10 days.
+**Estimate.** 8-10 agent-days in `eng-host`, days 4-12 (resident mode by day 7, doorway by day 12).
 
 **Work packages.** WP7.1 (senior agent): socket and HTTP with the security matrix. WP7.2: clients, scopes, audit, revocation. WP7.3: OpenAPI, lint, golden test. WP7.4: MCP and CLI. WP7.5: bundle, ring buffers, protocol log. WP7.6: queue inspector and preview. WP7.7: Swift spike.
 Adversarial: a "break in" agent, given only the listener source and ARCH 12.3, must make an unauthenticated, cross-origin or wrong-scope call; a "leak" agent tries to get a canary into a bundle through any field.
@@ -499,40 +509,39 @@ Adversarial: a "break in" agent, given only the listener source and ARCH 12.3, m
 
 ### E8. Hardening, soak and clean-up (ARCH M10, engine half)
 
-**Goal.** Prove the engine survives real life (sleep, battery, bad networks, quota storms, full disks, damaged files) and remove the temporary shims.
+**Goal.** Prove the engine survives real life (sleep, battery, bad networks, quota storms, full disks, damaged files) and delete the legacy code.
 
 **Deliverables.**
-1. **Soak harness** (`scripts/soak.ts`): a rehearsal run in weeks 10-11.5, then the release soak on the one 0.4.0 release candidate that plan 30's U9 dogfood week also uses (weeks 12.5-13.5): seven days with a stub provider and, in parallel, the owner's real accounts through plan 20's actors; scheduled sleep and wake and battery cycles on the owner's Mac (an owner step); RSS, WAL size, event-loop p99 and units per minute sampled each minute to a CSV.
+1. **Soak harness** (`scripts/soak.ts`): a rehearsal run on days 15 to 18, then the release soak in the background during Phase 3 (days 18 to 25) on the release candidate the owner uses daily: seven days with a stub provider and, in parallel, the owner's real accounts through plan 20's actors (the weekly Gmail reconnect falls inside the week and tests the reconnect flow); scheduled sleep and wake and battery cycles on the owner's Mac (an owner step); RSS, WAL size, event-loop p99 and units per minute sampled each minute to a CSV.
 2. **Fault injection** (shared with plan 20): drops, 403 and 429 storms, a corrupt provider page, disk full (a size-limited disk image from `hdiutil`), a flipped byte in a copy of `mail.db`, history 404, clock moved backward.
 3. **Damaged-database path** (Decision 6): `SQLITE_CORRUPT` or a failed `integrity_check` at open parks the engine, copies the damaged file aside, and offers Export report, Restore a pre-migration backup, or Rebuild from your provider, first listing what exists only on this Mac (drafts, scheduled sends, local workflow edits).
-4. **Shim removal:** the legacy bridge (`assembleLegacyState` and `legacyStoreAdapter`, 4.2), legacy `state.get`/`threads.page`, `packages/contract/src/legacy/`, the `apps/desktop/src/shared` re-export stubs and the legacy op kind go once plan 30 reports the renderer on windows (at its WP5.6 flip right after E3, about week 6-7; not at U9) and plan 20 reports legacy ops drained and IMAP, JMAP, Graph and CalDAV off the legacy sync (after PV6-PV10).
+4. **Delete the legacy code** (days 14 to 17, the Integrator with each owning lane): `packages/engine/src/legacy/`, `packages/contract/src/legacy/`, `apps/desktop/src/renderer/legacy/`, the `apps/desktop/src/shared` re-export stubs and the old provider files in `src/main`. It starts once `ui-shell` reports the renderer on the real engine (the switch on days 11 to 13) and each provider lane reports its adapter replaced.
 5. **A1 readiness verified, not built** (ARCH 2.6): the import lint test, lock, `KeyProvider`, engine-only migrations, a version handshake.
-6. **Second-Mac update test** 0.3.x to 0.4.0 (needed anyway for plan 40's Developer ID check), including import on a second machine's data, an update interrupted during migration, and a rollback.
+6. **Second-Mac update test** from 0.2.3 to the release candidate (needed anyway for plan 40's Developer ID check), including import on a second machine's data, an update interrupted during migration, and a rollback to 0.2.3.
 
 **Ownership.** Plan 10, with plans 20 and 40 as required participants. **Dependencies.** Everything above; plan 40's release pipeline.
 
 **Acceptance.**
 - Seven-day soak: zero duplicate sends; zero ghost threads after a forced cursor expiry; RSS slope under 2 MB an hour after a 30-minute warm-up and under 50 MB net over 24 hours (ARCH's "flat memory"); WAL never above 256 MB; no event-loop p99 above 500 ms for more than a minute running. CSV and chart attached.
 - Disk full: the engine parks with a clear message, `integrity_check` is `ok` once space returns, nothing lost. Corruption: parked, damaged copy kept, restore and rebuild each work from a clean start.
-- Clean 0.3.x to 0.4.0 update on the second Mac; rollback to 0.3.x opens the untouched data. Portability test passes with shims gone.
+- Clean update from 0.2.3 on the second Mac; rollback to 0.2.3 opens the untouched `aplos.db`. The portability test passes with the legacy folders gone.
 
-**Estimate.** 5-7 days plus the soak in the background.
+**Estimate.** 5-7 agent-days in Phases 2 and 3 (days 14-25), plus the soak in the background.
 
-**Work packages.** WP8.1 harness. WP8.2 fault scenarios, one agent each. WP8.3 damaged-database path. WP8.4 shim removal after the two readiness reports. WP8.5 update test with the owner.
+**Work packages.** WP8.1 harness. WP8.2 fault scenarios, one agent each. WP8.3 damaged-database path. WP8.4 legacy deletion after the two readiness reports. WP8.5 update test with the owner.
 Adversarial: a "murphy" agent runs the fault scenarios in random combinations and order for 24 hours with a fixed seed and must find one violated invariant (duplicate, lost message, stuck status) or report that it could not.
 
-> **What this means:** Before 0.4.0 the engine is run hard for a week through sleep, bad networks, full disks and damaged files, and anything that breaks is fixed. The temporary bridges to the old structure are then removed.
+> **What this means:** Before the release the engine is run hard for a week through sleep, bad networks, full disks and damaged files, and anything that breaks is fixed. The old code is then deleted.
 
 ## 5. Test strategy
 
-**Principles.** Mocked Google never counts as live acceptance (AGENTS.md). Agents run headless only; checks needing a visible window are owner steps or a background Cua-driver run on one exact window that never takes the foreground. A milestone is checked off only with evidence in PROGRESS.md.
+**Principles.** Mocked Google never counts as live acceptance (AGENTS.md). Agents run headless only; checks needing a visible window are owner steps or a background Cua-driver run on one exact window that never takes the foreground. Automatic live checks use throwaway test accounts only; checks on the owner's own accounts are hand-run. A milestone is checked off only with evidence in PROGRESS.md.
 
 | Layer | Proves | Where |
 |---|---|---|
 | Unit (node:test via tsx, as today) | Registry, ids, tokens, buckets, redactor, SSRF classifier, timer loop on a fake clock | `packages/*/tests`, `apps/desktop/tests` |
 | Property (seeded, seed printed) | Change-log replay, rollups vs a slow reference, consent gating, client overlay vs engine truth | `packages/engine/tests/property` |
 | Conformance | Fixture and real engine behave identically | `packages/contract/tests/conformance` |
-| Bridge differential | Legacy service on `mail.db` equals the legacy store, field by field | `packages/engine/tests/bridge` |
 | Benchmarks with budgets | E2-E4 numbers; CI gates at 3x margin (shared runners are noisy); exact numbers recorded from the owner's Mac | `packages/engine/bench` |
 | Kill-point and fault injection | No duplicate send, no silent loss, resumable import | child-process engine, test-only build flag |
 | Security matrices | Listener, hostile HTML and leak test, SSRF table | E4, E7 |
@@ -552,8 +561,8 @@ Adversarial: a "murphy" agent runs the fault scenarios in random combinations an
 | 1 | Change-log or window bugs show stale or missing rows; Bulwark shipped two (M / H) | Replay property test; shared conformance suite; coarse entries in backfill; `cannotCalculateChanges` and `reset` as safe fallbacks |
 | 2 | Window re-run storms during backfill (M / M) | Coalescing at 4 a second, gating, one coarse entry per page, storm test |
 | 3 | Import corrupts or loses data (L / H) | Read-only source never renamed; resumable units; kill-mid-import test; content hash; rollback drill |
-| 4 | Threads collide on the same files (H / M) | E1 moves and the `electron.ts` split first; ownership by file; freeze C1; 24-hour window (section 9) |
-| 5 | Contract freeze is wrong and UI work is wasted (M / M) | Fixture plus conformance expose gaps early; plan 30's reviewer attacks the contract before C1; `v:1` with capability flags |
+| 4 | Threads collide on the same files (H / M) | the Phase 0 restructure first; exclusive paths enforced by `owners-check`; freeze C1 (section 9) |
+| 5 | Contract freeze is wrong and UI work is wasted (M / M) | Fixture plus conformance expose gaps early; three reviewers attack the contract before C1; `v:1` with capability flags |
 | 6 | Zod plus engine busts 400 KB, or zod JIT breaks under CSP (M / L) | Measure in E1; `zod/mini`, boundary validation or a recorded budget; `jitless`; oRPC only per ARCH 9.3 |
 | 7 | `node:sqlite` follows Electron's SQLite; a bump changes version or options (M / M) | CI and packaged `--selftest` assert 3.43+, FTS5, `contentless_delete`; better-sqlite3 is a one-file switch |
 | 8 | WAL growth from always-on readers (M / M) | Short reads, idle `wal_checkpoint(TRUNCATE)`, `journal_size_limit`, 256 MB flag, soak assertion |
@@ -562,13 +571,13 @@ Adversarial: a "murphy" agent runs the fault scenarios in random combinations an
 | 11 | Image-proxy SSRF (L / H) | Resolve once and connect to the address, full special-use table, revalidated redirects, table tests, RFC 6890 audit |
 | 12 | Listener exposed by mistake (L / H) | Off by default, loopback and socket only, request matrix, plan 40 review; no `0.0.0.0` path until A2 |
 | 13 | Adapters misreport `uncertain` vs `failed` (L / H) | Narrow `NotSentError`, everything else uncertain; kill-point matrix per provider; real sends in E6 |
-| 14 | Live verification lags: owner time, Google Testing mode (H / M) | Emulators for development; short owner checklists written ahead; evidence recorded as gathered |
-| 15 | PR #21 touches the file E1 splits (M / L) | Not merged; engine side reimplemented as `Setup/*`; plan 30 absorbs its UI; dropped in the rebase if merged first |
-| 16 | The legacy bridge loses, duplicates or resurrects threads, especially for IMAP and JMAP on a capped working set (M / H) | Natural-key upserts, deletions only for provider-reported ids, full-list mode, differential replay of recorded `StoreDiff` streams, emulator runs (4.2) |
-| 17 | The E1 move breaks the packaged app: `@aplos/*` left unbundled, package dependencies missing from the asar (M / H) | Build wiring is a deliverable; `npm run package` and `verify-release.mjs` in E1 acceptance; adapter dependencies stay in `apps/desktop/package.json` |
-| 18 | The P thread is over-subscribed in weeks 4-8, so E3 to E6 slip and block plan 20's drafts and plan 30's U6 (H / M) | Priority and slip rule (4.0), E4 as slack, E6 before E5 if needed, E2b's work on P in week 3, optional third engine thread (Decision 11) |
-| 19 | The contract fixture and the real engine drift, so the UI is built against behaviour that does not exist (M / M) | One conformance suite for both, a fixture-only assertion fails CI, plan 30 flips dev builds to the real windows once E3 is green |
-| 20 | E2a slips past week 3 and delays plan 20's M3, the Gmail daily-driver gate (M / H) | E2a is five to six days of S-thread work only; same-day escalation; the schema is reviewed by plan 20 before it merges |
+| 14 | Live verification lags: owner time, Google Testing mode (H / M) | Emulators first; scheduled live runs on throwaway accounts that follow the weekly reconnect; short owner checklists written ahead; evidence recorded as gathered |
+| 15 | PR #21 touches the file Phase 0 splits (M / L) | Not merged; engine side reimplemented as `Setup/*`; plan 30 absorbs its UI; dropped in the rebase if merged first |
+| 16 | Old code lingers and confuses agents (M / M) | Legacy code sits in `legacy/` folders from day 1, read-only, and is deleted in Phase 2 (4.2) |
+| 17 | The Phase 0 move breaks the packaged app: `@aplos/*` left unbundled, package dependencies missing from the asar (M / H) | Build wiring is a deliverable; `npm run package` and `verify-release.mjs` in Phase 0 acceptance (E1); adapter dependencies stay in `apps/desktop/package.json` |
+| 18 | The Engine thread is over-subscribed across seven lanes, so E3 to E6 slip and block `prov-gmail-write` and `ui-reader` (H / M) | The priority and slip rule (4.0), critical lanes first (`eng-store`, `eng-views`), staggered starts for agent rate limits, E6 before E5 if needed |
+| 19 | The contract fixture and the real engine drift, so the UI is built against behaviour that does not exist (M / M) | One conformance suite for both, a fixture-only assertion fails CI, `ui-shell` switches to the real engine on days 11 to 13 once the conformance suite is green |
+| 20 | `eng-store`'s real commit slips past day 6 and delays `prov-gmail`, the Gmail daily-driver gate (M / H) | One lane, same-day escalation, the schema reviewed by Providers in Phase 0 (F4) |
 
 Resident-mode confusion and rollback losing local-only edits are covered by Decisions 1 and 4.
 
@@ -583,31 +592,29 @@ Plan 10 defines these in `packages/engine/src/ports.ts` and `packages/contract`;
 | Port or artifact | Meaning |
 |---|---|
 | `store.commit(fn)`, page commits | The only write path; a page, its resume token and its `changes` commit together; replay of pending ops inside the commit is a store service (ARCH 4.3) |
-| `sync_state`, `sync_failures`, `governor_state`, `provider_memory`, `accounts.status*`, `baseline_done_at` | Plan 10 owns tables, plan 20 owns semantics; plan 20 reviews the schema before E2a merges. `baseline_done_at` marks the end of the **first window** (the newest ~50 Inbox threads, ARCH 5.1 P1), never the end of backfill; backfill pages never create notifications |
+| `sync_state`, `sync_failures`, `governor_state`, `provider_memory`, `accounts.status*`, `baseline_done_at` | Plan 10 owns tables, plan 20 owns semantics; plan 20 reviews the schema in Phase 0 (F4). `baseline_done_at` marks the end of the **first window** (the newest ~50 Inbox threads, ARCH 5.1 P1), never the end of backfill; backfill pages never create notifications |
 | `ProviderAdapter` (plan 20 section 3.2: `connect`, `syncStep`, `fetchBody`, `apply`, `saveDraft`, `send`, `findSent`, `search`, `watch`, `calendar`) | The one port every adapter implements, in `ports.ts` and frozen with C1. `SendPort` and `DraftSyncPort` are its engine-side callers (`send`, `saveDraft`, `findSent`). Adapters never retry, never write the store and never pace; everything goes through `GovernorPort` |
 | Contract methods backed by plan 20 | `Account/connect|reconnect|grantPermissions` (granted-scope handling, D5), `Account/lease`, `Unsubscribe/run`, `Event/set {scope: occurrence|series|following}`, `Event/rsvp`: names and schemas frozen at C1, behaviour from PV3, PV4, PV8 and PV9 |
 | `AccountActorHost` | Start, stop, pause, wake, heartbeat, status; the supervisor restarts a silent actor alone |
 | `GovernorPort.run(account, {budget, lane, cost, kind, signal}, fn)` and the classified-error record | Plan 20 implements, plan 10 specifies the type; E0's log shape is the same record |
-| Status vocabulary (`starting`, `ok`, `syncing`, `backfilling (n of m)`, `paused`, `needsReauth`, `needsPermission`, `needsAdmin`, `misconfigured`, `offline`, `error`) | Defined in contract (ARCH 6.4) |
+| Status vocabulary (`starting`, `ok`, `syncing`, `backfilling (n of m)`, `paused`, `needsReauth`, `needsPermission`, `needsAdmin`, `misconfigured`, `offline`, `error`) and the `reconnectBy` account fact | Defined in contract (ARCH 6.4). `prov-gov` records the token grant time and sets `reconnectBy` (grant plus 7 days in Testing mode); plan 10 carries it in the account type and `Setup/status` (F1); `ui-shell` shows the note a day ahead |
 | `bucketFor` and the header field mask | Plan 10 provides the function, plan 20 supplies inputs at ingest |
-| `ProviderPort.openThread(account, remoteThreadId, {knownCount?})` | Thread-granular open; plan 20's adapter picks `threads.get?format=full` (120 units) unless a single message is known (plan 20 section 2). This replaces ARCH 5.1's "two or more messages" test, which cannot be evaluated before a count exists; recorded in DECISIONS.md at E2a. Plan 10 does not depend on which call is made |
+| `ProviderPort.openThread(account, remoteThreadId, {knownCount?})` | Thread-granular open; plan 20's adapter picks `threads.get?format=full` (120 units) unless a single message is known (plan 20 section 2). This replaces ARCH 5.1's "two or more messages" test, which cannot be evaluated before a count exists; recorded in DECISIONS.md in Phase 0. Plan 10 does not depend on which call is made |
 | Where adapters live | `apps/desktop/src/host/providers/<name>/` (not `packages/providers`, not `packages/engine/src/providers`); actors and governor in `packages/engine/src/sync/**`, the recurrence module in `packages/engine/src/calendar/**`; `packages/emulators` is plan 20's and test-only (section 3). Dependencies stay in `apps/desktop/package.json`. The portability rule needs no path exception, because no adapter lives in `packages/engine` |
-| The legacy bridge (4.2) | Reads and writes. Until plan 20's PV6-PV10 (ARCH M7 and M8), IMAP, JMAP, Graph and CalDAV sync through the legacy service and `legacyStoreAdapter`; plan 20 must keep them working there and may rely on the adapter's natural-key upsert. It is not a place for new features |
 | `SendPort.send`, `NotSentError`, `findSent`; `DraftSyncPort` | Plan 20 implements (E6) |
-| `legacy.thread.patch` op kind | Created at import; plan 20 drains or translates before 0.3.0 |
 | Deadline-source registration | Plan 20 registers next-poll and cooldowns, giving one clock |
 | Emulators with fault injection | Plan 20 owns; shared by E6 and E8 |
 
-Timing: logger (E0) alongside plan 20's PV0 (PV0 never waits for it); schema, `store.commit` and change log (E2a) at the start of its M3 (week 3); `submissions` and the drafts table (E6) in weeks 5-7 for plan 20's drafts work; kill-point harness shared by week 6.
+Timing: the logger (F7) lands in Phase 0, before plan 20's lanes start. Schema 0001 and a minimal `store.commit` (F4) freeze on day 3, and the real commit and change log arrive by day 6 for `prov-gmail`. `eng-time`'s `submissions` and drafts table land in its days 4 to 10, and `prov-gmail-write` starts on day 6 against the frozen ports. The kill-point harness is shared with `prov-emu` by day 9.
 
 ### 7.2 Plan 30 (UI)
 
 | Artifact | Meaning |
 |---|---|
-| Fixture engine, contract preview C0 (E1 day 5) and freeze C1 (E1 day 10) | The UI builds against it from week 2 (Decision 9); shape, scenarios, control channel, transports and the table of plan 30's twelve asks are in 4.1 |
-| Typed-client codemod | **Plan 10 runs it in E1's freeze window** over the 53 `invoke(` sites in 15 files; plan 30's U2 (its section 4.1 strangler step 1 and U2 deliverables) builds `renderer/data/` on the result and does not migrate the sites again |
-| Moving `engine/discover` and `engine/provider` imports out of the renderer | Not a precondition of the move: E1 rewrites those imports to `@aplos/engine/discover` and the contract's legacy types; plan 30's U2 later moves them behind `Account/discover` |
-| Flip to real windows | Plan 30's WP5.6 flips dev builds to `engineWindows` when E3's conformance suite is green (about week 6), keeping `compatWindows` only as a contingency, instead of waiting for U9. Its "renderer on windows" report at the flip unblocks E8's shim removal. Plan 10's removal of `latestState` does not wait for U9 either (E3 item 6) |
+| Stand-in engine and the freeze C1 (end of Phase 0, day 3) | The UI builds against it from day 4 (Decision 9, settled); shape, scenarios, control channel, transports and the table of plan 30's twelve asks are in 4.1 |
+| Typed client `api.*` (F2) | Plan 30's new screens call it and build `renderer/data/` on it. There is no codemod over today's `invoke(` sites; the old renderer stays read-only in `renderer/legacy/` |
+| Moving `engine/discover` and `engine/provider` imports out of the renderer | Not a precondition of the move: Phase 0 step 1 rewrites those imports to `@aplos/engine/discover` and the contract's legacy types; `ui-onboard` later moves them behind `Account/discover` |
+| Switch to the real engine | Plan 30's WP5.6, run by `ui-shell` with the Integrator on days 11 to 13, once `eng-views` passes the conformance suite on the real engine (day 11). Its report that the renderer is on the real engine unblocks E8's deletion of the legacy folders. Removing `latestState` does not wait for it (E3 item 6) |
 | `@aplos/contract/client` | Plan 30 wraps `WindowStore` in React hooks; `shared/live.ts` retires |
 | Window and hold semantics | E3; DESIGN section 5 rules 6, 9, 10, 11 are the requirements |
 | `Setup/begin|end|status` | DESIGN 7.11-7.12 and Appendix C (F1, F2, F5, F6, F10); the UI calls `Setup/end` on every close |
@@ -621,7 +628,7 @@ Timing: logger (E0) alongside plan 20's PV0 (PV0 never waits for it); schema, `s
 | Artifact | Meaning |
 |---|---|
 | Fuses, macOS 13, entitlements | Needed before E1's resident check; plan 40 writes, plan 10 verifies in the packaged app |
-| Formatter and linter adoption | Inside E1's freeze window: main merged, then this plan's rename-and-imports commit, then **plan 40's Q1a format commit**, then the contract skeleton and codemod, then Q1b (section 9, E1 item 0). Branches cut from main before the format commit come back through plan 40's `format-merge.mjs` |
+| Formatter and linter adoption | Inside Phase 0: this plan's rename-and-imports commit, then **plan 40's Q1a format commit**, then the `electron.ts` split, then Q1b (section 9, E1 item 0). There is no `format-merge.mjs` |
 | CI jobs | SQLite check, OpenAPI diff, portability test, benchmark gates, secret scan: plan 10 supplies tests, plan 40 the runners |
 | `assertCaller`, port handoff, permission handler, `webRequest` backstop | Reviewed by plan 40; one shared `webRequest` handler module **[U]** |
 | Host-page CSP changes | Plan 40 edits `index.html` once E4's frame exists |
@@ -632,7 +639,7 @@ Timing: logger (E0) alongside plan 20's PV0 (PV0 never waits for it); schema, `s
 
 ## 8. What to read first
 
-1. `plans/ARCHITECTURE.md` (sections 3, 7-12, 15) and `plans/DESIGN.md` (sections 5, 7.11-7.12, 15, Appendix C).
+1. `plans/00-roadmap.md` (sections 1, 2.1, 4 and 7), `plans/ARCHITECTURE.md` (sections 3, 7-12, 15) and `plans/DESIGN.md` (sections 5, 7.11-7.12, 15, Appendix C).
 2. `AGENTS.md`, `DECISIONS.md` (2026-10-15, 10-16 M26 and M29, 10-21, 10-23), `PROGRESS.md`, `TODO.md`, `MOBILE.md` on main.
 3. By milestone, the research named in that milestone's deliverables (the five `RC/gaps/` reports, `RC/protocols/proto-google.md` §1, `research/pr21-onboarding-review.md`, `RC/arch/extra-bulwark-legacy-proxy.md`) and the main-branch files it replaces (`service.ts`, `electron.ts`, `preload.ts`, `server.ts`, `engine/store.ts`).
 4. `plans/_council/CONTEXT.md` for the facts that override the research.
@@ -643,19 +650,19 @@ Provenance rule for every brief: the corpus contains GPL, AGPL, commercial and u
 
 ## 9. PR and branch strategy within the revamp
 
-**Nothing goes to main without the owner.** The long-lived branch is `revamp`, cut from main at `72095ff` (v0.2.3); its first commits are the research and planning documents. All plan 10 work merges into `revamp`. PR #21 is not merged by this workstream.
+**Nothing goes to main without the owner.** The long-lived branch is `revamp`, cut from main at `72095ff` (v0.2.3); its first commits are the research and planning documents. Main does not change until the owner merges `revamp` for the redesigned release. PR #21 is not merged by this workstream.
 
-- **Branches.** Git cannot hold `revamp/...` refs next to a `revamp` branch, so work branches are `rv/<workstream>/<slug>` (`plans/00-roadmap.md` section 4). This plan runs on the Engine thread: `rv/engine/e<N>-<slug>` per milestone (`rv/engine/e1-move`, `rv/engine/e2b-import`; E2a runs on the Providers & Sync thread as `rv/providers/e2a-store`) and `rv/engine/e<N>-wp<N.M>-<slug>` per work package, each in its own git worktree. A branch name is never a folder of another (no `rv/engine/e1` beside `rv/engine/e1/...`). Work-package PRs target their milestone branch; the milestone branch PRs into `revamp` once its evidence is attached.
-- **Merge style.** E1's move commits use merge commits so `git log --follow` survives; everything else squashes, with a message naming the work package and evidence.
-- **The E1 freeze window.** On day 1 of week 1 the owner (or orchestrating thread) announces a 24-hour window. In order, each its own commit: step 0, main merged into `revamp`; plan 10's rename-and-imports commit; **plan 40's Q1a format commit**; the `packages/contract` skeleton; plan 10's typed-client codemod; plan 40's Q1b. Plans 20 and 30 rebase after each. No other PR touches `src/engine`, `src/main`, `src/shared` or renderer call sites during the window. This matches plan 40's Q1 table and section 5 and plan 30's day-zero gate.
-- **E0 may reach main.** The 0.2.4 train is one branch, `hotfix/0.2.4`, cut from main and owned by plan 20's PV0. E0 is developed on `hotfix/0.2.4-log`, with files at today's paths (`src/engine/diag/`, `src/main/logsink.ts`), and joins the train by PR into `hotfix/0.2.4` only if it is ready when PV0 is; PV0 never waits for it. The owner merges the train to main. Either way E0's commits reach `revamp` before E1's rename (through main at step 0, or through `format-merge.mjs` if late).
+- **Branches.** Git cannot hold refs under `revamp` next to a branch named `revamp`, so lane branches are `rv/<lane>/<slug>`, for example `rv/eng-store/commit` or `rv/eng-views/windows` (roadmap 7), each in its own git worktree. The Engine thread coordinates on `rv/thread/engine`. A branch name is never a folder of another (no `rv/eng-store` beside `rv/eng-store/commit`). Lane PRs target `revamp`.
+- **Merge style.** Phase 0's mechanical commits merge by merge commit, so `git log --follow` survives, and go into `.git-blame-ignore-revs`. Everything else squashes, with a message naming the lane and work package. Long-lived branches take `revamp` by merge, never rebase, and nobody force-pushes a shared branch. Only the Integrator merges into `revamp`, after typecheck, tests, `npm run check`, the owners check and the conformance run pass.
+- **The Phase 0 restructure chain.** On day 1 the Engine thread runs the steps in E1 item 0 serially, each its own commit: the NOTICE, the rename-and-imports commit, plan 40's Q1a format commit, the `electron.ts` split and plan 40's Q1b. Main is not merged in, because it does not change. The other threads work in their own worktrees on new files only, and no other PR touches `src/engine`, `src/main`, `src/shared` or renderer call sites while the chain runs (about a day).
+- **Contract changes** go only through `eng-contract`, labelled `contract-change`, additive within `v:1`.
 - **Evidence on every PR:** test output, benchmark numbers, corpus and leak-test results, and screenshots where a UI is involved (attached with `gh pr create --attach`, never committed).
 - **Records.** Each milestone PR appends to `PROGRESS.md` (what and evidence) and `DECISIONS.md` (calibrated numbers, the freeze, the zod bundle result, the Swift spike result) and ticks `TODO.md` only with evidence (AGENTS.md).
 - **Review.** Every PR is reviewed by an agent that did not write it, briefed with the acceptance criteria; E4 and E7 also get plan 40's reviewer.
-- **Releases.** 0.2.4 is ARCH's M0, tagged from main. **0.3.0 is ARCH's M3 (about week 5-6): E1, E2a, E2b and plan 20's PV3**, with the renderer on the legacy bridge. E3 to E6 reach the owner on beta tags as each passes its acceptance; a stable 0.3.x only if the owner asks. 0.4.0 is ARCH's M10 plus plan 30's U9, about week 14. **Stable releases are tagged from main** after the owner merges `revamp` into it; **beta tags** (`vX.Y.Z-beta.N`) may be cut from `revamp` with `scripts/release.mjs --allow-branch` and published as prereleases on the owner's go-ahead (plan 40 section 9 item 5). `aplos.db` stays until 0.4.0 is stable (Decision 4).
+- **Builds and release.** One redesigned release, proposed 0.3.0, covers E1 to E8 and plans 20 to 40. Before it, builds are local packaged builds or `v0.3.0-beta.N` draft releases in this private repo, published on the owner's go-ahead (`scripts/release.mjs --allow-branch`) and installed by hand. The stable release is tagged from main after the owner merges `revamp`. `aplos.db` stays until the release is stable (Decision 4).
 - **Commits** are authored as Kainoa Newton <k@kainoa.me>; flag any other `git config user.email` before committing.
 
-> **What this means:** Everything lands on `revamp` in small reviewed pieces with proof attached. The risky file moves happen first, in one short window. Main changes only when you decide.
+> **What this means:** Everything lands on `revamp` in small reviewed pieces with proof attached. The risky file moves happen first, in one short chain on day 1. Main changes only when you decide.
 
 ## Evidence index
 
