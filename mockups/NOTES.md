@@ -36,7 +36,7 @@ Start with three screens: Home, the reader and Compose. Then open the onboarding
 | Permissions (`onboarding-permissions.html`) | default, granted | Microphone, notifications and log-in as quiet rows (5.12) |
 | Try the keys (`onboarding-drill.html`) | step1, step3, done | The drill as a mode of the sync screen, with progress still visible (5.13) |
 | Getting your mail (`onboarding-sync.html`) | progress, paused, ready, partial, failed | Neutral progress, honest Google slow-down, "Esc opens Aplos", calm ready check (5.13) |
-| Home (`home.html`) | default, no-ai | Page title, 180 px focus card, one ⋯, read/unread weight instead of the fade (5.3, 3.3) |
+| Home (`home.html`) | default, no-ai | Do now (ordered by due date and importance, Back from Later at its bottom), Important updates, Follow up, Low importance; 180 px focus card (12) |
 | All mail (`inbox.html`) | default, bulk | Neutral cursor, no account dots, bulk bar in the pane header (5.4) |
 | Later (`later.html`) | later, bookmarks, drag | Puck in the page head, drop targets named by time (9 #11) |
 | Done (`done.html`) | – | The new Done place, H to move one back (5.11) |
@@ -44,7 +44,7 @@ Start with three screens: Home, the reader and Compose. Then open the onboarding
 | Demo (`demo.html`) | – | Home with the demo account switcher |
 | Reader (`reader.html`) | default, earlier, pending, no-ai | Sender line, big serif summary, one action row, the message, reply field. No rail (5.5) |
 | Inline reply (`reply.html`) | reply, reply-all, dictating, sent | One reply card, the level meter, the neutral undo-send line (5.6, 5.7) |
-| Compose (`compose.html`) | new, ai-draft, polish | A page, not a sheet: To, a title-sized subject, the text, Send (5.8) |
+| Compose (`compose.html`) | new, ai-draft, polish, follow-up | A page, not a sheet: To, a title-sized subject, the text, Send (5.8) |
 | Ask (`ask.html`) | answer, empty, working, no-provider, today | The dock as a second pane, serif answers, one proposal card (5.9) |
 | Palette (`palette.html`) | commands, filtered, confirm | Opaque ⌘K, Suggested and Go to first, Cancel as the default (5.10) |
 | Search (`search.html`) | results, no-match | Search as a page with a heading-size field (5.10) |

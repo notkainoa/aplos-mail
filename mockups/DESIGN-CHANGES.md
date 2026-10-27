@@ -349,4 +349,77 @@ The From row is removed (it's in ⋯). Nothing decorates the top. The AI draft i
 
 11.6. **The calendar button is back** at the top right of the main pane, after Ask. It shows a calendar icon, and its tooltip reads "Today, ⇧A". It opens the Today tab of the Ask dock. This replaces the "Today leaves the toolbar" line in 5.1.
 
-11.7. **Home ordering is under review.** The owner wants to change how Home prioritises mail. The current plan is summarised for that discussion in the reply that came with this revision. No ordering change is drawn yet.
+11.7. **Home ordering.** Replaced by section 12.
+
+## 12. Home, revision 3: Do now, Important updates, Follow up (the owner's design; replaces §7.2's sections and ARCH §8.2's ordering)
+
+### In plain English
+
+Home now sorts mail by what it asks of you.
+
+**Do now** is mail that needs you to do something, like reply, decide, sign, pay or reschedule. It's sorted by how soon it's due, and the more important one goes first when two are due on the same day. Things you set aside with Later come back at the bottom of Do now once their day arrives.
+
+**Important updates** is mail you should see but don't have to act on, like "your package was delivered". If an email has a clear action, such as "your dinner reservation was canceled, reschedule?", it goes to Do now instead.
+
+**Follow up** (the old "Waiting on others") is mail you sent that hasn't had a reply. Aplos drafts a short follow-up for each one, so pressing Space opens a reply that's already written. You read it, change it if you want, and send.
+
+Everything else, including newsletters, receipts and routine alerts such as Google's "new sign-in" emails, stays folded into the Low importance line at the bottom.
+
+### 12.1 Sections, top to bottom
+
+| Section | What goes in it | Space does | Order inside |
+|---|---|---|---|
+| **Do now** | New mail with a clear action for you: a direct question or request, a decision, something to sign, pay, approve, confirm, book or reschedule, an invitation to answer. Example: "Your Saturday table was canceled. Pick another night." | The suggested action (Reply, View invoice, Reschedule, Add to calendar…) | 12.2 |
+| ↳ **Back from Later** (sub-label inside Do now) | Later items whose date has arrived (was "Due now"). Always at the bottom of Do now. Its label carries "Clear from Home". | The item's suggested action | 12.2, within this block |
+| **Important updates** | Mail worth seeing with no clear action: a delivery that arrived, a person sharing something "for your information", a decision that affects you, a payment that will happen by itself | Done (it's read and handled) | Important first, then newest |
+| **Follow up** | Mail you sent with no reply after the nudge period (3 days default) (was "Waiting on others") | **Reply with a nudge**: opens the reply with an AI-drafted follow-up as an editable suggestion (Tab keep, Esc dismiss) | Longest wait first |
+| **Low importance** (the one-line band, now last) | Newsletters, promotions, receipts, routine notifications, security alerts such as "New sign-in on your Mac", shipping progress ("on its way"), anything automated with nothing to do | Return opens the sheet | Unchanged |
+
+- The focus letter starts on the first item of Do now. Tab and ⇧Tab move between Do now, Important updates and Follow up.
+- Done on a Follow up item offers "Remind me if no reply · R" (decision 6 is unchanged).
+- The sidebar count on Home is the Do now count.
+- If a section is empty it doesn't render. If Do now is empty and the rest isn't, Home starts at Important updates.
+
+### 12.2 Ordering inside Do now
+
+1. **Due band:** overdue or due today, then due tomorrow, then due within 7 days, then due later or no due date.
+2. **Within a band:** important before normal.
+3. **Then** the soonest due date.
+4. **Then** the newest received.
+
+The "Back from Later" block uses the same order, below the new items. Rows in Do now show their due date as a quiet chip ("Tomorrow", "Sat", "Nov 4"), so the order is readable. Overdue chips use `--stamp-ink`. Undated rows show no chip.
+
+The order stays still under the cursor (holds, §5 rule 6). New mail and re-ranks wait under `hold`, then `arrive`.
+
+### 12.3 How mail is sorted into sections
+
+- Each thread gets a **lane** (`do`, `update`, `low`) and keeps its **importance** (`important`, `normal`) for ordering. Follow up is computed, not stored: you sent the last message, and there's been no reply for the nudge period.
+- **Without AI, at ingest** (ARCH §8.2's signals, re-aimed):
+  - **Low:** List-Unsubscribe, bulk or auto-submitted, no-reply senders, Gmail Promotions and Social, account and security notices.
+  - **Update:** transactional mail with a final state, for example "delivered", "your payment is scheduled", "minutes posted". Use sender patterns and Gmail Updates, where structured delivery markup exists.
+  - **Do:** direct-to-me mail from people, especially known correspondents; mail that asks a question or names a deadline; calendar invitations; bills and documents with a due date.
+  - When unsure, a person's mail goes to Do and automated mail goes to Low.
+- **With AI:** the summary job also returns the lane, a due date it found in the text ("by tomorrow", "until Saturday"), and the suggested action. It may move a thread between lanes. Rules and your corrections always win.
+- **Corrections are one key each.** ⌥↓ moves a thread down a lane (Do now → Important updates → Low importance). ⌥↑ moves it up. Both offer "Always do this for [sender]" and toast with Undo. This replaces "Not important" and "Always Home" (§7.5, §8).
+- **Due dates on Do now items come from three places.** In order of trust, they are your own date (D), dates in structured data (invites, bills), and an AI-extracted date. An extracted date shows as "Due tomorrow" with "from the email" on hover, so it's never mistaken for one you set.
+
+### 12.4 The follow-up draft
+
+- When a thread enters Follow up, a background job writes a short, polite nudge in the user's voice, referring to the last message. It's a local suggestion, not a synced draft, until you keep it. Consent and the daily AI cap apply as usual (ARCH §8.3–8.4).
+- Space opens the reply with the suggestion in the body (dim, "Aplos drafted this follow-up from your last email. Tab keep, Esc dismiss").
+- With AI off or not consented, Space opens an empty reply with "Re:" filled in, and there's no error.
+- **Drawn in:** `compose.html?state=follow-up`. In the app this opens as the inline reply in the thread (5.6). The mockup uses the compose page as a stand-in.
+
+### 12.5 Changes this needs in the other plans (for the plan threads)
+
+- **ARCHITECTURE §3 schema:** `thread_workflow.rank_bucket` becomes `lane` (`do|update|low`) plus `importance` (`important|normal`) and `rank_source`. `due_date` gains `due_source` (`user|structured|ai`). The `home` index becomes `(status, lane, due_band, importance, due_date, last_date DESC)`.
+- **ARCHITECTURE §8.2 and plan 10 E5:** `bucketFor` becomes `laneFor`, returning `{lane, importance, due?}`. The planned 60-case header table gains Update cases (deliveries, scheduled payments, FYI from people) and the security-notice → Low cases.
+- **ARCHITECTURE §8.1:** add a background job, `followup:<thread>:<last_sent_hash>`, after summaries in priority.
+- **Plan 30 §4.1 view spec:** `home` sections become `do` (with a `fromLater` flag), `update` and `follow`, ordered as 12.2, plus `home.low`.
+- **DESIGN §7.2, §7.5 (Why rail text), §8 (⌥↑/⌥↓), §10 (labels):** add "Do now", "Back from Later", "Important updates", "Follow up" and "Reply with a nudge". Remove "New", "Due now" and "Waiting on others".
+
+### 12.6 Small open questions (defaults are drawn)
+
+1. **Section order.** Drawn as Do now, Important updates, Follow up, then Low importance. The alternative is putting Follow up second, so everything that needs you sits together at the top.
+2. **Mail from a person with no action** (for example "Thanks for covering Saturday"). Drawn as Important updates. The alternative is Low.
+3. **The Home count.** Drawn as the Do now count only. The alternative is counting Do now plus Follow up.
