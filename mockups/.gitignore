@@ -1,2 +1,5 @@
 _shots/
 _work/
+.vercel/
+.vercel
+.env*
