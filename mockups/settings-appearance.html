@@ -13,15 +13,11 @@
 <div class="window">
   <span class="traffic"></span>
   <div class="app">
-    <aside class="sidebar" id="sb" data-active="none" data-accounts="all"></aside>
+    <aside class="sidebar" id="sb" data-active="settings" data-accounts="all"></aside>
     <main class="main">
       <header class="toolbar">
-        <h1 class="title">Settings</h1>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace set-ws">
@@ -37,17 +33,17 @@
 S.nav('General');
 const stored = (() => { try { return localStorage.getItem('aplos-mock-theme'); } catch { return null; } })();
 const hints = document.documentElement.classList.contains('show-hints');
-document.getElementById('content').innerHTML =
+document.getElementById('content').innerHTML = S.page('General', 'How Aplos looks and behaves on this Mac.') +
   S.group('Appearance',
-    S.row({ label: 'Appearance', hint: 'Light, dark, or match the system.', control: S.seg('theme', [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']], stored === 'light' || stored === 'dark' ? stored : 'system') }) +
-    S.row({ label: 'Density', hint: 'How much room each row gets.', control: S.seg('density', [['roomy', 'Roomy'], ['comfortable', 'Comfortable'], ['compact', 'Compact']], 'comfortable') })) +
+    S.row({ label: 'Theme', hint: 'Light, dark, or match the system.', control: S.seg('theme', [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']], stored === 'light' || stored === 'dark' ? stored : 'system') }) +
+    S.row({ label: 'Density', hint: 'How much room each row gets.', control: S.seg('density', [['roomy', 'Roomy'], ['comfortable', 'Normal'], ['compact', 'Compact']], 'comfortable') })) +
   S.group('Keys and gestures',
-    S.row({ label: 'Show all key hints', hint: 'Keep every shortcut visible instead of only on hover.', control: S.sw('hints', hints, 'Show all key hints') }) +
-    S.row({ label: 'Swipe direction', hint: 'Which way Done and Later go on Home and one by one.', control: S.select('swipe', 'Right is Done', ['Right is Done', 'Left is Done'], 'Swipe direction') })) +
+    S.row({ label: 'Show all key hints', hint: 'Keep every shortcut visible next to its button.', control: S.sw('hints', hints, 'Show all key hints') }) +
+    S.row({ label: 'Swipe direction', hint: 'Which way Done goes on Home and one by one.', control: S.select('swipe', 'Right is Done', ['Right is Done', 'Left is Done'], 'Swipe direction') })) +
   S.group('Window',
     S.row({ label: 'Minimised sidebar', hint: 'Hide the sidebar until you press [.', control: S.sw('mini', false, 'Minimised sidebar') }) +
-    S.row({ label: 'Open Aplos when you log in', hint: 'Starts Aplos quietly so your mail is already in.', control: S.sw('login', true, 'Open Aplos when you log in') }) +
-    S.row({ label: 'Keep Aplos in the menu bar when the window closes', hint: 'Mail keeps syncing and reminders keep arriving.', control: S.sw('menubar', true, 'Keep Aplos in the menu bar when the window closes') }));
+    S.row({ label: 'Open Aplos at login', hint: 'Starts quietly so your mail is already in.', control: S.sw('login', true, 'Open Aplos at login') }) +
+    S.row({ label: 'Keep Aplos in the menu bar', hint: 'Mail keeps syncing after the window closes.', control: S.sw('menubar', true, 'Keep Aplos in the menu bar') }));
 S.initSegs();
 document.addEventListener('settings:seg', e => {
   if (e.detail.id !== 'theme') return;

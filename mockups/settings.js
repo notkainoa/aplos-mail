@@ -3,10 +3,10 @@
   const ic = (n, c = '') => Mock.icon(n, c);
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
-  const NAV = [['General', 'settings-appearance.html'], ['Mail', '#'], ['Calendar', '#'], ['AI', 'settings-ai.html'], ['Notifications', '#'], ['Accounts', 'settings-accounts.html'], ['Keyboard', 'settings-keyboard.html'], ['Help & about', '#']];
+  const NAV = [['General', 'settings-appearance.html', 'settings'], ['Mail', '#', 'mail'], ['Calendar', '#', 'calendar'], ['AI', 'settings-ai.html', 'bubble'], ['Notifications', '#', 'bell'], ['Accounts', 'settings-accounts.html', 'user'], ['Keyboard', 'settings-keyboard.html', 'keyboard'], ['Help & about', '#', 'help']];
   function nav(active) {
     const el = document.getElementById('snav');
-    el.innerHTML = `<span class="puck" aria-hidden="true"></span>` + NAV.map(([l, h]) => `<a class="nav-item" href="${h}" ${l === active ? 'aria-current="page"' : ''}>${l}</a>`).join('');
+    el.innerHTML = `<span class="puck" aria-hidden="true"></span>` + NAV.map(([l, h, i]) => `<a class="nav-item" href="${h}" ${l === active ? 'aria-current="page"' : ''}>${ic(i)}<span>${l}</span></a>`).join('');
     el.setAttribute('aria-label', 'Settings sections');
     el.querySelectorAll('a[href="#"]').forEach(a => a.addEventListener('click', e => e.preventDefault()));
     const cur = el.querySelector('[aria-current="page"]'), puck = el.querySelector('.puck');
@@ -14,9 +14,13 @@
     el.addEventListener('pointerdown', e => { const n = e.target.closest('.nav-item'); if (n) puck.style.transform = `translateY(${n.offsetTop}px)`; });
   }
 
+  const page = (title, sub = '') => `<div class="page-head"><div><h1 class="page-title">${title}</h1>${sub ? `<p class="page-sub">${sub}</p>` : ''}</div></div>`;
   const group = (label, body, right = '') => `<div class="section-head"><span class="label">${label}</span>${right}</div>${body}`;
   const row = ({ label, hint = '', control = '', cls = '', tag = '' }) =>
-    `<div class="srow ${cls}"><div><div class="l">${label}${tag ? `<span class="tag">${tag}</span>` : ''}</div>${hint ? `<div class="h">${hint}</div>` : ''}</div><div class="c">${control}</div></div>`;
+    `<div class="srow ${hint ? 'has-h' : ''} ${cls}"><div><div class="l">${label}${tag ? `<span class="tag">${tag}</span>` : ''}</div>${hint ? `<div class="h">${hint}</div>` : ''}</div><div class="c">${control}</div></div>`;
+  /* A folded row: the long text opens beneath it */
+  const disclosure = (id, label, hint, body) =>
+    `<button class="srow has-h is-disclosure" data-disclose="${id}" aria-expanded="false" aria-controls="${id}"><div><div class="l">${label}</div><div class="h">${hint}</div></div><div class="c">${ic('chevd')}</div></button><div class="privacy" id="${id}" hidden>${body}</div>`;
   const sw = (id, on, label) => `<button class="switch" role="switch" aria-checked="${!!on}" aria-label="${esc(label)}" data-switch="${id}"></button>`;
   const seg = (id, opts, sel) => `<div class="seg" data-seg="${id}" role="tablist" aria-label="${esc(id)}">${opts.map(([v, l]) => `<button role="tab" data-v="${v}" aria-selected="${v === sel}">${l}</button>`).join('')}</div>`;
   const select = (id, value, options, label) => `<button class="select" data-select="${id}" data-options='${esc(JSON.stringify(options))}' aria-haspopup="listbox" aria-expanded="false" aria-label="${esc(label || id)}"><span>${value}</span>${ic('chevd')}</button>`;
@@ -50,6 +54,8 @@
   }
 
   document.addEventListener('click', e => {
+    const dz = e.target.closest('[data-disclose]');
+    if (dz) { const open = dz.getAttribute('aria-expanded') !== 'true'; dz.setAttribute('aria-expanded', String(open)); document.getElementById(dz.dataset.disclose).hidden = !open; return; }
     const s = e.target.closest('.switch[role="switch"]');
     if (s) { const on = s.getAttribute('aria-checked') !== 'true'; s.setAttribute('aria-checked', String(on)); document.dispatchEvent(new CustomEvent('settings:switch', { detail: { id: s.dataset.switch, on, el: s } })); return; }
     const b = e.target.closest('.seg[data-seg] button');
@@ -62,5 +68,5 @@
   });
   Mock.onKey(e => { if (e.key === 'Escape' && closeMenu()) return true; });
 
-  window.S = { nav, group, row, sw, seg, select, initSegs, placePuck, esc, closeMenu };
+  window.S = { nav, page, group, row, disclosure, sw, seg, select, initSegs, placePuck, esc, closeMenu };
 })();

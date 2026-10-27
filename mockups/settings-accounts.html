@@ -13,15 +13,11 @@
 <div class="window">
   <span class="traffic"></span>
   <div class="app">
-    <aside class="sidebar" id="sb" data-active="none" data-accounts="all"></aside>
+    <aside class="sidebar" id="sb" data-active="settings" data-accounts="all"></aside>
     <main class="main">
       <header class="toolbar">
-        <h1 class="title">Settings</h1>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace set-ws">
@@ -44,22 +40,22 @@ const ACCTS = [
   { id: 'g', name: 'alex.moreno@gmail.com', prov: 'Google', mark: '--tag-sky', col: 'sky', ai: true, bad: reconnect },
   { id: 'f', name: 'alex@fernworks.studio', prov: 'Fastmail · IMAP', mark: '--tag-hill', col: 'hill', ai: false },
 ];
-const acct = a => `<div class="block">
-  <div class="srow">
+const acctRow = a => `<div class="srow has-h">
     <div><div class="l acct-name"><span class="mk" style="background:var(${a.mark})"></span><b>${a.name}</b><span class="prov">${a.prov}</span></div>
-      <div class="h ${a.bad ? 'bad' : 'ok'}">${a.bad ? ic('alert') + 'Google needs you to sign in again.' : ic('check') + 'Connected · synced 2 min ago'}</div></div>
+      <div class="h ${a.bad ? 'bad' : ''}">${a.bad ? ic('alert') + 'Google needs you to sign in again.' : 'Connected · synced 2 min ago'}</div></div>
     <div class="c">${a.bad ? `<button class="btn btn-filled md">Reconnect</button>` : `<button class="btn btn-text md">Remove</button>`}</div>
-  </div>
-  ${S.row({ label: 'Use this account’s mail for AI', hint: 'Lets Ask, summaries and drafts read this mailbox. Off means nothing from it is sent.', control: S.sw('ai-' + a.id, a.ai, 'Use this account’s mail for AI') })}
-  ${S.row({ label: 'Colour', hint: 'The dot beside this account’s mail and events.', control: swatches(a.id, a.col) })}
-</div>`;
-document.getElementById('content').innerHTML =
-  S.group('Accounts', ACCTS.map(acct).join('') +
-    `<div class="srow"><div class="h">Google, iCloud, Fastmail or any other IMAP mailbox.</div><div class="c"><button class="btn btn-text md">${ic('plus')}Add account</button></div></div>`) +
-  S.group('Demo mail', S.row({ label: 'Demo mail', hint: 'Sample mail and events for trying Aplos. Nothing here is real.', control: `<button class="btn btn-text md" data-demo="load">Load</button><button class="btn btn-text md" data-demo="reset">Reset</button><button class="btn btn-text md" data-demo="remove">Remove</button>` }));
+  </div>`;
+const acctOpts = a => S.group(a.name,
+  S.row({ label: 'Use this mail for AI', hint: 'Off means nothing from it is sent to a provider.', control: S.sw('ai-' + a.id, a.ai, 'Use ' + a.name + ' mail for AI') }) +
+  S.row({ label: 'Colour', control: swatches(a.id, a.col) }));
+document.getElementById('content').innerHTML = S.page('Accounts', 'The mailboxes Aplos reads, and what each is allowed to do.') +
+  S.group('Accounts', ACCTS.map(acctRow).join('') +
+    S.row({ label: 'Add an account', hint: 'Google, iCloud, Fastmail or any IMAP mailbox.', control: `<button class="btn btn-text md">${ic('plus')}Add account</button>` })) +
+  ACCTS.map(acctOpts).join('') +
+  S.group('Demo mail', S.row({ label: 'Demo mail', hint: 'Sample mail and events. Nothing here is real.', control: `<button class="btn btn-text md" data-demo="load">Load</button><button class="btn btn-text md" data-demo="reset">Reset</button><button class="btn btn-text md" data-demo="remove">Remove</button>` }));
 document.addEventListener('click', e => {
   const s = e.target.closest('[data-swatch]');
-  if (s) { const g = s.closest('.swatches'); g.querySelectorAll('.swatch').forEach(x => x.setAttribute('aria-checked', String(x === s))); const [id, k] = s.dataset.swatch.split(':'); const mk = g.closest('.block').querySelector('.acct-name .mk'); mk.style.background = `var(--tag-${k})`; return; }
+  if (s) { const g = s.closest('.swatches'); g.querySelectorAll('.swatch').forEach(x => x.setAttribute('aria-checked', String(x === s))); const [id, k] = s.dataset.swatch.split(':'); document.querySelectorAll('.acct-name .mk')[id === 'g' ? 0 : 1].style.background = `var(--tag-${k})`; return; }
   const d = e.target.closest('[data-demo]');
   if (d) Mock.toast({ icon: 'check', text: { load: 'Demo mail loaded', reset: 'Demo mail reset', remove: 'Demo mail removed' }[d.dataset.demo], actions: d.dataset.demo === 'remove' ? [['Undo', 'Z']] : [] });
   if (e.target.closest('.btn-filled')) Mock.toast({ icon: 'refresh', text: 'Opening Google sign-in' });

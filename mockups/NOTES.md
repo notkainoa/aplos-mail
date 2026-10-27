@@ -1,79 +1,78 @@
-# Skypaper mockups: notes
+# Aplos mockups: notes
 
 ## In plain English
 
-These are pictures of the new Aplos that you can click through. Nothing in them is the real app. They exist so you can judge the planned look before anyone writes code. They follow `plans/DESIGN.md` (Skypaper).
+These are clickable pictures of the new Aplos, made so you can judge the look before any code is written. This is revision 2, made after your review. It is calmer and roomier. The background is gray, the content sits on one white panel, and colour only appears where it means something. The sky and the airmail stripe are gone.
 
-**How to open them.** Double-click `mockups/index.html`. It opens in your browser, with no install and no server. The gallery groups every screen: onboarding, Home and lists, reading and writing, Ask and search, empty and error states, calendar, and settings. The switch in the top right sets light or dark, and every screen remembers it. Click a picture to open that screen at its real window size. The small bar at the bottom right of each screen switches theme and state. It also has a keyboard button that shows every key hint. The serif font loads from Google Fonts, so open the gallery while online the first time.
+Double-click `mockups/index.html`, or open https://aplos-mockups.vercel.app. The switch at the top right of the gallery sets light or dark, and every screen remembers it. Click a picture to open a screen at its real window size. The small bar at the bottom right of each screen switches state and theme.
 
-**What to try.** On Home, press J and K to move, E for Done, L for Later and Z to undo. Watch the letter get carried off and the next one slide into the same spot. ⌘K opens commands, / searches, ? shows every key, A focuses Ask, ⌘J opens and closes the Ask dock, and Esc goes back. Hold ⌘ to see the key hints.
+On Home, try J and K to move, E for Done, L for Later and Z to undo. ⌘K opens commands, / opens Search, ? shows every key and Esc goes back. Hold ⌘ to see small key badges.
 
-**What to judge.**
-1. The serif summaries. Do you like Newsreader as Aplos's voice?
-2. The ink-blue accent: is it calm enough?
-3. The onboarding window with the sky behind it.
-4. The "You handled 12 emails" sky. It is the loudest thing in the app, and I think it needs toning down (finding 1 below).
-
-**The findings below are the useful part.** They cover the places where the design document was unclear or looked wrong once drawn, each with a fix.
+Start with three screens: Home, the reader and Compose. Then open the onboarding window. `DESIGN-CHANGES.md` lists every change to the design document, and it ends with four decisions for you.
 
 ## How this is built
 
-- **Shared files:**
-  - `tokens.css` holds every value in DESIGN §4, and pages use only these variables.
-  - `shell.css` holds the window chrome and the §6 component parts.
-  - `shell.js` handles the theme, states, icons, sidebar, tooltips, the J/K list, toasts, key routing and the drawn sky.
-  - Helper files: `cal.css`/`cal.js`, `settings.css`/`settings.js`, `home-view.js` and `home-backdrop.js`. The last two both draw the Home list behind overlays. They are near-duplicates written in parallel; fold them into one if these mockups live on.
-- **States:** each page lists its states in `<html data-states>` and reads `?state=`. `?theme=dark` and `?shot=1` (no mockup bar) also work.
-- **Screenshots:** `node mockups/shoot.cjs [page.html …]` runs headless Chromium. It shoots every state in both themes into `mockups/_shots/` (gitignored), then audits the page for:
-  - JS errors
+- `tokens.css` holds every value. Pages use only its variables.
+- `shell.css` and `shell.js` hold the gray shell, the white panes, the sidebar, the shared parts, the theme, the J/K lists, toasts and key routing.
+- `home-view.js` draws Home, both on its own and behind overlays.
+- `cal.css`/`cal.js` and `settings.css`/`settings.js` are shared by the calendar and settings pages.
+- `node mockups/shoot.cjs [pages]` takes headless screenshots of every state in both themes, into the gitignored `mockups/_shots/`. It then checks each one for:
+  - JavaScript errors
   - banned words and icons
   - more than one filled button
   - text under 11 px
   - text contrast under 4.5:1
-
-  The final run covers 82 states × 2 themes (164 screenshots) and finds 0 issues. I reviewed every shot myself on light/dark contact sheets.
-- **Sizes:** main window 1440 × 900. Onboarding window 640 × 600.
-- **Data:** all invented: Alex Moreno, the Hollow Creek site, Fernworks Studio, and a separate bakery world for demo mode.
+- `HOVER=1` adds the layout-shift check: it hovers each control and fails if anything else moves.
+- The last full run covered 30 pages, 82 states, 164 screenshots. It found 0 issues, including 0 layout shifts. I reviewed every state myself on light/dark contact sheets.
+- Revision 2 was built in two steps. I rebuilt the tokens, the shell and the sidebar, Home, the reader, the inline reply and Compose. Four Sonnet subagents then brought the other pages up to those anchors, and I reviewed and fixed the result.
 
 ## What each screen exercises
 
-| Screen (file) | States | DESIGN.md decisions and sections |
+| Screen (file) | States | What it shows (DESIGN-CHANGES.md section) |
 |---|---|---|
-| Welcome (`onboarding-welcome.html`) | – | §7.11 window and steps, sky moment 1 (§7.16), `display` serif, demo only as a small top-right text button (owner wish), Return/Esc |
-| Connect account (`onboarding-accounts.html`) | choose, typed, waiting, connected, icloud | §7.11 step 2: discovery moves focus (F12), "Waiting for Google in your browser…", a late connect never pulls you back (F9), iCloud preset copy (plan 30 §4.5 row 7) |
-| AI provider (`onboarding-ai.html`) | groq, byok, local, consent | §7.11 step 3: Groq preselected with its key source shown, key characters never shown; Ollama/LM Studio addresses; the consent card (plan 30 §4.5 row 1) |
-| Permissions (`onboarding-permissions.html`) | default, granted | §7.11 step 4 "Voice", widened to the owner's "permissions explained"; hold A / hold R keycaps |
-| Try the keys (`onboarding-drill.html`) | step1, step3, done | §7.12 "Try the keys while your mail arrives" (the Instrument graft); a quiet sync line stays visible |
-| Getting your mail (`onboarding-sync.html`) | progress, paused, ready, partial, failed | §7.12 + plan 30 U8: checkpoint `ProgressSegments`, "about N" only with an estimate, "n of 50" not the mailbox, Google slow-down copy with resume time, enter early (Esc), auto-enter only on a clean finish, `sunrise`, honest partial wording (F10), failed + Esc continues (F8), one `role=status` (F11) |
-| Home (`home.html`) | default, no-ai | §7.2: the fixed 160 px focus letter, serif `summary`, one filled button with an always-shown Space, sections New / Due now / Waiting on others, low-importance band, ink-ramp fade; §4.9 commit chip + edge + `flight` + `deal` + `hold`/`close`; no-provider shows the subject in SF |
-| All mail (`inbox.html`) | default, bulk | §7.4: one list, accent-wash + 2 px bar selection, hover actions that overlay the date, X / ⇧X bulk with the title replaced in place; decision 7 (arrows only move here) |
-| Later (`later.html`) | later, bookmarks, drag | §7.3: groups, overdue as clock + `--stamp-ink`, Later \| Bookmarks puck, drag with `lift` and labelled targets |
-| Done (`done.html`) | – | Not in DESIGN (finding 6): All mail filtered by an `in:done` operator token |
-| Later picker (`later-picker.html`) | default, calendar | §6 `DatePresets`: 1–5, Pick a date, Return; `reveal` |
-| Demo mode (`demo.html`) | – | plan 30 §4.5 row 8; demo account switcher and status slot |
-| Reader (`reader.html`) | default, pending, no-ai | §7.5 and decision 5: sender line → big serif summary → quiet subject → thread (28 px one-liners, 3 px rail) → body at 68ch; the flap; the margin rail (decision 12) with Why + ⌥↓/⌥↑; provenance on hover (§9.5) |
-| Inline reply (`reply.html`) | reply, reply-all, dictating, sent | §7.6: reply inside the paper with the post edge, `LevelMeter`, `UndoTray` with a draining post edge, one notice per send |
-| Compose (`compose.html`) | new, ai-draft, polish | §7.6: 680 px non-modal sheet, post edge, DraftState, AI draft as plain editable text (Tab/Esc), Polish as a diff that never overwrites (§9.6) |
-| Ask dock (`ask.html`) | answer, empty, working, no-provider, today | §7.7 and decision 9: question line with a rule, serif `answer`, mono citations, folded step log, proposal card with two key rows, queued follow-up, calm no-provider line, the Today agenda |
-| Palette (`palette.html`) | commands, filtered, confirm | §7.9 and decision 10: context line, groups, keycaps, scoring, destructive two-row confirm |
-| Search (`search.html`) | results, no-match | §7.9: operator tokens, remote search only on Return, results as ordinary rows |
-| Shortcuts (`shortcuts.html`) | default, filtered | §8, generated from one registry array; level-3 dialog |
-| Empty (`empty.html`) | inbox-zero, first-mail, no-accounts, drafts, trash, spam | §7.14, sky moment 3, plan 30 §4.5 rows 8 and 10 ("Your first mail is on its way", never the all-clear sky while syncing) |
-| Errors (`errors.html`) | reconnect, quota, offline, row-error, send-failed | §7.15 and §7.1 status slot: never a banner that pushes the list |
-| Fatal (`fatal.html`) | – | §7.15 `FatalScreen` |
-| Toasts (`toasts.html`) | stack, pending, remind, offline | §7.13: stack of three, op-queue wording, next-step toasts (decision 6) |
-| Calendar week / day / event (`calendar-*.html`) | default, overlap / default, empty / detail, rsvp | §7.8: real-date title, D/W/M puck, today tint, now-line with cap, event rule + fill, "From mail" dashed plan, 44 px lanes with "+N" stack, comma in day titles; §4.2 colours |
-| Settings General (`settings-appearance.html`) | – | §7.10 layout (200 + 640, 40 px rows); "Light, dark, or match the system." (§10) |
-| Settings Accounts (`settings-accounts.html`) | default, reconnect | §7.10: connection state and Reconnect on the row; per-account AI switch and demo controls (plan 30 §4.5 rows 2 and 8) |
-| Settings AI (`settings-ai.html`) | default, testing | §7.10: nine providers with key source (never characters), Test, local addresses; the feature table for Ask, Summaries, Drafts, Plans and Voice (Voice limited to Groq/OpenAI); the one privacy explanation |
-| Settings Keyboard (`settings-keyboard.html`) | default, recording | §7.10 / §8: registry-generated list, remapping, conflict marks, single-key switch, "Show all key hints" |
+| Welcome (`onboarding-welcome.html`) | – | Full-bleed paper window, the app icon as the only sky, sans display line, demo as a small top-right button (5.12) |
+| Connect an account (`onboarding-accounts.html`) | choose, typed, waiting, connected, icloud | Quiet provider rows with Microsoft shown, discovery, browser wait, iCloud app password (5.12) |
+| AI provider (`onboarding-ai.html`) | groq, byok, local, consent | Groq by default, own key, a model on this Mac behind "More options", the consent card as the only card (5.12) |
+| Permissions (`onboarding-permissions.html`) | default, granted | Microphone, notifications and log-in as quiet rows (5.12) |
+| Try the keys (`onboarding-drill.html`) | step1, step3, done | The drill as a mode of the sync screen, with progress still visible (5.13) |
+| Getting your mail (`onboarding-sync.html`) | progress, paused, ready, partial, failed | Neutral progress, honest Google slow-down, "Esc opens Aplos", calm ready check (5.13) |
+| Home (`home.html`) | default, no-ai | Page title, 180 px focus card, one ⋯, read/unread weight instead of the fade (5.3, 3.3) |
+| All mail (`inbox.html`) | default, bulk | Neutral cursor, no account dots, bulk bar in the pane header (5.4) |
+| Later (`later.html`) | later, bookmarks, drag | Puck in the page head, drop targets named by time (9 #11) |
+| Done (`done.html`) | – | The new Done place, H to move one back (5.11) |
+| Later picker (`later-picker.html`) | default, calendar | Presets 1–5 always visible, date picker |
+| Demo (`demo.html`) | – | Home with the demo account switcher |
+| Reader (`reader.html`) | default, earlier, pending, no-ai | Sender line, big serif summary, one action row, the message, reply field. No rail (5.5) |
+| Inline reply (`reply.html`) | reply, reply-all, dictating, sent | One reply card, the level meter, the neutral undo-send line (5.6, 5.7) |
+| Compose (`compose.html`) | new, ai-draft, polish | A page, not a sheet: To, a title-sized subject, the text, Send (5.8) |
+| Ask (`ask.html`) | answer, empty, working, no-provider, today | The dock as a second pane, serif answers, one proposal card (5.9) |
+| Palette (`palette.html`) | commands, filtered, confirm | Opaque ⌘K, Suggested and Go to first, Cancel as the default (5.10) |
+| Search (`search.html`) | results, no-match | Search as a page with a heading-size field (5.10) |
+| Shortcuts (`shortcuts.html`) | default, filtered | A calm three-column key list (6.2) |
+| Empty states (`empty.html`) | inbox-zero, first-mail, no-accounts, drafts, trash, spam | Inbox zero with no sky, counts hidden during first sync (5.14) |
+| Errors (`errors.html`) | reconnect, quota, offline, row-error, send-failed | The status slot, an inline row error, send failure in the new reader |
+| Fatal (`fatal.html`) | – | Sans display error (3.2) |
+| Toasts (`toasts.html`) | stack, pending, remind, offline | Opaque toasts |
+| Calendar week, day, event (`calendar-*.html`) | default, overlap / default, empty / detail, rsvp | Big month title, mini month and calendar list in the sidebar, the "+N" stack, RSVP with nothing chosen (5.15) |
+| Settings General, Accounts, AI, Keyboard (`settings-*.html`) | – / default, reconnect / default, testing / default, recording | Section titles, 48 px rows with descriptions, AI features first (5.16) |
 
-Across all pages:
-- **Banned items:** none of the §13 Avec-derived elements appear, and no sparkle, wand, star or brain glyph does either. The audit checks the banned words and icons on every state.
-- **Buttons:** one filled button per screen at most.
-- **Key hints:** keycaps stay hidden until hover, except the primary action's key.
+## Revision 2 findings: what looked wrong once drawn, with fixes
 
-## Where DESIGN.md was ambiguous or looked wrong, with recommended changes
+1. **Fields are below 3:1 at rest.** Calm fields use a `--line-strong` ring (ink 14 %), which is about 1.4:1 against white. WCAG 1.4.11 asks for 3:1 on boundaries you need to see a control. The fields stay identifiable through their label, placeholder and hover step, and checkboxes, radios and switches keep 3:1. **Recommend:** accept this at rest, and switch fields to `--control-edge` under Increase Contrast, which tokens.css already does.
+2. **Tooltip-only key hints are less discoverable.** Hiding hints until a 0.5 s tooltip costs some discovery. Holding ⌘ to show badges and the "Show all key hints" setting make up for it. **Recommend:** show a one-time "Hold ⌘ to see keys" toast on first launch.
+3. **Inline reply scrolls the summary away.** Writing a reply scrolls the summary out of view. The pane header still says "Home 1 of 9". **Recommend:** once the summary is out of view, show the subject in the header crumb.
+4. **The shortcut sheet can't fit 75 shortcuts at 28 px.** It scrolls about 90 px. Either accept that or add a fourth column.
+5. **Onboarding headings jumped between states.** Vertically centring each step made headings jump when the content height changed. Steps are top-anchored now, and only Welcome is centred. Amend §7.11's `safe center` rule to say so.
+6. **Dark calendar event times failed contrast.** `--dim` on the dark event tint was 4.4:1, so event times use `--ink-2` in dark. Mini-month days outside the month use `--dim`, because `--faint` failed.
+7. **The calendar now-line crosses event text.** At 10:00 it runs over the Northwind Dental time. Notion does the same thing, and hiding the line behind events made it nearly invisible. Kept as drawn.
+8. **"Reconnect" appears twice.** In the reconnect state it shows in both the status slot and the account menu. Each is a real place you'd look, so I kept both.
+9. **The palette centres on the window, not the pane.** Notion does the same. On a 1440 px window the visual centre sits 116 px left of the pane's centre. Either is fine. Centring on the pane would feel slightly more anchored.
+10. **The search field has no focus ring.** The Search page's heading-size field shows only a caret, because a ring around 24 px text looked heavy. **Recommend:** a 2 px accent underline under the field while focused, to keep a visible focus indicator.
+11. **Done's hover action had to move.** The Done list keeps the "Done 9:41 AM" stamp in a fixed column and puts the hover action to its left, so the stamp is never covered. Add a stamp-column option to `ListRow`.
+12. **Revision 1 finding 13 is still open.** Section headers on Home still vanish the moment their last row leaves. They should stay, showing 0, until `hold` releases.
+13. **Notion Mail no longer exists.** Notion Mail shut down on September 22, 2026, so its principles came from Notion, Notion Calendar's desktop shot and Redakt. Nothing was copied.
+
+### Revision 1 findings (kept for the record; DESIGN-CHANGES.md section 9 says what happened to each)
 
 Ranked by how much they matter.
 
@@ -146,28 +145,21 @@ Ranked by how much they matter.
 
 ## Values I had to invent
 
-All of these are marked `INVENTED` in the source.
+DESIGN.md never gave these values. Revision 2 changed many of them on purpose, and DESIGN-CHANGES.md sections 2–4 give the old and new values.
 
 | Value | Where | Why |
 |---|---|---|
-| `--puck` ink 8 % (dark 9 %) | tokens.css | Sidebar selection colour; DESIGN names the puck, not its fill |
-| Sky gradient direction: deep `#2a9afd` on top, `#67ccff` at the horizon | tokens.css | DESIGN gives the two colours, not the direction |
-| `--skyscene-hill-far` (hill + 30 % white) and dark scene hills (hill mixed into the night sky) | tokens.css | A second hill for depth; the dark `--hill` read as a lit lawn |
-| App icon colours (`--icon-*`) | tokens.css | Drawn in SVG for the mockups; a stand-in for the real icon asset |
-| `--breathe-lo/hi/static` .75 / 1 / .85 on `--ink-2` | tokens.css | Replaces DESIGN's .55↔.85, which fails contrast (finding 2) |
-| Sender columns 152 px (lists) and 140 px (Home); collapsed-message sender 136 px | tokens.css | Not given |
-| Menu min-width 220, palette max-height 420, chip icon 14, small icon 12 | tokens.css | Not given |
-| Status track 2 px (from §4.8 `status`), ProgressSegments bar 4 px | tokens.css | The segment bar height is not given |
-| Switch 32 × 20 with a 16 px thumb, radio dot 5 px, app icon 72 px | tokens.css | Not given |
-| Sidebar top 52 px; traffic lights at 20 / 18 px, 12 px | tokens.css | macOS hidden-inset geometry |
-| Window corner 12 px, OS desktop backdrop, traffic-light colours | tokens.css | OS chrome, not app tokens |
-| Dark `--elev-float` / `--elev-dialog` split as 30 % + 45 % and 40 % + 55 % | tokens.css | DESIGN says "shadows at 45 % / 55 %" without saying which layer |
-| Dark `--press-lo` black 20 % | tokens.css | DESIGN gives the light press shade only |
-| Motion distances (`--move-*`, `--flight-*`, `--post-*`) | tokens.css | Transcribed from the §4.8 table into tokens |
-| `--hour` 60 px of grid per hour; grid shows 8 AM–8 PM | cal.css | Not given |
-| `--today-tint` = `--sky` 8 % light / `--horizon` dark | cal.css | From §7.8, made a token |
-| Provider status column 192, action column 128, address field 256 | settings.css | Not given |
-| `--sheet-w` / `--sheet-h` for the ? sheet (three columns, fixed height) | shortcuts.html | DESIGN says "fixed height", no size |
-| `--dawn` glow for the sync-complete sunrise | onboarding-sync.html | DESIGN says "the sky brightens once" |
-| RSVP keys Y / M / N; "Move to Home" key H | calendar-event.html, done.html | Not in §8 |
-| Date groups in All mail (Today, Yesterday, Earlier this week, Earlier in October) | inbox.html | DESIGN doesn't say whether lists are grouped by date |
+| The neutral palette (`--shell`, `--canvas`, `--paper`, `--raised`, `--sunken`, ink ramp, dark equivalents) | tokens.css | The new direction; each text pair was checked numerically and headless |
+| `--line` 9 %, `--line-strong` 14 %, `--hover` 4 %, `--press` 8 %, `--puck` 6 % (and dark steps) | tokens.css | Calmer hairlines and fills |
+| Type scale line-heights and the 24 px heading, 30 px display, 21/31 summary | tokens.css | Room and hierarchy |
+| `--shell-pad` 8, `--list-w` 720, `--reader-w` 640, `--sidebar-w` 232, `--gutter` 40, `--group-gap` 32, `--focus-letter` 180 | tokens.css | Layout |
+| `--elev-pane`, `--elev-card`, opaque `--elev-float` | tokens.css | Light without glass |
+| `--today-tint`, `--event-fill` 12 % / 20 % | tokens.css | Calendar |
+| `--sender-w` 152, `--sender-w-home` 148, `--menu-min` 220, `--palette-max` 420, `--seg-h` 3, `--app-icon` 64, switch 30 × 18 | tokens.css | Sizes DESIGN doesn't give |
+| `--hour` 56 px (8 AM–8 PM fits) | cal.css | Grid density |
+| `--ctl-w` 208, `--prov-status-w` 128, `--prov-act-w` 128, `--addr-w` 256 | settings.css | Settings columns |
+| `--sheet-w`, `--sheet-h`, `--keys-w` (from tokens) | shortcuts.html | Shortcut sheet size |
+| `--check-size` 40 | onboarding-sync.html | The ready check |
+| `--stamp-w` (from tokens) | done.html | The Done stamp column |
+| RSVP keys Y/M/N, "Move to Home" key H | calendar-event.html, done.html | Not in DESIGN §8 |
+| App icon colours (`--icon-*`) | tokens.css | Stand-in drawing of the current icon (an open decision) |

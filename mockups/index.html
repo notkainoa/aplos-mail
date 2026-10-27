@@ -12,8 +12,8 @@
   })();
 </script>
 <style>
-  body { display: block; place-items: normal; background: linear-gradient(var(--horizon), var(--canvas) var(--horizon-depth)) var(--canvas) no-repeat; min-height: 100vh; }
-  .wrap { max-width: calc(var(--list-w) + var(--paper-w)); margin: 0 auto; padding: var(--space-9) var(--gutter) var(--space-10); }
+  body { display: block; place-items: normal; background: var(--shell); min-height: 100vh; }
+  .wrap { max-width: calc(var(--list-w) * 2 + var(--space-10)); margin: 0 auto; padding: var(--space-9) var(--gutter) var(--space-10); }
   header.top { display: flex; align-items: flex-start; gap: var(--space-6); }
   header.top [data-app-icon] svg { width: var(--space-10); height: var(--space-10); }
   header.top .lede { color: var(--ink-2); font: var(--type-base); max-width: 68ch; margin-top: var(--space-2); }
@@ -24,8 +24,8 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--space-10) * 4.5), 1fr)); gap: var(--space-4); }
   .card { padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
   .thumb { display: block; position: relative; overflow: hidden; border-radius: var(--radius-md); box-shadow: var(--ring); background: var(--canvas); aspect-ratio: 1440 / 900; }
+  .card { background: var(--canvas); border-radius: var(--radius-lg); box-shadow: var(--elev-pane); }
   .thumb iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
-  .thumb.onb { background: var(--skyscene-bottom); }
   .thumb:hover { box-shadow: 0 0 0 var(--select-bar) var(--accent); }
   .card h3 { font: var(--type-base); font-weight: 600; letter-spacing: var(--track-base); display: flex; align-items: baseline; gap: var(--space-2); }
   .card h3 a:hover { text-decoration: underline; text-decoration-color: var(--line); }
@@ -44,7 +44,8 @@
     <div data-app-icon></div>
     <div>
       <h1 class="t-display">Aplos, after the revamp</h1>
-      <p class="lede">Static mockups of every planned screen in the Skypaper design. Click a picture to open the screen at real window size. Each screen has its own states, listed under it. Light and dark use the switch on the right, and every screen remembers it.</p>
+      <p class="lede">Revision 2: calmer, neutral, more room. What changed is in DESIGN-CHANGES.md.</p>
+      <p class="lede">Static mockups of every planned screen of the revamped Aplos. Click a picture to open the screen at real window size. Each screen has its own states, listed under it. Light and dark use the switch on the right, and every screen remembers it.</p>
       <p class="lede">Inside a screen: J and K move, E is Done, L is Later, Z undoes, Return opens, Space runs the suggested action, ⌘K opens commands, / searches, ? shows every key, and Esc goes back. Hold ⌘ to see key hints. The small bar at the bottom right of each screen switches theme and state.</p>
     </div>
     <div class="theme seg" role="tablist" aria-label="Theme">
@@ -59,34 +60,34 @@
 <script>
 const AREAS = [
   ['Onboarding window', '640 × 600, its own window', [
-    ['onboarding-welcome.html', 'Welcome', '§7.11', 'Full-bleed sky, one sheet, demo only from the small top-right button.', []],
+    ['onboarding-welcome.html', 'Welcome', '§7.11', 'A small full-bleed window. The app icon is the only sky left. Demo is the small top-right button.', []],
     ['onboarding-accounts.html', 'Connect an account', '§7.11', 'Google, Microsoft, iCloud or other mail; discovery and the browser wait.', ['choose', 'typed', 'waiting', 'connected', 'icloud']],
     ['onboarding-ai.html', 'AI provider', '§7.11, plan 30 §4.5', 'Groq by default, your own key, or a model on this Mac; the consent card.', ['groq', 'byok', 'local', 'consent']],
     ['onboarding-permissions.html', 'Permissions explained', '§7.11 step 4', 'Microphone, notifications and log-in, each optional and plainly explained.', ['default', 'granted']],
-    ['onboarding-drill.html', 'Try the keys', '§7.12', 'A 30-second, skippable key drill while the first mail arrives.', ['step1', 'step3', 'done']],
+    ['onboarding-drill.html', 'Try the keys', '§7.12', 'A short, skippable key drill inside the sync screen, so progress stays in view.', ['step1', 'step3', 'done']],
     ['onboarding-sync.html', 'Getting your mail', '§7.12, plan 30 U8', 'Honest first sync: progressing, paused by Google, ready, partial, failed.', ['progress', 'paused', 'ready', 'partial', 'failed']],
   ]],
   ['Home and lists', 'the main window, 1440 × 900', [
     ['home.html', 'Home', '§7.2', 'The fixed-height focus letter, sections, the low-importance band. Try E, L, J, K, Z.', ['default', 'no-ai']],
     ['inbox.html', 'All mail', '§7.4', 'One list, hover actions, X to select several. Return opens the reader.', ['default', 'bulk']],
     ['later.html', 'Later', '§7.3', 'Grouped by date, Bookmarks as a filter, drag to reschedule.', ['later', 'bookmarks', 'drag']],
-    ['done.html', 'Done', 'gap in §7.4', 'DESIGN has no Done view; this is All mail filtered with in:done.', []],
+    ['done.html', 'Done', 'new', 'Mail you finished, with H to move one back to Home.', []],
     ['later-picker.html', 'Later picker', '§6 DatePresets', 'Snooze presets on 1–5 and a date picker.', ['default', 'calendar']],
     ['demo.html', 'Demo mode', 'plan 30 §4.5 row 8', 'The main window right after "Try demo mail".', []],
   ]],
   ['Reading and writing', '', [
-    ['reader.html', 'Reader', '§7.5', 'Sender first, the big serif summary, the thread, the flap and the margin rail.', ['default', 'pending', 'no-ai']],
-    ['reply.html', 'Inline reply', '§7.6', 'Reply inside the letter, dictation, and the undo-send tray.', ['reply', 'reply-all', 'dictating', 'sent']],
-    ['compose.html', 'Compose', '§7.6', 'A new message sheet, an AI draft at the caret, Polish as a diff.', ['new', 'ai-draft', 'polish']],
+    ['reader.html', 'Reader', '§7.5', 'Sender first, the big summary, one row of actions, then the message. Nothing else.', ['default', 'earlier', 'pending', 'no-ai']],
+    ['reply.html', 'Inline reply', '§7.6', 'A plain reply box under the message, dictation, and a quiet undo-send line.', ['reply', 'reply-all', 'dictating', 'sent']],
+    ['compose.html', 'Compose', '§7.6', 'A calm page: To, a title-sized subject, the text, Send. An AI draft and Polish.', ['new', 'ai-draft', 'polish']],
   ]],
   ['Ask, commands and search', '', [
-    ['ask.html', 'Ask dock', '§7.7', 'The docked Ask panel: answers in the serif voice, citations, proposals, Today.', ['answer', 'empty', 'working', 'no-provider', 'today']],
+    ['ask.html', 'Ask dock', '§7.7', 'Ask docked as a second pane: answers in the serif voice, citations, a proposal, Today.', ['answer', 'empty', 'working', 'no-provider', 'today']],
     ['palette.html', 'Command palette', '§7.9', '⌘K with a context line, groups and keycaps.', ['commands', 'filtered', 'confirm']],
-    ['search.html', 'Search', '§7.9', '/ search with operator tokens; results are ordinary rows.', ['results', 'no-match']],
+    ['search.html', 'Search', '§7.9', 'Search is a page: a big field, operator tokens, ordinary rows.', ['results', 'no-match']],
     ['shortcuts.html', 'Keyboard shortcuts', '§8', 'The ? sheet, generated from one list of commands.', ['default', 'filtered']],
   ]],
   ['Empty, error and notice states', '', [
-    ['empty.html', 'Empty states', '§7.14, §7.16', 'Inbox zero as a sky moment, first mail on its way, no accounts, empty mailboxes.', ['inbox-zero', 'first-mail', 'no-accounts', 'drafts', 'trash', 'spam']],
+    ['empty.html', 'Empty states', '§7.14', 'Inbox zero, first mail on its way, no accounts, empty mailboxes.', ['inbox-zero', 'first-mail', 'no-accounts', 'drafts', 'trash', 'spam']],
     ['errors.html', 'Errors', '§7.15', 'Reconnect, Gmail quota paused, offline, a rejected move, a failed send.', ['reconnect', 'quota', 'offline', 'row-error', 'send-failed']],
     ['fatal.html', 'Engine unreachable', '§7.15', 'The one full-window error.', []],
     ['toasts.html', 'Toasts with undo', '§7.13', 'Stacked notices, pending, next-step and offline wording.', ['stack', 'pending', 'remind', 'offline']],

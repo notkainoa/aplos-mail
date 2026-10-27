@@ -7,23 +7,20 @@
 <link rel="stylesheet" href="shell.css">
 <script src="shell.js"></script>
 <style>
-  .onb .sheet-body { padding-top: var(--space-6); }
+  .onb .onb-body { justify-content: flex-start; padding-top: var(--space-7); }
   .step { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
-  .step .sub { font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink-2); margin-top: var(--space-2); max-width: 54ch; }
-  .perms { width: 100%; margin-top: var(--space-4); border-radius: var(--radius-md); box-shadow: inset 0 0 0 var(--hairline) var(--line); }
-  .perm { display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4); }
-  .perm + .perm { box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line); }
-  .perm > .ic { margin-top: var(--space-half); color: var(--dim); }
+  .perms { width: 100%; margin-top: var(--space-6); }
+  .perm { position: relative; display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) 0; }
+  .perm + .perm::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: var(--hairline); background: var(--line); }
+  .perm > .ic { color: var(--dim); }
   .perm .txt { flex: 1; min-width: 0; }
   .perm .t { font: var(--type-base); font-weight: 500; letter-spacing: var(--track-base); color: var(--ink); }
-  .perm .d { font: var(--type-ui); letter-spacing: var(--track-ui); color: var(--dim); margin-top: var(--space-half); }
-  .perm .d .kbd { vertical-align: baseline; margin: 0 var(--space-half); }
-  .perm .act { flex: none; display: flex; align-items: center; min-width: var(--sender-w); justify-content: flex-end; height: var(--control-sm); }
+  .perm .d { font: var(--type-small); color: var(--dim); margin-top: var(--space-half); }
+  .perm .act { flex: none; display: flex; align-items: center; justify-content: flex-end; height: var(--control-sm); }
   .perm .act .btn { margin-right: calc(-1 * var(--space-3)); }
-  .allowed { display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-ui); font-weight: 500; color: var(--hill); }
-  .allowed .ic { width: var(--icon-sm); height: var(--icon-sm); }
-  .go-row { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-5); }
-  .go-row .hint-line { font: var(--type-small); color: var(--dim); }
+  .allowed { display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-ui); color: var(--dim); }
+  .allowed .ic { width: var(--icon-sm); height: var(--icon-sm); color: var(--hill); }
+  .go-row { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-7); }
   .ask-btn, .done-w { display: none; }
   html[data-state="default"] .ask-btn { display: inline-flex; }
   html[data-state="granted"] .done-w { display: inline-flex; }
@@ -32,41 +29,39 @@
 <body>
 <div class="window">
   <div class="onb">
-    <div class="skyscene" aria-hidden="true"></div>
-    <span class="traffic"></span>
     <div class="drag">
-      <a class="btn btn-text xs demo-btn" href="demo.html" data-tip="Load sample mail to look around. Remove it any time in Settings.">Try demo mail</a>
+      <span class="traffic"></span>
+      <a class="btn btn-text xs" href="demo.html" data-tip="Load sample mail to look around. Remove it any time in Settings.">Try demo mail</a>
     </div>
-    <section class="sheet dialog" aria-labelledby="h">
-      <div class="sheet-body">
+    <main class="onb-body" aria-labelledby="h">
         <div class="step">
           <h1 class="t-heading" id="h">Voice and permissions</h1>
-          <p class="sub">Each of these is optional. Aplos works without them, and you can change any of them later in Settings.</p>
+          <p class="lede">Each of these is optional. Aplos works without them, and you can change any of them later in Settings.</p>
           <div class="perms">
             <div class="perm">
-              <svg class="ic lg"><use href="#i-mic"/></svg>
+              <svg class="ic"><use href="#i-mic"/></svg>
               <div class="txt">
                 <div class="t">Microphone</div>
-                <div class="d">Hold <span class="kbd">A</span> to dictate to Ask, or hold <span class="kbd">R</span> to dictate a reply. Speech goes to Groq or OpenAI to become text.</div>
+                <div class="d">Hold A to dictate to Ask, or R to dictate a reply. Speech goes to Groq or OpenAI to become text.</div>
               </div>
               <div class="act">
-                <button class="btn btn-text ask-btn" data-ask="mic">Allow microphone…</button>
+                <button class="btn btn-text ask-btn" data-ask="mic">Allow…</button>
                 <span class="allowed done-w"><svg class="ic"><use href="#i-check"/></svg>Allowed</span>
               </div>
             </div>
             <div class="perm">
-              <svg class="ic lg"><use href="#i-bell"/></svg>
+              <svg class="ic"><use href="#i-bell"/></svg>
               <div class="txt">
                 <div class="t">Notifications</div>
                 <div class="d">Only for mail that reaches Home. Newsletters and receipts stay quiet.</div>
               </div>
               <div class="act">
-                <button class="btn btn-text ask-btn" data-ask="bell">Allow notifications…</button>
+                <button class="btn btn-text ask-btn" data-ask="bell">Allow…</button>
                 <span class="allowed done-w"><svg class="ic"><use href="#i-check"/></svg>Allowed</span>
               </div>
             </div>
             <div class="perm">
-              <svg class="ic lg"><use href="#i-laptop"/></svg>
+              <svg class="ic"><use href="#i-laptop"/></svg>
               <div class="txt">
                 <div class="t" id="login-l">Open Aplos when you log in</div>
                 <div class="d">Your mail is ready when you sit down.</div>
@@ -78,13 +73,12 @@
             <button class="btn btn-filled lg" id="primary">Finish setup<span class="kbd">Return</span></button>
           </div>
         </div>
-      </div>
-      <footer class="sheet-foot">
-        <div class="steps" aria-label="Step 4 of 4"><i class="done"></i><i class="done"></i><i class="done"></i><i class="on"></i></div>
-        <span class="note">Setup continues in the background.</span>
-        <div class="btns"><button class="btn btn-text" id="back">Back<span class="kbd hint">Esc</span></button></div>
-      </footer>
-    </section>
+    </main>
+    <footer class="onb-foot">
+      <div class="steps" aria-label="Step 4 of 4"><i class="done"></i><i class="done"></i><i class="done"></i><i class="on"></i></div>
+      <span class="note">Setup continues in the background.</span>
+      <div class="btns"><button class="btn btn-text" id="back">Back<span class="kbd hint">Esc</span></button></div>
+    </footer>
   </div>
 </div>
 <script>

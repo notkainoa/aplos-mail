@@ -69,11 +69,19 @@
   const longDay = d => `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
   const dayTitle = d => `${longDay(d)}, ${d.getFullYear()}`;
   const weekStart = d => add(d, -d.getDay());
+  const short = d => MONTHS[d.getMonth()].slice(0, 3);
+  /* The big title is always the month; a week that crosses two months names both. The subtitle holds the range. */
   const weekTitle = s => {
     const e = add(s, 6);
-    return s.getMonth() === e.getMonth() ? `${MONTHS[s.getMonth()]} ${s.getDate()} – ${e.getDate()}, ${e.getFullYear()}`
-      : `${MONTHS[s.getMonth()]} ${s.getDate()} – ${MONTHS[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
+    if (s.getMonth() === e.getMonth()) return `${MONTHS[s.getMonth()]} ${s.getFullYear()}`;
+    return s.getFullYear() === e.getFullYear() ? `${short(s)} – ${short(e)} ${e.getFullYear()}` : `${short(s)} ${s.getFullYear()} – ${short(e)} ${e.getFullYear()}`;
   };
+  const weekSub = s => {
+    const e = add(s, 6);
+    return s.getMonth() === e.getMonth() ? `${MONTHS[s.getMonth()]} ${s.getDate()} – ${e.getDate()}` : `${short(s)} ${s.getDate()} – ${short(e)} ${e.getDate()}`;
+  };
+  const monthTitle = d => `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  const monthSub = (y, m) => { let n = 0; for (let i = 1; i <= 31; i++) { const d = D(y, m, i); if (d.getMonth() === m - 1) n += eventsOn(d).length; } return `${n} events`; };
 
   function eventsOn(d, opts = {}) {
     const k = iso(d);
@@ -118,19 +126,21 @@
   const labelTime = ev => `${range(ev.s, ev.e)}`;
   function evHTML(it, { wide, selected }) {
     const e = it.ev, cal = CALS[e.cal];
-    const short = e.d < 0.75;
-    const cls = ['ev', short ? 'short' : '', e.plan ? 'is-plan' : '', it.beside ? 'beside' : '', selected === e.id ? 'is-selected' : ''].join(' ');
+    const tiny = e.d < 0.5, compact = e.d < 1;   // under 30 min: one line, title only; under an hour: one line
+    const cls = ['ev', !e.plan && compact ? 'one' : '', e.plan ? 'is-plan' : '', it.beside ? 'beside' : '', selected === e.id ? 'is-selected' : ''].filter(Boolean).join(' ');
     const style = `--cal:var(${cal.c});--s:${e.at - H0};--d:${e.d};--lane:${it.lane};--lanes:${it.lanes}`;
     const lab = `${e.t}, ${labelTime(e)}, ${e.plan ? 'found in mail, not added yet' : cal.name}`;
+    const place = INFO[e.base || e.id]?.place;
     let inner;
-    if (e.plan) inner = `<span class="t">${e.t}</span><span class="from">${ic('mail')}From mail</span>`;
-    else if (short) inner = `<span class="t">${e.t}</span>${wide ? `<span class="w">${range(e.s, e.e)}</span>` : ''}`;
-    else inner = `<span class="t">${e.t}</span><span class="w">${wide && INFO[e.base || e.id]?.place ? range(e.s, e.e) + ' · ' + INFO[e.base || e.id].place : range(e.s, e.e)}</span>`;
+    if (e.plan) inner = `<span class="t">${e.t}</span><span class="from">${ic('mail', 'sm')}From mail</span>`;
+    else if (tiny) inner = `<span class="t">${e.t}</span>`;
+    else if (compact) inner = `<span class="t">${e.t}</span>${wide ? `<span class="w">${range(e.s, e.e)}</span>` : ''}`;
+    else inner = `<span class="t">${e.t}</span><span class="w">${wide && place ? range(e.s, e.e) + ' · ' + place : range(e.s, e.e)}</span>`;
     return `<button class="${cls}" style="${style}" data-id="${e.id}" aria-label="${lab}" ${selected === e.id ? 'aria-pressed="true"' : ''}>${inner}</button>`;
   }
   function stackHTML(st, i, date) {
     const cal = CALS[st.evs[0].cal];
-    return `<button class="ev-stack" style="--cal:var(${cal.c});--s:${st.at - H0};--d:${st.d}" data-stack="${date}:${i}" aria-expanded="false" aria-label="${st.evs.length} more events at ${timeFull(st.evs[0].s)}">+${st.evs.length}<i></i></button>`;
+    return `<button class="ev-stack" style="--cal:var(${cal.c});--s:${st.at - H0};--d:${st.d}" data-stack="${date}:${i}" aria-expanded="false" aria-label="${st.evs.length} more events at ${timeFull(st.evs[0].s)}">+${st.evs.length}</button>`;
   }
 
   function hoursHTML() {
@@ -163,7 +173,8 @@
   function day(mount, o = {}) {
     mount.className = 'cal';
     mount.style.setProperty('--ncols', 1);
-    mount.innerHTML = `<div class="cal-scroll"><div class="cal-body" style="--nhours:${H1 - H0}">${hoursHTML()}${colHTML(o.date, { maxLanes: 6, wide: true, selected: o.selected, overlap: o.overlap })}</div></div>`;
+    mount.innerHTML = `<div class="cal-head"><div></div>${headHTML(o.date)}</div>
+      <div class="cal-scroll"><div class="cal-body" style="--nhours:${H1 - H0}">${hoursHTML()}${colHTML(o.date, { maxLanes: 6, wide: true, selected: o.selected, overlap: o.overlap })}</div></div>`;
     return mount;
   }
   /* Month grid. */
@@ -174,7 +185,7 @@
     for (let i = 0; i < 42; i++) {
       const d = add(s, i), out = d.getMonth() !== o.month - 1;
       const evs = eventsOn(d).sort((a, b) => a.at - b.at);
-      const shown = evs.slice(0, 3), more = evs.length - shown.length;
+      const shown = evs.length <= 3 ? evs : evs.slice(0, 2), more = evs.length - shown.length;   // never a lonely "1 more"
       html += `<div class="mcell ${out ? 'out' : ''} ${sameDay(d, TODAY) ? 'today' : ''}"><span class="n">${d.getDate()}</span>${shown.map(e => `<div class="mev" style="--cal:var(${CALS[e.cal].c})"><i></i><span>${e.t}</span></div>`).join('')}${more > 0 ? `<div class="mev more">${more} more</div>` : ''}</div>`;
     }
     mount.className = 'cal';
@@ -185,26 +196,27 @@
   /* Detail body shared by the day rail and the popover.
      o: { close, rsvp, invite, own } */
   const GUEST = { going: ['check', 'Going'], maybe: ['help', 'Maybe'], declined: ['x', 'Declined'], none: ['circle', 'No reply yet'] };
+  /* Edit, delete and the like live behind the ⋯ button; the tooltip names what is inside. */
   function detail(ev, o = {}) {
     const info = INFO[ev.base || ev.id] || {};
     const cal = CALS[ev.cal];
     const d = new Date(ev.date.replace(/-/g, '/'));
-    const guests = info.guests ? `<h3 class="d-label">Guests</h3><ul class="guests">${info.guests.map(([n, st, role]) => `<li><span>${n}${role ? ` <span class="role">${role}</span>` : ''}</span><span class="st ${st === 'none' ? 'is-open' : ''}">${ic(GUEST[st][0])}${GUEST[st][1]}</span></li>`).join('')}</ul>` : '';
-    const foot = [];
-    if (info.invite) foot.push(`<button class="btn btn-text md" data-open-invite>${ic('external')}Open the invite email<span class="kbd hint">O</span></button>`);
-    if (ev.own && !ev.plan) foot.push(`<button class="btn btn-text md">Edit<span class="kbd hint">E</span></button><button class="btn btn-text md btn-danger">Delete<span class="kbd hint">⌫</span></button>`);
+    const guests = info.guests ? `<h3 class="d-label">Guests</h3><ul class="guests">${info.guests.map(([n, st, role]) => `<li><span>${n}${role ? `<span class="role">${role}</span>` : ''}</span><span class="st ${st === 'none' ? 'is-open' : ''}">${ic(GUEST[st][0])}${GUEST[st][1]}</span></li>`).join('')}</ul>` : '';
+    const more = ev.own ? 'More: edit, delete' : info.invite ? 'More: change your reply, hide' : 'More: hide, copy link';
     return `<div class="detail">
-      <div class="d-head"><h2>${ev.t}</h2>${o.close ? `<button class="btn btn-icon" data-close aria-label="Close" data-tip="Close" data-key="Esc">${ic('x')}</button>` : ''}</div>
+      <div class="d-head"><h2>${ev.t}</h2>
+        <button class="btn btn-icon" aria-label="More" data-tip="${more}" data-key=".">${ic('more')}</button>
+        ${o.close ? `<button class="btn btn-icon" data-close aria-label="Close" data-tip="Close" data-key="Esc">${ic('x')}</button>` : ''}</div>
       <p class="d-when">${longDay(d)} · ${range(ev.s, ev.e)}</p>
       <ul class="d-rows">
         <li><span class="mk"><i style="background:var(${cal.c})"></i></span>${cal.name}</li>
-        ${info.video ? `<li>${ic('video')}<a class="link" href="#">${info.video}</a></li>` : ''}
-        ${info.place ? `<li>${ic('pin')}${info.place}</li>` : ''}
+        ${info.video ? `<li>${ic('video')}<a class="link ellipsis" href="#">${info.video}</a></li>` : ''}
+        ${info.place ? `<li>${ic('pin')}<span class="ellipsis">${info.place}</span></li>` : ''}
+        ${info.invite ? `<li>${ic('mail')}<a class="link ellipsis" href="reader.html" data-open-invite data-tip="Open the invite email" data-key="O">Invite from ${info.invite.from}</a></li>` : ''}
       </ul>
       ${o.rsvp ? o.rsvp : ''}
       ${guests}
-      ${info.desc ? `<p class="d-desc">${info.desc}</p>` : ''}
-      ${o.noFoot ? '' : `<div class="d-foot">${foot.join('')}</div>`}
+      ${info.desc && !o.noDesc ? `<p class="d-desc">${info.desc}</p>` : ''}
     </div>`;
   }
 
@@ -230,5 +242,5 @@
   }
   function pos(el, anc) { let x = 0, y = 0; for (let n = el; n && n !== anc; n = n.offsetParent) { x += n.offsetLeft; y += n.offsetTop; } return { x, y }; }
 
-  window.Cal = { CALS, INFO, TODAY, NOW, MONTHS, DAYS, D, iso, add, sameDay, weekStart, weekTitle, dayTitle, longDay, range, timeFull, eventsOn, findEvent, layout, week, day, month, detail, placePuck, segSelect, initSegs, pos, GUEST };
+  window.Cal = { CALS, INFO, TODAY, NOW, MONTHS, DAYS, D, iso, add, sameDay, weekStart, weekTitle, weekSub, monthTitle, monthSub, dayTitle, longDay, range, timeFull, eventsOn, findEvent, layout, week, day, month, detail, placePuck, segSelect, initSegs, pos, GUEST };
 })();

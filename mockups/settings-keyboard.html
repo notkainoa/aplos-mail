@@ -13,15 +13,11 @@
 <div class="window">
   <span class="traffic"></span>
   <div class="app">
-    <aside class="sidebar" id="sb" data-active="none" data-accounts="all"></aside>
+    <aside class="sidebar" id="sb" data-active="settings" data-accounts="all"></aside>
     <main class="main">
       <header class="toolbar">
-        <h1 class="title">Settings</h1>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace set-ws">
@@ -86,7 +82,7 @@ function rowHTML(c) {
   if (rec && rec.id === c.id) {
     const mid = rec.chord ? `<span class="kbd new">${rec.chord}</span>${rec.other ? `<span class="conflict">${ic('alert')}Already used by ${rec.other.label}</span><button class="btn btn-text md" data-rec="replace">Replace</button><button class="btn btn-text md" data-rec="cancel">Cancel</button>` : ''}`
       : `<span class="kbd wait" aria-hidden="true">…</span><button class="btn btn-text md" data-rec="cancel">Cancel</button>`;
-    return `<div class="srow krow is-recording" data-id="${c.id}" aria-live="polite"><div><div class="l"><b>${c.label}</b></div><div class="h">Press the new keys · Esc to cancel</div></div><div class="c">${mid}</div></div>`;
+    return `<div class="srow has-h krow is-recording" data-id="${c.id}" aria-live="polite"><div><div class="l">${c.label}</div><div class="h">Press the new keys · Esc to cancel</div></div><div class="c">${mid}</div></div>`;
   }
   const bad = c.keys.map(k => clash(c, k)).find(Boolean);
   const changed = !same(c.keys, c.def);
@@ -97,9 +93,9 @@ function rowHTML(c) {
 }
 function render(keep) {
   const hints = document.documentElement.classList.contains('show-hints');
-  const top = S.group('Shortcuts',
+  const top = S.page('Keyboard', 'Every shortcut in one list. Click the keys to change them.') + S.group('Shortcuts',
     S.row({ label: 'Single-key shortcuts', hint: 'Letters like E and L act on their own. Off means they need ⌘.', control: S.sw('single', true, 'Single-key shortcuts') }) +
-    S.row({ label: 'Show all key hints', hint: 'Keep keycaps visible instead of only on hover.', control: S.sw('hints', hints, 'Show all key hints') }),
+    S.row({ label: 'Show all key hints', hint: 'Keep every shortcut visible next to its button.', control: S.sw('hints', hints, 'Show all key hints') }),
     `<button class="btn btn-text xs" data-resetall>Reset all</button>`);
   const rest = REG.map(g => S.group(g.g, g.items.map(([id]) => rowHTML(CMD[id])).join(''))).join('');
   const sc = document.querySelector('.workspace').scrollTop;

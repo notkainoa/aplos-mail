@@ -7,34 +7,38 @@
 <link rel="stylesheet" href="shell.css">
 <script src="shell.js"></script>
 <style>
-  /* DESIGN.md has no Done view: Done archives. This is All mail filtered by the in:done token. */
-  .toolbar .title .token { font-weight: 400; }
+  /* Done mail has one action: Move to Home. It overlays the snippet and never covers the Done stamp. */
+  :root { --stamp-w: calc(var(--space-10) * 2 + var(--space-7)); }
+  .row { grid-template-columns: var(--space-4) var(--sender-w) minmax(0, 1fr) var(--stamp-w); }
+  .row .meta { white-space: nowrap; }
   .row .meta .done-at { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--dim); }
   .row .meta .done-at .ic { width: var(--icon-sm); height: var(--icon-sm); color: var(--hill); }
-  /* the cursor row keeps its hover action visible, as it would under the pointer */
-  .row.is-cursor .row-actions { display: flex; }
-  .row-actions .btn-text { color: var(--ink-2); }
+  .row-actions { right: calc(var(--stamp-w) + var(--space-3) + var(--space-3)); }
+  /* the cursor row shows its action, as it would under the pointer */
+  .row.is-cursor .row-actions { visibility: visible; }
 </style>
 </head>
 <body>
 <div class="window">
   <span class="traffic"></span>
   <div class="app">
-    <aside class="sidebar" data-active="all"></aside>
+    <aside class="sidebar" data-active="done"></aside>
     <main class="main">
       <header class="toolbar">
-        <h1 class="title">All mail
-          <span class="token" role="group" aria-label="Filter: in:done"><span><b>in:</b>done</span><button class="x" aria-label="Remove filter" data-tip="Remove filter" data-key="Esc"><svg class="ic"><use href="#i-x"/></svg></button></span>
-        </h1>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace">
-        <div class="column list" id="list" data-list role="listbox" aria-label="Done mail"></div>
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Done</h1>
+              <p class="page-sub">Mail you finished. Press H to move one back to Home.</p>
+            </div>
+          </div>
+          <div class="list" id="list" data-list role="listbox" aria-label="Done mail"></div>
+        </div>
       </div>
     </main>
   </div>
@@ -64,7 +68,7 @@ DONE.forEach(([grp, who, line, at, acct], i) => {
     <span class="dot"></span><span class="sender ellipsis">${who}</span>
     <span class="line"><span class="ellipsis">${line}</span></span>
     <span class="meta"><span class="mark" style="background:var(--tag-${acct})" title="${acct === 'hill' ? 'alex@fernworks.studio' : 'alex.moreno@gmail.com'}"></span><span class="done-at">${ic('check')}Done ${at}</span></span>
-    <span class="row-actions"><button class="btn btn-text xs" data-home>${ic('undo')}Move to Home<span class="kbd hint">H</span></button></span>
+    <span class="row-actions"><button class="btn btn-icon" data-home data-tip="Move to Home" data-key="H" aria-label="Move to Home">${ic('home')}</button></span>
   </div>`;
 });
 list.innerHTML = h;
@@ -91,7 +95,6 @@ Mock.onKey(e => {
     r.classList.remove('arrive'); void r.offsetWidth; r.classList.add('arrive'); Mock.setCursor(list, r);
     Mock.toast({ icon: 'undo', text: 'Undone' }); return true;
   }
-  if (e.key === 'Escape') { Mock.go('inbox.html'); return true; }
 });
 </script>
 </body>

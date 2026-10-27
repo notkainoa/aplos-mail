@@ -7,11 +7,11 @@
 <link rel="stylesheet" href="shell.css">
 <script src="shell.js"></script>
 <style>
-  /* FatalScreen (§7.15): full window on canvas, no sidebar, no toolbar. The traffic lights stay. */
-  .fatal { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 var(--space-8) var(--space-10); }
-  .fatal .t-display { color: var(--ink); max-width: var(--paper-content); }
-  .fatal .safe { margin-top: var(--space-3); font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink-2); }
-  .fatal .actions { margin-top: var(--space-6); display: flex; align-items: center; gap: var(--space-2); }
+  /* FatalScreen: the whole window on canvas, no sidebar, no pane header. The traffic lights stay. */
+  .fatal { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 var(--space-8) var(--space-10); background: var(--canvas); }
+  .fatal .t-display { color: var(--ink); max-width: var(--reader-w); }
+  .fatal .safe { margin-top: var(--space-3); font: var(--type-base); letter-spacing: var(--track-base); color: var(--dim); }
+  .fatal .actions { margin-top: var(--space-7); display: flex; align-items: center; gap: var(--space-2); }
 </style>
 </head>
 <body>
@@ -21,7 +21,7 @@
     <h1 class="t-display">Aplos can’t reach its mail engine.</h1>
     <p class="safe">Your mail is safe on this Mac.</p>
     <div class="actions">
-      <button class="btn btn-filled md" id="restart"><svg class="ic"><use href="#i-refresh"/></svg><span id="restart-l">Restart engine</span><span class="kbd">Return</span></button>
+      <button class="btn btn-filled md" id="restart"><span id="restart-l">Restart engine</span></button>
       <button class="btn btn-text md" id="copy">Copy diagnostics</button>
     </div>
   </main>

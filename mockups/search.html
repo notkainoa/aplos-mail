@@ -7,29 +7,30 @@
 <link rel="stylesheet" href="shell.css">
 <script src="shell.js"></script>
 <style>
-  /* DECISION: search is not a modal overlay. The field takes the toolbar's title slot, the results are ordinary
-     list rows in the list column, so j/k, E, L, X and Return all behave as they do in every other list.
+  /* DECISION: search is a list view, not an overlay. The page title is the field, so the query is the first thing
+     you see; operator tokens sit under it; results are ordinary rows (j/k, E, L, X and Return behave as everywhere).
      The palette (⌘K) is the only overlay. */
-  .toolbar { position: relative; }
-  .searchbar { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: calc(var(--list-w) - var(--space-7)); z-index: 6; }
-  .searchbar .field { gap: var(--space-2); padding-right: var(--space-2); }
-  .searchbar input { height: var(--control-sm); }
-  .searchbar .field .ic { flex: none; }
+  .search-head { display: block; }
+  .search-title { display: flex; align-items: center; gap: var(--space-3); min-height: var(--space-8); border-radius: var(--radius-md); }
+  .search-title .ic { color: var(--dim); flex: none; }
+  .search-title input { flex: 1; min-width: 0; border: 0; background: none; padding: 0; font: var(--type-heading); letter-spacing: var(--track-heading); color: var(--ink); outline: none; }
+  .search-title input::placeholder { color: var(--faint); }
+  .search-meta { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-sm); margin-top: var(--space-3); padding-left: calc(var(--icon) + var(--space-3)); font: var(--type-small); color: var(--dim); }
+  .search-meta .scope { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-1); }
   .token { cursor: default; gap: 0; }
-  .token .x { margin-left: var(--space-1); }
-  .token .x { border: 0; }
+  .token .x { margin-left: var(--space-1); border: 0; }
   .token .x:hover { background: var(--hover); color: var(--ink); }
-  .scope { font: var(--type-small); color: var(--dim); display: inline-flex; align-items: center; gap: var(--space-1); flex: none; }
+  #tokens { display: contents; }
 
-  .column { padding-top: var(--space-1); }
   .row .line .subj { color: var(--ink); font-weight: 500; }
   .row.unread .line .subj { font-weight: 600; }
   .row .line b { font-weight: 600; color: var(--ink); }
-  .remote { display: flex; align-items: center; gap: var(--space-2); height: var(--row); padding: 0 var(--space-3) 0 var(--space-3); margin-top: var(--space-2); border-radius: var(--radius-md); color: var(--dim); font: var(--type-base); letter-spacing: var(--track-base); width: 100%; text-align: left; }
+  .remote { display: flex; align-items: center; gap: var(--space-2); height: var(--row); padding: 0 var(--space-3); margin-top: var(--space-4); border-radius: var(--radius-md); color: var(--dim); font: var(--type-base); letter-spacing: var(--track-base); width: 100%; text-align: left; }
   .remote:hover { background: var(--hover); color: var(--ink); }
   .remote .kbd { margin-left: auto; }
   .remote .ic { color: var(--dim); }
   .remote.is-busy { pointer-events: none; }
+  .empty-line { padding-top: var(--space-2); }
   .empty-line .btn { margin-left: calc(-1 * var(--space-2)); }
   .remote-note { padding: var(--space-3); font: var(--type-base); color: var(--dim); }
 </style>
@@ -38,27 +39,24 @@
 <div class="window">
   <span class="traffic"></span>
   <div class="app">
-    <aside class="sidebar" data-active="none"></aside>
+    <aside class="sidebar" data-active="search"></aside>
     <main class="main">
       <header class="toolbar">
-        <a class="btn btn-icon" href="home.html" data-tip="Back" data-key="Esc" aria-label="Back"><svg class="ic"><use href="#i-chevl"/></svg></a>
-        <div class="searchbar" role="search">
-          <label class="field" id="fld">
-            <svg class="ic"><use href="#i-search"/></svg>
-            <span id="tokens" style="display:contents"></span>
-            <input id="q" placeholder="Search mail" autocomplete="off" spellcheck="false" aria-label="Search mail">
-            <span class="scope" id="scope">All accounts</span>
-          </label>
-        </div>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" aria-pressed="true" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace">
-        <div class="column list" id="list" data-list data-no-initial role="listbox" aria-label="Search results"></div>
+        <div class="column">
+          <div class="page-head search-head" role="search">
+            <label class="search-title">
+              <svg class="ic"><use href="#i-search"/></svg>
+              <input id="q" placeholder="Search mail" autocomplete="off" spellcheck="false" aria-label="Search mail">
+            </label>
+            <div class="search-meta"><span id="tokens"></span><span class="scope" id="scope" data-tip="Search scope">All accounts</span></div>
+          </div>
+          <div class="list" id="list" data-list data-no-initial role="listbox" aria-label="Search results"></div>
+        </div>
       </div>
       <p class="sr-only" role="status" id="live"></p>
     </main>
@@ -116,6 +114,7 @@ const row = (m, text, i, remote) => `<div class="row ${m.f.includes('u') ? 'unre
 const remoteBtn = label => `<button class="${list.dataset.empty ? 'btn btn-text md' : 'remote'}" id="remote">${ic('globe')}${label}<span class="kbd">Return</span></button>`;
 
 function renderTokens() {
+  if (!tokens.length) { tokensEl.innerHTML = 'Narrow with from:, to:, subject:, has:attachment, before:, in:done'; return; }
   tokensEl.innerHTML = tokens.map((t, i) => `<span class="token"><b>${t.k}:</b>${esc(t.v)}<button class="x" data-i="${i}" aria-label="Remove ${t.k}:${esc(t.v)}">${ic('x')}</button></span>`).join('');
 }
 function render() {

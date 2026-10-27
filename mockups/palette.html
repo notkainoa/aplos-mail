@@ -8,12 +8,12 @@
 <script src="shell.js"></script>
 <script src="home-view.js"></script>
 <style>
-  /* DECISION: no scrim. The palette is level 2 glass (DESIGN 4.6: scrim belongs to level 3 dialogs), and Home behind
-     stays readable context for "For: ...". The blur and 80 % paper keep the text behind it from fighting the list. */
-  .palette .context { padding: var(--space-3) var(--space-4) var(--space-1); }
-  .palette .field, .palette .field:focus-within { padding-left: var(--space-4); background: none; border-radius: 0; box-shadow: 0 var(--hairline) 0 var(--line); }
+  /* DECISION: the palette is an opaque centred card over a light scrim. No glass, no blur. Home behind stays readable
+     because the scrim is light; the context line says which email the commands act on. */
+  .palette .field, .palette .field:hover, .palette .field:focus-within { padding: 0 var(--space-4); background: none; border-radius: 0; box-shadow: 0 var(--hairline) 0 var(--line); }
   .palette .field .ic { color: var(--dim); }
-  .palette .results { padding: var(--space-1) var(--space-1) var(--space-2); }
+  .palette .context { padding: var(--space-3) var(--space-4) 0; }
+  .palette .results { padding: var(--space-1) var(--space-2) var(--space-2); }
   .menu-item { position: relative; }
   .menu-item .label { flex: 1; min-width: 0; font: var(--type-ui); }
   .menu-item .label b { font-weight: 600; }
@@ -24,19 +24,21 @@
   .menu-item .num { width: var(--space-4); text-align: center; font: var(--type-small); color: var(--dim); flex: none; }
   .menu-item.is-active .num { color: var(--ink-2); }
   .menu-item.is-active::before { content: ""; position: absolute; left: 0; top: var(--space-2); bottom: var(--space-2); width: var(--select-bar); border-radius: var(--select-bar); background: var(--accent); }
-  .palette .menu-label { padding: var(--space-3) var(--space-3) var(--space-1); }
+  .palette .menu-label { padding: var(--space-3) var(--space-2) var(--space-1); }
   .palette .menu-label:first-child { padding-top: var(--space-2); }
-  .none { padding: var(--space-5) var(--space-3); font: var(--type-base); color: var(--dim); }
+  .none { padding: var(--space-5) var(--space-2); font: var(--type-base); color: var(--dim); }
 
+  /* destructive confirm: Cancel is the default. Return cancels, Shift Return deletes. */
   .confirm { padding: var(--space-4) var(--space-4) var(--space-3); }
   .confirm .ask { font: var(--type-title); letter-spacing: var(--track-title); color: var(--ink); }
   .confirm .what { margin-top: var(--space-1); font: var(--type-ui); color: var(--ink-2); max-width: 52ch; }
-  .confirm .key-rows { margin-top: var(--space-3); margin-left: calc(-1 * var(--space-2)); margin-right: calc(-1 * var(--space-2)); }
-  .key-row.destructive { background: var(--stamp-tint); color: var(--stamp-ink); font-weight: 500; }
-  .key-row.destructive .ic { color: var(--stamp-ink); }
-  .key-row .kbd { margin-left: auto; }
+  .confirm .key-rows { margin: var(--space-4) calc(-1 * var(--space-2)) 0; }
   .key-row { width: 100%; text-align: left; }
-  html[data-state="confirm"] .results, html:not([data-state="confirm"]) .confirm { display: none; }
+  .key-row .ic { color: var(--dim); }
+  .key-row.destructive { color: var(--stamp-ink); }
+  .key-row.destructive .ic { color: var(--stamp-ink); }
+  .key-row.destructive:hover { background: var(--stamp-tint); }
+  html[data-state="confirm"] .results, html[data-state="confirm"] .context, html:not([data-state="confirm"]) .confirm { display: none; }
 </style>
 </head>
 <body>
@@ -46,34 +48,39 @@
     <aside class="sidebar" data-active="home"></aside>
     <main class="main">
       <header class="toolbar">
-        <h1 class="title">Home</h1>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace">
-        <div class="column" id="home" aria-hidden="true"></div>
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Home</h1>
+              <p class="page-sub">Thursday, October 29 · 9 to handle</p>
+            </div>
+          </div>
+          <div id="home" role="listbox" aria-label="Home" aria-hidden="true"></div>
+        </div>
       </div>
       <p class="sr-only" role="status" id="live"></p>
     </main>
   </div>
 
-  <div class="palette float settle" id="palette" role="dialog" aria-label="Command palette">
-    <div class="context" id="ctx">For: <b>Drew Bell · October illustrations</b></div>
+  <div class="scrim" aria-hidden="true"></div>
+  <div class="palette settle" id="palette" role="dialog" aria-label="Command palette">
     <div class="field">
       <svg class="ic"><use href="#i-search"/></svg>
       <input id="q" placeholder="Type a command" autocomplete="off" spellcheck="false" aria-label="Command" role="combobox" aria-expanded="true" aria-controls="res">
     </div>
+    <div class="context" id="ctx">For: <b>Drew Bell · October illustrations</b></div>
     <div class="results" id="res" role="listbox" aria-label="Commands"></div>
     <div class="confirm" id="confirm">
       <p class="ask">Delete forever?</p>
       <p class="what">“Invoice #0412 · October illustrations” will be removed from your account. This can’t be undone.</p>
       <div class="key-rows">
-        <button class="key-row destructive" id="yes"><svg class="ic"><use href="#i-trash"/></svg>Delete<span class="kbd">Return</span></button>
-        <button class="key-row" id="no">Cancel<span class="kbd">Esc</span></button>
+        <button class="key-row primary" id="no">Cancel<span class="kbd">Return</span></button>
+        <button class="key-row destructive" id="yes"><svg class="ic"><use href="#i-trash"/></svg>Delete forever<span class="kbd">⇧Return</span></button>
       </div>
     </div>
   </div>
@@ -82,25 +89,25 @@
 <script>
 /* The registry: every command is declared once, with its keycap. Palette-only commands carry no key. */
 const CMDS = [
-  { g: 'Actions', label: 'Reply', icon: 'reply', keys: ['R'], kw: 'respond' },
+  { g: 'Actions', label: 'Reply', icon: 'reply', keys: ['R'], kw: 'respond', sug: 1 },
   { g: 'Actions', label: 'Reply all', icon: 'replyall', keys: ['⇧R'] },
   { g: 'Actions', label: 'Forward', icon: 'forward', keys: ['F'] },
-  { g: 'Actions', label: 'Done', icon: 'check', keys: ['E'], kw: 'archive finish' },
-  { g: 'Actions', label: 'Later', icon: 'clock', keys: ['L'], kw: 'set aside snooze' },
+  { g: 'Actions', label: 'Done', icon: 'check', keys: ['E'], kw: 'archive finish', sug: 1 },
+  { g: 'Actions', label: 'Later', icon: 'clock', keys: ['L'], kw: 'set aside snooze', sug: 1 },
   { g: 'Actions', label: 'Set due date', icon: 'calendar', keys: ['D'] },
   { g: 'Actions', label: 'Bookmark', icon: 'bookmark', keys: ['B'] },
   { g: 'Actions', label: 'Trash', icon: 'trash', keys: ['#'], kw: 'remove' },
   { g: 'Actions', label: 'Find related mail', icon: 'search', keys: [] },
   { g: 'Actions', label: 'Delete forever', icon: 'trash', keys: [], destructive: true },
-  { g: 'Go to', label: 'Home', icon: 'home', keys: ['⌃1'], href: 'home.html' },
-  { g: 'Go to', label: 'Later', icon: 'clock', keys: ['⌃2'], href: 'later.html' },
-  { g: 'Go to', label: 'All mail', icon: 'tray', keys: ['⌃3'], href: 'inbox.html' },
-  { g: 'Go to', label: 'Drafts', icon: 'file', keys: ['⌃4'], href: 'empty.html?state=drafts' },
+  { g: 'Go to', label: 'Home', icon: 'home', keys: ['⌃1'], href: 'home.html', first: 1 },
+  { g: 'Go to', label: 'Later', icon: 'clock', keys: ['⌃2'], href: 'later.html', first: 1 },
+  { g: 'Go to', label: 'All mail', icon: 'tray', keys: ['⌃3'], href: 'inbox.html', first: 1 },
+  { g: 'Go to', label: 'Drafts', icon: 'file', keys: ['⌃4'], href: 'empty.html?state=drafts', first: 1 },
   { g: 'Go to', label: 'Sent', icon: 'send', keys: ['⌃5'], href: 'inbox.html' },
-  { g: 'Go to', label: 'Calendar', icon: 'calendar', keys: ['⌃6'], href: 'calendar-week.html' },
+  { g: 'Go to', label: 'Calendar', icon: 'calendar', keys: ['⌃6'], href: 'calendar-week.html', first: 1 },
   { g: 'Go to', label: 'Trash', icon: 'trash', keys: ['⌃7'], href: 'empty.html?state=trash' },
   { g: 'Go to', label: 'Spam', icon: 'spam', keys: ['⌃8'], href: 'empty.html?state=spam' },
-  { g: 'Ask', label: 'Ask about this email', icon: 'bubble', keys: ['A'], href: 'ask.html' },
+  { g: 'Ask', label: 'Ask about this email', icon: 'bubble', keys: ['A'], href: 'ask.html', sug: 1 },
   { g: 'Ask', label: 'Open Today', icon: 'today', keys: ['⇧A'], href: 'ask.html?state=today' },
   { g: 'Ask', label: 'Toggle the Ask dock', icon: 'sidebar', keys: ['⌘J'], href: 'ask.html' },
   { g: 'Ask', label: 'New chat', icon: 'bubble', keys: ['⌘N'], href: 'ask.html?state=empty' },
@@ -109,7 +116,8 @@ const CMDS = [
   { g: 'Settings', label: 'Keyboard shortcuts', icon: 'keyboard', keys: ['?'], href: 'shortcuts.html' },
   { g: 'Settings', label: 'Appearance', icon: 'moon', keys: [], href: 'settings-appearance.html' },
 ];
-const GROUPS = ['Actions', 'Go to', 'Ask', 'Settings'];
+/* First open shows only Suggested (what acts on this email) and the places you go most. The rest appears as you type. */
+const FIRST = [['Suggested', c => c.sug], ['Go to', c => c.first]];
 
 /* Scoring: exact, prefix, word start, substring, subsequence. Returns { score, idx } or null. */
 function score(label, q, kw = '') {
@@ -133,21 +141,21 @@ let list = [], active = 0, level = 'list';
 
 function build() {
   const text = q.value.trim();
-  if (!text) list = CMDS.map(c => ({ c, idx: [] }));
+  if (!text) list = FIRST.flatMap(([lab, f]) => CMDS.filter(f).map(c => ({ c, idx: [], lab })));
   else list = CMDS.map(c => ({ c, m: score(c.label, text, c.kw) })).filter(x => x.m).sort((a, b) => b.m.score - a.m.score).map(x => ({ c: x.c, idx: x.m.idx }));
   active = Math.min(active, Math.max(list.length - 1, 0));
   render();
 }
 function render() {
   if (!list.length) { res.innerHTML = `<p class="none">No commands match “${q.value.trim()}”.</p>`; return; }
-  const short = q.value.trim() && list.length <= 9;
+  const empty = !q.value.trim();   // 1–9 pick only while the field is empty, so digits stay typeable
   let h = '', lastG = null;
   list.forEach((x, i) => {
-    if (!q.value.trim() && x.c.g !== lastG) { h += `<div class="menu-label">${x.c.g}</div>`; lastG = x.c.g; }
+    if (empty && x.lab !== lastG) { h += `<div class="menu-label">${x.lab}</div>`; lastG = x.lab; }
     const keys = x.c.keys.map(k => `<span class="kbd">${k}</span>`).join('');
     h += `<div class="menu-item ${i === active ? 'is-active' : ''}" role="option" data-i="${i}" aria-selected="${i === active}">
-      ${short ? `<span class="num">${i + 1}</span>` : ''}${Mock.icon(x.c.icon)}<span class="label">${mark(x.c.label, x.idx)}</span>
-      <span class="right">${q.value.trim() ? `<span class="grp">${x.c.g}</span>` : ''}${keys}</span></div>`;
+      ${empty && i < 9 ? `<span class="num">${i + 1}</span>` : ''}${Mock.icon(x.c.icon)}<span class="label">${mark(x.c.label, x.idx)}</span>
+      <span class="right">${empty ? '' : `<span class="grp">${x.c.g}</span>`}${keys}</span></div>`;
   });
   res.innerHTML = h;
   res.querySelector('.is-active')?.scrollIntoView({ block: 'nearest' });
@@ -158,24 +166,24 @@ function run(i) {
   if (x.c.destructive) { enterConfirm(); return; }
   Mock.go(x.c.href || 'home.html');
 }
-function enterConfirm() { document.documentElement.dataset.state = 'confirm'; level = 'confirm'; q.readOnly = true; document.getElementById('live').textContent = 'Delete forever? Return deletes, Escape cancels.'; }
+function enterConfirm() { document.documentElement.dataset.state = 'confirm'; level = 'confirm'; q.readOnly = true; document.getElementById('live').textContent = 'Delete forever? Cancel is selected. Return cancels, Shift Return deletes.'; }
 function leaveConfirm() { document.documentElement.dataset.state = q.value ? 'filtered' : 'commands'; level = 'list'; q.readOnly = false; q.focus(); }
 
 q.addEventListener('input', () => { active = 0; build(); });
 res.addEventListener('click', e => { const r = e.target.closest('[data-i]'); if (r) run(+r.dataset.i); });
 res.addEventListener('pointermove', e => { const r = e.target.closest('[data-i]'); if (r && +r.dataset.i !== active) { active = +r.dataset.i; res.querySelectorAll('.menu-item').forEach((m, i) => m.classList.toggle('is-active', i === active)); } });
-document.getElementById('yes').onclick = () => Mock.go('home.html');
+document.getElementById('yes').onclick = () => Mock.go('home.html');   // pointer only; the keyboard needs Shift Return
 document.getElementById('no').onclick = leaveConfirm;
 
 Mock.onKey(e => {
   const k = e.key;
   if (e.metaKey && k.toLowerCase() === 'k') { Mock.go('home.html'); return true; }   // ⌘K again closes
   if (k === 'Escape') { if (level === 'confirm') leaveConfirm(); else Mock.go('home.html'); return true; }   // up one level, then close
-  if (level === 'confirm') { if (k === 'Enter') { Mock.go('home.html'); return true; } return true; }
+  if (level === 'confirm') { if (k === 'Enter') { if (e.shiftKey) Mock.go('home.html'); else leaveConfirm(); } return true; }   // Cancel is the default
   if (k === 'ArrowDown' || (e.ctrlKey && k === 'n')) { move(1); return true; }
   if (k === 'ArrowUp' || (e.ctrlKey && k === 'p')) { move(-1); return true; }
   if (k === 'Enter') { run(active); return true; }
-  if (/^[1-9]$/.test(k) && !e.metaKey && !e.ctrlKey && q.value.trim() && list.length <= 9 && +k <= list.length) { run(+k - 1); return true; }   // 1–9 pick in short lists
+  if (/^[1-9]$/.test(k) && !e.metaKey && !e.ctrlKey && !q.value && +k <= Math.min(9, list.length)) { run(+k - 1); return true; }   // 1–9 pick only while the field is empty
 });
 
 HomeBackdrop.mount(document.getElementById('home'), { focus: 1, keys: false, quiet: true });

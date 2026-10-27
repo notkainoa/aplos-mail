@@ -7,12 +7,9 @@
 <link rel="stylesheet" href="shell.css">
 <script src="shell.js"></script>
 <style>
-  .list { padding-top: var(--space-2); }
-  .toolbar .seg { margin-left: var(--space-2); }
-  .grp + .grp { margin-top: var(--space-6); }
-  .grp .section-head { margin-top: 0; }
+  .grp + .grp { margin-top: var(--group-gap); }
   .grp .section-head .ic { color: var(--dim); }
-  .grp .section-head .target { margin-left: auto; display: none; font: var(--type-small); font-weight: 500; color: var(--ink-2); }
+  .grp .section-head .target { margin-left: auto; display: none; font: var(--type-small); color: var(--dim); }
   .grp .section-head.overdue .label, .grp .section-head.overdue .ic { color: var(--stamp-ink); }
   .row .meta .chip { margin-right: var(--space-half); }
   .row .meta .when { color: var(--dim); }
@@ -23,7 +20,7 @@
   html[data-state="drag"] .grp.can-drop .section-head { padding-left: var(--space-3); }
   html[data-state="drag"] .grp.can-drop .target { display: inline; }
   html[data-state="drag"] .grp.is-over { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent); }
-  html[data-state="drag"] .grp.is-over .target { color: var(--ink); }
+  html[data-state="drag"] .grp.is-over .target { color: var(--ink); font-weight: 500; }
   html[data-state="drag"] .grp.no-drop .label, html[data-state="drag"] .grp.no-drop .n { color: var(--dim); }
   html[data-state="drag"] .grp.no-drop .section-head.overdue .label, html[data-state="drag"] .grp.no-drop .section-head.overdue .ic { color: var(--stamp-ink); }
   .row.is-lifted { position: absolute; left: var(--space-3); right: calc(-1 * var(--space-3)); z-index: 40; transform: scale(1.02); cursor: grabbing; pointer-events: none; }
@@ -40,21 +37,27 @@
     <aside class="sidebar" data-active="later" data-counts='{"later":9}'></aside>
     <main class="main">
       <header class="toolbar">
-        <h1 class="title">Later</h1>
-        <div class="seg" role="tablist" aria-label="Later view">
-          <span class="seg-puck" id="puck"></span>
-          <button role="tab" data-v="later" aria-selected="true">Later</button>
-          <button role="tab" data-v="bookmarks" aria-selected="false">Bookmarks</button>
-        </div>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace">
-        <div class="column list" id="list" data-list role="listbox" aria-label="Later"></div>
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Later</h1>
+              <p class="page-sub" id="sub">9 emails · 2 overdue</p>
+            </div>
+            <div class="actions">
+              <div class="seg" role="tablist" aria-label="Later view">
+                <span class="seg-puck" id="puck"></span>
+                <button role="tab" data-v="later" aria-selected="true">Later</button>
+                <button role="tab" data-v="bookmarks" aria-selected="false">Bookmarks</button>
+              </div>
+            </div>
+          </div>
+          <div class="list" id="list" data-list role="listbox" aria-label="Later"></div>
+        </div>
       </div>
     </main>
   </div>
@@ -67,16 +70,16 @@ const GROUPS = [
     ['Priya Raman', 'Send the revised Q4 deck so Priya can review it before Friday.', 'Yesterday', 1, 1],
     ['Drew Bell', 'Approve the $1,840 invoice for October illustrations.', 'Tue, Oct 27', 0, 0],
   ] },
-  { id: 'today', label: 'Today', drop: 'Move to Today evening', rows: [
+  { id: 'today', label: 'Today', drop: 'Today, 6:00 PM', rows: [
     ['Northwind Dental', 'Confirm or reschedule the cleaning.', 'Today, 5:00 PM', 0, 0],
     ['Leah Okafor', 'Pick a quiet lunch spot for six on Friday.', 'Today, 6:00 PM', 1, 0],
   ] },
-  { id: 'week', label: 'This week', drop: 'Move to Tomorrow', rows: [
+  { id: 'week', label: 'This week', drop: 'Tomorrow, 8:00 AM', rows: [
     ['Jordan Park', 'Choose a layout direction for the Hollow Creek site.', 'Fri, 8:00 AM', 0, 1],
     ['Maple Library', 'Two holds wait at the front desk until Saturday.', 'Sat, 9:00 AM', 0, 0],
     ['Rowan Pottery', 'Reply to keep your seat in the Tuesday wheel class.', 'Sun, 10:00 AM', 0, 0],
   ] },
-  { id: 'someday', label: 'Someday', drop: 'Move to Someday', rows: [
+  { id: 'someday', label: 'Someday', drop: 'Someday', rows: [
     ['Field Notes', 'Issue 42: five walking routes for short autumn days.', 'Someday', 0, 0],
     ['Ana Ruiz', 'Plan the winter rota at the community garden.', 'Someday', 0, 0],
   ] },
@@ -144,6 +147,7 @@ function render() {
   list.setAttribute('aria-label', v === 'bookmarks' ? 'Bookmarks' : 'Later');
   (v === 'later' ? renderLater : renderBookmarks)();
   const c = Mock.rows(list)[0]; if (c && Mock.state !== 'drag') Mock.setCursor(list, c, { noScroll: true });
+  document.getElementById('sub').textContent = v === 'bookmarks' ? `${MARKS.length} bookmarked emails` : '9 emails · 2 overdue';
   puck(v);
 }
 function puck(v) {

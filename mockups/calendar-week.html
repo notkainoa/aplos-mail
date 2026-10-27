@@ -13,28 +13,31 @@
 <div class="window">
   <span class="traffic"></span>
   <div class="app">
-    <aside class="sidebar" data-active="calendar"></aside>
+    <aside class="sidebar" data-active="calendar" data-extra="calendar"></aside>
     <main class="main">
       <header class="toolbar">
-        <h1 class="title" id="title">October 25 – 31, 2026</h1>
-        <div class="cal-nav">
-          <button class="btn btn-text" id="today">Today<span class="kbd hint">T</span></button>
-          <button class="btn btn-icon" id="prev" aria-label="Previous week" data-tip="Previous week" data-key="K"><svg class="ic"><use href="#i-chevl"/></svg></button>
-          <button class="btn btn-icon" id="next" aria-label="Next week" data-tip="Next week" data-key="J"><svg class="ic"><use href="#i-chevr"/></svg></button>
-          <div class="seg" id="views" role="tablist" aria-label="View">
-            <button role="tab" data-view="day" aria-selected="false" data-tip="Day" data-key="D">Day</button>
-            <button role="tab" data-view="week" aria-selected="true" data-tip="Week" data-key="W">Week</button>
-            <button role="tab" data-view="month" aria-selected="false" data-tip="Month" data-key="M">Month</button>
-          </div>
-        </div>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
+          <button class="btn btn-icon" data-tip="New event" data-key="N" aria-label="New event"><svg class="ic"><use href="#i-plus"/></svg></button>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace cal-ws">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title" id="title">October 2026</h1>
+            <p class="page-sub" id="sub">October 25 – 31</p>
+          </div>
+          <div class="actions">
+            <button class="btn btn-text" id="today">Today<span class="kbd hint">T</span></button>
+            <button class="btn btn-icon" id="prev" aria-label="Previous week" data-tip="Previous week" data-key="K"><svg class="ic"><use href="#i-chevl"/></svg></button>
+            <button class="btn btn-icon" id="next" aria-label="Next week" data-tip="Next week" data-key="J"><svg class="ic"><use href="#i-chevr"/></svg></button>
+            <div class="seg" id="views" role="tablist" aria-label="View">
+              <button role="tab" data-view="day" aria-selected="false" aria-label="Day" data-tip="Day" data-key="D">D</button>
+              <button role="tab" data-view="week" aria-selected="true" aria-label="Week" data-tip="Week" data-key="W">W</button>
+              <button role="tab" data-view="month" aria-selected="false" aria-label="Month" data-tip="Month" data-key="M">M</button>
+            </div>
+          </div>
+        </div>
         <div class="cal" id="cal"></div>
       </div>
       <p class="sr-only" role="status" id="live"></p>
@@ -45,6 +48,7 @@
 const overlap = Mock.state === 'overlap';
 const mount = document.getElementById('cal');
 const titleEl = document.getElementById('title');
+const subEl = document.getElementById('sub');
 const seg = document.getElementById('views');
 let view = new URLSearchParams(location.search).get('view') || 'week';
 let start = Cal.weekStart(Cal.TODAY);
@@ -71,9 +75,11 @@ function openStack(btn) {
 }
 
 function titleFor() { return view === 'month' ? `${Cal.MONTHS[ym.month - 1]} ${ym.year}` : Cal.weekTitle(start); }
+function subFor() { return view === 'month' ? Cal.monthSub(ym.year, ym.month) : Cal.weekSub(start); }
 function render() {
   closeMenu();
   titleEl.textContent = titleFor();
+  subEl.textContent = subFor();
   seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === view)));
   Cal.placePuck(seg);
   const per = view === 'month' ? 'month' : 'week';
@@ -81,7 +87,7 @@ function render() {
   document.getElementById('next').setAttribute('aria-label', 'Next ' + per);
   if (view === 'month') Cal.month(mount, ym);
   else Cal.week(mount, { start, overlap, selected });
-  document.getElementById('live').textContent = titleFor();
+  document.getElementById('live').textContent = `${titleFor()}, ${subFor()}`;
 }
 function shift(n) {
   if (view === 'month') { const d = new Date(ym.year, ym.month - 1 + n, 1); ym = { year: d.getFullYear(), month: d.getMonth() + 1 }; }
