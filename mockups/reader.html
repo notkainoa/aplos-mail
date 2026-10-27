@@ -12,7 +12,9 @@
   .sender-btn:hover .name { text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: var(--space-1); }
   html:not([data-state="pending"]) .summary.is-pending, html[data-state="pending"] .summary.ready { display: none; }
   html[data-state="no-ai"] .summary { display: none; }
-  html[data-state="no-ai"] .subject.std { display: none; }
+  html[data-state="no-ai"] .subject.std, html[data-state="pending"] .subject.std { display: none; }
+  /* pending: the subject waits in the summary slot in the sans face; the serif arrives with the summary */
+  .summary.is-pending { font: var(--type-summary); font-family: var(--font-sans); font-weight: 500; font-variation-settings: normal; letter-spacing: var(--track-heading); }
   html:not([data-state="no-ai"]) .subject.as-summary { display: none; }
   .subject.as-summary { margin-top: var(--space-3); color: var(--ink); }
   .summary.ready:hover + .prov { opacity: 1; }

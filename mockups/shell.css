@@ -167,8 +167,10 @@ html.shot .window { border-radius: 0; box-shadow: none; }
 .btn-filled .kbd { background: color-mix(in srgb, var(--accent-ink) 18%, transparent); color: var(--accent-ink); box-shadow: none; }
 .btn-danger { color: var(--stamp-ink); }
 .btn-danger .ic { color: var(--stamp-ink); }
-.btn[disabled], .btn[aria-disabled="true"] { opacity: 1; color: var(--faint); pointer-events: none; }
+.btn[disabled], .btn[aria-disabled="true"] { opacity: 1; color: var(--dim); pointer-events: none; }
+.btn[disabled] .ic, .btn[aria-disabled="true"] .ic { color: var(--faint); }
 .btn-filled[disabled] { background: var(--sunken); color: var(--dim); box-shadow: none; }
+.btn-filled[disabled] .kbd { background: var(--raised); color: var(--dim); }
 /* armed (§13 #15): the matching flap button takes the action colour, no scale, no pill */
 .btn.is-armed-done { background: var(--hill); color: var(--fill-ink); }
 .btn.is-armed-later { background: var(--dusk); color: var(--fill-ink); }
@@ -283,9 +285,9 @@ html.cmd-held .kbd.hint, html.show-hints .kbd.hint { display: inline-flex; }
 .paper { background: var(--paper); border-radius: var(--radius-lg); box-shadow: var(--elev-paper); position: relative; }
 .paper.lift { box-shadow: var(--elev-lift); }
 .summary { color: var(--ink); }
-.summary.is-pending { color: var(--dim); animation: breathe var(--dur-breathe) var(--ease-inout) infinite alternate; }
+.summary.is-pending { color: var(--ink-2); animation: breathe var(--dur-breathe) var(--ease-inout) infinite alternate; }
 .summary.is-absent { font: var(--type-summary); font-family: var(--font-sans); font-weight: 500; font-variation-settings: normal; letter-spacing: var(--track-heading); }
-@keyframes breathe { from { opacity: .55; } to { opacity: .85; } }
+@keyframes breathe { from { opacity: var(--breathe-lo); } to { opacity: var(--breathe-hi); } }
 .monogram { width: var(--avatar); height: var(--avatar); border-radius: 50%; background: var(--raised); color: var(--ink); box-shadow: inset 0 0 0 var(--hairline) var(--line); display: inline-flex; align-items: center; justify-content: center; font: var(--type-caption); font-weight: 600; flex: none; }
 
 /* Focus letter (§7.2): fixed height slot */
@@ -551,7 +553,7 @@ html.shot .mockbar { display: none; }
   *, *::before, *::after { transition-duration: 0ms !important; }
   .reveal, .settle, .toast, .arrive, .dock-inner, .sunrise, .focus-letter.is-dealing .deal-in { animation: fade-only var(--dur-reduced) linear both !important; }
   .row.is-leaving-done, .row.is-leaving-later { animation: fade-out var(--dur-reduced) linear both !important; }
-  .summary.is-pending { animation: none; opacity: .7; }
+  .summary.is-pending { animation: none; opacity: var(--breathe-static); }
   .status-track > i, .progress-seg > i.now::after { animation: none; }
   .post-edge.drain { animation: none; }
   .commit-edge, .commit-chip { animation: fade-only var(--dur-commit) linear both; }

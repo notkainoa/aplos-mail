@@ -1,0 +1,91 @@
+/* Settings screens (appearance, accounts, ai, keyboard). Shared layout: app sidebar, 200 px nav, 640 px content.
+   Tokens only; the INVENTED values are listed in the report. */
+:root {
+  --prov-status-w: calc(var(--space-10) * 3);  /* INVENTED: status column of a provider row (192) */
+  --prov-act-w: calc(var(--space-10) * 2);     /* INVENTED: Test / Remove column (128) */
+  --addr-w: calc(var(--space-10) * 4);         /* INVENTED: width of an address field (256) */
+}
+.workspace.set-ws { padding: 0 var(--gutter) var(--space-10); }
+.settings { display: flex; justify-content: center; align-items: flex-start; gap: var(--space-7); }
+.snav { width: var(--settings-nav); flex: none; position: sticky; top: 0; padding-top: calc(var(--space-2) + (var(--control-md) - var(--control-sm)) / 2); }
+.scontent { width: min(var(--settings-content), 100%); flex: none; }
+
+/* A 40 px setting row: label, one dim line saying what it does, control on the right */
+.srow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-4); min-height: var(--row); padding: var(--space-half) var(--space-3); }
+.srow + .srow { box-shadow: inset 0 var(--hairline) 0 var(--line); }
+.srow .l { font: var(--type-ui); letter-spacing: var(--track-ui); color: var(--ink); min-width: 0; display: flex; align-items: center; gap: var(--space-2); }
+.srow .l b { font-weight: 500; }
+.srow .l .tag { font: var(--type-small); color: var(--dim); font-weight: 400; }
+.srow .h { font: var(--type-small); letter-spacing: var(--track-small); color: var(--dim); min-width: 0; }
+.srow .c { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.srow .h .ic { width: var(--icon-sm); height: var(--icon-sm); vertical-align: calc(-1 * var(--space-half)); margin-right: var(--space-1); }
+.srow .h.ok .ic { color: var(--hill); }
+.srow .h.bad, .srow .h.bad .ic { color: var(--stamp-ink); }
+.srow.sub { padding-left: calc(var(--space-3) + var(--space-4)); box-shadow: none; }
+.srow.sub .l { font: var(--type-small); color: var(--dim); }
+.srow.sub .field { width: var(--addr-w); height: var(--control-sm); }
+.srow.sub .field input { font: var(--type-ui); letter-spacing: var(--track-ui); }
+.srow.note { box-shadow: none; }
+.block + .block { margin-top: var(--space-5); }
+.block + .srow { margin-top: var(--space-2); box-shadow: none; }
+
+.set-ws .section-head .btn { margin-right: calc(-1 * var(--space-2)); }
+.set-ws .section-head .btn .kbd { margin-left: var(--space-1); }
+
+/* Controls */
+.srow button.switch { cursor: default; }
+.srow .select { cursor: default; }
+.select[aria-expanded="true"] { box-shadow: inset 0 0 0 1px var(--accent); }
+.set-menu { position: absolute; z-index: 40; min-width: var(--menu-min); }
+.set-menu .menu-item .ck { width: var(--icon-row); height: var(--icon-row); flex: none; }
+.set-menu .menu-item[aria-selected="true"] { font-weight: 500; }
+
+/* Accounts */
+.acct-name { display: flex; align-items: center; gap: var(--space-2); }
+.acct-name .mk { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; flex: none; }
+.acct-name .prov { font: var(--type-small); color: var(--dim); font-weight: 400; }
+.swatches { display: flex; gap: var(--space-2); }
+.swatch { width: var(--icon-row); height: var(--icon-row); border-radius: 50%; background: var(--c); display: inline-flex; align-items: center; justify-content: center; color: var(--fill-ink); position: relative; }
+.swatch .ic { width: var(--icon-xs); height: var(--icon-xs); stroke-width: calc(var(--icon-stroke) + var(--hairline)); display: none; }
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 var(--space-half) var(--canvas), 0 0 0 calc(var(--space-half) * 2) var(--ink); }
+.swatch[aria-checked="true"] .ic { display: block; }
+
+/* AI providers */
+.srow.prov { grid-template-columns: minmax(0, 1fr) var(--prov-status-w) var(--prov-act-w); }
+.pstat { display: flex; align-items: center; gap: var(--space-2); font: var(--type-ui); color: var(--ink-2); min-width: 0; }
+.pstat span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pstat.bad { color: var(--stamp-ink); }
+.pstat .ic { color: var(--hill); }
+.pstat.bad .ic { color: var(--stamp-ink); }
+.pstat.busy { color: var(--dim); }
+.pact { display: flex; justify-content: flex-end; gap: var(--space-half); }
+.pact .btn { padding: 0 var(--space-2); }
+.srow-fix { padding: var(--space-1) 0 var(--space-2); }
+.srow-fix .error-line { align-items: flex-start; }
+.srow-fix .error-line .ic { margin-top: var(--space-half); }
+.srow-fix .error-line .btn { margin-top: calc(-1 * var(--space-half)); }
+.srow.feat .c { gap: var(--space-2); }
+.privacy { padding: var(--space-2) var(--space-3) var(--space-3); font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink-2); max-width: var(--measure-read); }
+.privacy p + p { margin-top: var(--space-3); }
+.privacy b { font-weight: 500; color: var(--ink); }
+
+/* Keyboard */
+.krow { grid-template-columns: minmax(0, 1fr) auto; }
+.krow .c { gap: var(--space-3); }
+.keys { display: inline-flex; align-items: center; gap: var(--space-half); height: var(--control-sm); padding: 0 var(--space-2); border-radius: var(--radius-md); margin-right: calc(-1 * var(--space-2)); }
+.keys:hover { background: var(--hover); }
+.keys .kbd + .kbd { margin-left: 0; }
+.conflict { display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-small); color: var(--stamp-ink); }
+.conflict .ic { width: var(--icon-sm); height: var(--icon-sm); color: var(--stamp-ink); }
+.krow.is-recording { background: var(--accent-wash); border-radius: var(--radius-md); box-shadow: none; }
+.krow.is-recording + .krow { box-shadow: none; }
+.krow.is-recording .kbd.new { box-shadow: inset 0 0 0 1px var(--accent); background: var(--paper); color: var(--ink); }
+.krow .kbd.wait { background: transparent; box-shadow: inset 0 0 0 1px var(--control-edge); color: var(--dim); min-width: calc(var(--kbd) * 2); }
+.krow .changed { font: var(--type-small); color: var(--dim); }
+
+/* Disabled text buttons stay readable: --faint is non-text only (DESIGN 4.1) */
+.pact .btn[aria-disabled="true"] { color: var(--dim); }
+.srow.feat .select { justify-content: space-between; }
+.srow.feat [data-select$="-p"] { min-width: calc(var(--space-10) * 1.5); }
+.srow.feat [data-select$="-m"] { min-width: calc(var(--space-10) * 3); }
+.pact .btn[data-tip][aria-disabled="true"] { pointer-events: auto; }

@@ -104,18 +104,18 @@
 
   /* ---------------- Sidebar ---------------- */
   const NAV = [
-    [['home', 'Home', 'home', 'home.html', 9, '⌃1'], ['later', 'Later', 'clock', 'later.html', 4, '⌃2'], ['calendar', 'Calendar', 'calendar', 'calendar-week.html', null, '⌃6']],
+    [['home', 'Home', 'home', 'home.html', 9, '⌃1'], ['later', 'Later', 'clock', 'later.html', 9, '⌃2'], ['calendar', 'Calendar', 'calendar', 'calendar-week.html', null, '⌃6']],
     [['all', 'All mail', 'tray', 'inbox.html', null, '⌃3'], ['drafts', 'Drafts', 'file', 'empty.html?state=drafts', 1, '⌃4'], ['sent', 'Sent', 'send', 'inbox.html', null, '⌃5']],
     [['trash', 'Trash', 'trash', 'empty.html?state=trash', null, '⌃7'], ['spam', 'Spam', 'spam', 'empty.html?state=spam', null, '⌃8']],
   ];
   const STATUS = {
     synced: `<span class="status-slot" title="Synced 2 min ago"></span>`,
-    importing: `<div class="status-slot" style="display:block">${icon('refresh')} Importing <b>214</b> of 500<div class="status-track" role="progressbar" aria-label="alex.moreno@gmail.com sync"><i></i></div></div>`,
+    importing: `<div class="status-slot">${icon('refresh')}<div style="flex:1">Importing older mail · <b>214</b> of 500<div class="status-track" role="progressbar" aria-label="alex.moreno@gmail.com sync"><i></i></div></div></div>`,
     paused: `<div class="status-slot">${icon('pause')}<div>Google asked us to slow down. Resuming at <b>2:14 PM</b>.<br><button class="btn btn-text xs" style="margin-left:calc(-1*var(--space-2))">Retry now</button></div></div>`,
     offline: `<div class="status-slot">${icon('cloudoff')}<div>Offline · 2 changes waiting</div></div>`,
     reconnect: `<div class="status-slot is-attn">${icon('alert')}<div><b>Google needs you to sign in again.</b><br><button class="btn btn-text xs btn-danger" style="margin-left:calc(-1*var(--space-2))">Reconnect</button></div></div>`,
     demo: `<div class="status-slot">${icon('mail')}<div>Demo mail. Remove it in Settings → Accounts.</div></div>`,
-    firstmail: `<div class="status-slot" style="display:block">${icon('refresh')} Reading your newest mail · <b>24</b> of 50<div class="status-track" role="progressbar" aria-label="alex.moreno@gmail.com sync"><i></i></div></div>`,
+    firstmail: `<div class="status-slot">${icon('refresh')}<div style="flex:1">Reading your newest mail<br><b>24</b> of 50<div class="status-track" role="progressbar" aria-label="alex.moreno@gmail.com sync"><i></i></div></div></div>`,
   };
   const ACCTS = {
     all: { label: 'All accounts', dots: ['--tag-sky', '--tag-hill'] },

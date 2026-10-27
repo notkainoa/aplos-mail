@@ -141,6 +141,7 @@
 
   /* INVENTED sizes DESIGN.md does not give (see NOTES.md) */
   --sender-w: 152px;            /* list sender column */
+  --sender-w-home: 140px;       /* Home rows: a little narrower, the summary carries more */
   --msg-who-w: 136px;           /* collapsed message sender column */
   --menu-min: 220px;
   --palette-max: 420px;
@@ -235,6 +236,9 @@
   --dur-toast: 4s;  --dur-toast-undo: 8s;  --dur-toast-fade: 400ms;
   --dur-reduced: 120ms;
 
+  /* breathe (§4.8) is opacity .55↔.85 (static .7). On --dim text that measures 3.1:1 at the low end,
+     so the mockup uses the RECOMMENDED fix: breathe --ink-2 between .75 and 1 (≥ 5.2:1). See NOTES.md. */
+  --breathe-lo: .75; --breathe-hi: 1; --breathe-static: .85;
   --press-scale: .97;
   --press-scale-icon: .94;
 

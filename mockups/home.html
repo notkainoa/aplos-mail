@@ -9,7 +9,7 @@
 <style>
   /* Page-only layout glue; all values are tokens. */
   .column { position: relative; padding-top: var(--space-1); }
-  .home-row { --sender-w: 140px; cursor: default; }
+  .home-row { --sender-w: var(--sender-w-home); cursor: default; }
   .home-row .chip { margin-right: var(--space-1); }
   .ghost-paper { position: absolute; left: 0; right: 0; z-index: 30; pointer-events: none; }
   html[data-state="no-ai"] .focus-letter .summary { font: var(--type-summary); font-family: var(--font-sans); font-weight: 500; font-variation-settings: normal; letter-spacing: var(--track-heading); }

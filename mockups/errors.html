@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="reconnect,quota,offline,row-error,send-failed" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Errors · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<script src="home-view.js"></script>
+<style>
+  html[data-state="send-failed"] .v-home, html:not([data-state="send-failed"]) .v-reader { display: none; }
+  .workspace.v-reader { padding-bottom: var(--space-6); }
+
+  /* Write rejected: the row returns to its place with an inline error (§7.15) */
+  .home-row.is-error { background: var(--stamp-tint); }
+  .home-row.is-error .sender { color: var(--ink); }
+  .row-err { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--stamp-ink); min-width: 0; }
+  .row-err .ic { color: var(--stamp-ink); }
+  .home-row.is-error .btn { color: var(--stamp-ink); }
+  .home-row.is-error .btn:hover { background: var(--stamp-tint); }
+
+  /* Sign-in expired: the account switcher menu, with the account row saying what happened */
+  .acct-menu { position: absolute; z-index: 60; left: var(--space-3); top: calc(var(--sidebar-top) + var(--control-md) + var(--space-1)); width: calc(var(--menu-min) + var(--space-9)); }
+  .acct-menu .dots { display: flex; flex: none; }
+  .acct-menu .dots i, .acct-menu .mk { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; display: block; flex: none; }
+  .acct-menu .dots i + i { margin-left: calc(-1 * var(--space-half)); box-shadow: -1px 0 0 var(--paper); }
+  .acct-menu .acct-row { height: auto; align-items: flex-start; padding: var(--space-2); }
+  .acct-menu .acct-row .mk { margin-top: var(--space-1); }
+  .acct-menu .acct-row .txt { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-half); min-width: 0; }
+  .acct-menu .acct-row b { font-weight: 500; }
+  .acct-menu .acct-row .why { font: var(--type-small); color: var(--stamp-ink); }
+  .acct-menu .acct-row .why + .btn { margin: var(--space-1) 0 0 calc(-1 * var(--space-2)); }
+  .acct-switch.is-open { background: var(--hover); }
+
+  /* Send failed: the thread tray (§7.15, plan 30 §4.5 row 4) */
+  .send-fail { flex: none; padding: var(--space-2) var(--paper-pad) var(--space-3); }
+  .send-fail .error-line { min-height: var(--control-lg); }
+  .send-fail .acts { margin-left: auto; display: flex; gap: var(--space-1); }
+  .send-fail .acts .btn { margin-left: 0; }
+  .msg-line .when.fail { color: var(--stamp-ink); display: inline-flex; align-items: center; gap: var(--space-1); }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" id="side" data-active="home"></aside>
+    <main class="main">
+      <header class="toolbar v-home">
+        <h1 class="title">Home</h1>
+        <div class="tools">
+          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
+          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
+        </div>
+      </header>
+      <header class="toolbar v-reader">
+        <a class="btn btn-icon" href="home.html" data-tip="Back" data-key="Esc" aria-label="Back"><svg class="ic"><use href="#i-chevl"/></svg></a>
+        <h1 class="title">Home <span class="pos">1 of 9</span></h1>
+        <div class="tools">
+          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
+          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about this email" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
+        </div>
+      </header>
+
+      <div class="workspace v-home">
+        <div class="column" id="home" role="listbox" aria-label="Home"></div>
+      </div>
+
+      <div class="workspace v-reader">
+        <div class="reader">
+          <article class="paper" aria-label="Email from Jordan Park">
+            <div class="scroll">
+              <header class="letterhead">
+                <div class="from">
+                  <span class="monogram">JP</span><span class="name">Jordan Park</span><span class="date">10:00 AM</span>
+                </div>
+                <div class="icons">
+                  <button class="btn btn-icon" data-tip="Bookmark" data-key="B" aria-label="Bookmark"><svg class="ic"><use href="#i-bookmark"/></svg></button>
+                  <button class="btn btn-icon" data-tip="Trash" data-key="#" aria-label="Trash"><svg class="ic"><use href="#i-trash"/></svg></button>
+                  <button class="btn btn-icon" data-tip="More" data-key="." aria-label="More"><svg class="ic"><use href="#i-more"/></svg></button>
+                </div>
+                <p class="summary t-summary" role="doc-subtitle">Two layout directions for the Hollow Creek site are ready, and Jordan wants your pick by tomorrow so the build can start Monday.</p>
+                <h2 class="subject">A quieter home for the Hollow Creek site</h2>
+              </header>
+              <section class="thread" aria-label="4 messages">
+                <div class="msg"><div class="msg-line"><span class="who ellipsis">Jordan Park</span><span class="snip ellipsis">Kicking off: here is the brief we agreed on Friday, plus the three sites you liked.</span><span class="when">Oct 20</span></div></div>
+                <div class="msg"><div class="msg-line"><span class="who ellipsis">You</span><span class="snip ellipsis">Love the brief. Two things to keep: the booking form near the top, and the trail map.</span><span class="when">Oct 21</span></div></div>
+                <div class="msg"><div class="msg-line"><span class="who ellipsis">Mina Cho</span><span class="snip ellipsis">Early sketches before Jordan sends the full set. The serif headings are a test.</span><span class="when">Oct 27</span></div></div>
+                <div class="msg">
+                  <div class="msg-open">
+                    <div class="head"><span class="who">Jordan Park</span><span class="to">to you, Mina Cho</span><span class="when">Today, 10:00 AM</span></div>
+                    <div class="body">
+                      <p>Hi Alex,</p>
+                      <p>Both directions are ready. Direction A keeps the long scrolling story we talked about, with the trail photos carrying most of the page. Direction B is quieter: one screen, a short welcome, and the booking form right up front.</p>
+                      <p>Can you send me your preference by tomorrow? If we lock it by Friday, Mina can start the build on Monday and we keep the November 16 launch.</p>
+                      <p>Thanks,<br>Jordan</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="msg is-cursor"><div class="msg-line"><span class="who ellipsis">Draft to Jordan</span><span class="snip ellipsis">Direction B, please. I’ll send notes on the booking form tomorrow.</span><span class="when fail"><svg class="ic" style="width:var(--icon-sm);height:var(--icon-sm)"><use href="#i-alert"/></svg>Not sent</span></div></div>
+              </section>
+            </div>
+            <div class="send-fail" role="alert">
+              <div class="error-line"><svg class="ic"><use href="#i-alert"/></svg><span>Couldn’t send to Jordan. Your draft is saved.</span>
+                <span class="acts"><button class="btn btn-text xs">Try again</button><button class="btn btn-text xs">Edit<span class="kbd hint">E</span></button></span></div>
+            </div>
+            <footer class="flap">
+              <a class="btn btn-filled md" href="reply.html"><svg class="ic"><use href="#i-reply"/></svg>Reply<span class="kbd">Space</span></a>
+              <a class="btn btn-text md" href="reply.html?state=reply-all"><svg class="ic"><use href="#i-replyall"/></svg>Reply all<span class="kbd hint">⇧R</span></a>
+              <div class="right">
+                <button class="btn btn-text md"><svg class="ic"><use href="#i-clock"/></svg>Later<span class="kbd hint">L</span></button>
+                <button class="btn btn-text md"><svg class="ic"><use href="#i-check"/></svg>Done<span class="kbd hint">E</span></button>
+              </div>
+            </footer>
+          </article>
+          <aside class="rail" aria-label="Notes">
+            <section class="rail-group">
+              <h3 class="rail-label">Found here</h3>
+              <div class="rail-item"><svg class="ic"><use href="#i-clock"/></svg>Due tomorrow<button class="btn btn-text xs">Change<span class="kbd hint">D</span></button></div>
+              <div class="rail-item"><span class="chip plan"><svg class="ic"><use href="#i-calendar"/></svg>Launch · Mon, Nov 16</span><button class="btn btn-text xs">Add</button></div>
+              <div class="rail-item"><svg class="ic"><use href="#i-paperclip"/></svg>2 attachments</div>
+            </section>
+            <section class="rail-group">
+              <h3 class="rail-label">Why it’s in Home</h3>
+              <p class="c-ink2 t-ui">Jordan asked you a direct question with a deadline.</p>
+              <blockquote class="quote" style="margin-inline:0">“Can you send me your preference by tomorrow?”</blockquote>
+            </section>
+          </aside>
+        </div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+</div>
+<script>
+const S = Mock.state;
+const side = document.getElementById('side');
+const ic = Mock.icon;
+side.dataset.status = { reconnect: 'reconnect', quota: 'paused', offline: 'offline' }[S] || 'synced';
+
+if (S !== 'send-failed') {
+  const items = HomeView.DEFAULT_ITEMS.map(x => ({ ...x }));
+  if (S === 'row-error') items[3].err = 'Couldn’t move to Later.';
+  HomeView(document.getElementById('home'), {
+    items,
+    onRetry: (id, home) => { home.items[id].err = null; home.state.focus = id; home.render(); home.commit('later'); },
+  });
+}
+
+if (S === 'reconnect') {
+  document.addEventListener('DOMContentLoaded', () => {
+    side.querySelector('.acct-switch').classList.add('is-open');
+    const m = document.createElement('div');
+    m.className = 'float menu acct-menu reveal'; m.setAttribute('role', 'menu'); m.setAttribute('aria-label', 'Accounts');
+    m.innerHTML = `
+      <div class="menu-label">Accounts</div>
+      <div class="menu-item" role="menuitem"><span class="dots"><i style="background:var(--tag-sky)"></i><i style="background:var(--tag-hill)"></i></span>All accounts</div>
+      <div class="menu-item acct-row" role="menuitem"><span class="mk" style="background:var(--tag-sky)"></span>
+        <span class="txt"><b>alex.moreno@gmail.com</b><span class="why">Google needs you to sign in again.</span><button class="btn btn-text xs btn-danger">Reconnect</button></span></div>
+      <div class="menu-item" role="menuitem"><span class="mk" style="background:var(--tag-hill)"></span>alex@fernworks.studio<span class="aside">Synced</span></div>
+      <div class="menu-sep"></div>
+      <div class="menu-item" role="menuitem">${ic('plus')}Add an account</div>`;
+    document.querySelector('.window').append(m);
+  });
+}
+</script>
+</body>
+</html>
