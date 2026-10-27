@@ -8,42 +8,36 @@ Definitive design spec for the Aplos Mail revamp. Written 2026-10-27 by the desi
 
 ## In plain English
 
-This is the final design plan for the new Aplos. It decides how the app looks, moves, speaks and responds to your keys. It also sets the rules that stop AI coding agents from drifting away from that design.
+This is the final design plan for the new Aplos. It decides how the app looks, moves, speaks and responds to keys. It also sets rules that stop AI coding agents from drifting away from the design.
 
-The winning direction is called **Skypaper**. It comes straight from your app icon. The email you are handling is a sheet of paper, and everything around it is sky. In light mode the sky is a calm blue-grey. In dark mode it is a deep night blue, not pure black. A new "ink blue" replaces today's bright blue, which sits very close to Avec's. Done is a moss green from the hill in the icon. Later is an evening blue.
+The design is called Skypaper, and it comes from your app icon. The open email is a sheet of paper on a sky background. The sky is blue-grey in light mode and deep night blue in dark mode. A new ink blue replaces today's bright blue, which is close to Avec's blue. Summaries and Ask answers use a serif typeface, so you can tell the AI is speaking without any sparkle icon.
 
-When Aplos itself is speaking, as in summaries and Ask answers, the text is set in a letter-like serif font. That is how you can tell it is the AI, so no sparkle, wand or star icon is ever needed.
+The plan removes 17 things that look or read like Avec today, including the big blue Reply pill and the "Hold to talk" wording. Your next key press never waits for an animation, and the list never jumps. Finishing an email plays one signature motion that speeds up when you do.
 
-Several things that look or read like Avec today are removed. These include the big blue Reply pill and the floating button row under the email, the "Hold to talk" and "Swipe through them" wording, the "Todo" naming and the stacked-card look. Section 13 lists every one, with the file and line where it lives today.
+The onboarding window and first-sync screen are redesigned and include every fix from the PR #21 review. Automatic checks keep the design from drifting.
 
-Speed is a rule, not a hope. Your next key never waits for an animation. The list never jumps under your hands. Moving between screens is instant. Finishing an email has one signature motion: the letter is carried off the way you sent it, and it goes faster when you go faster.
-
-The onboarding window and the first-sync screen are redesigned. They also absorb every bug found in the PR #21 review. Closing the window early is always safe, and progress is always honest, including when Google asks Aplos to slow down.
-
-Finally, the design is enforced by lint rules, a design skill that every UI agent must load, automatic contrast checks and headless screenshot tests.
-
----
+You need to answer 12 questions below. Questions 2 and 3 matter most.
 
 ## Decisions for you
 
-Each decision below has a recommended default. If you accept all of them, the spec is buildable as written.
+Each question has a recommended default. If you accept all of them, the spec is ready to build.
 
 | # | Question | Options | Recommended | What happens |
 |---|---|---|---|---|
-| 1 | Adopt **Skypaper** as the design language? | (a) Skypaper, with grafts from the other two; (b) Carried's warm desk; (c) Instrument's flat precision look | **(a)** | (a) Aplos looks like its icon and clearly not like Avec. (b) is warmer but stays in Avec's warm-grey family. (c) is crisp but loses the icon story and the serif voice. |
-| 2 | Change the accent to **ink blue** `#0b5394` in both the app and the website? | (a) Ink blue; (b) keep `#0755dc` | **(a)** | (a) The distance from Avec's blue rises from ΔE 4.8 to 13.8, and white text on buttons rises to 7.84:1. (b) The blue stays close to Avec, so the serif and the paper have to carry the identity alone. |
-| 3 | Set summaries and Ask answers in the **Newsreader** serif? | (a) Yes, after a one-day look test against the system font; (b) yes, with no test; (c) no, and mark the AI by colour instead | **(a)** | (a) costs one day and gives the strongest identity cue. (c) is plainer. Only one token changes either way. |
-| 4 | Use the **cool sky** neutrals instead of today's warm greys? | (a) Cool; (b) keep warm neutrals but change everything else | **(a)** | Avec's warm grey is part of the overlap (`DECISIONS.md:72, 223` chose warm). Under (b), the two apps still share a canvas family. |
-| 5 | What goes at the top of the reader? | (a) Sender and date on a small first line, then the big summary, then the subject; (b) summary first | **(a)** | It satisfies both of your notes ("summary at the very top, above the subject" and "sender and relative date at top"). (b) is closer to today. |
-| 6 | Should Done on mail that still needs your reply leave Home? | (a) Yes, with a toast offering "Remind me if no reply, R"; (b) it stays on Home | **(a)** | Today the row stays put and Done reads as broken (`ui/aplos-baseline.md` §6.9 #4). |
-| 7 | Where do the arrow keys triage? | (a) Only on Home and in the reader and one-by-one; (b) everywhere, as today; (c) only behind a setting | **(a)** | A slip in All mail or search can't archive mail, and your swipe-direction habit is kept where the letter is. |
-| 8 | Hide key hints until hover or holding ⌘, except Space on the main action? | (a) Hidden, with a "Show all key hints" setting; (b) always visible | **(a)** | Screens get calmer. The setting keeps today's look if you want it. |
-| 9 | Should the Ask dock start closed? | (a) Closed on first run, then remembered; (b) open on first run | **(a)** | The first screen isn't 700 px of blank panel (`ui/aplos-baseline.md` §6.2). After that it remembers whatever you last did. |
-| 10 | Should ⌘K become a real command palette, with `/` for search? | (a) Yes; (b) keep ⌘K as search | **(a)** | Every command is reachable without memorising letters. It is an overlay, not toolbar navigation. |
-| 11 | Should the Home focus letter have a fixed height, with the summary limited to two lines? | (a) Fixed (160 px at the default density); (b) auto height, as today | **(a)** | The list can't jump when letters change. A long summary is cut off at two lines on Home only, never in the reader. |
-| 12 | Should the reader get a quiet **margin rail** on the right (due date, attachments, why it's on Home, the sender's history)? | (a) Yes; (b) no, keep those under the summary | **(a)** | The paper holds only the letter, and the 40 % blank card goes away. |
+| 1 | Adopt **Skypaper** as the design language? | (a) Skypaper, with ideas from the other two; (b) Carried's warm desk; (c) Instrument's flat look | **(a)** | (a) Aplos looks like its icon and unlike Avec. (b) stays close to Avec's warm greys. (c) loses the icon story and the serif voice. |
+| 2 | Change the accent to **ink blue** `#0b5394` in the app and website? | (a) Ink blue; (b) keep `#0755dc` | **(a)** | (a) moves the blue far from Avec's and keeps white button text readable. (b) leaves the blue close to Avec's, so the serif and paper must carry the identity. |
+| 3 | Set summaries and Ask answers in the **Newsreader** serif? | (a) Yes, after a one-day look test; (b) yes, with no test; (c) no, mark the AI by colour | **(a)** | (a) costs one day and gives the strongest sign that Aplos is speaking. (c) is plainer. Either way it is easy to change later. |
+| 4 | Use **cool sky** greys instead of today's warm greys? | (a) Cool; (b) keep warm greys | **(a)** | Avec uses a warm grey, so keeping it leaves the two apps sharing a canvas colour. |
+| 5 | What goes at the top of the reader? | (a) Sender and date, then the big summary, then the subject; (b) summary first | **(a)** | (a) matches both of your notes. (b) is closer to today. |
+| 6 | Should Done on mail that still needs your reply leave Home? | (a) Yes, with a toast offering "Remind me if no reply, R"; (b) it stays on Home | **(a)** | Today the row stays and Done looks broken. |
+| 7 | Where do the arrow keys triage? | (a) Only on Home, in the reader and one-by-one; (b) everywhere, as today; (c) only behind a setting | **(a)** | A slip in All mail or search cannot archive mail. |
+| 8 | Hide key hints until hover or holding ⌘, except Space on the main action? | (a) Hidden, with a "Show all key hints" setting; (b) always visible | **(a)** | Screens get calmer, and the setting restores today's look. |
+| 9 | Should the Ask dock start closed? | (a) Closed on first run, then remembered; (b) open on first run | **(a)** | The first screen is not 700 px of blank panel. After that it remembers your last choice. |
+| 10 | Should ⌘K become a real command palette, with `/` for search? | (a) Yes; (b) keep ⌘K as search | **(a)** | Every command is reachable without memorising keys. |
+| 11 | Should the Home focus letter have a fixed height, with the summary cut at two lines? | (a) Fixed (160 px); (b) auto height, as today | **(a)** | The list cannot jump when letters change. Summaries are cut only on Home, never in the reader. |
+| 12 | Should the reader get a quiet **margin rail** on the right (due date, attachments, why it is on Home, sender history)? | (a) Yes; (b) no, keep those under the summary | **(a)** | The paper holds only the letter, and the 40% blank card goes away. |
 
-> **What this means:** if you answer only two, answer 2 (the blue) and 3 (the serif). Those two decide how different Aplos looks from Avec at a glance.
+> **What this means:** Answer 2 (the blue) and 3 (the serif) first. They decide most of how different Aplos looks from Avec.
 
 ---
 
@@ -57,7 +51,7 @@ I scored the three proposals independently before reading the GLM judge's reason
 
 Appendix B lists every graft.
 
-> **What this means:** Skypaper is the base. The best engineering from Instrument and the best touch details from Carried are folded in, so nothing good from the losing proposals is lost.
+> **What this means:** Skypaper is the base design. The best ideas from the other two proposals are added to it.
 
 ---
 
@@ -108,7 +102,7 @@ These checks run automatically on the screenshot harness (§12.5) for Home and t
 - `DECISIONS.md:15-17` and `PROGRESS.md:12` stop saying "airmail brand".
 - Alt text may say "a striped letter".
 
-> **What this means:** the identity is taken from your own icon, so it can't be mistaken for Avec or for Bloop's Airmail. Seven automatic yes-or-no checks keep it that way.
+> **What this means:** The identity comes from your own icon, so it cannot be mistaken for Avec or for Bloop's Airmail. Seven automatic checks enforce that.
 
 ---
 
@@ -125,7 +119,7 @@ These checks run automatically on the screenshot harness (§12.5) for Home and t
 9. **AI is content.** It has no glyph, badge or glow.
 10. **Decoration is rare on purpose:** two post edges and four sky moments.
 
-> **What this means:** these ten lines are the tie-breakers. If a screen needs a new colour, radius, motion or floating pill, the screen is wrong, not the system.
+> **What this means:** These ten principles settle any design disagreement. A screen that needs a new colour, radius, motion or floating pill is wrong.
 
 ---
 ## 4. Tokens
@@ -312,7 +306,7 @@ Today there are about 30 literal radii and pill-shaped buttons everywhere [V: ba
 - **Banned in every form:** `sparkle(s)`, `wand.and.stars`, `wand.and.rays`, `star`, `star.fill`, `apple.intelligence`, `brain`, `brain.head.profile`, and Lucide `Sparkles`, `Sparkle`, `Wand`, `WandSparkles`, `Stars`, `Star`, `Brain`, `Bot`. Lint enforces the list (§12.2). Bookmarks use `bookmark`, never a star.
 - **No icon-in-a-grey-circle empty states** [V: baseline §6.8 #1].
 
-> **What this means:** every colour, size, gap, corner and shadow comes from one short list, so the app stays consistent no matter which agent builds a screen. Every text colour passes accessibility checks in both themes, including the faded rows that fail today.
+> **What this means:** Every colour, size, gap, corner and shadow comes from one list, so screens stay consistent. All text colours pass contrast checks in both themes, including the faded rows that fail today.
 
 ---
 ### 4.8 Motion tokens
@@ -389,7 +383,7 @@ The proposal's slide spring (400 / 32 / 1) actually settles in 361 ms at 0.5 %, 
 
 **Send** uses `post`, the only place the wind arc appears.
 
-> **What this means:** about two dozen named motions replace dozens of one-offs. Moving around is instant. Finishing an email has one memorable gesture that never makes you wait and never moves the list under your hands.
+> **What this means:** About two dozen named motions replace dozens of one-offs. Moving around is instant, and finishing an email never makes you wait or moves the list under you.
 
 ---
 
@@ -427,7 +421,7 @@ These are requirements, not preferences. Each one has a test in the budget suite
 | Cold start → shell painted / Home interactive | < 800 ms / < 1.5 s (local index). Initial targets, recalibrated after the first measurement. |
 | Scroll 10k rows | no frame over 16.7 ms p95 |
 
-> **What this means:** the app always does the thing first and animates second, so fast hands never wait and a slow network never makes the keyboard feel slow. Every rule is a test that can fail.
+> **What this means:** The app acts first and animates second, so fast key presses never wait and a slow network never slows the keyboard. Every rule is an automatic test.
 
 ---
 ## 6. Component inventory
@@ -474,7 +468,7 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
 | `ShortcutSheet` | Rework | Generated from the command registry; fixed height; alternatives joined with "or" |
 | `CommandRegistry` | New | One source of every action: id, label, icon, keys, context, undo, confirm. It feeds keys, the palette, menus, tooltips, the sheet and toast keycaps. |
 
-> **What this means:** a fixed parts list means a new screen is assembled, not invented. Agents can't quietly add a fourth button style or a new pill.
+> **What this means:** Screens are assembled from a fixed parts list, so agents cannot add a fourth button style or a new pill.
 
 ---
 
@@ -790,7 +784,7 @@ There are four moments:
 
 Moments 2 and 3 can be skipped with any key and are static under reduced motion.
 
-> **What this means:** every screen keeps its job and your keys, but follows one grammar: a title, quiet rows, one sheet of paper, honest status and plain sentences. The biggest visible changes are the reader's flap and margin, the real command palette, honest sending, and an onboarding window that can't get stuck.
+> **What this means:** Every screen keeps its job and your keys. The biggest visible changes are the reader's new layout, a real command palette, honest sending and an onboarding window that cannot get stuck.
 
 ---
 ## 8. Keyboard map
@@ -818,7 +812,7 @@ Moments 2 and 3 can be skipped with any key and are static under reduced motion.
 
 **Discoverability.** Keycaps appear on hover, on focus, while ⌘ is held, and in tooltips, the palette and toasts. Space on the primary action is always shown.
 
-> **What this means:** your keys mostly stay. Space always does the smart thing, R replies, holding a key speaks instead of types, and the help sheet can never go stale.
+> **What this means:** Most of your keys stay. Space does the smart action, R replies, and holding a key dictates. The help sheet always matches the real keys.
 
 ---
 
@@ -835,7 +829,7 @@ Moments 2 and 3 can be skipped with any key and are static under reduced motion.
 | 7 | **Absence is quiet.** With no provider, the subject takes the summary's place, there is no error on the mail surface, and one line appears in Settings → AI. |
 | 8 | **Banned in every form:** sparkles, wands, stars, the `apple.intelligence` glyph, brains and robots, purple gradients, rainbow or animated borders ("beams"), shimmer, and the words "magic", "AI-powered", "smart" as a label, "Copilot" and "Beta" badges. Enforced by lint on icon names and UI strings (§12.2). |
 
-> **What this means:** you recognise Aplos speaking by its letter-like typeface and its plain "because" line, never by a glowing icon. With AI switched off, nothing looks broken.
+> **What this means:** Aplos speaks in a serif typeface and gives a plain "because" line for its suggestions, never a glowing icon. With AI off, nothing looks broken.
 
 ---
 
@@ -863,7 +857,7 @@ Moments 2 and 3 can be skipped with any key and are static under reduced motion.
 
 These phrases are on the lint ban list (§12.2): "Swipe through them", "Hold to talk", "Hide all", "Todo", "Be here now", "Sent with", "Ask me anything", "magic", "AI-powered".
 
-> **What this means:** every phrase that echoed Avec is replaced, and the app speaks plainly instead of in an assistant's voice.
+> **What this means:** Every phrase that echoed Avec is replaced, and the app uses plain wording instead of an assistant's voice.
 
 ---
 
@@ -882,7 +876,7 @@ These phrases are on the lint ban list (§12.2): "Swipe through them", "Hold to 
 6. **Size.** Everything is in `rem`, and 200 % zoom works down to the 900 px minimum window. Nothing is under 11 px. Targets are at least 24 px (28 px default).
 7. **Checks.** An axe scan of every harness state in both themes, a keyboard-only walkthrough of ten core tasks, and manual VoiceOver passes for Home, the reader, compose, Ask, the calendar and onboarding. Japanese and Chinese IME tests.
 
-> **What this means:** the calm look sits on top of accessibility rules, not instead of them, and every rule is checked automatically.
+> **What this means:** The calm look follows accessibility rules, and automatic checks enforce each one.
 
 ---
 
@@ -955,7 +949,7 @@ The skill is versioned with the tokens. A token change that doesn't touch the sk
 
 `npm run test:perf` runs in the **packaged** build. The renderer is driven by synthetic key events through CDP, against a 10k-thread fixture store. It measures with the Event Timing API and `PerformanceObserver` for long animation frames, and asserts the §5 budgets at p95 over 50 runs. Results are recorded to `tests/perf/history.json`. A slowdown of more than 10 % against the 7-day median fails.
 
-> **What this means:** the design can't quietly drift. Lint blocks raw colours, literal timings and layout animation. Every UI agent loads the same rulebook. CI checks contrast and the distance from Avec. Headless screenshots catch any visual change before it merges.
+> **What this means:** Lint rules block raw colours, literal timings and layout animation. Automatic contrast, Avec-distance and screenshot checks run before anything merges.
 
 ---
 
@@ -985,7 +979,7 @@ The root cause is that `DECISIONS.md:125` set "Visual parity (M14)" to reproduce
 
 **Behaviours kept on purpose** (your model, with new looks and words): one letter at a time, Space runs the suggestion, hold to dictate, the docked Ask, the low-importance bundle with its own background, Later grouped by date, the D due-date toast, → → mark-all, and rapid-mode timing.
 
-> **What this means:** these seventeen items are what make today's screenshots look and read like Avec. All of them go in the first stage of work, and the not-Avec test stops them coming back.
+> **What this means:** These 17 items make today's screens look and read like Avec. All of them are fixed in the first stage, and an automatic check stops them returning.
 
 ---
 ## 14. What not to copy from each reference
@@ -1003,7 +997,7 @@ The root cause is that `DECISIONS.md:125` set "Visual parity (M14)" to reproduce
 
 The rejected parts of the losing proposals are listed in Appendix B.
 
-> **What this means:** we borrow engineering and restraint from each app, never its look, words or assets. The whole sparkle, glow and shimmer family is excluded.
+> **What this means:** We borrow engineering and restraint from each reference app, never its look, wording or assets. Sparkle, glow and shimmer effects are excluded.
 
 ---
 
@@ -1019,7 +1013,7 @@ For the T3 UI thread. Several steps depend on the architecture plan's contracts:
 | 4. Motion signature (~1 week) | `commit`, `flight`, `deal`, `carry`, `hold`, `close`, rapid mode, the cursor layer, puck, dock fix | §5 budgets pass in the packaged app at 10k threads; filmstrips are baselined |
 | 5. Screens (2–3 weeks) | Palette and search, Later, Ask, Settings, Calendar fixes, onboarding and first sync (§7.11–7.12, Appendix C), toasts, empty and error states, sky moments | Each §7 state is in the harness; every PR #21 finding has a test; closing onboarding at any step leaves AI working |
 
-> **What this means:** trust fixes ship first, then the guard-rails that stop drift, then the new look, then the motion, then the remaining screens, each with a check you can see pass.
+> **What this means:** Trust fixes ship first, then the checks that stop drift, then the new look, then motion, then the remaining screens. Each stage has a check you can see pass.
 
 ---
 

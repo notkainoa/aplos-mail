@@ -6,38 +6,36 @@ Workstream plan for the T3 UI thread, 2026-10-27, branch `revamp`. Planning only
 
 ## In plain English
 
-This is the plan for rebuilding how Aplos looks, moves and responds, from the screens you see to the rules that stop AI coding agents from wandering away from the design. It follows the Skypaper design and the engine plan, which are already decided.
+This plan covers how the screens look, move and respond.
 
-Today the screen code is about 8,500 dense lines. It holds your whole mailbox in memory, has 56 one-off animations and about 70 hard-coded colours, and nothing checks automatically that a screen follows the design. So the first job is guard-rails, and the second is screens built on top of them.
+Today the screen code is about 8,500 dense lines. It has 56 one-off animations and about 70 hard-coded colours, and nothing checks that a screen follows the design. So the plan builds the checks first and the screens second.
 
-The work runs in ten steps. First come a few days of trust fixes: every word and layout that echoes Avec goes (all seventeen items on the design's list), and ten known bugs are fixed. Then come the foundations: one file that defines every colour, size and motion, checks that fail when someone breaks the rules, and a robot that photographs about ninety screens with no visible window. Then come the new look, the signature "carried off" motion, and each screen in turn.
+The work has ten steps. First come a few days of trust fixes. Every word or layout that echoes Avec goes, and ten known bugs are fixed. Then one file defines every colour, size and motion, and automatic checks fail when someone breaks the rules. Then come the new look and each screen.
 
-Onboarding is the PR #21 work reshaped to your wishes: its own small window with the sky edge to edge, a tiny "Try demo mail" button in the top-right corner that loads demo mail only when you click it, and, after setup, a loading screen that fetches your newest mail and sorts it before Aplos opens. Gmail lets an app read only so much per minute. So that screen fetches the newest mail first, tells the truth about progress, and lets you walk in early while older mail keeps arriving.
+Onboarding becomes its own small window with the sky edge to edge and a small "Try demo mail" button. After setup, a loading screen fetches your newest mail first and lets you walk in early while older mail arrives.
 
-What changes for you. The trust fixes arrive in about two weeks and the new look around week six. The whole revamp takes about 13 to 14 weeks, or up to 17 if reviews and live checks run slow. That is two to three weeks after the engine plan's eleven. The screens start on a stand-in engine in week two and switch to the real one around week six, so your Gmail days are not disturbed. Four things only you can do: judge the serif font, feel the motion, connect a real Google account through the new onboarding, and try VoiceOver. Nothing goes to main without you.
+Trust fixes arrive in about two weeks and the new look around week six. The whole revamp takes 13 to 14 weeks, or up to 17 if reviews run slow.
 
-> **What this means:** One steady path from "looks and reads a bit like Avec" to "clearly Aplos", with a safety net first, a visible check at the end of every step, and your hands-on judgement asked for exactly where a machine cannot give it.
+You need to judge the serif font, feel the motion, connect a real Google account through onboarding, try VoiceOver, and answer 12 questions below.
 
 ## Decisions for you
 
-Each has a recommended default; the plan proceeds on the defaults unless you say otherwise. Answers to 1, 4 and 10 matter soonest.
+Each question has a recommended default. The plan uses the defaults unless you say otherwise. Answer 1, 4 and 10 first.
 
 | # | Question | Options | Recommended | What happens |
 |---|---|---|---|---|
-| 1 | Ship the trust fixes (step U0) to main early? | (a) Yes, with 0.3.0; (b) yes, plus a three-colour interim palette (ink blue, moss green, cool canvas) so the early release already looks less like Avec; (c) hold everything for the big release | **(a)** | (a) You get the plain wording and ten bug fixes in about two weeks, at the cost of a small merge. (b) changes the look early but half-changed screens may feel odd. (c) leaves the old wording for months. |
-| 2 | Who picks the serif, and when? | (a) You, from a one-page look test at the start of U3; (b) Newsreader without a test | **(a); no answer in two days means Newsreader** (DESIGN decision 3) | The test costs a day. Skipping risks a look you dislike, though changing it later is a one-token edit. |
-| 3 | When do the screens switch from the stand-in engine to the real one? | (a) As soon as the real engine's live lists pass the same tests as the stand-in (about week 6-7); (b) at the very end (the earlier plan) | **(a)** | (a) lets the engine team finish its clean-up on time and shows you real mail in the new screens sooner. (b) delays the engine's last step and the 0.4.0 release by weeks. |
-| 4 | What happens to PR #21? | (a) Absorb its screens and you close it as superseded; (b) merge it first, then rework; (c) discard it | **(a)** | (a) keeps its work and avoids a throwaway merge; its engine half is rebuilt by the engine plan. (b) puts a screen on main that is rewritten weeks later. (c) loses working code. |
-| 5 | Where do visual baselines live? | (a) A small golden set in the repository plus same-machine comparison against the base branch; (b) every baseline committed (DESIGN 12.5) | **(a)** | The repository stays small and immune to macOS font updates. (b) adds tens of megabytes per refresh to a repository that may go public. |
-| 6 | May the UI thread design the small missing surfaces in section 4.5? | (a) Yes, inside Skypaper's parts, you read the copy at the U7 and U8 reviews; (b) stop and ask each time | **(a)** | Asking would stall small items; the risk is wording, which you will see. |
-| 7 | Tap versus hold on R and A. | (a) R opens the reply instantly and holding adds dictation, one 250 ms threshold replacing today's three; (b) keep tap-on-release | **(a)** | (a) removes the small wait the design forbids. Today's way delays every tap by the threshold. |
-| 8 | How do you try each milestone? | (a) A local packaged build; (b) the dev server only | **(a)** | It shows real fonts, vibrancy and windowing, where surprises hide. |
-| 9 | A seven-day dogfood week before anything is proposed for main? | (a) Yes; (b) no | **(a)** | A week of real mail finds what a harness cannot. Skipping saves a week and risks a surprise. |
-| 10 | How does the onboarding window look? | (a) The sky fills the whole window including under the title bar, and one paper sheet sits on it with a 16 px margin; (b) text straight on the sky, no sheet; (c) the design's original smaller card with sky around it | **(a)** | (a) gives the Arc, Dia and Zen full-bleed feel and keeps text on a solid background. (b) puts text on a gradient, which DESIGN section 14 warns against. (c) is calmer but not full-bleed. |
-| 11 | After setup, does Aplos open by itself? | (a) Yes, about one second after your newest mail is in and sorting finished or hit its 60 second limit, but it waits for you whenever something went wrong (Google slowing down, a failure, partial sorting); (b) always wait for Return | **(a)** | (a) matches "loading screen, then inbox" and never hides a problem. (b) is more predictable but adds a click on every happy path. You can always enter early either way. |
-| 12 | When is 0.4.0 released? | (a) Once the engine's seven-day soak and the UI's dogfood week pass together on one release candidate (about week 14); (b) the engine at week 11 with unfinished screens | **(a)** | (a) ships one coherent release and uses one week for both checks. (b) is earlier but ships a half-new look. |
-
-> **What this means:** If you say nothing, the plan follows every default above. The three new questions (10 to 12) are about the onboarding look, whether Aplos opens itself after setup, and when the release lands.
+| 1 | Ship the trust fixes (step U0) to main early? | (a) Yes, with 0.3.0; (b) yes, plus an interim three-colour palette; (c) hold everything for the big release | **(a)** | (a) gives you plain wording and ten bug fixes in about two weeks. (b) changes the look early, but half-changed screens may feel odd. (c) keeps the old wording for months. |
+| 2 | Who picks the serif, and when? | (a) You, from a one-page look test at the start of U3; (b) Newsreader with no test | **(a); no answer in two days means Newsreader** (design decision 3) | The test costs a day. Skipping risks a look you dislike, though it is easy to change later. |
+| 3 | When do the screens switch from the stand-in engine to the real one? | (a) When the real engine passes the same tests (about week 6 to 7); (b) at the very end | **(a)** | (a) shows you real mail in the new screens sooner and keeps the engine on time. (b) delays the 0.4.0 release by weeks. |
+| 4 | What happens to PR #21? | (a) Absorb its screens, and you close it as superseded; (b) merge it first, then rework; (c) discard it | **(a)** | (a) keeps its work without a throwaway merge. (b) puts a screen on main that gets rewritten weeks later. (c) loses working code. |
+| 5 | Where are the reference screenshots stored? | (a) A small set in the repository, plus same-machine comparison against the base branch; (b) every screenshot committed | **(a)** | (a) keeps the repository small. (b) adds tens of megabytes per refresh. |
+| 6 | May the UI thread design the small missing screens in section 4.5? | (a) Yes, using Skypaper's parts, and you read the copy at the U7 and U8 reviews; (b) stop and ask each time | **(a)** | Asking would stall small items. The risk is wording, which you will see. |
+| 7 | Tap versus hold on R and A? | (a) R opens the reply instantly and holding adds dictation, with one 250 ms threshold; (b) keep tap-on-release | **(a)** | (a) removes a small wait on every tap. |
+| 8 | How do you try each milestone? | (a) A local packaged build; (b) the dev server only | **(a)** | It shows real fonts and windows, where surprises hide. |
+| 9 | Run a seven-day week of using it on your real mail before anything goes to main? | (a) Yes; (b) no | **(a)** | A week of real mail finds problems tests miss. Skipping saves a week and risks a surprise. |
+| 10 | How does the onboarding window look? | (a) The sky fills the whole window, with one paper sheet and a 16 px margin; (b) text straight on the sky; (c) the original smaller card with sky around it | **(a)** | (a) gives a full-bleed look and keeps text on a solid background. (b) puts text on a gradient. (c) is calmer but not full-bleed. |
+| 11 | After setup, does Aplos open by itself? | (a) Yes, about one second after your newest mail is in and sorted (or sorting hits 60 seconds), but it waits whenever something went wrong; (b) always wait for Return | **(a)** | (a) matches "loading screen, then inbox" and never hides a problem. (b) adds a click every time. You can always enter early. |
+| 12 | When is 0.4.0 released? | (a) After the engine's seven-day soak and the UI week pass together on one release candidate (about week 14); (b) the engine at week 11 with unfinished screens | **(a)** | (a) ships one coherent release. (b) is earlier but looks half-new. |
 
 ## 1. Scope and non-goals
 

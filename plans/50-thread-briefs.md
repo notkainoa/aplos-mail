@@ -4,17 +4,13 @@ Written 2026-10-27 on branch `revamp`. Planning only: nothing here is implemente
 
 ## In plain English
 
-Three T3 Code threads will carry out the revamp, and this file holds the exact message that starts each one.
+This file holds the launch message for three T3 Code threads that will carry out the revamp.
 
-The **Engine** thread builds the foundation: the agreed list of commands between screens and engine, the new database and the move of your mail into it, the sealed box that shows each email safely, the AI queue, sending and timers, plus the tests, security and release machinery. The **Providers & Sync** thread makes every mail service work. It starts with the quick Gmail fix (0.2.4), the most urgent job in the whole revamp, then rebuilds Gmail, adds iCloud, Fastmail, calendars and a dormant Outlook, and prepares the Google review. The **UI** thread builds everything you see: the Skypaper look, the motion, every screen, onboarding and the website text.
+The Engine thread builds the foundation. That covers the database, the safe email display, the AI queue, sending, timers, tests and releases. The Providers & Sync thread makes every mail service work. It starts with the Gmail fix (0.2.4), the most urgent job, then rebuilds Gmail, adds iCloud, Fastmail and calendars, and prepares the Google review. The UI thread builds everything you see, including the Skypaper look, every screen and onboarding.
 
-They coordinate through one shared notes file, `plans/STATUS.md` on the `revamp` branch. Each thread adds dated lines there: milestone done, handoff ready, blocked on something, or a proposed change to the shared contract. The Engine thread owns that contract. In week 1 there is one short freeze, about a day, when the other two pause edits while the Engine thread moves files.
+The threads coordinate through one notes file, `plans/STATUS.md` on the `revamp` branch. The Engine thread owns the shared contract, which is the list of commands the screens use to talk to the engine. In week 1 the other two threads pause for about a day while the Engine thread moves files.
 
-In every milestone each thread runs Claude Code workflows: plan, build pieces in parallel, have a second agent try to break the result, run the checks, fix. They stay lean to keep cost down.
-
-What you will see: after each milestone, a short plain note on what works and what you can try. What you will need to do: answer the launch questions below (or accept the defaults), create a few accounts, run the live Gmail checks by hand, and merge the 0.2.4 pull request. Nothing reaches main except 0.2.4 and the releases you approve.
-
-> **What this means:** Three teams, one shared notes file, one short pause in week 1. You get a plain-English update after every step, and only you can put anything on main.
+After each milestone you get a short plain note on what works and what to try. You need to answer three launch questions below, create a few accounts, run the live Gmail checks by hand, and merge the 0.2.4 pull request. Only 0.2.4 and the releases you approve reach main.
 
 ## How to use this file
 
@@ -422,21 +418,10 @@ Do these in order. The owner says "go"; nothing here starts before that.
 
 ## Decisions for you
 
-Only the launch-specific ones are here. The full list is in [00-roadmap.md](00-roadmap.md) section 6. If you do not answer, the default applies.
+These are the launch questions. The full list is in [00-roadmap.md](00-roadmap.md) section 6. The default applies if you do not answer.
 
-**1. Launch all three threads at once, or stagger them?**
-- Options: (a) stagger: Providers & Sync first (day 0), Engine the same day or the next, UI with the Engine thread or a day later; (b) all three at once; (c) fully staggered: Providers first, then Engine, then UI only after the contract preview (C0, about day 5 of week 1).
-- **Default: (a).** The Gmail fix starts first. The UI thread's first jobs are two small fixes for 0.2.4 (the email-display stopgap and the website and privacy page) that only count if done in week 0, and its main work waits for the freeze window anyway, so starting it a day behind Engine costs almost nothing.
-- Consequence: (b) works too but puts three threads' review demands on you in the same week. (c) saves a few days of token cost, but the two small 0.2.4 fixes then miss the train and wait for 0.3.0, and the privacy page for Google's brand check starts later.
+**1. Launch all three threads at once, or stagger them?** (a) Stagger, with Providers & Sync first, Engine the same day or the next, and UI a day later; (b) all three at once; (c) Providers first, then Engine, then UI after the contract preview (about day 5). **Default is (a).** The Gmail fix starts first, and the UI thread's first jobs are two small fixes that must land in week 0. (b) puts three threads' reviews on you in one week. (c) saves tokens but pushes those two fixes to 0.3.0.
 
-**2. Who starts the freeze window in week 1?**
-- Options: (a) the Engine thread asks you, you say go, it announces the window in STATUS.md; (b) the Engine thread starts it on its own once 0.2.4 has merged or day 5 passes.
-- **Default: (a).** It is one short pause for the other two threads, and you know whether you are mid-review.
-- Consequence: (b) is quicker but could pause threads while you are not watching.
+**2. Who starts the freeze window in week 1?** (a) The Engine thread asks you and starts the window when you say go; (b) it starts on its own once 0.2.4 has merged or day 5 passes. **Default is (a).** You know whether you are mid-review. (b) is quicker but could pause threads while you are away.
 
-**3. How often should threads report to you?**
-- Options: (a) at the end of each milestone, in 3-6 plain sentences (as the briefs say); (b) also a short daily line; (c) only on blockers.
-- **Default: (a).**
-- Consequence: (b) is closer to a live view but adds noise and token cost. (c) risks silent drift.
-
-> **What this means:** The default is a staggered start with Providers first, the freeze window on your word, and one plain-English note per milestone. You can speed up or slow down any of these by saying so.
+**3. How often should threads report to you?** (a) After each milestone, in 3 to 6 plain sentences; (b) also a short daily line; (c) only when blocked. **Default is (a).** (b) adds noise and token cost. (c) risks silent drift.

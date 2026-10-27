@@ -6,85 +6,45 @@ Workstream plan, 2026-10-27, branch `revamp`. Planning only: nothing here is imp
 
 ## In plain English
 
-The rebuild only works if the ground under it is solid. This plan is about that ground: the dull, important things that decide whether the new Aplos is safe, shippable and honest.
+This plan covers releases, security, tests and the website.
 
-Here is where Aplos stands. Nobody but you can download it or get an update, because the code sits in a private place and the download link and update feed point there. Electron, the toolkit Aplos is built on, has safety switches, and all are at factory settings, so another program on your Mac could borrow Aplos's trusted identity. The installer says it runs on macOS 12, but the toolkit needs 13. There is no formatter, and much of the code is squeezed into very long lines. No automatic test opens the whole app. AI quality checks run by hand. The website shows downloads for Windows and Linux builds that do not exist, and says Aplos works with Outlook, which cannot sign in yet. Google still treats Aplos as a test app, so only people you list can use Gmail.
+Today only you can download Aplos or get updates, because the code is private and the download link points there. Electron, the toolkit Aplos uses, has its safety settings at their defaults. The installer claims macOS 12 support but needs macOS 13. The website lists Windows and Linux downloads that do not exist and says Outlook works when it cannot sign in yet. Google still treats Aplos as a test app, so only people you list can use Gmail.
 
-This plan fixes those in order. First, a public "releases only" home, so downloads and updates work while the code stays private. The Gmail fix, 0.2.4, never waits for any of this. Second, one big automatic tidy of every file, with proof it changed no behaviour. Third, the safety switches. Fourth, a test robot that opens the app on fake accounts without showing a window and makes small read-only checks on real ones. Fifth, a website that says only what is true, with its privacy page live early, because Google's review needs it. Sixth, everything needed to open the code one day: a licence, a secret scan of the whole history, a copied-code check, contributor guides, and a plan for the Google sign-in keys that ship inside the app.
+The plan fixes these in order. A public releases-only repository makes downloads and updates work while the code stays private. Then one commit reformats every file. Then the security settings are tightened. Then a test robot opens the app on fake accounts. Then the website says only what is true, with its privacy page early because Google's review needs it. Last, it prepares for open source.
 
-For you, that means about fourteen decisions, a few accounts to create, a domain for the website, and some buttons only you press: publish a release, send Google your review, make the repository public. Nothing reaches main without you.
-
-> **What this means:** You get a product strangers can safely download, update and trust, and a codebase you can open to the world without regret. The first public step, the releases home, takes days, not weeks.
+You need to answer 14 questions below, create a few accounts and get a domain for the website. You press the buttons to publish a release, send Google your review and make the repository public.
 
 ## Decisions for you
 
-Each has a recommended default. The plan proceeds on the defaults unless you say otherwise. M, B, C and D should be answered soonest.
+Each question has a recommended default. The plan uses the defaults unless you say otherwise. Answer M first, because Google's review cannot start without a domain. B, C and D unblock the most work.
 
-**A. Reformat every file in one commit, inside the first-week "freeze window"?**
-- *Yes, right after the engine files are moved and before the big engine split (recommended).* One big diff that changes no behaviour, proven by checks. Every later change is readable. The 0.2.4 Gmail fix is merged in first, so nothing is lost.
-- *No, tidy files only as they are touched.* No big diff, but dense and tidy code stay mixed for months.
+**A. Reformat every file in one commit during the first-week freeze window?** Yes, after the engine files move and before the big engine split; or no, tidy files only as they change. **Default is yes.** One big diff changes no behaviour, and checks prove it. Later changes become readable. No keeps dense and tidy code mixed for months.
 
-**B. Where do downloads and updates come from while the code is private?** (ARCH Decision 11, made concrete.)
-- *A separate public repository for releases only, `aplos-mail-releases` (recommended).* Download links and auto-update work for anyone. No source is exposed. The name is permanent, because every installed copy remembers it.
-- *Make the main repository public now.* Simplest, but exposes unaudited history (see D).
-- *Host files ourselves.* Works, but you pay for 150 MB downloads and run more plumbing.
+**B. Where do downloads and updates come from while the code is private?** (Architecture decision 11.) A separate public repository for releases only, named `aplos-mail-releases`; make the main repository public now; or host the files ourselves. **Default is the releases repository.** Downloads and updates work for anyone, and no source is exposed. The name is permanent because installed copies remember it. Going public now exposes unaudited history. Hosting costs you for 150 MB downloads.
 
-**C. Which licence when Aplos goes open source?** (ARCH Decision 12.)
-- *GPL-3.0 for the app and engine, MIT for `packages/contract` (recommended).* Copies of the app stay open; tools built on the contract can be anything. The name and icon stay yours.
-- *MIT or Apache-2.0 everywhere.* Anyone may reuse it, even in closed apps, including a competitor.
-- *AGPL-3.0.* Also covers hosted services; deters some contributors and companies.
+**C. Which licence when Aplos goes open source?** (Architecture decision 12.) GPL-3.0 for the app and engine with MIT for `packages/contract`; MIT or Apache-2.0 everywhere; or AGPL-3.0. **Default is the first.** Copies of the app stay open, and tools built on the contract can be anything. Your name and icon stay yours. Today `package.json` says MIT but no LICENSE file exists, so the plan sets "UNLICENSED" until you answer.
 
-Today `package.json` says MIT but there is no LICENSE file, so nothing is actually granted. Until you answer, the plan sets those fields to "UNLICENSED".
+**D. When the code goes public, keep its full history or start fresh?** A fresh, curated history; or flip the existing repository. **Default is fresh.** Today's history openly describes analysing a competitor's installed app, and 37 commits carry a different author name and email. Flipping keeps blame and old pull requests but makes every old commit, branch and note public.
 
-**D. When the code goes public, keep its full history or start fresh?**
-- *A fresh, curated history (recommended).* The public repository starts from a clean copy; the private one stays as your archive. Today's history and docs openly describe analysing a competitor's installed app (SPEC.md records its version and file hash), and 37 commits carry a different author name and email.
-- *Flip the existing repository.* Keeps blame and old pull requests, but every old commit, branch, pull request and note becomes public.
+**E. How do contributors agree to your licence?** A sign-off on each commit (the "DCO"); or a signed agreement (a "CLA"). **Default is the sign-off.** It is low friction, but you cannot relicense others' code later without asking. A CLA allows relicensing but deters casual contributors and needs a bot.
 
-**E. How do contributors agree to your licence?**
-- *A sign-off on each commit, the "DCO" (recommended).* Low friction. You cannot later relicense others' code without asking.
-- *A signed agreement, a "CLA".* Lets you relicense later, but deters casual contributors and needs a bot.
+**F. When does the code go public?** With 0.4.0 after the audits pass; after 0.3.0; or now. **Default is with 0.4.0.** The first public code is the revamped one. After 0.3.0 gives an earlier community but shows the old design. Now is not advised, because Gmail does not work yet and nothing is audited.
 
-**F. When does the code go public?**
-- *With 0.4.0, after the audits pass (recommended).* The first public code is the revamped one, free of Avec-style layouts and wording.
-- *After 0.3.0.* Earlier community, but the old design is the public face.
-- *Now.* Not advised: Gmail does not work yet and nothing is audited.
+**G. May the test robot use dedicated test accounts and keys in the cloud?** Yes, with a throwaway Gmail account and a separate Groq key now, and iCloud and Fastmail later; only on your Mac by hand; or only fakes. **Default is yes.** Small read-only nightly checks run, and your daily Groq allowance stays untouched. Your real mailbox is never used in the cloud. Mac-only means nobody notices a Google or Apple change for days. Fakes can never catch one.
 
-**G. May the test robot use dedicated test accounts and keys, in the cloud?**
-- *Yes: a throwaway Gmail account and a separate Groq key now; iCloud and Fastmail later (recommended).* Small read-only nightly checks, and your daily Groq allowance is untouched. Your real mailbox is never used in CI: only these dedicated throwaway accounts, whose tokens are CI secrets, and only read-only (plan 20's tier R). Checks on your own account stay on your Mac and run by hand. Plan 20 §5.4 states the same rule.
-- *Only on your Mac, by hand.* No secrets in the cloud, but nobody notices a change at Google or Apple for days.
-- *Only fakes.* Free, but the robot can never catch a change Google or Apple makes.
+**H. How much may cloud testing (CI) cost while the repository is private?** Linux for almost everything, and a Mac only on merges, tags and nightly; Mac for everything; or a spending cap you set. **Default is the first.** A Mac minute costs 10 times a Linux minute, and your included minutes are unknown.
 
-**H. How much may CI cost while the repository is private?** Mac runners cost 10 times a Linux minute; [U] your plan's included minutes are unknown.
-- *Linux for almost everything; a Mac only on merges, tags and nightly (recommended).*
-- *Mac for everything.* Simplest, but can burn a free allowance in days.
-- *Cap spend at a number you give.* The plan drops the lowest-value jobs first.
+**I. Which address may be published for security reports and privacy questions?** A role address on a domain you control plus GitHub private reporting; or your personal address. **Default is the role address.** It keeps your personal inbox out of the public record. Your personal address is faster but permanent.
 
-**I. Which address may be published for security reports and privacy questions?**
-- *A role address on a domain you control, plus GitHub private reporting (recommended).* Keeps your personal inbox out of the public record.
-- *Your personal address.* Faster, but permanent.
+**J. Should "Aplos Mail" get a professional name search before going public?** Yes or no. **Default is yes.** It costs a few hundred dollars. The audit found marks near "Airmail", not "Aplos", but never searched "Aplos Mail". No is free, with a small chance of a forced rename later.
 
-**J. Should "Aplos Mail" get a professional name search before going public?** (`RC/gaps/identity-collision-audit.md` §8, question 3.)
-- *Yes (recommended).* A few hundred dollars; the audit found marks near "Airmail", not "Aplos", but never searched "Aplos Mail".
-- *No.* Free, with a small chance of a forced rename later.
+**K. Should the website drop every claim not yet proven?** Yes, with no Windows or Linux, no Outlook and no other provider until it passes a live check; or keep the optimistic copy until launch. **Default is yes.** The site then matches reality. The optimistic copy is false today and risks Google's review.
 
-**K. Should the website drop every claim not yet proven?**
-- *Yes: no Windows or Linux, no Outlook, no other provider until it passes a live check (recommended).* The site matches reality and grows as proof arrives.
-- *Keep the optimistic copy until launch.* Looks bigger, but is false today and risks Google's verification review.
+**L. Should quality and platform run as its own T3 thread?** Fold it into the Engine thread, with the website items going to the UI thread; or a separate small thread. **Default is to fold it in.** You asked for one UI thread and at most two architecture threads. Revisit at the week-4 review if the Engine thread is behind. A separate thread gives one owner for tooling that touches every file but adds a fourth thread to review.
 
-**L. Should quality and platform run as its own T3 thread?**
-- *Fold it into the Engine thread (recommended; you asked for one UI thread and at most two architecture threads, `plans/00-roadmap.md` §2).* The website items (Q5A, Q5B) go to the UI thread. Revisit at the week-4 review if the Engine thread is behind.
-- *A separate small thread.* One owner for tooling and CI that touch every file, at the cost of a fourth thread to review.
+**M. Which domain hosts the website and privacy page?** A subdomain of a domain you already own, pointed at the Vercel site; buy a new domain; or wait. **Default is a subdomain.** Google accepts a privacy page only on a domain you own and have verified, and probably not a `github.com` or `vercel.app` address. A subdomain takes an hour and starts Google's review clock early. A new domain costs a small yearly fee and a day. Waiting stops Google verification, and Gmail stays limited to listed testers.
 
-**M. Which domain hosts the website and privacy page?** Google will only accept a privacy page on a domain you own and have verified; a `github.com` or `vercel.app` address is not accepted [U, check in the console]. Today `apps/web/src/site.ts` still holds placeholder links.
-- *A subdomain of a domain you already own, pointed at the Vercel site (recommended).* Takes an hour, and starts Google's review clock early.
-- *Buy a new domain for Aplos.* Cleaner brand, a small yearly cost, and a day for the domain to settle.
-- *Wait.* Google verification then cannot start, and Gmail stays limited to listed testers.
-
-**N. May strangers download 0.2.4 before Google approves the app?**
-- *Yes, as an invite-only beta (recommended).* Gmail sign-in works for up to 100 people you list as testers (or, once you move to Production, up to 100 new users behind a warning screen). iCloud, Fastmail and other mail work for anyone. The README and site say this plainly.
-- *No, wait for Google's approval.* Nothing misleading is ever public, but approval takes weeks, so nobody but you uses Aplos meanwhile.
-
-> **What this means:** If you say nothing, every recommended default applies. B (releases home), C (licence), D (history) and M (domain) unblock the most work. M is on the critical path of Google's review, so answer it first.
+**N. May strangers download 0.2.4 before Google approves the app?** Yes, as an invite-only beta; or no, wait for approval. **Default is yes.** Gmail works for up to 100 people you list as testers, or up to 100 new users behind a warning screen after you move to Production. iCloud, Fastmail and other mail work for anyone, and the README and site say so. Waiting means nobody but you uses Aplos for weeks.
 
 ## 1. Scope and non-goals
 

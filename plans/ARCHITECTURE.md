@@ -6,15 +6,17 @@ Chief architect's decision document, 2026-10-27, branch `revamp`. Planning only:
 
 ## In plain English
 
-Aplos has never finished syncing a real Gmail account. Google now lets each app do only a fixed amount of work per person per minute, and Aplos tries to download ten minutes' worth at once. Google says no, and Aplos starts again from zero, forever. Behind that headline sit deeper problems. The whole mailbox is held in memory. Nothing remembers what changed after a restart. AI work runs in the middle of syncing. And mail stops arriving when you close the window.
+Aplos has never finished syncing a real Gmail account. Google limits how much work an app can do per person per minute. Aplos asks for about ten minutes of work at once, Google refuses, and Aplos starts over. The app also keeps the whole mailbox in memory, forgets changes when it restarts, and stops fetching mail when you close the window.
 
-This document is the final plan for the "engine room" of Aplos: the part that talks to Gmail, iCloud, Fastmail and Outlook, stores your mail, and feeds the screens. It picks the best of three competing proposals. The winner repairs the existing engine in place instead of rebuilding it, then adds two things borrowed from the others: a locked local "doorway" so tools and later a phone can use the same engine, and a cleanly separated engine package so a phone version stays possible.
+This document is the final plan for the engine. The engine is the part that talks to your mail providers, stores your mail and feeds the screens. The plan repairs the existing engine in place instead of rebuilding it.
 
-What changes for you, in order. Within about a week, a small update makes real Gmail work in a limited way and records exactly why Google refuses anything. By about week five, Gmail is something you can live in: the inbox appears in seconds, the rest fills in quietly, and the app spends Google's allowance like a careful budget. Closing the window keeps Aplos in the menu bar, so mail, reminders and scheduled sends keep working. iCloud and Fastmail are solid by about week eight. Emails render in a sealed box that cannot reach the rest of the app, and remote images stay off until you allow them. AI never slows sync, and Home still sorts sensibly with AI switched off. A safe diagnostics report explains any stall.
+What changes for you. In about one week, a small update (0.2.4) makes Gmail work in a limited way. By about week five, Gmail is ready for daily use. iCloud and Fastmail follow by about week eight. Closing the window keeps Aplos in the menu bar, so mail, reminders and scheduled sends keep working. Remote images stay off until you allow them.
 
-What does not change: no Aplos server ever holds your mail, Groq stays the default AI, and nothing works while your Mac is asleep. We say that plainly.
+What stays the same. No Aplos server holds your mail, Groq stays the default AI, and nothing syncs while your Mac sleeps.
 
-> **What this means:** One clear plan for the engine, built in small safe steps, with a usable Gmail app in about five weeks and every risky choice left late and reversible.
+You need to answer 15 questions below. Questions 2, 3 and 11 matter first.
+
+> **What this means:** Gmail works well in about five weeks, built in small steps you can reverse.
 
 ## 0. How the winner was chosen
 
@@ -38,7 +40,7 @@ What does not change: no Aplos server ever holds your mail, Groq stays the defau
 
 **What is rejected.** The portable plan as a target (shared Gmail quota, months of phone work, CloudKit profiles, leases failing open; `RC/gaps/phone-mac-connectivity.md` §5); the local-server plan's ordering, which bundles resident mode with the listener and so delays timed features to about week 8-12; any LaunchAgent before a real need.
 
-> **What this means:** The three plans agreed on most of the work. We take the one that gets you real Gmail first and fixes the "change flips back" problem, then borrow the best ideas from the other two.
+> **What this means:** We take the plan that gets real Gmail working first and stops changes flipping back, then borrow the best ideas from the other two.
 
 ## 1. System diagram
 
@@ -74,7 +76,7 @@ What does not change: no Aplos server ever holds your mail, Groq stays the defau
    AI: Groq default; BYO OpenAI, Claude, Gemini (paid only for mail), OpenRouter, OpenCode Go, Ollama, LM Studio, custom
 ```
 
-> **What this means:** The app has one "brain" process that alone owns your mail database and every connection. Windows, emails and later other tools all talk to that one brain.
+> **What this means:** One main process owns your mail database and every connection. Windows and other tools ask it for everything.
 
 ## 2. Process topology and lifecycle
 
@@ -121,7 +123,7 @@ Following `RC/gaps/macos-daemon-lifecycle.md` §9:
 
 **Triggers** (any one): "sync after ⌘Q" becomes a daily annoyance; an agent needs the engine with the UI quit; a phone needs a host that outlives the UI. **Shape:** Node SEA (`execArgvExtension:"none"`) in a nested `LSBackgroundOnly` bundle, an N-API shim for Keychain, notifications and wake, a shared Keychain access group, update choreography drain → exit → `quitAndInstall` → launchd restart, and a version handshake per connection. 3.5-5 weeks after A0, blocked on a provisioning profile (`RC/gaps/macos-daemon-lifecycle.md` §2(c), §4, §9). Never a windowless Electron copy: Squirrel aborts updates while it runs [V §2(a)]. **Kept cheap now** by a lint rule against Electron imports in `packages/engine`, the single-writer lock, a `KeyProvider` port and engine-only migrations.
 
-> **What this means:** Closing the window no longer stops your mail. Quitting still does, and that is fine for now; a separate background helper is ready to design if it ever becomes a daily annoyance.
+> **What this means:** Closing the window no longer stops your mail. Quitting still does, which is fine for now.
 
 ## 3. Storage
 
@@ -291,7 +293,7 @@ One transaction per table family from `aplos.db`: accounts, settings, vault refe
 
 **Encryption at rest:** none beyond FileVault (ADR-08, Decision 7). Files are 0600 in a 0700 directory; credentials and AI keys stay in the encrypted vault under the Keychain-wrapped data key.
 
-> **What this means:** Your mail moves into a proper database that opens in milliseconds at any size. Message text loads when you need it, old text is trimmed gently, and the old file stays as a safety net.
+> **What this means:** Your mail moves into a database that opens in milliseconds at any size. The old file stays as a backup.
 
 ## 4. Sync engine: the shared model
 
@@ -320,7 +322,7 @@ Today's per-mutation clone and `touched` heuristics are replaced by two mechanis
 
 Ops are per message and per label (Gmail) or per placement (IMAP, JMAP, Graph), coalesced: Gmail ops with the same add/remove label set merge into one `messages.batchModify` (50 units per 1,000 ids). Per-account FIFO; one failure holds back only that account's later ops (unchanged from DECISIONS 2026-10-15). A provider 404 drops the op.
 
-> **What this means:** Every account gets one orderly worker that downloads the table of contents first, saves page by page, and never guesses about deletions. When you archive something, it stays archived; it no longer flips back while sync catches up.
+> **What this means:** Each account gets one sync worker that never guesses about deletions. An email you archive stays archived while sync catches up.
 
 ## 5. Sync per provider
 
@@ -376,7 +378,7 @@ One EventSource per account on `eventSourceUrl` (`types=Email,Mailbox,Thread,Ema
 
 Mail is IMAP (§5.3: CONDSTORE without QRESYNC, IDLE on INBOX, at most two connections on the primary device and one elsewhere, own Sent copy); calendars are CalDAV (§5.5); contacts CardDAV later. One app-specific password, stored once in the vault, serves all three; Apple offers third parties no OAuth (`RC/protocols/proto-others.md` §5). Live acceptance is in M7.
 
-> **What this means:** Gmail shows your inbox within seconds and fills in the rest quietly. iCloud and Fastmail get instant "new mail" signals. Calendars stop re-downloading everything every ten minutes and stop wiping meeting links when you edit an event.
+> **What this means:** Gmail shows your inbox in seconds, and iCloud and Fastmail alert you to new mail instantly. Calendars stop redownloading everything and stop wiping meeting links.
 
 ## 6. Governor and the single retry layer
 
@@ -432,7 +434,7 @@ Every copy of Aplos on the owner's three Macs shares one 6,000-unit budget [V `R
 
 **Acceptance.** An emulator enforcing 6,000 units/min and a concurrency cap serves 500 threads with zero refusals and the first 50 in under 15 s; a crash mid-page resumes there; `dailyLimitExceeded` stops retries until reset; fake-clock tests cover escalation and AIMD; two emulated devices stay under 6,000 sustained.
 
-> **What this means:** Aplos counts its own requests against Google's limit and waits instead of being refused. When a provider does say no, Aplos reads why, waits the right time, and tells you in plain words. Your three Macs take turns instead of fighting.
+> **What this means:** Aplos counts its own requests against Google's limit and waits instead of getting refused. When a provider says no, Aplos tells you why in plain words.
 
 ## 7. Outbox, send safety, drafts and timed features
 
@@ -464,7 +466,7 @@ A single loop sleeps until the earliest deadline across `submissions.not_before`
 
 `notifications` is a durable outbox keyed by message: written in the sync commit for new inbound Inbox mail after the silent baseline, posted by main, marked `posted`. A crash cannot duplicate a notification, and a second client can later **claim** them (comail/Flectar pattern). The Dock badge comes from engine counters, not from a main-process mirror.
 
-> **What this means:** Sending stays double-send safe. Undo, scheduled sends, reminders and Later all survive restarts. If your Mac was off when something was due, Aplos asks instead of sending it hours late, and drafts follow you between devices through your mail provider.
+> **What this means:** Sending cannot double-send. Undo, scheduled sends and reminders survive restarts, and Aplos asks you before sending something that came due while your Mac was off.
 
 ## 8. AI job pipeline
 
@@ -491,7 +493,7 @@ Every provider entry carries `trainsOnInputs`. Background mail content never goe
 
 Background jobs run with **no tools**. Model output is data: suggested actions are one of the preset `SuggestedAction` values, rendered as proposals that need a keystroke, which also satisfies Google's per-invocation consent expectation for agentic actions (`RC/protocols/proto-google.md` §8.2). Mail text is wrapped as quoted, untrusted content in every prompt. No sparkle, wand or star glyph anywhere for AI state (owner rule).
 
-> **What this means:** Home sorts your mail sensibly even with AI switched off. Summaries arrive shortly after, within a daily budget you control, only after you have agreed to what is sent where, and AI can suggest but never act on its own.
+> **What this means:** Home sorts your mail even with AI off. Summaries arrive later within a daily limit you set, and AI runs only after you consent.
 
 ## 9. The typed contract and transports
 
@@ -526,7 +528,7 @@ Binary data moves as transferable `ArrayBuffer` on MessagePort and blob routes o
 
 Additive changes only within `v:1`; `Session/get` returns `{apiVersion, appVersion, schemaVersion, capabilities}`. Socket and HTTP clients send theirs in the hello; an incompatible major gets `unsupported` with an upgrade message.
 
-> **What this means:** Every part of Aplos talks to the engine in one clearly written language. Lists load a small window at a time and update in place, so a 100,000-message mailbox feels the same as a tiny one, and a restart no longer reloads everything.
+> **What this means:** Screens load a small window of the list at a time, so a 100,000-message mailbox feels like a small one. A restart no longer reloads everything.
 
 ## 10. Email HTML isolation
 
@@ -546,7 +548,7 @@ Adopt the tested design in `RC/gaps/electron-email-html-isolation.md` §7. Today
 
 **Stopgap (M0).** A same-origin `srcdoc` frame without scripts and with an inner meta CSP: far better than today, acceptable while the owner is the only user, replaced in M4.
 
-> **What this means:** Every email renders in a sealed box next door that cannot reach Send, your files or the network. Layout and styling come back, scripts never run, and nobody learns you opened their message unless you load images.
+> **What this means:** Each email displays in an isolated frame that cannot reach your files or the network. Scripts never run, and remote images stay off until you load them.
 
 ## 11. Observability and diagnostics
 
@@ -560,7 +562,7 @@ Aplos has none today (`RC/SYNTH-architecture.md` §9), and the engine will run w
 
 **Acceptance.** From a deliberately stalled sync, the owner exports a bundle that contains no bodies, subjects or tokens and shows whether the stall is quota, auth or network.
 
-> **What this means:** When something sticks, Aplos tells you what and why, and you can share a safe report that contains none of your email.
+> **What this means:** When sync stalls, Aplos tells you why, and you can share a report that contains none of your email.
 
 ## 12. Security
 
@@ -590,7 +592,7 @@ Image proxy SSRF rules (§10); CalDAV same-registrable-domain redirects (§5.5);
 
 Both Gmail scopes are restricted, mail goes to LLM servers, so plan for verification **and** CASA (`RC/protocols/proto-google.md` §8.2). This is an owner action, not engineering (see External prerequisites).
 
-> **What this means:** The local doorway is locked by default: only your own Mac user can use it, every tool needs its own key that you can revoke, and sending needs separate permission.
+> **What this means:** Only your own Mac user can reach the local connection. Each tool needs its own revocable key, and sending needs separate permission.
 
 ## 13. Multi-device and the phone
 
@@ -607,7 +609,7 @@ Mailbox facts always come from the provider. Workflow state (Done, Later, todos,
 - **Deferred:** a phone engine (D) and a relay (C). D stays possible because `packages/engine` keeps passing the portability test (`MOBILE.md`); if built, it must adopt the primary-device lease.
 - **Before scheduling a phone:** a 1-2 day Swift spike generates a client from `openapi.json` and consumes SSE (`RC/gaps/engine-contract-rpc-stack.md` §7 step 6).
 
-> **What this means:** Your Macs share Done and Later today and take turns on the heavy work. A phone app can come later as a remote for your Mac without redoing the engine, but it will only see mail while a Mac is awake.
+> **What this means:** Your Macs share Done and Later today. A phone app can come later as a remote for your Mac, and it sees mail only while a Mac is awake.
 
 ## 14. What open-source readiness implies
 
@@ -621,7 +623,7 @@ The repository is private today but should be able to go public. That shapes the
 7. **Distribution:** a public releases repository now (Decision 11).
 8. **Licence and brand** are separate (Decision 12); the name and the sky, envelope and hill icon stay reserved, and "Airmail" is never used (`RC/gaps/identity-collision-audit.md`).
 
-> **What this means:** We build as if strangers will read and run the code one day: no secrets in it, no borrowed code, tests that work without your mailbox, and a published interface others can build on.
+> **What this means:** The code is built as if strangers will read it one day, with no secrets in it, no borrowed code and tests that work without your mailbox.
 
 ## 15. Migration from today's code, step by step
 
@@ -655,7 +657,7 @@ Two architecture threads: **S** owns store, sync, governor and providers (M2, M3
 
 **Effort.** About 11 weeks nominal (9-14), matching 6-10 weeks of foundation plus 1-2 for A0 (`RC/SYNTH-architecture.md` §11). Gmail daily-driver about week 5; plus iCloud and Fastmail about week 8. Live verification, not coding, is the constraint.
 
-> **What this means:** There is never a big-bang switch. You get a quick Gmail fix in week one, a Gmail app you can live in around week five, and every later step adds a provider or a safety feature without breaking what already works.
+> **What this means:** You get a quick Gmail fix in week one and a daily-use Gmail app around week five. Each later step adds one provider or safety feature without breaking earlier ones.
 
 ## 16. Architecture decision records
 
@@ -685,7 +687,7 @@ Format: context / options / choice / consequences.
 | 20 Recurrence | Server expansion inconsistent; single-occurrence edits refused | Server expand; client expand | Masters + overrides, client-side expansion | One recurrence engine to test well |
 | 21 Push | Gmail, Graph, Calendar push need a server (`RC/SYNTH-architecture.md` §4.3) | Relay; poll | IDLE, EventSource, jittered polling; no relay | Gmail new mail within ~15 s focused |
 
-> **What this means:** Every major choice is written down with what we considered and what it costs, so future work does not reopen settled questions by accident.
+> **What this means:** Every major choice is written down with its alternatives and costs, so settled questions stay settled.
 
 ## 16A. Amendments (2026-10-27)
 
@@ -696,7 +698,7 @@ Recorded by the integrator after the four workstream plans were reconciled (`pla
 - **AM-3, release timing (§15).** 0.3.0 is M3 at about week 5-6 (plan 10's E1, E2a, E2b and plan 20's PV3), with today's screens on the legacy bridge. 0.4.0 is M10 **plus the UI's last step (plan 30 U9)**: the seven-day soak and the owner's dogfood week share one release candidate, so 0.4.0 lands at about **week 14** nominal (about 17 pessimistic) instead of week 11. Stable releases are tagged from main after the owner merges `revamp`; beta tags may be cut from `revamp`.
 - **AM-4, the silent baseline (§4.2 rule 6, §5.1).** `baseline_done_at` marks the end of the **first window** (P1, the newest ~50 Inbox threads), never the end of backfill. Pages from P2 onward are backfill: they never create notifications and never count as new mail. The first-sync screen's "found" count is an optional estimate, shown only when the provider gives one.
 
-> **What this means:** Four small corrections found while lining the plans up: a cheaper-to-get-right rule for opening Gmail threads, two test-only packages, 0.4.0 moving to about week 14 so the new screens ship with the new engine, and a precise meaning for "first sync done".
+> **What this means:** Four small corrections from lining the plans up, including 0.4.0 moving to about week 14 so the new screens ship with the new engine.
 
 ## 17. Non-goals
 
@@ -713,29 +715,29 @@ Recorded by the integrator after the four workstream plans were reconciled (`pla
 - No reference-project code, assets, branding or wording; no "Airmail" naming.
 - No UI design decisions; the UI thread builds against the frozen contract and fixture engine.
 
-> **What this means:** These are the things we are deliberately not doing, so the plan stays small enough to finish.
+> **What this means:** These are things the plan deliberately skips.
 
 ## Decisions for you
 
-Each has a recommended default; the plan proceeds on the defaults unless you say otherwise.
+Each question has a recommended default. The plan uses the defaults unless you say otherwise.
 
-1. **Ship a quick Gmail fix (0.2.4) before the rebuild?** Yes or no. **Recommended: yes.** Yes gives real Gmail evidence and a safer reader within a week for a few days of throwaway work. No saves those days, but real Gmail waits about five weeks.
-2. **Move the Google sign-in project from Testing to Production (unverified) now?** Yes or wait for verification. **Recommended: yes.** Yes ends weekly forced reconnects but shows an "unverified app" screen and caps new users at 100. Waiting means reconnecting every 7 days.
-3. **Which Gmail permission should Aplos ask for?** Today's level, or add the broader one for faster bulk sync and instant new-mail signals. **Recommended: today's level.** No scary wording, one code path; big mailboxes just backfill more slowly. The broader one is faster, but Google's screen then says "permanently delete all your email". Must be settled before Google verification.
-4. **How much mail should the first sync fetch?** Newest 500 Inbox conversations plus 30 days of Sent, then a quiet backfill to 90 days; 14 days only; or everything. **Recommended: the first.** Inbox in seconds, older mail one search away. 14 days hides history; everything takes hours under Google's limit.
-5. **Keep Aplos running in the menu bar when the window closes, and start hidden at login?** Both; menu bar only; neither. **Recommended: both,** with ⌘Q to quit fully. Mail, reminders and scheduled sends keep working; "neither" stops them with the window.
-6. **How much message text stays on this Mac?** 90 days plus anything opened, starred or unread, capped at 2 GB; everything; or a smaller cap. **Recommended: the first.** Everything gives full offline reading but grows to many gigabytes; a cap means old mail re-downloads when opened.
-7. **Encrypt the database beyond FileVault?** No or yes. **Recommended: no.** No costs no speed. Yes guards against other programs running as you and unencrypted backups, but slows writes 2-4x and some reads up to 14x.
-8. **Block remote images by default?** Block until allowed per message or sender, or always load through the safe proxy. **Recommended: block.** Blocking stops senders learning when you read; loading looks nicer but leaks that.
-9. **If your Mac was off when a scheduled message was due?** Ask, or send on wake. **Recommended: ask** (after 5 minutes' grace). Asking avoids stale mail arriving hours late; sending is simpler but can surprise you.
-10. **When should the phone start, and must it work while every Mac sleeps?** After the local doorway is solid, as a remote for your Mac; or earlier with its own engine. **Recommended: the first, and no.** It is cheap and uses none of Google's allowance, but sees mail only while a Mac is awake. Its own engine works during sleep but costs months and shares Google's allowance.
-11. **Where do updates come from while the code is private?** A separate public releases repository, or make the code public sooner. **Recommended: separate releases repository.** Downloads and auto-update work without exposing code; going public sooner needs the secrets and licence review first.
-12. **Which licence when Aplos goes open source?** MIT/Apache (anyone may reuse, even in closed apps); GPL-3.0 (copies must stay open); AGPL-3.0 (also covers running the engine as a hosted service). **Recommended: GPL-3.0 for the app and engine, MIT for `packages/contract`** so anyone can build tools against Aplos. The name and icon stay yours under any licence.
-13. **How much background AI per day?** 150,000 tokens, adjustable; unlimited; or off until you ask. **Recommended: 150,000.** It fits Groq's free daily allowance with Ask on a different model; unlimited can hit Groq's daily wall; off means no automatic summaries.
-14. **Build the background helper that keeps syncing after ⌘Q?** Only when quitting-stops-sync becomes a daily annoyance or a phone needs it; or right after the local doorway. **Recommended: only on need.** It costs 3.5-5 weeks and an Apple provisioning profile, competing with daily-driver work.
-15. **Is a hosted push relay ever acceptable?** Never; or later, content-free, only for phone alerts while Macs sleep. **Recommended: not now,** revisit only with a phone. A relay is a server Aplos must run and may widen Google's security review.
+1. **Ship a quick Gmail fix (0.2.4) before the rebuild?** Yes or no. **Default is yes.** Real Gmail works within a week. No saves a few days of work but delays real Gmail by about five weeks.
+2. **Move the Google sign-in project from Testing to Production (unverified) now?** Yes, or wait for verification. **Default is yes.** You stop reconnecting every 7 days, but Google shows an "unverified app" screen and caps new users at 100.
+3. **Which Gmail permission should Aplos ask for?** Today's level, or a broader one. **Default is today's level.** The broader one syncs big mailboxes faster, but Google's screen then says Aplos can "permanently delete all your email". Settle this before Google's review.
+4. **How much mail should the first sync fetch?** The newest 500 Inbox conversations plus 30 days of Sent, then 90 days in the background; only 14 days; or everything. **Default is the first.** Your inbox appears in seconds. Fetching everything takes hours under Google's limit.
+5. **Keep Aplos running in the menu bar when you close the window, and start hidden at login?** Both; menu bar only; or neither. **Default is both,** and ⌘Q quits fully. Mail, reminders and scheduled sends keep working. With neither, they stop when the window closes.
+6. **How much message text stays on this Mac?** 90 days plus anything opened, starred or unread, up to 2 GB; everything; or a smaller cap. **Default is the first.** Keeping everything allows full offline reading but grows to many gigabytes.
+7. **Encrypt the database beyond FileVault?** No or yes. **Default is no.** Yes protects against other programs running as you, but it slows writes 2 to 4 times.
+8. **Block remote images by default?** Block until you allow them, or always load them through a safe proxy. **Default is block.** Blocking stops senders learning when you read. Loading looks nicer but leaks that.
+9. **What happens when your Mac was off at a scheduled send time?** Ask you, or send on wake. **Default is ask,** after 5 minutes' grace. Asking avoids stale mail arriving hours late.
+10. **When should the phone app start, and must it work while every Mac sleeps?** After the local connection is solid, as a remote for your Mac, and no; or earlier with its own engine. **Default is the first.** It is cheap, but it sees mail only while a Mac is awake. Its own engine works during sleep but costs months.
+11. **Where do updates come from while the code is private?** A separate public releases repository, or make the code public sooner. **Default is the releases repository.** Downloads and auto-update work without exposing code.
+12. **Which licence when Aplos goes open source?** MIT or Apache (anyone may reuse it, even in closed apps); GPL-3.0 (copies must stay open); or AGPL-3.0 (also covers hosted services). **Default is GPL-3.0 for the app and engine, and MIT for `packages/contract`.** Your name and icon stay yours under any licence.
+13. **How much background AI per day?** 150,000 tokens, adjustable; unlimited; or off until you ask. **Default is 150,000.** That fits Groq's free daily allowance. Unlimited can hit Groq's daily limit. Off means no automatic summaries.
+14. **Build a background helper that keeps syncing after ⌘Q?** Only when quitting becomes a daily annoyance or a phone needs it; or right after the local connection. **Default is only on need.** It costs 3.5 to 5 weeks and an Apple provisioning profile.
+15. **Is a hosted push relay ever acceptable?** Never; or later, only for phone alerts while Macs sleep, with no mail content. **Default is not now.** A relay is a server Aplos must run, and it may widen Google's security review.
 
-> **What this means:** If you say nothing, the plan follows every recommended default above. Decisions 2, 3 and 11 are the ones worth answering soonest.
+> **What this means:** If you say nothing, the plan uses every default. Answer 2, 3 and 11 first.
 
 ## External prerequisites (owner actions, not decisions)
 
@@ -745,7 +747,7 @@ Each has a recommended default; the plan proceeds on the defaults unless you say
 - Apple: a Developer ID provisioning profile with `keychain-access-groups` and CloudKit only when A1 or CloudKit is scheduled.
 - Groq, OpenRouter and other providers: confirm no-training terms before they are mail-eligible.
 
-> **What this means:** These are calls or forms only you can make; the plan schedules around them and Graph simply stays switched off until Microsoft is set up.
+> **What this means:** These are forms and accounts only you can set up. Outlook stays switched off until Microsoft is set up.
 
 ## Evidence index
 
