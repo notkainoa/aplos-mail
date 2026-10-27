@@ -321,7 +321,7 @@ Q1a does not care whether step 1 happened: its globs include both `apps/*/src` a
 5. **The privacy page, finished now:** contact address (decision I, a free forwarding address on aplos.email), the Google API Services **Limited Use** statement (`RC/protocols/proto-google.md` §8.2), what is stored on the Mac and what leaves it (provider, the AI provider the owner chose, the update check; nothing else), no telemetry, and how to delete data. It is served at aplos.email, linked from the homepage, and its AI section matches what the code does (plan 20's `trainsOnInputs` rule). It must simply be true.
 6. `scripts/check-web-external.mjs`: the built site requests no host but itself (the page promises no third-party scripts).
 7. `site.ts` placeholder links replaced by this repository's releases page once it is public; until then, no source or download link.
-8. **Restyle** to the revised design: UI-core's `tokens.json` (artifact F9, day 3), roomier type, the Newsreader serif for AI text, no airmail stripe and no sky gradient (DESIGN-CHANGES 10.2 default), and never a sparkle, wand or star glyph. The `Airmail` name goes with the stripe. Copy-only fixes do not wait for tokens.
+8. **Restyle** to the revised design: UI-core's `tokens.json` (artifact F9, day 3), roomier type, the Newsreader serif for AI text, no airmail stripe and no sky gradient (DESIGN §2.4, decision 14; roadmap §2.5), and never a sparkle, wand or star glyph. The `Airmail` name goes with the stripe. Copy-only fixes do not wait for tokens.
 
 **Ownership.** The `web` lane owns `apps/web/**` (copy, data, scripts and styles) and `apps/desktop/build/dmg-background.html`. UI-core owns `tokens.json`, which the site consumes.
 
@@ -595,7 +595,7 @@ Drafts, kept under `docs/legal-drafts/` until the owner answers decision C so no
 2. Copy carries `data-claim` ids. **`check-claims.mjs`** fails the production build on a missing, unverified or stale claim; preview builds show a "preview" banner instead.
 3. The privacy page, finished in Q5A, is now **protected**: the build fails while any `[...]` placeholder remains, and any change to it needs the owner's sign-off. It carries the Limited Use statement (`RC/protocols/proto-google.md` §8.2), contact address, what is stored and what leaves the Mac, diagnostics "never uploaded" (ARCH §11).
 4. Screenshots regenerated from demo data by UI-core's harness (the old capture script stalled on PR #21's onboarding window, `DESIGN.md` Appendix C F14).
-5. Copy follows the DESIGN voice rules (§10) and banned phrases, including "Airmail" and "hold A and say it" (§13 item 16). The stripe and sky are gone (DESIGN-CHANGES 10.2), so alt text describes the new art.
+5. Copy follows the DESIGN voice rules (§10) and banned phrases, including "Airmail" and "hold A and say it" (§13 item 16). The stripe and sky are gone (DESIGN §2.4, decision 14), so alt text describes the new art.
 
 **Ownership.** The `web` lane: `apps/web/claims.json`, `apps/web/scripts/check-*.mjs`, copy and styles under `apps/web`.
 

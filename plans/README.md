@@ -1,18 +1,18 @@
 # Aplos revamp: start here
 
-This folder is the plan for rebuilding Aplos Mail. Nothing in it is built yet. Six AI coding threads will follow it in parallel, one of them an Integrator that merges everything and reports to you. Expect a build you can use every day in about two and a half weeks, and a finished redesigned version in about three and a half. Nothing in the plan costs money.
+This folder is the plan for rebuilding Aplos Mail. Nothing in it is built yet. Six AI coding threads will follow it in parallel, one of them an Integrator that keeps the shared branch healthy and reports to you. Expect a build you can use every day in about two and a half weeks, and a finished redesigned version in about three and a half. Nothing in the plan costs money.
 
 ## Read this first (about 8 minutes)
 
 1. Open [overview.html](overview.html) in a browser. It shows the four phases in days, the six threads and the decisions.
-2. Read [00-roadmap.md](00-roadmap.md) down to "Reference": the plan in days, five open decisions with defaults, and your free tasks.
-3. Answer the open decisions you care about. If you skip one, its default applies.
+2. Read [00-roadmap.md](00-roadmap.md) down to "Reference": the plan in days, the decisions already made, and your free tasks.
+3. No decisions are open. You review work feature by feature: a thread posts steps to try, screenshots and a short recording, you give feedback until you approve, then it runs deep reviews, opens a pull request and merges into `revamp` itself unless something you would notice changed. Main only changes when you merge.
 
-The look is being revised on branch `rv/ui/mockups`, in the HTML mockups and `mockups/DESIGN-CHANGES.md`. Those changes are folded into DESIGN.md before the screen threads start, and the mockups are their visual target.
+The look is called Paper. DESIGN.md has the full spec, and `../mockups/index.html` (also at aplos-mockups.vercel.app) shows every screen. The screen threads build from both.
 
 ## What happens after you say go
 
-The Integrator and Engine threads start first. For two or three days the Engine thread sets the shared rules while the others prepare. Then about 25 lanes build at once. You see the main screens on demo mail around day 9, the new Aplos on your real mail around day 15, and you start using it daily around day 18. Main changes only when you merge, and agents never merge for you.
+The Integrator and Engine threads start first. For two or three days the Engine thread sets the shared rules while the others prepare. Then about 25 lanes build at once. Features reach you for review from about day 7, with the main screens on demo mail around day 9, the new Aplos on your real mail around day 15, and you start using it daily around day 18. Main changes only when you merge, and agents never merge to main for you.
 
 ## What's in here
 

@@ -10,13 +10,15 @@ The Engine thread goes first. In the first two or three days it restructures the
 
 Then about 25 lanes run at once. The Engine thread builds the database, live lists, the clock for scheduled sends and reminders, the AI queue, the sealed email frame and the menu-bar life. The Providers thread builds the practice servers, Gmail, iCloud and other IMAP, Fastmail, calendars and Outlook. The UI-core thread builds the design system, the app shell, Home and the reader. The UI-screens thread builds onboarding, Calendar, Settings, Ask and the command palette. The Platform and website thread builds the test pipeline, the release safety work and the aplos.email site. The Integrator merges everything, runs the full test suite, and writes you one short summary a day.
 
+The owner reviews per big feature. When a thread finishes one, it posts plain-English steps, screenshots and a short recording. The owner gives feedback until it looks good. The thread then runs deep review passes, opens a pull request into `revamp`, handles the comments and merges it itself unless something the owner would notice changed. Every brief ends with the full process and its own features.
+
 You don't need to read the briefs. You need the launch checklist and the two launch questions at the end.
 
 > **What this means:** Six messages, one per thread. Paste each into a new thread and it can start with nothing else from you.
 
 ## How to use this file
 
-Each brief sits in its own code block. Copy the whole block, exactly as it is, into a new T3 Code thread. Each brief is complete on its own: the thread sees nothing else except the repository. Shared sections (coordination, branches, workflows, quality, hard rules) repeat in every brief on purpose.
+Each brief sits in its own code block. Copy the whole block, exactly as it is, into a new T3 Code thread. Each brief is complete on its own: the thread sees nothing else except the repository. Shared sections (coordination, branches, workflows, quality, hard rules, the owner review loop) repeat in every brief on purpose.
 
 ## Brief 1: Engine thread
 
@@ -57,7 +59,7 @@ Post `NOTICE | restructure started` in STATUS.md. Nobody else edits existing fil
 4.2 Frozen artifacts (days 2-3, parallel agents on new files; roadmap section 1.2 is the checklist):
   F1 contract v1 in `packages/contract/src/**`: every method name with zod input and output schemas (plan 10 section 4.1's verb list plus Consent, Listener, Clients, Diagnostics), all frames with `{dbEpoch, seq}` tokens and receipts, error types, the classified-error record `{class, reason, status, code, retryAfterMs, providerMessage}`, the status vocabulary (`starting`, `ok`, `syncing`, `backfilling(n of m)`, `paused(until, reason)`, `needsReauth`, `needsPermission`, `needsAdmin`, `misconfigured`, `offline`, `error`) plus a per-account `reconnectBy` time for Google's 7-day Testing-mode tokens, the `Setup/status` shape, the Thread row with `partial`, `Mail/frame`, capability flags, `Settings` with its `ui` object and a provider and model per AI feature, the logger event catalog.
   F2 generated allowlists and the typed client `api.*`; `preload.ts`, `engine-host.ts` and `server.ts` derive from the registry; a host-agreement test.
-  F3 `packages/engine/src/ports.ts`: `ProviderAdapter` (with `CalendarAdapter` and `findSent`), `GovernorPort`, `AccountActorHost`, `SendPort` with `NotSentError`, `DraftSyncPort`, `ProviderPort.openThread`, `Clock`, deadline-source registration, `KeyProvider`, `MailHtml`, `Logger`, `StorePort`, `bucketFor`. The Providers thread sends its proposal for the provider ports by the morning of day 2; you decide and freeze.
+  F3 `packages/engine/src/ports.ts`: `ProviderAdapter` (with `CalendarAdapter` and `findSent`), `GovernorPort`, `AccountActorHost`, `SendPort` with `NotSentError`, `DraftSyncPort`, `ProviderPort.openThread`, `Clock`, deadline-source registration, `KeyProvider`, `MailHtml`, `Logger`, `StorePort`, `laneFor`. The Providers thread sends its proposal for the provider ports by the morning of day 2; you decide and freeze.
   F4 migration framework, `mail.db` schema 0001 (ARCH 3.2 plus the Providers review: recurrence id on `events`, `message_folders` keyed for IMAP placements, `sync_state`, `governor_state`, the account's token-grant time), the `store.commit` signature, and a minimal working commit that writes `changes` and bumps `seq` so other lanes can test against it.
   F5 `packages/engine/src/methods/index.ts`: every contract method mapped to one module file, each a stub throwing `NotImplemented`. Lanes fill their own files and never edit this table.
   F6 the stand-in engine (`packages/contract-fixture`) answering every method on `demo` and `empty`, the `Fixture/control` signatures, and the conformance suite layout. No Node or Electron imports; nothing from it ships.
@@ -72,9 +74,9 @@ You PRODUCE F1-F8. You CONSUME F9 (the UI-core thread's tokens and data-hook sig
 `eng-views` and `eng-contract` make the real engine pass the same conformance suite as the stand-in engine (an expected-fail list that shrinks from day 4 to zero by day 11). In Phase 2 you support the switch to the real engine, run the importer rehearsal command for the owner (a copy of `aplos.db`, content-free report), delete the legacy folders with the Integrator (plan 10 E8 item 4), and run E8's fault injection and the background soak during Phase 3.
 
 7. COORDINATION
-- `plans/STATUS.md` on `revamp` is the append-only log shared by all six threads. One line per entry: `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`, TYPE one of NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP. Read it (`git fetch origin revamp`, then `origin/revamp:plans/STATUS.md`) before each work package and each PR. Never edit another thread's entries. Report any slip that moves another lane's date the same day.
+- `plans/STATUS.md` on `revamp` is the append-only log shared by all six threads. One line per entry: `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`, TYPE one of NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP, READY-FOR-OWNER, APPROVED, MERGED. Read it (`git fetch origin revamp`, then `origin/revamp:plans/STATUS.md`) before each work package and each PR. Never edit another thread's entries. Report any slip that moves another lane's date the same day.
 - `plans/OWNERS.md` maps every path to one lane. Touch only your lanes' paths. Need a change elsewhere? Post a REQUEST to the owning lane.
-- The Integrator merges every PR into `revamp`. You never merge your own PRs.
+- The Integrator merges your dependency and infrastructure PRs into `revamp`. You merge your own feature PRs only after the owner approves them, under section 14. Never merge a `contract-change` PR.
 
 8. BRANCH RULES
 - Lane branches are `rv/<lane>/<slug>` (for example `rv/eng-store/commit`), one git worktree each. Your coordination branch is `rv/thread/engine`. No branch name is ever a folder of another, so never create a branch named exactly `rv/<lane>`.
@@ -118,6 +120,39 @@ Post BLOCKED-ON and ask in plain English, with options and a recommended default
 
 13. REPORTING
 At each LANE-DONE, post 3 to 6 plain sentences in this thread: what works, how the owner could see it, what is next, and anything unverified. The Integrator folds these into the owner's daily digest. If you are blocked or behind, say so the same day in STATUS.md.
+
+14. HOW THE OWNER REVIEWS YOUR WORK
+The owner reviews per big feature, never per phase and never code. This section is the whole process. It replaces any earlier mention of phase reviews or of the Integrator merging every PR.
+
+YOUR FEATURES
+- You LEAD feature 11 (menu-bar mode and background sync: `eng-host`), feature 12 (sending, undo, scheduled send and Later: `eng-time`, with `prov-gmail-write` from the Providers thread) and feature 13 (the email safety frame: `eng-html`).
+- You CONTRIBUTE to feature 7 (Ask, summaries and the command palette: `eng-ai`, led by UI-screens), feature 8 (Settings, through `eng-host`'s listener methods and `eng-ai`'s provider table, led by UI-screens), feature 4 (the reader shows `eng-html` and `eng-time` work, led by UI-core) and feature 5 (consent and `Setup/*` from `eng-ai`, led by UI-screens).
+- NO OWNER REVIEW: `eng-contract`, `eng-store`, `eng-views`. Their PRs are dependency PRs that the Integrator merges after an adversarial review by a different agent and the conformance suite. The owner sees their effect through features 2 and 3.
+There are 14 owner-visible features in all (roadmap section 12 has the table). Each has one lead thread that runs its loop and talks to the owner. A thread that owns a lane in someone else's feature finishes its lane's part, posts HANDOFF-READY to the lead in STATUS.md, and runs steps d to g for its own lane's PR. The owner's approval covers every lane of the feature. Lanes with no owner review are gated by a different agent's adversarial review, the Integrator's checks and the conformance suite.
+
+THE LOOP, for each feature you lead (lanes that only contribute run steps d to g for their own PR)
+a. BUILD. Run subagent workflows until the feature works end to end on demo mail or practice servers (emulators, the stand-in engine, isolated test storage). Work packages merge into your lane's feature branch `rv/<lane>/<slug>`. Anything another lane needs earlier (ports, adapters, store functions, anything the roadmap's "Needs" column names) goes to `revamp` as a small dependency PR that the Integrator merges. A dependency PR shows the owner nothing new.
+b. READY TO LOOK AT. Post one message in this thread, in plain English with no jargon: the feature's name; three to six numbered steps to try (what to click or press and what should happen); which data it runs on; how to open it (the browser-preview command or the build); what changed since your last post; what is not done yet. Attach screenshots of every state the steps visit, in light and dark, and one screen recording under 90 seconds that follows the steps. Add a STATUS.md entry `READY-FOR-OWNER`. When the feature is mostly engine work (sync, sending, the safety frame), show the screen it drives on practice data plus a short plain readout of what happened, such as a chart of Gmail units a minute against the limit.
+c. FEEDBACK. The owner replies in the thread. Fix each point, or say plainly why not and offer an option. Re-post the changed visuals, with before and after for anything that moved. Repeat until the owner says "approved", "looks good" or something equally clear. Silence is not approval. Approval of part of a feature is not approval of the rest.
+d. APPROVAL SNAPSHOT, THEN DEEP REVIEW. On approval, record the commit SHA of every lane branch in the feature. Save the approved screenshots and the exact capture script in `~/Library/Application Support/Aplos Mail Review/<feature>/<sha>/`, outside the repo, with demo data only. Add a STATUS.md entry `APPROVED` with the SHAs. Then agents that did not write the code run four passes, and you fix what they find:
+   1. an adversarial correctness review (Claude Opus, one named check per acceptance item, worst-case data);
+   2. a design-conformance check against `plans/DESIGN.md` and the mockups: side-by-side headless screenshots in both themes, plus the contrast, banned-string, banned-glyph and hover-never-shifts checks;
+   3. the tests and performance budgets: targeted tests, `npm run typecheck`, `npm run check`, the owners check, the conformance run, budgets measured and recorded;
+   4. a security review wherever the feature touches mail HTML, sending, OAuth or tokens, the local listener, logging, release or updater code, or keys.
+e. PULL REQUEST. Open a PR from `rv/<lane>/<slug>` into `revamp` with `gh pr create --attach`: the approved screenshots, a plain summary, the snapshot SHA and the results of the four passes. Then wait for review comments. Automated reviewers such as Cubic may comment. Never re-trigger one after every fix. Batch the fixes, verify them yourself, and request at most one re-review.
+f. ITERATE. Work through every comment and update the PR.
+g. MERGE RULE. Re-run the saved capture script at the PR head, compare it with the approval snapshot by image diff, and list the behavior diff since the snapshot: owner-visible strings, keys, states, flows and timings that changed. A change is material when the owner would notice it or might disagree with it: an element added, removed, moved or restyled; copy changed beyond a typo; a changed key or flow; changed timing; a fix that alters what the owner approved. Tests, refactors, performance work with the same look, typo fixes and fixes that make behavior match what the owner saw are not material. When in doubt, it is material.
+   - Nothing material changed: after the checks pass (`npm run typecheck`, targeted tests, `npm run check`, the owners check, the conformance run), squash-merge the PR into `revamp` yourself (`gh pr merge --squash`). Post one line to the owner in this thread with the PR link and add a STATUS.md entry `MERGED`. The Integrator runs the full suite afterward and reverts a red merge.
+   - Something material changed: do not merge. Go back to step c with before and after visuals. After the new approval, take a new snapshot and repeat d to g for what changed.
+   - A cross-thread conflict, a contract change (`contract-change` label), a file owned by another lane, or a red `revamp`: do not merge. Post a REQUEST to the Integrator, who decides.
+
+RULES THAT NEVER BEND
+- Only `revamp` merges are automatic. You never merge into main, tag a stable release, publish a draft or change repository visibility.
+- Visuals are made headlessly: Playwright's Electron support with `APLOS_TEST=1` and an isolated `APLOS_DATA_DIR` (or your own dev server on your own port for browser-preview screens), `page.screenshot` and `recordVideo`. Capture the app's own window only, never the desktop, a real window or another app. Attach the files in this T3 thread and in the PR. Never commit them, never upload them to a third-party host, and never include secrets, tokens, keys, real addresses, real mail or any personal data. Use original demo data. An agent looks at every image before you post it.
+- Approval on practice data is not live acceptance. A feature that needs a real account stays "done pending live check" until the owner's hand check or the content-free evidence file exists.
+- Several features may wait for the owner at once. Keep working on other features and lanes meanwhile. The Integrator's daily digest lists what waits on the owner, with links to your ready posts.
+- A feature PR is the one exception to the 500-line guide: one PR per lane per feature.
+- For a feature lane, the MERGED entry replaces LANE-DONE. Lanes with no owner review post LANE-DONE as before.
 ```
 
 > **What this means:** The Engine thread writes the shared rules first, then builds the database, live lists, the send clock, the AI queue, the sealed email frame and menu-bar life in seven parallel lanes.
@@ -178,9 +213,9 @@ F1 contract v1 (account and status fields, `Account/*`, `Sync/request`, `Unsubsc
 Days 12-16: live gates (Gmail first, then iCloud, Fastmail, calendars, Outlook if registered), fixes from end-to-end runs, moving or deleting today's provider files once their replacements pass. Days 15-25: PV11 hardening, fault injection per provider and the background soak.
 
 10. COORDINATION
-- `plans/STATUS.md` on `revamp` is the append-only log shared by all six threads. One line per entry: `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`, TYPE one of NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP. Read it (`git fetch origin revamp`, then `origin/revamp:plans/STATUS.md`) before each work package and each PR. Never edit another thread's entries. Report any slip that moves another lane's date the same day.
+- `plans/STATUS.md` on `revamp` is the append-only log shared by all six threads. One line per entry: `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`, TYPE one of NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP, READY-FOR-OWNER, APPROVED, MERGED. Read it (`git fetch origin revamp`, then `origin/revamp:plans/STATUS.md`) before each work package and each PR. Never edit another thread's entries. Report any slip that moves another lane's date the same day.
 - `plans/OWNERS.md` maps every path to one lane. Touch only your lanes' paths. Need a change elsewhere? Post a REQUEST to the owning lane.
-- The Integrator merges every PR into `revamp`. You never merge your own PRs.
+- The Integrator merges your dependency and infrastructure PRs into `revamp`. You merge your own feature PRs only after the owner approves them, under section 17. Never merge a `contract-change` PR.
 
 11. BRANCH RULES
 - Lane branches are `rv/<lane>/<slug>` (for example `rv/prov-gmail/history`), one git worktree each. Your coordination branch is `rv/thread/providers`. No branch name is ever a folder of another, so never create a branch named exactly `rv/<lane>`.
@@ -221,6 +256,40 @@ Post BLOCKED-ON and ask in plain English, with options and a recommended default
 
 16. REPORTING
 At each LANE-DONE, post 3 to 6 plain sentences in this thread: what works, how the owner could see it, what is next, and anything still waiting on a live check. The Integrator folds these into the owner's daily digest. If you are blocked or behind, say so the same day in STATUS.md.
+
+17. HOW THE OWNER REVIEWS YOUR WORK
+The owner reviews per big feature, never per phase and never code. This section is the whole process. It replaces any earlier mention of phase reviews or of the Integrator merging every PR.
+
+YOUR FEATURES
+- You LEAD feature 1 (Gmail sync and the first-sync screen: `prov-gov`, `prov-gmail`, plus the first-sync slice of `ui-onboard` from UI-screens), feature 9 (iCloud and Fastmail: `prov-imap`, `prov-jmap`) and feature 10 (Outlook: `prov-graph`).
+- You CONTRIBUTE to feature 5 (the reconnect side of `prov-gov`, led by UI-screens), feature 6 (Calendar: `prov-cal`, led by UI-screens) and feature 12 (`prov-gmail-write`, led by Engine).
+- NO OWNER REVIEW: `prov-emu`. Its PRs are dependency PRs that the Integrator merges once the Gmail emulator reproduces 0.2.3's failure and an adversarial review passes.
+- Your approvals are on emulators and practice servers. Features 1, 9 and 10 stay "done pending live check" until the evidence file exists and the owner's hand checks on days 14 to 16 pass. For feature 1, the pictures show the first-sync screen on the `rate-limited` and `backfilling` scenarios plus a chart of Gmail units a minute against the limit.
+There are 14 owner-visible features in all (roadmap section 12 has the table). Each has one lead thread that runs its loop and talks to the owner. A thread that owns a lane in someone else's feature finishes its lane's part, posts HANDOFF-READY to the lead in STATUS.md, and runs steps d to g for its own lane's PR. The owner's approval covers every lane of the feature. Lanes with no owner review are gated by a different agent's adversarial review, the Integrator's checks and the conformance suite.
+
+THE LOOP, for each feature you lead (lanes that only contribute run steps d to g for their own PR)
+a. BUILD. Run subagent workflows until the feature works end to end on demo mail or practice servers (emulators, the stand-in engine, isolated test storage). Work packages merge into your lane's feature branch `rv/<lane>/<slug>`. Anything another lane needs earlier (ports, adapters, store functions, anything the roadmap's "Needs" column names) goes to `revamp` as a small dependency PR that the Integrator merges. A dependency PR shows the owner nothing new.
+b. READY TO LOOK AT. Post one message in this thread, in plain English with no jargon: the feature's name; three to six numbered steps to try (what to click or press and what should happen); which data it runs on; how to open it (the browser-preview command or the build); what changed since your last post; what is not done yet. Attach screenshots of every state the steps visit, in light and dark, and one screen recording under 90 seconds that follows the steps. Add a STATUS.md entry `READY-FOR-OWNER`. When the feature is mostly engine work (sync, sending, the safety frame), show the screen it drives on practice data plus a short plain readout of what happened, such as a chart of Gmail units a minute against the limit.
+c. FEEDBACK. The owner replies in the thread. Fix each point, or say plainly why not and offer an option. Re-post the changed visuals, with before and after for anything that moved. Repeat until the owner says "approved", "looks good" or something equally clear. Silence is not approval. Approval of part of a feature is not approval of the rest.
+d. APPROVAL SNAPSHOT, THEN DEEP REVIEW. On approval, record the commit SHA of every lane branch in the feature. Save the approved screenshots and the exact capture script in `~/Library/Application Support/Aplos Mail Review/<feature>/<sha>/`, outside the repo, with demo data only. Add a STATUS.md entry `APPROVED` with the SHAs. Then agents that did not write the code run four passes, and you fix what they find:
+   1. an adversarial correctness review (Claude Opus, one named check per acceptance item, worst-case data);
+   2. a design-conformance check against `plans/DESIGN.md` and the mockups: side-by-side headless screenshots in both themes, plus the contrast, banned-string, banned-glyph and hover-never-shifts checks;
+   3. the tests and performance budgets: targeted tests, `npm run typecheck`, `npm run check`, the owners check, the conformance run, budgets measured and recorded;
+   4. a security review wherever the feature touches mail HTML, sending, OAuth or tokens, the local listener, logging, release or updater code, or keys.
+e. PULL REQUEST. Open a PR from `rv/<lane>/<slug>` into `revamp` with `gh pr create --attach`: the approved screenshots, a plain summary, the snapshot SHA and the results of the four passes. Then wait for review comments. Automated reviewers such as Cubic may comment. Never re-trigger one after every fix. Batch the fixes, verify them yourself, and request at most one re-review.
+f. ITERATE. Work through every comment and update the PR.
+g. MERGE RULE. Re-run the saved capture script at the PR head, compare it with the approval snapshot by image diff, and list the behavior diff since the snapshot: owner-visible strings, keys, states, flows and timings that changed. A change is material when the owner would notice it or might disagree with it: an element added, removed, moved or restyled; copy changed beyond a typo; a changed key or flow; changed timing; a fix that alters what the owner approved. Tests, refactors, performance work with the same look, typo fixes and fixes that make behavior match what the owner saw are not material. When in doubt, it is material.
+   - Nothing material changed: after the checks pass (`npm run typecheck`, targeted tests, `npm run check`, the owners check, the conformance run), squash-merge the PR into `revamp` yourself (`gh pr merge --squash`). Post one line to the owner in this thread with the PR link and add a STATUS.md entry `MERGED`. The Integrator runs the full suite afterward and reverts a red merge.
+   - Something material changed: do not merge. Go back to step c with before and after visuals. After the new approval, take a new snapshot and repeat d to g for what changed.
+   - A cross-thread conflict, a contract change (`contract-change` label), a file owned by another lane, or a red `revamp`: do not merge. Post a REQUEST to the Integrator, who decides.
+
+RULES THAT NEVER BEND
+- Only `revamp` merges are automatic. You never merge into main, tag a stable release, publish a draft or change repository visibility.
+- Visuals are made headlessly: Playwright's Electron support with `APLOS_TEST=1` and an isolated `APLOS_DATA_DIR` (or your own dev server on your own port for browser-preview screens), `page.screenshot` and `recordVideo`. Capture the app's own window only, never the desktop, a real window or another app. Attach the files in this T3 thread and in the PR. Never commit them, never upload them to a third-party host, and never include secrets, tokens, keys, real addresses, real mail or any personal data. Use original demo data. An agent looks at every image before you post it.
+- Approval on practice data is not live acceptance. A feature that needs a real account stays "done pending live check" until the owner's hand check or the content-free evidence file exists.
+- Several features may wait for the owner at once. Keep working on other features and lanes meanwhile. The Integrator's daily digest lists what waits on the owner, with links to your ready posts.
+- A feature PR is the one exception to the 500-line guide: one PR per lane per feature.
+- For a feature lane, the MERGED entry replaces LANE-DONE. Lanes with no owner review post LANE-DONE as before.
 ```
 
 > **What this means:** The Providers thread builds practice servers first, then Gmail with the old quick fix built in, and iCloud, Fastmail, calendars and Outlook alongside. It also makes the weekly Gmail reconnect painless.
@@ -269,10 +338,10 @@ F1 contract v1, F2 the typed client, F6 the stand-in engine with its scenarios a
 Days 11-13: run WP5.6 with the Integrator. Dev builds switch to the real engine by one flag once the Engine thread's conformance suite is green on it; screens must work on both. Days 13-16: screens on real mail, fixes from end-to-end runs, the owner's look review on day 15. Days 15-18: U9's accessibility (VoiceOver labels, focus order, reduced motion, Increase Contrast), the performance suite (your next key never waits for an animation; the list never jumps), deleting `renderer/legacy/`, and the release candidate. Phase 3: fixes from the owner's daily use.
 
 7. COORDINATION
-- `plans/STATUS.md` on `revamp` is the append-only log shared by all six threads. One line per entry: `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`, TYPE one of NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP. Read it (`git fetch origin revamp`, then `origin/revamp:plans/STATUS.md`) before each work package and each PR. Never edit another thread's entries. Report any slip that moves another lane's date the same day.
+- `plans/STATUS.md` on `revamp` is the append-only log shared by all six threads. One line per entry: `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`, TYPE one of NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP, READY-FOR-OWNER, APPROVED, MERGED. Read it (`git fetch origin revamp`, then `origin/revamp:plans/STATUS.md`) before each work package and each PR. Never edit another thread's entries. Report any slip that moves another lane's date the same day.
 - `plans/OWNERS.md` maps every path to one lane. Touch only your lanes' paths. Need a change elsewhere? Post a REQUEST to the owning lane.
 - The UI never shows a raw provider error or invents status copy: it maps reason codes to DESIGN section 7.15 copy. Every user-facing string, including `aria-label`, `title`, `placeholder` and tooltips, follows DESIGN section 10.
-- The Integrator merges every PR into `revamp`. You never merge your own PRs.
+- The Integrator merges your dependency and infrastructure PRs into `revamp`. You merge your own feature PRs only after the owner approves them, under section 14. Never merge a `contract-change` PR.
 
 8. BRANCH RULES
 - Lane branches are `rv/<lane>/<slug>` (for example `rv/ui-home/triage`), one git worktree each. Your coordination branch is `rv/thread/ui-core`. `rv/ui/mockups` is the design thread's branch; do not commit to it. No branch name is ever a folder of another, so never create a branch named exactly `rv/<lane>`.
@@ -310,10 +379,44 @@ Rules: token cost is acceptable to the owner, so use as many agents as there is 
 - Nothing to main without the owner.
 
 12. WHEN TO STOP AND ASK THE OWNER
-Post BLOCKED-ON and ask in plain English, with options and a recommended default, when: a decision in `plans/00-roadmap.md` section 8 or DESIGN-CHANGES section 10 has no default (if it has one and the owner has not answered, apply it, record it, and move on); DESIGN.md and the mockups disagree in a way that changes behaviour; anything would touch main; anything needs an owner-only action; or the plan cannot be met as written. You may design small undrawn surfaces inside DESIGN; the owner reads their copy at the day-9 and day-15 reviews. Never deviate quietly.
+Post BLOCKED-ON and ask in plain English, with options and a recommended default, when: a decision in `plans/00-roadmap.md` section 8 or DESIGN.md's Decisions for you has no default (if it has one and the owner has not answered, apply it, record it, and move on); DESIGN.md and the mockups disagree in a way that changes behaviour; anything would touch main; anything needs an owner-only action; or the plan cannot be met as written. You may design small undrawn surfaces inside DESIGN; the owner reads their copy in that feature's review. Never deviate quietly.
 
 13. REPORTING
-At each LANE-DONE, post 3 to 6 plain sentences in this thread with one screenshot reference: what works, how the owner could see it (browser preview command or packaged build), what is next. The Integrator folds these into the owner's daily digest and prepares the day-9 look review from your harness. If you are blocked or behind, say so the same day in STATUS.md.
+At each LANE-DONE, post 3 to 6 plain sentences in this thread with one screenshot reference: what works, how the owner could see it (browser preview command or packaged build), what is next. The Integrator folds these into the owner's daily digest and uses your harness for its queue of features waiting on the owner. If you are blocked or behind, say so the same day in STATUS.md.
+
+14. HOW THE OWNER REVIEWS YOUR WORK
+The owner reviews per big feature, never per phase and never code. This section is the whole process. It replaces any earlier mention of phase reviews or of the Integrator merging every PR.
+
+YOUR FEATURES
+- You LEAD feature 2 (sidebar and app shell: `ui-shell`), feature 3 (Home and mail lists: `ui-home`) and feature 4 (reader, reply and compose: `ui-reader`).
+- You CONTRIBUTE nothing to another thread's feature directly, but features 5, 6, 7 and 8 use your components and shell. If one of those leads needs a change in your paths, it posts a REQUEST.
+- NO OWNER REVIEW: `ui-foundation` (tokens, lint, components, the harness). The owner sees it in every screen. Its PRs are dependency PRs that the Integrator merges after the design lint, contrast checks and an adversarial review.
+- Your golden screenshot set stays the one allowed exception to "never commit screenshots", as your branch rules say.
+There are 14 owner-visible features in all (roadmap section 12 has the table). Each has one lead thread that runs its loop and talks to the owner. A thread that owns a lane in someone else's feature finishes its lane's part, posts HANDOFF-READY to the lead in STATUS.md, and runs steps d to g for its own lane's PR. The owner's approval covers every lane of the feature. Lanes with no owner review are gated by a different agent's adversarial review, the Integrator's checks and the conformance suite.
+
+THE LOOP, for each feature you lead (lanes that only contribute run steps d to g for their own PR)
+a. BUILD. Run subagent workflows until the feature works end to end on demo mail or practice servers (emulators, the stand-in engine, isolated test storage). Work packages merge into your lane's feature branch `rv/<lane>/<slug>`. Anything another lane needs earlier (ports, adapters, store functions, anything the roadmap's "Needs" column names) goes to `revamp` as a small dependency PR that the Integrator merges. A dependency PR shows the owner nothing new.
+b. READY TO LOOK AT. Post one message in this thread, in plain English with no jargon: the feature's name; three to six numbered steps to try (what to click or press and what should happen); which data it runs on; how to open it (the browser-preview command or the build); what changed since your last post; what is not done yet. Attach screenshots of every state the steps visit, in light and dark, and one screen recording under 90 seconds that follows the steps. Add a STATUS.md entry `READY-FOR-OWNER`. When the feature is mostly engine work (sync, sending, the safety frame), show the screen it drives on practice data plus a short plain readout of what happened, such as a chart of Gmail units a minute against the limit.
+c. FEEDBACK. The owner replies in the thread. Fix each point, or say plainly why not and offer an option. Re-post the changed visuals, with before and after for anything that moved. Repeat until the owner says "approved", "looks good" or something equally clear. Silence is not approval. Approval of part of a feature is not approval of the rest.
+d. APPROVAL SNAPSHOT, THEN DEEP REVIEW. On approval, record the commit SHA of every lane branch in the feature. Save the approved screenshots and the exact capture script in `~/Library/Application Support/Aplos Mail Review/<feature>/<sha>/`, outside the repo, with demo data only. Add a STATUS.md entry `APPROVED` with the SHAs. Then agents that did not write the code run four passes, and you fix what they find:
+   1. an adversarial correctness review (Claude Opus, one named check per acceptance item, worst-case data);
+   2. a design-conformance check against `plans/DESIGN.md` and the mockups: side-by-side headless screenshots in both themes, plus the contrast, banned-string, banned-glyph and hover-never-shifts checks;
+   3. the tests and performance budgets: targeted tests, `npm run typecheck`, `npm run check`, the owners check, the conformance run, budgets measured and recorded;
+   4. a security review wherever the feature touches mail HTML, sending, OAuth or tokens, the local listener, logging, release or updater code, or keys.
+e. PULL REQUEST. Open a PR from `rv/<lane>/<slug>` into `revamp` with `gh pr create --attach`: the approved screenshots, a plain summary, the snapshot SHA and the results of the four passes. Then wait for review comments. Automated reviewers such as Cubic may comment. Never re-trigger one after every fix. Batch the fixes, verify them yourself, and request at most one re-review.
+f. ITERATE. Work through every comment and update the PR.
+g. MERGE RULE. Re-run the saved capture script at the PR head, compare it with the approval snapshot by image diff, and list the behavior diff since the snapshot: owner-visible strings, keys, states, flows and timings that changed. A change is material when the owner would notice it or might disagree with it: an element added, removed, moved or restyled; copy changed beyond a typo; a changed key or flow; changed timing; a fix that alters what the owner approved. Tests, refactors, performance work with the same look, typo fixes and fixes that make behavior match what the owner saw are not material. When in doubt, it is material.
+   - Nothing material changed: after the checks pass (`npm run typecheck`, targeted tests, `npm run check`, the owners check, the conformance run), squash-merge the PR into `revamp` yourself (`gh pr merge --squash`). Post one line to the owner in this thread with the PR link and add a STATUS.md entry `MERGED`. The Integrator runs the full suite afterward and reverts a red merge.
+   - Something material changed: do not merge. Go back to step c with before and after visuals. After the new approval, take a new snapshot and repeat d to g for what changed.
+   - A cross-thread conflict, a contract change (`contract-change` label), a file owned by another lane, or a red `revamp`: do not merge. Post a REQUEST to the Integrator, who decides.
+
+RULES THAT NEVER BEND
+- Only `revamp` merges are automatic. You never merge into main, tag a stable release, publish a draft or change repository visibility.
+- Visuals are made headlessly: Playwright's Electron support with `APLOS_TEST=1` and an isolated `APLOS_DATA_DIR` (or your own dev server on your own port for browser-preview screens), `page.screenshot` and `recordVideo`. Capture the app's own window only, never the desktop, a real window or another app. Attach the files in this T3 thread and in the PR. Never commit them, never upload them to a third-party host, and never include secrets, tokens, keys, real addresses, real mail or any personal data. Use original demo data. An agent looks at every image before you post it.
+- Approval on practice data is not live acceptance. A feature that needs a real account stays "done pending live check" until the owner's hand check or the content-free evidence file exists.
+- Several features may wait for the owner at once. Keep working on other features and lanes meanwhile. The Integrator's daily digest lists what waits on the owner, with links to your ready posts.
+- A feature PR is the one exception to the 500-line guide: one PR per lane per feature.
+- For a feature lane, the MERGED entry replaces LANE-DONE. Lanes with no owner review post LANE-DONE as before.
 ```
 
 > **What this means:** The UI-core thread builds the design system, the app shell, Home and the reader from the revised mockups, and hands the other UI thread fixed building blocks on day 3.
@@ -356,10 +459,10 @@ F1 contract v1 and F2 the typed client (from the Engine thread), F6 the stand-in
 Days 11-16: your screens on the real engine after UI-core's switch; the real onboarding with a real Google account run by the owner (day 14-16); Calendar on the Providers thread's real calendars; Settings against real accounts. Days 15-18: accessibility and copy review with UI-core. Phase 3: fixes from daily use, including the first real weekly reconnect inside the dogfood week, which is the acceptance test for the reconnect sheet.
 
 7. COORDINATION
-- `plans/STATUS.md` on `revamp` is the append-only log shared by all six threads. One line per entry: `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`, TYPE one of NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP. Read it (`git fetch origin revamp`, then `origin/revamp:plans/STATUS.md`) before each work package and each PR. Never edit another thread's entries. Report any slip that moves another lane's date the same day.
+- `plans/STATUS.md` on `revamp` is the append-only log shared by all six threads. One line per entry: `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`, TYPE one of NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP, READY-FOR-OWNER, APPROVED, MERGED. Read it (`git fetch origin revamp`, then `origin/revamp:plans/STATUS.md`) before each work package and each PR. Never edit another thread's entries. Report any slip that moves another lane's date the same day.
 - `plans/OWNERS.md` maps every path to one lane. Touch only your lanes' paths. Need a change elsewhere? Post a REQUEST to the owning lane.
 - The UI never shows a raw provider error or invents status copy: it maps reason codes to DESIGN section 7.15 copy. Every user-facing string follows DESIGN section 10.
-- The Integrator merges every PR into `revamp`. You never merge your own PRs.
+- The Integrator merges your dependency and infrastructure PRs into `revamp`. You merge your own feature PRs only after the owner approves them, under section 14. Never merge a `contract-change` PR.
 
 8. BRANCH RULES
 - Lane branches are `rv/<lane>/<slug>` (for example `rv/ui-onboard/first-sync`), one git worktree each. Your coordination branch is `rv/thread/ui-screens`. No branch name is ever a folder of another, so never create a branch named exactly `rv/<lane>`.
@@ -398,10 +501,43 @@ Rules: token cost is acceptable to the owner, so use as many agents as there is 
 - Nothing to main without the owner.
 
 12. WHEN TO STOP AND ASK THE OWNER
-Post BLOCKED-ON and ask in plain English, with options and a recommended default, when: a decision in `plans/00-roadmap.md` section 8 or DESIGN-CHANGES section 10 has no default (if it has one and the owner has not answered, apply it, record it, and move on); DESIGN.md and the mockups disagree in a way that changes behaviour; anything would touch main; anything needs an owner-only action; or the plan cannot be met as written. You may design small undrawn surfaces inside DESIGN; the owner reads their copy at the day-9 and day-15 reviews. Never deviate quietly.
+Post BLOCKED-ON and ask in plain English, with options and a recommended default, when: a decision in `plans/00-roadmap.md` section 8 or DESIGN.md's Decisions for you has no default (if it has one and the owner has not answered, apply it, record it, and move on); DESIGN.md and the mockups disagree in a way that changes behaviour; anything would touch main; anything needs an owner-only action; or the plan cannot be met as written. You may design small undrawn surfaces inside DESIGN; the owner reads their copy in that feature's review. Never deviate quietly.
 
 13. REPORTING
 At each LANE-DONE, post 3 to 6 plain sentences in this thread with one screenshot reference: what works, how the owner could see it, what is next. The Integrator folds these into the owner's daily digest. If you are blocked or behind, say so the same day in STATUS.md.
+
+14. HOW THE OWNER REVIEWS YOUR WORK
+The owner reviews per big feature, never per phase and never code. This section is the whole process. It replaces any earlier mention of phase reviews or of the Integrator merging every PR.
+
+YOUR FEATURES
+- You LEAD feature 5 (onboarding and the weekly reconnect: `ui-onboard`, plus the reconnect side of `prov-gov` from Providers), feature 6 (Calendar: `ui-calendar`, with `prov-cal` from Providers), feature 7 (Ask, summaries and the command palette: `ui-ask`, with `eng-ai` from Engine) and feature 8 (Settings: `ui-settings`, fed by `eng-host` and `eng-ai`).
+- You CONTRIBUTE the first-sync screen slice of `ui-onboard` to feature 1 (Gmail sync and the first-sync screen, led by Providers). Give the Providers lead the screen on the `rate-limited`, `backfilling` and `needs-reauth` scenarios when it asks.
+- NO OWNER REVIEW: none of your lanes. Every lane is in a feature.
+There are 14 owner-visible features in all (roadmap section 12 has the table). Each has one lead thread that runs its loop and talks to the owner. A thread that owns a lane in someone else's feature finishes its lane's part, posts HANDOFF-READY to the lead in STATUS.md, and runs steps d to g for its own lane's PR. The owner's approval covers every lane of the feature. Lanes with no owner review are gated by a different agent's adversarial review, the Integrator's checks and the conformance suite.
+
+THE LOOP, for each feature you lead (lanes that only contribute run steps d to g for their own PR)
+a. BUILD. Run subagent workflows until the feature works end to end on demo mail or practice servers (emulators, the stand-in engine, isolated test storage). Work packages merge into your lane's feature branch `rv/<lane>/<slug>`. Anything another lane needs earlier (ports, adapters, store functions, anything the roadmap's "Needs" column names) goes to `revamp` as a small dependency PR that the Integrator merges. A dependency PR shows the owner nothing new.
+b. READY TO LOOK AT. Post one message in this thread, in plain English with no jargon: the feature's name; three to six numbered steps to try (what to click or press and what should happen); which data it runs on; how to open it (the browser-preview command or the build); what changed since your last post; what is not done yet. Attach screenshots of every state the steps visit, in light and dark, and one screen recording under 90 seconds that follows the steps. Add a STATUS.md entry `READY-FOR-OWNER`. When the feature is mostly engine work (sync, sending, the safety frame), show the screen it drives on practice data plus a short plain readout of what happened, such as a chart of Gmail units a minute against the limit.
+c. FEEDBACK. The owner replies in the thread. Fix each point, or say plainly why not and offer an option. Re-post the changed visuals, with before and after for anything that moved. Repeat until the owner says "approved", "looks good" or something equally clear. Silence is not approval. Approval of part of a feature is not approval of the rest.
+d. APPROVAL SNAPSHOT, THEN DEEP REVIEW. On approval, record the commit SHA of every lane branch in the feature. Save the approved screenshots and the exact capture script in `~/Library/Application Support/Aplos Mail Review/<feature>/<sha>/`, outside the repo, with demo data only. Add a STATUS.md entry `APPROVED` with the SHAs. Then agents that did not write the code run four passes, and you fix what they find:
+   1. an adversarial correctness review (Claude Opus, one named check per acceptance item, worst-case data);
+   2. a design-conformance check against `plans/DESIGN.md` and the mockups: side-by-side headless screenshots in both themes, plus the contrast, banned-string, banned-glyph and hover-never-shifts checks;
+   3. the tests and performance budgets: targeted tests, `npm run typecheck`, `npm run check`, the owners check, the conformance run, budgets measured and recorded;
+   4. a security review wherever the feature touches mail HTML, sending, OAuth or tokens, the local listener, logging, release or updater code, or keys.
+e. PULL REQUEST. Open a PR from `rv/<lane>/<slug>` into `revamp` with `gh pr create --attach`: the approved screenshots, a plain summary, the snapshot SHA and the results of the four passes. Then wait for review comments. Automated reviewers such as Cubic may comment. Never re-trigger one after every fix. Batch the fixes, verify them yourself, and request at most one re-review.
+f. ITERATE. Work through every comment and update the PR.
+g. MERGE RULE. Re-run the saved capture script at the PR head, compare it with the approval snapshot by image diff, and list the behavior diff since the snapshot: owner-visible strings, keys, states, flows and timings that changed. A change is material when the owner would notice it or might disagree with it: an element added, removed, moved or restyled; copy changed beyond a typo; a changed key or flow; changed timing; a fix that alters what the owner approved. Tests, refactors, performance work with the same look, typo fixes and fixes that make behavior match what the owner saw are not material. When in doubt, it is material.
+   - Nothing material changed: after the checks pass (`npm run typecheck`, targeted tests, `npm run check`, the owners check, the conformance run), squash-merge the PR into `revamp` yourself (`gh pr merge --squash`). Post one line to the owner in this thread with the PR link and add a STATUS.md entry `MERGED`. The Integrator runs the full suite afterward and reverts a red merge.
+   - Something material changed: do not merge. Go back to step c with before and after visuals. After the new approval, take a new snapshot and repeat d to g for what changed.
+   - A cross-thread conflict, a contract change (`contract-change` label), a file owned by another lane, or a red `revamp`: do not merge. Post a REQUEST to the Integrator, who decides.
+
+RULES THAT NEVER BEND
+- Only `revamp` merges are automatic. You never merge into main, tag a stable release, publish a draft or change repository visibility.
+- Visuals are made headlessly: Playwright's Electron support with `APLOS_TEST=1` and an isolated `APLOS_DATA_DIR` (or your own dev server on your own port for browser-preview screens), `page.screenshot` and `recordVideo`. Capture the app's own window only, never the desktop, a real window or another app. Attach the files in this T3 thread and in the PR. Never commit them, never upload them to a third-party host, and never include secrets, tokens, keys, real addresses, real mail or any personal data. Use original demo data. An agent looks at every image before you post it.
+- Approval on practice data is not live acceptance. A feature that needs a real account stays "done pending live check" until the owner's hand check or the content-free evidence file exists.
+- Several features may wait for the owner at once. Keep working on other features and lanes meanwhile. The Integrator's daily digest lists what waits on the owner, with links to your ready posts.
+- A feature PR is the one exception to the 500-line guide: one PR per lane per feature.
+- For a feature lane, the MERGED entry replaces LANE-DONE. Lanes with no owner review post LANE-DONE as before.
 ```
 
 > **What this means:** The UI-screens thread builds onboarding, the weekly reconnect, Calendar, Settings, Ask and the command palette on the building blocks the UI-core thread freezes on day 3.
@@ -443,9 +579,9 @@ F1 and F2 (the contract and generated allowlists, for host-agreement and OpenAPI
 Days 12-16: the end-to-end journeys on emulators run daily with the Integrator (connect, first sync, triage, reply, send later, undo, reconnect); packaged builds on demand; the CSP stage 2 after the Engine thread's mail frame lands. Days 15-18: the release candidate build, `verify-release.mjs`, the release gate checklist. Phase 3: open-source preparation (scan, notices, LICENSE draft, a public-flip checklist for the owner's later decision), and the second-Mac update test only if the owner asks.
 
 7. COORDINATION
-- `plans/STATUS.md` on `revamp` is the append-only log shared by all six threads. One line per entry: `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`, TYPE one of NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP. Read it (`git fetch origin revamp`, then `origin/revamp:plans/STATUS.md`) before each work package and each PR. Never edit another thread's entries. Report any slip that moves another lane's date the same day.
+- `plans/STATUS.md` on `revamp` is the append-only log shared by all six threads. One line per entry: `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`, TYPE one of NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP, READY-FOR-OWNER, APPROVED, MERGED. Read it (`git fetch origin revamp`, then `origin/revamp:plans/STATUS.md`) before each work package and each PR. Never edit another thread's entries. Report any slip that moves another lane's date the same day.
 - `plans/OWNERS.md` maps every path to one lane. Touch only your lanes' paths. Need a change elsewhere? Post a REQUEST to the owning lane. You own root devDependencies; other lanes ask you for new ones by REQUEST.
-- The Integrator merges every PR into `revamp`. You never merge your own PRs.
+- The Integrator merges your dependency and infrastructure PRs into `revamp`. You merge your own feature PRs only after the owner approves them, under section 14. Never merge a `contract-change` PR.
 
 8. BRANCH RULES
 - Lane branches are `rv/<lane>/<slug>` (for example `rv/plat-ci/e2e-base`), one git worktree each. Your coordination branch is `rv/thread/platform`. No branch name is ever a folder of another, so never create a branch named exactly `rv/<lane>`.
@@ -486,6 +622,39 @@ Post BLOCKED-ON and ask in plain English, with options and a recommended default
 
 13. REPORTING
 At each LANE-DONE, post 3 to 6 plain sentences in this thread: what works, how the owner could see it (a preview link for the site, a command), what is next. The Integrator folds these into the owner's daily digest. If you are blocked or behind, say so the same day in STATUS.md.
+
+14. HOW THE OWNER REVIEWS YOUR WORK
+The owner reviews per big feature, never per phase and never code. This section is the whole process. It replaces any earlier mention of phase reviews or of the Integrator merging every PR.
+
+YOUR FEATURES
+- You LEAD feature 14 (the aplos.email website: `web`). The owner's preview is a Vercel preview link or headless screenshots of the built site in both themes, never a push to the production branch.
+- NO OWNER REVIEW: `plat-ci` and `plat-release`. Their PRs are dependency or infrastructure PRs that the Integrator merges after an adversarial review by a different agent. The owner meets `plat-release`'s work when they install the release candidate on days 17 to 18.
+- You CONTRIBUTE nothing else to another thread's feature.
+There are 14 owner-visible features in all (roadmap section 12 has the table). Each has one lead thread that runs its loop and talks to the owner. A thread that owns a lane in someone else's feature finishes its lane's part, posts HANDOFF-READY to the lead in STATUS.md, and runs steps d to g for its own lane's PR. The owner's approval covers every lane of the feature. Lanes with no owner review are gated by a different agent's adversarial review, the Integrator's checks and the conformance suite.
+
+THE LOOP, for each feature you lead (lanes that only contribute run steps d to g for their own PR)
+a. BUILD. Run subagent workflows until the feature works end to end on demo mail or practice servers (emulators, the stand-in engine, isolated test storage). Work packages merge into your lane's feature branch `rv/<lane>/<slug>`. Anything another lane needs earlier (ports, adapters, store functions, anything the roadmap's "Needs" column names) goes to `revamp` as a small dependency PR that the Integrator merges. A dependency PR shows the owner nothing new.
+b. READY TO LOOK AT. Post one message in this thread, in plain English with no jargon: the feature's name; three to six numbered steps to try (what to click or press and what should happen); which data it runs on; how to open it (the browser-preview command or the build); what changed since your last post; what is not done yet. Attach screenshots of every state the steps visit, in light and dark, and one screen recording under 90 seconds that follows the steps. Add a STATUS.md entry `READY-FOR-OWNER`. When the feature is mostly engine work (sync, sending, the safety frame), show the screen it drives on practice data plus a short plain readout of what happened, such as a chart of Gmail units a minute against the limit.
+c. FEEDBACK. The owner replies in the thread. Fix each point, or say plainly why not and offer an option. Re-post the changed visuals, with before and after for anything that moved. Repeat until the owner says "approved", "looks good" or something equally clear. Silence is not approval. Approval of part of a feature is not approval of the rest.
+d. APPROVAL SNAPSHOT, THEN DEEP REVIEW. On approval, record the commit SHA of every lane branch in the feature. Save the approved screenshots and the exact capture script in `~/Library/Application Support/Aplos Mail Review/<feature>/<sha>/`, outside the repo, with demo data only. Add a STATUS.md entry `APPROVED` with the SHAs. Then agents that did not write the code run four passes, and you fix what they find:
+   1. an adversarial correctness review (Claude Opus, one named check per acceptance item, worst-case data);
+   2. a design-conformance check against `plans/DESIGN.md` and the mockups: side-by-side headless screenshots in both themes, plus the contrast, banned-string, banned-glyph and hover-never-shifts checks;
+   3. the tests and performance budgets: targeted tests, `npm run typecheck`, `npm run check`, the owners check, the conformance run, budgets measured and recorded;
+   4. a security review wherever the feature touches mail HTML, sending, OAuth or tokens, the local listener, logging, release or updater code, or keys.
+e. PULL REQUEST. Open a PR from `rv/<lane>/<slug>` into `revamp` with `gh pr create --attach`: the approved screenshots, a plain summary, the snapshot SHA and the results of the four passes. Then wait for review comments. Automated reviewers such as Cubic may comment. Never re-trigger one after every fix. Batch the fixes, verify them yourself, and request at most one re-review.
+f. ITERATE. Work through every comment and update the PR.
+g. MERGE RULE. Re-run the saved capture script at the PR head, compare it with the approval snapshot by image diff, and list the behavior diff since the snapshot: owner-visible strings, keys, states, flows and timings that changed. A change is material when the owner would notice it or might disagree with it: an element added, removed, moved or restyled; copy changed beyond a typo; a changed key or flow; changed timing; a fix that alters what the owner approved. Tests, refactors, performance work with the same look, typo fixes and fixes that make behavior match what the owner saw are not material. When in doubt, it is material.
+   - Nothing material changed: after the checks pass (`npm run typecheck`, targeted tests, `npm run check`, the owners check, the conformance run), squash-merge the PR into `revamp` yourself (`gh pr merge --squash`). Post one line to the owner in this thread with the PR link and add a STATUS.md entry `MERGED`. The Integrator runs the full suite afterward and reverts a red merge.
+   - Something material changed: do not merge. Go back to step c with before and after visuals. After the new approval, take a new snapshot and repeat d to g for what changed.
+   - A cross-thread conflict, a contract change (`contract-change` label), a file owned by another lane, or a red `revamp`: do not merge. Post a REQUEST to the Integrator, who decides.
+
+RULES THAT NEVER BEND
+- Only `revamp` merges are automatic. You never merge into main, tag a stable release, publish a draft or change repository visibility.
+- Visuals are made headlessly: Playwright's Electron support with `APLOS_TEST=1` and an isolated `APLOS_DATA_DIR` (or your own dev server on your own port for browser-preview screens), `page.screenshot` and `recordVideo`. Capture the app's own window only, never the desktop, a real window or another app. Attach the files in this T3 thread and in the PR. Never commit them, never upload them to a third-party host, and never include secrets, tokens, keys, real addresses, real mail or any personal data. Use original demo data. An agent looks at every image before you post it.
+- Approval on practice data is not live acceptance. A feature that needs a real account stays "done pending live check" until the owner's hand check or the content-free evidence file exists.
+- Several features may wait for the owner at once. Keep working on other features and lanes meanwhile. The Integrator's daily digest lists what waits on the owner, with links to your ready posts.
+- A feature PR is the one exception to the 500-line guide: one PR per lane per feature.
+- For a feature lane, the MERGED entry replaces LANE-DONE. Lanes with no owner review post LANE-DONE as before.
 ```
 
 > **What this means:** The Platform and website thread keeps the codebase tidy and tested, makes the app safe and releasable from this one repo, prepares for going public later, and makes aplos.email honest and on-brand.
@@ -496,7 +665,7 @@ At each LANE-DONE, post 3 to 6 plain sentences in this thread: what works, how t
 # BRIEF: INTEGRATOR THREAD
 
 1. MISSION
-You are the INTEGRATOR of the Aplos Mail revamp. Aplos Mail is the owner's keyboard-first macOS mail and calendar app (Electron, React, TypeScript, npm-workspaces monorepo: `apps/desktop`, `apps/web`, `packages/`). The owner is rebuilding the engine, the provider layer and every screen at once and shipping them as ONE redesigned release (proposed 0.3.0). Five build threads (Engine, Providers, UI-core, UI-screens, Platform and website) run about 26 lanes in parallel, each owning its own paths. You own no product code. You own: the coordination files (`plans/STATUS.md`, `plans/OWNERS.md`), the freeze sign-off, every merge into `revamp`, the health of `revamp`, the full test suite, the conformance burn-down, scheduling of live checks, Phase 2 integration, the release candidate, the owner's daily digest and phase reviews, and the triage of the owner's daily-use reports in Phase 3. Schedule and lanes are in `plans/00-roadmap.md`, which you keep accurate. Nothing goes to main without the owner; you never merge to main.
+You are the INTEGRATOR of the Aplos Mail revamp. Aplos Mail is the owner's keyboard-first macOS mail and calendar app (Electron, React, TypeScript, npm-workspaces monorepo: `apps/desktop`, `apps/web`, `packages/`). The owner is rebuilding the engine, the provider layer and every screen at once and shipping them as ONE redesigned release (proposed 0.3.0). Five build threads (Engine, Providers, UI-core, UI-screens, Platform and website) run about 26 lanes in parallel, each owning its own paths. You own no product code. You own: the coordination files (`plans/STATUS.md`, `plans/OWNERS.md`), the freeze sign-off, every dependency and infrastructure merge into `revamp` (threads merge their own owner-approved feature PRs), the health of `revamp`, the full test suite, the conformance burn-down, scheduling of live checks, Phase 2 integration, the release candidate, the owner's daily digest and phase reviews, and the triage of the owner's daily-use reports in Phase 3. Schedule and lanes are in `plans/00-roadmap.md`, which you keep accurate. Nothing goes to main without the owner; you never merge to main.
 
 2. READING ORDER
 1. `plans/_council/CONTEXT.md`, then `plans/00-roadmap.md` in full.
@@ -507,19 +676,19 @@ You are the INTEGRATOR of the Aplos Mail revamp. Aplos Mail is the owner's keybo
 
 3. PHASE 0 (days 1-3)
 - First hour: confirm `git config user.email` is k@kainoa.me and the name is Kainoa Newton in the repo; confirm DESIGN.md contains `mockups/DESIGN-CHANGES.md` revision 2 and `mockups/` is on `revamp` (if not, tell the owner and hold the two UI threads' Phase 1 start).
-- Create `plans/STATUS.md` with a one-paragraph header: line format `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`; types NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP; append-only.
+- Create `plans/STATUS.md` with a one-paragraph header: line format `YYYY-MM-DD HH:MM | <thread> | <TYPE> | <lane> | text`; types NOTICE, FROZEN, HANDOFF-READY, LANE-DONE, REQUEST, BLOCKED-ON, CONTRACT-CHANGE-PROPOSED, CONTRACT-CHANGE-DONE, SLIP, READY-FOR-OWNER, APPROVED, MERGED; append-only.
 - Create `plans/OWNERS.md` from roadmap section 2: every path glob to exactly one lane and thread, plus the shared files and who may edit them (`PROGRESS.md`, `DECISIONS.md`, `TODO.md` are append-only for all; `package.json` root and devDependencies belong to `plat-ci`; `plans/` belongs to you). Build `scripts/audit/owners-check.mjs` with the Platform thread.
 - Write the merge procedure into the STATUS.md header: lanes open PRs into `revamp`; you merge after the checks in section 5.
 - Run the freeze review on day 3. Spawn three fresh adversarial reviewers (Claude Opus), each given artifacts F1-F10 from roadmap section 1.2, the relevant DESIGN, ARCH and plan sections, and the UI-screens thread's gap list, but not the authors' reasoning: (1) UI: every mockup screen and DESIGN sections 5 and 7 against the contract and data hooks, plus plan 10 section 4.1's twelve asks; (2) Providers: Gmail, IMAP, JMAP, Graph and CalDAV through the ports and schema 0001 on paper, including the weekly reconnect and the lease; (3) security and platform: scope tags, transports, `Mail/frame`, the log catalog against ARCH 11-12, the 400,000-byte budget. Track every finding to a fix or a recorded decision. Then tag `contract-v1` on `revamp`, post FROZEN, and send the owner a five-line plain-English note.
 
 4. PHASE 1 (days 4-13)
-- Merge continuously. Before each merge: the PR touches only its lane's paths (owners check); `npm run typecheck`, `npm test`, `npm run check`; the conformance suite on the stand-in engine; the real-engine conformance run with its expected-fail list (it may only shrink); evidence attached; reviewed by an agent that did not write it. Merge small PRs in arrival order, critical lanes first when queued. Squash merges, except Phase 0's mechanical commits.
+- Merge continuously. Before each dependency or infrastructure merge: the PR touches only its lane's paths (owners check); `npm run typecheck`, `npm test`, `npm run check`; the conformance suite on the stand-in engine; the real-engine conformance run with its expected-fail list (it may only shrink); evidence attached; reviewed by an agent that did not write it. Merge small PRs in arrival order, critical lanes first when queued. Squash merges, except Phase 0's mechanical commits.
 - If `revamp` goes red, find the PR that broke it and revert that PR at once with a note to its lane. Never force-push.
 - Guard the contract: any PR touching `packages/contract`, `ports.ts`, migrations or `methods/index.ts` outside `eng-contract` or `eng-store` is refused. Contract changes must be additive within `v:1`.
 - Keep the critical path in view (roadmap section 4): `eng-store`'s real commit by day 6, `prov-gmail`'s emulator gate by day 11, `eng-views` conformance green by day 11. Post SLIP the same day a date moves, and say what it moves.
 - Schedule live checks with the Providers thread: on this Mac, at set times, read-only first, one Gmail run at a time per test account, each under 3,000 units a minute, after the owner's weekly reconnect.
 - Machine load: many agents share one Mac. Ask lanes to run targeted tests; you run the full suite. GitHub Actions runs on pushes to `revamp` only, Linux only, within the free allowance.
-- Prepare the day-9 look review: the harness screenshots of every main screen on demo mail in both themes next to the mockups, plus a ten-line checklist for the owner.
+- Keep the owner's review queue (section 12): from about day 7 features arrive as READY-FOR-OWNER entries. Help the leads with the harness screenshots of each main screen on demo mail in both themes next to the mockups.
 
 5. PHASE 2 (days 11-18)
 - Lead the switch to the real engine (UI-core's WP5.6) when the real-engine conformance list reaches zero: dev builds flip by one flag; screens must work on both.
@@ -536,7 +705,7 @@ You are the INTEGRATOR of the Aplos Mail revamp. Aplos Mail is the owner's keybo
 
 7. OWNER COMMUNICATION
 - One daily digest in this thread, at most 10 plain sentences: what landed, what the owner can try and how, what slipped and why, what needs them (with a deadline), and anything unverified. No jargon, or jargon explained in passing.
-- Phase reviews (default, roadmap decision N2): day 3 freeze note, day 9 look review, about an hour of live checks around day 15, daily use from day 18. The owner reviews behaviour, never code. Each review has a checklist written ahead.
+- Reviews (roadmap decision N2, answered): the owner reviews per big feature, never code (section 12). Besides that, the day 3 freeze note, about an hour of live checks around day 15 and daily use from day 18. Each live check has a checklist written ahead.
 - Remind the owner a day before each weekly Gmail reconnect.
 
 8. BRANCH RULES
@@ -561,6 +730,32 @@ The owner has asked each thread to orchestrate Claude Code workflows, so this br
 
 11. WHEN TO STOP AND ASK THE OWNER
 When a decision has no default, when anything would touch main or need an owner-only action, when a lane must be cut or the release date moves by more than two days, or when two threads disagree on the contract and the Engine thread cannot settle it. Ask in plain English with options and a recommended default.
+
+12. HOW THE OWNER REVIEWS (YOU RUN THE QUEUE)
+The owner reviews per big feature, never per phase and never code. The five build threads run each feature's loop themselves. You lead no feature and own no lane. Your part is the queue, the checks around the merges and the decisions that cross threads.
+
+THE LOOP, as the threads run it
+a. The lead thread builds the feature with subagent workflows until it works end to end on demo mail or practice servers.
+b. It posts a plain-English "ready to look at" message in its T3 thread: steps to try, which data, what changed, what is not done, screenshots in light and dark and a recording under 90 seconds. It adds a STATUS.md entry `READY-FOR-OWNER`.
+c. The owner gives feedback. The thread iterates and re-posts visuals until the owner says "approved" or "looks good".
+d. On approval the thread records the commit SHA of each lane branch and saves the approved screenshots and capture script outside the repo, adds `APPROVED`, then runs four deep review passes with agents that did not write the code: adversarial correctness, design conformance against `plans/DESIGN.md` and the mockups, tests and performance budgets, and a security review where relevant.
+e. Each lane opens a PR from its `rv/<lane>/<slug>` branch into `revamp` with `gh pr create --attach` and waits for review comments. Automated reviewers such as Cubic may comment. Nobody re-triggers one after every fix; a thread requests at most one re-review.
+f. The thread iterates on the comments.
+g. Merge rule. If nothing user-visible changed materially since the approval snapshot (judged by an image diff against the saved screenshots and the behavior diff), the thread squash-merges into `revamp` itself, posts one line to the owner and adds `MERGED`. If something changed materially, it goes back to the owner with before and after visuals. If there is a cross-thread conflict, a contract change or a red `revamp`, it comes to you.
+
+THE 14 FEATURES AND THEIR LEADS
+1 Gmail sync and the first-sync screen (Providers: `prov-gov`, `prov-gmail`, first-sync slice of `ui-onboard`); 2 sidebar and app shell (UI-core: `ui-shell`); 3 Home and mail lists (UI-core: `ui-home`); 4 reader, reply and compose (UI-core: `ui-reader`); 5 onboarding and the weekly reconnect (UI-screens: `ui-onboard`, reconnect side of `prov-gov`); 6 Calendar (UI-screens: `ui-calendar`, `prov-cal`); 7 Ask, summaries and the command palette (UI-screens: `ui-ask`, `eng-ai`); 8 Settings (UI-screens: `ui-settings`); 9 iCloud and Fastmail (Providers: `prov-imap`, `prov-jmap`); 10 Outlook (Providers: `prov-graph`); 11 menu-bar mode and background sync (Engine: `eng-host`); 12 sending, undo, scheduled send and Later (Engine: `eng-time`, `prov-gmail-write`); 13 the email safety frame (Engine: `eng-html`); 14 the aplos.email website (Platform and website: `web`). No owner review: `eng-contract`, `eng-store`, `eng-views`, `prov-emu`, `ui-foundation`, `plat-ci`, `plat-release`. Their PRs are dependency or infrastructure PRs and you merge them.
+
+WHAT YOU DO
+- Keep the queue. Read the `READY-FOR-OWNER`, `APPROVED` and `MERGED` entries. The daily digest lists what waits on the owner, oldest first, with a link to each ready post. Suggest an order (features 1 to 4 first) and offer to batch small features into one sitting.
+- Merge dependency and infrastructure PRs after the checks in section 4. Refuse any feature PR that touches another lane's paths. Merge every `contract-change` PR yourself; a thread never self-merges one.
+- After every feature merge by a thread, run the full suite, the conformance run and the owners check, and revert a red merge at once with a note to the thread. Check that every `MERGED` entry has an earlier `READY-FOR-OWNER` and `APPROVED` and a one-line note to the owner. If not, revert and tell the thread. Spot-check "nothing material changed" claims by comparing visuals yourself for Home, the reader, compose, onboarding and sending.
+- Decide cross-thread conflicts and contract questions that threads send you. If the Engine thread cannot settle a contract disagreement, ask the owner.
+- Approval on practice data is not live acceptance. Features 1, 9 and 10 stay "done pending live check" until the evidence file exists and the owner's days 14 to 16 hand checks pass.
+
+RULES THAT NEVER BEND
+- Only `revamp` merges are automatic. Main is only ever touched by the owner.
+- Visuals are headless (Playwright's Electron support with `APLOS_TEST=1` and an isolated `APLOS_DATA_DIR`, or the thread's own dev server), show the app's own window only, are attached in T3 threads and PRs, are never committed or uploaded to a third-party host, and never show secrets, tokens, real addresses, real mail, personal data or other apps. Check this in every digest you write.
 ```
 
 > **What this means:** The Integrator owns no features. It keeps the shared branch green, runs the freeze review and the joining phase, and is the one voice that reports to you every day.
@@ -569,21 +764,21 @@ When a decision has no default, when anything would touch main or need an owner-
 
 Do these in order once the owner says go.
 
-1. **Settle the design.** The owner answers DESIGN-CHANGES section 10 in the mockups thread, or its defaults apply. Fold `mockups/DESIGN-CHANGES.md` into `plans/DESIGN.md` on `revamp`, and merge the `mockups/` folder from `rv/ui/mockups` into `revamp` as read-only reference. The UI threads start from the updated DESIGN.md with the mockups as the visual target. This must happen before the UI-core thread launches, because it writes the design tokens on day 1.
+1. **Settle the design.** Done on 2026-10-27: DESIGN.md is the Paper spec with every mockup revision folded in, and `mockups/` is on `revamp`.
 2. **Align the plans if time allows.** Run the alignment pass from roadmap section 10 on plans 10-40, ARCHITECTURE.md and DESIGN.md. If it is not done yet, launch anyway: every brief says the roadmap wins.
 3. **Commit and push `plans/` on `revamp`.** Every thread reads the plans from its own worktree.
 4. **Check identity.** `git config user.email` is k@kainoa.me and the name is Kainoa Newton.
 5. **Give each thread a worktree from `revamp`** on `rv/thread/engine`, `rv/thread/providers`, `rv/thread/ui-core`, `rv/thread/ui-screens`, `rv/thread/platform` and `rv/thread/integrator`. Lane branches (`rv/<lane>/<slug>`) sit beside them without conflict.
 6. **Launch the Integrator and the Engine thread first, in the same hour.** The Integrator creates STATUS.md and OWNERS.md; the Engine thread starts the restructure.
 7. **Then launch Providers, Platform and website, UI-core and UI-screens the same day.** Each does its Phase 0 preparation on new files only until the restructure lands.
-8. **Tell the owner the day-1 tasks** from the roadmap's "What you need to do": the open decisions, the design questions, the throwaway Gmail accounts and test users, the 6,000-unit check, the Groq test key, the Entra app and the Vercel check.
-9. **Watch STATUS.md.** Expect, in order: NOTICE restructure started (day 1), the Providers port proposal and UI-screens gap list (day 2), FROZEN and the `contract-v1` tag (day 2-3), the Gmail emulator reproducing 0.2.3's failure (day 4), `eng-store`'s real commit (day 6), the first LANE-DONE entries (days 6-8), the day-9 look review.
+8. **Tell the owner the day-1 tasks** from the roadmap's "What you need to do": the design questions, the throwaway Gmail accounts and test users, the 6,000-unit check, the Groq test key, the Entra app and the Vercel check. Tell the owner that features will arrive for review from about day 7, each with steps to try, screenshots and a recording, and that saying "approved" in a feature's thread starts its deep review and merge.
+9. **Watch STATUS.md.** Expect, in order: NOTICE restructure started (day 1), the Providers port proposal and UI-screens gap list (day 2), FROZEN and the `contract-v1` tag (day 2-3), the Gmail emulator reproducing 0.2.3's failure (day 4), `eng-store`'s real commit (day 6), the first LANE-DONE entries (days 6-8), the first READY-FOR-OWNER posts (from about day 7), and the main screens on demo mail around day 9.
 
 > **What this means:** Settle and fold the design first, push the plans, start the Integrator and Engine threads together, then the other four the same day, and give the owner the short list of free day-1 tasks.
 
 ## Decisions for you
 
-These are launch questions. The open roadmap decisions (N1-N5) are in [00-roadmap.md](00-roadmap.md). The default applies if you don't answer.
+The roadmap has no open decisions. N1 to N5 are answered in [00-roadmap.md](00-roadmap.md). These two are launch questions, and the default applies if you don't answer.
 
 **1. Launch all six threads on day 1, or stagger them?** (a) All on day 1, with the Integrator and Engine first; (b) the four other threads on day 3, after the freeze. **Default is (a).** The others prepare practice servers, gap lists and the format and lint commits during Phase 0, which shortens the critical path by about two days. (b) saves some tokens but loses those days, and the contract freezes without the UI-screens gap list.
 

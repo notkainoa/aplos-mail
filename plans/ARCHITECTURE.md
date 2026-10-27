@@ -203,13 +203,16 @@ correspondents(address TEXT PRIMARY KEY, name TEXT, sent_to INTEGER NOT NULL DEF
 thread_workflow(thread_id INTEGER PRIMARY KEY REFERENCES threads ON DELETE CASCADE,
   account_id TEXT NOT NULL, sync_key TEXT NOT NULL,  -- host thread id, or root Message-ID for IMAP (M29)
   status TEXT NOT NULL,                  -- new|done|later
-  later_until INTEGER, due_date TEXT, reminder_at INTEGER, reminder_fired_at INTEGER,
+  later_until INTEGER, due_date TEXT, due_source TEXT, -- user|structured|ai, in that order of trust
+  reminder_at INTEGER, reminder_fired_at INTEGER,
   bookmarked INTEGER, reply_status TEXT, todo TEXT, hidden_from_home INTEGER,
-  rank_bucket INTEGER NOT NULL DEFAULT 1, -- 0 important, 1 normal, 2 low
-  rank_source TEXT NOT NULL DEFAULT 'heuristic', ranked_at INTEGER,
+  lane TEXT NOT NULL DEFAULT 'do',      -- do|update|low: Home's Do now, Important updates, Low importance (8.2)
+  importance TEXT NOT NULL DEFAULT 'normal', -- important|normal; orders within a lane
+  rank_source TEXT NOT NULL DEFAULT 'heuristic', ranked_at INTEGER, -- heuristic|ai|rule|user
+  due_band INTEGER NOT NULL DEFAULT 3,  -- 0 overdue or today, 1 tomorrow, 2 within 7 days, 3 later or none; timer loop refreshes at local midnight
   last_date INTEGER NOT NULL,            -- denormalised from threads for the Home index
   edited_at INTEGER, edit_device TEXT, edit_gen INTEGER)
-  INDEX home ON thread_workflow(status, rank_bucket, last_date DESC, thread_id)
+  INDEX home ON thread_workflow(status, lane, due_band, importance, due_date, last_date DESC, thread_id)
   INDEX timers_wf ON thread_workflow(reminder_at) WHERE reminder_at IS NOT NULL AND reminder_fired_at IS NULL
 summaries(thread_id INTEGER NOT NULL, input_hash TEXT NOT NULL, model TEXT NOT NULL, text TEXT NOT NULL,
   action TEXT, state TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(thread_id, input_hash))
@@ -475,11 +478,25 @@ A single loop sleeps until the earliest deadline across `submissions.not_before`
 ### 8.1 Two paths, one budget
 
 - **Interactive** (Ask, draft, polish, transcribe, "summarize this"): streamed, cancellable, immediate, counted in `ai_usage`. Ask keeps its bounded agent loop and preset-only tools (DECISIONS 2026-10-21).
-- **Background enrichment** (summary, rank, reply-needed, suggested Space action) runs only in the durable `jobs` queue on the primary device, never inside a sync transaction. Singleton key `summary:<thread>:<input_hash>`, content-keyed so a label change does not invalidate it; backoff, dead letter after 5 attempts, 1-2 jobs per provider. Priority: visible Home, then unread Inbox newest first; never Spam, Trash or the silent baseline.
+- **Background enrichment** (summary, Home lane, a due date found in the text, reply-needed, suggested Space action) runs only in the durable `jobs` queue on the primary device, never inside a sync transaction. Singleton key `summary:<thread>:<input_hash>`, content-keyed so a label change does not invalidate it; backoff, dead letter after 5 attempts, 1-2 jobs per provider. Priority: visible Home, then unread Inbox newest first; never Spam, Trash or the silent baseline.
+- **Follow-up drafts.** When a thread enters Home's Follow up (8.2), a `followup:<thread>:<last_sent_hash>` job writes a short nudge in the user's voice that refers to their last message. It runs after summaries in priority, under the same consent, daily cap and no-tools rules, and its text stays a local suggestion, never a synced draft, until the user keeps it (DESIGN §7.2). A new reply or a new sent message changes the hash and retires the old suggestion.
 
 ### 8.2 Heuristic Home works with AI off
 
-At ingest, a deterministic **bucket** (`important`, `normal`, `low`) is computed from `List-Unsubscribe`, `Precedence: bulk`, `Auto-Submitted`, no-reply senders, Gmail `CATEGORY_*` and `IMPORTANT` labels, direct-to-me versus cc, known correspondent (`correspondents.sent_to > 0`), an existing reply from the user, and calendar invitations. It is stored with `rank_source='heuristic'`. AI may later move a bucket (`rank_source='ai'`); user and rule choices always win. Buckets instead of scores, plus `holdIds` on watched windows, stop Home reshuffling under the cursor (`RC/gaps/engine-contract-rpc-stack.md` §3.3, §5.4). A thread is never held back waiting for AI.
+Home sorts mail by what it asks of the user (DESIGN §7.2): **Do now**, **Important updates**, the Low importance band, then **Follow up**. The rule is respond, see or skip: mail the user would answer is `do`, mail they only need to see is `update`, and mail they don't need to see is `low`.
+
+At ingest, a pure `laneFor(headers, labels, correspondents, invite, thread)` returns `{lane, importance, due?}`, stored with `rank_source='heuristic'`:
+
+- **`low`:** `List-Unsubscribe`, `Precedence: bulk`, `Auto-Submitted`, no-reply senders, Gmail `CATEGORY_PROMOTIONS` and `CATEGORY_SOCIAL`, account and security notices ("New sign-in"), shipping progress ("on its way"), and a short reply with no question that only closes a thread the user ended ("Of course!").
+- **`update`:** transactional mail with a final state ("delivered", "your payment is scheduled", "minutes posted"), from sender patterns, Gmail `CATEGORY_UPDATES`, and structured delivery, reservation or bill markup once a body is fetched.
+- **`do`:** direct-to-me mail from people, especially known correspondents (`correspondents.sent_to > 0`); mail that asks a question or names a deadline; calendar invitations; bills and documents with a due date.
+- When unsure, a person's mail goes to `do` and automated mail to `low`. A person's mail is never sent to `low` for being from a person, or kept out of it for that reason.
+- **`importance`** (`important|normal`) comes from Gmail `IMPORTANT`, direct-to-me versus cc and known correspondent. It only orders threads within a lane.
+- **`due`** comes from invites and bills (`due_source='structured'`). The user's own date is `user`, and a date the AI found is `ai`. A lower-trust source never overwrites a higher one.
+
+The summary job also returns the lane, a due date found in the text and the suggested action, and may move a thread (`rank_source='ai'`). Sender rules (`'rule'`) and the user's one-key corrections (⌥↑ / ⌥↓, `'user'`) always win. **Follow up is computed, not stored:** the user sent the thread's last message and no reply arrived within the nudge period (3 days by default, a setting).
+
+**Order.** `do` sorts by `due_band` (0 overdue or due today, 1 tomorrow, 2 within 7 days, 3 later or undated), then `importance`, then `due_date`, then `last_date DESC`. Later items whose date has arrived sit at the bottom of Do now in the same order, whatever their lane. `update` sorts by importance, then newest. Follow up sorts by longest wait. Home's sidebar count is `do` plus `update`. Lanes and bands instead of scores, plus `holdIds` on watched windows, stop Home reshuffling under the cursor (`RC/gaps/engine-contract-rpc-stack.md` §3.3, §5.4). A thread is never held back waiting for AI.
 
 ### 8.3 Consent
 
@@ -641,7 +658,7 @@ The roadmap (`plans/00-roadmap.md`) sets the schedule in days. Phase 0 (days 1-3
 
 **M4: windows and HTML isolation (days 4-11; `eng-views`, `eng-contract`, `eng-html`).** Contract steps 3-4 with the UI threads: `View/watch`, receipts, direct MessagePort, main's `latestState` removed; `aplos-mail://` frames, `packages/mail-html`, image proxy, CSP tightening. **Acceptance:** shortcuts work with focus inside a mail frame (hand-verified in the packaged app); the isolation report's hostile vectors (inline script, `onerror`, meta refresh, `<link>` prefetch, `url()` trackers, forms) leak nothing; a 100k-thread fixture reads through bounded windows.
 
-**M5: AI queue, heuristic Home, consent (days 4-11, `eng-ai`).** `jobs`, AI governor, `ai_usage`, buckets, consent card, `trainsOnInputs`, `deferAI` removed. **Acceptance:** with AI unreachable Home is ordered; no job enqueues before consent; a Groq 429 pauses the queue and says why; the PR #21 close-at-any-moment scenarios pass as tests.
+**M5: AI queue, heuristic Home, consent (days 4-11, `eng-ai`).** `jobs` (including `followup`), AI governor, `ai_usage`, Home lanes (`laneFor`), consent card, `trainsOnInputs`, `deferAI` removed. **Acceptance:** with AI unreachable Home is ordered; no job enqueues before consent; a Groq 429 pauses the queue and says why; the PR #21 close-at-any-moment scenarios pass as tests.
 
 **M6: outbox, drafts, timers (days 4-10, `eng-time`).** `submissions`, uncertain handling, Gmail and IMAP drafts, one timer loop, notification outbox. **Acceptance:** killing the engine before the marker, after the marker and after provider acceptance causes no duplicate and no silent loss (emulated provider, plus one real send to an owner-controlled address); an overdue send suspends.
 
@@ -683,7 +700,7 @@ Format: context / options / choice / consequences.
 | 14 Email HTML | No script-free cross-origin height (`RC/gaps/electron-email-html-isolation.md` §0) | `srcdoc`; custom-origin OOPIF + one script; view per message | `aplos-mail://` OOPIF, hash-pinned reporter, engine sanitizer | +22-35 MB per thread; keyboard needs a hand check |
 | 15 Remote images | Tracking pixels report reads | Load; block | Block by default; DNS-pinned proxy on opt-in; no remote fonts | Some newsletters plain until allowed |
 | 16 Scheduled send | Toast-only holds lose mail (`RC/SYNTH-architecture.md` §7) | Separate mechanisms; one `not_before` | One durable `not_before`; overdue suspends | A sleeping Mac never sends late silently |
-| 17 AI | AI on the sync path stalls sync, lacks consent (`research/inbox-zero/SYNTHESIS.md` §4) | Inline; job queue | Jobs on primary device, heuristic buckets, versioned consent, no tools | Home useful with AI off |
+| 17 AI | AI on the sync path stalls sync, lacks consent (`research/inbox-zero/SYNTHESIS.md` §4) | Inline; job queue | Jobs on primary device, heuristic Home lanes, versioned consent, no tools | Home useful with AI off |
 | 18 Observability | No logs today (`RC/SYNTH-architecture.md` §9) | Telemetry; local only | Local logs, event catalog, content-free bundle | Support needs a user-exported bundle |
 | 19 Packages | `packages/` reserved for shared code (AGENTS.md) | Keep in app; extract | `packages/contract`, `engine`, `mail-html`; amended by AM-2 (test-only `contract-fixture` and `emulators`; adapters stay in the app) | One mechanical move in M1 |
 | 20 Recurrence | Server expansion inconsistent; single-occurrence edits refused | Server expand; client expand | Masters + overrides, client-side expansion | One recurrence engine to test well |
