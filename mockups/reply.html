@@ -29,7 +29,7 @@
     <main class="main">
       <header class="toolbar">
         <a class="btn btn-icon" href="home.html" data-tip="Back" data-key="Esc" aria-label="Back"><svg class="ic"><use href="#i-chevl"/></svg></a>
-        <span class="title">Home <span class="pos">1 of 9</span></span>
+        <span class="title">Home <span class="pos">1 of 16</span></span>
         <div class="tools">
           <button class="btn btn-icon" data-tip="Previous" data-key="K" aria-label="Previous email"><svg class="ic"><use href="#i-chevu"/></svg></button>
           <button class="btn btn-icon" data-tip="Next" data-key="J" aria-label="Next email"><svg class="ic"><use href="#i-chevd"/></svg></button>
@@ -118,7 +118,7 @@ function commit(kind) {
     : g.animate([{ transform: 'none', opacity: 1 }, { opacity: 1, offset: .4 }, { transform: `translate(${s * parseFloat(Mock.css('--flight-x'))}px, ${-s * parseFloat(Mock.css('--flight-y'))}px) rotate(${s * parseFloat(Mock.css('--flight-rot'))}deg)`, opacity: 0 }], { duration: Mock.dur('flight'), delay: 40, easing: Mock.css('--ease-carry'), fill: 'forwards' });
   a.onfinish = () => g.remove();
   letter.animate([{ opacity: 0, transform: `translateY(${Mock.css('--move-deal')})` }, { opacity: 1, transform: 'none' }], { duration: Mock.dur('swap'), delay: 80, easing: Mock.css('--ease-std'), fill: 'backwards' });
-  document.querySelector('.title .pos').textContent = '1 of 8';
+  document.querySelector('.title .pos').textContent = '1 of 15';
   document.getElementById('live').textContent = (kind === 'done' ? 'Done' : 'Moved to Later') + '. Next: Drew Bell.';
   if (kind === 'done') Mock.toast({ icon: 'check', tone: 'c-hill', text: 'Done. Next: Drew Bell', actions: [['Undo', 'Z']] });
   else Mock.toast({ icon: 'clock', tone: 'c-dusk', text: 'Moved to Later', actions: [['Set a date', 'D'], ['Undo', 'Z']] });

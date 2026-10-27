@@ -19,14 +19,14 @@
   `;
   document.head.append(css);
 
-  // Home, revision 3 (owner): Do now, Important updates, Follow up, then the low-importance band.
+  // Home, revision 3 (owner): Do now, Important updates, the low-importance band, then Follow up last.
   // Old section names still work: new -> do, due -> do (back from Later), wait -> follow.
   const SECTIONS = {
     do: ['Do now', `<button class="btn btn-text" data-tip="Open each one in turn" data-key="S">Go one by one</button>`],
     upd: ['Important updates', ''],
     follow: ['Follow up', ''],
   };
-  const RANK = { do: 0, later: 1, upd: 2, follow: 3, low: 4 };
+  const RANK = { do: 0, later: 1, upd: 2, low: 3, follow: 4 };
   function normalise(list) {
     const out = list.map(x => {
       const it = { ...x };
@@ -35,7 +35,7 @@
       if (it.sec === 'wait') it.sec = 'follow';
       return it;
     });
-    // stable: Do now (new), Do now (back from Later), Important updates, Follow up, Low importance
+    // stable: Do now (new), Do now (back from Later), Important updates, Low importance, Follow up (last)
     return out.map((it, i) => [it, i]).sort((p, q) => (RANK[p[0].later ? 'later' : p[0].sec] - RANK[q[0].later ? 'later' : q[0].sec]) || p[1] - q[1]).map(p => p[0]);
   }
 
@@ -63,6 +63,9 @@
     { sec: 'do', sender: 'Drew Bell', unread: 1, date: 'Yesterday', act: ['paperclip', 'View invoice'],
       sum: 'October illustrations are finished. Approve the $1,840 invoice to close out the month.',
       subj: 'Invoice #0412 · October illustrations' },
+    { sec: 'do', sender: 'Ana Ruiz', date: 'Wednesday', act: ['reply', 'Reply'],
+      sum: 'Ana thanks you for covering Saturday at the garden and hopes the cold wasn’t too bad.',
+      subj: 'Thank you for Saturday' },
     { sec: 'do', later: true, sender: 'Priya Raman', date: 'Oct 23', due: 'Due today', overdue: 1, act: ['reply', 'Reply'],
       sum: 'Priya needs the revised deck today so she can review it before Friday’s meeting.',
       subj: 'Re: Q4 review deck' },
@@ -81,9 +84,9 @@
     { sec: 'upd', sender: 'City Water', date: 'Oct 20', act: ['check', 'Done'],
       sum: 'Autopay will pay this month’s $41.20 water bill on November 10.',
       subj: 'Your bill is ready' },
-    { sec: 'follow', sender: 'Ana Ruiz', date: 'Oct 23', act: ['reply', 'Reply with a nudge'], href: 'compose.html?state=follow-up',
-      sum: 'You asked Ana to swap Saturday shifts at the garden. No reply in six days.',
-      subj: 'Saturday shift' },
+    { sec: 'follow', sender: 'Owen Park', date: 'Oct 23', act: ['reply', 'Reply with a nudge'], href: 'compose.html?state=follow-up',
+      sum: 'You asked Owen whether Mom’s birthday dinner is still at 7. No reply in six days.',
+      subj: 'Dinner on the 7th' },
     { sec: 'follow', sender: 'Studio Kettle', date: 'Oct 24', act: ['reply', 'Reply with a nudge'], href: 'compose.html?state=follow-up',
       sum: 'You sent the signed statement of work on October 24. No reply in five days.',
       subj: 'Signed SOW attached' },

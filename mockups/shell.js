@@ -104,7 +104,7 @@
   /* ---------------- Sidebar (revision 2: quiet groups, Notion-like) ---------------- */
   // [id, label, icon, href, count, key]
   const NAV = [
-    { items: [['search', 'Search', 'search', 'search.html', null, '/'], ['home', 'Home', 'home', 'home.html', 9, '⌃1'], ['later', 'Later', 'clock', 'later.html', 9, '⌃2'], ['calendar', 'Calendar', 'calendar', 'calendar-week.html', null, '⌃6']] },
+    { items: [['search', 'Search', 'search', 'search.html', null, '/'], ['home', 'Home', 'home', 'home.html', 14, '⌃1'], ['later', 'Later', 'clock', 'later.html', 9, '⌃2'], ['calendar', 'Calendar', 'calendar', 'calendar-week.html', null, '⌃6']] },
     { head: 'Mail', items: [['all', 'All mail', 'tray', 'inbox.html', null, '⌃3'], ['done', 'Done', 'checkcircle', 'done.html', null, ''], ['drafts', 'Drafts', 'file', 'empty.html?state=drafts', 1, '⌃4'], ['sent', 'Sent', 'send', 'inbox.html', null, '⌃5'], ['spam', 'Spam', 'spam', 'empty.html?state=spam', null, '⌃8'], ['trash', 'Trash', 'trash', 'empty.html?state=trash', null, '⌃7']] },
   ];
   const CALENDARS = [['Work', '--tag-hill'], ['Personal', '--tag-sky'], ['Hollow Creek', '--tag-ember'], ['Family', '--tag-sand']];
