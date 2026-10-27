@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default,overlap" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Calendar, week · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="cal.css">
+<script src="shell.js"></script>
+<script src="cal.js"></script>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="calendar" data-extra="calendar"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <button class="btn btn-icon" data-tip="New event" data-key="N" aria-label="New event"><svg class="ic"><use href="#i-plus"/></svg></button>
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace cal-ws">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title keep" id="title">October 2026</h1>
+            <p class="page-sub" id="sub">October 25 – 31</p>
+          </div>
+          <div class="actions">
+            <button class="btn btn-text" id="today">Today<span class="kbd hint">T</span></button>
+            <button class="btn btn-icon" id="prev" aria-label="Previous week" data-tip="Previous week" data-key="K"><svg class="ic"><use href="#i-chevl"/></svg></button>
+            <button class="btn btn-icon" id="next" aria-label="Next week" data-tip="Next week" data-key="J"><svg class="ic"><use href="#i-chevr"/></svg></button>
+            <div class="seg" id="views" role="tablist" aria-label="View">
+              <button role="tab" data-view="day" aria-selected="false" aria-label="Day" data-tip="Day" data-key="D">D</button>
+              <button role="tab" data-view="week" aria-selected="true" aria-label="Week" data-tip="Week" data-key="W">W</button>
+              <button role="tab" data-view="month" aria-selected="false" aria-label="Month" data-tip="Month" data-key="M">M</button>
+            </div>
+          </div>
+        </div>
+        <div class="cal" id="cal"></div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+</div>
+<script>
+const overlap = Mock.state === 'overlap';
+const mount = document.getElementById('cal');
+const titleEl = document.getElementById('title');
+const subEl = document.getElementById('sub');
+const seg = document.getElementById('views');
+let view = new URLSearchParams(location.search).get('view') || 'week';
+let start = Cal.weekStart(Cal.TODAY);
+let ym = { year: 2026, month: 10 };
+let selected = null;
+let menu = null;
+
+function closeMenu() { if (menu) { menu.remove(); menu = null; mount.querySelectorAll('.ev-stack').forEach(s => s.setAttribute('aria-expanded', 'false')); return true; } return false; }
+function openStack(btn) {
+  closeMenu();
+  const [date, i] = btn.dataset.stack.split(':');
+  const lay = Cal.layout(Cal.eventsOn(new Date(date.replace(/-/g, '/')), { overlap }), 2);
+  const evs = lay.stacks[+i].evs.sort((a, b) => a.at - b.at);
+  const body = mount.querySelector('.cal-body');
+  menu = document.createElement('div');
+  menu.className = 'float menu stack-menu reveal';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = `<div class="menu-label">${evs.length} more at ${Cal.timeFull(evs[0].s)}</div>` + evs.map(e => `<button class="menu-item" role="menuitem" data-ev="${e.id}"><span class="mk" style="background:var(${Cal.CALS[e.cal].c})"></span>${e.t}<span class="aside">${Cal.range(e.s, e.e)}</span></button>`).join('');
+  body.append(menu);
+  btn.setAttribute('aria-expanded', 'true');
+  const p = Cal.pos(btn, body);
+  menu.style.left = Math.max(0, p.x + btn.offsetWidth - menu.offsetWidth) + 'px';
+  menu.style.top = (p.y + btn.offsetHeight + parseFloat(Mock.css('--space-1'))) + 'px';
+}
+
+function titleFor() { return view === 'month' ? `${Cal.MONTHS[ym.month - 1]} ${ym.year}` : Cal.weekTitle(start); }
+function subFor() { return view === 'month' ? Cal.monthSub(ym.year, ym.month) : Cal.weekSub(start); }
+function render() {
+  closeMenu();
+  titleEl.textContent = titleFor();
+  subEl.textContent = subFor();
+  seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === view)));
+  Cal.placePuck(seg);
+  const per = view === 'month' ? 'month' : 'week';
+  document.getElementById('prev').setAttribute('aria-label', 'Previous ' + per);
+  document.getElementById('next').setAttribute('aria-label', 'Next ' + per);
+  if (view === 'month') Cal.month(mount, ym);
+  else Cal.week(mount, { start, overlap, selected });
+  document.getElementById('live').textContent = `${titleFor()}, ${subFor()}`;
+}
+function shift(n) {
+  if (view === 'month') { const d = new Date(ym.year, ym.month - 1 + n, 1); ym = { year: d.getFullYear(), month: d.getMonth() + 1 }; }
+  else start = Cal.add(start, 7 * n);
+  render();
+}
+function setView(v) {
+  if (v === 'day') return Mock.go('calendar-day.html');
+  view = v; render();
+}
+function today() { start = Cal.weekStart(Cal.TODAY); ym = { year: 2026, month: 10 }; render(); }
+
+document.getElementById('prev').onclick = () => shift(-1);
+document.getElementById('next').onclick = () => shift(1);
+document.getElementById('today').onclick = today;
+seg.addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (b) setView(b.dataset.view); });
+mount.addEventListener('click', e => {
+  const st = e.target.closest('[data-stack]');
+  if (st) { st.getAttribute('aria-expanded') === 'true' ? closeMenu() : openStack(st); return; }
+  const it = e.target.closest('[data-ev]');
+  if (it) { const ev = Cal.findEvent(it.dataset.ev, { overlap }); closeMenu(); Mock.toast({ icon: 'calendar', text: `${ev.t} · ${Cal.range(ev.s, ev.e)}` }); return; }
+  const ev = e.target.closest('.ev');
+  if (ev) { selected = ev.dataset.id; mount.querySelectorAll('.ev').forEach(x => { const on = x === ev; x.classList.toggle('is-selected', on); on ? x.setAttribute('aria-pressed', 'true') : x.removeAttribute('aria-pressed'); }); closeMenu(); return; }
+  if (!e.target.closest('.stack-menu')) closeMenu();
+});
+mount.addEventListener('dblclick', e => { const ev = e.target.closest('.ev'); if (ev) Mock.go(ev.dataset.id === 'q4' ? 'calendar-event.html' : 'calendar-day.html'); });
+Mock.onKey(e => {
+  if (e.target.closest('input,textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if (k === 'Escape' && closeMenu()) return true;
+  if (k === 'j' || k === 'ArrowRight') { shift(1); return true; }
+  if (k === 'k' || k === 'ArrowLeft') { shift(-1); return true; }
+  if (k === 't') { today(); return true; }
+  if (k === 'd') { setView('day'); return true; }
+  if (k === 'w') { setView('week'); return true; }
+  if (k === 'm') { setView('month'); return true; }
+  if (k === 'Enter' && selected) { Mock.go(selected === 'q4' ? 'calendar-event.html' : 'calendar-day.html'); return true; }
+});
+render();
+Cal.initSegs();
+if (overlap && view === 'week') { const s = mount.querySelector('[data-stack]'); if (s) openStack(s); }
+</script>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="commands,filtered,confirm" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Command palette · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<script src="home-view.js"></script>
+<style>
+  /* DECISION: the palette is an opaque centred card over a light scrim. No glass, no blur. Home behind stays readable
+     because the scrim is light; the context line says which email the commands act on. */
+  .palette .field, .palette .field:hover, .palette .field:focus-within { padding: 0 var(--space-4); background: none; border-radius: 0; box-shadow: 0 var(--hairline) 0 var(--line); }
+  .palette .field .ic { color: var(--dim); }
+  .palette .context { padding: var(--space-3) var(--space-4) 0; }
+  .palette .results { padding: var(--space-1) var(--space-2) var(--space-2); }
+  .menu-item { position: relative; }
+  .menu-item .label { flex: 1; min-width: 0; font: var(--type-ui); }
+  .menu-item .label b { font-weight: 600; }
+  .menu-item .right { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2); }
+  .menu-item .right .kbd { margin-left: 0; }
+  .menu-item .right .kbd + .kbd { margin-left: var(--space-half); }
+  .menu-item .grp { font: var(--type-small); color: var(--dim); }
+  .menu-item .num { width: var(--space-4); text-align: center; font: var(--type-small); color: var(--dim); flex: none; }
+  .menu-item.is-active .num { color: var(--ink-2); }
+  .menu-item.is-active::before { content: ""; position: absolute; left: 0; top: var(--space-2); bottom: var(--space-2); width: var(--select-bar); border-radius: var(--select-bar); background: var(--accent); }
+  .palette .menu-label { padding: var(--space-3) var(--space-2) var(--space-1); }
+  .palette .menu-label:first-child { padding-top: var(--space-2); }
+  .none { padding: var(--space-5) var(--space-2); font: var(--type-base); color: var(--dim); }
+
+  /* destructive confirm: Cancel is the default. Return cancels, Shift Return deletes. */
+  .confirm { padding: var(--space-4) var(--space-4) var(--space-3); }
+  .confirm .ask { font: var(--type-title); letter-spacing: var(--track-title); color: var(--ink); }
+  .confirm .what { margin-top: var(--space-1); font: var(--type-ui); color: var(--ink-2); max-width: 52ch; }
+  .confirm .key-rows { margin: var(--space-4) calc(-1 * var(--space-2)) 0; }
+  .key-row { width: 100%; text-align: left; }
+  .key-row .ic { color: var(--dim); }
+  .key-row.destructive { color: var(--stamp-ink); }
+  .key-row.destructive .ic { color: var(--stamp-ink); }
+  .key-row.destructive:hover { background: var(--stamp-tint); }
+  html[data-state="confirm"] .results, html[data-state="confirm"] .context, html:not([data-state="confirm"]) .confirm { display: none; }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="home"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Home</h1>
+              <p class="page-sub">Thursday, October 29 · 9 to handle</p>
+            </div>
+          </div>
+          <div id="home" role="listbox" aria-label="Home" aria-hidden="true"></div>
+        </div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+
+  <div class="scrim" aria-hidden="true"></div>
+  <div class="palette settle" id="palette" role="dialog" aria-label="Command palette">
+    <div class="field">
+      <svg class="ic"><use href="#i-search"/></svg>
+      <input id="q" placeholder="Type a command" autocomplete="off" spellcheck="false" aria-label="Command" role="combobox" aria-expanded="true" aria-controls="res">
+    </div>
+    <div class="context" id="ctx">For: <b>Drew Bell · October illustrations</b></div>
+    <div class="results" id="res" role="listbox" aria-label="Commands"></div>
+    <div class="confirm" id="confirm">
+      <p class="ask">Delete forever?</p>
+      <p class="what">“Invoice #0412 · October illustrations” will be removed from your account. This can’t be undone.</p>
+      <div class="key-rows">
+        <button class="key-row primary" id="no">Cancel<span class="kbd">Return</span></button>
+        <button class="key-row destructive" id="yes"><svg class="ic"><use href="#i-trash"/></svg>Delete forever<span class="kbd">⇧Return</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* The registry: every command is declared once, with its keycap. Palette-only commands carry no key. */
+const CMDS = [
+  { g: 'Actions', label: 'Reply', icon: 'reply', keys: ['R'], kw: 'respond', sug: 1 },
+  { g: 'Actions', label: 'Reply all', icon: 'replyall', keys: ['⇧R'] },
+  { g: 'Actions', label: 'Forward', icon: 'forward', keys: ['F'] },
+  { g: 'Actions', label: 'Done', icon: 'check', keys: ['E'], kw: 'archive finish', sug: 1 },
+  { g: 'Actions', label: 'Later', icon: 'clock', keys: ['L'], kw: 'set aside snooze', sug: 1 },
+  { g: 'Actions', label: 'Set due date', icon: 'calendar', keys: ['D'] },
+  { g: 'Actions', label: 'Bookmark', icon: 'bookmark', keys: ['B'] },
+  { g: 'Actions', label: 'Trash', icon: 'trash', keys: ['#'], kw: 'remove' },
+  { g: 'Actions', label: 'Find related mail', icon: 'search', keys: [] },
+  { g: 'Actions', label: 'Delete forever', icon: 'trash', keys: [], destructive: true },
+  { g: 'Go to', label: 'Home', icon: 'home', keys: ['⌃1'], href: 'home.html', first: 1 },
+  { g: 'Go to', label: 'Later', icon: 'clock', keys: ['⌃2'], href: 'later.html', first: 1 },
+  { g: 'Go to', label: 'All mail', icon: 'tray', keys: ['⌃3'], href: 'inbox.html', first: 1 },
+  { g: 'Go to', label: 'Drafts', icon: 'file', keys: ['⌃4'], href: 'empty.html?state=drafts', first: 1 },
+  { g: 'Go to', label: 'Sent', icon: 'send', keys: ['⌃5'], href: 'inbox.html' },
+  { g: 'Go to', label: 'Calendar', icon: 'calendar', keys: ['⌃6'], href: 'calendar-week.html', first: 1 },
+  { g: 'Go to', label: 'Trash', icon: 'trash', keys: ['⌃7'], href: 'empty.html?state=trash' },
+  { g: 'Go to', label: 'Spam', icon: 'spam', keys: ['⌃8'], href: 'empty.html?state=spam' },
+  { g: 'Ask', label: 'Ask about this email', icon: 'bubble', keys: ['A'], href: 'ask.html', sug: 1 },
+  { g: 'Ask', label: 'Open Today', icon: 'today', keys: ['⇧A'], href: 'ask.html?state=today' },
+  { g: 'Ask', label: 'Toggle the Ask dock', icon: 'sidebar', keys: ['⌘J'], href: 'ask.html' },
+  { g: 'Ask', label: 'New chat', icon: 'bubble', keys: ['⌘N'], href: 'ask.html?state=empty' },
+  { g: 'Settings', label: 'Open Settings', icon: 'settings', keys: ['⌘,'], href: 'settings-appearance.html' },
+  { g: 'Settings', label: 'AI providers', icon: 'key', keys: [], href: 'settings-ai.html' },
+  { g: 'Settings', label: 'Keyboard shortcuts', icon: 'keyboard', keys: ['?'], href: 'shortcuts.html' },
+  { g: 'Settings', label: 'Appearance', icon: 'moon', keys: [], href: 'settings-appearance.html' },
+];
+/* First open shows only Suggested (what acts on this email) and the places you go most. The rest appears as you type. */
+const FIRST = [['Suggested', c => c.sug], ['Go to', c => c.first]];
+
+/* Scoring: exact, prefix, word start, substring, subsequence. Returns { score, idx } or null. */
+function score(label, q, kw = '') {
+  const L = label.toLowerCase(), Q = q.toLowerCase();
+  if (L === Q) return { score: 1000, idx: [...Q].map((_, i) => i) };
+  if (L.startsWith(Q)) return { score: 800 - L.length * .1, idx: [...Q].map((_, i) => i) };
+  const w = L.search(new RegExp('\\b' + Q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  if (w >= 0) return { score: 600 - w * .1, idx: [...Q].map((_, i) => w + i) };
+  const sub = L.indexOf(Q);
+  if (sub >= 0) return { score: 400 - sub * .1, idx: [...Q].map((_, i) => sub + i) };
+  let j = 0, idx = [], gaps = 0, last = -1;
+  for (let i = 0; i < L.length && j < Q.length; i++) if (L[i] === Q[j]) { if (last >= 0) gaps += i - last - 1; idx.push(i); last = i; j++; }
+  if (j === Q.length) return { score: 200 - gaps, idx };
+  if (kw && kw.split(' ').some(k => k.startsWith(Q))) return { score: 150, idx: [] };
+  return null;
+}
+const mark = (label, idx) => { const s = new Set(idx); return [...label].map((c, i) => s.has(i) ? `<b>${c}</b>` : c).join('').replace(/<\/b><b>/g, ''); };
+
+const q = document.getElementById('q'), res = document.getElementById('res');
+let list = [], active = 0, level = 'list';
+
+function build() {
+  const text = q.value.trim();
+  if (!text) list = FIRST.flatMap(([lab, f]) => CMDS.filter(f).map(c => ({ c, idx: [], lab })));
+  else list = CMDS.map(c => ({ c, m: score(c.label, text, c.kw) })).filter(x => x.m).sort((a, b) => b.m.score - a.m.score).map(x => ({ c: x.c, idx: x.m.idx }));
+  active = Math.min(active, Math.max(list.length - 1, 0));
+  render();
+}
+function render() {
+  if (!list.length) { res.innerHTML = `<p class="none">No commands match “${q.value.trim()}”.</p>`; return; }
+  const empty = !q.value.trim();   // 1–9 pick only while the field is empty, so digits stay typeable
+  let h = '', lastG = null;
+  list.forEach((x, i) => {
+    if (empty && x.lab !== lastG) { h += `<div class="menu-label">${x.lab}</div>`; lastG = x.lab; }
+    const keys = x.c.keys.map(k => `<span class="kbd">${k}</span>`).join('');
+    h += `<div class="menu-item ${i === active ? 'is-active' : ''}" role="option" data-i="${i}" aria-selected="${i === active}">
+      ${empty && i < 9 ? `<span class="num">${i + 1}</span>` : ''}${Mock.icon(x.c.icon)}<span class="label">${mark(x.c.label, x.idx)}</span>
+      <span class="right">${empty ? '' : `<span class="grp">${x.c.g}</span>`}${keys}</span></div>`;
+  });
+  res.innerHTML = h;
+  res.querySelector('.is-active')?.scrollIntoView({ block: 'nearest' });
+}
+function move(d) { if (!list.length) return; active = (active + d + list.length) % list.length; render(); }
+function run(i) {
+  const x = list[i]; if (!x) return;
+  if (x.c.destructive) { enterConfirm(); return; }
+  Mock.go(x.c.href || 'home.html');
+}
+function enterConfirm() { document.documentElement.dataset.state = 'confirm'; level = 'confirm'; q.readOnly = true; document.getElementById('live').textContent = 'Delete forever? Cancel is selected. Return cancels, Shift Return deletes.'; }
+function leaveConfirm() { document.documentElement.dataset.state = q.value ? 'filtered' : 'commands'; level = 'list'; q.readOnly = false; q.focus(); }
+
+q.addEventListener('input', () => { active = 0; build(); });
+res.addEventListener('click', e => { const r = e.target.closest('[data-i]'); if (r) run(+r.dataset.i); });
+res.addEventListener('pointermove', e => { const r = e.target.closest('[data-i]'); if (r && +r.dataset.i !== active) { active = +r.dataset.i; res.querySelectorAll('.menu-item').forEach((m, i) => m.classList.toggle('is-active', i === active)); } });
+document.getElementById('yes').onclick = () => Mock.go('home.html');   // pointer only; the keyboard needs Shift Return
+document.getElementById('no').onclick = leaveConfirm;
+
+Mock.onKey(e => {
+  const k = e.key;
+  if (e.metaKey && k.toLowerCase() === 'k') { Mock.go('home.html'); return true; }   // ⌘K again closes
+  if (k === 'Escape') { if (level === 'confirm') leaveConfirm(); else Mock.go('home.html'); return true; }   // up one level, then close
+  if (level === 'confirm') { if (k === 'Enter') { if (e.shiftKey) Mock.go('home.html'); else leaveConfirm(); } return true; }   // Cancel is the default
+  if (k === 'ArrowDown' || (e.ctrlKey && k === 'n')) { move(1); return true; }
+  if (k === 'ArrowUp' || (e.ctrlKey && k === 'p')) { move(-1); return true; }
+  if (k === 'Enter') { run(active); return true; }
+  if (/^[1-9]$/.test(k) && !e.metaKey && !e.ctrlKey && !q.value && +k <= Math.min(9, list.length)) { run(+k - 1); return true; }   // 1–9 pick only while the field is empty
+});
+
+HomeBackdrop.mount(document.getElementById('home'), { focus: 1, keys: false, quiet: true });
+const s = Mock.state;
+if (s === 'filtered') q.value = 'lat';
+if (s === 'confirm') { q.value = 'delete forever'; }
+build();
+if (s === 'confirm') { active = list.findIndex(x => x.c.destructive); render(); enterConfirm(); }
+else q.focus();
+</script>
+</body>
+</html>

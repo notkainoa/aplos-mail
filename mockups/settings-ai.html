@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default,testing" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Settings, AI · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="settings.css">
+<script src="shell.js"></script>
+<script src="settings.js"></script>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" id="sb" data-active="settings" data-accounts="all"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace set-ws">
+        <div class="settings">
+          <nav class="nav snav" id="snav"></nav>
+          <div class="scontent" id="content"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+S.nav('AI');
+const testing = Mock.state === 'testing';
+const ic = Mock.icon;
+const PROV = [
+  { id: 'groq', name: 'Groq', tag: 'Default', src: 'From environment: GROQ_API_KEY', st: 'ready', env: 'GROQ_API_KEY' },
+  { id: 'openai', name: 'OpenAI', src: 'Saved in Keychain', st: 'ready' },
+  { id: 'claude', name: 'Claude', src: 'Not set · reads ANTHROPIC_API_KEY', st: 'none' },
+  { id: 'gemini', name: 'Gemini', src: 'Not set · reads GEMINI_API_KEY', st: 'none' },
+  { id: 'openrouter', name: 'OpenRouter', src: 'Saved in Keychain', st: 'ready' },
+  { id: 'opencode', name: 'OpenCode Go', src: 'Not set · reads OPENCODE_API_KEY', st: 'none' },
+];
+const LOCAL = [
+  { id: 'ollama', name: 'Ollama', src: 'On this Mac · running · no key needed', addr: 'http://localhost:11434' },
+  { id: 'lmstudio', name: 'LM Studio', src: 'On this Mac · not running', addr: 'http://localhost:1234' },
+  { id: 'custom', name: 'Custom server', src: 'Any OpenAI-compatible server · key optional', addr: '' },
+];
+// What the status column shows per provider in the `testing` state
+const RESULT = testing ? { groq: 'works', openai: 'busy', openrouter: 'refused' } : {};
+const STATUS = { ready: ['ok', 'Ready'], none: ['', 'Needs a key'] };
+function stat(p) {
+  const r = RESULT[p.id];
+  if (r === 'works') return `<div class="pstat" data-stat="${p.id}">${ic('check')}<span>Works · 0.4 s</span></div>`;
+  if (r === 'busy') return `<div class="pstat busy" data-stat="${p.id}" aria-busy="true"><span class="status-dot"></span><span>Testing…</span></div>`;
+  if (r === 'refused') return `<div class="pstat bad" data-stat="${p.id}"><span class="status-dot warn"></span><span>Key refused</span></div>`;
+  const [c, w] = STATUS[p.st];
+  return `<div class="pstat" data-stat="${p.id}"><span class="status-dot ${c}"></span><span>${w}</span></div>`;
+}
+function acts(p) {
+  const r = RESULT[p.id];
+  if (p.st === 'none') return `<button class="btn btn-text" data-add="${p.id}">Add key</button>`;
+  const test = r === 'busy' ? `<button class="btn btn-text" aria-disabled="true">Test</button>` : `<button class="btn btn-text" data-test="${p.id}">Test</button>`;
+  const rm = p.env ? `<button class="btn btn-text" aria-disabled="true" data-tip="This key comes from ${p.env} in your environment. Remove it there.">Remove</button>` : `<button class="btn btn-text" data-remove="${p.id}">Remove</button>`;
+  return test + rm;
+}
+function provRow(p) {
+  let h = `<div class="srow has-h prov" data-prov="${p.id}"><div><div class="l"><b>${p.name}</b>${p.tag ? `<span class="tag">${p.tag}</span>` : ''}</div><div class="h">${p.src}</div></div>${stat(p)}<div class="pact">${acts(p)}</div></div>`;
+  if (RESULT[p.id] === 'refused') h += `<div class="srow-fix"><div class="error-line">${ic('alert')}<span>OpenRouter refused the saved key, so nothing was sent. Copy a fresh one from openrouter.ai/keys. Your other providers are not affected.</span><button class="btn btn-text">Replace key</button></div></div>`;
+  return h;
+}
+const localRow = p => S.row({ label: p.name, hint: p.src, control: `<label class="field addr"><input value="${p.addr}" placeholder="https://your-server.example/v1" aria-label="${p.name} address" spellcheck="false"></label>` });
+const READY = ['Groq', 'OpenAI', 'OpenRouter', 'Ollama'];
+const MODELS = {
+  Groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
+  OpenAI: ['gpt-5-mini', 'gpt-5'],
+  OpenRouter: ['openai/gpt-oss-120b', 'meta-llama/llama-3.3-70b-instruct'],
+  Ollama: ['llama3.2:3b', 'qwen3:8b'],
+};
+const SPEECH = { Groq: ['whisper-large-v3-turbo', 'whisper-large-v3'], OpenAI: ['gpt-4o-transcribe', 'whisper-1'] };
+const FEATURES = [
+  ['ask', 'Ask', 'Answers about your mail and calendar.', 'Groq', 'openai/gpt-oss-120b'],
+  ['summaries', 'Summaries', 'One-line digests on Home and in the reader.', 'Groq', 'llama-3.1-8b-instant'],
+  ['drafts', 'Drafts', 'First drafts of replies, for you to edit.', 'Groq', 'openai/gpt-oss-120b'],
+  ['plans', 'Plans', 'Finds plans in mail and proposes events.', 'Groq', 'openai/gpt-oss-120b'],
+  ['voice', 'Voice', 'Turns speech into text for dictation.', 'Groq', 'whisper-large-v3-turbo'],
+];
+const feat = ([id, l, h, p, m]) => S.row({ label: l, hint: h, cls: 'feat', control: S.select(id + '-p', p, id === 'voice' ? Object.keys(SPEECH) : READY, l + ' provider') + S.select(id + '-m', m, (id === 'voice' ? SPEECH : MODELS)[p], l + ' model') });
+const HOW = `<p><b>What is sent.</b> When you use Ask, Summaries, Drafts or Plans, Aplos sends the text of the mail or events involved to the provider you chose for that feature, and nothing else. Voice sends your recording to your speech-to-text provider.</p><p><b>What stays here.</b> Ollama and LM Studio run on this Mac, so nothing leaves it. Keys live in your Keychain or your environment, and Aplos never shows them.</p><p><b>Your control.</b> Turn off “Use this mail for AI” under Accounts to keep a mailbox out of every feature.</p>`;
+
+document.getElementById('content').innerHTML = S.page('AI', 'Groq is the default. Pick a provider and model for each feature.') +
+  S.group('Features', FEATURES.map(feat).join('')) +
+  S.group('Providers', PROV.map(provRow).join('')) +
+  S.group('On this Mac and custom', LOCAL.map(localRow).join('')) +
+  S.group('Privacy and limits',
+    S.disclosure('how', 'How your mail is used', 'What is sent, what stays here, and your control.', HOW) +
+    S.row({ label: 'Summarise in the background', hint: 'Reads new mail as it arrives and sends it to Groq.', control: S.sw('bg', true, 'Summarise in the background') }) +
+    S.row({ label: 'Daily limit', hint: 'Background work pauses after this many requests.', control: S.select('cap', '500 requests', ['100 requests', '250 requests', '500 requests', '1,000 requests', 'No limit'], 'Daily AI limit') }));
+
+// Interactions: Test runs, selects cascade
+const wait = ms => new Promise(r => setTimeout(r, Mock.reduced ? 0 : ms));
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-test]'); if (!t) return;
+  const id = t.dataset.test, row = t.closest('.srow'), cell = row.querySelector('.pstat');
+  t.setAttribute('aria-disabled', 'true');
+  cell.className = 'pstat busy'; cell.innerHTML = '<span class="status-dot"></span><span>Testing…</span>';
+  await wait(900);
+  t.removeAttribute('aria-disabled');
+  if (id === 'openrouter') { cell.className = 'pstat bad'; cell.innerHTML = '<span class="status-dot warn"></span><span>Key refused</span>'; }
+  else { cell.className = 'pstat'; cell.innerHTML = `${ic('check')}<span>Works · 0.4 s</span>`; }
+});
+document.addEventListener('click', e => { const a = e.target.closest('[data-add]'); if (a) Mock.toast({ icon: 'key', text: 'Paste a key. It is saved in your Keychain.' }); });
+document.addEventListener('settings:select', e => {
+  const m = e.detail.id.match(/^(\w+)-p$/); if (!m) return;
+  const list = (m[1] === 'voice' ? SPEECH : MODELS)[e.detail.v];
+  const mb = document.querySelector(`[data-select="${m[1]}-m"]`);
+  mb.dataset.options = JSON.stringify(list); mb.querySelector('span').textContent = list[0];
+});
+
+</script>
+</body>
+</html>

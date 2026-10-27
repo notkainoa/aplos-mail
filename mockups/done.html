@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Done · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  /* Done mail has one action: Move to Home. It overlays the snippet and never covers the Done stamp. */
+  :root { --stamp-w: calc(var(--space-10) * 2 + var(--space-7)); }
+  .row { grid-template-columns: var(--space-4) var(--sender-w) minmax(0, 1fr) var(--stamp-w); }
+  .row .meta { white-space: nowrap; }
+  .row .meta .done-at { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--dim); }
+  .row .meta .done-at .ic { width: var(--icon-sm); height: var(--icon-sm); color: var(--hill); }
+  .row-actions { right: calc(var(--stamp-w) + var(--space-3) + var(--space-3)); }
+  /* the cursor row shows its action, as it would under the pointer */
+  .row.is-cursor .row-actions { visibility: visible; }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="done"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Done</h1>
+              <p class="page-sub">Mail you finished. Press H to move one back to Home.</p>
+            </div>
+          </div>
+          <div class="list" id="list" data-list role="listbox" aria-label="Done mail"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+const ic = Mock.icon;
+// [group, sender, line, done-at, account]
+const DONE = [
+  ['Today', 'Mina Cho', 'Shared the Hollow Creek type samples. Nothing needed from you yet', '9:41 AM', 'hill'],
+  ['Today', 'Fern & Field Co-op', 'Your Thursday vegetable box is packed. Pickup after 4 PM at the side door', '9:38 AM', 'sky'],
+  ['Today', 'Parcel Trail', 'Your order shipped and arrives Monday between 9 AM and noon', '9:12 AM', 'sky'],
+  ['Yesterday', 'Cedar Market', 'Receipt for your order of October 26, $63.18', 'Wed 4:20 PM', 'sky'],
+  ['Yesterday', 'Ana Ruiz', 'Thanks for covering Saturday at the garden', 'Wed 12:05 PM', 'sky'],
+  ['Yesterday', 'Theo Lindqvist', 'Photos from the ridge hike, 38 of them, including the one with the fog', 'Wed 8:52 AM', 'sky'],
+  ['Earlier this week', 'Hollow Creek Trust', 'Board minutes for October. The trail budget passed', 'Tue 5:10 PM', 'hill'],
+  ['Earlier this week', 'City Water', 'Your bill is ready: $41.20, due November 10', 'Tue 9:30 AM', 'sky'],
+  ['Earlier this week', 'Field Notes', 'Issue 41: a short guide to winter light', 'Mon 7:45 PM', 'sky'],
+  ['Earlier this week', 'Owen Park', 'Birthday dinner for Mom on November 7 at 7, at the usual place', 'Mon 11:18 AM', 'sky'],
+  ['Last week', 'Maple Library', 'Your holds were returned to the shelf', 'Oct 23', 'sky'],
+  ['Last week', 'Rowan Pottery', 'Thanks for coming to the open studio', 'Oct 22', 'sky'],
+];
+const list = document.getElementById('list');
+let g = '', h = '';
+DONE.forEach(([grp, who, line, at, acct], i) => {
+  if (grp !== g) { h += `<div class="date-head">${grp}</div>`; g = grp; }
+  h += `<div class="row ${i === 1 ? 'is-cursor' : ''}" data-row data-href="reader.html" role="option">
+    <span class="dot"></span><span class="sender ellipsis">${who}</span>
+    <span class="line"><span class="ellipsis">${line}</span></span>
+    <span class="meta"><span class="mark" style="background:var(--tag-${acct})" title="${acct === 'hill' ? 'alex@fernworks.studio' : 'alex.moreno@gmail.com'}"></span><span class="done-at">${ic('check')}Done ${at}</span></span>
+    <span class="row-actions"><button class="btn btn-icon" data-home data-tip="Move to Home" data-key="H" aria-label="Move to Home">${ic('home')}</button></span>
+  </div>`;
+});
+list.innerHTML = h;
+
+// Done mail only has one quick action: put it back on Home
+const stash = [];
+function toHome(row) {
+  if (!row) return;
+  const rs = Mock.rows(list), i = rs.indexOf(row), next = rs[i + 1] || rs[i - 1];
+  row.classList.add('is-leaving-later');
+  setTimeout(() => { row.classList.remove('is-leaving-later'); row.classList.add('is-held'); row.style.visibility = 'hidden'; }, Mock.reduced ? Mock.dur('reduced') : Mock.dur('carry'));
+  Mock.setCursor(list, next);
+  stash.push(row);
+  setTimeout(() => Mock.closeGaps(list), 450);
+  Mock.toast({ icon: 'home', text: 'Moved to Home', actions: [['Undo', 'Z']] });
+}
+list.addEventListener('click', e => { const b = e.target.closest('[data-home]'); if (b) { e.stopPropagation(); toHome(b.closest('[data-row]')); } });
+Mock.onKey(e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input,textarea')) return;
+  if (e.key === 'h') { toHome(list.querySelector('.is-cursor')); return true; }
+  if (e.key === 'e' || e.key === 'l' || e.key === '#') return true;   // already done: Done and Later do nothing here
+  if (e.key === 'z' && stash.length) {
+    const r = stash.pop(); r.classList.remove('is-gone', 'is-held'); r.style.display = ''; r.style.visibility = '';
+    r.classList.remove('arrive'); void r.offsetWidth; r.classList.add('arrive'); Mock.setCursor(list, r);
+    Mock.toast({ icon: 'undo', text: 'Undone' }); return true;
+  }
+});
+</script>
+</body>
+</html>

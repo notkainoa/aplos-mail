@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="stack,pending,remind,offline" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Toasts · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<script src="home-view.js"></script>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" id="side" data-active="home"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Home</h1>
+              <p class="page-sub">Thursday, October 29 · 9 to handle</p>
+            </div>
+          </div>
+          <div id="home" role="listbox" aria-label="Home"></div>
+        </div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+</div>
+<script>
+// Toasts stack bottom-centre of the content column (§7.13). Here they are held (ms: 0) so the states can be read;
+// E, L and # still raise live toasts that time out as usual.
+const S = Mock.state;
+if (S === 'offline') document.getElementById('side').dataset.status = 'offline';
+HomeView(document.getElementById('home'), { items: HomeView.DEFAULT_ITEMS });
+const SETS = {
+  stack: [
+    { icon: 'check', tone: 'c-hill', text: 'Done', actions: [['Undo', 'Z']] },
+    { icon: 'clock', tone: 'c-dusk', text: 'Moved to Later', actions: [['Set a date', 'D'], ['Undo', 'Z']] },
+    { icon: 'trash', text: 'Moved to Trash', actions: [['Undo', 'Z']] },
+  ],
+  pending: [{ icon: 'refresh', text: 'Archiving…' }],
+  remind: [{ icon: 'check', tone: 'c-hill', text: 'Done', actions: [['Remind me if no reply', 'R'], ['Undo', 'Z']] }],
+  offline: [{ icon: 'cloudoff', text: 'Saved here · will sync' }],
+};
+document.addEventListener('DOMContentLoaded', () => (SETS[S] || []).forEach(t => Mock.toast({ ...t, ms: 0 })));
+</script>
+</body>
+</html>

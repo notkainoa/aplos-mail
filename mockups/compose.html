@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="new,ai-draft,polish,follow-up" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Compose · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  .compose-page { width: min(var(--composer-w), 100%); margin: 0 auto; padding: var(--space-7) 0 var(--space-8); }
+  .c-row { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-lg); font: var(--type-base); color: var(--dim); }
+  .c-row .lbl { width: var(--space-8); flex: none; }
+  .c-row input { flex: 1; border: 0; background: none; outline: none; font: var(--type-base); color: var(--ink); min-width: 0; }
+  .c-row input::placeholder { color: var(--dim); }
+  .c-subject { display: block; width: 100%; margin-top: var(--space-6); border: 0; background: none; outline: none; font: var(--type-heading); letter-spacing: var(--track-heading); color: var(--ink); padding: 0; }
+  .c-subject::placeholder { color: var(--faint); }
+  .c-text { margin-top: var(--space-5); font: var(--type-read); letter-spacing: var(--track-read); color: var(--ink); outline: none; max-width: var(--measure-read); }
+  .c-text p + p { margin-top: var(--space-4); }
+  .compose-foot { flex: none; box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line); }
+  .compose-foot .inner { width: min(var(--composer-w), 100% - 2 * var(--gutter)); margin: 0 auto; height: var(--space-10); display: flex; align-items: center; gap: var(--space-3); }
+  .compose-foot .saved { font: var(--type-small); color: var(--dim); }
+  .compose-foot .right { margin-left: auto; display: flex; gap: var(--space-half); }
+  .polish-bar { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-5); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--raised); font: var(--type-ui); color: var(--ink-2); }
+  .polish-bar .spacer { flex: 1; }
+  del { color: var(--dim); text-decoration-color: var(--dim); }
+  ins { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: var(--space-1); background: var(--accent-wash); border-radius: var(--radius-xs); }
+  html:not([data-state="ai-draft"]) .draft-only, html:not([data-state="polish"]) .polish-only, html[data-state="polish"] .plain-only { display: none; }
+  html:not([data-state="follow-up"]) .fu-only, html[data-state="follow-up"] .not-fu { display: none; }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="none"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <a class="btn btn-icon" href="home.html" data-tip="Close. The draft is saved." data-key="Esc" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></a>
+        <span class="title not-fu">New message</span><span class="title fu-only">Reply to Studio Kettle</span>
+        <div class="tools">
+          <button class="btn btn-icon" data-tip="More: send from, schedule, discard" data-key="⌘/" aria-label="More"><svg class="ic"><use href="#i-more"/></svg></button>
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace">
+        <div class="compose-page">
+          <div class="c-row"><span class="lbl">To</span><span class="person not-fu">Jordan Park</span><span class="person not-fu">Mina Cho</span><span class="person fu-only">Hana Sato, Studio Kettle</span><input aria-label="Add recipients"><button class="btn btn-text xs" data-tip="Add Cc or Bcc" data-key="⌘⇧C">Cc</button></div>
+          <input class="c-subject not-fu" value="Hollow Creek: going with Direction B" aria-label="Subject" placeholder="Subject"><input class="c-subject fu-only" value="Re: Signed SOW attached" aria-label="Subject">
+          <div class="polish-bar polish-only"><svg class="ic sm"><use href="#i-type"/></svg>Polish suggests 3 changes. Yours stays until you choose.<span class="spacer"></span>
+            <button class="btn btn-text xs">Use these <span class="kbd">Return</span></button><button class="btn btn-text xs">Keep mine <span class="kbd">Esc</span></button></div>
+          <div class="c-text fu-only" contenteditable="true" spellcheck="false">
+            <p class="suggestion fu-draft">Hi Hana,</p>
+            <p class="suggestion fu-draft">Just checking that the signed statement of work reached you on the 24th. Could you confirm, and let me know when the team can start?</p>
+            <p class="suggestion fu-draft">Thanks,<br>Alex</p>
+          </div>
+          <p class="suggest-hint fu-only" id="fu-hint"><span>Aplos drafted this follow-up from your last email.</span><span><span class="kbd">Tab</span> keep</span><span><span class="kbd">Esc</span> dismiss</span></p>
+          <div class="c-text not-fu" contenteditable="true" spellcheck="false" id="text">
+            <p>Hi Jordan and Mina,</p>
+            <p class="plain-only">Direction B for the first launch. The booking form up front is the part I care about most<span class="draft-only">, and A can wait until the new trail photos are in. If we lock it by Friday, Mina can start the build on Monday and we keep the November 16 launch.</span><span class="draft-only suggestion" id="sugg"> Could you send the final files for B by Thursday so I can review them before the call?</span><span class="caret"></span></p>
+            <p class="polish-only">Direction B for me. I think <del>its</del> <ins>it’s</ins> the better first launch, since most people arrive from the newsletter. Can we keep the booking form up top and look at A in spring? <del>Will</del> <ins>I’ll</ins> sign off <del>friday</del> <ins>Friday</ins> morning.</p>
+            <p>Alex</p>
+          </div>
+          <p class="suggest-hint draft-only" id="hint"><span>The grey sentence is a suggestion.</span><span><span class="kbd">Tab</span> keep</span><span><span class="kbd">Esc</span> dismiss</span></p>
+        </div>
+      </div>
+      <footer class="compose-foot">
+        <div class="inner">
+          <button class="btn btn-filled md" id="send"><svg class="ic"><use href="#i-send"/></svg>Send<span class="kbd">⌘↩</span></button>
+          <span class="saved">Draft saved</span>
+          <div class="right">
+            <button class="btn btn-icon" data-tip="Attach a file" data-key="⌘⇧A" aria-label="Attach"><svg class="ic"><use href="#i-paperclip"/></svg></button>
+            <button class="btn btn-icon" data-tip="Format" data-key="⌘/" aria-label="Format"><svg class="ic"><use href="#i-type"/></svg></button>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </div>
+</div>
+<script>
+const send = () => { Mock.toast({ icon: 'send', text: Mock.state === 'follow-up' ? 'Sending to Hana in 8 s' : 'Sending to Jordan and Mina in 8 s', actions: [['Undo', 'Z'], ['Send now', '']] }); };
+document.getElementById('send').onclick = send;
+Mock.onKey(e => {
+  if (e.metaKey && e.key === 'Enter') { send(); return true; }
+  if (Mock.state === 'ai-draft' && document.getElementById('sugg')) {
+    if (e.key === 'Tab') { const s = document.getElementById('sugg'); s.classList.remove('suggestion'); s.removeAttribute('id'); document.getElementById('hint').hidden = true; return true; }
+    if (e.key === 'Escape') { document.getElementById('sugg').remove(); document.getElementById('hint').hidden = true; return true; }
+  }
+  if (Mock.state === 'follow-up' && document.querySelector('.fu-draft')) {
+    if (e.key === 'Tab') { document.querySelectorAll('.fu-draft').forEach(p => p.classList.remove('suggestion', 'fu-draft')); document.getElementById('fu-hint').hidden = true; return true; }
+    if (e.key === 'Escape') { document.querySelectorAll('.fu-draft').forEach(p => p.remove()); document.getElementById('fu-hint').hidden = true; return true; }
+  }
+  if (Mock.state === 'polish' && (e.key === 'Enter' || e.key === 'Escape') && !e.target.closest('[contenteditable],input')) { Mock.go('compose.html'); return true; }
+  if (e.key === 'Escape') { Mock.go('home.html'); return true; }
+});
+</script>
+</body>
+</html>

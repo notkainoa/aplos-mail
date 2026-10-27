@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en" data-window="onboarding" data-states="groq,byok,local,consent" data-esc="onboarding-accounts.html">
+<head>
+<meta charset="utf-8">
+<title>Onboarding · AI · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  .onb .onb-body { justify-content: flex-start; padding-top: var(--space-7); }
+  .step { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
+  .go-row { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-7); }
+  .cap { font: var(--type-small); font-weight: 500; color: var(--dim); margin: var(--space-6) 0 var(--space-2); }
+  .cap:first-of-type { margin-top: var(--space-6); }
+  .fine { display: flex; align-items: center; gap: var(--space-2); font: var(--type-small); color: var(--dim); margin-top: var(--space-3); }
+  .fine .ic { width: var(--icon-sm); height: var(--icon-sm); }
+  .step .field { width: 100%; }
+  .more-btn { margin-left: calc(-1 * var(--space-2)); margin-top: var(--space-3); }
+  .more-btn .ic { width: var(--icon-sm); height: var(--icon-sm); }
+  .more-btn[aria-expanded="true"] .ic { transform: rotate(180deg); }
+
+  /* quiet blocks: hairline top and bottom, no box */
+  .blk { width: 100%; margin-top: var(--space-6); }
+  .blk .it { position: relative; display: flex; align-items: center; gap: var(--space-3); min-height: var(--row-roomy); padding: var(--space-3) 0; font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink); }
+  .blk .it + .it::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: var(--hairline); background: var(--line); }
+  .blk .it .nm { font-weight: 500; }
+  .blk .it .tag, .blk .it .sub { font: var(--type-small); color: var(--dim); }
+  .blk .it .end { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); }
+  .blk .it .end .btn { margin-right: calc(-1 * var(--space-2)); }
+  .blk .it > .ic { color: var(--dim); }
+  .blk .it .stk { display: flex; flex-direction: column; min-width: 0; }
+  .blk .it .stk .sub { margin-top: var(--space-half); }
+  .blk .it .stk code { font-family: var(--font-mono); color: var(--ink-2); }
+  .ok-word { display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-small); color: var(--dim); }
+  .ok-word .ic { width: var(--icon-sm); height: var(--icon-sm); color: var(--hill); }
+  .lines { width: 100%; margin-top: var(--space-2); }
+  .lines .btn { width: 100%; justify-content: flex-start; height: var(--control-lg); padding: 0 var(--space-3); margin: 0 calc(-1 * var(--space-3)); width: calc(100% + 2 * var(--space-3)); font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink); }
+  .lines .btn .go { margin-left: auto; }
+
+  /* provider menu */
+  .menu-wrap { position: relative; }
+  .menu-wrap .menu { position: absolute; top: 100%; left: 0; margin-top: var(--space-1); z-index: 5; }
+  .menu-item[aria-checked="true"] .ic { color: var(--ink); }
+  .menu-item .ic.ph { visibility: hidden; }
+  .menu-item[aria-checked="true"] .ic.ph { visibility: visible; }
+  .select.md { height: var(--control-md); min-width: var(--sender-w); justify-content: space-between; font: var(--type-base); letter-spacing: var(--track-base); }
+
+  /* consent: the only card on this screen */
+  .consent { width: 100%; margin-top: var(--space-6); padding: var(--space-2) var(--space-5); }
+  .consent dl { margin: 0; display: grid; grid-template-columns: var(--sender-w) 1fr; }
+  .consent dt, .consent dd { margin: 0; padding: var(--space-3) 0; font: var(--type-ui); letter-spacing: var(--track-ui); }
+  .consent dt { color: var(--dim); }
+  .consent dd { color: var(--ink); }
+  .consent dl > :nth-child(n+3) { box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line); }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="onb">
+    <div class="drag">
+      <span class="traffic"></span>
+      <a class="btn btn-text xs" href="demo.html" data-tip="Load sample mail to look around. Remove it any time in Settings.">Try demo mail</a>
+    </div>
+    <main class="onb-body" aria-labelledby="h">
+
+        <!-- groq (default) -->
+        <div class="step" data-s="groq">
+          <h1 class="t-heading" id="h">Set up AI</h1>
+          <p class="lede">AI sums up each email in a line, drafts replies and answers questions about your mail. It is optional.</p>
+          <div class="blk">
+            <div class="it">
+              <span class="radio" role="radio" aria-checked="true" aria-label="Groq"></span>
+              <div class="stk"><span><span class="nm">Groq</span> <span class="tag">Default</span></span><span class="sub">Key found in the environment as <code>GROQ_API_KEY</code></span></div>
+              <span class="end">
+                <span class="ok-word" id="result"><svg class="ic"><use href="#i-check"/></svg>Works · 0.4 s</span>
+                <button class="btn btn-text xs" id="test">Test</button>
+              </span>
+            </div>
+          </div>
+          <button class="btn btn-text more-btn" id="more" aria-expanded="false" aria-controls="morelist">More options<svg class="ic"><use href="#i-chevd"/></svg></button>
+          <div class="lines" id="morelist" hidden>
+            <button class="btn btn-text" data-go="byok"><svg class="ic"><use href="#i-key"/></svg>Use another provider<svg class="ic go"><use href="#i-chevr"/></svg></button>
+            <button class="btn btn-text" data-go="local"><svg class="ic"><use href="#i-laptop"/></svg>Run on this Mac<svg class="ic go"><use href="#i-chevr"/></svg></button>
+          </div>
+          <div class="go-row">
+            <button class="btn btn-filled lg" id="primary">Continue<span class="kbd">Return</span></button>
+            <button class="btn btn-text" id="skip">Skip for now</button>
+          </div>
+        </div>
+
+        <!-- byok -->
+        <div class="step" data-s="byok">
+          <h1 class="t-heading">Use your own key</h1>
+          <p class="lede">Pick a provider and paste its API key. Aplos saves the key in Keychain and never shows it again.</p>
+          <div class="cap" id="provlbl">Provider</div>
+          <div class="menu-wrap">
+            <button class="select md" id="prov" aria-haspopup="menu" aria-expanded="false" aria-labelledby="provlbl"><span id="provname">Claude</span><svg class="ic"><use href="#i-updown"/></svg></button>
+            <div class="paper menu" id="provmenu" role="menu" hidden>
+              <button class="menu-item" role="menuitemradio" aria-checked="false"><svg class="ic ph"><use href="#i-check"/></svg>OpenAI</button>
+              <button class="menu-item" role="menuitemradio" aria-checked="true"><svg class="ic ph"><use href="#i-check"/></svg>Claude</button>
+              <button class="menu-item" role="menuitemradio" aria-checked="false"><svg class="ic ph"><use href="#i-check"/></svg>Gemini</button>
+              <button class="menu-item" role="menuitemradio" aria-checked="false"><svg class="ic ph"><use href="#i-check"/></svg>OpenRouter</button>
+              <button class="menu-item" role="menuitemradio" aria-checked="false"><svg class="ic ph"><use href="#i-check"/></svg>OpenCode Go</button>
+              <button class="menu-item" role="menuitemradio" aria-checked="false"><svg class="ic ph"><use href="#i-check"/></svg>Custom server</button>
+            </div>
+          </div>
+          <div class="cap" id="keylbl">API key</div>
+          <label class="field lg"><svg class="ic"><use href="#i-key"/></svg><input id="key" type="password" placeholder="Paste your Claude API key" autocomplete="off" aria-labelledby="keylbl"></label>
+          <div class="fine"><svg class="ic"><use href="#i-lock"/></svg>Saved in Keychain on this Mac. Never shown again.</div>
+          <div class="go-row">
+            <button class="btn btn-filled lg" id="primary-b">Continue<span class="kbd">Return</span></button>
+          </div>
+        </div>
+
+        <!-- local -->
+        <div class="step" data-s="local">
+          <h1 class="t-heading">Run AI on this Mac</h1>
+          <p class="lede">Ollama and LM Studio answer from your own Mac, so your mail stays on this Mac.</p>
+          <div class="blk">
+            <div class="it">
+              <span class="radio" role="radio" aria-checked="true" aria-label="Ollama"></span>
+              <div class="stk"><span class="nm">Ollama</span><span class="sub"><i class="status-dot ok"></i> Found at localhost:11434</span></div>
+              <span class="end"><button class="select" aria-label="Model">llama3.2:3b<svg class="ic"><use href="#i-chevd"/></svg></button></span>
+            </div>
+            <div class="it">
+              <span class="radio" role="radio" aria-checked="false" aria-label="LM Studio"></span>
+              <div class="stk"><span class="nm">LM Studio</span><span class="sub"><i class="status-dot"></i> Not running</span></div>
+              <span class="end"><button class="btn btn-text xs">Check again</button></span>
+            </div>
+          </div>
+          <button class="btn btn-text more-btn" id="more-l" aria-expanded="false" aria-controls="addr-l">More options<svg class="ic"><use href="#i-chevd"/></svg></button>
+          <label class="field" id="addr-l" hidden style="margin-top:var(--space-2)"><svg class="ic"><use href="#i-server"/></svg><input type="text" value="http://localhost:1234" spellcheck="false" aria-label="LM Studio address"></label>
+          <div class="go-row">
+            <button class="btn btn-filled lg" id="primary-l">Continue<span class="kbd">Return</span></button>
+          </div>
+        </div>
+
+        <!-- consent -->
+        <div class="step" data-s="consent">
+          <h1 class="t-heading">Allow summaries in the background?</h1>
+          <p class="lede">Aplos can read new mail as it arrives and write the summaries for you. Here is exactly what that sends.</p>
+          <div class="paper consent">
+            <dl>
+              <dt>Provider</dt><dd>Groq</dd>
+              <dt>Model</dt><dd>llama-3.3-70b-versatile</dd>
+              <dt>What is sent</dt><dd>The sender, subject and text of each new email, and your question when you use Ask. Attachments are not sent.</dd>
+            </dl>
+          </div>
+          <div class="fine"><svg class="ic"><use href="#i-laptop"/></svg>Ollama and LM Studio keep all of this on your Mac.</div>
+          <div class="go-row" style="margin-top:var(--space-6)">
+            <button class="btn btn-filled lg" id="primary-c">Allow<span class="kbd">Return</span></button>
+            <button class="btn btn-text" id="notnow">Not now</button>
+          </div>
+        </div>
+
+    </main>
+    <footer class="onb-foot">
+      <div class="steps" aria-label="Step 3 of 4"><i class="done"></i><i class="done"></i><i class="on"></i><i></i></div>
+      <span class="note">Setup continues in the background.</span>
+      <div class="btns"><button class="btn btn-text" id="back">Back<span class="kbd hint">Esc</span></button></div>
+    </footer>
+  </div>
+</div>
+<script>
+(function () {
+  const html = document.documentElement;
+  const $ = id => document.getElementById(id);
+  let st = 'groq';
+  const target = { groq: 'primary', byok: 'primary-b', local: 'primary-l', consent: 'primary-c' };
+  function show(s) {
+    st = s; html.dataset.state = s;
+    document.querySelectorAll('[data-s]').forEach(el => { el.hidden = !el.dataset.s.split(' ').includes(s); });
+    closeMenu();
+    $(target[s]).focus({ preventScroll: true });
+  }
+  const next = () => Mock.go('onboarding-permissions.html');
+  document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => show(b.dataset.go)));
+  ['primary', 'primary-b', 'primary-l'].forEach(id => $(id).addEventListener('click', () => show('consent')));
+  $('primary-c').addEventListener('click', next);
+  $('notnow').addEventListener('click', next);
+  $('skip').addEventListener('click', next);
+  $('test').addEventListener('click', () => {
+    const r = $('result'); r.style.visibility = 'hidden';
+    setTimeout(() => { r.style.visibility = ''; }, 500);
+  });
+  // "More options" disclosures
+  [['more', 'morelist'], ['more-l', 'addr-l']].forEach(([b, t]) => $(b).addEventListener('click', () => {
+    const open = $(b).getAttribute('aria-expanded') !== 'true';
+    $(b).setAttribute('aria-expanded', String(open)); $(t).hidden = !open;
+  }));
+  // provider menu
+  const menu = $('provmenu');
+  function closeMenu() { menu.hidden = true; $('prov').setAttribute('aria-expanded', 'false'); }
+  $('prov').addEventListener('click', () => { const o = menu.hidden; menu.hidden = !o; $('prov').setAttribute('aria-expanded', String(o)); });
+  menu.querySelectorAll('.menu-item').forEach(c => c.addEventListener('click', () => {
+    menu.querySelectorAll('.menu-item').forEach(o => o.setAttribute('aria-checked', o === c));
+    const name = c.textContent.trim();
+    $('provname').textContent = name;
+    $('key').placeholder = name.includes('Custom') ? 'Paste the server address and key' : `Paste your ${name} API key`;
+    closeMenu(); $('key').focus({ preventScroll: true });
+  }));
+  const back = () => { if (!menu.hidden) return closeMenu(); if (st === 'groq') return Mock.go('onboarding-accounts.html?state=connected'); show('groq'); };
+  $('back').addEventListener('click', back);
+  Mock.onKey(e => {
+    if (e.key === 'Escape') { back(); return true; }
+    if (e.key === 'Enter') {
+      if (e.target.closest('button')) return false;
+      $(target[st]).click(); return true;
+    }
+  });
+  addEventListener('DOMContentLoaded', () => show(Mock.state || 'groq'));
+})();
+</script>
+</body>
+</html>

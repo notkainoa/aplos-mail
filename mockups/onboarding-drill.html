@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en" data-window="onboarding" data-states="step1,step3,done" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Onboarding · Getting your mail, try the keys · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  /* The sync screen with the key drill inline below its progress. */
+  .onb .onb-body { justify-content: flex-start; padding-top: var(--space-6); padding-bottom: var(--space-3); }
+  .step { display: flex; flex-direction: column; align-items: stretch; width: 100%; }
+
+  /* compact progress: one line per account, bar underneath, motion on the marker */
+  .cp + .cp { margin-top: var(--space-3); }
+  .cp .top { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); font: var(--type-ui); letter-spacing: var(--track-ui); }
+  .cp .top .dot { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; flex: none; }
+  .cp .top b { font-weight: 500; color: var(--ink); }
+  .cp .top .st { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-2); font: var(--type-small); color: var(--dim); }
+  .cp .top .st .ic { width: var(--icon-sm); height: var(--icon-sm); color: var(--ink); }
+  .spin { animation: spin var(--dur-status) var(--ease-linear) infinite; }
+  .spin .trk { stroke: var(--line-strong); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+  .progress { margin-top: var(--space-4); }
+
+  /* the drill */
+  .drill { margin-top: var(--space-6); padding-top: var(--space-5); box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line); }
+  .drill-head { display: flex; align-items: baseline; gap: var(--space-3); }
+  .drill-head .t-title { color: var(--ink); }
+  .drill-head .sub { margin-left: auto; font: var(--type-small); color: var(--dim); }
+  .dlist { margin-top: var(--space-2); display: flex; flex-direction: column; }
+  .dlist:focus-visible { outline: none; }   /* the cursor row is the focus mark */
+  .drow { position: relative; display: grid; grid-template-columns: var(--space-4) var(--sender-w) 1fr; align-items: center; height: var(--row-compact); padding: 0 var(--space-3); border-radius: var(--radius-md); font: var(--type-ui); letter-spacing: var(--track-ui); color: var(--ink-2); }
+  .drow .dot { width: var(--unread-dot); height: var(--unread-dot); border-radius: 50%; background: var(--accent); justify-self: start; }
+  .drow .who { font-weight: 600; color: var(--ink); }
+  .drow .subj { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .drow.is-cursor { background: var(--accent-wash); }
+  .drow.is-cursor::before { content: ""; position: absolute; left: 0; top: var(--space-2); bottom: var(--space-2); width: var(--select-bar); border-radius: var(--select-bar); background: var(--accent); }
+  .drow.leaving { animation: carry-r var(--dur-carry) var(--ease-carry) both; }
+
+  /* the tiny focus letter: the thing in hand */
+  .tiny { margin-top: var(--space-3); padding: var(--space-3) var(--space-4); }
+  .tiny .meta { display: flex; align-items: center; gap: var(--space-2); font: var(--type-base); font-weight: 600; letter-spacing: var(--track-base); color: var(--ink); }
+  .tiny .meta .date { margin-left: auto; font: var(--type-small); font-weight: 400; color: var(--dim); }
+  .tiny .t-answer { margin-top: var(--space-half); color: var(--ink); }
+  .tiny .sug { margin-top: var(--space-2); display: flex; align-items: center; gap: var(--space-2); font: var(--type-ui); letter-spacing: var(--track-ui); color: var(--ink-2); min-height: var(--control-xs); }
+  .tiny .sug .ic { width: var(--icon-sm); height: var(--icon-sm); color: var(--ink); }
+  .tiny .sug .kbd { margin-left: auto; }
+  .tiny .sug .ran { display: none; }
+  .tiny.ran .sug .run { display: none; }
+  .tiny.ran .sug .ran { display: inline-flex; align-items: center; gap: var(--space-1); font-weight: 500; }
+  .tiny.ran .sug .kbd { display: none; }
+
+  /* the current step */
+  .prompt { margin-top: var(--space-3); display: flex; align-items: center; gap: var(--space-3); min-height: var(--control-md); }
+  .prompt .keys { display: flex; align-items: center; gap: var(--space-1); flex: none; }
+  .prompt .keys .kbd { min-width: var(--control-sm); height: var(--control-sm); font: var(--type-ui); font-weight: 500; color: var(--ink); background: var(--sunken); }
+  .prompt .say { font: var(--type-ui); letter-spacing: var(--track-ui); color: var(--ink); }
+  .prompt .say small { margin-left: var(--space-2); font: var(--type-small); color: var(--dim); }
+  .prompt .n { margin-left: auto; font: var(--type-small); color: var(--dim); white-space: nowrap; }
+  .finish { display: flex; align-items: center; gap: var(--space-2); font: var(--type-ui); letter-spacing: var(--track-ui); color: var(--ink); }
+  .finish .ic { color: var(--ink); }
+
+  .esc-line { display: inline-flex; align-items: center; gap: var(--space-2); }
+  html[data-state="done"] .tiny .sug { display: none; }
+  html[data-state="done"] .in-steps, html:not([data-state="done"]) .in-done { display: none; }
+  @media (prefers-reduced-motion: reduce) { .drow.leaving { animation: none; opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="onb">
+    <div class="drag">
+      <span class="traffic"></span>
+      <a class="btn btn-text xs" href="demo.html" data-tip="Load sample mail to look around. Remove it any time in Settings.">Try demo mail</a>
+    </div>
+    <main class="onb-body" aria-labelledby="h">
+      <div class="step">
+        <h1 class="t-heading" id="h">Getting your mail</h1>
+
+        <div class="progress">
+          <div class="cp">
+            <div class="top"><i class="dot" style="background:var(--tag-sky)"></i><b>alex.moreno@gmail.com</b>
+              <span class="st"><svg class="ic spin" viewBox="0 0 24 24" aria-hidden="true"><circle class="trk" cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="8.5" pathLength="100" stroke-dasharray="26 74"/></svg>Reading 24 of 50</span></div>
+            <div class="progress-seg" role="progressbar" aria-label="alex.moreno@gmail.com sync" aria-valuetext="Reading your newest mail, 24 of 50"><i class="done"></i><i class="done"></i><i class="part" style="--p:48%"></i><i></i></div>
+          </div>
+          <div class="cp">
+            <div class="top"><i class="dot" style="background:var(--tag-hill)"></i><b>alex@fernworks.studio</b>
+              <span class="st"><svg class="ic spin" viewBox="0 0 24 24" aria-hidden="true"><circle class="trk" cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="8.5" pathLength="100" stroke-dasharray="26 74"/></svg>Reading 38 of 50</span></div>
+            <div class="progress-seg" role="progressbar" aria-label="alex@fernworks.studio sync" aria-valuetext="Reading your newest mail, 38 of 50"><i class="done"></i><i class="done"></i><i class="part" style="--p:76%"></i><i></i></div>
+          </div>
+        </div>
+
+        <section class="drill" aria-labelledby="dh">
+          <div class="drill-head"><h2 class="t-title" id="dh">Try the keys while you wait</h2><span class="sub">Practice letters. Nothing real changes.</span></div>
+          <div class="dlist" id="list" tabindex="0" role="listbox" aria-label="Practice letters"></div>
+
+          <div class="paper tiny" id="tiny">
+            <div class="meta"><span id="t-who"></span><span class="date">Wed</span></div>
+            <p class="t-answer" id="t-sum"></p>
+            <div class="sug">
+              <span class="run" id="t-sug"></span>
+              <span class="ran"><svg class="ic"><use href="#i-check"/></svg>Draft ready. Nothing is sent.</span>
+              <span class="kbd">Space</span>
+            </div>
+          </div>
+
+          <div class="prompt in-steps" id="prompt">
+            <span class="keys" id="p-keys"></span>
+            <span class="say" id="p-say"></span>
+            <span class="n" id="p-n"></span>
+          </div>
+          <div class="prompt in-done"><span class="finish"><svg class="ic"><use href="#i-check"/></svg>That is the whole loop. Press ? in Aplos any time to see every key.</span></div>
+        </section>
+      </div>
+    </main>
+    <footer class="onb-foot">
+      <span class="note esc-line"><span class="kbd">Esc</span>opens Aplos</span>
+      <div class="btns">
+        <button class="btn btn-text in-steps" id="skip">Back to progress</button>
+        <button class="btn btn-filled in-done" id="primary">Back to progress<span class="kbd">Return</span></button>
+      </div>
+    </footer>
+  </div>
+</div>
+<script>
+(function () {
+  const html = document.documentElement;
+  const $ = id => document.getElementById(id);
+  const LETTERS = [
+    { who: 'Jordan Park', subj: 'Hollow Creek: pick a layout by tomorrow', sum: 'Jordan needs your pick of a homepage layout by tomorrow.', sug: 'Reply: Going with option B.' },
+    { who: 'Mina Cho', subj: 'Header options, round two', sum: 'Mina sent two header options and asks which you prefer.', sug: 'Reply: The second header.' },
+    { who: 'Priya Raman', subj: 'Q4 review deck', sum: 'Priya wants your slides before Friday at 11:00.', sug: 'Reply: Slides arrive Thursday evening.' },
+  ];
+  const STEPS = [
+    { keys: ['J', 'K'], say: 'Move through the letters', sub: 'J goes down, K goes up.' },
+    { keys: ['Space'], say: 'Run the suggestion', sub: 'Space does the one thing Aplos recommends.' },
+    { keys: ['E'], say: 'Mark it Done', sub: 'E puts it away. Z brings it back.' },
+    { keys: ['A'], say: 'Ask about it', sub: 'A opens Ask beside your mail.' },
+  ];
+  // Where each named state starts: step, cursor row, rows left, suggestion already run
+  const PRESET = {
+    step1: { step: 0, cur: 0, rows: 3, ran: false },
+    step2: { step: 1, cur: 1, rows: 3, ran: false },
+    step3: { step: 2, cur: 1, rows: 3, ran: true },
+    step4: { step: 3, cur: 1, rows: 2, ran: false },
+    done:  { step: 4, cur: 1, rows: 2, ran: false },
+  };
+  let m = Object.assign({}, PRESET[Mock.state] || PRESET.step1);
+  let list = m.rows === 2 ? [LETTERS[0], LETTERS[2]] : LETTERS.slice();
+
+  function render() {
+    html.dataset.state = m.step >= 4 ? 'done' : 'step' + (m.step + 1);
+    $('list').innerHTML = list.map((l, i) => `<div class="drow${i === m.cur ? ' is-cursor' : ''}" role="option" aria-selected="${i === m.cur}"><span class="dot"></span><span class="who">${l.who}</span><span class="subj">${l.subj}</span></div>`).join('');
+    const l = list[m.cur];
+    $('t-who').textContent = l.who; $('t-sum').textContent = l.sum; $('t-sug').textContent = l.sug;
+    $('tiny').classList.toggle('ran', m.ran);
+    if (m.step < 4) {
+      const s = STEPS[m.step];
+      $('p-keys').innerHTML = s.keys.map(k => `<span class="kbd">${k}</span>`).join('');
+      $('p-say').innerHTML = `${s.say}<small>${s.sub}</small>`;
+      $('p-n').textContent = `${m.step + 1} of 4`;
+    }
+  }
+  function move(d) { m.cur = Math.max(0, Math.min(list.length - 1, m.cur + d)); m.ran = false; if (m.step === 0) m.step = 1; render(); }
+  const focusMain = () => (m.step >= 4 ? $('primary') : $('list')).focus({ preventScroll: true });
+  function key(k) {
+    if (m.step >= 4) return;
+    if (k === 'j' || k === 'k') move(k === 'j' ? 1 : -1);
+    else if (k === ' ' && m.step === 1) { m.ran = true; m.step = 2; render(); }
+    else if (k === 'e' && m.step === 2) {
+      const row = $('list').children[m.cur];
+      const done = () => { list.splice(m.cur, 1); m.cur = Math.min(m.cur, list.length - 1); m.ran = false; m.step = 3; render(); };
+      if (Mock.reduced) done(); else { row.classList.add('leaving'); setTimeout(done, Mock.dur('carry')); }
+    }
+    else if (k === 'a' && m.step === 3) { m.step = 4; render(); focusMain(); }
+  }
+  const leave = () => Mock.go('onboarding-sync.html?flow=1');
+  const enter = () => Mock.go('home.html');   // Esc always enters Aplos on the sync screen, drill included
+  $('skip').addEventListener('click', leave);
+  $('primary').addEventListener('click', leave);
+  Mock.onKey(e => {
+    if (e.key === 'Escape') { enter(); return true; }
+    if (e.key === 'Enter') { if (e.target.closest('button')) return false; if (m.step >= 4) leave(); return true; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === ' ' && e.target.closest('button')) return false;
+    if (e.key.length === 1) { key(e.key.toLowerCase()); return true; }   // letters belong to the drill here, not to the app
+  });
+  addEventListener('DOMContentLoaded', () => { render(); focusMain(); });
+})();
+</script>
+</body>
+</html>

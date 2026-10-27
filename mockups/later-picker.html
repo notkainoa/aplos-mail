@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default,calendar" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Later picker · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<script src="home-view.js"></script>
+<style>
+  /* Later picker: a level-2 popover under the focus letter's Later button (§6 DatePresets) */
+  .picker { position: absolute; z-index: 60; width: calc(var(--menu-min) + var(--space-9)); }
+  .picker .menu-item { gap: var(--space-3); }
+  .picker .num { width: var(--space-4); text-align: center; color: var(--dim); font: var(--type-small); flex: none; }
+  .picker .menu-item .ic { flex: none; }
+  .picker .menu-item .kbd { margin-left: var(--space-1); }
+  .picker .menu-item .aside + .kbd { margin-left: var(--space-1); }
+  .picker .menu-item.is-active .num { color: var(--ink); }
+  .cal { padding: var(--space-2) var(--space-2) var(--space-1); }
+  .cal-head { display: flex; align-items: center; height: var(--control-sm); padding-left: var(--space-1); }
+  .cal-head b { font: var(--type-ui); font-weight: 500; flex: 1; }
+  .cal-dow, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+  .cal-dow span { height: var(--space-6); display: flex; align-items: center; justify-content: center; font: var(--type-caption); letter-spacing: var(--track-caption); color: var(--dim); }
+  .cal-grid button { height: var(--control-sm); border-radius: var(--radius-md); font: var(--type-ui); color: var(--ink); display: flex; align-items: center; justify-content: center; }
+  .cal-grid button:hover { background: var(--hover); }
+  .cal-grid button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 500; }
+  .cal-foot { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) 0 var(--space-1); margin-top: var(--space-1); box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line); }
+  .cal-foot .select { margin-right: auto; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="home"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace" id="ws">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Home</h1>
+              <p class="page-sub">Thursday, October 29 · 9 to handle</p>
+            </div>
+          </div>
+          <div id="home" role="listbox" aria-label="Home"></div>
+        </div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+</div>
+<script>
+const ic = Mock.icon;
+const PRESETS = [
+  ['Today evening', '6:00 PM'],
+  ['Tomorrow', 'Fri 8:00 AM'],
+  ['This weekend', 'Sat 9:00 AM'],
+  ['Next week', 'Mon 8:00 AM'],
+  ['Someday', ''],
+];
+const calendar = Mock.state === 'calendar';
+let open = true;
+let hi = calendar ? 'date' : 1;           // highlighted entry: preset index or 'date'
+let day = 4;                               // November 4, 2026 (a Wednesday)
+const DAYS = ['Sun, Nov ', 'Mon, Nov ', 'Tue, Nov ', 'Wed, Nov ', 'Thu, Nov ', 'Fri, Nov ', 'Sat, Nov '];
+const dayName = d => DAYS[(d - 1) % 7] + d;   // Nov 1, 2026 is a Sunday
+
+let pop, home;
+function popover() {
+  const items = PRESETS.map(([l, t], i) => `<div class="menu-item ${hi === i ? 'is-active' : ''}" role="menuitem" data-pick="${i}"><span class="num">${i + 1}</span>${l}${t ? `<span class="aside">${t}</span>` : ''}${hi === i ? '<span class="kbd">Return</span>' : ''}</div>`).join('');
+  let grid = '';
+  for (let d = 1; d <= 30; d++) grid += `<button ${d === day ? 'aria-selected="true"' : ''} data-day="${d}">${d}</button>`;
+  const cal = calendar ? `<div class="cal">
+      <div class="cal-head"><b>November 2026</b><button class="btn btn-icon xs" aria-label="Previous month">${ic('chevl')}</button><button class="btn btn-icon xs" aria-label="Next month">${ic('chevr')}</button></div>
+      <div class="cal-dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+      <div class="cal-grid" role="grid" aria-label="November 2026">${grid}</div>
+      <div class="cal-foot"><span class="select">8:00 AM${ic('chevd')}</span><button class="btn btn-text" data-confirm>Move to Later<span class="kbd">Return</span></button></div>
+    </div>` : '';
+  return `<div class="menu-label">Later until</div>${items}<div class="menu-sep"></div>
+    <div class="menu-item ${hi === 'date' ? 'is-active' : ''}" role="menuitem" data-pick="date">${ic('calendar')}Pick a date…${calendar ? `<span class="aside">${dayName(day)}</span>` : (hi === 'date' ? '<span class="kbd">Return</span>' : '')}</div>${cal}`;
+}
+function place() {
+  if (!open) return;
+  const ws = document.getElementById('ws'), b = document.querySelector('[data-later]'); if (!b) return;
+  if (!pop) { pop = document.createElement('div'); pop.className = 'float menu picker reveal'; pop.setAttribute('role', 'menu'); pop.setAttribute('aria-label', 'Later until'); ws.append(pop); }
+  const w = ws.getBoundingClientRect(), r = b.getBoundingClientRect();
+  pop.style.left = (r.left - w.left + ws.scrollLeft) + 'px';
+  pop.style.top = `calc(${r.bottom - w.top + ws.scrollTop}px + var(--space-1))`;
+  pop.innerHTML = popover();
+}
+function close() { open = false; pop?.remove(); pop = null; }
+function pick(i) {
+  const label = i === 'date' ? dayName(day) : PRESETS[i][0];
+  close();
+  home.commit('later', { toast: { icon: 'clock', tone: 'c-dusk', text: `Moved to Later · ${label}`, actions: [['Undo', 'Z']] } });
+}
+
+home = HomeView(document.getElementById('home'), {
+  items: HomeView.DEFAULT_ITEMS,
+  afterRender: () => place(),
+  onLaterButton: () => { open = !open; open ? place() : close(); },
+  onKey: e => {
+    const k = e.key;
+    if (!open) { if (k === 'd') { open = true; place(); return true; } return; }
+    if (/^[1-5]$/.test(k)) { pick(+k - 1); return true; }
+    if (k === 'Enter') { pick(hi); return true; }
+    if (calendar && hi === 'date' && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'h', 'j', 'k', 'l'].includes(k)) {
+      const d = { ArrowLeft: -1, h: -1, ArrowRight: 1, l: 1, ArrowUp: -7, k: -7, ArrowDown: 7, j: 7 }[k];
+      day = Math.max(1, Math.min(30, day + d)); place(); return true;
+    }
+    if (k === 'ArrowDown' || k === 'j' || k === 'ArrowUp' || k === 'k') {
+      const order = [0, 1, 2, 3, 4, 'date']; const i = order.indexOf(hi);
+      hi = order[Math.max(0, Math.min(order.length - 1, i + (k === 'ArrowDown' || k === 'j' ? 1 : -1)))]; place(); return true;
+    }
+    if (k === 'Escape' || k === 'Meta') return;
+    return true;   // the popover is modal to the keyboard
+  },
+});
+document.addEventListener('click', e => {
+  if (!pop) return;
+  const p = e.target.closest('[data-pick]'); if (p) { pick(p.dataset.pick === 'date' ? 'date' : +p.dataset.pick); return; }
+  const d = e.target.closest('[data-day]'); if (d) { day = +d.dataset.day; hi = 'date'; place(); return; }
+  if (e.target.closest('[data-confirm]')) { pick('date'); return; }
+  if (!e.target.closest('.picker, [data-later]')) Mock.go('home.html');
+});
+document.addEventListener('DOMContentLoaded', () => place());
+</script>
+</body>
+</html>

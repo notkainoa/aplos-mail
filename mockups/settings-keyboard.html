@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default,recording" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Settings, Keyboard · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="settings.css">
+<script src="shell.js"></script>
+<script src="settings.js"></script>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" id="sb" data-active="settings" data-accounts="all"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace set-ws">
+        <div class="settings">
+          <nav class="nav snav" id="snav"></nav>
+          <div class="scontent" id="content"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+S.nav('Keyboard');
+const ic = Mock.icon;
+const recording = Mock.state === 'recording';
+
+/* The registry. Every binding is declared once; this page is generated from it (DESIGN 8, 7.10).
+   [id, label, default keys]. ctx decides which groups can conflict. */
+const REG = [
+  { g: 'Lists and Home', ctx: 'lists', items: [
+    ['suggest', 'Do the suggested action', ['Space']], ['done', 'Done', ['E']], ['later', 'Later', ['L']], ['due', 'Set a due date', ['D']],
+    ['bookmark', 'Bookmark', ['B']], ['unread', 'Mark read or unread', ['U']], ['trash', 'Move to Trash', ['#']],
+    ['reply', 'Reply', ['R']], ['replyall', 'Reply all', ['⇧R']], ['forward', 'Forward', ['F']],
+    ['select', 'Select', ['X']], ['selectall', 'Select all', ['⌘A']], ['more', 'More actions', ['.']], ['why', 'Why is this here', ['I']],
+    ['notimp', 'Not important', ['⌥↓']], ['always', 'Always on Home', ['⌥↑']], ['section', 'Next section', ['Tab']], ['onebyone', 'Go one by one', ['S']],
+  ] },
+  { g: 'Reader', ctx: 'reader', items: [
+    ['nextthread', 'Next thread', ['J']], ['prevthread', 'Previous thread', ['K']], ['nextmsg', 'Next message', ['↓']], ['prevmsg', 'Previous message', ['↑']],
+    ['quoted', 'Show quoted text', ['O']], ['find', 'Find in message', ['⌘F']],
+  ] },
+  { g: 'Compose', ctx: 'compose', items: [
+    ['send', 'Send', ['⌘Return']], ['senddone', 'Send and Done', ['⌘⇧Return']], ['ccbcc', 'Cc and Bcc', ['⌘⇧C']], ['attach', 'Attach a file', ['⌘⇧A']], ['format', 'Format menu', ['⌘/']],
+  ] },
+  { g: 'Ask', ctx: 'ask', items: [
+    ['ask', 'Ask', ['Return']], ['askall', 'Search all mail', ['⌘Return']], ['newchat', 'New chat', ['⌘N']],
+  ] },
+  { g: 'Calendar', ctx: 'calendar', items: [
+    ['caltoday', 'Go to today', ['T']], ['calday', 'Day view', ['D']], ['calweek', 'Week view', ['W']], ['calmonth', 'Month view', ['M']],
+    ['calnext', 'Next period', ['J']], ['calprev', 'Previous period', ['K']], ['calnew', 'New event', ['N']], ['caledit', 'Edit event', ['E']], ['caldel', 'Delete event', ['⌫']],
+  ] },
+  { g: 'Places', ctx: 'global', items: [
+    ['p1', 'Home', ['⌃1']], ['p2', 'Later', ['⌃2']], ['p3', 'All mail', ['⌃3']], ['p4', 'Drafts', ['⌃4']], ['p5', 'Sent', ['⌃5']], ['p6', 'Calendar', ['⌃6']], ['p7', 'Trash', ['⌃7']], ['p8', 'Spam', ['⌃8']],
+  ] },
+  { g: 'Everywhere', ctx: 'global', items: [
+    ['palette', 'Command palette', ['⌘K']], ['search', 'Search', ['/']], ['compose', 'Compose', ['C']], ['askopen', 'Ask', ['A']], ['dock', 'Toggle the Ask dock', ['⌘J']],
+    ['today', 'Today', ['⇧A']], ['settings', 'Settings', ['⌘,']], ['shortcuts', 'Show shortcuts', ['?']], ['undo', 'Undo', ['Z']],
+  ] },
+];
+const CMD = {}; REG.forEach(g => g.items.forEach(([id, label, keys]) => CMD[id] = { id, label, def: keys.slice(), keys: keys.slice(), g: g.g, ctx: g.ctx }));
+// An existing conflict, from an old config: Not important was moved onto the Ask dock's keys.
+if (!recording) CMD.notimp.keys = ['⌘J'];
+
+const overlap = (a, b) => a === b || a === 'global' || b === 'global' || (['lists', 'reader'].includes(a) && ['lists', 'reader'].includes(b));
+const clash = (cmd, chord) => Object.values(CMD).find(o => o.id !== cmd.id && overlap(o.ctx, cmd.ctx) && o.keys.includes(chord));
+const same = (a, b) => a.length === b.length && a.every((k, i) => k === b[i]);
+
+let rec = null; // { id, chord, other }
+if (recording) rec = { id: 'done', chord: 'L', other: CMD.later };
+
+const kbds = keys => keys.map(k => `<span class="kbd">${k}</span>`).join('');
+function rowHTML(c) {
+  if (rec && rec.id === c.id) {
+    const mid = rec.chord ? `<span class="kbd new">${rec.chord}</span>${rec.other ? `<span class="conflict">${ic('alert')}Already used by ${rec.other.label}</span><button class="btn btn-text md" data-rec="replace">Replace</button><button class="btn btn-text md" data-rec="cancel">Cancel</button>` : ''}`
+      : `<span class="kbd wait" aria-hidden="true">…</span><button class="btn btn-text md" data-rec="cancel">Cancel</button>`;
+    return `<div class="srow has-h krow is-recording" data-id="${c.id}" aria-live="polite"><div><div class="l">${c.label}</div><div class="h">Press the new keys · Esc to cancel</div></div><div class="c">${mid}</div></div>`;
+  }
+  const bad = c.keys.map(k => clash(c, k)).find(Boolean);
+  const changed = !same(c.keys, c.def);
+  return `<div class="srow krow" data-id="${c.id}"><div class="l">${c.label}</div><div class="c">
+    ${bad ? `<span class="conflict">${ic('alert')}Same keys as ${bad.label}</span>` : ''}
+    ${changed ? `<button class="btn btn-text xs" data-reset="${c.id}">Reset</button>` : ''}
+    <button class="keys" data-keys="${c.id}" data-tip="Click to change" aria-label="Change the shortcut for ${S.esc(c.label)}. Now ${c.keys.join(' ')}">${kbds(c.keys)}</button></div></div>`;
+}
+function render(keep) {
+  const hints = document.documentElement.classList.contains('show-hints');
+  const top = S.page('Keyboard', 'Every shortcut in one list. Click the keys to change them.') + S.group('Shortcuts',
+    S.row({ label: 'Single-key shortcuts', hint: 'Letters like E and L act on their own. Off means they need ⌘.', control: S.sw('single', true, 'Single-key shortcuts') }) +
+    S.row({ label: 'Show all key hints', hint: 'Keep every shortcut visible next to its button.', control: S.sw('hints', hints, 'Show all key hints') }),
+    `<button class="btn btn-text xs" data-resetall>Reset all</button>`);
+  const rest = REG.map(g => S.group(g.g, g.items.map(([id]) => rowHTML(CMD[id])).join(''))).join('');
+  const sc = document.querySelector('.workspace').scrollTop;
+  document.getElementById('content').innerHTML = top + rest;
+  document.querySelector('.workspace').scrollTop = sc;
+}
+render();
+if (recording) document.querySelector('.is-recording')?.scrollIntoView({ block: 'center' });
+
+function startRec(id) { rec = { id, chord: null, other: null }; render(); }
+function endRec() { rec = null; render(); }
+function commit(id, chord) { CMD[id].keys = [chord]; Mock.toast({ icon: 'check', text: `${CMD[id].label} is now ${chord}`, actions: [['Undo', 'Z']] }); endRec(); }
+
+document.addEventListener('click', e => {
+  const k = e.target.closest('[data-keys]'); if (k) { startRec(k.dataset.keys); return; }
+  const r = e.target.closest('[data-rec]');
+  if (r) {
+    if (r.dataset.rec === 'cancel') return endRec();
+    if (r.dataset.rec === 'replace') { const o = rec.other; o.keys = o.keys.filter(x => x !== rec.chord); return commit(rec.id, rec.chord); }
+  }
+  const rs = e.target.closest('[data-reset]'); if (rs) { CMD[rs.dataset.reset].keys = CMD[rs.dataset.reset].def.slice(); render(); return; }
+  if (e.target.closest('[data-resetall]')) { Object.values(CMD).forEach(c => c.keys = c.def.slice()); rec = null; render(); Mock.toast({ icon: 'undo', text: 'Every shortcut is back to its default' }); }
+});
+document.addEventListener('settings:switch', e => {
+  if (e.detail.id === 'hints') document.documentElement.classList.toggle('show-hints', e.detail.on);
+  if (e.detail.id === 'single') Mock.toast({ icon: 'keyboard', text: e.detail.on ? 'Single-key shortcuts are on' : 'Single-key shortcuts are off. Letters now need ⌘.' });
+});
+
+// KeyRecorder: swallow every key while a row is recording
+const NAMES = { ' ': 'Space', Enter: 'Return', Backspace: '⌫', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Tab: 'Tab' };
+Mock.onKey(e => {
+  if (!rec) return;
+  if (['Meta', 'Control', 'Alt', 'Shift'].includes(e.key)) return true;
+  if (e.key === 'Escape') { endRec(); return true; }
+  let key = NAMES[e.key] || e.key;
+  if (key.length === 1) key = key.toUpperCase();
+  const letter = /^[A-Z]$/.test(key);
+  const chord = (e.ctrlKey ? '⌃' : '') + (e.altKey ? '⌥' : '') + ((e.shiftKey && (letter || key.length > 1)) ? '⇧' : '') + (e.metaKey ? '⌘' : '') + key;
+  const other = clash(CMD[rec.id], chord);
+  if (!other) return commit(rec.id, chord), true;
+  rec.chord = chord; rec.other = other; render();
+  return true;
+});
+
+</script>
+</body>
+</html>

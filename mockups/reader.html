@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default,earlier,pending,no-ai" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Reader · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  html:not([data-state="pending"]) .summary.is-pending, html[data-state="pending"] .summary.ready,
+  html[data-state="no-ai"] .summary.ready, html:not([data-state="no-ai"]) .summary.is-absent { display: none; }
+  html:not([data-state="earlier"]) .earlier-list, html[data-state="earlier"] .r-earlier { display: none; }
+  .r-subject { font: var(--type-small); font-weight: 500; color: var(--dim); margin-bottom: var(--space-2); }
+  .ghost-paper { position: absolute; z-index: 30; pointer-events: none; background: var(--canvas); }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="home"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <a class="btn btn-icon" href="home.html" data-tip="Back" data-key="Esc" aria-label="Back"><svg class="ic"><use href="#i-chevl"/></svg></a>
+        <span class="title">Home <span class="pos">1 of 16</span></span>
+        <div class="tools">
+          <button class="btn btn-icon" data-tip="Previous" data-key="K" aria-label="Previous email"><svg class="ic"><use href="#i-chevu"/></svg></button>
+          <button class="btn btn-icon" data-tip="Next" data-key="J" aria-label="Next email"><svg class="ic"><use href="#i-chevd"/></svg></button>
+          <button class="btn btn-icon" data-tip="More: bookmark, trash, forward, why it’s here" data-key="." aria-label="More"><svg class="ic"><use href="#i-more"/></svg></button>
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about this email" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace">
+        <article class="reader-page" id="letter" aria-label="Email from Jordan Park">
+          <div class="r-from">
+            <span class="name" data-tip="jordan@parkandpine.co · 14 emails both ways since March">Jordan Park</span>
+            <span class="to">to you and Mina Cho</span>
+            <span class="when"><span class="chip"><svg class="ic"><use href="#i-clock"/></svg>Due tomorrow</span>10:00 AM</span>
+          </div>
+          <p class="r-summary summary t-summary ready" data-tip="Summary by Groq">Two layout directions for the Hollow Creek site are ready, and Jordan wants your pick by tomorrow so the build can start Monday.</p>
+          <p class="r-summary summary is-pending" aria-busy="true">A quieter home for the Hollow Creek site</p>
+          <p class="r-summary summary is-absent t-summary">A quieter home for the Hollow Creek site</p>
+          <div class="r-actions">
+            <a class="btn btn-filled md" href="reply.html"><svg class="ic"><use href="#i-reply"/></svg>Reply<span class="kbd">Space</span></a>
+            <button class="btn btn-text md" data-commit="later" data-tip="Later" data-key="L"><svg class="ic"><use href="#i-clock"/></svg>Later</button>
+            <button class="btn btn-text md" data-commit="done" data-tip="Done" data-key="E"><svg class="ic"><use href="#i-check"/></svg>Done</button>
+          </div>
+
+          <section class="r-thread" aria-label="4 messages">
+            <h2 class="r-subject">A quieter home for the Hollow Creek site · 4 messages</h2>
+            <button class="r-earlier" onclick="Mock.go('reader.html?state=earlier')"><svg class="ic sm"><use href="#i-chevr"/></svg>3 earlier messages from Jordan, you and Mina</button>
+            <div class="earlier-list">
+              <div class="r-msg-line"><span class="who ellipsis">Jordan Park</span><span class="ellipsis">Kicking off: here is the brief we agreed on Friday, plus the three sites you liked.</span><span>Oct 20</span></div>
+              <div class="r-msg-line"><span class="who ellipsis">You</span><span class="ellipsis">Love the brief. Two things to keep: the booking form near the top, and the trail map.</span><span>Oct 21</span></div>
+              <div class="r-msg-line"><span class="who ellipsis">Mina Cho</span><span class="ellipsis">Early sketches before Jordan sends the full set. The serif headings are a test.</span><span>Oct 27</span></div>
+            </div>
+            <div class="r-msg is-cursor">
+              <div class="head"><span class="who">Jordan Park</span><span class="to">to you, Mina Cho</span><span class="when">Today, 10:00 AM</span></div>
+              <div class="body">
+                <p>Hi Alex,</p>
+                <p>Both directions are ready. Direction A keeps the long scrolling story we talked about, with the trail photos carrying most of the page. Direction B is quieter: one screen, a short welcome, and the booking form right up front.</p>
+                <p>I lean toward B for the first launch, since most visitors arrive from the newsletter and already know the place. A could follow in spring, once the new trail photos are in.</p>
+                <p>Can you send me your preference by tomorrow? If we lock it by Friday, Mina can start the build on Monday and we keep the November 16 launch.</p>
+                <p>Thanks,<br>Jordan</p>
+              </div>
+              <div class="attachments">
+                <span class="attachment"><svg class="ic"><use href="#i-filetext"/></svg>direction-a.pdf <span class="size">4.2 MB</span></span>
+                <span class="attachment"><svg class="ic"><use href="#i-filetext"/></svg>direction-b.pdf <span class="size">3.1 MB</span></span>
+              </div>
+            </div>
+            <a class="reply-stub" href="reply.html"><svg class="ic"><use href="#i-reply"/></svg>Reply to Jordan…<span class="kbd">R</span></a>
+          </section>
+        </article>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+</div>
+<script>
+const letter = document.getElementById('letter');
+function commit(kind) {
+  const ws = letter.parentElement;
+  const g = letter.cloneNode(true); g.classList.add('ghost-paper'); g.removeAttribute('id');
+  g.style.left = letter.offsetLeft + 'px'; g.style.top = letter.offsetTop + 'px'; g.style.width = letter.offsetWidth + 'px';
+  g.insertAdjacentHTML('beforeend', `<span class="commit-chip ${kind}" style="top:var(--space-7);right:0">${Mock.icon(kind === 'done' ? 'check' : 'clock')}${kind === 'done' ? 'Done' : 'Later'}</span>`);
+  ws.append(g);
+  const s = kind === 'done' ? 1 : -1;
+  const a = Mock.reduced ? g.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Mock.dur('reduced'), fill: 'forwards' })
+    : g.animate([{ transform: 'none', opacity: 1 }, { opacity: 1, offset: .4 }, { transform: `translate(${s * parseFloat(Mock.css('--flight-x'))}px, ${-s * parseFloat(Mock.css('--flight-y'))}px) rotate(${s * parseFloat(Mock.css('--flight-rot'))}deg)`, opacity: 0 }], { duration: Mock.dur('flight'), delay: 40, easing: Mock.css('--ease-carry'), fill: 'forwards' });
+  a.onfinish = () => g.remove();
+  letter.animate([{ opacity: 0, transform: `translateY(${Mock.css('--move-deal')})` }, { opacity: 1, transform: 'none' }], { duration: Mock.dur('swap'), delay: 80, easing: Mock.css('--ease-std'), fill: 'backwards' });
+  document.querySelector('.title .pos').textContent = '1 of 15';
+  document.getElementById('live').textContent = (kind === 'done' ? 'Done' : 'Moved to Later') + '. Next: Drew Bell.';
+  if (kind === 'done') Mock.toast({ icon: 'check', tone: 'c-hill', text: 'Done. Next: Drew Bell', actions: [['Undo', 'Z']] });
+  else Mock.toast({ icon: 'clock', tone: 'c-dusk', text: 'Moved to Later', actions: [['Set a date', 'D'], ['Undo', 'Z']] });
+}
+document.querySelectorAll('[data-commit]').forEach(b => b.onclick = () => commit(b.dataset.commit));
+Mock.onKey(e => {
+  if (e.target.closest('input,textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  switch (e.key) {
+    case 'e': case 'ArrowRight': commit('done'); return true;
+    case 'l': case 'ArrowLeft': commit('later'); return true;
+    case ' ': case 'r': Mock.go('reply.html'); return true;
+    case 'R': Mock.go('reply.html?state=reply-all'); return true;
+    case 'o': Mock.go(Mock.state === 'earlier' ? 'reader.html' : 'reader.html?state=earlier'); return true;
+    case 'j': case 'k': letter.animate([{ opacity: 0, transform: `translateY(${(e.key === 'j' ? 1 : -1) * parseFloat(Mock.css('--move-swap'))}px)` }, { opacity: 1, transform: 'none' }], { duration: Mock.dur('swap'), easing: Mock.css('--ease-std') }); return true;
+    case 'd': Mock.go('later-picker.html'); return true;
+  }
+});
+</script>
+</body>
+</html>

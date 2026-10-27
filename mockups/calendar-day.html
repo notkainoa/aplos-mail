@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default,empty" data-esc="calendar-week.html">
+<head>
+<meta charset="utf-8">
+<title>Calendar, day · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="cal.css">
+<script src="shell.js"></script>
+<script src="cal.js"></script>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="calendar" data-extra="calendar"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <button class="btn btn-icon" data-tip="New event" data-key="N" aria-label="New event"><svg class="ic"><use href="#i-plus"/></svg></button>
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace cal-ws">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title keep" id="title">October 2026</h1>
+            <p class="page-sub" id="sub">Thursday, October 29</p>
+          </div>
+          <div class="actions">
+            <button class="btn btn-text" id="today">Today<span class="kbd hint">T</span></button>
+            <button class="btn btn-icon" id="prev" aria-label="Previous day" data-tip="Previous day" data-key="K"><svg class="ic"><use href="#i-chevl"/></svg></button>
+            <button class="btn btn-icon" id="next" aria-label="Next day" data-tip="Next day" data-key="J"><svg class="ic"><use href="#i-chevr"/></svg></button>
+            <div class="seg" id="views" role="tablist" aria-label="View">
+              <button role="tab" data-view="day" aria-selected="true" aria-label="Day" data-tip="Day" data-key="D">D</button>
+              <button role="tab" data-view="week" aria-selected="false" aria-label="Week" data-tip="Week" data-key="W">W</button>
+              <button role="tab" data-view="month" aria-selected="false" aria-label="Month" data-tip="Month" data-key="M">M</button>
+            </div>
+          </div>
+        </div>
+        <div class="day-wrap" id="wrap">
+          <div class="cal" id="cal"></div>
+          <aside class="day-rail" id="rail" aria-label="Event details"></aside>
+        </div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+</div>
+<script>
+const mount = document.getElementById('cal');
+const rail = document.getElementById('rail');
+const seg = document.getElementById('views');
+let date = Mock.state === 'empty' ? Cal.D(2026, 11, 1) : Cal.TODAY;
+let selected = date.getDate() === 29 && date.getMonth() === 9 ? 'design' : null;
+
+function render() {
+  document.getElementById('title').textContent = Cal.monthTitle(date);
+  document.getElementById('sub').textContent = Cal.longDay(date);
+  const evs = Cal.eventsOn(date).sort((a, b) => a.at - b.at);
+  if (!evs.find(e => e.id === selected)) selected = evs[0]?.id || null;
+  Cal.day(mount, { date, selected });
+  const body = mount.querySelector('.cal-body');
+  if (!evs.length) {
+    body.insertAdjacentHTML('beforeend', `<div class="day-empty"><div class="empty-line"><span>Nothing scheduled.</span><button class="btn btn-text md" id="new">New event<span class="kbd">N</span></button></div></div>`);
+  }
+  document.getElementById('wrap').classList.toggle('is-empty', !evs.length);
+  const ev = evs.find(e => e.id === selected);
+  rail.innerHTML = ev ? Cal.detail(ev) : '';
+  document.getElementById('live').textContent = Cal.dayTitle(date) + (evs.length ? `. ${evs.length} events.` : '. Nothing scheduled.');
+}
+function shift(n) { date = Cal.add(date, n); selected = null; render(); }
+document.getElementById('prev').onclick = () => shift(-1);
+document.getElementById('next').onclick = () => shift(1);
+document.getElementById('today').onclick = () => { date = Cal.TODAY; selected = 'design'; render(); };
+seg.addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (!b) return; if (b.dataset.view === 'week') Mock.go('calendar-week.html'); if (b.dataset.view === 'month') Mock.go('calendar-week.html?view=month'); });
+mount.addEventListener('click', e => {
+  const ev = e.target.closest('.ev'); if (!ev) return;
+  selected = ev.dataset.id; render();
+});
+mount.addEventListener('dblclick', e => { const ev = e.target.closest('.ev'); if (ev && ev.dataset.id === 'q4') Mock.go('calendar-event.html'); });
+Mock.onKey(e => {
+  if (e.target.closest('input,textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  const evs = Cal.eventsOn(date).sort((a, b) => a.at - b.at);
+  const i = evs.findIndex(x => x.id === selected);
+  if (k === 'j' || k === 'ArrowRight') { shift(1); return true; }
+  if (k === 'k' || k === 'ArrowLeft') { shift(-1); return true; }
+  if (k === 'ArrowDown' && evs.length) { selected = evs[Math.min(evs.length - 1, i + 1)].id; render(); return true; }
+  if (k === 'ArrowUp' && evs.length) { selected = evs[Math.max(0, i - 1)].id; render(); return true; }
+  if (k === 't') { date = Cal.TODAY; selected = 'design'; render(); return true; }
+  if (k === 'w') { Mock.go('calendar-week.html'); return true; }
+  if (k === 'm') { Mock.go('calendar-week.html?view=month'); return true; }
+  if (k === 'Enter' && selected === 'q4') { Mock.go('calendar-event.html'); return true; }
+});
+render();
+Cal.initSegs();
+</script>
+</body>
+</html>
