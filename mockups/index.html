@@ -15,7 +15,6 @@
   body { display: block; place-items: normal; background: var(--shell); min-height: 100vh; }
   .wrap { max-width: calc(var(--list-w) * 2 + var(--space-10)); margin: 0 auto; padding: var(--space-9) var(--gutter) var(--space-10); }
   header.top { display: flex; align-items: flex-start; gap: var(--space-6); }
-  header.top [data-app-icon] svg { width: var(--space-10); height: var(--space-10); }
   header.top .lede { color: var(--ink-2); font: var(--type-base); max-width: 68ch; margin-top: var(--space-2); }
   header.top .lede + .lede { color: var(--dim); font: var(--type-ui); }
   .theme { margin-left: auto; flex: none; }
@@ -41,7 +40,6 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <div data-app-icon></div>
     <div>
       <h1 class="t-display">Aplos, after the revamp</h1>
       <p class="lede">Revision 2: calmer, neutral, more room. What changed is in DESIGN-CHANGES.md.</p>
@@ -60,7 +58,7 @@
 <script>
 const AREAS = [
   ['Onboarding window', '640 × 600, its own window', [
-    ['onboarding-welcome.html', 'Welcome', '§7.11', 'A small full-bleed window. The app icon is the only sky left. Demo is the small top-right button.', []],
+    ['onboarding-welcome.html', 'Welcome', '§7.11', 'A small full-bleed window: one line, one button. Demo is the small top-right button.', []],
     ['onboarding-accounts.html', 'Connect an account', '§7.11', 'Google, Microsoft, iCloud or other mail; discovery and the browser wait.', ['choose', 'typed', 'waiting', 'connected', 'icloud']],
     ['onboarding-ai.html', 'AI provider', '§7.11, plan 30 §4.5', 'Groq by default, your own key, or a model on this Mac; the consent card.', ['groq', 'byok', 'local', 'consent']],
     ['onboarding-permissions.html', 'Permissions explained', '§7.11 step 4', 'Microphone, notifications and log-in, each optional and plainly explained.', ['default', 'granted']],

@@ -8,7 +8,7 @@ Double-click `mockups/index.html`, or open https://aplos-mockups.vercel.app. The
 
 On Home, try J and K to move, E for Done, L for Later and Z to undo. ⌘K opens commands, / opens Search, ? shows every key and Esc goes back. Hold ⌘ to see small key badges.
 
-Start with three screens: Home, the reader and Compose. Then open the onboarding window. `DESIGN-CHANGES.md` lists every change to the design document, and it ends with four decisions for you.
+Start with three screens: Home, the reader and Compose. Then open the onboarding window. `DESIGN-CHANGES.md` lists every change to the design document. Section 11 records your answers: no app icon, no page titles, the calendar button back, the name "Paper" and account dots with two or more accounts.
 
 ## How this is built
 
@@ -30,7 +30,7 @@ Start with three screens: Home, the reader and Compose. Then open the onboarding
 
 | Screen (file) | States | What it shows (DESIGN-CHANGES.md section) |
 |---|---|---|
-| Welcome (`onboarding-welcome.html`) | – | Full-bleed paper window, the app icon as the only sky, sans display line, demo as a small top-right button (5.12) |
+| Welcome (`onboarding-welcome.html`) | – | Full-bleed paper window, one sans display line and one button, no icon, demo as a small top-right button (5.12, 11.1) |
 | Connect an account (`onboarding-accounts.html`) | choose, typed, waiting, connected, icloud | Quiet provider rows with Microsoft shown, discovery, browser wait, iCloud app password (5.12) |
 | AI provider (`onboarding-ai.html`) | groq, byok, local, consent | Groq by default, own key, a model on this Mac behind "More options", the consent card as the only card (5.12) |
 | Permissions (`onboarding-permissions.html`) | default, granted | Microphone, notifications and log-in as quiet rows (5.12) |

@@ -328,3 +328,25 @@ The From row is removed (it's in ⋯). Nothing decorates the top. The AI draft i
 | 10.2 | **The website** uses the stripe: `apps/web/src/Chrome.tsx:5-7` (`Airmail`, used at `:40`), `Landing.tsx:2,20`, `Download.tsx:3,63`, `Privacy.tsx:1,8`, and `styles.css:91-99` (the scrolling stripe) plus `:461`. The DMG background has it too: `apps/desktop/build/dmg-background.html:21`. The Landing hero alt text says "an airmail envelope" (`Landing.tsx:34`). | (a) Remove the stripe from the site and the DMG now; (b) leave the site until the icon decision | **(a)** | (a) The site matches the app and the "checker" look goes everywhere at once. (b) The site keeps the look you said you hate. |
 | 10.3 | **The design system's name.** "Skypaper" no longer fits now the sky is gone. | (a) Rename to "Paper"; (b) keep "Skypaper" internally | **(a)** | It's never user-visible either way; (a) just stops the name from pulling agents back toward a sky. |
 | 10.4 | **Account colour on rows.** Rows no longer show a coloured dot for the account. | (a) Hidden; the account shows in the tooltip and reader; (b) show the dot only when two or more accounts are connected | **(a)** | (a) is calmest. (b) helps if you often need to tell accounts apart at a glance. |
+
+## 11. Revision 2b: the owner's answers and follow-ups (these win over sections 1–10)
+
+11.1. **The app icon is dropped from the app** (decision 10.1). The owner dislikes the current icon. It no longer appears anywhere in the UI, including onboarding Welcome. There is no sky left in the product at all. A new logo comes later. Until then, Welcome is one line, one sentence and one button.
+
+11.2. **The website will be fully redesigned later** with the new logo (decision 10.2). For now, leave `apps/web` and `apps/desktop/build/dmg-background.html` alone. The stripe list in 10.2 is the starting inventory for that redesign.
+
+11.3. **The design system is named "Paper"** (decision 10.3). Rename Skypaper in DESIGN.md, the `aplos-design` skill and the token comments. "Quiet paper" in 1.1 is just a description.
+
+11.4. **Account dots show on rows when two or more accounts are connected** (decision 10.4, option b). This replaces 5.4's "rows don't show the account colour dot". With one account they're hidden.
+
+11.5. **No page titles.** This replaces the page-title parts of 3 (the `heading` role's use), 4.1 ("Page title block"), 5.3, 5.4, 5.11 and 5.16.
+- Home, lists, Later, Done, Search, Settings and the rest have no big title and no subtitle. The sidebar already says where you are, and the reader's pane header keeps its small crumb ("Home 1 of 9").
+- **The section labels do the job instead.** "New", "Due now", "Waiting on others", the date groups in All mail and Done, and the settings group labels are now `ui` 13/20 at 600 in `--ink`, with the count in `--dim`. Before, they were `small` 12 at 500 in `--dim`.
+- Groups stay 32 px apart, and the first label sits 12 px below the pane header.
+- Page-level controls stay where the title used to be, on the right: Later's Later | Bookmarks switch, Search's field, and the calendar's Today, previous/next and D | W | M.
+- The calendar keeps its date ("October 2026") as a small `title` label (15/22, 600), because there it is information, not a heading.
+- The `heading` role (24/32) is now only used for the compose subject and the search field. `.page-head` keeps its name as the row for page controls.
+
+11.6. **The calendar button is back** at the top right of the main pane, after Ask. It shows a calendar icon, and its tooltip reads "Today, ⇧A". It opens the Today tab of the Ask dock. This replaces the "Today leaves the toolbar" line in 5.1.
+
+11.7. **Home ordering is under review.** The owner wants to change how Home prioritises mail. The current plan is summarised for that discussion in the reply that came with this revision. No ordering change is drawn yet.

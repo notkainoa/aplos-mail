@@ -72,6 +72,11 @@ html.shot .window { border-radius: 0; box-shadow: none; }
 .page-head .page-title { font: var(--type-heading); letter-spacing: var(--track-heading); color: var(--ink); }
 .page-head .page-sub { font: var(--type-small); color: var(--dim); margin-top: var(--space-1); }
 .page-head .actions { margin-left: auto; display: flex; gap: var(--space-1); align-items: center; }
+/* Owner, revision 2b: no big page titles. The section labels carry the structure; the sidebar says where you are. */
+.page-head { padding: var(--space-5) 0 var(--space-3); align-items: center; }
+.page-head .page-title, .page-head .page-sub { display: none; }
+.page-head:not(:has(.actions, input, .seg, .page-title.keep)) { padding: var(--space-3) 0 0; }
+.page-head .page-title.keep { display: block; font: var(--type-title); letter-spacing: var(--track-title); }
 
 /* ---------- Pane header (was "toolbar") ---------- */
 .toolbar {
@@ -197,12 +202,12 @@ html.cmd-held [data-key]::after {
 /* ---------- Section header ---------- */
 .section-head { display: flex; align-items: center; gap: var(--space-2); height: var(--control-sm); padding: 0 var(--space-3); margin-top: var(--group-gap); margin-bottom: var(--space-1); }
 .section-head:first-child { margin-top: 0; }
-.section-head .label { font: var(--type-small); font-weight: 500; color: var(--dim); }
-.section-head .n { font: var(--type-small); color: var(--dim); }
+.section-head .label { font: var(--type-ui); font-weight: 600; letter-spacing: var(--track-ui); color: var(--ink); }
+.section-head .n { font: var(--type-ui); color: var(--dim); }
 .section-head .new-count { font: var(--type-small); color: var(--accent); }
 .section-head .btn { margin-left: auto; margin-right: calc(-1 * var(--space-2)); font-weight: 400; color: var(--dim); }
 .section-head .btn:hover { color: var(--ink); }
-.date-head { font: var(--type-small); font-weight: 500; color: var(--dim); padding: var(--space-6) var(--space-3) var(--space-2); }
+.date-head { font: var(--type-ui); font-weight: 600; letter-spacing: var(--track-ui); color: var(--ink); padding: var(--space-7) var(--space-3) var(--space-2); }
 .date-head:first-child { padding-top: 0; }
 
 /* ---------- List rows ---------- */
@@ -227,8 +232,9 @@ html.cmd-held [data-key]::after {
 .row .line .snip { color: var(--dim); }
 .row .meta { display: flex; align-items: center; gap: var(--space-2); font: var(--type-small); color: var(--dim); justify-self: end; }
 .row .meta .ic { color: var(--faint); width: var(--icon-sm); height: var(--icon-sm); }
-/* account marks stay out of rows (colour is rare); the account shows in the row's tooltip and the reader */
-.row .mark { display: none; }
+/* account marks show only when two or more accounts are connected (owner decision); hidden with one account */
+.row .mark { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; display: inline-block; flex: none; }
+html.one-account .row .mark { display: none; }
 .row.is-cursor { background: var(--puck); --row-bg: color-mix(in srgb, var(--canvas), var(--ink) 6%); }
 .row.is-cursor::before { content: ""; position: absolute; left: 0; top: var(--space-3); bottom: var(--space-3); width: var(--select-bar); border-radius: var(--select-bar); background: var(--accent); }
 .row.is-picked { background: var(--accent-wash); --row-bg: color-mix(in srgb, var(--canvas), var(--accent) 8%); }

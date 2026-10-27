@@ -371,6 +371,12 @@
         e.stopPropagation(); triage(list, r, b.dataset.act);
       });
     });
+    // the calendar button sits top right of the main pane, next to Ask (owner, revision 2b)
+    document.querySelectorAll('.main > .toolbar .tools').forEach(t => {
+      if (t.querySelector('[data-today]')) return;
+      t.insertAdjacentHTML('beforeend', `<a class="btn btn-icon" data-today href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today" ${location.pathname.endsWith('ask.html') && state === 'today' ? 'aria-pressed="true"' : ''}>${icon('today')}</a>`);
+    });
+    if ((document.querySelector('.sidebar')?.dataset.accounts || 'all') !== 'all') html.classList.add('one-account');
     document.querySelectorAll('.workspace').forEach(w => { const t = w.previousElementSibling; if (t?.classList.contains('toolbar')) w.addEventListener('scroll', () => t.classList.toggle('is-scrolled', w.scrollTop > 2), { passive: true }); });
     tooltips(); mockbar(); fit();
     addEventListener('resize', fit);
