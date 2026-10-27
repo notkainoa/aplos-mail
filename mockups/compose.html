@@ -6,231 +6,81 @@
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="shell.css">
 <script src="shell.js"></script>
-<script src="home-backdrop.js"></script>
 <style>
-  /* DECISION: the composer is non-modal, so it has no scrim. It reads as lifted by taking the
-     level-3 shadow (--elev-dialog) instead of the level-1 paper shadow. Home behind it stays live. */
-  .composer {
-    position: absolute; z-index: 40; top: calc(var(--toolbar-h) + var(--space-1)); right: var(--gutter);
-    width: var(--composer-w); overflow: hidden; display: flex; flex-direction: column;
-    box-shadow: var(--elev-dialog); transform-origin: top right;
-  }
-  .composer .head { height: var(--control-lg); display: flex; align-items: center; padding: 0 var(--space-2) 0 var(--space-5); }
-  .composer .head .t { font: var(--type-small); font-weight: 500; color: var(--dim); }
-  .frow { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-lg); padding: 0 var(--space-3) 0 var(--space-5); box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line) inset; }
-  .frow:first-of-type { box-shadow: 0 var(--hairline) 0 var(--line), 0 calc(-1 * var(--hairline)) 0 var(--line) inset; }
-  .frow .lbl { width: calc(var(--space-9) + var(--space-2)); flex: none; font: var(--type-small); color: var(--dim); }
-  .frow .val { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); padding: var(--space-1) 0; }
-  .frow input { flex: 1; min-width: var(--space-10); border: 0; background: none; outline: none; font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink); height: var(--control-sm); }
-  .frow .from { display: inline-flex; align-items: center; gap: var(--space-2); font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink); }
-  .frow .from .mk { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; background: var(--tag-hill); }
-  .frow .from .ic { color: var(--dim); width: var(--icon-sm); height: var(--icon-sm); }
-  .rcpt { padding-right: var(--space-half); }
-  .rcpt .x { width: var(--space-5); height: var(--space-5); border-radius: var(--radius-xs); display: inline-flex; align-items: center; justify-content: center; color: var(--dim); }
-  .rcpt .x:hover { background: var(--hover); color: var(--ink); }
-  .rcpt .x .ic { width: var(--icon-xs); height: var(--icon-xs); }
-  .composer .head .btn-icon, .frow .btn { --btn-h: var(--control-sm); }
-
-  .cwrap { min-height: calc(var(--row) * 6); }
-  html[data-state="polish"] .cwrap { min-height: 0; }
-  .cbody { padding: var(--space-4) var(--space-5) var(--space-3); outline: none; color: var(--ink); }
-  .cbody:focus-visible { outline: none; }
-  .cbody p + p { margin-top: var(--space-4); }
-  .pending { color: var(--dim); }
-  .draft-hint { padding: 0 var(--space-5) var(--space-4); font: var(--type-small); color: var(--dim); }
-  html:not([data-state="ai-draft"]) .draft-hint, .draft-hint[hidden] { display: none; }
-
-  .cfoot { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-3) var(--space-4); box-shadow: 0 var(--hairline) 0 var(--line) inset; }
-  .cfoot .btn-filled { margin-right: var(--space-2); }
-  .draftstate { margin-left: auto; font: var(--type-small); color: var(--dim); display: inline-flex; align-items: center; gap: var(--space-1); }
-
-  /* polish: your text and the diff side by side. Yours is never modified. */
-  .polish { display: none; padding: var(--space-4) var(--space-5) var(--space-3); gap: var(--space-5); grid-template-columns: 1fr 1fr; }
-  html[data-state="polish"] .polish { display: grid; }
-  html[data-state="polish"] .cbody { display: none; }
-  .polish .col { display: flex; flex-direction: column; min-width: 0; }
-  .polish .col + .col { padding-left: var(--space-5); box-shadow: calc(-1 * var(--hairline)) 0 0 var(--line); }
-  .polish .cap { display: flex; align-items: baseline; gap: var(--space-3); height: var(--space-6); font: var(--type-small); font-weight: 500; color: var(--dim); }
-  .polish .cap .legend { margin-left: auto; font-weight: 400; display: inline-flex; gap: var(--space-3); }
-  .polish .txt { color: var(--ink); }
-  .polish .txt p + p { margin-top: var(--space-4); }
-  del { color: var(--stamp-ink); text-decoration: line-through; text-decoration-thickness: 1px; }
-  ins { margin-left: var(--space-1); color: var(--hill); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; font-weight: 500; }
-  .polish .key-rows { margin-top: var(--space-4); margin-left: calc(-1 * var(--space-3)); margin-right: calc(-1 * var(--space-3)); }
-  .polish .col:first-child .key-rows { margin-top: auto; padding-top: var(--space-4); }
-  .composer.is-sent { pointer-events: none; }
+  .compose-page { width: min(var(--composer-w), 100%); margin: 0 auto; padding: var(--space-7) 0 var(--space-8); }
+  .c-row { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-lg); font: var(--type-base); color: var(--dim); }
+  .c-row .lbl { width: var(--space-8); flex: none; }
+  .c-row input { flex: 1; border: 0; background: none; outline: none; font: var(--type-base); color: var(--ink); min-width: 0; }
+  .c-row input::placeholder { color: var(--dim); }
+  .c-subject { display: block; width: 100%; margin-top: var(--space-6); border: 0; background: none; outline: none; font: var(--type-heading); letter-spacing: var(--track-heading); color: var(--ink); padding: 0; }
+  .c-subject::placeholder { color: var(--faint); }
+  .c-text { margin-top: var(--space-5); font: var(--type-read); letter-spacing: var(--track-read); color: var(--ink); outline: none; max-width: var(--measure-read); }
+  .c-text p + p { margin-top: var(--space-4); }
+  .compose-foot { flex: none; box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line); }
+  .compose-foot .inner { width: min(var(--composer-w), 100% - 2 * var(--gutter)); margin: 0 auto; height: var(--space-10); display: flex; align-items: center; gap: var(--space-3); }
+  .compose-foot .saved { font: var(--type-small); color: var(--dim); }
+  .compose-foot .right { margin-left: auto; display: flex; gap: var(--space-half); }
+  .polish-bar { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-5); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--raised); font: var(--type-ui); color: var(--ink-2); }
+  .polish-bar .spacer { flex: 1; }
+  del { color: var(--dim); text-decoration-color: var(--dim); }
+  ins { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: var(--space-1); background: var(--accent-wash); border-radius: var(--radius-xs); }
+  html:not([data-state="ai-draft"]) .draft-only, html:not([data-state="polish"]) .polish-only, html[data-state="polish"] .plain-only { display: none; }
 </style>
 </head>
 <body>
 <div class="window">
   <span class="traffic"></span>
   <div class="app">
-    <aside class="sidebar" data-active="home"></aside>
+    <aside class="sidebar" data-active="none"></aside>
     <main class="main">
       <header class="toolbar">
-        <h1 class="title">Home</h1>
+        <a class="btn btn-icon" href="home.html" data-tip="Close. The draft is saved." data-key="Esc" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></a>
+        <span class="title">New message</span>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" aria-pressed="true" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
+          <button class="btn btn-icon" data-tip="More: send from, schedule, discard" data-key="⌘/" aria-label="More"><svg class="ic"><use href="#i-more"/></svg></button>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace">
-        <div class="column" id="home" role="listbox" aria-label="Home"></div>
+        <div class="compose-page">
+          <div class="c-row"><span class="lbl">To</span><span class="person">Jordan Park</span><span class="person">Mina Cho</span><input aria-label="Add recipients"><button class="btn btn-text xs" data-tip="Add Cc or Bcc" data-key="⌘⇧C">Cc</button></div>
+          <input class="c-subject" value="Hollow Creek: going with Direction B" aria-label="Subject" placeholder="Subject">
+          <div class="polish-bar polish-only"><svg class="ic sm"><use href="#i-type"/></svg>Polish suggests 3 small changes. Your text stays until you choose.<span class="spacer"></span>
+            <button class="btn btn-text xs">Use these <span class="kbd">Return</span></button><button class="btn btn-text xs">Keep mine <span class="kbd">Esc</span></button></div>
+          <div class="c-text" contenteditable="true" spellcheck="false" id="text">
+            <p>Hi Jordan and Mina,</p>
+            <p class="plain-only">Direction B for the first launch. The booking form up front is the part I care about most<span class="draft-only">, and A can wait until the new trail photos are in. If we lock it by Friday, Mina can start the build on Monday and we keep the November 16 launch.</span><span class="draft-only suggestion" id="sugg"> Could you send the final files for B by Thursday so I can review them before the call?</span><span class="caret"></span></p>
+            <p class="polish-only">Direction B for me. I think <del>its</del> <ins>it’s</ins> the better first launch, since most people arrive from the newsletter. Can we keep the booking form up top and look at A in spring? <del>Will</del> <ins>I’ll</ins> sign off <del>friday</del> <ins>Friday</ins> morning.</p>
+            <p>Alex</p>
+          </div>
+          <p class="suggest-hint draft-only" id="hint"><span>The grey sentence is a suggestion.</span><span><span class="kbd">Tab</span> keep</span><span><span class="kbd">Esc</span> dismiss</span></p>
+        </div>
       </div>
-
-      <section class="composer paper settle" id="composer" aria-label="New message">
-        <div class="post-edge" aria-hidden="true"></div>
-        <div class="head">
-          <span class="t">New message</span>
-          <span class="spacer"></span>
-          <button class="btn btn-icon" id="close" data-tip="Close" data-key="Esc" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
-        </div>
-        <div class="frow"><span class="lbl">From</span><span class="val"><span class="from"><i class="mk"></i>alex@fernworks.studio<svg class="ic"><use href="#i-chevd"/></svg></span></span></div>
-        <div class="frow">
-          <span class="lbl">To</span>
-          <span class="val">
-            <span class="chip rcpt">Jordan Park<button class="x" aria-label="Remove Jordan Park"><svg class="ic"><use href="#i-x"/></svg></button></span>
-            <span class="chip rcpt">Mina Cho<button class="x" aria-label="Remove Mina Cho"><svg class="ic"><use href="#i-x"/></svg></button></span>
-            <input id="to" aria-label="Add a recipient">
-          </span>
-          <button class="btn btn-text xs" id="ccbtn">Cc Bcc<span class="kbd hint">⌘⇧C</span></button>
-        </div>
-        <div class="frow" id="ccrow" hidden><span class="lbl">Cc</span><span class="val"><input aria-label="Cc"></span></div>
-        <div class="frow" id="bccrow" hidden><span class="lbl">Bcc</span><span class="val"><input aria-label="Bcc"></span></div>
-        <div class="frow"><span class="lbl">Subject</span><span class="val"><input id="subj" value="Hollow Creek: going with Direction B" aria-label="Subject"></span></div>
-
-        <div class="cwrap"><div class="cbody t-read" id="body" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message body"></div>
-        <p class="draft-hint" id="hint">Tab to keep · Esc to dismiss</p></div>
-
-        <div class="polish" aria-label="Polish">
-          <div class="col">
-            <div class="cap"><span>Your text</span></div>
-            <div class="txt t-read">
-              <p>Hi Jordan and Mina,</p>
-              <p>Direction B for me. I think its the better first launch, since most people arrive from the newsletter. Can we keep the booking form up top and look at A in spring? Will sign off friday morning.</p>
-              <p>Alex</p>
-            </div>
-            <div class="key-rows"><div class="key-row" id="keep">Keep mine<span class="kbd">Esc</span></div></div>
-          </div>
-          <div class="col">
-            <div class="cap"><span>Polished</span><span class="legend"><span><del>Removed</del></span><span><ins>Added</ins></span></span></div>
-            <div class="txt t-read">
-              <p>Hi Jordan and Mina,</p>
-              <p>Direction B for me. I think <del><span class="sr-only">removed: </span>its</del><ins><span class="sr-only">added: </span>it’s</ins> the better first launch, since most people arrive from the newsletter. Can we keep the booking form up top and look at A in spring? <del><span class="sr-only">removed: </span>Will</del><ins><span class="sr-only">added: </span>I’ll</ins> sign off <del><span class="sr-only">removed: </span>friday</del><ins><span class="sr-only">added: </span>Friday</ins> morning.</p>
-              <p>Alex</p>
-            </div>
-            <div class="key-rows"><div class="key-row primary" id="use">Use this<span class="kbd">Return</span></div></div>
+      <footer class="compose-foot">
+        <div class="inner">
+          <button class="btn btn-filled md" id="send"><svg class="ic"><use href="#i-send"/></svg>Send<span class="kbd">⌘↩</span></button>
+          <span class="saved">Draft saved</span>
+          <div class="right">
+            <button class="btn btn-icon" data-tip="Attach a file" data-key="⌘⇧A" aria-label="Attach"><svg class="ic"><use href="#i-paperclip"/></svg></button>
+            <button class="btn btn-icon" data-tip="Format" data-key="⌘/" aria-label="Format"><svg class="ic"><use href="#i-type"/></svg></button>
           </div>
         </div>
-
-        <footer class="cfoot">
-          <button class="btn btn-filled md" id="send"><svg class="ic"><use href="#i-send"/></svg>Send<span class="kbd">⌘Return</span></button>
-          <button class="btn btn-icon md" data-tip="Attach a file" data-key="⌘⇧A" aria-label="Attach a file"><svg class="ic"><use href="#i-paperclip"/></svg></button>
-          <button class="btn btn-icon md" data-tip="Format" data-key="⌘/" aria-label="Format"><svg class="ic"><use href="#i-type"/></svg></button>
-          <span class="draftstate" id="draft" role="status">Saved</span>
-        </footer>
-      </section>
-      <p class="sr-only" role="status" id="live"></p>
+      </footer>
     </main>
   </div>
 </div>
-
 <script>
-const comp = document.getElementById('composer'), body = document.getElementById('body'), hint = document.getElementById('hint');
-const draftEl = document.getElementById('draft');
-const USER = 'Hi Jordan and Mina,';
-const DRAFT = 'Direction B for the first launch. The booking form up front matters most to me, and we can look at A in spring once the new trail photos are in. If we lock it by Friday, Mina can start the build on Monday and we keep the November 16 launch.';
-let sent = false;
-
-function fill() {
-  if (Mock.state === 'ai-draft') {
-    body.innerHTML = `<p>${USER}</p><p><span class="pending" id="pending" contenteditable="false">${DRAFT}</span></p>`;
-  } else {
-    body.innerHTML = `<p>${USER}</p><p>Direction B for the first launch. The booking form up front is the part I care about most, and A can wait until the new trail photos are in.</p>`;
-  }
-}
-function caretTo(node, atStart) {
-  const r = document.createRange(); r.selectNodeContents(node); r.collapse(atStart);
-  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-}
-function placeCaret() {
-  if (Mock.state === 'polish') return;
-  body.focus({ preventScroll: true });
-  const p = document.getElementById('pending');
-  if (p) { const r = document.createRange(); r.setStart(p.parentElement, 0); r.collapse(true); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }   // caret sits where the draft was inserted
-  else caretTo(body.lastElementChild, false);
-}
-function setState(s) { document.documentElement.dataset.state = s; }
-function keep() {
-  const p = document.getElementById('pending'); if (!p) return false;
-  p.removeAttribute('contenteditable'); p.classList.remove('pending'); p.removeAttribute('id');
-  hint.hidden = true; caretTo(p, false); savedSoon(); return true;
-}
-function dismiss() {
-  const p = document.getElementById('pending'); if (!p) return false;
-  p.parentElement.remove(); hint.hidden = true; placeCaret(); return true;
-}
-let t;
-function savedSoon() { draftEl.textContent = 'Saving…'; clearTimeout(t); t = setTimeout(() => draftEl.textContent = 'Saved', 600); }
-body.addEventListener('beforeinput', e => {   // typing replaces the draft
-  const p = document.getElementById('pending'); if (!p) return;
-  e.preventDefault();
-  const line = p.parentElement; p.remove(); line.innerHTML = '<br>'; hint.hidden = true; caretTo(line, true);
-  if (e.inputType === 'insertText' && e.data) document.execCommand('insertText', false, e.data);
-  savedSoon();
-});
-body.addEventListener('input', savedSoon);
-document.getElementById('subj').addEventListener('input', savedSoon);
-
-function reveal(el) { el.hidden = false; el.classList.remove('settle'); void el.offsetWidth; el.classList.add('reveal'); }
-function toggleCc() { const c = document.getElementById('ccrow'), b = document.getElementById('bccrow'); if (c.hidden) { reveal(c); reveal(b); c.querySelector('input').focus(); } else { c.hidden = b.hidden = true; } }
-document.getElementById('ccbtn').onclick = toggleCc;
-
-function send() {
-  if (sent) return; sent = true;
-  const dx = parseFloat(Mock.css('--post-x')), dy = parseFloat(Mock.css('--post-y'));
-  comp.classList.add('is-sent');
-  const a = Mock.reduced
-    ? comp.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Mock.dur('reduced'), fill: 'forwards' })
-    : comp.animate([{ transform: 'none', opacity: 1 }, { transform: `translate(${dx}px, ${-dy}px) scale(.96)`, opacity: 0 }], { duration: Mock.dur('post'), easing: Mock.css('--ease-carry'), fill: 'forwards' });
-  a.onfinish = () => {
-    comp.hidden = true;
-    // one notice per send: no thread is visible, so a single toast carries the undo window
-    const t = Mock.toast({ icon: 'send', text: 'Sending to Jordan and Mina in 8 s', actions: [['Undo', 'Z'], ['Send now']] });
-    t.querySelector('.act').addEventListener('click', undoSend);
-    document.getElementById('live').textContent = 'Sending to Jordan Park and Mina Cho. Press Z to undo.';
-  };
-}
-function undoSend() {
-  if (!sent) return; sent = false; comp.getAnimations().forEach(x => x.cancel());
-  comp.hidden = false; comp.classList.remove('is-sent', 'settle'); void comp.offsetWidth; comp.classList.add('settle'); placeCaret();
-}
-
-Mock.onKey(e => {
-  const k = e.key, meta = e.metaKey;
-  if (meta && k === 'Enter') { send(); return true; }
-  if (meta && e.shiftKey && k.toLowerCase() === 'c') { toggleCc(); return true; }
-  if (sent) { if (k === 'z') { undoSend(); return true; } return; }
-  if (k === 'Tab' && document.getElementById('pending')) { keep(); return true; }
-  if (k === 'Escape') {
-    if (dismiss()) return true;
-    if (Mock.state === 'polish' || document.documentElement.dataset.state === 'polish') { setState('new'); placeCaret(); return true; }
-    Mock.go('home.html'); return true;   // saved: closes with no prompt
-  }
-  if (k === 'Enter' && document.documentElement.dataset.state === 'polish') { usePolished(); return true; }
-});
+const send = () => { Mock.toast({ icon: 'send', text: 'Sending to Jordan and Mina in 8 s', actions: [['Undo', 'Z'], ['Send now', '']] }); };
 document.getElementById('send').onclick = send;
-document.getElementById('close').onclick = () => Mock.go('home.html');
-document.getElementById('keep').onclick = () => { setState('new'); placeCaret(); };
-document.getElementById('use').onclick = usePolished;
-function usePolished() {
-  body.innerHTML = '<p>Hi Jordan and Mina,</p><p>Direction B for me. I think it’s the better first launch, since most people arrive from the newsletter. Can we keep the booking form up top and look at A in spring? I’ll sign off Friday morning.</p><p>Alex</p>';
-  setState('new'); placeCaret(); savedSoon();
-}
-fill(); placeCaret();
-HomeBackdrop.mount(document.getElementById('home'), { focus: 1, quiet: true });   // after our handler, so the composer's keys win
+Mock.onKey(e => {
+  if (e.metaKey && e.key === 'Enter') { send(); return true; }
+  if (Mock.state === 'ai-draft' && document.getElementById('sugg')) {
+    if (e.key === 'Tab') { const s = document.getElementById('sugg'); s.classList.remove('suggestion'); s.removeAttribute('id'); document.getElementById('hint').hidden = true; return true; }
+    if (e.key === 'Escape') { document.getElementById('sugg').remove(); document.getElementById('hint').hidden = true; return true; }
+  }
+  if (Mock.state === 'polish' && (e.key === 'Enter' || e.key === 'Escape') && !e.target.closest('[contenteditable],input')) { Mock.go('compose.html'); return true; }
+  if (e.key === 'Escape') { Mock.go('home.html'); return true; }
+});
 </script>
 </body>
 </html>

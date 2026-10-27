@@ -1,63 +1,24 @@
 <!doctype html>
-<html lang="en" data-window="main" data-states="reply,reply-all,dictating,sent" data-esc="home.html">
+<html lang="en" data-window="main" data-states="reply,reply-all,dictating,sent" data-esc="reader.html">
 <head>
 <meta charset="utf-8">
-<title>Reply · Aplos mockup</title>
+<title>Inline reply · Aplos mockup</title>
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="shell.css">
 <script src="shell.js"></script>
 <style>
-  .workspace { padding-bottom: var(--space-6); }
-  .sender-btn { display: inline-flex; align-items: center; gap: var(--space-2); border-radius: var(--radius-sm); padding-right: var(--space-1); }
-  .subject.std { margin-top: calc(var(--space-6) + var(--space-1)); }
-
-  /* ---- inline reply, inside the paper above the flap ---- */
-  .reply { flex: none; position: relative; background: var(--paper); box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line); z-index: 1; }
-  .reply .rhead { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-lg); padding: var(--space-1) var(--space-5) 0 var(--paper-pad); }
-  .reply .lbl { font: var(--type-small); color: var(--dim); width: var(--space-7); flex: none; }
-  .reply .val { flex: 1; display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
-  .rcpt { padding-right: var(--space-half); }
-  .rcpt .x { width: var(--space-5); height: var(--space-5); border-radius: var(--radius-xs); display: inline-flex; align-items: center; justify-content: center; color: var(--dim); }
-  .rcpt .x .ic { width: var(--icon-xs); height: var(--icon-xs); }
-  html:not([data-state="reply-all"]) .rcpt-all { display: none; }
-  .rwrap { position: relative; }
-  .rbody { padding: var(--space-2) var(--paper-pad) var(--space-3); min-height: calc(var(--row) * 3); outline: none; color: var(--ink); max-width: calc(var(--measure-read) + var(--space-6) * 2); }
-  .rbody:focus-visible { outline: none; }
-  .rbody p + p { margin-top: var(--space-3); }
-  .rfoot { display: flex; align-items: center; gap: var(--space-1); min-height: var(--control-lg); padding: 0 var(--space-4) var(--space-2) calc(var(--paper-pad) - var(--space-2)); }
-  .rfoot .draftstate { margin-left: auto; font: var(--type-small); color: var(--dim); padding-right: var(--space-2); }
-  .rfoot .dictate-hint { display: none; align-items: center; gap: var(--space-2); font: var(--type-small); color: var(--ink-2); padding-left: var(--space-1); }
-  html[data-state="dictating"] .rfoot .dictate-hint { display: inline-flex; }
-  html[data-state="dictating"] .rfoot > :not(.dictate-hint) { display: none; }
-
-  /* LevelMeter: a few --stamp bars at the field edge. Static and calm; no ring, no breathing. */
-  .meter { display: none; position: absolute; right: var(--paper-pad); bottom: var(--space-3); align-items: flex-end; gap: var(--space-half); height: var(--space-6); }
-  html[data-state="dictating"] .meter { display: flex; }
-  .meter i { width: var(--space-1); border-radius: var(--radius-xs); background: var(--stamp); display: block; }
-  .meter i:nth-child(1) { height: var(--space-2); }
-  .meter i:nth-child(2) { height: var(--space-4); }
-  .meter i:nth-child(3) { height: var(--space-6); }
-  .meter i:nth-child(4) { height: var(--space-4); }
-  .meter i:nth-child(5) { height: var(--space-3); }
-  .rbody .partial { color: var(--dim); }
-
-  /* flap: Send owns the one filled button while a reply is open */
-  .flap .when-open, .flap .when-closed { display: contents; }
-  html[data-state="sent"] .flap .when-open, html[data-state="closed"] .flap .when-open { display: none; }
-  html:not([data-state="sent"]):not([data-state="closed"]) .flap .when-closed { display: none; }
-
-  /* thread: sent message and its undo tray */
-  .msg-sent { display: none; }
-  html[data-state="sent"] .msg-sent { display: block; }
-  html[data-state="sent"] .msg-j .msg-open { display: none; }
-  html:not([data-state="sent"]) .msg-j .msg-line { display: none; }
-  html[data-state="sent"] .msg-j.is-cursor::before { display: none; }
-  .msg-sent .undo-tray { margin: var(--space-3) 0 var(--space-2); }
-  .undo-tray .inner .grow { flex: 1; color: var(--ink); }
-  .undo-tray .inner .grow .n { color: var(--dim); }
-  .undo-tray.is-done { display: none; }
-  html:not([data-state="sent"]) .reply-slot { display: block; }
-  html[data-state="sent"] .reply-slot, html[data-state="closed"] .reply-slot { display: none; }
+  html:not([data-state="pending"]) .summary.is-pending, html[data-state="pending"] .summary.ready,
+  html[data-state="no-ai"] .summary.ready, html:not([data-state="no-ai"]) .summary.is-absent { display: none; }
+  html:not([data-state="earlier"]) .earlier-list, html[data-state="earlier"] .r-earlier { display: none; }
+  .r-subject { font: var(--type-small); font-weight: 500; color: var(--dim); margin-bottom: var(--space-2); }
+  html:not([data-state="reply-all"]) .all-only, html:not([data-state="dictating"]) .dict-only, html[data-state="dictating"] .reply-only { display: none; }
+  html[data-state="sent"] .composer, html:not([data-state="sent"]) .sent-only { display: none; }
+  .meter { display: inline-flex; align-items: flex-end; gap: var(--space-half); height: var(--icon); }
+  .meter i { width: var(--space-half); border-radius: 1px; background: var(--stamp); display: block; animation: meter var(--dur-status) var(--ease-inout) infinite alternate; }
+  .meter i:nth-child(1) { height: 40%; } .meter i:nth-child(2) { height: 80%; animation-delay: -.3s; } .meter i:nth-child(3) { height: 100%; animation-delay: -.6s; } .meter i:nth-child(4) { height: 60%; animation-delay: -.9s; } .meter i:nth-child(5) { height: 30%; animation-delay: -1.2s; }
+  @keyframes meter { to { transform: scaleY(.5); } }
+  @media (prefers-reduced-motion: reduce) { .meter i { animation: none; } }
+  .ghost-paper { position: absolute; z-index: 30; pointer-events: none; background: var(--canvas); }
 </style>
 </head>
 <body>
@@ -68,228 +29,113 @@
     <main class="main">
       <header class="toolbar">
         <a class="btn btn-icon" href="home.html" data-tip="Back" data-key="Esc" aria-label="Back"><svg class="ic"><use href="#i-chevl"/></svg></a>
-        <h1 class="title">Home <span class="pos">1 of 9</span></h1>
+        <span class="title">Home <span class="pos">1 of 9</span></span>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
+          <button class="btn btn-icon" data-tip="Previous" data-key="K" aria-label="Previous email"><svg class="ic"><use href="#i-chevu"/></svg></button>
+          <button class="btn btn-icon" data-tip="Next" data-key="J" aria-label="Next email"><svg class="ic"><use href="#i-chevd"/></svg></button>
+          <button class="btn btn-icon" data-tip="More: bookmark, trash, forward, why it’s here" data-key="." aria-label="More"><svg class="ic"><use href="#i-more"/></svg></button>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about this email" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace">
-        <div class="reader" id="reader">
-          <article class="paper" id="paper" aria-label="Email from Jordan Park">
-            <div class="scroll" id="scroll">
-              <header class="letterhead">
-                <div class="from">
-                  <button class="sender-btn" data-tip="jordan@parkandpine.co · 14 letters both ways"><span class="monogram">JP</span><span class="name">Jordan Park</span></button>
-                  <span class="date">10:00 AM</span>
-                </div>
-                <div class="icons">
-                  <button class="btn btn-icon" data-tip="Bookmark" data-key="B" aria-label="Bookmark"><svg class="ic"><use href="#i-bookmark"/></svg></button>
-                  <button class="btn btn-icon" data-tip="Trash" data-key="#" aria-label="Trash"><svg class="ic"><use href="#i-trash"/></svg></button>
-                  <button class="btn btn-icon" data-tip="More" data-key="." aria-label="More"><svg class="ic"><use href="#i-more"/></svg></button>
-                </div>
-                <p class="summary t-summary" role="doc-subtitle">Two layout directions for the Hollow Creek site are ready, and Jordan wants your pick by tomorrow so the build can start Monday.</p>
-                <h2 class="subject std">A quieter home for the Hollow Creek site</h2>
-              </header>
-              <section class="thread" id="thread" aria-label="Messages">
-                <div class="msg"><div class="msg-line"><span class="who ellipsis">Jordan Park</span><span class="snip ellipsis">Kicking off: here is the brief we agreed on Friday, plus the three sites you liked.</span><span class="when">Oct 20</span></div></div>
-                <div class="msg"><div class="msg-line"><span class="who ellipsis">You</span><span class="snip ellipsis">Love the brief. Two things to keep: the booking form near the top, and the trail map.</span><span class="when">Oct 21</span></div></div>
-                <div class="msg"><div class="msg-line"><span class="who ellipsis">Mina Cho</span><span class="snip ellipsis">Early sketches before Jordan sends the full set. The serif headings are a test.</span><span class="when">Oct 27</span></div></div>
-                <div class="msg msg-j is-cursor">
-                  <div class="msg-line"><span class="who ellipsis">Jordan Park</span><span class="snip ellipsis">Both directions are ready. Direction A keeps the long scrolling story we talked about.</span><span class="when">Today, 10:00 AM</span></div>
-                  <div class="msg-open">
-                    <div class="head"><span class="who">Jordan Park</span><span class="to">to you, Mina Cho</span><span class="when">Today, 10:00 AM</span></div>
-                    <div class="body">
-                      <p>Hi Alex,</p>
-                      <p>Both directions are ready. Direction A keeps the long scrolling story we talked about, with the trail photos carrying most of the page. Direction B is quieter: one screen, a short welcome, and the booking form right up front.</p>
-                      <p>I lean toward B for the first launch, since most visitors arrive from the newsletter and already know the place. A could follow in spring, once the new trail photos are in.</p>
-                      <p>Can you send me your preference by tomorrow? If we lock it by Friday, Mina can start the build on Monday and we keep the November 16 launch.</p>
-                      <p>Thanks,<br>Jordan</p>
-                    </div>
-                    <div class="attachments">
-                      <span class="attachment"><svg class="ic"><use href="#i-filetext"/></svg>direction-a.pdf <span class="size">4.2 MB</span></span>
-                      <span class="attachment"><svg class="ic"><use href="#i-filetext"/></svg>direction-b.pdf <span class="size">3.1 MB</span></span>
-                    </div>
-                  </div>
-                </div>
-                <div class="msg msg-sent is-cursor" id="sentmsg">
-                  <div class="msg-open">
-                    <div class="head"><span class="who">You</span><span class="to">to Jordan Park</span><span class="when">Just now</span></div>
-                    <div class="body" id="sentbody"></div>
-                  </div>
-                  <div class="undo-tray" id="tray" role="status">
-                    <div class="post-edge drain" id="drain" aria-hidden="true"></div>
-                    <div class="inner">
-                      <span class="grow">Sending to Jordan in <span class="n" id="count">8</span> s</span>
-                      <button class="btn btn-text" id="undo"><svg class="ic"><use href="#i-undo"/></svg>Undo<span class="kbd">Z</span></button>
-                      <button class="btn btn-text" id="now">Send now</button>
-                    </div>
-                  </div>
-                </div>
-              </section>
+        <article class="reader-page" id="letter" aria-label="Email from Jordan Park">
+          <div class="r-from">
+            <span class="name" data-tip="jordan@parkandpine.co · 14 emails both ways since March">Jordan Park</span>
+            <span class="to">to you and Mina Cho</span>
+            <span class="when"><span class="chip"><svg class="ic"><use href="#i-clock"/></svg>Due tomorrow</span>10:00 AM</span>
+          </div>
+          <p class="r-summary summary t-summary ready" data-tip="Summary by Groq">Two layout directions for the Hollow Creek site are ready, and Jordan wants your pick by tomorrow so the build can start Monday.</p>
+          <p class="r-summary summary is-pending" aria-busy="true">A quieter home for the Hollow Creek site</p>
+          <p class="r-summary summary is-absent t-summary">A quieter home for the Hollow Creek site</p>
+          <div class="r-actions">
+            <a class="btn btn-text md" href="reply.html"><svg class="ic"><use href="#i-reply"/></svg>Reply</a>
+            <button class="btn btn-text md" data-commit="later" data-tip="Later" data-key="L"><svg class="ic"><use href="#i-clock"/></svg>Later</button>
+            <button class="btn btn-text md" data-commit="done" data-tip="Done" data-key="E"><svg class="ic"><use href="#i-check"/></svg>Done</button>
+          </div>
+
+          <section class="r-thread" aria-label="4 messages">
+            <h2 class="r-subject">A quieter home for the Hollow Creek site · 4 messages</h2>
+            <button class="r-earlier" onclick="Mock.go('reader.html?state=earlier')"><svg class="ic sm"><use href="#i-chevr"/></svg>3 earlier messages from Jordan, you and Mina</button>
+            <div class="earlier-list">
+              <div class="r-msg-line"><span class="who ellipsis">Jordan Park</span><span class="ellipsis">Kicking off: here is the brief we agreed on Friday, plus the three sites you liked.</span><span>Oct 20</span></div>
+              <div class="r-msg-line"><span class="who ellipsis">You</span><span class="ellipsis">Love the brief. Two things to keep: the booking form near the top, and the trail map.</span><span>Oct 21</span></div>
+              <div class="r-msg-line"><span class="who ellipsis">Mina Cho</span><span class="ellipsis">Early sketches before Jordan sends the full set. The serif headings are a test.</span><span>Oct 27</span></div>
             </div>
-
-            <section class="reply reply-slot settle" id="reply" aria-label="Reply">
-              <div class="post-edge" aria-hidden="true"></div>
-              <div class="rhead">
-                <span class="lbl">To</span>
-                <span class="val">
-                  <span class="chip rcpt">Jordan Park<button class="x" aria-label="Remove Jordan Park"><svg class="ic"><use href="#i-x"/></svg></button></span>
-                  <span class="chip rcpt rcpt-all">Mina Cho<button class="x" aria-label="Remove Mina Cho"><svg class="ic"><use href="#i-x"/></svg></button></span>
-                </span>
-                <button class="btn btn-icon" data-tip="Pop out" aria-label="Pop out"><svg class="ic"><use href="#i-popout"/></svg></button>
+            <div class="r-msg is-cursor">
+              <div class="head"><span class="who">Jordan Park</span><span class="to">to you, Mina Cho</span><span class="when">Today, 10:00 AM</span></div>
+              <div class="body">
+                <p>Hi Alex,</p>
+                <p>Both directions are ready. Direction A keeps the long scrolling story we talked about, with the trail photos carrying most of the page. Direction B is quieter: one screen, a short welcome, and the booking form right up front.</p>
+                <p>I lean toward B for the first launch, since most visitors arrive from the newsletter and already know the place. A could follow in spring, once the new trail photos are in.</p>
+                <p>Can you send me your preference by tomorrow? If we lock it by Friday, Mina can start the build on Monday and we keep the November 16 launch.</p>
+                <p>Thanks,<br>Jordan</p>
               </div>
-              <div class="rwrap">
-                <div class="rbody t-read" id="rbody" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Reply text"></div>
-                <div class="meter" aria-label="Listening" role="img"><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="attachments">
+                <span class="attachment"><svg class="ic"><use href="#i-filetext"/></svg>direction-a.pdf <span class="size">4.2 MB</span></span>
+                <span class="attachment"><svg class="ic"><use href="#i-filetext"/></svg>direction-b.pdf <span class="size">3.1 MB</span></span>
               </div>
-              <div class="rfoot">
-                <button class="btn btn-icon" data-tip="Attach a file" data-key="⌘⇧A" aria-label="Attach a file"><svg class="ic"><use href="#i-paperclip"/></svg></button>
-                <button class="btn btn-icon" data-tip="Format" data-key="⌘/" aria-label="Format"><svg class="ic"><use href="#i-type"/></svg></button>
-                <span class="draftstate" id="draft" role="status">Saved</span>
-                <span class="dictate-hint"><svg class="ic"><use href="#i-mic"/></svg>Release to keep · Esc to cancel</span>
+            </div>
+            <div class="composer" id="composer" aria-label="Reply">
+              <div class="c-to">To <span class="person">Jordan Park</span><span class="person all-only">Mina Cho</span>
+                <span class="spacer"></span>
+                <button class="btn btn-text xs" data-tip="Add Cc or Bcc" data-key="⌘⇧C">Cc</button>
+                <button class="btn btn-icon xs" data-tip="Open in its own window" aria-label="Pop out"><svg class="ic sm"><use href="#i-popout"/></svg></button>
               </div>
-            </section>
-
-            <footer class="flap">
-              <div class="when-open">
-                <button class="btn btn-filled md" id="send"><svg class="ic"><use href="#i-send"/></svg>Send<span class="kbd">⌘Return</span></button>
-                <button class="btn btn-text md" id="sendDone"><svg class="ic"><use href="#i-check"/></svg>Send and Done<span class="kbd hint">⌘⇧Return</span></button>
+              <div class="c-body" contenteditable="true" spellcheck="false">Hi Jordan,<br><br>Direction B for the first launch. Let’s keep the booking form up front and come back to A in spring<span class="dict-only">, once the new trail photos</span><span class="caret"></span></div>
+              <div class="c-foot">
+                <button class="btn btn-filled md"><svg class="ic"><use href="#i-send"/></svg>Send<span class="kbd">⌘↩</span></button>
+                <span class="saved reply-only">Draft saved</span>
+                <span class="saved dict-only row-flex"><span class="meter" aria-label="Listening"><i></i><i></i><i></i><i></i><i></i></span>Listening. Release R to keep, Esc to cancel.</span>
+                <div class="right">
+                  <button class="btn btn-icon" data-tip="Attach a file" data-key="⌘⇧A" aria-label="Attach"><svg class="ic"><use href="#i-paperclip"/></svg></button>
+                  <button class="btn btn-icon" data-tip="More: format, schedule, discard" data-key="⌘/" aria-label="More"><svg class="ic"><use href="#i-more"/></svg></button>
+                </div>
               </div>
-              <div class="when-closed">
-                <button class="btn btn-filled md" id="open"><svg class="ic"><use href="#i-reply"/></svg>Reply<span class="kbd">Space</span></button>
-                <button class="btn btn-text md" id="openAll"><svg class="ic"><use href="#i-replyall"/></svg>Reply all<span class="kbd hint">⇧R</span></button>
-              </div>
-              <div class="right">
-                <button class="btn btn-text md"><svg class="ic"><use href="#i-clock"/></svg>Later<span class="kbd hint">L</span></button>
-                <button class="btn btn-text md"><svg class="ic"><use href="#i-check"/></svg>Done<span class="kbd hint">E</span></button>
-              </div>
-            </footer>
-          </article>
-
-          <aside class="rail" aria-label="Notes">
-            <section class="rail-group">
-              <h3 class="rail-label">Found here</h3>
-              <div class="rail-item"><svg class="ic"><use href="#i-clock"/></svg>Due tomorrow<button class="btn btn-text xs">Change<span class="kbd hint">D</span></button></div>
-              <div class="rail-item"><span class="chip plan"><svg class="ic"><use href="#i-calendar"/></svg>Launch · Mon, Nov 16</span><button class="btn btn-text xs">Add</button></div>
-              <div class="rail-item"><svg class="ic"><use href="#i-paperclip"/></svg>2 attachments</div>
-            </section>
-            <section class="rail-group">
-              <h3 class="rail-label">Why it’s in Home</h3>
-              <p class="c-ink2 t-ui">Jordan asked you a direct question with a deadline.</p>
-              <blockquote class="quote" style="margin-inline:0">“Can you send me your preference by tomorrow?”</blockquote>
-              <button class="fix" style="width:100%">Not important<span class="kbd">⌥</span><span class="kbd">↓</span></button>
-              <button class="fix" style="width:100%">Always Home<span class="kbd">⌥</span><span class="kbd">↑</span></button>
-            </section>
-            <section class="rail-group">
-              <h3 class="rail-label">Jordan Park</h3>
-              <div class="rail-item">14 letters both ways</div>
-              <div class="t-small c-dim">First in March · last today</div>
-              <div class="history-dots" aria-label="Letters per week, last 12 weeks"><i class="on"></i><i></i><i class="on"></i><i class="on"></i><i></i><i></i><i class="on"></i><i></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>
-            </section>
-          </aside>
-        </div>
+            </div>
+            <div class="r-msg arrive sent-only">
+              <div class="head"><span class="who">You</span><span class="to">to Jordan Park</span><span class="when">Just now</span></div>
+              <div class="body"><p>Hi Jordan,</p><p>Direction B for the first launch. Let’s keep the booking form up front and come back to A in spring.</p><p>Alex</p></div>
+              <div class="undo-tray"><div class="inner">Sending to Jordan in 8 s<span class="spacer"></span><button class="btn btn-text xs">Undo <span class="kbd">Z</span></button><button class="btn btn-text xs">Send now</button></div><span class="drain"></span></div>
+            </div>
+          </section>
+        </article>
       </div>
       <p class="sr-only" role="status" id="live"></p>
     </main>
   </div>
 </div>
-
 <script>
-const html = document.documentElement;
-const rbody = document.getElementById('rbody'), scroller = document.getElementById('scroll'), reply = document.getElementById('reply');
-const draft = document.getElementById('draft');
-const TEXT = {
-  one: '<p>Hi Jordan,</p><p>Direction B for the first launch. Let’s keep the booking form up front and look at A in spring.</p><p>Alex</p>',
-  all: '<p>Hi Jordan and Mina,</p><p>Direction B for the first launch. Let’s keep the booking form up front and look at A in spring.</p><p>Alex</p>',
-};
-const WORDS = 'Direction B works for me. Keep the booking form on the first screen, and we can look at A in spring.'.split(' ');
-let dictTimer = null, holdTimer = null, sentText = '', countTimer = null, left = 8;
-
-const st = () => html.dataset.state;
-const setState = s => { html.dataset.state = s; };
-function toBottom() { scroller.scrollTop = scroller.scrollHeight; }
-function caretEnd() { rbody.focus({ preventScroll: true }); const r = document.createRange(); r.selectNodeContents(rbody); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
-function say(t) { document.getElementById('live').textContent = t; }
-
-function openReply(all) {
-  setState(all ? 'reply-all' : 'reply');
-  rbody.innerHTML = all ? TEXT.all : TEXT.one;
-  reply.classList.remove('settle'); void reply.offsetWidth; reply.classList.add('settle');
-  toBottom(); caretEnd(); say(all ? 'Reply all open.' : 'Reply open.');
+const letter = document.getElementById('letter');
+addEventListener('DOMContentLoaded', () => { const ws = document.querySelector('.workspace'); ws.scrollTop = ws.scrollHeight; });
+function commit(kind) {
+  const ws = letter.parentElement;
+  const g = letter.cloneNode(true); g.classList.add('ghost-paper'); g.removeAttribute('id');
+  g.style.left = letter.offsetLeft + 'px'; g.style.top = letter.offsetTop + 'px'; g.style.width = letter.offsetWidth + 'px';
+  g.insertAdjacentHTML('beforeend', `<span class="commit-chip ${kind}" style="top:var(--space-7);right:0">${Mock.icon(kind === 'done' ? 'check' : 'clock')}${kind === 'done' ? 'Done' : 'Later'}</span>`);
+  ws.append(g);
+  const s = kind === 'done' ? 1 : -1;
+  const a = Mock.reduced ? g.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Mock.dur('reduced'), fill: 'forwards' })
+    : g.animate([{ transform: 'none', opacity: 1 }, { opacity: 1, offset: .4 }, { transform: `translate(${s * parseFloat(Mock.css('--flight-x'))}px, ${-s * parseFloat(Mock.css('--flight-y'))}px) rotate(${s * parseFloat(Mock.css('--flight-rot'))}deg)`, opacity: 0 }], { duration: Mock.dur('flight'), delay: 40, easing: Mock.css('--ease-carry'), fill: 'forwards' });
+  a.onfinish = () => g.remove();
+  letter.animate([{ opacity: 0, transform: `translateY(${Mock.css('--move-deal')})` }, { opacity: 1, transform: 'none' }], { duration: Mock.dur('swap'), delay: 80, easing: Mock.css('--ease-std'), fill: 'backwards' });
+  document.querySelector('.title .pos').textContent = '1 of 8';
+  document.getElementById('live').textContent = (kind === 'done' ? 'Done' : 'Moved to Later') + '. Next: Drew Bell.';
+  if (kind === 'done') Mock.toast({ icon: 'check', tone: 'c-hill', text: 'Done. Next: Drew Bell', actions: [['Undo', 'Z']] });
+  else Mock.toast({ icon: 'clock', tone: 'c-dusk', text: 'Moved to Later', actions: [['Set a date', 'D'], ['Undo', 'Z']] });
 }
-function closeReply() { clearInterval(dictTimer); setState('closed'); rbody.blur(); toBottom(); }
-
-function startDictation(prefill = 0) {
-  setState('dictating'); rbody.innerHTML = '<p></p>'; reply.classList.remove('settle'); toBottom();
-  let i = 0; const write = n => { rbody.firstChild.textContent = WORDS.slice(0, n).join(' '); toBottom(); };
-  i = prefill || 1; write(i);
-  if (!prefill) dictTimer = setInterval(() => { if (i < WORDS.length) write(++i); }, 320);
-  say('Listening. Release R to keep, Escape to cancel.');
-}
-function keepDictation() { clearInterval(dictTimer); setState('reply'); caretEnd(); draft.textContent = 'Saved'; }
-function cancelDictation() { clearInterval(dictTimer); closeReply(); }
-
-function send() {
-  sentText = rbody.innerHTML;
-  document.getElementById('sentbody').innerHTML = sentText;
-  setState('sent');
-  const m = document.getElementById('sentmsg');
-  m.classList.remove('arrive'); void m.offsetWidth; m.classList.add('arrive');
-  const tray = document.getElementById('tray'); tray.classList.remove('is-done');
-  const d = document.getElementById('drain'); d.style.animation = 'none'; void d.offsetWidth; d.style.animation = '';
-  left = 8; document.getElementById('count').textContent = left;
-  clearInterval(countTimer);
-  countTimer = setInterval(() => { left -= 1; document.getElementById('count').textContent = Math.max(left, 0); if (left <= 0) finish(); }, 1000);
-  setTimeout(toBottom, 0); say('Sending to Jordan in 8 seconds. Press Z to undo.');
-}
-function finish() { clearInterval(countTimer); document.getElementById('tray').classList.add('is-done'); say('Sent.'); }
-function undoSend() { clearInterval(countTimer); openReply(false); rbody.innerHTML = sentText; caretEnd(); say('Send undone. Your reply is open.'); }
-
+document.querySelectorAll('[data-commit]').forEach(b => b.onclick = () => commit(b.dataset.commit));
 Mock.onKey(e => {
-  const k = e.key, inEdit = e.target.closest('input,textarea,[contenteditable="true"]');
-  const s = st();
-  if (e.metaKey && k === 'Enter') { if (s === 'reply' || s === 'reply-all') send(); return true; }
-  if (k === 'Escape') {
-    if (s === 'dictating') { cancelDictation(); return true; }
-    if (s === 'reply' || s === 'reply-all') { closeReply(); return true; }   // saved: closes with no prompt
-    if (s === 'sent') { return; }
-    return;
+  if (e.metaKey && e.key === 'Enter') { Mock.go('reply.html?state=sent'); return true; }
+  if (e.key === 'Escape') { Mock.go('reader.html'); return true; }
+  if (e.target.closest('input,textarea,[contenteditable]') || e.metaKey || e.ctrlKey || e.altKey) return;
+  switch (e.key) {
+    case 'e': case 'ArrowRight': commit('done'); return true;
+    case 'l': case 'ArrowLeft': commit('later'); return true;
+    case 'z': if (Mock.state === 'sent') { Mock.go('reply.html'); return true; } return;
+    case 'j': case 'k': letter.animate([{ opacity: 0, transform: `translateY(${(e.key === 'j' ? 1 : -1) * parseFloat(Mock.css('--move-swap'))}px)` }, { opacity: 1, transform: 'none' }], { duration: Mock.dur('swap'), easing: Mock.css('--ease-std') }); return true;
+    case 'd': Mock.go('later-picker.html'); return true;
   }
-  if (s === 'sent' && !inEdit) {
-    if (k === 'z') { undoSend(); return true; }
-    if (k === ' ' ) { openReply(false); return true; }
-  }
-  if (inEdit || e.ctrlKey || e.altKey || e.metaKey) return;
-  if (k === 'r') {
-    if (e.repeat) return true;
-    if (s === 'dictating') return true;
-    holdTimer = setTimeout(() => { holdTimer = null; startDictation(); }, 300);   // hold R: dictate
-    return true;
-  }
-  if (k === 'R') { openReply(true); return true; }
-  if (k === ' ') { if (s === 'closed') openReply(false); else caretEnd(); return true; }
 });
-addEventListener('keyup', e => {
-  if (e.key.toLowerCase() !== 'r') return;
-  if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; openReply(false); }   // tap R: reply
-  else if (st() === 'dictating') keepDictation();                                    // release: keep
-});
-rbody.addEventListener('input', () => { draft.textContent = 'Saving…'; clearTimeout(rbody._t); rbody._t = setTimeout(() => draft.textContent = 'Saved', 600); });
-document.getElementById('send').onclick = send;
-document.getElementById('sendDone').onclick = send;
-document.getElementById('undo').onclick = undoSend;
-document.getElementById('now').onclick = finish;
-document.getElementById('open').onclick = () => openReply(false);
-document.getElementById('openAll').onclick = () => openReply(true);
-
-/* initial state from the URL */
-const s0 = st();
-if (s0 === 'reply' || s0 === 'reply-all') { rbody.innerHTML = s0 === 'reply-all' ? TEXT.all : TEXT.one; toBottom(); caretEnd(); }
-else if (s0 === 'dictating') { startDictation(WORDS.length - 3); }
-else if (s0 === 'sent') { rbody.innerHTML = TEXT.one; send(); }
 </script>
 </body>
 </html>

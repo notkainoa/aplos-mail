@@ -1,12 +1,11 @@
-/* Skypaper mockup shell. Load synchronously in <head> (sets theme before paint).
+/* Aplos mockup shell (revision 2). Load synchronously in <head> (sets theme before paint).
    Page contract:
      <html data-window="main|onboarding" data-states="a,b,c" data-esc="home.html">
-     <aside class="sidebar" data-active="home" data-status="importing" data-accounts="all"></aside>
+     <aside class="sidebar" data-active="home" data-status="importing" data-accounts="all" data-extra="calendar"></aside>
      <span class="traffic"></span>               (filled with traffic lights)
      <svg class="ic"><use href="#i-check"/></svg> (icon sprite)
      [data-tip="Compose" data-key="C"]            (tooltip with keycap)
      [data-list] > [data-row]                     (j/k list; data-href opens; E/L/# triage; X picks; Z undo)
-     .skyscene                                    (filled with hills + one wind arc)
      [data-app-icon]                              (filled with the app icon)
    API: Mock.toast({...}), Mock.onKey(fn), Mock.dur(name), Mock.reduced, Mock.state, Mock.closeGaps(list) */
 (function () {
@@ -102,45 +101,57 @@
   }
   const icon = (n, cls = '') => `<svg class="ic ${cls}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 
-  /* ---------------- Sidebar ---------------- */
+  /* ---------------- Sidebar (revision 2: quiet groups, Notion-like) ---------------- */
+  // [id, label, icon, href, count, key]
   const NAV = [
-    [['home', 'Home', 'home', 'home.html', 9, '⌃1'], ['later', 'Later', 'clock', 'later.html', 9, '⌃2'], ['calendar', 'Calendar', 'calendar', 'calendar-week.html', null, '⌃6']],
-    [['all', 'All mail', 'tray', 'inbox.html', null, '⌃3'], ['drafts', 'Drafts', 'file', 'empty.html?state=drafts', 1, '⌃4'], ['sent', 'Sent', 'send', 'inbox.html', null, '⌃5']],
-    [['trash', 'Trash', 'trash', 'empty.html?state=trash', null, '⌃7'], ['spam', 'Spam', 'spam', 'empty.html?state=spam', null, '⌃8']],
+    { items: [['search', 'Search', 'search', 'search.html', null, '/'], ['home', 'Home', 'home', 'home.html', 9, '⌃1'], ['later', 'Later', 'clock', 'later.html', 9, '⌃2'], ['calendar', 'Calendar', 'calendar', 'calendar-week.html', null, '⌃6']] },
+    { head: 'Mail', items: [['all', 'All mail', 'tray', 'inbox.html', null, '⌃3'], ['done', 'Done', 'checkcircle', 'done.html', null, ''], ['drafts', 'Drafts', 'file', 'empty.html?state=drafts', 1, '⌃4'], ['sent', 'Sent', 'send', 'inbox.html', null, '⌃5'], ['spam', 'Spam', 'spam', 'empty.html?state=spam', null, '⌃8'], ['trash', 'Trash', 'trash', 'empty.html?state=trash', null, '⌃7']] },
   ];
+  const CALENDARS = [['Work', '--tag-hill'], ['Personal', '--tag-sky'], ['Hollow Creek', '--tag-ember'], ['Family', '--tag-sand']];
   const STATUS = {
-    synced: `<span class="status-slot" title="Synced 2 min ago"></span>`,
-    importing: `<div class="status-slot">${icon('refresh')}<div style="flex:1">Importing older mail · <b>214</b> of 500<div class="status-track" role="progressbar" aria-label="alex.moreno@gmail.com sync"><i></i></div></div></div>`,
-    paused: `<div class="status-slot">${icon('pause')}<div>Google asked us to slow down. Resuming at <b>2:14 PM</b>.<br><button class="btn btn-text xs" style="margin-left:calc(-1*var(--space-2))">Retry now</button></div></div>`,
-    offline: `<div class="status-slot">${icon('cloudoff')}<div>Offline · 2 changes waiting</div></div>`,
-    reconnect: `<div class="status-slot is-attn">${icon('alert')}<div><b>Google needs you to sign in again.</b><br><button class="btn btn-text xs btn-danger" style="margin-left:calc(-1*var(--space-2))">Reconnect</button></div></div>`,
-    demo: `<div class="status-slot">${icon('mail')}<div>Demo mail. Remove it in Settings → Accounts.</div></div>`,
+    synced: '',
+    importing: `<div class="status-slot">${icon('refresh')}<div style="flex:1">Importing older mail<br><b>214</b> of 500<div class="status-track" role="progressbar" aria-label="alex.moreno@gmail.com sync"><i></i></div></div></div>`,
+    paused: `<div class="status-slot">${icon('pause')}<div>Google asked Aplos to slow down. Resuming at <b>2:14 PM</b>.<br><button class="btn btn-text xs">Retry now</button></div></div>`,
+    offline: `<div class="status-slot">${icon('cloudoff')}<div>Offline. 2 changes waiting.</div></div>`,
+    reconnect: `<div class="status-slot is-attn">${icon('alert')}<div><b>Google needs you to sign in again.</b><br><button class="btn btn-text xs btn-danger">Reconnect</button></div></div>`,
+    demo: `<div class="status-slot">${icon('mail')}<div>Demo mail. Remove it in Settings.</div></div>`,
     firstmail: `<div class="status-slot">${icon('refresh')}<div style="flex:1">Reading your newest mail<br><b>24</b> of 50<div class="status-track" role="progressbar" aria-label="alex.moreno@gmail.com sync"><i></i></div></div></div>`,
   };
   const ACCTS = {
-    all: { label: 'All accounts', dots: ['--tag-sky', '--tag-hill'] },
-    personal: { label: 'alex.moreno@gmail.com', dots: ['--tag-sky'] },
-    demo: { label: 'Demo · All accounts', dots: ['--tag-sand', '--tag-dusk'] },
-    none: { label: 'No accounts', dots: [] },
+    all: { label: 'Alex Moreno', mono: 'A' },
+    personal: { label: 'alex.moreno@gmail.com', mono: 'A' },
+    demo: { label: 'Demo mail', mono: 'D' },
+    none: { label: 'No accounts', mono: '·' },
   };
+  function miniMonth() {
+    // October 2026 starts on a Thursday; today is Thursday the 29th
+    const days = []; for (let d = 27; d <= 30; d++) days.push([d, 'out']); for (let d = 1; d <= 31; d++) days.push([d, '']); for (let d = 1; d <= 7; d++) days.push([d, 'out']);
+    let rows = ''; for (let w = 0; w < 6; w++) { rows += '<tr>' + days.slice(w * 7, w * 7 + 7).map(([d, c]) => `<td class="${c} ${!c && d >= 25 && d <= 31 ? 'week' : ''} ${!c && d === 29 ? 'today' : ''}"><span>${d}</span></td>`).join('') + '</tr>'; }
+    return `<div class="mini-month"><div class="mm-head">October 2026<button class="btn btn-icon xs" aria-label="Previous month">${icon('chevl', 'sm')}</button><button class="btn btn-icon xs" aria-label="Next month">${icon('chevr', 'sm')}</button></div>
+      <table aria-label="October 2026"><thead><tr>${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => `<th>${d}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
   function sidebar(el) {
     const active = el.dataset.active || '';
     const counts = el.dataset.counts ? JSON.parse(el.dataset.counts) : {};
     const a = ACCTS[el.dataset.accounts || 'all'];
-    const groups = NAV.map(g => `<div class="nav-group">${g.map(([id, label, ic, href, n, key]) => {
+    const item = ([id, label, ic, href, n, key]) => {
       const c = id in counts ? counts[id] : n;
-      return `<a class="nav-item" href="${href}" data-nav="${id}" ${id === active ? 'aria-current="page"' : ''}>${icon(ic)}<span>${label}</span>${c ? `<span class="count">${c}</span>` : ''}<span class="kbd hint">${key}</span></a>`;
-    }).join('')}</div>`).join('');
+      return `<a class="nav-item" href="${href}" data-nav="${id}" ${key ? `data-tip="${label}" data-key="${key}"` : ''} ${id === active ? 'aria-current="page"' : ''}>${icon(ic)}<span>${label}</span>${c ? `<span class="count">${c}</span>` : ''}</a>`;
+    };
+    const groups = NAV.map(g => `<div class="nav-group">${g.head ? `<div class="nav-head">${g.head}</div>` : ''}${g.items.map(item).join('')}</div>`).join('');
+    const cal = el.dataset.extra === 'calendar'
+      ? `${miniMonth()}<div class="nav-group"><div class="nav-head">Calendars</div>${CALENDARS.map(([n, c]) => `<a class="nav-item" href="#"><span class="swatch" style="background:var(${c})"></span><span>${n}</span></a>`).join('')}</div>`
+      : '';
     el.innerHTML = `
-      <button class="acct-switch" data-tip="Switch account">${a.dots.length ? `<span class="dots">${a.dots.map(d => `<i style="background:var(${d})"></i>`).join('')}</span>` : ''}<span class="ellipsis">${a.label}</span>${icon('updown')}</button>
-      <nav class="nav" aria-label="Mailboxes"><span class="puck" aria-hidden="true"></span>${groups}</nav>
+      <div class="side-top">
+        <button class="acct-switch" data-tip="Switch account"><span class="mono">${a.mono}</span><span class="ellipsis">${a.label}</span>${icon('chevd')}</button>
+        <a class="btn btn-icon" href="compose.html" data-tip="New message" data-key="C" aria-label="New message">${icon('compose')}</a>
+      </div>
+      <nav class="nav" aria-label="Places">${groups}${cal}</nav>
       <div class="sidebar-foot">${STATUS[el.dataset.status || 'synced'] || ''}
-        <div class="tools"><a class="btn btn-icon" href="settings-appearance.html" data-tip="Settings" data-key="⌘,">${icon('settings')}</a><a class="btn btn-icon" href="shortcuts.html" data-tip="Help and shortcuts" data-key="?">${icon('help')}</a></div>
+        <a class="nav-item" href="settings-appearance.html" data-tip="Settings" data-key="⌘," ${active === 'settings' ? 'aria-current="page"' : ''}>${icon('settings')}<span>Settings</span></a>
+        <a class="nav-item" href="shortcuts.html" data-tip="Keyboard shortcuts" data-key="?">${icon('help')}<span>Help</span></a>
       </div>`;
-    const cur = el.querySelector('[aria-current="page"]'), puck = el.querySelector('.puck');
-    if (cur) puck.style.transform = `translateY(${cur.offsetTop}px)`; else puck.style.display = 'none';
-    // slide puck on hover-press for feel (navigation itself is instant)
-    el.querySelectorAll('.nav-item').forEach(n => n.addEventListener('pointerdown', () => { puck.style.display = ''; puck.style.transform = `translateY(${n.offsetTop}px)`; }));
   }
 
   /* ---------------- Tooltips ---------------- */
@@ -289,14 +300,7 @@
   }
 
   /* ---------------- Sky scene + app icon ---------------- */
-  function sky(el) {
-    const W = 1000, H = 1000;
-    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
-      <path class="wind" vector-effect="non-scaling-stroke" d="M ${W * .06} ${H * .30} C ${W * .30} ${H * .16}, ${W * .55} ${H * .40}, ${W * .94} ${H * .22}"/>
-      <path class="hill-far" d="M0 ${H * .80} C ${W * .22} ${H * .74}, ${W * .45} ${H * .77}, ${W * .62} ${H * .79} S ${W * .9} ${H * .73}, ${W} ${H * .76} L ${W} ${H} L 0 ${H} Z"/>
-      <path class="hill" d="M0 ${H * .88} C ${W * .18} ${H * .80}, ${W * .40} ${H * .79}, ${W * .58} ${H * .85} S ${W * .86} ${H * .9}, ${W} ${H * .86} L ${W} ${H} L 0 ${H} Z"/>
-    </svg>`;
-  }
+  function sky(el) { el.remove(); }  // revision 2: the drawn sky is gone
   let iconN = 0;
   function appIcon(el) {
     const id = 'ai' + (iconN++);
@@ -367,6 +371,7 @@
         e.stopPropagation(); triage(list, r, b.dataset.act);
       });
     });
+    document.querySelectorAll('.workspace').forEach(w => { const t = w.previousElementSibling; if (t?.classList.contains('toolbar')) w.addEventListener('scroll', () => t.classList.toggle('is-scrolled', w.scrollTop > 2), { passive: true }); });
     tooltips(); mockbar(); fit();
     addEventListener('resize', fit);
     addEventListener('keydown', onKey, true);

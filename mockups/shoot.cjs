@@ -13,6 +13,36 @@ const pages = process.argv.slice(2).length ? process.argv.slice(2)
 
 const BANNED = [/swipe through them/i, /hold to talk/i, /\bhide all\b/i, /\btodos?\b/i, /be here now/i, /sent with/i, /ask me anything/i, /\bmagic\b/i, /ai-powered/i, /copilot/i, /\bbeta\b/i, /✨|⭐|★|☆/];
 
+// Rule: hovering never moves anything else. Hover each interactive element and diff every other box.
+async function hoverShift(page) {
+  const n = await page.evaluate(() => {
+    const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && getComputedStyle(el).visibility !== 'hidden'; };
+    window.__targets = [...document.querySelectorAll('.window :is(button, a, [data-row], .nav-item, [data-tip], .attachment, .chip)')].filter(vis).slice(0, 90);
+    window.__watch = [...document.querySelectorAll('.window :is(button, a, .kbd, .row, .chip, .nav-item, .count, .label, .sender, .meta, .title, .page-title, .summary, p, h1, h2, h3)')].filter(vis);
+    return window.__targets.length;
+  });
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const before = await page.evaluate(() => window.__watch.map(e => { const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }));
+    const box = await page.evaluate(i => { const r = window.__targets[i].getBoundingClientRect(); return { x: r.x + Math.min(r.width / 2, 40), y: r.y + r.height / 2 }; }, i);
+    await page.mouse.move(box.x, box.y);
+    await page.waitForTimeout(40);
+    const moved = await page.evaluate(([i, before]) => {
+      const t = window.__targets[i]; const res = [];
+      window.__watch.forEach((e, j) => {
+        if (t.contains(e) || e.contains(t) || e.closest('.tooltip')) return;
+        const r = e.getBoundingClientRect(); const b = before[j];
+        if (Math.abs(r.x - b[0]) > 0.5 || Math.abs(r.y - b[1]) > 0.5 || Math.abs(r.width - b[2]) > 0.5 || Math.abs(r.height - b[3]) > 0.5)
+          res.push((e.textContent || e.className).trim().slice(0, 24));
+      });
+      return res.length ? `hover "${(t.textContent || t.getAttribute('aria-label') || '').trim().slice(0, 24)}" moved: ${res.slice(0, 3).join(' | ')}` : null;
+    }, [i, before]);
+    if (moved) out.push('LAYOUT SHIFT ' + moved);
+    await page.mouse.move(2, 2);
+  }
+  return [...new Set(out)];
+}
+
 async function audit(page) {
   return page.evaluate((bannedSrc) => {
     const banned = bannedSrc.map(s => new RegExp(s.src, s.flags));
@@ -92,6 +122,7 @@ async function audit(page) {
         const name = `${file.replace('.html', '')}${st ? '-' + st : ''}-${theme}.png`;
         await page.screenshot({ path: path.join(OUT, name) });
         const a = await audit(page);
+        if (process.env.HOVER && theme === 'light' && st === states[0]) a.push(...await hoverShift(page));
         const all = [...errs.splice(0).map(e => 'JS ERROR ' + e), ...a];
         if (all.length) { issues += all.length; console.log(`\n${name}`); all.forEach(x => console.log('  - ' + x)); }
         else console.log(`ok ${name}`);

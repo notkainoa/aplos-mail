@@ -6,14 +6,7 @@
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="shell.css">
 <script src="shell.js"></script>
-<style>
-  /* Page-only layout glue; all values are tokens. */
-  .column { position: relative; padding-top: var(--space-1); }
-  .home-row { --sender-w: var(--sender-w-home); cursor: default; }
-  .home-row .chip { margin-right: var(--space-1); }
-  .ghost-paper { position: absolute; left: 0; right: 0; z-index: 30; pointer-events: none; }
-  html[data-state="no-ai"] .focus-letter .summary { font: var(--type-summary); font-family: var(--font-sans); font-weight: 500; font-variation-settings: normal; letter-spacing: var(--track-heading); }
-</style>
+<script src="home-view.js"></script>
 </head>
 <body>
 <div class="window">
@@ -22,158 +15,27 @@
     <aside class="sidebar" data-active="home"></aside>
     <main class="main">
       <header class="toolbar">
-        <h1 class="title">Home</h1>
         <div class="tools">
-          <a class="btn btn-icon" href="compose.html" data-tip="Compose" data-key="C" aria-label="Compose"><svg class="ic"><use href="#i-compose"/></svg></a>
-          <a class="btn btn-icon" href="search.html" data-tip="Search" data-key="/" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></a>
           <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
-          <a class="btn btn-icon" href="ask.html?state=today" data-tip="Today" data-key="⇧A" aria-label="Today"><svg class="ic"><use href="#i-today"/></svg></a>
         </div>
       </header>
       <div class="workspace">
-        <div class="column" id="home" role="listbox" aria-label="Home"></div>
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Home</h1>
+              <p class="page-sub">Thursday, October 29 · 9 to handle</p>
+            </div>
+          </div>
+          <div id="home" role="listbox" aria-label="Home"></div>
+        </div>
       </div>
       <p class="sr-only" role="status" id="live"></p>
     </main>
   </div>
 </div>
-
 <script>
-const ITEMS = [
-  { sec: 'new', sender: 'Jordan Park', unread: 1, date: '10:00 AM', act: ['reply', 'Reply'], href: 'reply.html',
-    sum: 'Two layout directions for the Hollow Creek site are ready, and Jordan wants your pick by tomorrow so the build can start Monday.',
-    subj: 'A quieter home for the Hollow Creek site' },
-  { sec: 'new', sender: 'Drew Bell', unread: 1, date: 'Yesterday', act: ['paperclip', 'View invoice'],
-    sum: 'October illustrations are finished. Approve the $1,840 invoice to close out the month.',
-    subj: 'Invoice #0412 · October illustrations' },
-  { sec: 'new', sender: 'Maple Library', unread: 1, date: 'Yesterday', act: ['clock', 'Remind me Saturday'],
-    sum: 'Two holds are waiting at the front desk until Saturday: “The Overstory” and a field guide to mosses.',
-    subj: 'Items ready for pickup' },
-  { sec: 'new', sender: 'Leah Okafor', date: 'Tuesday', act: ['reply', 'Reply with a spot'],
-    sum: 'Lunch for six on Friday. Leah asks you to pick somewhere quiet with vegetarian options.',
-    subj: 'Friday lunch?' },
-  { sec: 'new', sender: 'Rowan Pottery', date: 'Tuesday', act: ['reply', 'Reply to reserve'],
-    sum: 'A seat opened in the Tuesday evening wheel class. Reply by Sunday to keep it.',
-    subj: 'A seat opened up' },
-  { sec: 'new', sender: 'Sami Haddad', date: 'Monday', act: ['paperclip', 'View lease'],
-    sum: 'The lease renewal is attached and needs your signature by November 4. Rent stays the same.',
-    subj: 'Lease renewal, unit 3B' },
-  { sec: 'low' },
-  { sec: 'due', sender: 'Northwind Dental', date: 'Oct 22', due: 'Due today', act: ['calendar', 'Add to calendar'],
-    sum: 'Your cleaning is Thursday at 9:30 AM. Confirm or reschedule by today.',
-    subj: 'Appointment reminder' },
-  { sec: 'due', sender: 'Priya Raman', date: 'Oct 23', due: 'Due today', act: ['reply', 'Reply'],
-    sum: 'Priya needs the revised deck today so she can review it before Friday’s meeting.',
-    subj: 'Re: Q4 review deck' },
-  { sec: 'wait', sender: 'To Studio Kettle', date: 'Oct 24', act: ['reply', 'Write a nudge'],
-    sum: 'You sent the signed statement of work. No reply in four days.',
-    subj: 'Signed SOW attached' },
-];
-const SECTIONS = {
-  new: ['New', `<button class="btn btn-text" data-tip="Open each letter in turn">Go one by one <span class="kbd hint">S</span></button>`],
-  due: ['Due now', `<button class="btn btn-text">Clear from Home</button>`],
-  wait: ['Waiting on others', ''],
-};
-const noAI = Mock.state === 'no-ai';
-let items = ITEMS.map((x, i) => ({ ...x, id: i }));
-let focus = 1;
-const el = document.getElementById('home');
-const ic = Mock.icon;
-
-function text(it) { return noAI ? it.subj : it.sum; }
-function row(it, dist) {
-  if (it.sec === 'low') return `<div class="low-band ${dist === 0 ? 'is-cursor' : ''}" data-row role="option" data-tip="Open low importance" data-key="Return">
-      <span class="label">Low importance</span><span class="names">Parcel Trail, Field Notes, Cedar Market and 3 more</span><span class="n">6</span></div>`;
-  const ramp = dist <= 2 ? 'near' : 'far';
-  return `<div class="row home-row ${it.unread ? 'unread' : ''} ${ramp}" data-row data-i="${it.id}" role="option">
-    <span class="dot"></span><span class="sender ellipsis">${it.sender}</span>
-    <span class="line">${it.due ? `<span class="chip due">${ic('clock')}${it.due}</span>` : ''}<span class="ellipsis">${text(it)}</span></span>
-    <span class="meta">${it.date}</span>
-    <span class="row-actions"><button class="btn btn-icon" data-tip="Later" data-key="L">${ic('clock')}</button><button class="btn btn-icon" data-tip="Done" data-key="E">${ic('check')}</button></span>
-  </div>`;
-}
-function letter(it) {
-  return `<article class="paper focus-letter" data-row data-i="${it.id}" role="option" aria-selected="true" aria-label="${it.sender}">
-    <div class="deal-in" style="display:flex;flex-direction:column;height:100%">
-      <div class="meta-line"><span class="sender">${it.sender}</span>${it.due ? `<span class="chip overdue">${ic('clock')}${it.due}</span>` : ''}<span class="date">${it.date}</span></div>
-      <p class="summary t-summary">${text(it)}</p>
-      <div class="actions">
-        <button class="btn btn-filled md" data-go="space">${ic(it.act[0])}${it.act[1]}<span class="kbd">Space</span></button>
-        <button class="btn btn-text md" data-go="later">${ic('clock')}Later<span class="kbd hint">L</span></button>
-        <button class="btn btn-text md" data-go="done">${ic('check')}Done<span class="kbd hint">E</span></button>
-        <button class="btn btn-icon md" data-tip="Bookmark" data-key="B" aria-label="Bookmark">${ic('bookmark')}</button>
-        <button class="btn btn-icon md" data-tip="More" data-key="." aria-label="More">${ic('more')}</button>
-      </div>
-    </div>
-  </article>`;
-}
-function render(opts = {}) {
-  let html = '', last = null;
-  items.forEach((it, i) => {
-    if (it.sec !== last && SECTIONS[it.sec]) {
-      const n = items.filter(x => x.sec === it.sec).length;
-      html += `<div class="section-head"><span class="label">${SECTIONS[it.sec][0]}</span><span class="n">${n}</span>${SECTIONS[it.sec][1]}</div>`;
-    }
-    last = it.sec;
-    if (opts.holdAt === i) html += `<div class="is-held" style="height:var(--row)"></div>`;
-    html += i === focus && it.sec !== 'low' ? letter(it) : row(it, Math.abs(i - focus));
-  });
-  el.innerHTML = html;
-  if (opts.deal) { const f = el.querySelector('.focus-letter'); f.classList.add('is-dealing'); f.querySelector('.deal-in').style.animationDelay = Mock.dur('commit') + 'ms'; }
-}
-let hold;
-function commit(kind) {
-  const it = items[focus]; if (!it || it.sec === 'low') return;
-  const paper = el.querySelector('.focus-letter');
-  // Frame 0: state commits and focus moves; then a ghost copy is carried off (§4.9)
-  const ghost = paper.cloneNode(true);
-  ghost.classList.add('ghost-paper'); ghost.style.top = paper.offsetTop + 'px'; ghost.style.margin = '0';
-  ghost.insertAdjacentHTML('beforeend', `<span class="commit-edge ${kind}"></span><span class="commit-chip ${kind}">${ic(kind === 'done' ? 'check' : 'clock')}${kind === 'done' ? 'Done' : 'Later'}</span>`);
-  items.splice(focus, 1);
-  if (focus >= items.length || items[focus].sec === 'low' && focus === items.length - 1) focus = Math.max(0, focus - 1);
-  if (items[focus]?.sec === 'low') focus = Math.min(items.length - 1, focus + 1);
-  render({ deal: true, holdAt: focus + 1 });
-  el.append(ghost);
-  const dx = parseFloat(Mock.css('--flight-x')) * (kind === 'done' ? 1 : -1), dy = parseFloat(Mock.css('--flight-y')) * (kind === 'done' ? -1 : 1);
-  const rot = parseFloat(Mock.css('--flight-rot')) * (kind === 'done' ? 1 : -1);
-  const a = Mock.reduced
-    ? ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Mock.dur('reduced'), fill: 'forwards' })
-    : ghost.animate([{ transform: 'none', opacity: 1 }, { opacity: 1, offset: .4 }, { transform: `translate(${dx}px, ${dy}px) rotate(${rot}deg)`, opacity: 0 }],
-        { duration: Mock.dur('flight'), delay: 40, easing: Mock.css('--ease-carry'), fill: 'forwards' });
-  a.onfinish = () => ghost.remove();
-  clearTimeout(hold); hold = setTimeout(() => Mock.closeGaps(el), 450);
-  const next = items[focus];
-  document.getElementById('live').textContent = `${kind === 'done' ? 'Done' : 'Moved to Later'}. Next: ${next?.sender || 'nothing'}.`;
-  if (kind === 'done') Mock.toast({ icon: 'check', tone: 'c-hill', text: it.sec === 'wait' ? 'Done' : 'Done', actions: it.sec === 'wait' ? [['Remind me if no reply', 'R'], ['Undo', 'Z']] : [['Undo', 'Z']] });
-  else Mock.toast({ icon: 'clock', tone: 'c-dusk', text: 'Moved to Later', actions: [['Set a date', 'D'], ['Undo', 'Z']] });
-  undoBuf.push({ it, at: items.indexOf(next) < 0 ? items.length : items.indexOf(next) });
-}
-const undoBuf = [];
-function move(d) {
-  focus = Math.max(0, Math.min(items.length - 1, focus + d)); render();
-  const f = el.querySelector('[aria-selected="true"], .low-band.is-cursor'); f?.scrollIntoView({ block: 'nearest' });
-}
-Mock.onKey(e => {
-  if (e.target.closest('input,textarea') || e.metaKey || e.ctrlKey) return;
-  const k = e.key;
-  if (k === 'j' || k === 'ArrowDown') { move(1); return true; }
-  if (k === 'k' || k === 'ArrowUp') { move(-1); return true; }
-  if (k === 'Tab') { const order = ['new', 'due', 'wait']; const cur = items[focus].sec; const i = order.indexOf(cur === 'low' ? 'new' : cur); const t = order[(i + (e.shiftKey ? order.length - 1 : 1)) % order.length]; focus = items.findIndex(x => x.sec === t); render(); return true; }
-  if (k === 'e' || k === 'ArrowRight') { commit('done'); return true; }
-  if (k === 'l' || k === 'ArrowLeft') { commit('later'); return true; }
-  if (k === 'z') { const u = undoBuf.pop(); if (!u) return true; items.splice(u.at, 0, u.it); focus = u.at; render({ deal: true }); Mock.toast({ icon: 'undo', text: 'Undone' }); return true; }
-  if (k === ' ') { const it = items[focus]; if (it.href) Mock.go(it.href); else Mock.toast({ icon: it.act[0], text: `${it.act[1]}…` }); return true; }
-  if (k === 'Enter' || k === 'o') { Mock.go('reader.html'); return true; }
-  if (k === 'd') { Mock.go('later-picker.html'); return true; }
-  if (k === 's') { Mock.go('reader.html'); return true; }
-});
-el.addEventListener('click', e => {
-  const b = e.target.closest('[data-go]');
-  if (b) { const g = b.dataset.go; if (g === 'done' || g === 'later') commit(g); else if (g === 'space') { const it = items[focus]; it.href ? Mock.go(it.href) : Mock.toast({ icon: it.act[0], text: `${it.act[1]}…` }); } return; }
-  const r = e.target.closest('[data-row]'); if (r && !r.classList.contains('focus-letter')) { const i = [...el.querySelectorAll('[data-row]')].indexOf(r); focus = i; render(); }
-});
-el.addEventListener('dblclick', e => { if (e.target.closest('[data-row]')) Mock.go('reader.html'); });
-render();
+HomeView(document.getElementById('home'), { noAI: Mock.state === 'no-ai' });
 </script>
 </body>
 </html>

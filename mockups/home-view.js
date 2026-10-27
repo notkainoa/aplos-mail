@@ -1,13 +1,15 @@
-/* Shared Home rendering for the state pages (later-picker, errors, toasts, demo).
+/* Shared Home rendering (revision 2): home.html, the state pages, and the Home drawn behind overlays.
    Same markup, same classes and same commit motion as home.html; only the data is a parameter.
    Usage (after shell.js, inside the body, before DOMContentLoaded):
-     const home = HomeView(document.getElementById('home'), { items, low: { names, n }, noAI, focus, onKey, toasts });
+     const home = HomeView(document.getElementById('home'), { items, low: { names, n }, noAI, focus, onKey, quiet, keys, enabled });
+     HomeBackdrop.mount(el, { focus, quiet, keys, enabled })  — same thing with the default items (for overlays).
+     quiet: the focus letter's action becomes a text button (an overlay owns the one filled button).
+     keys: false disables Home's keys; enabled(): return false to pause them.
    Items: { sec: 'new'|'due'|'wait'|'low', sender, unread, date, act: [icon, label], href, sum, subj, due, err }
    Tokens only; no raw values. */
 (function () {
   const css = document.createElement('style');
   css.textContent = `
-    .column { position: relative; padding-top: var(--space-1); }
     .home-row { --sender-w: var(--sender-w-home); cursor: default; }
     .home-row .chip { margin-right: var(--space-1); }
     .ghost-paper { position: absolute; left: 0; right: 0; z-index: 30; pointer-events: none; }
@@ -15,7 +17,7 @@
   document.head.append(css);
 
   const SECTIONS = {
-    new: ['New', `<button class="btn btn-text" data-tip="Open each letter in turn">Go one by one <span class="kbd hint">S</span></button>`],
+    new: ['New', `<button class="btn btn-text" data-tip="Open each letter in turn" data-key="S">Go one by one</button>`],
     due: ['Due now', `<button class="btn btn-text">Clear from Home</button>`],
     wait: ['Waiting on others', ''],
   };
@@ -55,7 +57,7 @@
 
   window.HomeView = function (el, o) {
     const ic = Mock.icon;
-    const items = o.items.map((x, i) => ({ ...x, id: i }));
+    const items = (o.items || DEFAULT_ITEMS).map((x, i) => ({ ...x, id: i }));
     const state = { items, focus: o.focus ?? 1 };
     const noAI = !!o.noAI;
     const low = o.low || { names: 'Parcel Trail, Field Notes, Cedar Market and 3 more', n: 6 };
@@ -69,11 +71,10 @@
     function row(it, dist) {
       if (it.sec === 'low') return `<div class="low-band ${dist === 0 ? 'is-cursor' : ''}" data-row role="option" data-tip="Open low importance" data-key="Return">
         <span class="label">Low importance</span><span class="names">${low.names}</span><span class="n">${low.n}</span></div>`;
-      const ramp = dist <= 2 ? 'near' : 'far';
       const line = it.err
         ? `<span class="row-err">${ic('alert')}<span class="ellipsis">${it.err}</span></span><button class="btn btn-text xs" data-retry="${it.id}">Retry</button>`
         : `${it.due ? `<span class="chip due">${ic('clock')}${it.due}</span>` : ''}<span class="ellipsis">${text(it)}</span>`;
-      return `<div class="row home-row ${it.unread ? 'unread' : ''} ${it.err ? 'is-error' : ''} ${ramp}" data-row data-i="${it.id}" role="option">
+      return `<div class="row home-row ${it.unread ? 'unread' : ''} ${it.err ? 'is-error' : ''}" data-row data-i="${it.id}" role="option">
         <span class="dot"></span><span class="sender ellipsis">${it.sender}</span>
         <span class="line">${line}</span>
         <span class="meta">${it.date}</span>
@@ -86,11 +87,10 @@
           <div class="meta-line"><span class="sender">${it.sender}</span>${it.due ? `<span class="chip overdue">${ic('clock')}${it.due}</span>` : ''}<span class="date">${it.date}</span></div>
           <p class="summary t-summary">${text(it)}</p>
           <div class="actions">
-            <button class="btn btn-filled md" data-go="space">${ic(it.act[0])}${it.act[1]}<span class="kbd">Space</span></button>
-            <button class="btn btn-text md" data-go="later" data-later>${ic('clock')}Later<span class="kbd hint">L</span></button>
-            <button class="btn btn-text md" data-go="done">${ic('check')}Done<span class="kbd hint">E</span></button>
-            <button class="btn btn-icon md" data-tip="Bookmark" data-key="B" aria-label="Bookmark">${ic('bookmark')}</button>
-            <button class="btn btn-icon md" data-tip="More" data-key="." aria-label="More">${ic('more')}</button>
+            <button class="btn ${o.quiet ? 'btn-text' : 'btn-filled'} md" data-go="space">${ic(it.act[0])}${it.act[1]}${o.quiet ? '' : '<span class="kbd">Space</span>'}</button>
+            <button class="btn btn-text md" data-go="later" data-later data-tip="Later" data-key="L">${ic('clock')}Later</button>
+            <button class="btn btn-text md" data-go="done" data-tip="Done" data-key="E">${ic('check')}Done</button>
+            <button class="btn btn-icon md" data-tip="More: bookmark, trash, why it’s here" data-key="." aria-label="More">${ic('more')}</button>
           </div>
         </div>
       </article>`;
@@ -146,8 +146,9 @@
     }
     const api = { state, items, render, commit, move };
 
-    Mock.onKey(e => {
+    if (o.keys !== false) Mock.onKey(e => {
       if (e.target.closest('input,textarea') || e.metaKey || e.ctrlKey) return;
+      if (o.enabled && !o.enabled()) return;
       if (o.onKey && o.onKey(e, api) === true) return true;
       const k = e.key;
       if (k === 'j' || k === 'ArrowDown') { move(1); return true; }
@@ -181,4 +182,5 @@
     return api;
   };
   window.HomeView.DEFAULT_ITEMS = DEFAULT_ITEMS;
+  window.HomeBackdrop = { mount: (el, o = {}) => window.HomeView(el, { items: DEFAULT_ITEMS, ...o }) };
 })();
