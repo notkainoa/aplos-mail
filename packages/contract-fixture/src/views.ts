@@ -1,4 +1,4 @@
-import type { SearchQuery, ThreadRow, ViewSpec } from '@aplos/contract';
+import type { Plan, SearchQuery, ThreadRow, ViewSpec } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Store } from './store';
 import { atLocal, localDay } from './time';
@@ -26,6 +26,8 @@ export interface ViewContext {
   now: number;
   zone: string;
   body(messageId: string): string;
+  /** Threads remote search found, by query text (`Search/remote`, the `searchRemote` knob): they join search windows. */
+  remote?: ReadonlyMap<string, readonly string[]>;
 }
 
 const has = (t: ThreadRow, role: string) => t.labels.includes(`${t.accountId}:${role}`);
@@ -90,9 +92,10 @@ function lowGroups(ctx: ViewContext, accountId?: string) {
     count: list.length,
     latestThreadId: list[0]!.id,
     unsubscribe: list.some(t => !!t.unsubscribe),
+    threadIds: list.map(t => t.id),
   }));
 }
-export const senderGroups = (ctx: ViewContext) => lowGroups(ctx);
+export const senderGroups = (ctx: ViewContext) => lowGroups(ctx).map(({ threadIds: _, ...g }) => g);
 
 function matches(ctx: ViewContext, t: ThreadRow, q: SearchQuery) {
   const messages = ctx.store.all('Message').filter(m => m.threadId === t.id);
@@ -197,6 +200,21 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
         sections: groups.map((g, i) => ({ key: g.address, label: g.name, start: i, count: 1 })),
       };
     }
+    case 'lowBySender': {
+      // The Low sheet's threads, one run per sender in `lowSenders` order (FR-27).
+      const groups = lowGroups(ctx, spec.accountId);
+      const result: ViewResult = { rowType: 'Thread', ids: [], sections: [] };
+      for (const g of groups) {
+        result.sections.push({
+          key: g.address,
+          label: g.name,
+          start: result.ids.length,
+          count: g.threadIds.length,
+        });
+        result.ids.push(...g.threadIds);
+      }
+      return result;
+    }
     case 'mailbox': {
       const role = spec.role;
       const filter = (t: ThreadRow) =>
@@ -298,7 +316,12 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
     case 'search':
       return {
         rowType: 'Thread',
-        ids: ids(threads(t => matches(ctx, t, spec.query), spec.accountId).sort(newest)),
+        ids: ids(
+          threads(
+            t => matches(ctx, t, spec.query) || !!ctx.remote?.get(spec.query.text)?.includes(t.id),
+            spec.accountId,
+          ).sort(newest),
+        ),
         sections: [],
       };
     case 'thread': {
@@ -326,20 +349,41 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
         });
       return {
         rowType: 'Event',
-        ids: ids(eventsIn(ctx, spec.from, spec.to, spec.calendarIds, spec.includeDeclined)),
+        ids: ids(
+          eventsIn(ctx, spec.from, spec.to, spec.calendarIds, spec.includeDeclined).filter(
+            e => spec.includeHidden || !e.hidden,
+          ),
+        ),
         sections: [],
       };
     }
-    case 'plans':
+    case 'plans': {
+      const { from, to } = spec;
+      if (from !== undefined && to !== undefined && (to < from || to - from > maxEventRangeMs))
+        throw new ContractError({
+          type: 'rangeTooLarge',
+          message: 'Choose a range of at most 62 days.',
+        });
+      // With a range, only plans overlapping it (the grid's dashed outlines, FR-22).
+      const inRange = (p: Plan) =>
+        (from === undefined || instant(p.end, ctx.zone) > from) &&
+        (to === undefined || instant(p.start, ctx.zone) < to);
       return {
         rowType: 'Plan',
         ids: ids(
           ctx.store
             .all('Plan')
-            .filter(p => p.state === 'open' && (!spec.threadId || p.threadId === spec.threadId)),
+            .filter(
+              p =>
+                p.state === 'open' &&
+                (!spec.threadId || p.threadId === spec.threadId) &&
+                inRange(p),
+            )
+            .sort((a, b) => instant(a.start, ctx.zone) - instant(b.start, ctx.zone)),
         ),
         sections: [],
       };
+    }
     case 'conversations':
       return {
         rowType: 'Conversation',

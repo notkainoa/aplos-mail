@@ -117,8 +117,57 @@ export function controlHandler(fx: Fixture) {
         fx.emit({ frame: 'host', event: { type: 'clock', now: fx.now } });
         await settle();
         return { now: fx.now };
+      case 'askScript': {
+        const { knob: _, ...script } = args;
+        fx.askScripts.push(script);
+        return ok;
+      }
+      case 'failNextAi':
+        fx.aiFailures.set(
+          args.feature,
+          clean({ reasonCode: args.reasonCode, message: args.message }),
+        );
+        return ok;
+      case 'searchRemote': {
+        const { knob: _, ...script } = args;
+        fx.searchScripts.push(script);
+        return ok;
+      }
+      case 'transcribeResult':
+        fx.transcripts.push(args.text);
+        return ok;
+      case 'calendarChange': {
+        const e = fx.store.get('Event', args.eventId);
+        if (!e) throw new Error(`No event ${args.eventId}.`);
+        const { types } = fx.store.commit(tx =>
+          args.removed
+            ? tx.del('Event', e.id)
+            : tx.put('Event', { ...e, ...args.patch, sync: 'synced' }),
+        );
+        fx.changed(types);
+        await settle();
+        return ok;
+      }
+      case 'resolveConnect': {
+        const { knob: _, connectId, delayMs, ...outcome } = args;
+        if (!connectId)
+          fx.connectScripts.push({ ...outcome, ...(delayMs !== undefined ? { delayMs } : {}) });
+        else {
+          const live = fx.connects.get(connectId);
+          if (!live) throw new Error(`No connect flow ${connectId} is waiting.`);
+          if (delayMs) fx.clock.after(delayMs, () => live.finish(outcome));
+          else live.finish(outcome);
+        }
+        await settle();
+        return ok;
+      }
       case 'advanceClock':
         fx.clock.advance(args.ms);
+        await settle();
+        return { now: fx.now };
+      case 'sleep':
+        fx.clock.sleep(args.ms);
+        fx.emit({ frame: 'host', event: { type: 'clock', now: fx.now } });
         await settle();
         return { now: fx.now };
       case 'setOrdering':

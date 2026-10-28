@@ -1,5 +1,6 @@
 import type { Account } from '@aplos/contract';
 import type { Fixture } from '../engine';
+import type { ConnectOutcome } from '../control-types';
 import { demoData } from '../data/demo';
 import { accountRows, insert, loadDemo } from '../scenarios';
 import type { SetupRecord, Tx } from '../store';
@@ -96,17 +97,39 @@ export function account(fx: Fixture) {
     must(fx.store, 'Account', id, 'This account is no longer connected.');
   const sendingIn = (accountId: string) =>
     fx.store.all('Submission').some(s => s.accountId === accountId && s.state === 'sending');
-  /** A connect flow: `waiting` now, then the outcome after the browser step, all as `connect` frames. */
-  const flow = (mode: 'new' | 'reconnect' | 'grantPermissions', done: () => string) => {
+  /**
+   * A connect flow: `waiting` now, then the outcome after the browser step, all as `connect` frames. A reconnect or
+   * permission grant names its account on every frame and every frame keeps the flow's mode (freeze FR-23). The outcome
+   * is `connected` after 800 ms unless the `resolveConnect` knob scripted another.
+   */
+  const flow = (
+    mode: 'new' | 'reconnect' | 'grantPermissions',
+    accountId: string | undefined,
+    done: () => string,
+  ) => {
     const connectId = fx.id('connect');
-    fx.emit({ frame: 'connect', connectId, mode, state: 'waiting' });
+    const frame = (state: string, extra: { accountId?: string; reasonCode?: string } = {}) =>
+      fx.emit({
+        frame: 'connect',
+        connectId,
+        mode,
+        state,
+        ...(accountId ? { accountId } : {}),
+        ...extra,
+      });
+    const finish = (o: ConnectOutcome) => {
+      if (!fx.connects.delete(connectId)) return;
+      fx.runs.get(connectId)?.();
+      fx.runs.delete(connectId);
+      if (o.outcome === 'connected') frame('connected', { accountId: done() });
+      else frame(o.outcome, o.reasonCode ? { reasonCode: o.reasonCode } : {});
+    };
+    fx.connects.set(connectId, { finish });
+    frame('waiting');
+    const script = fx.connectScripts.shift();
     fx.runs.set(
       connectId,
-      fx.clock.after(800, () => {
-        fx.runs.delete(connectId);
-        const accountId = done();
-        fx.emit({ frame: 'connect', connectId, mode, state: 'connected', accountId });
-      }),
+      fx.clock.after(script?.delayMs ?? 800, () => finish(script ?? { outcome: 'connected' })),
     );
     return { connectId };
   };
@@ -164,7 +187,7 @@ export function account(fx: Fixture) {
     'Account/connect': ({ provider, loginHint, name }) => {
       if (provider !== 'google')
         fail('unsupported', 'Only Gmail accounts can be connected in this version.');
-      return flow('new', () => {
+      return flow('new', undefined, () => {
         const id = fx.id('acct');
         const address = (loginHint ?? `you.${id}@practice.example`).toLowerCase();
         const acct: Account = {
@@ -239,7 +262,7 @@ export function account(fx: Fixture) {
     },
     'Account/reconnect': ({ accountId }) => {
       accountOf(accountId);
-      return flow('reconnect', () => {
+      return flow('reconnect', accountId, () => {
         const a = accountOf(accountId);
         fx.write({ kind: 'Account/reconnect' }, tx =>
           tx.put('Account', {
@@ -254,9 +277,18 @@ export function account(fx: Fixture) {
         return accountId;
       });
     },
+    'Account/updateSecret': ({ accountId }) => {
+      const a = accountOf(accountId);
+      // Only app-password and API-token accounts take a pasted secret (FR-25); Google signs in again in the browser.
+      if (a.provider === 'google')
+        fail('unsupported', 'Google accounts sign in again in the browser. Use Reconnect.');
+      if (a.provider !== 'imap' && a.provider !== 'jmap')
+        fail('unsupported', 'This account has no password to update.');
+      return flow('reconnect', accountId, () => accountId);
+    },
     'Account/grantPermissions': ({ accountId }) => {
       accountOf(accountId);
-      return flow('grantPermissions', () => {
+      return flow('grantPermissions', accountId, () => {
         const { missingPermissions: _, ...a } = accountOf(accountId);
         fx.write({ kind: 'Account/grantPermissions' }, tx =>
           tx.put('Account', {
@@ -271,11 +303,9 @@ export function account(fx: Fixture) {
       });
     },
     'Account/cancelConnect': ({ connectId }) => {
-      const stop = fx.runs.get(connectId);
-      if (!stop) return { cancelled: false };
-      stop();
-      fx.runs.delete(connectId);
-      fx.emit({ frame: 'connect', connectId, mode: 'new', state: 'cancelled' });
+      const live = fx.connects.get(connectId);
+      if (!live) return { cancelled: false };
+      live.finish({ outcome: 'cancelled' });
       return { cancelled: true };
     },
     'Account/set': ({ opId, accountId, name, colorTag, aiAllowed, notifications }) => {

@@ -14,6 +14,7 @@ validation. The design is ARCHITECTURE.md section 9; plan 10 section 4.1 and pla
 | `src/wire.ts` | The call and reply envelopes, `Hello`, and every push frame |
 | `src/api/*.ts` | Every method, grouped by domain, each stamped with its owning area |
 | `src/registry/` | `area()` and `desktop()`, the merged `methods` table, `parseArgs`, `checkResult` and the type helpers (`Input<M>`, `Output<M>`) |
+| `src/access.ts` | `checkAccess`, `requireScope` and `principalOf`: the default-deny rules from the generated tables, no zod (`@aplos/contract/access`) |
 | `src/client/` | `createClient(session)` and `api.<type>.<verb>()`, `routeByHost`, the `EngineConnection` interface |
 | `src/legacy-methods.ts` | Today's 66 method names (47 engine, 19 desktop) and where each capability lives in v1 |
 | `GAPS.md` | How v1 answers every gap the UI threads raised before the freeze: closed, already there, or rejected with the reason |
@@ -37,7 +38,8 @@ Every schema follows ARCH 9.3, and `tests/wire-rules.test.ts` enforces it:
 
 1. Add it to the right file in `src/api/`, inside its area's `area('<area>', {...})` block. The name is `Type/verb`: a
    PascalCase type and a camelCase verb. Give it `input`, `output`, `kind` (`query` or `command`), `scope`, a one-line
-   `summary`, and `secret`, `uiOnly` or `audit` where they apply (see `src/registry/define.ts`).
+   `summary`, and `secret`, `uiOnly`, `audit`, `scopeRule` or `windowOnlyArgs` where they apply (see
+   `src/registry/define.ts`).
 2. Commands take an `opId` and return a `Receipt`, or a row plus a receipt.
 3. Run `npm run generate -w @aplos/contract`. This rewrites `generated/`, and the golden test fails until you do.
 4. Add the handler to `packages/engine/src/methods/<area>.ts`. Its type demands the new entry. `methods/index.ts` does
@@ -63,7 +65,32 @@ The generated tables say who may call what:
 
 - Preload allows `rendererMethods` and routes `desktopMethods` to main.
 - The listener (socket, loopback HTTP) carries `listenerMethods`: engine methods that are not `secret`, `uiOnly` or `host`.
-- The MCP adapter exposes `mcpMethods`, the `read` and `draft` scopes only.
+- The MCP adapter exposes `mcpMethods`: the `read` and `draft` scopes, minus anything audited, so nothing destructive
+  (`Draft/destroy`) runs without the owner (ARCH 12.3 item 6).
+
+Every dispatch denies by default with `checkAccess(method, caller, args)` from `@aplos/contract/access` (zod-free, so the
+neutral engine can use it): the method's scope must be in `caller.scopes`; `host` methods need main's connection;
+`uiOnly` and `secret` methods need a window or main; and a listener may not set a `windowOnlyArgs` path (`patch.ai` on
+`Settings/set`, `aiAllowed` on `Account/set`). Two registry tags add a check the handler makes from its data, with
+`requireScope`:
+
+- `scopeRule: 'originating'` (`Operation/undo`, `Operation/retry`, `Queue/retry`, `Queue/discard`): the caller also needs
+  the scope of the method that made the operation or item (`Operation.scope`, `QueueItem.scope`), so a triage tool cannot
+  re-send mail or re-invite guests.
+- `scopeRule: 'guests'` (`Ask/decide`): accepting an event that invites anyone but the owner also needs `send`.
+
+Blobs and frame tokens carry at least 128 random bits and belong to the principal that made them (`principalOf`: every
+window and main are one, each listener client its own). Another caller's id answers `notFound`, on `Blob/get`,
+`Blob/release`, `GET /v1/blob/:id`, `DraftAttachment.blobId` and `Ai/transcribe` alike. "Use this account's mail for
+AI" bounds every AI call: a scope or thread naming an excluded account never widens it.
+
+Over the socket the first frame is `Hello` with the client's `token`, answered by `HelloReply`. Over HTTP:
+
+- `Authorization: Bearer <token>` on every request, compared in constant time with the stored hash; nothing else
+  authenticates, and a token is never logged.
+- `Host` must be exactly `127.0.0.1:<port>` or `localhost:<port>`, else 421; an `Origin`, when present, must match an
+  allowed origin exactly, else 403. No CORS headers are ever reflected.
+- Every response is `Cache-Control: no-store`.
 
 Transports validate every call with `parseArgs(method, args)` before `dispatch`. The neutral engine imports no zod, which
 keeps it inside its 400,000-byte budget. Output schemas are checked with `checkResult` in tests and dev builds only.

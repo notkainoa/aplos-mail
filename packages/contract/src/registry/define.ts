@@ -62,6 +62,21 @@ export interface MethodSpec<I extends Schema = Schema, O extends Schema = Schema
   uiOnly?: true;
   /** A call from a non-UI client writes an `audit_log` row (sends, deletes, settings changes). */
   audit?: true;
+  /**
+   * A check the handler makes from the data it acts on, after the method's own scope (freeze FR-3, FR-4). Scopes are a
+   * set, not a hierarchy, so a cheap scope must never reach an effect a dearer one guards:
+   * - `originating`: the call acts on an operation, queue item or submission another method created. The caller's scopes
+   *   must also include that method's scope (`Operation.scope`, `QueueItem.scope`; `send` for submissions), else
+   *   `forbidden`. `requireScope` in `@aplos/contract/access` makes the check.
+   * - `guests`: what the call creates would invite or email someone other than the owner (an event with a non-self
+   *   attendee). The caller's scopes must also include `send`, else `forbidden`.
+   */
+  scopeRule?: 'originating' | 'guests';
+  /**
+   * Argument paths only Electron windows and main may set (FR-5): a listener call whose arguments hold any of them
+   * answers `forbidden`, whatever its scopes. Dot paths from the input root, e.g. `patch.ai`. `checkAccess` applies them.
+   */
+  windowOnlyArgs?: readonly string[];
 }
 
 /** A registered method: its spec plus the host and area the registry stamps on it. */

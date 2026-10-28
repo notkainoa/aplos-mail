@@ -183,8 +183,10 @@ export const MailFrame = z.object({
   quotedCount: Count,
   /**
    * Stand-in engine only: the sanitized document for an `<iframe srcdoc>`, so the reader works before `eng-html`'s
-   * sealed `aplos-mail://` protocol exists (roadmap section 10, plan 30 item 3). The real engine never sets it; the reader
-   * must use `url` whenever this is absent.
+   * sealed `aplos-mail://` protocol exists (roadmap section 10, plan 30 item 3). Frozen rules (FR-34): the real engine
+   * never sets it (the conformance suite fails a non-stand-in target that does); the document carries its own
+   * `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; ...">`; and the reader uses it only in an
+   * unpackaged build while `Session.capabilities.mailFrame` is false, inside `sandbox=""`. Otherwise it uses `url`.
    */
   srcdoc: z.optional(text(5_000_000)),
 });
@@ -208,9 +210,15 @@ export const ThreadAction = z.discriminatedUnion('type', [
   z.object({ type: z.literal('due'), date: z.optional(LocalDate) }),
   /**
    * A reminder at `at`. With `ifNoReply` it fires only if nobody replied, and without `at` it falls due after
-   * `mail.followUpDays` (R after Done on Follow up). Neither field clears the reminder.
+   * `mail.followUpDays` (R after Done on Follow up). `clear: true` removes the reminder, and the other fields are then
+   * ignored (freeze FR-28).
    */
-  z.object({ type: z.literal('reminder'), at: z.optional(EpochMs), ifNoReply: z.optional(bool()) }),
+  z.object({
+    type: z.literal('reminder'),
+    at: z.optional(EpochMs),
+    ifNoReply: z.optional(bool()),
+    clear: z.optional(bool()),
+  }),
   /**
    * A lane chosen in "Why it's here", stored with `rank_source='user'`; absolute, so a retry is idempotent. The toast's
    * "Always do this for [sender]" sends it with the lane the thread already moved to and `alsoForSender`, which only adds
@@ -233,8 +241,13 @@ export const ThreadAction = z.discriminatedUnion('type', [
     status: choice(['none', 'needsReply', 'awaitingReply']),
   }),
   z.object({ type: z.literal('todo'), text: z.optional(text(2_000)) }),
-  /** Hide from Home or show there again (today's `home.hide`). "Clear from Home" on Back from Later is `later` instead. */
+  /** Hide from Home or show there again (today's `home.hide`). */
   z.object({ type: z.literal('home'), hidden: bool() }),
+  /**
+   * "Clear from Home" on Back from Later (FR-28): each thread goes back to Later keeping its own `laterUntil`, so it
+   * stays in Later's Overdue group, and leaves Home until it is acted on. A thread not back from Later is unchanged.
+   */
+  z.object({ type: z.literal('clearFromHome') }),
   z.object({ type: z.literal('labels'), add: Ids(100), remove: Ids(100) }),
 ]);
 export type ThreadAction = z.infer<typeof ThreadAction>;
@@ -250,6 +263,11 @@ export const Operation = z.object({
   undoable: z.boolean(),
   undoUntil: z.optional(EpochMs),
   createdAt: EpochMs,
+  /**
+   * The scope of the method that made it (`send` for `Submission/set` and `Event/set`). `Operation/undo`,
+   * `Operation/retry` and `Queue/*` need it as well as their own (freeze FR-3), so a triage tool cannot re-send.
+   */
+  scope: z.optional(openEnum(['read', 'triage', 'draft', 'send', 'ai', 'admin'])),
 });
 export type Operation = z.infer<typeof Operation>;
 
@@ -287,6 +305,12 @@ export const ViewSpec = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('homeSection'), section: homeSection, ...account }),
   /** The Low importance sheet grouped by sender: rows are `SenderGroup`s. */
   z.object({ kind: z.literal('lowSenders'), ...account }),
+  /**
+   * The Low importance sheet's threads grouped by sender (FR-27): `Thread` rows, one `WindowSection` per sender (key the
+   * address, label the name), senders in `lowSenders` order and threads newest first within each. A thread view, so a
+   * `ThreadSelector` with a sender's `section` marks one sender's threads.
+   */
+  z.object({ kind: z.literal('lowBySender'), ...account }),
   /** Go one by one: a frozen order taken when the window opens, so items never reshuffle while you work through them. */
   z.object({ kind: z.literal('oneByOne'), section: homeSection, ...account }),
   /** Inbox, All mail, Sent, Trash, Spam, Archive, Starred by folder role. */
@@ -322,10 +346,24 @@ export const ViewSpec = z.discriminatedUnion('kind', [
     to: EpochMs,
     calendarIds: z.optional(Ids(200)),
     includeDeclined: z.optional(bool()),
+    /**
+     * Reserved and ignored in v1 (FR-22): an events window holds `Event` rows only. The grid's dashed "From mail" outlines
+     * come from a `plans` window over the same range.
+     */
     includePlans: z.optional(bool()),
+    /** Include events hidden in Aplos (`Event/hide`), e.g. for a "Show hidden" toggle. */
+    includeHidden: z.optional(bool()),
   }),
-  /** Plans found in mail and not yet confirmed or dismissed. */
-  z.object({ kind: z.literal('plans'), threadId: z.optional(Id) }),
+  /**
+   * Plans found in mail and not yet confirmed or dismissed, oldest start first; with `from` and `to`, only those
+   * overlapping that range (at most 62 days), for the calendar grid.
+   */
+  z.object({
+    kind: z.literal('plans'),
+    threadId: z.optional(Id),
+    from: z.optional(EpochMs),
+    to: z.optional(EpochMs),
+  }),
   /** Ask history, newest first. */
   z.object({ kind: z.literal('conversations') }),
 ]);
@@ -381,7 +419,8 @@ export const SenderGroup = z.object({
  * A labelled run of a view, counted across the whole view, not just the window; runs never overlap. Keys: `home` has
  * `do`, `fromLater`, `update`, `low` and `follow` in that order (`fromLater` is Back from Later at the bottom of Do now,
  * whose count is the two together; `low` is the band, with `count` and `senders` but no rows in `ids`); `later` has
- * `overdue`, `today`, `week` and `someday`; `lowSenders` has one per sender (the address, with `label` the name).
+ * `overdue`, `today`, `week` and `someday`; `lowSenders` and `lowBySender` have one per sender (the address, with
+ * `label` the name).
  */
 export const WindowSection = z.object({
   key: line(320),

@@ -9,6 +9,7 @@ export const handlers: AreaHandlers<'event'> = {
   'Calendar/set': notImplemented('Calendar/set'),
   'Event/get': notImplemented('Event/get'),
   'Event/set': notImplemented('Event/set'),
+  'Event/hide': notImplemented('Event/hide'),
   'Event/rsvp': notImplemented('Event/rsvp'),
   'Event/extract': notImplemented('Event/extract'),
   'Plan/get': notImplemented('Plan/get'),

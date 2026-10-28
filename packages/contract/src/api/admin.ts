@@ -39,17 +39,22 @@ export const queue = area('queue', {
     output: z.object({ list: z.array(QueueItem) }),
   },
   'Queue/retry': {
-    summary: 'Retry a queued item now.',
+    summary:
+      'Retry a queued item now. Needs the scope of the method that made it (`QueueItem.scope`; `send` for a submission).',
     kind: 'command',
     scope: 'admin',
+    audit: true,
+    scopeRule: 'originating',
     input: z.object({ id: Id }),
     output: Ok,
   },
   'Queue/discard': {
-    summary: 'Discard a queued item.',
+    summary:
+      'Discard a queued item. Needs the scope of the method that made it (`QueueItem.scope`; `send` for a submission).',
     kind: 'command',
     scope: 'admin',
     audit: true,
+    scopeRule: 'originating',
     input: z.object({ id: Id }),
     output: Ok,
   },
@@ -75,6 +80,7 @@ export const diagnostics = area('diagnostics', {
       'Turn the verbose protocol log (headers only) on, switching itself off after 15 minutes, or off.',
     kind: 'command',
     scope: 'admin',
+    audit: true,
     input: z.object({ on: bool() }),
     output: z.object({ until: z.optional(EpochMs) }),
   },

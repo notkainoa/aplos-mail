@@ -174,9 +174,11 @@ export const thread = area('thread', {
 export const operation = area('operation', {
   'Operation/undo': {
     summary:
-      'Undo an operation: cancel it while held (`undoUntil`), else queue its inverse under `undoOpId`; never a delayed commit.',
+      'Undo an operation: cancel it while held (`undoUntil`), else queue its inverse under `undoOpId`; never a delayed commit. A send is cancelled while queued or scheduled. Needs the scope of the method that made the operation.',
     kind: 'command',
     scope: 'triage',
+    audit: true,
+    scopeRule: 'originating',
     input: z.object({ opId: OpId, undoOpId: OpId }),
     output: Receipt,
   },
@@ -188,9 +190,12 @@ export const operation = area('operation', {
     output: z.object({ list: z.array(Operation), notFound: z.array(z.string()) }),
   },
   'Operation/retry': {
-    summary: 'Retry a failed operation (the inline Retry after a rejected write).',
+    summary:
+      'Retry a failed operation (the inline Retry after a rejected write). Needs the scope of the method that made the operation.',
     kind: 'command',
     scope: 'triage',
+    audit: true,
+    scopeRule: 'originating',
     input: z.object({ opId: OpId }),
     output: Receipt,
   },
@@ -233,9 +238,10 @@ export const mail = area('mail', {
   },
   'Mail/frame': {
     summary:
-      'Render a message into the sealed `aplos-mail://` frame: sanitized on read, trackers removed, remote images blocked unless loaded or allowed.',
+      'Render a message into the sealed `aplos-mail://` frame: sanitized on read, trackers removed, remote images blocked unless loaded or allowed. Electron windows only: a frame URL means nothing elsewhere, and the 64-token cap is per window.',
     kind: 'query',
     scope: 'read',
+    uiOnly: true,
     input: z.object({
       messageId: Id,
       imagePolicy: choice(['block', 'load']),
@@ -257,6 +263,7 @@ export const mail = area('mail', {
     summary: 'Free a frame token when the reader replaces it.',
     kind: 'query',
     scope: 'read',
+    uiOnly: true,
     input: z.object({ url: line(500) }),
     output: Ok,
   },
@@ -265,6 +272,7 @@ export const mail = area('mail', {
       'Re-render a frame with quoted history opened or closed (the O key); returns the new frame.',
     kind: 'query',
     scope: 'read',
+    uiOnly: true,
     input: z.object({ url: line(500), open: bool() }),
     output: MailFrame,
   },

@@ -154,13 +154,16 @@
     "/call/Settings/set": {
       "post": {
         "operationId": "Settings_set",
-        "summary": "Change settings by section; `stateMismatch` when `ifInState` is behind.",
+        "summary": "Change settings by section; `stateMismatch` when `ifInState` is behind. The `ai` section (providers, their addresses, the paid mark, features, background) is for Electron windows only.",
         "tags": [
           "settings"
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
+        "x-aplos-window-only-args": [
+          "patch.ai"
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -801,12 +804,14 @@
     "/call/Operation/undo": {
       "post": {
         "operationId": "Operation_undo",
-        "summary": "Undo an operation: cancel it while held (`undoUntil`), else queue its inverse under `undoOpId`; never a delayed commit.",
+        "summary": "Undo an operation: cancel it while held (`undoUntil`), else queue its inverse under `undoOpId`; never a delayed commit. A send is cancelled while queued or scheduled. Needs the scope of the method that made the operation.",
         "tags": [
           "operation"
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
+        "x-aplos-audit": true,
+        "x-aplos-scope-rule": "originating",
         "requestBody": {
           "required": true,
           "content": {
@@ -887,12 +892,14 @@
     "/call/Operation/retry": {
       "post": {
         "operationId": "Operation_retry",
-        "summary": "Retry a failed operation (the inline Retry after a rejected write).",
+        "summary": "Retry a failed operation (the inline Retry after a rejected write). Needs the scope of the method that made the operation.",
         "tags": [
           "operation"
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
+        "x-aplos-audit": true,
+        "x-aplos-scope-rule": "originating",
         "requestBody": {
           "required": true,
           "content": {
@@ -1059,12 +1066,13 @@
     "/call/Mail/frame": {
       "post": {
         "operationId": "Mail_frame",
-        "summary": "Render a message into the sealed `aplos-mail://` frame: sanitized on read, trackers removed, remote images blocked unless loaded or allowed.",
+        "summary": "Render a message into the sealed `aplos-mail://` frame: sanitized on read, trackers removed, remote images blocked unless loaded or allowed. Electron windows only: a frame URL means nothing elsewhere, and the 64-token cap is per window.",
         "tags": [
           "mail"
         ],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
+        "x-aplos-ui-only": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -1152,6 +1160,7 @@
         ],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
+        "x-aplos-ui-only": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -1195,6 +1204,7 @@
         ],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
+        "x-aplos-ui-only": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -1490,7 +1500,7 @@
     "/call/Draft/set": {
       "post": {
         "operationId": "Draft_set",
-        "summary": "Create (no `id`) or save a draft, compare-and-set on `baseRevision`: `stateMismatch` \"This draft changed in another window. Reopen it before editing.\"",
+        "summary": "Create (no `id`) or save a draft, compare-and-set on `baseRevision`: `stateMismatch` \"This draft changed in another window. Reopen it before editing.\" Refused while a send of it is live (`Draft.submissionId`).",
         "tags": [
           "draft"
         ],
@@ -1533,7 +1543,7 @@
     "/call/Draft/destroy": {
       "post": {
         "operationId": "Draft_destroy",
-        "summary": "Discard a draft; refused while it is sending.",
+        "summary": "Discard a draft, cancelling any send of it that has not started; refused while it is sending.",
         "tags": [
           "draft"
         ],
@@ -1574,10 +1584,53 @@
         }
       }
     },
+    "/call/Contact/suggest": {
+      "post": {
+        "operationId": "Contact_suggest",
+        "summary": "Recipient type-ahead for To, Cc and Bcc: addresses you have written to or heard from, ranked by how much (the correspondents table), matching the start of a name or address.",
+        "tags": [
+          "draft"
+        ],
+        "x-aplos-kind": "query",
+        "x-aplos-scope": "read",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Contact_suggest_input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Contact_suggest_output"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A failed call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/call/Draft/resolve": {
       "post": {
         "operationId": "Draft_resolve",
-        "summary": "Settle a draft changed on another device: keep mine, take theirs, or keep both (a copy).",
+        "summary": "Settle a draft changed on another device: keep mine, take theirs, or keep both (a copy). Refused while a send of it is live.",
         "tags": [
           "draft"
         ],
@@ -1663,7 +1716,7 @@
     "/call/Submission/set": {
       "post": {
         "operationId": "Submission_set",
-        "summary": "Send with undo, send later, undo, send now, reschedule, send anyway after an unconfirmed send, or retry a failed one.",
+        "summary": "Send with undo, send later, undo, send now, reschedule, send anyway after an unconfirmed send, retry a failed one, or cancel one that failed, is unconfirmed or missed its time.",
         "tags": [
           "submission"
         ],
@@ -1879,7 +1932,7 @@
     "/call/Ai/request": {
       "post": {
         "operationId": "Ai_request",
-        "summary": "Queue AI work for a thread ahead of the background order (today's `ai.summarize`); the result arrives as a Summary change. Without `force`, a thread with a summary is left alone.",
+        "summary": "Queue AI work for a thread ahead of the background order (today's `ai.summarize`); the result arrives as a Summary change. Without `force`, a thread with a summary is left alone. `forbidden` (`ai.accountExcluded`) for an account left out of AI.",
         "tags": [
           "ai"
         ],
@@ -2008,7 +2061,7 @@
     "/call/Ai/draft": {
       "post": {
         "operationId": "Ai_draft",
-        "summary": "Write a draft or reply from an instruction, as a suggestion at the caret.",
+        "summary": "Write a draft or reply from an instruction, as a suggestion at the caret; a `threadId` in an account left out of AI is `forbidden`.",
         "tags": [
           "ai"
         ],
@@ -2485,7 +2538,7 @@
     "/call/Ai/testKey": {
       "post": {
         "operationId": "Ai_testKey",
-        "summary": "One cheap request with the provider's current key (usually its model list). No mail is sent.",
+        "summary": "One cheap request with the provider's current key (usually its model list). No mail is sent. `message` is Aplos's own sentence for `reasonCode`, never the provider's text (FR-33).",
         "tags": [
           "ai"
         ],
@@ -2528,7 +2581,7 @@
     "/call/Ai/test": {
       "post": {
         "operationId": "Ai_test",
-        "summary": "One tiny request asking a model to call a tool, so a pass means Ask's tools work too. No mail is sent.",
+        "summary": "One tiny request asking a model to call a tool, so a pass means Ask's tools work too. No mail is sent. A failure's message is Aplos's own sentence for its `reasonCode`, never the provider's text (FR-33).",
         "tags": [
           "ai"
         ],
@@ -2571,7 +2624,7 @@
     "/call/Ask/run": {
       "post": {
         "operationId": "Ask_run",
-        "summary": "Ask about your mail; returns at once with a run id, streams `progress` frames, and the answer lands in the Conversation.",
+        "summary": "Ask about your mail; returns at once with a run id, streams `progress` frames, and the answer lands in the Conversation. `scope.accountIds` and `context` only narrow the accounts whose \"Use this account's mail for AI\" is on; they never widen past them.",
         "tags": [
           "ask"
         ],
@@ -2657,12 +2710,14 @@
     "/call/Ask/decide": {
       "post": {
         "operationId": "Ask_decide",
-        "summary": "Accept or dismiss something Ask proposed (a reply, an event, a triage); accepting returns the receipt for Undo.",
+        "summary": "Accept or dismiss something Ask proposed (a reply, an event, a triage); accepting returns the receipt for Undo. Accepting an event with a guest other than you also needs `send`, and invites go out only then.",
         "tags": [
           "ask"
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
+        "x-aplos-audit": true,
+        "x-aplos-scope-rule": "guests",
         "requestBody": {
           "required": true,
           "content": {
@@ -3175,13 +3230,14 @@
     "/call/Consent/grant": {
       "post": {
         "operationId": "Consent_grant",
-        "summary": "Agree to background AI for the version shown, naming the provider and model on the card.",
+        "summary": "Agree to background AI for the version shown, naming the provider and model on the card. Electron windows only: the owner must see the card (ARCH 8.3).",
         "tags": [
           "consent"
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
+        "x-aplos-ui-only": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -3306,12 +3362,14 @@
     "/call/Queue/retry": {
       "post": {
         "operationId": "Queue_retry",
-        "summary": "Retry a queued item now.",
+        "summary": "Retry a queued item now. Needs the scope of the method that made it (`QueueItem.scope`; `send` for a submission).",
         "tags": [
           "queue"
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
+        "x-aplos-audit": true,
+        "x-aplos-scope-rule": "originating",
         "requestBody": {
           "required": true,
           "content": {
@@ -3349,13 +3407,14 @@
     "/call/Queue/discard": {
       "post": {
         "operationId": "Queue_discard",
-        "summary": "Discard a queued item.",
+        "summary": "Discard a queued item. Needs the scope of the method that made it (`QueueItem.scope`; `send` for a submission).",
         "tags": [
           "queue"
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
+        "x-aplos-scope-rule": "originating",
         "requestBody": {
           "required": true,
           "content": {
@@ -3485,6 +3544,7 @@
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
+        "x-aplos-audit": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -3961,6 +4021,51 @@
         }
       }
     },
+    "/call/Account/updateSecret": {
+      "post": {
+        "operationId": "Account_updateSecret",
+        "summary": "Reconnect an app-password or API-token account (iCloud, IMAP, Fastmail) with its new secret after `needsReauth`; reports through `reconnect` connect frames, keeps queued changes, no resync. `calendarSecret` replaces a separate CalDAV app password.",
+        "tags": [
+          "account"
+        ],
+        "x-aplos-kind": "command",
+        "x-aplos-scope": "admin",
+        "x-aplos-audit": true,
+        "x-aplos-ui-only": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Account_updateSecret_input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectStart"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A failed call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/call/Account/grantPermissions": {
       "post": {
         "operationId": "Account_grantPermissions",
@@ -4051,13 +4156,16 @@
     "/call/Account/set": {
       "post": {
         "operationId": "Account_set",
-        "summary": "Rename an account, change its colour, its notifications or \"Use this account's mail for AI\".",
+        "summary": "Rename an account, change its colour, its notifications or \"Use this account's mail for AI\" (Electron windows only).",
         "tags": [
           "account"
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
+        "x-aplos-window-only-args": [
+          "aiAllowed"
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -4101,6 +4209,7 @@
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
+        "x-aplos-audit": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -4658,6 +4767,49 @@
         }
       }
     },
+    "/call/Event/hide": {
+      "post": {
+        "operationId": "Event_hide",
+        "summary": "Hide events in Aplos only (the event detail's Hide), or show them again; never written to the provider, so nobody is told.",
+        "tags": [
+          "event"
+        ],
+        "x-aplos-kind": "command",
+        "x-aplos-scope": "triage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Event_hide_input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Receipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A failed call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/call/Event/rsvp": {
       "post": {
         "operationId": "Event_rsvp",
@@ -4705,7 +4857,7 @@
     "/call/Event/extract": {
       "post": {
         "operationId": "Event_extract",
-        "summary": "Find dates and meetings in a thread with the Plans model (today's `calendar.extract`); results are Plans to confirm.",
+        "summary": "Find dates and meetings in a thread with the Plans model (today's `calendar.extract`); results are Plans to confirm. `forbidden` (`ai.accountExcluded`) for an account left out of AI.",
         "tags": [
           "event"
         ],
@@ -4791,12 +4943,13 @@
     "/call/Plan/confirm": {
       "post": {
         "operationId": "Plan_confirm",
-        "summary": "Add a plan to a calendar, with optional edits.",
+        "summary": "Add a plan to a calendar, with optional edits. Never with guests, so nobody is invited: add them afterwards with `Event/set`.",
         "tags": [
           "event"
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
+        "x-aplos-audit": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -5331,6 +5484,11 @@
             "maxLength": 4000,
             "pattern": "^[^\\r\\n]*$"
           },
+          "calendarSecret": {
+            "type": "string",
+            "maxLength": 4000,
+            "pattern": "^[^\\r\\n]*$"
+          },
           "server": {
             "$ref": "#/components/schemas/ServerSettings"
           },
@@ -5560,6 +5718,27 @@
         "required": [
           "account",
           "receipt"
+        ]
+      },
+      "Account_updateSecret_input": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "$ref": "#/components/schemas/Id"
+          },
+          "secret": {
+            "type": "string",
+            "maxLength": 4000,
+            "pattern": "^[^\\r\\n]*$"
+          },
+          "calendarSecret": {
+            "type": "string",
+            "maxLength": 4000,
+            "pattern": "^[^\\r\\n]*$"
+          }
+        },
+        "required": [
+          "accountId"
         ]
       },
       "AccountCapabilities": {
@@ -6282,7 +6461,9 @@
             "pattern": "^[^\\r\\n]*$"
           },
           "message": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[^\\r\\n]*$"
           }
         },
         "required": [
@@ -7079,6 +7260,24 @@
                         "required": [
                           "start",
                           "end"
+                        ]
+                      }
+                    },
+                    "cites": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "$ref": "#/components/schemas/Count"
+                          },
+                          "n": {
+                            "$ref": "#/components/schemas/Count"
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "n"
                         ]
                       }
                     }
@@ -8055,6 +8254,64 @@
         },
         "required": [
           "scope"
+        ]
+      },
+      "Contact_suggest_input": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 320,
+            "pattern": "^[^\\r\\n]*$"
+          },
+          "accountId": {
+            "$ref": "#/components/schemas/Id"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "Contact_suggest_output": {
+        "type": "object",
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string",
+                  "maxLength": 320,
+                  "pattern": "^[^\\r\\n]*$"
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "pattern": "^[^\\r\\n]*$"
+                },
+                "sentTo": {
+                  "$ref": "#/components/schemas/Count"
+                },
+                "receivedFrom": {
+                  "$ref": "#/components/schemas/Count"
+                }
+              },
+              "required": [
+                "address",
+                "sentTo",
+                "receivedFrom"
+              ]
+            }
+          }
+        },
+        "required": [
+          "list"
         ]
       },
       "Conversation": {
@@ -9367,6 +9624,9 @@
             "type": "string",
             "maxLength": 2000
           },
+          "hidden": {
+            "type": "boolean"
+          },
           "sync": {
             "anyOf": [
               {
@@ -9461,6 +9721,29 @@
           "state",
           "list",
           "notFound"
+        ]
+      },
+      "Event_hide_input": {
+        "type": "object",
+        "properties": {
+          "opId": {
+            "$ref": "#/components/schemas/OpId"
+          },
+          "ids": {
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Id"
+            }
+          },
+          "hidden": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "opId",
+          "ids",
+          "hidden"
         ]
       },
       "Event_rsvp_input": {
@@ -10101,6 +10384,9 @@
               "citation": {
                 "$ref": "#/components/schemas/Citation"
               },
+              "at": {
+                "$ref": "#/components/schemas/Count"
+              },
               "proposal": {
                 "$ref": "#/components/schemas/Proposal"
               },
@@ -10366,12 +10652,105 @@
               "name",
               "kind"
             ]
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[^\\r\\n]*$"
           }
         },
         "required": [
           "v",
           "apiVersion",
           "client"
+        ]
+      },
+      "HelloReply": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": true
+              },
+              "session": {
+                "type": "object",
+                "properties": {
+                  "apiVersion": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "dbEpoch": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[^\\r\\n]*$"
+                  },
+                  "clientId": {
+                    "$ref": "#/components/schemas/Id"
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 30,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  }
+                },
+                "required": [
+                  "apiVersion",
+                  "dbEpoch",
+                  "clientId",
+                  "scopes"
+                ]
+              }
+            },
+            "required": [
+              "ok",
+              "session"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean",
+                "const": false
+              },
+              "error": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "unsupported",
+                          "forbidden"
+                        ]
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "message"
+                ]
+              }
+            },
+            "required": [
+              "ok",
+              "error"
+            ]
+          }
         ]
       },
       "HostEvent": {
@@ -11483,6 +11862,24 @@
           },
           "createdAt": {
             "$ref": "#/components/schemas/EpochMs"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "triage",
+                  "draft",
+                  "send",
+                  "ai",
+                  "admin"
+                ]
+              },
+              {
+                "type": "string"
+              }
+            ]
           }
         },
         "required": [
@@ -11715,29 +12112,6 @@
                 "type": "string",
                 "maxLength": 20000
               },
-              "attendees": {
-                "maxItems": 500,
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "address": {
-                      "$ref": "#/components/schemas/Email"
-                    },
-                    "name": {
-                      "type": "string",
-                      "maxLength": 200,
-                      "pattern": "^[^\\r\\n]*$"
-                    },
-                    "optional": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "address"
-                  ]
-                }
-              },
               "threadId": {
                 "$ref": "#/components/schemas/Id"
               }
@@ -11815,7 +12189,8 @@
             "type": "string"
           },
           "message": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 1000
           },
           "at": {
             "$ref": "#/components/schemas/EpochMs"
@@ -12168,6 +12543,25 @@
           },
           "canDiscard": {
             "type": "boolean"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "triage",
+                  "draft",
+                  "send",
+                  "ai",
+                  "admin",
+                  "host"
+                ]
+              },
+              {
+                "type": "string"
+              }
+            ]
           }
         },
         "required": [
@@ -12265,6 +12659,8 @@
               "ai.noConsent",
               "ai.trainsOnInputs",
               "ai.failed",
+              "ai.accountExcluded",
+              "send.overdue",
               "unknown"
             ]
           },
@@ -13918,6 +14314,288 @@
           "seq"
         ]
       },
+      "StrictDiagnosticsBundle": {
+        "type": "object",
+        "properties": {
+          "generatedAt": {
+            "$ref": "#/components/schemas/EpochMs"
+          },
+          "versions": {
+            "type": "object",
+            "properties": {
+              "app": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[^\\r\\n]*$"
+              },
+              "api": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "schema": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "os": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[^\\r\\n]*$"
+              },
+              "electron": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[^\\r\\n]*$"
+              },
+              "sqlite": {
+                "type": "string",
+                "maxLength": 40,
+                "pattern": "^[^\\r\\n]*$"
+              }
+            },
+            "required": [
+              "app",
+              "api",
+              "schema"
+            ]
+          },
+          "engine": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+              },
+              "uptimeMs": {
+                "$ref": "#/components/schemas/DurationMs"
+              },
+              "eventLoopP99Ms": {
+                "type": "number"
+              },
+              "parkedReason": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+              }
+            },
+            "required": [
+              "state",
+              "uptimeMs"
+            ]
+          },
+          "accounts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "accountHash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                "provider": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+                },
+                "state": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+                },
+                "reasonCode": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+                },
+                "cursorAgeMs": {
+                  "$ref": "#/components/schemas/DurationMs"
+                },
+                "lastSyncAt": {
+                  "$ref": "#/components/schemas/EpochMs"
+                },
+                "reconnectBy": {
+                  "$ref": "#/components/schemas/EpochMs"
+                },
+                "budgets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "budget": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+                      },
+                      "target": {
+                        "type": "number"
+                      },
+                      "unitsPerMinute": {
+                        "type": "number"
+                      },
+                      "cooldownUntil": {
+                        "$ref": "#/components/schemas/EpochMs"
+                      },
+                      "dailyBlockUntil": {
+                        "$ref": "#/components/schemas/EpochMs"
+                      }
+                    },
+                    "required": [
+                      "budget"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "accountHash",
+                "provider",
+                "state",
+                "budgets"
+              ]
+            }
+          },
+          "queues": {
+            "type": "object",
+            "properties": {
+              "ops": {
+                "$ref": "#/components/schemas/Count"
+              },
+              "jobs": {
+                "$ref": "#/components/schemas/Count"
+              },
+              "submissions": {
+                "$ref": "#/components/schemas/Count"
+              },
+              "failed": {
+                "$ref": "#/components/schemas/Count"
+              }
+            },
+            "required": [
+              "ops",
+              "jobs",
+              "submissions",
+              "failed"
+            ]
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "$ref": "#/components/schemas/EpochMs"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "class": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+                    },
+                    "provider": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+                    },
+                    "method": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "code": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+                    },
+                    "retryAfterMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "resumeAt": {
+                      "type": "number"
+                    },
+                    "concurrency": {
+                      "type": "boolean"
+                    },
+                    "uncertain": {
+                      "type": "boolean"
+                    },
+                    "missingScopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "class",
+                    "provider",
+                    "method",
+                    "reason"
+                  ]
+                }
+              },
+              "required": [
+                "at",
+                "error"
+              ]
+            }
+          },
+          "storage": {
+            "type": "object",
+            "properties": {
+              "dbBytes": {
+                "$ref": "#/components/schemas/Count"
+              },
+              "walBytes": {
+                "$ref": "#/components/schemas/Count"
+              },
+              "ftsBacklog": {
+                "$ref": "#/components/schemas/Count"
+              },
+              "bodyBytes": {
+                "$ref": "#/components/schemas/Count"
+              },
+              "attachmentBytes": {
+                "$ref": "#/components/schemas/Count"
+              }
+            },
+            "required": [
+              "dbBytes",
+              "walBytes",
+              "ftsBacklog",
+              "bodyBytes",
+              "attachmentBytes"
+            ]
+          },
+          "crashes": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "$ref": "#/components/schemas/Count"
+              },
+              "lastAt": {
+                "$ref": "#/components/schemas/EpochMs"
+              }
+            },
+            "required": [
+              "count"
+            ]
+          }
+        },
+        "required": [
+          "generatedAt",
+          "versions",
+          "engine",
+          "accounts",
+          "queues",
+          "errors",
+          "storage",
+          "crashes"
+        ]
+      },
       "Submission": {
         "type": "object",
         "properties": {
@@ -13940,6 +14618,9 @@
             "type": "string",
             "maxLength": 1000,
             "pattern": "^[^\\r\\n]*$"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/Count"
           },
           "state": {
             "$ref": "#/components/schemas/SubmissionState"
@@ -13975,7 +14656,8 @@
                 "type": "string"
               },
               "message": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 1000
               },
               "at": {
                 "$ref": "#/components/schemas/EpochMs"
@@ -13995,6 +14677,7 @@
           "draftId",
           "accountId",
           "internetId",
+          "revision",
           "state",
           "queuedAt",
           "notBefore",
@@ -14110,6 +14793,9 @@
               },
               "submissionId": {
                 "$ref": "#/components/schemas/Id"
+              },
+              "revision": {
+                "$ref": "#/components/schemas/Count"
               }
             },
             "required": [
@@ -14146,6 +14832,9 @@
               },
               "submissionId": {
                 "$ref": "#/components/schemas/Id"
+              },
+              "revision": {
+                "$ref": "#/components/schemas/Count"
               }
             },
             "required": [
@@ -14159,6 +14848,25 @@
               "type": {
                 "type": "string",
                 "const": "retry"
+              },
+              "submissionId": {
+                "$ref": "#/components/schemas/Id"
+              },
+              "revision": {
+                "$ref": "#/components/schemas/Count"
+              }
+            },
+            "required": [
+              "type",
+              "submissionId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "cancel"
               },
               "submissionId": {
                 "$ref": "#/components/schemas/Id"
@@ -14619,6 +15327,9 @@
               },
               "ifNoReply": {
                 "type": "boolean"
+              },
+              "clear": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -14743,6 +15454,18 @@
             "required": [
               "type",
               "hidden"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "clearFromHome"
+              }
+            },
+            "required": [
+              "type"
             ]
           },
           {
@@ -15530,6 +16253,21 @@
             "properties": {
               "kind": {
                 "type": "string",
+                "const": "lowBySender"
+              },
+              "accountId": {
+                "$ref": "#/components/schemas/Id"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
                 "const": "oneByOne"
               },
               "section": {
@@ -15753,6 +16491,9 @@
               },
               "includePlans": {
                 "type": "boolean"
+              },
+              "includeHidden": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -15770,6 +16511,12 @@
               },
               "threadId": {
                 "$ref": "#/components/schemas/Id"
+              },
+              "from": {
+                "$ref": "#/components/schemas/EpochMs"
+              },
+              "to": {
+                "$ref": "#/components/schemas/EpochMs"
               }
             },
             "required": [

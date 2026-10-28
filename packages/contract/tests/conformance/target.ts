@@ -1,4 +1,5 @@
-import type { EngineConnection } from '../../src/client/index';
+import type { EngineConnection, EngineSession } from '../../src/client/index';
+import type { Caller } from '../../src/access';
 
 /**
  * What an engine hands the conformance suite. Only contract-level abilities: the suite never reaches into an engine's
@@ -15,6 +16,12 @@ export interface EngineUnderTest {
   reset?(reason: 'dbEpoch' | 'restore' | 'restart'): Promise<void>;
   /** Force where a command's frames land relative to its reply. Without it, the engine's natural order is tested. */
   orderings?: { modes: readonly OrderingMode[]; set(mode: OrderingMode): Promise<void> };
+  /** A session as another caller, e.g. a listener client holding some scopes. The access tests are skipped without it. */
+  connectAs?(caller: Caller): EngineSession;
+  /** The Mac sleeps for `ms`: no timer fires on the way, then due work runs late at wake. The overdue test needs it. */
+  sleep?(ms: number): Promise<void>;
+  /** The stand-in engine, the only one allowed to answer `MailFrame.srcdoc` (freeze FR-34). */
+  standIn?: boolean;
   close?(): Promise<void>;
 }
 export type OrderingMode = 'receiptFirst' | 'frameFirst' | 'together';

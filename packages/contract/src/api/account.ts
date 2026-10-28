@@ -19,6 +19,7 @@ import {
 import { Account, AccountPreset, ConnectStart, Lease, ServerSettings } from '../schemas/account';
 
 const noBreaks = 'Passwords and tokens cannot contain line breaks.';
+const secretText = text(4_000).check(z.regex(/^[^\r\n]*$/, noBreaks));
 
 export const account = area('account', {
   'Account/get': {
@@ -72,7 +73,9 @@ export const account = area('account', {
       address: z.optional(Email),
       name: z.optional(line(200)),
       /** An app-specific password or API token for IMAP and JMAP hosts (round 2). Never logged or returned. */
-      secret: z.optional(text(4_000).check(z.regex(/^[^\r\n]*$/, noBreaks))),
+      secret: z.optional(secretText),
+      /** A second app password for the account's CalDAV calendars when `secret` is a mail-only API token (Fastmail). */
+      calendarSecret: z.optional(secretText),
       server: z.optional(ServerSettings),
       sessionUrl: z.optional(HttpsUrl),
     }),
@@ -85,6 +88,22 @@ export const account = area('account', {
     scope: 'admin',
     audit: true,
     input: z.object({ accountId: Id }),
+    output: ConnectStart,
+  },
+  'Account/updateSecret': {
+    summary:
+      'Reconnect an app-password or API-token account (iCloud, IMAP, Fastmail) with its new secret after `needsReauth`; reports through `reconnect` connect frames, keeps queued changes, no resync. `calendarSecret` replaces a separate CalDAV app password.',
+    kind: 'command',
+    scope: 'admin',
+    secret: true,
+    audit: true,
+    input: z
+      .object({
+        accountId: Id,
+        secret: z.optional(secretText),
+        calendarSecret: z.optional(secretText),
+      })
+      .check(z.refine(v => !!v.secret || !!v.calendarSecret, 'Paste the new password first.')),
     output: ConnectStart,
   },
   'Account/grantPermissions': {
@@ -104,10 +123,11 @@ export const account = area('account', {
   },
   'Account/set': {
     summary:
-      'Rename an account, change its colour, its notifications or "Use this account\'s mail for AI".',
+      'Rename an account, change its colour, its notifications or "Use this account\'s mail for AI" (Electron windows only).',
     kind: 'command',
     scope: 'admin',
     audit: true,
+    windowOnlyArgs: ['aiAllowed'],
     input: z.object({
       opId: OpId,
       accountId: Id,
@@ -123,6 +143,7 @@ export const account = area('account', {
       '"Use this Mac" for background work (pin), or back to automatic; every account when `accountId` is absent (ARCH 6.5).',
     kind: 'command',
     scope: 'admin',
+    audit: true,
     input: z.object({ accountId: z.optional(Id), pin: bool() }),
     output: z.object({ leases: z.array(z.object({ accountId: Id, lease: Lease })) }),
   },
