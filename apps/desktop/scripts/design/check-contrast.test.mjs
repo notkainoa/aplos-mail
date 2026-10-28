@@ -6,8 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { apcaLc, deltaE2000 } from "./color.mjs";
+import { pairsDocument } from "./build-tokens.mjs";
 import { evaluatePairs } from "./check-contrast.mjs";
-import { GENERATED_DIR, REFERENCES_PATH, TOKENS_PATH, readJson } from "./tokens-lib.mjs";
+import { GENERATED_DIR, REFERENCES_PATH, TOKENS_PATH, flattenTokens, readJson } from "./tokens-lib.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./check-contrast.mjs", import.meta.url));
 
@@ -26,7 +27,30 @@ function withTemp(name, data, fn) {
   }
 }
 
-const results = evaluatePairs(readJson(join(GENERATED_DIR, "contrast-pairs.json")));
+const BUILD = fileURLToPath(new URL("./build-tokens.mjs", import.meta.url));
+
+// Writes edited tokens to a temp folder, regenerates the pairs there (so the
+// stale-file check passes) and runs the contrast check against both.
+function checkEdited(edit) {
+  const tokens = readJson(TOKENS_PATH);
+  edit(tokens);
+  const dir = mkdtempSync(join(tmpdir(), "aplos-contrast-"));
+  try {
+    const path = join(dir, "tokens.json");
+    writeFileSync(path, JSON.stringify(tokens));
+    const built = spawnSync(process.execPath, [BUILD, "--tokens", path, "--out", dir], { encoding: "utf8" });
+    assert.equal(built.status, 0, built.stderr);
+    return runCheck(["--contrast", "--tokens", path, "--pairs", join(dir, "contrast-pairs.json")]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function pairs(tokens) {
+  return tokens.$extensions.aplos.contrastPairs;
+}
+
+const results = evaluatePairs(pairsDocument(flattenTokens(readJson(TOKENS_PATH))));
 
 function ratio(id, mode) {
   const row = results.find((r) => r.id === id && r.mode === mode);
@@ -123,6 +147,73 @@ test("the real tokens pass every check", () => {
   assert.match(result.stdout, /Accepted exception: line-strong-on-canvas in light/);
 });
 
+test("a colour changed in tokens.json is re-checked even if contrast-pairs.json is stale", () => {
+  const tokens = readJson(TOKENS_PATH);
+  tokens.color.dim.$value = "#c0c0c0";
+  withTemp("tokens.json", tokens, (path) => {
+    const result = runCheck(["--contrast", "--tokens", path, "--pairs", join(GENERATED_DIR, "contrast-pairs.json")]);
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /FAIL dim-on-canvas in light/);
+    assert.match(result.stdout, /contrast-pairs\.json is stale/);
+  });
+});
+
+test("a pair minimum below 4.5 or 3 fails", () => {
+  const result = checkEdited((tokens) => {
+    tokens.color["stamp-ink"].$extensions.aplos.dark = "#ff9090";
+    for (const pair of pairs(tokens).filter((p) => p.fg === "{color.stamp-ink}")) {
+      pair.min = 1.5;
+    }
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /declared min 1\.5 is below the 4\.5 required for text/);
+});
+
+test("an exception that is not on the allow-list fails", () => {
+  const result = checkEdited((tokens) => {
+    tokens.color["stamp-ink"].$value = "#ff9090";
+    for (const pair of pairs(tokens).filter((p) => p.fg === "{color.stamp-ink}")) {
+      pair.exception = { decision: "none", reason: "test" };
+    }
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /exception is not on the allow-list/);
+});
+
+test("the field ring exception has a floor", () => {
+  const result = checkEdited((tokens) => {
+    tokens.color["line-strong"].$value.percent = 2;
+    tokens.color["line-strong"].$extensions.aplos.dark.percent = 2;
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /FAIL line-strong-on-canvas in light: 1\.0\d is below the 1\.3 floor/);
+});
+
+test("coverage is per mode: a text token paired only in light fails", () => {
+  const result = checkEdited((tokens) => {
+    tokens.color.quiet = { $value: "#5f6268", $description: "test", $extensions: { aplos: { dark: "#202020", usage: ["text"] } } };
+    pairs(tokens).push({ fg: "{color.quiet}", bg: "{color.canvas}", kind: "text", modes: ["light"], usage: "test" });
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /color\.quiet: used as text but is the foreground of no text pair in dark, light-more, dark-more/);
+});
+
+test("a colour literal outside a colour token fails", () => {
+  const result = checkEdited((tokens) => {
+    tokens.color.brand = { $type: "string", $value: "#ffff80", $description: "test" };
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /color\.brand: \$type string holds a colour literal/);
+});
+
+test("a surface colour that backs no pair needs a reason", () => {
+  const result = checkEdited((tokens) => {
+    tokens.color.pale = { $value: "#c8c8c8", $description: "test", $extensions: { aplos: { usage: ["surface"] } } };
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /color\.pale: surface colour is the background of no pair/);
+});
+
 test("a colour token without a declared pair fails coverage", () => {
   const tokens = readJson(TOKENS_PATH);
   tokens.color["link-visited"] = { $value: "#5a3d8a", $description: "test", $extensions: { aplos: { usage: ["text"] } } };
@@ -153,11 +244,24 @@ test("an accent too close to Avec fails the identity check", () => {
   });
 });
 
+test("an identity exception past its review date, or without a decision, fails", () => {
+  const expired = runCheck(["--identity", "--today", "2099-01-01"]);
+  assert.equal(expired.status, 1);
+  assert.match(expired.stdout, /identity exception \{color\.hill\} dark vs #64ca56 expired on/);
+  const refs = readJson(REFERENCES_PATH);
+  delete refs.exceptions[0].decision;
+  withTemp("refs.json", refs, (path) => {
+    const result = runCheck(["--identity", "--refs", path, "--today", "2026-10-27"]);
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /has no decision reference/);
+  });
+});
+
 test("the provisional dark-hill exception is the only identity distance under 8.5", () => {
   const refs = readJson(REFERENCES_PATH);
   refs.exceptions = [];
   withTemp("refs.json", refs, (path) => {
-    const result = runCheck(["--identity", "--refs", path]);
+    const result = runCheck(["--identity", "--refs", path, "--today", "2026-10-27"]);
     assert.equal(result.status, 1);
     const fails = result.stdout.split("\n").filter((line) => line.startsWith("FAIL identity"));
     assert.deepEqual(fails, ["FAIL identity: --hill dark #86b86a is 7.72 from Mimestream system green #64ca56"]);

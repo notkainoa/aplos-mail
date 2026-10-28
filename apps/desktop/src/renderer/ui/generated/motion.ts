@@ -18,6 +18,9 @@ export interface SpringState {
   readonly value: number;
   readonly velocity: number;
   readonly target: number;
+  // Distance the motion covers; springAtRest() is relative to it. Treated as 1
+  // (a unit spring) when absent.
+  readonly travel?: number;
 }
 
 export const SETTLE_EPSILON = 0.005;
@@ -57,17 +60,32 @@ export function stepSpring(params: SpringParams, state: SpringState, dt: number)
     y = c1 * Math.exp(r1 * dt) + c2 * Math.exp(r2 * dt);
     v = c1 * r1 * Math.exp(r1 * dt) + c2 * r2 * Math.exp(r2 * dt);
   }
-  return { value: state.target + y, velocity: v, target: state.target };
+  return { ...state, value: state.target + y, velocity: v };
 }
 
+// A spring at rest at `from`, heading for `to`.
+export function createSpring(from: number, to: number): SpringState {
+  return { value: from, velocity: 0, target: to, travel: Math.abs(to - from) };
+}
+
+// Move the target; value and velocity carry over so motion stays continuous.
+// The travel becomes the remaining distance (kept from before when that is 0).
 export function retargetSpring(state: SpringState, target: number): SpringState {
-  return { value: state.value, velocity: state.velocity, target };
+  const distance = Math.abs(target - state.value);
+  return { value: state.value, velocity: state.velocity, target, travel: distance > 0 ? distance : travelOf(state) };
 }
 
-// True once the spring is within epsilon of its target and nearly still
-// (velocity in target-distance units per second).
+function travelOf(state: SpringState): number {
+  return state.travel ?? 1;
+}
+
+// True once the spring is within epsilon of its target and nearly still, both
+// relative to its travel: |value - target| <= epsilon * travel and
+// |velocity| <= 10 * epsilon * travel per second. So a 1 -> 1.02 scale and a
+// 0 -> 300 px move both stop at 0.5 % of their travel, never early.
 export function springAtRest(state: SpringState, epsilon: number = SETTLE_EPSILON): boolean {
-  return Math.abs(state.value - state.target) < epsilon && Math.abs(state.velocity) < epsilon * 10;
+  const tolerance = epsilon * travelOf(state);
+  return Math.abs(state.value - state.target) <= tolerance && Math.abs(state.velocity) <= tolerance * 10;
 }
 
 export function springProgress(params: SpringParams, t: number): number {
@@ -135,6 +153,8 @@ export interface SpringToken extends SpringParams {
 export interface MotionSpec {
   readonly durations: Readonly<Record<string, number>>;
   readonly rapid: Readonly<Record<string, number>>;
+  // During rapid triage the motion must not start until hold ends (arrive).
+  readonly deferWhenRapid: boolean;
   readonly reduced: Readonly<Record<string, number>>;
   readonly reducedMode: ReducedMode;
   readonly curve: string | null;
@@ -221,6 +241,7 @@ export const motions = {
   nav: {
     durations: { base: 0 },
     rapid: { base: 0 },
+    deferWhenRapid: false,
     reduced: { base: 0 },
     reducedMode: "none",
     curve: null,
@@ -229,6 +250,7 @@ export const motions = {
   press: {
     durations: { down: 80, up: 140 },
     rapid: { down: 80, up: 140 },
+    deferWhenRapid: false,
     reduced: { down: 80, up: 140 },
     reducedMode: "colour",
     curve: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -237,6 +259,7 @@ export const motions = {
   hover: {
     durations: { base: 100 },
     rapid: { base: 100 },
+    deferWhenRapid: false,
     reduced: { base: 100 },
     reducedMode: "same",
     curve: "cubic-bezier(0.2, 0.8, 0.2, 1)",
@@ -245,6 +268,7 @@ export const motions = {
   cursor: {
     durations: { base: 120, focus: 160 },
     rapid: { base: 0, focus: 0 },
+    deferWhenRapid: false,
     reduced: { base: 0, focus: 0 },
     reducedMode: "none",
     curve: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -253,6 +277,7 @@ export const motions = {
   reveal: {
     durations: { in: 140, out: 100 },
     rapid: { in: 140, out: 100 },
+    deferWhenRapid: false,
     reduced: { in: 100, out: 100 },
     reducedMode: "opacity",
     curve: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -263,6 +288,7 @@ export const motions = {
   settle: {
     durations: { in: 180, out: 120 },
     rapid: { in: 180, out: 120 },
+    deferWhenRapid: false,
     reduced: { in: 120, out: 120 },
     reducedMode: "opacity",
     curve: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -273,6 +299,7 @@ export const motions = {
   slide: {
     durations: { base: 270 },
     rapid: { base: 270 },
+    deferWhenRapid: false,
     reduced: { base: 0 },
     reducedMode: "none",
     curve: "linear(0, 0.059, 0.189, 0.343, 0.492, 0.624, 0.732, 0.816, 0.88, 0.925, 0.957, 0.978, 0.991, 0.999, 1.003, 1.005, 1.005, 1)",
@@ -281,6 +308,7 @@ export const motions = {
   commit: {
     durations: { base: 60 },
     rapid: { base: 30 },
+    deferWhenRapid: false,
     reduced: { base: 60 },
     reducedMode: "opacity",
     curve: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -289,6 +317,7 @@ export const motions = {
   carry: {
     durations: { base: 120 },
     rapid: { base: 60 },
+    deferWhenRapid: false,
     reduced: { base: 80 },
     reducedMode: "opacity",
     curve: "cubic-bezier(0.4, 0, 1, 1)",
@@ -297,6 +326,7 @@ export const motions = {
   flight: {
     durations: { base: 220 },
     rapid: { base: 110 },
+    deferWhenRapid: false,
     reduced: { base: 120 },
     reducedMode: "opacity",
     curve: "cubic-bezier(0.4, 0, 1, 1)",
@@ -305,6 +335,7 @@ export const motions = {
   deal: {
     durations: { base: 140 },
     rapid: { base: 0 },
+    deferWhenRapid: false,
     reduced: { base: 0 },
     reducedMode: "none",
     curve: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -313,6 +344,7 @@ export const motions = {
   hold: {
     durations: { base: 450, cap: 1200 },
     rapid: { base: 450, cap: 1200 },
+    deferWhenRapid: false,
     reduced: { base: 450, cap: 1200 },
     reducedMode: "same",
     curve: null,
@@ -321,6 +353,7 @@ export const motions = {
   close: {
     durations: { base: 180 },
     rapid: { base: 180 },
+    deferWhenRapid: false,
     reduced: { base: 0 },
     reducedMode: "none",
     curve: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -329,6 +362,7 @@ export const motions = {
   swap: {
     durations: { base: 120 },
     rapid: { base: 60 },
+    deferWhenRapid: false,
     reduced: { base: 100 },
     reducedMode: "opacity",
     curve: "cubic-bezier(0.2, 0.8, 0.2, 1)",
@@ -337,6 +371,7 @@ export const motions = {
   arrive: {
     durations: { base: 200 },
     rapid: { base: 200 },
+    deferWhenRapid: true,
     reduced: { base: 120 },
     reducedMode: "opacity",
     curve: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -345,6 +380,7 @@ export const motions = {
   dock: {
     durations: { in: 200, out: 140 },
     rapid: { in: 200, out: 140 },
+    deferWhenRapid: false,
     reduced: { in: 0, out: 0 },
     reducedMode: "none",
     curve: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -355,6 +391,7 @@ export const motions = {
   "undo-send": {
     durations: { base: 8000 },
     rapid: { base: 8000 },
+    deferWhenRapid: false,
     reduced: { base: 8000 },
     reducedMode: "static",
     curve: "linear",
@@ -363,6 +400,7 @@ export const motions = {
   lift: {
     durations: { base: 240 },
     rapid: { base: 240 },
+    deferWhenRapid: false,
     reduced: { base: 0 },
     reducedMode: "none",
     curve: "linear(0, 0.041, 0.137, 0.257, 0.381, 0.499, 0.603, 0.693, 0.767, 0.827, 0.874, 0.91, 0.937, 0.958, 0.972, 0.983, 0.99, 1)",
@@ -371,6 +409,7 @@ export const motions = {
   follow: {
     durations: { base: 210 },
     rapid: { base: 210 },
+    deferWhenRapid: false,
     reduced: { base: 0 },
     reducedMode: "none",
     curve: "linear(0, 0.045, 0.147, 0.272, 0.4, 0.519, 0.623, 0.711, 0.783, 0.84, 0.884, 0.918, 0.943, 0.962, 0.975, 0.984, 0.991, 1)",
@@ -379,6 +418,7 @@ export const motions = {
   snap: {
     durations: { base: 250 },
     rapid: { base: 250 },
+    deferWhenRapid: false,
     reduced: { base: 0 },
     reducedMode: "none",
     curve: "linear(0, 0.038, 0.126, 0.239, 0.359, 0.474, 0.578, 0.669, 0.745, 0.808, 0.859, 0.898, 0.929, 0.952, 0.969, 0.981, 0.989, 1)",
@@ -387,6 +427,7 @@ export const motions = {
   thumb: {
     durations: { base: 310 },
     rapid: { base: 310 },
+    deferWhenRapid: false,
     reduced: { base: 0 },
     reducedMode: "none",
     curve: "linear(0, 0.067, 0.222, 0.408, 0.589, 0.746, 0.868, 0.956, 1.013, 1.044, 1.057, 1.057, 1.051, 1.04, 1.029, 1.019, 1.011, 1)",
@@ -395,6 +436,7 @@ export const motions = {
   breathe: {
     durations: { base: 1600 },
     rapid: { base: 1600 },
+    deferWhenRapid: false,
     reduced: { base: 1600 },
     reducedMode: "static",
     curve: "cubic-bezier(0.65, 0, 0.35, 1)",
@@ -403,6 +445,7 @@ export const motions = {
   status: {
     durations: { base: 1500 },
     rapid: { base: 1500 },
+    deferWhenRapid: false,
     reduced: { base: 1500 },
     reducedMode: "static",
     curve: "cubic-bezier(0.65, 0, 0.35, 1)",
@@ -411,6 +454,7 @@ export const motions = {
   count: {
     durations: { base: 140 },
     rapid: { base: 0 },
+    deferWhenRapid: false,
     reduced: { base: 0 },
     reducedMode: "none",
     curve: "cubic-bezier(0.16, 1, 0.3, 1)",
@@ -461,6 +505,9 @@ export const timing = {
   themeSwitchFrames: 1,
 } as const;
 
+// Timing values that change under reduced motion.
+export const timingReduced = { toastFade: 120 } as const satisfies Partial<Record<keyof typeof timing, number>>;
+
 export const themeHooks = {
   theme: "data-theme",
   contrast: "data-contrast",
@@ -475,7 +522,14 @@ export interface MotionContext {
   readonly reduced?: boolean;
 }
 
-// The duration of one phase of a named motion. Reduced wins over rapid.
+// True when a motion must wait for hold to end instead of playing now.
+export function motionDeferred(name: MotionName, context: MotionContext = {}): boolean {
+  const spec: MotionSpec = motions[name];
+  return Boolean(context.rapid) && spec.deferWhenRapid;
+}
+
+// The duration of one phase of a named motion. Reduced wins over rapid. For a
+// motion with deferWhenRapid, check motionDeferred() first.
 export function motionMs<N extends MotionName>(name: N, phase: MotionPhase<N>, context: MotionContext = {}): number {
   const spec: MotionSpec = motions[name];
   if (context.reduced) {

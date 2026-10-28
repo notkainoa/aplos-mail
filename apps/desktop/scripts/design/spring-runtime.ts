@@ -13,6 +13,9 @@ export interface SpringState {
   readonly value: number;
   readonly velocity: number;
   readonly target: number;
+  // Distance the motion covers; springAtRest() is relative to it. Treated as 1
+  // (a unit spring) when absent.
+  readonly travel?: number;
 }
 
 export const SETTLE_EPSILON = 0.005;
@@ -52,17 +55,32 @@ export function stepSpring(params: SpringParams, state: SpringState, dt: number)
     y = c1 * Math.exp(r1 * dt) + c2 * Math.exp(r2 * dt);
     v = c1 * r1 * Math.exp(r1 * dt) + c2 * r2 * Math.exp(r2 * dt);
   }
-  return { value: state.target + y, velocity: v, target: state.target };
+  return { ...state, value: state.target + y, velocity: v };
 }
 
+// A spring at rest at `from`, heading for `to`.
+export function createSpring(from: number, to: number): SpringState {
+  return { value: from, velocity: 0, target: to, travel: Math.abs(to - from) };
+}
+
+// Move the target; value and velocity carry over so motion stays continuous.
+// The travel becomes the remaining distance (kept from before when that is 0).
 export function retargetSpring(state: SpringState, target: number): SpringState {
-  return { value: state.value, velocity: state.velocity, target };
+  const distance = Math.abs(target - state.value);
+  return { value: state.value, velocity: state.velocity, target, travel: distance > 0 ? distance : travelOf(state) };
 }
 
-// True once the spring is within epsilon of its target and nearly still
-// (velocity in target-distance units per second).
+function travelOf(state: SpringState): number {
+  return state.travel ?? 1;
+}
+
+// True once the spring is within epsilon of its target and nearly still, both
+// relative to its travel: |value - target| <= epsilon * travel and
+// |velocity| <= 10 * epsilon * travel per second. So a 1 -> 1.02 scale and a
+// 0 -> 300 px move both stop at 0.5 % of their travel, never early.
 export function springAtRest(state: SpringState, epsilon: number = SETTLE_EPSILON): boolean {
-  return Math.abs(state.value - state.target) < epsilon && Math.abs(state.velocity) < epsilon * 10;
+  const tolerance = epsilon * travelOf(state);
+  return Math.abs(state.value - state.target) <= tolerance && Math.abs(state.velocity) <= tolerance * 10;
 }
 
 export function springProgress(params: SpringParams, t: number): number {

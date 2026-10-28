@@ -44,6 +44,19 @@ test("--check names a hand-edited generated file", () => {
   }
 });
 
+test("--check fails on a hand-made file in generated/", () => {
+  const dir = mkdtempSync(join(tmpdir(), "aplos-tokens-"));
+  try {
+    cpSync(GENERATED_DIR, dir, { recursive: true });
+    writeFileSync(join(dir, "extra.css"), ":root { --x: red; }\n");
+    const result = runBuild(["--check", "--out", dir]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /extra\.css \(not generated; remove it\)/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("every generated file starts with the do-not-edit header", () => {
   const outputs = generate();
   assert.ok(outputs["tokens.css"].startsWith(`/* ${HEADER}`));
@@ -71,7 +84,7 @@ test("Increase Contrast and reduced motion work through both hooks", () => {
   assert.match(media, /:root\[data-theme="dark"\]/, "contrast overrides must also beat the night block");
   const reduced = css.slice(css.indexOf(':root[data-motion="reduced"] {'));
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-  for (const decl of ["--move-carry: 0px;", "--move-flight-rotate: 0deg;", "--scale-lift: 1;", "--press-scale: 1;", "--dur-slide: 0ms;", "--dur-flight: 120ms;", "--play-status: paused;", "--breathe-hi: 0.85;"]) {
+  for (const decl of ["--move-carry: 0px;", "--move-flight-rotate: 0deg;", "--scale-lift: 1;", "--press-scale: 1;", "--dur-slide: 0ms;", "--dur-flight: 120ms;", "--play-status: paused;", "--breathe-hi: 0.85;", "--dur-toast-fade: 120ms;"]) {
     assert.ok(reduced.includes(decl), `reduced block lacks ${decl}`);
   }
   assert.match(css, /:root\[data-theme-switching\] \*[\s\S]*transition: none !important;/);
@@ -86,4 +99,14 @@ test("generated motion.ts loads and matches the solver", async () => {
   assert.equal(motion.motionMs("press", "up"), 140);
   assert.equal(motion.motions["undo-send"].durations.base, 8000);
   assert.equal(motion.easings.out.css, "cubic-bezier(0.16, 1, 0.3, 1)");
+  assert.equal(motion.timingReduced.toastFade, 120);
+});
+
+test("arrive is deferred during rapid triage; nothing else is", async () => {
+  const motion = await import(pathToFileURL(join(GENERATED_DIR, "motion.ts")).href);
+  assert.equal(motion.motionDeferred("arrive", { rapid: true }), true);
+  assert.equal(motion.motionDeferred("arrive", { rapid: true, reduced: true }), true);
+  assert.equal(motion.motionDeferred("arrive"), false);
+  const deferred = Object.keys(motion.motions).filter((name) => motion.motionDeferred(name, { rapid: true }));
+  assert.deepEqual(deferred, ["arrive"]);
 });

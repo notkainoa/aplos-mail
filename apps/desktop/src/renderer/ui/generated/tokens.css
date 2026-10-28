@@ -336,6 +336,7 @@
     --scale-snap: 1;
     --breathe-lo: 0.85;
     --breathe-hi: 0.85;
+    --dur-toast-fade: 120ms;
   }
 }
 
@@ -382,6 +383,7 @@
   --scale-snap: 1;
   --breathe-lo: 0.85;
   --breathe-hi: 0.85;
+  --dur-toast-fade: 120ms;
 }
 
 /* Theme switch: set data-theme-switching on :root for one frame so the app changes at once. */

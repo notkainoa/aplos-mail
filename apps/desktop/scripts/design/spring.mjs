@@ -11,7 +11,7 @@ export function dampingRatio({ stiffness, damping, mass }) {
   return damping / (2 * Math.sqrt(stiffness * mass));
 }
 
-// Advance a spring state { value, velocity, target } by dt seconds.
+// Advance a spring state { value, velocity, target, travel? } by dt seconds.
 // Returns a new state; the input is not changed.
 export function stepSpring(params, state, dt) {
   const { stiffness, mass } = params;
@@ -43,18 +43,35 @@ export function stepSpring(params, state, dt) {
     y = c1 * Math.exp(r1 * dt) + c2 * Math.exp(r2 * dt);
     v = c1 * r1 * Math.exp(r1 * dt) + c2 * r2 * Math.exp(r2 * dt);
   }
-  return { value: state.target + y, velocity: v, target: state.target };
+  return { ...state, value: state.target + y, velocity: v };
+}
+
+// A spring at rest at `from`, heading for `to`. `travel` is the distance the
+// motion covers; springAtRest() measures its tolerance against it, so a
+// 1 -> 1.02 scale and a 0 -> 300 px move both stop at 0.5 % of their travel.
+export function createSpring(from, to) {
+  return { value: from, velocity: 0, target: to, travel: Math.abs(to - from) };
 }
 
 // Move the target; value and velocity carry over so motion stays continuous.
+// The travel becomes the remaining distance (kept from before when that is 0).
 export function retargetSpring(state, target) {
-  return { value: state.value, velocity: state.velocity, target };
+  const distance = Math.abs(target - state.value);
+  return { value: state.value, velocity: state.velocity, target, travel: distance > 0 ? distance : travelOf(state) };
 }
 
-// True once the spring is within epsilon of its target and nearly still
-// (velocity in target-distance units per second).
+// States made by hand without a travel are treated as unit springs (0 -> 1).
+function travelOf(state) {
+  return state.travel ?? 1;
+}
+
+// True once the spring is within epsilon of its target and nearly still, both
+// relative to its travel: |value - target| <= epsilon * travel and
+// |velocity| <= 10 * epsilon * travel per second. Never stops early, since the
+// value tolerance is the same 0.5 % that defines the settle time.
 export function springAtRest(state, epsilon = SETTLE_EPSILON) {
-  return Math.abs(state.value - state.target) < epsilon && Math.abs(state.velocity) < epsilon * 10;
+  const tolerance = epsilon * travelOf(state);
+  return Math.abs(state.value - state.target) <= tolerance && Math.abs(state.velocity) <= tolerance * 10;
 }
 
 // Value of a unit spring (0 -> 1 from rest) at time t seconds.

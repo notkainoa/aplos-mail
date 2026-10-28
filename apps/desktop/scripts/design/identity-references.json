@@ -1,7 +1,11 @@
 {
-  "$description": "Identity reference colours for check-contrast.mjs --identity (DESIGN 2.3, 4.1 and 12.4). Every target token, in both themes, must sit at least `threshold` ΔE00 from every reference. Sources: the identity audit's de2000.py (tools/identity-audit/de2000.py in aplos-research) and research/email-clients/gaps/identity-collision-audit.md section 4. Names describe other products' colours so they can be avoided; nothing here is used in the app.",
+  "$description": "Identity reference colours for check-contrast.mjs --identity (DESIGN 2.3, 4.1 and 12.4). Every target token, in both themes, must sit at least `threshold` ΔE00 from every reference. An entry in `exceptions` needs a `decision` and a `reviewBy` date (YYYY-MM-DD); the check fails once that date has passed. Sources: the identity audit's de2000.py (tools/identity-audit/de2000.py in aplos-research) and research/email-clients/gaps/identity-collision-audit.md section 4. Names describe other products' colours so they can be avoided; nothing here is used in the app.",
   "threshold": 8.5,
   "targets": ["{color.accent}", "{color.hill}", "{color.dusk}", "{color.stamp}"],
+  "advisoryTargets": {
+    "$description": "Printed with their nearest reference but not gated: DESIGN 12.4 limits the gate to the accent and commit colours. Whether tag colours join the gate is on the owner's decision list (tag-sky light is 3.76 from Mimestream's icon deep blue, dark 7.49 from Avec sky).",
+    "tokens": ["{tag.sky}", "{tag.sand}", "{tag.ember}"]
+  },
   "notAvec": {
     "$description": "DESIGN 2.3 checks 2 and 3: the accent at least 10 from Avec's blue, and the Done colour at least 10 from Avec's greens, in both themes.",
     "minimum": 10,
@@ -21,6 +25,8 @@
       "mode": "dark",
       "reference": "#64ca56",
       "status": "provisional, awaiting owner decision",
+      "decision": "Owner decision list, F9 tokens hand-off: accept the dark-hill exception in DESIGN (new decision entry) or nudge #86b86a",
+      "reviewBy": "2026-11-24",
       "reason": "Dark hill #86b86a measures ΔE00 7.72 from Mimestream's system green, which is in de2000.py's list. DESIGN 2.3 and 4.1 only checked Avec's greens (11.6 and 12.9 pass) and DESIGN 12.4 scopes the gate to blues. Reported instead of changing a DESIGN colour; remove this entry to make it fail."
     }
   ],

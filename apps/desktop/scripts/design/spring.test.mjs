@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { retargetSpring, settleTime, springSamples, stepSpring } from "./spring.mjs";
+import { createSpring, retargetSpring, settleTime, springAtRest, springSamples, stepSpring } from "./spring.mjs";
 import { GENERATED_DIR } from "./tokens-lib.mjs";
 
 // DESIGN 4.8, verbatim.
@@ -107,4 +107,36 @@ test("the TypeScript twin in generated/motion.ts matches spring.mjs", async () =
   for (const [name, spec] of Object.entries(DESIGN)) {
     assert.equal(motion.springs[name].settleMs, Math.round(settleTime(params(spec)) * 10000) / 10);
   }
+});
+
+// Steps at 120 Hz until springAtRest; returns [ms, state].
+function runToRest(p, state) {
+  let s = state;
+  let t = 0;
+  while (!springAtRest(s) && t < 5) {
+    s = stepSpring(p, s, 1 / 120);
+    t += 1 / 120;
+  }
+  return [t * 1000, s];
+}
+
+test("springAtRest is relative to the travel, so small and large moves stop alike", () => {
+  const lift = { stiffness: 500, damping: 40, mass: 1 };
+  const [smallMs, small] = runToRest(lift, createSpring(1, 1.02));
+  const [largeMs, large] = runToRest(lift, createSpring(0, 300));
+  assert.ok(Math.abs(smallMs - largeMs) < 1, `${smallMs} vs ${largeMs}`);
+  assert.ok(Math.abs(small.target - small.value) <= 0.005 * 0.02, "never stops early on a small travel");
+  assert.ok(Math.abs(large.target - large.value) <= 0.005 * 300);
+  const settle = settleTime(lift) * 1000;
+  assert.ok(smallMs >= settle - 9 && smallMs <= settle + 60, `rests at ${smallMs} ms against a ${settle} ms settle`);
+});
+
+test("a retarget measures rest against the new remaining distance", () => {
+  const p = { stiffness: 600, damping: 42, mass: 1 };
+  const moving = stepSpring(p, createSpring(0, 300), 0.1);
+  const moved = retargetSpring(moving, moving.value + 10);
+  assert.equal(moved.travel, 10);
+  assert.equal(retargetSpring(moved, moved.value).travel, 10, "keeps the old travel when the new distance is 0");
+  const [, rest] = runToRest(p, moved);
+  assert.ok(Math.abs(rest.target - rest.value) <= 0.05);
 });

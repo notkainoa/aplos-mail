@@ -5,7 +5,7 @@
 //   node apps/desktop/scripts/design/build-tokens.mjs --check   exit 1 if any file on disk differs
 // --tokens <path> and --out <dir> point at other copies (used by the tests).
 
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { toHex } from "./color.mjs";
@@ -275,6 +275,10 @@ function curveInfo(flat, ref, springCache) {
   return { curve: css, curveName: aliasPath(ref) };
 }
 
+// "same": rapid keeps the normal durations. "defer-until-hold": during a burst
+// the motion waits for hold to end, then plays at its normal durations.
+const RAPID_KEYWORDS = new Set(["same", "defer-until-hold"]);
+
 function groupTokens(flat, group) {
   return flat.tokens.filter((t) => t.group === group);
 }
@@ -303,7 +307,8 @@ export function buildMotionTs(flat, springCache) {
     const { curve, curveName } = curveInfo(flat, v.curve, springCache);
     const spec = {
       durations,
-      rapid: v.rapid === "same" ? durations : msMap(v.rapid),
+      rapid: RAPID_KEYWORDS.has(v.rapid) ? durations : msMap(v.rapid),
+      deferWhenRapid: v.rapid === "defer-until-hold",
       reduced: msMap(v.reduced),
       reducedMode: v.reducedMode,
       curve,
@@ -319,8 +324,12 @@ export function buildMotionTs(flat, springCache) {
   const moves = Object.fromEntries(groupTokens(flat, "move").map((t) => [camel(t.key), parseLength(t.value)]));
   const scales = Object.fromEntries(groupTokens(flat, "scale").map((t) => [camel(t.key), t.value]));
   const breathe = Object.fromEntries(groupTokens(flat, "breathe").map((t) => [camel(t.key), t.value]));
+  const timingTokens = groupTokens(flat, "timing");
   const timing = Object.fromEntries(
-    groupTokens(flat, "timing").map((t) => [camel(t.key), t.type === "number" ? t.value : parseDuration(t.value)]),
+    timingTokens.map((t) => [camel(t.key), t.type === "number" ? t.value : parseDuration(t.value)]),
+  );
+  const timingReduced = Object.fromEntries(
+    timingTokens.filter((t) => t.reduced !== undefined).map((t) => [camel(t.key), parseDuration(t.reduced)]),
   );
 
   return `// ${HEADER_TEXT}
@@ -346,6 +355,8 @@ export interface SpringToken extends SpringParams {
 export interface MotionSpec {
   readonly durations: Readonly<Record<string, number>>;
   readonly rapid: Readonly<Record<string, number>>;
+  // During rapid triage the motion must not start until hold ends (arrive).
+  readonly deferWhenRapid: boolean;
   readonly reduced: Readonly<Record<string, number>>;
   readonly reducedMode: ReducedMode;
   readonly curve: string | null;
@@ -376,6 +387,9 @@ export const breathe = ${tsLiteral(breathe)} as const;
 
 export const timing = ${tsLiteral(timing)} as const;
 
+// Timing values that change under reduced motion.
+export const timingReduced = ${tsLiteral(timingReduced)} as const satisfies Partial<Record<keyof typeof timing, number>>;
+
 export const themeHooks = {
   theme: "data-theme",
   contrast: "data-contrast",
@@ -390,7 +404,14 @@ export interface MotionContext {
   readonly reduced?: boolean;
 }
 
-// The duration of one phase of a named motion. Reduced wins over rapid.
+// True when a motion must wait for hold to end instead of playing now.
+export function motionDeferred(name: MotionName, context: MotionContext = {}): boolean {
+  const spec: MotionSpec = motions[name];
+  return Boolean(context.rapid) && spec.deferWhenRapid;
+}
+
+// The duration of one phase of a named motion. Reduced wins over rapid. For a
+// motion with deferWhenRapid, check motionDeferred() first.
 export function motionMs<N extends MotionName>(name: N, phase: MotionPhase<N>, context: MotionContext = {}): number {
   const spec: MotionSpec = motions[name];
   if (context.reduced) {
@@ -414,7 +435,7 @@ function cssName(flat, ref) {
   return ref ? lookup(flat, ref).css : undefined;
 }
 
-export function buildPairs(flat) {
+export function pairsDocument(flat) {
   const pairs = [];
   const seen = new Set();
   for (const pair of declaredPairs(flat)) {
@@ -445,8 +466,11 @@ export function buildPairs(flat) {
       pairs.push(entry);
     }
   }
-  const doc = { $comment: HEADER_TEXT, modes: MODES, pairs };
-  const json = JSON.stringify(doc, null, 2).replace(/\[\s+([^[\]{}]*?)\s+\]/g, (_, inner) => `[${inner.split(/,\s+/).join(", ")}]`);
+  return { $comment: HEADER_TEXT, modes: MODES, pairs };
+}
+
+export function buildPairs(flat) {
+  const json = JSON.stringify(pairsDocument(flat), null, 2).replace(/\[\s+([^[\]{}]*?)\s+\]/g, (_, inner) => `[${inner.split(/,\s+/).join(", ")}]`);
   return `${json}\n`;
 }
 
@@ -470,13 +494,18 @@ export function generate(tokensPath = TOKENS_PATH) {
   };
 }
 
+// Generated files that differ from disk, plus any file in the output folder
+// the generator does not make (generated/ is exempt from the raw-colour lint,
+// so nothing hand-made may live there).
 export function diffOutputs(outputs, outDir) {
-  return Object.entries(outputs)
+  const changed = Object.entries(outputs)
     .filter(([name, content]) => {
       const path = join(outDir, name);
       return !existsSync(path) || readFileSync(path, "utf8") !== content;
     })
     .map(([name]) => name);
+  const stray = existsSync(outDir) ? readdirSync(outDir).filter((name) => !(name in outputs)) : [];
+  return [...changed, ...stray.map((name) => `${name} (not generated; remove it)`)];
 }
 
 function argValue(args, flag) {
