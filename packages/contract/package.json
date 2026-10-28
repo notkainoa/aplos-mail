@@ -18,7 +18,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "generate": "tsx scripts/generate.ts",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts tests/conformance/*.test.ts"
   },
   "dependencies": {
     "zod": "^4.6.7"
