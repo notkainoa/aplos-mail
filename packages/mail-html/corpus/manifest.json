@@ -1150,5 +1150,104 @@
     "expect": {
       "mustKeepText": ["Line ending message"]
     }
+  },
+  {
+    "id": "119-svg-foreignobject-mutation",
+    "title": "Foreign objects used to change how the parser reads what follows",
+    "classes": ["svg-foreignobject", "mxss", "iframe-nested"],
+    "html": "messages/119-svg-foreignobject-mutation.html",
+    "expect": {
+      "mustKeepText": ["Annual report summary"]
+    }
+  },
+  {
+    "id": "120-legacy-elements-and-accesskeys",
+    "title": "Obsolete elements and keyboard tricks",
+    "classes": ["object-embed", "event-handler", "remote-image", "popup-navigation"],
+    "html": "messages/120-legacy-elements-and-accesskeys.html",
+    "expect": {
+      "mustKeepText": ["Notice board from a very old web page"]
+    }
+  },
+  {
+    "id": "121-css-rare-at-rules-and-properties",
+    "title": "Seldom-used style features that can still load a picture",
+    "classes": ["css-url", "css-image-set", "css-legacy"],
+    "html": "messages/121-css-rare-at-rules-and-properties.html",
+    "expect": {
+      "mustKeepText": ["Rare style features"]
+    }
+  },
+  {
+    "id": "122-form-action-schemes-and-self-post",
+    "title": "Forms that post to odd places, including the frame itself",
+    "classes": ["form-autosubmit", "link-scheme", "relative-url"],
+    "html": "messages/122-form-action-schemes-and-self-post.html",
+    "expect": {
+      "mustKeepText": ["Feedback form"]
+    }
+  },
+  {
+    "id": "123-css-media-query-fingerprint",
+    "title": "Style rules that report screen size, colour scheme and installed fonts",
+    "classes": ["css-exfil", "css-url", "css-font-face"],
+    "html": "messages/123-css-media-query-fingerprint.html",
+    "expect": {
+      "mustKeepText": ["Display settings survey"]
+    }
+  },
+  {
+    "id": "124-amp-email-and-custom-elements",
+    "title": "Interactive email markup and unknown elements that carry addresses",
+    "classes": [
+      "script-inline",
+      "iframe-nested",
+      "tracking-pixel",
+      "form-autosubmit",
+      "remote-image"
+    ],
+    "html": "messages/124-amp-email-and-custom-elements.html",
+    "expect": {
+      "mustKeepText": ["Interactive newsletter"]
+    }
+  },
+  {
+    "id": "125-document-structure-confusion",
+    "title": "Documents with several heads, bodies and content after the end",
+    "classes": ["mxss", "event-handler", "base-tag", "meta-misc"],
+    "html": "messages/125-document-structure-confusion.html",
+    "expect": {
+      "mustKeepText": ["Real content in the first body", "Content after the closing html tag"]
+    }
+  },
+  {
+    "id": "126-cid-in-active-contexts",
+    "title": "Inline attachment references used where only a picture is expected",
+    "classes": ["cid-inline", "iframe-nested", "object-embed", "script-inline"],
+    "html": "messages/126-cid-in-active-contexts.html",
+    "cids": ["page@mail.example", "script@mail.example", "style@mail.example"],
+    "expect": {
+      "mustKeepText": ["Attachment references in active places"],
+      "notes": "The attachments themselves are hostile (an html page, a script and a stylesheet). Only img sources may carry cid:, and a cid may only ever be served as an image."
+    }
+  },
+  {
+    "id": "127-dangling-markup",
+    "title": "Unclosed quotes that would send the following text to a server",
+    "classes": ["mxss", "remote-image", "form-autosubmit", "meta-refresh"],
+    "html": "messages/127-dangling-markup.html",
+    "expect": {
+      "mustKeepText": ["Your verification code is 482915"],
+      "notes": "Each tag below opens an attribute value and never closes it, so a loose parser would swallow everything up to the next matching quote, including the verification code and the lines after it, into the address. The visible code must stay visible text and must not appear inside any URL."
+    }
+  },
+  {
+    "id": "128-unicode-case-folding",
+    "title": "Letters from other alphabets that fold to ASCII",
+    "classes": ["mxss", "malformed-encoding", "unicode-bidi"],
+    "html": "messages/128-unicode-case-folding.html",
+    "expect": {
+      "mustKeepText": ["Case folding message"]
+    }
   }
 ]

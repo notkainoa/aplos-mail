@@ -1,0 +1,28 @@
+<style>
+  @media (min-width: 320px) { .w { background: url({{CANARY}}/{{ID}}/width-320); } }
+  @media (min-width: 768px) { .w { background: url({{CANARY}}/{{ID}}/width-768); } }
+  @media (min-width: 1280px) { .w { background: url({{CANARY}}/{{ID}}/width-1280); } }
+  @media (min-width: 1920px) { .w { background: url({{CANARY}}/{{ID}}/width-1920); } }
+  @media (min-height: 800px) { .h { background: url({{CANARY}}/{{ID}}/height-800); } }
+  @media (min-resolution: 2dppx) { .r { background: url({{CANARY}}/{{ID}}/resolution-2x); } }
+  @media (-webkit-min-device-pixel-ratio: 2) { .r { background: url({{CANARY}}/{{ID}}/pixel-ratio-2); } }
+  @media (prefers-color-scheme: dark) { .c { background: url({{CANARY}}/{{ID}}/dark-mode); } }
+  @media (prefers-reduced-motion: reduce) { .c { background: url({{CANARY}}/{{ID}}/reduced-motion); } }
+  @media (prefers-contrast: more) { .c { background: url({{CANARY}}/{{ID}}/contrast-more); } }
+  @media (forced-colors: active) { .c { background: url({{CANARY}}/{{ID}}/forced-colors); } }
+  @media (hover: none) { .c { background: url({{CANARY}}/{{ID}}/hover-none); } }
+  @media (pointer: coarse) { .c { background: url({{CANARY}}/{{ID}}/pointer-coarse); } }
+  @media (display-mode: standalone) { .c { background: url({{CANARY}}/{{ID}}/display-standalone); } }
+  @media (orientation: landscape) { .c { background: url({{CANARY}}/{{ID}}/landscape); } }
+  @media (color-gamut: p3) { .c { background: url({{CANARY}}/{{ID}}/gamut-p3); } }
+  @media (dynamic-range: high) { .c { background: url({{CANARY}}/{{ID}}/hdr); } }
+  @media print { .c { background: url({{CANARY}}/{{ID}}/print); } }
+  @supports (backdrop-filter: blur(1px)) { .f { background: url({{CANARY}}/{{ID}}/supports-backdrop); } }
+  @supports (-webkit-appearance: none) { .f { background: url({{CANARY}}/{{ID}}/supports-appearance); } }
+  @font-face { font-family: probe-menlo; src: local("Menlo"), url({{CANARY}}/{{ID}}/font-missing-menlo); }
+  @font-face { font-family: probe-calibri; src: local("Calibri"), url({{CANARY}}/{{ID}}/font-missing-calibri); }
+  @font-face { font-family: probe-sf; src: local("SF Pro Text"), url({{CANARY}}/{{ID}}/font-missing-sf); }
+  .p1 { font-family: probe-menlo; } .p2 { font-family: probe-calibri; } .p3 { font-family: probe-sf; }
+</style>
+<p>Display settings survey: this message measures your screen without asking.</p>
+<div class="w h r c f p1 p2 p3">probe</div><span class="p1">m</span><span class="p2">c</span><span class="p3">s</span>

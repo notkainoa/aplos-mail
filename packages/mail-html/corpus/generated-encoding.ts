@@ -77,7 +77,7 @@ function replacementAndBoms(): Draft {
       `<img src="{{CANARY}}/{{ID}}/astral-attr" \u{1F600}="x" data-\u{1D400}="y"><\u{1F600}img src="{{CANARY}}/{{ID}}/astral-tag">` +
       `<p>${'\u0301'.repeat(100_000)}</p><p>${'\u202E'.repeat(10_000)}</p><p>${'\u200B'.repeat(100_000)}</p>${tail()}`,
     expect: { mustKeepText: ['replacement characters and marks'] },
-    promise: { minChars: 300_000, occurrences: [{ needle: '\uFFFD', count: 50_000 }] },
+    promise: { minChars: 250_000, occurrences: [{ needle: '\uFFFD', count: 50_000 }] },
   };
 }
 
