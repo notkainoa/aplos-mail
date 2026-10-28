@@ -102,7 +102,7 @@ address_or_domain TEXT NOT NULL, action TEXT NOT NULL, remote_filter_id TEXT) ST
   `CREATE TABLE ops(seq INTEGER PRIMARY KEY, op_id TEXT NOT NULL UNIQUE,
 account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE, kind TEXT NOT NULL, target TEXT NOT NULL,
 payload TEXT NOT NULL, base TEXT, effect TEXT, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER,
-last_error TEXT, created_seq INTEGER NOT NULL) STRICT`,
+last_error TEXT, created_seq INTEGER NOT NULL, scope TEXT) STRICT`,
   `CREATE INDEX ops_queue ON ops(account_id, state, seq)`,
   // eng-time, prov-gmail-write: local drafts with revisions; S10 origin marks phone drafts (D9).
   `CREATE TABLE drafts(id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE,

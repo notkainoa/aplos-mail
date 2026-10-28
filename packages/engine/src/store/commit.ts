@@ -771,8 +771,8 @@ class CommitRun implements WriteScope {
       throw new StoreError('invalid', `Op ${w.opId} is already queued`);
     for (const e of w.effect) this.applyEffect(w.accountId, e, undefined);
     this.q(
-      `INSERT INTO ops(op_id, account_id, kind, target, payload, base, effect, state, created_seq)
-      VALUES(?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
+      `INSERT INTO ops(op_id, account_id, kind, target, payload, base, effect, state, created_seq, scope)
+      VALUES(?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)`,
     ).run(
       w.opId,
       w.accountId,
@@ -782,6 +782,7 @@ class CommitRun implements WriteScope {
       w.base ?? null,
       w.effect.length ? JSON.stringify(w.effect) : null,
       this.seq,
+      w.scope ?? null,
     );
     this.mark('Account', w.accountId, null, 'u'); // Account.pendingChanges
   }

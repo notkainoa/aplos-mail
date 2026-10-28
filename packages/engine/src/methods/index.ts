@@ -1,5 +1,5 @@
 import type { EngineMethodName } from '@aplos/contract';
-import { hostMethods, listenerMethods, mcpMethods, methodScope } from '@aplos/contract/allowlists';
+import { checkAccess } from '@aplos/contract/access';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller, EngineHandlers, Handler, MethodContext } from './types';
 import { handlers as session } from './session';
@@ -77,26 +77,24 @@ export const handlers: EngineHandlers = {
   ...workflow,
 };
 
-const hostOnly: ReadonlySet<string> = new Set(hostMethods);
-// The generator builds `listenerMethods` as the engine methods that are not uiOnly, not secret and not `host`, so
-// membership is exactly "a listener may carry this"; it stands in for a separate uiOnly table.
-const listenable: ReadonlySet<string> = new Set(listenerMethods);
-const mcpTools: ReadonlySet<string> = new Set(mcpMethods);
-
 /**
- * Default deny, from the registry's generated tables (ARCH 12.3), whatever the transport already checked: the method's
- * scope must be among the caller's; `host` methods are for main's control connection only; a listener client never
- * reaches a uiOnly or secret method; an MCP client only reaches the MCP tools. Returns the refusal, or undefined.
+ * Default deny with the contract's one rule set (`checkAccess`, ARCH 12.3), whatever the transport already checked: the
+ * method's scope must be among the caller's; `host` methods are for main's control connection only; a listener client
+ * never reaches a uiOnly or secret method or sets a window-only argument; an MCP client only reaches the MCP tools.
+ * Returns the refusal, or undefined. `scopeRule` methods also call `requireScope` in their handler (FR-3, FR-4).
  */
-export function refusal(method: EngineMethodName, caller: Caller): string | undefined {
-  if (!caller.scopes.includes(methodScope[method]))
-    return 'This client does not have permission for that.';
-  if (hostOnly.has(method) && caller.kind !== 'host') return 'Only the app itself can do that.';
-  if (caller.kind === 'listener' && !listenable.has(method))
-    return 'That can only be done in the Aplos window.';
-  if (caller.kind === 'listener' && caller.via === 'mcp' && !mcpTools.has(method))
-    return 'That is not available to MCP clients.';
-  return undefined;
+export function refusal(
+  method: EngineMethodName,
+  caller: Caller,
+  args?: unknown,
+): string | undefined {
+  try {
+    checkAccess(method, caller, args);
+    return undefined;
+  } catch (error) {
+    if (error instanceof ContractError) return error.message;
+    throw error;
+  }
 }
 
 /**
@@ -110,7 +108,7 @@ export async function dispatch(
 ): Promise<unknown> {
   if (!Object.prototype.hasOwnProperty.call(handlers, method))
     throw new ContractError({ type: 'unsupported', message: 'Unsupported application method.' });
-  const denied = refusal(method as EngineMethodName, ctx.caller);
+  const denied = refusal(method as EngineMethodName, ctx.caller, args);
   if (denied) throw new ContractError({ type: 'forbidden', message: denied });
   return (handlers[method as EngineMethodName] as Handler<EngineMethodName>)(args as never, ctx);
 }

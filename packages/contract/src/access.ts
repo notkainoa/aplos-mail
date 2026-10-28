@@ -1,6 +1,7 @@
 import { ContractError } from './contract-error';
 import {
   listenerMethods,
+  mcpMethods,
   methodHost,
   methodScope,
   windowOnlyArgs,
@@ -16,6 +17,8 @@ import {
 export interface Caller {
   /** An Electron window's port, main's control connection, or a listener client (socket, HTTP, MCP). */
   kind: 'window' | 'host' | 'listener';
+  /** Listener clients only: the MCP adapter sets `mcp`, which limits the caller to `mcpMethods` (FR-9). */
+  via?: 'socket' | 'http' | 'mcp';
   /** The listener client's id (`Client.id`); absent for windows and main. */
   clientId?: string;
   scopes: readonly string[];
@@ -43,12 +46,16 @@ export function checkAccess(method: string, caller: Caller, args?: unknown): voi
   const scope = methodScope[method];
   if (!scope || methodHost[method] !== 'engine') return;
   if (scope === 'host') {
-    if (caller.kind !== 'host') throw forbidden('Only the Aplos app itself can do that.');
+    // Main's control connection only, and it must also hold the `host` scope the transport grants it.
+    if (caller.kind !== 'host' || !caller.scopes.includes('host'))
+      throw forbidden('Only the Aplos app itself can do that.');
     return;
   }
   if (caller.kind === 'listener') {
     if (!(listenerMethods as readonly string[]).includes(method))
       throw forbidden('Only the Aplos app itself can do that.');
+    if (caller.via === 'mcp' && !(mcpMethods as readonly string[]).includes(method))
+      throw forbidden('That is not available to MCP clients.');
     if (windowOnlyArgs[method]?.some(path => has(args, path)))
       throw forbidden('Change this in Aplos itself.');
   }

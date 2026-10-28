@@ -398,6 +398,8 @@ export interface OpWrite {
   /** The state before the edit, opaque JSON, for undo and conflict display. */
   base?: string;
   effect: OpEffect[];
+  /** The scope of the method that made the op, which undo, retry and discard require again (contract `Operation.scope`, FR-3). */
+  scope?: string;
 }
 
 /** Open op states. `synced` and `cancelled` are terminal: the row is deleted and replay stops. */
