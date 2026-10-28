@@ -12,6 +12,7 @@
 
 import type { SettingRoute, TargetSummary } from '../commands';
 import type { AccountId, AiProviderId } from '../data';
+import type { ToastData } from '../ui/props';
 
 // ---------------------------------------------------------------------------
 // Lane marker and the not-implemented error
@@ -118,6 +119,40 @@ export function useCommandTarget(target: TargetSummary | null): void {
 /** The current command target, live; the shell puts it in every `CommandContext` and the palette's context line (`contextLine`). */
 export function useCurrentTarget(): TargetSummary | null {
   return notImplemented('useCurrentTarget');
+}
+
+// ---------------------------------------------------------------------------
+// Toasts (DESIGN 7.13): the shell mounts the one ToastStack; screens push data
+// ---------------------------------------------------------------------------
+
+/** A toast a screen or command handler pushes. A chosen action runs its `commandId` through the registry; `onAction` covers actions with no command. */
+export interface PushedToast extends ToastData {
+  /** Called when an action without a `commandId` is chosen (rare; prefer a command so keys, palette and toast agree). */
+  onAction?: (actionId: string) => void;
+}
+
+/** Pushes a toast onto the shell's stack and returns its id. One operation, one notice: use the operation's opId as the id. Undo toasts are never silently replaced; the stack shows three. Navigation, saves and sync ticks never toast. */
+export function pushToast(toast: PushedToast): string {
+  void toast;
+  return notImplemented('pushToast');
+}
+
+/** Rewords a toast in place as its operation moves on ("Archiving…" → "Done · Undo Z", DESIGN 7.13); a no-op when it has already closed. */
+export function updateToast(id: string, patch: Partial<Omit<PushedToast, 'id'>>): void {
+  void id;
+  void patch;
+  notImplemented('updateToast');
+}
+
+/** Closes a toast early (its operation failed and an inline error took over, or Undo ran). */
+export function dismissToast(id: string): void {
+  void id;
+  notImplemented('dismissToast');
+}
+
+/** The live stack, newest last, for the shell's own ToastStack. Screens don't render toasts themselves. */
+export function useToasts(): readonly ToastData[] {
+  return notImplemented('useToasts');
 }
 
 // ---------------------------------------------------------------------------
