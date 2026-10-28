@@ -11,12 +11,16 @@
  * Each interface carries one line: DESIGN section · mockup file(s) · which lane writes the plain version and
  * which refines it. "used by" names the consuming screen lanes.
  */
-import type { ReactElement, ReactNode, Ref, RefObject } from 'react';
+import type { ReactElement, ReactNode, Ref } from 'react';
 
 /* ───────────────────────── Shared vocabulary ───────────────────────── */
 
-/** A CommandRegistry id (DESIGN §6 `CommandRegistry`, §8). Local alias; matches commands/types.ts. */
-type CommandId = string;
+/**
+ * A CommandRegistry id (DESIGN §6 `CommandRegistry`, §8). Same type as `CommandId` in renderer/commands/types.ts
+ * (a plain string there too); exported so screens can import it from here. When that file lands on this branch,
+ * this line becomes `export type { CommandId } from '../commands/types'`, which changes nothing for callers.
+ */
+export type CommandId = string;
 
 /** ISO 8601 date-time with offset, e.g. "2026-10-29T10:00:00-07:00". Components format it with the shared formatter (en-US in the harness, frozen clock). */
 export type IsoDateTime = string;
@@ -151,10 +155,14 @@ export interface KeyHintsContextValue {
 /** Polite live-region announcement, supplied by the shell's single `role="status"` region (DESIGN §11.3). */
 export type Announce = (message: string) => void;
 
-/** The element a Menu, Popover or Tooltip positions against. */
-export type AnchorRef = RefObject<HTMLElement | null>;
+/**
+ * The element a Menu, Popover or DatePresets positions against. The one anchor style: every trigger callback that
+ * opens a floating surface hands over its element (`onMore(anchor)`, `onLater(anchor)`, `onAction(id, anchor)`),
+ * and the screen passes that element straight to the surface. Null while nothing is open.
+ */
+export type Anchor = HTMLElement | null;
 
-/** Ids a screen uses to wire a `listbox` with `aria-activedescendant` (DESIGN §11.3). */
+/** Ids the `ListBox` container uses to wire a `listbox` with `aria-activedescendant` (DESIGN §11.3). */
 export interface ListboxBinding {
   /** DOM id of the listbox element. */
   id: string;
@@ -168,6 +176,8 @@ export interface ListboxBinding {
 export interface CommandAction {
   /** Visible verb in plain words (DESIGN §10). */
   label: string;
+  /** Leading icon, e.g. `plus` on "Add an account" (empty.html no-accounts). */
+  icon?: IconName;
   /** Registry command that supplies the keycap and tooltip (DESIGN §8). */
   commandId?: CommandId;
   /** Literal keycap where DESIGN requires one; overrides the registry key. */
@@ -176,7 +186,7 @@ export interface CommandAction {
   onSelect: () => void;
 }
 
-/** A due date shown as a Chip (DESIGN §6 Chip, §7.2). */
+/** A due date shown as a Chip: only the date set with D, found in structured data or found by AI (DESIGN §6 Chip, §7.2). Never the Later date; that is `LaterUntil`. */
 export interface DueInfo {
   /** The due moment; a date-only due uses midnight local time. */
   at: IsoDateTime;
@@ -184,6 +194,32 @@ export interface DueInfo {
   overdue: boolean;
   /** Provenance; 'ai' adds "from the email" on hover. */
   source: DueSource;
+}
+
+/**
+ * When a Later item comes back (DESIGN §7.3; DatePresets purpose 'later'). Separate from `DueInfo`: a Later item can
+ * have both. Rendered as a 'laterUntil' Chip: "Yesterday", "Tue, Oct 27", "Today, 5:00 PM", "Someday".
+ */
+export type LaterUntil =
+  | {
+      /** A set moment. */
+      kind: 'at';
+      /** The moment it returns to Home. */
+      at: IsoDateTime;
+      /** The moment has passed (the Overdue group): `--stamp-ink` on `--stamp-tint` with a clock. Computed by the data layer. */
+      overdue: boolean;
+    }
+  | {
+      /** No date: the chip reads "Someday". */
+      kind: 'someday';
+    };
+
+/** A rejected write on a row or the focus letter: back in place with "Couldn't <op>." and Retry (DESIGN §5 rule 11, §7.15). */
+export interface RejectedWrite {
+  /** Lower-case op phrase, e.g. "move to Later". */
+  op: string;
+  /** Retry the write. */
+  onRetry: () => void;
 }
 
 /** The suggested action, the one filled button with the Space keycap (DESIGN §7.2 focus letter, §7.5). */
@@ -196,7 +232,7 @@ export interface SuggestedAction {
   isDone: boolean;
 }
 
-/** Registry ids for the triage controls on the focus letter and the reader action row (DESIGN §8 Lists). */
+/** Registry ids for the triage controls on the focus letter and the reader action row (DESIGN §8 Lists). The reader uses `ReaderTriageCommands`. */
 export interface TriageCommands {
   /** Space: run the suggestion. */
   suggest: CommandId;
@@ -208,9 +244,23 @@ export interface TriageCommands {
   more: CommandId;
 }
 
+/** The reader action row's keys: no ⋯ there, it lives in the pane header (DESIGN §7.5). */
+export type ReaderTriageCommands = Pick<TriageCommands, 'suggest' | 'later' | 'done'>;
+
+/**
+ * Hold-to-dictate state (DESIGN §7.6 Dictation, §8): a small `--stamp` LevelMeter and one line the component writes,
+ * "Listening. Release <key> to keep, Esc to cancel." Used by Composer, InlineReply and AskDock.
+ */
+export interface DictationState {
+  /** The held key named in the line: Space in an empty compose body, R from the reader, A for Ask. */
+  holdKey: 'A' | 'R' | 'Space';
+  /** Input level 0–1 for the meter (or drive the LevelMeter imperatively through its ref). */
+  level: number;
+}
+
 /* ───────────────────────── buttons-keys ───────────────────────── */
 
-/** Button heights 28 / 32 / 40 px (DESIGN §4.4 control heights, §6 Button). 'lg' is the onboarding primary. */
+/** Button heights 28 / 32 / 40 px (DESIGN §4.4 control heights, §6 Button). 'lg' is the onboarding primary. There is no 24 px button: 24 px belongs to chips, and the mockups' `.btn.xs` (status slot, undo tray, Cc, Reset, "Try demo mail") render at 'sm'. */
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 /** Fields every Button variant shares. */
@@ -239,8 +289,8 @@ interface ButtonBase {
   busy?: boolean;
   /** Toggle state for `aria-pressed`, e.g. the pane header Ask button while the dock is open. */
   pressed?: boolean;
-  /** Popup wiring for menu and picker triggers. */
-  popup?: { kind: 'menu' | 'listbox' | 'dialog'; expanded: boolean; controls: string };
+  /** Popup wiring for menu and picker triggers. Pickers are a Menu with `checkedId` (menuitemradio), so they use 'menu'; there is no listbox popup. */
+  popup?: { kind: 'menu' | 'dialog'; expanded: boolean; controls: string };
   /** Click handler. */
   onPress: () => void;
   /** Form role; default 'button'. */
@@ -266,7 +316,7 @@ export type ButtonProps =
       labelVisible?: boolean;
     });
 
-/** One keycap: 18 px, radius 4, `caption`, `--sunken` (DESIGN §6 Kbd). Mockups: every page (`.kbd`). Plain + refines: ui-foundation. */
+/** One keycap: 18 px, radius 4, `caption`, `--sunken` (DESIGN §6 Kbd). One size only: the drill prompt's larger caps in onboarding-drill.html follow DESIGN and use this Kbd. Mockups: every page (`.kbd`). Plain + refines: ui-foundation. */
 export interface KbdProps {
   /** Display chord as one cap, e.g. "E", "⌘↩", "⇧A", "Space", "Return", "⌃1". */
   chord: string;
@@ -294,19 +344,102 @@ export interface TooltipProps {
 
 /* ───────────────────────── surfaces ───────────────────────── */
 
+/** One icon tool in the pane header: icon button with tooltip and registry key (DESIGN §7.1). */
+export interface PaneTool {
+  /** Registry command; passed back on press and supplies the keycap. */
+  commandId: CommandId;
+  /** Icon. */
+  icon: IconName;
+  /** Accessible name and tooltip first line, e.g. "Previous email", "More", "New event". */
+  label: string;
+  /** Tooltip second line, e.g. "bookmark, trash, forward, why it's here" for More. */
+  detail?: string;
+  /** Toggle state for `aria-pressed`. */
+  pressed?: boolean;
+  /** Disabled, e.g. Next on the last thread. */
+  disabled?: boolean;
+}
+
+/** At most three icon tools (DESIGN §7.1); the tuple type enforces the limit. */
+export type PaneTools = readonly [] | readonly [PaneTool] | readonly [PaneTool, PaneTool] | readonly [PaneTool, PaneTool, PaneTool];
+
+/** The 48 px pane header, structured so a lane cannot add a fourth tool, a page title or move Ask (DESIGN §7.1, §4.4). The hairline after scroll is internal. Mockups: every main-window page (`.toolbar`), reader.html, compose.html, inbox.html (#bulk), calendar-week.html. */
+export interface PaneHeaderProps {
+  /** Back (chevron, Esc) or close (×, Esc) on deeper views. */
+  lead?: {
+    /** 'back' = chevron-left; 'close' = ×. */
+    kind: 'back' | 'close';
+    /** Accessible name and tooltip, e.g. "Back", "Close. The draft is saved." */
+    label: string;
+    /** Registry command for the keycap (Esc). */
+    commandId?: CommandId;
+    /** Pressed. */
+    onPress: () => void;
+  };
+  /** The quiet crumb after the lead, e.g. "Home" + "1 of 16", "New message", "Reply to Studio Kettle". Never a page title. */
+  crumb?: {
+    /** Crumb text. */
+    label: string;
+    /** Position in `--dim`, e.g. { index: 1, of: 16 } → "1 of 16". */
+    position?: { index: number; of: number };
+    /** Reader: the thread subject, shown instead of the crumb once `showSubject` is true. */
+    subject?: string;
+    /** The summary has scrolled out of view, so the crumb shows `subject` (DESIGN §7.1). */
+    showSubject?: boolean;
+  };
+  /** Up to three icon tools for the view, right side, before Ask. */
+  tools?: PaneTools;
+  /** A tool was pressed; the element is the anchor for its Menu (e.g. More). */
+  onTool?: (commandId: CommandId, anchor: HTMLElement) => void;
+  /** The Ask button (speech bubble + "Ask", A); always present, after the tools. */
+  ask: {
+    /** `aria-pressed` while the dock is open. */
+    pressed: boolean;
+    /** Tooltip wording: 'mail' = "Ask about your mail"; 'thisEmail' = "Ask about this email" (reader). */
+    scope: 'mail' | 'thisEmail';
+    /** Pressed. */
+    onPress: () => void;
+  };
+  /** The calendar button (tooltip "Today", ⇧A) after Ask; opens the dock's Today tab. */
+  today: {
+    /** `aria-pressed` while the Today tab is showing. */
+    pressed: boolean;
+    /** Pressed. */
+    onPress: () => void;
+  };
+  /** Bulk selection replaces the left side: "3 selected · Done · Later · Trash · More · Esc" (DESIGN §7.4). */
+  bulk?: {
+    /** Picked rows. */
+    count: number;
+    /** Text verbs in order (Done, Later, Trash), keycaps from the registry with keyHint 'hint'. */
+    actions: readonly CommandAction[];
+    /** The More icon button; the element anchors its Menu. */
+    onMore: (anchor: HTMLElement) => void;
+    /** Clear selection (×, Esc). */
+    onClear: () => void;
+  };
+}
+
 /** The white surface on the gray shell: the main pane and the Ask dock (DESIGN §2.2, §4.4, §6 Pane). Mockups: every main-window page. Plain + refines: ui-foundation; used by ui-shell. */
-export interface PaneProps {
-  /** 'main' = content pane; 'dock' = the Ask dock's second pane. */
-  kind: 'main' | 'dock';
+export type PaneProps = {
   /** Accessible region name, e.g. "Home", "Ask". */
   label: string;
-  /** The 48 px pane header (back or close + crumb left; up to three tools, Ask, calendar button right; bulk bar). Hairline only after content scrolls under it (DESIGN §7.1). */
-  header?: ReactNode;
   /** Pane content; scrolls inside the pane. */
   children: ReactNode;
   /** Element ref for the motion runtime (`dock` FLIP, DESIGN §4.8). */
   ref?: Ref<HTMLElement>;
-}
+} & (
+  | {
+      /** The content pane. */
+      kind: 'main';
+      /** The structured 48 px header; omitted only on the FatalScreen. */
+      header?: PaneHeaderProps;
+    }
+  | {
+      /** The Ask dock's second pane; AskDock draws its own Ask | Today header inside. */
+      kind: 'dock';
+    }
+);
 
 /** What may sit on the left of a PageHead row. Never a page title or subtitle (DESIGN §7). */
 export type PageHeadLead =
@@ -341,6 +474,39 @@ export interface NavHeadProps {
   id?: string;
 }
 
+/** The sidebar's account switcher: the app's one monogram (ink on `--raised`), the account name and a chevron; tooltip "Switch account"; opens the account Menu (DESIGN §7.1, §4.2). Mockups: shell.js sidebar (`.acct-switch`), errors.html (reconnect, menu open). Plain + refines: ui-foundation; used by ui-shell. */
+export interface AccountSwitcherProps {
+  /** Visible name, e.g. "All accounts" or "alex.moreno@gmail.com". */
+  label: string;
+  /** One or two letters, e.g. "A" for All accounts. */
+  monogram: string;
+  /** The account Menu is open (`aria-expanded`). */
+  open: boolean;
+  /** DOM id of the Menu it controls (`aria-controls`). */
+  menuId: string;
+  /** Pressed; the element anchors the account Menu. */
+  onOpen: (anchor: HTMLElement) => void;
+}
+
+/** The DESIGN §4.3 type roles a screen may set on plain text, plus two compositions the mockups use: 'lede' (`base` `--dim`, onboarding) and 'label' (`small` 500 `--dim`, field captions and the reader's subject line). Never 'summary' or 'answer': those belong to Summary and AskTurn. */
+export type TextVariant = 'display' | 'heading' | 'title' | 'lede' | 'label' | 'small' | 'caption';
+
+/** Closed text primitive so screens never set type themselves (DESIGN §4.3, §12.2): onboarding titles and ledes, the Welcome display line, the reader's subject line, the Today header, the drill heading, "Esc opens Aplos", lock lines. Mockups: onboarding-*.html, reader.html (`.r-subject`), ask.html (`.today-head`). Plain + refines: ui-foundation; used by ui-onboard, ui-reader, ui-ask. */
+export interface TextProps {
+  /** Type role. */
+  variant: TextVariant;
+  /** Element; default 'p' ('h1' for display and heading). Headings keep the document outline. */
+  as?: 'h1' | 'h2' | 'h3' | 'p' | 'span' | 'div';
+  /** Ink; default per variant (heading/title/display `--ink`, lede/label/small/caption `--dim`). */
+  tone?: 'ink' | 'ink-2' | 'dim';
+  /** Leading 14 px icon, e.g. `lock` on "Saved in Keychain on this Mac. Never shown again." */
+  icon?: IconName;
+  /** DOM id, e.g. a step title that labels the window body. */
+  id?: string;
+  /** Text, optionally with a Kbd ("Esc opens Aplos"). */
+  children: ReactNode;
+}
+
 /** One entry in a Menu. */
 export type MenuEntry =
   | {
@@ -352,8 +518,8 @@ export type MenuEntry =
       label: string;
       /** Leading icon. */
       icon?: IconName;
-      /** Leading colour mark (accounts, calendars). */
-      swatch?: TagColor;
+      /** Leading colour mark (accounts, calendars); several overlap as stacked dots, e.g. the "All accounts" row (errors.html reconnect). */
+      swatch?: TagColor | readonly TagColor[];
       /** Registry command whose keycap shows on the right. */
       commandId?: CommandId;
       /** Dim right-aligned text, e.g. "6:00 PM" or "Synced". */
@@ -382,8 +548,8 @@ export type MenuEntry =
 export interface MenuProps {
   /** Whether the menu is shown (`reveal`). */
   open: boolean;
-  /** Element the menu opens from. */
-  anchor: AnchorRef;
+  /** Element the menu opens from (the trigger callback's element). */
+  anchor: Anchor;
   /** Accessible name. */
   label: string;
   /** Rows, separators and group labels. */
@@ -406,8 +572,8 @@ export interface MenuProps {
 export interface PopoverProps {
   /** Whether it is shown (`reveal`). */
   open: boolean;
-  /** Element it opens from. */
-  anchor: AnchorRef;
+  /** Element it opens from (the trigger callback's element). */
+  anchor: Anchor;
   /** Accessible name. */
   label: string;
   /** 'dialog' for interactive content; 'tooltip' for read-only hover content such as a citation quote. */
@@ -478,6 +644,8 @@ export interface PuckItem {
   count?: number;
   /** Registry command for the tooltip keycap, e.g. ⌃1 on Home. */
   commandId?: CommandId;
+  /** Tooltip second line, e.g. Done's "Mail you finished. Press H to move one back to Home." (DESIGN §7.4). */
+  tooltip?: string;
   /** Disabled option. */
   disabled?: boolean;
 }
@@ -510,7 +678,6 @@ export type ToastKind =
   | 'undone'
   | 'pending'
   | 'offline'
-  | 'sending'
   | 'tip'
   | 'info';
 
@@ -548,10 +715,12 @@ export interface ToastProps extends ToastData {
   onDismiss: () => void;
 }
 
-/** Up to three toasts bottom-centre of the main pane, never under the dock; hover or focus pauses; polite, never steals focus (DESIGN §6 ToastStack, §7.13). Mockups: toasts.html. Plain + refines: ui-foundation; used by ui-shell. */
+/** Up to three toasts bottom-centre of the main pane, never under the dock; hover or focus pauses; polite, never steals focus (DESIGN §6 ToastStack, §7.13). Mockups: toasts.html, compose.html (send with no thread). Plain + refines: ui-foundation; used by ui-shell. */
 export interface ToastStackProps {
   /** Newest last; the stack shows the last three and never silently replaces an Undo toast. */
   toasts: readonly ToastData[];
+  /** The undo-send notice when no thread showing the message is visible (DESIGN §7.6 "one notice per send"): rendered as an UndoTray with placement 'toast' inside the stack, counted in the three and never replaced. ui-reader owns the send state; ui-shell passes it here. */
+  undoSend?: Omit<UndoTrayProps, 'placement'>;
   /** A toast's verb was chosen. */
   onAction: (toastId: string, actionId: string) => void;
   /** A toast timed out or was closed. */
@@ -560,7 +729,11 @@ export interface ToastStackProps {
 
 /* ───────────────────────── list ───────────────────────── */
 
-/** A quick action that overlays the date column on hover, an icon button with tooltip and key (DESIGN §5 rule 17, §7.4). */
+/**
+ * A quick action that overlays the date column on hover, an icon button with tooltip and key (DESIGN §5 rule 17, §7.4).
+ * Inside an `option` it is a pointer duplicate: `tabIndex={-1}` and `aria-hidden`, because every row action has a key
+ * and options' children are presentational (DESIGN §11.3; see README Accessibility).
+ */
 export interface RowAction {
   /** Registry command run on click (passed to onAction). */
   commandId: CommandId;
@@ -570,7 +743,7 @@ export interface RowAction {
   label: string;
 }
 
-/** Column layout of a row. 'home' = 148 px sender; 'list' = 152 px sender + date; 'later' = due chip in the date column; 'done' = fixed "Done 9:41 AM" stamp column with the hover action to its left (DESIGN §4.4, §7.3, §7.4). */
+/** Column layout of a row. 'home' = 148 px sender; 'list' = 152 px sender + date; 'later' = the `laterUntil` chip in the date column; 'done' = fixed "Done 9:41 AM" stamp column with the hover action to its left (DESIGN §4.4, §7.3, §7.4). */
 export type RowLayout = 'home' | 'list' | 'later' | 'done';
 
 /** A mail row: fixed height per density, unread dot, sender, summary or subject, due chip, date; no avatar (DESIGN §4.1 Rows, §6 ListRow, §7.2–7.4). Hosts the cursor layer, bulk-pick wash, swipe underlay and hover actions. Mockups: home.html, inbox.html, later.html, done.html, search.html, errors.html (row-error). Plain + refines: ui-foundation; used by ui-home, ui-ask (search). */
@@ -593,8 +766,10 @@ export interface ListRowProps {
   unread: boolean;
   /** Received (list, home), edited (Drafts) or sent (Sent) time for the date column. */
   date: IsoDateTime;
-  /** Due chip; in 'later' layout it replaces the date. */
+  /** Due-date chip (D, structured or found), before the date column in every layout. Never the Later date. */
   due?: DueInfo;
+  /** 'later' layout only: when it comes back; replaces the date column with a 'laterUntil' Chip (DESIGN §7.3). */
+  laterUntil?: LaterUntil;
   /** For 'done' layout: when it was finished ("Done 9:41 AM"). */
   doneAt?: IsoDateTime;
   /** Meta marks before the date: replied, bookmarked, attachment. */
@@ -614,22 +789,37 @@ export interface ListRowProps {
   /** What the swipe underlay reveals in each direction; the motion runtime drives it imperatively through `ref` (DESIGN §4.9 Swipe). */
   swipe?: { right: CommitKind; left: CommitKind };
   /** A rejected write: the row is back in place with "Couldn't <op>." and Retry (DESIGN §5 rule 11, §7.15). */
-  rejected?: {
-    /** Lower-case op phrase, e.g. "move to Later". */
-    op: string;
-    /** Retry the write. */
-    onRetry: () => void;
-  };
+  rejected?: RejectedWrite;
   /** Lifted while dragged (`lift`, `--elev-lift`, DESIGN §7.3). */
   lifted?: boolean;
   /** Click: move the cursor here. */
   onSelect: () => void;
   /** Double-click: open. Return/O are routed by the registry. */
   onOpen: () => void;
-  /** A hover action was clicked. */
-  onAction: (commandId: CommandId) => void;
+  /** A hover action was clicked; the element anchors a Menu or DatePresets (More, Later). */
+  onAction: (commandId: CommandId, anchor: HTMLElement) => void;
   /** Element ref for the cursor layer, ghost cloning and swipe (DESIGN §5 rule 3). */
   ref?: Ref<HTMLElement>;
+}
+
+/** The one listbox container for every mail list: Home, Later, All mail, Done, Drafts, Sent, Trash, Spam, search results, the Low-importance sheet (DESIGN §11.3). Focusable, owns `aria-activedescendant`; children are ListGroups or options (ListRow, FocusSlot › FocusLetter, LowBand). Mockups: home.html, inbox.html, later.html, done.html, search.html. Plain + refines: ui-foundation; used by ui-home, ui-ask. */
+export interface ListBoxProps {
+  /** Id, accessible name and active option. */
+  binding: ListboxBinding;
+  /** Bulk picking is on (`aria-multiselectable`). */
+  multiselectable?: boolean;
+  /** ListGroups and options only. */
+  children: ReactNode;
+  /** Element ref so the screen can focus the list. */
+  ref?: Ref<HTMLElement>;
+}
+
+/** A labelled group inside a ListBox: `role="group"` + `aria-labelledby` its SectionHeader, which renders as a presentational first child (the WAI-ARIA grouped-listbox pattern). Mockups: home.html (Do now, Important updates), later.html, inbox.html and done.html (date groups). Plain + refines: ui-foundation; used by ui-home, ui-ask. */
+export interface ListGroupProps {
+  /** The group's label; its `id` labels the group. */
+  header: SectionHeaderProps;
+  /** Options in the group. */
+  children: ReactNode;
 }
 
 /** A section label: `ui` 600 `--ink` + `--dim` count + one optional quiet text action; Tab / ⇧Tab target; stays, showing 0, until `hold` releases (DESIGN §5 rule 6, §6 SectionHeader). Mockups: home.html, later.html (groups, drag targets), inbox.html and done.html (date groups), search.html, settings.js. Plain + refines: ui-foundation; used by ui-home, ui-ask, ui-settings. */
@@ -648,7 +838,7 @@ export interface SectionHeaderProps {
   tone?: 'default' | 'overdue';
   /** "2 new" beside the label while new mail waits under `hold` (DESIGN §7.2). */
   waitingNew?: number;
-  /** One quiet `--dim` text action, e.g. "Go one by one" (S), "Clear from Home", "Reset all". */
+  /** One quiet `--dim` text action, e.g. "Go one by one" (S), "Clear from Home", "Reset all", "Unsubscribe" in the Low-importance sheet. Inside a ListBox it is a pointer duplicate of its key. */
   action?: CommandAction;
   /** Drag state while a Later row is lifted; the label names the time it resolves to (DESIGN §7.3). */
   dropTarget?: {
@@ -722,10 +912,12 @@ export interface FocusLetterProps {
   demoted: boolean;
   /** Pane under 700 px: labels drop, the Space verb stays (DESIGN §7.2 Narrow). */
   narrow?: boolean;
-  /** Suggestion button. */
+  /** The write on this item was rejected: "Couldn't <op>." with Retry on the card (DESIGN §5 rule 11). */
+  rejected?: RejectedWrite;
+  /** Suggestion button. Buttons on the card are pointer duplicates of their keys inside the option (README Accessibility). */
   onSuggestion: () => void;
-  /** Later button. */
-  onLater: () => void;
+  /** Later button; the element anchors DatePresets (later-picker.html). */
+  onLater: (anchor: HTMLElement) => void;
   /** Done button. */
   onDone: () => void;
   /** ⋯ button; the screen opens a Menu at this anchor (bookmark, trash, "Why it's here"). */
@@ -744,8 +936,48 @@ export interface LowBandProps {
   cursor: boolean;
   /** Fixed height per density. */
   density: Density;
+  /** Registry command for the tooltip "Open low importance" and its key (Return). */
+  commandId: CommandId;
   /** Click or Return: open the Low-importance sheet. */
   onOpen: () => void;
+}
+
+/** One sender group in the Low-importance sheet. */
+export interface LowSheetGroup {
+  /** Stable id; also the group header's DOM id. */
+  id: string;
+  /** Sender name, the group label. */
+  sender: string;
+  /** The sender's rows (layout 'list'). */
+  rows: readonly ListRowProps[];
+  /** Per-sender Unsubscribe, present only once List-Unsubscribe lands for this sender (DESIGN §7.2). */
+  onUnsubscribe?: () => void;
+}
+
+/** The Low-importance sheet opened from the LowBand: grouped by sender, hover preview, per-sender Unsubscribe, → → marks everything done (first press arms, second commits); empty: "No low-importance mail." with "Back to Home" (DESIGN §7.2, §7.14). Not drawn in the mockups. Plain + refines: ui-foundation; used by ui-home. */
+export interface LowSheetProps {
+  /** Whether it is shown (a Dialog, size 'md'). */
+  open: boolean;
+  /** Listbox wiring for the rows. */
+  binding: ListboxBinding;
+  /** Sender groups; empty shows the empty line. */
+  groups: readonly LowSheetGroup[];
+  /** The first → was pressed: the component shows "Press → again to mark all <n> done · Esc cancels" (copy pending DESIGN). */
+  armed: boolean;
+  /** Registry command for → (the keycap in the armed line). */
+  markAllCommandId: CommandId;
+  /** Row whose preview shows on hover, with its text from the data hook. */
+  preview?: { rowId: string; text: string };
+  /** Pointer entered or left a row; the screen loads the preview text. */
+  onPreview?: (rowId: string | null) => void;
+  /** First → (arm). */
+  onArm: () => void;
+  /** Second → while armed (commit all). */
+  onCommitAll: () => void;
+  /** Esc or "Back to Home". Esc while armed disarms first; the screen sets `armed` false. */
+  onClose: () => void;
+  /** Announces arming and the result (DESIGN §11.3). */
+  announce?: Announce;
 }
 
 /** Solid hill / dusk / stamp commit chip, 26 px, `--radius-sm`, icon + word; static, drawn on the ghost (DESIGN §4.9, §6 CommitChip). Mockups: home.html, reader.html (commit). Plain + refines: ui-foundation; motion by ui-shell. */
@@ -771,8 +1003,14 @@ export type ChipProps =
       kind: 'due';
       /** The due date. */
       due: DueInfo;
-      /** 'short' = "Tomorrow" / "Sat" / "Nov 4"; 'withTime' = "Today, 5:00 PM" (Later); 'sentence' = "Due tomorrow" (reader). */
+      /** 'short' = "Tomorrow" / "Sat" / "Nov 4"; 'withTime' = "Today, 5:00 PM"; 'sentence' = "Due tomorrow" (reader). */
       format: 'short' | 'withTime' | 'sentence';
+    }
+  | {
+      /** When a Later item comes back, with a clock: "Yesterday", "Tue, Oct 27", "Today, 5:00 PM", "Someday" (later.html). */
+      kind: 'laterUntil';
+      /** The Later date. */
+      until: LaterUntil;
     }
   | {
       /** A mail label. */
@@ -809,14 +1047,14 @@ export interface EmptyLineProps {
   size?: 'line' | 'display';
   /** A second dim line, e.g. "Next: Design review at 2:00 PM" or the status slot's reason. */
   detail?: string;
-  /** The action, e.g. "Undo last" Z, "Search all mail on Google" Return, "New event" N. */
+  /** The action, e.g. "Undo last" Z, "Search all mail on Google" Return, "New event" N, "Add an account" with `plus`. */
   action?: CommandAction & { emphasis: 'filled' | 'text' };
   /** Second action for No accounts only ("Try demo mail"). */
   secondaryAction?: CommandAction;
 }
 
 /** Actions an ErrorLine can offer. */
-export type ErrorLineAction = 'retry' | 'edit' | 'useAnotherProvider' | 'review' | 'replaceKey';
+export type ErrorLineAction = 'retry' | 'edit' | 'useAnotherProvider' | 'review' | 'replaceKey' | 'openSettings';
 
 /** What went wrong; the component writes DESIGN §7.15's copy: what happened, what is safe, what to do; no exclamation marks. */
 export type ErrorLineKind =
@@ -853,6 +1091,14 @@ export type ErrorLineKind =
       provider: string;
       /** Where to get a fresh key, shown as plain text. */
       keyPage?: string;
+    }
+  | {
+      /** First-sync sorting failed: "Couldn't sort with <Provider>: the key was refused. Mail is ready; sorting will retry." with Open Settings (DESIGN §7.12). 'unreachable' = "<Provider> didn't answer"; 'cap' = "today's AI limit is reached". */
+      kind: 'sortFailed';
+      /** Provider display name, e.g. "Groq". */
+      provider: string;
+      /** Why. */
+      cause: 'keyRefused' | 'unreachable' | 'cap';
     }
   | {
       /** A plain reason sentence from the engine, already in DESIGN §10's voice (first-sync failures). */
@@ -901,14 +1147,14 @@ export interface ReaderHeadProps {
   summary: SummaryContent;
   /** The filled suggestion with Space, then Later and Done. */
   suggestion: SuggestedAction;
-  /** Registry ids for the controls (`more` is unused here; ⋯ lives in the pane header). */
-  commands: TriageCommands;
+  /** Registry ids for the three controls; ⋯ lives in the pane header. */
+  commands: ReaderTriageCommands;
   /** The inline reply or another top surface owns the filled button (DESIGN §7.6). */
   demoted: boolean;
   /** Suggestion button. */
   onSuggestion: () => void;
-  /** Later button. */
-  onLater: () => void;
+  /** Later button; the element anchors DatePresets. */
+  onLater: (anchor: HTMLElement) => void;
   /** Done button. */
   onDone: () => void;
   /** Element ref for the reader-column flight ghost (DESIGN §4.9). */
@@ -937,7 +1183,7 @@ export interface EarlierMessagesProps {
   expanded: boolean;
   /** The one-liners shown when expanded. */
   messages: readonly CollapsedMessage[];
-  /** Message under the ↑/↓ cursor. */
+  /** The thread cursor: the one message id the ↑/↓ rail is on, shared with ThreadMessage (`cursor` = this id). */
   cursorId?: string;
   /** Registry id for O. */
   commandId: CommandId;
@@ -945,6 +1191,46 @@ export interface EarlierMessagesProps {
   onToggle: () => void;
   /** Open one message. */
   onOpenMessage: (id: string) => void;
+}
+
+/** A remote-images notice on a message (DESIGN §7.5 HTML mail). */
+export interface RemoteImages {
+  /** Remote images are blocked: shows "Load images from this sender". */
+  blocked: boolean;
+  /** Load and remember for this sender. */
+  onLoad: () => void;
+}
+
+/** One full message in the thread: an `article` landmark (DESIGN §11.3) with header (who, to, when), the `read` body from mailframe, "Load images from this sender", quoted text on O, attachments, and the 2 px accent rail when it holds the thread cursor (DESIGN §7.5 item 4). Mockups: reader.html, reply.html (sent, with UndoTray), errors.html. Plain + refines: ui-foundation; used by ui-reader. */
+export interface ThreadMessageProps {
+  /** Message id; also the DOM id the thread cursor and `aria-labelledby` use. */
+  id: string;
+  /** Sender name, or "You". */
+  from: string;
+  /** `--dim` recipients phrase, e.g. "to you, Mina Cho". */
+  toLabel: string;
+  /** Sent time. */
+  date: IsoDateTime;
+  /** Holds the thread cursor (the one cursor id shared with EarlierMessages): the accent rail shows. */
+  cursor: boolean;
+  /** The message body from `renderer/mailframe` (sandboxed iframe or plain text). */
+  body: ReactNode;
+  /** Attachment chips under the body. */
+  attachments?: readonly Extract<ChipProps, { kind: 'attachment' }>[];
+  /** Remote images notice, when the mail has any. */
+  remoteImages?: RemoteImages;
+  /** Quoted text toggle (O also shows quoted text). */
+  quoted?: { shown: boolean; onToggle: () => void; commandId: CommandId };
+  /** The undo-send line under a message you just sent (placement 'thread'). */
+  undoTray?: Omit<UndoTrayProps, 'placement'>;
+  /** Element ref for `arrive` and scrolling the cursor into view. */
+  ref?: Ref<HTMLElement>;
+}
+
+/** The 12 px line shown when a body takes past 1.5 s while the previous letter stays: a small Spinner and "Loading Maple Library…" (DESIGN §5 rules 10 and 12, §7.5). Mockups: none drawn. Plain + refines: ui-foundation; used by ui-reader. */
+export interface LoadingLineProps {
+  /** e.g. "Loading Maple Library…"; also the Spinner's accessible name. */
+  label: string;
 }
 
 /** The quiet "Reply to Jordan…" field with an R keycap at the end of the thread (DESIGN §6 ReplyStub, §7.5 item 5). Mockups: reader.html, errors.html. Plain + refines: ui-foundation; used by ui-reader. */
@@ -1001,13 +1287,13 @@ export type UndoTrayState =
 /** Verbs the undo tray can offer. */
 export type UndoTrayAction = 'undo' | 'sendNow' | 'checkSent' | 'sendAnyway' | 'reschedule';
 
-/** A `--raised` line under a sent message with the neutral 2 px `undo-send` drain; one notice per send (DESIGN §6 UndoTray, §7.6). Mockups: reply.html (sent). Plain + refines: ui-foundation; used by ui-reader. */
+/** A `--raised` line under a sent message with the neutral 2 px `undo-send` drain; one notice per send; its inline buttons are Button size 'sm' (DESIGN §6 UndoTray, §7.6). Mockups: reply.html (sent), compose.html (toast). Plain + refines: ui-foundation; used by ui-reader (via ThreadMessage) and ui-shell (via ToastStack). */
 export interface UndoTrayProps {
   /** What it says. */
   state: UndoTrayState;
   /** Reduced motion: no drain, a static text countdown instead (DESIGN §4.8 `undo-send`). */
   reducedMotion: boolean;
-  /** 'thread' = under the message; 'toast' = the same words as a toast when no thread is visible. */
+  /** 'thread' = under the message (ThreadMessage sets it); 'toast' = inside ToastStack when no thread is visible (ToastStack sets it). Screens never set it. */
   placement: 'thread' | 'toast';
   /** Registry id for Undo (Z). */
   undoCommandId: CommandId;
@@ -1060,10 +1346,12 @@ export interface ComposerProps {
   subject: string;
   /** Subject edited. */
   onSubjectChange: (value: string) => void;
-  /** The body editor, `read` type (owned by ui-reader). */
+  /** The body editor, `read` type (owned by ui-reader). An AI draft or follow-up nudge is editor data: the editor renders the dim text at the caret itself; no component renders inside the contenteditable. */
   editor: ReactNode;
-  /** A Suggestion hint under the body. */
-  suggestion?: ReactNode;
+  /** The suggestion hint line under the body while the editor holds dim suggested text. */
+  suggestion?: SuggestionProps;
+  /** Dictating (hold Space in an empty body): the footer shows the meter and the Listening line. */
+  dictation?: DictationState;
   /** The Polish bar: "Polish suggests <n> changes. Yours stays until you choose." Use these (Return) · Keep mine (Esc). */
   polish?: { changes: number; onUse: () => void; onKeep: () => void };
   /** Draft save state. */
@@ -1084,28 +1372,16 @@ export interface ComposerProps {
   onFormat: (anchor: HTMLElement) => void;
 }
 
-/** Dictation state shown in the composer footer: a `--stamp` LevelMeter and "Listening. Release R to keep, Esc to cancel." (DESIGN §7.6 Dictation). */
-export interface DictationState {
-  /** The held key named in the line. */
-  holdKey: 'R' | 'Space';
-  /** Input level 0–1 for the meter. */
-  level: number;
-}
-
 /** The inline reply card under the message (`--elev-card`, `settle`): To line with Cc and Pop out, `read` text, Send (⌘↩), draft state, attach and ⋯; owns the filled button while open (DESIGN §6 InlineReply, §7.6). Mockups: reply.html (reply, reply-all, dictating). Plain + refines: ui-foundation; used by ui-reader. */
 export interface InlineReplyProps {
-  /** RecipientField rows. */
+  /** RecipientField rows; the To row carries the Cc button (`RecipientField.ccButton`), and the screen adds Cc/Bcc rows when shown. */
   recipients: ReactNode;
-  /** Cc/Bcc rows are shown. */
-  ccVisible: boolean;
-  /** Show Cc/Bcc. */
-  onShowCc: () => void;
   /** Move the reply to the compose page. */
   onPopOut: () => void;
-  /** The body editor (owned by ui-reader). */
+  /** The body editor (owned by ui-reader); it renders any dim suggested text itself. */
   editor: ReactNode;
-  /** A Suggestion hint under the body. */
-  suggestion?: ReactNode;
+  /** The suggestion hint line under the body (AI draft, follow-up nudge). */
+  suggestion?: SuggestionProps;
   /** Draft save state. */
   draftState: DraftStateKind;
   /** Retry after "Couldn't save". */
@@ -1162,7 +1438,7 @@ export interface RecipientFieldProps {
   listboxId: string;
   /** Recipients that failed validation (outlined). */
   invalidIds?: readonly string[];
-  /** Show the "Cc" text button on this row (To only). */
+  /** Show the "Cc" text button on this row (To only); the one owner of Cc in the composer family. */
   ccButton?: { onSelect: () => void; commandId: CommandId };
   /** Focus on mount. */
   autoFocus?: boolean;
@@ -1176,14 +1452,10 @@ export interface DraftStateProps {
   onRetry?: () => void;
 }
 
-/** Dim, editable AI text with Tab to keep and Esc to dismiss; carries AI drafts and the follow-up nudge (DESIGN §6 Suggestion, §9 rule 6). Mockups: compose.html (ai-draft, follow-up). Plain + refines: ui-foundation; used by ui-reader. */
+/** The hint line under the body for dim AI text: "The grey sentence is a suggestion. Tab keep, Esc dismiss." The dim text itself is editor data rendered by ui-reader's editor (DESIGN §6 Suggestion, §7.6, §9 rule 6). Mockups: compose.html (ai-draft, follow-up: `p.suggest-hint`). Plain + refines: ui-foundation; used by ui-reader via Composer and InlineReply. */
 export interface SuggestionProps {
   /** 'draft' = "The grey sentence is a suggestion."; 'followUp' = "Aplos drafted this follow-up from your last email." */
   kind: 'draft' | 'followUp';
-  /** 'text' = the dim suggested text inline in the editor flow; 'hint' = the line under the body with Tab keep, Esc dismiss. */
-  part: 'text' | 'hint';
-  /** The suggested text (part 'text'). */
-  text?: string;
   /** Tab: keep it as ordinary text. */
   onKeep: () => void;
   /** Esc: remove it. */
@@ -1262,6 +1534,8 @@ export interface AskDockProps {
   onQueuedChange: (id: string, text: string) => void;
   /** Send a queued card now. */
   onSendQueuedNow: (id: string) => void;
+  /** Dictating to Ask (hold A): the field shows the meter and the Listening line (DESIGN §8 Global). */
+  dictation?: DictationState;
   /** Ref to the field so A can focus it. */
   fieldRef?: Ref<HTMLTextAreaElement>;
 }
@@ -1443,7 +1717,7 @@ export interface OperatorTokenProps {
   onRemove: () => void;
 }
 
-/** The Search page field at `heading` size in the PageHead row, with a 2 px accent underline while focused; tokens under it; remote Gmail search only on Return (DESIGN §6 SearchField, §7.9). Mockups: search.html (results, no-match). Plain + refines: ui-ask. */
+/** The Search page field at `heading` size in the PageHead row, with a 2 px accent underline while focused; tokens under it, or with no tokens the fixed hint "Narrow with from:, to:, subject:, has:attachment, before:, after:, in:done"; remote Gmail search only on Return (DESIGN §6 SearchField, §7.9). Mockups: search.html (results, no-match). Plain + refines: ui-ask. */
 export interface SearchFieldProps {
   /** Free text (placeholder "Search mail"). */
   value: string;
@@ -1484,8 +1758,8 @@ export interface DatePresetOption {
 export interface DatePresetsProps {
   /** Whether it is shown (`reveal`). */
   open: boolean;
-  /** Element it opens from, e.g. the focus letter's Later button. */
-  anchor: AnchorRef;
+  /** Element it opens from, e.g. the focus letter's Later button (`FocusLetter.onLater(anchor)`). */
+  anchor: Anchor;
   /** 'later' titles it "Later until"; 'due' sets a due date (D). */
   purpose: 'later' | 'due';
   /** The five presets in order. */
@@ -1578,6 +1852,33 @@ export interface CalendarEventData {
   persisted: boolean;
   /** For plans: the mail it came from. */
   source?: { from: string; subject: string; threadId: string };
+  /** Video call link shown in the detail, e.g. "meet.google.com/abc-defg-hij". */
+  video?: string;
+  /** Guests with their replies (EventDetail). */
+  guests?: readonly EventGuest[];
+  /** You organise it: ⋯ offers edit and delete; otherwise change your reply and hide. */
+  isOrganizer?: boolean;
+  /** Your own reply to an invite; null = not answered yet. */
+  myReply?: RsvpAnswer | null;
+  /** The invite email: "Invite from Priya" link (O). */
+  invite?: { from: string; threadId: string };
+  /** Plain-text description. */
+  description?: string;
+}
+
+/** An RSVP answer (Y / M / N, DESIGN §7.8). */
+export type RsvpAnswer = 'yes' | 'maybe' | 'no';
+
+/** One guest line: "Going", "Maybe", "Declined", "No reply yet" (calendar-event.html). */
+export interface EventGuest {
+  /** Display name. */
+  name: string;
+  /** Their reply. */
+  status: 'going' | 'maybe' | 'declined' | 'none';
+  /** The owner: the role reads "you" (or "you, organizer"). */
+  isYou?: boolean;
+  /** The organizer: the role reads "organizer". */
+  isOrganizer?: boolean;
 }
 
 /** Views of the grid; 'agenda' is the narrow-pane list and the Today tab (DESIGN §7.7 Today, §7.8 Narrow). */
@@ -1611,6 +1912,8 @@ export interface CalendarGridProps {
   onOpenStack: (ids: readonly string[], anchor: HTMLElement) => void;
   /** Empty day: "Nothing scheduled." with this action (New event · N, DESIGN §7.14). */
   emptyAction?: CommandAction;
+  /** View 'agenda' only: 'today' = the Today tab's compact agenda (header "Thursday, October 29 · 4 events · next at 11:00 AM", next event, the following two, free gaps, now line); 'full' = the narrow-pane calendar list. Default 'full'. */
+  agenda?: 'today' | 'full';
   /** Accessible name for the `grid`, e.g. "Week of October 25, 2026". */
   label: string;
   /** Announces range and selection changes (DESIGN §11.3). */
@@ -1670,6 +1973,37 @@ export interface PlanOutlineProps {
   onSelect: () => void;
   /** Open the detail (which offers confirm and the source email). */
   onOpen: (anchor: HTMLElement) => void;
+}
+
+/** The event detail: title with ⋯ ("More: edit, delete" / "change your reply, hide") and optional close; when line; calendar swatch; video link; place; "Invite from Priya" (O); the "Going?" RSVP Puck with "Send reply" disabled until chosen; Guests; description; for a plan, confirm and the source email (DESIGN §7.8). Mockups: calendar-event.html (detail, rsvp; cal.js detail()), calendar-day.html (`.day-rail`). Plain + refines: ui-calendar. */
+export interface EventDetailProps {
+  /** The entry. */
+  event: CalendarEventData;
+  /** 'popover' = content for a Popover from the grid; 'rail' = the day view's persistent side rail. */
+  presentation: 'popover' | 'rail';
+  /** RSVP block for an unanswered or changeable invite; Y/M/N answer only while it shows. */
+  reply?: {
+    /** Chosen answer; null shows no thumb and keeps "Send reply" disabled. */
+    answer: RsvpAnswer | null;
+    /** Registry ids for Y, M and N. */
+    commands: { yes: CommandId; maybe: CommandId; no: CommandId };
+    /** An answer was chosen. */
+    onAnswer: (answer: RsvpAnswer) => void;
+    /** "Send reply". */
+    onSend: () => void;
+  };
+  /** Open the invite email (O). */
+  onOpenInvite?: (threadId: string) => void;
+  /** Open the video link. */
+  onOpenVideo?: () => void;
+  /** A plan: add it to the calendar (it stops being an outline). */
+  onConfirmPlan?: () => void;
+  /** Open a plan's source email. */
+  onOpenSource?: (threadId: string) => void;
+  /** ⋯; the element anchors its Menu. */
+  onMore: (anchor: HTMLElement) => void;
+  /** Close (×, Esc); omit to hide the button (the rail). */
+  onClose?: () => void;
 }
 
 /** The now-line: 1 px `--stamp` with a 5 px cap; it may cross event text (DESIGN §6 NowLine, §7.8). Mockups: calendar-week.html, calendar-day.html, ask.html (today agenda). Plain + refines: ui-calendar. */
@@ -1777,12 +2111,21 @@ export type ProviderTableProps =
       onAction: (provider: ProviderId, action: ProviderAction) => void;
     }
   | {
-      /** Ollama, LM Studio and a custom server, each with an editable address and its default port. */
+      /** Ollama, LM Studio and a custom server, each with an editable address and its default port; keys are optional (OLLAMA_API_KEY, LM_STUDIO_API_KEY, CUSTOM_AI_API_KEY). */
       kind: 'local';
-      /** One row per server. */
-      rows: readonly { provider: 'ollama' | 'lmstudio' | 'custom'; address: string; defaultAddress: string; running?: boolean }[];
+      /** One row per server; `keySource` 'local' means no key is set and none is needed. */
+      rows: readonly {
+        provider: 'ollama' | 'lmstudio' | 'custom';
+        address: string;
+        defaultAddress: string;
+        running?: boolean;
+        keySource?: KeySource;
+        status?: ProviderStatus;
+      }[];
       /** Address edited. */
       onAddressChange: (provider: 'ollama' | 'lmstudio' | 'custom', address: string) => void;
+      /** Test, Add key, Replace key or Remove on a local row. */
+      onAction?: (provider: 'ollama' | 'lmstudio' | 'custom', action: ProviderAction) => void;
     };
 
 /** One remappable shortcut row: keycaps, conflict marks, recording with Replace / Cancel, Reset when changed (DESIGN §6 KeyRecorder, §7.10 Keyboard, §11.4). Mockups: settings-keyboard.html (default, recording). Plain + refines: ui-settings. */
@@ -1884,23 +2227,43 @@ export type SyncStatus =
       kind: 'demo';
     };
 
+/** The account a progress row belongs to. */
+export interface SyncAccount {
+  /** Address; also the progress bar's label "<address> sync" (DESIGN §7.12 Accessibility). */
+  address: string;
+  /** Account colour dot. */
+  color: TagColor;
+}
+
 /** Verbs the status slot offers; Reconnect opens the ReconnectSheet. */
 export type StatusAction = 'reconnect' | 'retry' | 'copyDiagnostics' | 'viewDetails';
 
-/** The sidebar footer's sync state, the only place sync status lives in the main window; two short lines of about 28 characters; never a banner (DESIGN §6 StatusSlot, §7.1). Mockups: errors.html (reconnect, quota, offline), empty.html (first-mail), demo.html, shell.js STATUS. Plain + refines: ui-foundation; used by ui-shell. */
+/**
+ * The sidebar footer's sync state, the only place sync status lives in the main window; two short lines of about 28
+ * characters with an inline Button size 'sm'; never a banner (DESIGN §6 StatusSlot, §7.1). Mockups: errors.html
+ * (reconnect, quota, offline), empty.html (first-mail), demo.html, shell.js STATUS. Plain + refines: ui-foundation; used by ui-shell.
+ * Priority (proposed, pending DESIGN): the shell passes the single most severe account state (needsAdmin, misconfigured,
+ * needsReauth, needsPermission, error, paused, offline, backfilling, syncing, starting, ok), and `account` with it.
+ */
 export interface StatusSlotProps {
   /** The state to show; the component writes DESIGN §7.1's copy. */
   status: SyncStatus;
-  /** The offered action was chosen. */
-  onAction: (action: StatusAction) => void;
+  /** The account the state is about. Named in the copy only when `multipleAccounts`; always the "<address> sync" label of the importing track. */
+  account?: SyncAccount;
+  /** Two or more accounts are connected, so the copy names the account. */
+  multipleAccounts?: boolean;
+  /** The offered action was chosen, with the account it is for (Reconnect opens ReconnectSheet for that address). */
+  onAction: (action: StatusAction, account?: SyncAccount) => void;
 }
 
-/** The weekly Gmail reconnect sheet (`--elev-dialog`): opens Google in the browser with the address filled in, "Waiting for Google in your browser…" with Cancel; closes with a "Reconnected" toast; nothing resyncs (DESIGN §6 ReconnectSheet, §7.1). Mockups: settings-accounts.html (reconnect), onboarding-accounts.html (waiting). Plain + refines: ui-foundation; used by ui-onboard, ui-shell, ui-settings. */
+/** The weekly Gmail reconnect sheet (`--elev-dialog`): opens the provider in the browser with the address filled in, "Waiting for Google in your browser…" with Cancel; closes with a "Reconnected" toast; nothing resyncs (DESIGN §6 ReconnectSheet, §7.1). Onboarding's inline waiting step is not this sheet: it is an OnboardingStep with ProgressSegments 'waiting'. Mockups: settings-accounts.html (reconnect). Plain + refines: ui-foundation; used by ui-shell, ui-settings. */
 export interface ReconnectSheetProps {
   /** Whether it is shown. */
   open: boolean;
   /** The account address (`login_hint`). */
   address: string;
+  /** Whose sign-in page; names it in the copy. Default 'google'; 'microsoft' for round 2. */
+  provider?: 'google' | 'microsoft';
   /** 'waiting' for the browser, or 'failed' with a reason and Try again. */
   state: 'waiting' | 'failed';
   /** Plain reason when failed. */
@@ -1951,15 +2314,7 @@ export type SyncCheckpoint =
       of: number;
     };
 
-/** The account a progress row belongs to. */
-export interface SyncAccount {
-  /** Address; also the progress bar's label "<address> sync" (DESIGN §7.12 Accessibility). */
-  address: string;
-  /** Account colour dot. */
-  color: TagColor;
-}
-
-/** Checkpoint progress for first sync, "Account connected" and "Importing N of M"; neutral colours; never a fake percentage (DESIGN §6 ProgressSegments, §7.12). Mockups: onboarding-sync.html (progress, paused, ready, partial, failed), onboarding-drill.html, shell.js (importing). Plain + refines: ui-foundation; used by ui-onboard, ui-shell. */
+/** Checkpoint progress for first sync, "Account connected" and "Importing N of M"; neutral colours; never a fake percentage (DESIGN §6 ProgressSegments, §7.12). Mockups: onboarding-sync.html (progress, paused, ready, partial, failed), onboarding-drill.html, onboarding-accounts.html (waiting), shell.js (importing). Plain + refines: ui-foundation; used by ui-onboard, ui-shell. */
 export type ProgressSegmentsProps =
   | {
       /** One account's segments plus its checklist. */
@@ -1970,10 +2325,14 @@ export type ProgressSegmentsProps =
       checkpoints: readonly SyncCheckpoint[];
       /** Paused until, for "Paused until 2:14 PM". */
       pausedUntil?: IsoDateTime;
-      /** Plain failure reason for the failed step, shown as an ErrorLine in the checklist. */
-      failureReason?: string;
+      /** What failed, rendered as an ErrorLine (placement 'checklist'): 'reason' for a plain engine sentence, 'sortFailed' for an AI failure. */
+      failure?: ErrorLineKind;
+      /** The account was skipped or isn't connected: "Not connected · Try again", never an endless "Waiting" (DESIGN §7.12). */
+      notConnected?: boolean;
       /** "Not connected · Try again" or Try again after a failure. */
       onRetry?: () => void;
+      /** "Open Settings" after an AI failure (sortFailed). */
+      onOpenSettings?: () => void;
       /** Only the segments and status, no checklist (the drill keeps progress visible this way). */
       compact?: boolean;
     }
@@ -1988,12 +2347,18 @@ export type ProgressSegmentsProps =
       of: number;
     }
   | {
+      /** An indeterminate neutral track with no count, e.g. waiting for OAuth in the browser (onboarding-accounts.html waiting `.wait-track`). */
+      variant: 'waiting';
+      /** Accessible name of the progressbar, e.g. "Waiting for sign-in". */
+      label: string;
+    }
+  | {
       /** The drawn 40 px check (static under reduced motion). */
       variant: 'ready';
       /** 'ready' = "Your mail is ready"; 'connected' = "Account connected". */
       label: 'ready' | 'connected';
-      /** Per-account result lines, e.g. "Newest 50 read · sorted 40 of 40". */
-      accounts?: readonly (SyncAccount & { result: string })[];
+      /** Per-account results; the component writes "Newest 50 read · sorted 40 of 40" (sort omitted with no AI). */
+      accounts?: readonly (SyncAccount & { read: number; sorted?: { done: number; of: number } })[];
     };
 
 /** The whole-pane fatal error: sans `display` "Aplos can't reach its mail engine." + "Your mail is safe on this Mac." (DESIGN §6 FatalScreen, §7.15; plan 30 §4.5 #3). Mockups: fatal.html. Plain + refines: ui-foundation; used by ui-shell. */
@@ -2044,6 +2409,20 @@ export interface CheckboxProps {
   label: string;
   /** Show the label beside the box. Default true. */
   labelVisible?: boolean;
+  /** Disabled. */
+  disabled?: boolean;
+}
+
+/** The six account colours as a radio group of swatches, the selected one with a check; names are fixed copy "Sky", "Hill", "Stamp", "Dusk", "Sand", "Ember" (DESIGN §4.2). Mockups: settings-accounts.html (Colour row). Plain: ui-foundation; refines: ui-settings. */
+export interface SwatchPickerProps {
+  /** Accessible name of the radiogroup, e.g. "Colour". */
+  label: string;
+  /** DOM id of a visible label (a SettingRow's label); overrides `label` as the name. */
+  labelledBy?: string;
+  /** Selected colour. */
+  value: TagColor;
+  /** A colour was chosen (click, arrows, Space). */
+  onChange: (color: TagColor) => void;
   /** Disabled. */
   disabled?: boolean;
 }
@@ -2130,6 +2509,100 @@ export interface ShortcutSheetProps {
   onClose: () => void;
 }
 
+/* ───────────────────────── onboarding ───────────────────────── */
+
+/** A button in an onboarding step's action row or footer; at most one 'filled' per step (DESIGN §4.6, §7.11). */
+export interface StepButton extends CommandAction {
+  /** 'filled' = the step's main action (Return, size 'lg' in the body); 'text' = quiet verbs ("Skip for now", "Back"). */
+  emphasis: 'filled' | 'text';
+  /** Where the keycap shows; filled Return is 'always', footer Esc is 'hint'. */
+  keyHint?: KeyHint;
+  /** Disabled, e.g. "Open Aplos" before the newest batch is in. */
+  disabled?: boolean;
+  /** Working; label stays, Spinner after 150 ms. */
+  busy?: boolean;
+}
+
+/** The onboarding footer: step dashes, the fixed note, then the step's buttons (DESIGN §7.11, §7.12). */
+export interface OnboardingFooter {
+  /** Short dashes for "Step 2 of 4"; omitted on the first-sync screen. */
+  dashes?: { step: number; of: number };
+  /** 'setupContinues' = "Setup continues in the background."; 'escOpensAplos' = Esc keycap + "opens Aplos" (first sync, drill). */
+  note: 'setupContinues' | 'escOpensAplos';
+  /** Footer buttons, e.g. Back (Esc), "Skip setup", "Continue anyway", "Open Aplos" (Return). */
+  buttons: readonly StepButton[];
+}
+
+/** One onboarding step in the separate 640 × 600 window: full-bleed white, the 48 px strip with "Try demo mail", a top-anchored sans `heading` title (Welcome: centred `display`), a lede, the body, an action row and the footer (DESIGN §7.11, §7.12). Mockups: onboarding-welcome.html, onboarding-accounts.html, onboarding-ai.html, onboarding-permissions.html, onboarding-sync.html, onboarding-drill.html. Plain: ui-foundation; refines: ui-onboard. */
+export interface OnboardingStepProps {
+  /** 'step' = top-anchored heading; 'welcome' = centred `display` line with `safe center`. */
+  layout: 'step' | 'welcome';
+  /** Step title, e.g. "Add your mail", "Waiting for Google in your browser…", "Getting your mail". */
+  title: string;
+  /** DOM id of the title; it labels the window body. */
+  titleId: string;
+  /** One sentence under the title (`base` `--dim`). */
+  lede?: string;
+  /** Step content: TextField, ChoiceRows, ConsentCard, ProgressSegments, Text. */
+  children?: ReactNode;
+  /** "More options" disclosure for steps with more than about six controls. */
+  moreOptions?: { expanded: boolean; onToggle: () => void; content: ReactNode };
+  /** The action row under the content, e.g. "Continue with Google" (filled, Return) + "Use a different provider". */
+  actions?: readonly StepButton[];
+  /** The footer. */
+  footer: OnboardingFooter;
+  /** "Try demo mail" in the top strip, with the tooltip "Load sample mail to look around. Remove it any time in Settings." Omit to hide. */
+  onTryDemo?: () => void;
+  /** Phase text for the one visually hidden `role="status"` (first sync: connected, found, ready, failed; DESIGN §7.12). */
+  phaseStatus?: string;
+}
+
+/** A quiet onboarding row: provider choice ("Google ›"), a found provider, a connected account, an AI provider radio ("Groq · Default", key source, "Works · 0.4 s", Test), a permission (Microphone · Allow…, a Switch) (DESIGN §7.11). Mockups: onboarding-accounts.html (`.row-q`), onboarding-ai.html (`.blk .it`), onboarding-permissions.html (`.perm`). Plain: ui-foundation; refines: ui-onboard. */
+export interface ChoiceRowProps {
+  /** DOM id. */
+  id: string;
+  /** 'link' = the whole row is a button that goes on (chevron); 'radio' = one of a radiogroup; 'static' = information with an optional trailing control. */
+  role: 'link' | 'radio' | 'static';
+  /** Name, e.g. "Google", "Groq", "Microphone", "alex.moreno@gmail.com". */
+  label: string;
+  /** Leading icon. */
+  icon?: IconName;
+  /** Leading account dot instead of an icon. */
+  mark?: TagColor;
+  /** Quiet tag after the label, e.g. "Default". */
+  tag?: string;
+  /** Second line, e.g. "You sign in on Google's own page in your browser.", "Google", "Hold A to dictate to Ask…". */
+  detail?: string;
+  /** A provider's key source as the second line ("Key found in the environment as GROQ_API_KEY", mono variable); replaces `detail`. */
+  keySource?: KeySource;
+  /** A small status dot before the detail: 'ok' = found/running, 'off' = not running. */
+  detailDot?: 'ok' | 'off';
+  /** Trailing status word: 'ok' adds a check ("Found", "Connected", "Allowed", "Works · 0.4 s"); 'attention' an alert in `--stamp-ink`. */
+  status?: { text: string; tone: 'ok' | 'dim' | 'attention' };
+  /** Trailing control: Test or "Allow…" Button (size 'sm'), a model picker, a Switch. */
+  control?: ReactNode;
+  /** Radio only: chosen (`aria-checked`). */
+  selected?: boolean;
+  /** Link or radio press. */
+  onPress?: () => void;
+}
+
+/** The AI step's one card (`--elev-card`): Provider, Model and "What is sent", then Allow (filled, Return) and "Not now"; background summaries wait for it (DESIGN §7.11; plan 30 §4.5 #1). Mockups: onboarding-ai.html (consent). Plain: ui-foundation; refines: ui-onboard; also used by ui-settings when the provider changes. */
+export interface ConsentCardProps {
+  /** Provider display name, e.g. "Groq". */
+  provider: string;
+  /** Model id, e.g. "llama-3.3-70b-versatile". */
+  model: string;
+  /** What is sent, one plain sentence ("The sender, subject and text of each new email… Attachments are not sent."). */
+  sent: string;
+  /** Adds the lock line "Ollama and LM Studio keep all of this on your Mac." when a hosted provider is chosen. */
+  showLocalNote?: boolean;
+  /** Allow (Return). */
+  onAllow: () => void;
+  /** Not now. */
+  onNotNow: () => void;
+}
+
 /* ───────────────────────── Manifest ───────────────────────── */
 
 /** Component families; each is a folder under renderer/ui/. */
@@ -2143,7 +2616,8 @@ export type ComponentFamily =
   | 'calendar'
   | 'settings'
   | 'status'
-  | 'controls';
+  | 'controls'
+  | 'onboarding';
 
 /** One planned implementation file. */
 export interface ComponentEntry {
@@ -2163,6 +2637,8 @@ export const COMPONENTS = [
   { name: 'Pane', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Pane.tsx' },
   { name: 'PageHead', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/PageHead.tsx' },
   { name: 'NavHead', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/NavHead.tsx' },
+  { name: 'AccountSwitcher', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/AccountSwitcher.tsx' },
+  { name: 'Text', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Text.tsx' },
   { name: 'Menu', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Menu.tsx' },
   { name: 'Popover', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Popover.tsx' },
   { name: 'Dialog', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Dialog.tsx' },
@@ -2170,11 +2646,14 @@ export const COMPONENTS = [
   { name: 'Puck', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Puck.tsx' },
   { name: 'Toast', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Toast.tsx' },
   { name: 'ToastStack', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/ToastStack.tsx' },
+  { name: 'ListBox', family: 'list', file: 'apps/desktop/src/renderer/ui/list/ListBox.tsx' },
+  { name: 'ListGroup', family: 'list', file: 'apps/desktop/src/renderer/ui/list/ListGroup.tsx' },
   { name: 'ListRow', family: 'list', file: 'apps/desktop/src/renderer/ui/list/ListRow.tsx' },
   { name: 'SectionHeader', family: 'list', file: 'apps/desktop/src/renderer/ui/list/SectionHeader.tsx' },
   { name: 'FocusSlot', family: 'list', file: 'apps/desktop/src/renderer/ui/list/FocusSlot.tsx' },
   { name: 'FocusLetter', family: 'list', file: 'apps/desktop/src/renderer/ui/list/FocusLetter.tsx' },
   { name: 'LowBand', family: 'list', file: 'apps/desktop/src/renderer/ui/list/LowBand.tsx' },
+  { name: 'LowSheet', family: 'list', file: 'apps/desktop/src/renderer/ui/list/LowSheet.tsx' },
   { name: 'CommitChip', family: 'list', file: 'apps/desktop/src/renderer/ui/list/CommitChip.tsx' },
   { name: 'CommitEdge', family: 'list', file: 'apps/desktop/src/renderer/ui/list/CommitEdge.tsx' },
   { name: 'Chip', family: 'list', file: 'apps/desktop/src/renderer/ui/list/Chip.tsx' },
@@ -2182,6 +2661,8 @@ export const COMPONENTS = [
   { name: 'ErrorLine', family: 'list', file: 'apps/desktop/src/renderer/ui/list/ErrorLine.tsx' },
   { name: 'ReaderHead', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/ReaderHead.tsx' },
   { name: 'EarlierMessages', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/EarlierMessages.tsx' },
+  { name: 'ThreadMessage', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/ThreadMessage.tsx' },
+  { name: 'LoadingLine', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/LoadingLine.tsx' },
   { name: 'ReplyStub', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/ReplyStub.tsx' },
   { name: 'Summary', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/Summary.tsx' },
   { name: 'Why', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/Why.tsx' },
@@ -2206,6 +2687,7 @@ export const COMPONENTS = [
   { name: 'EventBlock', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/EventBlock.tsx' },
   { name: 'PlanOutline', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/PlanOutline.tsx' },
   { name: 'NowLine', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/NowLine.tsx' },
+  { name: 'EventDetail', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/EventDetail.tsx' },
   { name: 'DatePresets', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/DatePresets.tsx' },
   { name: 'SettingRow', family: 'settings', file: 'apps/desktop/src/renderer/ui/settings/SettingRow.tsx' },
   { name: 'ProviderTable', family: 'settings', file: 'apps/desktop/src/renderer/ui/settings/ProviderTable.tsx' },
@@ -2217,8 +2699,12 @@ export const COMPONENTS = [
   { name: 'Spinner', family: 'status', file: 'apps/desktop/src/renderer/ui/status/Spinner.tsx' },
   { name: 'Switch', family: 'controls', file: 'apps/desktop/src/renderer/ui/controls/Switch.tsx' },
   { name: 'Checkbox', family: 'controls', file: 'apps/desktop/src/renderer/ui/controls/Checkbox.tsx' },
+  { name: 'SwatchPicker', family: 'controls', file: 'apps/desktop/src/renderer/ui/controls/SwatchPicker.tsx' },
   { name: 'TextField', family: 'controls', file: 'apps/desktop/src/renderer/ui/controls/TextField.tsx' },
   { name: 'ShortcutSheet', family: 'controls', file: 'apps/desktop/src/renderer/ui/controls/ShortcutSheet.tsx' },
+  { name: 'OnboardingStep', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/OnboardingStep.tsx' },
+  { name: 'ChoiceRow', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/ChoiceRow.tsx' },
+  { name: 'ConsentCard', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/ConsentCard.tsx' },
 ] as const satisfies readonly ComponentEntry[];
 
 /** Name of every component in the manifest. */
@@ -2232,6 +2718,8 @@ export interface ComponentPropsMap {
   Pane: PaneProps;
   PageHead: PageHeadProps;
   NavHead: NavHeadProps;
+  AccountSwitcher: AccountSwitcherProps;
+  Text: TextProps;
   Menu: MenuProps;
   Popover: PopoverProps;
   Dialog: DialogProps;
@@ -2239,11 +2727,14 @@ export interface ComponentPropsMap {
   Puck: PuckProps;
   Toast: ToastProps;
   ToastStack: ToastStackProps;
+  ListBox: ListBoxProps;
+  ListGroup: ListGroupProps;
   ListRow: ListRowProps;
   SectionHeader: SectionHeaderProps;
   FocusSlot: FocusSlotProps;
   FocusLetter: FocusLetterProps;
   LowBand: LowBandProps;
+  LowSheet: LowSheetProps;
   CommitChip: CommitChipProps;
   CommitEdge: CommitEdgeProps;
   Chip: ChipProps;
@@ -2251,6 +2742,8 @@ export interface ComponentPropsMap {
   ErrorLine: ErrorLineProps;
   ReaderHead: ReaderHeadProps;
   EarlierMessages: EarlierMessagesProps;
+  ThreadMessage: ThreadMessageProps;
+  LoadingLine: LoadingLineProps;
   ReplyStub: ReplyStubProps;
   Summary: SummaryProps;
   Why: WhyProps;
@@ -2275,6 +2768,7 @@ export interface ComponentPropsMap {
   EventBlock: EventBlockProps;
   PlanOutline: PlanOutlineProps;
   NowLine: NowLineProps;
+  EventDetail: EventDetailProps;
   DatePresets: DatePresetsProps;
   SettingRow: SettingRowProps;
   ProviderTable: ProviderTableProps;
@@ -2286,8 +2780,12 @@ export interface ComponentPropsMap {
   Spinner: SpinnerProps;
   Switch: SwitchProps;
   Checkbox: CheckboxProps;
+  SwatchPicker: SwatchPickerProps;
   TextField: TextFieldProps;
   ShortcutSheet: ShortcutSheetProps;
+  OnboardingStep: OnboardingStepProps;
+  ChoiceRow: ChoiceRowProps;
+  ConsentCard: ConsentCardProps;
 }
 
 /** Compile-time guard: the manifest and the props map name exactly the same components. */
