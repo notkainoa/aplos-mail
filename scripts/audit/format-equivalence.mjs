@@ -1,6 +1,6 @@
 // Proves that a mechanical formatting commit changed layout only.
 //
-// Usage: node scripts/audit/format-equivalence.mjs --before <ref> --after <ref> [--build]
+// Usage: node scripts/audit/format-equivalence.mjs --before <ref> --after <ref> [--build [--keep-dist <dir>]]
 //
 // For every file that differs between the two refs (renames followed with `git diff -M`; a 100%
 // rename is accepted as is) the script compares the before and after blobs:
@@ -25,7 +25,8 @@
 // and requires apps/desktop/dist/main/*.cjs and every file under apps/desktop/dist/renderer to be
 // byte-identical with identical names. If a build ever emitted sourcemaps, .map files are ignored
 // and sourceMappingURL comments stripped, and the summary says so. The native helper in dist/bin
-// (swiftc, lipo) is compared for information only. Temporary worktrees are always removed.
+// (swiftc, lipo) is compared for information only. --keep-dist <dir> copies both dist folders to
+// <dir>/before and <dir>/after for inspection. Temporary worktrees are always removed.
 // The build runs without GOOGLE_CLIENT_*, MICROSOFT_CLIENT_ID and APLOS_RELEASE_BUILD in its
 // environment, so no secret is read.
 //
@@ -50,7 +51,15 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -506,7 +515,7 @@ function compareBuilds(distBefore, distAfter) {
   return { failures, info, compared, state };
 }
 
-function buildComparison(before, after) {
+function buildComparison(before, after, keepDir) {
   const tempRoot = mkdtempSync(join(tmpdir(), 'aplos-format-equivalence-'));
   const created = [];
   try {
@@ -514,6 +523,10 @@ function buildComparison(before, after) {
     const distBefore = buildRef(before, tempRoot, 'before');
     created.push('after');
     const distAfter = buildRef(after, tempRoot, 'after');
+    if (keepDir) {
+      cpSync(distBefore, join(keepDir, 'before'), { recursive: true });
+      cpSync(distAfter, join(keepDir, 'after'), { recursive: true });
+    }
     return compareBuilds(distBefore, distAfter);
   } finally {
     for (const label of created) {
@@ -561,7 +574,11 @@ function main() {
   if (args.includes('--build')) {
     console.log('\nbuilding both refs (this takes a few minutes)...');
     try {
-      const build = buildComparison(beforeSha, afterSha);
+      const build = buildComparison(
+        beforeSha,
+        afterSha,
+        args.includes('--keep-dist') ? resolve(value('--keep-dist')) : null,
+      );
       console.log(`build: ${build.compared} files byte-identical`);
       if (build.state.stripped) {
         console.log(`  stripped sourceMappingURL comments in ${build.state.stripped} file reads`);
