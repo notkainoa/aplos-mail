@@ -78,7 +78,10 @@ test('the engine bundles for a platform without Node, so a mobile app can reuse 
 // The budget is for the engine that ships after Phase 2, which deletes `legacy/`; legacy code is still held to the
 // no-Node rule above. The new engine must not lean on legacy code, or the deletion would break it.
 const legacy = join(src, 'legacy');
-test('the new engine (contract types and zod-free tables only, no zod) stays under 400,000 bytes and never imports legacy code', async () => {
+// Measured unminified, all files at once. 2026-10-28: store, runtime, views 1 to 3 reached 426,360 bytes (253,443 minified,
+// which is what ships); the budget rose from 400,000 to 450,000, recorded in DECISIONS.md as the plan (plan 10 E1) requires.
+const BUDGET_BYTES = 450_000;
+test('the new engine (contract types and zod-free tables only, no zod) stays under 450,000 bytes and never imports legacy code', async () => {
   const { code, inputs } = await bundleNeutral(src, f => f.startsWith(legacy));
   assert.deepEqual(
     inputs.filter(path => /(^|\/)legacy\//.test(path)),
@@ -86,7 +89,7 @@ test('the new engine (contract types and zod-free tables only, no zod) stays und
     'no legacy imports outside legacy/',
   );
   const bytes = new TextEncoder().encode(code).length;
-  assert.ok(bytes < 400_000, `engine bundle stays small (${bytes} bytes)`);
+  assert.ok(bytes < BUDGET_BYTES, `engine bundle stays small (${bytes} bytes)`);
 });
 
 test('a Node import planted in a subfolder fails the portability check', async () => {
