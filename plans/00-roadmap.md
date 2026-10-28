@@ -351,6 +351,14 @@ Rules:
 - Non-Claude output is checked before it counts: tests run, and a Claude agent reviews the diff. If a free model fails twice, or makes no progress for 10 minutes, cancel it and move up a tier.
 - When Claude reports a usage limit, don't stall. Shift queued low-judgment work to the free tier, and resume Claude work after the reset.
 
+### 5.1b Machines (owner, 2026-10-28)
+
+> **What this means:** threads that only need tests and a headless browser run on the Linux box, so this Mac isn't overloaded.
+
+- **This Mac (MacBook Air):** the Integrator, Engine, and Platform and website. They need macOS, Electron, signing and the Keychain. Live Gmail runs also happen here, because the test account's grant is in this Mac's Keychain.
+- **Linux box (`kainoas-linux-mba`, its own T3 server, repo at `~/Dev/aplos-mail`, Node 24 through nvm):** UI-screens, UI-core and Providers. Their tests run headless (Playwright Chromium, the stand-in engine, the emulators). Anything that truly needs a visible window uses `agent-display` there, or is routed back to the Mac through STATUS.
+- Branches, origin, `plans/STATUS.md` and the merge procedure are the same on both machines. Threads on different machines talk only through STATUS. The orchestrator watches both.
+
 ### 5.2 Why six
 
 - **Merge conflicts** depend on path ownership, not on thread count. The owners check makes cross-lane edits fail in CI, so more lanes do not mean more conflicts. Thread count matters for coordination. Each orchestrating thread keeps at most about eight workflows in view.

@@ -123,9 +123,10 @@ export async function launchAplos(options: LaunchOptions = {}): Promise<AplosApp
       timeout: options.timeout ?? 30_000,
     });
     const userData = await app.evaluate(({ app }) => app.getPath('userData'));
-    if (!isInside(userDataDir, userData)) {
+    // F8 test mode keeps Chromium's profile inside APLOS_DATA_DIR; either temp folder is isolated.
+    if (!isInside(userDataDir, userData) && !isInside(dataDir, userData)) {
       throw new Error(
-        `userData is ${userData}, not inside ${userDataDir}; the run would touch real app state`,
+        `userData is ${userData}, not inside ${userDataDir} or ${dataDir}; the run would touch real app state`,
       );
     }
     await assertNoVisibleWindows();
