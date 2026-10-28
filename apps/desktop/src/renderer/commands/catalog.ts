@@ -115,7 +115,14 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
     keywords: ['keyboard', 'help', 'keys'],
   },
   { id: 'app.undo', label: 'Undo', keys: ['z'], contexts: ['global'], group: 'Actions' },
-  { id: 'nav.home', label: 'Home', keys: ['ctrl+1'], contexts: ['global'], group: 'Go to' },
+  {
+    id: 'nav.home',
+    label: 'Home',
+    icon: 'house',
+    keys: ['ctrl+1'],
+    contexts: ['global'],
+    group: 'Go to',
+  },
   {
     id: 'nav.later',
     label: 'Later',
@@ -127,12 +134,20 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
   {
     id: 'nav.allMail',
     label: 'All mail',
+    icon: 'tray',
     keys: ['ctrl+3'],
     contexts: ['global'],
     group: 'Go to',
     keywords: ['inbox', 'archive'],
   },
-  { id: 'nav.drafts', label: 'Drafts', keys: ['ctrl+4'], contexts: ['global'], group: 'Go to' },
+  {
+    id: 'nav.drafts',
+    label: 'Drafts',
+    icon: 'doc',
+    keys: ['ctrl+4'],
+    contexts: ['global'],
+    group: 'Go to',
+  },
   { id: 'nav.sent', label: 'Sent', keys: ['ctrl+5'], contexts: ['global'], group: 'Go to' },
   {
     id: 'nav.calendar',

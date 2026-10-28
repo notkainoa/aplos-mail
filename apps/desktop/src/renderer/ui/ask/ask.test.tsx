@@ -21,6 +21,7 @@ import {
   SearchField,
   StepLog,
 } from './index';
+import { openCitation } from './Citation';
 import { formatRecent, formatSource } from './format';
 import { nextActiveId } from './palette-nav';
 
@@ -243,7 +244,7 @@ test('AskTurn states: working, streaming with one caret, stopped, failed', () =>
   assert.equal((streaming.match(/ui-ask-turn__caret/g) ?? []).length, 1);
   assert.doesNotMatch(streaming, /No source/);
 
-  assert.match(text(html(turn({ state: 'stopped' }))), /Stopped/);
+  assert.match(text(html(turn({ state: 'stopped' }))), /Stopped\./);
 
   const failed = html(
     turn({
@@ -723,4 +724,50 @@ test('Palette: a long breadcrumb keeps its text in a shrinkable span, the input 
   const markup = html(palette({ trail: [long, 'AI providers'] }));
   assert.match(markup, /<li[^>]*><span class="ui-palette__trail-text">Settingsx+<\/span>/);
   assert.ok(markup.indexOf('ui-palette__trail') < markup.indexOf('ui-palette__input'));
+});
+
+test('AskTurn: provenance on hover only, local models say "on this Mac"; a daily limit is a quiet line', () => {
+  const groq = html(turn({ provenance: { provider: 'Groq', local: false } }));
+  assert.match(groq, /class="ui-ask-turn__answer"[^>]*title="Answer by Groq"/);
+  assert.doesNotMatch(text(groq), /Answer by/);
+  const local = html(turn({ provenance: { provider: 'Ollama', local: true } }));
+  assert.match(local, /title="Answer by Ollama on this Mac"/);
+  assert.doesNotMatch(html(turn()), /Answer by/);
+
+  const paused = html(turn({ state: 'paused', answer: undefined, citations: [] }));
+  assert.match(text(paused), /Paused for today\. Resumes tomorrow\./);
+  assert.doesNotMatch(paused, /role="alert"/);
+  assert.doesNotMatch(paused, /No source/);
+  clean(paused);
+});
+
+test('Citation clicks pass the citation number, for threads and for events', () => {
+  const opened: unknown[] = [];
+  const onOpen = (id: string, index: number) => opened.push(['thread', id, index]);
+  const onOpenEvent = (id: string, index: number) => opened.push(['event', id, index]);
+  openCitation({ ...source2, onOpen, onOpenEvent });
+  openCitation({
+    ...source1,
+    index: 3,
+    kind: 'event',
+    eventId: 'e9',
+    threadId: '',
+    onOpen,
+    onOpenEvent,
+  });
+  assert.deepEqual(opened, [
+    ['thread', 't2', 2],
+    ['event', 'e9', 3],
+  ]);
+});
+
+test('Citation drops empty parts: no dangling separators when a field is missing', () => {
+  const noSubject = html(<Citation {...source1} subject="" onOpen={noop} />);
+  assert.match(text(noSubject), /Mina Cho · Mar 20, 2020$/);
+  assert.match(noSubject, /aria-label="Source 1: Mina Cho"/);
+  const bare = html(<Citation {...source1} from=" " subject="" date="" onOpen={noop} />);
+  assert.doesNotMatch(text(bare), /·/);
+  assert.match(bare, /aria-label="Source 1"/);
+  const empty = html(<Citation {...source1} from="" subject="" date="" quote="" onOpen={noop} />);
+  assert.doesNotMatch(empty, /role="tooltip"|aria-describedby/);
 });

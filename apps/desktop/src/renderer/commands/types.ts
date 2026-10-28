@@ -2,6 +2,8 @@
 // Static descriptors (CommandSpec, ControlSpec) are declared once in catalog.ts;
 // screens attach runtime handlers (CommandHandlers) to them through the registry.
 
+import type { HoldRelease } from './hold';
+
 export type CommandId = string;
 
 /**
@@ -186,6 +188,7 @@ export type IconName =
   | 'doc'
   | 'gearshape'
   | 'house'
+  | 'tray'
   | 'keyboard';
 
 /**
@@ -399,6 +402,13 @@ export interface CommandHandlers {
   children?(ctx: CommandContext): readonly PaletteChild[];
   /** The confirm prompt for this target ("“Invoice #0412” will be removed from your account."); falls back to the spec's prompt. */
   promptFor?(ctx: CommandContext): string | undefined;
+  /**
+   * For a hold command (the one the HoldTracker upgrades to): the key came up, or the hold ended (another key, Esc, blur).
+   * The shell passes every HoldRelease the tracker returns to `registry.release`, so a dictation handler learns when to
+   * stop and whether to keep (`release.phase` 'hold') or discard what it heard. Not called for a tap that never upgraded
+   * unless the screen attached `release` to that command.
+   */
+  release?(ctx: CommandContext, release: HoldRelease): void | Promise<void>;
 }
 
 export type Command = CommandSpec & CommandHandlers;

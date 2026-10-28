@@ -306,7 +306,8 @@
   margin: var(--space-2) 0 0;
 }
 .ui-ask-turn__no-source,
-.ui-ask-turn__stopped {
+.ui-ask-turn__stopped,
+.ui-ask-turn__paused {
   margin: var(--space-2) 0 0;
   color: var(--dim);
   font: var(--type-small);
@@ -490,9 +491,11 @@
   letter-spacing: var(--track-base);
   overflow-wrap: anywhere;
 }
+.ui-citation__text + .ui-citation__source {
+  margin-top: var(--space-2);
+}
 .ui-citation__source {
   display: block;
-  margin-top: var(--space-2);
   color: var(--dim);
   font: var(--type-small);
   letter-spacing: var(--track-small);
@@ -784,7 +787,9 @@
   color: var(--dim);
   font: var(--type-small);
   letter-spacing: var(--track-small);
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ui-palette__context b {
   color: var(--ink-2);

@@ -246,7 +246,7 @@ export function Palette(props: PaletteProps) {
         ) : (
           <>
             {context ? (
-              <p className="ui-palette__context">
+              <p className="ui-palette__context" title={context}>
                 For: <b dir="auto">{context}</b>
               </p>
             ) : null}

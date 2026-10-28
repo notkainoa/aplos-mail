@@ -11,6 +11,8 @@ import {
   settingRoute,
   type SettingEntry,
 } from './settings';
+import { UI_ICON_FOR_COMMAND, uiIconFor } from './icons';
+import { createHoldTracker } from './hold';
 import { buildSheet, SHEET_POINTER_ROWS, SHEET_SECTIONS } from './sheet';
 import { context, keydown, wiredRegistry } from './testing';
 import { DEFAULT_KEY_PREFS, type CommandSpec, type ContextName, type Keymap } from './types';
@@ -794,5 +796,50 @@ test('keyPrefsFromUi maps the stored ui fields onto the registry prefs', () => {
     keyPrefsFromUi({ singleKeys: true, holdMs: 250, swipeDirection: 'doneRight', keymap: {} })
       .swapTriageArrows,
     false,
+  );
+});
+
+test('Home, All mail and Drafts have icons, and every catalog icon maps to the UI set', () => {
+  const icon = (id: string) => COMMANDS.find(c => c.id === id)?.icon;
+  assert.deepEqual(
+    ['nav.home', 'nav.allMail', 'nav.drafts'].map(id => uiIconFor(icon(id))),
+    ['home', 'tray', 'file'],
+  );
+  for (const c of COMMANDS)
+    if (c.icon) assert.ok(UI_ICON_FOR_COMMAND[c.icon], `${c.id}: ${c.icon}`);
+  assert.equal(uiIconFor(undefined), undefined);
+});
+
+test('registry.release tells the hold command when the key comes up', () => {
+  const registry = wiredRegistry();
+  const ctx = context(['global', 'list']);
+  const seen: string[] = [];
+  registry.attach('mail.dictateReply', {
+    run: () => undefined,
+    release: (_ctx, release) => {
+      seen.push(`${release.commandId}:${release.phase}:${release.upgraded}`);
+    },
+  });
+  const tracker = createHoldTracker(250);
+  const key = { key: 'r', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
+  tracker.down(key, 'mail.dictateReply', 0);
+  tracker.tick(300);
+  const result = registry.release(tracker.up(key, 400), ctx);
+  assert.equal(result.status, 'ran');
+  assert.deepEqual(seen, ['mail.dictateReply:hold:true']);
+  assert.equal(registry.release(null, ctx).status, 'unhandled');
+  assert.equal(
+    registry.release(
+      { key: 'r', commandId: 'mail.done', phase: 'tap', upgraded: false, heldMs: 5 },
+      ctx,
+    ).status,
+    'unhandled',
+  );
+  assert.equal(
+    registry.release(
+      { key: 'r', commandId: 'no.such', phase: 'tap', upgraded: false, heldMs: 5 },
+      ctx,
+    ).status,
+    'unknown',
   );
 });
