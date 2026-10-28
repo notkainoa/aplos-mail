@@ -3,7 +3,6 @@ import { requireOriginating } from '@aplos/contract/access';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller } from '../methods/types';
 import type { StoreReader, StoreWrite } from '../store';
-import { UNCERTAIN } from '../sync/ops';
 import {
   invertStep,
   localWrite,
@@ -29,11 +28,17 @@ import {
 
 const conflict = (message: string) => new ContractError({ type: 'conflict', message });
 
-/** A queued, failed or conflicted edit never reached the provider (unless its outcome is unknown), so it can be cancelled. */
-const cancellable = (row: OpRow | undefined): row is OpRow =>
-  !!row &&
-  row.last_error !== UNCERTAIN &&
-  (row.state === 'queued' || row.state === 'failed' || row.state === 'conflict');
+const given = (row: OpRow) => row.state === 'failed' || row.state === 'conflict';
+
+/** Never tried: the provider cannot have it, so the edit can be cancelled and the provider never hears of it. */
+const unsent = (row: OpRow) => row.state === 'queued' && row.attempts === 0;
+
+/** A failed or conflicted edit is given up; a queued one that was tried before is not (the provider may have it). */
+const cancellable = (row: OpRow | undefined): row is OpRow => !!row && (unsent(row) || given(row));
+
+/** The provider may have applied the edit: it was tried more than once, or is not waiting to be tried. */
+const mayHaveLanded = (row: OpRow | undefined) =>
+  !row || !cancellable(row) || (given(row) && row.attempts > 1);
 
 interface UndoPlan {
   writes: StoreWrite[];
@@ -47,8 +52,9 @@ function undoStep(
   undoOpId: string,
   plan: UndoPlan,
 ): void {
+  const send = mayHaveLanded(row);
   for (const step of invertStep(rs.step)) {
-    if (cancellable(row)) {
+    if (!send) {
       plan.writes.push(localWrite(rs.accountId, step));
       continue;
     }
@@ -79,6 +85,14 @@ function planUndo(q: StoreReader, rec: OpRecord, rows: OpRow[], undoOpId: string
   return plan;
 }
 
+/** The caller needs the scope the journal recorded and every scope an op row of the operation carries. */
+function requireScopesOf(caller: Caller, rec: OpRecord | undefined, rows: readonly OpRow[]): void {
+  const method = rec?.method ?? 'Thread/act';
+  const scopes = new Set([rec?.scope, ...rows.map(r => r.scope)].filter(Boolean));
+  if (!scopes.size) requireOriginating(caller, { method });
+  for (const scope of scopes) requireOriginating(caller, { scope, method });
+}
+
 /** Who may undo: the caller needs the scope the operation was made with, and the operation has to be one we can invert. */
 function undoableRecord(
   deps: CommandDeps,
@@ -92,10 +106,7 @@ function undoableRecord(
       type: 'notFound',
       message: 'This change can no longer be undone.',
     });
-  requireOriginating(caller, {
-    scope: rec?.scope ?? rows[0]?.scope,
-    method: rec?.method ?? 'Thread/act',
-  });
+  requireScopesOf(caller, rec, rows);
   if (!rec || !rec.undoable) throw conflict('This change cannot be undone.');
   if (rec.undone) throw conflict('This change was already undone.');
   return { rec, rows };
@@ -106,7 +117,12 @@ export function undoOperation(
   args: Input<'Operation/undo'>,
   caller: Caller,
 ): Receipt {
-  const replay = priorReceipt(deps, args.undoOpId, false);
+  if (args.undoOpId === args.opId)
+    throw new ContractError({
+      type: 'validation',
+      message: 'An undo needs an id of its own.',
+    });
+  const replay = priorReceipt(deps, args.undoOpId, 'Operation/undo');
   if (replay) return replay;
   const { rec, rows } = undoableRecord(deps, args, caller);
   const plan = deps.store.read(q => planUndo(q, rec, rows, args.undoOpId));
@@ -172,10 +188,8 @@ export function retryOperation(
       message: 'This change is no longer in the queue.',
     });
   const rec = deps.journal.get(args.opId);
-  requireOriginating(caller, {
-    scope: rec?.scope ?? rows[0].scope,
-    method: rec?.method ?? 'Thread/act',
-  });
+  requireScopesOf(caller, rec, rows);
+  if (rec?.undone) throw conflict('This change was undone, so it cannot be retried.');
   const failed = rows.filter(r => r.state === 'failed' || r.state === 'conflict');
   if (!failed.length) throw conflict('Only a failed change can be retried.');
   const result = deps.store.commit({

@@ -534,3 +534,46 @@ test('Thread/act tells the account actors which accounts have new ops, once each
     world.cleanup();
   }
 });
+
+test('labels refuses a folder the account does not have and a system folder, and queues nothing', async () => {
+  const t = await worldEngine(5);
+  try {
+    const id = await pickInbox(t);
+    for (const add of ['acct-1:NoSuchLabel', 'acct-1:SENT'])
+      await assert.rejects(
+        t.call('Thread/act', {
+          opId: nextOp(),
+          ids: [id],
+          action: { type: 'labels', add: [add], remove: [] },
+        }),
+        isType('validation'),
+        add,
+      );
+    assert.deepEqual(openOps(t.store), []);
+    await t.call('Thread/act', {
+      opId: nextOp(),
+      ids: [id],
+      action: { type: 'labels', add: ['acct-1:Label_2'], remove: [] },
+    });
+  } finally {
+    await t.close();
+  }
+});
+
+test('a selector from a state this database has not reached yet is refused', async () => {
+  const t = await worldEngine(6);
+  try {
+    const atState = { dbEpoch: t.store.dbEpoch, seq: t.store.seq() + 5 };
+    await assert.rejects(
+      t.call('Thread/act', {
+        opId: nextOp(),
+        selector: { spec: { kind: 'mailbox', role: 'inbox', accountId: 'acct-1' }, atState },
+        action: { type: 'done' },
+      }),
+      isType('stateMismatch'),
+    );
+    assert.deepEqual(openOps(t.store), []);
+  } finally {
+    await t.close();
+  }
+});

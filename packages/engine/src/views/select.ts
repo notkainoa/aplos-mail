@@ -1,4 +1,4 @@
-import type { ThreadSelector } from '@aplos/contract';
+import type { State, ThreadSelector } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { StoreReader } from '../store';
 import { splitId } from './compile';
@@ -56,10 +56,10 @@ export function resolveSelector(
   q: StoreReader,
   selector: ThreadSelector,
   env: ViewEnv,
-  dbEpoch: string,
+  now: State,
 ): string[] {
   const { atState, section } = selector;
-  if (atState.dbEpoch !== dbEpoch) throw stateMismatch();
+  if (atState.dbEpoch !== now.dbEpoch || atState.seq > now.seq) throw stateMismatch();
   const plan = compileView(specOf(selector), env);
   if (plan.rowType !== 'Thread')
     throw new ContractError({

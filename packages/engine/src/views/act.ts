@@ -44,6 +44,8 @@ export interface ThreadFacts {
   /** Messages that are not drafts, oldest first. */
   messages: MessageFacts[];
   roles: Roles;
+  /** The user labels and folders of the thread's account (remote ids), the only ones a `labels` action may add. */
+  userLabels: ReadonlySet<string>;
   /** The account files mail under labels (Gmail): a message keeps its other labels when it moves. */
   labels: boolean;
 }
@@ -65,6 +67,17 @@ function rolesOf(q: StoreReader, accountId: string): Roles {
   ))
     if ((ROLES as readonly string[]).includes(f.role)) roles[f.role as keyof Roles] = f.remote_id;
   return roles;
+}
+
+function userLabelsOf(q: StoreReader, accountId: string): Set<string> {
+  return new Set(
+    q
+      .all<{ remote_id: string }>(
+        "SELECT remote_id FROM folders WHERE account_id = ? AND role IS NULL AND kind IN ('label', 'folder')",
+        accountId,
+      )
+      .map(f => f.remote_id),
+  );
 }
 
 function labelsOf(q: StoreReader, accountId: string): boolean {
@@ -101,17 +114,20 @@ export function factsReader(q: StoreReader) {
   const accounts = q.all<{ id: string }>('SELECT id FROM accounts').map(a => a.id);
   const roles = new Map<string, Roles>();
   const labels = new Map<string, boolean>();
+  const userLabels = new Map<string, Set<string>>();
   return (id: string): ThreadFacts | undefined => {
     const row = threadByContractId(q, id, accounts);
     if (!row) return undefined;
     if (!roles.has(row.account_id)) {
       roles.set(row.account_id, rolesOf(q, row.account_id));
       labels.set(row.account_id, labelsOf(q, row.account_id));
+      userLabels.set(row.account_id, userLabelsOf(q, row.account_id));
     }
     return {
       row,
       messages: messagesOf(q, row.rowid),
       roles: roles.get(row.account_id)!,
+      userLabels: userLabels.get(row.account_id)!,
       labels: labels.get(row.account_id)!,
     };
   };
@@ -215,6 +231,12 @@ function relabel(f: ThreadFacts, add: string[], remove: string[]): Step[] {
       .filter(id => id.startsWith(`${f.row.account_id}:`))
       .map(id => id.slice(f.row.account_id.length + 1));
   const [put, take] = [mine(add), mine(remove)];
+  const unknown = put.find(x => !f.userLabels.has(x));
+  if (unknown !== undefined)
+    throw new ContractError({
+      type: 'validation',
+      message: 'That label does not exist in this account.',
+    });
   const steps: Step[] = [];
   for (const m of f.messages) {
     const gain = put.filter(x => !m.folders.includes(x));

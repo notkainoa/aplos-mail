@@ -4,6 +4,7 @@ import type { ThreadAction } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller } from '../../src/methods/types';
 import { worldEngine } from './harness';
+import { createJournal, rowId, type OpRecord } from '../../src/views/ops';
 import { facts, inboxIds, nextOp, openOps, rowOf, settle } from './acts';
 
 /*
@@ -88,7 +89,17 @@ test('an op in flight or of unknown outcome is not cancelled: the inverse follow
       const { opId } = await act(t, id, { type: 'done' });
       const original = openOps(t.store).map(r => r.opId);
       if (mode === 'inflight') settle(t, 'inflight');
-      else settle(t, 'queued', undefined, 'uncertain');
+      else
+        t.commit(
+          original.map(opId => ({
+            kind: 'opSettle',
+            opId,
+            state: 'queued',
+            attempts: 1,
+            lastError: 'uncertain',
+          })),
+          'sync',
+        );
       await t.call('Operation/undo', { opId, undoOpId: nextOp('undo') });
       const rows = openOps(t.store);
       assert.deepEqual(
@@ -314,4 +325,155 @@ test('retry puts a failed op back in the queue and brings its local effect back'
   } finally {
     await t.close();
   }
+});
+
+const settleWith = (
+  t: T,
+  ids: readonly string[],
+  state: 'queued' | 'failed' | 'inflight',
+  attempts: number,
+  lastError?: string,
+) =>
+  t.commit(
+    ids.map(opId => ({
+      kind: 'opSettle',
+      opId,
+      state,
+      attempts,
+      ...(lastError ? { lastError } : {}),
+    })),
+    'sync',
+  );
+
+test('a retried op that was tried before is not cancelled by undo: the inverse follows it', async () => {
+  const t = await worldEngine(5);
+  try {
+    const id = await first(t);
+    const before = await rowOf(t, id);
+    const { opId } = await act(t, id, { type: 'trash' });
+    const original = openOps(t.store).map(r => r.opId);
+    settleWith(t, original, 'queued', 1, 'uncertain');
+    settleWith(t, original, 'queued', 2, 'unclassified');
+    await t.call('Operation/undo', { opId, undoOpId: nextOp('undo') });
+    const rows = openOps(t.store);
+    assert.deepEqual(
+      rows.slice(0, original.length).map(r => r.opId),
+      original,
+    );
+    assert.ok(
+      rows.some(r => r.payload?.change.kind === 'untrash'),
+      'the provider may have the trash, so the untrash follows it',
+    );
+    assert.deepEqual(facts(await rowOf(t, id)), facts(before));
+  } finally {
+    await t.close();
+  }
+});
+
+test('a failed op that was tried again is given up and its inverse is queued as well', async () => {
+  const t = await worldEngine(5);
+  try {
+    const id = await first(t);
+    const { opId } = await act(t, id, { type: 'done' });
+    const original = openOps(t.store).map(r => r.opId);
+    settleWith(t, original, 'failed', 3, 'invalidPayload');
+    await t.call('Operation/undo', { opId, undoOpId: nextOp('undo') });
+    const rows = openOps(t.store);
+    assert.equal(rows.length, original.length);
+    assert.ok(rows.every(r => r.state === 'queued' && !original.includes(r.opId)));
+  } finally {
+    await t.close();
+  }
+});
+
+test('an undone op that fails afterwards is not retried, and still shows as failed', async () => {
+  const t = await worldEngine(5);
+  try {
+    const id = await first(t);
+    const { opId } = await act(t, id, { type: 'done' });
+    const original = openOps(t.store).map(r => r.opId);
+    settleWith(t, original, 'inflight', 1);
+    await t.call('Operation/undo', { opId, undoOpId: nextOp('undo') });
+    settleWith(t, original, 'failed', 2, 'providerDown');
+    const op = (await t.call('Operation/get', { opIds: [opId] })).list[0]!;
+    assert.equal(op.state, 'failed');
+    assert.ok(op.error);
+    await assert.rejects(t.call('Operation/retry', { opId }), isType('conflict'));
+    assert.ok((await inboxIds(t, 'acct-1')).includes(id), 'the thread stays in the Inbox');
+  } finally {
+    await t.close();
+  }
+});
+
+test('an opId belongs to one method: undo of itself, and replays across methods, are refused', async () => {
+  const t = await worldEngine(5);
+  try {
+    const id = await first(t);
+    const { opId } = await act(t, id, { type: 'done' });
+    await assert.rejects(t.call('Operation/undo', { opId, undoOpId: opId }), isType('validation'));
+    assert.ok(!(await inboxIds(t, 'acct-1')).includes(id), 'nothing was undone');
+    const other = await act(t, id, { type: 'bookmark', on: true });
+    await assert.rejects(
+      t.call('Operation/undo', { opId: other.opId, undoOpId: opId }),
+      isType('conflict'),
+      'a Thread/act commit is not an undo receipt',
+    );
+    const undoOpId = nextOp('undo');
+    await t.call('Operation/undo', { opId, undoOpId });
+    await assert.rejects(
+      t.call('Thread/act', { opId: undoOpId, ids: [id], action: { type: 'done' } }),
+      isType('conflict'),
+      'an undo commit is not a Thread/act receipt',
+    );
+  } finally {
+    await t.close();
+  }
+});
+
+test('undo and retry need every scope among the op rows, not only the journal scope', async () => {
+  const t = await worldEngine(5);
+  try {
+    const id = await first(t);
+    const tool = t.engine.connect(listener('read', 'triage'));
+    const own = nextOp('tool');
+    await tool.call('Thread/act', { opId: own, ids: [id], action: { type: 'bookmark', on: true } });
+    t.commit([
+      {
+        kind: 'op',
+        opId: rowId(own, 7),
+        accountId: 'acct-1',
+        opKind: 'Submission/set',
+        targets: [],
+        payload: '{}',
+        effect: [],
+        scope: 'send',
+      },
+      { kind: 'opSettle', opId: rowId(own, 7), state: 'failed' },
+    ]);
+    await assert.rejects(
+      tool.call('Operation/undo', { opId: own, undoOpId: nextOp('undo') }),
+      isType('forbidden'),
+    );
+    await assert.rejects(tool.call('Operation/retry', { opId: own }), isType('forbidden'));
+  } finally {
+    await t.close();
+  }
+});
+
+test('the journal says when it dropped a record too heavy to keep', () => {
+  const record = (weightSteps: number): OpRecord => ({
+    opId: 'big',
+    method: 'Thread/act',
+    scope: 'triage',
+    targets: [],
+    seq: 1,
+    createdAt: 0,
+    threads: [],
+    steps: Array.from({ length: weightSteps }, () => ({}) as never),
+    undoable: true,
+  });
+  const journal = createJournal(10);
+  assert.equal(journal.add(record(3)), true);
+  assert.equal(journal.add(record(20)), false);
+  assert.equal(journal.get('big'), undefined);
 });

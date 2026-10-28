@@ -1,4 +1,5 @@
 import type { ErrorBody, Operation, Receipt, State } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
 import type { FrameBus } from '../runtime/frames';
 import type { AccountActorHost, Clock, OpChange, StorePort } from '../ports';
 import type { OpEffect, OpWrite, SqlRow, StoreReader, StoreWrite, WorkflowFields } from '../store';
@@ -202,13 +203,14 @@ const JOURNAL_ENTRIES = 500;
 
 export interface Journal {
   get(opId: string): OpRecord | undefined;
-  add(record: OpRecord): void;
+  /** False when the record is too heavy to keep, so the operation cannot be undone. */
+  add(record: OpRecord): boolean;
 }
 
 const weightOf = (r: OpRecord) => 1 + r.threads.length + r.steps.length;
 
 /** A bounded memory of recent operations, oldest dropped first. An operation too big to keep cannot be undone. */
-export function createJournal(): Journal {
+export function createJournal(maxWeight = JOURNAL_WEIGHT): Journal {
   const records = new Map<string, OpRecord>();
   let weight = 0;
   const drop = (id: string) => {
@@ -221,11 +223,12 @@ export function createJournal(): Journal {
     get: opId => records.get(opId),
     add(record) {
       drop(record.opId);
-      if (weightOf(record) > JOURNAL_WEIGHT) return;
+      if (weightOf(record) > maxWeight) return false;
       records.set(record.opId, record);
       weight += weightOf(record);
-      while (weight > JOURNAL_WEIGHT || records.size > JOURNAL_ENTRIES)
+      while (weight > maxWeight || records.size > JOURNAL_ENTRIES)
         drop(records.keys().next().value as string);
+      return true;
     },
   };
 }
@@ -247,8 +250,10 @@ function rowsState(rows: readonly OpRow[]): Operation['state'] | undefined {
 }
 
 function stateOf(rec: OpRecord | undefined, rows: readonly OpRow[]): Operation['state'] {
-  if (rec?.undone) return 'cancelled';
   const open = rowsState(rows);
+  // A failure of an edit that was already on its way when it was undone is still a failure the owner should see.
+  if (open === 'failed' || open === 'conflict') return open;
+  if (rec?.undone) return 'cancelled';
   if (open) return open;
   return rec && rec.steps.length === 0 ? 'applied' : 'synced';
 }
@@ -312,15 +317,25 @@ export interface CommandDeps {
   zone: string;
 }
 
-/** The receipt of a commit already applied under `opId`, so a replay answers the same and applies nothing. */
+/**
+ * The receipt of a commit already applied under `opId`, so a replay answers the same and applies nothing. An `opId`
+ * the journal knows from another method is a `conflict`: it is not a replay of this call.
+ */
 export function priorReceipt(
   deps: CommandDeps,
   opId: string,
-  undoable: boolean,
+  method: OpRecord['method'],
 ): Receipt | undefined {
   const prior = deps.store.read(q => commitOf(q, opId));
   if (!prior) return undefined;
-  return { opId, appliedState: { dbEpoch: deps.store.dbEpoch, seq: prior.seq }, undoable };
+  const rec = deps.journal.get(opId);
+  if (rec && rec.method !== method)
+    throw new ContractError({ type: 'conflict', message: 'That operation id is already in use.' });
+  return {
+    opId,
+    appliedState: { dbEpoch: deps.store.dbEpoch, seq: prior.seq },
+    undoable: !!rec?.undoable,
+  };
 }
 
 /** Tells the account actors there is something to drain; an actor that is not running yet drains it when it starts. */

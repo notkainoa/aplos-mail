@@ -61,7 +61,10 @@ function targetIds(deps: CommandDeps, q: StoreReader, args: Input<'Thread/act'>,
   if (hasIds === !!args.selector)
     throw new ContractError({ type: 'validation', message: 'Choose at least one conversation.' });
   if (args.selector)
-    return resolveSelector(q, args.selector, viewEnv(q, env.now, deps.zone), deps.store.dbEpoch);
+    return resolveSelector(q, args.selector, viewEnv(q, env.now, deps.zone), {
+      dbEpoch: deps.store.dbEpoch,
+      seq: deps.store.seq(),
+    });
   return [...new Set(args.ids)];
 }
 
@@ -125,17 +128,17 @@ function addThread(
 }
 
 function act(deps: CommandDeps, args: Input<'Thread/act'>): Receipt {
-  const replay = priorReceipt(deps, args.opId, true);
+  const replay = priorReceipt(deps, args.opId, 'Thread/act');
   if (replay) return replay;
   const built = deps.store.read(q => build(deps, q, args));
   const result = deps.store.commit({ opId: args.opId, origin: 'local', writes: built.writes });
   const receipt: Receipt = {
     opId: args.opId,
     appliedState: { dbEpoch: result.dbEpoch, seq: result.seq },
-    undoable: true,
+    undoable: false,
   };
-  if (result.replayed) return receipt;
-  deps.journal.add({
+  if (result.replayed) return { ...receipt, undoable: !!deps.journal.get(args.opId)?.undoable };
+  receipt.undoable = deps.journal.add({
     opId: args.opId,
     method: 'Thread/act',
     scope: ACT_SCOPE,
