@@ -43,9 +43,13 @@ export type Sql = Pick<StoreReader, 'get' | 'all'>;
 
 const encode = (r: Rule) => (r.action === 'lane' ? `lane:${r.lane}` : r.action);
 
-function decode(action: string): Pick<Rule, 'action' | 'lane'> {
-  if (action.startsWith('lane:')) return { action: 'lane', lane: action.slice(5) as RuleLane };
-  return { action: action as RuleAction };
+const LANES: readonly string[] = ['do', 'update', 'low'];
+
+/** A row another lane wrote may hold anything; an action this lane does not know is ignored, never guessed at. */
+function decode(action: string): Pick<Rule, 'action' | 'lane'> | undefined {
+  if (action === 'block' || action === 'skipInbox') return { action };
+  const lane = action.startsWith('lane:') ? action.slice(5) : '';
+  return LANES.includes(lane) ? { action: 'lane', lane: lane as RuleLane } : undefined;
 }
 
 interface RuleDb {
@@ -59,13 +63,19 @@ interface RuleDb {
 
 const COLS = 'id, account_id, address_or_domain, action, remote_filter_id';
 
-const rowOf = (r: RuleDb): RuleRow => ({
-  id: r.id,
-  accountId: r.account_id,
-  match: r.address_or_domain,
-  remoteFilterId: r.remote_filter_id,
-  ...decode(r.action),
-});
+function rowOf(r: RuleDb): RuleRow | undefined {
+  const what = decode(r.action);
+  if (!what) return undefined;
+  return {
+    id: r.id,
+    accountId: r.account_id,
+    match: r.address_or_domain,
+    remoteFilterId: r.remote_filter_id,
+    ...what,
+  };
+}
+
+const rowsOf = (rows: RuleDb[]) => rows.flatMap(r => rowOf(r) ?? []);
 
 export const ruleById = (sql: Sql, id: number): RuleRow | undefined => {
   const r = sql.get<RuleDb>(`SELECT ${COLS} FROM sender_rules WHERE id = ?`, id);
@@ -87,38 +97,63 @@ export const ruleByKey = (
 };
 
 export const rulesFor = (sql: Sql, accountId?: string): RuleRow[] =>
-  sql
-    .all<RuleDb>(
+  rowsOf(
+    sql.all<RuleDb>(
       `SELECT ${COLS} FROM sender_rules WHERE ? IS NULL OR account_id IS NULL OR account_id = ? ORDER BY id`,
       accountId ?? null,
       accountId ?? null,
-    )
-    .map(rowOf);
+    ),
+  );
 
 /** Every rule on an exact match, in any account scope. */
 export const rulesByMatch = (sql: Sql, match: string): RuleRow[] =>
-  sql
-    .all<RuleDb>(`SELECT ${COLS} FROM sender_rules WHERE address_or_domain = ? ORDER BY id`, match)
-    .map(rowOf);
+  rowsOf(
+    sql.all<RuleDb>(
+      `SELECT ${COLS} FROM sender_rules WHERE address_or_domain = ? ORDER BY id`,
+      match,
+    ),
+  );
 
 const domainOf = (address: string) => address.slice(address.lastIndexOf('@'));
 
 /** The rules that cover a sender in an account, the one that governs first: the exact address before its domain, an account's own before a global. */
 export function rulesCovering(sql: Sql, accountId: string, address: string): RuleRow[] {
-  return sql
-    .all<RuleDb>(
+  return rowsOf(
+    sql.all<RuleDb>(
       `SELECT ${COLS} FROM sender_rules WHERE (account_id IS NULL OR account_id = ?) AND address_or_domain IN (?, ?)
        ORDER BY (address_or_domain = ?) DESC, (account_id IS NOT NULL) DESC, id`,
       accountId,
       address,
       domainOf(address),
       address,
-    )
-    .map(rowOf);
+    ),
+  );
 }
 
-export const ruleForSender = (sql: Sql, accountId: string, address: string) =>
-  rulesCovering(sql, accountId, address)[0];
+/** How early a rule governs a sender: 0 is the exact address, an account's own before a global rule; lower wins. */
+export const precedence = (rule: Pick<Rule, 'accountId' | 'match'>, address: string) =>
+  (rule.match === address ? 0 : 2) + (rule.accountId === null ? 1 : 0);
+
+/** Every rule at once, by address or domain, so a batch of new mail reads the table one time. */
+export type RuleIndex = ReadonlyMap<string, RuleRow[]>;
+
+export function indexRules(sql: Sql): RuleIndex {
+  const index = new Map<string, RuleRow[]>();
+  for (const rule of rulesFor(sql)) index.set(rule.match, [...(index.get(rule.match) ?? []), rule]);
+  return index;
+}
+
+/** The rule that governs a sender in an account, from an index. */
+export function governing(
+  index: RuleIndex,
+  accountId: string,
+  address: string,
+): RuleRow | undefined {
+  const found = [...(index.get(address) ?? []), ...(index.get(domainOf(address)) ?? [])];
+  return found
+    .filter(r => r.accountId === null || r.accountId === accountId)
+    .sort((a, b) => precedence(a, address) - precedence(b, address) || a.id - b.id)[0];
+}
 
 // ------------------------------------------------------------ senders and matching
 
@@ -209,11 +244,16 @@ function remove(w: Extract<SenderRuleWrite, { op: 'delete' }>, tx: CommitExtensi
 
 // ------------------------------------------------------------ new mail
 
-function applyToThread(tx: CommitExtensionTx, accountId: string, remoteThreadId: string): void {
+function applyToThread(
+  tx: CommitExtensionTx,
+  rules: RuleIndex,
+  accountId: string,
+  remoteThreadId: string,
+): void {
   const id = tx.threadRowId(accountId, remoteThreadId);
   const sender = id === undefined ? undefined : senderOf(tx, id);
   if (id === undefined || !sender) return;
-  const rule = ruleForSender(tx, accountId, sender);
+  const rule = governing(rules, accountId, sender);
   const wf = tx.get<{ rank_source: string; lane: string; hidden: number | null }>(
     'SELECT rank_source, lane, hidden_from_home AS hidden FROM thread_workflow WHERE thread_id = ?',
     id,
@@ -243,12 +283,18 @@ function ingest(
 ) {
   if (batch.origin !== 'sync') return;
   const done = new Set<string>();
+  const rules = indexRules(tx);
   for (const m of batch.messages) {
     const key = `${m.accountId}\0${m.remoteThreadId}`;
     if (!m.added || m.origin === 'search' || m.flags.fromMe || m.flags.draft || done.has(key))
       continue;
     done.add(key);
-    applyToThread(tx, m.accountId, m.remoteThreadId);
+    // A throw here would roll back the account's whole sync commit on every retry: bad data skips the thread.
+    try {
+      applyToThread(tx, rules, m.accountId, m.remoteThreadId);
+    } catch {
+      // This thread keeps the rank it arrived with.
+    }
   }
 }
 

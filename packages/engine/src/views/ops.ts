@@ -211,6 +211,8 @@ export interface Journal {
   get(opId: string): OpRecord | undefined;
   /** False when the record is too heavy to keep, so the operation cannot be undone. */
   add(record: OpRecord): boolean;
+  /** The records that match, newest first. */
+  filter(match: (record: OpRecord) => boolean): OpRecord[];
 }
 
 const weightOf = (r: OpRecord) => 1 + r.threads.length + r.steps.length;
@@ -227,6 +229,7 @@ export function createJournal(maxWeight = JOURNAL_WEIGHT): Journal {
   };
   return {
     get: opId => records.get(opId),
+    filter: match => [...records.values()].reverse().filter(match),
     add(record) {
       drop(record.opId);
       if (weightOf(record) > maxWeight) return false;

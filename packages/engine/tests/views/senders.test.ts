@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { Output, ThreadAction } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller } from '../../src/methods/types';
-import type { MessageWrite } from '../../src/store';
+import type { MessageWrite, StoreWrite } from '../../src/store';
 import { facts, nextOp, openOps, rowOf } from './acts';
 import { incoming, patch, worldEngine } from './harness';
 
@@ -347,11 +347,13 @@ test('a block hides mail, never deletes it, and unblock brings it back', async (
     const back = await t.call('SenderRule/unblock', { opId: nextOp('unblock'), address: ADA });
     assert.equal(back.undoable, true);
     assert.deepEqual((await t.call('SenderRule/get', {})).list, []);
-    for (const id of [...mine, fresh]) {
+    for (const id of mine) {
       const r = await rowOf(t, id);
       assert.ok(r.labels.includes('acct-1:INBOX') && !r.labels.includes('acct-1:SPAM'), id);
       assert.equal(r.workflow.hiddenFromHome, false);
     }
+    // New mail was only hidden (it never moved to Spam), and nothing tells that from a thread the owner hid: it stays.
+    assert.equal((await rowOf(t, fresh)).workflow.hiddenFromHome, true);
     assert.equal(messages(t), total + 1, 'still every message');
   } finally {
     await t.close();
@@ -444,6 +446,180 @@ test('get filters by account: an account sees its own rules and the global ones'
     );
     assert.equal((await t.call('SenderRule/get', {})).list.length, 3);
     assert.equal(one.state.dbEpoch, t.store.dbEpoch);
+  } finally {
+    await t.close();
+  }
+});
+
+// ------------------------------------------------------------ review fixes
+
+/** Writes a rule row the way another lane would: no application to threads, no journal. */
+const rawRule = (t: Engine, rule: Record<string, unknown>) =>
+  t.commit([{ kind: 'senderRule', op: 'put', accountId: null, ...rule } as StoreWrite]);
+
+const block = (t: Engine, address: string, accountId?: string) =>
+  t.call('SenderRule/block', {
+    opId: nextOp('block'),
+    address,
+    ...(accountId ? { accountId } : {}),
+  });
+
+const where = async (t: Engine, id: string) => {
+  const r = await rowOf(t, id);
+  return {
+    hidden: r.workflow.hiddenFromHome === true,
+    inbox: r.labels.includes('acct-1:INBOX'),
+    spam: r.labels.includes('acct-1:SPAM'),
+  };
+};
+
+test('a more specific rule governs: a domain or global rule leaves a thread it does not govern', async () => {
+  const t = await empty();
+  try {
+    const ada = arrive(t, 'g1', ADA);
+    const ben = arrive(t, 'g2', BEN);
+    await setLane(t, ADA, 'do', 'acct-1');
+    await setLane(t, '@news.example', 'low');
+    assert.equal((await rank(t, ada)).lane, 'do', 'the exact address wins over its domain');
+    assert.equal((await rank(t, ben)).lane, 'low');
+    assert.equal((await rank(t, arrive(t, 'g4', ADA))).lane, 'do', 'as new mail does');
+
+    const cy = arrive(t, 'g3', 'cy@other.example');
+    await setLane(t, 'cy@other.example', 'do', 'acct-1');
+    await setLane(t, 'cy@other.example', 'low');
+    assert.equal((await rank(t, cy)).lane, 'do', "an account's own rule wins over a global one");
+
+    await block(t, '@news.example');
+    assert.deepEqual(await where(t, ada), { hidden: false, inbox: true, spam: false });
+    assert.equal((await where(t, ben)).hidden, true);
+  } finally {
+    await t.close();
+  }
+});
+
+test('unblock plans a thread once when two block rules cover it', async () => {
+  const t = await empty();
+  try {
+    const id = arrive(t, 'q1', ADA);
+    await block(t, ADA, 'acct-1');
+    await block(t, ADA);
+    const opened = openOps(t.store).length;
+    const { opId } = await t.call('SenderRule/unblock', {
+      opId: nextOp('unblock'),
+      address: ADA,
+    });
+    assert.equal(openOps(t.store).length, opened + 1, 'one restore op');
+    const op = (await t.call('Operation/get', { opIds: [opId] })).list[0]!;
+    assert.deepEqual(op.targets, [id]);
+    assert.deepEqual(await where(t, id), { hidden: false, inbox: true, spam: false });
+  } finally {
+    await t.close();
+  }
+});
+
+test('unblock leaves a thread the block did not hide itself', async () => {
+  const t = await empty();
+  try {
+    // Hidden by the owner before a block that arrived later, from the block's journal.
+    const early = arrive(t, 'h1', BEN);
+    await act(t, [early], { type: 'home', hidden: true });
+    await block(t, BEN);
+    assert.deepEqual(await where(t, early), { hidden: true, inbox: false, spam: true });
+    await t.call('SenderRule/unblock', { opId: nextOp('unblock'), address: BEN });
+    assert.deepEqual(await where(t, early), { hidden: true, inbox: true, spam: false });
+  } finally {
+    await t.close();
+  }
+});
+
+test('without a journal, unblock restores only threads that are in Spam and hidden', async () => {
+  const t = await empty();
+  try {
+    const byHand = arrive(t, 'j1', ADA);
+    const junk = arrive(t, 'j2', ADA);
+    t.commit([from('j2', ADA, { folder: 'SPAM', remoteId: 'j2-s' })]);
+    rawRule(t, { match: ADA, action: 'block' });
+    await act(t, [byHand], { type: 'home', hidden: true });
+    t.commit([patch(junk, { hiddenFromHome: true })]);
+    await t.call('SenderRule/unblock', { opId: nextOp('unblock'), address: ADA });
+    assert.equal((await where(t, byHand)).hidden, true, 'hidden by hand stays hidden');
+    assert.equal((await where(t, junk)).hidden, false);
+    assert.equal((await where(t, junk)).spam, false);
+  } finally {
+    await t.close();
+  }
+});
+
+test('removing a block keeps what another remaining rule still asks for', async () => {
+  const t = await empty();
+  try {
+    const id = arrive(t, 'r1', ADA);
+    const { rule } = await block(t, ADA);
+    await t.call('SenderRule/set', {
+      opId: nextOp('rule'),
+      match: '@news.example',
+      action: 'skipInbox',
+    });
+    await t.call('SenderRule/destroy', { opId: nextOp('rule'), id: rule.id });
+    assert.deepEqual(
+      await where(t, id),
+      { hidden: true, inbox: false, spam: false },
+      'skip-Inbox holds',
+    );
+
+    // A remaining domain block holds even when an exact lane rule is the first rule that covers the sender.
+    const other = arrive(t, 'r2', 'zed@zed.example');
+    await block(t, '@zed.example');
+    await setLane(t, 'zed@zed.example', 'do', 'acct-1');
+    await block(t, 'zed@zed.example');
+    await t.call('SenderRule/unblock', { opId: nextOp('unblock'), address: 'zed@zed.example' });
+    assert.deepEqual(await where(t, other), { hidden: true, inbox: false, spam: true });
+  } finally {
+    await t.close();
+  }
+});
+
+test('malformed rule rows are ignored, and the ingest hook never throws', async () => {
+  const t = await empty();
+  try {
+    rawRule(t, { match: ADA, action: 'lane', lane: 'bogus' });
+    rawRule(t, { match: BEN, action: 'frobnicate' });
+    assert.deepEqual((await t.call('SenderRule/get', {})).list, []);
+    const a = arrive(t, 'm1', ADA);
+    const b = arrive(t, 'm2', BEN);
+    for (const id of [a, b]) {
+      assert.equal((await rank(t, id)).source, 'heuristic', id);
+      assert.equal((await where(t, id)).hidden, false, id);
+    }
+    await setLane(t, '@news.example', 'low');
+    assert.equal((await rank(t, arrive(t, 'm3', ADA))).lane, 'low', 'a good rule still applies');
+  } finally {
+    await t.close();
+  }
+});
+
+test('the ingest hook picks the exact address over its domain and an account rule over a global one', async () => {
+  const t = await empty();
+  try {
+    await setLane(t, '@news.example', 'low');
+    await setLane(t, ADA, 'do');
+    await setLane(t, BEN, 'update');
+    await setLane(t, BEN, 'low', 'acct-1');
+    t.commit(
+      [
+        from('i1', ADA),
+        from('i2', BEN),
+        from('i3', 'cy@news.example'),
+        from('i4', BEN, { accountId: 'imap:2' }),
+      ],
+      'sync',
+    );
+    const lanes = await Promise.all(
+      ['acct-1:i1', 'acct-1:i2', 'acct-1:i3', 'imap:2:i4'].map(
+        async id => (await rank(t, id)).lane,
+      ),
+    );
+    assert.deepEqual(lanes, ['do', 'low', 'low', 'update']);
   } finally {
     await t.close();
   }

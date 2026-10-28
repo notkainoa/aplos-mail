@@ -18,10 +18,17 @@ import {
   type Built,
   type CommandMethod,
 } from './apply';
-import { priorReceipt, type CommandDeps, type Step } from './ops';
+import {
+  priorReceipt,
+  type CommandDeps,
+  type Journal,
+  type RecordedThread,
+  type Step,
+} from './ops';
 import {
   ruleById,
   ruleByKey,
+  precedence,
   rulesCovering,
   rulePatch,
   rulesByMatch,
@@ -76,10 +83,52 @@ function planRule(f: ThreadFacts, rule: Rule, env: ActEnv): Plan | undefined {
   return { patch: { ...patch, editedAt: env.now }, steps };
 }
 
-/** Back from a block: out of Spam, shown on Home again. Only threads the block hid. */
-function planUnblock(f: ThreadFacts, env: ActEnv): Plan | undefined {
-  if (f.row.hidden_from_home !== 1) return undefined;
-  return { patch: { hiddenFromHome: false, editedAt: env.now }, steps: restore(f) };
+const inSpam = (f: ThreadFacts) =>
+  !!f.roles.spam && f.messages.some(m => m.folders.includes(f.roles.spam!));
+
+/** What a removed block changed on a thread, from the journal of the commands that applied it (newest first). */
+function blockImages(journal: Journal, removed: readonly RuleRow[], f: ThreadFacts) {
+  const ofRule = (w: StoreWrite) =>
+    w.kind === 'senderRule' &&
+    removed.some(r => r.accountId === (w.accountId ?? null) && r.match === w.match);
+  const here = (t: RecordedThread) =>
+    t.accountId === f.row.account_id && t.remoteThreadId === f.row.remote_id;
+  return journal
+    .filter(
+      r =>
+        !r.undone &&
+        (r.method === 'SenderRule/block' || r.method === 'SenderRule/set') &&
+        !!r.restore?.some(ofRule),
+    )
+    .flatMap(r => r.threads.filter(here));
+}
+
+/** Rules that keep a thread out of the Inbox put an unblocked thread in the archive instead. */
+const toArchive = (f: ThreadFacts): ThreadFacts => ({
+  ...f,
+  roles: { ...f.roles, inbox: f.roles.archive },
+});
+
+/**
+ * Back from a block: out of Spam, shown on Home again, but only what the block itself did. With the block's journal
+ * that is a thread still in Spam (or one without a Spam folder) and, if the block hid it, hidden again. Without it, a
+ * thread that is in Spam and hidden. A thread the owner hid or moved is left as it is.
+ */
+function planUnblock(
+  f: ThreadFacts,
+  env: ActEnv,
+  images: readonly RecordedThread[],
+  quiet: boolean,
+): Plan | undefined {
+  const hidden = f.row.hidden_from_home === 1;
+  const moved = !!f.roles.spam && !inSpam(f);
+  const mine = images.length ? !moved : inSpam(f) && hidden;
+  if (!mine) return undefined;
+  const blockHid = !images.length || images.some(i => 'hiddenFromHome' in i.before);
+  const unhide = hidden && blockHid && !quiet;
+  const steps = inSpam(f) ? restore(quiet ? toArchive(f) : f) : [];
+  if (!unhide && !steps.length) return undefined;
+  return { patch: { ...(unhide ? { hiddenFromHome: false } : {}), editedAt: env.now }, steps };
 }
 
 interface Scope {
@@ -90,12 +139,22 @@ interface Scope {
   method: CommandMethod;
 }
 
-function applyRule(s: Scope, rule: Rule): void {
+/** The rule governs the thread's sender once saved: no rule that is more specific (replacing `replaced`) covers it. */
+function governs(q: StoreReader, f: ThreadFacts, rule: Rule, replaced?: number): boolean {
+  const sender = senderOf(q, f.row.rowid);
+  if (!sender) return false;
+  const mine = precedence(rule, sender);
+  return rulesCovering(q, f.row.account_id, sender).every(
+    r => r.id === replaced || precedence(r, sender) > mine,
+  );
+}
+
+function applyRule(s: Scope, rule: Rule, replaced?: number): void {
   const read = factsReader(s.q);
   const skip = new Set(s.out.targets);
   for (const id of threadsOf(s.q, rule)) {
     const facts = skip.has(id) ? undefined : read(id);
-    const plan = facts && planRule(facts, rule, s.env);
+    const plan = facts && governs(s.q, facts, rule, replaced) && planRule(facts, rule, s.env);
     if (facts && plan) addThread(s.out, facts, plan, s.opId, s.method);
   }
 }
@@ -121,32 +180,39 @@ function putRule(s: Scope, draft: Rule & { id?: number }): void {
       ? putWrite(current)
       : { kind: 'senderRule', op: 'delete', accountId: draft.accountId, match: draft.match },
   );
-  applyRule(s, draft);
+  applyRule(s, draft, current?.id);
 }
 
-/** Another block rule that still covers the sender keeps the thread blocked. */
-function stillBlocked(q: StoreReader, f: ThreadFacts, gone: ReadonlySet<number>): boolean {
-  const sender = senderOf(q, f.row.rowid);
-  const rule = sender
-    ? rulesCovering(q, f.row.account_id, sender).find(r => !gone.has(r.id))
-    : undefined;
-  return rule?.action === 'block';
+/** After the removal: another block still holds the thread; a skip-Inbox rule keeps it out of the Inbox. */
+function planRemoval(
+  s: Scope,
+  journal: Journal,
+  f: ThreadFacts,
+  removed: readonly RuleRow[],
+): Plan | undefined {
+  const sender = senderOf(s.q, f.row.rowid);
+  const gone = new Set(removed.map(r => r.id));
+  const left = sender
+    ? rulesCovering(s.q, f.row.account_id, sender).filter(r => !gone.has(r.id))
+    : [];
+  if (left.some(r => r.action === 'block')) return undefined;
+  const quiet = left.some(r => r.action === 'skipInbox');
+  return planUnblock(f, s.env, blockImages(journal, removed, f), quiet);
 }
 
-function removeRules(s: Scope, rules: readonly RuleRow[]): void {
-  const gone = new Set(rules.map(r => r.id));
-  const read = factsReader(s.q);
+function removeRules(s: Scope, journal: Journal, rules: readonly RuleRow[]): void {
   for (const rule of rules) {
     s.out.writes.push({ kind: 'senderRule', op: 'delete', id: rule.id });
     s.out.restore.push(putWrite(rule));
   }
-  const skip = new Set(s.out.targets);
-  for (const rule of rules.filter(r => r.action === 'block'))
-    for (const id of threadsOf(s.q, rule)) {
-      const facts = skip.has(id) ? undefined : read(id);
-      const plan = facts && !stillBlocked(s.q, facts, gone) && planUnblock(facts, s.env);
-      if (facts && plan) addThread(s.out, facts, plan, s.opId, s.method);
-    }
+  const blocks = rules.filter(r => r.action === 'block');
+  const ids = new Set(blocks.flatMap(rule => threadsOf(s.q, rule)));
+  const read = factsReader(s.q);
+  for (const id of ids) {
+    const facts = read(id);
+    const plan = facts && planRemoval(s, journal, facts, rules);
+    if (facts && plan) addThread(s.out, facts, plan, s.opId, s.method);
+  }
 }
 
 // ------------------------------------------------------------ the wire
@@ -241,12 +307,13 @@ export function createSenderOps(deps: CommandDeps): SenderOps {
       command(args.opId, 'SenderRule/destroy', s => {
         const rule = ruleById(s.q, Number(args.id));
         if (!rule) throw fail('notFound', 'This rule no longer exists.');
-        removeRules(s, [rule]);
+        removeRules(s, deps.journal, [rule]);
       }),
     unblock: args =>
       command(args.opId, 'SenderRule/unblock', s =>
         removeRules(
           s,
+          deps.journal,
           rulesByMatch(s.q, args.address.trim().toLowerCase()).filter(r => r.action === 'block'),
         ),
       ),
