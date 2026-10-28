@@ -14,42 +14,89 @@ import { defaultAskModel, parseAskModel } from '@aplos/contract/legacy/ask';
  * (provider:model; Groq is the default and the key for the chosen provider must be in the environment).
  */
 loadDevEnv();
-const groq=createGroq();
-const model=process.argv.find(a=>a.startsWith('--model='))?.slice(8)??defaultAskModel;
-if(!parseAskModel(model))throw new Error('Give --model as provider:model, e.g. groq:openai/gpt-oss-120b.');
-const dataDir=await mkdtemp(join(tmpdir(),'aplos-ask-live-'));
-const service=await createService({dataDir,google:await createGoogle({dataDir,clientId:''}),groq});
-let usage:{calls?:number;prompt?:number;completion?:number}={};
-service.subscribe(event=>{const p=event.payload as {type?:string;step?:{tool:string;label:string;status:string}};if(event.type==='ai.progress'&&p?.type==='usage')usage=p;if(event.type==='ai.progress'&&p?.step?.tool==='wait'&&p.step.status==='running')console.log(`  … ${p.step.label}`);});
-const questions:Array<[string,Record<string,unknown>?]>=[
-  ['Summarize this',{context:{view:'home',threadId:'garden'}}],
+const groq = createGroq();
+const model = process.argv.find(a => a.startsWith('--model='))?.slice(8) ?? defaultAskModel;
+if (!parseAskModel(model))
+  throw new Error('Give --model as provider:model, e.g. groq:openai/gpt-oss-120b.');
+const dataDir = await mkdtemp(join(tmpdir(), 'aplos-ask-live-'));
+const service = await createService({
+  dataDir,
+  google: await createGoogle({ dataDir, clientId: '' }),
+  groq,
+});
+let usage: { calls?: number; prompt?: number; completion?: number } = {};
+service.subscribe(event => {
+  const p = event.payload as {
+    type?: string;
+    step?: { tool: string; label: string; status: string };
+  };
+  if (event.type === 'ai.progress' && p?.type === 'usage') usage = p;
+  if (event.type === 'ai.progress' && p?.step?.tool === 'wait' && p.step.status === 'running')
+    console.log(`  … ${p.step.label}`);
+});
+const questions: Array<[string, Record<string, unknown>?]> = [
+  ['Summarize this', { context: { view: 'home', threadId: 'garden' } }],
   ['What does the invoice from Drew need from me?'],
   ['What plans do I have this week?'],
   ['Book lunch with Maya Friday at noon'],
   ['Move the Trail Journal newsletter and the Field Notes digest to Done'],
 ];
-const only=process.argv.find(a=>a.startsWith('--only='))?.slice(7);
-if(only)questions.splice(0,questions.length,...questions.filter((_,i)=>String(i+1)===only));
-let failed=0;
-try{
-  await service.invoke('settings.update',{patch:{askModel:model}});
-  const before=await service.invoke('state.get') as {drafts:unknown[];threads:{id:string;status:string}[]};
-  for(const [message,extra] of questions){
-    const started=performance.now();
-    try{
-      const conversation=await service.invoke('ai.ask',{message,timeZone:'America/Los_Angeles',...extra}) as Conversation;
-      const answer=conversation.messages.at(-1)!;
-      console.log(`\n» ${message}  (${Math.round(performance.now()-started)} ms, ${usage.calls} calls, ${usage.prompt} prompt + ${usage.completion} output tokens)`);
-      for(const s of answer.steps??[])console.log(`  · ${s.label}${s.count!==undefined?` · ${s.count}`:''}${s.status==='error'?' (error)':''}`);
-      console.log(`  ${answer.content.replace(/\n/g,'\n  ')}`);
-      if(answer.citations?.length)console.log(`  cites: ${answer.citations.join(', ')}`);
-      if(answer.proposal)console.log(`  draft card: to=${answer.proposal.to??''} subject=${answer.proposal.subject??''}`);
-      if(answer.event)console.log(`  event card: ${answer.event.title} ${answer.event.start} → ${answer.event.end} guests=${answer.event.guests?.join(', ')}`);
-      if(answer.triage)console.log(`  triage card: ${answer.triage.action} ${answer.triage.threadIds.join(', ')}`);
-    }catch(error){failed++;console.log(`\n» ${message}\n  FAILED: ${(error as Error).message}`);}
+const only = process.argv.find(a => a.startsWith('--only='))?.slice(7);
+if (only)
+  questions.splice(0, questions.length, ...questions.filter((_, i) => String(i + 1) === only));
+let failed = 0;
+try {
+  await service.invoke('settings.update', { patch: { askModel: model } });
+  const before = (await service.invoke('state.get')) as {
+    drafts: unknown[];
+    threads: { id: string; status: string }[];
+  };
+  for (const [message, extra] of questions) {
+    const started = performance.now();
+    try {
+      const conversation = (await service.invoke('ai.ask', {
+        message,
+        timeZone: 'America/Los_Angeles',
+        ...extra,
+      })) as Conversation;
+      const answer = conversation.messages.at(-1)!;
+      console.log(
+        `\n» ${message}  (${Math.round(performance.now() - started)} ms, ${usage.calls} calls, ${usage.prompt} prompt + ${usage.completion} output tokens)`,
+      );
+      for (const s of answer.steps ?? [])
+        console.log(
+          `  · ${s.label}${s.count !== undefined ? ` · ${s.count}` : ''}${s.status === 'error' ? ' (error)' : ''}`,
+        );
+      console.log(`  ${answer.content.replace(/\n/g, '\n  ')}`);
+      if (answer.citations?.length) console.log(`  cites: ${answer.citations.join(', ')}`);
+      if (answer.proposal)
+        console.log(
+          `  draft card: to=${answer.proposal.to ?? ''} subject=${answer.proposal.subject ?? ''}`,
+        );
+      if (answer.event)
+        console.log(
+          `  event card: ${answer.event.title} ${answer.event.start} → ${answer.event.end} guests=${answer.event.guests?.join(', ')}`,
+        );
+      if (answer.triage)
+        console.log(`  triage card: ${answer.triage.action} ${answer.triage.threadIds.join(', ')}`);
+    } catch (error) {
+      failed++;
+      console.log(`\n» ${message}\n  FAILED: ${(error as Error).message}`);
+    }
   }
-  const after=await service.invoke('state.get') as {drafts:unknown[];threads:{id:string;status:string}[]};
-  const unchanged=JSON.stringify(after.drafts)===JSON.stringify(before.drafts)&&JSON.stringify(after.threads.map(t=>[t.id,t.status]))===JSON.stringify(before.threads.map(t=>[t.id,t.status]));
-  console.log(`\n${model}: ${questions.length-failed}/${questions.length} answered; drafts and threads unchanged: ${unchanged}`);
-}finally{await service.close();await rm(dataDir,{recursive:true,force:true});}
-if(failed)process.exitCode=1;
+  const after = (await service.invoke('state.get')) as {
+    drafts: unknown[];
+    threads: { id: string; status: string }[];
+  };
+  const unchanged =
+    JSON.stringify(after.drafts) === JSON.stringify(before.drafts) &&
+    JSON.stringify(after.threads.map(t => [t.id, t.status])) ===
+      JSON.stringify(before.threads.map(t => [t.id, t.status]));
+  console.log(
+    `\n${model}: ${questions.length - failed}/${questions.length} answered; drafts and threads unchanged: ${unchanged}`,
+  );
+} finally {
+  await service.close();
+  await rm(dataDir, { recursive: true, force: true });
+}
+if (failed) process.exitCode = 1;

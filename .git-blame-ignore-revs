@@ -1,5 +1,5 @@
-# Mechanical commits of the revamp's Phase 0 restructure (plans/00-roadmap.md 1.1).
-# Use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# Mechanical commits that git blame should skip.
+# Use: git config blame.ignoreRevsFile .git-blame-ignore-revs (or git blame --ignore-revs-file .git-blame-ignore-revs)
 
-# Step 1: move the engine, its shared files and the renderer into legacy folders
-dfbf4ab68cbd4e1453b16b431676991f68081d61
+# Restructure step 2 (plan 40 Q1a): Prettier format of the moved tree
+34d86586d74ace0a240129c95522cd98d823200f
