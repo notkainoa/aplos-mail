@@ -3,9 +3,11 @@ import { test } from 'node:test';
 import { motions, timing } from '../ui/generated/motion';
 import { FakeEnv, type FakeElement } from './fakes';
 import { closeDeltas, createCloser, layoutTops } from './flip';
+import { createGhostLayer } from './ghost';
 import { createHoldGate } from './holdGate';
 import { createRapidTracker } from './rapid';
 import { createScheduler } from './scheduler';
+import { createTriageMotion } from './triage';
 
 const { base: HOLD, cap: CAP } = motions.hold.durations;
 
@@ -173,4 +175,88 @@ test('reduced motion: close lands at once', () => {
   assert.equal(closer.close({ reduced: true }), 0);
   assert.equal(row.style.transform, '');
   assert.equal(fake.running().length, 0);
+});
+
+function triageList(ids: readonly string[]) {
+  const fake = new FakeEnv();
+  const scheduler = createScheduler(fake.env);
+  const hold = createHoldGate(scheduler);
+  const elements = new Map<string, FakeElement>();
+  for (const id of ids) elements.set(id, fake.element({ height: 40 }));
+  const closer = createCloser<string>({
+    heightOf: () => 40,
+    elementOf: id => elements.get(id)?.el ?? null,
+  });
+  const triage = createTriageMotion({
+    scheduler,
+    ghosts: createGhostLayer({ scheduler, host: fake.element().el }),
+    hold,
+    rapid: createRapidTracker(),
+    closer,
+  });
+  const closes = () =>
+    fake.animations.filter(a => String(a.keyframes[0]?.transform).startsWith('translateY('));
+  return { fake, hold, elements, closer, triage, closes };
+}
+
+test('a pointer already resting on the list: the first key still pins, and leaving closes', () => {
+  const s = triageList(['a', 'b', 'c', 'd']);
+  s.hold.pointerEnter();
+  const b = s.elements.get('b');
+  s.elements.delete('b');
+  s.triage.commit({
+    kind: 'done',
+    surface: 'row',
+    element: b?.el ?? null,
+    rows: { before: ['a', 'b', 'c', 'd'], after: ['a', 'c', 'd'] },
+  });
+  assert.equal(s.closer.pinned.size, 2);
+  assert.equal(s.elements.get('c')?.style.transform, 'translateY(40px)');
+  s.fake.advance(CAP * 2);
+  assert.equal(s.elements.get('c')?.style.transform, 'translateY(40px)');
+  s.hold.pointerLeave();
+  assert.equal(s.closes().length, 2);
+  assert.equal(s.closer.pinned.size, 0);
+
+  // The next hold anchors afresh from the layout the close landed on.
+  s.fake.advance(motions.close.durations.base);
+  s.hold.pointerEnter();
+  s.triage.commit({
+    kind: 'done',
+    surface: 'row',
+    element: null,
+    rows: { before: ['a', 'c', 'd'], after: ['a', 'd'] },
+  });
+  assert.equal(s.elements.get('d')?.style.transform, 'translateY(40px)');
+});
+
+test('an undo during the hold goes through relayout and keeps the rows still', () => {
+  const s = triageList(['a', 'b', 'c', 'd']);
+  s.triage.commit({
+    kind: 'done',
+    surface: 'row',
+    element: null,
+    rows: { before: ['a', 'b', 'c', 'd'], after: ['a', 'c', 'd'] },
+  });
+  s.triage.commit({
+    kind: 'later',
+    surface: 'row',
+    element: null,
+    rows: { before: ['a', 'c', 'd'], after: ['a', 'd'] },
+  });
+  assert.equal(s.elements.get('d')?.style.transform, 'translateY(80px)');
+  s.triage.relayout({ before: ['a', 'd'], after: ['a', 'c', 'd'] });
+  assert.equal(s.elements.get('c')?.style.transform, 'translateY(40px)');
+  assert.equal(s.elements.get('d')?.style.transform, 'translateY(40px)');
+  s.fake.advance(HOLD);
+  assert.deepEqual(
+    s.closes().map(a => a.keyframes[0]?.transform),
+    ['translateY(40px)', 'translateY(40px)'],
+  );
+
+  // Outside a hold relayout leaves React's layout alone.
+  s.fake.advance(motions.close.durations.base);
+  s.triage.relayout({ before: ['a', 'c', 'd'], after: ['a', 'd'] });
+  assert.equal(s.elements.get('d')?.style.transform, '');
+  assert.equal(s.closer.pinned.size, 0);
 });

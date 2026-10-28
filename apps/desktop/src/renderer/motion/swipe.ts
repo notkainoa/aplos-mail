@@ -1,7 +1,10 @@
 // Swipe to triage (DESIGN 4.9 Swipe). The letter follows the pointer on the
 // `follow` spring. Past 30 % of the width, or faster than 0.6 px/ms, the side
 // arms: the caller shows the underlay's armed state and its icon pulses on
-// `snap`. Releasing while armed commits and hands the letter to a ghost that
+// `snap`. Throwing back the other way faster than 0.6 px/ms disarms, and
+// arming is re-checked every frame while pressed, so an arm won by speed lapses
+// when the pointer stops: what the underlay shows is what release does.
+// Releasing while armed commits and hands the letter to a ghost that
 // continues from the drawn position and velocity into flight; releasing
 // unarmed springs back on `snap` from the drawn value and velocity. A new
 // press during the spring-back picks it up where it is. pointercancel stops the
@@ -58,9 +61,15 @@ export interface Swipe {
   dispose(): void;
 }
 
-/** The side a drag arms, if any: distance past `SWIPE_DISTANCE` of the width, or speed past `SWIPE_VELOCITY`. */
+/**
+ * The side a drag arms, if any: distance past `SWIPE_DISTANCE` of the width, or speed past
+ * `SWIPE_VELOCITY`. A throw back against the drag faster than `SWIPE_VELOCITY` arms nothing.
+ */
 export function armedSide(dx: number, velocity: number, width: number): SwipeSide | null {
-  if (Math.abs(dx) >= SWIPE_DISTANCE * width) return dx > 0 ? 'right' : 'left';
+  if (Math.abs(dx) >= SWIPE_DISTANCE * width) {
+    if (Math.abs(velocity) > SWIPE_VELOCITY && Math.sign(velocity) !== Math.sign(dx)) return null;
+    return dx > 0 ? 'right' : 'left';
+  }
   if (Math.abs(velocity) > SWIPE_VELOCITY && Math.sign(velocity) === Math.sign(dx || velocity)) {
     return velocity > 0 ? 'right' : 'left';
   }
@@ -95,6 +104,8 @@ export function createSwipe(options: SwipeOptions): Swipe {
   let armed: SwipeSide | null = null;
   let samples: { x: number; at: number }[] = [];
   let lastDrawn = 0;
+  let pointerDx = 0;
+  let stopRecheck: (() => void) | null = null;
 
   const draw = (x: number) => {
     lastDrawn = x;
@@ -109,11 +120,28 @@ export function createSwipe(options: SwipeOptions): Swipe {
     spring = null;
   }
 
+  function endRecheck() {
+    stopRecheck?.();
+    stopRecheck = null;
+  }
+
   function setArmed(side: SwipeSide | null) {
     if (side === armed) return;
     armed = side;
     options.onArm?.(side);
-    if (!side) return;
+    if (!side) {
+      endRecheck();
+      return;
+    }
+    // Pointer speed decays without move events; keep the armed state honest until it lapses.
+    stopRecheck ??= scheduler.loop(() => {
+      if (!pressed || !armed) {
+        stopRecheck = null;
+        return false;
+      }
+      setArmed(armedSide(pointerDx, pointerVelocity(), options.width));
+      return armed !== null;
+    });
     const icon = options.iconOf?.(side);
     const pulse = armPulsePlan(contextOf());
     if (icon && pulse) play(icon, pulse);
@@ -143,6 +171,16 @@ export function createSwipe(options: SwipeOptions): Swipe {
     });
   }
 
+  function track(x: number) {
+    if (!pressed) return;
+    const dx = x - origin;
+    pointerDx = dx;
+    samples.push({ x, at: scheduler.env.now() });
+    if (spring) spring.retarget(dx);
+    else draw(dx);
+    setArmed(armedSide(dx, pointerVelocity(), options.width));
+  }
+
   function rest() {
     stopSpring();
     draw(0);
@@ -155,23 +193,19 @@ export function createSwipe(options: SwipeOptions): Swipe {
       const velocity = spring?.velocity ?? 0;
       pressed = true;
       origin = x - drawn;
+      pointerDx = drawn;
       samples = [{ x, at: scheduler.env.now() }];
       follow(drawn, velocity);
     },
-    move(x) {
-      if (!pressed) return;
-      const dx = x - origin;
-      samples.push({ x, at: scheduler.env.now() });
-      if (spring) spring.retarget(dx);
-      else draw(dx);
-      setArmed(armedSide(dx, pointerVelocity(), options.width));
-    },
+    move: track,
     up(x) {
       if (!pressed) return 'none';
+      // Release decides by the armed state on screen; a release away from the last move counts as one.
+      if (x - origin !== pointerDx) track(x);
+      const side = armed;
+      const dx = pointerDx;
       pressed = false;
-      const dx = x - origin;
-      samples.push({ x, at: scheduler.env.now() });
-      const side = armedSide(dx, pointerVelocity(), options.width);
+      endRecheck();
       const drawn = spring ? spring.value : dx;
       const velocity = spring ? spring.velocity / 1000 : 0;
       stopSpring();
@@ -221,6 +255,7 @@ export function createSwipe(options: SwipeOptions): Swipe {
     },
     dispose() {
       pressed = false;
+      endRecheck();
       stopSpring();
     },
   };

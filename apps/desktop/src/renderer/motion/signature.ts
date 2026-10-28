@@ -141,7 +141,8 @@ export function handoffFlightPlan(
     return plan('flight', duration, motions.flight.curve, fadeOut(`translateX(${x}px)`));
   }
   const direction = directionOf(kind);
-  const speed = Math.max(0, velocity * direction);
+  // Signed, so a letter still drifting back at release turns around without a velocity jump.
+  const speed = velocity * direction;
   const distance = Math.max(moves.flightX, speed * duration);
   const accel = (2 * (distance - speed * duration)) / (duration * duration);
   const keyframes: MotionFrame[] = [];
@@ -153,7 +154,11 @@ export function handoffFlightPlan(
       offset <= FLIGHT_FADE_FROM ? 1 : 1 - (offset - FLIGHT_FADE_FROM) / (1 - FLIGHT_FADE_FROM);
     keyframes.push({
       offset,
-      transform: flightTransform(direction, x + direction * travelled, travelled / distance),
+      transform: flightTransform(
+        direction,
+        x + direction * travelled,
+        Math.max(0, travelled / distance),
+      ),
       opacity,
     });
   }

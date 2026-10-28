@@ -165,3 +165,73 @@ test('reduced motion: follows at once, snaps back at once, releases into a fade'
     false,
   );
 });
+
+test('flick, pause, release: an arm won by speed lapses, so release springs back', () => {
+  const s = setup();
+  s.swipe.down(0);
+  for (let x = 10; x <= 60; x += 10) {
+    s.fake.advance(8);
+    s.swipe.move(x);
+  }
+  assert.equal(s.swipe.armed, 'right');
+  s.fake.advance(400);
+  assert.equal(s.swipe.armed, null);
+  assert.deepEqual(s.arms, ['right', null]);
+  assert.equal(s.swipe.up(60), 'snap');
+  assert.equal(s.commits.length, 0);
+  s.fake.advance(1000);
+  assert.equal(s.scheduler.pending, 0);
+});
+
+test('whatever the underlay shows at release is what release does', () => {
+  for (let pause = 0; pause <= 200; pause += 10) {
+    const s = setup();
+    s.swipe.down(0);
+    for (let x = 15; x <= 90; x += 15) {
+      s.fake.advance(8);
+      s.swipe.move(x);
+    }
+    s.fake.advance(pause);
+    const shown = s.swipe.armed;
+    const result = s.swipe.up(90);
+    assert.equal(result, shown ? 'commit' : 'snap', `pause ${pause} ms`);
+  }
+});
+
+test('thrown back against an armed drag: disarms and springs back from the drawn motion', () => {
+  const s = setup();
+  drag(s, 0.4 * WIDTH, 15, 16);
+  s.fake.advance(200);
+  assert.equal(s.swipe.armed, 'right');
+  for (let x = 0.4 * WIDTH; x >= 0.32 * WIDTH; x -= 12) {
+    s.fake.advance(8);
+    s.swipe.move(x);
+  }
+  assert.equal(s.swipe.armed, null);
+  const drawn = s.swipe.offset;
+  const velocity = s.swipe.velocity;
+  assert.equal(s.swipe.up(0.32 * WIDTH), 'snap');
+  assert.equal(s.commits.length, 0);
+  assert.equal(s.ghosts.active.length, 0);
+  assert.ok(Math.abs(s.swipe.offset - drawn) < 1e-9);
+  assert.ok(Math.abs(s.swipe.velocity - velocity) < 1e-9);
+});
+
+test('hand-off from a letter still drifting back keeps its velocity', () => {
+  const velocity = -0.3;
+  const plan = handoffFlightPlan('done', 200, velocity);
+  assert.ok(plan);
+  const xs = plan.keyframes.map(k =>
+    Number(/translate\(([-\d.e]+)px/.exec(String(k.transform))?.[1]),
+  );
+  const dt = Number(plan.keyframes[1]?.offset) * plan.duration;
+  const [p0, p1, p2] = [Number(xs[0]), Number(xs[1]), Number(xs[2])];
+  assert.ok(Math.abs(p0 - 200) < 1e-9);
+  // Constant acceleration: the start velocity is (4 p1 - p2 - 3 p0) / 2 dt.
+  assert.ok(Math.abs((4 * p1 - p2 - 3 * p0) / (2 * dt) - velocity) < 1e-9);
+  assert.ok(Number(xs.at(-1)) - 200 >= moves.flightX - 1e-9);
+  for (const frame of plan.keyframes) {
+    const tilt = Number(/rotate\(([-\d.e]+)deg/.exec(String(frame.transform))?.[1]);
+    assert.ok(tilt >= 0, 'tilt never leans the wrong way');
+  }
+});
