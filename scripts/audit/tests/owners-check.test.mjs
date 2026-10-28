@@ -1,0 +1,288 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { after, describe, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { expandBraces, globToRegExp, parseOwners, resolveOwner } from '../owners-check.mjs';
+
+const SCRIPT = fileURLToPath(new URL('../owners-check.mjs', import.meta.url));
+const tmpRoot = mkdtempSync(path.join(tmpdir(), 'owners-check-'));
+after(() => rmSync(tmpRoot, { recursive: true, force: true }));
+
+const OWNERS = `# Ownership
+
+Text and tables without Path and Lane columns are ignored.
+
+| Lane | Owner |
+|---|---|
+| web | someone |
+
+| Path | Lane | Thread | Notes |
+|---|---|---|---|
+| \`apps/web/**\` | web | Platform and website | the site |
+| \`scripts/audit/**\`<br>\`.github/workflows/ci.yml\` | plat-ci | Platform and website | |
+| \`tools/lint/**\` | plat-ci | Platform and website | except design |
+| \`tools/lint/design/**\` | ui-foundation | UI-core | more specific |
+| \`apps/desktop/src/renderer/{ui,commands}/**\` | ui-foundation | UI-core | |
+| \`packages/engine/src/**\` | eng-store | Engine | |
+| \`plans/**\` | integrator | Integrator | |
+| \`PROGRESS.md\`, \`DECISIONS.md\` | * | | shared |
+| \`TODO.md\` | all | | shared |
+`;
+
+const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+const GIT_ARGS = ['-c', 'user.name=Test Author', '-c', 'user.email=k@kainoa.me', '-c', 'commit.gpgsign=false', '-c', 'init.defaultBranch=main'];
+
+const git = (cwd, ...args) => {
+  const result = spawnSync('git', [...GIT_ARGS, ...args], { cwd, env: GIT_ENV, encoding: 'utf8' });
+  assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`);
+  return result.stdout;
+};
+
+let counter = 0;
+/** A temp repo whose `main` holds OWNERS.md plus `files`, checked out on `branch`. */
+function makeRepo({ branch = 'rv/web/site', owners = OWNERS, files = {} } = {}) {
+  const dir = path.join(tmpRoot, `repo-${counter++}`);
+  mkdirSync(dir, { recursive: true });
+  git(dir, 'init', '-q');
+  if (owners !== null) write(dir, 'plans/OWNERS.md', owners);
+  write(dir, 'README.md', 'seed\n');
+  for (const [file, content] of Object.entries(files)) write(dir, file, content);
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-q', '-m', 'base');
+  git(dir, 'checkout', '-q', '-b', branch);
+  return dir;
+}
+
+function write(dir, file, content) {
+  mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+  writeFileSync(path.join(dir, file), content);
+}
+
+function commit(dir, files, message = ['change']) {
+  for (const [file, content] of Object.entries(files)) write(dir, file, content);
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-q', ...message.flatMap(m => ['-m', m]));
+}
+
+function run(dir, args = [], env = {}) {
+  const result = spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, env: { ...GIT_ENV, ...env }, encoding: 'utf8' });
+  return { code: result.status, out: result.stdout, err: result.stderr };
+}
+
+const check = (dir, args = [], env) => run(dir, ['--base', 'main', ...args], env);
+const violationFiles = res => JSON.parse(res.out).violations.map(v => v.file);
+
+describe('change check', () => {
+  test('a change inside the acting lane passes', () => {
+    const dir = makeRepo();
+    commit(dir, { 'apps/web/src/a.ts': 'x' });
+    const res = check(dir);
+    assert.equal(res.code, 0, res.out + res.err);
+    assert.match(res.out, /^OK:/m);
+  });
+
+  test('a cross-lane change fails and names the owner', () => {
+    const dir = makeRepo();
+    commit(dir, { 'apps/web/a.ts': 'x', 'packages/engine/src/store.ts': 'y' });
+    const res = check(dir);
+    assert.equal(res.code, 1);
+    assert.match(res.out, /packages\/engine\/src\/store\.ts\s+eng-store\s+web/);
+    assert.match(res.out, /FAIL: 1 of 2/);
+    assert.deepEqual(violationFiles(check(dir, ['--json'])), ['packages/engine/src/store.ts']);
+  });
+
+  test('a Lane-Approved commit trailer approves the owning lane', () => {
+    const dir = makeRepo();
+    commit(dir, { 'packages/engine/src/store.ts': 'y' }, ['touch engine', 'Lane-Approved: eng-store']);
+    const res = check(dir);
+    assert.equal(res.code, 0, res.out);
+    assert.match(res.out, /eng-store \(trailer\)/);
+  });
+
+  test('a trailer for another lane does not approve', () => {
+    const dir = makeRepo();
+    commit(dir, { 'packages/engine/src/store.ts': 'y' }, ['touch engine', 'Lane-Approved: integrator']);
+    assert.equal(check(dir).code, 1);
+  });
+
+  test('--approved approves the owning lane', () => {
+    const dir = makeRepo();
+    commit(dir, { 'plans/STATUS.md': 'y' });
+    assert.equal(check(dir).code, 1);
+    assert.equal(check(dir, ['--approved', 'integrator']).code, 0);
+  });
+
+  test('--pr reads lane-approved labels through gh', () => {
+    const dir = makeRepo();
+    commit(dir, { 'plans/STATUS.md': 'y' });
+    const bin = path.join(tmpRoot, `bin-${counter++}`);
+    mkdirSync(bin);
+    writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho '{"labels":[{"name":"bug"},{"name":"lane-approved:integrator"}]}'\n`);
+    chmodSync(path.join(bin, 'gh'), 0o755);
+    const withLabel = check(dir, ['--pr', '7'], { PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+    assert.equal(withLabel.code, 0, withLabel.out + withLabel.err);
+    assert.match(withLabel.out, /integrator \(PR label\)/);
+  });
+
+  test('the most specific glob wins (tools/lint/design belongs to ui-foundation)', () => {
+    const dir = makeRepo({ branch: 'rv/plat-ci/lint' });
+    commit(dir, { 'tools/lint/rules.mjs': 'a', 'tools/lint/design/no-hex.mjs': 'b' });
+    const res = check(dir, ['--json']);
+    assert.equal(res.code, 1);
+    assert.deepEqual(violationFiles(res), ['tools/lint/design/no-hex.mjs']);
+    assert.equal(JSON.parse(res.out).violations[0].owner, 'ui-foundation');
+    // and the reverse: ui-foundation may edit design/ but not the rest of tools/lint
+    git(dir, 'checkout', '-q', '-B', 'rv/ui-foundation/lint');
+    assert.deepEqual(violationFiles(check(dir, ['--json'])), ['tools/lint/rules.mjs']);
+  });
+
+  test('brace globs and <br> separated globs are honoured', () => {
+    const dir = makeRepo({ branch: 'rv/ui-foundation/x' });
+    commit(dir, { 'apps/desktop/src/renderer/commands/a.ts': 'a', 'apps/desktop/src/renderer/ui/b.ts': 'b' });
+    assert.equal(check(dir).code, 0);
+    const ci = makeRepo({ branch: 'rv/plat-ci/x' });
+    commit(ci, { '.github/workflows/ci.yml': 'a', 'scripts/audit/x.mjs': 'b' });
+    assert.equal(check(ci).code, 0);
+  });
+
+  test('a rename across lanes checks both the old and the new path', () => {
+    const body = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n');
+    const dir = makeRepo({ files: { 'apps/web/moved.ts': body } });
+    mkdirSync(path.join(dir, 'tools/lint/design'), { recursive: true });
+    git(dir, 'mv', 'apps/web/moved.ts', 'tools/lint/design/moved.ts');
+    git(dir, 'commit', '-q', '-m', 'move');
+    // acting web: the new path (ui-foundation) is the violation
+    assert.deepEqual(violationFiles(check(dir, ['--json'])), ['tools/lint/design/moved.ts']);
+    // acting ui-foundation: the old path (web) is the violation
+    const reverse = check(dir, ['--json', '--lane', 'ui-foundation']);
+    assert.deepEqual(violationFiles(reverse), ['apps/web/moved.ts']);
+    assert.equal(check(dir, ['--lane', 'web,ui-foundation']).code, 0);
+  });
+
+  test('shared paths may be edited by anyone', () => {
+    const dir = makeRepo();
+    commit(dir, { 'PROGRESS.md': 'a', 'DECISIONS.md': 'b', 'TODO.md': 'c' });
+    assert.equal(check(dir).code, 0);
+  });
+
+  test('an unowned path fails and tells the author to ask the Integrator', () => {
+    const dir = makeRepo();
+    commit(dir, { 'brand-new-folder/file.ts': 'x' });
+    const res = check(dir);
+    assert.equal(res.code, 1);
+    assert.match(res.out, /brand-new-folder\/file\.ts\s+\(unowned\)/);
+    assert.match(res.out, /ask the Integrator to add them to plans\/OWNERS\.md/);
+    // approval of some lane never covers an unowned file
+    assert.equal(check(dir, ['--approved', 'integrator,web']).code, 1);
+  });
+
+  test('rv/thread/<name> acts as every lane of that thread', () => {
+    const dir = makeRepo({ branch: 'rv/thread/platform' });
+    commit(dir, { 'apps/web/a.ts': 'a', 'scripts/audit/b.mjs': 'b' });
+    const res = check(dir);
+    assert.equal(res.code, 0, res.out + res.err);
+    assert.match(res.out, /acting lane\(s\) web, plat-ci/);
+    commit(dir, { 'packages/engine/src/x.ts': 'c' });
+    assert.equal(check(dir).code, 1);
+    git(dir, 'checkout', '-q', '-B', 'rv/thread/UI-core');
+    assert.match(check(dir).out, /acting lane\(s\) ui-foundation/);
+  });
+
+  test('an unknown branch needs --lane, and --lane overrides the branch', () => {
+    const dir = makeRepo({ branch: 'feature/whatever' });
+    commit(dir, { 'apps/web/a.ts': 'a' });
+    const res = check(dir);
+    assert.equal(res.code, 2);
+    assert.match(res.err, /pass --lane/);
+    assert.equal(check(dir, ['--lane', 'web']).code, 0);
+    assert.equal(check(dir, ['--lane', 'nonsense']).code, 2);
+  });
+
+  test('base defaults to the merge-base with origin/revamp', () => {
+    const dir = makeRepo();
+    git(dir, 'update-ref', 'refs/remotes/origin/revamp', 'main');
+    commit(dir, { 'packages/engine/src/x.ts': 'a' });
+    const res = run(dir, []);
+    assert.equal(res.code, 1, res.out + res.err);
+    assert.match(res.out, /packages\/engine\/src\/x\.ts/);
+  });
+
+  test('missing OWNERS.md prints pending and exits 0', () => {
+    const dir = makeRepo({ owners: null, branch: 'rv/web/x' });
+    commit(dir, { 'anything/at/all.ts': 'a' });
+    const res = check(dir);
+    assert.equal(res.code, 0);
+    assert.equal(res.out.trim(), 'pending: plans/OWNERS.md not on this branch yet');
+  });
+});
+
+describe('--validate', () => {
+  test('reports unowned tracked files and only fails with --strict', () => {
+    const dir = makeRepo({ files: { 'stray/one.ts': 'a', 'stray/two.ts': 'b' } });
+    const res = run(dir, ['--validate', '--json']);
+    const report = JSON.parse(res.out);
+    assert.equal(res.code, 0);
+    assert.equal(report.unowned, 3); // README.md, stray/one.ts, stray/two.ts
+    assert.deepEqual(report.unownedAreas, { 'README.md': 1, stray: 2 });
+    assert.equal(run(dir, ['--validate', '--strict']).code, 1);
+  });
+
+  test('detects a glob given to two lanes and a file two lanes own equally', () => {
+    const tied = `${OWNERS}
+| Path | Lane |
+|---|---|
+| \`apps/web/**\` | eng-views |
+| \`lib/?a*\` | alpha |
+| \`lib/*a?\` | beta |
+`;
+    const dir = makeRepo({ owners: tied, files: { 'lib/xaq': 'a' } });
+    const res = run(dir, ['--validate']);
+    assert.equal(res.code, 1);
+    assert.match(res.out, /tie: glob apps\/web\/\*\* is listed for web .* and eng-views/);
+    assert.match(res.out, /tie between alpha vs beta on 1 file\(s\), e\.g\. lib\/xaq/);
+    // a change check refuses to run on an invalid file rather than guess
+    commit(dir, { 'apps/web/a.ts': 'x' });
+    assert.equal(check(dir).code, 1);
+  });
+
+  test('reports malformed rows', () => {
+    const bad = `| Path | Lane |\n|---|---|\n| \`a/{b\` | x |\n| \`c/**\` | |\n`;
+    const dir = makeRepo({ owners: bad });
+    const res = run(dir, ['--validate']);
+    assert.equal(res.code, 1);
+    assert.match(res.out, /unbalanced "\{"/);
+    assert.match(res.out, /no lane/);
+  });
+});
+
+describe('glob matching and parsing', () => {
+  test('globs', () => {
+    const m = (glob, file) => expandBraces(glob).some(g => globToRegExp(g).test(file));
+    assert.ok(m('a/**', 'a/b/c.ts'));
+    assert.ok(!m('a/**', 'a'));
+    assert.ok(m('a/**/c.ts', 'a/c.ts'));
+    assert.ok(m('a/**/c.ts', 'a/x/y/c.ts'));
+    assert.ok(m('a/*.ts', 'a/b.ts'));
+    assert.ok(!m('a/*.ts', 'a/b/c.ts'));
+    assert.ok(m('a/?.ts', 'a/b.ts'));
+    assert.ok(!m('a/?.ts', 'a/bc.ts'));
+    assert.ok(m('a/{b,c/d}/**', 'a/c/d/e'));
+    assert.ok(!m('a/{b,c/d}/**', 'a/c/e'));
+    assert.ok(m('x.mjs', 'x.mjs'));
+    assert.ok(!m('x.mjs', 'xamjs'));
+    assert.deepEqual(expandBraces('m/{a,b}.{ts,js}').sort(), ['m/a.js', 'm/a.ts', 'm/b.js', 'm/b.ts']);
+  });
+
+  test('a trailing slash means everything below, and unticked <br> separated cells parse', () => {
+    const parsed = parseOwners('| **Paths** | `Lane` | THREAD |\n|:--|:-:|--|\n| scripts/design/, docs/a.md<br/>x/{y,z}/** | **UI-Core** | T |\n');
+    assert.deepEqual(parsed.errors, []);
+    const owner = file => resolveOwner(parsed.rules, file)?.rule.lane;
+    assert.equal(owner('scripts/design/a/b.ts'), 'ui-core');
+    assert.equal(owner('docs/a.md'), 'ui-core');
+    assert.equal(owner('x/z/q'), 'ui-core');
+    assert.equal(owner('x/w/q'), undefined);
+  });
+});

@@ -26,6 +26,8 @@
     "web": "npm run dev -w @aplos/web",
     "web:build": "npm run build -w @aplos/web",
     "web:preview": "npm run preview -w @aplos/web",
+    "owners:check": "node scripts/audit/owners-check.mjs",
+    "test:audit": "node --test \"scripts/audit/tests/*.test.mjs\"",
     "release": "node scripts/release.mjs",
     "release:build": "npm run release:build -w @aplos/desktop",
     "update-feed": "npm run update-feed -w @aplos/desktop --"
