@@ -42,10 +42,46 @@ Each is a fresh Claude Opus agent (`claude-opus-5-5`) run from a Claude Code wor
 
 ## 4. Findings
 
-Every finding ends as **fixed** (with the commit) or **decided** (a DECIDED entry in STATUS.md and a DECISIONS.md line, with the reason). A blocker cannot be decided away without the owner. Rows are added on day 3.
+Every finding ends as **fixed** (with the commit) or **decided** (a DECIDED entry in STATUS.md and a DECISIONS.md line, with the reason). A blocker cannot be decided away without the owner. Round 1 ran on 2026-10-27 at 22:5x on PR #28 (214f052) plus F9 at 98dfc61: 36 findings (9 blockers, 25 gaps, 2 nits), all confirmed in the code, none dropped. The full list, with evidence and suggested fixes, is [freeze/findings.md](freeze/findings.md). Outcomes are recorded here as they land.
 
-| ID | Reviewer | Severity | Artifact | Finding | Outcome | Commit or decision |
-|---|---|---|---|---|---|---|
+| ID | Severity | Owner | Outcome | Commit or decision |
+|---|---|---|---|---|
+| FR-1 | blocker | ui-foundation | open | |
+| FR-2 | blocker | eng-contract | open | |
+| FR-3 | blocker | eng-contract | open | |
+| FR-4 | blocker | eng-contract | open | |
+| FR-5 | blocker | eng-contract | open | |
+| FR-6 | blocker | eng-contract | open | |
+| FR-7 | blocker | eng-contract | open | |
+| FR-8 | blocker | eng-contract | open | |
+| FR-9 | blocker | eng-contract | open | |
+| FR-10 | gap | eng-store | open | |
+| FR-11 | gap | eng-contract | open | |
+| FR-12 | gap | eng-contract | open | |
+| FR-13 | gap | eng-contract | open | |
+| FR-14 | gap | eng-contract | open | |
+| FR-15 | gap | eng-store | open | |
+| FR-16 | gap | eng-contract | open | |
+| FR-17 | gap | eng-contract | open | |
+| FR-18 | gap | eng-contract | open | |
+| FR-19 | gap | eng-contract | open | |
+| FR-20 | gap | eng-contract | open | |
+| FR-21 | gap | eng-contract + ui-foundation | open | |
+| FR-22 | gap | eng-contract | open | |
+| FR-23 | gap | eng-contract | open | |
+| FR-24 | gap | eng-contract | open | |
+| FR-25 | gap | eng-contract | open | |
+| FR-26 | gap | eng-contract | open | |
+| FR-27 | gap | eng-contract | open | |
+| FR-28 | gap | eng-contract | open | |
+| FR-29 | gap | eng-contract | open | |
+| FR-30 | gap | eng-contract | open | |
+| FR-31 | gap | eng-store | open | |
+| FR-32 | gap | eng-contract | open | |
+| FR-33 | gap | eng-contract | open | |
+| FR-34 | gap | eng-contract | open | |
+| FR-35 | nit | eng-contract | open | |
+| FR-36 | nit | eng-contract | open | |
 
 ## 5. Exit
 
