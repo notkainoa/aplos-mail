@@ -52,11 +52,9 @@ The Avec hex values of `lint/identity-references.json` (when it exists) and `#e5
 
 ## Exemptions
 
-Only token sources and generated files are exempt (`config.mjs`): `renderer/ui/tokens.json` and `renderer/ui/generated/**`. Test files (`*.test.*`) and this tool's own `tools/lint/design/fixtures/**` are skipped because they plant violations on purpose; a `fixtures/` folder inside the renderer (mock mail data, say) is linted like any other code. `renderer/legacy/**` is skipped, and so is a **temporary explicit list of today's renderer files** until the restructure moves them.
+Only token sources and generated files are exempt (`config.mjs`): `renderer/ui/tokens.json` and `renderer/ui/generated/**`. Test files (`*.test.*`) and this tool's own `tools/lint/design/fixtures/**` are skipped because they plant violations on purpose; a `fixtures/` folder inside the renderer (mock mail data, say) is linted like any other code. `renderer/legacy/**` (today's renderer, moved there by restructure step 1 and deleted in Phase 2) is skipped.
 
-The temporary list expires by itself. It applies only while `apps/desktop/src/renderer/legacy/` does not exist. The moment that folder exists, the list stops exempting anything (so a new `main.tsx`, `ui/Button.tsx` or `ui/motion.ts` is linted), and the test `restructure step 1 has not landed, or the temporary legacy list has been deleted` fails until `legacyRendererFiles` is deleted from `config.mjs`.
-
-**Generator output contract.** The token generator writes `apps/desktop/src/renderer/ui/generated/tokens.css`, `motion.ts` and `contrast-pairs.json`, and nothing else is exempt. If it wrote `ui/tokens.css` or `ui/motion.ts` (today's legacy names) they would fail with hundreds of hex and duration violations once the legacy list expires. `apps/web` is outside the include glob until its redesign.
+**Generator output contract.** The token generator writes `apps/desktop/src/renderer/ui/generated/tokens.css`, `motion.ts` and `contrast-pairs.json`, and nothing else is exempt. If it wrote `ui/tokens.css` or `ui/motion.ts` (today's legacy names) they would fail with hundreds of hex and duration violations. `apps/web` is outside the include glob until its redesign.
 
 There are no inline disable comments. The CLI has none to honour. When the adapters are wired in, the config should switch the tools' own directives off (`linterOptions: { noInlineConfig: true }` in ESLint, `ignoreDisables: true` in stylelint). There is no escape hatch. A new token goes in `tokens.json`; a genuinely needed exception is a DESIGN change.
 

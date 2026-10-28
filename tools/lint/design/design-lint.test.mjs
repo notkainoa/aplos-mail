@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  alwaysExclude, buildExclude, exclude, legacyFolderExists, legacyRendererFiles, repoRoot,
+  alwaysExclude, exclude, repoRoot,
 } from './config.mjs';
 import { matchesAny } from './lib/glob.mjs';
 import { lintFile, lintText } from './lib/lint.mjs';
@@ -157,24 +157,7 @@ test('the default scope over today\'s tree passes, and the exempt files are exem
     'apps/desktop/src/renderer/ui/motion.ts',
   ];
   for (const file of covered) assert.ok(!matchesAny(file, alwaysExclude), file);
-  assert.ok(legacyRendererFiles.every((file) => file.startsWith('apps/desktop/src/renderer/')));
-});
-
-test('the temporary legacy list applies only while renderer/legacy/ does not exist', () => {
-  const before = buildExclude(false);
-  const after = buildExclude(true);
-  for (const file of ['apps/desktop/src/renderer/App.tsx', 'apps/desktop/src/renderer/ui/Button.tsx', 'apps/desktop/src/renderer/main.tsx']) {
-    assert.equal(matchesAny(file, after), false, `${file} is linted once legacy/ exists`);
-  }
-  assert.ok(matchesAny('apps/desktop/src/renderer/App.tsx', before));
-  assert.ok(matchesAny('apps/desktop/src/renderer/legacy/App.tsx', after));
-  assert.deepEqual(exclude, buildExclude(legacyFolderExists()));
-});
-
-test('restructure step 1 has not landed, or the temporary legacy list has been deleted', () => {
-  if (legacyFolderExists()) {
-    assert.deepEqual(legacyRendererFiles, [], 'renderer/legacy/ exists: delete legacyRendererFiles from tools/lint/design/config.mjs');
-  }
+  assert.ok(matchesAny('apps/desktop/src/renderer/legacy/App.tsx', exclude));
 });
 
 test('evasions from plan 30 WP1.3 are caught', () => {
