@@ -11,7 +11,7 @@
  */
 
 import type { SettingRoute, TargetSummary } from '../commands';
-import type { AccountId } from '../data';
+import type { AccountId, AiProviderId } from '../data';
 
 // ---------------------------------------------------------------------------
 // Lane marker and the not-implemented error
@@ -50,16 +50,19 @@ function notImplemented(member: string): never {
 export interface SheetArgs {
   /**
    * The weekly Gmail reconnect (DESIGN 7.1, ReconnectSheet): 'reconnect' for `needsReauth`
-   * and `reconnectBy` within 24 hours, 'grant' for `needsPermission`. Either way the sheet
-   * calls `api.account.reconnect` and follows its `connect` frames (where 'grant' is F1's
-   * `grantPermissions`); the shell passes `mode` on as `ReconnectSheetProps.mode` for the copy.
+   * and `health.reconnectBy` within 24 hours, 'grant' for `needsPermission`. The sheet calls
+   * `api.account.reconnect` ('reconnect') or `api.account.grantPermissions` ('grant') and
+   * follows that flow's `connect` frames by `connectId` (the frame's `mode` is
+   * `reconnect` or `grantPermissions`); the shell passes `mode` on as
+   * `ReconnectSheetProps.mode` for the copy.
    */
   reconnect: { readonly accountId: AccountId; readonly mode: 'reconnect' | 'grant' };
   /**
    * The AI consent card as a sheet (plan 30 4.5 #1: Settings → AI "Review" after a provider
-   * change). Provider and model default to the Summaries choice in `Settings.ai.features`.
+   * change, or `Consent.needsReconsent`). Provider and model default to the Summaries choice in
+   * `Settings.ai.features`; Allow sends `api.consent.grant` with `Consent.currentVersion`.
    */
-  consent: { readonly providerId?: string; readonly model?: string };
+  consent: { readonly provider?: AiProviderId; readonly model?: string };
 }
 
 /** A sheet name. */
@@ -77,7 +80,7 @@ export type SheetArgsParam<K extends SheetName> =
 /**
  * Opens a sheet over the current window (`--elev-dialog`, `settle`). One sheet at a time:
  * opening the sheet that is already open with equal arguments keeps it; any other sheet
- * replaces it, cancelling the first (a reconnect's `AccountFlow.cancel()`). While it is open
+ * replaces it, cancelling the first (a waiting reconnect's `api.account.cancelConnect`). While it is open
  * the shell adds the modal `sheet` context to the key stack, so Esc runs `sheet.cancel` and
  * nothing behind it answers. Focus returns to the opener when it closes.
  */

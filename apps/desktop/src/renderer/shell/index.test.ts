@@ -22,7 +22,7 @@ function sheetExample(): string {
   openSheet('reconnect', { accountId: 'a1', mode: 'reconnect' });
   openSheet('reconnect', { accountId: 'a1', mode: 'grant' });
   openSheet('consent');
-  openSheet('consent', { providerId: 'groq', model: 'llama-3.3-70b-versatile' });
+  openSheet('consent', { provider: 'groq', model: 'llama-3.3-70b-versatile' });
   // @ts-expect-error: the reconnect sheet needs its account.
   openSheet('reconnect');
   // @ts-expect-error: there is no such sheet.

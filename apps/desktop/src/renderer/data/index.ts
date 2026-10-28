@@ -1,85 +1,78 @@
 /**
  * The renderer data surface (F9, frozen on day 3; plan 30 section 4.1 and U2).
  *
- * Screens read mail only through these hooks and `api`. After the freeze, changes are
- * additive only: new members may be added, nothing is renamed or removed.
+ * Screens read mail only through these hooks and `api`. Every type is the engine contract's (`@aplos/contract`, F1),
+ * re-exported from `./contract-shapes.ts`, plus the few UI-side types in `./ui-types.ts`. `api` is the F2 typed
+ * client's surface (`@aplos/contract/client`): each member is the client method of the same name, and its type is
+ * derived from the client, so the two cannot drift. After the freeze, changes are additive only: new members may be
+ * added, nothing is renamed or removed.
  *
- * Every implementation below throws `NotImplementedError`. Lane `ui-shell` builds them in
- * U2 (days 4-8) as `client.ts`, `rows.ts`, `windows.ts`, `optimistic.ts` and `session.ts`
- * behind this file, first against the stand-in engine (F6), then against the real engine
- * by one flag (WP5.6).
+ * Every implementation below throws `NotImplementedError`. Lane `ui-shell` builds them in U2 (days 4-8) as
+ * `client.ts`, `rows.ts`, `windows.ts`, `optimistic.ts` and `session.ts` behind this file, first against the stand-in
+ * engine (F6), then against the real engine by one flag (WP5.6).
  *
- * Not here: transport selection (MessagePort in Electron, tokenised HTTP and SSE in the
- * browser preview). That lives in `renderer/bridge.ts`, owned by `ui-shell`, and this
- * surface never exposes it.
+ * Not here: transport selection (MessagePort in Electron, tokenised HTTP and SSE in the browser preview). That lives
+ * in `renderer/bridge.ts`, owned by `ui-shell`, and this surface never exposes it. `./standin.ts` boots the stand-in
+ * engine in-process for development and tests only.
  *
- * This file imports nothing from today's renderer, `shared/live`, `AppState` or
- * `engine/*`, and no React: hooks are typed as plain functions so the signatures can be
+ * This file imports nothing from today's renderer, `shared/live`, `AppState` or `engine/*`, nothing at runtime from
+ * the contract (types only, so no zod), and no React: hooks are typed as plain functions so the signatures can be
  * checked without a DOM.
  */
 
+import type { Api as ClientApi } from '@aplos/contract/client';
 import type {
+  Account,
   AccountId,
-  AccountRow,
   AccountStatus,
-  AgendaQuery,
-  AiConsentGrant,
-  AiRequest,
-  AiResult,
-  AskAnswer,
-  AskFrame,
-  AskRequest,
-  AttachmentId,
-  AttachmentRef,
-  ContractError,
-  Counts,
-  DiagnosticsPreview,
-  DraftId,
-  DraftInput,
-  DraftRow,
-  DraftSaveResult,
-  DraftsViewSpec,
+  Consent,
+  Conversation,
+  Count,
+  CountsBlock,
+  DesktopMethodName,
+  Draft,
   EpochMs,
-  EventRow,
-  FrameKind,
-  FrameMap,
-  HomeGroupKey,
-  HomeSection,
-  MailFrameRef,
-  MailFrameRequest,
+  ErrorBody,
+  Event,
+  Id,
+  Input,
+  Message,
   MessageBody,
   MessageId,
-  MessageRow,
+  MethodName,
   OpId,
-  OperationRemoteState,
-  OperationState,
-  ProviderKind,
+  Operation,
+  Plan,
+  ReasonCode,
   Receipt,
-  RequestId,
   RowType,
-  RowTypeMap,
-  SendOptions,
+  SenderGroup,
   Session,
   SetupStatus,
   Settings,
-  SettingsPatch,
-  StateToken,
-  SubmissionId,
+  State,
+  Submission,
   ThreadAction,
   ThreadId,
   ThreadRow,
   ThreadSelector,
-  ThreadTarget,
-  ThreadViewSpec,
-  Transcript,
   UiSettings,
   ViewSpec,
-  WhyItsHere,
-  FollowupSuggestion,
-  WindowGroup,
+  WindowSection,
 } from './contract-shapes';
+import type {
+  CachedRowType,
+  HomeSection,
+  OperationState,
+  RowTypeMap,
+  StreamFrameMap,
+  StreamKind,
+  ThreadListSelector,
+  ViewSpecOf,
+} from './ui-types';
 
 export type * from './contract-shapes';
+export type * from './ui-types';
 
 // ---------------------------------------------------------------------------
 // Lane marker and the not-implemented error
@@ -88,7 +81,7 @@ export type * from './contract-shapes';
 /** The lane that implements this surface (roadmap 2.3). */
 export const DATA_LANE = 'ui-shell' as const;
 
-/** Thrown by every stub until `ui-shell` lands U2; names the member and the lane. */
+/** Thrown by every stub until `ui-shell` lands U2; names the member and the lane. (The contract's own `NotImplementedError` is what an engine stub throws; this one is the renderer's.) */
 export class NotImplementedError extends Error {
   /** Stable code for tests and logs. */
   readonly code = 'NOT_IMPLEMENTED' as const;
@@ -130,7 +123,7 @@ export const PREFETCH_TIMING = {
   hoverMs: 120,
 } as const;
 
-/** Most rows one window holds (ARCH 9.2). */
+/** Most rows one window holds (ARCH 9.2; `View/watch.limit` is at most 200). */
 export const WINDOW_MAX_ROWS = 200;
 
 // ---------------------------------------------------------------------------
@@ -139,9 +132,9 @@ export const WINDOW_MAX_ROWS = 200;
 
 /** What every optimistic command returns: the overlay is already applied when this returns (key-to-state within 8 ms, DESIGN 5 rule 1). */
 export interface ActResult {
-  /** Client-created operation id; use it with `useOperation` and `api.operation.undo`. */
+  /** The operation id (minted by the data layer when the caller gave none); use it with `useOperation` and `api.operation.undo`. */
   readonly opId: OpId;
-  /** Resolves when the engine commits; rejects with `OperationFailedError` after the overlay has rolled back and the row shows its inline error. */
+  /** Resolves with the contract `Receipt` when the engine commits; rejects with `OperationFailedError` after the overlay has rolled back and the row shows its inline error. The overlay drops once a window frame's `state.seq` reaches `receipt.appliedState.seq` within the same `dbEpoch` (frames are coalesced and can skip states, so the comparison is ordered, never equality). */
   readonly receipt: Promise<Receipt>;
 }
 
@@ -149,10 +142,10 @@ export interface ActResult {
 export class OperationFailedError extends Error {
   /** The failed operation. */
   readonly opId: OpId;
-  /** The engine's error; `error.message` is the sentence to show. */
-  readonly error: ContractError;
+  /** The engine's error body; `error.message` is the sentence to show. */
+  readonly error: ErrorBody;
 
-  constructor(opId: OpId, error: ContractError) {
+  constructor(opId: OpId, error: ErrorBody) {
     super(error.message);
     this.name = 'OperationFailedError';
     this.opId = opId;
@@ -166,19 +159,21 @@ export interface OperationView {
   readonly opId: OpId;
   /** pending until the receipt, confirmed after it, failed on rejection. */
   readonly state: OperationState;
-  /** Provider-side progress once confirmed ("Saved here · will sync" while queued offline); null while pending. */
-  readonly remote: OperationRemoteState | null;
+  /** Provider-side progress once confirmed (`Operation.state` from `operation` frames: "Saved here · will sync" while `queued`); null while pending. */
+  readonly remote: Operation['state'] | null;
   /** The action, for toast wording; null for non-thread operations. */
   readonly action: ThreadAction | null;
-  /** Target ids. For a selector target: empty while pending, the ids the engine resolved once confirmed. */
-  readonly targets: readonly string[];
-  /** The selector when the operation targeted a whole view or group; null for explicit ids. */
+  /** Target ids. For a selector target: empty while pending, the ids the engine resolved once confirmed (`Operation.targets`). */
+  readonly targets: readonly Id[];
+  /** The selector when the operation targeted a whole view or section; null for explicit ids. */
   readonly selector: ThreadSelector | null;
   /** Set when failed; `message` is shown as written. */
-  readonly error: ContractError | null;
-  /** True when `api.operation.undo` applies (confirmed or pending, not already undone). */
+  readonly error: ErrorBody | null;
+  /** True when `api.operation.undo` applies (`Receipt.undoable` is not false, and not already undone). */
   readonly undoable: boolean;
-  /** Re-sends the same operation with a new op id; the overlay re-applies at once. */
+  /** `Receipt.undoUntil`: until when undo cancels a held change instead of sending an inverse (calendar writes that email guests); null otherwise. */
+  readonly undoUntil: EpochMs | null;
+  /** Re-sends the same action under a new op id; the overlay re-applies at once. */
   retry(): ActResult;
 }
 
@@ -206,17 +201,28 @@ export function useOperation(opId: OpId | undefined): OperationView | undefined 
 // Views (ARCH 9.2 windows; plan 30 4.1 windows.ts)
 // ---------------------------------------------------------------------------
 
-/** Row type a spec yields: messages for the thread view, draft rows for Drafts, thread rows for every other view. */
-export type RowForSpec<S extends ViewSpec> = S extends ThreadViewSpec
-  ? MessageRow
-  : S extends DraftsViewSpec
-    ? DraftRow
-    : ThreadRow;
+/** The row a spec yields, following the window's `rowType`: messages for `thread`, drafts for `drafts`, submissions for `scheduled`, sender groups for `lowSenders`, events for `events`, plans for `plans`, conversations for `conversations`, thread rows for every other view. */
+export type RowForSpec<S extends ViewSpec> =
+  S extends ViewSpecOf<'thread'>
+    ? Message
+    : S extends ViewSpecOf<'drafts'>
+      ? Draft
+      : S extends ViewSpecOf<'scheduled'>
+        ? Submission
+        : S extends ViewSpecOf<'lowSenders'>
+          ? SenderGroup
+          : S extends ViewSpecOf<'events'>
+            ? Event
+            : S extends ViewSpecOf<'plans'>
+              ? Plan
+              : S extends ViewSpecOf<'conversations'>
+                ? Conversation
+                : ThreadRow;
 
-/** `opening` before the first frame; `live` while frames apply; `reset` while reopening after a reset or `cannotCalculateChanges` (the previous ids stay on screen); `failed` when the view cannot open or stopped (remote search `quotaPaused` or `unavailable`, a thread that is gone): show `error.message` as an ErrorLine (DESIGN 7.15). */
+/** `opening` before the first window; `live` while frames apply; `reset` while reopening after a `reset` frame or `cannotCalculateChanges` (the previous ids stay on screen); `failed` when the view cannot open or stopped (`WindowBody.error`: remote search paused or unavailable, a thread that is gone): show `error.message` as an ErrorLine (DESIGN 7.15). */
 export type ViewStatus = 'opening' | 'live' | 'reset' | 'failed';
 
-/** A range of indices in the whole view, end exclusive; the data layer turns it into a keyset `View/move` anchor. */
+/** A range of indices in the whole view, end exclusive; the data layer turns it into a `View/move` anchor (keyset, never OFFSET). */
 export interface ViewRange {
   /** First index wanted. */
   readonly start: number;
@@ -226,35 +232,39 @@ export interface ViewRange {
 
 /** Options for `useView`. */
 export interface UseViewOptions {
-  /** Engine half of holding still (plan 30 4.1): rows around the cursor that a re-rank must not move. Non-empty also freezes the rendered order and queues frames until it empties again. Pass `HoldController.heldIds`. A change to `holdIds` never re-watches: the data layer sends `View/hold {windowId, ids}` or `View/release` on the open window and pings activity while it is non-empty, so status stays `live` and the offset is kept. */
-  readonly holdIds?: readonly string[];
+  /** Engine half of holding still (plan 30 4.1): rows around the cursor that a re-rank must not move (`View/watch.holdIds`). Non-empty also freezes the rendered order and queues frames until it empties again. Pass `HoldController.heldIds`. A change to `holdIds` never re-watches: the data layer sends `View/hold {windowId, ids}` (repeating it is the activity ping) or `View/release` on the open window, so status stays `live` and the position is kept. */
+  readonly holdIds?: readonly Id[];
 }
 
-/** A watched window with the optimistic overlay applied. */
+/** A watched window (`WindowBody`) with the optimistic overlay applied. Field names are the contract's. */
 export interface ViewResult<R> {
   /** Ordered ids in the window as rendered: overlay applied, held order kept during a hold. */
-  readonly ids: readonly string[];
-  /** Index of `ids[0]` in the whole view. */
-  readonly offset: number;
+  readonly ids: readonly Id[];
+  /** `WindowBody.position`: index of `ids[0]` in the whole view (approximate under keyset paging). */
+  readonly position: number;
   /** Rows in the whole view, overlay applied. */
   readonly total: number;
-  /** Rows by id from the row cache; an id may be missing while its row is fetched. */
-  readonly rows: ReadonlyMap<string, R>;
-  /** Groups for grouped views (home, later, home.low), counts overlay applied; empty otherwise. */
-  readonly groups: readonly WindowGroup[];
-  /** State token of the last applied frame; null while opening. */
-  readonly state: StateToken | null;
+  /** Rows by id from the row cache; an id may be missing while its row is fetched with `T/get`. */
+  readonly rows: ReadonlyMap<Id, R>;
+  /** `WindowBody.sections`: Home sections, Later groups, Low senders, counts overlay applied; empty for ungrouped views. */
+  readonly sections: readonly WindowSection[];
+  /** `WindowBody.held`: rows the engine kept in place for a hold; empty otherwise. */
+  readonly held: readonly Id[];
+  /** `WindowBody.rowType`; null while opening. */
+  readonly rowType: RowType | null;
+  /** State of the last applied window; null while opening. Pass it as `ThreadSelector.atState`. */
+  readonly state: State | null;
   /** Window lifecycle. */
   readonly status: ViewStatus;
-  /** Why the view failed; null unless `status` is `failed`. A thread view whose thread is gone fails with type `notFound`. */
-  readonly error: ContractError | null;
+  /** Why the view failed (`WindowBody.error`, or the call's error); null unless `status` is `failed`. A thread view whose thread is gone fails with type `notFound`. */
+  readonly error: ErrorBody | null;
   /** Rows whose last write was rejected, by id (DESIGN 5 rule 11). */
-  readonly failures: ReadonlyMap<string, RowFailure>;
+  readonly failures: ReadonlyMap<Id, RowFailure>;
   /** Scroll the window; call with the virtualised list's visible range plus overscan. */
   move(range: ViewRange): void;
 }
 
-/** Watch one view (`View/watch`, `View/move`, `View/unwatch`, `View/hold`, `View/release`). Re-watches only when the spec changes by value, never for a `holdIds` change. */
+/** Watch one view (`View/watch`, `View/move`, `View/unwatch`, `View/hold`, `View/release`, `window` and `reset` frames, `T/get` for unknown or changed ids). Re-watches only when the spec changes by value, never for a `holdIds` change. */
 export function useView<S extends ViewSpec>(
   spec: S,
   opts?: UseViewOptions,
@@ -268,15 +278,15 @@ export function useView<S extends ViewSpec>(
 export interface HomeSectionView {
   /** Section key, in display order. */
   readonly key: HomeSection;
-  /** Ids in this section within the current window, in order. For `do`, excludes the Back from Later block, whose ids are in `fromLater.ids` (render them after these). */
+  /** Ids in this section within the current window, in order. For `do`, excludes Back from Later, whose ids are in `fromLater.ids` (render them after these). */
   readonly ids: readonly ThreadId[];
-  /** Rows in the section across the whole view, the number beside the label. For `do`, includes Back from Later (DESIGN 7.2: it is a sub-label inside Do now); `fromLater.count` is the block alone. */
+  /** Rows in the section across the whole view, the number beside the label. For `do`, the `do` and `fromLater` sections together (DESIGN 7.2: Back from Later is a sub-label inside Do now); `fromLater.count` is the block alone. */
   readonly count: number;
   /** Index of the section's first row in the whole view (Tab and ⇧Tab jump here). */
   readonly start: number;
-  /** Whether the label renders: count above 0, or emptied while a hold is active, in which case it shows 0 until the hold releases (DESIGN 5 rule 6). */
+  /** Whether the label renders: count above 0, or emptied while a hold is active, in which case it shows 0 until the hold releases (DESIGN 5 rule 6). The engine omits empty sections; this flag is the renderer's. */
   readonly visible: boolean;
-  /** `do` only: the Back from Later block at its bottom; null for other sections or when empty and not held. */
+  /** `do` only: the Back from Later block at its bottom (the window's `fromLater` section); null for other sections or when empty and not held. */
   readonly fromLater: HomeBlockView | null;
   /** Rows that arrived during a hold and wait to `arrive` ("2 new" beside the Do now label). */
   readonly waiting: number;
@@ -284,8 +294,8 @@ export interface HomeSectionView {
 
 /** A sub-block inside a section (Back from Later). */
 export interface HomeBlockView {
-  /** Group key of the block. */
-  readonly key: Extract<HomeGroupKey, 'fromLater'>;
+  /** Section key of the block. */
+  readonly key: 'fromLater';
   /** Ids in the block within the window. */
   readonly ids: readonly ThreadId[];
   /** Rows in the block across the view. */
@@ -298,11 +308,11 @@ export interface HomeBlockView {
 
 /** The Low importance band (DESIGN 7.2): one line, up to three sender names, "and N more", a plain count. */
 export interface LowBandView {
-  /** Low-importance threads in the scope. */
+  /** Low-importance threads in the scope (the home window's `low` section `count`). */
   readonly count: number;
-  /** Up to three sender names, most recent first. */
+  /** Up to three sender names, most recent first (the `low` section's `senders`). */
   readonly names: readonly string[];
-  /** Senders beyond `names` ("and N more"). */
+  /** Senders beyond `names` ("and N more"): the `lowSenders` window's `total` minus `names.length`. */
   readonly moreSenders: number;
 }
 
@@ -311,12 +321,12 @@ export interface UseHomeOptions {
   /** One account, or absent for All accounts. */
   readonly accountId?: AccountId;
   /** Engine half of holding still; pass `HoldController.heldIds`. */
-  readonly holdIds?: readonly string[];
+  readonly holdIds?: readonly Id[];
 }
 
-/** Home as sections: the `home` view plus the `home.low` band, section-aware. */
+/** Home as sections: the `home` window (sections `do`, `fromLater`, `update`, `low`, `follow`), section-aware. */
 export interface HomeView {
-  /** Do now, Important updates, Follow up, always all three in order; render those with `visible`. */
+  /** Do now, Important updates, Follow up, always all three in order; render those with `visible`. The Low band sits between Important updates and Follow up (DESIGN 7.2). */
   readonly sections: readonly HomeSectionView[];
   /** The Low importance band; count 0 hides it. */
   readonly low: LowBandView;
@@ -326,15 +336,17 @@ export interface HomeView {
   readonly failures: ReadonlyMap<ThreadId, RowFailure>;
   /** Do now plus Important updates plus Follow up across the view (inbox zero when 0 and the band is empty). */
   readonly total: number;
+  /** State of the last applied `home` window; null while opening. Selectors ("Clear from Home") pass it as `atState`. */
+  readonly state: State | null;
   /** Lifecycle of the underlying `home` window. */
   readonly status: ViewStatus;
   /** Why it failed; null unless `status` is `failed`. */
-  readonly error: ContractError | null;
+  readonly error: ErrorBody | null;
   /** Scroll the underlying `home` window. */
   move(range: ViewRange): void;
 }
 
-/** Home's section-aware helper over `useView({kind: 'home'})` and `useView({kind: 'home.low'})`. */
+/** Home's section-aware helper over `useView({kind: 'home'})`, plus the `lowSenders` window's total for the band's "and N more". */
 export function useHome(opts?: UseHomeOptions): HomeView {
   void opts;
   return notImplemented('useHome');
@@ -344,10 +356,10 @@ export function useHome(opts?: UseHomeOptions): HomeView {
 // Rows (plan 30 4.1 rows.ts)
 // ---------------------------------------------------------------------------
 
-/** One cached row by type and id; undefined until known and also when gone (use `useRowState` to tell them apart). Referentially stable while `rev` is unchanged, so it is safe in memo deps. */
-export function useRow<T extends RowType>(
+/** One cached row by contract type name and id; undefined until known and also when gone (use `useRowState` to tell them apart). Referentially stable while `rev` is unchanged, so it is safe in memo deps. */
+export function useRow<T extends CachedRowType>(
   type: T,
-  id: string | undefined,
+  id: Id | undefined,
 ): RowTypeMap[T] | undefined {
   void type;
   void id;
@@ -358,14 +370,14 @@ export function useRow<T extends RowType>(
 export interface RowState<R> {
   /** The row once known; stable while `rev` is unchanged. */
   readonly row: R | undefined;
-  /** loading until the first answer; ready with a row; notFound once `T/get` reports the id in `notFound` or the row is destroyed. */
+  /** loading until the first answer; ready with a row; notFound once `T/get` lists the id in `notFound` or the row is destroyed. */
   readonly status: 'loading' | 'ready' | 'notFound';
 }
 
 /** One cached row with its lookup status, for screens that must show "This email is no longer here." instead of waiting forever. */
-export function useRowState<T extends RowType>(
+export function useRowState<T extends CachedRowType>(
   type: T,
-  id: string | undefined,
+  id: Id | undefined,
 ): RowState<RowTypeMap[T]> {
   void type;
   void id;
@@ -381,22 +393,22 @@ export type HoldReason = 'keys' | 'pointer';
 
 /** Called when a hold releases; the motion lane runs `close` (FLIP from fixed row heights) here. */
 export type HoldReleaseListener = (released: {
-  readonly ids: readonly string[];
+  readonly ids: readonly Id[];
   readonly reason: HoldReason;
 }) => void;
 
 /** One list's hold. Methods are synchronous and safe inside a keydown handler. */
 export interface HoldController {
   /** Start or refresh a hold pinning `ids` (the rows around the cursor); restarts the 450 ms release timer within the 1200 ms cap. */
-  begin(reason: HoldReason, ids: readonly string[]): void;
+  begin(reason: HoldReason, ids: readonly Id[]): void;
   /** Push the release back on another key, optionally adding ids; never past the cap. */
-  extend(ids?: readonly string[]): void;
+  extend(ids?: readonly Id[]): void;
   /** Release now (pointer left the list, Esc, navigation). */
   release(): void;
   /** True while held. */
   readonly isHeld: boolean;
   /** Ids to pass as `holdIds` to `useView` or `useHome`; empty when not held. Changing them sends `View/hold` or `View/release`, never a re-watch. */
-  readonly heldIds: readonly string[];
+  readonly heldIds: readonly Id[];
   /** Current reason, or null. */
   readonly reason: HoldReason | null;
   /** Subscribe to releases; returns an unsubscribe function. */
@@ -413,13 +425,7 @@ export function useHold(scope: string): HoldController {
 // Prefetch on intent (DESIGN 5 rule 9)
 // ---------------------------------------------------------------------------
 
-/** Handle for one prefetch request. */
-export interface PrefetchHandle {
-  /** Cancel; harmless after completion. */
-  cancel(): void;
-}
-
-/** Intent tracker for one list: applies the 80 ms focus and 120 ms hover delays and cancels the previous request on move. */
+/** Intent tracker for one list: applies the 80 ms focus and 120 ms hover delays and cancels the previous request on move (`MessageBody/prefetch {threadIds}`, then `{threadIds, cancel: true}`). */
 export interface PrefetchIntent {
   /** Keyboard focus rests on a thread (after 80 ms); `neighbours` are the rows above and below. */
   focus(threadId: ThreadId, neighbours: readonly ThreadId[]): void;
@@ -444,10 +450,10 @@ export interface BodyResult {
   readonly status: 'idle' | 'loading' | 'ready' | 'failed';
   /** True once loading passes 1.5 s: show the 12 px loading line (DESIGN 5 rule 10). */
   readonly slow: boolean;
-  /** The body when ready; html bodies then ask `api.mail.frame` for the frame URL. */
+  /** The body when ready; `bodyKind: 'html'` bodies then ask `api.mail.frame` for the frame URL. */
   readonly body: MessageBody | undefined;
   /** Set when failed. */
-  readonly error: ContractError | null;
+  readonly error: ErrorBody | null;
   /** Try again. */
   retry(): void;
 }
@@ -459,23 +465,27 @@ export function useMessageBody(messageId: MessageId | undefined): BodyResult {
 }
 
 // ---------------------------------------------------------------------------
-// Session, accounts, status slot, counts, setup, settings (ARCH 6.4, 9.5)
+// Session, accounts, status slot, counts, setup, settings, consent (ARCH 6.4, 9.5)
 // ---------------------------------------------------------------------------
 
-/** The session singleton; undefined until `Session/get` answers. Whether the engine is still coming or gone is `useConnection`'s job. */
+/** The session singleton (`Session/get`, re-read on a `state` frame for type `Session`); undefined until it answers. Whether the engine is still coming or gone is `useConnection`'s job. */
 export function useSession(): Session | undefined {
   return notImplemented('useSession');
 }
 
-/** The data layer's link to the engine: `connecting` until `Session/get` answers (and while reconnecting), `ready`, `unreachable` when the transport is gone and does not come back (FatalScreen "Aplos can't reach its mail engine.", DESIGN 7.15), `parked` after a `parked` frame (FatalScreen with Try again and Export diagnostics, plan 30 4.5 #3). */
+/** The data layer's link to the engine, in the contract's `DesktopEvent` `engine` vocabulary: `connecting` until `Session/get` answers (and while reconnecting), `ready`, `unreachable` when the transport is gone and does not come back (FatalScreen "Aplos can't reach its mail engine.", DESIGN 7.15), `parked` after a `parked` host event or a `desktop` engine event (FatalScreen with Try again and Export diagnostics, plan 30 4.5 #3). */
 export type ConnectionState = 'connecting' | 'ready' | 'unreachable' | 'parked';
 
 /** Connection state for the FatalScreen and the status slot. */
 export interface ConnectionView {
   /** Current state. */
   readonly state: ConnectionState;
-  /** The parked frame's sentence, or a plain transport sentence when unreachable; null otherwise. */
+  /** The engine's or main's plain sentence (`message`), or a plain transport sentence when unreachable; null otherwise. */
   readonly reason: string | null;
+  /** The copy key (`reasonCode`, e.g. `crashLoop`); null when none. */
+  readonly reasonCode: string | null;
+  /** Whether Try again can help (`canRetry`); true unless the engine said otherwise. */
+  readonly canRetry: boolean;
 }
 
 /** Whether the engine is reachable, connecting or parked. Transport details stay in `bridge.ts`. */
@@ -483,38 +493,42 @@ export function useConnection(): ConnectionView {
   return notImplemented('useConnection');
 }
 
-/** All accounts, in sidebar order, with status and `reconnectBy`. */
-export function useAccounts(): readonly AccountRow[] {
+/** All accounts (`Account/get`), in sidebar order, each with `health` (status, `reasonCode`, `reconnectBy`, `lastSyncAt`). */
+export function useAccounts(): readonly Account[] {
   return notImplemented('useAccounts');
 }
 
 /** What the status slot shows (DESIGN 7.1 table). */
 export interface StatusSlotState {
   /** The account the line is about; null when no account exists. */
-  readonly account: AccountRow | null;
-  /** The status to render. */
+  readonly account: Account | null;
+  /** The status to render (`account.health.status`). */
   readonly status: AccountStatus;
-  /** True when `account.reconnectBy` falls within 24 hours: "Gmail will ask you to reconnect tomorrow at 9:00 AM." */
+  /** The copy key for it (`account.health.reasonCode`); null while ok. The UI maps it to DESIGN 7.15 copy; provider text never reaches the screen. */
+  readonly reasonCode: ReasonCode | null;
+  /** True when `account.health.reconnectBy` falls within 24 hours: "Gmail will ask you to reconnect tomorrow at 9:00 AM." */
   readonly reconnectSoon: boolean;
-  /** True when the account is the demo account and nothing more urgent applies. */
+  /** True when the account is a demo account (`account.demo`) and nothing more urgent applies. */
   readonly demo: boolean;
 }
 
-/** The one status line for a scope, most urgent first: misconfigured, needsReauth, needsPermission, needsAdmin, error, paused, offline, reconnect soon, backfilling, syncing, starting, demo, ok. Undefined with no accounts. */
+/** The one status line for a scope, most urgent first: misconfigured, needsReauth, needsPermission, needsAdmin, error, paused, offline, reconnect soon, backfilling, syncing, starting, demo, ok. Undefined with no accounts. An unknown `state` from a newer engine counts as error. */
 export function useStatus(accountId?: AccountId): StatusSlotState | undefined {
   void accountId;
   return notImplemented('useStatus');
 }
 
-/** Sidebar counts for a scope. */
+/** Sidebar counts for a scope (`Counts/get`, re-read on a `state` frame for type `Counts`). */
 export interface CountsView {
-  /** The counts. */
-  readonly counts: Counts;
+  /** `Counts.all`, or `Counts.accounts[accountId]` for one account: `home` (Do now with Back from Later plus Important updates), `laterDue`, `drafts`, `scheduled`, `unread`, `handledToday`, ... */
+  readonly counts: CountsBlock;
+  /** `Counts.folders`: unread threads per folder id, for label rows. */
+  readonly folders: Readonly<Record<Id, Count>>;
   /** True while any account in scope is in its first sync (no `baselineDoneAt`): counts hide (DESIGN 7.1). */
   readonly hidden: boolean;
 }
 
-/** Sidebar counts: Home is Do now (with Back from Later) plus Important updates, Later is due now, Drafts; plus `handledToday` for inbox zero. */
+/** Sidebar counts for one account, or absent for All accounts. */
 export function useCounts(accountId?: AccountId): CountsView {
   void accountId;
   return notImplemented('useCounts');
@@ -522,31 +536,36 @@ export function useCounts(accountId?: AccountId): CountsView {
 
 /** Events in a range, live, for Today and Home's inbox-zero "Next: Design review at 2:00 PM" (DESIGN 7.14). */
 export interface AgendaView {
-  /** Events ordered by start, all-day first within a day. */
-  readonly events: readonly EventRow[];
-  /** loading until the first answer, then ready; failed with `error` set. */
+  /** Events ordered by start, all-day first within a day. `start` and `end` are `EventTime`s (`utc`, `date` or `floating`). */
+  readonly events: readonly Event[];
+  /** loading until the first answer, then ready; failed with `error` set (`rangeTooLarge` past 62 days). */
   readonly status: 'loading' | 'ready' | 'failed';
   /** Set when failed. */
-  readonly error: ContractError | null;
+  readonly error: ErrorBody | null;
 }
 
-/** Watch events in a range (`Event/query`, refreshed by `state` frames for type Event). The calendar grid, Event/set and Event/rsvp are additive for `ui-calendar`. */
-export function useAgenda(query: AgendaQuery): AgendaView {
-  void query;
+/** Watch events in a range: an `events` window (`View/watch {spec: {kind: 'events', from, to, calendarIds?, includeDeclined?}}`, not capped at 200 rows; `View/move {range}` to page) plus `Event/get`. The calendar grid, `Event/set` and `Event/rsvp` are additive for `ui-calendar`. */
+export function useAgenda(spec: ViewSpecOf<'events'>): AgendaView {
+  void spec;
   return notImplemented('useAgenda');
 }
 
-/** First-sync progress (`Setup/status`), live; undefined until known. */
+/** First-sync progress (`Setup/status`, re-read on a `state` frame for type `Setup`); undefined until known. */
 export function useSetupStatus(): SetupStatus | undefined {
   return notImplemented('useSetupStatus');
 }
 
-/** The settings singleton, live; undefined until known. */
+/** The settings singleton (`Settings/get`, re-read on a `state` frame for type `Settings`); undefined until known. */
 export function useSettings(): Settings | undefined {
   return notImplemented('useSettings');
 }
 
-/** The `ui` object's defaults (gap list U11): F1's documented defaults (schemas/settings.ts), what a fresh install and the stand-in engine start with. */
+/** The background-AI consent record (`Consent/get`, re-read on a `state` frame for type `Consent`); undefined until known. Consent is not a settings field: `needsReconsent` says whether the card must ask again. */
+export function useConsent(): Consent | undefined {
+  return notImplemented('useConsent');
+}
+
+/** The `ui` object's defaults: F1's documented defaults (`schemas/settings.ts` field comments), what a fresh install and the stand-in engine start with. */
 export const UI_SETTINGS_DEFAULTS: UiSettings = {
   theme: 'system',
   density: 'default',
@@ -570,19 +589,19 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
 // Push frames: streamed progress, connect flows, the engine clock
 // ---------------------------------------------------------------------------
 
-/** The fields `useFrames` can filter each frame kind by; other fields are not filterable. */
+/** The fields `useFrames` can filter each stream by; other fields are not filterable. */
 export interface FrameFilterFields {
-  /** Run progress: one run, one source ('ask', 'search'), or one Ask turn. */
+  /** Run progress: one run (`Ask/run`'s `runId`), one source ('ask', 'search'), or one Ask turn. */
   progress: 'runId' | 'source' | 'turnId';
-  /** Connect flows: one flow (`connectId` = `AccountFlow.requestId`), one account, or one mode. */
+  /** Connect flows: one flow (`Account/connect`'s `connectId`), one account, or one mode. */
   connect: 'connectId' | 'accountId' | 'mode';
   /** The clock is one stream; no filter. */
   clock: never;
 }
 
 /** Only frames whose listed fields equal these values. Compared by value, so an inline object literal never resubscribes. */
-export type FrameFilter<K extends FrameKind> = Partial<
-  Pick<FrameMap[K], FrameFilterFields[K] & keyof FrameMap[K]>
+export type FrameFilter<K extends StreamKind> = Partial<
+  Pick<StreamFrameMap[K], FrameFilterFields[K] & keyof StreamFrameMap[K]>
 >;
 
 /** Options for `useFrames`. */
@@ -591,7 +610,7 @@ export interface UseFramesOptions {
   readonly max?: number;
 }
 
-/** The matching frames of one kind. */
+/** The matching frames of one stream. */
 export interface FramesView<F> {
   /** Matching frames in arrival order: since the hook mounted, or since the run started when the filter names a live run (`runId` or `connectId`). */
   readonly frames: readonly F[];
@@ -599,12 +618,12 @@ export interface FramesView<F> {
   readonly last: F | undefined;
 }
 
-/** Subscribe to push frames of one kind (Ask `progress`, `connect` for "Waiting for Google in your browser…", `clock`; first sync is `useSetupStatus`), batched per animation frame (DESIGN 5 rule 13). Changing the filter's values restarts the buffer. */
-export function useFrames<K extends FrameKind>(
+/** Subscribe to push frames of one stream (Ask `progress`, `connect` for "Waiting for Google in your browser…", `clock`; first sync is `useSetupStatus`), batched per animation frame (DESIGN 5 rule 13). Changing the filter's values restarts the buffer. */
+export function useFrames<K extends StreamKind>(
   kind: K,
   filter?: FrameFilter<K>,
   opts?: UseFramesOptions,
-): FramesView<FrameMap[K]> {
+): FramesView<StreamFrameMap[K]> {
   void kind;
   void filter;
   void opts;
@@ -661,10 +680,10 @@ export function toIsoDateTime(ms: EpochMs): string {
  * The one renderer clock, as epoch ms truncated to the granularity. Every label that
  * depends on now (Today, the now-line, "reconnect within 24 hours", "Resuming at 2:14 PM")
  * reads this, never `Date.now()`. Source, first that applies: a clock injected with
- * `setClock`; the engine's fixture clock (`Session/get` now plus `clock` events, test
- * builds only); `Date.now()`. Props take ISO strings: convert with `toIsoDateTime` and
- * `toIsoDate`. Ticks pause while the window is hidden and catch up at
- * once when it shows again (DESIGN 5 rule 15).
+ * `setClock`; the engine's clock (`Session.now` plus `clock` host events, which only jump
+ * under a test clock); `Date.now()`. Props take ISO strings: convert with `toIsoDateTime`
+ * and `toIsoDate`. Ticks pause while the window is hidden and catch up at once when it
+ * shows again (DESIGN 5 rule 15).
  */
 export function useNow(opts: UseNowOptions): EpochMs {
   void opts;
@@ -716,7 +735,7 @@ export interface UndoHandle {
   forget(): void;
 }
 
-/** The one stack Z reads, so Z undoes the most recent change of either kind (DESIGN 5 rule 11, 7.13). `api.operation.undoLast` covers engine operations only; the shell's `app.undo` calls `undoStack.undoLast()`. */
+/** The one stack Z reads, so Z undoes the most recent change of either kind (DESIGN 5 rule 11, 7.13). The shell's `app.undo` calls `undoStack.undoLast()`. */
 export interface UndoStack {
   /** Push a local change; engine operations join by themselves. */
   push(entry: LocalUndo): UndoHandle;
@@ -739,181 +758,198 @@ export function useUndoTop(): UndoEntry | null {
 }
 
 // ---------------------------------------------------------------------------
-// The command surface
+// The command surface: the F2 typed client's methods, by the client's names
 // ---------------------------------------------------------------------------
 
-/** A started submission. */
-export interface SubmissionReceipt {
-  /** Submission id; watch it with `useRow('Submission', id)` for the UndoTray. */
-  readonly submissionId: SubmissionId;
-  /** Receipt of the queueing. */
-  readonly receipt: Receipt;
-}
+/** A command's arguments with its fresh `opId` optional: the data layer mints one when it is absent. */
+export type CommandArgs<M extends MethodName> = Omit<Input<M>, 'opId'> & {
+  readonly opId?: OpId;
+};
 
-/** An account connect or reconnect flow in the browser ("Waiting for Google in your browser…"). */
-export interface AccountFlow {
-  /** Flow id. */
-  readonly requestId: RequestId;
-  /** Resolves with the account once connected; rejects with `OperationFailedError` on refusal or cancel. */
-  readonly done: Promise<AccountRow>;
-  /** Cancel the flow (the sheet's Cancel). */
-  cancel(): void;
-}
+/** An interactive AI request's arguments with its `requestId` optional: the data layer mints one when it is absent. */
+export type RequestArgs<M extends MethodName> = Omit<Input<M>, 'requestId'> & {
+  readonly requestId?: Id;
+};
 
-/** A running Ask request with its `progress` frames. */
-export interface AskRun {
-  /** Request id. */
-  readonly requestId: RequestId;
-  /** Subscribe to frames in order; returns an unsubscribe function. Late subscribers get frames from the start. */
-  subscribe(listener: (frame: AskFrame) => void): () => void;
-  /** Resolves with the final answer; rejects with `OperationFailedError` ("Groq didn't answer."). */
-  readonly answer: Promise<AskAnswer>;
-  /** Stop the run (Esc). */
-  cancel(): void;
-}
+/** The F2 client's own call type for a method (`api.thread.act` for `Thread/act`). */
+type ResolvedCall<M extends MethodName> = M extends `${infer T}/${infer V}`
+  ? Uncapitalize<T> extends keyof ClientApi
+    ? V extends keyof ClientApi[Uncapitalize<T>]
+      ? ClientApi[Uncapitalize<T>][V] extends (...args: never[]) => unknown
+        ? ClientApi[Uncapitalize<T>][V]
+        : never
+      : never
+    : never
+  : never;
 
-/** Arguments for connecting a new account. */
-export interface ConnectRequest {
-  /** Provider; round 1 is Gmail only. */
-  readonly provider: ProviderKind;
-  /** Address typed by the owner, passed to the provider as `login_hint`. */
-  readonly loginHint?: string;
-}
+/** The client's call for `M`, with its fresh `opId` minted by the data layer when absent; same result as the client's. */
+type Command<M extends MethodName> = (args: CommandArgs<M>) => ReturnType<ResolvedCall<M>>;
 
-/** The typed command surface the screens call. Methods map one to one onto contract methods (see `CONTRACT_METHODS`); the F2 client drops in under the data layer. */
+/** The client's call for `M`, with its fresh `requestId` minted by the data layer when absent. */
+type Request<M extends MethodName> = (args: RequestArgs<M>) => ReturnType<ResolvedCall<M>>;
+
+/** `api.thread.act`'s arguments: `Thread/act` with `opId` optional, and a selector only over thread-row specs. Exactly one of `ids` and `selector`. */
+export type ThreadActArgs = Omit<Input<'Thread/act'>, 'opId' | 'selector'> & {
+  readonly opId?: OpId;
+  readonly selector?: ThreadListSelector;
+};
+
+/** `api.operation.undo`'s arguments: `opId` is the operation to undo; `undoOpId`, the inverse's id, is minted by the data layer when absent. */
+export type UndoArgs = Omit<Input<'Operation/undo'>, 'undoOpId'> & { readonly undoOpId?: OpId };
+
+/**
+ * The typed command surface the screens call. Each group and verb is the F2 client's (`api.<type>.<verb>()` for
+ * contract method `Type/verb`), and each member's type is the client's, except that the data layer mints fresh
+ * `opId`s and `requestId`s and that the two overlay methods return an `ActResult` synchronously. Reads that have a
+ * hook (`View/*`, `T/get`, `Session/get`, `Counts/get`, `Setup/status`) are not here: use the hook.
+ */
 export interface DataApi {
-  /** Thread commands. */
+  /** Threads. */
   readonly thread: {
-    /** Act on threads with the optimistic overlay applied synchronously (`Thread/act`). A selector target (a whole view or one group, past the 200-row window) overlays the rows in open windows and the group counts at once; the receipt covers every resolved row. */
-    act(target: ThreadTarget, action: ThreadAction): ActResult;
-    /** "Why it's here" for one thread. */
-    why(threadId: ThreadId): Promise<WhyItsHere>;
-    /** The follow-up nudge suggestion, or null with AI off, not consented or not ready. */
-    followup(threadId: ThreadId): Promise<FollowupSuggestion | null>;
-    /** Unsubscribe through List-Unsubscribe (`Unsubscribe/run`). */
-    unsubscribe(threadId: ThreadId): Promise<Receipt>;
+    /** `Thread/act` with the optimistic overlay applied synchronously: Done, Later, trash, read state, flag, bookmark, due date, reminder, lane, importance, reply state, Home visibility, labels. A `selector` (a whole view or one section past the 200-row window, at the `state` the owner saw) overlays the rows in open windows and the section counts at once; the receipt covers every resolved row. Undoable: joins the undo stack. */
+    act(args: ThreadActArgs): ActResult;
+    /** `Thread/why`: "Why it's here". */
+    readonly why: ClientApi['thread']['why'];
   };
-  /** Operation commands. */
+  /** Operations. */
   readonly operation: {
-    /** Undo by applying the inverse operation (`Operation/undo`); the overlay applies at once. */
-    undo(opId: OpId): ActResult;
-    /** Undo the most recent undoable operation (Z); null when there is none. */
-    undoLast(): ActResult | null;
+    /** `Operation/undo`: cancel while held (`undoUntil`), else an inverse operation; the overlay applies at once. The receipt's `opId` is the inverse's. */
+    undo(args: UndoArgs): ActResult;
+    /** `Operation/retry`: the inline Retry after a rejected write. */
+    readonly retry: ClientApi['operation']['retry'];
   };
-  /** Sending (undo-send and send-later are one mechanism, ARCH 7.2). */
+  /** Sending (`Submission/set`; undo-send and send later are one `notBefore` mechanism, ARCH 7.2). */
   readonly submission: {
-    /** Send after the undo window; `{markDone: true}` is ⌘⇧Return (one operation, one notice). */
-    send(draftId: DraftId, opts?: SendOptions): Promise<SubmissionReceipt>;
-    /** Schedule a send; `opts` as for `send`. */
-    sendLater(draftId: DraftId, at: EpochMs, opts?: SendOptions): Promise<SubmissionReceipt>;
-    /** Undo before `notBefore`; the draft comes back. */
-    undo(submissionId: SubmissionId): Promise<Receipt>;
-    /** Send now: skip the undo window, "Send now" on suspended, "Send anyway" on uncertain, "Try again" on failed. */
-    sendNow(submissionId: SubmissionId): Promise<Receipt>;
-    /** Reschedule a queued or suspended send. */
-    reschedule(submissionId: SubmissionId, at: EpochMs): Promise<Receipt>;
+    /** One intent per call: `send` (after the undo window, or at `notBefore` for send later; `alsoDone` is ⌘⇧Return, one operation and one notice), `undo`, `sendNow`, `reschedule`, `sendAnyway` (uncertain), `retry` (failed). Watch the result's submission with `useRow('Submission', id)`. */
+    readonly set: Command<'Submission/set'>;
   };
-  /** Drafts (compare-and-set by revision, ARCH 7.4). */
+  /** Drafts (compare-and-set by `revision`, ARCH 7.4). */
   readonly draft: {
-    /** Save; rejects with `stateMismatch` on a stale base revision. */
-    save(input: DraftInput): Promise<DraftSaveResult>;
-    /** Discard a draft. */
-    discard(draftId: DraftId): Promise<Receipt>;
-    /** Resolve "This draft changed on another device." */
-    resolveConflict(
-      draftId: DraftId,
-      choice: 'keepMine' | 'takeTheirs' | 'keepBoth',
-    ): Promise<Receipt>;
+    /** `Draft/set`: create (no `id`) or save with `baseRevision`; rejects with `stateMismatch` on a stale base. `fields.mode` and `replyToMessageId` say reply, reply all or forward; forward copies attachments through `DraftAttachment.source`. */
+    readonly set: Command<'Draft/set'>;
+    /** `Draft/destroy`: discard; refused while it is sending. */
+    readonly destroy: Command<'Draft/destroy'>;
+    /** `Draft/resolve`: "This draft changed on another device." keep mine, take theirs, or keep both. */
+    readonly resolve: Command<'Draft/resolve'>;
   };
   /** Message bodies. */
-  readonly body: {
-    /** One body. */
-    get(messageId: MessageId): Promise<MessageBody>;
-    /** Warm the engine's LRU of 12 rendered bodies for these threads (thread-granular, ARCH AM-1: list rows carry thread ids, not message ids); cancel on move. */
-    prefetch(threadIds: readonly ThreadId[]): PrefetchHandle;
+  readonly messageBody: {
+    /** `MessageBody/get`: one body (prefer `useMessageBody` in components). */
+    readonly get: ClientApi['messageBody']['get'];
+    /** `MessageBody/prefetch`: warm the engine's body LRU by thread (ARCH AM-1) or message; `cancel: true` cancels. Prefer `usePrefetchIntent`. */
+    readonly prefetch: ClientApi['messageBody']['prefetch'];
   };
-  /** The sandboxed mail frame (ARCH 10). */
+  /** The sealed mail frame (ARCH 10). */
   readonly mail: {
-    /** A single-render frame URL plus host-chrome facts. */
-    frame(req: MailFrameRequest): Promise<MailFrameRef>;
-    /** Free a frame token when the reader replaces it. */
-    releaseFrame(url: string): Promise<void>;
-    /** "Load images from this sender": adds the address to `Settings.mail.imageAllowSenders` (no read-modify-write race); re-request the frame afterwards. Removal is a `settings.set` of the list. */
-    allowImagesFrom(address: string): Promise<Receipt>;
+    /** `Mail/frame`: a single-render frame URL plus host-chrome facts; `imagePolicy: 'block' | 'load'`, `quotesOpen`. The engine applies `mail.imageAllowList`. */
+    readonly frame: ClientApi['mail']['frame'];
+    /** `Mail/release`: free a frame token when the reader replaces it. */
+    readonly release: ClientApi['mail']['release'];
+    /** `Mail/toggleQuotes`: O in the reader; returns the re-rendered frame. */
+    readonly toggleQuotes: ClientApi['mail']['toggleQuotes'];
+    /** `Mail/allowImages`: "Load images from this sender" (an address or `@domain`), or remove it; re-request the frame afterwards. */
+    readonly allowImages: Command<'Mail/allowImages'>;
   };
-  /** Attachments over the blob route (never base64). */
+  /** Attachments. */
   readonly attachment: {
-    /** Fetch the bytes. */
-    get(attachmentId: AttachmentId): Promise<Blob>;
-    /** Upload a file for a draft (Attach a file, ⌘⇧A, DESIGN 7.6); bytes move as a transferable or the blob route, never base64; over 25 MB rejects with `invalidArguments`. Put the returned id in `DraftInput.attachments`. */
-    put(data: Blob | ArrayBuffer, name: string, mime: string): Promise<AttachmentRef>;
+    /** `Attachment/get`: makes the bytes available as a blob; then `api.blob.get`. */
+    readonly get: ClientApi['attachment']['get'];
+  };
+  /** Bytes, both ways, never base64: a transferable `Uint8Array` on MessagePort, a blob route over HTTP. */
+  readonly blob: {
+    /** `Blob/put`: upload (Attach a file, ⌘⇧A; dictation audio), 25 MB at most; pass the buffer in `options.transfer`. Put the `blobId` in a `DraftAttachment` or `Ai/transcribe`. */
+    readonly put: ClientApi['blob']['put'];
+    /** `Blob/get`: read a blob's bytes. */
+    readonly get: ClientApi['blob']['get'];
   };
   /** Sync control. */
   readonly sync: {
-    /** "Retry now" on a pause, or a manual refresh; absent account means all. */
-    request(accountId?: AccountId): Promise<void>;
+    /** `Sync/request`: a manual refresh; `force` is "Retry now" on a throttle pause (once per pause). */
+    readonly request: ClientApi['sync']['request'];
   };
-  /** Accounts. */
+  /** Accounts. Flows return a `connectId` at once and report through `connect` frames (`useFrames('connect', {connectId})`). */
   readonly account: {
-    /** Connect a new account (onboarding, Settings → Add account). */
-    connect(req: ConnectRequest): AccountFlow;
-    /** Weekly reconnect with `login_hint`; no resync, queued changes kept (roadmap N3). */
-    reconnect(accountId: AccountId): AccountFlow;
-    /** Cancel a flow by id when its `AccountFlow` handle is gone (a reopened sheet found it with `useFrames('connect', {accountId})`); resolves false when it already ended. */
-    cancelConnect(requestId: RequestId): Promise<boolean>;
-    /** "Use this account's mail for AI" (ARCH 8.3, plan 30 8.1 item 6). */
-    setAiAllowed(accountId: AccountId, allowed: boolean): Promise<Receipt>;
+    /** `Account/connect`: connect a new account (onboarding, Settings → Add account). */
+    readonly connect: ClientApi['account']['connect'];
+    /** `Account/reconnect`: the weekly reconnect, with `login_hint`; no resync, queued changes kept (roadmap N3). */
+    readonly reconnect: ClientApi['account']['reconnect'];
+    /** `Account/grantPermissions`: full re-consent for missing scopes (`needsPermission`). */
+    readonly grantPermissions: ClientApi['account']['grantPermissions'];
+    /** `Account/cancelConnect`: the sheet's Cancel; a late answer is then ignored. */
+    readonly cancelConnect: ClientApi['account']['cancelConnect'];
+    /** `Account/set`: name, colour, notifications, and "Use this account's mail for AI" (`aiAllowed`). */
+    readonly set: Command<'Account/set'>;
   };
   /** First-sync session (`Setup/*`); the UI calls `end` on every window close. */
   readonly setup: {
-    /** Begin a setup session. */
-    begin(): Promise<void>;
-    /** End it; idempotent. */
-    end(): Promise<void>;
-    /** First sync's "Try again" for one account (`notConnected`, `failed` or `partial`, DESIGN 7.12); idempotent, resumes from the checkpoint. */
-    retry(accountId: AccountId): Promise<void>;
+    /** `Setup/begin {origin}` → `{setupId}`. */
+    readonly begin: ClientApi['setup']['begin'];
+    /** `Setup/end {setupId?, reason}`; idempotent. */
+    readonly end: ClientApi['setup']['end'];
+    /** `Setup/retry`: first sync's "Try again" for one account (DESIGN 7.12); idempotent, resumes from the checkpoint. */
+    readonly retry: ClientApi['setup']['retry'];
   };
   /** Demo mail on request (plan 30 8.1 item 11). */
   readonly demo: {
-    /** Load demo mail. */
-    load(): Promise<Receipt>;
-    /** Reset demo mail. */
-    reset(): Promise<Receipt>;
-    /** Remove demo mail. */
-    remove(): Promise<Receipt>;
+    /** `Demo/load`. */
+    readonly load: ClientApi['demo']['load'];
+    /** `Demo/reset`. */
+    readonly reset: ClientApi['demo']['reset'];
+    /** `Demo/remove`. */
+    readonly remove: ClientApi['demo']['remove'];
   };
   /** Settings. */
   readonly settings: {
-    /** Read the singleton (prefer `useSettings` in components). */
-    get(): Promise<Settings>;
-    /** Change fields. */
-    set(patch: SettingsPatch): Promise<Receipt>;
+    /** `Settings/get` (prefer `useSettings` in components). */
+    readonly get: ClientApi['settings']['get'];
+    /** `Settings/set`: a patch per section; object-valued fields (`dock`, `keymap`, `palette`, `calendar`, `features`) are replaced whole; `ifInState` makes it compare-and-set. */
+    readonly set: Command<'Settings/set'>;
   };
-  /** Ask (DESIGN 7.7). */
+  /** Ask (DESIGN 7.7). Progress streams as `progress` frames (`useFrames('progress', {runId})`); the answer lands in the `Conversation`. */
   readonly ask: {
-    /** Run a question; frames stream through the returned handle. */
-    run(req: AskRequest): AskRun;
+    /** `Ask/run` → `{runId, conversationId}` at once. `scope.searchAllMail` is ⌘Return. */
+    readonly run: ClientApi['ask']['run'];
+    /** `Ask/cancel`: Esc; the partial answer is kept and the turn says `stopped`. */
+    readonly cancel: ClientApi['ask']['cancel'];
   };
   /** Interactive AI. */
   readonly ai: {
-    /** Draft, polish or re-summarise. */
-    request<R extends AiRequest>(req: R): Promise<Extract<AiResult, { kind: R['kind'] }>>;
-    /** Speech to text; audio moves as a transferable buffer or blob, never base64. */
-    transcribe(audio: Blob | ArrayBuffer, mime: string): Promise<Transcript>;
-    /** Record Allow on the consent card (or null to revoke in Settings); "Not now" records nothing. */
-    setConsent(grant: AiConsentGrant): Promise<Receipt>;
+    /** `Ai/request`: queue a summary (or classify, plan, suggest action) for a thread; the result arrives as a row change. */
+    readonly request: Command<'Ai/request'>;
+    /** `Ai/draft`: write a draft or reply from an instruction, as a suggestion at the caret. */
+    readonly draft: Request<'Ai/draft'>;
+    /** `Ai/polish`: suggested edits to a draft's html, never applied by themselves; the composer diffs `html` against its own. */
+    readonly polish: Request<'Ai/polish'>;
+    /** `Ai/transcribe`: speech to text from a blob uploaded with `api.blob.put`. */
+    readonly transcribe: Request<'Ai/transcribe'>;
+    /** `Ai/followup`: the Follow up nudge for a thread, absent with AI off, without consent or not ready (`ThreadRow.follow.suggestion` says one is ready). */
+    readonly followup: ClientApi['ai']['followup'];
   };
-  /** The engine process, through main (it works when the engine cannot answer). */
+  /** Unsubscribe. */
+  readonly unsubscribe: {
+    /** `Unsubscribe/run`: one-click or mailto where offered, else `outcome: 'openLink'` with an https link to review. */
+    readonly run: Command<'Unsubscribe/run'>;
+  };
+  /** Background-AI consent (ARCH 8.3); the record is `Consent`, not a settings field. */
+  readonly consent: {
+    /** `Consent/get` (prefer `useConsent` in components). */
+    readonly get: ClientApi['consent']['get'];
+    /** `Consent/grant`: Allow on the consent card, naming the version, provider and model shown. "Not now" records nothing. */
+    readonly grant: ClientApi['consent']['grant'];
+    /** `Consent/revoke`: Settings → AI; background AI stops. */
+    readonly revoke: ClientApi['consent']['revoke'];
+  };
+  /** The engine process, through main (it answers when the engine cannot). */
   readonly engine: {
-    /** "Restart engine" on the unreachable FatalScreen and "Try again" when parked; resolves once the restart begins, and `useConnection` reports the outcome. */
-    restart(): Promise<void>;
+    /** `Engine/restart`: "Restart engine" on the unreachable FatalScreen and "Try again" when parked; `useConnection` reports the outcome. */
+    readonly restart: ClientApi['engine']['restart'];
   };
   /** The content-free diagnostics bundle (ARCH 11). */
   readonly diagnostics: {
-    /** The bundle text for the preview Dialog (Help → Export diagnostics). */
-    preview(): Promise<DiagnosticsPreview>;
-    /** "Copy diagnostics": copies the bundle to the clipboard; when the engine is unreachable or parked, main builds a host-only bundle instead. */
-    copy(): Promise<void>;
+    /** `Diagnostics/preview`: the `DiagnosticsBundle` for the preview Dialog; the renderer formats it. */
+    readonly preview: ClientApi['diagnostics']['preview'];
+    /** `Diagnostics/copy` (main): copies the engine's bundle, or main's host-only one when the engine is unreachable or parked. */
+    readonly copy: ClientApi['diagnostics']['copy'];
   };
 }
 
@@ -922,301 +958,218 @@ export type ApiMethodName = {
   [G in keyof DataApi]: `${G & string}.${keyof DataApi[G] & string}`;
 }[keyof DataApi];
 
-/** How a method reaches the engine: a plain call, a call wrapped by the optimistic overlay, a streamed call, data-layer only, or a native method served by main. */
-export type ContractCallKind = 'call' | 'overlay' | 'stream' | 'local' | 'native';
+/** The contract method an `api` method calls: `thread.act` → `Thread/act`. Never when the contract has no such method, so a renamed or removed method fails the typecheck. */
+export type ContractMethodOf<N extends ApiMethodName> = N extends `${infer G}.${infer V}`
+  ? `${Capitalize<G>}/${V}` extends MethodName
+    ? `${Capitalize<G>}/${V}`
+    : never
+  : never;
 
-/** One row of the method mapping the F2 client must satisfy. */
-export interface ContractMethodRef {
-  /** Contract wire method (for example `Thread/act`), or the blob route for binary data. */
-  readonly method: string;
-  /** How it is called. */
-  readonly kind: ContractCallKind;
-  /** `planned`: named in plan 10 or ARCH; `ask`: this surface asks F1 to add or confirm it. */
-  readonly source: 'planned' | 'ask';
-  /** Arguments or notes the contract must support. */
-  readonly needs: string;
+/** How a method reaches the engine: a plain call, a call wrapped by the optimistic overlay, a call that returns an id and streams frames, or a desktop method served by main. */
+export type ContractCallKind = 'call' | 'overlay' | 'stream' | 'native';
+
+/** One row of the mapping table: `api` method → contract method. */
+export interface ContractMethodRef<N extends ApiMethodName = ApiMethodName> {
+  /** The contract method, `Type/verb`; checked against the registry at compile time. */
+  readonly method: ContractMethodOf<N>;
+  /** How it is called; `native` exactly when the contract's host is main (`DesktopMethodName`). */
+  readonly kind: ContractMethodOf<N> extends DesktopMethodName
+    ? 'native'
+    : Exclude<ContractCallKind, 'native'>;
+  /** The GAPS.md rows (`packages/contract/GAPS.md`) that settled what this surface asked of the method; empty when it asked nothing. */
+  readonly gaps: readonly string[];
+  /** What the data layer adds or relies on. */
+  readonly notes: string;
 }
 
-/** The expected mapping from `api` method to contract method, checked complete at compile time. The freeze reviewer checks F1 against it. */
+/** The mapping from `api` method to contract method, checked complete and correct at compile time. */
 export const CONTRACT_METHODS = {
   'thread.act': {
     method: 'Thread/act',
     kind: 'overlay',
-    source: 'planned',
-    needs:
-      '{opId, ids | query: {spec, group?, atState}, action}; every ThreadAction kind incl. setLane; returns receipt {opId, appliedState, appliedSeq}; ask: query targets and setLane',
+    gaps: ['F9-1', 'F9-2', 'F9-3'],
+    notes:
+      'overlay applied before return; opId minted; ids or a thread-row selector {spec, section?, atState}; joins the undo stack',
   },
-  'thread.why': {
-    method: 'Thread/why',
-    kind: 'call',
-    source: 'ask',
-    needs: '{threadId} -> {sentence, quote, rankSource}',
-  },
-  'thread.followup': {
-    method: 'Thread/followup',
-    kind: 'call',
-    source: 'ask',
-    needs: '{threadId} -> {threadId, text} | null; eng-ai followup job output',
-  },
-  'thread.unsubscribe': {
-    method: 'Unsubscribe/run',
-    kind: 'call',
-    source: 'planned',
-    needs: '{threadId} -> receipt',
-  },
+  'thread.why': { method: 'Thread/why', kind: 'call', gaps: ['F9-4'], notes: '' },
   'operation.undo': {
     method: 'Operation/undo',
     kind: 'overlay',
-    source: 'planned',
-    needs: '{opId} -> receipt whose opId is the inverse operation',
+    gaps: ['F9-7'],
+    notes: 'undoOpId minted; the receipt is the inverse operation',
   },
-  'operation.undoLast': {
-    method: 'Operation/undo',
-    kind: 'local',
-    source: 'planned',
-    needs: 'data layer tracks the last undoable opId',
+  'operation.retry': {
+    method: 'Operation/retry',
+    kind: 'call',
+    gaps: [],
+    notes: 'RowFailure.retry and OperationView.retry; the overlay re-applies',
   },
-  'submission.send': {
+  'submission.set': {
     method: 'Submission/set',
     kind: 'call',
-    source: 'planned',
-    needs:
-      '{action: send, draftId, markDone?} -> {submissionId, receipt}; notBefore = now + undoSeconds; row has queuedAt; ask: markDone in the same operation',
+    gaps: ['F9-8', 'F9-9'],
+    notes: 'opId minted; one SubmissionAction per intent; Submission.queuedAt drives the drain bar',
   },
-  'submission.sendLater': {
-    method: 'Submission/set',
-    kind: 'call',
-    source: 'planned',
-    needs: '{action: send, draftId, notBefore, markDone?}',
-  },
-  'submission.undo': {
-    method: 'Submission/set',
-    kind: 'call',
-    source: 'planned',
-    needs: '{action: undo, submissionId}',
-  },
-  'submission.sendNow': {
-    method: 'Submission/set',
-    kind: 'call',
-    source: 'ask',
-    needs: '{action: sendNow, submissionId}; valid for queued, suspended, uncertain, failed',
-  },
-  'submission.reschedule': {
-    method: 'Submission/set',
-    kind: 'call',
-    source: 'ask',
-    needs: '{action: reschedule, submissionId, notBefore}',
-  },
-  'draft.save': {
+  'draft.set': {
     method: 'Draft/set',
     kind: 'call',
-    source: 'planned',
-    needs:
-      'create or update with baseRevision (ifInState); stateMismatch on conflict; ask: source {messageId, mode} on create, forward copies attachments',
+    gaps: ['F9-10', 'F9-40'],
+    notes: 'opId minted; compare-and-set on baseRevision',
   },
-  'draft.discard': { method: 'Draft/set', kind: 'call', source: 'planned', needs: 'destroy' },
-  'draft.resolveConflict': {
-    method: 'Draft/set',
+  'draft.destroy': { method: 'Draft/destroy', kind: 'call', gaps: [], notes: 'opId minted' },
+  'draft.resolve': {
+    method: 'Draft/resolve',
     kind: 'call',
-    source: 'ask',
-    needs:
-      '{draftId, resolve: keepMine|takeTheirs|keepBoth}; Draft/changed frame sets changedElsewhere',
+    gaps: ['F9-11'],
+    notes: 'opId minted; the Draft/changed frame sets Draft.conflict',
   },
-  'body.get': {
-    method: 'MessageBody/get',
-    kind: 'call',
-    source: 'planned',
-    needs: '{messageId} -> {bodyKind, text, quotedRanges}',
-  },
-  'body.prefetch': {
+  'messageBody.get': { method: 'MessageBody/get', kind: 'call', gaps: [], notes: '' },
+  'messageBody.prefetch': {
     method: 'MessageBody/prefetch',
     kind: 'call',
-    source: 'ask',
-    needs:
-      '{threadIds} (thread-granular, ARCH AM-1) with cancel (a requestId, or a second call with an empty list)',
+    gaps: ['F9-12'],
+    notes: 'usePrefetchIntent applies the delays and cancels with {cancel: true}',
   },
-  'mail.frame': {
-    method: 'Mail/frame',
+  'mail.frame': { method: 'Mail/frame', kind: 'call', gaps: ['F9-13'], notes: '' },
+  'mail.release': { method: 'Mail/release', kind: 'call', gaps: [], notes: '' },
+  'mail.toggleQuotes': { method: 'Mail/toggleQuotes', kind: 'call', gaps: ['F9-13'], notes: '' },
+  'mail.allowImages': {
+    method: 'Mail/allowImages',
     kind: 'call',
-    source: 'planned',
-    needs:
-      '{messageId, imagePolicy, findQuery, showQuotes?} -> {url, expiresAt, bodyKind, trackersRemoved, hasRemoteImages, quotedCount}; honours imageAllowSenders; srcdoc from the stand-in only',
+    gaps: ['F9-14'],
+    notes: 'opId minted',
   },
-  'mail.releaseFrame': {
-    method: 'Mail/frame.release',
+  'attachment.get': { method: 'Attachment/get', kind: 'call', gaps: [], notes: 'then blob.get' },
+  'blob.put': {
+    method: 'Blob/put',
     kind: 'call',
-    source: 'planned',
-    needs: '{url}',
+    gaps: ['F9-15', 'F9-22'],
+    notes: 'transferable Uint8Array, never base64',
   },
-  'mail.allowImagesFrom': {
-    method: 'Mail/allowImagesFrom',
-    kind: 'call',
-    source: 'ask',
-    needs:
-      "{address} -> receipt; appends to Settings.mail.imageAllowSenders (name is eng-contract's call)",
-  },
-  'attachment.get': {
-    method: 'GET /v1/blob/:id',
-    kind: 'call',
-    source: 'planned',
-    needs: 'transferable ArrayBuffer on MessagePort, blob route on HTTP; never base64',
-  },
-  'attachment.put': {
-    method: 'Blob/put (PUT /v1/blob)',
-    kind: 'call',
-    source: 'ask',
-    needs:
-      '{data, name, mime} -> AttachmentRef {id, name, mime, size, state}; 25 MB cap; transferable on MessagePort; never base64',
-  },
-  'sync.request': {
-    method: 'Sync/request',
-    kind: 'call',
-    source: 'planned',
-    needs: '{accountId?}; also clears a throttle pause for Retry now',
-  },
+  'blob.get': { method: 'Blob/get', kind: 'call', gaps: [], notes: '' },
+  'sync.request': { method: 'Sync/request', kind: 'call', gaps: ['F9-16'], notes: '' },
   'account.connect': {
     method: 'Account/connect',
     kind: 'stream',
-    source: 'planned',
-    needs: '{provider, loginHint?} -> requestId; progress frames; cancel',
+    gaps: ['F9-17'],
+    notes: 'connectId, then connect frames',
   },
   'account.reconnect': {
     method: 'Account/reconnect',
     kind: 'stream',
-    source: 'planned',
-    needs: '{accountId} with login_hint, no resync, queued changes kept; cancel',
+    gaps: ['F9-17'],
+    notes: 'connectId, then connect frames',
+  },
+  'account.grantPermissions': {
+    method: 'Account/grantPermissions',
+    kind: 'stream',
+    gaps: [],
+    notes: "the reconnect sheet's 'grant' mode; connectId, then connect frames",
   },
   'account.cancelConnect': {
     method: 'Account/cancelConnect',
     kind: 'call',
-    source: 'planned',
-    needs: '{connectId} -> {cancelled}; a late answer is then ignored (F1 f1-gaps)',
+    gaps: ['F9-17'],
+    notes: '',
   },
-  'account.setAiAllowed': {
-    method: 'Account/set',
-    kind: 'call',
-    source: 'ask',
-    needs:
-      "{accountId, aiAllowed} -> receipt; plan 10 freeze row 6 names per-account aiAllowed, the verb is eng-contract's call",
-  },
-  'setup.begin': { method: 'Setup/begin', kind: 'call', source: 'planned', needs: '{}' },
-  'setup.end': { method: 'Setup/end', kind: 'call', source: 'planned', needs: '{}; idempotent' },
-  'setup.retry': {
-    method: 'Setup/retry',
-    kind: 'call',
-    source: 'ask',
-    needs: "{accountId}; idempotent, resumes from the checkpoint (F5); name is eng-contract's call",
-  },
-  'demo.load': {
-    method: 'Demo/load',
-    kind: 'call',
-    source: 'planned',
-    needs: 'idempotent; demo accounts only',
-  },
-  'demo.reset': {
-    method: 'Demo/reset',
-    kind: 'call',
-    source: 'planned',
-    needs: 'idempotent; demo accounts only',
-  },
-  'demo.remove': {
-    method: 'Demo/remove',
-    kind: 'call',
-    source: 'planned',
-    needs: 'idempotent; demo accounts only',
-  },
-  'settings.get': {
-    method: 'Settings/get',
-    kind: 'call',
-    source: 'planned',
-    needs: 'Settings with the ui object',
-  },
+  'account.set': { method: 'Account/set', kind: 'call', gaps: ['F9-18'], notes: 'opId minted' },
+  'setup.begin': { method: 'Setup/begin', kind: 'call', gaps: [], notes: '' },
+  'setup.end': { method: 'Setup/end', kind: 'call', gaps: [], notes: 'idempotent' },
+  'setup.retry': { method: 'Setup/retry', kind: 'call', gaps: ['F9-19'], notes: '' },
+  'demo.load': { method: 'Demo/load', kind: 'call', gaps: [], notes: '' },
+  'demo.reset': { method: 'Demo/reset', kind: 'call', gaps: [], notes: '' },
+  'demo.remove': { method: 'Demo/remove', kind: 'call', gaps: [], notes: '' },
+  'settings.get': { method: 'Settings/get', kind: 'call', gaps: ['F9-41'], notes: '' },
   'settings.set': {
     method: 'Settings/set',
     kind: 'call',
-    source: 'planned',
-    needs:
-      'per section, the fields given replace those fields; object-valued fields (dock, keymap, palette, calendar) are replaced whole -> receipt',
+    gaps: ['F9-41', 'F9-42'],
+    notes: 'opId minted; object-valued fields replaced whole',
   },
   'ask.run': {
     method: 'Ask/run',
     kind: 'stream',
-    source: 'planned',
-    needs:
-      'progress frames step {id, text, state, count?}|text|citation (message {n, messageId, threadId, quote, fromName?, date?, subject?} or event {n, eventId, title, start})|proposal|done|error; cancel',
+    gaps: ['F9-20'],
+    notes: 'runId, then progress frames; the turn lands in the Conversation',
   },
+  'ask.cancel': { method: 'Ask/cancel', kind: 'call', gaps: [], notes: '' },
   'ai.request': {
     method: 'Ai/request',
     kind: 'call',
-    source: 'planned',
-    needs: 'kinds draft, polish, summary',
+    gaps: ['F9-21'],
+    notes: 'opId minted; kind summary re-summarises',
+  },
+  'ai.draft': { method: 'Ai/draft', kind: 'call', gaps: ['F9-21'], notes: 'requestId minted' },
+  'ai.polish': {
+    method: 'Ai/polish',
+    kind: 'call',
+    gaps: ['F9-21'],
+    notes: 'requestId minted; html plus a change count (change ranges rejected)',
   },
   'ai.transcribe': {
-    method: 'Blob/put + Ai/request',
+    method: 'Ai/transcribe',
     kind: 'call',
-    source: 'ask',
-    needs: 'audio as a transferable buffer, then {kind: transcribe, blobId} -> {text}',
+    gaps: ['F9-22'],
+    notes: 'requestId minted; audio from blob.put',
   },
-  'ai.setConsent': {
-    method: 'Consent/set',
+  'ai.followup': { method: 'Ai/followup', kind: 'call', gaps: ['F9-5'], notes: '' },
+  'unsubscribe.run': {
+    method: 'Unsubscribe/run',
     kind: 'call',
-    source: 'planned',
-    needs:
-      "{providerId, model, version} | null -> receipt; Settings.ai.consent and consentVersion carry the record (plan 10 freeze row 6 Consent/*; the verb is eng-contract's call)",
+    gaps: ['F9-6'],
+    notes: 'opId minted',
   },
-  'engine.restart': {
-    method: 'native engine.restart (main native-methods.ts)',
-    kind: 'native',
-    source: 'ask',
-    needs: 'restarts or un-parks the engine utilityProcess; works when the engine cannot answer',
-  },
+  'consent.get': { method: 'Consent/get', kind: 'call', gaps: ['F9-23', 'F9-43'], notes: '' },
+  'consent.grant': { method: 'Consent/grant', kind: 'call', gaps: ['F9-23'], notes: '' },
+  'consent.revoke': { method: 'Consent/revoke', kind: 'call', gaps: ['F9-23'], notes: '' },
+  'engine.restart': { method: 'Engine/restart', kind: 'native', gaps: ['F9-24'], notes: '' },
   'diagnostics.preview': {
     method: 'Diagnostics/preview',
     kind: 'call',
-    source: 'planned',
-    needs: '{} -> {text, generatedAt}; content-free',
+    gaps: ['F9-26'],
+    notes: 'the renderer formats the bundle',
   },
   'diagnostics.copy': {
-    method: 'Diagnostics/preview, native fallback through main',
+    method: 'Diagnostics/copy',
     kind: 'native',
-    source: 'ask',
-    needs:
-      'clipboard write of the bundle; main builds a host-only bundle when the engine is unreachable or parked',
+    gaps: ['F9-25'],
+    notes: '',
   },
-} as const satisfies Record<ApiMethodName, ContractMethodRef>;
+} as const satisfies { readonly [N in ApiMethodName]: ContractMethodRef<N> };
 
-/** What the hooks need from the contract besides `api`, for the freeze reviewer. */
+/** What the hooks read from the contract, with the GAPS.md rows that settled each ask. */
 export const CONTRACT_HOOK_NEEDS = {
   useView:
-    'View/watch {spec, holdIds?} -> window {windowId, state, seq, ids, total, changed, offset, groups}; View/move {windowId, anchor}; View/unwatch; reset frame; a failed window carries a ContractError; drafts spec yields Draft rows; Thread/get, Message/get and Draft/get for unknown or changed ids',
+    'View/watch {spec, holdIds?, anchor?, limit?} -> WindowBody {windowId, state, rowType, ids, position, total, changed?, sections, held?, error?}; View/move, View/unwatch; window and reset frames; T/get for unknown or changed ids (F9-27, F9-28, F9-29, F9-30, F9-44)',
   useHome:
-    'home spec with groups do, fromLater, update, follow; home.low spec with groups by sender (label = name)',
-  useRow: 'T/get {ids} -> {state, list, notFound}; state frames per type',
-  useRowState: 'as useRow; notFound ids and destroyed rows report notFound',
-  useOperation: 'receipts; Operation rows in state frames for remote progress',
+    'home window sections do, fromLater, update, low (count and senders, no ids), follow; the lowSenders window total for "and N more" (F9-30, F9-39)',
+  useRow:
+    'Thread/get, Message/get, Draft/get, Submission/get, Event/get, Plan/get, Conversation/get, SenderGroup/get, Account/get {ids}, Operation/get {opIds} -> {list, notFound}; state frames per type',
+  useRowState: 'as useRow; ids in notFound and destroyed rows report notFound',
+  useOperation:
+    'Receipt {opId, appliedState, undoUntil?, undoable?}; operation frames carry the Operation (F9-27, F9-32)',
   useHold:
-    'View/hold {windowId, ids}, View/release {windowId} and an activity ping on the open window (holds expire about 2 s after the last activity); never a re-watch',
-  usePrefetchIntent: 'MessageBody/prefetch {threadIds} with cancel',
+    'View/hold {windowId, ids} (repeating it is the activity ping), View/release {windowId, ids?}; never a re-watch (F9-31)',
+  usePrefetchIntent: 'MessageBody/prefetch {threadIds, cancel?} (F9-12)',
   useMessageBody: 'MessageBody/get',
-  useSession:
-    'Session/get {apiVersion, appVersion, schemaVersion, dbEpoch, capabilities, hasAccounts}',
+  useSession: 'Session/get; state frames for type Session (F9-33)',
   useConnection:
-    'the parked push frame {reason, since}, sent by main when the engine cannot; transport state from bridge.ts',
+    'host event parked {reasonCode, message, canRetry, at}; desktop event engine {state, reasonCode?, message?, canRetry?, at} from main when the engine cannot answer (F9-34)',
   useAccounts:
-    'Account/get and state frames; status per ARCH 6.4; reconnectBy, baselineDoneAt, isDemo',
-  useStatus: 'as useAccounts',
+    'Account/get; Account.health {status, reasonCode?, reconnectBy?, lastSyncAt?}, demo, baselineDoneAt, pendingChanges, colorTag (F9-35)',
+  useStatus: 'as useAccounts; copy from health.reasonCode, never provider text (F9-35, F9-38)',
   useCounts:
-    'Counts singleton {unread, home, laterDue, drafts, handledToday} per scope, in state frames; home includes Back from Later',
-  useAgenda: 'Event/query {from, to, calendarIds?} -> EventRow[]; state frames for type Event',
-  useSetupStatus: 'Setup/status per plan 10 4.1, pushed while setup runs',
-  useSettings:
-    'Settings/get and state frames; Settings.ui per F1 UiSettings (theme, density, keyHints, singleKeys, holdMs, dock, keymap, sidebarMinimised, swipe, swipeDirection, zen, sendSound, devDetails, lastAccount, palette.recents, calendar.weekStart)',
+    'Counts/get {all, accounts, folders}; CountsBlock.handledToday; state frames for type Counts; hiding from baselineDoneAt (F9-36)',
+  useAgenda:
+    'events window {kind: events, from, to, calendarIds?, includeDeclined?} (62 days at most) and Event/get (F9-37)',
+  useSetupStatus: 'Setup/status; state frames for type Setup',
+  useSettings: 'Settings/get; state frames for type Settings; Settings.ui (F9-41, UI-1 to UI-13)',
+  useConsent: 'Consent/get; state frames for type Consent (F9-23, F9-43)',
   useFrames:
-    'F1 push frames progress {runId, source, kind, step, delta, turnId, citation, proposal, problem}, connect {connectId, mode, state, accountId?, reasonCode?} and the host frame clock event {type: clock, now}; a live run replays from its start',
-  useNow:
-    'Session/get.now and the host clock event when the fixture sets the clock (test builds only, APLOS_NOW); Date.now() otherwise',
+    'progress {runId, source, kind, step?, delta?, turnId?, citation?, proposal?, problem?} (F9-20), connect {connectId, mode, state, accountId?, reasonCode?} (F9-17) and the host clock event; a live run replays from its start (renderer-side, U8)',
+  useNow: 'Session.now and the host clock event (E3); Date.now() otherwise',
   useUndoTop:
-    'none beyond Operation/undo and OperationView.undoable; local entries never reach the engine',
+    'none beyond Operation/undo and Receipt.undoable; local entries never reach the engine (U7)',
 } as const;
 
 /** The command surface. Every method throws `NotImplementedError` until U2. */
@@ -1224,37 +1177,35 @@ export const api: DataApi = {
   thread: {
     act: () => notImplemented('api.thread.act'),
     why: () => notImplemented('api.thread.why'),
-    followup: () => notImplemented('api.thread.followup'),
-    unsubscribe: () => notImplemented('api.thread.unsubscribe'),
   },
   operation: {
     undo: () => notImplemented('api.operation.undo'),
-    undoLast: () => notImplemented('api.operation.undoLast'),
+    retry: () => notImplemented('api.operation.retry'),
   },
   submission: {
-    send: () => notImplemented('api.submission.send'),
-    sendLater: () => notImplemented('api.submission.sendLater'),
-    undo: () => notImplemented('api.submission.undo'),
-    sendNow: () => notImplemented('api.submission.sendNow'),
-    reschedule: () => notImplemented('api.submission.reschedule'),
+    set: () => notImplemented('api.submission.set'),
   },
   draft: {
-    save: () => notImplemented('api.draft.save'),
-    discard: () => notImplemented('api.draft.discard'),
-    resolveConflict: () => notImplemented('api.draft.resolveConflict'),
+    set: () => notImplemented('api.draft.set'),
+    destroy: () => notImplemented('api.draft.destroy'),
+    resolve: () => notImplemented('api.draft.resolve'),
   },
-  body: {
-    get: () => notImplemented('api.body.get'),
-    prefetch: () => notImplemented('api.body.prefetch'),
+  messageBody: {
+    get: () => notImplemented('api.messageBody.get'),
+    prefetch: () => notImplemented('api.messageBody.prefetch'),
   },
   mail: {
     frame: () => notImplemented('api.mail.frame'),
-    releaseFrame: () => notImplemented('api.mail.releaseFrame'),
-    allowImagesFrom: () => notImplemented('api.mail.allowImagesFrom'),
+    release: () => notImplemented('api.mail.release'),
+    toggleQuotes: () => notImplemented('api.mail.toggleQuotes'),
+    allowImages: () => notImplemented('api.mail.allowImages'),
   },
   attachment: {
     get: () => notImplemented('api.attachment.get'),
-    put: () => notImplemented('api.attachment.put'),
+  },
+  blob: {
+    put: () => notImplemented('api.blob.put'),
+    get: () => notImplemented('api.blob.get'),
   },
   sync: {
     request: () => notImplemented('api.sync.request'),
@@ -1262,8 +1213,9 @@ export const api: DataApi = {
   account: {
     connect: () => notImplemented('api.account.connect'),
     reconnect: () => notImplemented('api.account.reconnect'),
+    grantPermissions: () => notImplemented('api.account.grantPermissions'),
     cancelConnect: () => notImplemented('api.account.cancelConnect'),
-    setAiAllowed: () => notImplemented('api.account.setAiAllowed'),
+    set: () => notImplemented('api.account.set'),
   },
   setup: {
     begin: () => notImplemented('api.setup.begin'),
@@ -1281,11 +1233,22 @@ export const api: DataApi = {
   },
   ask: {
     run: () => notImplemented('api.ask.run'),
+    cancel: () => notImplemented('api.ask.cancel'),
   },
   ai: {
     request: () => notImplemented('api.ai.request'),
+    draft: () => notImplemented('api.ai.draft'),
+    polish: () => notImplemented('api.ai.polish'),
     transcribe: () => notImplemented('api.ai.transcribe'),
-    setConsent: () => notImplemented('api.ai.setConsent'),
+    followup: () => notImplemented('api.ai.followup'),
+  },
+  unsubscribe: {
+    run: () => notImplemented('api.unsubscribe.run'),
+  },
+  consent: {
+    get: () => notImplemented('api.consent.get'),
+    grant: () => notImplemented('api.consent.grant'),
+    revoke: () => notImplemented('api.consent.revoke'),
   },
   engine: {
     restart: () => notImplemented('api.engine.restart'),

@@ -22,6 +22,10 @@ import type { ReactElement, ReactNode, Ref } from 'react';
 import type { CommandId } from '../commands/types';
 export type { CommandId };
 
+/* Data types props share with the data surface, so screens pass row fields straight through. Type-only: components
+   still never import renderer/data at runtime. */
+import type { DueSource as DataDueSource, Lane as DataLane } from '../data';
+
 /** ISO 8601 date-time with offset, e.g. "2026-10-29T10:00:00-07:00". Components format it with the shared formatter (en-US in the harness, frozen clock). */
 export type IsoDateTime = string;
 
@@ -43,11 +47,18 @@ export type TagColor = 'sky' | 'hill' | 'stamp' | 'dusk' | 'sand' | 'ember';
 /** A triage commit that carries a letter off (DESIGN §4.9): hill + check, dusk + clock, stamp + trash. */
 export type CommitKind = 'done' | 'later' | 'trash';
 
-/** Home lane of a thread (DESIGN §7.2): Do now, Important updates, Low importance. */
-export type Lane = 'do' | 'update' | 'low';
+/**
+ * Home lane of a thread (DESIGN §7.2): Do now, Important updates, Low importance. The contract's `Lane` (renderer/data),
+ * so a screen passes `row.rank.lane` straight through. An open enum: a value a newer engine adds renders like no
+ * known lane.
+ */
+export type Lane = DataLane;
 
-/** Where a due date came from, in order of trust (DESIGN §7.2). 'ai' shows "from the email" on hover (DESIGN §9 rule 5). */
-export type DueSource = 'user' | 'structured' | 'ai';
+/**
+ * Where a due date came from, in order of trust (DESIGN §7.2). 'ai' shows "from the email" on hover (DESIGN §9 rule 5).
+ * The contract's `DueSource` (renderer/data), so a screen passes `row.workflow.dueSource` straight through.
+ */
+export type DueSource = DataDueSource;
 
 /**
  * The closed icon set (DESIGN §4.7): monoline, SF Symbols with a Lucide fallback.
