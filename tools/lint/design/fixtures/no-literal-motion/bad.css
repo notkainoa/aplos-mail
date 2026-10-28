@@ -1,0 +1,20 @@
+/* Planted violations carry an expect marker; the test requires exactly those lines to be reported. */
+.durations {
+  transition: opacity 120ms; /* @expect */
+  transition: opacity 0.2s ease-out; /* @expect */
+  transition: transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1); /* @expect */
+  animation: fade 1s steps(4); /* @expect */
+  animation-duration: 300ms; /* @expect */
+  transition-timing-function: ease-in-out; /* @expect */
+  transition-delay: .1s; /* @expect */
+  animation-timing-function: linear(0, 0.5, 1); /* @expect */
+  transition: opacity var(--dur-hover, 100ms) var(--ease-std); /* @expect */
+  transition: background-color var(--dur-hover) linear; /* @expect */
+}
+
+.custom-properties {
+  --x: 120ms; /* @expect */
+  --curve: cubic-bezier(0.2, 0, 0, 1); /* @expect */
+  --steps: steps(4, end); /* @expect */
+  transition: opacity var(--x) var(--curve);
+}
