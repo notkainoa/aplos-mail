@@ -11,8 +11,11 @@ npx playwright install chromium   # once; downloads to the user cache
 
 | Project | Matches | What it drives |
 |---|---|---|
-| `browser` | `*.browser.spec.ts` | The renderer's browser preview (`npm run dev -w @aplos/desktop`), started by the config on its own ports with demo data |
-| `electron` | `*.electron.spec.ts` | The built app (`apps/desktop`, `npm run build` first) through `support/electron.ts`; no browser |
+| `browser` | `**/*.browser.spec.ts` | The renderer's browser preview (`npm run dev -w @aplos/desktop`), started by the config on its own ports with demo data |
+| `electron` | `**/*.electron.spec.ts` | The built app (`apps/desktop`, `npm run build` first) through `support/electron.ts`; no browser |
+
+Specs are matched both here and under a lane's own folder, `apps/desktop/tests/<lane>/`; keep the
+file-name suffix (`*.browser.spec.ts` or `*.electron.spec.ts`) so the right project picks it up.
 
 `smoke.electron.spec.ts` is skipped unless `APLOS_E2E_ELECTRON=1`. It turns on once F8 lands: main
 honouring `APLOS_TEST=1` and `APLOS_DATA_DIR` (isolated data, no single-instance lock, no Dock or
