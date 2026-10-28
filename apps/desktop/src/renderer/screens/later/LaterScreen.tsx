@@ -14,6 +14,7 @@ import { BOOKMARKS_CONFIG, LATER_CONFIG } from '../lists/listKinds';
 import { useListKeys } from '../lists/listCommands';
 import type { OpenKind } from '../lists/listRows';
 import { ListEmpty } from '../lists/ListStates';
+import { Reopenable } from '../lists/Reopenable';
 import { MailListView, Row, runRowAction } from '../lists/MailListView';
 import { rowDomId, useMailList, type MailListState } from '../lists/useMailList';
 import { reschedule } from './laterActions';
@@ -206,7 +207,9 @@ export function LaterScreen(props: LaterScreenProps) {
           onSelect={id => setWhich(id === 'bookmarks' ? 'bookmarks' : 'later')}
         />
       </PageHead>
-      {which === 'later' ? <LaterBody {...props} /> : <BookmarksBody {...props} />}
+      <Reopenable key={which}>
+        {which === 'later' ? <LaterBody {...props} /> : <BookmarksBody {...props} />}
+      </Reopenable>
     </div>
   );
 }

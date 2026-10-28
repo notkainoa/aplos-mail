@@ -7,6 +7,7 @@ import type { AccountId } from '../../data';
 import { configFor, type ListWhich } from './listKinds';
 import { useListKeys } from './listCommands';
 import { MailListView } from './MailListView';
+import { Reopenable } from './Reopenable';
 import { useMailList } from './useMailList';
 import type { OpenKind } from './listRows';
 
@@ -22,8 +23,16 @@ export interface ListScreenProps {
   readonly deleteForever?: (ids: readonly string[]) => Promise<unknown>;
 }
 
-export function ListScreen({ which, ...options }: ListScreenProps) {
+function ListBody({ which, ...options }: ListScreenProps) {
   const list = useMailList(configFor(which), options);
   useListKeys(list.actions);
   return <MailListView list={list} />;
+}
+
+export function ListScreen(props: ListScreenProps) {
+  return (
+    <Reopenable>
+      <ListBody {...props} />
+    </Reopenable>
+  );
 }

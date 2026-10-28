@@ -159,7 +159,10 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
       message: deps.undoLabel('mail.done', 'Done'),
       undoable: true,
       actions: remind
-        ? [{ id: 'remind', label: 'Remind me if no reply' }, UNDO_ACTION]
+        ? [
+            { id: 'remind', label: 'Remind me if no reply', keysFrom: 'mail.remindIfNoReply' },
+            UNDO_ACTION,
+          ]
         : [UNDO_ACTION],
       onAction: actionId => {
         if (actionId === 'remind') remindAbout(target.row.id);
@@ -181,7 +184,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
       kind: 'later',
       message: deps.undoLabel('mail.later', 'Moved to Later'),
       undoable: true,
-      actions: [{ id: 'setDate', label: 'Set a date' }, UNDO_ACTION],
+      actions: [{ id: 'setDate', label: 'Set a date', keysFrom: 'mail.setDate' }, UNDO_ACTION],
       onAction: actionId => {
         if (actionId === 'setDate') deps.openDatePicker(target.row.id);
         else undoHandler(opId, () => undone(opId))(actionId);

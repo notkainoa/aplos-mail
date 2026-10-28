@@ -21,6 +21,7 @@ import { useCommandTarget, useCurrentTarget, useShellKeyLayer } from '../../shel
 import { CommitChip, CommitEdge } from '../../ui/list';
 import { statusCopy } from '../../ui/status';
 import { ListFailed } from '../lists/ListStates';
+import { Reopenable } from '../lists/Reopenable';
 import { HomeEmpty } from './HomeStates';
 import {
   activeDomId,
@@ -119,7 +120,7 @@ function useScrollToCursor(key: string | null): void {
   }, [key]);
 }
 
-export function HomeScreen({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
+function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   const hold = useHold('home');
   const home = useHome({ accountId, holdIds: hold.heldIds });
   const accounts = useAccounts();
@@ -249,5 +250,13 @@ export function HomeScreen({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
         actions={actions}
       />
     </div>
+  );
+}
+
+export function HomeScreen(props: HomeScreenProps) {
+  return (
+    <Reopenable>
+      <HomeBody {...props} />
+    </Reopenable>
   );
 }

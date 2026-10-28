@@ -409,6 +409,7 @@ test('a list toast Undo undoes its own operation, not the newest one', async () 
     const older = getToasts().find(toast => toast.kind === 'done');
     assert.ok(older);
     assert.equal(older.actions?.[0]?.commandId, undefined);
+    assert.equal(older.actions?.[0]?.keysFrom, 'app.undo', 'Z is drawn, not run');
     cursor.key = second;
     actions.done();
     const newer = getToasts().find(toast => toast.kind === 'done' && toast.id !== older.id);
@@ -425,6 +426,8 @@ test('a list toast Undo undoes its own operation, not the newest one', async () 
   }
 });
 
-test('a list that failed with nothing to show says so in one sentence', () => {
-  assert.match(renderToStaticMarkup(createElement(ListFailed)), /Couldn’t load this list\./);
+test('a list that failed with nothing to show says so in one sentence, with Try again', () => {
+  const html = renderToStaticMarkup(createElement(ListFailed));
+  assert.match(html, /Couldn’t load this list\./);
+  assert.match(html, /Try again/);
 });

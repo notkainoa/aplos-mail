@@ -204,6 +204,7 @@ function Band(props: HomeListProps) {
     <LowBand
       id={LOW_DOM_ID}
       senders={low.names}
+      moreSenders={low.moreSenders}
       count={low.count}
       cursor={props.cursorKey === LOW_KEY}
       density={props.density}

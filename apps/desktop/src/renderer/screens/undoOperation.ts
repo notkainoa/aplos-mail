@@ -6,8 +6,11 @@
  */
 import { api } from '../data';
 
-/** The Undo verb on a toast. It has no `commandId`: the toast's `onAction` runs it against its own operation. */
-export const UNDO_ACTION = { id: 'undo', label: 'Undo' } as const;
+/**
+ * The Undo verb on a toast. It has no `commandId` (that would run the shared command on the newest operation): the
+ * toast's `onAction` runs it against its own operation, and `keysFrom` only draws the Z keycap.
+ */
+export const UNDO_ACTION = { id: 'undo', label: 'Undo', keysFrom: 'app.undo' } as const;
 
 /** Undoes one operation; a rejected undo is the data layer's to report. */
 export function undoOperation(opId: string): void {

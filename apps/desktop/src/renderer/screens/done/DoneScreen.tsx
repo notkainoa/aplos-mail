@@ -7,6 +7,7 @@ import type { AccountId } from '../../data';
 import { DONE_CONFIG } from '../lists/listKinds';
 import type { OpenKind } from '../lists/listRows';
 import { MailListView } from '../lists/MailListView';
+import { Reopenable } from '../lists/Reopenable';
 import { useMailList } from '../lists/useMailList';
 import { useDoneKeys } from './doneCommands';
 
@@ -18,8 +19,16 @@ export interface DoneScreenProps {
   readonly onOpen?: (id: string, kind: OpenKind) => void;
 }
 
-export function DoneScreen(props: DoneScreenProps) {
+function DoneBody(props: DoneScreenProps) {
   const list = useMailList(DONE_CONFIG, props);
   useDoneKeys(list.actions);
   return <MailListView list={list} />;
+}
+
+export function DoneScreen(props: DoneScreenProps) {
+  return (
+    <Reopenable>
+      <DoneBody {...props} />
+    </Reopenable>
+  );
 }
