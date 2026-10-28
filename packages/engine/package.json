@@ -8,11 +8,12 @@
   "exports": {
     "./store": "./src/store/index.ts",
     "./store/*": "./src/store/*.ts",
+    "./diag/*": "./src/diag/*.ts",
     "./legacy/*": "./src/legacy/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts tests/store/*.test.ts"
+    "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
     "@aplos/contract": "*",
