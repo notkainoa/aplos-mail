@@ -1,0 +1,12 @@
+# Mechanical commits that git blame should skip.
+# Use: git config blame.ignoreRevsFile .git-blame-ignore-revs (or git blame --ignore-revs-file .git-blame-ignore-revs)
+
+# Restructure step 1 (roadmap 1.1): move the engine, its shared files and the renderer into legacy folders
+dfbf4ab68cbd4e1453b16b431676991f68081d61
+
+# Restructure step 2 (plan 40 Q1a): Prettier format of the moved tree
+34d86586d74ace0a240129c95522cd98d823200f
+
+# Step 3: rename main/engine-host.ts to main/engine-process.ts, then split main/electron.ts into owned modules (code moves)
+f1311f4484e0e1b778b2e52712fa0b08be5bbb45
+c5f559e8fdb4d677c459d3e750d2bce437312c6d
