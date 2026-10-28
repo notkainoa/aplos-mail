@@ -5,6 +5,7 @@ import type { MinuteUnits } from './meter';
 import type { Mailbox } from './mailbox';
 import type { GenerateOptions } from './generate';
 import type { OAuthServer, TestUser, TestUserInput } from './oauth';
+import type { CalendarHelpers, GcalOptions } from '../gcal/types';
 
 export type RetryAfterMode = 'none' | 'seconds' | 'httpDate';
 
@@ -43,6 +44,8 @@ export interface GmailEmulatorOptions {
   sendLimitPerDay?: number;
   /** Test users to start with. By default one user, test.user@example.test. Pass [] for none. */
   users?: TestUserInput[];
+  /** Google Calendar settings (requests per minute, throttle shape, sync-token horizon, ...). */
+  calendar?: GcalOptions;
 }
 
 /** Live settings; assigning to a field takes effect on the next request. */
@@ -95,6 +98,14 @@ export interface GmailEmulator {
   /** Fills a user's mailbox with synthetic mail, returns it. */
   seedMailbox(options: GenerateOptions & { user?: string }): Mailbox;
   oauth: OAuthServer;
+
+  /**
+   * Google Calendar, served by this same instance and fetch (www.googleapis.com/calendar/v3), with
+   * its own request budget, settings, anti-abuse switch and data helpers.
+   */
+  calendar: CalendarHelpers;
+  /** Shorthand for `calendar.setAbuse`: writes answer 403 quotaExceeded until switched off. */
+  setCalendarAbuse(on: boolean, options?: { forMs?: number }): void;
 
   // quota
   meter: MeterHelpers;
