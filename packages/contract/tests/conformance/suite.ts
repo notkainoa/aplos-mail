@@ -9,6 +9,7 @@ import {
   errorTypes,
   Frame,
   methodsByArea,
+  parseDiagnosticsBundle,
   type EngineMethodName,
   type Input,
   type Output,
@@ -39,7 +40,9 @@ type Body = (t: TestContext) => Promise<void>;
 
 /** A connection with its frames recorded in arrival order, and typed calls. */
 function open(engine: EngineUnderTest) {
-  const session: EngineSession = engine.connection.connect();
+  return openSession(engine.connection.connect());
+}
+function openSession(session: EngineSession) {
   const frames: Frame[] = [];
   const events: (
     { kind: 'frame'; frame: Frame } | { kind: 'reply'; method: string; result: unknown }
@@ -579,5 +582,323 @@ export function conformance(
       const ops = await c.call('Operation/get', { opIds: [act] });
       assert.equal(ops.list[0]?.opId, act);
     }
+  });
+
+  // ---- freeze rules (plans/freeze/findings.md) -------------------------------------------------------------
+
+  const listener = (engine: EngineUnderTest, ...scopes: string[]) =>
+    openSession(
+      engine.connectAs!({ kind: 'listener', clientId: `conf-${scopes.join('-')}`, scopes }),
+    );
+  const noCaller = (e: EngineUnderTest) =>
+    !e.connectAs && `${target.name} cannot connect as a tool`;
+  const hour = 3_600_000;
+  /** A draft and a send of it at `notBefore` (absent: the undo window), with a 10 s undo window set first. */
+  const send = async (c: ReturnType<typeof open>, notBefore?: number) => {
+    await c.call('Settings/set', { opId: opId(), patch: { mail: { undoSendSeconds: 10 } } });
+    const ctx = new SampleContext(c.session, async () => {});
+    const draft = await ctx.draft();
+    const out = await c.call('Submission/set', {
+      opId: opId('send'),
+      action: { type: 'send', draftId: draft.id, revision: draft.revision, notBefore },
+    });
+    return { draft, ...out };
+  };
+  const submission = async (c: ReturnType<typeof open>, id: string) =>
+    (await c.call('Submission/get', { ids: [id] })).list[0]!;
+
+  /** FR-2 (ARCH 7.3): a send waiting on `notBefore` that the Mac slept through is suspended, never sent late. */
+  scenario(
+    'send/overdue-suspends',
+    async (engine, c) => {
+      const now = (await c.call('Session/get', {})).now;
+      const later = await send(c, now + hour);
+      assert.equal(later.submission.state, 'scheduled');
+      const undo = await send(c);
+      assert.equal(undo.submission.state, 'queued');
+      await engine.sleep!(3 * hour);
+      await engine.advance(1_000);
+      for (const { submission: s } of [later, undo]) {
+        const after = await submission(c, s.id);
+        assert.equal(after.state, 'suspended', `a ${s.state} send that fell due asleep waits`);
+        assert.ok(after.problem?.reasonCode, 'with the reason the UI shows');
+      }
+    },
+    e => !e.sleep && `${target.name} cannot sleep`,
+  );
+
+  /** FR-7: the bytes that leave are the revision the owner sent; a held send locks its draft. */
+  scenario('send/draft-locked-while-held', async (_e, c) => {
+    const now = (await c.call('Session/get', {})).now;
+    const { draft, submission: s } = await send(c, now + hour);
+    assert.equal(s.revision, draft.revision, 'the submission records the revision it sends');
+    const { revision } = draft;
+    const fields = {
+      accountId: draft.accountId,
+      mode: 'new' as const,
+      to: draft.to,
+      cc: draft.cc,
+      bcc: draft.bcc,
+      subject: draft.subject,
+      html: draft.html,
+      attachments: draft.attachments,
+      signature: draft.signature,
+    };
+    await rejects(
+      c.session.call('Draft/set', {
+        opId: opId(),
+        id: draft.id,
+        baseRevision: revision,
+        fields: { ...fields, to: [{ address: 'someone-else@conformance.example' }] },
+      }),
+      'stateMismatch',
+    );
+    await rejects(
+      c.session.call('Draft/resolve', { opId: opId(), id: draft.id, choice: 'keepMine' }),
+      'stateMismatch',
+    );
+    await rejects(
+      c.session.call('Submission/set', {
+        opId: opId(),
+        action: { type: 'sendNow', submissionId: s.id, revision: revision + 1 },
+      }),
+      'stateMismatch',
+    );
+    await c.call('Submission/set', { opId: opId(), action: { type: 'undo', submissionId: s.id } });
+    await c.call('Draft/set', { opId: opId(), id: draft.id, baseRevision: revision, fields });
+  });
+
+  /** FR-14: a send's receipt is undoable while held, and `Operation/undo` on it cancels the send. */
+  scenario('send/undo-through-receipt', async (_e, c) => {
+    const { draft, submission: s, receipt } = await send(c);
+    assert.equal(receipt.undoable, true, 'a held send can be undone from its receipt');
+    assert.equal(receipt.undoUntil, s.notBefore);
+    await c.call('Operation/undo', { opId: receipt.opId, undoOpId: opId('undo') });
+    assert.equal((await submission(c, s.id)).state, 'cancelled');
+    const back = (await c.call('Draft/get', { ids: [draft.id] })).list[0]!;
+    assert.equal(back.submissionId, undefined, 'the draft comes back unlocked');
+  });
+
+  /** FR-13: "Don't send it" after a suspended send, and discarding a draft cancels its held send. */
+  scenario(
+    'send/cancel-and-discard',
+    async (engine, c) => {
+      const now = (await c.call('Session/get', {})).now;
+      const missed = await send(c, now + hour);
+      await engine.sleep!(3 * hour);
+      await engine.advance(1_000);
+      assert.equal((await submission(c, missed.submission.id)).state, 'suspended');
+      const out = await c.call('Submission/set', {
+        opId: opId(),
+        action: { type: 'cancel', submissionId: missed.submission.id },
+      });
+      assert.equal(out.submission.state, 'cancelled');
+      const draft = (await c.call('Draft/get', { ids: [missed.draft.id] })).list[0]!;
+      assert.equal(draft.submissionId, undefined, 'the draft comes back unlocked');
+      const held = await send(c, now + 10 * hour);
+      await c.call('Draft/destroy', { opId: opId(), id: held.draft.id });
+      assert.equal((await submission(c, held.submission.id)).state, 'cancelled');
+      const pending = await c.call('Outbox/pending', {});
+      assert.ok(
+        !JSON.stringify(pending).includes(held.submission.id),
+        'a discarded draft leaves nothing to send',
+      );
+    },
+    e => !e.sleep && `${target.name} cannot sleep`,
+  );
+
+  /** FR-3: undo and retry act with the scope of the method that made the operation. */
+  scenario(
+    'access/undo-needs-originating-scope',
+    async (engine, c) => {
+      const ctx = new SampleContext(c.session, async () => {});
+      const now = (await c.call('Session/get', {})).now;
+      const created = await c.call('Event/set', {
+        opId: opId('event'),
+        change: {
+          type: 'create',
+          calendarId: await ctx.calendar(),
+          fields: {
+            title: 'Conformance meeting',
+            start: { type: 'utc', utc: now + 24 * hour },
+            end: { type: 'utc', utc: now + 25 * hour },
+            allDay: false,
+            attendees: [{ address: 'guest@conformance.example' }],
+          },
+        },
+      });
+      const op = (await c.call('Operation/get', { opIds: [created.receipt.opId] })).list[0]!;
+      if (op.scope !== undefined) assert.equal(op.scope, 'send');
+      const triage = listener(engine, 'read', 'triage');
+      await rejects(
+        triage.session.call('Operation/undo', {
+          opId: created.receipt.opId,
+          undoOpId: opId('undo'),
+        }),
+        'forbidden',
+      );
+      await rejects(
+        triage.session.call('Operation/retry', { opId: created.receipt.opId }),
+        'forbidden',
+      );
+      const admin = listener(engine, 'read', 'admin');
+      await rejects(admin.session.call('Queue/discard', { id: created.receipt.opId }), 'forbidden');
+      const sender = listener(engine, 'read', 'triage', 'send');
+      await sender.call('Operation/undo', { opId: created.receipt.opId, undoOpId: opId('undo') });
+    },
+    noCaller,
+  );
+
+  /** FR-5 and FR-6: what only the owner may do in Aplos itself. */
+  scenario(
+    'access/window-only',
+    async (engine, c) => {
+      const tool = listener(engine, 'read', 'triage', 'draft', 'send', 'ai', 'admin');
+      const accountId = await new SampleContext(c.session, async () => {}).account();
+      await rejects(
+        tool.session.call('Consent/grant', {
+          scope: 'background',
+          version: (await c.call('Consent/get', {})).currentVersion,
+          provider: 'groq',
+          model: 'openai/gpt-oss-120b',
+        }),
+        'forbidden',
+      );
+      await rejects(
+        tool.session.call('Settings/set', {
+          opId: opId(),
+          patch: { ai: { providers: { ollama: { address: 'http://203.0.113.7:11434/v1' } } } },
+        }),
+        'forbidden',
+      );
+      await rejects(
+        tool.session.call('Account/set', { opId: opId(), accountId, aiAllowed: true }),
+        'forbidden',
+      );
+      await tool.call('Settings/set', { opId: opId(), patch: { ui: { density: 'roomy' } } });
+      const message = await new SampleContext(c.session, async () => {}).message();
+      await rejects(
+        tool.session.call('Mail/frame', { messageId: message, imagePolicy: 'block' }),
+        'forbidden',
+      );
+      const reader = listener(engine, 'read');
+      await rejects(
+        reader.session.call('Submission/set', {
+          opId: opId(),
+          action: { type: 'undo', submissionId: 'any' },
+        }),
+        'forbidden',
+      );
+    },
+    noCaller,
+  );
+
+  /** FR-6: blobs are bound to who made them; an export never reaches a tool. */
+  scenario(
+    'access/blob-bound-to-caller',
+    async (engine, c) => {
+      const exported = await c.call('Data/export', {});
+      const mine = await c.call('Blob/put', {
+        bytes: new TextEncoder().encode('window'),
+        mime: 'text/plain',
+      });
+      assert.ok(mine.blobId.length >= 22, 'a blob id carries at least 128 random bits');
+      const a = listener(engine, 'read', 'draft');
+      const b = listener(engine, 'read', 'draft', 'admin');
+      for (const blobId of [exported.blobId, mine.blobId])
+        await rejects(a.session.call('Blob/get', { blobId }), 'notFound');
+      const theirs = await a.call('Blob/put', {
+        bytes: new TextEncoder().encode('tool'),
+        mime: 'text/plain',
+      });
+      await rejects(b.session.call('Blob/get', { blobId: theirs.blobId }), 'notFound');
+      await rejects(b.session.call('Blob/release', { blobId: theirs.blobId }), 'notFound');
+      assert.equal((await a.call('Blob/get', { blobId: theirs.blobId })).size, 4);
+      assert.equal((await c.call('Blob/get', { blobId: exported.blobId })).mime.length > 0, true);
+    },
+    noCaller,
+  );
+
+  /** FR-8: "Use this account's mail for AI" bounds every AI scope; naming an excluded account never widens it. */
+  scenario('ai/excluded-account-stays-out', async (engine, c) => {
+    const accounts = (await c.call('Account/get', {})).list;
+    if (accounts.length < 2) return;
+    const [kept, excluded] = accounts as [(typeof accounts)[0], (typeof accounts)[0]];
+    await c.call('Account/set', { opId: opId(), accountId: excluded.id, aiAllowed: false });
+    let run;
+    try {
+      run = await c.call('Ask/run', {
+        question: 'What needs my reply today?',
+        scope: { accountIds: [excluded.id, kept.id] },
+      });
+    } catch (error) {
+      if (error instanceof ContractError && error.type === 'notConfigured') return;
+      throw error;
+    }
+    await engine.advance(3_000);
+    const turn = (
+      await c.call('Conversation/get', { ids: [run.conversationId] })
+    ).list[0]!.turns.at(-1)!;
+    const threads = new Set(
+      turn.citations.flatMap(x => (x.kind === 'message' ? [x.threadId] : [])),
+    );
+    const rows = (await c.call('Thread/get', { ids: [...threads] })).list;
+    assert.ok(
+      rows.every(t => t.accountId !== excluded.id),
+      'no source from an account left out of AI',
+    );
+    assert.ok(turn.excludedAccountIds?.includes(excluded.id));
+    const excludedThread = (
+      await c.call('View/query', {
+        spec: { kind: 'mailbox', role: 'inbox', accountId: excluded.id },
+      })
+    ).ids[0];
+    if (excludedThread)
+      await rejects(
+        c.session.call('Ai/request', {
+          opId: opId(),
+          kind: 'summary',
+          threadId: excludedThread,
+          force: true,
+        }),
+        'forbidden',
+      );
+  });
+
+  /** FR-23: a reconnect sheet reopened anywhere finds its flow by account, and a cancel keeps its mode. */
+  scenario('connect/reconnect-frames-carry-account', async (engine, c) => {
+    const accountId = (await c.call('Account/get', {})).list[0]!.id;
+    const start = await c.call('Account/reconnect', { accountId });
+    await engine.advance(100);
+    await c.call('Account/cancelConnect', { connectId: start.connectId });
+    await engine.advance(100);
+    const frames = c.frames.filter(
+      (f): f is Extract<Frame, { frame: 'connect' }> =>
+        f.frame === 'connect' && f.connectId === start.connectId,
+    );
+    assert.ok(frames.length > 0, 'the flow reports through connect frames');
+    for (const f of frames) {
+      assert.equal(f.accountId, accountId, `the ${f.state} frame names the account`);
+      assert.equal(f.mode, 'reconnect', `the ${f.state} frame keeps the flow's mode`);
+    }
+    assert.ok(frames.some(f => f.state === 'cancelled'));
+  });
+
+  /** FR-32: the bundle the engine builds passes the host's strict production parse. */
+  scenario('diagnostics/strict-bundle', async (_e, c) => {
+    parseDiagnosticsBundle(await c.call('Diagnostics/preview', {}));
+  });
+
+  /** FR-34: only the stand-in may hand the reader a `srcdoc`, and then with its own CSP. */
+  scenario('mail/srcdoc-stand-in-only', async (engine, c) => {
+    const message = await new SampleContext(c.session, async () => {}).message();
+    const frame = await c.call('Mail/frame', { messageId: message, imagePolicy: 'block' });
+    if (!engine.standIn) assert.equal(frame.srcdoc, undefined, 'the real engine never sets srcdoc');
+    if (frame.srcdoc !== undefined)
+      assert.match(
+        frame.srcdoc,
+        /<meta http-equiv="Content-Security-Policy" content="default-src 'none'[^"]*">/,
+        'the stand-in document carries its own CSP',
+      );
   });
 }

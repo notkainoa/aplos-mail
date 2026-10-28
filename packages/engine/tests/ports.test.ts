@@ -1,9 +1,14 @@
 // Tiny fakes of every F3 port, proving the types compose; the runtime checks pin the few rules the types carry.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ClassifiedError } from '@aplos/contract';
+import { errorClasses, type ClassifiedError } from '@aplos/contract';
 import {
+  GOVERNOR_CLASS_POLICY,
+  IMAGE_PROXY_LIMITS,
   NotSentError,
+  OVERDUE_GRACE_MS,
+  RECURRENCE_ID_FORMAT,
+  WAITING_SUBMISSION_STATES,
   PausedError,
   PROJECT,
   ProviderError,
@@ -16,12 +21,14 @@ import {
   type BoundGovernor,
   type BudgetSpec,
   type CalendarAdapter,
+  type CalendarPort,
   type Clock,
   type DeadlineRegistry,
   type DeadlineSource,
   type DraftSyncPort,
   type GovernedRequest,
   type GovernorPort,
+  type ImageProxy,
   type KeyProvider,
   type KnownLookup,
   type LaneFor,
@@ -30,6 +37,7 @@ import {
   type ProviderAdapter,
   type ProviderFactory,
   type RequestIo,
+  type RulesPort,
   type SendPort,
   type StepResult,
   type SyncState,
@@ -92,6 +100,7 @@ function pausedGovernor(clock: Clock, pausedUntil: number): GovernorPort {
     charge() {},
     admission,
     batchSize: () => 10,
+    retryNow: admission,
     setRole() {},
     clear() {},
     snapshot: () => [],
@@ -131,6 +140,7 @@ const lookup: KnownLookup = {
   knownThreads: async () => new Set(),
   knownMessages: async () => new Set(),
   trackedDraftIds: async () => new Set(),
+  draftsByMessageId: async () => new Map(),
   threadMessages: async () => [],
   placements: async () => new Map(),
   folderUids: async () => [],
@@ -534,6 +544,7 @@ test('the remaining ports accept small fakes', async () => {
     wake() {},
     opsChanged() {},
     claimLease: async () => {},
+    releaseLease: async () => {},
     status: () => runtime,
     lastHeartbeat: () => 0,
     subscribe: () => () => {},
@@ -603,4 +614,126 @@ test('the remaining ports accept small fakes', async () => {
   assert.equal((await send.findSent('acct-1', '<s1@mail.example>', 0)).kind, 'found');
   assert.equal(PROJECT, '*');
   assert.equal(new ProviderError(err('config', 'accessNotConfigured'), 'project').scope, 'project');
+});
+
+/** How `eng-time`'s outbox wakes: the overdue rule `SendPort` freezes, applied to every waiting row. */
+function wakeOutbox(rows: { id: string; state: string; notBefore: number }[], now: number) {
+  return rows.map(r =>
+    (WAITING_SUBMISSION_STATES as readonly string[]).includes(r.state) &&
+    now - r.notBefore > OVERDUE_GRACE_MS
+      ? { ...r, state: 'suspended' }
+      : r,
+  );
+}
+
+test('a send-later row that fell due while the Mac was off is suspended, like a queued one; a sending row is not', () => {
+  const now = 10 * 86_400_000;
+  const woke = wakeOutbox(
+    [
+      { id: 'later', state: 'scheduled', notBefore: now - 2 * 86_400_000 },
+      { id: 'undo', state: 'queued', notBefore: now - 6 * 60_000 },
+      { id: 'fresh', state: 'queued', notBefore: now - 60_000 },
+      { id: 'lost', state: 'sending', notBefore: now - 86_400_000 },
+    ],
+    now,
+  );
+  assert.deepEqual(
+    woke.map(r => `${r.id}:${r.state}`),
+    ['later:suspended', 'undo:suspended', 'fresh:queued', 'lost:sending'],
+  );
+});
+
+test('the governor policy has one row per F1 error class', () => {
+  assert.deepEqual(Object.keys(GOVERNOR_CLASS_POLICY).sort(), [...errorClasses].sort());
+  assert.equal(GOVERNOR_CLASS_POLICY.send_limit.pauses, 'sends');
+  assert.equal(GOVERNOR_CLASS_POLICY.config.pauses, 'project');
+  assert.equal(GOVERNOR_CLASS_POLICY.transient.resend, 'readAndIdempotentWrite');
+  assert.ok(!('conflict' in GOVERNOR_CLASS_POLICY), 'an edit conflict is a result, not a class');
+});
+
+test('recurrence ids have one canonical form', () => {
+  for (const ok of ['20261027T160000Z', '20261027', '20261027T090000'])
+    assert.match(ok, RECURRENCE_ID_FORMAT);
+  for (const bad of ['2026-10-27T09:00:00+02:00', '2026-10-27', '20261027T090000+0200', ''])
+    assert.doesNotMatch(bad, RECURRENCE_ID_FORMAT);
+});
+
+test('calendar writes, filters, draft conflicts and the image proxy reach their ports', async () => {
+  const notified: (boolean | undefined)[] = [];
+  const calendar: CalendarPort = {
+    put: async (_a, change) => (
+      notified.push(change.notify),
+      { kind: 'saved', upserts: [], removals: [] }
+    ),
+    remove: async (_a, ref) => (
+      notified.push(ref.notify),
+      { kind: 'saved', upserts: [], removals: [] }
+    ),
+    rsvp: async (_a, _r, _resp, opts) => (notified.push(opts.notify), { kind: 'conflict' }),
+  };
+  const ref = { calendarRemoteId: 'primary', remoteId: 'e1', recurrenceId: '20261027T160000Z' };
+  await calendar.put('acct-1', { ...ref, scope: 'occurrence', fields: { summary: 'x' } });
+  await calendar.remove('acct-1', { ...ref, scope: 'series', notify: true });
+  await calendar.rsvp('acct-1', { ...ref, scope: 'occurrence' }, 'accepted', { notify: false });
+  assert.deepEqual(
+    notified,
+    [undefined, true, false],
+    'absent notify reaches the adapter as absent: no email',
+  );
+
+  const remote = new Map<string, string>();
+  const rules: RulesPort = {
+    list: async () =>
+      [...remote].map(([remoteId, addressOrDomain]) => ({
+        remoteId,
+        addressOrDomain,
+        action: 'block',
+      })),
+    create: async (_a, rule) => (remote.set('f1', rule.addressOrDomain), 'f1'),
+    delete: async (_a, id) => void remote.delete(id),
+  };
+  assert.equal(
+    await rules.create('acct-1', { addressOrDomain: 'spam.example', action: 'block' }),
+    'f1',
+  );
+  assert.equal((await rules.list('acct-1')).length, 1);
+
+  // The phone edited the draft after our last sync: the save is refused, never overwritten.
+  const server = { remoteMessageId: 'rm-phone' };
+  const drafts: DraftSyncPort = {
+    save: async (_a, d) =>
+      d.baseRemoteMessageId !== server.remoteMessageId
+        ? { kind: 'conflict', remoteMessageId: server.remoteMessageId }
+        : { kind: 'saved', remoteDraftId: 'r1', remoteMessageId: 'rm2', revision: d.revision },
+    remove: async () => {},
+  };
+  const upload = {
+    draftId: 'd1',
+    revision: 4,
+    fingerprint: 'f',
+    internetId: '<d1.4@mail.example>',
+    mime: new Uint8Array(),
+    remoteDraftId: 'r1',
+  };
+  assert.equal(
+    (await drafts.save('acct-1', { ...upload, baseRemoteMessageId: 'rm1' })).kind,
+    'conflict',
+  );
+  assert.equal(
+    (await drafts.save('acct-1', { ...upload, baseRemoteMessageId: 'rm-phone' })).kind,
+    'saved',
+  );
+
+  const images: ImageProxy = {
+    fetch: async url =>
+      /^https?:\/\/(127\.|10\.|\[::1\])/.test(url)
+        ? { kind: 'refused', reason: 'address' }
+        : { kind: 'image', mime: 'image/png', bytes: new Uint8Array(8) },
+  };
+  const signal = new AbortController().signal;
+  assert.deepEqual(await images.fetch('http://127.0.0.1/pixel.png', { token: 't', signal }), {
+    kind: 'refused',
+    reason: 'address',
+  });
+  assert.deepEqual(IMAGE_PROXY_LIMITS.ports, [80, 443]);
 });

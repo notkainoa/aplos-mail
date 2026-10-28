@@ -9,6 +9,7 @@ export const handlers: AreaHandlers<'account'> = {
   'Account/discover': notImplemented('Account/discover'),
   'Account/connect': notImplemented('Account/connect'),
   'Account/reconnect': notImplemented('Account/reconnect'),
+  'Account/updateSecret': notImplemented('Account/updateSecret'),
   'Account/grantPermissions': notImplemented('Account/grantPermissions'),
   'Account/cancelConnect': notImplemented('Account/cancelConnect'),
   'Account/set': notImplemented('Account/set'),

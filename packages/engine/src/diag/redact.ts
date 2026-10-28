@@ -29,6 +29,8 @@ const TOKEN_SHAPES = [
   /\bgh[pousr]_\w{20,}/g,
   /\bgithub_pat_\w{20,}/g,
   /\bxox[abposr]-[\w-]{8,}/g,
+  // A masked key as some providers echo it in a 401 (`sk-proj-****abcd`): the visible tail is still part of a key (FR-33).
+  /(?:\b[\w.-]{0,24})?[*\u2022]{3,}[\w-]{0,12}/g,
 ];
 /** `key: value` and `key=value` pairs whose value is a credential, including JSON-escaped quotes. Short numbers stay (`"code":403`). */
 const SECRET_PAIR =

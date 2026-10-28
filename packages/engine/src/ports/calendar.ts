@@ -1,3 +1,4 @@
+import type { EventTime } from '@aplos/contract';
 import type { BudgetId, SyncLane } from './base';
 import type { AdapterContext, PlannedStep, PlanInput, Quarantine, SyncState } from './provider';
 
@@ -8,18 +9,20 @@ import type { AdapterContext, PlannedStep, PlanInput, Quarantine, SyncState } fr
 /** F1 `Event/set` scope; `following` splits the series (behind plan 20 Decision 6). */
 export type EditScope = 'occurrence' | 'series' | 'following';
 
-/** An instant, an all-day date, or a floating or zoned local time. */
-export type EventTime =
-  | { kind: 'instant'; utc: number }
-  | { kind: 'date'; date: string }
-  | { kind: 'local'; local: string; tzid?: string };
+/**
+ * The F1 wire `EventTime` itself (`utc`, `date`, or `floating` with an optional `timeZone`), so facts reach the store
+ * and `Event/get` with no mapping. A zoned local time is `floating` with `timeZone`.
+ */
+export type { EventTime };
 
+/** Field names as F1 `Attendee`, so `Event/get` copies it; the response stays closed on the adapter side. */
 export interface Attendee {
-  email: string;
+  address: string;
   name?: string;
   response: 'needsAction' | 'accepted' | 'declined' | 'tentative';
   organizer: boolean;
   self: boolean;
+  optional?: boolean;
 }
 
 export interface EventFields {
@@ -32,15 +35,38 @@ export interface EventFields {
   attendees: Attendee[];
 }
 
+/**
+ * The canonical `recurrenceId` (`events.recurrence_id`, part of its unique key): an occurrence's ORIGINAL start, written
+ * one way whatever the provider sent, so one occurrence can never get two rows.
+ * - Timed, with a zone or offset (Google `originalStartTime.dateTime`, CalDAV `RECURRENCE-ID;TZID=...`, Graph
+ *   `originalStart`): converted to UTC, `YYYYMMDDTHHMMSSZ`.
+ * - All-day (Google `originalStartTime.date`, `RECURRENCE-ID;VALUE=DATE`): `YYYYMMDD`.
+ * - Floating (no zone at all, CalDAV only): the wall-clock time, `YYYYMMDDTHHMMSS`, no `Z`.
+ * Masters and single events have none (stored as ''). Google's instance id is `<recurringEventId>_<recurrenceId>`, so
+ * an RSVP to one occurrence needs no extra lookup. F1's occurrence id `<seriesId>@<originalStart>` uses this same form.
+ */
+export const RECURRENCE_ID_FORMAT = /^\d{8}(T\d{6}Z?)?$/;
+
+/**
+ * Identity per provider: Google `remoteId` is the event id and an override's `masterRemoteId` its `recurringEventId`.
+ * CalDAV `remoteId` is the resource href (the unit of ETag, `sync-collection` and delete), shared by the master and its
+ * overrides, so `masterRemoteId` is absent there and the master is the row with the same href and no `recurrenceId`;
+ * the iCalendar UID is `EventFacts.uid`, never `remoteId`. Graph `remoteId` is the event id and `masterRemoteId` its
+ * `seriesMasterId`.
+ */
 export interface EventRef {
   calendarRemoteId: string;
   remoteId: string;
-  /** The ORIGINAL start of an overridden or cancelled occurrence (`events.recurrence_id`); absent for masters and single events. */
+  /** Canonical (`RECURRENCE_ID_FORMAT`) original start of one occurrence; absent for masters and single events. */
   recurrenceId?: string;
   etag?: string;
 }
 
-/** Only changed fields are sent (D11), with `If-Match`. No `remoteId` creates the event. */
+/**
+ * Only changed fields are sent (D11), with `If-Match`. No `remoteId` creates the event. `notify` is `Event/set`'s
+ * resolved choice; absent or false never emails guests (Google `sendUpdates=none`, CalDAV `SCHEDULE-AGENT=CLIENT`,
+ * Graph PATCH without a cancel or forward). `remove` carries it on its ref the same way (Graph cancel versus delete).
+ */
 export interface EventChange {
   calendarRemoteId: string;
   remoteId?: string;
@@ -48,6 +74,7 @@ export interface EventChange {
   etag?: string;
   scope: EditScope;
   fields: Partial<EventFields>;
+  notify?: boolean;
 }
 
 /** D24; `changeTag` is CalDAV's ctag, to skip unchanged collections. */
@@ -67,9 +94,20 @@ export interface EventFacts extends EventFields {
   calendarRemoteId: string;
   remoteId: string;
   etag?: string;
-  /** Set on an override; stored as `events.master_remote_id` and joined on it, since an override can arrive before its master. */
+  /**
+   * Set on a Google or Graph override; stored as `events.master_remote_id` and joined on it, since an override can
+   * arrive before its master. Absent on CalDAV, whose overrides share the master's `remoteId` (see `EventRef`).
+   */
   masterRemoteId?: string;
   recurrenceId?: string;
+  /**
+   * Rows with a `recurrenceId` only. `exception`: edited or cancelled apart from its series (Google and CalDAV
+   * overrides, Graph `type: exception`). `occurrence`: an unedited instance a provider returned expanded (Graph
+   * `calendarView/delta` `type: occurrence`), stored only while its master is not.
+   */
+  instance?: 'exception' | 'occurrence';
+  /** The iCalendar UID (Google `iCalUID`, CalDAV `UID`, Graph `iCalUId`), to match an invitation email to its event. */
+  uid?: string;
   /** Masters only. */
   rrule?: string[];
   rdate?: string[];
@@ -118,7 +156,7 @@ export type CalendarWriteResult =
 
 /**
  * Implemented by `prov-cal` (Google Calendar in round 1; CalDAV and Graph calendar in round 2). Called by the account
- * actor (sync) and, for writes, by `methods/event.ts` through the actor host. Its budget is separate from mail (D12), so
+ * actor (sync) and, for writes, by `methods/event.ts` through `CalendarPort` (`ports/engine.ts`). Its budget is separate from mail (D12), so
  * a calendar pause shows per calendar, never as the account's mail status.
  */
 export interface CalendarAdapter {
@@ -140,9 +178,12 @@ export interface CalendarAdapter {
     lane: SyncLane,
     ctx: AdapterContext,
   ): Promise<CalendarStepResult>;
-  /** An occurrence edit creates an override; `following` splits the series. */
+  /** An occurrence edit creates an override; `following` splits the series. Guests are emailed only when `change.notify`. */
   put(change: EventChange, ctx: AdapterContext): Promise<CalendarWriteResult>;
-  remove(ref: EventRef & { scope: EditScope }, ctx: AdapterContext): Promise<CalendarWriteResult>;
+  remove(
+    ref: EventRef & { scope: EditScope; notify?: boolean },
+    ctx: AdapterContext,
+  ): Promise<CalendarWriteResult>;
   /** Edits only the self attendee (Google sends the whole list; CalDAV the own PARTSTAT). */
   rsvp(
     ref: EventRef & { scope: EditScope },

@@ -25,7 +25,7 @@ export interface Clock {
 
 /** Known deadline sources; open so a later module registers its own without a port change. */
 export type DeadlineSourceId =
-  | 'outbox' // submissions.not_before (eng-time)
+  | 'outbox' // submissions.not_before of every waiting row, `queued` and `scheduled` (eng-time)
   | 'reminders' // thread_workflow.reminder_at (eng-time)
   | 'later' // thread_workflow.later_until, Later and snooze returns (eng-time)
   | 'drafts' // the next draft upload: 5 s idle, or a paused upload's retry (eng-time)

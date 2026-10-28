@@ -444,6 +444,15 @@ export const samples: Samples = {
   },
   'Event/extract': { args: async c => ({ opId: opId(), threadId: await c.thread() }), allow: ai },
   'Plan/get': { args: async c => ({ ids: [await c.plan()] }) },
+  'Event/hide': {
+    args: async c => ({ opId: opId(), ids: [await c.event()], hidden: true }),
+    allow: ['notFound'],
+  },
+  'Contact/suggest': { args: () => ({ query: 'a', limit: 5 }) },
+  'Account/updateSecret': {
+    args: async c => ({ accountId: await c.account(), secret: 'conformance-app-password' }),
+    allow: ['unsupported'],
+  },
   'Plan/confirm': { args: async c => ({ opId: opId(), id: await c.plan() }), allow: ['notFound'] },
   'Plan/dismiss': { args: async c => ({ opId: opId(), ids: [await c.plan()] }) },
   'SenderRule/get': { args: () => ({}) },

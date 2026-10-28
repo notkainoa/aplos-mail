@@ -46,7 +46,10 @@ export const AiProvider = z.object({
   trainsOnInputs: z.boolean(),
   paidMarked: z.optional(z.boolean()),
   sttCapable: z.boolean(),
-  /** Mail never leaves this Mac. */
+  /**
+   * Mail never leaves this Mac. Computed from the address (a loopback host: `localhost`, `127.0.0.0/8`, `::1`), never
+   * from the provider id, so an Ollama address moved to another machine is not local (freeze FR-5).
+   */
   local: z.boolean(),
   lastTest: z.optional(
     z.object({
@@ -124,7 +127,11 @@ export const AiUsage = z.object({
   ),
 });
 
-/** A versioned consent record (ARCH 8.3). A provider or scope change bumps `currentVersion` and pauses background AI. */
+/**
+ * A versioned consent record (ARCH 8.3). The version covers the scope, the Summaries provider and model, and that
+ * provider's address host: changing any of them bumps `currentVersion`, sets `needsReconsent` and pauses background AI
+ * until the owner agrees again on the card (`Consent/grant`, Electron windows only; freeze FR-5).
+ */
 export const Consent = z.object({
   scope: openEnum(['background']),
   granted: z.boolean(),
@@ -192,13 +199,18 @@ export const AskStep = z.object({
 export const AskTurn = z.object({
   id: Id,
   question: text(20_000),
-  /** Paragraphs; `strong` marks ranges to emphasise. */
+  /**
+   * Paragraphs; `strong` marks ranges to emphasise. `cites` places citation chips (FR-30): chip `n` (a `Citation.n`) sits
+   * at character `at` of `text`. Text carries no `[n]` markers: the engine strips any the model wrote, so offsets and
+   * `strong` ranges count the text as shown, and quoted mail that contains "[1]" is just text.
+   */
   answer: z.optional(
     z.object({
       blocks: z.array(
         z.object({
           text: text(20_000),
           strong: z.optional(z.array(z.object({ start: Count, end: Count }))),
+          cites: z.optional(z.array(z.object({ at: Count, n: Count }))),
         }),
       ),
     }),
@@ -211,7 +223,7 @@ export const AskTurn = z.object({
   problem: z.optional(Problem),
   proposals: z.array(Proposal),
   steps: z.array(AskStep),
-  /** Accounts left out because "Use this account's mail for AI" is off. */
+  /** Accounts left out because "Use this account's mail for AI" is off, even when `scope.accountIds` named them (FR-8). */
   excludedAccountIds: z.optional(z.array(Id)),
   createdAt: EpochMs,
 });

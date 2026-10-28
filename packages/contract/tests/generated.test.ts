@@ -36,7 +36,19 @@ test('the generated tables partition the registry', () => {
   );
   assert.ok(tables.mcpMethods.every(name => ['read', 'draft'].includes(getMethod(name).scope)));
   assert.ok(
+    tables.listenerMethods.every(
+      name => !(tables.uiOnlyMethods as readonly string[]).includes(name),
+    ),
+  );
+  assert.ok(
     !tables.rendererMethods.some(name => (tables.hostMethods as readonly string[]).includes(name)),
   );
   assert.equal(tables.legacyMethods.length, 66);
+});
+
+/** Freeze FR-9 (ARCH 12.3 item 6): an MCP agent following injected mail must not delete anything unprompted. */
+test('MCP exposes no audited (destructive) method, Draft/destroy included', () => {
+  assert.ok(!(tables.mcpMethods as readonly string[]).includes('Draft/destroy'));
+  for (const name of tables.mcpMethods) assert.ok(!getMethod(name).audit, `${name} is audited`);
+  assert.ok((tables.mcpMethods as readonly string[]).includes('Draft/set'), 'drafting stays');
 });

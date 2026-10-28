@@ -82,6 +82,8 @@ export const Event = z.object({
   /** The thread the event was made from (a plan). */
   threadId: z.optional(Id),
   htmlLink: z.optional(text(2_000)),
+  /** Hidden in Aplos only (`Event/hide`), never at the provider; events windows leave it out unless `includeHidden`. */
+  hidden: z.optional(z.boolean()),
   /** Where the latest local change stands: `localOnly` is an event not yet created at the provider, so it has no Delete (acceptance 6). */
   sync: openEnum(['localOnly', 'pending', 'synced', 'failed', 'conflict']),
 });

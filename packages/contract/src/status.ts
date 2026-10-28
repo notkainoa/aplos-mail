@@ -75,6 +75,10 @@ export const reasonCodes = [
   'ai.noConsent',
   'ai.trainsOnInputs',
   'ai.failed',
+  /** The call named an account whose "Use this account's mail for AI" is off (freeze FR-8). */
+  'ai.accountExcluded',
+  /** A send missed its time while the Mac was off and waits for Send now or Reschedule (ARCH 7.3, FR-2). */
+  'send.overdue',
   'unknown',
 ] as const;
 export type ReasonCode = (typeof reasonCodes)[number];

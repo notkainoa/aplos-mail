@@ -3,6 +3,8 @@ import type { Fixture } from '../engine';
 import type { Bytes } from '../data/demo';
 import { capabilities } from '../data/defaults';
 import { addDays, atLocal, localDay, weekday } from '../time';
+import { principalOf, requireScope, type Caller } from '@aplos/contract/access';
+import { consentKey } from './ai';
 import { clean, fail, must, type Part } from './util';
 
 const hash = (s: string) => {
@@ -12,10 +14,20 @@ const hash = (s: string) => {
 };
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value, null, 2));
 
-export function blobOf(fx: Fixture, bytes: Bytes, mime: string, name?: string) {
-  const blobId = fx.id('blob');
-  fx.blobs.set(blobId, { bytes, mime, ...(name ? { name } : {}) });
+/** Stores a blob for `caller` under an id with 128 random bits (seeded, so a run repeats), never a counter (FR-6). */
+export function blobOf(fx: Fixture, caller: Caller, bytes: Bytes, mime: string, name?: string) {
+  const bits = Array.from({ length: 4 }, () =>
+    ((fx.random() * 2 ** 32) >>> 0).toString(16).padStart(8, '0'),
+  ).join('');
+  const blobId = `blob-${bits}`;
+  fx.blobs.set(blobId, { bytes, mime, ...(name ? { name } : {}), owner: principalOf(caller) });
   return blobId;
+}
+
+/** The caller's own blob, else `notFound`: another caller's id reads as unknown, never as forbidden. */
+export function ownBlob(fx: Fixture, caller: Caller, blobId: string, message: string) {
+  const b = fx.blobs.get(blobId);
+  return b && b.owner === principalOf(caller) ? b : fail('notFound', message);
 }
 
 /** Session, settings, the outbox summary, Later presets, reminders, notifications and the admin areas. */
@@ -101,7 +113,13 @@ export function core(fx: Fixture) {
       const next = { ...current } as Settings & { id: 'settings' };
       for (const section of Object.keys(patch) as (keyof Settings)[])
         (next as Record<string, unknown>)[section] = { ...current[section], ...patch[section] };
-      const { receipt } = fx.write({ opId, kind: 'Settings/set' }, tx => tx.put('Settings', next));
+      const { receipt } = fx.write({ opId, kind: 'Settings/set' }, tx => {
+        tx.put('Settings', next);
+        // Another Summaries provider, model or address host needs consent again (FR-5).
+        const c = tx.get('Consent', 'background');
+        if (c?.granted && consentKey(current.ai) !== consentKey(next.ai))
+          tx.put('Consent', { ...c, currentVersion: c.currentVersion + 1, needsReconsent: true });
+      });
       if (patch.ui?.theme && patch.ui.theme !== current.ui.theme)
         fx.emit({ frame: 'host', event: { type: 'appearance', theme: patch.ui.theme } });
       const { id: _, ...out } = next;
@@ -244,7 +262,7 @@ export function core(fx: Fixture) {
     },
     'Clients/audit': () => ({ list: [] }),
 
-    'Data/export': () => {
+    'Data/export': (_args, cx) => {
       const bytes = encode({
         exportedAt: fx.now,
         settings: settings(),
@@ -256,17 +274,17 @@ export function core(fx: Fixture) {
         conversations: fx.store.all('Conversation'),
       });
       return {
-        blobId: blobOf(fx, bytes, 'application/json', 'aplos-data.json'),
+        blobId: blobOf(fx, cx.caller, bytes, 'application/json', 'aplos-data.json'),
         name: 'aplos-data.json',
         size: bytes.length,
       };
     },
 
     'Diagnostics/preview': () => diagnostics(fx),
-    'Diagnostics/export': () => {
+    'Diagnostics/export': (_args, cx) => {
       const bytes = encode(diagnostics(fx));
       return {
-        blobId: blobOf(fx, bytes, 'application/json', 'aplos-diagnostics.json'),
+        blobId: blobOf(fx, cx.caller, bytes, 'application/json', 'aplos-diagnostics.json'),
         name: 'aplos-diagnostics.json',
         size: bytes.length,
       };
@@ -282,16 +300,19 @@ export function core(fx: Fixture) {
     'Queue/list': ({ kinds }) => ({
       list: queue(fx).filter(item => !kinds || kinds.includes(item.kind as 'op')),
     }),
-    'Queue/retry': ({ id }) => {
+    // Each queue action needs the scope of whatever made the item, as well as admin (FR-3): a send is `send`, a job `ai`.
+    'Queue/retry': ({ id }, cx) => {
       const op = fx.ops.get(id);
       if (op) {
+        requireScope(cx.caller, op.scope);
         if (op.operation.state !== 'failed')
           fail('conflict', 'Only a failed change can be retried.');
-        fx.handlers['Operation/retry']({ opId: id }, { sessionId: '' });
+        fx.handlers['Operation/retry']({ opId: id }, cx);
         return { ok: true as const };
       }
       const job = fx.store.get('AiJob', id);
       if (job) {
+        requireScope(cx.caller, 'ai');
         fx.write({ kind: 'Queue/retry' }, tx =>
           tx.put('AiJob', { ...job, state: 'queued', attempts: job.attempts + 1, nextAt: fx.now }),
         );
@@ -299,29 +320,36 @@ export function core(fx: Fixture) {
       }
       const sub = fx.store.get('Submission', id);
       if (sub?.state === 'failed') {
+        requireScope(cx.caller, 'send');
         fx.handlers['Submission/set'](
           { opId: fx.id('retry'), action: { type: 'retry', submissionId: id } },
-          { sessionId: '' },
+          cx,
         );
         return { ok: true as const };
       }
       return fail('notFound', 'This item is no longer in the queue.');
     },
-    'Queue/discard': ({ id }) => {
+    'Queue/discard': ({ id }, cx) => {
       const op = fx.ops.get(id);
       if (op) {
+        requireScope(cx.caller, op.scope);
         op.operation = { ...op.operation, state: 'cancelled' };
         fx.emit({ frame: 'operation', operation: op.operation });
         return { ok: true as const };
       }
       if (fx.store.get('AiJob', id)) {
+        requireScope(cx.caller, 'ai');
         fx.write({ kind: 'Queue/discard' }, tx => tx.del('AiJob', id));
         return { ok: true as const };
       }
       const sub = fx.store.get('Submission', id);
-      if (sub) {
-        fx.write({ kind: 'Queue/discard' }, tx =>
-          tx.put('Submission', { ...sub, state: 'cancelled' }),
+      if (sub && !['sent', 'cancelled'].includes(sub.state)) {
+        requireScope(cx.caller, 'send');
+        // Discarding a send is undo or cancel, so the draft comes back unlocked.
+        const type = sub.state === 'queued' || sub.state === 'scheduled' ? 'undo' : 'cancel';
+        fx.handlers['Submission/set'](
+          { opId: fx.id('discard'), action: { type, submissionId: id } },
+          cx,
         );
         return { ok: true as const };
       }
@@ -346,6 +374,7 @@ function queue(fx: Fixture): QueueItem[] {
           : undefined,
         canRetry: o.state === 'failed',
         canDiscard: true,
+        scope: fx.ops.get(o.opId)?.scope,
       }),
     );
   const jobs = fx.store
@@ -366,6 +395,7 @@ function queue(fx: Fixture): QueueItem[] {
           : undefined,
         canRetry: j.state === 'failed',
         canDiscard: true,
+        scope: 'ai',
       }),
     );
   const subs = fx.store
@@ -388,6 +418,7 @@ function queue(fx: Fixture): QueueItem[] {
           : undefined,
         canRetry: s.state === 'failed',
         canDiscard: s.state !== 'sending',
+        scope: 'send',
       }),
     );
   return [...ops, ...jobs, ...subs];

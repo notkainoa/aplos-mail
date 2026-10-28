@@ -22,6 +22,8 @@ const defs = methodNames.map(name => [name, getMethod(name)] as [string, MethodD
 const pick = (test: (def: MethodDef) => boolean) => sorted(defs.filter(([, def]) => test(def)).map(([name]) => name));
 /** What the socket and loopback HTTP listener may carry: engine methods that are not UI-only, secret or for main alone. */
 const listenable = (def: MethodDef) => def.host === 'engine' && !def.uiOnly && !def.secret && def.scope !== 'host';
+/** What the MCP adapter exposes: listenable `read` and `draft` methods that are not audited, so nothing destructive (Draft/destroy) runs unprompted. */
+const mcpExposed = (def: MethodDef) => listenable(def) && (def.scope === 'read' || def.scope === 'draft') && !def.audit;
 
 export function renderMethods(): string {
   const parts = [
@@ -33,13 +35,16 @@ export function renderMethods(): string {
     list('rendererMethods', pick(d => d.scope !== 'host'), 'What preload lets an Electron window call: everything except `host` methods.'),
     list('hostMethods', pick(d => d.scope === 'host'), 'Methods only main\'s own control connection may call.'),
     list('listenerMethods', pick(listenable), 'What the local socket and loopback HTTP listener may carry (ARCH 12.3).'),
-    list('mcpMethods', pick(d => listenable(d) && (d.scope === 'read' || d.scope === 'draft')), 'Methods the MCP adapter exposes as tools: `read` and `draft` scopes only.'),
+    list('mcpMethods', pick(mcpExposed), 'Methods the MCP adapter exposes as tools: `read` and `draft` scopes, never an audited (destructive) one (ARCH 12.3 item 6).'),
     list('secretMethods', pick(d => !!d.secret), 'Methods whose arguments carry a secret: never logged, never echoed, Electron windows only.'),
+    list('uiOnlyMethods', pick(d => !!d.uiOnly), 'Methods only Electron windows (and main) may call, never the socket, HTTP or MCP.'),
     list('auditMethods', pick(d => !!d.audit), 'A call from a non-UI client writes an `audit_log` row.'),
     record('methodHost', `'engine' | 'desktop'`, defs.map(([n, d]) => [n, d.host]), 'Host per method.'),
     record('methodScope', `'${scopes.join(`' | '`)}'`, defs.map(([n, d]) => [n, d.scope]), 'Listener scope per method.'),
     record('methodKind', `'query' | 'command'`, defs.map(([n, d]) => [n, d.kind]), 'Query or command per method.'),
     record('methodArea', 'string', defs.map(([n, d]) => [n, d.area]), 'Owning area file per method.'),
+    record('methodScopeRule', `'originating' | 'guests'`, defs.flatMap(([n, d]) => (d.scopeRule ? [[n, d.scopeRule]] : [])), 'The data-dependent scope check a handler adds (`MethodSpec.scopeRule`, freeze FR-3 and FR-4).'),
+    `/** Argument paths a listener caller may not set (\`MethodSpec.windowOnlyArgs\`, freeze FR-5). */\nexport const windowOnlyArgs: Record<string, readonly string[]> = {\n${defs.flatMap(([n, d]) => (d.windowOnlyArgs ? [`  '${n}': [${d.windowOnlyArgs.map(a => `'${a}'`).join(', ')}],`] : [])).join('\n')}\n};\n`,
     list('legacyEngineMethods', sorted(Object.entries(legacyMethods).filter(([, h]) => h === 'engine').map(([n]) => n)), 'Today\'s engine method names (0.2.3), until Phase 2.'),
     list('legacyDesktopMethods', sorted(Object.entries(legacyMethods).filter(([, h]) => h === 'desktop').map(([n]) => n)), 'Today\'s desktop method names (0.2.3), until Phase 2.'),
     list('legacyMethods', sorted(Object.keys(legacyMethods)), 'The union of today\'s three hand lists (preload, electron, server).'),
@@ -95,6 +100,8 @@ export function renderOpenApi(): string {
         'x-aplos-scope': def.scope,
         ...(def.audit ? { 'x-aplos-audit': true } : {}),
         ...(!listenable(def) ? { 'x-aplos-ui-only': true } : {}),
+        ...(def.scopeRule ? { 'x-aplos-scope-rule': def.scopeRule } : {}),
+        ...(def.windowOnlyArgs ? { 'x-aplos-window-only-args': def.windowOnlyArgs } : {}),
         requestBody: { required: true, content: { 'application/json': { schema: ref(def.input) } } },
         responses: {
           200: { description: 'The result.', content: { 'application/json': { schema: ref(def.output) } } },

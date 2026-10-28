@@ -1,5 +1,6 @@
 import * as z from 'zod/mini';
-import { ClassifiedErrorSchema } from '../errors';
+import { ClassifiedErrorSchema, ContractError } from '../errors';
+import { logAddressHashPattern, logCodePattern } from '../log/events';
 import { ReasonCodeSchema } from '../status';
 import { Count, DurationMs, EpochMs, Id, line, openEnum, State } from './common';
 import { AiProviderId } from './ai';
@@ -190,61 +191,111 @@ export const QueueItem = z.object({
   problem: z.optional(z.object({ reasonCode: line(60), message: z.optional(z.string()) })),
   canRetry: z.boolean(),
   canDiscard: z.boolean(),
+  /** The scope of the method that made the item (`send` for submissions, `ai` for jobs); `Queue/*` needs it too (FR-3). */
+  scope: z.optional(openEnum(scopes)),
 });
 export type QueueItem = z.infer<typeof QueueItem>;
+
+type Field = z.ZodMiniType<string, string>;
+/** One bundle shape, built twice: as the method's output, and strict for the host's production check (FR-32). */
+function bundleOf(code: (max: number) => Field, hash: Field, error: z.ZodMiniType) {
+  return z.object({
+    generatedAt: EpochMs,
+    versions: z.object({
+      app: line(100),
+      api: z.int(),
+      schema: z.int(),
+      os: z.optional(line(100)),
+      electron: z.optional(line(100)),
+      sqlite: z.optional(line(40)),
+    }),
+    engine: z.object({
+      state: code(40),
+      uptimeMs: DurationMs,
+      eventLoopP99Ms: z.optional(z.number()),
+      parkedReason: z.optional(code(60)),
+    }),
+    accounts: z.array(
+      z.object({
+        accountHash: hash,
+        provider: code(30),
+        state: code(40),
+        reasonCode: z.optional(code(60)),
+        cursorAgeMs: z.optional(DurationMs),
+        lastSyncAt: z.optional(EpochMs),
+        reconnectBy: z.optional(EpochMs),
+        budgets: z.array(
+          z.object({
+            budget: code(60),
+            target: z.optional(z.number()),
+            unitsPerMinute: z.optional(z.number()),
+            cooldownUntil: z.optional(EpochMs),
+            dailyBlockUntil: z.optional(EpochMs),
+          }),
+        ),
+      }),
+    ),
+    queues: z.object({ ops: Count, jobs: Count, submissions: Count, failed: Count }),
+    /** Recent classified errors; `providerMessage` is already redacted by the Logger. */
+    errors: z.array(z.object({ at: EpochMs, error })),
+    storage: z.object({
+      dbBytes: Count,
+      walBytes: Count,
+      ftsBacklog: Count,
+      bodyBytes: Count,
+      attachmentBytes: Count,
+    }),
+    crashes: z.object({ count: Count, lastAt: z.optional(EpochMs) }),
+  });
+}
 
 /**
  * The diagnostics bundle (ARCH 11): content-free by construction. Nothing enters it except through this schema, so no
  * subject, body, snippet, token or plain address can (addresses appear only as salted hashes). Previewed before saving.
  */
-export const DiagnosticsBundle = z.object({
-  generatedAt: EpochMs,
-  versions: z.object({
-    app: line(100),
-    api: z.int(),
-    schema: z.int(),
-    os: z.optional(line(100)),
-    electron: z.optional(line(100)),
-    sqlite: z.optional(line(40)),
-  }),
-  engine: z.object({
-    state: line(40),
-    uptimeMs: DurationMs,
-    eventLoopP99Ms: z.optional(z.number()),
-    parkedReason: z.optional(line(60)),
-  }),
-  accounts: z.array(
-    z.object({
-      accountHash: line(64),
-      provider: line(30),
-      state: line(40),
-      reasonCode: z.optional(line(60)),
-      cursorAgeMs: z.optional(DurationMs),
-      lastSyncAt: z.optional(EpochMs),
-      reconnectBy: z.optional(EpochMs),
-      budgets: z.array(
-        z.object({
-          budget: line(60),
-          target: z.optional(z.number()),
-          unitsPerMinute: z.optional(z.number()),
-          cooldownUntil: z.optional(EpochMs),
-          dailyBlockUntil: z.optional(EpochMs),
-        }),
-      ),
-    }),
-  ),
-  queues: z.object({ ops: Count, jobs: Count, submissions: Count, failed: Count }),
-  /** Recent classified errors; `providerMessage` is already redacted by the Logger. */
-  errors: z.array(z.object({ at: EpochMs, error: ClassifiedErrorSchema })),
-  storage: z.object({
-    dbBytes: Count,
-    walBytes: Count,
-    ftsBacklog: Count,
-    bodyBytes: Count,
-    attachmentBytes: Count,
-  }),
-  crashes: z.object({ count: Count, lastAt: z.optional(EpochMs) }),
+export const DiagnosticsBundle = bundleOf(line, line(64), ClassifiedErrorSchema);
+
+const code = z.string().check(z.regex(logCodePattern));
+/**
+ * A classified error as a bundle may carry it: every string a code (`logCodePattern`), and no `providerMessage` or
+ * `item`, which a strict parse drops, so provider text and remote ids never leave in a bundle.
+ */
+const BundleError = z.object({
+  class: code,
+  provider: code,
+  method: code,
+  reason: code,
+  status: z.optional(z.int()),
+  code: z.optional(code),
+  retryAfterMs: z.optional(z.number().check(z.nonnegative())),
+  resumeAt: z.optional(z.number()),
+  concurrency: z.optional(z.boolean()),
+  uncertain: z.optional(z.boolean()),
+  missingScopes: z.optional(z.array(code)),
 });
+
+/**
+ * The bundle as it may leave the engine (freeze FR-32). Output schemas run only in tests and dev builds (`checkResult`),
+ * so the host parses every bundle with this one, in production too, before preview, save or copy
+ * (`parseDiagnosticsBundle`). Every free-form field must be a code and every account a 16-hex hash, so a stored error
+ * column the builder forgot to clean fails the parse instead of leaving the Mac.
+ */
+export const StrictDiagnosticsBundle = bundleOf(
+  () => code,
+  z.string().check(z.regex(logAddressHashPattern)),
+  BundleError,
+);
+
+/** The host's production check of a bundle: the strict parse, or `internal` with a plain sentence. Never shows the bundle. */
+export function parseDiagnosticsBundle(value: unknown): DiagnosticsBundle {
+  const parsed = StrictDiagnosticsBundle.safeParse(value);
+  if (!parsed.success)
+    throw new ContractError({
+      type: 'internal',
+      message: 'The diagnostics report held something it should not, so it was not made.',
+    });
+  return parsed.data as DiagnosticsBundle;
+}
 export type DiagnosticsBundle = z.infer<typeof DiagnosticsBundle>;
 
 /** A notification main posts for the engine (ARCH 7.6): durable, claimed once, never duplicated by a crash. */

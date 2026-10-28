@@ -1,7 +1,22 @@
 import { transaction, type SqlDatabase, type SqlStatement, type SqlValue } from './sql';
+import { encodeBody } from './bodies';
+import { governor, providerMemory, syncFailure } from './bookkeeping';
+import { calendar, calendarDelete, event, eventDelete, eventSweep } from './calendar';
+import type { WriteScope } from './scope';
 import {
   StoreError,
   type AccountWrite,
+  type AttachmentStateWrite,
+  type AttachmentsWrite,
+  type BodyCodec,
+  type BodyWrite,
+  type ChangeType,
+  type CommitExtension,
+  type CommitExtensionTx,
+  type OpEffect,
+  type OpSettleWrite,
+  type OpWrite,
+  type ThreadMergeWrite,
   type CommitInput,
   type CommitResult,
   type FlagsWrite,
@@ -56,13 +71,49 @@ export interface CommitContext {
   now: () => number;
   /** Cached prepare. */
   stmt: (sql: string) => SqlStatement;
+  /** Lane writers by kind (seam 2), validated by `registerExtensions`. */
+  extensions?: ReadonlyMap<string, CommitExtension>;
+  bodyCodec?: BodyCodec;
 }
 
+/** The kinds `commit.ts` applies itself; no extension may claim one. */
+export const CORE_WRITE_KINDS: ReadonlySet<string> = new Set([
+  'account',
+  'folder',
+  'folderDelete',
+  'message',
+  'messageDelete',
+  'placements',
+  'flags',
+  'thread',
+  'threadDelete',
+  'threadMerge',
+  'workflow',
+  'syncState',
+  'sweep',
+  'meta',
+  'op',
+  'opSettle',
+  'body',
+  'attachments',
+  'attachmentState',
+  'governor',
+  'providerMemory',
+  'syncFailure',
+  'calendar',
+  'calendarDelete',
+  'event',
+  'eventDelete',
+  'eventSweep',
+]);
+/** Op states whose effect is still replayed over sync (ARCH 4.3). */
+const REPLAYED_OPS = `state IN ('queued', 'inflight')`;
+
 /**
- * The minimal working commit (F4): accounts, folders, messages, placements, flags, threads, workflow, sync state, the
- * bounded sweep and meta in one transaction, thread rollups and folder lists recomputed from the messages, one `changes` row per changed
- * item, `seq` bumped once. A replayed `opId` is a no-op. `eng-store` completes it in Phase 1 (replay of pending ops,
- * bodies, FTS, notifications, compaction) without changing `CommitInput`.
+ * The commit (F4): every write in one transaction, then pending ops replayed over the sync facts (ARCH 4.3), then thread
+ * rollups and folder lists recomputed from the messages, one `changes` row per changed item, `seq` bumped once. Lane
+ * kinds run in their extension inside the same transaction. A replayed `opId` is a no-op. Still to come in Phase 1
+ * (store-1 to store-4): FTS, ingest hooks, compaction, without changing `CommitInput`.
  */
 export function applyCommit(ctx: CommitContext, input: CommitInput): CommitResult {
   if (typeof input?.opId !== 'string' || !input.opId)
@@ -79,6 +130,7 @@ export function applyCommit(ctx: CommitContext, input: CommitInput): CommitResul
     const current = Number(ctx.stmt("SELECT value FROM meta WHERE key = 'seq'").get()?.value ?? 0);
     const run = new CommitRun(ctx, input, current + 1);
     for (const write of input.writes) run.apply(write);
+    run.replayOps();
     run.rollups();
     const changed = run.writeChanges();
     const seq = changed > 0 ? current + 1 : current;
@@ -96,26 +148,34 @@ interface MessageRow {
   remote_id: string;
   flags: number;
   local_seq: number | null;
+  first_seen_seq: number;
   [k: string]: number | string | null;
 }
+const MESSAGE_COLS = 'm.id, m.thread_id, m.remote_id, m.flags, m.local_seq, m.first_seen_seq';
 
-class CommitRun {
+class CommitRun implements WriteScope {
   private readonly touched = new Set<number>();
+  /** Messages this commit wrote, per account: what pending ops are replayed over. */
+  private readonly touchedMessages = new Map<string, Set<number>>();
   private readonly changes = new Map<string, { type: string; id: string; op: 'u' | 'd' | '*' }>();
+  private readonly txs = new Map<CommitExtension, CommitExtensionTx>();
   private readonly coarse: boolean;
-  private readonly local: boolean;
+  readonly local: boolean;
 
   constructor(
     private readonly ctx: CommitContext,
     private readonly input: CommitInput,
-    private readonly seq: number,
+    readonly seq: number,
   ) {
     this.coarse = input.changes === 'coarse';
     this.local = input.origin === 'local';
   }
 
-  private q(sql: string) {
+  q(sql: string) {
     return this.ctx.stmt(sql);
+  }
+  now() {
+    return this.ctx.now();
   }
 
   apply(w: StoreWrite) {
@@ -146,23 +206,115 @@ class CommitRun {
         return this.sweep(w);
       case 'meta':
         return this.meta(w);
+      case 'threadMerge':
+        return this.threadMerge(w);
+      case 'op':
+        return this.op(w);
+      case 'opSettle':
+        return this.opSettle(w);
+      case 'body':
+        return this.body(w);
+      case 'attachments':
+        return this.attachments(w);
+      case 'attachmentState':
+        return this.attachmentState(w);
+      case 'governor':
+        return governor(this, w);
+      case 'providerMemory':
+        return providerMemory(this, w);
+      case 'syncFailure':
+        return syncFailure(this, w);
+      case 'calendar':
+        return calendar(this, w);
+      case 'calendarDelete':
+        return calendarDelete(this, w);
+      case 'event':
+        return event(this, w);
+      case 'eventDelete':
+        return eventDelete(this, w);
+      case 'eventSweep':
+        return eventSweep(this, w);
       default:
-        throw new StoreError('invalid', `Unknown write kind ${(w as { kind?: unknown }).kind}`);
+        return this.extension(w as { kind: string });
     }
   }
 
+  /** Lane kinds (seam 2): the registered extension applies them inside this transaction. */
+  private extension(w: { kind: string }) {
+    const ext = typeof w?.kind === 'string' ? this.ctx.extensions?.get(w.kind) : undefined;
+    if (!ext)
+      throw new StoreError(
+        'invalid',
+        `No writer for write kind ${String((w as { kind?: unknown })?.kind)}`,
+      );
+    let tx = this.txs.get(ext);
+    if (!tx) this.txs.set(ext, (tx = this.extensionTx(ext)));
+    ext.apply(w, tx);
+  }
+
+  private extensionTx(ext: CommitExtension): CommitExtensionTx {
+    const allowed = new Set<string>(ext.changeTypes);
+    const rowId = (sql: string, accountId: string, remoteId: string) =>
+      this.q(sql).get<{ id: number }>(accountId, remoteId)?.id;
+    return {
+      origin: this.input.origin,
+      step: this.input.step,
+      seq: this.seq,
+      now: () => this.now(),
+      run: (sql, ...params) => this.q(sql).run(...params),
+      get: (sql, ...params) => this.q(sql).get(...params),
+      all: (sql, ...params) => this.q(sql).all(...params),
+      mark: (type, id, op) => {
+        if (!allowed.has(type))
+          throw new StoreError('invalid', `${ext.lane} may not write ${type} change rows`);
+        this.markId(type, id, op);
+      },
+      messageRowId: (accountId, remoteId) =>
+        rowId(
+          'SELECT id FROM messages WHERE account_id = ? AND remote_id = ?',
+          accountId,
+          remoteId,
+        ),
+      threadRowId: (accountId, remoteThreadId) =>
+        rowId(
+          'SELECT id FROM threads WHERE account_id = ? AND remote_id = ?',
+          accountId,
+          remoteThreadId,
+        ),
+      touchThread: (accountId, remoteThreadId) => {
+        const id = rowId(
+          'SELECT id FROM threads WHERE account_id = ? AND remote_id = ?',
+          accountId,
+          remoteThreadId,
+        );
+        if (id === undefined) return this.missing(`Thread ${remoteThreadId}`);
+        this.q('UPDATE threads SET rev = ? WHERE id = ?').run(this.seq, id);
+        this.mark('Thread', accountId, remoteThreadId, 'u');
+      },
+      touchMessage: (accountId, remoteId) => {
+        const m = this.messageRow(accountId, remoteId);
+        if (!m) return this.missing(`Message ${remoteId}`);
+        this.q('UPDATE messages SET rev = ? WHERE id = ?').run(this.seq, m.id);
+        this.mark('Message', accountId, remoteId, 'u');
+      },
+    };
+  }
+
   /** Records a change; a later `d` wins over `u`, a re-created item goes back to `u`. Coarse mode folds per account. */
-  private mark(type: string, accountId: string, remoteId: string | null, op: 'u' | 'd') {
+  mark(type: ChangeType, accountId: string, remoteId: string | null, op: 'u' | 'd') {
     if (this.coarse && (type === 'Thread' || type === 'Message')) {
       this.changes.set(`${type}\0${accountId}`, { type, id: accountId, op: '*' });
       return;
     }
-    const id = remoteId === null ? accountId : `${accountId}:${remoteId}`;
+    this.markId(type, remoteId === null ? accountId : `${accountId}:${remoteId}`, op);
+  }
+  /** A change row by contract id, for extensions (which may not mark store types). */
+  markId(type: ChangeType, id: string, op: 'u' | 'd') {
     this.changes.set(`${type}\0${id}`, { type, id, op });
   }
 
   /** Sync facts about an item the store does not track are dropped; a local edit of a missing item is an error. */
-  private missing(what: string) {
+  missing(what: string) {
     if (this.local) throw new StoreError('notFound', `${what} is not in the store`);
   }
 
@@ -195,6 +347,7 @@ class CommitRun {
       set('resume_at', state === 'paused' ? (until ?? null) : null);
       set('status_detail', Object.keys(detail).length ? JSON.stringify(detail) : null);
     }
+    set('status_reason_code', w.reasonCode);
     set('baseline_done_at', w.baselineDoneAt);
     set('token_granted_at', w.tokenGrantedAt);
     set('refresh_expires_at', w.refreshExpiresAt);
@@ -223,8 +376,16 @@ class CommitRun {
 
   private folder(w: FolderWrite) {
     const before = this.q(
-      'SELECT id, role FROM folders WHERE account_id = ? AND remote_id = ?',
-    ).get<{ id: number; role: string | null }>(w.accountId, w.remoteId);
+      'SELECT id, role, uidvalidity FROM folders WHERE account_id = ? AND remote_id = ?',
+    ).get<{ id: number; role: string | null; uidvalidity: number | null }>(w.accountId, w.remoteId);
+    // A new UIDVALIDITY voids every UID stored for the folder (FR-31): the resync re-stamps them, and an old UID left in
+    // place would collide with a relisted message's new one on `mf_uid` and fail every page of the reset.
+    if (
+      before?.uidvalidity != null &&
+      w.uidValidity != null &&
+      before.uidvalidity !== w.uidValidity
+    )
+      this.q('UPDATE message_folders SET uid = NULL WHERE folder_id = ?').run(before.id);
     this.q(
       `INSERT INTO folders(account_id, remote_id, name, role, kind, sync_scope, uidvalidity, hidden) VALUES(?, ?, ?, ?, ?, COALESCE(?, 'lazy'), ?, ?)
       ON CONFLICT(account_id, remote_id) DO UPDATE SET name = excluded.name, role = excluded.role, kind = excluded.kind,
@@ -251,6 +412,13 @@ class CommitRun {
     }>(w.accountId, w.remoteId);
     if (!row) return;
     this.touchFolderThreads(row.id);
+    // The cascade drops the placements, which changes each placed message's labels (FR-15).
+    for (const m of this.q(
+      'SELECT m.id, m.remote_id FROM message_folders mf JOIN messages m ON m.id = mf.message_id WHERE mf.folder_id = ?',
+    ).all<{ id: number; remote_id: string }>(row.id)) {
+      this.q('UPDATE messages SET rev = ? WHERE id = ?').run(this.seq, m.id);
+      this.mark('Message', w.accountId, m.remote_id, 'u');
+    }
     this.q('DELETE FROM folders WHERE id = ?').run(row.id);
     this.mark('Folder', w.accountId, w.remoteId, 'd');
   }
@@ -323,9 +491,7 @@ class CommitRun {
           ? 'local'
           : 'sync');
     const threadId = this.threadId(w.accountId, w.remoteThreadId, w.internalDate);
-    const existing = this.q(
-      'SELECT id, thread_id, remote_id, flags, local_seq FROM messages WHERE account_id = ? AND remote_id = ?',
-    ).get<MessageRow>(w.accountId, w.remoteId);
+    const existing = this.messageRow(w.accountId, w.remoteId);
     const fenced = existing !== undefined && this.fenced(existing.local_seq);
     let flags =
       (w.flags.seen ? FLAG.seen : 0) |
@@ -385,7 +551,20 @@ class CommitRun {
     }
     if (w.folders && !fenced) this.replacePlacements(id, w.accountId, w.folders, w.seenGen);
     this.touched.add(threadId);
+    this.touchedMessage(w.accountId, id);
     this.mark('Message', w.accountId, w.remoteId, 'u');
+  }
+
+  messageRow(accountId: string, remoteId: string): MessageRow | undefined {
+    return this.q(
+      `SELECT ${MESSAGE_COLS} FROM messages m WHERE m.account_id = ? AND m.remote_id = ?`,
+    ).get<MessageRow>(accountId, remoteId);
+  }
+
+  private touchedMessage(accountId: string, id: number) {
+    let set = this.touchedMessages.get(accountId);
+    if (!set) this.touchedMessages.set(accountId, (set = new Set()));
+    set.add(id);
   }
 
   private replacePlacements(
@@ -416,19 +595,25 @@ class CommitRun {
   }
 
   private targets(accountId: string, target: MessageTarget): MessageRow[] {
-    const rows =
-      'remoteId' in target
-        ? this.q(
-            'SELECT id, thread_id, remote_id, flags, local_seq FROM messages WHERE account_id = ? AND remote_id = ?',
-          ).all<MessageRow>(accountId, target.remoteId)
-        : this.q(
-            `SELECT m.id, m.thread_id, m.remote_id, m.flags, m.local_seq FROM messages m JOIN threads t ON t.id = m.thread_id
-          WHERE t.account_id = ? AND t.remote_id = ? AND (m.flags & ${FLAG.draft}) = 0`,
-          ).all<MessageRow>(accountId, target.remoteThreadId);
-    if (!rows.length)
-      this.missing(
-        'remoteId' in target ? `Message ${target.remoteId}` : `Thread ${target.remoteThreadId}`,
-      );
+    let rows: MessageRow[], what: string;
+    if ('remoteId' in target) {
+      const row = this.messageRow(accountId, target.remoteId);
+      rows = row ? [row] : [];
+      what = `Message ${target.remoteId}`;
+    } else if ('remoteThreadId' in target) {
+      rows = this.q(
+        `SELECT ${MESSAGE_COLS} FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.account_id = ? AND t.remote_id = ? AND (m.flags & ${FLAG.draft}) = 0`,
+      ).all<MessageRow>(accountId, target.remoteThreadId);
+      what = `Thread ${target.remoteThreadId}`;
+    } else {
+      rows = this.q(
+        `SELECT ${MESSAGE_COLS} FROM message_folders mf JOIN folders f ON f.id = mf.folder_id
+          JOIN messages m ON m.id = mf.message_id WHERE f.account_id = ? AND f.remote_id = ? AND mf.uid = ?`,
+      ).all<MessageRow>(accountId, target.folder, target.uid);
+      what = `UID ${target.uid} in ${target.folder}`;
+    }
+    if (!rows.length) this.missing(what);
     return rows;
   }
 
@@ -440,32 +625,35 @@ class CommitRun {
       m.id,
     );
     this.touched.add(m.thread_id);
+    this.touchedMessage(accountId, m.id);
     this.mark('Message', accountId, m.remote_id, 'u');
   }
 
   private placements(w: PlacementsWrite) {
     for (const m of this.targets(w.accountId, w.target)) {
       if (this.fenced(m.local_seq)) continue;
-      for (const ref of w.add)
-        this.place(m.id, this.folderId(w.accountId, ref.folder), ref.uid, w.seenGen);
-      for (const folder of w.remove)
-        this.q(
-          'DELETE FROM message_folders WHERE message_id = ? AND folder_id = (SELECT id FROM folders WHERE account_id = ? AND remote_id = ?)',
-        ).run(m.id, w.accountId, folder);
+      this.movePlacements(w.accountId, m.id, w.add, w.remove, w.seenGen);
       this.touchMessage(w.accountId, m);
     }
   }
 
+  private movePlacements(
+    accountId: string,
+    messageId: number,
+    add: FolderRef[],
+    remove: string[],
+    seenGen: number | undefined,
+  ) {
+    for (const ref of add)
+      this.place(messageId, this.folderId(accountId, ref.folder), ref.uid, seenGen);
+    for (const folder of remove)
+      this.q(
+        'DELETE FROM message_folders WHERE message_id = ? AND folder_id = (SELECT id FROM folders WHERE account_id = ? AND remote_id = ?)',
+      ).run(messageId, accountId, folder);
+  }
+
   private flags(w: FlagsWrite) {
-    let set = 0,
-      clear = 0;
-    const bit = (on: boolean | undefined, flag: number) => {
-      if (on === true) set |= flag;
-      else if (on === false) clear |= flag;
-    };
-    bit(w.seen, FLAG.seen);
-    bit(w.flagged, FLAG.flagged);
-    bit(w.answered, FLAG.answered);
+    const [set, clear] = flagBits(w);
     for (const m of this.targets(w.accountId, w.target)) {
       if (this.fenced(m.local_seq)) continue;
       this.q('UPDATE messages SET flags = (flags & ~?) | ? WHERE id = ?').run(clear, set, m.id);
@@ -511,6 +699,7 @@ class CommitRun {
       if (m.parts & PART.fts) this.q('DELETE FROM messages_fts WHERE rowid = ?').run(m.id);
       this.mark('Message', w.accountId, m.remote_id, 'd');
     }
+    this.markListChanges(this.lists(row.id), new Map());
     this.q('DELETE FROM threads WHERE id = ?').run(row.id); // cascades messages, placements, workflow, lists
     this.touched.delete(row.id);
     this.mark('Thread', w.accountId, w.remoteThreadId, 'd');
@@ -534,6 +723,198 @@ class CommitRun {
     // Workflow is part of the contract's Thread row, so the thread's rev moves with it.
     this.q('UPDATE threads SET rev = ? WHERE id = ?').run(this.seq, row.id);
     this.mark('Thread', w.accountId, w.remoteThreadId, 'u');
+  }
+
+  private threadMerge(w: ThreadMergeWrite) {
+    const find = (remoteId: string) =>
+      this.q('SELECT id FROM threads WHERE account_id = ? AND remote_id = ?').get<{ id: number }>(
+        w.accountId,
+        remoteId,
+      )?.id;
+    const from = w.from.filter(r => r !== w.into);
+    let into = find(w.into);
+    if (into === undefined) {
+      const first = from.find(r => find(r) !== undefined);
+      if (first === undefined) return this.missing(`Thread ${w.into}`);
+      into = find(first)!;
+      this.q('UPDATE threads SET remote_id = ? WHERE id = ?').run(w.into, into);
+      this.q('UPDATE thread_workflow SET sync_key = ? WHERE thread_id = ?').run(w.into, into);
+      this.mark('Thread', w.accountId, first, 'd');
+      // Its messages now name a different contract thread id.
+      for (const m of this.q(
+        `SELECT ${MESSAGE_COLS} FROM messages m WHERE m.thread_id = ?`,
+      ).all<MessageRow>(into))
+        this.touchMessage(w.accountId, m);
+    }
+    for (const remoteId of from) {
+      const id = find(remoteId);
+      if (id === undefined || id === into) continue;
+      for (const m of this.q(
+        `SELECT ${MESSAGE_COLS} FROM messages m WHERE m.thread_id = ?`,
+      ).all<MessageRow>(id)) {
+        this.q('UPDATE messages SET thread_id = ? WHERE id = ?').run(into, m.id);
+        this.touchMessage(w.accountId, { ...m, thread_id: into });
+      }
+      this.touched.add(id); // emptied: the rollup deletes it and marks it
+    }
+    this.touched.add(into);
+  }
+
+  // ------------------------------------------------------------ ops (ARCH 4.3)
+
+  private op(w: OpWrite) {
+    if (!w.opId || !w.accountId || !w.opKind)
+      throw new StoreError('invalid', 'An op needs opId, accountId and opKind');
+    if (!Array.isArray(w.effect))
+      throw new StoreError('invalid', `Op ${w.opId} needs an effect array`);
+    if (this.q('SELECT 1 FROM ops WHERE op_id = ?').get(w.opId))
+      throw new StoreError('invalid', `Op ${w.opId} is already queued`);
+    for (const e of w.effect) this.applyEffect(w.accountId, e, undefined);
+    this.q(
+      `INSERT INTO ops(op_id, account_id, kind, target, payload, base, effect, state, created_seq, scope)
+      VALUES(?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)`,
+    ).run(
+      w.opId,
+      w.accountId,
+      w.opKind,
+      JSON.stringify(w.targets ?? []),
+      w.payload,
+      w.base ?? null,
+      w.effect.length ? JSON.stringify(w.effect) : null,
+      this.seq,
+      w.scope ?? null,
+    );
+    this.mark('Account', w.accountId, null, 'u'); // Account.pendingChanges
+  }
+
+  private opSettle(w: OpSettleWrite) {
+    const row = this.q('SELECT seq, account_id FROM ops WHERE op_id = ?').get<{
+      seq: number;
+      account_id: string;
+    }>(w.opId);
+    if (!row) return this.missing(`Op ${w.opId}`);
+    if (w.state === 'synced' || w.state === 'cancelled')
+      this.q('DELETE FROM ops WHERE seq = ?').run(row.seq);
+    else {
+      const cols: Record<string, SqlValue> = { state: w.state };
+      if (w.attempts !== undefined) cols.attempts = w.attempts;
+      if (w.nextAt !== undefined) cols.next_at = w.nextAt;
+      if (w.lastError !== undefined) cols.last_error = w.lastError;
+      const keys = Object.keys(cols);
+      this.q(`UPDATE ops SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE seq = ?`).run(
+        ...keys.map(k => cols[k]),
+        row.seq,
+      );
+    }
+    this.mark('Account', row.account_id, null, 'u');
+  }
+
+  /**
+   * One op effect. `only` set: a replay over a sync commit, limited to the messages it wrote that were already stored
+   * when the op was enqueued, ignoring the fence and leaving `local_seq` alone. Unset: the op's own local edit.
+   */
+  private applyEffect(
+    accountId: string,
+    e: OpEffect,
+    only: { ids: Set<number>; createdSeq: number } | undefined,
+  ) {
+    if (!only) {
+      if (e.kind === 'placements')
+        return this.placements({
+          kind: 'placements',
+          accountId,
+          target: e.target,
+          add: e.add,
+          remove: e.remove,
+        });
+      if (e.kind === 'flags') return this.flags({ ...e, kind: 'flags', accountId });
+      throw new StoreError('invalid', `Unknown op effect ${(e as { kind?: unknown }).kind}`);
+    }
+    for (const m of this.targets(accountId, e.target)) {
+      if (!only.ids.has(m.id) || m.first_seen_seq > only.createdSeq) continue;
+      if (e.kind === 'placements') this.movePlacements(accountId, m.id, e.add, e.remove, undefined);
+      else if (e.kind === 'flags') {
+        const [set, clear] = flagBits(e);
+        this.q('UPDATE messages SET flags = (flags & ~?) | ? WHERE id = ?').run(clear, set, m.id);
+      }
+      this.touched.add(m.thread_id);
+    }
+  }
+
+  /** ARCH 4.3 replay: provider facts first, then every still-pending op over the messages this sync commit wrote. */
+  replayOps() {
+    if (this.input.origin !== 'sync') return;
+    for (const [accountId, ids] of this.touchedMessages) {
+      const ops = this.q(
+        `SELECT effect, created_seq FROM ops WHERE account_id = ? AND ${REPLAYED_OPS} AND effect IS NOT NULL ORDER BY seq`,
+      ).all<{ effect: string; created_seq: number }>(accountId);
+      for (const op of ops)
+        for (const e of JSON.parse(op.effect) as OpEffect[])
+          this.applyEffect(accountId, e, { ids, createdSeq: op.created_seq });
+    }
+  }
+
+  // ------------------------------------------------------------ bodies and attachments (ARCH 3.3)
+
+  private body(w: BodyWrite) {
+    const m = this.messageRow(w.accountId, w.remoteId);
+    if (!m) return this.missing(`Message ${w.remoteId}`);
+    const { rawSize, codec, data } = encodeBody(w.body, this.ctx.bodyCodec);
+    this.q(
+      `INSERT INTO bodies(message_id, codec, raw_size, data) VALUES(?, ?, ?, ?)
+      ON CONFLICT(message_id) DO UPDATE SET codec = excluded.codec, raw_size = excluded.raw_size, data = excluded.data`,
+    ).run(m.id, codec, rawSize, data);
+    const parts = this.q('SELECT parts FROM messages WHERE id = ?').get<{ parts: number }>(
+      m.id,
+    )!.parts;
+    // The body changes what search indexes: drop the row and the bit, and the paced indexer picks it up again.
+    if (parts & PART.fts) this.q('DELETE FROM messages_fts WHERE rowid = ?').run(m.id);
+    const next =
+      (parts & ~(PART.text | PART.html | PART.fts | PART.evicted)) |
+      (w.body.text !== undefined ? PART.text : 0) |
+      (w.body.html !== undefined ? PART.html : 0);
+    this.q('UPDATE messages SET parts = ?, rev = ? WHERE id = ?').run(next, this.seq, m.id);
+    this.mark('Message', w.accountId, w.remoteId, 'u'); // Message.bodyState
+  }
+
+  private attachments(w: AttachmentsWrite) {
+    const m = this.messageRow(w.accountId, w.remoteId);
+    if (!m) return this.missing(`Message ${w.remoteId}`);
+    this.q(
+      'DELETE FROM attachments WHERE message_id = ? AND remote_part NOT IN (SELECT value FROM json_each(?))',
+    ).run(m.id, JSON.stringify(w.list.map(a => a.remotePart)));
+    const upsert = this.q(
+      `INSERT INTO attachments(message_id, remote_part, name, mime, size, cid, inline, state) VALUES(?, ?, ?, ?, ?, ?, ?, 'absent')
+      ON CONFLICT(message_id, remote_part) DO UPDATE SET name = excluded.name, mime = excluded.mime, size = excluded.size,
+        cid = excluded.cid, inline = excluded.inline`,
+    );
+    for (const a of w.list)
+      upsert.run(
+        m.id,
+        a.remotePart,
+        a.name ?? null,
+        a.mime ?? null,
+        a.size ?? null,
+        a.cid ?? null,
+        Number(a.inline),
+      );
+    this.q('UPDATE messages SET parts = parts | ?, rev = ? WHERE id = ?').run(
+      PART.attachListed,
+      this.seq,
+      m.id,
+    );
+    this.mark('Message', w.accountId, w.remoteId, 'u'); // Message.attachments
+  }
+
+  private attachmentState(w: AttachmentStateWrite) {
+    const m = this.messageRow(w.accountId, w.remoteId);
+    if (!m) return this.missing(`Message ${w.remoteId}`);
+    const done = this.q(
+      `UPDATE attachments SET state = ?, path = CASE WHEN ? THEN ? ELSE path END WHERE message_id = ? AND remote_part = ?`,
+    ).run(w.state, Number(w.path !== undefined), w.path ?? null, m.id, w.remotePart).changes;
+    if (!done) return this.missing(`Attachment ${w.remotePart} of ${w.remoteId}`);
+    this.q('UPDATE messages SET rev = ? WHERE id = ?').run(this.seq, m.id);
+    this.mark('Message', w.accountId, w.remoteId, 'u');
   }
 
   // ------------------------------------------------------------ bookkeeping
@@ -568,7 +949,7 @@ class CommitRun {
     }>(w.accountId, w.folder);
     if (!folder) return;
     const gone = this.q(
-      `SELECT m.id, m.thread_id, m.remote_id, m.flags, m.local_seq FROM message_folders mf JOIN messages m ON m.id = mf.message_id
+      `SELECT ${MESSAGE_COLS} FROM message_folders mf JOIN messages m ON m.id = mf.message_id
       WHERE mf.folder_id = ?1 AND mf.seen_gen IS NOT NULL AND mf.seen_gen < ?2
         AND (?3 IS NULL OR m.internal_date > ?3) AND (?4 IS NULL OR m.internal_date < ?4)
         AND (?5 IS NULL OR mf.uid >= ?5) AND (?6 IS NULL OR mf.uid <= ?6)`,
@@ -621,6 +1002,7 @@ class CommitRun {
         FROM messages WHERE thread_id = ?`,
       ).get<Record<string, number | null>>(threadId)!;
       if (!a.total) {
+        this.markListChanges(this.lists(threadId), new Map());
         this.q('DELETE FROM threads WHERE id = ?').run(threadId);
         this.mark('Thread', t.account_id, t.remote_id, 'd');
         continue;
@@ -654,6 +1036,7 @@ class CommitRun {
         threadId,
       );
       this.q('UPDATE thread_workflow SET last_date = ? WHERE thread_id = ?').run(last, threadId);
+      const before = this.lists(threadId);
       this.q('DELETE FROM thread_folders WHERE thread_id = ?').run(threadId);
       this.q(
         `INSERT INTO thread_folders(folder_id, last_date, thread_id, unread)
@@ -664,7 +1047,32 @@ class CommitRun {
             WHERE x.message_id = m.id AND y.role IN ('trash', 'spam')))
         GROUP BY mf.folder_id`,
       ).run(last, threadId);
+      this.markListChanges(before, this.lists(threadId));
       this.mark('Thread', t.account_id, t.remote_id, 'u');
+    }
+  }
+
+  /** The thread's folder lists: folder id → whether the thread counts as unread there. */
+  private lists(threadId: number): Map<number, boolean> {
+    return new Map(
+      this.q('SELECT folder_id, unread FROM thread_folders WHERE thread_id = ?')
+        .all<{ folder_id: number; unread: number }>(threadId)
+        .map(r => [r.folder_id, r.unread > 0]),
+    );
+  }
+
+  /**
+   * Folder rows are derived too (FR-15): `Folder.total` and `Folder.unread` count the threads listed there, so a folder
+   * whose list gained or lost a thread, or where the thread turned read or unread, gets a change row.
+   */
+  private markListChanges(before: Map<number, boolean>, after: Map<number, boolean>) {
+    for (const id of new Set([...before.keys(), ...after.keys()])) {
+      if (before.get(id) === after.get(id)) continue;
+      const f = this.q('SELECT account_id, remote_id FROM folders WHERE id = ?').get<{
+        account_id: string;
+        remote_id: string;
+      }>(id);
+      if (f) this.mark('Folder', f.account_id, f.remote_id, 'u');
     }
   }
 
@@ -673,6 +1081,19 @@ class CommitRun {
     for (const c of this.changes.values()) insert.run(this.seq, c.type, c.id, c.op);
     return this.changes.size;
   }
+}
+
+function flagBits(w: { seen?: boolean; flagged?: boolean; answered?: boolean }): [number, number] {
+  let set = 0,
+    clear = 0;
+  const bit = (on: boolean | undefined, flag: number) => {
+    if (on === true) set |= flag;
+    else if (on === false) clear |= flag;
+  };
+  bit(w.seen, FLAG.seen);
+  bit(w.flagged, FLAG.flagged);
+  bit(w.answered, FLAG.answered);
+  return [set, clear];
 }
 
 const WORKFLOW_COLUMNS: Record<keyof WorkflowFields, string> = {

@@ -2,6 +2,7 @@ import type { AccountHealth, ReasonCode } from '@aplos/contract';
 import type { Logger } from '../diag/log';
 import type { StorePort } from '../store/port';
 import type { AccountId, Admission, DeviceId, ProviderKind } from './base';
+import type { CalendarWriteResult, EditScope, EventChange, EventRef } from './calendar';
 import type { GovernorPort, RequestIo } from './governor';
 import type {
   AttachmentRef,
@@ -14,7 +15,9 @@ import type {
   OpenedThread,
   PlanEnv,
   ProviderFactory,
+  RemoteRule,
   ScopeId,
+  SenderRule,
   SendReceipt,
   ServerSearch,
   SubmissionPayload,
@@ -53,14 +56,27 @@ export interface ProviderPort {
 export interface AccountRuntime extends AccountHealth {
   grantedScopes: string[];
   capabilities: Capabilities;
-  /** Feature-level gaps (calendar, filters) that do not make the whole account `needsPermission`. */
-  missingPermissions?: { capability: keyof Capabilities; missingScopes: string[] }[];
+  /**
+   * Feature-level gaps (calendar, filters) that do not make the whole account `needsPermission`. Same shape as the F1
+   * `Account.missingPermissions` row, so `Account/get` copies it: `reasonCode` is the copy key (`missingCalendarScope`).
+   */
+  missingPermissions?: {
+    capability: keyof Capabilities;
+    reasonCode: ReasonCode;
+    missingScopes: string[];
+  }[];
   sendBlockedUntil?: number;
   /** The first window's progress (AM-4); complete once `baselineDoneAt` is set. `found` only when the provider estimates it. */
   firstWindow: { read: number; total: number; found?: number };
   baselineDoneAt?: number;
   /** "Background work runs on: <Mac>" (ARCH 6.5). */
-  lease?: { role: 'primary' | 'secondary'; holder?: DeviceId; until?: number };
+  lease?: {
+    role: 'primary' | 'secondary';
+    holder?: DeviceId;
+    until?: number;
+    /** "Use this Mac" is on for this device (`claimLease`), until `releaseLease`; F1 `Lease.pinned`. */
+    pinned?: boolean;
+  };
   /** Calendar pauses show per calendar, never as the mail status (D12). */
   calendars?: {
     remoteId: string;
@@ -85,7 +101,8 @@ export interface AccountActorHost extends ProviderPort {
   connect(account: AccountId, kind: ProviderKind, req: ConnectRequest): Promise<ConnectResult>;
   /**
    * Restores governor state, then plans from committed cursors. The outbox start rules are `SendPort`'s: a `sending` row
-   * becomes `uncertain` and is settled by `findSent` before anything else; only `queued` rows obey the overdue rule.
+   * becomes `uncertain` and is settled by `findSent` before anything else; `queued` and `scheduled` rows (every row
+   * waiting on `not_before`, `WAITING_SUBMISSION_STATES`) obey the overdue rule.
    */
   start(account: AccountId): Promise<void>;
   stop(account: AccountId, why: 'disconnect' | 'quit' | 'restart'): Promise<void>;
@@ -94,14 +111,27 @@ export interface AccountActorHost extends ProviderPort {
    * no resync (a cursor Google already expired takes D10's bounded resync). Queued ops and drafts are kept and flush.
    */
   reconnected(account: AccountId, result: ConnectResult): Promise<void>;
-  /** `Sync/request`: asks the governor's admission first, so a manual sync while paused makes no network call. */
-  request(account: AccountId, req: { scope?: ScopeId; manual: boolean }): Admission;
+  /**
+   * `Sync/request`: asks the governor's admission first, so a manual sync while paused makes no network call.
+   * `force` is DESIGN 7.1's "Retry now": during a `throttle` cooldown it plans one step through
+   * `GovernorPort.retryNow`, which admits a single call once per pause and keeps the escalation step; any other refusal
+   * (daily, auth, config, send_limit, anti_abuse, or a second force in the same pause) answers as without `force`.
+   */
+  request(
+    account: AccountId,
+    req: { scope?: ScopeId; manual: boolean; force?: boolean },
+  ): Admission;
   requestAll(req: { manual: boolean }): Record<AccountId, Admission>;
   wake(reason: 'wake' | 'network' | 'focus' | 'push', account?: AccountId): void;
   /** New or changed `ops` rows: flush on the `opFlush` lane. */
   opsChanged(account: AccountId): void;
-  /** "Use this Mac" (`Account/lease`). */
+  /** "Use this Mac" (`Account/lease` `pin: true`): writes a pinned copy naming this device and keeps claiming while awake. */
   claimLease(account: AccountId): Promise<void>;
+  /**
+   * Back to automatic (`Account/lease` `pin: false`): drops this device's pin; the lease then follows the normal renewal
+   * and the lower-`DeviceId` tie rule, so this device may stay primary. A no-op when nothing is pinned here.
+   */
+  releaseLease(account: AccountId): Promise<void>;
   status(account: AccountId): AccountRuntime | undefined;
   lastHeartbeat(account: AccountId): number | undefined;
   subscribe(listener: (account: AccountId, status: AccountRuntime) => void): () => void;
@@ -133,8 +163,12 @@ export interface TokenSource {
  * lost (the app died after the marker). It becomes `uncertain` at once and runs `findSent(internetId, attempt_at)`
  * before any other submission of that account goes out; it is never `suspended`, re-queued or re-sent, however late.
  *
- * Overdue rule (ARCH 7.3, extended to pauses and reconnects): applies to `queued` rows only. A `queued` submission
- * that would go out more than 5 minutes past `not_before`, for any reason, becomes `suspended` instead.
+ * Overdue rule (ARCH 7.3, extended to pauses and reconnects): applies to every row waiting on `not_before`, which is
+ * `queued` (the undo window) and `scheduled` (send later) alike (`WAITING_SUBMISSION_STATES`); never to `sending`. A
+ * waiting submission that would go out more than `OVERDUE_GRACE_MS` past `not_before`, for any reason (Mac asleep or
+ * off, paused, signed out), becomes `suspended` instead: "Send now or Reschedule". The `outbox` deadline source and the
+ * store's due index cover both states (`store/due.ts`: `nextDueAt`, `dueSubmissions`), so a send-later row is found when it
+ * falls due.
  */
 export interface SendPort {
   /** No I/O: is the account's mail budget open for a send now (auth, pause, send-limit blocks)? */
@@ -144,14 +178,56 @@ export interface SendPort {
   findSent(account: AccountId, internetId: string, since: number): Promise<FindSentResult>;
 }
 
+/** The submission states that wait on `not_before` and so obey the overdue rule (F1 `SubmissionState` values). */
+export const WAITING_SUBMISSION_STATES = ['queued', 'scheduled'] as const;
+export type WaitingSubmissionState = (typeof WAITING_SUBMISSION_STATES)[number];
+/** ARCH 7.3's grace: a waiting submission more than this past `not_before` is `suspended`, never sent late. */
+export const OVERDUE_GRACE_MS = 5 * 60_000;
+
 /**
  * Remote draft copies. Implemented by `prov-gov` (routes to `saveDraft`/`deleteDraft` on the `opFlush` lane); called by
  * `eng-time`'s draft scheduler, which owns timing (5 s idle, on close), the fingerprint skip, per-draft serialization and
- * the "keep mine, take theirs, or keep both" state. `PausedError` reschedules through the `drafts` deadline.
+ * the "keep mine, take theirs, or keep both" state. `PausedError` reschedules through the `drafts` deadline. The
+ * scheduler passes the last synced copy as `DraftUpload.baseRemoteMessageId`; a `conflict` result (the copy changed
+ * elsewhere since) raises the same choice, and nothing is overwritten.
  */
 export interface DraftSyncPort {
   save(account: AccountId, draft: DraftUpload): Promise<DraftSaveResult>;
   remove(account: AccountId, remoteDraftId: string): Promise<void>;
+}
+
+/**
+ * Calendar writes, account-addressed. Implemented by `prov-gov` (routes to the account adapter's `calendar` on the
+ * interactive lane, under the calendar's own budget, and commits `saved` facts itself); called by `methods/event.ts`
+ * (`Event/set`, `Event/rsvp`, `Plan/confirm`, accepted `addEvent` proposals). `notify` (on `EventChange` and on
+ * `remove`'s ref) is the method's resolved choice: absent or false never emails guests, so a guest-free or triage path
+ * cannot send an invitation by default.
+ */
+export interface CalendarPort {
+  put(account: AccountId, change: EventChange): Promise<CalendarWriteResult>;
+  remove(
+    account: AccountId,
+    ref: EventRef & { scope: EditScope; notify?: boolean },
+  ): Promise<CalendarWriteResult>;
+  rsvp(
+    account: AccountId,
+    ref: EventRef & { scope: EditScope },
+    response: 'accepted' | 'declined' | 'tentative',
+    opts: { notify: boolean },
+  ): Promise<CalendarWriteResult>;
+}
+
+/**
+ * Provider filters for block and skip-Inbox, account-addressed. Implemented by `prov-gov` (routes to the adapter's
+ * `rules` on `opFlush`); called by `methods/sender.ts` (`SenderRule/*`). An account whose adapter has no `rules` (or
+ * lacks the filters permission) answers `list` with `[]` and `create` with `undefined`: the rule stays local only.
+ */
+export interface RulesPort {
+  list(account: AccountId): Promise<RemoteRule[]>;
+  /** The provider's rule id, or undefined when the account cannot hold provider rules. */
+  create(account: AccountId, rule: SenderRule): Promise<string | undefined>;
+  /** Idempotent: an absent rule is success. */
+  delete(account: AccountId, remoteId: string): Promise<void>;
 }
 
 /** What the engine runtime (`eng-contract`) injects when it builds `prov-gov`'s actor host. */

@@ -11,6 +11,11 @@ export interface FixtureClock {
   set(ms: number): void;
   /** Moves the clock forward, firing due timers in order. A real clock only shifts its offset; its timers keep wall time. */
   advance(ms: number): void;
+  /**
+   * The Mac sleeps for `ms`: time jumps with no timer firing on the way, then every due timer fires at once at wake, late
+   * (ARCH 7.3's overdue case). A real clock only shifts its offset.
+   */
+  sleep(ms: number): void;
   readonly kind: 'fake' | 'real';
 }
 
@@ -50,6 +55,10 @@ export function fakeClock(start = defaultNow): FixtureClock {
     advance(ms) {
       runUntil(now + Math.max(0, ms));
     },
+    sleep(ms) {
+      now += Math.max(0, ms);
+      runUntil(now);
+    },
   };
 }
 
@@ -66,6 +75,9 @@ export function realClock(start = Date.now()): FixtureClock {
       offset = ms - Date.now();
     },
     advance(ms) {
+      offset += Math.max(0, ms);
+    },
+    sleep(ms) {
       offset += Math.max(0, ms);
     },
   };

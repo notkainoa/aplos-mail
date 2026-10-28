@@ -1,6 +1,6 @@
 /**
  * The engine's ports (Phase 0 artifact F3): every interface a lane implements or calls across a lane boundary.
- * Types and small error classes only, no behaviour. Frozen at C1; after that, changes are additive and go through
+ * Types, small error classes and a few constants that state a frozen rule; no behaviour. Frozen at C1; after that, changes are additive and go through
  * CONTRACT-CHANGE-PROPOSED to `eng-contract`. `ports.walk.md` walks every provider through them.
  */
 export * from './ports/base';

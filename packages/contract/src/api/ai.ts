@@ -51,7 +51,7 @@ const keySource = z.object({
 export const ai = area('ai', {
   'Ai/request': {
     summary:
-      "Queue AI work for a thread ahead of the background order (today's `ai.summarize`); the result arrives as a Summary change. Without `force`, a thread with a summary is left alone.",
+      "Queue AI work for a thread ahead of the background order (today's `ai.summarize`); the result arrives as a Summary change. Without `force`, a thread with a summary is left alone. `forbidden` (`ai.accountExcluded`) for an account left out of AI.",
     kind: 'command',
     scope: 'ai',
     input: z.object({
@@ -87,7 +87,8 @@ export const ai = area('ai', {
     output: z.object({ html: text(1_000_000), changes: Count }),
   },
   'Ai/draft': {
-    summary: 'Write a draft or reply from an instruction, as a suggestion at the caret.',
+    summary:
+      'Write a draft or reply from an instruction, as a suggestion at the caret; a `threadId` in an account left out of AI is `forbidden`.',
     kind: 'command',
     scope: 'ai',
     input: z.object({
@@ -177,7 +178,7 @@ export const ai = area('ai', {
   },
   'Ai/testKey': {
     summary:
-      "One cheap request with the provider's current key (usually its model list). No mail is sent.",
+      "One cheap request with the provider's current key (usually its model list). No mail is sent. `message` is Aplos's own sentence for `reasonCode`, never the provider's text (FR-33).",
     kind: 'command',
     scope: 'admin',
     input: z.object({ provider }),
@@ -185,12 +186,12 @@ export const ai = area('ai', {
       ok: z.boolean(),
       ms: z.optional(DurationMs),
       reasonCode: z.optional(line(60)),
-      message: z.optional(z.string()),
+      message: z.optional(line(500)),
     }),
   },
   'Ai/test': {
     summary:
-      "One tiny request asking a model to call a tool, so a pass means Ask's tools work too. No mail is sent.",
+      "One tiny request asking a model to call a tool, so a pass means Ask's tools work too. No mail is sent. A failure's message is Aplos's own sentence for its `reasonCode`, never the provider's text (FR-33).",
     kind: 'command',
     scope: 'admin',
     input: z.object({ model: ModelRef }),
@@ -201,7 +202,7 @@ export const ai = area('ai', {
 export const ask = area('ask', {
   'Ask/run': {
     summary:
-      'Ask about your mail; returns at once with a run id, streams `progress` frames, and the answer lands in the Conversation.',
+      'Ask about your mail; returns at once with a run id, streams `progress` frames, and the answer lands in the Conversation. `scope.accountIds` and `context` only narrow the accounts whose "Use this account\'s mail for AI" is on; they never widen past them.',
     kind: 'command',
     scope: 'ai',
     input: z.object({
@@ -240,9 +241,11 @@ export const ask = area('ask', {
   },
   'Ask/decide': {
     summary:
-      'Accept or dismiss something Ask proposed (a reply, an event, a triage); accepting returns the receipt for Undo.',
+      'Accept or dismiss something Ask proposed (a reply, an event, a triage); accepting returns the receipt for Undo. Accepting an event with a guest other than you also needs `send`, and invites go out only then.',
     kind: 'command',
     scope: 'triage',
+    audit: true,
+    scopeRule: 'guests',
     input: z.object({ opId: OpId, conversationId: Id, turnId: Id, proposalId: Id, accept: bool() }),
     output: z.object({ receipt: Receipt, draftId: z.optional(Id), eventId: z.optional(Id) }),
   },
@@ -345,9 +348,10 @@ export const consent = area('consent', {
   },
   'Consent/grant': {
     summary:
-      'Agree to background AI for the version shown, naming the provider and model on the card.',
+      'Agree to background AI for the version shown, naming the provider and model on the card. Electron windows only: the owner must see the card (ARCH 8.3).',
     kind: 'command',
     scope: 'admin',
+    uiOnly: true,
     audit: true,
     input: z.object({ scope: choice(['background']), version: Count, provider, model: line(200) }),
     output: Consent,

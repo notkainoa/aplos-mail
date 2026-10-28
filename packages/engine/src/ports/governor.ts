@@ -89,9 +89,58 @@ export interface GovernorSnapshot {
 }
 
 /**
+ * The governor's whole class-by-class policy (ARCH 6.3), frozen here: `GOVERNOR_CLASS_POLICY` is the machine-checked
+ * half, so a new F1 `ErrorClass` fails the typecheck until it has a row, and the table below is the rest.
+ *
+ * - `throttle`: a cooldown on that budget for max(`retryAfterMs`, the escalation 60 s, 5 min, 15 min, 1 h; reset after
+ *   10 quiet minutes). The AIMD target halves (never below `floor`) and regrows after 10 quiet minutes; `concurrency`
+ *   drops `inFlightLimit` to 1 and halves the batch size. Not re-sent; `retryNow` admits one call per pause. Shows as
+ *   `paused(until, 'throttle')` for a mail budget, per calendar for `gcal` and `caldav` (D12).
+ * - `daily`: stops the budget until `resumeAt`; with `scope: 'project'` (Gmail `dailyLimitExceeded`) every account on
+ *   `PROJECT`. Never re-sent. `paused(until, 'daily')`.
+ * - `send_limit`: sets `sendBlockedUntil`, so `admission(.., 'send')` refuses until then; sync and every other kind go
+ *   on. Never re-sent. The status does not change; the submission is `failed` "until HH:MM" (D7).
+ * - `anti_abuse`: a cooldown of hours on that budget only (Google Calendar `quotaExceeded`). Never re-sent. Per
+ *   calendar for a calendar budget, never the mail status (D12).
+ * - `auth`: after a first 401, one forced token refresh and one re-send; otherwise `blocked` on every budget of the
+ *   account, token calls included, until `clear(account, 'auth')`. `needsReauth`.
+ * - `permission`: nothing on the budget; the gap is recorded as `AccountRuntime.missingPermissions`. Never re-sent.
+ *   `needsPermission` only when the core mail scope is missing.
+ * - `config`: `blocked` on `PROJECT` until `clear(PROJECT, 'config')`. Never re-sent. `misconfigured` on every account
+ *   of the provider.
+ * - `transient`: `read` and `idempotentWrite` are re-sent at 1, 2 and 4 s with jitter, each re-admitted; a `write` is
+ *   `OpOutcome` `failed` with `uncertain`; a `send` is uncertain (`SendPort`, settled by `findSent`). `offline` while
+ *   the network is down.
+ * - `permanent`: nothing on the budget; the item fails alone (quarantine, `NotSentError` for a send). Never re-sent.
+ * - `cancelled`: nothing; the caller's own abort, or a pause aborting a `read`, is never counted as a refusal.
+ *
+ * An edit that raced a remote change is a result (`CalendarWriteResult.conflict`, `DraftSaveResult.conflict`), not a
+ * class. A class this engine does not know (the F1 enum is open) is treated as `transient`.
+ */
+export const GOVERNOR_CLASS_POLICY = {
+  throttle: { pauses: 'budget', resend: 'never' },
+  daily: { pauses: 'budget', resend: 'never' },
+  send_limit: { pauses: 'sends', resend: 'never' },
+  anti_abuse: { pauses: 'budget', resend: 'never' },
+  auth: { pauses: 'account', resend: 'onceAfterRefresh' },
+  permission: { pauses: 'nothing', resend: 'never' },
+  config: { pauses: 'project', resend: 'never' },
+  transient: { pauses: 'nothing', resend: 'readAndIdempotentWrite' },
+  permanent: { pauses: 'nothing', resend: 'never' },
+  cancelled: { pauses: 'nothing', resend: 'never' },
+} as const satisfies Record<
+  ErrorClass,
+  {
+    /** What a refusal of this class blocks: one budget (`daily` with `scope: 'project'` blocks it on `PROJECT`), sends only, every budget of the account, or every account. */
+    pauses: 'budget' | 'sends' | 'account' | 'project' | 'nothing';
+    resend: 'never' | 'onceAfterRefresh' | 'readAndIdempotentWrite';
+  }
+>;
+
+/**
  * Implemented by `prov-gov` (`packages/engine/src/sync/governor.ts`); `eng-ai`'s AI governor shares its base class
  * for `ai:*` budgets. Called by the account actors (which bind it per account for adapters), the timer loop,
- * `Sync/request` and `SendPort`. The class-by-class policy is the Providers proposal's table (section 4).
+ * `Sync/request` and `SendPort`. Each class's action is `GOVERNOR_CLASS_POLICY` and the table above it.
  */
 export interface GovernorPort {
   /**
@@ -127,6 +176,13 @@ export interface GovernorPort {
   admission(account: AccountId, budget: BudgetId, lane: SyncLane, kind?: RequestKind): Admission;
   /** Current AIMD batch size (halved on a refusal, +growBy to max when quiet). */
   batchSize(account: AccountId, budget: BudgetId): number;
+  /**
+   * "Retry now" (`Sync/request` `force`, through `AccountActorHost.request`). During a `throttle` cooldown on `budget`,
+   * lets the next `run` on that budget pass the cooldown once and keeps `cooldownStep`, so a new refusal escalates as
+   * usual. At most once per pause: a second call in the same cooldown, or any other block (daily, send_limit,
+   * anti_abuse, auth, config), returns the refusing `Admission` and changes nothing. `{ ok: true }` when not paused. No I/O.
+   */
+  retryNow(account: AccountId, budget: BudgetId): Admission;
   /** From the lease: a secondary device runs under the secondary target. */
   setRole(account: AccountId, role: 'primary' | 'secondary'): void;
   /** After a successful reconnect or config fix: the only way out of an auth or config block. */
