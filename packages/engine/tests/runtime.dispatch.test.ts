@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getMethod, methodNames, parseArgs, type EngineMethodName } from '@aplos/contract';
-import { ContractError, NotImplementedError } from '@aplos/contract/contract-error';
+import { ContractError } from '@aplos/contract/contract-error';
 import { methodScope } from '@aplos/contract/allowlists';
-import type { Caller, Handler } from '../../src/methods/types';
-import { testEngine } from './helpers';
+import type { Caller, Handler } from '../src/methods/types';
+import { windowCaller } from '../src/index';
+import { testEngine } from './runtime.helpers';
 
 const engineMethods = methodNames.filter(
   (name): name is EngineMethodName => getMethod(name).host === 'engine',
@@ -17,10 +18,7 @@ test('the in-process connection serves the F5 table: stubs, unknown and desktop 
   const t = await testEngine();
   try {
     const s = t.engine.connect();
-    await assert.rejects(
-      s.call('Session/get', {}),
-      (e: unknown) => e instanceof NotImplementedError,
-    );
+    await assert.rejects(s.call('Session/get', {}), isType('notImplemented'));
     await assert.rejects(s.call('Thread/explode', {}), isType('unsupported'));
     await assert.rejects(
       s.call('File/save', { blobId: 'b', name: 'x.txt' }),
@@ -143,6 +141,85 @@ test('arguments and results are copied, so neither side shares objects', async (
     answer.list[0]!.id = 'changed';
     assert.deepEqual(kept[0], { ids: ['a'] });
     assert.equal(result.list[0]!.id, 'x');
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('a caller of no known kind is refused at connect, and the default window caller is frozen', async () => {
+  const t = await testEngine();
+  try {
+    for (const bad of [
+      { kind: 'socket', scopes: ['read'] },
+      { scopes: ['read'] },
+      { kind: 'Listener', scopes: ['read'] },
+      { kind: 'window' },
+    ])
+      assert.throws(() => t.engine.connect(bad as never), isType('forbidden'));
+    assert.ok(Object.isFrozen(windowCaller) && Object.isFrozen(windowCaller.scopes));
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('closing a session rejects its running calls and lets a handler start nothing more', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => (release = resolve));
+  const ran: string[] = [];
+  const t = await testEngine({
+    handlers: {
+      'Operation/retry': async (_args, ctx) => {
+        await gate;
+        return ctx.redispatch('Thread/act', {} as never);
+      },
+      'Thread/act': () => {
+        ran.push('act');
+        return {} as never;
+      },
+    },
+  });
+  try {
+    const s = t.engine.connect();
+    const pending = s.call('Operation/retry', { opId: 'o1' });
+    await new Promise(resolve => setImmediate(resolve));
+    s.close();
+    await assert.rejects(pending, isType('unavailable'));
+    release();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(ran, [], 'the re-dispatch after close never ran');
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('the services are frozen: a handler cannot swap a port or the log for later calls', async () => {
+  const t = await testEngine({
+    handlers: {
+      'Thread/get': (_args, ctx) => {
+        assert.throws(() => {
+          (ctx.services as { log: unknown }).log = null;
+        });
+        assert.throws(() => {
+          (ctx.services.frames as { emit: unknown }).emit = null;
+        });
+        return { list: [], notFound: [] } as never;
+      },
+    },
+  });
+  try {
+    await t.engine.connect().call('Thread/get', { ids: [] });
+    assert.ok(Object.isFrozen(t.engine.services));
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('arguments that cannot be copied answer validation, not internal', async () => {
+  const t = await testEngine();
+  try {
+    const s = t.engine.connect();
+    await assert.rejects(s.call('Thread/get', { ids: [], f: () => 1 }), isType('validation'));
+    assert.doesNotMatch(t.logText(), /rpc\.failed/);
   } finally {
     await t.cleanup();
   }

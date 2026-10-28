@@ -1,15 +1,15 @@
 import type { Frame, LogRecord } from '@aplos/contract';
-import { createLogger } from '../../src/diag/log';
-import { createEngine, type Engine, type EngineOptions } from '../../src/index';
-import type { Clock, Timer } from '../../src/ports';
-import { openStore, type StorePort } from '../../src/store';
-import { T0, tempDb } from '../store/helpers';
+import { createLogger } from '../src/diag/log';
+import { createEngine, type Engine, type EngineOptions } from '../src/index';
+import type { Clock, Timer } from '../src/ports';
+import { openStore, type StorePort } from '../src/store';
+import { T0, tempDb } from './store/helpers';
 
 /** A manual clock until `eng-time`'s fake clock lands: timers fire only when a test advances it. */
 export function manualClock(start = T0) {
   let now = start;
   let timers: { at: number; fire: () => void; live: boolean }[] = [];
-  const clock: Clock & { advance(ms: number): void } = {
+  const clock: Clock & { advance(ms: number): void; pending(): number } = {
     now: () => now,
     sleep: ms => new Promise(resolve => clock.timer(now + ms, resolve)),
     timer(at, fire): Timer {
@@ -17,6 +17,7 @@ export function manualClock(start = T0) {
       timers.push(entry);
       return { cancel: () => void (entry.live = false) };
     },
+    pending: () => timers.filter(t => t.live).length,
     advance(ms) {
       const until = now + ms;
       for (;;) {

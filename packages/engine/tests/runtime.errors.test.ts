@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ContractError } from '@aplos/contract/contract-error';
-import { NotSentError, PausedError, ProviderError } from '../../src/ports';
-import { testEngine } from './helpers';
+import { NotSentError, PausedError, ProviderError } from '../src/ports';
+import { testEngine } from './runtime.helpers';
 
 const PROVIDER_TEXT = 'Invalid Credentials for owner@mail.example ya29.secret-token-value';
 
@@ -68,11 +68,24 @@ test('a provider refusal becomes providerError or paused, without the provider m
   }
 });
 
-test("a handler's ContractError passes through as its own sentence", async () => {
-  const mine = new ContractError({ type: 'notFound', message: 'That conversation is gone.' });
+test("a handler's ContractError keeps its sentence and loses its stack, cause and extra fields", async () => {
+  const mine = Object.assign(
+    new ContractError({ type: 'notFound', message: 'That conversation is gone.' }),
+    { cause: new Error(PROVIDER_TEXT), providerMessage: PROVIDER_TEXT },
+  );
   const { got, log } = await failWith(mine);
-  assert.equal(got, mine);
+  assert.notEqual(got, mine);
+  assert.deepEqual(got.body, { type: 'notFound', message: 'That conversation is gone.' });
+  assert.equal(got.stack, 'ContractError: That conversation is gone.');
+  assert.doesNotMatch(visible(got), /ya29|owner@|\.ts:\d/);
   assert.doesNotMatch(log, /rpc\.failed/);
+});
+
+test('a thrown value that defeats instanceof is still internal', async () => {
+  const { proxy, revoke } = Proxy.revocable({}, {});
+  revoke();
+  const { got } = await failWith(proxy);
+  assert.equal(got.type, 'internal');
 });
 
 test('a throw that is not an Error at all is still internal', async () => {

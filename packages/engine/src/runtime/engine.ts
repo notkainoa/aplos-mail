@@ -1,11 +1,11 @@
 import { appScopes } from '@aplos/contract/access';
 import type { EngineConnection, EngineSession } from '@aplos/contract/client';
-import { ContractError } from '@aplos/contract/contract-error';
 import type { EngineMethodName } from '@aplos/contract';
 import { dispatchWith, handlers as table } from '../methods/index';
 import type { Caller, EngineHandlers } from '../methods/types';
 import type { Clock, Logger, StorePort } from '../ports';
 import { openConnection } from './connection';
+import { contractError } from './errors';
 import { createFrameHub, observeCommits } from './frames';
 import type { EngineServices, LaneModule, LaneModuleSource } from './services';
 
@@ -49,10 +49,13 @@ export interface Engine extends EngineConnection {
 }
 
 /** The caller `connect()` gets when none is named, as in the stand-in engine. */
-export const windowCaller: Caller = { kind: 'window', scopes: appScopes };
+export const windowCaller: Caller = Object.freeze({
+  kind: 'window',
+  scopes: Object.freeze([...appScopes]),
+});
 
 const unavailable = () =>
-  new ContractError({ type: 'unavailable', message: 'This part of Aplos is not running yet.' });
+  contractError({ type: 'unavailable', message: 'This part of Aplos is not running yet.' });
 const absentPorts = new WeakSet<object>();
 
 /** A port the host has not injected: callable, and every member rejects with `unavailable`. */
@@ -96,9 +99,11 @@ export async function buildEngine(
   modules: readonly LaneModuleSource[],
 ): Promise<Engine> {
   const hub = createFrameHub({ store: options.store, clock: options.clock });
-  const services = coreServices(options, hub);
-  const started = composeModules(services, modules, new Set(Object.keys(options.ports ?? {})));
-  for (const lane of started) await lane.start?.();
+  const draft = coreServices(options, hub);
+  const started = composeModules(draft, modules, new Set(Object.keys(options.ports ?? {})));
+  // Frozen once composed: no lane or handler swaps a port, the observed store or the log for everyone after it.
+  const services = Object.freeze(draft);
+  await startAll(started, hub);
   const dispatch = dispatcher(options.handlers);
   const open = new Set<EngineSession>();
   let counter = 0;
@@ -138,7 +143,7 @@ function coreServices(options: EngineOptions, hub: ReturnType<typeof createFrame
     store: observeCommits(options.store, hub),
     clock: options.clock,
     log: options.log,
-    frames: { emit: hub.emit, changed: hub.changed, reset: hub.reset },
+    frames: Object.freeze({ emit: hub.emit, changed: hub.changed, reset: hub.reset }),
     randomBytes,
   } as EngineServices;
   for (const name of HOST_PORTS)
@@ -148,6 +153,34 @@ function coreServices(options: EngineOptions, hub: ReturnType<typeof createFrame
 
 const CORE = new Set(['store', 'clock', 'log', 'frames', 'randomBytes']);
 
+/** Starts the lanes in order; when one fails, stops the ones already running, in reverse, and rethrows. */
+async function startAll(lanes: readonly LaneModule[], hub: { close(): void }) {
+  const running: LaneModule[] = [];
+  try {
+    for (const lane of lanes) {
+      await lane.start?.();
+      running.push(lane);
+    }
+  } catch (error) {
+    for (const lane of running.reverse()) await lane.stop?.();
+    hub.close();
+    throw error;
+  }
+}
+
+/** What `createModule` sees: every service built so far, read-only. A lane adds its own only by returning them. */
+function readOnly(services: EngineServices): EngineServices {
+  const refuse = (_target: object, key: string | symbol) => {
+    throw new Error(`A lane module cannot change services.${String(key)}; return it instead`);
+  };
+  const traps: ProxyHandler<EngineServices> = {
+    set: refuse,
+    defineProperty: refuse,
+    deleteProperty: refuse,
+  };
+  return new Proxy(services, traps);
+}
+
 /** Runs each lane's `createModule` in order. A lane may fill a stand-in port, never replace a real one or another lane's. */
 function composeModules(
   services: EngineServices,
@@ -155,8 +188,9 @@ function composeModules(
   injected: ReadonlySet<string>,
 ): LaneModule[] {
   const owner = new Map<string, string>();
+  const view = readOnly(services);
   return modules.map(source => {
-    const lane = source.createModule(services);
+    const lane = source.createModule(view);
     for (const [key, value] of Object.entries(lane.services ?? {})) {
       const holder = CORE.has(key) || injected.has(key) ? 'the host' : owner.get(key);
       if (holder) throw new Error(`${source.lane} cannot set services.${key}: ${holder} set it`);

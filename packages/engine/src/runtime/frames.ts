@@ -38,10 +38,14 @@ export interface FrameHub extends FrameBus {
   close(): void;
 }
 
+/** Frames only the bus (`state`, `reset`) or main (`desktop`) sends. */
+const OWN_KINDS: ReadonlySet<string> = new Set(['state', 'reset', 'desktop']);
+
 export function createFrameHub(deps: { store: StorePort; clock: Clock }): FrameHub {
   const targets = new Map<string, (frame: StampedFrame) => void>();
   const pending = new Map<string, number>();
   let timer: Timer | undefined;
+  let closed = false;
 
   const send = (frame: StampedFrame, to?: string) => {
     for (const [id, deliver] of [...targets]) {
@@ -69,8 +73,14 @@ export function createFrameHub(deps: { store: StorePort; clock: Clock }): FrameH
   };
 
   return {
-    emit: (frame, to) => send(stamp(frame), to),
+    emit(frame, to) {
+      // The types forbid these, but a lane's untyped frame must not skip coalescing or pose as main.
+      if (OWN_KINDS.has((frame as { frame?: unknown }).frame as string))
+        throw new Error(`The frame bus sends ${String(frame.frame)} frames itself`);
+      if (!closed) send(stamp(frame), to);
+    },
     changed(types) {
+      if (closed) return;
       for (const [type, seq] of Object.entries(types))
         pending.set(type, Math.max(seq, pending.get(type) ?? 0));
       if (pending.size && !timer)
@@ -78,11 +88,12 @@ export function createFrameHub(deps: { store: StorePort; clock: Clock }): FrameH
     },
     reset(reason) {
       cancel();
-      send(stamp({ frame: 'reset', reason }));
+      if (!closed) send(stamp({ frame: 'reset', reason }));
     },
     attach: (id, deliver) => void targets.set(id, deliver),
     detach: id => void targets.delete(id),
     close() {
+      closed = true;
       cancel();
       targets.clear();
     },

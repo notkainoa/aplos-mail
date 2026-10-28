@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ContractError } from '@aplos/contract/contract-error';
-import { createLogger } from '../../src/diag/log';
-import { isAbsent, laneExtensions } from '../../src/index';
-import { buildEngine } from '../../src/runtime/engine';
-import type { DeadlineRegistry } from '../../src/ports';
-import type { LaneModuleSource } from '../../src/runtime/services';
-import { openStore } from '../../src/store';
-import { T0, tempDb } from '../store/helpers';
-import { manualClock, testEngine } from './helpers';
+import { createLogger } from '../src/diag/log';
+import { isAbsent, laneExtensions } from '../src/index';
+import { buildEngine } from '../src/runtime/engine';
+import type { DeadlineRegistry } from '../src/ports';
+import type { LaneModuleSource } from '../src/runtime/services';
+import { openStore } from '../src/store';
+import { T0, tempDb } from './store/helpers';
+import { manualClock, testEngine } from './runtime.helpers';
 
 function deps() {
   const file = tempDb();
@@ -122,4 +122,55 @@ test('a closed engine refuses new connections and closes the open ones', async (
     () => t.engine.connect(),
     (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
   );
+});
+
+test('a module cannot write to the services it is given', async () => {
+  const d = deps();
+  try {
+    await assert.rejects(
+      buildEngine(d.options, [
+        {
+          lane: 'eng-ai',
+          extensions: [],
+          createModule: services => {
+            (services as { send: unknown }).send = {};
+            return {};
+          },
+        },
+      ]),
+      /cannot change services\.send/,
+    );
+  } finally {
+    d.cleanup();
+  }
+});
+
+test('when a lane fails to start, the lanes already started are stopped', async () => {
+  const d = deps();
+  const order: string[] = [];
+  const lane = (name: string, fails = false): LaneModuleSource => ({
+    lane: name,
+    extensions: [],
+    createModule: () => ({
+      start: () => {
+        if (fails) throw new Error(`${name} failed`);
+        order.push(`start ${name}`);
+      },
+      stop: () => void order.push(`stop ${name}`),
+    }),
+  });
+  try {
+    await assert.rejects(
+      buildEngine(d.options, [lane('eng-time'), lane('eng-views'), lane('eng-ai', true)]),
+      /eng-ai failed/,
+    );
+    assert.deepEqual(order, [
+      'start eng-time',
+      'start eng-views',
+      'stop eng-views',
+      'stop eng-time',
+    ]);
+  } finally {
+    d.cleanup();
+  }
 });

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Frame } from '@aplos/contract';
-import { STATE_COALESCE_MS } from '../../src/index';
-import { accountWrite, folderWrites } from '../store/helpers';
-import { framesOf, testEngine } from './helpers';
+import { STATE_COALESCE_MS } from '../src/index';
+import { accountWrite, folderWrites } from './store/helpers';
+import { framesOf, testEngine } from './runtime.helpers';
 
 test('commits leave as one coalesced state frame, stamped with dbEpoch and seq', async () => {
   const t = await testEngine();
@@ -132,4 +132,20 @@ test("a listener's bug does not stop delivery, and frames are copies", async () 
   } finally {
     await t.cleanup();
   }
+});
+
+test('the bus refuses frames only it or main may send, and is silent after close', async () => {
+  const t = await testEngine();
+  const bus = t.engine.services.frames;
+  const frames = framesOf(t.engine.connect());
+  for (const frame of ['state', 'reset', 'desktop'])
+    assert.throws(
+      () => bus.emit({ frame, types: { Thread: 1 } } as never),
+      /sends .* frames itself/,
+    );
+  assert.equal(frames.length, 0);
+  await t.engine.close();
+  t.engine.services.store.commit({ opId: 'late', origin: 'sync', writes: [accountWrite] });
+  assert.equal(t.clock.pending(), 0, 'no coalescing timer after close');
+  await t.cleanup();
 });
