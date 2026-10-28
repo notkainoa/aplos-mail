@@ -7,6 +7,39 @@ const MEET = {
   createRequest: { requestId: 'req-1', conferenceSolutionKey: { type: 'hangoutsMeet' } },
 };
 
+/** An event as the JSON response carries it. */
+interface EventJson {
+  [field: string]: unknown;
+  id: string;
+  status?: string;
+  summary?: string;
+  etag?: string;
+  sequence?: number;
+  start: { [field: string]: unknown; date?: string; dateTime?: string };
+  end: { [field: string]: unknown; date?: string; dateTime?: string };
+  attendees?: GuestJson[];
+  recurringEventId?: string;
+  originalStartTime?: { [field: string]: unknown; date?: string; dateTime?: string };
+}
+/** An attendee as the JSON response carries it. */
+interface GuestJson {
+  [field: string]: unknown;
+  email: string;
+  responseStatus?: string;
+  organizer?: boolean;
+  self?: boolean;
+}
+/** What 0.2.3's saveEvent sends; it needs this shape from the event it saved. */
+interface SaveJson {
+  [field: string]: unknown;
+  summary?: string;
+  description?: string;
+  location?: string;
+  start?: { dateTime?: string };
+  end?: { dateTime?: string };
+  attendees?: { email: string }[];
+}
+
 /** An event with everything a PUT from 0.2.3 would wipe: a Meet room, RSVPs, reminders, colour, visibility. */
 async function richEvent(t: CalHarness) {
   const created = await t.call(t.events('primary', undefined, { conferenceDataVersion: 1 }), {
@@ -30,13 +63,13 @@ async function richEvent(t: CalHarness) {
 }
 
 /** What 0.2.3 sends when the user saves an event (apps/desktop/src/main/google.ts saveEvent). */
-const legacySave = (event: any) => ({
+const legacySave = (event: SaveJson) => ({
   summary: `${event.summary} (edited)`,
   description: event.description,
   location: event.location,
-  start: { dateTime: new Date(event.start.dateTime).toISOString() },
-  end: { dateTime: new Date(event.end.dateTime).toISOString() },
-  attendees: event.attendees.map((a: any) => ({ email: a.email })),
+  start: { dateTime: new Date(event.start!.dateTime!).toISOString() },
+  end: { dateTime: new Date(event.end!.dateTime!).toISOString() },
+  attendees: (event.attendees ?? []).map(a => ({ email: a.email })),
 });
 
 test('D11: a PUT wipes the Meet link, reminders, colour, visibility and every RSVP', async () => {
@@ -45,7 +78,7 @@ test('D11: a PUT wipes the Meet link, reminders, colour, visibility and every RS
   assert.ok(before.hangoutLink);
   assert.equal(before.conferenceData.entryPoints[0].uri, before.hangoutLink);
   assert.deepEqual(
-    before.attendees.map((a: any) => a.responseStatus),
+    before.attendees.map((a: GuestJson) => a.responseStatus),
     ['accepted', 'accepted', 'declined'],
   );
 
@@ -63,7 +96,7 @@ test('D11: a PUT wipes the Meet link, reminders, colour, visibility and every RS
   assert.equal(after.extendedProperties, undefined);
   assert.deepEqual(after.reminders, { useDefault: true });
   assert.deepEqual(
-    after.attendees.filter((a: any) => !a.organizer).map((a: any) => a.responseStatus),
+    after.attendees.filter((a: GuestJson) => !a.organizer).map((a: GuestJson) => a.responseStatus),
     ['needsAction', 'needsAction'],
   );
   // What survives: identity, creator and the fields that were sent.
@@ -82,8 +115,18 @@ test('D11: a PATCH of one field keeps the Meet link, RSVPs and everything else',
     body: { summary: 'Product demo v2' },
   });
   assert.equal(patch.status, 200);
-  const { summary, etag, updated, sequence, ...rest } = patch.json;
-  const { summary: _s, etag: _e, updated: _u, sequence: _q, ...was } = before;
+  const summary = patch.json.summary;
+  const sequence = patch.json.sequence;
+  const rest = { ...patch.json };
+  delete rest.summary;
+  delete rest.etag;
+  delete rest.updated;
+  delete rest.sequence;
+  const was = { ...before };
+  delete was.summary;
+  delete was.etag;
+  delete was.updated;
+  delete was.sequence;
   assert.equal(summary, 'Product demo v2');
   assert.deepEqual(rest, was);
   assert.equal(sequence, before.sequence + 1, 'a new title is a significant change');
@@ -168,7 +211,7 @@ test('PATCH replaces arrays whole, merges objects, and null removes a field', as
     },
   });
   assert.deepEqual(
-    r.json.attendees.map((a: any) => [a.email, a.responseStatus]),
+    r.json.attendees.map((a: GuestJson) => [a.email, a.responseStatus]),
     [
       [ME, 'accepted'],
       [GUESTS[0], 'needsAction'],
@@ -294,7 +337,7 @@ test('a guest may answer for themselves and change personal fields only', async 
   });
   assert.equal(rsvp.status, 200);
   assert.deepEqual(
-    rsvp.json.attendees.map((a: any) => [a.email, a.responseStatus]),
+    rsvp.json.attendees.map((a: GuestJson) => [a.email, a.responseStatus]),
     [
       ['casey.rivera@example.test', 'accepted'],
       [ME, 'tentative'],
@@ -423,7 +466,7 @@ test('deleting a recurring master cancels the whole series, exceptions included'
   const del = await t.call(t.events('primary', gen.weekly.masterId), { method: 'DELETE' });
   assert.equal(del.status, 204);
   const changes = (await t.call(t.events('primary', undefined, { syncToken: token }))).json.items;
-  const byId = Object.fromEntries(changes.map((e: any) => [e.id, e]));
+  const byId = Object.fromEntries(changes.map((e: EventJson) => [e.id, e]));
   assert.equal(byId[gen.weekly.masterId].status, 'cancelled');
   assert.equal(byId[gen.weekly.overrideId].status, 'cancelled');
   assert.equal(byId[gen.weekly.overrideId].recurringEventId, gen.weekly.masterId);
@@ -434,7 +477,7 @@ test('deleting a recurring master cancels the whole series, exceptions included'
       timeMax: '2027-01-01T00:00:00-08:00',
     }),
   );
-  assert.ok(!visible.json.items.some((e: any) => e.recurringEventId === gen.weekly.masterId));
+  assert.ok(!visible.json.items.some((e: EventJson) => e.recurringEventId === gen.weekly.masterId));
 });
 
 test('editing one occurrence creates an override; the master and the other occurrences stay', async () => {
@@ -469,11 +512,11 @@ test('editing one occurrence creates an override; the master and the other occur
   assert.equal(after.summary, 'Standup');
   // Listing without expansion returns the master and the exception; with expansion four occurrences, one changed.
   const raw = (await t.call(t.events('primary'))).json.items;
-  assert.deepEqual(raw.map((e: any) => e.id).sort(), [instanceId, master.id].sort());
+  assert.deepEqual(raw.map((e: EventJson) => e.id).sort(), [instanceId, master.id].sort());
   const expanded = (await t.call(t.events('primary', undefined, { singleEvents: true }))).json
     .items;
   assert.deepEqual(
-    expanded.map((e: any) => e.summary),
+    expanded.map((e: EventJson) => e.summary),
     ['Standup', 'Standup (long)', 'Standup', 'Standup'],
   );
   // A second patch edits the stored override (no new one), and a PUT replaces it.
@@ -524,7 +567,7 @@ test('deleting one occurrence leaves a cancelled stub; deleting it again is 410'
   const withDeleted = (
     await t.call(t.events('primary', undefined, { singleEvents: true, showDeleted: true }))
   ).json.items;
-  const stub = withDeleted.find((e: any) => e.id === id);
+  const stub = withDeleted.find((e: EventJson) => e.id === id);
   assert.equal(stub.status, 'cancelled');
   assert.equal(stub.recurringEventId, master.id);
   assert.equal(
@@ -536,7 +579,7 @@ test('deleting one occurrence leaves a cancelled stub; deleting it again is 410'
   assert.equal((await t.call(t.events('primary', master.id))).json.etag, master.etag);
   const changes = (await t.call(t.events('primary', undefined, { syncToken: token }))).json.items;
   assert.deepEqual(
-    changes.map((e: any) => [e.id, e.status]),
+    changes.map((e: EventJson) => [e.id, e.status]),
     [[id, 'cancelled']],
   );
 });
@@ -560,7 +603,7 @@ test('moving or re-ruling the series retires its exceptions', async () => {
   });
   const changes = (await t.call(t.events('primary', undefined, { syncToken: token }))).json.items;
   assert.deepEqual(
-    changes.map((e: any) => [e.id, e.status]).sort(),
+    changes.map((e: EventJson) => [e.id, e.status]).sort(),
     [
       [id, 'cancelled'],
       [master.id, 'confirmed'],
@@ -570,5 +613,5 @@ test('moving or re-ruling the series retires its exceptions', async () => {
   const expanded = (await t.call(t.events('primary', undefined, { singleEvents: true }))).json
     .items;
   assert.equal(expanded.length, 6);
-  assert.ok(expanded.every((e: any) => e.summary === 'Standup'));
+  assert.ok(expanded.every((e: EventJson) => e.summary === 'Standup'));
 });

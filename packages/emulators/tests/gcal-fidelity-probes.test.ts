@@ -28,10 +28,50 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SCOPE } from '../src/gmail';
 import { ME, setupCal, timed, type CalHarness } from './gcal-helpers';
+import type { GcalEvent, InvitationSpec } from '../src/gcal';
 
 const LIST = '/users/me/calendarList';
-const reasonOf = (json: any): string | undefined => json?.error?.errors?.[0]?.reason;
-const domainOf = (json: any): string | undefined => json?.error?.errors?.[0]?.domain;
+
+/** An error body Google's API answers with. */
+interface ApiJson {
+  [field: string]: unknown;
+  error?: {
+    [field: string]: unknown;
+    code?: number;
+    message?: string;
+    errors?: {
+      reason?: string;
+      domain?: string;
+      message?: string;
+    }[];
+  };
+}
+/** An event as the JSON response carries it. */
+interface EventJson {
+  [field: string]: unknown;
+  id?: string;
+  status?: string;
+  summary?: string;
+  recurringEventId?: string;
+  location?: string;
+}
+/** An attendee as the JSON response carries it. */
+interface GuestJson {
+  [field: string]: unknown;
+  email: string;
+  responseStatus?: string;
+  organizer?: boolean;
+  self?: boolean;
+}
+/** A calendarList entry as the JSON response carries it. */
+interface EntryJson {
+  [field: string]: unknown;
+  id?: string;
+  hidden?: boolean;
+}
+
+const reasonOf = (json: ApiJson): string | undefined => json?.error?.errors?.[0]?.reason;
+const domainOf = (json: ApiJson): string | undefined => json?.error?.errors?.[0]?.domain;
 const RATE_REASONS = ['rateLimitExceeded', 'userRateLimitExceeded'];
 
 /** Inserts an event over REST and returns the created resource. */
@@ -39,7 +79,7 @@ async function insert(
   t: CalHarness,
   body: Record<string, unknown>,
   query: Record<string, string | number | boolean> = {},
-): Promise<any> {
+): Promise<GcalEvent> {
   const r = await t.call(t.events('primary', undefined, query), { method: 'POST', body });
   assert.equal(r.status, 200, `insert failed: ${r.text}`);
   return r.json;
@@ -65,15 +105,16 @@ async function fullSync(
   }
 }
 
-function invitation(t: CalHarness, extra: Record<string, unknown> = {}) {
-  return t.emu.calendar.addInvitation({
+function invitation(t: CalHarness, extra: Record<string, unknown> = {}): GcalEvent {
+  const spec: InvitationSpec = {
     summary: 'Quarterly orchard review',
     organizer: { email: 'casey.rivera@example.test' },
     guests: ['lee.chen@example.test'],
     start: { dateTime: '2026-11-04T13:00:00-08:00', timeZone: 'America/Los_Angeles' },
     end: { dateTime: '2026-11-04T14:00:00-08:00', timeZone: 'America/Los_Angeles' },
     ...extra,
-  } as any);
+  };
+  return t.emu.calendar.addInvitation(spec);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -135,7 +176,7 @@ test('PROBE 04 orderBy=startTime with singleEvents=true is allowed and ascending
   );
   assert.equal(r.status, 200, r.text);
   assert.deepEqual(
-    r.json.items.map((e: any) => e.summary),
+    r.json.items.map((e: EventJson) => e.summary),
     ['Sooner', 'Later'],
   );
   assert.equal((await t.call(t.events('primary', undefined, { orderBy: 'updated' }))).status, 200);
@@ -224,7 +265,7 @@ test('PROBE 10 a deleted event comes back in incremental sync with status cancel
   assert.equal((await t.call(t.events('primary', doomed.id), { method: 'DELETE' })).status, 204);
   const r = await t.call(t.events('primary', undefined, { syncToken: token }));
   assert.equal(r.status, 200, r.text);
-  const stub = r.json.items.find((e: any) => e.id === doomed.id);
+  const stub = r.json.items.find((e: EventJson) => e.id === doomed.id);
   assert.ok(stub, 'deleted event is in the incremental result');
   assert.equal(stub.status, 'cancelled');
   assert.ok(r.json.nextSyncToken);
@@ -238,9 +279,9 @@ test('PROBE 11 a plain list (no showDeleted) leaves deleted events out [list sho
   );
   await t.call(t.events('primary', doomed.id), { method: 'DELETE' });
   const r = await t.call(t.events('primary'));
-  assert.ok(!r.json.items.some((e: any) => e.id === doomed.id));
+  assert.ok(!r.json.items.some((e: EventJson) => e.id === doomed.id));
   const shown = await t.call(t.events('primary', undefined, { showDeleted: true }));
-  assert.equal(shown.json.items.find((e: any) => e.id === doomed.id)?.status, 'cancelled');
+  assert.equal(shown.json.items.find((e: EventJson) => e.id === doomed.id)?.status, 'cancelled');
 });
 
 test('PROBE 12 deleting an already deleted event is 410 "deleted" [errors][observed]', async () => {
@@ -366,7 +407,7 @@ test('PROBE 15 PATCH replaces the whole attendees array (no per-item merge) for 
   assert.equal(r.status, 200, r.text);
   // Google may keep the organizer's own entry; the point is that the other guests are gone.
   assert.deepEqual(
-    r.json.attendees.filter((a: any) => !a.organizer).map((a: any) => a.email),
+    r.json.attendees.filter((a: GuestJson) => !a.organizer).map((a: GuestJson) => a.email),
     ['lee.chen@example.test'],
   );
 });
@@ -385,20 +426,18 @@ test('PROBE 16 a guest changing the summary is 403 forbiddenForNonOrganizer [upd
 
 test('PROBE 17 a guest PATCHing the full attendees list with only their own responseStatus changed succeeds [events attendees[].responseStatus][observed]', async () => {
   const t = await setupCal();
-  const invite: any = invitation(t);
-  const attendees = invite.attendees.map((a: any) =>
-    a.self ? { ...a, responseStatus: 'accepted' } : a,
-  );
+  const invite = invitation(t);
+  const attendees = invite.attendees!.map(a => (a.self ? { ...a, responseStatus: 'accepted' } : a));
   const r = await t.call(t.events('primary', invite.id), { method: 'PATCH', body: { attendees } });
   assert.equal(r.status, 200, r.text);
-  const mine = r.json.attendees.find((a: any) => a.email === ME);
+  const mine = r.json.attendees.find((a: GuestJson) => a.email === ME);
   assert.equal(mine.responseStatus, 'accepted');
   assert.equal(
-    r.json.attendees.find((a: any) => a.email === 'casey.rivera@example.test').responseStatus,
+    r.json.attendees.find((a: GuestJson) => a.email === 'casey.rivera@example.test').responseStatus,
     'accepted',
   );
   assert.equal(
-    r.json.attendees.find((a: any) => a.email === 'lee.chen@example.test').responseStatus,
+    r.json.attendees.find((a: GuestJson) => a.email === 'lee.chen@example.test').responseStatus,
     'needsAction',
   );
   assert.equal(r.json.summary, 'Quarterly orchard review');
@@ -487,7 +526,7 @@ test('PROBE 22 editing an instance id creates an exception with recurringEventId
   // The other instances keep the series title.
   const after = await t.call(`${t.events('primary', master.id)}/instances`);
   assert.deepEqual(
-    after.json.items.map((e: any) => e.summary),
+    after.json.items.map((e: EventJson) => e.summary),
     ['Weekly sync', 'Weekly sync (moved)', 'Weekly sync', 'Weekly sync'],
   );
 });
@@ -586,9 +625,9 @@ test('PROBE 30 calendarList with showHidden=false leaves hidden calendars out; s
   const gen = t.emu.calendar.seed();
   const off = await t.call(`${LIST}?showHidden=false`);
   assert.equal(off.status, 200);
-  assert.ok(!off.json.items.some((c: any) => c.id === gen.calendars.hidden));
+  assert.ok(!off.json.items.some((c: EntryJson) => c.id === gen.calendars.hidden));
   const on = await t.call(`${LIST}?showHidden=true`);
-  assert.equal(on.json.items.find((c: any) => c.id === gen.calendars.hidden)?.hidden, true);
+  assert.equal(on.json.items.find((c: EntryJson) => c.id === gen.calendars.hidden)?.hidden, true);
 });
 
 test('PROBE 31 calendarList syncToken refuses minAccessRole and showHidden=false with 400 [calList syncToken]', async () => {

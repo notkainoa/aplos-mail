@@ -26,6 +26,7 @@ import { FakeClock } from '../src/kit/clock';
 import { createGmailEmulator, SCOPE, type GmailEmulator } from '../src/gmail';
 import type { GcalEvent } from '../src/gcal';
 import { createGoogle } from '../../../apps/desktop/src/main/google';
+// eslint-disable-next-line aplos/boundaries -- this gate test exercises the unmodified 0.2.3 calendar client on purpose
 import type { Account, CalendarEvent } from '@aplos/contract/legacy/types';
 
 const CAL = 'https://www.googleapis.com/calendar/v3';
@@ -68,7 +69,7 @@ interface Rig {
   call(
     path: string,
     init?: { method?: string; body?: unknown },
-  ): Promise<{ status: number; json: any }>;
+  ): Promise<{ status: number; json: Record<string, unknown> }>;
   dispose(): Promise<void>;
 }
 
@@ -295,8 +296,16 @@ test('D11 control: a raw PATCH of the title keeps the Meet link and the answers 
     assert.equal(after.hangoutLink, before.hangoutLink);
     assert.equal(JSON.stringify(after.attendees), JSON.stringify(before.attendees));
     // Nothing else moved either, apart from the bookkeeping a title change bumps.
-    const { summary: _a, etag: _b, updated: _c, sequence: _d, ...rest } = after;
-    const { summary: _e, etag: _f, updated: _g, sequence: _h, ...was } = before;
+    const rest: Record<string, unknown> = { ...after };
+    delete rest.summary;
+    delete rest.etag;
+    delete rest.updated;
+    delete rest.sequence;
+    const was: Record<string, unknown> = { ...before };
+    delete was.summary;
+    delete was.etag;
+    delete was.updated;
+    delete was.sequence;
     assert.deepEqual(rest, was);
   } finally {
     await r.dispose();
@@ -368,14 +377,14 @@ test('D12 control: a sync-token poll with no changes costs one request per calen
     r.emu.calendar.seed();
     // A correct client's first sync: the list and each calendar once, keeping the tokens.
     const list = await r.call('/users/me/calendarList');
-    const calendars: { id: string }[] = list.json.items;
-    let listToken: string = list.json.nextSyncToken;
+    const calendars: { id: string }[] = list.json.items as { id: string }[];
+    let listToken: string = list.json.nextSyncToken as string;
     const tokens = new Map<string, string>();
     for (const c of calendars) {
       const full = await r.call(`/calendars/${enc(c.id)}/events?maxResults=2500`);
       assert.equal(full.status, 200);
       assert.equal(full.json.nextPageToken, undefined);
-      tokens.set(c.id, full.json.nextSyncToken);
+      tokens.set(c.id, full.json.nextSyncToken as string);
     }
     await r.clock.advance(10 * 60_000);
 
@@ -384,7 +393,7 @@ test('D12 control: a sync-token poll with no changes costs one request per calen
       const listDelta = await r.call(`/users/me/calendarList?syncToken=${enc(listToken)}`);
       assert.equal(listDelta.status, 200);
       assert.deepEqual(listDelta.json.items, []);
-      listToken = listDelta.json.nextSyncToken;
+      listToken = listDelta.json.nextSyncToken as string;
       for (const c of calendars) {
         const delta = await r.call(
           `/calendars/${enc(c.id)}/events?syncToken=${enc(tokens.get(c.id)!)}`,
@@ -392,7 +401,7 @@ test('D12 control: a sync-token poll with no changes costs one request per calen
         assert.equal(delta.status, 200);
         assert.deepEqual(delta.json.items, []);
         assert.ok(delta.json.nextSyncToken);
-        tokens.set(c.id, delta.json.nextSyncToken);
+        tokens.set(c.id, delta.json.nextSyncToken as string);
       }
       assert.equal(
         logged(r.emu, 'calendar.events.list', from).length,
@@ -461,22 +470,29 @@ test('D24 control: the calendar list carries the hidden and selected flags', asy
     const { family, hidden, unselected, readOnly } = seeded.calendars;
     const all = await r.call('/users/me/calendarList?showHidden=true');
     assert.equal(all.status, 200);
-    const byId = new Map<string, any>(all.json.items.map((c: any) => [c.id, c]));
+    /** A calendarList entry as the JSON response carries it. */
+    interface EntryJson {
+      [field: string]: unknown;
+      id: string;
+      hidden?: boolean;
+      selected?: boolean;
+    }
+    const byId = new Map<string, EntryJson>((all.json.items as EntryJson[]).map(c => [c.id, c]));
     // Google leaves false flags out, so an absent `selected` means switched off.
     for (const id of [seeded.primaryId, family, readOnly])
-      assert.equal(byId.get(id).selected, true, 'a shown calendar says so');
-    assert.equal(byId.get(unselected).selected, undefined);
-    assert.equal(byId.get(unselected).hidden, undefined);
-    assert.equal(byId.get(hidden).hidden, true);
-    assert.equal(byId.get(hidden).selected, undefined);
+      assert.equal(byId.get(id)!.selected, true, 'a shown calendar says so');
+    assert.equal(byId.get(unselected)!.selected, undefined);
+    assert.equal(byId.get(unselected)!.hidden, undefined);
+    assert.equal(byId.get(hidden)!.hidden, true);
+    assert.equal(byId.get(hidden)!.selected, undefined);
     // Without showHidden the hidden entry is left out, as on Google.
     const shown = await r.call('/users/me/calendarList');
     assert.equal(
-      shown.json.items.some((c: any) => c.id === hidden),
+      (shown.json.items as EntryJson[]).some(c => c.id === hidden),
       false,
     );
     assert.equal(
-      shown.json.items.some((c: any) => c.id === unselected),
+      (shown.json.items as EntryJson[]).some(c => c.id === unselected),
       true,
     );
   } finally {

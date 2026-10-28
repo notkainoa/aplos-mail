@@ -187,7 +187,12 @@ export class CalendarHub implements CalendarHelpers {
   addInvitation(spec: InvitationSpec, user?: string): GcalEvent {
     const store = this.storeFor(user);
     const cal = store.calendar(spec.calendarId ?? 'primary');
-    const { organizer, guests = [], calendarId: _calendar, id, ...rest } = spec;
+    const { organizer, guests = [], id } = spec;
+    const rest: Record<string, unknown> = { ...spec };
+    delete rest.organizer;
+    delete rest.guests;
+    delete rest.calendarId;
+    delete rest.id;
     return insertInvitation(store, cal, {
       id,
       organizer,

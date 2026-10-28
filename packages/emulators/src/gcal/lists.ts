@@ -243,19 +243,30 @@ function orderKey(
   return `${prefix}|${pad(startMs)}|${ev.id}`;
 }
 
-export function listEvents(
-  store: CalendarStore,
-  cal: CalendarRecord,
+/** Everything listEvents collects from the query string, before scanning the store. */
+interface ListQuery {
+  token: TokenData | undefined;
+  singleEvents: boolean;
+  showDeleted: boolean;
+  orderBy: string | null;
+  max: number;
+  updatedMin: number | undefined;
+  hasWindow: boolean;
+  win: Window;
+  /** singleEvents of the call that issued the token, or of this call without one. */
+  wasSingle: boolean;
+  snapshot: number;
+  pageToken: string | null;
+}
+
+function checkListParams(
   q: URLSearchParams,
-): Record<string, unknown> {
-  const settings = store.deps.settings();
-  const syncText = q.get('syncToken');
-  const singleEvents = bool(q, 'singleEvents') ?? false;
-  const showDeleted = bool(q, 'showDeleted') ?? false;
-  const orderBy = q.get('orderBy');
-  const max = size(q, 250, 2500);
-  const updatedMin = instant(q, 'updatedMin');
-  const hasWindow = q.get('timeMin') || q.get('timeMax');
+  syncText: string | null,
+  orderBy: string | null,
+  singleEvents: boolean,
+  updatedMin: number | undefined,
+  hasWindow: boolean,
+): void {
   // Google's list: iCalUID, orderBy, privateExtendedProperty, q, sharedExtendedProperty, timeMin, timeMax, updatedMin.
   const filtered = ['q', 'iCalUID', 'privateExtendedProperty', 'sharedExtendedProperty'].some(
     name => q.has(name),
@@ -272,9 +283,19 @@ export function listEvents(
       'The requested ordering is not available for the particular query.',
       'badRequest',
     );
+}
+
+function listQuery(store: CalendarStore, cal: CalendarRecord, q: URLSearchParams): ListQuery {
+  const settings = store.deps.settings();
+  const syncText = q.get('syncToken');
+  const singleEvents = bool(q, 'singleEvents') ?? false;
+  const showDeleted = bool(q, 'showDeleted') ?? false;
+  const orderBy = q.get('orderBy');
+  const max = size(q, 250, 2500);
+  const updatedMin = instant(q, 'updatedMin');
+  const hasWindow = !!(q.get('timeMin') || q.get('timeMax'));
+  checkListParams(q, syncText, orderBy, singleEvents, updatedMin, hasWindow);
   const token = syncText ? checkSyncToken(store, syncText, 'e', cal) : undefined;
-  const pageToken = q.get('pageToken');
-  const snapshot = snapshotOf(store, pageToken);
   const win = token
     ? {
         fromMs: token.w?.[0] ?? store.now() - 30 * DAY_MS,
@@ -282,59 +303,95 @@ export function listEvents(
       }
     : eventWindow(store, q);
   const wasSingle = token ? token.s === true : singleEvents;
-
-  const items: Keyed<GcalEvent>[] = [];
-  const add = (ev: GcalEvent, rec: EventRecord, view: GcalEvent = viewOf(ev)): void => {
-    const startMs = token ? rec.rev : rangeOf(ev, cal.timeZone).startMs;
-    items.push({
-      key: token
-        ? `${pad(rec.rev, 12)}|${ev.id}`
-        : orderKey(orderBy, singleEvents, ev, rec, startMs),
-      item: view,
-    });
+  const pageToken = q.get('pageToken');
+  const snapshot = snapshotOf(store, pageToken);
+  return {
+    token,
+    singleEvents,
+    showDeleted,
+    orderBy,
+    max,
+    updatedMin,
+    hasWindow,
+    win,
+    wasSingle,
+    snapshot,
+    pageToken,
   };
+}
 
+function collectRecord(
+  cal: CalendarRecord,
+  ev: GcalEvent,
+  rec: EventRecord,
+  opts: ListQuery,
+  add: (ev: GcalEvent, rec: EventRecord) => void,
+): void {
+  const cancelled = ev.status === 'cancelled';
+  const deletedSince = opts.updatedMin !== undefined && Date.parse(ev.updated) >= opts.updatedMin;
+  if (cancelled && !opts.showDeleted && !deletedSince) return;
+  if (opts.updatedMin !== undefined && Date.parse(ev.updated) < opts.updatedMin) return;
+  if (isMaster(ev)) {
+    if (cancelled) {
+      if (!opts.singleEvents) add(ev, rec);
+    } else if (opts.singleEvents) {
+      for (const instance of expandPlain(cal, rec, opts.win)) add(instance, rec);
+    } else if (!opts.hasWindow || hasOccurrenceIn(cal, rec, opts.win)) {
+      add(ev, rec);
+    }
+    return;
+  }
+  if (rec.stale && !opts.showDeleted && !deletedSince) return;
+  const r = rangeOf(ev, cal.timeZone);
+  if (!opts.hasWindow || overlaps(r.startMs, r.endMs, opts.win)) add(ev, rec);
+}
+
+function collectEvents(
+  store: CalendarStore,
+  cal: CalendarRecord,
+  opts: ListQuery,
+): Keyed<GcalEvent>[] {
+  const items: Keyed<GcalEvent>[] = [];
+  const add = (ev: GcalEvent, rec: EventRecord): void => {
+    const key = opts.token
+      ? `${pad(rec.rev, 12)}|${ev.id}`
+      : orderKey(opts.orderBy, opts.singleEvents, ev, rec, rangeOf(ev, cal.timeZone).startMs);
+    items.push({ key, item: viewOf(ev) });
+  };
   for (const rec of cal.events.values()) {
     const ev = rec.event;
-    const cancelled = ev.status === 'cancelled';
-    if (token) {
-      if (rec.rev <= token.r) continue;
-      if (wasSingle && isMaster(ev) && !cancelled)
-        for (const instance of expandPlain(cal, rec, win)) add(instance, rec);
+    if (opts.token) {
+      if (rec.rev <= opts.token.r) continue;
+      if (opts.wasSingle && isMaster(ev) && ev.status !== 'cancelled')
+        for (const instance of expandPlain(cal, rec, opts.win)) add(instance, rec);
       else add(ev, rec);
       continue;
     }
-    const deletedSince = updatedMin !== undefined && Date.parse(ev.updated) >= updatedMin;
-    if (cancelled && !showDeleted && !deletedSince) continue;
-    if (updatedMin !== undefined && Date.parse(ev.updated) < updatedMin) continue;
-    if (isMaster(ev)) {
-      if (cancelled) {
-        if (!singleEvents) add(ev, rec);
-      } else if (singleEvents) {
-        for (const instance of expandPlain(cal, rec, win)) add(instance, rec);
-      } else if (!hasWindow || hasOccurrenceIn(cal, rec, win)) {
-        add(ev, rec);
-      }
-      continue;
-    }
-    if (rec.stale && !showDeleted && !deletedSince) continue;
-    const r = rangeOf(ev, cal.timeZone);
-    if (!hasWindow || overlaps(r.startMs, r.endMs, win)) add(ev, rec);
+    collectRecord(cal, ev, rec, opts, add);
   }
+  return items;
+}
 
-  const { page, nextPageToken } = pageOf(items, pageToken, max, snapshot);
+export function listEvents(
+  store: CalendarStore,
+  cal: CalendarRecord,
+  q: URLSearchParams,
+): Record<string, unknown> {
+  const opts = listQuery(store, cal, q);
+  const items = collectEvents(store, cal, opts);
+  const { page, nextPageToken } = pageOf(items, opts.pageToken, opts.max, opts.snapshot);
   const nextSyncToken = encode({
     k: 'e',
     c: cal.id,
-    r: snapshot,
+    r: opts.snapshot,
     a: store.now(),
     e: store.epochFor(`events:${cal.id}`),
     u: store.owner.sub,
-    s: wasSingle,
-    ...(token?.w
-      ? { w: token.w }
-      : hasWindow && singleEvents
-        ? { w: [win.fromMs ?? null, win.toMs] }
+    s: opts.wasSingle,
+    ...(opts.token?.w
+      ? { w: opts.token.w }
+      : opts.hasWindow && opts.singleEvents
+        ? { w: [opts.win.fromMs ?? null, opts.win.toMs] }
         : {}),
   } satisfies TokenData);
   return eventsEnvelope(store, cal, page, nextPageToken, nextPageToken ? undefined : nextSyncToken);

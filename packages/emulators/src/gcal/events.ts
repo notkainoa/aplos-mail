@@ -8,6 +8,14 @@ import {
   resourceDeleted,
 } from './errors';
 import {
+  EMAIL,
+  RESPONSES,
+  finalizeFields,
+  isObject,
+  normalizeTimes,
+  resolveConference,
+} from './fields';
+import {
   RecurrenceError,
   occurrences,
   validateRecurrence,
@@ -15,21 +23,12 @@ import {
   type Series,
 } from './rrule';
 import type { CalendarRecord, CalendarStore, EventRecord } from './store';
-import {
-  civilOfDay,
-  dateOfDay,
-  dayOf,
-  dayOfCivil,
-  isDateText,
-  isValidZone,
-  isoInZone,
-  localParts,
-  localToUtc,
-  parseDateTime,
-} from './tz';
+import { dateOfDay, dayOf, dayOfCivil, isoInZone, localParts, parseDateTime } from './tz';
 import type {
   Attendee,
+  ConferenceData,
   EventTime,
+  Fields,
   GcalEvent,
   ResponseStatus,
   SendUpdates,
@@ -54,9 +53,7 @@ export interface WriteOptions {
 
 export const INSTANCE_ID = /^(.+)_(\d{8}(?:T\d{6}Z)?)$/;
 const CLIENT_ID = /^[a-v0-9]{5,1024}$/;
-const EMAIL = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 const STATUSES = ['confirmed', 'tentative', 'cancelled'];
-const RESPONSES: ResponseStatus[] = ['needsAction', 'declined', 'tentative', 'accepted'];
 
 /** Fields a client may write. Everything else is either read-only (accepted and ignored) or unknown (400). */
 const WRITABLE = [
@@ -140,8 +137,6 @@ export function stable(value: unknown): string {
 }
 
 const clone = <T>(value: T): T => structuredClone(value);
-const isObject = (v: unknown): v is Record<string, any> =>
-  !!v && typeof v === 'object' && !Array.isArray(v);
 
 // ---------- views ----------
 
@@ -167,23 +162,7 @@ export const isMaster = (event: GcalEvent): boolean =>
 
 // ---------- times ----------
 
-export interface EventRange {
-  startMs: number;
-  endMs: number;
-  allDay: boolean;
-}
-
-/** The span an event covers. All-day dates are read in the calendar's zone, as Google does for timeMin/timeMax. */
-export function rangeOf(event: GcalEvent, calTz: string): EventRange {
-  const at = (t: EventTime): number => {
-    if (t.date) {
-      const c = civilOfDay(dayOf(t.date));
-      return localToUtc({ y: c.y, mo: c.mo, d: c.d, h: 0, mi: 0, s: 0 }, calTz);
-    }
-    return parseDateTime(t.dateTime, t.timeZone ?? calTz) ?? 0;
-  };
-  return { startMs: at(event.start), endMs: at(event.end), allDay: !!event.start.date };
-}
+export { rangeOf, type EventRange } from './fields';
 
 export function seriesOf(master: GcalEvent, calTz: string): Series {
   if (master.start.date) {
@@ -289,8 +268,8 @@ export function getEvent(cal: CalendarRecord, eventId: string): GcalEvent {
 
 // ---------- validation and normalisation ----------
 
-function pickWritable(body: Record<string, unknown>): Record<string, any> {
-  const out: Record<string, any> = {};
+function pickWritable(body: Record<string, unknown>): Fields {
+  const out: Fields = {};
   for (const [key, value] of Object.entries(body)) {
     if (READ_ONLY.includes(key)) continue;
     if (!WRITABLE.includes(key))
@@ -300,198 +279,31 @@ function pickWritable(body: Record<string, unknown>): Record<string, any> {
   return out;
 }
 
-function writableOf(event: GcalEvent): Record<string, any> {
-  const out: Record<string, any> = {};
+function writableOf(event: GcalEvent): Fields {
+  const out: Fields = {};
   for (const key of WRITABLE) if (event[key] !== undefined) out[key] = clone(event[key]);
   return out;
 }
 
 /** RFC 7396 merge: objects merge, null removes, anything else (arrays included) replaces. */
-function mergePatch(target: Record<string, any>, patch: Record<string, any>): Record<string, any> {
-  const out = { ...target };
+function mergePatch(target: Fields, patch: Fields): Fields {
+  const out: Fields = { ...target };
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete out[key];
     else if (isObject(value) && isObject(out[key]) && key !== 'start' && key !== 'end')
       out[key] = mergePatch(out[key], value);
     else if ((key === 'start' || key === 'end') && isObject(value) && isObject(out[key])) {
       // A new date replaces a dateTime and vice versa; a bare timeZone change merges.
-      const base = { ...out[key] };
+      const base: Fields = { ...out[key] };
       if ('date' in value) {
         delete base.dateTime;
         delete base.timeZone;
       }
       if ('dateTime' in value) delete base.date;
-      out[key] = mergePatch(base, value);
+      out[key] = mergePatch(base, value) as EventTime;
     } else out[key] = value;
   }
   return out;
-}
-
-function normalizeTime(which: 'start' | 'end', t: unknown): EventTime {
-  if (!isObject(t)) throw calInvalid(`Missing ${which} time.`, 'required');
-  const hasDate = t.date !== undefined && t.date !== null;
-  const hasDateTime = t.dateTime !== undefined && t.dateTime !== null;
-  if (!hasDate && !hasDateTime) throw calInvalid(`Missing ${which} time.`, 'required');
-  if (hasDate && hasDateTime) throw calInvalid(`Invalid ${which} time.`);
-  const tz: unknown = t.timeZone;
-  if (tz !== undefined && (typeof tz !== 'string' || !isValidZone(tz)))
-    throw calInvalid(`Invalid time zone definition for ${which} time.`);
-  if (hasDate) {
-    if (!isDateText(t.date)) throw calInvalid(`Invalid ${which} time.`);
-    return { date: t.date, ...(tz ? { timeZone: tz as string } : {}) };
-  }
-  const ms = parseDateTime(t.dateTime, tz as string | undefined);
-  if (ms === undefined) {
-    const missing =
-      typeof t.dateTime === 'string' &&
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(t.dateTime) &&
-      !tz;
-    throw missing
-      ? calInvalid(`Missing time zone definition for ${which} time.`, 'required')
-      : calInvalid(`Invalid ${which} time.`);
-  }
-  // With a zone, Google answers in that zone's wall time and offset whatever offset the client sent.
-  return tz
-    ? { dateTime: isoInZone(ms, tz as string), timeZone: tz as string }
-    : { dateTime: t.dateTime as string };
-}
-
-function normalizeTimes(fields: Record<string, any>, calTz: string): void {
-  fields.start = normalizeTime('start', fields.start);
-  fields.end = normalizeTime('end', fields.end);
-  if (!!fields.start.date !== !!fields.end.date)
-    throw calInvalid('The start and end times must either both be dates or both be date-times.');
-  const range = rangeOf({ start: fields.start, end: fields.end } as GcalEvent, calTz);
-  if (range.endMs < range.startMs || (range.allDay && range.endMs === range.startMs)) {
-    throw calInvalid('The specified time range is empty.', 'timeRangeEmpty');
-  }
-  if (fields.recurrence && fields.start.dateTime && !fields.start.timeZone)
-    throw calInvalid('Missing time zone definition for start time.', 'required');
-}
-
-function normalizeAttendees(
-  store: CalendarStore,
-  list: unknown,
-  organizer: GcalEvent['organizer'],
-): Attendee[] {
-  if (!Array.isArray(list)) throw calInvalid('Invalid value for: attendees');
-  const out: Attendee[] = [];
-  const seen = new Set<string>();
-  for (const item of list) {
-    if (!isObject(item) || typeof item.email !== 'string' || !EMAIL.test(item.email))
-      throw calInvalid('Invalid attendee email.');
-    const key = item.email.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const isOrganizer = key === organizer.email.toLowerCase();
-    const response: ResponseStatus = RESPONSES.includes(item.responseStatus)
-      ? item.responseStatus
-      : isOrganizer
-        ? 'accepted'
-        : 'needsAction';
-    out.push({
-      email: item.email,
-      ...(typeof item.displayName === 'string' ? { displayName: item.displayName } : {}),
-      ...(isOrganizer ? { organizer: true } : {}),
-      ...(key === store.owner.email.toLowerCase() ? { self: true } : {}),
-      ...(item.resource === true ? { resource: true } : {}),
-      ...(item.optional === true ? { optional: true } : {}),
-      responseStatus: response,
-      ...(typeof item.comment === 'string' ? { comment: item.comment } : {}),
-      ...(Number.isInteger(item.additionalGuests)
-        ? { additionalGuests: item.additionalGuests }
-        : {}),
-    });
-  }
-  // Inviting people makes the organizer a guest too, already accepted.
-  if (out.length && organizer.self && !seen.has(organizer.email.toLowerCase())) {
-    out.unshift({
-      email: organizer.email,
-      organizer: true,
-      self: true,
-      responseStatus: 'accepted',
-    });
-  }
-  return out;
-}
-
-function checkReminders(reminders: unknown): void {
-  if (!isObject(reminders)) throw calInvalid('Invalid value for: reminders');
-  const overrides = reminders.overrides;
-  if (overrides === undefined) return;
-  if (
-    !Array.isArray(overrides) ||
-    overrides.length > 5 ||
-    overrides.some(
-      o =>
-        !isObject(o) ||
-        !['email', 'popup'].includes(o.method) ||
-        !Number.isInteger(o.minutes) ||
-        o.minutes < 0,
-    )
-  ) {
-    throw calInvalid(
-      'Invalid reminders: at most five overrides, each with method email or popup and non-negative minutes.',
-    );
-  }
-}
-
-/** Google Meet details as Calendar creates them for a `createRequest`. */
-function makeConference(store: CalendarStore, request: Record<string, any>): Record<string, any> {
-  const letters = (n: number): string =>
-    Array.from({ length: n }, () => String.fromCharCode(97 + store.deps.random.int(0, 25))).join(
-      '',
-    );
-  const conferenceId = `${letters(3)}-${letters(4)}-${letters(3)}`;
-  return {
-    createRequest: {
-      requestId: String(request.requestId ?? store.newId(12)),
-      conferenceSolutionKey: { type: 'hangoutsMeet' },
-      status: { statusCode: 'success' },
-    },
-    entryPoints: [
-      {
-        entryPointType: 'video',
-        uri: `https://meet.google.com/${conferenceId}`,
-        label: `meet.google.com/${conferenceId}`,
-      },
-    ],
-    conferenceSolution: {
-      key: { type: 'hangoutsMeet' },
-      name: 'Google Meet',
-      iconUri: 'https://example.test/icons/meet.png',
-    },
-    conferenceId,
-  };
-}
-
-/**
- * conferenceDataVersion decides everything: below 1 the body's conferenceData is ignored; at 1 a
- * `createRequest` makes a Meet room. A PUT keeps an existing room only when the client resends it
- * (this is the D11 trap); a PATCH keeps it unless the body says otherwise.
- */
-function resolveConference(
-  store: CalendarStore,
-  mode: 'insert' | 'put' | 'patch',
-  prev: GcalEvent | undefined,
-  sent: unknown,
-  version: number,
-): Record<string, any> | undefined {
-  const existing = prev?.conferenceData;
-  if (version < 1) return mode === 'patch' ? existing : undefined;
-  if (sent === null) return undefined;
-  if (mode === 'patch' && sent === undefined) return existing;
-  if (!isObject(sent)) return undefined;
-  if (
-    existing &&
-    (sent.conferenceId === existing.conferenceId || (mode === 'patch' && sent.createRequest))
-  )
-    return existing;
-  if (isObject(sent.createRequest) && !existing) return makeConference(store, sent.createRequest);
-  // Version 1 also copies an existing conference sent in full ("copying of ConferenceData", events.insert docs).
-  if (typeof sent.conferenceId === 'string' && Array.isArray(sent.entryPoints))
-    return structuredClone(sent);
-  return undefined;
 }
 
 // ---------- assembling an event ----------
@@ -519,20 +331,23 @@ function assemble(
   store: CalendarStore,
   cal: CalendarRecord,
   who: Identity,
-  fields: Record<string, any>,
-  conference: Record<string, any> | undefined,
+  fields: Fields,
+  conference: ConferenceData | undefined,
 ): GcalEvent {
-  if (fields.status !== undefined && !STATUSES.includes(fields.status))
+  if (fields.status !== undefined && !STATUSES.includes(fields.status as string))
     throw calInvalid('Invalid value for: status');
   for (const key of ['summary', 'description', 'location', 'colorId']) {
     if (fields[key] !== undefined && typeof fields[key] !== 'string')
       throw calInvalid(`Invalid value for: ${key}`);
   }
-  if (fields.transparency !== undefined && !['opaque', 'transparent'].includes(fields.transparency))
+  if (
+    fields.transparency !== undefined &&
+    !['opaque', 'transparent'].includes(fields.transparency as string)
+  )
     throw calInvalid('Invalid value for: transparency');
   if (
     fields.visibility !== undefined &&
-    !['default', 'public', 'private', 'confidential'].includes(fields.visibility)
+    !['default', 'public', 'private', 'confidential'].includes(fields.visibility as string)
   )
     throw calInvalid('Invalid value for: visibility');
   if (Array.isArray(fields.recurrence) && fields.recurrence.length === 0) delete fields.recurrence;
@@ -547,13 +362,8 @@ function assemble(
       throw calInvalid('An exception of a series cannot have its own recurrence.');
   }
   normalizeTimes(fields, cal.timeZone);
-  if (fields.reminders === undefined) fields.reminders = { useDefault: true };
-  else checkReminders(fields.reminders);
-  if (fields.attendees !== undefined) {
-    fields.attendees = normalizeAttendees(store, fields.attendees, who.organizer);
-    if (!fields.attendees.length) delete fields.attendees;
-  }
-  const hangout = conference?.entryPoints?.find((e: any) => e.entryPointType === 'video')?.uri;
+  finalizeFields(store, fields, who.organizer);
+  const hangout = conference?.entryPoints?.find(e => e.entryPointType === 'video')?.uri;
   return {
     kind: 'calendar#event',
     etag: '',
@@ -778,7 +588,8 @@ function guestEdit(
     const existing = next.find(a => a.email.toLowerCase() === email);
     if (!existing) throw forbiddenForNonOrganizer();
     seen.add(email);
-    const wanted = RESPONSES.includes(item.responseStatus) ? item.responseStatus : 'needsAction';
+    const asked = item.responseStatus as ResponseStatus;
+    const wanted: ResponseStatus = RESPONSES.includes(asked) ? asked : 'needsAction';
     if (email === me) {
       existing.responseStatus = wanted;
       if (typeof item.comment === 'string') existing.comment = item.comment;
@@ -808,7 +619,7 @@ function updateEvent(
   const shared = opts.trusted || canEditShared(current, cal);
   const sent = pickWritable(body);
   const guests = shared ? undefined : guestEdit(current, sent.attendees, store, mode);
-  let fields = mode === 'put' ? sent : mergePatch(writableOf(current), sent);
+  const fields = mode === 'put' ? sent : mergePatch(writableOf(current), sent);
   if (guests) fields.attendees = guests;
   if (mode === 'patch' && current.status === 'cancelled' && sent.status === undefined)
     fields.status = 'cancelled';
@@ -887,7 +698,7 @@ export function insertInvitation(
   spec: {
     id?: string;
     organizer: { email: string; displayName?: string };
-    fields: Record<string, any>;
+    fields: Fields;
   },
 ): GcalEvent {
   const id = spec.id ?? store.newId();

@@ -2,6 +2,24 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ME, setupCal, timed } from './gcal-helpers';
 
+/** An event as the JSON response carries it. */
+interface EventJson {
+  [field: string]: unknown;
+  id?: string;
+  status?: string;
+  summary?: string;
+  attendees?: GuestJson[];
+}
+/** An attendee as the JSON response carries it. */
+interface GuestJson {
+  [field: string]: unknown;
+  email: string;
+  responseStatus?: string;
+  organizer?: boolean;
+  self?: boolean;
+  optional?: boolean;
+}
+
 test('an inserted event carries the full Google model', async () => {
   const t = await setupCal();
   const r = await t.call(t.events('primary'), {
@@ -50,7 +68,7 @@ test('an inserted event carries the full Google model', async () => {
   assert.deepEqual(e.extendedProperties, { private: { app: 'aplos' } });
   // The organizer is added as a guest who has already accepted; the others have not answered.
   assert.deepEqual(
-    e.attendees.map((a: any) => [a.email, a.responseStatus, a.organizer, a.self]),
+    e.attendees.map((a: GuestJson) => [a.email, a.responseStatus, a.organizer, a.self]),
     [
       [ME, 'accepted', true, true],
       ['sam.ortiz@example.test', 'needsAction', undefined, undefined],
@@ -212,7 +230,7 @@ test('events.list: maxResults defaults to 250, caps at 2500, and pages with a st
   );
   assert.ok(second.json.nextSyncToken);
   assert.equal(second.json.nextPageToken, undefined);
-  const ids = [...first.json.items, ...second.json.items].map((e: any) => e.id);
+  const ids = [...first.json.items, ...second.json.items].map((e: EventJson) => e.id);
   assert.equal(new Set(ids).size, ids.length);
   // maxResults over 2500 is clamped, 0 and junk are refused.
   assert.equal((await t.call(t.events('primary', undefined, { maxResults: 9999 }))).status, 200);
@@ -249,7 +267,7 @@ test('timeMin and timeMax select by overlap; they need an offset', async () => {
     end: { date: '2026-11-07' },
   });
   const list = async (q: Record<string, string>) =>
-    (await t.call(t.events('primary', undefined, q))).json.items.map((e: any) => e.id);
+    (await t.call(t.events('primary', undefined, q))).json.items.map((e: EventJson) => e.id);
   assert.deepEqual(
     await list({ timeMin: '2026-11-04T10:00:00-08:00', timeMax: '2026-11-05T09:00:00-08:00' }),
     [],
@@ -287,7 +305,7 @@ test('orderBy=startTime needs singleEvents=true; syncToken excludes timeMin, tim
     t.events('primary', undefined, { orderBy: 'startTime', singleEvents: true }),
   );
   assert.deepEqual(
-    ordered.json.items.map((e: any) => e.id),
+    ordered.json.items.map((e: EventJson) => e.id),
     [second.id, first.id],
   );
   assert.equal((await t.call(t.events('primary', undefined, { orderBy: 'sideways' }))).status, 400);
@@ -322,7 +340,7 @@ test('updatedMin filters on the last change and always includes deletions since 
   );
   t.emu.calendar.removeEvent('primary', doomed.id);
   const r = await t.call(t.events('primary', undefined, { updatedMin: cut }));
-  const byId = Object.fromEntries(r.json.items.map((e: any) => [e.id, e]));
+  const byId = Object.fromEntries(r.json.items.map((e: EventJson) => [e.id, e]));
   assert.deepEqual(Object.keys(byId).sort(), [doomed.id, fresh.id].sort());
   assert.equal(byId[doomed.id].status, 'cancelled');
   assert.ok(!(old.id in byId));
@@ -390,7 +408,7 @@ test('incremental events sync returns changed and cancelled events since the tok
   assert.equal(page2.json.items.length, 1);
   assert.ok(page2.json.nextSyncToken);
   const byId = Object.fromEntries(
-    [...page1.json.items, ...page2.json.items].map((e: any) => [e.id, e]),
+    [...page1.json.items, ...page2.json.items].map((e: EventJson) => [e.id, e]),
   );
   assert.deepEqual(Object.keys(byId).sort(), [a.id, b.id, d.id].sort());
   assert.equal(byId[a.id].summary, 'A2');

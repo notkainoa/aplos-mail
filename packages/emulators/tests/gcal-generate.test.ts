@@ -2,6 +2,34 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ME, setupCal, timed } from './gcal-helpers';
 
+/** An event as the JSON response carries it. */
+interface EventJson {
+  [field: string]: unknown;
+  id: string;
+  summary?: string;
+  etag: string;
+  status: string;
+  recurrence?: string[];
+  start: { [field: string]: unknown; date?: string; dateTime?: string; timeZone?: string };
+  organizer: { email: string; self?: boolean };
+  creator: { email: string };
+  hangoutLink?: string;
+  attendees?: GuestJson[];
+  conferenceData?: {
+    [field: string]: unknown;
+    entryPoints: { entryPointType?: string; uri?: string }[];
+    conferenceSolution: { key: { type?: string } };
+  };
+}
+/** An attendee as the JSON response carries it. */
+interface GuestJson {
+  [field: string]: unknown;
+  email: string;
+  responseStatus?: string;
+  organizer?: boolean;
+  self?: boolean;
+}
+
 const ALL_TIME = {
   singleEvents: true,
   timeMin: '2026-09-01T00:00:00-07:00',
@@ -21,7 +49,7 @@ test('the generator builds the whole set: calendars, singles, all-day, weekly se
   assert.equal(gen.primaryId, ME);
 
   const events = (await t.call(t.events('primary', undefined, { showDeleted: true }))).json
-    .items as any[];
+    .items as EventJson[];
   const byId = new Map(events.map(e => [e.id, e]));
   assert.equal(gen.singleEventIds.length, 10);
   for (const id of gen.singleEventIds) assert.ok(byId.get(id)!.start.dateTime);
@@ -37,18 +65,18 @@ test('the generator builds the whole set: calendars, singles, all-day, weekly se
     await t.call(`${t.events('primary', gen.weekly.masterId)}/instances?maxResults=40`)
   ).json.items;
   assert.ok(
-    weekdays.some((e: any) => e.start.dateTime.endsWith('-07:00')) &&
-      weekdays.some((e: any) => e.start.dateTime.endsWith('-08:00')),
+    weekdays.some((e: EventJson) => e.start.dateTime?.endsWith('-07:00')) &&
+      weekdays.some((e: EventJson) => e.start.dateTime?.endsWith('-08:00')),
     'the series crosses the DST change',
   );
 
   // Meet links: conferenceData and hangoutLink agree.
   for (const id of [gen.weekly.masterId, ...gen.meetEventIds]) {
     const e = byId.get(id)!;
-    assert.equal(e.conferenceData.conferenceSolution.key.type, 'hangoutsMeet');
-    assert.equal(e.conferenceData.entryPoints[0].entryPointType, 'video');
-    assert.equal(e.hangoutLink, e.conferenceData.entryPoints[0].uri);
-    assert.match(e.hangoutLink, /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/);
+    assert.equal(e.conferenceData!.conferenceSolution.key.type, 'hangoutsMeet');
+    assert.equal(e.conferenceData!.entryPoints[0].entryPointType, 'video');
+    assert.equal(e.hangoutLink, e.conferenceData!.entryPoints[0].uri);
+    assert.match(e.hangoutLink!, /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/);
   }
 
   // Invitations: somebody else organises, the user is a needsAction guest.
@@ -58,10 +86,10 @@ test('the generator builds the whole set: calendars, singles, all-day, weekly se
     assert.notEqual(e.organizer.email, ME);
     assert.equal(e.organizer.self, undefined);
     assert.equal(e.creator.email, e.organizer.email);
-    const me = e.attendees.find((a: any) => a.self);
+    const me = e.attendees!.find(a => a.self)!;
     assert.equal(me.email, ME);
     assert.equal(me.responseStatus, 'needsAction');
-    assert.equal(e.attendees.find((a: any) => a.organizer).responseStatus, 'accepted');
+    assert.equal(e.attendees!.find(a => a.organizer)!.responseStatus, 'accepted');
   }
   // Events on the other calendars.
   assert.equal((await t.call(t.events(gen.calendars.hidden))).json.items.length, 1);
@@ -73,7 +101,7 @@ test('the same seed gives the same data, a different seed gives different data',
     const t = await setupCal({ seed });
     t.emu.calendar.seed({ seed });
     const items = (await t.call(t.events('primary', undefined, { showDeleted: true }))).json
-      .items as any[];
+      .items as EventJson[];
     return items.map(e => [e.id, e.summary, e.start?.dateTime ?? e.start?.date, e.etag]);
   };
   assert.deepEqual(await snapshot(3), await snapshot(3));
@@ -84,7 +112,7 @@ test('all generated data is synthetic: example.test addresses and invented title
   const t = await setupCal();
   t.emu.calendar.seed();
   const events = (await t.call(t.events('primary', undefined, { ...ALL_TIME, maxResults: 2500 })))
-    .json.items as any[];
+    .json.items as EventJson[];
   const emails = new Set<string>();
   for (const e of events) for (const a of e.attendees ?? []) emails.add(a.email);
   for (const email of emails) assert.match(email, /@example\.test$/, email);
@@ -152,7 +180,7 @@ test('the request log holds no titles, descriptions, attendees, addresses, ids o
   const log = JSON.stringify(t.emu.log);
   const events = (
     await t.call(t.events('primary', undefined, { showDeleted: true, maxResults: 2500 }))
-  ).json.items as any[];
+  ).json.items as EventJson[];
   const forbidden = [
     ...secrets,
     'garbage-secret-token',
@@ -165,7 +193,7 @@ test('the request log holds no titles, descriptions, attendees, addresses, ids o
     created.json.etag,
     gen.weekly.masterId,
     ...events.map(e => e.summary).filter(Boolean),
-    ...events.flatMap(e => (e.attendees ?? []).map((a: any) => a.email)),
+    ...events.flatMap(e => (e.attendees ?? []).map((a: GuestJson) => a.email)),
     'meet.google.com',
   ];
   for (const word of forbidden) assert.ok(!log.includes(word), `log leaks ${word}`);
@@ -218,7 +246,7 @@ test('the request log holds no titles, descriptions, attendees, addresses, ids o
 test('a client can run the per-calendar sync the plan describes: one token per calendar, failures isolated', async () => {
   const t = await setupCal();
   const gen = t.emu.calendar.seed();
-  const list = (await t.call('/users/me/calendarList')).json.items as any[];
+  const list = (await t.call('/users/me/calendarList')).json.items as EventJson[];
   const tokens: Record<string, string> = {};
   for (const cal of list)
     tokens[cal.id] = (

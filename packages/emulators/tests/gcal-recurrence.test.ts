@@ -4,6 +4,20 @@ import { occurrences, validateRecurrence, type Series } from '../src/gcal';
 import { dateOfDay, dayOf, isoInZone } from '../src/gcal/tz';
 import { setupCal, timed } from './gcal-helpers';
 
+/** An event as the JSON response carries it. */
+interface EventJson {
+  [field: string]: unknown;
+  id: string;
+  summary?: string;
+  status?: string;
+  recurrence?: string[];
+  start: { [field: string]: unknown; date?: string; dateTime?: string };
+  end?: { [field: string]: unknown; date?: string; dateTime?: string };
+  location?: string;
+  recurringEventId?: string;
+  originalStartTime?: { [field: string]: unknown; date?: string; dateTime?: string };
+}
+
 const ZONE = 'America/Los_Angeles';
 
 /** First `n` occurrences of an all-day series starting on `date`, as local dates. */
@@ -238,7 +252,7 @@ test('events.instances: DST in the instance ids and times, paging and windows', 
   assert.equal(r.json.kind, 'calendar#events');
   assert.equal(r.json.nextSyncToken, undefined, 'instances has no sync token');
   assert.deepEqual(
-    r.json.items.map((e: any) => [e.id.slice(master.id.length + 1), e.start.dateTime]),
+    r.json.items.map((e: EventJson) => [e.id.slice(master.id.length + 1), e.start.dateTime]),
     [
       ['20261026T170000Z', '2026-10-26T10:00:00-07:00'],
       ['20261102T180000Z', '2026-11-02T10:00:00-08:00'],
@@ -260,7 +274,7 @@ test('events.instances: DST in the instance ids and times, paging and windows', 
   // Every instance of the horizon is reachable and reads 10:00 local all year.
   const all = await t.call(path({ maxResults: 2500 }));
   assert.ok(all.json.items.length >= 104);
-  assert.ok(all.json.items.every((e: any) => /T10:00:00-0[78]:00$/.test(e.start.dateTime)));
+  assert.ok(all.json.items.every((e: EventJson) => /T10:00:00-0[78]:00$/.test(e.start.dateTime!)));
 });
 
 test('events.instances on a bad target: not recurring is 400, unknown is 404', async () => {
@@ -283,17 +297,17 @@ test('singleEvents=true expands masters, shows overrides where they moved to, an
       await t.call(
         t.events('primary', undefined, { singleEvents: true, timeMin: start, timeMax: end, ...q }),
       )
-    ).json.items as any[];
+    ).json.items as EventJson[];
   const weekly = (await list({})).filter(e => e.recurringEventId === gen.weekly.masterId);
   const ids = weekly.map(e => e.id);
   assert.ok(ids.includes(gen.weekly.overrideId));
   assert.ok(!ids.includes(gen.weekly.cancelledId));
-  const moved = weekly.find(e => e.id === gen.weekly.overrideId);
+  const moved = weekly.find(e => e.id === gen.weekly.overrideId)!;
   assert.equal(moved.summary, 'Weekly planning sync (moved)');
-  assert.match(moved.start.dateTime, /T11:00:00-0[78]:00$/);
-  assert.match(moved.originalStartTime.dateTime, /T10:00:00-0[78]:00$/);
+  assert.match(moved.start.dateTime!, /T11:00:00-0[78]:00$/);
+  assert.match(moved.originalStartTime!.dateTime!, /T10:00:00-0[78]:00$/);
   // Chronological, no duplicates.
-  const starts = weekly.map(e => Date.parse(e.start.dateTime));
+  const starts = weekly.map(e => Date.parse(e.start.dateTime!));
   assert.deepEqual(
     starts,
     [...starts].sort((a, b) => a - b),
@@ -302,17 +316,17 @@ test('singleEvents=true expands masters, shows overrides where they moved to, an
   // With showDeleted the cancelled one is a stub.
   const withDeleted = (await list({ showDeleted: 'true' })).find(
     e => e.id === gen.weekly.cancelledId,
-  );
+  )!;
   assert.equal(withDeleted.status, 'cancelled');
   // Without expansion: one master plus the two exceptions.
   const raw = (
     await t.call(t.events('primary', undefined, { showDeleted: true }))
-  ).json.items.filter((e: any) => e.id.startsWith(gen.weekly.masterId));
+  ).json.items.filter((e: EventJson) => e.id.startsWith(gen.weekly.masterId));
   assert.deepEqual(
-    raw.map((e: any) => e.id).sort(),
+    raw.map((e: EventJson) => e.id).sort(),
     [gen.weekly.masterId, gen.weekly.overrideId, gen.weekly.cancelledId].sort(),
   );
-  assert.deepEqual(raw.find((e: any) => e.id === gen.weekly.masterId).recurrence, [
+  assert.deepEqual(raw.find((e: EventJson) => e.id === gen.weekly.masterId).recurrence, [
     'RRULE:FREQ=WEEKLY;BYDAY=MO',
   ]);
 });
@@ -334,7 +348,7 @@ test('the master is listed for a window only when the series has an occurrence i
     )
   ).json.items;
   assert.deepEqual(
-    inWindow.map((e: any) => e.id),
+    inWindow.map((e: EventJson) => e.id),
     [master.id],
   );
   const after = (
@@ -358,7 +372,7 @@ test('all-day recurring events expand by date', async () => {
   });
   const items = (await t.call(`${t.events('primary', master.id)}/instances`)).json.items;
   assert.deepEqual(
-    items.map((e: any) => [e.id.slice(master.id.length + 1), e.start.date, e.end.date]),
+    items.map((e: EventJson) => [e.id.slice(master.id.length + 1), e.start.date, e.end!.date]),
     [
       ['20261102', '2026-11-02', '2026-11-03'],
       ['20261109', '2026-11-09', '2026-11-10'],
@@ -408,10 +422,12 @@ test('incremental sync keeps the shape of the first request: expanded instances 
     await t.call(t.events('primary', undefined, { singleEvents: true, syncToken: token }))
   ).json;
   assert.deepEqual(
-    changed.items.map((e: any) => e.summary),
+    changed.items.map((e: EventJson) => e.summary),
     ['Standup v2', 'Standup v2', 'Standup v2'],
   );
-  assert.ok(changed.items.every((e: any) => e.recurringEventId === master.id && !e.recurrence));
+  assert.ok(
+    changed.items.every((e: EventJson) => e.recurringEventId === master.id && !e.recurrence),
+  );
   t.emu.calendar.editEvent('primary', `${master.id}_20261109T170000Z`, { location: 'Room 1' });
   const afterEdit = (
     await t.call(
@@ -419,7 +435,7 @@ test('incremental sync keeps the shape of the first request: expanded instances 
     )
   ).json;
   assert.deepEqual(
-    afterEdit.items.map((e: any) => [e.id.slice(master.id.length + 1), e.location]),
+    afterEdit.items.map((e: EventJson) => [e.id.slice(master.id.length + 1), e.location]),
     [['20261109T170000Z', 'Room 1']],
   );
   // Deleting the series sends the cancelled master (and its cancelled exception).
@@ -430,7 +446,7 @@ test('incremental sync keeps the shape of the first request: expanded instances 
     )
   ).json.items;
   assert.deepEqual(
-    gone.map((e: any) => [e.id, e.status]).sort(),
+    gone.map((e: EventJson) => [e.id, e.status]).sort(),
     [
       [master.id, 'cancelled'],
       [`${master.id}_20261109T170000Z`, 'cancelled'],

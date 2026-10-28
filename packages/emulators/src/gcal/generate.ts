@@ -276,7 +276,7 @@ export function generateCalendars(
           { email: organizer.email, responseStatus: 'accepted' },
           { email: store.owner.email, responseStatus: 'needsAction' },
           ...(i % 2 === 0
-            ? [{ email: COLLEAGUES[i % COLLEAGUES.length], responseStatus: 'accepted' }]
+            ? [{ email: COLLEAGUES[i % COLLEAGUES.length], responseStatus: 'accepted' as const }]
             : []),
         ],
       },

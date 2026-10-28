@@ -4,6 +4,22 @@ import { ME, setupCal } from './gcal-helpers';
 
 const LIST = '/users/me/calendarList';
 
+/** A calendarList entry as the JSON response carries it. */
+interface EntryJson {
+  [field: string]: unknown;
+  id?: string;
+  summary?: string;
+  summaryOverride?: string;
+  accessRole?: string;
+  selected?: boolean;
+  hidden?: boolean;
+  deleted?: boolean;
+  primary?: boolean;
+  backgroundColor?: string;
+  timeZone?: string;
+  etag?: string;
+}
+
 async function seeded() {
   const t = await setupCal();
   const gen = t.emu.calendar.seed();
@@ -15,7 +31,7 @@ test('entries carry the fields clients read, and Google leaves false flags out',
   const r = await t.call(`${LIST}?showHidden=true`);
   assert.equal(r.status, 200);
   assert.equal(r.json.kind, 'calendar#calendarList');
-  const primary = r.json.items.find((i: any) => i.id === ME);
+  const primary = r.json.items.find((i: EntryJson) => i.id === ME);
   assert.equal(primary.kind, 'calendar#calendarListEntry');
   assert.equal(primary.primary, true);
   assert.equal(primary.accessRole, 'owner');
@@ -25,23 +41,23 @@ test('entries carry the fields clients read, and Google leaves false flags out',
   assert.match(primary.backgroundColor, /^#[0-9a-f]{6}$/);
   assert.equal(primary.hidden, undefined);
   assert.equal(primary.deleted, undefined);
-  const family = r.json.items.find((i: any) => i.id === gen.calendars.family);
+  const family = r.json.items.find((i: EntryJson) => i.id === gen.calendars.family);
   assert.equal(family.primary, undefined);
   assert.equal(family.summary, 'Family');
-  const readOnly = r.json.items.find((i: any) => i.id === gen.calendars.readOnly);
+  const readOnly = r.json.items.find((i: EntryJson) => i.id === gen.calendars.readOnly);
   assert.equal(readOnly.accessRole, 'reader');
 });
 
 test('hidden calendars are left out unless showHidden is set; unselected ones are listed with selected missing', async () => {
   const { t, gen } = await seeded();
   const plain = await t.call(LIST);
-  const ids = plain.json.items.map((i: any) => i.id);
+  const ids = plain.json.items.map((i: EntryJson) => i.id);
   assert.ok(!ids.includes(gen.calendars.hidden));
   assert.ok(ids.includes(gen.calendars.unselected));
-  const unselected = plain.json.items.find((i: any) => i.id === gen.calendars.unselected);
+  const unselected = plain.json.items.find((i: EntryJson) => i.id === gen.calendars.unselected);
   assert.equal(unselected.selected, undefined);
   const withHidden = await t.call(`${LIST}?showHidden=true`);
-  const hidden = withHidden.json.items.find((i: any) => i.id === gen.calendars.hidden);
+  const hidden = withHidden.json.items.find((i: EntryJson) => i.id === gen.calendars.hidden);
   assert.equal(hidden.hidden, true);
   assert.equal(withHidden.json.items.length, plain.json.items.length + 1);
 });
@@ -51,15 +67,15 @@ test('helpers hide, deselect and delete calendars; showDeleted brings deleted en
   t.emu.calendar.hideCalendar(gen.calendars.family);
   t.emu.calendar.deselectCalendar(gen.primaryId);
   t.emu.calendar.deleteCalendar(gen.calendars.unselected);
-  const plain = (await t.call(LIST)).json.items.map((i: any) => i.id);
+  const plain = (await t.call(LIST)).json.items.map((i: EntryJson) => i.id);
   assert.ok(!plain.includes(gen.calendars.family));
   assert.ok(!plain.includes(gen.calendars.unselected));
   assert.equal(
-    (await t.call(LIST)).json.items.find((i: any) => i.id === gen.primaryId).selected,
+    (await t.call(LIST)).json.items.find((i: EntryJson) => i.id === gen.primaryId).selected,
     undefined,
   );
   const all = (await t.call(`${LIST}?showHidden=true&showDeleted=true`)).json.items;
-  assert.equal(all.find((i: any) => i.id === gen.calendars.unselected).deleted, true);
+  assert.equal(all.find((i: EntryJson) => i.id === gen.calendars.unselected).deleted, true);
   assert.throws(() => t.emu.calendar.deleteCalendar(gen.primaryId), /primary/);
   // A deleted calendar's events are gone.
   assert.equal((await t.call(t.events(gen.calendars.unselected))).status, 404);
@@ -68,11 +84,13 @@ test('helpers hide, deselect and delete calendars; showDeleted brings deleted en
 test('minAccessRole filters by role rank', async () => {
   const { t, gen } = await seeded();
   const writers = (await t.call(`${LIST}?minAccessRole=writer&showHidden=true`)).json.items.map(
-    (i: any) => i.id,
+    (i: EntryJson) => i.id,
   );
   assert.ok(!writers.includes(gen.calendars.readOnly));
   assert.ok(writers.includes(gen.primaryId));
-  const readers = (await t.call(`${LIST}?minAccessRole=reader`)).json.items.map((i: any) => i.id);
+  const readers = (await t.call(`${LIST}?minAccessRole=reader`)).json.items.map(
+    (i: EntryJson) => i.id,
+  );
   assert.ok(readers.includes(gen.calendars.readOnly));
   assert.equal((await t.call(`${LIST}?minAccessRole=boss`)).status, 400);
 });
@@ -83,13 +101,13 @@ test('maxResults and pageToken page the list; the sync token comes only with the
   assert.equal(first.json.items.length, 2);
   assert.ok(first.json.nextPageToken);
   assert.equal(first.json.nextSyncToken, undefined);
-  const seen = [...first.json.items.map((i: any) => i.id)];
+  const seen = [...first.json.items.map((i: EntryJson) => i.id)];
   let page = first;
   while (page.json.nextPageToken) {
     page = await t.call(
       `${LIST}?maxResults=2&showHidden=true&pageToken=${page.json.nextPageToken}`,
     );
-    seen.push(...page.json.items.map((i: any) => i.id));
+    seen.push(...page.json.items.map((i: EntryJson) => i.id));
   }
   assert.equal(new Set(seen).size, seen.length);
   assert.equal(seen.length, 5);
@@ -109,7 +127,7 @@ test('incremental sync returns only changed entries, hidden and deleted ones inc
   t.emu.calendar.deleteCalendar(gen.calendars.unselected);
   const added = t.emu.calendar.addCalendar({ summary: 'Book club', accessRole: 'writer' });
   const changes = await t.call(`${LIST}?syncToken=${none.json.nextSyncToken}`);
-  const byId = Object.fromEntries(changes.json.items.map((i: any) => [i.id, i]));
+  const byId = Object.fromEntries(changes.json.items.map((i: EntryJson) => [i.id, i]));
   assert.equal(Object.keys(byId).length, 3);
   assert.equal(byId[gen.calendars.family].hidden, true);
   assert.equal(byId[gen.calendars.unselected].deleted, true);

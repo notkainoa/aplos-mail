@@ -23,6 +23,22 @@ export interface Attendee {
   additionalGuests?: number;
 }
 
+/** Conference data attached to an event (Google Meet), as the API returns it. */
+export interface ConferenceEntryPoint {
+  [field: string]: unknown;
+  entryPointType?: string;
+  uri?: string;
+  label?: string;
+}
+
+export interface ConferenceData {
+  [field: string]: unknown;
+  createRequest?: Record<string, unknown>;
+  entryPoints?: ConferenceEntryPoint[];
+  conferenceSolution?: { key?: { type?: string }; name?: string; iconUri?: string };
+  conferenceId?: string;
+}
+
 /** An Events resource as the API returns it. Fields Google adds later pass through untouched. */
 export interface GcalEvent {
   kind: 'calendar#event';
@@ -53,12 +69,15 @@ export interface GcalEvent {
   guestsCanInviteOthers?: boolean;
   guestsCanSeeOtherGuests?: boolean;
   reminders?: { useDefault: boolean; overrides?: { method: string; minutes: number }[] };
-  conferenceData?: Record<string, any>;
+  conferenceData?: ConferenceData;
   hangoutLink?: string;
   extendedProperties?: { private?: Record<string, string>; shared?: Record<string, string> };
   eventType?: string;
-  [field: string]: any;
+  [field: string]: unknown;
 }
+
+/** A client-supplied event body: known fields keep their types, everything else passes through. */
+export type Fields = Record<string, unknown> & Partial<GcalEvent>;
 
 export interface CalendarListEntry {
   kind: 'calendar#calendarListEntry';
