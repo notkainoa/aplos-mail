@@ -80,6 +80,31 @@ function ownKeys(source: Record<string, unknown>): string[] {
   }
 }
 
+/** The missingScopes list: at most 20 kept ids; refused (so `drop` runs) when any given one was unreadable. */
+function cleanMissingScopes(scopes: unknown[], drop: () => void): string[] {
+  const clean = scopes
+    .slice(0, 20)
+    .map(cleanScope)
+    .filter((s): s is string => s !== undefined);
+  if (clean.length < Math.min(scopes.length, 20)) drop();
+  return clean;
+}
+
+/** Each named field through its check; a present-but-wrong value is refused. */
+function setChecked<Out extends Record<string, unknown>>(
+  get: (key: string) => unknown,
+  keys: readonly string[],
+  accepts: (value: unknown) => boolean,
+  out: Out,
+  drop: () => void,
+) {
+  for (const key of keys) {
+    const value = get(key);
+    if (accepts(value)) (out as Record<string, unknown>)[key] = value;
+    else if (value !== undefined) drop();
+  }
+}
+
 /** The ClassifiedError keys the Logger reads, each with its treatment. Anything else on the object (a `cause`, a `stack`, a body) is never read. */
 function cleanError(value: unknown, salt: string, drop: () => void): ClassifiedError | undefined {
   if (!isObject(value)) return undefined;
@@ -124,25 +149,11 @@ function cleanError(value: unknown, salt: string, drop: () => void): ClassifiedE
   else if (status !== undefined) drop();
   const providerCode = code('code');
   if (providerCode !== undefined) out.code = providerCode;
-  for (const key of ['retryAfterMs', 'resumeAt'] as const) {
-    const n = get(key);
-    if (nonNegative(n)) out[key] = n as number;
-    else if (n !== undefined) drop();
-  }
-  for (const key of ['concurrency', 'uncertain'] as const) {
-    const b = get(key);
-    if (typeof b === 'boolean') out[key] = b;
-    else if (b !== undefined) drop();
-  }
+  setChecked(get, ['retryAfterMs', 'resumeAt'] as const, nonNegative, out, drop);
+  setChecked(get, ['concurrency', 'uncertain'] as const, b => typeof b === 'boolean', out, drop);
   const scopes = get('missingScopes');
-  if (Array.isArray(scopes)) {
-    const clean = scopes
-      .slice(0, 20)
-      .map(cleanScope)
-      .filter((s): s is string => s !== undefined);
-    if (clean.length < Math.min(scopes.length, 20)) drop();
-    out.missingScopes = clean;
-  } else if (scopes !== undefined) drop();
+  if (Array.isArray(scopes)) out.missingScopes = cleanMissingScopes(scopes, drop);
+  else if (scopes !== undefined) drop();
   // A remote item id is the provider's, not ours: hashed like an address so lines still correlate.
   const item = get('item');
   if (typeof item === 'string' && item.length <= 512) out.item = hashAddress(salt, item);
