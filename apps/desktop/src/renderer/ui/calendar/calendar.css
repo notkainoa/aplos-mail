@@ -32,6 +32,7 @@
 }
 
 .ui-cal-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -49,6 +50,17 @@
     transform var(--dur-press-up) var(--ease-out),
     background-color var(--dur-hover) var(--ease-std),
     color var(--dur-hover) var(--ease-std);
+}
+
+/* Hover and press tint sit on an overlay so solid fills (accent, event colours) shift with the shared tokens. */
+.ui-cal-button::after,
+.ui-event-block::after,
+.ui-plan-outline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
 }
 
 .ui-cal-button:active {
@@ -91,7 +103,6 @@
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: var(--space-half);
-  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .ui-cal-kbd {
@@ -110,7 +121,7 @@
 }
 
 .ui-cal-button[data-variant="filled"] .ui-cal-kbd {
-  background: color-mix(in srgb, var(--accent-ink) 16%, transparent);
+  background: var(--press-hi);
   color: var(--accent-ink);
 }
 
@@ -144,8 +155,12 @@
   }
 
   .ui-cal-button[data-variant="filled"]:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent), var(--ink) 8%);
+    background: var(--accent);
     color: var(--accent-ink);
+  }
+
+  .ui-cal-button[data-variant="filled"]:hover:not(:disabled)::after {
+    background: var(--press);
   }
 }
 
@@ -326,10 +341,7 @@
   --lane-min: calc(var(--space-8) + var(--space-1)); /* a lane never narrows below 44 px */
   --hours-w: var(--space-10);
   --ev-gap: var(--space-half);
-  --l-event: 1; /* stacking inside the grid only */
-  --l-raised: 2;
-  --l-now: 3;
-  --l-drag: 4;
+  --drag-source: 0.5; /* the entry being dragged stays behind, dimmed (no token for it yet: see prop_gaps) */
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -497,15 +509,16 @@
 
 .ui-calendar-grid__slot {
   position: absolute;
-  z-index: var(--l-event);
   top: calc(var(--hour) * var(--s) + var(--hairline));
   height: max(var(--space-5), calc(var(--hour) * var(--d) - var(--ev-gap) * 2));
   left: calc(100% * var(--lane, 0) / var(--lanes, 1) + var(--ev-gap));
   width: calc(100% / var(--lanes, 1) - var(--ev-gap) * 2);
 }
 
+/* Folded cluster: the kept lanes share the width left of the "+N" stack (--lanes counts only them). */
 .ui-calendar-grid__slot[data-beside="true"] {
-  width: calc(100% - var(--lane-min) - var(--ev-gap) * 3);
+  left: calc((100% - var(--lane-min) - var(--ev-gap)) * var(--lane, 0) / var(--lanes, 1) + var(--ev-gap));
+  width: calc((100% - var(--lane-min) - var(--ev-gap)) / var(--lanes, 1) - var(--ev-gap) * 2);
 }
 
 .ui-calendar-grid__slot[data-kind="stack"] {
@@ -514,12 +527,13 @@
   width: var(--lane-min);
 }
 
-.ui-calendar-grid__slot[data-dragging="true"] {
-  opacity: 0.5;
+.ui-calendar-grid__slot[data-kind="stack"][data-alone="true"] {
+  left: var(--ev-gap);
+  width: auto;
 }
 
-.ui-calendar-grid__slot:has([data-selected="true"]) {
-  z-index: var(--l-raised);
+.ui-calendar-grid__slot[data-dragging="true"] {
+  opacity: var(--drag-source);
 }
 
 .ui-calendar-grid__strip .ui-event-block,
@@ -538,7 +552,6 @@
 
 .ui-calendar-grid__drag {
   position: absolute;
-  z-index: var(--l-drag);
   top: calc(var(--hour) * var(--s) + var(--hairline));
   height: max(var(--space-5), calc(var(--hour) * var(--d) - var(--ev-gap) * 2));
   left: var(--ev-gap);
@@ -556,7 +569,6 @@
 
 .ui-calendar-grid__empty {
   position: absolute;
-  z-index: var(--l-raised);
   left: 0;
   right: 0;
   top: var(--hour);
@@ -579,6 +591,7 @@
 .ui-event-block,
 .ui-plan-outline {
   --ev-fill: color-mix(in srgb, var(--cal) var(--event-fill), var(--canvas)); /* over the canvas, so grid lines never cross the text */
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -644,7 +657,6 @@
   outline: var(--focus-width) solid var(--accent);
   outline-offset: 0;
   position: relative;
-  z-index: var(--l-raised);
 }
 
 /* A plan from mail: dashed 1 px outline and a label until it is confirmed. */
@@ -687,16 +699,12 @@
 }
 
 @media (hover: hover) {
-  .ui-event-block[data-kind="event"]:hover {
-    background: color-mix(in srgb, var(--ev-fill), var(--ink) 4%);
-  }
-
-  .ui-plan-outline:hover {
-    background: color-mix(in srgb, var(--canvas), var(--ink) 4%);
+  .ui-event-block:hover::after,
+  .ui-plan-outline:hover::after {
+    background: var(--hover);
   }
 
   .ui-event-block[data-kind="stack"]:hover {
-    background: color-mix(in srgb, var(--raised), var(--ink) 4%);
     color: var(--ink);
   }
 }
@@ -704,7 +712,6 @@
 /* ---------- NowLine ---------- */
 .ui-now-line[data-variant="grid"] {
   position: absolute;
-  z-index: var(--l-now);
   left: 0;
   right: 0;
   top: calc(var(--hour) * (var(--now) - var(--grid-first, 8)));
@@ -758,11 +765,14 @@
 
 /* ---------- Month ---------- */
 .ui-calendar-grid__month {
+  /* A week row is never shorter than its day number and three entries, so no entry is clipped; a short pane scrolls. */
+  --month-row: calc(var(--control-xs) * 4 + var(--space-half) + var(--space-1) * 2);
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
   padding-bottom: var(--space-6);
   display: grid;
-  grid-template-rows: auto repeat(6, minmax(0, 1fr));
+  grid-template-rows: max-content repeat(6, minmax(var(--month-row), 1fr));
   position: relative;
 }
 
@@ -770,6 +780,12 @@
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   min-height: 0;
+}
+
+.ui-calendar-grid__mev[data-active="true"],
+.ui-event-block[data-active="true"] {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: 0;
 }
 
 .ui-calendar-grid__mh {
@@ -976,7 +992,7 @@
 }
 
 .ui-calendar-grid__ag[data-state="past"] i {
-  opacity: 0.5;
+  background: var(--faint); /* a past entry's mark is the non-text grey */
 }
 
 .ui-calendar-grid__ag[data-state="next"] .ui-calendar-grid__ag-name {
@@ -1205,15 +1221,20 @@
 }
 
 /* ---------- DatePresets ---------- */
+.ui-date-presets__outside,
+.ui-date-presets {
+  --l-menu: 10; /* used until the shared --z-menu layer token lands; it wins once defined */
+}
+
 .ui-date-presets__outside {
   position: fixed;
   inset: 0;
-  z-index: var(--z-menu);
+  z-index: var(--z-menu, var(--l-menu));
 }
 
 .ui-date-presets {
   position: fixed;
-  z-index: var(--z-menu);
+  z-index: calc(var(--z-menu, var(--l-menu)) + 1);
   left: var(--anchor-x, 0);
   top: calc(var(--anchor-y, 0) + var(--space-1));
   width: calc(var(--menu-min) + var(--space-9));
@@ -1271,10 +1292,13 @@
 
 .ui-date-presets__text {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ui-date-presets__aside {
+  flex: none;
   margin-left: auto;
   padding-left: var(--space-3);
   font: var(--type-small);
@@ -1383,10 +1407,18 @@
   box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
 }
 
+.ui-date-presets__foot .ui-cal-button {
+  flex: none;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+}
+
 .ui-date-presets__time {
+  flex: 0 1 auto;
+  min-width: 0;
   margin-right: auto;
   height: var(--control-sm);
-  padding: 0 var(--space-2) 0 var(--space-3);
+  padding: 0 var(--space-1) 0 var(--space-2);
   border-radius: var(--radius-md);
   background: var(--canvas);
   box-shadow: inset 0 0 0 1px var(--line-strong);

@@ -1,15 +1,32 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import type { CalendarEventData, CalendarGridProps } from '../props';
+import type { CalendarGridProps } from '../props';
 import { AgendaView } from './AgendaView';
 import { rangeOf } from './dates';
 import { eventDomId } from './eventText';
 import { MonthGrid } from './MonthGrid';
+import { ActiveStack } from './segment';
 import { TimeGrid } from './TimeGrid';
 
-/** Entries in reading order, the order ↑ and ↓ walk. */
-function reading(events: readonly CalendarEventData[]): CalendarEventData[] {
-  return [...events].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime() || a.id.localeCompare(b.id));
+/** One stop of the ↑ ↓ walk: a rendered entry, or a rendered "+N" / "N more" button that holds folded entries. */
+interface Stop {
+  domId: string;
+  eventId?: string;
+  at: number;
+  el: HTMLElement;
+}
+
+/**
+ * The stops that exist in the DOM, in reading order. Entries folded away have no element, so they are never
+ * walked to; their "+N" or "N more" button stands in for them.
+ */
+function stopsOf(root: HTMLElement): Stop[] {
+  const stops: Stop[] = [];
+  root.querySelectorAll<HTMLElement>('[data-walk-at]').forEach((el) => {
+    if (!el.id) return;
+    stops.push({ domId: el.id, eventId: el.dataset.eventId, at: Number(el.dataset.walkAt), el });
+  });
+  return stops.sort((a, b) => a.at - b.at || a.domId.localeCompare(b.domId));
 }
 
 /**
@@ -23,6 +40,10 @@ export function CalendarGrid(props: CalendarGridProps) {
   const { view, events, selectedId, onSelect, onOpen, label, announce } = props;
   const rootRef = useRef<HTMLDivElement>(null);
   const first = useRef(true);
+  const [activeStack, setActiveStack] = useState<string | null>(null);
+
+  // A selection from outside (pointer, props) takes the walk off a "+N" button.
+  useEffect(() => setActiveStack(null), [selectedId, view]);
 
   // Announce range changes, but not the first render.
   useEffect(() => {
@@ -35,9 +56,9 @@ export function CalendarGrid(props: CalendarGridProps) {
 
   // Keep the selected entry in view as ↑ and ↓ walk the list.
   useEffect(() => {
-    if (!selectedId) return;
-    document.getElementById(eventDomId(selectedId))?.scrollIntoView?.({ block: 'nearest' });
-  }, [selectedId]);
+    const id = activeStack ?? (selectedId ? eventDomId(selectedId) : null);
+    if (id) document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' });
+  }, [selectedId, activeStack]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
     if (e.nativeEvent.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
@@ -45,23 +66,34 @@ export function CalendarGrid(props: CalendarGridProps) {
       // Buttons inside keep Return and Space for themselves; only the walk is shared.
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
     }
-    const list = reading(events);
-    if (list.length === 0) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const stops = stopsOf(root);
+    if (stops.length === 0) return;
+    const current = activeStack ?? (selectedId ? eventDomId(selectedId) : null);
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      const at = list.findIndex((x) => x.id === selectedId);
-      const next = e.key === 'ArrowDown' ? list[Math.min(list.length - 1, at + 1)] : list[at < 0 ? list.length - 1 : Math.max(0, at - 1)];
-      if (!next || next.id === selectedId) return;
-      onSelect(next.id);
-      announce?.(`${next.title}, ${next.allDay ? 'all day' : rangeOf(next.start, next.end)}`);
+      const at = stops.findIndex((x) => x.domId === current);
+      const next = e.key === 'ArrowDown' ? stops[Math.min(stops.length - 1, at + 1)] : stops[at < 0 ? stops.length - 1 : Math.max(0, at - 1)];
+      if (!next || next.domId === current) return;
+      if (next.eventId === undefined) {
+        // A "+N" or "N more" button: it becomes the active descendant and Return opens it.
+        setActiveStack(next.domId);
+        announce?.(next.el.getAttribute('aria-label') ?? next.el.textContent ?? '');
+        return;
+      }
+      setActiveStack(null);
+      onSelect(next.eventId);
+      const event = events.find((x) => x.id === next.eventId);
+      if (event) announce?.(`${event.title}, ${event.allDay ? 'all day' : rangeOf(event.start, event.end)}`);
       return;
     }
-    if (e.key === 'Enter' && selectedId) {
-      const el = rootRef.current?.querySelector<HTMLElement>(`[id="${eventDomId(selectedId)}"]`);
-      if (el) {
-        e.preventDefault();
-        onOpen(selectedId, el);
-      }
+    if (e.key === 'Enter' && current) {
+      const stop = stops.find((x) => x.domId === current);
+      if (!stop) return;
+      e.preventDefault();
+      if (stop.eventId === undefined) stop.el.click();
+      else onOpen(stop.eventId, stop.el);
     }
   };
 
@@ -74,11 +106,13 @@ export function CalendarGrid(props: CalendarGridProps) {
       data-agenda={view === 'agenda' ? (props.agenda ?? 'full') : undefined}
       role={gridLike ? 'grid' : 'region'}
       aria-label={label}
-      aria-activedescendant={gridLike && selectedId ? eventDomId(selectedId) : undefined}
+      aria-activedescendant={gridLike ? (activeStack ?? (selectedId ? eventDomId(selectedId) : undefined)) : undefined}
       tabIndex={0}
       onKeyDown={onKeyDown}
     >
-      {view === 'agenda' ? <AgendaView {...props} /> : view === 'month' ? <MonthGrid {...props} /> : <TimeGrid {...props} />}
+      <ActiveStack.Provider value={activeStack}>
+        {view === 'agenda' ? <AgendaView {...props} /> : view === 'month' ? <MonthGrid {...props} /> : <TimeGrid {...props} />}
+      </ActiveStack.Provider>
     </div>
   );
 }

@@ -3,16 +3,17 @@
  * with 56 px per hour, lanes, the "+N" stack, the now-line and pointer drag (create, move, resize).
  * Internal to the calendar family; CalendarGrid is the public component.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { CalendarEventData, CalendarGridProps } from '../props';
 import { dateOf, dateTimeAt, dayOf, dayTitle, hourLabel, hourRange, rangeOf, shortWeekday, snapHours } from './dates';
 import { EventBlock } from './EventBlock';
 import { calVar } from './eventText';
 import { GridAction } from './GridAction';
-import { allDayOn, daysOf, dragRange, layoutDay, MAX_LANES, timedOn, type Timed } from './layout';
+import { allDayOn, daysOf, dragRange, lanesFor, layoutDay, MAX_LANES, timedOn, type Timed } from './layout';
 import { NowLine } from './NowLine';
 import { PlanOutline } from './PlanOutline';
+import { FirstSegment } from './segment';
 
 interface DragState {
   kind: 'create' | 'move' | 'resize';
@@ -31,6 +32,9 @@ interface DragRun {
   y: number;
   moved: boolean;
   last?: string;
+  /** The element that took the press and its pointer, captured only once the press becomes a drag. */
+  el: HTMLElement;
+  pointerId: number;
 }
 
 /** Pixels the pointer must travel before a press becomes a drag, so a click still selects. */
@@ -41,7 +45,10 @@ export function TimeGrid(props: CalendarGridProps) {
   const wide = view === 'day';
   const days = daysOf(wide ? 'day' : 'week', start);
   const today = dayOf(now);
-  const maxLanes = wide ? MAX_LANES.day : MAX_LANES.week;
+  // Lanes are limited by width as well as by count: none narrower than 44 px (DESIGN 7.8). Unknown width (first
+  // render, no layout) uses the count alone.
+  const [colWidth, setColWidth] = useState(0);
+  const maxLanes = lanesFor(colWidth, wide ? MAX_LANES.day : MAX_LANES.week);
 
   const perDay = days.map((day) => {
     const timed = events.map((e) => timedOn(e, day)).filter((t): t is Timed => t !== null);
@@ -56,6 +63,17 @@ export function TimeGrid(props: CalendarGridProps) {
   const run = useRef<DragRun | null>(null);
   const suppressClick = useRef(false);
   const [drag, setDrag] = useState<DragState | null>(null);
+
+  useEffect(() => {
+    const track = trackRefs.current[0];
+    if (!track) return;
+    const measure = (): void => setColWidth(Math.round(track.getBoundingClientRect().width));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(track);
+    return () => observer.disconnect();
+  }, [view]);
 
   const hoursAt = (clientY: number, dayIndex: number): number => {
     const track = trackRefs.current[dayIndex];
@@ -74,14 +92,15 @@ export function TimeGrid(props: CalendarGridProps) {
   const begin = (e: ReactPointerEvent<HTMLElement>, kind: DragState['kind'], dayIndex: number, at: number, end: number, id?: string): void => {
     if (e.button !== 0) return;
     const pointer = hoursAt(e.clientY, dayIndex);
-    run.current = { kind, id, dayIndex, origin: { at, end, pointer }, x: e.clientX, y: e.clientY, moved: false };
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    // No capture yet: a plain click must still land on the entry (capture would retarget it to the slot).
+    run.current = { kind, id, dayIndex, origin: { at, end, pointer }, x: e.clientX, y: e.clientY, moved: false, el: e.currentTarget, pointerId: e.pointerId };
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLElement>): void => {
     const r = run.current;
     if (!r) return;
     if (!r.moved && Math.hypot(e.clientX - r.x, e.clientY - r.y) < DRAG_SLOP) return;
+    if (!r.moved) r.el.setPointerCapture?.(r.pointerId);
     r.moved = true;
     const dayIndex = r.kind === 'move' ? dayIndexAt(e.clientX, r.dayIndex) : r.dayIndex;
     const range = dragRange(r.kind, r.origin, hoursAt(e.clientY, r.dayIndex));
@@ -98,7 +117,13 @@ export function TimeGrid(props: CalendarGridProps) {
     const state = drag;
     setDrag(null);
     if (!r.moved) return;
-    suppressClick.current = true;
+    if (r.kind !== 'create') {
+      // The click that ends a move or resize must not select; a create ends on the empty track, which has no click.
+      suppressClick.current = true;
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+    }
     if (!commit || !state) return;
     const day = days[state.dayIndex];
     const range = { start: dateTimeAt(day, state.at), end: dateTimeAt(day, state.end) };
@@ -107,6 +132,21 @@ export function TimeGrid(props: CalendarGridProps) {
       if (state.dayIndex !== r.dayIndex || state.at !== r.origin.at) onMove(state.id, range);
     } else if (state.kind === 'resize' && state.id && state.end !== r.origin.end) onResize(state.id, range.end);
   };
+
+  // Esc cancels a drag that is under way wherever focus is (a press on an empty track focuses the grid root).
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+  useEffect(() => {
+    if (!drag) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      finishRef.current(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [drag !== null]);
 
   const movable = (e: CalendarEventData): boolean => e.kind === 'event' && e.persisted && !e.allDay;
 
@@ -140,12 +180,6 @@ export function TimeGrid(props: CalendarGridProps) {
       onPointerMove={onPointerMove}
       onPointerUp={() => finish(true)}
       onPointerCancel={() => finish(false)}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape' && run.current) {
-          e.stopPropagation();
-          finish(false);
-        }
-      }}
     >
       <div className="ui-calendar-grid__head" role="row">
         <div className="ui-calendar-grid__corner" aria-hidden="true" />
@@ -172,11 +206,14 @@ export function TimeGrid(props: CalendarGridProps) {
           <div className="ui-calendar-grid__corner" role="rowheader">
             All day
           </div>
-          {perDay.map(({ day, allDay }) => (
+          {perDay.map(({ day, allDay }, dayIndex) => (
             <div key={day} role="gridcell" className="ui-calendar-grid__allday-cell" aria-label={`${dayTitle(day)}, all day`}>
               {allDay.map((event) => (
                 <div className="ui-calendar-grid__strip" key={event.id}>
-                  {block(event, { lane: 0, lanes: 1, wide })}
+                  {/* A multi-day entry shows on each day it covers, but only its first segment is the DOM target. */}
+                  <FirstSegment.Provider value={!perDay.slice(0, dayIndex).some((d) => d.allDay.some((x) => x.id === event.id))}>
+                    {block(event, { lane: 0, lanes: 1, wide })}
+                  </FirstSegment.Provider>
                 </div>
               ))}
             </div>
@@ -260,6 +297,7 @@ export function TimeGrid(props: CalendarGridProps) {
                       key={stack.events.map((e) => e.id).join('+')}
                       className="ui-calendar-grid__slot"
                       data-kind="stack"
+                      data-alone={stack.alone ? 'true' : undefined}
                       style={slotStyle(stack.at, stack.end, 0, 1)}
                     >
                       <EventBlock

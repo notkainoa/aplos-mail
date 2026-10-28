@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { copyProblem } from '../../commands/internal';
 import type { KeyRecorderProps, ProviderTableProps } from '../props';
 import { KeyRecorder, ProviderTable, SettingRow } from './index';
-import { chordText } from './KeyRecorder';
+import { chordText, recorderKeyAction } from './KeyRecorder';
 import { latencyText } from './ProviderTable';
 
 const noop = () => {};
@@ -254,6 +254,28 @@ test('ProviderTable local: a saved or environment key offers Replace key and Rem
   assert.match(out, /title="This key comes from CUSTOM_AI_API_KEY in your environment\. Remove it there\."/);
 });
 
+test('ProviderTable local: a refused or unreachable server explains itself like a hosted row', () => {
+  const out = html(
+    <ProviderTable
+      kind="local"
+      onAddressChange={noop}
+      onAction={noop}
+      rows={[
+        { provider: 'custom', address: 'https://x.example/v1', defaultAddress: '', keySource: { kind: 'keychain' }, status: { kind: 'refused' } },
+        { provider: 'ollama', address: 'http://localhost:11434', defaultAddress: 'http://localhost:11434', running: false, status: { kind: 'unreachable' } },
+      ]}
+    />,
+  );
+  assert.match(out, /Custom server refused the saved key, so nothing was sent\./);
+  assert.match(out, /Couldn&#x27;t reach Ollama\. Nothing was sent\./);
+  assertCleanCopy(out);
+});
+
+test('SettingRow: the tag is never shrunk by a long meta', () => {
+  const out = html(<SettingRow id="r" label="Groq" meta={'m'.repeat(200)} tag="Default" />);
+  assert.match(out, /class="ui-setting-row__tag">Default</);
+});
+
 test('ProviderTable worst case: unbreakable address, 300-character model, CJK and RTL addresses', () => {
   const longModel = 'm'.repeat(300);
   const feat = html(
@@ -354,11 +376,32 @@ test('KeyRecorder conflict: the pressed chord, who owns it, Replace and Cancel',
   assertCleanCopy(out);
 });
 
+test('KeyRecorder conflict: Return replaces and Tab is not recorded, so Replace and Cancel are reachable by key', () => {
+  const key = (k: string, extra: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean }> = {}) => ({ key: k, metaKey: false, ctrlKey: false, altKey: false, ...extra });
+  assert.equal(recorderKeyAction('conflict', key('Enter')), 'replace');
+  assert.equal(recorderKeyAction('conflict', key('Tab')), 'move');
+  assert.equal(recorderKeyAction('conflict', key('x')), 'record');
+  assert.equal(recorderKeyAction('conflict', key('Enter', { metaKey: true })), 'record'); // ⌘Return is a chord
+  // Before a chord is pressed every key is the new chord, Tab and Return included.
+  assert.equal(recorderKeyAction('recording', key('Tab')), 'record');
+  assert.equal(recorderKeyAction('recording', key('Enter')), 'record');
+});
+
+test('KeyRecorder: a long conflicting label is truncated in one line, with the full text as a tooltip', () => {
+  const long = 'Later '.repeat(60).trim();
+  const out = html(<KeyRecorder {...recorder({ state: 'conflict', pendingChord: 'l', conflictWith: { commandId: 'mail.later', label: long } })} />);
+  assert.match(out, /class="ui-key-recorder__conflict-text"/);
+  assert.ok(out.includes(`title="Already used by ${long}"`));
+  const idle = html(<KeyRecorder {...recorder({ label: long, conflictWith: { commandId: 'mail.later', label: long } })} />);
+  assert.match(idle, /class="ui-key-recorder__conflict-text"/);
+  assert.ok(idle.includes(`title="${long}"`));
+});
+
 test('KeyRecorder worst case: 300-character label, many chords, one-letter command, emoji and CJK labels', () => {
   const many = Array.from({ length: 6 }, (_, i) => `ctrl+${i}`);
   const out = html(<KeyRecorder {...recorder({ label: 'L'.repeat(300), chords: many })} />);
   assert.equal((out.match(/class="ui-key-recorder__kbd"/g) ?? []).length, 6);
   for (const label of ['A', '完了', 'تم', 'Done 🎉']) {
-    assert.ok(html(<KeyRecorder {...recorder({ label })} />).includes(`dir="auto">${label}</span>`));
+    assert.ok(html(<KeyRecorder {...recorder({ label })} />).includes(`dir="auto" title="${label}">${label}</span>`));
   }
 });

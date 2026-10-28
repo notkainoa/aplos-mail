@@ -1,7 +1,9 @@
+import { useContext } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import type { EventBlockProps } from '../props';
 import { rangeOf, timeOf } from './dates';
-import { calVar, densityOf, eventDomId, eventLabel } from './eventText';
+import { calVar, densityOf, eventDomId, eventLabel, stackDomId, walkAt } from './eventText';
+import { ActiveStack, FirstSegment } from './segment';
 
 /**
  * One entry on the grid: radius 6, a 2 px leading rule in the calendar colour, the DESIGN 4.2 fill composited over
@@ -11,13 +13,20 @@ import { calVar, densityOf, eventDomId, eventLabel } from './eventText';
  * CalendarGrid places it: a slot element around it carries the top, height and lane; the block fills the slot.
  */
 export function EventBlock(props: EventBlockProps) {
+  const first = useContext(FirstSegment);
+  const activeStack = useContext(ActiveStack);
   if (props.kind === 'stack') {
     const count = props.ids.length;
+    const domId = stackDomId(props.ids);
     return (
       <button
         type="button"
+        id={domId}
         className="ui-event-block"
         data-kind="stack"
+        data-walk-at={new Date(props.start).getTime()}
+        data-active={activeStack === domId ? 'true' : undefined}
+        tabIndex={-1}
         aria-haspopup="menu"
         aria-label={`${count} more ${count === 1 ? 'event' : 'events'} at ${timeOf(props.start)}`}
         title={`${count} more, ${rangeOf(props.start, props.end)}`}
@@ -46,8 +55,9 @@ export function EventBlock(props: EventBlockProps) {
   return (
     <button
       type="button"
-      id={eventDomId(event.id)}
+      id={first ? eventDomId(event.id) : undefined}
       className="ui-event-block"
+      data-walk-at={first ? walkAt(event) : undefined}
       data-kind="event"
       data-event-id={event.id}
       data-density={density}

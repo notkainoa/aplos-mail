@@ -7,7 +7,7 @@ import { useId } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { CalendarEventData, CalendarGridProps } from '../props';
 import { dayOf, dayTitle, durationText, longDay, minutesBetween, timeOf } from './dates';
-import { calVar, eventDomId, eventLabel } from './eventText';
+import { calVar, eventDomId, eventLabel, walkAt } from './eventText';
 import { GridAction } from './GridAction';
 import { allDayOn, daysOf } from './layout';
 import { NowLine } from './NowLine';
@@ -19,13 +19,15 @@ function row(
   event: CalendarEventData,
   sub: string | undefined,
   state: RowState = 'later',
+  first = true,
 ) {
   const { selectedId, onSelect, onOpen } = props;
   return (
     <button
       key={event.id}
       type="button"
-      id={eventDomId(event.id)}
+      id={first ? eventDomId(event.id) : undefined}
+      data-walk-at={first ? walkAt(event) : undefined}
       className="ui-calendar-grid__ag"
       data-state={state}
       data-kind={event.kind}
@@ -121,6 +123,7 @@ function FullAgenda(props: CalendarGridProps) {
   const { start, events, now, emptyAction } = props;
   const uid = useId();
   const today = dayOf(now);
+  const seen = new Set<string>(); // a multi-day entry is listed on each day, but only the first row is the DOM target
   const days = daysOf('agenda', start)
     .map((day) => ({
       day,
@@ -152,7 +155,9 @@ function FullAgenda(props: CalendarGridProps) {
             parts.push(<NowLine key="now" now={now} variant="agenda" />);
             placed = true;
           }
-          parts.push(row(props, e, e.place ? `${e.calendar.name} · ${e.place}` : e.calendar.name));
+          const first = !seen.has(e.id);
+          seen.add(e.id);
+          parts.push(row(props, e, e.place ? `${e.calendar.name} · ${e.place}` : e.calendar.name, 'later', first));
         }
         if (!placed) parts.push(<NowLine key="now" now={now} variant="agenda" />);
         return (

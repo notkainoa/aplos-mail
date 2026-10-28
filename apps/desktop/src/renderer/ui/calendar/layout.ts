@@ -1,7 +1,8 @@
 /**
  * Lane layout for one day column (DESIGN 7.8). Overlapping entries share the width. When more lanes are needed
- * than fit (3 or more overlapping in a week column), the first lane stays and the rest fold into one "+N" stack,
- * so no lane is ever narrower than 44 px.
+ * than fit, the lanes that fit stay side by side (each at its own lane index) beside one "+N" stack that holds
+ * the rest, so no lane is ever narrower than 44 px. If not even one lane plus the stack fits, everything folds
+ * into the stack.
  */
 import type { CalendarEventData, IsoDate } from '../props';
 import { addDays, dayOf, hoursOf, isoOf } from './dates';
@@ -18,7 +19,7 @@ export interface Timed {
 export interface LaidItem extends Timed {
   lane: number;
   lanes: number;
-  /** The first lane of a folded cluster: it sits beside the "+N" stack. */
+  /** A lane of a folded cluster: `lanes` counts only the kept lanes, and they sit beside the "+N" stack. */
   beside: boolean;
 }
 
@@ -26,6 +27,8 @@ export interface LaidStack {
   events: CalendarEventData[];
   at: number;
   end: number;
+  /** No lane is kept beside it: the stack takes the whole column. */
+  alone: boolean;
 }
 
 export interface DayLayout {
@@ -33,8 +36,17 @@ export interface DayLayout {
   stacks: LaidStack[];
 }
 
-/** Lanes that fit side by side: two in a week column, six in a single wide day column. */
+/** Lanes that fit side by side, the "+N" stack counting as one: two in a week column, six in a day column. */
 export const MAX_LANES = { week: 2, day: 6 } as const;
+
+/** Mirrors `--lane-min` in calendar.css (44 px): the narrowest a lane or the stack may be. */
+export const LANE_MIN_PX = 44;
+
+/** How many lanes (the "+N" stack included) a column of `width` px holds, capped at `cap`; at least 1. */
+export function lanesFor(width: number, cap: number): number {
+  if (!(width > 0)) return cap;
+  return Math.max(1, Math.min(cap, Math.floor(width / LANE_MIN_PX)));
+}
 
 const EPS = 1e-6;
 
@@ -84,11 +96,12 @@ export function layoutDay(timed: readonly Timed[], maxLanes: number): DayLayout 
     } else {
       const keep = maxLanes - 1;
       const folded = cluster.filter((e) => e.lane >= keep);
-      for (const e of cluster.filter((e) => e.lane < keep)) out.items.push({ ...e, lane: 0, lanes: 1, beside: true });
+      for (const e of cluster.filter((e) => e.lane < keep)) out.items.push({ ...e, lane: e.lane, lanes: keep, beside: true });
       out.stacks.push({
         events: folded.map((e) => e.event),
         at: Math.min(...folded.map((e) => e.at)),
         end: Math.max(...folded.map((e) => e.end)),
+        alone: keep === 0,
       });
     }
     cluster = [];

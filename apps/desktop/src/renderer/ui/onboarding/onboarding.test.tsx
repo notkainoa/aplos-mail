@@ -220,6 +220,23 @@ test('ChoiceRow radio: aria-checked, Groq Default with its key source in mono, W
   assert.match(unchecked, /aria-checked="false"/);
 });
 
+test('ChoiceRow radio: the chosen row is the one tab stop; an unchosen row is out of the tab order', () => {
+  assert.match(html(<ChoiceRow {...row({ role: 'radio', selected: true })} />), /role="radio"[^>]*tabindex="0"/);
+  assert.match(html(<ChoiceRow {...row({ role: 'radio', selected: false })} />), /role="radio"[^>]*tabindex="-1"/);
+});
+
+test('ChoiceRow link with a control: the control sits beside the button, never inside it', () => {
+  const out = html(<ChoiceRow {...row({ role: 'link', label: 'Microphone', onPress: noop, control: <button type="button">Allow…</button> })} />);
+  assert.match(out, /data-split="true"/);
+  assert.equal((out.match(/<button/g) ?? []).length, 2);
+  const link = /<button[^>]*class="ui-choice-row__link"[^>]*>(.*?)<\/button>/.exec(out);
+  assert.ok(link);
+  assert.doesNotMatch(link[1], /<button/);
+  assert.match(out, /<button type="button">Allow…<\/button>/);
+  // Without a control it stays one button.
+  assert.equal((html(<ChoiceRow {...row({ role: 'link', onPress: noop })} />).match(/<button/g) ?? []).length, 1);
+});
+
 test('ChoiceRow key sources: saved, missing and local say so, never any key characters', () => {
   assert.match(html(<ChoiceRow {...row({ keySource: { kind: 'keychain' } })} />), /Saved in Keychain/);
   assert.match(html(<ChoiceRow {...row({ keySource: { kind: 'none', variable: 'ANTHROPIC_API_KEY' } })} />), /No key yet · reads <code>ANTHROPIC_API_KEY<\/code>/);

@@ -10,6 +10,7 @@
 
 /* ---------- Family buttons: filled (Return), text; keycap ---------- */
 .ui-onb-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -27,6 +28,15 @@
     transform var(--dur-press-up) var(--ease-out),
     background-color var(--dur-hover) var(--ease-std),
     color var(--dur-hover) var(--ease-std);
+}
+
+/* The filled button's hover tint sits on an overlay so the solid accent shifts with the shared --press token. */
+.ui-onb-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
 }
 
 .ui-onb-button[data-size="xs"] {
@@ -94,7 +104,7 @@
 }
 
 .ui-onb-button[data-variant="filled"] .ui-onb-kbd {
-  background: color-mix(in srgb, var(--accent-ink) 16%, transparent);
+  background: var(--press-hi);
   color: var(--accent-ink);
 }
 
@@ -117,7 +127,7 @@
   width: var(--icon-sm);
   height: var(--icon-sm);
   border-radius: var(--radius-md);
-  border: var(--seg-h) solid var(--line-strong);
+  border: var(--space-half) solid var(--line-strong);
   border-top-color: currentColor;
   animation: ui-onb-spin var(--dur-status) var(--ease-linear) infinite;
 }
@@ -142,8 +152,12 @@
   }
 
   .ui-onb-button[data-variant="filled"]:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent), var(--ink) 8%);
+    background: var(--accent);
     color: var(--accent-ink);
+  }
+
+  .ui-onb-button[data-variant="filled"]:hover:not(:disabled)::after {
+    background: var(--press);
   }
 }
 
@@ -382,6 +396,26 @@
   outline-offset: calc(-1 * var(--focus-width));
 }
 
+/* A link row with a control: the button that goes on and the control sit side by side, never nested. */
+.ui-choice-row__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  min-height: var(--row-roomy);
+  margin: calc(-1 * var(--space-3)) 0;
+  padding: var(--space-3) 0;
+  border-radius: var(--radius-md);
+  text-align: left;
+  color: inherit;
+}
+
+.ui-choice-row__link:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+
 .ui-choice-row__icon,
 .ui-choice-row__go {
   display: inline-flex;
@@ -439,7 +473,7 @@
 }
 
 .ui-choice-row__tag {
-  flex: none;
+  flex: none; /* the tag wins over a long name: the name wraps, "Default" never clips */
   font: var(--type-small);
   letter-spacing: var(--track-small);
   color: var(--dim);

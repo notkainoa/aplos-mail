@@ -339,7 +339,16 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
                 onChange={(e) => onAddressChange(row.provider, e.target.value)}
               />
             }
-            below={actions}
+            below={
+              actions || (onAction && row.status) ? (
+                <>
+                  {actions}
+                  {onAction && row.status ? (
+                    <Fix name={name} source={source} status={row.status} onAction={(action) => onAction(row.provider, action)} />
+                  ) : null}
+                </>
+              ) : undefined
+            }
           />
         );
       })}

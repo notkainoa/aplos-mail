@@ -1,5 +1,5 @@
-import { useId } from 'react';
-import type { CSSProperties } from 'react';
+import { useId, useRef } from 'react';
+import type { CSSProperties, KeyboardEvent } from 'react';
 import type { CalendarEventData, EventDetailProps, EventGuest, RsvpAnswer } from '../props';
 import { dayOf, longDay, rangeOf } from './dates';
 import { calVar } from './eventText';
@@ -10,7 +10,7 @@ const GUEST_STATUS = {
   going: { icon: 'check', word: 'Going' },
   maybe: { icon: 'help', word: 'Maybe' },
   declined: { icon: 'close', word: 'Declined' },
-  none: { icon: 'circle', word: 'No reply yet' },
+  none: { icon: 'circle', word: 'Not answered' },
 } as const;
 
 const ANSWERS: ReadonlyArray<{ id: RsvpAnswer; label: string; command: 'yes' | 'maybe' | 'no' }> = [
@@ -30,6 +30,17 @@ function moreLabel(event: CalendarEventData): string {
   if (event.isOrganizer) return event.persisted ? 'More: edit, delete' : 'More: edit';
   if (event.invite || event.myReply !== undefined) return 'More: change your reply, hide';
   return 'More: hide, copy link';
+}
+
+const TITLES = new Set(['dr', 'mr', 'mrs', 'ms', 'mx', 'miss', 'prof', 'sir', 'dame']);
+
+/** The sender's first name for "Invite from …": skips titles ("Dr. Priya Raman" is Priya), falls back to the whole name. */
+export function firstNameOf(from: string): string {
+  const whole = from.trim();
+  if (whole === '' || whole.includes('@')) return whole;
+  const words = whole.split(/\s+/);
+  const name = words.find((w) => !TITLES.has(w.replace(/\.$/, '').toLowerCase()));
+  return name ?? whole;
 }
 
 function guestRole(guest: EventGuest): string | undefined {
@@ -62,6 +73,18 @@ export function EventDetail({
   const isPlan = event.kind === 'plan';
   const guests = event.guests ?? [];
   const more = moreLabel(event);
+  const answerRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  // The radiogroup pattern: one tab stop (the chosen answer, or the first), arrows move to and choose the next.
+  const onAnswerKey = (e: KeyboardEvent<HTMLButtonElement>, at: number): void => {
+    if (e.nativeEvent.isComposing) return;
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (step === 0) return;
+    e.preventDefault();
+    const next = (at + step + ANSWERS.length) % ANSWERS.length;
+    answerRefs.current[next]?.focus();
+    reply?.onAnswer(ANSWERS[next].id);
+  };
 
   return (
     <section
@@ -122,7 +145,7 @@ export function EventDetail({
               title="Open the invite email · O"
               onClick={() => onOpenInvite?.(event.invite!.threadId)}
             >
-              {`Invite from ${event.invite.from.split(' ')[0]}`}
+              {firstNameOf(event.invite.from) ? `Invite from ${firstNameOf(event.invite.from)}` : 'Invite'}
             </button>
           </li>
         ) : null}
@@ -140,7 +163,7 @@ export function EventDetail({
         <div className="ui-event-detail__plan">
           <p className="ui-event-detail__note">Found in your mail. Nothing is added until you confirm.</p>
           <button type="button" className="ui-cal-button" data-variant="filled" onClick={onConfirmPlan}>
-            Add to calendar
+            Add to Calendar
           </button>
         </div>
       ) : null}
@@ -152,14 +175,19 @@ export function EventDetail({
           </h3>
           <div className="ui-event-detail__rsvp-row">
             <div className="ui-event-detail__answers" role="radiogroup" aria-labelledby={rsvpLabelId}>
-              {ANSWERS.map((a) => {
+              {ANSWERS.map((a, i) => {
                 const key = keycapOf(reply.commands[a.command]);
                 const checked = reply.answer === a.id;
                 return (
                   <button
                     key={a.id}
+                    ref={(el) => {
+                      answerRefs.current[i] = el;
+                    }}
                     type="button"
                     role="radio"
+                    tabIndex={checked || (reply.answer === null && i === 0) ? 0 : -1}
+                    onKeyDown={(e) => onAnswerKey(e, i)}
                     className="ui-event-detail__answer"
                     aria-checked={checked}
                     data-checked={checked ? 'true' : 'false'}

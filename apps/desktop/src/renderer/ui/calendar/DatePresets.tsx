@@ -160,7 +160,8 @@ export function DatePresets(props: DatePresetsProps) {
           </span>
         ) : null}
         {content}
-        {active ? <kbd className="ui-date-presets__kbd">Return</kbd> : null}
+        {/* With the month open, Return confirms in the footer button, which carries the keycap. */}
+        {active && !(id === 'date' && calendarOpen) ? <kbd className="ui-date-presets__kbd">Return</kbd> : null}
       </div>
     );
   };

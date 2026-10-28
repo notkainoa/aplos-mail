@@ -82,6 +82,13 @@
   color: var(--dim);
 }
 
+/* The tag ("Default") is never clipped; a long meta shrinks first. */
+.ui-setting-row__tag {
+  flex: none;
+  max-width: none;
+  overflow: visible;
+}
+
 .ui-setting-row__mark {
   flex: none;
   width: var(--mark-dot);
@@ -414,8 +421,9 @@
 
 /* ---------- KeyRecorder: one 40 px row per command; 48 px while recording ---------- */
 .ui-key-recorder {
+  --label-min: calc(var(--space-10) * 2); /* the label keeps this much; the controls give way */
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(var(--label-min), 1fr) minmax(0, auto);
   align-items: center;
   column-gap: var(--space-4);
   min-height: var(--row);
@@ -428,7 +436,9 @@
 
 .ui-key-recorder__label {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap; /* one line, so the row stays 40 or 48 */
 }
 
 .ui-key-recorder__text {
@@ -453,6 +463,10 @@
 }
 
 .ui-key-recorder__hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font: var(--type-small);
   letter-spacing: var(--track-small);
   color: var(--dim);
@@ -461,7 +475,16 @@
 .ui-key-recorder__controls {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-3);
+  min-width: 0;
+}
+
+.ui-key-recorder__keys,
+.ui-key-recorder__capture,
+.ui-key-recorder__reset,
+.ui-key-recorder__action {
+  flex: none;
 }
 
 .ui-key-recorder__keys,
@@ -514,9 +537,21 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  min-width: 0;
   font: var(--type-small);
   letter-spacing: var(--track-small);
   color: var(--stamp-ink);
+}
+
+.ui-key-recorder__conflict .ui-set-icon {
+  flex: none;
+}
+
+.ui-key-recorder__conflict-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ui-key-recorder__reset,

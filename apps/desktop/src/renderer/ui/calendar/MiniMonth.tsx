@@ -1,4 +1,4 @@
-import { useId, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { MiniMonthProps } from '../props';
 import { dateOf, dayTitle, monthMatrix, monthTitle, parseDate, shiftMonth, WEEKDAYS, weekdayOrder, addDays } from './dates';
@@ -12,6 +12,7 @@ import { CalIcon } from './icons';
 export function MiniMonth({ month, today, range, weekStartsOn, onMonthChange, onPick }: MiniMonthProps) {
   const headId = useId();
   const tableRef = useRef<HTMLTableElement>(null);
+  const pendingFocus = useRef<string | null>(null);
   const rows = monthMatrix(month, weekStartsOn);
   const order = weekdayOrder(weekStartsOn);
   const m = Number(month.slice(5, 7));
@@ -25,6 +26,14 @@ export function MiniMonth({ month, today, range, weekStartsOn, onMonthChange, on
     (days.includes(today) && inMonth(today) ? today : undefined) ??
     days.find(inMonth);
 
+  // Arrowing past the matrix changes the month; focus then follows to the day that was headed for.
+  useEffect(() => {
+    const date = pendingFocus.current;
+    if (!date) return;
+    pendingFocus.current = null;
+    tableRef.current?.querySelector<HTMLElement>(`[data-date="${date}"]`)?.focus();
+  }, [month]);
+
   const onKeyDown = (e: KeyboardEvent<HTMLTableElement>): void => {
     if (e.nativeEvent.isComposing) return;
     const target = (e.target as HTMLElement).closest<HTMLElement>('[data-date]');
@@ -36,7 +45,10 @@ export function MiniMonth({ month, today, range, weekStartsOn, onMonthChange, on
     const next = addDays(from, step);
     const el = tableRef.current?.querySelector<HTMLElement>(`[data-date="${next}"]`);
     if (el) el.focus();
-    else onMonthChange(shiftMonth(month, step < 0 ? -1 : 1));
+    else {
+      pendingFocus.current = next;
+      onMonthChange(shiftMonth(month, step < 0 ? -1 : 1));
+    }
   };
 
   return (

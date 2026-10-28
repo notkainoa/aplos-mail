@@ -1,6 +1,8 @@
+import { useEffect, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import type { ChoiceRowProps, KeySource } from '../props';
 import { OnbIcon } from './icons';
+import { arrowTarget, syncTabStops } from './radio';
 
 /** A provider's key source as a second line; the variable is mono, key characters are never passed in. */
 function keySourceLine(source: KeySource): ReactNode {
@@ -45,6 +47,7 @@ export function ChoiceRow({
   selected,
   onPress,
 }: ChoiceRowProps) {
+  const pickRef = useRef<HTMLDivElement>(null);
   const labelId = `${id}-label`;
   const detailId = `${id}-detail`;
   const second: ReactNode = keySource ? keySourceLine(keySource) : detail;
@@ -89,6 +92,35 @@ export function ChoiceRow({
 
   const describedBy = hasSecond ? detailId : undefined;
 
+  // Roving tab stop: the chosen radio is the group's one tab stop, or the first when none is chosen.
+  useEffect(() => {
+    if (role === 'radio') syncTabStops(pickRef.current);
+  });
+
+  if (role === 'link' && control) {
+    // A control (Test, Allow…) cannot live inside a button, so it sits beside the one that goes on.
+    return (
+      <div id={id} className="ui-choice-row" data-role="link" data-split="true" data-has-detail={hasSecond ? 'true' : 'false'}>
+        <button
+          type="button"
+          className="ui-choice-row__link"
+          aria-labelledby={labelId}
+          aria-describedby={describedBy}
+          onClick={onPress}
+        >
+          {lead}
+          {text}
+        </button>
+        <span className="ui-choice-row__end">
+          {end}
+          <span className="ui-choice-row__go" aria-hidden="true">
+            <OnbIcon name="chevron-right" />
+          </span>
+        </span>
+      </div>
+    );
+  }
+
   if (role === 'link') {
     return (
       <button
@@ -119,17 +151,26 @@ export function ChoiceRow({
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
         onPress?.();
+        return;
+      }
+      // The radiogroup pattern: arrows move to the next radio and choose it.
+      const target = arrowTarget(e.currentTarget, e.key);
+      if (target) {
+        e.preventDefault();
+        target.focus();
+        target.click();
       }
     };
     return (
       <div id={id} className="ui-choice-row" data-role="radio" data-selected={selected ? 'true' : 'false'} data-has-detail={hasSecond ? 'true' : 'false'}>
         <div
+          ref={pickRef}
           role="radio"
           className="ui-choice-row__pick"
           aria-checked={Boolean(selected)}
           aria-labelledby={labelId}
           aria-describedby={describedBy}
-          tabIndex={0}
+          tabIndex={selected ? 0 : -1}
           onClick={onPress}
           onKeyDown={onKeyDown}
         >

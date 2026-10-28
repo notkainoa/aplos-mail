@@ -1,4 +1,4 @@
-// Run: npx tsx --test apps/desktop/src/renderer/ui/calendar/calendar.test.tsx
+// Run: npx tsx --tsconfig apps/desktop/tsconfig.json --test apps/desktop/src/renderer/ui/calendar/calendar.test.tsx
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -15,7 +15,9 @@ import {
   PlanOutline,
 } from './index';
 import { addDays, dayTitle, durationText, hourRange, monthMatrix, rangeOf, shiftMonth, snapHours, timeOf } from './dates';
-import { dragRange, layoutDay, timedOn } from './layout';
+import { firstNameOf } from './EventDetail';
+import { eventDomId, stackDomId } from './eventText';
+import { dragRange, lanesFor, layoutDay, timedOn } from './layout';
 
 const noop = () => {};
 const NOW = '2026-10-29T10:00:00';
@@ -128,6 +130,43 @@ test('layout: drag math snaps to 15 minutes, keeps the length when moving and ne
   assert.deepEqual(dragRange('create', { at: 10, end: 10, pointer: 10 }, 9), { at: 9, end: 10 });
   assert.deepEqual(dragRange('move', { at: 14, end: 14.5, pointer: 14.2 }, 15.2), { at: 15, end: 15.5 });
   assert.deepEqual(dragRange('resize', { at: 14, end: 14.5, pointer: 14.5 }, 13), { at: 14, end: 14.25 });
+});
+
+test('layout: seven overlaps in a day column keep their own lanes beside one stack; none share a slot', () => {
+  const seven = Array.from({ length: 7 }, (_, i) => ev(`o${i + 1}`, `Overlap ${i + 1}`, '2026-10-28T10:00:00', '2026-10-28T12:30:00'));
+  const timed = seven.map((e) => timedOn(e, '2026-10-28')).filter((t) => t !== null);
+  const day = layoutDay(timed, 6);
+  assert.equal(day.items.length, 5);
+  assert.deepEqual(day.items.map((i) => i.lane).sort(), [0, 1, 2, 3, 4]);
+  assert.ok(day.items.every((i) => i.lanes === 5 && i.beside));
+  assert.equal(day.stacks.length, 1);
+  assert.equal(day.stacks[0].events.length, 2);
+  assert.equal(day.stacks[0].alone, false);
+  // Every entry is either on the grid in its own lane or in the stack, exactly once.
+  const all = [...day.items.map((i) => i.event.id), ...day.stacks.flatMap((x) => x.events.map((e) => e.id))].sort();
+  assert.deepEqual(all, seven.map((e) => e.id).sort());
+});
+
+test('layout: when not even one lane and the stack fit, everything folds into one stack; lanes follow the width', () => {
+  const three = ['a', 'b', 'c'].map((id) => ev(id, id, '2026-10-28T10:00:00', '2026-10-28T11:00:00'));
+  const timed = three.map((e) => timedOn(e, '2026-10-28')).filter((t) => t !== null);
+  const narrow = layoutDay(timed, 1);
+  assert.equal(narrow.items.length, 0);
+  assert.equal(narrow.stacks[0].events.length, 3);
+  assert.equal(narrow.stacks[0].alone, true);
+  assert.equal(layoutDay(timed.slice(0, 1), 1).items.length, 1);
+  assert.equal(lanesFor(87, 2), 1); // 7 narrow columns: no lane under 44 px
+  assert.equal(lanesFor(130, 2), 2);
+  assert.equal(lanesFor(700, 6), 6);
+  assert.equal(lanesFor(0, 2), 2); // unknown width: the count alone
+});
+
+test('ids: distinct entry ids never share a DOM id; a stack is keyed by its first entry', () => {
+  assert.notEqual(eventDomId('a b'), eventDomId('a-b'));
+  assert.notEqual(eventDomId('a_b'), eventDomId('a b'));
+  assert.equal(eventDomId('q4'), 'ui-event-q4');
+  assert.match(eventDomId('x"y]'), /^[A-Za-z0-9_-]+$/);
+  assert.match(stackDomId(['o2', 'o3']), /^ui-stack-o2$/);
 });
 
 /* ---------------------------------- NowLine ---------------------------------- */
@@ -312,6 +351,53 @@ test('CalendarGrid week: plans show "From mail", three overlaps show the first l
   assert.doesNotMatch(two, /\+\d/);
 });
 
+/** Elements the ↑ ↓ walk can land on in a render: those with a walk time and an id. */
+function walkables(markup: string): string[] {
+  return [...markup.matchAll(/<[^>]*data-walk-at="[^"]*"[^>]*>/g)].map((m) => /\sid="([^"]*)"/.exec(m[0])?.[1] ?? '');
+}
+
+test('CalendarGrid day: with seven overlaps every walkable element has its own id; folded entries are reached through "+N"', () => {
+  const seven = Array.from({ length: 7 }, (_, i) => ev(`o${i + 1}`, `Overlap ${i + 1}`, '2026-10-28T10:00:00', '2026-10-28T12:30:00'));
+  const out = html(<CalendarGrid {...gridProps({ view: 'day', start: '2026-10-28', events: seven, label: 'Wednesday, October 28, 2026' })} />);
+  const ids = walkables(out);
+  assert.equal(ids.length, 6); // five entries and one stack
+  assert.ok(ids.every(Boolean));
+  assert.equal(new Set(ids).size, ids.length);
+  assert.ok(ids.includes('ui-stack-o6'));
+  assert.doesNotMatch(out, /id="ui-event-o6"/);
+  // Five different lanes, none stacked on another.
+  const lanes = [...out.matchAll(/--lane:(\d);--lanes:5/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(lanes)].sort(), ['0', '1', '2', '3', '4']);
+  assert.match(out, />\+2</);
+});
+
+test('CalendarGrid: a multi-day all-day entry has one DOM id in week and month, and the agenda', () => {
+  const trip = ev('trip', 'Trip to Hollow Creek', '2026-10-27', '2026-10-30', { allDay: true });
+  for (const view of ['week', 'month'] as const) {
+    const out = html(<CalendarGrid {...gridProps({ view, start: view === 'week' ? '2026-10-25' : '2026-10-01', events: [trip] })} />);
+    assert.equal((out.match(/id="ui-event-trip"/g) ?? []).length, 1, view);
+    assert.equal(walkables(out).length, 1, view);
+  }
+  const agenda = html(<CalendarGrid {...gridProps({ view: 'agenda', agenda: 'full', start: '2026-10-25', events: [trip] })} />);
+  assert.equal((agenda.match(/id="ui-event-trip"/g) ?? []).length, 1);
+  // Ids that only differ in punctuation still stay apart.
+  const two = html(
+    <CalendarGrid
+      {...gridProps({ events: [ev('a b', 'One', '2026-10-27T10:00:00', '2026-10-27T11:00:00'), ev('a-b', 'Two', '2026-10-27T12:00:00', '2026-10-27T13:00:00')] })}
+    />,
+  );
+  assert.equal(new Set(walkables(two)).size, 2);
+});
+
+test('CalendarGrid month: "N more" is a walkable stop with its own id', () => {
+  const crowded = ['a', 'b', 'c', 'd'].map((id, i) => ev(id, `Item ${id}`, `2026-10-29T${String(8 + i).padStart(2, '0')}:00:00`, `2026-10-29T${String(8 + i).padStart(2, '0')}:30:00`));
+  const out = html(<CalendarGrid {...gridProps({ view: 'month', start: '2026-10-01', events: crowded, label: 'October 2026' })} />);
+  const ids = walkables(out);
+  assert.equal(ids.length, 3); // a, b and "2 more"
+  assert.ok(ids.some((id) => id.startsWith('ui-stack-')));
+  assert.ok(ids.every(Boolean));
+});
+
 test('CalendarGrid: the selected entry is the active descendant and is pressed', () => {
   const out = html(<CalendarGrid {...gridProps({ selectedId: 'q4' })} />);
   assert.match(out, /aria-activedescendant="ui-event-q4"/);
@@ -470,11 +556,30 @@ test('EventDetail: title, the when line with the comma day, swatch, video, invit
   assert.match(out, />you</);
   assert.match(out, /Going/);
   assert.match(out, /Maybe/);
-  assert.match(out, /No reply yet/);
+  assert.match(out, /Not answered/);
+  assert.doesNotMatch(out, /No reply yet/);
   assert.match(out, /aria-label="More"/);
   assert.match(out, /title="More: change your reply, hide"/);
   assert.match(out, /aria-label="Close"/);
   assert.match(out, /data-presentation="popover"/);
+});
+
+test('EventDetail: "Invite from" uses the first name, skipping titles, and falls back to the whole name', () => {
+  assert.equal(firstNameOf('Priya Raman'), 'Priya');
+  assert.equal(firstNameOf('Dr. Priya Raman'), 'Priya');
+  assert.equal(firstNameOf('  Prof Mina Cho '), 'Mina');
+  assert.equal(firstNameOf('Dr.'), 'Dr.');
+  assert.equal(firstNameOf('priya@fernworks.studio'), 'priya@fernworks.studio');
+  assert.equal(firstNameOf(''), '');
+  assert.match(detail({ ...Q4, invite: { from: 'Dr. Priya Raman', threadId: 't' } }), />Invite from Priya</);
+  assert.match(detail({ ...Q4, invite: { from: '', threadId: 't' } }), />Invite</);
+});
+
+test('EventDetail rsvp: one tab stop, the chosen answer or the first when nothing is chosen', () => {
+  const none = detail(Q4, { reply: reply(null) });
+  assert.deepEqual([...none.matchAll(/role="radio"[^>]*?tabindex="(-?\d)"/g)].map((m) => m[1]), ['0', '-1', '-1']);
+  const maybe = detail(Q4, { reply: reply('maybe') });
+  assert.deepEqual([...maybe.matchAll(/role="radio"[^>]*?tabindex="(-?\d)"/g)].map((m) => m[1]), ['-1', '0', '-1']);
 });
 
 test('EventDetail: Delete is named only on a saved event you organise; the rail has no close', () => {
@@ -489,7 +594,7 @@ test('EventDetail: Delete is named only on a saved event you organise; the rail 
 test('EventDetail plan: confirm and source email, and all-day wording', () => {
   const out = detail(DEMO[7]);
   assert.match(out, /Found in your mail\. Nothing is added until you confirm\./);
-  assert.match(out, />Add to calendar</);
+  assert.match(out, />Add to Calendar</);
   assert.match(out, />From Jordan Park: Build timing</);
   assert.match(out, /title="More: hide"/);
   const allDay = detail(ev('ad', 'Offsite', '2026-10-29T00:00:00', '2026-10-30T00:00:00', { allDay: true }));
@@ -579,6 +684,8 @@ test('DatePresets calendar: month grid of six weeks, picked day, time list, "Mov
   const none = html(<DatePresets {...presetsProps({ activeId: 'date', calendarOpen: true })} />);
   assert.match(none, /<button[^>]*disabled=""[^>]*>Move to Later/);
   const due = html(<DatePresets {...presetsProps({ purpose: 'due', activeId: 'date', calendarOpen: true, pickedDate: '2026-11-04', pickedTime: '09:15' })} />);
+  // With the month open, the footer button carries Return; the "Pick a date…" row does not repeat it.
+  assert.equal((out.match(/class="ui-date-presets__kbd"/g) ?? []).length, 0);
   assert.match(due, /aria-label="Due date"/);
   assert.match(due, /Set due date/);
   assert.match(due, /<option value="09:15" selected="">9:15 AM<\/option>/);
