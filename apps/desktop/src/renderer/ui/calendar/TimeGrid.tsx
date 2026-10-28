@@ -101,14 +101,26 @@ export function TimeGrid(props: CalendarGridProps) {
   const [drag, setDrag] = useState<DragState | null>(null);
 
   // Opens at 8 AM, or at now when today is shown (or at `scrollToHour`); runs on mount and when the view changes,
-  // so paging between weeks keeps the reader's place. Without layout (first render, tests) there is nothing to do.
+  // so paging between weeks keeps the reader's place. A grid mounted without layout (a hidden tab or dock, a pane
+  // laid out after mount; the first render in tests) has no height yet: the scroll waits, once, for the first
+  // layout instead of being lost.
   const opensAt = openHour({ today: days.includes(today), nowHours, override: scrollToHour });
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     const track = trackRefs.current[0];
     if (!scroller || !track) return;
-    const perHour = track.offsetHeight / DAY_HOURS;
-    if (perHour > 0) scroller.scrollTop = perHour * opensAt;
+    const open = (): boolean => {
+      const perHour = track.offsetHeight / DAY_HOURS;
+      if (perHour <= 0) return false;
+      scroller.scrollTop = perHour * opensAt;
+      return true;
+    };
+    if (open() || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (open()) observer.disconnect();
+    });
+    observer.observe(track);
+    return () => observer.disconnect();
   }, [view]);
 
   useEffect(() => {

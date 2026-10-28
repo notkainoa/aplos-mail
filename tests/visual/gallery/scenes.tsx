@@ -36,7 +36,11 @@ import {
   LowBand,
   SectionHeader,
 } from '../../../apps/desktop/src/renderer/ui/list';
-import { ChoiceRow, OnboardingStep } from '../../../apps/desktop/src/renderer/ui/onboarding';
+import {
+  ChoiceGroup,
+  ChoiceRow,
+  OnboardingStep,
+} from '../../../apps/desktop/src/renderer/ui/onboarding';
 import { Palette, SearchField } from '../../../apps/desktop/src/renderer/ui/ask';
 import { ReaderHead } from '../../../apps/desktop/src/renderer/ui/reader';
 import { ProviderTable, SettingRow } from '../../../apps/desktop/src/renderer/ui/settings';
@@ -888,6 +892,64 @@ function OnboardingScene(): ReactElement {
   );
 }
 
+declare global {
+  interface Window {
+    /** Every id the choice group's onChange reported, in order (read by dom.spec). */
+    __choices?: string[];
+  }
+}
+
+const AI_CHOICES = [
+  { id: 'ai-groq', label: 'Groq', detail: 'Fast hosted models' },
+  { id: 'ai-claude', label: 'Claude', detail: 'Anthropic models' },
+  { id: 'ai-local', label: 'Ollama', detail: 'On this Mac · no key needed' },
+] as const;
+
+function ChoiceGroupScene(): ReactElement {
+  const [value, setValue] = useState<string | null>('ai-groq');
+  return (
+    <OnboardingStep
+      layout="step"
+      title="Pick an AI provider"
+      titleId="ai-title"
+      actions={[
+        {
+          label: 'Continue',
+          emphasis: 'filled',
+          keys: 'Return',
+          keyHint: 'always',
+          onSelect: noop,
+        },
+      ]}
+      footer={{
+        dashes: { step: 3, of: 4 },
+        note: 'setupContinues',
+        buttons: [quiet('Back', { keys: 'Esc', keyHint: 'hint' })],
+      }}
+    >
+      <ChoiceGroup
+        label="AI provider"
+        value={value}
+        onChange={id => {
+          (window.__choices ??= []).push(id);
+          setValue(id);
+        }}
+      >
+        {AI_CHOICES.map(c => (
+          <ChoiceRow
+            key={c.id}
+            id={c.id}
+            role="radio"
+            label={c.label}
+            detail={c.detail}
+            selected={value === c.id}
+          />
+        ))}
+      </ChoiceGroup>
+    </OnboardingStep>
+  );
+}
+
 function FirstSyncScene(): ReactElement {
   return (
     <OnboardingStep
@@ -936,5 +998,6 @@ export const scenes: Record<string, () => ReactElement> = {
   'settings-providers': SettingsScene,
   'calendar-week': CalendarScene,
   'onboarding-step': OnboardingScene,
+  'onboarding-choice-group': ChoiceGroupScene,
   'progress-first-sync': FirstSyncScene,
 };

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { copyProblem } from '../../commands/internal';
 import type { KeyRecorderProps, ProviderTableProps } from '../props';
-import { KeyRecorder, ProviderTable, SettingRow } from './index';
+import { focusSettingRow, KeyRecorder, ProviderTable, SettingRow } from './index';
 import { chordText, recorderKeyAction } from './KeyRecorder';
 import { latencyText } from './ProviderTable';
 
@@ -650,4 +650,52 @@ test('SettingRow paletteId: the row carries its anchor so settings/<section>#<ro
   );
   assert.match(folded, /data-setting-anchor="how"/);
   assert.doesNotMatch(html(<SettingRow id="plain" label="Plain" />), /data-setting-anchor/);
+});
+
+/** A minimal stand-in for the few DOM calls focusSettingRow makes, so its order of choices is tested in Node. */
+function fakeRoot(
+  rows: Record<string, { control?: string[]; toggle?: boolean; focusable?: string[] }>,
+) {
+  const log: string[] = [];
+  const el = (name: string) => ({
+    focus: () => log.push(`focus ${name}`),
+  });
+  const root = {
+    querySelectorAll: () =>
+      Object.keys(rows).map(anchor => ({
+        dataset: { settingAnchor: anchor },
+        scrollIntoView: () => log.push(`scroll ${anchor}`),
+        querySelector: (selector: string) => {
+          const row = rows[anchor];
+          if (selector === '.ui-setting-row__control')
+            return row.control
+              ? { querySelector: () => (row.control!.length ? el(`${anchor} control`) : null) }
+              : null;
+          if (selector === '.ui-setting-row__toggle')
+            return row.toggle ? el(`${anchor} toggle`) : null;
+          return row.focusable?.length ? el(`${anchor} first`) : null;
+        },
+      })),
+  };
+  return { root: root as unknown as ParentNode, log };
+}
+
+test('focusSettingRow scrolls to the row and focuses its control, then its toggle, then its first control', () => {
+  const { root, log } = fakeRoot({
+    undoSeconds: { control: ['switch'], toggle: true },
+    folded: { toggle: true, focusable: ['x'] },
+    plain: { focusable: ['x'] },
+  });
+  assert.equal(focusSettingRow('undoSeconds', root), true);
+  assert.deepEqual(log.splice(0), ['scroll undoSeconds', 'focus undoSeconds control']);
+  assert.equal(focusSettingRow('folded', root), true);
+  assert.deepEqual(log.splice(0), ['scroll folded', 'focus folded toggle']);
+  assert.equal(focusSettingRow('plain', root), true);
+  assert.deepEqual(log.splice(0), ['scroll plain', 'focus plain first']);
+});
+
+test('focusSettingRow reports an unknown anchor and does nothing', () => {
+  const { root, log } = fakeRoot({ undoSeconds: { control: ['switch'] } });
+  assert.equal(focusSettingRow('nope', root), false);
+  assert.deepEqual(log, []);
 });

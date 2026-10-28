@@ -267,6 +267,59 @@ test.describe('dom', () => {
   }
 });
 
+// Behaviour that a static render cannot show.
+test.describe('behaviour', () => {
+  test('a Dialog leaves no transform behind after its entrance, so a Menu or Popover inside it is not offset', async ({
+    page,
+  }) => {
+    const state = STATES.find(candidate => candidate.id === 'dialog-confirm-destructive')!;
+    await openState(page, state);
+    const dialog = page.locator('.ui-dialog');
+    await dialog.waitFor();
+    await expect
+      .poll(() => dialog.evaluate(el => el.getAnimations().length), { timeout: 3000 })
+      .toBe(0);
+    expect(await dialog.evaluate(el => getComputedStyle(el).transform)).toBe('none');
+  });
+
+  test('ChoiceGroup reports a click, Space, Return and an arrow once each, with the row id', async ({
+    page,
+  }) => {
+    const state = STATES.find(candidate => candidate.id === 'onboarding-choice-group')!;
+    await openState(page, state);
+    const group = page.getByRole('radiogroup', { name: 'AI provider' });
+    const choices = (): Promise<string[]> => page.evaluate(() => window.__choices ?? []);
+
+    // One tab stop: the chosen row.
+    const stops = await group
+      .locator('[role="radio"]')
+      .evaluateAll(rows => rows.map(row => (row as HTMLElement).tabIndex));
+    expect(stops).toEqual([0, -1, -1]);
+
+    await group.getByRole('radio', { name: /Claude/ }).click();
+    expect(await choices()).toEqual(['ai-claude']);
+
+    // The chosen row now holds the tab stop; Space and Return choose the focused row.
+    const claude = group.getByRole('radio', { name: /Claude/ });
+    await claude.focus();
+    await page.keyboard.press('Space');
+    expect(await choices()).toEqual(['ai-claude', 'ai-claude']);
+    await page.keyboard.press('Enter');
+    expect(await choices()).toEqual(['ai-claude', 'ai-claude', 'ai-claude']);
+
+    // Arrow keys move focus and choose the next row once.
+    await page.keyboard.press('ArrowDown');
+    expect((await choices()).slice(3)).toEqual(['ai-local']);
+    await expect(group.getByRole('radio', { name: /Ollama/ })).toBeFocused();
+    await expect(group.getByRole('radio', { name: /Ollama/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await page.keyboard.press('ArrowUp');
+    expect((await choices()).slice(4)).toEqual(['ai-claude']);
+  });
+});
+
 // Positive control: plant one violation of each kind and require the audit to name it.
 test('the audit catches planted violations', async ({ page }) => {
   const state = STATES.find(candidate => candidate.id === 'empty-inbox-zero')!;
