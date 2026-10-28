@@ -103,6 +103,16 @@ function specs(q: StoreReader): ViewSpec[] {
     { text: '', in: 'done', is: ['read' as const] },
     { text: '', in: 'starred' },
     { text: '', in: 'spam' },
+    { text: '', in: 'archive' },
+    { text: '', in: 'all', is: ['unread' as const] },
+    { text: 'budget', in: 'archive' },
+    { text: 'invoice', in: 'all' },
+    // Typed but unsearchable words match nothing; control characters are dropped.
+    { text: '???' },
+    { text: '', from: '--' },
+    { text: 'bud\u0000get' },
+    // Non-ASCII subjects fold like the index does.
+    { text: '', subject: 'Harbór' },
     { text: '', in: 'acct-1:Label_1', hasAttachment: false },
     { text: '', in: 'imap:2:Projects' },
     { text: '', after: '2026-10-25', before: '2026-10-30' },
@@ -110,6 +120,8 @@ function specs(q: StoreReader): ViewSpec[] {
   ];
   for (const query of queries) out.push({ kind: 'search', query });
   out.push({ kind: 'search', query: { text: 'budget' }, accountId: 'imap:2' });
+  // A folder place of another account matches nothing.
+  out.push({ kind: 'search', query: { text: '', in: 'acct-1:Label_1' }, accountId: 'imap:2' });
   return out;
 }
 

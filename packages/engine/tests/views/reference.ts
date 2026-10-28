@@ -282,15 +282,7 @@ function mailboxThreads(r: Ref, role: string, a?: string): RThread[] {
   const live = r.d.threads.filter(r.inAcct(a));
   if (role === 'all') return live.filter(r.visible).sort(r.wfNewest);
   if (role === 'starred') return live.filter(t => r.visible(t) && t.flagged).sort(r.wfNewest);
-  if (role === 'archive')
-    return live
-      .filter(t => {
-        const archive = r.roleFolder(t.account, 'archive');
-        if (archive !== undefined) return t.lists.has(archive);
-        const inbox = r.roleFolder(t.account, 'inbox');
-        return r.visible(t) && (inbox === undefined || !t.lists.has(inbox));
-      })
-      .sort(r.tfNewest);
+  if (role === 'archive') return live.filter(t => inArchive(r, t)).sort(r.tfNewest);
   return live
     .filter(t => {
       const f = r.roleFolder(t.account, role);
@@ -321,9 +313,11 @@ function laterExpected(r: Ref, a?: string): Expected {
 
 const flat = (list: string[]): Expected => ({ ids: list, sections: [], total: list.length });
 
-/** FTS5's unicode61 view of a text: lower-case alphanumeric tokens. */
+/** FTS5's unicode61 view of a text: lower-case alphanumeric tokens with accents removed. */
 const tokens = (s: string) =>
   s
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean);
@@ -351,11 +345,21 @@ function ftsMatch(m: RMsg, qy: SearchQuery): boolean {
 
 const has = (hay: string, v: string) => hay.toLowerCase().includes(v.toLowerCase());
 
+/** Archive: the account's Archive folder where it has one (IMAP), else everything outside the Inbox (Gmail). */
+function inArchive(r: Ref, t: RThread): boolean {
+  const archive = r.roleFolder(t.account, 'archive');
+  if (archive !== undefined) return t.lists.has(archive);
+  const inbox = r.roleFolder(t.account, 'inbox');
+  return r.visible(t) && (inbox === undefined || !t.lists.has(inbox));
+}
+
 function placeOk(r: Ref, t: RThread, place?: string): boolean {
   if (place === undefined) return r.visible(t);
   const p = place.toLowerCase();
   if (p === 'starred') return !!t.flagged;
   if (p === 'done' || p === 'later') return t.status === p;
+  if (p === 'all') return r.visible(t);
+  if (p === 'archive') return inArchive(r, t);
   if (['inbox', 'sent', 'trash', 'spam', 'important'].includes(p))
     return [...t.lists].some(f => r.role(f) === p);
   const f = r.d.folders.find(x => `${x.account}:${x.remote}` === place);
@@ -389,14 +393,16 @@ function searchExpected(
         m =>
           ftsMatch(m, qy) &&
           (!qy.from || has(m.fromAddr, qy.from) || has(m.fromName, qy.from)) &&
-          (!qy.to || has(m.to, qy.to)) &&
-          (!qy.subject || has(m.subject, qy.subject)),
+          (!qy.to || has(m.to, qy.to)),
       ),
     );
     return flat(ids(hit.sort(r.tfNewest)));
   }
+  // Words were typed but none is searchable (punctuation only): nothing matches.
+  if ([qy.text, qy.from, qy.to, qy.subject].some(v => (v ?? '').trim() !== '')) return flat([]);
   const p = qy.in?.toLowerCase();
-  const tfOrdered = p !== undefined && p !== 'done' && p !== 'later' && p !== 'starred';
+  const tfOrdered =
+    p !== undefined && p !== 'done' && p !== 'later' && p !== 'starred' && p !== 'all';
   // A role place reads one folder per account: the account's first folder with that role.
   const inPlace =
     tfOrdered && ['inbox', 'sent', 'trash', 'spam', 'important'].includes(p!)

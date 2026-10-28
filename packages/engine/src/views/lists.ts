@@ -87,12 +87,16 @@ export function roleRun(q: StoreReader, role: string, accountId?: string, preds:
 }
 
 /** Archive: the account's Archive folder where it has one (IMAP), else everything outside the Inbox (Gmail). */
-function archiveRun(q: StoreReader, accountId?: string): Run {
+export function archiveRun(
+  q: StoreReader,
+  accountId?: string,
+  preds: (col: string) => Pred[] = () => [],
+): Run {
   const cursors: CursorDef[] = [];
   for (const a of accountIds(q, accountId)) {
     const folder = roleFolder(q, a, 'archive');
     if (folder !== undefined) {
-      cursors.push(tfCursor(folder));
+      cursors.push(tfCursor(folder, preds('tf.thread_id')));
       continue;
     }
     const inbox = roleFolder(q, a, 'inbox') ?? -1;
@@ -101,7 +105,10 @@ function archiveRun(q: StoreReader, accountId?: string): Run {
       inbox,
     ];
     // Same key shape as the folder lists, so both kinds merge in one run.
-    cursors.push(...statusRun([notInbox, [visible('w.thread_id')]], a, NEWEST_TF_WF).cursors);
+    cursors.push(
+      ...statusRun([notInbox, [visible('w.thread_id')], ...preds('w.thread_id')], a, NEWEST_TF_WF)
+        .cursors,
+    );
   }
   return { cursors };
 }

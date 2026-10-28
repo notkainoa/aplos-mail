@@ -2,6 +2,7 @@ import type { SearchQuery, ViewSpec } from '@aplos/contract';
 import type { SqlValue, StoreReader } from '../store';
 import { keysetPlan, materializedPlan, threadRowId, visible } from './compile';
 import {
+  archiveRun,
   folderRowId,
   roleRun,
   statusRun,
@@ -21,12 +22,17 @@ import { MATERIALIZED_LIMIT, type Run, type Statement, type ViewEnv, type ViewPl
  */
 
 const ROLES = new Set(['inbox', 'sent', 'trash', 'spam', 'important']);
+const ARCHIVE_PRED = `(EXISTS (SELECT 1 FROM thread_folders px JOIN folders pf ON pf.id = px.folder_id WHERE px.thread_id = %s AND pf.role = 'archive')
+  OR (NOT EXISTS (SELECT 1 FROM folders af WHERE af.role = 'archive' AND af.account_id = (SELECT account_id FROM threads WHERE id = %s))
+    AND NOT EXISTS (SELECT 1 FROM thread_folders ix JOIN folders xf ON xf.id = ix.folder_id WHERE ix.thread_id = %s AND xf.role = 'inbox')
+    AND %v))`;
 const FLAGGED = 'EXISTS (SELECT 1 FROM threads sf WHERE sf.id = %s AND sf.flagged = 1)';
 const hasWordChar = /[\p{L}\p{N}]/u;
 
 /** One FTS5 prefix phrase per word; a word without a letter or digit is dropped (it would match nothing). */
 export function ftsPhrases(text: string | undefined): string[] {
   return (text ?? '')
+    .replace(/\p{Cc}/gu, ' ')
     .split(/\s+/)
     .filter(w => hasWordChar.test(w))
     .map(w => `"${w.replace(/"/g, '""')}"*`);
@@ -44,6 +50,10 @@ export function ftsQuery(query: SearchQuery): string {
   return parts.join(' ');
 }
 
+/** True when a text or word operator was given, even if it holds no searchable word. */
+const hasWordOperator = (query: SearchQuery) =>
+  [query.text, query.from, query.to, query.subject].some(v => (v ?? '').trim() !== '');
+
 const like = (v: string) => `%${v.replace(/[\\%_]/g, c => `\\${c}`)}%`;
 
 /** Exact message-level checks for the word operators (FTS `people` holds senders and recipients together). */
@@ -56,7 +66,6 @@ function messagePreds(query: SearchQuery): Pred[] {
       like(query.from),
     ]);
   if (query.to) out.push(["m.to_json LIKE ? ESCAPE '\\'", like(query.to)]);
-  if (query.subject) out.push(["m.subject LIKE ? ESCAPE '\\'", like(query.subject)]);
   return out;
 }
 
@@ -71,6 +80,8 @@ function placePred(q: StoreReader, place: string | undefined, col: string): Pred
       `EXISTS (SELECT 1 FROM thread_workflow pw WHERE pw.thread_id = ${col} AND pw.status = ?)`,
       p,
     ];
+  if (p === 'all') return [visible(col)];
+  if (p === 'archive') return [ARCHIVE_PRED.replace(/%s/g, col).replace('%v', visible(col))];
   if (ROLES.has(p))
     return [
       `EXISTS (SELECT 1 FROM thread_folders px JOIN folders pf ON pf.id = px.folder_id WHERE px.thread_id = ${col} AND pf.role = ?)`,
@@ -115,16 +126,18 @@ function ftsStatement(q: StoreReader, spec: SearchSpec, env: ViewEnv, match: str
     placePred(q, spec.query.in, 't.id'),
     ...threadPreds(spec.query, env, 't.id'),
   ];
-  const msgWhere = ['messages_fts MATCH ?', ...msg.map(p => p[0])].join(' AND ');
+  // The place and flag filters sit inside the limited subquery, so a broad word never loses older matches to the cap.
+  const where = ['messages_fts MATCH ?', ...msg.map(p => p[0]), ...thread.map(p => p[0])].join(
+    ' AND ',
+  );
   const sql = `SELECT t.account_id || ':' || t.remote_id AS id FROM threads t WHERE t.id IN (
-    SELECT m.thread_id FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid
-    WHERE ${msgWhere} ORDER BY f.rowid DESC LIMIT ?)
-  ${thread.map(p => `AND ${p[0]}`).join(' ')} ORDER BY t.last_date DESC, t.id DESC LIMIT ?`;
+    SELECT m.thread_id FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid CROSS JOIN threads t ON t.id = m.thread_id
+    WHERE ${where} ORDER BY f.rowid DESC LIMIT ?) ORDER BY t.last_date DESC, t.id DESC LIMIT ?`;
   const params: SqlValue[] = [
     match,
     ...msg.flatMap(p => p.slice(1) as SqlValue[]),
-    MATERIALIZED_LIMIT,
     ...thread.flatMap(p => p.slice(1) as SqlValue[]),
+    MATERIALIZED_LIMIT,
     MATERIALIZED_LIMIT,
   ];
   return { sql, params };
@@ -149,6 +162,9 @@ function placeRun(q: StoreReader, spec: SearchSpec, env: ViewEnv): Run {
       [[FLAGGED.replace('%s', 'w.thread_id')], ...threadPreds(spec.query, env, 'w.thread_id')],
       a,
     );
+  if (place === 'all')
+    return statusRun([[visible('w.thread_id')], ...threadPreds(spec.query, env, 'w.thread_id')], a);
+  if (place === 'archive') return archiveRun(q, a, col => threadPreds(spec.query, env, col));
   if (place !== undefined && ROLES.has(place))
     return roleRun(q, place, a, threadPreds(spec.query, env, 'tf.thread_id'));
   if (spec.query.in !== undefined) {
@@ -157,7 +173,19 @@ function placeRun(q: StoreReader, spec: SearchSpec, env: ViewEnv): Run {
       cursors:
         folder === undefined
           ? []
-          : [tfCursor(folder, threadPreds(spec.query, env, 'tf.thread_id'))],
+          : [
+              tfCursor(folder, [
+                ...(a === undefined
+                  ? []
+                  : [
+                      [
+                        'EXISTS (SELECT 1 FROM threads at WHERE at.id = tf.thread_id AND at.account_id = ?)',
+                        a,
+                      ] as Pred,
+                    ]),
+                ...threadPreds(spec.query, env, 'tf.thread_id'),
+              ]),
+            ],
     };
   }
   return statusRun([[visible('w.thread_id')], ...threadPreds(spec.query, env, 'w.thread_id')], a);
@@ -169,7 +197,10 @@ export function searchPlan(spec: SearchSpec, env: ViewEnv): ViewPlan {
     return keysetPlan({
       kind: 'search',
       rowType: 'Thread',
-      sections: q => [{ key: '', runs: [placeRun(q, spec, env)] }],
+      // Words that were typed but reduce to nothing (punctuation only) match nothing, not everything.
+      sections: q => [
+        { key: '', runs: [hasWordOperator(spec.query) ? { cursors: [] } : placeRun(q, spec, env)] },
+      ],
       resolve: threadRowId,
     });
   return materializedPlan({
