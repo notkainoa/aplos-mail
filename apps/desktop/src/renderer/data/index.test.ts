@@ -52,6 +52,10 @@ import {
 import type {
   AccountState,
   ApiMethodName,
+  ConnectionState,
+  DueSource,
+  KnownValues,
+  Lane,
   Citation,
   ConnectFrame,
   ContractMethodOf,
@@ -68,6 +72,7 @@ import type {
   UiSettings,
 } from './index';
 import { keyPrefsFromUi } from '../commands';
+import type { DueSource as UiDueSource, Lane as UiLane } from '../ui/props';
 
 // ---------------------------------------------------------------------------
 // Compile-time: `api` is the F2 client's surface
@@ -83,7 +88,10 @@ const sameAsClient: [
   Equals<DataApi['blob']['put'], ClientApi['blob']['put']>,
   Equals<DataApi['consent']['grant'], ClientApi['consent']['grant']>,
   Equals<DataApi['engine']['restart'], ClientApi['engine']['restart']>,
-] = [true, true, true, true, true];
+  Equals<DataApi['thread']['open'], ClientApi['thread']['open']>,
+  Equals<DataApi['ai']['cancel'], ClientApi['ai']['cancel']>,
+  Equals<DataApi['operation']['retry'], ClientApi['operation']['retry']>,
+] = [true, true, true, true, true, true, true, true];
 
 /** Commands return the client's result; only the fresh `opId` or `requestId` becomes optional. */
 const commandResults: [
@@ -92,7 +100,20 @@ const commandResults: [
   Equals<ReturnType<DataApi['settings']['set']>, Promise<Output<'Settings/set'>>>,
   Equals<ReturnType<DataApi['ai']['transcribe']>, Promise<Output<'Ai/transcribe'>>>,
   Equals<ContractMethodOf<'messageBody.prefetch'>, 'MessageBody/prefetch'>,
-] = [true, true, true, true, true];
+  Equals<ReturnType<DataApi['search']['remote']>, Promise<Output<'Search/remote'>>>,
+  Equals<ReturnType<DataApi['ai']['dismissFollowup']>, Promise<Output<'Ai/dismissFollowup'>>>,
+] = [true, true, true, true, true, true, true];
+
+/**
+ * `ui/props.ts` keeps `Lane` and `DueSource` closed (components never import renderer/data) and screens narrow the
+ * contract's open enums to them; these pin the closed sets to the contract's known values, so neither can drift.
+ * `ConnectionState` is derived from the contract's `engine` desktop event the same way.
+ */
+const closedSetsMatch: [
+  Equals<KnownValues<Lane>, UiLane>,
+  Equals<KnownValues<DueSource>, UiDueSource>,
+  Equals<ConnectionState, 'connecting' | 'ready' | 'unreachable' | 'parked'>,
+] = [true, true, true];
 
 // ---------------------------------------------------------------------------
 // Compile-time examples (never run past their first hook; they only need to type-check)
@@ -528,7 +549,7 @@ test('the lane marker is ui-shell and the type checks hold', () => {
   assert.equal(DATA_LANE, 'ui-shell');
   assert.equal(noMissingState, true);
   assert.equal(ARCH_STATES.length, 11);
-  assert.ok([...sameAsClient, ...commandResults].every(Boolean));
+  assert.ok([...sameAsClient, ...commandResults, ...closedSetsMatch].every(Boolean));
   assert.equal(typeof keyPrefsFromStored, 'function');
 });
 

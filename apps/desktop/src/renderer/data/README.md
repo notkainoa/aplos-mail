@@ -29,9 +29,13 @@ The hooks use the contract's names too: a window has `position` and `sections` (
 
 **Commands act first.** `api.thread.act({ids | selector, action})` applies the optimistic overlay before it returns and gives `{opId, receipt}`. The data layer mints the `opId` when the caller gives none. A selector is `{spec, section?, atState}` over thread-row specs only (the type refuses the reader's message list). The overlay drops once a window's `state.seq` reaches `receipt.appliedState.seq` within one `dbEpoch`. `useOperation(opId)` reports `pending`, `confirmed` or `failed`, the provider-side `Operation.state`, `undoUntil`, and offers `retry()`. Undo is `api.operation.undo({opId})`, an inverse operation.
 
+**Retry has two cases.** If the engine rejected the write, no operation exists: `RowFailure.retry()` and `OperationView.retry()` send a fresh `api.thread.act` with the same action and targets under a new `opId`, and the overlay re-applies at once. If the engine accepted the write and the provider later refused it (`Operation.state: 'failed'` after a receipt), `OperationView.retry()` calls `api.operation.retry({opId})` (`Operation/retry`). That keeps the same `opId`, returns a `Receipt` and applies no overlay.
+
+**Search.** Local results come from `useView({kind: 'search', query})` as the owner types. Return calls `api.search.remote({query, accountId?})` (`Search/remote`), which answers at once with `{runId, receipt}`. Progress follows as `progress` frames with `source: 'search'` (`useFrames('progress', {runId})`), and the server's results join the open `search` window with the same query.
+
 **Holding still, prefetch, bodies.** As before: `useHold(scope)` is the renderer half, `holdIds` the engine half (`View/hold`, repeated as the ping; `View/release`). `usePrefetchIntent()` sends `MessageBody/prefetch {threadIds}` after 80 ms focus or 120 ms hover and cancels with `{cancel: true}`. `useMessageBody(id)` loads one body and sets `slow` after 1.5 s.
 
-**Session, status, counts, settings, consent.** `useSession()` is `Session/get`. `useConnection()` speaks the contract's `engine` vocabulary (`connecting`, `ready`, `unreachable`, `parked`) with `reason`, `reasonCode` and `canRetry`. `useAccounts()` returns `Account`s with `health`. `useStatus()` picks the one status line and gives its `reasonCode` (copy comes from the code, never from provider text). `useCounts()` gives the `CountsBlock` for the scope plus per-folder unread counts. `useAgenda({kind: 'events', from, to})` is an events window. `useSetupStatus()`, `useSettings()` and the new `useConsent()` read their singletons, re-read on `state` frames.
+**Session, status, counts, settings, consent.** `useSession()` is `Session/get`. `useConnection()` speaks the contract's `engine` vocabulary (`connecting`, `ready`, `unreachable`, `parked`; `ConnectionState` is the known values of that open enum, and a state a newer main adds is reported as `unreachable`) with `reason`, `reasonCode` and `canRetry`. `useAccounts()` returns `Account`s with `health`. `useStatus()` picks the one status line and gives its `reasonCode` (copy comes from the code, never from provider text). `useCounts()` gives the `CountsBlock` for the scope plus per-folder unread counts. `useAgenda({kind: 'events', from, to})` is an events window. `useSetupStatus()`, `useSettings()` and the new `useConsent()` read their singletons, re-read on `state` frames.
 
 **Streams, clock, undo.** `useFrames('progress' | 'connect' | 'clock', filter)` serves the contract's `progress` and `connect` frames and the host clock event. A run is followed by the `runId` that `api.ask.run` returned, a connect flow by its `connectId`. `useNow`, `getNow`, `setClock` and the one undo stack are unchanged.
 
@@ -47,8 +51,9 @@ Each `api` member is the F2 typed client's method of the same name (`api.<type>.
 |---|---|---|---|
 | `thread.act` | `Thread/act` | overlay | F9-1, F9-2, F9-3 |
 | `thread.why` | `Thread/why` | call | F9-4 |
+| `thread.open` | `Thread/open` | call | |
 | `operation.undo` | `Operation/undo` | overlay | F9-7 |
-| `operation.retry` | `Operation/retry` | call | |
+| `operation.retry` | `Operation/retry` | call (provider-side failures only; an engine-rejected write is retried with `thread.act`) | |
 | `submission.set` | `Submission/set` | call | F9-8, F9-9 |
 | `draft.set`, `draft.destroy`, `draft.resolve` | `Draft/set`, `Draft/destroy`, `Draft/resolve` | call | F9-10, F9-11, F9-40 |
 | `messageBody.get`, `messageBody.prefetch` | `MessageBody/get`, `MessageBody/prefetch` | call | F9-12 |
@@ -62,7 +67,9 @@ Each `api` member is the F2 typed client's method of the same name (`api.<type>.
 | `demo.load`, `demo.reset`, `demo.remove` | `Demo/load`, `Demo/reset`, `Demo/remove` | call | |
 | `settings.get`, `settings.set` | `Settings/get`, `Settings/set` | call | F9-41, F9-42 |
 | `ask.run`, `ask.cancel` | `Ask/run`, `Ask/cancel` | stream, call | F9-20 |
+| `search.remote` | `Search/remote` | stream | |
 | `ai.request`, `ai.draft`, `ai.polish`, `ai.transcribe`, `ai.followup` | `Ai/request`, `Ai/draft`, `Ai/polish`, `Ai/transcribe`, `Ai/followup` | call | F9-5, F9-21, F9-22 |
+| `ai.dismissFollowup`, `ai.cancel` | `Ai/dismissFollowup`, `Ai/cancel` | call | |
 | `unsubscribe.run` | `Unsubscribe/run` | call | F9-6 |
 | `consent.get`, `consent.grant`, `consent.revoke` | `Consent/get`, `Consent/grant`, `Consent/revoke` | call | F9-23, F9-43 |
 | `engine.restart` | `Engine/restart` | native | F9-24 |
@@ -129,11 +136,13 @@ These are new, small, and none blocks U2. Each has a stopgap that needs no contr
 
 ## Release rule
 
-No release ships before the switch to the real engine (plan 30 4.1, build-order step 2). `renderer/main.tsx` boots the stand-in only in a development build; a production build loads today's renderer. The `srcdoc` mail frame (`MailFrame.srcdoc`, set by the stand-in only) is a development path, never a shipped fallback (ARCH 10).
+No release ships before the switch to the real engine (plan 30 4.1, build-order step 2). `renderer/main.tsx` boots the stand-in only in a development build; a production build loads today's renderer. `shell/app.test.ts` re-runs the boot path headless: stand-in, Home window, rendered lines. The `srcdoc` mail frame (`MailFrame.srcdoc`, set by the stand-in only) is a development path, never a shipped fallback (ARCH 10).
 
 ## Changes against the F9 base (pre-freeze waiver)
 
-The contract swap renamed or removed exported names. The freeze is day 3, so this is allowed once and recorded here. In this tree nothing outside `renderer/data`, `renderer/shell` and `ui/props.ts` imported the old names.
+The contract swap renamed or removed exported names. The freeze is day 3, so this is allowed once and recorded here. In this tree nothing outside `renderer/data` and `renderer/shell` imported the old names.
+
+`ui/props.ts` keeps `Lane` and `DueSource` closed, as they were. Components never import `renderer/data` (`ui/README.md`), and the contract's enums are open, so a screen narrows `row.rank.lane` and `row.workflow.dueSource` to the closed set and draws no lane controls for an unknown lane. `index.test.ts` checks that the closed sets equal the contract's known values (`KnownValues<Lane>`, `KnownValues<DueSource>`).
 
 | Where | Before | Now | Why |
 |---|---|---|---|
@@ -144,11 +153,14 @@ The contract swap renamed or removed exported names. The freeze is day 3, so thi
 | data `api` | `thread.act(target, action)`, `thread.followup`, `thread.unsubscribe`, `operation.undoLast`, `submission.send/sendLater/undo/sendNow/reschedule`, `draft.save/discard/resolveConflict`, `body.*`, `mail.releaseFrame/allowImagesFrom`, `attachment.put`, `account.setAiAllowed`, `ai.setConsent`, handles `AccountFlow`, `AskRun`, `SubmissionReceipt` | `thread.act({ids | selector, action})`, `ai.followup`, `unsubscribe.run`, `undoStack.undoLast()`, `submission.set({action})`, `draft.set/destroy/resolve`, `messageBody.*`, `mail.release/allowImages`, `blob.put`, `account.set`, `consent.grant/revoke`; flows return `connectId` / `runId` and stream through `useFrames`. New: `operation.retry`, `mail.toggleQuotes`, `blob.get`, `account.grantPermissions`, `ask.cancel`, `ai.draft/polish/transcribe`, `consent.get` | `api` maps one to one onto the F2 client's method names |
 | data `ContractMethodRef` | `{method, kind, source, needs}`, kind `local` | `{method, kind, gaps, notes}`; `method` checked against the registry | Every method now exists; the column records how each ask was settled |
 | shell `SheetArgs.consent` | `{providerId?, model?}` | `{provider?, model?}` (`AiProviderId`) | The contract's names |
-| `ui/props.ts` `Lane`, `DueSource` | closed literal unions | the contract's open enums, re-exported through `renderer/data` (wider, so additive for callers) | Screens pass `row.rank.lane` and `row.workflow.dueSource` straight through |
 
 ## Not yet in the surface (additive follow-ups)
 
 - Calendar beyond the agenda: `Event/set`, `Event/rsvp`, `Calendar/get` and a `useCalendars` hook (`ui-calendar`).
 - Ask history and proposals: `Ask/decide`, `Ask/suggestions`, `Conversation/destroy` (`ui-ask`); `conversations` and `Conversation` rows already work through `useView` and `useRow`.
 - Settings extras: `Account/disconnect`, `Account/lease`, `Ai/providers|models|status|usage|setKey|testKey`, `Queue/*`, `Folder/get` (`ui-settings`).
-- `Search/remote`, `Later/presets`, `Reminder/*`, `Thread/open`, `Outbox/pending` and the desktop window methods, each added to `api` under its client name when its screen lands.
+- `Later/presets` for the Later picker and `Reminder/*` (`ui-home`); `Outbox/pending` and the desktop window methods (`ui-shell`). Each is added to `api` under its client name when its screen lands.
+
+## Dependencies
+
+`apps/desktop/package.json` declares `zod` (dependencies) and `@aplos/contract` (devDependencies). `@aplos/contract-fixture`, which `standin.ts`, `standin.test.ts` and `shell/app.test.ts` import, is not declared. It resolves only through the workspace symlink in the root `node_modules`. Ask for the package.json owner: add `"@aplos/contract-fixture": "*"` to `devDependencies`.

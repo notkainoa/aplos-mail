@@ -24,6 +24,12 @@ import type {
   ViewSpec,
 } from './contract-shapes';
 
+/**
+ * The known values of a contract open enum (`'a' | 'b' | (string & {})` → `'a' | 'b'`): the closed set a screen can
+ * switch over. A value a newer engine adds is not in it, so the caller maps it to a safe default.
+ */
+export type KnownValues<T> = T extends string ? (string extends T ? never : T) : never;
+
 /** One view spec by kind, e.g. `ViewSpecOf<'events'>` is `{kind: 'events', from, to, calendarIds?, ...}`. */
 export type ViewSpecOf<K extends ViewSpec['kind']> = Extract<ViewSpec, { kind: K }>;
 

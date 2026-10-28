@@ -2,7 +2,7 @@
 
 This folder holds the few shell functions that screens owned by other lanes need. It is part of Phase 0 artifact F9 and freezes on day 3 (2026-10-29). After the freeze, changes are **additive only**. Lane `ui-shell` owns the folder and builds the real shell on days 4-11. Until then, every function in `index.ts` throws `NotImplementedError` naming lane `ui-shell`.
 
-Run the tests with `npx tsx --test apps/desktop/src/renderer/shell/index.test.ts`. `npx tsc --noEmit -p apps/desktop/tsconfig.json` checks the call examples and their `@ts-expect-error` lines.
+Run the tests with `cd apps/desktop && npx tsx --test 'src/renderer/shell/*.test.ts'`. `app.test.ts` covers the new renderer entry's boot proof (`renderer/App.tsx`, mounted by `renderer/main.tsx`): it boots the stand-in engine on the `demo` and `empty` scenarios, watches Home through `watchHome` (window frames, `Counts` changes, a `reset` frame reopening the window), and renders `HomeContent` with react-dom/server, in node with no DOM. `npx tsc --noEmit -p apps/desktop/tsconfig.json` checks the call examples and their `@ts-expect-error` lines.
 
 ## The surface in plain words
 

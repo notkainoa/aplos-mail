@@ -31,6 +31,7 @@ import type {
   CountsBlock,
   DesktopMethodName,
   Draft,
+  EngineEvent,
   EpochMs,
   ErrorBody,
   Event,
@@ -63,6 +64,7 @@ import type {
 import type {
   CachedRowType,
   HomeSection,
+  KnownValues,
   OperationState,
   RowTypeMap,
   StreamFrameMap,
@@ -173,7 +175,14 @@ export interface OperationView {
   readonly undoable: boolean;
   /** `Receipt.undoUntil`: until when undo cancels a held change instead of sending an inverse (calendar writes that email guests); null otherwise. */
   readonly undoUntil: EpochMs | null;
-  /** Re-sends the same action under a new op id; the overlay re-applies at once. */
+  /**
+   * Retry after a failure; which call it makes depends on where it failed:
+   * - `state: 'failed'` (the engine rejected the write, so no operation exists): a fresh `api.thread.act` with the same
+   *   action and targets under a new `opId`; the overlay re-applies at once and the result's `opId` is the new one.
+   * - `state: 'confirmed'` with `remote: 'failed'` (accepted, then the provider refused it): `api.operation.retry({opId})`
+   *   (`Operation/retry`), same `opId`, no overlay; the result's `receipt` is `Operation/retry`'s `Receipt`.
+   * Any other state: nothing to retry, so the result's `receipt` rejects with `OperationFailedError` (`type: 'validation'`).
+   */
   retry(): ActResult;
 }
 
@@ -185,7 +194,7 @@ export interface RowFailure {
   readonly action: ThreadAction;
   /** The engine's sentence. */
   readonly message: string;
-  /** Retry the same action. */
+  /** Retry the same action: the engine rejected it, so no operation exists and this is a fresh `api.thread.act` under a new `opId` (the overlay re-applies at once). Provider-side failures after a receipt are `OperationView.retry` (`Operation/retry`). */
   retry(): ActResult;
   /** Clear the inline error without retrying. */
   dismiss(): void;
@@ -473,8 +482,8 @@ export function useSession(): Session | undefined {
   return notImplemented('useSession');
 }
 
-/** The data layer's link to the engine, in the contract's `DesktopEvent` `engine` vocabulary: `connecting` until `Session/get` answers (and while reconnecting), `ready`, `unreachable` when the transport is gone and does not come back (FatalScreen "Aplos can't reach its mail engine.", DESIGN 7.15), `parked` after a `parked` host event or a `desktop` engine event (FatalScreen with Try again and Export diagnostics, plan 30 4.5 #3). */
-export type ConnectionState = 'connecting' | 'ready' | 'unreachable' | 'parked';
+/** The data layer's link to the engine: the known values of the contract's `DesktopEvent` `engine` state (an open enum; a state a newer main adds is reported as `unreachable`, which shows the FatalScreen with Restart). `connecting` until `Session/get` answers (and while reconnecting), `ready`, `unreachable` when the transport is gone and does not come back (FatalScreen "Aplos can't reach its mail engine.", DESIGN 7.15), `parked` after a `parked` host event or a `desktop` engine event (FatalScreen with Try again and Export diagnostics, plan 30 4.5 #3). */
+export type ConnectionState = KnownValues<EngineEvent['state']>;
 
 /** Connection state for the FatalScreen and the status slot. */
 export interface ConnectionView {
@@ -591,7 +600,7 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
 
 /** The fields `useFrames` can filter each stream by; other fields are not filterable. */
 export interface FrameFilterFields {
-  /** Run progress: one run (`Ask/run`'s `runId`), one source ('ask', 'search'), or one Ask turn. */
+  /** Run progress: one run (the `runId` of `Ask/run` or `Search/remote`), one source ('ask', 'search'), or one Ask turn. */
   progress: 'runId' | 'source' | 'turnId';
   /** Connect flows: one flow (`Account/connect`'s `connectId`), one account, or one mode. */
   connect: 'connectId' | 'accountId' | 'mode';
@@ -810,12 +819,14 @@ export interface DataApi {
     act(args: ThreadActArgs): ActResult;
     /** `Thread/why`: "Why it's here". */
     readonly why: ClientApi['thread']['why'];
+    /** `Thread/open`: the reader opened a thread. Fetches it whole when the row is partial (`complete: false` until then; the full row arrives as a row change) and marks it opened for retention. The reader sends it once per open. */
+    readonly open: ClientApi['thread']['open'];
   };
   /** Operations. */
   readonly operation: {
     /** `Operation/undo`: cancel while held (`undoUntil`), else an inverse operation; the overlay applies at once. The receipt's `opId` is the inverse's. */
     undo(args: UndoArgs): ActResult;
-    /** `Operation/retry`: the inline Retry after a rejected write. */
+    /** `Operation/retry {opId}`: retry an operation the provider refused after its receipt (`Operation.state: 'failed'`). Same `opId`, a `Receipt`, no overlay. An engine-rejected `Thread/act` never created an operation: its Retry is a fresh `thread.act` (`RowFailure.retry`). Prefer `OperationView.retry`, which picks the right one. */
     readonly retry: ClientApi['operation']['retry'];
   };
   /** Sending (`Submission/set`; undo-send and send later are one `notBefore` mechanism, ARCH 7.2). */
@@ -912,6 +923,11 @@ export interface DataApi {
     /** `Ask/cancel`: Esc; the partial answer is kept and the turn says `stopped`. */
     readonly cancel: ClientApi['ask']['cancel'];
   };
+  /** Remote search (DESIGN 7.9): local results come from the open `search` window as the owner types; Return asks the provider once. */
+  readonly search: {
+    /** `Search/remote {query, accountId?}` → `{runId, receipt}` at once. Progress follows as `progress` frames with `source: 'search'` (`useFrames('progress', {runId})`); the server's results join the open `useView({kind: 'search', query})` window with the same query, and a paused or unavailable provider shows as that window's `error`. */
+    readonly remote: Command<'Search/remote'>;
+  };
   /** Interactive AI. */
   readonly ai: {
     /** `Ai/request`: queue a summary (or classify, plan, suggest action) for a thread; the result arrives as a row change. */
@@ -924,6 +940,10 @@ export interface DataApi {
     readonly transcribe: Request<'Ai/transcribe'>;
     /** `Ai/followup`: the Follow up nudge for a thread, absent with AI off, without consent or not ready (`ThreadRow.follow.suggestion` says one is ready). */
     readonly followup: ClientApi['ai']['followup'];
+    /** `Ai/dismissFollowup`: dismiss the Follow up nudge for a thread. */
+    readonly dismissFollowup: Command<'Ai/dismissFollowup'>;
+    /** `Ai/cancel {requestId?}`: Esc during `draft`, `polish` or `transcribe`, naming the request's `requestId`; absent cancels every interactive request. Ask's own Esc is `ask.cancel`. */
+    readonly cancel: ClientApi['ai']['cancel'];
   };
   /** Unsubscribe. */
   readonly unsubscribe: {
@@ -989,9 +1009,15 @@ export const CONTRACT_METHODS = {
     kind: 'overlay',
     gaps: ['F9-1', 'F9-2', 'F9-3'],
     notes:
-      'overlay applied before return; opId minted; ids or a thread-row selector {spec, section?, atState}; joins the undo stack',
+      'overlay applied before return; opId minted; ids or a thread-row selector {spec, section?, atState}; joins the undo stack; also the Retry of an engine-rejected write (a fresh call under a new opId)',
   },
   'thread.why': { method: 'Thread/why', kind: 'call', gaps: ['F9-4'], notes: '' },
+  'thread.open': {
+    method: 'Thread/open',
+    kind: 'call',
+    gaps: [],
+    notes: 'once per reader open; a partial row completes as a row change',
+  },
   'operation.undo': {
     method: 'Operation/undo',
     kind: 'overlay',
@@ -1002,7 +1028,8 @@ export const CONTRACT_METHODS = {
     method: 'Operation/retry',
     kind: 'call',
     gaps: [],
-    notes: 'RowFailure.retry and OperationView.retry; the overlay re-applies',
+    notes:
+      'provider-side failures after a receipt only (Operation.state failed): same opId, Receipt, no overlay; OperationView.retry calls it when remote is failed',
   },
   'submission.set': {
     method: 'Submission/set',
@@ -1093,6 +1120,13 @@ export const CONTRACT_METHODS = {
     notes: 'runId, then progress frames; the turn lands in the Conversation',
   },
   'ask.cancel': { method: 'Ask/cancel', kind: 'call', gaps: [], notes: '' },
+  'search.remote': {
+    method: 'Search/remote',
+    kind: 'stream',
+    gaps: [],
+    notes:
+      "opId minted; runId, then progress frames with source 'search'; results join the open search window with the same query",
+  },
   'ai.request': {
     method: 'Ai/request',
     kind: 'call',
@@ -1113,6 +1147,18 @@ export const CONTRACT_METHODS = {
     notes: 'requestId minted; audio from blob.put',
   },
   'ai.followup': { method: 'Ai/followup', kind: 'call', gaps: ['F9-5'], notes: '' },
+  'ai.dismissFollowup': {
+    method: 'Ai/dismissFollowup',
+    kind: 'call',
+    gaps: [],
+    notes: 'opId minted',
+  },
+  'ai.cancel': {
+    method: 'Ai/cancel',
+    kind: 'call',
+    gaps: [],
+    notes: 'the requestId of ai.draft, ai.polish or ai.transcribe; absent cancels all',
+  },
   'unsubscribe.run': {
     method: 'Unsubscribe/run',
     kind: 'call',
@@ -1177,6 +1223,7 @@ export const api: DataApi = {
   thread: {
     act: () => notImplemented('api.thread.act'),
     why: () => notImplemented('api.thread.why'),
+    open: () => notImplemented('api.thread.open'),
   },
   operation: {
     undo: () => notImplemented('api.operation.undo'),
@@ -1235,12 +1282,17 @@ export const api: DataApi = {
     run: () => notImplemented('api.ask.run'),
     cancel: () => notImplemented('api.ask.cancel'),
   },
+  search: {
+    remote: () => notImplemented('api.search.remote'),
+  },
   ai: {
     request: () => notImplemented('api.ai.request'),
     draft: () => notImplemented('api.ai.draft'),
     polish: () => notImplemented('api.ai.polish'),
     transcribe: () => notImplemented('api.ai.transcribe'),
     followup: () => notImplemented('api.ai.followup'),
+    dismissFollowup: () => notImplemented('api.ai.dismissFollowup'),
+    cancel: () => notImplemented('api.ai.cancel'),
   },
   unsubscribe: {
     run: () => notImplemented('api.unsubscribe.run'),
