@@ -145,7 +145,7 @@ value TEXT NOT NULL, PRIMARY KEY(account_id, key)) STRICT`,
 requests INTEGER NOT NULL, tokens_in INTEGER NOT NULL, tokens_out INTEGER NOT NULL,
 PRIMARY KEY(day, provider, model, lane)) STRICT`,
   // eng-ai: versioned AI consent per scope; no job before it (ARCH 8.3).
-  `CREATE TABLE consent(scope TEXT PRIMARY KEY, version INTEGER NOT NULL, provider TEXT, granted_at INTEGER) STRICT`,
+  `CREATE TABLE consent(scope TEXT PRIMARY KEY, version INTEGER NOT NULL, provider TEXT, model TEXT, granted_at INTEGER) STRICT`,
   // prov-cal: the calendar list with selected, time zone and ctag (S6).
   `CREATE TABLE calendars(id INTEGER PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE,
 remote_id TEXT NOT NULL, name TEXT, color TEXT, is_primary INTEGER, hidden INTEGER, read_only INTEGER,
