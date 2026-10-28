@@ -1,10 +1,12 @@
 // RuleTester cases for aplos/boundaries, run with the real zones from eslint.config.mjs.
 // Run: node --test tools/lint/tests/
+import assert from 'node:assert/strict';
 import path from 'node:path';
 import { describe, it } from 'node:test';
-import { RuleTester } from 'eslint';
+import { fileURLToPath } from 'node:url';
+import { ESLint, RuleTester } from 'eslint';
 import tseslint from 'typescript-eslint';
-import { boundaryZones } from '../../../eslint.config.mjs';
+import config, { boundaryZones } from '../../../eslint.config.mjs';
 import plugin, { globToRegExp } from '../eslint-plugin-aplos.mjs';
 
 RuleTester.describe = describe;
@@ -19,7 +21,8 @@ const tester = new RuleTester({
 });
 
 const options = [{ zones: boundaryZones }];
-const at = file => path.join(process.cwd(), file);
+const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+const at = file => path.join(ROOT, file);
 const valid = (name, file, code) => ({ name, filename: at(file), code, options });
 const invalid = (name, file, code, ...zones) => ({
   name,
@@ -45,6 +48,7 @@ tester.run('aplos/boundaries', plugin.rules.boundaries, {
     valid('main may import electron and the engine', 'apps/desktop/src/main/windows.ts', "import { app } from 'electron'; import { start } from '@aplos/engine';"),
     valid('non-literal dynamic import outside engine core', 'apps/desktop/src/main/windows.ts', 'const m = await import(name);'),
     valid('word legacy inside a segment name is fine', 'apps/desktop/src/main/a.ts', "import { x } from './legacy-notes';"),
+    valid('engine core: electron-like name that is not a package prefix', ENGINE, "import { x } from './electron-bridge';"),
   ],
   invalid: [
     invalid('engine core: static import of electron', ENGINE, "import { app } from 'electron';", 'engine-core'),
@@ -68,8 +72,84 @@ tester.run('aplos/boundaries', plugin.rules.boundaries, {
     invalid('non-legacy: export * from ../legacy/x', 'packages/engine/src/index.ts', "export * from '../legacy/x';", 'legacy'),
     invalid('non-legacy: @aplos/engine/src/legacy/y', 'apps/desktop/src/main/windows.ts', "import { y } from '@aplos/engine/src/legacy/y';", 'legacy'),
     invalid('non-legacy: dynamic import of a legacy path', 'apps/desktop/src/main/windows.ts', "const m = await import('./legacy/x');", 'legacy'),
+    invalid('engine core: electron-updater and @electron/remote', ENGINE, "import { autoUpdater } from 'electron-updater'; import r from '@electron/remote';", 'engine-core', 'engine-core'),
+    invalid('engine core: electron/main subpath', ENGINE, "import { app } from 'electron/main';", 'engine-core'),
+    invalid('engine core: a nested folder called legacy gets no exemption', 'packages/engine/src/providers/legacy/gmail.ts', "import { app } from 'electron'; import fs from 'node:fs';", 'engine-core', 'engine-core'),
+    invalid('contract: a nested folder called legacy gets no exemption', 'packages/contract/src/x/legacy/a.ts', "import fs from 'node:fs';", 'contract'),
+    invalid('contract: non-literal dynamic import', CONTRACT, 'const m = await import(name);', 'dynamic'),
     invalid('engine core: a legacy path is rejected by the legacy zone', 'packages/engine/src/a.ts', "import { x } from './legacy/electron';", 'legacy'),
   ],
+});
+
+const htmlRule = plugin.rules['no-dangerous-html'];
+const html = (name, file, code) => ({ name, filename: at(file), code });
+const bannedHtml = (name, code) => ({ ...html(name, RENDERER, code), errors: [{ messageId: 'banned' }] });
+
+tester.run('aplos/no-dangerous-html', htmlRule, {
+  valid: [
+    html('plain JSX', RENDERER, 'const a = <div className="x" />;'),
+    html('destructuring the prop only reads it', RENDERER, 'const { dangerouslySetInnerHTML } = props;'),
+    html('unrelated key', RENDERER, "const o = { innerText: 'x' };"),
+  ],
+  invalid: [
+    bannedHtml('JSX attribute', 'const a = <div dangerouslySetInnerHTML={{ __html: h }} />;'),
+    bannedHtml('JSX spread of an object literal', 'const a = <div {...{ dangerouslySetInnerHTML: { __html: h } }} />;'),
+    bannedHtml('props object spread later', 'const props = { dangerouslySetInnerHTML: { __html: h } }; const a = <div {...props} />;'),
+    bannedHtml('createElement props', "createElement('div', { dangerouslySetInnerHTML: { __html: h } });"),
+    bannedHtml('string-literal key', "const o = { 'dangerouslySetInnerHTML': { __html: h } };"),
+  ],
+});
+
+// Whole-config checks through the ESLint API: how the rules behave as configured, not in isolation.
+async function lint(code, file, { cwd = ROOT, extra = [] } = {}) {
+  const eslint = new ESLint({ cwd, overrideConfigFile: true, overrideConfig: [...config, ...extra] });
+  const [result] = await eslint.lintText(code, { filePath: at(file) });
+  return result.messages.filter(message => message.severity === 2).map(message => message.ruleId);
+}
+
+describe('eslint.config.mjs as a whole', () => {
+  // Same shape as DESIGN 12.2's raw-colour rule, which UI-core adds through tools/lint/design.
+  const designLike = [
+    {
+      files: ['apps/desktop/src/renderer/**'],
+      rules: { 'no-restricted-syntax': ['error', { selector: 'Literal[value=/#[0-9a-f]{3,8}/i]', message: 'x' }] },
+    },
+  ];
+
+  it('a design rule using no-restricted-syntax does not remove the dangerouslySetInnerHTML ban', async () => {
+    const code = 'export const a = <div dangerouslySetInnerHTML={{ __html: h }} />;';
+    const rules = await lint(code, 'apps/desktop/src/renderer/Z.tsx', { extra: designLike });
+    assert.ok(rules.includes('aplos/no-dangerous-html'), rules.join());
+  });
+
+  it('mailframe may use dangerouslySetInnerHTML', async () => {
+    const code = 'export const a = <div dangerouslySetInnerHTML={{ __html: h }} />;';
+    assert.deepEqual(await lint(code, 'apps/desktop/src/renderer/mailframe/Z.tsx'), []);
+  });
+
+  it('boundaries still apply when ESLint runs from inside a package', async () => {
+    const code = "export const m = () => import('electron');";
+    const rules = await lint(code, 'packages/engine/src/x.ts', { cwd: path.join(ROOT, 'packages/engine') });
+    assert.deepEqual(rules, ['aplos/boundaries']);
+  });
+
+  for (const [name, code] of [
+    ['process.getBuiltinModule', "export const f = process.getBuiltinModule('node:fs');"],
+    ['module.require', "export const f = module.require('fs');"],
+    ['(0, require)(...)', "export const f = (0, require)('fs');"],
+    ['globalThis.require', "export const f = globalThis.require?.('fs');"],
+    ['__dirname', 'export const d = __dirname;'],
+  ]) {
+    it(`engine core rejects ${name}`, async () => {
+      const rules = await lint(code, 'packages/engine/src/x.ts');
+      assert.ok(rules.length > 0, 'expected an error');
+    });
+  }
+
+  it('engine legacy may still use __dirname, Node modules and getBuiltinModule', async () => {
+    const code = "import fs from 'node:fs'; export const f = [fs, __dirname, process.getBuiltinModule('fs')];";
+    assert.deepEqual(await lint(code, 'packages/engine/src/legacy/x.ts'), []);
+  });
 });
 
 describe('globToRegExp', () => {

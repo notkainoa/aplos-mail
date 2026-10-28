@@ -1,11 +1,17 @@
 name: CI
 
 # Free-minutes rule: Linux jobs run on pushes to revamp only; there is no pull_request trigger
-# (the Integrator runs the full suite before each merge). macOS runs on demand only.
+# (the Integrator runs the full suite before each merge). macOS runs only when a manual run
+# ticks the "macos" box, so a scratch-branch proof of the static job costs Linux minutes only.
 on:
   push:
     branches: [revamp]
   workflow_dispatch:
+    inputs:
+      macos:
+        description: Also run the desktop job on macOS (costs about 10x Linux minutes)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -102,10 +108,10 @@ jobs:
       - run: npm run typecheck -w @aplos/web
       - run: npm run build -w @aplos/web
 
-  # macOS minutes are scarce: this job runs only when started by hand.
+  # macOS minutes are scarce: this job runs only when started by hand with the macos box ticked.
   desktop-macos:
     name: Desktop on macOS (typecheck, test, build)
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
     runs-on: macos-latest
     timeout-minutes: 30
     steps:

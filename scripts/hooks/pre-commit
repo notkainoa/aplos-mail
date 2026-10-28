@@ -28,7 +28,8 @@ status=0
 if [ ! -x node_modules/.bin/prettier ] || ! has_prettier_config; then
   echo "pre-commit: prettier or its config is missing, skipping the format check"
 else
-  files=$(staged '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|json|css|html|ya?ml)$')
+  # eslint-suppressions.json is written by ESLint (no final newline) and is not Prettier-formatted.
+  files=$(staged '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|json|css|html|ya?ml)$' | grep -v -x -e 'eslint-suppressions.json' -e 'stylelint-suppressions.json')
   if [ -n "$files" ]; then
     run_on "$files" node_modules/.bin/prettier --check --ignore-unknown --no-error-on-unmatched-pattern \
       || { echo "pre-commit: run 'npx prettier --write <files>' and re-stage"; status=1; }
@@ -40,7 +41,8 @@ if [ ! -x node_modules/.bin/eslint ] || [ ! -f eslint.config.mjs ]; then
 else
   files=$(staged '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$')
   if [ -n "$files" ]; then
-    run_on "$files" node_modules/.bin/eslint --no-warn-ignored || status=1
+    # Fixing a suppressed violation must not fail the commit; 'npm run lint:prune' tidies the file.
+    run_on "$files" node_modules/.bin/eslint --no-warn-ignored --pass-on-unpruned-suppressions || status=1
   fi
 fi
 

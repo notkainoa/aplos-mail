@@ -33,11 +33,9 @@ export default {
     'declaration-block-no-redundant-longhand-properties': null, // top/left/right/bottom versus inset: same effect
     'property-no-vendor-prefix': null, // -webkit-backdrop-filter, -webkit-user-select, -webkit-mask-*: needed for Safari on the website
 
-    // Correctness-flavoured rules that today's CSS breaks. Kept on, as warnings so lint:css passes;
-    // fix them as the owning lane touches each file, then drop this override to make them errors.
-    'no-descending-specificity': [true, { severity: 'warning' }], // 155 hits
-    'no-duplicate-selectors': [true, { severity: 'warning' }], // 18 hits
-    'keyframe-block-no-duplicate-selectors': [true, { severity: 'warning' }], // apps/web/src/styles.css:648 and :660
+    // Correctness-flavoured rules stay on as errors. Today's violations (no-descending-specificity,
+    // no-duplicate-selectors, keyframe-block-no-duplicate-selectors) are recorded in
+    // stylelint-suppressions.json (npm run lint:css:baseline), so only new ones fail.
 
     ...design.rules,
   },

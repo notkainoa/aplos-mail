@@ -1,7 +1,12 @@
-// Local ESLint plugin. One rule today: "aplos/boundaries" (import boundaries between the
-// layers of the repo). It is configured from eslint.config.mjs; see tools/lint/README.md.
+// Local ESLint plugin. Rules: "aplos/boundaries" (import boundaries between the layers of the
+// repo, configured from eslint.config.mjs) and "aplos/no-dangerous-html". See tools/lint/README.md.
 import { builtinModules } from 'node:module';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Paths are resolved against the repo root (this file's location), not the cwd, so running
+// ESLint from inside a package gives the same answer as running it from the root.
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 const NODE_BUILTINS = new Set(builtinModules);
 
@@ -119,7 +124,7 @@ const rule = {
   },
   create(context) {
     const zones = context.options[0]?.zones ?? [];
-    const file = toPosix(path.relative(context.cwd, context.filename));
+    const file = toPosix(path.relative(REPO_ROOT, context.filename));
     const active = zones.filter(zone => zoneApplies(zone, file));
     if (active.length === 0) return {};
 
@@ -168,4 +173,33 @@ const rule = {
   },
 };
 
-export default { meta: { name: 'eslint-plugin-aplos' }, rules: { boundaries: rule } };
+const HTML_PROP = 'dangerouslySetInnerHTML';
+
+/** Flags React's raw-HTML prop however it is written: JSX attribute, object key (spread props, createElement). */
+const noDangerousHtml = {
+  meta: {
+    type: 'problem',
+    docs: { description: `Disallow ${HTML_PROP}; turn the rule off only for the sandboxed mail frame` },
+    schema: [],
+    messages: {
+      banned: `${HTML_PROP} is allowed only in apps/desktop/src/renderer/mailframe (ARCHITECTURE 10).`,
+    },
+  },
+  create(context) {
+    const report = node => context.report({ node, messageId: 'banned' });
+    return {
+      JSXAttribute: node => node.name.name === HTML_PROP && report(node),
+      Property(node) {
+        if (node.parent.type !== 'ObjectExpression') return; // destructuring only reads the prop
+        const key = node.key;
+        const named = key.type === 'Identifier' && !node.computed && key.name === HTML_PROP;
+        if (named || literalValue(key) === HTML_PROP) report(node);
+      },
+    };
+  },
+};
+
+export default {
+  meta: { name: 'eslint-plugin-aplos' },
+  rules: { boundaries: rule, 'no-dangerous-html': noDangerousHtml },
+};
