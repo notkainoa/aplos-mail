@@ -1,0 +1,8 @@
+.ghost {
+  transform: translateX(0);
+  will-change: auto;
+}
+
+.list {
+  contain: content;
+}
