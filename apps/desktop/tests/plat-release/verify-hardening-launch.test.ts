@@ -31,7 +31,9 @@ function fakeSpawn(
         child.emit('close', null, signal);
       });
     const plan = behaviour(args, options.env) ?? {};
-    setImmediate(() => {
+    // process.nextTick, not setImmediate: the planned exit then always lands before the check's
+    // kill timer, however busy the machine is (a timer could win against setImmediate under load).
+    process.nextTick(() => {
       if (plan.output) child.stderr.emit('data', Buffer.from(plan.output));
       if (plan.exitCode !== undefined || plan.signal) {
         const code = plan.signal ? null : plan.exitCode;

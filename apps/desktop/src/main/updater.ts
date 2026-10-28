@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { UpdateController, disabledReason, teamIdentifier, type Updater } from './updates';
 import { emit, focusMain } from './windows';
 import { releaseBuild } from './oauth-config';
+import { isTest } from './test-mode';
 
 let updates: UpdateController | undefined;
 /** Set by Restart: the normal quit (drafts saved, engine closed) ends by installing the update instead of quitting. */
@@ -16,18 +17,26 @@ function createUpdates() {
   // Never in a release build, whatever app.isPackaged says (it follows the executable's name).
   const devFeed = !releaseBuild && !app.isPackaged && process.env.APLOS_UPDATE_DEV === '1';
   const log = (line: string) => console.log(`Aplos Mail: ${line}`);
-  const disabled = disabledReason({
-    platform: process.platform,
-    packaged: app.isPackaged,
-    devFeed,
-    bundlePath: bundlePath(),
-    teamId: () => {
-      const result = spawnSync('/usr/bin/codesign', ['--display', '--verbose=2', bundlePath()], {
-        encoding: 'utf8',
+  // Updates are off in test mode (a local package build; release builds compile test mode out): a test must never reach
+  // the update feed or replace the build under test.
+  const disabled = isTest
+    ? 'Updates are off in test mode.'
+    : disabledReason({
+        platform: process.platform,
+        packaged: app.isPackaged,
+        devFeed,
+        bundlePath: bundlePath(),
+        teamId: () => {
+          const result = spawnSync(
+            '/usr/bin/codesign',
+            ['--display', '--verbose=2', bundlePath()],
+            {
+              encoding: 'utf8',
+            },
+          );
+          return teamIdentifier(`${result.stdout}\n${result.stderr}`);
+        },
       });
-      return teamIdentifier(`${result.stdout}\n${result.stderr}`);
-    },
-  });
   return new UpdateController({
     currentVersion: app.getVersion(),
     disabled,
