@@ -33,17 +33,34 @@ import {
   useSetupStatus,
   useStatus,
   useView,
+  UI_SETTINGS_DEFAULTS,
+  HARNESS_NOW_LOCAL,
+  HARNESS_NOW_MS,
+  HARNESS_TIME_ZONE,
+  getNow,
+  toIsoDate,
+  toIsoDateTime,
+  setClock,
+  undoStack,
+  useFrames,
+  useNow,
+  useUndoTop,
 } from './index';
 import type {
   AccountState,
   ApiMethodName,
+  Citation,
+  ConnectFrame,
   DraftRow,
   MessageRow,
   OpId,
+  ProgressFrame,
   Receipt,
+  SettingsPatch,
   StatusSlotState,
   ThreadRow,
 } from './index';
+import { keyPrefsFromUi } from '../commands';
 
 // ---------------------------------------------------------------------------
 // Compile-time examples (never run past their first hook; they only need to type-check)
@@ -283,6 +300,63 @@ function statusSlotExample(): string {
   }
 }
 
+/** Where a citation chip goes on click: a thread for a message, the calendar for an event. */
+function citationTarget(c: Citation): string {
+  return c.kind === 'message' ? `thread:${c.threadId}` : `event:${c.eventId}`;
+}
+
+/** Ask streaming: one run's F1 progress frames, the step line with its count, the answer text, citations. */
+function askStreamExample(runId: string): string {
+  const { frames, last } = useFrames('progress', { runId });
+  let text = '';
+  let step = '';
+  const sources: string[] = [];
+  for (const frame of frames) {
+    if (frame.kind === 'step' && frame.step) step = frame.step.count === undefined ? frame.step.text : `${frame.step.text} · ${frame.step.count}`;
+    else if (frame.kind === 'text') text += frame.delta ?? '';
+    else if (frame.kind === 'citation' && frame.citation) sources.push(citationTarget(frame.citation));
+    else if (frame.kind === 'error') return frame.problem?.message ?? '';
+  }
+  const typed: ProgressFrame | undefined = last;
+  useFrames('progress', { source: 'ask' });
+  // @ts-expect-error: progress frames cannot be filtered by a field that is not listed.
+  useFrames('progress', { seq: 3 });
+  return typed?.kind === 'done' ? text : `${step} ${text} ${sources.join(' ')}`;
+}
+
+/** The reconnect sheet: "Waiting for Google in your browser…" from the connect frames of one flow; Cancel by id once the handle is gone. */
+function reconnectSheetExample(requestId: string): string {
+  const last: ConnectFrame | undefined = useFrames('connect', { connectId: requestId }).last;
+  if (!last || last.state === 'waiting') {
+    void api.account.cancelConnect(requestId);
+    return 'Waiting for Google in your browser…';
+  }
+  if (last.state === 'failed') return last.reasonCode === 'wrongAccount' ? 'That was a different account.' : 'Couldn’t reconnect.';
+  return last.state === 'connected' ? 'Reconnected' : '';
+}
+
+/** One clock for the now-line and "reconnect within 24 hours"; a settings change Z can undo. */
+function clockAndUndoExample(reconnectBy: number): boolean {
+  const now = useNow({ granularity: 'minute' });
+  const top = useUndoTop();
+  const label = top?.kind === 'local' ? `${top.label} · Undo Z` : '';
+  const handle = undoStack.push({ label: 'Done is now L', undo: () => api.settings.set({ ui: { keymap: {} } }).then(() => undefined) });
+  handle.forget();
+  const outcome = undoStack.undoLast();
+  if (outcome?.kind === 'operation') void outcome.result.receipt;
+  // Object-valued fields are replaced whole (F1), so a width change sends the whole dock.
+  const patch: SettingsPatch = { ui: { dock: { ...UI_SETTINGS_DEFAULTS.dock, width: 400 }, palette: { recents: ['mail.done'] } } };
+  // @ts-expect-error: a partial dock would wipe `open` and `tab`.
+  const partial: SettingsPatch = { ui: { dock: { width: 400 } } };
+  void patch;
+  void partial;
+  void label;
+  return reconnectBy - now < 24 * 60 * 60 * 1000;
+}
+
+/** The stored ui fields drive the registry's key prefs without an adapter. */
+const DEFAULT_KEY_PREFS_FROM_UI = keyPrefsFromUi(UI_SETTINGS_DEFAULTS);
+
 /** The ARCH 6.4 vocabulary, checked both ways against `AccountState`. */
 const ARCH_STATES = [
   'starting',
@@ -339,6 +413,9 @@ test('every hook stub throws NotImplemented naming ui-shell', () => {
     ['useAgenda', () => useAgenda({ from: 0, to: 1 })],
     ['useSetupStatus', () => useSetupStatus()],
     ['useSettings', () => useSettings()],
+    ['useFrames', () => useFrames('progress', { runId: 'r1' })],
+    ['useNow', () => useNow({ granularity: 'minute' })],
+    ['useUndoTop', () => useUndoTop()],
   ];
   for (const [name, call] of hooks) {
     assertNotImplemented(call, name);
@@ -371,6 +448,62 @@ test('the examples type-check and stop at the first stub', () => {
   assertNotImplemented(() => statusSlotExample(), 'useStatus');
   assertNotImplemented(() => inboxZeroExample(0), 'useCounts');
   assertNotImplemented(() => fatalExample(), 'useConnection');
+});
+
+test('the stream, clock and undo examples stop at the first stub', () => {
+  assertNotImplemented(() => askStreamExample('r1'), 'useFrames');
+  assertNotImplemented(() => reconnectSheetExample('q1'), 'useFrames');
+  assertNotImplemented(() => clockAndUndoExample(0), 'useNow');
+});
+
+test('the clock and the undo stack are stubs that name ui-shell', () => {
+  assertNotImplemented(() => getNow(), 'getNow');
+  assertNotImplemented(() => setClock({ now: () => 0 }), 'setClock');
+  assertNotImplemented(() => undoStack.push({ label: 'Done is now L', undo: () => undefined }), 'undoStack.push');
+  assertNotImplemented(() => undoStack.undoLast(), 'undoStack.undoLast');
+  assertNotImplemented(() => undoStack.peek(), 'undoStack.peek');
+});
+
+// F1's UiSettings defaults (eng-contract f1-gaps, packages/contract/src/schemas/settings.ts field comments and
+// tests/fixtures.ts). Until @aplos/contract is in this tree, this copy is the check; at the swap it becomes
+// `UI_SETTINGS_DEFAULTS satisfies import('@aplos/contract').UiSettings` (data/README "Provisional types").
+const F1_UI_DEFAULTS = {
+  theme: 'system',
+  density: 'default',
+  keyHints: 'tooltip',
+  singleKeys: true,
+  holdMs: 250,
+  dock: { open: false, tab: 'ask' },
+  keymap: {},
+  sidebarMinimised: false,
+  swipe: true,
+  swipeDirection: 'doneRight',
+  zen: false,
+  sendSound: true,
+  devDetails: false,
+  lastAccount: 'all',
+  palette: { recents: [] },
+  calendar: {},
+} as const;
+
+test('the ui defaults are F1 UiSettings field for field and map onto the registry prefs', () => {
+  assert.deepEqual(UI_SETTINGS_DEFAULTS, F1_UI_DEFAULTS);
+  assert.equal(UI_SETTINGS_DEFAULTS.dock.open, false, 'the dock is closed on first run (decision 9)');
+  assert.deepEqual(DEFAULT_KEY_PREFS_FROM_UI, { singleKeyShortcuts: true, holdThresholdMs: 250, swapTriageArrows: false, keymap: {} });
+  const swapped = keyPrefsFromUi({ ...UI_SETTINGS_DEFAULTS, swipeDirection: 'doneLeft', keymap: { 'mail.done': [{ chord: 'y' }] } });
+  assert.equal(swapped.swapTriageArrows, true);
+  assert.deepEqual(swapped.keymap, { 'mail.done': [{ chord: 'y' }] });
+});
+
+test('epoch to ISO conversion is local with an offset, never UTC', () => {
+  const ms = new Date(2026, 9, 29, 22, 30, 5).getTime(); // 10:30 PM local: UTC is already the 30th west of Greenwich
+  assert.equal(toIsoDate(ms), '2026-10-29');
+  const iso = toIsoDateTime(ms);
+  assert.match(iso, /^2026-10-29T22:30:05[+-]\d{2}:\d{2}$/);
+  assert.equal(new Date(iso).getTime(), ms, 'the offset round-trips');
+  assert.equal(HARNESS_TIME_ZONE, 'America/Los_Angeles');
+  assert.equal(HARNESS_NOW_LOCAL, '2026-10-29T10:00:00');
+  assert.equal(new Date(`${HARNESS_NOW_LOCAL}-07:00`).getTime(), HARNESS_NOW_MS, 'October 29 2026 is PDT');
 });
 
 test('the drafts example stops at the first stub', async () => {

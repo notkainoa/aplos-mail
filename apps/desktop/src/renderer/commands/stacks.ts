@@ -10,7 +10,10 @@ import type { ContextName, ContextStack } from './types';
  * resolver reaches one, outer contexts never answer: E behind a Trash confirm,
  * or ⌘Return behind the palette, does nothing.
  */
-export const MODAL_CONTEXTS: readonly ContextName[] = ['palette', 'menu', 'datePicker', 'dialog', 'lowImportance'];
+export const MODAL_CONTEXTS: readonly ContextName[] = ['palette', 'menu', 'datePicker', 'dialog', 'sheet', 'lowImportance'];
+
+/** The onboarding window's contexts: that window has no 'global', so no app command reaches it. */
+export const ONBOARDING_WINDOW_CONTEXTS: readonly ContextName[] = ['onboarding', 'firstSync', 'drill'];
 
 /** Contexts that must sit under another, outer to inner. */
 const IMPLIED: Readonly<Partial<Record<ContextName, readonly ContextName[]>>> = {
@@ -18,6 +21,8 @@ const IMPLIED: Readonly<Partial<Record<ContextName, readonly ContextName[]>>> = 
   done: ['list'],
   reader: ['list'],
   oneByOne: ['list', 'reader'],
+  firstSync: ['onboarding'],
+  drill: ['onboarding', 'firstSync'],
 };
 
 /**
@@ -27,20 +32,24 @@ const IMPLIED: Readonly<Partial<Record<ContextName, readonly ContextName[]>>> = 
  */
 const SITS_ON: Readonly<Record<ContextName, readonly ContextName[]>> = {
   global: [],
-  list: ['global'],
+  search: ['global'],
+  list: ['global', 'search'],
   home: ['global', 'list'],
   done: ['global', 'list'],
-  reader: ['global', 'list', 'home', 'done'],
+  reader: ['global', 'search', 'list', 'home', 'done'],
   oneByOne: ['global', 'list', 'home', 'reader'],
-  compose: ['global', 'list', 'home', 'done', 'reader', 'oneByOne'],
+  compose: ['global', 'search', 'list', 'home', 'done', 'reader', 'oneByOne'],
   ask: ['global'],
   calendar: ['global'],
   settings: ['global'],
   onboarding: [],
+  firstSync: ['onboarding'],
+  drill: ['onboarding', 'firstSync'],
   palette: [],
   menu: [],
   datePicker: [],
   dialog: [],
+  sheet: [],
   lowImportance: [],
 };
 
@@ -54,19 +63,22 @@ export function canShareStack(a: ContextName, b: ContextName): boolean {
 }
 
 /**
- * Normalizes a context stack: 'global' first (onboarding is its own window and
- * has none), implied contexts inserted before the context that needs them
- * (['global', 'reader'] → ['global', 'list', 'reader']), duplicates dropped,
- * modal transients moved last in their original order.
+ * Normalizes a context stack: 'global' first (the onboarding window has none and
+ * keeps only its own contexts), implied contexts inserted before the context that
+ * needs them (['global', 'reader'] → ['global', 'list', 'reader'], ['drill'] →
+ * ['onboarding', 'firstSync', 'drill']), 'search' right after 'global', duplicates
+ * dropped, modal transients moved last in their original order.
  */
 export function buildStack(contexts: readonly ContextName[]): ContextStack {
   const modals = contexts.filter(isModal);
-  const base = contexts.filter((c) => !isModal(c));
-  if (base.includes('onboarding')) return [...new Set<ContextName>(['onboarding', ...modals])];
-  const out: ContextName[] = ['global'];
+  const onboardingWindow = contexts.some((c) => ONBOARDING_WINDOW_CONTEXTS.includes(c));
+  const base = contexts.filter((c) => !isModal(c) && ONBOARDING_WINDOW_CONTEXTS.includes(c) === onboardingWindow);
+  const out: ContextName[] = onboardingWindow ? [] : ['global'];
   const add = (c: ContextName) => {
     if (!out.includes(c)) out.push(c);
   };
+  // The Search page is always outside its results list, whatever order the shell collected them in.
+  if (base.includes('search')) add('search');
   for (const c of base) {
     for (const implied of IMPLIED[c] ?? []) add(implied);
     add(c);

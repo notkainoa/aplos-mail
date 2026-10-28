@@ -9,4 +9,6 @@ export { createRegistry, expandKeys, findConflicts, findShadows } from './regist
 export type { RegistryOptions } from './registry';
 export { pickBinding, resolve } from './resolver';
 export type { ResolveOptions } from './resolver';
-export { canShareStack, MODAL_CONTEXTS } from './stacks';
+export { canShareStack, MODAL_CONTEXTS, ONBOARDING_WINDOW_CONTEXTS } from './stacks';
+export { APP_SETTINGS, createSettingsTable } from './settings';
+export type { SettingsTable } from './settings';

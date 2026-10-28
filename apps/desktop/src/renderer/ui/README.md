@@ -1,6 +1,6 @@
 # renderer/ui: the Paper components
 
-This folder holds the parts every screen is built from (plans/DESIGN.md §6). `props.ts` is the frozen props contract, artifact F9. It covers every component in DESIGN §6 plus twelve parts the freeze review found DESIGN §7 needs (74 in all; see "Added at the freeze review" below). The `CommandRegistry` row of §6 lives in `renderer/commands/`, not here. Implementations come later, one file per component, under the family folders listed in `COMPONENTS` in `props.ts`.
+This folder holds the parts every screen is built from (plans/DESIGN.md §6). `props.ts` is the frozen props contract, artifact F9. It covers every component in DESIGN §6 plus twelve parts the freeze review found DESIGN §7 needs and one the UI-screens gap list asked for (75 in all; see "Added at the freeze review" and "Added for the UI-screens gap list" below). The `CommandRegistry` row of §6 lives in `renderer/commands/`, not here. Implementations come later, one file per component, under the family folders listed in `COMPONENTS` in `props.ts`.
 
 The design spec is `plans/DESIGN.md` ("Paper"). The visual target is `mockups/*.html`. DESIGN wins on rules, numbers and copy.
 
@@ -35,8 +35,12 @@ Build screens from these parts. Never style a control inside a screen, and never
 | Pane header (back, crumb, tools, Ask, calendar button, bulk bar) | `Pane` with structured `header: PaneHeaderProps` (no free slot; at most three tools by type) |
 | Sidebar rows and Settings nav | `Puck` (`kind: 'selection'`, `role: 'navigation'`, vertical; `tooltip` for Done's line) + `NavHead` |
 | Account switcher and its menu | `AccountSwitcher` + `Menu` (`swatch` one or several colours, `detail`, `inlineAction`) |
-| Pickers ("Groq ▾", "500 requests ▾") | `Button` (`trailingIcon: 'chevron-down'`, `popup.kind: 'menu'`) + `Menu` (`checkedId`, so items are `menuitemradio`). There is no listbox popup. |
+| Pickers ("Groq ▾", "500 requests ▾") | `Button` (`trailingIcon: 'chevron-down'`, `popup.kind: 'menu'`) + `Menu` (`checkedId`, so items are `menuitemradio`). There is no listbox popup. This is the frozen Select: there is no `Select` component. |
 | Theme, density, RSVP | `Puck` (`kind: 'segmented'`) |
+| Radio rows (the onboarding AI provider choice) | `ChoiceGroup` (the radiogroup, roving tabindex, ↑/↓) around `ChoiceRow`s with `role: 'radio'`. Short segmented choices stay a `Puck` (`role: 'radio'`). |
+| Onboarding step dashes ("Step 2 of 4") | `OnboardingStep` `footer.dashes {step, of}`. There is no `StepDashes` component. |
+| The first-sync drill's practice letters | `ListBox` + `ListRow` and `FocusSlot` › `FocusLetter` with invented values. Their props are plain strings and callbacks, never engine rows, so the drill makes no data call. |
+| A Settings row reachable from ⌘K | `SettingRow` with `paletteId` = the id it registered with `registerSetting` (`renderer/commands`) |
 | Account colour | `SwatchPicker` in a `SettingRow` |
 | Event detail (day rail, popover) | `EventDetail` (`presentation: 'rail'`, or `'popover'` inside `Popover`) |
 | Low-importance sheet | `LowSheet` |
@@ -76,6 +80,23 @@ Build screens from these parts. Never style a control inside a screen, and never
 
 `AccountSwitcher`, `Text` (surfaces); `ListBox`, `ListGroup`, `LowSheet` (list); `ThreadMessage`, `LoadingLine` (reader); `EventDetail` (calendar); `SwatchPicker` (controls); `OnboardingStep`, `ChoiceRow`, `ConsentCard` (onboarding). None is an ornament. Each is a state DESIGN §7 requires that the §6 parts could not express without a screen styling its own control.
 
+## Added for the UI-screens gap list
+
+The UI-screens thread checked every screen it builds against these props (`plans/ui-screens/gap-list.md`, item U10). Everything below is additive:
+
+- `ChoiceGroup` (onboarding): the radiogroup around radio `ChoiceRow`s.
+- `ProgressSegments` variant `'segments'` with `ProgressSegment {label, state, value?}`: plain labelled segments.
+- `MiniMonth.marks`: days with events.
+- `SettingRow.paletteId`: the row's palette entry.
+- `PaletteItem.detail` and `PaletteItem.opensPage`: a Settings row's section, and the chevron for nested pages.
+- `CitationData.kind` and `eventId`, `CitationProps.onOpenEvent`, `AskTurnProps.onOpenEventCitation`: calendar-event citations (data `Citation` kind `'event'`, F1). For an event, `from` is the calendar, `date` the start, `subject` the title and `threadId` is `''`.
+- `ReconnectSheetProps.mode`: `'grant'` shows the missing-permission copy instead of the weekly reconnect copy.
+- `PaletteItem.icon` is now optional, because Settings rows, nested page rows and several commands have no icon. The one loosening in this list: a palette that passes `item.icon` straight to `Icon` must check it first (`Palette.tsx` on `rv/ui-foundation/c-compose-ask`, line 222). `commandId` carries the setting entry id or the page row id for those rows.
+- Density stays `'roomy' | 'comfortable' | 'compact'` here. The stored setting uses F1's names (`'compact' | 'default' | 'roomy'`), so screens map `'default'` to `'comfortable'`.
+- For props typed `IsoDateTime` or `IsoDate`, convert the data layer's clock with `toIsoDateTime(ms)` and `toIsoDate(ms)` from `renderer/data`. Both are local with an offset, never `toISOString()` (UTC). The harness runs in `America/Los_Angeles`.
+
+Already present, so not added: `Radio` (`Puck` `role: 'radio'`, `ChoiceRow` `role: 'radio'`, `SwatchPicker`), `Select` (Button + Menu, above), `StepDashes` (`OnboardingFooter.dashes`), plain rows for the drill (`ListRow`, `FocusLetter`), `EventBlock` plans and stacks (`PlanOutline`, `EventBlock` `kind: 'stack'`), `SettingRow` hint (`description`), and `CalendarGrid`, `NowLine`, `CalendarList`, `AskTurn`, `Citation`, `StepLog`, `ProposalCard`, `Palette`, `SearchField`, `OperatorToken`, `ProviderTable` and `KeyRecorder`.
+
 ## Changing this contract
 
 The contract freezes after day 3. Changes may only be additive: a new optional prop, a new union member, a new component with its manifest entry and map entry. Never rename or remove. The one exception agreed in advance: if the CommandRegistry later narrows `CommandId` to a literal union of catalog ids, that change happens in `renderer/commands/types.ts` and reaches these props through the re-export. Screens already pass catalog ids, so only typos stop compiling. Every exported type and prop keeps a one-line doc comment naming what it is and its DESIGN section.
@@ -94,4 +115,4 @@ The contract freezes after day 3. Changes may only be additive: a new optional p
 | `settings` | SettingRow, ProviderTable, KeyRecorder | ui-settings |
 | `status` | StatusSlot, ReconnectSheet, ProgressSegments, FatalScreen, Spinner | ui-foundation; used by ui-shell and ui-onboard |
 | `controls` | Switch, Checkbox, SwatchPicker (refined by ui-settings), TextField, ShortcutSheet | ui-foundation |
-| `onboarding` | OnboardingStep, ChoiceRow, ConsentCard | plain: ui-foundation; refined by ui-onboard |
+| `onboarding` | OnboardingStep, ChoiceRow, ChoiceGroup, ConsentCard | plain: ui-foundation; refined by ui-onboard |

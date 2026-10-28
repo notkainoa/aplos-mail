@@ -1,8 +1,9 @@
 // The CommandRegistry (DESIGN §6; plan 30 §4.2): one table that feeds the key
 // handler, the palette, menus, tooltips, the shortcut sheet and toast keycaps.
 import { copyProblem } from './copy';
-import { chordId, formatAlternatives, formatChord, isCharacterChord, isTextEditingChord, parseChord } from './keys';
+import { chordId, formatAlternatives, formatChord, isCharacterChord, isTextEditingChord, parseChord, reservedReason } from './keys';
 import { resolve } from './resolver';
+import { SETTING_ID_PREFIX, SETTING_SECTIONS, settingRoute, type SettingEntry, type SettingRoute, type SettingsTable } from './settings';
 import { buildStack, canShareStack, isModal } from './stacks';
 import {
   CONTEXT_NAMES,
@@ -10,6 +11,7 @@ import {
   PALETTE_GROUPS,
   type Binding,
   type CommandContext,
+  type CommandGroup,
   type CommandHandlers,
   type CommandId,
   type CommandSpec,
@@ -23,7 +25,7 @@ import {
   type KeySpec,
   type Keymap,
   type KeymapEntry,
-  type PaletteGroup,
+  type PaletteChild,
   type Resolution,
   type TargetSummary,
 } from './types';
@@ -47,20 +49,35 @@ export interface KeymapIssue {
    * reserved: the chord edits text (⌘C, ⌘V, ⌘A…). conflict: another command has
    * the chord in the same context. shadowed: a context that sits inside or around
    * this one has the chord, so one of the two could never be reached by key.
+   * dropsDefault: a warning, not a refusal; the remap applies but leaves out a default
+   * key that only some contexts have or that follows the swipe direction (→ Done on
+   * Home), so Settings can say so. List that chord in the remap to keep it as it was.
    */
-  readonly reason: 'unknownCommand' | 'invalidEntry' | 'invalidChord' | 'reserved' | 'conflict' | 'shadowed';
+  readonly reason: 'unknownCommand' | 'invalidEntry' | 'invalidChord' | 'reserved' | 'conflict' | 'shadowed' | 'dropsDefault';
   readonly detail: string;
+  /** For 'conflict' and 'shadowed': the other commands that have the chord, for "Already used by Later". */
+  readonly with?: readonly CommandId[];
 }
 
 export interface PaletteEntry {
+  /** A command id, or a setting entry id ("setting.mail.undoSeconds"). */
   readonly id: CommandId;
   readonly label: string;
   readonly icon?: IconName;
-  readonly group: PaletteGroup;
+  /** The group it is listed under while typing. */
+  readonly group: CommandGroup;
+  /** Listed under "Suggested" on first open (DESIGN §7.9). */
+  readonly suggested: boolean;
   /** Keycaps from the registry, alternatives joined with "or"; '' when the command has no key. */
   readonly keys: string;
   readonly keywords: readonly string[];
   readonly destructive: boolean;
+  /** Choosing it opens a nested page (run returns status 'page'); the row shows a chevron. */
+  readonly page: boolean;
+  /** For a setting entry: its deep link; run returns status 'navigate'. */
+  readonly route?: SettingRoute;
+  /** Dim text on the right, e.g. a setting's section ("Mail"). */
+  readonly detail?: string;
 }
 
 export type RunResult =
@@ -69,7 +86,18 @@ export type RunResult =
   /** The handler threw synchronously; already reported to onError. */
   | { readonly status: 'failed'; readonly error: unknown }
   | { readonly status: 'unknown' | 'unhandled' | 'disabled' }
-  | { readonly status: 'confirm'; readonly prompt: string; readonly destructive: boolean };
+  /** Show the two-row Confirm; run again with `{confirmed: true}` on ⇧Return. */
+  | {
+      readonly status: 'confirm';
+      readonly title: string;
+      readonly prompt: string;
+      readonly confirmLabel: string;
+      readonly destructive: boolean;
+    }
+  /** Open a nested palette page: push `title` on the breadcrumb trail and list `items` (run one with runChild). */
+  | { readonly status: 'page'; readonly title: string; readonly items: readonly PaletteChild[] }
+  /** A setting entry: the shell opens this route and Settings focuses the row. */
+  | { readonly status: 'navigate'; readonly route: SettingRoute };
 
 /** A failed command, or a runtime label that breaks DESIGN §10 (the spec label is shown instead). */
 export type RegistryErrorHandler = (error: unknown, commandId: CommandId) => void;
@@ -81,6 +109,8 @@ export interface RegistryOptions {
   readonly prefs?: KeyPrefs;
   /** Where failures go so the toast or inline Retry can show them (DESIGN §5 rule 11). Defaults to console.error. */
   readonly onError?: RegistryErrorHandler;
+  /** Settings rows listed in the palette's Settings group; read at call time, so later registrations show. */
+  readonly settings?: SettingsTable;
 }
 
 export interface Registry {
@@ -102,13 +132,30 @@ export interface Registry {
   /** For tooltips and toasts: "E", "J or ↓", "Hold R"; '' when unbound. */
   describeKeys(id: CommandId, stack?: readonly ContextName[]): string;
   isEnabled(id: CommandId, ctx: CommandContext): boolean;
-  /** The palette's commands for the stack under it, grouped in PALETTE_GROUPS order. */
+  /**
+   * The palette's entries for the stack under it, grouped in PALETTE_GROUPS order:
+   * commands (not `palette: false`), then the registered Settings rows in the
+   * Settings group. On first open the palette shows the `suggested` entries under
+   * "Suggested", then Go to; typing filters everything by label and keywords.
+   */
   commandsForPalette(ctx: CommandContext): readonly PaletteEntry[];
   /** Resolves a keydown against ctx.stack, normalized with buildStack. */
   resolve(event: KeyInput, ctx: CommandContext): Resolution | null;
-  /** Runs a command, asking for confirmation first when its spec says so. */
+  /**
+   * Runs a command, asking for confirmation first when its spec says so. A command
+   * whose handler has `children` returns its nested page; a setting entry id
+   * returns its route.
+   */
   run(id: CommandId, ctx: CommandContext, options?: { readonly confirmed?: boolean }): RunResult;
-  /** Applies new prefs (keymap, swipe direction). Rejected remaps keep their defaults and are reported. */
+  /**
+   * Runs a row of a nested page: its own page when it has `children`, else its `run`,
+   * asking first when the row has `confirm` (run again with `{confirmed: true}` on
+   * ⇧Return). Failures go to onError under the row's id.
+   */
+  runChild(child: PaletteChild, ctx: CommandContext, options?: { readonly confirmed?: boolean }): RunResult;
+  /** The registered Settings rows. */
+  settings(): readonly SettingEntry[];
+  /** Applies new prefs (keymap, swipe direction). Rejected remaps keep their defaults and are reported; a 'dropsDefault' issue is a warning about a remap that applied. */
   configure(prefs: KeyPrefs): readonly KeymapIssue[];
   readonly keymapIssues: readonly KeymapIssue[];
   /** Ids with no attached handler (a sheet key with no handler). */
@@ -195,13 +242,27 @@ function readEntry(id: CommandId, entry: KeymapEntry): { chord: string; phase: '
   return { chord: entry.chord, phase };
 }
 
+/** Groups a command's bindings by phase and chord: one default key, with all its contexts. */
+function byKey(bindings: readonly Binding[]): Map<string, Binding[]> {
+  const out = new Map<string, Binding[]>();
+  for (const b of bindings) {
+    const key = `${b.phase}|${chordId(b.chord)}`;
+    out.set(key, [...(out.get(key) ?? []), b]);
+  }
+  return out;
+}
+
 /**
- * Expands a user remap. Contexts come from the command; the text-field rule is
+ * Expands a user remap. A chord and phase equal to one of the command's own
+ * default keys keeps that default exactly (its contexts, text-field rule and
+ * swipe swap), so listing ArrowRight for Done keeps → on Home, one by one and the
+ * reader. Any other chord gets the command's contexts; the text-field rule is
  * inherited from the command's default keys in that context, except for chords
  * that type (single keys, outside focused widgets) or edit text.
  */
 export function expandKeymapEntries(owner: Owner, entries: readonly KeymapEntry[], defaults: readonly Binding[]): Binding[] {
   const out: Binding[] = [];
+  const defaultKeys = byKey(defaults);
   for (const raw of entries) {
     const entry = readEntry(owner.id, raw);
     let chord: KeyChord;
@@ -210,9 +271,16 @@ export function expandKeymapEntries(owner: Owner, entries: readonly KeymapEntry[
     } catch (error) {
       throw new KeymapRefusal('invalidChord', (error as Error).message);
     }
+    const kept = defaultKeys.get(`${entry.phase}|${chordId(chord)}`);
+    if (kept) {
+      out.push(...kept.filter((k) => !out.includes(k)));
+      continue;
+    }
     const ownDefault = defaults.some((d) => chordId(d.chord) === chordId(chord));
-    if (isTextEditingChord(chord) && !ownDefault) {
-      throw new KeymapRefusal('reserved', `${formatChord(chord)} edits text, so it can’t run ${owner.id}`);
+    const reserved = reservedReason(chord);
+    if (reserved && !ownDefault) {
+      const why = reserved === 'text' ? 'edits text' : 'belongs to macOS';
+      throw new KeymapRefusal('reserved', `${formatChord(chord)} ${why}, so it can’t run ${owner.id}`);
     }
     for (const context of owner.contexts) {
       const fieldOwner = defaults.some((d) => d.inTextField && d.context === context);
@@ -225,6 +293,22 @@ export function expandKeymapEntries(owner: Owner, entries: readonly KeymapEntry[
         }),
       );
     }
+  }
+  return out;
+}
+
+/**
+ * The default keys a remap leaves out that only some of the command's contexts
+ * have, or that follow the swipe direction: dropping them is easy to miss.
+ */
+function droppedScopedDefaults(owner: Owner, defaults: readonly Binding[], remapped: readonly Binding[]): Binding[][] {
+  const kept = byKey(remapped);
+  const all = [...owner.contexts].sort().join(',');
+  const out: Binding[][] = [];
+  for (const [key, group] of byKey(defaults)) {
+    if (kept.has(key)) continue;
+    const contexts = group.map((b) => b.context).sort().join(',');
+    if (contexts !== all || group.some((b) => b.followsSwipe)) out.push(group);
   }
   return out;
 }
@@ -322,15 +406,21 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
   const controls = options.controls ?? [];
   const onError = options.onError ?? defaultOnError;
   const specs = new Map<CommandId, { kind: 'command'; spec: CommandSpec } | { kind: 'control'; spec: ControlSpec }>();
+  const settingsTable = options.settings;
   for (const spec of commands) {
     if (specs.has(spec.id)) throw new Error(`Duplicate command id ${spec.id}`);
     assertContexts(spec.id, spec.contexts);
+    if (spec.palette === false && !spec.repeat) throw new Error(`${spec.id}: only movement (repeat) commands may leave the palette`);
+    if (spec.page && !spec.label.endsWith('…')) throw new Error(`${spec.id}: a command that opens a page ends its label with "…"`);
     specs.set(spec.id, { kind: 'command', spec });
   }
   for (const spec of controls) {
     if (specs.has(spec.id)) throw new Error(`Duplicate command id ${spec.id}`);
     assertContexts(spec.id, spec.contexts);
     specs.set(spec.id, { kind: 'control', spec });
+  }
+  for (const id of specs.keys()) {
+    if (id.startsWith(SETTING_ID_PREFIX)) throw new Error(`${id}: "${SETTING_ID_PREFIX}" ids belong to setting entries`);
   }
   const order = [...specs.keys()];
   const disabledIn = options.disabledIn ?? {};
@@ -387,7 +477,7 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
         found.push({ commandId: id, reason, detail: (error as Error).message });
       }
     }
-    const rejected = new Map<CommandId, { reason: 'conflict' | 'shadowed'; detail: string }>();
+    const rejected = new Map<CommandId, { reason: 'conflict' | 'shadowed'; detail: string; with: readonly CommandId[] }>();
     const isRemapped = (id: CommandId) => overrides.has(id) && !rejected.has(id);
     for (;;) {
       const table = order.flatMap((id) => (isRemapped(id) ? overrides.get(id)! : defaults.get(id)!));
@@ -399,13 +489,21 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
       for (const { c, reason } of clashes) {
         for (const id of c.commandIds) {
           if (!isRemapped(id)) continue;
-          rejected.set(id, { reason, detail: describeConflicts([c]) });
+          rejected.set(id, { reason, detail: describeConflicts([c]), with: c.commandIds.filter((other) => other !== id) });
           progressed = true;
         }
       }
       if (!progressed) {
-        for (const [id, { reason, detail }] of rejected) {
-          found.push({ commandId: id, reason, detail: `Kept the default keys. The new keys clash: ${detail}` });
+        for (const [id, { reason, detail, with: others }] of rejected) {
+          found.push({ commandId: id, reason, detail: `Kept the default keys. The new keys clash: ${detail}`, with: others });
+        }
+        for (const id of order) {
+          if (!isRemapped(id)) continue;
+          for (const group of droppedScopedDefaults(ownerOf(id), defaults.get(id)!, overrides.get(id)!)) {
+            const where = group.map((b) => b.context).join(', ');
+            const swipe = group.some((b) => b.followsSwipe) ? ', following the swipe direction' : '';
+            found.push({ commandId: id, reason: 'dropsDefault', detail: `${keyText(group[0])} no longer runs ${id} in ${where}${swipe}` });
+          }
         }
         return { bindings: table, issues: found };
       }
@@ -453,29 +551,85 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
     return spec.label;
   }
 
+  function suggestedNow(id: CommandId, spec: CommandSpec, ctx: CommandContext): boolean {
+    const handler = activeHandlers(id)?.suggested;
+    if (!handler) return spec.suggested ?? false;
+    try {
+      return handler(ctx);
+    } catch (error) {
+      onError(error, id);
+      return spec.suggested ?? false;
+    }
+  }
+
+  function settingEntries(stack: readonly ContextName[]): PaletteEntry[] {
+    if (!settingsTable || !stack.includes('global')) return [];
+    return settingsTable.list().map((s) => ({
+      id: s.id,
+      label: s.label,
+      group: 'Settings' as const,
+      suggested: false,
+      keys: '',
+      keywords: s.keywords ?? [],
+      destructive: false,
+      page: false,
+      route: settingRoute(s),
+      detail: SETTING_SECTIONS.find((section) => section.id === s.section)?.label,
+    }));
+  }
+
   function commandsForPalette(ctx: CommandContext): readonly PaletteEntry[] {
     const stack = buildStack(ctx.stack).filter((c) => !isModal(c));
     const out: PaletteEntry[] = [];
     for (const group of PALETTE_GROUPS) {
       for (const spec of commands) {
-        if (spec.group !== group) continue;
+        if (spec.group !== group || spec.palette === false) continue;
         if (!spec.contexts.some((c) => stack.includes(c))) continue;
         if (!isEnabled(spec.id, ctx)) continue;
         out.push({
           id: spec.id,
           label: labelOf(spec.id, spec, ctx),
           icon: spec.icon,
-          group,
+          group: spec.group,
+          suggested: suggestedNow(spec.id, spec, ctx),
           keys: describeKeys(spec.id, stack),
           keywords: spec.keywords ?? [],
           destructive: spec.confirm?.destructive ?? false,
+          page: spec.page ?? false,
         });
       }
+      if (group === 'Settings') out.push(...settingEntries(stack));
     }
     return out;
   }
 
+  /** Calls a run function, reporting a synchronous throw or a rejection to onError under `reportAs`. */
+  function invoke(reportAs: string, fn: () => void | Promise<void>): RunResult {
+    let outcome: void | Promise<void>;
+    try {
+      outcome = fn();
+    } catch (error) {
+      onError(error, reportAs);
+      return { status: 'failed', error };
+    }
+    const done = Promise.resolve(outcome);
+    done.catch((error: unknown) => onError(error, reportAs));
+    return { status: 'ran', done };
+  }
+
+  /** Builds a nested page, reporting a throwing `children` as a failure. */
+  function page(reportAs: string, title: string, children: () => readonly PaletteChild[]): RunResult {
+    try {
+      return { status: 'page', title: title.replace(/…$/, ''), items: children() };
+    } catch (error) {
+      onError(error, reportAs);
+      return { status: 'failed', error };
+    }
+  }
+
   function run(id: CommandId, ctx: CommandContext, runOptions: { readonly confirmed?: boolean } = {}): RunResult {
+    const setting = settingsTable?.get(id);
+    if (setting) return { status: 'navigate', route: settingRoute(setting) };
     const entry = specs.get(id);
     if (!entry) return { status: 'unknown' };
     const handlers = activeHandlers(id);
@@ -484,23 +638,40 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
     const confirm = entry.kind === 'command' ? entry.spec.confirm : undefined;
     const needsConfirm = confirm && (confirm.scope !== 'bulk' || ctx.selection.length > 1);
     if (confirm && needsConfirm && !runOptions.confirmed) {
-      return { status: 'confirm', prompt: confirm.prompt, destructive: confirm.destructive };
+      let prompt = confirm.prompt;
+      const custom = handlers.promptFor?.(ctx);
+      if (custom !== undefined) {
+        const problem = copyProblem(custom);
+        if (problem) onError(new Error(`promptFor: ${problem}`), id);
+        else prompt = custom;
+      }
+      return { status: 'confirm', title: confirm.title, prompt, confirmLabel: confirm.confirmLabel, destructive: confirm.destructive };
     }
-    let outcome: void | Promise<void>;
-    try {
-      outcome = handlers.run(ctx);
-    } catch (error) {
-      onError(error, id);
-      return { status: 'failed', error };
+    const children = handlers.children;
+    if (children) return page(id, entry.spec.label, () => children(ctx));
+    return invoke(id, () => handlers.run(ctx));
+  }
+
+  function runChild(child: PaletteChild, ctx: CommandContext, runOptions: { readonly confirmed?: boolean } = {}): RunResult {
+    const confirm = child.confirm;
+    if (confirm && (confirm.scope !== 'bulk' || ctx.selection.length > 1) && !runOptions.confirmed) {
+      return { status: 'confirm', title: confirm.title, prompt: confirm.prompt, confirmLabel: confirm.confirmLabel, destructive: confirm.destructive };
     }
-    const done = Promise.resolve(outcome);
-    done.catch((error: unknown) => onError(error, id));
-    return { status: 'ran', done };
+    const children = child.children;
+    if (children) return page(child.id, child.label, () => children(ctx));
+    const runRow = child.run;
+    if (!runRow) return { status: 'unhandled' };
+    return invoke(child.id, () => runRow(ctx));
   }
 
   return {
     attach(id, handlers) {
-      if (!specs.has(id)) throw new Error(`No command ${id}`);
+      const entry = specs.get(id);
+      if (!entry) throw new Error(`No command ${id}`);
+      // The palette's chevron and "…" come from the spec, so the spec and the handler must agree.
+      const isPage = entry.kind === 'command' && entry.spec.page === true;
+      if (handlers.children && !isPage) throw new Error(`${id}: only a command with page: true may have children`);
+      if (isPage && !handlers.children) throw new Error(`${id}: a page command needs children`);
       const slot: Slot = { handlers };
       slots.set(id, [...(slots.get(id) ?? []), slot]);
       return () => {
@@ -530,6 +701,8 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
       });
     },
     run,
+    runChild,
+    settings: () => settingsTable?.list() ?? [],
     configure,
     get keymapIssues() {
       return issues;

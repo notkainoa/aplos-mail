@@ -489,6 +489,100 @@ export interface ResetFrame {
   readonly reason: string;
 }
 
+/** Why a connect or reconnect ended, for the copy (open enum; gap list P2, P11). provisional: replaced by import from @aplos/contract at the freeze */
+export type ConnectReasonCode = 'wrongAccount' | 'scopeMissing' | 'denied' | 'timeout' | 'cancelled' | (string & {});
+
+/**
+ * `connect` push frame: one account connect, reconnect or permission grant in the browser ("Waiting for Google in
+ * your browser…"; gap list P1, P2). F1's names (wire.ts `connect`): `connectId` is `AccountFlow.requestId`, and the
+ * shell's sheet mode 'grant' is the wire's 'grantPermissions'. There is no message field: the copy comes from
+ * `reasonCode`. provisional: replaced by import from @aplos/contract at the freeze
+ */
+export interface ConnectFrame {
+  /** Change-log position the frame was sent at. */
+  readonly dbEpoch: string;
+  /** Ordered within one `dbEpoch`. */
+  readonly seq: number;
+  /** The flow; the same id as `AccountFlow.requestId`. */
+  readonly connectId: RequestId;
+  /** A new account, the weekly reconnect, or granting a missing permission (open enum). */
+  readonly mode: 'new' | 'reconnect' | 'grantPermissions' | (string & {});
+  /** Where the flow is; a late `connected` after the owner moved on only updates the accounts list (DESIGN 7.11 [F9]). Open enum. */
+  readonly state: 'waiting' | 'connected' | 'failed' | 'cancelled' | (string & {});
+  /** The account once known; always set for reconnect and grant. */
+  readonly accountId?: AccountId;
+  /** Machine reason when failed or cancelled; the UI words it. */
+  readonly reasonCode?: ConnectReasonCode;
+}
+
+/** One step of a streamed run (F1 `AskStep`): the steady line, and the fold's counts ("Read 14 emails from Jordan · 3 steps"). provisional: replaced by import from @aplos/contract at the freeze */
+export interface ProgressStep {
+  /** Stable within the run; a repeated id updates the step in place. */
+  readonly id: string;
+  /** The step line, e.g. "Reading 14 emails from Jordan". */
+  readonly text: string;
+  /** Running, done or error (open enum). */
+  readonly state: 'running' | 'done' | 'error' | (string & {});
+  /** How many items the step touched, for the fold summary. */
+  readonly count?: number;
+}
+
+/**
+ * `progress` push frame: one event of a streamed run (Ask, remote search, polish, transcription, setup; gap list E27,
+ * E52). F1's flat shape (wire.ts `progress`). Ephemeral and never logged (ARCH 9.2). `kind: 'done'` ends the run; the
+ * lasting result is a state change, so a dock remounted after a stop reads `stopped` from the stored turn, not from
+ * the frames. provisional: replaced by import from @aplos/contract at the freeze
+ */
+export interface ProgressFrame {
+  /** Change-log position the frame was sent at. */
+  readonly dbEpoch: string;
+  /** Ordered within one `dbEpoch`; a gap means a frame was coalesced away. */
+  readonly seq: number;
+  /** The run; the same id as `AskRun.requestId`. */
+  readonly runId: RequestId;
+  /** Which kind of run (open enum). */
+  readonly source: 'ask' | 'search' | 'ai' | 'transcribe' | 'setup' | (string & {});
+  /** What happened (open enum); `done` and `error` end the run. */
+  readonly kind: 'step' | 'text' | 'citation' | 'proposal' | 'done' | 'error' | 'usage' | (string & {});
+  /** With `kind: 'step'`. */
+  readonly step?: ProgressStep;
+  /** With `kind: 'text'`: answer text to append. */
+  readonly delta?: string;
+  /** The Ask turn the run fills, once stored. */
+  readonly turnId?: string;
+  /** With `kind: 'citation'`. */
+  readonly citation?: Citation;
+  /** With `kind: 'proposal'`. */
+  readonly proposal?: AskProposal;
+  /** With `kind: 'error'`: `message` is the sentence to show ("Groq didn't answer."). */
+  readonly problem?: ContractError;
+}
+
+/** The clock event (F1 `HostEvent` `{type: 'clock', now}`, delivered in a `host` frame): the engine's clock jumped (the fixture clock was set, or a wake). provisional: replaced by import from @aplos/contract at the freeze */
+export interface ClockFrame {
+  /** Always 'clock'. */
+  readonly type: 'clock';
+  /** The engine's now. */
+  readonly now: EpochMs;
+}
+
+/**
+ * The push frames screens subscribe to with `useFrames`, by kind. Setup has no frame of its own in F1: first-sync
+ * progress is `Setup/status` re-read on a `state` frame, so screens use `useSetupStatus`. provisional: replaced by
+ * import from @aplos/contract at the freeze
+ */
+export interface FrameMap {
+  /** Streamed run progress (Ask, remote search, setup steps). */
+  progress: ProgressFrame;
+  /** Account connect, reconnect and grant flows. */
+  connect: ConnectFrame;
+  /** The engine's clock jumps (`host` frame `clock` event). */
+  clock: ClockFrame;
+}
+
+/** A frame kind `useFrames` accepts. provisional: replaced by import from @aplos/contract at the freeze */
+export type FrameKind = keyof FrameMap;
+
 // ---------------------------------------------------------------------------
 // Operations, receipts and thread actions (ARCH 9.1-9.2, plan 10 E3, DESIGN 5 rule 11)
 // ---------------------------------------------------------------------------
@@ -837,15 +931,48 @@ export interface SubmissionRow {
 // AI: Ask, follow-up nudges, why-it's-here, drafts, polish, voice (ARCH 8, plan 30 8.1 item 7)
 // ---------------------------------------------------------------------------
 
-/** One Ask citation (plan 30 8.1 item 7). provisional: replaced by import from @aplos/contract at the freeze */
-export interface Citation {
-  /** The `[n]` chip number. */
-  readonly n: number;
-  /** Source message. */
-  readonly messageId: MessageId;
-  /** The quoted sentence shown on hover. */
-  readonly quote: string;
-}
+/**
+ * One Ask citation (plan 30 8.1 item 7; F1 `Citation`): a message or a calendar event, so hover and click work for
+ * both. A message citation carries its thread and the hover card's sender, date and subject, so a streamed citation
+ * fills `CitationData` without another lookup. provisional: replaced by import from @aplos/contract at the freeze
+ */
+export type Citation =
+  | {
+      /** A message source. */
+      readonly kind: 'message';
+      /** The `[n]` chip number. */
+      readonly n: number;
+      /** Source message. */
+      readonly messageId: MessageId;
+      /** The thread the chip opens. */
+      readonly threadId: ThreadId;
+      /** The quoted sentence shown on hover. */
+      readonly quote: string;
+      /** Sender display name. */
+      readonly fromName?: string;
+      /** Message time. */
+      readonly date?: EpochMs;
+      /** Thread subject. */
+      readonly subject?: string;
+    }
+  | {
+      /** A calendar event source. */
+      readonly kind: 'event';
+      /** The `[n]` chip number. */
+      readonly n: number;
+      /** The event the chip opens. */
+      readonly eventId: EventId;
+      /** Event title. */
+      readonly title: string;
+      /** Event start: an instant, a day, or a floating wall-clock time (F1 `EventTime`). */
+      readonly start: EventTime;
+    };
+
+/** A point or day in time on the wire (F1 `EventTime`); never a `Date`. provisional: replaced by import from @aplos/contract at the freeze */
+export type EventTime =
+  | { readonly type: 'utc'; readonly utc: EpochMs }
+  | { readonly type: 'date'; readonly date: string }
+  | { readonly type: 'floating'; readonly local: string; readonly timeZone?: string };
 
 /** A proposal card's payload (DESIGN 7.7); nothing applies without confirmation. provisional: replaced by import from @aplos/contract at the freeze */
 export interface AskProposal {
@@ -869,8 +996,8 @@ export interface AskRequest {
 
 /** `progress` frames of one Ask run; ephemeral and never logged (ARCH 9.2). provisional: replaced by import from @aplos/contract at the freeze */
 export type AskFrame =
-  /** The one steady step line, for example "Reading 14 emails from Jordan". */
-  | { readonly kind: 'step'; readonly text: string }
+  /** The one steady step line, for example "Reading 14 emails from Jordan"; `id`, `state` and `count` as in `ProgressStep` (the fold summary). */
+  | { readonly kind: 'step'; readonly text: string; readonly id?: string; readonly state?: ProgressStep['state']; readonly count?: number }
   /** Appended answer text. */
   | { readonly kind: 'text'; readonly text: string }
   /** A citation became available. */
@@ -888,6 +1015,8 @@ export interface AskAnswer {
   readonly citations: readonly Citation[];
   /** Proposals awaiting confirmation. */
   readonly proposals: readonly AskProposal[];
+  /** The owner stopped the run (Esc); `text` holds what streamed (AskTurnProps state 'stopped'; F1 `AskTurn.stopped`). */
+  readonly stopped?: boolean;
 }
 
 /** A follow-up nudge kept as a local suggestion, never a synced draft (DESIGN 7.2). provisional: replaced by import from @aplos/contract at the freeze */
@@ -946,31 +1075,66 @@ export interface Transcript {
 /** Command id; matches commands/types.ts (declared locally until that file lands; not exported). */
 type CommandId = string;
 
-/** Row density (DESIGN 4.4). provisional: replaced by import from @aplos/contract at the freeze */
+/** Row density (DESIGN 4.4): rows 34 / 40 / 48 px. F1's names; ui/props.ts `Density` calls the middle one 'comfortable', so screens map 'default' to it. provisional: replaced by import from @aplos/contract at the freeze */
 export type Density = 'compact' | 'default' | 'roomy';
 
-/** The renderer's `ui` settings object (plan 30 8.1 item 8). provisional: replaced by import from @aplos/contract at the freeze */
+/** One remapped key as stored (F1 `KeyBinding`): a chord spec ("meta+k") and tap (default) or hold; commands/types.ts `KeymapEntry` accepts it. provisional: replaced by import from @aplos/contract at the freeze */
+export interface UiKeymapEntry {
+  /** Chord spec string, as `chordId` writes it. */
+  readonly chord: string;
+  /** Default 'tap'. */
+  readonly phase?: 'tap' | 'hold';
+}
+
+/** The Ask dock's remembered state (DESIGN 4.4 "Ask dock", 7.7, decision 9). provisional: replaced by import from @aplos/contract at the freeze */
+export interface UiDockSettings {
+  /** Open; closed on first run, then remembered. Default false. */
+  readonly open: boolean;
+  /** Last tab. Default 'ask'. */
+  readonly tab: 'ask' | 'today';
+  /** Width in px once the owner resizes it (F1 accepts 240-1200; the shell clamps to 300-440); absent means the layout default (360, or 320 under a 1180 px window). */
+  readonly width?: number;
+}
+
+/**
+ * The renderer's `ui` settings object (plan 30 8.1 item 8; gap list U11, S9, A14, A15, C14), field for field F1's
+ * `UiSettings` (packages/contract schemas/settings.ts) with its documented defaults (`UI_SETTINGS_DEFAULTS` in
+ * index.ts). commands' `keyPrefsFromUi` reads singleKeys, holdMs, swipeDirection and keymap. provisional: replaced
+ * by import from @aplos/contract at the freeze
+ */
 export interface UiSettings {
-  /** Row density. */
+  /** Light, dark, or match the system (Settings → General). Default 'system'. */
+  readonly theme: 'light' | 'dark' | 'system';
+  /** Row density. Default 'default'. */
   readonly density: Density;
-  /** Light, dark, or match the system. */
-  readonly appearance: 'light' | 'dark' | 'system';
-  /** "Show all key hints" mode (DESIGN 5 rule 17). */
-  readonly showAllKeyHints: boolean;
-  /** Single-key shortcuts on or off (WCAG 2.1.4). */
-  readonly singleKeyShortcuts: boolean;
-  /** Ask dock open; closed on first run and remembered (DESIGN decision 9). */
-  readonly dockOpen: boolean;
-  /** Last dock tab. */
-  readonly dockTab: 'ask' | 'today';
-  /** Minimised sidebar (☰ mode). */
+  /** Where keycaps show: 'tooltip' = tooltips and badges while ⌘ is held (default); 'always' = "Show all key hints" (DESIGN 5 rule 17, decision 8). */
+  readonly keyHints: 'tooltip' | 'always';
+  /** Single-key shortcuts on (WCAG 2.1.4, DESIGN 11.4). Default true. */
+  readonly singleKeys: boolean;
+  /** Tap versus hold threshold in ms (100-2000), one for every hold key. Default 250 (plan 30 4.2). */
+  readonly holdMs: number;
+  /** The Ask dock. Default `{open: false, tab: 'ask'}`. */
+  readonly dock: UiDockSettings;
+  /** Remapped keys by command id (matches commands/types.ts `CommandId`); a listed id loses its default keys, absent ids keep them. Default {}. */
+  readonly keymap: Readonly<Record<CommandId, readonly UiKeymapEntry[]>>;
+  /** Minimised sidebar (☰ mode, DESIGN 7.1). Default false. */
   readonly sidebarMinimised: boolean;
-  /** Tap versus hold threshold, default 250 ms (plan 30 4.2). */
-  readonly holdThresholdMs: number;
-  /** Arrow triage sides on Home and one by one. */
-  readonly swipeDirection: 'rightDone' | 'rightLater';
-  /** Remapped bindings: command id (matches commands/types.ts `CommandId`) to key strings; absent ids use defaults. */
-  readonly keymap: Readonly<Record<CommandId, readonly string[]>>;
+  /** Two-finger swipe triage on rows (DESIGN 7.2). Default true. */
+  readonly swipe: boolean;
+  /** Arrow and swipe triage sides: 'doneRight' = → Done, ← Later (default, DESIGN 8); 'doneLeft' swaps them. */
+  readonly swipeDirection: 'doneRight' | 'doneLeft';
+  /** Zen mode. Default false. */
+  readonly zen: boolean;
+  /** The send sound. Default true. */
+  readonly sendSound: boolean;
+  /** The developer toggle: model names, scores and rank sources shown (DESIGN 9 rule 4). Default false. */
+  readonly devDetails: boolean;
+  /** The account switcher's last scope: 'all' (All accounts) or an account id. Default 'all'. */
+  readonly lastAccount: AccountId | 'all';
+  /** Palette memory: recent command and setting-entry ids, newest first (F1 keeps at most 50; the palette shows 20); boosted, never above an exact match (DESIGN 7.9). Default `{recents: []}`. */
+  readonly palette: { readonly recents: readonly string[] };
+  /** Calendar: first weekday, 0 Sunday to 6 Saturday; absent follows the macOS locale (gap list decision 15). Default {}. */
+  readonly calendar: { readonly weekStart?: 0 | 1 | 2 | 3 | 4 | 5 | 6 };
 }
 
 /** AI features with a provider and model each (AGENTS.md, DESIGN 7.10). provisional: replaced by import from @aplos/contract at the freeze */
@@ -1079,10 +1243,13 @@ export interface AgendaQuery {
   readonly calendarIds?: readonly CalendarId[];
 }
 
-/** A partial settings update; nested objects merge. provisional: replaced by import from @aplos/contract at the freeze */
+/** A partial `ui` update (F1 `Settings/set`): the fields given replace those fields, and object-valued fields (`dock`, `keymap`, `palette`, `calendar`) are replaced whole, so send the full object (`{dock: {...current.dock, width: 400}}`). provisional: replaced by import from @aplos/contract at the freeze */
+export type UiSettingsPatch = Partial<UiSettings>;
+
+/** A partial settings update: per section, the fields given replace those fields; object-valued fields are replaced whole (F1). provisional: replaced by import from @aplos/contract at the freeze */
 export interface SettingsPatch {
   /** Fields of `ui` to change. */
-  readonly ui?: Partial<UiSettings>;
+  readonly ui?: UiSettingsPatch;
   /** Fields of `mail` to change. */
   readonly mail?: Partial<Settings['mail']>;
   /** Per-feature provider and model changes. */

@@ -28,15 +28,16 @@ interface SectionDef {
 }
 
 /**
- * The sections of DESIGN §8, in reading order. Onboarding and Settings are not
- * listed: the sheet opens from the mail window, which neither belongs to.
+ * The sections of DESIGN §8, in reading order. The onboarding window (onboarding,
+ * firstSync, drill) and Settings are not listed: the sheet opens from the mail
+ * window. The reconnect and consent `sheet` has only Return and Esc, like a dialog.
  */
 export const SHEET_SECTIONS: readonly SectionDef[] = [
   { id: 'global', title: 'Global', column: 0, contexts: ['global'] },
   { id: 'home', title: 'Home and one by one', column: 0, contexts: ['home', 'oneByOne', 'lowImportance'] },
   { id: 'done', title: 'Done', column: 0, contexts: ['done'] },
   { id: 'reader', title: 'Reader', column: 0, contexts: ['reader'] },
-  { id: 'lists', title: 'Lists', column: 1, contexts: ['list'] },
+  { id: 'lists', title: 'Lists', column: 1, contexts: ['list', 'search'] },
   { id: 'palette', title: 'Palette, menus and date picker', column: 1, contexts: ['palette', 'menu', 'datePicker', 'dialog'] },
   { id: 'compose', title: 'Compose', column: 2, contexts: ['compose'] },
   { id: 'ask', title: 'Ask', column: 2, contexts: ['ask'] },
