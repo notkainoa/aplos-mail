@@ -7,9 +7,10 @@
  * derived from the client, so the two cannot drift. After the freeze, changes are additive only: new members may be
  * added, nothing is renamed or removed.
  *
- * Every implementation below throws `NotImplementedError`. Lane `ui-shell` builds them in U2 (days 4-8) as
- * `client.ts`, `rows.ts`, `windows.ts`, `optimistic.ts` and `session.ts` behind this file, first against the stand-in
- * engine (F6), then against the real engine by one flag (WP5.6).
+ * Every hook, `api` method, the clock and the undo stack forward to the data runtime that `connectDataLayer()`
+ * (`./connect.ts`) installs: `client.ts`, `rows.ts`, `windows.ts`, `optimistic.ts`, `session.ts` and the rest of this
+ * folder, first on the stand-in engine (F6), then on the real engine by one flag (WP5.6). Until a runtime is installed
+ * each throws `DataLayerNotConnectedError`, a `NotImplementedError` naming the member and lane `ui-shell`.
  *
  * Not here: transport selection (MessagePort in Electron, tokenised HTTP and SSE in the browser preview). That lives
  * in `renderer/bridge.ts`, owned by `ui-shell`, and this surface never exposes it. `./standin.ts` boots the stand-in
@@ -101,15 +102,68 @@ export class NotImplementedError extends Error {
   }
 }
 
-function notImplemented(member: string): never {
-  throw new NotImplementedError(member);
+/** Thrown by every hook and `api` method while no data layer is connected (`connectDataLayer()` in `./connect.ts`). */
+export class DataLayerNotConnectedError extends NotImplementedError {
+  constructor(member: string) {
+    super(member);
+    this.name = 'DataLayerNotConnectedError';
+    this.message = `renderer/data: ${member} has no data layer connected yet. Lane ${DATA_LANE} connects it with connectDataLayer() (renderer/data/connect.ts).`;
+  }
+}
+
+/** What `connectDataLayer()` installs: the implementation of every hook, `api`, the clock and the undo stack. */
+export interface DataRuntime {
+  readonly useOperation: typeof useOperation;
+  readonly useView: typeof useView;
+  readonly useHome: typeof useHome;
+  readonly useRow: typeof useRow;
+  readonly useRowState: typeof useRowState;
+  readonly useHold: typeof useHold;
+  readonly usePrefetchIntent: typeof usePrefetchIntent;
+  readonly useMessageBody: typeof useMessageBody;
+  readonly useSession: typeof useSession;
+  readonly useConnection: typeof useConnection;
+  readonly useAccounts: typeof useAccounts;
+  readonly useStatus: typeof useStatus;
+  readonly useCounts: typeof useCounts;
+  readonly useAgenda: typeof useAgenda;
+  readonly useSetupStatus: typeof useSetupStatus;
+  readonly useSettings: typeof useSettings;
+  readonly useConsent: typeof useConsent;
+  readonly useFrames: typeof useFrames;
+  readonly useNow: typeof useNow;
+  readonly getNow: typeof getNow;
+  readonly setClock: typeof setClock;
+  readonly undoStack: UndoStack;
+  readonly useUndoTop: typeof useUndoTop;
+  readonly api: DataApi;
+}
+
+let runtime: DataRuntime | null = null;
+
+/** Installs the data runtime (`connectDataLayer()` does this), or removes it with null. */
+export function installDataRuntime(next: DataRuntime | null): void {
+  runtime = next;
+}
+
+function connected(member: string): DataRuntime {
+  if (!runtime) throw new DataLayerNotConnectedError(member);
+  return runtime;
+}
+
+function forward(group: string, verb: string, args: unknown[]): unknown {
+  const api = connected(`api.${group}.${verb}`).api as unknown as Record<
+    string,
+    Record<string, (...a: unknown[]) => unknown>
+  >;
+  return api[group]![verb]!(...args);
 }
 
 // ---------------------------------------------------------------------------
 // Timing constants the data layer owns
 // ---------------------------------------------------------------------------
 
-/** Hold timing (DESIGN 5 rule 6, plan 30 4.3 holdGate): release 450 ms after the last key, cap 1200 ms. Mirrors DESIGN; `ui-shell` reads them from ui/generated/motion.ts once it exists. */
+/** Hold timing (DESIGN 5 rule 6, plan 30 4.3 holdGate): release 450 ms after the last key, cap 1200 ms. `holds.ts` runs on the generated `hold` motion; `layer.test.ts` checks these agree with it. */
 export const HOLD_TIMING = {
   /** Release this long after the last triage key or when the pointer leaves the list. */
   releaseAfterLastKeyMs: 450,
@@ -202,8 +256,7 @@ export interface RowFailure {
 
 /** Observe one operation; undefined once it is forgotten (after its toast closes). */
 export function useOperation(opId: OpId | undefined): OperationView | undefined {
-  void opId;
-  return notImplemented('useOperation');
+  return connected('useOperation').useOperation(opId);
 }
 
 // ---------------------------------------------------------------------------
@@ -278,9 +331,7 @@ export function useView<S extends ViewSpec>(
   spec: S,
   opts?: UseViewOptions,
 ): ViewResult<RowForSpec<S>> {
-  void spec;
-  void opts;
-  return notImplemented('useView');
+  return connected('useView').useView(spec, opts);
 }
 
 /** One Home section with its rows and counts (DESIGN 7.2). */
@@ -357,8 +408,7 @@ export interface HomeView {
 
 /** Home's section-aware helper over `useView({kind: 'home'})`, plus the `lowSenders` window's total for the band's "and N more". */
 export function useHome(opts?: UseHomeOptions): HomeView {
-  void opts;
-  return notImplemented('useHome');
+  return connected('useHome').useHome(opts);
 }
 
 // ---------------------------------------------------------------------------
@@ -370,9 +420,7 @@ export function useRow<T extends CachedRowType>(
   type: T,
   id: Id | undefined,
 ): RowTypeMap[T] | undefined {
-  void type;
-  void id;
-  return notImplemented('useRow');
+  return connected('useRow').useRow(type, id);
 }
 
 /** A row lookup that can say the row is gone (the reader open on a thread that was deleted or moved elsewhere). */
@@ -388,9 +436,7 @@ export function useRowState<T extends CachedRowType>(
   type: T,
   id: Id | undefined,
 ): RowState<RowTypeMap[T]> {
-  void type;
-  void id;
-  return notImplemented('useRowState');
+  return connected('useRowState').useRowState(type, id);
 }
 
 // ---------------------------------------------------------------------------
@@ -426,8 +472,7 @@ export interface HoldController {
 
 /** The hold controller for one list, keyed by a scope name such as `home` or `later`. */
 export function useHold(scope: string): HoldController {
-  void scope;
-  return notImplemented('useHold');
+  return connected('useHold').useHold(scope);
 }
 
 // ---------------------------------------------------------------------------
@@ -446,7 +491,7 @@ export interface PrefetchIntent {
 
 /** Prefetch on intent for a list. */
 export function usePrefetchIntent(): PrefetchIntent {
-  return notImplemented('usePrefetchIntent');
+  return connected('usePrefetchIntent').usePrefetchIntent();
 }
 
 // ---------------------------------------------------------------------------
@@ -469,8 +514,7 @@ export interface BodyResult {
 
 /** Load one message body (`MessageBody/get`), served from the engine's LRU after a prefetch. */
 export function useMessageBody(messageId: MessageId | undefined): BodyResult {
-  void messageId;
-  return notImplemented('useMessageBody');
+  return connected('useMessageBody').useMessageBody(messageId);
 }
 
 // ---------------------------------------------------------------------------
@@ -479,7 +523,7 @@ export function useMessageBody(messageId: MessageId | undefined): BodyResult {
 
 /** The session singleton (`Session/get`, re-read on a `state` frame for type `Session`); undefined until it answers. Whether the engine is still coming or gone is `useConnection`'s job. */
 export function useSession(): Session | undefined {
-  return notImplemented('useSession');
+  return connected('useSession').useSession();
 }
 
 /** The data layer's link to the engine: the known values of the contract's `DesktopEvent` `engine` state (an open enum; a state a newer main adds is reported as `unreachable`, which shows the FatalScreen with Restart). `connecting` until `Session/get` answers (and while reconnecting), `ready`, `unreachable` when the transport is gone and does not come back (FatalScreen "Aplos can't reach its mail engine.", DESIGN 7.15), `parked` after a `parked` host event or a `desktop` engine event (FatalScreen with Try again and Export diagnostics, plan 30 4.5 #3). */
@@ -499,12 +543,12 @@ export interface ConnectionView {
 
 /** Whether the engine is reachable, connecting or parked. Transport details stay in `bridge.ts`. */
 export function useConnection(): ConnectionView {
-  return notImplemented('useConnection');
+  return connected('useConnection').useConnection();
 }
 
 /** All accounts (`Account/get`), in sidebar order, each with `health` (status, `reasonCode`, `reconnectBy`, `lastSyncAt`). */
 export function useAccounts(): readonly Account[] {
-  return notImplemented('useAccounts');
+  return connected('useAccounts').useAccounts();
 }
 
 /** What the status slot shows (DESIGN 7.1 table). */
@@ -523,8 +567,7 @@ export interface StatusSlotState {
 
 /** The one status line for a scope, most urgent first: misconfigured, needsReauth, needsPermission, needsAdmin, error, paused, offline, reconnect soon, backfilling, syncing, starting, demo, ok. Undefined with no accounts. An unknown `state` from a newer engine counts as error. */
 export function useStatus(accountId?: AccountId): StatusSlotState | undefined {
-  void accountId;
-  return notImplemented('useStatus');
+  return connected('useStatus').useStatus(accountId);
 }
 
 /** Sidebar counts for a scope (`Counts/get`, re-read on a `state` frame for type `Counts`). */
@@ -539,8 +582,7 @@ export interface CountsView {
 
 /** Sidebar counts for one account, or absent for All accounts. */
 export function useCounts(accountId?: AccountId): CountsView {
-  void accountId;
-  return notImplemented('useCounts');
+  return connected('useCounts').useCounts(accountId);
 }
 
 /** Events in a range, live, for Today and Home's inbox-zero "Next: Design review at 2:00 PM" (DESIGN 7.14). */
@@ -555,23 +597,22 @@ export interface AgendaView {
 
 /** Watch events in a range: an `events` window (`View/watch {spec: {kind: 'events', from, to, calendarIds?, includeDeclined?}}`, not capped at 200 rows; `View/move {range}` to page) plus `Event/get`. The calendar grid, `Event/set` and `Event/rsvp` are additive for `ui-calendar`. */
 export function useAgenda(spec: ViewSpecOf<'events'>): AgendaView {
-  void spec;
-  return notImplemented('useAgenda');
+  return connected('useAgenda').useAgenda(spec);
 }
 
 /** First-sync progress (`Setup/status`, re-read on a `state` frame for type `Setup`); undefined until known. */
 export function useSetupStatus(): SetupStatus | undefined {
-  return notImplemented('useSetupStatus');
+  return connected('useSetupStatus').useSetupStatus();
 }
 
 /** The settings singleton (`Settings/get`, re-read on a `state` frame for type `Settings`); undefined until known. */
 export function useSettings(): Settings | undefined {
-  return notImplemented('useSettings');
+  return connected('useSettings').useSettings();
 }
 
 /** The background-AI consent record (`Consent/get`, re-read on a `state` frame for type `Consent`); undefined until known. Consent is not a settings field: `needsReconsent` says whether the card must ask again. */
 export function useConsent(): Consent | undefined {
-  return notImplemented('useConsent');
+  return connected('useConsent').useConsent();
 }
 
 /** The `ui` object's defaults: F1's documented defaults (`schemas/settings.ts` field comments), what a fresh install and the stand-in engine start with. */
@@ -633,10 +674,7 @@ export function useFrames<K extends StreamKind>(
   filter?: FrameFilter<K>,
   opts?: UseFramesOptions,
 ): FramesView<StreamFrameMap[K]> {
-  void kind;
-  void filter;
-  void opts;
-  return notImplemented('useFrames');
+  return connected('useFrames').useFrames(kind, filter, opts);
 }
 
 // ---------------------------------------------------------------------------
@@ -695,19 +733,17 @@ export function toIsoDateTime(ms: EpochMs): string {
  * shows again (DESIGN 5 rule 15).
  */
 export function useNow(opts: UseNowOptions): EpochMs {
-  void opts;
-  return notImplemented('useNow');
+  return connected('useNow').useNow(opts);
 }
 
 /** Now from the same source as `useNow`, for event handlers (no subscription). */
 export function getNow(): EpochMs {
-  return notImplemented('getNow');
+  return connected('getNow').getNow();
 }
 
 /** Injects the clock `useNow` and `getNow` read (the harness's frozen 2026-10-29T10:00, unit tests); null restores the default source. */
 export function setClock(clock: Clock | null): void {
-  void clock;
-  notImplemented('setClock');
+  connected('setClock').setClock(clock);
 }
 
 // ---------------------------------------------------------------------------
@@ -754,16 +790,16 @@ export interface UndoStack {
   peek(): UndoEntry | null;
 }
 
-/** The app's undo stack. Every method throws `NotImplementedError` until U2. */
+/** The app's undo stack; each method throws `DataLayerNotConnectedError` until a data layer is connected. */
 export const undoStack: UndoStack = {
-  push: () => notImplemented('undoStack.push'),
-  undoLast: () => notImplemented('undoStack.undoLast'),
-  peek: () => notImplemented('undoStack.peek'),
+  push: entry => connected('undoStack.push').undoStack.push(entry),
+  undoLast: () => connected('undoStack.undoLast').undoStack.undoLast(),
+  peek: () => connected('undoStack.peek').undoStack.peek(),
 };
 
 /** The newest undoable entry, live, for the toast and its "· Undo Z". */
 export function useUndoTop(): UndoEntry | null {
-  return notImplemented('useUndoTop');
+  return connected('useUndoTop').useUndoTop();
 }
 
 // ---------------------------------------------------------------------------
@@ -1218,95 +1254,121 @@ export const CONTRACT_HOOK_NEEDS = {
     'none beyond Operation/undo and Receipt.undoable; local entries never reach the engine (U7)',
 } as const;
 
-/** The command surface. Every method throws `NotImplementedError` until U2. */
+/** The command surface; each method forwards to the connected data layer and throws `DataLayerNotConnectedError` until one is. */
 export const api: DataApi = {
   thread: {
-    act: () => notImplemented('api.thread.act'),
-    why: () => notImplemented('api.thread.why'),
-    open: () => notImplemented('api.thread.open'),
+    act: ((...args: unknown[]) => forward('thread', 'act', args)) as DataApi['thread']['act'],
+    why: ((...args: unknown[]) => forward('thread', 'why', args)) as DataApi['thread']['why'],
+    open: ((...args: unknown[]) => forward('thread', 'open', args)) as DataApi['thread']['open'],
   },
   operation: {
-    undo: () => notImplemented('api.operation.undo'),
-    retry: () => notImplemented('api.operation.retry'),
+    undo: ((...args: unknown[]) =>
+      forward('operation', 'undo', args)) as DataApi['operation']['undo'],
+    retry: ((...args: unknown[]) =>
+      forward('operation', 'retry', args)) as DataApi['operation']['retry'],
   },
   submission: {
-    set: () => notImplemented('api.submission.set'),
+    set: ((...args: unknown[]) =>
+      forward('submission', 'set', args)) as DataApi['submission']['set'],
   },
   draft: {
-    set: () => notImplemented('api.draft.set'),
-    destroy: () => notImplemented('api.draft.destroy'),
-    resolve: () => notImplemented('api.draft.resolve'),
+    set: ((...args: unknown[]) => forward('draft', 'set', args)) as DataApi['draft']['set'],
+    destroy: ((...args: unknown[]) =>
+      forward('draft', 'destroy', args)) as DataApi['draft']['destroy'],
+    resolve: ((...args: unknown[]) =>
+      forward('draft', 'resolve', args)) as DataApi['draft']['resolve'],
   },
   messageBody: {
-    get: () => notImplemented('api.messageBody.get'),
-    prefetch: () => notImplemented('api.messageBody.prefetch'),
+    get: ((...args: unknown[]) =>
+      forward('messageBody', 'get', args)) as DataApi['messageBody']['get'],
+    prefetch: ((...args: unknown[]) =>
+      forward('messageBody', 'prefetch', args)) as DataApi['messageBody']['prefetch'],
   },
   mail: {
-    frame: () => notImplemented('api.mail.frame'),
-    release: () => notImplemented('api.mail.release'),
-    toggleQuotes: () => notImplemented('api.mail.toggleQuotes'),
-    allowImages: () => notImplemented('api.mail.allowImages'),
+    frame: ((...args: unknown[]) => forward('mail', 'frame', args)) as DataApi['mail']['frame'],
+    release: ((...args: unknown[]) =>
+      forward('mail', 'release', args)) as DataApi['mail']['release'],
+    toggleQuotes: ((...args: unknown[]) =>
+      forward('mail', 'toggleQuotes', args)) as DataApi['mail']['toggleQuotes'],
+    allowImages: ((...args: unknown[]) =>
+      forward('mail', 'allowImages', args)) as DataApi['mail']['allowImages'],
   },
   attachment: {
-    get: () => notImplemented('api.attachment.get'),
+    get: ((...args: unknown[]) =>
+      forward('attachment', 'get', args)) as DataApi['attachment']['get'],
   },
   blob: {
-    put: () => notImplemented('api.blob.put'),
-    get: () => notImplemented('api.blob.get'),
+    put: ((...args: unknown[]) => forward('blob', 'put', args)) as DataApi['blob']['put'],
+    get: ((...args: unknown[]) => forward('blob', 'get', args)) as DataApi['blob']['get'],
   },
   sync: {
-    request: () => notImplemented('api.sync.request'),
+    request: ((...args: unknown[]) =>
+      forward('sync', 'request', args)) as DataApi['sync']['request'],
   },
   account: {
-    connect: () => notImplemented('api.account.connect'),
-    reconnect: () => notImplemented('api.account.reconnect'),
-    grantPermissions: () => notImplemented('api.account.grantPermissions'),
-    cancelConnect: () => notImplemented('api.account.cancelConnect'),
-    set: () => notImplemented('api.account.set'),
+    connect: ((...args: unknown[]) =>
+      forward('account', 'connect', args)) as DataApi['account']['connect'],
+    reconnect: ((...args: unknown[]) =>
+      forward('account', 'reconnect', args)) as DataApi['account']['reconnect'],
+    grantPermissions: ((...args: unknown[]) =>
+      forward('account', 'grantPermissions', args)) as DataApi['account']['grantPermissions'],
+    cancelConnect: ((...args: unknown[]) =>
+      forward('account', 'cancelConnect', args)) as DataApi['account']['cancelConnect'],
+    set: ((...args: unknown[]) => forward('account', 'set', args)) as DataApi['account']['set'],
   },
   setup: {
-    begin: () => notImplemented('api.setup.begin'),
-    end: () => notImplemented('api.setup.end'),
-    retry: () => notImplemented('api.setup.retry'),
+    begin: ((...args: unknown[]) => forward('setup', 'begin', args)) as DataApi['setup']['begin'],
+    end: ((...args: unknown[]) => forward('setup', 'end', args)) as DataApi['setup']['end'],
+    retry: ((...args: unknown[]) => forward('setup', 'retry', args)) as DataApi['setup']['retry'],
   },
   demo: {
-    load: () => notImplemented('api.demo.load'),
-    reset: () => notImplemented('api.demo.reset'),
-    remove: () => notImplemented('api.demo.remove'),
+    load: ((...args: unknown[]) => forward('demo', 'load', args)) as DataApi['demo']['load'],
+    reset: ((...args: unknown[]) => forward('demo', 'reset', args)) as DataApi['demo']['reset'],
+    remove: ((...args: unknown[]) => forward('demo', 'remove', args)) as DataApi['demo']['remove'],
   },
   settings: {
-    get: () => notImplemented('api.settings.get'),
-    set: () => notImplemented('api.settings.set'),
+    get: ((...args: unknown[]) => forward('settings', 'get', args)) as DataApi['settings']['get'],
+    set: ((...args: unknown[]) => forward('settings', 'set', args)) as DataApi['settings']['set'],
   },
   ask: {
-    run: () => notImplemented('api.ask.run'),
-    cancel: () => notImplemented('api.ask.cancel'),
+    run: ((...args: unknown[]) => forward('ask', 'run', args)) as DataApi['ask']['run'],
+    cancel: ((...args: unknown[]) => forward('ask', 'cancel', args)) as DataApi['ask']['cancel'],
   },
   search: {
-    remote: () => notImplemented('api.search.remote'),
+    remote: ((...args: unknown[]) =>
+      forward('search', 'remote', args)) as DataApi['search']['remote'],
   },
   ai: {
-    request: () => notImplemented('api.ai.request'),
-    draft: () => notImplemented('api.ai.draft'),
-    polish: () => notImplemented('api.ai.polish'),
-    transcribe: () => notImplemented('api.ai.transcribe'),
-    followup: () => notImplemented('api.ai.followup'),
-    dismissFollowup: () => notImplemented('api.ai.dismissFollowup'),
-    cancel: () => notImplemented('api.ai.cancel'),
+    request: ((...args: unknown[]) => forward('ai', 'request', args)) as DataApi['ai']['request'],
+    draft: ((...args: unknown[]) => forward('ai', 'draft', args)) as DataApi['ai']['draft'],
+    polish: ((...args: unknown[]) => forward('ai', 'polish', args)) as DataApi['ai']['polish'],
+    transcribe: ((...args: unknown[]) =>
+      forward('ai', 'transcribe', args)) as DataApi['ai']['transcribe'],
+    followup: ((...args: unknown[]) =>
+      forward('ai', 'followup', args)) as DataApi['ai']['followup'],
+    dismissFollowup: ((...args: unknown[]) =>
+      forward('ai', 'dismissFollowup', args)) as DataApi['ai']['dismissFollowup'],
+    cancel: ((...args: unknown[]) => forward('ai', 'cancel', args)) as DataApi['ai']['cancel'],
   },
   unsubscribe: {
-    run: () => notImplemented('api.unsubscribe.run'),
+    run: ((...args: unknown[]) =>
+      forward('unsubscribe', 'run', args)) as DataApi['unsubscribe']['run'],
   },
   consent: {
-    get: () => notImplemented('api.consent.get'),
-    grant: () => notImplemented('api.consent.grant'),
-    revoke: () => notImplemented('api.consent.revoke'),
+    get: ((...args: unknown[]) => forward('consent', 'get', args)) as DataApi['consent']['get'],
+    grant: ((...args: unknown[]) =>
+      forward('consent', 'grant', args)) as DataApi['consent']['grant'],
+    revoke: ((...args: unknown[]) =>
+      forward('consent', 'revoke', args)) as DataApi['consent']['revoke'],
   },
   engine: {
-    restart: () => notImplemented('api.engine.restart'),
+    restart: ((...args: unknown[]) =>
+      forward('engine', 'restart', args)) as DataApi['engine']['restart'],
   },
   diagnostics: {
-    preview: () => notImplemented('api.diagnostics.preview'),
-    copy: () => notImplemented('api.diagnostics.copy'),
+    preview: ((...args: unknown[]) =>
+      forward('diagnostics', 'preview', args)) as DataApi['diagnostics']['preview'],
+    copy: ((...args: unknown[]) =>
+      forward('diagnostics', 'copy', args)) as DataApi['diagnostics']['copy'],
   },
 };

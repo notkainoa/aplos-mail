@@ -4,12 +4,24 @@ This folder holds the one way the new screens read mail and send commands to the
 
 | File | What it is |
 |---|---|
-| `index.ts` | The frozen public surface: hooks, `api`, receipts, holds, constants and the contract mapping. Screens import only from here. Until U2 lands, every hook and method throws `NotImplementedError` naming lane `ui-shell`. |
+| `index.ts` | The frozen public surface: hooks, `api`, receipts, holds, constants and the contract mapping. Screens import only from here. Every hook and method forwards to the runtime `connectDataLayer()` installs; until one is installed each throws `DataLayerNotConnectedError` (a `NotImplementedError` naming lane `ui-shell`). |
+| `connect.ts` | `connectDataLayer({session, scheduler?, timers?})`: builds the layer on a transport and installs it behind `index.ts`. `standin-layer.ts` does the same on the stand-in engine for development. |
+| `client.ts` | The F2 typed client over an injected `EngineSession` (in-process stand-in today; MessagePort and HTTP from `bridge.ts` later), zod jitless, opId minting, error bodies. |
+| `rows.ts` | The row cache by type and id, reference-counted by windows, hooks and the overlay; an unchanged `rev` keeps object identity. `RowFetcher` sends one `T/get` per type per frame for unknown or stale ids. |
+| `windows.ts` | `engineWindows`: `View/watch`, `View/move`, `View/unwatch`, `View/hold`, `View/release`; ID-only frames; reopen on `reset` (any reason, including `cannotCalculateChanges`); held windows queue frames and reconcile on release. |
+| `optimistic.ts` | The overlay: entries `{opId, targets, patch, originalPosition}` laid over windows and rows until each reaches the receipt's `appliedState`; `restore` entries put rows back for undo and provider refusals. |
+| `operations.ts` | `OperationView`s and the one undo stack (engine operations and local entries; Z takes the newest). |
+| `layer.ts` | Composes the rest on one change signal; frames apply once per animation frame, `api.thread.act` applies its overlay synchronously. |
+| `hooks.ts` | The React hooks, each `useSyncExternalStore` over a plain store. |
+| `holds.ts`, `prefetch.ts`, `session.ts`, `clock.ts`, `frames.ts`, `bodies.ts`, `home.ts` | Hold gate (generated `hold` timing), prefetch on intent, session and status slot order, the clock, `useFrames` streams, message bodies, Home's sections. |
+| `harness.ts` | Test support: the layer on a fake-clock stand-in with a manual scheduler and timers and every call recorded. |
 | `contract-shapes.ts` | The wire types, as type-only re-exports and thin aliases of `@aplos/contract`, under the contract's names. It declares no shape of its own. |
 | `ui-types.ts` | The few UI-side types that are not wire types: Home's and Later's section keys, the thread-row specs a selector may target, the row cache map, the streams `useFrames` serves, the overlay's lifecycle. |
 | `standin.ts` | `connectStandIn()`: the stand-in engine (F6) in-process behind the F2 typed client, for development (`renderer/main.tsx`) and tests only. Never part of a release. |
 | `index.test.ts` | Compile-time usage examples in the contract's types (Home, the reader, the status slot, Ask streaming, the reconnect sheet, the clock, undo, consent), `Equals` checks that `api` is the client's surface, and runtime checks that every stub throws and every `api` method is a registered contract method of the same name. |
 | `standin.test.ts` | Boots the stand-in and reads windows into the types the hooks expose (`ViewResult`, `RowForSpec`, `LowBandView`, `Receipt`), in node with no DOM. |
+| `windows.test.ts`, `optimistic.test.ts`, `layer.test.ts`, `hooks.test.ts` | The window cache (one `Thread/get` per frame, reset reopens, the stand-in's order), the overlay's timing and races, undo, failures, holds, prefetch, status, counts, the clock, streams, and the hooks through `index.ts`. |
+| `property.test.ts` | Plan 30 4.1's property test: 10,000 seeded sequences (`APLOS_PROPERTY_RUNS` overrides, `APLOS_PROPERTY_SEED` replays one), about three minutes. |
 
 Run the tests with `cd apps/desktop && npx tsx --test 'src/renderer/data/*.test.ts'`. `npm test` does not pick them up yet, because the desktop test script only globs `tests/*.test.ts`; `ui-shell` widens it when Phase 0 ends. `npx tsc --noEmit -p apps/desktop/tsconfig.json` checks the examples, the `@ts-expect-error` lines and the mapping table.
 
