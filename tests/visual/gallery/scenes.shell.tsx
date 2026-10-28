@@ -4,8 +4,13 @@
 
 import { useEffect, type ReactElement, type ReactNode } from 'react';
 import '../../../apps/desktop/src/renderer/shell/shell.css';
-import type { Account, StatusSlotState } from '../../../apps/desktop/src/renderer/data';
-import { ErrorLine, ListBox, ListRow } from '../../../apps/desktop/src/renderer/ui/list';
+import {
+  HARNESS_NOW_MS,
+  toIsoDateTime,
+  type Account,
+  type StatusSlotState,
+} from '../../../apps/desktop/src/renderer/data';
+import { ListBox, ListRow } from '../../../apps/desktop/src/renderer/ui/list';
 import { EmptyLine } from '../../../apps/desktop/src/renderer/ui/list';
 import { ReconnectSheet } from '../../../apps/desktop/src/renderer/ui/status';
 import type { PaneHeaderProps, ToastData } from '../../../apps/desktop/src/renderer/ui/props';
@@ -14,7 +19,11 @@ import { FatalHost, ShellLayout } from '../../../apps/desktop/src/renderer/shell
 import { StatusView } from '../../../apps/desktop/src/renderer/shell/StatusHost';
 import { ToastHostView } from '../../../apps/desktop/src/renderer/shell/ToastHost';
 import { failureReason } from '../../../apps/desktop/src/renderer/shell/SheetHost';
-import { FirstSyncLine, NoAccountsLine } from '../../../apps/desktop/src/renderer/shell/states';
+import {
+  FirstSyncLine,
+  ListFailedLine,
+  NoAccountsLine,
+} from '../../../apps/desktop/src/renderer/shell/states';
 import { placeCounts, type PlaceId } from '../../../apps/desktop/src/renderer/shell/nav';
 import type { Screen } from '../../../apps/desktop/src/renderer/shell';
 import { noop, row } from './scenes.shared';
@@ -129,7 +138,14 @@ function Frame({
           onAddAccount={noop}
         />
       }
-      status={<StatusView state={state} accountCount={ACCOUNTS.length} onAction={noop} />}
+      status={
+        <StatusView
+          state={state}
+          accountCount={ACCOUNTS.length}
+          now={toIsoDateTime(HARNESS_NOW_MS)}
+          onAction={noop}
+        />
+      }
       header={header}
       toasts={<ToastHostView toasts={toasts} onAction={noop} onDismiss={noop} />}
       overlay={overlay}
@@ -356,23 +372,7 @@ function ErrorListFailed(): ReactElement {
   return (
     <Frame>
       <div className="stage__column">
-        <ListBox binding={{ id: 'all', label: 'All mail' }}>
-          <ListRow
-            {...row({
-              id: 'x-1',
-              sender: 'Theo Lindgren',
-              primary: 'Climbing on Thursday evening',
-              secondary: 'If the weather holds we meet at the gym at six',
-              date: '2026-10-26T18:05:00-07:00',
-              rejected: { op: 'move to Later', onRetry: noop },
-            })}
-          />
-          <ListRow
-            {...row({ id: 'x-2', sender: 'Leah Okafor', primary: 'Lunch for six tomorrow' })}
-          />
-        </ListBox>
-        <div className="stage__gap" />
-        <ErrorLine kind="writeRejected" op="archive 2 emails" placement="column" onAction={noop} />
+        <ListFailedLine onRetry={noop} />
       </div>
     </Frame>
   );

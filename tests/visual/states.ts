@@ -408,8 +408,8 @@ export const STATES: readonly VisualState[] = [
   {
     id: 'shell-error-list-failed',
     frame: 'shell',
-    title: 'List: a rejected write on a row and an error line',
-    components: ['ListRow', 'ErrorLine'],
+    title: 'List: the first load failed, with Try again',
+    components: ['ErrorLine'],
     design: '7.15',
     mockup: 'errors.html (row-error)',
     filled: 0,
