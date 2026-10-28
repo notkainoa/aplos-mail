@@ -121,15 +121,13 @@ export function load(q: StoreReader): Data {
     drafts: q
       .all<{ id: string; account_id: string; updated_at: number }>('SELECT * FROM drafts')
       .map(d => ({ id: d.id, account: d.account_id, updated: d.updated_at })),
-    subs: q
-      .all<Record<string, never>>('SELECT * FROM submissions')
-      .map(s => ({
-        id: s.id,
-        draft: s.draft_id,
-        account: s.account_id,
-        notBefore: s.not_before,
-        state: s.state,
-      })),
+    subs: q.all<Record<string, never>>('SELECT * FROM submissions').map(s => ({
+      id: s.id,
+      draft: s.draft_id,
+      account: s.account_id,
+      notBefore: s.not_before,
+      state: s.state,
+    })),
   };
 }
 
