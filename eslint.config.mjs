@@ -13,7 +13,8 @@ const designConfig = existsSync(new URL('./tools/lint/design/index.mjs', import.
   : [];
 
 const ENGINE_CORE = 'packages/engine/src/**';
-const CONTRACT = 'packages/contract/src/**';
+// The contract's own files: its source and the allowlists and client generated from its registry.
+const CONTRACT = ['packages/contract/src/**', 'packages/contract/generated/**'];
 const RENDERER = 'apps/desktop/src/renderer/**';
 const MAILFRAME = 'apps/desktop/src/renderer/mailframe/**';
 // Legacy code lives only in these three roots (restructure step 1). A folder that merely happens
@@ -44,12 +45,12 @@ export const boundaryZones = [
   },
   {
     name: 'contract',
-    from: [CONTRACT],
+    from: CONTRACT,
     except: [CONTRACT_LEGACY],
     flagDynamic: true,
     allow: {
       packages: ['zod'],
-      relativeWithin: [CONTRACT],
+      relativeWithin: CONTRACT,
       message: 'the contract imports only zod and its own files.',
     },
   },
@@ -115,6 +116,17 @@ export default [
       // so UI-core's design rules (which use no-restricted-syntax) could otherwise erase this ban.
       'aplos/no-dangerous-html': 'error',
       'aplos/boundaries': ['error', { zones: boundaryZones }],
+      // A leading underscore marks a binding that is unused on purpose.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+        },
+      ],
     },
   },
   {
@@ -141,7 +153,7 @@ export default [
     // Engine core and the contract must not reach Node modules without an import either.
     // process and Buffer stay allowed: the engine may run in plain Node (ARCHITECTURE 2.6).
     // Do not set these two rules for these paths elsewhere: a later config replaces the whole list.
-    files: [ENGINE_CORE, CONTRACT],
+    files: [ENGINE_CORE, ...CONTRACT],
     ignores: [ENGINE_LEGACY, CONTRACT_LEGACY],
     rules: {
       'no-restricted-properties': [
