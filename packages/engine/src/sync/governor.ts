@@ -9,218 +9,69 @@ import {
   type BoundGovernor,
   type BudgetId,
   type BudgetSpec,
-  type Clock,
   type GovernedRequest,
   type GovernorPort,
   type GovernorSnapshot,
-  type Logger,
   type ProjectScope,
   type RequestIo,
   type RequestKind,
   type SyncLane,
   type TokenSource,
 } from '../ports';
-import { LANES, PRIORITY_LANES, defaultBudgets } from './budgets';
+import { LANES, PRIORITY_LANES } from './budgets';
+import {
+  ANTI_ABUSE_MS,
+  BeforeCall,
+  COOLDOWN_STEPS_MS,
+  Meter,
+  NEVER,
+  REFUSING,
+  RESERVE_REFRESH_MS,
+  RESERVE_STEP_SHARE,
+  SEND_LIMIT_MS,
+  TOKEN_EARLY_MS,
+  TRANSIENT_DELAYS_MS,
+  TRANSIENT_TRIES,
+  abortable,
+  refusalOf,
+  type Block,
+  type DeviceRole,
+  type RunMode,
+  type Ticket,
+  type Waiter,
+} from './governor-meter';
+import {
+  after,
+  batchNow,
+  effectiveTarget,
+  futureTime,
+  inFlightLimit,
+  nextTargetChange,
+} from './governor-math';
+import { changeKey, restoreMeterState, restoreWindow } from './governor-snapshot';
+import { GovernorState, type GovernorOptions } from './governor-state';
 import { nextPacificMidnight } from './pacific';
-import { SlidingWindow, type Charge } from './window';
 
-/** Throttle cooldowns: 60 s, then 5 min, then 15 min, then 1 h at most (ARCH 6.3). */
-export const COOLDOWN_STEPS_MS: readonly number[] = [60_000, 300_000, 900_000, 3_600_000];
-/** Quiet time that resets the escalation, starts AIMD regrowth and gives back one in-flight slot. */
-export const QUIET_MS = 600_000;
-/** AIMD regrows once per minute after the quiet period. */
-export const REGROW_INTERVAL_MS = 60_000;
-/** Transient failures of reads and idempotent writes: three tries in total, waiting 1 s then 2 s (jittered). */
-export const TRANSIENT_TRIES = 3;
-export const TRANSIENT_DELAYS_MS: readonly number[] = [1_000, 2_000, 4_000];
-/** Google Calendar's anti-abuse `quotaExceeded` when the provider gives no time (plan 20). */
-export const ANTI_ABUSE_MS = 3 * 3600_000;
-/**
- * A send limit with no stated end blocks sends for an hour (proto-google 2.5: "can persist for hours"). A design
- * choice: the submission fails "until HH:MM" and the user may try again then.
- */
-export const SEND_LIMIT_MS = 3600_000;
-/**
- * The persisted window spend (`windowSpent`) is reserved in steps of this share of the primary target and refreshed
- * at least this often while units are spent, so `onChange` fires a few times a minute under load, not per request.
- */
-export const RESERVE_STEP_SHARE = 0.1;
-export const RESERVE_REFRESH_MS = 15_000;
-/** A cached access token closer than this to expiry is refreshed first. */
-export const TOKEN_EARLY_MS = 60_000;
-/** The latest instant a Date can hold; longer waits are clamped to it. */
-const MAX_TIME = 8.64e15;
-
-export type DeviceRole = 'primary' | 'secondary';
-type Scope = AccountId | ProjectScope;
-
-export type GovernorLogEvent =
-  'governor.admitted' | 'governor.paused' | 'governor.resumed' | 'governor.refused';
-/** The only fields the trace hook gets: no content, tokens or addresses. */
-export interface GovernorLogFields {
-  account: Scope;
-  budget: BudgetId;
-  lane?: SyncLane;
-  method?: string;
-  units?: number;
-  waitMs?: number;
-  cls?: ErrorClass;
-  reason?: string;
-  status?: number;
-}
-/** A per-request trace hook for tests and the verbose protocol log; the F7 `Logger` gets the catalog events. */
-export type GovernorLogger = (event: GovernorLogEvent, fields: GovernorLogFields) => void;
-
-export interface GovernorOptions {
-  /** Only `now` and `sleep`: the governor never arms a timer of its own. */
-  clock: Pick<Clock, 'now' | 'sleep'>;
-  /** Specs for every account until `setBudgets` gives an account its own. */
-  budgets?: readonly BudgetSpec[];
-  /** The host's token source; without one no request carries a token and a 401 is an auth block at once. */
-  tokens?: TokenSource;
-  /** The classifier registry. Falls back to a thrown `ProviderError`'s record; anything else is `transient`. */
-  classify?: (error: unknown) => ClassifiedError | undefined;
-  logger?: GovernorLogger;
-  /** F7 catalog events (`governor.paused`, `governor.resumed`). */
-  log?: Logger;
-  /** Role before the lease says otherwise. Defaults to the conservative 'secondary' (ARCH 6.5). */
-  role?: DeviceRole;
-  /** Source of retry jitter, for reproducible tests. */
-  random?: () => number;
-}
-
-/** What `run` may be told beyond the port: connect-time calls ignore the account's auth block (F3 `ConnectContext`). */
-export interface RunMode {
-  ignoreAuth?: boolean;
-}
-
-/** Live numbers that change on every request, for tests and diagnostics; never persisted. */
-export interface MeterView {
-  used: number;
-  inFlight: number;
-  inFlightLimit: number;
-  target: number;
-  queued: number;
-}
-
-const KNOWN_CLASSES: ReadonlySet<string> = new Set<ErrorClass>([
-  'auth',
-  'permission',
-  'throttle',
-  'daily',
-  'send_limit',
-  'anti_abuse',
-  'config',
-  'transient',
-  'permanent',
-  'cancelled',
-]);
-/** Classes that change governor state (`GOVERNOR_CLASS_POLICY` rows whose `pauses` is not `nothing`). */
-const REFUSING: ReadonlySet<ErrorClass> = new Set<ErrorClass>([
-  'throttle',
-  'daily',
-  'anti_abuse',
-  'send_limit',
-  'auth',
-  'config',
-]);
-
-interface Block {
-  account: Scope;
-  budget: BudgetId;
-  cls: ErrorClass;
-  reason: string;
-  /** Absent for auth and config blocks, which end only through `clear`. */
-  until?: number;
-}
-
-/** What an admitted request holds. `retry` marks the one call `retryNow` let through a cooldown. */
-interface Ticket {
-  signal: AbortSignal;
-  charge?: Charge;
-  retry?: boolean;
-}
-
-interface Waiter {
-  req: GovernedRequest;
-  mode: RunMode;
-  cost: number;
-  slots: number;
-  queuedAt: number;
-  resolve: (ticket: Ticket) => void;
-  reject: (error: unknown) => void;
-  detach: () => void;
-}
-
-/** A signal that never aborts, for a send or write that has no caller signal. */
-const NEVER = new AbortController().signal;
-
-/** State of one budget of one account, or of `PROJECT` (project-wide daily stops and config blocks only). */
-class Meter {
-  window: SlidingWindow;
-  /** AIMD target after a refusal, before regrowth and the role's cap; undefined when not in force. */
-  aimdTarget?: number;
-  /**
-   * End of the last throttle cooldown. It stays after the cooldown passes, as the start of the quiet period, until
-   * AIMD and the in-flight limit have regrown, so a restart restores both exactly (it is the persisted quiet mark).
-   */
-  cooldownUntil?: number;
-  cooldownStep = 0;
-  cooldownReason?: string;
-  /** End of a daily or anti-abuse stop. */
-  blockUntil?: number;
-  blockCls?: ErrorClass;
-  blockReason?: string;
-  /** A send limit: refuses sends only. */
-  sendBlockedUntil?: number;
-  sendReason?: string;
-  /** `PROJECT` meters only: a config block, until `clear`. */
-  stop?: { reason: string; since: number };
-  lastRefusalAt?: number;
-  /** In-flight limit after a concurrency refusal, before regrowth (+1 per quiet 10 minutes); undefined when lifted. */
-  capBase?: number;
-  /** HTTP batch size before quiet growth, and when growth (+growBy per quiet 10 minutes) started counting. */
-  batchBase: number;
-  batchSince: number;
-  inFlight = 0;
-  /** The persisted upper bound on window spend and when it was set (see `reserve`). */
-  reservedSpent = 0;
-  reservedAt?: number;
-  /** Aborted when a pause starts; every admitted read and idempotent write's signal follows it. */
-  epoch = new AbortController();
-  readonly queues = new Map<SyncLane, Waiter[]>(LANES.map(lane => [lane, []]));
-  timer?: { at: number; controller: AbortController };
-  pauseActive = false;
-  pausedAt?: number;
-  /** `retryNow` granted one call through this cooldown (`retryUsedFor` is the cooldown it was granted for). */
-  retryPass = false;
-  retryUsedFor?: number;
-  /** The "Retry now" call, parked until the calls still in flight finish: it goes alone (prov-gov-attack-09). */
-  retryWaiter?: Waiter;
-  lastKey = '';
-
-  constructor(
-    readonly account: Scope,
-    public spec: BudgetSpec,
-    public role: DeviceRole,
-    now: number,
-  ) {
-    this.window = new SlidingWindow(spec.windowMs);
-    this.batchBase = spec.batch?.start ?? 1;
-    this.batchSince = now;
-  }
-
-  queued(): Waiter[] {
-    return [...this.queues.values()].flat();
-  }
-}
-
-/** Whether a pause may abort the request in flight: never a send or write whose bytes may have left. */
-function abortable(kind: RequestKind): boolean {
-  return kind === 'read' || kind === 'idempotentWrite';
-}
-
-const keyOf = (account: Scope, budget: BudgetId) => `${account}\u0000${budget}`;
+export {
+  ANTI_ABUSE_MS,
+  COOLDOWN_STEPS_MS,
+  QUIET_MS,
+  REGROW_INTERVAL_MS,
+  RESERVE_REFRESH_MS,
+  RESERVE_STEP_SHARE,
+  SEND_LIMIT_MS,
+  TOKEN_EARLY_MS,
+  TRANSIENT_DELAYS_MS,
+  TRANSIENT_TRIES,
+} from './governor-meter';
+export type { DeviceRole, MeterView, RunMode } from './governor-meter';
+export { GovernorState } from './governor-state';
+export type {
+  GovernorLogEvent,
+  GovernorLogFields,
+  GovernorLogger,
+  GovernorOptions,
+} from './governor-state';
 
 /**
  * The budget keeper (ARCH 6, plan 20 PV2), implementing F3 `GovernorPort`. Every provider request goes through `run`,
@@ -229,34 +80,17 @@ const keyOf = (account: Scope, budget: BudgetId) => `${account}\u0000${budget}`;
  * re-sends a request: a transient failure of a read or idempotent write, and any kind once after a first 401 and one
  * forced token refresh. Each class's action is `GOVERNOR_CLASS_POLICY`.
  */
-export class Governor implements GovernorPort {
-  private readonly clock: Pick<Clock, 'now' | 'sleep'>;
-  private readonly defaults = new Map<BudgetId, BudgetSpec>();
-  private readonly accountSpecs = new Map<AccountId, Map<BudgetId, BudgetSpec>>();
+export class Governor extends GovernorState implements GovernorPort {
   private readonly tokens?: TokenSource;
-  private readonly classifier?: (error: unknown) => ClassifiedError | undefined;
-  private readonly logger?: GovernorLogger;
-  private readonly log?: Logger;
   private readonly random: () => number;
-  private readonly defaultRole: DeviceRole;
-  private readonly roles = new Map<AccountId, DeviceRole>();
-  private readonly meters = new Map<string, Meter>();
-  /** Auth blocks are the account's, over every budget (F3 `GovernorSnapshot`). */
-  private readonly authBlocks = new Map<AccountId, { reason: string; since: number }>();
   /** One token refresh at a time per account (D21), and a count of refreshes so concurrent 401s share one. */
   private readonly refreshing = new Map<AccountId, Promise<string>>();
   private readonly tokenGen = new Map<AccountId, number>();
-  private readonly listeners = new Set<(account: Scope, snapshot: GovernorSnapshot) => void>();
 
   constructor(options: GovernorOptions) {
-    this.clock = options.clock;
-    for (const spec of options.budgets ?? defaultBudgets) this.defaults.set(spec.id, spec);
+    super(options);
     this.tokens = options.tokens;
-    this.classifier = options.classify;
-    this.logger = options.logger;
-    this.log = options.log;
     this.random = options.random ?? Math.random;
-    this.defaultRole = options.role ?? 'secondary';
   }
 
   // ---------------------------------------------------------------- GovernorPort
@@ -304,7 +138,7 @@ export class Governor implements GovernorPort {
   batchSize(account: AccountId, budget: BudgetId): number {
     const m = this.meter(account, budget);
     this.refresh(m);
-    return this.batchNow(m, this.clock.now());
+    return batchNow(m, this.clock.now());
   }
 
   retryNow(account: AccountId, budget: BudgetId): Admission {
@@ -365,14 +199,6 @@ export class Governor implements GovernorPort {
     }
   }
 
-  snapshot(account: AccountId | ProjectScope): GovernorSnapshot[] {
-    const now = this.clock.now();
-    return this.budgetMeters(account).map(m => {
-      this.refresh(m);
-      return this.describe(m, now);
-    });
-  }
-
   /**
    * Seeds state after a restart from the snapshots the actor persisted in `governor_state`. The window's charges are
    * not persisted; the reserved `windowSpent` is charged again instead, which can only make the governor wait longer.
@@ -382,53 +208,11 @@ export class Governor implements GovernorPort {
     for (const snap of snapshots) {
       if (!this.specFor(account, snap.budget)) continue;
       const m = this.meter(account, snap.budget);
-      const roleMax = Math.max(m.spec.target.primary, m.spec.target.secondary);
-      m.cooldownUntil = snap.cooldownUntil;
-      m.cooldownStep = snap.cooldownStep ?? 0;
-      m.cooldownReason = snap.cls === 'throttle' ? snap.reason : undefined;
-      // AIMD and the in-flight cap only exist inside a quiet period, which the kept cooldown end marks.
-      m.aimdTarget =
-        snap.cooldownUntil !== undefined && snap.target < roleMax
-          ? snap.target - this.regrowSteps(m, now) * this.regrowStep(m.spec)
-          : undefined;
-      m.capBase =
-        snap.cooldownUntil !== undefined && snap.inFlightLimit < m.spec.inFlight
-          ? snap.inFlightLimit - this.quietSteps(m, now)
-          : undefined;
-      if (m.spec.batch && Number.isFinite(snap.batchSize)) {
-        m.batchBase = Math.min(m.spec.batch.max, Math.max(m.spec.batch.min, snap.batchSize));
-        m.batchSince = now;
-      }
-      const blockCls = snap.cls === 'daily' || snap.cls === 'anti_abuse' ? snap.cls : undefined;
-      m.blockUntil = snap.dailyBlockUntil;
-      m.blockCls = blockCls ?? 'daily';
-      m.blockReason = blockCls ? snap.reason : undefined;
-      m.sendBlockedUntil = snap.sendBlockedUntil;
-      m.sendReason = snap.cls === 'send_limit' ? snap.reason : undefined;
-      m.lastRefusalAt = snap.lastRefusalAt;
-      if (snap.blocked?.cls === 'auth' && account !== PROJECT && !this.authBlocks.has(account)) {
-        this.authBlocks.set(account, {
-          reason: snap.cls === 'auth' ? (snap.reason ?? '') : '',
-          since: snap.blocked.since,
-        });
-      }
-      if (snap.blocked?.cls === 'config') {
-        const project = this.meter(PROJECT, snap.budget);
-        project.stop ??= {
-          reason: snap.cls === 'config' ? (snap.reason ?? '') : '',
-          since: snap.blocked.since,
-        };
-      }
-      m.window = new SlidingWindow(m.spec.windowMs);
-      if (snap.windowSpent > 0) {
-        // Every unit the old process spent left by windowAt + RESERVE_REFRESH_MS (and by now), so a charge at the
-        // earlier of the two outlives all of them.
-        m.window.charge(Math.min(now, snap.windowAt + RESERVE_REFRESH_MS), snap.windowSpent);
-      }
-      m.reservedSpent = snap.windowSpent;
-      m.reservedAt = snap.windowAt || undefined;
+      restoreMeterState(m, snap, now);
+      this.restoreBlocks(account, snap);
+      restoreWindow(m, snap, now);
       m.pauseActive = false;
-      m.lastKey = this.changeKey(this.describe(m, now));
+      m.lastKey = changeKey(this.describe(m, now));
       this.refresh(m);
     }
     // Start every pause the snapshots carry (auth included) on every meter they cover.
@@ -441,13 +225,6 @@ export class Governor implements GovernorPort {
       if (block && !m.pauseActive) this.startPause(m, block);
       this.pump(m);
     }
-  }
-
-  onChange(listener: (account: Scope, snapshot: GovernorSnapshot) => void): () => void {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
   }
 
   // ---------------------------------------------------------------- beyond the port
@@ -473,19 +250,6 @@ export class Governor implements GovernorPort {
       if (spec.batch) m.batchBase = Math.min(spec.batch.max, Math.max(spec.batch.min, m.batchBase));
       this.pump(m);
     }
-  }
-
-  /** Live numbers for tests and diagnostics. */
-  inspect(account: AccountId, budget: BudgetId): MeterView {
-    const m = this.meter(account, budget);
-    const now = this.clock.now();
-    return {
-      used: m.window.used(now),
-      inFlight: m.inFlight,
-      inFlightLimit: this.limit(m, now),
-      target: this.effectiveTarget(m, now),
-      queued: m.queued().length,
-    };
   }
 
   // ---------------------------------------------------------------- one request
@@ -755,8 +519,8 @@ export class Governor implements GovernorPort {
       return;
     }
     const authBlocked = m.account !== PROJECT && this.authBlocks.has(m.account);
-    const target = this.effectiveTarget(m, now);
-    const limit = this.limit(m, now);
+    const target = effectiveTarget(m, now);
+    const limit = inFlightLimit(m, now);
     // The reserve shrinks with the limit, so a limit of 1 reserves nothing and no lane starves (review objection 6).
     const reserved = Math.max(0, Math.min(m.spec.reservedInteractive, limit - 1));
     let wakeAt = Infinity;
@@ -796,8 +560,8 @@ export class Governor implements GovernorPort {
         break;
       }
     }
-    if (wakeAt !== Infinity) wakeAt = Math.min(wakeAt, this.nextTargetChange(m, now));
-    else if (m.inFlight >= limit && m.queued().length) wakeAt = this.nextTargetChange(m, now);
+    if (wakeAt !== Infinity) wakeAt = Math.min(wakeAt, nextTargetChange(m, now));
+    else if (m.inFlight >= limit && m.queued().length) wakeAt = nextTargetChange(m, now);
     this.arm(m, wakeAt);
   }
 
@@ -971,82 +735,23 @@ export class Governor implements GovernorPort {
   ): void {
     const now = this.clock.now();
     this.refresh(m);
-    const after = (ms: number) => Math.min(MAX_TIME, now + ms);
     m.retryPass = false;
-    const at = (time: number | undefined) =>
-      time !== undefined && time > now ? Math.min(MAX_TIME, time) : undefined;
     switch (error.class) {
-      case 'throttle': {
-        const before = this.blockFor(m, undefined, now, false);
-        const limitNow = this.limit(m, now);
-        let until: number;
-        if (m.cooldownUntil !== undefined && m.cooldownUntil > now && !fresh) {
-          // Sent before the pause began: it may lengthen the pause but does not escalate or halve again. The target
-          // may not rise above what was in force when it was refused.
-          until = Math.max(m.cooldownUntil, after(error.retryAfterMs ?? 0));
-          m.aimdTarget = this.effectiveTarget(m, now);
-        } else {
-          const step = COOLDOWN_STEPS_MS[Math.min(m.cooldownStep, COOLDOWN_STEPS_MS.length - 1)];
-          until = after(Math.max(error.retryAfterMs ?? 0, step));
-          m.cooldownStep++;
-          m.aimdTarget = Math.max(m.spec.floor, Math.floor(this.effectiveTarget(m, now) / 2));
-          if (m.spec.batch)
-            m.batchBase = Math.max(m.spec.batch.min, Math.floor(this.batchNow(m, now) / 2));
-        }
-        // The in-flight limit regrows from the end of this cooldown; freeze what it has regrown to so far.
-        if (error.concurrency) m.capBase = 1;
-        else if (m.capBase !== undefined) m.capBase = limitNow;
-        m.cooldownUntil = until;
-        m.cooldownReason = error.reason;
-        // Batch growth counts quiet time again from the end of this cooldown.
-        m.batchSince = until;
-        m.lastRefusalAt = now;
-        this.afterChange(m, before, error.status);
+      case 'throttle':
+        this.refuseThrottle(m, error, now, fresh);
         return;
-      }
       case 'daily':
-      case 'anti_abuse': {
-        // Gmail's per-project `dailyLimitExceeded` blocks the budget on PROJECT, so every account stops.
-        const target =
-          error.class === 'daily' && scope === 'project'
-            ? this.meter(PROJECT, m.spec.id, m.spec)
-            : m;
-        const fallback = error.class === 'daily' ? nextPacificMidnight(now) : after(ANTI_ABUSE_MS);
-        const until = at(error.resumeAt) ?? fallback;
-        const before = this.blockFor(target, undefined, now, false);
-        if (until >= (target.blockUntil ?? 0)) {
-          target.blockUntil = until;
-          target.blockCls = error.class;
-          target.blockReason = error.reason;
-        }
-        target.lastRefusalAt = now;
-        if (target.account === PROJECT) this.projectChanged(target, error.status);
-        else this.afterChange(target, before, error.status);
-        if (error.class === 'daily')
-          this.catalog('governor.daily_stopped', target, { reason: error.reason, until });
+      case 'anti_abuse':
+        this.refuseStop(m, error, error.class, scope, now);
         return;
-      }
-      case 'send_limit': {
-        const stated =
-          at(error.resumeAt) ??
-          (error.retryAfterMs !== undefined && error.retryAfterMs > 0
-            ? after(error.retryAfterMs)
-            : undefined);
-        const until = stated ?? after(SEND_LIMIT_MS);
-        if (until >= (m.sendBlockedUntil ?? 0)) {
-          m.sendBlockedUntil = until;
-          m.sendReason = error.reason;
-        }
-        m.lastRefusalAt = now;
-        this.emitIfChanged(m);
+      case 'send_limit':
+        this.refuseSendLimit(m, error, now);
         return;
-      }
-      case 'auth': {
+      case 'auth':
         if (m.account === PROJECT) return;
         m.lastRefusalAt = now;
         this.blockAccount(m.account, error.reason, now, error.status);
         return;
-      }
       case 'config': {
         const project = this.meter(PROJECT, m.spec.id, m.spec);
         project.stop ??= { reason: error.reason, since: now };
@@ -1057,6 +762,74 @@ export class Governor implements GovernorPort {
       default:
         return;
     }
+  }
+
+  private refuseThrottle(m: Meter, error: ClassifiedError, now: number, fresh: boolean): void {
+    const before = this.blockFor(m, undefined, now, false);
+    const limitNow = inFlightLimit(m, now);
+    let until: number;
+    if (m.cooldownUntil !== undefined && m.cooldownUntil > now && !fresh) {
+      // Sent before the pause began: it may lengthen the pause but does not escalate or halve again. The target
+      // may not rise above what was in force when it was refused.
+      until = Math.max(m.cooldownUntil, after(now, error.retryAfterMs ?? 0));
+      m.aimdTarget = effectiveTarget(m, now);
+    } else {
+      const step = COOLDOWN_STEPS_MS[Math.min(m.cooldownStep, COOLDOWN_STEPS_MS.length - 1)];
+      until = after(now, Math.max(error.retryAfterMs ?? 0, step));
+      m.cooldownStep++;
+      m.aimdTarget = Math.max(m.spec.floor, Math.floor(effectiveTarget(m, now) / 2));
+      if (m.spec.batch) m.batchBase = Math.max(m.spec.batch.min, Math.floor(batchNow(m, now) / 2));
+    }
+    // The in-flight limit regrows from the end of this cooldown; freeze what it has regrown to so far.
+    if (error.concurrency) m.capBase = 1;
+    else if (m.capBase !== undefined) m.capBase = limitNow;
+    m.cooldownUntil = until;
+    m.cooldownReason = error.reason;
+    // Batch growth counts quiet time again from the end of this cooldown.
+    m.batchSince = until;
+    m.lastRefusalAt = now;
+    this.afterChange(m, before, error.status);
+  }
+
+  /** A daily or anti-abuse stop. */
+  private refuseStop(
+    m: Meter,
+    error: ClassifiedError,
+    cls: 'daily' | 'anti_abuse',
+    scope: 'account' | 'project',
+    now: number,
+  ): void {
+    // Gmail's per-project `dailyLimitExceeded` blocks the budget on PROJECT, so every account stops.
+    const target =
+      cls === 'daily' && scope === 'project' ? this.meter(PROJECT, m.spec.id, m.spec) : m;
+    const fallback = cls === 'daily' ? nextPacificMidnight(now) : after(now, ANTI_ABUSE_MS);
+    const until = futureTime(now, error.resumeAt) ?? fallback;
+    const before = this.blockFor(target, undefined, now, false);
+    if (until >= (target.blockUntil ?? 0)) {
+      target.blockUntil = until;
+      target.blockCls = cls;
+      target.blockReason = error.reason;
+    }
+    target.lastRefusalAt = now;
+    if (target.account === PROJECT) this.projectChanged(target, error.status);
+    else this.afterChange(target, before, error.status);
+    if (cls === 'daily')
+      this.catalog('governor.daily_stopped', target, { reason: error.reason, until });
+  }
+
+  private refuseSendLimit(m: Meter, error: ClassifiedError, now: number): void {
+    const stated =
+      futureTime(now, error.resumeAt) ??
+      (error.retryAfterMs !== undefined && error.retryAfterMs > 0
+        ? after(now, error.retryAfterMs)
+        : undefined);
+    const until = stated ?? after(now, SEND_LIMIT_MS);
+    if (until >= (m.sendBlockedUntil ?? 0)) {
+      m.sendBlockedUntil = until;
+      m.sendReason = error.reason;
+    }
+    m.lastRefusalAt = now;
+    this.emitIfChanged(m);
   }
 
   /** Starts the pause a refusal began on one meter, if it is new or longer, and persists the change. */
@@ -1134,326 +907,4 @@ export class Governor implements GovernorPort {
       concurrency: block.cls === 'throttle' && m.capBase !== undefined ? true : undefined,
     });
   }
-
-  // ---------------------------------------------------------------- state
-
-  /** A time-limited pause on this meter alone: the later of its cooldown and its daily or anti-abuse stop. */
-  private ownPause(m: Meter, now: number): Block | undefined {
-    const cooling = m.cooldownUntil !== undefined && m.cooldownUntil > now ? m.cooldownUntil : 0;
-    const blocked = m.blockUntil !== undefined && m.blockUntil > now ? m.blockUntil : 0;
-    if (!cooling && !blocked) return undefined;
-    const base = { account: m.account, budget: m.spec.id };
-    return blocked >= cooling
-      ? { ...base, until: blocked, cls: m.blockCls ?? 'daily', reason: m.blockReason ?? '' }
-      : { ...base, until: cooling, cls: 'throttle', reason: m.cooldownReason ?? '' };
-  }
-
-  /** What stops every request on this budget: a project config block, then the later of its own and the project's pause. */
-  private budgetPause(m: Meter, now: number): Block | undefined {
-    const project = m.account === PROJECT ? m : this.peek(PROJECT, m.spec.id);
-    if (project?.stop) {
-      return { account: PROJECT, budget: m.spec.id, cls: 'config', reason: project.stop.reason };
-    }
-    const own = this.ownPause(m, now);
-    const shared = project && project !== m ? this.ownPause(project, now) : undefined;
-    if (!shared) return own;
-    if (!own) return shared;
-    return shared.until! > own.until! ? shared : own;
-  }
-
-  /** What refuses a request of `kind` now: the account's auth block, a pause, or for a send a send limit. */
-  private blockFor(
-    m: Meter,
-    kind: RequestKind | undefined,
-    now: number,
-    ignoreAuth: boolean,
-  ): Block | undefined {
-    if (!ignoreAuth && m.account !== PROJECT) {
-      const auth = this.authBlocks.get(m.account);
-      if (auth) return { account: m.account, budget: m.spec.id, cls: 'auth', reason: auth.reason };
-    }
-    const pause = this.budgetPause(m, now);
-    if (pause) return pause;
-    if (kind === 'send' && m.sendBlockedUntil !== undefined && m.sendBlockedUntil > now) {
-      return {
-        account: m.account,
-        budget: m.spec.id,
-        until: m.sendBlockedUntil,
-        cls: 'send_limit',
-        reason: m.sendReason ?? '',
-      };
-    }
-    return undefined;
-  }
-
-  /** Lazily applies everything time does: pause ends, the quiet reset, AIMD and in-flight regrowth. */
-  private refresh(m: Meter): void {
-    const now = this.clock.now();
-    if (m.blockUntil !== undefined && m.blockUntil <= now) m.blockUntil = undefined;
-    if (m.sendBlockedUntil !== undefined && m.sendBlockedUntil <= now)
-      m.sendBlockedUntil = undefined;
-    if (!(m.cooldownUntil !== undefined && m.cooldownUntil > now)) m.retryPass = false;
-    // AIMD ends only once it has regrown past every role's target, so a role flip cannot skip it.
-    const aimd = this.aimdValue(m, now);
-    const roleMax = Math.max(m.spec.target.primary, m.spec.target.secondary);
-    if (aimd !== undefined && aimd >= roleMax) m.aimdTarget = undefined;
-    if (m.capBase !== undefined && this.limit(m, now) >= m.spec.inFlight) m.capBase = undefined;
-    if (m.cooldownUntil !== undefined && now >= m.cooldownUntil + QUIET_MS) {
-      m.cooldownStep = 0;
-      // The quiet mark is kept while anything still regrows from it.
-      if (m.aimdTarget === undefined && m.capBase === undefined) {
-        m.cooldownUntil = undefined;
-        m.cooldownReason = undefined;
-      }
-    }
-    if (m.pauseActive && !this.blockFor(m, undefined, now, false)) {
-      m.pauseActive = false;
-      this.trace('governor.resumed', { account: m.account, budget: m.spec.id });
-      this.catalogResumed(m, 'timer', now);
-    }
-    this.emitIfChanged(m);
-  }
-
-  /** The HTTP batch size: halved on a throttle, then +growBy per quiet 10 minutes up to max (F3 `BudgetSpec.batch`). */
-  private batchNow(m: Meter, now: number): number {
-    const batch = m.spec.batch;
-    if (!batch) return 1;
-    const quiet = now < m.batchSince ? 0 : Math.floor((now - m.batchSince) / QUIET_MS);
-    return Math.min(batch.max, m.batchBase + quiet * batch.growBy);
-  }
-
-  /** The AIMD target with its regrowth so far, before the role's cap. */
-  private aimdValue(m: Meter, now: number): number | undefined {
-    if (m.aimdTarget === undefined) return undefined;
-    return m.aimdTarget + this.regrowSteps(m, now) * this.regrowStep(m.spec);
-  }
-
-  private regrowSteps(m: Meter, now: number): number {
-    if (m.cooldownUntil === undefined || now < m.cooldownUntil + QUIET_MS) return 0;
-    return Math.floor((now - m.cooldownUntil - QUIET_MS) / REGROW_INTERVAL_MS) + 1;
-  }
-
-  /** Whole quiet 10-minute periods since the cooldown ended: the in-flight limit regrows by one per period. */
-  private quietSteps(m: Meter, now: number): number {
-    if (m.cooldownUntil === undefined || now < m.cooldownUntil) return 0;
-    return Math.floor((now - m.cooldownUntil) / QUIET_MS);
-  }
-
-  private limit(m: Meter, now: number): number {
-    if (m.capBase === undefined) return m.spec.inFlight;
-    return Math.min(m.spec.inFlight, Math.max(1, m.capBase + this.quietSteps(m, now)));
-  }
-
-  private effectiveTarget(m: Meter, now: number): number {
-    return Math.min(m.spec.target[m.role], this.aimdValue(m, now) ?? Infinity);
-  }
-
-  /** ARCH 6.2: Gmail regrows 250 a minute, 1/18 of its 4,500 primary target; other budgets in proportion. */
-  private regrowStep(spec: BudgetSpec): number {
-    return Math.max(1, Math.round(spec.target.primary / 18));
-  }
-
-  /** When the target or the in-flight limit next changes on its own, while something waits. */
-  private nextTargetChange(m: Meter, now: number): number {
-    const q = m.cooldownUntil;
-    if (q === undefined) return Infinity;
-    let next = Infinity;
-    if (m.aimdTarget !== undefined) {
-      const start = q + QUIET_MS;
-      next =
-        now < start
-          ? start
-          : start + (Math.floor((now - start) / REGROW_INTERVAL_MS) + 1) * REGROW_INTERVAL_MS;
-    }
-    if (m.capBase !== undefined) {
-      const cap = now < q ? q + QUIET_MS : q + (Math.floor((now - q) / QUIET_MS) + 1) * QUIET_MS;
-      next = Math.min(next, cap);
-    }
-    return next;
-  }
-
-  private describe(m: Meter, now: number): GovernorSnapshot {
-    const auth = m.account === PROJECT ? undefined : this.authBlocks.get(m.account);
-    const own = this.ownPause(m, now);
-    const sending =
-      m.sendBlockedUntil !== undefined && m.sendBlockedUntil > now
-        ? { cls: 'send_limit' as const, reason: m.sendReason ?? '' }
-        : undefined;
-    const shown = auth
-      ? { cls: 'auth' as const, reason: auth.reason }
-      : m.stop
-        ? { cls: 'config' as const, reason: m.stop.reason }
-        : (own ?? sending);
-    const blocked = auth
-      ? { cls: 'auth' as const, since: auth.since }
-      : m.stop
-        ? { cls: 'config' as const, since: m.stop.since }
-        : undefined;
-    return dropUndefined<GovernorSnapshot>({
-      budget: m.spec.id,
-      target: this.effectiveTarget(m, now),
-      inFlightLimit: this.limit(m, now),
-      batchSize: this.batchNow(m, now),
-      windowSpent: m.reservedAt !== undefined ? m.reservedSpent : 0,
-      windowAt: m.reservedAt ?? 0,
-      cooldownUntil: m.cooldownUntil,
-      cooldownStep: m.cooldownStep,
-      dailyBlockUntil: m.blockUntil !== undefined && m.blockUntil > now ? m.blockUntil : undefined,
-      sendBlockedUntil: sending ? m.sendBlockedUntil : undefined,
-      blocked,
-      cls: shown?.cls,
-      reason: shown?.reason,
-      lastRefusalAt: m.lastRefusalAt,
-    });
-  }
-
-  private changeKey(snap: GovernorSnapshot): string {
-    return JSON.stringify(snap);
-  }
-
-  private emitIfChanged(m: Meter): void {
-    const snap = this.describe(m, this.clock.now());
-    const key = this.changeKey(snap);
-    if (key === m.lastKey) return;
-    m.lastKey = key;
-    for (const listener of this.listeners) {
-      try {
-        listener(m.account, snap);
-      } catch {
-        // A failing listener must not break pacing.
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------- meters
-
-  private specFor(account: Scope, budget: BudgetId): BudgetSpec | undefined {
-    if (account !== PROJECT) {
-      const own = this.accountSpecs.get(account)?.get(budget);
-      if (own) return own;
-    }
-    const fallback = this.defaults.get(budget);
-    if (fallback || account !== PROJECT) return fallback;
-    for (const specs of this.accountSpecs.values()) {
-      const spec = specs.get(budget);
-      if (spec) return spec;
-    }
-    return undefined;
-  }
-
-  private meter(account: Scope, budget: BudgetId, like?: BudgetSpec): Meter {
-    const key = keyOf(account, budget);
-    let m = this.meters.get(key);
-    if (!m) {
-      const spec = this.specFor(account, budget) ?? like;
-      if (!spec) throw new Error(`unknown budget ${budget}`);
-      const role =
-        account === PROJECT ? this.defaultRole : (this.roles.get(account) ?? this.defaultRole);
-      m = new Meter(account, spec, role, this.clock.now());
-      m.lastKey = this.changeKey(this.describe(m, this.clock.now()));
-      this.meters.set(key, m);
-    }
-    return m;
-  }
-
-  private peek(account: Scope, budget: BudgetId): Meter | undefined {
-    return this.meters.get(keyOf(account, budget));
-  }
-
-  private scopeMeters(account: Scope): Meter[] {
-    return [...this.meters.values()].filter(m => m.account === account);
-  }
-
-  private accountMeters(account: AccountId): Meter[] {
-    return this.scopeMeters(account);
-  }
-
-  /** Every account's meter of one budget (not the project's). */
-  private budgetPeers(budget: BudgetId): Meter[] {
-    return [...this.meters.values()].filter(m => m.account !== PROJECT && m.spec.id === budget);
-  }
-
-  /**
-   * Every budget of an account: its own specs (or the defaults), the token endpoint, and any budget it has used. For
-   * `PROJECT`, the budgets that have project state.
-   */
-  private budgetMeters(account: Scope): Meter[] {
-    if (account === PROJECT) return this.scopeMeters(PROJECT);
-    const ids = new Set<BudgetId>([
-      ...(this.accountSpecs.get(account)?.keys() ?? this.defaults.keys()),
-      ...this.scopeMeters(account).map(m => m.spec.id),
-    ]);
-    if (this.specFor(account, 'oauth')) ids.add('oauth');
-    return [...ids].filter(id => this.specFor(account, id)).map(id => this.meter(account, id));
-  }
-
-  // ---------------------------------------------------------------- helpers
-
-  private classified(error: unknown): ClassifiedError | undefined {
-    return this.classifier?.(error) ?? (error instanceof ProviderError ? error.error : undefined);
-  }
-
-  /** The F1 enum is open: a class this engine does not know is treated as `transient`. */
-  private normalize(cls: string): ErrorClass {
-    return KNOWN_CLASSES.has(cls) ? (cls as ErrorClass) : 'transient';
-  }
-
-  private paused(block: Block): PausedError {
-    return new PausedError(block.account, block.budget, block.cls, block.reason, block.until);
-  }
-
-  private trace(event: GovernorLogEvent, fields: GovernorLogFields): void {
-    try {
-      this.logger?.(event, dropUndefined(fields));
-    } catch {
-      // Logging never breaks pacing.
-    }
-  }
-
-  private catalog(
-    id: 'governor.paused' | 'governor.daily_stopped',
-    m: Meter,
-    fields: Record<string, unknown>,
-  ): void {
-    if (!this.log) return;
-    const logger = m.account === PROJECT ? this.log : this.log.with({ account: m.account });
-    const data = dropUndefined({
-      budget: m.spec.id,
-      ...fields,
-      reason: (fields.reason as string) || 'unknown',
-    });
-    logger.event(id, data as never);
-  }
-
-  private catalogResumed(
-    m: Meter,
-    why: 'timer' | 'reconnect' | 'wake' | 'manual',
-    now: number,
-  ): void {
-    const since = m.pausedAt;
-    m.pausedAt = undefined;
-    if (!this.log || since === undefined) return;
-    const logger = m.account === PROJECT ? this.log : this.log.with({ account: m.account });
-    logger.event('governor.resumed', {
-      budget: m.spec.id,
-      pausedMs: Math.max(0, now - since),
-      why,
-    });
-  }
-}
-
-/** Marks an error raised before `fn` ran, so `run` maps it for sends instead of classifying it as a failure. */
-class BeforeCall {
-  constructor(readonly error: unknown) {}
-}
-
-function refusalOf(block: Block | undefined): Admission {
-  if (!block) return { ok: true };
-  return block.until === undefined
-    ? { ok: false, cls: block.cls, reason: block.reason }
-    : { ok: false, cls: block.cls, reason: block.reason, until: block.until };
-}
-
-function dropUndefined<T extends object>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
 }

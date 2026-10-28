@@ -214,12 +214,7 @@ export interface StepWriteContext {
   baselineDone: boolean;
 }
 
-/** Everything one `StepResult` writes, in one commit with its `nextStates` (F3 `StepResult`, ports.walk.md). */
-export function stepWrites(result: StepResult, ctx: StepWriteContext): StoreWrite[] {
-  const { account, now } = ctx;
-  const id = account.id;
-  const self = account.address;
-  const gen = roundGeneration(ctx.step, ctx.state, result);
+function folderWrites(id: AccountId, result: StepResult): StoreWrite[] {
   const writes: StoreWrite[] = [];
   for (const f of result.folders ?? []) {
     if (f.removed) {
@@ -237,9 +232,16 @@ export function stepWrites(result: StepResult, ctx: StepWriteContext): StoreWrit
       ...(f.uidValidity !== undefined ? { uidValidity: f.uidValidity } : {}),
     });
   }
-  for (const merge of result.threadMerges ?? []) {
-    writes.push({ kind: 'threadMerge', accountId: id, from: merge.from, into: merge.into });
-  }
+  return writes;
+}
+
+function upsertWrites(
+  id: AccountId,
+  self: string,
+  result: StepResult,
+  gen: number | undefined,
+): StoreWrite[] {
+  const writes: StoreWrite[] = [];
   const sizes = new Map<string, number>();
   for (const m of result.upserts ?? []) {
     writes.push(...messageWrites(id, self, m, gen));
@@ -248,6 +250,11 @@ export function stepWrites(result: StepResult, ctx: StepWriteContext): StoreWrit
   for (const [remoteThreadId, remoteCount] of sizes) {
     writes.push({ kind: 'thread', accountId: id, remoteThreadId, remoteCount });
   }
+  return writes;
+}
+
+function deltaWrites(id: AccountId, result: StepResult, gen: number | undefined): StoreWrite[] {
+  const writes: StoreWrite[] = [];
   for (const d of result.labelDeltas ?? []) {
     writes.push({
       kind: 'placements',
@@ -271,37 +278,45 @@ export function stepWrites(result: StepResult, ctx: StepWriteContext): StoreWrit
     const w = placementWrite(id, d, d.present ? stamp : undefined);
     if (w) writes.push(w);
   }
-  for (const r of result.removals ?? []) {
-    writes.push({ kind: 'messageDelete', accountId: id, remoteId: r.remoteId });
-  }
-  for (const d of result.drafts ?? []) writes.push(draftWrite(id, self, d));
-  for (const s of result.nextStates) {
-    writes.push({
-      kind: 'syncState',
-      accountId: id,
-      scope: s.scope,
-      generation: s.generation,
-      ...(s.cursor !== undefined ? { cursor: s.cursor } : {}),
-      ...(s.pageToken !== undefined ? { pageToken: s.pageToken } : {}),
-      ...(s.phase !== undefined ? { phase: s.phase } : {}),
-      ...(s.oldestLoaded !== undefined ? { oldestLoaded: s.oldestLoaded } : {}),
-      ...(s.pending?.length ? { pending: s.pending } : {}),
-    });
-  }
+  return writes;
+}
+
+function syncStateWrites(id: AccountId, result: StepResult): StoreWrite[] {
+  return result.nextStates.map((s): StoreWrite => ({
+    kind: 'syncState',
+    accountId: id,
+    scope: s.scope,
+    generation: s.generation,
+    ...(s.cursor !== undefined ? { cursor: s.cursor } : {}),
+    ...(s.pageToken !== undefined ? { pageToken: s.pageToken } : {}),
+    ...(s.phase !== undefined ? { phase: s.phase } : {}),
+    ...(s.oldestLoaded !== undefined ? { oldestLoaded: s.oldestLoaded } : {}),
+    ...(s.pending?.length ? { pending: s.pending } : {}),
+  }));
+}
+
+function sweepWrites(account: AdapterAccount, result: StepResult): StoreWrite[] {
   // The sweep commits with the step that covered the scope, never after a partial answer or on a partial-view host.
-  if (result.scopeCovered && result.done && !account.capabilities.partialView) {
-    const { bound, generation } = result.scopeCovered;
-    writes.push({
+  if (!result.scopeCovered || !result.done || account.capabilities.partialView) return [];
+  const { bound, generation } = result.scopeCovered;
+  return [
+    {
       kind: 'sweep',
-      accountId: id,
+      accountId: account.id,
       folder: bound.folder,
       generation,
       ...(bound.since !== undefined ? { since: bound.since } : {}),
       ...(bound.until !== undefined ? { until: bound.until } : {}),
       ...(bound.uidFrom !== undefined ? { uidFrom: bound.uidFrom } : {}),
       ...(bound.uidTo !== undefined ? { uidTo: bound.uidTo } : {}),
-    });
-  }
+    },
+  ];
+}
+
+function trailingWrites(result: StepResult, ctx: StepWriteContext): StoreWrite[] {
+  const { account, now } = ctx;
+  const id = account.id;
+  const writes: StoreWrite[] = [];
   if (result.memory && Object.keys(result.memory).length) {
     writes.push({ kind: 'providerMemory', accountId: id, values: result.memory });
   }
@@ -321,6 +336,29 @@ export function stepWrites(result: StepResult, ctx: StepWriteContext): StoreWrit
   if (result.baselineReached && !ctx.baselineDone) {
     writes.push({ kind: 'account', id, baselineDoneAt: now });
   }
+  return writes;
+}
+
+/** Everything one `StepResult` writes, in one commit with its `nextStates` (F3 `StepResult`, ports.walk.md). */
+export function stepWrites(result: StepResult, ctx: StepWriteContext): StoreWrite[] {
+  const { account } = ctx;
+  const id = account.id;
+  const self = account.address;
+  const gen = roundGeneration(ctx.step, ctx.state, result);
+  const writes: StoreWrite[] = [...folderWrites(id, result)];
+  for (const merge of result.threadMerges ?? []) {
+    writes.push({ kind: 'threadMerge', accountId: id, from: merge.from, into: merge.into });
+  }
+  writes.push(...upsertWrites(id, self, result, gen), ...deltaWrites(id, result, gen));
+  for (const r of result.removals ?? []) {
+    writes.push({ kind: 'messageDelete', accountId: id, remoteId: r.remoteId });
+  }
+  for (const d of result.drafts ?? []) writes.push(draftWrite(id, self, d));
+  writes.push(
+    ...syncStateWrites(id, result),
+    ...sweepWrites(account, result),
+    ...trailingWrites(result, ctx),
+  );
   return writes;
 }
 

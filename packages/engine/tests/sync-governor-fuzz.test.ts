@@ -204,6 +204,78 @@ async function fuzz(
     return { ...base, class: 'permanent', reason: 'notFound', status: 404 };
   };
 
+  /** The invariant checks at the moment the provider is called (1)-(5), and the in-flight count. */
+  const checkCall = (
+    g: Gen,
+    kind: RequestKind,
+    lane: Lane,
+    cost: number,
+    tries: number,
+    lastFailure: ErrorClass | 'unclassified' | 'aborted' | undefined,
+    now: number,
+  ) => {
+    // (2) and (4): never while a pause or stop is in force.
+    if (now < model.throttleUntil || model.stopped)
+      flag(
+        '2-call-during-pause',
+        `${kind}/${lane} at +${now - clock.jumps[0]?.from} throttleUntil ${model.throttleUntil} stopped ${model.stopped}`,
+      );
+    if (now < model.dailyUntil)
+      flag('4-daily-lifted-early', `${kind}/${lane} at ${now}, daily until ${model.dailyUntil}`);
+    if (!g.governor.admission(ACCOUNT, 'gmail', lane).ok)
+      flag('2-call-during-pause', `governor itself reports a pause at ${now}`);
+    // (3) and (5): one retry layer.
+    if (tries > 1 && (kind === 'send' || kind === 'write'))
+      flag('3-send-or-write-twice', `${kind} invoked ${tries} times`);
+    if (
+      tries > 1 &&
+      !(
+        (kind === 'read' || kind === 'idempotentWrite') &&
+        (lastFailure === 'transient' || lastFailure === 'unclassified')
+      )
+    )
+      flag('5-second-retry-layer', `${kind} re-invoked after ${lastFailure}`);
+    if (tries > TRANSIENT_TRIES) flag('5-second-retry-layer', `${tries} tries`);
+    // Concurrency.
+    g.running++;
+    if (g.running > 3) flag('concurrency', `${g.running} in flight`);
+    if (now < model.cap1Until && g.running > 1)
+      flag(
+        'concurrency',
+        `${g.running} in flight after a concurrency refusal, at ${now}, cap until ${model.cap1Until}`,
+      );
+    // (1): window at the provider, across restarts, against the target in force.
+    calls.push({ at: now, units: cost });
+    t(`call ${kind}/${lane} ${cost} gen${restarts}`);
+    const used = calls.filter(c => now - c.at < MINUTE).reduce((s, c) => s + c.units, 0);
+    const snap = gmail(g.governor.snapshot(ACCOUNT));
+    if (used > snap.target)
+      flag(
+        '1-window-over-target',
+        `${now - lastRestartAt < MINUTE ? '[within 60 s of a restart] ' : '[no recent restart] '}${used} units in the 60 s window at ${now}, target in force ${snap.target} (governor thinks ${g.governor.inspect(ACCOUNT, 'gmail').used}), restarts so far ${restarts}`,
+      );
+    if (used > ROLE_TARGET[role])
+      flag('1-window-over-target', `${used} units over role target ${ROLE_TARGET[role]} (${role})`);
+    const bound = Math.min(ROLE_TARGET[role], aimdBound(now));
+    if (snap.target > bound)
+      flag(
+        '1b-target-above-aimd-bound',
+        `target ${snap.target} > AIMD bound ${bound} at ${now} (H ${aimd?.H}, q ${aimd?.q}), role ${role}, restarts ${restarts}`,
+      );
+  };
+
+  /** The provider refuses: the model learns it first, then the error reaches the governor. */
+  const refuse = (g: Gen, kind: RequestKind, a: ClassifiedError): never => {
+    learn(g, a);
+    t(`fn answer ${kind} ${a.class} ra=${a.retryAfterMs} -> model ${JSON.stringify(model)}`);
+    const err = new ProviderError(a);
+    if (a.class === 'throttle')
+      queueMicrotask(() => {
+        if (g.alive) afterThrottle(g);
+      });
+    throw err;
+  };
+
   const spawn = () => {
     const g = gen;
     const lane: Lane = pick(LANES);
@@ -223,60 +295,7 @@ async function fuzz(
           flag('2-call-during-pause', `dead process called fn at ${now}`);
           throw new Error('dead');
         }
-        // (2) and (4): never while a pause or stop is in force.
-        if (now < model.throttleUntil || model.stopped)
-          flag(
-            '2-call-during-pause',
-            `${kind}/${lane} at +${now - clock.jumps[0]?.from} throttleUntil ${model.throttleUntil} stopped ${model.stopped}`,
-          );
-        if (now < model.dailyUntil)
-          flag(
-            '4-daily-lifted-early',
-            `${kind}/${lane} at ${now}, daily until ${model.dailyUntil}`,
-          );
-        if (!g.governor.admission(ACCOUNT, 'gmail', lane).ok)
-          flag('2-call-during-pause', `governor itself reports a pause at ${now}`);
-        // (3) and (5): one retry layer.
-        if (tries > 1 && (kind === 'send' || kind === 'write'))
-          flag('3-send-or-write-twice', `${kind} invoked ${tries} times`);
-        if (
-          tries > 1 &&
-          !(
-            (kind === 'read' || kind === 'idempotentWrite') &&
-            (lastFailure === 'transient' || lastFailure === 'unclassified')
-          )
-        )
-          flag('5-second-retry-layer', `${kind} re-invoked after ${lastFailure}`);
-        if (tries > TRANSIENT_TRIES) flag('5-second-retry-layer', `${tries} tries`);
-        // Concurrency.
-        g.running++;
-        if (g.running > 3) flag('concurrency', `${g.running} in flight`);
-        if (now < model.cap1Until && g.running > 1)
-          flag(
-            'concurrency',
-            `${g.running} in flight after a concurrency refusal, at ${now}, cap until ${model.cap1Until}`,
-          );
-        // (1): window at the provider, across restarts, against the target in force.
-        calls.push({ at: now, units: cost });
-        t(`call ${kind}/${lane} ${cost} gen${restarts}`);
-        const used = calls.filter(c => now - c.at < MINUTE).reduce((s, c) => s + c.units, 0);
-        const snap = gmail(g.governor.snapshot(ACCOUNT));
-        if (used > snap.target)
-          flag(
-            '1-window-over-target',
-            `${now - lastRestartAt < MINUTE ? '[within 60 s of a restart] ' : '[no recent restart] '}${used} units in the 60 s window at ${now}, target in force ${snap.target} (governor thinks ${g.governor.inspect(ACCOUNT, 'gmail').used}), restarts so far ${restarts}`,
-          );
-        if (used > ROLE_TARGET[role])
-          flag(
-            '1-window-over-target',
-            `${used} units over role target ${ROLE_TARGET[role]} (${role})`,
-          );
-        const bound = Math.min(ROLE_TARGET[role], aimdBound(now));
-        if (snap.target > bound)
-          flag(
-            '1b-target-above-aimd-bound',
-            `target ${snap.target} > AIMD bound ${bound} at ${now} (H ${aimd?.H}, q ${aimd?.q}), role ${role}, restarts ${restarts}`,
-          );
+        checkCall(g, kind, lane, cost, tries, lastFailure, now);
         const isWrite = kind === 'send' || kind === 'write';
         const honoursAbort = !isWrite || rand() < 0.5; // half the writes run through http.ts, which aborts the fetch
         try {
@@ -297,14 +316,7 @@ async function fuzz(
           throw new Error('socket hang up');
         }
         lastFailure = a.class as ErrorClass;
-        learn(g, a);
-        t(`fn answer ${kind} ${a.class} ra=${a.retryAfterMs} -> model ${JSON.stringify(model)}`);
-        const err = new ProviderError(a);
-        if (a.class === 'throttle')
-          queueMicrotask(() => {
-            if (g.alive) afterThrottle(g);
-          });
-        throw err;
+        refuse(g, kind, a);
       })
       .then(
         () => {},

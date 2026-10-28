@@ -44,35 +44,43 @@ function parseJson(text: string): unknown {
   }
 }
 
+/** OAuth token endpoint: {"error": "invalid_grant", "error_description": "..."} */
+function oauthError(status: number, code: string, root: Json): GoogleErrorInfo {
+  const description = str(root.error_description);
+  return {
+    status,
+    reason: code || 'unknown',
+    message: tidy(description ?? code),
+    ...(description ? { oauthDescription: tidy(description) } : {}),
+  };
+}
+
+/** The `google.rpc.ErrorInfo` detail, else the first detail that names a reason. */
+function errorInfoDetail(error: Json): Json | undefined {
+  if (!Array.isArray(error.details)) return undefined;
+  return (
+    error.details.find(
+      (d): d is Json =>
+        isObject(d) &&
+        typeof d['@type'] === 'string' &&
+        d['@type'].endsWith('google.rpc.ErrorInfo'),
+    ) ?? error.details.find((d): d is Json => isObject(d) && typeof d.reason === 'string')
+  );
+}
+
 export function parseGoogleError(status: number, bodyText: string): GoogleErrorInfo {
   const body = parseJson(bodyText);
   const root = isObject(body) ? body : undefined;
   if (!root) return { status, reason: 'unknown', message: tidy(bodyText ?? '') };
 
-  // OAuth token endpoint: {"error": "invalid_grant", "error_description": "..."}
-  if (typeof root.error === 'string') {
-    const description = str(root.error_description);
-    return {
-      status,
-      reason: root.error || 'unknown',
-      message: tidy(description ?? root.error),
-      ...(description ? { oauthDescription: tidy(description) } : {}),
-    };
-  }
+  if (typeof root.error === 'string') return oauthError(status, root.error, root);
 
   const error = isObject(root.error) ? root.error : undefined;
   if (!error) return { status, reason: 'unknown', message: tidy(bodyText) };
 
   const first =
     Array.isArray(error.errors) && isObject(error.errors[0]) ? error.errors[0] : undefined;
-  const info = Array.isArray(error.details)
-    ? (error.details.find(
-        (d): d is Json =>
-          isObject(d) &&
-          typeof d['@type'] === 'string' &&
-          d['@type'].endsWith('google.rpc.ErrorInfo'),
-      ) ?? error.details.find((d): d is Json => isObject(d) && typeof d.reason === 'string'))
-    : undefined;
+  const info = errorInfoDetail(error);
 
   const rpcStatus = str(error.status);
   const domain = str(first?.domain) ?? str(info?.domain);

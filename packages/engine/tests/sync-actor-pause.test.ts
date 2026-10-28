@@ -4,7 +4,6 @@ import {
   ProviderError,
   type PlanInput,
   type PlannedStep,
-  type StepResult,
   type SyncLane,
   type WorkflowChannel,
 } from '../src/ports';
