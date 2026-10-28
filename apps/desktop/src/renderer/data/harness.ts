@@ -8,6 +8,7 @@ import { createFixtureEngine, defaultNow, type Scenario } from '@aplos/contract-
 import { fixtureControl, type FixtureControl } from '@aplos/contract-fixture/control';
 import type { MethodName } from './contract-shapes';
 import { createDataLayer, type DataLayer } from './layer';
+import { withNativeStubs } from './native-stub';
 import {
   createManualScheduler,
   createManualTimers,
@@ -57,7 +58,7 @@ export function createHarness(options: HarnessOptions = {}): Harness {
     checkResults: options.checkResults ?? true,
   });
   const calls: RecordedCall[] = [];
-  const inner = engine.connect();
+  const inner = withNativeStubs(engine.connect());
   const session: EngineSession = {
     call(method, args, callOptions) {
       calls.push({ method: method as MethodName, args });

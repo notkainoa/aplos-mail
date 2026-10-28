@@ -46,8 +46,8 @@ export type Effect =
 
 export interface OpRecord {
   readonly opId: OpId;
-  /** `act` for `Thread/act`, `undo` for `Operation/undo`. */
-  readonly kind: 'act' | 'undo';
+  /** `act` for `Thread/act`, `undo` for `Operation/undo`, `command` for any other write that returns a receipt (no overlay). */
+  readonly kind: 'act' | 'undo' | 'command';
   /** For an undo: the operation it reverses. */
   readonly undoOf: OpId | null;
   readonly action: ThreadAction | null;
@@ -60,6 +60,8 @@ export interface OpRecord {
   undoUntil: EpochMs | null;
   /** Set while an undo of this operation is issued or done; cleared if that undo fails. */
   undoneBy: OpId | null;
+  /** A `command` only: sends the same write again under a fresh `opId` (Retry after the engine refused it). */
+  readonly reissue?: () => ActResult;
 }
 
 /** Operations remembered for toasts; the oldest are forgotten past this. */
@@ -191,6 +193,14 @@ export class UndoStackStore implements UndoStack {
 
   pushOperation(opId: OpId): void {
     this.add({ kind: 'operation', id: this.deps.mintId('undo'), opId });
+  }
+
+  /** Take an operation off the stack (its receipt said it cannot be undone). */
+  dropOperation(opId: OpId): void {
+    const kept = this.entries.filter(e => !(e.kind === 'operation' && e.opId === opId));
+    if (kept.length === this.entries.length) return;
+    this.entries = kept;
+    this.deps.emitter.emit(UNDO_TOPIC);
   }
 
   push(entry: LocalUndo): UndoHandle {

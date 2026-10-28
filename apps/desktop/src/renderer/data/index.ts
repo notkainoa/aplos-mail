@@ -923,6 +923,12 @@ export interface DataApi {
   };
   /** Accounts. Flows return a `connectId` at once and report through `connect` frames (`useFrames('connect', {connectId})`). */
   readonly account: {
+    /** `Account/discover {address | domain}`: which provider an address belongs to, with preset server settings (Add account). Round 1 connects Google only. */
+    readonly discover: ClientApi['account']['discover'];
+    /** `Account/disconnect {accountId}`: remove an account and everything Aplos stored for it; refused while one of its messages is sending. Not undoable (its receipt says so); a refusal marks the operation failed and rethrows the engine's error. */
+    readonly disconnect: Command<'Account/disconnect'>;
+    /** `Account/lease {accountId?, pin}`: "Use this Mac" for background work, or back to automatic; every account when `accountId` is absent. */
+    readonly lease: ClientApi['account']['lease'];
     /** `Account/connect`: connect a new account (onboarding, Settings → Add account). */
     readonly connect: ClientApi['account']['connect'];
     /** `Account/reconnect`: the weekly reconnect, with `login_hint`; no resync, queued changes kept (roadmap N3). */
@@ -965,6 +971,88 @@ export interface DataApi {
     readonly run: ClientApi['ask']['run'];
     /** `Ask/cancel`: Esc; the partial answer is kept and the turn says `stopped`. */
     readonly cancel: ClientApi['ask']['cancel'];
+    /** `Ask/decide {conversationId, turnId, proposalId, accept}`: accept or dismiss something Ask proposed (a reply, an event, a triage). Accepting returns the receipt, and joins the one undo stack unless it says it cannot be undone; `draftId` and `eventId` name what accepting made. */
+    readonly decide: Command<'Ask/decide'>;
+    /** `Ask/suggestions`: three plain suggested questions for the empty Ask panel. */
+    readonly suggestions: ClientApi['ask']['suggestions'];
+  };
+  /** Ask conversations (read them with `useView({kind: 'conversations'})` and `useRow('Conversation', id)`). */
+  readonly conversation: {
+    /** `Conversation/destroy {id}`: delete a conversation. Undoable: joins the undo stack (Operation/undo brings it back). */
+    readonly destroy: Command<'Conversation/destroy'>;
+  };
+  /** Calendars (Aplos-side visibility and colour; never written to the provider). */
+  readonly calendar: {
+    /** `Calendar/get {accountId?}`: calendars with Aplos-side visibility and colour. */
+    readonly get: ClientApi['calendar']['get'];
+    /** `Calendar/set {id, shown?, colorTag?}`: show or hide a calendar, or change its colour. Undoable. */
+    readonly set: Command<'Calendar/set'>;
+  };
+  /** Events (read them with `useAgenda` and `useRow('Event', id)`). */
+  readonly event: {
+    /** `Event/set {change, notify?}`: create, edit or delete an event, for one occurrence, the series or the following ones. May email guests, so the engine holds it briefly: the receipt's `undoUntil` says until when Operation/undo cancels it. Joins the undo stack. */
+    readonly set: Command<'Event/set'>;
+    /** `Event/rsvp {id, response, scope, notify?}`: answer an invitation for one occurrence or the series. Joins the undo stack. */
+    readonly rsvp: Command<'Event/rsvp'>;
+  };
+  /** Plans found in mail (dates and meetings waiting to be confirmed; read them with `useRow('Plan', id)`). */
+  readonly plan: {
+    /** `Plan/confirm {id, calendarId?, fields?}`: add a plan to a calendar, with optional edits; `eventId` names the new event. Joins the undo stack. */
+    readonly confirm: Command<'Plan/confirm'>;
+    /** `Plan/dismiss {ids}`: dismiss plans. Joins the undo stack. */
+    readonly dismiss: Command<'Plan/dismiss'>;
+  };
+  /** "Allow tools on this Mac": the local socket and loopback HTTP listener (Settings → Tools; UI-only methods). */
+  readonly listener: {
+    /** `Listener/get`: whether the listener is on, and where. */
+    readonly get: ClientApi['listener']['get'];
+    /** `Listener/set {enabled}`: turn the listener on or off. */
+    readonly set: ClientApi['listener']['set'];
+  };
+  /** Tools allowed on this Mac (Settings → Tools; UI-only methods). Tokens never cross the contract. */
+  readonly clients: {
+    /** `Clients/list`: tools allowed on this Mac. */
+    readonly list: ClientApi['clients']['list'];
+    /** `Clients/grant {name, kind, scopes}`: allow a tool with scopes. */
+    readonly grant: ClientApi['clients']['grant'];
+    /** `Clients/revoke {id}`: revoke a tool. */
+    readonly revoke: ClientApi['clients']['revoke'];
+    /** `Clients/audit {clientId?, limit?}`: sends, deletes and settings changes made by tools. */
+    readonly audit: ClientApi['clients']['audit'];
+  };
+  /** The queue inspector (Settings → Queue): ops, AI jobs and submissions, content-free. */
+  readonly queue: {
+    /** `Queue/list {kinds?}`. */
+    readonly list: ClientApi['queue']['list'];
+    /** `Queue/retry {id}`: retry a queued item now. */
+    readonly retry: ClientApi['queue']['retry'];
+    /** `Queue/discard {id}`: discard a queued item. */
+    readonly discard: ClientApi['queue']['discard'];
+  };
+  /** Windows, served by main (preload routes them past the engine). */
+  readonly window: {
+    /** `Window/openOnboarding {mode}`: open the onboarding window, first run (`first`) or "Show welcome" (`review`) beside the mail window. */
+    readonly openOnboarding: ClientApi['window']['openOnboarding'];
+    /** `Window/finishOnboarding`: hand over from onboarding to the mail window. */
+    readonly finishOnboarding: ClientApi['window']['finishOnboarding'];
+  };
+  /** macOS facts and permissions, served by main. */
+  readonly system: {
+    /** `System/login {enabled?}`: read, or set, whether Aplos opens at login. */
+    readonly login: ClientApi['system']['login'];
+    /** `System/defaultMail`: make Aplos the default mail app. */
+    readonly defaultMail: ClientApi['system']['defaultMail'];
+    /** `System/microphone {check?}`: microphone permission, checked without the macOS prompt or asked for. */
+    readonly microphone: ClientApi['system']['microphone'];
+    /** `System/notifications`: notification permission as far as macOS reports it. */
+    readonly notifications: ClientApi['system']['notifications'];
+    /** `System/openSettings {pane}`: open the System Settings pane for a permission Aplos needs. */
+    readonly openSettings: ClientApi['system']['openSettings'];
+  };
+  /** Notifications, served by main. */
+  readonly notification: {
+    /** `Notification/test`: post a test notification. */
+    readonly test: ClientApi['notification']['test'];
   };
   /** Remote search (DESIGN 7.9): local results come from the open `search` window as the owner types; Return asks the provider once. */
   readonly search: {
@@ -973,6 +1061,20 @@ export interface DataApi {
   };
   /** Interactive AI. */
   readonly ai: {
+    /** `Ai/providers`: Settings → AI's provider table: status and where each key comes from, never the key. */
+    readonly providers: ClientApi['ai']['providers'];
+    /** `Ai/models {provider}`: a provider's models; local servers are asked live, hosted ones fall back to the curated list offline (`live` says which). */
+    readonly models: ClientApi['ai']['models'];
+    /** `Ai/status`: whether each AI feature is ready, and why not. */
+    readonly status: ClientApi['ai']['status'];
+    /** `Ai/usage`: today's AI use against the daily background cap. */
+    readonly usage: ClientApi['ai']['usage'];
+    /** `Ai/setKey {provider, key}`: save a provider key to the Keychain-backed vault; never echoed back, never logged. */
+    readonly setKey: ClientApi['ai']['setKey'];
+    /** `Ai/removeKey {provider}`: remove a saved key; refused for a key from the backend environment. */
+    readonly removeKey: ClientApi['ai']['removeKey'];
+    /** `Ai/testKey {provider}`: one cheap request with the provider's current key. No mail is sent. */
+    readonly testKey: ClientApi['ai']['testKey'];
     /** `Ai/request`: queue a summary (or classify, plan, suggest action) for a thread; the result arrives as a row change. */
     readonly request: Command<'Ai/request'>;
     /** `Ai/draft`: write a draft or reply from an instruction, as a suggestion at the caret. */
@@ -1224,6 +1326,224 @@ export const CONTRACT_METHODS = {
     gaps: ['F9-25'],
     notes: '',
   },
+  'account.discover': {
+    method: 'Account/discover',
+    kind: 'call',
+    gaps: [],
+    notes: '',
+  },
+  'account.disconnect': {
+    method: 'Account/disconnect',
+    kind: 'call',
+    gaps: [],
+    notes:
+      'opId minted; joins operations, not undoable (receipt.undoable false); a refusal rethrows the engine error and marks the operation failed',
+  },
+  'account.lease': {
+    method: 'Account/lease',
+    kind: 'call',
+    gaps: [],
+    notes: 'every account when accountId is absent',
+  },
+  'ai.providers': {
+    method: 'Ai/providers',
+    kind: 'call',
+    gaps: [],
+    notes: 'never the key',
+  },
+  'ai.models': {
+    method: 'Ai/models',
+    kind: 'call',
+    gaps: [],
+    notes: 'live says whether a local server was asked',
+  },
+  'ai.status': {
+    method: 'Ai/status',
+    kind: 'call',
+    gaps: [],
+    notes: '',
+  },
+  'ai.usage': {
+    method: 'Ai/usage',
+    kind: 'call',
+    gaps: [],
+    notes: '',
+  },
+  'ai.setKey': {
+    method: 'Ai/setKey',
+    kind: 'call',
+    gaps: [],
+    notes: 'secret: never logged or echoed',
+  },
+  'ai.removeKey': {
+    method: 'Ai/removeKey',
+    kind: 'call',
+    gaps: [],
+    notes: 'secret; refused for a key from the backend environment',
+  },
+  'ai.testKey': {
+    method: 'Ai/testKey',
+    kind: 'call',
+    gaps: [],
+    notes: 'no mail is sent',
+  },
+  'ask.decide': {
+    method: 'Ask/decide',
+    kind: 'call',
+    gaps: [],
+    notes: 'opId minted; receipt joins operations and the undo stack unless undoable is false',
+  },
+  'ask.suggestions': {
+    method: 'Ask/suggestions',
+    kind: 'call',
+    gaps: [],
+    notes: '',
+  },
+  'conversation.destroy': {
+    method: 'Conversation/destroy',
+    kind: 'call',
+    gaps: [],
+    notes: 'opId minted; receipt joins operations and the undo stack',
+  },
+  'event.set': {
+    method: 'Event/set',
+    kind: 'call',
+    gaps: [],
+    notes:
+      'opId minted; receipt joins operations and the undo stack; undoUntil is the hold before guests are told',
+  },
+  'event.rsvp': {
+    method: 'Event/rsvp',
+    kind: 'call',
+    gaps: [],
+    notes: 'opId minted; receipt joins operations and the undo stack',
+  },
+  'calendar.get': {
+    method: 'Calendar/get',
+    kind: 'call',
+    gaps: [],
+    notes: '',
+  },
+  'calendar.set': {
+    method: 'Calendar/set',
+    kind: 'call',
+    gaps: [],
+    notes: 'opId minted; receipt joins operations and the undo stack',
+  },
+  'plan.confirm': {
+    method: 'Plan/confirm',
+    kind: 'call',
+    gaps: [],
+    notes: 'opId minted; receipt joins operations and the undo stack',
+  },
+  'plan.dismiss': {
+    method: 'Plan/dismiss',
+    kind: 'call',
+    gaps: [],
+    notes: 'opId minted; receipt joins operations and the undo stack',
+  },
+  'listener.get': {
+    method: 'Listener/get',
+    kind: 'call',
+    gaps: [],
+    notes: 'UI-only method',
+  },
+  'listener.set': {
+    method: 'Listener/set',
+    kind: 'call',
+    gaps: [],
+    notes: 'UI-only method',
+  },
+  'clients.list': {
+    method: 'Clients/list',
+    kind: 'call',
+    gaps: [],
+    notes: 'UI-only method',
+  },
+  'clients.grant': {
+    method: 'Clients/grant',
+    kind: 'call',
+    gaps: [],
+    notes: 'UI-only method; the token never crosses the contract',
+  },
+  'clients.revoke': {
+    method: 'Clients/revoke',
+    kind: 'call',
+    gaps: [],
+    notes: 'UI-only method',
+  },
+  'clients.audit': {
+    method: 'Clients/audit',
+    kind: 'call',
+    gaps: [],
+    notes: 'UI-only method',
+  },
+  'queue.list': {
+    method: 'Queue/list',
+    kind: 'call',
+    gaps: [],
+    notes: 'content-free',
+  },
+  'queue.retry': {
+    method: 'Queue/retry',
+    kind: 'call',
+    gaps: [],
+    notes: '',
+  },
+  'queue.discard': {
+    method: 'Queue/discard',
+    kind: 'call',
+    gaps: [],
+    notes: '',
+  },
+  'window.openOnboarding': {
+    method: 'Window/openOnboarding',
+    kind: 'native',
+    gaps: [],
+    notes: 'main opens the window; the stand-in answers ok and records nothing',
+  },
+  'window.finishOnboarding': {
+    method: 'Window/finishOnboarding',
+    kind: 'native',
+    gaps: [],
+    notes: 'main also ends the setup session itself on any close',
+  },
+  'system.login': {
+    method: 'System/login',
+    kind: 'native',
+    gaps: [],
+    notes: '',
+  },
+  'system.defaultMail': {
+    method: 'System/defaultMail',
+    kind: 'native',
+    gaps: [],
+    notes: '',
+  },
+  'system.microphone': {
+    method: 'System/microphone',
+    kind: 'native',
+    gaps: [],
+    notes: 'check: true reads without the macOS prompt',
+  },
+  'system.notifications': {
+    method: 'System/notifications',
+    kind: 'native',
+    gaps: [],
+    notes: '',
+  },
+  'system.openSettings': {
+    method: 'System/openSettings',
+    kind: 'native',
+    gaps: [],
+    notes: '',
+  },
+  'notification.test': {
+    method: 'Notification/test',
+    kind: 'native',
+    gaps: [],
+    notes: '',
+  },
 } as const satisfies { readonly [N in ApiMethodName]: ContractMethodRef<N> };
 
 /** What the hooks read from the contract, with the GAPS.md rows that settled each ask. */
@@ -1313,6 +1633,12 @@ export const api: DataApi = {
       forward('sync', 'request', args)) as DataApi['sync']['request'],
   },
   account: {
+    discover: ((...args: unknown[]) =>
+      forward('account', 'discover', args)) as DataApi['account']['discover'],
+    disconnect: ((...args: unknown[]) =>
+      forward('account', 'disconnect', args)) as DataApi['account']['disconnect'],
+    lease: ((...args: unknown[]) =>
+      forward('account', 'lease', args)) as DataApi['account']['lease'],
     connect: ((...args: unknown[]) =>
       forward('account', 'connect', args)) as DataApi['account']['connect'],
     reconnect: ((...args: unknown[]) =>
@@ -1338,6 +1664,9 @@ export const api: DataApi = {
     set: ((...args: unknown[]) => forward('settings', 'set', args)) as DataApi['settings']['set'],
   },
   ask: {
+    decide: ((...args: unknown[]) => forward('ask', 'decide', args)) as DataApi['ask']['decide'],
+    suggestions: ((...args: unknown[]) =>
+      forward('ask', 'suggestions', args)) as DataApi['ask']['suggestions'],
     run: ((...args: unknown[]) => forward('ask', 'run', args)) as DataApi['ask']['run'],
     cancel: ((...args: unknown[]) => forward('ask', 'cancel', args)) as DataApi['ask']['cancel'],
   },
@@ -1346,6 +1675,15 @@ export const api: DataApi = {
       forward('search', 'remote', args)) as DataApi['search']['remote'],
   },
   ai: {
+    providers: ((...args: unknown[]) =>
+      forward('ai', 'providers', args)) as DataApi['ai']['providers'],
+    models: ((...args: unknown[]) => forward('ai', 'models', args)) as DataApi['ai']['models'],
+    status: ((...args: unknown[]) => forward('ai', 'status', args)) as DataApi['ai']['status'],
+    usage: ((...args: unknown[]) => forward('ai', 'usage', args)) as DataApi['ai']['usage'],
+    setKey: ((...args: unknown[]) => forward('ai', 'setKey', args)) as DataApi['ai']['setKey'],
+    removeKey: ((...args: unknown[]) =>
+      forward('ai', 'removeKey', args)) as DataApi['ai']['removeKey'],
+    testKey: ((...args: unknown[]) => forward('ai', 'testKey', args)) as DataApi['ai']['testKey'],
     request: ((...args: unknown[]) => forward('ai', 'request', args)) as DataApi['ai']['request'],
     draft: ((...args: unknown[]) => forward('ai', 'draft', args)) as DataApi['ai']['draft'],
     polish: ((...args: unknown[]) => forward('ai', 'polish', args)) as DataApi['ai']['polish'],
@@ -1377,5 +1715,63 @@ export const api: DataApi = {
       forward('diagnostics', 'preview', args)) as DataApi['diagnostics']['preview'],
     copy: ((...args: unknown[]) =>
       forward('diagnostics', 'copy', args)) as DataApi['diagnostics']['copy'],
+  },
+  conversation: {
+    destroy: ((...args: unknown[]) =>
+      forward('conversation', 'destroy', args)) as DataApi['conversation']['destroy'],
+  },
+  event: {
+    set: ((...args: unknown[]) => forward('event', 'set', args)) as DataApi['event']['set'],
+    rsvp: ((...args: unknown[]) => forward('event', 'rsvp', args)) as DataApi['event']['rsvp'],
+  },
+  calendar: {
+    get: ((...args: unknown[]) => forward('calendar', 'get', args)) as DataApi['calendar']['get'],
+    set: ((...args: unknown[]) => forward('calendar', 'set', args)) as DataApi['calendar']['set'],
+  },
+  plan: {
+    confirm: ((...args: unknown[]) =>
+      forward('plan', 'confirm', args)) as DataApi['plan']['confirm'],
+    dismiss: ((...args: unknown[]) =>
+      forward('plan', 'dismiss', args)) as DataApi['plan']['dismiss'],
+  },
+  listener: {
+    get: ((...args: unknown[]) => forward('listener', 'get', args)) as DataApi['listener']['get'],
+    set: ((...args: unknown[]) => forward('listener', 'set', args)) as DataApi['listener']['set'],
+  },
+  clients: {
+    list: ((...args: unknown[]) => forward('clients', 'list', args)) as DataApi['clients']['list'],
+    grant: ((...args: unknown[]) =>
+      forward('clients', 'grant', args)) as DataApi['clients']['grant'],
+    revoke: ((...args: unknown[]) =>
+      forward('clients', 'revoke', args)) as DataApi['clients']['revoke'],
+    audit: ((...args: unknown[]) =>
+      forward('clients', 'audit', args)) as DataApi['clients']['audit'],
+  },
+  queue: {
+    list: ((...args: unknown[]) => forward('queue', 'list', args)) as DataApi['queue']['list'],
+    retry: ((...args: unknown[]) => forward('queue', 'retry', args)) as DataApi['queue']['retry'],
+    discard: ((...args: unknown[]) =>
+      forward('queue', 'discard', args)) as DataApi['queue']['discard'],
+  },
+  window: {
+    openOnboarding: ((...args: unknown[]) =>
+      forward('window', 'openOnboarding', args)) as DataApi['window']['openOnboarding'],
+    finishOnboarding: ((...args: unknown[]) =>
+      forward('window', 'finishOnboarding', args)) as DataApi['window']['finishOnboarding'],
+  },
+  system: {
+    login: ((...args: unknown[]) => forward('system', 'login', args)) as DataApi['system']['login'],
+    defaultMail: ((...args: unknown[]) =>
+      forward('system', 'defaultMail', args)) as DataApi['system']['defaultMail'],
+    microphone: ((...args: unknown[]) =>
+      forward('system', 'microphone', args)) as DataApi['system']['microphone'],
+    notifications: ((...args: unknown[]) =>
+      forward('system', 'notifications', args)) as DataApi['system']['notifications'],
+    openSettings: ((...args: unknown[]) =>
+      forward('system', 'openSettings', args)) as DataApi['system']['openSettings'],
+  },
+  notification: {
+    test: ((...args: unknown[]) =>
+      forward('notification', 'test', args)) as DataApi['notification']['test'],
   },
 };
