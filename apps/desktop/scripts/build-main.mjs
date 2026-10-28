@@ -10,14 +10,7 @@ if (process.env.APLOS_RELEASE_BUILD === '1') {
     process.exit(1);
   }
 }
-// APLOS_E2E=1 builds the E2E variant (plan 40 Q2 item 6): the only build whose packaged app accepts
-// --remote-debugging-port, for scripts/verify-release.mjs. It is never a release.
-const e2e = process.env.APLOS_E2E === '1';
-if (e2e && process.env.APLOS_RELEASE_BUILD === '1') {
-  console.error('build-main: APLOS_E2E=1 cannot be combined with APLOS_RELEASE_BUILD=1.');
-  process.exit(1);
-}
-const define = { ...oauthDefines(process.env), __APLOS_E2E__: JSON.stringify(e2e) };
+const define = oauthDefines(process.env);
 // Bundle the workspace packages (`@aplos/*`, TypeScript source that is not in the packaged node_modules);
 // every third-party package stays external and ships from app.asar's node_modules.
 const thirdPartyExternal = {

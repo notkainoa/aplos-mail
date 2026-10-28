@@ -135,8 +135,17 @@ async function load(options: Options = {}) {
   };
   const module = { exports: {} as Security };
   const inspector = { url: () => options.inspector };
-  const requireFake = (id: string) =>
-    id === 'electron' ? electron : id === 'node:inspector' ? inspector : nodeRequire(id);
+  // The guard writes its one line with fs.writeSync(2, ...) so it survives the exit; capture fd 2 only.
+  const fs = {
+    ...(nodeRequire('node:fs') as object),
+    writeSync: (fd: number, line: string) => {
+      if (fd !== 2) throw new Error(`unexpected write to fd ${fd}`);
+      stderr.push(line);
+      return line.length;
+    },
+  };
+  const fakes: Record<string, unknown> = { electron, 'node:inspector': inspector, 'node:fs': fs };
+  const requireFake = (id: string) => fakes[id] ?? nodeRequire(id);
   let exitCode: number | undefined;
   try {
     new Function(
@@ -507,6 +516,9 @@ const HOSTILE_ARGS = [
   ['--inspect-port=9229'],
   ['--inspect-wait'],
   ['--debug-port=9229'],
+  ['--debug'],
+  ['--debug-brk=5858'],
+  ['-inspect-brk=9229'],
   ['--js-flags=--inspect'],
   ['--user-data-dir=/tmp/x', '--INSPECT=0'],
 ];
@@ -519,11 +531,16 @@ test('a packaged release build exits with code 78 for every debugging switch, be
       const { exitCode, stderr } = await load({ release: true, packaged, argv });
       assert.equal(exitCode, 78, `${packaged} ${argv.join(' ')}`);
       assert.equal(stderr.length, 1);
+      // Only the switch name is printed, never a value (a port, an address, a js-flags string).
+      assert.match(stderr[0], /^Aplos Mail: a release build does not start with --[a-z-]+\.\n$/);
     }
   }
   // Chromium's own parse (app.commandLine) is a second source.
   const parsed = await load({ release: true, packaged: true, switches: ['remote-debugging-port'] });
   assert.equal(parsed.exitCode, 78);
+  assert.deepEqual(parsed.stderr, [
+    'Aplos Mail: a release build does not start with --remote-debugging-port.\n',
+  ]);
   // An inspector opened some other way (NODE_OPTIONS on a build without the fuse) is refused too.
   const inspecting = await load({ release: true, inspector: 'ws://127.0.0.1:9229/x' });
   assert.equal(inspecting.exitCode, 78);
@@ -551,6 +568,9 @@ test('the debug guard leaves dev, local package and E2E builds, and harmless swi
     'aplos:thread/1',
     'mailto:someone@example.com?subject=--inspect',
     '--lang=en',
+    '--debugger-ui',
+    '-NSDocumentRevisionsDebugMode',
+    'YES',
   ];
   const { exitCode } = await load({ release: true, packaged: true, argv: harmless });
   assert.equal(exitCode, undefined);

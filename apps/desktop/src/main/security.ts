@@ -9,6 +9,7 @@ import {
   type Session,
   type WebContents,
 } from 'electron';
+import { writeSync } from 'node:fs';
 import { url as inspectorURL } from 'node:inspector';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -28,8 +29,12 @@ const DEBUG_SWITCHES = [
   'inspect-port',
   'inspect-wait',
   'debug-port',
+  'debug',
+  'debug-brk',
 ];
-/** The first debugging switch in `argv` (argv[0] is the executable), or undefined. */
+// Node's legacy spellings (--debug, --debug-brk, --debug-port); not --debugger-ui or other look-alikes.
+const NODE_DEBUG = new Set(['debug', 'debug-brk', 'debug-port']);
+/** The first debugging switch in `argv` (argv[0] is the executable), or undefined. Only the name, never its value. */
 function debugSwitch(argv: readonly string[]): string | undefined {
   for (const arg of argv.slice(1)) {
     const match = /^--?([^=]+)(?:=([\s\S]*))?$/.exec(arg);
@@ -38,7 +43,7 @@ function debugSwitch(argv: readonly string[]): string | undefined {
     if (
       name.startsWith('remote-debugging-') ||
       name.startsWith('inspect') ||
-      name === 'debug-port' ||
+      NODE_DEBUG.has(name) ||
       (name === 'js-flags' && /inspect/i.test(match[2] ?? ''))
     )
       return `--${name}`;
@@ -61,12 +66,18 @@ function refuseDebugging(): void {
   // A JavaScript listener replaces Node's SIGUSR1 handler, so `kill -USR1` cannot open the inspector on a
   // running release (the fuse above also turns that off; this covers a build without it).
   process.on('SIGUSR1', () => {});
+  const parsed = DEBUG_SWITCHES.find(name => app.commandLine.hasSwitch(name));
   const found =
     debugSwitch(process.argv) ??
-    DEBUG_SWITCHES.find(name => app.commandLine.hasSwitch(name)) ??
+    (parsed && `--${parsed}`) ??
     (inspectorURL() ? 'an open inspector' : undefined);
   if (!found) return;
-  process.stderr.write(`Aplos Mail: a release build does not start with ${found}.\n`);
+  // Written synchronously: process.stderr is asynchronous for a pipe on macOS, and the exit would drop it.
+  try {
+    writeSync(2, `Aplos Mail: a release build does not start with ${found}.\n`);
+  } catch {
+    // No usable stderr; exit anyway.
+  }
   process.exit(DEBUG_GUARD_EXIT_CODE);
 }
 // Runs on import, so before lifecycle.ts's body (single-instance lock, whenReady, any window): lifecycle.ts

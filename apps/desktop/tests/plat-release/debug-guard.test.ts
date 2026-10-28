@@ -6,24 +6,26 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the script is untyped ESM
-const vh: any = await import(new URL('../../scripts/verify-hardening.mjs', import.meta.url).href);
 
-// ADR 40-6: the startup guard in src/main/security.ts. security.ts is bundled the way build-main.mjs does it,
-// with a stand-in for 'electron' (packaged or not via STUB_PACKAGED), then run as a plain Node process.
+// The script is plain ESM without type declarations, so load it untyped.
+const vh = await import(new URL('../../scripts/verify-hardening.mjs', import.meta.url).href);
+
+// ADR 40-6: the startup guard in src/main/security.ts, run as a real process (security-guard.test.ts drives the
+// same code with a fake process). security.ts is bundled the way build-main.mjs does it, with and without the
+// APLOS_RELEASE_BUILD define and with a stand-in for 'electron', then started with plain Node, so the exit code
+// and the stderr line are what a launcher would see.
 const stubElectron = `
-const exit = code => process.exit(code);
 module.exports = {
   app: {
     isPackaged: process.env.STUB_PACKAGED === '1',
     commandLine: { hasSwitch: name => (process.env.STUB_SWITCH || '') === name },
-    exit,
+    on() {},
   },
   BrowserWindow: {}, session: {}, shell: {}, systemPreferences: {},
 };`;
 const dir = await mkdtemp(join(tmpdir(), 'aplos-guard-'));
-async function bundle(e2e: boolean) {
-  const outfile = join(dir, `security-${e2e ? 'e2e' : 'normal'}.cjs`);
+async function bundle(release: boolean) {
+  const outfile = join(dir, `security-${release ? 'release' : 'local'}.cjs`);
   await build({
     entryPoints: [new URL('../../src/main/security.ts', import.meta.url).pathname],
     outfile,
@@ -31,7 +33,7 @@ async function bundle(e2e: boolean) {
     platform: 'node',
     format: 'cjs',
     logLevel: 'silent',
-    define: { __APLOS_E2E__: JSON.stringify(e2e) },
+    define: { __APLOS_RELEASE_BUILD__: JSON.stringify(release) },
     plugins: [
       {
         name: 'stub-electron',
@@ -44,8 +46,8 @@ async function bundle(e2e: boolean) {
   });
   return outfile;
 }
-const normal = await bundle(false);
-const e2e = await bundle(true);
+const release = await bundle(true);
+const local = await bundle(false);
 test.after(() => rm(dir, { recursive: true, force: true }));
 
 function run(file: string, args: string[], env: Record<string, string> = {}) {
@@ -56,7 +58,7 @@ function run(file: string, args: string[], env: Record<string, string> = {}) {
   return { code: r.status, stderr: r.stderr };
 }
 
-test('debug guard: a packaged build exits with code 78 on any debugging switch, before anything else', () => {
+test('debug guard: a release build exits with code 78 on any debugging switch, naming only the switch', () => {
   assert.equal(vh.DEBUG_GUARD_EXIT_CODE, 78);
   for (const arg of [
     '--remote-debugging-port=0',
@@ -70,20 +72,23 @@ test('debug guard: a packaged build exits with code 78 on any debugging switch, 
     '--debug',
     '--debug-brk=5858',
   ]) {
-    const r = run(normal, ['--user-data-dir=/tmp/x', arg]);
-    assert.equal(r.code, 78, arg);
-    assert.match(
-      r.stderr,
-      /^Aplos Mail: refusing to start with -{1,2}[a-z-]+; debugging is off/,
-      arg,
-    );
-    assert.ok(!r.stderr.includes('='), `the value is never echoed: ${r.stderr}`);
+    // app.isPackaged must not matter: only the release define does.
+    for (const packaged of ['1', '0']) {
+      const r = run(release, ['--user-data-dir=/tmp/x', arg], { STUB_PACKAGED: packaged });
+      assert.equal(r.code, 78, arg);
+      assert.match(
+        r.stderr,
+        /^Aplos Mail: a release build does not start with --[a-z-]+\.\n$/,
+        arg,
+      );
+      assert.ok(!r.stderr.includes('='), `the value is never echoed: ${r.stderr}`);
+    }
   }
   // Chromium's own parse is consulted too.
-  assert.equal(run(normal, [], { STUB_SWITCH: 'remote-debugging-port' }).code, 78);
+  assert.equal(run(release, [], { STUB_SWITCH: 'remote-debugging-port' }).code, 78);
 });
 
-test('debug guard: ordinary launches, links, development runs and the E2E variant start normally', () => {
+test('debug guard: ordinary release launches and every non-release build start normally', () => {
   for (const args of [
     [],
     ['--user-data-dir=/tmp/x'],
@@ -92,10 +97,11 @@ test('debug guard: ordinary launches, links, development runs and the E2E varian
     ['--debugger-ui'],
     ['-NSDocumentRevisionsDebugMode', 'YES'],
   ])
-    assert.deepEqual(run(normal, args), { code: 0, stderr: '' }, args.join(' '));
-  assert.equal(run(normal, ['--remote-debugging-port=0'], { STUB_PACKAGED: '0' }).code, 0);
-  assert.equal(run(e2e, ['--remote-debugging-port=0']).code, 0);
-  const { debugSwitch } = createRequire(import.meta.url)(normal);
+    assert.deepEqual(run(release, args), { code: 0, stderr: '' }, args.join(' '));
+  // `npm run package`, `electron .` and verify-release builds have no release define and keep debugging.
+  for (const packaged of ['1', '0'])
+    assert.equal(run(local, ['--remote-debugging-port=0'], { STUB_PACKAGED: packaged }).code, 0);
+  const { debugSwitch } = createRequire(import.meta.url)(local);
   assert.equal(debugSwitch(['a', '--inspect-brk=1']), '--inspect-brk');
   assert.equal(debugSwitch(['a']), undefined);
 });
