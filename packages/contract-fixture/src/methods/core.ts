@@ -3,7 +3,7 @@ import type { Fixture } from '../engine';
 import type { Bytes } from '../data/demo';
 import { capabilities } from '../data/defaults';
 import { addDays, atLocal, localDay, weekday } from '../time';
-import { principalOf, requireScope, type Caller } from '@aplos/contract/access';
+import { principalOf, requireOriginating, requireScope, type Caller } from '@aplos/contract/access';
 import { consentKey } from './ai';
 import { clean, fail, must, type Part } from './util';
 
@@ -115,7 +115,7 @@ export function core(fx: Fixture) {
         (next as Record<string, unknown>)[section] = { ...current[section], ...patch[section] };
       const { receipt } = fx.write({ opId, kind: 'Settings/set' }, tx => {
         tx.put('Settings', next);
-        // Another Summaries provider, model or address host needs consent again (FR-5).
+        // Another provider, model or address host for a background feature needs consent again (FR-5, R2B-4).
         const c = tx.get('Consent', 'background');
         if (c?.granted && consentKey(current.ai) !== consentKey(next.ai))
           tx.put('Consent', { ...c, currentVersion: c.currentVersion + 1, needsReconsent: true });
@@ -304,7 +304,7 @@ export function core(fx: Fixture) {
     'Queue/retry': ({ id }, cx) => {
       const op = fx.ops.get(id);
       if (op) {
-        requireScope(cx.caller, op.scope);
+        requireOriginating(cx.caller, op);
         if (op.operation.state !== 'failed')
           fail('conflict', 'Only a failed change can be retried.');
         fx.handlers['Operation/retry']({ opId: id }, cx);
@@ -332,7 +332,7 @@ export function core(fx: Fixture) {
     'Queue/discard': ({ id }, cx) => {
       const op = fx.ops.get(id);
       if (op) {
-        requireScope(cx.caller, op.scope);
+        requireOriginating(cx.caller, op);
         op.operation = { ...op.operation, state: 'cancelled' };
         fx.emit({ frame: 'operation', operation: op.operation });
         return { ok: true as const };
@@ -361,7 +361,7 @@ export function core(fx: Fixture) {
 function queue(fx: Fixture): QueueItem[] {
   const ops = [...fx.ops.values()]
     .filter(o => o.operation.state === 'queued' || o.operation.state === 'failed')
-    .map(({ operation: o }) =>
+    .map(({ operation: o, scope }) =>
       clean({
         id: o.opId,
         kind: 'op',
@@ -374,7 +374,7 @@ function queue(fx: Fixture): QueueItem[] {
           : undefined,
         canRetry: o.state === 'failed',
         canDiscard: true,
-        scope: fx.ops.get(o.opId)?.scope,
+        scope,
       }),
     );
   const jobs = fx.store

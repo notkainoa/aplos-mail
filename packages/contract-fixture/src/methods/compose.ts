@@ -5,12 +5,11 @@ import { addDays, atLocal, localDay } from '../time';
 import { instant } from '../views';
 import { actOn } from './mail';
 import { ownBlob } from './core';
-import { clean, fail, getRows, must, textOf, type Part } from './util';
+import { requireScope } from '@aplos/contract/access';
+import { OVERDUE_GRACE_MS, WAITING_SUBMISSION_STATES } from '@aplos/contract/rules';
+import { clean, fail, getRows, live, must, textOf, type Part } from './util';
 
-const live = new Set(['queued', 'scheduled', 'sending', 'uncertain', 'failed', 'suspended']);
 const uncertainCopy = 'We could not confirm this was sent. Check Sent, or Send anyway.';
-/** ARCH 7.3: a send found this long past `notBefore` at wake is suspended, never sent late on its own. */
-export const overdueGraceMs = 5 * 60_000;
 export const overdueCopy =
   'This was due while your Mac was off. Send it now, or choose a new time.';
 
@@ -62,8 +61,8 @@ export function compose(fx: Fixture) {
       return;
     // The overdue rule (FR-2): a held send, undo window or send later alike, that wakes up past its time is suspended.
     if (
-      (sub.state === 'queued' || sub.state === 'scheduled') &&
-      fx.now > sub.notBefore + overdueGraceMs
+      (WAITING_SUBMISSION_STATES as readonly string[]).includes(sub.state) &&
+      fx.now > sub.notBefore + OVERDUE_GRACE_MS
     ) {
       fx.write({ kind: 'Submission/suspend' }, tx =>
         tx.put('Submission', {
@@ -276,9 +275,11 @@ export function compose(fx: Fixture) {
       );
       return { draft: value, receipt };
     },
-    'Draft/destroy': ({ opId, id }) => {
+    'Draft/destroy': ({ opId, id }, cx) => {
       const draft = must(fx.store, 'Draft', id, 'This draft no longer exists.');
       const sub = liveSub(draft);
+      // Cancelling a send is `send`'s effect everywhere else, so it is here too (R2B-2).
+      if (sub) requireScope(cx.caller, 'send');
       if (sub?.state === 'sending')
         fail('conflict', 'This message is sending. Wait a moment, then try again.');
       // Discarding the draft cancels a send that has not started, so the outbox and the Quit warning clear (FR-13).

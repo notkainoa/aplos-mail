@@ -75,7 +75,8 @@ export const ai = area('ai', {
     output: z.object({ list: z.array(AiJob) }),
   },
   'Ai/polish': {
-    summary: "Suggest edits to a draft's text; the user's text stays until they choose.",
+    summary:
+      "Suggest edits to a draft's text; the user's text stays until they choose. A `draftId` in an account left out of AI, or answering a thread there, is `forbidden` (`ai.accountExcluded`).",
     kind: 'command',
     scope: 'ai',
     input: z.object({
@@ -88,7 +89,7 @@ export const ai = area('ai', {
   },
   'Ai/draft': {
     summary:
-      'Write a draft or reply from an instruction, as a suggestion at the caret; a `threadId` in an account left out of AI is `forbidden`.',
+      'Write a draft or reply from an instruction, as a suggestion at the caret; a `threadId` or `draftId` in an account left out of AI (or a draft answering a thread there) is `forbidden` (`ai.accountExcluded`).',
     kind: 'command',
     scope: 'ai',
     input: z.object({

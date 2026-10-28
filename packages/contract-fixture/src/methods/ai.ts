@@ -27,18 +27,23 @@ export const loopback = (address: string) => {
     return false;
   }
 };
-/** What background consent covers (FR-5): the Summaries provider and model, and that provider's address host. */
-export const consentKey = (ai: Settings['ai']) => {
-  const { provider, model } = ai.features.summaries;
-  const address = ai.providers[provider]?.address;
-  let host = '';
-  try {
-    host = address ? new URL(address).host : '';
-  } catch {
-    /* an empty or default address */
-  }
-  return `${provider}\u0000${model}\u0000${host}`;
-};
+/** The features background jobs run on: summaries, plans, and drafts for follow-ups (R2B-4). */
+export const backgroundFeatures = ['summaries', 'plans', 'drafts'] as const;
+/** What background consent covers (FR-5, R2B-4): each background feature's provider, model and address host. */
+export const consentKey = (ai: Settings['ai']) =>
+  backgroundFeatures
+    .map(feature => {
+      const { provider, model } = ai.features[feature];
+      const address = ai.providers[provider]?.address;
+      let host = '';
+      try {
+        host = address ? new URL(address).host : '';
+      } catch {
+        /* an empty or default address */
+      }
+      return `${provider}\u0000${model}\u0000${host}`;
+    })
+    .join('\u0001');
 type Block = NonNullable<AskTurn['answer']>['blocks'][number];
 
 /**
@@ -88,6 +93,16 @@ export function ai(fx: Fixture) {
         reasonCode: 'ai.accountExcluded',
       });
     return t;
+  };
+  /** A draft an AI call names follows the same rule, by its account and by the thread it answers (R2B-5). */
+  const aiDraft = (draftId: string) => {
+    const d = must(fx.store, 'Draft', draftId, 'This draft no longer exists.');
+    if (!aiAccounts().has(d.accountId))
+      fail('forbidden', "AI is turned off for this account's mail.", {
+        reasonCode: 'ai.accountExcluded',
+      });
+    if (d.threadId && fx.store.get('Thread', d.threadId)) aiThread(d.threadId);
+    return d;
   };
 
   /** Threads that best match a question's words, else the top of Do now. */
@@ -217,14 +232,17 @@ export function ai(fx: Fixture) {
             (!states || states.includes(j.state as 'queued')),
         ),
     }),
-    'Ai/polish': ({ html }) => {
+    'Ai/polish': ({ html, draftId }) => {
       need('drafts');
+      if (draftId) aiDraft(draftId);
       const polished = html.replace(/ {2,}/g, ' ').replace(/\bi\b/g, 'I');
       return { html: polished, changes: polished === html ? 0 : 1 };
     },
-    'Ai/draft': ({ instruction, threadId }) => {
+    'Ai/draft': ({ instruction, threadId, draftId }) => {
       need('drafts');
-      const t = threadId ? aiThread(threadId) : undefined;
+      const d = draftId ? aiDraft(draftId) : undefined;
+      const id = threadId ?? d?.threadId;
+      const t = id ? aiThread(id) : undefined;
       const first = t?.fromName.split(' ')[0];
       const html = `${first ? `<p>Hi ${first},</p>` : ''}${plainHtml(`Thanks for your note. ${instruction.trim().replace(/\.?$/, '.')}`)}<p>Warmly,<br>Alex</p>`;
       return clean({

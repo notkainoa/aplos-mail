@@ -264,10 +264,12 @@ export const Operation = z.object({
   undoUntil: z.optional(EpochMs),
   createdAt: EpochMs,
   /**
-   * The scope of the method that made it (`send` for `Submission/set` and `Event/set`). `Operation/undo`,
-   * `Operation/retry` and `Queue/*` need it as well as their own (freeze FR-3), so a triage tool cannot re-send.
+   * The scope of the method that made it (`send` for `Submission/set`, `Event/set`, `Event/rsvp` and `Unsubscribe/run`),
+   * always recorded. `Operation/undo`, `Operation/retry` and `Queue/*` need it as well as their own (freeze FR-3), so a
+   * triage tool cannot re-send. An engine that finds none uses the scope of the method that made it, and refuses a
+   * listener when that is unknown too (`requireOriginating`, R2B-1).
    */
-  scope: z.optional(openEnum(['read', 'triage', 'draft', 'send', 'ai', 'admin'])),
+  scope: openEnum(['read', 'triage', 'draft', 'send', 'ai', 'admin']),
 });
 export type Operation = z.infer<typeof Operation>;
 

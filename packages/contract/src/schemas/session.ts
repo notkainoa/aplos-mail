@@ -191,8 +191,11 @@ export const QueueItem = z.object({
   problem: z.optional(z.object({ reasonCode: line(60), message: z.optional(z.string()) })),
   canRetry: z.boolean(),
   canDiscard: z.boolean(),
-  /** The scope of the method that made the item (`send` for submissions, `ai` for jobs); `Queue/*` needs it too (FR-3). */
-  scope: z.optional(openEnum(scopes)),
+  /**
+   * The scope of the method that made the item (`send` for submissions, `ai` for jobs), always recorded; `Queue/*` needs
+   * it too (FR-3, `requireOriginating`, R2B-1).
+   */
+  scope: openEnum(scopes),
 });
 export type QueueItem = z.infer<typeof QueueItem>;
 

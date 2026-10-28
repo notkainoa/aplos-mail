@@ -18,6 +18,7 @@ import {
 } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { appScopes, checkAccess, type Caller } from '@aplos/contract/access';
+import { methodScope } from '@aplos/contract/allowlists';
 import type { EngineConnection, EngineSession } from '@aplos/contract/client';
 import { fakeClock, realClock, seeded, type FixtureClock } from './clock';
 import { Store, type Touch, type Tx } from './store';
@@ -105,8 +106,8 @@ interface OpRec {
   operation: Operation;
   touched: Touch[];
   method: string;
-  /** The scope of the method that made it; undo, retry and the queue need it too (freeze FR-3). */
-  scope?: string;
+  /** The scope of the method that made it, always recorded; undo, retry and the queue need it too (FR-3, R2B-1). */
+  scope: string;
   /** How `Operation/undo` undoes it when restoring before-images is not the inverse (a held send is cancelled). */
   undo?: (undoOpId: string) => Receipt;
   /** Accounts whose `pendingChanges` this operation counts in while it is queued for the provider. */
@@ -310,7 +311,9 @@ export class Fixture {
       undoable,
     };
     if (opts.opId) {
-      const scope = opts.scope ?? this.callScope;
+      // Every operation records its originating scope (R2B-1): the dispatched method's, else its kind's own.
+      const scope = opts.scope ?? this.callScope ?? methodScope[opts.kind];
+      if (!scope) throw new Error(`The stand-in wrote ${opts.kind} with no originating scope.`);
       const operation: Operation = {
         opId: opts.opId,
         kind: opts.kind,
@@ -320,7 +323,7 @@ export class Fixture {
         undoable,
         ...(opts.undoUntil ? { undoUntil: opts.undoUntil } : {}),
         createdAt: this.now,
-        ...(scope ? { scope } : {}),
+        scope,
       };
       this.ops.set(opts.opId, {
         operation,

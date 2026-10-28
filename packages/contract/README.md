@@ -14,7 +14,8 @@ validation. The design is ARCHITECTURE.md section 9; plan 10 section 4.1 and pla
 | `src/wire.ts` | The call and reply envelopes, `Hello`, and every push frame |
 | `src/api/*.ts` | Every method, grouped by domain, each stamped with its owning area |
 | `src/registry/` | `area()` and `desktop()`, the merged `methods` table, `parseArgs`, `checkResult` and the type helpers (`Input<M>`, `Output<M>`) |
-| `src/access.ts` | `checkAccess`, `requireScope` and `principalOf`: the default-deny rules from the generated tables, no zod (`@aplos/contract/access`) |
+| `src/access.ts` | `checkAccess`, `listenerCaller`, `requireScope`, `requireOriginating` and `principalOf`: the default-deny rules from the generated tables, no zod (`@aplos/contract/access`) |
+| `src/rules.ts` | The send rules defined once (FR-2): the waiting submission states and the 5-minute overdue grace, no zod (`@aplos/contract/rules`) |
 | `src/client/` | `createClient(session)` and `api.<type>.<verb>()`, `routeByHost`, the `EngineConnection` interface |
 | `src/legacy-methods.ts` | Today's 66 method names (47 engine, 19 desktop) and where each capability lives in v1 |
 | `GAPS.md` | How v1 answers every gap the UI threads raised before the freeze: closed, already there, or rejected with the reason |
@@ -68,6 +69,10 @@ The generated tables say who may call what:
 - The MCP adapter exposes `mcpMethods`: the `read` and `draft` scopes, minus anything audited, so nothing destructive
   (`Draft/destroy`) runs without the owner (ARCH 12.3 item 6).
 
+A transport makes a listener's `Caller` only with `listenerCaller(client, transport)`, from the stored `Client` row the
+token matched, never from `Hello`: `clientId` and `scopes` come from the row, and a `Client` of kind `mcp` is limited to
+`mcpMethods` on the socket and HTTP too. `checkAccess` refuses a listener caller with no `clientId` or `via`.
+
 Every dispatch denies by default with `checkAccess(method, caller, args)` from `@aplos/contract/access` (zod-free, so the
 neutral engine can use it): the method's scope must be in `caller.scopes`; `host` methods need main's connection;
 `uiOnly` and `secret` methods need a window or main; and a listener may not set a `windowOnlyArgs` path (`patch.ai` on
@@ -76,13 +81,17 @@ neutral engine can use it): the method's scope must be in `caller.scopes`; `host
 
 - `scopeRule: 'originating'` (`Operation/undo`, `Operation/retry`, `Queue/retry`, `Queue/discard`): the caller also needs
   the scope of the method that made the operation or item (`Operation.scope`, `QueueItem.scope`), so a triage tool cannot
-  re-send mail or re-invite guests.
+  re-send mail or re-invite guests. It fails closed with `requireOriginating`: every operation records its scope, an
+  engine that finds none uses the scope of the method that made it, and a listener is refused when that is unknown too.
+  `Draft/destroy` of a draft with a live send also needs `send`, the scope that cancels a send.
 - `scopeRule: 'guests'` (`Ask/decide`): accepting an event that invites anyone but the owner also needs `send`.
 
 Blobs and frame tokens carry at least 128 random bits and belong to the principal that made them (`principalOf`: every
 window and main are one, each listener client its own). Another caller's id answers `notFound`, on `Blob/get`,
-`Blob/release`, `GET /v1/blob/:id`, `DraftAttachment.blobId` and `Ai/transcribe` alike. "Use this account's mail for
-AI" bounds every AI call: a scope or thread naming an excluded account never widens it.
+`Blob/release`, `GET /v1/blob/:id`, `DraftAttachment.blobId` and `Ai/transcribe` alike. A blob attached to a draft with
+a live send stays until that send settles (FR-7): `Blob/release` answers `stateMismatch` and a disconnect drops nothing,
+so the bytes that leave are the ones the owner attached. "Use this account's mail for AI" bounds every AI call: a scope,
+thread or draft naming an excluded account never widens it.
 
 Over the socket the first frame is `Hello` with the client's `token`, answered by `HelloReply`. Over HTTP:
 

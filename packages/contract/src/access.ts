@@ -13,15 +13,39 @@ import {
  * `@aplos/contract/access`.
  */
 
-/** Who is calling, set by the transport once it has authenticated the connection. */
+/**
+ * Who is calling, set by the transport once it has authenticated the connection. A listener's caller is built with
+ * `listenerCaller` from the stored `Client` row its token matched, never from the `Hello` frame (freeze R2B-3).
+ */
 export interface Caller {
   /** An Electron window's port, main's control connection, or a listener client (socket, HTTP, MCP). */
   kind: 'window' | 'host' | 'listener';
-  /** Listener clients only: the MCP adapter sets `mcp`, which limits the caller to `mcpMethods` (FR-9). */
+  /**
+   * Listener clients only, required: the transport, or `mcp` whenever the stored `Client.kind` is `mcp`, so an MCP
+   * client is limited to `mcpMethods` (FR-9) on the socket and HTTP too. A listener without one is refused.
+   */
   via?: 'socket' | 'http' | 'mcp';
-  /** The listener client's id (`Client.id`); absent for windows and main. */
+  /** Listener clients only, required: the stored `Client.id`. A listener without one is refused; absent for windows and main. */
   clientId?: string;
   scopes: readonly string[];
+}
+
+/**
+ * The only way a transport makes a listener's `Caller` (freeze R2B-3): `clientId`, `scopes` and the MCP limit come from the
+ * `Client` row the token's hash matched, so a self-declared `Hello.client.kind` or an adapter that forgets `via` cannot
+ * widen them. A revoked client is refused.
+ */
+export function listenerCaller(
+  client: { id: string; kind: string; scopes: readonly string[]; revokedAt?: number },
+  transport: 'socket' | 'http' | 'mcp',
+): Caller {
+  if (client.revokedAt !== undefined) throw forbidden('This tool is no longer allowed.');
+  return {
+    kind: 'listener',
+    via: client.kind === 'mcp' ? 'mcp' : transport,
+    clientId: client.id,
+    scopes: client.scopes.filter(s => s !== 'host'),
+  };
 }
 
 const forbidden = (message: string) => new ContractError({ type: 'forbidden', message });
@@ -52,6 +76,8 @@ export function checkAccess(method: string, caller: Caller, args?: unknown): voi
     return;
   }
   if (caller.kind === 'listener') {
+    // Fail closed (R2B-3): a listener the transport did not identify from its stored client gets nothing.
+    if (!caller.clientId || !caller.via) throw forbidden('This tool is not allowed in Aplos.');
     if (!(listenerMethods as readonly string[]).includes(method))
       throw forbidden('Only the Aplos app itself can do that.');
     if (caller.via === 'mcp' && !(mcpMethods as readonly string[]).includes(method))
@@ -63,12 +89,23 @@ export function checkAccess(method: string, caller: Caller, args?: unknown): voi
 }
 
 /**
- * The second check of a `scopeRule` method (FR-3, FR-4): the caller must also hold `scope`, e.g. the scope of the method
- * that made the operation it undoes, or `send` when accepting an invitation to guests. Windows and main hold every scope.
+ * The second check of a `scopeRule` method (FR-3, FR-4): the caller must also hold `scope`, e.g. `send` when accepting an
+ * invitation to guests or discarding a draft with a live send. Windows and main hold every scope.
  */
-export function requireScope(caller: Caller, scope: string | undefined): void {
-  if (scope && !caller.scopes.includes(scope))
+export function requireScope(caller: Caller, scope: string): void {
+  if (!caller.scopes.includes(scope))
     throw forbidden(`This tool does not have permission to ${scopeVerb[scope] ?? 'do that'}.`);
+}
+
+/**
+ * The `originating` check (FR-3), fail closed (freeze R2B-1): the caller must also hold the scope of the method that made
+ * the operation or queue item. `op.scope` is that scope as recorded; when it was not recorded, the method's own
+ * `methodScope` stands in, and when neither is known a listener is refused. Windows and main hold every scope.
+ */
+export function requireOriginating(caller: Caller, op: { scope?: string; method: string }): void {
+  const scope = op.scope || methodScope[op.method];
+  if (scope) return requireScope(caller, scope);
+  if (caller.kind === 'listener') throw forbidden('This tool does not have permission to do that.');
 }
 
 const scopeVerb: Record<string, string> = {
@@ -86,7 +123,10 @@ const scopeVerb: Record<string, string> = {
  * reaches a listener at all.
  */
 export function principalOf(caller: Caller): string {
-  return caller.kind === 'listener' ? `client:${caller.clientId ?? ''}` : 'app';
+  if (caller.kind !== 'listener') return 'app';
+  // Never a shared `client:` principal for listeners the transport did not identify (R2B-3).
+  if (!caller.clientId) throw forbidden('This tool is not allowed in Aplos.');
+  return `client:${caller.clientId}`;
 }
 
 /** What a window (and main) holds: every scope. Listener clients hold what `Clients/grant` gave them. */
