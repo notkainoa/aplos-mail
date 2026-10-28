@@ -355,6 +355,8 @@ export interface ToastAction {
   label: string;
   /** Registry command whose keycap shows inside the toast. */
   commandId?: CommandId;
+  /** Display-only: shows that command's keycap while selecting the action calls only `onAction(id)` and never runs the command. For a verb whose click runs its own callback (Undo Z, Remind R, Set a date D). `commandId` takes precedence if both are set. */
+  keysFrom?: CommandId;
 }
 
 /** One toast's data, worded from the op queue (DESIGN §7.13). */
