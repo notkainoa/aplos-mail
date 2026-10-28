@@ -77,7 +77,8 @@ export interface WorkflowSync {
 }
 
 export interface EngineOptions {
-  /** The app's version, which only the host knows (the engine package has no app manifest). */
+  /** The app's version, which only the host knows (the engine package has no app manifest). Optional so tests that build
+   * the engine directly need not invent one; `capabilities.get` then reports an empty version. Every host passes it. */
   appVersion?:string;
   store:ServiceStore;
   staged:StagedMemory;
