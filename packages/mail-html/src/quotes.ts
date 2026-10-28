@@ -32,11 +32,12 @@ export function quoteStart(node: ChildNode): QuoteStart | undefined {
   return ORIGINAL_MESSAGE.test(leadingText(element)) ? 'rest' : undefined;
 }
 
-/** The first 200 characters of an element's text, read without recursion. */
+/** The first 200 characters of an element's text, from at most 64 nodes, so deep mail stays linear. */
 function leadingText(element: Element): string {
   let text = '';
+  let visited = 0;
   const stack: ChildNode[] = [...element.children].reverse();
-  while (stack.length > 0 && text.length < 200) {
+  while (stack.length > 0 && text.length < 200 && visited++ < 64) {
     const node = stack.pop() as ChildNode;
     if (node.type === 'text') text += node.data;
     if (node.type === 'tag') stack.push(...[...node.children].reverse());
