@@ -13,7 +13,14 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { addTargetSlot, getTarget, subscribeTarget } from './store-target';
 import type { TargetSlot } from './store-target';
-import { getSheet, hideSheet, registerSheetCancel, showSheet, subscribeSheet } from './store-sheet';
+import {
+  getSheet,
+  hideSheet,
+  registerSheetCancel,
+  setSheetOpener,
+  showSheet,
+  subscribeSheet,
+} from './store-sheet';
 import { addToast, getToasts, patchToast, removeToast, subscribeToasts } from './store-toast';
 import {
   getRoute,
@@ -115,7 +122,7 @@ export function useSheetContextActive(): boolean {
   return useSheet() !== null;
 }
 
-export { registerSheetCancel };
+export { registerSheetCancel, setSheetOpener };
 
 // ---------------------------------------------------------------------------
 // The command target (gap list U1, A12): what the palette's context line names

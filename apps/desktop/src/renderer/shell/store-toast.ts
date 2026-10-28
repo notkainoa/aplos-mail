@@ -2,18 +2,17 @@
  * The toast stack's state (DESIGN 7.13; F9).
  *
  * Rules the store keeps: one operation, one notice (a push with a live id updates that toast in
- * place); the stack holds three; when a fourth arrives the oldest toast that is not an Undo toast
- * goes. An Undo toast is never replaced or evicted: a toast is an Undo toast when `undoable` is
- * true or one of its actions runs `app.undo`. With three Undo toasts open a plain newcomer is the
- * oldest non-undo toast, so it is the one dropped; four Undo toasts can all stay (the cap only
- * ever drops plain ones), and `ToastStack` shows the last three. Timers: plain 4 s, Undo 8 s,
- * `persistent` never (a failure or a pending operation says so with `persistent`; ToastKind has no
- * error kind). The fade after the timer is the stack's exit motion, not the store's. Navigation,
- * saves and sync ticks never toast: callers simply do not push for them.
+ * place); the stack holds three; when a fourth arrives the oldest toast that is neither an Undo
+ * toast nor `persistent` goes. An Undo toast is never replaced or evicted: a toast is an Undo toast
+ * when `undoable` is true or one of its actions runs `app.undo`. A persistent toast (a failure or a
+ * pending operation) is never evicted either. If nothing else can go the stack exceeds the cap and
+ * `ToastStack` shows the last three. The store runs no timers: the `Toast` component owns the
+ * life (plain 4 s, Undo 8 s, `persistent` never), pauses it on hover and focus, fades out and then
+ * calls `onDismiss`, which is `dismissToast`. `viewOf` sets `undoable` from `isUndoToast`, so a
+ * toast with an `app.undo` action lasts 8 s. Navigation, saves and sync ticks never toast: callers
+ * simply do not push for them.
  */
-import { realTimers } from '../data/scheduler';
 import { createStore } from './store-core';
-import type { Timers } from '../data/scheduler';
 import type { ToastData } from '../ui/props';
 import type { PushedToast } from './index';
 
@@ -28,20 +27,8 @@ const UNDO_COMMAND = 'app.undo';
 
 type Patch = Partial<Omit<PushedToast, 'id'>>;
 
-interface Live {
-  toast: PushedToast;
-  /** Cancels the running auto-dismiss, if any. */
-  cancel: (() => void) | null;
-  /** Time left while paused by hover or focus; null when running. */
-  remaining: number | null;
-  /** When the running timer started and how long it was for. */
-  startedAt: number;
-  duration: number;
-}
-
 const toastStore = createStore<readonly ToastData[]>([]);
-const live = new Map<string, Live>();
-let timers: Timers = realTimers;
+const live = new Map<string, PushedToast>();
 let runCommand: ((commandId: string) => unknown) | null = null;
 
 /** True for a toast that must never be silently replaced or evicted. */
@@ -49,78 +36,48 @@ export function isUndoToast(toast: ToastData): boolean {
   return toast.undoable || (toast.actions ?? []).some(a => a.commandId === UNDO_COMMAND);
 }
 
-function durationOf(toast: ToastData): number | null {
-  if (toast.persistent) return null;
-  return isUndoToast(toast) ? UNDO_TOAST_MS : PLAIN_TOAST_MS;
-}
-
-/** The view the stack renders: the toast without its callback. */
+/** The view the stack renders: the toast without its callback, with `undoable` true for any Undo toast. */
 function viewOf(toast: PushedToast): ToastData {
   const { onAction, ...data } = toast;
   void onAction;
-  return data;
+  return { ...data, undoable: isUndoToast(toast) };
 }
 
 function publish(): void {
-  toastStore.set([...live.values()].map(entry => viewOf(entry.toast)));
-}
-
-function stop(entry: Live): void {
-  entry.cancel?.();
-  entry.cancel = null;
-}
-
-function start(id: string, entry: Live, ms: number | null): void {
-  stop(entry);
-  entry.remaining = null;
-  if (ms === null) return;
-  entry.duration = ms;
-  entry.startedAt = timers.now();
-  entry.cancel = timers.setTimeout(() => dismissToastNow(id), ms);
+  toastStore.set([...live.values()].map(viewOf));
 }
 
 function dismissToastNow(id: string): void {
-  const entry = live.get(id);
-  if (!entry) return;
-  stop(entry);
-  live.delete(id);
+  if (!live.delete(id)) return;
   publish();
 }
 
-function evictOldestPlain(): void {
+function evictable(toast: PushedToast): boolean {
+  return !toast.persistent && !isUndoToast(toast);
+}
+
+function evictOldest(): void {
   while (live.size > TOAST_LIMIT) {
-    const victim = [...live].find(([, entry]) => !isUndoToast(entry.toast));
+    const victim = [...live].find(([, toast]) => evictable(toast));
     if (!victim) return;
-    dismissToastNow(victim[0]);
+    live.delete(victim[0]);
   }
 }
 
 /** Pushes a toast, or updates the live one with the same id in place; returns the id. */
 export function addToast(toast: PushedToast): string {
-  const existing = live.get(toast.id);
-  if (existing) {
-    replaceToast(toast.id, existing, toast);
-    return toast.id;
-  }
-  const entry: Live = { toast, cancel: null, remaining: null, startedAt: 0, duration: 0 };
-  live.set(toast.id, entry);
-  start(toast.id, entry, durationOf(toast));
-  evictOldestPlain();
+  live.set(toast.id, toast);
+  evictOldest();
   publish();
   return toast.id;
 }
 
-function replaceToast(id: string, entry: Live, next: PushedToast): void {
-  entry.toast = next;
-  start(id, entry, durationOf(next));
-  publish();
-}
-
-/** Rewords a live toast and restarts its timer; a no-op once it has closed. */
+/** Rewords a live toast; a no-op once it has closed. */
 export function patchToast(id: string, patch: Patch): void {
-  const entry = live.get(id);
-  if (!entry) return;
-  replaceToast(id, entry, { ...entry.toast, ...patch, id });
+  const toast = live.get(id);
+  if (!toast) return;
+  live.set(id, { ...toast, ...patch, id });
+  publish();
 }
 
 /** Closes a toast; a no-op once it has closed. */
@@ -128,20 +85,14 @@ export function removeToast(id: string): void {
   dismissToastNow(id);
 }
 
-/** Hover or focus: stops the clock and remembers what was left. */
+/** Kept for the frozen surface: the `Toast` component pauses its own clock on hover and focus. */
 export function holdToast(id: string): void {
-  const entry = live.get(id);
-  if (!entry?.cancel) return;
-  const elapsed = timers.now() - entry.startedAt;
-  stop(entry);
-  entry.remaining = Math.max(0, entry.duration - elapsed);
+  void id;
 }
 
-/** Pointer or focus left: the toast carries on with the time it had left. */
+/** Kept for the frozen surface: see `holdToast`. */
 export function releaseToast(id: string): void {
-  const entry = live.get(id);
-  if (entry?.remaining == null) return;
-  start(id, entry, entry.remaining);
+  void id;
 }
 
 /** Wires the command registry: `run` receives the action's `commandId` (the shell builds the `CommandContext`). */
@@ -151,22 +102,20 @@ export function setToastCommandRunner(runner: ((commandId: string) => unknown) |
 
 /** Runs the chosen action (its command, else the toast's `onAction`) and then closes the toast. */
 export function runToastAction(id: string, actionId: string): void {
-  const entry = live.get(id);
-  if (!entry) return;
-  const action = entry.toast.actions?.find(a => a.id === actionId);
+  const toast = live.get(id);
+  if (!toast) return;
+  const action = toast.actions?.find(a => a.id === actionId);
   try {
     if (action?.commandId && runCommand) runCommand(action.commandId);
-    else entry.toast.onAction?.(actionId);
+    else toast.onAction?.(actionId);
   } finally {
     dismissToastNow(id);
   }
 }
 
-/** Swaps the timer source and drops every toast (tests drive time by hand). */
-export function resetToasts(next: Timers = realTimers): void {
-  for (const entry of live.values()) stop(entry);
+/** Drops every toast and the command runner (tests). */
+export function resetToasts(): void {
   live.clear();
-  timers = next;
   runCommand = null;
   publish();
 }

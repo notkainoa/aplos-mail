@@ -1,11 +1,8 @@
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { createManualTimers } from '../data/scheduler';
 import {
   dismissToast,
-  holdToast,
   pushToast,
-  releaseToast,
   runToastAction,
   setToastCommandRunner,
   updateToast,
@@ -13,9 +10,7 @@ import {
 import { getToasts, resetToasts } from './store-toast';
 import type { PushedToast } from './index';
 
-const clock = createManualTimers(0);
-
-beforeEach(() => resetToasts(clock));
+beforeEach(() => resetToasts());
 
 const plain = (id: string): PushedToast => ({ id, kind: 'info', message: id, undoable: false });
 const undo = (id: string): PushedToast => ({
@@ -84,41 +79,39 @@ test('updateToast and dismissToast are no-ops for a closed toast', () => {
   assert.deepEqual(ids(), []);
 });
 
-test('plain toasts close after 4 s, undo after 8 s, persistent ones stay', () => {
+test('the store runs no timers: the Toast component owns the life and dismisses through dismissToast', () => {
   pushToast(plain('p'));
   pushToast(undo('u'));
-  pushToast({ ...plain('e'), persistent: true });
-  clock.advance(3_999);
-  assert.deepEqual(ids(), ['p', 'u', 'e']);
-  clock.advance(1);
-  assert.deepEqual(ids(), ['u', 'e']);
-  clock.advance(4_000);
-  assert.deepEqual(ids(), ['e']);
-  clock.advance(60_000);
-  assert.deepEqual(ids(), ['e']);
+  assert.deepEqual(ids(), ['p', 'u']);
+  dismissToast('p');
+  assert.deepEqual(ids(), ['u']);
 });
 
-test('an update restarts the clock, and a pending toast that confirms becomes a timed undo', () => {
-  pushToast({ ...plain('op'), persistent: true });
-  clock.advance(20_000);
-  updateToast('op', { persistent: false, undoable: true });
-  clock.advance(7_999);
-  assert.deepEqual(ids(), ['op']);
-  clock.advance(1);
-  assert.deepEqual(ids(), []);
-});
-
-test('hover holds the clock and release resumes with the time left', () => {
+test('the view marks any toast with an app.undo action undoable, so it gets the Undo life', () => {
+  pushToast({ ...undo('u'), undoable: false });
   pushToast(plain('p'));
-  clock.advance(3_000);
-  holdToast('p');
-  clock.advance(60_000);
-  assert.deepEqual(ids(), ['p']);
-  releaseToast('p');
-  clock.advance(999);
-  assert.deepEqual(ids(), ['p']);
-  clock.advance(1);
-  assert.deepEqual(ids(), []);
+  assert.deepEqual(
+    getToasts().map(t => t.undoable),
+    [true, false],
+  );
+});
+
+test('a persistent toast is never evicted: the oldest plain non-persistent one goes instead', () => {
+  pushToast({ ...plain('e'), persistent: true });
+  pushToast(plain('p1'));
+  pushToast(plain('p2'));
+  pushToast(plain('p3'));
+  assert.deepEqual(ids(), ['e', 'p2', 'p3']);
+});
+
+test('with three undo toasts open a persistent newcomer stays, and the stack exceeds the cap', () => {
+  pushToast(undo('u1'));
+  pushToast(undo('u2'));
+  pushToast(undo('u3'));
+  pushToast({ ...plain('e'), persistent: true });
+  assert.deepEqual(ids(), ['u1', 'u2', 'u3', 'e']);
+  pushToast(plain('p'));
+  assert.deepEqual(ids(), ['u1', 'u2', 'u3', 'e']);
 });
 
 test('runToastAction runs the command through the runner, or onAction, then closes the toast', () => {
