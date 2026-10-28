@@ -16,3 +16,7 @@ Commands: `npm run dev`, `npm run typecheck`, `npm test`, `npm run package`, `no
 - No multi-statement one-liners.
 - New files use named exports and small functions.
 - Whoever touches a dense function tidies it.
+
+## Design rule (revamp)
+
+The reference apps (Avec, Tatem, Notion, Notion Calendar, Redakt, Zero and others) are ideas only. `plans/DESIGN.md` is binding for every screen, and `mockups/` is the visual target. Before touching `apps/desktop/src/renderer` or `apps/web`, load the `aplos-design` skill (`.claude/skills/aplos-design/SKILL.md`) and follow its definition of done. Never use a sparkle, wand or star glyph for AI.
