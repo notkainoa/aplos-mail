@@ -7,10 +7,12 @@ import { thread, threadDelete, threadMerge, workflow } from './commit-threads';
 import { op, opSettle, applyEffect } from './commit-ops';
 import { body, attachments, attachmentState } from './commit-bodies';
 import { syncState, sweep, meta } from './commit-sync';
+import { ingest } from './ingest';
 import type { WriteScope } from './scope';
 import {
   StoreError,
   type BodyCodec,
+  type IngestHooks,
   ChangeType,
   CommitExtension,
   CommitExtensionTx,
@@ -53,6 +55,8 @@ export interface CommitContext {
   /** Lane writers by kind (seam 2), validated by `registerExtensions`. */
   extensions?: ReadonlyMap<string, CommitExtension>;
   bodyCodec?: BodyCodec;
+  /** `laneFor` and other store-run ingest hooks (seam 2). */
+  ingest?: IngestHooks;
 }
 
 /** The kinds `commit.ts` applies itself; no extension may claim one. */
@@ -93,8 +97,9 @@ const REPLAYED_OPS = `state IN ('queued', 'inflight')`;
 /**
  * The commit (F4): every write in one transaction, then pending ops replayed over the sync facts (ARCH 4.3), then thread
  * rollups and folder lists recomputed from the messages, one `changes` row per changed item, `seq` bumped once. Lane
- * kinds run in their extension inside the same transaction. A replayed `opId` is a no-op. Still to come in Phase 1
- * (store-1 to store-4): FTS, ingest hooks, compaction, without changing `CommitInput`.
+ * kinds run in their extension inside the same transaction, and ingest (correspondents, `laneFor`, the lanes' `ingest`
+ * hooks) runs after the rollups. A replayed `opId` is a no-op. Still to come in Phase 1 (store-4): FTS, without
+ * changing `CommitInput`.
  */
 export function applyCommit(ctx: CommitContext, input: CommitInput): CommitResult {
   if (typeof input?.opId !== 'string' || !input.opId)
@@ -113,6 +118,7 @@ export function applyCommit(ctx: CommitContext, input: CommitInput): CommitResul
     for (const write of input.writes) run.apply(write);
     run.replayOps();
     run.rollups();
+    ingest(run);
     const changed = run.writeChanges();
     const seq = changed > 0 ? current + 1 : current;
     if (changed > 0) ctx.stmt("UPDATE meta SET value = ? WHERE key = 'seq'").run(String(seq));
@@ -137,6 +143,10 @@ export const MESSAGE_COLS =
 
 export class CommitRun implements WriteScope {
   readonly touched = new Set<number>();
+  /** Messages a `message` write stored in this commit → whether this commit first inserted them (ingest). */
+  readonly ingested = new Map<number, boolean>();
+  /** Messages a `body` write stored in this commit: their threads re-run `laneFor`. */
+  readonly bodied = new Set<number>();
   /** Messages this commit wrote, per account: what pending ops are replayed over. */
   private readonly touchedMessages = new Map<string, Set<number>>();
   private readonly changes = new Map<string, { type: string; id: string; op: 'u' | 'd' | '*' }>();
@@ -174,9 +184,14 @@ export class CommitRun implements WriteScope {
         'invalid',
         `No writer for write kind ${String((w as { kind?: unknown })?.kind)}`,
       );
+    ext.apply(w, this.txFor(ext));
+  }
+
+  /** One `CommitExtensionTx` per extension and commit, shared by `apply` and `ingest`. */
+  txFor(ext: CommitExtension): CommitExtensionTx {
     let tx = this.txs.get(ext);
     if (!tx) this.txs.set(ext, (tx = this.extensionTx(ext)));
-    ext.apply(w, tx);
+    return tx;
   }
 
   private extensionTx(ext: CommitExtension): CommitExtensionTx {

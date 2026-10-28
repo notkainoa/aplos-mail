@@ -293,53 +293,89 @@ function randomWrite(r: ReturnType<typeof rng>, step: number, local: boolean): S
   return randomPlainWrite(r, step);
 }
 
+/** Compacts at random points: a small row limit, or an age limit against the clock the sequence advances. */
+function maybeCompact(r: ReturnType<typeof rng>, store: StorePort, rate: number) {
+  if (!r.chance(rate)) return;
+  const options = r.chance(0.5)
+    ? { maxRows: r.int(25), maxAgeMs: r.chance(0.3) ? r.int(60) * MINUTE : undefined }
+    : { maxAgeMs: r.int(120) * MINUTE };
+  const before = floorOf(store);
+  const { floorSeq } = store.compact(options);
+  assert.ok(floorSeq >= before && floorSeq <= store.seq(), `floor ${floorSeq} out of range`);
+}
+
+const MINUTE = 60_000;
+const floorOf = (store: StorePort) =>
+  store.read(q => Number(q.get("SELECT value FROM meta WHERE key = 'change_floor_seq'")!.value));
+
+function commitRandom(r: ReturnType<typeof rng>, store: StorePort, i: number) {
+  const origin = r.chance(0.3) ? 'local' : 'sync';
+  const input: CommitInput = {
+    opId: `c${i}`,
+    origin,
+    fenceSeq: origin === 'sync' && r.chance(0.3) ? r.int(store.seq() + 1) : undefined,
+    changes: origin === 'sync' && r.chance(0.15) ? 'coarse' : 'fine',
+    writes: Array.from({ length: 1 + r.int(4) }, () => randomWrite(r, i + 2, origin === 'local')),
+  };
+  // Settle some open op: drained, failed, retried or undone.
+  const open = store.read(q => q.all<{ op_id: string }>('SELECT op_id FROM ops').map(o => o.op_id));
+  if (open.length && r.chance(0.3))
+    input.writes.push({
+      kind: 'opSettle',
+      opId: r.pick(open),
+      state: r.pick(['inflight', 'failed', 'queued', 'synced', 'cancelled'] as const),
+    });
+  try {
+    store.commit(input);
+  } catch (error) {
+    // A local edit of a missing item fails the whole commit; that is the store's rule, not a replay failure.
+    if (!(error instanceof StoreError)) throw error;
+  }
+}
+
+/** Above the floor: replay reaches the latest snapshot. Below it: the store refuses and names the floor. */
+function checkSnapshots(seed: number, store: StorePort, snaps: Map<number, Snapshot>) {
+  const latest = snapshot(store);
+  const floorSeq = floorOf(store);
+  for (const [seq, snap] of snaps) {
+    if (seq < floorSeq) {
+      assert.deepEqual(
+        store.changesSince(seq),
+        { status: 'cannotCalculateChanges', floorSeq, seq: store.seq() },
+        `seed ${seed}: changesSince(${seq}) below floor ${floorSeq} was not refused`,
+      );
+      continue;
+    }
+    const got = replay(snap, store, seq, latest);
+    const stale = [...new Set([...got.keys(), ...latest.keys()])].filter(
+      k => got.get(k) !== latest.get(k),
+    );
+    assert.deepEqual(
+      stale.map(k => k.replace('\0', ' ')),
+      [],
+      `seed ${seed}: snapshot(${seq}) + changes != snapshot(${store.seq()}) (floor ${floorSeq})`,
+    );
+  }
+}
+
 function runSequence(seed: number, commits: number) {
   const r = rng(seed);
-  const store = openStore(openSqlite(':memory:'), { now: () => T0 });
+  const clock = { now: T0 };
+  const store = openStore(openSqlite(':memory:'), { now: () => clock.now });
+  // A third of the sequences never compact, so the full log from seq 0 is still proved.
+  const compactRate = r.pick([0, 0.1, 0.25]);
   try {
     store.commit({ opId: 'setup', origin: 'sync', writes: [accountWrite, ...folderWrites] });
     const snaps = new Map<number, Snapshot>([[store.seq(), snapshot(store)]]);
     for (let i = 0; i < commits; i++) {
-      const origin = r.chance(0.3) ? 'local' : 'sync';
-      const input: CommitInput = {
-        opId: `c${i}`,
-        origin,
-        fenceSeq: origin === 'sync' && r.chance(0.3) ? r.int(store.seq() + 1) : undefined,
-        changes: origin === 'sync' && r.chance(0.15) ? 'coarse' : 'fine',
-        writes: Array.from({ length: 1 + r.int(4) }, () =>
-          randomWrite(r, i + 2, origin === 'local'),
-        ),
-      };
-      // Settle some open op: drained, failed, retried or undone.
-      const open = store.read(q =>
-        q.all<{ op_id: string }>('SELECT op_id FROM ops').map(o => o.op_id),
-      );
-      if (open.length && r.chance(0.3))
-        input.writes.push({
-          kind: 'opSettle',
-          opId: r.pick(open),
-          state: r.pick(['inflight', 'failed', 'queued', 'synced', 'cancelled'] as const),
-        });
-      try {
-        store.commit(input);
-      } catch (error) {
-        // A local edit of a missing item fails the whole commit; that is the store's rule, not a replay failure.
-        if (!(error instanceof StoreError)) throw error;
-      }
+      clock.now += r.int(10) * MINUTE;
+      commitRandom(r, store, i);
       snaps.set(store.seq(), snapshot(store));
+      maybeCompact(r, store, compactRate);
     }
-    const latest = snapshot(store);
-    for (const [seq, snap] of snaps) {
-      const got = replay(snap, store, seq, latest);
-      const stale = [...new Set([...got.keys(), ...latest.keys()])].filter(
-        k => got.get(k) !== latest.get(k),
-      );
-      assert.deepEqual(
-        stale.map(k => k.replace('\0', ' ')),
-        [],
-        `seed ${seed}: snapshot(${seq}) + changes != snapshot(${store.seq()})`,
-      );
-    }
+    checkSnapshots(seed, store, snaps);
+  } catch (error) {
+    throw new Error(`replay failed for APLOS_REPLAY_SEED=${seed}`, { cause: error });
   } finally {
     store.close();
   }
