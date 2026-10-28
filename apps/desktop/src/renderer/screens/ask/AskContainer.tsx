@@ -169,23 +169,36 @@ export function AskContainer({ ports, today }: { ports: AskPorts; today: ReactNo
             context: {
               threadId: target?.kind === 'thread' ? target.id : undefined,
               eventId: target?.kind === 'event' ? target.id : undefined,
-              selectedIds: context.selection.length > 0 ? [...context.selection].slice(0, 50) : undefined,
+              selectedIds:
+                context.selection.length > 0 ? [...context.selection].slice(0, 50) : undefined,
             },
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           })
-          .then(out => perform(runStarted(askStore.get().ask, effect.clientId, out.runId, out.conversationId)))
-          .catch((error: unknown) => setAsk(runRefused(askStore.get().ask, effect.clientId, errorBody(error))));
+          .then(out =>
+            perform(runStarted(askStore.get().ask, effect.clientId, out.runId, out.conversationId)),
+          )
+          .catch((error: unknown) =>
+            setAsk(runRefused(askStore.get().ask, effect.clientId, errorBody(error))),
+          );
         break;
       }
       case 'cancel':
         void api.ask.cancel({ runId: effect.runId }).catch(() => undefined);
         break;
       case 'decide': {
-        const card = viewRef.current.turns.map(t => t.proposal).find(p => p?.proposalId === effect.proposalId);
+        const card = viewRef.current.turns
+          .map(t => t.proposal)
+          .find(p => p?.proposalId === effect.proposalId);
         ports
           .decide(effect)
           .then(out => {
-            setAsk(decided(askStore.get().ask, effect.proposalId, { ok: true, eventId: out.eventId, draftId: out.draftId }));
+            setAsk(
+              decided(askStore.get().ask, effect.proposalId, {
+                ok: true,
+                eventId: out.eventId,
+                draftId: out.draftId,
+              }),
+            );
             if (effect.accept && card) {
               ports.pushToast({
                 id: out.receipt.opId,
@@ -200,7 +213,12 @@ export function AskContainer({ ports, today }: { ports: AskPorts; today: ReactNo
           .catch(() => {
             setAsk(decided(askStore.get().ask, effect.proposalId, { ok: false }));
             if (effect.accept && card) {
-              ports.pushToast({ id: `ask-decide-${effect.proposalId}`, kind: 'error', message: `Couldn’t ${card.kicker.toLowerCase()}.`, undoable: false });
+              ports.pushToast({
+                id: `ask-decide-${effect.proposalId}`,
+                kind: 'error',
+                message: `Couldn’t ${card.kicker.toLowerCase()}.`,
+                undoable: false,
+              });
             }
           });
         break;
@@ -283,7 +301,12 @@ export function AskContainer({ ports, today }: { ports: AskPorts; today: ReactNo
       .start(level => setDictation(d => (d ? { ...d, level } : d)))
       .catch(() => {
         setDictation(undefined);
-        ports.pushToast({ id: 'ask-mic', kind: 'error', message: 'Aplos can’t use the microphone. Type your question instead.', undoable: false });
+        ports.pushToast({
+          id: 'ask-mic',
+          kind: 'error',
+          message: 'Aplos can’t use the microphone. Type your question instead.',
+          undoable: false,
+        });
       });
   }
 
@@ -303,7 +326,12 @@ export function AskContainer({ ports, today }: { ports: AskPorts; today: ReactNo
           fieldRef.current?.focus();
         })
         .catch(() =>
-          ports.pushToast({ id: 'ask-transcribe', kind: 'error', message: 'Couldn’t turn that into text. Type it instead.', undoable: false }),
+          ports.pushToast({
+            id: 'ask-transcribe',
+            kind: 'error',
+            message: 'Couldn’t turn that into text. Type it instead.',
+            undoable: false,
+          }),
         );
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -325,8 +353,10 @@ export function AskContainer({ ports, today }: { ports: AskPorts; today: ReactNo
   useEffect(() => {
     const { registry } = ports;
     const cur = () => askStore.get().ask;
-    const esc = () => once('esc', () => perform(escape(cur(), viewRef.current, proposalFocusedRef.current)));
-    const submitAs = (mode: 'ask' | 'searchAll') => once('submit', () => perform(submit(cur(), viewRef.current, mode)));
+    const esc = () =>
+      once('esc', () => perform(escape(cur(), viewRef.current, proposalFocusedRef.current)));
+    const submitAs = (mode: 'ask' | 'searchAll') =>
+      once('submit', () => perform(submit(cur(), viewRef.current, mode)));
     const detach = [
       registry.attach('ask.open', {
         run: () => askStore.open('ask'),
@@ -335,25 +365,35 @@ export function AskContainer({ ports, today }: { ports: AskPorts; today: ReactNo
       }),
       registry.attach('ask.dictate', { run: () => startDictation() }),
       registry.attach('ask.toggleDock', {
-        run: () => once('toggle', () => askStore.update(s => ({ ...s, open: !s.open, focusTick: s.focusTick + 1 }))),
+        run: () =>
+          once('toggle', () =>
+            askStore.update(s => ({ ...s, open: !s.open, focusTick: s.focusTick + 1 })),
+          ),
       }),
       registry.attach('nav.today', { run: () => askStore.open('today') }),
       registry.attach('ask.submit', { run: () => submitAs('ask') }),
       registry.attach('ask.searchAllMail', { run: () => submitAs('searchAll') }),
       registry.attach('ask.sendNow', {
-        run: () => once('submit', () => {
-          const first = cur().queued[0];
-          if (first) perform(sendNow(cur(), viewRef.current, first.id));
-        }),
+        run: () =>
+          once('submit', () => {
+            const first = cur().queued[0];
+            if (first) perform(sendNow(cur(), viewRef.current, first.id));
+          }),
       }),
       registry.attach('ask.newChat', { run: () => once('new', () => perform(newChat(cur()))) }),
       registry.attach('ask.stop', { run: esc }),
       registry.attach('ask.clear', { run: esc }),
       registry.attach('ask.close', { run: esc }),
       registry.attach('ask.declineProposal', { run: esc }),
-      registry.attach('ask.acceptProposal', { run: () => once('accept', () => perform(decide(cur(), viewRef.current, true))) }),
-      registry.attach('ask.previousSuggestion', { run: () => setAsk(arrow(cur(), viewRef.current, -1)) }),
-      registry.attach('ask.nextSuggestion', { run: () => setAsk(arrow(cur(), viewRef.current, 1)) }),
+      registry.attach('ask.acceptProposal', {
+        run: () => once('accept', () => perform(decide(cur(), viewRef.current, true))),
+      }),
+      registry.attach('ask.previousSuggestion', {
+        run: () => setAsk(arrow(cur(), viewRef.current, -1)),
+      }),
+      registry.attach('ask.nextSuggestion', {
+        run: () => setAsk(arrow(cur(), viewRef.current, 1)),
+      }),
       registry.attach('ask.useAnotherProvider', {
         run: () => undefined,
         children: (): readonly PaletteChild[] => {
@@ -380,7 +420,9 @@ export function AskContainer({ ports, today }: { ports: AskPorts; today: ReactNo
     <div
       className="ask-screen"
       data-keyctx="ask"
-      onFocus={event => setProposalFocused(Boolean((event.target as HTMLElement).closest('.ui-proposal-card')))}
+      onFocus={event =>
+        setProposalFocused(Boolean((event.target as HTMLElement).closest('.ui-proposal-card')))
+      }
     >
       <AskPanel
         view={view}
@@ -399,19 +441,24 @@ export function AskContainer({ ports, today }: { ports: AskPorts; today: ReactNo
           onStop: () => perform(stop(cur())),
           onQueuedChange: (id, text) => setAsk(editQueued(cur(), id, text)),
           onSendQueuedNow: id => once('submit', () => perform(sendNow(cur(), viewRef.current, id))),
-          onPickSuggestion: question => perform(submit(setField(cur(), question), viewRef.current, 'ask')),
+          onPickSuggestion: question =>
+            perform(submit(setField(cur(), question), viewRef.current, 'ask')),
           onOpenRecent: id => perform(openConversation(cur(), id)),
           onToggleSteps: turnId => setAsk(toggleSteps(cur(), turnId)),
           onOpenCitation: (turnId, threadId) => {
             const turn = viewRef.current.turns.find(t => t.id === turnId);
-            const target = turn ? [...turn.targets.values()].find(t => t.kind === 'thread' && t.threadId === threadId) : undefined;
+            const target = turn
+              ? [...turn.targets.values()].find(t => t.kind === 'thread' && t.threadId === threadId)
+              : undefined;
             ports.openThread(threadId, target?.kind === 'thread' ? target.messageId : undefined);
           },
           onOpenEventCitation: eventId => ports.openEvent(eventId),
           onRetry: turnId => perform(retry(cur(), viewRef.current, turnId)),
           onUseAnotherProvider: () => ports.openRoute('settings/ai'),
-          onConfirmProposal: proposalId => once('accept', () => perform(decide(cur(), viewRef.current, true, proposalId))),
-          onDismissProposal: proposalId => once('esc', () => perform(decide(cur(), viewRef.current, false, proposalId))),
+          onConfirmProposal: proposalId =>
+            once('accept', () => perform(decide(cur(), viewRef.current, true, proposalId))),
+          onDismissProposal: proposalId =>
+            once('esc', () => perform(decide(cur(), viewRef.current, false, proposalId))),
         }}
       />
     </div>

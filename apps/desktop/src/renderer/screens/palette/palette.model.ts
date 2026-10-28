@@ -303,7 +303,9 @@ export interface PaletteView {
 }
 
 /** The palette's "For: …" text for a context, without the "For: " the component writes. */
-export function paletteContext(ctx: Pick<CommandContext, 'target' | 'selection'>): string | undefined {
+export function paletteContext(
+  ctx: Pick<CommandContext, 'target' | 'selection'>,
+): string | undefined {
   const target = ctx.target;
   if (ctx.selection.length <= 1 && (!target || target.title.trim() === '')) return undefined;
   const line = contextLine(target, ctx.selection.length);
@@ -427,7 +429,12 @@ export function paletteView(state: PaletteState, input: PaletteInput): PaletteVi
 export function moveActive(state: PaletteState, view: PaletteView, step: 1 | -1): PaletteState {
   if (view.order.length === 0) return state;
   const at = view.activeId ? view.order.indexOf(view.activeId) : -1;
-  const next = at < 0 ? (step === 1 ? 0 : view.order.length - 1) : (at + step + view.order.length) % view.order.length;
+  const next =
+    at < 0
+      ? step === 1
+        ? 0
+        : view.order.length - 1
+      : (at + step + view.order.length) % view.order.length;
   return { ...state, activeId: view.order[next] };
 }
 
@@ -437,8 +444,13 @@ export function choose(view: PaletteView, id: string): RunTarget | null {
 }
 
 /** A digit 1–9: the Nth row, only while the field is empty; otherwise null and the digit is typed. */
-export function pickNumber(state: PaletteState, view: PaletteView, digit: number): RunTarget | null {
-  if (state.query !== '' || state.confirm || !Number.isInteger(digit) || digit < 1 || digit > 9) return null;
+export function pickNumber(
+  state: PaletteState,
+  view: PaletteView,
+  digit: number,
+): RunTarget | null {
+  if (state.query !== '' || state.confirm || !Number.isInteger(digit) || digit < 1 || digit > 9)
+    return null;
   const id = view.order[digit - 1];
   return id ? choose(view, id) : null;
 }
@@ -482,7 +494,12 @@ export function applyRun(
           activeId: undefined,
           pages: [
             ...state.pages,
-            { title: result.title, items: result.items, parentQuery: state.query, parentActive: state.activeId },
+            {
+              title: result.title,
+              items: result.items,
+              parentQuery: state.query,
+              parentActive: state.activeId,
+            },
           ],
         },
         closed: false,
@@ -500,7 +517,10 @@ export function applyRun(
 }
 
 /** Return / ⇧Return on the confirm. Destructive: Return cancels and ⇧Return confirms; otherwise Return confirms. */
-export function confirmKey(confirm: Pick<PaletteConfirm, 'destructive'>, shift: boolean): 'confirm' | 'cancel' {
+export function confirmKey(
+  confirm: Pick<PaletteConfirm, 'destructive'>,
+  shift: boolean,
+): 'confirm' | 'cancel' {
   if (!confirm.destructive) return 'confirm';
   return shift ? 'confirm' : 'cancel';
 }

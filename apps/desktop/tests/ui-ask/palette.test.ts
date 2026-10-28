@@ -46,10 +46,19 @@ function prng(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-const pick = <T>(rand: () => number, list: readonly T[]): T => list[Math.floor(rand() * list.length)];
+const pick = <T>(rand: () => number, list: readonly T[]): T =>
+  list[Math.floor(rand() * list.length)];
 
 function ctx(stack: readonly ContextName[], extra: Partial<CommandContext> = {}): CommandContext {
-  return { stack, target: null, selection: [], conditions: {}, prefs: DEFAULT_KEY_PREFS, focus: 'none', ...extra };
+  return {
+    stack,
+    target: null,
+    selection: [],
+    conditions: {},
+    prefs: DEFAULT_KEY_PREFS,
+    focus: 'none',
+    ...extra,
+  };
 }
 
 /** The app registry with a no-op handler on every command and control (an empty page for page commands). */
@@ -57,14 +66,21 @@ function wired(): Registry {
   const registry = createAppRegistry();
   for (const spec of [...COMMANDS, ...CONTROLS]) {
     const page = 'page' in spec && spec.page === true;
-    registry.attach(spec.id, page ? { run: () => undefined, children: () => [] } : { run: () => undefined });
+    registry.attach(
+      spec.id,
+      page ? { run: () => undefined, children: () => [] } : { run: () => undefined },
+    );
   }
   return registry;
 }
 
 /* ───────────── an independent oracle for the scoring order (written apart from the model) ───────────── */
 
-function oracleTier(query: string, label: string, keywords: readonly string[]): { tier: number; exact: boolean } | null {
+function oracleTier(
+  query: string,
+  label: string,
+  keywords: readonly string[],
+): { tier: number; exact: boolean } | null {
   const q = query.trim().replace(/\s+/g, ' ').toLowerCase();
   if (q === '') return null;
   const l = label.toLowerCase();
@@ -89,9 +105,18 @@ function oracleTier(query: string, label: string, keywords: readonly string[]): 
   return tier === 0 ? null : { tier, exact: tier === 4 };
 }
 
-function oracleRank(query: string, items: readonly { id: string; label: string; keywords: readonly string[] }[], recents: readonly string[]): string[] {
+function oracleRank(
+  query: string,
+  items: readonly { id: string; label: string; keywords: readonly string[] }[],
+  recents: readonly string[],
+): string[] {
   return items
-    .map((item, order) => ({ item, order, hit: oracleTier(query, item.label, item.keywords), recent: recents.indexOf(item.id) }))
+    .map((item, order) => ({
+      item,
+      order,
+      hit: oracleTier(query, item.label, item.keywords),
+      recent: recents.indexOf(item.id),
+    }))
     .filter(x => x.hit !== null)
     .sort((a, b) => {
       const ea = a.hit!.tier + (a.recent >= 0 ? 1.5 : 0);
@@ -154,10 +179,36 @@ describe('ui-ask: palette scoring', () => {
 
   test('palette scoring oracle – fuzzed against an independent oracle (2000 queries)', () => {
     const rand = prng(2026);
-    const words = ['later', 'label', 'move', 'to', 'done', 'mail', 'all', 'ask', 'about', 'reply', 'search', 'settings', 'undo', 'send', 'draft', 'calendar', 'today', 'home', 'trash', 'a', 'set', 'due', 'date…'];
+    const words = [
+      'later',
+      'label',
+      'move',
+      'to',
+      'done',
+      'mail',
+      'all',
+      'ask',
+      'about',
+      'reply',
+      'search',
+      'settings',
+      'undo',
+      'send',
+      'draft',
+      'calendar',
+      'today',
+      'home',
+      'trash',
+      'a',
+      'set',
+      'due',
+      'date…',
+    ];
     for (let round = 0; round < 2000; round += 1) {
       const items = Array.from({ length: 4 + Math.floor(rand() * 10) }, (_, i) => {
-        const label = Array.from({ length: 1 + Math.floor(rand() * 3) }, () => pick(rand, words)).join(' ');
+        const label = Array.from({ length: 1 + Math.floor(rand() * 3) }, () =>
+          pick(rand, words),
+        ).join(' ');
         const capitalised = label[0].toUpperCase() + label.slice(1);
         const keywords = rand() < 0.3 ? [pick(rand, words)] : [];
         return { id: `c${i}`, label: capitalised, keywords };
@@ -175,11 +226,18 @@ describe('ui-ask: palette scoring', () => {
       const recents = items.filter(() => rand() < 0.25).map(i => i.id);
       const got = rank(query, items, recents).map(s => s.candidate.id);
       const want = oracleRank(query, items, recents);
-      assert.deepEqual(got, want, `query "${query}" over ${JSON.stringify(items.map(i => i.label))} recents ${recents}`);
+      assert.deepEqual(
+        got,
+        want,
+        `query "${query}" over ${JSON.stringify(items.map(i => i.label))} recents ${recents}`,
+      );
       // The bold letters spell the query, in order, for a label match.
       for (const scored of rank(query, items, recents)) {
         if (scored.indices.length === 0) continue;
-        const spelled = scored.indices.map(i => [...scored.candidate.label][i]).join('').toLowerCase();
+        const spelled = scored.indices
+          .map(i => [...scored.candidate.label][i])
+          .join('')
+          .toLowerCase();
         const bare = (text: string) => text.replace(/ /g, '').replace(/[….]+$/, '');
         assert.equal(bare(spelled), bare(query.trim().toLowerCase()));
       }
@@ -205,7 +263,11 @@ describe('ui-ask: palette reach and groups', () => {
       assert.deepEqual(choose(view, item.id), { kind: 'command', id: spec.id });
       // Typing the full label puts it among the exact matches, ahead of every non-exact row.
       const first = view.sections[0].items[0];
-      assert.equal(matchLabel(spec.label, first.label)?.tier, 4, `${spec.id}: "${first.label}" ranked first`);
+      assert.equal(
+        matchLabel(spec.label, first.label)?.tier,
+        4,
+        `${spec.id}: "${first.label}" ranked first`,
+      );
     }
     assert.deepEqual(missing, []);
   });
@@ -238,16 +300,21 @@ describe('ui-ask: palette reach and groups', () => {
 
   test('palette first open groups – only Suggested and Go to, at most nine rows, numbered in order', () => {
     const registry = wired();
-    const target: TargetSummary = { kind: 'thread', id: 't1', title: 'Drew Bell', detail: 'October illustrations' };
+    const target: TargetSummary = {
+      kind: 'thread',
+      id: 't1',
+      title: 'Drew Bell',
+      detail: 'October illustrations',
+    };
     const context = ctx(['global', 'list', 'home'], { target });
     const entries = registry.commandsForPalette(context);
     const view = paletteView(openPalette(), { ctx: context, entries, recents: [] });
-    assert.deepEqual(view.sections.map(s => s.label), ['Suggested', 'Go to']);
-    assert.ok(view.order.length <= 9);
     assert.deepEqual(
-      view.sections[1].items.map(i => i.label).slice(0, 2),
-      ['Home', 'Later'],
+      view.sections.map(s => s.label),
+      ['Suggested', 'Go to'],
     );
+    assert.ok(view.order.length <= 9);
+    assert.deepEqual(view.sections[1].items.map(i => i.label).slice(0, 2), ['Home', 'Later']);
     assert.equal(view.context, 'Drew Bell · October illustrations');
     // A place you went to recently comes first under Go to.
     const recent = paletteView(openPalette(), { ctx: context, entries, recents: ['nav.calendar'] });
@@ -263,7 +330,11 @@ describe('ui-ask: palette reach and groups', () => {
     assert.equal(items[items.length - 1].id, ASK_ROW_ID);
     assert.equal(items[items.length - 1].label, 'Ask about “lat”');
     assert.deepEqual(choose(view, ASK_ROW_ID), { kind: 'ask', question: 'lat' });
-    const none = paletteView(openPalette('when is the dentist'), { ctx: context, entries, recents: [] });
+    const none = paletteView(openPalette('when is the dentist'), {
+      ctx: context,
+      entries,
+      recents: [],
+    });
     assert.deepEqual(none.order, [ASK_ROW_ID]);
   });
 
@@ -275,13 +346,18 @@ describe('ui-ask: palette reach and groups', () => {
     const view = paletteView(empty, { ctx: context, entries, recents: [] });
     assert.deepEqual(pickNumber(empty, view, 2), choose(view, view.order[1]));
     const typed = setQuery(empty, 'l');
-    assert.equal(pickNumber(typed, paletteView(typed, { ctx: context, entries, recents: [] }), 2), null);
+    assert.equal(
+      pickNumber(typed, paletteView(typed, { ctx: context, entries, recents: [] }), 2),
+      null,
+    );
     assert.equal(pickNumber(empty, view, 0), null);
     assert.equal(pickNumber(empty, view, 10), null);
   });
 
   test('↓/↑ wrap around the rows', () => {
-    const view = { order: ['a', 'b', 'c'], activeId: 'c' } as unknown as ReturnType<typeof paletteView>;
+    const view = { order: ['a', 'b', 'c'], activeId: 'c' } as unknown as ReturnType<
+      typeof paletteView
+    >;
     assert.equal(moveActive(openPalette(), view, 1).activeId, 'a');
     assert.equal(moveActive(openPalette(), { ...view, activeId: 'a' }, -1).activeId, 'c');
   });
@@ -306,7 +382,10 @@ describe('ui-ask: palette pages, confirm, Esc', () => {
     state = applyRun(state, target, registry.run('mail.moveToLabel', context)).state;
     const page = paletteView(state, { ctx: context, entries, recents: [] });
     assert.deepEqual(page.trail, ['Move to label']);
-    assert.deepEqual(page.sections[0].items.map(i => i.label), ['Receipts', 'Hollow Creek']);
+    assert.deepEqual(
+      page.sections[0].items.map(i => i.label),
+      ['Receipts', 'Hollow Creek'],
+    );
     const back = escape(state);
     assert.equal(back.closed, false);
     assert.equal(back.state.query, 'label');
@@ -367,7 +446,10 @@ describe('ui-ask: palette pages, confirm, Esc', () => {
     const registry = createAppRegistry();
     registry.attach('mail.moveToLabel', {
       run: () => undefined,
-      children: () => [{ id: 'nested', label: 'More labels', children: () => children }, ...children],
+      children: () => [
+        { id: 'nested', label: 'More labels', children: () => children },
+        ...children,
+      ],
     });
     registry.attach('compose.discard', { run: () => undefined });
     const context = ctx(['global', 'list', 'compose']);
@@ -408,7 +490,11 @@ describe('ui-ask: palette pages, confirm, Esc', () => {
     // And the keys agree: with the palette open, Esc is the palette's own Back, never the app's Go back.
     const app = wired();
     const esc = { key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
-    for (const stack of [['global', 'palette'], ['global', 'list', 'reader', 'palette'], ['global', 'ask', 'palette']] as ContextName[][]) {
+    for (const stack of [
+      ['global', 'palette'],
+      ['global', 'list', 'reader', 'palette'],
+      ['global', 'ask', 'palette'],
+    ] as ContextName[][]) {
       const hit = app.resolve(esc, ctx(stack, { focus: 'text' }));
       assert.equal(hit?.commandId, 'palette.back', stack.join('>'));
     }
@@ -416,33 +502,76 @@ describe('ui-ask: palette pages, confirm, Esc', () => {
 
   test('palette context line truthful – over 30 contexts the line names the target the commands get, or is absent', () => {
     const rand = prng(30);
-    const kinds: TargetKind[] = ['thread', 'event', 'plan', 'calendar', 'account', 'draft', 'setting', 'provider', 'conversation'];
-    const titles = ['Drew Bell', 'Mina Cho', 'Design review', 'jordan@example.com', '', '   ', 'Ünal Kaya', '山田 花子', 'A'.repeat(120)];
+    const kinds: TargetKind[] = [
+      'thread',
+      'event',
+      'plan',
+      'calendar',
+      'account',
+      'draft',
+      'setting',
+      'provider',
+      'conversation',
+    ];
+    const titles = [
+      'Drew Bell',
+      'Mina Cho',
+      'Design review',
+      'jordan@example.com',
+      '',
+      '   ',
+      'Ünal Kaya',
+      '山田 花子',
+      'A'.repeat(120),
+    ];
     const details = [undefined, 'October illustrations', 'Thu 2:00 PM', 'Mail', ''];
     const registry = wired();
     for (let i = 0; i < 30; i += 1) {
       const title = pick(rand, titles);
       const detail = pick(rand, details);
-      const target: TargetSummary | null = rand() < 0.15 ? null : { kind: pick(rand, kinds), id: `x${i}`, title, ...(detail !== undefined ? { detail } : {}) };
+      const target: TargetSummary | null =
+        rand() < 0.15
+          ? null
+          : {
+              kind: pick(rand, kinds),
+              id: `x${i}`,
+              title,
+              ...(detail !== undefined ? { detail } : {}),
+            };
       const selection = rand() < 0.2 ? ['a', 'b', 'c'].slice(0, 1 + Math.floor(rand() * 3)) : [];
       const context = ctx(['global', 'list'], { target, selection });
-      const view = paletteView(openPalette(), { ctx: context, entries: registry.commandsForPalette(context), recents: [] });
+      const view = paletteView(openPalette(), {
+        ctx: context,
+        entries: registry.commandsForPalette(context),
+        recents: [],
+      });
       if (selection.length > 1) assert.equal(view.context, `${selection.length} selected`);
-      else if (!target || title.trim() === '') assert.equal(view.context, undefined, `target ${JSON.stringify(target)}`);
+      else if (!target || title.trim() === '')
+        assert.equal(view.context, undefined, `target ${JSON.stringify(target)}`);
       else assert.equal(view.context, detail ? `${title} · ${detail}` : title);
       assert.equal(view.context, paletteContext(context));
     }
   });
 
   test('a run that ran closes the palette and records a recent; the Ask row records nothing', () => {
-    const applied = applyRun(openPalette('lat'), { kind: 'command', id: 'mail.later' }, { status: 'ran', done: Promise.resolve() });
+    const applied = applyRun(
+      openPalette('lat'),
+      { kind: 'command', id: 'mail.later' },
+      { status: 'ran', done: Promise.resolve() },
+    );
     assert.equal(applied.closed, true);
     assert.equal(applied.recent, 'mail.later');
     const ask = applyRun(openPalette('when'), { kind: 'ask', question: 'when' }, { status: 'ask' });
     assert.equal(ask.closed, true);
     assert.equal(ask.recent, undefined);
     assert.deepEqual(pushRecent(['a', 'b', 'c'], 'b'), ['b', 'a', 'c']);
-    assert.equal(pushRecent(Array.from({ length: 30 }, (_, i) => `c${i}`), 'new').length, 20);
+    assert.equal(
+      pushRecent(
+        Array.from({ length: 30 }, (_, i) => `c${i}`),
+        'new',
+      ).length,
+      20,
+    );
   });
 });
 

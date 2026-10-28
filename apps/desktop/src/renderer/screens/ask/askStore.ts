@@ -45,7 +45,13 @@ export const askStore = {
   },
   /** Opens the dock and asks a question (the palette's Ask row). */
   ask(question: string): void {
-    askStore.update(s => ({ ...s, open: true, tab: 'ask', pendingQuestion: question, focusTick: s.focusTick + 1 }));
+    askStore.update(s => ({
+      ...s,
+      open: true,
+      tab: 'ask',
+      pendingQuestion: question,
+      focusTick: s.focusTick + 1,
+    }));
   },
 };
 

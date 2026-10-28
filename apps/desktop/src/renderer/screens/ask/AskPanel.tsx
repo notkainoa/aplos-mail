@@ -50,7 +50,11 @@ function Turn({ turn, handlers }: { turn: TurnView; handlers: AskPanelHandlers }
         id={`ask-turn-${turn.id}`}
         question={turn.question}
         state={turn.state}
-        steps={turn.steps ? { ...turn.steps, onToggle: () => handlers.onToggleSteps(turn.id) } : undefined}
+        steps={
+          turn.steps
+            ? { ...turn.steps, onToggle: () => handlers.onToggleSteps(turn.id) }
+            : undefined
+        }
         answer={turn.answer}
         citations={turn.citations}
         provider={turn.provider}
@@ -66,7 +70,9 @@ function Turn({ turn, handlers }: { turn: TurnView; handlers: AskPanelHandlers }
         onOpenCitation={threadId => handlers.onOpenCitation(turn.id, threadId)}
         onOpenEventCitation={handlers.onOpenEventCitation}
         onRetry={turn.state === 'failed' ? () => handlers.onRetry(turn.id) : undefined}
-        onUseAnotherProvider={turn.state === 'failed' ? () => handlers.onUseAnotherProvider(turn.id) : undefined}
+        onUseAnotherProvider={
+          turn.state === 'failed' ? () => handlers.onUseAnotherProvider(turn.id) : undefined
+        }
       />
       {turn.excludedNote ? (
         <div className="ask-screen__note">
@@ -80,7 +86,15 @@ function Turn({ turn, handlers }: { turn: TurnView; handlers: AskPanelHandlers }
   return turn.provenance ? <Tooltip label={turn.provenance}>{body}</Tooltip> : body;
 }
 
-export function AskPanel({ view, tab, width, today, dictation, fieldRef, handlers }: AskPanelProps) {
+export function AskPanel({
+  view,
+  tab,
+  width,
+  today,
+  dictation,
+  fieldRef,
+  handlers,
+}: AskPanelProps) {
   const conversation =
     view.turns.length > 0 ? (
       <div className="ask-screen__turns">
@@ -101,7 +115,11 @@ export function AskPanel({ view, tab, width, today, dictation, fieldRef, handler
       conversation={conversation}
       empty={
         view.empty
-          ? { ...view.empty, onPickSuggestion: handlers.onPickSuggestion, onOpenRecent: handlers.onOpenRecent }
+          ? {
+              ...view.empty,
+              onPickSuggestion: handlers.onPickSuggestion,
+              onOpenRecent: handlers.onOpenRecent,
+            }
           : undefined
       }
       today={today}

@@ -104,14 +104,28 @@ export function SearchPage(props: SearchPageProps) {
             binding={{ id: RESULTS_ID, label: 'Search results', activeDescendantId: cursorId }}
           >
             {localRows.length > 0 ? (
-              <ListGroup header={{ id: 'search-local', label: 'In your mail', variant: 'section', count: model.localCount }}>
+              <ListGroup
+                header={{
+                  id: 'search-local',
+                  label: 'In your mail',
+                  variant: 'section',
+                  count: model.localCount,
+                }}
+              >
                 {localRows.map(row => (
                   <Row key={row.id} row={row} props={props} />
                 ))}
               </ListGroup>
             ) : null}
             {remoteRows.length > 0 ? (
-              <ListGroup header={{ id: 'search-remote', label: 'From Google', variant: 'section', count: remoteRows.length }}>
+              <ListGroup
+                header={{
+                  id: 'search-remote',
+                  label: 'From Google',
+                  variant: 'section',
+                  count: remoteRows.length,
+                }}
+              >
                 {remoteRows.map(row => (
                   <Row key={row.id} row={row} props={props} />
                 ))}
@@ -124,14 +138,27 @@ export function SearchPage(props: SearchPageProps) {
             text={model.noMatch}
             action={
               model.noMatchOffer
-                ? { label: SEARCH_GOOGLE, icon: 'globe', keys: 'Return', emphasis: 'text', onSelect: handlers.onSubmit }
+                ? {
+                    label: SEARCH_GOOGLE,
+                    icon: 'globe',
+                    keys: 'Return',
+                    emphasis: 'text',
+                    onSelect: handlers.onSubmit,
+                  }
                 : undefined
             }
           />
         ) : null}
         {line?.kind === 'offer' ? (
           <div className="search-screen__remote">
-            <Button variant="text" icon="globe" label={line.text} keys="Return" keyHint="always" onPress={handlers.onSubmit} />
+            <Button
+              variant="text"
+              icon="globe"
+              label={line.text}
+              keys="Return"
+              keyHint="always"
+              onPress={handlers.onSubmit}
+            />
           </div>
         ) : null}
         {line && (line.kind === 'busy' || line.kind === 'none') ? (
@@ -150,7 +177,13 @@ export function SearchPage(props: SearchPageProps) {
         ) : null}
         {line?.kind === 'failed' ? (
           <div className="search-screen__remote">
-            <ErrorLine kind="reason" text={line.text} retryable={line.retry} placement="column" onAction={() => handlers.onSubmit()} />
+            <ErrorLine
+              kind="reason"
+              text={line.text}
+              retryable={line.retry}
+              placement="column"
+              onAction={() => handlers.onSubmit()}
+            />
           </div>
         ) : null}
       </div>

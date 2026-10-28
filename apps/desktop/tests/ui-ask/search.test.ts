@@ -40,7 +40,8 @@ function prng(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-const pick = <T>(rand: () => number, list: readonly T[]): T => list[Math.floor(rand() * list.length)];
+const pick = <T>(rand: () => number, list: readonly T[]): T =>
+  list[Math.floor(rand() * list.length)];
 
 describe('ui-ask: search parser', () => {
   test('search operators become tokens – from:, to:, subject:, has:attachment, before:, after:, in: incl. in:done', () => {
@@ -70,20 +71,31 @@ describe('ui-ask: search parser', () => {
   });
 
   test('values an operator does not take stay free text', () => {
-    const parsed = parseSearch('before:soon has:pdf from: in:"" after:2026-02-30 http://example.com into:x');
+    const parsed = parseSearch(
+      'before:soon has:pdf from: in:"" after:2026-02-30 http://example.com into:x',
+    );
     assert.deepEqual(parsed.tokens, []);
-    assert.equal(parsed.free, 'before:soon has:pdf from: in:"" after:2026-02-30 http://example.com into:x');
+    assert.equal(
+      parsed.free,
+      'before:soon has:pdf from: in:"" after:2026-02-30 http://example.com into:x',
+    );
     assert.equal(normaliseDate('2028-02-29'), '2028-02-29');
     assert.equal(normaliseDate('2026-02-29'), null);
   });
 
   test('a label name keeps its case; a known place is lower-cased', () => {
-    assert.deepEqual(parseSearch('in:"Hollow Creek" in:INBOX').tokens, [{ operator: 'in', value: 'inbox' }]);
-    assert.deepEqual(parseSearch('in:"Hollow Creek"').tokens, [{ operator: 'in', value: 'Hollow Creek' }]);
+    assert.deepEqual(parseSearch('in:"Hollow Creek" in:INBOX').tokens, [
+      { operator: 'in', value: 'inbox' },
+    ]);
+    assert.deepEqual(parseSearch('in:"Hollow Creek"').tokens, [
+      { operator: 'in', value: 'Hollow Creek' },
+    ]);
   });
 
   test('one value per operator: the later token replaces the earlier', () => {
-    assert.deepEqual(parseSearch('from:jordan from:mina').tokens, [{ operator: 'from', value: 'mina' }]);
+    assert.deepEqual(parseSearch('from:jordan from:mina').tokens, [
+      { operator: 'from', value: 'mina' },
+    ]);
   });
 
   test('quoted values keep spaces, escapes and non-Latin text', () => {
@@ -93,12 +105,17 @@ describe('ui-ask: search parser', () => {
       { operator: 'to', value: 'back\\slash' },
     ];
     const text = formatSearch(tokens, 'résumé');
-    assert.equal(text, 'from:"Mina \\"M\\" Cho" subject:"ハイキング 計画" to:"back\\\\slash" résumé');
+    assert.equal(
+      text,
+      'from:"Mina \\"M\\" Cho" subject:"ハイキング 計画" to:"back\\\\slash" résumé',
+    );
     assert.deepEqual(parseSearch(text), { tokens, free: 'résumé' });
   });
 
   test('an unclosed quote runs to the end, so a value can be typed with spaces', () => {
-    assert.deepEqual(parseSearch('subject:"design rev').tokens, [{ operator: 'subject', value: 'design rev' }]);
+    assert.deepEqual(parseSearch('subject:"design rev').tokens, [
+      { operator: 'subject', value: 'design rev' },
+    ]);
   });
 
   test('scan marks a term complete only when whitespace follows it', () => {
@@ -111,13 +128,27 @@ describe('ui-ask: search parser', () => {
 
   test('search parser round trip – format then parse gives the same tokens and words (500 fuzzed queries)', () => {
     const rand = prng(7);
-    const words = ['layout', 'invoice', 'Jordan', 'résumé', 'ハイキング', 'дизайн', 'q3', 'a-b', 'x.y', 'from', 'in', '"quoted phrase"'];
+    const words = [
+      'layout',
+      'invoice',
+      'Jordan',
+      'résumé',
+      'ハイキング',
+      'дизайн',
+      'q3',
+      'a-b',
+      'x.y',
+      'from',
+      'in',
+      '"quoted phrase"',
+    ];
     const values: Record<SearchOperator, () => string> = {
       from: () => pick(rand, ['jordan', 'Mina Cho', 'drew@example.com', 'Ünal', 'a"b', '李雷']),
       to: () => pick(rand, ['mina', 'team@example.org', 'Sam Lee']),
       subject: () => pick(rand, ['design review', 'Q3', 'Re: "plans"', 'back\\up', 'まとめ']),
       has: () => 'attachment',
-      before: () => `20${10 + Math.floor(rand() * 20)}-${String(1 + Math.floor(rand() * 12)).padStart(2, '0')}-${String(1 + Math.floor(rand() * 28)).padStart(2, '0')}`,
+      before: () =>
+        `20${10 + Math.floor(rand() * 20)}-${String(1 + Math.floor(rand() * 12)).padStart(2, '0')}-${String(1 + Math.floor(rand() * 28)).padStart(2, '0')}`,
       after: () => pick(rand, ['2026-01-01', '2025-12-31']),
       in: () => pick(rand, ['done', 'later', 'inbox', 'Hollow Creek', 'Receipts']),
     };
@@ -129,7 +160,9 @@ describe('ui-ask: search parser', () => {
         const operator = pick(rand, ops);
         tokens = withToken(tokens, { operator, value: values[operator]() });
       }
-      const free = Array.from({ length: Math.floor(rand() * 4) }, () => pick(rand, words)).join(' ');
+      const free = Array.from({ length: Math.floor(rand() * 4) }, () => pick(rand, words)).join(
+        ' ',
+      );
       const text = formatSearch(tokens, free);
       assert.deepEqual(parseSearch(text), { tokens, free }, text);
     }
@@ -137,9 +170,31 @@ describe('ui-ask: search parser', () => {
 
   test('parse is idempotent on arbitrary text (500 fuzzed strings)', () => {
     const rand = prng(11);
-    const pieces = ['from:', 'to:', 'in:', 'has:', 'before:', 'subject:', '"', '\\', ' ', '  ', 'x', 'Jordan', 'done', 'attachment', '2026-10-01', ':', 'é', '漢', '\t'];
+    const pieces = [
+      'from:',
+      'to:',
+      'in:',
+      'has:',
+      'before:',
+      'subject:',
+      '"',
+      '\\',
+      ' ',
+      '  ',
+      'x',
+      'Jordan',
+      'done',
+      'attachment',
+      '2026-10-01',
+      ':',
+      'é',
+      '漢',
+      '\t',
+    ];
     for (let i = 0; i < 500; i += 1) {
-      const text = Array.from({ length: 1 + Math.floor(rand() * 12) }, () => pick(rand, pieces)).join('');
+      const text = Array.from({ length: 1 + Math.floor(rand() * 12) }, () =>
+        pick(rand, pieces),
+      ).join('');
       const once = parseSearch(text);
       const again = parseSearch(formatSearch(once.tokens, once.free));
       assert.deepEqual(again, once, JSON.stringify(text));
@@ -152,14 +207,17 @@ describe('ui-ask: search parser', () => {
       tokens: [{ operator: 'from', value: 'jordan' }],
     });
     assert.deepEqual(absorbTokens('from:jor', []), { field: 'from:jor', tokens: [] });
-    assert.deepEqual(absorbTokens('has:attachment in:done ', [{ operator: 'from', value: 'jordan' }]), {
-      field: '',
-      tokens: [
-        { operator: 'from', value: 'jordan' },
-        { operator: 'has', value: 'attachment' },
-        { operator: 'in', value: 'done' },
-      ],
-    });
+    assert.deepEqual(
+      absorbTokens('has:attachment in:done ', [{ operator: 'from', value: 'jordan' }]),
+      {
+        field: '',
+        tokens: [
+          { operator: 'from', value: 'jordan' },
+          { operator: 'has', value: 'attachment' },
+          { operator: 'in', value: 'done' },
+        ],
+      },
+    );
   });
 });
 
@@ -190,7 +248,14 @@ function progress(runId: string, kind: ProgressFrame['kind'], reasonCode?: strin
 describe('ui-ask: search page model', () => {
   test('search local as you type – typing never asks Google', () => {
     let state = initialSearch;
-    for (const text of ['l', 'la', 'lay', 'layout', 'layout from:jordan ', 'layout from:jordan x']) {
+    for (const text of [
+      'l',
+      'la',
+      'lay',
+      'layout',
+      'layout from:jordan ',
+      'layout from:jordan x',
+    ]) {
       const stepped = typeField(state, text);
       assert.deepEqual(stepped.effects, []);
       state = stepped.state;
@@ -206,10 +271,22 @@ describe('ui-ask: search page model', () => {
       let lastAsked = null as string | null;
       let runSeq = 0;
       for (let i = 0; i < 40; i += 1) {
-        const action = pick(rand, ['type', 'type', 'return', 'return', 'reset', 'remove', 'frame', 'render']);
+        const action = pick(rand, [
+          'type',
+          'type',
+          'return',
+          'return',
+          'reset',
+          'remove',
+          'frame',
+          'render',
+        ]);
         let effects: readonly SearchEffect[] = [];
         if (action === 'type') {
-          const stepped = typeField(state, pick(rand, ['', 'a', 'layout', 'layout ', 'from:jordan ', 'invoice', 'x']));
+          const stepped = typeField(
+            state,
+            pick(rand, ['', 'a', 'layout', 'layout ', 'from:jordan ', 'invoice', 'x']),
+          );
           effects = stepped.effects;
           state = stepped.state;
         } else if (action === 'remove') {
@@ -218,7 +295,11 @@ describe('ui-ask: search page model', () => {
           state = stepped.state;
         } else if (action === 'reset' || action === 'render') {
           // A window reset or any re-render reads the page from the same state: there is no step, so no call.
-          searchPage(state, { status: action === 'reset' ? 'reset' : 'live', ids: [], total: 0 }, 2_000);
+          searchPage(
+            state,
+            { status: action === 'reset' ? 'reset' : 'live', ids: [], total: 0 },
+            2_000,
+          );
         } else if (action === 'frame' && 'runId' in state.remote && state.remote.runId) {
           state = remoteFrame(state, progress(state.remote.runId, 'done'));
         } else if (action === 'return') {
@@ -227,7 +308,11 @@ describe('ui-ask: search page model', () => {
           const stepped = submit(state, ctx());
           effects = stepped.effects;
           state = stepped.state;
-          assert.equal(effects.filter(e => e.kind === 'remote').length, expected, `Return on "${key}"`);
+          assert.equal(
+            effects.filter(e => e.kind === 'remote').length,
+            expected,
+            `Return on "${key}"`,
+          );
           if (expected) lastAsked = key;
           for (const e of effects) {
             if (e.kind !== 'remote') continue;
@@ -235,7 +320,11 @@ describe('ui-ask: search page model', () => {
             state = remoteStarted(state, e.key, `run-${runSeq}`);
           }
         }
-        if (action !== 'return') assert.ok(effects.every(e => e.kind !== 'remote'), `${action} asked Google`);
+        if (action !== 'return')
+          assert.ok(
+            effects.every(e => e.kind !== 'remote'),
+            `${action} asked Google`,
+          );
       }
     }
   });
@@ -244,7 +333,11 @@ describe('ui-ask: search page model', () => {
     let state = type(initialSearch, 'layout');
     const first = submit(state, ctx(['t1']));
     assert.equal(first.effects.length, 1);
-    state = remoteStarted(first.state, first.effects[0].kind === 'remote' ? first.effects[0].key : '', 'r1');
+    state = remoteStarted(
+      first.state,
+      first.effects[0].kind === 'remote' ? first.effects[0].key : '',
+      'r1',
+    );
     assert.equal(submit(state, ctx(['t1'])).effects.length, 0);
     state = remoteFrame(state, progress('r1', 'done'));
     assert.equal(submit(state, ctx(['t1'])).effects.length, 0);
@@ -258,7 +351,10 @@ describe('ui-ask: search page model', () => {
   test('a failed remote search may be retried with Return; a refused one is not', () => {
     let state = type(initialSearch, 'layout');
     const first = submit(state, ctx());
-    state = remoteRejected(first.state, (first.effects[0] as { key: string }).key, { type: 'providerError', message: 'x' });
+    state = remoteRejected(first.state, (first.effects[0] as { key: string }).key, {
+      type: 'providerError',
+      message: 'x',
+    });
     assert.equal(searchPage(state, live([]), 5_000).remoteLine?.kind, 'failed');
     assert.equal(submit(state, ctx()).effects.length, 1);
     const again = submit(state, ctx());
@@ -302,7 +398,10 @@ describe('ui-ask: search page model', () => {
     assert.equal(page.noMatch, 'No mail matches ‘dentist’.');
     assert.equal(page.remoteLine, null, 'the offer rides on the no-match line');
     assert.equal(page.announce, 'No results.');
-    assert.equal(searchPage(type(initialSearch, 'layout'), live(['a', 'b', 'c', 'd']), 0).announce, '4 results in your mail.');
+    assert.equal(
+      searchPage(type(initialSearch, 'layout'), live(['a', 'b', 'c', 'd']), 0).announce,
+      '4 results in your mail.',
+    );
   });
 
   test('nothing to search: no offer, no no-match, no announcement', () => {

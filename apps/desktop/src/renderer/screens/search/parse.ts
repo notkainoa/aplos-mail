@@ -187,7 +187,8 @@ export function parseSearch(text: string): ParsedSearch {
   let tokens: SearchToken[] = [];
   const free: string[] = [];
   for (const term of scanSearch(text)) {
-    if (term.kind === 'op') tokens = withToken(tokens, { operator: term.operator, value: term.value });
+    if (term.kind === 'op')
+      tokens = withToken(tokens, { operator: term.operator, value: term.value });
     else free.push(term.text);
   }
   return { tokens, free: free.join(' ') };
@@ -243,7 +244,9 @@ export function toSearchQuery(tokens: readonly SearchToken[], free: string): Sea
 
 /** True when the query asks for nothing (no words, no operators). */
 export function isEmptyQuery(query: SearchQuery): boolean {
-  return Object.entries(query).every(([key, value]) => (key === 'text' ? value === '' : value === undefined));
+  return Object.entries(query).every(([key, value]) =>
+    key === 'text' ? value === '' : value === undefined,
+  );
 }
 
 /**

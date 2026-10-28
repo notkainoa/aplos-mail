@@ -48,7 +48,12 @@ export interface SearchPorts {
 }
 
 function errorBody(error: unknown): ErrorBody {
-  return (error as { body?: ErrorBody } | null)?.body ?? { type: 'internal', message: 'Something went wrong.' };
+  return (
+    (error as { body?: ErrorBody } | null)?.body ?? {
+      type: 'internal',
+      message: 'Something went wrong.',
+    }
+  );
 }
 
 export function SearchContainer({ ports }: { ports: SearchPorts }) {
@@ -84,7 +89,9 @@ export function SearchContainer({ ports }: { ports: SearchPorts }) {
     api.search
       .remote({ query: effect.query, accountId: ports.accountId })
       .then(out => commit(remoteStarted(stateRef.current, effect.key, out.runId)))
-      .catch((error: unknown) => commit(remoteRejected(stateRef.current, effect.key, errorBody(error))));
+      .catch((error: unknown) =>
+        commit(remoteRejected(stateRef.current, effect.key, errorBody(error))),
+      );
   }
 
   useEffect(() => {
@@ -118,7 +125,14 @@ export function SearchContainer({ ports }: { ports: SearchPorts }) {
 
   const rowFor = (id: string, remote: boolean) => {
     const thread = local.rows.get(id);
-    return thread ? resultRow(thread, model.query, remote, ports.showAccountDot ? ports.accountTag(thread.accountId) : undefined) : null;
+    return thread
+      ? resultRow(
+          thread,
+          model.query,
+          remote,
+          ports.showAccountDot ? ports.accountTag(thread.accountId) : undefined,
+        )
+      : null;
   };
   const localRows = model.localIds.map(id => rowFor(id, false)).filter(r => r !== null);
   const remoteRows = model.remoteIds.map(id => rowFor(id, true)).filter(r => r !== null);
@@ -161,7 +175,8 @@ export function SearchContainer({ ports }: { ports: SearchPorts }) {
         },
         onSelectRow: threadId => moveCursor(threadId),
         onOpenRow: threadId => ports.openThread(threadId),
-        onRowAction: (threadId, commandId, anchor) => ports.runRowCommand(threadId, commandId, anchor),
+        onRowAction: (threadId, commandId, anchor) =>
+          ports.runRowCommand(threadId, commandId, anchor),
       }}
     />
   );

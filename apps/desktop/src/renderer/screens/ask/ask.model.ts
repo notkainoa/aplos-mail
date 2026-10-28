@@ -91,7 +91,14 @@ export interface AskState {
   readonly seq: number;
 }
 
-export const initialAsk: AskState = { field: '', past: [], queued: [], expanded: [], decisions: {}, seq: 0 };
+export const initialAsk: AskState = {
+  field: '',
+  past: [],
+  queued: [],
+  expanded: [],
+  decisions: {},
+  seq: 0,
+};
 
 /** Something the container must do. */
 export type AskEffect =
@@ -125,7 +132,12 @@ const step = (state: AskState, ...effects: AskEffect[]): AskStep => ({ state, ef
 /** What the live run's frames add up to. */
 export interface LiveRun {
   readonly turnId?: string;
-  readonly steps: readonly { readonly id: string; readonly text: string; readonly state: string; readonly count?: number }[];
+  readonly steps: readonly {
+    readonly id: string;
+    readonly text: string;
+    readonly state: string;
+    readonly count?: number;
+  }[];
   readonly text: string;
   readonly citations: readonly { readonly citation: Citation; readonly at: number }[];
   readonly proposals: readonly Proposal[];
@@ -156,7 +168,10 @@ export function foldFrames(frames: readonly ProgressFrame[], runId: string | und
           break;
         case 'citation':
           if (frame.citation) {
-            citations.set(frame.citation.n, { citation: frame.citation, at: frame.at ?? text.length });
+            citations.set(frame.citation.n, {
+              citation: frame.citation,
+              at: frame.at ?? text.length,
+            });
           }
           break;
         case 'proposal':
@@ -187,7 +202,11 @@ export function foldFrames(frames: readonly ProgressFrame[], runId: string | und
 
 /* ───────────────────────── answer text ───────────────────────── */
 
-type Block = { text: string; strong?: readonly { start: number; end: number }[]; cites?: readonly { at: number; n: number }[] };
+type Block = {
+  text: string;
+  strong?: readonly { start: number; end: number }[];
+  cites?: readonly { at: number; n: number }[];
+};
 
 /** Clamps an offset into the text without splitting a surrogate pair. */
 function clampAt(text: string, at: number): number {
@@ -203,7 +222,10 @@ function clampAt(text: string, at: number): number {
  * Paragraphs of segments from answer blocks. Only the first emphasised range in the whole answer stays weight 500
  * (DESIGN §7.7: the decisive fact). Chips whose number has no citation are dropped.
  */
-export function toParagraphs(blocks: readonly Block[], known: ReadonlySet<number>): AnswerParagraph[] {
+export function toParagraphs(
+  blocks: readonly Block[],
+  known: ReadonlySet<number>,
+): AnswerParagraph[] {
   let decisiveUsed = false;
   const out: AnswerParagraph[] = [];
   for (const block of blocks) {
@@ -242,7 +264,9 @@ export function toParagraphs(blocks: readonly Block[], known: ReadonlySet<number
       if (next === undefined || next <= at) continue;
       const piece = text.slice(at, next);
       const bold = strong !== undefined && at >= strong.start && next <= strong.end;
-      segments.push(bold ? { kind: 'text', text: piece, strong: true } : { kind: 'text', text: piece });
+      segments.push(
+        bold ? { kind: 'text', text: piece, strong: true } : { kind: 'text', text: piece },
+      );
     }
     if (segments.length > 0) out.push(segments);
   }
@@ -264,7 +288,10 @@ export function streamBlocks(text: string, cites: readonly { at: number; n: numb
     // A chip belongs to the paragraph it falls in; one at a break sits at the end of the paragraph before.
     let owner = blocks[0];
     for (const block of blocks) if (cite.at >= block.start) owner = block;
-    owner.cites.push({ at: Math.max(0, Math.min(cite.at - owner.start, owner.text.length)), n: cite.n });
+    owner.cites.push({
+      at: Math.max(0, Math.min(cite.at - owner.start, owner.text.length)),
+      n: cite.n,
+    });
   }
   return blocks
     .filter(b => b.text.trim() !== '' || b.cites.length > 0)
@@ -323,13 +350,19 @@ const PROVIDER_LABELS: Readonly<Record<string, string>> = {
   custom: 'Custom server',
 };
 
-export function providerLabel(id: string | undefined, providers: readonly Pick<AiProvider, 'id' | 'label'>[] = []): string | undefined {
+export function providerLabel(
+  id: string | undefined,
+  providers: readonly Pick<AiProvider, 'id' | 'label'>[] = [],
+): string | undefined {
   if (!id) return undefined;
   return providers.find(p => p.id === id)?.label ?? PROVIDER_LABELS[id] ?? id;
 }
 
 /** "Answer by Groq", "Answer by Ollama on this Mac"; local only when the provider table says so (FR-5). */
-export function provenance(model: ModelRef | undefined, providers: readonly Pick<AiProvider, 'id' | 'label' | 'local'>[] = []): string | undefined {
+export function provenance(
+  model: ModelRef | undefined,
+  providers: readonly Pick<AiProvider, 'id' | 'label' | 'local'>[] = [],
+): string | undefined {
   if (!model) return undefined;
   const label = providerLabel(model.provider, providers);
   const local = providers.find(p => p.id === model.provider)?.local === true;
@@ -339,13 +372,19 @@ export function provenance(model: ModelRef | undefined, providers: readonly Pick
 /** Reason codes that mean Ask has no provider to ask, rather than a provider that failed. */
 const NO_PROVIDER = new Set(['ai.noProvider', 'ai.missingKey']);
 
-export function isNoProvider(error: Pick<ErrorBody, 'type' | 'reasonCode'> | { reasonCode?: string; type?: string } | undefined): boolean {
+export function isNoProvider(
+  error:
+    Pick<ErrorBody, 'type' | 'reasonCode'> | { reasonCode?: string; type?: string } | undefined,
+): boolean {
   if (!error) return false;
   return error.type === 'notConfigured' || NO_PROVIDER.has(error.reasonCode ?? '');
 }
 
 /** "Use another provider": ready providers other than the one that failed. */
-export function otherProviders<P extends Pick<AiProvider, 'id' | 'status'>>(providers: readonly P[], failing?: string): P[] {
+export function otherProviders<P extends Pick<AiProvider, 'id' | 'status'>>(
+  providers: readonly P[],
+  failing?: string,
+): P[] {
   return providers.filter(p => p.status === 'ready' && p.id !== failing);
 }
 
@@ -383,8 +422,10 @@ export function proposalCard(
       const calendar = proposal.calendarId ? calendars.get(proposal.calendarId) : undefined;
       const start = instant(event.start);
       const end = instant(event.end);
-      const when = Number.isFinite(start) && Number.isFinite(end) ? formatWhen(start, end, event.allDay) : '';
-      const consequence = [when, calendar?.name].filter(Boolean).join(' · ') || proposal.consequence;
+      const when =
+        Number.isFinite(start) && Number.isFinite(end) ? formatWhen(start, end, event.allDay) : '';
+      const consequence =
+        [when, calendar?.name].filter(Boolean).join(' · ') || proposal.consequence;
       return {
         ...base,
         kicker: 'Add to Calendar',
@@ -424,7 +465,10 @@ export function proposalCard(
 }
 
 /** A proposal's state after the owner's decisions here: a decision shows at once; a refused one reverts. */
-export function effectiveProposalState(proposal: Proposal, decision: Decision | undefined): 'pending' | 'applied' | 'dismissed' {
+export function effectiveProposalState(
+  proposal: Proposal,
+  decision: Decision | undefined,
+): 'pending' | 'applied' | 'dismissed' {
   if (decision && decision.phase !== 'failed') return decision.accept ? 'applied' : 'dismissed';
   if (proposal.state === 'accepted') return 'applied';
   if (proposal.state === 'dismissed') return 'dismissed';
@@ -464,7 +508,12 @@ export function stepLog(
   const texts = steps.map(s => s.text);
   if (working) {
     const running = [...steps].reverse().find(s => s.state === 'running');
-    return { current: (running ?? steps[steps.length - 1]).text, summary: '', steps: texts, expanded: false };
+    return {
+      current: (running ?? steps[steps.length - 1]).text,
+      summary: '',
+      steps: texts,
+      expanded: false,
+    };
   }
   let headline = steps[steps.length - 1];
   for (const s of steps) if ((s.count ?? -1) > (headline.count ?? -1)) headline = s;
@@ -489,10 +538,14 @@ export interface AskInputs {
   readonly recents: readonly { id: string; title: string; updatedAt: number }[];
 }
 
-function excludedNote(ids: readonly string[] | undefined, names?: ReadonlyMap<string, string>): string | undefined {
+function excludedNote(
+  ids: readonly string[] | undefined,
+  names?: ReadonlyMap<string, string>,
+): string | undefined {
   if (!ids || ids.length === 0) return undefined;
   const list = ids.map(id => names?.get(id) ?? 'one account');
-  const who = list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+  const who =
+    list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
   return `Mail from ${who} was left out. Its AI setting is off.`;
 }
 
@@ -504,7 +557,9 @@ function storedTurn(turn: StoredTurn, inputs: AskInputs, state: AskState): TurnV
   const status: TurnView['state'] = stopped ? 'stopped' : failed ? 'failed' : 'answered';
   const citations = [...turn.citations].sort((a, b) => a.n - b.n);
   const decisionsFor = (p: Proposal) => state.decisions[p.id];
-  const card = stopped ? undefined : pickProposal(turn.proposals, turn.id, inputs.calendars, decisionsFor);
+  const card = stopped
+    ? undefined
+    : pickProposal(turn.proposals, turn.id, inputs.calendars, decisionsFor);
   const hasAnswer = answer.length > 0;
   return {
     id: turn.id,
@@ -538,13 +593,17 @@ function pickProposal(
 function liveTurn(run: RunRef, live: LiveRun, inputs: AskInputs, state: AskState): TurnView {
   const id = live.turnId ?? run.clientId;
   const known = new Set(live.citations.map(c => c.citation.n));
-  const blocks = streamBlocks(live.text, live.citations.map(c => ({ at: c.at, n: c.citation.n })));
+  const blocks = streamBlocks(
+    live.text,
+    live.citations.map(c => ({ at: c.at, n: c.citation.n })),
+  );
   const answer = toParagraphs(blocks, known);
   const hasAnswer = answer.length > 0;
   const refusedNoProvider = isNoProvider(run.refused);
   const failed =
     !run.stopped &&
-    ((run.refused !== undefined && !refusedNoProvider) || (live.terminal === 'error' && !isNoProvider(live.problem)));
+    ((run.refused !== undefined && !refusedNoProvider) ||
+      (live.terminal === 'error' && !isNoProvider(live.problem)));
   const finished = run.stopped || live.terminal !== undefined || run.refused !== undefined;
   const status: TurnView['state'] = run.stopped
     ? 'stopped'
@@ -570,7 +629,8 @@ function liveTurn(run: RunRef, live: LiveRun, inputs: AskInputs, state: AskState
     provider: providerLabel(inputs.askModel?.provider, inputs.providers),
     provenance: hasAnswer && finished ? provenance(inputs.askModel, inputs.providers) : undefined,
     proposal: card,
-    sourceLine: hasAnswer && finished && !failed ? (citations.length > 0 ? 'cited' : 'noSource') : null,
+    sourceLine:
+      hasAnswer && finished && !failed ? (citations.length > 0 ? 'cited' : 'noSource') : null,
     live: true,
   };
 }
@@ -626,7 +686,8 @@ export function dockView(state: AskState, inputs: AskInputs): DockView {
     else turns[i] = { ...turns[i], proposal: undefined };
   }
 
-  const noProvider = isNoProvider(run?.refused) || (live.terminal === 'error' && isNoProvider(live.problem));
+  const noProvider =
+    isNoProvider(run?.refused) || (live.terminal === 'error' && isNoProvider(live.problem));
   const providerReady = inputs.askReady && !noProvider;
   const showEmpty = turns.length === 0 && state.conversationId === undefined;
   return {
@@ -636,7 +697,9 @@ export function dockView(state: AskState, inputs: AskInputs): DockView {
     empty: showEmpty
       ? {
           suggestions: inputs.suggestions.slice(0, 3),
-          recents: inputs.recents.slice(0, 5).map(r => ({ id: r.id, question: r.title, at: toIsoDateTime(r.updatedAt) })),
+          recents: inputs.recents
+            .slice(0, 5)
+            .map(r => ({ id: r.id, question: r.title, at: toIsoDateTime(r.updatedAt) })),
           cursorIndex: state.cursor,
         }
       : undefined,
@@ -659,7 +722,12 @@ export function askConditions(view: DockView, proposalFocused: boolean) {
 /* ───────────────────────── actions ───────────────────────── */
 
 export function setField(state: AskState, text: string): AskState {
-  return { ...state, field: text, history: undefined, cursor: text === '' ? state.cursor : undefined };
+  return {
+    ...state,
+    field: text,
+    history: undefined,
+    cursor: text === '' ? state.cursor : undefined,
+  };
 }
 
 function nextId(state: AskState, prefix: string): [AskState, string] {
@@ -690,7 +758,8 @@ export function submit(state: AskState, view: DockView, mode: 'ask' | 'searchAll
   if (text === '') {
     if (mode === 'ask' && view.pendingProposal) return decide(state, view, true);
     if (mode === 'ask' && view.empty && state.cursor !== undefined) return pickCursor(state, view);
-    if (mode === 'searchAll' && view.working && state.queued.length > 0) return sendNow(state, view, state.queued[0].id);
+    if (mode === 'searchAll' && view.working && state.queued.length > 0)
+      return sendNow(state, view, state.queued[0].id);
     return step(state);
   }
   if (view.working) {
@@ -728,10 +797,18 @@ export function sendNow(state: AskState, view: DockView, id: string): AskStep {
 }
 
 /** `Ask/run` answered. A run stopped before its id came back (Esc, send now) is cancelled now. */
-export function runStarted(state: AskState, clientId: string, runId: string, conversationId: string): AskStep {
+export function runStarted(
+  state: AskState,
+  clientId: string,
+  runId: string,
+  conversationId: string,
+): AskStep {
   if (state.run?.clientId === clientId) {
     const run = { ...state.run, runId };
-    return step({ ...state, conversationId, run }, ...(run.stopped ? [{ kind: 'cancel', runId } as const] : []));
+    return step(
+      { ...state, conversationId, run },
+      ...(run.stopped ? [{ kind: 'cancel', runId } as const] : []),
+    );
   }
   const past = state.past.find(p => p.clientId === clientId);
   if (!past) return step(state);
@@ -742,7 +819,11 @@ export function runStarted(state: AskState, clientId: string, runId: string, con
 }
 
 /** `Ask/run` was refused. */
-export function runRefused(state: AskState, clientId: string, error: Pick<ErrorBody, 'type' | 'reasonCode' | 'message'>): AskState {
+export function runRefused(
+  state: AskState,
+  clientId: string,
+  error: Pick<ErrorBody, 'type' | 'reasonCode' | 'message'>,
+): AskState {
   if (state.run?.clientId !== clientId) return state;
   // With no provider the question never became a turn: it goes back in the field, so nothing typed is lost.
   const field = isNoProvider(error) && state.field === '' ? state.run.question : state.field;
@@ -760,7 +841,11 @@ export function advance(state: AskState, frames: readonly ProgressFrame[]): AskS
   if (!runEnded(run, live)) return step(state);
   // With no provider the question never became an answer: it goes back in the field, so nothing typed is lost.
   const giveBack = live.terminal === 'error' && isNoProvider(live.problem) && state.field === '';
-  const settled: AskState = { ...state, field: giveBack ? run.question : state.field, run: { ...run, settled: true } };
+  const settled: AskState = {
+    ...state,
+    field: giveBack ? run.question : state.field,
+    run: { ...run, settled: true },
+  };
   const ok = !run.stopped && run.refused === undefined && live.terminal === 'done';
   if (!ok) return step(settled);
   const [first, ...rest] = settled.queued;
@@ -804,19 +889,37 @@ export function stop(state: AskState): AskStep {
 }
 
 /** Accept (Return, Add) or dismiss (Esc, Not now) the newest open proposal. Applies at once; the engine confirms. */
-export function decide(state: AskState, view: DockView, accept: boolean, proposalId?: string): AskStep {
+export function decide(
+  state: AskState,
+  view: DockView,
+  accept: boolean,
+  proposalId?: string,
+): AskStep {
   const card = proposalId
     ? view.turns.map(t => t.proposal).find(p => p?.proposalId === proposalId)
     : view.pendingProposal;
   if (!card || card.state !== 'pending' || !state.conversationId) return step(state);
   return step(
-    { ...state, decisions: { ...state.decisions, [card.proposalId]: { accept, phase: 'sending' } } },
-    { kind: 'decide', proposalId: card.proposalId, turnId: card.turnId, conversationId: state.conversationId, accept },
+    {
+      ...state,
+      decisions: { ...state.decisions, [card.proposalId]: { accept, phase: 'sending' } },
+    },
+    {
+      kind: 'decide',
+      proposalId: card.proposalId,
+      turnId: card.turnId,
+      conversationId: state.conversationId,
+      accept,
+    },
   );
 }
 
 /** The engine's answer to a decision. A refusal returns the card to pending. */
-export function decided(state: AskState, proposalId: string, outcome: { ok: true; eventId?: string; draftId?: string } | { ok: false }): AskState {
+export function decided(
+  state: AskState,
+  proposalId: string,
+  outcome: { ok: true; eventId?: string; draftId?: string } | { ok: false },
+): AskState {
   const decision = state.decisions[proposalId];
   if (!decision) return state;
   const next: Decision = outcome.ok
@@ -843,11 +946,10 @@ export function newChat(state: AskState): AskStep {
 /** A recent chat was opened. */
 export function openConversation(state: AskState, conversationId: string): AskStep {
   const fresh = newChat(state);
-  return step(
-    { ...fresh.state, conversationId },
-    ...fresh.effects,
-    { kind: 'openConversation', conversationId },
-  );
+  return step({ ...fresh.state, conversationId }, ...fresh.effects, {
+    kind: 'openConversation',
+    conversationId,
+  });
 }
 
 /** ↑/↓: through suggestions and recents in the empty view; in a conversation with an empty field, earlier questions. */
@@ -879,7 +981,10 @@ export function pickCursor(state: AskState, view: DockView): AskStep {
 
 export function toggleSteps(state: AskState, turnId: string): AskState {
   const open = state.expanded.includes(turnId);
-  return { ...state, expanded: open ? state.expanded.filter(id => id !== turnId) : [...state.expanded, turnId] };
+  return {
+    ...state,
+    expanded: open ? state.expanded.filter(id => id !== turnId) : [...state.expanded, turnId],
+  };
 }
 
 /** Retry after a provider error: the same question again, in the same conversation. */

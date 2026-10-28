@@ -30,7 +30,10 @@ export function TodayContainer({ ports }: { ports: TodayPorts }) {
   const now = useNow({ granularity: 'minute' });
   const { from, to } = dayRange(now);
   const agenda = useAgenda({ kind: 'events', from, to });
-  const model = useMemo(() => todayModel(agenda.events, ports.calendars, now), [agenda.events, ports.calendars, now]);
+  const model = useMemo(
+    () => todayModel(agenda.events, ports.calendars, now),
+    [agenda.events, ports.calendars, now],
+  );
   const [selected, setSelected] = useState<string | undefined>();
   return (
     <Today

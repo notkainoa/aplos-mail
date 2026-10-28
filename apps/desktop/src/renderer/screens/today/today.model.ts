@@ -80,7 +80,8 @@ export function formatWhen(start: number, end: number, allDay: boolean): string 
   const a = clock(start);
   const b = clock(end);
   const meridiem = (text: string) => text.slice(-2);
-  const sameHalf = meridiem(a) === meridiem(b) && new Date(start).toDateString() === new Date(end).toDateString();
+  const sameHalf =
+    meridiem(a) === meridiem(b) && new Date(start).toDateString() === new Date(end).toDateString();
   return `${day} ${sameHalf ? a.slice(0, -3) : a}–${b}`;
 }
 
@@ -163,7 +164,11 @@ export function todayModel(
   now: number,
 ): TodayModel {
   const day = toIsoDate(now);
-  const dayStart = new Date(new Date(now).getFullYear(), new Date(now).getMonth(), new Date(now).getDate()).getTime();
+  const dayStart = new Date(
+    new Date(now).getFullYear(),
+    new Date(now).getMonth(),
+    new Date(now).getDate(),
+  ).getTime();
   const dayEnd = new Date(dayStart + 36 * 60 * MINUTE).setHours(0, 0, 0, 0);
 
   const entries: AgendaEntry[] = [];
@@ -172,9 +177,15 @@ export function todayModel(
     const start = instant(event.start);
     const end = instant(event.end);
     if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
-    const onToday = event.allDay ? start < dayEnd && end > dayStart : start >= dayStart && start < dayEnd;
+    const onToday = event.allDay
+      ? start < dayEnd && end > dayStart
+      : start >= dayStart && start < dayEnd;
     if (!onToday) continue;
-    entries.push({ event: toData(event, calendars.get(event.calendarId)), start, end: Math.max(end, start) });
+    entries.push({
+      event: toData(event, calendars.get(event.calendarId)),
+      start,
+      end: Math.max(end, start),
+    });
   }
   entries.sort((a, b) => a.start - b.start || a.event.title.localeCompare(b.event.title));
 

@@ -37,7 +37,9 @@ import { AskPanel } from '../../src/renderer/screens/ask/AskPanel';
 import type { TodayCalendar } from '../../src/renderer/screens/today/today.model';
 import { frame, message, SCRIPTS, type Script } from './ask-script';
 
-const calendars = new Map<string, TodayCalendar>([['cal-hollow', { id: 'cal-hollow', name: 'Hollow Creek', color: 'ember' }]]);
+const calendars = new Map<string, TodayCalendar>([
+  ['cal-hollow', { id: 'cal-hollow', name: 'Hollow Creek', color: 'ember' }],
+]);
 const providers = [
   { id: 'groq', label: 'Groq', local: false, status: 'ready' },
   { id: 'openai', label: 'OpenAI', local: false, status: 'missingKey' },
@@ -53,7 +55,11 @@ function inputs(extra: Partial<AskInputs> = {}): AskInputs {
     askModel: { provider: 'groq', model: 'demo-model' },
     calendars,
     accountNames: new Map([['acc-work', 'Work']]),
-    suggestions: ['What needs a reply from me today?', 'When am I free tomorrow afternoon?', 'What did I miss this week?'],
+    suggestions: [
+      'What needs a reply from me today?',
+      'When am I free tomorrow afternoon?',
+      'What did I miss this week?',
+    ],
     recents: [
       { id: 'c1', title: 'When is the design review?', updatedAt: Date.now() - 60_000 },
       { id: 'c2', title: 'Invoices from Drew', updatedAt: Date.now() - 86_400_000 },
@@ -63,7 +69,10 @@ function inputs(extra: Partial<AskInputs> = {}): AskInputs {
 }
 
 /** Drives one scripted answer through the model the way the container does. */
-function play(script: Script, onPrefix?: (view: DockView, state: AskState, frames: ProgressFrame[]) => void) {
+function play(
+  script: Script,
+  onPrefix?: (view: DockView, state: AskState, frames: ProgressFrame[]) => void,
+) {
   let state = setField(initialAsk, script.question);
   const asked = submit(state, dockView(state, inputs()), 'ask');
   assert.equal(asked.effects[0]?.kind, 'run');
@@ -84,8 +93,22 @@ function play(script: Script, onPrefix?: (view: DockView, state: AskState, frame
     effects = [...effects, ...stepped.effects];
     onPrefix?.(dockView(state, inputs({ frames: seen })), state, seen);
   }
-  const stored = script.stored ? { id: 'conv-1', rev: 1, title: script.question, updatedAt: Date.now(), turns: [script.stored('turn-1')] } : undefined;
-  return { state, frames: seen, effects, view: dockView(state, inputs({ frames: seen, conversation: stored })), liveView: dockView(state, inputs({ frames: seen })) };
+  const stored = script.stored
+    ? {
+        id: 'conv-1',
+        rev: 1,
+        title: script.question,
+        updatedAt: Date.now(),
+        turns: [script.stored('turn-1')],
+      }
+    : undefined;
+  return {
+    state,
+    frames: seen,
+    effects,
+    view: dockView(state, inputs({ frames: seen, conversation: stored })),
+    liveView: dockView(state, inputs({ frames: seen })),
+  };
 }
 
 function chips(turn: TurnView): number[] {
@@ -142,11 +165,19 @@ describe('ui-ask: Ask invariants over 20 scripted answers (U7 acc. 4)', () => {
           assert.deepEqual(typed.effects, []);
           assert.equal(typed.state.queued.at(-1)?.text, 'And is Mina free then?');
           assert.equal(typed.state.field, '');
-          const edited = editQueued(typed.state, typed.state.queued.at(-1)!.id, 'And is Mina free at 3?');
+          const edited = editQueued(
+            typed.state,
+            typed.state.queued.at(-1)!.id,
+            'And is Mina free at 3?',
+          );
           assert.equal(edited.queued.at(-1)?.text, 'And is Mina free at 3?');
         }
         for (const turn of prefix.turns) {
-          for (const n of chips(turn)) assert.ok(turn.citations.some(c => c.index === n), `chip [${n}] has a source`);
+          for (const n of chips(turn))
+            assert.ok(
+              turn.citations.some(c => c.index === n),
+              `chip [${n}] has a source`,
+            );
           assert.ok(strongCount(turn) <= 1, 'one decisive span at most');
         }
       });
@@ -169,12 +200,16 @@ describe('ui-ask: Ask invariants over 20 scripted answers (U7 acc. 4)', () => {
         assert.equal(turn.sourceLine, cited ? 'cited' : 'noSource');
         const html = renderTurns(v);
         assert.equal(html.includes('No source in your mail'), !cited);
-        if (cited) assert.ok(chips(turn).length + (html.match(/ui-citation__chip/g) ?? []).length > 0);
+        if (cited)
+          assert.ok(chips(turn).length + (html.match(/ui-citation__chip/g) ?? []).length > 0);
         for (const n of chips(turn)) assert.ok(turn.citations.some(c => c.index === n));
         assert.ok(strongCount(turn) <= 1);
       }
       if (script.ends === 'stopped') {
-        assert.ok(effects.some(e => e.kind === 'cancel'), 'Esc asked the engine to stop');
+        assert.ok(
+          effects.some(e => e.kind === 'cancel'),
+          'Esc asked the engine to stop',
+        );
         assert.equal(liveView.turns.at(-1)!.proposal, undefined, 'a stopped answer offers nothing');
       }
     });
@@ -193,7 +228,10 @@ describe('ui-ask: Ask invariants over 20 scripted answers (U7 acc. 4)', () => {
     stepped = submit(setField(state, 'And is Mina free then?'), working, 'ask');
     stepped = submit(setField(stepped.state, 'Book the room too'), working, 'ask');
     state = stepped.state;
-    assert.deepEqual(state.queued.map(q => q.text), ['And is Mina free then?', 'Book the room too']);
+    assert.deepEqual(
+      state.queued.map(q => q.text),
+      ['And is Mina free then?', 'Book the room too'],
+    );
     assert.deepEqual(advance(state, head).effects, [], 'nothing runs while the answer streams');
     const done = advance(state, frames);
     assert.deepEqual(
@@ -209,12 +247,20 @@ describe('ui-ask: Ask invariants over 20 scripted answers (U7 acc. 4)', () => {
     const script = SCRIPTS[0];
     let state = setField(initialAsk, script.question);
     const asked = submit(state, dockView(state, inputs()), 'ask');
-    state = runStarted(asked.state, (asked.effects[0] as { clientId: string }).clientId, 'r', 'conv-1').state;
+    state = runStarted(
+      asked.state,
+      (asked.effects[0] as { clientId: string }).clientId,
+      'r',
+      'conv-1',
+    ).state;
     const frames = script.frames('r', 'turn-1').slice(0, 9);
     const view = dockView(state, inputs({ frames }));
     state = submit(setField(state, 'And is Mina free then?'), view, 'ask').state;
     const now = sendNow(state, view, state.queued[0].id);
-    assert.deepEqual(now.effects.map(e => e.kind), ['cancel', 'run']);
+    assert.deepEqual(
+      now.effects.map(e => e.kind),
+      ['cancel', 'run'],
+    );
     const after = dockView(now.state, inputs({ frames }));
     const old = after.turns.find(t => t.question === script.question)!;
     assert.equal(old.state, 'stopped');
@@ -227,11 +273,19 @@ describe('ui-ask: Ask invariants over 20 scripted answers (U7 acc. 4)', () => {
     const ran = submit(state, dockView(state, inputs()), 'searchAll');
     assert.equal(ran.effects[0].kind === 'run' && ran.effects[0].searchAll, true);
     const script = SCRIPTS[0];
-    let live = runStarted(ran.state, (ran.effects[0] as { clientId: string }).clientId, 'r', 'conv-1').state;
+    let live = runStarted(
+      ran.state,
+      (ran.effects[0] as { clientId: string }).clientId,
+      'r',
+      'conv-1',
+    ).state;
     const view = dockView(live, inputs({ frames: script.frames('r', 'turn-1').slice(0, 3) }));
     live = setField(live, 'Is it signed?');
     const sent = submit(live, view, 'searchAll');
-    assert.deepEqual(sent.effects.map(e => e.kind), ['cancel', 'run']);
+    assert.deepEqual(
+      sent.effects.map(e => e.kind),
+      ['cancel', 'run'],
+    );
     assert.equal((sent.effects[1] as { searchAll: boolean }).searchAll, true);
   });
 
@@ -240,7 +294,12 @@ describe('ui-ask: Ask invariants over 20 scripted answers (U7 acc. 4)', () => {
     const asked = submit(state, dockView(state, inputs()), 'ask');
     const stopped = stop(asked.state);
     assert.deepEqual(stopped.effects, [], 'no run id yet');
-    const started = runStarted(stopped.state, (asked.effects[0] as { clientId: string }).clientId, 'r9', 'conv-1');
+    const started = runStarted(
+      stopped.state,
+      (asked.effects[0] as { clientId: string }).clientId,
+      'r9',
+      'conv-1',
+    );
     assert.deepEqual(started.effects, [{ kind: 'cancel', runId: 'r9' }]);
   });
 });
@@ -252,7 +311,12 @@ describe('ui-ask: Ask keys and states', () => {
     const script = SCRIPTS[0];
     let state = setField(initialAsk, script.question);
     const asked = submit(state, dockView(state, inputs()), 'ask');
-    state = runStarted(asked.state, (asked.effects[0] as { clientId: string }).clientId, 'r', 'conv-1').state;
+    state = runStarted(
+      asked.state,
+      (asked.effects[0] as { clientId: string }).clientId,
+      'r',
+      'conv-1',
+    ).state;
     state = setField(state, 'and the room');
     const streaming = dockView(state, inputs({ frames: script.frames('r', 'turn-1').slice(0, 8) }));
     assert.equal(escRung(state, streaming, false), 'stop');
@@ -275,14 +339,20 @@ describe('ui-ask: Ask keys and states', () => {
       if (stepped.effects.some(e => e.kind === 'close')) break;
     }
     assert.deepEqual(rungs, ['clear', 'dismissProposal', 'close']);
-    for (const kind of kinds) assert.ok(['cancel', 'decide', 'close'].includes(kind), `Esc did ${kind}`);
+    for (const kind of kinds)
+      assert.ok(['cancel', 'decide', 'close'].includes(kind), `Esc did ${kind}`);
   });
 
   test('a focused proposal takes Esc first, even while an answer streams (registry priority)', () => {
     const script = SCRIPTS[2];
     let state = initialAsk;
     const asked = submit(setField(state, script.question), dockView(state, inputs()), 'ask');
-    state = runStarted(asked.state, (asked.effects[0] as { clientId: string }).clientId, 'r', 'conv-1').state;
+    state = runStarted(
+      asked.state,
+      (asked.effects[0] as { clientId: string }).clientId,
+      'r',
+      'conv-1',
+    ).state;
     const view = dockView(state, inputs({ frames: script.frames('r', 'turn-1').slice(0, -1) }));
     assert.equal(view.working, true);
     assert.equal(escRung(state, view, true), 'declineProposal');
@@ -295,28 +365,56 @@ describe('ui-ask: Ask keys and states', () => {
     assert.equal(view.pendingProposal?.color, 'ember');
     const accepted = submit(state, view, 'ask');
     assert.deepEqual(accepted.effects, [
-      { kind: 'decide', proposalId: 'p-event', turnId: 'turn-1', conversationId: 'conv-1', accept: true },
+      {
+        kind: 'decide',
+        proposalId: 'p-event',
+        turnId: 'turn-1',
+        conversationId: 'conv-1',
+        accept: true,
+      },
     ]);
     const shown = dockView(accepted.state, inputs({ frames, conversation: storedOf(SCRIPTS[2]) }));
     assert.equal(shown.turns.at(-1)!.proposal?.state, 'applied');
-    assert.equal(shown.turns.at(-1)!.proposal?.appliedText, 'Added to Calendar · Thu 2:00–2:30 PM · Hollow Creek');
+    assert.equal(
+      shown.turns.at(-1)!.proposal?.appliedText,
+      'Added to Calendar · Thu 2:00–2:30 PM · Hollow Creek',
+    );
     // A second Return has nothing pending to apply.
     assert.deepEqual(submit(accepted.state, shown, 'ask').effects, []);
     const confirmed = decided(accepted.state, 'p-event', { ok: true, eventId: 'e-new' });
     const back = undone(confirmed, 'p-event');
-    assert.equal(dockView(back, inputs({ frames, conversation: storedOf(SCRIPTS[2]) })).pendingProposal?.proposalId, 'p-event');
+    assert.equal(
+      dockView(back, inputs({ frames, conversation: storedOf(SCRIPTS[2]) })).pendingProposal
+        ?.proposalId,
+      'p-event',
+    );
   });
 
   test('an Undo in the engine brings the card back once the store has the decision', () => {
     const { state, view, frames } = play(SCRIPTS[2]);
-    const accepted = decided(decide(state, view, true).state, 'p-event', { ok: true, eventId: 'e-new' });
+    const accepted = decided(decide(state, view, true).state, 'p-event', {
+      ok: true,
+      eventId: 'e-new',
+    });
     const stored = storedOf(SCRIPTS[2]);
-    const acceptedInStore = { ...stored, turns: [{ ...stored.turns[0], proposals: [{ ...stored.turns[0].proposals[0], state: 'accepted' }] }] };
+    const acceptedInStore = {
+      ...stored,
+      turns: [
+        { ...stored.turns[0], proposals: [{ ...stored.turns[0].proposals[0], state: 'accepted' }] },
+      ],
+    };
     const pruned = pruneDecisions(accepted, acceptedInStore);
     assert.deepEqual(pruned.decisions, {});
-    assert.equal(dockView(pruned, inputs({ frames, conversation: acceptedInStore })).turns.at(-1)!.proposal?.state, 'applied');
+    assert.equal(
+      dockView(pruned, inputs({ frames, conversation: acceptedInStore })).turns.at(-1)!.proposal
+        ?.state,
+      'applied',
+    );
     // Undo reopens it in the engine.
-    assert.equal(dockView(pruned, inputs({ frames, conversation: stored })).pendingProposal?.proposalId, 'p-event');
+    assert.equal(
+      dockView(pruned, inputs({ frames, conversation: stored })).pendingProposal?.proposalId,
+      'p-event',
+    );
   });
 
   test('ask proposal nothing applied without confirm – no decide effect until Add or Return; a refusal reverts the card', () => {
@@ -324,7 +422,11 @@ describe('ui-ask: Ask keys and states', () => {
     assert.ok(!effects.some(e => e.kind === 'decide'));
     const accepted = decide(state, view, true);
     const refused = decided(accepted.state, 'p-event', { ok: false });
-    assert.equal(dockView(refused, inputs({ frames, conversation: storedOf(SCRIPTS[2]) })).pendingProposal?.state, 'pending');
+    assert.equal(
+      dockView(refused, inputs({ frames, conversation: storedOf(SCRIPTS[2]) })).pendingProposal
+        ?.state,
+      'pending',
+    );
   });
 
   test('ask proposal dismiss persists – Not now hides the card, and the stored dismissal keeps it hidden', () => {
@@ -332,16 +434,29 @@ describe('ui-ask: Ask keys and states', () => {
     const dismissed = decide(state, view, false);
     assert.equal(dismissed.effects[0].kind === 'decide' && dismissed.effects[0].accept, false);
     const stored = storedOf(SCRIPTS[2]);
-    stored.turns[0] = { ...stored.turns[0], proposals: stored.turns[0].proposals.map(p => ({ ...p, state: 'dismissed' })) };
-    const reopened = dockView({ ...initialAsk, conversationId: 'conv-1' }, inputs({ conversation: stored }));
+    stored.turns[0] = {
+      ...stored.turns[0],
+      proposals: stored.turns[0].proposals.map(p => ({ ...p, state: 'dismissed' })),
+    };
+    const reopened = dockView(
+      { ...initialAsk, conversationId: 'conv-1' },
+      inputs({ conversation: stored }),
+    );
     assert.equal(reopened.pendingProposal, undefined);
     assert.equal(reopened.turns[0].proposal, undefined);
   });
 
-  test('only the newest open proposal is the dock\'s card', () => {
+  test("only the newest open proposal is the dock's card", () => {
     const stored = storedOf(SCRIPTS[2]);
-    const second = { ...stored.turns[0], id: 'turn-2', proposals: [{ ...stored.turns[0].proposals[0], id: 'p-2' }] };
-    const view = dockView({ ...initialAsk, conversationId: 'conv-1' }, inputs({ conversation: { ...stored, turns: [stored.turns[0], second] } }));
+    const second = {
+      ...stored.turns[0],
+      id: 'turn-2',
+      proposals: [{ ...stored.turns[0].proposals[0], id: 'p-2' }],
+    };
+    const view = dockView(
+      { ...initialAsk, conversationId: 'conv-1' },
+      inputs({ conversation: { ...stored, turns: [stored.turns[0], second] } }),
+    );
     assert.equal(view.pendingProposal?.proposalId, 'p-2');
     assert.equal(view.turns[0].proposal, undefined);
   });
@@ -355,7 +470,11 @@ describe('ui-ask: Ask keys and states', () => {
     // Refused for a missing key: the same state, and the question goes back in the field.
     let state = setField(initialAsk, 'Anything new?');
     const asked = submit(state, dockView(state, inputs()), 'ask');
-    state = runRefused(asked.state, (asked.effects[0] as { clientId: string }).clientId, { type: 'notConfigured', reasonCode: 'ai.missingKey', message: 'x' });
+    state = runRefused(asked.state, (asked.effects[0] as { clientId: string }).clientId, {
+      type: 'notConfigured',
+      reasonCode: 'ai.missingKey',
+      message: 'x',
+    });
     const refused = dockView(state, inputs());
     assert.equal(refused.providerReady, false);
     assert.equal(state.field, 'Anything new?');
@@ -369,17 +488,30 @@ describe('ui-ask: Ask keys and states', () => {
     assert.match(html, />Use another provider</);
     const failed = liveView.turns.at(-1)!;
     const again = retry(state, liveView, failed.id);
-    assert.deepEqual(again.effects.map(e => (e.kind === 'run' ? e.question : e.kind)), [SCRIPTS[6].question]);
-    assert.deepEqual(retry(again.state, dockView(again.state, inputs()), failed.id).effects, [], 'no second run while one is going');
+    assert.deepEqual(
+      again.effects.map(e => (e.kind === 'run' ? e.question : e.kind)),
+      [SCRIPTS[6].question],
+    );
+    assert.deepEqual(
+      retry(again.state, dockView(again.state, inputs()), failed.id).effects,
+      [],
+      'no second run while one is going',
+    );
   });
 
   test('ask use another provider lists ready providers other than the failing one', () => {
-    assert.deepEqual(otherProviders([...providers], 'groq').map(p => p.id), ['ollama', 'anthropic']);
+    assert.deepEqual(
+      otherProviders([...providers], 'groq').map(p => p.id),
+      ['ollama', 'anthropic'],
+    );
   });
 
   test('ask provenance on hover – "Answer by Groq"; a local model says "on this Mac"', () => {
     assert.equal(provenance({ provider: 'groq', model: 'm' }, [...providers]), 'Answer by Groq');
-    assert.equal(provenance({ provider: 'ollama', model: 'm' }, [...providers]), 'Answer by Ollama on this Mac');
+    assert.equal(
+      provenance({ provider: 'ollama', model: 'm' }, [...providers]),
+      'Answer by Ollama on this Mac',
+    );
     assert.equal(provenance(undefined, [...providers]), undefined);
     const { view } = play(SCRIPTS[0]);
     assert.equal(view.turns.at(-1)!.provenance, 'Answer by Groq');
@@ -389,7 +521,8 @@ describe('ui-ask: Ask keys and states', () => {
 
   test('ask working step line names the real step, then folds into "Read 14 emails from Jordan · 3 steps"', () => {
     play(SCRIPTS[0], (view, _state, frames) => {
-      if (frames.length === 3) assert.equal(view.turns.at(-1)!.steps?.current, 'Reading 14 emails from Jordan');
+      if (frames.length === 3)
+        assert.equal(view.turns.at(-1)!.steps?.current, 'Reading 14 emails from Jordan');
     });
     const { view } = play(SCRIPTS[0]);
     assert.equal(view.turns.at(-1)!.steps?.summary, 'Read 14 emails from Jordan · 3 steps');
@@ -403,7 +536,11 @@ describe('ui-ask: Ask keys and states', () => {
     assert.equal(first.quote, 'Let’s hold the design review Thursday from 2:00 to 2:30.');
     assert.equal(first.from, 'Mina Cho');
     assert.equal(first.subject, 'Hollow Creek review');
-    assert.deepEqual(turn.targets.get(1), { kind: 'thread', threadId: first.threadId, messageId: 'm1-19' });
+    assert.deepEqual(turn.targets.get(1), {
+      kind: 'thread',
+      threadId: first.threadId,
+      messageId: 'm1-19',
+    });
     const event = play(SCRIPTS[11]).liveView.turns.at(-1)!;
     assert.deepEqual(event.targets.get(1), { kind: 'event', eventId: 'e-review' });
     assert.equal(event.citations[0].kind, 'event');
@@ -411,15 +548,28 @@ describe('ui-ask: Ask keys and states', () => {
 
   test('ask decisive span single – the first emphasised range stays, later ones are plain', () => {
     const paragraphs = toParagraphs(
-      [{ text: 'Layout by Friday; budget by Monday.', strong: [{ start: 10, end: 16 }, { start: 28, end: 34 }] }],
+      [
+        {
+          text: 'Layout by Friday; budget by Monday.',
+          strong: [
+            { start: 10, end: 16 },
+            { start: 28, end: 34 },
+          ],
+        },
+      ],
       new Set(),
     );
-    assert.deepEqual(paragraphs[0].filter(s => s.kind === 'text' && s.strong), [{ kind: 'text', text: 'Friday', strong: true }]);
+    assert.deepEqual(
+      paragraphs[0].filter(s => s.kind === 'text' && s.strong),
+      [{ kind: 'text', text: 'Friday', strong: true }],
+    );
   });
 
   test('a chip never splits an emoji', () => {
     const { liveView } = play(SCRIPTS[14]);
-    const texts = liveView.turns.at(-1)!.answer![0].flatMap(s => (s.kind === 'text' ? [s.text] : []));
+    const texts = liveView.turns
+      .at(-1)!
+      .answer![0].flatMap(s => (s.kind === 'text' ? [s.text] : []));
     for (const t of texts) assert.doesNotMatch(t, /^[\udc00-\udfff]|[\ud800-\udbff]$/);
   });
 
@@ -433,7 +583,10 @@ describe('ui-ask: Ask keys and states', () => {
     assert.equal(state.cursor, 4, 'wraps to the last recent');
     state = arrow(state, dockView(state, inputs()), 1);
     const picked = submit(state, dockView(state, inputs()), 'ask');
-    assert.equal(picked.effects[0].kind === 'run' && picked.effects[0].question, 'What needs a reply from me today?');
+    assert.equal(
+      picked.effects[0].kind === 'run' && picked.effects[0].question,
+      'What needs a reply from me today?',
+    );
   });
 
   test('↑ in an empty field inside a conversation recalls earlier questions', () => {
@@ -443,7 +596,11 @@ describe('ui-ask: Ask keys and states', () => {
     const up = arrow(state0, view, -1);
     assert.equal(up.field, SCRIPTS[0].question);
     assert.equal(arrow(up, view, 1).field, '');
-    assert.equal(arrow(setField(state0, 'typing'), view, -1).field, 'typing', 'typed text is never replaced');
+    assert.equal(
+      arrow(setField(state0, 'typing'), view, -1).field,
+      'typing',
+      'typed text is never replaced',
+    );
   });
 
   test('ask new chat – ⌘N clears to the empty state and the next question starts a new conversation', () => {
@@ -451,26 +608,45 @@ describe('ui-ask: Ask keys and states', () => {
     const fresh = newChat(state);
     assert.equal(fresh.state.conversationId, undefined);
     assert.ok(dockView(fresh.state, inputs()).empty);
-    const next = submit(setField(fresh.state, 'New question'), dockView(fresh.state, inputs()), 'ask');
+    const next = submit(
+      setField(fresh.state, 'New question'),
+      dockView(fresh.state, inputs()),
+      'ask',
+    );
     assert.equal(next.effects[0].kind === 'run' && next.effects[0].conversationId, undefined);
   });
 
   test('an account left out is said plainly under the answer', () => {
     const { view } = play(SCRIPTS[18]);
-    assert.equal(view.turns.at(-1)!.excludedNote, 'Mail from Work was left out. Its AI setting is off.');
+    assert.equal(
+      view.turns.at(-1)!.excludedNote,
+      'Mail from Work was left out. Its AI setting is off.',
+    );
   });
 
   test('a long stream keeps every delta', () => {
     const { liveView } = play(SCRIPTS[17]);
-    const text = liveView.turns.at(-1)!.answer!.flat().map(s => (s.kind === 'text' ? s.text : '')).join('');
+    const text = liveView.turns
+      .at(-1)!
+      .answer!.flat()
+      .map(s => (s.kind === 'text' ? s.text : ''))
+      .join('');
     assert.equal(text, 'The Hollow Creek board passed the trail budget. '.repeat(30));
   });
 
   test('frames of another run never leak into this one', () => {
     let state = setField(initialAsk, 'One');
     const asked = submit(state, dockView(state, inputs()), 'ask');
-    state = runStarted(asked.state, (asked.effects[0] as { clientId: string }).clientId, 'mine', 'conv-1').state;
-    const view = dockView(state, inputs({ frames: [frame('other', 'text', { delta: 'not mine' }), frame('other', 'done')] }));
+    state = runStarted(
+      asked.state,
+      (asked.effects[0] as { clientId: string }).clientId,
+      'mine',
+      'conv-1',
+    ).state;
+    const view = dockView(
+      state,
+      inputs({ frames: [frame('other', 'text', { delta: 'not mine' }), frame('other', 'done')] }),
+    );
     assert.equal(view.working, true);
     assert.equal(view.turns.at(-1)!.answer, undefined);
     void message;
@@ -478,5 +654,11 @@ describe('ui-ask: Ask keys and states', () => {
 });
 
 function storedOf(script: Script): Conversation {
-  return { id: 'conv-1', rev: 1, title: script.question, updatedAt: Date.now(), turns: [script.stored!('turn-1')] };
+  return {
+    id: 'conv-1',
+    rev: 1,
+    title: script.question,
+    updatedAt: Date.now(),
+    turns: [script.stored!('turn-1')],
+  };
 }

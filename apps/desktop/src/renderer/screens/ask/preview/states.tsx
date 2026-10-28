@@ -8,19 +8,27 @@
  * 'pane' fills the main pane (Search), 'overlay' draws the palette over an empty pane.
  */
 import type { JSX } from 'react';
-import { createAppRegistry, type CommandContext, type PaletteChild, type Registry, type TargetSummary } from '../../../commands';
+import {
+  createAppRegistry,
+  type CommandContext,
+  type PaletteChild,
+  type Registry,
+  type TargetSummary,
+} from '../../../commands';
 import { COMMANDS, CONTROLS } from '../../../commands/internal';
 import { DEFAULT_KEY_PREFS } from '../../../commands';
-import type { AskTurn, Citation, Conversation, Event, ProgressFrame, Proposal, ThreadRow } from '../../../data';
+import type {
+  AskTurn,
+  Citation,
+  Conversation,
+  Event,
+  ProgressFrame,
+  Proposal,
+  ThreadRow,
+} from '../../../data';
 import type { DictationState } from '../../../ui/props';
 import { AskPanel, type AskPanelHandlers } from '../AskPanel';
-import {
-  dockView,
-  initialAsk,
-  setField,
-  type AskInputs,
-  type AskState,
-} from '../ask.model';
+import { dockView, initialAsk, setField, type AskInputs, type AskState } from '../ask.model';
 import { Today } from '../../today/Today';
 import { todayModel, type TodayCalendar } from '../../today/today.model';
 import { PaletteScreen } from '../../palette/PaletteScreen';
@@ -74,13 +82,41 @@ const providers = [
   { id: 'ollama', label: 'Ollama', local: true, status: 'ready' },
 ];
 
-function message(n: number, fromName: string, subject: string, quote: string, when: number): Citation {
-  return { kind: 'message', n, messageId: `m${n}`, threadId: `t${n}`, quote, fromName, date: when, subject };
+function message(
+  n: number,
+  fromName: string,
+  subject: string,
+  quote: string,
+  when: number,
+): Citation {
+  return {
+    kind: 'message',
+    n,
+    messageId: `m${n}`,
+    threadId: `t${n}`,
+    quote,
+    fromName,
+    date: when,
+    subject,
+  };
 }
 
-const REVIEW = message(1, 'Mina Cho', 'Hollow Creek review', 'Let’s hold the design review Thursday from 2:00 to 2:30.', ago(DAY));
-const LAYOUT = message(2, 'Jordan Park', 'Two layout directions', 'Could you pick a layout by tomorrow?', ago(3 * HOUR));
-const ANSWER = 'Mina’s note puts the design review with you and Jordan at Thursday, 2:00–2:30 PM. Jordan also wants your layout pick by tomorrow. The review isn’t on your calendar yet.';
+const REVIEW = message(
+  1,
+  'Mina Cho',
+  'Hollow Creek review',
+  'Let’s hold the design review Thursday from 2:00 to 2:30.',
+  ago(DAY),
+);
+const LAYOUT = message(
+  2,
+  'Jordan Park',
+  'Two layout directions',
+  'Could you pick a layout by tomorrow?',
+  ago(3 * HOUR),
+);
+const ANSWER =
+  'Mina’s note puts the design review with you and Jordan at Thursday, 2:00–2:30 PM. Jordan also wants your layout pick by tomorrow. The review isn’t on your calendar yet.';
 const STEPS = [
   { id: 's1', text: 'Searched mail for “design review”', state: 'done' },
   { id: 's2', text: 'Read 14 emails from Jordan', state: 'done', count: 14 },
@@ -161,7 +197,11 @@ const handlers: AskPanelHandlers = {
   onDismissProposal: noop,
 };
 
-function dock(state: AskState, input: AskInputs, options: { tab?: 'ask' | 'today'; dictation?: DictationState } = {}) {
+function dock(
+  state: AskState,
+  input: AskInputs,
+  options: { tab?: 'ask' | 'today'; dictation?: DictationState } = {},
+) {
   return (
     <AskPanel
       view={dockView(state, input)}
@@ -177,7 +217,16 @@ function dock(state: AskState, input: AskInputs, options: { tab?: 'ask' | 'today
 let seq = 0;
 function frame(kind: ProgressFrame['kind'], extra: Partial<ProgressFrame> = {}): ProgressFrame {
   seq += 1;
-  return { frame: 'progress', dbEpoch: 'demo', seq, runId: 'r', source: 'ask', kind, turnId: 'live', ...extra } as ProgressFrame;
+  return {
+    frame: 'progress',
+    dbEpoch: 'demo',
+    seq,
+    runId: 'r',
+    source: 'ask',
+    kind,
+    turnId: 'live',
+    ...extra,
+  } as ProgressFrame;
 }
 
 /** A run on its way, with these frames so far. */
@@ -185,7 +234,14 @@ function running(question: string, field = '', queued: string[] = []): AskState 
   return {
     ...setField(initialAsk, field),
     conversationId: 'conv-1',
-    run: { clientId: 'ask-1', question, searchAll: false, runId: 'r', stopped: false, settled: false },
+    run: {
+      clientId: 'ask-1',
+      question,
+      searchAll: false,
+      runId: 'r',
+      stopped: false,
+      settled: false,
+    },
     queued: queued.map((text, i) => ({ id: `q${i}`, text, searchAll: false })),
   };
 }
@@ -200,7 +256,13 @@ function sentenceEnds(text: string): number[] {
 /* ───────────────────────── Today ───────────────────────── */
 
 let eventSeq = 0;
-function event(title: string, calendarId: string, start: number, end: number, extra: Partial<Event> = {}): Event {
+function event(
+  title: string,
+  calendarId: string,
+  start: number,
+  end: number,
+  extra: Partial<Event> = {},
+): Event {
   eventSeq += 1;
   return {
     id: `e${eventSeq}`,
@@ -255,8 +317,10 @@ const LABELS: PaletteChild[] = [
 function registry(): Registry {
   const r = createAppRegistry();
   for (const spec of [...COMMANDS, ...CONTROLS]) {
-    if (spec.id === 'mail.suggested') r.attach(spec.id, { run: noop, labelFor: () => 'Approve the invoice' });
-    else if (spec.id === 'mail.moveToLabel') r.attach(spec.id, { run: noop, children: () => LABELS });
+    if (spec.id === 'mail.suggested')
+      r.attach(spec.id, { run: noop, labelFor: () => 'Approve the invoice' });
+    else if (spec.id === 'mail.moveToLabel')
+      r.attach(spec.id, { run: noop, children: () => LABELS });
     else if ('page' in spec && spec.page) r.attach(spec.id, { run: noop, children: () => [] });
     else if (spec.id === 'ask.open') {
       r.attach(spec.id, {
@@ -269,13 +333,26 @@ function registry(): Registry {
   return r;
 }
 
-const DREW: TargetSummary = { kind: 'thread', id: 't-drew', title: 'Drew Bell', detail: 'Invoice 412 · October illustrations' };
+const DREW: TargetSummary = {
+  kind: 'thread',
+  id: 't-drew',
+  title: 'Drew Bell',
+  detail: 'Invoice 412 · October illustrations',
+};
 
-function context(target: TargetSummary | null, stack: CommandContext['stack'] = ['global', 'list', 'home', 'palette']): CommandContext {
+function context(
+  target: TargetSummary | null,
+  stack: CommandContext['stack'] = ['global', 'list', 'home', 'palette'],
+): CommandContext {
   return { stack, target, selection: [], conditions: {}, prefs: DEFAULT_KEY_PREFS, focus: 'text' };
 }
 
-function palette(state: PaletteState, ctx: CommandContext, reg = registry(), recents: string[] = []) {
+function palette(
+  state: PaletteState,
+  ctx: CommandContext,
+  reg = registry(),
+  recents: string[] = [],
+) {
   const view = paletteView(state, { ctx, entries: reg.commandsForPalette(ctx), recents });
   return (
     <PaletteScreen
@@ -301,7 +378,14 @@ function ran(state: PaletteState, id: string, ctx: CommandContext, reg = registr
 
 /* ───────────────────────── Search ───────────────────────── */
 
-function thread(id: string, fromName: string, subject: string, snippet: string, lastDate: number, extra: Partial<ThreadRow> = {}): ThreadRow {
+function thread(
+  id: string,
+  fromName: string,
+  subject: string,
+  snippet: string,
+  lastDate: number,
+  extra: Partial<ThreadRow> = {},
+): ThreadRow {
   return {
     id,
     accountId: 'acc',
@@ -328,13 +412,48 @@ function thread(id: string, fromName: string, subject: string, snippet: string, 
 }
 
 const THREADS: ThreadRow[] = [
-  thread('t1', 'Jordan Park', 'A quieter home for the Hollow Creek site', 'Two layout directions are ready, one quieter and one bolder.', at(29, 10), { unread: true, hasAttachments: true }),
-  thread('t2', 'Jordan Park', 'Kicking off Hollow Creek', 'Here is the brief we agreed on Friday, with the layout notes.', at(20, 9), { hasAttachments: true }),
-  thread('t3', 'Jordan Park', 'Sitemap v2', 'Updated site map with the booking form on the first page.', at(14, 16), { hasAttachments: true }),
-  thread('t4', 'Jordan Park', 'Logo files', 'The layout grid and logo files for the trail map, as promised.', at(8, 11), { hasAttachments: true }),
+  thread(
+    't1',
+    'Jordan Park',
+    'A quieter home for the Hollow Creek site',
+    'Two layout directions are ready, one quieter and one bolder.',
+    at(29, 10),
+    { unread: true, hasAttachments: true },
+  ),
+  thread(
+    't2',
+    'Jordan Park',
+    'Kicking off Hollow Creek',
+    'Here is the brief we agreed on Friday, with the layout notes.',
+    at(20, 9),
+    { hasAttachments: true },
+  ),
+  thread(
+    't3',
+    'Jordan Park',
+    'Sitemap v2',
+    'Updated site map with the booking form on the first page.',
+    at(14, 16),
+    { hasAttachments: true },
+  ),
+  thread(
+    't4',
+    'Jordan Park',
+    'Logo files',
+    'The layout grid and logo files for the trail map, as promised.',
+    at(8, 11),
+    { hasAttachments: true },
+  ),
 ];
 const REMOTE: ThreadRow[] = [
-  thread('g1', 'Jordan Park', 'Layout feedback from the board', 'The board liked the quieter layout for the landing page.', at(2, 15), { partial: true, hasAttachments: true }),
+  thread(
+    'g1',
+    'Jordan Park',
+    'Layout feedback from the board',
+    'The board liked the quieter layout for the landing page.',
+    at(2, 15),
+    { partial: true, hasAttachments: true },
+  ),
 ];
 
 function rowsById(list: ThreadRow[]) {
@@ -376,7 +495,9 @@ function typed(text: string): SearchState {
 function asked(state: SearchState, localIds: string[], now: number): SearchState {
   const stepped = submitSearch(state, { now, supported: true, localIds });
   const effect = stepped.effects[0];
-  return effect?.kind === 'remote' ? remoteStarted(stepped.state, effect.key, 'search-run') : stepped.state;
+  return effect?.kind === 'remote'
+    ? remoteStarted(stepped.state, effect.key, 'search-run')
+    : stepped.state;
 }
 
 /* ───────────────────────── the table ───────────────────────── */
@@ -397,8 +518,17 @@ export const states: Record<string, StateEntry> = {
         running('When is the Hollow Creek design review?', '', ['And is Mina free then?']),
         inputs({
           frames: [
-            frame('step', { step: { id: 's1', text: 'Searched mail for “design review”', state: 'done' } }),
-            frame('step', { step: { id: 's2', text: 'Reading 14 emails from Jordan', state: 'running', count: 14 } }),
+            frame('step', {
+              step: { id: 's1', text: 'Searched mail for “design review”', state: 'done' },
+            }),
+            frame('step', {
+              step: {
+                id: 's2',
+                text: 'Reading 14 emails from Jordan',
+                state: 'running',
+                count: 14,
+              },
+            }),
           ],
         }),
       ),
@@ -412,7 +542,10 @@ export const states: Record<string, StateEntry> = {
         inputs({
           frames: [
             ...STEPS.map(step => frame('step', { step })),
-            frame('text', { delta: 'Mina’s note puts the design review with you and Jordan at Thursday, 2:00–2:30 PM.' }),
+            frame('text', {
+              delta:
+                'Mina’s note puts the design review with you and Jordan at Thursday, 2:00–2:30 PM.',
+            }),
             frame('citation', { citation: REVIEW }),
             frame('text', { delta: ' Jordan also wants' }),
           ],
@@ -429,7 +562,16 @@ export const states: Record<string, StateEntry> = {
           conversation: conversation([
             turn('t-1', 'When is the Hollow Creek design review?', {
               answer: {
-                blocks: [{ text: ANSWER, strong: [{ start: 58, end: 80 }], cites: [{ at: 81, n: 1 }, { at: 129, n: 2 }] }],
+                blocks: [
+                  {
+                    text: ANSWER,
+                    strong: [{ start: 58, end: 80 }],
+                    cites: [
+                      { at: 81, n: 1 },
+                      { at: 129, n: 2 },
+                    ],
+                  },
+                ],
               },
               citations: [REVIEW, LAYOUT],
               noSource: false,
@@ -466,7 +608,9 @@ export const states: Record<string, StateEntry> = {
         inputs({
           frames: [
             ...STEPS.map(step => frame('step', { step })),
-            frame('text', { delta: 'Jordan sent two layout directions and asked for a pick by tomorrow.' }),
+            frame('text', {
+              delta: 'Jordan sent two layout directions and asked for a pick by tomorrow.',
+            }),
             frame('citation', { citation: LAYOUT }),
             frame('text', { delta: ' He also shared' }),
           ],
@@ -487,7 +631,9 @@ export const states: Record<string, StateEntry> = {
         running('What did I miss this week?'),
         inputs({
           frames: [
-            frame('step', { step: { id: 's1', text: 'Searching this week’s mail', state: 'running' } }),
+            frame('step', {
+              step: { id: 's1', text: 'Searching this week’s mail', state: 'running' },
+            }),
             frame('error', { problem: { reasonCode: 'ai.unreachable' } }),
           ],
         }),
@@ -499,24 +645,49 @@ export const states: Record<string, StateEntry> = {
     render: () => dock(initialAsk, inputs(), { dictation: { holdKey: 'A', level: 0.6 } }),
   },
   'ask-worst-case': {
-    title: 'Ask worst case: a very long question, 30 citations, non-Latin text, an account left out',
+    title:
+      'Ask worst case: a very long question, 30 citations, non-Latin text, an account left out',
     layout: 'dock',
     render: () => {
       const many = Array.from({ length: 30 }, (_, i) =>
-        message(i + 1, i % 3 === 0 ? '山田 花子' : i % 3 === 1 ? 'Ünal Kaya-Øvergaard' : 'Мария Иванова', `Thread ${i + 1} — ハイキング計画`, `引用 ${i + 1}: 土曜日の朝8時に駅で集合しましょう。`, ago(i * DAY)),
+        message(
+          i + 1,
+          i % 3 === 0 ? '山田 花子' : i % 3 === 1 ? 'Ünal Kaya-Øvergaard' : 'Мария Иванова',
+          `Thread ${i + 1} — ハイキング計画`,
+          `引用 ${i + 1}: 土曜日の朝8時に駅で集合しましょう。`,
+          ago(i * DAY),
+        ),
       );
-      const text = '土曜日のハイキングは朝8時に駅で集合です。Ünal confirmed the trail, and Мария will bring the map. '.repeat(3);
+      const text =
+        '土曜日のハイキングは朝8時に駅で集合です。Ünal confirmed the trail, and Мария will bring the map. '.repeat(
+          3,
+        );
       return dock(
         answered,
         inputs({
           conversation: conversation([
-            turn('t-1', `Can you check every message from the hiking group since September, including the ones in other languages, and tell me who is driving, who is bringing food, and whether anyone mentioned the weather or a change of trail ${'and the parking '.repeat(6)}?`, {
-              answer: { blocks: [{ text, strong: [{ start: 0, end: 21 }], cites: sentenceEnds(text).flatMap((end, i) => [{ at: end, n: 2 * i + 1 }, { at: end, n: 2 * i + 2 }]) }] },
-              citations: many,
-              noSource: false,
-              steps: STEPS,
-              excludedAccountIds: ['acc-work'],
-            }),
+            turn(
+              't-1',
+              `Can you check every message from the hiking group since September, including the ones in other languages, and tell me who is driving, who is bringing food, and whether anyone mentioned the weather or a change of trail ${'and the parking '.repeat(6)}?`,
+              {
+                answer: {
+                  blocks: [
+                    {
+                      text,
+                      strong: [{ start: 0, end: 21 }],
+                      cites: sentenceEnds(text).flatMap((end, i) => [
+                        { at: end, n: 2 * i + 1 },
+                        { at: end, n: 2 * i + 2 },
+                      ]),
+                    },
+                  ],
+                },
+                citations: many,
+                noSource: false,
+                steps: STEPS,
+                excludedAccountIds: ['acc-work'],
+              },
+            ),
           ]),
         }),
       );
@@ -559,7 +730,13 @@ export const states: Record<string, StateEntry> = {
     title: 'Today: nothing scheduled',
     layout: 'dock',
     render: () => (
-      <AskPanel view={dockView(initialAsk, inputs())} tab="today" width={360} handlers={handlers} today={<TodayFixture events={[]} />} />
+      <AskPanel
+        view={dockView(initialAsk, inputs())}
+        tab="today"
+        width={360}
+        handlers={handlers}
+        today={<TodayFixture events={[]} />}
+      />
     ),
   },
   'palette-first-open': {
@@ -584,7 +761,10 @@ export const states: Record<string, StateEntry> = {
     title: 'Palette: discard a draft, Cancel is the default',
     layout: 'overlay',
     render: () => {
-      const ctx = context({ kind: 'draft', id: 'd1', title: 'Re: October illustrations', detail: 'to Drew Bell' }, ['global', 'compose', 'palette']);
+      const ctx = context(
+        { kind: 'draft', id: 'd1', title: 'Re: October illustrations', detail: 'to Drew Bell' },
+        ['global', 'compose', 'palette'],
+      );
       return palette(ran(openPalette('discard'), 'compose.discard', ctx), ctx);
     },
   },
@@ -597,12 +777,26 @@ export const states: Record<string, StateEntry> = {
     title: 'Palette worst case: a very long target, non-Latin text in the query',
     layout: 'overlay',
     render: () =>
-      palette(openPalette('予定'), context({ kind: 'thread', id: 't', title: 'Ünal Kaya-Øvergaard and the Hollow Creek Trail Restoration Committee', detail: 'Re: Re: Fwd: 土曜日のハイキング計画 — the final, final version of the trail map with parking notes' })),
+      palette(
+        openPalette('予定'),
+        context({
+          kind: 'thread',
+          id: 't',
+          title: 'Ünal Kaya-Øvergaard and the Hollow Creek Trail Restoration Committee',
+          detail:
+            'Re: Re: Fwd: 土曜日のハイキング計画 — the final, final version of the trail map with parking notes',
+        }),
+      ),
   },
   'search-results': {
     title: 'Search: operator tokens, local rows, the Google offer',
     layout: 'pane',
-    render: () => search(typed('from:jordan has:attachment layout'), live(['t1', 't2', 't3', 't4']), rowsById(THREADS)),
+    render: () =>
+      search(
+        typed('from:jordan has:attachment layout'),
+        live(['t1', 't2', 't3', 't4']),
+        rowsById(THREADS),
+      ),
   },
   'search-no-match': {
     title: 'Search: no mail matches, with the Google offer',
@@ -622,7 +816,14 @@ export const states: Record<string, StateEntry> = {
     layout: 'pane',
     render: () => {
       let state = asked(typed('from:jordan layout'), ['t1', 't2', 't3', 't4'], NOW - 2_000);
-      state = remoteFrame(state, { frame: 'progress', dbEpoch: 'demo', seq: 1, runId: 'search-run', source: 'search', kind: 'done' });
+      state = remoteFrame(state, {
+        frame: 'progress',
+        dbEpoch: 'demo',
+        seq: 1,
+        runId: 'search-run',
+        source: 'search',
+        kind: 'done',
+      });
       return search(state, live(['t1', 't2', 't3', 't4', 'g1']), rowsById([...THREADS, ...REMOTE]));
     },
   },
@@ -644,10 +845,19 @@ export const states: Record<string, StateEntry> = {
     layout: 'pane',
     render: () =>
       search(
-        typed('from:"Ünal Kaya-Øvergaard" subject:"土曜日のハイキング計画 and the trail" in:"Hollow Creek Trail Restoration" before:2026-10-20 ハイキング'),
+        typed(
+          'from:"Ünal Kaya-Øvergaard" subject:"土曜日のハイキング計画 and the trail" in:"Hollow Creek Trail Restoration" before:2026-10-20 ハイキング',
+        ),
         live(['w1', 'w2']),
         rowsById([
-          thread('w1', 'Ünal Kaya-Øvergaard of the Hollow Creek Trail Restoration Committee', '土曜日のハイキング計画 and the trail: the final, final version with parking notes for everyone', 'ハイキング の 集合 は 朝 8 時 です。Please bring water, a map, and the permit we printed last week.', at(18, 8), { unread: true, hasAttachments: true }),
+          thread(
+            'w1',
+            'Ünal Kaya-Øvergaard of the Hollow Creek Trail Restoration Committee',
+            '土曜日のハイキング計画 and the trail: the final, final version with parking notes for everyone',
+            'ハイキング の 集合 は 朝 8 時 です。Please bring water, a map, and the permit we printed last week.',
+            at(18, 8),
+            { unread: true, hasAttachments: true },
+          ),
           thread('w2', 'Мария Иванова', 'ハイキング', 'Короткое сообщение.', at(10, 8)),
         ]),
       ),

@@ -65,8 +65,14 @@ describe('ui-ask: Today', () => {
     assert.equal(model.headline, '4 events · next at 11:00 AM');
     assert.equal(model.behind?.event.title, 'Northwind Dental');
     assert.equal(model.next?.event.title, 'Standup');
-    assert.deepEqual(model.following.map(e => e.event.title), ['Design review with Mina and Jordan', 'Climbing with Theo']);
-    assert.deepEqual(model.gaps.map(g => g.text), ['Free for 1 h', 'Free for 2 h 45 min', 'Free for 3 h']);
+    assert.deepEqual(
+      model.following.map(e => e.event.title),
+      ['Design review with Mina and Jordan', 'Climbing with Theo'],
+    );
+    assert.deepEqual(
+      model.gaps.map(g => g.text),
+      ['Free for 1 h', 'Free for 2 h 45 min', 'Free for 3 h'],
+    );
     assert.equal(model.moreText, undefined);
     assert.equal(model.now, '2026-10-29T10:00:00-07:00');
   });
@@ -74,15 +80,26 @@ describe('ui-ask: Today', () => {
   test('declined, cancelled and free events neither show nor block a gap', () => {
     const model = todayModel(busy(), calendars, NOW);
     const titles = model.events.map(e => e.title);
-    for (const hidden of ['Declined sync', 'Focus time', 'Cancelled lunch', 'Tomorrow’s standup']) assert.ok(!titles.includes(hidden), hidden);
-    assert.ok(model.gaps.some(g => g.minutes === 165), 'the free 3 PM focus block does not split the 2 h 45 min gap');
+    for (const hidden of ['Declined sync', 'Focus time', 'Cancelled lunch', 'Tomorrow’s standup'])
+      assert.ok(!titles.includes(hidden), hidden);
+    assert.ok(
+      model.gaps.some(g => g.minutes === 165),
+      'the free 3 PM focus block does not split the 2 h 45 min gap',
+    );
   });
 
   test('the following two in full, the rest folded as "2 more"', () => {
-    const events = [...busy(), event('Dinner', at(20), at(21)), event('Call home', at(21, 30), at(22))];
+    const events = [
+      ...busy(),
+      event('Dinner', at(20), at(21)),
+      event('Call home', at(21, 30), at(22)),
+    ];
     const model = todayModel(events, calendars, NOW);
     assert.equal(model.moreText, '2 more');
-    assert.deepEqual(model.folded.map(e => e.event.title), ['Dinner', 'Call home']);
+    assert.deepEqual(
+      model.folded.map(e => e.event.title),
+      ['Dinner', 'Call home'],
+    );
     assert.equal(model.shownGaps.length, 3);
   });
 
@@ -96,17 +113,28 @@ describe('ui-ask: Today', () => {
 
   test('an event under way pushes the first gap to its end; overlapping events never invent a gap', () => {
     const model = todayModel(
-      [event('Workshop', at(9), at(12)), event('Lunch talk', at(11), at(11, 30)), event('Review', at(12, 15), at(13))],
+      [
+        event('Workshop', at(9), at(12)),
+        event('Lunch talk', at(11), at(11, 30)),
+        event('Review', at(12, 15), at(13)),
+      ],
       calendars,
       at(10),
     );
     assert.equal(model.current.length, 1);
     // The workshop runs to 12:00, so the 11:30 end of the talk inside it frees nothing.
-    assert.deepEqual(model.gaps.map(g => g.text), []);
+    assert.deepEqual(
+      model.gaps.map(g => g.text),
+      [],
+    );
   });
 
   test('all-day events count and sit above the timeline; an empty day says so', () => {
-    const allDay = event('Offsite', at(0), at(0, 0, 30), { allDay: true, start: { type: 'date', date: '2026-10-29' }, end: { type: 'date', date: '2026-10-30' } });
+    const allDay = event('Offsite', at(0), at(0, 0, 30), {
+      allDay: true,
+      start: { type: 'date', date: '2026-10-29' },
+      end: { type: 'date', date: '2026-10-30' },
+    });
     const model = todayModel([allDay], calendars, NOW);
     assert.equal(model.allDay.length, 1);
     assert.equal(model.headline, '1 event · none left today');
@@ -126,7 +154,10 @@ describe('ui-ask: Today', () => {
       }),
     );
     const gaps = [...html.matchAll(/Free for [^<]+/g)].map(m => m[0]);
-    assert.deepEqual(gaps, model.shownGaps.map(g => g.text));
+    assert.deepEqual(
+      gaps,
+      model.shownGaps.map(g => g.text),
+    );
     assert.match(html, /aria-label="Now, 10:00 AM"/);
     assert.match(html, /4 events · next at 11:00 AM|5 events · next at 11:00 AM/);
     assert.match(html, />1 more</);

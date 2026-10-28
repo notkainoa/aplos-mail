@@ -59,7 +59,11 @@ export function PaletteContainer({ ports }: { ports: PalettePorts }) {
   const view = paletteView(state, { ctx: context, entries, recents });
 
   // ⌘K toggles from anywhere; the palette's own keys stay with the component while it has focus.
-  useEffect(() => registry.attach('app.palette', { run: () => once('toggle', () => paletteStore.toggle()) }), [registry, once]);
+  useEffect(
+    () =>
+      registry.attach('app.palette', { run: () => once('toggle', () => paletteStore.toggle()) }),
+    [registry, once],
+  );
 
   function apply(applied: Applied) {
     paletteStore.set(applied.state);
@@ -96,13 +100,19 @@ export function PaletteContainer({ ports }: { ports: PalettePorts }) {
             if (target) execute(target);
           }),
         onBack: () => once('esc', () => paletteStore.set(escape(paletteStore.get()).state)),
-        onClose: () => once('close', () => paletteStore.set(escape({ ...paletteStore.get(), pages: [], confirm: undefined }).state)),
+        onClose: () =>
+          once('close', () =>
+            paletteStore.set(
+              escape({ ...paletteStore.get(), pages: [], confirm: undefined }).state,
+            ),
+          ),
         onConfirm: () =>
           once('confirm', () => {
             const confirm = paletteStore.get().confirm;
             if (confirm) execute(confirm.target, true);
           }),
-        onCancelConfirm: () => once('esc', () => paletteStore.set(escape(paletteStore.get()).state)),
+        onCancelConfirm: () =>
+          once('esc', () => paletteStore.set(escape(paletteStore.get()).state)),
       }}
     />
   );

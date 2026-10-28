@@ -35,7 +35,12 @@ export type RemoteState =
   /** Return pressed; the call is on its way (`starting`) or answered with its run id (`running`). */
   | ({ readonly phase: 'starting' } & PendingRemote)
   | ({ readonly phase: 'running' } & PendingRemote)
-  | { readonly phase: 'done'; readonly key: string; readonly runId: string; readonly localIds: readonly string[] }
+  | {
+      readonly phase: 'done';
+      readonly key: string;
+      readonly runId: string;
+      readonly localIds: readonly string[];
+    }
   /** Google asked us to slow down; `resumeAt` when known. */
   | { readonly phase: 'paused'; readonly key: string; readonly resumeAt?: number }
   | {
@@ -76,7 +81,11 @@ export interface RemoteContext {
 }
 
 /** The query the page searches for right now, and its key (the canonical text; equal keys are the same search). */
-export function currentQuery(state: SearchState): { query: SearchQuery; key: string; empty: boolean } {
+export function currentQuery(state: SearchState): {
+  query: SearchQuery;
+  key: string;
+  empty: boolean;
+} {
   const { tokens, free } = currentSearch(state.field, state.tokens);
   const query = toSearchQuery(tokens, free);
   return { query, key: formatSearch(tokens, query.text), empty: isEmptyQuery(query) };
@@ -111,7 +120,10 @@ export function submit(state: SearchState, ctx: RemoteContext): SearchStep {
   const { query, key, empty } = currentQuery(state);
   if (empty || !ctx.supported) return { state, effects: [] };
   if (ctx.pausedUntil !== undefined && ctx.pausedUntil > ctx.now) {
-    return { state: { ...state, remote: { phase: 'paused', key, resumeAt: ctx.pausedUntil } }, effects: [] };
+    return {
+      state: { ...state, remote: { phase: 'paused', key, resumeAt: ctx.pausedUntil } },
+      effects: [],
+    };
   }
   if (alreadyAsked(state.remote, key, ctx.now)) return { state, effects: [] };
   return {
@@ -131,7 +143,10 @@ export function remoteStarted(state: SearchState, key: string, runId: string): S
 }
 
 /** Maps a refusal to the line the page shows; never the provider's text. */
-function refusal(key: string, error: Pick<ErrorBody, 'type' | 'reasonCode' | 'resumeAt'>): RemoteState {
+function refusal(
+  key: string,
+  error: Pick<ErrorBody, 'type' | 'reasonCode' | 'resumeAt'>,
+): RemoteState {
   const code = error.reasonCode ?? '';
   if (error.type === 'paused' || code.startsWith('rate.') || code.startsWith('quota.')) {
     return { phase: 'paused', key, resumeAt: error.resumeAt };
@@ -140,7 +155,11 @@ function refusal(key: string, error: Pick<ErrorBody, 'type' | 'reasonCode' | 're
   if (error.type === 'needsReauth' || error.type === 'permission' || code.startsWith('auth.')) {
     return { phase: 'failed', key, reason: 'needsReauth' };
   }
-  if (error.type === 'unsupported' || error.type === 'unavailable' || error.type === 'notImplemented') {
+  if (
+    error.type === 'unsupported' ||
+    error.type === 'unavailable' ||
+    error.type === 'notImplemented'
+  ) {
     return { phase: 'failed', key, reason: 'unavailable' };
   }
   return { phase: 'failed', key, reason: 'error' };
@@ -156,8 +175,13 @@ export function remoteRejected(state: SearchState, key: string, error: ErrorBody
 /** A `progress` frame of the remote run. */
 export function remoteFrame(state: SearchState, frame: ProgressFrame): SearchState {
   const remote = state.remote;
-  if ((remote.phase !== 'running' && remote.phase !== 'starting') || remote.runId !== frame.runId) return state;
-  if (frame.kind === 'done') return { ...state, remote: { phase: 'done', key: remote.key, runId: frame.runId, localIds: remote.localIds } };
+  if ((remote.phase !== 'running' && remote.phase !== 'starting') || remote.runId !== frame.runId)
+    return state;
+  if (frame.kind === 'done')
+    return {
+      ...state,
+      remote: { phase: 'done', key: remote.key, runId: frame.runId, localIds: remote.localIds },
+    };
   if (frame.kind === 'error') {
     return {
       ...state,
@@ -228,9 +252,15 @@ const FAILED_TEXT = {
 } as const;
 
 /** The page's view of the state, the local window and the clock. */
-export function searchPage(state: SearchState, local: LocalResults, now: number, supported = true): SearchPageModel {
+export function searchPage(
+  state: SearchState,
+  local: LocalResults,
+  now: number,
+  supported = true,
+): SearchPageModel {
   const { query, key, empty } = currentQuery(state);
-  const remote = 'key' in state.remote && state.remote.key === key ? state.remote : ({ phase: 'idle' } as const);
+  const remote =
+    'key' in state.remote && state.remote.key === key ? state.remote : ({ phase: 'idle' } as const);
   const before =
     remote.phase === 'running' || remote.phase === 'starting' || remote.phase === 'done'
       ? new Set(remote.localIds)
@@ -246,9 +276,13 @@ export function searchPage(state: SearchState, local: LocalResults, now: number,
     } else if (remote.phase === 'idle') {
       remoteLine = { kind: 'offer', text: SEARCH_GOOGLE };
     } else if (remote.phase === 'starting' || remote.phase === 'running') {
-      remoteLine = now - remote.at >= BUSY_DELAY_MS ? { kind: 'busy', text: 'Searching Google…' } : null;
+      remoteLine =
+        now - remote.at >= BUSY_DELAY_MS ? { kind: 'busy', text: 'Searching Google…' } : null;
     } else if (remote.phase === 'done') {
-      remoteLine = remoteIds.length === 0 ? { kind: 'none', text: 'Nothing on Google either. Try fewer words.' } : null;
+      remoteLine =
+        remoteIds.length === 0
+          ? { kind: 'none', text: 'Nothing on Google either. Try fewer words.' }
+          : null;
     } else if (remote.phase === 'paused') {
       remoteLine = { kind: 'paused', text: pausedText(remote.resumeAt) };
     } else {
@@ -270,7 +304,9 @@ export function searchPage(state: SearchState, local: LocalResults, now: number,
   let announce = '';
   if (!empty && settled) {
     announce =
-      localCount === 0 ? 'No results.' : `${localCount} ${localCount === 1 ? 'result' : 'results'} in your mail.`;
+      localCount === 0
+        ? 'No results.'
+        : `${localCount} ${localCount === 1 ? 'result' : 'results'} in your mail.`;
   }
 
   return {
@@ -321,7 +357,18 @@ export function highlightTerms(query: SearchQuery): string[] {
 
 /** One row from a thread. */
 export function resultRow(
-  thread: Pick<ThreadRow, 'id' | 'fromName' | 'subject' | 'snippet' | 'unread' | 'lastDate' | 'hasAttachments' | 'workflow' | 'accountId'>,
+  thread: Pick<
+    ThreadRow,
+    | 'id'
+    | 'fromName'
+    | 'subject'
+    | 'snippet'
+    | 'unread'
+    | 'lastDate'
+    | 'hasAttachments'
+    | 'workflow'
+    | 'accountId'
+  >,
   query: SearchQuery,
   remote: boolean,
   account?: { label: string; color: TagColor },
@@ -335,7 +382,10 @@ export function resultRow(
     highlight: highlightTerms(query),
     unread: thread.unread,
     date: toIsoDateTime(thread.lastDate),
-    marks: { attachment: thread.hasAttachments || undefined, bookmarked: thread.workflow.bookmarked || undefined },
+    marks: {
+      attachment: thread.hasAttachments || undefined,
+      bookmarked: thread.workflow.bookmarked || undefined,
+    },
     account,
     remote,
   };

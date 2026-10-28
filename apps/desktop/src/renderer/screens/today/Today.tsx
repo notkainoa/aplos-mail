@@ -23,7 +23,15 @@ export interface TodayProps {
 
 const noop = () => undefined;
 
-export function Today({ model, selectedId, onSelect, onOpenEvent, onOpenCalendar, onNewEvent, announce }: TodayProps) {
+export function Today({
+  model,
+  selectedId,
+  onSelect,
+  onOpenEvent,
+  onOpenCalendar,
+  onNewEvent,
+  announce,
+}: TodayProps) {
   return (
     <div className="today-screen">
       <CalendarGrid
@@ -52,7 +60,14 @@ export function Today({ model, selectedId, onSelect, onOpenEvent, onOpenCalendar
         </div>
       ) : null}
       <div className="today-screen__open">
-        <Button variant="text" icon="calendar" label="Open Calendar" commandId="nav.calendar" keyHint="always" onPress={onOpenCalendar} />
+        <Button
+          variant="text"
+          icon="calendar"
+          label="Open Calendar"
+          commandId="nav.calendar"
+          keyHint="always"
+          onPress={onOpenCalendar}
+        />
       </div>
     </div>
   );

@@ -89,7 +89,10 @@ async function audit(page) {
       banned.forEach(({ src, flags }) => {
         const re = new RegExp(src, flags);
         const hit = copy.match(re);
-        if (hit) out.push(`banned copy ${re} in "${copy.slice(Math.max(0, hit.index - 20), hit.index + 30).replace(/\s+/g, ' ')}"`);
+        if (hit)
+          out.push(
+            `banned copy ${re} in "${copy.slice(Math.max(0, hit.index - 20), hit.index + 30).replace(/\s+/g, ' ')}"`,
+          );
       });
 
       // Glyphs: icon class names, sprite references and icon attributes.
@@ -110,7 +113,10 @@ async function audit(page) {
       const filled = [...root.querySelectorAll('[data-variant="filled"]')].filter(
         b => b.tagName === 'BUTTON' && visible(b),
       );
-      if (filled.length > 1) out.push(`${filled.length} filled buttons: ${filled.map(b => b.innerText.trim()).join(' | ')}`);
+      if (filled.length > 1)
+        out.push(
+          `${filled.length} filled buttons: ${filled.map(b => b.innerText.trim()).join(' | ')}`,
+        );
 
       // Nothing under 11 px.
       const seen = new Set();
@@ -122,7 +128,8 @@ async function audit(page) {
         if (!el || seen.has(el) || !visible(el)) continue;
         seen.add(el);
         const size = parseFloat(getComputedStyle(el).fontSize);
-        if (size < 11) out.push(`text under 11px (${size}px): "${node.textContent.trim().slice(0, 30)}"`);
+        if (size < 11)
+          out.push(`text under 11px (${size}px): "${node.textContent.trim().slice(0, 30)}"`);
       }
       // The serif is only for words Aplos wrote: Ask answers and the quotes behind citations (DESIGN 9 rule 1).
       const serifOk = el => el.closest('.ui-ask-turn__answer, .ui-citation__quote');
@@ -132,11 +139,14 @@ async function audit(page) {
         if (!el || !walk2.currentNode.textContent.trim() || !visible(el)) continue;
         const family = getComputedStyle(el).fontFamily.toLowerCase();
         if (/newsreader|new york|georgia/.test(family.split(',')[0]) && !serifOk(el)) {
-          out.push(`serif outside Ask prose: "${walk2.currentNode.textContent.trim().slice(0, 30)}"`);
+          out.push(
+            `serif outside Ask prose: "${walk2.currentNode.textContent.trim().slice(0, 30)}"`,
+          );
         }
       }
       // Nothing spills out of the window.
-      if (document.documentElement.scrollWidth > innerWidth + 1) out.push('the window scrolls sideways');
+      if (document.documentElement.scrollWidth > innerWidth + 1)
+        out.push('the window scrolls sideways');
       return [...new Set(out)];
     },
     {
@@ -152,13 +162,25 @@ async function hoverShift(page) {
     const root = document.querySelector('.prev-window');
     const visible = el => {
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && getComputedStyle(el).visibility !== 'hidden';
+      return (
+        r.width > 0 &&
+        r.height > 0 &&
+        r.bottom > 0 &&
+        r.top < innerHeight &&
+        getComputedStyle(el).visibility !== 'hidden'
+      );
     };
     window.__targets = [
-      ...root.querySelectorAll('button, a, input, textarea, [role="option"], [role="tab"], .ui-citation'),
-    ].filter(visible).slice(0, 80);
+      ...root.querySelectorAll(
+        'button, a, input, textarea, [role="option"], [role="tab"], .ui-citation',
+      ),
+    ]
+      .filter(visible)
+      .slice(0, 80);
     window.__watch = [
-      ...root.querySelectorAll('button, a, input, textarea, kbd, h1, h2, p, li, span, [role="option"], [role="tab"], .ui-ask-turn'),
+      ...root.querySelectorAll(
+        'button, a, input, textarea, kbd, h1, h2, p, li, span, [role="option"], [role="tab"], .ui-ask-turn',
+      ),
     ].filter(visible);
     return window.__targets.length;
   });
@@ -242,7 +264,13 @@ if (process.env.SELFTEST === '1') {
     shifty.addEventListener('mouseleave', () => shifty.style.removeProperty('padding'));
   }, plant);
   const found = [...(await audit(page)), ...(await hoverShift(page))].join('\n');
-  const expect = { 'filled buttons': /2 filled buttons/, 'text size': /under 11px/, copy: /banned copy/, glyph: /banned glyph/, hover: /LAYOUT SHIFT/ };
+  const expect = {
+    'filled buttons': /2 filled buttons/,
+    'text size': /under 11px/,
+    copy: /banned copy/,
+    glyph: /banned glyph/,
+    hover: /LAYOUT SHIFT/,
+  };
   let missed = 0;
   for (const [name, re] of Object.entries(expect)) {
     const ok = re.test(found);
@@ -277,9 +305,13 @@ try {
       });
       await page.goto(`${GALLERY}?state=${encodeURIComponent(name)}&theme=${theme}`);
       try {
-        await page.waitForFunction(() => document.documentElement.dataset.previewReady === 'true', null, {
-          timeout: 15_000,
-        });
+        await page.waitForFunction(
+          () => document.documentElement.dataset.previewReady === 'true',
+          null,
+          {
+            timeout: 15_000,
+          },
+        );
       } catch {
         errors.push('the state never became ready');
       }

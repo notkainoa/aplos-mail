@@ -63,7 +63,9 @@ function Index() {
 
 function Gallery() {
   const entry = stateName ? states[stateName] : undefined;
-  return <Ready>{entry && stateName ? <Window entry={entry} name={stateName} /> : <Index />}</Ready>;
+  return (
+    <Ready>{entry && stateName ? <Window entry={entry} name={stateName} /> : <Index />}</Ready>
+  );
 }
 
 // The capture script reads the state list from here.

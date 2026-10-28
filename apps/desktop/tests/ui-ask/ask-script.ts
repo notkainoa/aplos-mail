@@ -7,12 +7,30 @@ export const NOW = new Date(2026, 9, 29, 10, 0).getTime();
 const at = (day: number, h: number, m = 0) => new Date(2026, 9, day, h, m).getTime();
 
 let seq = 0;
-export function frame(runId: string, kind: ProgressFrame['kind'], extra: Partial<ProgressFrame> = {}): ProgressFrame {
+export function frame(
+  runId: string,
+  kind: ProgressFrame['kind'],
+  extra: Partial<ProgressFrame> = {},
+): ProgressFrame {
   seq += 1;
-  return { frame: 'progress', dbEpoch: 'demo', seq, runId, source: 'ask', kind, ...extra } as ProgressFrame;
+  return {
+    frame: 'progress',
+    dbEpoch: 'demo',
+    seq,
+    runId,
+    source: 'ask',
+    kind,
+    ...extra,
+  } as ProgressFrame;
 }
 
-export function message(n: number, fromName: string, subject: string, quote: string, day = 27): Citation {
+export function message(
+  n: number,
+  fromName: string,
+  subject: string,
+  quote: string,
+  day = 27,
+): Citation {
   return {
     kind: 'message',
     n,
@@ -39,12 +57,30 @@ export interface Script {
 }
 
 const steps3 = (runId: string, turnId: string) => [
-  frame(runId, 'step', { turnId, step: { id: 's1', text: 'Searching mail for “design review”', state: 'running' } }),
-  frame(runId, 'step', { turnId, step: { id: 's1', text: 'Searched mail for “design review”', state: 'done' } }),
-  frame(runId, 'step', { turnId, step: { id: 's2', text: 'Reading 14 emails from Jordan', state: 'running', count: 14 } }),
-  frame(runId, 'step', { turnId, step: { id: 's2', text: 'Read 14 emails from Jordan', state: 'done', count: 14 } }),
-  frame(runId, 'step', { turnId, step: { id: 's3', text: 'Checking your calendars', state: 'running' } }),
-  frame(runId, 'step', { turnId, step: { id: 's3', text: 'Checked your Work and Hollow Creek calendars', state: 'done' } }),
+  frame(runId, 'step', {
+    turnId,
+    step: { id: 's1', text: 'Searching mail for “design review”', state: 'running' },
+  }),
+  frame(runId, 'step', {
+    turnId,
+    step: { id: 's1', text: 'Searched mail for “design review”', state: 'done' },
+  }),
+  frame(runId, 'step', {
+    turnId,
+    step: { id: 's2', text: 'Reading 14 emails from Jordan', state: 'running', count: 14 },
+  }),
+  frame(runId, 'step', {
+    turnId,
+    step: { id: 's2', text: 'Read 14 emails from Jordan', state: 'done', count: 14 },
+  }),
+  frame(runId, 'step', {
+    turnId,
+    step: { id: 's3', text: 'Checking your calendars', state: 'running' },
+  }),
+  frame(runId, 'step', {
+    turnId,
+    step: { id: 's3', text: 'Checked your Work and Hollow Creek calendars', state: 'done' },
+  }),
 ];
 const doneSteps = [
   { id: 's1', text: 'Searched mail for “design review”', state: 'done' },
@@ -55,7 +91,8 @@ const doneSteps = [
 function stream(runId: string, turnId: string, text: string, pieces = 6): ProgressFrame[] {
   const out: ProgressFrame[] = [];
   const size = Math.max(1, Math.ceil(text.length / pieces));
-  for (let i = 0; i < text.length; i += size) out.push(frame(runId, 'text', { turnId, delta: text.slice(i, i + size) }));
+  for (let i = 0; i < text.length; i += size)
+    out.push(frame(runId, 'text', { turnId, delta: text.slice(i, i + size) }));
   return out;
 }
 
@@ -73,9 +110,21 @@ function turn(turnId: string, question: string, rest: Partial<AskTurn>): AskTurn
   };
 }
 
-const review = message(1, 'Mina Cho', 'Hollow Creek review', 'Let’s hold the design review Thursday from 2:00 to 2:30.');
-const layout = message(2, 'Jordan Park', 'Two layout directions', 'Could you pick a layout by tomorrow?', 28);
-const REVIEW_TEXT = 'Mina’s note puts the design review with you and Jordan at Thursday, 2:00–2:30 PM. Jordan also wants your layout pick by tomorrow.';
+const review = message(
+  1,
+  'Mina Cho',
+  'Hollow Creek review',
+  'Let’s hold the design review Thursday from 2:00 to 2:30.',
+);
+const layout = message(
+  2,
+  'Jordan Park',
+  'Two layout directions',
+  'Could you pick a layout by tomorrow?',
+  28,
+);
+const REVIEW_TEXT =
+  'Mina’s note puts the design review with you and Jordan at Thursday, 2:00–2:30 PM. Jordan also wants your layout pick by tomorrow.';
 
 const eventProposal: Proposal = {
   kind: 'addEvent',
@@ -105,7 +154,18 @@ export const SCRIPTS: readonly Script[] = [
     ],
     stored: t =>
       turn(t, 'When is the Hollow Creek design review?', {
-        answer: { blocks: [{ text: REVIEW_TEXT, strong: [{ start: 62, end: 81 }], cites: [{ at: 82, n: 1 }, { at: REVIEW_TEXT.length, n: 2 }] }] },
+        answer: {
+          blocks: [
+            {
+              text: REVIEW_TEXT,
+              strong: [{ start: 62, end: 81 }],
+              cites: [
+                { at: 82, n: 1 },
+                { at: REVIEW_TEXT.length, n: 2 },
+              ],
+            },
+          ],
+        },
         citations: [review, layout],
         noSource: false,
         steps: doneSteps,
@@ -115,7 +175,10 @@ export const SCRIPTS: readonly Script[] = [
     name: 'no source',
     question: 'How do I write a polite follow-up?',
     ends: 'answer',
-    frames: (r, t) => [...stream(r, t, 'Thank them, restate the ask in one line, and give a date.'), frame(r, 'done', { turnId: t })],
+    frames: (r, t) => [
+      ...stream(r, t, 'Thank them, restate the ask in one line, and give a date.'),
+      frame(r, 'done', { turnId: t }),
+    ],
     stored: t =>
       turn(t, 'How do I write a polite follow-up?', {
         answer: { blocks: [{ text: 'Thank them, restate the ask in one line, and give a date.' }] },
@@ -134,7 +197,9 @@ export const SCRIPTS: readonly Script[] = [
     ],
     stored: t =>
       turn(t, 'Put the design review on my calendar', {
-        answer: { blocks: [{ text: 'The review is Thursday, 2:00–2:30 PM.', cites: [{ at: 37, n: 1 }] }] },
+        answer: {
+          blocks: [{ text: 'The review is Thursday, 2:00–2:30 PM.', cites: [{ at: 37, n: 1 }] }],
+        },
         citations: [review],
         noSource: false,
         proposals: [eventProposal],
@@ -153,7 +218,12 @@ export const SCRIPTS: readonly Script[] = [
         state: 'open',
         draft: { subject: 'Re: Two layout directions' },
       };
-      return [...stream(r, t, 'I drafted a reply picking the quieter layout.'), frame(r, 'citation', { turnId: t, citation: layout }), frame(r, 'proposal', { turnId: t, proposal }), frame(r, 'done', { turnId: t })];
+      return [
+        ...stream(r, t, 'I drafted a reply picking the quieter layout.'),
+        frame(r, 'citation', { turnId: t, citation: layout }),
+        frame(r, 'proposal', { turnId: t, proposal }),
+        frame(r, 'done', { turnId: t }),
+      ];
     },
   },
   {
@@ -169,8 +239,18 @@ export const SCRIPTS: readonly Script[] = [
         threadIds: ['t-a', 't-b', 't-c'],
         action: { type: 'done' },
       };
-      const parcel = message(1, 'Parcel Trail', 'Delivered', 'Your package was delivered at 9:12 AM.');
-      return [...stream(r, t, 'Three shipping updates are delivered.'), frame(r, 'citation', { turnId: t, citation: parcel }), frame(r, 'proposal', { turnId: t, proposal }), frame(r, 'done', { turnId: t })];
+      const parcel = message(
+        1,
+        'Parcel Trail',
+        'Delivered',
+        'Your package was delivered at 9:12 AM.',
+      );
+      return [
+        ...stream(r, t, 'Three shipping updates are delivered.'),
+        frame(r, 'citation', { turnId: t, citation: parcel }),
+        frame(r, 'proposal', { turnId: t, proposal }),
+        frame(r, 'done', { turnId: t }),
+      ];
     },
   },
   {
@@ -180,7 +260,12 @@ export const SCRIPTS: readonly Script[] = [
     stopAfter: 9,
     frames: (r, t) => [
       ...steps3(r, t),
-      ...stream(r, t, 'Jordan sent two layout directions and asked for a pick by tomorrow. He also shared the sitemap.', 8),
+      ...stream(
+        r,
+        t,
+        'Jordan sent two layout directions and asked for a pick by tomorrow. He also shared the sitemap.',
+        8,
+      ),
       frame(r, 'citation', { turnId: t, citation: layout }),
       frame(r, 'proposal', { turnId: t, proposal: eventProposal }),
       frame(r, 'done', { turnId: t }),
@@ -191,7 +276,10 @@ export const SCRIPTS: readonly Script[] = [
     question: 'What did I miss this week?',
     ends: 'failed',
     frames: (r, t) => [
-      frame(r, 'step', { turnId: t, step: { id: 's1', text: 'Searching this week’s mail', state: 'running' } }),
+      frame(r, 'step', {
+        turnId: t,
+        step: { id: 's1', text: 'Searching this week’s mail', state: 'running' },
+      }),
       frame(r, 'error', { turnId: t, problem: { reasonCode: 'ai.unreachable' } }),
     ],
   },
@@ -199,7 +287,10 @@ export const SCRIPTS: readonly Script[] = [
     name: 'provider error mid-stream',
     question: 'Who is waiting on me?',
     ends: 'failed',
-    frames: (r, t) => [...stream(r, t, 'Priya is waiting on'), frame(r, 'error', { turnId: t, problem: { reasonCode: 'ai.failed' } })],
+    frames: (r, t) => [
+      ...stream(r, t, 'Priya is waiting on'),
+      frame(r, 'error', { turnId: t, problem: { reasonCode: 'ai.failed' } }),
+    ],
   },
   {
     name: 'no provider',
@@ -218,7 +309,8 @@ export const SCRIPTS: readonly Script[] = [
     question: 'What are Jordan and Mina asking for?',
     ends: 'answer',
     frames: (r, t) => {
-      const text = 'Jordan wants your layout pick by tomorrow.\n\nMina wants the review on Thursday.';
+      const text =
+        'Jordan wants your layout pick by tomorrow.\n\nMina wants the review on Thursday.';
       return [
         ...stream(r, t, text, 9),
         frame(r, 'citation', { turnId: t, citation: layout, at: 42 }),
@@ -232,8 +324,18 @@ export const SCRIPTS: readonly Script[] = [
     question: 'Am I busy Thursday at 2?',
     ends: 'answer',
     frames: (r, t) => {
-      const event: Citation = { kind: 'event', n: 1, eventId: 'e-review', title: 'Design review', start: { type: 'utc', utc: at(29, 14) } };
-      return [...stream(r, t, 'Yes, the design review is at 2:00 PM.'), frame(r, 'citation', { turnId: t, citation: event }), frame(r, 'done', { turnId: t })];
+      const event: Citation = {
+        kind: 'event',
+        n: 1,
+        eventId: 'e-review',
+        title: 'Design review',
+        start: { type: 'utc', utc: at(29, 14) },
+      };
+      return [
+        ...stream(r, t, 'Yes, the design review is at 2:00 PM.'),
+        frame(r, 'citation', { turnId: t, citation: event }),
+        frame(r, 'done', { turnId: t }),
+      ];
     },
   },
   {
@@ -252,8 +354,17 @@ export const SCRIPTS: readonly Script[] = [
     question: '来週のハイキングの予定は？',
     ends: 'answer',
     frames: (r, t) => {
-      const cite = message(1, '山田 花子', '週末のハイキング', '土曜日の朝8時に駅で集合しましょう。');
-      return [...stream(r, t, '土曜日の朝8時に駅で集合です。'), frame(r, 'citation', { turnId: t, citation: cite, at: 14 }), frame(r, 'done', { turnId: t })];
+      const cite = message(
+        1,
+        '山田 花子',
+        '週末のハイキング',
+        '土曜日の朝8時に駅で集合しましょう。',
+      );
+      return [
+        ...stream(r, t, '土曜日の朝8時に駅で集合です。'),
+        frame(r, 'citation', { turnId: t, citation: cite, at: 14 }),
+        frame(r, 'done', { turnId: t }),
+      ];
     },
   },
   {
@@ -263,17 +374,36 @@ export const SCRIPTS: readonly Script[] = [
     frames: (r, t) => {
       const cite = message(1, 'Theo Lin', 'Climbing 🧗 Friday', 'See you at the wall 🧗 at 6.');
       // Offset 5 falls inside the surrogate pair of the emoji; the chip moves after it, never splits it.
-      return [...stream(r, t, 'Wall 🧗 at 6 on Friday.', 3), frame(r, 'citation', { turnId: t, citation: cite, at: 6 }), frame(r, 'done', { turnId: t })];
+      return [
+        ...stream(r, t, 'Wall 🧗 at 6 on Friday.', 3),
+        frame(r, 'citation', { turnId: t, citation: cite, at: 6 }),
+        frame(r, 'done', { turnId: t }),
+      ];
     },
   },
   {
     name: 'several emphasised ranges',
     question: 'When are the two deadlines?',
     ends: 'answer',
-    frames: (r, t) => [...stream(r, t, 'Layout by Friday; budget by Monday.'), frame(r, 'citation', { turnId: t, citation: layout }), frame(r, 'done', { turnId: t })],
+    frames: (r, t) => [
+      ...stream(r, t, 'Layout by Friday; budget by Monday.'),
+      frame(r, 'citation', { turnId: t, citation: layout }),
+      frame(r, 'done', { turnId: t }),
+    ],
     stored: t =>
       turn(t, 'When are the two deadlines?', {
-        answer: { blocks: [{ text: 'Layout by Friday; budget by Monday.', strong: [{ start: 10, end: 16 }, { start: 28, end: 34 }], cites: [{ at: 35, n: 1 }] }] },
+        answer: {
+          blocks: [
+            {
+              text: 'Layout by Friday; budget by Monday.',
+              strong: [
+                { start: 10, end: 16 },
+                { start: 28, end: 34 },
+              ],
+              cites: [{ at: 35, n: 1 }],
+            },
+          ],
+        },
         citations: [layout],
         noSource: false,
       }),
@@ -282,10 +412,24 @@ export const SCRIPTS: readonly Script[] = [
     name: 'chip for a source that never came',
     question: 'Who sent the sitemap?',
     ends: 'answer',
-    frames: (r, t) => [...stream(r, t, 'Jordan sent it.'), frame(r, 'citation', { turnId: t, citation: layout }), frame(r, 'done', { turnId: t })],
+    frames: (r, t) => [
+      ...stream(r, t, 'Jordan sent it.'),
+      frame(r, 'citation', { turnId: t, citation: layout }),
+      frame(r, 'done', { turnId: t }),
+    ],
     stored: t =>
       turn(t, 'Who sent the sitemap?', {
-        answer: { blocks: [{ text: 'Jordan sent it.', cites: [{ at: 6, n: 2 }, { at: 15, n: 7 }] }] },
+        answer: {
+          blocks: [
+            {
+              text: 'Jordan sent it.',
+              cites: [
+                { at: 6, n: 2 },
+                { at: 15, n: 7 },
+              ],
+            },
+          ],
+        },
         citations: [layout],
         noSource: false,
       }),
@@ -306,13 +450,31 @@ export const SCRIPTS: readonly Script[] = [
     question: 'Any invoices this week?',
     ends: 'answer',
     frames: (r, t) => {
-      const invoice = message(1, 'Drew Bell', 'Invoice #0412', 'Approve the $1,840 invoice to close October.');
-      return [...stream(r, t, 'Drew Bell’s October invoice is waiting for approval.'), frame(r, 'citation', { turnId: t, citation: invoice }), frame(r, 'done', { turnId: t })];
+      const invoice = message(
+        1,
+        'Drew Bell',
+        'Invoice #0412',
+        'Approve the $1,840 invoice to close October.',
+      );
+      return [
+        ...stream(r, t, 'Drew Bell’s October invoice is waiting for approval.'),
+        frame(r, 'citation', { turnId: t, citation: invoice }),
+        frame(r, 'done', { turnId: t }),
+      ];
     },
     stored: t =>
       turn(t, 'Any invoices this week?', {
-        answer: { blocks: [{ text: 'Drew Bell’s October invoice is waiting for approval.', cites: [{ at: 52, n: 1 }] }] },
-        citations: [message(1, 'Drew Bell', 'Invoice #0412', 'Approve the $1,840 invoice to close October.')],
+        answer: {
+          blocks: [
+            {
+              text: 'Drew Bell’s October invoice is waiting for approval.',
+              cites: [{ at: 52, n: 1 }],
+            },
+          ],
+        },
+        citations: [
+          message(1, 'Drew Bell', 'Invoice #0412', 'Approve the $1,840 invoice to close October.'),
+        ],
         noSource: false,
         excludedAccountIds: ['acc-work'],
       }),
@@ -322,8 +484,14 @@ export const SCRIPTS: readonly Script[] = [
     question: 'Did anyone mention the dentist?',
     ends: 'answer',
     frames: (r, t) => [
-      frame(r, 'step', { turnId: t, step: { id: 's1', text: 'Searching mail for “dentist”', state: 'running' } }),
-      frame(r, 'step', { turnId: t, step: { id: 's1', text: 'Searched mail for “dentist”', state: 'done', count: 0 } }),
+      frame(r, 'step', {
+        turnId: t,
+        step: { id: 's1', text: 'Searching mail for “dentist”', state: 'running' },
+      }),
+      frame(r, 'step', {
+        turnId: t,
+        step: { id: 's1', text: 'Searched mail for “dentist”', state: 'done', count: 0 },
+      }),
       ...stream(r, t, 'Nothing in your mail mentions a dentist.'),
       frame(r, 'done', { turnId: t }),
     ],
