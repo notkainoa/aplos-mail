@@ -51,6 +51,8 @@ export interface WindowPort {
   readonly id: number;
   isDestroyed(): boolean;
   isVisible(): boolean;
+  /** `ready-to-show` has fired (the window may still be hidden: test mode, or minimized). */
+  hasPainted(): boolean;
   isMinimized(): boolean;
   restore(): void;
   show(): void;
@@ -86,12 +88,18 @@ export interface OnboardingController {
   open(mode: OnboardingMode): void;
   /** Resolves when the mail window is up and the onboarding window is gone (or the handoff was abandoned). */
   finish(): Promise<void>;
-  /** The renderer ended setup itself (`Setup/end` passed through main), so main's own call on close is skipped. */
+  /**
+   * The renderer ended setup itself, so main's own call on close is skipped. Not called yet: the renderer's `Setup/end`
+   * goes straight to the engine (`engine-host.ts`), so main still sends its own, which the engine treats as idempotent.
+   */
   noteRendererSetupEnd(): void;
   isOpen(): boolean;
 }
 
 const alive = (win: WindowPort | undefined): win is WindowPort => !!win && !win.isDestroyed();
+/** A mail window that is up: one still waiting for its first paint belongs to a handoff and is not "open" yet. */
+const up = (win: WindowPort | undefined): win is WindowPort =>
+  alive(win) && (win.isVisible() || win.hasPainted());
 
 export function createOnboarding(deps: OnboardingDeps): OnboardingController {
   let win: WindowPort | undefined;
@@ -111,7 +119,8 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
     if (!ended) void deps.endSetup().catch(() => {});
     ended = false;
     // Closing the welcome window must not leave the app with no window at all.
-    if (!deps.isQuitting() && !alive(deps.currentMail())) bring(deps.createMail());
+    // (The mail window shows itself on its own first paint.)
+    if (!deps.isQuitting() && !alive(deps.currentMail())) deps.createMail();
   }
 
   function open(mode: OnboardingMode) {
@@ -142,7 +151,7 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
       };
       if (deps.isQuitting() || !alive(win)) return done();
       const existing = deps.currentMail();
-      if (alive(existing) && existing.isVisible()) return reveal(existing, done);
+      if (up(existing)) return reveal(existing, done);
       const mail = alive(existing) ? existing : deps.createMail();
       let settled = false;
       const settle = () => {
@@ -158,6 +167,8 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
         if (settled) return;
         settled = true;
         deps.clearTimer(timer);
+        // The welcome window may have been closed meanwhile: never leave the app with no window.
+        if (!alive(win) && !deps.isQuitting() && !alive(deps.currentMail())) deps.createMail();
         done();
       });
     });
@@ -171,10 +182,7 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
       return choice;
     },
     activate(facts) {
-      const decision = activation(
-        { onboarding: alive(win), mail: alive(deps.currentMail()) },
-        facts,
-      );
+      const decision = activation({ onboarding: alive(win), mail: up(deps.currentMail()) }, facts);
       if (decision === 'focus-onboarding' && win) bring(win);
       if (decision === 'open-onboarding') open('first');
       return decision;

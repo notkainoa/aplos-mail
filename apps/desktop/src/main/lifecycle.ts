@@ -16,10 +16,13 @@ import {
   testAppName,
   silenceDialogs,
   silenceSystem,
+  exposeTestHooks,
   markTestDir,
 } from './test-mode';
 
 let started = false;
+// A second launch or Dock click while Aplos boots is answered once startup has chosen its window.
+let pendingActivation = false;
 let closing = false;
 let quitting = false;
 function finishQuit() {
@@ -50,6 +53,7 @@ if (isTest) {
   silenceDialogs(dialog, line => console.error(`Aplos Mail test: ${line}`));
   silenceSystem(shell, systemPreferences, line => console.error(`Aplos Mail test: ${line}`));
   markTestDir(testDataDir!);
+  exposeTestHooks();
   app.setPath('userData', join(testDataDir!, 'electron'));
 }
 app.setName(isTest ? testAppName : 'Aplos Mail');
@@ -64,6 +68,7 @@ else {
   app.on('second-instance', (_event, argv) => {
     // While Aplos is still starting, startup is choosing the one window: a second launch only queues its link.
     if (started) focusMain();
+    else pendingActivation = true;
     for (const arg of argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
   });
   app.on('activate', () => {
@@ -112,6 +117,7 @@ else {
       // eng-host: a menu-bar status item added here must also skip creation when `isTest`.
       const atLogin = !isTest && app.getLoginItemSettings().wasOpenedAtLogin;
       if (startWindows(atLogin) === 'mail') setMain(createWindow());
+      else if (pendingActivation) focusMain();
       if (!isTest) app.setAsDefaultProtocolClient('aplos');
       for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
     })

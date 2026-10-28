@@ -41,6 +41,8 @@ function focusMain() {
   const decision = activateWindows();
   if (isTest || decision === 'focus-onboarding' || decision === 'open-onboarding') return;
   if (!main || main.isDestroyed()) main = createWindow();
+  // A window still waiting for its first paint shows itself then (F4: never a blank flash).
+  if (!painted.has(main)) return;
   if (main.isMinimized()) main.restore();
   main.show();
   main.focus();
@@ -96,6 +98,13 @@ const webPreferences = () => ({
   // answer to a quit could then take tens of seconds (plat-release, 2026-10-28 06:12).
   backgroundThrottling: !isTest,
 });
+/** A subframe the app's own page points at a mail view (`aplos-mail://m/<token>`), or an empty or inline document. */
+function mailFrameURL(event: { url: string; initiator?: { url: string } | null }) {
+  if (/^about:(blank|srcdoc)$/.test(event.url)) return true;
+  return (
+    event.url.startsWith('aplos-mail://m/') && !!event.initiator && trustedURL(event.initiator.url)
+  );
+}
 /** ARCH 10: links leave Aplos or open Compose, and nothing but the app's own page ever loads in any frame. */
 function lockNavigation(win: BrowserWindow) {
   const contents = win.webContents;
@@ -106,7 +115,8 @@ function lockNavigation(win: BrowserWindow) {
     }
   });
   contents.on('will-frame-navigate', event => {
-    if (!trustedURL(event.url) && !event.url.startsWith('aplos-mail:')) event.preventDefault();
+    if (trustedURL(event.url) || (!event.isMainFrame && mailFrameURL(event))) return;
+    event.preventDefault();
   });
   contents.on('will-redirect', (event, url) => {
     if (!trustedURL(url)) event.preventDefault();
@@ -126,6 +136,7 @@ function loadRenderer(win: BrowserWindow, query?: Record<string, string>) {
 }
 // A window's first paint: show it (never in test mode) and tell its renderer, once, that it is up (F4, the `shown` event).
 const announced = new WeakSet<BrowserWindow>();
+const painted = new WeakSet<BrowserWindow>();
 function announceShown(win: BrowserWindow) {
   if (announced.has(win) || win.isDestroyed()) return;
   announced.add(win);
@@ -181,6 +192,7 @@ function createWindow(query?: { draft?: string; thread?: string }) {
     if (permittedClose.has(win.id) || closing) event.preventDefault();
   });
   win.once('ready-to-show', () => {
+    painted.add(win);
     if (!isTest && !quitting) win.show();
     announceShown(win);
   });
@@ -236,6 +248,7 @@ function portOf(win: BrowserWindow): WindowPort {
     id: win.id,
     isDestroyed: () => win.isDestroyed(),
     isVisible: () => win.isVisible(),
+    hasPainted: () => painted.has(win),
     isMinimized: () => win.isMinimized(),
     restore: () => win.restore(),
     show: () => win.show(),
@@ -260,6 +273,7 @@ function createWelcomeWindow(mode: OnboardingMode): WindowPort {
   });
   windows.add(win);
   win.once('ready-to-show', () => {
+    painted.add(win);
     if (!isTest && !quitting) win.show();
     announceShown(win);
   });
@@ -270,7 +284,8 @@ function createWelcomeWindow(mode: OnboardingMode): WindowPort {
   });
   win.on('closed', () => {
     windows.delete(win);
-    if (quitting && !windows.size) finishQuit();
+    // After the welcome controller's own close handler, so its `Setup/end` reaches the engine before the quit closes it.
+    if (quitting && !windows.size) setImmediate(finishQuit);
   });
   loadRenderer(win, { window: 'onboarding', mode });
   return portOf(win);

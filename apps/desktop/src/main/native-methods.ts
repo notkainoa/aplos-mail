@@ -24,14 +24,18 @@ import {
 import { updates, restartToUpdate, cancelInstall } from './updater';
 import { latestState } from './engine-host';
 import { cancelQuit } from './lifecycle';
-import { legacyDesktopMethods } from '@aplos/contract/allowlists';
+import { legacyDesktopMethods, type desktopMethods } from '@aplos/contract/allowlists';
 import { isTest, recordNotification } from './test-mode';
 import { settingsPaneUrl } from '../host/lifecycle';
 
 const nativeMethods = new Set<string>(legacyDesktopMethods);
 // Contract v1 desktop methods main already answers. A window reaches them once preload moves to the generated v1 table.
-for (const name of ['Window/openOnboarding', 'Window/finishOnboarding', 'System/openSettings'])
-  nativeMethods.add(name);
+const v1Served: (typeof desktopMethods)[number][] = [
+  'Window/openOnboarding',
+  'Window/finishOnboarding',
+  'System/openSettings',
+];
+for (const name of v1Served) nativeMethods.add(name);
 const ok = { ok: true } as const;
 function notify(title: string, body: string, threadId?: string) {
   if (isTest) return recordNotification(title, body, threadId);

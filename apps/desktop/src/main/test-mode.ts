@@ -144,7 +144,7 @@ export function silenceDialogs(dialog: object, log: (line: string) => void) {
   target.showOpenDialogSync = () => undefined;
 }
 
-/** Links the app asked the system to open in test mode; an emulator or a test reads them to finish an OAuth connect. */
+/** Links the app asked the system to open in test mode (`globalThis.aplosTest.externalLinks`), so a test can finish an OAuth connect. */
 export const recordedExternalLinks: string[] = [];
 /**
  * Freeze round 2, R2H-5: the engine's `openExternal` request (OAuth connect) and the session's microphone permission
@@ -166,4 +166,15 @@ export function silenceSystem(
   sh.openPath = async () => '';
   sh.showItemInFolder = () => {};
   prefs.askForMediaAccess = async () => false;
+}
+
+/**
+ * `globalThis.aplosTest` in the main process, test mode only: what a hidden run recorded, for a test that reads it with
+ * `electronApp.evaluate` (Playwright) instead of scraping logs. Holds the notifications and the links that were dropped.
+ */
+export function exposeTestHooks() {
+  Object.defineProperty(globalThis, 'aplosTest', {
+    value: { notifications: recordedNotifications, externalLinks: recordedExternalLinks },
+    enumerable: false,
+  });
 }

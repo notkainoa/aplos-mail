@@ -20,11 +20,13 @@ class FakeWindow implements WindowPort {
   id = FakeWindow.next++;
   destroyed = false;
   visible = false;
+  painted = false;
   shows = 0;
   ready: Array<() => void> = [];
   closed: Array<() => void> = [];
   isDestroyed = () => this.destroyed;
   isVisible = () => this.visible;
+  hasPainted = () => this.painted;
   isMinimized = () => false;
   restore = () => {};
   show = () => {
@@ -36,6 +38,7 @@ class FakeWindow implements WindowPort {
   onReadyToShow = (listener: () => void) => void this.ready.push(listener);
   onClosed = (listener: () => void) => void this.closed.push(listener);
   paint() {
+    this.painted = true;
     for (const listener of this.ready.splice(0)) listener();
   }
   destroy() {
@@ -135,7 +138,7 @@ test('window race: closing onboarding before the renderer loads ends setup once 
   await Promise.resolve();
   assert.equal(log.ends, 1);
   assert.equal(log.mail.length, 1, 'the mail window opens so the app is never left with no window');
-  assert.equal(mailWindow()?.shows, 1);
+  assert.equal(mailWindow()?.shows, 0, 'and shows itself on its own first paint, not before');
   assert.equal(controller.isOpen(), false);
 });
 
@@ -201,6 +204,44 @@ test('handoff: an existing visible mail window (Show welcome) is brought forward
   assert.equal(log.onboarding[0].destroyed, true);
   assert.equal(mail.destroyed, false);
   assert.equal(log.mail.length, 1, 'no second mail window');
+});
+
+test('window race: a painted window that is not visible (test mode, minimized) hands over at once', async () => {
+  const { controller, log, seedMail } = harness({ testMode: true });
+  const mail = seedMail();
+  mail.paint();
+  controller.open('review');
+  await controller.finish(); // would stall for READY_TIMEOUT_MS if it waited for a ready-to-show that already fired
+  assert.equal(log.onboarding[0].destroyed, true);
+  assert.equal(
+    log.timers.filter(timer => !timer.cleared).length,
+    0,
+    'no backstop timer was left armed',
+  );
+});
+
+test('window race: a Dock click during the handoff never brings forward the unpainted mail window', async () => {
+  const { controller, log, mailWindow } = harness();
+  controller.start(fresh, { atLogin: false });
+  const handoff = controller.finish();
+  assert.equal(controller.activate(fresh), 'focus-onboarding');
+  assert.equal(mailWindow()!.shows, 0);
+  mailWindow()!.paint();
+  await handoff;
+  assert.equal(log.mail.length, 1);
+  assert.equal(controller.activate(withAccount), 'focus-mail');
+});
+
+test('window race: the welcome closed and then the hidden mail window closing still leaves a window', async () => {
+  const { controller, log, mailWindow } = harness();
+  controller.start(fresh, { atLogin: false });
+  const handoff = controller.finish();
+  const first = mailWindow()!;
+  log.onboarding[0].destroy(); // closed mid-handoff: the pending mail window stands in
+  first.destroy();
+  await handoff;
+  assert.equal(log.mail.length, 2, 'a replacement mail window was created');
+  assert.equal(mailWindow()!.destroyed, false);
 });
 
 test('window race: quitting during the handoff shows nothing, opens nothing and leaves no pending timer work', async () => {
