@@ -18,7 +18,11 @@ const INLINE_REPLY: ContextName[] = ['global', 'list', 'reader', 'compose'];
 const ASK: ContextName[] = ['global', 'ask'];
 const PALETTE_OVER_HOME: ContextName[] = ['global', 'list', 'home', 'palette'];
 const READER_OVER_DONE: ContextName[] = ['global', 'list', 'done', 'reader'];
-const TRANSIENTS: readonly ContextName[] = ['palette', 'menu', 'datePicker', 'dialog', 'lowImportance'];
+const TRANSIENTS: readonly ContextName[] = ['palette', 'menu', 'datePicker', 'dialog', 'sheet', 'lowImportance'];
+const SEARCH_FIELD: ContextName[] = ['global', 'search'];
+const SEARCH_RESULTS: ContextName[] = ['global', 'search', 'list'];
+const FIRST_SYNC: ContextName[] = ['onboarding', 'firstSync'];
+const DRILL: ContextName[] = ['onboarding', 'firstSync', 'drill'];
 const SINGLE_OFF: Partial<KeyPrefs> = { singleKeyShortcuts: false };
 
 interface Row {
@@ -118,6 +122,32 @@ const TABLE: readonly Row[] = [
   { name: 'Esc in a dialog cancels it', stack: [...HOME, 'dialog'], event: keydown('Escape'), expect: 'dialog.cancel' },
   { name: '→ in the Low-importance sheet marks everything done', stack: [...HOME, 'lowImportance'], event: keydown('ArrowRight'), expect: 'lowImportance.markAllDone' },
   { name: 'Esc on Welcome skips setup', stack: ['onboarding'], event: keydown('Escape'), conditions: { welcome: true }, expect: 'onboarding.skipSetup' },
+  { name: 'Esc on a later onboarding step goes back', stack: ['onboarding'], event: keydown('Escape'), expect: 'onboarding.back' },
+
+  // The reconnect and consent sheet is modal: its Esc cancels, nothing behind it answers.
+  { name: 'Esc in the sheet cancels it, not the Esc ladder', stack: [...HOME, 'sheet'], event: keydown('Escape'), expect: 'sheet.cancel' },
+  { name: 'Return in the sheet chooses the highlighted button', stack: ['global', 'settings', 'sheet'], event: keydown('Enter'), expect: 'sheet.default' },
+  { name: '⌘K over the sheet does not open the palette', stack: [...HOME, 'sheet'], event: keydown('k', { metaKey: true }), expect: null },
+
+  // First sync owns Esc in every state [F8]; the drill keeps it and takes its own letters.
+  { name: 'Esc on first sync opens Aplos', stack: FIRST_SYNC, event: keydown('Escape'), expect: 'onboarding.openAplos' },
+  { name: 'Esc on first sync opens Aplos even with Welcome flagged', stack: FIRST_SYNC, event: keydown('Escape'), conditions: { welcome: true }, expect: 'onboarding.openAplos' },
+  { name: 'Esc in the drill opens Aplos', stack: DRILL, event: keydown('Escape'), expect: 'onboarding.openAplos' },
+  { name: 'Return on first sync continues (Open Aplos)', stack: FIRST_SYNC, event: keydown('Enter'), expect: 'onboarding.continue' },
+  { name: 'Return in the drill goes back to progress', stack: DRILL, event: keydown('Enter'), expect: 'drill.leave' },
+  { name: 'E in the drill marks a practice letter, never real mail', stack: DRILL, event: keydown('e'), expect: 'drill.done' },
+  { name: 'J in the drill moves through practice letters', stack: DRILL, event: keydown('j'), expect: 'drill.next' },
+  { name: 'Space in the drill runs the practice suggestion', stack: DRILL, event: keydown(' '), expect: 'drill.suggested' },
+  { name: 'L in the drill does nothing (no Later in the drill)', stack: DRILL, event: keydown('l'), expect: null },
+  { name: '⌘K in the drill does nothing (no global in the onboarding window)', stack: DRILL, event: keydown('k', { metaKey: true }), expect: null },
+  { name: 'E on first sync outside the drill does nothing', stack: FIRST_SYNC, event: keydown('e'), expect: null },
+
+  // Search: Return in the field searches Google once; in the results the Lists keymap applies.
+  { name: 'Return in the search field searches all mail on Google', stack: SEARCH_FIELD, event: keydown('Enter'), focus: 'text', expect: 'search.remote' },
+  { name: 'Return on a search result opens it', stack: SEARCH_RESULTS, event: keydown('Enter'), expect: 'mail.open' },
+  { name: 'E on a search result is Done', stack: SEARCH_RESULTS, event: keydown('e'), expect: 'mail.done' },
+  { name: 'Return on a result opens it even if the shell collected list before search', stack: ['global', 'list', 'search'], event: keydown('Enter'), expect: 'mail.open' },
+  { name: 'J typed in the search field types', stack: SEARCH_FIELD, event: keydown('j'), focus: 'text', expect: null },
 
   // Stacks are normalized: the reader always sits on the list.
   { name: 'E in a reader stack without list is still Done', stack: ['global', 'reader'], event: keydown('e'), expect: 'mail.done' },
@@ -182,6 +212,11 @@ test('buildStack restores the shapes DESIGN §8 assumes', () => {
   assert.deepEqual(buildStack(['global', 'palette', 'home']), ['global', 'list', 'home', 'palette']);
   assert.deepEqual(buildStack(['global', 'list', 'done', 'reader']), ['global', 'list', 'done', 'reader']);
   assert.deepEqual(buildStack(['onboarding', 'global']), ['onboarding']);
+  assert.deepEqual(buildStack(['drill']), ['onboarding', 'firstSync', 'drill']);
+  assert.deepEqual(buildStack(['firstSync', 'list']), ['onboarding', 'firstSync'], 'the onboarding window keeps only its own contexts');
+  assert.deepEqual(buildStack(['global', 'list', 'search']), ['global', 'search', 'list'], 'Search is always outside its results');
+  assert.deepEqual(buildStack(['global', 'sheet', 'settings']), ['global', 'settings', 'sheet']);
+  assert.deepEqual(buildStack(['drill', 'dialog']), ['onboarding', 'firstSync', 'drill', 'dialog']);
 });
 
 test('hold tracker: a tap under the threshold stays a tap', () => {

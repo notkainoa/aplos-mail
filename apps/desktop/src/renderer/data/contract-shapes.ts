@@ -489,6 +489,70 @@ export interface ResetFrame {
   readonly reason: string;
 }
 
+/** Why a connect or reconnect ended, for the copy (open enum; gap list P2, P11). provisional: replaced by import from @aplos/contract at the freeze */
+export type ConnectReasonCode = 'wrongAccount' | 'scopeMissing' | 'denied' | 'timeout' | 'cancelled' | (string & {});
+
+/** `connect` push frame: one account connect, reconnect or permission grant in the browser ("Waiting for Google in your browser…"; gap list P1, P2). provisional: replaced by import from @aplos/contract at the freeze */
+export interface ConnectFrame {
+  /** The flow; the same id as `AccountFlow.requestId`. */
+  readonly requestId: RequestId;
+  /** A new account, the weekly reconnect, or granting a missing permission. */
+  readonly mode: 'new' | 'reconnect' | 'grant';
+  /** Where the flow is; a late `connected` after the owner moved on only updates the accounts list (DESIGN 7.11 [F9]). */
+  readonly state: 'waiting' | 'connected' | 'failed' | 'cancelled';
+  /** The account once known; always set for reconnect and grant. */
+  readonly accountId: AccountId | null;
+  /** Machine reason when failed or cancelled. */
+  readonly reasonCode: ConnectReasonCode | null;
+  /** The engine's plain sentence, if any. */
+  readonly message: string | null;
+}
+
+/** One event inside a `progress` frame: Ask's step, text, citation and proposal events, plus pause, finish and failure. provisional: replaced by import from @aplos/contract at the freeze */
+export type ProgressEvent =
+  | AskFrame
+  /** The run waits on a rate limit ("Waiting for Groq, about 20 s"; remote search "quotaPaused"). */
+  | { readonly kind: 'paused'; readonly resumeAt: EpochMs | null }
+  /** The run finished. */
+  | { readonly kind: 'done' }
+  /** The run failed; `error.message` is the sentence to show. */
+  | { readonly kind: 'error'; readonly error: ContractError };
+
+/** `progress` push frame: one event of a streamed run, Ask now and remote search once it lands (gap list E27, E52). Ephemeral and never logged (ARCH 9.2). provisional: replaced by import from @aplos/contract at the freeze */
+export interface ProgressFrame {
+  /** The run; the same id as `AskRun.requestId`. */
+  readonly runId: RequestId;
+  /** Which kind of run. */
+  readonly channel: 'ask' | 'search';
+  /** Order within the run, from 0; a gap means a frame was coalesced away. */
+  readonly seq: number;
+  /** What happened. */
+  readonly event: ProgressEvent;
+}
+
+/** `clock` push frame: the fixture clock was set or advanced (`APLOS_NOW`, `Fixture/control` clock; test builds only; gap list E3). provisional: replaced by import from @aplos/contract at the freeze */
+export interface ClockFrame {
+  /** The engine's now. */
+  readonly now: EpochMs;
+  /** True while the fixture holds the clock still (the harness's 2026-10-29T10:00). */
+  readonly frozen: boolean;
+}
+
+/** The push frames screens subscribe to with `useFrames`, by frame kind. provisional: replaced by import from @aplos/contract at the freeze */
+export interface FrameMap {
+  /** Ask (and later remote search) run progress. */
+  progress: ProgressFrame;
+  /** Account connect, reconnect and grant flows. */
+  connect: ConnectFrame;
+  /** `Setup/status` pushed while setup runs (first sync, onboarding, Add account). */
+  setup: SetupStatus;
+  /** The fixture clock (test builds only). */
+  clock: ClockFrame;
+}
+
+/** A frame kind `useFrames` accepts. provisional: replaced by import from @aplos/contract at the freeze */
+export type FrameKind = keyof FrameMap;
+
 // ---------------------------------------------------------------------------
 // Operations, receipts and thread actions (ARCH 9.1-9.2, plan 10 E3, DESIGN 5 rule 11)
 // ---------------------------------------------------------------------------
@@ -946,31 +1010,57 @@ export interface Transcript {
 /** Command id; matches commands/types.ts (declared locally until that file lands; not exported). */
 type CommandId = string;
 
-/** Row density (DESIGN 4.4). provisional: replaced by import from @aplos/contract at the freeze */
-export type Density = 'compact' | 'default' | 'roomy';
+/** Row density (DESIGN 4.4): rows 48 / 40 / 34 px; same names as ui/props.ts `Density`. provisional: replaced by import from @aplos/contract at the freeze */
+export type Density = 'roomy' | 'comfortable' | 'compact';
 
-/** The renderer's `ui` settings object (plan 30 8.1 item 8). provisional: replaced by import from @aplos/contract at the freeze */
+/** One remapped key as stored: a chord spec string ("meta+k") or `{chord, phase}`; the same shape as commands/types.ts `KeymapEntry`. provisional: replaced by import from @aplos/contract at the freeze */
+export type UiKeymapEntry = string | { readonly chord: string; readonly phase?: 'tap' | 'hold' };
+
+/** The Ask dock's remembered state (DESIGN 4.4 "Ask dock", 7.7, decision 9). provisional: replaced by import from @aplos/contract at the freeze */
+export interface UiDockSettings {
+  /** Open; closed on first run, then remembered. Default false. */
+  readonly open: boolean;
+  /** Last tab. Default 'ask'. */
+  readonly tab: 'ask' | 'today';
+  /** Width in px, 300-440. Default 360 (the shell draws 320 under a 1180 px window until the owner resizes). */
+  readonly width: number;
+}
+
+/**
+ * The renderer's `ui` settings object (plan 30 8.1 item 8; gap list U11, S9, A14, A15, C14).
+ * F1 (eng-contract) owns the Settings schema; these are the fields and defaults the screens
+ * need (`UI_SETTINGS_DEFAULTS` in index.ts). commands' `keyPrefsFromUi` reads singleKeys,
+ * holdMs, swipeDirection and keymap. provisional: replaced by import from @aplos/contract at the freeze
+ */
 export interface UiSettings {
-  /** Row density. */
+  /** Light, dark, or match the system (Settings → General). Default 'system'. */
+  readonly theme: 'light' | 'dark' | 'system';
+  /** Row density. Default 'comfortable'. */
   readonly density: Density;
-  /** Light, dark, or match the system. */
-  readonly appearance: 'light' | 'dark' | 'system';
-  /** "Show all key hints" mode (DESIGN 5 rule 17). */
-  readonly showAllKeyHints: boolean;
-  /** Single-key shortcuts on or off (WCAG 2.1.4). */
-  readonly singleKeyShortcuts: boolean;
-  /** Ask dock open; closed on first run and remembered (DESIGN decision 9). */
-  readonly dockOpen: boolean;
-  /** Last dock tab. */
-  readonly dockTab: 'ask' | 'today';
-  /** Minimised sidebar (☰ mode). */
+  /** Where keycaps show: 'tooltip' = tooltips and badges while ⌘ is held (default); 'always' = "Show all key hints" (DESIGN 5 rule 17, decision 8). */
+  readonly keyHints: 'tooltip' | 'always';
+  /** Single-key shortcuts on (WCAG 2.1.4, DESIGN 11.4). Default true. */
+  readonly singleKeys: boolean;
+  /** Tap versus hold threshold in ms, one for every hold key. Default 250 (plan 30 4.2). */
+  readonly holdMs: number;
+  /** The Ask dock. */
+  readonly dock: UiDockSettings;
+  /** Remapped keys by command id (matches commands/types.ts `CommandId`); a listed id loses its default keys, absent ids keep them. Default {}. */
+  readonly keymap: Readonly<Record<CommandId, readonly UiKeymapEntry[]>>;
+  /** Minimised sidebar (☰ mode, DESIGN 7.1). Default false. */
   readonly sidebarMinimised: boolean;
-  /** Tap versus hold threshold, default 250 ms (plan 30 4.2). */
-  readonly holdThresholdMs: number;
-  /** Arrow triage sides on Home and one by one. */
+  /** Arrow triage sides on Home and one by one: 'rightDone' = → Done, ← Later (default, DESIGN 8); 'rightLater' swaps them. */
   readonly swipeDirection: 'rightDone' | 'rightLater';
-  /** Remapped bindings: command id (matches commands/types.ts `CommandId`) to key strings; absent ids use defaults. */
-  readonly keymap: Readonly<Record<CommandId, readonly string[]>>;
+  /** The developer toggle: model names, scores and rank sources shown (DESIGN 9 rule 4). Default false. */
+  readonly devDetails: boolean;
+  /** The account switcher's last scope: an account id, 'all' (All accounts), or null before the first choice. Default null. */
+  readonly lastAccount: AccountId | 'all' | null;
+  /** Palette memory: recent command and setting-entry ids, newest first, at most 20; boosted, never above an exact match (DESIGN 7.9). */
+  readonly palette: { readonly recents: readonly string[] };
+  /** Calendar: first weekday, 0 Sunday or 1 Monday; null follows the macOS locale (gap list decision 15). Default null. */
+  readonly calendar: { readonly weekStart: 0 | 1 | null };
+  /** One-time hints already shown: the first-launch "Hold ⌘ to see keys." toast (DESIGN 7.13). Default false. */
+  readonly seen: { readonly holdCommandHint: boolean };
 }
 
 /** AI features with a provider and model each (AGENTS.md, DESIGN 7.10). provisional: replaced by import from @aplos/contract at the freeze */
@@ -1079,10 +1169,18 @@ export interface AgendaQuery {
   readonly calendarIds?: readonly CalendarId[];
 }
 
+/** A partial `ui` update: nested objects (dock, palette, calendar, seen) merge; `keymap` replaces the whole map so an entry can be removed. provisional: replaced by import from @aplos/contract at the freeze */
+export type UiSettingsPatch = Partial<Omit<UiSettings, 'dock' | 'palette' | 'calendar' | 'seen'>> & {
+  readonly dock?: Partial<UiDockSettings>;
+  readonly palette?: Partial<UiSettings['palette']>;
+  readonly calendar?: Partial<UiSettings['calendar']>;
+  readonly seen?: Partial<UiSettings['seen']>;
+};
+
 /** A partial settings update; nested objects merge. provisional: replaced by import from @aplos/contract at the freeze */
 export interface SettingsPatch {
   /** Fields of `ui` to change. */
-  readonly ui?: Partial<UiSettings>;
+  readonly ui?: UiSettingsPatch;
   /** Fields of `mail` to change. */
   readonly mail?: Partial<Settings['mail']>;
   /** Per-feature provider and model changes. */

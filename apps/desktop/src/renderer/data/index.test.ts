@@ -33,17 +33,28 @@ import {
   useSetupStatus,
   useStatus,
   useView,
+  UI_SETTINGS_DEFAULTS,
+  getNow,
+  setClock,
+  undoStack,
+  useFrames,
+  useNow,
+  useUndoTop,
 } from './index';
 import type {
   AccountState,
   ApiMethodName,
+  ConnectFrame,
   DraftRow,
   MessageRow,
   OpId,
+  ProgressFrame,
   Receipt,
+  SettingsPatch,
   StatusSlotState,
   ThreadRow,
 } from './index';
+import { keyPrefsFromUi } from '../commands';
 
 // ---------------------------------------------------------------------------
 // Compile-time examples (never run past their first hook; they only need to type-check)
@@ -283,6 +294,50 @@ function statusSlotExample(): string {
   }
 }
 
+/** Ask streaming: one run's progress frames, the step line, the answer text, and a pause. */
+function askStreamExample(runId: string): string {
+  const { frames, last } = useFrames('progress', { runId });
+  let text = '';
+  let step = '';
+  for (const frame of frames) {
+    const event = frame.event;
+    if (event.kind === 'step') step = event.text;
+    else if (event.kind === 'text') text += event.text;
+    else if (event.kind === 'paused') step = event.resumeAt === null ? 'Waiting…' : `Waiting until ${event.resumeAt}`;
+    else if (event.kind === 'error') return event.error.message;
+  }
+  const typed: ProgressFrame | undefined = last;
+  // @ts-expect-error: progress frames cannot be filtered by a field that is not listed.
+  useFrames('progress', { seq: 3 });
+  return typed?.event.kind === 'done' ? text : `${step} ${text}`;
+}
+
+/** The reconnect sheet: "Waiting for Google in your browser…" from the connect frames of one flow. */
+function reconnectSheetExample(requestId: string): string {
+  const last: ConnectFrame | undefined = useFrames('connect', { requestId }).last;
+  if (!last || last.state === 'waiting') return 'Waiting for Google in your browser…';
+  if (last.state === 'failed') return last.reasonCode === 'wrongAccount' ? 'That was a different account.' : last.message ?? 'Couldn’t reconnect.';
+  return last.state === 'connected' ? 'Reconnected' : '';
+}
+
+/** One clock for the now-line and "reconnect within 24 hours"; a settings change Z can undo. */
+function clockAndUndoExample(reconnectBy: number): boolean {
+  const now = useNow({ granularity: 'minute' });
+  const top = useUndoTop();
+  const label = top?.kind === 'local' ? `${top.label} · Undo Z` : '';
+  const handle = undoStack.push({ label: 'Done is now L', undo: () => api.settings.set({ ui: { keymap: {} } }).then(() => undefined) });
+  handle.forget();
+  const outcome = undoStack.undoLast();
+  if (outcome?.kind === 'operation') void outcome.result.receipt;
+  const patch: SettingsPatch = { ui: { dock: { width: 400 }, palette: { recents: ['mail.done'] } } };
+  void patch;
+  void label;
+  return reconnectBy - now < 24 * 60 * 60 * 1000;
+}
+
+/** The stored ui fields drive the registry's key prefs without an adapter. */
+const DEFAULT_KEY_PREFS_FROM_UI = keyPrefsFromUi(UI_SETTINGS_DEFAULTS);
+
 /** The ARCH 6.4 vocabulary, checked both ways against `AccountState`. */
 const ARCH_STATES = [
   'starting',
@@ -339,6 +394,9 @@ test('every hook stub throws NotImplemented naming ui-shell', () => {
     ['useAgenda', () => useAgenda({ from: 0, to: 1 })],
     ['useSetupStatus', () => useSetupStatus()],
     ['useSettings', () => useSettings()],
+    ['useFrames', () => useFrames('progress', { runId: 'r1' })],
+    ['useNow', () => useNow({ granularity: 'minute' })],
+    ['useUndoTop', () => useUndoTop()],
   ];
   for (const [name, call] of hooks) {
     assertNotImplemented(call, name);
@@ -371,6 +429,29 @@ test('the examples type-check and stop at the first stub', () => {
   assertNotImplemented(() => statusSlotExample(), 'useStatus');
   assertNotImplemented(() => inboxZeroExample(0), 'useCounts');
   assertNotImplemented(() => fatalExample(), 'useConnection');
+});
+
+test('the stream, clock and undo examples stop at the first stub', () => {
+  assertNotImplemented(() => askStreamExample('r1'), 'useFrames');
+  assertNotImplemented(() => reconnectSheetExample('q1'), 'useFrames');
+  assertNotImplemented(() => clockAndUndoExample(0), 'useNow');
+});
+
+test('the clock and the undo stack are stubs that name ui-shell', () => {
+  assertNotImplemented(() => getNow(), 'getNow');
+  assertNotImplemented(() => setClock({ now: () => 0 }), 'setClock');
+  assertNotImplemented(() => undoStack.push({ label: 'Done is now L', undo: () => undefined }), 'undoStack.push');
+  assertNotImplemented(() => undoStack.undoLast(), 'undoStack.undoLast');
+  assertNotImplemented(() => undoStack.peek(), 'undoStack.peek');
+});
+
+test('the ui defaults follow DESIGN and map onto the registry prefs', () => {
+  assert.equal(UI_SETTINGS_DEFAULTS.holdMs, 250);
+  assert.equal(UI_SETTINGS_DEFAULTS.dock.open, false, 'the dock is closed on first run (decision 9)');
+  assert.equal(UI_SETTINGS_DEFAULTS.dock.width, 360);
+  assert.equal(UI_SETTINGS_DEFAULTS.density, 'comfortable');
+  assert.equal(UI_SETTINGS_DEFAULTS.keyHints, 'tooltip');
+  assert.deepEqual(DEFAULT_KEY_PREFS_FROM_UI, { singleKeyShortcuts: true, holdThresholdMs: 250, swapTriageArrows: false, keymap: {} });
 });
 
 test('the drafts example stops at the first stub', async () => {

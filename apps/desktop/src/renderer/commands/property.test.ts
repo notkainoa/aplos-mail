@@ -99,7 +99,19 @@ const STACKS: readonly (readonly ContextName[])[] = [
   ['global', 'list', 'home', 'reader', 'oneByOne'],
   ['onboarding'],
   ['onboarding', 'dialog'],
+  ['onboarding', 'firstSync'],
+  ['onboarding', 'firstSync', 'drill'],
+  ['onboarding', 'firstSync', 'drill', 'dialog'],
+  ['global', 'search'],
+  ['global', 'search', 'list'],
+  ['global', 'search', 'list', 'palette'],
+  ['global', 'list', 'home', 'sheet'],
+  ['global', 'settings', 'sheet'],
+  ['global', 'settings'],
 ];
+
+/** The onboarding window: no app command may answer there (DESIGN §7.11, §7.12). */
+const ONBOARDING_WINDOW = new Set<ContextName>(['onboarding', 'firstSync', 'drill']);
 
 const CONDITIONS: readonly Condition[] = [
   'selection',
@@ -113,11 +125,10 @@ const CONDITIONS: readonly Condition[] = [
   'queued',
   'remindOffer',
   'welcome',
-  'firstSync',
 ];
 
 /** Focus-scoped and modal: exempt from the single-key switch, and nothing outside them answers. */
-const MODAL = new Set<ContextName>(['palette', 'menu', 'datePicker', 'dialog', 'lowImportance']);
+const MODAL = new Set<ContextName>(['palette', 'menu', 'datePicker', 'dialog', 'sheet', 'lowImportance']);
 const TEXT_EDITING = new Set(['meta+a', 'ctrl+a', 'ctrl+e', 'ctrl+k']);
 
 type Pick = () => number;
@@ -229,6 +240,13 @@ test(`resolver agrees with the oracle over ${SEQUENCES} seeded sequences`, () =>
         if (!prefs.singleKeyShortcuts && key.character) assert.ok(MODAL.has(owner.context), `single key fired with the switch off: ${label}`);
         assert.ok(reachable(stack).includes(actual.context), `a key reached behind a modal: ${label}`);
         if (stack.includes('done')) assert.ok(actual.commandId !== 'mail.done' && actual.commandId !== 'mail.later', `Done or Later in the Done place: ${label}`);
+        if (stack.some((c) => ONBOARDING_WINDOW.has(c))) {
+          assert.ok(ONBOARDING_WINDOW.has(actual.context) || MODAL.has(actual.context), `an app command answered in the onboarding window: ${label}`);
+        }
+        if (stack.includes('drill') && /^[a-z]$/.test(key.id)) assert.ok(actual.commandId.startsWith('drill.'), `a letter in the drill reached ${actual.commandId}: ${label}`);
+        if (stack.includes('firstSync') && key.id === 'Escape' && !MODAL.has(stack[stack.length - 1])) {
+          assert.equal(actual.commandId, 'onboarding.openAplos', `Esc on first sync must open Aplos: ${label}`);
+        }
         const triageArrow = key.id === 'ArrowLeft' || key.id === 'ArrowRight';
         if (triageArrow && (actual.commandId === 'mail.done' || actual.commandId === 'mail.later')) {
           assert.ok(['home', 'oneByOne', 'reader'].includes(actual.context), `arrow triage outside Home/one by one/reader: ${label}`);
@@ -263,5 +281,6 @@ test(`resolver agrees with the oracle over ${SEQUENCES} seeded sequences`, () =>
     assert.deepEqual(dispatched, offered, `key queue order in sequence ${s}`);
   }
   assert.equal(checked, SEQUENCES * SEQUENCE_LENGTH);
-  assert.ok(resolved > checked * 0.2, `enough keys resolved to mean something (${resolved} of ${checked})`);
+  // The onboarding-window and modal stacks bind few keys, so most keys there resolve to nothing by design.
+  assert.ok(resolved > checked * 0.15, `enough keys resolved to mean something (${resolved} of ${checked})`);
 });

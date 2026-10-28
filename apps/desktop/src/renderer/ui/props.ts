@@ -1660,6 +1660,10 @@ export interface PaletteItem {
   group?: string;
   /** Destructive: running it opens the Confirm sub-view. */
   destructive?: boolean;
+  /** Dim text on the right: a Settings row's section ("Mail"), a nested page row's detail. */
+  detail?: string;
+  /** Running it opens a nested page (registry status 'page'): the row shows a chevron and the title joins `trail`. */
+  opensPage?: boolean;
 }
 
 /** A labelled group of palette results. */
@@ -1816,6 +1820,8 @@ export interface MiniMonthProps {
   onMonthChange: (month: IsoYearMonth) => void;
   /** A day was picked. */
   onPick: (date: IsoDate) => void;
+  /** Days with at least one event in a visible calendar; drawn as a quiet `--dim` mark under the number, never a colour (gap list C15). Omit for none. */
+  marks?: readonly IsoDate[];
 }
 
 /** The "Calendars" list with colour swatches, the calendar legend; ⌥-click shows one alone (DESIGN §6 CalendarList, §7.1, §7.8). Mockups: calendar-*.html (shell.js). Plain: ui-foundation; refines: ui-calendar. */
@@ -2038,6 +2044,8 @@ export interface SettingRowProps {
   disclosure?: { expanded: boolean; onToggle: () => void; content: ReactNode };
   /** A line under the row, e.g. an ErrorLine with placement 'settings'. */
   below?: ReactNode;
+  /** The row's palette entry id, `setting.<section>.<rowAnchor>` (renderer/commands `registerSetting`); the row renders its anchor so ⌘K can scroll to it and focus the control (DESIGN §7.10 "Every setting is searchable from ⌘K"). */
+  paletteId?: string;
 }
 
 /** AI features with a provider and model each (DESIGN §7.10 AI). */
@@ -2359,7 +2367,25 @@ export type ProgressSegmentsProps =
       label: 'ready' | 'connected';
       /** Per-account results; the component writes "Newest 50 read · sorted 40 of 40" (sort omitted with no AI). */
       accounts?: readonly (SyncAccount & { read: number; sorted?: { done: number; of: number } })[];
+    }
+  | {
+      /** Plain labelled segments with no checklist copy, for progress the other variants don't name (gap list O16, U10). */
+      variant: 'segments';
+      /** Segments in order. */
+      segments: readonly ProgressSegment[];
+      /** Accessible name of the progressbar, e.g. "jordan@gmail.com sync" (DESIGN §7.12). */
+      label: string;
     };
+
+/** One segment of ProgressSegments' 'segments' variant (DESIGN §7.12: neutral colours, never a fake percentage). */
+export interface ProgressSegment {
+  /** Segment name for assistive tech and the tooltip, e.g. "Read your newest mail". */
+  label: string;
+  /** State; 'current' carries the `status` motion. */
+  state: SegmentState;
+  /** The current segment's real fraction, 0–1, when the engine reports a count ("24 of 50" → 0.48); omit for an indeterminate segment. */
+  value?: number;
+}
 
 /** The whole-pane fatal error: sans `display` "Aplos can't reach its mail engine." + "Your mail is safe on this Mac." (DESIGN §6 FatalScreen, §7.15; plan 30 §4.5 #3). Mockups: fatal.html. Plain + refines: ui-foundation; used by ui-shell. */
 export interface FatalScreenProps {
@@ -2587,6 +2613,20 @@ export interface ChoiceRowProps {
   onPress?: () => void;
 }
 
+/** A radio group of ChoiceRows (role 'radio'), e.g. the onboarding AI provider choice: owns `role="radiogroup"`, the roving tabindex and ↑/↓ (WAI-ARIA radio group); the rows only report presses. Segmented choices use Puck (role 'radio'); pickers use Button + Menu (README) (DESIGN §7.11; gap list O16, U10). Mockups: onboarding-ai.html (`.blk .it`). Plain: ui-foundation; refines: ui-onboard. */
+export interface ChoiceGroupProps {
+  /** Accessible name of the radiogroup, e.g. "AI provider". */
+  label: string;
+  /** DOM id of a visible label; overrides `label` as the name. */
+  labelledBy?: string;
+  /** The chosen row's `id`; null when none is chosen. */
+  value: string | null;
+  /** A row was chosen (click, ↑/↓, Space). */
+  onChange: (id: string) => void;
+  /** ChoiceRows with role 'radio'; each row's `id` is its value and its `selected` mirrors `value`. */
+  children: ReactNode;
+}
+
 /** The AI step's one card (`--elev-card`): Provider, Model and "What is sent", then Allow (filled, Return) and "Not now"; background summaries wait for it (DESIGN §7.11; plan 30 §4.5 #1). Mockups: onboarding-ai.html (consent). Plain: ui-foundation; refines: ui-onboard; also used by ui-settings when the provider changes. */
 export interface ConsentCardProps {
   /** Provider display name, e.g. "Groq". */
@@ -2705,6 +2745,7 @@ export const COMPONENTS = [
   { name: 'OnboardingStep', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/OnboardingStep.tsx' },
   { name: 'ChoiceRow', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/ChoiceRow.tsx' },
   { name: 'ConsentCard', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/ConsentCard.tsx' },
+  { name: 'ChoiceGroup', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/ChoiceGroup.tsx' },
 ] as const satisfies readonly ComponentEntry[];
 
 /** Name of every component in the manifest. */
@@ -2786,6 +2827,7 @@ export interface ComponentPropsMap {
   OnboardingStep: OnboardingStepProps;
   ChoiceRow: ChoiceRowProps;
   ConsentCard: ConsentCardProps;
+  ChoiceGroup: ChoiceGroupProps;
 }
 
 /** Compile-time guard: the manifest and the props map name exactly the same components. */

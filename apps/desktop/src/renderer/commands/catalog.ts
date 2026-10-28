@@ -1,8 +1,9 @@
 // Every command in DESIGN §8, declared once. Screens attach run/when through the
 // registry; nothing else may bind a key. Labels follow DESIGN §10 (plain, no
 // exclamation marks); icons come from DESIGN §4.7.
-import { createRegistry, type Registry, type RegistryErrorHandler } from './registry';
-import type { CommandId, CommandSpec, ContextName, ControlSpec, KeyPrefs } from './types';
+import { createRegistry, type KeymapIssue, type Registry, type RegistryErrorHandler } from './registry';
+import { APP_SETTINGS } from './settings';
+import { DEFAULT_KEY_PREFS, type CommandId, type CommandSpec, type ContextName, type ControlSpec, type KeyPrefs, type Keymap } from './types';
 
 const TRIAGE_ARROW_CONTEXTS: readonly ContextName[] = ['home', 'oneByOne', 'reader'];
 
@@ -57,17 +58,18 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
 ];
 
 export const LIST_COMMANDS: readonly CommandSpec[] = [
-  { id: 'list.down', label: 'Next row', keys: ['j', 'ArrowDown'], contexts: ['list'], group: 'Go to', repeat: true },
-  { id: 'list.up', label: 'Previous row', keys: ['k', 'ArrowUp'], contexts: ['list'], group: 'Go to', repeat: true },
+  // Pure cursor movement stays out of the palette (palette: false) and in the sheet.
+  { id: 'list.down', label: 'Next row', keys: ['j', 'ArrowDown'], contexts: ['list'], group: 'Go to', repeat: true, palette: false },
+  { id: 'list.up', label: 'Previous row', keys: ['k', 'ArrowUp'], contexts: ['list'], group: 'Go to', repeat: true, palette: false },
   { id: 'mail.open', label: 'Open', keys: ['Enter', 'o'], contexts: ['list'], group: 'Actions' },
-  { id: 'mail.suggested', label: 'Run the suggested action', keys: ['Space'], contexts: ['list'], group: 'Suggested' },
+  { id: 'mail.suggested', label: 'Run the suggested action', keys: ['Space'], contexts: ['list'], group: 'Actions', suggested: true },
   {
     id: 'mail.reply',
     label: 'Reply',
     icon: 'arrowshape.turn.up.left',
     keys: ['r'],
     contexts: ['list'],
-    group: 'Suggested',
+    group: 'Actions', suggested: true,
     keywords: ['respond'],
   },
   {
@@ -86,7 +88,7 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
     icon: 'checkmark',
     keys: ['e', { chord: 'ArrowRight', contexts: TRIAGE_ARROW_CONTEXTS, followsSwipe: true }],
     contexts: ['list'],
-    group: 'Suggested',
+    group: 'Actions', suggested: true,
     keywords: ['archive', 'finish'],
     undo: { label: 'Done' },
   },
@@ -96,7 +98,7 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
     icon: 'clock',
     keys: ['l', { chord: 'ArrowLeft', contexts: TRIAGE_ARROW_CONTEXTS, followsSwipe: true }],
     contexts: ['list'],
-    group: 'Suggested',
+    group: 'Actions', suggested: true,
     keywords: ['set aside', 'snooze'],
     undo: { label: 'Moved to Later' },
   },
@@ -112,7 +114,13 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
     group: 'Actions',
     keywords: ['delete', 'remove'],
     undo: { label: 'Moved to Trash' },
-    confirm: { destructive: true, prompt: 'Move the selected emails to Trash?', scope: 'bulk' },
+    confirm: {
+      destructive: true,
+      title: 'Move the selected emails to Trash?',
+      prompt: 'You can restore them from Trash.',
+      confirmLabel: 'Move to Trash',
+      scope: 'bulk',
+    },
   },
   { id: 'mail.replyAll', label: 'Reply all', icon: 'arrowshape.turn.up.left.2', keys: ['shift+r'], contexts: ['list'], group: 'Actions' },
   { id: 'mail.forward', label: 'Forward', icon: 'arrowshape.turn.up.right', keys: ['f'], contexts: ['list'], group: 'Actions' },
@@ -161,7 +169,7 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
     keys: [],
     contexts: ['list'],
     group: 'Actions',
-    confirm: { destructive: true, prompt: 'This can’t be undone.' },
+    confirm: { destructive: true, title: 'Delete forever?', prompt: 'This can’t be undone.', confirmLabel: 'Delete forever' },
   },
   {
     id: 'done.moveToHome',
@@ -175,10 +183,10 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
 ];
 
 export const READER_COMMANDS: readonly CommandSpec[] = [
-  { id: 'reader.nextThread', label: 'Next email', keys: ['j'], contexts: ['reader'], group: 'Go to', repeat: true },
-  { id: 'reader.previousThread', label: 'Previous email', keys: ['k'], contexts: ['reader'], group: 'Go to', repeat: true },
-  { id: 'reader.nextMessage', label: 'Next message', keys: ['ArrowDown'], contexts: ['reader'], group: 'Go to', repeat: true },
-  { id: 'reader.previousMessage', label: 'Previous message', keys: ['ArrowUp'], contexts: ['reader'], group: 'Go to', repeat: true },
+  { id: 'reader.nextThread', label: 'Next email', keys: ['j'], contexts: ['reader'], group: 'Go to', repeat: true, palette: false },
+  { id: 'reader.previousThread', label: 'Previous email', keys: ['k'], contexts: ['reader'], group: 'Go to', repeat: true, palette: false },
+  { id: 'reader.nextMessage', label: 'Next message', keys: ['ArrowDown'], contexts: ['reader'], group: 'Go to', repeat: true, palette: false },
+  { id: 'reader.previousMessage', label: 'Previous message', keys: ['ArrowUp'], contexts: ['reader'], group: 'Go to', repeat: true, palette: false },
   {
     id: 'reader.expand',
     label: 'Show earlier messages and quoted text',
@@ -190,7 +198,7 @@ export const READER_COMMANDS: readonly CommandSpec[] = [
 ];
 
 export const COMPOSE_COMMANDS: readonly CommandSpec[] = [
-  { id: 'compose.send', label: 'Send', keys: [{ chord: 'meta+Enter', inTextField: true }], contexts: ['compose'], group: 'Suggested' },
+  { id: 'compose.send', label: 'Send', keys: [{ chord: 'meta+Enter', inTextField: true }], contexts: ['compose'], group: 'Actions', suggested: true },
   {
     id: 'compose.sendAndDone',
     label: 'Send and mark Done',
@@ -212,7 +220,7 @@ export const COMPOSE_COMMANDS: readonly CommandSpec[] = [
     label: 'Keep the suggestion',
     keys: [{ chord: 'Tab', inTextField: true }],
     contexts: ['compose'],
-    group: 'Suggested',
+    group: 'Actions', suggested: true,
     onlyWhen: 'suggestion',
   },
   {
@@ -257,7 +265,7 @@ export const COMPOSE_COMMANDS: readonly CommandSpec[] = [
     keys: [],
     contexts: ['compose'],
     group: 'Actions',
-    confirm: { destructive: true, prompt: 'Discard this draft?' },
+    confirm: { destructive: true, title: 'Discard this draft?', prompt: 'This can’t be undone.', confirmLabel: 'Discard' },
   },
 ];
 
@@ -304,14 +312,28 @@ export const CALENDAR_COMMANDS: readonly CommandSpec[] = [
     group: 'Actions',
     undo: { label: 'Event deleted' },
   },
-  { id: 'calendar.answerYes', label: 'Answer yes', keys: ['y'], contexts: ['calendar'], group: 'Suggested', onlyWhen: 'invite', keywords: ['accept', 'rsvp'] },
-  { id: 'calendar.answerMaybe', label: 'Answer maybe', keys: ['m'], contexts: ['calendar'], group: 'Suggested', onlyWhen: 'invite', keywords: ['rsvp'] },
-  { id: 'calendar.answerNo', label: 'Answer no', keys: ['n'], contexts: ['calendar'], group: 'Suggested', onlyWhen: 'invite', keywords: ['decline', 'rsvp'] },
+  { id: 'calendar.answerYes', label: 'Answer yes', keys: ['y'], contexts: ['calendar'], group: 'Actions', suggested: true, onlyWhen: 'invite', keywords: ['accept', 'rsvp'] },
+  { id: 'calendar.answerMaybe', label: 'Answer maybe', keys: ['m'], contexts: ['calendar'], group: 'Actions', suggested: true, onlyWhen: 'invite', keywords: ['rsvp'] },
+  { id: 'calendar.answerNo', label: 'Answer no', keys: ['n'], contexts: ['calendar'], group: 'Actions', suggested: true, onlyWhen: 'invite', keywords: ['decline', 'rsvp'] },
+];
+
+/** The Search page (DESIGN §7.9). Its results are a list, so the Lists keymap applies inside them. */
+export const SEARCH_COMMANDS: readonly CommandSpec[] = [
+  // Remote search runs only on Return, to protect quota.
+  {
+    id: 'search.remote',
+    label: 'Search all mail on Google',
+    keys: [{ chord: 'Enter', inTextField: true }],
+    contexts: ['search'],
+    group: 'Actions',
+    keywords: ['gmail', 'server'],
+  },
 ];
 
 /** Every palette command, in catalog order. */
 export const COMMANDS: readonly CommandSpec[] = [
   ...GLOBAL_COMMANDS,
+  ...SEARCH_COMMANDS,
   ...LIST_COMMANDS,
   ...READER_COMMANDS,
   ...COMPOSE_COMMANDS,
@@ -377,7 +399,21 @@ export const CONTROLS: readonly ControlSpec[] = [
   { id: 'onboarding.continue', label: 'Continue', keys: ['Enter'], contexts: ['onboarding'] },
   { id: 'onboarding.back', label: 'Go back a step', keys: ['Escape'], contexts: ['onboarding'] },
   { id: 'onboarding.skipSetup', label: 'Skip setup', keys: ['Escape'], contexts: ['onboarding'], onlyWhen: 'welcome' },
-  { id: 'onboarding.openAplos', label: 'Open Aplos', keys: ['Escape'], contexts: ['onboarding'], onlyWhen: 'firstSync' },
+  // DESIGN §7.12 [F8]: the first-sync screen owns Esc in every state, drill included.
+  { id: 'onboarding.openAplos', label: 'Open Aplos', keys: ['Escape'], contexts: ['firstSync'] },
+
+  // "Try the keys while you wait" (DESIGN §7.12): practice letters only, nothing real changes.
+  { id: 'drill.next', label: 'Next practice letter', keys: ['j', 'ArrowDown'], contexts: ['drill'], repeat: true },
+  { id: 'drill.previous', label: 'Previous practice letter', keys: ['k', 'ArrowUp'], contexts: ['drill'], repeat: true },
+  { id: 'drill.suggested', label: 'Run the suggestion', keys: ['Space'], contexts: ['drill'] },
+  { id: 'drill.done', label: 'Mark it Done', keys: ['e'], contexts: ['drill'] },
+  { id: 'drill.ask', label: 'Ask about it', keys: ['a'], contexts: ['drill'] },
+  { id: 'drill.undo', label: 'Bring it back', keys: ['z'], contexts: ['drill'] },
+  { id: 'drill.leave', label: 'Back to progress', keys: ['Enter'], contexts: ['drill'] },
+
+  // The reconnect and consent sheets the shell hosts (shell/index.ts openSheet).
+  { id: 'sheet.default', label: 'Choose the highlighted button', keys: ['Enter'], contexts: ['sheet'] },
+  { id: 'sheet.cancel', label: 'Cancel', keys: ['Escape'], contexts: ['sheet'] },
 ];
 
 /**
@@ -389,7 +425,16 @@ export const DISABLED_IN: Readonly<Partial<Record<ContextName, readonly CommandI
   done: ['mail.done', 'mail.later'],
 };
 
-/** The app's registry over the full catalog, with the user's prefs applied. */
+/** The app's registry over the full catalog and the registered Settings rows, with the user's prefs applied. */
 export function createAppRegistry(prefs?: KeyPrefs, onError?: RegistryErrorHandler): Registry {
-  return createRegistry(COMMANDS, { controls: CONTROLS, disabledIn: DISABLED_IN, prefs, onError });
+  return createRegistry(COMMANDS, { controls: CONTROLS, disabledIn: DISABLED_IN, prefs, onError, settings: APP_SETTINGS });
+}
+
+/**
+ * Checks a keymap against the whole catalog without touching the live registry:
+ * unreadable entries, reserved chords, clashes ("Already used by Later": the
+ * issue's `with`) and shadowing. Settings → Keyboard calls it before saving.
+ */
+export function conflicts(keymap: Keymap, prefs: KeyPrefs = DEFAULT_KEY_PREFS): readonly KeymapIssue[] {
+  return createRegistry(COMMANDS, { controls: CONTROLS, disabledIn: DISABLED_IN, prefs: { ...prefs, keymap } }).keymapIssues;
 }

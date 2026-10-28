@@ -122,6 +122,42 @@ const TEXT_EDITING_CHORDS = new Set([
   'ctrl+y',
 ]);
 
+/** Chords macOS or the app menu own (quit, close, hide, minimise, settings, app and window switching, screenshots, full screen). */
+const SYSTEM_CHORDS = new Set([
+  'meta+q',
+  'meta+w',
+  'meta+h',
+  'alt+meta+h',
+  'meta+m',
+  'meta+,',
+  'meta+Tab',
+  'shift+meta+Tab',
+  'meta+`',
+  'meta+Space',
+  'ctrl+meta+Space',
+  'ctrl+meta+q',
+  'ctrl+meta+f',
+  'alt+meta+d',
+  'alt+meta+Escape',
+  'shift+meta+3',
+  'shift+meta+4',
+  'shift+meta+5',
+]);
+
+/**
+ * Chords no remap may take, as canonical spec strings ("meta+c"): text editing
+ * (⌘C, ⌘V, ⌘X, ⌘A, ⌘Z, ⌘⇧Z, the ⌃ Emacs keys…) and the system's (⌘Q, ⌘W, ⌘H, ⌘M,
+ * ⌘,, ⌘Tab…). A command may keep one that is its own default (⌘A Select all, ⌘, Settings).
+ */
+export const RESERVED_CHORDS: readonly string[] = [...TEXT_EDITING_CHORDS, ...SYSTEM_CHORDS];
+
+/** Why a chord is reserved, or null: 'text' edits text in a field, 'system' belongs to macOS or the app menu. */
+export function reservedReason(chord: KeyChord): 'text' | 'system' | null {
+  const id = chordId(chord);
+  if (TEXT_EDITING_CHORDS.has(id)) return 'text';
+  return SYSTEM_CHORDS.has(id) ? 'system' : null;
+}
+
 function isSingleChar(key: string): boolean {
   return [...key].length === 1;
 }
