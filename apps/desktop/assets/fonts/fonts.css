@@ -7,7 +7,7 @@
    Georgia 0.4459; ascent 0.735, descent 0.265), so nothing shifts when Newsreader arrives. */
 
 @font-face {
-  font-family: "Newsreader";
+  font-family: Newsreader;
   font-style: normal;
   font-weight: 200 800;
   font-display: block;
@@ -17,7 +17,7 @@
 }
 
 @font-face {
-  font-family: "Newsreader";
+  font-family: Newsreader;
   font-style: normal;
   font-weight: 200 800;
   font-display: block;
