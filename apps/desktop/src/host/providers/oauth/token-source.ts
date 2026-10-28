@@ -2,18 +2,21 @@
 // request and owns every retry; this module makes exactly one token-endpoint POST per refresh. No token, refresh
 // token or client secret ever reaches an error, a log or a thrown object.
 
-import type { ClassifiedError, ErrorClass } from '@aplos/contract';
-import {
-  ProviderError,
-  type AccountId,
-  type RequestIo,
-  type TokenSource,
-} from '@aplos/engine/ports';
-import { HttpFailure, type HttpClient, type HttpResponse } from '../shared/http';
-import { MAX_MESSAGE_LENGTH, parseGoogleError } from '../shared/google-error';
-import { noGoogleClientMessage, type OAuthClient } from './client';
+import { createHash } from 'node:crypto';
+import type { AccountId, RequestIo, TokenSource } from '@aplos/engine/ports';
+import type { HttpClient, HttpResponse } from '../shared/http';
+import type { OAuthClient } from './client';
 import { checkRequiredScopes } from './grant';
 import { missingRequiredScopes, parseGrantedScopes } from './scopes';
+import {
+  cancelledError,
+  grantChangedError,
+  refusalError,
+  tokenError,
+  transportError,
+} from './token-errors';
+
+export { TokenRefreshError } from './token-errors';
 
 export const googleTokenUrl = 'https://oauth2.googleapis.com/token';
 /** `cached` stops handing out a token this long before it expires. */
@@ -25,9 +28,13 @@ export interface GoogleTokenBundle {
   refreshToken: string;
 }
 
-/** The slice of the secret vault this needs; `main/vault.ts`'s `Vault<T>` fits. `set` replaces the whole value. */
+/**
+ * The slice of the secret vault this needs; `main/vault.ts`'s `Vault<T>` fits. `get` is synchronous and does no I/O
+ * (that vault keeps decrypted entries in memory), so `cached` can see a grant a reconnect replaced. `set` replaces
+ * the whole value.
+ */
 export interface SecretVault<T> {
-  get(ref: string): T | undefined | Promise<T | undefined>;
+  get(ref: string): T | undefined;
   set(ref: string, value: T): Promise<void>;
 }
 
@@ -48,95 +55,22 @@ export interface AccessToken {
   expiresAt: number;
 }
 
-const method = 'oauth.token';
-
-const userMessages: Partial<Record<ErrorClass, string>> = {
-  auth: 'Google needs you to sign in to this account again. Choose Reconnect to keep syncing.',
-  config: 'Google refused this build’s sign-in setup. Check the Google client id and secret.',
-  permanent: 'Google refused to renew this account’s sign-in.',
-  transient: 'Google sign-in could not be renewed just now. Aplos will try again.',
-  cancelled: 'Google sign-in renewal was cancelled.',
-};
-
-const reasonMessages: Record<string, string> = {
-  clientMismatch:
-    'This account was connected with a different Google sign-in setup. Reconnect it to keep syncing.',
-  noClient: noGoogleClientMessage,
-  vaultWriteFailed:
-    'Aplos could not save the renewed Google sign-in securely. Check the data directory and your keychain.',
-};
-
-/** A `ProviderError` whose `message` is a sentence the UI may show; `error.reason` stays the stable code. */
-export class TokenRefreshError extends ProviderError {
-  constructor(error: ClassifiedError, scope: 'account' | 'project', message: string) {
-    super(error, scope);
-    this.message = message;
-  }
+/** `grant` fingerprints the bundle the token came from; the refresh token itself is never kept here. */
+interface CachedToken extends AccessToken {
+  grant: string;
 }
 
-interface TokenErrorInit {
-  extra?: Partial<ClassifiedError>;
-  scope?: 'account' | 'project';
-  /** Overrides the sentence picked from the reason and class. */
-  message?: string;
+/** One shared token request; it is aborted only when every caller waiting on it has given up. */
+interface Flight {
+  promise: Promise<AccessToken>;
+  controller: AbortController;
+  waiters: number;
 }
 
-function tokenError(cls: ErrorClass, reason: string, init: TokenErrorInit = {}): TokenRefreshError {
-  const error: ClassifiedError = { class: cls, provider: 'oauth', method, reason, ...init.extra };
-  const message = init.message ?? reasonMessages[reason] ?? userMessages[cls] ?? reason;
-  return new TokenRefreshError(error, init.scope ?? 'account', message);
-}
-
-/** Refusals that only a new sign-in fixes (plan 20 section 3.3). */
-const authReasons = new Set([
-  'invalid_grant',
-  'admin_policy_enforced',
-  'interaction_required',
-  'consent_required',
-  'access_denied',
-]);
-/** Refusals of the client itself, which hit every account on the project. */
-const configReasons = new Set([
-  'invalid_client',
-  'unauthorized_client',
-  'invalid_request',
-  'invalid_scope',
-  'unsupported_grant_type',
-]);
-
-function refusalClass(status: number, reason: string): ErrorClass {
-  if (authReasons.has(reason)) return 'auth';
-  if (status === 408 || status === 429 || status >= 500) return 'transient';
-  if (configReasons.has(reason)) return 'config';
-  return 'permanent';
-}
-
-/** Replaces every secret sent with the request, in case a server echoes one back. */
-function scrub(text: string, secrets: readonly string[]): string {
-  let clean = text;
-  for (const secret of secrets) if (secret) clean = clean.split(secret).join('[redacted]');
-  return clean.slice(0, MAX_MESSAGE_LENGTH);
-}
-
-function refusal(response: HttpResponse, secrets: readonly string[]): TokenRefreshError {
-  const info = parseGoogleError(response.status, response.text());
-  const cls = refusalClass(response.status, info.reason);
-  const description = scrub(info.oauthDescription ?? info.message, secrets);
-  const extra: Partial<ClassifiedError> = {
-    status: response.status,
-    ...(response.retryAfterMs !== undefined ? { retryAfterMs: response.retryAfterMs } : {}),
-    ...(description ? { providerMessage: description } : {}),
-  };
-  const scope = cls === 'config' ? 'project' : 'account';
-  return tokenError(cls, scrub(info.reason, secrets), { extra, scope });
-}
-
-/** Only the failure's kind survives: a `cause` is not ours to vouch for, so nothing else is passed on. */
-function transportError(error: unknown): TokenRefreshError {
-  const extra = { uncertain: false };
-  if (!(error instanceof HttpFailure)) return tokenError('transient', 'requestFailed', { extra });
-  if (error.kind === 'aborted') return tokenError('cancelled', 'aborted', { extra });
-  return tokenError('transient', error.kind, { extra });
+/** The bundle to refresh with, and the refresh token the vault itself holds (they differ after a failed write). */
+interface Current {
+  bundle: GoogleTokenBundle;
+  stored: string;
 }
 
 interface TokenReply {
@@ -147,6 +81,12 @@ interface TokenReply {
 }
 
 const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value !== '';
+
+function grantId(bundle: GoogleTokenBundle): string {
+  return createHash('sha256')
+    .update(`${bundle.clientId}\n${bundle.refreshToken}`)
+    .digest('base64url');
+}
 
 /** Never `response.json()`: a parse error message can quote the body, and the body holds the token. */
 function parseReply(response: HttpResponse): TokenReply | undefined {
@@ -184,35 +124,30 @@ function validBundle(value: GoogleTokenBundle | undefined): GoogleTokenBundle | 
   return value;
 }
 
-/** The bundle to refresh with, and the refresh token the vault itself holds (they differ after a failed write). */
-interface Current {
-  bundle: GoogleTokenBundle;
-  stored: string;
-}
-
 export class GoogleTokenSource implements TokenSource {
-  private readonly cache = new Map<AccountId, AccessToken>();
-  private readonly inFlight = new Map<AccountId, Promise<AccessToken>>();
+  private readonly cache = new Map<AccountId, CachedToken>();
+  private readonly inFlight = new Map<AccountId, Flight>();
   /** A rotated bundle the vault refused, used while the vault still holds `over` (so a reconnect wins). */
   private readonly unsaved = new Map<AccountId, { bundle: GoogleTokenBundle; over: string }>();
 
   constructor(private readonly options: GoogleTokenSourceOptions) {}
 
+  /** Only a token from the grant the vault holds now, and not within the skew of its expiry. */
   cached(account: AccountId): AccessToken | undefined {
     const hit = this.cache.get(account);
     if (!hit || hit.expiresAt - tokenSkewMs <= this.options.clock.now()) return undefined;
-    return { ...hit };
+    if (!this.holdsGrant(account, hit.grant)) {
+      this.cache.delete(account);
+      return undefined;
+    }
+    return { token: hit.token, expiresAt: hit.expiresAt };
   }
 
-  /** Concurrent calls for one account share one request; the first caller's `io` carries it. */
+  /** Concurrent calls for one account share one request; each caller's own signal ends only its own wait. */
   refresh(account: AccountId, io: RequestIo): Promise<AccessToken> {
-    const pending = this.inFlight.get(account);
-    if (pending) return pending;
-    const started = this.run(account, io).finally(() => {
-      if (this.inFlight.get(account) === started) this.inFlight.delete(account);
-    });
-    this.inFlight.set(account, started);
-    return started;
+    if (io.signal.aborted) return Promise.reject(cancelledError());
+    const flight = this.inFlight.get(account) ?? this.launch(account);
+    return this.join(account, flight, io.signal);
   }
 
   /** Drops what this process remembers for an account (disconnect). The vault is the caller's. */
@@ -221,24 +156,74 @@ export class GoogleTokenSource implements TokenSource {
     this.unsaved.delete(account);
   }
 
-  private async run(account: AccountId, io: RequestIo): Promise<AccessToken> {
+  private launch(account: AccountId): Flight {
+    const controller = new AbortController();
+    const flight: Flight = {
+      controller,
+      waiters: 0,
+      promise: this.run(account, controller.signal),
+    };
+    flight.promise = flight.promise.finally(() => this.land(account, flight));
+    flight.promise.catch(() => {
+      /* every caller gets the outcome through `join`; none may be left */
+    });
+    this.inFlight.set(account, flight);
+    return flight;
+  }
+
+  private land(account: AccountId, flight: Flight): void {
+    if (this.inFlight.get(account) === flight) this.inFlight.delete(account);
+  }
+
+  private join(account: AccountId, flight: Flight, signal: AbortSignal): Promise<AccessToken> {
+    flight.waiters += 1;
+    return new Promise<AccessToken>((resolve, reject) => {
+      const leave = () => {
+        signal.removeEventListener('abort', onAbort);
+        flight.waiters -= 1;
+      };
+      const onAbort = () => {
+        leave();
+        if (flight.waiters === 0) this.abandon(account, flight);
+        reject(cancelledError());
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      flight.promise.then(
+        token => {
+          leave();
+          resolve({ ...token });
+        },
+        (error: unknown) => {
+          leave();
+          reject(error);
+        },
+      );
+    });
+  }
+
+  /** Nobody waits any more: the request is cut, and the next caller starts a fresh one. */
+  private abandon(account: AccountId, flight: Flight): void {
+    this.land(account, flight);
+    flight.controller.abort();
+  }
+
+  /** Any failure drops the cached token: the governor refreshes only when that token was due or refused. */
+  private async run(account: AccountId, signal: AbortSignal): Promise<AccessToken> {
     try {
-      return await this.refreshOnce(account, io);
+      return await this.refreshOnce(account, signal);
     } catch (error) {
-      if (error instanceof ProviderError && error.error.class === 'auth')
-        this.cache.delete(account);
+      this.cache.delete(account);
       throw error;
     }
   }
 
-  private async refreshOnce(account: AccountId, io: RequestIo): Promise<AccessToken> {
-    const current = await this.current(account);
-    if (!current) throw tokenError('auth', 'noCredential');
-    const secret = this.secretFor(current.bundle);
+  private async refreshOnce(account: AccountId, signal: AbortSignal): Promise<AccessToken> {
+    const used = this.readCurrent(account);
+    if (!used) throw tokenError('auth', 'noCredential');
+    const secret = this.secretFor(used.bundle);
     const startedAt = this.options.clock.now();
-    const response = await this.post(current.bundle, secret, io);
-    const secrets = [current.bundle.refreshToken, secret ?? ''];
-    if (!response.ok) throw refusal(response, secrets);
+    const response = await this.post(used.bundle, secret, signal);
+    if (!response.ok) throw refusalError(response, [used.bundle.refreshToken, secret ?? '']);
     const reply = parseReply(response);
     if (!reply) {
       throw tokenError('transient', 'malformedTokenResponse', {
@@ -246,25 +231,49 @@ export class GoogleTokenSource implements TokenSource {
       });
     }
     // A rotated refresh token is stored before anything else can refuse the reply.
-    await this.keep(account, current, reply);
+    const bundle = await this.keep(account, used, reply);
     checkReplyScopes(reply);
+    // Checked and cached in one synchronous step, so a reconnect cannot slip in between.
+    this.assertGrant(account, bundle);
     const token = { token: reply.accessToken, expiresAt: startedAt + reply.expiresInMs };
-    this.cache.set(account, token);
-    return { ...token };
+    this.cache.set(account, { ...token, grant: grantId(bundle) });
+    return token;
   }
 
   private ref(account: AccountId): string {
     return this.options.refFor ? this.options.refFor(account) : account;
   }
 
-  private async current(account: AccountId): Promise<Current | undefined> {
-    const stored = validBundle(await this.options.vault.get(this.ref(account)));
+  private current(account: AccountId): Current | undefined {
+    const stored = validBundle(this.options.vault.get(this.ref(account)));
     const pending = this.unsaved.get(account);
     if (pending && stored?.refreshToken === pending.over) {
       return { bundle: pending.bundle, stored: stored.refreshToken };
     }
     this.unsaved.delete(account);
     return stored && { bundle: stored, stored: stored.refreshToken };
+  }
+
+  /** `current`, with a vault that throws turned into a secret-free `transient` error. */
+  private readCurrent(account: AccountId): Current | undefined {
+    try {
+      return this.current(account);
+    } catch {
+      throw tokenError('transient', 'vaultReadFailed', { extra: { uncertain: false } });
+    }
+  }
+
+  private holdsGrant(account: AccountId, grant: string): boolean {
+    try {
+      const now = this.current(account);
+      return now !== undefined && grantId(now.bundle) === grant;
+    } catch {
+      return false;
+    }
+  }
+
+  private assertGrant(account: AccountId, bundle: GoogleTokenBundle): void {
+    if (!this.holdsGrant(account, grantId(bundle))) throw grantChangedError();
   }
 
   /** D21: the refresh token only works with the client it was granted to; any other client is refused unsent. */
@@ -279,7 +288,7 @@ export class GoogleTokenSource implements TokenSource {
   private async post(
     bundle: GoogleTokenBundle,
     secret: string | undefined,
-    io: RequestIo,
+    signal: AbortSignal,
   ): Promise<HttpResponse> {
     const form = new URLSearchParams({
       grant_type: 'refresh_token',
@@ -295,7 +304,7 @@ export class GoogleTokenSource implements TokenSource {
           accept: 'application/json',
         },
         body: form,
-        signal: io.signal,
+        signal,
       });
     } catch (error) {
       throw transportError(error);
@@ -303,23 +312,39 @@ export class GoogleTokenSource implements TokenSource {
   }
 
   /**
-   * Stores a rotated refresh token as one bundle write before the new access token is used. A bundle replaced while
-   * the request was out (a reconnect) wins. A refused write leaves the vault's old bundle in place and keeps the new
-   * one in memory for the next try.
+   * Stores a rotated refresh token as one bundle write before the new access token is used, and returns the bundle
+   * now in force. A bundle replaced while the request was out (a reconnect) wins: nothing is written over it.
    */
-  private async keep(account: AccountId, used: Current, reply: TokenReply): Promise<void> {
-    const now = await this.current(account);
-    if (!now || now.bundle.refreshToken !== used.bundle.refreshToken) {
-      throw tokenError('transient', 'grantChanged', { extra: { uncertain: false } });
-    }
+  private async keep(
+    account: AccountId,
+    used: Current,
+    reply: TokenReply,
+  ): Promise<GoogleTokenBundle> {
+    const now = this.readCurrent(account);
+    if (!now || grantId(now.bundle) !== grantId(used.bundle)) throw grantChangedError();
     const next = { ...now.bundle, refreshToken: reply.refreshToken ?? now.bundle.refreshToken };
-    if (next.refreshToken === now.stored) return;
+    if (next.refreshToken === now.stored) return now.bundle;
+    // Compared and written in one synchronous step; `assertGrant` afterwards catches a write that raced this one.
+    await this.write(account, next, now.stored);
+    return next;
+  }
+
+  /** A refused write leaves the vault's bundle in place and keeps the new one in memory for the next try. */
+  private async write(account: AccountId, next: GoogleTokenBundle, over: string): Promise<void> {
     try {
       await this.options.vault.set(this.ref(account), next);
     } catch {
-      this.unsaved.set(account, { bundle: next, over: now.stored });
+      if (this.storedToken(account) === over) this.unsaved.set(account, { bundle: next, over });
       throw tokenError('transient', 'vaultWriteFailed', { extra: { uncertain: false } });
     }
     this.unsaved.delete(account);
+  }
+
+  private storedToken(account: AccountId): string | undefined {
+    try {
+      return validBundle(this.options.vault.get(this.ref(account)))?.refreshToken;
+    } catch {
+      return undefined;
+    }
   }
 }

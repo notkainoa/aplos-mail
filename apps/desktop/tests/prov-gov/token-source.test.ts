@@ -21,6 +21,9 @@ interface MemoryVault extends SecretVault<GoogleTokenBundle> {
   entries: Map<string, GoogleTokenBundle>;
   writes: GoogleTokenBundle[];
   failWrites: boolean;
+  failReads: boolean;
+  /** Runs while a write is still being persisted, after the entry changed (as `main/vault.ts` orders it). */
+  duringWrite?: () => void;
 }
 
 /** Like `main/vault.ts`: a refused write leaves the previous value in place. */
@@ -29,11 +32,17 @@ function memoryVault(initial?: GoogleTokenBundle): MemoryVault {
     entries: new Map(initial ? [[account, { ...initial }]] : []),
     writes: [],
     failWrites: false,
-    get: ref => vault.entries.get(ref),
+    failReads: false,
+    get(ref) {
+      if (vault.failReads) throw new Error(`keychain locked for ${refreshToken}`);
+      return vault.entries.get(ref);
+    },
     async set(ref, value) {
-      if (vault.failWrites) throw new Error('Account credentials could not be saved securely.');
+      if (vault.failWrites) throw new Error(`could not save ${value.refreshToken}`);
       vault.writes.push({ ...value });
       vault.entries.set(ref, { ...value });
+      await Promise.resolve();
+      vault.duringWrite?.();
     },
   };
   return vault;
@@ -111,13 +120,24 @@ async function failure(promise: Promise<unknown>): Promise<ProviderError> {
   return error;
 }
 
+/** Not the whole secret, and not its first 8 characters either (a secret cut at a length cap). */
 function assertNoSecrets(error: unknown, secrets: string[]): void {
   const views = [String(error), JSON.stringify(error), inspect(error, { depth: 10 })];
   if (error instanceof Error) views.push(error.message, error.stack ?? '');
   for (const view of views) {
-    for (const secret of secrets) assert.ok(!view.includes(secret), 'a secret leaked');
+    for (const secret of secrets) assert.ok(!view.includes(secret.slice(0, 8)), 'a secret leaked');
   }
 }
+
+function gate(): { wait: Promise<void>; open: () => void } {
+  let open!: () => void;
+  const wait = new Promise<void>(resolve => {
+    open = resolve;
+  });
+  return { wait, open };
+}
+
+const reconnected: GoogleTokenBundle = { clientId, refreshToken: '1//reconnected' };
 
 test('cached is empty before a refresh, then serves the token without I/O until the skew', async () => {
   const { source, clock, calls } = setup([ok()]);
@@ -132,6 +152,16 @@ test('cached is empty before a refresh, then serves the token without I/O until 
   await clock.advance(1);
   assert.equal(source.cached(account), undefined);
   assert.equal(calls.length, 1, 'cached never touches the network');
+});
+
+test('cached drops a token whose grant was replaced in the vault (reconnect, more permissions)', async () => {
+  const { source, vault } = setup([ok()]);
+  await source.refresh(account, io());
+  assert.ok(source.cached(account));
+  vault.entries.set(account, reconnected);
+  assert.equal(source.cached(account), undefined);
+  vault.entries.set(account, { clientId, refreshToken });
+  assert.equal(source.cached(account), undefined, 'a dropped token does not come back');
 });
 
 test('refresh makes exactly one POST with the bundle’s refresh token and client', async () => {
@@ -169,18 +199,18 @@ test('admin_policy_enforced is auth too; invalid_client is a project-wide config
   assert.equal(error.scope, 'project');
 });
 
-test('network failures, timeouts and 5xx are transient and keep the refresh token and the cache', async () => {
+test('network failures, timeouts and 5xx are transient, keep the refresh token and drop the cache', async () => {
   const down: Script = () => Promise.reject(Object.assign(new TypeError('fetch failed'), {}));
   const hang: Script = () => new Promise<Response>(() => {});
   for (const script of [down, hang, oauthRefusal('internal_failure', 500)]) {
     const { source, vault, clock } = setup([ok(), script]);
     await source.refresh(account, io());
-    const kept = source.cached(account);
+    assert.ok(source.cached(account));
     await clock.advance(1000);
     const error = await failure(source.refresh(account, io()));
     assert.equal(error.error.class, 'transient');
     assert.deepEqual(vault.entries.get(account), { clientId, refreshToken });
-    assert.deepEqual(source.cached(account), kept, 'a failed renewal does not drop a valid token');
+    assert.equal(source.cached(account), undefined, 'a refused or failed renewal drops the token');
   }
 });
 
@@ -193,6 +223,20 @@ test('an aborted request is cancelled, not auth', async () => {
   assert.deepEqual(vault.entries.get(account), { clientId, refreshToken });
 });
 
+test('aborting a hung request cancels it, keeps the bundle, and the next refresh starts afresh', async () => {
+  const hang: Script = () => new Promise<Response>(() => {});
+  const { source, vault, calls } = setup([hang, ok()]);
+  const controller = new AbortController();
+  const pending = source.refresh(account, { signal: controller.signal });
+  await Promise.resolve();
+  controller.abort();
+  const error = await failure(pending);
+  assert.equal(error.error.class, 'cancelled');
+  assert.deepEqual(vault.entries.get(account), { clientId, refreshToken });
+  await source.refresh(account, io());
+  assert.equal(calls.length, 2);
+});
+
 test('a rotated refresh token is stored as one bundle write before the token is used', async () => {
   const { source, vault } = setup([ok({ refresh_token: '1//rotated' })]);
   await source.refresh(account, io());
@@ -203,51 +247,107 @@ test('a rotated refresh token is stored as one bundle write before the token is 
 });
 
 test('a refused rotation write keeps the old bundle in the vault and the new token for the next try', async () => {
-  const { source, vault, calls } = setup([ok({ refresh_token: '1//rotated' }), ok()]);
+  const { source, vault, calls } = setup([ok(), ok({ refresh_token: '1//rotated' }), ok()]);
+  await source.refresh(account, io());
+  assert.ok(source.cached(account));
   vault.failWrites = true;
   const error = await failure(source.refresh(account, io()));
   assert.equal(error.error.class, 'transient');
   assert.equal(error.error.reason, 'vaultWriteFailed');
+  assertNoSecrets(error, ['1//rotated', refreshToken]);
   assert.equal(source.cached(account), undefined, 'not used before it is stored');
   assert.deepEqual(vault.entries.get(account), { clientId, refreshToken });
   vault.failWrites = false;
   await source.refresh(account, io());
-  assert.equal(calls[1].get('refresh_token'), '1//rotated', 'the newest refresh token is used');
+  assert.equal(calls[2].get('refresh_token'), '1//rotated', 'the newest refresh token is used');
+  assert.deepEqual(vault.entries.get(account), { clientId, refreshToken: '1//rotated' });
+});
+
+test('a rotated refresh token is stored even when the scope check then refuses the reply', async () => {
+  const shrunk = ok({ refresh_token: '1//rotated', scope: 'openid' });
+  const { source, vault } = setup([shrunk]);
+  const error = await failure(source.refresh(account, io()));
+  assert.equal(error.error.class, 'permission');
   assert.deepEqual(vault.entries.get(account), { clientId, refreshToken: '1//rotated' });
 });
 
 test('a bundle replaced while the request was out (a reconnect) wins', async () => {
   const late: { vault?: MemoryVault } = {};
   const reconnectDuringRequest: Script = () => {
-    late.vault!.entries.set(account, { clientId, refreshToken: '1//reconnected' });
+    late.vault!.entries.set(account, reconnected);
     return ok({ refresh_token: '1//stale-rotation' })(new URLSearchParams());
   };
-  const { source, vault } = setup([reconnectDuringRequest]);
+  const { source, vault, clock } = setup([ok(), reconnectDuringRequest]);
   late.vault = vault;
+  await source.refresh(account, io());
+  assert.ok(source.cached(account));
+  await clock.advance(1000);
   const error = await failure(source.refresh(account, io()));
   assert.equal(error.error.reason, 'grantChanged');
   assert.equal(source.cached(account), undefined);
-  assert.deepEqual(vault.entries.get(account), { clientId, refreshToken: '1//reconnected' });
+  assert.deepEqual(vault.entries.get(account), reconnected);
+});
+
+test('a reconnect that lands while a rotation is being written wins, and its grant is not cached', async () => {
+  const { source, vault } = setup([ok({ refresh_token: '1//rotated' })]);
+  vault.duringWrite = () => vault.entries.set(account, reconnected);
+  const error = await failure(source.refresh(account, io()));
+  assert.equal(error.error.reason, 'grantChanged');
+  assert.equal(source.cached(account), undefined);
+  assert.deepEqual(vault.entries.get(account), reconnected);
+});
+
+test('a reconnect after a refused rotation write wins over the unsaved token', async () => {
+  const { source, vault, calls } = setup([ok({ refresh_token: '1//rotated' }), ok()]);
+  vault.failWrites = true;
+  await failure(source.refresh(account, io()));
+  vault.failWrites = false;
+  vault.entries.set(account, reconnected);
+  await source.refresh(account, io());
+  assert.equal(calls[1].get('refresh_token'), '1//reconnected');
+  assert.deepEqual(vault.entries.get(account), reconnected);
+  assert.ok(source.cached(account));
 });
 
 test('concurrent refreshes for one account share one request', async () => {
-  let release!: () => void;
-  const gate = new Promise<void>(resolve => {
-    release = resolve;
-  });
+  const held = gate();
   const slow: Script = async () => {
-    await gate;
+    await held.wait;
     return ok()(new URLSearchParams());
   };
   const { source, calls } = setup([slow]);
   const first = source.refresh(account, io());
   const second = source.refresh(account, io());
-  release();
+  held.open();
   const [a, b] = await Promise.all([first, second]);
   assert.equal(calls.length, 1);
   assert.deepEqual(a, b);
   await source.refresh(account, io());
   assert.equal(calls.length, 2, 'a settled refresh is not reused');
+});
+
+test('a caller that aborts a shared refresh does not cancel the other caller', async () => {
+  const held = gate();
+  const seen: AbortSignal[] = [];
+  const fetchSignal = async (_url: string | URL | Request, init?: RequestInit) => {
+    seen.push(init!.signal!);
+    await held.wait;
+    return ok()(new URLSearchParams());
+  };
+  const clock = new FakeClock();
+  const http = createHttpClient({ fetch: fetchSignal as typeof fetch, clock, userAgent: 'a' });
+  const vault = memoryVault({ clientId, refreshToken });
+  const source = new GoogleTokenSource({ vault, http, clock, client: () => ({ clientId }) });
+  const quitter = new AbortController();
+  const first = source.refresh(account, { signal: quitter.signal });
+  const second = source.refresh(account, io());
+  await Promise.resolve();
+  quitter.abort();
+  assert.equal((await failure(first)).error.class, 'cancelled');
+  assert.equal(seen[0].aborted, false, 'the shared request is still running');
+  held.open();
+  assert.equal((await second).token, 'ya29.access');
+  assert.equal(seen.length, 1);
 });
 
 test('no token, refresh token or client secret appears in any thrown error', async () => {
@@ -267,6 +367,45 @@ test('no token, refresh token or client secret appears in any thrown error', asy
     const error = await failure(source.refresh(account, io()));
     assertNoSecrets(error, secrets);
   }
+});
+
+test('a secret cut by the 300-character cap leaves no part of itself behind', async () => {
+  const pad = 'x'.repeat(290);
+  // As is, and with one character \u-escaped so only the parsed text holds the whole secret.
+  const plain = `{"error":"invalid_grant","error_description":"${pad}${refreshToken}"}`;
+  const hidden = refreshToken.replace('//r', '//\\u0072');
+  const escaped = `{"error":"invalid_grant","error_description":"${pad}${hidden}"}`;
+  for (const body of [plain, escaped]) {
+    const { source } = setup([() => new Response(body, { status: 400 })]);
+    const error = await failure(source.refresh(account, io()));
+    assert.equal(error.error.class, 'auth');
+    assertNoSecrets(error, [refreshToken]);
+  }
+});
+
+test('a provider reason that names an Object property still gets a plain sentence', async () => {
+  for (const reason of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    const { source } = setup([oauthRefusal(reason)]);
+    const error = await failure(source.refresh(account, io()));
+    assert.equal(typeof error.message, 'string');
+    assert.equal(error.message, 'Google refused to renew this account’s sign-in.');
+  }
+});
+
+test('a vault that throws on read or write is a secret-free transient error', async () => {
+  const reads = setup([ok()]);
+  reads.vault.failReads = true;
+  const readError = await failure(reads.source.refresh(account, io()));
+  assert.equal(readError.error.class, 'transient');
+  assert.equal(readError.error.reason, 'vaultReadFailed');
+  assertNoSecrets(readError, [refreshToken]);
+  assert.equal(reads.calls.length, 0);
+  assert.equal(reads.source.cached(account), undefined, 'cached never throws');
+  const writes = setup([ok({ refresh_token: '1//rotated' })]);
+  writes.vault.failWrites = true;
+  const writeError = await failure(writes.source.refresh(account, io()));
+  assert.equal(writeError.error.reason, 'vaultWriteFailed');
+  assertNoSecrets(writeError, ['1//rotated', refreshToken]);
 });
 
 test('a bundle granted to another client is refused without a request', async () => {
@@ -290,7 +429,10 @@ test('no stored bundle is auth; no client in this build is config', async () => 
 });
 
 test('granted scopes that lose the mail scope are a permission refusal', async () => {
-  const { source } = setup([ok({ scope: `openid ${SCOPE.calendarEvents}` })]);
+  const { source, clock } = setup([ok(), ok({ scope: `openid ${SCOPE.calendarEvents}` })]);
+  await source.refresh(account, io());
+  assert.ok(source.cached(account));
+  await clock.advance(1000);
   const error = await failure(source.refresh(account, io()));
   assert.equal(error.error.class, 'permission');
   assert.deepEqual(error.error.missingScopes, [mailScope]);
