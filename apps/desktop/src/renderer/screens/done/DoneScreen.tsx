@@ -1,0 +1,28 @@
+/**
+ * The Done place (DESIGN 7.4): mail you finished. Rows read "Done 9:41 AM" in a fixed stamp column, the one hover
+ * action is an icon-only "Move to Home" (H) to the stamp's left, and E and L do nothing here. Moving a row back is an
+ * operation with Undo. Every key is the registry's.
+ */
+import type { Registry } from '../../commands';
+import type { AccountId } from '../../data';
+import { DONE_CONFIG } from '../lists/listKinds';
+import type { OpenKind } from '../lists/listRows';
+import { MailListView } from '../lists/MailListView';
+import { useMailList } from '../lists/useMailList';
+import { useDoneKeys } from './doneCommands';
+
+/** Props for `DoneScreen`. */
+export interface DoneScreenProps {
+  /** One account, or absent for All accounts. */
+  readonly accountId?: AccountId;
+  /** The registry the keys and handlers use; the shell's once it shares one. Default: Done's own. */
+  readonly registry?: Registry;
+  /** Open a thread in the reader (the reader lane owns it; absent until it lands). */
+  readonly onOpen?: (id: string, kind: OpenKind) => void;
+}
+
+export function DoneScreen(props: DoneScreenProps) {
+  const list = useMailList(DONE_CONFIG, props);
+  useDoneKeys(list.register, list.actions);
+  return <MailListView list={list} />;
+}

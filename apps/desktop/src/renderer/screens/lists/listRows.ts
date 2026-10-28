@@ -1,0 +1,193 @@
+/**
+ * Rows as the shared list wants them: the pure mapping from a thread, a draft or a submission to the props of
+ * `ListRow` (DESIGN 4.1, 7.4). Thread rows reuse Home's mapping; Drafts rows are Draft rows (recipients and the time
+ * they were edited), Sent shows the recipients, Done adds the "Done 9:41 AM" stamp. Nothing here reads the engine.
+ */
+import { toIsoDateTime, type Draft, type Submission, type ThreadRow } from '../../data';
+import type { LaterUntil, ListRowProps } from '../../ui/props';
+import { listRowProps, primaryOf, senderOf, type RowContext } from '../home/homeRows';
+import type { ListConfig } from './listKinds';
+
+/** A row a mail list can hold. */
+export type ListRowData = ThreadRow | Draft | Submission;
+
+/** What a row opens as: a thread in the reader, a draft in the composer, a submission in the outbox. */
+export type OpenKind = 'thread' | 'draft' | 'submission';
+
+/** Narrows an unknown cache entry to a draft. */
+export function isDraft(row: unknown): row is Draft {
+  return typeof row === 'object' && row !== null && 'revision' in row && 'html' in row;
+}
+
+/** Narrows an unknown cache entry to a submission. */
+export function isSubmission(row: unknown): row is Submission {
+  return typeof row === 'object' && row !== null && 'toNames' in row && 'notBefore' in row;
+}
+
+/** Narrows an unknown cache entry to a thread row. */
+export function isThread(row: unknown): row is ThreadRow {
+  return typeof row === 'object' && row !== null && 'participants' in row && 'workflow' in row;
+}
+
+/** Keeps a cache entry the list can draw; anything else (a row type a newer engine added) is dropped. */
+export function asListRow(row: unknown): ListRowData | undefined {
+  return isThread(row) || isDraft(row) || isSubmission(row) ? row : undefined;
+}
+
+/** What opening the row does. */
+export function openKindOf(row: ListRowData): OpenKind {
+  if (isDraft(row)) return 'draft';
+  return isSubmission(row) ? 'submission' : 'thread';
+}
+
+const MAX_NAMES = 3;
+
+function joinNames(names: readonly string[]): string {
+  const shown = names.slice(0, MAX_NAMES).join(', ');
+  return names.length > MAX_NAMES ? `${shown} and ${names.length - MAX_NAMES} more` : shown;
+}
+
+/** Sent's who column: the people the thread went to, never the owner. */
+export function recipientsOfThread(row: ThreadRow): string {
+  const names = row.participants
+    .filter(person => person.me !== true)
+    .map(person => (person.name || person.address || '').trim())
+    .filter(name => name.length > 0);
+  return names.length > 0 ? joinNames(names) : senderOf(row);
+}
+
+/** A draft's who column: its recipients, or "No recipient" for a draft with none yet. */
+export function recipientsOfDraft(draft: Draft): string {
+  const names = draft.to
+    .map(person => (person.name || person.address).trim())
+    .filter(name => name.length > 0);
+  return names.length > 0 ? joinNames(names) : 'No recipient';
+}
+
+const TAG = /<[^>]*>/g;
+const SPACE = /\s+/g;
+
+/** The words of a draft's body without markup, for the line when the subject is empty. Never inserted as HTML. */
+export function plainText(html: string): string {
+  return html.replace(TAG, ' ').replace(SPACE, ' ').trim();
+}
+
+/** A draft's main line: its subject, else the start of its body, else "No subject". */
+export function draftLine(draft: Draft): string {
+  const subject = draft.subject.trim();
+  if (subject.length > 0) return subject;
+  const body = plainText(draft.html);
+  return body.length > 0 ? body : 'No subject';
+}
+
+/** A submission's main line. */
+function submissionLine(submission: Submission): string {
+  const subject = submission.subject.trim();
+  return subject.length > 0 ? subject : 'No subject';
+}
+
+/** The moment a row sorts and groups by: last activity, or when it was finished in Done. */
+export function dateMsOf(row: ListRowData, field: ListConfig['dateField']): number | undefined {
+  if (isDraft(row)) return row.updatedAt;
+  if (isSubmission(row)) return row.sentAt ?? row.notBefore;
+  if (field === 'doneAt') return row.workflow.doneAt ?? row.lastDate;
+  return row.lastDate;
+}
+
+/** The part of `ListRowProps` the screen decides. */
+export interface ListRowContext extends Omit<RowContext, 'layout'> {
+  readonly config: ListConfig;
+  /** The clock, for the Later chip's overdue flag. */
+  readonly nowMs?: number;
+}
+
+/** When a Later thread comes back: a moment (overdue once it has passed) or Someday. */
+export function laterUntilOf(row: ThreadRow, nowMs: number): LaterUntil {
+  const at = row.workflow.laterUntil;
+  if (at === undefined) return { kind: 'someday' };
+  return { kind: 'at', at: toIsoDateTime(at), overdue: at < nowMs };
+}
+
+function draftProps(draft: Draft, context: ListRowContext): ListRowProps {
+  return {
+    id: context.domId,
+    layout: context.config.layout,
+    density: context.density,
+    sender: recipientsOfDraft(draft),
+    primary: draftLine(draft),
+    unread: false,
+    date: toIsoDateTime(draft.updatedAt),
+    marks: { attachment: draft.attachments.length > 0 },
+    showAccountDot: false,
+    cursor: context.cursor,
+    picked: false,
+    picking: false,
+    hoverActions: context.config.hoverActions,
+    rejected: context.rejected,
+    ...context.handlers,
+  };
+}
+
+function submissionProps(submission: Submission, context: ListRowContext): ListRowProps {
+  const at = submission.sentAt ?? submission.notBefore;
+  return {
+    id: context.domId,
+    layout: context.config.layout,
+    density: context.density,
+    sender: joinNames(submission.toNames.filter(name => name.trim().length > 0)) || 'No recipient',
+    primary: submissionLine(submission),
+    unread: false,
+    date: toIsoDateTime(at),
+    showAccountDot: false,
+    cursor: context.cursor,
+    picked: false,
+    picking: false,
+    hoverActions: context.config.hoverActions,
+    rejected: context.rejected,
+    ...context.handlers,
+  };
+}
+
+function threadProps(row: ThreadRow, context: ListRowContext): ListRowProps {
+  const { config } = context;
+  const base = listRowProps(row, { ...context, layout: config.layout });
+  const who = config.kind === 'sent' ? recipientsOfThread(row) : base.sender;
+  return {
+    ...base,
+    sender: who.trim() || 'No sender',
+    primary: primaryOf(row).trim() || 'No subject',
+    hoverActions: config.hoverActions,
+    doneAt:
+      config.layout === 'done' ? toIsoDateTime(row.workflow.doneAt ?? row.lastDate) : undefined,
+    laterUntil:
+      config.layout === 'later' ? laterUntilOf(row, context.nowMs ?? Date.now()) : undefined,
+  };
+}
+
+/** Everything `ListRow` needs for one row of this list. */
+export function listRowPropsFor(row: ListRowData, context: ListRowContext): ListRowProps {
+  if (isDraft(row)) return draftProps(row, context);
+  if (isSubmission(row)) return submissionProps(row, context);
+  return threadProps(row, context);
+}
+
+/** The cursor target the palette's first line names. */
+export function targetOf(row: ListRowData): {
+  kind: 'thread' | 'draft';
+  id: string;
+  title: string;
+  detail: string;
+} {
+  if (isDraft(row)) {
+    return { kind: 'draft', id: row.id, title: recipientsOfDraft(row), detail: draftLine(row) };
+  }
+  if (isSubmission(row)) {
+    return {
+      kind: 'thread',
+      id: row.id,
+      title: joinNames(row.toNames),
+      detail: submissionLine(row),
+    };
+  }
+  return { kind: 'thread', id: row.id, title: senderOf(row), detail: row.subject };
+}
