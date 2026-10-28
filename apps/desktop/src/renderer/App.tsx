@@ -18,7 +18,7 @@ import type { ErrorBody, Frame, HomeSectionKey, WindowBody, WindowSection } from
 import { EmptyLine, LowBand, SectionHeader } from './ui/list';
 import { useAccounts, useCounts, useStatus, api } from './data';
 import { statusCopy } from './ui/status';
-import { navigate, type Screen } from './shell';
+import { navigate, useHomeShellProps, type HomeShellProps, type Screen } from './shell';
 import { Shell } from './shell/Shell';
 import { FirstSyncLine, NoAccountsLine } from './shell/states';
 import { toSyncStatus } from './shell/status-map';
@@ -212,11 +212,11 @@ export function HomeContent({ home }: HomeContentProps) {
 const SETTLING_STATES: readonly string[] = ['backfilling', 'paused'];
 
 /** The `home` screen: the boot-proof Home, or the first-sync and no-accounts lines where inbox zero would be a lie. */
-export function HomeScreen({ client }: AppProps) {
+export function HomeScreen({ client, accountId }: AppProps & Partial<HomeShellProps>) {
   const home = useHomeWindow(client);
   const accounts = useAccounts();
-  const counts = useCounts();
-  const status = useStatus();
+  const counts = useCounts(accountId);
+  const status = useStatus(accountId);
   if (accounts.length === 0)
     return (
       <NoAccountsLine
@@ -233,9 +233,14 @@ export function HomeScreen({ client }: AppProps) {
   return <HomeContent home={home} />;
 }
 
+/** Home in the screen slot, given the account scope and the openers by the shell (`ui-home` spreads the same props into its Home). */
+function HomeRoute({ client }: AppProps) {
+  return <HomeScreen client={client} {...useHomeShellProps()} />;
+}
+
 /** The screen slot: Home's boot proof for `home`, nothing (so the placeholder) for the rest. */
 export function renderScreen(client: AppClient, screen: Screen) {
-  return screen === 'home' ? <HomeScreen client={client} /> : undefined;
+  return screen === 'home' ? <HomeRoute client={client} /> : undefined;
 }
 
 /** The new renderer's root. */

@@ -5,7 +5,7 @@
  * reached, the FatalScreen in place of everything.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { api, useAccounts, useConnection, useCounts, useSettings, type AccountId } from '../data';
+import { api, useAccounts, useConnection, useCounts, useSettings } from '../data';
 import { FatalScreen } from '../ui/status';
 import { Pane } from '../ui/surfaces';
 import type { PaneHeaderProps } from '../ui/props';
@@ -24,6 +24,8 @@ import {
   navigate,
   openSheet,
   pushToast,
+  setAccountScope,
+  useAccountScope,
   useAppRoute,
   useSheetContextActive,
   type Screen,
@@ -90,11 +92,6 @@ export function FatalHost({ kind }: { readonly kind: 'unreachable' | 'parked' })
   );
 }
 
-function useAccountScope() {
-  const [scope, setScope] = useState<AccountId | undefined>(undefined);
-  return { scope, setScope };
-}
-
 /** Props for `ShellLayout`. */
 export interface ShellLayoutProps {
   readonly screen: Screen;
@@ -142,16 +139,20 @@ export function ShellLayout(props: ShellLayoutProps) {
 function ShellFrame({ renderScreen }: ShellProps) {
   const screen = useAppRoute();
   const accounts = useAccounts();
-  const { scope, setScope } = useAccountScope();
-  const counts = useCounts(scope);
+  const scope = useAccountScope();
+  useEffect(() => {
+    // A removed account cannot stay the scope: fall back to All accounts.
+    if (scope && accounts.length > 0 && !accounts.some(a => a.id === scope)) setAccountScope(null);
+  }, [scope, accounts]);
+  const counts = useCounts(scope ?? undefined);
   const minimised = useSettings()?.ui.sidebarMinimised === true;
   const [dock, setDock] = useState<DockTab>('closed');
   const sheetOpen = useSheetContextActive();
   const account = (
     <AccountMenu
       accounts={accounts}
-      scope={scope}
-      onScope={setScope}
+      scope={scope ?? undefined}
+      onScope={id => setAccountScope(id ?? null)}
       onReconnect={a => openSheet('reconnect', { accountId: a.id, mode: accountReconnectMode(a) })}
       onAddAccount={() => navigate('settings')}
     />
