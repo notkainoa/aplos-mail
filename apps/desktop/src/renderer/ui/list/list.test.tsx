@@ -399,6 +399,6 @@ describe('FocusSlot and FocusLetter', () => {
 });
 
 test('no banned phrase, glyph or exclamation mark rendered anywhere in the list rows and focus letter', () => {
-  assert.ok(collected.length > 30);
+  assert.ok(collected.length > 40);
   for (const markup of collected) assert.deepEqual(bannedIn(markup), [], markup.slice(0, 160));
 });

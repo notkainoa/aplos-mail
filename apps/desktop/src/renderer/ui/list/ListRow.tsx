@@ -223,7 +223,13 @@ export function ListRow(props: ListRowProps) {
         {sender}
       </span>
 
-      <RowLine {...props} />
+      <RowLine
+        rejected={rejected}
+        due={props.due}
+        primary={props.primary}
+        secondary={props.secondary}
+        highlight={props.highlight}
+      />
 
       <span className="ui-list-row__meta">
         <RowMarks marks={props.marks} />
@@ -232,7 +238,12 @@ export function ListRow(props: ListRowProps) {
             <span className="ui-list-sr">{account.label}</span>
           </span>
         ) : null}
-        <DateColumn {...props} />
+        <DateColumn
+          layout={layout}
+          date={props.date}
+          doneAt={props.doneAt}
+          laterUntil={props.laterUntil}
+        />
         {/* Inside the meta cell so the overlay always covers the whole date column: no half glyph or chip. */}
         {hoverActions.length > 0 ? (
           <HoverActions actions={hoverActions} onAction={onAction} />

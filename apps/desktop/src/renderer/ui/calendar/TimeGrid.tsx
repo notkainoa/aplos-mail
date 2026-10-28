@@ -103,7 +103,8 @@ export function TimeGrid(props: CalendarGridProps) {
   // Opens at 8 AM, or at now when today is shown (or at `scrollToHour`); runs on mount and when the view changes,
   // so paging between weeks keeps the reader's place. A grid mounted without layout (a hidden tab or dock, a pane
   // laid out after mount; the first render in tests) has no height yet: the scroll waits, once, for the first
-  // layout instead of being lost.
+  // layout instead of being lost. The deferred scroll uses the latest open hour (read through the ref), not the
+  // hour from mount.
   const opensAt = useRef(0);
   opensAt.current = openHour({ today: days.includes(today), nowHours, override: scrollToHour });
   useLayoutEffect(() => {
