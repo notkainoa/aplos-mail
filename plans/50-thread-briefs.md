@@ -16,6 +16,8 @@ You don't need to read the briefs. You need the launch checklist and the two lau
 
 > **What this means:** Six messages, one per thread. Paste each into a new thread and it can start with nothing else from you.
 
+**Lean mode (owner, 2026-10-28; every thread):** Sonnet by default, the free OpenCode models for mechanical code, and Opus only for a named short list. Agents read lane cards, not whole plans. Threads start fresh past about 150,000 tokens. At most two layers of agents, and one review per PR. The rules are in roadmap section 5.1a and override anything below that asks for Opus, adversarial panels or nested lane leads.
+
 ## How to use this file
 
 Each brief sits in its own code block. Copy the whole block, exactly as it is, into a new T3 Code thread. Each brief is complete on its own: the thread sees nothing else except the repository. Shared sections (coordination, branches, workflows, quality, hard rules, the owner review loop) repeat in every brief on purpose.

@@ -19,7 +19,7 @@
     "desktop": "npm run build && electron .",
     "build": "tsc --noEmit && vite build && node scripts/build-main.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test \"tests/*.test.ts\" \"tests/*/**/*.test.ts\"",
     "package": "npm run build && electron-builder --mac dir",
     "start": "electron .",
     "verify:release": "node scripts/verify-release.mjs",
@@ -41,9 +41,12 @@
     "mailparser": "^3.7.0",
     "nodemailer": "^10.1.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@aplos/contract": "*",
+    "@aplos/engine": "*",
     "@types/mailparser": "^3.4.0",
     "@types/node": "^24.0.0",
     "@types/nodemailer": "^7.0.0",
