@@ -212,7 +212,8 @@ export class OAuthServer {
   authorize(url: string | URL, options: { as?: string; deny?: boolean } = {}): string {
     const reply = this.consent(new URL(url), options);
     const location = reply.headers.location;
-    if (reply.status !== 302 || !location) throw new Error(`Authorization request rejected: ${JSON.stringify(reply.json)}`);
+    if (reply.status !== 302 || !location)
+      throw new Error(`Authorization request rejected: ${JSON.stringify(reply.json)}`);
     return location;
   }
 
@@ -250,14 +251,20 @@ export class OAuthServer {
     });
     const body = (await response.json()) as Record<string, unknown>;
     if (!response.ok) throw new Error(`Token exchange failed: ${JSON.stringify(body)}`);
-    return { accessToken: String(body.access_token), refreshToken: body.refresh_token as string | undefined, scope: String(body.scope), response: body };
+    return {
+      accessToken: String(body.access_token),
+      refreshToken: body.refresh_token as string | undefined,
+      scope: String(body.scope),
+      response: body,
+    };
   }
 
   // ---------- endpoints ----------
 
   private redirectWith(redirectUri: string, params: Record<string, string | undefined>): Reply {
     const target = new URL(redirectUri);
-    for (const [key, value] of Object.entries(params)) if (value !== undefined) target.searchParams.set(key, value);
+    for (const [key, value] of Object.entries(params))
+      if (value !== undefined) target.searchParams.set(key, value);
     return { status: 302, headers: { location: target.toString() } };
   }
 
@@ -265,38 +272,58 @@ export class OAuthServer {
   consent(url: URL, options: { as?: string; deny?: boolean } = {}): Reply {
     const q = url.searchParams;
     const clientId = q.get('client_id') ?? '';
-    if (!clientId || !this.clients.has(clientId)) return oauthError(401, 'invalid_client', 'The OAuth client was not found.');
+    if (!clientId || !this.clients.has(clientId))
+      return oauthError(401, 'invalid_client', 'The OAuth client was not found.');
     const redirectUri = q.get('redirect_uri') ?? '';
     if (!isLoopbackWithPort(redirectUri)) {
-      return oauthError(400, 'redirect_uri_mismatch', 'redirect_uri must be http://127.0.0.1:<port>/..., http://localhost:<port>/... or http://[::1]:<port>/...');
+      return oauthError(
+        400,
+        'redirect_uri_mismatch',
+        'redirect_uri must be http://127.0.0.1:<port>/..., http://localhost:<port>/... or http://[::1]:<port>/...',
+      );
     }
     const state = q.get('state') ?? undefined;
-    const fail = (error: string, description?: string): Reply => this.redirectWith(redirectUri, { error, error_description: description, state });
+    const fail = (error: string, description?: string): Reply =>
+      this.redirectWith(redirectUri, { error, error_description: description, state });
 
     if (q.get('response_type') !== 'code') return fail('unsupported_response_type');
     const challengeValue = q.get('code_challenge') ?? '';
     // Without a method Google assumes "plain" (RFC 7636 section 4.3).
     const method = q.get('code_challenge_method') || 'plain';
-    if (challengeValue && method !== 'S256' && method !== 'plain') return fail('invalid_request', 'Invalid code_challenge_method');
+    if (challengeValue && method !== 'S256' && method !== 'plain')
+      return fail('invalid_request', 'Invalid code_challenge_method');
     if (this.requirePkceAndState) {
       if (!state) return fail('invalid_request', 'state is required');
-      if (!challengeValue || method !== 'S256') return fail('invalid_request', 'code_challenge with method S256 is required');
+      if (!challengeValue || method !== 'S256')
+        return fail('invalid_request', 'code_challenge with method S256 is required');
     }
-    const requested = (q.get('scope') ?? '').split(/\s+/).filter(Boolean).map(s => SCOPE_ALIASES[s] ?? s);
+    const requested = (q.get('scope') ?? '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(s => SCOPE_ALIASES[s] ?? s);
     if (!requested.length) return fail('invalid_scope', 'scope is required');
 
     const user = this.chooseUser(q.get('login_hint'), options.as);
     if (!user || options.deny) return fail('access_denied');
-    if (this.testingMode && !user.testUser) return fail('access_denied', 'The user is not a listed test user.');
-    if (user.adminBlocked) return fail('admin_policy_enforced', 'The application is blocked by a Workspace administrator.');
-    const granted = user.grantedScopes ? requested.filter(s => user.grantedScopes!.includes(s)) : requested;
+    if (this.testingMode && !user.testUser)
+      return fail('access_denied', 'The user is not a listed test user.');
+    if (user.adminBlocked)
+      return fail(
+        'admin_policy_enforced',
+        'The application is blocked by a Workspace administrator.',
+      );
+    const granted = user.grantedScopes
+      ? requested.filter(s => user.grantedScopes!.includes(s))
+      : requested;
     if (!granted.length) return fail('access_denied');
 
     const code = `4/emu-${this.random.hex(40)}`;
     this.codes.set(code, {
       clientId,
       redirectUri,
-      challenge: challengeValue ? { value: challengeValue, method: method as 'S256' | 'plain' } : undefined,
+      challenge: challengeValue
+        ? { value: challengeValue, method: method as 'S256' | 'plain' }
+        : undefined,
       user,
       granted,
       prompt: q.get('prompt') ?? '',
@@ -334,23 +361,36 @@ export class OAuthServer {
     const stored = this.codes.get(code);
     this.codes.delete(code); // a code works once, even when the attempt fails
     const now = this.clock.now();
-    if (!stored || stored.clientId !== clientId || now - stored.at > CODE_LIFETIME_MS) return oauthError(400, 'invalid_grant', 'Bad Request');
+    if (!stored || stored.clientId !== clientId || now - stored.at > CODE_LIFETIME_MS)
+      return oauthError(400, 'invalid_grant', 'Bad Request');
     // A redirect_uri other than the authorization request's is a configuration fault, not a dead grant.
-    if (stored.redirectUri !== params.get('redirect_uri')) return oauthError(400, 'redirect_uri_mismatch', 'Bad Request');
+    if (stored.redirectUri !== params.get('redirect_uri'))
+      return oauthError(400, 'redirect_uri_mismatch', 'Bad Request');
     if (stored.challenge) {
       const verifier = params.get('code_verifier');
       if (!verifier) return oauthError(400, 'invalid_grant', 'Missing code verifier.');
-      const derived = stored.challenge.method === 'S256' ? createHash('sha256').update(verifier).digest('base64url') : verifier;
-      if (derived !== stored.challenge.value) return oauthError(400, 'invalid_grant', 'Invalid code verifier.');
+      const derived =
+        stored.challenge.method === 'S256'
+          ? createHash('sha256').update(verifier).digest('base64url')
+          : verifier;
+      if (derived !== stored.challenge.value)
+        return oauthError(400, 'invalid_grant', 'Invalid code verifier.');
     }
-    if (stored.user.adminBlocked) return oauthError(400, 'admin_policy_enforced', 'The application is blocked by a Workspace administrator.');
+    if (stored.user.adminBlocked)
+      return oauthError(
+        400,
+        'admin_policy_enforced',
+        'The application is blocked by a Workspace administrator.',
+      );
 
     const seen = `${stored.user.sub}|${clientId}`;
     const repeat = this.consented.has(seen);
     this.consented.add(seen);
     const forced = stored.prompt.split(/\s+/).includes('consent');
     const issueRefresh = !repeat || this.repeatConsentIssuesRefreshToken || forced;
-    const refresh = issueRefresh ? this.newRefreshToken(stored.user, clientId, stored.granted, now) : undefined;
+    const refresh = issueRefresh
+      ? this.newRefreshToken(stored.user, clientId, stored.granted, now)
+      : undefined;
     return this.tokenReply(stored.user, clientId, stored.granted, refresh, now, true);
   }
 
@@ -359,22 +399,48 @@ export class OAuthServer {
     const now = this.clock.now();
     const dead = oauthError(400, 'invalid_grant', 'Token has been expired or revoked.');
     if (!record || record.clientId !== clientId || record.revoked) return dead;
-    if (record.user.adminBlocked) return oauthError(400, 'admin_policy_enforced', 'The application is blocked by a Workspace administrator.');
+    if (record.user.adminBlocked)
+      return oauthError(
+        400,
+        'admin_policy_enforced',
+        'The application is blocked by a Workspace administrator.',
+      );
     if (this.testingMode && now - record.consentAt >= TESTING_REFRESH_MS) return dead;
     return this.tokenReply(record.user, clientId, record.scopes, record, now, false);
   }
 
-  private newRefreshToken(user: TestUser, clientId: string, scopes: string[], now: number): RefreshRecord {
-    const record: RefreshRecord = { token: `1//emu-${this.random.hex(48)}`, clientId, user, scopes, consentAt: now, revoked: false };
+  private newRefreshToken(
+    user: TestUser,
+    clientId: string,
+    scopes: string[],
+    now: number,
+  ): RefreshRecord {
+    const record: RefreshRecord = {
+      token: `1//emu-${this.random.hex(48)}`,
+      clientId,
+      user,
+      scopes,
+      consentAt: now,
+      revoked: false,
+    };
     this.refreshTokens.set(record.token, record);
     // Google keeps at most 100 refresh tokens per account and client; the oldest quietly dies.
-    const mine = [...this.refreshTokens.values()].filter(r => r.user === user && r.clientId === clientId && !r.revoked);
+    const mine = [...this.refreshTokens.values()].filter(
+      r => r.user === user && r.clientId === clientId && !r.revoked,
+    );
     if (mine.length > REFRESH_TOKEN_CAP) mine[0].revoked = true;
     return record;
   }
 
   /** `grant` is the refresh token behind this access token; `isNew` means it is returned to the client. */
-  private tokenReply(user: TestUser, clientId: string, scopes: string[], grant: RefreshRecord | undefined, now: number, isNew: boolean): Reply {
+  private tokenReply(
+    user: TestUser,
+    clientId: string,
+    scopes: string[],
+    grant: RefreshRecord | undefined,
+    now: number,
+    isNew: boolean,
+  ): Reply {
     const access: AccessRecord = {
       token: `ya29.emu-${this.counter++}-${this.random.hex(40)}`,
       user,
@@ -394,14 +460,20 @@ export class OAuthServer {
     if (grant && isNew) body.refresh_token = grant.token;
     // proto-google.md 8.1 reads the docs as "only for time-based access"; live Testing-mode
     // projects are widely seen to send it too (about 604,799 s). Unknown to confirm on the first live run.
-    if (grant && this.testingMode) body.refresh_token_expires_in = Math.max(0, Math.floor((grant.consentAt + TESTING_REFRESH_MS - now) / 1000));
-    if (isNew && scopes.includes(SCOPE.openid)) body.id_token = this.idToken(user, clientId, scopes, now);
+    if (grant && this.testingMode)
+      body.refresh_token_expires_in = Math.max(
+        0,
+        Math.floor((grant.consentAt + TESTING_REFRESH_MS - now) / 1000),
+      );
+    if (isNew && scopes.includes(SCOPE.openid))
+      body.id_token = this.idToken(user, clientId, scopes, now);
     return jsonReply(body, 200, { 'cache-control': 'no-store' });
   }
 
   /** An unsigned, clearly synthetic id token; tests can decode it, real clients must not trust it. */
   private idToken(user: TestUser, clientId: string, scopes: string[], now: number): string {
-    const part = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const part = (value: unknown): string =>
+      Buffer.from(JSON.stringify(value)).toString('base64url');
     const claims = {
       iss: 'https://accounts.google.com',
       aud: clientId,
@@ -419,12 +491,15 @@ export class OAuthServer {
     const token = params.get('token') ?? '';
     const refresh = this.refreshTokens.get(token);
     const access = this.accessTokens.get(token);
-    const dead = refresh ? refresh.revoked : !access || access.revoked || this.clock.now() >= access.expiresAt;
+    const dead = refresh
+      ? refresh.revoked
+      : !access || access.revoked || this.clock.now() >= access.expiresAt;
     if (dead) return oauthError(400, 'invalid_token', 'Token expired or revoked');
     const grant = refresh ?? this.refreshTokens.get(access!.refreshToken ?? '');
     if (grant) {
       grant.revoked = true;
-      for (const a of this.accessTokens.values()) if (a.refreshToken === grant.token) a.revoked = true;
+      for (const a of this.accessTokens.values())
+        if (a.refreshToken === grant.token) a.revoked = true;
     }
     if (access) access.revoked = true;
     return { status: 200, headers: {}, text: '' };
@@ -463,7 +538,11 @@ export class OAuthServer {
 export function isLoopbackWithPort(uri: string): boolean {
   try {
     const url = new URL(uri);
-    return url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && url.port !== '';
+    return (
+      url.protocol === 'http:' &&
+      ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) &&
+      url.port !== ''
+    );
   } catch {
     return false;
   }

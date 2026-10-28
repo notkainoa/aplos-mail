@@ -105,14 +105,24 @@ const GOOGLE_STATUS_NAMES: Record<number, string> = {
   504: 'DEADLINE_EXCEEDED',
 };
 
-const RATE_LIMIT_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded', 'quotaExceeded', 'dailyLimitExceeded']);
+const RATE_LIMIT_REASONS = new Set([
+  'rateLimitExceeded',
+  'userRateLimitExceeded',
+  'quotaExceeded',
+  'dailyLimitExceeded',
+]);
 
 /**
  * A Google-style JSON error response: `{ error: { code, message, errors: [{ message, domain, reason }], status } }`.
  * Clients read `error.errors[0].reason` to decide between "back off", "reconnect" and "give up",
  * so tests can inject any reason with it.
  */
-export function googleError(status: number, reason: string, message = reason, extras: GoogleErrorExtras = {}): Response {
+export function googleError(
+  status: number,
+  reason: string,
+  message = reason,
+  extras: GoogleErrorExtras = {},
+): Response {
   const domain = extras.domain ?? (RATE_LIMIT_REASONS.has(reason) ? 'usageLimits' : 'global');
   const body = {
     error: {
@@ -122,19 +132,28 @@ export function googleError(status: number, reason: string, message = reason, ex
       status: extras.statusName ?? GOOGLE_STATUS_NAMES[status] ?? 'UNKNOWN',
     },
   };
-  const headers = new Headers({ 'content-type': 'application/json; charset=UTF-8', ...extras.headers });
-  if (extras.retryAfterSeconds !== undefined) headers.set('retry-after', String(extras.retryAfterSeconds));
+  const headers = new Headers({
+    'content-type': 'application/json; charset=UTF-8',
+    ...extras.headers,
+  });
+  if (extras.retryAfterSeconds !== undefined)
+    headers.set('retry-after', String(extras.retryAfterSeconds));
   return new Response(JSON.stringify(body), { status, headers });
 }
 
 /** Does the request satisfy the filters (ignoring `after`, which needs a counter)? */
 export function matchesRequest(match: FaultMatch, request: EmulatedRequest): boolean {
   if (match.service !== undefined && match.service !== request.service) return false;
-  if (match.httpMethod !== undefined && match.httpMethod.toUpperCase() !== request.httpMethod.toUpperCase()) return false;
+  if (
+    match.httpMethod !== undefined &&
+    match.httpMethod.toUpperCase() !== request.httpMethod.toUpperCase()
+  )
+    return false;
   if (match.account !== undefined && match.account !== request.account) return false;
   if (match.apiMethod !== undefined) {
     const wanted = match.apiMethod;
-    const ok = typeof wanted === 'string' ? wanted === request.apiMethod : wanted.test(request.apiMethod);
+    const ok =
+      typeof wanted === 'string' ? wanted === request.apiMethod : wanted.test(request.apiMethod);
     if (!ok) return false;
   }
   return true;
@@ -157,23 +176,47 @@ export function createFaultInjector(): FaultInjector {
   let rules: Rule[] = [];
   const fired: FiredFault[] = [];
 
-  function add(rule: Rule): void { rules.push(rule); }
-
-  function respondWith(what: Response | FailSpec, charge: boolean | undefined): (() => FaultDecision) {
-    // Clone prepared Responses so a rule that fires more than once can hand out a fresh body each time.
-    if (what instanceof Response) return () => ({ kind: 'respond', response: what.clone(), charge });
-    const { status, reason, message, ...extras } = what;
-    return () => ({ kind: 'respond', response: googleError(status, reason, message, extras), charge });
+  function add(rule: Rule): void {
+    rules.push(rule);
   }
 
-  function simple(kind: 'drop' | 'dropAfter' | 'corrupt', match: FaultMatch, options: FireOptions | undefined): void {
+  function respondWith(
+    what: Response | FailSpec,
+    charge: boolean | undefined,
+  ): () => FaultDecision {
+    // Clone prepared Responses so a rule that fires more than once can hand out a fresh body each time.
+    if (what instanceof Response)
+      return () => ({ kind: 'respond', response: what.clone(), charge });
+    const { status, reason, message, ...extras } = what;
+    return () => ({
+      kind: 'respond',
+      response: googleError(status, reason, message, extras),
+      charge,
+    });
+  }
+
+  function simple(
+    kind: 'drop' | 'dropAfter' | 'corrupt',
+    match: FaultMatch,
+    options: FireOptions | undefined,
+  ): void {
     add({ kind, match, seen: 0, remaining: options?.times ?? 1, decide: () => ({ kind }) });
   }
 
   return {
     failNext(match, what, options) {
-      const describe = what instanceof Response ? { status: what.status, reason: '' } : { status: what.status, reason: what.reason };
-      add({ kind: 'fail', match, seen: 0, remaining: options?.times ?? 1, decide: respondWith(what, options?.charge), describe });
+      const describe =
+        what instanceof Response
+          ? { status: what.status, reason: '' }
+          : { status: what.status, reason: what.reason };
+      add({
+        kind: 'fail',
+        match,
+        seen: 0,
+        remaining: options?.times ?? 1,
+        decide: respondWith(what, options?.charge),
+        describe,
+      });
     },
 
     storm(rule) {
@@ -184,7 +227,11 @@ export function createFaultInjector(): FaultInjector {
         match: match ?? {},
         seen: 0,
         range: { from, to },
-        decide: () => ({ kind: 'respond', response: googleError(status, reason, message, extras), charge }),
+        decide: () => ({
+          kind: 'respond',
+          response: googleError(status, reason, message, extras),
+          charge,
+        }),
         describe: { status, reason },
       });
     },
@@ -193,9 +240,16 @@ export function createFaultInjector(): FaultInjector {
     dropAfterNext: (match, options) => simple('dropAfter', match, options),
     corruptNext: (match, options) => simple('corrupt', match, options),
 
-    clear() { rules = []; },
-    reset() { rules = []; fired.length = 0; },
-    get pending() { return rules.length; },
+    clear() {
+      rules = [];
+    },
+    reset() {
+      rules = [];
+      fired.length = 0;
+    },
+    get pending() {
+      return rules.length;
+    },
     fired,
 
     intercept(request, now) {
@@ -207,8 +261,13 @@ export function createFaultInjector(): FaultInjector {
 
         const decision = rule.decide(request);
         fired.push({
-          at: now, seq: request.seq, service: request.service, apiMethod: request.apiMethod,
-          rule: rule.kind, status: rule.describe?.status, reason: rule.describe?.reason || undefined,
+          at: now,
+          seq: request.seq,
+          service: request.service,
+          apiMethod: request.apiMethod,
+          rule: rule.kind,
+          status: rule.describe?.status,
+          reason: rule.describe?.reason || undefined,
         });
         if (rule.remaining !== undefined) {
           rule.remaining -= 1;

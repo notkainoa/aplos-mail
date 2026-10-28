@@ -65,7 +65,9 @@ export class UnitMeter {
   perMinuteSeries(account: string): MinuteUnits[] {
     const series = this.minutes.get(account);
     if (!series) return [];
-    return [...series.entries()].sort((a, b) => a[0] - b[0]).map(([minuteStart, units]) => ({ minuteStart, units }));
+    return [...series.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([minuteStart, units]) => ({ minuteStart, units }));
   }
 
   /** The highest total the 60 s window ever held. */

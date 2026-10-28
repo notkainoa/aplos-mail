@@ -59,7 +59,9 @@ export const GMAIL_UNIT_COSTS_GRANDFATHERED: Readonly<Record<string, CostEntry>>
  * forgot to ask for metadata is priced the way Google prices it.
  */
 export function costOf(apiMethod: string, format?: string | null, grandfathered = false): number {
-  const entry = (grandfathered ? GMAIL_UNIT_COSTS_GRANDFATHERED[apiMethod] : undefined) ?? GMAIL_UNIT_COSTS[apiMethod];
+  const entry =
+    (grandfathered ? GMAIL_UNIT_COSTS_GRANDFATHERED[apiMethod] : undefined) ??
+    GMAIL_UNIT_COSTS[apiMethod];
   if (!entry) throw new Error(`No unit cost for ${apiMethod}`);
   const effective = format ?? 'full';
   const expensive = effective === 'full' || effective === 'raw' || effective === 'html';

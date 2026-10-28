@@ -24,14 +24,17 @@ export function boundaryOf(contentType: string | null): string | undefined {
 /** Splits a batch body into its embedded requests. Throws on a part that is not an HTTP request. */
 export function parseBatch(body: string, boundary: string): BatchPart[] {
   const parts: BatchPart[] = [];
-  const chunks = body.split(new RegExp(`--${boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:--)?[ \\t]*\\r?\\n?`)).slice(1);
+  const chunks = body
+    .split(new RegExp(`--${boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:--)?[ \\t]*\\r?\\n?`))
+    .slice(1);
   for (const chunk of chunks) {
     if (!chunk.trim()) continue;
     const split = /\r?\n\r?\n/.exec(chunk);
     if (!split) throw new Error('Batch part has no headers');
     const partHeaders = chunk.slice(0, split.index);
     const content = chunk.slice(split.index + split[0].length);
-    const contentId = /^content-id:\s*(.+)$/im.exec(partHeaders)?.[1]?.trim() ?? `<item${parts.length + 1}>`;
+    const contentId =
+      /^content-id:\s*(.+)$/im.exec(partHeaders)?.[1]?.trim() ?? `<item${parts.length + 1}>`;
 
     const requestSplit = /\r?\n\r?\n/.exec(content);
     const head = requestSplit ? content.slice(0, requestSplit.index) : content;
@@ -42,15 +45,25 @@ export function parseBatch(body: string, boundary: string): BatchPart[] {
     const headers = new Headers();
     for (const headerLine of headerLines) {
       const colon = headerLine.indexOf(':');
-      if (colon > 0) headers.set(headerLine.slice(0, colon).trim(), headerLine.slice(colon + 1).trim());
+      if (colon > 0)
+        headers.set(headerLine.slice(0, colon).trim(), headerLine.slice(colon + 1).trim());
     }
-    parts.push({ contentId, method: line[1], target: line[2], headers, body: Buffer.from(payload.replace(/\r?\n$/, ''), 'utf8') });
+    parts.push({
+      contentId,
+      method: line[1],
+      target: line[2],
+      headers,
+      body: Buffer.from(payload.replace(/\r?\n$/, ''), 'utf8'),
+    });
   }
   return parts;
 }
 
 /** Builds the multipart/mixed response body and its Content-Type. */
-export function buildBatchResponse(replies: { contentId: string; reply: Reply }[], boundary: string): { contentType: string; body: string } {
+export function buildBatchResponse(
+  replies: { contentId: string; reply: Reply }[],
+  boundary: string,
+): { contentType: string; body: string } {
   const pieces = replies.map(({ contentId, reply }, index) => {
     const text = replyBody(reply);
     const innerHeaders = [
@@ -70,7 +83,10 @@ export function buildBatchResponse(replies: { contentId: string; reply: Reply }[
       text,
     ].join('\r\n');
   });
-  return { contentType: `multipart/mixed; boundary=${boundary}`, body: `${pieces.join('\r\n')}\r\n--${boundary}--\r\n` };
+  return {
+    contentType: `multipart/mixed; boundary=${boundary}`,
+    body: `${pieces.join('\r\n')}\r\n--${boundary}--\r\n`,
+  };
 }
 
 /**
@@ -79,7 +95,12 @@ export function buildBatchResponse(replies: { contentId: string; reply: Reply }[
  * and (extrapolated) up to 55% at 100.
  */
 export function batchRefusalProbability(size: number): number {
-  const points: [number, number][] = [[10, 0], [25, 0.012], [50, 0.19], [100, 0.55]];
+  const points: [number, number][] = [
+    [10, 0],
+    [25, 0.012],
+    [50, 0.19],
+    [100, 0.55],
+  ];
   if (size <= points[0][0]) return 0;
   for (let i = 1; i < points.length; i++) {
     const [x0, y0] = points[i - 1];

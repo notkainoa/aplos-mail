@@ -10,7 +10,11 @@ export interface Reply {
   reason?: string;
 }
 
-export const jsonReply = (json: unknown, status = 200, headers: Record<string, string> = {}): Reply => ({ status, headers, json });
+export const jsonReply = (
+  json: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): Reply => ({ status, headers, json });
 export const emptyReply = (status = 204): Reply => ({ status, headers: {} });
 export const errorReply = (error: ApiError, headers: Record<string, string> = {}): Reply => ({
   status: error.httpStatus,
@@ -27,15 +31,22 @@ export function replyBody(reply: Reply): string {
 export function toResponse(reply: Reply): Response {
   const body = replyBody(reply);
   const headers = new Headers(reply.headers);
-  if (reply.json !== undefined && !headers.has('content-type')) headers.set('content-type', 'application/json; charset=UTF-8');
-  const bodyless = reply.status === 204 || reply.status === 205 || reply.status === 304 || (reply.status >= 300 && reply.status < 400);
+  if (reply.json !== undefined && !headers.has('content-type'))
+    headers.set('content-type', 'application/json; charset=UTF-8');
+  const bodyless =
+    reply.status === 204 ||
+    reply.status === 205 ||
+    reply.status === 304 ||
+    (reply.status >= 300 && reply.status < 400);
   return new Response(bodyless ? null : body, { status: reply.status, headers });
 }
 
 export async function replyFromResponse(response: Response): Promise<Reply> {
   const text = await response.text();
   const headers: Record<string, string> = {};
-  response.headers.forEach((value, key) => { headers[key] = value; });
+  response.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
   let reason: string | undefined;
   try {
     const parsed = JSON.parse(text) as { error?: unknown };

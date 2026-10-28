@@ -2,7 +2,14 @@ import { SCOPE } from '../gmail/oauth';
 import { emptyReply, jsonReply, type Reply } from '../gmail/reply';
 import type { Shape } from '../gmail/schema';
 import { calForbidden, calInvalid } from './errors';
-import { deleteEvent, getEvent, insertEvent, patchEvent, replaceEvent, type WriteOptions } from './events';
+import {
+  deleteEvent,
+  getEvent,
+  insertEvent,
+  patchEvent,
+  replaceEvent,
+  type WriteOptions,
+} from './events';
 import { listCalendarList, listEvents, listInstances } from './lists';
 import { CALENDAR_RESPONSE } from './schema';
 import type { CalendarStore } from './store';
@@ -17,8 +24,18 @@ export type CalScope = 'listRead' | 'eventsRead' | 'eventsWrite';
 
 /** Any one of these scopes is enough for a route of that class. */
 export const CAL_SCOPES_FOR: Record<CalScope, string[]> = {
-  listRead: [SCOPE.calendarList, SCOPE.calendarListFull, SCOPE.calendarReadonly, SCOPE.calendarFull],
-  eventsRead: [SCOPE.calendarEvents, SCOPE.calendarEventsReadonly, SCOPE.calendarReadonly, SCOPE.calendarFull],
+  listRead: [
+    SCOPE.calendarList,
+    SCOPE.calendarListFull,
+    SCOPE.calendarReadonly,
+    SCOPE.calendarFull,
+  ],
+  eventsRead: [
+    SCOPE.calendarEvents,
+    SCOPE.calendarEventsReadonly,
+    SCOPE.calendarReadonly,
+    SCOPE.calendarFull,
+  ],
   eventsWrite: [SCOPE.calendarEvents, SCOPE.calendarFull],
 };
 
@@ -43,12 +60,20 @@ export interface CalRoute {
 
 function writeOptions(ctx: CalContext): WriteOptions {
   const raw = ctx.query.get('sendUpdates');
-  if (raw !== null && !['all', 'externalOnly', 'none'].includes(raw)) throw calInvalid('Invalid value for: sendUpdates');
+  if (raw !== null && !['all', 'externalOnly', 'none'].includes(raw))
+    throw calInvalid('Invalid value for: sendUpdates');
   // The older boolean still works when sendUpdates is absent.
-  const sendUpdates: SendUpdates = (raw as SendUpdates | null) ?? (ctx.query.get('sendNotifications') === 'true' ? 'all' : 'none');
+  const sendUpdates: SendUpdates =
+    (raw as SendUpdates | null) ?? (ctx.query.get('sendNotifications') === 'true' ? 'all' : 'none');
   const versionText = ctx.query.get('conferenceDataVersion');
-  const conferenceDataVersion = versionText === null || versionText === '' ? 0 : Number(versionText);
-  if (!Number.isInteger(conferenceDataVersion) || conferenceDataVersion < 0 || conferenceDataVersion > 1) throw calInvalid('Invalid conference data version.');
+  const conferenceDataVersion =
+    versionText === null || versionText === '' ? 0 : Number(versionText);
+  if (
+    !Number.isInteger(conferenceDataVersion) ||
+    conferenceDataVersion < 0 ||
+    conferenceDataVersion > 1
+  )
+    throw calInvalid('Invalid conference data version.');
   return { sendUpdates, conferenceDataVersion, ifMatch: ctx.headers.get('if-match') ?? undefined };
 }
 
@@ -66,43 +91,90 @@ function readableCalendar(ctx: CalContext) {
 
 export const CALENDAR_ROUTES: CalRoute[] = [
   {
-    method: 'GET', pattern: 'users/me/calendarList', apiMethod: 'calendar.calendarList.list', scope: 'listRead',
+    method: 'GET',
+    pattern: 'users/me/calendarList',
+    apiMethod: 'calendar.calendarList.list',
+    scope: 'listRead',
     handler: ctx => jsonReply(listCalendarList(ctx.store, ctx.query)),
   },
   {
-    method: 'GET', pattern: 'users/me/calendarList/:calendarId', apiMethod: 'calendar.calendarList.get', scope: 'listRead',
+    method: 'GET',
+    pattern: 'users/me/calendarList/:calendarId',
+    apiMethod: 'calendar.calendarList.get',
+    scope: 'listRead',
     handler: ctx => jsonReply(ctx.store.entryView(calendarFor(ctx))),
   },
   {
-    method: 'GET', pattern: 'calendars/:calendarId/events', apiMethod: 'calendar.events.list', scope: 'eventsRead',
+    method: 'GET',
+    pattern: 'calendars/:calendarId/events',
+    apiMethod: 'calendar.events.list',
+    scope: 'eventsRead',
     handler: ctx => jsonReply(listEvents(ctx.store, readableCalendar(ctx), ctx.query)),
   },
   {
-    method: 'POST', pattern: 'calendars/:calendarId/events', apiMethod: 'calendar.events.insert', scope: 'eventsWrite', write: true,
-    handler: ctx => jsonReply(insertEvent(ctx.store, calendarFor(ctx), ctx.json(), writeOptions(ctx))),
+    method: 'POST',
+    pattern: 'calendars/:calendarId/events',
+    apiMethod: 'calendar.events.insert',
+    scope: 'eventsWrite',
+    write: true,
+    handler: ctx =>
+      jsonReply(insertEvent(ctx.store, calendarFor(ctx), ctx.json(), writeOptions(ctx))),
   },
   {
-    method: 'GET', pattern: 'calendars/:calendarId/events/:eventId/instances', apiMethod: 'calendar.events.instances', scope: 'eventsRead',
-    handler: ctx => jsonReply(listInstances(ctx.store, readableCalendar(ctx), ctx.params.eventId, ctx.query)),
+    method: 'GET',
+    pattern: 'calendars/:calendarId/events/:eventId/instances',
+    apiMethod: 'calendar.events.instances',
+    scope: 'eventsRead',
+    handler: ctx =>
+      jsonReply(listInstances(ctx.store, readableCalendar(ctx), ctx.params.eventId, ctx.query)),
   },
   {
-    method: 'GET', pattern: 'calendars/:calendarId/events/:eventId', apiMethod: 'calendar.events.get', scope: 'eventsRead',
+    method: 'GET',
+    pattern: 'calendars/:calendarId/events/:eventId',
+    apiMethod: 'calendar.events.get',
+    scope: 'eventsRead',
     handler: ctx => {
       const event = getEvent(readableCalendar(ctx), ctx.params.eventId);
       const none = ctx.headers.get('if-none-match');
-      return none !== null && none === event.etag ? emptyReply(304) : jsonReply(event, 200, { etag: event.etag });
+      return none !== null && none === event.etag
+        ? emptyReply(304)
+        : jsonReply(event, 200, { etag: event.etag });
     },
   },
   {
-    method: 'PUT', pattern: 'calendars/:calendarId/events/:eventId', apiMethod: 'calendar.events.update', scope: 'eventsWrite', write: true,
-    handler: ctx => jsonReply(replaceEvent(ctx.store, calendarFor(ctx), ctx.params.eventId, ctx.json(), writeOptions(ctx))),
+    method: 'PUT',
+    pattern: 'calendars/:calendarId/events/:eventId',
+    apiMethod: 'calendar.events.update',
+    scope: 'eventsWrite',
+    write: true,
+    handler: ctx =>
+      jsonReply(
+        replaceEvent(
+          ctx.store,
+          calendarFor(ctx),
+          ctx.params.eventId,
+          ctx.json(),
+          writeOptions(ctx),
+        ),
+      ),
   },
   {
-    method: 'PATCH', pattern: 'calendars/:calendarId/events/:eventId', apiMethod: 'calendar.events.patch', scope: 'eventsWrite', write: true,
-    handler: ctx => jsonReply(patchEvent(ctx.store, calendarFor(ctx), ctx.params.eventId, ctx.json(), writeOptions(ctx))),
+    method: 'PATCH',
+    pattern: 'calendars/:calendarId/events/:eventId',
+    apiMethod: 'calendar.events.patch',
+    scope: 'eventsWrite',
+    write: true,
+    handler: ctx =>
+      jsonReply(
+        patchEvent(ctx.store, calendarFor(ctx), ctx.params.eventId, ctx.json(), writeOptions(ctx)),
+      ),
   },
   {
-    method: 'DELETE', pattern: 'calendars/:calendarId/events/:eventId', apiMethod: 'calendar.events.delete', scope: 'eventsWrite', write: true,
+    method: 'DELETE',
+    pattern: 'calendars/:calendarId/events/:eventId',
+    apiMethod: 'calendar.events.delete',
+    scope: 'eventsWrite',
+    write: true,
     handler: ctx => {
       deleteEvent(ctx.store, calendarFor(ctx), ctx.params.eventId, writeOptions(ctx));
       return emptyReply(204);

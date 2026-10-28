@@ -11,15 +11,32 @@ export interface Clock {
 
 export const systemClock: Clock = {
   now: () => Date.now(),
-  sleep: (ms, signal) => new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) { reject(signal.reason); return; }
-    const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, Math.max(0, ms));
-    const abort = () => { clearTimeout(timer); reject(signal!.reason); };
-    signal?.addEventListener('abort', abort, { once: true });
-  }),
+  sleep: (ms, signal) =>
+    new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(signal.reason);
+        return;
+      }
+      const timer = setTimeout(
+        () => {
+          signal?.removeEventListener('abort', abort);
+          resolve();
+        },
+        Math.max(0, ms),
+      );
+      const abort = () => {
+        clearTimeout(timer);
+        reject(signal!.reason);
+      };
+      signal?.addEventListener('abort', abort, { once: true });
+    }),
 };
 
-interface Timer { at: number; seq: number; resolve: () => void }
+interface Timer {
+  at: number;
+  seq: number;
+  resolve: () => void;
+}
 
 /** 2026-10-27 09:00 Pacific, a fixed start so runs are reproducible. */
 export const FAKE_EPOCH = Date.UTC(2026, 9, 27, 16, 0, 0);
@@ -48,16 +65,30 @@ export class FakeClock implements Clock {
     this.autoOn = options.auto ?? true;
   }
 
-  now(): number { return this.time; }
+  now(): number {
+    return this.time;
+  }
 
   /** Pending timers, for idle checks and debugging. */
-  get pending(): number { return this.timers.length; }
+  get pending(): number {
+    return this.timers.length;
+  }
 
   sleep(ms: number, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) return Promise.reject(signal.reason);
     return new Promise<void>((resolve, reject) => {
-      const timer: Timer = { at: this.time + Math.max(0, ms), seq: this.seq++, resolve: () => { signal?.removeEventListener('abort', abort); resolve(); } };
-      const abort = () => { this.timers = this.timers.filter(t => t !== timer); reject(signal!.reason); };
+      const timer: Timer = {
+        at: this.time + Math.max(0, ms),
+        seq: this.seq++,
+        resolve: () => {
+          signal?.removeEventListener('abort', abort);
+          resolve();
+        },
+      };
+      const abort = () => {
+        this.timers = this.timers.filter(t => t !== timer);
+        reject(signal!.reason);
+      };
       signal?.addEventListener('abort', abort, { once: true });
       this.timers.push(timer);
       this.timers.sort((a, b) => a.at - b.at || a.seq - b.seq);
@@ -66,10 +97,15 @@ export class FakeClock implements Clock {
   }
 
   /** Turn automatic advancing on or off. */
-  auto(on: boolean): void { this.autoOn = on; if (on) this.scheduleAuto(); }
+  auto(on: boolean): void {
+    this.autoOn = on;
+    if (on) this.scheduleAuto();
+  }
 
   /** Move time forward by `ms`, firing every timer due on the way in order and letting each wake-up run. */
-  async advance(ms: number): Promise<void> { await this.advanceTo(this.time + ms); }
+  async advance(ms: number): Promise<void> {
+    await this.advanceTo(this.time + ms);
+  }
 
   async advanceTo(target: number): Promise<void> {
     while (this.timers.length && this.timers[0].at <= target) {
@@ -93,7 +129,10 @@ export class FakeClock implements Clock {
   }
 
   private jump(to: number): void {
-    if (to > this.time) { this.jumps.push({ from: this.time, to }); this.time = to; }
+    if (to > this.time) {
+      this.jumps.push({ from: this.time, to });
+      this.time = to;
+    }
   }
 
   private scheduleAuto(): void {

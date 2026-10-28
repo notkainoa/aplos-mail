@@ -1,6 +1,12 @@
 import { badRequest, invalidIdError, notFound } from './errors';
 import { HISTORY_TYPES, type HistoryType } from './history';
-import { compareKeyed, type Keyed, type Mailbox, type MessageFormat, type MessageView } from './mailbox';
+import {
+  compareKeyed,
+  type Keyed,
+  type Mailbox,
+  type MessageFormat,
+  type MessageView,
+} from './mailbox';
 import { SCOPE } from './oauth';
 import { emptyReply, jsonReply, type Reply } from './reply';
 import { RESPONSE, type Shape } from './schema';
@@ -50,7 +56,8 @@ const MESSAGE_FORMATS: readonly string[] = ['minimal', 'metadata', 'full', 'raw'
 
 function formatOf(query: URLSearchParams, allowRaw: boolean): MessageFormat {
   const format = query.get('format') ?? 'full';
-  if (!MESSAGE_FORMATS.includes(format) || (format === 'raw' && !allowRaw)) throw badRequest(`Invalid format "${format}" for this resource`);
+  if (!MESSAGE_FORMATS.includes(format) || (format === 'raw' && !allowRaw))
+    throw badRequest(`Invalid format "${format}" for this resource`);
   return format as MessageFormat;
 }
 
@@ -63,7 +70,10 @@ function maxResultsOf(query: URLSearchParams): number {
 }
 
 /** Pages a newest-first list. The page token remembers the last item's position, so edits between pages cannot skip or repeat. */
-function page<T extends Keyed>(items: T[], query: URLSearchParams): { items: T[]; nextPageToken?: string } {
+function page<T extends Keyed>(
+  items: T[],
+  query: URLSearchParams,
+): { items: T[]; nextPageToken?: string } {
   const max = maxResultsOf(query);
   const token = query.get('pageToken');
   let start = 0;
@@ -71,7 +81,8 @@ function page<T extends Keyed>(items: T[], query: URLSearchParams): { items: T[]
     let cursor: Keyed;
     try {
       cursor = JSON.parse(Buffer.from(token, 'base64url').toString()) as Keyed;
-      if (typeof cursor.date !== 'number' || typeof cursor.id !== 'string') throw new Error('bad cursor');
+      if (typeof cursor.date !== 'number' || typeof cursor.id !== 'string')
+        throw new Error('bad cursor');
     } catch {
       throw badRequest('Invalid pageToken');
     }
@@ -81,12 +92,21 @@ function page<T extends Keyed>(items: T[], query: URLSearchParams): { items: T[]
   const slice = items.slice(start, start + max);
   const more = start + max < items.length;
   const last = slice[slice.length - 1];
-  return { items: slice, nextPageToken: more && last ? Buffer.from(JSON.stringify({ date: last.date, id: last.id })).toString('base64url') : undefined };
+  return {
+    items: slice,
+    nextPageToken:
+      more && last
+        ? Buffer.from(JSON.stringify({ date: last.date, id: last.id })).toString('base64url')
+        : undefined,
+  };
 }
 
 function decodeRaw(value: unknown): Buffer {
   if (typeof value !== 'string' || !value) {
-    throw badRequest("'raw' RFC822 payload message string or uploading message via /upload/* URL required", 'invalidArgument');
+    throw badRequest(
+      "'raw' RFC822 payload message string or uploading message via /upload/* URL required",
+      'invalidArgument',
+    );
   }
   return Buffer.from(value, 'base64url');
 }
@@ -105,20 +125,36 @@ export function requireGmailId(id: string): string {
 
 const stringList = (value: unknown, name: string): string[] => {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.some(v => typeof v !== 'string')) throw badRequest(`Invalid ${name}`);
+  if (!Array.isArray(value) || value.some(v => typeof v !== 'string'))
+    throw badRequest(`Invalid ${name}`);
   return value as string[];
 };
 
-const labelsOut = (m: MessageView) => ({ id: m.id, threadId: m.threadId, ...(m.labelIds.length ? { labelIds: m.labelIds } : {}) });
+const labelsOut = (m: MessageView) => ({
+  id: m.id,
+  threadId: m.threadId,
+  ...(m.labelIds.length ? { labelIds: m.labelIds } : {}),
+});
 const refOut = (m: MessageView) => ({ id: m.id, threadId: m.threadId });
 
 function labelChange(ctx: RouteContext): { add: string[]; remove: string[] } {
   const body = ctx.json();
-  return { add: stringList(body.addLabelIds, 'addLabelIds'), remove: stringList(body.removeLabelIds, 'removeLabelIds') };
+  return {
+    add: stringList(body.addLabelIds, 'addLabelIds'),
+    remove: stringList(body.removeLabelIds, 'removeLabelIds'),
+  };
 }
 
-function listFilter(query: URLSearchParams): { labelIds: string[]; q: string; includeSpamTrash: boolean } {
-  return { labelIds: query.getAll('labelIds'), q: query.get('q') ?? '', includeSpamTrash: query.get('includeSpamTrash') === 'true' };
+function listFilter(query: URLSearchParams): {
+  labelIds: string[];
+  q: string;
+  includeSpamTrash: boolean;
+} {
+  return {
+    labelIds: query.getAll('labelIds'),
+    q: query.get('q') ?? '',
+    includeSpamTrash: query.get('includeSpamTrash') === 'true',
+  };
 }
 
 // ---------- handlers ----------
@@ -127,7 +163,9 @@ const listMessages = (ctx: RouteContext): Reply => {
   const hits = ctx.mailbox.select(listFilter(ctx.query));
   const paged = page(hits, ctx.query);
   return jsonReply({
-    ...(paged.items.length ? { messages: paged.items.map(h => ({ id: h.id, threadId: h.threadId })) } : {}),
+    ...(paged.items.length
+      ? { messages: paged.items.map(h => ({ id: h.id, threadId: h.threadId })) }
+      : {}),
     ...(paged.nextPageToken ? { nextPageToken: paged.nextPageToken } : {}),
     resultSizeEstimate: hits.length,
   });
@@ -137,17 +175,26 @@ const listThreads = (ctx: RouteContext): Reply => {
   const hits = ctx.mailbox.selectThreads(listFilter(ctx.query));
   const paged = page(hits, ctx.query);
   return jsonReply({
-    ...(paged.items.length ? { threads: paged.items.map(t => ({ id: t.id, snippet: t.snippet, historyId: t.historyId })) } : {}),
+    ...(paged.items.length
+      ? {
+          threads: paged.items.map(t => ({ id: t.id, snippet: t.snippet, historyId: t.historyId })),
+        }
+      : {}),
     ...(paged.nextPageToken ? { nextPageToken: paged.nextPageToken } : {}),
     resultSizeEstimate: hits.length,
   });
 };
 
 const listDrafts = (ctx: RouteContext): Reply => {
-  const drafts = ctx.mailbox.listDrafts().map(d => ({ date: d.message.internalDate, id: d.id, message: d.message })).sort(compareKeyed);
+  const drafts = ctx.mailbox
+    .listDrafts()
+    .map(d => ({ date: d.message.internalDate, id: d.id, message: d.message }))
+    .sort(compareKeyed);
   const paged = page(drafts, ctx.query);
   return jsonReply({
-    ...(paged.items.length ? { drafts: paged.items.map(d => ({ id: d.id, message: refOut(d.message) })) } : {}),
+    ...(paged.items.length
+      ? { drafts: paged.items.map(d => ({ id: d.id, message: refOut(d.message) })) }
+      : {}),
     ...(paged.nextPageToken ? { nextPageToken: paged.nextPageToken } : {}),
     resultSizeEstimate: drafts.length,
   });
@@ -159,7 +206,9 @@ function historyList(ctx: RouteContext): Reply {
   const start = ctx.query.get('startHistoryId');
   if (start === null || !/^\d+$/.test(start)) throw badRequest('Invalid startHistoryId');
   const types = ctx.query.getAll('historyTypes');
-  for (const type of types) if (!HISTORY_TYPES.includes(type as HistoryType)) throw badRequest(`Invalid historyTypes: ${type}`);
+  for (const type of types)
+    if (!HISTORY_TYPES.includes(type as HistoryType))
+      throw badRequest(`Invalid historyTypes: ${type}`);
   const result = ctx.mailbox.history.query({
     startHistoryId: Number(start),
     types: types as HistoryType[],
@@ -177,7 +226,10 @@ function historyList(ctx: RouteContext): Reply {
 
 function createFilter(ctx: RouteContext): Reply {
   const body = ctx.json();
-  const asObject = (value: unknown): Record<string, unknown> => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {});
+  const asObject = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
   return jsonReply(ctx.mailbox.createFilter(asObject(body.criteria), asObject(body.action)));
 }
 
@@ -189,19 +241,29 @@ function batchModify(ctx: RouteContext): Reply {
   ids.forEach(requireGmailId);
   const unknown = ids.find(id => !ctx.mailbox.hasMessage(id));
   if (unknown !== undefined) throw invalidIdError();
-  ctx.mailbox.modifyMessages(ids, stringList(body.addLabelIds, 'addLabelIds'), stringList(body.removeLabelIds, 'removeLabelIds'));
+  ctx.mailbox.modifyMessages(
+    ids,
+    stringList(body.addLabelIds, 'addLabelIds'),
+    stringList(body.removeLabelIds, 'removeLabelIds'),
+  );
   return emptyReply(204);
 }
 
 function sendJson(ctx: RouteContext): Reply {
   const body = ctx.json();
-  const message = ctx.mailbox.sendRaw(decodeRaw(body.raw), typeof body.threadId === 'string' ? body.threadId : undefined);
+  const message = ctx.mailbox.sendRaw(
+    decodeRaw(body.raw),
+    typeof body.threadId === 'string' ? body.threadId : undefined,
+  );
   return jsonReply(labelsOut(message));
 }
 
 function sendUpload(ctx: RouteContext): Reply {
   const uploadType = ctx.query.get('uploadType');
-  if (uploadType !== 'media') throw badRequest(`Unsupported uploadType "${uploadType ?? ''}"; the emulator accepts uploadType=media with message/rfc822`);
+  if (uploadType !== 'media')
+    throw badRequest(
+      `Unsupported uploadType "${uploadType ?? ''}"; the emulator accepts uploadType=media with message/rfc822`,
+    );
   if (!ctx.body.length) throw badRequest('Empty upload');
   return jsonReply(labelsOut(ctx.mailbox.sendRaw(ctx.body)));
 }
@@ -209,64 +271,158 @@ function sendUpload(ctx: RouteContext): Reply {
 function draftMessageRaw(ctx: RouteContext): { raw: Buffer; threadId?: string } {
   const message = ctx.json().message as { raw?: unknown; threadId?: unknown } | undefined;
   if (!message) throw badRequest('Missing draft message');
-  return { raw: decodeRaw(message.raw), threadId: typeof message.threadId === 'string' ? message.threadId : undefined };
+  return {
+    raw: decodeRaw(message.raw),
+    threadId: typeof message.threadId === 'string' ? message.threadId : undefined,
+  };
 }
 
 export const ROUTES: Route[] = [
-  { method: 'GET', pattern: 'profile', apiMethod: 'gmail.users.getProfile', scope: 'read', handler: ctx => jsonReply(ctx.mailbox.profile()) },
   {
-    method: 'POST', pattern: 'watch', apiMethod: 'gmail.users.watch', scope: 'read',
-    handler: ctx => jsonReply({ historyId: String(ctx.mailbox.history.currentId), expiration: String(ctx.now + 7 * 86400_000) }),
+    method: 'GET',
+    pattern: 'profile',
+    apiMethod: 'gmail.users.getProfile',
+    scope: 'read',
+    handler: ctx => jsonReply(ctx.mailbox.profile()),
+  },
+  {
+    method: 'POST',
+    pattern: 'watch',
+    apiMethod: 'gmail.users.watch',
+    scope: 'read',
+    handler: ctx =>
+      jsonReply({
+        historyId: String(ctx.mailbox.history.currentId),
+        expiration: String(ctx.now + 7 * 86400_000),
+      }),
   },
 
   // labels
-  { method: 'GET', pattern: 'labels', apiMethod: 'gmail.users.labels.list', scope: 'read', handler: ctx => jsonReply({ labels: ctx.mailbox.listLabels() }) },
   {
-    method: 'POST', pattern: 'labels', apiMethod: 'gmail.users.labels.create', scope: 'write',
+    method: 'GET',
+    pattern: 'labels',
+    apiMethod: 'gmail.users.labels.list',
+    scope: 'read',
+    handler: ctx => jsonReply({ labels: ctx.mailbox.listLabels() }),
+  },
+  {
+    method: 'POST',
+    pattern: 'labels',
+    apiMethod: 'gmail.users.labels.create',
+    scope: 'write',
     handler: ctx => {
       const body = ctx.json();
       if (typeof body.name !== 'string') throw badRequest('Invalid label name');
-      return jsonReply(ctx.mailbox.createLabel(body.name, {
-        labelListVisibility: typeof body.labelListVisibility === 'string' ? body.labelListVisibility : undefined,
-        messageListVisibility: typeof body.messageListVisibility === 'string' ? body.messageListVisibility : undefined,
-      }));
+      return jsonReply(
+        ctx.mailbox.createLabel(body.name, {
+          labelListVisibility:
+            typeof body.labelListVisibility === 'string' ? body.labelListVisibility : undefined,
+          messageListVisibility:
+            typeof body.messageListVisibility === 'string' ? body.messageListVisibility : undefined,
+        }),
+      );
     },
   },
   {
-    method: 'GET', pattern: 'labels/:id', apiMethod: 'gmail.users.labels.get', scope: 'read',
-    handler: ctx => jsonReply({ ...ctx.mailbox.getLabel(ctx.params.id), ...ctx.mailbox.labelCounts(ctx.params.id) }),
+    method: 'GET',
+    pattern: 'labels/:id',
+    apiMethod: 'gmail.users.labels.get',
+    scope: 'read',
+    handler: ctx =>
+      jsonReply({
+        ...ctx.mailbox.getLabel(ctx.params.id),
+        ...ctx.mailbox.labelCounts(ctx.params.id),
+      }),
   },
 
   // history
-  { method: 'GET', pattern: 'history', apiMethod: 'gmail.users.history.list', scope: 'read', handler: historyList },
+  {
+    method: 'GET',
+    pattern: 'history',
+    apiMethod: 'gmail.users.history.list',
+    scope: 'read',
+    handler: historyList,
+  },
 
   // messages (literal paths first so ":id" does not swallow them)
-  { method: 'GET', pattern: 'messages', apiMethod: 'gmail.users.messages.list', scope: 'read', handler: listMessages },
-  { method: 'POST', pattern: 'messages/batchModify', apiMethod: 'gmail.users.messages.batchModify', scope: 'write', handler: batchModify },
   {
-    method: 'POST', pattern: 'messages/insert', apiMethod: 'gmail.users.messages.insert', scope: 'compose',
+    method: 'GET',
+    pattern: 'messages',
+    apiMethod: 'gmail.users.messages.list',
+    scope: 'read',
+    handler: listMessages,
+  },
+  {
+    method: 'POST',
+    pattern: 'messages/batchModify',
+    apiMethod: 'gmail.users.messages.batchModify',
+    scope: 'write',
+    handler: batchModify,
+  },
+  {
+    method: 'POST',
+    pattern: 'messages/insert',
+    apiMethod: 'gmail.users.messages.insert',
+    scope: 'compose',
     handler: ctx => {
       const body = ctx.json();
-      const source = ctx.query.get('internalDateSource') === 'dateHeader' ? 'dateHeader' : 'receivedTime';
-      const message = ctx.mailbox.insertRaw(decodeRaw(body.raw), stringList(body.labelIds, 'labelIds'), typeof body.threadId === 'string' ? body.threadId : undefined, source);
+      const source =
+        ctx.query.get('internalDateSource') === 'dateHeader' ? 'dateHeader' : 'receivedTime';
+      const message = ctx.mailbox.insertRaw(
+        decodeRaw(body.raw),
+        stringList(body.labelIds, 'labelIds'),
+        typeof body.threadId === 'string' ? body.threadId : undefined,
+        source,
+      );
       return jsonReply(labelsOut(message));
     },
   },
-  { method: 'POST', pattern: 'messages/send', apiMethod: 'gmail.users.messages.send', scope: 'compose', send: true, handler: sendJson },
-  { method: 'POST', pattern: 'messages/send', apiMethod: 'gmail.users.messages.send', scope: 'compose', send: true, upload: true, handler: sendUpload },
   {
-    method: 'GET', pattern: 'messages/:messageId', apiMethod: 'gmail.users.messages.get', scope: 'read',
-    handler: ctx => jsonReply(ctx.mailbox.messageResource(ctx.params.messageId, formatOf(ctx.query, true), ctx.query.getAll('metadataHeaders'))),
+    method: 'POST',
+    pattern: 'messages/send',
+    apiMethod: 'gmail.users.messages.send',
+    scope: 'compose',
+    send: true,
+    handler: sendJson,
   },
   {
-    method: 'DELETE', pattern: 'messages/:messageId', apiMethod: 'gmail.users.messages.delete', scope: 'full',
+    method: 'POST',
+    pattern: 'messages/send',
+    apiMethod: 'gmail.users.messages.send',
+    scope: 'compose',
+    send: true,
+    upload: true,
+    handler: sendUpload,
+  },
+  {
+    method: 'GET',
+    pattern: 'messages/:messageId',
+    apiMethod: 'gmail.users.messages.get',
+    scope: 'read',
+    handler: ctx =>
+      jsonReply(
+        ctx.mailbox.messageResource(
+          ctx.params.messageId,
+          formatOf(ctx.query, true),
+          ctx.query.getAll('metadataHeaders'),
+        ),
+      ),
+  },
+  {
+    method: 'DELETE',
+    pattern: 'messages/:messageId',
+    apiMethod: 'gmail.users.messages.delete',
+    scope: 'full',
     handler: ctx => {
       ctx.mailbox.deleteMessage(ctx.params.messageId);
       return emptyReply(204);
     },
   },
   {
-    method: 'POST', pattern: 'messages/:messageId/modify', apiMethod: 'gmail.users.messages.modify', scope: 'write',
+    method: 'POST',
+    pattern: 'messages/:messageId/modify',
+    apiMethod: 'gmail.users.messages.modify',
+    scope: 'write',
     handler: ctx => {
       const { add, remove } = labelChange(ctx);
       ctx.mailbox.modifyMessages([ctx.params.messageId], add, remove);
@@ -274,21 +430,30 @@ export const ROUTES: Route[] = [
     },
   },
   {
-    method: 'POST', pattern: 'messages/:messageId/trash', apiMethod: 'gmail.users.messages.trash', scope: 'write',
+    method: 'POST',
+    pattern: 'messages/:messageId/trash',
+    apiMethod: 'gmail.users.messages.trash',
+    scope: 'write',
     handler: ctx => {
       ctx.mailbox.trashMessage(ctx.params.messageId);
       return jsonReply(labelsOut(ctx.mailbox.getMessage(ctx.params.messageId)!));
     },
   },
   {
-    method: 'POST', pattern: 'messages/:messageId/untrash', apiMethod: 'gmail.users.messages.untrash', scope: 'write',
+    method: 'POST',
+    pattern: 'messages/:messageId/untrash',
+    apiMethod: 'gmail.users.messages.untrash',
+    scope: 'write',
     handler: ctx => {
       ctx.mailbox.untrashMessage(ctx.params.messageId);
       return jsonReply(labelsOut(ctx.mailbox.getMessage(ctx.params.messageId)!));
     },
   },
   {
-    method: 'GET', pattern: 'messages/:messageId/attachments/:attachmentId', apiMethod: 'gmail.users.messages.attachments.get', scope: 'read',
+    method: 'GET',
+    pattern: 'messages/:messageId/attachments/:attachmentId',
+    apiMethod: 'gmail.users.messages.attachments.get',
+    scope: 'read',
     handler: ctx => {
       const data = ctx.mailbox.attachment(ctx.params.messageId, ctx.params.attachmentId);
       return jsonReply({ size: data.length, data: data.toString('base64url') });
@@ -296,13 +461,32 @@ export const ROUTES: Route[] = [
   },
 
   // threads
-  { method: 'GET', pattern: 'threads', apiMethod: 'gmail.users.threads.list', scope: 'read', handler: listThreads },
   {
-    method: 'GET', pattern: 'threads/:threadId', apiMethod: 'gmail.users.threads.get', scope: 'read',
-    handler: ctx => jsonReply(ctx.mailbox.threadResource(ctx.params.threadId, formatOf(ctx.query, false) as Exclude<MessageFormat, 'raw'>, ctx.query.getAll('metadataHeaders'))),
+    method: 'GET',
+    pattern: 'threads',
+    apiMethod: 'gmail.users.threads.list',
+    scope: 'read',
+    handler: listThreads,
   },
   {
-    method: 'POST', pattern: 'threads/:threadId/modify', apiMethod: 'gmail.users.threads.modify', scope: 'write',
+    method: 'GET',
+    pattern: 'threads/:threadId',
+    apiMethod: 'gmail.users.threads.get',
+    scope: 'read',
+    handler: ctx =>
+      jsonReply(
+        ctx.mailbox.threadResource(
+          ctx.params.threadId,
+          formatOf(ctx.query, false) as Exclude<MessageFormat, 'raw'>,
+          ctx.query.getAll('metadataHeaders'),
+        ),
+      ),
+  },
+  {
+    method: 'POST',
+    pattern: 'threads/:threadId/modify',
+    apiMethod: 'gmail.users.threads.modify',
+    scope: 'write',
     handler: ctx => {
       const { add, remove } = labelChange(ctx);
       ctx.mailbox.modifyThread(ctx.params.threadId, add, remove);
@@ -310,14 +494,20 @@ export const ROUTES: Route[] = [
     },
   },
   {
-    method: 'POST', pattern: 'threads/:threadId/trash', apiMethod: 'gmail.users.threads.trash', scope: 'write',
+    method: 'POST',
+    pattern: 'threads/:threadId/trash',
+    apiMethod: 'gmail.users.threads.trash',
+    scope: 'write',
     handler: ctx => {
       ctx.mailbox.trashThread(ctx.params.threadId);
       return jsonReply(ctx.mailbox.threadResource(ctx.params.threadId, 'minimal'));
     },
   },
   {
-    method: 'POST', pattern: 'threads/:threadId/untrash', apiMethod: 'gmail.users.threads.untrash', scope: 'write',
+    method: 'POST',
+    pattern: 'threads/:threadId/untrash',
+    apiMethod: 'gmail.users.threads.untrash',
+    scope: 'write',
     handler: ctx => {
       ctx.mailbox.untrashThread(ctx.params.threadId);
       return jsonReply(ctx.mailbox.threadResource(ctx.params.threadId, 'minimal'));
@@ -325,9 +515,18 @@ export const ROUTES: Route[] = [
   },
 
   // drafts
-  { method: 'GET', pattern: 'drafts', apiMethod: 'gmail.users.drafts.list', scope: 'read', handler: listDrafts },
   {
-    method: 'POST', pattern: 'drafts', apiMethod: 'gmail.users.drafts.create', scope: 'compose',
+    method: 'GET',
+    pattern: 'drafts',
+    apiMethod: 'gmail.users.drafts.list',
+    scope: 'read',
+    handler: listDrafts,
+  },
+  {
+    method: 'POST',
+    pattern: 'drafts',
+    apiMethod: 'gmail.users.drafts.create',
+    scope: 'compose',
     handler: ctx => {
       const { raw, threadId } = draftMessageRaw(ctx);
       const draft = ctx.mailbox.createDraft(raw, threadId);
@@ -335,7 +534,11 @@ export const ROUTES: Route[] = [
     },
   },
   {
-    method: 'POST', pattern: 'drafts/send', apiMethod: 'gmail.users.drafts.send', scope: 'compose', send: true,
+    method: 'POST',
+    pattern: 'drafts/send',
+    apiMethod: 'gmail.users.drafts.send',
+    scope: 'compose',
+    send: true,
     handler: ctx => {
       const id = ctx.json().id;
       if (typeof id !== 'string') throw badRequest('Missing draft id');
@@ -343,14 +546,27 @@ export const ROUTES: Route[] = [
     },
   },
   {
-    method: 'GET', pattern: 'drafts/:id', apiMethod: 'gmail.users.drafts.get', scope: 'read',
+    method: 'GET',
+    pattern: 'drafts/:id',
+    apiMethod: 'gmail.users.drafts.get',
+    scope: 'read',
     handler: ctx => {
       const messageId = ctx.mailbox.draftMessageId(ctx.params.id);
-      return jsonReply({ id: ctx.params.id, message: ctx.mailbox.messageResource(messageId, formatOf(ctx.query, true), ctx.query.getAll('metadataHeaders')) });
+      return jsonReply({
+        id: ctx.params.id,
+        message: ctx.mailbox.messageResource(
+          messageId,
+          formatOf(ctx.query, true),
+          ctx.query.getAll('metadataHeaders'),
+        ),
+      });
     },
   },
   {
-    method: 'PUT', pattern: 'drafts/:id', apiMethod: 'gmail.users.drafts.update', scope: 'compose',
+    method: 'PUT',
+    pattern: 'drafts/:id',
+    apiMethod: 'gmail.users.drafts.update',
+    scope: 'compose',
     handler: ctx => {
       const { raw, threadId } = draftMessageRaw(ctx);
       const draft = ctx.mailbox.updateDraft(ctx.params.id, raw, threadId);
@@ -358,7 +574,10 @@ export const ROUTES: Route[] = [
     },
   },
   {
-    method: 'DELETE', pattern: 'drafts/:id', apiMethod: 'gmail.users.drafts.delete', scope: 'compose',
+    method: 'DELETE',
+    pattern: 'drafts/:id',
+    apiMethod: 'gmail.users.drafts.delete',
+    scope: 'compose',
     handler: ctx => {
       ctx.mailbox.deleteDraft(ctx.params.id);
       return emptyReply(204);
@@ -367,22 +586,46 @@ export const ROUTES: Route[] = [
 
   // settings
   {
-    method: 'GET', pattern: 'settings/filters', apiMethod: 'gmail.users.settings.filters.list', scope: 'settingsRead',
+    method: 'GET',
+    pattern: 'settings/filters',
+    apiMethod: 'gmail.users.settings.filters.list',
+    scope: 'settingsRead',
     handler: ctx => {
       const filter = ctx.mailbox.listFilters();
       return jsonReply(filter.length ? { filter } : {});
     },
   },
-  { method: 'POST', pattern: 'settings/filters', apiMethod: 'gmail.users.settings.filters.create', scope: 'settingsWrite', handler: createFilter },
-  { method: 'GET', pattern: 'settings/filters/:id', apiMethod: 'gmail.users.settings.filters.get', scope: 'settingsRead', handler: ctx => jsonReply(ctx.mailbox.getFilter(ctx.params.id)) },
   {
-    method: 'DELETE', pattern: 'settings/filters/:id', apiMethod: 'gmail.users.settings.filters.delete', scope: 'settingsWrite',
+    method: 'POST',
+    pattern: 'settings/filters',
+    apiMethod: 'gmail.users.settings.filters.create',
+    scope: 'settingsWrite',
+    handler: createFilter,
+  },
+  {
+    method: 'GET',
+    pattern: 'settings/filters/:id',
+    apiMethod: 'gmail.users.settings.filters.get',
+    scope: 'settingsRead',
+    handler: ctx => jsonReply(ctx.mailbox.getFilter(ctx.params.id)),
+  },
+  {
+    method: 'DELETE',
+    pattern: 'settings/filters/:id',
+    apiMethod: 'gmail.users.settings.filters.delete',
+    scope: 'settingsWrite',
     handler: ctx => {
       ctx.mailbox.deleteFilter(ctx.params.id);
       return emptyReply(204);
     },
   },
-  { method: 'GET', pattern: 'settings/sendAs', apiMethod: 'gmail.users.settings.sendAs.list', scope: 'settingsRead', handler: ctx => jsonReply({ sendAs: ctx.mailbox.listSendAs() }) },
+  {
+    method: 'GET',
+    pattern: 'settings/sendAs',
+    apiMethod: 'gmail.users.settings.sendAs.list',
+    scope: 'settingsRead',
+    handler: ctx => jsonReply({ sendAs: ctx.mailbox.listSendAs() }),
+  },
 ];
 
 /** The response type a `fields=` mask is checked against. Methods answering 204 have none. */
@@ -471,7 +714,9 @@ export function matchRoute(method: string, pathname: string): RouteMatch | undef
     const hit = compiled.regex.exec(parts[3]);
     if (!hit) continue;
     const params: Record<string, string> = {};
-    compiled.names.forEach((name, index) => { params[name] = decodeURIComponent(hit[index + 1]); });
+    compiled.names.forEach((name, index) => {
+      params[name] = decodeURIComponent(hit[index + 1]);
+    });
     return { route: compiled.route, params, userId: decodeURIComponent(parts[2]) };
   }
   return undefined;

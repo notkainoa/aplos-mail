@@ -54,8 +54,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run typecheck -w @aplos/desktop
-      - run: npm test -w @aplos/desktop
+      - run: npm run typecheck -w @aplos/desktop -w @aplos/engine -w @aplos/contract
+      - run: npm test -w @aplos/desktop -w @aplos/engine
       # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
       - run: npm run build -w @aplos/desktop
 

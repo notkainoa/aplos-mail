@@ -172,7 +172,9 @@ export interface CalendarHelpers {
   /** Every notification that `sendUpdates` would have caused. */
   sentUpdates: SentUpdate[];
   /** Fills a user's calendars with synthetic data; see `generateCalendars`. */
-  seed(options?: import('./generate').GenerateCalendarsOptions): import('./generate').GeneratedCalendars;
+  seed(
+    options?: import('./generate').GenerateCalendarsOptions,
+  ): import('./generate').GeneratedCalendars;
   /** Calendars of a user (email or sub; the first user when omitted), as the calendar list shows them. */
   listCalendars(user?: string): CalendarListEntry[];
   addCalendar(spec: CalendarSpec, user?: string): CalendarListEntry;
@@ -191,15 +193,30 @@ export interface CalendarHelpers {
    * Creates an event the way a client signed in as the user would (same code as events.insert) but
    * without quota or HTTP. `organizer` makes it somebody else's event.
    */
-  addEvent(calendarId: string, body: Record<string, unknown>, options?: { user?: string; sendUpdates?: SendUpdates; conferenceDataVersion?: 0 | 1 }): GcalEvent;
+  addEvent(
+    calendarId: string,
+    body: Record<string, unknown>,
+    options?: { user?: string; sendUpdates?: SendUpdates; conferenceDataVersion?: 0 | 1 },
+  ): GcalEvent;
   /** An invitation from somebody else, with the user as a needsAction attendee. */
   addInvitation(spec: InvitationSpec, user?: string): GcalEvent;
   /** Another client's edit of an event (events.patch semantics, no quota). */
-  editEvent(calendarId: string, eventId: string, patch: Record<string, unknown>, options?: { user?: string; conferenceDataVersion?: 0 | 1 }): GcalEvent;
+  editEvent(
+    calendarId: string,
+    eventId: string,
+    patch: Record<string, unknown>,
+    options?: { user?: string; conferenceDataVersion?: 0 | 1 },
+  ): GcalEvent;
   /** Another client's delete. */
   removeEvent(calendarId: string, eventId: string, user?: string): void;
   /** An attendee other than the user answers an invitation; the organizer's copy changes. */
-  respond(calendarId: string, eventId: string, email: string, responseStatus: ResponseStatus, user?: string): GcalEvent;
+  respond(
+    calendarId: string,
+    eventId: string,
+    email: string,
+    responseStatus: ResponseStatus,
+    user?: string,
+  ): GcalEvent;
 
   /** Makes sync tokens invalid so the next incremental call answers 410 fullSyncRequired. */
   expireSyncTokens(options?: ExpireOptions): void;

@@ -14,11 +14,24 @@ const leaves = (...names: string[]): Shape => Object.fromEntries(names.map(name 
 const HEADER = leaves('name', 'value');
 const PART_BODY = leaves('attachmentId', 'size', 'data');
 /** MessagePart is recursive: `parts` holds more MessageParts. */
-const PART: Shape = { ...leaves('partId', 'mimeType', 'filename'), headers: HEADER, body: PART_BODY };
+const PART: Shape = {
+  ...leaves('partId', 'mimeType', 'filename'),
+  headers: HEADER,
+  body: PART_BODY,
+};
 PART.parts = PART;
 
 export const MESSAGE: Shape = {
-  ...leaves('id', 'threadId', 'labelIds', 'snippet', 'historyId', 'internalDate', 'sizeEstimate', 'raw'),
+  ...leaves(
+    'id',
+    'threadId',
+    'labelIds',
+    'snippet',
+    'historyId',
+    'internalDate',
+    'sizeEstimate',
+    'raw',
+  ),
   payload: PART,
   classificationLabelValues: { ...leaves('labelId'), fields: leaves('fieldId', 'selection') },
 };
@@ -27,7 +40,17 @@ export const THREAD: Shape = { ...leaves('id', 'snippet', 'historyId'), messages
 export const DRAFT: Shape = { id: true, message: MESSAGE };
 
 export const LABEL: Shape = {
-  ...leaves('id', 'name', 'messageListVisibility', 'labelListVisibility', 'type', 'messagesTotal', 'messagesUnread', 'threadsTotal', 'threadsUnread'),
+  ...leaves(
+    'id',
+    'name',
+    'messageListVisibility',
+    'labelListVisibility',
+    'type',
+    'messagesTotal',
+    'messagesUnread',
+    'threadsTotal',
+    'threadsUnread',
+  ),
   color: leaves('textColor', 'backgroundColor'),
 };
 
@@ -44,16 +67,39 @@ const HISTORY: Shape = {
 
 export const FILTER: Shape = {
   id: true,
-  criteria: leaves('from', 'to', 'subject', 'query', 'negatedQuery', 'hasAttachment', 'excludeChats', 'size', 'sizeComparison'),
+  criteria: leaves(
+    'from',
+    'to',
+    'subject',
+    'query',
+    'negatedQuery',
+    'hasAttachment',
+    'excludeChats',
+    'size',
+    'sizeComparison',
+  ),
   action: leaves('addLabelIds', 'removeLabelIds', 'forward'),
 };
 
 const SEND_AS: Shape = {
-  ...leaves('sendAsEmail', 'displayName', 'replyToAddress', 'signature', 'isPrimary', 'isDefault', 'treatAsAlias', 'verificationStatus'),
+  ...leaves(
+    'sendAsEmail',
+    'displayName',
+    'replyToAddress',
+    'signature',
+    'isPrimary',
+    'isDefault',
+    'treatAsAlias',
+    'verificationStatus',
+  ),
   smtpMsa: leaves('host', 'port', 'username', 'password', 'securityMode'),
 };
 
-const list = (key: string, item: Shape): Shape => ({ [key]: item, nextPageToken: true, resultSizeEstimate: true });
+const list = (key: string, item: Shape): Shape => ({
+  [key]: item,
+  nextPageToken: true,
+  resultSizeEstimate: true,
+});
 
 export const RESPONSE = {
   profile: leaves('emailAddress', 'messagesTotal', 'threadsTotal', 'historyId'),

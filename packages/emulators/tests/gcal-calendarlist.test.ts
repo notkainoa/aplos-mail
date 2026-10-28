@@ -54,7 +54,10 @@ test('helpers hide, deselect and delete calendars; showDeleted brings deleted en
   const plain = (await t.call(LIST)).json.items.map((i: any) => i.id);
   assert.ok(!plain.includes(gen.calendars.family));
   assert.ok(!plain.includes(gen.calendars.unselected));
-  assert.equal((await t.call(LIST)).json.items.find((i: any) => i.id === gen.primaryId).selected, undefined);
+  assert.equal(
+    (await t.call(LIST)).json.items.find((i: any) => i.id === gen.primaryId).selected,
+    undefined,
+  );
   const all = (await t.call(`${LIST}?showHidden=true&showDeleted=true`)).json.items;
   assert.equal(all.find((i: any) => i.id === gen.calendars.unselected).deleted, true);
   assert.throws(() => t.emu.calendar.deleteCalendar(gen.primaryId), /primary/);
@@ -64,7 +67,9 @@ test('helpers hide, deselect and delete calendars; showDeleted brings deleted en
 
 test('minAccessRole filters by role rank', async () => {
   const { t, gen } = await seeded();
-  const writers = (await t.call(`${LIST}?minAccessRole=writer&showHidden=true`)).json.items.map((i: any) => i.id);
+  const writers = (await t.call(`${LIST}?minAccessRole=writer&showHidden=true`)).json.items.map(
+    (i: any) => i.id,
+  );
   assert.ok(!writers.includes(gen.calendars.readOnly));
   assert.ok(writers.includes(gen.primaryId));
   const readers = (await t.call(`${LIST}?minAccessRole=reader`)).json.items.map((i: any) => i.id);
@@ -81,7 +86,9 @@ test('maxResults and pageToken page the list; the sync token comes only with the
   const seen = [...first.json.items.map((i: any) => i.id)];
   let page = first;
   while (page.json.nextPageToken) {
-    page = await t.call(`${LIST}?maxResults=2&showHidden=true&pageToken=${page.json.nextPageToken}`);
+    page = await t.call(
+      `${LIST}?maxResults=2&showHidden=true&pageToken=${page.json.nextPageToken}`,
+    );
     seen.push(...page.json.items.map((i: any) => i.id));
   }
   assert.equal(new Set(seen).size, seen.length);
@@ -127,7 +134,10 @@ test('a bad, foreign or expired sync token is 410 fullSyncRequired', async () =>
   const garbage = await t.call(`${LIST}?syncToken=not-a-token`);
   assert.equal(garbage.status, 410);
   assert.equal(garbage.json.error.errors[0].reason, 'fullSyncRequired');
-  assert.equal(garbage.json.error.message, 'Sync token is no longer valid, a full sync is required.');
+  assert.equal(
+    garbage.json.error.message,
+    'Sync token is no longer valid, a full sync is required.',
+  );
   assert.equal(t.emu.log.at(-1)!.reason, 'fullSyncRequired');
 
   // The expire helper kills tokens of one list kind only.
@@ -159,7 +169,10 @@ test('syncToken cannot be combined with minAccessRole, showDeleted=false or show
     const r = await t.call(`${LIST}?syncToken=${token}&${extra}`);
     assert.equal(r.status, 400, extra);
   }
-  assert.equal((await t.call(`${LIST}?syncToken=${token}&showDeleted=true&showHidden=true`)).status, 200);
+  assert.equal(
+    (await t.call(`${LIST}?syncToken=${token}&showDeleted=true&showHidden=true`)).status,
+    200,
+  );
 });
 
 test('calendarList.get returns one entry, hidden ones too; unknown ids are 404', async () => {
@@ -174,7 +187,12 @@ test('calendarList.get returns one entry, hidden ones too; unknown ids are 404',
 test('fields masks apply to the calendar list and unknown names are 400', async () => {
   const { t } = await seeded();
   const r = await t.call(`${LIST}?fields=items(id,hidden,selected),nextSyncToken`);
-  assert.deepEqual(Object.keys(r.json.items[0]).sort().filter(k => !['id', 'hidden', 'selected'].includes(k)), []);
+  assert.deepEqual(
+    Object.keys(r.json.items[0])
+      .sort()
+      .filter(k => !['id', 'hidden', 'selected'].includes(k)),
+    [],
+  );
   assert.ok(r.json.nextSyncToken);
   const bad = await t.call(`${LIST}?fields=items(idd)`);
   assert.equal(bad.status, 400);

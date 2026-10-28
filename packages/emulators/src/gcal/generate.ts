@@ -1,9 +1,24 @@
 import { Random, mixSeed } from '../gmail/rng';
-import { deleteEvent, insertEvent, insertInvitation, patchEvent, seriesOf, type WriteOptions } from './events';
+import {
+  deleteEvent,
+  insertEvent,
+  insertInvitation,
+  patchEvent,
+  seriesOf,
+  type WriteOptions,
+} from './events';
 import { occurrences, type Occurrence } from './rrule';
 import type { CalendarRecord, CalendarStore } from './store';
 import type { GcalEvent } from './types';
-import { civilOfDay, dateOfDay, dayOfCivil, isoInZone, localParts, localToUtc, weekdayOfDay } from './tz';
+import {
+  civilOfDay,
+  dateOfDay,
+  dayOfCivil,
+  isoInZone,
+  localParts,
+  localToUtc,
+  weekdayOfDay,
+} from './tz';
 
 /**
  * A seeded calendar set for tests: a primary calendar plus four secondary ones (one hidden, one not
@@ -44,11 +59,28 @@ export interface GeneratedCalendars {
 const ZONE = 'America/Los_Angeles';
 const HOUR = 3_600_000;
 const TITLES = [
-  'Dentist appointment', 'Lunch with Sam', 'Design review', 'Piano lesson', 'Budget check-in', 'Dog groomer', 'Quarterly planning',
-  'Coffee with Priya', 'Library return', 'Garden club', 'Invoice review', 'Bike service', 'Reading hour', 'Team retro',
+  'Dentist appointment',
+  'Lunch with Sam',
+  'Design review',
+  'Piano lesson',
+  'Budget check-in',
+  'Dog groomer',
+  'Quarterly planning',
+  'Coffee with Priya',
+  'Library return',
+  'Garden club',
+  'Invoice review',
+  'Bike service',
+  'Reading hour',
+  'Team retro',
 ];
 const PLACES = ['Room 4B', 'Harbor Cafe', 'Studio 2', 'Main Street Library', 'Online'];
-const COLLEAGUES = ['sam.ortiz@example.test', 'priya.nair@example.test', 'lee.chen@example.test', 'jo.baker@example.test'];
+const COLLEAGUES = [
+  'sam.ortiz@example.test',
+  'priya.nair@example.test',
+  'lee.chen@example.test',
+  'jo.baker@example.test',
+];
 const ORGANIZERS = [
   { email: 'casey.rivera@example.test', displayName: 'Casey Rivera' },
   { email: 'morgan.fox@example.test', displayName: 'Morgan Fox' },
@@ -68,18 +100,53 @@ function at(day: number, hour: number, minute = 0): number {
 
 const zoned = (ms: number) => ({ dateTime: isoInZone(ms, ZONE), timeZone: ZONE });
 
-export function generateCalendars(store: CalendarStore, options: GenerateCalendarsOptions = {}): GeneratedCalendars {
+export function generateCalendars(
+  store: CalendarStore,
+  options: GenerateCalendarsOptions = {},
+): GeneratedCalendars {
   const random = new Random(mixSeed(options.seed ?? 1, 4242));
   const now = store.now();
   const opts: WriteOptions = { sendUpdates: 'none', conferenceDataVersion: 1, trusted: true };
 
-  const primary = store.addCalendar({ id: store.owner.email, summary: store.owner.name, primary: true, timeZone: ZONE, accessRole: 'owner', selected: true, backgroundColor: '#9fe1e7' });
-  const family = store.addCalendar({ summary: 'Family', timeZone: ZONE, selected: true, backgroundColor: '#f83a22' });
-  const hidden = store.addCalendar({ summary: 'Side project', timeZone: ZONE, hidden: true, selected: false, backgroundColor: '#b99aff' });
-  const unselected = store.addCalendar({ summary: 'Reading club', timeZone: ZONE, selected: false, backgroundColor: '#fad165' });
-  const shared = store.addCalendar({ id: 'team.holidays@example.test', summary: 'Team holidays', timeZone: ZONE, accessRole: 'reader', selected: true, backgroundColor: '#16a765' });
+  const primary = store.addCalendar({
+    id: store.owner.email,
+    summary: store.owner.name,
+    primary: true,
+    timeZone: ZONE,
+    accessRole: 'owner',
+    selected: true,
+    backgroundColor: '#9fe1e7',
+  });
+  const family = store.addCalendar({
+    summary: 'Family',
+    timeZone: ZONE,
+    selected: true,
+    backgroundColor: '#f83a22',
+  });
+  const hidden = store.addCalendar({
+    summary: 'Side project',
+    timeZone: ZONE,
+    hidden: true,
+    selected: false,
+    backgroundColor: '#b99aff',
+  });
+  const unselected = store.addCalendar({
+    summary: 'Reading club',
+    timeZone: ZONE,
+    selected: false,
+    backgroundColor: '#fad165',
+  });
+  const shared = store.addCalendar({
+    id: 'team.holidays@example.test',
+    summary: 'Team holidays',
+    timeZone: ZONE,
+    accessRole: 'reader',
+    selected: true,
+    backgroundColor: '#16a765',
+  });
 
-  const insert = (cal: CalendarRecord, body: Record<string, unknown>) => insertEvent(store, cal, body, opts).id;
+  const insert = (cal: CalendarRecord, body: Record<string, unknown>) =>
+    insertEvent(store, cal, body, opts).id;
 
   // Weekly planning sync: Mondays 10:00-10:30, starting two Mondays ago so it crosses the autumn DST change.
   const today = dayFromToday(now, 0);
@@ -91,19 +158,30 @@ export function generateCalendars(store: CalendarStore, options: GenerateCalenda
     start: zoned(at(startDay, 10)),
     end: zoned(at(startDay, 10, 30)),
     recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=MO'],
-    attendees: COLLEAGUES.slice(0, 3).map((email, i) => ({ email, responseStatus: (['accepted', 'tentative', 'needsAction'] as const)[i] })),
-    conferenceData: { createRequest: { requestId: 'gen-weekly', conferenceSolutionKey: { type: 'hangoutsMeet' } } },
+    attendees: COLLEAGUES.slice(0, 3).map((email, i) => ({
+      email,
+      responseStatus: (['accepted', 'tentative', 'needsAction'] as const)[i],
+    })),
+    conferenceData: {
+      createRequest: { requestId: 'gen-weekly', conferenceSolutionKey: { type: 'hangoutsMeet' } },
+    },
     reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 10 }] },
     colorId: '9',
   });
   const master = primary.events.get(masterId)!.event;
   const [, , third, fourth] = takeOccurrences(master, 4);
   const overrideId = `${masterId}_${third.key}`;
-  patchEvent(store, primary, overrideId, {
-    summary: 'Weekly planning sync (moved)',
-    start: zoned(third.startMs + HOUR),
-    end: zoned(third.startMs + HOUR + 30 * 60_000),
-  }, opts);
+  patchEvent(
+    store,
+    primary,
+    overrideId,
+    {
+      summary: 'Weekly planning sync (moved)',
+      start: zoned(third.startMs + HOUR),
+      end: zoned(third.startMs + HOUR + 30 * 60_000),
+    },
+    opts,
+  );
   const cancelledId = `${masterId}_${fourth.key}`;
   deleteEvent(store, primary, cancelledId, opts);
 
@@ -112,35 +190,76 @@ export function generateCalendars(store: CalendarStore, options: GenerateCalenda
     const day = today + random.int(-10, 20);
     const hour = random.int(8, 17);
     const minutes = random.pick([30, 60, 90]);
-    singleEventIds.push(insert(primary, {
-      summary: TITLES[i % TITLES.length],
-      location: random.pick(PLACES),
-      start: zoned(at(day, hour)),
-      end: zoned(at(day, hour) + minutes * 60_000),
-    }));
+    singleEventIds.push(
+      insert(primary, {
+        summary: TITLES[i % TITLES.length],
+        location: random.pick(PLACES),
+        start: zoned(at(day, hour)),
+        end: zoned(at(day, hour) + minutes * 60_000),
+      }),
+    );
   }
 
   const allDayEventIds = [
-    insert(primary, { summary: 'Offsite day', start: { date: dateOfDay(today + 3) }, end: { date: dateOfDay(today + 4) }, transparency: 'transparent' }),
-    insert(primary, { summary: 'Trip to Lake Town', start: { date: dateOfDay(today + 12) }, end: { date: dateOfDay(today + 15) } }),
-    insert(family, { summary: 'Grandma visiting', start: { date: dateOfDay(today + 6) }, end: { date: dateOfDay(today + 8) } }),
+    insert(primary, {
+      summary: 'Offsite day',
+      start: { date: dateOfDay(today + 3) },
+      end: { date: dateOfDay(today + 4) },
+      transparency: 'transparent',
+    }),
+    insert(primary, {
+      summary: 'Trip to Lake Town',
+      start: { date: dateOfDay(today + 12) },
+      end: { date: dateOfDay(today + 15) },
+    }),
+    insert(family, {
+      summary: 'Grandma visiting',
+      start: { date: dateOfDay(today + 6) },
+      end: { date: dateOfDay(today + 8) },
+    }),
   ];
 
   // Two single events that carry a Google Meet room.
-  const meetEventIds = [1, 2].map(n => insert(primary, {
-    summary: n === 1 ? 'Product demo' : 'Mentoring call',
-    start: zoned(at(today + n * 2, 14)),
-    end: zoned(at(today + n * 2, 15)),
-    attendees: [{ email: COLLEAGUES[n], responseStatus: 'accepted' }, { email: COLLEAGUES[n + 1] }],
-    conferenceData: { createRequest: { requestId: `gen-meet-${n}`, conferenceSolutionKey: { type: 'hangoutsMeet' } } },
-  }));
+  const meetEventIds = [1, 2].map(n =>
+    insert(primary, {
+      summary: n === 1 ? 'Product demo' : 'Mentoring call',
+      start: zoned(at(today + n * 2, 14)),
+      end: zoned(at(today + n * 2, 15)),
+      attendees: [
+        { email: COLLEAGUES[n], responseStatus: 'accepted' },
+        { email: COLLEAGUES[n + 1] },
+      ],
+      conferenceData: {
+        createRequest: {
+          requestId: `gen-meet-${n}`,
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
+      },
+    }),
+  );
 
   // Events on the other calendars, so every one has something in it.
-  insert(unselected, { summary: 'Book swap', start: zoned(at(today + 5, 18)), end: zoned(at(today + 5, 20)) });
-  insert(hidden, { summary: 'Prototype checkpoint', start: zoned(at(today + 4, 11)), end: zoned(at(today + 4, 12)) });
+  insert(unselected, {
+    summary: 'Book swap',
+    start: zoned(at(today + 5, 18)),
+    end: zoned(at(today + 5, 20)),
+  });
+  insert(hidden, {
+    summary: 'Prototype checkpoint',
+    start: zoned(at(today + 4, 11)),
+    end: zoned(at(today + 4, 12)),
+  });
   const readOnlyEventIds = [
-    insert(shared, { summary: 'Company holiday', start: { date: dateOfDay(today + 9) }, end: { date: dateOfDay(today + 10) } }),
-    insert(shared, { summary: 'Team offsite planning', start: zoned(at(today + 7, 9)), end: zoned(at(today + 7, 10)) }),
+    insert(shared, {
+      summary: 'Company holiday',
+      start: { date: dateOfDay(today + 9) },
+      end: { date: dateOfDay(today + 10) },
+    }),
+    insert(shared, {
+      summary: 'Team offsite planning',
+      start: zoned(at(today + 7, 9)),
+      end: zoned(at(today + 7, 10)),
+    }),
   ];
 
   const invitationIds: string[] = [];
@@ -156,7 +275,9 @@ export function generateCalendars(store: CalendarStore, options: GenerateCalenda
         attendees: [
           { email: organizer.email, responseStatus: 'accepted' },
           { email: store.owner.email, responseStatus: 'needsAction' },
-          ...(i % 2 === 0 ? [{ email: COLLEAGUES[i % COLLEAGUES.length], responseStatus: 'accepted' }] : []),
+          ...(i % 2 === 0
+            ? [{ email: COLLEAGUES[i % COLLEAGUES.length], responseStatus: 'accepted' }]
+            : []),
         ],
       },
     });
@@ -165,7 +286,12 @@ export function generateCalendars(store: CalendarStore, options: GenerateCalenda
 
   return {
     primaryId: primary.id,
-    calendars: { family: family.id, hidden: hidden.id, unselected: unselected.id, readOnly: shared.id },
+    calendars: {
+      family: family.id,
+      hidden: hidden.id,
+      unselected: unselected.id,
+      readOnly: shared.id,
+    },
     weekly: { masterId, overrideId, cancelledId, timeZone: ZONE },
     singleEventIds,
     allDayEventIds,

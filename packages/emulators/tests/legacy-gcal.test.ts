@@ -26,13 +26,21 @@ import { FakeClock } from '../src/kit/clock';
 import { createGmailEmulator, SCOPE, type GmailEmulator } from '../src/gmail';
 import type { GcalEvent } from '../src/gcal';
 import { createGoogle } from '../../../apps/desktop/src/main/google';
-import type { Account, CalendarEvent } from '../../../apps/desktop/src/shared/types';
+import type { Account, CalendarEvent } from '@aplos/contract/legacy/types';
 
 const CAL = 'https://www.googleapis.com/calendar/v3';
 const CLIENT_ID = 'legacy-gcal-client.apps.example.test';
 const CLIENT_SECRET = 'legacy-gcal-secret';
 /** The scopes 0.2.3 asks for at connect (google.ts connect()). */
-const LEGACY_SCOPES = ['openid', 'email', 'profile', SCOPE.gmailModify, SCOPE.gmailSettingsBasic, SCOPE.calendarList, SCOPE.calendarEvents];
+const LEGACY_SCOPES = [
+  'openid',
+  'email',
+  'profile',
+  SCOPE.gmailModify,
+  SCOPE.gmailSettingsBasic,
+  SCOPE.calendarList,
+  SCOPE.calendarEvents,
+];
 const ZONE = 'America/Los_Angeles';
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -57,7 +65,10 @@ interface Rig {
   token: string;
   observed: Observed[];
   /** A raw Calendar call with the signed-in token, as a correct client would make it. */
-  call(path: string, init?: { method?: string; body?: unknown }): Promise<{ status: number; json: any }>;
+  call(
+    path: string,
+    init?: { method?: string; body?: unknown },
+  ): Promise<{ status: number; json: any }>;
   dispose(): Promise<void>;
 }
 
@@ -66,11 +77,22 @@ async function rig(): Promise<Rig> {
   const clock = new FakeClock({ start: Date.now() });
   const emu = createGmailEmulator({ clock, latencyMs: 0 });
   emu.oauth.addClient(CLIENT_ID, CLIENT_SECRET);
-  const session = await emu.oauth.signIn({ clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, scopes: LEGACY_SCOPES, fetch: emu.fetch });
+  const session = await emu.oauth.signIn({
+    clientId: CLIENT_ID,
+    clientSecret: CLIENT_SECRET,
+    scopes: LEGACY_SCOPES,
+    fetch: emu.fetch,
+  });
   const user = emu.users()[0];
   const account: Account = {
-    id: `google-${user.sub}`, name: user.name, email: user.email, provider: 'google', preset: 'gmail',
-    color: '#738c80', connected: true, calendarConnected: true,
+    id: `google-${user.sub}`,
+    name: user.name,
+    email: user.email,
+    provider: 'google',
+    preset: 'gmail',
+    color: '#738c80',
+    connected: true,
+    calendarConnected: true,
   };
 
   // Tokens the emulator issued, stored where the adapter reads them. `expiresAt` uses the real clock
@@ -78,18 +100,34 @@ async function rig(): Promise<Rig> {
   const dataDir = await mkdtemp(join(tmpdir(), 'aplos-legacy-gcal-'));
   const encrypt = (value: string) => Buffer.from(value, 'utf8');
   const decrypt = (value: Buffer) => value.toString('utf8');
-  const stored = { access_token: session.accessToken, refresh_token: session.refreshToken, expiresAt: Date.now() + 365 * DAY };
-  await writeFile(join(dataDir, 'google-tokens.enc.json'), JSON.stringify({ [account.id]: encrypt(JSON.stringify(stored)).toString('base64') }), { mode: 0o600 });
+  const stored = {
+    access_token: session.accessToken,
+    refresh_token: session.refreshToken,
+    expiresAt: Date.now() + 365 * DAY,
+  };
+  await writeFile(
+    join(dataDir, 'google-tokens.enc.json'),
+    JSON.stringify({ [account.id]: encrypt(JSON.stringify(stored)).toString('base64') }),
+    { mode: 0o600 },
+  );
 
   const observed: Observed[] = [];
   const watched: typeof fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const response = await emu.fetch(input, init);
     if (url.href.startsWith(CAL)) {
-      const body = response.ok && response.status !== 204 ? await response.clone().json().catch(() => undefined) : undefined;
+      const body =
+        response.ok && response.status !== 204
+          ? await response
+              .clone()
+              .json()
+              .catch(() => undefined)
+          : undefined;
       const headers = new Headers(init?.headers);
       observed.push({
-        method: init?.method ?? 'GET', url, status: response.status,
+        method: init?.method ?? 'GET',
+        url,
+        status: response.status,
         ...(Array.isArray(body?.items) ? { items: body.items.length } : {}),
         ifMatch: headers.has('if-match'),
       });
@@ -98,25 +136,43 @@ async function rig(): Promise<Rig> {
   };
 
   const adapter = await createGoogle({
-    dataDir, encrypt, decrypt, fetch: watched, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET,
+    dataDir,
+    encrypt,
+    decrypt,
+    fetch: watched,
+    clientId: CLIENT_ID,
+    clientSecret: CLIENT_SECRET,
     sleep: ms => clock.sleep(ms),
   });
   return {
-    clock, emu, account, adapter, token: session.accessToken, observed,
+    clock,
+    emu,
+    account,
+    adapter,
+    token: session.accessToken,
+    observed,
     async call(path, init = {}) {
       const headers: Record<string, string> = { authorization: `Bearer ${session.accessToken}` };
       if (init.body !== undefined) headers['content-type'] = 'application/json';
-      const response = await emu.fetch(`${CAL}${path}`, { method: init.method ?? 'GET', headers, body: init.body === undefined ? undefined : JSON.stringify(init.body) });
+      const response = await emu.fetch(`${CAL}${path}`, {
+        method: init.method ?? 'GET',
+        headers,
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      });
       const text = await response.text();
       return { status: response.status, json: text ? JSON.parse(text) : undefined };
     },
-    async dispose() { adapter.close(); await rm(dataDir, { recursive: true, force: true }); },
+    async dispose() {
+      adapter.close();
+      await rm(dataDir, { recursive: true, force: true });
+    },
   };
 }
 
 const enc = encodeURIComponent;
 /** Requests the emulator logged for one Calendar API method since `from` (a log seq). */
-const logged = (emu: GmailEmulator, apiMethod: string, from = 0) => emu.log.filter(e => e.seq > from && e.service === 'gcal' && e.apiMethod === apiMethod);
+const logged = (emu: GmailEmulator, apiMethod: string, from = 0) =>
+  emu.log.filter(e => e.seq > from && e.service === 'gcal' && e.apiMethod === apiMethod);
 const lastSeq = (emu: GmailEmulator) => emu.log.at(-1)?.seq ?? 0;
 
 // ---------- D11 ----------
@@ -127,17 +183,29 @@ const lastSeq = (emu: GmailEmulator) => emu.log.at(-1)?.seq ?? 0;
  */
 function richEvent(r: Rig): GcalEvent {
   const start = Math.ceil(r.clock.now() / HOUR) * HOUR + 3 * DAY;
-  const created = r.emu.calendar.addEvent('primary', {
-    summary: 'Quarterly planning',
-    description: 'Agenda: goals, staffing, budget.',
-    location: 'Room 4B',
-    start: { dateTime: new Date(start).toISOString(), timeZone: ZONE },
-    end: { dateTime: new Date(start + HOUR).toISOString(), timeZone: ZONE },
-    colorId: '5',
-    reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 5 }, { method: 'email', minutes: 60 }] },
-    attendees: GUESTS.map(email => ({ email })),
-    conferenceData: { createRequest: { requestId: 'legacy-d11', conferenceSolutionKey: { type: 'hangoutsMeet' } } },
-  }, { conferenceDataVersion: 1 });
+  const created = r.emu.calendar.addEvent(
+    'primary',
+    {
+      summary: 'Quarterly planning',
+      description: 'Agenda: goals, staffing, budget.',
+      location: 'Room 4B',
+      start: { dateTime: new Date(start).toISOString(), timeZone: ZONE },
+      end: { dateTime: new Date(start + HOUR).toISOString(), timeZone: ZONE },
+      colorId: '5',
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: 'popup', minutes: 5 },
+          { method: 'email', minutes: 60 },
+        ],
+      },
+      attendees: GUESTS.map(email => ({ email })),
+      conferenceData: {
+        createRequest: { requestId: 'legacy-d11', conferenceSolutionKey: { type: 'hangoutsMeet' } },
+      },
+    },
+    { conferenceDataVersion: 1 },
+  );
   r.emu.calendar.respond('primary', created.id, GUESTS[0], 'accepted');
   r.emu.calendar.respond('primary', created.id, GUESTS[1], 'declined');
   r.emu.calendar.respond('primary', created.id, GUESTS[2], 'tentative');
@@ -150,9 +218,10 @@ function richEvent(r: Rig): GcalEvent {
 }
 
 /** The guests' answers, in GUESTS order. */
-const answers = (event: GcalEvent) => GUESTS.map(email => event.attendees?.find(a => a.email === email)?.responseStatus);
+const answers = (event: GcalEvent) =>
+  GUESTS.map(email => event.attendees?.find(a => a.email === email)?.responseStatus);
 
-test('D11 0.2.3 saving an event wipes its Meet link and guests\' answers (asserts the old failure)', async () => {
+test("D11 0.2.3 saving an event wipes its Meet link and guests' answers (asserts the old failure)", async () => {
   const r = await rig();
   try {
     const before = richEvent(r);
@@ -162,12 +231,22 @@ test('D11 0.2.3 saving an event wipes its Meet link and guests\' answers (assert
     for (const guest of GUESTS) assert.ok(listed.guests.includes(guest));
     const from = lastSeq(r.emu);
     r.observed.length = 0;
-    const saved = await r.adapter.saveEvent(r.account, { ...listed, title: 'Quarterly planning (moved rooms)' } satisfies CalendarEvent);
+    const saved = await r.adapter.saveEvent(r.account, {
+      ...listed,
+      title: 'Quarterly planning (moved rooms)',
+    } satisfies CalendarEvent);
     assert.equal(saved.title, 'Quarterly planning (moved rooms)');
 
     // One write, and it was a full replace without an ETag.
-    assert.deepEqual(r.observed.map(o => o.method), ['PUT']);
-    assert.equal(r.observed[0].ifMatch, false, 'no If-Match, so a concurrent edit would be overwritten too');
+    assert.deepEqual(
+      r.observed.map(o => o.method),
+      ['PUT'],
+    );
+    assert.equal(
+      r.observed[0].ifMatch,
+      false,
+      'no If-Match, so a concurrent edit would be overwritten too',
+    );
     assert.equal(logged(r.emu, 'calendar.events.update', from).length, 1);
     assert.equal(logged(r.emu, 'calendar.events.patch', from).length, 0);
 
@@ -187,7 +266,15 @@ test('D11 0.2.3 saving an event wipes its Meet link and guests\' answers (assert
     assert.equal(after.created, before.created);
     // The request log saw the whole exchange and still holds no titles, places or addresses.
     const log = JSON.stringify(r.emu.log);
-    for (const secret of ['Quarterly planning', 'Room 4B', 'Agenda', ...GUESTS, r.account.email, before.id]) assert.equal(log.includes(secret), false);
+    for (const secret of [
+      'Quarterly planning',
+      'Room 4B',
+      'Agenda',
+      ...GUESTS,
+      r.account.email,
+      before.id,
+    ])
+      assert.equal(log.includes(secret), false);
   } finally {
     await r.dispose();
   }
@@ -198,7 +285,8 @@ test('D11 control: a raw PATCH of the title keeps the Meet link and the answers 
   try {
     const before = richEvent(r);
     const patched = await r.call(`/calendars/primary/events/${enc(before.id)}?sendUpdates=none`, {
-      method: 'PATCH', body: { summary: 'Quarterly planning (moved rooms)' },
+      method: 'PATCH',
+      body: { summary: 'Quarterly planning (moved rooms)' },
     });
     assert.equal(patched.status, 200);
     const after = r.emu.calendar.getEvent('primary', before.id)!;
@@ -262,7 +350,10 @@ test('D12 0.2.3 re-reads every calendar in full on every poll (asserts the old f
     assert.equal(second.requests.length, first.requests.length);
     assert.equal(second.rows, first.rows);
     assert.ok(first.rows > 60, `rows per poll: ${first.rows}`);
-    assert.deepEqual(second.events.map(e => e.id), first.events.map(e => e.id));
+    assert.deepEqual(
+      second.events.map(e => e.id),
+      first.events.map(e => e.id),
+    );
     // The weekly series alone is re-sent as about 56 separate instances each time.
     const weekly = second.events.filter(e => e.remoteId?.startsWith(`${seeded.weekly.masterId}_`));
     assert.ok(weekly.length >= 50, `weekly instances re-sent: ${weekly.length}`);
@@ -295,13 +386,19 @@ test('D12 control: a sync-token poll with no changes costs one request per calen
       assert.deepEqual(listDelta.json.items, []);
       listToken = listDelta.json.nextSyncToken;
       for (const c of calendars) {
-        const delta = await r.call(`/calendars/${enc(c.id)}/events?syncToken=${enc(tokens.get(c.id)!)}`);
+        const delta = await r.call(
+          `/calendars/${enc(c.id)}/events?syncToken=${enc(tokens.get(c.id)!)}`,
+        );
         assert.equal(delta.status, 200);
         assert.deepEqual(delta.json.items, []);
         assert.ok(delta.json.nextSyncToken);
         tokens.set(c.id, delta.json.nextSyncToken);
       }
-      assert.equal(logged(r.emu, 'calendar.events.list', from).length, calendars.length, 'one events.list per calendar');
+      assert.equal(
+        logged(r.emu, 'calendar.events.list', from).length,
+        calendars.length,
+        'one events.list per calendar',
+      );
       assert.equal(logged(r.emu, 'calendar.calendarList.list', from).length, 1);
     }
   } finally {
@@ -320,7 +417,11 @@ test('D24 0.2.3 ignores hidden and deselected calendars (asserts the old failure
 
     // The client's calendar model has no room for either flag.
     for (const c of calendars) {
-      for (const key of Object.keys(c)) assert.ok(['id', 'name', 'accountId', 'color', 'primary'].includes(key), `unexpected key ${key}`);
+      for (const key of Object.keys(c))
+        assert.ok(
+          ['id', 'name', 'accountId', 'color', 'primary'].includes(key),
+          `unexpected key ${key}`,
+        );
     }
     // A calendar switched off in Google Calendar comes back like any other...
     const off = calendars.find(c => c.id === unselected);
@@ -329,13 +430,25 @@ test('D24 0.2.3 ignores hidden and deselected calendars (asserts the old failure
     // ...and its events are fetched and shown in the 0.2.3 view.
     r.observed.length = 0;
     const events = await r.adapter.listEvents(r.account);
-    assert.ok(r.observed.some(o => o.url.pathname === `/calendar/v3/calendars/${enc(unselected)}/events`), 'the deselected calendar is fetched');
-    assert.ok(events.some(e => e.calendarId === unselected), 'its events are in the view');
+    assert.ok(
+      r.observed.some(o => o.url.pathname === `/calendar/v3/calendars/${enc(unselected)}/events`),
+      'the deselected calendar is fetched',
+    );
+    assert.ok(
+      events.some(e => e.calendarId === unselected),
+      'its events are in the view',
+    );
     // The hidden one is missing only because Google leaves hidden entries out unless showHidden=true;
     // 0.2.3 never asks, so it cannot offer the calendar at all, not even as a switched-off entry.
-    assert.equal(calendars.some(c => c.id === hidden), false);
+    assert.equal(
+      calendars.some(c => c.id === hidden),
+      false,
+    );
     assert.ok(r.observed.every(o => !o.url.searchParams.has('showHidden')));
-    assert.equal(events.some(e => e.calendarId === hidden), false);
+    assert.equal(
+      events.some(e => e.calendarId === hidden),
+      false,
+    );
   } finally {
     await r.dispose();
   }
@@ -350,15 +463,22 @@ test('D24 control: the calendar list carries the hidden and selected flags', asy
     assert.equal(all.status, 200);
     const byId = new Map<string, any>(all.json.items.map((c: any) => [c.id, c]));
     // Google leaves false flags out, so an absent `selected` means switched off.
-    for (const id of [seeded.primaryId, family, readOnly]) assert.equal(byId.get(id).selected, true, 'a shown calendar says so');
+    for (const id of [seeded.primaryId, family, readOnly])
+      assert.equal(byId.get(id).selected, true, 'a shown calendar says so');
     assert.equal(byId.get(unselected).selected, undefined);
     assert.equal(byId.get(unselected).hidden, undefined);
     assert.equal(byId.get(hidden).hidden, true);
     assert.equal(byId.get(hidden).selected, undefined);
     // Without showHidden the hidden entry is left out, as on Google.
     const shown = await r.call('/users/me/calendarList');
-    assert.equal(shown.json.items.some((c: any) => c.id === hidden), false);
-    assert.equal(shown.json.items.some((c: any) => c.id === unselected), true);
+    assert.equal(
+      shown.json.items.some((c: any) => c.id === hidden),
+      false,
+    );
+    assert.equal(
+      shown.json.items.some((c: any) => c.id === unselected),
+      true,
+    );
   } finally {
     await r.dispose();
   }
