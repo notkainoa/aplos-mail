@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { CitationProps } from '../props';
 import { formatSource } from './format';
@@ -11,10 +11,17 @@ import { formatSource } from './format';
  */
 export function Citation({ index, quote, from, date, subject, threadId, onOpen }: CitationProps) {
   const quoteId = useId();
+  const [hover, setHover] = useState(false);
   // A unique dashed ident per chip lets the stylesheet anchor the quote to its own chip (CSS anchor positioning).
   const anchor = { '--cite-anchor': `--cite-${quoteId.replace(/[^a-zA-Z0-9]/g, '')}` } as CSSProperties;
   return (
-    <span className="ui-citation" style={anchor}>
+    <span
+      className="ui-citation"
+      style={anchor}
+      data-hover={hover ? 'true' : undefined}
+      onPointerEnter={(event) => setHover(event.pointerType !== 'touch')}
+      onPointerLeave={() => setHover(false)}
+    >
       <button
         type="button"
         className="ui-citation__chip"

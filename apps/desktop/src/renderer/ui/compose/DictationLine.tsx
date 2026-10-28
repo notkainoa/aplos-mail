@@ -9,7 +9,7 @@ export function DictationLine({ dictation }: { dictation: DictationState }) {
   return (
     <span className="ui-dictation-line" role="status">
       <LevelMeter level={dictation.level} label="Listening" />
-      <span>{`Listening. Release ${dictation.holdKey} to keep, Esc to cancel.`}</span>
+      <span className="ui-dictation-line__text">{`Listening. Release ${dictation.holdKey} to keep, Esc to cancel.`}</span>
     </span>
   );
 }

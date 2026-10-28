@@ -4,6 +4,7 @@ import type { ConfirmProps, PaletteItem, PaletteProps } from '../props';
 import { Icon } from '../compose/icons';
 import { keycapsFor } from '../compose/keycaps';
 import { Kbd } from '../compose/parts';
+import { nextActiveId } from './palette-nav';
 
 /** The label with the matched characters in 600. `matches` are code-point indices of `label`. */
 function MatchedLabel({ label, matches }: { label: string; matches?: readonly number[] }) {
@@ -72,12 +73,14 @@ function ConfirmView({ confirm }: { confirm: ConfirmProps }) {
 export function Palette(props: PaletteProps) {
   const { open, query, onQueryChange, context, trail, sections, activeId, onActiveChange, onRun, confirm, listboxId, onBack, onClose, announce } = props;
   const resultsRef = useRef<HTMLDivElement>(null);
+  // Only the keyboard (and digits) may scroll the list; a pointer-driven change never does, so hover moves nothing.
+  const keyboardMoved = useRef(false);
   const flat: PaletteItem[] = sections.flatMap((section) => [...section.items]);
   const empty = query === '';
 
   useEffect(() => {
     if (!confirm) return;
-    announce?.(
+    (confirm.announce ?? announce)?.(
       confirm.destructive
         ? `${confirm.question} Cancel is selected. Return cancels, Shift Return confirms.`
         : `${confirm.question} Return confirms, Escape cancels.`,
@@ -87,15 +90,18 @@ export function Palette(props: PaletteProps) {
   }, [Boolean(confirm)]);
 
   useEffect(() => {
+    if (!keyboardMoved.current) return;
+    keyboardMoved.current = false;
     resultsRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView?.({ block: 'nearest' });
   }, [activeId]);
 
   if (!open) return null;
 
   function move(step: 1 | -1) {
-    if (flat.length === 0) return;
-    const at = flat.findIndex((item) => item.id === activeId);
-    onActiveChange(flat[(at + step + flat.length) % flat.length].id);
+    const next = nextActiveId(flat.map((item) => item.id), activeId, step);
+    if (next === undefined) return;
+    keyboardMoved.current = true;
+    onActiveChange(next);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
@@ -114,7 +120,8 @@ export function Palette(props: PaletteProps) {
       return;
     }
     if (confirm) {
-      if (key === 'Enter') {
+      // On a focused key row Return is that button's own click; the Return mapping is for the field.
+      if (key === 'Enter' && (event.target as HTMLElement).tagName !== 'BUTTON') {
         event.preventDefault();
         if (event.shiftKey || !confirm.destructive) confirm.onConfirm();
         else confirm.onCancel();
@@ -155,7 +162,7 @@ export function Palette(props: PaletteProps) {
             <ol className="ui-palette__trail" aria-label="Path">
               {trail.map((crumb, index) => (
                 <li key={`${index}:${crumb}`} dir="auto">
-                  {crumb}
+                  <span className="ui-palette__trail-text">{crumb}</span>
                   <Icon name="chevron-right" size="xs" />
                 </li>
               ))}
@@ -214,6 +221,7 @@ export function Palette(props: PaletteProps) {
                             data-destructive={item.destructive ? 'true' : undefined}
                             onMouseDown={(event) => event.preventDefault()}
                             onPointerMove={() => {
+                              keyboardMoved.current = false;
                               if (!active) onActiveChange(item.id);
                             }}
                             onClick={() => onRun(item.id)}

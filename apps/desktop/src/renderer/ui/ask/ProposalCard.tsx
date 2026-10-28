@@ -49,7 +49,7 @@ export function ProposalCard(props: ProposalCardProps) {
       </p>
       <div className="ui-proposal-card__keys">
         <Btn variant="filled" size="md" label={confirmLabel} commandId="ask.acceptProposal" keyHint="always" onPress={() => onConfirm()} />
-        <Btn variant="text" size="md" label="Not now" commandId="ask.declineProposal" keyHint="always" onPress={() => onDismiss()} />
+        <Btn variant="text" size="md" label="Not now" hint="Not now" commandId="ask.declineProposal" onPress={() => onDismiss()} />
       </div>
     </section>
   );

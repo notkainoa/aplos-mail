@@ -1,4 +1,3 @@
-import { useId } from 'react';
 import type { AskTurnProps, CitationData } from '../props';
 import { Icon } from '../compose/icons';
 import { Btn } from '../compose/parts';
@@ -13,14 +12,14 @@ import { StepLog } from './StepLog';
  * A failure is an inline line with Retry and "Use another provider", never a red wall.
  */
 export function AskTurn(props: AskTurnProps) {
-  const { question, state, steps, answer, citations, provider, proposal, onOpenCitation, onRetry, onUseAnotherProvider } = props;
-  const questionId = useId();
+  const { id, question, state, steps, answer, citations, provider, proposal, onOpenCitation, onRetry, onUseAnotherProvider } = props;
+  const questionId = `${id}-question`;
   const byIndex = new Map<number, CitationData>(citations.map((c) => [c.index, c]));
   const referenced = new Set<number>();
   const hasAnswer = Boolean(answer && answer.length > 0);
 
   return (
-    <article className="ui-ask-turn" aria-labelledby={questionId} data-state={state} aria-busy={state === 'working' || state === 'streaming'}>
+    <article id={id} className="ui-ask-turn" aria-labelledby={questionId} data-state={state} aria-busy={state === 'working' || state === 'streaming'}>
       <p className="ui-ask-turn__question" id={questionId} dir="auto">
         {question}
       </p>

@@ -69,7 +69,13 @@ test('DraftState writes the three lines of DESIGN 7.6', () => {
   assert.match(failed, /role="status"/);
   assert.match(failed, /data-state="failed"/);
   assert.match(failed, /<button[^>]*>.*Retry/);
-  assert.doesNotMatch(html(<DraftState state="failed" />), /<button/);
+  // Without a retry handler there is no dangling separator.
+  const bare = html(<DraftState state="failed" />);
+  assert.doesNotMatch(bare, /<button/);
+  assert.equal(text(bare), "Couldn't save");
+  // Worst case at a 300 px pane: the text gives way (own span), the dot and Retry come after it and never shrink.
+  assert.ok(failed.indexOf('ui-draft-state__text') < failed.indexOf('ui-draft-state__dot'));
+  assert.ok(failed.indexOf('ui-draft-state__dot') < failed.indexOf('Retry'));
   for (const state of ['saving', 'saved', 'failed'] as const) clean(html(<DraftState state={state} onRetry={noop} />));
 });
 

@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { AskDockProps, AskTurnProps, CitationData, PaletteItem, PaletteProps, ProposalCardProps, SearchFieldProps } from '../props';
 import { AskDock, AskTurn, Citation, OperatorToken, Palette, ProposalCard, SearchField, StepLog } from './index';
 import { formatRecent, formatSource } from './format';
+import { nextActiveId } from './palette-nav';
 
 const noop = () => undefined;
 const html = (element: ReactElement) => renderToStaticMarkup(element);
@@ -117,7 +118,8 @@ test('ProposalCard: the one card, the filled button with Return, Not now with Es
   assert.match(pending, /aria-labelledby/);
   assert.match(pending, /--swatch:var\(--tag-ember\)/);
   assert.match(pending, /data-variant="filled"[^>]*>.*Add.*<kbd[^>]*>Return<\/kbd>/);
-  assert.match(pending, /Not now.*<kbd[^>]*>Esc<\/kbd>/);
+  assert.match(pending, /title="Not now \(Esc\)"[^>]*>.*Not now/);
+  assert.doesNotMatch(pending, /Not now<\/span><kbd/);
   assert.equal((pending.match(/data-variant="filled"/g) ?? []).length, 1);
   assert.match(text(pending), /Add to CalendarDesign reviewThu 2:00–2:30 PM · Hollow Creek/);
   clean(pending);
@@ -136,8 +138,8 @@ test('ProposalCard: the one card, the filled button with Return, Not now with Es
 
 test('AskTurn: question line, serif prose with the decisive fact, citation chips', () => {
   const markup = html(turn());
-  assert.match(markup, /<article[^>]*aria-labelledby/);
-  assert.match(markup, /class="ui-ask-turn__question"[^>]*>When is the Hollow Creek design review\?/);
+  assert.match(markup, /<article id="q1"[^>]*aria-labelledby="q1-question"/);
+  assert.match(markup, /class="ui-ask-turn__question" id="q1-question"[^>]*>When is the Hollow Creek design review\?/);
   assert.match(markup, /<strong>Thursday, 2:00–2:30 PM<\/strong>/);
   assert.equal((markup.match(/role="tooltip"/g) ?? []).length, 2);
   assert.doesNotMatch(markup, /No source in your mail/);
@@ -544,4 +546,22 @@ test('format: wall-clock dates are deterministic and relative to the given clock
   assert.equal(formatSource('2026-10-28T16:12:00-07:00', now), 'Yesterday, 4:12 PM');
   assert.equal(formatSource('2026-10-27T09:12:00-07:00', now), 'Oct 27');
   assert.equal(formatRecent('garbage', now), '');
+});
+
+test('Palette cursor: with nothing active ArrowDown lands first and ArrowUp last, then both wrap', () => {
+  const ids = ['o1', 'o2', 'o3', 'o4', 'o5'];
+  assert.equal(nextActiveId(ids, undefined, 1), 'o1');
+  assert.equal(nextActiveId(ids, undefined, -1), 'o5');
+  assert.equal(nextActiveId(ids, 'gone', -1), 'o5');
+  assert.equal(nextActiveId(ids, 'o5', 1), 'o1');
+  assert.equal(nextActiveId(ids, 'o1', -1), 'o5');
+  assert.equal(nextActiveId(ids, 'o3', -1), 'o2');
+  assert.equal(nextActiveId([], undefined, 1), undefined);
+});
+
+test('Palette: a long breadcrumb keeps its text in a shrinkable span, the input stays in the field', () => {
+  const long = 'Settings'.padEnd(80, 'x');
+  const markup = html(palette({ trail: [long, 'AI providers'] }));
+  assert.match(markup, /<li[^>]*><span class="ui-palette__trail-text">Settingsx+<\/span>/);
+  assert.ok(markup.indexOf('ui-palette__trail') < markup.indexOf('ui-palette__input'));
 });

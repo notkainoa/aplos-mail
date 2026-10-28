@@ -292,7 +292,7 @@
 .ui-step-log__steps[hidden] { display: none; }
 
 /* ---------- Citation ---------- */
-.ui-citation { position: relative; display: inline; }
+.ui-citation { --shown: 0; position: relative; display: inline; }
 .ui-citation__chip {
   display: inline-flex;
   align-items: center;
@@ -308,6 +308,9 @@
   vertical-align: var(--space-half);
   transition: color var(--dur-hover) var(--ease-std);
 }
+/* The chip draws at --kbd (18); its hit area is the 24 floor. */
+.ui-citation__chip { position: relative; }
+.ui-citation__chip::before { content: ""; position: absolute; inset: calc((var(--kbd) - var(--control-xs)) / 2) 0; }
 .ui-citation__chip:focus-visible { outline: var(--focus-width) solid var(--accent); outline-offset: var(--space-half); }
 .ui-citation__quote {
   position: absolute;
@@ -322,10 +325,17 @@
   border-radius: var(--radius-lg);
   background: var(--paper);
   box-shadow: var(--elev-float);
-  opacity: 0;
+  opacity: var(--shown);
   visibility: hidden;
   pointer-events: none;
   text-align: left;
+  /* `reveal`: opacity, 4 px and .98 (DESIGN §4.8). Hover and focus only flip --shown; nothing moves. */
+  transform: translateY(calc((1 - var(--shown)) * var(--move-reveal))) scale(calc(1 - (1 - var(--shown)) * (1 - var(--scale-reveal))));
+  transform-origin: bottom left;
+  transition:
+    opacity var(--dur-reveal-in) var(--ease-out),
+    transform var(--dur-reveal-in) var(--ease-out),
+    visibility var(--dur-reveal-in) var(--ease-std);
 }
 @supports (position-area: top) {
   .ui-citation { anchor-name: var(--cite-anchor); }
@@ -337,14 +347,14 @@
     inset: auto;
   }
 }
-.ui-citation:focus-within .ui-citation__quote { opacity: 1; visibility: visible; }
+/* Pointer hover is tracked in Citation (data-hover) so the reveal's transform never sits in a :hover rule. */
+.ui-citation[data-hover="true"], .ui-citation:focus-within { --shown: 1; }
+.ui-citation[data-hover="true"] .ui-citation__quote, .ui-citation:focus-within .ui-citation__quote { visibility: visible; }
 .ui-citation__text {
   display: block;
   color: var(--ink);
-  font: var(--type-answer);
-  font-variation-settings: "opsz" var(--opsz-answer);
-  letter-spacing: var(--track-answer);
-  font-weight: var(--w-answer);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
   overflow-wrap: anywhere;
 }
 .ui-citation__source {
@@ -356,7 +366,6 @@
   overflow-wrap: anywhere;
 }
 @media (hover: hover) {
-  .ui-citation:hover .ui-citation__quote { opacity: 1; visibility: visible; }
   .ui-citation__chip:hover { color: var(--accent); }
 }
 
@@ -433,6 +442,9 @@
   color: var(--dim);
   transition: background-color var(--dur-hover) var(--ease-std), color var(--dur-hover) var(--ease-std);
 }
+.ui-operator-token__remove { position: relative; }
+/* 16 px drawn, 24 px to hit. */
+.ui-operator-token__remove::before { content: ""; position: absolute; inset: calc((var(--space-4) - var(--control-xs)) / 2); }
 .ui-operator-token__remove:focus-visible { outline: var(--focus-width) solid var(--accent); outline-offset: var(--focus-gap); }
 @media (hover: hover) {
   .ui-operator-token__remove:hover { background: var(--hover); color: var(--ink); }
@@ -445,11 +457,21 @@
   align-items: center;
   gap: var(--space-3);
   min-height: var(--space-8);
-  border-radius: var(--radius-md);
-  box-shadow: 0 var(--space-half) 0 0 transparent;
-  transition: box-shadow var(--dur-hover) var(--ease-std);
 }
-.ui-search-field__title:focus-within { box-shadow: 0 var(--space-half) 0 0 var(--accent); }
+/* The 2 px accent underline is a straight bar under the row, so it has no curved ends. */
+.ui-search-field__title { position: relative; }
+.ui-search-field__title::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: calc(-1 * var(--space-half));
+  left: 0;
+  height: var(--space-half);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--dur-hover) var(--ease-std);
+}
+.ui-search-field__title:focus-within::after { opacity: 1; }
 .ui-search-field__title .ui-compose-icon { color: var(--dim); }
 .ui-search-field__input {
   flex: 1;
@@ -462,7 +484,7 @@
   letter-spacing: var(--track-heading);
   outline: 0;
 }
-.ui-search-field__input::placeholder { color: var(--faint); }
+.ui-search-field__input::placeholder { color: var(--dim); }
 .ui-search-field__meta {
   display: flex;
   align-items: center;
@@ -511,7 +533,7 @@
 .ui-palette__field .ui-compose-icon { color: var(--dim); }
 .ui-palette__input {
   flex: 1;
-  min-width: 0;
+  min-width: var(--space-10);
   padding: 0;
   border: 0;
   background: none;
@@ -521,8 +543,10 @@
   outline: 0;
 }
 .ui-palette__input::placeholder { color: var(--dim); }
-.ui-palette__trail { display: flex; flex: none; align-items: center; gap: var(--space-1); margin: 0; padding: 0; list-style: none; color: var(--dim); font: var(--type-base); }
-.ui-palette__trail li { display: inline-flex; align-items: center; gap: var(--space-1); }
+.ui-palette__trail { display: flex; flex: 0 1 auto; align-items: center; gap: var(--space-1); min-width: 0; max-width: 50%; margin: 0; padding: 0; list-style: none; color: var(--dim); font: var(--type-base); }
+.ui-palette__trail li { display: inline-flex; flex: 0 1 auto; align-items: center; gap: var(--space-1); min-width: 0; overflow: hidden; white-space: nowrap; }
+.ui-palette__trail li > .ui-compose-icon { flex: none; }
+.ui-palette__trail-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ui-palette__context { margin: 0; padding: var(--space-3) var(--space-4) 0; color: var(--dim); font: var(--type-small); letter-spacing: var(--track-small); overflow-wrap: anywhere; }
 .ui-palette__context b { color: var(--ink-2); font-weight: 500; }
 .ui-palette__results { max-height: var(--palette-max); padding: var(--space-1) var(--space-2) var(--space-2); overflow: auto; }
