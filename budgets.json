@@ -1,6 +1,6 @@
 {
-  "$comment": "Performance budget register (plans/40-platform-quality.md Q3 deliverable 6). Checked by scripts/audit/check-budgets.mjs. Values are the plans' own; null means the plans give no number. maxAgeDays and lastMeasured (an ISO date) are filled in when a row is first measured. calibrate = set from the first run on the owner's Mac and written to DECISIONS.md.",
-  "version": 1,
+  "$comment": "Performance budget register (plans/40-platform-quality.md Q3 deliverable 6). Checked by scripts/audit/check-budgets.mjs. Values are the plans' own; null means the plans give no number. dueBy is the date by which the row must have a first measurement (roadmap days: day 1 is 2026-10-27); a never-measured row is reported as awaiting until then and fails after it. maxAgeDays and lastMeasured (an ISO date) are filled in when a row is first measured. calibrate = set from the first run on the owner's Mac and written to DECISIONS.md. Gates: hard-3x (fails at 3x the budget), trend-10pct, record, tighten-only (alertPct, when present, is the allowed rise before an alert), required, release (a release gate, run for the release candidate).",
+  "version": 2,
   "rows": [
     {
       "id": "ui.triage-key-to-state",
@@ -15,7 +15,8 @@
       "stat": "p95",
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "ui.triage-key-to-paint",
@@ -30,7 +31,8 @@
       "stat": "p95",
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "ui.triage-key-to-paint-cap",
@@ -45,7 +47,8 @@
       "stat": "hard cap",
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "ui.triage-burst",
@@ -61,7 +64,8 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "notes": "Pass or fail check; a 3x margin does not apply to a dropped key.",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "ui.open-cached-letter",
@@ -75,7 +79,8 @@
       "unit": "ms",
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "ui.jk-prefetched",
@@ -89,7 +94,8 @@
       "unit": "ms",
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "ui.palette-open",
@@ -103,7 +109,8 @@
       "unit": "ms",
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "ui.palette-filter",
@@ -117,7 +124,8 @@
       "unit": "ms",
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "ui.scroll-10k-rows",
@@ -132,7 +140,8 @@
       "stat": "p95",
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "ui.cold-start-shell",
@@ -147,7 +156,8 @@
       "notes": "Initial target; recalibrate after the first measure (DESIGN section 5). The owner's Mac gives the absolute number; the first run only records.",
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "ui.home-interactive",
@@ -162,7 +172,8 @@
       "notes": "Initial target; recalibrate after the first measure (DESIGN section 5). The owner's Mac gives the absolute number; the first run only records.",
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "store.first-page",
@@ -176,7 +187,8 @@
       "stat": "p50",
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-06"
     },
     {
       "id": "store.unread-counts",
@@ -189,7 +201,8 @@
       "unit": "ms",
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-06"
     },
     {
       "id": "store.label-commit",
@@ -203,7 +216,8 @@
       "stat": "p50",
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-06"
     },
     {
       "id": "store.page-commit-throughput",
@@ -217,7 +231,8 @@
       "notes": "The schema adds rollups and a change log, so the first run recalibrates (plan 10 section 5).",
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-06"
     },
     {
       "id": "store.cold-open",
@@ -230,7 +245,8 @@
       "unit": "ms",
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-06"
     },
     {
       "id": "store.rss-first-page",
@@ -243,7 +259,8 @@
       "unit": "MB",
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-06"
     },
     {
       "id": "store.search-newest-50",
@@ -256,63 +273,68 @@
       "unit": "ms",
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-06"
     },
     {
       "id": "soak.rss-slope",
       "description": "RSS slope after a 30-minute warm-up",
       "owner": "eng-host",
       "environment": "owner's Mac, 7-day soak in the background during Phase 3 (roadmap 2.6)",
-      "gate": "required",
+      "gate": "release",
       "calibration": "set",
       "value": 2,
       "unit": "MB/hour",
       "notes": "Seven-day soak: RSS slope under 2 MB an hour. Plan 10 E8 is run by the Engine thread with the Integrator.",
       "source": "plans/10-engine-foundation.md E8 acceptance; plans/40-platform-quality.md Q3 deliverable 6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-20"
     },
     {
       "id": "soak.rss-net-24h",
       "description": "Net RSS growth over 24 hours",
       "owner": "eng-host",
       "environment": "owner's Mac, 7-day soak in the background during Phase 3 (roadmap 2.6)",
-      "gate": "required",
+      "gate": "release",
       "calibration": "set",
       "value": 50,
       "unit": "MB",
       "notes": "Seven-day soak: ARCH \"flat memory\". Plan 10 E8 is run by the Engine thread with the Integrator.",
       "source": "plans/10-engine-foundation.md E8 acceptance; plans/40-platform-quality.md Q3 deliverable 6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-20"
     },
     {
       "id": "soak.wal-size",
       "description": "WAL size, never above",
       "owner": "eng-host",
       "environment": "owner's Mac, 7-day soak in the background during Phase 3 (roadmap 2.6)",
-      "gate": "required",
+      "gate": "release",
       "calibration": "set",
       "value": 256,
       "unit": "MB",
       "notes": "Seven-day soak. Plan 10 E8 is run by the Engine thread with the Integrator.",
       "source": "plans/10-engine-foundation.md E8 acceptance; plans/40-platform-quality.md Q3 deliverable 6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-20"
     },
     {
       "id": "soak.event-loop-p99",
       "description": "Event-loop p99, not above this for more than a minute running",
       "owner": "eng-host",
       "environment": "owner's Mac, 7-day soak in the background during Phase 3 (roadmap 2.6)",
-      "gate": "required",
+      "gate": "release",
       "calibration": "set",
       "value": 500,
       "unit": "ms",
       "notes": "Seven-day soak. Plan 10 E8 is run by the Engine thread with the Integrator.",
       "source": "plans/10-engine-foundation.md E8 acceptance; plans/40-platform-quality.md Q3 deliverable 6",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-20"
     },
     {
       "id": "idle.engine-rss",
@@ -326,7 +348,8 @@
       "notes": "Recorded first, then limited so it cannot rise (the gate then becomes tighten-only). No number in the plans.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6 (resident-mode idle row)",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "idle.cpu-10min",
@@ -340,7 +363,8 @@
       "notes": "Recorded first, then limited so it cannot rise (the gate then becomes tighten-only). No number in the plans.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6 (resident-mode idle row)",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "idle.wakeups",
@@ -354,7 +378,8 @@
       "notes": "Recorded first, then limited so it cannot rise (the gate then becomes tighten-only). No number in the plans.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6 (resident-mode idle row)",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-13"
     },
     {
       "id": "size.app-bundle",
@@ -368,7 +393,9 @@
       "notes": "Local baseline from the plan. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-07",
+      "alertPct": 10
     },
     {
       "id": "size.app-zip",
@@ -382,7 +409,9 @@
       "notes": "Baseline from the plan. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-07",
+      "alertPct": 10
     },
     {
       "id": "size.engine-bundle",
@@ -396,7 +425,8 @@
       "notes": "Asserted by tests/portability.test.ts; a failing test is never silenced. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-07"
     },
     {
       "id": "size.renderer-bundle",
@@ -410,7 +440,8 @@
       "notes": "No number in the plans; recorded at the first measurement. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-07"
     },
     {
       "id": "time.unit-suite",
@@ -424,7 +455,8 @@
       "notes": "No number in the plans; recorded at the first measurement. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-07"
     },
     {
       "id": "ci.wall-clock-static-unit",
@@ -438,7 +470,8 @@
       "notes": "Q3 acceptance. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-07"
     },
     {
       "id": "ci.wall-clock-e2e-browser",
@@ -452,7 +485,8 @@
       "notes": "Q3 acceptance. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-07"
     },
     {
       "id": "ci.wall-clock-macos",
@@ -466,7 +500,8 @@
       "notes": "Q3 acceptance. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-07"
     },
     {
       "id": "ci.billed-minutes",
@@ -480,7 +515,8 @@
       "notes": "scripts/audit/ci-minutes.mjs warns at 70% of the allowance; the allowance itself is not stated in the plans. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-07"
     },
     {
       "id": "sync.first-sync-first50",
@@ -493,7 +529,8 @@
       "unit": "s",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md journey J2",
       "maxAgeDays": null,
-      "lastMeasured": null
+      "lastMeasured": null,
+      "dueBy": "2026-11-06"
     },
     {
       "id": "sync.first-sync-refusals",
@@ -505,6 +542,262 @@
       "value": 0,
       "unit": "refusals",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/20-providers-sync.md PV3 acceptance",
+      "maxAgeDays": null,
+      "lastMeasured": null,
+      "dueBy": "2026-11-06"
+    },
+    {
+      "id": "views.window-rerun",
+      "description": "Window re-run at 100,000 threads",
+      "owner": "eng-views",
+      "environment": "100,000-thread fixture on the real engine: shared runners and the shared agent Mac (3x hard cap); exact numbers from the owner's Mac (plan 10 section 5)",
+      "gate": "hard-3x",
+      "calibration": "set",
+      "value": 1,
+      "unit": "ms",
+      "stat": "p95",
+      "source": "plans/10-engine-foundation.md E3 acceptance",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "views.view-move",
+      "description": "View/move at 100,000 threads",
+      "owner": "eng-views",
+      "environment": "100,000-thread fixture on the real engine: shared runners and the shared agent Mac (3x hard cap); exact numbers from the owner's Mac (plan 10 section 5)",
+      "gate": "hard-3x",
+      "calibration": "set",
+      "value": 5,
+      "unit": "ms",
+      "stat": "p95",
+      "source": "plans/10-engine-foundation.md E3 acceptance",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "views.thread-act-receipt",
+      "description": "Thread/act plus receipt at 100,000 threads (inside the 8 ms key-to-state budget)",
+      "owner": "eng-views",
+      "environment": "100,000-thread fixture on the real engine: shared runners and the shared agent Mac (3x hard cap); exact numbers from the owner's Mac (plan 10 section 5)",
+      "gate": "hard-3x",
+      "calibration": "set",
+      "value": 4,
+      "unit": "ms",
+      "stat": "p95",
+      "source": "plans/10-engine-foundation.md E3 acceptance",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "views.window-open-rows",
+      "description": "Window open: rows sent",
+      "owner": "eng-views",
+      "environment": "100,000-thread fixture on the real engine: shared runners and the shared agent Mac (3x hard cap); exact numbers from the owner's Mac (plan 10 section 5)",
+      "gate": "required",
+      "calibration": "set",
+      "value": 200,
+      "unit": "rows",
+      "stat": "at most",
+      "source": "plans/10-engine-foundation.md E3 acceptance",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "views.window-open-bytes",
+      "description": "Window open: payload size",
+      "owner": "eng-views",
+      "environment": "100,000-thread fixture on the real engine: shared runners and the shared agent Mac (3x hard cap); exact numbers from the owner's Mac (plan 10 section 5)",
+      "gate": "required",
+      "calibration": "set",
+      "value": 150,
+      "unit": "KB",
+      "stat": "at most",
+      "source": "plans/10-engine-foundation.md E3 acceptance",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "views.burst-window-update-interval",
+      "description": "Burst of 10 Thread/act in 2 s: at most one window update per interval",
+      "owner": "eng-views",
+      "environment": "100,000-thread fixture on the real engine: shared runners and the shared agent Mac (3x hard cap); exact numbers from the owner's Mac (plan 10 section 5)",
+      "gate": "required",
+      "calibration": "set",
+      "value": 250,
+      "unit": "ms",
+      "stat": "minimum interval",
+      "source": "plans/10-engine-foundation.md E3 acceptance",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "views.message-size-cap",
+      "description": "Largest engine-to-renderer message outside blob routes (payload test)",
+      "owner": "eng-views",
+      "environment": "payload test in the unit suite, every push",
+      "gate": "required",
+      "calibration": "set",
+      "value": 256,
+      "unit": "KB",
+      "stat": "at most",
+      "source": "plans/10-engine-foundation.md E3 acceptance",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "sanitizer.median",
+      "description": "Sanitizer time per message on the hostile corpus and a realistic sample",
+      "owner": "eng-html",
+      "environment": "packaged build, owner's Mac; corpus of at least 60 messages plus a realistic sample",
+      "gate": "hard-3x",
+      "calibration": "calibrate",
+      "value": 5,
+      "unit": "ms",
+      "stat": "median",
+      "source": "plans/10-engine-foundation.md E4 acceptance (calibrate on first run)",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "sanitizer.p99",
+      "description": "Sanitizer time per message on the hostile corpus and a realistic sample",
+      "owner": "eng-html",
+      "environment": "packaged build, owner's Mac; corpus of at least 60 messages plus a realistic sample",
+      "gate": "hard-3x",
+      "calibration": "calibrate",
+      "value": 40,
+      "unit": "ms",
+      "stat": "p99",
+      "source": "plans/10-engine-foundation.md E4 acceptance (calibrate on first run)",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "ui.home-100k-first-rows",
+      "description": "100,000-thread fixture: Home opens to first rows",
+      "owner": "ui-foundation",
+      "environment": "packaged build, 100k-thread fixture; scheduled on the shared Mac, trend on the owner's quiet Mac",
+      "gate": "hard-3x",
+      "calibration": "set",
+      "value": 200,
+      "unit": "ms",
+      "stat": "at most",
+      "source": "plans/30-ui-revamp.md U9 acceptance 2",
+      "dueBy": "2026-11-13",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "ui.scroll-100k-frame",
+      "description": "100,000-thread fixture: scrolling frame time",
+      "owner": "ui-foundation",
+      "environment": "packaged build, 100k-thread fixture; scheduled on the shared Mac, trend on the owner's quiet Mac",
+      "gate": "hard-3x",
+      "calibration": "set",
+      "value": 16.7,
+      "unit": "ms",
+      "stat": "p95",
+      "source": "plans/30-ui-revamp.md U9 acceptance 2",
+      "dueBy": "2026-11-13",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "sync.emu-stale-rerun-units",
+      "description": "Gmail emulator: cost of a stale re-run",
+      "owner": "prov-gmail",
+      "environment": "Gmail quota emulator (6,000 units/min, concurrency cap); live runs on the agent test account",
+      "gate": "required",
+      "calibration": "set",
+      "value": 100,
+      "unit": "units",
+      "stat": "at most",
+      "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (emulator)",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "sync.emu-relabel-units",
+      "description": "Gmail emulator: cost of 2,000 threads relabelled elsewhere",
+      "owner": "prov-gmail",
+      "environment": "Gmail quota emulator (6,000 units/min, concurrency cap); live runs on the agent test account",
+      "gate": "required",
+      "calibration": "set",
+      "value": 2500,
+      "unit": "units",
+      "stat": "at most",
+      "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (emulator)",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "sync.live-units-per-minute",
+      "description": "Live first sync: logged units per minute",
+      "owner": "prov-gmail",
+      "environment": "Gmail quota emulator (6,000 units/min, concurrency cap); live runs on the agent test account",
+      "gate": "required",
+      "calibration": "set",
+      "value": 3000,
+      "unit": "units/min",
+      "stat": "never above",
+      "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (live)",
+      "dueBy": "2026-11-10",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "sync.live-first-rows",
+      "description": "Live first sync: first rows visible",
+      "owner": "prov-gmail",
+      "environment": "Gmail quota emulator (6,000 units/min, concurrency cap); live runs on the agent test account",
+      "gate": "required",
+      "calibration": "set",
+      "value": 45,
+      "unit": "s",
+      "stat": "at most",
+      "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (live)",
+      "dueBy": "2026-11-10",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "sync.first-sync-500-threads",
+      "description": "First sync: 500 threads synced (the plan says about 3 minutes)",
+      "owner": "prov-gmail",
+      "environment": "Gmail quota emulator (6,000 units/min, concurrency cap); live runs on the agent test account",
+      "gate": "required",
+      "calibration": "calibrate",
+      "value": 3,
+      "unit": "min",
+      "stat": "about",
+      "source": "plans/20-providers-sync.md PV3 acceptance",
+      "dueBy": "2026-11-06",
+      "maxAgeDays": null,
+      "lastMeasured": null
+    },
+    {
+      "id": "sync.archive-2000-units",
+      "description": "A 2,000-thread archive made in Gmail web costs under this many sync units",
+      "owner": "prov-gmail",
+      "environment": "Gmail quota emulator (6,000 units/min, concurrency cap); live runs on the agent test account",
+      "gate": "required",
+      "calibration": "set",
+      "value": 100,
+      "unit": "units",
+      "stat": "at most",
+      "source": "plans/20-providers-sync.md PV3 acceptance",
+      "dueBy": "2026-11-10",
       "maxAgeDays": null,
       "lastMeasured": null
     }

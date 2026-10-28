@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { launchAplos } from './support/electron';
 
+// launchAplos() itself refuses to run unless APLOS_E2E_ELECTRON=1, so any other *.electron.spec.ts
+// is safe too; this skip only turns the refusal into a visible "skipped".
 // Turns on once F8 (APLOS_TEST / APLOS_DATA_DIR honoured in main/lifecycle.ts: isolated data,
 // no single-instance lock, no Dock or menu-bar item, hidden windows) has landed. Without it the
 // launch would open a real, visible window on a shared Mac.

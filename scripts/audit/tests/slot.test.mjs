@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -17,7 +17,11 @@ writeFileSync(
 );
 after(() => rmSync(root, { recursive: true, force: true }));
 
-const run = name => spawnSync(process.execPath, [slot, name, '--root', root], { encoding: 'utf8' });
+const run = (name, env = {}) =>
+  spawnSync(process.execPath, [slot, name, '--root', root], {
+    encoding: 'utf8',
+    env: { ...process.env, GITHUB_STEP_SUMMARY: '', ...env },
+  });
 
 describe('slot.mjs', () => {
   it('propagates a failing script as a non-zero exit', () => {
@@ -37,10 +41,20 @@ describe('slot.mjs', () => {
     assert.match(result.stdout, /pending: check:openapi \(owner: eng-contract \/ eng-host\)/);
   });
 
-  it('names an unknown missing script as unassigned', () => {
-    const result = run('check:nothing');
+  it('exits 2 for an unknown or misspelled slot, even when the script exists', () => {
+    for (const name of ['check:tokns', 'constructor', '__proto__', 'check:openapi; echo hi']) {
+      const result = run(name);
+      assert.equal(result.status, 2, name);
+      assert.match(result.stderr, /unknown slot/);
+      assert.doesNotMatch(result.stdout, /pending/);
+    }
+  });
+
+  it('appends the pending line to GITHUB_STEP_SUMMARY when it is set', () => {
+    const summary = join(root, 'summary.md');
+    const result = run('check:contrast', { GITHUB_STEP_SUMMARY: summary });
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /pending: check:nothing \(owner: unassigned\)/);
+    assert.equal(readFileSync(summary, 'utf8'), '- pending: check:contrast (owner: ui-foundation)\n');
   });
 
   it('exits 2 without a name', () => {

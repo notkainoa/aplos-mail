@@ -12,6 +12,21 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+/**
+ * Several agents share each Mac, so no run may open a visible window. `baseUse.headless` is only a
+ * default: `--headed`, `--debug`, `--ui` and PWDEBUG would override it, so they are refused here.
+ */
+export function assertHeadless(argv: string[] = process.argv, env = process.env): void {
+  const refused = argv.filter(arg => /^--(headed|debug|ui)(-host|-port)?(=|$)/.test(arg));
+  if (env.PWDEBUG) refused.push('PWDEBUG');
+  if (refused.length > 0) {
+    throw new Error(
+      `Aplos E2E is headless only: ${refused.join(', ')} would open a visible window on a shared Mac. Use the HTML trace (npx playwright show-trace) instead.`,
+    );
+  }
+}
+assertHeadless();
+
 export const repoRoot = resolve(import.meta.dirname, '..', '..');
 export const artifactsDir = join(repoRoot, 'artifacts', 'e2e');
 

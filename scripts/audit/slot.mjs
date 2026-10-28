@@ -2,9 +2,11 @@
 // CI slot runner (plan 40 Q3 deliverable 2). Usage: node scripts/audit/slot.mjs <npm-script> [--root <dir>]
 // Runs the root package.json script when it exists and propagates its exit code. When it does not
 // exist yet, prints "pending: <name> (owner: <lane>)" and exits 0, so a job can be wired before the
-// lane that owns the check has landed it.
+// lane that owns the check has landed it. The pending line is also appended to
+// $GITHUB_STEP_SUMMARY when that is set, so a green run still lists what did not run. A name that
+// is not in the table below is a typo or an unregistered slot and exits 2.
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,9 +25,15 @@ export function hasScript(root, name) {
   return Boolean(pkg.scripts && Object.hasOwn(pkg.scripts, name));
 }
 
-export function runSlot(name, root) {
+export function runSlot(name, root, summaryFile = process.env.GITHUB_STEP_SUMMARY) {
+  if (!Object.hasOwn(slotOwners, name)) {
+    console.error(`unknown slot "${name}"; known slots: ${Object.keys(slotOwners).join(', ')}`);
+    return 2;
+  }
   if (!hasScript(root, name)) {
-    console.log(`pending: ${name} (owner: ${slotOwners[name] ?? 'unassigned'})`);
+    const line = `pending: ${name} (owner: ${slotOwners[name]})`;
+    console.log(line);
+    if (summaryFile) appendFileSync(summaryFile, `- ${line}\n`);
     return 0;
   }
   const result = spawnSync('npm', ['run', name], { cwd: root, stdio: 'inherit' });
