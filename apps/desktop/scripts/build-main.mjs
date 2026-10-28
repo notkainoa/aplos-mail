@@ -10,7 +10,11 @@ if (process.env.APLOS_RELEASE_BUILD === '1') {
     process.exit(1);
   }
 }
-const define = oauthDefines(process.env);
+// Test mode (APLOS_TEST=1, main/test-mode.ts) is compiled out of release builds, so a distributed app ignores it.
+const define = {
+  ...oauthDefines(process.env),
+  __APLOS_TEST_MODE__: JSON.stringify(process.env.APLOS_RELEASE_BUILD !== '1'),
+};
 // Bundle the workspace packages (`@aplos/*`, TypeScript source that is not in the packaged node_modules);
 // every third-party package stays external and ships from app.asar's node_modules.
 const thirdPartyExternal = {
@@ -34,7 +38,7 @@ await build({
   define,
 });
 await build({
-  entryPoints: ['src/main/engine-host.ts'],
+  entryPoints: ['src/main/engine-process.ts'],
   outfile: 'dist/main/engine.cjs',
   bundle: true,
   platform: 'node',
