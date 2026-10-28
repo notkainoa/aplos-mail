@@ -1,9 +1,29 @@
 // Builds the release artifacts (DMG + ZIP, arm64 + x64, latest-mac.yml) with electron-builder.
 // Signs and notarizes only when the credentials exist; otherwise makes an ad-hoc signed build.
 // Usage: node scripts/release-build.mjs [--publish never|always] [extra electron-builder args]
-// Run `npm run build` first (the npm scripts release:build / release:publish do).
+// Run `APLOS_RELEASE_BUILD=1 npm run build` first (the npm scripts release:build / release:publish do);
+// a bundle built without it is refused.
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+
+// Only a bundle built with APLOS_RELEASE_BUILD=1 carries the release define, and with it the ADR 40-6
+// debug guard and the release-only renderer rules (src/main/security.ts). Packaging a dev bundle as a
+// release would ship a debuggable app with the release identity, so refuse it.
+for (const bundle of ['electron.cjs', 'engine.cjs']) {
+  let source = '';
+  try {
+    source = readFileSync(new URL(`../dist/main/${bundle}`, import.meta.url), 'utf8');
+  } catch {
+    // Missing: reported below like a non-release bundle.
+  }
+  if (!/\bvar releaseBuild = true;/.test(source)) {
+    console.error(
+      `release-build: dist/main/${bundle} is missing or was not built with APLOS_RELEASE_BUILD=1; run npm run release:build (or APLOS_RELEASE_BUILD=1 npm run build) first.`,
+    );
+    process.exit(1);
+  }
+}
 
 const env = { ...process.env };
 // GitHub Actions passes missing secrets as empty strings; electron-builder should see them as absent.

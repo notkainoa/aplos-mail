@@ -9,6 +9,7 @@ import {
   type Session,
   type WebContents,
 } from 'electron';
+import { url as inspectorURL } from 'node:inspector';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { releaseBuild } from './oauth-config';
@@ -45,14 +46,25 @@ function debugSwitch(argv: readonly string[]): string | undefined {
   return undefined;
 }
 /**
- * A packaged release build refuses to start with a debugging switch: with RunAsNode off, a debugger is
- * the remaining way to drive Aplos with its Keychain trust. Dev runs, local `npm run package` builds and
- * E2E runs (no APLOS_RELEASE_BUILD define) keep debugging so Playwright can attach.
+ * A release build refuses to start with a debugging switch or an open inspector: with RunAsNode off, a
+ * debugger is the remaining way to drive Aplos with its Keychain trust. Only the build-time release define
+ * counts, never app.isPackaged: Electron derives that from the executable's name, so the same signed binary
+ * linked as "electron" would skip the check. Dev runs, local `npm run package` builds and E2E runs (no
+ * APLOS_RELEASE_BUILD define) keep debugging so Playwright can attach.
+ *
+ * Node's inspector starts before any JavaScript (--inspect prints its listener line first, --inspect-brk
+ * pauses before this runs), so only the EnableNodeCliInspectArguments fuse (Q2.1) closes those fully; this
+ * guard then still covers the Chromium switches (--remote-debugging-*), which open only after the main script.
  */
 function refuseDebugging(): void {
-  if (!releaseBuild || !app.isPackaged) return;
+  if (!releaseBuild) return;
+  // A JavaScript listener replaces Node's SIGUSR1 handler, so `kill -USR1` cannot open the inspector on a
+  // running release (the fuse above also turns that off; this covers a build without it).
+  process.on('SIGUSR1', () => {});
   const found =
-    debugSwitch(process.argv) ?? DEBUG_SWITCHES.find(name => app.commandLine.hasSwitch(name));
+    debugSwitch(process.argv) ??
+    DEBUG_SWITCHES.find(name => app.commandLine.hasSwitch(name)) ??
+    (inspectorURL() ? 'an open inspector' : undefined);
   if (!found) return;
   process.stderr.write(`Aplos Mail: a release build does not start with ${found}.\n`);
   process.exit(DEBUG_GUARD_EXIT_CODE);
@@ -64,7 +76,9 @@ refuseDebugging();
 
 const rendererFile = resolve(__dirname, '../renderer/index.html');
 const rendererURL = pathToFileURL(rendererFile);
-const devURL = process.env.APLOS_RENDERER_URL;
+// The Vite dev server; a release build never takes it, or one environment variable would make any origin
+// the trusted renderer (navigation, the microphone, every IPC call).
+const devURL = releaseBuild ? undefined : process.env.APLOS_RENDERER_URL;
 function trustedURL(raw: string): boolean {
   try {
     const url = new URL(raw);
@@ -118,8 +132,8 @@ const DENIED_PERMISSIONS: ReadonlySet<string> = new Set([
   'bluetooth',
   'openExternal',
 ]);
-// Today's rule, unchanged: only the trusted window may use the microphone, never the camera. Subframes
-// (a future mail frame) are also held back by Chromium's permissions policy: microphone defaults to 'self'.
+// Today's rule: only the trusted window may use the microphone, never the camera. The asking frame must be
+// that window's main frame too, so no subframe (a future mail frame) reaches the grant whatever its allow=.
 function permissionCheck(
   contents: WebContents | null,
   permission: string,
@@ -127,7 +141,13 @@ function permissionCheck(
   details: Partial<PermissionCheckHandlerHandlerDetails> = {},
 ): boolean {
   if (DENIED_PERMISSIONS.has(permission) || details.mediaType === 'video') return false;
-  return Boolean(contents && trustedURL(contents.getURL()) && permission === 'media');
+  return Boolean(
+    contents &&
+    permission === 'media' &&
+    details.isMainFrame !== false &&
+    trustedURL(contents.getURL()) &&
+    trustedURL(details.requestingUrl ?? contents.getURL()),
+  );
 }
 function permissionRequest(
   contents: WebContents,
@@ -135,10 +155,12 @@ function permissionRequest(
   callback: (granted: boolean) => void,
   details: unknown,
 ): void {
-  const media = details as { mediaTypes?: string[] };
+  const media = details as { mediaTypes?: string[]; isMainFrame?: boolean; requestingUrl?: string };
   if (
     DENIED_PERMISSIONS.has(permission) ||
     !trustedURL(contents.getURL()) ||
+    media.isMainFrame !== true ||
+    !trustedURL(media.requestingUrl ?? '') ||
     permission !== 'media' ||
     media.mediaTypes?.includes('video')
   ) {
@@ -185,15 +207,18 @@ function navigationAllowed(url: string, mainFrame: boolean): boolean {
 /**
  * Lockdown for every webContents (windows, pop-outs, print views, future mail-frame views, webviews):
  * navigation only to the renderer, no new windows (web and mail links open in the browser), no <webview>.
- * windows.ts keeps its own per-window handlers; those open a blocked top-level link externally.
+ * windows.ts keeps its own per-window handlers; its will-navigate opens a blocked top-level link externally.
  */
 function guardContents(contents: WebContents) {
   hardenSession(contents.session);
   contents.on('will-navigate', event => {
     if (!trustedURL(event.url)) event.preventDefault();
   });
+  // Subframes only. Electron emits will-navigate for a main frame only when will-frame-navigate was not
+  // prevented, so judging main frames here would hide the navigation from windows.ts's will-navigate (the
+  // link would vanish instead of opening in the browser); will-navigate above blocks them instead.
   contents.on('will-frame-navigate', event => {
-    if (!navigationAllowed(event.url, event.isMainFrame)) event.preventDefault();
+    if (!event.isMainFrame && !navigationAllowed(event.url, false)) event.preventDefault();
   });
   contents.on('will-redirect', event => {
     if (!navigationAllowed(event.url, event.isMainFrame)) event.preventDefault();

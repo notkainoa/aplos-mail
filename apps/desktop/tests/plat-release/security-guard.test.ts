@@ -102,6 +102,7 @@ interface Options {
   switches?: string[];
   env?: Record<string, string>;
   platform?: string;
+  inspector?: string;
 }
 async function load(options: Options = {}) {
   const app = Object.assign(new Emitter(), {
@@ -112,6 +113,7 @@ async function load(options: Options = {}) {
   const opened: string[] = [];
   const asked: string[] = [];
   const stderr: string[] = [];
+  const signals: string[] = [];
   const electron = {
     app,
     session: { defaultSession },
@@ -126,12 +128,15 @@ async function load(options: Options = {}) {
     env: options.env ?? {},
     platform: options.platform ?? 'darwin',
     stderr: { write: (line: string) => void stderr.push(line) },
+    on: (name: string) => void signals.push(name),
     exit: (code: number) => {
       throw new Exit(code);
     },
   };
   const module = { exports: {} as Security };
-  const requireFake = (id: string) => (id === 'electron' ? electron : nodeRequire(id));
+  const inspector = { url: () => options.inspector };
+  const requireFake = (id: string) =>
+    id === 'electron' ? electron : id === 'node:inspector' ? inspector : nodeRequire(id);
   let exitCode: number | undefined;
   try {
     new Function(
@@ -146,7 +151,16 @@ async function load(options: Options = {}) {
     if (!(error instanceof Exit)) throw error;
     exitCode = error.code;
   }
-  return { security: module.exports, app, defaultSession, opened, asked, stderr, exitCode };
+  return {
+    security: module.exports,
+    app,
+    defaultSession,
+    opened,
+    asked,
+    stderr,
+    signals,
+    exitCode,
+  };
 }
 async function installed(options: Options = {}) {
   const loaded = await load(options);
@@ -216,8 +230,23 @@ test('permission checks deny everything except the trusted window microphone', a
     check(trusted, 'media', 'file:///', { mediaType: 'video', isMainFrame: true }),
     false,
   );
+  assert.equal(
+    check(trusted, 'media', 'file:///', {
+      mediaType: 'audio',
+      isMainFrame: true,
+      requestingUrl: RENDERER,
+    }),
+    true,
+  );
   assert.equal(check(outside, 'media', 'https://example.com', { mediaType: 'audio' }), false);
   assert.equal(check(null, 'media', '', { mediaType: 'audio' }), false);
+  // A frame inside the trusted window is not the trusted window.
+  for (const details of [
+    { mediaType: 'audio', isMainFrame: false, requestingUrl: RENDERER },
+    { mediaType: 'audio', isMainFrame: false, requestingUrl: 'about:blank' },
+    { mediaType: 'audio', isMainFrame: true, requestingUrl: 'https://evil.example/' },
+  ])
+    assert.equal(check(trusted, 'media', 'file:///', details), false, JSON.stringify(details));
 });
 
 test('permission requests deny everything; the trusted microphone still asks macOS', async () => {
@@ -225,21 +254,41 @@ test('permission requests deny everything; the trusted microphone still asks mac
   const trusted = contents(RENDERER);
   const request = (wc: FakeContents, permission: string, details: unknown) =>
     new Promise(resolve => defaultSession.request!(wc, permission, resolve, details));
+  // Electron always sets isMainFrame and requestingUrl on a request (PermissionRequest).
+  const main = { isMainFrame: true, requestingUrl: RENDERER };
   for (const permission of PERMISSIONS)
-    assert.equal(await request(trusted, permission, { isMainFrame: true }), false, permission);
-  assert.equal(await request(trusted, 'media', { mediaTypes: ['audio', 'video'] }), false);
-  assert.equal(await request(trusted, 'media', { mediaTypes: ['video'] }), false);
+    assert.equal(await request(trusted, permission, main), false, permission);
+  assert.equal(await request(trusted, 'media', { ...main, mediaTypes: ['audio', 'video'] }), false);
+  assert.equal(await request(trusted, 'media', { ...main, mediaTypes: ['video'] }), false);
   assert.equal(
-    await request(contents('https://example.com/'), 'media', { mediaTypes: ['audio'] }),
+    await request(contents('https://example.com/'), 'media', {
+      isMainFrame: true,
+      requestingUrl: 'https://example.com/',
+      mediaTypes: ['audio'],
+    }),
     false,
   );
+  // Subframes of the trusted window, or a request without frame details, never reach the grant.
+  for (const details of [
+    { mediaTypes: ['audio'], isMainFrame: false, requestingUrl: 'about:blank' },
+    { mediaTypes: ['audio'], isMainFrame: false, requestingUrl: RENDERER },
+    { mediaTypes: ['audio'], isMainFrame: false, requestingUrl: 'https://evil.example/' },
+    { mediaTypes: ['audio'], isMainFrame: true, requestingUrl: 'https://evil.example/' },
+    { mediaTypes: ['audio'] },
+  ])
+    assert.equal(await request(trusted, 'media', details), false, JSON.stringify(details));
   assert.deepEqual(asked, []);
-  assert.equal(await request(trusted, 'media', { mediaTypes: ['audio'] }), true);
-  assert.deepEqual(asked, ['microphone']);
+  assert.equal(await request(trusted, 'media', { ...main, mediaTypes: ['audio'] }), true);
+  assert.equal(
+    await request(trusted, 'media', { ...main, requestingUrl: `${RENDERER}?thread=t1` }),
+    true,
+  );
+  assert.deepEqual(asked, ['microphone', 'microphone']);
 
   const linux = await installed({ platform: 'linux' });
   const granted = await new Promise(resolve =>
     linux.defaultSession.request!(linux.contents(RENDERER), 'media', resolve, {
+      ...main,
       mediaTypes: ['audio'],
     }),
   );
@@ -306,17 +355,52 @@ test('navigation and redirects are blocked unless they go to the renderer', asyn
     wc.emit(name, e, url);
     return e.defaultPrevented;
   };
-  for (const name of ['will-navigate', 'will-frame-navigate', 'will-redirect']) {
+  for (const name of ['will-navigate', 'will-redirect']) {
     for (const url of OUTSIDE) assert.equal(blocked(name, url), true, `${name} ${url}`);
     assert.equal(blocked(name, RENDERER), false, name);
     assert.equal(blocked(name, `${RENDERER}?draft=d1#x`), false, name);
   }
+  // Main frames are judged by will-navigate (see the next test); will-frame-navigate leaves them alone.
+  for (const url of OUTSIDE) assert.equal(blocked('will-frame-navigate', url), false, url);
   // Subframes may hold inert documents, nothing else from outside.
   assert.equal(blocked('will-frame-navigate', 'about:srcdoc', false), false);
   assert.equal(blocked('will-frame-navigate', 'about:blank', false), false);
+  assert.equal(blocked('will-frame-navigate', RENDERER, false), false);
   for (const url of OUTSIDE.filter(url => url !== 'about:blank'))
     assert.equal(blocked('will-frame-navigate', url, false), true, url);
   assert.equal(blocked('will-redirect', 'https://example.com/', false), true);
+});
+
+test('a blocked top-level link still reaches windows.ts, which opens it in the browser', async () => {
+  const { contents, security, opened } = await installed();
+  const wc = contents();
+  // windows.ts's own will-navigate handler, registered after the guard (the guard runs at creation).
+  const sec = security as unknown as Security & {
+    trustedURL(url: string): boolean;
+    external(url: string): Promise<void>;
+  };
+  wc.on('will-navigate', (...args: unknown[]) => {
+    const [e, url] = args as [ReturnType<typeof event>, string];
+    if (!sec.trustedURL(url)) {
+      e.preventDefault();
+      void sec.external(url).catch(() => {});
+    }
+  });
+  // Electron's order for a main-frame navigation: will-frame-navigate, then will-navigate only if the
+  // first was not prevented.
+  const navigate = (url: string) => {
+    const frame = event({ url, isMainFrame: true });
+    wc.emit('will-frame-navigate', frame);
+    if (frame.defaultPrevented) return true;
+    const e = event({ url, isMainFrame: true });
+    wc.emit('will-navigate', e, url);
+    return e.defaultPrevented;
+  };
+  assert.equal(navigate('https://example.com/clicked'), true);
+  assert.equal(navigate('javascript:alert(1)'), true);
+  assert.equal(navigate(RENDERER), false);
+  await settle();
+  assert.deepEqual(opened, ['https://example.com/clicked']);
 });
 
 test('the dev renderer origin is the only trusted one under APLOS_RENDERER_URL', async () => {
@@ -331,6 +415,33 @@ test('the dev renderer origin is the only trusted one under APLOS_RENDERER_URL',
     wc.emit('will-navigate', e, url);
     assert.equal(e.defaultPrevented, prevented, url);
   }
+});
+
+test('a release build ignores APLOS_RENDERER_URL', async () => {
+  const attacker = 'http://127.0.0.1:31337/';
+  const { contents, defaultSession, asked, security } = await installed({
+    release: true,
+    env: { APLOS_RENDERER_URL: attacker },
+  });
+  assert.equal((security as unknown as { devURL?: string }).devURL, undefined);
+  const wc = contents(attacker);
+  for (const [url, prevented] of [
+    [attacker, true],
+    [RENDERER, false],
+  ] as const) {
+    const e = event({ url, isMainFrame: true });
+    wc.emit('will-navigate', e, url);
+    assert.equal(e.defaultPrevented, prevented, url);
+  }
+  const granted = await new Promise(resolve =>
+    defaultSession.request!(wc, 'media', resolve, {
+      isMainFrame: true,
+      requestingUrl: attacker,
+      mediaTypes: ['audio'],
+    }),
+  );
+  assert.equal(granted, false);
+  assert.deepEqual(asked, []);
 });
 
 test('window.open is always denied; only web and mail links open in the browser', async () => {
@@ -403,13 +514,24 @@ const HOSTILE_ARGS = [
 test('a packaged release build exits with code 78 for every debugging switch, before anything else', async () => {
   for (const argv of HOSTILE_ARGS) {
     // load() only sees the exit if it happens while the module itself is evaluated (on import).
-    const { exitCode, stderr } = await load({ release: true, packaged: true, argv });
-    assert.equal(exitCode, 78, argv.join(' '));
-    assert.equal(stderr.length, 1);
+    for (const packaged of [true, false]) {
+      // app.isPackaged comes from the executable's name, so it must not matter.
+      const { exitCode, stderr } = await load({ release: true, packaged, argv });
+      assert.equal(exitCode, 78, `${packaged} ${argv.join(' ')}`);
+      assert.equal(stderr.length, 1);
+    }
   }
   // Chromium's own parse (app.commandLine) is a second source.
   const parsed = await load({ release: true, packaged: true, switches: ['remote-debugging-port'] });
   assert.equal(parsed.exitCode, 78);
+  // An inspector opened some other way (NODE_OPTIONS on a build without the fuse) is refused too.
+  const inspecting = await load({ release: true, inspector: 'ws://127.0.0.1:9229/x' });
+  assert.equal(inspecting.exitCode, 78);
+});
+
+test('a release build traps SIGUSR1 so it cannot open the inspector; other builds leave it to Node', async () => {
+  assert.deepEqual((await load({ release: true })).signals, ['SIGUSR1']);
+  assert.deepEqual((await load({ release: false })).signals, []);
 });
 
 test('the debug guard leaves dev, local package and E2E builds, and harmless switches, alone', async () => {
@@ -417,7 +539,6 @@ test('the debug guard leaves dev, local package and E2E builds, and harmless swi
     for (const options of [
       { release: false, packaged: true },
       { release: false, packaged: false },
-      { release: true, packaged: false },
     ]) {
       const { exitCode, security } = await load({ ...options, argv });
       assert.equal(exitCode, undefined, `${JSON.stringify(options)} ${argv.join(' ')}`);
@@ -433,6 +554,8 @@ test('the debug guard leaves dev, local package and E2E builds, and harmless swi
   ];
   const { exitCode } = await load({ release: true, packaged: true, argv: harmless });
   assert.equal(exitCode, undefined);
+  const dev = await load({ release: false, inspector: 'ws://127.0.0.1:9229/x' });
+  assert.equal(dev.exitCode, undefined);
 });
 
 test('debugSwitch names the first debugging switch after the executable', async () => {
