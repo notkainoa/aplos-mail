@@ -22,6 +22,7 @@
     "package": "npm run package -w @aplos/desktop",
     "start": "npm run start -w @aplos/desktop",
     "verify:release": "npm run verify:release -w @aplos/desktop",
+    "verify:hardening": "node apps/desktop/scripts/verify-hardening.mjs",
     "verify:large": "npm run verify:large -w @aplos/desktop",
     "web": "npm run dev -w @aplos/web",
     "web:build": "npm run build -w @aplos/web",
@@ -34,6 +35,8 @@
     "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
     "test:e2e:browser": "playwright test -c tests/e2e/playwright.config.ts --project browser",
     "check:budgets": "node scripts/audit/check-budgets.mjs",
+    "check:sqlite": "node scripts/audit/sqlite-floor.mjs",
+    "test:engine": "node scripts/audit/electron-node.mjs --import tsx --test 'packages/engine/tests/**/*.test.ts' 'apps/desktop/tests/engine.test.ts' 'apps/desktop/tests/engine-host.test.ts' 'apps/desktop/tests/queue.test.ts' 'apps/desktop/tests/service.test.ts' 'apps/desktop/tests/sync-safety.test.ts'",
     "format": "prettier --write --no-error-on-unmatched-pattern 'apps/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'apps/*/scripts/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json}' 'apps/desktop/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'packages/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'packages/*/generated/**/*.{ts,mjs,json}' 'packages/*/scripts/**/*.{ts,mjs}' 'packages/*/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'scripts/**/*.{ts,mjs,cjs,mts,cts,js}' 'apps/*/*.{ts,mts,mjs,cjs,json}' '*.{json,mjs,cjs}' 'tools/**/*.{ts,mjs,cjs,js}' 'tests/**/*.{ts,mjs}' .prettierrc",
     "format:check": "prettier --check --no-error-on-unmatched-pattern 'apps/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'apps/*/scripts/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json}' 'apps/desktop/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'packages/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'packages/*/generated/**/*.{ts,mjs,json}' 'packages/*/scripts/**/*.{ts,mjs}' 'packages/*/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'scripts/**/*.{ts,mjs,cjs,mts,cts,js}' 'apps/*/*.{ts,mts,mjs,cjs,json}' '*.{json,mjs,cjs}' 'tools/**/*.{ts,mjs,cjs,js}' 'tests/**/*.{ts,mjs}' .prettierrc",
     "lint": "eslint . --pass-on-unpruned-suppressions",
@@ -42,7 +45,7 @@
     "lint:css": "stylelint \"apps/**/*.css\"",
     "lint:css:baseline": "rm -f stylelint-suppressions.json && stylelint \"apps/**/*.css\" --suppress",
     "test:lint": "node --test \"tools/lint/tests/*.test.mjs\"",
-    "check": "node scripts/audit/run-if-present.mjs format:check && npm run lint && npm run test:lint && npm run test:audit && npm run lint:css && node scripts/audit/run-if-present.mjs owners:check && npm run typecheck && npm test",
+    "check": "node scripts/audit/run-if-present.mjs format:check && npm run lint && npm run test:lint && npm run test:audit && npm run lint:css && node scripts/audit/run-if-present.mjs owners:check && npm run typecheck && npm run check:sqlite && npm run test:engine && npm test",
     "prepare": "node scripts/hooks/install.mjs"
   },
   "devDependencies": {

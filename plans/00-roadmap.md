@@ -330,34 +330,61 @@ flowchart LR
 | Platform and website | `plat-ci`, `plat-release`, `web` | 3 | Opus for hardening and release security; Claude for the website; cheap models for CI plumbing |
 | Integrator | none; dependency and infrastructure merges, the full suite, the conformance burn-down, Phase 2 lead, the owner's review queue and digests | 1 plus reviewers | Opus for judgement; Haiku for test runs and summaries |
 
-### 5.1a Model routing to save Claude usage (owner, 2026-10-28)
+### 5.1a Lean mode: the token budget (owner, 2026-10-28; replaces the earlier routing rules)
 
-> **What this means:** Free models do the simple, checkable work. Claude does the thinking, the design and every final check. The quality bar stays the same.
+> **What this means:** Sonnet does most of the work, free models write the simple code, and Opus is saved for a short list of hard calls. Agents read less, live shorter, and fewer of them run at once. Tests and one review per change keep quality where it was.
 
-Claude's 5-hour limit was hit on day 1, so every thread routes work by tier:
+**Why.** In the first 26 hours the revamp hit Claude's 5-hour limit three times. The causes, measured from the logs:
+- Opus made about 87% of the calls, because subagents inherit their parent's model and every parent was Opus.
+- The average call re-read about 200,000 tokens of context, and over 1,300 calls re-read more than 400,000, because threads lived forever and agents read whole plans.
+- Orchestrators were nested three layers deep.
+- Every PR got multi-round Opus review panels.
+- The orchestrator and the Integrator polled every 30 minutes.
+- About 20 agents ran at once. The limit caps work per 5 hours, so running wider only hit the cap sooner.
 
-| Tier | Models | Use for |
+**Models.** Every agent, workflow and delegate names its model explicitly. Nothing inherits.
+
+| Tier | Model | Use for |
 |---|---|---|
-| Free | OpenCode Zen free models: `opencode/glm-5.3-flash-free`, `opencode/deepseek-v4.1-flash-free`, `opencode/mimo-v2.6-flash-free`, `opencode/beam-free`, `opencode/flint-40b-free`. Run them with `delegate_task` on provider `opencode`, or with `opencode run -m <model>`. Do not use `opencode/nemotron-3-ultra-free`, which hangs | Searching and summarizing code; running tests and builds and summarizing the results; mechanical edits, renames and codemods; boilerplate; turning a written test plan into test cases; fixtures and emulator data; lint and format fixes; STATUS and doc formatting; first-pass bug hunts, with each finding verified by Claude |
-| Cursor Grok | `grok-4.7` or `grok-4.6`, through `delegate_task` on provider `cursor` or with `cursor-agent -p --model grok-4.7-medium` | Well-scoped coding with a clear spec; second-opinion reviews. Its free monthly allowance ran out on day 1. Try it, and on "usage limit" or "unavailable on Free" fall back to the next tier without retrying |
-| Claude Haiku | `claude-haiku-5-5` | Easy work when a free model fails or is too slow |
-| Claude Sonnet | `claude-sonnet-5-5` | Scoped features, bug fixes with a repro, routine UI |
-| Claude Opus | `claude-opus-5-5` | The contract, store, governor, sync, security, complex UI, adversarial reviews, and the final check before any merge |
+| Default | `claude-sonnet-5-5` | Thread orchestrators, all UI code, scoped features, every review |
+| Free | `opencode/glm-5.3-flash-free`, `opencode/deepseek-v4.1-flash-free` (`delegate_task` provider `opencode`) | Mechanical non-UI code from a written spec: tests from a test plan, fixtures, scripts, CI, file splits, lint and format fixes, searches, test-run summaries. Avoid `beam-free`, `mimo-*` and `nemotron-*` |
+| Cursor Grok | `grok-4.7`, when its free allowance is back | Same as free; fall back without retrying on a limit error |
+| Opus (named cases only) | `claude-opus-5-5` | Contract changes; security code (send guard, live-run guard, sanitizer and frame, hardening, auth and tokens); the store's commit path and sync correctness; the final review of PRs in those areas. Nothing else |
+| Haiku | `claude-haiku-5-5` | Trivial checks when the free models are down |
 
-Rules:
-- All UI and design code goes to Claude only: Opus for complex or high-visibility UI, Sonnet for routine UI.
-- Never use a paid plan or upgrade. OpenCode Go and Factory need subscriptions the owner doesn't have, so don't use them.
-- Free and Cursor models never see secrets, `.env`, Keychain values, or mail and addresses from the agent test account. Give them code and demo data only.
-- Non-Claude output is checked before it counts: tests run, and a Claude agent reviews the diff. If a free model fails twice, or makes no progress for 10 minutes, cancel it and move up a tier.
-- When Claude reports a usage limit, don't stall. Shift queued low-judgment work to the free tier, and resume Claude work after the reset.
+**Context.**
+- **Lane cards.** Each lane has a lane card of at most one page in `plans/lanes/<lane>.md`: goal, owned paths, the exact plan sections and line ranges to read, done criteria and test commands. Agents read the card and only the sections it names, never whole plans. The 22,000-word DESIGN.md is read by section only.
+- **Fresh threads.** A thread whose context passes about 150,000 tokens writes `plans/<thread>/HANDOFF.md` (at most one page), and a fresh thread continues from it. Subagents are one task each and end when it's done.
+- **Short STATUS.** `plans/STATUS.md` keeps only the last 3 days. Older entries move to `plans/status-archive/`. Agents read only new lines (`git diff` since the last read), not the whole file.
+- **No pasting.** No raw test or build logs in context: scripts summarize results to pass or fail counts plus the first failure.
+
+**Structure.**
+- At most two layers: a thread runs its own subagents directly. No lane-lead orchestrators or delegates that spawn more delegates.
+- At most 3 building threads plus the Integrator at once, working down the critical path. The others are parked until their inputs exist.
+- At most 4 concurrent subagents per thread.
+
+**Reviews.**
+- One Sonnet review per PR, of the diff only, plus passing tests.
+- An Opus adversarial review only for the Opus areas above.
+- No multi-round panels: a second review round only checks the fixes for the first round's findings.
+- Free-model code always gets the Sonnet review.
+
+**Polling.**
+- No agent polls.
+- `plans/tools/watch.sh` checks STATUS, PRs and thread state in shell. An agent wakes only when it prints a change, and that agent starts as a fresh small thread.
+- The Integrator is event-driven: it merges when a READY or HANDOFF-READY entry appears.
+
+**Measurement.** `python3 plans/tools/token-report.py` prints tokens by model and by thread since a given time. The daily digest includes one line from it. If Opus goes above 25% of calls, or the average context goes above 120,000 tokens, the orchestrator tightens routing the same day.
+
+**Unchanged:** every test gate, the security reviews, the owner's feature review loop, and the hard rules.
 
 ### 5.1b Machines (owner, 2026-10-28)
 
-> **What this means:** threads that only need tests and a headless browser run on the Linux box, so this Mac isn't overloaded.
+> **What this means:** tests that only need a headless browser or Node run on the Linux box when it helps the Mac; anything needing macOS stays on the Mac.
 
-- **This Mac (MacBook Air):** the Integrator, Engine, and Platform and website. They need macOS, Electron, signing and the Keychain. Live Gmail runs also happen here, because the test account's grant is in this Mac's Keychain.
-- **Linux box (`kainoas-linux-mba`, its own T3 server, repo at `~/Dev/aplos-mail`, Node 24 through nvm):** UI-screens, UI-core and Providers. Their tests run headless (Playwright Chromium, the stand-in engine, the emulators). Anything that truly needs a visible window uses `agent-display` there, or is routed back to the Mac through STATUS.
-- Branches, origin, `plans/STATUS.md` and the merge procedure are the same on both machines. Threads on different machines talk only through STATUS. The orchestrator watches both.
+- **This Mac:** the Integrator and Engine (Electron host, Keychain, live Gmail runs), plus Platform's release and hardening work.
+- **Linux box (`kainoas-linux-mba`, its own T3 server, repo at `~/Dev/aplos-mail`, Node 24 through nvm):** browser-tested UI work (UI-core, UI-screens) and Node-only provider work, when they're active.
+- Threads on different machines talk only through STATUS. Live Gmail runs and Mac-only checks go to the Integrator as a REQUEST in STATUS.
 
 ### 5.2 Why six
 
