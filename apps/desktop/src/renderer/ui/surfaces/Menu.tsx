@@ -1,11 +1,13 @@
 /**
  * Menu: opaque --paper, --elev-float, radius 12, 32 px items, at least 220 px wide (DESIGN 6 Menu).
  * Controlled: the screen owns `activeId`; arrows move it, Return chooses, digits 1–9 pick in short menus,
- * Esc closes and focus returns to the anchor. The chosen item never blinks; the menu just closes.
+ * → fires the active row's inline action, Esc closes. Focus returns to the anchor on every close, before the
+ * screen hears the choice, so it is never lost. The chosen item never blinks; the menu just closes (`reveal` out).
  */
 import { useEffect, useId, type KeyboardEvent } from 'react';
+import { motions } from '../generated/motion';
 import type { ComponentPropsMap, MenuEntry, TagColor } from '../props';
-import { PartIcon, PartKeys, keysFor, useDismiss, useFloating } from './parts';
+import { PartIcon, PartKeys, SrOnly, keysFor, lowerFirst, useDismiss, useFloating, usePresence } from './parts';
 
 type ItemEntry = Extract<MenuEntry, { kind: 'item' }>;
 
@@ -23,14 +25,15 @@ function Swatches({ swatch }: { swatch: TagColor | readonly TagColor[] }) {
 export function Menu(props: ComponentPropsMap['Menu']) {
   const { open, anchor, label, entries, activeId, checkedId, numbered, onActiveChange, onSelect, onClose } = props;
   const baseId = useId();
-  const { ref, style, placed } = useFloating(open, anchor, 'below-start');
+  const { mounted, leaving } = usePresence(open, motions.reveal.durations.out);
+  const { ref, style, placed } = useFloating(mounted, anchor, 'below-start');
   useDismiss(open, ref, anchor, onClose);
 
   useEffect(() => {
     if (open) ref.current?.focus({ preventScroll: true });
   }, [open, ref]);
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   const items = entries.filter((entry): entry is ItemEntry => entry.kind === 'item');
   const enabled = items.filter((item) => !item.disabled);
@@ -39,10 +42,22 @@ export function Menu(props: ComponentPropsMap['Menu']) {
   const domId = (id: string) => `${baseId}-${id}`;
   const picker = checkedId !== undefined;
 
+  // Focus goes back to the anchor first, so a screen that moves focus on select (a dialog, a field) still wins.
+  const close = () => {
+    anchor?.focus({ preventScroll: true });
+    onClose();
+  };
   const choose = (id: string) => {
     const item = items.find((entry) => entry.id === id);
     if (!item || item.disabled) return;
+    anchor?.focus({ preventScroll: true });
     onSelect(id);
+    onClose();
+  };
+  const fireInline = (item: ItemEntry) => {
+    if (!item.inlineAction || item.disabled) return;
+    anchor?.focus({ preventScroll: true });
+    item.inlineAction.onSelect();
     onClose();
   };
   const move = (delta: number | 'first' | 'last') => {
@@ -57,7 +72,7 @@ export function Menu(props: ComponentPropsMap['Menu']) {
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.nativeEvent.isComposing) return;
+    if (event.nativeEvent.isComposing || leaving) return;
     const key = event.key;
     if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Home' || key === 'End') {
       event.preventDefault();
@@ -65,11 +80,16 @@ export function Menu(props: ComponentPropsMap['Menu']) {
     } else if (key === 'Enter' || key === ' ') {
       event.preventDefault();
       if (activeId) choose(activeId);
+    } else if (key === 'ArrowRight') {
+      const item = items.find((entry) => entry.id === activeId);
+      if (item?.inlineAction) {
+        event.preventDefault();
+        fireInline(item);
+      }
     } else if (key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      onClose();
-      anchor?.focus();
+      close();
     } else if (key === 'Tab') {
       onClose();
     } else if (numbered && /^[1-9]$/.test(key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -91,6 +111,9 @@ export function Menu(props: ComponentPropsMap['Menu']) {
       aria-activedescendant={activeItem ? domId(activeItem.id) : undefined}
       tabIndex={-1}
       className="ui-menu"
+      data-state={leaving ? 'leaving' : 'open'}
+      aria-hidden={leaving ? true : undefined}
+      inert={leaving}
       data-placed={placed ? 'true' : undefined}
       data-numbered={numbered ? 'true' : undefined}
       style={style}
@@ -107,11 +130,17 @@ export function Menu(props: ComponentPropsMap['Menu']) {
         }
         const digit = digitOf.get(entry.id);
         const checked = picker ? entry.id === checkedId : undefined;
+        const labelId = `${domId(entry.id)}-label`;
+        const detailId = entry.detail ? `${domId(entry.id)}-detail` : undefined;
+        const hintId = entry.inlineAction ? `${domId(entry.id)}-hint` : undefined;
+        const describedBy = [detailId, hintId].filter(Boolean).join(' ') || undefined;
         return (
           <div
             key={entry.id}
             id={domId(entry.id)}
             role={picker ? 'menuitemradio' : 'menuitem'}
+            aria-labelledby={labelId}
+            aria-describedby={describedBy}
             aria-checked={checked}
             aria-disabled={entry.disabled ? true : undefined}
             className="ui-menu__item"
@@ -128,22 +157,32 @@ export function Menu(props: ComponentPropsMap['Menu']) {
             {entry.icon ? <PartIcon name={entry.icon} /> : null}
             {entry.swatch ? <Swatches swatch={entry.swatch} /> : null}
             <span className="ui-menu__text">
-              <span className="ui-menu__item-label">{entry.label}</span>
-              {entry.detail ? <span className="ui-menu__detail">{entry.detail}</span> : null}
+              <span className="ui-menu__item-label" id={labelId}>
+                {entry.label}
+              </span>
+              {entry.detail ? (
+                <span className="ui-menu__detail" id={detailId}>
+                  {entry.detail}
+                </span>
+              ) : null}
               {entry.inlineAction ? (
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  className="ui-menu__inline"
-                  data-tone={entry.inlineAction.tone}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    entry.inlineAction?.onSelect();
-                    onClose();
-                  }}
-                >
-                  {entry.inlineAction.label}
-                </button>
+                <>
+                  {/* Pointer duplicate of → on the active row; the key path is spoken through the hint. */}
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="ui-menu__inline"
+                    data-tone={entry.inlineAction.tone}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      fireInline(entry);
+                    }}
+                  >
+                    {entry.inlineAction.label}
+                  </button>
+                  <SrOnly id={hintId}>{`Press Right Arrow to ${lowerFirst(entry.inlineAction.label)}.`}</SrOnly>
+                </>
               ) : null}
             </span>
             {entry.aside ? <span className="ui-menu__aside">{entry.aside}</span> : null}

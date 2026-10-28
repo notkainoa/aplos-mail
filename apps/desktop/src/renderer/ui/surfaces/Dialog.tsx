@@ -1,10 +1,13 @@
 /**
  * Dialog: the modal surface. Opaque --paper, radius 16, --elev-dialog, --scrim behind, `settle` in (DESIGN 4.6, 6).
  * It owns the screen's filled button (passed in `footer`). Focus moves in on open, stays inside while open
- * and returns to the opener on close. Esc or a press on the scrim closes it.
+ * and returns to the opener on close. Esc or a press on the scrim closes it. It stays mounted, inert, for the
+ * `settle` out duration so the exit plays.
  */
 import { useEffect, useId, useRef, type KeyboardEvent, type MouseEvent } from 'react';
+import { motions } from '../generated/motion';
 import type { ComponentPropsMap } from '../props';
+import { usePresence } from './parts';
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -12,6 +15,7 @@ export function Dialog({ open, title, description, size, children, footer, initi
   const titleId = useId();
   const descId = useId();
   const ref = useRef<HTMLElement | null>(null);
+  const { mounted, leaving } = usePresence(open, motions.settle.durations.out);
 
   useEffect(() => {
     if (!open) return;
@@ -22,10 +26,10 @@ export function Dialog({ open, title, description, size, children, footer, initi
     return () => opener?.focus({ preventScroll: true });
   }, [open, initialFocusId]);
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.nativeEvent.isComposing) return;
+    if (event.nativeEvent.isComposing || leaving) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
@@ -50,11 +54,11 @@ export function Dialog({ open, title, description, size, children, footer, initi
   };
 
   const onScrim = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget) onClose();
+    if (!leaving && event.target === event.currentTarget) onClose();
   };
 
   return (
-    <div className="ui-dialog__scrim" onMouseDown={onScrim}>
+    <div className="ui-dialog__scrim" data-state={leaving ? 'leaving' : 'open'} aria-hidden={leaving ? true : undefined} inert={leaving} onMouseDown={onScrim}>
       <section
         ref={ref}
         role="dialog"
@@ -64,6 +68,7 @@ export function Dialog({ open, title, description, size, children, footer, initi
         tabIndex={-1}
         className="ui-dialog"
         data-size={size}
+        data-state={leaving ? 'leaving' : 'open'}
         onKeyDown={onKeyDown}
       >
         <div className="ui-dialog__head">

@@ -135,6 +135,25 @@
     inset 0 1px 0 var(--press-hi),
     inset 0 calc(-1 * 1px) 0 var(--press-lo);
 }
+/* Hover is --hover laid over --accent (as the mockup does), never a new mixed colour. The overlay comes first
+   in tree order and the contents are positioned after it, so it sits under the label without a z-index. */
+.ui-part-button[data-variant='filled'] > * {
+  position: relative;
+}
+.ui-part-button[data-variant='filled']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--hover);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-hover) var(--ease-std);
+}
+.ui-part-button[data-variant='filled']:disabled::before,
+.ui-part-button[data-variant='filled'][aria-disabled='true']::before {
+  display: none;
+}
 .ui-part-button[data-variant='filled']:active {
   box-shadow: inset 0 1px 0 var(--press-lo);
 }
@@ -146,19 +165,28 @@
 .ui-part-button[data-tone='danger'] .ui-part-icon {
   color: var(--stamp-ink);
 }
-.ui-part-button:disabled {
+.ui-part-button:disabled,
+.ui-part-button[aria-disabled='true'] {
   color: var(--dim);
+}
+.ui-part-button:disabled {
   pointer-events: none;
+}
+/* Soft-disabled keeps focus and takes no press feedback. */
+.ui-part-button[aria-disabled='true']:active {
+  transform: none;
 }
 .ui-part-button:disabled .ui-part-icon {
   color: var(--faint);
 }
-.ui-part-button[data-variant='filled']:disabled {
+.ui-part-button[data-variant='filled']:disabled,
+.ui-part-button[data-variant='filled'][aria-disabled='true'] {
   background: var(--sunken);
   color: var(--dim);
   box-shadow: none;
 }
-.ui-part-button[data-variant='filled']:disabled .ui-part-kbd {
+.ui-part-button[data-variant='filled']:disabled .ui-part-kbd,
+.ui-part-button[data-variant='filled'][aria-disabled='true'] .ui-part-kbd {
   background: var(--raised);
   color: var(--dim);
 }
@@ -176,8 +204,8 @@
   .ui-part-button[data-tone='danger']:hover .ui-part-icon {
     color: var(--stamp-ink);
   }
-  .ui-part-button[data-variant='filled']:hover {
-    background: color-mix(in srgb, var(--accent) 90%, var(--ink));
+  .ui-part-button[data-variant='filled']:hover::before {
+    opacity: 1;
   }
 }
 .ui-part-button[data-variant='text']:active,
@@ -190,6 +218,10 @@
   position: relative;
   display: inline-flex;
   min-width: 0;
+}
+/* An icon button's wrapper never shrinks below its fixed square; only text beside it gives way. */
+.ui-part-tipwrap:has(> .ui-part-button[data-variant='icon']) {
+  flex: none;
 }
 .ui-part-tip {
   position: absolute;
@@ -291,6 +323,10 @@
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
+}
+/* Only the crumb shrinks; back / close keeps its place. */
+.ui-pane__lead > .ui-part-tipwrap {
+  flex: none;
 }
 .ui-pane__crumb {
   display: flex;
@@ -478,7 +514,12 @@
   gap: var(--space-2);
 }
 .ui-text[data-icon='true'] .ui-part-icon {
+  flex: none;
   color: var(--dim);
+}
+.ui-text__body {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .ui-text[data-variant='display'] {
   font: var(--type-display);
@@ -529,7 +570,8 @@
   position: fixed;
   left: var(--float-x);
   top: var(--float-y);
-  z-index: var(--z-menu);
+  /* --z-menu is being added to the layer tokens; until it lands, the existing popover layer holds. */
+  z-index: var(--z-menu, var(--z-popover));
   border-radius: var(--radius-lg);
   background: var(--paper);
   box-shadow: var(--elev-float);
@@ -546,6 +588,18 @@
 }
 @keyframes ui-reveal {
   from {
+    opacity: 0;
+    transform: translateY(var(--move-reveal)) scale(var(--scale-reveal));
+  }
+}
+/* `reveal` out: back toward the trigger while the surface stays mounted, inert, for --dur-reveal-out. */
+.ui-menu[data-state='leaving'],
+.ui-popover[data-state='leaving'] {
+  pointer-events: none;
+  animation: ui-reveal-out var(--dur-reveal-out) var(--ease-in) both;
+}
+@keyframes ui-reveal-out {
+  to {
     opacity: 0;
     transform: translateY(var(--move-reveal)) scale(var(--scale-reveal));
   }
@@ -775,6 +829,25 @@
     transform: translateY(var(--move-settle)) scale(var(--scale-settle));
   }
 }
+/* `settle` out: the dialog sinks and the scrim fades over --dur-settle-out; nothing in it takes input. */
+.ui-dialog__scrim[data-state='leaving'] {
+  pointer-events: none;
+  animation: ui-scrim-out var(--dur-settle-out) var(--ease-in) both;
+}
+.ui-dialog[data-state='leaving'] {
+  animation: ui-settle-out var(--dur-settle-out) var(--ease-in) both;
+}
+@keyframes ui-scrim-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ui-settle-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--move-settle)) scale(var(--scale-settle));
+  }
+}
 .ui-dialog[data-size='sm'] {
   max-width: var(--toast-max);
 }
@@ -903,7 +976,7 @@
   }
 }
 
-/* ───────────── Puck: one shared thumb, translate + scale, never width ───────────── */
+/* ───────────── Puck: one shared thumb, translate + scaleX, never width ───────────── */
 
 .ui-puck {
   position: relative;
@@ -918,13 +991,17 @@
   left: 0;
   width: var(--puck-w);
   height: var(--puck-h);
-  transform: translate(var(--puck-x), var(--puck-y)) scale(var(--puck-sx), var(--puck-sy));
+  transform: translate(var(--puck-x), var(--puck-y)) scaleX(var(--puck-sx));
   transform-origin: 0 0;
   pointer-events: none;
   transition: transform var(--dur-slide) var(--spring-slide);
 }
 .ui-puck:not([data-ready]) > .ui-puck__thumb {
   visibility: hidden;
+}
+/* First placement: land in place, no slide in from the corner. */
+.ui-puck[data-instant] > .ui-puck__thumb {
+  transition: none;
 }
 /* Cells follow the thumb in the DOM and are positioned, so they paint above it without a layer. */
 .ui-puck__cell {

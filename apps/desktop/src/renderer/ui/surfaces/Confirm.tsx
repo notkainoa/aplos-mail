@@ -1,16 +1,17 @@
 /**
  * Confirm: a confirmation as two key rows (DESIGN 6, 7.9). The default row comes first and is focused.
  * Destructive: Cancel is the default (Return cancels), the confirm row needs ⇧Return and reads in --stamp-ink.
- * Otherwise the confirm row is the default (Return) and Cancel takes Esc. Esc always cancels.
+ * Otherwise the confirm row is the default (Return) and Cancel takes Esc; Return on a focused Cancel row cancels.
+ * Esc always cancels.
  */
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react';
 import type { ComponentPropsMap, LiteralKey } from '../props';
 import { Dialog } from './Dialog';
 import { PartKeys, lowerFirst } from './parts';
 
-function KeyRow({ label, keys, primary, danger, onPress }: { label: string; keys: LiteralKey; primary: boolean; danger: boolean; onPress: () => void }) {
+function KeyRow({ row, label, keys, primary, danger, onPress }: { row: 'confirm' | 'cancel'; label: string; keys: LiteralKey; primary: boolean; danger: boolean; onPress: () => void }) {
   return (
-    <button type="button" className="ui-confirm__row" data-primary={primary ? 'true' : undefined} data-tone={danger ? 'danger' : undefined} onClick={onPress}>
+    <button type="button" className="ui-confirm__row" data-row={row} data-primary={primary ? 'true' : undefined} data-tone={danger ? 'danger' : undefined} onClick={onPress}>
       <span className="ui-confirm__row-label">{label}</span>
       <PartKeys chords={[keys]} />
     </button>
@@ -44,7 +45,12 @@ export function Confirm({ question, consequence, confirmLabel, cancelLabel = 'Ca
       if (destructive) {
         if (event.shiftKey) onConfirm();
         else onCancel();
-      } else if (!event.shiftKey) onConfirm();
+      } else if (!event.shiftKey) {
+        // Return never confirms from the Cancel row: it activates the row that has focus.
+        const row = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[data-row]')?.dataset.row : undefined;
+        if (row === 'cancel') onCancel();
+        else onConfirm();
+      }
     } else if (event.key === 'Escape' && presentation === 'inline') {
       event.preventDefault();
       event.stopPropagation();
@@ -57,8 +63,8 @@ export function Confirm({ question, consequence, confirmLabel, cancelLabel = 'Ca
     }
   };
 
-  const cancelRow = <KeyRow key="cancel" label={cancelLabel} keys={destructive ? 'Return' : 'Esc'} primary={destructive} danger={false} onPress={onCancel} />;
-  const confirmRow = <KeyRow key="confirm" label={confirmLabel} keys={destructive ? '⇧Return' : 'Return'} primary={!destructive} danger={destructive} onPress={onConfirm} />;
+  const cancelRow = <KeyRow key="cancel" row="cancel" label={cancelLabel} keys={destructive ? 'Return' : 'Esc'} primary={destructive} danger={false} onPress={onCancel} />;
+  const confirmRow = <KeyRow key="confirm" row="confirm" label={confirmLabel} keys={destructive ? '⇧Return' : 'Return'} primary={!destructive} danger={destructive} onPress={onConfirm} />;
   const rows = (
     <div ref={rowsRef} className="ui-confirm__rows" onKeyDown={onKeyDown}>
       {destructive ? [cancelRow, confirmRow] : [confirmRow, cancelRow]}

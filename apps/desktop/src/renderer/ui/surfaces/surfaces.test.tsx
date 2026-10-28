@@ -1,5 +1,5 @@
 // Surfaces family: static render checks of structure, copy, ARIA and states, with demo and worst-case data.
-// Run: npx tsx --test apps/desktop/src/renderer/ui/surfaces/surfaces.test.tsx
+// Run from the repo root: npx tsx --tsconfig apps/desktop/tsconfig.json --test apps/desktop/src/renderer/ui/surfaces/surfaces.test.tsx
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { ReactElement } from 'react';
@@ -261,7 +261,11 @@ describe('Menu', () => {
     assert.equal(count(html, /data-color="(sky|hill)"/g), 4);
     assert.match(html, /data-active="true" data-detail="true"/);
     assert.match(textOf(html), /Google needs you to sign in again\. Reconnect/);
-    assert.match(html, /class="ui-menu__inline" data-tone="danger"/);
+    // The inline Reconnect is a pointer duplicate; keys reach it with → and the item names only its label.
+    assert.match(html, /aria-hidden="true" class="ui-menu__inline" data-tone="danger"/);
+    assert.match(html, /role="menuitem" aria-labelledby="([^"]+)-gmail-label" aria-describedby="\1-gmail-detail \1-gmail-hint"/);
+    assert.match(html, /class="ui-sr-only" id="[^"]+-gmail-hint">Press Right Arrow to reconnect\.</);
+    assert.match(html, /role="menu"[^>]*data-state="open"/);
     assert.match(html, /ui-menu__aside">Synced</);
     assert.ok(!html.includes('data-placed'), 'unplaced until measured');
     assertIdRefs(html);
@@ -303,9 +307,9 @@ describe('Popover', () => {
         <p>Jordan asked for your pick by tomorrow.</p>
       </Popover>,
     );
-    assert.match(dialog, /role="dialog" aria-label="Why it’s here" tabindex="-1" class="ui-popover" data-role="dialog" data-placement="below-end"/);
+    assert.match(dialog, /role="dialog" aria-label="Why it’s here" tabindex="-1" class="ui-popover" data-role="dialog" data-state="open" data-placement="below-end"/);
     const tip = render(<Popover open anchor={null} label="Quote" role="tooltip" onClose={noop}>{RTL}</Popover>);
-    assert.match(tip, /role="tooltip" aria-label="Quote" class="ui-popover" data-role="tooltip" data-placement="below-start"/);
+    assert.match(tip, /role="tooltip" aria-label="Quote" class="ui-popover" data-role="tooltip" data-state="open" data-placement="below-start"/);
     assert.ok(!tip.includes('tabindex'));
   });
 });
@@ -319,7 +323,8 @@ describe('Dialog', () => {
         <p>Body</p>
       </Dialog>,
     );
-    assert.match(html, /^<div class="ui-dialog__scrim"><section role="dialog" aria-modal="true" aria-labelledby="[^"]+" aria-describedby="[^"]+" tabindex="-1" class="ui-dialog" data-size="lg">/);
+    assert.match(html, /^<div class="ui-dialog__scrim" data-state="open"><section role="dialog" aria-modal="true" aria-labelledby="[^"]+" aria-describedby="[^"]+" tabindex="-1" class="ui-dialog" data-size="lg" data-state="open">/);
+    assert.ok(!html.includes('inert'), 'open: takes input');
     assert.match(html, /<h2 class="ui-dialog__title" id="[^"]+">Keyboard shortcuts<\/h2>/);
     assert.match(html, /ui-dialog__foot"><button/);
     assertIdRefs(html);
@@ -383,6 +388,7 @@ describe('Puck', () => {
     assert.match(html, /<span class="ui-puck__label">W<\/span>/);
     assert.match(textOf(html), /Week view W/);
     assert.ok(!html.includes('data-ready'), 'the selected item paints itself until measured');
+    assert.ok(!html.includes('--puck-sy'), 'scaleX only: the thumb is never scaled vertically');
     assertIdRefs(html);
   });
 
@@ -454,7 +460,9 @@ describe('Toast', () => {
         onDismiss={noop}
       />,
     );
-    assert.match(html, /^<div role="status" aria-atomic="true" class="ui-toast" data-kind="later" data-state="shown">/);
+    // Not a live region of its own: the stack's persistent region announces it (a region born with text is often silent).
+    assert.match(html, /^<div class="ui-toast" data-kind="later" data-state="shown">/);
+    assert.ok(!html.includes('role="status"'));
     assert.match(html, /data-tone="dusk"><svg[^>]*data-icon="clock"/);
     assert.match(textOf(html), /Moved to Later Set a date D Undo Z/);
     assert.ok(!html.includes('tabindex'), 'never takes focus');
@@ -481,17 +489,19 @@ describe('Toast', () => {
 });
 
 describe('ToastStack', () => {
-  it('keeps the newest three, dropping plain toasts before Undo toasts', () => {
+  it('keeps three, the oldest plain toasts giving way; an Undo toast is never dropped', () => {
     const list = [t('1', { undoable: true }), t('2'), t('3', { undoable: true }), t('4'), t('5')];
     assert.deepEqual(visibleToasts(list, 0).map((x) => x.id), ['1', '3', '5']);
     assert.deepEqual(visibleToasts(list, 1).map((x) => x.id), ['1', '3']);
     assert.deepEqual(visibleToasts([t('a'), t('b')], 0).map((x) => x.id), ['a', 'b']);
     assert.deepEqual(visibleToasts([], 0), []);
+    // Four quick E presses: all four Undo toasts stay rather than one being silently hidden.
     const undos = [1, 2, 3, 4].map((n) => t(String(n), { undoable: true }));
-    assert.deepEqual(visibleToasts(undos, 0).map((x) => x.id), ['2', '3', '4']);
+    assert.deepEqual(visibleToasts(undos, 0).map((x) => x.id), ['1', '2', '3', '4']);
+    assert.deepEqual(visibleToasts([...undos, t('p')], 1).map((x) => x.id), ['1', '2', '3', '4']);
   });
 
-  it('renders a labelled stack and the undo-send notice inside it, counted in the three', () => {
+  it('renders a polite stack and the undo-send notice inside it, counted in the three', () => {
     const html = render(
       <ToastStack
         toasts={[t('1', { kind: 'done', message: 'Done', undoable: true }), t('2'), t('3'), t('4')]}
@@ -500,8 +510,11 @@ describe('ToastStack', () => {
         onDismiss={noop}
       />,
     );
-    assert.match(html, /^<section class="ui-toast-stack" aria-label="Notifications">/);
+    assert.match(html, /^<div class="ui-toast-stack" aria-live="polite">/);
+    assert.ok(!html.includes('aria-label="Notifications"'), 'not a landmark');
     assert.equal(count(html, 'class="ui-toast"'), 3);
+    // The ticking countdown opts out of the stack's live region; its start is spoken once through announce.
+    assert.match(html, /data-kind="undo-send" data-state="shown" aria-live="off"/);
     assert.match(textOf(html), /Sending to Jordan in 6 s Undo Z Send now/);
     assert.match(html, /class="ui-toast__drain" aria-hidden="true" style="--drain:0.75"/);
     assert.ok(html.includes('>Done<'), 'the Undo toast stays');
@@ -519,6 +532,6 @@ describe('ToastStack', () => {
   });
 
   it('an empty stack stays mounted so announcements land', () => {
-    assert.equal(render(<ToastStack toasts={[]} onAction={noop} onDismiss={noop} />), '<section class="ui-toast-stack" aria-label="Notifications"></section>');
+    assert.equal(render(<ToastStack toasts={[]} onAction={noop} onDismiss={noop} />), '<div class="ui-toast-stack" aria-live="polite"></div>');
   });
 });

@@ -1,6 +1,8 @@
 /**
  * Puck: one shared selection indicator per group (DESIGN 4.8 `slide`, 6). The thumb is a single element whose
- * size is fixed on first measure; selection moves it with translate + scale, never width. 'segmented' is a
+ * width is fixed on first measure; selection moves it with translate + scaleX, never width (its height simply
+ * follows the selected cell and never animates). The first placement, and the first after the group was hidden,
+ * lands without a transition, so nothing slides in on mount. 'segmented' is a
  * --sunken track with a --paper thumb (--elev-puck); 'selection' is rows with a --puck fill (sidebar, Settings nav).
  * Before the first measure (server render) the selected item paints its own fill, so nothing is ever unselected.
  */
@@ -12,7 +14,6 @@ interface Thumb {
   x: number;
   y: number;
   sx: number;
-  sy: number;
   w: number;
   h: number;
 }
@@ -52,8 +53,11 @@ function PuckCell({ item, selected, role, focusable, onSelect, onKeyDown }: { it
 export function Puck({ kind, role, orientation, label, items, selectedId, onSelect }: ComponentPropsMap['Puck']) {
   const vertical = (orientation ?? (kind === 'segmented' ? 'horizontal' : 'vertical')) === 'vertical';
   const trackRef = useRef<HTMLDivElement | null>(null);
-  const base = useRef<{ w: number; h: number } | null>(null);
+  const thumbRef = useRef<HTMLSpanElement | null>(null);
+  const baseW = useRef<number | null>(null);
   const [thumb, setThumb] = useState<Thumb | null>(null);
+  // True until the thumb has been painted once at its place with transitions off.
+  const [instant, setInstant] = useState(true);
 
   useLayoutEffect(() => {
     const track = trackRef.current;
@@ -62,18 +66,27 @@ export function Puck({ kind, role, orientation, label, items, selectedId, onSele
       const cell = selectedId === null ? null : Array.from(track.querySelectorAll<HTMLElement>('[data-puck-id]')).find((el) => el.dataset.puckId === selectedId);
       if (!cell || cell.offsetWidth === 0) {
         setThumb(null);
+        setInstant(true);
         return;
       }
       const w = cell.offsetWidth;
-      const h = cell.offsetHeight;
-      base.current ??= { w, h };
-      setThumb({ x: cell.offsetLeft, y: cell.offsetTop, sx: w / base.current.w, sy: h / base.current.h, w: base.current.w, h: base.current.h });
+      baseW.current ??= w;
+      setThumb({ x: cell.offsetLeft, y: cell.offsetTop, sx: w / baseW.current, w: baseW.current, h: cell.offsetHeight });
     };
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     observer?.observe(track);
     return () => observer?.disconnect();
   }, [selectedId, items]);
+
+  // The thumb was just placed with transitions off: flush that style so it is the starting point, then turn
+  // the slide on. Later moves transition from here instead of from the top-left corner.
+  useLayoutEffect(() => {
+    if (!thumb || !instant) return;
+    const el = thumbRef.current;
+    if (el) void getComputedStyle(el).transform;
+    setInstant(false);
+  }, [thumb, instant]);
 
   const enabled = items.filter((item) => !item.disabled);
   const roving = role !== 'navigation';
@@ -101,7 +114,6 @@ export function Puck({ kind, role, orientation, label, items, selectedId, onSele
         '--puck-x': `${thumb.x}px`,
         '--puck-y': `${thumb.y}px`,
         '--puck-sx': String(thumb.sx),
-        '--puck-sy': String(thumb.sy),
         '--puck-w': `${thumb.w}px`,
         '--puck-h': `${thumb.h}px`,
       } as CSSProperties)
@@ -114,11 +126,12 @@ export function Puck({ kind, role, orientation, label, items, selectedId, onSele
       data-kind={kind}
       data-orientation={vertical ? 'vertical' : 'horizontal'}
       data-ready={thumb ? 'true' : undefined}
+      data-instant={thumb && instant ? 'true' : undefined}
       role={role === 'tabs' ? 'tablist' : role === 'radio' ? 'radiogroup' : undefined}
       aria-label={role === 'navigation' ? undefined : label}
       aria-orientation={role === 'tabs' ? (vertical ? 'vertical' : 'horizontal') : undefined}
     >
-      <span className="ui-puck__thumb" aria-hidden="true" style={thumbStyle} />
+      <span ref={thumbRef} className="ui-puck__thumb" aria-hidden="true" style={thumbStyle} />
       {items.map((item) => (
         <PuckCell
           key={item.id}

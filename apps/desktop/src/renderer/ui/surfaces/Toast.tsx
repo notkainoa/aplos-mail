@@ -2,7 +2,8 @@
  * Toast: one opaque notice, --paper, --elev-float, radius 12, `ui` text, up to 440 px (DESIGN 6, 7.13).
  * Wears its kind's icon (meaning never rides on colour alone). Plain toasts live 4 s, Undo toasts 8 s, then fade
  * over 400 ms (120 ms reduced); hover, focus or a hidden window pauses the clock. Durations come from motion.ts.
- * Announced politely; it never takes focus.
+ * Announced politely by the stack's persistent live region (a region inserted with its text already inside is
+ * often not read); it never takes focus.
  */
 import { useEffect, useRef, useState } from 'react';
 import { themeHooks, timing, timingReduced } from '../generated/motion';
@@ -99,8 +100,6 @@ export function Toast({ kind, message, actions = [], undoable, persistent, onAct
   const look = KIND[kind];
   return (
     <div
-      role="status"
-      aria-atomic="true"
       className="ui-toast"
       data-kind={kind}
       data-state={leaving ? 'leaving' : 'shown'}

@@ -1,7 +1,8 @@
 /**
  * FatalScreen: the whole-pane fatal error (DESIGN 6, 7.15). Sans `display` "Aplos can't reach its mail engine."
  * and "Your mail is safe on this Mac.", then Restart engine (filled, Return) · Copy diagnostics. The parked engine
- * offers Try again · Export diagnostics. Never a stack trace, never an exclamation mark.
+ * offers Try again · Export diagnostics. Never a stack trace, never an exclamation mark. While restarting the
+ * primary is aria-disabled, not disabled, so the focus it holds is never dropped to the page.
  */
 import { useEffect, useRef, type KeyboardEvent } from 'react';
 import type { ComponentPropsMap } from '../props';
@@ -26,7 +27,7 @@ export function FatalScreen({ kind, restarting, onRestart, onDiagnostics }: Comp
       <h1 className="ui-fatal-screen__title">Aplos can’t reach its mail engine.</h1>
       <p className="ui-fatal-screen__safe">Your mail is safe on this Mac.</p>
       <div className="ui-fatal-screen__actions">
-        <PartButton buttonRef={primary} variant="filled" label={restartLabel} keys="Return" keyHint="always" disabled={restarting} onPress={() => onRestart()} />
+        <PartButton buttonRef={primary} variant="filled" label={restartLabel} keys="Return" keyHint="always" softDisabled={restarting} onPress={() => onRestart()} />
         <PartButton variant="text" label={kind === 'parked' ? 'Export diagnostics' : 'Copy diagnostics'} onPress={() => onDiagnostics()} />
       </div>
     </div>

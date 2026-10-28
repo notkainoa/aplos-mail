@@ -232,6 +232,8 @@ export interface PartButtonProps {
   keyHint?: KeyHint;
   tone?: 'default' | 'danger';
   disabled?: boolean;
+  /** Unavailable for now but still focusable (aria-disabled): for a focused button that goes busy, so focus is never lost. */
+  softDisabled?: boolean;
   pressed?: boolean;
   /** Tooltip first line when it differs from the visible label (the Ask button's "Ask about your mail"). */
   tipLabel?: string;
@@ -248,7 +250,7 @@ export interface PartButtonProps {
 }
 
 export function PartButton(props: PartButtonProps) {
-  const { variant, label, size = 'md', icon, trailingIcon, labelVisible, commandId, keys, keyHint = 'tooltip', tone = 'default', disabled, pressed, tipLabel, detail, tipPlacement, popup, presentational, id, buttonRef, onPress } = props;
+  const { variant, label, size = 'md', icon, trailingIcon, labelVisible, commandId, keys, keyHint = 'tooltip', tone = 'default', disabled, softDisabled, pressed, tipLabel, detail, tipPlacement, popup, presentational, id, buttonRef, onPress } = props;
   const tipId = useId();
   const chords = keysFor(commandId, keys);
   const showLabel = variant !== 'icon' || labelVisible === true;
@@ -273,8 +275,11 @@ export function PartButton(props: PartButtonProps) {
       aria-describedby={hasTip ? tipId : undefined}
       aria-hidden={presentational ? true : undefined}
       tabIndex={presentational ? -1 : undefined}
+      aria-disabled={softDisabled ? true : undefined}
       disabled={disabled}
-      onClick={onPress}
+      onClick={(event) => {
+        if (!softDisabled) onPress(event);
+      }}
     >
       {icon ? <PartIcon name={icon} /> : null}
       {showLabel ? <span className="ui-part-button__label">{label}</span> : null}
@@ -353,7 +358,7 @@ export function useFloating(open: boolean, anchor: Anchor, placement: FloatPlace
   return { ref, style, placed: coords !== null };
 }
 
-/** Esc and an outside pointer press close a floating surface; clicks on its anchor are left to the anchor. */
+/** An outside pointer press closes a floating surface; presses on its anchor are left to the anchor. Esc is each surface's own key handler. */
 export function useDismiss(open: boolean, surface: { current: HTMLElement | null }, anchor: Anchor, onClose: () => void) {
   const close = useRef(onClose);
   close.current = onClose;
@@ -368,6 +373,23 @@ export function useDismiss(open: boolean, surface: { current: HTMLElement | null
     document.addEventListener('pointerdown', onPointer, true);
     return () => document.removeEventListener('pointerdown', onPointer, true);
   }, [open, surface, anchor]);
+}
+
+/**
+ * Keeps a surface mounted for its exit motion after `open` turns false (DESIGN 4.8 `reveal` / `settle` out).
+ * `mounted` says whether to render; `leaving` is true during the out duration, for data-state="leaving".
+ */
+export function usePresence(open: boolean, outMs: number): { mounted: boolean; leaving: boolean } {
+  const [shown, setShown] = useState(open);
+  useEffect(() => {
+    if (open) {
+      setShown(true);
+      return;
+    }
+    const t = setTimeout(() => setShown(false), outMs);
+    return () => clearTimeout(t);
+  }, [open, outMs]);
+  return { mounted: open || shown, leaving: !open && shown };
 }
 
 /** Visually hidden text for assistive tech. */

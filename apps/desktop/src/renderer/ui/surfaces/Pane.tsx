@@ -2,7 +2,8 @@
  * Pane: the white surface on the gray shell, the main pane and the Ask dock (DESIGN 2.2, 4.4, 4.6, 6, 7.1).
  * Inset by --shell-pad on top, right and bottom, radius 12, --elev-pane. The main pane has the structured
  * 48 px header: back or close plus a quiet crumb on the left; at most three icon tools, then Ask, then the
- * calendar button on the right; bulk selection replaces the left side; a hairline only after content scrolls.
+ * calendar button on the right, all 28 px controls as in the mockup; bulk selection replaces the left side; a
+ * hairline only after content scrolls.
  */
 import { useState, type UIEvent } from 'react';
 import type { ComponentPropsMap, PaneHeaderProps } from '../props';
@@ -43,6 +44,7 @@ function PaneHeader({ header, scrolled }: { header: PaneHeaderProps; scrolled: b
           {lead ? (
             <PartButton
               variant="icon"
+              size="sm"
               icon={lead.kind === 'back' ? 'chevron-left' : 'close'}
               label={lead.label}
               commandId={lead.commandId}
@@ -66,6 +68,7 @@ function PaneHeader({ header, scrolled }: { header: PaneHeaderProps; scrolled: b
           <PartButton
             key={tool.commandId}
             variant="icon"
+            size="sm"
             icon={tool.icon}
             label={tool.label}
             detail={tool.detail}
@@ -77,6 +80,7 @@ function PaneHeader({ header, scrolled }: { header: PaneHeaderProps; scrolled: b
         ))}
         <PartButton
           variant="icon"
+          size="sm"
           icon="bubble"
           label="Ask"
           labelVisible
@@ -85,7 +89,7 @@ function PaneHeader({ header, scrolled }: { header: PaneHeaderProps; scrolled: b
           pressed={ask.pressed}
           onPress={() => ask.onPress()}
         />
-        <PartButton variant="icon" icon="today" label="Today" commandId={TODAY_COMMAND} pressed={today.pressed} tipPlacement="below" onPress={() => today.onPress()} />
+        <PartButton variant="icon" size="sm" icon="today" label="Today" commandId={TODAY_COMMAND} pressed={today.pressed} tipPlacement="below" onPress={() => today.onPress()} />
       </div>
     </header>
   );

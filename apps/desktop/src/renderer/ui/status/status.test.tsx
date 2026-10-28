@@ -75,6 +75,12 @@ describe('statusCopy (DESIGN 7.1 table)', () => {
     assert.equal(statusCopy({ kind: 'ok', reconnectBy: '2026-10-31T09:00:00-07:00' }, NOW), null);
     assert.equal(statusCopy({ kind: 'ok', reconnectBy: '2026-10-29T17:30:00-07:00' }, NOW)?.text, 'Gmail will ask you to reconnect today at 5:30 PM.');
   });
+  it('a reconnect deadline already past reads as an expired sign-in, never a past weekday', () => {
+    const past = statusCopy({ kind: 'ok', reconnectBy: '2026-10-26T09:00:00-07:00' }, NOW);
+    assert.equal(past?.text, 'Google needs you to sign in again.');
+    assert.deepEqual(past?.action, { kind: 'reconnect', label: 'Reconnect', tone: 'danger' });
+    assert.equal(past?.attention, true);
+  });
   it('offline counts: 0, 1 and 9999', () => {
     assert.equal(statusCopy({ kind: 'offline', changesWaiting: 0 })?.text, 'Offline');
     assert.equal(statusCopy({ kind: 'offline', changesWaiting: 1 })?.text, 'Offline · 1 change waiting');
@@ -102,7 +108,10 @@ describe('StatusSlot', () => {
   });
   it('names the account when two or more are connected, even an 80-character one', () => {
     const html = render(<StatusSlot status={{ kind: 'paused', reason: 'throttle', resumeAt: RESUME }} account={{ address: EMAIL_80, color: 'sky' }} multipleAccounts onAction={noop} />);
-    assert.match(html, new RegExp(`ui-status-slot__account">${EMAIL_80}<`));
+    // Folded into the sentence, not a line of its own: the colour dot leads, the address is spoken and in the tooltip.
+    assert.ok(!html.includes('ui-status-slot__account'));
+    assert.match(html, /<p class="ui-status-slot__text"><i class="ui-status-slot__dot" data-color="sky" aria-hidden="true"><\/i><span class="ui-sr-only">[^<]+: <\/span>Google asked us/);
+    assert.match(html, new RegExp(`ui-part-tip__detail">${EMAIL_80}<`));
     assert.match(textOf(html), /Google asked us to slow down\. Resuming at 2:14 PM\. Retry now/);
     assert.match(html, /data-icon="pause"/);
     assert.ok(!html.includes('data-tone="attention"'));
@@ -157,7 +166,7 @@ describe('ProgressSegments', () => {
     assert.match(html, /role="progressbar" aria-label="alex\.moreno@gmail\.com sync" aria-valuetext="Reading your newest mail · 24 of 50"/);
     assert.equal(count(html, 'class="ui-progress-segments__seg"'), 4);
     assert.match(html, /data-state="current" data-step="read"><i class="ui-progress-segments__fill" style="--fill:0\.48"/);
-    for (const line of ['Connected', 'Found about 214 recent emails', 'Reading your newest mail · 24 of 50', 'Sort what matters']) assert.ok(textOf(html).includes(line), line);
+    for (const line of ['Connected', 'Found about 214 recent emails', 'Reading your newest mail · 24 of 50', 'Sorting what matters']) assert.ok(textOf(html).includes(line), line);
     assert.match(html, /data-state="current"><span class="ui-progress-segments__marker"><svg class="ui-spinner__glyph"/);
     assert.match(html, /ui-progress-segments__status">Reading 24 of 50</);
     assert.equal(count(html, 'role="status"'), 1);
@@ -334,10 +343,11 @@ describe('FatalScreen', () => {
     assert.doesNotMatch(textOf(html), /Aplos needs a moment|Making room/);
     assertClean(html);
   });
-  it('restarting disables the button and says "Restarting…"; the parked engine offers Try again · Export diagnostics', () => {
+  it('restarting soft-disables the button (focus kept) and says "Restarting…"; the parked engine offers Try again · Export diagnostics', () => {
     const restarting = render(<FatalScreen kind="unreachable" restarting onRestart={noop} onDiagnostics={noop} />);
     assert.match(restarting, /data-state="restarting"/);
-    assert.match(restarting, /disabled=""><span class="ui-part-button__label">Restarting…</);
+    assert.match(restarting, /aria-disabled="true"><span class="ui-part-button__label">Restarting…</);
+    assert.ok(!restarting.includes('disabled=""'), 'never natively disabled, which would drop focus to the page');
     const parked = render(<FatalScreen kind="parked" restarting={false} onRestart={noop} onDiagnostics={noop} />);
     assert.match(textOf(parked), /Try again Return Export diagnostics/);
   });

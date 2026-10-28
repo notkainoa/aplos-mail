@@ -2,12 +2,14 @@
  * StatusSlot: the sidebar footer's sync state, the only place sync status lives in the main window
  * (DESIGN 6, 7.1, 7.15). Copy is DESIGN 7.1's table, written for two short lines of about 28 characters, with
  * one inline text button. It never becomes a banner. "Starting…" and "Syncing…" wait 150 ms before they show.
+ * With several accounts the account is named without adding a line: its colour dot leads the sentence, the
+ * address is spoken with it and shown in the action's tooltip.
  * The slot is a polite live region; ticking counts inside it are marked aria-live="off" so only state changes speak.
  */
 import { useEffect, useState } from 'react';
 import { timing } from '../generated/motion';
 import type { ComponentPropsMap, IconName, StatusAction, SyncStatus } from '../props';
-import { PartButton, PartIcon, dayWord, formatCount, formatTime } from '../surfaces/parts';
+import { PartButton, PartIcon, SrOnly, dayWord, formatCount, formatTime } from '../surfaces/parts';
 import { ProgressSegments } from './ProgressSegments';
 
 const DAY_MS = 86_400_000;
@@ -33,6 +35,8 @@ export function statusCopy(status: SyncStatus, now: Date = new Date()): StatusCo
       if (!status.reconnectBy) return null;
       const left = new Date(status.reconnectBy).getTime() - now.getTime();
       if (left > DAY_MS) return null;
+      // The deadline has passed: Gmail is already asking, so it reads as an expired sign-in (DESIGN 7.15).
+      if (left <= 0) return { text: 'Google needs you to sign in again.', icon: 'alert', action: { kind: 'reconnect', label: 'Reconnect', tone: 'danger' }, attention: true };
       return {
         text: `Gmail will ask you to reconnect ${dayWord(status.reconnectBy, now)} at ${formatTime(status.reconnectBy)}.`,
         icon: 'clock',
@@ -96,6 +100,7 @@ export function StatusSlot({ status, account, multipleAccounts, onAction }: Comp
   const copy = statusCopy(status);
   const action = copy?.action;
   const ticking = status.kind === 'backfilling' || (status.kind === 'syncing' && status.firstWindow !== undefined);
+  const named = multipleAccounts && account ? account : undefined;
   return (
     <div
       className="ui-status-slot"
@@ -108,13 +113,18 @@ export function StatusSlot({ status, account, multipleAccounts, onAction }: Comp
         <>
           <PartIcon name={copy.icon} size="sm" />
           <div className="ui-status-slot__body">
-            {multipleAccounts && account ? <span className="ui-status-slot__account">{account.address}</span> : null}
             {status.kind === 'backfilling' && account ? (
               <div aria-live="off">
                 <ProgressSegments variant="importing" account={account} done={status.done} of={status.of} />
               </div>
             ) : (
               <p className="ui-status-slot__text" aria-live={ticking ? 'off' : undefined}>
+                {named ? (
+                  <>
+                    <i className="ui-status-slot__dot" data-color={named.color} aria-hidden="true" />
+                    <SrOnly>{`${named.address}: `}</SrOnly>
+                  </>
+                ) : null}
                 {copy.text}
               </p>
             )}
@@ -125,7 +135,7 @@ export function StatusSlot({ status, account, multipleAccounts, onAction }: Comp
             ) : null}
             {action ? (
               <span className="ui-status-slot__action">
-                <PartButton variant="text" size="sm" label={action.label} tone={action.tone} onPress={() => onAction(action.kind, account)} />
+                <PartButton variant="text" size="sm" label={action.label} tone={action.tone} detail={named?.address} onPress={() => onAction(action.kind, account)} />
               </span>
             ) : null}
           </div>

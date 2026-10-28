@@ -56,9 +56,9 @@ function lineFor(cp: SyncCheckpoint): string {
       const count = `${formatCount(cp.sorted)} of ${formatCount(cp.of)}`;
       if (cp.state === 'done') return `Sorted ${count}`;
       if (cp.state === 'partial') return `Sorted ${count}. The rest continue in the background.`;
-      if (cp.state === 'current') return `Sort what matters · ${count}`;
-      if (cp.state === 'paused') return `Sort what matters · paused at ${count}`;
-      return 'Sort what matters';
+      if (cp.state === 'current') return `Sorting what matters · ${count}`;
+      if (cp.state === 'paused') return `Sorting what matters · paused at ${count}`;
+      return 'Sorting what matters';
     }
   }
 }
