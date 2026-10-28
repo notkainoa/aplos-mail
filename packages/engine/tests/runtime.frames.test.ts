@@ -7,6 +7,9 @@ import type { Caller } from '../src/methods/types';
 import { observeCommits } from '../src/runtime/frames';
 import { framesOf, testEngine } from './runtime.helpers';
 
+/** Main's control connection: the only caller that receives host events. */
+const MAIN: Caller = { kind: 'host', scopes: ['host', 'read'] };
+
 test('commits leave as one coalesced state frame, stamped with dbEpoch and seq', async () => {
   const t = await testEngine();
   try {
@@ -36,7 +39,7 @@ test('commits leave as one coalesced state frame, stamped with dbEpoch and seq',
 test('every frame is stamped and one connection never sees seq go backwards', async () => {
   const t = await testEngine();
   try {
-    const s = t.engine.connect();
+    const s = t.engine.connect(MAIN);
     const frames = framesOf(s);
     const { store, frames: bus } = t.engine.services;
     bus.emit({ frame: 'host', event: { type: 'badge', count: 1 } });
@@ -96,9 +99,9 @@ test('a frame for one connection reaches only it, and a closed connection gets n
     },
   });
   try {
-    const a = t.engine.connect();
-    const b = t.engine.connect();
-    const closed = t.engine.connect();
+    const a = t.engine.connect(MAIN);
+    const b = t.engine.connect(MAIN);
+    const closed = t.engine.connect(MAIN);
     const [fa, fb, fc] = [framesOf(a), framesOf(b), framesOf(closed)];
     closed.close();
     await a.call('Thread/get', { ids: [] });
@@ -121,12 +124,12 @@ test('a frame for one connection reaches only it, and a closed connection gets n
 test("a listener's bug does not stop delivery, and frames are copies", async () => {
   const t = await testEngine();
   try {
-    const a = t.engine.connect();
+    const a = t.engine.connect(MAIN);
     a.subscribe(() => {
       throw new Error('listener bug');
     });
     const seen = framesOf(a);
-    const other = framesOf(t.engine.connect());
+    const other = framesOf(t.engine.connect(MAIN));
     t.engine.services.frames.emit({ frame: 'host', event: { type: 'badge', count: 1 } });
     assert.equal(seen.length, 1);
     (seen[0] as { seq: number }).seq = 999;
@@ -174,7 +177,46 @@ test('broadcasts are filtered by caller: a listener never sees host, draft, Ask 
     assert.deepEqual(kinds('reader'), ['reset']);
     assert.deepEqual(kinds('asker'), ['progress', 'reset']);
     assert.deepEqual(kinds('main'), ['host', 'Draft/changed', 'progress', 'connect', 'reset']);
-    assert.deepEqual(kinds('window'), ['host', 'Draft/changed', 'progress', 'connect', 'reset']);
+    // A window is not main: host events never reach it.
+    assert.deepEqual(kinds('window'), ['Draft/changed', 'progress', 'connect', 'reset']);
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('operation and progress frames need their own scope, and unknown ones are withheld from everyone but main', async () => {
+  const t = await testEngine();
+  try {
+    const base = { kind: 'listener', via: 'socket', clientId: 'c' } as const;
+    const triager: Caller = { ...base, scopes: ['read', 'triage'] };
+    const searcher: Caller = { ...base, scopes: ['read'] };
+    const main: Caller = { kind: 'host', scopes: ['host'] };
+    const seen = {
+      triager: framesOf(t.engine.connect(triager)),
+      searcher: framesOf(t.engine.connect(searcher)),
+      main: framesOf(t.engine.connect(main)),
+    };
+    const emit = t.engine.services.frames.emit;
+    const operation = (scope?: string) =>
+      ({ frame: 'operation', operation: { id: 'o1', scope } }) as never;
+    emit(operation('triage'));
+    emit(operation('send'));
+    emit(operation());
+    emit({ frame: 'progress', runId: 'r1', source: 'search', kind: 'done' });
+    emit({ frame: 'progress', runId: 'r2', source: 'telepathy', kind: 'done' } as never);
+    const shown = (name: keyof typeof seen) =>
+      seen[name].map(f =>
+        f.frame === 'operation' ? `operation:${f.operation.scope ?? '-'}` : f.frame,
+      );
+    assert.deepEqual(shown('triager'), ['operation:triage', 'progress']);
+    assert.deepEqual(shown('searcher'), ['progress']);
+    assert.deepEqual(shown('main'), [
+      'operation:triage',
+      'operation:send',
+      'operation:-',
+      'progress',
+      'progress',
+    ]);
   } finally {
     await t.cleanup();
   }

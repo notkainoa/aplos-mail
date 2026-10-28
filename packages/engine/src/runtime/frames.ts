@@ -47,27 +47,54 @@ export interface FrameHub extends FrameBus {
 /** Frames only the bus (`state`, `reset`) or main (`desktop`) sends. */
 const OWN_KINDS: ReadonlySet<string> = new Set(['state', 'reset', 'desktop']);
 
-/** The scope a broadcast frame needs; `state`, `reset` and `operation` carry no content and go to everyone. */
-const FRAME_SCOPE: Readonly<Record<string, string | undefined>> = {
-  window: 'read',
-  progress: 'ai',
-  'Draft/changed': 'draft',
-  connect: 'admin',
-  host: 'host',
+type Scope = Caller['scopes'][number];
+
+/** Ask, polish and transcription need `ai`; remote search needs `read`; setup progress is an `admin` matter. */
+const PROGRESS_SCOPE: Readonly<Record<string, Scope>> = {
+  ask: 'ai',
+  ai: 'ai',
+  transcribe: 'ai',
+  search: 'read',
+  setup: 'admin',
 };
 
 /**
- * What a connection's broadcasts may contain, by its caller (fail closed: a frame kind not listed here is withheld
- * from listeners). Windows and main see every broadcast; a listener client (socket, HTTP, MCP) never sees host events
- * (it can never hold the `host` scope), and sees Ask progress, drafts and account flows only when its grant has the scope.
+ * The scope a broadcast frame needs, `null` when it carries no content (`state` counts, `reset`), or `undefined` for a
+ * frame kind or source this table does not know, which no caller receives except main's control connection.
+ */
+function frameScope(frame: StampedFrame): Scope | null | undefined {
+  switch (frame.frame) {
+    case 'state':
+    case 'reset':
+      return null;
+    case 'window':
+      return 'read';
+    case 'Draft/changed':
+      return 'draft';
+    case 'connect':
+      return 'admin';
+    case 'progress':
+      return PROGRESS_SCOPE[frame.source];
+    case 'operation':
+      return frame.operation.scope as Scope | undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * What a connection's broadcasts may contain, by its caller. Fail closed for every kind of caller: a frame or source
+ * this file does not know is withheld, `host` events (notify, badge, reminder) go to main's control connection alone,
+ * and every other frame needs its scope (a window holds every grantable scope; a listener only its grant). Main's
+ * control connection sees every known frame. A targeted `emit` reply is not filtered at all.
  */
 export function frameFilter(caller: Caller): (frame: StampedFrame) => boolean {
   return frame => {
-    if (caller.kind !== 'listener') return true;
-    if (frame.frame === 'state' || frame.frame === 'reset' || frame.frame === 'operation')
-      return true;
-    const scope = FRAME_SCOPE[frame.frame];
-    return scope !== undefined && caller.scopes.includes(scope as Caller['scopes'][number]);
+    if (frame.frame === 'host') return caller.kind === 'host' && caller.scopes.includes('host');
+    const scope = frameScope(frame);
+    if (scope === null) return true;
+    if (caller.kind === 'host') return true;
+    return scope !== undefined && caller.scopes.includes(scope);
   };
 }
 

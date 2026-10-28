@@ -447,5 +447,10 @@ test('a failing SQL read while building the lane input still fails the commit (o
     store.read(q => q.get<{ n: number }>('SELECT count(*) AS n FROM messages')!.n),
     1,
   );
+  // The op id was not recorded, so a retry is not answered as replayed.
+  assert.equal(
+    store.read(q => q.get<{ n: number }>("SELECT count(*) AS n FROM commits WHERE op_id = 'n'")!.n),
+    0,
+  );
   store.close();
 });
