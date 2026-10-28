@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url';
 
 export const owner = 'plat-ci';
 export const defaultMaxAgeDays = 30;
-const bytesPerMb = 1_000_000;
+// MB here is MiB, what `du -sm` prints and what the plan's 369 MB baseline was read from.
+const bytesPerMb = 1024 * 1024;
 const bundleExtensions = ['.js', '.mjs', '.css'];
 
 // Directory sizing
