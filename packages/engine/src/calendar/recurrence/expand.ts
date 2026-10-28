@@ -97,16 +97,15 @@ function ruleInstNear(n: Normal, key: string, wall: number): Inst | undefined {
   return undefined;
 }
 
-function expandNormal(
+/** Rule instances inside the widened range, in wall order, stopping a day past `limit` shown ones. */
+function ruleInstances(
   n: Normal,
+  lo: number,
+  hi: number,
   from: number,
   to: number,
   limit: number,
-): { occurrences: Occurrence[]; truncated: boolean } {
-  const lo = from - n.duration - SLACK;
-  const hi = to + SLACK;
-
-  // Rule instances inside the widened range, in wall order, stopping a day past `limit` shown ones.
+): { found: Map<string, Inst>; truncated: boolean } {
   const found = new Map<string, Inst>();
   let truncated = false;
   let counted = 0;
@@ -130,7 +129,11 @@ function expandNormal(
     found.set(inst.key, inst);
     if (shown && !n.overrides.has(inst.key) && ++counted === limit) limitWall = wall;
   }
+  return { found, truncated };
+}
 
+/** Overrides moved into the range, and RDATEs, collectable additions to `found`. */
+function addDated(n: Normal, found: Map<string, Inst>, from: number, to: number): void {
   // An override moved into the range from elsewhere shows when its original start is an instance.
   // Only overrides that land in the range are looked up, so a far-off or invented id costs nothing.
   for (const [key, o] of n.overrides) {
@@ -141,7 +144,9 @@ function expandNormal(
     if (inst) found.set(key, inst);
   }
   for (const inst of n.rdates) if (!found.has(inst.key)) found.set(inst.key, inst);
+}
 
+function placements(n: Normal, found: Map<string, Inst>, from: number, to: number): Placement[] {
   const placed: Placement[] = [];
   for (const inst of found.values()) {
     const p = n.exKeys.has(inst.key) ? undefined : resolve(n, inst);
@@ -150,6 +155,25 @@ function expandNormal(
   placed.sort(
     (a, b) => a.at - b.at || (a.occurrence.recurrenceId < b.occurrence.recurrenceId ? -1 : 1),
   );
+  return placed;
+}
+
+function expandNormal(
+  n: Normal,
+  from: number,
+  to: number,
+  limit: number,
+): { occurrences: Occurrence[]; truncated: boolean } {
+  const { found, truncated } = ruleInstances(
+    n,
+    from - n.duration - SLACK,
+    to + SLACK,
+    from,
+    to,
+    limit,
+  );
+  addDated(n, found, from, to);
+  const placed = placements(n, found, from, to);
   return {
     occurrences: placed.slice(0, limit).map(p => p.occurrence),
     truncated: truncated || placed.length > limit,

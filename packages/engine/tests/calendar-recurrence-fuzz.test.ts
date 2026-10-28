@@ -26,6 +26,12 @@ import {
   type Override,
   type Series,
 } from '../src/calendar/recurrence';
+import {
+  type Expected,
+  bDisputed,
+  rfcWeekNumbers,
+  weekNoDefectOfA,
+} from './calendar-recurrence-oracle-defects';
 
 const PYTHON = process.env.APLOS_ORACLE_PYTHON ?? '/tmp/aplos-rrule-oracle/bin/python';
 const ORACLE_A = join(import.meta.dirname, '..', 'scripts', 'recurrence-oracle', 'oracle_a.py');
@@ -93,6 +99,14 @@ function localOf(ms: number, tz: string): string {
 const isoOfKey = (k: string): string =>
   `${k.slice(0, 4)}-${k.slice(4, 6)}-${k.slice(6, 8)}${k.length > 8 ? `T${k.slice(9, 11)}:${k.slice(11, 13)}:${k.slice(13, 15)}` : ''}`;
 
+/** The draws the fuzz-series builders share (bound to one seeded prng). */
+interface Draws {
+  rnd: () => number;
+  int: (lo: number, hi: number) => number;
+  pick: <T>(xs: readonly T[]) => T;
+  some: <T>(xs: readonly T[], k: number) => T[];
+}
+
 // ---------- the random series ----------
 
 interface Job extends Series {
@@ -125,6 +139,164 @@ const ZONES = [
 ];
 const DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 
+/** BYHOUR / BYMINUTE parts for a timed series (none for all-day). */
+function hoursParts(parts: string[], timed: boolean, r: Draws): void {
+  if (!timed) return;
+  if (r.rnd() < 0.2) parts.push(`BYHOUR=${r.some([0, 1, 2, 3, 9, 23], r.int(1, 2)).join(',')}`);
+  if (r.rnd() < 0.1) parts.push(`BYMINUTE=${r.some([0, 30, 45], r.int(1, 2)).join(',')}`);
+}
+
+function dailyParts(parts: string[], timed: boolean, r: Draws): void {
+  if (r.rnd() < 0.3) parts.push(`BYDAY=${r.some(DAYS, r.int(1, 3)).join(',')}`);
+  if (r.rnd() < 0.2)
+    parts.push(`BYMONTHDAY=${r.some([1, 15, 29, 30, 31, -1, -2], r.int(1, 2)).join(',')}`);
+  if (r.rnd() < 0.2)
+    parts.push(`BYMONTH=${r.some([1, 2, 3, 4, 9, 10, 11, 12], r.int(1, 3)).join(',')}`);
+  hoursParts(parts, timed, r);
+  if (parts.some(p => p.startsWith('BYHOUR=') && p.includes(',')) && r.rnd() < 0.5)
+    parts.push(`BYSETPOS=${r.pick([1, -1])}`);
+}
+
+function weeklyParts(parts: string[], timed: boolean, r: Draws): void {
+  const byday = r.rnd() < 0.8 ? r.some(DAYS, r.int(1, 4)) : [];
+  if (byday.length) parts.push(`BYDAY=${byday.join(',')}`);
+  if (r.rnd() < 0.5) parts.push(`WKST=${r.pick(DAYS)}`);
+  if (r.rnd() < 0.15) parts.push(`BYMONTH=${r.some([2, 3, 4, 9, 10, 11], r.int(1, 2)).join(',')}`);
+  if (byday.length > 1 && r.rnd() < 0.2) parts.push(`BYSETPOS=${r.pick([1, -1, 2, -2])}`);
+  hoursParts(parts, timed, r);
+}
+
+function monthlyParts(parts: string[], timed: boolean, r: Draws): void {
+  const shape = r.int(0, 5);
+  if (shape === 1)
+    parts.push(
+      `BYMONTHDAY=${r.some([1, 5, 15, 29, 30, 31, -1, -3, -10, -31], r.int(1, 3)).join(',')}`,
+    );
+  if (shape === 2)
+    parts.push(
+      `BYDAY=${r
+        .some([1, 2, 3, 4, 5, -1, -2, -5], r.int(1, 2))
+        .map(o => `${o}${r.pick(DAYS)}`)
+        .join(',')}`,
+    );
+  if (shape === 3)
+    parts.push(
+      `BYDAY=${r.some(DAYS, r.int(2, 5)).join(',')}`,
+      `BYSETPOS=${r.some([1, 2, 3, -1, -2, -3], r.int(1, 2)).join(',')}`,
+    );
+  if (shape === 4)
+    parts.push(
+      `BYDAY=${r.some(DAYS, r.int(1, 2)).join(',')}`,
+      `BYMONTHDAY=${r.some([1, 7, 13, 20, -1], r.int(1, 3)).join(',')}`,
+    );
+  if (shape === 5) parts.push(`BYDAY=${r.some(DAYS, r.int(1, 3)).join(',')}`);
+  if (r.rnd() < 0.2)
+    parts.push(`BYMONTH=${r.some([1, 2, 3, 4, 9, 10, 11, 12], r.int(2, 4)).join(',')}`);
+  hoursParts(parts, timed, r);
+}
+
+function yearlyParts(parts: string[], timed: boolean, r: Draws): void {
+  const shape = r.int(0, 9);
+  if (shape === 1)
+    parts.push(`BYMONTH=${r.some([1, 2, 3, 4, 9, 10, 11, 12], r.int(1, 3)).join(',')}`);
+  if (shape === 2)
+    parts.push(
+      `BYMONTH=${r.some([2, 3, 4, 9, 10, 11], r.int(1, 2)).join(',')}`,
+      `BYMONTHDAY=${r.some([1, 29, 30, 31, -1], r.int(1, 2)).join(',')}`,
+    );
+  if (shape === 3)
+    parts.push(
+      `BYMONTH=${r.some([3, 4, 9, 10, 11], r.int(1, 2)).join(',')}`,
+      `BYDAY=${r.pick([1, 2, -1, 4, 5])}${r.pick(DAYS)}`,
+    );
+  if (shape === 4)
+    parts.push(
+      `BYMONTH=${r.some([2, 3, 4, 10, 11], r.int(1, 2))}`,
+      `BYDAY=${r.some(DAYS, r.int(2, 5)).join(',')}`,
+      `BYSETPOS=${r.pick([1, -1, 2, -2])}`,
+    );
+  if (shape === 5) parts.push(`BYDAY=${r.pick([1, 20, 52, 53, -1, -53])}${r.pick(DAYS)}`);
+  if (shape === 6) parts.push(`BYMONTHDAY=${r.some([1, 15, 31, -1], r.int(1, 2)).join(',')}`);
+  if (shape === 7)
+    parts.push(
+      `BYYEARDAY=${r.some([1, 60, 100, 200, 365, 366, -1, -306, -366], r.int(1, 3)).join(',')}`,
+    );
+  if (shape === 8) {
+    parts.push(`BYWEEKNO=${r.some([1, 2, 20, 52, 53, -1, -2], r.int(1, 2)).join(',')}`);
+    if (r.rnd() < 0.7) parts.push(`BYDAY=${r.some(DAYS, r.int(1, 3)).join(',')}`);
+    if (r.rnd() < 0.5) parts.push(`WKST=${r.pick(DAYS)}`);
+  }
+  if (shape === 9) parts.push('BYMONTH=2', 'BYMONTHDAY=29');
+  hoursParts(parts, timed, r);
+}
+
+/** COUNT or UNTIL, in DTSTART's own form, as RFC 5545 requires (lenient forms are oracle B territory). */
+function endingParts(parts: string[], mode: string, startMs: number, r: Draws): void {
+  const ending = r.int(0, 2);
+  if (ending === 1) parts.push(`COUNT=${r.int(1, 80)}`);
+  if (ending === 2) {
+    const u = new Date(startMs + r.int(-3, 3000) * DAY + r.int(0, 23) * 3_600_000);
+    const ymd = `${u.getUTCFullYear()}${pad(u.getUTCMonth() + 1)}${pad(u.getUTCDate())}`;
+    const hms = `${pad(u.getUTCHours())}0000`;
+    parts.push(
+      `UNTIL=${mode === 'date' ? ymd : mode === 'floating' ? `${ymd}T${hms}` : `${ymd}T${hms}Z`}`,
+    );
+  }
+}
+
+function startEnd(
+  mode: 'date' | 'floating' | 'zoned',
+  zone: string,
+  date: string,
+  local: string,
+  startMs: number,
+  r: Draws,
+): { start: EventTime; end: EventTime; tzid?: string } {
+  const durMin = r.pick([0, 30, 60, 90, 1440, 1530]);
+  if (mode === 'date')
+    return {
+      start: { date },
+      end: { date: new Date(startMs + r.int(1, 3) * DAY).toISOString().slice(0, 10) },
+    };
+  if (mode === 'floating')
+    return {
+      start: { local },
+      end: {
+        local: new Date(Date.parse(`${local}Z`) + durMin * 60_000).toISOString().slice(0, 19),
+      },
+    };
+  if (r.rnd() < 0.25) {
+    // An instant start with the zone on the series, the way Google's API reports it.
+    const at = Date.parse(`${local}Z`);
+    return { start: { utc: at }, end: { utc: at + durMin * 60_000 }, tzid: zone };
+  }
+  return {
+    start: { local, tzid: zone },
+    end: {
+      local: new Date(Date.parse(`${local}Z`) + durMin * 60_000).toISOString().slice(0, 19),
+      tzid: zone,
+    },
+  };
+}
+
+/**
+ * dateutil builds DTSTART's week from DTSTART onwards, not from WKST, so BYSETPOS counts a
+ * partial first week (an oracle A defect, pinned by hand below). Starting the week on DTSTART's
+ * weekday keeps the comparison fair without dropping WEEKLY BYSETPOS from the fuzz.
+ */
+function fixWkst(parts: string[], start: EventTime, zone: string, date: string): void {
+  if (parts.some(p => p.startsWith('BYSETPOS='))) {
+    const wall = 'utc' in start ? localOf(start.utc, zone) : date.replace(/-/g, '');
+    const wd =
+      (new Date(Date.UTC(+wall.slice(0, 4), +wall.slice(4, 6) - 1, +wall.slice(6, 8))).getUTCDay() +
+        6) %
+      7;
+    const at = parts.findIndex(p => p.startsWith('WKST='));
+    if (at >= 0) parts.splice(at, 1);
+    parts.push(`WKST=${DAYS[wd]}`);
+  }
+}
+
 function baseCases(seed: number, n: number): FuzzCase[] {
   const rnd = prng(seed);
   const int = (lo: number, hi: number): number => lo + Math.floor(rnd() * (hi - lo + 1));
@@ -132,6 +304,7 @@ function baseCases(seed: number, n: number): FuzzCase[] {
   const some = <T>(xs: readonly T[], k: number): T[] => [
     ...new Set(Array.from({ length: k }, () => pick(xs))),
   ];
+  const r: Draws = { rnd, int, pick, some };
   const out: FuzzCase[] = [];
   for (let i = 0; i < n; i++) {
     const zone = pick(ZONES);
@@ -151,140 +324,14 @@ function baseCases(seed: number, n: number): FuzzCase[] {
     const freq = pick(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'] as const);
     const parts = [`FREQ=${freq}`];
     if (rnd() < 0.4) parts.push(`INTERVAL=${int(2, 3)}`);
-    const hours = (): void => {
-      if (!timed) return;
-      if (rnd() < 0.2) parts.push(`BYHOUR=${some([0, 1, 2, 3, 9, 23], int(1, 2)).join(',')}`);
-      if (rnd() < 0.1) parts.push(`BYMINUTE=${some([0, 30, 45], int(1, 2)).join(',')}`);
-    };
-    if (freq === 'DAILY') {
-      if (rnd() < 0.3) parts.push(`BYDAY=${some(DAYS, int(1, 3)).join(',')}`);
-      if (rnd() < 0.2)
-        parts.push(`BYMONTHDAY=${some([1, 15, 29, 30, 31, -1, -2], int(1, 2)).join(',')}`);
-      if (rnd() < 0.2)
-        parts.push(`BYMONTH=${some([1, 2, 3, 4, 9, 10, 11, 12], int(1, 3)).join(',')}`);
-      hours();
-      if (parts.some(p => p.startsWith('BYHOUR=') && p.includes(',')) && rnd() < 0.5)
-        parts.push(`BYSETPOS=${pick([1, -1])}`);
-    } else if (freq === 'WEEKLY') {
-      const byday = rnd() < 0.8 ? some(DAYS, int(1, 4)) : [];
-      if (byday.length) parts.push(`BYDAY=${byday.join(',')}`);
-      if (rnd() < 0.5) parts.push(`WKST=${pick(DAYS)}`);
-      if (rnd() < 0.15) parts.push(`BYMONTH=${some([2, 3, 4, 9, 10, 11], int(1, 2)).join(',')}`);
-      if (byday.length > 1 && rnd() < 0.2) parts.push(`BYSETPOS=${pick([1, -1, 2, -2])}`);
-      hours();
-    } else if (freq === 'MONTHLY') {
-      const shape = int(0, 5);
-      if (shape === 1)
-        parts.push(
-          `BYMONTHDAY=${some([1, 5, 15, 29, 30, 31, -1, -3, -10, -31], int(1, 3)).join(',')}`,
-        );
-      if (shape === 2)
-        parts.push(
-          `BYDAY=${some([1, 2, 3, 4, 5, -1, -2, -5], int(1, 2))
-            .map(o => `${o}${pick(DAYS)}`)
-            .join(',')}`,
-        );
-      if (shape === 3)
-        parts.push(
-          `BYDAY=${some(DAYS, int(2, 5)).join(',')}`,
-          `BYSETPOS=${some([1, 2, 3, -1, -2, -3], int(1, 2)).join(',')}`,
-        );
-      if (shape === 4)
-        parts.push(
-          `BYDAY=${some(DAYS, int(1, 2)).join(',')}`,
-          `BYMONTHDAY=${some([1, 7, 13, 20, -1], int(1, 3)).join(',')}`,
-        );
-      if (shape === 5) parts.push(`BYDAY=${some(DAYS, int(1, 3)).join(',')}`);
-      if (rnd() < 0.2)
-        parts.push(`BYMONTH=${some([1, 2, 3, 4, 9, 10, 11, 12], int(2, 4)).join(',')}`);
-      hours();
-    } else {
-      const shape = int(0, 9);
-      if (shape === 1)
-        parts.push(`BYMONTH=${some([1, 2, 3, 4, 9, 10, 11, 12], int(1, 3)).join(',')}`);
-      if (shape === 2)
-        parts.push(
-          `BYMONTH=${some([2, 3, 4, 9, 10, 11], int(1, 2)).join(',')}`,
-          `BYMONTHDAY=${some([1, 29, 30, 31, -1], int(1, 2)).join(',')}`,
-        );
-      if (shape === 3)
-        parts.push(
-          `BYMONTH=${some([3, 4, 9, 10, 11], int(1, 2)).join(',')}`,
-          `BYDAY=${pick([1, 2, -1, 4, 5])}${pick(DAYS)}`,
-        );
-      if (shape === 4)
-        parts.push(
-          `BYMONTH=${some([2, 3, 4, 10, 11], int(1, 2))}`,
-          `BYDAY=${some(DAYS, int(2, 5)).join(',')}`,
-          `BYSETPOS=${pick([1, -1, 2, -2])}`,
-        );
-      if (shape === 5) parts.push(`BYDAY=${pick([1, 20, 52, 53, -1, -53])}${pick(DAYS)}`);
-      if (shape === 6) parts.push(`BYMONTHDAY=${some([1, 15, 31, -1], int(1, 2)).join(',')}`);
-      if (shape === 7)
-        parts.push(
-          `BYYEARDAY=${some([1, 60, 100, 200, 365, 366, -1, -306, -366], int(1, 3)).join(',')}`,
-        );
-      if (shape === 8) {
-        parts.push(`BYWEEKNO=${some([1, 2, 20, 52, 53, -1, -2], int(1, 2)).join(',')}`);
-        if (rnd() < 0.7) parts.push(`BYDAY=${some(DAYS, int(1, 3)).join(',')}`);
-        if (rnd() < 0.5) parts.push(`WKST=${pick(DAYS)}`);
-      }
-      if (shape === 9) parts.push('BYMONTH=2', 'BYMONTHDAY=29');
-      hours();
-    }
+    if (freq === 'DAILY') dailyParts(parts, timed, r);
+    else if (freq === 'WEEKLY') weeklyParts(parts, timed, r);
+    else if (freq === 'MONTHLY') monthlyParts(parts, timed, r);
+    else yearlyParts(parts, timed, r);
     const startMs = Date.UTC(y, mo - 1, d);
-    const ending = int(0, 2);
-    if (ending === 1) parts.push(`COUNT=${int(1, 80)}`);
-    if (ending === 2) {
-      const u = new Date(startMs + int(-3, 3000) * DAY + int(0, 23) * 3_600_000);
-      const ymd = `${u.getUTCFullYear()}${pad(u.getUTCMonth() + 1)}${pad(u.getUTCDate())}`;
-      const hms = `${pad(u.getUTCHours())}0000`;
-      // UNTIL in DTSTART's own form, as RFC 5545 requires (lenient forms are oracle B territory).
-      parts.push(
-        `UNTIL=${mode === 'date' ? ymd : mode === 'floating' ? `${ymd}T${hms}` : `${ymd}T${hms}Z`}`,
-      );
-    }
-
-    const durMin = pick([0, 30, 60, 90, 1440, 1530]);
-    let start: EventTime;
-    let end: EventTime;
-    let tzid: string | undefined;
-    if (mode === 'date') {
-      start = { date };
-      end = { date: new Date(startMs + int(1, 3) * DAY).toISOString().slice(0, 10) };
-    } else if (mode === 'floating') {
-      start = { local };
-      end = {
-        local: new Date(Date.parse(`${local}Z`) + durMin * 60_000).toISOString().slice(0, 19),
-      };
-    } else if (rnd() < 0.25) {
-      // An instant start with the zone on the series, the way Google's API reports it.
-      const at = Date.parse(`${local}Z`);
-      start = { utc: at };
-      end = { utc: at + durMin * 60_000 };
-      tzid = zone;
-    } else {
-      start = { local, tzid: zone };
-      end = {
-        local: new Date(Date.parse(`${local}Z`) + durMin * 60_000).toISOString().slice(0, 19),
-        tzid: zone,
-      };
-    }
-    if (freq === 'WEEKLY' && parts.some(p => p.startsWith('BYSETPOS='))) {
-      // dateutil builds DTSTART's week from DTSTART onwards, not from WKST, so BYSETPOS counts a
-      // partial first week (an oracle A defect, pinned by hand below). Starting the week on DTSTART's
-      // weekday keeps the comparison fair without dropping WEEKLY BYSETPOS from the fuzz.
-      const wall = 'utc' in start ? localOf(start.utc, zone) : date.replace(/-/g, '');
-      const wd =
-        (new Date(
-          Date.UTC(+wall.slice(0, 4), +wall.slice(4, 6) - 1, +wall.slice(6, 8)),
-        ).getUTCDay() +
-          6) %
-        7;
-      const at = parts.findIndex(p => p.startsWith('WKST='));
-      if (at >= 0) parts.splice(at, 1);
-      parts.push(`WKST=${DAYS[wd]}`);
-    }
+    endingParts(parts, mode, startMs, r);
+    const { start, end, tzid } = startEnd(mode, zone, date, local, startMs, r);
+    if (freq === 'WEEKLY') fixWkst(parts, start, zone, date);
     const shift = rnd() < 0.3 ? int(30, 1500) : -2;
     const from = startMs + shift * DAY;
     const to = startMs + 3653 * DAY;
@@ -302,74 +349,85 @@ function baseCases(seed: number, n: number): FuzzCase[] {
   return out;
 }
 
-/** Adds EXDATE, RDATE and overrides chosen from oracle A's own instances, so they actually hit. */
+function addExdates(c: FuzzCase, instances: string[], tz: string, r: Draws): void {
+  const chosen = [...new Set(Array.from({ length: r.int(1, 3) }, () => r.pick(instances)))];
+  const lines: string[] = [];
+  for (const k of chosen) {
+    if (c.mode === 'date') lines.push(r.rnd() < 0.5 ? `EXDATE;VALUE=DATE:${k}` : k);
+    else if (c.mode === 'floating') lines.push(`EXDATE:${k}`);
+    else {
+      const form = r.int(0, 2);
+      if (form === 0) lines.push(`EXDATE:${k}`);
+      if (form === 1) lines.push(`EXDATE;TZID=${tz}:${localOf(keyMs(k), tz)}`);
+      if (form === 2) lines.push(`EXDATE;TZID=Europe/Berlin:${localOf(keyMs(k), 'Europe/Berlin')}`);
+    }
+  }
+  c.job.exdate = lines;
+}
+
+function addRdates(c: FuzzCase, instances: string[], tz: string, r: Draws): void {
+  const base = keyMs(instances[0]);
+  const lines: string[] = [];
+  for (let j = r.int(1, 2); j > 0; j--) {
+    const day = new Date(base + r.int(-10, 2000) * DAY);
+    const ymd = `${day.getUTCFullYear()}${pad(day.getUTCMonth() + 1)}${pad(day.getUTCDate())}`;
+    const hms = `${pad(r.pick([0, 1, 2, 3, 9, 23]))}${r.pick(['00', '30'])}00`;
+    if (c.mode === 'date') lines.push(`RDATE;VALUE=DATE:${ymd}`);
+    else if (c.mode === 'floating') lines.push(`RDATE:${ymd}T${hms}`);
+    else lines.push(r.rnd() < 0.5 ? `RDATE;TZID=${tz}:${ymd}T${hms}` : `RDATE:${ymd}T${hms}Z`);
+  }
+  c.job.rdate = lines;
+}
+
+function addOverrides(c: FuzzCase, instances: string[], tz: string, r: Draws): void {
+  const overrides: Override[] = [];
+  for (const k of new Set(Array.from({ length: r.int(1, 3) }, () => r.pick(instances)))) {
+    const idForm = r.int(0, 2);
+    let recurrenceId: string | EventTime = k;
+    if (c.mode === 'zoned' && idForm === 1) recurrenceId = { utc: keyMs(k) };
+    if (c.mode === 'zoned' && idForm === 2)
+      recurrenceId = { local: isoOfKey(localOf(keyMs(k), tz)), tzid: tz };
+    if (c.mode === 'date' && idForm === 1) recurrenceId = { date: isoOfKey(k) };
+    if (c.mode === 'floating' && idForm === 1) recurrenceId = { local: isoOfKey(k) };
+    if (r.rnd() < 0.3) {
+      overrides.push({ recurrenceId, cancelled: true });
+      continue;
+    }
+    const delta = r.pick([-DAY, 2 * 3_600_000, 3 * DAY, -40 * DAY, 400 * DAY]);
+    const moved = keyMs(k) + (c.mode === 'date' ? Math.round(delta / DAY) * DAY : delta);
+    const o: Override = { recurrenceId };
+    if (c.mode === 'date') o.start = { date: new Date(moved).toISOString().slice(0, 10) };
+    else if (c.mode === 'floating') o.start = { local: new Date(moved).toISOString().slice(0, 19) };
+    else o.start = { utc: moved };
+    if (r.rnd() < 0.4) {
+      if (c.mode === 'date') o.end = { date: new Date(moved + 2 * DAY).toISOString().slice(0, 10) };
+      else if (c.mode === 'floating')
+        o.end = { local: new Date(moved + 45 * 60_000).toISOString().slice(0, 19) };
+      else o.end = { utc: moved + 45 * 60_000 };
+    }
+    overrides.push(o);
+  }
+  c.job.overrides = overrides;
+}
+
+/**
+ * Adds EXDATE, RDATE and overrides chosen from oracle A's own instances, so they actually hit.
+ */
 function decorate(c: FuzzCase, instances: string[], seed: number): void {
   const rnd = prng(seed);
-  const int = (lo: number, hi: number): number => lo + Math.floor(rnd() * (hi - lo + 1));
-  const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)];
+  const r: Draws = {
+    rnd,
+    int: (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1)),
+    pick: <T>(xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)],
+    some: <T>(xs: readonly T[], k: number): T[] => [
+      ...new Set(Array.from({ length: k }, () => r.pick(xs))),
+    ],
+  };
   const tz = c.mode === 'zoned' ? c.zone : 'UTC';
   if (!instances.length) return;
-  if (rnd() < 0.4) {
-    const chosen = [...new Set(Array.from({ length: int(1, 3) }, () => pick(instances)))];
-    const lines: string[] = [];
-    for (const k of chosen) {
-      if (c.mode === 'date') lines.push(rnd() < 0.5 ? `EXDATE;VALUE=DATE:${k}` : k);
-      else if (c.mode === 'floating') lines.push(`EXDATE:${k}`);
-      else {
-        const form = int(0, 2);
-        if (form === 0) lines.push(`EXDATE:${k}`);
-        if (form === 1) lines.push(`EXDATE;TZID=${tz}:${localOf(keyMs(k), tz)}`);
-        if (form === 2)
-          lines.push(`EXDATE;TZID=Europe/Berlin:${localOf(keyMs(k), 'Europe/Berlin')}`);
-      }
-    }
-    c.job.exdate = lines;
-  }
-  if (rnd() < 0.3) {
-    const base = keyMs(instances[0]);
-    const lines: string[] = [];
-    for (let j = int(1, 2); j > 0; j--) {
-      const day = new Date(base + int(-10, 2000) * DAY);
-      const ymd = `${day.getUTCFullYear()}${pad(day.getUTCMonth() + 1)}${pad(day.getUTCDate())}`;
-      const hms = `${pad(pick([0, 1, 2, 3, 9, 23]))}${pick(['00', '30'])}00`;
-      if (c.mode === 'date') lines.push(`RDATE;VALUE=DATE:${ymd}`);
-      else if (c.mode === 'floating') lines.push(`RDATE:${ymd}T${hms}`);
-      else lines.push(rnd() < 0.5 ? `RDATE;TZID=${tz}:${ymd}T${hms}` : `RDATE:${ymd}T${hms}Z`);
-    }
-    c.job.rdate = lines;
-  }
-  if (rnd() < 0.4) {
-    const overrides: Override[] = [];
-    for (const k of new Set(Array.from({ length: int(1, 3) }, () => pick(instances)))) {
-      const idForm = int(0, 2);
-      let recurrenceId: string | EventTime = k;
-      if (c.mode === 'zoned' && idForm === 1) recurrenceId = { utc: keyMs(k) };
-      if (c.mode === 'zoned' && idForm === 2)
-        recurrenceId = { local: isoOfKey(localOf(keyMs(k), tz)), tzid: tz };
-      if (c.mode === 'date' && idForm === 1) recurrenceId = { date: isoOfKey(k) };
-      if (c.mode === 'floating' && idForm === 1) recurrenceId = { local: isoOfKey(k) };
-      if (rnd() < 0.3) {
-        overrides.push({ recurrenceId, cancelled: true });
-        continue;
-      }
-      const delta = pick([-DAY, 2 * 3_600_000, 3 * DAY, -40 * DAY, 400 * DAY]);
-      const moved = keyMs(k) + (c.mode === 'date' ? Math.round(delta / DAY) * DAY : delta);
-      const o: Override = { recurrenceId };
-      if (c.mode === 'date') o.start = { date: new Date(moved).toISOString().slice(0, 10) };
-      else if (c.mode === 'floating')
-        o.start = { local: new Date(moved).toISOString().slice(0, 19) };
-      else o.start = { utc: moved };
-      if (rnd() < 0.4) {
-        if (c.mode === 'date')
-          o.end = { date: new Date(moved + 2 * DAY).toISOString().slice(0, 10) };
-        else if (c.mode === 'floating')
-          o.end = { local: new Date(moved + 45 * 60_000).toISOString().slice(0, 19) };
-        else o.end = { utc: moved + 45 * 60_000 };
-      }
-      overrides.push(o);
-    }
-    c.job.overrides = overrides;
-  }
+  if (r.rnd() < 0.4) addExdates(c, instances, tz, r);
+  if (r.rnd() < 0.3) addRdates(c, instances, tz, r);
+  if (r.rnd() < 0.4) addOverrides(c, instances, tz, r);
 }
 
 // ---------- oracles ----------
@@ -402,13 +460,6 @@ function runA(jobs: Job[], dir: string, name: string): Map<string, OracleResult>
   writeFileSync(output, raw);
   const parsed = JSON.parse(readFileSync(output, 'utf8')) as { results: OracleResult[] };
   return new Map(parsed.results.map(r => [r.id, r]));
-}
-
-interface Expected {
-  recurrenceId: string;
-  start: string;
-  end: string;
-  overridden: boolean;
 }
 
 /** An oracle's recurrence set with overrides, range and limit applied (same rules as generate.ts). */
@@ -447,62 +498,6 @@ function diff(expected: Expected[], actual: Expected[]): string {
   const i = expected.findIndex((e, j) => JSON.stringify(e) !== JSON.stringify(actual[j]));
   const at = i < 0 ? Math.min(expected.length, actual.length) : i;
   return `${actual.length} vs ${expected.length} expected; first difference at ${at}: got ${JSON.stringify(actual[at])}, want ${JSON.stringify(expected[at])}`;
-}
-
-/**
- * RFC 5545 week number of a UTC-midnight day, by brute force: week 1 of year Y is the first week
- * (starting on `wkst`, 0 = Monday) holding at least four days of Y. Returns [n, n - weeksInYear - 1].
- */
-function rfcWeekNumbers(dayMs: number, wkst: number): [number, number] {
-  const weekday = (ms: number): number => (new Date(ms).getUTCDay() + 6) % 7;
-  const week1 = (y: number): number => {
-    for (let s = Date.UTC(y - 1, 11, 25); ; s += DAY) {
-      if (weekday(s) !== wkst) continue;
-      let inYear = 0;
-      for (let k = 0; k < 7; k++) if (new Date(s + k * DAY).getUTCFullYear() === y) inYear++;
-      if (inYear >= 4) return s;
-    }
-  };
-  const y = new Date(dayMs).getUTCFullYear();
-  const owner = [y + 1, y, y - 1].find(c => week1(c) <= dayMs)!;
-  const n = Math.floor((dayMs - week1(owner)) / (7 * DAY)) + 1;
-  const weeks = (week1(owner + 1) - week1(owner)) / (7 * DAY);
-  return [n, n - weeks - 1];
-}
-
-/**
- * dateutil 3.0.0 counts the previous year's weeks with the current year's length (`lnumweeks`), so
- * near 1 January it can call week 52 "week 53". A mismatch is put down to that only when every
- * occurrence A alone has fails the brute-force week check and every one the module alone has passes it.
- */
-function weekNoDefectOfA(
-  rrule: string,
-  want: Expected[],
-  actual: Expected[],
-  toDay: (k: string) => number,
-): boolean {
-  const m = /BYWEEKNO=([^;]+)/.exec(rrule);
-  if (!m) return false;
-  const wanted = m[1].split(',').map(Number);
-  const wkst = DAYS.indexOf(/WKST=(\w\w)/.exec(rrule)?.[1] ?? 'MO');
-  const matches = (k: string): boolean =>
-    rfcWeekNumbers(toDay(k), wkst).some(n => wanted.includes(n));
-  const a = new Set(want.map(e => e.recurrenceId));
-  const b = new Set(actual.map(e => e.recurrenceId));
-  const aOnly = [...a].filter(k => !b.has(k));
-  const mOnly = [...b].filter(k => !a.has(k));
-  return aOnly.length > 0 && aOnly.every(k => !matches(k)) && mOnly.every(matches);
-}
-
-/** Shapes where oracle B is documented to read RFC 5545 differently (disagreements.md). */
-function bDisputed(rrule: string): boolean {
-  const has = (p: string): boolean => new RegExp(`(^|;)${p}=`).test(rrule);
-  const freq = /FREQ=(\w+)/.exec(rrule)![1];
-  if (freq === 'YEARLY' && !has('BYMONTH') && (has('BYMONTHDAY') || /BYDAY=[^;]*\d/.test(rrule)))
-    return true;
-  if (has('BYSETPOS') && (freq === 'WEEKLY' || freq === 'DAILY')) return true;
-  if (has('BYSETPOS') && freq === 'YEARLY' && !/BYMONTH=\d+(;|$)/.test(rrule)) return true;
-  return false;
 }
 
 // ---------- the fuzz run ----------

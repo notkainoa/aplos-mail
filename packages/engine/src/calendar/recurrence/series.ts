@@ -194,42 +194,94 @@ function rulesOf(rrule: Series['rrule']): string[] {
     .filter(Boolean);
 }
 
+/** The master's clock, start and duration, before any dated instance is read. */
+function baseNormal(series: Series, floatingZone: string): Normal {
+  zone(floatingZone);
+  const start = parseEventTime(series.start);
+  const end = parseEventTime(series.end);
+  if (series.allDay !== (start.value.kind === 'date')) fail('allDay must match a { date } start');
+  if ((start.value.kind === 'date') !== (end.value.kind === 'date'))
+    fail('start and end must both be dates or both be times');
+  const tzid = start.tzid ?? series.tzid;
+  const zoned = start.value.kind === 'utc' || (start.value.kind === 'local' && tzid !== undefined);
+  const mode: Mode = start.value.kind === 'date' ? 'date' : zoned ? 'zoned' : 'floating';
+  const tz = zoned ? zone(tzid ?? 'UTC') : floatingZone;
+  // A zoned start inside a DST gap repeats at its written wall time, so the wall is kept as given.
+  const startWall = start.value.kind === 'utc' ? toWall(start.value.ms, tz) : valueMs(start.value);
+  // Start and end may name different zones; the exact gap between the two instants is the duration.
+  const instant = (t: typeof start): number =>
+    t.value.kind === 'utc' ? t.value.ms : fromWall(valueMs(t.value), zone(t.tzid ?? tz));
+  const duration = zoned ? instant(end) - instant(start) : valueMs(end.value) - startWall;
+  const normal: Normal = {
+    mode,
+    tz,
+    floatingZone,
+    startWall,
+    duration: Math.max(0, duration),
+    startAt: zoned && start.value.kind === 'utc' ? start.value.ms : undefined,
+    rdates: [],
+    exKeys: new Set(),
+    overrides: new Map(),
+  };
+  return normal;
+}
+
+/** Reads RDATE, EXDATE and overrides into the master. May throw a Refusal part-way. */
+function addDated(normal: Normal, series: Series): void {
+  normal.rdates = datedInsts(normal, series.rdate, 'RDATE');
+  normal.exKeys = new Set(datedInsts(normal, series.exdate, 'EXDATE').map(i => i.key));
+  for (const o of series.overrides ?? []) normal.overrides.set(...normalOverride(normal, o));
+}
+
+/** Checks the series' RRULE against the normalised master and attaches a usable rule. */
+function withRule(series: Series, normal: Normal): Prepared {
+  const rules = rulesOf(series.rrule);
+  if (rules.length > 1)
+    return { ok: false, refused: 'unsupported', reason: 'more than one RRULE', normal };
+  if (rules.length === 0) return { ok: true, normal };
+  const parsed = parseRRule(rules[0]);
+  if (!parsed.ok) return { ok: false, refused: parsed.error, reason: parsed.reason, normal };
+  const rule = parsed.rule;
+  if (
+    normal.mode === 'date' &&
+    (rule.byHour.length || rule.byMinute.length || rule.bySecond.length)
+  ) {
+    return {
+      ok: false,
+      refused: 'invalid',
+      reason: 'BYHOUR, BYMINUTE and BYSECOND need a timed start',
+      normal,
+    };
+  }
+  if (!EXPANDABLE.has(rule.freq))
+    return {
+      ok: false,
+      refused: 'unsupported',
+      reason: `FREQ=${rule.freq} is not expanded`,
+      normal,
+    };
+  // DAILY;BYHOUR=0..23;BYMINUTE=0..59 is MINUTELY in disguise (86,400 a day with BYSECOND), and one
+  // such invite would stall expansion. More than once an hour is refused like HOURLY and finer.
+  if (timesPerDay(rule) > MAX_TIMES_PER_DAY) {
+    return {
+      ok: false,
+      refused: 'unsupported',
+      reason: `more than ${MAX_TIMES_PER_DAY} start times a day (HOURLY or finer in effect)`,
+      normal,
+    };
+  }
+  normal.rule = rule;
+  return { ok: true, normal };
+}
+
 /** Normalises a master. Never throws: bad input comes back as a typed refusal. */
 export function prepare(series: Series, floatingZone = 'UTC'): Prepared {
   let normal: Normal | undefined;
   try {
-    zone(floatingZone);
-    const start = parseEventTime(series.start);
-    const end = parseEventTime(series.end);
-    if (series.allDay !== (start.value.kind === 'date')) fail('allDay must match a { date } start');
-    if ((start.value.kind === 'date') !== (end.value.kind === 'date'))
-      fail('start and end must both be dates or both be times');
-    const tzid = start.tzid ?? series.tzid;
-    const zoned =
-      start.value.kind === 'utc' || (start.value.kind === 'local' && tzid !== undefined);
-    const mode: Mode = start.value.kind === 'date' ? 'date' : zoned ? 'zoned' : 'floating';
-    const tz = zoned ? zone(tzid ?? 'UTC') : floatingZone;
-    // A zoned start inside a DST gap repeats at its written wall time, so the wall is kept as given.
-    const startWall =
-      start.value.kind === 'utc' ? toWall(start.value.ms, tz) : valueMs(start.value);
-    // Start and end may name different zones; the exact gap between the two instants is the duration.
-    const instant = (t: typeof start): number =>
-      t.value.kind === 'utc' ? t.value.ms : fromWall(valueMs(t.value), zone(t.tzid ?? tz));
-    const duration = zoned ? instant(end) - instant(start) : valueMs(end.value) - startWall;
-    normal = {
-      mode,
-      tz,
-      floatingZone,
-      startWall,
-      duration: Math.max(0, duration),
-      startAt: zoned && start.value.kind === 'utc' ? start.value.ms : undefined,
-      rdates: [],
-      exKeys: new Set(),
-      overrides: new Map(),
-    };
-    normal.rdates = datedInsts(normal, series.rdate, 'RDATE');
-    normal.exKeys = new Set(datedInsts(normal, series.exdate, 'EXDATE').map(i => i.key));
-    for (const o of series.overrides ?? []) normal.overrides.set(...normalOverride(normal, o));
+    // Assigned before the dated instances are read, so an unsupported RDATE still returns the
+    // master and its first instance (DTSTART) can be shown.
+    normal = baseNormal(series, floatingZone);
+    addDated(normal, series);
   } catch (err) {
     if (err instanceof Refusal)
       return {
@@ -241,44 +293,7 @@ export function prepare(series: Series, floatingZone = 'UTC'): Prepared {
     if (err instanceof RangeError) return { ok: false, refused: 'invalid', reason: err.message };
     throw err;
   }
-  const rules = rulesOf(series.rrule);
-  if (rules.length > 1)
-    return { ok: false, refused: 'unsupported', reason: 'more than one RRULE', normal };
-  if (rules.length === 1) {
-    const parsed = parseRRule(rules[0]);
-    if (!parsed.ok) return { ok: false, refused: parsed.error, reason: parsed.reason, normal };
-    const rule = parsed.rule;
-    if (
-      normal.mode === 'date' &&
-      (rule.byHour.length || rule.byMinute.length || rule.bySecond.length)
-    ) {
-      return {
-        ok: false,
-        refused: 'invalid',
-        reason: 'BYHOUR, BYMINUTE and BYSECOND need a timed start',
-        normal,
-      };
-    }
-    if (!EXPANDABLE.has(rule.freq))
-      return {
-        ok: false,
-        refused: 'unsupported',
-        reason: `FREQ=${rule.freq} is not expanded`,
-        normal,
-      };
-    // DAILY;BYHOUR=0..23;BYMINUTE=0..59 is MINUTELY in disguise (86,400 a day with BYSECOND), and one
-    // such invite would stall expansion. More than once an hour is refused like HOURLY and finer.
-    if (timesPerDay(rule) > MAX_TIMES_PER_DAY) {
-      return {
-        ok: false,
-        refused: 'unsupported',
-        reason: `more than ${MAX_TIMES_PER_DAY} start times a day (HOURLY or finer in effect)`,
-        normal,
-      };
-    }
-    normal.rule = rule;
-  }
-  return { ok: true, normal };
+  return withRule(series, normal);
 }
 
 function normalOverride(n: Normal, o: Override): [string, NormalOverride] {

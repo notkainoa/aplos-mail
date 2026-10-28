@@ -152,27 +152,34 @@ const READINGS: Record<string, { side: 'A' | 'B'; reading: string }> = {
 
 // ---------- main ----------
 
-async function main(): Promise<void> {
-  const oracleB = await loadOracleB();
-  const bCommit = (() => {
-    try {
-      return execFileSync('git', ['-C', ORACLE_B_DIR, 'rev-parse', '--short', 'HEAD'])
-        .toString()
-        .trim();
-    } catch {
-      return 'unknown';
-    }
-  })();
+function bCommitOf(): string {
+  try {
+    return (
+      execFileSync('git', ['-C', ORACLE_B_DIR, 'rev-parse', '--short', 'HEAD']).toString().trim() ||
+      'unknown'
+    );
+  } catch {
+    return 'unknown';
+  }
+}
 
-  const jobs = cases.map(c => jobOf(c.id, c.event, cutoffOf(c)));
-  const a = runA(jobs);
-  const firstJobs = cases.map(c => jobOf(c.id, { ...c.event, rrule: undefined }, cutoffOf(c)));
-  const firstA = runA(firstJobs);
-  const golden: unknown[] = [];
-  const disputed: unknown[] = [];
-  const aOnly: string[] = [];
-  const bOnly: string[] = [];
-  const problems: string[] = [];
+interface Classified {
+  golden: unknown[];
+  disputed: unknown[];
+  aOnly: string[];
+  bOnly: string[];
+  problems: string[];
+}
+
+function classify(
+  a: { engine: string; results: Map<string, OracleResult> },
+  firstA: { results: Map<string, OracleResult> },
+  jobs: Job[],
+  firstJobs: Job[],
+  oracleB: (job: Job) => OracleResult,
+): Classified {
+  const result: Classified = { golden: [], disputed: [], aOnly: [], bOnly: [], problems: [] };
+  const { golden, disputed, aOnly, bOnly, problems } = result;
 
   for (const [i, c] of cases.entries()) {
     const ra = a.results.get(c.id)!;
@@ -194,25 +201,16 @@ async function main(): Promise<void> {
     };
 
     if (c.refusal) {
-      // A refused series still shows its own first instance: both oracles expand the event without its rule.
-      const fa = firstA.results.get(c.id)!;
-      const fb = oracleB(firstJobs[i]);
-      if (rb.status === 'ok')
-        problems.push(`${c.id}: oracle B accepts a rule the case expects to be refused`);
-      else if (fa.status !== 'ok' || fb.status !== 'ok' || !agree(fa, fb))
-        problems.push(`${c.id}: the oracles disagree on the first instance`);
-      else {
-        const first = materialise(fa, c);
-        const refused = ra.status === 'ok' ? 'unsupported' : 'invalid';
-        if (ra.status === 'ok' && ra.instances[0] !== fa.instances[0])
-          problems.push(`${c.id}: DTSTART is not the rule's first instance`);
-        record(['A', 'B'], {
-          ok: false,
-          refused,
-          occurrences: first,
-          why: { A: ra.status === 'ok' ? 'expands it' : ra.error, B: rb.error },
-        });
-      }
+      refusalCase(
+        c,
+        ra,
+        rb,
+        firstA.results.get(c.id)!,
+        oracleB(firstJobs[i]),
+        input,
+        record,
+        problems,
+      );
       continue;
     }
     if (ra.status === 'refused' && rb.status === 'refused') {
@@ -235,27 +233,79 @@ async function main(): Promise<void> {
       if (agree(ra, rb) && same(ea, eb)) {
         record(['A', 'B'], { ok: true, occurrences: ea });
       } else {
-        const reading = READINGS[c.id];
-        if (!reading) problems.push(`${c.id}: oracles disagree and no reading is recorded`);
-        disputed.push({
-          id: c.id,
-          tags: c.tags,
-          input,
-          side: reading?.side ?? 'A',
-          reading: reading?.reading ?? 'UNREVIEWED',
-          expected: { ok: true, occurrences: (reading?.side ?? 'A') === 'A' ? ea : eb },
-          A: ea,
-          B: eb,
-        });
+        disputed.push(disputeFor(c.id, c.tags, input, ea, eb, problems));
       }
     }
   }
-  for (const [id, r] of Object.entries(READINGS)) {
+  return result;
+}
+
+/** A refused series still shows its own first instance: both oracles expand the event without its rule. */
+function refusalCase(
+  c: Case,
+  ra: OracleResult,
+  rb: OracleResult,
+  fa: OracleResult,
+  fb: OracleResult,
+  input: unknown,
+  record: (oracles: string[], expected: unknown) => void,
+  problems: string[],
+): void {
+  if (rb.status === 'ok')
+    problems.push(`${c.id}: oracle B accepts a rule the case expects to be refused`);
+  else if (fa.status !== 'ok' || fb.status !== 'ok' || !agree(fa, fb))
+    problems.push(`${c.id}: the oracles disagree on the first instance`);
+  else {
+    const first = materialise(fa, c);
+    const refused = ra.status === 'ok' ? 'unsupported' : 'invalid';
+    if (ra.status === 'ok' && ra.instances[0] !== fa.instances[0])
+      problems.push(`${c.id}: DTSTART is not the rule's first instance`);
+    record(['A', 'B'], {
+      ok: false,
+      refused,
+      occurrences: first,
+      why: { A: ra.status === 'ok' ? 'expands it' : ra.error, B: rb.error },
+    });
+  }
+}
+
+function disputeFor(
+  id: string,
+  tags: string[],
+  input: unknown,
+  ea: Expected[],
+  eb: Expected[],
+  problems: string[],
+): unknown {
+  const reading = READINGS[id];
+  if (!reading) problems.push(`${id}: oracles disagree and no reading is recorded`);
+  return {
+    id,
+    tags,
+    input,
+    side: reading?.side ?? 'A',
+    reading: reading?.reading ?? 'UNREVIEWED',
+    expected: { ok: true, occurrences: (reading?.side ?? 'A') === 'A' ? ea : eb },
+    A: ea,
+    B: eb,
+  };
+}
+
+/** The unset readings: a reading is recorded but the oracles now agree. */
+function unsetReadings(disputed: unknown[], problems: string[]): void {
+  for (const [id, _r] of Object.entries(READINGS)) {
     if (!disputed.some(d => (d as { id: string }).id === id))
       problems.push(`${id}: a reading is recorded but the oracles now agree`);
   }
+}
 
-  // ---------- property sweep: random rules inside B's subset, three years each ----------
+// ---------- property sweep: random rules inside B's subset, three years each ----------
+
+function propertySweep(oracleB: (job: Job) => OracleResult): {
+  property: unknown[];
+  sweepDisagreements: string[];
+  swept: number;
+} {
   const rules = propertyRules(20261027, 600);
   const pJobs = rules.map(r => jobOf(r.id, r.event, r.to - 1));
   const pa = runA(pJobs);
@@ -287,6 +337,28 @@ async function main(): Promise<void> {
       head: keys.slice(0, 30),
     });
   }
+  return { property, sweepDisagreements, swept: rules.length };
+}
+
+async function main(): Promise<void> {
+  const oracleB = await loadOracleB();
+  const bCommit = bCommitOf();
+
+  const jobs = cases.map(c => jobOf(c.id, c.event, cutoffOf(c)));
+  const a = runA(jobs);
+  const firstJobs = cases.map(c => jobOf(c.id, { ...c.event, rrule: undefined }, cutoffOf(c)));
+  const firstA = runA(firstJobs);
+
+  const golden: unknown[] = [];
+  const disputed: unknown[] = [];
+
+  const classified = classify(a, firstA, jobs, firstJobs, oracleB);
+  golden.push(...classified.golden);
+  disputed.push(...classified.disputed);
+  unsetReadings(disputed, classified.problems);
+
+  const sweep = propertySweep(oracleB);
+  const { property, sweepDisagreements } = sweep;
 
   writeFileSync(
     join(out, 'golden.json'),
@@ -321,20 +393,20 @@ async function main(): Promise<void> {
       bCommit,
       golden: golden.length,
       disputed,
-      aOnly,
-      bOnly,
+      aOnly: classified.aOnly,
+      bOnly: classified.bOnly,
       sweepDisagreements,
       property: property.length,
-      swept: rules.length,
+      swept: sweep.swept,
     }),
   );
 
   const twoOracle = golden.filter(g => (g as { oracles: string[] }).oracles.length === 2).length;
   console.log(
-    `golden: ${golden.length} cases (${twoOracle} with both oracles, ${aOnly.length} A only, ${bOnly.length} B only); disputed: ${disputed.length}; property: ${property.length} kept, ${sweepDisagreements.length} dropped`,
+    `golden: ${golden.length} cases (${twoOracle} with both oracles, ${classified.aOnly.length} A only, ${classified.bOnly.length} B only); disputed: ${disputed.length}; property: ${property.length} kept, ${sweepDisagreements.length} dropped`,
   );
-  if (problems.length) {
-    console.error(`problems:\n  ${problems.join('\n  ')}`);
+  if (classified.problems.length) {
+    console.error(`problems:\n  ${classified.problems.join('\n  ')}`);
     process.exitCode = 1;
   }
 }
