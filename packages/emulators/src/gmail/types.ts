@@ -1,0 +1,111 @@
+import type { Clock } from '../kit/clock';
+import type { FaultHook, RequestLogEntry } from '../kit/types';
+import type { DailyLimitKind, ThrottleShape } from './errors';
+import type { MinuteUnits } from './meter';
+import type { Mailbox } from './mailbox';
+import type { GenerateOptions } from './generate';
+import type { OAuthServer, TestUser, TestUserInput } from './oauth';
+
+export type RetryAfterMode = 'none' | 'seconds' | 'httpDate';
+
+export interface GmailEmulatorOptions {
+  clock: Clock;
+  /** Seeds ids, history steps, tokens and the batch refusal curve. Default 1. */
+  seed?: number;
+  /** Simulated time per request, waited with `clock.sleep`. Default 150. */
+  latencyMs?: number;
+  /** Per-user units in any sliding 60 s window. Default 6000. */
+  unitsPerMinute?: number;
+  /** Requests in flight per user before 429 "Too many concurrent requests". Default 10. */
+  concurrency?: number;
+  /** The "old" quota column: cheaper message and thread reads. Default false. */
+  grandfathered?: boolean;
+  /** Whether a refused request still counts against the window. Default false. */
+  chargeRefused?: boolean;
+  /** Which JSON error a per-minute refusal carries. Default 'rateLimitExceeded403'. */
+  throttleShape?: ThrottleShape;
+  /**
+   * Whether per-minute and send-limit refusals carry Retry-After, and in which format. Default
+   * 'none'. Whether Gmail sends Retry-After on a per-user 403 is unknown and must be checked on the
+   * first live run; the D1 gate depends on it and pins 'none' explicitly.
+   */
+  retryAfter?: RetryAfterMode;
+  /** OAuth project in Testing: refresh tokens die 7 days after consent. Default true. */
+  testingMode?: boolean;
+  /** Whether a repeat consent without prompt=consent returns a refresh token again. Default true. */
+  repeatConsentIssuesRefreshToken?: boolean;
+  /** Refuse authorization requests without state or an S256 challenge (stricter than Google). Default false. */
+  requirePkceAndState?: boolean;
+  faults?: FaultHook;
+  /** How long history records stay valid. Default 7 days. */
+  historyRetentionMs?: number;
+  /** Sends per Pacific day before 429 "Mail sending". Default 2000. */
+  sendLimitPerDay?: number;
+  /** Test users to start with. By default one user, test.user@example.test. Pass [] for none. */
+  users?: TestUserInput[];
+}
+
+/** Live settings; assigning to a field takes effect on the next request. */
+export interface GmailSettings {
+  latencyMs: number;
+  unitsPerMinute: number;
+  concurrency: number;
+  grandfathered: boolean;
+  chargeRefused: boolean;
+  throttleShape: ThrottleShape;
+  retryAfter: RetryAfterMode;
+  historyRetentionMs: number;
+  sendLimitPerDay: number;
+}
+
+export interface MeterHelpers {
+  /** Units in the last 60 s for a user (email or sub); the first user when omitted. */
+  unitsInWindow(account?: string): number;
+  /** Units accepted in each clock minute that saw traffic. */
+  perMinuteSeries(account?: string): MinuteUnits[];
+  /** The highest total the 60 s window ever held. */
+  peakWindow(account?: string): number;
+  /** Forgets all charges, series and peaks. */
+  reset(): void;
+}
+
+export interface DailyLimitState {
+  kind: DailyLimitKind;
+  /** Midnight America/Los_Angeles after which calls work again. */
+  resetsAt: number;
+}
+
+export interface GmailEmulator {
+  /** Drop-in for global fetch. Rejects any origin the emulator does not emulate. */
+  fetch: typeof fetch;
+  clock: Clock;
+  /** One content-free entry per request, including refusals, faults and batch parts. */
+  log: RequestLogEntry[];
+  /** Live, changeable settings (units per minute, latency, throttle shape, ...). */
+  settings: GmailSettings;
+  /** Origins that were requested and refused as external. */
+  blockedOrigins: string[];
+
+  // accounts
+  addUser(input: TestUserInput): TestUser;
+  users(): TestUser[];
+  /** The mailbox of a user (email or sub); the first user's when omitted. */
+  mailbox: Mailbox;
+  mailboxFor(user?: string): Mailbox;
+  /** Fills a user's mailbox with synthetic mail, returns it. */
+  seedMailbox(options: GenerateOptions & { user?: string }): Mailbox;
+  oauth: OAuthServer;
+
+  // quota
+  meter: MeterHelpers;
+  /** Requests currently holding a slot for the user (email or sub). */
+  inFlight(account?: string): number;
+
+  // daily switches
+  setDailyLimit(kind: DailyLimitKind | null): void;
+  dailyLimit(): DailyLimitState | null;
+  /** Sends counted today (Pacific) for the user. */
+  sendsToday(account?: string): number;
+  /** Pretends the user already sent this many messages today. */
+  setSendsToday(count: number, account?: string): void;
+}

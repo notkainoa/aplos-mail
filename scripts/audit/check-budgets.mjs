@@ -14,10 +14,12 @@ const dayMs = 24 * 60 * 60 * 1000;
 
 const isText = value => typeof value === 'string' && value.trim() !== '';
 const isNumber = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-const isDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) && !Number.isNaN(Date.parse(value));
+const isDate = value =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) && !Number.isNaN(Date.parse(value));
 const idPattern = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 
-const startOfDay = date => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+const startOfDay = date =>
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 
 /** Returns { errors, awaiting } for a parsed budgets.json. `now` is injectable for tests. */
 export function checkBudgets(register, now = new Date()) {
@@ -30,49 +32,67 @@ export function checkBudgets(register, now = new Date()) {
   register.rows.forEach((row, index) => {
     const label = isText(row?.id) ? row.id : `row #${index + 1}`;
     const fail = message => errors.push(`${label}: ${message}`);
-    if (!isText(row?.id)) fail('missing id');
-    else if (!idPattern.test(row.id)) fail('id must be lower-case words joined by "." or "-", no spaces');
-    else if (seen.has(row.id.toLowerCase())) fail('duplicate id');
-    else seen.add(row.id.toLowerCase());
-    if (!isText(row?.owner)) fail('missing owner');
-    if (!isText(row?.environment)) fail('missing environment');
-    if (!isText(row?.gate)) fail('missing gate');
-    else if (!gates.includes(row.gate)) fail(`unknown gate "${row.gate}"`);
-    if (row?.secondaryGate != null && !gates.includes(row.secondaryGate)) {
-      fail(`unknown secondaryGate "${row.secondaryGate}"`);
-    }
-    if (!calibrations.includes(row?.calibration)) fail('calibration must be "calibrate" or "set"');
-    if (row?.value == null) {
-      if (!isText(row?.source)) fail('a null value needs a source naming the plan section');
-    } else if (!isNumber(row.value)) fail(`value ${JSON.stringify(row.value)} must be a number of 0 or more`);
-    else if (!isText(row?.unit)) fail('a value needs a unit');
-    if (row?.alertPct != null && !(isNumber(row.alertPct) && row.alertPct > 0)) {
-      fail('alertPct must be a positive number');
-    }
-    if (!isDate(row?.dueBy)) fail('dueBy must be an ISO date for the first measurement');
-
-    if (row?.lastMeasured == null) {
-      if (isDate(row?.dueBy) && new Date(row.dueBy) < startOfDay(now)) {
-        fail(`overdue: no first measurement, due by ${row.dueBy}`);
-      } else {
-        awaiting.push(
-          `${label}: awaiting first measurement (${row?.calibration ?? 'unknown'}, due by ${row?.dueBy})`,
-        );
-      }
-      return;
-    }
-    const measured = new Date(row.lastMeasured);
-    if (Number.isNaN(measured.getTime())) return fail(`lastMeasured "${row.lastMeasured}" is not a date`);
-    if (measured > now) return fail(`lastMeasured ${row.lastMeasured} is in the future`);
-    if (!(typeof row.maxAgeDays === 'number' && row.maxAgeDays > 0)) {
-      return fail('a measured row needs a positive maxAgeDays');
-    }
-    const ageDays = Math.floor((now - measured) / dayMs);
-    if (ageDays > row.maxAgeDays) {
-      fail(`stale: measured ${row.lastMeasured}, ${ageDays} days ago, allowed ${row.maxAgeDays}`);
-    }
+    checkId(row, seen, fail);
+    checkDescriptors(row, fail);
+    checkValue(row, fail);
+    checkMeasurement(row, label, now, fail, awaiting);
   });
   return { errors, awaiting };
+}
+
+function checkId(row, seen, fail) {
+  if (!isText(row?.id)) fail('missing id');
+  else if (!idPattern.test(row.id))
+    fail('id must be lower-case words joined by "." or "-", no spaces');
+  else if (seen.has(row.id.toLowerCase())) fail('duplicate id');
+  else seen.add(row.id.toLowerCase());
+}
+
+function checkDescriptors(row, fail) {
+  if (!isText(row?.owner)) fail('missing owner');
+  if (!isText(row?.environment)) fail('missing environment');
+  if (!isText(row?.gate)) fail('missing gate');
+  else if (!gates.includes(row.gate)) fail(`unknown gate "${row.gate}"`);
+  if (row?.secondaryGate != null && !gates.includes(row.secondaryGate)) {
+    fail(`unknown secondaryGate "${row.secondaryGate}"`);
+  }
+  if (!calibrations.includes(row?.calibration)) fail('calibration must be "calibrate" or "set"');
+}
+
+function checkValue(row, fail) {
+  if (row?.value == null) {
+    if (!isText(row?.source)) fail('a null value needs a source naming the plan section');
+  } else if (!isNumber(row.value))
+    fail(`value ${JSON.stringify(row.value)} must be a number of 0 or more`);
+  else if (!isText(row?.unit)) fail('a value needs a unit');
+  if (row?.alertPct != null && !(isNumber(row.alertPct) && row.alertPct > 0)) {
+    fail('alertPct must be a positive number');
+  }
+  if (!isDate(row?.dueBy)) fail('dueBy must be an ISO date for the first measurement');
+}
+
+function checkMeasurement(row, label, now, fail, awaiting) {
+  if (row?.lastMeasured == null) {
+    if (isDate(row?.dueBy) && new Date(row.dueBy) < startOfDay(now)) {
+      fail(`overdue: no first measurement, due by ${row.dueBy}`);
+    } else {
+      awaiting.push(
+        `${label}: awaiting first measurement (${row?.calibration ?? 'unknown'}, due by ${row?.dueBy})`,
+      );
+    }
+    return;
+  }
+  const measured = new Date(row.lastMeasured);
+  if (Number.isNaN(measured.getTime()))
+    return fail(`lastMeasured "${row.lastMeasured}" is not a date`);
+  if (measured > now) return fail(`lastMeasured ${row.lastMeasured} is in the future`);
+  if (!(typeof row.maxAgeDays === 'number' && row.maxAgeDays > 0)) {
+    return fail('a measured row needs a positive maxAgeDays');
+  }
+  const ageDays = Math.floor((now - measured) / dayMs);
+  if (ageDays > row.maxAgeDays) {
+    fail(`stale: measured ${row.lastMeasured}, ${ageDays} days ago, allowed ${row.maxAgeDays}`);
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

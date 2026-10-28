@@ -1,5 +1,11 @@
 import { defineConfig } from '@playwright/test';
-import { baseConfig, baseUse, browserPreviewServer, previewUrl, wantsBrowserPreview } from './base.config';
+import {
+  baseConfig,
+  baseUse,
+  browserPreviewServer,
+  previewUrl,
+  wantsBrowserPreview,
+} from './base.config';
 
 // Two tiers (plans/40-platform-quality.md Q3): the browser preview and the Electron app.
 // Run from the repo root: npm run test:e2e

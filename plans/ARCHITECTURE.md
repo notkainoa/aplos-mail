@@ -449,7 +449,7 @@ Aplos's stable Message-ID, `sendAttemptAt` marker and `rfc822msgid:` reconciliat
 - The attempt marker is committed **before the first byte leaves**.
 - **Provably not sent** (no connection, DNS failure, 4xx before acceptance, send-limit 429) → `failed`, with Retry offered.
 - **Uncertain** (timeout or drop after the request was written) → never replayed. The engine searches Sent for the Message-ID (`rfc822msgid:` on Gmail, `HEADER Message-ID` on IMAP, `internetMessageId` filter on Graph, `Email/query` on JMAP); a match settles `sent`, otherwise the user sees "We could not confirm this was sent. Check Sent, or Send anyway."
-- Gmail sends use `drafts.send` when a synced remote draft exists (so the copy on other devices disappears), else `/upload/…/messages/send` as `message/rfc822` (resumable above 5 MB), fixing the 45 s JSON timeout for large mail (D20).
+- **The bytes that leave are always the submission's pinned revision** (`Submission.revision` and its MIME), never whatever a provider draft holds at send time. Gmail may use `drafts.send` (so the copy on other devices disappears) only when the remote draft is provably still that revision: its message id equals the one Aplos uploaded for the pinned revision (a `baseRemoteMessageId` precondition on the send payload). Otherwise, or with no synced draft, it sends the pinned MIME by `/upload/…/messages/send` as `message/rfc822` (resumable above 5 MB), fixing the 45 s JSON timeout for large mail (D20), and leaves a remote draft that changed elsewhere in place with a "This draft was edited on another device" note. Blobs attached to a held revision stay alive until the submission settles (freeze review FR-7, 2026-10-28).
 
 ### 7.2 Undo send and send later are one mechanism
 
@@ -457,9 +457,9 @@ A submission's `not_before` is `now + undo window` (default 10 s) or the schedul
 
 ### 7.3 Overdue while the Mac was off
 
-If, at launch or wake, a queued submission is past `not_before` by more than the grace (5 minutes), it becomes `suspended`: "Missed its time while your Mac was off. Send now or Reschedule" (Bulwark's laptop rule, `RC/arch/extra-bulwark-legacy-proxy.md` §6; Decision 9). An undo-window send interrupted by a quit and relaunched within the grace sends normally.
+If, at launch or wake, a waiting submission (`queued`, or `scheduled` for send later) is past `not_before` by more than the grace (5 minutes), it becomes `suspended`: "Missed its time while your Mac was off. Send now or Reschedule" (Bulwark's laptop rule, `RC/arch/extra-bulwark-legacy-proxy.md` §6; Decision 9). An undo-window send interrupted by a quit and relaunched within the grace sends normally.
 
-The overdue rule applies to `queued` rows only. A row found in `sending` at launch or wake is never suspended and never re-sent: it becomes `uncertain` and runs `findSent` first and settles as in §7.1's uncertain rule (frozen `SendPort` rule, 2026-10-27; Providers F3 review should-fix 4).
+The overdue rule applies to waiting rows only (`queued` and `scheduled`; freeze review FR-2). A row found in `sending` at launch or wake is never suspended and never re-sent: it becomes `uncertain` and runs `findSent` first and settles as in §7.1's uncertain rule (frozen `SendPort` rule, 2026-10-27; Providers F3 review should-fix 4).
 
 ### 7.4 Drafts sync
 

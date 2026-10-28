@@ -7,17 +7,31 @@
 //   export default { plugins: ['./tools/lint/design/stylelint-plugin.mjs'],
 //     rules: { 'aplos-design/no-raw-color': true, ... } };
 
+import path from 'node:path';
+import { exclude, include, repoRoot } from './config.mjs';
 import { createCssContext } from './lib/context.mjs';
+import { matchesAny } from './lib/glob.mjs';
 import { rules as coreRules } from './rules/index.mjs';
+
+/** stylelint runs over every CSS file in the repo; the design rules cover only the new renderer tree. */
+function inScope(file) {
+  if (!file) return false;
+  const relative = path.relative(repoRoot, file).split(path.sep).join('/');
+  return matchesAny(relative, include) && !matchesAny(relative, exclude);
+}
 
 const NAMESPACE = 'aplos-design';
 
 function toStylelintPlugin(core) {
   const ruleName = `${NAMESPACE}/${core.id}`;
-  const rule = (primary) => async (root, result) => {
-    if (!primary) return;
+  const rule = primary => async (root, result) => {
+    if (!primary || !inScope(root.source && root.source.input.file)) return;
     const { default: stylelint } = await import('stylelint');
-    const ctx = createCssContext({ path: root.source && root.source.input.file, text: root.toString(), root });
+    const ctx = createCssContext({
+      path: root.source && root.source.input.file,
+      text: root.toString(),
+      root,
+    });
     for (const item of core.check(ctx)) {
       stylelint.utils.report({
         ruleName,
@@ -35,7 +49,7 @@ function toStylelintPlugin(core) {
 }
 
 export const plugins = coreRules
-  .filter((core) => core.appliesTo.includes('css'))
+  .filter(core => core.appliesTo.includes('css'))
   .map(toStylelintPlugin);
 
 export default plugins;

@@ -9,3 +9,14 @@ Groq is the default for every AI feature, including transcription; read GROQ_API
 Layout: an npm-workspaces monorepo. `apps/desktop` is the Electron app (all source paths in these docs, such as `src/main` and `scripts/`, are relative to it), `apps/web` is the marketing site, and `packages/` holds the shared workspaces: `@aplos/engine` (`packages/engine`, today's engine under `src/legacy/`) and `@aplos/contract` (`packages/contract`, today's shared types under `src/legacy/`). Today's renderer is in `apps/desktop/src/renderer/legacy/`. Run every command from the repo root.
 
 Commands: `npm run dev`, `npm run typecheck`, `npm test`, `npm run package`, `node scripts/launch.mjs`, plus `npm run web` / `npm run web:build` for the site. Put `.env` at the repo root (or in `apps/desktop`). Browser preview uses separate local state from desktop. Use original demo data or isolated test storage for sending/triage tests; do not send external messages as part of autonomous verification.
+
+## Code hygiene
+
+- Run `npm run check` before every commit. It runs the format check, ESLint, stylelint, the owners check, typecheck and tests (checks that do not exist yet print `pending: <name>`).
+- No multi-statement one-liners.
+- New files use named exports and small functions.
+- Whoever touches a dense function tidies it.
+
+## Design rule (revamp)
+
+The reference apps (Avec, Tatem, Notion, Notion Calendar, Redakt, Zero and others) are ideas only. `plans/DESIGN.md` is binding for every screen, and `mockups/` is the visual target. Before touching `apps/desktop/src/renderer` or `apps/web`, load the `aplos-design` skill (`.claude/skills/aplos-design/SKILL.md`) and follow its definition of done. Never use a sparkle, wand or star glyph for AI.
