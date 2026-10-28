@@ -1,8 +1,10 @@
+import { RECURRENCE_ID_FORMAT } from '../ports/calendar';
 import {
   StoreError,
   type CalendarDeleteWrite,
   type CalendarWrite,
   type EventDeleteWrite,
+  type EventHiddenWrite,
   type EventSweepWrite,
   type EventWrite,
 } from './port';
@@ -11,9 +13,50 @@ import type { WriteScope } from './scope';
 // Calendar facts (prov-cal, ARCH 5.5). Masters and overrides are stored, expanded on query (ADR-20). One `Event`
 // change row per resource (master plus overrides), so a client re-reads the series.
 
-/** The change-log id of an event resource. Provisional until FR-20 fixes the canonical event id; change it only here. */
+/**
+ * The id of an event resource (master plus overrides) after the `accountId:` prefix: its `Event` change-log id and the
+ * contract `Event.id` of a master or single event. An occurrence's id appends `@<recurrenceId>` in the canonical form
+ * (FR-20). Change it only here.
+ */
 export const eventChangeKey = (calendarRemoteId: string, remoteId: string) =>
   `${calendarRemoteId}/${remoteId}`;
+
+/**
+ * The stored `recurrence_id`: '' for a master or single event, else the canonical `RECURRENCE_ID_FORMAT` form (FR-20).
+ * Anything else is refused, so '2026-10-27T09:00:00+02:00' can never sit beside '20261027T070000Z' as a second row.
+ */
+function recurrenceKey(remoteId: string, recurrenceId: string | undefined): string {
+  if (!recurrenceId) return '';
+  // The format, then a real calendar time: 20261399 or T250000 match the pattern but are no occurrence's start.
+  const part = (from: number, to: number) => Number(recurrenceId.slice(from, to)); // '' (all-day time) is 0
+  const [y, mo, d, h, mi, sec] = [
+    part(0, 4),
+    part(4, 6),
+    part(6, 8),
+    part(9, 11),
+    part(11, 13),
+    part(13, 15),
+  ];
+  const at = new Date(Date.UTC(y, mo - 1, d, h, mi, sec));
+  if (
+    !RECURRENCE_ID_FORMAT.test(recurrenceId) ||
+    at.getUTCFullYear() !== y ||
+    at.getUTCMonth() !== mo - 1 ||
+    at.getUTCDate() !== d ||
+    at.getUTCHours() !== h ||
+    at.getUTCMinutes() !== mi
+  )
+    throw new StoreError(
+      'invalid',
+      `Event ${remoteId} has recurrenceId ${JSON.stringify(recurrenceId)}, not the canonical form (FR-20)`,
+    );
+  return recurrenceId;
+}
+
+/** A resource that is gone takes its Event/hide rows with it. */
+function dropHidden(s: WriteScope, cal: number, remoteId: string) {
+  s.q('DELETE FROM event_hidden WHERE calendar_id = ? AND remote_id = ?').run(cal, remoteId);
+}
 
 function calendarRow(s: WriteScope, accountId: string, remoteId: string) {
   return s
@@ -58,7 +101,7 @@ export function calendarDelete(s: WriteScope, w: CalendarDeleteWrite) {
 export function event(s: WriteScope, w: EventWrite) {
   const cal = calendarRow(s, w.accountId, w.calendarRemoteId);
   if (cal === undefined) return s.missing(`Calendar ${w.calendarRemoteId}`);
-  const keys = w.rows.map(r => r.recurrenceId ?? '');
+  const keys = w.rows.map(r => recurrenceKey(w.remoteId, r.recurrenceId));
   if (new Set(keys).size !== keys.length)
     throw new StoreError('invalid', `Event ${w.remoteId} repeats a recurrenceId`);
   s.q(
@@ -72,11 +115,11 @@ export function event(s: WriteScope, w: EventWrite) {
       end_utc = excluded.end_utc, all_day = excluded.all_day, data = excluded.data, ics = excluded.ics,
       seen_gen = CASE WHEN seen_gen IS NULL THEN excluded.seen_gen ELSE max(seen_gen, COALESCE(excluded.seen_gen, seen_gen)) END`,
   );
-  for (const r of w.rows)
+  w.rows.forEach((r, i) =>
     upsert.run(
       cal,
       w.remoteId,
-      r.recurrenceId ?? '',
+      keys[i]!,
       r.masterRemoteId ?? null,
       r.status,
       r.etag ?? null,
@@ -87,7 +130,9 @@ export function event(s: WriteScope, w: EventWrite) {
       r.data,
       r.ics ?? null,
       w.seenGen ?? null,
-    );
+    ),
+  );
+  if (!w.rows.length) dropHidden(s, cal, w.remoteId);
   s.mark(
     'Event',
     w.accountId,
@@ -99,6 +144,7 @@ export function event(s: WriteScope, w: EventWrite) {
 export function eventDelete(s: WriteScope, w: EventDeleteWrite) {
   const cal = calendarRow(s, w.accountId, w.calendarRemoteId);
   if (cal === undefined) return;
+  dropHidden(s, cal, w.remoteId);
   const gone = s
     .q('DELETE FROM events WHERE calendar_id = ? AND remote_id = ?')
     .run(cal, w.remoteId).changes;
@@ -120,6 +166,29 @@ export function eventSweep(s: WriteScope, w: EventSweepWrite) {
     const left = s
       .q('SELECT 1 FROM events WHERE calendar_id = ? AND remote_id = ? LIMIT 1')
       .get(cal, remoteId);
+    if (!left) dropHidden(s, cal, remoteId);
     s.mark('Event', w.accountId, eventChangeKey(w.calendarRemoteId, remoteId), left ? 'u' : 'd');
   }
+}
+
+export function eventHidden(s: WriteScope, w: EventHiddenWrite) {
+  const recurrenceId = recurrenceKey(w.remoteId, w.recurrenceId);
+  const cal = calendarRow(s, w.accountId, w.calendarRemoteId);
+  const stored =
+    cal !== undefined &&
+    s
+      .q('SELECT 1 FROM events WHERE calendar_id = ? AND remote_id = ? LIMIT 1')
+      .get(cal, w.remoteId);
+  if (!stored) return s.missing(`Event ${w.calendarRemoteId}/${w.remoteId}`);
+  const changed = w.hidden
+    ? s
+        .q(
+          `INSERT INTO event_hidden(calendar_id, remote_id, recurrence_id, hidden_at) VALUES(?, ?, ?, ?)
+          ON CONFLICT DO NOTHING`,
+        )
+        .run(cal, w.remoteId, recurrenceId, s.now()).changes
+    : s
+        .q('DELETE FROM event_hidden WHERE calendar_id = ? AND remote_id = ? AND recurrence_id = ?')
+        .run(cal, w.remoteId, recurrenceId).changes;
+  if (changed) s.mark('Event', w.accountId, eventChangeKey(w.calendarRemoteId, w.remoteId), 'u');
 }

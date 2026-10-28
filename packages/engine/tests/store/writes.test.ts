@@ -23,6 +23,46 @@ const archive = (opId: string, thread: string): OpWrite => ({
   targets: [`${ACCOUNT}:${thread}`],
   payload: JSON.stringify({ removeLabelIds: ['INBOX'] }),
   effect: [{ kind: 'placements', target: { remoteThreadId: thread }, add: [], remove: ['INBOX'] }],
+  scope: 'triage',
+});
+
+test('an op without its originating scope is refused, and ops.scope is NOT NULL, so the check fails closed (R2H-2)', () => {
+  withStore((store, file) => {
+    setup(store);
+    store.commit({ opId: 'p1', origin: 'sync', writes: [msg('m1', 't1', 0)] });
+    for (const scope of [undefined, ''])
+      assert.throws(
+        () =>
+          store.commit({
+            opId: `no-scope-${scope}`,
+            origin: 'local',
+            writes: [{ ...archive('op-x', 't1'), scope } as unknown as OpWrite],
+          }),
+        (e: unknown) => e instanceof StoreError && e.code === 'invalid' && /scope/.test(e.message),
+      );
+    assert.deepEqual(labels(store, 'm1'), ['INBOX'], 'the refused commit left no effect');
+    store.commit({ opId: 'a1', origin: 'local', writes: [archive('op-1', 't1')] });
+    // The queue item's and Operation's scope is the stored one.
+    assert.equal(
+      store.read(q => q.get<{ scope: string }>('SELECT scope FROM ops')?.scope),
+      'triage',
+    );
+    // A writer that bypasses the type (raw SQL, a later migration) still cannot store an op without one.
+    const db = file.open();
+    try {
+      assert.throws(
+        () =>
+          db
+            .prepare(
+              `INSERT INTO ops(op_id, account_id, kind, target, payload, state, created_seq) VALUES('raw', ?, 'archive', '[]', '{}', 'queued', 1)`,
+            )
+            .run(ACCOUNT),
+        /NOT NULL constraint failed: ops.scope/,
+      );
+    } finally {
+      db.close();
+    }
+  });
 });
 
 test('a pending op is replayed over a sync page fenced after the edit, so Inbox does not come back (FR-10, ARCH 4.3)', () => {

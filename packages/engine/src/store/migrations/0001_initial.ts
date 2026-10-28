@@ -72,9 +72,11 @@ state TEXT NOT NULL, UNIQUE(message_id, remote_part)) STRICT`,
   // eng-store (paced FTS job): contentless index, rowid = messages.id (ARCH 3.4).
   `CREATE VIRTUAL TABLE messages_fts USING fts5(subject, people, body, content='', contentless_delete=1,
 tokenize='unicode61 remove_diacritics 2')`,
-  // eng-store at ingest, eng-ai reads: who the owner writes to and hears from (Home, autocomplete).
-  `CREATE TABLE correspondents(address TEXT PRIMARY KEY, name TEXT, sent_to INTEGER NOT NULL DEFAULT 0,
-received_from INTEGER NOT NULL DEFAULT 0, last_sent_at INTEGER) STRICT`,
+  // eng-store at ingest, eng-ai reads: who each account writes to and hears from (Home, Contact/suggest); per account so
+  // suggestions filter by account and a removed account's addresses go with it (R2G-3).
+  `CREATE TABLE correspondents(account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE, address TEXT NOT NULL,
+name TEXT, sent_to INTEGER NOT NULL DEFAULT 0, received_from INTEGER NOT NULL DEFAULT 0, last_sent_at INTEGER,
+PRIMARY KEY(account_id, address)) STRICT, WITHOUT ROWID`,
   // eng-views, eng-ai, eng-time, prov-gmail (workflow channel): triage state, Later, reminders, lanes.
   `CREATE TABLE thread_workflow(thread_id INTEGER PRIMARY KEY REFERENCES threads ON DELETE CASCADE,
 account_id TEXT NOT NULL, sync_key TEXT NOT NULL, status TEXT NOT NULL,
@@ -102,7 +104,7 @@ address_or_domain TEXT NOT NULL, action TEXT NOT NULL, remote_filter_id TEXT) ST
   `CREATE TABLE ops(seq INTEGER PRIMARY KEY, op_id TEXT NOT NULL UNIQUE,
 account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE, kind TEXT NOT NULL, target TEXT NOT NULL,
 payload TEXT NOT NULL, base TEXT, effect TEXT, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER,
-last_error TEXT, created_seq INTEGER NOT NULL, scope TEXT) STRICT`,
+last_error TEXT, created_seq INTEGER NOT NULL, scope TEXT NOT NULL) STRICT`,
   `CREATE INDEX ops_queue ON ops(account_id, state, seq)`,
   // eng-time, prov-gmail-write: local drafts with revisions; S10 origin marks phone drafts (D9).
   `CREATE TABLE drafts(id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE,
@@ -160,6 +162,10 @@ status TEXT NOT NULL DEFAULT 'confirmed', etag TEXT, recurrence TEXT, start_utc 
 all_day INTEGER, data TEXT NOT NULL, ics TEXT, seen_gen INTEGER, UNIQUE(calendar_id, remote_id, recurrence_id)) STRICT`,
   `CREATE INDEX events_time ON events(calendar_id, start_utc)`,
   `CREATE INDEX events_master ON events(calendar_id, master_remote_id) WHERE master_remote_id IS NOT NULL`,
+  // eng-store (`eventHidden`, Event/hide): Aplos-only hiding, never sent; '' hides the resource, else one occurrence.
+  `CREATE TABLE event_hidden(calendar_id INTEGER NOT NULL REFERENCES calendars ON DELETE CASCADE, remote_id TEXT NOT NULL,
+recurrence_id TEXT NOT NULL DEFAULT '', hidden_at INTEGER NOT NULL, PRIMARY KEY(calendar_id, remote_id, recurrence_id))
+STRICT, WITHOUT ROWID`,
   // eng-host: paired CLI, MCP and phone clients; only a token hash is stored.
   `CREATE TABLE clients(id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, token_hash TEXT NOT NULL,
 scopes TEXT NOT NULL, created_at INTEGER NOT NULL, last_seen_at INTEGER, revoked_at INTEGER) STRICT`,
