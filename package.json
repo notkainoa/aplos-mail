@@ -30,9 +30,14 @@
     "release:build": "npm run release:build -w @aplos/desktop",
     "update-feed": "npm run update-feed -w @aplos/desktop --",
     "format": "prettier --write --no-error-on-unmatched-pattern 'apps/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'apps/*/scripts/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json}' 'apps/desktop/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'packages/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'packages/*/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'scripts/**/*.{ts,mjs,cjs,mts,cts,js}' 'apps/*/*.{ts,mts,mjs,cjs,json}' '*.{json,mjs,cjs}' .prettierrc",
-    "format:check": "prettier --check --no-error-on-unmatched-pattern 'apps/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'apps/*/scripts/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json}' 'apps/desktop/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'packages/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'packages/*/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'scripts/**/*.{ts,mjs,cjs,mts,cts,js}' 'apps/*/*.{ts,mts,mjs,cjs,json}' '*.{json,mjs,cjs}' .prettierrc"
+    "format:check": "prettier --check --no-error-on-unmatched-pattern 'apps/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'apps/*/scripts/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json}' 'apps/desktop/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'packages/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'packages/*/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'scripts/**/*.{ts,mjs,cjs,mts,cts,js}' 'apps/*/*.{ts,mts,mjs,cjs,json}' '*.{json,mjs,cjs}' .prettierrc",
+    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
+    "test:e2e:browser": "playwright test -c tests/e2e/playwright.config.ts --project browser",
+    "check:budgets": "node scripts/audit/check-budgets.mjs",
+    "test:audit": "node --test scripts/audit/tests/*.test.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "prettier": "3.9.10"
   }
 }
