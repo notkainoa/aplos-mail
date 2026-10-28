@@ -4,11 +4,19 @@
  * Binding keys is the registry's resolver and the key listener, which are not mounted here. It also hands the toast
  * store a command runner over the same registry and stack, so a toast's Undo runs `app.undo`.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { createAppRegistry, keyPrefsFromUi, type ContextName } from '../commands';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  createAppRegistry,
+  DEFAULT_KEY_PREFS,
+  keyPrefsFromUi,
+  type ContextName,
+} from '../commands';
 import { useSettings } from '../data';
 import { CommandKeysProvider, KeyHintsProvider, resolveShowKeys } from '../ui/buttons-keys';
 import { setToastCommandRunner, type Screen } from './index';
+import { useShellKeys } from './keys-dispatch';
+import { ShellRegistryProvider, shellRegistryFor } from './ShellRegistry';
+import { getKeyLayers, layerConditions, shellStack, subscribeKeyLayers } from './store-keys';
 import { getTarget } from './store-target';
 import { toastCommandRunner, toastContext } from './toast-runner';
 
@@ -62,25 +70,39 @@ export interface KeysProvidersProps {
 export function KeysProviders({ screen, sheetOpen, children }: KeysProvidersProps) {
   const ui = useSettings()?.ui;
   const held = useCommandHeld();
-  const registry = useMemo(() => createAppRegistry(ui ? keyPrefsFromUi(ui) : undefined), [ui]);
-  const context = screenContext(screen);
-  const stack = useMemo<readonly ContextName[]>(() => {
-    const base: ContextName[] = context ? ['global', context] : ['global'];
-    return sheetOpen ? [...base, 'sheet'] : base;
-  }, [context, sheetOpen]);
+  const prefs = useMemo(() => (ui ? keyPrefsFromUi(ui) : undefined), [ui]);
+  // One registry for the app's life: screens attach handlers to it, so a settings change reconfigures it, never replaces it.
+  const [shell] = useState(() => shellRegistryFor(createAppRegistry(prefs)));
+  const { registry } = shell;
   useEffect(() => {
-    const prefs = ui ? keyPrefsFromUi(ui) : undefined;
+    registry.configure(prefs ?? DEFAULT_KEY_PREFS);
+  }, [registry, prefs]);
+  const layers = useSyncExternalStore(subscribeKeyLayers, getKeyLayers, getKeyLayers);
+  const context = screenContext(screen);
+  const stack = useMemo(() => shellStack(context, sheetOpen, layers), [context, sheetOpen, layers]);
+  const latest = useRef({ stack, prefs, layers });
+  latest.current = { stack, prefs, layers };
+  const keyState = () => ({
+    stack: latest.current.stack,
+    prefs: latest.current.prefs,
+    conditions: layerConditions(latest.current.layers),
+    target: getTarget(),
+  });
+  useShellKeys(registry, keyState);
+  useEffect(() => {
     setToastCommandRunner(
       toastCommandRunner(registry, () => toastContext(stack, getTarget(), prefs)),
     );
     return () => setToastCommandRunner(null);
-  }, [registry, stack, ui]);
+  }, [registry, stack, prefs]);
   const showKeys = resolveShowKeys({ all: ui?.keyHints === 'always', held });
   return (
-    <KeyHintsProvider value={{ showKeys }}>
-      <CommandKeysProvider describe={(id, from) => registry.describeKeys(id, from)} stack={stack}>
-        {children}
-      </CommandKeysProvider>
-    </KeyHintsProvider>
+    <ShellRegistryProvider value={shell}>
+      <KeyHintsProvider value={{ showKeys }}>
+        <CommandKeysProvider describe={(id, from) => registry.describeKeys(id, from)} stack={stack}>
+          {children}
+        </CommandKeysProvider>
+      </KeyHintsProvider>
+    </ShellRegistryProvider>
   );
 }
