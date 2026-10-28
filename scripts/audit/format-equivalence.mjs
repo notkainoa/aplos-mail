@@ -31,7 +31,8 @@
 //
 // Landing runbook (restructure chain slot 2, on the branch `revamp` after the engine move):
 //   1. Start clean:  git status --short  (empty), npm ci, npm run typecheck && npm test (baseline).
-//   2. Format:       npm run format
+//   2. Format:       npm run format  (run it twice: Prettier member chains are not always stable
+//      on the first pass, so repeat until  npm run format:check  exits 0, then make ONE commit)
 //      Then  git status --short  must list source files only, and  npm run format:check  exits 0.
 //   3. Commit:       git commit -am "[mechanical] Format the tree with Prettier"
 //      (author Kainoa Newton <k@kainoa.me>; the commit contains nothing but the format.)
@@ -113,7 +114,12 @@ function codeComments(text, extension) {
     const children = node.getChildren(file);
     if (children.length) return children.forEach(visit);
     if (node.kind === ts.SyntaxKind.JsxText) return;
-    for (const range of ts.getLeadingCommentRanges(text, node.pos) ?? []) {
+    // Comments on the same line as the previous token are "trailing"; the rest are "leading".
+    const ranges = [
+      ...(ts.getTrailingCommentRanges(text, node.pos) ?? []),
+      ...(ts.getLeadingCommentRanges(text, node.pos) ?? []),
+    ];
+    for (const range of ranges) {
       if (starts.has(range.pos)) continue;
       starts.add(range.pos);
       found.push(normaliseSpace(text.slice(range.pos, range.end)));
@@ -165,7 +171,19 @@ function treeFingerprint(text, extension) {
       case K.EmptyStatement:
       case K.SemicolonClassElement:
       case K.JsxText:
+      case K.JsxClosingElement:
+      case K.JsxClosingFragment:
         return;
+      case K.JsxExpression:
+        // Prettier writes significant JSX whitespace as {' '}; the compiled JSX check covers it.
+        if (
+          node.expression &&
+          ts.isStringLiteral(node.expression) &&
+          !node.expression.text.trim()
+        ) {
+          return;
+        }
+        break;
       case K.Identifier:
       case K.StringLiteral:
       case K.NoSubstitutionTemplateLiteral:
@@ -180,14 +198,46 @@ function treeFingerprint(text, extension) {
         out.push(`${isName ? 'N' : node.kind}:${node.text ?? node.rawText}`);
         return;
       }
-      default:
-        out.push(String(node.kind));
     }
+    out.push(String(node.kind));
     ts.forEachChild(node, visit);
   };
   visit(parse(text, extension));
   return out;
 }
+
+/** The compiled form of JSX (React.createElement calls) as a flat list, with adjacent string
+ * children merged, because Prettier may split " . " into " ." and {' '}. */
+function compiledFingerprint(code) {
+  const out = [];
+  const visit = node => {
+    if (ts.isCallExpression(node) && node.expression.getText() === 'React.createElement') {
+      out.push('createElement');
+      let text = null;
+      const flush = () => {
+        if (text !== null) out.push(`S:${text}`);
+        text = null;
+      };
+      for (const arg of node.arguments) {
+        if (ts.isStringLiteralLike(arg)) text = (text ?? '') + arg.text;
+        else {
+          flush();
+          visit(arg);
+        }
+      }
+      flush();
+      return;
+    }
+    out.push(ts.isStringLiteralLike(node) ? `S:${node.text}` : String(node.kind));
+    if (ts.isIdentifier(node)) out.push(node.text);
+    ts.forEachChild(node, visit);
+  };
+  const file = ts.createSourceFile('file.js', code, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+  visit(file);
+  return out;
+}
+
+const sameList = (a, b) => a.length === b.length && a.every((item, i) => item === b[i]);
 
 function firstDifference(a, b) {
   const length = Math.max(a.length, b.length);
@@ -206,6 +256,15 @@ const minify = (text, loader, extra = {}) =>
     ...extra,
   }).code;
 
+/** Minified css with the spaces after commas outside strings removed: Prettier writes
+ * var(--x, rgba(1, 2, 3)) where the source had rgba(1,2,3), and esbuild keeps a var() fallback
+ * as written. */
+const cssForCompare = text =>
+  minify(text, 'css')
+    .split(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/)
+    .map((part, i) => (i % 2 ? part : part.replace(/\s*,\s*/g, ',')))
+    .join('');
+
 const jsonValue = text => {
   const { config, error } = ts.parseConfigFileTextToJson('file.json', text);
   if (error) throw new Error(ts.flattenDiagnosticMessageText(error.messageText, '\n'));
@@ -223,9 +282,9 @@ function compare(kind, extension, before, after) {
     const a = minify(before, loader, keep);
     const b = minify(after, loader, keep);
     if (a !== b) {
-      const compiled = text => minify(text, loader, { jsx: 'transform' });
-      if (jsx && compiled(before) === compiled(after)) {
-        note = 'JSX text layout differs but compiles identically';
+      const compiled = text => compiledFingerprint(minify(text, loader, { jsx: 'transform' }));
+      if (jsx && sameList(compiled(before), compiled(after))) {
+        note = 'JSX text layout differs; compiled JSX is identical (adjacent text children merged)';
       } else {
         problems.push(`minified output differs ${firstDifference(a, b)}`);
       }
@@ -236,12 +295,14 @@ function compare(kind, extension, before, after) {
     if (loader === 'ts' || loader === 'tsx') {
       const x = treeFingerprint(before, extension);
       const y = treeFingerprint(after, extension);
-      if (x.length !== y.length || x.some((item, i) => item !== y[i])) {
+      if (!sameList(x, y)) {
         problems.push(`syntax tree differs ${firstDifference(x, y)}`);
       }
     }
   } else if (kind === 'css') {
-    if (minify(before, 'css') !== minify(after, 'css')) problems.push('minified css differs');
+    const a = cssForCompare(before);
+    const b = cssForCompare(after);
+    if (a !== b) problems.push(`minified css differs ${firstDifference([...a], [...b])}`);
     problems.push(...diffMultisets(cssComments(before), cssComments(after)));
   } else if (kind === 'json') {
     if (jsonValue(before) !== jsonValue(after)) problems.push('parsed json differs');
@@ -271,7 +332,32 @@ function changedFiles(before, after) {
     const newPath = moved ? raw[++i] : oldPath;
     files.push({ oldMode, newMode, oldSha, newSha, status, oldPath, newPath });
   }
-  return files;
+  return pairByName(files);
+}
+
+/** A move combined with a format leaves too little in common for git's rename detection. A deleted
+ * and an added file with the same name, each the only one of that name, count as one
+ * renamed file (status R0, listed in the notes). */
+function pairByName(files) {
+  const base = path => path.split('/').pop();
+  const gone = files.filter(file => file.status === 'D');
+  const born = files.filter(file => file.status === 'A');
+  const only = (list, file) => list.filter(other => base(other.newPath) === base(file.newPath));
+  const paired = new Set();
+  const renames = [];
+  for (const old of gone) {
+    const [candidate, ...rest] = only(born, old);
+    if (!candidate || rest.length || only(gone, old).length > 1) continue;
+    paired.add(old).add(candidate);
+    renames.push({
+      ...candidate,
+      oldMode: old.oldMode,
+      oldSha: old.oldSha,
+      oldPath: old.oldPath,
+      status: 'R0',
+    });
+  }
+  return [...files.filter(file => !paired.has(file)), ...renames];
 }
 
 function checkFiles(before, after) {
@@ -283,6 +369,7 @@ function checkFiles(before, after) {
   for (const file of files) {
     const name = file.newPath;
     const fail = message => failures.push(`${name}: ${message}`);
+    if (file.status === 'R0') notes.push(`${file.oldPath} -> ${name}: paired by file name`);
     if (!/^[MR]/.test(file.status)) {
       fail(`status ${file.status} (added, deleted or type-changed files are not a format change)`);
       continue;
