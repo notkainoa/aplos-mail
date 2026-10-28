@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aplos calendar preview</title>
+<style>
+  /* Development-only gallery. The capture script sizes the viewport to the main window (1440 × 900, or a narrower
+     window for the agenda state), so the frame is simply the viewport: the gray shell, a sidebar column and the pane.
+     The sidebar here only hosts this lane's MiniMonth and CalendarList data; ui-shell draws the real one. */
+  html, body, #root { margin: 0; height: 100%; }
+  body { background: var(--shell); }
+  .calp-window { display: flex; width: 100vw; height: 100vh; overflow: hidden; background: var(--shell); }
+  .calp-sidebar {
+    flex: none; width: var(--sidebar-w); box-sizing: border-box; overflow: hidden;
+    padding: calc(var(--pane-head) + var(--space-10) * 6) var(--space-3) 0;
+    display: flex; flex-direction: column; gap: var(--group-gap);
+  }
+  .calp-window > .ui-pane { flex: 1; min-width: 0; }
+  /* STOPGAP, gallery only (REQUEST to ui-foundation): the calendar family's buttons and lists never reset the
+     browser's defaults, so event blocks, mini-month days and the calendar legend draw native borders, grey fills and
+     bullets, and the event detail's title keeps the browser's heading margin. Zero-specificity resets stand in until the family resets its own controls; `&raw=1` turns this off to
+     show the defect. */
+  :where(html:not([data-raw])) :where(.ui-mini-month, .ui-calendar-list, .ui-calendar-grid, .ui-event-detail) :where(button) {
+    border: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit; cursor: default;
+  }
+  :where(html:not([data-raw])) :where(.ui-calendar-list__items, .ui-event-detail__rows, .ui-event-detail__guests) {
+    list-style: none; margin: 0; padding: 0;
+  }
+  :where(html:not([data-raw])) :where(.ui-event-detail, .ui-scope-chooser) :where(h2, h3, p) { margin: 0; }
+  /* STOPGAP 2 (REQUEST to ui-foundation): Dialog's `settle` animation fills `both`, so the dialog keeps an identity
+     transform and becomes the containing block of every fixed surface inside it; the editor's Menus and day picker
+     then open offset by the dialog's position. `backwards` keeps the entrance and drops the lingering transform. */
+  :where(html:not([data-raw])) .ui-dialog[data-state='open'] { animation-fill-mode: backwards; }
+  .calp-index { padding: 24px 32px; font: var(--type-ui); color: var(--ink); }
+  .calp-index li { margin: 4px 0; }
+  .calp-index a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="./main.tsx"></script>
+</body>
+</html>
