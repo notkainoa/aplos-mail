@@ -163,11 +163,11 @@ function forward(group: string, verb: string, args: unknown[]): unknown {
 // Timing constants the data layer owns
 // ---------------------------------------------------------------------------
 
-/** Hold timing (DESIGN 5 rule 6, plan 30 4.3 holdGate): release 450 ms after the last key, cap 1200 ms. `holds.ts` runs on the generated `hold` motion; `layer.test.ts` checks these agree with it. */
+/** Hold timing (DESIGN 5 rule 6, plan 30 4.3): release 450 ms after the last key; with the pointer still on the list, wait for it to leave but never past 1200 ms after the last key. `holds.ts` runs on the generated `hold` motion; `layer.test.ts` checks these agree with it. */
 export const HOLD_TIMING = {
-  /** Release this long after the last triage key or when the pointer leaves the list. */
+  /** Release this long after the last triage key (a burst of any length closes once). */
   releaseAfterLastKeyMs: 450,
-  /** A hold never lasts longer than this. */
+  /** With the pointer still on the list, a key hold closes this long after the last key; a pointer resting with no key holds until it leaves. */
   capMs: 1200,
 } as const;
 
@@ -443,7 +443,7 @@ export function useRowState<T extends CachedRowType>(
 // Holding still, renderer half (DESIGN 5 rule 6; plan 30 4.1 and 4.3)
 // ---------------------------------------------------------------------------
 
-/** Why a hold started: a triage burst, or the pointer resting over the list. */
+/** What holds the list: a triage burst (also while it waits on the pointer), or the pointer resting over the list alone. */
 export type HoldReason = 'keys' | 'pointer';
 
 /** Called when a hold releases; the motion lane runs `close` (FLIP from fixed row heights) here. */
@@ -454,11 +454,11 @@ export type HoldReleaseListener = (released: {
 
 /** One list's hold. Methods are synchronous and safe inside a keydown handler. */
 export interface HoldController {
-  /** Start or refresh a hold pinning `ids` (the rows around the cursor); restarts the 450 ms release timer within the 1200 ms cap. */
+  /** Start or refresh a hold pinning `ids`. `keys`: the rows around the cursor; restarts the 450 ms release timer (with the pointer still on the list it waits for it, up to 1200 ms after the last key). `pointer`: the row under the pointer; holds until `release()`. */
   begin(reason: HoldReason, ids: readonly Id[]): void;
-  /** Push the release back on another key, optionally adding ids; never past the cap. */
+  /** Another key: push the release back 450 ms, optionally adding ids (begins a key hold when idle). */
   extend(ids?: readonly Id[]): void;
-  /** Release now (pointer left the list, Esc, navigation). */
+  /** Close now (Esc, navigation, or the pointer that `begin('pointer')` named left the list). A pointer the list reported with `pointerEnter` keeps holding its row until `pointerLeave`. */
   release(): void;
   /** True while held. */
   readonly isHeld: boolean;
@@ -470,7 +470,14 @@ export interface HoldController {
   onRelease(listener: HoldReleaseListener): () => void;
 }
 
-/** The hold controller for one list, keyed by a scope name such as `home` or `later`. */
+/**
+ * The list's full hold gate: a `HoldController` plus `pointerEnter(ids)` (the row under the pointer; call it on
+ * pointerenter and pointermove) and `pointerLeave()`. `useHold` returns one; give the same object to the motion
+ * runtime's triage so the engine hold and the close run on one gate.
+ */
+export type { HoldGate } from './holds';
+
+/** The hold controller for one list, keyed by a scope name such as `home` or `later`. The object is a `HoldGate`. */
 export function useHold(scope: string): HoldController {
   return connected('useHold').useHold(scope);
 }

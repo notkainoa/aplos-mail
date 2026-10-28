@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createHoldGate } from '../data/holds';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { createFixtureEngine, defaultNow } from '@aplos/contract-fixture';
+import { connectDataLayer } from '../data/connect';
+import { createHoldGate, type HoldGate } from '../data/holds';
+import { useHold } from '../data/index';
+import { createManualScheduler, createManualTimers } from '../data/scheduler';
 import type { Timers } from '../data/scheduler';
 import { motions, timing } from '../ui/generated/motion';
 import { createCursorLayer } from './cursor';
 import { FakeEnv, type FakeElement } from './fakes';
 import { closeDeltas, createCloser, layoutTops } from './flip';
 import { createGhostLayer } from './ghost';
+import { createMotionRuntime } from './index';
 import { createRapidTracker } from './rapid';
 import { createScheduler } from './scheduler';
 import { createTriageMotion } from './triage';
@@ -56,6 +63,66 @@ test("the data layer's hold gate runs on the motion scheduler's visible clock", 
   hold.pointerLeave();
   assert.equal(releases.length, 4);
   hold.dispose();
+});
+
+test('one gate per list: triage closes on the same gate whose heldIds freeze the window', async () => {
+  const engine = createFixtureEngine({ scenario: 'demo', clock: defaultNow });
+  const frames = createManualScheduler();
+  const timers = createManualTimers(defaultNow);
+  const connection = connectDataLayer({ session: engine.connect(), scheduler: frames, timers });
+  const { layer } = connection;
+  try {
+    const w = layer.windows.acquire({ kind: 'home' });
+    for (let i = 0; i < 20; i++) {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      frames.flush();
+    }
+    // What a list does: useHold(scope) for the gate, its heldIds as useView's holdIds, the same gate to triage.
+    let fromHook: HoldGate | null = null;
+    function List() {
+      fromHook = useHold('home') as HoldGate;
+      return null;
+    }
+    renderToStaticMarkup(createElement(List));
+    const gate = layer.hold('home');
+    assert.equal(fromHook, gate, 'useHold hands out the layer gate itself');
+    gate.subscribe(() => w.setHold(1, gate.heldIds));
+
+    const fake = new FakeEnv();
+    const runtime = createMotionRuntime(fake.env);
+    assert.equal('createHold' in runtime, false, 'the motion runtime makes no gates of its own');
+    const ids = [...w.snapshot().ids].slice(0, 4);
+    const elements = new Map<string, FakeElement>();
+    for (const id of ids) elements.set(id, fake.element({ height: 40 }));
+    const closer = createCloser<string>({
+      heightOf: () => 40,
+      elementOf: id => elements.get(id)?.el ?? null,
+    });
+    const triage = createTriageMotion({
+      scheduler: runtime.scheduler,
+      ghosts: runtime.ghosts,
+      hold: gate,
+      rapid: runtime.rapid,
+      closer,
+    });
+    const [a, , c, d] = ids as [string, string, string, string];
+    triage.commit({
+      kind: 'done',
+      surface: 'row',
+      element: null,
+      holdIds: [a, c],
+      rows: { before: ids, after: [a, c, d] },
+    });
+    assert.equal(w.held, true, 'the key froze the window');
+    assert.equal(closer.pinned.size, 2);
+    timers.advance(HOLD);
+    assert.equal(w.held, false, 'one release lets the window go');
+    assert.equal(closer.pinned.size, 0, 'and closes the rows');
+    triage.dispose();
+    runtime.dispose();
+  } finally {
+    connection.close();
+  }
 });
 
 test('rapid: keys under 300 ms apart; burst from the fourth key in a second', () => {

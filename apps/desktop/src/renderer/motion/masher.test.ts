@@ -1,7 +1,10 @@
 // The button masher (plan 30 U4): random J, K, arrows, E, L and Z at 0-400 ms
-// gaps, with window hides, theme switches, new rows and the pointer entering
-// and leaving the list mid-flight. While a hold lasts, every row the hold
-// anchored is drawn exactly where it was, and after every press the cursor is
+// gaps, with window hides, theme switches, new mail landing anywhere in the
+// list (above the cursor too) and the pointer entering and leaving the list
+// mid-flight. New mail goes through a stand-in for the data layer's window: it
+// queues while the gate's heldIds are non-empty (what useView's holdIds do) and
+// lands when they empty. While a hold lasts, every row the hold anchored is
+// drawn exactly where it was, no new row renders under a resting pointer, and after every press the cursor is
 // headed for the focused row's drawn top (layout plus pin). Two seconds after the last key
 // nothing may be stuck: no ghost, no animation, no will-change, no pin, no
 // pending frame or timer, and the cursor sits on the model's focused row.
@@ -79,11 +82,30 @@ function mash(seed: number, presses: number) {
   let lastKeyAt = -Infinity;
   let maxActive = 0;
   let pointerInside = false;
+  // The row under the pointer while it is inside; the list names it on pointerenter and pointermove.
+  let hovered = '';
   let heldChecks = 0;
+  let restingChecks = 0;
+  let queuedLanded = 0;
+  // New mail the window queued while held: [id, index it lands at].
+  let queued: { id: string; index: number }[] = [];
+  const windowHeld = () => hold.heldIds.length > 0;
   // What the screen showed when the current hold first changed the list.
   let anchored: Map<string, number> | null = null;
   hold.onRelease(() => {
     anchored = null;
+  });
+  // After the close (triage's release listener ran first), a window let go applies what it queued.
+  hold.onRelease(() => {
+    if (windowHeld() || queued.length === 0) return;
+    let after = rows;
+    for (const q of queued) {
+      const index = Math.min(q.index, after.length);
+      after = [...after.slice(0, index), mount(q.id, index), ...after.slice(index)];
+    }
+    queuedLanded += queued.length;
+    queued = [];
+    triage.relayout(change(after));
   });
 
   const change = (after: string[]) => {
@@ -102,18 +124,43 @@ function mash(seed: number, presses: number) {
   for (let press = 0; press < presses; press++) {
     fake.advance(Math.floor(random() * 401));
     const roll = random();
+    // What the screen shows under a resting pointer before this press's events.
+    const restingBefore: string[] | null =
+      pointerInside && !fake.hidden && hold.isHeld ? [...rows] : null;
     if (roll < 0.04) {
       fake.setHidden(!fake.hidden);
-      // A resting pointer re-asserts itself on its next pointermove after a hide.
-      if (!fake.hidden && pointerInside) hold.pointerEnter();
+      // A resting pointer re-asserts itself on its next pointermove after a hide, naming the row under it.
+      if (!fake.hidden && pointerInside) {
+        hovered = rows[Math.floor(random() * rows.length)] ?? '';
+        hold.pointerEnter(hovered ? [hovered] : []);
+      }
     } else if (roll < 0.06) freeze.switchTheme(() => {});
-    else if (roll < 0.09) {
+    else if (roll < 0.11) {
+      // New mail, landing anywhere: above the cursor as often as below it.
       const id = `t${serial++}`;
-      triage.relayout(change([...rows, mount(id, rows.length)]));
-    } else if (roll < 0.14) {
+      const index = Math.floor(random() * (rows.length + 1));
+      if (windowHeld()) queued.push({ id, index });
+      else
+        triage.relayout(change([...rows.slice(0, index), mount(id, index), ...rows.slice(index)]));
+      if (restingBefore && !fake.hidden) {
+        assert.deepEqual(
+          rows,
+          restingBefore,
+          `seed ${seed} press ${press}: new mail moved rows under the pointer`,
+        );
+        restingChecks += 1;
+      }
+    } else if (roll < 0.16) {
       if (pointerInside) hold.pointerLeave();
-      else hold.pointerEnter();
+      else {
+        hovered = rows[Math.floor(random() * rows.length)] ?? '';
+        hold.pointerEnter(hovered ? [hovered] : []);
+      }
       pointerInside = !pointerInside;
+    } else if (roll < 0.2 && pointerInside && !fake.hidden) {
+      // A pointermove over another row.
+      hovered = rows[Math.floor(random() * rows.length)] ?? '';
+      hold.pointerEnter(hovered ? [hovered] : []);
     }
     if (fake.hidden) continue;
 
@@ -181,6 +228,7 @@ function mash(seed: number, presses: number) {
   if (fake.hidden) fake.setHidden(false);
   if (pointerInside) hold.pointerLeave();
   fake.advance(2000);
+  assert.equal(queued.length, 0, `seed ${seed}: new mail still queued after the pointer left`);
   const closes = fake.animations.filter(a =>
     String(a.keyframes[0]?.transform).startsWith('translateY('),
   ).length;
@@ -198,6 +246,8 @@ function mash(seed: number, presses: number) {
     maxActive,
     closes,
     heldChecks,
+    restingChecks,
+    queuedLanded,
     cursorHeldChecks,
     cursorY: focusAt() * ROW,
   };
@@ -207,12 +257,16 @@ test('button masher: nothing stuck or duplicated two seconds after the last key'
   let capHits = 0;
   let closes = 0;
   let heldChecks = 0;
+  let restingChecks = 0;
+  let queuedLanded = 0;
   let cursorHeldChecks = 0;
   for (let seed = 1; seed <= 120; seed++) {
     const r = mash(seed, 60);
     if (r.maxActive === MAX_GHOSTS) capHits += 1;
     closes += r.closes;
     heldChecks += r.heldChecks;
+    restingChecks += r.restingChecks;
+    queuedLanded += r.queuedLanded;
     cursorHeldChecks += r.cursorHeldChecks;
     assert.equal(r.ghosts.active.length, 0, `seed ${seed}: ghost left`);
     assert.equal(r.host.children.length, 0, `seed ${seed}: clone left`);
@@ -256,5 +310,7 @@ test('button masher: nothing stuck or duplicated two seconds after the last key'
   assert.ok(capHits > 0, 'the fuzz reached the ghost cap');
   assert.ok(closes > 0, 'the fuzz ran close');
   assert.ok(heldChecks > 0, 'the fuzz checked rows during holds');
+  assert.ok(restingChecks > 0, 'the fuzz delivered mail under a resting pointer');
+  assert.ok(queuedLanded > 0, 'queued mail landed after a release');
   assert.ok(cursorHeldChecks > 0, 'the fuzz checked the cursor during holds');
 });

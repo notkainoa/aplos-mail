@@ -9,10 +9,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { motions } from '../ui/generated/motion';
-import type { Id } from './contract-shapes';
+import type { Id, ThreadRow } from './contract-shapes';
 import { createHarness } from './harness';
 import { createHoldGate, HOLD_CAP_MS, HOLD_RELEASE_MS } from './holds';
-import type { HoldReason } from './index';
+import type { HoldController, HoldReason } from './index';
 import { createManualTimers } from './scheduler';
 
 const HOLD = HOLD_RELEASE_MS;
@@ -100,17 +100,18 @@ test('extend on an idle gate begins a key hold', () => {
   assert.equal(releases.length, 1);
 });
 
-test('a pointer still on the list after the last key: the cap releases once, and the pointer keeps holding until it leaves', () => {
+test('a pointer still on the list after the last key: the cap releases once, and the pointer keeps holding its row until it leaves', () => {
   const { timers, hold, releases } = setup();
   hold.pointerEnter(['a']);
   hold.extend(['b']);
+  assert.equal(hold.reason, 'keys', 'a key joined: a key hold waiting on the pointer');
   timers.advance(CAP - 1);
   assert.equal(hold.isHeld, true);
   timers.advance(1);
-  assert.deepEqual(releases, [{ ids: ['a', 'b'], reason: 'pointer', at: CAP }]);
+  assert.deepEqual(releases, [{ ids: ['a', 'b'], reason: 'keys', at: CAP }]);
   assert.equal(hold.isHeld, true, 'the resting pointer still holds');
   assert.equal(hold.reason, 'pointer');
-  assert.deepEqual(hold.heldIds, [], 'the fresh pointer hold has no pins');
+  assert.deepEqual(hold.heldIds, ['a'], 'no key pins: only the row under the pointer');
   timers.advance(CAP * 4);
   assert.equal(hold.isHeld, true);
   assert.equal(releases.length, 1);
@@ -120,14 +121,29 @@ test('a pointer still on the list after the last key: the cap releases once, and
   hold.extend(['c']);
   timers.advance(CAP);
   assert.equal(releases.length, 2);
-  assert.deepEqual(releases[1]?.ids, ['c']);
-  assert.equal(hold.isHeld, true);
+  assert.deepEqual(releases[1]?.ids, ['a', 'c']);
+  assert.deepEqual(hold.heldIds, ['a']);
   hold.pointerLeave();
   assert.equal(hold.isHeld, false);
   assert.equal(releases.length, 3);
+  assert.deepEqual(releases[2], { ids: ['a'], reason: 'pointer', at: CAP * 6 });
 });
 
-test('the cap counts from the last key, and the pointer leaving before it releases at once', () => {
+test('the cap goes straight from the burst to the pointer hold: the window is never let go in between', () => {
+  const { timers, hold } = setup();
+  const seen: (readonly Id[])[] = [];
+  hold.subscribe(() => seen.push(hold.heldIds));
+  hold.pointerEnter(['p']);
+  hold.extend(['k']);
+  timers.advance(CAP);
+  assert.deepEqual(seen, [['p'], ['p', 'k'], ['p']]);
+  assert.ok(
+    seen.every(ids => ids.length > 0),
+    'heldIds never empty while the pointer rests',
+  );
+});
+
+test('the cap counts from the last key, and the pointer leaving after base releases at once', () => {
   const { timers, hold, releases } = setup();
   hold.begin('keys', ['a']);
   timers.advance(200);
@@ -142,7 +158,7 @@ test('the cap counts from the last key, and the pointer leaving before it releas
   assert.equal(timers.pending, 0);
 });
 
-test('the pointer alone holds until it leaves, and leaving releases at once', () => {
+test("the pointer alone holds until it leaves; leaving inside a key's 450 ms does not cut the key hold short", () => {
   const { timers, hold, releases } = setup();
   hold.pointerEnter(['a']);
   timers.advance(CAP * 2);
@@ -154,24 +170,96 @@ test('the pointer alone holds until it leaves, and leaving releases at once', ()
   hold.begin('keys', ['c']);
   timers.advance(100);
   hold.pointerLeave();
+  assert.equal(hold.isHeld, true, 'the key still holds');
+  assert.equal(releases.length, 1);
+  timers.advance(HOLD - 101);
+  assert.equal(hold.isHeld, true);
+  timers.advance(1);
   assert.equal(releases.length, 2);
-  assert.equal(releases[1]?.at, CAP * 2 + 100);
+  assert.equal(releases[1]?.at, CAP * 2 + HOLD);
 });
 
-test('only pointerLeave forgets the pointer: Esc releases, and the resting pointer holds again with no pins', () => {
+test('the pointer leaving partway through a burst: the burst still closes once, 450 ms after its last key', () => {
   const { timers, hold, releases } = setup();
-  hold.pointerEnter();
+  hold.pointerEnter(['p']);
+  for (let i = 0; i < 20; i++) {
+    hold.extend([`x${i}`]);
+    if (i === 10) {
+      timers.advance(50);
+      hold.pointerLeave();
+      timers.advance(50);
+    } else timers.advance(100);
+  }
+  timers.advance(2000);
+  assert.deepEqual(
+    releases.map(r => r.at),
+    [1900 + HOLD],
+  );
+  assert.equal(releases[0]?.reason, 'keys');
+  assert.equal(hold.isHeld, false);
+});
+
+test('only pointerLeave forgets the pointer: Esc closes, and the resting pointer holds its row again', () => {
+  const { timers, hold, releases } = setup();
+  hold.pointerEnter(['p']);
   hold.begin('keys', ['a']);
   hold.release();
-  assert.deepEqual(releases, [{ ids: ['a'], reason: 'pointer', at: 0 }]);
+  assert.deepEqual(releases, [{ ids: ['p', 'a'], reason: 'keys', at: 0 }]);
   assert.equal(hold.isHeld, true);
-  assert.deepEqual(hold.heldIds, []);
+  assert.equal(hold.reason, 'pointer');
+  assert.deepEqual(hold.heldIds, ['p']);
+  assert.equal(timers.pending, 0);
   timers.advance(CAP * 3);
   assert.equal(hold.isHeld, true);
   hold.pointerLeave();
   assert.equal(hold.isHeld, false);
   hold.release();
   assert.equal(releases.length, 2, 'releasing an idle gate is a no-op');
+});
+
+test('the HoldController surface alone: release() ends a pointer hold that begin() started', () => {
+  const { timers, hold, releases } = setup();
+  const controller: HoldController = hold;
+  controller.begin('pointer', ['a']);
+  assert.equal(controller.isHeld, true);
+  controller.release();
+  assert.equal(controller.isHeld, false);
+  controller.release();
+  timers.advance(60_000);
+  assert.equal(controller.isHeld, false);
+  assert.equal(releases.length, 1);
+
+  // Keys over that pointer wait for it until the cap, then the pointer holds its row until release().
+  controller.begin('pointer', ['a']);
+  controller.extend(['b']);
+  timers.advance(HOLD);
+  assert.equal(controller.isHeld, true);
+  timers.advance(CAP - HOLD);
+  assert.equal(releases.length, 2);
+  assert.deepEqual(releases[1]?.ids, ['a', 'b']);
+  assert.equal(controller.isHeld, true);
+  assert.deepEqual(controller.heldIds, ['a']);
+  controller.release();
+  assert.equal(controller.isHeld, false);
+  assert.equal(releases.length, 3);
+  assert.equal(timers.pending, 0);
+});
+
+test('a key burst over a resting pointer releases with reason keys', () => {
+  const { timers, hold, releases } = setup();
+  hold.pointerEnter(['p']);
+  assert.equal(hold.reason, 'pointer');
+  hold.extend(['a']);
+  timers.advance(CAP);
+  assert.deepEqual(
+    releases.map(r => r.reason),
+    ['keys'],
+  );
+  hold.pointerLeave();
+  assert.deepEqual(
+    releases.map(r => r.reason),
+    ['keys', 'pointer'],
+  );
 });
 
 test('hiding the window releases the hold', () => {
@@ -195,9 +283,14 @@ test('hiding forgets the pointer; its next pointermove re-asserts the hold', () 
   assert.equal(releases.length, 1);
   timers.setHidden(false);
   assert.equal(hold.isHeld, false);
-  hold.pointerEnter();
+  hold.pointerEnter(['b']);
   hold.pointerEnter();
   assert.equal(hold.isHeld, true);
+  assert.deepEqual(
+    hold.heldIds,
+    ['b'],
+    'the row under the pointer now, not the one before the hide',
+  );
   timers.advance(CAP * 2);
   assert.equal(hold.isHeld, true);
   assert.equal(releases.length, 1);
@@ -248,46 +341,89 @@ test("the data layer's hold(scope) is this gate: one per scope, hides release it
   assert.equal(gate.version, before, 'a closed layer no longer hears hides');
 });
 
-/** What the rules say should happen, kept as deadlines rather than timers. */
-interface Model {
-  held: boolean;
-  reason: HoldReason | null;
-  ids: Id[];
-  pointer: boolean;
-  lastKey: number | null;
-  releases: { ids: readonly Id[]; reason: HoldReason; at: number }[];
+const HOME = { kind: 'home' } as const;
+
+async function heldHome() {
+  const h = createHarness();
+  const w = h.layer.windows.acquire(HOME);
+  await h.settle();
+  const gate = h.layer.hold('home');
+  // What useHold plus useView do: heldIds go to the window as holdIds.
+  gate.subscribe(() => w.setHold(1, gate.heldIds));
+  const ids = () => [...w.snapshot().ids];
+  const first = ids();
+  const accountId = (w.snapshot().rows.get(first[0]!) as ThreadRow).accountId;
+  let n = 0;
+  const mail = async () => {
+    n++;
+    const { threadId } = await h.control.deliverMail({
+      accountId,
+      fromName: `Arrival ${n}`,
+      from: `arrival${n}@field.example`,
+      subject: `Arrival ${n}`,
+      body: 'New mail during a hold.',
+      lane: 'do',
+    });
+    await h.control.advanceClock({ ms: 300 });
+    await h.settle();
+    return threadId;
+  };
+  return { h, w, gate, ids, first, mail };
 }
 
-function modelRelease(m: Model, at: number) {
-  if (!m.held) return;
-  m.releases.push({ ids: m.ids, reason: m.reason ?? 'keys', at });
-  m.held = false;
-  m.reason = null;
-  m.ids = [];
-  m.lastKey = null;
-  if (m.pointer) modelBegin(m, 'pointer', [], at);
-}
-
-function modelBegin(m: Model, why: HoldReason, ids: readonly Id[], at: number) {
-  if (!m.held) {
-    m.held = true;
-    m.reason = why;
-    m.lastKey = null;
+test('new mail never moves the rows under a pointer resting past the cap', async () => {
+  const { h, w, gate, ids, first, mail } = await heldHome();
+  try {
+    gate.pointerEnter([first[1]!]);
+    gate.extend([first[0]!]);
+    h.timers.advance(CAP);
+    await h.settle();
+    assert.equal(gate.isHeld, true);
+    assert.equal(w.held, true, 'the pointer-only hold still freezes the window');
+    const resting = ids();
+    const arrived = await mail();
+    assert.deepEqual(ids(), resting, 'the arrival waits');
+    gate.pointerLeave();
+    await h.settle();
+    assert.equal(w.held, false);
+    assert.ok(ids().includes(arrived), 'the pointer left: the arrival lands');
+  } finally {
+    h.close();
   }
-  if (why === 'pointer') m.pointer = true;
-  else m.lastKey = at;
-  for (const id of ids) if (!m.ids.includes(id)) m.ids.push(id);
-}
+});
 
-/** Step the model's clock to `to`: base after the last key releases unless the pointer rests; the cap releases then. */
-function modelAdvance(m: Model, to: number) {
-  if (!m.held || m.lastKey === null) return;
-  if (!m.pointer && m.lastKey + HOLD <= to) modelRelease(m, m.lastKey + HOLD);
-  else if (m.pointer && m.lastKey + CAP <= to) modelRelease(m, m.lastKey + CAP);
-}
+test('new mail never moves the rows under a pointer resting after Esc', async () => {
+  const { h, w, gate, ids, first, mail } = await heldHome();
+  try {
+    gate.pointerEnter([first[2]!]);
+    gate.extend([first[0]!, first[1]!]);
+    gate.release();
+    await h.settle();
+    assert.equal(w.held, true);
+    const resting = ids();
+    const arrived = await mail();
+    assert.deepEqual(ids(), resting);
+    h.timers.advance(CAP * 3);
+    await h.settle();
+    assert.deepEqual(ids(), resting, 'a pointer-only hold has no deadline');
+    h.timers.setHidden(true);
+    await h.settle();
+    assert.ok(ids().includes(arrived), 'a hide lets it land');
+  } finally {
+    h.close();
+  }
+});
 
-test('fuzz: keys, pointer moves, hides and Esc follow the rules; nothing is stuck after the pointer leaves', () => {
+/**
+ * The fuzz checks the rule text, not a copy of the gate: after every step, from what happened (keys, the pointer the
+ * gate was told about, hides, Esc) and when, it derives whether the list must be held, what must be pinned, and
+ * which releases may have happened, and it counts closes per burst.
+ */
+test('fuzz: keys, pointer moves, hides and Esc follow the rules; one close per burst', () => {
   const pool = ['t1', 't2', 't3', 't4', 't5', 't6'];
+  let bursts = 0;
+  let capCloses = 0;
+  let leavesInsideBase = 0;
   for (let seed = 1; seed <= RUNS; seed++) {
     const random = seeded(seed);
     const { timers, hold, releases } = setup();
@@ -295,71 +431,129 @@ test('fuzz: keys, pointer moves, hides and Esc follow the rules; nothing is stuc
     hold.subscribe(() => changes++);
     let physical = false;
     let hidden = false;
-    const m: Model = {
-      held: false,
-      reason: null,
-      ids: [],
-      pointer: false,
-      lastKey: null,
-      releases: [],
+    // The pointer as the gate was told: entered and not since forgotten (leave or hide).
+    let pointer = false;
+    let pointerRow: Id | null = null;
+    // Every row the pointer named since the gate last forgot it.
+    let pointerRows = new Set<Id>();
+    // The open burst: its last key, and the ids its keys pinned.
+    let keyAt: number | null = null;
+    let keyIds = new Set<Id>();
+    let burstCloses = 0;
+    let seen = 0;
+    const endBurst = (where: string, closes: number) => {
+      assert.equal(closes, 1, `${where}: a burst closed ${closes} times`);
+      keyAt = null;
+      keyIds = new Set();
+      burstCloses = 0;
     };
-    const pick = () => pool.filter(() => random() < 0.3);
+    const fresh = () => releases.slice(seen);
     for (let step = 0; step < 60; step++) {
-      const to = timers.now() + Math.floor(random() * 700);
+      const from = timers.now();
+      const to = from + Math.floor(random() * 700);
       timers.set(to);
-      modelAdvance(m, to);
+      const where = `seed ${seed} step ${step} at ${to}`;
+      // Time alone closes only an open burst, once: base after its last key, or the cap with the pointer resting.
+      const timed = fresh();
+      seen = releases.length;
+      if (keyAt !== null) {
+        const due: number = keyAt + (pointer ? CAP : HOLD);
+        if (due <= to) {
+          assert.equal(timed.length, 1, `${where}: closes due at ${due}`);
+          assert.equal(timed[0]?.at, due, `${where}: closed at the wrong time`);
+          assert.equal(timed[0]?.reason, 'keys');
+          for (const id of keyIds)
+            assert.ok(timed[0]?.ids.includes(id), `${where}: ${id} not closed`);
+          if (pointer) capCloses++;
+          endBurst(where, burstCloses + 1);
+        } else assert.equal(timed.length, 0, `${where}: closed early`);
+      } else assert.equal(timed.length, 0, `${where}: closed with no burst open`);
+
       const at = timers.now();
+      const wasHeld = hold.isHeld;
       const roll = random();
+      let mayClose = false;
       if (roll < 0.06) {
         hidden = !hidden;
         timers.setHidden(hidden);
         if (hidden) {
-          m.pointer = false;
-          modelRelease(m, at);
+          pointer = false;
+          pointerRow = null;
+          pointerRows = new Set();
+          mayClose = true;
+          if (keyAt !== null) endBurst(where, burstCloses + (wasHeld ? 1 : 0));
         }
       } else if (roll < 0.2) {
         physical = !physical;
         if (!hidden) {
           if (physical) {
-            const ids = random() < 0.3 ? pick() : [];
-            hold.pointerEnter(ids);
-            modelBegin(m, 'pointer', ids, at);
+            const row = pool[Math.floor(random() * pool.length)]!;
+            hold.pointerEnter([row]);
+            pointer = true;
+            pointerRow = row;
+            pointerRows.add(row);
           } else {
             hold.pointerLeave();
-            m.pointer = false;
-            modelRelease(m, at);
+            pointer = false;
+            pointerRow = null;
+            pointerRows = new Set();
+            if (keyAt !== null && at - keyAt < HOLD) {
+              // Inside a key's 450 ms the pointer leaving changes nothing now.
+              leavesInsideBase++;
+            } else {
+              mayClose = true;
+              if (keyAt !== null) endBurst(where, burstCloses + 1);
+            }
           }
         }
       } else if (roll < 0.3) {
-        // A pointermove: re-asserts a resting pointer (after a hide, too); idempotent otherwise.
+        // A pointermove re-asserts a resting pointer (after a hide it names the row under it again).
         if (!hidden && physical) {
-          hold.pointerEnter();
-          modelBegin(m, 'pointer', [], at);
+          if (!pointer) {
+            pointerRow = pool[Math.floor(random() * pool.length)]!;
+            pointerRows.add(pointerRow);
+            hold.pointerEnter([pointerRow]);
+          } else hold.pointerEnter();
+          pointer = true;
         }
       } else if (roll < 0.34) {
         if (!hidden) {
           hold.release();
-          modelRelease(m, at);
+          mayClose = true;
+          if (keyAt !== null) endBurst(where, burstCloses + 1);
         }
       } else if (!hidden) {
-        const ids = pick();
+        const ids = pool.filter(() => random() < 0.3);
+        if (keyAt === null) bursts++;
         if (random() < 0.5) hold.begin('keys', ids);
         else hold.extend(ids);
-        modelBegin(m, 'keys', ids, at);
+        keyAt = at;
+        for (const id of ids) keyIds.add(id);
       }
-      const where = `seed ${seed} step ${step} at ${at}`;
-      assert.equal(hold.isHeld, m.held, `${where}: isHeld`);
-      assert.equal(hold.reason, m.reason, `${where}: reason`);
-      assert.deepEqual(hold.heldIds, m.ids, `${where}: heldIds`);
-      assert.equal(releases.length, m.releases.length, `${where}: release count`);
-      assert.deepEqual(releases.at(-1), m.releases.at(-1), `${where}: last release`);
-      if (m.held && m.lastKey !== null) {
-        assert.ok(at - m.lastKey < CAP, `${where}: a key hold outlived the cap`);
-        if (!m.pointer)
-          assert.ok(at - m.lastKey < HOLD, `${where}: held past base with no pointer`);
+      const acted = fresh();
+      seen = releases.length;
+      if (mayClose && wasHeld)
+        assert.equal(acted.length, 1, `${where}: Esc, a hide or a leave closes what is held`);
+      else assert.equal(acted.length, 0, `${where}: closed without a cause`);
+
+      // What must hold now.
+      const keysHold: boolean = keyAt !== null && at - keyAt < (pointer ? CAP : HOLD);
+      assert.equal(hold.isHeld, pointer || keysHold, `${where}: isHeld`);
+      if (keysHold) {
+        assert.equal(hold.reason, 'keys', `${where}: reason`);
+        for (const id of keyIds) assert.ok(hold.heldIds.includes(id), `${where}: ${id} unpinned`);
+      } else if (pointer) {
+        assert.equal(hold.reason, 'pointer', `${where}: reason`);
+        assert.equal(timers.pending, 0, `${where}: a pointer-only hold has a timer`);
+        if (pointerRow !== null)
+          assert.ok(hold.heldIds.includes(pointerRow), `${where}: the row under the pointer moves`);
+        for (const id of hold.heldIds)
+          assert.ok(pointerRows.has(id), `${where}: a key pin ${id} outlived its close`);
+      } else {
+        assert.equal(hold.reason, null);
+        assert.deepEqual(hold.heldIds, []);
+        assert.equal(timers.pending, 0, `${where}: timer left`);
       }
-      if (hold.isHeld && m.lastKey === null)
-        assert.equal(timers.pending, 0, `${where}: pointer hold has a timer`);
     }
     if (hidden) timers.setHidden(false);
     hold.pointerLeave();
@@ -367,10 +561,8 @@ test('fuzz: keys, pointer moves, hides and Esc follow the rules; nothing is stuc
     assert.equal(hold.isHeld, false, `seed ${seed}: still held`);
     assert.equal(timers.pending, 0, `seed ${seed}: timer left`);
     assert.equal(hold.version, changes, `seed ${seed}: a change went unheard`);
-    for (let i = 1; i < releases.length; i++) {
-      const a = releases[i - 1];
-      const b = releases[i];
-      assert.ok(a && b && a.at <= b.at, `seed ${seed}: releases out of order`);
-    }
   }
+  assert.ok(bursts > RUNS, 'the fuzz made bursts');
+  assert.ok(capCloses > 0, 'the fuzz reached the cap under a resting pointer');
+  assert.ok(leavesInsideBase > 0, 'the fuzz left inside a key hold');
 });
