@@ -334,3 +334,18 @@ test("an exception no gated distance needs is stale and fails", () => {
     assert.match(result.stdout, /identity exception \{color\.hill\} dark vs #64ca56 is not needed/);
   });
 });
+
+test("the selection tint is solid: ink on it reads the same over the pane, an accent fill or a stamp fill", async () => {
+  const { resolvePair } = await import("./tokens-lib.mjs");
+  const flat = flattenTokens(readJson(TOKENS_PATH));
+  for (const mode of ["light", "dark", "light-more", "dark-more"]) {
+    const bgs = ["{color.canvas}", "{color.accent}", "{color.stamp}", "{color.hill}", "{color.sunken}"].map(
+      (over) => resolvePair(flat, { fg: "{color.ink}", bg: "{color.selection}", over, kind: "text" }, mode).bgRgb,
+    );
+    for (const bg of bgs) {
+      assert.deepEqual(bg, bgs[0], `${mode}: the selection must not let the surface under it show through`);
+    }
+  }
+  const css = (await import("./build-tokens.mjs")).generate()["tokens.css"];
+  assert.match(css, /--selection: color-mix\(in srgb, var\(--accent\) 18%, var\(--canvas\)\);/);
+});

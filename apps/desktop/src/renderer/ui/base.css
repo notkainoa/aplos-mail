@@ -37,7 +37,11 @@ textarea {
   color: inherit;
 }
 
-/* Numbers that line up use tabular figures (DESIGN 4.3). */
+/* Numbers that line up use tabular figures (DESIGN 4.3). This is only the
+   fallback for elements nobody styles: `font: var(--type-<role>)` resets
+   font-variant-numeric, so a component rule that sets a type role on a time,
+   count or keycap writes the figures itself, after the font, e.g.
+   `font: var(--type-small); font-variant-numeric: var(--num-small);`. */
 time,
 kbd,
 table {
@@ -55,19 +59,35 @@ table {
   outline: none;
 }
 
-/* Selected text turns ink on the accent tint. */
+/* Selected text turns ink on the accent tint. --selection is opaque (the
+   accent mixed into the pane), so the pair holds on every surface and fill,
+   including the filled button, today's badge and hill, dusk and stamp chips. */
 ::selection {
   background-color: var(--selection);
   color: var(--ink);
 }
 
-/* Display lines and headings balance; summaries and prose wrap pretty (DESIGN 4.3). */
-:where(h1, h2, h3, h4, h5, h6) {
-  text-wrap: balance;
-}
-
+/* Summaries and prose wrap pretty; display lines and headings balance
+   (DESIGN 4.3). Balance comes second so a display or heading line written as a
+   <p> or <div> still balances: through Text's display and heading variants or
+   the .ui-display and .ui-heading hooks. */
 :where(p, li, dd, blockquote, figcaption, .ui-summary) {
   text-wrap: pretty;
+}
+
+:where(
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    .ui-display,
+    .ui-heading,
+    .ui-text[data-variant="display"],
+    .ui-text[data-variant="heading"]
+  ) {
+  text-wrap: balance;
 }
 
 /* +0.005em tracking on non-Retina displays (DESIGN 4.3): every --track-<role>

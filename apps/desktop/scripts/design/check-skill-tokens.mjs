@@ -11,14 +11,18 @@
 //    code spans that are CSS are read (they start with `--` or contain
 //    `var(--`), so command flags like `build-tokens.mjs --check` are ignored;
 //    `var(--token)` is the skill's placeholder and is ignored too.
-// 2. Every token in the colour, radius, elevation and layer families is named
-//    in the skill, exactly or through a documented wildcard of its family
-//    (`--tag-*`, `--z-*`). Every type role and every motion name must be the
-//    first cell of a row in the skill's Type or Motion table, backticked
-//    (`| \`caption\` |`, `| \`lift\`, \`follow\`, \`snap\` |`) or by its exact
-//    property. A mention elsewhere (`once \`hold\` releases`) or a wildcard
-//    such as `--type-<role>` or `--dur-*` does not count, so adding a role or a
-//    motion means adding a row to the table, and deleting a row fails.
+// 2. Every token in the colour, radius, elevation and layer families, every
+//    type role and every motion name must be the first cell of a row in its
+//    own table: `### Colour roles`, `### Radius`, `### Elevation`, `### Layers`,
+//    `### Type` or `### Motion`. The cell holds backticked names separated by
+//    commas or slashes, optionally followed by a parenthetical
+//    (`| \`--line\` / \`--line-strong\` |`, `| \`--accent\` (ink blue) |`,
+//    `| \`lift\`, \`follow\`, \`snap\` |`). A type role or motion counts by its
+//    name or its exact property. In the colour, radius, elevation and layer
+//    tables a family wildcard in the first cell (`| \`--tag-*\` |`) covers its
+//    family; type roles and motions take no wildcard. A mention anywhere else
+//    (`a 3 px \`--hill\` edge`, `once \`hold\` releases`) does not count, so
+//    adding a token means adding a row and deleting a row fails.
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -40,11 +44,21 @@ export function codeSpans(markdown) {
   return [...prose.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]);
 }
 
-// The tables whose rows name type roles and motions: the `### Type` and
-// `### Motion` sections of the cheat-sheet.
-const ROW_SECTIONS = { "type role": /^###\s+Type\b/i, motion: /^###\s+Motion\b/i };
+// The cheat-sheet tables whose rows name each token family.
+const ROW_SECTIONS = {
+  colour: /^###\s+Colour roles\b/i,
+  radius: /^###\s+Radius\b/i,
+  elevation: /^###\s+Elevation\b/i,
+  layer: /^###\s+Layers\b/i,
+  "type role": /^###\s+Type\b/i,
+  motion: /^###\s+Motion\b/i,
+};
+// A first cell: backticked names joined by commas or slashes, then an optional
+// parenthetical such as "(ink blue)".
+const ROW_CELL = /^`[^`]+`(?:\s*[,/]\s*`[^`]+`)*(?:\s*\([^()]*\))?$/;
 
 // Backticked names in the first cell of each table row, per row section.
+// Family wildcards (`--tag-*`) are kept as written; covered() expands them.
 export function tableRowNames(markdown) {
   const out = Object.fromEntries(Object.keys(ROW_SECTIONS).map((family) => [family, new Set()]));
   let family = null;
@@ -66,8 +80,7 @@ export function tableRowNames(markdown) {
       continue;
     }
     const cell = row[1].trim();
-    // The whole cell must be backticked names separated by commas.
-    if (!/^`[^`]+`(?:\s*,\s*`[^`]+`)*$/.test(cell)) {
+    if (!ROW_CELL.test(cell)) {
       continue;
     }
     for (const [, name] of cell.matchAll(/`([^`]+)`/g)) {
@@ -103,11 +116,20 @@ export function generatedProperties(tokensPath = TOKENS_PATH) {
   return new Set([...css.matchAll(/^\s*(--[a-z0-9-]+):/gim)].map((m) => m[1]));
 }
 
-function covered(name, refs) {
-  return refs.exact.has(name) || [...refs.wildcards].some((prefix) => name.startsWith(prefix));
+// A token has a row: its name or property is a first cell in its family's
+// table, or (families that allow it) a `--family-*` wildcard there covers it.
+function hasRow(need, rows) {
+  const names = rows[need.family];
+  if (names.has(need.name) || names.has(need.property)) {
+    return true;
+  }
+  return (
+    need.wildcards &&
+    [...names].some((name) => name.endsWith("-*") && WILDCARD_PREFIX.test(name.slice(0, -1)) && need.property.startsWith(name.slice(0, -1)))
+  );
 }
 
-// Token families the skill must list, as { family, name, wildcardsCount }.
+// Token families the skill must list, as { family, name, property, wildcards }.
 export function requiredMentions(flat) {
   const out = [];
   for (const token of flat.tokens) {
@@ -115,13 +137,13 @@ export function requiredMentions(flat) {
       continue;
     }
     if (token.type === "color" || token.group === "tag") {
-      out.push({ family: "colour", name: token.css, wildcards: true });
+      out.push({ family: "colour", name: token.css, property: token.css, wildcards: true });
     } else if (token.group === "radius") {
-      out.push({ family: "radius", name: token.css, wildcards: true });
+      out.push({ family: "radius", name: token.css, property: token.css, wildcards: true });
     } else if (token.group === "elev") {
-      out.push({ family: "elevation", name: token.css, wildcards: true });
+      out.push({ family: "elevation", name: token.css, property: token.css, wildcards: true });
     } else if (token.group === "layer") {
-      out.push({ family: "layer", name: token.css, wildcards: true });
+      out.push({ family: "layer", name: token.css, property: token.css, wildcards: true });
     } else if (token.group === "type") {
       out.push({ family: "type role", name: token.key, property: token.css, wildcards: false });
     } else if (token.group === "motion") {
@@ -151,13 +173,14 @@ export function checkSkillTokens(markdown, tokensPath = TOKENS_PATH) {
   }
 
   for (const need of requiredMentions(flat)) {
-    if (need.wildcards) {
-      if (!covered(need.name, refs)) {
-        problems.push(`${need.family} token ${need.name} is not in SKILL.md; add it to the skill's token tables`);
-      }
-    } else if (!refs.rows[need.family].has(need.name) && !refs.rows[need.family].has(need.property)) {
-      problems.push(`${need.family} \`${need.name}\` has no row in SKILL.md's table; add one`);
+    if (hasRow(need, refs.rows)) {
+      continue;
     }
+    problems.push(
+      need.wildcards
+        ? `${need.family} token ${need.name} has no row in SKILL.md's ${need.family} table; add one`
+        : `${need.family} \`${need.name}\` has no row in SKILL.md's table; add one`,
+    );
   }
   return { problems, refs, defined };
 }

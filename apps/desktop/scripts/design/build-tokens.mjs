@@ -10,6 +10,11 @@
 // hairlines, strokes, the focus ring, edges, bars, tracks, tracking, shadows
 // and motion travel (moves in motion.ts) stay px. Values in ch, vh, em or %
 // pass through unchanged.
+//
+// Type roles: --type-<role> is a font shorthand, --track-<role> its tracking,
+// and a role with $extensions.aplos.tabular true also gets
+// --num-<role>: tabular-nums for font-variant-numeric, which the shorthand
+// would otherwise reset to normal.
 //   node apps/desktop/scripts/design/build-tokens.mjs           write the files
 //   node apps/desktop/scripts/design/build-tokens.mjs --check   exit 1 if any file on disk differs
 // --tokens <path> and --out <dir> point at other copies (used by the tests).
@@ -70,7 +75,10 @@ function cssColor(flat, value) {
   }
   const base = cssColor(flat, value.mix);
   const percent = isAlias(value.percent) ? cssRef(flat, value.percent) : `${value.percent}%`;
-  return `color-mix(in srgb, ${base} ${percent}, transparent)`;
+  // `solid: true` mixes into the `over` surface instead of transparent, so the
+  // result is opaque and the same whatever it is painted on.
+  const rest = value.solid ? cssColor(flat, value.over) : "transparent";
+  return `color-mix(in srgb, ${base} ${percent}, ${rest})`;
 }
 
 function cssPlain(flat, value) {
@@ -173,6 +181,12 @@ function typographyDeclarations(flat, token, value) {
   out.push([`--track-${role}`, trackValue(flat, value.letterSpacing)]);
   if (token.ext.opsz !== undefined) {
     out.push([`--opsz-${role}`, String(token.ext.opsz)]);
+  }
+  // `tabular: true` (DESIGN 4.3: small is tabular) becomes --num-<role>. The
+  // font shorthand resets font-variant-numeric, so a rule that writes
+  // `font: var(--type-small)` pairs it with `font-variant-numeric: var(--num-small)`.
+  if (token.ext.tabular) {
+    out.push([`--num-${role}`, "tabular-nums"]);
   }
   return out;
 }
