@@ -111,7 +111,10 @@ describe('check-budgets', () => {
   it('accepts the committed budgets.json; the CLI exits non-zero when an owner is deleted', () => {
     const file = join(here, '..', '..', '..', 'budgets.json');
     const register = JSON.parse(readFileSync(file, 'utf8'));
-    assert.deepEqual(checkBudgets(register, now).errors, []);
+    // A recorded measurement may postdate the fixed `now`, so check as of the latest one.
+    const measured = register.rows.map(r => new Date(r.lastMeasured ?? 0));
+    const asOf = new Date(Math.max(now, ...measured));
+    assert.deepEqual(checkBudgets(register, asOf).errors, []);
     for (const id of [
       'views.window-rerun',
       'sanitizer.p99',
@@ -125,7 +128,10 @@ describe('check-budgets', () => {
     }
     assert.ok(register.rows.length >= 50);
     const script = join(here, '..', 'check-budgets.mjs');
-    assert.equal(spawnSync(process.execPath, [script, file, '--now', '2026-10-27']).status, 0);
+    assert.equal(
+      spawnSync(process.execPath, [script, file, '--now', asOf.toISOString().slice(0, 10)]).status,
+      0,
+    );
     assert.equal(
       spawnSync(process.execPath, [script, file, '--now', '2027-01-01']).status,
       1,

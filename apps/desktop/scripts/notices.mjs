@@ -8,7 +8,14 @@
 //              the file is copied next to --out so both ship together (extra resource in the app).
 // Output is sorted and has no dates or machine paths, so the same tree gives the same file.
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -323,6 +330,7 @@ function main() {
     );
     process.exit(1);
   }
+  mkdirSync(dirname(resolve(args.out)), { recursive: true });
   writeFileSync(
     args.out,
     renderNotices(packages, { version: chromium.version, licenseText: electronLicense }),
