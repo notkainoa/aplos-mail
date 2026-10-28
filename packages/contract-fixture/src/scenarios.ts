@@ -101,41 +101,10 @@ export const loadDemo = (fx: Fixture, tx: Tx) => {
 const notYet = (scenario: string) =>
   new Error(`Scenario ${scenario} arrives in Phase 1 (eng-contract); use empty or demo.`);
 
-/** Fills the store for a scenario. `empty` and `demo` are the C1 pair; most others are `demo` with one thing forced. */
-export function buildScenario(fx: Fixture, scenario: Scenario) {
+/** Forces one scenario's awkward state onto the demo rows: health, setup, a stuck submission, a parked engine. */
+function forceScenario(fx: Fixture, put: Put, scenario: Scenario) {
   const s = fx.store,
     now = fx.now;
-  const put: Put = (table, row) => s.seed(table, row);
-  if (scenario === 'small-10k' || scenario === 'large-100k') throw notYet(scenario);
-  const withDemo = scenario !== 'empty';
-  const aiOn = scenario !== 'ai-off';
-  put('Meta', {
-    id: 'meta',
-    setup: withDemo ? { completedAt: now - 30 * day } : {},
-    engine: { state: 'ready' },
-    listener: { enabled: false },
-    workflowSync: false,
-    usage: { backgroundTokens: withDemo ? 12_400 : 0 },
-    keys: { groq: aiOn ? { keySource: 'env' } : { keySource: 'none' } },
-  });
-  const settings = defaultSettings();
-  if (!aiOn) settings.ai.background = false;
-  put('Settings', { ...settings, id: 'settings' });
-  const granted = withDemo && aiOn;
-  put('Consent', {
-    id: 'background',
-    scope: 'background',
-    granted,
-    version: granted ? 1 : 0,
-    currentVersion: 1,
-    needsReconsent: false,
-    ...(granted
-      ? { provider: 'groq', model: 'openai/gpt-oss-120b', grantedAt: now - 30 * day }
-      : {}),
-  });
-  if (!withDemo) return;
-  insert(fx, demoData(now, fx.zone), put, granted);
-
   const work = demoAccountIds.work,
     personal = demoAccountIds.personal;
   const account = (id: string) => s.get('Account', id)!;
@@ -271,4 +240,41 @@ export function buildScenario(fx: Fixture, scenario: Scenario) {
       });
       break;
   }
+}
+
+/** Fills the store for a scenario. `empty` and `demo` are the C1 pair; most others are `demo` with one thing forced. */
+export function buildScenario(fx: Fixture, scenario: Scenario) {
+  const s = fx.store,
+    now = fx.now;
+  const put: Put = (table, row) => s.seed(table, row);
+  if (scenario === 'small-10k' || scenario === 'large-100k') throw notYet(scenario);
+  const withDemo = scenario !== 'empty';
+  const aiOn = scenario !== 'ai-off';
+  put('Meta', {
+    id: 'meta',
+    setup: withDemo ? { completedAt: now - 30 * day } : {},
+    engine: { state: 'ready' },
+    listener: { enabled: false },
+    workflowSync: false,
+    usage: { backgroundTokens: withDemo ? 12_400 : 0 },
+    keys: { groq: aiOn ? { keySource: 'env' } : { keySource: 'none' } },
+  });
+  const settings = defaultSettings();
+  if (!aiOn) settings.ai.background = false;
+  put('Settings', { ...settings, id: 'settings' });
+  const granted = withDemo && aiOn;
+  put('Consent', {
+    id: 'background',
+    scope: 'background',
+    granted,
+    version: granted ? 1 : 0,
+    currentVersion: 1,
+    needsReconsent: false,
+    ...(granted
+      ? { provider: 'groq', model: 'openai/gpt-oss-120b', grantedAt: now - 30 * day }
+      : {}),
+  });
+  if (!withDemo) return;
+  insert(fx, demoData(now, fx.zone), put, granted);
+  forceScenario(fx, put, scenario);
 }
