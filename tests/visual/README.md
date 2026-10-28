@@ -43,6 +43,12 @@ and never the data layer, the shell or the engine, so a state needs no engine an
 `filled` to the number of filled buttons on show (0 or 1, never more), `summary` when a Summary
 renders, and `golden: true` only for a hero state.
 
+Screens that need their data (Home, Later, the lists, Done: `gallery/scenes.home.tsx`) are the exception:
+they set `frame: 'shell'` and render the real `App` on the stand-in engine (the `demo` or `backfilling`
+scenario, `connectStandInDataLayer`), with a few steps (a key, a click, a drag, a write through the
+data layer) that run once the screen has painted. Such a scene holds the shot back with
+`data-gallery-pending` until the steps are done. Dispatch keys on `window` and never move the real pointer.
+
 ## Determinism
 
 - The clock is fixed with `page.clock.setFixedTime` at 2026-10-29T10:00 (Los Angeles). Timers keep

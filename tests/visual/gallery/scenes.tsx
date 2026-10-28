@@ -43,6 +43,7 @@ import {
   StatusScene,
 } from './scenes.more';
 import { shellScenes } from './scenes.shell';
+import { homeScenes } from './scenes.home';
 
 export const registry = createAppRegistry();
 
@@ -622,4 +623,6 @@ export const scenes: Record<string, () => ReactElement> = {
   'progress-first-sync': FirstSyncScene,
   // ui-shell
   ...shellScenes,
+  // ui-home
+  ...homeScenes,
 };
