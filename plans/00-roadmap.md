@@ -52,6 +52,7 @@ The longest chain runs through Gmail. The database write path is ready around da
 - Going public is decided later. In phase 3 the threads prepare a secret and history scan, notices and a draft LICENSE (GPL-3.0 app, MIT contract).
 - **The agent test account.** Automatic live checks use your spare Gmail account, which you approved on 27 October for agents to read in full. They run on this Mac at set times, so no Google token sits on GitHub.
   - Agents may read all of its mail, run every AI feature over it with the Groq test key, sync and backfill all of it, label, archive, mark read, star, write drafts, add a filter they remove after the run, and send mail **only to its own address**.
+  - On its own calendar, agents may create, rename, move and delete test events that the same run created, with no attendees. A Meet link on such an event is fine. They must never touch any other event (orchestrator, 2026-10-28).
   - Agents may never send to anyone else, delete permanently, empty Trash, unsubscribe, RSVP, invite attendees or change account settings.
   - Its address and its mail stay off the repo: not in commits, logs, eval reports, screenshots or PRs. PR pictures use demo mail.
   - Your main Gmail is still only touched by you, in the hand checks on days 14 to 16.
