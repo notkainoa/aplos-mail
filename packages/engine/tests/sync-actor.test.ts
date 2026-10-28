@@ -68,7 +68,7 @@ const openOps = (store: StorePort) =>
 test('lane order: op flush first, then incremental, then backfill, then enrichment', async () => {
   const d = disk();
   const done =
-    (scope: string): StepFn =>
+    (_scope: string): StepFn =>
     async (s, _state, ctx) => {
       await governed(ctx, s, 5);
       return {
@@ -238,7 +238,6 @@ test('prov-gov-T33 a commit that fails leaves neither the page nor its token, an
 test('the mutation fence keeps a local edit made while the page was in flight', async () => {
   const d = disk();
   const gate = deferred();
-  let w!: ReturnType<typeof world>;
   const adapter = new FakeAdapter(
     input =>
       stateIn(input, 'window:inbox')?.phase === 'done'
@@ -260,7 +259,7 @@ test('the mutation fence keeps a local edit made while the page was in flight', 
       },
     },
   );
-  w = world(d, () => adapter);
+  const w = world(d, () => adapter);
   try {
     // Both messages already stored, read at the provider.
     w.store.commit({
