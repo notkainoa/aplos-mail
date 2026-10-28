@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'">
+<style>
+  body { margin: 0; background: #f5f5f6; font: 14px/22px -apple-system, sans-serif; }
+  .pane { margin: 8px; height: 860px; background: #fff; border-radius: 12px; }
+  .box { width: 120px; height: 40px; margin: 40px; background: #0b5394; animation: move 600ms linear infinite alternate; }
+  @keyframes move { to { transform: translateX(600px); } }
+</style>
+</head>
+<body>
+<div class="pane"><div class="box"></div><p>Timing spike: a moving box, rAF sampling, one deliberate 120 ms long task.</p></div>
+<script>
+  // Spike page: samples rAF deltas for 2 s, injects one 120 ms busy task at 1 s, and
+  // records long-animation-frame and event-timing entries for the synthetic keys.
+  const loaf = [];
+  const events = [];
+  try {
+    new PerformanceObserver((list) => { for (const e of list.getEntries()) loaf.push(Math.round(e.duration)); })
+      .observe({ type: 'long-animation-frame', buffered: true });
+  } catch (err) { loaf.push('unsupported: ' + err.message); }
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) events.push({ name: e.name, duration: e.duration, processing: Math.round(e.processingEnd - e.processingStart) });
+    }).observe({ type: 'event', buffered: true, durationThreshold: 16 });
+  } catch (err) { events.push('unsupported: ' + err.message); }
+  let keydowns = 0;
+  window.addEventListener('keydown', () => {
+    keydowns += 1;
+    const until = performance.now() + 20;
+    while (performance.now() < until) { /* 20 ms handler so each key shows in event timing */ }
+  });
+  function percentile(sorted, p) { return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]; }
+  window.__spike = {
+    run() {
+      return new Promise((resolve) => {
+        const deltas = [];
+        const start = performance.now();
+        let last = start;
+        let blocked = false;
+        function frame(now) {
+          deltas.push(now - last);
+          last = now;
+          if (!blocked && now - start > 1000) {
+            blocked = true;
+            const until = performance.now() + 120;
+            while (performance.now() < until) { /* deliberate long task */ }
+          }
+          if (now - start < 2000) { requestAnimationFrame(frame); return; }
+          const sorted = deltas.slice(1).sort((a, b) => a - b);
+          resolve({
+            visibility: document.visibilityState,
+            hidden: document.hidden,
+            frames: deltas.length,
+            rafMedianMs: +percentile(sorted, 0.5).toFixed(2),
+            rafP95Ms: +percentile(sorted, 0.95).toFixed(2),
+            rafMaxMs: +sorted[sorted.length - 1].toFixed(2),
+            animations: document.getAnimations().length,
+            animationTimeMs: Math.round(document.getAnimations()[0]?.currentTime ?? -1),
+          });
+        }
+        requestAnimationFrame(frame);
+      });
+    },
+    reset() { loaf.length = 0; events.length = 0; keydowns = 0; return true; },
+    events() { return { keydowns, longAnimationFrames: loaf.slice(0, 10), eventTimings: events.slice(0, 5), eventTimingCount: events.length }; },
+  };
+</script>
+</body>
+</html>

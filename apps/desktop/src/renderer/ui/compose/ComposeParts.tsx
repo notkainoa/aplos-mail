@@ -1,0 +1,90 @@
+/**
+ * Pieces Composer and InlineReply share so the sentences and the footer exist once. Not manifest components.
+ */
+import type {
+  BlockedSend,
+  ComposeCommands,
+  DictationState,
+  DraftConflict,
+  DraftStateKind,
+  IconName,
+} from '../props';
+import { DictationLine } from './DictationLine';
+import { DraftState } from './DraftState';
+import { Icon } from './icons';
+import { Btn } from './parts';
+
+/** A blocked send: one plain sentence, an icon and the stamp ink; the field it belongs to is outlined by CSS. No shake. */
+export function BlockedLine({ id, blocked }: { id: string; blocked: BlockedSend }) {
+  return (
+    <p id={id} className="ui-compose-blocked" role="alert" data-field={blocked.field}>
+      <Icon name="alert" size="sm" />
+      <span dir="auto">{blocked.message}</span>
+    </p>
+  );
+}
+
+/** "This draft changed on another device." with Keep mine · Take theirs · Keep both (plan 30 §4.5 #5). */
+export function ConflictBar({ conflict }: { conflict: DraftConflict }) {
+  return (
+    <div className="ui-compose-conflict" role="group" aria-label="Draft conflict">
+      <span>This draft changed on another device.</span>
+      <span className="ui-compose-conflict__acts">
+        <Btn variant="text" label="Keep mine" onPress={conflict.onKeepMine} />
+        <Btn variant="text" label="Take theirs" onPress={conflict.onTakeTheirs} />
+        <Btn variant="text" label="Keep both" onPress={conflict.onKeepBoth} />
+      </span>
+    </div>
+  );
+}
+
+export interface FooterAction {
+  label: string;
+  icon: IconName;
+  commandId: string;
+  hint: string;
+  onPress: (anchor: HTMLElement) => void;
+}
+
+/** Send (always with its keycap), the draft line or the dictation line, and the trailing icon buttons. */
+export function ComposeFooter(props: {
+  commands: ComposeCommands;
+  draftState: DraftStateKind;
+  onRetrySave: () => void;
+  dictation?: DictationState;
+  onSend: () => void;
+  trailing: readonly FooterAction[];
+}) {
+  const { commands, draftState, onRetrySave, dictation, onSend, trailing } = props;
+  return (
+    <div className="ui-compose-footer">
+      <Btn
+        variant="filled"
+        size="md"
+        icon="send"
+        label="Send"
+        commandId={commands.send}
+        keyHint="always"
+        onPress={onSend}
+      />
+      {dictation ? (
+        <DictationLine dictation={dictation} />
+      ) : (
+        <DraftState state={draftState} onRetry={onRetrySave} />
+      )}
+      <span className="ui-compose-footer__right">
+        {trailing.map(action => (
+          <Btn
+            key={action.label}
+            variant="icon"
+            icon={action.icon}
+            label={action.label}
+            hint={action.hint}
+            commandId={action.commandId}
+            onPress={action.onPress}
+          />
+        ))}
+      </span>
+    </div>
+  );
+}

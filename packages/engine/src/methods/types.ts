@@ -7,20 +7,9 @@ import type {
   Scope,
 } from '@aplos/contract';
 import { NotImplementedError } from '@aplos/contract/contract-error';
-import type {
-  AccountActorHost,
-  CalendarPort,
-  Clock,
-  DeadlineRegistry,
-  DraftSyncPort,
-  ImageProxy,
-  LaneFor,
-  Logger,
-  MailHtml,
-  RulesPort,
-  SendPort,
-  StorePort,
-} from '../ports';
+import type { EngineServices } from '../runtime/services';
+
+export type { EngineServices };
 
 /**
  * Handler types for the F5 dispatch table. Only types come from the contract (plus its zod-free generated tables in
@@ -45,33 +34,20 @@ export interface Caller {
   scopes: readonly Scope[];
 }
 
-/**
- * The engine's services, built once by the runtime (`eng-contract`) at start and handed to every call: the only way a
- * handler reaches a port. Lanes call these and never construct their own; a new service is an additive field here.
- */
-export interface EngineServices {
-  store: StorePort;
-  /** Account actors: connect, sync requests, leases, status, and the `ProviderPort` reads. */
-  accounts: AccountActorHost;
-  send: SendPort;
-  drafts: DraftSyncPort;
-  calendar: CalendarPort;
-  rules: RulesPort;
-  clock: Clock;
-  deadlines: DeadlineRegistry;
-  log: Logger;
-  html: MailHtml;
-  laneFor: LaneFor;
-  /** Injected by the host (Node networking); `Mail/serve`'s image route only. */
-  images: ImageProxy;
-}
-
 /** What every handler receives besides its validated arguments. */
 export interface MethodContext {
   caller: Caller;
   /** Aborted when the caller cancels or disconnects. */
   signal: AbortSignal;
   services: EngineServices;
+  /** The connection the call came in on: `services.frames.emit(frame, connectionId)` answers only this caller. */
+  connectionId: string;
+  /**
+   * Runs another method as this same caller, through the same default-deny dispatch (`Operation/retry`, a queued item):
+   * a re-dispatch never widens what the caller may do. It shares the caller's connection, so it runs under the same
+   * abort signal (closing the session cancels it) and a `connectionId` reply from it answers the same connection.
+   */
+  redispatch<M extends EngineMethodName>(method: M, args: Input<M>): Promise<Output<M>>;
 }
 
 export type Handler<M extends EngineMethodName> = (

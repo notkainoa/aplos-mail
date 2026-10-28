@@ -73,7 +73,9 @@ function rankThread(run: CommitRun, threadId: number, laneFor: LaneFor) {
     )
     .get<WorkflowRow>(threadId);
   if (!wf || wf.rank_source !== 'heuristic') return;
-  const result = safeLane(laneFor, () => laneInput(run, threadId, wf.account_id));
+  const input = laneInput(run, threadId, wf.account_id);
+  if (!input) return;
+  const result = safeLane(laneFor, input);
   if (!result) return;
   const due =
     result.due && (wf.due_source === null || wf.due_source === 'structured')
@@ -96,15 +98,9 @@ function rankThread(run: CommitRun, threadId: number, laneFor: LaneFor) {
 }
 
 /** A `laneFor` bug must not stop mail arriving: a throw or an out-of-range answer keeps the stored rank. */
-function safeLane(
-  laneFor: LaneFor,
-  makeInput: () => LaneInput | undefined,
-): LaneResult | undefined {
-  let result: LaneResult | undefined;
+function safeLane(laneFor: LaneFor, input: LaneInput): LaneResult | undefined {
+  let result: LaneResult;
   try {
-    // Building the input reads stored bodies, which can fail on a missing codec or a corrupt row: that gives up the rank, not the commit.
-    const input = makeInput();
-    if (!input) return undefined;
     result = laneFor(input);
   } catch {
     return undefined;
@@ -221,7 +217,12 @@ function bodyText(run: CommitRun, m: LaneRow): string | undefined {
     .q('SELECT codec, data FROM bodies WHERE message_id = ?')
     .get<{ codec: number; data: Uint8Array }>(m.id);
   if (!row) return undefined;
-  return decodeBody(row, run.ctx.bodyCodec).text?.slice(0, LANE_TEXT_CAP);
+  // Only the decode is forgiven (a missing codec or a corrupt row gives up the text); the SQL read above must fail loudly.
+  try {
+    return decodeBody(row, run.ctx.bodyCodec).text?.slice(0, LANE_TEXT_CAP);
+  } catch {
+    return undefined;
+  }
 }
 
 interface IngestRow {
