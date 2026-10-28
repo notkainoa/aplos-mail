@@ -14,6 +14,7 @@
     "./contract-error": "./src/contract-error.ts",
     "./legacy-methods": "./src/legacy-methods.ts",
     "./generated/openapi.json": "./generated/openapi.json",
+    "./rules": "./src/rules.ts",
     "./legacy/*": "./src/legacy/*.ts"
   },
   "scripts": {

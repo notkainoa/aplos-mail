@@ -169,6 +169,13 @@ export interface TokenSource {
  * off, paused, signed out), becomes `suspended` instead: "Send now or Reschedule". The `outbox` deadline source and the
  * store's due index cover both states (`store/due.ts`: `nextDueAt`, `dueSubmissions`), so a send-later row is found when it
  * falls due.
+ *
+ * Pinned revision rule (ARCH 7.1, FR-7): the bytes that leave are the submission's pinned revision (`Submission.revision`
+ * and its `mime`), never whatever a provider draft holds at send time. The outbox sets
+ * `SubmissionPayload.baseRemoteMessageId` (and `baseChangeKey`) from the draft's synced copy only when that copy is the
+ * pinned revision (`drafts.synced_revision` equals `Submission.revision`); otherwise it leaves them unset. The adapter
+ * sends the remote draft only when `sendsRemoteDraft` holds, else the pinned `mime`, so a phone edit during the undo
+ * window or a send-later hold never leaves. After a `mime` send the remote copy is left in place (no `draftConsumed`).
  */
 export interface SendPort {
   /** No I/O: is the account's mail budget open for a send now (auth, pause, send-limit blocks)? */
@@ -178,11 +185,12 @@ export interface SendPort {
   findSent(account: AccountId, internetId: string, since: number): Promise<FindSentResult>;
 }
 
-/** The submission states that wait on `not_before` and so obey the overdue rule (F1 `SubmissionState` values). */
-export const WAITING_SUBMISSION_STATES = ['queued', 'scheduled'] as const;
-export type WaitingSubmissionState = (typeof WAITING_SUBMISSION_STATES)[number];
-/** ARCH 7.3's grace: a waiting submission more than this past `not_before` is `suspended`, never sent late. */
-export const OVERDUE_GRACE_MS = 5 * 60_000;
+// The waiting states and the grace are defined once in the contract (FR-2) and re-exported so lanes import them from the ports.
+export {
+  WAITING_SUBMISSION_STATES,
+  OVERDUE_GRACE_MS,
+  type WaitingSubmissionState,
+} from '@aplos/contract/rules';
 
 /**
  * Remote draft copies. Implemented by `prov-gov` (routes to `saveDraft`/`deleteDraft` on the `opFlush` lane); called by

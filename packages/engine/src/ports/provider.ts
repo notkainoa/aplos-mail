@@ -536,8 +536,36 @@ export interface SubmissionPayload {
   /** SMTP envelope; `rcpt` includes Bcc. */
   envelope: { from: string; rcpt: string[] };
   remoteThreadId?: string;
-  /** Gmail: `drafts.send`, so the copy on other devices disappears. */
+  /**
+   * The synced remote draft (Gmail: `drafts.send`, so the copy on other devices disappears). Used only when
+   * `sendsRemoteDraft` holds; it never decides what is sent.
+   */
   remoteDraftId?: string;
+  /**
+   * Precondition for sending the remote draft, like `DraftUpload.baseRemoteMessageId`: the remote message id Aplos
+   * uploaded for the pinned revision. Set only when the synced copy is that revision; unset means send `mime`.
+   */
+  baseRemoteMessageId?: string;
+  /** Graph's `changeKey` of that copy, where the message id does not change on edit. */
+  baseChangeKey?: string;
+}
+
+/**
+ * The frozen send rule (ARCH 7.1, FR-7): may the adapter send the remote draft instead of the pinned `mime`? Only
+ * when the remote draft is provably the pinned revision: the payload names it with a precondition, and the copy the
+ * adapter just read (Gmail `drafts.get`) still has that message id and, when given, that `changeKey`. A phone edit
+ * changes the id (or the key), so it is never what leaves; `current` undefined means the draft is gone.
+ */
+export function sendsRemoteDraft(
+  submission: SubmissionPayload,
+  current: { remoteMessageId: string; changeKey?: string } | undefined,
+): boolean {
+  return (
+    submission.remoteDraftId !== undefined &&
+    submission.baseRemoteMessageId !== undefined &&
+    current?.remoteMessageId === submission.baseRemoteMessageId &&
+    (submission.baseChangeKey === undefined || current.changeKey === submission.baseChangeKey)
+  );
 }
 
 export interface SendReceipt {
@@ -635,6 +663,7 @@ export interface ProviderAdapter {
    * When one call makes several requests (iCloud: SMTP, then an `APPEND` to Sent), it may let `PausedError` or
    * `NotSentError` escape only if no earlier request in the call could have delivered the mail; after SMTP accepted the
    * message, a failed `APPEND` still resolves (the receipt), it never throws.
+   * It sends the pinned `submission.mime` unless `sendsRemoteDraft` holds for the remote copy it just read (FR-7).
    */
   send(submission: SubmissionPayload, ctx: AdapterContext): Promise<SendReceipt>;
   /** Searches Sent by Message-ID: Gmail `rfc822msgid:`, IMAP `HEADER Message-ID`, Graph `internetMessageId`, JMAP `Email/query`. */
