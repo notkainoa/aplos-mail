@@ -34,7 +34,7 @@ await build({
   define,
 });
 await build({
-  entryPoints: ['src/main/engine-host.ts'],
+  entryPoints: ['src/main/engine-process.ts'],
   outfile: 'dist/main/engine.cjs',
   bundle: true,
   platform: 'node',

@@ -1,5 +1,15 @@
 # Decisions
 
+## 2026-10-28 — Revamp Phase 0 artifacts F1-F5 and F7 (freeze candidate)
+
+- **zod/mini, types-only in the engine.** The contract's schemas use `zod/mini` (about 35 KB against full zod's 188 KB in a neutral bundle). The engine core imports contract *types* and the zod-free error classes only; transports validate with `parseArgs` at the host boundary (ARCH 9.3; plan 10 section 3's named fallback), because the runtime schemas plus zod cost about 158 KB of the 400,000-byte budget.
+- **Engine budget measured without `legacy/`.** The portability test applies the no-Node rule to all of `packages/engine/src`, but the 400,000-byte check counts only the new engine (UTF-8 bytes, unminified) and forbids new code from importing `legacy/`, which Phase 2 deletes.
+- **Contract naming.** Every method is `Type/verb` (`Mail/release`, `Mail/toggleQuotes` rather than `Mail/frame.release`), so the typed client is `api.<type>.<verb>`. Binary moves as `Blob/put` then a `blobId`, never base64. Scopes: `read`, `triage`, `draft`, `send`, `ai`, `admin`, `host`. Submissions add `scheduled`. `conflict` is a reply error type, not a governor error class (adapters return conflicts as results). No key characters (`last4`) leave the engine.
+- **Ports (F3)** follow the Providers thread's proposal v2 with the changes listed in STATUS.md (one adapter per account, results for conflicts, only proof makes a send not-sent, one placements list, governor-owned token refresh, `reconnectBy` computed by the host), plus every fix from the Providers review (`packages/engine/src/ports.review-answers.md`): connect ignores auth blocks; per-account monotonic sweep generations with `SweepBound.until` and a `sweep` write in the same commit; the overdue rule applies to queued submissions only, and a submission found `sending` at start becomes `uncertain` and runs `findSent` first.
+- **Store (F4).** Schema 0001 is ARCH 3.2 plus the Providers review's S1-S11 and the later additions; `store.commit` is synchronous, data-only and idempotent per required `opId`; `seq` moves once per client-visible commit; `changes` is keyed `(seq, type, id)`; rollups are computed in the store, never taken from a batch.
+- **Logger (F7).** The catalog is plain data checked at runtime; its zod schemas are used in tests. Addresses are hashed with a salted synchronous SHA-256 (first 16 hex digits); free text is redacted aggressively and anything over 2,000 characters is replaced whole.
+- **UI gaps.** Every gap the UI threads sent is answered in `packages/contract/GAPS.md`.
+
 ## 2026-10-27 — Revamp Phase 0 step 1: legacy folders and workspaces
 
 - **Moved, not rewritten.** Today's engine is `packages/engine/src/legacy/` (`@aplos/engine`), the five shared files it needs (`types`, `ask`, `mailbox`, `summary`, `live`) are `packages/contract/src/legacy/` (`@aplos/contract`), and today's renderer is `apps/desktop/src/renderer/legacy/`. All three are read-only reference until Phase 2 deletes them (roadmap 1.1, plan 10 E1 item 1).
