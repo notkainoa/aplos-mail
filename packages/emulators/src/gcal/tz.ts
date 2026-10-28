@@ -10,7 +10,14 @@ function formatterFor(tz: string): Intl.DateTimeFormat {
   let formatter = formatters.get(tz);
   if (!formatter) {
     formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+      timeZone: tz,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
     });
     formatters.set(tz, formatter);
   }
@@ -41,7 +48,14 @@ export function localParts(ms: number, tz: string): LocalParts {
   for (const part of formatterFor(tz).formatToParts(new Date(Math.floor(ms / 1000) * 1000))) {
     if (part.type !== 'literal') parts[part.type] = Number(part.value);
   }
-  return { y: parts.year, mo: parts.month, d: parts.day, h: parts.hour, mi: parts.minute, s: parts.second };
+  return {
+    y: parts.year,
+    mo: parts.month,
+    d: parts.day,
+    h: parts.hour,
+    mi: parts.minute,
+    s: parts.second,
+  };
 }
 
 /** Zone offset from UTC at an instant, in ms (negative west of Greenwich). */
@@ -73,14 +87,16 @@ export function isoInZone(ms: number, tz: string): string {
   const offsetMinutes = Math.round(offsetMs(ms, tz) / 60_000);
   const sign = offsetMinutes < 0 ? '-' : '+';
   const abs = Math.abs(offsetMinutes);
-  const zone = tz === 'UTC' || tz === 'Etc/UTC' ? 'Z' : `${sign}${two(Math.floor(abs / 60))}:${two(abs % 60)}`;
+  const zone =
+    tz === 'UTC' || tz === 'Etc/UTC' ? 'Z' : `${sign}${two(Math.floor(abs / 60))}:${two(abs % 60)}`;
   return `${p.y}-${two(p.mo)}-${two(p.d)}T${two(p.h)}:${two(p.mi)}:${two(p.s)}${zone}`;
 }
 
 const DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-export const isDateText = (value: unknown): value is string => typeof value === 'string' && DATE.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+export const isDateText = (value: unknown): value is string =>
+  typeof value === 'string' && DATE.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
 
 /** Parses RFC 3339; a value without an offset needs `tz`. Returns undefined when it is not valid. */
 export function parseDateTime(value: unknown, tz?: string): number | undefined {
@@ -114,9 +130,11 @@ export function civilOfDay(day: number): { y: number; mo: number; d: number } {
   return { y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate() };
 }
 
-export const dayOfCivil = (y: number, mo: number, d: number): number => Math.floor(Date.UTC(y, mo - 1, d) / DAY_MS);
+export const dayOfCivil = (y: number, mo: number, d: number): number =>
+  Math.floor(Date.UTC(y, mo - 1, d) / DAY_MS);
 
-export const daysInMonth = (y: number, mo: number): number => new Date(Date.UTC(y, mo, 0)).getUTCDate();
+export const daysInMonth = (y: number, mo: number): number =>
+  new Date(Date.UTC(y, mo, 0)).getUTCDate();
 
 /** Instance id suffix: UTC 'YYYYMMDDTHHMMSSZ' for timed occurrences, 'YYYYMMDD' for all-day ones. */
 export function utcKey(ms: number): string {

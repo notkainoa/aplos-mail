@@ -9,9 +9,18 @@ test('every request costs one unit and the log names service gcal and the API me
   await t.call('/users/me/calendarList');
   await t.call(t.events('primary', undefined, { maxResults: 5 }));
   const entries = t.emu.log.filter(e => e.service === 'gcal');
-  assert.deepEqual(entries.map(e => e.apiMethod), ['calendar.calendarList.list', 'calendar.events.list']);
-  assert.deepEqual(entries.map(e => e.units), [1, 1]);
-  assert.deepEqual(entries.map(e => e.status), [200, 200]);
+  assert.deepEqual(
+    entries.map(e => e.apiMethod),
+    ['calendar.calendarList.list', 'calendar.events.list'],
+  );
+  assert.deepEqual(
+    entries.map(e => e.units),
+    [1, 1],
+  );
+  assert.deepEqual(
+    entries.map(e => e.status),
+    [200, 200],
+  );
   assert.equal(t.emu.calendar.meter.unitsInWindow(), 2);
 });
 
@@ -48,7 +57,12 @@ test('refusal shapes: rateLimitExceeded, userRateLimitExceeded, 429 and message-
   const t = await setupCal({ calendar: { requestsPerMinute: 1 } });
   await t.call('/users/me/calendarList');
   const seen: Record<string, unknown> = {};
-  for (const shape of ['rateLimitExceeded403', 'userRateLimitExceeded403', 'resourceExhausted429', 'messageOnly'] as const) {
+  for (const shape of [
+    'rateLimitExceeded403',
+    'userRateLimitExceeded403',
+    'resourceExhausted429',
+    'messageOnly',
+  ] as const) {
     t.emu.calendar.settings.throttleShape = shape;
     const r = await t.call('/users/me/calendarList');
     seen[shape] = [r.status, r.json.error.errors?.[0]?.reason, r.json.error.errors?.[0]?.domain];
@@ -106,8 +120,15 @@ test('anti-abuse: every write answers 403 quotaExceeded, reads keep working', as
   assert.equal(insert.json.error.errors[0].reason, 'quotaExceeded');
   assert.equal(insert.json.error.errors[0].domain, 'usageLimits');
   assert.equal(insert.json.error.message, 'Calendar usage limits exceeded.');
-  for (const [method, suffix] of [['PUT', 'abcde'], ['PATCH', 'abcde'], ['DELETE', 'abcde']] as const) {
-    const r = await t.call(t.events('primary', suffix), { method, body: method === 'DELETE' ? undefined : {} });
+  for (const [method, suffix] of [
+    ['PUT', 'abcde'],
+    ['PATCH', 'abcde'],
+    ['DELETE', 'abcde'],
+  ] as const) {
+    const r = await t.call(t.events('primary', suffix), {
+      method,
+      body: method === 'DELETE' ? undefined : {},
+    });
     assert.equal(r.json.error.errors[0].reason, 'quotaExceeded', method);
   }
   assert.equal((await t.call(t.events('primary'))).status, 200);
@@ -151,7 +172,10 @@ test('scopes: calendarList reads need the calendar-list scope, events need calen
 
   const readOnly = await setupCal({ scopes: ['openid', SCOPE.calendarEventsReadonly] });
   assert.equal((await readOnly.call(readOnly.events('primary'))).status, 200);
-  const write = await readOnly.call(readOnly.events('primary'), { method: 'POST', body: timed('x', '2026-11-03T10:00:00', '2026-11-03T11:00:00') });
+  const write = await readOnly.call(readOnly.events('primary'), {
+    method: 'POST',
+    body: timed('x', '2026-11-03T10:00:00', '2026-11-03T11:00:00'),
+  });
   assert.equal(write.json.error.errors[0].reason, 'insufficientPermissions');
   assert.ok(CAL_SCOPES.length);
 });
@@ -177,9 +201,22 @@ test('the shared fault hook sees Calendar requests as service gcal and can answe
   const t = await setupCal({
     faults: {
       intercept(request) {
-        if (request.service === 'gcal') seen.push(`${request.service}:${request.apiMethod}:${request.cost}`);
+        if (request.service === 'gcal')
+          seen.push(`${request.service}:${request.apiMethod}:${request.cost}`);
         if (request.apiMethod === 'calendar.events.list') {
-          return { kind: 'respond', response: new Response(JSON.stringify({ error: { code: 503, message: 'Backend Error', errors: [{ reason: 'backendError', domain: 'global' }] } }), { status: 503 }) };
+          return {
+            kind: 'respond',
+            response: new Response(
+              JSON.stringify({
+                error: {
+                  code: 503,
+                  message: 'Backend Error',
+                  errors: [{ reason: 'backendError', domain: 'global' }],
+                },
+              }),
+              { status: 503 },
+            ),
+          };
         }
         return undefined;
       },

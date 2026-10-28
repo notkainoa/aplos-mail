@@ -41,12 +41,23 @@ function decode<T>(text: string): T | undefined {
   }
 }
 
-function checkSyncToken(store: CalendarStore, text: string, kind: 'e' | 'l', cal?: CalendarRecord): TokenData {
+function checkSyncToken(
+  store: CalendarStore,
+  text: string,
+  kind: 'e' | 'l',
+  cal?: CalendarRecord,
+): TokenData {
   const token = decode<TokenData>(text);
   const epoch = kind === 'l' ? store.epochFor('list') : store.epochFor(`events:${cal!.id}`);
-  const stale = !token || token.k !== kind || token.u !== store.owner.sub || (kind === 'e' && token.c !== cal!.id)
-    || typeof token.r !== 'number' || token.r > store.rev || token.e !== epoch
-    || store.now() - token.a > store.deps.settings().syncTokenHorizonMs;
+  const stale =
+    !token ||
+    token.k !== kind ||
+    token.u !== store.owner.sub ||
+    (kind === 'e' && token.c !== cal!.id) ||
+    typeof token.r !== 'number' ||
+    token.r > store.rev ||
+    token.e !== epoch ||
+    store.now() - token.a > store.deps.settings().syncTokenHorizonMs;
   if (stale) throw fullSyncRequired();
   return token;
 }
@@ -83,14 +94,21 @@ interface Keyed<T> {
   item: T;
 }
 
-const pad = (n: number, width = 16): string => String(Math.max(0, Math.round(n) + 1e13)).padStart(width, '0');
+const pad = (n: number, width = 16): string =>
+  String(Math.max(0, Math.round(n) + 1e13)).padStart(width, '0');
 
-function pageOf<T>(items: Keyed<T>[], pageToken: string | null, max: number, snapshot: number): { page: T[]; nextPageToken?: string } {
+function pageOf<T>(
+  items: Keyed<T>[],
+  pageToken: string | null,
+  max: number,
+  snapshot: number,
+): { page: T[]; nextPageToken?: string } {
   items.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   let start = 0;
   if (pageToken) {
     const cursor = decode<{ after: string }>(pageToken);
-    if (!cursor || typeof cursor.after !== 'string') throw calInvalid('Invalid page token.', 'invalid');
+    if (!cursor || typeof cursor.after !== 'string')
+      throw calInvalid('Invalid page token.', 'invalid');
     start = items.findIndex(i => i.key > cursor.after);
     if (start === -1) start = items.length;
   }
@@ -98,7 +116,9 @@ function pageOf<T>(items: Keyed<T>[], pageToken: string | null, max: number, sna
   const more = start + max < items.length;
   return {
     page: slice.map(i => i.item),
-    ...(more ? { nextPageToken: encode({ after: slice[slice.length - 1].key, snap: snapshot }) } : {}),
+    ...(more
+      ? { nextPageToken: encode({ after: slice[slice.length - 1].key, snap: snapshot }) }
+      : {}),
   };
 }
 
@@ -110,7 +130,10 @@ function snapshotOf(store: CalendarStore, pageToken: string | null): number {
 
 // ---------- calendar list ----------
 
-export function listCalendarList(store: CalendarStore, q: URLSearchParams): Record<string, unknown> {
+export function listCalendarList(
+  store: CalendarStore,
+  q: URLSearchParams,
+): Record<string, unknown> {
   const max = size(q, 100, 250);
   const syncText = q.get('syncToken');
   const showHidden = bool(q, 'showHidden');
@@ -118,7 +141,9 @@ export function listCalendarList(store: CalendarStore, q: URLSearchParams): Reco
   const minRole = q.get('minAccessRole');
   if (minRole && !(minRole in ROLE_RANK)) throw calInvalid('Invalid value for: minAccessRole');
   if (syncText && (minRole || showHidden === false || showDeleted === false)) {
-    throw calInvalid('minAccessRole cannot be combined with syncToken, and showDeleted and showHidden cannot be false with it.');
+    throw calInvalid(
+      'minAccessRole cannot be combined with syncToken, and showDeleted and showHidden cannot be false with it.',
+    );
   }
   const token = syncText ? checkSyncToken(store, syncText, 'l') : undefined;
   const pageToken = q.get('pageToken');
@@ -128,14 +153,26 @@ export function listCalendarList(store: CalendarStore, q: URLSearchParams): Reco
   for (const cal of store.calendars.values()) {
     const wanted = token
       ? cal.rev > token.r
-      : (!cal.deleted || showDeleted === true) && (!cal.hidden || showHidden === true) && (!minRole || ROLE_RANK[cal.accessRole] >= ROLE_RANK[minRole as AccessRole]);
+      : (!cal.deleted || showDeleted === true) &&
+        (!cal.hidden || showHidden === true) &&
+        (!minRole || ROLE_RANK[cal.accessRole] >= ROLE_RANK[minRole as AccessRole]);
     if (wanted) items.push({ key: pad(cal.seq, 10), item: store.entryView(cal) });
   }
   const { page, nextPageToken } = pageOf(items, pageToken, max, snapshot);
   return {
     kind: 'calendar#calendarList',
     etag: `"l${snapshot}"`,
-    ...(nextPageToken ? { nextPageToken } : { nextSyncToken: encode({ k: 'l', r: snapshot, a: store.now(), e: store.epochFor('list'), u: store.owner.sub } satisfies TokenData) }),
+    ...(nextPageToken
+      ? { nextPageToken }
+      : {
+          nextSyncToken: encode({
+            k: 'l',
+            r: snapshot,
+            a: store.now(),
+            e: store.epochFor('list'),
+            u: store.owner.sub,
+          } satisfies TokenData),
+        }),
     items: page,
   };
 }
@@ -157,7 +194,12 @@ function overlaps(startMs: number, endMs: number, win: Window): boolean {
  * Occurrences nobody has edited, as events. Edited ones (exceptions) are separate records and are
  * listed by whoever lists records, so they are skipped here.
  */
-function expandPlain(cal: CalendarRecord, master: EventRecord, win: Window, stopAfter = Infinity): GcalEvent[] {
+function expandPlain(
+  cal: CalendarRecord,
+  master: EventRecord,
+  win: Window,
+  stopAfter = Infinity,
+): GcalEvent[] {
   const out: GcalEvent[] = [];
   let scanned = 0;
   for (const occ of occurrences(seriesOf(master.event, cal.timeZone))) {
@@ -173,20 +215,77 @@ function expandPlain(cal: CalendarRecord, master: EventRecord, win: Window, stop
   return out;
 }
 
-const hasOccurrenceIn = (cal: CalendarRecord, master: EventRecord, win: Window): boolean => expandPlain(cal, master, win, 1).length > 0;
+const hasOccurrenceIn = (cal: CalendarRecord, master: EventRecord, win: Window): boolean =>
+  expandPlain(cal, master, win, 1).length > 0;
 
 function eventWindow(store: CalendarStore, q: URLSearchParams): Window {
   const timeMax = instant(q, 'timeMax');
-  return { fromMs: instant(q, 'timeMin'), toMs: timeMax ?? store.now() + store.deps.settings().expansionHorizonMs };
+  return {
+    fromMs: instant(q, 'timeMin'),
+    toMs: timeMax ?? store.now() + store.deps.settings().expansionHorizonMs,
+  };
 }
 
 /** Unordered lists keep creation order, except expanded ones, which come out chronologically as Google's do. */
-function orderKey(orderBy: string | null, singleEvents: boolean, ev: GcalEvent, rec: EventRecord, startMs: number): string {
-  const prefix = orderBy === 'startTime' || (!orderBy && singleEvents) ? pad(startMs) : orderBy === 'updated' ? pad(Date.parse(ev.updated)) : pad(rec.seq, 10);
+function orderKey(
+  orderBy: string | null,
+  singleEvents: boolean,
+  ev: GcalEvent,
+  rec: EventRecord,
+  startMs: number,
+): string {
+  const prefix =
+    orderBy === 'startTime' || (!orderBy && singleEvents)
+      ? pad(startMs)
+      : orderBy === 'updated'
+        ? pad(Date.parse(ev.updated))
+        : pad(rec.seq, 10);
   return `${prefix}|${pad(startMs)}|${ev.id}`;
 }
 
-export function listEvents(store: CalendarStore, cal: CalendarRecord, q: URLSearchParams): Record<string, unknown> {
+/** Everything listEvents collects from the query string, before scanning the store. */
+interface ListQuery {
+  token: TokenData | undefined;
+  singleEvents: boolean;
+  showDeleted: boolean;
+  orderBy: string | null;
+  max: number;
+  updatedMin: number | undefined;
+  hasWindow: boolean;
+  win: Window;
+  /** singleEvents of the call that issued the token, or of this call without one. */
+  wasSingle: boolean;
+  snapshot: number;
+  pageToken: string | null;
+}
+
+function checkListParams(
+  q: URLSearchParams,
+  syncText: string | null,
+  orderBy: string | null,
+  singleEvents: boolean,
+  updatedMin: number | undefined,
+  hasWindow: boolean,
+): void {
+  // Google's list: iCalUID, orderBy, privateExtendedProperty, q, sharedExtendedProperty, timeMin, timeMax, updatedMin.
+  const filtered = ['q', 'iCalUID', 'privateExtendedProperty', 'sharedExtendedProperty'].some(
+    name => q.has(name),
+  );
+  if (syncText && (hasWindow || updatedMin !== undefined || orderBy || filtered)) {
+    throw calInvalid(
+      'syncToken cannot be combined with iCalUID, orderBy, privateExtendedProperty, q, sharedExtendedProperty, timeMin, timeMax or updatedMin.',
+    );
+  }
+  if (orderBy && orderBy !== 'startTime' && orderBy !== 'updated')
+    throw calInvalid('Invalid value for: orderBy');
+  if (orderBy === 'startTime' && !singleEvents)
+    throw calInvalid(
+      'The requested ordering is not available for the particular query.',
+      'badRequest',
+    );
+}
+
+function listQuery(store: CalendarStore, cal: CalendarRecord, q: URLSearchParams): ListQuery {
   const settings = store.deps.settings();
   const syncText = q.get('syncToken');
   const singleEvents = bool(q, 'singleEvents') ?? false;
@@ -194,62 +293,117 @@ export function listEvents(store: CalendarStore, cal: CalendarRecord, q: URLSear
   const orderBy = q.get('orderBy');
   const max = size(q, 250, 2500);
   const updatedMin = instant(q, 'updatedMin');
-  const hasWindow = q.get('timeMin') || q.get('timeMax');
-  // Google's list: iCalUID, orderBy, privateExtendedProperty, q, sharedExtendedProperty, timeMin, timeMax, updatedMin.
-  const filtered = ['q', 'iCalUID', 'privateExtendedProperty', 'sharedExtendedProperty'].some(name => q.has(name));
-  if (syncText && (hasWindow || updatedMin !== undefined || orderBy || filtered)) {
-    throw calInvalid('syncToken cannot be combined with iCalUID, orderBy, privateExtendedProperty, q, sharedExtendedProperty, timeMin, timeMax or updatedMin.');
-  }
-  if (orderBy && orderBy !== 'startTime' && orderBy !== 'updated') throw calInvalid('Invalid value for: orderBy');
-  if (orderBy === 'startTime' && !singleEvents) throw calInvalid('The requested ordering is not available for the particular query.', 'badRequest');
+  const hasWindow = !!(q.get('timeMin') || q.get('timeMax'));
+  checkListParams(q, syncText, orderBy, singleEvents, updatedMin, hasWindow);
   const token = syncText ? checkSyncToken(store, syncText, 'e', cal) : undefined;
+  const win = token
+    ? {
+        fromMs: token.w?.[0] ?? store.now() - 30 * DAY_MS,
+        toMs: token.w?.[1] ?? store.now() + settings.expansionHorizonMs,
+      }
+    : eventWindow(store, q);
+  const wasSingle = token ? token.s === true : singleEvents;
   const pageToken = q.get('pageToken');
   const snapshot = snapshotOf(store, pageToken);
-  const win = token ? { fromMs: token.w?.[0] ?? store.now() - 30 * DAY_MS, toMs: token.w?.[1] ?? store.now() + settings.expansionHorizonMs } : eventWindow(store, q);
-  const wasSingle = token ? token.s === true : singleEvents;
-
-  const items: Keyed<GcalEvent>[] = [];
-  const add = (ev: GcalEvent, rec: EventRecord, view: GcalEvent = viewOf(ev)): void => {
-    const startMs = token ? rec.rev : rangeOf(ev, cal.timeZone).startMs;
-    items.push({ key: token ? `${pad(rec.rev, 12)}|${ev.id}` : orderKey(orderBy, singleEvents, ev, rec, startMs), item: view });
+  return {
+    token,
+    singleEvents,
+    showDeleted,
+    orderBy,
+    max,
+    updatedMin,
+    hasWindow,
+    win,
+    wasSingle,
+    snapshot,
+    pageToken,
   };
+}
 
+function collectRecord(
+  cal: CalendarRecord,
+  ev: GcalEvent,
+  rec: EventRecord,
+  opts: ListQuery,
+  add: (ev: GcalEvent, rec: EventRecord) => void,
+): void {
+  const cancelled = ev.status === 'cancelled';
+  const deletedSince = opts.updatedMin !== undefined && Date.parse(ev.updated) >= opts.updatedMin;
+  if (cancelled && !opts.showDeleted && !deletedSince) return;
+  if (opts.updatedMin !== undefined && Date.parse(ev.updated) < opts.updatedMin) return;
+  if (isMaster(ev)) {
+    if (cancelled) {
+      if (!opts.singleEvents) add(ev, rec);
+    } else if (opts.singleEvents) {
+      for (const instance of expandPlain(cal, rec, opts.win)) add(instance, rec);
+    } else if (!opts.hasWindow || hasOccurrenceIn(cal, rec, opts.win)) {
+      add(ev, rec);
+    }
+    return;
+  }
+  if (rec.stale && !opts.showDeleted && !deletedSince) return;
+  const r = rangeOf(ev, cal.timeZone);
+  if (!opts.hasWindow || overlaps(r.startMs, r.endMs, opts.win)) add(ev, rec);
+}
+
+function collectEvents(
+  store: CalendarStore,
+  cal: CalendarRecord,
+  opts: ListQuery,
+): Keyed<GcalEvent>[] {
+  const items: Keyed<GcalEvent>[] = [];
+  const add = (ev: GcalEvent, rec: EventRecord): void => {
+    const key = opts.token
+      ? `${pad(rec.rev, 12)}|${ev.id}`
+      : orderKey(opts.orderBy, opts.singleEvents, ev, rec, rangeOf(ev, cal.timeZone).startMs);
+    items.push({ key, item: viewOf(ev) });
+  };
   for (const rec of cal.events.values()) {
     const ev = rec.event;
-    const cancelled = ev.status === 'cancelled';
-    if (token) {
-      if (rec.rev <= token.r) continue;
-      if (wasSingle && isMaster(ev) && !cancelled) for (const instance of expandPlain(cal, rec, win)) add(instance, rec);
+    if (opts.token) {
+      if (rec.rev <= opts.token.r) continue;
+      if (opts.wasSingle && isMaster(ev) && ev.status !== 'cancelled')
+        for (const instance of expandPlain(cal, rec, opts.win)) add(instance, rec);
       else add(ev, rec);
       continue;
     }
-    const deletedSince = updatedMin !== undefined && Date.parse(ev.updated) >= updatedMin;
-    if (cancelled && !showDeleted && !deletedSince) continue;
-    if (updatedMin !== undefined && Date.parse(ev.updated) < updatedMin) continue;
-    if (isMaster(ev)) {
-      if (cancelled) {
-        if (!singleEvents) add(ev, rec);
-      } else if (singleEvents) {
-        for (const instance of expandPlain(cal, rec, win)) add(instance, rec);
-      } else if (!hasWindow || hasOccurrenceIn(cal, rec, win)) {
-        add(ev, rec);
-      }
-      continue;
-    }
-    if (rec.stale && !showDeleted && !deletedSince) continue;
-    const r = rangeOf(ev, cal.timeZone);
-    if (!hasWindow || overlaps(r.startMs, r.endMs, win)) add(ev, rec);
+    collectRecord(cal, ev, rec, opts, add);
   }
+  return items;
+}
 
-  const { page, nextPageToken } = pageOf(items, pageToken, max, snapshot);
+export function listEvents(
+  store: CalendarStore,
+  cal: CalendarRecord,
+  q: URLSearchParams,
+): Record<string, unknown> {
+  const opts = listQuery(store, cal, q);
+  const items = collectEvents(store, cal, opts);
+  const { page, nextPageToken } = pageOf(items, opts.pageToken, opts.max, opts.snapshot);
   const nextSyncToken = encode({
-    k: 'e', c: cal.id, r: snapshot, a: store.now(), e: store.epochFor(`events:${cal.id}`), u: store.owner.sub, s: wasSingle,
-    ...(token?.w ? { w: token.w } : hasWindow && singleEvents ? { w: [win.fromMs ?? null, win.toMs] } : {}),
+    k: 'e',
+    c: cal.id,
+    r: opts.snapshot,
+    a: store.now(),
+    e: store.epochFor(`events:${cal.id}`),
+    u: store.owner.sub,
+    s: opts.wasSingle,
+    ...(opts.token?.w
+      ? { w: opts.token.w }
+      : opts.hasWindow && opts.singleEvents
+        ? { w: [opts.win.fromMs ?? null, opts.win.toMs] }
+        : {}),
   } satisfies TokenData);
   return eventsEnvelope(store, cal, page, nextPageToken, nextPageToken ? undefined : nextSyncToken);
 }
 
-function eventsEnvelope(store: CalendarStore, cal: CalendarRecord, items: GcalEvent[], nextPageToken?: string, nextSyncToken?: string): Record<string, unknown> {
+function eventsEnvelope(
+  store: CalendarStore,
+  cal: CalendarRecord,
+  items: GcalEvent[],
+  nextPageToken?: string,
+  nextSyncToken?: string,
+): Record<string, unknown> {
   return {
     kind: 'calendar#events',
     etag: `"e${store.rev}"`,
@@ -265,7 +419,12 @@ function eventsEnvelope(store: CalendarStore, cal: CalendarRecord, items: GcalEv
   };
 }
 
-export function listInstances(store: CalendarStore, cal: CalendarRecord, eventId: string, q: URLSearchParams): Record<string, unknown> {
+export function listInstances(
+  store: CalendarStore,
+  cal: CalendarRecord,
+  eventId: string,
+  q: URLSearchParams,
+): Record<string, unknown> {
   const located = locate(cal, eventId);
   const master = located.record;
   if (!master) throw calNotFound();
@@ -284,7 +443,12 @@ export function listInstances(store: CalendarStore, cal: CalendarRecord, eventId
   for (const ev of expandPlain(cal, master, win)) add(ev);
   for (const rec of cal.events.values()) {
     const ev = rec.event;
-    if (ev.recurringEventId !== master.event.id || rec.stale || (ev.status === 'cancelled' && !showDeleted)) continue;
+    if (
+      ev.recurringEventId !== master.event.id ||
+      rec.stale ||
+      (ev.status === 'cancelled' && !showDeleted)
+    )
+      continue;
     const r = rangeOf(ev, cal.timeZone);
     if (!hasWindow || overlaps(r.startMs, r.endMs, win)) add(ev);
   }

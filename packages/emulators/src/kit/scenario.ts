@@ -68,11 +68,15 @@ export interface RunOptions {
   realTimeBudgetMs?: number;
 }
 
-export function defineScenario(scenario: Scenario): Scenario { return scenario; }
+export function defineScenario(scenario: Scenario): Scenario {
+  return scenario;
+}
 
 /** Raised by `ctx.step` after it has recorded the failure, so the runner doesn't report it twice. */
 class ScenarioAbort extends Error {
-  constructor() { super('scenario aborted after a failed invariant'); }
+  constructor() {
+    super('scenario aborted after a failed invariant');
+  }
 }
 
 function describeError(error: unknown): string {
@@ -85,9 +89,13 @@ async function realTurns(turns = 5): Promise<void> {
   for (let i = 0; i < turns; i++) await new Promise<void>(resolve => setImmediate(resolve));
 }
 
-export async function runScenarios(list: Scenario[], options: RunOptions = {}): Promise<ScenarioResult[]> {
+export async function runScenarios(
+  list: Scenario[],
+  options: RunOptions = {},
+): Promise<ScenarioResult[]> {
   const results: ScenarioResult[] = [];
-  for (const scenario of list) results.push(await runScenario(scenario, options.realTimeBudgetMs ?? 10_000));
+  for (const scenario of list)
+    results.push(await runScenario(scenario, options.realTimeBudgetMs ?? 10_000));
   return results;
 }
 
@@ -115,8 +123,12 @@ async function runScenario(scenario: Scenario, realTimeBudgetMs: number): Promis
     for (const invariant of scenario.invariants) {
       // Step invariants also run at the end; end invariants never run mid-story.
       if (which === 'step' && invariant.every !== 'step') continue;
-      try { await invariant.check(ctx); }
-      catch (error) { ok = false; failures.push(`invariant '${invariant.name}': ${describeError(error)}`); }
+      try {
+        await invariant.check(ctx);
+      } catch (error) {
+        ok = false;
+        failures.push(`invariant '${invariant.name}': ${describeError(error)}`);
+      }
     }
     return ok;
   };
@@ -127,8 +139,12 @@ async function runScenario(scenario: Scenario, realTimeBudgetMs: number): Promis
     faults: createFaultInjector(),
     kill: createKillSwitch(),
     subjects,
-    get requestLog() { return requestLog; },
-    set requestLog(fn) { requestLog = fn; },
+    get requestLog() {
+      return requestLog;
+    },
+    set requestLog(fn) {
+      requestLog = fn;
+    },
     subject<T>(key: string): T {
       if (!(key in subjects)) throw new Error(`scenario subject '${key}' was not set up`);
       return subjects[key] as T;
@@ -155,11 +171,28 @@ async function runScenario(scenario: Scenario, realTimeBudgetMs: number): Promis
   let bodyError: unknown;
   const outcome = await new Promise<Outcome>(resolve => {
     let settled = false;
-    const finish = (value: Outcome) => { if (!settled) { settled = true; resolve(value); } };
-    body.then(() => finish('done'), error => { bodyError = error; finish('done'); });
+    const finish = (value: Outcome) => {
+      if (!settled) {
+        settled = true;
+        resolve(value);
+      }
+    };
+    body.then(
+      () => finish('done'),
+      error => {
+        bodyError = error;
+        finish('done');
+      },
+    );
     // Clock-time limit. When it fires, give work that the jump woke a chance to finish first:
     // a scenario that drains the clock with runUntilIdle would otherwise trip its own watchdog.
-    clock.sleep(scenario.timeoutMs, abort.signal).then(async () => { await realTurns(); finish('timeout'); }, () => {});
+    clock.sleep(scenario.timeoutMs, abort.signal).then(
+      async () => {
+        await realTurns();
+        finish('timeout');
+      },
+      () => {},
+    );
     realTimer = setTimeout(() => finish('budget'), realTimeBudgetMs);
   });
   if (realTimer) clearTimeout(realTimer);
@@ -169,9 +202,11 @@ async function runScenario(scenario: Scenario, realTimeBudgetMs: number): Promis
     // Stop a runaway body from keeping the clock moving, and keep its late rejection quiet.
     clock.auto(false);
     body.catch(() => {});
-    failures.push(outcome === 'timeout'
-      ? `timed out after ${scenario.timeoutMs} ms of clock time (during ${phase})`
-      : `exceeded the real-time budget of ${realTimeBudgetMs} ms (during ${phase})`);
+    failures.push(
+      outcome === 'timeout'
+        ? `timed out after ${scenario.timeoutMs} ms of clock time (during ${phase})`
+        : `exceeded the real-time budget of ${realTimeBudgetMs} ms (during ${phase})`,
+    );
   } else {
     if (bodyError !== undefined && !(bodyError instanceof ScenarioAbort)) {
       failures.push(`${phase} threw: ${describeError(bodyError)}`);
@@ -180,8 +215,11 @@ async function runScenario(scenario: Scenario, realTimeBudgetMs: number): Promis
   }
 
   if (scenario.teardown) {
-    try { await scenario.teardown(ctx); }
-    catch (error) { failures.push(`teardown threw: ${describeError(error)}`); }
+    try {
+      await scenario.teardown(ctx);
+    } catch (error) {
+      failures.push(`teardown threw: ${describeError(error)}`);
+    }
   }
 
   const log = requestLog();
@@ -202,7 +240,8 @@ async function runScenario(scenario: Scenario, realTimeBudgetMs: number): Promis
 // ---------------------------------------------------------------------------------------------
 
 type LogSource = readonly RequestLogEntry[] | (() => readonly RequestLogEntry[]);
-const resolveLog = (log: LogSource): readonly RequestLogEntry[] => (typeof log === 'function' ? log() : log);
+const resolveLog = (log: LogSource): readonly RequestLogEntry[] =>
+  typeof log === 'function' ? log() : log;
 
 export interface WindowPeak {
   units: number;
@@ -217,7 +256,11 @@ export interface WindowPeak {
  * `windowMs` apart are not in the same window. Windows are measured per account because quotas
  * are per user; pass `perAccount: false` to pool every request together.
  */
-export function peakWindow(log: readonly RequestLogEntry[], windowMs = 60_000, perAccount = true): WindowPeak {
+export function peakWindow(
+  log: readonly RequestLogEntry[],
+  windowMs = 60_000,
+  perAccount = true,
+): WindowPeak {
   const groups = new Map<string | undefined, RequestLogEntry[]>();
   for (const entry of log) {
     const key = perAccount ? entry.account : undefined;
@@ -234,8 +277,12 @@ export function peakWindow(log: readonly RequestLogEntry[], windowMs = 60_000, p
     for (let last = 0; last < sorted.length; last++) {
       sum += sorted[last].units;
       // Drop requests too old to share a window with the newest one.
-      while (sorted[last].at - sorted[first].at >= windowMs) { sum -= sorted[first].units; first++; }
-      if (sum > best.units) best = { units: sum, from: sorted[first].at, requests: last - first + 1, account };
+      while (sorted[last].at - sorted[first].at >= windowMs) {
+        sum -= sorted[first].units;
+        first++;
+      }
+      if (sum > best.units)
+        best = { units: sum, from: sorted[first].at, requests: last - first + 1, account };
     }
   }
   return best;
@@ -246,12 +293,18 @@ export function peakUnits(log: readonly RequestLogEntry[], windowMs = 60_000): n
 }
 
 /** Fails if any sliding window of `windowMs` charged more than `limit` units. */
-export function unitsNeverAbove(log: LogSource, limit: number, windowMs = 60_000, perAccount = true): void {
+export function unitsNeverAbove(
+  log: LogSource,
+  limit: number,
+  windowMs = 60_000,
+  perAccount = true,
+): void {
   const peak = peakWindow(resolveLog(log), windowMs, perAccount);
   if (peak.units > limit) {
     const who = peak.account ? ` for account ${peak.account}` : '';
     throw new Error(
-      `${peak.units} units charged in ${windowMs} ms${who} (${peak.requests} requests from t=${peak.from}), limit is ${limit}`);
+      `${peak.units} units charged in ${windowMs} ms${who} (${peak.requests} requests from t=${peak.from}), limit is ${limit}`,
+    );
   }
 }
 
@@ -262,7 +315,9 @@ export function maxInFlight(log: LogSource, limit: number): void {
     if (entry.inFlight > limit && (!worst || entry.inFlight > worst.inFlight)) worst = entry;
   }
   if (worst) {
-    throw new Error(`${worst.inFlight} requests in flight at once (request #${worst.seq}, ${worst.apiMethod}), limit is ${limit}`);
+    throw new Error(
+      `${worst.inFlight} requests in flight at once (request #${worst.seq}, ${worst.apiMethod}), limit is ${limit}`,
+    );
   }
 }
 
@@ -270,8 +325,12 @@ export function maxInFlight(log: LogSource, limit: number): void {
 
 /** Turn Maps and Sets into plain data so they can be compared and printed. */
 function toPlain(value: unknown): unknown {
-  if (value instanceof Map) return Object.fromEntries([...value].map(([k, v]) => [String(k), toPlain(v)]));
-  if (value instanceof Set) return [...value].map(toPlain).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  if (value instanceof Map)
+    return Object.fromEntries([...value].map(([k, v]) => [String(k), toPlain(v)]));
+  if (value instanceof Set)
+    return [...value]
+      .map(toPlain)
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   if (Array.isArray(value)) return value.map(toPlain);
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toPlain(v)]));
@@ -293,7 +352,11 @@ export function diffSnapshots(local: unknown, server: unknown): string[] {
     if (bothObjects && Array.isArray(a) === Array.isArray(b)) {
       const keys = new Set([...Object.keys(a as object), ...Object.keys(b as object)]);
       for (const key of keys) {
-        walk((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key], path ? `${path}.${key}` : key);
+        walk(
+          (a as Record<string, unknown>)[key],
+          (b as Record<string, unknown>)[key],
+          path ? `${path}.${key}` : key,
+        );
       }
       return;
     }
@@ -316,6 +379,11 @@ export async function dbMatchesServer<T>(
   const differences = compare(await getLocal(), await getServer());
   if (!differences.length) return;
   const shown = differences.slice(0, 20);
-  const more = differences.length > shown.length ? `\n  ... and ${differences.length - shown.length} more` : '';
-  throw new Error(`local database and server differ in ${differences.length} place(s):\n  ${shown.join('\n  ')}${more}`);
+  const more =
+    differences.length > shown.length
+      ? `\n  ... and ${differences.length - shown.length} more`
+      : '';
+  throw new Error(
+    `local database and server differ in ${differences.length} place(s):\n  ${shown.join('\n  ')}${more}`,
+  );
 }

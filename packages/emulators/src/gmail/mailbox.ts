@@ -15,12 +15,30 @@ import {
   type GmailPart,
   type MimeHeader,
 } from './mime';
-import { matchesQuery, mentionsSpamTrash, normalizeLabelName, parseQuery, type QueryTarget } from './query';
+import {
+  matchesQuery,
+  mentionsSpamTrash,
+  normalizeLabelName,
+  parseQuery,
+  type QueryTarget,
+} from './query';
 import { Random } from './rng';
 
 const SYSTEM_LABEL_IDS = [
-  'INBOX', 'SENT', 'DRAFT', 'TRASH', 'SPAM', 'UNREAD', 'STARRED', 'IMPORTANT', 'CHAT',
-  'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL', 'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS',
+  'INBOX',
+  'SENT',
+  'DRAFT',
+  'TRASH',
+  'SPAM',
+  'UNREAD',
+  'STARRED',
+  'IMPORTANT',
+  'CHAT',
+  'CATEGORY_PERSONAL',
+  'CATEGORY_SOCIAL',
+  'CATEGORY_PROMOTIONS',
+  'CATEGORY_UPDATES',
+  'CATEGORY_FORUMS',
 ];
 
 export interface MailLabel {
@@ -117,7 +135,14 @@ export interface MailboxOptions {
 }
 
 /** Names Gmail keeps for itself; labels.create refuses them in any letter case [observed]. */
-const RESERVED_LABEL_NAMES = new Set([...SYSTEM_LABEL_IDS.map(id => id.toLowerCase()), 'drafts', 'chats', 'all mail', 'scheduled', 'snoozed']);
+const RESERVED_LABEL_NAMES = new Set([
+  ...SYSTEM_LABEL_IDS.map(id => id.toLowerCase()),
+  'drafts',
+  'chats',
+  'all mail',
+  'scheduled',
+  'snoozed',
+]);
 
 /** How an explicit threadId is honoured. */
 type ThreadRule = 'api' | 'fixture';
@@ -136,7 +161,11 @@ interface InsertOptions {
 }
 
 const stripAngle = (id: string): string => id.trim().replace(/^<|>$/g, '');
-const baseSubject = (subject: string): string => subject.toLowerCase().replace(/^(\s*(re|fwd?|fw)\s*:\s*)+/, '').trim();
+const baseSubject = (subject: string): string =>
+  subject
+    .toLowerCase()
+    .replace(/^(\s*(re|fwd?|fw)\s*:\s*)+/, '')
+    .trim();
 
 export class Mailbox {
   readonly emailAddress: string;
@@ -157,11 +186,30 @@ export class Mailbox {
     this.clock = options.clock;
     this.emailAddress = options.emailAddress;
     this.random = new Random(options.seed);
-    this.history = new HistoryLog(options.clock, this.random, options.historyRetentionMs ?? 7 * 86400_000);
+    this.history = new HistoryLog(
+      options.clock,
+      this.random,
+      options.historyRetentionMs ?? 7 * 86400_000,
+    );
     for (const id of SYSTEM_LABEL_IDS) {
-      this.labels.set(id, { id, name: id, type: 'system', messageListVisibility: 'show', labelListVisibility: id === 'CHAT' ? 'labelHide' : 'labelShow' });
+      this.labels.set(id, {
+        id,
+        name: id,
+        type: 'system',
+        messageListVisibility: 'show',
+        labelListVisibility: id === 'CHAT' ? 'labelHide' : 'labelShow',
+      });
     }
-    this.aliases = [{ sendAsEmail: options.emailAddress, displayName: '', isDefault: true, isPrimary: true, treatAsAlias: false, verificationStatus: 'accepted' }];
+    this.aliases = [
+      {
+        sendAsEmail: options.emailAddress,
+        displayName: '',
+        isDefault: true,
+        isPrimary: true,
+        treatAsAlias: false,
+        verificationStatus: 'accepted',
+      },
+    ];
   }
 
   // ---------- labels ----------
@@ -177,7 +225,12 @@ export class Mailbox {
   }
 
   /** Counts for labels.get, in Gmail's four fields. */
-  labelCounts(id: string): { messagesTotal: number; messagesUnread: number; threadsTotal: number; threadsUnread: number } {
+  labelCounts(id: string): {
+    messagesTotal: number;
+    messagesUnread: number;
+    threadsTotal: number;
+    threadsUnread: number;
+  } {
     const inLabel = [...this.messages.values()].filter(m => m.labelIds.includes(id));
     const unread = inLabel.filter(m => m.labelIds.includes('UNREAD'));
     return {
@@ -188,9 +241,13 @@ export class Mailbox {
     };
   }
 
-  createLabel(name: string, visibility: { labelListVisibility?: string; messageListVisibility?: string } = {}): MailLabel {
+  createLabel(
+    name: string,
+    visibility: { labelListVisibility?: string; messageListVisibility?: string } = {},
+  ): MailLabel {
     const clean = name.trim();
-    if (!clean || RESERVED_LABEL_NAMES.has(clean.toLowerCase())) throw badRequest('Invalid label name');
+    if (!clean || RESERVED_LABEL_NAMES.has(clean.toLowerCase()))
+      throw badRequest('Invalid label name');
     if ([...this.labels.values()].some(l => l.name.toLowerCase() === clean.toLowerCase())) {
       throw new ApiError(409, 'duplicate', 'Label name exists or conflicts', {});
     }
@@ -216,8 +273,18 @@ export class Mailbox {
 
   // ---------- reading ----------
 
-  profile(): { emailAddress: string; messagesTotal: number; threadsTotal: number; historyId: string } {
-    return { emailAddress: this.emailAddress, messagesTotal: this.messages.size, threadsTotal: this.threads.size, historyId: String(this.history.currentId) };
+  profile(): {
+    emailAddress: string;
+    messagesTotal: number;
+    threadsTotal: number;
+    historyId: string;
+  } {
+    return {
+      emailAddress: this.emailAddress,
+      messagesTotal: this.messages.size,
+      threadsTotal: this.threads.size,
+      historyId: String(this.history.currentId),
+    };
   }
 
   get messageCount(): number {
@@ -255,8 +322,16 @@ export class Mailbox {
 
   private view(m: StoredMessage): MessageView {
     return {
-      id: m.id, threadId: m.threadId, labelIds: [...m.labelIds], internalDate: m.internalDate, historyId: String(m.historyId),
-      subject: m.subject, from: m.from, to: m.toRaw, messageId: m.meta.messageId, snippet: m.snippet,
+      id: m.id,
+      threadId: m.threadId,
+      labelIds: [...m.labelIds],
+      internalDate: m.internalDate,
+      historyId: String(m.historyId),
+      subject: m.subject,
+      from: m.from,
+      to: m.toRaw,
+      messageId: m.meta.messageId,
+      snippet: m.snippet,
     };
   }
 
@@ -269,7 +344,9 @@ export class Mailbox {
   private sortedThread(threadId: string): StoredMessage[] {
     const ids = this.threads.get(threadId);
     if (!ids) throw notFound();
-    return ids.map(id => this.messages.get(id)!).sort((a, b) => a.internalDate - b.internalDate || a.historyId - b.historyId);
+    return ids
+      .map(id => this.messages.get(id)!)
+      .sort((a, b) => a.internalDate - b.internalDate || a.historyId - b.historyId);
   }
 
   private target(m: StoredMessage): QueryTarget {
@@ -281,10 +358,18 @@ export class Mailbox {
   }
 
   /** Messages matching labelIds (all of them) and a Gmail query, newest first. */
-  select(options: { labelIds?: string[]; q?: string; includeSpamTrash?: boolean }): (Keyed & { id: string; threadId: string })[] {
+  select(options: {
+    labelIds?: string[];
+    q?: string;
+    includeSpamTrash?: boolean;
+  }): (Keyed & { id: string; threadId: string })[] {
     const parsed = parseQuery(options.q ?? '');
     const wanted = options.labelIds ?? [];
-    const showJunk = options.includeSpamTrash || wanted.includes('TRASH') || wanted.includes('SPAM') || mentionsSpamTrash(parsed);
+    const showJunk =
+      options.includeSpamTrash ||
+      wanted.includes('TRASH') ||
+      wanted.includes('SPAM') ||
+      mentionsSpamTrash(parsed);
     const now = this.clock.now();
     return [...this.messages.values()]
       .filter(m => showJunk || !(m.labelIds.includes('TRASH') || m.labelIds.includes('SPAM')))
@@ -295,13 +380,23 @@ export class Mailbox {
   }
 
   /** Threads with at least one matching message, ordered by their newest matching message. */
-  selectThreads(options: { labelIds?: string[]; q?: string; includeSpamTrash?: boolean }): ThreadSummary[] {
+  selectThreads(options: {
+    labelIds?: string[];
+    q?: string;
+    includeSpamTrash?: boolean;
+  }): ThreadSummary[] {
     const newest = new Map<string, Keyed & { id: string }>();
-    for (const hit of this.select(options)) if (!newest.has(hit.threadId)) newest.set(hit.threadId, hit);
+    for (const hit of this.select(options))
+      if (!newest.has(hit.threadId)) newest.set(hit.threadId, hit);
     return [...newest.entries()]
       .map(([threadId, hit]) => {
         const stored = this.messages.get(hit.id)!;
-        return { id: threadId, date: hit.date, snippet: stored.snippet, historyId: String(this.threadHistoryId(threadId)) };
+        return {
+          id: threadId,
+          date: hit.date,
+          snippet: stored.snippet,
+          historyId: String(this.threadHistoryId(threadId)),
+        };
       })
       .sort(compareKeyed);
   }
@@ -324,19 +419,38 @@ export class Mailbox {
     };
   }
 
-  messageResource(id: string, format: MessageFormat, metadataHeaders: string[] = []): Record<string, unknown> {
+  messageResource(
+    id: string,
+    format: MessageFormat,
+    metadataHeaders: string[] = [],
+  ): Record<string, unknown> {
     return this.resourceOf(this.require(id), format, metadataHeaders);
   }
 
-  private resourceOf(m: StoredMessage, format: MessageFormat, metadataHeaders: string[]): Record<string, unknown> {
+  private resourceOf(
+    m: StoredMessage,
+    format: MessageFormat,
+    metadataHeaders: string[],
+  ): Record<string, unknown> {
     const base = this.baseResource(m);
     switch (format) {
       case 'minimal':
         return base;
       case 'metadata': {
         const wanted = new Set(metadataHeaders.map(h => h.toLowerCase()));
-        const headers = m.payload.headers.filter(h => !wanted.size || wanted.has(h.name.toLowerCase()));
-        return { ...base, payload: { partId: '', mimeType: m.payload.mimeType, filename: '', headers: headers.map(h => ({ ...h })), body: { size: 0 } } };
+        const headers = m.payload.headers.filter(
+          h => !wanted.size || wanted.has(h.name.toLowerCase()),
+        );
+        return {
+          ...base,
+          payload: {
+            partId: '',
+            mimeType: m.payload.mimeType,
+            filename: '',
+            headers: headers.map(h => ({ ...h })),
+            body: { size: 0 },
+          },
+        };
       }
       case 'full':
         return { ...base, payload: structuredClone(m.payload) };
@@ -345,7 +459,11 @@ export class Mailbox {
     }
   }
 
-  threadResource(threadId: string, format: Exclude<MessageFormat, 'raw'>, metadataHeaders: string[] = []): Record<string, unknown> {
+  threadResource(
+    threadId: string,
+    format: Exclude<MessageFormat, 'raw'>,
+    metadataHeaders: string[] = [],
+  ): Record<string, unknown> {
     const messages = this.sortedThread(threadId);
     return {
       id: threadId,
@@ -391,10 +509,13 @@ export class Mailbox {
     const headers = payload.headers;
     const subject = headerValue(headers, 'subject') ?? '';
     const from = headerValue(headers, 'from') ?? '';
-    const toRaw = [headerValue(headers, 'to'), headerValue(headers, 'cc')].filter(Boolean).join(', ');
+    const toRaw = [headerValue(headers, 'to'), headerValue(headers, 'cc')]
+      .filter(Boolean)
+      .join(', ');
     const messageId = stripAngle(headerValue(headers, 'message-id') ?? '');
     const id = this.newId();
-    const threadId = this.resolveThread(headers, options.threadId, options.threadRule ?? 'fixture') ?? id;
+    const threadId =
+      this.resolveThread(headers, options.threadId, options.threadRule ?? 'fixture') ?? id;
     const text = bodyText(tree);
     const message: StoredMessage = {
       id,
@@ -415,7 +536,9 @@ export class Mailbox {
         subject: subject.toLowerCase(),
         messageId,
         internalDate: options.internalDate ?? this.clock.now(),
-        hasAttachment: collectLeaves(tree).some(l => l.filename !== '' || l.disposition === 'attachment'),
+        hasAttachment: collectLeaves(tree).some(
+          l => l.filename !== '' || l.disposition === 'attachment',
+        ),
         searchText: `${subject}\n${text}`.toLowerCase(),
       },
     };
@@ -435,14 +558,24 @@ export class Mailbox {
    * an explicit id also needs a matching subject (Re:/Fwd: ignored); the References requirement in
    * the sending guide is not enforced, because Gmail is widely seen to thread on id plus subject.
    */
-  private resolveThread(headers: MimeHeader[], explicit: string | undefined, rule: ThreadRule): string | undefined {
+  private resolveThread(
+    headers: MimeHeader[],
+    explicit: string | undefined,
+    rule: ThreadRule,
+  ): string | undefined {
     const subject = baseSubject(headerValue(headers, 'subject') ?? '');
     if (explicit) {
       if (!this.threads.has(explicit)) throw notFound();
       if (rule === 'fixture') return explicit;
-      return this.sortedThread(explicit).some(m => baseSubject(m.subject) === subject) ? explicit : undefined;
+      return this.sortedThread(explicit).some(m => baseSubject(m.subject) === subject)
+        ? explicit
+        : undefined;
     }
-    const refs = `${headerValue(headers, 'in-reply-to') ?? ''} ${headerValue(headers, 'references') ?? ''}`.split(/\s+/).map(stripAngle).filter(Boolean);
+    const refs =
+      `${headerValue(headers, 'in-reply-to') ?? ''} ${headerValue(headers, 'references') ?? ''}`
+        .split(/\s+/)
+        .map(stripAngle)
+        .filter(Boolean);
     for (const ref of refs) {
       const match = this.messages.get(this.byMessageId.get(ref) ?? '');
       if (match && baseSubject(match.subject) === subject) return match.threadId;
@@ -450,7 +583,8 @@ export class Mailbox {
     return undefined;
   }
 
-  private nextBoundary = (): string => `=_emu_${(this.boundaries++).toString(36)}_${this.random.hex(6)}`;
+  private nextBoundary = (): string =>
+    `=_emu_${(this.boundaries++).toString(36)}_${this.random.hex(6)}`;
 
   /** Builds and inserts a message the way another Gmail client would have delivered it. */
   addMessage(spec: MessageSpec): MessageView {
@@ -462,7 +596,11 @@ export class Mailbox {
       ['To', (spec.to ?? [this.emailAddress]).join(', ')],
     ];
     if (spec.cc?.length) headers.push(['Cc', spec.cc.join(', ')]);
-    headers.push(['Subject', spec.subject ?? (parent ? `Re: ${parent.subject.replace(/^(re:\s*)+/i, '')}` : '(no subject)')]);
+    headers.push([
+      'Subject',
+      spec.subject ??
+        (parent ? `Re: ${parent.subject.replace(/^(re:\s*)+/i, '')}` : '(no subject)'),
+    ]);
     headers.push(['Date', new Date(internalDate).toUTCString()]);
     headers.push(['Message-ID', `<${messageId}>`]);
     if (parent) {
@@ -470,7 +608,10 @@ export class Mailbox {
       headers.push(['References', `<${parent.meta.messageId}>`]);
     }
     for (const [name, value] of Object.entries(spec.headers ?? {})) headers.push([name, value]);
-    const raw = buildRfc822({ headers, text: spec.text, html: spec.html, attachments: spec.attachments }, this.nextBoundary);
+    const raw = buildRfc822(
+      { headers, text: spec.text, html: spec.html, attachments: spec.attachments },
+      this.nextBoundary,
+    );
     return this.addRaw(raw, {
       labelIds: spec.labelIds ?? ['INBOX'],
       threadId: spec.threadId ?? parent?.threadId,
@@ -486,7 +627,11 @@ export class Mailbox {
   }
 
   /** Adds and removes labels on messages, writing one history record per kind of change per message. */
-  private applyLabels(targets: StoredMessage[], add: readonly string[], remove: readonly string[]): number {
+  private applyLabels(
+    targets: StoredMessage[],
+    add: readonly string[],
+    remove: readonly string[],
+  ): number {
     let changed = 0;
     for (const m of targets) {
       const added = add.filter(l => !m.labelIds.includes(l));
@@ -495,8 +640,20 @@ export class Mailbox {
       changed++;
       m.labelIds = [...m.labelIds.filter(l => !removed.includes(l)), ...added];
       const ref = { id: m.id, threadId: m.threadId };
-      if (added.length) m.historyId = Number(this.history.append({ messages: [ref], labelsAdded: [{ message: this.historyMessage(m), labelIds: added }] }).id);
-      if (removed.length) m.historyId = Number(this.history.append({ messages: [ref], labelsRemoved: [{ message: this.historyMessage(m), labelIds: removed }] }).id);
+      if (added.length)
+        m.historyId = Number(
+          this.history.append({
+            messages: [ref],
+            labelsAdded: [{ message: this.historyMessage(m), labelIds: added }],
+          }).id,
+        );
+      if (removed.length)
+        m.historyId = Number(
+          this.history.append({
+            messages: [ref],
+            labelsRemoved: [{ message: this.historyMessage(m), labelIds: removed }],
+          }).id,
+        );
     }
     return changed;
   }
@@ -507,15 +664,23 @@ export class Mailbox {
     if (siblings.length) this.threads.set(m.threadId, siblings);
     else this.threads.delete(m.threadId);
     if (this.byMessageId.get(m.meta.messageId) === m.id) this.byMessageId.delete(m.meta.messageId);
-    for (const [draftId, messageId] of this.drafts) if (messageId === m.id) this.drafts.delete(draftId);
-    this.history.append({ messages: [{ id: m.id, threadId: m.threadId }], messagesDeleted: [{ message: this.historyMessage(m) }] });
+    for (const [draftId, messageId] of this.drafts)
+      if (messageId === m.id) this.drafts.delete(draftId);
+    this.history.append({
+      messages: [{ id: m.id, threadId: m.threadId }],
+      messagesDeleted: [{ message: this.historyMessage(m) }],
+    });
   }
 
   // ---------- changes (API and "made elsewhere" helpers) ----------
 
   modifyMessages(ids: string[], add: string[], remove: string[]): void {
     this.requireLabels([...add, ...remove]);
-    this.applyLabels(ids.map(id => this.require(id)), add, remove);
+    this.applyLabels(
+      ids.map(id => this.require(id)),
+      add,
+      remove,
+    );
   }
 
   modifyThread(threadId: string, add: string[], remove: string[]): void {
@@ -524,7 +689,11 @@ export class Mailbox {
   }
 
   /** Changes labels on messages and/or whole threads, as the Gmail web app or a phone would. Returns messages changed. */
-  relabel(target: { messageIds?: string[]; threadIds?: string[] }, add: string[] = [], remove: string[] = []): number {
+  relabel(
+    target: { messageIds?: string[]; threadIds?: string[] },
+    add: string[] = [],
+    remove: string[] = [],
+  ): number {
     this.requireLabels([...add, ...remove]);
     const messages = [
       ...(target.messageIds ?? []).map(id => this.require(id)),
@@ -535,7 +704,9 @@ export class Mailbox {
 
   /** Removes INBOX from the `count` newest inbox threads. Returns their ids. */
   archiveThreads(count: number): string[] {
-    const ids = this.selectThreads({ labelIds: ['INBOX'] }).slice(0, count).map(t => t.id);
+    const ids = this.selectThreads({ labelIds: ['INBOX'] })
+      .slice(0, count)
+      .map(t => t.id);
     this.relabel({ threadIds: ids }, [], ['INBOX']);
     return ids;
   }
@@ -589,28 +760,46 @@ export class Mailbox {
   sendRaw(raw: Buffer, threadId?: string): MessageView {
     const full = this.outgoing(raw);
     const toSelf = this.recipientsOf(full).includes(this.emailAddress.toLowerCase());
-    return this.addRaw(full, { labelIds: toSelf ? ['SENT', 'INBOX', 'UNREAD'] : ['SENT'], threadId, threadRule: 'api' });
+    return this.addRaw(full, {
+      labelIds: toSelf ? ['SENT', 'INBOX', 'UNREAD'] : ['SENT'],
+      threadId,
+      threadRule: 'api',
+    });
   }
 
   /** messages.insert: no labels unless asked, like an IMAP APPEND. */
-  insertRaw(raw: Buffer, labelIds: string[], threadId: string | undefined, dateSource: 'receivedTime' | 'dateHeader'): MessageView {
+  insertRaw(
+    raw: Buffer,
+    labelIds: string[],
+    threadId: string | undefined,
+    dateSource: 'receivedTime' | 'dateHeader',
+  ): MessageView {
     const dateHeader = headerValue(parseRfc822(raw).headers, 'date');
     const parsedDate = dateHeader ? Date.parse(dateHeader) : NaN;
-    const internalDate = dateSource === 'dateHeader' && Number.isFinite(parsedDate) ? parsedDate : this.clock.now();
+    const internalDate =
+      dateSource === 'dateHeader' && Number.isFinite(parsedDate) ? parsedDate : this.clock.now();
     return this.addRaw(raw, { labelIds, threadId, internalDate, threadRule: 'api' });
   }
 
   // ---------- drafts ----------
 
   createDraft(raw: Buffer, threadId?: string): { id: string; message: MessageView } {
-    const message = this.addRaw(this.outgoing(raw), { labelIds: ['DRAFT'], threadId, threadRule: 'api' });
+    const message = this.addRaw(this.outgoing(raw), {
+      labelIds: ['DRAFT'],
+      threadId,
+      threadRule: 'api',
+    });
     const id = `r${this.random.int(1, 9)}${this.random.hex(18)}`;
     this.drafts.set(id, message.id);
     return { id, message };
   }
 
   /** Replaces the whole message: the draft id stays, the message id changes. */
-  updateDraft(draftId: string, raw: Buffer, threadId?: string): { id: string; message: MessageView } {
+  updateDraft(
+    draftId: string,
+    raw: Buffer,
+    threadId?: string,
+  ): { id: string; message: MessageView } {
     const old = this.require(this.draftMessageId(draftId));
     // Add the replacement first so the thread never empties out and keeps its id.
     // Only a threadId the client sends is held to the subject rule; otherwise the draft keeps its thread.
@@ -643,12 +832,23 @@ export class Mailbox {
   }
 
   listDrafts(): { id: string; message: MessageView }[] {
-    return [...this.drafts.entries()].map(([id, messageId]) => ({ id, message: this.view(this.require(messageId)) }));
+    return [...this.drafts.entries()].map(([id, messageId]) => ({
+      id,
+      message: this.view(this.require(messageId)),
+    }));
   }
 
   /** A draft started on a phone or in Gmail web. Returns the ids a client should later see. */
-  createDraftElsewhere(spec: MessageSpec): { draftId: string; messageId: string; threadId: string } {
-    const message = this.addMessage({ ...spec, labelIds: ['DRAFT'], from: spec.from ?? this.emailAddress });
+  createDraftElsewhere(spec: MessageSpec): {
+    draftId: string;
+    messageId: string;
+    threadId: string;
+  } {
+    const message = this.addMessage({
+      ...spec,
+      labelIds: ['DRAFT'],
+      from: spec.from ?? this.emailAddress,
+    });
     const draftId = `r${this.random.int(1, 9)}${this.random.hex(18)}`;
     this.drafts.set(draftId, message.id);
     return { draftId, messageId: message.id, threadId: message.threadId };
@@ -660,10 +860,14 @@ export class Mailbox {
     if (this.filters.size >= 1000) throw badRequest('Too many filters', 'failedPrecondition');
     if (![...Object.keys(criteria)].length) throw badRequest('Filter criteria is empty');
     if (![...Object.keys(action)].length) throw badRequest('Filter action is empty');
-    this.requireLabels([...(action.addLabelIds as string[] | undefined ?? []), ...(action.removeLabelIds as string[] | undefined ?? [])]);
+    this.requireLabels([
+      ...((action.addLabelIds as string[] | undefined) ?? []),
+      ...((action.removeLabelIds as string[] | undefined) ?? []),
+    ]);
     const fingerprint = JSON.stringify([criteria, action]);
     for (const existing of this.filters.values()) {
-      if (JSON.stringify([existing.criteria, existing.action]) === fingerprint) throw badRequest('Filter already exists', 'failedPrecondition');
+      if (JSON.stringify([existing.criteria, existing.action]) === fingerprint)
+        throw badRequest('Filter already exists', 'failedPrecondition');
     }
     const filter: GmailFilter = { id: `ANe1Bm${this.random.hex(24)}`, criteria, action };
     this.filters.set(filter.id, filter);
@@ -689,7 +893,14 @@ export class Mailbox {
   }
 
   addSendAs(email: string, displayName = ''): void {
-    this.aliases.push({ sendAsEmail: email, displayName, isDefault: false, isPrimary: false, treatAsAlias: true, verificationStatus: 'accepted' });
+    this.aliases.push({
+      sendAsEmail: email,
+      displayName,
+      isDefault: false,
+      isPrimary: false,
+      treatAsAlias: true,
+      verificationStatus: 'accepted',
+    });
   }
 }
 

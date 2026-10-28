@@ -24,9 +24,17 @@ export interface HistoryRecord {
 }
 
 export type HistoryType = 'messageAdded' | 'messageDeleted' | 'labelAdded' | 'labelRemoved';
-export const HISTORY_TYPES: readonly HistoryType[] = ['messageAdded', 'messageDeleted', 'labelAdded', 'labelRemoved'];
+export const HISTORY_TYPES: readonly HistoryType[] = [
+  'messageAdded',
+  'messageDeleted',
+  'labelAdded',
+  'labelRemoved',
+];
 
-const TYPE_FIELD: Record<HistoryType, 'messagesAdded' | 'messagesDeleted' | 'labelsAdded' | 'labelsRemoved'> = {
+const TYPE_FIELD: Record<
+  HistoryType,
+  'messagesAdded' | 'messagesDeleted' | 'labelsAdded' | 'labelsRemoved'
+> = {
   messageAdded: 'messagesAdded',
   messageDeleted: 'messagesDeleted',
   labelAdded: 'labelsAdded',
@@ -107,9 +115,12 @@ export class HistoryLog {
     // equal to the current id stays valid however long the mailbox has been quiet.
     const retentionMs = typeof this.retention === 'function' ? this.retention() : this.retention;
     const horizon = this.clock.now() - retentionMs;
-    if (q.startHistoryId < this.current && this.issuedAt(q.startHistoryId) < horizon) return { expired: true };
+    if (q.startHistoryId < this.current && this.issuedAt(q.startHistoryId) < horizon)
+      return { expired: true };
 
-    const after = q.pageToken ? Number(Buffer.from(q.pageToken, 'base64url').toString()) : q.startHistoryId;
+    const after = q.pageToken
+      ? Number(Buffer.from(q.pageToken, 'base64url').toString())
+      : q.startHistoryId;
     const matching = this.stored
       .filter(s => s.num > after && s.at >= horizon)
       .map(s => this.project(s.record, q))
@@ -132,7 +143,9 @@ export class HistoryLog {
 
   /** Applies the historyTypes and labelId filters to one record; undefined means "leave it out". */
   private project(record: HistoryRecord, q: HistoryQuery): HistoryRecord | undefined {
-    const wantedFields = q.types.length ? q.types.map(t => TYPE_FIELD[t]) : Object.values(TYPE_FIELD);
+    const wantedFields = q.types.length
+      ? q.types.map(t => TYPE_FIELD[t])
+      : Object.values(TYPE_FIELD);
     const out: HistoryRecord = { id: record.id, messages: record.messages };
     let kept = false;
     for (const field of wantedFields) {
@@ -146,7 +159,12 @@ export class HistoryLog {
     return kept ? out : undefined;
   }
 
-  private touchesLabel(entry: { message: HistoryMessage; labelIds?: string[] }, labelId: string): boolean {
-    return (entry.labelIds ?? []).includes(labelId) || (entry.message.labelIds ?? []).includes(labelId);
+  private touchesLabel(
+    entry: { message: HistoryMessage; labelIds?: string[] },
+    labelId: string,
+  ): boolean {
+    return (
+      (entry.labelIds ?? []).includes(labelId) || (entry.message.labelIds ?? []).includes(labelId)
+    );
   }
 }

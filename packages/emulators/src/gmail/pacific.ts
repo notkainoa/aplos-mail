@@ -25,7 +25,13 @@ export function pacificParts(ms: number): PacificParts {
   for (const part of formatter.formatToParts(new Date(ms))) {
     if (part.type !== 'literal') parts[part.type] = Number(part.value);
   }
-  return { year: parts.year, month: parts.month, day: parts.day, hour: parts.hour, minute: parts.minute };
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour,
+    minute: parts.minute,
+  };
 }
 
 /** Pacific calendar date, e.g. '2026-11-01'. Daily counters are keyed by it. */

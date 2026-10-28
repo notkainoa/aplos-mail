@@ -65,8 +65,18 @@ function codeFrom(emu: GmailEmulator, params: Record<string, string> = {}): stri
 }
 
 async function tokenCall(emu: GmailEmulator, fields: Record<string, string>, withSecret = true) {
-  const body = new URLSearchParams({ client_id: 'probe-client', ...(withSecret ? { client_secret: 'probe-secret' } : {}), ...fields });
-  return result(await emu.fetch(TOKEN_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body }));
+  const body = new URLSearchParams({
+    client_id: 'probe-client',
+    ...(withSecret ? { client_secret: 'probe-secret' } : {}),
+    ...fields,
+  });
+  return result(
+    await emu.fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body,
+    }),
+  );
 }
 
 const reasonOf = (json: any): string | undefined => json?.error?.errors?.[0]?.reason;
@@ -78,8 +88,10 @@ const reasonOf = (json: any): string | undefined => json?.error?.errors?.[0]?.re
 test('PROBE 01 per-user units: the call that would pass 6,000 units in 60 s is refused, and 60 s later it fits [quota]', async () => {
   const h = await setup({ threads: 1 });
   const id = (await h.api('/messages?maxResults=1')).json.messages[0].id; // 5
-  for (let i = 0; i < 99; i++) assert.equal((await h.api(`/messages/${id}?format=full`)).status, 200, `full get ${i}`); // 5,945
-  for (let i = 0; i < 11; i++) assert.equal((await h.api('/messages?maxResults=1')).status, 200, `list ${i}`); // 6,000
+  for (let i = 0; i < 99; i++)
+    assert.equal((await h.api(`/messages/${id}?format=full`)).status, 200, `full get ${i}`); // 5,945
+  for (let i = 0; i < 11; i++)
+    assert.equal((await h.api('/messages?maxResults=1')).status, 200, `list ${i}`); // 6,000
   assert.equal(h.emu.meter.unitsInWindow(), 6000, 'exactly 6,000 accepted');
   const refused = await h.api('/profile');
   assert.ok([403, 429].includes(refused.status), `status ${refused.status}`);
@@ -90,8 +102,17 @@ test('PROBE 01 per-user units: the call that would pass 6,000 units in 60 s is r
 
 test('PROBE 02 per-user units: one user exhausting the window does not throttle another user of the same project [quota]', async () => {
   const h = await setup({ unitsPerMinute: 100 });
-  const second = h.emu.addUser({ sub: '200000000000000000002', email: 'second.probe@example.test', name: 'Second Probe' });
-  const other = await h.emu.oauth.signIn({ clientId: 'test-client', scopes: ['openid', 'email', SCOPE.gmailModify], as: second.email, fetch: h.emu.fetch });
+  const second = h.emu.addUser({
+    sub: '200000000000000000002',
+    email: 'second.probe@example.test',
+    name: 'Second Probe',
+  });
+  const other = await h.emu.oauth.signIn({
+    clientId: 'test-client',
+    scopes: ['openid', 'email', SCOPE.gmailModify],
+    as: second.email,
+    fetch: h.emu.fetch,
+  });
   for (let i = 0; i < 20; i++) await h.api('/messages'); // 100 units for the first user
   assert.ok([403, 429].includes((await h.api('/profile')).status), 'first user is throttled');
   const otherCall = await h.api('/profile', { token: other.accessToken });
@@ -128,7 +149,10 @@ test('PROBE 04 daily stop: quotaExceeded persists until midnight Pacific, not fo
 
 test('PROBE 05 daily send limit: the next send is 429 rateLimitExceeded naming "Mail sending" [errors]', async () => {
   const h = await setup({ sendLimitPerDay: 1 });
-  assert.equal((await h.api('/messages/send', { method: 'POST', body: { raw: rawMessage({}) } })).status, 200);
+  assert.equal(
+    (await h.api('/messages/send', { method: 'POST', body: { raw: rawMessage({}) } })).status,
+    200,
+  );
   const refused = await h.api('/messages/send', { method: 'POST', body: { raw: rawMessage({}) } });
   assert.equal(refused.status, 429);
   assert.equal(reasonOf(refused.json), 'rateLimitExceeded');
@@ -142,7 +166,10 @@ test('PROBE 06 daily send limit: the 429 text carries "Retry after <RFC 3339 tim
   const refused = await h.api('/messages/send', { method: 'POST', body: { raw: rawMessage({}) } });
   assert.equal(refused.status, 429);
   // Live Gmail: "User-rate limit exceeded.  Retry after 2026-10-28T07:00:00.000Z (Mail sending)".
-  assert.match(refused.json.error.message, /Retry after \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/);
+  assert.match(
+    refused.json.error.message,
+    /Retry after \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/,
+  );
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -155,7 +182,10 @@ test('PROBE 07 threads.get format=raw is not a ThreadFormat value: 400 INVALID_A
   const refused = await h.api(`/threads/${threadId}?format=raw`);
   assert.equal(refused.status, 400);
   assert.equal(refused.json.error.status, 'INVALID_ARGUMENT');
-  assert.ok(['invalidArgument', 'invalid', 'badRequest'].includes(reasonOf(refused.json)!), `reason ${reasonOf(refused.json)}`);
+  assert.ok(
+    ['invalidArgument', 'invalid', 'badRequest'].includes(reasonOf(refused.json)!),
+    `reason ${reasonOf(refused.json)}`,
+  );
 });
 
 test('PROBE 08 messages.list maxResults=501 is capped silently at 500 with a nextPageToken [ref messages.list: "maximum allowed value is 500"; observed cap]', async () => {
@@ -194,18 +224,29 @@ test('PROBE 10 history.list with an expired startHistoryId answers 404 notFound 
 test('PROBE 11 messages.batchModify with 1,001 existing ids is 400; 1,000 is 204 [ref batchModify: "up to 1000"]', async () => {
   const h = await setup({ unitsPerMinute: 10_000_000 });
   const ids: string[] = [];
-  for (let i = 0; i < 1001; i++) ids.push(h.emu.mailbox.addMessage({ subject: `Bulk ${i}`, text: 'x', labelIds: ['INBOX'] }).id);
-  const tooMany = await h.api('/messages/batchModify', { method: 'POST', body: { ids, removeLabelIds: ['INBOX'] } });
+  for (let i = 0; i < 1001; i++)
+    ids.push(h.emu.mailbox.addMessage({ subject: `Bulk ${i}`, text: 'x', labelIds: ['INBOX'] }).id);
+  const tooMany = await h.api('/messages/batchModify', {
+    method: 'POST',
+    body: { ids, removeLabelIds: ['INBOX'] },
+  });
   assert.equal(tooMany.status, 400);
   assert.equal(tooMany.json.error.status, 'INVALID_ARGUMENT');
-  const fits = await h.api('/messages/batchModify', { method: 'POST', body: { ids: ids.slice(0, 1000), removeLabelIds: ['INBOX'] } });
+  const fits = await h.api('/messages/batchModify', {
+    method: 'POST',
+    body: { ids: ids.slice(0, 1000), removeLabelIds: ['INBOX'] },
+  });
   assert.equal(fits.status, 204);
   assert.equal(fits.text, '', 'batchModify returns an empty body');
 });
 
 test('PROBE 12 a batch of 101 parts is refused as a whole with 400 [batch: "limited to 100 calls"]', async () => {
   const h = await setup({ unitsPerMinute: 10_000_000 });
-  const refused = await sendBatch(h.emu, h.token, Array.from({ length: 101 }, () => ({ path: '/profile' })));
+  const refused = await sendBatch(
+    h.emu,
+    h.token,
+    Array.from({ length: 101 }, () => ({ path: '/profile' })),
+  );
   assert.equal(refused.status, 400);
   assert.equal(h.emu.meter.unitsInWindow(), 0, 'no part ran');
 });
@@ -225,13 +266,23 @@ test('PROBE 14 messages.send without raw is 400 naming the raw/upload requiremen
   const h = await setup();
   const refused = await h.api('/messages/send', { method: 'POST', body: {} });
   assert.equal(refused.status, 400);
-  assert.equal(refused.json.error.message, "'raw' RFC822 payload message string or uploading message via /upload/* URL required");
+  assert.equal(
+    refused.json.error.message,
+    "'raw' RFC822 payload message string or uploading message via /upload/* URL required",
+  );
   assert.equal(h.emu.mailbox.listMessages().filter(m => m.labelIds.includes('SENT')).length, 0);
 });
 
 test('PROBE 15 messages.send with no To, Cc or Bcc is 400 "Recipient address required" [observed]', async () => {
   const h = await setup();
-  const noRecipient = Buffer.from(['Subject: Nobody to send to', 'Content-Type: text/plain; charset="UTF-8"', '', 'Body only.'].join('\r\n')).toString('base64url');
+  const noRecipient = Buffer.from(
+    [
+      'Subject: Nobody to send to',
+      'Content-Type: text/plain; charset="UTF-8"',
+      '',
+      'Body only.',
+    ].join('\r\n'),
+  ).toString('base64url');
   const refused = await h.api('/messages/send', { method: 'POST', body: { raw: noRecipient } });
   assert.equal(refused.status, 400);
   assert.equal(refused.json.error.message, 'Recipient address required');
@@ -247,10 +298,20 @@ test('PROBE 16 labels.create with a reserved system name (INBOX) is refused with
 
 test('PROBE 17 an explicit threadId with a different Subject does not join the thread [sending: "The Subject headers must match"]', async () => {
   const h = await setup();
-  const first = await h.api('/messages/send', { method: 'POST', body: { raw: rawMessage({ subject: 'Picnic plan', messageId: 'p1@probe.example.test' }) } });
+  const first = await h.api('/messages/send', {
+    method: 'POST',
+    body: { raw: rawMessage({ subject: 'Picnic plan', messageId: 'p1@probe.example.test' }) },
+  });
   const changed = await h.api('/messages/send', {
     method: 'POST',
-    body: { threadId: first.json.threadId, raw: rawMessage({ subject: 'Completely unrelated', messageId: 'p2@probe.example.test', extra: ['In-Reply-To: <p1@probe.example.test>', 'References: <p1@probe.example.test>'] }) },
+    body: {
+      threadId: first.json.threadId,
+      raw: rawMessage({
+        subject: 'Completely unrelated',
+        messageId: 'p2@probe.example.test',
+        extra: ['In-Reply-To: <p1@probe.example.test>', 'References: <p1@probe.example.test>'],
+      }),
+    },
   });
   assert.equal(changed.status, 200);
   assert.notEqual(changed.json.threadId, first.json.threadId);
@@ -297,17 +358,35 @@ test('PROBE 20 int64 fields are JSON strings: profile.historyId, message.interna
 
 test('PROBE 21 search: rfc822msgid: finds the message by Message-ID, as the 0.2.3 adapter relies on [ref Gmail search operators]', async () => {
   const h = await setup({ threads: 3 });
-  const sent = await h.api('/messages/send', { method: 'POST', body: { raw: rawMessage({ messageId: 'needle-42@probe.example.test' }) } });
-  const found = await h.api(`/messages?q=${encodeURIComponent('rfc822msgid:needle-42@probe.example.test')}&includeSpamTrash=true&maxResults=1`);
+  const sent = await h.api('/messages/send', {
+    method: 'POST',
+    body: { raw: rawMessage({ messageId: 'needle-42@probe.example.test' }) },
+  });
+  const found = await h.api(
+    `/messages?q=${encodeURIComponent('rfc822msgid:needle-42@probe.example.test')}&includeSpamTrash=true&maxResults=1`,
+  );
   assert.equal(found.status, 200);
-  assert.deepEqual(found.json.messages?.map((m: any) => m.id), [sent.json.id]);
+  assert.deepEqual(
+    found.json.messages?.map((m: any) => m.id),
+    [sent.json.id],
+  );
 });
 
 test('PROBE 22 userId: the signed-in address works in place of "me"; another address is 403 "Delegation denied" [ref userId; observed]', async () => {
   const h = await setup();
-  const own = await result(await h.emu.fetch('https://gmail.googleapis.com/gmail/v1/users/test.user@example.test/profile', { headers: { authorization: `Bearer ${h.token}` } }));
+  const own = await result(
+    await h.emu.fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/test.user@example.test/profile',
+      { headers: { authorization: `Bearer ${h.token}` } },
+    ),
+  );
   assert.equal(own.status, 200);
-  const other = await result(await h.emu.fetch('https://gmail.googleapis.com/gmail/v1/users/someone.else@example.test/profile', { headers: { authorization: `Bearer ${h.token}` } }));
+  const other = await result(
+    await h.emu.fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/someone.else@example.test/profile',
+      { headers: { authorization: `Bearer ${h.token}` } },
+    ),
+  );
   assert.equal(other.status, 403);
   assert.match(other.json.error.message, /^Delegation denied for /);
 });
@@ -336,7 +415,10 @@ test('PROBE 24 no Authorization header is 401 with reason "required" ("Login Req
 
 test('PROBE 25 filters.create without gmail.settings.basic is 403 insufficientPermissions [ref filters.create: only scope gmail.settings.basic]', async () => {
   const h = await setup({ scopes: ['openid', 'email', SCOPE.gmailModify] });
-  const refused = await h.api('/settings/filters', { method: 'POST', body: { criteria: { from: 'news@example.test' }, action: { removeLabelIds: ['INBOX'] } } });
+  const refused = await h.api('/settings/filters', {
+    method: 'POST',
+    body: { criteria: { from: 'news@example.test' }, action: { removeLabelIds: ['INBOX'] } },
+  });
   assert.equal(refused.status, 403);
   assert.equal(reasonOf(refused.json), 'insufficientPermissions');
   assert.equal(refused.json.error.status, 'PERMISSION_DENIED');
@@ -346,7 +428,11 @@ test('PROBE 25 filters.create without gmail.settings.basic is 403 insufficientPe
 
 test('PROBE 26 an origin the emulator does not serve is rejected with TypeError "External network blocked" [task rule]', async () => {
   const h = await setup();
-  await assert.rejects(h.emu.fetch('https://people.googleapis.com/v1/people/me'), (error: unknown) => error instanceof TypeError && /External network blocked/.test((error as Error).message));
+  await assert.rejects(
+    h.emu.fetch('https://people.googleapis.com/v1/people/me'),
+    (error: unknown) =>
+      error instanceof TypeError && /External network blocked/.test((error as Error).message),
+  );
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -355,9 +441,17 @@ test('PROBE 26 an origin the emulator does not serve is rejected with TypeError 
 
 test('PROBE 27 refresh 7 days after consent in Testing mode is 400 invalid_grant "Token has been expired or revoked." [native][proto-google §8.1]', async () => {
   const { emu, clock } = oauthFixture({ testingMode: true });
-  const exchanged = await tokenCall(emu, { grant_type: 'authorization_code', code: codeFrom(emu), redirect_uri: REDIRECT, code_verifier: VERIFIER });
+  const exchanged = await tokenCall(emu, {
+    grant_type: 'authorization_code',
+    code: codeFrom(emu),
+    redirect_uri: REDIRECT,
+    code_verifier: VERIFIER,
+  });
   await clock.advance(7 * DAY + 1000);
-  const dead = await tokenCall(emu, { grant_type: 'refresh_token', refresh_token: exchanged.json.refresh_token });
+  const dead = await tokenCall(emu, {
+    grant_type: 'refresh_token',
+    refresh_token: exchanged.json.refresh_token,
+  });
   assert.equal(dead.status, 400);
   assert.equal(dead.json.error, 'invalid_grant');
   assert.equal(dead.json.error_description, 'Token has been expired or revoked.');
@@ -365,7 +459,12 @@ test('PROBE 27 refresh 7 days after consent in Testing mode is 400 invalid_grant
 
 test('PROBE 28 a code exchange with the wrong PKCE verifier is 400 invalid_grant [rfc7636][native]', async () => {
   const { emu } = oauthFixture();
-  const wrong = await tokenCall(emu, { grant_type: 'authorization_code', code: codeFrom(emu), redirect_uri: REDIRECT, code_verifier: 'w'.repeat(64) });
+  const wrong = await tokenCall(emu, {
+    grant_type: 'authorization_code',
+    code: codeFrom(emu),
+    redirect_uri: REDIRECT,
+    code_verifier: 'w'.repeat(64),
+  });
   assert.equal(wrong.status, 400);
   assert.equal(wrong.json.error, 'invalid_grant');
   assert.equal(wrong.json.access_token, undefined);
@@ -374,22 +473,51 @@ test('PROBE 28 a code exchange with the wrong PKCE verifier is 400 invalid_grant
 test('PROBE 29 a reused authorization code is 400 invalid_grant [RFC 6749 §4.1.2][native]', async () => {
   const { emu } = oauthFixture();
   const code = codeFrom(emu);
-  assert.equal((await tokenCall(emu, { grant_type: 'authorization_code', code, redirect_uri: REDIRECT, code_verifier: VERIFIER })).status, 200);
-  const again = await tokenCall(emu, { grant_type: 'authorization_code', code, redirect_uri: REDIRECT, code_verifier: VERIFIER });
+  assert.equal(
+    (
+      await tokenCall(emu, {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT,
+        code_verifier: VERIFIER,
+      })
+    ).status,
+    200,
+  );
+  const again = await tokenCall(emu, {
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: REDIRECT,
+    code_verifier: VERIFIER,
+  });
   assert.equal(again.status, 400);
   assert.equal(again.json.error, 'invalid_grant');
 });
 
 test('PROBE 30 a code exchange with a different redirect_uri is 400 redirect_uri_mismatch [observed Google token endpoint]', async () => {
   const { emu } = oauthFixture();
-  const mismatch = await tokenCall(emu, { grant_type: 'authorization_code', code: codeFrom(emu), redirect_uri: 'http://127.0.0.1:49153/elsewhere', code_verifier: VERIFIER });
+  const mismatch = await tokenCall(emu, {
+    grant_type: 'authorization_code',
+    code: codeFrom(emu),
+    redirect_uri: 'http://127.0.0.1:49153/elsewhere',
+    code_verifier: VERIFIER,
+  });
   assert.equal(mismatch.status, 400);
   assert.equal(mismatch.json.error, 'redirect_uri_mismatch');
 });
 
 test('PROBE 31 a desktop client that omits client_secret gets 400 invalid_request "client_secret is missing." [observed]', async () => {
   const { emu } = oauthFixture();
-  const missing = await tokenCall(emu, { grant_type: 'authorization_code', code: codeFrom(emu), redirect_uri: REDIRECT, code_verifier: VERIFIER }, false);
+  const missing = await tokenCall(
+    emu,
+    {
+      grant_type: 'authorization_code',
+      code: codeFrom(emu),
+      redirect_uri: REDIRECT,
+      code_verifier: VERIFIER,
+    },
+    false,
+  );
   assert.equal(missing.status, 400);
   assert.equal(missing.json.error, 'invalid_request');
   assert.equal(missing.json.error_description, 'client_secret is missing.');
@@ -397,32 +525,51 @@ test('PROBE 31 a desktop client that omits client_secret gets 400 invalid_reques
 
 test('PROBE 32 POST /revoke with the refresh token kills the refresh token and the access tokens issued from it [native "Revoking a token"]', async () => {
   const { emu } = oauthFixture();
-  const exchanged = await tokenCall(emu, { grant_type: 'authorization_code', code: codeFrom(emu), redirect_uri: REDIRECT, code_verifier: VERIFIER });
+  const exchanged = await tokenCall(emu, {
+    grant_type: 'authorization_code',
+    code: codeFrom(emu),
+    redirect_uri: REDIRECT,
+    code_verifier: VERIFIER,
+  });
   const revoked = await emu.fetch('https://oauth2.googleapis.com/revoke', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ token: exchanged.json.refresh_token }),
   });
   assert.equal(revoked.status, 200);
-  const refresh = await tokenCall(emu, { grant_type: 'refresh_token', refresh_token: exchanged.json.refresh_token });
+  const refresh = await tokenCall(emu, {
+    grant_type: 'refresh_token',
+    refresh_token: exchanged.json.refresh_token,
+  });
   assert.equal(refresh.status, 400);
   assert.equal(refresh.json.error, 'invalid_grant');
-  const call = await emu.fetch(`${BASE}/profile`, { headers: { authorization: `Bearer ${exchanged.json.access_token}` } });
+  const call = await emu.fetch(`${BASE}/profile`, {
+    headers: { authorization: `Bearer ${exchanged.json.access_token}` },
+  });
   assert.equal(call.status, 401, 'the access token died with its refresh token');
-  const twice = await result(await emu.fetch('https://oauth2.googleapis.com/revoke', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ token: exchanged.json.refresh_token }),
-  }));
+  const twice = await result(
+    await emu.fetch('https://oauth2.googleapis.com/revoke', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: exchanged.json.refresh_token }),
+    }),
+  );
   assert.equal(twice.status, 400);
   assert.equal(twice.json.error, 'invalid_token');
 });
 
 test('PROBE 33 PKCE and state are recommended, not required: an authorization request without them still yields a code [native: code_challenge "Recommended", state "Recommended"]', async () => {
   const { emu } = oauthFixture();
-  const response = await emu.fetch(authUrl({ code_challenge: '\u0000', code_challenge_method: '\u0000', state: '\u0000' }), { redirect: 'manual' });
+  const response = await emu.fetch(
+    authUrl({ code_challenge: '\u0000', code_challenge_method: '\u0000', state: '\u0000' }),
+    { redirect: 'manual' },
+  );
   assert.equal(response.status, 302);
   const location = new URL(response.headers.get('location')!);
-  assert.equal(location.searchParams.get('error'), null, `error ${location.searchParams.get('error')}`);
+  assert.equal(
+    location.searchParams.get('error'),
+    null,
+    `error ${location.searchParams.get('error')}`,
+  );
   assert.ok(location.searchParams.get('code'));
 });

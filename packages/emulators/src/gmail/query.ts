@@ -36,7 +36,8 @@ export interface ParsedQuery {
   groups: Term[][];
 }
 
-export const normalizeLabelName = (name: string): string => name.toLowerCase().replace(/[\s/]+/g, '-');
+export const normalizeLabelName = (name: string): string =>
+  name.toLowerCase().replace(/[\s/]+/g, '-');
 
 function tokenize(q: string): Token[] {
   const tokens: Token[] = [];
@@ -103,11 +104,20 @@ export function mentionsSpamTrash(parsed: ParsedQuery): boolean {
   return parsed.groups.flat().some(term => {
     if (term.neg || !term.key) return false;
     const value = term.value.toLowerCase();
-    return (term.key === 'in' && ['anywhere', 'trash', 'spam'].includes(value)) || ((term.key === 'label' || term.key === 'is') && ['trash', 'spam'].includes(value));
+    return (
+      (term.key === 'in' && ['anywhere', 'trash', 'spam'].includes(value)) ||
+      ((term.key === 'label' || term.key === 'is') && ['trash', 'spam'].includes(value))
+    );
   });
 }
 
-const UNIT_MS: Record<string, number> = { h: 3600_000, d: 86400_000, w: 7 * 86400_000, m: 30 * 86400_000, y: 365 * 86400_000 };
+const UNIT_MS: Record<string, number> = {
+  h: 3600_000,
+  d: 86400_000,
+  w: 7 * 86400_000,
+  m: 30 * 86400_000,
+  y: 365 * 86400_000,
+};
 
 function ageLimitMs(value: string): number | undefined {
   const match = /^(\d+)([hdwmy])?$/i.exec(value);
@@ -134,10 +144,12 @@ function termMatches(term: Term, target: QueryTarget, now: number): boolean {
       result = target.labelIds.includes(`CATEGORY_${value.toUpperCase()}`);
       break;
     case 'in':
-      result = value === 'anywhere' || target.labelNames.includes(value === 'drafts' ? 'draft' : value);
+      result =
+        value === 'anywhere' || target.labelNames.includes(value === 'drafts' ? 'draft' : value);
       break;
     case 'is':
-      result = value === 'read' ? !target.labelIds.includes('UNREAD') : target.labelNames.includes(value);
+      result =
+        value === 'read' ? !target.labelIds.includes('UNREAD') : target.labelNames.includes(value);
       break;
     case 'has':
       result = value === 'attachment' ? target.hasAttachment : false;

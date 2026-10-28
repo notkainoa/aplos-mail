@@ -3,12 +3,34 @@ import { Random, mixSeed } from '../gmail/rng';
 import { UnitMeter } from '../gmail/meter';
 import type { TestUser } from '../gmail/oauth';
 import type { MeterHelpers } from '../gmail/types';
-import { deleteEvent, getEvent, insertEvent, insertInvitation, patchEvent, type WriteOptions } from './events';
-import { generateCalendars, type GenerateCalendarsOptions, type GeneratedCalendars } from './generate';
+import {
+  deleteEvent,
+  getEvent,
+  insertEvent,
+  insertInvitation,
+  patchEvent,
+  type WriteOptions,
+} from './events';
+import {
+  generateCalendars,
+  type GenerateCalendarsOptions,
+  type GeneratedCalendars,
+} from './generate';
 import { CalendarStore } from './store';
 import type {
-  AbuseState, CalendarHelpers, CalendarListEntry, CalendarPatch, CalendarSpec, ExpireOptions, GcalEvent, GcalOptions, GcalSettings,
-  InvitationSpec, ResponseStatus, SendUpdates, SentUpdate,
+  AbuseState,
+  CalendarHelpers,
+  CalendarListEntry,
+  CalendarPatch,
+  CalendarSpec,
+  ExpireOptions,
+  GcalEvent,
+  GcalOptions,
+  GcalSettings,
+  InvitationSpec,
+  ResponseStatus,
+  SendUpdates,
+  SentUpdate,
 } from './types';
 
 export interface HubDeps {
@@ -41,7 +63,8 @@ export class CalendarHub implements CalendarHelpers {
       ...deps.options,
     };
     this.meter = {
-      unitsInWindow: who => this.requests.unitsInWindow(this.deps.account(who).sub, this.deps.clock.now()),
+      unitsInWindow: who =>
+        this.requests.unitsInWindow(this.deps.account(who).sub, this.deps.clock.now()),
       perMinuteSeries: who => this.requests.perMinuteSeries(this.deps.account(who).sub),
       peakWindow: who => this.requests.peakWindow(this.deps.account(who).sub),
       reset: () => this.requests.reset(),
@@ -59,13 +82,19 @@ export class CalendarHub implements CalendarHelpers {
           clock: this.deps.clock,
           random: new Random(mixSeed(this.deps.seed, 900 + this.stores.size)),
           settings: () => this.settings,
-          isGoogleAccount: email => this.deps.users().some(u => u.email.toLowerCase() === email.toLowerCase()),
+          isGoogleAccount: email =>
+            this.deps.users().some(u => u.email.toLowerCase() === email.toLowerCase()),
           sentUpdates: this.sentUpdates,
         },
       );
       this.stores.set(user.sub, store);
       // Every Google account has a primary calendar named after its address.
-      store.addCalendar({ id: user.email, summary: user.email, primary: true, timeZone: 'America/Los_Angeles' });
+      store.addCalendar({
+        id: user.email,
+        summary: user.email,
+        primary: true,
+        timeZone: 'America/Los_Angeles',
+      });
     }
     return store;
   }
@@ -80,7 +109,9 @@ export class CalendarHub implements CalendarHelpers {
 
   setAbuse(on: boolean, options: { forMs?: number } = {}): void {
     const duration = options.forMs ?? this.settings.abuseDurationMs;
-    this.abuseState = on ? { until: duration === null ? Infinity : this.deps.clock.now() + duration } : null;
+    this.abuseState = on
+      ? { until: duration === null ? Infinity : this.deps.clock.now() + duration }
+      : null;
   }
 
   abuse(): AbuseState | null {
@@ -124,7 +155,10 @@ export class CalendarHub implements CalendarHelpers {
     this.storeFor(user).renameCalendar(calendarId, summary);
   }
 
-  private writeOptions(sendUpdates: SendUpdates = 'none', conferenceDataVersion: 0 | 1 = 1): WriteOptions {
+  private writeOptions(
+    sendUpdates: SendUpdates = 'none',
+    conferenceDataVersion: 0 | 1 = 1,
+  ): WriteOptions {
     return { sendUpdates, conferenceDataVersion, trusted: true };
   }
 
@@ -136,15 +170,29 @@ export class CalendarHub implements CalendarHelpers {
     }
   }
 
-  addEvent(calendarId: string, body: Record<string, unknown>, options: { user?: string; sendUpdates?: SendUpdates; conferenceDataVersion?: 0 | 1 } = {}): GcalEvent {
+  addEvent(
+    calendarId: string,
+    body: Record<string, unknown>,
+    options: { user?: string; sendUpdates?: SendUpdates; conferenceDataVersion?: 0 | 1 } = {},
+  ): GcalEvent {
     const store = this.storeFor(options.user);
-    return insertEvent(store, store.calendar(calendarId), body, this.writeOptions(options.sendUpdates, options.conferenceDataVersion));
+    return insertEvent(
+      store,
+      store.calendar(calendarId),
+      body,
+      this.writeOptions(options.sendUpdates, options.conferenceDataVersion),
+    );
   }
 
   addInvitation(spec: InvitationSpec, user?: string): GcalEvent {
     const store = this.storeFor(user);
     const cal = store.calendar(spec.calendarId ?? 'primary');
-    const { organizer, guests = [], calendarId: _calendar, id, ...rest } = spec;
+    const { organizer, guests = [], id } = spec;
+    const rest: Record<string, unknown> = { ...spec };
+    delete rest.organizer;
+    delete rest.guests;
+    delete rest.calendarId;
+    delete rest.id;
     return insertInvitation(store, cal, {
       id,
       organizer,
@@ -159,9 +207,20 @@ export class CalendarHub implements CalendarHelpers {
     });
   }
 
-  editEvent(calendarId: string, eventId: string, patch: Record<string, unknown>, options: { user?: string; conferenceDataVersion?: 0 | 1 } = {}): GcalEvent {
+  editEvent(
+    calendarId: string,
+    eventId: string,
+    patch: Record<string, unknown>,
+    options: { user?: string; conferenceDataVersion?: 0 | 1 } = {},
+  ): GcalEvent {
     const store = this.storeFor(options.user);
-    return patchEvent(store, store.calendar(calendarId), eventId, patch, this.writeOptions('none', options.conferenceDataVersion));
+    return patchEvent(
+      store,
+      store.calendar(calendarId),
+      eventId,
+      patch,
+      this.writeOptions('none', options.conferenceDataVersion),
+    );
   }
 
   removeEvent(calendarId: string, eventId: string, user?: string): void {
@@ -169,20 +228,33 @@ export class CalendarHub implements CalendarHelpers {
     deleteEvent(store, store.calendar(calendarId), eventId, this.writeOptions());
   }
 
-  respond(calendarId: string, eventId: string, email: string, responseStatus: ResponseStatus, user?: string): GcalEvent {
+  respond(
+    calendarId: string,
+    eventId: string,
+    email: string,
+    responseStatus: ResponseStatus,
+    user?: string,
+  ): GcalEvent {
     const event = this.getEvent(calendarId, eventId, user);
-    if (!event?.attendees?.some(a => a.email.toLowerCase() === email.toLowerCase())) throw new Error(`${email} is not a guest of ${eventId}`);
-    const attendees = event.attendees.map(a => (a.email.toLowerCase() === email.toLowerCase() ? { ...a, responseStatus } : a));
+    if (!event?.attendees?.some(a => a.email.toLowerCase() === email.toLowerCase()))
+      throw new Error(`${email} is not a guest of ${eventId}`);
+    const attendees = event.attendees.map(a =>
+      a.email.toLowerCase() === email.toLowerCase() ? { ...a, responseStatus } : a,
+    );
     return this.editEvent(calendarId, eventId, { attendees }, { user });
   }
 
   expireSyncTokens(options: ExpireOptions = {}): void {
-    const stores = options.user ? [this.storeFor(options.user)] : this.deps.users().map(u => this.storeFor(u.sub));
+    const stores = options.user
+      ? [this.storeFor(options.user)]
+      : this.deps.users().map(u => this.storeFor(u.sub));
     for (const store of stores) {
       if (!options.kind && !options.calendarId) store.expire('all');
       if (options.kind === 'calendarList') store.expire('list');
       if (options.kind !== 'calendarList' && (options.kind === 'events' || options.calendarId)) {
-        const ids = options.calendarId ? [store.find(options.calendarId)?.id ?? options.calendarId] : [...store.calendars.keys()];
+        const ids = options.calendarId
+          ? [store.find(options.calendarId)?.id ?? options.calendarId]
+          : [...store.calendars.keys()];
         for (const id of ids) store.expire(`events:${id}`);
       }
     }

@@ -54,7 +54,8 @@ function parseHeaders(head: string): MimeHeader[] {
       continue;
     }
     const colon = line.indexOf(':');
-    if (colon > 0) headers.push({ name: line.slice(0, colon).trim(), value: line.slice(colon + 1).trim() });
+    if (colon > 0)
+      headers.push({ name: line.slice(0, colon).trim(), value: line.slice(colon + 1).trim() });
   }
   return headers;
 }
@@ -64,7 +65,8 @@ function valueAndParams(raw: string): { value: string; params: Record<string, st
   const params: Record<string, string> = {};
   for (const piece of rest) {
     const match = /^\s*([^=\s]+)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|(.*?))\s*$/.exec(piece);
-    if (match) params[match[1].toLowerCase()] = (match[2] ?? match[3] ?? '').replace(/\\(.)/g, '$1');
+    if (match)
+      params[match[1].toLowerCase()] = (match[2] ?? match[3] ?? '').replace(/\\(.)/g, '$1');
   }
   return { value: first.trim().toLowerCase(), params };
 }
@@ -154,16 +156,26 @@ export interface PayloadOptions {
   htmlAsAttachment: boolean;
 }
 
-const isTextBody = (node: MimeNode): boolean => node.mimeType === 'text/plain' || node.mimeType === 'text/html';
+const isTextBody = (node: MimeNode): boolean =>
+  node.mimeType === 'text/plain' || node.mimeType === 'text/html';
 
 export function toPayload(node: MimeNode, options: PayloadOptions, partId = ''): GmailPart {
-  const part: GmailPart = { partId, mimeType: node.mimeType, filename: node.filename, headers: node.headers.map(h => ({ ...h })), body: { size: 0 } };
+  const part: GmailPart = {
+    partId,
+    mimeType: node.mimeType,
+    filename: node.filename,
+    headers: node.headers.map(h => ({ ...h })),
+    body: { size: 0 },
+  };
   if (node.children.length) {
-    part.parts = node.children.map((child, index) => toPayload(child, options, partId ? `${partId}.${index}` : String(index)));
+    part.parts = node.children.map((child, index) =>
+      toPayload(child, options, partId ? `${partId}.${index}` : String(index)),
+    );
     return part;
   }
   part.body.size = node.content.length;
-  const attachmentLike = node.filename !== '' || node.disposition === 'attachment' || !isTextBody(node);
+  const attachmentLike =
+    node.filename !== '' || node.disposition === 'attachment' || !isTextBody(node);
   if (attachmentLike || (options.htmlAsAttachment && node.mimeType === 'text/html')) {
     part.body.attachmentId = options.storeAttachment(node.content);
   } else {
@@ -193,7 +205,9 @@ export function htmlToText(html: string): string {
 /** Readable text of every text part, plain preferred over html when both exist. */
 export function bodyText(root: MimeNode): string {
   const leaves = collectLeaves(root).filter(l => isTextBody(l) && l.filename === '');
-  const plain = leaves.filter(l => l.mimeType === 'text/plain').map(l => l.content.toString('utf8'));
+  const plain = leaves
+    .filter(l => l.mimeType === 'text/plain')
+    .map(l => l.content.toString('utf8'));
   if (plain.length) return plain.join('\n');
   return leaves.map(l => htmlToText(l.content.toString('utf8'))).join('\n');
 }
@@ -241,7 +255,10 @@ function wrapBase64(data: Buffer): string {
 function textPart(mimeType: string, text: string): BuiltPart {
   const ascii = isAscii(text);
   return {
-    headers: [`Content-Type: ${mimeType}; charset="UTF-8"`, `Content-Transfer-Encoding: ${ascii ? '7bit' : 'base64'}`],
+    headers: [
+      `Content-Type: ${mimeType}; charset="UTF-8"`,
+      `Content-Transfer-Encoding: ${ascii ? '7bit' : 'base64'}`,
+    ],
     body: ascii ? text.replace(/\r?\n/g, '\r\n') : wrapBase64(Buffer.from(text, 'utf8')),
   };
 }
@@ -257,18 +274,26 @@ function attachmentPart(a: BuildAttachment): BuiltPart {
 }
 
 function multipart(subtype: string, children: BuiltPart[], boundary: string): BuiltPart {
-  const body = children.map(c => `--${boundary}\r\n${c.headers.join('\r\n')}\r\n\r\n${c.body}`).join('\r\n') + `\r\n--${boundary}--\r\n`;
+  const body =
+    children.map(c => `--${boundary}\r\n${c.headers.join('\r\n')}\r\n\r\n${c.body}`).join('\r\n') +
+    `\r\n--${boundary}--\r\n`;
   return { headers: [`Content-Type: multipart/${subtype}; boundary="${boundary}"`], body };
 }
 
 /** Builds an RFC 822 message. `nextBoundary` supplies deterministic boundary strings. */
 export function buildRfc822(spec: BuildSpec, nextBoundary: () => string): Buffer {
   const texts: BuiltPart[] = [];
-  if (spec.text !== undefined || spec.html === undefined) texts.push(textPart('text/plain', spec.text ?? ''));
+  if (spec.text !== undefined || spec.html === undefined)
+    texts.push(textPart('text/plain', spec.text ?? ''));
   if (spec.html !== undefined) texts.push(textPart('text/html', spec.html));
   let root = texts.length > 1 ? multipart('alternative', texts, nextBoundary()) : texts[0];
-  if (spec.attachments?.length) root = multipart('mixed', [root, ...spec.attachments.map(attachmentPart)], nextBoundary());
-  const lines = [...spec.headers.map(([name, value]) => `${name}: ${value}`), 'MIME-Version: 1.0', ...root.headers];
+  if (spec.attachments?.length)
+    root = multipart('mixed', [root, ...spec.attachments.map(attachmentPart)], nextBoundary());
+  const lines = [
+    ...spec.headers.map(([name, value]) => `${name}: ${value}`),
+    'MIME-Version: 1.0',
+    ...root.headers,
+  ];
   return Buffer.from(`${lines.join('\r\n')}\r\n\r\n${root.body}`, 'latin1');
 }
 
@@ -277,5 +302,8 @@ export function withDefaultHeaders(raw: Buffer, defaults: Record<string, string>
   const present = new Set(topHeaders(raw).map(h => h.name.toLowerCase()));
   const missing = Object.entries(defaults).filter(([name]) => !present.has(name.toLowerCase()));
   if (!missing.length) return raw;
-  return Buffer.concat([Buffer.from(missing.map(([n, v]) => `${n}: ${v}\r\n`).join(''), 'latin1'), raw]);
+  return Buffer.concat([
+    Buffer.from(missing.map(([n, v]) => `${n}: ${v}\r\n`).join(''), 'latin1'),
+    raw,
+  ]);
 }

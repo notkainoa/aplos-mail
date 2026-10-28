@@ -52,6 +52,7 @@ The longest chain runs through Gmail. The database write path is ready around da
 - Going public is decided later. In phase 3 the threads prepare a secret and history scan, notices and a draft LICENSE (GPL-3.0 app, MIT contract).
 - **The agent test account.** Automatic live checks use your spare Gmail account, which you approved on 27 October for agents to read in full. They run on this Mac at set times, so no Google token sits on GitHub.
   - Agents may read all of its mail, run every AI feature over it with the Groq test key, sync and backfill all of it, label, archive, mark read, star, write drafts, add a filter they remove after the run, and send mail **only to its own address**.
+  - On its own calendar, agents may create, rename, move and delete test events that the same run created, with no attendees. A Meet link on such an event is fine. They must never touch any other event (orchestrator, 2026-10-28).
   - Agents may never send to anyone else, delete permanently, empty Trash, unsubscribe, RSVP, invite attendees or change account settings.
   - Its address and its mail stay off the repo: not in commits, logs, eval reports, screenshots or PRs. PR pictures use demo mail.
   - Your main Gmail is still only touched by you, in the hand checks on days 14 to 16.
@@ -328,6 +329,27 @@ flowchart LR
 | UI-screens | `ui-onboard`, `ui-calendar`, `ui-settings`, `ui-ask` | 4 | Claude only: Opus for onboarding and Calendar layout; Sonnet for Settings and routine screens |
 | Platform and website | `plat-ci`, `plat-release`, `web` | 3 | Opus for hardening and release security; Claude for the website; cheap models for CI plumbing |
 | Integrator | none; dependency and infrastructure merges, the full suite, the conformance burn-down, Phase 2 lead, the owner's review queue and digests | 1 plus reviewers | Opus for judgement; Haiku for test runs and summaries |
+
+### 5.1a Model routing to save Claude usage (owner, 2026-10-28)
+
+> **What this means:** Free models do the simple, checkable work. Claude does the thinking, the design and every final check. The quality bar stays the same.
+
+Claude's 5-hour limit was hit on day 1, so every thread routes work by tier:
+
+| Tier | Models | Use for |
+|---|---|---|
+| Free | OpenCode Zen free models: `opencode/glm-5.3-flash-free`, `opencode/deepseek-v4.1-flash-free`, `opencode/mimo-v2.6-flash-free`, `opencode/beam-free`, `opencode/flint-40b-free`. Run them with `delegate_task` on provider `opencode`, or with `opencode run -m <model>`. Do not use `opencode/nemotron-3-ultra-free`, which hangs | Searching and summarizing code; running tests and builds and summarizing the results; mechanical edits, renames and codemods; boilerplate; turning a written test plan into test cases; fixtures and emulator data; lint and format fixes; STATUS and doc formatting; first-pass bug hunts, with each finding verified by Claude |
+| Cursor Grok | `grok-4.7` or `grok-4.6`, through `delegate_task` on provider `cursor` or with `cursor-agent -p --model grok-4.7-medium` | Well-scoped coding with a clear spec; second-opinion reviews. Its free monthly allowance ran out on day 1. Try it, and on "usage limit" or "unavailable on Free" fall back to the next tier without retrying |
+| Claude Haiku | `claude-haiku-5-5` | Easy work when a free model fails or is too slow |
+| Claude Sonnet | `claude-sonnet-5-5` | Scoped features, bug fixes with a repro, routine UI |
+| Claude Opus | `claude-opus-5-5` | The contract, store, governor, sync, security, complex UI, adversarial reviews, and the final check before any merge |
+
+Rules:
+- All UI and design code goes to Claude only: Opus for complex or high-visibility UI, Sonnet for routine UI.
+- Never use a paid plan or upgrade. OpenCode Go and Factory need subscriptions the owner doesn't have, so don't use them.
+- Free and Cursor models never see secrets, `.env`, Keychain values, or mail and addresses from the agent test account. Give them code and demo data only.
+- Non-Claude output is checked before it counts: tests run, and a Claude agent reviews the diff. If a free model fails twice, or makes no progress for 10 minutes, cancel it and move up a tier.
+- When Claude reports a usage limit, don't stall. Shift queued low-judgment work to the free tier, and resume Claude work after the reset.
 
 ### 5.2 Why six
 

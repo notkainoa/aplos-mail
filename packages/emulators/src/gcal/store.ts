@@ -1,7 +1,15 @@
 import type { Clock } from '../kit/clock';
 import type { Random } from '../gmail/rng';
 import { calNotFound } from './errors';
-import type { AccessRole, CalendarListEntry, CalendarPatch, CalendarSpec, GcalEvent, GcalSettings, SentUpdate } from './types';
+import type {
+  AccessRole,
+  CalendarListEntry,
+  CalendarPatch,
+  CalendarSpec,
+  GcalEvent,
+  GcalSettings,
+  SentUpdate,
+} from './types';
 
 export interface EventRecord {
   event: GcalEvent;
@@ -51,7 +59,16 @@ export interface StoreDeps {
 }
 
 const BASE32HEX = '0123456789abcdefghijklmnopqrstuv';
-const PALETTE = ['#9fe1e7', '#b99aff', '#f83a22', '#fad165', '#92e1c0', '#ffad46', '#cabdbf', '#16a765'];
+const PALETTE = [
+  '#9fe1e7',
+  '#b99aff',
+  '#f83a22',
+  '#fad165',
+  '#92e1c0',
+  '#ffad46',
+  '#cabdbf',
+  '#16a765',
+];
 
 /**
  * One user's calendars and events. A single change counter orders every visible change, so one
@@ -63,7 +80,10 @@ export class CalendarStore {
   private seq = 0;
   private readonly epochs = new Map<string, number>();
 
-  constructor(readonly owner: Owner, readonly deps: StoreDeps) {}
+  constructor(
+    readonly owner: Owner,
+    readonly deps: StoreDeps,
+  ) {}
 
   now(): number {
     return this.deps.clock.now();
@@ -111,7 +131,8 @@ export class CalendarStore {
 
   addCalendar(spec: CalendarSpec): CalendarRecord {
     const primary = spec.primary ?? false;
-    const id = spec.id ?? (primary ? this.owner.email : `${this.newId(26)}@group.calendar.google.com`);
+    const id =
+      spec.id ?? (primary ? this.owner.email : `${this.newId(26)}@group.calendar.google.com`);
     const existing = this.calendars.get(id);
     const cal: CalendarRecord = existing ?? {
       id,
@@ -128,7 +149,13 @@ export class CalendarStore {
       events: new Map(),
     };
     // Subscribing again to a calendar that was removed brings the same entry back.
-    if (existing) Object.assign(cal, { summary: spec.summary, deleted: false, selected: spec.selected ?? true, hidden: spec.hidden ?? false });
+    if (existing)
+      Object.assign(cal, {
+        summary: spec.summary,
+        deleted: false,
+        selected: spec.selected ?? true,
+        hidden: spec.hidden ?? false,
+      });
     if (spec.description !== undefined) cal.description = spec.description;
     if (spec.summaryOverride !== undefined) cal.summaryOverride = spec.summaryOverride;
     if (spec.colorId !== undefined) cal.colorId = spec.colorId;

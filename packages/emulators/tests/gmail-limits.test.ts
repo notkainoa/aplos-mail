@@ -34,7 +34,13 @@ test('userRateLimitExceeded403 has the exact Google body', async () => {
     error: {
       code: 403,
       message: 'User-rate limit exceeded.',
-      errors: [{ message: 'User-rate limit exceeded.', domain: 'usageLimits', reason: 'userRateLimitExceeded' }],
+      errors: [
+        {
+          message: 'User-rate limit exceeded.',
+          domain: 'usageLimits',
+          reason: 'userRateLimitExceeded',
+        },
+      ],
       status: 'PERMISSION_DENIED',
     },
   });
@@ -49,7 +55,13 @@ test('resourceExhausted429 has the exact Google body', async () => {
       message: QUOTA_TEXT,
       errors: [{ message: QUOTA_TEXT, domain: 'global', reason: 'rateLimitExceeded' }],
       status: 'RESOURCE_EXHAUSTED',
-      details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'RATE_LIMIT_EXCEEDED', domain: 'googleapis.com' }],
+      details: [
+        {
+          '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+          reason: 'RATE_LIMIT_EXCEEDED',
+          domain: 'googleapis.com',
+        },
+      ],
     },
   });
 });
@@ -57,7 +69,11 @@ test('resourceExhausted429 has the exact Google body', async () => {
 test('messageOnly is a 403 whose text alone names the per-minute quota: no status, no errors array, no reason', async () => {
   const refused = await overLimit('messageOnly');
   assert.equal(refused.status, 403);
-  assert.deepEqual(Object.keys(refused.json.error).sort(), ['code', 'message'], 'a client reading errors[0].reason finds nothing');
+  assert.deepEqual(
+    Object.keys(refused.json.error).sort(),
+    ['code', 'message'],
+    'a client reading errors[0].reason finds nothing',
+  );
   assert.match(refused.json.error.message, /per minute per user/);
 });
 
@@ -68,7 +84,11 @@ test('Retry-After in seconds is the time until enough units leave the window', a
   for (let i = 0; i < 3; i++) await h.api('/messages'); // 15 more, window now 20
   const refused = await h.api('/messages');
   assert.equal(refused.status, 403);
-  assert.equal(refused.headers.get('retry-after'), '50', 'the oldest 5 units leave at t0 + 60 s, 50 s from now');
+  assert.equal(
+    refused.headers.get('retry-after'),
+    '50',
+    'the oldest 5 units leave at t0 + 60 s, 50 s from now',
+  );
   await h.clock.advance(50_000);
   assert.equal((await h.api('/messages')).status, 200);
 });
@@ -98,7 +118,10 @@ test('more requests in flight than the concurrency cap get 429 "Too many concurr
   assert.equal(results[3].json.error.status, 'RESOURCE_EXHAUSTED');
   const gmail = h.emu.log.filter(e => e.service === 'gmail');
   // Refused requests hold a slot for their latency too, so the fifth sees four ahead of it.
-  assert.deepEqual(gmail.map(e => e.inFlight), [1, 2, 3, 4, 5]);
+  assert.deepEqual(
+    gmail.map(e => e.inFlight),
+    [1, 2, 3, 4, 5],
+  );
   assert.equal(h.emu.inFlight(), 0, 'slots are released when requests finish');
   assert.equal((await h.api('/profile')).status, 200);
 });
@@ -108,9 +131,17 @@ test('refused requests hold an in-flight slot too, so a burst while throttled sh
   await h.api('/profile'); // spends the whole minute
   const burst = await Promise.all(Array.from({ length: 12 }, () => h.api('/profile')));
   const reasons = burst.map(r => r.json.error.message);
-  assert.equal(reasons.filter(m => m === 'Too many concurrent requests for user.').length, 9, 'three refusals in flight, nine more turned away');
+  assert.equal(
+    reasons.filter(m => m === 'Too many concurrent requests for user.').length,
+    9,
+    'three refusals in flight, nine more turned away',
+  );
   const gmail = h.emu.log.filter(e => e.service === 'gmail').slice(1);
-  assert.equal(Math.max(...gmail.map(e => e.inFlight)), 12, 'the log shows the whole burst in flight');
+  assert.equal(
+    Math.max(...gmail.map(e => e.inFlight)),
+    12,
+    'the log shows the whole burst in flight',
+  );
   assert.throws(() => maxInFlight(h.emu.log, 3), 'a "3 in flight" assertion catches the burst');
   assert.equal(h.emu.inFlight(), 0);
 });
@@ -124,12 +155,18 @@ test('dailyLimitExceeded stops every call until midnight Pacific, across a DST c
 
   const refused = await h.api('/profile');
   assert.equal(refused.status, 403);
-  assert.deepEqual(refused.json.error.errors, [{ message: 'Daily Limit Exceeded', domain: 'usageLimits', reason: 'dailyLimitExceeded' }]);
+  assert.deepEqual(refused.json.error.errors, [
+    { message: 'Daily Limit Exceeded', domain: 'usageLimits', reason: 'dailyLimitExceeded' },
+  ]);
   assert.equal(h.emu.log.at(-1)!.units, 0);
 
   await h.clock.advanceTo(resetsAt - 1000);
   await h.renew();
-  assert.equal((await h.api('/profile')).status, 403, 'a fixed +24 h would already have reset; Pacific midnight has not come');
+  assert.equal(
+    (await h.api('/profile')).status,
+    403,
+    'a fixed +24 h would already have reset; Pacific midnight has not come',
+  );
   await h.clock.advanceTo(resetsAt);
   assert.equal((await h.api('/profile')).status, 200);
   assert.equal(h.emu.dailyLimit(), null);
@@ -154,7 +191,8 @@ test('quotaExceeded uses its own reason, and the next midnight is 23 hours away 
 
 test('sending above the daily limit gets 429 "Mail sending", and sent mail keeps its Message-ID', async () => {
   const h = await setup({ sendLimitPerDay: 2, unitsPerMinute: 100_000 });
-  const send = (id: string) => h.api('/messages/send', { method: 'POST', body: { raw: rawMessage({ messageId: id }) } });
+  const send = (id: string) =>
+    h.api('/messages/send', { method: 'POST', body: { raw: rawMessage({ messageId: id }) } });
   const first = await send('first@client.example.test');
   assert.equal(first.status, 200);
   assert.deepEqual(first.json.labelIds, ['SENT']);
@@ -164,38 +202,69 @@ test('sending above the daily limit gets 429 "Mail sending", and sent mail keeps
   const refused = await send('third@client.example.test');
   assert.equal(refused.status, 429);
   // 2026-10-27 09:00 PDT; sending works again at the next Pacific midnight.
-  assert.equal(refused.json.error.message, 'User-rate limit exceeded.  Retry after 2026-10-28T07:00:00.000Z (Mail sending)');
-  assert.equal(refused.headers.get('retry-after'), null, 'no Retry-After header unless the setting asks for one');
+  assert.equal(
+    refused.json.error.message,
+    'User-rate limit exceeded.  Retry after 2026-10-28T07:00:00.000Z (Mail sending)',
+  );
+  assert.equal(
+    refused.headers.get('retry-after'),
+    null,
+    'no Retry-After header unless the setting asks for one',
+  );
   assert.equal(refused.json.error.errors[0].reason, 'rateLimitExceeded');
   assert.equal(h.emu.meter.unitsInWindow(), unitsBefore, 'a refused send costs nothing');
 
   const sent = h.emu.mailbox.listMessages().filter(m => m.labelIds.includes('SENT'));
-  assert.deepEqual(sent.map(m => m.messageId).sort(), ['first@client.example.test', 'second@client.example.test']);
+  assert.deepEqual(sent.map(m => m.messageId).sort(), [
+    'first@client.example.test',
+    'second@client.example.test',
+  ]);
   const full = await h.api(`/messages/${first.json.id}?format=metadata&metadataHeaders=Message-ID`);
-  assert.deepEqual(full.json.payload.headers, [{ name: 'Message-ID', value: '<first@client.example.test>' }]);
+  assert.deepEqual(full.json.payload.headers, [
+    { name: 'Message-ID', value: '<first@client.example.test>' },
+  ]);
 
   // drafts.send counts too, and the limit resets at midnight Pacific.
-  const draft = await h.api('/drafts', { method: 'POST', body: { message: { raw: rawMessage({}) } } });
-  assert.equal((await h.api('/drafts/send', { method: 'POST', body: { id: draft.json.id } })).status, 429);
+  const draft = await h.api('/drafts', {
+    method: 'POST',
+    body: { message: { raw: rawMessage({}) } },
+  });
+  assert.equal(
+    (await h.api('/drafts/send', { method: 'POST', body: { id: draft.json.id } })).status,
+    429,
+  );
   await h.clock.advanceTo(nextPacificMidnight(h.clock.now()));
   await h.renew();
-  assert.equal((await h.api('/drafts/send', { method: 'POST', body: { id: draft.json.id } })).status, 200);
+  assert.equal(
+    (await h.api('/drafts/send', { method: 'POST', body: { id: draft.json.id } })).status,
+    200,
+  );
 });
 
 test('upload endpoint accepts message/rfc822 and keeps the Message-ID', async () => {
   const h = await setup();
-  const raw = Buffer.from(Buffer.from(rawMessage({ messageId: 'uploaded@client.example.test' }), 'base64url'));
-  const response = await h.emu.fetch('https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${h.token}`, 'content-type': 'message/rfc822' },
-    body: raw,
-  });
+  const raw = Buffer.from(
+    Buffer.from(rawMessage({ messageId: 'uploaded@client.example.test' }), 'base64url'),
+  );
+  const response = await h.emu.fetch(
+    'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media',
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${h.token}`, 'content-type': 'message/rfc822' },
+      body: raw,
+    },
+  );
   const sent = await result(response);
   assert.equal(sent.status, 200);
   assert.equal(h.emu.mailbox.getMessage(sent.json.id)!.messageId, 'uploaded@client.example.test');
-  const resumable = await h.emu.fetch('https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=resumable', {
-    method: 'POST', headers: { authorization: `Bearer ${h.token}` }, body: raw,
-  });
+  const resumable = await h.emu.fetch(
+    'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=resumable',
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${h.token}` },
+      body: raw,
+    },
+  );
   assert.equal(resumable.status, 400);
 });
 
@@ -216,7 +285,11 @@ test('filters and sendAs writes need gmail.settings.basic', async () => {
   const refused = await modifyOnly.api('/settings/filters', { method: 'POST', body });
   assert.equal(refused.status, 403);
   assert.equal(refused.json.error.errors[0].reason, 'insufficientPermissions');
-  assert.equal((await modifyOnly.api('/settings/filters')).status, 200, 'reading filters is allowed with gmail.modify');
+  assert.equal(
+    (await modifyOnly.api('/settings/filters')).status,
+    200,
+    'reading filters is allowed with gmail.modify',
+  );
 
   const settingsOnly = await setup({ scopes: ['openid', SCOPE.gmailSettingsBasic] });
   assert.equal((await settingsOnly.api('/settings/filters', { method: 'POST', body })).status, 200);
@@ -236,7 +309,9 @@ test('access tokens expire after 3599 s with a 401 authError', async () => {
   assert.equal((await h.api('/profile')).status, 200);
   h.emu.oauth.expireAccessTokens();
   assert.equal((await h.api('/profile')).status, 401);
-  const missing = await result(await h.emu.fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile'));
+  const missing = await result(
+    await h.emu.fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile'),
+  );
   assert.equal(missing.status, 401);
 });
 
@@ -247,10 +322,17 @@ test('origins the emulator does not serve are blocked, and Calendar is served by
     assert.equal((error as Error).message, 'External network blocked: https://api.groq.com');
     return true;
   });
-  await assert.rejects(h.emu.fetch('http://gmail.googleapis.com/gmail/v1/users/me/profile'), /External network blocked: http:\/\/gmail\.googleapis\.com/);
+  await assert.rejects(
+    h.emu.fetch('http://gmail.googleapis.com/gmail/v1/users/me/profile'),
+    /External network blocked: http:\/\/gmail\.googleapis\.com/,
+  );
   assert.deepEqual(h.emu.blockedOrigins, ['https://api.groq.com', 'http://gmail.googleapis.com']);
 
-  const calendar = await result(await h.emu.fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', { headers: { authorization: `Bearer ${h.token}` } }));
+  const calendar = await result(
+    await h.emu.fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+      headers: { authorization: `Bearer ${h.token}` },
+    }),
+  );
   // Calendar is routed (this token lacks the calendar scope) and logged under its own service.
   assert.equal(calendar.status, 403);
   assert.equal(calendar.json.error.errors[0].reason, 'insufficientPermissions');
@@ -264,17 +346,60 @@ test('request log holds no subjects, bodies, addresses, tokens or queries', asyn
   await h.api(`/messages?q=${secretQuery}`);
   const list = await h.api('/threads?maxResults=5');
   for (const t of list.json.threads) await h.api(`/threads/${t.id}?format=full`);
-  await h.api('/messages/send', { method: 'POST', body: { raw: rawMessage({ to: 'someone.private@example.test', subject: 'Private subject line', body: 'Private body words' }) } });
-  await h.api('/settings/filters', { method: 'POST', body: { criteria: { from: 'filter.address@example.test' }, action: { removeLabelIds: ['INBOX'] } } });
+  await h.api('/messages/send', {
+    method: 'POST',
+    body: {
+      raw: rawMessage({
+        to: 'someone.private@example.test',
+        subject: 'Private subject line',
+        body: 'Private body words',
+      }),
+    },
+  });
+  await h.api('/settings/filters', {
+    method: 'POST',
+    body: {
+      criteria: { from: 'filter.address@example.test' },
+      action: { removeLabelIds: ['INBOX'] },
+    },
+  });
   await h.api(`/messages?q=${secretQuery}`);
 
   const logText = JSON.stringify(h.emu.log);
-  const secrets: string[] = [secretQuery, h.token, h.refreshToken!, 'someone.private', 'Private subject', 'Private body', 'filter.address', 'test.user', 'example.test', 'Bearer'];
-  for (const message of h.emu.mailbox.listMessages()) secrets.push(message.subject, message.from, message.snippet.slice(0, 40), message.messageId);
-  for (const secret of secrets.filter(Boolean)) assert.ok(!logText.includes(secret), `log leaks ${secret}`);
+  const secrets: string[] = [
+    secretQuery,
+    h.token,
+    h.refreshToken!,
+    'someone.private',
+    'Private subject',
+    'Private body',
+    'filter.address',
+    'test.user',
+    'example.test',
+    'Bearer',
+  ];
+  for (const message of h.emu.mailbox.listMessages())
+    secrets.push(message.subject, message.from, message.snippet.slice(0, 40), message.messageId);
+  for (const secret of secrets.filter(Boolean))
+    assert.ok(!logText.includes(secret), `log leaks ${secret}`);
 
-  const allowed = new Set(['seq', 'at', 'service', 'apiMethod', 'httpMethod', 'units', 'status', 'reason', 'inFlight', 'fault', 'account', 'batch']);
-  for (const entry of h.emu.log) for (const key of Object.keys(entry)) assert.ok(allowed.has(key), `unexpected log field ${key}`);
+  const allowed = new Set([
+    'seq',
+    'at',
+    'service',
+    'apiMethod',
+    'httpMethod',
+    'units',
+    'status',
+    'reason',
+    'inFlight',
+    'fault',
+    'account',
+    'batch',
+  ]);
+  for (const entry of h.emu.log)
+    for (const key of Object.keys(entry))
+      assert.ok(allowed.has(key), `unexpected log field ${key}`);
 });
 
 test('the fault hook can replace, drop, lose or corrupt an answer, and every one is logged', async () => {
@@ -289,14 +414,24 @@ test('the fault hook can replace, drop, lose or corrupt an answer, and every one
   const h = await setup({ faults });
   seen.length = 0;
 
-  plan['gmail.users.getProfile'] = { kind: 'respond', response: new Response('{"error":{"code":503,"message":"x","errors":[{"reason":"backendError"}]}}', { status: 503 }) };
+  plan['gmail.users.getProfile'] = {
+    kind: 'respond',
+    response: new Response(
+      '{"error":{"code":503,"message":"x","errors":[{"reason":"backendError"}]}}',
+      { status: 503 },
+    ),
+  };
   const replaced = await h.api('/profile');
   assert.equal(replaced.status, 503);
   assert.equal(h.emu.log.at(-1)!.fault, 'respond');
   assert.equal(h.emu.log.at(-1)!.reason, 'backendError');
   assert.equal(h.emu.log.at(-1)!.units, 0, 'a replaced answer is not charged by default');
 
-  plan['gmail.users.getProfile'] = { kind: 'respond', response: new Response('{}', { status: 500 }), charge: true };
+  plan['gmail.users.getProfile'] = {
+    kind: 'respond',
+    response: new Response('{}', { status: 500 }),
+    charge: true,
+  };
   await h.api('/profile');
   assert.equal(h.emu.log.at(-1)!.units, 1);
 
@@ -305,8 +440,17 @@ test('the fault hook can replace, drop, lose or corrupt an answer, and every one
   assert.equal(h.emu.log.at(-1)!.fault, 'drop');
 
   plan['gmail.users.messages.send'] = { kind: 'dropAfter' };
-  await assert.rejects(h.api('/messages/send', { method: 'POST', body: { raw: rawMessage({ messageId: 'lost-reply@client.example.test' }) } }), TypeError);
-  assert.ok(h.emu.mailbox.listMessages().some(m => m.messageId === 'lost-reply@client.example.test'), 'the write happened');
+  await assert.rejects(
+    h.api('/messages/send', {
+      method: 'POST',
+      body: { raw: rawMessage({ messageId: 'lost-reply@client.example.test' }) },
+    }),
+    TypeError,
+  );
+  assert.ok(
+    h.emu.mailbox.listMessages().some(m => m.messageId === 'lost-reply@client.example.test'),
+    'the write happened',
+  );
   assert.equal(h.emu.log.at(-1)!.units, 100);
   assert.equal(h.emu.log.at(-1)!.status, 200);
 

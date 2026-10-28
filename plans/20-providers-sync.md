@@ -336,7 +336,7 @@ PV3 is the long pole (PV6 was the other one, now round 2). `prov-gmail` starts o
 **Goal.** Drafts that follow you between devices, rules that act while the Mac sleeps, and one-key unsubscribe. (The shared state channel and the lease moved to PV3.)
 **Deliverables.**
 - **Drafts API** (ARCH §7.4): upload 5 s after idle and on close (15 units); skip unchanged fingerprints; serialize per draft by stable `draftId`; large drafts through `/upload/`; `DRAFT` history records with a message id Aplos did not write raise a conflict ("keep mine, take theirs, keep both"); reply threading from the selected message (D9).
-- **Send transport:** `drafts.send` when a remote draft exists, else `/upload/…/messages/send` as `message/rfc822`, resumable above 5 MB (D20); never retried; `uncertain` settled with `rfc822msgid:` (the state machine is plan 10's, ARCH §7.1).
+- **Send transport:** the bytes sent are always the submission's pinned revision (ARCH 7.1). `drafts.send` only when `sendsRemoteDraft(payload)` is true, i.e. the remote draft is provably that revision (`baseRemoteMessageId` precondition); otherwise the pinned MIME by `/upload/…/messages/send` as `message/rfc822`, resumable above 5 MB (D20); never retried; `uncertain` settled with `rfc822msgid:` (the state machine is plan 10's, ARCH §7.1).
 - **Filters:** a `sender_rules` mirror for Block and skip-Inbox through `settings.filters.create` (5 units), `list` (1); delete-and-recreate for edits; application to existing mail through `messages.list` plus `batchModify`; capability derived from the granted `gmail.settings.basic` scope. Decision 4 is answered (2026-10-27): filters are kept.
 - **List-Unsubscribe:** capture `List-Unsubscribe` and `List-Unsubscribe-Post` at sync (already in the P1 header list), store in `messages.list_unsub`; execution per Decision 5: RFC 8058 one-click POST from the engine under the image proxy's SSRF rules (ARCH §10), else `mailto:` through the account, else open the page.
 **Owns/touches.** `prov-gmail-write`: `host/providers/google/{send,drafts,filters,unsubscribe}.ts`, `methods/unsubscribe.ts`.
@@ -491,7 +491,7 @@ Each run writes a **content-free evidence file** (counts, timings, units per min
 
 ### 5.5 Live experiments register
 
-Experiments are named EX1-EX12 so they cannot be confused with plan 10's milestones E0-E8 (there is no EX9).
+Experiments are named EX1-EX14 so they cannot be confused with plan 10's milestones E0-E8 (there is no EX9).
 
 | # | Question | Source | Settled in |
 |---|---|---|---|
@@ -506,6 +506,8 @@ Experiments are named EX1-EX12 so they cannot be confused with plan 10's milesto
 | EX10 | Does a Graph upload-session send keep the `internetMessageId` | ARCH §5.2 [U] | PV10 |
 | EX11 | Does iCloud or Fastmail CalDAV send the RSVP reply when `PARTSTAT` is updated | not in research | PV9 |
 | EX12 | After a Testing-mode expiry, does a reconnect with `login_hint` and without `prompt=consent` return a new refresh token, and how old can a Gmail history cursor be and still answer? | `RC/protocols/proto-google.md` §8.1 (7-day expiry); ARCH §5.1 | PV5, first reconnect |
+| EX13 | Does Gmail send `Retry-After` on the per-user 403 `rateLimitExceeded` or on 429? The emulator shows 0.2.3 would finish slowly, not fail, if it did, so the field failure suggests it does not | Providers thread, Gmail emulator gate (STATUS 2026-10-27) | `prov-gmail`, first live run |
+| EX14 | Does a Testing-mode token response include `refresh_token_expires_in`? `reconnectBy` uses it when present, else grant time plus 7 days | Providers thread (STATUS 2026-10-27) | `prov-gov`, first live run |
 
 > **What this means:** Practice providers prove the logic quickly and cheaply. Only real accounts prove the real thing, so live checks are written down, run by the owner where mail would be sent, and never replaced by mocks.
 

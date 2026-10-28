@@ -1,9 +1,24 @@
 name: CI
 
+# Free-minutes rule: Linux jobs run on pushes to revamp only; there is no pull_request trigger
+# (the Integrator runs the full suite before each merge). macOS runs only when a manual run
+# ticks the "macos" box, so a scratch-branch proof of the static job costs Linux minutes only.
 on:
-  pull_request:
   push:
-    branches: [main]
+    branches: [revamp]
+    # Coordination and docs pushes (STATUS.md entries land on revamp many times a day) run nothing.
+    # A push that also changes code still runs everything.
+    paths-ignore:
+      - 'plans/**'
+      - 'mockups/**'
+      - 'research/**'
+      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: Also run the desktop job on macOS (costs about 10x Linux minutes)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,21 +31,25 @@ jobs:
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
     outputs:
-      desktop: ${{ steps.filter.outputs.desktop }}
-      web: ${{ steps.filter.outputs.web }}
+      desktop: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.desktop == 'true' }}
+      web: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.web == 'true' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
+        if: github.event_name == 'push'
         with:
+          # On a push to revamp, compare with the commit before the push.
+          base: ${{ github.ref_name }}
           filters: |
             shared: &shared
               - package.json
               - package-lock.json
+              - .node-version
               - packages/**
               - .github/workflows/ci.yml
             desktop:
@@ -41,23 +60,47 @@ jobs:
               - *shared
               - apps/web/**
 
-  desktop:
-    name: Desktop (typecheck, test, build)
+  static:
+    name: Static (format, lint, types, audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      # --ignore-scripts: no Electron binary download and no git-hook install on the runner.
+      - run: npm ci --ignore-scripts
+      # Checks other lanes add later print "pending: <name>" until their script exists.
+      - run: node scripts/audit/run-if-present.mjs format:check
+      - run: npm run lint
+      - run: npm run test:lint
+      - run: npm run test:audit
+      - run: npm run lint:css
+      # The change check (a PR against revamp) runs locally in npm run check and in the integrator's merge procedure;
+      # a push to revamp has nothing to compare, so CI validates OWNERS.md itself.
+      - run: node scripts/audit/owners-check.mjs --validate
+      - run: npm run typecheck
+      - run: npm audit --omit=dev --audit-level=high
+
+  unit:
+    name: Unit tests
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck -w @aplos/desktop
-      - run: npm test -w @aplos/desktop
-      # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
-      - run: npm run build -w @aplos/desktop
+      - run: npm ci --ignore-scripts
+      # Runs under system Node. The suites that touch node:sqlite (store, service, queue,
+      # sync-safety, sql) move under Electron's own Node in Q3, because node:sqlite uses the
+      # SQLite of the host runtime and the two differ.
+      - run: npm test
 
   web:
     name: Website (typecheck, build)
@@ -66,11 +109,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run typecheck -w @aplos/web
       - run: npm run build -w @aplos/web
+
+  # macOS minutes are scarce: this job runs only when started by hand with the macos box ticked.
+  desktop-macos:
+    name: Desktop on macOS (typecheck, test, build)
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
+      - run: npm run build -w @aplos/desktop

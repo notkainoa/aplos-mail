@@ -6,11 +6,63 @@ import { Random, mixSeed } from './rng';
  * Deterministic synthetic mail. Every name, organisation, subject and sentence below is invented;
  * all addresses end in `.example.test`. The same seed always yields the same mailbox.
  */
-const FIRST = ['Maren', 'Tobias', 'Ines', 'Callum', 'Priya', 'Joaquin', 'Linnea', 'Dmitri', 'Odessa', 'Rafferty', 'Noor', 'Bastien', 'Willa', 'Kofi', 'Saskia', 'Emrys'];
-const LAST = ['Ashgrove', 'Valdry', 'Pennick', 'Okonjo', 'Thistlewood', 'Marquand', 'Halloran', 'Brandvold', 'Kestrel', 'Lindqvist'];
-const ORGS = ['Lanternworks', 'Brightwell Cooperative', 'Quillon Labs', 'Harbor Lane Bakery', 'Northfield Transit', 'Pinecrest Studio', 'Oakmere Library', 'Tidewater Market'];
-const TOPICS = ['the garden schedule', 'next quarter plans', 'the workshop agenda', 'the shared calendar', 'our reading list', 'the trip itinerary', 'the budget draft', 'volunteer rotas'];
-const OPENERS = ['Thanks for the note.', 'Quick follow-up from earlier.', 'Sorry for the slow reply.', 'Looping back on this.', 'One more thing before the weekend.'];
+const FIRST = [
+  'Maren',
+  'Tobias',
+  'Ines',
+  'Callum',
+  'Priya',
+  'Joaquin',
+  'Linnea',
+  'Dmitri',
+  'Odessa',
+  'Rafferty',
+  'Noor',
+  'Bastien',
+  'Willa',
+  'Kofi',
+  'Saskia',
+  'Emrys',
+];
+const LAST = [
+  'Ashgrove',
+  'Valdry',
+  'Pennick',
+  'Okonjo',
+  'Thistlewood',
+  'Marquand',
+  'Halloran',
+  'Brandvold',
+  'Kestrel',
+  'Lindqvist',
+];
+const ORGS = [
+  'Lanternworks',
+  'Brightwell Cooperative',
+  'Quillon Labs',
+  'Harbor Lane Bakery',
+  'Northfield Transit',
+  'Pinecrest Studio',
+  'Oakmere Library',
+  'Tidewater Market',
+];
+const TOPICS = [
+  'the garden schedule',
+  'next quarter plans',
+  'the workshop agenda',
+  'the shared calendar',
+  'our reading list',
+  'the trip itinerary',
+  'the budget draft',
+  'volunteer rotas',
+];
+const OPENERS = [
+  'Thanks for the note.',
+  'Quick follow-up from earlier.',
+  'Sorry for the slow reply.',
+  'Looping back on this.',
+  'One more thing before the weekend.',
+];
 const MIDDLES = [
   'I moved the meeting to Thursday afternoon, which should leave more room for questions.',
   'The draft is in the shared folder and I left comments on the second page.',
@@ -19,12 +71,45 @@ const MIDDLES = [
   'Nothing urgent here, just keeping everyone in the loop.',
 ];
 const CLOSERS = ['Talk soon.', 'Let me know what works.', 'Best wishes.', 'Many thanks.'];
-const HEADLINES = ['Five small ideas for your week', 'New arrivals and a few favourites', 'What we are reading this month', 'Seasonal notes from the studio', 'A short update from the team'];
+const HEADLINES = [
+  'Five small ideas for your week',
+  'New arrivals and a few favourites',
+  'What we are reading this month',
+  'Seasonal notes from the studio',
+  'A short update from the team',
+];
 
-type Kind = 'conversation' | 'newsletter' | 'social' | 'updates' | 'sent' | 'archived' | 'trash' | 'spam' | 'draft';
-const KINDS: readonly Kind[] = ['conversation', 'newsletter', 'social', 'updates', 'sent', 'archived', 'trash', 'spam', 'draft'];
+type Kind =
+  | 'conversation'
+  | 'newsletter'
+  | 'social'
+  | 'updates'
+  | 'sent'
+  | 'archived'
+  | 'trash'
+  | 'spam'
+  | 'draft';
+const KINDS: readonly Kind[] = [
+  'conversation',
+  'newsletter',
+  'social',
+  'updates',
+  'sent',
+  'archived',
+  'trash',
+  'spam',
+  'draft',
+];
 const KIND_WEIGHTS: (readonly [Kind, number])[] = [
-  ['conversation', 30], ['newsletter', 20], ['social', 8], ['updates', 12], ['sent', 8], ['archived', 10], ['trash', 4], ['spam', 4], ['draft', 4],
+  ['conversation', 30],
+  ['newsletter', 20],
+  ['social', 8],
+  ['updates', 12],
+  ['sent', 8],
+  ['archived', 10],
+  ['trash', 4],
+  ['spam', 4],
+  ['draft', 4],
 ];
 
 export interface GenerateOptions {
@@ -61,7 +146,9 @@ const slug = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]+/g,
 export function generateInto(mailbox: Mailbox, options: GenerateOptions & { clock: Clock }): void {
   const random = new Random(mixSeed(options.seed ?? 1, 0x6d));
   const now = options.now ?? options.clock.now();
-  const userLabels = ['Projects', 'Receipts', 'Team Notes'].map(name => mailbox.labelIdByName(name) ?? mailbox.createLabel(name).id);
+  const userLabels = ['Projects', 'Receipts', 'Team Notes'].map(
+    name => mailbox.labelIdByName(name) ?? mailbox.createLabel(name).id,
+  );
   const own: Person = { name: 'Test User', address: mailbox.emailAddress };
 
   const person = (): Person => {
@@ -74,7 +161,8 @@ export function generateInto(mailbox: Mailbox, options: GenerateOptions & { cloc
     return { name, address: `hello@${slug(name)}.example.test` };
   };
   const formatted = (p: Person): string => `${p.name} <${p.address}>`;
-  const paragraph = (): string => `${random.pick(OPENERS)} ${random.pick(MIDDLES)} ${random.pick(CLOSERS)}`;
+  const paragraph = (): string =>
+    `${random.pick(OPENERS)} ${random.pick(MIDDLES)} ${random.pick(CLOSERS)}`;
   const topic = (): string => random.pick(TOPICS);
 
   for (let index = 0; index < options.threads; index++) {
@@ -87,10 +175,14 @@ export function generateInto(mailbox: Mailbox, options: GenerateOptions & { cloc
     let count = 1;
     const subject = (): string => {
       switch (kind) {
-        case 'newsletter': return random.pick(HEADLINES);
-        case 'social': return `${person().name} mentioned you in a comment`;
-        case 'updates': return `Your receipt from ${random.pick(ORGS)}`;
-        default: return `Notes on ${topic()}`;
+        case 'newsletter':
+          return random.pick(HEADLINES);
+        case 'social':
+          return `${person().name} mentioned you in a comment`;
+        case 'updates':
+          return `Your receipt from ${random.pick(ORGS)}`;
+        default:
+          return `Notes on ${topic()}`;
       }
     };
     const title = subject();
@@ -99,7 +191,14 @@ export function generateInto(mailbox: Mailbox, options: GenerateOptions & { cloc
     switch (kind) {
       case 'conversation':
       case 'archived':
-        count = random.weighted([[1, 3], [2, 4], [3, 3], [4, 2], [5, 1], [6, 1]]);
+        count = random.weighted([
+          [1, 3],
+          [2, 4],
+          [3, 3],
+          [4, 2],
+          [5, 1],
+          [6, 1],
+        ]);
         break;
       case 'newsletter': {
         counterpart = org();
@@ -122,7 +221,14 @@ export function generateInto(mailbox: Mailbox, options: GenerateOptions & { cloc
         counterpart = org();
         labelBase.push('CATEGORY_UPDATES');
         extra.headers = random.chance(0.6) ? { 'Auto-Submitted': 'auto-generated' } : {};
-        if (random.chance(0.3)) extra.attachments = [{ filename: 'receipt.pdf', mimeType: 'application/pdf', data: Buffer.from(`%PDF-1.4 synthetic receipt ${random.hex(12)}`) }];
+        if (random.chance(0.3))
+          extra.attachments = [
+            {
+              filename: 'receipt.pdf',
+              mimeType: 'application/pdf',
+              data: Buffer.from(`%PDF-1.4 synthetic receipt ${random.hex(12)}`),
+            },
+          ];
         break;
       case 'draft':
         count = random.int(1, 2);
@@ -133,7 +239,12 @@ export function generateInto(mailbox: Mailbox, options: GenerateOptions & { cloc
 
     let first: string | undefined;
     for (let n = 0; n < count; n++) {
-      const fromContact = kind === 'sent' ? false : kind === 'conversation' || kind === 'archived' || kind === 'draft' ? n % 2 === 0 : true;
+      const fromContact =
+        kind === 'sent'
+          ? false
+          : kind === 'conversation' || kind === 'archived' || kind === 'draft'
+            ? n % 2 === 0
+            : true;
       const sender = fromContact ? counterpart : own;
       const recipients = fromContact ? [own] : [counterpart];
       const labelIds = fromContact ? [...labelBase] : ['SENT'];
@@ -143,16 +254,19 @@ export function generateInto(mailbox: Mailbox, options: GenerateOptions & { cloc
         else if (kind !== 'archived') labelIds.push('INBOX');
       }
       const last = n === count - 1;
-      if (fromContact && last && labelIds.includes('INBOX') && random.chance(0.4)) labelIds.push('UNREAD');
+      if (fromContact && last && labelIds.includes('INBOX') && random.chance(0.4))
+        labelIds.push('UNREAD');
       if (fromContact && labelIds.includes('INBOX') && kind === 'conversation') {
         if (random.chance(0.35)) labelIds.push('IMPORTANT');
         if (last && random.chance(0.1)) labelIds.push('STARRED');
       }
-      if (last && kind !== 'trash' && kind !== 'spam' && random.chance(0.25)) labelIds.push(random.pick(userLabels));
+      if (last && kind !== 'trash' && kind !== 'spam' && random.chance(0.25))
+        labelIds.push(random.pick(userLabels));
       const text = `${paragraph()}\n\n${paragraph()}`;
-      const html = kind === 'newsletter' || kind === 'social' || kind === 'spam'
-        ? `<html><body><h1>${title}</h1><p>${paragraph()}</p><p><a href="https://links.example.test/read/${random.hex(8)}">Read more</a></p></body></html>`
-        : undefined;
+      const html =
+        kind === 'newsletter' || kind === 'social' || kind === 'spam'
+          ? `<html><body><h1>${title}</h1><p>${paragraph()}</p><p><a href="https://links.example.test/read/${random.hex(8)}">Read more</a></p></body></html>`
+          : undefined;
       const message = mailbox.addMessage({
         from: formatted(sender),
         to: recipients.map(formatted),
@@ -171,7 +285,13 @@ export function generateInto(mailbox: Mailbox, options: GenerateOptions & { cloc
       at = nextReplyAt(at, count - n, now, random);
     }
     if (kind === 'draft') {
-      mailbox.createDraftElsewhere({ to: [counterpart.address], subject: `Re: ${title}`, text: `${paragraph()}`, threadId: first, internalDate: at });
+      mailbox.createDraftElsewhere({
+        to: [counterpart.address],
+        subject: `Re: ${title}`,
+        text: `${paragraph()}`,
+        threadId: first,
+        internalDate: at,
+      });
     }
   }
   mailbox.history.clear();
@@ -180,7 +300,11 @@ export function generateInto(mailbox: Mailbox, options: GenerateOptions & { cloc
 /** A new standalone mailbox filled with synthetic mail. */
 export function generateMailbox(options: GenerateMailboxOptions): Mailbox {
   const clock = options.clock ?? new FakeClock({ auto: false });
-  const mailbox = new Mailbox({ clock, emailAddress: options.emailAddress ?? 'test.user@example.test', seed: options.seed ?? 1 });
+  const mailbox = new Mailbox({
+    clock,
+    emailAddress: options.emailAddress ?? 'test.user@example.test',
+    seed: options.seed ?? 1,
+  });
   generateInto(mailbox, { ...options, clock });
   return mailbox;
 }
