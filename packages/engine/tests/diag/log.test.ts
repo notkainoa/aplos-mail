@@ -139,6 +139,8 @@ test('the redactor', () => {
   assert.equal(r('Invalid label name "Taxes 2026"'), 'Invalid label name "[text]"');
   assert.equal(r('thread 18c2f3a4b5d6e7f8 not found'), 'thread [id] not found');
   assert.equal(r('word '.repeat(100)).length, 300);
+  assert.equal(r('550 5.7.1 [203.0.113.5] or 2001:db8::8a2e:370:7334 rejected at 12:30:45'), '550 5.7.1 [[ip]] or [ip] rejected at 12:30:45');
+  assert.equal(r('Subject: Lunch on Friday'), 'Subject: [text]');
 });
 
 test('the SHA-256 matches Node on block boundaries and non-ASCII input', () => {

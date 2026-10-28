@@ -8,7 +8,7 @@ import { sha256Hex } from './sha256';
  * best-effort by nature; it errs towards destroying text, because a log line that says less is cheap and a leak is not.
  */
 
-/** Free text is cut to this before any pattern runs, so a 2 MB string costs no more than a short one. */
+/** Longer "provider text" is a response body or a mistake, not an error message: it is replaced whole, unscanned. */
 const SCAN_MAX = 2000;
 
 // Zero-width, bidi, soft-hyphen and variation characters vanish; other control characters become spaces.
@@ -32,6 +32,12 @@ const TOKEN_SHAPES = [
 /** `key: value` and `key=value` pairs whose value is a credential, including JSON-escaped quotes. Short numbers stay (`"code":403`). */
 const SECRET_PAIR = /\b(authorization|proxy-authorization|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|api[_-]?key|x-api-key|x-goog-api-key|token|password|passwd|pwd|secret|code|cookie|set-cookie|session|sig|signature|key)(\\?["']?\s*[:=]\s*\\?["']?\s*)(?:(?:bearer|basic|token)\s+)?(?!\d{1,5}(?![\w.~+/-]))[^\s"'\\&,;}]+/gi;
 const AUTH_SCHEME = /\b(bearer|basic)\s+[\w.~+/=-]+/gi;
+/** `token <value>` with a space and no `=`: providers and libraries write it in prose. Short words (`token has`) stay. */
+const SECRET_WORD = /\b((?:access|refresh|id)?[_ -]?token|api[_ -]?key|key|password|passwd|secret)\s+(?=[\w.~+/=-]{12,})[\w.~+/=-]+/gi;
+/** `user:password@host` outside a URL. */
+const USER_INFO = /[^\s@"'<>/:]+:[^\s@"'<>/]+@(?=[A-Za-z0-9])/g;
+/** A labelled piece of mail (`Subject: …`, `To: …`) outside quotes: everything after the label goes, to the end. */
+const CONTENT_LABEL = /\b(subject|title|summary|snippet|body|preview|file ?name|display ?name|name|from|to|cc|bcc|reply-to|sender|recipients?)\s*[:=]\s*\S.*$/gi;
 const URL = /\b([a-z][a-z0-9+.-]{1,15}):\/\/([^\s"'<>\\]+)/gi;
 const ADDRESS = /[^\s@"'<>()[\]{},;:\\/]+@[^\s@"'<>()[\]{},;:\\/]+/g;
 /** Quoted text is where providers echo user data (`Invalid label "…"`); only a bare identifier without digits survives. */
@@ -41,8 +47,10 @@ const SAFE_QUOTED = /^[A-Za-z_][A-Za-z_.-]{0,40}$/;
 const MIXED_RUN = /(?<![\w-])(?=[\w-]*[A-Za-z])(?=[\w-]*\d)[\w-]{8,}(?![\w-])/g;
 /** Standard base64 with `+` (paths never have one), long letter-only runs, long digit runs. */
 const BASE64_PLUS = /(?<![\w+/-])(?=[A-Za-z0-9+/]*\+)[A-Za-z0-9+/]{20,}={0,2}/g;
-const LONG_LETTERS = /[A-Za-z]{40,}/g;
+const LONG_LETTERS = /[A-Za-z]{32,}/g;
 const LONG_DIGITS = /\d{10,}/g;
+/** IP addresses (an SMTP reply names the owner's): IPv4, and IPv6 with three or more colons so clock times stay. */
+const IP = /\b\d{1,3}(?:\.\d{1,3}){3}\b|(?<![\w:])(?:[0-9a-f]{0,4}:){3,7}[0-9a-f]{1,4}(?![\w:])/gi;
 
 /** NFKC-folds (fullwidth `＠` becomes `@`), drops invisible characters and undoes common escapes of `@`. */
 function fold(text: string): string {
@@ -96,13 +104,16 @@ function trimUrl(_match: string, scheme: string, rest: string): string {
 
 /**
  * Redacts free text from a provider or the OS: addresses become `[addr:<hash>]` (the same hash as an address field),
- * credentials `[secret]`, ids and long runs `[id]`, quoted text `"[text]"`, URL queries `?[q]`; then cuts to `max`.
+ * credentials `[secret]`, ids and long runs `[id]`, quoted or labelled text `[text]`, URL queries `?[q]`; then cuts to
+ * `max`. What it cannot catch is a plain digit-free word a provider echoes unquoted and unlabelled: the catalog keeps
+ * free text to provider error messages for that reason.
  */
 export function redactText(input: string, salt: string, max = LOG_TEXT_MAX): string {
-  const truncated = input.length > SCAN_MAX;
-  let text = fold(truncated ? input.slice(0, SCAN_MAX) : input);
+  if (input.length > SCAN_MAX) return '[long text]';
+  let text = fold(input);
   for (const re of TOKEN_SHAPES) text = text.replace(re, '[secret]');
-  text = text.replace(SECRET_PAIR, '$1$2[secret]').replace(AUTH_SCHEME, '$1 [secret]').replace(URL, trimUrl);
+  text = text.replace(SECRET_PAIR, '$1$2[secret]').replace(AUTH_SCHEME, '$1 [secret]').replace(SECRET_WORD, '$1 [secret]')
+    .replace(URL, trimUrl).replace(USER_INFO, '[secret]@');
   // Address hashes are parked behind private-use markers so the later passes cannot mangle them.
   const hashes: string[] = [];
   text = text.replace(ADDRESS, match => {
@@ -114,10 +125,12 @@ export function redactText(input: string, salt: string, max = LOG_TEXT_MAX): str
     const inner = groups.slice(0, 4).find(g => g !== undefined) ?? '';
     return SAFE_QUOTED.test(inner) ? match : `${match[0]}[text]${match[match.length - 1]}`;
   });
-  text = text.replace(BASE64_PLUS, '[secret]').replace(MIXED_RUN, '[id]').replace(LONG_LETTERS, '[secret]').replace(LONG_DIGITS, '[n]');
+  // An unclosed quote (a cut or malformed JSON) leaves its text unpaired: it goes too. Labels run after quotes, so a
+  // label inside a quoted string can never eat that string's closing quote.
+  if ((text.match(/"/g)?.length ?? 0) % 2) text = text.replace(/"[^"]*$/, '"[text]');
+  text = text.replace(CONTENT_LABEL, '$1: [text]');
+  text = text.replace(IP, '[ip]').replace(BASE64_PLUS, '[secret]').replace(MIXED_RUN, '[id]').replace(LONG_LETTERS, '[secret]').replace(LONG_DIGITS, '[n]');
   text = text.replace(/\ue000(\d+)\ue001/g, (_m, i: string) => `[addr:${hashes[Number(i)]}]`).replace(/[\ue000\ue001]/g, '');
-  // A string cut before scanning may end in half a token the patterns could not recognise: drop that last word.
-  if (truncated) text = `${text.replace(/\S*$/, '')}…`;
   text = text.replace(/\s+/g, ' ').trim();
   if (text.length > max) {
     text = text.slice(0, max);
