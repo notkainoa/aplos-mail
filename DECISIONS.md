@@ -1,5 +1,17 @@
 # Decisions
 
+## 2026-10-27 — Revamp Phase 0 step 1: legacy folders and workspaces
+
+- **Moved, not rewritten.** Today's engine is `packages/engine/src/legacy/` (`@aplos/engine`), the five shared files it needs (`types`, `ask`, `mailbox`, `summary`, `live`) are `packages/contract/src/legacy/` (`@aplos/contract`), and today's renderer is `apps/desktop/src/renderer/legacy/`. All three are read-only reference until Phase 2 deletes them (roadmap 1.1, plan 10 E1 item 1).
+- **No re-export stubs in `src/shared`.** The plan allowed one-line stubs so importers compile unchanged. The codemod (`scripts/codemod-imports.mjs`) rewrote every importer to `@aplos/contract/legacy/*` instead, so a stub would have no importer, and leaving a file at the old path would stop git from recording the five moves as renames (`git log --follow` would lose their history). `src/shared/version.ts` stays in the app.
+- **`@aplos/engine/legacy/*`, not `@aplos/engine/*`.** Imports of legacy code say so (`@aplos/engine/legacy/discover`), so the new engine's own paths stay free and Phase 2 can find every legacy importer with one search.
+- **Internal source packages.** Each package's `exports` maps `./legacy/*` to TypeScript source; there is no build step. tsconfig `paths` and a Vite alias resolve the same files. `scripts/build-main.mjs` bundles `@aplos/*` and keeps every third-party package external (esbuild's `packages:'external'` would have left `@aplos/*` out of the app). `@aplos/*` are dev dependencies of `@aplos/desktop`, so electron-builder never copies their source into `app.asar`; third-party packages they use (today `fast-xml-parser`) stay declared in `apps/desktop/package.json` too, because that is the manifest electron-builder reads.
+- **Provider types in the contract.** `AccountPreset`, `ProviderCapabilities`, `ProviderKind` and `ServerSettings` moved to `packages/contract/src/legacy/provider-types.ts`; the engine's `provider.ts` re-exports them. The contract never imports the engine.
+- **`appVersion` through `EngineOptions`.** The engine no longer reads the app's `package.json`; the host (`src/main/service.ts`) passes it.
+- **Portability test.** It moved to `packages/engine/tests/`, bundles every `.ts` file under `src/` at any depth (instead of one entry file, which nothing provides yet), and has a negative test that plants a `node:fs` import two folders deep. The orchestration run with the Node store, staged memory and Groq stays in the app as `tests/engine-host.test.ts`.
+- **Engine size, measured.** The neutral bundle of everything under `packages/engine/src` (all legacy today) is 353,669 bytes unminified, against the 400,000-byte budget. MOBILE.md's 146,544 was a minified figure. The freeze review should decide whether the budget applies to the new engine entry without `legacy/` (which Phase 2 deletes), because legacy plus zod plus new code would not fit.
+- **Packaged-app proof without a window.** `scripts/verify-release.mjs` shows the app's window, which the headless rule forbids, so step 1 was proved by `npm run package` plus a content check of `app.asar` instead. The full run waits for F8's hidden test mode (`APLOS_TEST=1`).
+
 ## 2026-10-24 — OAuth clients built into releases
 
 - **Closes the open decision on where OAuth client config lives for a public release.** The v0.2.0 draft, installed on a second Mac, could not connect Google: a packaged app read only `~/.config/aplos-mail/.env`, which exists only on the owner's machine.

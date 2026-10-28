@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-27 — Revamp Phase 0 step 1: engine, contract and renderer in legacy folders
+
+- **Change.** `git mv` of `apps/desktop/src/engine` to `packages/engine/src/legacy`, of `src/shared/{types,ask,mailbox,summary,live}.ts` to `packages/contract/src/legacy`, and of `src/renderer` to `src/renderer/legacy`; import specifiers rewritten by `scripts/codemod-imports.mjs`; workspaces `@aplos/engine` and `@aplos/contract`; tsconfig paths, Vite alias, esbuild bundling `@aplos/*`; the recursive portability test with a planted-import negative test; `appVersion` through `EngineOptions`. Decisions are in DECISIONS.md under the same date.
+- **Evidence.** `git diff -M` of the move commit: 75 renames (38 at 100%, the rest import lines only); the lines that are not import or export specifiers are confined to the manifests, tsconfigs, `vite.config.ts`, `build-main.mjs`, `index.html`, the reader fixture, the two portability test files, the provider-types move and the three `appVersion` lines. `npm run typecheck` clean; `npm test` 229 of 229 pass (226 in the app, 3 in `packages/engine`; the baseline was 228, plus the new negative test). `npm run build` and `electron-builder --mac dir` (unsigned) pass. In the packaged `app.asar`, `dist/main/engine.cjs` contains the legacy engine, no `require("@aplos/…")` is left in any bundle, and every third-party `require` in `engine.cjs` and `electron.cjs` resolves from the asar's `node_modules`. The browser preview (`src/main/server.ts` on its own ports, isolated data) served `/src/renderer/legacy/main.tsx`, resolved the renderer's `@aplos/contract` imports through the alias, and answered `capabilities.get` with version 0.2.3 and `state.get` with the demo accounts.
+- **Not verified.** `scripts/verify-release.mjs` was not run, because it opens the app's window; it runs once F8's hidden test mode exists. The neutral engine bundle is 353,669 bytes (unminified) against the 400,000-byte budget, which leaves little room until `legacy/` is deleted.
+
 ## 2026-10-24 — OAuth clients built into release builds
 
 - **Why.** The v0.2.0 draft, installed on a second Mac, showed "Live Google connection needs Aplos's own Desktop OAuth client…": a packaged app only read `~/.config/aplos-mail/.env`.
