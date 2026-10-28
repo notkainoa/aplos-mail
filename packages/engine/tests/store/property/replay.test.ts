@@ -122,94 +122,103 @@ const LABELS = ['Label_1', 'Label_2', 'Label_3'];
 const CALENDARS = ['primary', 'team'];
 const EVENTS = ['e0', 'e1', 'e2'];
 
-function randomWrite(r: ReturnType<typeof rng>, step: number, local: boolean): StoreWrite {
-  const refs = (): FolderRef[] => FOLDERS.filter(() => r.chance(0.3)).map(folder => ({ folder }));
-  const target = (): MessageTarget =>
-    r.chance(0.7) ? { remoteId: r.pick(MESSAGES) } : { remoteThreadId: r.pick(THREADS) };
-  // Local commits also enqueue and settle ops; sync commits merge threads, address UIDs and write calendars.
-  if (r.chance(0.25)) {
-    if (local) {
-      const opId = `op${r.int(6)}`;
-      if (r.chance(0.6))
-        return {
-          kind: 'op',
-          opId: `${opId}-${step}`,
-          accountId: ACCOUNT,
-          opKind: 'label',
-          targets: [],
-          payload: '{}',
-          scope: 'triage',
-          effect: r.chance(0.5)
-            ? [
-                {
-                  kind: 'placements',
-                  target: target(),
-                  add: refs(),
-                  remove: FOLDERS.filter(() => r.chance(0.3)),
-                },
-              ]
-            : [{ kind: 'flags', target: target(), seen: r.chance(0.5) }],
-        };
-    }
-    const roll = r.int(7);
-    if (roll === 0)
+const folderRefs = (r: ReturnType<typeof rng>): FolderRef[] =>
+  FOLDERS.filter(() => r.chance(0.3)).map(folder => ({ folder }));
+const target = (r: ReturnType<typeof rng>): MessageTarget =>
+  r.chance(0.7) ? { remoteId: r.pick(MESSAGES) } : { remoteThreadId: r.pick(THREADS) };
+
+/** Local commits also enqueue and settle ops; sync commits merge threads, address UIDs and write calendars. */
+function randomSpecialWrite(r: ReturnType<typeof rng>, step: number, local: boolean): StoreWrite {
+  if (local) {
+    const opId = `op${r.int(6)}`;
+    if (r.chance(0.6))
       return {
-        kind: 'threadMerge',
+        kind: 'op',
+        opId: `${opId}-${step}`,
         accountId: ACCOUNT,
-        from: [r.pick(THREADS)],
-        into: r.pick(THREADS),
+        opKind: 'label',
+        targets: [],
+        payload: '{}',
+        scope: 'triage',
+        effect: r.chance(0.5)
+          ? [
+              {
+                kind: 'placements',
+                target: target(r),
+                add: folderRefs(r),
+                remove: FOLDERS.filter(() => r.chance(0.3)),
+              },
+            ]
+          : [{ kind: 'flags', target: target(r), seen: r.chance(0.5) }],
       };
-    if (roll === 1)
-      return {
-        kind: 'flags',
-        accountId: ACCOUNT,
-        target: { folder: r.pick(FOLDERS), uid: 1 + r.int(MESSAGES.length) },
-        flagged: r.chance(0.5),
-      };
-    if (roll === 2)
-      return {
-        kind: 'calendar',
-        accountId: ACCOUNT,
-        remoteId: r.pick(CALENDARS),
-        name: `Cal ${r.int(3)}`,
-        hidden: r.chance(0.2),
-        readOnly: false,
-        selected: r.chance(0.3) ? r.chance(0.5) : undefined,
-      };
-    if (roll === 3)
-      return { kind: 'calendarDelete', accountId: ACCOUNT, remoteId: r.pick(CALENDARS) };
-    if (roll === 4)
-      return {
-        kind: 'event',
-        accountId: ACCOUNT,
-        calendarRemoteId: r.pick(CALENDARS),
-        remoteId: r.pick(EVENTS),
-        rows: ['', 'r1', 'r2']
-          .filter(() => r.chance(0.5))
-          .map(id => ({
-            recurrenceId: id || undefined,
-            status: 'confirmed',
-            allDay: false,
-            startUtc: T0 + r.int(5),
-            data: String(r.int(3)),
-          })),
-        seenGen: r.chance(0.7) ? step : undefined,
-      };
-    if (roll === 5)
-      return {
-        kind: 'eventSweep',
-        accountId: ACCOUNT,
-        calendarRemoteId: r.pick(CALENDARS),
-        generation: step,
-        from: r.chance(0.5) ? T0 + 2 : undefined,
-      };
+  }
+  return randomSyncWrite(r, step);
+}
+
+/** Sync commits also merge threads, address UIDs and write calendars: after an op chance, 0..6. */
+function randomSyncWrite(r: ReturnType<typeof rng>, step: number): StoreWrite {
+  const roll = r.int(7);
+  if (roll === 0)
     return {
-      kind: 'eventDelete',
+      kind: 'threadMerge',
+      accountId: ACCOUNT,
+      from: [r.pick(THREADS)],
+      into: r.pick(THREADS),
+    };
+  if (roll === 1)
+    return {
+      kind: 'flags',
+      accountId: ACCOUNT,
+      target: { folder: r.pick(FOLDERS), uid: 1 + r.int(MESSAGES.length) },
+      flagged: r.chance(0.5),
+    };
+  if (roll === 2)
+    return {
+      kind: 'calendar',
+      accountId: ACCOUNT,
+      remoteId: r.pick(CALENDARS),
+      name: `Cal ${r.int(3)}`,
+      hidden: r.chance(0.2),
+      readOnly: false,
+      selected: r.chance(0.3) ? r.chance(0.5) : undefined,
+    };
+  if (roll === 3)
+    return { kind: 'calendarDelete', accountId: ACCOUNT, remoteId: r.pick(CALENDARS) };
+  if (roll === 4)
+    return {
+      kind: 'event',
       accountId: ACCOUNT,
       calendarRemoteId: r.pick(CALENDARS),
       remoteId: r.pick(EVENTS),
+      rows: ['', 'r1', 'r2']
+        .filter(() => r.chance(0.5))
+        .map(id => ({
+          recurrenceId: id || undefined,
+          status: 'confirmed',
+          allDay: false,
+          startUtc: T0 + r.int(5),
+          data: String(r.int(3)),
+        })),
+      seenGen: r.chance(0.7) ? step : undefined,
     };
-  }
+  if (roll === 5)
+    return {
+      kind: 'eventSweep',
+      accountId: ACCOUNT,
+      calendarRemoteId: r.pick(CALENDARS),
+      generation: step,
+      from: r.chance(0.5) ? T0 + 2 : undefined,
+    };
+  return {
+    kind: 'eventDelete',
+    accountId: ACCOUNT,
+    calendarRemoteId: r.pick(CALENDARS),
+    remoteId: r.pick(EVENTS),
+  };
+}
+
+/** The 0..99 dispatch: messages, placements, flags, deletes, folders, sweep, workflow, thread. */
+function randomPlainWrite(r: ReturnType<typeof rng>, step: number): StoreWrite {
   const roll = r.int(100);
   if (roll < 30) {
     const id = r.pick(MESSAGES);
@@ -225,7 +234,7 @@ function randomWrite(r: ReturnType<typeof rng>, step: number, local: boolean): S
           fromMe: r.chance(0.2),
         },
         folders: r.chance(0.8)
-          ? refs().map(f => (r.chance(0.3) ? { ...f, uid: 1 + MESSAGES.indexOf(id) } : f))
+          ? folderRefs(r).map(f => (r.chance(0.3) ? { ...f, uid: 1 + MESSAGES.indexOf(id) } : f))
           : undefined,
         seenGen: r.chance(0.5) ? step : undefined,
         hasAttachments: r.chance(0.2),
@@ -236,15 +245,15 @@ function randomWrite(r: ReturnType<typeof rng>, step: number, local: boolean): S
     return {
       kind: 'placements',
       accountId: ACCOUNT,
-      target: target(),
-      add: refs(),
+      target: target(r),
+      add: folderRefs(r),
       remove: FOLDERS.filter(() => r.chance(0.25)),
     };
   if (roll < 60)
     return {
       kind: 'flags',
       accountId: ACCOUNT,
-      target: target(),
+      target: target(r),
       seen: r.chance(0.5),
       flagged: r.chance(0.5) ? r.chance(0.5) : undefined,
     };
@@ -277,6 +286,11 @@ function randomWrite(r: ReturnType<typeof rng>, step: number, local: boolean): S
     complete: r.chance(0.5),
     remoteCount: r.int(9),
   };
+}
+
+function randomWrite(r: ReturnType<typeof rng>, step: number, local: boolean): StoreWrite {
+  if (r.chance(0.25)) return randomSpecialWrite(r, step, local);
+  return randomPlainWrite(r, step);
 }
 
 function runSequence(seed: number, commits: number) {
