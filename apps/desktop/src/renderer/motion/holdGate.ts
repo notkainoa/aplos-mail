@@ -1,10 +1,12 @@
-// The list holds still (DESIGN 5 rule 6, plan 30 4.3 holdGate). A triage key
-// starts or extends a hold that releases hold.base (450 ms) after the last key,
-// and never later than hold.cap (1200 ms) after it began. A pointer resting on
-// the list holds too, until it leaves; leaving releases at once, whatever else
-// is pending. Timers run on the scheduler's visible clock, so a hidden window
-// pauses the hold. It satisfies the data layer's HoldController, so `useHold`
-// can hand one out as is.
+// The list holds still (DESIGN 4.8 hold, 5 rule 6, plan 30 4.3 holdGate). A
+// triage key starts or extends a hold that releases hold.base (450 ms) after the
+// last key, so a burst of any length closes once. If the pointer is still on the
+// list then, the hold waits for it to leave, but never past hold.cap (1200 ms)
+// after the last key. A pointer resting on the list with no key holds until it
+// leaves (new mail never moves the row under it). Leaving releases at once.
+// Hiding the window releases too: nothing paints while hidden, so arrivals land
+// instead of queueing. It satisfies the data layer's HoldController, so
+// `useHold` can hand one out as is.
 import type { HoldController, HoldReason, HoldReleaseListener, Id } from '../data';
 import { motions } from '../ui/generated/motion';
 import type { Scheduler } from './scheduler';
@@ -27,7 +29,7 @@ export function createHoldGate(scheduler: Scheduler): HoldGate {
   let reason: HoldReason | null = null;
   let ids: readonly Id[] = [];
   let pointerInside = false;
-  let capAt = 0;
+  let lastKeyAt: number | null = null;
   let cancelTimer: (() => void) | null = null;
 
   const notify = () => {
@@ -50,19 +52,24 @@ export function createHoldGate(scheduler: Scheduler): HoldGate {
 
   function onKeyTimer() {
     cancelTimer = null;
-    if (!pointerInside) release();
+    if (!pointerInside || lastKeyAt === null) {
+      release();
+      return;
+    }
+    const waited = scheduler.now() - lastKeyAt;
+    cancelTimer = scheduler.after(Math.max(0, cap - waited), release);
   }
 
   function armKeyTimer() {
     clearTimer();
-    const now = scheduler.now();
-    cancelTimer = scheduler.after(Math.max(0, Math.min(now + base, capAt) - now), onKeyTimer);
+    lastKeyAt = scheduler.now();
+    cancelTimer = scheduler.after(base, onKeyTimer);
   }
 
   function start(why: HoldReason) {
     held = true;
     reason = why;
-    capAt = scheduler.now() + cap;
+    lastKeyAt = null;
   }
 
   function release() {
@@ -73,6 +80,7 @@ export function createHoldGate(scheduler: Scheduler): HoldGate {
     reason = null;
     ids = [];
     pointerInside = false;
+    lastKeyAt = null;
     notify();
     for (const listener of [...releaseListeners]) listener(released);
   }
@@ -84,6 +92,8 @@ export function createHoldGate(scheduler: Scheduler): HoldGate {
     else armKeyTimer();
     if (addIds(more) || !wasHeld) notify();
   }
+
+  const stopHide = scheduler.onHide(release);
 
   return {
     begin,
@@ -125,6 +135,7 @@ export function createHoldGate(scheduler: Scheduler): HoldGate {
       };
     },
     dispose() {
+      stopHide();
       clearTimer();
       releaseListeners.clear();
       changeListeners.clear();

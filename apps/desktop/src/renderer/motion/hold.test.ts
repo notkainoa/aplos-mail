@@ -34,26 +34,39 @@ test('hold releases 450 ms after the last key', () => {
   assert.deepEqual(hold.heldIds, []);
 });
 
-test('hold never lasts past the 1200 ms cap', () => {
+test('a long burst of keys holds until 450 ms after the last key, so it closes once', () => {
   const { fake, hold, releases } = setup();
   hold.begin('keys', ['a']);
-  for (let t = 0; t < 2000; t += 100) {
+  for (let i = 0; i < 19; i += 1) {
     fake.advance(100);
-    if (fake.now < CAP) hold.extend();
+    hold.extend();
   }
-  assert.equal(releases[0]?.at, CAP);
-  assert.equal(releases.length, 1);
+  assert.equal(hold.isHeld, true, 'still held 1.9 s into a burst');
+  fake.advance(HOLD);
+  assert.deepEqual(
+    releases.map(r => r.at),
+    [1900 + HOLD],
+  );
 });
 
-test('the pointer holds until it leaves, and leaving releases at once', () => {
+test('a pointer still on the list after the last key holds, but never past the cap', () => {
   const { fake, hold, releases } = setup();
   hold.pointerEnter(['a']);
   hold.extend(['b']);
+  fake.advance(CAP - 1);
+  assert.equal(hold.isHeld, true);
+  fake.advance(1);
+  assert.equal(hold.isHeld, false);
+  assert.deepEqual(releases, [{ ids: ['a', 'b'], at: CAP }]);
+});
+
+test('the pointer alone holds until it leaves, and leaving releases at once', () => {
+  const { fake, hold, releases } = setup();
+  hold.pointerEnter(['a']);
   fake.advance(CAP * 2);
   assert.equal(hold.isHeld, true);
   hold.pointerLeave();
   assert.equal(hold.isHeld, false);
-  assert.equal(releases.length, 1);
   assert.equal(releases[0]?.at, CAP * 2);
 
   hold.begin('keys', ['c']);
@@ -63,18 +76,16 @@ test('the pointer holds until it leaves, and leaving releases at once', () => {
   assert.equal(releases[1]?.at, CAP * 2 + 100);
 });
 
-test('a hidden window pauses the hold timer', () => {
-  const { fake, hold } = setup();
+test('hiding the window releases the hold', () => {
+  const { fake, hold, releases } = setup();
   hold.begin('keys', ['a']);
   fake.advance(100);
   fake.setHidden(true);
-  fake.advance(5000);
-  assert.equal(hold.isHeld, true);
-  fake.setHidden(false);
-  fake.advance(HOLD - 100 - 1);
-  assert.equal(hold.isHeld, true);
-  fake.advance(1);
   assert.equal(hold.isHeld, false);
+  assert.equal(releases.length, 1);
+  fake.setHidden(false);
+  fake.advance(HOLD);
+  assert.equal(releases.length, 1);
 });
 
 test('subscribers hear every change so useSyncExternalStore stays exact', () => {
@@ -199,7 +210,7 @@ function triageList(ids: readonly string[]) {
   return { fake, hold, elements, closer, triage, closes };
 }
 
-test('a pointer already resting on the list: the first key still pins, and leaving closes', () => {
+test('a pointer already resting on the list: the first key still pins, and the cap after the last key closes', () => {
   const s = triageList(['a', 'b', 'c', 'd']);
   s.hold.pointerEnter();
   const b = s.elements.get('b');
@@ -212,11 +223,12 @@ test('a pointer already resting on the list: the first key still pins, and leavi
   });
   assert.equal(s.closer.pinned.size, 2);
   assert.equal(s.elements.get('c')?.style.transform, 'translateY(40px)');
-  s.fake.advance(CAP * 2);
+  s.fake.advance(CAP - 1);
   assert.equal(s.elements.get('c')?.style.transform, 'translateY(40px)');
-  s.hold.pointerLeave();
+  s.fake.advance(1);
   assert.equal(s.closes().length, 2);
   assert.equal(s.closer.pinned.size, 0);
+  s.hold.pointerLeave();
 
   // The next hold anchors afresh from the layout the close landed on.
   s.fake.advance(motions.close.durations.base);
