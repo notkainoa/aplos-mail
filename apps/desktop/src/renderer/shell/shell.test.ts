@@ -6,7 +6,7 @@
  * hosts to static markup: sidebar groups and counts, the status slot's copy for each state, the reconnect line, the
  * toast stack and the FatalScreen.
  */
-import test, { afterEach, mock } from 'node:test';
+import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -37,7 +37,6 @@ interface Booted {
 let open: DataConnection | null = null;
 
 afterEach(() => {
-  mock.timers.reset();
   closeSheet();
   navigate('home');
   open?.close();
@@ -55,8 +54,6 @@ async function boot(scenario: Scenario): Promise<Booted> {
   });
   open = connection;
   setClock(harnessClock);
-  mock.timers.reset();
-  mock.timers.enable({ apis: ['Date'], now: HARNESS_NOW_MS });
   const settle = async () => {
     for (let i = 0; i < 20; i++) {
       await nextTask();

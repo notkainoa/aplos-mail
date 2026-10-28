@@ -2,7 +2,7 @@
  * Empty and first-sync states for the screen slot (DESIGN 7.14): one plain sentence, at most one action, no icon in a
  * circle. The wording is the table's; screens other lanes own replace the placeholder with their own content.
  */
-import { EmptyLine } from '../ui/list';
+import { EmptyLine, ErrorLine } from '../ui/list';
 import { screenLabel } from './nav';
 import type { Screen } from './index';
 
@@ -54,4 +54,19 @@ export function NoAccountsLine({ onAddAccount, onTryDemo }: NoAccountsLineProps)
       secondaryAction={{ label: 'Try demo mail', onSelect: onTryDemo }}
     />
   );
+}
+
+/** Props for `ListFailedLine`. */
+export interface ListFailedLineProps {
+  /** Opens the list's view again. The shell has no view of its own to reopen, so the owning screen passes its hook's retry. */
+  readonly onRetry?: () => void;
+}
+
+function ignoreRetry(): void {
+  // No view hook to reopen here (the shell lists nothing itself): the screen that draws this line passes onRetry.
+}
+
+/** A mail list whose first load or refresh failed (DESIGN 7.15): the ErrorLine's own sentence, with Try again. */
+export function ListFailedLine({ onRetry = ignoreRetry }: ListFailedLineProps) {
+  return <ErrorLine kind="listFailed" placement="column" onAction={onRetry} />;
 }
