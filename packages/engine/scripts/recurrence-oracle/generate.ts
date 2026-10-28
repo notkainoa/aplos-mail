@@ -10,6 +10,7 @@
  *   python3 -m venv /tmp/aplos-rrule-oracle && /tmp/aplos-rrule-oracle/bin/pip install python-dateutil
  * Oracle B is read from the prov-emu-gcal worktree (override with APLOS_ORACLE_B_DIR). Then, from the repo root:
  *   npx tsx packages/engine/scripts/recurrence-oracle/generate.ts
+ *   npx prettier --write packages/engine/tests/fixtures/calendar   (npm run format:check covers the fixtures)
  */
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
