@@ -6,6 +6,13 @@ name: CI
 on:
   push:
     branches: [revamp]
+    # Coordination and docs pushes (STATUS.md entries land on revamp many times a day) run nothing.
+    # A push that also changes code still runs everything.
+    paths-ignore:
+      - 'plans/**'
+      - 'mockups/**'
+      - 'research/**'
+      - '**/*.md'
   workflow_dispatch:
     inputs:
       macos:
