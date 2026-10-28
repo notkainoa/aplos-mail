@@ -13,7 +13,10 @@ const packages = fileURLToPath(new URL('../../packages/', import.meta.url));
  * - script-src: production has no 'unsafe-inline'. The build emits only external module scripts
  *   (modulePreload polyfill off; Electron's Chromium preloads modules natively), and the build
  *   step below fails if an inline script ever appears. Dev keeps 'unsafe-inline' for Vite's and
- *   React's dev-time injected scripts.
+ *   React's dev-time injected scripts. No script-src-elem, script-src-attr or worker-src: each
+ *   overrides script-src for its own targets, and script-src-attr 'unsafe-inline' would let
+ *   onerror= handlers in mail HTML (Reader's dangerouslySetInnerHTML) run. The test pins the
+ *   whole production policy, so any added directive or source has to be argued there.
  * - style-src keeps 'unsafe-inline': React renders `style={...}` props as style attributes
  *   (layout sizes, motion, colours), and a CSP can only allow those with 'unsafe-inline'.
  * - img-src keeps https: until stage 2, when eng-html's aplos-mail: frames replace it.
@@ -40,11 +43,41 @@ export function rendererCsp(mode: 'production' | { vitePort: number; apiPort: nu
   ].join('; ');
 }
 
-const cspMeta = /(<meta http-equiv="Content-Security-Policy" content=")[^"]*(")/;
+/**
+ * Finds the one CSP <meta> that will govern the page and returns where it is and its policy, or
+ * throws. A meta CSP only counts in <head>, and only for elements parsed after it, so the meta must
+ * be the first thing in <head> apart from other <meta> tags. Exactly one may exist anywhere in the
+ * text, and none inside a comment: otherwise a commented-out or second copy could be the one the
+ * build rewrites (or checks) while the browser obeys another, or none at all.
+ */
+export function cspMeta(html: string): { start: number; end: number; policy: string } {
+  for (const [comment] of html.matchAll(/<!--[\s\S]*?(?:-->|$)/g))
+    if (/content-security-policy/i.test(comment))
+      throw new Error('index.html has Content-Security-Policy text inside an HTML comment.');
+  const mentions = html.match(/content-security-policy/gi)?.length ?? 0;
+  if (mentions !== 1)
+    throw new Error(
+      `index.html must have exactly one Content-Security-Policy meta; found ${mentions}.`,
+    );
+  const meta = /<meta http-equiv="Content-Security-Policy" content="([^"]*)"\s*\/?>/.exec(html);
+  if (!meta)
+    throw new Error(
+      'index.html\'s CSP must be written <meta http-equiv="Content-Security-Policy" content="...">.',
+    );
+  const before = html.slice(0, meta.index);
+  if (
+    !/^\s*(?:<!doctype html>\s*)?(?:<html\b[^>]*>\s*)?<head\b[^>]*>\s*(?:<meta\b[^>]*>\s*)*$/i.test(
+      before,
+    )
+  )
+    throw new Error(
+      "index.html's CSP meta must sit in <head>, preceded only by other <meta> tags, so it governs every script and stylesheet.",
+    );
+  return { start: meta.index, end: meta.index + meta[0].length, policy: meta[1] };
+}
 function setCsp(html: string, policy: string): string {
-  // A missing meta would ship the renderer with no policy at all, so the build stops instead.
-  if (!cspMeta.test(html)) throw new Error('index.html has no Content-Security-Policy meta tag.');
-  return html.replace(cspMeta, `$1${policy}$2`);
+  const { start, end } = cspMeta(html);
+  return `${html.slice(0, start)}<meta http-equiv="Content-Security-Policy" content="${policy}">${html.slice(end)}`;
 }
 /** Inline <script> bodies (a script element without a src attribute). */
 export function inlineScripts(html: string): string[] {
@@ -52,12 +85,25 @@ export function inlineScripts(html: string): string[] {
     .filter(([, attributes]) => !/\ssrc\s*=/i.test(attributes))
     .map(([tag]) => tag);
 }
+/** The production build's final HTML step: refuse inline script or a misplaced meta, then set the policy. */
+export function productionHtml(html: string): string {
+  const inline = inlineScripts(html);
+  if (inline.length)
+    throw new Error(
+      `The production CSP forbids inline scripts, but index.html has ${inline.length}: ${inline[0].slice(0, 120)}`,
+    );
+  return setCsp(html, rendererCsp('production'));
+}
 function csp(): Plugin[] {
   return [
     {
       name: 'aplos-csp-dev',
       apply: 'serve',
-      transformIndexHtml: html => setCsp(html, rendererCsp({ vitePort, apiPort })),
+      // 'pre' checks index.html as written, before Vite prepends its dev client script to <head>.
+      transformIndexHtml: {
+        order: 'pre',
+        handler: html => setCsp(html, rendererCsp({ vitePort, apiPort })),
+      },
     },
     {
       name: 'aplos-csp-production',
@@ -65,14 +111,7 @@ function csp(): Plugin[] {
       // 'post' runs after Vite has injected its own tags, so the check sees the final HTML.
       transformIndexHtml: {
         order: 'post',
-        handler(html) {
-          const inline = inlineScripts(html);
-          if (inline.length)
-            throw new Error(
-              `The production CSP forbids inline scripts, but index.html has ${inline.length}: ${inline[0].slice(0, 120)}`,
-            );
-          return setCsp(html, rendererCsp('production'));
-        },
+        handler: productionHtml,
       },
     },
   ];
