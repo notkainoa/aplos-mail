@@ -128,3 +128,37 @@ jobs:
       - run: npm test
       # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
       - run: npm run build -w @aplos/desktop
+
+  slots:
+    name: slots
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: summary heading
+        run: echo '### Pending slots (listed when the owning lane has not landed its script)' >> "$GITHUB_STEP_SUMMARY"
+      # The slots run in sequence; a failing slot does not hide the ones after it.
+      - name: slot check:openapi
+        run: node scripts/audit/slot.mjs check:openapi
+      - name: slot check:tokens
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs check:tokens
+      - name: slot check:contrast
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs check:contrast
+      - name: slot check:identity
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs check:identity
+      - name: slot test:visual
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs test:visual
+      - name: budget register
+        if: ${{ !cancelled() }}
+        run: npm run check:budgets

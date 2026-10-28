@@ -124,7 +124,9 @@ export async function launchAplos(options: LaunchOptions = {}): Promise<AplosApp
     });
     const userData = await app.evaluate(({ app }) => app.getPath('userData'));
     if (!isInside(userDataDir, userData)) {
-      throw new Error(`userData is ${userData}, not inside ${userDataDir}; the run would touch real app state`);
+      throw new Error(
+        `userData is ${userData}, not inside ${userDataDir}; the run would touch real app state`,
+      );
     }
     await assertNoVisibleWindows();
   } catch (error) {

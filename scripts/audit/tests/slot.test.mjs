@@ -12,7 +12,10 @@ writeFileSync(
   join(root, 'package.json'),
   JSON.stringify({
     name: 'fixture',
-    scripts: { 'check:tokens': 'node -e "process.exit(3)"', 'test:visual': 'node -e "console.log(\'ran\')"' },
+    scripts: {
+      'check:tokens': 'node -e "process.exit(3)"',
+      'test:visual': 'node -e "console.log(\'ran\')"',
+    },
   }),
 );
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -54,7 +57,10 @@ describe('slot.mjs', () => {
     const summary = join(root, 'summary.md');
     const result = run('check:contrast', { GITHUB_STEP_SUMMARY: summary });
     assert.equal(result.status, 0);
-    assert.equal(readFileSync(summary, 'utf8'), '- pending: check:contrast (owner: ui-foundation)\n');
+    assert.equal(
+      readFileSync(summary, 'utf8'),
+      '- pending: check:contrast (owner: ui-foundation)\n',
+    );
   });
 
   it('exits 2 without a name', () => {
