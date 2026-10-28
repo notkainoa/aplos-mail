@@ -117,8 +117,9 @@ test('the originating-scope check fails closed', () => {
 test('a listener caller comes from the stored client; MCP limits follow the client, not the transport', () => {
   const row = { id: 'c9', kind: 'mcp', scopes: ['read', 'draft', 'send', 'host'] };
   const notTool = (tables.listenerMethods as readonly string[]).find(
-    m => !(tables.mcpMethods as readonly string[]).includes(m) && tables.methodScope[m] === 'read',
+    m => !(tables.mcpMethods as readonly string[]).includes(m) && tables.methodScope[m] === 'send',
   )!;
+  assert.ok(notTool, 'a send method that is not an MCP tool');
   for (const transport of ['socket', 'http', 'mcp'] as const) {
     const caller = listenerCaller(row, transport);
     assert.equal(caller.via, 'mcp', `an mcp client over ${transport} is an MCP caller`);
@@ -127,7 +128,7 @@ test('a listener caller comes from the stored client; MCP limits follow the clie
     denied(() => checkAccess(notTool, caller));
     checkAccess(tables.mcpMethods.find(m => tables.methodScope[m] === 'read')!, caller);
   }
-  const cli = listenerCaller({ id: 'c8', kind: 'cli', scopes: ['read'] }, 'socket');
+  const cli = listenerCaller({ id: 'c8', kind: 'cli', scopes: ['read', 'send'] }, 'socket');
   assert.equal(cli.via, 'socket');
   checkAccess(notTool, cli);
   denied(() => listenerCaller({ ...row, revokedAt: 5 }, 'socket'));
