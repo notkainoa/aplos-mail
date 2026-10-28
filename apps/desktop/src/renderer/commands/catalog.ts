@@ -1,0 +1,369 @@
+// Every command in DESIGN §8, declared once. Screens attach run/when through the
+// registry; nothing else may bind a key. Labels follow DESIGN §10 (plain, no
+// exclamation marks); icons come from DESIGN §4.7.
+import type { CommandSpec, ContextName, ControlSpec } from './types';
+
+const TRIAGE_ARROW_CONTEXTS: readonly ContextName[] = ['home', 'oneByOne', 'reader'];
+
+export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
+  { id: 'app.palette', label: 'Show commands', keys: ['meta+k'], contexts: ['global'], group: 'Actions', keywords: ['command palette'] },
+  { id: 'nav.search', label: 'Search', icon: 'magnifyingglass', keys: ['/'], contexts: ['global'], group: 'Go to', keywords: ['find'] },
+  { id: 'mail.compose', label: 'New message', icon: 'square.and.pencil', keys: ['c'], contexts: ['global'], group: 'Actions', keywords: ['compose', 'write'] },
+  {
+    id: 'ask.open',
+    label: 'Ask',
+    icon: 'text.bubble',
+    keys: ['a', { chord: 'a', contexts: ['ask'] }],
+    contexts: ['global'],
+    group: 'Ask',
+    keywords: ['question'],
+  },
+  {
+    id: 'ask.dictate',
+    label: 'Dictate to Ask',
+    icon: 'text.bubble',
+    keys: [
+      { chord: 'a', phase: 'hold' },
+      { chord: 'a', phase: 'hold', contexts: ['ask'], inTextField: true },
+    ],
+    contexts: ['global'],
+    group: 'Ask',
+    keywords: ['voice', 'speak'],
+  },
+  { id: 'ask.toggleDock', label: 'Show or hide the Ask pane', keys: ['meta+j'], contexts: ['global'], group: 'Ask', keywords: ['dock'] },
+  { id: 'nav.today', label: 'Today', icon: 'calendar', keys: ['shift+a'], contexts: ['global'], group: 'Ask', keywords: ['agenda'] },
+  { id: 'app.settings', label: 'Open Settings', icon: 'gearshape', keys: ['meta+,'], contexts: ['global'], group: 'Settings', keywords: ['preferences'] },
+  { id: 'app.sidebar', label: 'Show or hide the sidebar', keys: ['['], contexts: ['global'], group: 'Actions', keywords: ['menu'] },
+  { id: 'app.shortcuts', label: 'See every shortcut', icon: 'keyboard', keys: ['?'], contexts: ['global'], group: 'Settings', keywords: ['keyboard', 'help', 'keys'] },
+  { id: 'app.undo', label: 'Undo', keys: ['z'], contexts: ['global'], group: 'Actions' },
+  { id: 'nav.home', label: 'Home', keys: ['ctrl+1'], contexts: ['global'], group: 'Go to' },
+  { id: 'nav.later', label: 'Later', icon: 'clock', keys: ['ctrl+2'], contexts: ['global'], group: 'Go to' },
+  { id: 'nav.allMail', label: 'All mail', keys: ['ctrl+3'], contexts: ['global'], group: 'Go to', keywords: ['inbox', 'archive'] },
+  { id: 'nav.drafts', label: 'Drafts', keys: ['ctrl+4'], contexts: ['global'], group: 'Go to' },
+  { id: 'nav.sent', label: 'Sent', keys: ['ctrl+5'], contexts: ['global'], group: 'Go to' },
+  { id: 'nav.calendar', label: 'Calendar', icon: 'calendar', keys: ['ctrl+6'], contexts: ['global'], group: 'Go to' },
+  { id: 'nav.trash', label: 'Trash', icon: 'trash', keys: ['ctrl+7'], contexts: ['global'], group: 'Go to' },
+  { id: 'nav.spam', label: 'Spam', keys: ['ctrl+8'], contexts: ['global'], group: 'Go to', keywords: ['junk'] },
+  { id: 'nav.done', label: 'Done', icon: 'checkmark.circle', keys: [], contexts: ['global'], group: 'Go to', keywords: ['finished'] },
+  { id: 'nav.skipToList', label: 'Skip to the list', keys: ['meta+alt+l'], contexts: ['global'], group: 'Go to' },
+  { id: 'nav.skipToReader', label: 'Skip to the reader', keys: ['meta+alt+r'], contexts: ['global'], group: 'Go to' },
+  // The last rung of the Esc ladder. Transients and selection answer first from
+  // inner contexts; nothing on Esc ever closes the window.
+  { id: 'nav.back', label: 'Go back', keys: ['Escape'], contexts: ['global'], group: 'Go to' },
+];
+
+export const LIST_COMMANDS: readonly CommandSpec[] = [
+  { id: 'list.down', label: 'Next row', keys: ['j', 'ArrowDown'], contexts: ['list'], group: 'Go to', repeat: true },
+  { id: 'list.up', label: 'Previous row', keys: ['k', 'ArrowUp'], contexts: ['list'], group: 'Go to', repeat: true },
+  { id: 'mail.open', label: 'Open', keys: ['Enter', 'o'], contexts: ['list'], group: 'Actions' },
+  { id: 'mail.suggested', label: 'Run the suggested action', keys: ['Space'], contexts: ['list'], group: 'Suggested' },
+  {
+    id: 'mail.reply',
+    label: 'Reply',
+    icon: 'arrowshape.turn.up.left',
+    keys: ['r'],
+    contexts: ['list'],
+    group: 'Suggested',
+    keywords: ['respond'],
+  },
+  {
+    id: 'mail.dictateReply',
+    label: 'Dictate a reply',
+    icon: 'arrowshape.turn.up.left',
+    keys: [{ chord: 'r', phase: 'hold' }],
+    contexts: ['list'],
+    group: 'Actions',
+    keywords: ['voice', 'speak'],
+  },
+  {
+    id: 'mail.done',
+    label: 'Done',
+    icon: 'checkmark',
+    keys: ['e', { chord: 'ArrowRight', contexts: TRIAGE_ARROW_CONTEXTS, followsSwipe: true }],
+    contexts: ['list'],
+    group: 'Suggested',
+    keywords: ['archive', 'finish'],
+    undo: { label: 'Done' },
+  },
+  {
+    id: 'mail.later',
+    label: 'Later',
+    icon: 'clock',
+    keys: ['l', { chord: 'ArrowLeft', contexts: TRIAGE_ARROW_CONTEXTS, followsSwipe: true }],
+    contexts: ['list'],
+    group: 'Suggested',
+    keywords: ['set aside', 'snooze'],
+    undo: { label: 'Moved to Later' },
+  },
+  { id: 'mail.setDate', label: 'Set a date', icon: 'calendar', keys: ['d'], contexts: ['list'], group: 'Actions', keywords: ['due', 'remind'] },
+  { id: 'mail.bookmark', label: 'Bookmark', icon: 'bookmark', keys: ['b'], contexts: ['list'], group: 'Actions', keywords: ['save'] },
+  { id: 'mail.toggleRead', label: 'Mark read or unread', keys: ['u'], contexts: ['list'], group: 'Actions' },
+  {
+    id: 'mail.trash',
+    label: 'Move to Trash',
+    icon: 'trash',
+    keys: ['#'],
+    contexts: ['list'],
+    group: 'Actions',
+    keywords: ['delete', 'remove'],
+    undo: { label: 'Moved to Trash' },
+    confirm: { destructive: true, prompt: 'Move the selected emails to Trash?', scope: 'bulk' },
+  },
+  { id: 'mail.replyAll', label: 'Reply all', icon: 'arrowshape.turn.up.left.2', keys: ['shift+r'], contexts: ['list'], group: 'Actions' },
+  { id: 'mail.forward', label: 'Forward', icon: 'arrowshape.turn.up.right', keys: ['f'], contexts: ['list'], group: 'Actions' },
+  { id: 'list.select', label: 'Select', keys: ['x'], contexts: ['list'], group: 'Actions' },
+  { id: 'list.selectRange', label: 'Select a range', keys: ['shift+x'], contexts: ['list'], group: 'Actions' },
+  { id: 'list.selectAll', label: 'Select all', keys: ['meta+a'], contexts: ['list'], group: 'Actions' },
+  { id: 'list.clearSelection', label: 'Clear the selection', keys: ['Escape'], contexts: ['list'], group: 'Actions', onlyWhen: 'selection' },
+  { id: 'list.more', label: 'More actions', keys: ['.'], contexts: ['list'], group: 'Actions' },
+  { id: 'mail.why', label: 'Why it’s here', keys: ['i'], contexts: ['list'], group: 'Actions', keywords: ['reason', 'explain'] },
+  {
+    id: 'mail.laneDown',
+    label: 'Move down a lane',
+    keys: ['alt+ArrowDown'],
+    contexts: ['list'],
+    group: 'Actions',
+    keywords: ['less important'],
+    undo: { label: 'Moved down a lane' },
+  },
+  {
+    id: 'mail.laneUp',
+    label: 'Move up a lane',
+    keys: ['alt+ArrowUp'],
+    contexts: ['list'],
+    group: 'Actions',
+    keywords: ['more important'],
+    undo: { label: 'Moved up a lane' },
+  },
+  { id: 'list.nextSection', label: 'Next section', keys: ['Tab'], contexts: ['list'], group: 'Go to' },
+  { id: 'list.previousSection', label: 'Previous section', keys: ['shift+Tab'], contexts: ['list'], group: 'Go to' },
+  { id: 'home.oneByOne', label: 'Go one by one', keys: ['s'], contexts: ['list'], group: 'Go to' },
+  {
+    id: 'mail.remindIfNoReply',
+    label: 'Remind me if no reply',
+    icon: 'clock',
+    keys: ['r'],
+    contexts: ['list'],
+    group: 'Actions',
+    onlyWhen: 'remindOffer',
+  },
+  { id: 'home.clearFromHome', label: 'Clear from Home', keys: [], contexts: ['home'], group: 'Actions', undo: { label: 'Moved to Later' } },
+  { id: 'mail.restore', label: 'Restore', keys: [], contexts: ['list'], group: 'Actions', undo: { label: 'Restored' } },
+  {
+    id: 'mail.deleteForever',
+    label: 'Delete forever',
+    icon: 'trash',
+    keys: [],
+    contexts: ['list'],
+    group: 'Actions',
+    confirm: { destructive: true, prompt: 'This can’t be undone.' },
+  },
+  {
+    id: 'done.moveToHome',
+    label: 'Move to Home',
+    keys: ['h'],
+    contexts: ['done'],
+    group: 'Actions',
+    undo: { label: 'Moved to Home' },
+  },
+];
+
+export const READER_COMMANDS: readonly CommandSpec[] = [
+  { id: 'reader.nextThread', label: 'Next email', keys: ['j'], contexts: ['reader'], group: 'Go to', repeat: true },
+  { id: 'reader.previousThread', label: 'Previous email', keys: ['k'], contexts: ['reader'], group: 'Go to', repeat: true },
+  { id: 'reader.nextMessage', label: 'Next message', keys: ['ArrowDown'], contexts: ['reader'], group: 'Go to', repeat: true },
+  { id: 'reader.previousMessage', label: 'Previous message', keys: ['ArrowUp'], contexts: ['reader'], group: 'Go to', repeat: true },
+  {
+    id: 'reader.expand',
+    label: 'Show earlier messages and quoted text',
+    keys: ['o'],
+    contexts: ['reader'],
+    group: 'Actions',
+  },
+  { id: 'reader.find', label: 'Find in this email', keys: ['meta+f'], contexts: ['reader'], group: 'Actions' },
+];
+
+export const COMPOSE_COMMANDS: readonly CommandSpec[] = [
+  { id: 'compose.send', label: 'Send', keys: [{ chord: 'meta+Enter', inTextField: true }], contexts: ['compose'], group: 'Suggested' },
+  {
+    id: 'compose.sendAndDone',
+    label: 'Send and mark Done',
+    keys: [{ chord: 'meta+shift+Enter', inTextField: true }],
+    contexts: ['compose'],
+    group: 'Actions',
+  },
+  {
+    id: 'compose.dictate',
+    label: 'Dictate the message',
+    keys: [{ chord: 'Space', phase: 'hold', inTextField: true }],
+    contexts: ['compose'],
+    group: 'Actions',
+    onlyWhen: 'emptyBody',
+    keywords: ['voice', 'speak'],
+  },
+  {
+    id: 'compose.keepSuggestion',
+    label: 'Keep the suggestion',
+    keys: [{ chord: 'Tab', inTextField: true }],
+    contexts: ['compose'],
+    group: 'Suggested',
+    onlyWhen: 'suggestion',
+  },
+  {
+    id: 'compose.dismissSuggestion',
+    label: 'Dismiss the suggestion',
+    keys: ['Escape'],
+    contexts: ['compose'],
+    group: 'Actions',
+    onlyWhen: 'suggestion',
+  },
+  { id: 'compose.close', label: 'Close the message', keys: ['Escape'], contexts: ['compose'], group: 'Actions' },
+  { id: 'compose.bold', label: 'Bold', keys: [{ chord: 'meta+b', inTextField: true }], contexts: ['compose'], group: 'Actions' },
+  { id: 'compose.italic', label: 'Italic', keys: [{ chord: 'meta+i', inTextField: true }], contexts: ['compose'], group: 'Actions' },
+  { id: 'compose.underline', label: 'Underline', keys: [{ chord: 'meta+u', inTextField: true }], contexts: ['compose'], group: 'Actions' },
+  {
+    id: 'compose.ccBcc',
+    label: 'Show Cc and Bcc',
+    keys: [{ chord: 'meta+shift+c', inTextField: true }],
+    contexts: ['compose'],
+    group: 'Actions',
+  },
+  {
+    id: 'compose.attach',
+    label: 'Attach a file',
+    icon: 'paperclip',
+    keys: [{ chord: 'meta+shift+a', inTextField: true }],
+    contexts: ['compose'],
+    group: 'Actions',
+  },
+  {
+    id: 'compose.format',
+    label: 'Show the format menu',
+    keys: [{ chord: 'meta+/', inTextField: true }],
+    contexts: ['compose'],
+    group: 'Actions',
+  },
+  { id: 'compose.popOut', label: 'Pop out the reply', keys: [], contexts: ['compose'], group: 'Actions' },
+  {
+    id: 'compose.discard',
+    label: 'Discard the draft',
+    icon: 'trash',
+    keys: [],
+    contexts: ['compose'],
+    group: 'Actions',
+    confirm: { destructive: true, prompt: 'Discard this draft?' },
+  },
+];
+
+export const ASK_COMMANDS: readonly CommandSpec[] = [
+  { id: 'ask.submit', label: 'Send the question', keys: [{ chord: 'Enter', inTextField: true }], contexts: ['ask'], group: 'Ask' },
+  {
+    id: 'ask.searchAllMail',
+    label: 'Search all mail',
+    icon: 'magnifyingglass',
+    keys: [{ chord: 'meta+Enter', inTextField: true }],
+    contexts: ['ask'],
+    group: 'Ask',
+  },
+  {
+    id: 'ask.sendNow',
+    label: 'Send the queued question now',
+    keys: [{ chord: 'meta+Enter', inTextField: true }],
+    contexts: ['ask'],
+    group: 'Ask',
+    onlyWhen: 'queued',
+  },
+  { id: 'ask.newChat', label: 'New chat', icon: 'text.bubble', keys: [{ chord: 'meta+n', inTextField: true }], contexts: ['ask'], group: 'Ask' },
+  { id: 'ask.stop', label: 'Stop the answer', keys: ['Escape'], contexts: ['ask'], group: 'Ask', onlyWhen: 'streaming' },
+  { id: 'ask.clear', label: 'Clear the question', keys: ['Escape'], contexts: ['ask'], group: 'Ask', onlyWhen: 'askText' },
+  { id: 'ask.close', label: 'Close Ask', keys: ['Escape'], contexts: ['ask'], group: 'Ask' },
+];
+
+export const CALENDAR_COMMANDS: readonly CommandSpec[] = [
+  { id: 'calendar.today', label: 'Go to today', keys: ['t'], contexts: ['calendar'], group: 'Go to' },
+  { id: 'calendar.dayView', label: 'Day view', keys: ['d'], contexts: ['calendar'], group: 'Actions' },
+  { id: 'calendar.weekView', label: 'Week view', keys: ['w'], contexts: ['calendar'], group: 'Actions' },
+  { id: 'calendar.monthView', label: 'Month view', keys: ['m'], contexts: ['calendar'], group: 'Actions' },
+  { id: 'calendar.nextPeriod', label: 'Next period', keys: ['j', 'ArrowRight'], contexts: ['calendar'], group: 'Go to', repeat: true },
+  { id: 'calendar.previousPeriod', label: 'Previous period', keys: ['k', 'ArrowLeft'], contexts: ['calendar'], group: 'Go to', repeat: true },
+  { id: 'calendar.newEvent', label: 'New event', icon: 'calendar', keys: ['n'], contexts: ['calendar'], group: 'Actions' },
+  { id: 'calendar.open', label: 'Open the event', keys: ['Enter'], contexts: ['calendar'], group: 'Actions' },
+  { id: 'calendar.edit', label: 'Edit the event', keys: ['e'], contexts: ['calendar'], group: 'Actions' },
+  {
+    id: 'calendar.delete',
+    label: 'Delete the event',
+    icon: 'trash',
+    keys: ['Backspace'],
+    contexts: ['calendar'],
+    group: 'Actions',
+    undo: { label: 'Event deleted' },
+  },
+  { id: 'calendar.answerYes', label: 'Answer yes', keys: ['y'], contexts: ['calendar'], group: 'Suggested', onlyWhen: 'invite', keywords: ['accept', 'rsvp'] },
+  { id: 'calendar.answerMaybe', label: 'Answer maybe', keys: ['m'], contexts: ['calendar'], group: 'Suggested', onlyWhen: 'invite', keywords: ['rsvp'] },
+  { id: 'calendar.answerNo', label: 'Answer no', keys: ['n'], contexts: ['calendar'], group: 'Suggested', onlyWhen: 'invite', keywords: ['decline', 'rsvp'] },
+];
+
+/** Every palette command, in catalog order. */
+export const COMMANDS: readonly CommandSpec[] = [
+  ...GLOBAL_COMMANDS,
+  ...LIST_COMMANDS,
+  ...READER_COMMANDS,
+  ...COMPOSE_COMMANDS,
+  ...ASK_COMMANDS,
+  ...CALENDAR_COMMANDS,
+];
+
+const DIGITS_1_TO_9 = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+/** Keys that operate the focused widget itself (see ControlSpec). */
+export const CONTROLS: readonly ControlSpec[] = [
+  { id: 'ask.previousSuggestion', label: 'Previous suggestion', keys: [{ chord: 'ArrowUp', inTextField: true }], contexts: ['ask'], repeat: true },
+  { id: 'ask.nextSuggestion', label: 'Next suggestion', keys: [{ chord: 'ArrowDown', inTextField: true }], contexts: ['ask'], repeat: true },
+  { id: 'ask.acceptProposal', label: 'Accept the proposal', keys: ['Enter'], contexts: ['ask'], onlyWhen: 'proposal' },
+  { id: 'ask.declineProposal', label: 'Not now', keys: ['Escape'], contexts: ['ask'], onlyWhen: 'proposal' },
+
+  { id: 'palette.next', label: 'Next result', keys: [{ chord: 'ArrowDown', inTextField: true }], contexts: ['palette'], repeat: true },
+  { id: 'palette.previous', label: 'Previous result', keys: [{ chord: 'ArrowUp', inTextField: true }], contexts: ['palette'], repeat: true },
+  { id: 'palette.choose', label: 'Run the command', keys: [{ chord: 'Enter', inTextField: true }], contexts: ['palette'] },
+  {
+    id: 'palette.pickNumber',
+    label: 'Run that result',
+    keys: DIGITS_1_TO_9.map((d) => ({ chord: d, inTextField: true })),
+    contexts: ['palette'],
+    onlyWhen: 'emptyField',
+  },
+  {
+    id: 'palette.confirmDestructive',
+    label: 'Confirm a destructive command',
+    keys: [{ chord: 'shift+Enter', inTextField: true }],
+    contexts: ['palette'],
+  },
+  { id: 'palette.back', label: 'Go up a level, then close', keys: [{ chord: 'Escape', inTextField: true }], contexts: ['palette'] },
+
+  { id: 'menu.next', label: 'Next item', keys: ['ArrowDown'], contexts: ['menu'], repeat: true },
+  { id: 'menu.previous', label: 'Previous item', keys: ['ArrowUp'], contexts: ['menu'], repeat: true },
+  { id: 'menu.choose', label: 'Choose the item', keys: ['Enter'], contexts: ['menu'] },
+  { id: 'menu.pickNumber', label: 'Choose that item', keys: DIGITS_1_TO_9, contexts: ['menu'] },
+  { id: 'menu.close', label: 'Close the menu', keys: ['Escape'], contexts: ['menu'] },
+
+  { id: 'datePicker.next', label: 'Next date', keys: ['ArrowDown'], contexts: ['datePicker'], repeat: true },
+  { id: 'datePicker.previous', label: 'Previous date', keys: ['ArrowUp'], contexts: ['datePicker'], repeat: true },
+  { id: 'datePicker.preset', label: 'Choose a preset', keys: ['1', '2', '3', '4', '5'], contexts: ['datePicker'] },
+  { id: 'datePicker.confirm', label: 'Set the date', keys: ['Enter'], contexts: ['datePicker'] },
+  { id: 'datePicker.close', label: 'Close the date picker', keys: ['Escape'], contexts: ['datePicker'] },
+
+  // Destructive confirmations default to Cancel: Return cancels, ⇧Return confirms (DESIGN §7.9).
+  { id: 'dialog.default', label: 'Choose the highlighted button', keys: ['Enter'], contexts: ['dialog'] },
+  { id: 'dialog.confirmDestructive', label: 'Confirm', keys: ['shift+Enter'], contexts: ['dialog'] },
+  { id: 'dialog.cancel', label: 'Cancel', keys: ['Escape'], contexts: ['dialog'] },
+
+  { id: 'onboarding.continue', label: 'Continue', keys: ['Enter'], contexts: ['onboarding'] },
+  { id: 'onboarding.back', label: 'Go back a step', keys: ['Escape'], contexts: ['onboarding'] },
+  { id: 'onboarding.openAplos', label: 'Open Aplos', keys: ['Escape'], contexts: ['onboarding'], onlyWhen: 'firstSync' },
+];
+
+/** Chords that do nothing in a context even though an outer context binds them. */
+export const CONTEXT_BLOCKS: Readonly<Partial<Record<ContextName, readonly string[]>>> = {
+  // DESIGN §7.4: E and L do nothing on done rows.
+  done: ['e', 'l'],
+};

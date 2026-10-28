@@ -1,0 +1,238 @@
+// Seeded property test (plan 30 WP1.4): random key sequences across contexts,
+// IME composition, focus and prefs, checked against an independent oracle.
+// The oracle never calls keys.ts: each generated key carries its canonical
+// chord id by construction, and the oracle applies DESIGN §5 rule 16 and §8
+// directly to the binding table.
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createHoldTracker } from './hold';
+import { createKeyQueue } from './keyQueue';
+import { chordId } from './keys';
+import { context, prng, wiredRegistry } from './testing';
+import {
+  DEFAULT_KEY_PREFS,
+  type Binding,
+  type CommandContext,
+  type Condition,
+  type ContextName,
+  type FocusKind,
+  type KeyInput,
+  type KeyPrefs,
+} from './types';
+
+const SEED = 20261027;
+const SEQUENCES = 2500;
+const SEQUENCE_LENGTH = 12;
+
+interface GenKey {
+  readonly event: KeyInput;
+  /** The canonical chord id the event must normalize to. */
+  readonly id: string;
+  /** A character key with no ⌘, ⌃ or ⌥; shift allowed (WCAG 2.1.4 single-key). */
+  readonly character: boolean;
+}
+
+function plain(key: string, id: string, extra: Partial<KeyInput> = {}): GenKey {
+  const event = { key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...extra };
+  const character = [...id.replace(/^shift\+/, '')].length === 1;
+  return { event, id, character };
+}
+
+const KEY_POOL: readonly GenKey[] = [
+  ...'abcdefhijklmnorstuwxyz'.split('').map((k) => plain(k, k)),
+  ...'aejlrsx'.split('').map((k) => plain(k.toUpperCase(), k)), // Caps Lock on
+  ...'arx'.split('').map((k) => plain(k.toUpperCase(), `shift+${k}`, { shiftKey: true })),
+  ...'12345679'.split('').map((d) => plain(d, d)),
+  plain('?', '?', { shiftKey: true, code: 'Slash' }),
+  plain('#', '#', { shiftKey: true, code: 'Digit3' }),
+  plain('/', '/'),
+  plain('[', '['),
+  plain('.', '.'),
+  plain(' ', 'Space'),
+  plain('Enter', 'Enter'),
+  plain('Enter', 'shift+Enter', { shiftKey: true }),
+  plain('Escape', 'Escape'),
+  plain('Tab', 'Tab'),
+  plain('Tab', 'shift+Tab', { shiftKey: true }),
+  plain('Backspace', 'Backspace'),
+  plain('ArrowUp', 'ArrowUp'),
+  plain('ArrowDown', 'ArrowDown'),
+  plain('ArrowLeft', 'ArrowLeft'),
+  plain('ArrowRight', 'ArrowRight'),
+  plain('ArrowDown', 'alt+ArrowDown', { altKey: true }),
+  plain('ArrowUp', 'alt+ArrowUp', { altKey: true }),
+  plain('k', 'meta+k', { metaKey: true }),
+  plain('a', 'meta+a', { metaKey: true }),
+  plain('j', 'meta+j', { metaKey: true }),
+  plain(',', 'meta+,', { metaKey: true }),
+  plain('/', 'meta+/', { metaKey: true }),
+  plain('f', 'meta+f', { metaKey: true }),
+  plain('n', 'meta+n', { metaKey: true }),
+  plain('Enter', 'meta+Enter', { metaKey: true }),
+  plain('Enter', 'shift+meta+Enter', { metaKey: true, shiftKey: true }),
+  plain('¬', 'alt+meta+l', { metaKey: true, altKey: true, code: 'KeyL' }),
+  plain('®', 'alt+meta+r', { metaKey: true, altKey: true, code: 'KeyR' }),
+  ...'12345678'.split('').map((d) => plain(d, `ctrl+${d}`, { ctrlKey: true })),
+];
+
+const STACKS: readonly (readonly ContextName[])[] = [
+  ['global'],
+  ['global', 'list'],
+  ['global', 'list', 'home'],
+  ['global', 'list', 'done'],
+  ['global', 'list', 'reader'],
+  ['global', 'list', 'reader', 'oneByOne'],
+  ['global', 'list', 'reader', 'compose'],
+  ['global', 'compose'],
+  ['global', 'ask'],
+  ['global', 'calendar'],
+  ['global', 'list', 'home', 'palette'],
+  ['global', 'list', 'home', 'menu'],
+  ['global', 'list', 'datePicker'],
+  ['global', 'calendar', 'dialog'],
+  ['onboarding'],
+];
+
+const CONDITIONS: readonly Condition[] = [
+  'selection',
+  'invite',
+  'suggestion',
+  'emptyBody',
+  'emptyField',
+  'streaming',
+  'askText',
+  'proposal',
+  'queued',
+  'remindOffer',
+  'firstSync',
+];
+
+const FOCUS_SCOPED = new Set<ContextName>(['palette', 'menu', 'datePicker', 'dialog']);
+const TEXT_EDITING = new Set(['meta+a', 'ctrl+a', 'ctrl+e', 'ctrl+k']);
+
+type Pick = () => number;
+
+function choose<T>(rand: Pick, items: readonly T[]): T {
+  return items[Math.floor(rand() * items.length)];
+}
+
+/** DESIGN §5 rule 16 and the focus rules, one binding at a time. */
+function oracleAllows(b: Binding, key: GenKey, focus: FocusKind, prefs: KeyPrefs, repeat: boolean, ctx: CommandContext, guardOf: (id: string) => Condition | undefined): boolean {
+  const hasCommandModifier = key.event.metaKey || key.event.ctrlKey;
+  const textOk = b.inTextField || key.id === 'Escape' || (hasCommandModifier && !TEXT_EDITING.has(key.id));
+  const controlOk = b.inTextField || !(key.id === 'Space' || key.id === 'Enter');
+  if (focus === 'text' && !textOk) return false;
+  if (focus === 'control' && !controlOk) return false;
+  if (!prefs.singleKeyShortcuts && key.character && !b.inTextField && !FOCUS_SCOPED.has(b.context)) return false;
+  if (repeat && !b.repeat) return false;
+  if (b.commandId === null) return true;
+  const guard = guardOf(b.commandId);
+  return guard === undefined || ctx.conditions[guard] === true;
+}
+
+/** The innermost context that blocks or answers decides; guarded before unguarded; tap before hold. */
+function oracle(key: GenKey, ctx: CommandContext, table: readonly Binding[], repeat: boolean, composing: boolean, guardOf: (id: string) => Condition | undefined) {
+  if (composing) return null;
+  const candidates = table.filter((b) => chordId(b.chord) === key.id && ctx.stack.includes(b.context));
+  const depthOf = (b: Binding) => ctx.stack.lastIndexOf(b.context);
+  const deciding = candidates
+    .filter((b) => b.commandId === null || oracleAllows(b, key, ctx.focus, ctx.prefs, repeat, ctx, guardOf))
+    .sort((a, b) => depthOf(b) - depthOf(a));
+  if (deciding.length === 0) return null;
+  const depth = depthOf(deciding[0]);
+  const level = deciding.filter((b) => depthOf(b) === depth);
+  if (level.some((b) => b.commandId === null)) return null;
+  const rank = (b: Binding) => (b.guarded ? 0 : 1);
+  const taps = level.filter((b) => b.phase === 'tap').sort((a, b) => rank(a) - rank(b));
+  const holds = level.filter((b) => b.phase === 'hold').sort((a, b) => rank(a) - rank(b));
+  if (taps.length > 0) return { commandId: taps[0].commandId, phase: 'tap', holdCommandId: holds[0]?.commandId ?? undefined };
+  return { commandId: holds[0].commandId, phase: 'hold', holdCommandId: undefined };
+}
+
+test(`resolver agrees with the oracle over ${SEQUENCES} seeded sequences`, () => {
+  const rand = prng(SEED);
+  const registries = new Map<string, ReturnType<typeof wiredRegistry>>();
+  let resolved = 0;
+  let checked = 0;
+  for (let s = 0; s < SEQUENCES; s += 1) {
+    const prefs: KeyPrefs = {
+      ...DEFAULT_KEY_PREFS,
+      singleKeyShortcuts: rand() > 0.2,
+      swapTriageArrows: rand() > 0.8,
+      holdThresholdMs: 150 + Math.floor(rand() * 300),
+    };
+    const cacheKey = String(prefs.swapTriageArrows);
+    const registry = registries.get(cacheKey) ?? wiredRegistry(prefs);
+    registries.set(cacheKey, registry);
+    const guardOf = (id: string) => registry.get(id)?.spec.onlyWhen;
+    const table = registry.bindings();
+    const tracker = createHoldTracker(prefs.holdThresholdMs);
+    const queue = createKeyQueue<number>();
+    const offered: number[] = [];
+    const dispatched: number[] = [];
+    let stack = choose(rand, STACKS);
+    let clock = 0;
+
+    for (let i = 0; i < SEQUENCE_LENGTH; i += 1) {
+      if (rand() < 0.25) stack = choose(rand, STACKS);
+      const key = choose(rand, KEY_POOL);
+      const composing = rand() < 0.1;
+      const repeat = rand() < 0.08;
+      const focus: FocusKind = rand() < 0.3 ? 'text' : rand() < 0.15 ? 'control' : 'none';
+      const conditions: Partial<Record<Condition, boolean>> = {};
+      for (const c of CONDITIONS) if (rand() < 0.25) conditions[c] = true;
+      const ctx = context(stack, { focus, conditions, prefs });
+      const event = { ...key.event, isComposing: composing, repeat };
+
+      const actual = registry.resolve(event, ctx);
+      const expected = oracle(key, ctx, table, repeat, composing, guardOf);
+      const label = `seq ${s} step ${i}: ${key.id} in [${stack.join(' > ')}] focus=${focus} composing=${composing} repeat=${repeat} singleKey=${prefs.singleKeyShortcuts} conditions=${JSON.stringify(conditions)}`;
+      assert.equal(actual?.commandId ?? null, expected?.commandId ?? null, label);
+      assert.equal(actual?.phase, expected?.phase, label);
+      assert.equal(actual?.holdCommandId, expected?.holdCommandId, label);
+      checked += 1;
+
+      // Invariants stated by DESIGN, independent of the table.
+      if (composing) assert.equal(actual, null, label);
+      if (actual) {
+        resolved += 1;
+        assert.ok(stack.includes(actual.context), label);
+        const owner = table.find((b) => b.commandId === actual.commandId && b.context === actual.context && chordId(b.chord) === key.id);
+        assert.ok(owner, label);
+        if (focus === 'text' && key.character) assert.ok(owner.inTextField, `single key fired in a text field: ${label}`);
+        if (!prefs.singleKeyShortcuts && key.character) assert.ok(owner.inTextField || FOCUS_SCOPED.has(owner.context), label);
+        const triageArrow = key.id === 'ArrowLeft' || key.id === 'ArrowRight';
+        if (triageArrow && (actual.commandId === 'mail.done' || actual.commandId === 'mail.later')) {
+          assert.ok(['home', 'oneByOne', 'reader'].includes(actual.context), `arrow triage outside Home/one by one/reader: ${label}`);
+        }
+        if (key.id === 'Space' && actual.phase === 'hold') assert.equal(actual.context, 'compose', label);
+      }
+
+      // Hold timing: a hold-capable keydown, held for a random time.
+      const holdId = actual?.phase === 'tap' ? actual.holdCommandId : actual?.commandId;
+      if (actual && (actual.phase === 'hold' || holdId)) {
+        const heldFor = Math.floor(rand() * 600);
+        tracker.down(key.id, holdId!, clock);
+        const upgrade = tracker.tick(clock + heldFor);
+        const release = tracker.up(key.id, clock + heldFor);
+        const isHold = heldFor >= prefs.holdThresholdMs;
+        assert.equal(upgrade !== null, isHold, label);
+        assert.equal(release?.phase, isHold ? 'hold' : 'tap', label);
+        clock += heldFor;
+      }
+      clock += 1 + Math.floor(rand() * 40);
+
+      // Transitions open and close at random; nothing is dropped or reordered.
+      if (rand() < 0.2) queue.begin();
+      offered.push(checked);
+      if (!queue.offer(checked)) dispatched.push(checked);
+      if (rand() < 0.3) queue.end();
+      dispatched.push(...queue.drain());
+    }
+    while (queue.busy) queue.end();
+    dispatched.push(...queue.drain());
+    assert.deepEqual(dispatched, offered, `key queue order in sequence ${s}`);
+  }
+  assert.equal(checked, SEQUENCES * SEQUENCE_LENGTH);
+  assert.ok(resolved > checked * 0.2, `enough keys resolved to mean something (${resolved} of ${checked})`);
+});
