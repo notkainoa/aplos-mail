@@ -330,26 +330,28 @@ flowchart LR
 | Platform and website | `plat-ci`, `plat-release`, `web` | 3 | Opus for hardening and release security; Claude for the website; cheap models for CI plumbing |
 | Integrator | none; dependency and infrastructure merges, the full suite, the conformance burn-down, Phase 2 lead, the owner's review queue and digests | 1 plus reviewers | Opus for judgement; Haiku for test runs and summaries |
 
-### 5.1a Model routing to save Claude usage (owner, 2026-10-28)
+### 5.1a Model routing to save Claude usage (owner, 2026-10-28, tightened the same day)
 
-> **What this means:** Free models do the simple, checkable work. Claude does the thinking, the design and every final check. The quality bar stays the same.
+> **What this means:** The free models write most of the non-UI code. Sonnet writes the UI and reviews everything else. Opus only makes the hardest calls. Tests and reviews keep quality high.
 
-Claude's 5-hour limit was hit on day 1, so every thread routes work by tier:
+Claude's 5-hour limit was hit three times on day 2, so the routing was tightened. Every thread routes work by tier, cheapest first:
 
 | Tier | Models | Use for |
 |---|---|---|
-| Free | OpenCode Zen free models: `opencode/glm-5.3-flash-free`, `opencode/deepseek-v4.1-flash-free`, `opencode/mimo-v2.6-flash-free`, `opencode/beam-free`, `opencode/flint-40b-free`. Run them with `delegate_task` on provider `opencode`, or with `opencode run -m <model>`. Do not use `opencode/nemotron-3-ultra-free`, which hangs | Searching and summarizing code; running tests and builds and summarizing the results; mechanical edits, renames and codemods; boilerplate; turning a written test plan into test cases; fixtures and emulator data; lint and format fixes; STATUS and doc formatting; first-pass bug hunts, with each finding verified by Claude |
-| Cursor Grok | `grok-4.7` or `grok-4.6`, through `delegate_task` on provider `cursor` or with `cursor-agent -p --model grok-4.7-medium` | Well-scoped coding with a clear spec; second-opinion reviews. Its free monthly allowance ran out on day 1. Try it, and on "usage limit" or "unavailable on Free" fall back to the next tier without retrying |
-| Claude Haiku | `claude-haiku-5-5` | Easy work when a free model fails or is too slow |
-| Claude Sonnet | `claude-sonnet-5-5` | Scoped features, bug fixes with a repro, routine UI |
-| Claude Opus | `claude-opus-5-5` | The contract, store, governor, sync, security, complex UI, adversarial reviews, and the final check before any merge |
+| Free (the default for non-UI work) | `opencode/glm-5.3-flash-free` and `opencode/deepseek-v4.1-flash-free`, which are the reliable ones. Run them through `delegate_task` on provider `opencode`, or with `opencode run -m <model>`. `opencode/flint-40b-free` is a backup. Avoid `beam-free` (fails with more than 128 tools), `mimo-v2.6-flash-free` (stalls) and `nemotron-3-ultra-free` (hangs) | Non-UI code with a written spec or test plan: adapters, emulator scenarios, store and view helpers, scripts, CI, tests, fixtures, refactors, file splits, lint and format fixes; searching and summarizing code; running and summarizing tests and builds; first-pass bug hunts |
+| Cursor Grok | `grok-4.7` or `grok-4.6`, through `delegate_task` on provider `cursor` or with `cursor-agent -p --model grok-4.7-medium` | Like the free tier, and second-opinion reviews. Its free allowance is used up for now. Try it, and on "usage limit" or "unavailable on Free" fall back to the free tier without retrying |
+| Claude Sonnet (the default Claude) | `claude-sonnet-5-5` | All UI code by default; reviewing every non-Claude diff; scoped features where free models failed twice |
+| Claude Opus (scarce) | `claude-opus-5-5` | Only the hardest calls: contract changes, security-sensitive code (send guard, sanitizer, hardening, auth), the store's commit and sync correctness, high-visibility UI the owner will judge, and final review of security or critical-path PRs |
+| Claude Haiku | `claude-haiku-5-5` | Fallback for trivial work when free models are down |
 
 Rules:
-- All UI and design code goes to Claude only: Opus for complex or high-visibility UI, Sonnet for routine UI.
+- UI and design code is Claude-only: Sonnet by default, Opus only for the hardest screens.
+- Quality comes from checks. Every non-Claude diff must pass its tests plus a Sonnet review before it counts. Security and critical-path PRs also get an Opus review.
+- Thread orchestrators (the thread's own turns) spend tokens too. Keep turns short, delegate the reading and test runs, and don't re-read large files.
 - Never use a paid plan or upgrade. OpenCode Go and Factory need subscriptions the owner doesn't have, so don't use them.
 - Free and Cursor models never see secrets, `.env`, Keychain values, or mail and addresses from the agent test account. Give them code and demo data only.
-- Non-Claude output is checked before it counts: tests run, and a Claude agent reviews the diff. If a free model fails twice, or makes no progress for 10 minutes, cancel it and move up a tier.
-- When Claude reports a usage limit, don't stall. Shift queued low-judgment work to the free tier, and resume Claude work after the reset.
+- If a free model fails twice, or makes no progress for 10 minutes, cancel it and move up one tier.
+- When Claude reports a usage limit, don't stall. Keep the free tier working, and resume Claude work after the reset.
 
 ### 5.1b Machines (owner, 2026-10-28)
 
