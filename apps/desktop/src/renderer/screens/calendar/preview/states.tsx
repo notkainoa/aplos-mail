@@ -303,11 +303,20 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
   const [calendars, setCalendars] = useState<readonly Calendar[]>(fixture.calendars ?? CALENDARS);
   const events = fixture.events ?? WEEK;
   const plans = fixture.plans ?? [LAUNCH_PREP];
-  const period = periodOf(shownView(state), state.anchor, weekStartsOn);
+  const { from: periodFrom, to: periodTo } = periodOf(shownView(state), state.anchor, weekStartsOn);
   const defaultId = defaultCalendarId(calendars);
   const entries = useMemo<CalendarEventData[]>(
-    () => entriesFor({ events, plans, calendars, solo: state.solo, period, planCalendarId: defaultId, overlay }),
-    [events, plans, calendars, state.solo, period.from, period.to, defaultId, overlay],
+    () =>
+      entriesFor({
+        events,
+        plans,
+        calendars,
+        solo: state.solo,
+        period: { from: periodFrom, to: periodTo },
+        planCalendarId: defaultId,
+        overlay,
+      }),
+    [events, plans, calendars, state.solo, periodFrom, periodTo, defaultId, overlay],
   );
   const ctx: CalendarContext = {
     now,

@@ -8,7 +8,15 @@
  * day view adds the detail rail; week, month and agenda open the detail in a Popover anchored to the event. The
  * editor (N, E, a drag on an empty hour) is a Dialog. Pane-header tools belong to the shell: `CALENDAR_PANE_TOOLS`.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type RefObject,
+} from 'react';
 import { Button } from '../../ui/buttons-keys';
 import { CalendarGrid, EventDetail, MiniMonth, ScopeChooser } from '../../ui/calendar';
 import { formatClock, yearMonthOf } from '../../ui/calendar/dates';
@@ -73,22 +81,25 @@ function ScreenMenu(props: {
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
+  const { open, checkedId } = props;
   const [active, setActive] = useState<string | undefined>(undefined);
-  const first = props.entries.find(
+  const firstId = props.entries.find(
     (e): e is Extract<MenuEntry, { kind: 'item' }> => e.kind === 'item' && !e.disabled,
-  );
+  )?.id;
+  // Only on opening: the cursor starts on the checked item, else the first one.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (props.open) setActive(props.checkedId ?? first?.id);
-    // Only on opening: the cursor starts on the checked item, else the first one.
-  }, [props.open]);
+    if (open && !wasOpen.current) setActive(checkedId ?? firstId);
+    wasOpen.current = open;
+  }, [open, checkedId, firstId]);
   return (
     <Menu
-      open={props.open}
+      open={open}
       anchor={props.anchor}
       label={props.label}
       entries={props.entries}
       activeId={active}
-      checkedId={props.checkedId}
+      checkedId={checkedId}
       onActiveChange={setActive}
       onSelect={props.onSelect}
       onClose={props.onClose}
@@ -103,21 +114,56 @@ function sideOf(anchor: Anchor): 'left' | 'right' | 'below-start' {
   return r.left + r.width / 2 > window.innerWidth / 2 ? 'left' : 'right';
 }
 
-export function CalendarScreen({ vm, dispatch, announce, focus }: CalendarScreenProps) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const railRef = useRef<HTMLElement | null>(null);
-  const opened = useRef(new Map<string, HTMLElement>());
-  const stackAnchor = useRef<HTMLElement | null>(null);
-  const [moreAnchor, setMoreAnchor] = useState<Anchor>(null);
-  const [anchors, setAnchors] = useState<{ popover: Anchor; stack: Anchor; scope: Anchor }>({
-    popover: null,
-    stack: null,
-    scope: null,
-  });
+interface AnchorRefs {
+  readonly root: RefObject<HTMLDivElement | null>;
+  /** The element a click handed over, by entry id. */
+  readonly opened: RefObject<Map<string, HTMLElement>>;
+  readonly stack: RefObject<HTMLElement | null>;
+}
 
-  // The pane's width decides the narrow agenda (DESIGN 7.8): measured, never guessed.
+/** An entry's anchor: the element a click handed over, else the entry's own element, else the stack that folds it, else the grid. */
+function anchorFor(id: string | null, refs: AnchorRefs): Anchor {
+  if (!id) return null;
+  const held = refs.opened.current.get(id);
+  if (held?.isConnected) return held;
+  const own = document.getElementById(eventDomId(id));
+  if (own) return own;
+  if (refs.stack.current?.isConnected) return refs.stack.current;
+  return refs.root.current?.querySelector<HTMLElement>('.ui-calendar-grid') ?? null;
+}
+
+interface Anchors {
+  readonly popover: Anchor;
+  readonly stack: Anchor;
+  readonly scope: Anchor;
+}
+
+const STACK_KEY_SEP = '\u0000';
+
+/** Anchors follow the model, resolved after layout, so a state opened from outside (a key, the preview) finds its event. */
+function useAnchors(vm: CalendarViewModel, refs: AnchorRefs): Anchors {
+  const [anchors, setAnchors] = useState<Anchors>({ popover: null, stack: null, scope: null });
+  const popoverId = vm.popover?.id ?? null;
+  const scopeId = vm.scope?.entryId ?? null;
+  const stackKey = vm.stack?.ids.join(STACK_KEY_SEP) ?? '';
+  const { shown } = vm;
+  const periodStart = vm.period.start;
   useLayoutEffect(() => {
-    const el = rootRef.current;
+    let stackEl: HTMLElement | null = null;
+    if (stackKey) {
+      const held = refs.stack.current?.isConnected ? refs.stack.current : null;
+      stackEl = held ?? document.getElementById(stackDomId(stackKey.split(STACK_KEY_SEP)));
+    }
+    if (stackEl) refs.stack.current = stackEl;
+    setAnchors({ popover: anchorFor(popoverId, refs), stack: stackEl, scope: anchorFor(scopeId, refs) });
+  }, [popoverId, scopeId, stackKey, shown, periodStart, refs]);
+  return anchors;
+}
+
+/** The pane's width decides the narrow agenda (DESIGN 7.8): measured, never guessed. */
+function usePaneWidth(root: RefObject<HTMLDivElement | null>, dispatch: (action: CalendarAction) => void): void {
+  useLayoutEffect(() => {
+    const el = root.current;
     if (!el) return;
     const measure = (): void => dispatch({ type: 'width', px: Math.round(el.getBoundingClientRect().width) });
     measure();
@@ -125,78 +171,109 @@ export function CalendarScreen({ vm, dispatch, announce, focus }: CalendarScreen
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [dispatch]);
+  }, [root, dispatch]);
+}
 
-  // Anchors follow the model: the element a click handed over, else the entry's own element, else the stack that
-  // folds it, else the grid. Resolved after layout, so a state opened from outside (a key, the preview) finds its event.
-  const anchorFor = (id: string | null | undefined): Anchor => {
-    if (!id) return null;
-    const held = opened.current.get(id);
-    if (held?.isConnected) return held;
-    const own = document.getElementById(eventDomId(id));
-    if (own) return own;
-    if (stackAnchor.current?.isConnected) return stackAnchor.current;
-    return rootRef.current?.querySelector<HTMLElement>('.ui-calendar-grid') ?? null;
-  };
-  const stackIds = vm.stack?.ids.join('\u0000') ?? '';
-  useLayoutEffect(() => {
-    const stackEl =
-      vm.stack && vm.stack.ids.length > 0
-        ? (stackAnchor.current?.isConnected ? stackAnchor.current : null) ??
-          document.getElementById(stackDomId(vm.stack.ids))
-        : null;
-    if (stackEl) stackAnchor.current = stackEl;
-    setAnchors({
-      popover: vm.popover ? anchorFor(vm.popover.id) : null,
-      stack: stackEl,
-      scope: vm.scope ? anchorFor(vm.scope.entryId) : null,
-    });
-  }, [vm.popover?.id, vm.scope?.entryId, stackIds, vm.shown, vm.period.start]);
-
-  // A ⋯ menu opened by a key (or the preview) has no click to hand over its button: find it in the open detail.
+/** A ⋯ menu opened by a key (or the preview) has no click to hand over its button: find it in the open detail. */
+function useMoreAnchor(root: RefObject<HTMLDivElement | null>, vm: CalendarViewModel) {
+  const [moreAnchor, setMoreAnchor] = useState<Anchor>(null);
+  const detailId = (vm.popover ?? vm.rail)?.id ?? null;
   useLayoutEffect(() => {
     if (!vm.moreOpen || moreAnchor?.isConnected) return;
-    const button = rootRef.current?.querySelector<HTMLElement>(
+    const button = root.current?.querySelector<HTMLElement>(
       '.cal-screen__popover button[aria-haspopup="menu"], .cal-screen__rail button[aria-haspopup="menu"]',
     );
     if (button) setMoreAnchor(button);
-  });
+  }, [root, vm.moreOpen, moreAnchor, detailId]);
+  return [moreAnchor, setMoreAnchor] as const;
+}
 
+/** Moves focus when the container asks (Return in day view, a delete, a closed popover). */
+function useFocusRequest(
+  focus: FocusRequest | null | undefined,
+  root: RefObject<HTMLDivElement | null>,
+  rail: RefObject<HTMLElement | null>,
+): void {
+  const seq = focus?.seq;
+  const target = focus?.target;
   useEffect(() => {
-    if (!focus) return;
-    const target =
-      focus.target === 'rail'
-        ? railRef.current
-        : rootRef.current?.querySelector<HTMLElement>('.ui-calendar-grid');
-    target?.focus({ preventScroll: true });
-  }, [focus?.seq]);
+    if (seq === undefined) return;
+    const el = target === 'rail' ? rail.current : root.current?.querySelector<HTMLElement>('.ui-calendar-grid');
+    el?.focus({ preventScroll: true });
+  }, [seq, target, root, rail]);
+}
 
+type DetailProps = Omit<ComponentProps<typeof EventDetail>, 'presentation' | 'onClose'>;
+
+/** The open detail's props, shared by the day rail and the popover. */
+function detailPropsFor(
+  vm: CalendarViewModel,
+  dispatch: (action: CalendarAction) => void,
+  onMore: (anchor: HTMLElement) => void,
+): DetailProps | null {
   const detail = vm.popover ?? vm.rail;
-  const reply =
-    vm.reply && detail
-      ? {
-          answer: vm.reply.answer,
-          commands: ANSWER_COMMANDS,
-          onAnswer: (answer: 'yes' | 'maybe' | 'no') => dispatch({ type: 'answer', answer }),
-          onSend: () => dispatch({ type: 'sendReply' }),
-        }
-      : undefined;
-  const detailProps = detail
+  if (!detail) return null;
+  const reply = vm.reply
     ? {
-        event: detail,
-        reply,
-        onOpenInvite: () => dispatch({ type: 'openInvite' }),
-        onOpenVideo: () => dispatch({ type: 'openVideo' }),
-        onConfirmPlan: () => dispatch({ type: 'confirmPlan' }),
-        onOpenSource: () => dispatch({ type: 'openSource' }),
-        onMore: (anchor: HTMLElement) => {
-          setMoreAnchor(anchor);
-          dispatch({ type: 'more', open: true });
-        },
+        answer: vm.reply.answer,
+        commands: ANSWER_COMMANDS,
+        onAnswer: (answer: 'yes' | 'maybe' | 'no') => dispatch({ type: 'answer', answer }),
+        onSend: () => dispatch({ type: 'sendReply' }),
       }
-    : null;
+    : undefined;
+  return {
+    event: detail,
+    reply,
+    onOpenInvite: () => dispatch({ type: 'openInvite' }),
+    onOpenVideo: () => dispatch({ type: 'openVideo' }),
+    onConfirmPlan: () => dispatch({ type: 'confirmPlan' }),
+    onOpenSource: () => dispatch({ type: 'openSource' }),
+    onMore,
+  };
+}
 
-  const grid = (
+/** The PageHead row: the date label, then Today, previous and next and the D | W | M Puck. */
+function ViewControls({ vm, dispatch }: { vm: CalendarViewModel; dispatch: (action: CalendarAction) => void }) {
+  return (
+    <PageHead lead={{ kind: 'dateLabel', label: vm.head.label, range: vm.head.range }}>
+      <Button variant="text" label="Today" commandId="calendar.today" onPress={() => dispatch({ type: 'today' })} />
+      <Button
+        variant="icon"
+        icon="chevron-left"
+        label={`Previous ${vm.periodWord}`}
+        commandId="calendar.previousPeriod"
+        onPress={() => dispatch({ type: 'period', dir: -1 })}
+      />
+      <Button
+        variant="icon"
+        icon="chevron-right"
+        label={`Next ${vm.periodWord}`}
+        commandId="calendar.nextPeriod"
+        onPress={() => dispatch({ type: 'period', dir: 1 })}
+      />
+      <span className="cal-screen__views">
+        <Puck
+          kind="segmented"
+          role="tabs"
+          label="View"
+          items={VIEWS}
+          selectedId={vm.viewSelected}
+          onSelect={id => dispatch({ type: 'view', view: id as GridView })}
+        />
+      </span>
+    </PageHead>
+  );
+}
+
+function Grid(props: {
+  vm: CalendarViewModel;
+  dispatch: (action: CalendarAction) => void;
+  announce?: Announce;
+  opened: RefObject<Map<string, HTMLElement>>;
+  stack: RefObject<HTMLElement | null>;
+}) {
+  const { vm, dispatch, opened, stack } = props;
+  return (
     <CalendarGrid
       view={vm.shown}
       start={vm.period.start}
@@ -213,7 +290,7 @@ export function CalendarScreen({ vm, dispatch, announce, focus }: CalendarScreen
       onMove={(id, range) => dispatch({ type: 'move', id, start: range.start, end: range.end })}
       onResize={(id, end) => dispatch({ type: 'resize', id, end })}
       onOpenStack={(ids, anchor) => {
-        stackAnchor.current = anchor;
+        stack.current = anchor;
         dispatch({ type: 'openStack', ids });
       }}
       emptyAction={
@@ -223,74 +300,35 @@ export function CalendarScreen({ vm, dispatch, announce, focus }: CalendarScreen
       }
       agenda="full"
       label={vm.gridLabel}
-      announce={announce}
+      announce={props.announce}
     />
   );
+}
 
+/** The detail popover, the ⋯ and "+N" menus, and the scope question. */
+function Surfaces(props: {
+  vm: CalendarViewModel;
+  dispatch: (action: CalendarAction) => void;
+  anchors: Anchors;
+  moreAnchor: Anchor;
+  detailProps: DetailProps | null;
+}) {
+  const { vm, dispatch, anchors, moreAnchor, detailProps } = props;
+  const close = () => dispatch({ type: 'close' });
+  const listPlacement = vm.shown === 'month' || vm.shown === 'agenda';
   return (
-    <div ref={rootRef} className="cal-screen" data-view={vm.shown}>
-      <PageHead lead={{ kind: 'dateLabel', label: vm.head.label, range: vm.head.range }}>
-        <Button
-          variant="text"
-          label="Today"
-          commandId="calendar.today"
-          onPress={() => dispatch({ type: 'today' })}
-        />
-        <Button
-          variant="icon"
-          icon="chevron-left"
-          label={`Previous ${vm.periodWord}`}
-          commandId="calendar.previousPeriod"
-          onPress={() => dispatch({ type: 'period', dir: -1 })}
-        />
-        <Button
-          variant="icon"
-          icon="chevron-right"
-          label={`Next ${vm.periodWord}`}
-          commandId="calendar.nextPeriod"
-          onPress={() => dispatch({ type: 'period', dir: 1 })}
-        />
-        <span className="cal-screen__views">
-          <Puck
-            kind="segmented"
-            role="tabs"
-            label="View"
-            items={VIEWS}
-            selectedId={vm.view}
-            onSelect={id => dispatch({ type: 'view', view: id as GridView })}
-          />
-        </span>
-      </PageHead>
-
-      {vm.shown === 'day' ? (
-        <div className="cal-screen__day" data-rail={vm.rail ? 'true' : undefined}>
-          {grid}
-          {vm.rail && detailProps ? (
-            <aside
-              ref={railRef}
-              className="cal-screen__rail"
-              aria-label="Event details"
-              tabIndex={-1}
-            >
-              <EventDetail {...detailProps} presentation="rail" />
-            </aside>
-          ) : null}
-        </div>
-      ) : (
-        <div className="cal-screen__body">{grid}</div>
-      )}
-
+    <>
       <Popover
         open={vm.popover !== null && vm.scope === null && anchors.popover !== null}
         anchor={anchors.popover}
-        label={vm.popover ? vm.popover.title : 'Event'}
+        label={vm.popover?.title ?? 'Event'}
         role="dialog"
-        placement={vm.shown === 'month' || vm.shown === 'agenda' ? 'below-start' : sideOf(anchors.popover)}
-        onClose={() => dispatch({ type: 'close' })}
+        placement={listPlacement ? 'below-start' : sideOf(anchors.popover)}
+        onClose={close}
       >
         {vm.popover && detailProps ? (
           <div className="cal-screen__popover">
-            <EventDetail {...detailProps} presentation="popover" onClose={() => dispatch({ type: 'close' })} />
+            <EventDetail {...detailProps} presentation="popover" onClose={close} />
           </div>
         ) : null}
       </Popover>
@@ -316,7 +354,7 @@ export function CalendarScreen({ vm, dispatch, announce, focus }: CalendarScreen
       <Popover
         open={vm.scope !== null && anchors.scope !== null}
         anchor={anchors.scope}
-        label={vm.scope ? vm.scope.title : 'Repeating event'}
+        label={vm.scope?.title ?? 'Repeating event'}
         role="dialog"
         placement={sideOf(anchors.scope)}
         onClose={() => dispatch({ type: 'scopeCancel' })}
@@ -330,6 +368,46 @@ export function CalendarScreen({ vm, dispatch, announce, focus }: CalendarScreen
           />
         ) : null}
       </Popover>
+    </>
+  );
+}
+
+export function CalendarScreen({ vm, dispatch, announce, focus }: CalendarScreenProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const railRef = useRef<HTMLElement | null>(null);
+  const opened = useRef(new Map<string, HTMLElement>());
+  const stackAnchor = useRef<HTMLElement | null>(null);
+  const refs = useMemo<AnchorRefs>(() => ({ root: rootRef, opened, stack: stackAnchor }), []);
+
+  usePaneWidth(rootRef, dispatch);
+  const anchors = useAnchors(vm, refs);
+  const [moreAnchor, setMoreAnchor] = useMoreAnchor(rootRef, vm);
+  useFocusRequest(focus, rootRef, railRef);
+
+  const detailProps = detailPropsFor(vm, dispatch, anchor => {
+    setMoreAnchor(anchor);
+    dispatch({ type: 'more', open: true });
+  });
+  const grid = <Grid vm={vm} dispatch={dispatch} announce={announce} opened={opened} stack={stackAnchor} />;
+
+  return (
+    <div ref={rootRef} className="cal-screen" data-view={vm.shown}>
+      <ViewControls vm={vm} dispatch={dispatch} />
+
+      {vm.shown === 'day' ? (
+        <div className="cal-screen__day" data-rail={vm.rail ? 'true' : undefined}>
+          {grid}
+          {vm.rail && detailProps ? (
+            <aside ref={railRef} className="cal-screen__rail" aria-label="Event details" tabIndex={-1}>
+              <EventDetail {...detailProps} presentation="rail" />
+            </aside>
+          ) : null}
+        </div>
+      ) : (
+        <div className="cal-screen__body">{grid}</div>
+      )}
+
+      <Surfaces vm={vm} dispatch={dispatch} anchors={anchors} moreAnchor={moreAnchor} detailProps={detailProps} />
 
       {vm.editor ? <EventEditor editor={vm.editor} dispatch={dispatch} /> : null}
     </div>

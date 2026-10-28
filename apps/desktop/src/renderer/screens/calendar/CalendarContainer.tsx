@@ -6,9 +6,10 @@
  * What `renderer/data` and `renderer/shell` don't offer yet comes in through `CalendarPorts` (REQUESTs to ui-shell):
  * the `Calendar/get` list, `Event/set|rsvp|hide`, `Calendar/set`, `Plan/confirm|dismiss`, the `invite` key condition,
  * the sidebar slot, opening a thread or a link, and the clipboard. It cannot run until ui-shell lands the data layer.
+ * Undoable writes go through `writes.ts`; the interim key guards (←/→, Esc, Return) are in `keys.ts`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Registry } from '../../commands';
+import type { CommandContext, Registry } from '../../commands';
 import {
   api,
   getNow,
@@ -22,11 +23,10 @@ import {
   type Event,
   type Output,
   type Plan,
-  type Receipt,
   type State,
 } from '../../data';
 import { dismissToast, pushToast, updateToast, useCommandTarget } from '../../shell';
-import type { Announce } from '../../ui/props';
+import type { Announce, ToastKind } from '../../ui/props';
 import {
   actionForCommand,
   CALENDAR_COMMAND_IDS,
@@ -49,6 +49,7 @@ import {
   visibleCalendarIds,
   weekStartsOnFor,
   type CalendarAction,
+  type CalendarCommandId,
   type CalendarContext,
   type CalendarEffect,
   type CalendarState,
@@ -56,12 +57,14 @@ import {
   type Overlay,
 } from './calendar.model';
 import { CalendarScreen, type FocusRequest } from './CalendarScreen';
+import { createTurnGate, ladderTakesEscape, ownsSideArrows, type ElementLike } from './keys';
 import { calendarSidebar, type CalendarSidebar } from './sidebar';
+import { createWrites, type Writes } from './writes';
 
 /** A contract command through a port: the caller mints the `opId`. */
-type PortCall<M extends 'Event/set' | 'Event/rsvp' | 'Event/hide' | 'Calendar/set' | 'Plan/confirm' | 'Plan/dismiss'> = (
-  args: CommandArgs<M> & { readonly opId: string },
-) => Promise<Output<M>>;
+type PortCall<
+  M extends 'Event/set' | 'Event/rsvp' | 'Event/hide' | 'Calendar/set' | 'Plan/confirm' | 'Plan/dismiss',
+> = (args: CommandArgs<M> & { readonly opId: string }) => Promise<Output<M>>;
 
 /** What the Calendar container needs that `renderer/data` and `renderer/shell` don't offer yet (REQUESTs to ui-shell). */
 export interface CalendarPorts {
@@ -80,6 +83,11 @@ export interface CalendarPorts {
   };
   readonly calendar: { readonly set: PortCall<'Calendar/set'> };
   readonly plan: { readonly confirm: PortCall<'Plan/confirm'>; readonly dismiss: PortCall<'Plan/dismiss'> };
+  /**
+   * True when these writes join the undo stack by themselves, as the data layer's `api.*` writes do; the container then
+   * pushes no entry of its own, so one write is one Z.
+   */
+  readonly writesJoinUndo?: boolean;
   /** Opens a thread in the reader (an invite email, a plan's source). */
   readonly openThread: (threadId: string) => void;
   /** `Shell/open`: a meeting link in the browser. */
@@ -93,7 +101,12 @@ export interface CalendarContainerProps {
 }
 
 const newOpId = (): string => crypto.randomUUID();
-const UNDO_ACTION = [{ id: 'undo', label: 'Undo', commandId: 'app.undo' }] as const;
+
+/**
+ * A toast's Undo undoes its own write, so it has no `commandId`: with one, the shell would run `app.undo`, which undoes
+ * the newest change instead (review1 3). Z still undoes the newest.
+ */
+const UNDO_ACTION = [{ id: 'undo', label: 'Undo' }] as const;
 
 /** An overlay entry stays until a window frame reaches the write's state (ARCH 9.2), or until it fails or is undone. */
 interface Settling {
@@ -103,6 +116,46 @@ interface Settling {
 
 const reached = (window: State | null, at: State | null): boolean =>
   window !== null && at !== null && window.dbEpoch === at.dbEpoch && window.seq >= at.seq;
+
+const focused = (): ElementLike | null =>
+  typeof document === 'undefined' ? null : (document.activeElement as ElementLike | null);
+
+/** The period commands rest while focus is in a widget that moves with ←/→ itself (keys.ts). */
+const PERIOD_COMMANDS: ReadonlySet<CalendarCommandId> = new Set(['calendar.nextPeriod', 'calendar.previousPeriod']);
+
+function useUndoToast(writes: Writes) {
+  return useCallback(
+    (opId: string, kind: ToastKind, message: string) =>
+      pushToast({
+        id: opId,
+        kind,
+        message,
+        actions: UNDO_ACTION,
+        undoable: true,
+        onAction: actionId => {
+          if (actionId === 'undo') void writes.undo(opId);
+        },
+      }),
+    [writes],
+  );
+}
+
+/** Runs the model's Esc ladder from a capture listener and takes the key only when a rung handled it (keys.ts). */
+function useEscapeLadder(dispatch: (action: CalendarAction) => boolean) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      const root = document.querySelector('.cal-screen');
+      const active = document.activeElement;
+      const inScreen = active === null || active === document.body || (root?.contains(active) ?? false);
+      if (!ladderTakesEscape(event, active, inScreen)) return;
+      if (!dispatch({ type: 'escape' })) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [dispatch]);
+}
 
 export function CalendarContainer({ ports, announce }: CalendarContainerProps) {
   const now = useNow({ granularity: 'minute' });
@@ -124,6 +177,7 @@ export function CalendarContainer({ ports, announce }: CalendarContainerProps) {
   const [focus, setFocus] = useState<FocusRequest | null>(null);
 
   const period = periodOf(shownView(state), state.anchor, weekStartsOn);
+  const { from: periodFrom, to: periodTo } = period;
   const visible = visibleCalendarIds(calendars, state.solo);
   const eventsWindow = useView(eventsSpec(period, visible));
   const plansWindow = useView(plansSpec(period));
@@ -136,10 +190,19 @@ export function CalendarContainer({ ports, announce }: CalendarContainerProps) {
     [plansWindow.ids, plansWindow.rows],
   );
   const defaultId = defaultCalendarId(calendars, settings?.calendar.defaultCalendarId);
+  // The period by its bounds, so a new object for the same range does not recompute.
   const entries = useMemo(
-    () => entriesFor({ events, plans, calendars, solo: state.solo, period, planCalendarId: defaultId, overlay }),
-    // The period by its bounds, so a new object for the same range does not recompute.
-    [events, plans, calendars, state.solo, period.from, period.to, defaultId, overlay],
+    () =>
+      entriesFor({
+        events,
+        plans,
+        calendars,
+        solo: state.solo,
+        period: { from: periodFrom, to: periodTo },
+        planCalendarId: defaultId,
+        overlay,
+      }),
+    [events, plans, calendars, state.solo, periodFrom, periodTo, defaultId, overlay],
   );
   const ctx: CalendarContext = useMemo(
     () => ({
@@ -156,10 +219,10 @@ export function CalendarContainer({ ports, announce }: CalendarContainerProps) {
 
   // Drop overlay entries once the events window has caught up with their writes.
   useEffect(() => {
-    const done = settling.filter(s => reached(eventsWindow.state, s.at));
-    if (done.length === 0) return;
-    setOverlay(o => done.reduce((acc, s) => overlayWithout(acc, s.id), o));
-    setSettling(list => list.filter(s => !done.includes(s)));
+    const caughtUp = settling.filter(s => reached(eventsWindow.state, s.at));
+    if (caughtUp.length === 0) return;
+    setOverlay(o => caughtUp.reduce((acc, s) => overlayWithout(acc, s.id), o));
+    setSettling(list => list.filter(s => !caughtUp.includes(s)));
   }, [eventsWindow.state, settling]);
 
   // The reducer reads the newest state and context even when several keys land in one frame.
@@ -171,20 +234,6 @@ export function CalendarContainer({ ports, announce }: CalendarContainerProps) {
   const optimistic = useCallback((change: OptimisticChange) => setOverlay(o => overlayWith(o, change)), []);
   const rollback = useCallback((id: string) => setOverlay(o => overlayWithout(o, id)), []);
   const settle = useCallback((id: string, at: State | null) => setSettling(list => [...list, { id, at }]), []);
-
-  /** Pushes Z's entry for an engine write: cancel while held, else the inverse (`Operation/undo` decides). */
-  const undoable = useCallback(
-    (opId: string, label: string, id: string) =>
-      undoStack.push({
-        label,
-        undo: async () => {
-          dismissToast(opId);
-          await api.operation.undo({ opId }).receipt;
-          rollback(id);
-        },
-      }),
-    [rollback],
-  );
 
   const failed = useCallback(
     (opId: string, id: string, message: string, retry: () => void) => {
@@ -204,105 +253,113 @@ export function CalendarContainer({ ports, announce }: CalendarContainerProps) {
     [rollback],
   );
 
+  const joinsUndo = ports.writesJoinUndo === true;
+  const writes = useMemo(
+    () =>
+      createWrites({
+        undoOperation: opId => api.operation.undo({ opId }).receipt,
+        rollback,
+        settle,
+        dismissToast,
+        failed,
+        ...(joinsUndo
+          ? {}
+          : { pushUndo: (label: string, undo: () => Promise<void>) => undoStack.push({ label, undo }) }),
+      }),
+    [rollback, settle, failed, joinsUndo],
+  );
+  const undoToast = useUndoToast(writes);
+
   const run = useCallback(
     (fx: CalendarEffect): void => {
+      const retry = () => run(fx);
       switch (fx.kind) {
         case 'eventSet': {
           const opId = newOpId();
           optimistic(fx.optimistic);
-          if (fx.toast)
-            pushToast({ id: opId, kind: fx.toast.kind, message: fx.toast.message, actions: UNDO_ACTION, undoable: true });
-          const handle = undoable(opId, fx.undoLabel, fx.optimistic.id);
-          ports.event.set({ opId, change: fx.change }).then(
-            out => settle(fx.optimistic.id, out.receipt.appliedState),
-            () => {
-              handle.forget();
-              failed(opId, fx.optimistic.id, fx.failure, () => run(fx));
-            },
-          );
+          if (fx.toast) undoToast(opId, fx.toast.kind, fx.toast.message);
+          writes.start({
+            opId,
+            entryId: fx.optimistic.id,
+            label: fx.undoLabel,
+            call: () => ports.event.set({ opId, change: fx.change }).then(out => out.receipt.appliedState),
+            failure: fx.failure,
+            retry,
+          });
           return;
         }
         case 'rsvp': {
           const opId = newOpId();
+          const held = rsvpMessage(fx.answer, fx.organizer, 'held');
           optimistic(fx.optimistic);
-          pushToast({
-            id: opId,
-            kind: 'done',
-            message: rsvpMessage(fx.answer, fx.organizer, 'held'),
-            actions: UNDO_ACTION,
-            undoable: true,
+          undoToast(opId, 'done', held);
+          writes.start({
+            opId,
+            entryId: fx.id,
+            label: held,
+            call: () =>
+              ports.event.rsvp({ opId, id: fx.id, response: fx.response, scope: fx.scope }).then(receipt => {
+                // Sent at once (no hold): the toast says so.
+                if (receipt.undoUntil === undefined || receipt.undoUntil <= getNow())
+                  updateToast(opId, { message: rsvpMessage(fx.answer, fx.organizer, 'sent') });
+                return receipt.appliedState;
+              }),
+            failure: fx.failure,
+            retry,
           });
-          const handle = undoable(opId, rsvpMessage(fx.answer, fx.organizer, 'held'), fx.id);
-          ports.event.rsvp({ opId, id: fx.id, response: fx.response, scope: fx.scope }).then(
-            (receipt: Receipt) => {
-              settle(fx.id, receipt.appliedState);
-              // Sent at once (no hold): the toast says so.
-              if (receipt.undoUntil === undefined || receipt.undoUntil <= getNow())
-                updateToast(opId, { message: rsvpMessage(fx.answer, fx.organizer, 'sent') });
-            },
-            () => {
-              handle.forget();
-              failed(opId, fx.id, fx.failure, () => run(fx));
-            },
-          );
           return;
         }
         case 'calendarSet': {
+          const clear = () =>
+            setShownOverride(m => {
+              const next = new Map(m);
+              next.delete(fx.id);
+              return next;
+            });
           setShownOverride(m => new Map(m).set(fx.id, fx.shown));
-          ports.calendar.set({ opId: newOpId(), id: fx.id, shown: fx.shown }).then(
-            () => setShownOverride(m => {
-              const next = new Map(m);
-              next.delete(fx.id);
-              return next;
-            }),
-            () => setShownOverride(m => {
-              const next = new Map(m);
-              next.delete(fx.id);
-              return next;
-            }),
-          );
+          ports.calendar.set({ opId: newOpId(), id: fx.id, shown: fx.shown }).then(clear, clear);
           return;
         }
         case 'planConfirm': {
           const opId = newOpId();
           optimistic(fx.optimistic);
-          const handle = undoable(opId, 'Added to Calendar', fx.optimistic.id);
-          ports.plan
-            .confirm({ opId, id: fx.planId, ...(fx.calendarId ? { calendarId: fx.calendarId } : {}) })
-            .then(
-              out => settle(fx.optimistic.id, out.receipt.appliedState),
-              () => {
-                handle.forget();
-                failed(opId, fx.optimistic.id, "Couldn't add it to the calendar.", () => run(fx));
-              },
-            );
+          writes.start({
+            opId,
+            entryId: fx.optimistic.id,
+            label: 'Added to Calendar',
+            call: () =>
+              ports.plan
+                .confirm({ opId, id: fx.planId, ...(fx.calendarId ? { calendarId: fx.calendarId } : {}) })
+                .then(out => out.receipt.appliedState),
+            failure: "Couldn't add it to the calendar.",
+            retry,
+          });
           return;
         }
         case 'planDismiss': {
           const opId = newOpId();
           optimistic(fx.optimistic);
-          const handle = undoable(opId, 'Not added', fx.optimistic.id);
-          ports.plan.dismiss({ opId, ids: [fx.planId] }).then(
-            receipt => settle(fx.optimistic.id, receipt.appliedState),
-            () => {
-              handle.forget();
-              rollback(fx.optimistic.id);
-            },
-          );
+          writes.start({
+            opId,
+            entryId: fx.optimistic.id,
+            label: 'Not added',
+            call: () => ports.plan.dismiss({ opId, ids: [fx.planId] }).then(receipt => receipt.appliedState),
+            retry,
+          });
           return;
         }
         case 'eventHide': {
           const opId = newOpId();
           optimistic(fx.optimistic);
-          pushToast({ id: opId, kind: fx.toast.kind, message: fx.toast.message, actions: UNDO_ACTION, undoable: true });
-          const handle = undoable(opId, fx.toast.message, fx.id);
-          ports.event.hide({ opId, ids: [fx.id], hidden: true }).then(
-            receipt => settle(fx.id, receipt.appliedState),
-            () => {
-              handle.forget();
-              failed(opId, fx.id, "Couldn't hide it.", () => run(fx));
-            },
-          );
+          undoToast(opId, fx.toast.kind, fx.toast.message);
+          writes.start({
+            opId,
+            entryId: fx.id,
+            label: fx.toast.message,
+            call: () => ports.event.hide({ opId, ids: [fx.id], hidden: true }).then(r => r.appliedState),
+            failure: "Couldn't hide it.",
+            retry,
+          });
           return;
         }
         case 'openThread':
@@ -323,10 +380,10 @@ export function CalendarContainer({ ports, announce }: CalendarContainerProps) {
           return;
       }
     },
-    [ports, optimistic, undoable, settle, failed, rollback],
+    [ports, optimistic, writes, undoToast],
   );
 
-  const dispatch = useCallback(
+  const apply = useCallback(
     (action: CalendarAction): boolean => {
       const t = update(stateRef.current, action, ctxRef.current);
       if (t.state !== stateRef.current) {
@@ -339,18 +396,34 @@ export function CalendarContainer({ ports, announce }: CalendarContainerProps) {
     [run],
   );
 
+  // Return: CalendarGrid opens its selection itself and the registry's calendar.open runs on the same key; the first
+  // of the two in one turn acts (keys.ts). A double-click is its own turn.
+  const returnGate = useMemo(() => createTurnGate(), []);
+  const dispatch = useCallback(
+    (action: CalendarAction): boolean => {
+      if (action.type === 'open' && action.id !== undefined && !returnGate.claim()) return true;
+      return apply(action);
+    },
+    [apply, returnGate],
+  );
+
   // The catalog's calendar commands: keys, the palette and menus all land in the same reducer.
   useEffect(() => {
     const detach = CALENDAR_COMMAND_IDS.map(id =>
       ports.registry.attach(id, {
-        when: () => commandEnabled(id, stateRef.current, ctxRef.current),
-        run: () => {
-          dispatch(actionForCommand(id));
+        when: () =>
+          commandEnabled(id, stateRef.current, ctxRef.current) &&
+          !(PERIOD_COMMANDS.has(id) && ownsSideArrows(focused())),
+        run: (command: CommandContext) => {
+          if (id === 'calendar.open' && command.trigger && !returnGate.claim()) return;
+          apply(actionForCommand(id));
         },
       }),
     );
     return () => detach.forEach(off => off());
-  }, [ports.registry, dispatch]);
+  }, [ports.registry, apply, returnGate]);
+
+  useEscapeLadder(apply);
 
   ports.useInviteCondition(inviteOpen(state, ctx));
   useCommandTarget(commandTarget(state, ctx));
@@ -358,12 +431,5 @@ export function CalendarContainer({ ports, announce }: CalendarContainerProps) {
     calendarSidebar({ state, calendars, entries, today: toIsoDate(now), weekStartsOn, dispatch }),
   );
 
-  return (
-    <CalendarScreen
-      vm={viewModel(state, ctx)}
-      dispatch={dispatch}
-      announce={announce}
-      focus={focus}
-    />
-  );
+  return <CalendarScreen vm={viewModel(state, ctx)} dispatch={dispatch} announce={announce} focus={focus} />;
 }

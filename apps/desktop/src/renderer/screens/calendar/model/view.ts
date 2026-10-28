@@ -1,0 +1,152 @@
+/** The view model CalendarScreen draws. */
+import { toIsoDate, toIsoDateTime, type Calendar } from '../../../data';
+import type {
+  CalendarEventData,
+  CalendarView,
+  IsoDate,
+  IsoDateTime,
+  IsoTime,
+  MenuEntry,
+  RsvpAnswer,
+  TagColor,
+} from '../../../ui/props';
+import { dayTitle, formatClock, rangeOf, timeOf, yearMonthOf } from '../../../ui/calendar/dates';
+import { daysBetween, editorShowsDelete, endChoices, startChoices, type EditorDraft } from './editor';
+import { entriesOnDay, monthEventCount, tagFor, writableCalendars } from './entries';
+import { gridLabel, periodOf, periodWord, topLabel, type GridView, type Period } from './period';
+import { canSendReply } from './rsvp';
+import {
+  detailMenu,
+  entryById,
+  liveRsvp,
+  railEntry,
+  shownView,
+  type CalendarContext,
+  type CalendarState,
+  type ScopeAsk,
+} from './state';
+
+export interface EditorView {
+  readonly draft: EditorDraft;
+  readonly title: string;
+  readonly showDelete: boolean;
+  /** "Thursday, October 29, 2026". */
+  readonly dateLabel: string;
+  readonly startLabel: string;
+  readonly endLabel: string;
+  readonly startChoices: readonly IsoTime[];
+  readonly endChoices: ReadonlyArray<{ time: IsoTime; length: string }>;
+  /** Calendars a new event can go on; an existing event shows its own, fixed. */
+  readonly calendars: ReadonlyArray<{ id: string; name: string; color: TagColor }>;
+  readonly calendar: { id: string; name: string; color: TagColor } | null;
+  readonly calendarFixed: boolean;
+  /** For the day picker's today badge and first weekday. */
+  readonly today: IsoDate;
+  readonly weekStartsOn: 0 | 1;
+}
+
+export interface CalendarViewModel {
+  readonly view: GridView;
+  /**
+   * The D | W | M switcher's choice: none while the narrow agenda shows, which always lists a week (label, J and K
+   * included), so the switcher never claims Day or Month the pane is not drawing (DESIGN 7.8 Narrow; review1 4d).
+   */
+  readonly viewSelected: GridView | null;
+  readonly shown: CalendarView;
+  readonly period: Period;
+  readonly head: { label: string; range: string };
+  readonly gridLabel: string;
+  readonly periodWord: 'day' | 'week' | 'month';
+  readonly entries: readonly CalendarEventData[];
+  readonly now: IsoDateTime;
+  readonly weekStartsOn: 0 | 1;
+  readonly selectedId: string | undefined;
+  /** The day view's rail (hidden when the day is empty or the pane is narrow). */
+  readonly rail: CalendarEventData | null;
+  /** The popover's entry. */
+  readonly popover: CalendarEventData | null;
+  /** The RSVP block of the rail or popover, with "Send reply" enabled only after a choice. */
+  readonly reply: { answer: RsvpAnswer | null; canSend: boolean } | null;
+  readonly more: readonly MenuEntry[];
+  readonly moreOpen: boolean;
+  readonly stack: { ids: readonly string[]; label: string; entries: readonly MenuEntry[] } | null;
+  readonly scope: { action: ScopeAsk['action']; title: string; entryId: string } | null;
+  readonly editor: EditorView | null;
+  /** DESIGN 7.14: "Nothing scheduled." with New event · N, on an empty day. */
+  readonly emptyAction: boolean;
+}
+
+export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarViewModel {
+  const shown = shownView(state);
+  const period = periodOf(shown, state.anchor, ctx.weekStartsOn);
+  const entries = ctx.entries;
+  const dayCount = entriesOnDay(entries, state.anchor).length;
+  const rail = shown === 'day' ? (railEntry(state, ctx) ?? null) : null;
+  const popover = shown === 'day' ? null : (entryById(ctx, state.detailId) ?? null);
+  const detail = popover ?? rail;
+  const live = liveRsvp(state, ctx);
+  const stackEntries = state.stackIds
+    ? state.stackIds.map(id => entryById(ctx, id)).filter((e): e is CalendarEventData => e !== undefined)
+    : [];
+  const scopeEntry = state.scope ? entryById(ctx, state.scope.entryId) : undefined;
+  return {
+    view: state.view,
+    viewSelected: shown === 'agenda' ? null : state.view,
+    shown,
+    period,
+    head: topLabel(shown, period, state.anchor, monthEventCount(entries, yearMonthOf(state.anchor))),
+    gridLabel: gridLabel(shown, period, state.anchor, dayCount),
+    periodWord: periodWord(shown),
+    entries,
+    now: toIsoDateTime(ctx.now),
+    weekStartsOn: ctx.weekStartsOn,
+    selectedId: entryById(ctx, state.selectedId)?.id,
+    rail,
+    popover,
+    reply: live && detail && live.eventId === detail.id ? { answer: live.answer, canSend: canSendReply(live, detail) } : null,
+    more: detail ? detailMenu(detail, ctx) : [],
+    moreOpen: state.moreOpen && detail !== null,
+    stack:
+      stackEntries.length > 0
+        ? {
+            ids: stackEntries.map(e => e.id),
+            label: `${stackEntries.length} more at ${timeOf(stackEntries[0].start)}`,
+            entries: [
+              { kind: 'label', label: `${stackEntries.length} more at ${timeOf(stackEntries[0].start)}` },
+              ...stackEntries.map(
+                (e): MenuEntry => ({
+                  kind: 'item',
+                  id: e.id,
+                  label: e.title,
+                  swatch: e.calendar.color,
+                  aside: e.allDay ? 'All day' : rangeOf(e.start, e.end),
+                }),
+              ),
+            ],
+          }
+        : null,
+    scope: state.scope && scopeEntry ? { action: state.scope.action, title: scopeEntry.title, entryId: scopeEntry.id } : null,
+    editor: state.editor ? editorView(state.editor, ctx) : null,
+    emptyAction: shown === 'day' || shown === 'agenda',
+  };
+}
+
+function editorView(draft: EditorDraft, ctx: CalendarContext): EditorView {
+  const ref = (c: Calendar) => ({ id: c.id, name: c.name, color: tagFor(c, ctx.calendars) });
+  const own = ctx.calendars.find(c => c.id === draft.calendarId);
+  return {
+    draft,
+    title: draft.mode === 'new' ? 'New event' : 'Edit event',
+    showDelete: editorShowsDelete(draft),
+    dateLabel: dayTitle(draft.date),
+    startLabel: formatClock(draft.start),
+    endLabel: formatClock(draft.end),
+    startChoices: startChoices(draft.start),
+    endChoices: endChoices(draft.start, draft.end, draft.allDay ? 0 : daysBetween(draft.date, draft.endDate)),
+    calendars: writableCalendars(ctx.calendars).map(ref),
+    calendar: own ? ref(own) : null,
+    calendarFixed: draft.mode === 'edit',
+    today: toIsoDate(ctx.now),
+    weekStartsOn: ctx.weekStartsOn,
+  };
+}

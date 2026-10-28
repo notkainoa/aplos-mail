@@ -388,7 +388,7 @@ describe('ui-calendar: the reducer (keys, flows, effects)', () => {
   test('moving a locked event does nothing – a move on an invite you do not organise writes nothing and says why', () => {
     const { effects } = run(week(), [{ type: 'move', id: 'q4', start: '2026-10-30T13:00:00', end: '2026-10-30T14:00:00' }]);
     assert.equal(effects.filter(e => e.kind === 'eventSet').length, 0);
-    assert.deepEqual(effects, [{ kind: 'notice', message: 'Only Priya can change this event.' }]);
+    assert.deepEqual(effects, [{ kind: 'notice', message: 'Only Priya can change this event. You can still reply.' }]);
     const ro = run(week({ selectedId: 'halloween' }), [{ type: 'edit' }], { events: [...events, halloween], calendars: [...calendars, holidays] });
     assert.equal(ro.state.editor, null);
     assert.match((ro.effects[0] as { message: string }).message, /Holidays is read-only/);
