@@ -1,0 +1,108 @@
+/**
+ * The sidebar (DESIGN 7.1), transparent on the gray shell. Top to bottom: the account switcher and the compose pencil;
+ * an unlabelled group (Search, Home, Later, Calendar); a quiet "Mail" label over All mail, Done, Drafts, Sent, Spam and
+ * Trash; then the footer, which is the status slot, Settings and Help. Each group is one `Puck`, so selection is the
+ * shared `slide` puck and counts use `count`. The component draws what it is given; the shell supplies the live data.
+ */
+import type { ReactNode } from 'react';
+import { Button } from '../ui/buttons-keys';
+import { NavHead, Puck } from '../ui/surfaces';
+import type { PuckItem } from '../ui/props';
+import {
+  FOOTER_PLACES,
+  MAIL_PLACES,
+  TOP_PLACES,
+  placeScreen,
+  screenPlace,
+  type Place,
+  type PlaceId,
+} from './nav';
+import type { Screen } from './index';
+
+const MAIL_HEAD_ID = 'sidebar-mail';
+
+/** Props for `Sidebar`. */
+export interface SidebarProps {
+  /** The current screen, which selects a row. */
+  readonly screen: Screen;
+  /** Row counts; empty while first sync runs. */
+  readonly counts: Readonly<Partial<Record<PlaceId, number>>>;
+  /** A row was chosen. */
+  readonly onNavigate: (screen: Screen) => void;
+  /** The compose pencil was pressed. */
+  readonly onCompose: () => void;
+  /** The account switcher and its menu. */
+  readonly accountSwitcher: ReactNode;
+  /** The status slot. */
+  readonly status: ReactNode;
+}
+
+function toItems(
+  places: readonly Place[],
+  counts: Readonly<Partial<Record<PlaceId, number>>>,
+): PuckItem[] {
+  return places.map(place => ({
+    id: place.id,
+    label: place.label,
+    icon: place.icon,
+    commandId: place.commandId,
+    tooltip: place.tooltip,
+    count: counts[place.id],
+  }));
+}
+
+interface GroupProps {
+  readonly label: string;
+  readonly places: readonly Place[];
+  readonly counts: Readonly<Partial<Record<PlaceId, number>>>;
+  readonly selected: PlaceId | null;
+  readonly onNavigate: (screen: Screen) => void;
+}
+
+function PlaceGroup({ label, places, counts, selected, onNavigate }: GroupProps) {
+  const here = places.some(place => place.id === selected);
+  return (
+    <Puck
+      kind="selection"
+      role="navigation"
+      label={label}
+      items={toItems(places, counts)}
+      selectedId={here ? selected : null}
+      onSelect={id => onNavigate(placeScreen(id as PlaceId))}
+    />
+  );
+}
+
+export function Sidebar({
+  screen,
+  counts,
+  onNavigate,
+  onCompose,
+  accountSwitcher,
+  status,
+}: SidebarProps) {
+  const selected = screenPlace(screen);
+  const group = { counts, selected, onNavigate };
+  return (
+    <aside className="aplos-sidebar" aria-label="Sidebar">
+      <div className="aplos-sidebar__top">
+        {accountSwitcher}
+        <Button
+          variant="icon"
+          size="sm"
+          icon="compose"
+          label="New message"
+          commandId="mail.compose"
+          onPress={onCompose}
+        />
+      </div>
+      <PlaceGroup label="Places" places={TOP_PLACES} {...group} />
+      <NavHead label="Mail" id={MAIL_HEAD_ID} />
+      <PlaceGroup label="Mail" places={MAIL_PLACES} {...group} />
+      <div className="aplos-sidebar__foot">
+        {status}
+        <PlaceGroup label="App" places={FOOTER_PLACES} {...group} />
+      </div>
+    </aside>
+  );
+}

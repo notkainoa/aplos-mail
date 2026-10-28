@@ -1,0 +1,73 @@
+/**
+ * The sheet host's state (F9; DESIGN 7.1): the one open sheet, the hooks that cancel a replaced
+ * sheet, and the focus return to whoever opened it. `index.ts` wraps these with the typed API.
+ *
+ * The key stack: `renderer/commands` has no helper that pushes the modal `sheet` context (it only
+ * defines the context and the `sheet.default` / `sheet.cancel` keys), so the shell reads
+ * `useSheetContextActive()` and adds 'sheet' to the stack it passes to `buildStack`.
+ */
+import { createStore, deepEqual } from './store-core';
+import type { OpenSheet } from './index';
+
+const sheetStore = createStore<OpenSheet | null>(null);
+const cancelHooks = new Set<(replaced: OpenSheet) => void>();
+
+/** The element to refocus on close: the one focused when the first sheet opened. */
+let opener: { focus(): void; isConnected?: boolean } | null = null;
+
+function focusedElement(): typeof opener {
+  if (typeof document === 'undefined') return null;
+  const active: unknown = document.activeElement;
+  if (typeof active !== 'object' || active === null) return null;
+  if (active === document.body) return null;
+  return typeof (active as { focus?: unknown }).focus === 'function'
+    ? (active as NonNullable<typeof opener>)
+    : null;
+}
+
+function restoreFocus(): void {
+  const target = opener;
+  opener = null;
+  if (target && target.isConnected !== false) target.focus();
+}
+
+function runCancelHooks(replaced: OpenSheet): void {
+  for (const hook of [...cancelHooks]) {
+    try {
+      hook(replaced);
+    } catch (error) {
+      // A failing cancel must not leave the old sheet open over the new one.
+      console.error('sheet cancel hook failed', error);
+    }
+  }
+}
+
+/** Registers a hook called with a sheet that another sheet replaced (not on `closeSheet`). Returns an unregister. */
+export function registerSheetCancel(hook: (replaced: OpenSheet) => void): () => void {
+  cancelHooks.add(hook);
+  return () => {
+    cancelHooks.delete(hook);
+  };
+}
+
+/** Shows `next`: the same sheet with equal arguments stays; any other replaces (and cancels) the open one. */
+export function showSheet(next: OpenSheet): void {
+  const current = sheetStore.get();
+  if (current && current.name === next.name && deepEqual(current.args, next.args)) return;
+  if (!current) opener = focusedElement();
+  sheetStore.set(next);
+  if (current) runCancelHooks(current);
+}
+
+/** Hides the open sheet and returns focus to the opener; a no-op when none is open. */
+export function hideSheet(): void {
+  if (!sheetStore.get()) return;
+  sheetStore.set(null);
+  restoreFocus();
+}
+
+/** The open sheet now. */
+export const getSheet = sheetStore.get;
+
+/** Subscribes to sheet changes (for `useSyncExternalStore`). */
+export const subscribeSheet = sheetStore.subscribe;
