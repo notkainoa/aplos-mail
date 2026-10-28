@@ -1,0 +1,278 @@
+import { expect, test, type Page } from '@playwright/test';
+import { STATES, THEMES } from './states';
+import { KNOWN_DEFECTS } from './known-defects';
+import { openState } from './support/gallery';
+
+// DOM assertions that run beside the pixels (DESIGN 12.5). Reduced motion is off here so computed
+// transitions and animations are the real ones, not the zeroed ones.
+test.use({ reducedMotion: 'no-preference' });
+
+/** DESIGN 10 and 13. Case-insensitive, word-bounded; data in the gallery never contains them. */
+const BANNED_PHRASES = [
+  'Swipe through them',
+  'Hold to talk',
+  'Hold Space to talk',
+  'Tap to write',
+  'Hide all',
+  'Todos?',
+  'Be here now',
+  'Sent with',
+  'Ask me anything',
+  'magic',
+  'AI-powered',
+  'AI powered',
+  'Copilot',
+  'Ready when you are',
+  'Waiting on you',
+  'No reply yet',
+  'All clear for now',
+  'Making room for your mail',
+  'Aplos needs a moment',
+  'Couldn.t summarize this email',
+  'Your day beside your mail',
+  'A comfortable place for your mail',
+  'Make light work of your inbox',
+  'A little less inbox',
+  'Aplos is ready when your day begins',
+  'Skypaper',
+  'Airmail',
+  'par avion',
+  'Smart',
+  'Beta',
+];
+/** Glyphs for sparkles, stars, wand, robot and brain (DESIGN 4.7, 9 rule 8). */
+const BANNED_GLYPHS = '✨⭐🪄🤖🧠★☆✦✧⚝';
+/** Icon names: a Lucide class, a data-icon, a use href or a symbol id. `\b` keeps Restart and Start out. */
+const BANNED_ICON = /sparkl|wand|\bstars?\b|\bbrain|\bbot\b|robot|apple\.intelligence/i;
+
+/** Properties whose animation moves layout (DESIGN 5 rule 7). `all` counts when its duration is not zero. */
+const LAYOUT_PROPERTY =
+  /^(all|width|height|min-width|min-height|max-width|max-height|padding(-.*)?|margin(-.*)?|inset(-.*)?|top|left|right|bottom|flex(-.*)?|grid-template(-.*)?|font-size|font-weight|letter-spacing|line-height|border-width|border-.*-width|gap|row-gap|column-gap)$/;
+
+interface Findings {
+  filled: { count: number; radiusOver8: string[]; labels: string[] };
+  layoutTransitions: string[];
+  decoration: string[];
+  smallText: string[];
+  banned: string[];
+  summaries: {
+    ready: { serif: boolean; family: string }[];
+    pending: { serif: boolean }[];
+    absent: number;
+  };
+  serifLoaded: boolean;
+}
+
+async function audit(page: Page): Promise<Findings> {
+  return page.evaluate(
+    ({ phrases, glyphs, iconSource, layoutSource }) => {
+      const layoutProperty = new RegExp(layoutSource);
+      const bannedIcon = new RegExp(iconSource, 'i');
+      const bannedPhrase = new RegExp(`(^|[^\\p{L}])(${phrases.join('|')})($|[^\\p{L}])`, 'iu');
+      const stage = document.querySelector('.stage') as HTMLElement;
+      const visible = (el: Element) => {
+        const rect = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.visibility !== 'hidden' &&
+          style.display !== 'none'
+        );
+      };
+      const name = (el: Element) =>
+        `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/).slice(0, 2).join('.')}` : ''}`;
+      const all = [stage, ...stage.querySelectorAll('*')];
+
+      const filledButtons = all.filter(el => el.matches('[data-variant="filled"]') && visible(el));
+      const radiusOver8 = filledButtons
+        .filter(el => parseFloat(getComputedStyle(el).borderTopLeftRadius) > 8)
+        .map(name);
+
+      const layoutTransitions: string[] = [];
+      const decoration: string[] = [];
+      for (const el of all) {
+        const style = getComputedStyle(el);
+        const properties = style.transitionProperty.split(',').map(s => s.trim());
+        const durations = style.transitionDuration.split(',').map(s => parseFloat(s));
+        properties.forEach((property, index) => {
+          const duration = durations[index % durations.length];
+          if (duration > 0 && layoutProperty.test(property))
+            layoutTransitions.push(`${name(el)} transitions ${property} for ${duration}s`);
+        });
+        for (const pseudo of [null, '::before', '::after'] as const) {
+          const s = pseudo ? getComputedStyle(el, pseudo) : style;
+          if (pseudo && s.content === 'none') continue;
+          const label = `${name(el)}${pseudo ?? ''}`;
+          if (/gradient/.test(s.backgroundImage))
+            decoration.push(`${label} has a gradient background`);
+          if (/gradient/.test(s.maskImage || '')) decoration.push(`${label} has a gradient mask`);
+          if (s.backdropFilter && s.backdropFilter !== 'none')
+            decoration.push(`${label} has backdrop-filter`);
+          const webkit = s.getPropertyValue('-webkit-backdrop-filter');
+          if (webkit && webkit !== 'none') decoration.push(`${label} has -webkit-backdrop-filter`);
+        }
+      }
+
+      const smallText: string[] = [];
+      const walker = document.createTreeWalker(stage, NodeFilter.SHOW_TEXT);
+      const copy: string[] = [];
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.textContent?.trim();
+        const parent = node.parentElement;
+        if (!text || !parent || !visible(parent)) continue;
+        copy.push(text);
+        const size = parseFloat(getComputedStyle(parent).fontSize);
+        if (size < 11) smallText.push(`${name(parent)} is ${size}px: "${text.slice(0, 30)}"`);
+      }
+      for (const el of all) {
+        for (const attribute of ['aria-label', 'title', 'placeholder', 'alt'] as const) {
+          const value = el.getAttribute(attribute);
+          if (value) copy.push(value);
+        }
+      }
+
+      const banned: string[] = [];
+      for (const text of copy) {
+        const hit = bannedPhrase.exec(text);
+        if (hit) banned.push(`phrase "${hit[2]}" in "${text.slice(0, 50)}"`);
+        if (text.includes('!')) banned.push(`exclamation mark in "${text.slice(0, 50)}"`);
+        for (const glyph of glyphs)
+          if (text.includes(glyph)) banned.push(`glyph ${glyph} in "${text.slice(0, 50)}"`);
+      }
+      for (const el of all) {
+        const handles = [
+          el.getAttribute('data-icon'),
+          el.getAttribute('data-name'),
+          el.getAttribute('href'),
+          el.getAttribute('xlink:href'),
+          el instanceof SVGElement ? el.getAttribute('class') : null,
+          el.tagName === 'symbol' ? el.id : null,
+        ];
+        for (const handle of handles)
+          if (handle && bannedIcon.test(handle)) banned.push(`icon "${handle}" on ${name(el)}`);
+      }
+
+      const family = (el: Element) => getComputedStyle(el).fontFamily;
+      const summaries = [...stage.querySelectorAll('.ui-summary')];
+      return {
+        filled: {
+          count: filledButtons.length,
+          radiusOver8,
+          labels: filledButtons.map(el => (el.textContent ?? '').trim().slice(0, 24)),
+        },
+        layoutTransitions: [...new Set(layoutTransitions)],
+        decoration: [...new Set(decoration)],
+        smallText: [...new Set(smallText)],
+        banned: [...new Set(banned)],
+        summaries: {
+          ready: summaries
+            .filter(el => el.getAttribute('data-state') === 'ready')
+            .map(el => ({ serif: /Newsreader/.test(family(el)), family: family(el) })),
+          pending: summaries
+            .filter(el => el.getAttribute('data-state') === 'pending')
+            .map(el => ({ serif: /Newsreader/.test(family(el)) })),
+          absent: summaries.filter(el => el.getAttribute('data-state') === 'absent').length,
+        },
+        serifLoaded: document.fonts.check('430 21px Newsreader'),
+      };
+    },
+    {
+      phrases: BANNED_PHRASES,
+      glyphs: [...BANNED_GLYPHS],
+      iconSource: BANNED_ICON.source,
+      layoutSource: LAYOUT_PROPERTY.source,
+    },
+  );
+}
+
+test.describe('dom', () => {
+  for (const state of STATES) {
+    for (const theme of THEMES) {
+      test(`${state.id} ${theme}`, async ({ page }) => {
+        await openState(page, state, { theme });
+        const found = await audit(page);
+
+        // One filled button per state, and never a rounder one than 8 px (DESIGN 3 rule 6, 2.3).
+        expect(
+          found.filled.count,
+          `filled buttons: ${found.filled.labels.join(' | ')}`,
+        ).toBeLessThanOrEqual(1);
+        expect(
+          found.filled.count,
+          `filled buttons in ${state.id}: ${found.filled.labels.join(' | ')}`,
+        ).toBe(state.filled);
+        expect(found.filled.radiusOver8, 'filled button radius over 8px').toEqual([]);
+
+        expect(found.layoutTransitions, 'a transition on a layout property').toEqual([]);
+        expect(found.decoration, 'gradient or backdrop-filter').toEqual([]);
+        expect(found.smallText, 'text under 11px').toEqual([]);
+        expect(found.banned, 'banned strings, glyphs or icons').toEqual([]);
+
+        // The summary is the one serif line; a pending or absent one is sans (DESIGN 4.3, 9).
+        if (state.summary === 'ready') {
+          expect(found.summaries.ready.length, 'a ready summary renders').toBeGreaterThan(0);
+          for (const summary of found.summaries.ready)
+            expect(summary.serif, `ready summary font: ${summary.family}`).toBe(true);
+          expect(found.serifLoaded, 'Newsreader is loaded').toBe(true);
+        }
+        if (state.summary === 'pending') {
+          expect(found.summaries.pending.length, 'a pending summary renders').toBeGreaterThan(0);
+          for (const summary of found.summaries.pending) expect(summary.serif).toBe(false);
+        }
+        if (state.summary === 'absent') expect(found.summaries.absent).toBeGreaterThan(0);
+      });
+
+      // Controls are drawn by the design system, never by the browser's default button chrome.
+      test(`${state.id} ${theme} has no browser-default button chrome`, async ({ page }) => {
+        const known = KNOWN_DEFECTS.uaButtonChrome[state.id];
+        test.fail(Boolean(known), known);
+        await openState(page, state, { theme });
+        const chrome = await page.evaluate(() =>
+          [...document.querySelectorAll('.stage button, .stage select')]
+            .filter(el => {
+              const style = getComputedStyle(el);
+              return (
+                /outset|inset|ridge|groove/.test(style.borderTopStyle) &&
+                parseFloat(style.borderTopWidth) > 0 &&
+                el.getBoundingClientRect().width > 0
+              );
+            })
+            .map(el => `${el.tagName.toLowerCase()}.${el.className}`),
+        );
+        expect([...new Set(chrome)], 'elements with the default border').toEqual([]);
+      });
+    }
+  }
+});
+
+// Positive control: plant one violation of each kind and require the audit to name it.
+test('the audit catches planted violations', async ({ page }) => {
+  const state = STATES.find(candidate => candidate.id === 'empty-inbox-zero')!;
+  await openState(page, state);
+  await page.evaluate(() => {
+    const host = document.querySelector('.stage__column')!;
+    host.insertAdjacentHTML(
+      'beforeend',
+      `<style>
+        .planted-fade { transition: width 200ms; background-image: linear-gradient(red, blue); }
+        .planted-blur { backdrop-filter: blur(4px); }
+      </style>
+      <div class="planted-fade">Todo</div>
+      <div class="planted-blur" style="font-size: 10px">Ready!</div>
+      <svg class="lucide lucide-sparkles" width="8" height="8"></svg>
+      <button data-variant="filled" style="border-radius: 20px">First</button>
+      <button data-variant="filled">Second</button>`,
+    );
+  });
+  const found = await audit(page);
+  expect(found.filled.count).toBe(2);
+  expect(found.filled.radiusOver8.length).toBe(1);
+  expect(found.layoutTransitions.join()).toContain('width');
+  expect(found.decoration.join()).toContain('gradient');
+  expect(found.decoration.join()).toContain('backdrop-filter');
+  expect(found.smallText.join()).toContain('10px');
+  expect(found.banned.join()).toMatch(/Todo/);
+  expect(found.banned.join()).toMatch(/exclamation/);
+  expect(found.banned.join()).toMatch(/sparkles/);
+});
