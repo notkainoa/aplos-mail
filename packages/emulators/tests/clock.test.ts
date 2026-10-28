@@ -30,3 +30,33 @@ test('manual mode only moves on advance, and abort cancels a sleep', async () =>
   await assert.rejects(aborted, /stop/);
   assert.equal(clock.pending, 0);
 });
+
+test('a worker that writes a file between sleeps is not stamped late (auto mode and advance)', async () => {
+  const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'emu-clock-'));
+  try {
+    // Two workers: one only sleeps, the other persists a file after each wake-up, as a token store would.
+    const run = async (clock: FakeClock, drive: (work: Promise<unknown>) => Promise<unknown>) => {
+      const start = clock.now();
+      const stamps: number[] = [];
+      const writer = (async () => {
+        for (let i = 0; i < 3; i++) {
+          await clock.sleep(100);
+          stamps.push(clock.now() - start);
+          for (let n = 0; n < 3; n++) await writeFile(join(dir, `state-${n}.json`), JSON.stringify({ i, n }));
+        }
+      })();
+      const ticker = (async () => { for (let i = 0; i < 6; i++) await clock.sleep(50); })();
+      // A real-time guard only, so a regression fails the assertion instead of hanging the file.
+      await Promise.race([drive(Promise.all([writer, ticker])), new Promise(resolve => setTimeout(resolve, 5000).unref())]);
+      return stamps;
+    };
+    assert.deepEqual(await run(new FakeClock(), work => work), [100, 200, 300], 'auto mode');
+    const manual = new FakeClock({ auto: false });
+    assert.deepEqual(await run(manual, async work => { await manual.runUntilIdle(); await work; }), [100, 200, 300], 'advance');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

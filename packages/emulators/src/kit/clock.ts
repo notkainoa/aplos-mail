@@ -28,10 +28,11 @@ export const FAKE_EPOCH = Date.UTC(2026, 9, 27, 16, 0, 0);
  * A deterministic clock. Time moves only through `advance`, `runUntilIdle`, or automatically when
  * `auto` is on and every piece of work in flight is waiting on this clock.
  *
- * Auto mode waits for the process to go quiet (several macrotask turns with no new timers and no
- * timer fired) before jumping to the earliest timer, so in-process requests that are still being
- * parsed register their own sleeps first. Code under test must never use the real `setTimeout`
- * for waits it expects to be fast-forwarded.
+ * Before firing the next timer, both auto mode and `advanceTo` wait for the process to go quiet:
+ * two settles in a row with no new timer, and no file or DNS request still pending. So a worker
+ * that writes a file (a token store, a page commit) between two sleeps registers its next sleep
+ * before time moves, instead of being stamped one timer late. Code under test must never use the
+ * real `setTimeout` for waits it expects to be fast-forwarded.
  */
 export class FakeClock implements Clock {
   private time: number;
@@ -75,10 +76,10 @@ export class FakeClock implements Clock {
       const next = this.timers.shift()!;
       this.jump(next.at);
       next.resolve();
-      await settle();
+      await this.quiet();
     }
     this.jump(Math.max(this.time, target));
-    await settle();
+    await this.quiet();
   }
 
   /** Fire timers until none are left or `limitMs` of clock time has passed. Returns the time spent. */
@@ -100,15 +101,10 @@ export class FakeClock implements Clock {
     this.autoScheduled = true;
     void (async () => {
       try {
-        // Wait until nothing new is registered for a few turns, then fire the earliest timer.
+        // Wait until the process is quiet, then fire the earliest timer.
         for (;;) {
-          let before = this.seq;
-          await settle();
+          await this.quiet();
           if (!this.autoOn || !this.timers.length) return;
-          if (this.seq !== before) continue;
-          before = this.seq;
-          await settle();
-          if (this.seq !== before || !this.timers.length) continue;
           const next = this.timers.shift()!;
           this.jump(next.at);
           next.resolve();
@@ -119,6 +115,30 @@ export class FakeClock implements Clock {
       }
     })();
   }
+
+  /**
+   * Returns once two settles in a row registered no new timer and no I/O request is pending.
+   * Pending I/O is waited for at most IO_WAIT_LIMIT_MS of real time, so a request that never
+   * completes cannot stall the clock.
+   */
+  private async quiet(): Promise<void> {
+    const ioDeadline = Date.now() + IO_WAIT_LIMIT_MS;
+    let calm = 0;
+    while (calm < 2) {
+      const before = this.seq;
+      await settle();
+      const ioPending = pendingIo() && Date.now() < ioDeadline;
+      calm = this.seq === before && !ioPending ? calm + 1 : 0;
+    }
+  }
+}
+
+/** Real milliseconds the clock waits for outstanding file or DNS requests before moving anyway. */
+const IO_WAIT_LIMIT_MS = 250;
+
+/** True while libuv has a file-system or DNS request in progress (FSReqCallback, FSReqPromise, CloseReq, GetAddrInfoReqWrap). */
+function pendingIo(): boolean {
+  return process.getActiveResourcesInfo().some(name => name.includes('Req'));
 }
 
 /** Let queued promise callbacks and a few macrotask turns run. */
