@@ -1,7 +1,8 @@
 // Generated from tokens.json by scripts/design/build-tokens.mjs. Do not edit.
-// Paper motion tokens (plans/DESIGN.md section 4.8). Durations are in ms,
-// moves in px (flightRotate in deg). The spring solver below is inlined from
-// scripts/design/spring-runtime.ts.
+// Paper motion tokens (plans/DESIGN.md section 4.8) and stacking layers.
+// Durations are in ms, moves in px (flightRotate in deg): the runtime needs
+// pixel travel even though CSS sizes are in rem. The spring solver below is
+// inlined from scripts/design/spring-runtime.ts.
 
 // Spring solver, TypeScript twin of scripts/design/spring.mjs.
 // Analytic, so any frame time is exact. State keeps value and velocity, and
@@ -504,6 +505,20 @@ export const timing = {
   burstKeys: 4,
   themeSwitchFrames: 1,
 } as const;
+
+// Stacking layers (z-index), lowest to highest; the same values as the --z-* CSS
+// variables. Use these only where a style is written from TS.
+export const layers = {
+  sticky: 10,
+  dock: 20,
+  menu: 30,
+  toast: 40,
+  dialog: 50,
+  palette: 60,
+  tooltip: 70,
+} as const;
+
+export type LayerName = keyof typeof layers;
 
 // Timing values that change under reduced motion.
 export const timingReduced = { toastFade: 120 } as const satisfies Partial<Record<keyof typeof timing, number>>;

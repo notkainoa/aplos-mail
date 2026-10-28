@@ -47,6 +47,8 @@ A change that needs a new colour, radius, motion, floating pill or ornament is w
 
 Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. Never write a hex, `rgb()`, `hsl()`, literal px size, radius, shadow, z-index, duration or easing.
 
+**Units (DESIGN §11.6, everything is in rem).** `tokens.json` keeps px as the source of truth and the generator emits rem (px / 16: 11 px is `0.6875rem`) for type sizes and line heights, spacing, controls, `--kbd`, rows, focus letters, layout sizes, icons and radii. Hairlines (0.75 px, 1 px), the icon stroke, `--focus-width`, `--focus-gap`, `--commit-edge`, `--select-bar`, `--thread-rail`, `--track`, `--seg-h`, tracking and shadows stay px, and so do the moves in `motion.ts`. The numbers in these tables are px. `ui/styles.css` is the one stylesheet: it imports `ui/base.css` (tokens, fonts, focus ring, selection, text wrapping) and then each family's CSS.
+
 ### Colour roles
 
 | Token | Role |
@@ -72,9 +74,12 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 | `--hover` / `--press` | Hover and press fills |
 | `--puck` | Sidebar selection, the keyboard cursor, segmented thumbs |
 | `--today-tint` | The calendar's today column |
+| `--selection` | Selected text (set once in `base.css`; selected text turns `--ink`) |
 | `--scrim` | Behind dialogs and the palette |
 | `--shadow-ink` / `--sheen` | Shadow base / the 1 px top sheen on dark panes and cards |
+| `--press-hi` / `--press-lo` | The filled button's top inset highlight / bottom inset shade |
 | `--tag-sky`, `--tag-hill`, `--tag-stamp`, `--tag-dusk`, `--tag-sand`, `--tag-ember` | Accounts, labels and calendars, as marks only. An account dot shows only when two or more accounts are connected. |
+| `--event-fill` | A calendar event's fill: its tag colour at this percentage (12 %, dark 20 %) |
 
 Rules:
 
@@ -100,7 +105,8 @@ Rules:
 | `summary` | 21/31 | Newsreader 430 (dark 410) | The one big line, the same on the Home focus letter and in the reader |
 | `answer` | 16/27 | Newsreader 400 (dark 390) | Ask answer prose |
 
-- Use `font: var(--type-<role>)` with `letter-spacing: var(--track-<role>)`.
+- Use `font: var(--type-<role>)` with `letter-spacing: var(--track-<role>)`. Each `--track-<role>` adds `--track-boost`, which `base.css` sets to `--track-boost-lowres` (+0.005 em) on non-Retina screens.
+- The serif stack is Newsreader, then its metric-matched fallback faces (New York and Georgia with size-adjust, in `assets/fonts/fonts.css`), then plain New York and Georgia: `--font-serif`. Also `--font-sans` and `--font-mono`.
 - SF weights are 400, 500 and 600 only.
 - **There are no page titles.** Section labels are `ui` 600 `--ink` with the count in `--dim`.
 - The serif is only for words Aplos wrote. A pending summary shows the subject in SF until the real summary lands.
@@ -146,6 +152,21 @@ Rules:
 | `--elev-dialog` | Dialogs and confirmations, with `--scrim` behind |
 | `--elev-lift` | A dragged row or letter |
 | `--elev-puck` | A segmented control's thumb |
+| `--elev-thumb` | The switch thumb's small shadow |
+
+### Layers: the only z-index values
+
+| Token | Value | Use |
+|---|---|---|
+| `--z-sticky` | 10 | The pane header over content scrolling under it |
+| `--z-dock` | 20 | The Ask dock and the sidebar while they slide |
+| `--z-menu` | 30 | Menus and popovers |
+| `--z-toast` | 40 | The toast stack |
+| `--z-dialog` | 50 | Dialogs and confirmations, with `--scrim` |
+| `--z-palette` | 60 | The command palette |
+| `--z-tooltip` | 70 | Tooltips, over everything |
+
+- `0` and `auto` stay literal. In TS, `layers` from `ui/generated/motion.ts` holds the same numbers.
 
 - No `backdrop-filter`. No translucent surfaces. No texture or noise.
 - **Press feel:** the filled button has a top inset highlight and a bottom inset shade. On `:active` they swap, and the button scales `--press-scale` (.97, icons .94).
@@ -175,6 +196,7 @@ Durations come from `--dur-*` / `motion.ts`, curves from `--ease-*` and `--sprin
 | `dock` | The Ask dock and sidebar: slide the contents, FLIP the main pane, never animate width |
 | `undo-send` | The neutral 2 px drain under a sent message. Static text countdown under reduced motion. |
 | `lift`, `follow`, `snap` | Drag and swipe springs |
+| `thumb` | The switch thumb's spring, the only one that visibly bounces (a token extra, not one of DESIGN's 23) |
 | `breathe` | Pending AI lines only, at most 3 on screen |
 | `status` | The current first-sync step. Spinners only after 150 ms. |
 | `count` | Sidebar count digits |

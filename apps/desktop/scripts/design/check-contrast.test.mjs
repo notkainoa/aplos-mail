@@ -244,26 +244,93 @@ test("an accent too close to Avec fails the identity check", () => {
   });
 });
 
-test("an identity exception past its review date, or without a decision, fails", () => {
-  const expired = runCheck(["--identity", "--today", "2099-01-01"]);
-  assert.equal(expired.status, 1);
-  assert.match(expired.stdout, /identity exception \{color\.hill\} dark vs #64ca56 expired on/);
+// A copy of the references with Mimestream's system green moved into the gate
+// and, optionally, an exception for the dark hill against it. The real list has
+// no exceptions; this keeps the exception machinery exercised.
+function refsWithGatedGreen(exception) {
   const refs = readJson(REFERENCES_PATH);
-  delete refs.exceptions[0].decision;
-  withTemp("refs.json", refs, (path) => {
+  const green = refs.advisoryReferences.find((r) => r.hex === "#64ca56");
+  refs.references.push(green);
+  refs.advisoryReferences = refs.advisoryReferences.filter((r) => r !== green);
+  refs.exceptions = exception ? [exception] : [];
+  return refs;
+}
+
+const HILL_EXCEPTION = {
+  token: "{color.hill}",
+  mode: "dark",
+  reference: "#64ca56",
+  status: "test fixture",
+  decision: "test decision",
+  reviewBy: "2026-11-24",
+  reason: "test",
+};
+
+test("the gate is DESIGN 12.4's list: Avec's four plus the audited brand and link blues", () => {
+  const refs = readJson(REFERENCES_PATH);
+  const gated = refs.references.map((r) => r.hex);
+  for (const avec of ["#0050ff", "#07aa04", "#03ce4c", "#36b7ff"]) {
+    assert.ok(gated.includes(avec), `${avec} must be gated`);
+  }
+  const brands = ["Spark", "Missive", "Mimestream link", "Airmail", "Shortwave", "Canary", "Apple system blue"];
+  for (const r of refs.references.filter((ref) => !ref.name.startsWith("Avec"))) {
+    assert.ok(brands.some((b) => r.name.startsWith(b)), `${r.name} is not on DESIGN 12.4's list`);
+    assert.match(r.source, /audit section 4/, `${r.name} must come from the audit's section 4`);
+  }
+  assert.ok(refs.references.some((r) => r.name === "Missive brand-dark"));
+  for (const advisory of ["#64ca56", "#2b8e3f", "#ea2e1a"]) {
+    assert.ok(!gated.includes(advisory), `${advisory} must be advisory`);
+    assert.ok(refs.advisoryReferences.some((r) => r.hex === advisory));
+  }
+  assert.deepEqual(refs.exceptions, []);
+});
+
+test("an advisory colour under 8.5 is printed but never fails", () => {
+  const result = runCheck(["--identity"]);
+  assert.equal(result.status, 0, result.stdout);
+  assert.match(result.stdout, /--hill dark\s+#86b86a\s+nearest 7\.72 Mimestream system green #64ca56 \(under 8\.5\)/);
+  assert.doesNotMatch(result.stdout, /FAIL/);
+  assert.match(result.stdout, /0 accepted exception, 0 fail/);
+});
+
+test("a colour moved into the gate fails without an exception", () => {
+  withTemp("refs.json", refsWithGatedGreen(), (path) => {
+    const result = runCheck(["--identity", "--refs", path, "--today", "2026-10-27"]);
+    assert.equal(result.status, 1);
+    const fails = result.stdout.split("\n").filter((line) => line.startsWith("FAIL identity"));
+    assert.deepEqual(fails, ["FAIL identity: --hill dark #86b86a is 7.72 from Mimestream system green #64ca56"]);
+  });
+});
+
+test("a current identity exception is accepted", () => {
+  withTemp("refs.json", refsWithGatedGreen(HILL_EXCEPTION), (path) => {
+    const result = runCheck(["--identity", "--refs", path, "--today", "2026-10-27"]);
+    assert.equal(result.status, 0, result.stdout);
+    assert.match(result.stdout, /Accepted exception \(test fixture\): --hill dark 7\.72 from Mimestream system green/);
+  });
+});
+
+test("an identity exception past its review date, or without a decision, fails", () => {
+  withTemp("refs.json", refsWithGatedGreen(HILL_EXCEPTION), (path) => {
+    const expired = runCheck(["--identity", "--refs", path, "--today", "2099-01-01"]);
+    assert.equal(expired.status, 1);
+    assert.match(expired.stdout, /identity exception \{color\.hill\} dark vs #64ca56 expired on 2026-11-24/);
+  });
+  const { decision, ...undecided } = HILL_EXCEPTION;
+  assert.ok(decision);
+  withTemp("refs.json", refsWithGatedGreen(undecided), (path) => {
     const result = runCheck(["--identity", "--refs", path, "--today", "2026-10-27"]);
     assert.equal(result.status, 1);
     assert.match(result.stdout, /has no decision reference/);
   });
 });
 
-test("the provisional dark-hill exception is the only identity distance under 8.5", () => {
+test("an exception no gated distance needs is stale and fails", () => {
   const refs = readJson(REFERENCES_PATH);
-  refs.exceptions = [];
+  refs.exceptions = [HILL_EXCEPTION];
   withTemp("refs.json", refs, (path) => {
     const result = runCheck(["--identity", "--refs", path, "--today", "2026-10-27"]);
     assert.equal(result.status, 1);
-    const fails = result.stdout.split("\n").filter((line) => line.startsWith("FAIL identity"));
-    assert.deepEqual(fails, ["FAIL identity: --hill dark #86b86a is 7.72 from Mimestream system green #64ca56"]);
+    assert.match(result.stdout, /identity exception \{color\.hill\} dark vs #64ca56 is not needed/);
   });
 });

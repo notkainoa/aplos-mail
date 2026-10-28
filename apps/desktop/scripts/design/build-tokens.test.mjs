@@ -5,7 +5,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { generate } from "./build-tokens.mjs";
+import { generate, remFromPx } from "./build-tokens.mjs";
 import { springLinear } from "./spring.mjs";
 import { GENERATED_DIR } from "./tokens-lib.mjs";
 
@@ -109,4 +109,71 @@ test("arrive is deferred during rapid triage; nothing else is", async () => {
   assert.equal(motion.motionDeferred("arrive"), false);
   const deferred = Object.keys(motion.motions).filter((name) => motion.motionDeferred(name, { rapid: true }));
   assert.deepEqual(deferred, ["arrive"]);
+});
+
+test("sizes are emitted in rem (DESIGN 11.6) while hairlines, rings, edges, tracking and shadows stay px", () => {
+  assert.equal(remFromPx("11px"), "0.6875rem");
+  assert.equal(remFromPx("999px"), "62.4375rem");
+  assert.equal(remFromPx("0px"), "0");
+  assert.equal(remFromPx("16vh"), "16vh");
+  const root = rootBlock(generate()["tokens.css"]);
+  for (const decl of [
+    "--type-caption: 500 0.6875rem/1rem var(--font-sans);",
+    "--type-summary: var(--w-summary) 1.3125rem/1.9375rem var(--font-serif);",
+    "--space-1: 0.25rem;",
+    "--space-half: 0.125rem;",
+    "--control-md: 2rem;",
+    "--kbd: 1.125rem;",
+    "--row: 2.5rem;",
+    "--focus-letter: 11.25rem;",
+    "--sidebar-w: 14.5rem;",
+    "--icon: 1rem;",
+    "--radius-md: 0.5rem;",
+    "--gutter: var(--space-8);",
+    "--palette-top: 16vh;",
+    "--measure-read: 64ch;",
+    "--hairline: 0.75px;",
+    "--icon-stroke: 1.5px;",
+    "--focus-width: 2px;",
+    "--focus-gap: 2px;",
+    "--commit-edge: 3px;",
+    "--select-bar: 2px;",
+    "--thread-rail: 2px;",
+    "--track: 2px;",
+    "--seg-h: 3px;",
+    "--move-carry: 28px;",
+    "--track-title: calc(-0.16px + var(--track-boost));",
+    "--track-boost: 0em;",
+    "--track-boost-lowres: 0.005em;",
+  ]) {
+    assert.ok(root.includes(decl), `root lacks ${decl}`);
+  }
+  assert.match(root, /--elev-card: 0px 0px 0px var\(--hairline\)/);
+  const sizeLines = root
+    .split("\n")
+    .filter((line) => /^\s+--(space|control|radius|row|focus-letter|icon|sidebar|list|reader|composer|dock|palette-w|settings|toast|sender|menu|switch|kbd)/.test(line))
+    .filter((line) => !line.includes("--icon-stroke"));
+  assert.ok(sizeLines.length > 40);
+  for (const line of sizeLines) {
+    assert.doesNotMatch(line, /\dpx/, `${line.trim()} should be in rem`);
+  }
+});
+
+test("the serif stack lists the metric-matched fallback faces before the system serifs", () => {
+  assert.match(
+    rootBlock(generate()["tokens.css"]),
+    /--font-serif: "Newsreader", "Newsreader Fallback New York", "Newsreader Fallback Georgia", "New York", "Georgia", serif;/,
+  );
+});
+
+test("z-index layers are emitted in CSS and motion.ts, increasing from sticky to tooltip", async () => {
+  const order = ["sticky", "dock", "menu", "toast", "dialog", "palette", "tooltip"];
+  const root = rootBlock(generate()["tokens.css"]);
+  const css = order.map((name) => Number(new RegExp(`--z-${name}: (\\d+);`).exec(root)?.[1]));
+  const motion = await import(pathToFileURL(join(GENERATED_DIR, "motion.ts")).href);
+  assert.deepEqual(Object.keys(motion.layers), order);
+  assert.deepEqual(Object.values(motion.layers), css);
+  for (let i = 1; i < css.length; i += 1) {
+    assert.ok(Number.isInteger(css[i]) && css[i] > css[i - 1], `${order[i]} must sit above ${order[i - 1]}`);
+  }
 });
