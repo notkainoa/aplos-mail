@@ -17,7 +17,8 @@
     "eval:ask": "tsx scripts/ask-live.ts",
     "bench:mailbox": "tsx scripts/mailbox-benchmark.ts",
     "desktop": "npm run build && electron .",
-    "build": "tsc --noEmit && vite build && node scripts/build-main.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/build-main.mjs && npm run notices",
+    "notices": "node scripts/notices.mjs --out dist/notices/THIRD_PARTY_NOTICES.txt --require-chromium",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"tests/*.test.ts\" \"tests/*/**/*.test.ts\"",
     "package": "npm run build && electron-builder --mac dir",
@@ -68,12 +69,17 @@
     "files": [
       "dist/**/*",
       "!dist/bin/**",
+      "!dist/notices/**",
       "package.json"
     ],
     "extraResources": [
       {
         "from": "dist/bin",
         "to": "bin"
+      },
+      {
+        "from": "dist/notices",
+        "to": "notices"
       }
     ],
     "mac": {
