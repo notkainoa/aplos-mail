@@ -67,7 +67,7 @@ export interface EventFacts extends EventFields {
   calendarRemoteId: string;
   remoteId: string;
   etag?: string;
-  /** Set on an override; resolved to `events.master_id` lazily, since an override can arrive before its master. */
+  /** Set on an override; stored as `events.master_remote_id` and joined on it, since an override can arrive before its master. */
   masterRemoteId?: string;
   recurrenceId?: string;
   /** Masters only. */
@@ -84,12 +84,21 @@ export interface EventFacts extends EventFields {
 }
 
 export interface CalendarStepResult {
+  /**
+   * The upserts of one `remoteId` are that resource's full row set (master and overrides; a CalDAV resource shares one
+   * UID): stored rows of that `remoteId` not among them are deleted.
+   */
   upserts: EventFacts[];
-  /** Remote ids of events gone from this calendar. */
+  /** Remote ids of events gone from this calendar; removes every row of that id (master and overrides). */
   removals: string[];
   nextState: SyncState;
   done: boolean;
-  scopeCovered?: { scope: `cal:${string}`; generation: number };
+  /**
+   * The calendar's round listed every event (a 410 resync): events with `seen_gen IS NOT NULL AND seen_gen < generation`
+   * are removed, inside `bound` when set (Graph `calendarView` covers a window, epoch ms `start_utc` from inclusive, to
+   * exclusive), so a deletion missed while the sync token was invalid does not stay as a ghost. Generation as `SyncState`.
+   */
+  scopeCovered?: { scope: `cal:${string}`; generation: number; bound?: { from: number; to: number } };
   reset?: 'syncTokenInvalid' | 'windowRolled';
   quarantine?: Quarantine[];
   costUnits: number;

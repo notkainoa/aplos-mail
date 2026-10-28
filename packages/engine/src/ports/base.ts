@@ -47,8 +47,9 @@ export class ProviderError extends Error {
 
 /**
  * Thrown by `governor.run` before any I/O (token calls included) while the budget is in cooldown, a daily stop, a
- * send-limit block or an auth or config block, and by queued requests a pause rejects. A send that gets it was provably
- * not sent. `until` is absent for auth and config blocks, which end only through `GovernorPort.clear`.
+ * send-limit block or an auth or config block, and by queued requests a pause rejects. An auth block applies to every
+ * budget of the account; connect-time calls alone ignore it (`ConnectContext`). A send that gets it was provably not
+ * sent. `until` is absent for auth and config blocks, which end only through `GovernorPort.clear`.
  */
 export class PausedError extends Error {
   override readonly name = 'PausedError';

@@ -36,7 +36,8 @@ uidvalidity INTEGER, hidden INTEGER NOT NULL DEFAULT 0, UNIQUE(account_id, remot
 remote_id TEXT NOT NULL, subject TEXT, snippet TEXT, participants TEXT,
 first_date INTEGER, last_date INTEGER NOT NULL, last_inbound_date INTEGER,
 msg_count INTEGER NOT NULL, unread_count INTEGER NOT NULL, flagged INTEGER NOT NULL, has_attach INTEGER NOT NULL,
-complete INTEGER NOT NULL DEFAULT 0, list_unsub TEXT, rev INTEGER NOT NULL, UNIQUE(account_id, remote_id)) STRICT`,
+complete INTEGER NOT NULL DEFAULT 0, remote_count INTEGER, list_unsub TEXT, rev INTEGER NOT NULL,
+UNIQUE(account_id, remote_id)) STRICT`,
   // eng-store from prov-* facts: body-free message rows; id is date-ordered, seconds * 4096 + n (ARCH 3.1).
   `CREATE TABLE messages(id INTEGER PRIMARY KEY, account_id TEXT NOT NULL,
 thread_id INTEGER NOT NULL REFERENCES threads ON DELETE CASCADE, remote_id TEXT NOT NULL,
@@ -106,7 +107,8 @@ last_error TEXT, created_seq INTEGER NOT NULL) STRICT`,
   // eng-time, prov-gmail-write: local drafts with revisions; S10 origin marks phone drafts (D9).
   `CREATE TABLE drafts(id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE,
 thread_id INTEGER REFERENCES threads ON DELETE SET NULL, revision INTEGER NOT NULL, data TEXT NOT NULL,
-remote_draft_id TEXT, remote_message_id TEXT, synced_revision INTEGER, origin TEXT NOT NULL DEFAULT 'local',
+remote_draft_id TEXT, remote_message_id TEXT, remote_internet_id TEXT, synced_revision INTEGER,
+origin TEXT NOT NULL DEFAULT 'local',
 updated_at INTEGER NOT NULL) STRICT`,
   `CREATE INDEX drafts_account ON drafts(account_id, updated_at)`,
   // eng-time: the outbox state machine; undo send and send later share not_before (ARCH 7.1-7.3).
@@ -135,7 +137,7 @@ attempts INTEGER NOT NULL, next_retry_at INTEGER NOT NULL, last_reason TEXT, PRI
   `CREATE TABLE governor_state(account_id TEXT NOT NULL, budget TEXT NOT NULL,
 target INTEGER, cooldown_until INTEGER, reason TEXT, daily_block_until INTEGER,
 cooldown_step INTEGER NOT NULL DEFAULT 0, last_refusal_at INTEGER, cls TEXT, in_flight_limit INTEGER, batch_size INTEGER,
-window_spent INTEGER, window_at INTEGER, send_blocked_until INTEGER, blocked_cls TEXT,
+window_spent INTEGER, window_at INTEGER, send_blocked_until INTEGER, blocked_cls TEXT, blocked_since INTEGER,
 updated_at INTEGER NOT NULL, PRIMARY KEY(account_id, budget)) STRICT`,
   // prov-*: small provider-owned key/values (IMAP indexes, Graph delta links).
   `CREATE TABLE provider_memory(account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE, key TEXT NOT NULL,
@@ -150,11 +152,11 @@ PRIMARY KEY(day, provider, model, lane)) STRICT`,
   `CREATE TABLE calendars(id INTEGER PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE,
 remote_id TEXT NOT NULL, name TEXT, color TEXT, is_primary INTEGER, hidden INTEGER, read_only INTEGER,
 selected INTEGER NOT NULL DEFAULT 1, time_zone TEXT, change_tag TEXT, UNIQUE(account_id, remote_id)) STRICT`,
-  // prov-cal: masters, overrides (S5 recurrence_id) and single events; expanded on query (ADR-20).
+  // prov-cal: masters, overrides (S5 recurrence_id) and single events; expanded on query (ADR-20); seen_gen for the 410 sweep.
   `CREATE TABLE events(id INTEGER PRIMARY KEY, calendar_id INTEGER NOT NULL REFERENCES calendars ON DELETE CASCADE,
 remote_id TEXT NOT NULL, recurrence_id TEXT NOT NULL DEFAULT '', master_remote_id TEXT,
 status TEXT NOT NULL DEFAULT 'confirmed', etag TEXT, recurrence TEXT, start_utc INTEGER, end_utc INTEGER,
-all_day INTEGER, data TEXT NOT NULL, ics TEXT, UNIQUE(calendar_id, remote_id, recurrence_id)) STRICT`,
+all_day INTEGER, data TEXT NOT NULL, ics TEXT, seen_gen INTEGER, UNIQUE(calendar_id, remote_id, recurrence_id)) STRICT`,
   `CREATE INDEX events_time ON events(calendar_id, start_utc)`,
   `CREATE INDEX events_master ON events(calendar_id, master_remote_id) WHERE master_remote_id IS NOT NULL`,
   // eng-host: paired CLI, MCP and phone clients; only a token hash is stored.

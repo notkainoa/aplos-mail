@@ -18,9 +18,18 @@ export interface BudgetSpec {
   target: { primary: number; secondary: number };
   /** AIMD floor: gmail 1,000. */
   floor: number;
-  /** Share of the target each lane may use; a lane left out may use none. gmail: interactive 1, opFlush 1, incremental 0.9, prefetch 0.2, backfill 0.75. */
+  /**
+   * Share of the target each lane may use; a lane left out may use none, so every lane the adapter plans needs one.
+   * gmail: interactive 1, opFlush 1, incremental 0.9, prefetch 0.2, backfill 0.75, enrichment 0.1 (the workflow round,
+   * which keeps the lease and Done/Later moving and also runs on a secondary device).
+   */
   laneShare: Partial<Record<SyncLane, number>>;
-  /** In-flight slots, and how many are kept for `interactive` and `opFlush`: gmail 3 and 1; graph 4 and 0 with priority admission. */
+  /**
+   * In-flight slots, and how many are kept for `interactive` and `opFlush`: gmail 3 and 1; graph 4 and 0 with priority
+   * admission. After a concurrency refusal (`ClassifiedError.concurrency`) the live limit (`inFlightLimit`) drops to 1
+   * and grows back by 1 per 10 quiet minutes up to `inFlight`. The reserve is always min(`reservedInteractive`,
+   * `inFlightLimit` - 1), so a limit of 1 reserves nothing and no lane is starved.
+   */
   inFlight: number;
   reservedInteractive: number;
   /** HTTP batch sizing (Neverest's curve): gmail start 10, min 1, max 25, grow 5. */
@@ -36,7 +45,10 @@ export interface GovernedRequest {
   method: string;
   cost: number;
   costs?: Partial<Record<BudgetId, number>>;
-  /** In-flight weight: a Graph `$batch` of 20 takes 4. Must not exceed `inFlight - reservedInteractive` outside `interactive`. */
+  /**
+   * In-flight weight: a Graph `$batch` of 20 takes 4. Clamped to the current `inFlightLimit`, so a request heavier than
+   * the limit is still admitted and runs alone rather than never.
+   */
   slots?: number;
   /** Default true: the governor fetches the access token (`TokenSource`) and owns the one forced refresh after a first 401. */
   auth?: boolean;
@@ -47,7 +59,11 @@ export interface GovernedRequest {
 /** What `fn` receives: the merged signal (caller cancel, plus a pause for `read` and `idempotentWrite` only) and the token. */
 export interface RequestIo { signal: AbortSignal; accessToken?: string }
 
-/** Persisted to `governor_state` by the actor on every `onChange`, restored before the first request after a restart. */
+/**
+ * Persisted to `governor_state` by the actor on every `onChange`, restored before the first request after a restart.
+ * Snapshots are per budget, but an `auth` block is the account's: it is written to every budget of that account
+ * (gmail, gcal, oauth) and `clear(account, 'auth')` lifts all of them.
+ */
 export interface GovernorSnapshot {
   budget: BudgetId;
   target: number;
@@ -62,7 +78,7 @@ export interface GovernorSnapshot {
   dailyBlockUntil?: number;
   /** `send_limit` blocks sends only; sync continues. */
   sendBlockedUntil?: number;
-  /** Ends only through `clear`. */
+  /** Ends only through `clear`. `since` is `governor_state.blocked_since`. */
   blocked?: { cls: 'auth' | 'config'; since: number };
   cls?: ErrorClass;
   reason?: string;
@@ -77,13 +93,26 @@ export interface GovernorSnapshot {
 export interface GovernorPort {
   /**
    * Waits (never sends) until the budget, lane share and a slot allow the call, then runs `fn` once. Throws
-   * `PausedError` before any I/O while paused or blocked. Re-sends only `transient` failures of `read` and
-   * `idempotentWrite` (1, 2, 4 s jitter, each re-admitted), and any kind once after a first 401 plus one forced refresh.
-   * A pause rejects queued calls and aborts in-flight `read`/`idempotentWrite` on that budget; never a started `write` or `send`.
+   * `PausedError` before any I/O while paused or blocked; an `auth` block covers every budget of the account, token
+   * calls included. Re-sends only `transient` failures of `read` and `idempotentWrite` (1, 2, 4 s jitter, each
+   * re-admitted), and any kind once after a first 401 plus one forced refresh. A pause rejects queued calls and aborts
+   * in-flight `read`/`idempotentWrite` on that budget; never a started `write` or `send`.
+   *
+   * For `kind: 'send'`, anything thrown before `fn` is invoked (the token refresh's network error, `invalid_grant`, a
+   * pause that began while queued) is proof the mail never left: it surfaces as `PausedError` when a block or pause
+   * caused it (including the auth block `invalid_grant` sets) and as `NotSentError` otherwise, never as a plain
+   * `ProviderError`, so `SendPort` does not treat it as uncertain.
+   *
+   * Connect-time calls (`ConnectContext.governor`, the code exchange on `oauth`) ignore `auth` blocks, since a reconnect
+   * is how an auth block ends, but still honour cooldowns, daily stops and `config` blocks.
    */
   run<T>(account: AccountId, req: GovernedRequest, fn: (io: RequestIo) => Promise<T>): Promise<T>;
-  /** A refusal found inside a successful reply (a 429 part of a 200 batch): same state change as a thrown one, never aborts the caller. */
-  observe(account: AccountId, budget: BudgetId, error: ClassifiedError): void;
+  /**
+   * A refusal found inside a successful reply (a 429 part of a 200 batch): same state change as a thrown one, never
+   * aborts the caller. `scope` as on `ProviderError` (`project`: Gmail's `dailyLimitExceeded` in a batch part blocks every
+   * account). Called after `run` resolves, never from inside `fn`, so the refusal is not counted against the call itself.
+   */
+  observe(account: AccountId, budget: BudgetId, error: ClassifiedError, scope?: 'account' | 'project'): void;
   /** Post-hoc charge, e.g. IMAP bytes known only after the reply. */
   charge(account: AccountId, budget: BudgetId, amount: number): void;
   /** No I/O. `kind: 'send'` also checks `sendBlockedUntil`. */
@@ -99,10 +128,13 @@ export interface GovernorPort {
   onChange(listener: (account: AccountId | ProjectScope, snapshot: GovernorSnapshot) => void): () => void;
 }
 
-/** `GovernorPort` bound to one account: the only network door an adapter gets (`AdapterContext.governor`). */
+/**
+ * `GovernorPort` bound to one account: the only network door an adapter gets (`AdapterContext.governor`). The one bound
+ * into `ConnectContext` is built for connect and ignores the account's `auth` block (see `GovernorPort.run`).
+ */
 export interface BoundGovernor {
   run<T>(req: GovernedRequest, fn: (io: RequestIo) => Promise<T>): Promise<T>;
-  observe(budget: BudgetId, error: ClassifiedError): void;
+  observe(budget: BudgetId, error: ClassifiedError, scope?: 'account' | 'project'): void;
   charge(budget: BudgetId, amount: number): void;
   batchSize(budget: BudgetId): number;
 }

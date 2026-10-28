@@ -45,8 +45,10 @@ export type ReasonCode = typeof reasonCodes[number];
 export const ReasonCodeSchema = z.union([z.enum(reasonCodes), z.string()]);
 
 /**
- * Facts every account carries next to its status. `reconnectBy` is the token grant time plus 7 days while the Google
- * project is in Testing mode (ARCH 6.4, 12.5; roadmap N3) and is absent for other providers, so the UI can warn a day ahead.
+ * Facts every account carries next to its status. `reconnectBy` is when the refresh token stops working: the earlier
+ * of the grant time plus 7 days while the Google project is in Testing mode and Google's `refresh_token_expires_in`
+ * (ARCH 6.4, 12.5; roadmap N3; F3 `ConnectResult.grant.refreshExpiresAt`). Absent when neither applies (other
+ * providers), so the UI can warn a day ahead.
  */
 export const AccountHealthSchema = z.object({
   status: AccountStatusSchema,

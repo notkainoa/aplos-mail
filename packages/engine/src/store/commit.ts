@@ -2,7 +2,7 @@ import { transaction, type SqlDatabase, type SqlStatement, type SqlValue } from 
 import {
   StoreError, type AccountWrite, type CommitInput, type CommitResult, type FlagsWrite, type FolderDeleteWrite,
   type FolderRef, type FolderWrite, type MessageDeleteWrite, type MessageTarget, type MessageWrite, type MetaWrite,
-  type PlacementsWrite, type StoreWrite, type SyncStateWrite, type ThreadDeleteWrite, type ThreadWrite,
+  type PlacementsWrite, type StoreWrite, type SweepWrite, type SyncStateWrite, type ThreadDeleteWrite, type ThreadWrite,
   type WorkflowFields, type WorkflowWrite,
 } from './port';
 
@@ -28,8 +28,8 @@ export interface CommitContext {
 }
 
 /**
- * The minimal working commit (F4): accounts, folders, messages, placements, flags, threads, workflow, sync state and
- * meta in one transaction, thread rollups and folder lists recomputed from the messages, one `changes` row per changed
+ * The minimal working commit (F4): accounts, folders, messages, placements, flags, threads, workflow, sync state, the
+ * bounded sweep and meta in one transaction, thread rollups and folder lists recomputed from the messages, one `changes` row per changed
  * item, `seq` bumped once. A replayed `opId` is a no-op. `eng-store` completes it in Phase 1 (replay of pending ops,
  * bodies, FTS, notifications, compaction) without changing `CommitInput`.
  */
@@ -80,6 +80,7 @@ class CommitRun {
       case 'threadDelete': return this.threadDelete(w);
       case 'workflow': return this.workflow(w);
       case 'syncState': return this.syncState(w);
+      case 'sweep': return this.sweep(w);
       case 'meta': return this.meta(w);
       default: throw new StoreError('invalid', `Unknown write kind ${(w as { kind?: unknown }).kind}`);
     }
@@ -252,9 +253,11 @@ class CommitRun {
     for (const { folderId, uid } of ids) this.place(messageId, folderId, uid, seenGen);
   }
 
+  /** A stamp only rises: a page of an older round committed late must not lower a newer round's stamp and get swept. */
   private place(messageId: number, folderId: number, uid: number | undefined, seenGen: number | undefined) {
     this.q(`INSERT INTO message_folders(message_id, folder_id, uid, seen_gen) VALUES(?, ?, ?, ?)
-      ON CONFLICT(message_id, folder_id) DO UPDATE SET uid = COALESCE(excluded.uid, uid), seen_gen = COALESCE(excluded.seen_gen, seen_gen)`)
+      ON CONFLICT(message_id, folder_id) DO UPDATE SET uid = COALESCE(excluded.uid, uid),
+        seen_gen = CASE WHEN seen_gen IS NULL THEN excluded.seen_gen ELSE max(seen_gen, COALESCE(excluded.seen_gen, seen_gen)) END`)
       .run(messageId, folderId, uid ?? null, seenGen ?? null);
   }
 
@@ -309,6 +312,7 @@ class CommitRun {
     const row = this.q('SELECT id FROM threads WHERE account_id = ? AND remote_id = ?').get<{ id: number }>(w.accountId, w.remoteThreadId);
     if (!row) return this.missing(`Thread ${w.remoteThreadId}`);
     if (w.complete !== undefined) this.q('UPDATE threads SET complete = ? WHERE id = ?').run(Number(w.complete), row.id);
+    if (w.remoteCount !== undefined) this.q('UPDATE threads SET remote_count = ? WHERE id = ?').run(w.remoteCount, row.id);
     this.touched.add(row.id);
   }
 
@@ -350,6 +354,24 @@ class CommitRun {
         generation = excluded.generation, pending = excluded.pending, updated_at = excluded.updated_at`)
       .run(w.accountId, w.scope, w.cursor ?? null, w.pageToken ?? null, w.phase ?? null, w.oldestLoaded ?? null, w.generation,
         w.pending?.length ? JSON.stringify(w.pending) : null, this.ctx.now());
+  }
+
+  /** Placements the covering round did not re-stamp, inside its bound; NULL stamps (history, open, search) stay. */
+  private sweep(w: SweepWrite) {
+    if (!Number.isInteger(w.generation)) throw new StoreError('invalid', 'A sweep needs an integer generation');
+    const folder = this.q('SELECT id FROM folders WHERE account_id = ? AND remote_id = ?').get<{ id: number }>(w.accountId, w.folder);
+    if (!folder) return;
+    const gone = this.q(`SELECT m.id, m.thread_id, m.remote_id, m.flags, m.local_seq FROM message_folders mf JOIN messages m ON m.id = mf.message_id
+      WHERE mf.folder_id = ?1 AND mf.seen_gen IS NOT NULL AND mf.seen_gen < ?2
+        AND (?3 IS NULL OR m.internal_date > ?3) AND (?4 IS NULL OR m.internal_date < ?4)
+        AND (?5 IS NULL OR mf.uid >= ?5) AND (?6 IS NULL OR mf.uid <= ?6)`)
+      .all<MessageRow>(folder.id, w.generation, w.since ?? null, w.until ?? null, w.uidFrom ?? null, w.uidTo ?? null);
+    const remove = this.q('DELETE FROM message_folders WHERE message_id = ? AND folder_id = ?');
+    for (const m of gone) {
+      if (this.fenced(m.local_seq)) continue;
+      remove.run(m.id, folder.id);
+      this.touchMessage(w.accountId, m);
+    }
   }
 
   private meta(w: MetaWrite) {
