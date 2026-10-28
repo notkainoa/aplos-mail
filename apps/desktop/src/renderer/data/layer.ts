@@ -483,6 +483,8 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
   }
 
   const retry = (record: OpRecord): ActResult => {
+    if (record.state === 'failed' && record.kind === 'command' && record.reissue)
+      return record.reissue();
     if (record.state === 'failed' && record.kind === 'act' && record.action) {
       return record.selector && !record.targets.length
         ? act({ selector: record.selector, action: record.action })
@@ -532,6 +534,60 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
     undo: opId => undo({ opId }),
     mintId: mint,
   });
+
+  /**
+   * A write that returns a receipt but has no overlay (calendar, plans, Ask proposals, conversations, calendars,
+   * disconnect): it joins the operations the toasts read, its receipt retains the `Operation` row, and when the
+   * receipt is undoable it joins the one undo stack, so Z reverses it through `Operation/undo` like `Thread/act`. A
+   * rejection marks the operation failed (its `OperationView.retry` sends the write again under a fresh `opId`) and
+   * rethrows the engine's own error to the caller.
+   */
+  function command<A extends { opId?: OpId }, R>(
+    args: A,
+    send: (args: A & { opId: OpId }) => Promise<R>,
+    receiptOf: (result: R) => Receipt,
+  ): Promise<R> {
+    const issue = (opId: OpId): Promise<R> => {
+      const record: OpRecord = {
+        opId,
+        kind: 'command',
+        undoOf: null,
+        action: null,
+        selector: null,
+        targets: [],
+        effect: null,
+        state: 'pending',
+        error: null,
+        receiptUndoable: true,
+        undoUntil: null,
+        undoneBy: null,
+        reissue: () => {
+          const next = mint('op');
+          const result = issue(next);
+          const receipt = result.then(receiptOf);
+          receipt.catch(() => {});
+          return { opId: next, receipt };
+        },
+      };
+      operations.add(record);
+      return send({ ...args, opId }).then(
+        result => {
+          const receipt = onReceipt(opId, receiptOf(result));
+          if (receipt.undoable !== false) undoStack.pushOperation(opId);
+          return result;
+        },
+        error => {
+          record.state = 'failed';
+          record.error = toErrorBody(error);
+          operations.changed(opId);
+          throw error;
+        },
+      );
+    };
+    const result = issue(args.opId ?? mint('op'));
+    result.catch(() => {});
+    return result;
+  }
 
   // ---- frames --------------------------------------------------------------------------------------------------
 
@@ -665,6 +721,14 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
     },
     sync: { request: args => c.sync.request(args) },
     account: {
+      discover: args => c.account.discover(args),
+      disconnect: args =>
+        command(
+          args,
+          a => c.account.disconnect(a),
+          receipt => receipt,
+        ),
+      lease: args => c.account.lease(args),
       connect: args => c.account.connect(args),
       reconnect: args => c.account.reconnect(args),
       grantPermissions: args => c.account.grantPermissions(args),
@@ -685,9 +749,95 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
       get: args => c.settings.get(args),
       set: args => c.settings.set(op(args) as never),
     },
-    ask: { run: args => c.ask.run(args), cancel: args => c.ask.cancel(args) },
+    ask: {
+      run: args => c.ask.run(args),
+      cancel: args => c.ask.cancel(args),
+      decide: args =>
+        command(
+          args,
+          a => c.ask.decide(a),
+          result => result.receipt,
+        ),
+      suggestions: args => c.ask.suggestions(args),
+    },
+    conversation: {
+      destroy: args =>
+        command(
+          args,
+          a => c.conversation.destroy(a),
+          receipt => receipt,
+        ),
+    },
+    calendar: {
+      get: args => c.calendar.get(args),
+      set: args =>
+        command(
+          args,
+          a => c.calendar.set(a),
+          result => result.receipt,
+        ),
+    },
+    event: {
+      set: args =>
+        command(
+          args,
+          a => c.event.set(a),
+          result => result.receipt,
+        ),
+      rsvp: args =>
+        command(
+          args,
+          a => c.event.rsvp(a),
+          receipt => receipt,
+        ),
+    },
+    plan: {
+      confirm: args =>
+        command(
+          args,
+          a => c.plan.confirm(a),
+          result => result.receipt,
+        ),
+      dismiss: args =>
+        command(
+          args,
+          a => c.plan.dismiss(a),
+          receipt => receipt,
+        ),
+    },
+    listener: { get: args => c.listener.get(args), set: args => c.listener.set(args) },
+    clients: {
+      list: args => c.clients.list(args),
+      grant: args => c.clients.grant(args),
+      revoke: args => c.clients.revoke(args),
+      audit: args => c.clients.audit(args),
+    },
+    queue: {
+      list: args => c.queue.list(args),
+      retry: args => c.queue.retry(args),
+      discard: args => c.queue.discard(args),
+    },
+    window: {
+      openOnboarding: args => c.window.openOnboarding(args),
+      finishOnboarding: args => c.window.finishOnboarding(args),
+    },
+    system: {
+      login: args => c.system.login(args),
+      defaultMail: args => c.system.defaultMail(args),
+      microphone: args => c.system.microphone(args),
+      notifications: args => c.system.notifications(args),
+      openSettings: args => c.system.openSettings(args),
+    },
+    notification: { test: args => c.notification.test(args) },
     search: { remote: args => c.search.remote(op(args) as never) },
     ai: {
+      providers: args => c.ai.providers(args),
+      models: args => c.ai.models(args),
+      status: args => c.ai.status(args),
+      usage: args => c.ai.usage(args),
+      setKey: args => c.ai.setKey(args),
+      removeKey: args => c.ai.removeKey(args),
+      testKey: args => c.ai.testKey(args),
       request: args => c.ai.request(op(args) as never),
       draft: args => c.ai.draft(req(args) as never),
       polish: args => c.ai.polish(req(args) as never),

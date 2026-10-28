@@ -6,6 +6,7 @@ import type { EngineConnection } from '@aplos/contract/client';
 import { inProcessTransport } from './client';
 import { connectDataLayer, type DataConnection } from './connect';
 import type { DataLayerOptions } from './layer';
+import { withNativeStubs } from './native-stub';
 import { connectStandIn, type StandInOptions } from './standin';
 
 /** The connected layer plus the engine, for a second connection (`fixtureControl(engine)` in tests). */
@@ -17,7 +18,10 @@ export function connectStandInDataLayer(
   options: StandInOptions & Omit<DataLayerOptions, 'session'> = {},
 ): StandInDataLayer {
   const standIn = connectStandIn(options);
-  const connection = connectDataLayer({ ...options, session: inProcessTransport(standIn.engine) });
+  const connection = connectDataLayer({
+    ...options,
+    session: withNativeStubs(inProcessTransport(standIn.engine)),
+  });
   return {
     ...connection,
     engine: standIn.engine,

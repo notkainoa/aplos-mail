@@ -1,0 +1,42 @@
+/**
+ * Main's native methods on the stand-in. The stand-in engine serves engine methods only and refuses a desktop method
+ * ("This method belongs to the desktop app"), because in Electron preload routes those to main. Development and tests
+ * have no main, so this wraps the stand-in's session and answers the desktop methods `api` exposes with the honest
+ * "nothing happened here" result: windows do not open, permissions are not granted, nothing is posted. Development and
+ * tests only, like the stand-in; a release uses the real transport.
+ */
+import type { EngineSession } from '@aplos/contract/client';
+
+type Stub = (args: Record<string, unknown>) => unknown;
+
+const ok = () => ({ ok: true as const });
+
+/** The desktop methods the stand-in answers, by contract name. */
+const STUBS: Readonly<Record<string, Stub>> = {
+  'Window/openOnboarding': ok,
+  'Window/finishOnboarding': ok,
+  'Notification/test': ok,
+  'System/openSettings': ok,
+  'System/login': args => ({ enabled: args['enabled'] === true }),
+  'System/defaultMail': () => ({ success: false }),
+  'System/microphone': () => ({ granted: false, status: 'notDetermined' }),
+  'System/notifications': () => ({ status: 'unknown' }),
+};
+
+/** Whether the stand-in answers this desktop method itself. */
+export function isNativeStubbed(method: string): boolean {
+  return Object.prototype.hasOwnProperty.call(STUBS, method);
+}
+
+/** `session` with the stubbed desktop methods answered locally; everything else goes to the stand-in unchanged. */
+export function withNativeStubs(session: EngineSession): EngineSession {
+  return {
+    call(method, args, options) {
+      const stub = isNativeStubbed(method) ? STUBS[method] : undefined;
+      if (!stub) return session.call(method, args, options);
+      return Promise.resolve(stub((args ?? {}) as Record<string, unknown>));
+    },
+    subscribe: listener => session.subscribe(listener),
+    close: () => session.close(),
+  };
+}

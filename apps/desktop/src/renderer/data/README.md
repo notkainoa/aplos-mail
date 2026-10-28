@@ -17,9 +17,11 @@ This folder holds the one way the new screens read mail and send commands to the
 | `harness.ts` | Test support: the layer on a fake-clock stand-in with a manual scheduler and timers and every call recorded. |
 | `contract-shapes.ts` | The wire types, as type-only re-exports and thin aliases of `@aplos/contract`, under the contract's names. It declares no shape of its own. |
 | `ui-types.ts` | The few UI-side types that are not wire types: Home's and Later's section keys, the thread-row specs a selector may target, the row cache map, the streams `useFrames` serves, the overlay's lifecycle. |
+| `native-stub.ts` | `withNativeStubs(session)`: answers the desktop methods `api` exposes (`Window/openOnboarding|finishOnboarding`, `System/*`, `Notification/test`) on the stand-in, which refuses any desktop method. Nothing opens or is granted; `System/login` echoes `enabled`. The stand-in layer and the harness use it. In Electron, preload routes them to main. |
 | `standin.ts` | `connectStandIn()`: the stand-in engine (F6) in-process behind the F2 typed client, for development (`renderer/main.tsx`) and tests only. Never part of a release. |
 | `index.test.ts` | Compile-time usage examples in the contract's types (Home, the reader, the status slot, Ask streaming, the reconnect sheet, the clock, undo, consent), `Equals` checks that `api` is the client's surface, and runtime checks that every stub throws and every `api` method is a registered contract method of the same name. |
 | `standin.test.ts` | Boots the stand-in and reads windows into the types the hooks expose (`ViewResult`, `RowForSpec`, `LowBandView`, `Receipt`), in node with no DOM. |
+| `api-gaps.test.ts` | The settings, calendar, Ask and shell `api` members on the stand-in: queries are one client call, commands mint their `opId` and join the operations and the undo stack (Z reverses a dismissed plan, a confirmed plan, a calendar toggle, a deleted conversation), a refused command fails its operation and Retry sends a fresh `opId`, a disconnect is not undoable, native methods are answered by the stub. |
 | `windows.test.ts`, `optimistic.test.ts`, `layer.test.ts`, `hooks.test.ts` | The window cache (one `Thread/get` per frame, reset reopens, the stand-in's order), the overlay's timing and races, undo, failures, holds, prefetch, status, counts, the clock, streams, and the hooks through `index.ts`. |
 | `property.test.ts` | Plan 30 4.1's property test: 10,000 seeded sequences (`APLOS_PROPERTY_RUNS` overrides, `APLOS_PROPERTY_SEED` replays one), about three minutes. |
 
@@ -86,6 +88,24 @@ Each `api` member is the F2 typed client's method of the same name (`api.<type>.
 | `consent.get`, `consent.grant`, `consent.revoke` | `Consent/get`, `Consent/grant`, `Consent/revoke` | call | F9-23, F9-43 |
 | `engine.restart` | `Engine/restart` | native | F9-24 |
 | `diagnostics.preview`, `diagnostics.copy` | `Diagnostics/preview`, `Diagnostics/copy` | call, native | F9-25, F9-26 |
+| `account.discover`, `account.lease` | `Account/discover`, `Account/lease` | call | |
+| `account.disconnect` | `Account/disconnect` | call (operation, not undoable) | |
+| `ai.providers`, `ai.models`, `ai.status`, `ai.usage` | `Ai/providers`, `Ai/models`, `Ai/status`, `Ai/usage` | call | |
+| `ai.setKey`, `ai.removeKey`, `ai.testKey` | `Ai/setKey`, `Ai/removeKey`, `Ai/testKey` | call (secret: never logged) | |
+| `ask.decide` | `Ask/decide` | call (operation, joins the undo stack) | |
+| `ask.suggestions` | `Ask/suggestions` | call | |
+| `conversation.destroy` | `Conversation/destroy` | call (operation, joins the undo stack) | |
+| `calendar.get`, `calendar.set` | `Calendar/get`, `Calendar/set` | call (`set`: operation, joins the undo stack) | |
+| `event.set`, `event.rsvp` | `Event/set`, `Event/rsvp` | call (operations, join the undo stack; `undoUntil` is the hold before guests are told) | |
+| `plan.confirm`, `plan.dismiss` | `Plan/confirm`, `Plan/dismiss` | call (operations, join the undo stack) | |
+| `listener.get`, `listener.set` | `Listener/get`, `Listener/set` | call (UI-only methods) | |
+| `clients.list`, `clients.grant`, `clients.revoke`, `clients.audit` | `Clients/list`, `Clients/grant`, `Clients/revoke`, `Clients/audit` | call (UI-only methods) | |
+| `queue.list`, `queue.retry`, `queue.discard` | `Queue/list`, `Queue/retry`, `Queue/discard` | call | |
+| `window.openOnboarding`, `window.finishOnboarding` | `Window/openOnboarding`, `Window/finishOnboarding` | native | |
+| `system.login`, `system.defaultMail`, `system.microphone`, `system.notifications`, `system.openSettings` | `System/login`, `System/defaultMail`, `System/microphone`, `System/notifications`, `System/openSettings` | native | |
+| `notification.test` | `Notification/test` | native | |
+
+A command that returns a receipt but has no overlay (every "operation" row above) goes through one path in `layer.ts`: it mints the `opId` when the caller gives none, records an operation (`OperationView`, kind `command`) so toasts can word it, retains the engine's `Operation` row once the receipt lands, and pushes it on the one undo stack when `receipt.undoable` is not `false` (Z then calls `Operation/undo`; there is no optimistic overlay, the engine's frames update the rows). A refusal marks the operation failed, rethrows the engine's own error to the caller, and `OperationView.retry()` sends the write again under a fresh `opId`. No new frame kind: streams already work through `useFrames`.
 
 ## What this surface asked of the contract, and the outcome
 
@@ -144,6 +164,7 @@ These are new, small, and none blocks U2. Each has a stopgap that needs no contr
 | new: `Settings.ui.seen.holdCommandHint` | The first-launch "Hold ⌘ to see keys." toast shows once (DESIGN 7.13); `UiSettings` strips unknown fields | The shell keeps the flag in its own local state |
 | new: `progress` kind `paused {resumeAt}` | "Waiting for Groq, about 20 s" during a rate-limit wait; the open `kind` enum can take it additively | Ask shows its steady step line |
 | new: clarify the `fromLater` count | The `WindowSection` comment says Back from Later's count "is the two together"; the stand-in counts the block alone and runs never overlap | `useHome` follows the stand-in: Do now's count is `do` plus `fromLater` |
+| new: `Event/hide` (or `EventChange {type: 'hide', id, hidden: boolean}` on `Event/set`) | The calendar screen's "Hide event" (FR-21): a local, per-event hide that is never written to the provider, undoable. Input `{opId, id, hidden}` (an occurrence id hides one occurrence); output `Receipt`. `EventChange` today has only `create`, `update` and `destroy`, and `Event` has no hidden flag, so the UI also needs `Event.hidden?: boolean` and `includeHidden?: boolean` on the `events` view. First asked 2026-10-27 23:57; the engine's notes say its home is in progress | The screen offers no Hide event action |
 | new: a sender key on thread rows | The Low sheet groups `homeSection: low` rows under `lowSenders` groups, but `ThreadRow` carries `fromName` and participants, not the newest sender's address, so the join is by name | The data layer joins on `fromName`, falling back to the participant with that name |
 
 ## Release rule
@@ -168,10 +189,9 @@ The contract swap renamed or removed exported names. The freeze is day 3, so thi
 
 ## Not yet in the surface (additive follow-ups)
 
-- Calendar beyond the agenda: `Event/set`, `Event/rsvp`, `Calendar/get` and a `useCalendars` hook (`ui-calendar`).
-- Ask history and proposals: `Ask/decide`, `Ask/suggestions`, `Conversation/destroy` (`ui-ask`); `conversations` and `Conversation` rows already work through `useView` and `useRow`.
-- Settings extras: `Account/disconnect`, `Account/lease`, `Ai/providers|models|status|usage|setKey|testKey`, `Queue/*`, `Folder/get` (`ui-settings`).
-- `Later/presets` for the Later picker and `Reminder/*` (`ui-home`); `Outbox/pending` and the desktop window methods (`ui-shell`). Each is added to `api` under its client name when its screen lands.
+- Calendar hooks: a `useCalendars` hook over `api.calendar.get` (`ui-calendar`); the `api` members are in.
+- `Folder/get` (`ui-settings`), `Later/presets` for the Later picker and `Reminder/*` (`ui-home`), `Outbox/pending` and the other desktop window methods (`Window/compose|thread|claim|release|closeReady|closeCancel`; `ui-shell`). Each is added to `api` under its client name when its screen lands.
+- `Event/hide`: not in the contract yet; see the ask under "Still open".
 
 ## Dependencies
 
