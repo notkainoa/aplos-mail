@@ -101,6 +101,14 @@ We also settled 18 small questions where the plans disagreed. In each case we fo
 
 ## 2. To the Providers thread
 
+These are contract-level needs. They sit on top of the Providers port proposal (`origin/rv/thread/providers:plans/providers/port-proposal.md`), which already covers the adapter side:
+- `ConnectRequest.mode` with `new`, `reconnect` and `grantPermissions`, plus `loginHint` and `wrongAccount`;
+- the account status union with `reasonCode`;
+- per-calendar status;
+- `recurrence_id`.
+
+Where the names differ, the port proposal's names win. Its paused state's `until` maps to E13's `resumeAt` in the contract row.
+
 | # | Tier | Need | Proposed shape (short) | From |
 |---|---|---|---|---|
 | P1 | 1 | OAuth connect lifecycle: no pending state, no Cancel, late resolve after `Setup/end` | `Account/connect {provider, loginHint?, setupId?} → {connectId}` at once; `Account/reconnect {accountId} → {connectId}`; `Account/cancelConnect {connectId}`; frame `connect {connectId, kind, state:'waiting'\|'connected'\|'failed'\|'cancelled', accountId?, reasonCode?}` | O4 |
