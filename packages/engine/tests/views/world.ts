@@ -35,7 +35,16 @@ const FOLDERS: Record<string, [remoteId: string, role: string | null, kind: stri
   ],
 };
 
-export const WORDS = ['budget', 'invoice', 'garden', 'harbor', 'ticket', 'lunch', 'review', 'maple'];
+export const WORDS = [
+  'budget',
+  'invoice',
+  'garden',
+  'harbor',
+  'ticket',
+  'lunch',
+  'review',
+  'maple',
+];
 const SENDERS = ['ada', 'ben', 'cleo', 'dev', 'eve', 'finn', 'gus', 'hana'];
 
 /** Mulberry32: small, seeded, good enough for test data. */
@@ -113,7 +122,9 @@ function message(r: Rng, account: string, thread: string, i: number, now: number
     accountId: account,
     remoteId: `m${i}`,
     remoteThreadId: thread,
-    from: fromMe ? { address: me, name: 'Owner' } : { address: `${sender}@mail.example`, name: sender },
+    from: fromMe
+      ? { address: me, name: 'Owner' }
+      : { address: `${sender}@mail.example`, name: sender },
     to: [{ address: fromMe ? `${sender}@mail.example` : me }],
     cc: [],
     subject: `${r.pick(WORDS)} ${r.pick(WORDS)}`,
@@ -130,7 +141,18 @@ function message(r: Rng, account: string, thread: string, i: number, now: number
 function laterUntil(r: Rng, now: number): number | null {
   if (r.chance(0.2)) return null;
   const day = 86_400_000;
-  const near = [-day, -1, 1, 3_600_000, 2 * 3_600_000, day - 1, day, day + 3_600_000, 6 * day, 7 * day];
+  const near = [
+    -day,
+    -1,
+    1,
+    3_600_000,
+    2 * 3_600_000,
+    day - 1,
+    day,
+    day + 3_600_000,
+    6 * day,
+    7 * day,
+  ];
   return now + r.pick(near) + (r.chance(0.5) ? 0 : r.int(9 * day)) - r.int(3) * 60_000;
 }
 
@@ -176,7 +198,9 @@ function laneRows(db: SqlDatabase, r: Rng, now: number) {
         r.pick(['queued', 'scheduled', 'sending', 'sent', 'cancelled', 'failed']),
       );
   }
-  const fts = db.prepare('INSERT INTO messages_fts(rowid, subject, people, body) VALUES(?, ?, ?, ?)');
+  const fts = db.prepare(
+    'INSERT INTO messages_fts(rowid, subject, people, body) VALUES(?, ?, ?, ?)',
+  );
   const rows = db
     .prepare('SELECT id, subject, from_addr, from_name, to_json FROM messages')
     .all<{ id: number; subject: string; from_addr: string; from_name: string; to_json: string }>();
@@ -185,7 +209,8 @@ function laneRows(db: SqlDatabase, r: Rng, now: number) {
 }
 
 /** A message's indexed body text (the reference search reads the same words). */
-export const bodyOf = (id: number) => `${WORDS[id % WORDS.length]} body ${WORDS[(id >> 3) % WORDS.length]}`;
+export const bodyOf = (id: number) =>
+  `${WORDS[id % WORDS.length]} body ${WORDS[(id >> 3) % WORDS.length]}`;
 
 export function makeWorld(seed: number, now: number, threads = 120): World {
   const file = tempDb();
@@ -202,7 +227,11 @@ export function makeWorld(seed: number, now: number, threads = 120): World {
     for (let k = 0; k < n; k++) writes.push(message(r, account, thread, m++, now));
     store.commit({ opId: `t${t}`, origin: 'sync', writes });
     // A thread made only of drafts is deleted by its rollup; skip its workflow then.
-    if (store.read(q => q.get('SELECT 1 FROM threads WHERE account_id = ? AND remote_id = ?', account, thread)))
+    if (
+      store.read(q =>
+        q.get('SELECT 1 FROM threads WHERE account_id = ? AND remote_id = ?', account, thread),
+      )
+    )
       store.commit({ opId: `w${t}`, origin: 'local', writes: [workflow(r, account, thread, now)] });
   }
   laneRows(db, r, now);

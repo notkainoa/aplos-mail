@@ -17,20 +17,33 @@ import { makeWorld, ACCOUNTS } from './world';
  */
 
 const ENVS: { name: string; env: ViewEnv }[] = [
-  { name: 'Los Angeles, eve of the DST change', env: { now: Date.UTC(2026, 10, 1, 5, 0), zone: 'America/Los_Angeles', followUpDays: 3 } },
-  { name: 'London, half past midnight on the DST change', env: { now: Date.UTC(2026, 9, 24, 23, 30), zone: 'Europe/London', followUpDays: 2 } },
-  { name: 'Havana, an hour before the doubled midnight', env: { now: Date.UTC(2026, 10, 1, 3, 0), zone: 'America/Havana', followUpDays: 5 } },
+  {
+    name: 'Los Angeles, eve of the DST change',
+    env: { now: Date.UTC(2026, 10, 1, 5, 0), zone: 'America/Los_Angeles', followUpDays: 3 },
+  },
+  {
+    name: 'London, half past midnight on the DST change',
+    env: { now: Date.UTC(2026, 9, 24, 23, 30), zone: 'Europe/London', followUpDays: 2 },
+  },
+  {
+    name: 'Havana, an hour before the doubled midnight',
+    env: { now: Date.UTC(2026, 10, 1, 3, 0), zone: 'America/Havana', followUpDays: 5 },
+  },
 ];
 const SEEDS = [1, 2, 3];
 
 function specs(q: StoreReader): ViewSpec[] {
   const threads = q
-    .all<{ id: string }>("SELECT account_id || ':' || remote_id AS id FROM threads ORDER BY id LIMIT 4")
+    .all<{ id: string }>(
+      "SELECT account_id || ':' || remote_id AS id FROM threads ORDER BY id LIMIT 4",
+    )
     .map(r => r.id);
   const out: ViewSpec[] = [
     { kind: 'home' },
     ...ACCOUNTS.map(accountId => ({ kind: 'home', accountId }) as const),
-    ...(['do', 'update', 'low', 'follow'] as const).map(section => ({ kind: 'homeSection', section }) as const),
+    ...(['do', 'update', 'low', 'follow'] as const).map(
+      section => ({ kind: 'homeSection', section }) as const,
+    ),
     { kind: 'homeSection', section: 'do', accountId: 'imap:2' },
     { kind: 'oneByOne', section: 'update' },
     { kind: 'lowSenders' },
@@ -53,8 +66,18 @@ function specs(q: StoreReader): ViewSpec[] {
     { kind: 'scheduled' },
     ...threads.map(threadId => ({ kind: 'thread', threadId }) as const),
   ];
-  for (const role of ['inbox', 'all', 'sent', 'trash', 'spam', 'archive', 'starred', 'important'] as const)
-    for (const accountId of [undefined, ...ACCOUNTS]) out.push({ kind: 'mailbox', role, accountId });
+  for (const role of [
+    'inbox',
+    'all',
+    'sent',
+    'trash',
+    'spam',
+    'archive',
+    'starred',
+    'important',
+  ] as const)
+    for (const accountId of [undefined, ...ACCOUNTS])
+      out.push({ kind: 'mailbox', role, accountId });
   const queries = [
     { text: 'budget' },
     { text: 'bud' },

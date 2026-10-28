@@ -46,7 +46,8 @@ test(`at ${THREADS} threads no compiled statement scans threads or messages`, ()
         assert.doesNotMatch(s.sql, /\bOFFSET\b/i);
         for (const row of q.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${s.sql}`, ...s.params)) {
           const scan = /^SCAN (\w+)/.exec(row.detail);
-          if (scan && BIG_TABLES.has(scan[1])) bad.push(`${JSON.stringify(spec)}: ${row.detail}\n  ${s.sql}`);
+          if (scan && BIG_TABLES.has(scan[1]))
+            bad.push(`${JSON.stringify(spec)}: ${row.detail}\n  ${s.sql}`);
         }
       }
     }
@@ -55,25 +56,30 @@ test(`at ${THREADS} threads no compiled statement scans threads or messages`, ()
   assert.ok(statements > 300, `${statements} statements`);
 });
 
-test(`at ${THREADS} threads: first page and layout per spec (printed)`, () => {
-  const lines: string[] = [];
-  store.read(q => {
-    for (const spec of BENCH_SPECS) {
-      const plan = compileView(spec, ENV);
-      const page: number[] = [];
-      const layout: number[] = [];
-      let total = 0;
-      for (let i = 0; i < 5; i++) {
-        let t = performance.now();
-        const rows = plan.rows(q, undefined, 200);
-        page.push(performance.now() - t);
-        t = performance.now();
-        total = plan.layout(q).total;
-        layout.push(performance.now() - t);
-        assert.ok(rows.length <= 200);
+// Opt-in (APLOS_VIEWS_TIMINGS=1): about 30 s at 100,000 threads. The numbers go to the PR and PROGRESS.md.
+test(
+  `at ${THREADS} threads: first page and layout per spec (printed)`,
+  { skip: !process.env.APLOS_VIEWS_TIMINGS },
+  () => {
+    store.read(q => {
+      for (const spec of BENCH_SPECS) {
+        const plan = compileView(spec, ENV);
+        const page: number[] = [];
+        const layout: number[] = [];
+        let total = 0;
+        for (let i = 0; i < 5; i++) {
+          let t = performance.now();
+          const rows = plan.rows(q, undefined, 200);
+          page.push(performance.now() - t);
+          t = performance.now();
+          total = plan.layout(q).total;
+          layout.push(performance.now() - t);
+          assert.ok(rows.length <= 200);
+        }
+        console.log(
+          `${JSON.stringify(spec).padEnd(96)} page ${median(page).toFixed(2).padStart(8)} ms  layout ${median(layout).toFixed(2).padStart(8)} ms  rows ${total}`,
+        );
       }
-      console.log(`${JSON.stringify(spec).padEnd(96)} page ${median(page).toFixed(2).padStart(8)} ms  layout ${median(layout).toFixed(2).padStart(8)} ms  rows ${total}`);
-    }
-  });
-  console.log(lines.join('\n'));
-});
+    });
+  },
+);

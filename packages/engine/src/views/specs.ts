@@ -109,7 +109,10 @@ export interface ViewPlan {
 }
 
 /** Compiles one spec kind. Thrown `ContractError`s (`notFound`, `rangeTooLarge`) reach the caller unchanged. */
-export type ViewCompiler<S extends { kind: string } = ViewSpec> = (spec: S, env: ViewEnv) => ViewPlan;
+export type ViewCompiler<S extends { kind: string } = ViewSpec> = (
+  spec: S,
+  env: ViewEnv,
+) => ViewPlan;
 
 /** Hard ceiling on rows a materialized view (search, sender groups) reads. */
 export const MATERIALIZED_LIMIT = 5_000;
