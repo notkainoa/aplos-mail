@@ -1,0 +1,795 @@
+{
+  "version": 1,
+  "claims": [
+    {
+      "id": "mac-only",
+      "says": "Independent software for Mac (no other platform named)",
+      "pages": ["landing", "download", "privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/package.json build: mac targets only",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 17 (no Windows or Linux builds)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "mac-chips",
+      "says": "For Macs with Apple silicon or Intel",
+      "pages": ["landing", "download"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/package.json build.mac.target dmg and zip, arch arm64 and x64",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "macos-13",
+      "says": "Runs on macOS 13 or later",
+      "pages": ["landing", "download"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 2.5 and section 17 (macOS 13 and later only)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "owner",
+          "ref": "2026-10-27 owner decision: macOS 13 or later, not 12 (plans/40-platform-quality.md Q5A item 2)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "apps/desktop/package.json still sets minimumSystemVersion 12.0; the plat-release lane raises it to 13.0 (ARCH 2.5). The site states the supported floor, not the plist."
+    },
+    {
+      "id": "gmail-google-calendar",
+      "says": "Aplos Mail is a Mac app for Gmail and Google Calendar",
+      "pages": ["landing", "privacy"],
+      "evidence": [
+        {
+          "kind": "owner",
+          "ref": "2026-10-27 owner decision: this round builds Gmail and Google Calendar only (plans/00-roadmap.md, Decisions already made)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Describes the app's scope. Whether Gmail works for a tester is the separate pending claim gmail-invited-testers. Also carried by the meta and og descriptions in apps/web/index.html."
+    },
+    {
+      "id": "gmail-invited-testers",
+      "says": "Gmail and Google Calendar are available to invited testers",
+      "pages": ["landing", "download"],
+      "evidence": [
+        {
+          "kind": "live",
+          "ref": "gmail",
+          "maxAgeDays": 7
+        },
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 12.5 (Testing mode, listed test users only)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "owner",
+          "ref": "owner acceptance note after the day 14-16 hand checks (not written yet)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "pending",
+      "verifiedAt": null,
+      "note": "Needs a passing Gmail live smoke within 7 days in apps/web/provider-status.json (absent today) and an owner acceptance note."
+    },
+    {
+      "id": "google-weekly-reconnect",
+      "says": "Only listed test users can sign in with Google, and a sign-in lasts 7 days, so testers reconnect weekly",
+      "pages": ["download"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 12.5",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "owner",
+          "ref": "2026-10-27 owner decision: Google project stays in Testing mode (plans/00-roadmap.md section 8.1 #3)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "invited-testers-builds",
+      "says": "There is no public download; builds are shared directly with invited testers",
+      "pages": ["landing", "download"],
+      "evidence": [
+        {
+          "kind": "owner",
+          "ref": "2026-10-27 owner decision: one repo, no releases repo, local or private draft builds; going public decided later (plans/00-roadmap.md section 8.1 #6)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "plans/_council/CONTEXT.md: the repository is private",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "dmg-install",
+      "says": "Install: open the Aplos Mail disk image from Downloads, drag it into Applications, open it",
+      "pages": ["download"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/package.json build.mac.target dmg (and build/dmg-background.html for the Applications drag window)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "summaries-with-ai",
+      "says": "Once AI is on, emails get a short summary of what they say and need",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md sections 8.1-8.4",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/summary-text.test.ts",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Deliberately conditional (\"once you turn on AI\"), because summaries need a provider, consent and stay within the daily budget. Also in the landing meta description (\"optional AI summaries\")."
+    },
+    {
+      "id": "home-focus",
+      "says": "Home puts the email that needs you in focus; Reply, Later or Done brings the next",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md section 7.2 and section 8 (Home and one by one: arrow triage)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "The demos are scripted on original demo data and the screenshots show the 0.2.x app; both are kept until the redesign."
+    },
+    {
+      "id": "several-accounts",
+      "says": "Several Google accounts can be connected at once; the screenshots show All accounts and a calendar week with events from two accounts",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md decision 16 (account dots with two or more accounts) and section 7.11 / F7 (opens on All accounts)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/renderer/legacy/components/Sidebar.tsx \"All accounts\" switcher",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Carried by the tour screenshots and their alt text (Tour.tsx). The images are the 0.2.x app on demo data."
+    },
+    {
+      "id": "google-calendar-views",
+      "says": "Your Google calendars share one day, week and month view",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md section 7.8 (D | W | M)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 5.5 (Google Calendar)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/calendar.test.ts",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "plans-confirm",
+      "says": "When an email mentions a plan, Aplos can propose the event and adds it only after you confirm",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md section 7.8 (plans found in mail stay dashed until confirmed) and section 9 rule 6",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Also carried by the Ask demo answer \"It goes on your calendar only when you add it\" (Ask.tsx)."
+    },
+    {
+      "id": "ask-dictate",
+      "says": "Type a question to Ask, or hold A to dictate it",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md section 8 (A Ask, hold A: dictate to Ask)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "packages/contract/src/legacy/ask.ts: voice feature with Groq or OpenAI speech to text",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "ask-cites",
+      "says": "Ask reads your mail and calendar and cites the messages it used",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md section 7.7 (every answer cites its sources)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Also carried by the Ask demo panel (sources under each answer)."
+    },
+    {
+      "id": "ask-never-sends",
+      "says": "Ask drafts replies for you to review and never sends on its own",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md section 9 rule 6",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "packages/engine/src/legacy/ask.ts propose_draft: \"the user decides whether to send\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/ask-agent.test.ts",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "keyboard-first",
+      "says": "Your hands stay on the keyboard from the first email to the last",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md section 8 keyboard map",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "key-list",
+      "says": "Space main action, left Later, right Done, Z undo, B bookmark, A Ask (hold to dictate), C compose, ? shortcuts",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md section 8 keyboard map",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Arrow triage is limited to Home, the reader and one by one (DESIGN section 8)."
+    },
+    {
+      "id": "groq-default",
+      "says": "Every AI feature runs on Groq by default",
+      "pages": ["landing", "privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "AGENTS.md (Groq is the default for every AI feature)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "packages/contract/src/legacy/ask.ts: Groq \"The default for every feature\"",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "provider-per-feature",
+      "says": "Pick a provider per feature in Settings; a feature's text goes only to that feature's provider (routers pass it on to the model host, see ai-routers)",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "AGENTS.md (Settings, AI: provider and model per feature)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md section 7.10",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/ask-providers.test.ts",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "ai-providers",
+      "says": "Providers: Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio or your own server; voice only Groq and OpenAI",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "packages/contract/src/legacy/ask.ts askProviders and speech-to-text list",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "AGENTS.md provider list",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "ai-routers",
+      "says": "OpenRouter and OpenCode Go pass each request on to the company that runs the chosen model",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "packages/contract/src/legacy/ask.ts: OpenRouter \"Hundreds of models on one key\"; OpenCode Go serves third-party models (Kimi, GLM, DeepSeek) on one plan",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "plain fact: both services are routers that forward requests to the model's host",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Replaces the earlier picker text \"and to no one else\" for these two providers."
+    },
+    {
+      "id": "keys-on-mac",
+      "says": "Your AI keys stay on your Mac",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/main/ai-keys.ts (ai-keys.enc.json in the data folder, or the backend environment)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/ai-keys.test.ts",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "ai-consent",
+      "says": "Background AI starts only after you agree",
+      "pages": ["landing", "privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 8.3 (versioned consent card)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "pending",
+      "verifiedAt": null,
+      "note": "Design commitment for the redesigned build; not in today's 0.2.x code (checked by grep on 2026-10-27). Verify with a test when it lands. Today's build uses an in-memory deferAI set (ARCH 8.3)."
+    },
+    {
+      "id": "no-training-providers",
+      "says": "Mail never goes to a provider that trains on inputs; a free Gemini key never gets mail",
+      "pages": ["landing", "privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 8.3 (trainsOnInputs)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "design",
+          "ref": "plans/00-roadmap.md section 8.3 #25",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "pending",
+      "verifiedAt": null,
+      "note": "Design commitment for the redesigned build; not in today's 0.2.x code (checked by grep on 2026-10-27). Verify with a test when it lands. ARCH 8.3 also says Groq and OpenRouter terms are still to be checked before release. The Gemini line in the provider picker belongs here too."
+    },
+    {
+      "id": "ai-daily-limit",
+      "says": "Background AI stops at a daily limit you can change",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 8.4",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "design",
+          "ref": "plans/00-roadmap.md section 8.3 #26 (150,000 tokens, adjustable)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "pending",
+      "verifiedAt": null,
+      "note": "Design commitment for the redesigned build; not in today's 0.2.x code (checked by grep on 2026-10-27). Verify with a test when it lands."
+    },
+    {
+      "id": "no-aplos-server",
+      "says": "No Aplos server ever sees your mail, calendar or sign-in details",
+      "pages": ["landing", "privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 17 (no Aplos-hosted server, relay or AI proxy)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "the repository contains no server that receives mail; apps/desktop/src/main/server.ts is a local dev preview only",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "mail-stays-on-mac",
+      "says": "Aplos Mail keeps your mail on your Mac",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md sections 3 and 17",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/main/store.ts (local aplos.db)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "local-database",
+      "says": "A local database of mail, drafts, events and settings lives in ~/Library/Application Support/Aplos Mail",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/main/electron.ts app.setName(\"Aplos Mail\") and engineInit(app.getPath(\"userData\")); apps/desktop/src/main/store.ts",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "retention-default",
+      "says": "Message text kept 90 days plus opened, starred or unread, up to 2 GB; older text refetched; metadata and search index kept",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 3.6",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "design",
+          "ref": "plans/00-roadmap.md section 8.3 #18",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "pending",
+      "verifiedAt": null,
+      "note": "Design commitment for the redesigned build; not in today's 0.2.x code (checked by grep on 2026-10-27). Verify with a test when it lands."
+    },
+    {
+      "id": "keychain-protected-secrets",
+      "says": "Sign-in tokens and saved AI keys are encrypted with a key the macOS keychain protects; the rest relies on FileVault",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 12.2 and section 3.8 (no encryption beyond FileVault)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/main/keyring.ts (AES-256-GCM data key wrapped by Electron safeStorage)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/keyring.test.ts",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "google-requests",
+      "says": "Google receives the app's requests for Gmail and Google Calendar",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md sections 5.1 and 5.5",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "local-models",
+      "says": "Ollama and LM Studio run on your Mac at their default addresses, so text sent to them stays there",
+      "pages": ["landing", "privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 8.3",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "AGENTS.md (default local ports)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "packages/contract/src/legacy/ask.ts Ollama and LM Studio default local base URLs",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "True at the default local addresses, which is how both the landing picker (\"running on your Mac at its default address\") and the privacy page state it; Settings lets the owner point them elsewhere."
+    },
+    {
+      "id": "remote-images-blocked",
+      "says": "Remote images load only when allowed per message or sender, through the image proxy without cookies; the server still sees a request",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 10 (remote images, image proxy)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "design",
+          "ref": "plans/00-roadmap.md section 8.3 #20",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "pending",
+      "verifiedAt": null,
+      "note": "Design commitment for the redesigned build; not in today's 0.2.x code (checked by grep on 2026-10-27). Verify with a test when it lands. ARCH 10 notes today's renderer CSP allows https: images directly."
+    },
+    {
+      "id": "update-check",
+      "says": "GitHub receives the app's update checks",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/main/updates.ts (electron-updater) and apps/desktop/package.json build.publish provider github",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/updates.test.ts",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "only-these-destinations",
+      "says": "Nothing else leaves the Mac besides Google, the chosen AI provider, allowed images and the update check",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/40-platform-quality.md Q5A item 5",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "network audit of the packaged redesigned build (not written yet)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "pending",
+      "verifiedAt": null,
+      "note": "Needs a network capture of the packaged build. The engine still contains account autodiscovery for round-2 providers (checkDomain), which round 1 must not expose."
+    },
+    {
+      "id": "no-telemetry",
+      "says": "No telemetry and no crash upload",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 14 item 6 and section 17",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "no telemetry or crashReporter call in apps/desktop/src/main (grep, 2026-10-27)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "diagnostics-local",
+      "says": "Logs, crash reports and diagnostics stay on the Mac unless the user exports them",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/ARCHITECTURE.md section 11 (never uploaded; crashReporter uploadToServer false)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Today the app writes no logs or diagnostics bundle, so this holds trivially; ARCH 11 adds them as local-only."
+    },
+    {
+      "id": "google-limited-use",
+      "says": "Google user data used only for in-app features, not sold, not for ads or training, never reaches an Aplos server; Google's Limited Use sentence quoted word for word",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "Limited Use sentence quoted word for word, with Google's two links, from the example on https://developers.google.com/workspace/workspace-api-user-data-developer-policy (fetched 2026-10-27, page last updated 2026-09-03); the site introduces it with \"As Google asks, Aplos Mail states:\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "design",
+          "ref": "research/email-clients/protocols/proto-google.md section 8.2",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "pending",
+      "verifiedAt": null,
+      "note": "https://developers.google.com/terms/api-services-user-data-policy (fetched 2026-10-27, last updated 2024-02-15) has no sample disclosure sentence; the Workspace policy's example was used. Pending because \"not used to train AI models\" and \"after you agree\" depend on no-training-providers and ai-consent."
+    },
+    {
+      "id": "site-no-tracking",
+      "says": "This website has no analytics, cookies, or third-party scripts or fonts; hosted on Vercel",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "test",
+          "ref": "grep of the built apps/web/dist for http(s) URLs on 2026-10-27: only links (Google policy, Google permissions) and the site itself; fonts self-hosted via @fontsource-variable/newsreader",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "apps/web/vercel.json and apps/web/README.md (Web Analytics and Speed Insights off)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Vercel project settings were not inspected (agents do not touch them). plans/40 Q5A item 6 adds scripts/check-web-external.mjs to make this a build check."
+    },
+    {
+      "id": "delete-data",
+      "says": "Disconnecting removes the account's mail, drafts and events; delete the data folder, plus the preferences file and the Aplos Mail Safe Storage keychain key outside it; revoke at myaccount.google.com/permissions",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "packages/engine/src/legacy/service.ts account.disconnect removes the account's threads, drafts and events",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/main/electron.ts userData path",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/package.json appId com.aplos.mail (~/Library/Preferences/com.aplos.mail.plist); Electron safeStorage keychain item \"Aplos Mail Safe Storage\" (attributes seen with security find-generic-password on the owner's Mac, 2026-10-27)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "When ARCH section 11 adds logs in ~/Library/Logs/Aplos Mail, add that folder to this paragraph."
+    },
+    {
+      "id": "privacy-contact",
+      "says": "Privacy questions go to privacy@aplos.email",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "owner",
+          "ref": "2026-10-27 owner decision: a free forwarding address on aplos.email (plans/00-roadmap.md section 8.3 #58)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "pending",
+      "verifiedAt": null,
+      "note": "Pending until the owner confirms the forwarding address is set up and delivers."
+    }
+  ]
+}

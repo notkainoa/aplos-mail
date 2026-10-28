@@ -1,0 +1,24 @@
+.pane {
+  background: var(--canvas);
+  box-shadow: var(--elev-pane);
+  transform: translateX(var(--move-carry)) rotate(var(--flight-rot));
+}
+
+.deck-size,
+.decked,
+.dock {
+  color: var(--ink);
+}
+
+.kbd-airline {
+  color: var(--ink);
+}
+
+.postal {
+  filter: none;
+}
+
+.flat {
+  transform: translate3d(4px, 0, 0) rotate(2deg);
+  rotate: 2deg;
+}

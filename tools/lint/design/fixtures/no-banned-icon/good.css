@@ -1,0 +1,16 @@
+.bookmark::before {
+  content: "";
+}
+
+.unread::before {
+  content: "\2022";
+}
+
+.arrow::after {
+  content: "\2192";
+  list-style: "- ";
+}
+
+.start {
+  content: "Start";
+}
