@@ -1,0 +1,37 @@
+# Shared brief: lane `ui-onboard` (Aplos Mail revamp, UI-screens thread), 2026-10-28
+
+You build part of Aplos Mail's new onboarding window. Aplos is the owner's keyboard-first macOS mail + calendar app (Electron, React, TypeScript, npm workspaces). The owner is rebuilding every screen in the "Paper" design. You are a UI agent: quality matters more than speed.
+
+## Read first, in this order (all paths relative to your worktree)
+1. `.claude/skills/aplos-design/SKILL.md` — MANDATORY; follow it exactly.
+2. `plans/DESIGN.md` §7.11 (onboarding window), §7.12 (first-sync screen), §7.1 (status slot table, reconnect sheet paragraph), §7.14, §7.15, §8 (keys), §9 (AI appearance), §10 (voice), §11 (accessibility), Appendix C (PR #21 findings F1-F14). DESIGN wins on rules, numbers and copy.
+3. `plans/30-ui-revamp.md` U8 (onboarding, first sync, consent, reconnect) — the "What ready means" rules and acceptance items.
+4. The mockups (visual target): `mockups/onboarding-welcome.html`, `onboarding-accounts.html`, `onboarding-ai.html`, `onboarding-permissions.html`, `onboarding-sync.html`, `onboarding-drill.html`, plus `mockups/tokens.css`, `shell.css`, `shell.js`. Each page lists its states in `<html data-states>`.
+5. Our thread's notes (not on your branch; read with git show): `git show origin/rv/thread/ui-screens:plans/ui-screens/map-onboard.md` (element-by-element map, unclear items with recommended readings), `git show origin/rv/thread/ui-screens:plans/ui-screens/gap-list.md` (section 4 = settled decisions: e.g. auto-open ONLY on a clean finish — a capped AI pass waits; Google is the only account row in round 1; no page titles; main and renderer both call Setup/end on close), `git show origin/rv/thread/ui-screens:plans/ui-screens/pr21-absorption.md` (what we take from PR #21 and the F-test names), `git show origin/rv/thread/ui-screens:apps/desktop/tests/ui-onboard/pending.test.ts` (the planned test names).
+6. The building blocks: `apps/desktop/src/renderer/ui/README.md` (compose, don't invent; closed variants; keys; accessibility), `apps/desktop/src/renderer/ui/props.ts` (frozen props: search for OnboardingStep, ChoiceRow, ChoiceGroup, ConsentCard, ProgressSegments, SyncCheckpoint, SyncAccount, ReconnectSheet, StepAction, TextField, Button, Text, ListBox, ListRow, FocusSlot, FocusLetter, Kbd, EmptyLine), the implementations in `apps/desktop/src/renderer/ui/onboarding/`, `ui/status/`, `ui/surfaces/`, `ui/controls/`, `ui/buttons-keys/`, `ui/list/`, and their tests for usage examples.
+7. The data surface: `apps/desktop/src/renderer/data/index.ts` and `README.md` (hooks `useSession`, `useAccounts`, `useSetupStatus`, `useConsent`, `useSettings`, `useFrames('connect', …)`, `useNow`, and `api.*`), `apps/desktop/src/renderer/data/standin.ts`. The contract: `packages/contract/src/` (schemas/session.ts `SetupStatus`/`SetupAccount`, schemas/account.ts, schemas/ai.ts `Consent`/`AiProvider`, api/ai.ts `Setup/*` `Consent/*` `Ai/*`, api/account.ts `Account/*`, api/native.ts `Window/*` `System/*`, wire.ts frames, status.ts reason codes). The renderer's command registry: `apps/desktop/src/renderer/commands/` (context `onboarding`; ControlSpec for onboarding's Return/Esc).
+8. `apps/desktop/src/renderer/onboarding/copy.ts` (already written): `reasonSentence`, `aiSentence`, `needsReconnect`, `isAdminBlock`. Use it for every reason-code sentence; do not write raw errors.
+
+## The data situation (important)
+Every hook and `api.*` in `renderer/data` is still a `notImplemented` stub; the `ui-shell` lane implements them on days 4-8. So build in three layers:
+- **Pure view model** (`*.model.ts` / `flow.ts`): plain functions from contract values (e.g. `SetupStatus`, `Account[]`, `Consent`, `AiProvider[]`, now) to exactly the props the components need, plus the decisions (can open, auto-open, which step, what Esc does). No React, no hooks. Fully unit-tested with node:test.
+- **Presentational components**: take the view model's output, compose `renderer/ui` parts only, report user intent through callbacks. Never style a control; lane CSS (one file per WP, tokens only, `var(--…)`) is only for layout of your own wrappers. Never animate layout; never a new colour, radius, button style, pill or ornament.
+- **Container** (thin): reads `renderer/data` hooks and calls `api.*`, feeds the model, wires callbacks. It must typecheck; it cannot run until ui-shell lands, and that's expected.
+The **preview gallery** (built by WP steps, see below) renders the presentational components with fixture inputs (contract-typed objects you write by hand from original demo data) so we can take headless screenshots now.
+
+## Hard rules
+- Headless only: never open a visible browser or app window, never move the mouse, take focus, or switch Spaces. Screenshots only with Playwright headless (`chromium.launch()` default headless) from `/Users/knewton/.t3/aplos-research/tools/node_modules/playwright` (require it by absolute path, as `mockups/shoot.cjs` does).
+- NEVER a sparkle, wand or star glyph for AI. No sky, gradient, airmail stripe, app icon, or page titles. AI-written text is the Newsreader serif via the components, never a badge.
+- Round 1 offers Google only. No Microsoft/iCloud/IMAP rows (the mockup's are round 2).
+- Copy follows DESIGN §10 exactly: no exclamation marks, buttons are verbs, never "Done" for a capped or failed pass, never a mailbox total, never mention Testing mode, verification or cost.
+- Demo data only: invented names and addresses on example domains (e.g. `jordan@example.com`). No real mail, addresses, keys or tokens. Never read or print `.env` or keys.
+- Never copy code, assets or wording from Avec, Tatem, Notion, Redakt or any other app. You may read PR #21's files for flow ideas (`git show 2d8884662ee61181d15efc474b1d1013578daee3:apps/desktop/src/renderer/components/Welcome.tsx`, `.../AddAccount.tsx`), but rewrite on the new parts; its review findings (Appendix C) say what was wrong with it.
+- Touch ONLY the files in your WP's list (new files). Do not edit `renderer/ui`, `renderer/data`, `renderer/shell`, `renderer/commands`, `renderer/main.tsx`, `App.tsx`, `packages/**`, or any existing file. If you need something from those, write it down in your final report as a REQUEST.
+- No git commands that change state (no add/commit/checkout/merge/push). I commit.
+- `node_modules` is a symlink to a shared install; never run `npm install`.
+
+## Verify before you report
+- `cd apps/desktop && npx tsc --noEmit -p .` — no errors in your files (report any pre-existing errors elsewhere separately).
+- Your node tests: `cd apps/desktop && npx tsx --test <your test files>` all pass. Tests go in `apps/desktop/tests/ui-onboard/` (node:test; `.test.ts` or `.test.tsx`). Name tests after the pending list where one matches.
+- Headless screenshots of every state you draw, light and dark, through the preview gallery; open each PNG and look at it next to the matching mockup state (render the mockup with `node mockups/shoot.cjs <page>` which writes to the gitignored `mockups/_shots/`). Fix what differs unless DESIGN says otherwise. Check: one filled button per screen, nothing under 11 px, no banned words or glyphs, hover never moves layout.
+- Final report: files written; what each state looks like vs the mockup; test and typecheck output tails; screenshot paths (keep PNGs under `/tmp/uionb-shots/<wp>/`, never in the repo); deviations from DESIGN or the mockup and why; REQUESTs to other lanes; open questions with your recommended answer.
