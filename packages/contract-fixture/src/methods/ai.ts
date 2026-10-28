@@ -15,6 +15,7 @@ import { actOn } from './mail';
 import { ownBlob } from './core';
 import { requireScope } from '@aplos/contract/access';
 import { clean, fail, getRows, must, plainHtml, type Part } from './util';
+import { askBlocks, askCitations, askProposals, askTimeline, type Block } from './ai-ask';
 
 type Feature = 'ask' | 'summaries' | 'drafts' | 'plans' | 'voice';
 
@@ -44,7 +45,6 @@ export const consentKey = (ai: Settings['ai']) =>
       return `${provider}\u0000${model}\u0000${host}`;
     })
     .join('\u0001');
-type Block = NonNullable<AskTurn['answer']>['blocks'][number];
 
 /**
  * AI on canned answers: summaries after a short delay on the engine clock, Ask with `progress` frames and citations, and
@@ -376,40 +376,12 @@ export function ai(fx: Fixture) {
         ...failure,
         ...script?.problem,
       });
-      const citations = script?.citations ?? found.map((t, i) => cite(t, i + 1));
+      const citations = askCitations(script, found, cite);
       // Paragraphs without `[n]` markers; each chip's place is a `cites` offset (FR-30).
-      const blocks: Block[] =
-        script?.blocks ??
-        (found.length
-          ? found.map((t, i) => {
-              const said = (t.summary.text ?? t.subject).replace(/[.\s]+$/, '');
-              return { text: `${said}.`, cites: [{ at: said.length, n: i + 1 }] };
-            })
-          : [{ text: 'I could not find anything about that in your mail.' }]);
+      const blocks: Block[] = askBlocks(script, found);
       const context_ = context?.threadId ? fx.store.get('Thread', context.threadId) : undefined;
       const target = context_ && allowed.has(context_.accountId) ? context_ : undefined;
-      const proposals: Proposal[] =
-        script?.proposals ??
-        (target && /\b(reply|answer|respond|write back)\b/i.test(question)
-          ? [
-              {
-                kind: 'reply',
-                id: `${turnId}-p1`,
-                consequence: 'Creates a draft reply. Nothing is sent.',
-                state: 'open',
-                draft: {
-                  accountId: target.accountId,
-                  mode: 'reply',
-                  threadId: target.id,
-                  to: target.participants
-                    .filter(p => !p.me && p.address)
-                    .map(p => clean({ address: p.address!, name: p.name })),
-                  subject: `Re: ${target.subject}`,
-                  html: `<p>Hi ${target.fromName.split(' ')[0]},</p><p>Thanks for this. I will get back to you shortly.</p>`,
-                },
-              },
-            ]
-          : []);
+      const proposals: Proposal[] = askProposals(script, target, turnId, question);
       const m = model('ask');
       const turn: AskTurn = clean({
         id: turnId,
@@ -450,58 +422,19 @@ export function ai(fx: Fixture) {
           steps: [{ ...step, state: stepState === 'running' ? 'error' : 'done' }],
         });
       };
-      const timeline: [number, () => void][] = [
-        [100, () => progress({ kind: 'step', step: { ...step, state: 'running' } })],
-      ];
-      if (failAt === 'step') timeline.push([400, fails('running', [])]);
-      else {
-        timeline.push([
-          400,
-          () => progress({ kind: 'step', step: { ...step, state: 'done', count: found.length } }),
-        ]);
-        // Each paragraph streams, then its chips at their offsets in the text streamed so far.
-        let streamed = 0;
-        blocks.forEach((b, i) => {
-          const sep = i ? '\n\n' : '';
-          const base = streamed + sep.length;
-          streamed = base + b.text.length;
-          timeline.push([
-            550 + 150 * i,
-            () => {
-              progress({ kind: 'text', delta: `${sep}${b.text}` });
-              for (const c of b.cites ?? []) {
-                const citation = citations.find(x => x.n === c.n);
-                if (citation) progress({ kind: 'citation', citation, at: base + c.at });
-              }
-            },
-          ]);
-          if (failAt === 'text' && i === 0) timeline.push([560, fails('done', [b])]);
-        });
-        const end = 550 + 150 * blocks.length;
-        const placed = new Set(blocks.flatMap(b => (b.cites ?? []).map(c => c.n)));
-        timeline.push(
-          [
-            end,
-            () => {
-              // Chips and cards appear as each becomes known, before the turn is stored.
-              for (const citation of citations)
-                if (!placed.has(citation.n)) progress({ kind: 'citation', citation });
-              for (const proposal of proposals) progress({ kind: 'proposal', proposal });
-            },
-          ],
-          [
-            end + 100,
-            () =>
-              finish({
-                answer: { blocks },
-                citations,
-                noSource: !found.length && !script?.citations?.length,
-                proposals,
-                steps: [{ ...step, state: 'done', count: found.length }],
-              }),
-          ],
-        );
-      }
+      const noSource = !found.length && !script?.citations?.length;
+      const timeline = askTimeline({
+        failAt,
+        found,
+        blocks,
+        citations,
+        proposals,
+        noSource,
+        step,
+        progress,
+        fails,
+        finish,
+      });
       const cancels = timeline.map(([ms, fn]) => fx.clock.after(ms, fn));
       fx.runs.set(runId, () => {
         cancels.forEach(c => c());
