@@ -28,7 +28,7 @@ Six threads run the lanes. One of them, the Integrator, keeps the shared branch 
 
 ## The plan in days
 
-Day 1 is the day you say go. If that is 28 October, day 18 is 14 November.
+Day 1 is the day you said go: 27 October 2026. Day 18 is 13 November and day 25 is 20 November.
 
 | Phase | Days | What happens | What you see |
 |---|---|---|---|
@@ -71,8 +71,8 @@ All free.
 - [x] Finish the design discussion in the mockups thread (done 27 October, folded into DESIGN.md).
 - [x] Confirm the Gmail limit: 6,000 units a minute per user (done 27 October).
 - [x] A separate free Groq key for tests (done 27 October, kept in this Mac's Keychain as `aplos-groq-test`).
-- [ ] Day 1: say go.
-- [ ] Day 1: add your spare Gmail account to the Google project's test users (skip if it is already there, or is the project's own account).
+- [x] Say go (27 October).
+- [x] Add your spare Gmail account to the Google project's test users (done 27 October).
 - [ ] Days 1-3: check which branch Vercel treats as production for aplos.email.
 - [ ] From about day 7: review features as they arrive, about 10 to 15 minutes each, when it suits you.
 - [ ] Days 14-16: about an hour of live checks on your own Gmail, including one send to yourself.
