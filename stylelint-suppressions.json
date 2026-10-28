@@ -1,0 +1,65 @@
+{
+  "apps/web/src/styles.css": {
+    "keyframe-block-no-duplicate-selectors": {
+      "count": 2
+    },
+    "no-descending-specificity": {
+      "count": 26
+    },
+    "no-duplicate-selectors": {
+      "count": 4
+    }
+  },
+  "apps/desktop/src/renderer/legacy/styles.css": {
+    "no-descending-specificity": {
+      "count": 51
+    },
+    "no-duplicate-selectors": {
+      "count": 8
+    }
+  },
+  "apps/desktop/src/renderer/legacy/styles/ask.css": {
+    "no-descending-specificity": {
+      "count": 13
+    }
+  },
+  "apps/desktop/src/renderer/legacy/styles/calendar.css": {
+    "no-descending-specificity": {
+      "count": 24
+    },
+    "no-duplicate-selectors": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/legacy/styles/focus.css": {
+    "no-descending-specificity": {
+      "count": 8
+    }
+  },
+  "apps/desktop/src/renderer/legacy/styles/reader.css": {
+    "no-descending-specificity": {
+      "count": 12
+    },
+    "no-duplicate-selectors": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/styles/settings-ai.css": {
+    "no-descending-specificity": {
+      "count": 6
+    },
+    "no-duplicate-selectors": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/renderer/legacy/ui/tokens.css": {
+    "no-descending-specificity": {
+      "count": 5
+    }
+  },
+  "apps/desktop/src/renderer/legacy/ui/ui.css": {
+    "no-descending-specificity": {
+      "count": 10
+    }
+  }
+}

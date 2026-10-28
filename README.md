@@ -10,7 +10,7 @@ An npm-workspaces monorepo. Run every command from the repo root.
 
 | Path | What it is |
 |---|---|
-| `apps/desktop` | The Electron app (macOS now; Windows and Linux would be more electron-builder targets). Its source, tests, scripts, assets and build config live here. Paths elsewhere in these docs, such as `src/engine` or `scripts/verify-release.mjs`, are relative to this folder. |
+| `apps/desktop` | The Electron app (macOS now; Windows and Linux would be more electron-builder targets). Its source, tests, scripts, assets and build config live here. Paths elsewhere in these docs, such as `src/main` or `scripts/verify-release.mjs`, are relative to this folder. |
 | `apps/web` | The marketing website and a draft privacy policy (Vite + React, static output). See `apps/web/README.md`. |
 | `packages/` | Reserved for shared code, such as the platform-neutral engine when an iOS app needs it (see DECISIONS.md). |
 | `scripts/launch.mjs` | Root shim for the desktop launcher. |
