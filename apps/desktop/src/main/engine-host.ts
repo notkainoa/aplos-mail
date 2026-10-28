@@ -17,56 +17,10 @@ import { assertCaller, external } from './security';
 import { claims, emit, applyAppearance } from './windows';
 import { nativeMethods, notify, invokeNative } from './native-methods';
 import { closing } from './lifecycle';
+import { legacyEngineMethods } from '@aplos/contract/allowlists';
+import { dataDirOverride } from './test-mode';
 
-const methods = new Set([
-  'state.get',
-  'threads.page',
-  'capabilities.get',
-  'symbols.render',
-  'settings.update',
-  'account.select',
-  'account.connect',
-  'account.discover',
-  'domain.check',
-  'account.disconnect',
-  'sync',
-  'demo.reset',
-  'thread.update',
-  'thread.undo',
-  'home.hide',
-  'search',
-  'draft.save',
-  'draft.delete',
-  'draft.send',
-  'draft.undoSend',
-  'ai.summarize',
-  'ai.summarizing',
-  'ai.polish',
-  'ai.draft',
-  'ai.ask',
-  'ai.models',
-  'ai.test',
-  'ai.keys',
-  'ai.key.set',
-  'ai.key.delete',
-  'ai.key.test',
-  'ai.cancel',
-  'ai.transcribe',
-  'conversation.delete',
-  'workflow.status',
-  'workflow.enable',
-  'workflow.code',
-  'workflow.disable',
-  'calendar.list',
-  'calendar.extract',
-  'calendar.save',
-  'calendar.delete',
-  'attachment.get',
-  'sender.block',
-  'sender.unblock',
-  'thread.unsubscribe',
-  'data.export',
-]);
+const methods = new Set<string>(legacyEngineMethods);
 type Engine = ReturnType<typeof connectEngine>;
 /** The mailbox engine in its utility process; replaced if that process stops unexpectedly. */
 let service: Engine | undefined;
@@ -205,9 +159,7 @@ function restartEngine(init: EngineInit, lastError?: unknown) {
   );
 }
 async function bootEngine() {
-  service = await startEngine(
-    await engineInit(process.env.APLOS_DATA_DIR || app.getPath('userData')),
-  );
+  service = await startEngine(await engineInit(dataDirOverride ?? app.getPath('userData')));
   ipcMain.handle('aplos:invoke', async (event, method: unknown, payload: unknown) => {
     assertCaller(event);
     if (typeof method !== 'string') throw new Error('Invalid application method.');
