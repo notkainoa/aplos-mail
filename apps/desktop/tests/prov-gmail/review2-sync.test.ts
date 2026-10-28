@@ -107,7 +107,8 @@ test('review2-sync a message whose fetch always fails is quarantined after 3 pol
       String(r.emu.mailbox.history.currentId),
       'the cursor waits while the message may still succeed',
     );
-    await r.clock.advance(60_000);
+    // One failure counts per entry per 5 minutes, so a short outage cannot quarantine a healthy message.
+    await r.clock.advance(6 * 60_000);
     await historyPoll(r);
   }
   const history = r.store.states.get('history')!;
@@ -138,7 +139,10 @@ test('review2-sync a message whose fetch always fails does not hold the Inbox wi
   poison.add(badThread);
   for (const id of r.emu.mailbox.threadMessageIds(badThread)) poison.add(id);
 
-  await r.drive({ until: windowDone(r), maxSteps: 60 });
+  for (let round = 0; round < 6 && phaseOf(r, 'window:inbox') !== 'done'; round++) {
+    await r.drive({ until: windowDone(r), maxSteps: 60 });
+    await r.clock.advance(6 * 60_000);
+  }
   assert.equal(phaseOf(r, 'window:inbox'), 'done', 'the window round ends');
   const quarantined = r.store.commits.flatMap(c => c.result.quarantine ?? []).map(q => q.item);
   assert.equal(quarantined.length, 1);

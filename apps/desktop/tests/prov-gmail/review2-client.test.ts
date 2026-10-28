@@ -235,6 +235,31 @@ const ROWS: Row[] = [
     retryAfterMs: 0,
   },
   {
+    name: 'throttle: a retry time days away is capped at 25 hours',
+    failure: {
+      status: 429,
+      body: google(
+        429,
+        'rateLimitExceeded',
+        'Rate limit exceeded. Retry after 2026-12-31T00:00:00.000Z',
+      ),
+    },
+    cls: 'throttle',
+    retryAfterMs: 25 * 60 * 60 * 1000,
+  },
+  {
+    name: 'throttle: a retry time without a zone is not trusted',
+    failure: {
+      status: 429,
+      body: google(
+        429,
+        'rateLimitExceeded',
+        'Rate limit exceeded. Retry after 2026-10-27T16:00:45',
+      ),
+    },
+    cls: 'throttle',
+  },
+  {
     name: 'throttle: no hint at all gives no retryAfterMs',
     failure: { status: 429, body: google(429, 'rateLimitExceeded', 'Rate limit exceeded.') },
     cls: 'throttle',
@@ -427,7 +452,7 @@ test('prov-gmail review2 D9 a first search asks for 10 hits (about 210 units); a
   assert.equal(listParam(r, 'maxResults'), '4', 'a smaller limit still wins');
 });
 
-test('prov-gmail review2 D9 a hit that could not be fetched is logged, and a search of only failures throws', async () => {
+test('prov-gmail review2 D9 a search with a hit that could not be fetched throws instead of hiding it', async () => {
   let r: Rig | undefined;
   const faults = failParts(() => r!.emu, 500);
   r = await rig({ threads: 200, adapter: { fetch: faults.fetch } });
@@ -435,14 +460,16 @@ test('prov-gmail review2 D9 a hit that could not be fetched is logged, and a sea
   const full = await r.adapter.search!({ text: 'subject:Notes', limit: 25 }, r.ctx());
   faults.state.on = true;
   r.log.lines.length = 0;
-  const result = await r.adapter.search!({ text: 'subject:Notes', limit: 25 }, r.ctx());
   assert.ok(full.remoteThreadIds.length > 1, 'the seed has several hits');
-  assert.equal(result.remoteThreadIds.length, full.remoteThreadIds.length - 1);
+  await assert.rejects(
+    r.adapter.search!({ text: 'subject:Notes', limit: 25 }, r.ctx()),
+    (error: unknown) => error instanceof ProviderError && error.error.class === 'transient',
+  );
   const refused = r.log.lines.filter(l => l.event === 'sync.gmail.request_refused');
   assert.equal(refused.length, 2, 'the part itself and the incomplete search');
   assert.match(JSON.stringify(refused.at(-1)), /searchIncomplete/);
 
-  // Every part fails: nothing to show, so the user is told instead of seeing "no results".
+  // Every part fails: the user is told instead of seeing "no results".
   const all = failParts(() => r!.emu, 500, true);
   r = await rig({ threads: 200, adapter: { fetch: all.fetch } });
   await assert.rejects(

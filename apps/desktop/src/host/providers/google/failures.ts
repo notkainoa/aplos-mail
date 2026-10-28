@@ -11,18 +11,28 @@ export const FAILURES_KEY = 'fetch.failures';
 export const MAX_ATTEMPTS = 3;
 /** Entries remembered at most; the oldest are forgotten first. */
 const KEEP = 500;
+/** One failure counts per entry per interval, so a short 5xx spell cannot quarantine a healthy message. */
+export const COUNT_INTERVAL_MS = 5 * 60_000;
+/** A count with no new failure for this long is forgotten (the entry left the page or round, or got better). */
+const FORGET_MS = 6 * 60 * 60_000;
 
-function readCounts(memory: ReadonlyMap<string, string>): Map<string, number> {
+interface Count {
+  n: number;
+  at: number;
+}
+
+function readCounts(memory: ReadonlyMap<string, string>, now: number): Map<string, Count> {
   try {
-    const parsed = JSON.parse(memory.get(FAILURES_KEY) ?? '{}') as Record<string, number>;
-    return new Map(Object.entries(parsed));
+    const parsed = JSON.parse(memory.get(FAILURES_KEY) ?? '{}') as Record<string, Count>;
+    const live = Object.entries(parsed).filter(([, c]) => c && now - c.at < FORGET_MS);
+    return new Map(live);
   } catch {
     return new Map();
   }
 }
 
 function countWrites(
-  counts: Map<string, number>,
+  counts: Map<string, Count>,
   memory: ReadonlyMap<string, string>,
 ): Record<string, string | null> {
   while (counts.size > KEEP) counts.delete(counts.keys().next().value!);
@@ -41,17 +51,19 @@ export function settleFailures(
   outcome: FetchOutcome,
   attempted: readonly string[],
 ): Record<string, string | null> {
-  const counts = readCounts(ctx.memory);
+  const now = ctx.clock.now();
+  const counts = readCounts(ctx.memory, now);
   const pending = new Set(outcome.pending);
   for (const entry of attempted) {
     if (!pending.has(entry)) counts.delete(entry);
   }
   const given = new Set<string>();
   for (const { entry, item, error } of outcome.failed) {
-    const attempts = (counts.get(entry) ?? 0) + 1;
+    const prior = counts.get(entry);
+    const attempts = prior && now - prior.at < COUNT_INTERVAL_MS ? prior.n : (prior?.n ?? 0) + 1;
     counts.delete(entry);
     if (attempts < MAX_ATTEMPTS) {
-      counts.set(entry, attempts);
+      counts.set(entry, { n: attempts, at: prior && attempts === prior.n ? prior.at : now });
       continue;
     }
     given.add(entry);

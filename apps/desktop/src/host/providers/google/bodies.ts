@@ -160,10 +160,16 @@ async function resolveBodyParts(
       const { messageId, attachmentId } = chunk[i];
       if (outcome.ok && outcome.data.data !== undefined)
         out.parts.set(`${messageId}/${attachmentId}`, outcome.data.data);
+      else if (!outcome.ok && isPermanent(outcome.error)) return;
       else out.unresolved.add(messageId);
     });
   }
   return out;
+}
+
+/** A part Google says is gone or forbidden stays empty; marking its message partial would refetch the thread on every open. */
+function isPermanent(error: ProviderError): boolean {
+  return error.error.class === 'permanent' || error.error.class === 'permission';
 }
 
 function fetchPartChunk(client: GmailClient, chunk: PartWant[], lane: 'interactive' | 'prefetch') {

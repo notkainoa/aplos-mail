@@ -24,7 +24,7 @@ export const searchPageSize = (query: ServerSearch): number =>
 
 /**
  * `SearchResult` has no partial flag, so a hit the metadata batch could not fetch (a transient part failure) is
- * logged, and a search that came back with nothing but such failures throws so the user can press Enter again.
+ * logged and the search throws, so the user presses Enter again instead of paging past hits that were never shown.
  */
 function reportIncomplete(
   ctx: AdapterContext,
@@ -40,7 +40,7 @@ function reportIncomplete(
     providerMessage: `${fetched.pending.length} of ${wanted} hits not fetched`,
   };
   ctx.log.event('sync.gmail.request_refused', { error });
-  if (fetched.facts.length === 0) throw new ProviderError(error);
+  throw new ProviderError(error);
 }
 
 export async function search(

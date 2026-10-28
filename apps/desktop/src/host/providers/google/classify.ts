@@ -151,11 +151,14 @@ function budgetOf(method: string): string {
   return 'gmail';
 }
 
+/** A time named in the text is trusted up to this far ahead; a send limit really can run for most of a day. */
+const MAX_TEXT_RETRY_MS = 25 * 60 * 60 * 1000;
+
 /** "User-rate limit exceeded.  Retry after 2026-10-28T07:00:00.000Z (Mail sending)": Google names the time in the text. */
-function retryAfterInText(text: string): number | undefined {
-  const match = /retry after (\d{4}-\d{2}-\d{2}T[\d:.]+Z?)/i.exec(text);
+function retryAfterInText(text: string, now: number): number | undefined {
+  const match = /retry after (\d{4}-\d{2}-\d{2}T[\d:.]+Z)/i.exec(text);
   const at = match ? Date.parse(match[1]) : NaN;
-  return Number.isNaN(at) ? undefined : at;
+  return Number.isNaN(at) ? undefined : Math.min(at, now + MAX_TEXT_RETRY_MS);
 }
 
 function missingScopes(headers: GoogleFailure['headers']): string[] | undefined {
@@ -281,7 +284,7 @@ function classifySendLimit(api: ApiReading): Classified | undefined {
   const { now } = api.failure;
   if (!SEND_LIMIT_TEXT.test(text) && !isSendQuota(api)) return undefined;
   const at =
-    retryAfterInText(text) ??
+    retryAfterInText(text, now) ??
     (retryAfterMs !== undefined ? now + retryAfterMs : nextPacificMidnight(now));
   return make('send_limit', reason ?? 'rateLimitExceeded', {
     resumeAt: at,
@@ -319,7 +322,7 @@ function classifyDaily(api: ApiReading): Classified | undefined {
 /** The `Retry-After` header wins; Google's own "Retry after <ISO time>" sentence is the fallback. */
 function retryHint(api: ApiReading): { retryAfterMs?: number } {
   if (api.retryAfterMs !== undefined) return api.withRetry;
-  const at = retryAfterInText(api.text);
+  const at = retryAfterInText(api.text, api.failure.now);
   return at !== undefined ? { retryAfterMs: Math.max(0, at - api.failure.now) } : {};
 }
 
