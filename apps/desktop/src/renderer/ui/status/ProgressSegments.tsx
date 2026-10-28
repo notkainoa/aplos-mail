@@ -6,7 +6,7 @@
  * the ready check.
  */
 import type { CSSProperties } from 'react';
-import type { ComponentPropsMap, ErrorLineKind, ProgressSegmentsProps, SegmentState, SyncAccount, SyncCheckpoint } from '../props';
+import type { ComponentPropsMap, ErrorLineKind, ProgressSegment, ProgressSegmentsProps, SegmentState, SyncAccount, SyncCheckpoint } from '../props';
 import { PartButton, PartIcon, formatCount, formatTime } from '../surfaces/parts';
 import { SpinnerGlyph } from './Spinner';
 
@@ -86,6 +86,18 @@ function Segment({ cp }: { cp: SyncCheckpoint }) {
   const indeterminate = cp.state === 'current' && fraction === null;
   return (
     <i className="ui-progress-segments__seg" data-state={cp.state} data-step={cp.step}>
+      {filling ? <i className="ui-progress-segments__fill" style={{ '--fill': String(fraction) } as CSSProperties} /> : null}
+      {indeterminate ? <i className="ui-progress-segments__runner" /> : null}
+    </i>
+  );
+}
+
+function PlainSegment({ segment }: { segment: ProgressSegment }) {
+  const fraction = segment.value === undefined ? null : Math.min(1, Math.max(0, segment.value));
+  const filling = (segment.state === 'current' || segment.state === 'partial') && fraction !== null;
+  const indeterminate = segment.state === 'current' && fraction === null;
+  return (
+    <i className="ui-progress-segments__seg" data-state={segment.state} title={segment.label}>
       {filling ? <i className="ui-progress-segments__fill" style={{ '--fill': String(fraction) } as CSSProperties} /> : null}
       {indeterminate ? <i className="ui-progress-segments__runner" /> : null}
     </i>
@@ -201,6 +213,19 @@ export function ProgressSegments(props: ComponentPropsMap['ProgressSegments']) {
           aria-valuetext={`Importing ${formatCount(done)} of ${formatCount(of)}`}
         >
           <i className="ui-progress-segments__fill" style={{ '--fill': String(fraction) } as CSSProperties} />
+        </div>
+      </div>
+    );
+  }
+
+  if (props.variant === 'segments') {
+    const current = props.segments.find((s) => s.state === 'current' || s.state === 'paused' || s.state === 'failed');
+    return (
+      <div className="ui-progress-segments" data-variant="segments">
+        <div className="ui-progress-segments__bar" role="progressbar" aria-label={props.label} aria-valuetext={current?.label}>
+          {props.segments.map((s) => (
+            <PlainSegment key={s.label} segment={s} />
+          ))}
         </div>
       </div>
     );

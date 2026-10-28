@@ -597,6 +597,7 @@
 .ui-palette__group { color: var(--dim); font: var(--type-small); }
 .ui-palette__num { flex: none; width: var(--space-4); color: var(--dim); font: var(--type-small); text-align: center; }
 .ui-palette__option[data-active="true"] .ui-palette__num { color: var(--ink-2); }
+.ui-palette__icon-gap { flex: none; width: var(--icon); height: var(--icon); }
 @media (hover: hover) {
   .ui-palette__option:hover { background: var(--hover); }
   .ui-palette__option[data-active="true"]:hover { background: var(--puck); }

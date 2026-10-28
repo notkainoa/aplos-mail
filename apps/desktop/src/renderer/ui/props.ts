@@ -1883,7 +1883,7 @@ export interface CalendarEventData {
 /** An RSVP answer (Y / M / N, DESIGN §7.8). */
 export type RsvpAnswer = 'yes' | 'maybe' | 'no';
 
-/** One guest line: "Going", "Maybe", "Declined", "No reply yet" (calendar-event.html). */
+/** One guest line: "Going", "Maybe", "Declined", "Not answered" (calendar-event.html; DESIGN 10 bans "No reply yet"). */
 export interface EventGuest {
   /** Display name. */
   name: string;

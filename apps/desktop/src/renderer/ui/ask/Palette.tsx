@@ -227,7 +227,7 @@ export function Palette(props: PaletteProps) {
                             onClick={() => onRun(item.id)}
                           >
                             {empty && number <= 9 ? <span className="ui-palette__num">{number}</span> : null}
-                            <Icon name={item.icon} />
+                            {item.icon ? <Icon name={item.icon} /> : <span className="ui-palette__icon-gap" aria-hidden="true" />}
                             <span className="ui-palette__label" dir="auto">
                               <MatchedLabel label={item.label} matches={item.matches} />
                             </span>
