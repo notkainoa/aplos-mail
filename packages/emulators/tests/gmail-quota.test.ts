@@ -58,7 +58,10 @@ test('grandfathered projects pay the old prices', async () => {
   const { api, emu } = await setup({ threads: 3, grandfathered: true });
   const threadId = (await api('/threads?maxResults=1')).json.threads[0].id;
   await api(`/threads/${threadId}?format=full`);
-  assert.deepEqual(emu.log.filter(e => e.service === 'gmail').map(e => e.units), [10, 10]);
+  assert.deepEqual(
+    emu.log.filter(e => e.service === 'gmail').map(e => e.units),
+    [10, 10],
+  );
 });
 
 test('a request that would pass the limit is refused, one that exactly fits is not', async () => {
@@ -91,7 +94,11 @@ test('chargeRefused counts refused requests against the window', async () => {
   await api('/messages');
   assert.equal(emu.meter.unitsInWindow(), 10);
   assert.equal(emu.log.at(-1)!.units, 5);
-  assert.equal(emu.meter.perMinuteSeries().reduce((s, m) => s + m.units, 0), 5, 'the series only counts accepted units');
+  assert.equal(
+    emu.meter.perMinuteSeries().reduce((s, m) => s + m.units, 0),
+    5,
+    'the series only counts accepted units',
+  );
   assert.equal(emu.meter.peakWindow(), 10);
 });
 
@@ -102,7 +109,10 @@ test('per-minute series and peak window track what was accepted', async () => {
   await clock.advanceTo(minute + 90_000);
   for (let i = 0; i < 2; i++) await api('/messages'); // 10 units in the second minute
   const series = emu.meter.perMinuteSeries();
-  assert.deepEqual(series.map(s => s.units), [20, 10]);
+  assert.deepEqual(
+    series.map(s => s.units),
+    [20, 10],
+  );
   assert.equal(series[1].minuteStart - series[0].minuteStart, 60_000);
   // The first 20 units had left the 60 s window by the time the next 10 arrived.
   assert.equal(emu.meter.peakWindow(), 20);
@@ -111,7 +121,9 @@ test('per-minute series and peak window track what was accepted', async () => {
 
 test('0.2.3 first sync: 500 full threads at four in parallel hit the wall after about 50', async () => {
   const { api, emu } = await setup({ threads: 120, latencyMs: 150 });
-  const ids = (await api('/threads?maxResults=120&includeSpamTrash=true')).json.threads.map((t: { id: string }) => t.id) as string[];
+  const ids = (await api('/threads?maxResults=120&includeSpamTrash=true')).json.threads.map(
+    (t: { id: string }) => t.id,
+  ) as string[];
   const outcomes: number[] = [];
   let next = 0;
   const worker = async () => {

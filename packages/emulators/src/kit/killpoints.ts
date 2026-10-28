@@ -48,21 +48,29 @@ export function createKillSwitch(): KillSwitch {
   const armed = new Map<string, number>();
 
   return {
-    arm(name, options = {}) { armed.set(name, options.after ?? 0); },
+    arm(name, options = {}) {
+      armed.set(name, options.after ?? 0);
+    },
 
     // An arrow function so it can be passed around as a bare hook without losing its closure.
     checkpoint: (name: string): void => {
       hits[name] = (hits[name] ?? 0) + 1;
       const passesLeft = armed.get(name);
       if (passesLeft === undefined) return;
-      if (passesLeft > 0) { armed.set(name, passesLeft - 1); return; }
+      if (passesLeft > 0) {
+        armed.set(name, passesLeft - 1);
+        return;
+      }
       // One kill per arming, so the restarted engine is not killed again at the same point.
       armed.delete(name);
       kills.push(name);
       throw new KilledError(name);
     },
 
-    disarm(name) { if (name === undefined) armed.clear(); else armed.delete(name); },
+    disarm(name) {
+      if (name === undefined) armed.clear();
+      else armed.delete(name);
+    },
     hits,
     kills,
   };

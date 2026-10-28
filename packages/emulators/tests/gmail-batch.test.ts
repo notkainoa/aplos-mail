@@ -5,29 +5,46 @@ import { sendBatch, setup } from './gmail-helpers';
 
 test('each batch part is answered, metered and logged on its own', async () => {
   const h = await setup({ threads: 6, unitsPerMinute: 10_000_000 });
-  const ids = (await h.api('/messages?maxResults=2')).json.messages.map((m: any) => m.id) as string[];
+  const ids = (await h.api('/messages?maxResults=2')).json.messages.map(
+    (m: any) => m.id,
+  ) as string[];
   h.emu.log.length = 0;
   const { status, answers } = await sendBatch(h.emu, h.token, [
-    { path: `/messages/${ids[0]}?format=metadata&metadataHeaders=Subject&fields=id,payload/headers` },
+    {
+      path: `/messages/${ids[0]}?format=metadata&metadataHeaders=Subject&fields=id,payload/headers`,
+    },
     { path: '/messages/00000000000000ff?format=minimal' }, // well-formed but unknown
     { path: `/messages/${ids[1]}/modify`, method: 'POST', body: { addLabelIds: ['STARRED'] } },
     { path: '/profile' },
   ]);
   assert.equal(status, 200);
-  assert.deepEqual(answers.map(a => a.contentId), ['item1', 'item2', 'item3', 'item4']);
-  assert.deepEqual(answers.map(a => a.status), [200, 404, 200, 200]);
-  assert.deepEqual(Object.keys(answers[0].json).sort(), ['id', 'payload'], 'fields masks apply inside batch parts');
+  assert.deepEqual(
+    answers.map(a => a.contentId),
+    ['item1', 'item2', 'item3', 'item4'],
+  );
+  assert.deepEqual(
+    answers.map(a => a.status),
+    [200, 404, 200, 200],
+  );
+  assert.deepEqual(
+    Object.keys(answers[0].json).sort(),
+    ['id', 'payload'],
+    'fields masks apply inside batch parts',
+  );
   assert.equal(answers[1].json.error.errors[0].reason, 'notFound');
   assert.ok(h.emu.mailbox.getMessage(ids[1])!.labelIds.includes('STARRED'));
 
   const batchEntry = h.emu.log.find(e => e.apiMethod === 'gmail.batch')!;
   const parts = h.emu.log.filter(e => e.batch === batchEntry.seq);
-  assert.deepEqual(parts.map(p => [p.apiMethod, p.units, p.status]), [
-    ['gmail.users.messages.get', 20, 200],
-    ['gmail.users.messages.get', 20, 404],
-    ['gmail.users.messages.modify', 5, 200],
-    ['gmail.users.getProfile', 1, 200],
-  ]);
+  assert.deepEqual(
+    parts.map(p => [p.apiMethod, p.units, p.status]),
+    [
+      ['gmail.users.messages.get', 20, 200],
+      ['gmail.users.messages.get', 20, 404],
+      ['gmail.users.messages.modify', 5, 200],
+      ['gmail.users.getProfile', 1, 200],
+    ],
+  );
   assert.equal(batchEntry.units, 0, 'the envelope is free; the parts pay');
 });
 
@@ -40,17 +57,28 @@ test('batching saves round trips, not quota: parts hit the unit meter one by one
     { path: `/messages/${id}?format=metadata` }, // refused
     { path: '/profile' }, // also refused, the window is full
   ]);
-  assert.deepEqual(answers.map(a => a.status), [200, 200, 403, 403]);
+  assert.deepEqual(
+    answers.map(a => a.status),
+    [200, 200, 403, 403],
+  );
   assert.equal(answers[2].json.error.errors[0].reason, 'rateLimitExceeded');
   assert.equal(h.emu.meter.unitsInWindow(), 45);
 });
 
 test('more than 100 parts is a 400, exactly 100 is fine', async () => {
   const h = await setup({ unitsPerMinute: 10_000_000 });
-  const tooMany = await sendBatch(h.emu, h.token, Array.from({ length: 101 }, () => ({ path: '/profile' })));
+  const tooMany = await sendBatch(
+    h.emu,
+    h.token,
+    Array.from({ length: 101 }, () => ({ path: '/profile' })),
+  );
   assert.equal(tooMany.status, 400);
   assert.match(tooMany.json.error.message, /more than 100/);
-  const hundred = await sendBatch(h.emu, h.token, Array.from({ length: 100 }, () => ({ path: '/labels/INBOX' })));
+  const hundred = await sendBatch(
+    h.emu,
+    h.token,
+    Array.from({ length: 100 }, () => ({ path: '/labels/INBOX' })),
+  );
   assert.equal(hundred.status, 200);
   assert.equal(hundred.answers.length, 100);
   assert.equal((await sendBatch(h.emu, h.token, [])).status, 400);
@@ -72,12 +100,20 @@ test('the refusal probability curve: none up to 10, about 1.2% at 25, about 19% 
   assert.ok(batchRefusalProbability(100) > 0.19);
 });
 
-async function refusalRate(size: number, batches: number, seed: number): Promise<{ rate: number; pattern: number[] }> {
+async function refusalRate(
+  size: number,
+  batches: number,
+  seed: number,
+): Promise<{ rate: number; pattern: number[] }> {
   const h = await setup({ seed, unitsPerMinute: 100_000_000, concurrency: 1000 });
   let refused = 0;
   const pattern: number[] = [];
   for (let i = 0; i < batches; i++) {
-    const { answers } = await sendBatch(h.emu, h.token, Array.from({ length: size }, () => ({ path: '/profile' })));
+    const { answers } = await sendBatch(
+      h.emu,
+      h.token,
+      Array.from({ length: size }, () => ({ path: '/profile' })),
+    );
     assert.equal(answers.length, size);
     for (const [index, answer] of answers.entries()) {
       if (answer.status === 429) {
