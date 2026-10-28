@@ -3,10 +3,11 @@
  * "Later until"), through the same date presets; Done, bookmark and trash are the list's. A pure table, so the shell can
  * read it without a component.
  */
+import { useMemo } from 'react';
 import type { CommandHandlers } from '../../commands';
+import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import type { ListActions } from '../lists/listActions';
 import { navigationCommands } from '../lists/listCommands';
-import { useCommandTable, type CommandTable, type Register } from '../lists/useCommandTable';
 
 /** The list's actions plus the picker. */
 export interface LaterActions extends ListActions {
@@ -18,7 +19,7 @@ function run(action: () => void): CommandHandlers {
   return { run: () => action() };
 }
 
-export function commandsForLater(actions: LaterActions): CommandTable {
+export function commandsForLater(actions: LaterActions): CommandHandlerTable {
   return {
     ...navigationCommands(actions),
     'mail.done': run(() => actions.done()),
@@ -30,6 +31,7 @@ export function commandsForLater(actions: LaterActions): CommandTable {
 }
 
 /** Attaches Later's handlers; they detach when the screen unmounts. */
-export function useLaterKeys(register: Register, actions: LaterActions): void {
-  useCommandTable(register, commandsForLater(actions));
+export function useLaterKeys(actions: LaterActions): void {
+  const table = useMemo(() => commandsForLater(actions), [actions]);
+  useRegisterCommands(table);
 }

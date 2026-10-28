@@ -6,7 +6,13 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { CommandContext, Registry } from '../../commands';
 import { api, undoStack, type HoldController, type ThreadId } from '../../data';
-import { dismissToast, pushToast, UNDO_TOAST_MS } from '../../shell';
+import {
+  dismissToast,
+  pushToast,
+  UNDO_TOAST_MS,
+  useRegisterCommands,
+  useShellRegistry,
+} from '../../shell';
 import type { CommitKind } from '../../ui/props';
 import {
   createHomeActions,
@@ -16,12 +22,11 @@ import {
   type OpenHow,
   type RunStatus,
 } from './homeActions';
-import { attachHomeCommands } from './homeCommands';
+import { commandsForHome } from './homeCommands';
 
 /** The screen's inputs to its actions. */
 export interface HomeActionInputs {
   readonly snapshot: RefObject<HomeSnapshot>;
-  readonly registry: Registry;
   /** The command context a command run from here (Space on a reply) gets. */
   readonly context: () => CommandContext;
   readonly hold: HoldController;
@@ -60,6 +65,7 @@ function undoLabelOf(registry: Registry, commandId: string, fallback: string): s
 
 /** The actions for one mounted Home, attached to `registry` until it unmounts. */
 export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
+  const { registry } = useShellRegistry();
   const latest = useRef(inputs);
   useEffect(() => {
     latest.current = inputs;
@@ -91,21 +97,22 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
         setRemindOffer(id !== null);
       },
       reminderOffer: () => offer.current,
-      runCommand: id => statusOf(now().registry.run(id, now().context())),
+      runCommand: id => statusOf(registry.run(id, now().context())),
       openThread: (id, how) => now().openThread(id, how),
       openLow: () => now().openLow(),
       oneByOne: () => now().oneByOne(),
       openMore: () => now().openMore(),
-      undoLabel: (commandId, fallback) => undoLabelOf(now().registry, commandId, fallback),
+      undoLabel: (commandId, fallback) => undoLabelOf(registry, commandId, fallback),
     };
     return createHomeActions(deps);
-  }, []);
+  }, [registry]);
 
-  const { registry, oneByOne, openMore } = inputs;
-  useEffect(
-    () => attachHomeCommands(registry, actions, { oneByOne, more: openMore, undo: undoLast }),
-    [registry, actions, oneByOne, openMore],
+  const { oneByOne, openMore } = inputs;
+  const table = useMemo(
+    () => commandsForHome(actions, { oneByOne, more: openMore, undo: undoLast }),
+    [actions, oneByOne, openMore],
   );
+  useRegisterCommands(table);
   return { actions, remindOffer };
 }
 

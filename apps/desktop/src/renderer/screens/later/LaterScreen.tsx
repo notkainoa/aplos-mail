@@ -4,8 +4,7 @@
  * The keyboard never needs the drag. A thread that comes back from Later shows on Home under "Back from Later"; Clear
  * from Home sends it here again, to Overdue. Every key is the registry's.
  */
-import { useMemo, useReducer, useRef, useState } from 'react';
-import type { Registry } from '../../commands';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { api, toIsoDate, useNow, useSettings, type AccountId } from '../../data';
 import { dismissToast, pushToast } from '../../shell';
 import { ListBox, ListGroup } from '../../ui/list';
@@ -30,8 +29,6 @@ import { groupDomId, useLaterDrag } from './useLaterDrag';
 export interface LaterScreenProps {
   /** One account, or absent for All accounts. */
   readonly accountId?: AccountId;
-  /** The registry the keys and handlers use; the shell's once it shares one. Default: Later's own. */
-  readonly registry?: Registry;
   /** Open a thread in the reader (the reader lane owns it; absent until it lands). */
   readonly onOpen?: (id: string, kind: OpenKind) => void;
 }
@@ -53,7 +50,7 @@ function useHeldGroups(next: LaterGroup[], held: boolean): LaterGroup[] {
 
 function BookmarksBody(props: LaterScreenProps) {
   const list = useMailList(BOOKMARKS_CONFIG, props);
-  useListKeys(list.register, list.actions);
+  useListKeys(list.actions);
   return <MailListView list={list} />;
 }
 
@@ -91,8 +88,16 @@ function LaterBody(props: LaterScreenProps) {
     setAnchor(document.getElementById(rowDomId(LATER_CONFIG, id)));
     dispatch({ type: 'open', id, today: toIsoDate(nowMs), first: presets[0]?.id ?? 'tomorrow' });
   };
-  const actions: LaterActions = { ...list.actions, openPicker };
-  useLaterKeys(list.register, actions);
+  const latestPicker = useRef(openPicker);
+  useEffect(() => {
+    latestPicker.current = openPicker;
+  });
+  const openLatestPicker = useCallback((key?: string) => latestPicker.current(key), []);
+  const actions = useMemo<LaterActions>(
+    () => ({ ...list.actions, openPicker: openLatestPicker }),
+    [list.actions, openLatestPicker],
+  );
+  useLaterKeys(actions);
 
   const { drag, handlers } = useLaterDrag({
     config: LATER_CONFIG,
@@ -184,7 +189,7 @@ function LaterGroups({ list, groups, nowMs, drag, onAction }: LaterGroupsProps) 
 export function LaterScreen(props: LaterScreenProps) {
   const [which, setWhich] = useState<Which>('later');
   return (
-    <div>
+    <div className="aplos-list-column">
       <PageHead>
         <Puck
           kind="segmented"

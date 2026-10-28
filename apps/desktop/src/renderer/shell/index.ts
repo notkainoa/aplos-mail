@@ -10,7 +10,7 @@
  * stay in `renderer/data`; keys and the palette's entries stay in `renderer/commands`.
  */
 
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { addTargetSlot, getTarget, subscribeTarget } from './store-target';
 import type { TargetSlot } from './store-target';
 import {
@@ -32,8 +32,16 @@ import {
 } from './store-route';
 import type { Screen } from './store-route';
 import type { RouteTarget } from './store-route';
-import type { SettingRoute, TargetSummary } from '../commands';
-import type { AccountId, AiProviderId } from '../data';
+import { addKeyLayer, type KeyLayer } from './store-keys';
+import { getScope, setScope, subscribeScope } from './store-scope';
+import {
+  getOpenThread,
+  OPEN_THREAD_SCREEN,
+  setOpenThread,
+  subscribeOpenThread,
+} from './store-thread';
+import type { ContextName, SettingRoute, TargetSummary } from '../commands';
+import type { AccountId, AiProviderId, ThreadId } from '../data';
 import type { ToastData } from '../ui/props';
 
 // ---------------------------------------------------------------------------
@@ -231,3 +239,85 @@ export function navigate(screen: Screen): void {
 
 export { consumeRoute } from './store-route';
 export type { RouteTarget, Screen } from './store-route';
+
+// ---------------------------------------------------------------------------
+// The shared registry and key layers (additive): one CommandRegistry and one key listener for the app
+// ---------------------------------------------------------------------------
+
+export { useRegisterCommands, useShellRegistry } from './ShellRegistry';
+export type { CommandHandlerTable, ShellRegistry } from './ShellRegistry';
+export type { KeyLayer } from './store-keys';
+
+/**
+ * Adds contexts (such as Home's `lowImportance` sheet) and conditions (`remindOffer`) to the key stack while the calling
+ * component is mounted, on top of the shell's own (global, the screen, the open sheet). Later layers win a condition.
+ * The `sheet` context always stays last. Compared by value, so an inline object is fine.
+ */
+export function useShellKeyLayer(layer: KeyLayer): void {
+  const contexts = (layer.contexts ?? []).join(',');
+  const conditions = JSON.stringify(layer.conditions ?? {});
+  useEffect(
+    () =>
+      addKeyLayer({
+        contexts: contexts ? (contexts.split(',') as ContextName[]) : [],
+        conditions: JSON.parse(conditions) as KeyLayer['conditions'],
+      }),
+    [contexts, conditions],
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The account scope (additive): what the sidebar's switcher selects
+// ---------------------------------------------------------------------------
+
+/** The account the switcher selects; null is All accounts. Counts in the sidebar and screens that scope their data follow it. */
+export function useAccountScope(): AccountId | null {
+  return useSyncExternalStore(subscribeScope, getScope, getScope);
+}
+
+/** Selects one account, or null for All accounts (what the AccountSwitcher's menu calls). */
+export function setAccountScope(accountId: AccountId | null): void {
+  setScope(accountId);
+}
+
+// ---------------------------------------------------------------------------
+// The open thread (additive): the reader lane renders it on the `{ label: 'thread' }` screen
+// ---------------------------------------------------------------------------
+
+/** Records `id` as the open thread and shows the `{ label: 'thread' }` screen (a placeholder until the reader lane renders it). */
+export function openThread(id: ThreadId): void {
+  setOpenThread(id);
+  setScreen(OPEN_THREAD_SCREEN);
+}
+
+/** Clears the open thread; the reader calls it when it closes. Does not navigate. */
+export function closeThread(): void {
+  setOpenThread(null);
+}
+
+/** The open thread's id, live; null when none. */
+export function useOpenThread(): ThreadId | null {
+  return useSyncExternalStore(subscribeOpenThread, getOpenThread, getOpenThread);
+}
+
+/** What Home takes from the shell: the scope's account (undefined for All accounts), and the two openers. */
+export interface HomeShellProps {
+  readonly accountId: AccountId | undefined;
+  readonly onOpen: (id: ThreadId) => void;
+  readonly onOneByOne: () => void;
+}
+
+const ONE_BY_ONE_SCREEN = { label: 'one by one' } as const;
+
+/** The props Home needs from the shell: `<HomeScreen {...useHomeShellProps()} />`. Stable between scope changes. */
+export function useHomeShellProps(): HomeShellProps {
+  const scope = useAccountScope();
+  return useMemo(
+    () => ({
+      accountId: scope ?? undefined,
+      onOpen: openThread,
+      onOneByOne: () => navigate(ONE_BY_ONE_SCREEN),
+    }),
+    [scope],
+  );
+}

@@ -36,7 +36,7 @@ import { ListRow } from '../../ui/list';
 import { setFormatClock } from '../../ui/list/internal/format';
 import { ListScreen } from './ListScreen';
 import { ListEmpty } from './ListStates';
-import { attachTable } from './useCommandTable';
+import { shellRegistryFor } from '../../shell/ShellRegistry';
 
 const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
 
@@ -254,10 +254,7 @@ test('the registry runs the list: arrows and J K move, E is Done, # is Trash, an
   try {
     const { deps, state, cursor, window } = depsOver(world, ALL_CONFIG);
     const registry = createAppRegistry();
-    const detach = attachTable(
-      (id, handlers) => registry.attach(id, handlers),
-      commandsForList(createListActions(deps)),
-    );
+    const detach = shellRegistryFor(registry).register(commandsForList(createListActions(deps)));
     const context: CommandContext = {
       stack: ['global', 'list'],
       target: null,
@@ -361,10 +358,7 @@ test('Done: H moves a row back to Home with Undo, and E and L do nothing', async
     const actions = createListActions(deps);
     const target = window.snapshot().ids[0]!;
     const registry = createAppRegistry();
-    const detach = attachTable(
-      (id, handlers) => registry.attach(id, handlers),
-      commandsForDone(actions),
-    );
+    const detach = shellRegistryFor(registry).register(commandsForDone(actions));
     const context: CommandContext = {
       stack: ['global', 'list', 'done'],
       target: null,

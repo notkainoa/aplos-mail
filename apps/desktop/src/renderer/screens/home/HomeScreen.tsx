@@ -3,16 +3,7 @@
  * still while keys or the pointer are at work, and routes every key through the CommandRegistry. The list itself is
  * `HomeList`; the empty states are `HomeEmpty`. Later, the lists and Done are the next round.
  */
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent,
-  type RefObject,
-} from 'react';
-import { createAppRegistry, keyPrefsFromUi, type Registry } from '../../commands';
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
 import {
   useAccounts,
   useCounts,
@@ -26,26 +17,24 @@ import {
   type ThreadId,
 } from '../../data';
 import { toSyncStatus } from '../../shell/status-map';
-import { useCommandTarget, useCurrentTarget } from '../../shell';
+import { useCommandTarget, useCurrentTarget, useShellKeyLayer } from '../../shell';
 import { CommitChip, CommitEdge } from '../../ui/list';
 import { statusCopy } from '../../ui/status';
 import { HomeEmpty } from './HomeStates';
 import { activeDomId, HomeList, threadIdOfDomId, type HomeListHandlers } from './HomeList';
 import { HomeOverlays } from './HomeOverlays';
 import type { HomeSnapshot, OpenHow } from './homeActions';
+import { homeRunContext } from './homeCommands';
 import { buildItems, orderLayout, type HomeLayout } from './homeModel';
 import { densityOf, senderOf } from './homeRows';
 import { useHomeActions } from './useHomeActions';
 import { useHomeCursor } from './useHomeCursor';
-import { homeContext, useHomeKeys } from './useHomeKeys';
 import { isGate, useHomeMotion } from './useHomeMotion';
 
 /** Props for `HomeScreen`. */
 export interface HomeScreenProps {
   /** One account, or absent for All accounts. */
   readonly accountId?: AccountId;
-  /** The registry the keys and handlers use; the shell's once it shares one. Default: Home's own. */
-  readonly registry?: Registry;
   /** Open a thread in the reader, or its reply (the reader lane owns both; absent until it lands). */
   readonly onOpen?: (id: ThreadId, how: OpenHow) => void;
   /** "Go one by one" (S): the reader stepping through Do now. */
@@ -108,14 +97,6 @@ function CommitTemplates({ forwardedRef }: { forwardedRef: RefObject<HTMLDivElem
   );
 }
 
-function useRegistry(given: Registry | undefined): Registry {
-  const ui = useSettings()?.ui;
-  return useMemo(
-    () => given ?? createAppRegistry(ui ? keyPrefsFromUi(ui) : undefined),
-    [given, ui],
-  );
-}
-
 /** Keeps the cursor row in view as it moves. */
 function useScrollToCursor(key: string | null): void {
   useEffect(() => {
@@ -124,7 +105,7 @@ function useScrollToCursor(key: string | null): void {
   }, [key]);
 }
 
-export function HomeScreen({ accountId, registry: given, onOpen, onOneByOne }: HomeScreenProps) {
+export function HomeScreen({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   const hold = useHold('home');
   const home = useHome({ accountId, holdIds: hold.heldIds });
   const accounts = useAccounts();
@@ -132,7 +113,6 @@ export function HomeScreen({ accountId, registry: given, onOpen, onOneByOne }: H
   const status = useStatus(accountId);
   const undoTop = useUndoTop();
   const density = densityOf(useSettings()?.ui.density);
-  const registry = useRegistry(given);
 
   const rowOf = useCallback((id: ThreadId) => home.rows.get(id), [home.rows]);
   const layout = orderLayout(layoutOf(home), rowOf, hold.isHeld);
@@ -154,8 +134,17 @@ export function HomeScreen({ accountId, registry: given, onOpen, onOneByOne }: H
   const motionCommit = useHomeMotion(hold, templates);
   const target = useCurrentTarget();
 
-  const keyState = useRef({ registry, lowSheetOpen: lowOpen, remindOffer: false, target });
-  const context = useCallback(() => homeContext(keyState.current, document.activeElement), []);
+  const keyState = useRef({ lowSheetOpen: lowOpen, remindOffer: false, target });
+  const context = useCallback(
+    () =>
+      homeRunContext(
+        keyState.current.target,
+        keyState.current.lowSheetOpen,
+        keyState.current.remindOffer,
+        document.activeElement,
+      ),
+    [],
+  );
   const commit = useCallback(
     (kind: 'done' | 'later' | 'trash', ids: readonly string[]) => {
       const dom = activeDomId(snapshot.current.key);
@@ -171,7 +160,6 @@ export function HomeScreen({ accountId, registry: given, onOpen, onOneByOne }: H
   const oneByOne = onOneByOne ?? ignore;
   const { actions, remindOffer } = useHomeActions({
     snapshot,
-    registry,
     context,
     hold,
     setCursor: cursor.setCursor,
@@ -181,8 +169,11 @@ export function HomeScreen({ accountId, registry: given, onOpen, onOneByOne }: H
     oneByOne,
     openMore,
   });
-  keyState.current = { registry, lowSheetOpen: lowOpen, remindOffer, target };
-  useHomeKeys(keyState.current);
+  keyState.current = { lowSheetOpen: lowOpen, remindOffer, target };
+  useShellKeyLayer({
+    contexts: lowOpen ? ['lowImportance'] : [],
+    conditions: { remindOffer },
+  });
   const pointer = usePointerHold(hold);
 
   const handlers: HomeListHandlers = {
@@ -215,7 +206,7 @@ export function HomeScreen({ accountId, registry: given, onOpen, onOneByOne }: H
   }
   if (home.status !== 'live') return null;
   return (
-    <div data-screen="home" {...pointer}>
+    <div className="aplos-list-column" data-screen="home" {...pointer}>
       <HomeList
         view={home}
         layout={layout}
@@ -232,7 +223,6 @@ export function HomeScreen({ accountId, registry: given, onOpen, onOneByOne }: H
         onCloseLow={() => setLowOpen(false)}
         menuAnchor={menuAnchor}
         onCloseMenu={() => setMenuAnchor(null)}
-        registry={registry}
         density={density}
         accounts={accounts}
         rowOf={rowOf}

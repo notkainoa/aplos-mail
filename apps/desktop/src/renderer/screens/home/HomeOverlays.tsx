@@ -1,5 +1,4 @@
 /** What opens over Home: the Low importance sheet and the focus letter's ⋯ menu. */
-import type { Registry } from '../../commands';
 import type { Account, AccountId, ThreadId, ThreadRow } from '../../data';
 import type { Density } from '../../ui/props';
 import { HomeMenu } from './HomeMenu';
@@ -13,7 +12,6 @@ export interface HomeOverlaysProps {
   readonly onCloseLow: () => void;
   readonly menuAnchor: HTMLElement | null;
   readonly onCloseMenu: () => void;
-  readonly registry: Registry;
   readonly density: Density;
   readonly accounts: readonly Account[];
   readonly rowOf: (id: ThreadId) => ThreadRow | undefined;
@@ -31,7 +29,6 @@ export function HomeOverlays(props: HomeOverlaysProps) {
           accountId={props.accountId}
           density={props.density}
           accounts={props.accounts}
-          registry={props.registry}
           onOpenThread={id => props.onOpen(id, 'open')}
           onClose={props.onCloseLow}
         />

@@ -4,7 +4,6 @@
  * Every key is the registry's.
  */
 import type { AccountId } from '../../data';
-import type { Registry } from '../../commands';
 import { configFor, type ListWhich } from './listKinds';
 import { useListKeys } from './listCommands';
 import { MailListView } from './MailListView';
@@ -17,8 +16,6 @@ export interface ListScreenProps {
   readonly which: ListWhich;
   /** One account, or absent for All accounts. */
   readonly accountId?: AccountId;
-  /** The registry the keys and handlers use; the shell's once it shares one. Default: the list's own. */
-  readonly registry?: Registry;
   /** Open a thread (reader), a draft (composer) or a submission. */
   readonly onOpen?: (id: string, kind: OpenKind) => void;
   /** Permanent deletion for Trash and Spam; absent until the contract has it. */
@@ -27,6 +24,6 @@ export interface ListScreenProps {
 
 export function ListScreen({ which, ...options }: ListScreenProps) {
   const list = useMailList(configFor(which), options);
-  useListKeys(list.register, list.actions);
+  useListKeys(list.actions);
   return <MailListView list={list} />;
 }

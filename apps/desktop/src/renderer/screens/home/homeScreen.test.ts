@@ -18,7 +18,8 @@ import { harnessClock } from '../../data/clock';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import { pushToast, dismissToast } from '../../shell';
 import { createHomeActions, type HomeDeps, type HomeSnapshot, type RunStatus } from './homeActions';
-import { attachHomeCommands } from './homeCommands';
+import { commandsForHome } from './homeCommands';
+import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { buildItems, initialKey, orderLayout, type HomeLayout } from './homeModel';
 import { HomeScreen } from './HomeScreen';
 
@@ -310,11 +311,13 @@ test("the registry runs Home's commands: E is Done, Tab jumps a section, Z undoe
     const key = { current: null as string | null };
     const { deps } = depsOver(world, key);
     const registry = createAppRegistry();
-    const detach = attachHomeCommands(registry, createHomeActions(deps), {
-      oneByOne: () => undefined,
-      more: () => undefined,
-      undo: () => void undoStack.undoLast(),
-    });
+    const detach = shellRegistryFor(registry).register(
+      commandsForHome(createHomeActions(deps), {
+        oneByOne: () => undefined,
+        more: () => undefined,
+        undo: () => void undoStack.undoLast(),
+      }),
+    );
     const context: CommandContext = {
       stack: ['global', 'list', 'home'],
       target: null,

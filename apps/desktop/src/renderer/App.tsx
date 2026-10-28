@@ -11,15 +11,25 @@
  * window's `total` (here it only ever shows the section's up-to-three names); there is no cursor, density setting or
  * Low sheet behind the band; rows are never read.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { StandIn } from './data/standin';
 import type { ErrorBody, Frame, HomeSectionKey, WindowBody, WindowSection } from './data';
 import { EmptyLine, LowBand, SectionHeader } from './ui/list';
 import { useAccounts, useCounts, useStatus, api } from './data';
 import { statusCopy } from './ui/status';
-import { navigate, type Screen } from './shell';
+import {
+  navigate,
+  openThread,
+  useAccountScope,
+  useHomeShellProps,
+  type HomeShellProps,
+  type Screen,
+} from './shell';
 import { HomeScreen as HomeRoute } from './screens/home';
+import { LaterScreen } from './screens/later';
+import { ListScreen, type ListWhich } from './screens/lists';
+import { DoneScreen } from './screens/done';
 import { Shell } from './shell/Shell';
 import { FirstSyncLine, NoAccountsLine } from './shell/states';
 import { toSyncStatus } from './shell/status-map';
@@ -213,11 +223,11 @@ export function HomeContent({ home }: HomeContentProps) {
 const SETTLING_STATES: readonly string[] = ['backfilling', 'paused'];
 
 /** The `home` screen: the boot-proof Home, or the first-sync and no-accounts lines where inbox zero would be a lie. */
-export function HomeScreen({ client }: AppProps) {
+export function HomeScreen({ client, accountId }: AppProps & Partial<HomeShellProps>) {
   const home = useHomeWindow(client);
   const accounts = useAccounts();
-  const counts = useCounts();
-  const status = useStatus();
+  const counts = useCounts(accountId);
+  const status = useStatus(accountId);
   if (accounts.length === 0)
     return (
       <NoAccountsLine
@@ -234,9 +244,57 @@ export function HomeScreen({ client }: AppProps) {
   return <HomeContent home={home} />;
 }
 
-/** The screen slot: ui-home's Home for `home` (`screens/home`), nothing (so the placeholder) for the rest. */
+/** The new Home in the screen slot, given the account scope and the openers by the shell. */
+function HomeSlot() {
+  return <HomeRoute {...useHomeShellProps()} />;
+}
+
+/** The scope's account (undefined for All accounts) and the opener every list shares: a row of any kind opens its thread for now. */
+function useListProps() {
+  const scope = useAccountScope();
+  return useMemo(
+    () => ({ accountId: scope ?? undefined, onOpen: (id: string) => openThread(id) }),
+    [scope],
+  );
+}
+
+function LaterSlot() {
+  return <LaterScreen {...useListProps()} />;
+}
+
+function DoneSlot() {
+  return <DoneScreen {...useListProps()} />;
+}
+
+function ListSlot({ which }: { readonly which: ListWhich }) {
+  return <ListScreen which={which} {...useListProps()} />;
+}
+
+/** Labels other lanes open as placeholders (the reader, one by one, search, help, compose); any other label is a folder id. */
+const PLACEHOLDER_LABELS: readonly string[] = [
+  'thread',
+  'one by one',
+  'Search',
+  'Help',
+  'New message',
+];
+
+const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
+
+function isListPlace(screen: string): screen is Exclude<ListWhich, { label: string }> {
+  return LIST_PLACES.includes(screen);
+}
+
+/** The screen slot: Home, Later, the lists and Done are `ui-home`'s; nothing (so the placeholder) for the rest. */
 export function renderScreen(_client: AppClient, screen: Screen) {
-  return screen === 'home' ? <HomeRoute /> : undefined;
+  if (typeof screen !== 'string')
+    return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
+      <ListSlot which={{ label: screen.label }} />
+    );
+  if (screen === 'home') return <HomeSlot />;
+  if (screen === 'later') return <LaterSlot />;
+  if (screen === 'done') return <DoneSlot />;
+  return isListPlace(screen) ? <ListSlot which={screen} /> : undefined;
 }
 
 /** The new renderer's root. */

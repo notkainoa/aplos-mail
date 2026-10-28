@@ -1,11 +1,11 @@
 /**
  * The shared list's state for one mounted screen (DESIGN 4.1, 5 rule 6, 7.4): the watched view with the list's hold
  * gate, the cursor, the actions and the confirmation they may ask for. All mail, Drafts, Sent, Trash, Spam, labels,
- * Done and Bookmarks all run on this; `MailListView` draws it. Keys come from the registry: the screen attaches its
- * command table with `use<Screen>Keys(register, list.actions)` and this hook listens for keys.
+ * Done and Bookmarks all run on this; `MailListView` draws it. Keys come from the shell's registry and key listener:
+ * the screen attaches its command table with `use<Screen>Keys(list.actions)`; this hook adds the list's contexts.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import { createAppRegistry, keyPrefsFromUi, type ContextName, type Registry } from '../../commands';
+import type { ContextName, Registry } from '../../commands';
 import {
   api,
   useAccounts,
@@ -20,7 +20,13 @@ import {
   type ViewResult,
 } from '../../data';
 import type { HoldGate } from '../../data/holds';
-import { useCommandTarget, useCurrentTarget, dismissToast, pushToast } from '../../shell';
+import {
+  useCommandTarget,
+  dismissToast,
+  pushToast,
+  useShellKeyLayer,
+  useShellRegistry,
+} from '../../shell';
 import { toSyncStatus } from '../../shell/status-map';
 import { statusCopy } from '../../ui/status';
 import type { Density } from '../../ui/props';
@@ -35,16 +41,12 @@ import type { ListConfig } from './listKinds';
 import { viewSpecOf } from './listKinds';
 import { absoluteIndex, LIST_WINDOW, rangeAround } from './listModel';
 import { asListRow, targetOf, type ListRowData, type OpenKind } from './listRows';
-import { registerOn, type Register } from './useCommandTable';
 import { useIdCursor, type IdCursor } from './useIdCursor';
-import { useScreenKeys, type ScreenKeyState } from './useScreenKeys';
 
 /** What a list screen is given. */
 export interface MailListOptions {
   /** One account, or absent for All accounts. */
   readonly accountId?: AccountId;
-  /** The registry the keys and handlers use; the shell's once it shares one. Default: the list's own. */
-  readonly registry?: Registry;
   /** Open a thread, draft or submission (Return, O, double-click). Absent until the reader and composer land. */
   readonly onOpen?: (id: string, kind: OpenKind) => void;
   /** Permanent deletion, offered in Trash and Spam behind a Confirm. Absent: the key does nothing there. */
@@ -67,9 +69,6 @@ export interface EmptyState {
 /** Everything `MailListView` draws and every handler it calls. */
 export interface MailListState {
   readonly config: ListConfig;
-  readonly registry: Registry;
-  /** Attaches a command's handlers on this list's registry; stable for the registry's life. Pass it to `use<Screen>Keys`. */
-  readonly register: Register;
   readonly view: ViewResult<unknown>;
   readonly ids: readonly string[];
   readonly rowOf: (id: string) => ListRowData | undefined;
@@ -80,7 +79,6 @@ export interface MailListState {
   readonly accounts: readonly Account[];
   readonly empty: EmptyState;
   readonly hold: HoldController;
-  readonly keys: ScreenKeyState;
   readonly pointer: {
     onPointerMove(event: PointerEvent<HTMLElement>): void;
     onPointerLeave(): void;
@@ -116,14 +114,6 @@ export function rowDomId(config: ListConfig, id: string): string {
 export function rowIdOfDom(config: ListConfig, domId: string): string | null {
   const prefix = `${config.id}-row-`;
   return domId.startsWith(prefix) ? domId.slice(prefix.length) : null;
-}
-
-function useRegistry(given: Registry | undefined): Registry {
-  const ui = useSettings()?.ui;
-  return useMemo(
-    () => given ?? createAppRegistry(ui ? keyPrefsFromUi(ui) : undefined),
-    [given, ui],
-  );
 }
 
 /** Keeps the cursor row in view as it moves. */
@@ -163,8 +153,7 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
   const { accountId, onOpen, deleteForever } = options;
   const hold = useHold(config.scope);
   const view = useView(viewSpecOf(config, accountId), { holdIds: hold.heldIds });
-  const registry = useRegistry(options.registry);
-  const register = useMemo(() => registerOn(registry), [registry]);
+  const { registry } = useShellRegistry();
   const accounts = useAccounts();
   const density = densityOf(useSettings()?.ui.density);
   const empty = useEmptyState(accountId);
@@ -206,20 +195,12 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
 
   const cursorRow = cursor.key === null ? undefined : rowOf(cursor.key);
   useCommandTarget(cursorRow ? targetOf(cursorRow) : null);
-  const target = useCurrentTarget();
-  const keys: ScreenKeyState = {
-    registry,
-    contexts: config.contexts,
-    modal: confirmation ? 'dialog' : (options.modal ?? null),
-    target,
-  };
-  useScreenKeys(keys);
+  const modal = confirmation ? 'dialog' : (options.modal ?? null);
+  useShellKeyLayer({ contexts: modal ? [...config.contexts, modal] : config.contexts });
   const pointer = usePointerHold(hold, `${config.id}-row-`);
 
   return {
     config,
-    registry,
-    register,
     view,
     ids: cursor.ids,
     rowOf,
@@ -230,7 +211,6 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
     accounts,
     empty,
     hold,
-    keys,
     pointer,
   };
 }

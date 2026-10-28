@@ -1,18 +1,25 @@
 /**
- * Attaches Home's handlers to the CommandRegistry. The registry owns the keys, the palette and the tooltips; Home only
- * says what each command does while it is mounted. Detaching hands every command back to what was attached before.
+ * Home's handlers for the shell's CommandRegistry, as a pure table. The registry owns the keys, the palette and the
+ * tooltips; Home only says what each command does while it is mounted (`useRegisterCommands` attaches the table).
  */
-import type { CommandHandlers, Registry } from '../../commands';
+import {
+  DEFAULT_KEY_PREFS,
+  buildStack,
+  focusKindOf,
+  type CommandContext,
+  type CommandHandlers,
+  type ContextName,
+  type TargetSummary,
+} from '../../commands';
+import type { CommandHandlerTable } from '../../shell';
 import type { HomeActions } from './homeActions';
 
 function run(action: () => void): CommandHandlers {
   return { run: () => action() };
 }
 
-function handlersFor(
-  actions: HomeActions,
-  extra: HomeExtras,
-): Readonly<Record<string, CommandHandlers>> {
+/** Home's handlers by command id. */
+export function commandsForHome(actions: HomeActions, extra: HomeExtras): CommandHandlerTable {
   return {
     'list.down': run(() => actions.move(1)),
     'list.up': run(() => actions.move(-1)),
@@ -41,13 +48,22 @@ export interface HomeExtras {
   readonly undo: () => void;
 }
 
-/** Attaches every Home handler; returns the function that detaches them all. */
-export function attachHomeCommands(
-  registry: Registry,
-  actions: HomeActions,
-  extra: HomeExtras,
-): () => void {
-  const table = handlersFor(actions, extra);
-  const detach = Object.entries(table).map(([id, handlers]) => registry.attach(id, handlers));
-  return () => detach.forEach(fn => fn());
+/** What a command run from Home's own code (Space on a reply) gets: the stack the shell reports for Home. */
+export function homeRunContext(
+  target: TargetSummary | null,
+  lowSheetOpen: boolean,
+  remindOffer: boolean,
+  focusTarget: unknown,
+): CommandContext {
+  const contexts: ContextName[] = lowSheetOpen
+    ? ['global', 'home', 'lowImportance']
+    : ['global', 'home'];
+  return {
+    stack: buildStack(contexts),
+    target,
+    selection: [],
+    conditions: { remindOffer },
+    prefs: DEFAULT_KEY_PREFS,
+    focus: focusKindOf(focusTarget),
+  };
 }

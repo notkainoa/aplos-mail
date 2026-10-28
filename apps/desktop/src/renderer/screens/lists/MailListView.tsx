@@ -108,7 +108,7 @@ export function MailListView({ list }: { readonly list: MailListState }) {
     activeDescendantId: cursor.key === null ? undefined : rowDomId(config, cursor.key),
   };
   return (
-    <div data-screen={config.kind} {...pointer}>
+    <div className="aplos-list-column" data-screen={config.kind} {...pointer}>
       <ListBox binding={binding}>
         {config.dateGroups ? <Groups list={list} /> : <Rows list={list} ids={list.ids} />}
       </ListBox>

@@ -3,11 +3,10 @@
  * the sheet is open, so the window is watched only then. The first → arms and the second marks every thread done in
  * one operation (a selector over the section, at the state the owner saw), with one Undo toast.
  */
-import { useEffect, useState } from 'react';
-import type { Registry } from '../../commands';
+import { useMemo, useState } from 'react';
 import { api, useView } from '../../data';
 import type { Account, AccountId, ThreadId, ThreadRow, ViewResult } from '../../data';
-import { dismissToast, pushToast } from '../../shell';
+import { dismissToast, pushToast, useRegisterCommands } from '../../shell';
 import type { Density, ListRowProps, LowSheetGroup } from '../../ui/props';
 import { LowSheet } from '../../ui/list';
 import { listRowProps, primaryOf } from './homeRows';
@@ -19,7 +18,6 @@ export interface LowSheetHostProps {
   readonly accountId?: AccountId;
   readonly density: Density;
   readonly accounts: readonly Account[];
-  readonly registry: Registry;
   readonly onOpenThread: (id: ThreadId) => void;
   readonly onClose: () => void;
 }
@@ -43,27 +41,27 @@ export function groupsOf(
   });
 }
 
-function useSheetCursor(registry: Registry, ids: readonly string[]) {
+function useSheetCursor(ids: readonly string[]) {
   const [at, setAt] = useState(0);
-  useEffect(() => {
-    const step = (delta: 1 | -1) => setAt(i => Math.max(0, Math.min(ids.length - 1, i + delta)));
-    const next = registry.attach('lowImportance.next', { run: () => step(1) });
-    const previous = registry.attach('lowImportance.previous', { run: () => step(-1) });
-    return () => {
-      next();
-      previous();
+  const count = ids.length;
+  const table = useMemo(() => {
+    const step = (delta: 1 | -1) => setAt(i => Math.max(0, Math.min(count - 1, i + delta)));
+    return {
+      'lowImportance.next': { run: () => step(1) },
+      'lowImportance.previous': { run: () => step(-1) },
     };
-  }, [registry, ids.length]);
+  }, [count]);
+  useRegisterCommands(table);
   return ids[Math.min(at, ids.length - 1)];
 }
 
 /** The sheet over Home. */
 export function LowSheetHost(props: LowSheetHostProps) {
-  const { accountId, density, accounts, registry, onOpenThread, onClose } = props;
+  const { accountId, density, accounts, onOpenThread, onClose } = props;
   const view = useView({ kind: 'lowBySender' as const, ...(accountId ? { accountId } : {}) });
   const [armed, setArmed] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
-  const cursorId = useSheetCursor(registry, view.ids);
+  const cursorId = useSheetCursor(view.ids);
   const rowProps = (row: ThreadRow): ListRowProps =>
     listRowProps(row, {
       domId: lowDomId(row.id),

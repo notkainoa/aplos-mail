@@ -3,16 +3,17 @@
  * Return opens. E and L are not attached, and the registry's `done` context turns them off as well, so they do nothing
  * on a done row. A pure table, so the shell can read it without a component.
  */
+import { useMemo } from 'react';
 import type { CommandHandlers } from '../../commands';
+import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import type { ListActions } from '../lists/listActions';
 import { navigationCommands } from '../lists/listCommands';
-import { useCommandTable, type CommandTable, type Register } from '../lists/useCommandTable';
 
 function run(action: () => void): CommandHandlers {
   return { run: () => action() };
 }
 
-export function commandsForDone(actions: ListActions): CommandTable {
+export function commandsForDone(actions: ListActions): CommandHandlerTable {
   return {
     ...navigationCommands(actions),
     'done.moveToHome': run(() => actions.moveToHome()),
@@ -20,6 +21,7 @@ export function commandsForDone(actions: ListActions): CommandTable {
 }
 
 /** Attaches Done's handlers; they detach when the screen unmounts. */
-export function useDoneKeys(register: Register, actions: ListActions): void {
-  useCommandTable(register, commandsForDone(actions));
+export function useDoneKeys(actions: ListActions): void {
+  const table = useMemo(() => commandsForDone(actions), [actions]);
+  useRegisterCommands(table);
 }

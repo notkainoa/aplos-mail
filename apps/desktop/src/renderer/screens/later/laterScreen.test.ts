@@ -19,7 +19,7 @@ import { getToasts, resetToasts } from '../../shell/store-toast';
 import { createListActions } from '../lists/listActions';
 import { LATER_CONFIG, viewSpecOf } from '../lists/listKinds';
 import { asListRow } from '../lists/listRows';
-import { attachTable } from '../lists/useCommandTable';
+import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { reschedule } from './laterActions';
 import { commandsForLater, type LaterActions } from './laterCommands';
 import { CLOSED, pickerReducer } from './laterPicker';
@@ -185,10 +185,7 @@ test('the registry runs Later: L and D open the date presets, E is Done, the arr
     });
     const actions: LaterActions = { ...list, openPicker: key => void opened.push(key) };
     const registry = createAppRegistry();
-    const detach = attachTable(
-      (id, handlers) => registry.attach(id, handlers),
-      commandsForLater(actions),
-    );
+    const detach = shellRegistryFor(registry).register(commandsForLater(actions));
     const context: CommandContext = {
       stack: ['global', 'list'],
       target: null,
