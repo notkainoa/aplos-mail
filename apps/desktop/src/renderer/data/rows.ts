@@ -6,7 +6,7 @@
  */
 import type { Id, Input, MethodName, State } from './contract-shapes';
 import type { DataClient } from './client';
-import type { Emitter } from './emitter';
+import { rowTopic, type Emitter } from './emitter';
 import type { StateOrder } from './states';
 import type { CachedRowType, RowTypeMap } from './ui-types';
 
@@ -105,7 +105,7 @@ export class RowCache {
 
   /** Stores fetched rows read at `state`; an older answer than the cached one is ignored. Returns whether anything changed. */
   put(type: CachedRowType, rows: readonly unknown[], state: State | null): boolean {
-    let changed = false;
+    const changed: string[] = [];
     const table = this.table(type);
     for (const row of rows) {
       const id = rowId(type, row);
@@ -113,22 +113,27 @@ export class RowCache {
       if (!entry) continue;
       if (entry.state && state && this.order.compare(state, entry.state) < 0) continue;
       entry.stale = false;
+      // The overlay lays itself over a thread read before the commit it predicts, so a newer read can change it.
+      let moved =
+        type === 'Thread' &&
+        (entry.state?.seq !== state?.seq || entry.state?.dbEpoch !== state?.dbEpoch);
       entry.state = state;
       if (entry.status !== 'ready') {
         entry.status = 'ready';
-        changed = true;
+        moved = true;
       }
       if (entry.row === undefined || !sameRow(entry.row, row)) {
         entry.row = row;
-        changed = true;
+        moved = true;
       }
+      if (moved) changed.push(rowTopic(type, id));
     }
-    if (changed) this.emitter.emit();
-    return changed;
+    if (changed.length) this.emitter.emit(...changed);
+    return changed.length > 0;
   }
 
   notFound(type: CachedRowType, ids: readonly Id[], state: State | null): void {
-    let changed = false;
+    const changed: string[] = [];
     const table = this.table(type);
     for (const id of ids) {
       const entry = table.get(id);
@@ -136,11 +141,11 @@ export class RowCache {
       if (entry.state && state && this.order.compare(state, entry.state) < 0) continue;
       entry.stale = false;
       entry.state = state;
-      if (entry.status !== 'notFound' || entry.row !== undefined) changed = true;
+      if (entry.status !== 'notFound' || entry.row !== undefined) changed.push(rowTopic(type, id));
       entry.status = 'notFound';
       entry.row = undefined;
     }
-    if (changed) this.emitter.emit();
+    if (changed.length) this.emitter.emit(...changed);
   }
 
   markStale(type: CachedRowType, ids: Iterable<Id>): void {

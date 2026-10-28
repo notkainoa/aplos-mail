@@ -17,9 +17,22 @@ import type {
 } from './contract-shapes';
 import type { DataClient } from './client';
 import { toErrorBody } from './client';
-import { memoSnapshot, sameArray, sameJson, sameMap, type Emitter } from './emitter';
+import {
+  FAILURES_TOPIC,
+  memoSnapshot,
+  OVERLAY_TOPIC,
+  readsRows,
+  sameArray,
+  sameJson,
+  sameMap,
+  SESSION_TOPIC,
+  windowTopic,
+  type Emitter,
+  type Topic,
+} from './emitter';
 import type { RowFailure, ViewRange, ViewResult, ViewStatus } from './index';
 import {
+  entersView,
   overlayWindow,
   sectionAt,
   specKey,
@@ -90,6 +103,9 @@ export class EngineWindow {
   private lastMove = '';
   private refreshing = false;
   private closed = false;
+  /** The ids the last snapshot drew, so a row change wakes only the windows showing it. */
+  private drawn: ReadonlySet<Id> = new Set();
+  readonly topic: Topic;
   readonly snapshot: () => ViewResult<unknown>;
 
   constructor(
@@ -98,6 +114,7 @@ export class EngineWindow {
     private readonly orphan: (windowId: string) => WindowFrame | undefined,
   ) {
     this.key = specKey(spec);
+    this.topic = windowTopic(this.key);
     this.snapshot = memoSnapshot(deps.emitter, () => this.compute(), sameView);
   }
 
@@ -106,6 +123,20 @@ export class EngineWindow {
     const all = new Set<Id>();
     for (const ids of this.holders.values()) for (const id of ids) all.add(id);
     return [...all];
+  }
+
+  /** Whether a change to these topics can change this window's snapshot. */
+  reads(topics: ReadonlySet<Topic>): boolean {
+    if (topics.has(this.topic) || topics.has(FAILURES_TOPIC)) return true;
+    const type = cachedType(this.base?.rowType);
+    if (!type) return false;
+    // Settings decide whether Done and Later take a row out of the Inbox.
+    if (type === 'Thread' && (topics.has(OVERLAY_TOPIC) || topics.has(SESSION_TOPIC))) return true;
+    return readsRows(topics, type, id => this.drawn.has(id));
+  }
+
+  private changed(): void {
+    this.deps.emitter.emit(this.topic);
   }
 
   get held(): boolean {
@@ -138,10 +169,8 @@ export class EngineWindow {
       .then(
         body => {
           if (generation !== this.openGeneration || this.closed) {
-            if (this.closed)
-              void this.deps.client
-                .call('View/unwatch', { windowId: body.windowId })
-                .catch(() => {});
+            // A reopen or a close overtook this watch: nobody will read the engine window it made.
+            void this.deps.client.call('View/unwatch', { windowId: body.windowId }).catch(() => {});
             return;
           }
           this.windowId = body.windowId;
@@ -156,7 +185,7 @@ export class EngineWindow {
           if (generation !== this.openGeneration || this.closed) return;
           this.status = 'failed';
           this.error = toErrorBody(error);
-          this.deps.emitter.emit();
+          this.changed();
         },
       );
   }
@@ -168,7 +197,7 @@ export class EngineWindow {
       if (!this.queued || this.deps.order.compare(frame.state, this.queued.state) >= 0)
         this.queued = frame;
       for (const id of frame.changed ?? []) this.queuedChanged.add(id);
-      this.deps.emitter.emit();
+      this.changed();
       return;
     }
     this.apply(frame, false);
@@ -182,7 +211,7 @@ export class EngineWindow {
     this.queuedChanged.clear();
     this.lastMove = '';
     if (this.status !== 'opening') this.status = 'reset';
-    this.deps.emitter.emit();
+    this.changed();
     this.open();
   }
 
@@ -240,6 +269,7 @@ export class EngineWindow {
       this.sectionsAtHold = new Set(
         (this.base?.sections ?? []).filter(s => s.count > 0).map(s => s.key),
       );
+      this.changed();
     }
     this.syncHold();
     if (wasHeld && !this.held) {
@@ -249,7 +279,7 @@ export class EngineWindow {
       this.queuedChanged.clear();
       this.sectionsAtHold = new Set();
       if (queued) this.apply({ ...queued, changed }, false);
-      else this.deps.emitter.emit();
+      else this.changed();
     }
   }
 
@@ -300,7 +330,7 @@ export class EngineWindow {
       this.base = rest;
       this.status = body.error ? 'failed' : 'live';
       this.error = body.error ?? null;
-      emitter.emit();
+      this.changed();
     });
     this.deps.settled();
   }
@@ -356,6 +386,7 @@ export class EngineWindow {
             : row,
         );
       }
+    this.drawn = new Set(shown.ids);
     const all = this.deps.failures();
     let failures = EMPTY_FAILURES;
     if (all.size) {
@@ -444,9 +475,8 @@ export class WindowManager {
 
   constructor(private readonly deps: WindowDeps) {}
 
-  /** The window for a spec, created (not yet watched) when new. */
-  get(spec: ViewSpec): EngineWindow {
-    const key = specKey(spec);
+  /** The window for a spec, created (not yet watched) when new. Pass `key` (its `specKey`) to skip computing it. */
+  get(spec: ViewSpec, key = specKey(spec)): EngineWindow {
     let w = this.windows.get(key);
     if (!w) {
       w = new EngineWindow(spec, this.deps, id => this.takeOrphan(id));
@@ -502,20 +532,23 @@ export class WindowManager {
   /**
    * The open windows that still need the entry: not yet at its state, and touched by it. Only windows that held a
    * target (or match its selector) get a frame for the commit, so only they are waited for. A restore waits for every
-   * window it puts a row back in.
+   * window it puts a row back in or takes one out of.
    */
   blocking(entry: OverlayEntry): EngineWindow[] {
     const at = entry.appliedState;
     if (!at) return [];
     const selectorKey = entry.selector ? specKey(entry.selector.spec) : null;
     const out: EngineWindow[] = [];
+    const mail = this.deps.mail();
     for (const w of this.windows.values()) {
       if (w.refs === 0 || !w.base || w.base.rowType !== 'Thread') continue;
       if (this.deps.order.reached(w.base.state, at)) continue;
+      const shows = w.base.ids.some(id => entry.targets.has(id));
       const waits =
         entry.kind === 'restore'
-          ? entry.originalPosition.has(w.key)
-          : w.key === selectorKey || w.base.ids.some(id => entry.targets.has(id));
+          ? entry.originalPosition.has(w.key) ||
+            (shows && !!entry.action && entersView(w.spec, entry.action, mail))
+          : w.key === selectorKey || shows;
       if (waits) out.push(w);
     }
     return out;

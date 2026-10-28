@@ -7,6 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ThreadRow, ViewSpec } from './contract-shapes';
 import { createHarness, type Harness } from './harness';
+import { windowStore } from './hooks';
 import type { ViewResult } from './index';
 import type { EngineWindow } from './windows';
 
@@ -169,6 +170,43 @@ test('move pages the window with View/move', async () => {
     const truth = await h.truth.api.view.query({ spec: INBOX, anchor: { position: 2 }, limit: 4 });
     assert.deepEqual(w.snapshot().ids, truth.ids);
     assert.equal(w.snapshot().position, 2);
+  } finally {
+    h.close();
+  }
+});
+
+test('a window swept between a render and its effect: the store reads the window the effect acquired', async () => {
+  const h = createHarness();
+  try {
+    const store = windowStore(h.layer.emitter, h.layer.windows, INBOX);
+    const rendered = store.current();
+    assert.equal(store.getSnapshot().status, 'opening');
+    let woke = 0;
+    const stop = store.subscribe(() => woke++);
+    // An animation frame lands before the passive effect runs; its flush sweeps the unacquired window.
+    h.layer.flush();
+    const acquired = h.layer.windows.acquire(INBOX);
+    assert.notEqual(acquired, rendered, "the render's window was swept");
+    await h.settle();
+    assert.equal(store.getSnapshot().status, 'live');
+    assert.deepEqual(store.getSnapshot().ids, (await engineOrder(h, INBOX)).ids);
+    assert.ok(woke > 0, 'the subscriber heard the acquired window open');
+    stop();
+  } finally {
+    h.close();
+  }
+});
+
+test('a reopen overtaking View/watch unwatches the engine window the stale watch made', async () => {
+  const h = createHarness({ deferred: true });
+  try {
+    const w = h.layer.windows.acquire(HOME);
+    w.reset();
+    await h.settle();
+    assert.equal(w.snapshot().status, 'live');
+    assert.equal(h.callsOf('View/watch').length, 2);
+    assert.equal(h.callsOf('View/unwatch').length, 1);
+    assert.equal((await h.control.snapshot()).windows, 1, 'no orphan left at the engine');
   } finally {
     h.close();
   }

@@ -34,6 +34,7 @@ export interface OverlayEntry {
   readonly kind: 'act' | 'restore';
   /** The rows it changes. For a selector, the ids that were visible when it was issued. */
   readonly targets: ReadonlySet<Id>;
+  /** The predicted action (act), or the action a restore reverses (null when unknown). */
   readonly action: ThreadAction | null;
   readonly selector: ThreadListSelector | null;
   /** The predicted row (act) or the before-image (restore). */
@@ -92,6 +93,44 @@ export function leavesView(
       return type === 'bookmark' && !action.on;
     case 'done':
       return type === 'restore' || type === 'later';
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether an action can bring a thread into a view: the mirror of `leavesView`. A restore entry takes its rows out of
+ * such a view (one they were not in before the action), so an undone move does not leave a copy behind.
+ */
+export function entersView(
+  spec: ViewSpec,
+  action: ThreadAction,
+  mail?: Pick<MailSettings, 'doneAction' | 'laterAction'>,
+): boolean {
+  const type = action.type;
+  if (type === 'trash' || type === 'spam') return spec.kind === 'mailbox' && spec.role === type;
+  if (HOME_KINDS.has(spec.kind)) {
+    if (type === 'restore') return true;
+    if (type === 'home') return !action.hidden;
+    if (type === 'lane')
+      return 'section' in spec ? spec.section === action.lane : action.lane !== 'low';
+    return false;
+  }
+  switch (spec.kind) {
+    case 'mailbox':
+      if (spec.role === 'inbox') return type === 'restore';
+      if (spec.role === 'starred') return type === 'flag' && action.on;
+      if (spec.role === 'archive') {
+        if (type === 'done') return (mail?.doneAction ?? 'archive') === 'archive';
+        if (type === 'later') return (mail?.laterAction ?? 'archive') === 'archive';
+      }
+      return false;
+    case 'later':
+      return type === 'later';
+    case 'bookmarks':
+      return type === 'bookmark' && action.on;
+    case 'done':
+      return type === 'done';
     default:
       return false;
   }
@@ -224,7 +263,11 @@ export function overlayWindow(
         for (const id of entry.targets) remove(id);
     } else {
       const placed = entry.originalPosition.get(key);
-      if (!placed) continue;
+      if (!placed) {
+        if (entry.action && entersView(spec, entry.action, mail))
+          for (const id of entry.targets) remove(id);
+        continue;
+      }
       for (const id of entry.targets) {
         const where = placed.get(id);
         if (!where || ids.includes(id)) continue;
@@ -297,7 +340,10 @@ export function restorePatch(before: ReadonlyMap<Id, ThreadRow>): (row: ThreadRo
   };
 }
 
-/** The ordered list of entries plus a cache of overlaid rows, so an untouched row keeps its identity. */
+/**
+ * The ordered list of entries plus a cache of overlaid rows, so an untouched row keeps its identity. `changed` hears
+ * every entry added, removed or mutated, so the layer can wake the windows and the target rows.
+ */
 export class Overlay {
   private list: OverlayEntry[] = [];
   private readonly rowCache = new WeakMap<
@@ -305,6 +351,8 @@ export class Overlay {
     { version: number; at: string; out: ThreadRow }
   >();
   private version = 0;
+
+  constructor(private readonly changed: (entries: readonly OverlayEntry[]) => void = () => {}) {}
 
   get entries(): readonly OverlayEntry[] {
     return this.list;
@@ -317,6 +365,7 @@ export class Overlay {
   add(entry: OverlayEntry): void {
     this.list = [...this.list, entry];
     this.version++;
+    this.changed([entry]);
   }
 
   remove(opId: OpId): OverlayEntry | undefined {
@@ -324,13 +373,15 @@ export class Overlay {
     if (entry) {
       this.list = this.list.filter(e => e !== entry);
       this.version++;
+      this.changed([entry]);
     }
     return entry;
   }
 
   /** Call after mutating an entry in place (receipt, supersede). */
-  touch(): void {
+  touch(entry: OverlayEntry): void {
     this.version++;
+    this.changed([entry]);
   }
 
   /** Drops entries every holder has caught up with. */
@@ -339,18 +390,37 @@ export class Overlay {
     if (gone.length) {
       this.list = this.list.filter(entry => !gone.includes(entry));
       this.version++;
+      this.changed(gone);
     }
     return gone;
   }
 
   row(row: ThreadRow, rowState: State | null, order: StateOrder): ThreadRow {
-    if (!this.list.length) return row;
+    if (!this.list.some(entry => entry.targets.has(row.id))) return row;
     const at = rowState ? `${rowState.dbEpoch}:${rowState.seq}` : '';
     const cached = this.rowCache.get(row);
     if (cached && cached.version === this.version && cached.at === at) return cached.out;
     const out = overlayRow(row, rowState, this.list, order);
-    const stable = cached && JSON.stringify(cached.out) === JSON.stringify(out) ? cached.out : out;
+    const stable = cached && sameThreadRow(cached.out, out) ? cached.out : out;
     this.rowCache.set(row, { version: this.version, at, out: stable });
     return stable;
   }
+}
+
+/** Equality for overlaid rows: patches copy the row and its `workflow` and `rank`, and share everything else. */
+function sameThreadRow(a: ThreadRow, b: ThreadRow): boolean {
+  if (a === b) return true;
+  const ka = Object.keys(a) as Array<keyof ThreadRow>;
+  if (ka.length !== Object.keys(b).length) return false;
+  for (const key of ka) {
+    const x = a[key];
+    const y = b[key];
+    if (Object.is(x, y)) continue;
+    if (!x || !y || typeof x !== 'object' || typeof y !== 'object' || Array.isArray(x))
+      return false;
+    const fx = Object.keys(x) as Array<keyof typeof x>;
+    if (fx.length !== Object.keys(y).length) return false;
+    for (const f of fx) if (!Object.is(x[f], y[f])) return false;
+  }
+  return true;
 }

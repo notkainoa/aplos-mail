@@ -20,7 +20,7 @@ import type {
   Settings,
 } from './contract-shapes';
 import { toErrorBody, UNREACHABLE_MESSAGE, type DataClient } from './client';
-import { sameJson, type Emitter } from './emitter';
+import { SESSION_TOPIC, sameJson, type Emitter } from './emitter';
 import type { ConnectionView, CountsView, StatusSlotState } from './index';
 
 /** Most urgent first (DESIGN 7.1). `reconnectSoon` sits between `offline` and `backfilling`. */
@@ -187,7 +187,7 @@ export class SessionStore {
   private setConnection(next: ConnectionView): void {
     if (sameJson(next, this.connection)) return;
     this.connection = next;
-    this.emitter.emit();
+    this.emitter.emit(SESSION_TOPIC);
   }
 
   private read(name: Singleton): void {
@@ -225,6 +225,7 @@ export class SessionStore {
                 reasonCode: null,
                 canRetry: true,
               });
+            // The epoch and the engine clock may have moved: every store re-reads.
             this.emitter.emit();
           },
           error => {
@@ -244,7 +245,7 @@ export class SessionStore {
           if (!current()) return;
           if (!sameJson(r.list, this.accounts)) {
             this.accounts = r.list;
-            this.emitter.emit();
+            this.emitter.emit(SESSION_TOPIC);
           }
         }, noop);
         return;
@@ -270,7 +271,7 @@ export class SessionStore {
   ): void {
     if (!current() || sameJson(value, this[key])) return;
     (this as SessionStore)[key] = value;
-    this.emitter.emit();
+    this.emitter.emit(SESSION_TOPIC);
   }
 }
 

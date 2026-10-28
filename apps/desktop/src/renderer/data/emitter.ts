@@ -1,31 +1,73 @@
-/** The one change signal every store in the data layer shares; hooks read it through `useSyncExternalStore`. */
+/**
+ * The change signal every store in the data layer shares; hooks read it through `useSyncExternalStore`. An emit may
+ * name topics (a row, a window, an operation, the overlay); a listener with a filter wakes only for topics it reads.
+ * An emit with no topics wakes every listener.
+ */
+export type Topic = string;
+
+/** The topics of one notification; `null` means everything changed. */
+export type Topics = ReadonlySet<Topic> | null;
+
 export interface Emitter {
-  subscribe(listener: () => void): () => void;
-  /** Notify now, or at the end of the current `batch`. */
-  emit(): void;
+  /** `reads` (when given) says whether this listener's snapshot can depend on any of the topics. */
+  subscribe(listener: () => void, reads?: (topics: ReadonlySet<Topic>) => boolean): () => void;
+  /** Notify now, or at the end of the current `batch`. No topics: every listener. */
+  emit(...topics: Topic[]): void;
   /** Run `fn`, then notify once if anything inside emitted. */
   batch<T>(fn: () => T): T;
   /** Bumped on every change, so snapshot caches know when to recompute. */
   readonly version: number;
 }
 
+export const OVERLAY_TOPIC = 'overlay';
+export const FAILURES_TOPIC = 'failures';
+export const UNDO_TOPIC = 'undo';
+export const SESSION_TOPIC = 'session';
+export const BODY_TOPIC = 'body';
+
+export const rowTopic = (type: string, id: string): Topic => `row:${type}:${id}`;
+export const windowTopic = (key: string): Topic => `window:${key}`;
+export const opTopic = (opId: string): Topic => `op:${opId}`;
+
+/** True when the topics name a row of `type` whose id `has` accepts. */
+export function readsRows(
+  topics: ReadonlySet<Topic>,
+  type: string,
+  has: (id: string) => boolean,
+): boolean {
+  const prefix = `row:${type}:`;
+  for (const topic of topics)
+    if (topic.startsWith(prefix) && has(topic.slice(prefix.length))) return true;
+  return false;
+}
+
 export function createEmitter(): Emitter {
-  const listeners = new Set<() => void>();
+  const listeners = new Map<() => void, ((topics: ReadonlySet<Topic>) => boolean) | undefined>();
   let version = 0;
   let depth = 0;
   let dirty = false;
+  let pending: Set<Topic> | null = new Set();
   const notify = () => {
-    for (const listener of [...listeners]) listener();
+    const topics = pending;
+    pending = new Set();
+    for (const [listener, reads] of [...listeners])
+      if (!topics || !reads || reads(topics)) listener();
+  };
+  const note = (topics: Topic[]) => {
+    if (!topics.length) pending = null;
+    else if (pending) for (const topic of topics) pending.add(topic);
   };
   return {
-    subscribe(listener) {
-      listeners.add(listener);
+    subscribe(listener, reads) {
+      const own = () => listener();
+      listeners.set(own, reads);
       return () => {
-        listeners.delete(listener);
+        listeners.delete(own);
       };
     },
-    emit() {
+    emit(...topics) {
       version++;
+      note(topics);
       if (depth > 0) dirty = true;
       else notify();
     },

@@ -5,7 +5,7 @@
  */
 import type { MessageId } from './contract-shapes';
 import { toErrorBody, type DataClient } from './client';
-import type { Emitter } from './emitter';
+import { BODY_TOPIC, type Emitter } from './emitter';
 import type { BodyResult } from './index';
 import type { Timers } from './scheduler';
 
@@ -74,19 +74,19 @@ export class BodyStore {
     const retry = entry.result.retry;
     if (entry.result.status !== 'loading') {
       entry.result = { status: 'loading', slow: false, body: undefined, error: null, retry };
-      this.emitter.emit();
+      this.emitter.emit(BODY_TOPIC);
     }
     entry.cancelSlow?.();
     entry.cancelSlow = this.timers.setTimeout(() => {
       if (entry.result.status !== 'loading') return;
       entry.result = { ...entry.result, slow: true };
-      this.emitter.emit();
+      this.emitter.emit(BODY_TOPIC);
     }, BODY_SLOW_MS);
     this.client.call('MessageBody/get', { messageId }).then(
       body => {
         entry.cancelSlow?.();
         entry.result = { status: 'ready', slow: false, body, error: null, retry };
-        this.emitter.emit();
+        this.emitter.emit(BODY_TOPIC);
       },
       error => {
         entry.cancelSlow?.();
@@ -97,7 +97,7 @@ export class BodyStore {
           error: toErrorBody(error),
           retry,
         };
-        this.emitter.emit();
+        this.emitter.emit(BODY_TOPIC);
       },
     );
   }

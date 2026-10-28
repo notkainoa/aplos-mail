@@ -6,16 +6,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import type { ThreadRow, ViewSpec } from './contract-shapes';
-import { createHarness, type Harness } from './harness';
+import { createHarness, type Harness, type HarnessOptions } from './harness';
+import { operationStore, rowStore, topicStore, windowStore } from './hooks';
 import { OperationFailedError, type ViewResult } from './index';
+import type { DataLayer } from './layer';
 import type { EngineWindow } from './windows';
 
 const HOME = { kind: 'home' } as const satisfies ViewSpec;
 const INBOX = { kind: 'mailbox', role: 'inbox' } as const satisfies ViewSpec;
 const KEY_TO_STATE_MS = 8;
 
-async function boot() {
-  const h = createHarness();
+async function boot(options: HarnessOptions = {}) {
+  const h = createHarness(options);
   const home = h.layer.windows.acquire(HOME);
   const inbox = h.layer.windows.acquire(INBOX);
   h.layer.session.want('settings');
@@ -35,20 +37,64 @@ async function catchUp(h: Harness, ms = 700) {
   await h.settle();
 }
 
-test('act() applies the overlay synchronously, in both windows, within the key-to-state budget', async () => {
+/**
+ * What mounted hooks do on every notification: React calls each woken store's `getSnapshot`. Per visible row: a row
+ * hook and an operation toast; per window: `copies` views. Returns how many listeners woke since the last read.
+ */
+function mountHooks(layer: DataLayer, windows: readonly ViewSpec[], copies: number) {
+  let woke = 0;
+  const stops: Array<() => void> = [];
+  const mount = (store: {
+    subscribe: (l: () => void) => () => void;
+    getSnapshot: () => unknown;
+  }) => {
+    store.getSnapshot();
+    stops.push(
+      store.subscribe(() => {
+        woke++;
+        store.getSnapshot();
+      }),
+    );
+  };
+  const ids = new Set<string>();
+  for (let c = 0; c < copies; c++)
+    for (const spec of windows) {
+      const store = windowStore(layer.emitter, layer.windows, spec);
+      for (const id of store.getSnapshot().ids) ids.add(id);
+      mount(store);
+    }
+  for (let c = 0; c < copies; c++)
+    for (const id of ids) {
+      mount(rowStore(layer, 'Thread', id));
+      mount(operationStore(layer, `op-elsewhere-${id}`));
+    }
+  mount(
+    topicStore(
+      layer.emitter,
+      t => t.has('session'),
+      () => layer.session.settings,
+    ),
+  );
+  return {
+    count: stops.length,
+    woke: () => {
+      const n = woke;
+      woke = 0;
+      return n;
+    },
+    stop: () => stops.forEach(stop => stop()),
+  };
+}
+
+test('act() applies the overlay synchronously, in both windows', async () => {
   const { h, home, inbox } = await boot();
   try {
     const target = home.snapshot().ids.find(id => inbox.snapshot().ids.includes(id))!;
     assert.ok(target, 'a row in both Home and the Inbox');
-    const start = performance.now();
     const { opId, receipt } = h.layer.api.thread.act({ ids: [target], action: { type: 'done' } });
-    const homeNow = rowsOf(home);
-    const inboxNow = rowsOf(inbox);
-    const took = performance.now() - start;
-    assert.ok(!homeNow.ids.includes(target), 'gone from Home before act() returned');
-    assert.ok(!inboxNow.ids.includes(target), 'gone from the Inbox too (Done archives)');
+    assert.ok(!rowsOf(home).ids.includes(target), 'gone from Home before act() returned');
+    assert.ok(!rowsOf(inbox).ids.includes(target), 'gone from the Inbox too (Done archives)');
     assert.equal(h.layer.operations.view(opId)!.state, 'pending');
-    assert.ok(took < KEY_TO_STATE_MS, `key to state took ${took.toFixed(2)} ms`);
     await receipt;
     await catchUp(h);
     assert.equal(
@@ -63,24 +109,52 @@ test('act() applies the overlay synchronously, in both windows, within the key-t
   }
 });
 
-test('key to state stays under 8 ms at p95 over 300 triage keys', async () => {
-  const { h, home, inbox } = await boot();
+test('act() wakes only the windows and the target row hooks', async () => {
+  const { h, home } = await boot({ deferred: true });
+  const hooks = mountHooks(h.layer, [HOME, INBOX], 1);
   try {
+    const target = home.snapshot().ids[0]!;
+    hooks.woke();
+    h.layer.api.thread.act({ ids: [target], action: { type: 'read' } });
+    // Two windows and the target's row hook; never the other rows, toasts or settings.
+    assert.equal(hooks.woke(), 3);
+    await catchUp(h);
+  } finally {
+    hooks.stop();
+    h.close();
+  }
+});
+
+test('key to state: act() and the woken snapshots stay under 8 ms at p95 with hundreds of hooks mounted', async () => {
+  // A deferred transport, as in the app, so the timing is the data layer's own synchronous work and not the stand-in's.
+  // CPU time, not wall time: a loaded test machine preempts the thread. APLOS_PERF=1 also checks wall time.
+  const { h, home } = await boot({ deferred: true });
+  const hooks = mountHooks(h.layer, [HOME, INBOX], 28);
+  try {
+    assert.ok(hooks.count >= 400, `${hooks.count} hooks mounted`);
     const ids = home.snapshot().ids;
-    const samples: number[] = [];
-    for (let i = 0; i < 300; i++) {
+    const cpu: number[] = [];
+    const wall: number[] = [];
+    for (let i = 0; i < 340; i++) {
       const id = ids[i % ids.length]!;
+      const startCpu = process.cpuUsage();
       const start = performance.now();
       h.layer.api.thread.act({ ids: [id], action: { type: i % 2 ? 'read' : 'unread' } });
-      rowsOf(home).rows.get(id);
-      rowsOf(inbox);
-      samples.push(performance.now() - start);
+      const took = performance.now() - start;
+      const used = process.cpuUsage(startCpu);
+      if (i >= 40) {
+        cpu.push((used.user + used.system) / 1000);
+        wall.push(took);
+      }
       if (i % 25 === 24) await catchUp(h, 300);
     }
-    samples.sort((a, b) => a - b);
-    const p95 = samples[Math.floor(samples.length * 0.95)]!;
-    assert.ok(p95 < KEY_TO_STATE_MS, `p95 ${p95.toFixed(2)} ms`);
+    const p95 = (samples: number[]) =>
+      [...samples].sort((a, b) => a - b)[Math.floor(samples.length * 0.95)]!;
+    assert.ok(p95(cpu) < KEY_TO_STATE_MS, `p95 ${p95(cpu).toFixed(2)} ms of CPU`);
+    if (process.env.APLOS_PERF)
+      assert.ok(p95(wall) < KEY_TO_STATE_MS, `p95 ${p95(wall).toFixed(2)} ms wall`);
   } finally {
+    hooks.stop();
     h.close();
   }
 });
@@ -188,7 +262,9 @@ test('a provider refusal after the receipt puts the row back in place and offers
     assert.equal(retried.opId, opId, 'same operation');
     await retried.receipt;
     assert.equal(h.callsOf('Operation/retry').length, 1);
+    assert.ok(!h.layer.failures.has(target), 'the retry went through: the error clears');
     await catchUp(h);
+    assert.ok(!rowsOf(home).failures.has(target));
     assert.deepEqual(home.snapshot().ids, await truthIds(h, HOME));
     assert.equal(h.layer.overlay.entries.length, 0);
   } finally {
@@ -289,6 +365,121 @@ test('a selector over a section empties it at once and counts it as zero', async
     await catchUp(h);
     assert.deepEqual(home.snapshot().ids, await truthIds(h, HOME));
     assert.equal(h.layer.overlay.entries.length, 0);
+  } finally {
+    h.close();
+  }
+});
+
+test("a refused row's Retry goes through Operation/retry, and an undo after it shows no stale error", async () => {
+  const { h, home } = await boot();
+  try {
+    await h.control.failNextWrite({
+      mode: 'afterReceipt',
+      type: 'conflict',
+      message: 'Refused by the provider.',
+      afterMs: 600,
+    });
+    const target = home.snapshot().ids[0]!;
+    const { opId, receipt } = h.layer.api.thread.act({ ids: [target], action: { type: 'done' } });
+    await receipt;
+    await catchUp(h, 300);
+    await catchUp(h, 400);
+    const failure = rowsOf(home).failures.get(target);
+    assert.ok(failure, 'refused: the row carries the error');
+    h.clearCalls();
+    const again = failure.retry();
+    assert.equal(again.opId, opId, 'the same operation, not a fresh action');
+    assert.ok(!rowsOf(home).failures.has(target), 'the error clears at once');
+    await again.receipt;
+    assert.equal(h.callsOf('Operation/retry').length, 1);
+    assert.equal(h.callsOf('Thread/act').length, 0);
+    await catchUp(h);
+    assert.notEqual(h.layer.operations.view(opId)!.remote, 'failed');
+    assert.deepEqual(home.snapshot().ids, await truthIds(h, HOME));
+
+    const undone = h.layer.api.operation.undo({ opId });
+    await undone.receipt;
+    await catchUp(h);
+    assert.ok(home.snapshot().ids.includes(target), 'undone: back in Home');
+    assert.equal(rowsOf(home).failures.has(target), false, 'with no stale error');
+    assert.equal(h.layer.failures.size, 0);
+  } finally {
+    h.close();
+  }
+});
+
+test('an undone Later takes the row out of Later at once while it puts it back in Home', async () => {
+  const LATER = { kind: 'later' } as const satisfies ViewSpec;
+  const { h, home } = await boot();
+  const later = h.layer.windows.acquire(LATER);
+  await h.settle();
+  try {
+    const target = home.snapshot().ids[0]!;
+    const moved = h.layer.api.thread.act({ ids: [target], action: { type: 'later' } });
+    await moved.receipt;
+    await catchUp(h);
+    assert.ok(later.snapshot().ids.includes(target), 'in Later');
+    await h.control.setOrdering({ ordering: { mode: 'receiptFirst', delayMs: 300 } });
+    const undone = h.layer.api.operation.undo({ opId: moved.opId });
+    assert.ok(home.snapshot().ids.includes(target), 'back in Home at once');
+    assert.ok(!later.snapshot().ids.includes(target), 'and out of Later at once');
+    await undone.receipt;
+    await h.settle();
+    assert.ok(later.base!.ids.includes(target), 'the frame has not come yet');
+    assert.ok(!later.snapshot().ids.includes(target), 'no copy lingers meanwhile');
+    await catchUp(h, 400);
+    assert.deepEqual(later.snapshot().ids, await truthIds(h, LATER));
+    assert.deepEqual(home.snapshot().ids, await truthIds(h, HOME));
+    assert.equal(h.layer.overlay.entries.length, 0);
+  } finally {
+    h.close();
+  }
+});
+
+test("the Inbox prediction follows the owner's Done setting with no settings hook mounted", async () => {
+  const h = createHarness();
+  const inbox = h.layer.windows.acquire(INBOX);
+  await h.settle();
+  try {
+    await h.truth.api.settings.set({
+      opId: 'op-done-reads',
+      patch: { mail: { doneAction: 'read' } },
+    });
+    await catchUp(h);
+    assert.equal(h.layer.session.settings?.mail.doneAction, 'read');
+    const target = inbox.snapshot().ids[0]!;
+    const { receipt } = h.layer.api.thread.act({ ids: [target], action: { type: 'done' } });
+    assert.ok(inbox.snapshot().ids.includes(target), 'Done marks it read here, so it stays');
+    await receipt;
+    await catchUp(h);
+    assert.deepEqual(inbox.snapshot().ids, await truthIds(h, INBOX));
+  } finally {
+    h.close();
+  }
+});
+
+test('operation rows are held only while their record is remembered; a reset re-reads only those', async () => {
+  const { h, home } = await boot();
+  try {
+    const ids = home.snapshot().ids;
+    const opIds: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const r = h.layer.api.thread.act({
+        ids: [ids[i % ids.length]!],
+        action: { type: i % 2 ? 'read' : 'unread' },
+      });
+      opIds.push(r.opId);
+      await r.receipt;
+    }
+    await catchUp(h);
+    assert.equal(h.layer.rows.size('Operation'), 12);
+    for (const opId of opIds.slice(0, 10)) h.layer.operations.forget(opId);
+    assert.equal(h.layer.rows.size('Operation'), 2);
+    h.clearCalls();
+    await h.control.reset({ reason: 'restart' });
+    await h.settle();
+    const read = h.callsOf('Operation/get').flatMap(c => (c.args as { opIds: string[] }).opIds);
+    assert.deepEqual(read.sort(), opIds.slice(10).sort());
   } finally {
     h.close();
   }

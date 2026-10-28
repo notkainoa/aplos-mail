@@ -12,7 +12,7 @@ import type {
   ThreadAction,
   ThreadRow,
 } from './contract-shapes';
-import { memoSnapshot, sameJson, type Emitter } from './emitter';
+import { memoSnapshot, opTopic, sameJson, UNDO_TOPIC, type Emitter } from './emitter';
 import type {
   ActResult,
   LocalUndo,
@@ -74,6 +74,8 @@ export interface OperationsDeps {
   readonly retry: (record: OpRecord) => ActResult;
   readonly undo: (opId: OpId) => ActResult;
   readonly mintId: (prefix: string) => string;
+  /** A record was forgotten (evicted or dropped): release what the layer holds for it. */
+  readonly forgotten?: (opId: OpId) => void;
 }
 
 export class Operations {
@@ -89,13 +91,19 @@ export class Operations {
   add(record: OpRecord): void {
     this.records.set(record.opId, record);
     while (this.records.size > KEEP_OPERATIONS) this.forget(this.records.keys().next().value!);
-    this.deps.emitter.emit();
+    this.changed(record.opId);
   }
 
   forget(opId: OpId): void {
-    this.records.delete(opId);
+    if (!this.records.delete(opId)) return;
     this.views.delete(opId);
-    this.deps.emitter.emit();
+    this.deps.forgotten?.(opId);
+    this.changed(opId);
+  }
+
+  /** Wake the views of one operation and the undo stack. */
+  changed(opId: OpId): void {
+    this.deps.emitter.emit(opTopic(opId), UNDO_TOPIC);
   }
 
   /** Every record, oldest first. */
@@ -192,7 +200,7 @@ export class UndoStackStore implements UndoStack {
       id,
       forget: () => {
         this.entries = this.entries.filter(e => e.id !== id);
-        this.deps.emitter.emit();
+        this.deps.emitter.emit(UNDO_TOPIC);
       },
     };
   }
@@ -209,7 +217,7 @@ export class UndoStackStore implements UndoStack {
     const entry = this.newest();
     if (!entry) return null;
     this.entries = this.entries.slice(0, this.entries.indexOf(entry));
-    this.deps.emitter.emit();
+    this.deps.emitter.emit(UNDO_TOPIC);
     if (entry.kind === 'operation') {
       return { kind: 'operation', opId: entry.opId, result: this.deps.undo(entry.opId) };
     }
@@ -228,6 +236,6 @@ export class UndoStackStore implements UndoStack {
 
   private add(entry: StackEntry): void {
     this.entries = [...this.entries, entry].slice(-KEEP_UNDO);
-    this.deps.emitter.emit();
+    this.deps.emitter.emit(UNDO_TOPIC);
   }
 }

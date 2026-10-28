@@ -38,9 +38,18 @@ export interface Harness {
 
 const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
 
-export function createHarness(
-  options: { scenario?: Scenario; seed?: number; checkResults?: boolean } = {},
-): Harness {
+export interface HarnessOptions {
+  readonly scenario?: Scenario;
+  readonly seed?: number;
+  readonly checkResults?: boolean;
+  /**
+   * Hand each call to the engine on a later task, as a real transport does. The in-process stand-in otherwise runs
+   * the engine's work inside `call()`, so a timing of `act()` would include it.
+   */
+  readonly deferred?: boolean;
+}
+
+export function createHarness(options: HarnessOptions = {}): Harness {
   const engine = createFixtureEngine({
     scenario: options.scenario ?? 'demo',
     clock: defaultNow,
@@ -52,7 +61,8 @@ export function createHarness(
   const session: EngineSession = {
     call(method, args, callOptions) {
       calls.push({ method: method as MethodName, args });
-      return inner.call(method, args, callOptions);
+      if (!options.deferred) return inner.call(method, args, callOptions);
+      return nextTask().then(() => inner.call(method, args, callOptions));
     },
     subscribe: listener => inner.subscribe(listener),
     close: () => inner.close(),

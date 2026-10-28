@@ -1,7 +1,7 @@
 /**
  * The data layer, framework-free: one client, the row cache, the windows, the overlay, operations and the undo
- * stack, session singletons, streams, bodies, holds and prefetch, all on one change signal. `hooks.ts` puts React on
- * top with `useSyncExternalStore`; tests drive this directly. Engine frames are queued and applied once per animation
+ * stack, session singletons, streams, bodies, holds and prefetch, all on one change signal whose emits name topics.
+ * `hooks.ts` puts React on top with `useSyncExternalStore`; tests drive this directly. Engine frames are queued and applied once per animation
  * frame (DESIGN 5 rule 13); a command's overlay applies synchronously, before `api.thread.act` returns (rule 1).
  */
 import type { EngineSession } from '@aplos/contract/client';
@@ -9,7 +9,7 @@ import type { Frame, Id, OpId, Operation, Receipt, State, ThreadRow } from './co
 import { BodyStore } from './bodies';
 import { createDataClient, toErrorBody, type DataClient } from './client';
 import { ClockStore } from './clock';
-import { createEmitter, type Emitter } from './emitter';
+import { createEmitter, FAILURES_TOPIC, OVERLAY_TOPIC, rowTopic, type Emitter } from './emitter';
 import { FrameBus, streamFrame } from './frames';
 import { createHoldGate, type HoldGate } from './holds';
 import {
@@ -102,7 +102,13 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
   const emitter = createEmitter();
   const order = new StateOrder();
   const rows = new RowCache(order, emitter);
-  const overlay = new Overlay();
+  // An entry changes the windows (any of them may show its rows) and its own target rows, nothing else.
+  const overlay = new Overlay(entries => {
+    const topics = [OVERLAY_TOPIC];
+    for (const entry of entries)
+      for (const id of entry.targets) topics.push(rowTopic('Thread', id));
+    emitter.emit(...topics);
+  });
   const clock = new ClockStore(timers);
   const bus = new FrameBus();
   const bodies = new BodyStore(client, emitter, timers);
@@ -182,11 +188,7 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
   };
 
   function sweep() {
-    const gone = overlay.sweep(settled);
-    if (gone.length) {
-      for (const entry of gone) releaseTargets(entry);
-      emitter.emit();
-    }
+    for (const entry of overlay.sweep(settled)) releaseTargets(entry);
   }
 
   /** Where each target sits in every open thread window right now. */
@@ -253,7 +255,7 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
       opId,
       kind: 'restore',
       targets: effect.targets,
-      action: null,
+      action: effect.action,
       selector: null,
       patch: restorePatch(effect.before),
       before: effect.before,
@@ -293,9 +295,10 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
       opId: record.opId,
       action,
       message,
+      // A rejected write acts again; a provider refusal after the receipt goes through Operation/retry.
       retry: () => {
         failure.dismiss();
-        return act({ ids: [...record.targets], action });
+        return retry(record);
       },
       dismiss: () => {
         const left = new Map(failures);
@@ -307,13 +310,13 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
           }
         if (changed) {
           failures = left;
-          emitter.emit();
+          emitter.emit(FAILURES_TOPIC);
         }
       },
     };
     for (const id of record.targets) next.set(id, failure);
     failures = next;
-    emitter.emit();
+    emitter.emit(FAILURES_TOPIC);
   };
 
   const clearFailures = (ids: Iterable<Id>) => {
@@ -323,8 +326,21 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
         next ??= new Map(failures);
         next.delete(id);
       }
-    if (next) failures = next;
+    if (next) {
+      failures = next;
+      emitter.emit(FAILURES_TOPIC);
+    }
   };
+
+  /** Drop the inline errors one operation put on its rows (it went through, or was undone). */
+  const clearFailuresOf = (opId: OpId) => {
+    const ids: Id[] = [];
+    for (const [id, f] of failures) if (f.opId === opId) ids.push(id);
+    clearFailures(ids);
+  };
+
+  /** Operation rows held for records still remembered; released when the record is forgotten. */
+  const heldOperations = new Set<OpId>();
 
   // ---- commands ------------------------------------------------------------------------------------------------
 
@@ -343,21 +359,21 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
       const entry = overlay.get(opId);
       if (entry) {
         entry.appliedState = receipt.appliedState;
-        overlay.touch();
+        overlay.touch(entry);
       }
       const record = operations.get(opId);
       if (record) {
         record.state = 'confirmed';
         record.receiptUndoable = receipt.undoable !== false;
         record.undoUntil = receipt.undoUntil ?? null;
-        if (record.undoOf) {
-          const original = dropEntry(record.undoOf);
-          if (original) overlay.touch();
+        if (record.undoOf) dropEntry(record.undoOf);
+        if (!heldOperations.has(opId)) {
+          heldOperations.add(opId);
+          rows.retain('Operation', [opId]);
         }
-        rows.retain('Operation', [opId]);
         fetcher.request('Operation', [opId]);
+        operations.changed(opId);
       }
-      emitter.emit();
       sweep();
     });
     return receipt;
@@ -375,7 +391,7 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
           const original = overlay.get(record.undoOf);
           if (original) {
             original.superseded = false;
-            overlay.touch();
+            overlay.touch(original);
           }
           const undone = operations.get(record.undoOf);
           if (undone?.undoneBy === opId) undone.undoneBy = null;
@@ -419,7 +435,6 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
         undoneBy: null,
       });
       undoStack.pushOperation(opId);
-      emitter.emit();
     });
     const wire = args.ids?.length
       ? { opId, ids: [...args.ids], action }
@@ -438,12 +453,14 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
         const original = overlay.get(args.opId);
         if (original) {
           original.superseded = true;
-          overlay.touch();
+          overlay.touch(original);
         }
         effect = inverse(record.effect);
         addEntry(entryFor(undoOpId, effect));
         record.undoneBy = undoOpId;
+        operations.changed(args.opId);
       }
+      clearFailuresOf(args.opId);
       operations.add({
         opId: undoOpId,
         kind: 'undo',
@@ -458,7 +475,6 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
         undoUntil: null,
         undoneBy: null,
       });
-      emitter.emit();
     });
     return {
       opId: undoOpId,
@@ -475,12 +491,15 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
     if (record.state === 'confirmed' && rows.get('Operation', record.opId)?.state === 'failed') {
       const receipt = client.call('Operation/retry', { opId: record.opId }).then(
         r => {
-          fetcher.request('Operation', [record.opId]);
           rows.markStale('Operation', [record.opId]);
+          fetcher.request('Operation', [record.opId]);
+          clearFailuresOf(record.opId);
           return r;
         },
         error => {
-          throw new OperationFailedError(record.opId, toErrorBody(error));
+          const body = toErrorBody(error);
+          setFailures(record, body.message);
+          throw new OperationFailedError(record.opId, body);
         },
       );
       receipt.catch(() => {});
@@ -502,6 +521,9 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
     retry,
     undo: opId => undo({ opId }),
     mintId: mint,
+    forgotten: opId => {
+      if (heldOperations.delete(opId)) rows.release('Operation', [opId]);
+    },
   });
   const undoStack = new UndoStackStore(operations, {
     emitter,
@@ -516,7 +538,12 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
   const onOperationFrame = (operation: Operation, state: State) => {
     rows.put('Operation', [operation], state);
     const record = operations.get(operation.opId);
-    if (operation.state !== 'failed' || !record || record.kind !== 'act' || !record.effect) return;
+    if (operation.state !== 'failed') {
+      // Retried (here or elsewhere) and on its way again: its rows lose their inline error.
+      clearFailuresOf(operation.opId);
+      return;
+    }
+    if (!record || record.kind !== 'act' || !record.effect) return;
     // The provider refused it after the receipt: the engine put the rows back; show them in place until the
     // windows catch up with this frame, with the inline error and Retry.
     dropEntry(operation.opId);
@@ -683,6 +710,8 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
   };
 
   session.start();
+  // Whether Done and Later take a row out of the Inbox depends on the owner's settings; never predict on defaults.
+  session.want('settings');
 
   return {
     client,

@@ -11,8 +11,8 @@ This folder holds the one way the new screens read mail and send commands to the
 | `windows.ts` | `engineWindows`: `View/watch`, `View/move`, `View/unwatch`, `View/hold`, `View/release`; ID-only frames; reopen on `reset` (any reason, including `cannotCalculateChanges`); held windows queue frames and reconcile on release. |
 | `optimistic.ts` | The overlay: entries `{opId, targets, patch, originalPosition}` laid over windows and rows until each reaches the receipt's `appliedState`; `restore` entries put rows back for undo and provider refusals. |
 | `operations.ts` | `OperationView`s and the one undo stack (engine operations and local entries; Z takes the newest). |
-| `layer.ts` | Composes the rest on one change signal; frames apply once per animation frame, `api.thread.act` applies its overlay synchronously. |
-| `hooks.ts` | The React hooks, each `useSyncExternalStore` over a plain store. |
+| `layer.ts` | Composes the rest on one change signal whose emits name topics (a row, a window, an operation, the overlay), so a hook wakes only for what it reads; frames apply once per animation frame, `api.thread.act` applies its overlay synchronously. |
+| `hooks.ts` | The React hooks, each `useSyncExternalStore` over a plain store that subscribes only to its own topics. |
 | `holds.ts`, `prefetch.ts`, `session.ts`, `clock.ts`, `frames.ts`, `bodies.ts`, `home.ts` | Hold gate (generated `hold` timing), prefetch on intent, session and status slot order, the clock, `useFrames` streams, message bodies, Home's sections. |
 | `harness.ts` | Test support: the layer on a fake-clock stand-in with a manual scheduler and timers and every call recorded. |
 | `contract-shapes.ts` | The wire types, as type-only re-exports and thin aliases of `@aplos/contract`, under the contract's names. It declares no shape of its own. |
