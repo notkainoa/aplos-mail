@@ -189,6 +189,15 @@ export const STATES: readonly VisualState[] = [
     filled: 0,
   },
   {
+    id: 'onboarding-choice-group',
+    frame: 'window',
+    title: 'Onboarding: a radiogroup of ChoiceRows',
+    components: ['ChoiceGroup', 'ChoiceRow', 'OnboardingStep'],
+    design: '7.11',
+    mockup: 'onboarding-ai.html (default)',
+    filled: 1,
+  },
+  {
     id: 'onboarding-step',
     frame: 'window',
     title: 'Onboarding step: add your mail',

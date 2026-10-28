@@ -605,6 +605,7 @@
   }
 }
 .ui-menu {
+  box-sizing: content-box; /* --menu-min is the width of the rows; the padding sits outside it */
   min-width: var(--menu-min);
   max-width: calc(var(--menu-min) * 2);
   padding: var(--space-1);
@@ -821,7 +822,10 @@
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
   outline: none;
-  animation: ui-settle var(--dur-settle-in) var(--ease-out) both;
+  /* Fill backwards only: `both` would keep an identity transform on the dialog after the entrance, and that
+     transform makes the dialog the containing block of every fixed Menu and Popover inside it, so they opened
+     offset. The leaving animation below keeps `both`: it ends invisible. */
+  animation: ui-settle var(--dur-settle-in) var(--ease-out) backwards;
 }
 @keyframes ui-settle {
   from {
@@ -1145,6 +1149,7 @@
   pointer-events: none;
 }
 .ui-toast {
+  box-sizing: content-box; /* the sizes below are the content; the padding sits outside them */
   position: relative;
   display: flex;
   align-items: center;

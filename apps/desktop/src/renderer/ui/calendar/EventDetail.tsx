@@ -1,7 +1,7 @@
 import { useId, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import type { CalendarEventData, EventDetailProps, EventGuest, RsvpAnswer } from '../props';
-import { dayOf, longDay, rangeOf } from './dates';
+import { dayOf, isoOf, longDay, rangeOf, shortDay, timeOf } from './dates';
 import { calVar } from './eventText';
 import { CalIcon } from './icons';
 import { keycapOf } from './keycaps';
@@ -19,9 +19,27 @@ const ANSWERS: ReadonlyArray<{ id: RsvpAnswer; label: string; command: 'yes' | '
   { id: 'no', label: 'No', command: 'no' },
 ];
 
-function whenLine(event: CalendarEventData): string {
-  const day = longDay(dayOf(event.start));
-  return event.allDay ? `${day} · All day` : `${day} · ${rangeOf(event.start, event.end)}`;
+/** The last day an entry touches: its end is exclusive, so an end at midnight belongs to the day before. */
+function lastDayOf(event: CalendarEventData): string {
+  const start = new Date(event.start).getTime();
+  const end = new Date(event.end).getTime();
+  return isoOf(new Date(Math.max(start, end - 60000)));
+}
+
+/**
+ * The when line. One day: "Thursday, October 29 · 10:30 – 11:30 AM" (or "· All day"). Several days: the times
+ * with their days, "Mon, Oct 26, 9:00 AM – Wed, Oct 28, 5:00 PM"; all-day as a date range, "Mon, Oct 26 – Wed,
+ * Oct 28 · All day".
+ */
+export function whenLine(event: CalendarEventData): string {
+  const first = dayOf(event.start);
+  const last = lastDayOf(event);
+  if (last === first) {
+    const day = longDay(first);
+    return event.allDay ? `${day} · All day` : `${day} · ${rangeOf(event.start, event.end)}`;
+  }
+  if (event.allDay) return `${shortDay(first)} – ${shortDay(last)} · All day`;
+  return `${shortDay(first)}, ${timeOf(event.start)} – ${shortDay(dayOf(event.end))}, ${timeOf(event.end)}`;
 }
 
 /** What the ⋯ button names in its tooltip: Delete exists only on a saved event you organise (DESIGN 7.8 Fixes). */

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { copyProblem } from '../../commands/internal';
 import type { KeyRecorderProps, ProviderTableProps } from '../props';
-import { KeyRecorder, ProviderTable, SettingRow } from './index';
+import { focusSettingRow, KeyRecorder, ProviderTable, SettingRow } from './index';
 import { chordText, recorderKeyAction } from './KeyRecorder';
 import { latencyText } from './ProviderTable';
 
@@ -621,4 +621,81 @@ test('KeyRecorder worst case: 300-character label, many chords, one-letter comma
       ),
     );
   }
+});
+
+test('SettingRow paletteId: the row carries its anchor so settings/<section>#<row> can scroll to it', () => {
+  const out = html(
+    <SettingRow id="undo-label" label="Undo send" paletteId="setting.mail.undoSeconds" />,
+  );
+  assert.match(
+    out,
+    /<div id="undoSeconds" class="ui-setting-row"[^>]*data-setting-anchor="undoSeconds"/,
+  );
+  // The label keeps its own id, so the two never clash.
+  assert.match(out, /id="undo-label"/);
+  // When the anchor is the label's id the label is the target and the row does not repeat it.
+  const same = html(
+    <SettingRow id="undoSeconds" label="Undo send" paletteId="setting.mail.undoSeconds" />,
+  );
+  assert.equal((same.match(/id="undoSeconds"/g) ?? []).length, 1);
+  assert.match(same, /data-setting-anchor="undoSeconds"/);
+  // A disclosure row carries it too; no paletteId, no anchor.
+  const folded = html(
+    <SettingRow
+      id="how"
+      label="How your mail is used"
+      paletteId="setting.ai.how"
+      disclosure={{ expanded: false, onToggle: noop, content: 'Text' }}
+    />,
+  );
+  assert.match(folded, /data-setting-anchor="how"/);
+  assert.doesNotMatch(html(<SettingRow id="plain" label="Plain" />), /data-setting-anchor/);
+});
+
+/** A minimal stand-in for the few DOM calls focusSettingRow makes, so its order of choices is tested in Node. */
+function fakeRoot(
+  rows: Record<string, { control?: string[]; toggle?: boolean; focusable?: string[] }>,
+) {
+  const log: string[] = [];
+  const el = (name: string) => ({
+    focus: () => log.push(`focus ${name}`),
+  });
+  const root = {
+    querySelectorAll: () =>
+      Object.keys(rows).map(anchor => ({
+        dataset: { settingAnchor: anchor },
+        scrollIntoView: () => log.push(`scroll ${anchor}`),
+        querySelector: (selector: string) => {
+          const row = rows[anchor];
+          if (selector === '.ui-setting-row__control')
+            return row.control
+              ? { querySelector: () => (row.control!.length ? el(`${anchor} control`) : null) }
+              : null;
+          if (selector === '.ui-setting-row__toggle')
+            return row.toggle ? el(`${anchor} toggle`) : null;
+          return row.focusable?.length ? el(`${anchor} first`) : null;
+        },
+      })),
+  };
+  return { root: root as unknown as ParentNode, log };
+}
+
+test('focusSettingRow scrolls to the row and focuses its control, then its toggle, then its first control', () => {
+  const { root, log } = fakeRoot({
+    undoSeconds: { control: ['switch'], toggle: true },
+    folded: { toggle: true, focusable: ['x'] },
+    plain: { focusable: ['x'] },
+  });
+  assert.equal(focusSettingRow('undoSeconds', root), true);
+  assert.deepEqual(log.splice(0), ['scroll undoSeconds', 'focus undoSeconds control']);
+  assert.equal(focusSettingRow('folded', root), true);
+  assert.deepEqual(log.splice(0), ['scroll folded', 'focus folded toggle']);
+  assert.equal(focusSettingRow('plain', root), true);
+  assert.deepEqual(log.splice(0), ['scroll plain', 'focus plain first']);
+});
+
+test('focusSettingRow reports an unknown anchor and does nothing', () => {
+  const { root, log } = fakeRoot({ undoSeconds: { control: ['switch'] } });
+  assert.equal(focusSettingRow('nope', root), false);
+  assert.deepEqual(log, []);
 });
