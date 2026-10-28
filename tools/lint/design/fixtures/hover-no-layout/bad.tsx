@@ -22,3 +22,13 @@ export function Row({ isHovering }: { isHovering: boolean }) {
 }
 
 export const sheet = `.row:hover { display: block; }`; // @expect
+
+export function Lower() {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div onMouseEnter={() => setHovered(true)}>
+      {hovered && <kbd>E</kbd>} {/* @expect */}
+      {hovered ? <span className="keycap">L</span> : null} {/* @expect */}
+    </div>
+  );
+}

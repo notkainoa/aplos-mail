@@ -15,3 +15,5 @@ export function mark(el: HTMLElement) {
   el.classList.add('is-open');
   el.style.transform = 'translateX(0)';
 }
+
+export const flat = { transform: 'translate3d(4px, 0, 0) rotate(2deg)', rotate: '2deg' };

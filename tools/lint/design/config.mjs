@@ -1,8 +1,14 @@
 // Which files the design lint covers by default, and what it never covers.
 // Exempt: the token sources and generated files only (DESIGN 12.2), plus
-// tests and fixtures, which plant violations on purpose. There are no inline
-// disable comments.
+// test files and this tool's own fixtures, which plant violations on purpose.
+// There are no inline disable comments.
+//
+// Contract with the token generator: it writes
+// apps/desktop/src/renderer/ui/generated/tokens.css, motion.ts and
+// contrast-pairs.json, and nothing else is exempt. A generator that wrote
+// ui/tokens.css or ui/motion.ts instead would be linted like any other file.
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +21,11 @@ export const include = ['apps/desktop/src/renderer/**/*.{css,ts,tsx}'];
 // TEMPORARY: every renderer file at this commit that still sits outside
 // renderer/legacy/. Delete this whole list once restructure step 1 lands (the
 // move into legacy/, which the first exclude below already covers).
+//
+// The list expires by itself: it is exempt only while renderer/legacy/ does not
+// exist. Once that folder exists the list stops applying, so a new file at one
+// of these paths (main.tsx, ui/Button.tsx, ui/motion.ts...) is linted, and the
+// test suite fails until the list is deleted.
 export const legacyRendererFiles = [
   'apps/desktop/src/renderer/App.tsx',
   'apps/desktop/src/renderer/Ask.tsx',
@@ -72,13 +83,23 @@ export const legacyRendererFiles = [
   'apps/desktop/src/renderer/useVoice.ts',
 ];
 
-export const exclude = [
+export const legacyFolder = 'apps/desktop/src/renderer/legacy';
+
+export function legacyFolderExists() {
+  return fs.existsSync(path.join(repoRoot, legacyFolder));
+}
+
+export const alwaysExclude = [
   'apps/desktop/src/renderer/legacy/**',
   'apps/desktop/src/renderer/ui/tokens.json',
   'apps/desktop/src/renderer/ui/generated/**',
-  '**/fixtures/**',
-  '**/__fixtures__/**',
+  'tools/lint/design/fixtures/**',
   '**/*.test.{ts,tsx,mjs}',
   '**/*.d.ts',
-  ...legacyRendererFiles,
 ];
+
+export function buildExclude(legacyExists) {
+  return legacyExists ? alwaysExclude : [...alwaysExclude, ...legacyRendererFiles];
+}
+
+export const exclude = buildExclude(legacyFolderExists());

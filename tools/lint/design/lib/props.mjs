@@ -15,7 +15,7 @@ export function stripVendor(prop) {
 const KNOWN_EXACT = new Set([
   'color', 'opacity', 'display', 'position', 'width', 'height', 'top', 'left', 'right', 'bottom',
   'gap', 'row-gap', 'column-gap', 'grid-gap', 'cursor', 'visibility', 'content', 'transform',
-  'transform-origin', 'translate', 'rotate', 'scale', 'perspective', 'perspective-origin',
+  'transform-origin', 'transform-style', 'backface-visibility', 'translate', 'rotate', 'scale', 'perspective', 'perspective-origin',
   'filter', 'backdrop-filter', 'box-shadow', 'text-shadow', 'z-index', 'will-change',
   'fill', 'stroke', 'caret-color', 'accent-color', 'outline', 'border', 'background',
   'font', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'flex', 'inset',

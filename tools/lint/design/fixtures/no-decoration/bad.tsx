@@ -44,3 +44,13 @@ export function mark(el: HTMLElement) {
   el.style.backdropFilter = 'blur(4px)'; // @expect
   el.style.cssText = 'backdrop-filter: blur(4px)'; // @expect
 }
+
+const styles: Record<string, string> = {};
+export const rotated = { transform: 'rotate3d(0, 1, 0, 14deg)' }; // @expect
+export const tilted = { transform: 'rotateX(10deg) translateZ(4px)' }; // @expect
+export const axis = { rotate: 'y 14deg' }; // @expect
+export const preserved = { transformStyle: 'preserve-3d' }; // @expect
+export const lifted = { transform: 'translate3d(0, 0, 10px)' }; // @expect
+export const hidden = { backfaceVisibility: 'hidden' }; // @expect
+export const modular = <div className={styles.readerDock} />; // @expect
+export const cameled = <div className={styles.dockPill} />; // @expect

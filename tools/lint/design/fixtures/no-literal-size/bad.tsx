@@ -46,3 +46,11 @@ export function place(el: HTMLElement) {
   el.style.zIndex = '5'; // @expect
   el.style.setProperty('gap', '12px'); // @expect
 }
+
+const nPad = 7;
+const box = { padding: 7 }; // @expect
+const layer = { zIndex: 9999 }; // @expect
+export const concat = <div style={{ padding: 7 + 'px', fontSize: `${13}px` }} />; // @expect
+export const viaConst = <div style={{ margin: `${nPad}px` }} />; // @expect
+export const boxed = <div style={box} />;
+export const layered = <div style={layer} />;

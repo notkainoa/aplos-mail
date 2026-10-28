@@ -36,10 +36,38 @@ const PHRASE_PATTERNS = BANNED_PHRASES.map((phrase) => ({
 
 const ALONE_LABELS = /^\s*(smart|beta)\s*$/i;
 
-// Object properties whose string values are copy.
-const COPY_KEYS = new Set([
-  'label', 'title', 'description', 'placeholder', 'ariaLabel', 'hint', 'tooltip', 'message',
-  'copy', 'text', 'subtitle', 'caption', 'heading', 'aria-label', 'aria-description',
+// Object properties whose string values are copy: the last word of the key
+// decides, so label, emptyLabel, confirm_label and aria-label all count while
+// context and labelledBy do not.
+const COPY_WORDS = new Set([
+  'label', 'title', 'description', 'placeholder', 'hint', 'tooltip', 'message', 'copy', 'text',
+  'subtitle', 'caption', 'heading', 'headline', 'summary', 'blurb', 'prompt',
+]);
+
+export function isCopyKey(key) {
+  const words = key.split(/[-_.]+/).flatMap((part) => part.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+/g) || []);
+  const last = words[words.length - 1];
+  return Boolean(last) && COPY_WORDS.has(last.toLowerCase());
+}
+
+// DOM properties and calls that write copy the user sees.
+const COPY_WRITES = new Set(['textContent', 'innerText', 'innerHTML', 'nodeValue', 'title', 'alt']);
+
+// Helpers whose arguments are copy, so an exclamation mark there fails too.
+const COPY_CALLS = /^(toast|notify|notice|announce|alert|confirm|prompt|group|titled|heading|say|speak|showToast|pushToast|addToast|setTitle|setMessage|setLabel|setStatus|success|error|warning|info)$/i;
+
+// Calls that take identifiers, keys, selectors or log text, never copy.
+const CODE_CALLS = new Set([
+  'require', 'import', 'Symbol', 'String', 'Number', 'Boolean', 'parseInt', 'parseFloat', 'log', 'warn',
+  'debug', 'trace', 'getItem', 'setItem', 'removeItem', 'querySelector', 'querySelectorAll',
+  'getElementById', 'closest', 'matches', 'addEventListener', 'removeEventListener', 'dispatchEvent',
+  'createElement', 'getAttribute', 'hasAttribute', 'removeAttribute', 'includes', 'startsWith',
+  'endsWith', 'indexOf', 'lastIndexOf', 'split', 'replace', 'replaceAll', 'test', 'match', 'matchAll',
+  'localeCompare', 'join', 'padStart', 'padEnd', 'charAt', 'has', 'get', 'set', 'add', 'delete',
+  'remove', 'toggle', 'contains', 'invoke', 'handle', 'on', 'off', 'once', 'emit', 'send', 'cx',
+  'clsx', 'classNames', 'cn', 'describe', 'it', 'expect', 'assert', 'equal', 'format', 'RegExp',
+  'Error', 'createContext', 'useState', 'useRef', 'lazy', 'memo', 'forwardRef', 'fetch', 'open',
+  'getComputedStyle', 'setProperty', 'getPropertyValue', 'animate', 'matchMedia', 'toLocaleString',
 ]);
 
 // JSX props that are always copy, even when the value is one lowercase word.
@@ -69,6 +97,17 @@ function looksLikeCode(text) {
   const trimmed = text.trim();
   if (/^[a-z0-9_.:/#?=&%-]+$/.test(trimmed)) return true;
   return /^[a-z]+[A-Z]\w*$/.test(trimmed);
+}
+
+function calleeName(call) {
+  const callee = call.expression;
+  if (ts.isIdentifier(callee)) return callee.text;
+  if (ts.isPropertyAccessExpression(callee)) return callee.name.text;
+  return '';
+}
+
+function isConsoleCall(call) {
+  return /^console\./.test(call.expression.getText());
 }
 
 function copyProblems(text) {
@@ -110,10 +149,46 @@ function tsChecks(ctx, out) {
       for (const leaf of valueLeaves(node.expression, sf)) report(node, copyProblems(leaf.text), 'JSX child');
     } else if (ts.isPropertyAssignment(node)) {
       const key = nameOfProperty(node.name);
-      if (!key || !COPY_KEYS.has(key)) return;
+      if (!key || !isCopyKey(key)) return;
       for (const leaf of valueLeaves(node.initializer, sf)) report(node, copyProblems(leaf.text), `Property ${key}`);
+    } else if (ts.isCallExpression(node)) {
+      callChecks(sf, node, report);
+    } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      assignmentChecks(sf, node, report);
     }
   });
+}
+
+function setAttributeCopy(call) {
+  if (calleeName(call) !== 'setAttribute' || call.arguments.length < 2) return false;
+  const first = call.arguments[0];
+  return ts.isStringLiteral(first) && (isCopyKey(first.text) || COPY_WRITES.has(first.text));
+}
+
+// Copy handed to a helper: toast('...'), window.confirm('...'), group('...', rows).
+// Every string argument is read unless it looks like code. Phrases fail in any
+// call that is not a known code call; an exclamation mark fails in copy helpers
+// and in strings that read as a sentence.
+function callChecks(sf, call, report) {
+  const name = calleeName(call);
+  if (isConsoleCall(call) || (CODE_CALLS.has(name) && !setAttributeCopy(call))) return;
+  const helper = COPY_CALLS.test(name) || setAttributeCopy(call);
+  const args = setAttributeCopy(call) ? call.arguments.slice(1) : call.arguments;
+  for (const argument of args) {
+    for (const leaf of valueLeaves(argument, sf)) {
+      if (!helper && looksLikeCode(leaf.text)) continue;
+      const sentence = /[A-Za-z].*\s.*!|[A-Za-z].*!\s/.test(leaf.text);
+      const problems = copyProblems(leaf.text).filter((problem) => helper || sentence || !problem.includes('exclamation'));
+      report(leaf.node, problems, `Argument of ${name || 'a call'}()`);
+    }
+  }
+}
+
+function assignmentChecks(sf, assignment, report) {
+  const left = assignment.left;
+  const name = ts.isPropertyAccessExpression(left) ? left.name.text : '';
+  if (!name || !(COPY_WRITES.has(name) || isCopyKey(name))) return;
+  for (const leaf of valueLeaves(assignment.right, sf)) report(leaf.node, copyProblems(leaf.text), `Assignment to ${name}`);
 }
 
 function cssChecks(ctx, out) {

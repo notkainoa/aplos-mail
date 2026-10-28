@@ -31,3 +31,12 @@
 .loop-without-duration {
   animation-iteration-count: infinite; /* @expect */
 }
+
+.big-count {
+  animation: used var(--dur-quick) 9999; /* @expect */
+}
+
+.counted {
+  animation-duration: var(--dur-quick);
+  animation-iteration-count: 50; /* @expect */
+}

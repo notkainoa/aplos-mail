@@ -1,5 +1,5 @@
-const dur = { hover: 100, carry: 120, flight: 220 };
-const ease = { carry: 'cubic-bezier(.4,0,1,1)' };
+import { dur, ease } from './ui/generated/motion';
+
 const kf = { opacity: [1, 0] };
 const options = { duration: dur.carry, easing: ease.carry };
 

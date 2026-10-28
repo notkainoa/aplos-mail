@@ -46,7 +46,7 @@ export function optionsObject(sf, call) {
 }
 
 const TIMER_NAMES = new Set(['setTimeout', 'setInterval']);
-const MOTION_STYLE = /^(transform|opacity|transition|translate|scale|rotate|animation|filter)$/i;
+const MOTION_STYLE = /^(transform|opacity|transition|translate|scale|rotate|animation|filter|left|top|right|bottom|inset|width|height|margin\w*|padding\w*)$/i;
 const MOTION_CLASS = /enter|leave|exit|animat|fade|slide|appear|flight|carry|flip/i;
 
 export function findTimerCalls(sf) {

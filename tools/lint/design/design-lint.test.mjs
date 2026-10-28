@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { exclude, legacyRendererFiles, repoRoot } from './config.mjs';
+import {
+  alwaysExclude, buildExclude, exclude, legacyFolderExists, legacyRendererFiles, repoRoot,
+} from './config.mjs';
 import { matchesAny } from './lib/glob.mjs';
 import { lintFile, lintText } from './lib/lint.mjs';
 import { parseValue } from './lib/value.mjs';
@@ -26,17 +28,17 @@ const EXPECTED_RULES = [
 // The fewest distinct violations each bad fixture must plant. The fixtures may
 // grow; they may not shrink without this table changing in review.
 const MIN_PLANTED = {
-  'no-raw-color': { css: 19, tsx: 19 },
-  'no-decoration': { css: 18, tsx: 20 },
-  'no-literal-motion': { css: 13, tsx: 19 },
+  'no-raw-color': { css: 19, tsx: 24 },
+  'no-decoration': { css: 24, tsx: 28 },
+  'no-literal-motion': { css: 13, tsx: 26 },
   'no-layout-motion': { css: 26, tsx: 14 },
-  'hover-no-layout': { css: 18, tsx: 4 },
-  'no-literal-size': { css: 32, tsx: 16 },
+  'hover-no-layout': { css: 18, tsx: 6 },
+  'no-literal-size': { css: 32, tsx: 20 },
   'no-static-will-change': { css: 4, tsx: 5 },
-  'reduced-motion-covered': { css: 10 },
-  'no-banned-icon': { css: 8, tsx: 25 },
-  'no-banned-string': { css: 3, tsx: 50 },
-  'button-variant': { tsx: 12 },
+  'reduced-motion-covered': { css: 12, tsx: 7 },
+  'no-banned-icon': { css: 8, tsx: 31 },
+  'no-banned-string': { css: 3, tsx: 58 },
+  'button-variant': { tsx: 14 },
 };
 
 function markerLines(file) {
@@ -142,18 +144,37 @@ test('the default scope over today\'s tree passes, and the exempt files are exem
     'apps/desktop/src/renderer/ui/tokens.json',
     'apps/desktop/src/renderer/ui/generated/tokens.css',
     'apps/desktop/src/renderer/ui/generated/motion.ts',
-    'apps/desktop/src/renderer/home/fixtures/mail.tsx',
-    'apps/desktop/src/renderer/App.tsx',
-    'apps/desktop/src/renderer/styles/focus.css',
+    'apps/desktop/src/renderer/ui/generated/contrast-pairs.json',
+    'tools/lint/design/fixtures/no-raw-color/bad.css',
   ];
-  for (const file of exempt) assert.ok(matchesAny(file, exclude), file);
+  for (const file of exempt) assert.ok(matchesAny(file, alwaysExclude), file);
   const covered = [
     'apps/desktop/src/renderer/home/Home.tsx',
     'apps/desktop/src/renderer/ui/Button.css',
     'apps/desktop/src/renderer/commands/types.ts',
+    'apps/desktop/src/renderer/home/fixtures/mail.tsx',
+    'apps/desktop/src/renderer/ui/tokens.css',
+    'apps/desktop/src/renderer/ui/motion.ts',
   ];
-  for (const file of covered) assert.ok(!matchesAny(file, exclude), file);
+  for (const file of covered) assert.ok(!matchesAny(file, alwaysExclude), file);
   assert.ok(legacyRendererFiles.every((file) => file.startsWith('apps/desktop/src/renderer/')));
+});
+
+test('the temporary legacy list applies only while renderer/legacy/ does not exist', () => {
+  const before = buildExclude(false);
+  const after = buildExclude(true);
+  for (const file of ['apps/desktop/src/renderer/App.tsx', 'apps/desktop/src/renderer/ui/Button.tsx', 'apps/desktop/src/renderer/main.tsx']) {
+    assert.equal(matchesAny(file, after), false, `${file} is linted once legacy/ exists`);
+  }
+  assert.ok(matchesAny('apps/desktop/src/renderer/App.tsx', before));
+  assert.ok(matchesAny('apps/desktop/src/renderer/legacy/App.tsx', after));
+  assert.deepEqual(exclude, buildExclude(legacyFolderExists()));
+});
+
+test('restructure step 1 has not landed, or the temporary legacy list has been deleted', () => {
+  if (legacyFolderExists()) {
+    assert.deepEqual(legacyRendererFiles, [], 'renderer/legacy/ exists: delete legacyRendererFiles from tools/lint/design/config.mjs');
+  }
 });
 
 test('evasions from plan 30 WP1.3 are caught', () => {
@@ -172,6 +193,23 @@ test('evasions from plan 30 WP1.3 are caught', () => {
     ['no-literal-motion', "const t = 'opacity 200ms'; export const s = <i style={{ transition: t }} />;"],
     ['no-banned-string', "const label = 'Hide all'; export const s = <button>{label}</button>;"],
     ['button-variant', "const v = 'ghost'; export const s = <Button variant={v} />;"],
+    ['no-raw-color', "export const c = '#0b' + '5394';"],
+    ['no-raw-color', 'export const s = <path fill="red" />;'],
+    ['no-raw-color', "const theme = { color: 'red' }; export const s = <div style={theme} />;"],
+    ['no-literal-size', 'const n = 7; export const s = <div style={{ margin: `${n}px` }} />;'],
+    ['no-literal-size', "const box = { padding: 7 }; export const s = <div style={box} />;"],
+    ['no-literal-motion', 'const opts = { duration: 240 }; el.animate(kf, opts);'],
+    ['no-literal-motion', 'const D = 240; el.animate(kf, { duration: D });'],
+    ['no-literal-motion', "export const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';"],
+    ['no-decoration', "export const s = { transform: 'rotate3d(0, 1, 0, 14deg)' };"],
+    ['no-banned-icon', 'export const s = <DynamicIcon name="wand-sparkles" />;'],
+    ['no-banned-icon', "import { Sparkles as Ai } from './glyphs'; export const s = <Ai />;"],
+    ['no-banned-string', "declare const toast: any; toast('All clear for now!');"],
+    ['no-banned-string', "export const g = group('No reply yet', rows);"],
+    ['no-banned-string', "export const s = { emptyLabel: 'Ready when you are' };"],
+    ['reduced-motion-covered', 'el.animate(kf, { duration: dur.quick, iterations: Infinity });'],
+    ['hover-no-layout', 'export const s = <div onMouseEnter={() => setHovered(true)}>{hovered && <kbd>E</kbd>}</div>;'],
+    ['button-variant', "import { Button as Btn } from './ui'; export const s = <Btn variant=\"pill\" />;"],
   ];
   for (const [ruleId, text] of cases) {
     assert.ok(violationsOf(ruleId, text).length >= 1, `${ruleId}: ${text}`);
@@ -190,6 +228,11 @@ test('legitimate code is not flagged', () => {
     ['no-banned-icon', "import { Bookmark, Restart } from 'lucide-react'; export const s = <Bookmark />;"],
     ['no-literal-size', 'export const layout = { top: 40, height: 120, gap: 8 };'],
     ['button-variant', 'export const s = <Button variant={busy ? "filled" : "text"} />;'],
+    ['no-banned-icon', 'export const s = <span data-state="star" />;'],
+    ['no-banned-icon', "import { useStarred } from './hooks';"],
+    ['no-raw-color', "export const issue = 'Fixes #123'; export const a = location.hash === '#add';"],
+    ['no-banned-string', "export const n = () => { console.log('Done!'); return list.includes('todo'); };"],
+    ['no-literal-motion', "import { ease } from './ui/generated/motion'; el.animate(kf, { duration: dur.carry, easing: ease.carry });"],
   ];
   for (const [ruleId, text] of cases) {
     assert.deepEqual(violationsOf(ruleId, text), [], `${ruleId}: ${text}`);
@@ -238,7 +281,7 @@ test('the value tokenizer splits nested functions and keeps var fallbacks', () =
 
 test('the ESLint adapter reports core violations at core locations', () => {
   assert.ok(eslintPlugin.rules['no-raw-color'] && eslintPlugin.rules['button-variant']);
-  assert.equal(eslintPlugin.rules['reduced-motion-covered'], undefined, 'css-only rules are not ESLint rules');
+  assert.ok(eslintPlugin.rules['reduced-motion-covered'], 'loops are checked in TS too');
   const reports = [];
   const context = {
     filename: 'x.tsx',

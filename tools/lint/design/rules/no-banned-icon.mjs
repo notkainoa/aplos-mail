@@ -2,7 +2,7 @@
 // robot icon, symbol name or glyph anywhere. "bookmark" is the bookmark icon.
 
 import ts from 'typescript';
-import { jsxTagName, lastSegment, positionOf, visit } from '../lib/ast.mjs';
+import { jsxTagName, lastSegment, nameOfProperty, positionOf, visit } from '../lib/ast.mjs';
 import { collectDecls, forEachString } from '../lib/decls.mjs';
 import { violation } from '../lib/context.mjs';
 import { parseValue, walkNodes } from '../lib/value.mjs';
@@ -40,10 +40,54 @@ export function isBannedIconName(name) {
   return words.some((word) => BANNED_WORDS.test(word.toLowerCase()));
 }
 
-export function isBannedSymbolName(text) {
+function wordsOf(name) {
+  return name
+    .split(/[-_.]+/)
+    .flatMap((part) => part.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+/g) || []);
+}
+
+// A name made of several words with no spaces (wand-sparkles, brain.head.profile,
+// WandSparkles, star-off) is an icon or symbol name wherever it appears.
+function isCompoundIconName(trimmed) {
+  if (!/^[\w.-]+$/.test(trimmed)) return false;
+  const words = wordsOf(trimmed);
+  return words.length >= 2 && isBannedIconName(trimmed);
+}
+
+// iconPosition is true where the string is plainly an icon name: a prop or key
+// named icon, symbol, glyph or systemImage, or the argument of an icon helper.
+// A lone word such as "star" is only a banned name there.
+export function isBannedSymbolName(text, { iconPosition = false } = {}) {
   const trimmed = text.trim();
-  if (SYMBOL_NAMES.has(trimmed.toLowerCase())) return true;
-  return SYMBOL_PREFIXES.some((pattern) => pattern.test(trimmed));
+  if (SYMBOL_PREFIXES.some((pattern) => pattern.test(trimmed))) return true;
+  if (isCompoundIconName(trimmed)) return true;
+  if (!iconPosition) return false;
+  return SYMBOL_NAMES.has(trimmed.toLowerCase()) || (/^[\w.-]+$/.test(trimmed) && isBannedIconName(trimmed));
+}
+
+const ICON_KEY = /(?:^|[a-z])(?:icon|symbol|glyph|systemImage)$|^(?:icon|symbol|glyph|systemImage)/i;
+const ICON_TAG = /(?:icon|symbol|glyph)$/i;
+const ICON_CALL = /icon|symbol|glyph/i;
+
+function isIconPosition(node) {
+  let current = node.parent;
+  if (current && ts.isJsxExpression(current)) current = current.parent;
+  if (current && ts.isJsxAttribute(current)) {
+    const name = current.name.getText();
+    if (ICON_KEY.test(name)) return true;
+    if (name === 'name') {
+      const tag = current.parent && current.parent.parent;
+      return Boolean(tag) && ICON_TAG.test(lastSegment(jsxTagName(tag)));
+    }
+    return false;
+  }
+  if (current && ts.isPropertyAssignment(current)) return ICON_KEY.test(nameOfProperty(current.name) || '');
+  if (current && ts.isCallExpression(current)) {
+    const callee = current.expression;
+    const name = ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isIdentifier(callee) ? callee.text : '';
+    return ICON_CALL.test(name);
+  }
+  return false;
 }
 
 function hasBannedGlyph(text) {
@@ -65,22 +109,25 @@ function importChecks(sf, out) {
   visit(sf, (node) => {
     if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) return;
     const specifier = node.moduleSpecifier.text;
-    if (!ICON_MODULE.test(specifier)) return;
+    const iconModule = ICON_MODULE.test(specifier);
     const clause = node.importClause;
     if (!clause) return;
+    // Outside icon libraries only the unmistakable names fail, so a hook such
+    // as useStarred is left alone, while an aliased Sparkles never slips by.
+    const banned = (name) => (iconModule ? isBannedIconName(name) : EXACT_NAMES.has(name) || BANNED_SUBSTRINGS.test(name));
     const report = (target, name) => {
       const at = positionOf(sf, target);
       out.push(violation(at.line, at.column, `Icon "${name}" from ${specifier} is banned. AI has no glyph and bookmarks use the bookmark icon (DESIGN 4.7).`));
     };
-    if (clause.name && isBannedIconName(clause.name.text)) report(clause.name, clause.name.text);
+    if (clause.name && banned(clause.name.text)) report(clause.name, clause.name.text);
     const lastPart = specifier.split('/').pop() || '';
     const pathWords = lastPart.split(/[-_.]/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join('');
-    if (isBannedIconName(pathWords)) report(node.moduleSpecifier, lastPart);
+    if (iconModule && isBannedIconName(pathWords)) report(node.moduleSpecifier, lastPart);
     const bindings = clause.namedBindings;
     if (!bindings || !ts.isNamedImports(bindings)) return;
     for (const element of bindings.elements) {
       const imported = (element.propertyName || element.name).text;
-      if (isBannedIconName(imported)) report(element, imported);
+      if (banned(imported)) report(element, imported);
     }
   });
 }
@@ -111,8 +158,8 @@ function usageChecks(sf, out) {
 function tsChecks(ctx, out) {
   importChecks(ctx.sf, out);
   usageChecks(ctx.sf, out);
-  forEachString(ctx, ({ text, line, column }) => {
-    if (isBannedSymbolName(text)) {
+  forEachString(ctx, ({ text, node, line, column }) => {
+    if (isBannedSymbolName(text, { iconPosition: isIconPosition(node) })) {
       out.push(violation(line, column, `Symbol name "${text.trim()}" is banned. Suggestions wear their action's icon (DESIGN 4.7 and 9).`));
     }
     if (hasBannedGlyph(text)) {

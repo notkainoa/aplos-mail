@@ -20,3 +20,5 @@ export function View({ busy, variantFromProps }: { busy: boolean; variantFromPro
 function Other(props: { variant: string }) {
   return <i>{props.variant}</i>;
 }
+
+export const spreadOk = <Button {...{ variant: 'filled' }}>Go</Button>;

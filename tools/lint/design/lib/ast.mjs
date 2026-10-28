@@ -35,12 +35,65 @@ export function isStringLike(node) {
 }
 
 // Cooked text of a string or template. Substitutions become the DYNAMIC marker.
-export function textOf(node) {
+// When a source file is given, substitutions that fold to a constant are
+// written out, so `${13}px` reads as 13px.
+export function textOf(node, sf = null) {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   if (ts.isTemplateExpression(node)) {
+    if (sf) return foldExpression(sf, node).text;
     return node.head.text + node.templateSpans.map((span) => DYNAMIC + span.literal.text).join('');
   }
   return '';
+}
+
+// Constant folding over literals, same-file const identifiers, template
+// substitutions and `+`. Returns null when nothing is known, else
+// {text, numeric, complete}: text holds the DYNAMIC marker in place of any part
+// that is not constant, and complete is true when every part was constant.
+export function foldExpression(sf, expression, depth = 0) {
+  const node = unwrap(expression);
+  if (!node || depth > 4) return null;
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return { text: node.text, numeric: false, complete: true };
+  }
+  if (isNumericLiteralLike(node)) return { text: String(numericValue(node)), numeric: true, complete: true };
+  if (ts.isIdentifier(node)) {
+    const resolved = sf ? resolveIdentifier(sf, node) : node;
+    if (resolved === node || isFunctionLike(resolved)) return null;
+    return foldExpression(sf, resolved, depth + 1);
+  }
+  if (ts.isTemplateExpression(node)) {
+    let text = node.head.text;
+    let complete = true;
+    for (const span of node.templateSpans) {
+      const part = foldExpression(sf, span.expression, depth + 1);
+      text += (part ? part.text : DYNAMIC) + span.literal.text;
+      if (!part || !part.complete) complete = false;
+    }
+    return { text, numeric: false, complete };
+  }
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.PlusToken) {
+    const left = foldExpression(sf, node.left, depth + 1);
+    const right = foldExpression(sf, node.right, depth + 1);
+    if (!left && !right) return null;
+    if (left && right && left.complete && right.complete && left.numeric && right.numeric) {
+      return { text: String(Number(left.text) + Number(right.text)), numeric: true, complete: true };
+    }
+    const known = left || right;
+    if (known.numeric && !(left && right)) return null;
+    return {
+      text: (left ? left.text : DYNAMIC) + (right ? right.text : DYNAMIC),
+      numeric: false,
+      complete: Boolean(left && right && left.complete && right.complete),
+    };
+  }
+  return null;
+}
+
+// True when the expression is a literal or folds completely to one.
+export function isConstantExpression(sf, expression) {
+  const folded = foldExpression(sf, expression);
+  return Boolean(folded && folded.complete);
 }
 
 export function nameOfProperty(name) {
@@ -89,9 +142,10 @@ export function valueLeaves(expression, sf = null, depth = 0) {
     const resolved = resolveIdentifier(sf, node);
     return resolved === node ? [] : valueLeaves(resolved, sf, depth + 1);
   }
-  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node)) {
-    return [{ text: textOf(node), node, numeric: false }];
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return [{ text: node.text, node, numeric: false }];
   }
+  if (ts.isTemplateExpression(node)) return [{ text: textOf(node, sf), node, numeric: false }];
   if (isNumericLiteralLike(node)) return [{ text: String(numericValue(node)), node, numeric: true }];
   if (ts.isConditionalExpression(node)) return [...valueLeaves(node.whenTrue, sf, depth), ...valueLeaves(node.whenFalse, sf, depth)];
   if (ts.isBinaryExpression(node)) {
@@ -100,6 +154,10 @@ export function valueLeaves(expression, sf = null, depth = 0) {
       return [...valueLeaves(node.left, sf, depth), ...valueLeaves(node.right, sf, depth)];
     }
     if (op === SyntaxKind.AmpersandAmpersandToken) return valueLeaves(node.right, sf, depth);
+    if (op === SyntaxKind.PlusToken) {
+      const folded = foldExpression(sf, node);
+      return folded ? [{ text: folded.text, node, numeric: folded.numeric }] : [];
+    }
   }
   return [];
 }

@@ -21,3 +21,10 @@ export function paint(el: HTMLElement) {
   el.style.color = 'var(--ink)';
   el.style.setProperty('background', 'var(--paper)');
 }
+
+export const icon = <svg><path fill="currentColor" stroke="none" /><stop stopColor="var(--ink)" /></svg>;
+export const note = 'Fixes #123';
+export const isAdd = location.hash === '#add';
+export const anchor = <a href="#fff">Top</a>;
+const calm = { color: 'var(--ink)' };
+export const calmer = <div style={calm} />;

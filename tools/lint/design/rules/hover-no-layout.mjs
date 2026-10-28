@@ -2,7 +2,7 @@
 // change colour and fill, nothing else, and it never reveals an inline keycap.
 
 import ts from 'typescript';
-import { jsxTagName, lastSegment, positionOf, visit } from '../lib/ast.mjs';
+import { jsxTagName, lastSegment, positionOf, valueLeaves, visit } from '../lib/ast.mjs';
 import { collectDecls } from '../lib/decls.mjs';
 import { violation } from '../lib/context.mjs';
 import { stripVendor } from '../lib/props.mjs';
@@ -32,7 +32,19 @@ function cssChecks(ctx, out) {
 
 const HOVER_NAME = /hover|mouse-?over|pointer-?over/i;
 const HOVER_HANDLERS = /^on(MouseEnter|MouseOver|PointerEnter|PointerOver|MouseLeave|PointerLeave)$/;
-const KBD_TAG = /^(Kbd|KeyCap|Keycap|KeyHint)$/;
+const KBD_TAG = /^(kbd|keycap|keyhint)$/i;
+const KBD_CLASS = /(^|[\s_-])(kbd|keycap|key-?hint)([\s_-]|$)/i;
+
+function isKeycap(sf, node) {
+  if (KBD_TAG.test(lastSegment(jsxTagName(node)))) return true;
+  return node.attributes.properties.some((attribute) => {
+    if (!ts.isJsxAttribute(attribute) || !/^class(Name)?$/.test(attribute.name.getText())) return false;
+    const initializer = attribute.initializer;
+    if (!initializer) return false;
+    const leaves = ts.isStringLiteral(initializer) ? [{ text: initializer.text }] : initializer.expression ? valueLeaves(initializer.expression, sf) : [];
+    return leaves.some((leaf) => KBD_CLASS.test(leaf.text));
+  });
+}
 
 // Names of state variables set from a hover handler, found by looking for
 // setX(...) calls inside onMouseEnter-style attributes.
@@ -79,7 +91,7 @@ function kbdChecks(ctx, out) {
   const stateNames = hoverStateNames(sf);
   visit(sf, (node) => {
     if (!ts.isJsxSelfClosingElement(node) && !ts.isJsxOpeningElement(node)) return;
-    if (!KBD_TAG.test(lastSegment(jsxTagName(node)))) return;
+    if (!isKeycap(sf, node)) return;
     if (!conditionalAncestorMentionsHover(node, stateNames)) return;
     const at = positionOf(sf, node);
     out.push(violation(at.line, at.column, 'A keycap rendered on hover moves the row. Key hints live in tooltips, in the held-command badges and in the "Show all key hints" mode (DESIGN 5 rule 17).'));

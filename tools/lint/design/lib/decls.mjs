@@ -8,11 +8,12 @@
 //   object        a key in a TS object literal (style={{...}} and friends)
 //   assign        el.style.x = ..., style.setProperty(...)
 //   inline        "prop: value" text inside a TS string
+//   attribute     an SVG colour attribute such as fill="red"
 
 import postcss from 'postcss';
 import ts from 'typescript';
 import {
-  isStringLike, nameOfProperty, positionOf, textOf, unwrap, valueLeaves, visit,
+  foldExpression, isStringLike, nameOfProperty, positionOf, textOf, unwrap, valueLeaves, visit,
 } from './ast.mjs';
 import { isKnownProp, toKebab } from './props.mjs';
 import { DYNAMIC } from './value.mjs';
@@ -40,7 +41,43 @@ function typeTextHasCssProperties(typeNode) {
   return Boolean(typeNode) && /CSSProperties/.test(typeNode.getText());
 }
 
-function isStyleObject(node) {
+function identifiersOf(expression) {
+  const node = unwrap(expression);
+  if (!node) return [];
+  if (ts.isIdentifier(node)) return [node.text];
+  if (ts.isConditionalExpression(node)) return [...identifiersOf(node.whenTrue), ...identifiersOf(node.whenFalse)];
+  if (ts.isBinaryExpression(node)) return [...identifiersOf(node.left), ...identifiersOf(node.right)];
+  if (ts.isArrayLiteralExpression(node)) return node.elements.flatMap((element) => identifiersOf(element));
+  return [];
+}
+
+const styleNameCache = new WeakMap();
+
+// Names of same-file objects handed to style={x}, Object.assign(el.style, x)
+// or spread into a style object, so `const theme = { color: 'red' }` counts as
+// a style object however few keys it has.
+function styleReferencedNames(sf) {
+  if (styleNameCache.has(sf)) return styleNameCache.get(sf);
+  const names = new Set();
+  styleNameCache.set(sf, names);
+  const spreads = [];
+  visit(sf, (node) => {
+    if (ts.isJsxAttribute(node) && /style$/i.test(node.name.getText()) && node.initializer && ts.isJsxExpression(node.initializer) && node.initializer.expression) {
+      for (const name of identifiersOf(node.initializer.expression)) names.add(name);
+    } else if (ts.isCallExpression(node) && /Object\.assign$/.test(node.expression.getText())) {
+      const first = node.arguments[0];
+      if (first && /style$/.test(first.getText())) node.arguments.slice(1).forEach((arg) => identifiersOf(arg).forEach((name) => names.add(name)));
+    } else if (ts.isSpreadAssignment(node) && ts.isObjectLiteralExpression(node.parent)) {
+      spreads.push(node);
+    }
+  });
+  for (const spread of spreads) {
+    if (isStyleObject(spread.parent, false)) identifiersOf(spread.expression).forEach((name) => names.add(name));
+  }
+  return names;
+}
+
+function isStyleObject(node, followReferences = true) {
   const passThrough = [
     ts.isParenthesizedExpression, ts.isConditionalExpression, ts.isObjectLiteralExpression,
     ts.isArrayLiteralExpression, ts.isSpreadAssignment, ts.isBinaryExpression,
@@ -66,6 +103,7 @@ function isStyleObject(node) {
   if (current && ts.isVariableDeclaration(current)) {
     const name = current.name.getText();
     if (typeTextHasCssProperties(current.type) || /style/i.test(name)) return true;
+    if (followReferences && ts.isIdentifier(current.name) && styleReferencedNames(node.getSourceFile()).has(name)) return true;
   }
   if (current && ts.isCallExpression(current) && /Object\.assign$/.test(current.expression.getText())) {
     const first = current.arguments[0];
@@ -197,6 +235,21 @@ function objectDecls(node, sf, decls) {
   }
 }
 
+// SVG presentation attributes carry colour too: <path fill="red" />.
+const COLOR_ATTRIBUTES = new Map([
+  ['fill', 'fill'], ['stroke', 'stroke'], ['color', 'color'], ['stopColor', 'stop-color'],
+  ['stop-color', 'stop-color'], ['floodColor', 'flood-color'], ['flood-color', 'flood-color'],
+  ['lightingColor', 'lighting-color'], ['lighting-color', 'lighting-color'],
+]);
+
+function attributeDecl(node, sf, decls) {
+  const prop = COLOR_ATTRIBUTES.get(node.name.getText());
+  const initializer = node.initializer;
+  if (!prop || !initializer) return;
+  const expression = ts.isJsxExpression(initializer) ? initializer.expression : initializer;
+  if (expression) pushLeaves(decls, prop, expression, node, sf, 'attribute', true);
+}
+
 function isStyleAccess(expression) {
   const inner = unwrap(expression);
   if (ts.isPropertyAccessExpression(inner)) return inner.name.text === 'style';
@@ -241,10 +294,11 @@ function tsDecls(ctx) {
   const embedded = new Set();
   visit(sf, (node) => {
     if (ts.isObjectLiteralExpression(node)) objectDecls(node, sf, decls);
+    else if (ts.isJsxAttribute(node)) attributeDecl(node, sf, decls);
     else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) assignDecl(node, sf, decls);
     else if (ts.isCallExpression(node)) setPropertyDecl(node, sf, decls);
     if (!isStringLike(node) || isIgnoredString(node)) return;
-    const text = textOf(node);
+    const text = textOf(node, sf);
     if (tryEmbeddedStylesheet(text, node, sf, decls)) embedded.add(node);
     else inlineDecls(text, node, sf, decls, true);
   });
@@ -260,13 +314,31 @@ export function collectDecls(ctx) {
 // Every string in a TS file except import specifiers and type literals.
 // Strings that were parsed as embedded stylesheets are skipped when asked,
 // because their declarations already go through collectDecls.
+//
+// A `+` chain of strings that folds to one constant ('#0b' + '5394') is
+// reported once more, as the joined text, so a split literal cannot hide.
 export function forEachString(ctx, callback, { skipEmbedded = false } = {}) {
   collectDecls(ctx);
   const { sf } = ctx;
   visit(sf, (node) => {
+    if (isTopConcatenation(node)) {
+      const folded = foldExpression(sf, node);
+      if (folded && folded.complete && !isIgnoredString(node)) {
+        const at = positionOf(sf, node);
+        callback({ text: folded.text, node, line: at.line, column: at.column, folded: true });
+      }
+      return;
+    }
     if (!isStringLike(node) || isIgnoredString(node)) return;
     if (skipEmbedded && ctx.embeddedStrings.has(node)) return;
     const at = positionOf(sf, node);
-    callback({ text: textOf(node), node, line: at.line, column: at.column });
+    callback({ text: textOf(node, sf), node, line: at.line, column: at.column });
   });
+}
+
+function isTopConcatenation(node) {
+  if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.PlusToken) return false;
+  let parent = node.parent;
+  while (parent && ts.isParenthesizedExpression(parent)) parent = parent.parent;
+  return !(parent && ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.PlusToken);
 }

@@ -26,3 +26,8 @@ export function View({ busy, armed }: { busy: boolean; armed: boolean }) {
 }
 
 const ui = { Button };
+
+import { Button as Btn } from '../ui';
+
+export const aliased = <Btn variant="pill">Go</Btn>; // @expect
+export const spread = <Btn {...{ variant: 'ghost' }}>Go</Btn>; // @expect

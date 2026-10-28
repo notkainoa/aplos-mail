@@ -36,3 +36,10 @@ export const entity = '&#9733; starred'; // @expect
 function Icon(props: { name?: string; symbol?: string }) {
   return <i {...props} />;
 }
+
+import { Sparkles as Ai } from './glyphs'; // @expect
+export const dynamic = <DynamicIcon name="wand-sparkles" />; // @expect
+export const dynamicToo = <DynamicIcon name="brain-circuit" />; // @expect
+export const named = { icon: 'WandSparkles' }; // @expect
+export const lone = { symbol: 'star' }; // @expect
+export const several = ['star-off', 'bot-message-square']; // @expect

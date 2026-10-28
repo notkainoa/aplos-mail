@@ -55,3 +55,11 @@
 .scene {
   perspective: 800px; /* @expect */
 }
+
+.rotated { transform: rotate3d(0, 1, 0, 14deg); } /* @expect */
+.axis { rotate: y 14deg; } /* @expect */
+.preserved { transform-style: preserve-3d; } /* @expect */
+.hidden { backface-visibility: hidden; } /* @expect */
+.matrix { transform: matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1); } /* @expect */
+.lifted { transform: translateZ(4px) scale3d(1, 1, 2); } /* @expect */
+.cameled .readerDock { color: var(--ink); } /* @expect */

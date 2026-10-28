@@ -63,3 +63,17 @@ export const items = [
   { label: 'Beta' }, // @expect
   { 'aria-label': 'Airmail' }, // @expect
 ];
+
+declare const toast: (message: string) => void;
+declare const group: (title: string, rows: unknown[]) => unknown;
+
+export function copyInCalls(rows: unknown[]) {
+  toast('All clear for now!'); // @expect
+  window.confirm('Hide all?'); // @expect
+  document.title = 'Airmail'; // @expect
+  group('Ready when you are', rows); // @expect
+  group('No reply yet', rows); // @expect
+  document.body.setAttribute('aria-label', 'Todo'); // @expect
+  toast('Saved!'); // @expect
+  return { emptyLabel: 'No reply yet', confirmLabel: 'Ready when you are' }; // @expect
+}

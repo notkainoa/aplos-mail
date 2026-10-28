@@ -14,3 +14,7 @@ export function Row({ showAllHints, commandHeld }: { showAllHints: boolean; comm
 }
 
 export const sheet = `.row:hover { background: var(--hover); }`;
+
+export function Plain() {
+  return <div><kbd>E</kbd><span className="keycap">L</span></div>;
+}

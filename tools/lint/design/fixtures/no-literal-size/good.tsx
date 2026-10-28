@@ -24,3 +24,7 @@ export function place(el: HTMLElement) {
   el.style.padding = 'var(--space-2)';
   el.style.setProperty('gap', 'var(--space-3)');
 }
+
+const roomy = { padding: 'var(--space-3)' };
+const offsets = { top: 40 };
+export const roomier = <div style={roomy} data-offsets={offsets.top} />;

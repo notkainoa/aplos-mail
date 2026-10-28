@@ -30,3 +30,8 @@ export const labels = ['Bookmarks', 'Restart', 'Starter'];
 function Icon(props: { name: string }) {
   return <i {...props} />;
 }
+
+import { useStarred } from './hooks';
+export const state = <span data-state="star" />;
+export const tab = { name: 'star', start: 1 };
+export const sheet = <DynamicIcon name="bookmark" />;

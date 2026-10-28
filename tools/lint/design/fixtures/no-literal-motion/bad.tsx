@@ -48,3 +48,19 @@ function fadeOut() {
   const el = document.body;
   el.style.opacity = '0';
 }
+
+const OPTS = { duration: 240, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }; // @expect
+const DURATION = 240;
+const EASING = 'ease-out';
+const DELAY = 120;
+const slow = 120;
+
+export function viaConst(el: HTMLElement) {
+  el.animate(kf, OPTS); // @expect
+  el.animate(kf, { duration: DURATION, easing: EASING }); // @expect
+  setTimeout(() => { el.style.left = '10px'; }, DELAY); // @expect
+  setTimeout(() => { el.style.transform = 'none'; }, 16); // @expect
+}
+
+export const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)'; // @expect
+export const templated = <i style={{ transition: `opacity ${slow}ms` }} />; // @expect

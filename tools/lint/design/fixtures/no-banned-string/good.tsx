@@ -41,3 +41,12 @@ function Item(props: Record<string, unknown>) {
 }
 
 export const keys = { todo, airmailBlue, sentWith, magicLinkId };
+
+export function codeCalls(list: string[], toast: (message: string) => void) {
+  console.log('Done! todo');
+  list.includes('todo');
+  document.querySelector('.low');
+  document.body.setAttribute('data-state', 'todo');
+  toast('Moved to Later');
+  return { context: 'todo', labelledBy: 'airmail-field' };
+}
