@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SKILL_PATH, checkSkillTokens, skillReferences } from "./check-skill-tokens.mjs";
+import { SKILL_PATH, checkSkillTokens, skillReferences, tableRowNames } from "./check-skill-tokens.mjs";
 import { TOKENS_PATH, readJson } from "./tokens-lib.mjs";
 
 const SCRIPT = fileURLToPath(new URL("./check-skill-tokens.mjs", import.meta.url));
@@ -78,8 +78,8 @@ test("a family wildcard covers its tokens, but not type roles or motion names", 
       const skill = `${SKILL}\nTags are \`--tag-*\`; durations are \`--dur-*\`.\n`;
       const { problems } = checkSkillTokens(skill, path);
       assert.deepEqual(problems, [
-        "type role `huge` is not in SKILL.md; add a row for it to the skill's table",
-        "motion `drift` is not in SKILL.md; add a row for it to the skill's table",
+        "type role `huge` has no row in SKILL.md's table; add one",
+        "motion `drift` has no row in SKILL.md's table; add one",
       ]);
     },
   );
@@ -91,6 +91,30 @@ test("removing a row from the skill's tables fails", () => {
   const { problems } = checkSkillTokens(skill);
   assert.deepEqual(problems, [
     "radius token --radius-xl is not in SKILL.md; add it to the skill's token tables",
-    "motion `breathe` is not in SKILL.md; add a row for it to the skill's table",
+    "motion `breathe` has no row in SKILL.md's table; add one",
   ]);
+});
+
+test("a motion or role mentioned elsewhere still needs its own row", () => {
+  // `hold` is also backticked in the `close` row, `small` and `ui` in prose.
+  const skill = SKILL.replace(/^\| `hold` .*\n/m, "").replace(/^\| `small` .*\n/m, "");
+  assert.notEqual(skill, SKILL);
+  assert.match(skill, /`hold`/);
+  assert.match(skill, /`small`/);
+  const { problems } = checkSkillTokens(skill);
+  assert.deepEqual(problems, [
+    "type role `small` has no row in SKILL.md's table; add one",
+    "motion `hold` has no row in SKILL.md's table; add one",
+  ]);
+});
+
+test("rows count only in their own table, and a shared row names each motion", () => {
+  const rows = tableRowNames(SKILL);
+  assert.ok(rows.motion.has("lift") && rows.motion.has("follow") && rows.motion.has("snap"));
+  assert.ok(rows["type role"].has("caption"));
+  assert.ok(!rows.motion.has("caption"), "type rows are not motion rows");
+  assert.ok(!rows.motion.has("--radius-xl"), "radius rows are not motion rows");
+  // A row moved out of its table no longer counts.
+  const moved = SKILL.replace(/^(\| `breathe` .*)\n/m, "").replace(/^(### Radius.*)$/m, "$1\n\n| `breathe` | moved |");
+  assert.ok(!tableRowNames(moved).motion.has("breathe"));
 });

@@ -13,10 +13,12 @@
 //    `var(--token)` is the skill's placeholder and is ignored too.
 // 2. Every token in the colour, radius, elevation and layer families is named
 //    in the skill, exactly or through a documented wildcard of its family
-//    (`--tag-*`, `--z-*`). Every type role and every motion name must appear as
-//    its own backticked word (`caption`, `undo-send`) or by its exact property:
-//    wildcards such as `--type-<role>` or `--dur-*` do not count for them, so
-//    adding a role or a motion means adding a row to the skill's table.
+//    (`--tag-*`, `--z-*`). Every type role and every motion name must be the
+//    first cell of a row in the skill's Type or Motion table, backticked
+//    (`| \`caption\` |`, `| \`lift\`, \`follow\`, \`snap\` |`) or by its exact
+//    property. A mention elsewhere (`once \`hold\` releases`) or a wildcard
+//    such as `--type-<role>` or `--dur-*` does not count, so adding a role or a
+//    motion means adding a row to the table, and deleting a row fails.
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -38,14 +40,49 @@ export function codeSpans(markdown) {
   return [...prose.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]);
 }
 
+// The tables whose rows name type roles and motions: the `### Type` and
+// `### Motion` sections of the cheat-sheet.
+const ROW_SECTIONS = { "type role": /^###\s+Type\b/i, motion: /^###\s+Motion\b/i };
+
+// Backticked names in the first cell of each table row, per row section.
+export function tableRowNames(markdown) {
+  const out = Object.fromEntries(Object.keys(ROW_SECTIONS).map((family) => [family, new Set()]));
+  let family = null;
+  let fenced = false;
+  for (const line of markdown.split("\n")) {
+    if (/^```/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) {
+      continue;
+    }
+    if (/^#{1,6}\s/.test(line)) {
+      family = Object.keys(ROW_SECTIONS).find((name) => ROW_SECTIONS[name].test(line)) ?? null;
+      continue;
+    }
+    const row = family && line.match(/^\|([^|]*)\|/);
+    if (!row || /^[\s:-]*$/.test(row[1])) {
+      continue;
+    }
+    const cell = row[1].trim();
+    // The whole cell must be backticked names separated by commas.
+    if (!/^`[^`]+`(?:\s*,\s*`[^`]+`)*$/.test(cell)) {
+      continue;
+    }
+    for (const [, name] of cell.matchAll(/`([^`]+)`/g)) {
+      out[family].add(name.trim());
+    }
+  }
+  return out;
+}
+
 // Exact names and wildcard prefixes the skill writes in CSS code spans.
 export function skillReferences(markdown) {
   const exact = new Set();
   const wildcards = new Set();
-  const words = new Set();
   for (const span of codeSpans(markdown)) {
     const text = span.trim();
-    words.add(text);
     if (!text.startsWith("--") && !text.includes("var(--")) {
       continue;
     }
@@ -57,7 +94,7 @@ export function skillReferences(markdown) {
       }
     }
   }
-  return { exact, wildcards, words };
+  return { exact, wildcards, rows: tableRowNames(markdown) };
 }
 
 // Every custom property the generator writes for these tokens.
@@ -118,8 +155,8 @@ export function checkSkillTokens(markdown, tokensPath = TOKENS_PATH) {
       if (!covered(need.name, refs)) {
         problems.push(`${need.family} token ${need.name} is not in SKILL.md; add it to the skill's token tables`);
       }
-    } else if (!refs.words.has(need.name) && !refs.exact.has(need.property)) {
-      problems.push(`${need.family} \`${need.name}\` is not in SKILL.md; add a row for it to the skill's table`);
+    } else if (!refs.rows[need.family].has(need.name) && !refs.rows[need.family].has(need.property)) {
+      problems.push(`${need.family} \`${need.name}\` has no row in SKILL.md's table; add one`);
     }
   }
   return { problems, refs, defined };

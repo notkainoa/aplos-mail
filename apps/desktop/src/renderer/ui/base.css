@@ -10,9 +10,10 @@
 @import "./generated/tokens.css";
 @import "../../../assets/fonts/fonts.css";
 
+/* The root keeps the platform's font size, so 1rem stays 16px and follows the
+   user's zoom and text size: every rem token is px/16 (DESIGN 11.6). Never set
+   font or font-size on html or :root; the type lives on body. */
 html {
-  font: var(--type-base);
-  letter-spacing: var(--track-base);
   color: var(--ink);
   background-color: var(--shell);
   -webkit-font-smoothing: antialiased;
@@ -22,6 +23,8 @@ html {
 
 body {
   margin: 0;
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
 }
 
 /* Controls take the document's type instead of the platform's. */
