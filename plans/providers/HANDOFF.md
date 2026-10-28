@@ -1,44 +1,29 @@
-# Providers thread: handoff for the fresh Linux thread (lean mode, 2026-10-28 pause)
+# Providers thread: handoff (lean mode, Linux, written 2026-10-28 evening)
 
-Written at the 20:05 UTC pause. This is the one-page version. The long Mac-to-Linux handoff (live-run procedure, full test notes, port gaps, decisions) is `plans/providers/HANDOFF-2026-10-28-mac.md`; read its sections 4, 5, 7 and 8 only when you need them. Old thread (read-only, small reads): `mcp:3cc38f80-9a34-4d39-a8d0-e53827aeb18d`.
+> **What this means:** the governor is merged. The Gmail adapter, the OAuth first slice and the live-run guard fixes are all pushed with PRs and waiting on the Integrator. The next building work is blocked on other threads' PRs (#46 runtime seam, #54 real store), so a fresh thread starts by reading STATUS, not by coding.
 
-> **What this means:** the Gmail and Calendar practice servers and the recurrence module are merged. The live-check guard has all its security fixes and is waiting for the Integrator. The budget keeper and the Gmail connection are built and pushed but have no pull requests yet. Nothing is lost and nothing waits on the owner.
+Older handoff (long Mac version): `plans/providers/HANDOFF-2026-10-28-mac.md`. Lane cards: `plans/lanes/prov-gov.md`, `prov-gmail.md` on revamp. Linux: `source ~/.nvm/nvm.sh && nvm use 24`; worktrees under `~/.t3/worktrees/aplos-mail/` (`rv-prov-gov`, `rv-prov-gmail`, `rv-prov-emu`; make fresh ones from `origin` if they are gone). `check:sqlite` cannot run on Linux (needs the Electron binary): say so in the PR, the Integrator runs it.
 
-Everything below is on `origin`; use only these branches and SHAs. Work on Linux: make worktrees from `origin`, run `npm ci`, merge `origin/revamp` before `npm run check`.
+## PRs
 
-## Lane state
+| PR | Branch @ SHA | State |
+|---|---|---|
+| #53 prov-gov governor, actor, host, shared HTTP | merged (e037fcc) | Opus review done; deferred findings in the PR comment (extra-budget costs not gated, overlapping block class lost on restart, logger lacks status and `target_changed`, config fix does not wake sleeping actors) |
+| #56 prov-gmail adapter, emulator only | `rv/prov-gmail/adapter` @ 3861379 | READY. Sonnet review (9 findings) and fix-check done, all fixed with tests (`apps/desktop/tests/prov-gmail/review2-*.test.ts`). Fails owners:check only because OWNERS.md lacks its rows (requested) |
+| #59 prov-gov OAuth first slice | `rv/prov-gov/oauth` | `host/providers/oauth/{scopes,client,grant}.ts`, 11 tests. Same OWNERS gap (`apps/desktop/tests/prov-gov/**`) |
+| #38 prov-emu live-run guard | `rv/prov-emu/live` @ a349b7c | READY after the Integrator's 4 Musts and 5 Shoulds (Opus). Waits for its re-review of the fixes. No live run happens before it merges |
 
-| Lane | Branch (origin) | SHA | State |
-|---|---|---|---|
-| prov-emu | `rv/prov-emu/live` | `f302415` | PR #38 OPEN, mergeable, READY since 09:19; all 8 security-review fixes in `8cb9aff`; `npm run check` green. Integrator re-runs the attack scripts, then merges |
-| prov-emu | gmail / gcal emulators | merged | #30, #31 |
-| prov-cal | recurrence | merged | #39. Open follow-up: restore `RDATE;VALUE=PERIOD` |
-| prov-gov | `rv/prov-gov/engine-sync` | `966da0b` | Governor, account actor, host, shared HTTP; 113/113 sync tests; format, lint, CSS lint, owners passed; typecheck, tests and PR still to do |
-| prov-gmail | `rv/prov-gmail/adapter` | `b1d4141` | Stacked on engine-sync (`7f55ebb`); adapter and tests in `apps/desktop/tests/prov-gmail/` (109 pass, 2 todo); needs engine-sync merged in, `npm run check`, PR |
-| prov-gmail-write | none | | Not started (PV4) |
-| superseded | `rv/prov-gov/actor` `a560d30`, `rv/prov-gov/governor` `826b978`, `rv/prov-gmail/core` `f8b64e9` | | Do not open PRs from these |
+## Next actions
 
-## Preserved uncommitted work (pause salvage)
+1. Read new STATUS lines (`git diff` since 2026-10-28 22:30 on origin/revamp). Answer any Integrator finding on #38 (Opus, security code), #56 or #59.
+2. When the OWNERS rows land, re-run `npm run check` on #56 and #59 (merge `origin/revamp` first) and post the result.
+3. **prov-gmail on the real store:** when #54 merges, move `google/sync.ts` and friends off the stand-in store onto `store.commit`; keep the quarantine, failure-count (`failures.ts`) and re-seeded backfill behaviour. Known gaps to close then: nothing retries a quarantined message; `SearchResult` has no partial flag (needs an eng-contract change, so an incomplete search throws); Inbox mail fetched after a history reset arrives through backfill and never notifies.
+4. **prov-gov rest:** `TokenSource` over the vault (Opus review, token code), `methods/account.ts` and `methods/sync.ts` (needs #46 merged), `sync/lease.ts` (lease over the workflow channel; un-todos `gov-stack-attack` 05). Reconnect acceptance: queued changes survive, zero resync, on the Gmail emulator.
+5. **prov-gmail PV3 remainder:** `workflow.ts` (D17, D18), P4 prefetch through `openThread(..., 'prefetch')`, Logger wiring (add `status` and method to `governor.paused`, emit `governor.target_changed`), G10 once eng-contract answers; then PV4 send/drafts/filters, prov-cal GoogleCalendarAdapter, day-2 port gaps (`plans/providers/port-gaps-day2.md` on the thread branch), feature-1 owner loop, the owner's day-9 sign-in, live gates (Mac only, via the Integrator).
 
-Both were only `package-lock.json` drift (a `packages/emulators` workspace entry from `npm install` on an older branch). Nothing else was uncommitted in any providers worktree. Do not build on it.
-- `rv/prov-gmail/wip-pause-1028` at `1e1aacb` (from `core`)
-- `rv/prov-gov/wip-pause-1028` at `8f7f7a1` (from `actor`)
+## Rules that bit this session
 
-## Open PRs
-
-- #38 as above. No other Providers PR is open. `revamp` has moved since: #28 (freeze), #41, #42 and others are in; open PRs #44, #46, #47 touch contract and engine seams, so re-merge `origin/revamp` before every `npm run check`.
-
-## Next 5 actions
-
-1. **#38:** nothing to fix (RESUME.md's "needs fixes" is out of date; the fixes are in). Only answer new Integrator findings, on Opus (security code). No lane card; the guard code is `apps/desktop/scripts/live/**` and `packages/emulators/**`.
-2. **prov-gov PR:** on a worktree of `rv/prov-gov/engine-sync`, merge `origin/revamp`, run typecheck, `npx tsx --test packages/engine/tests/sync-*.ts`, then `npm run check`; open a dependency PR into `revamp`. Then the PV2/PV5 remainder: `host/providers/oauth/**`, `methods/{account,sync}.ts`, `sync/lease.ts`. Card: `plans/lanes/prov-gov.md`.
-3. **prov-gmail PR:** merge `origin/rv/prov-gov/engine-sync` then `origin/revamp`, `npm run check`, open the PR after prov-gov's. Then move it onto the real store (`packages/engine/src/store`, `store.commit` with replay and fence; check the Engine thread's status first) and finish PV3: `workflow.ts`, P4 prefetch, Logger wiring, G10. Card: `plans/lanes/prov-gmail.md`.
-4. **Day-2 port gaps** (`plans/providers/port-gaps-day2.md`, G1 `bindConnect` and V-a op payload matter most): check STATUS for eng-contract answers before coding stand-ins.
-5. **Then in order:** prov-cal GoogleCalendarAdapter (PV9), prov-gmail-write (PV4), feature-1 owner loop with `ui-onboard`, the owner's day-9 sign-in (ask in plain English, exact command in the Mac handoff section 8), live gates.
-
-## Rules that matter here
-
-- Live Gmail runs only on the Mac (Keychain). Post `REQUEST | prov-emu | to integrator: live-run` in STATUS with the command, SHA and duration. Never print the test account's address or keys.
-- Model routing (roadmap 5.1a): Sonnet default; Opus only for the send and live-run guard, auth and tokens, governor and sync correctness; governor and sync lint stay on Claude, never the free tier; one Sonnet review per PR of the diff; at most 4 subagents.
-- Never merge to main; the Integrator merges. Commits as Kainoa Newton, ending with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
-- Mocked or emulated Google never counts as live acceptance.
+- Lane PRs stacked on an unmerged PR show other lanes' files in owners:check; base them on the lower branch, then retarget.
+- Never delete a branch before `gh pr view` says its PR is open: the Integrator squash-merges and deletes branches on its own schedule.
+- Pre-commit hooks run ESLint with complexity <= 25; a commit that fails the hook does not happen (check `git log` after committing).
+- Sonnet for work and review; Opus only for governor and sync correctness, auth and tokens, the send and live-run guards. Free OpenCode models were not used this session.
