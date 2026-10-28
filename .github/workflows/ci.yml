@@ -97,9 +97,14 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --ignore-scripts
-      # Runs under system Node. The suites that touch node:sqlite (store, service, queue,
-      # sync-safety, sql) move under Electron's own Node in Q3, because node:sqlite uses the
-      # SQLite of the host runtime and the two differ.
+      # The Electron binary is needed by check:sqlite and test:engine: node:sqlite uses
+      # the SQLite of the runtime that loads it, and the database suites (store, service,
+      # queue, sync-safety) run under Electron's own Node (ELECTRON_RUN_AS_NODE=1, no
+      # display needed) rather than system Node.
+      - run: node node_modules/electron/install.js
+      - run: npm run check:sqlite
+      - run: npm run test:engine
+      # Runs under system Node.
       - run: npm test
 
   web:
