@@ -6,9 +6,13 @@
   "description": "Aplos Mail engine contract: the shared types and, from Phase 0, the method registry",
   "license": "UNLICENSED",
   "exports": {
+    ".": "./src/index.ts",
     "./legacy/*": "./src/legacy/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
   }
 }
