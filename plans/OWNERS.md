@@ -64,7 +64,7 @@ Every path in the repo belongs to exactly one lane, and each lane belongs to one
 
 | Owner | Paths |
 |---|---|
-| `integrator` | `plans/**` (except `plans/STATUS.md`, below), `AGENTS.md`, `README.md`, `SPEC.md`, `VISION.md`, `MOBILE.md`, `.env.example` (lanes request new key names; the file never holds a value), `.github/**` not listed above, any new top-level folder or new workspace under `packages/`, `packages/.gitkeep`, `mockups/vercel.json` (deploy settings only; the mockups themselves stay read-only) |
+| `integrator` | `plans/**` (except `plans/STATUS.md`, below), `AGENTS.md`, `README.md`, `SPEC.md`, `VISION.md`, `MOBILE.md`, `.env.example` (lanes request new key names; the file never holds a value), `.github/**` not listed above, any new top-level folder or new workspace under `packages/`, `packages/.gitkeep`, the root `vercel.json` (the `aplos-mockups` Vercel project's deploy settings; `apps/web/vercel.json` is `web`'s) |
 
 ## Shared files
 
