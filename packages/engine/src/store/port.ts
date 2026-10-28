@@ -134,6 +134,11 @@ export type FolderRole =
   | 'category.updates'
   | 'category.forums';
 
+/**
+ * Upsert of one folder or label. A `uidValidity` that differs from the stored non-null one (IMAP `UIDVALIDITY` changed)
+ * clears every `message_folders.uid` of the folder in the same transaction; the adapter's full resync then re-stamps
+ * the UIDs and sweeps without UID bounds. Placements, flags and messages stay.
+ */
 export interface FolderWrite {
   kind: 'folder';
   accountId: string;

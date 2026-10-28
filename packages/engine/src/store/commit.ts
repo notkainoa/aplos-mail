@@ -223,8 +223,16 @@ class CommitRun {
 
   private folder(w: FolderWrite) {
     const before = this.q(
-      'SELECT id, role FROM folders WHERE account_id = ? AND remote_id = ?',
-    ).get<{ id: number; role: string | null }>(w.accountId, w.remoteId);
+      'SELECT id, role, uidvalidity FROM folders WHERE account_id = ? AND remote_id = ?',
+    ).get<{ id: number; role: string | null; uidvalidity: number | null }>(w.accountId, w.remoteId);
+    // A new UIDVALIDITY voids every UID stored for the folder (FR-31): the resync re-stamps them, and an old UID left in
+    // place would collide with a relisted message's new one on `mf_uid` and fail every page of the reset.
+    if (
+      before?.uidvalidity != null &&
+      w.uidValidity != null &&
+      before.uidvalidity !== w.uidValidity
+    )
+      this.q('UPDATE message_folders SET uid = NULL WHERE folder_id = ?').run(before.id);
     this.q(
       `INSERT INTO folders(account_id, remote_id, name, role, kind, sync_scope, uidvalidity, hidden) VALUES(?, ?, ?, ?, ?, COALESCE(?, 'lazy'), ?, ?)
       ON CONFLICT(account_id, remote_id) DO UPDATE SET name = excluded.name, role = excluded.role, kind = excluded.kind,
