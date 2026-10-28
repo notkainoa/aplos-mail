@@ -104,7 +104,11 @@ export function decodeWords(value: string): string {
     });
 }
 
-/** Splits an address list at commas outside quotes, angle brackets and comments. */
+/**
+ * Splits an address list at commas outside quotes, angle brackets and comments. RFC 5322 groups
+ * (`Team: a@x, b@y;`, `undisclosed-recipients:;`) contribute their members: the group name before
+ * an unquoted `:` and the `;` that closes the group are dropped.
+ */
 function splitList(value: string): string[] {
   const out: string[] = [];
   let current = '';
@@ -122,10 +126,12 @@ function splitList(value: string): string[] {
     else if (!quoted && c === '>') angle = Math.max(0, angle - 1);
     else if (!quoted && c === '(') comment++;
     else if (!quoted && c === ')') comment = Math.max(0, comment - 1);
-    if (c === ',' && !quoted && !angle && !comment) {
+    const outside = !quoted && !angle && !comment;
+    if (outside && (c === ',' || c === ';')) {
       out.push(current);
       current = '';
-    } else current += c;
+    } else if (outside && c === ':') current = '';
+    else current += c;
   }
   out.push(current);
   return out.map(s => s.trim()).filter(Boolean);
