@@ -1,4 +1,20 @@
-import { checkResult, fromReply, getMethod, isMethod, parseArgs, toReply, type EngineMethodName, type Frame, type Input, type NotificationItem, type Operation, type Output, type Receipt, type ViewSpec, type WindowBody } from '@aplos/contract';
+import {
+  checkResult,
+  fromReply,
+  getMethod,
+  isMethod,
+  parseArgs,
+  toReply,
+  type EngineMethodName,
+  type Frame,
+  type Input,
+  type NotificationItem,
+  type Operation,
+  type Output,
+  type Receipt,
+  type ViewSpec,
+  type WindowBody,
+} from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { EngineConnection, EngineSession } from '@aplos/contract/client';
 import { fakeClock, realClock, seeded, type FixtureClock } from './clock';
@@ -9,10 +25,23 @@ import { controlMethod, type ControlArgs, type Ordering } from './control-types'
 
 /** Every scenario the stand-in will serve (plan 10 section 4.1). `empty` and `demo` are complete at C1; the rest arrive in Phase 1. */
 export const scenarios = [
-  'empty', 'demo', 'small-10k', 'large-100k', 'offline', 'needs-reauth', 'backfilling', 'rate-limited', 'partial-threads', 'send-uncertain',
-  'send-suspended', 'ai-off', 'ai-budget-spent', 'setup-partial', 'parked',
+  'empty',
+  'demo',
+  'small-10k',
+  'large-100k',
+  'offline',
+  'needs-reauth',
+  'backfilling',
+  'rate-limited',
+  'partial-threads',
+  'send-uncertain',
+  'send-suspended',
+  'ai-off',
+  'ai-budget-spent',
+  'setup-partial',
+  'parked',
 ] as const;
-export type Scenario = typeof scenarios[number];
+export type Scenario = (typeof scenarios)[number];
 
 export interface FixtureOptions {
   scenario?: Scenario;
@@ -27,7 +56,9 @@ export interface FixtureOptions {
 }
 
 /** What a handler receives besides its validated arguments. */
-export interface CallContext { sessionId: string }
+export interface CallContext {
+  sessionId: string;
+}
 export type Handler<M extends EngineMethodName> = (args: Input<M>, cx: CallContext) => Output<M>;
 export type Handlers = { [M in EngineMethodName]: Handler<M> };
 
@@ -58,14 +89,31 @@ interface WindowRec {
 }
 
 interface OpRec {
-  operation: Operation; touched: Touch[]; method: string;
+  operation: Operation;
+  touched: Touch[];
+  method: string;
   /** Accounts whose `pendingChanges` this operation counts in while it is queued for the provider. */
   pending: string[];
 }
-interface FailSpec { mode: 'reject' | 'afterReceipt'; type: string; message: string; reasonCode?: string; afterMs: number }
+interface FailSpec {
+  mode: 'reject' | 'afterReceipt';
+  type: string;
+  message: string;
+  reasonCode?: string;
+  afterMs: number;
+}
 
-const rowTables: Record<string, 'Thread' | 'Message' | 'Draft' | 'Submission' | 'Event' | 'Plan' | 'Conversation' | undefined> = {
-  Thread: 'Thread', Message: 'Message', Draft: 'Draft', Submission: 'Submission', Event: 'Event', Plan: 'Plan', Conversation: 'Conversation',
+const rowTables: Record<
+  string,
+  'Thread' | 'Message' | 'Draft' | 'Submission' | 'Event' | 'Plan' | 'Conversation' | undefined
+> = {
+  Thread: 'Thread',
+  Message: 'Message',
+  Draft: 'Draft',
+  Submission: 'Submission',
+  Event: 'Event',
+  Plan: 'Plan',
+  Conversation: 'Conversation',
 };
 
 /** The engine state behind every connection of one `createFixtureEngine` call. */
@@ -80,7 +128,10 @@ export class Fixture {
   files: Record<string, { bytes: Bytes; mime: string; name: string }> = {};
   blobs = new Map<string, { bytes: Bytes; mime: string; name?: string }>();
   notifications: NotificationItem[] = [];
-  mailFrames = new Map<string, { messageId: string; expiresAt: number; quotesOpen: boolean; imagePolicy: 'block' | 'load' }>();
+  mailFrames = new Map<
+    string,
+    { messageId: string; expiresAt: number; quotesOpen: boolean; imagePolicy: 'block' | 'load' }
+  >();
   ops = new Map<string, OpRec>();
   /** Results of commands by `method + opId`, so a replayed opId never applies twice (the HTTP `Idempotency-Key`). */
   replies = new Map<string, unknown>();
@@ -105,7 +156,10 @@ export class Fixture {
   private counter = 0;
   private epochCount = 0;
 
-  constructor(readonly scenario: Scenario, options: FixtureOptions) {
+  constructor(
+    readonly scenario: Scenario,
+    options: FixtureOptions,
+  ) {
     this.seed = options.seed ?? 1;
     this.random = seeded(this.seed);
     this.zone = options.timeZone ?? 'America/Los_Angeles';
@@ -115,12 +169,20 @@ export class Fixture {
     this.store = new Store(this.newEpoch());
   }
 
-  get now() { return this.clock.now(); }
-  get view(): ViewContext { return { store: this.store, now: this.now, zone: this.zone, body: id => this.bodies[id] ?? '' }; }
+  get now() {
+    return this.clock.now();
+  }
+  get view(): ViewContext {
+    return { store: this.store, now: this.now, zone: this.zone, body: id => this.bodies[id] ?? '' };
+  }
 
-  newEpoch() { return `fx${this.seed}-${(this.random() * 2 ** 32 >>> 0).toString(36)}-${++this.epochCount}`; }
+  newEpoch() {
+    return `fx${this.seed}-${((this.random() * 2 ** 32) >>> 0).toString(36)}-${++this.epochCount}`;
+  }
   /** A deterministic id: `prefix-n`. */
-  id(prefix: string) { return `${prefix}-${++this.counter}`; }
+  id(prefix: string) {
+    return `${prefix}-${++this.counter}`;
+  }
 
   // ---- frames ------------------------------------------------------------------------------------------------
 
@@ -129,15 +191,24 @@ export class Fixture {
     const stamped = { ...frame, dbEpoch: this.store.dbEpoch, seq: this.store.seq } as Frame;
     for (const [sid, s] of this.sessions) {
       if (s.closed || (to && sid !== to)) continue;
-      if (this.capture) { const list = this.capture.get(sid) ?? []; list.push(stamped); this.capture.set(sid, list); }
-      else this.deliver(sid, stamped);
+      if (this.capture) {
+        const list = this.capture.get(sid) ?? [];
+        list.push(stamped);
+        this.capture.set(sid, list);
+      } else this.deliver(sid, stamped);
     }
   }
 
   deliver(sessionId: string, frame: Frame) {
     const s = this.sessions.get(sessionId);
     if (!s || s.closed) return;
-    for (const listener of [...s.listeners]) { try { listener(structuredClone(frame)); } catch { /* a listener's bug is not the engine's */ } }
+    for (const listener of [...s.listeners]) {
+      try {
+        listener(structuredClone(frame));
+      } catch {
+        /* a listener's bug is not the engine's */
+      }
+    }
   }
 
   // ---- writes ------------------------------------------------------------------------------------------------
@@ -146,16 +217,35 @@ export class Fixture {
    * Commits a change and returns its receipt. `opId` makes it an operation: recorded for `Operation/get`, undoable from
    * its before-images, and, when `provider` is set, queued then synced (or failed, by the control channel) on the clock.
    */
-  write<V>(opts: { opId?: string; kind: string; targets?: string[]; undoable?: boolean; undoUntil?: number; provider?: boolean }, fn: (tx: Tx) => V): { value: V; receipt: Receipt } {
+  write<V>(
+    opts: {
+      opId?: string;
+      kind: string;
+      targets?: string[];
+      undoable?: boolean;
+      undoUntil?: number;
+      provider?: boolean;
+    },
+    fn: (tx: Tx) => V,
+  ): { value: V; receipt: Receipt } {
     const fail = opts.opId ? this.failures[0] : undefined;
     if (fail?.mode === 'reject') {
       this.failures.shift();
-      throw new ContractError({ type: fail.type, message: fail.message, ...(fail.reasonCode ? { reasonCode: fail.reasonCode } : {}) });
+      throw new ContractError({
+        type: fail.type,
+        message: fail.message,
+        ...(fail.reasonCode ? { reasonCode: fail.reasonCode } : {}),
+      });
     }
     // A provider-bound operation counts in its accounts' `pendingChanges` until it syncs or fails. That bump is kept out
     // of the operation's own before-images, so undo never restores a stale account row.
-    const pending: string[] = [], bumpOnly = new Set<string>();
-    const { value, touched: all, types } = this.store.commit(tx => {
+    const pending: string[] = [],
+      bumpOnly = new Set<string>();
+    const {
+      value,
+      touched: all,
+      types,
+    } = this.store.commit(tx => {
       const v = fn(tx);
       if (opts.provider && opts.opId) {
         const mine = tx.touched();
@@ -170,14 +260,29 @@ export class Fixture {
     this.changed(types);
     const appliedState = this.store.state;
     const undoable = opts.undoable ?? true;
-    const receipt: Receipt = { opId: opts.opId ?? this.id('op'), appliedState, ...(opts.undoUntil ? { undoUntil: opts.undoUntil } : {}), undoable };
+    const receipt: Receipt = {
+      opId: opts.opId ?? this.id('op'),
+      appliedState,
+      ...(opts.undoUntil ? { undoUntil: opts.undoUntil } : {}),
+      undoable,
+    };
     if (opts.opId) {
       const operation: Operation = {
-        opId: opts.opId, kind: opts.kind, targets: opts.targets ?? [...new Set(touched.map(t => t.id))], state: opts.provider ? 'queued' : 'applied',
-        appliedState, undoable, ...(opts.undoUntil ? { undoUntil: opts.undoUntil } : {}), createdAt: this.now,
+        opId: opts.opId,
+        kind: opts.kind,
+        targets: opts.targets ?? [...new Set(touched.map(t => t.id))],
+        state: opts.provider ? 'queued' : 'applied',
+        appliedState,
+        undoable,
+        ...(opts.undoUntil ? { undoUntil: opts.undoUntil } : {}),
+        createdAt: this.now,
       };
       this.ops.set(opts.opId, { operation, touched, method: opts.kind, pending });
-      if (opts.provider) this.syncLater(opts.opId, fail?.mode === 'afterReceipt' ? this.failures.shift() : undefined);
+      if (opts.provider)
+        this.syncLater(
+          opts.opId,
+          fail?.mode === 'afterReceipt' ? this.failures.shift() : undefined,
+        );
     }
     return { value, receipt };
   }
@@ -191,11 +296,24 @@ export class Fixture {
         this.settlePending(tx, rec);
         if (fail) this.restore(tx, rec.touched, 'before');
         // Events written here now exist at the provider.
-        else for (const t of rec.touched) if (t.table === 'Event') { const e = tx.get('Event', t.id); if (e?.sync === 'pending') tx.put('Event', { ...e, sync: 'synced' }); }
+        else
+          for (const t of rec.touched)
+            if (t.table === 'Event') {
+              const e = tx.get('Event', t.id);
+              if (e?.sync === 'pending') tx.put('Event', { ...e, sync: 'synced' });
+            }
       });
       this.changed(types);
       rec.operation = fail
-        ? { ...rec.operation, state: 'failed', error: { type: fail.type, message: fail.message, ...(fail.reasonCode ? { reasonCode: fail.reasonCode } : {}) } }
+        ? {
+            ...rec.operation,
+            state: 'failed',
+            error: {
+              type: fail.type,
+              message: fail.message,
+              ...(fail.reasonCode ? { reasonCode: fail.reasonCode } : {}),
+            },
+          }
         : { ...rec.operation, state: 'synced' };
       this.emit({ frame: 'operation', operation: rec.operation });
     });
@@ -218,7 +336,13 @@ export class Fixture {
     for (const t of touched) {
       const row = t[side] as { id: string } | undefined;
       if (row === undefined) tx.del(t.table, t.id);
-      else tx.put(t.table, { ...row, ...('rev' in row ? { rev: (tx.get(t.table, t.id) as { rev?: number } | undefined)?.rev ?? 0 } : {}) } as never);
+      else
+        tx.put(t.table, {
+          ...row,
+          ...('rev' in row
+            ? { rev: (tx.get(t.table, t.id) as { rev?: number } | undefined)?.rev ?? 0 }
+            : {}),
+        } as never);
     }
   }
 
@@ -248,24 +372,58 @@ export class Fixture {
    */
   private laterTimer?: { at: number; cancel: () => void };
   scheduleLater(seeding = false) {
-    const waiting = this.store.all('Thread').filter(t => t.workflow.status === 'later' && t.workflow.laterUntil !== undefined && !t.fromLater);
+    const waiting = this.store
+      .all('Thread')
+      .filter(
+        t => t.workflow.status === 'later' && t.workflow.laterUntil !== undefined && !t.fromLater,
+      );
     const due = waiting.filter(t => t.workflow.laterUntil! <= this.now);
     if (due.length) {
       if (seeding) for (const t of due) this.store.seed('Thread', { ...t, fromLater: true });
-      else { const { types } = this.store.commit(tx => { for (const t of due) tx.put('Thread', { ...t, fromLater: true }); }); this.changed(types); return; }
+      else {
+        const { types } = this.store.commit(tx => {
+          for (const t of due) tx.put('Thread', { ...t, fromLater: true });
+        });
+        this.changed(types);
+        return;
+      }
     }
-    const next = Math.min(...waiting.filter(t => t.workflow.laterUntil! > this.now).map(t => t.workflow.laterUntil!));
+    const next = Math.min(
+      ...waiting.filter(t => t.workflow.laterUntil! > this.now).map(t => t.workflow.laterUntil!),
+    );
     if (this.laterTimer?.at === next) return;
     this.laterTimer?.cancel();
-    this.laterTimer = Number.isFinite(next) ? { at: next, cancel: this.clock.after(next - this.now, () => { this.laterTimer = undefined; this.scheduleLater(); }) } : undefined;
+    this.laterTimer = Number.isFinite(next)
+      ? {
+          at: next,
+          cancel: this.clock.after(next - this.now, () => {
+            this.laterTimer = undefined;
+            this.scheduleLater();
+          }),
+        }
+      : undefined;
   }
 
   // ---- windows -----------------------------------------------------------------------------------------------
 
-  openWindow(sessionId: string, spec: ViewSpec, holdIds: string[] = [], anchor?: { id?: string; offset?: number; position?: number }, limit?: number): WindowBody {
+  openWindow(
+    sessionId: string,
+    spec: ViewSpec,
+    holdIds: string[] = [],
+    anchor?: { id?: string; offset?: number; position?: number },
+    limit?: number,
+  ): WindowBody {
     const w: WindowRec = {
-      id: this.id('w'), sessionId, spec, position: 0, limit: spec.kind === 'events' ? Infinity : limit ?? 100, holds: new Set(holdIds),
-      prev: [], revs: new Map(), last: '', lastSentAt: -Infinity,
+      id: this.id('w'),
+      sessionId,
+      spec,
+      position: 0,
+      limit: spec.kind === 'events' ? Infinity : (limit ?? 100),
+      holds: new Set(holdIds),
+      prev: [],
+      revs: new Map(),
+      last: '',
+      lastSentAt: -Infinity,
     };
     if (spec.kind === 'oneByOne') w.frozen = runView(this.view, spec).ids;
     const body = this.compute(w);
@@ -277,11 +435,20 @@ export class Fixture {
 
   window(windowId: string) {
     const w = this.windows.get(windowId);
-    if (!w) throw new ContractError({ type: 'notFound', message: 'This list is no longer open. Reopen it.' });
+    if (!w)
+      throw new ContractError({
+        type: 'notFound',
+        message: 'This list is no longer open. Reopen it.',
+      });
     return w;
   }
 
-  moveWindow(w: WindowRec, anchor?: { id?: string; offset?: number; position?: number }, limit?: number, range?: { from: number; to: number }) {
+  moveWindow(
+    w: WindowRec,
+    anchor?: { id?: string; offset?: number; position?: number },
+    limit?: number,
+    range?: { from: number; to: number },
+  ) {
     if (range && w.spec.kind === 'events') w.spec = { ...w.spec, ...range };
     if (limit && w.spec.kind !== 'events') w.limit = limit;
     w.position = this.resolve(w, anchor, this.compute(w).total);
@@ -292,32 +459,56 @@ export class Fixture {
   closeWindow(windowId: string) {
     const w = this.windows.get(windowId);
     if (!w) return;
-    w.timer?.(); w.holdTimer?.();
+    w.timer?.();
+    w.holdTimer?.();
     this.windows.delete(windowId);
   }
 
-  hold(w: WindowRec, ids: string[]) { for (const id of ids) w.holds.add(id); this.touchHold(w); }
+  hold(w: WindowRec, ids: string[]) {
+    for (const id of ids) w.holds.add(id);
+    this.touchHold(w);
+  }
   release(w: WindowRec, ids?: string[]) {
-    if (ids) for (const id of ids) w.holds.delete(id); else w.holds.clear();
-    if (!w.holds.size) { w.holdTimer?.(); w.holdTimer = undefined; }
+    if (ids) for (const id of ids) w.holds.delete(id);
+    else w.holds.clear();
+    if (!w.holds.size) {
+      w.holdTimer?.();
+      w.holdTimer = undefined;
+    }
     this.refresh(w);
   }
   private touchHold(w: WindowRec) {
     w.holdTimer?.();
-    w.holdTimer = this.clock.after(holdLapseMs, () => { w.holdTimer = undefined; w.holds.clear(); this.refresh(w); });
+    w.holdTimer = this.clock.after(holdLapseMs, () => {
+      w.holdTimer = undefined;
+      w.holds.clear();
+      this.refresh(w);
+    });
   }
 
-  private resolve(w: WindowRec, anchor: { id?: string; offset?: number; position?: number } | undefined, total: number) {
+  private resolve(
+    w: WindowRec,
+    anchor: { id?: string; offset?: number; position?: number } | undefined,
+    total: number,
+  ) {
     if (!anchor) return Math.min(w.position, Math.max(0, total - 1));
     let at = anchor.position ?? w.position;
-    if (anchor.id) { const i = w.prev.indexOf(anchor.id); at = i >= 0 ? i : (this.fullList(w).ids.indexOf(anchor.id)); if (at < 0) at = 0; }
+    if (anchor.id) {
+      const i = w.prev.indexOf(anchor.id);
+      at = i >= 0 ? i : this.fullList(w).ids.indexOf(anchor.id);
+      if (at < 0) at = 0;
+    }
     return Math.max(0, Math.min(at + (anchor.offset ?? 0), Math.max(0, total - 1)));
   }
 
   private fullList(w: WindowRec) {
     if (w.frozen) {
       const rowType = 'Thread';
-      return { rowType, ids: w.frozen.filter(id => this.store.get('Thread', id)), sections: [] as Section[] };
+      return {
+        rowType,
+        ids: w.frozen.filter(id => this.store.get('Thread', id)),
+        sections: [] as Section[],
+      };
     }
     return runView(this.view, w.spec);
   }
@@ -325,9 +516,13 @@ export class Fixture {
   /** The window as it should look now: the view's order with held rows kept where they were last sent. */
   private compute(w: WindowRec): WindowBody & { full: string[] } {
     const result = this.fullList(w);
-    let full = result.ids, sections = result.sections;
+    let full = result.ids,
+      sections = result.sections;
     const kept = new Map<number, string>();
-    for (const id of w.holds) { const i = w.prev.indexOf(id); if (i >= 0) kept.set(i, id); }
+    for (const id of w.holds) {
+      const i = w.prev.indexOf(id);
+      if (i >= 0) kept.set(i, id);
+    }
     if (kept.size) {
       const keptIds = new Set(kept.values());
       const rest = full.filter(id => !keptIds.has(id));
@@ -346,28 +541,49 @@ export class Fixture {
     const table = rowTables[result.rowType];
     const changed = ids.filter(id => {
       const before = w.revs.get(id);
-      const rev = table ? (this.store.get(table, id) as { rev?: number } | undefined)?.rev : undefined;
+      const rev = table
+        ? (this.store.get(table, id) as { rev?: number } | undefined)?.rev
+        : undefined;
       return before !== undefined && rev !== undefined && rev !== before;
     });
     const held = full.filter(id => w.holds.has(id));
     return {
-      windowId: w.id, state: this.store.state, rowType: result.rowType, ids, position: w.position, total: full.length,
-      sections, ...(changed.length ? { changed } : {}), ...(held.length ? { held } : {}), full,
+      windowId: w.id,
+      state: this.store.state,
+      rowType: result.rowType,
+      ids,
+      position: w.position,
+      total: full.length,
+      sections,
+      ...(changed.length ? { changed } : {}),
+      ...(held.length ? { held } : {}),
+      full,
     };
   }
 
   /** Sections for a held order: each row keeps the section it is in now, or the one it was in when last sent. */
   private resection(full: string[], fresh: string[], sections: Section[], w: WindowRec): Section[] {
-    const keyOf = (list: string[], secs: Section[], id: string) => { const i = list.indexOf(id); return secs.find(s => s.key !== 'low' && i >= s.start && i < s.start + s.count)?.key; };
+    const keyOf = (list: string[], secs: Section[], id: string) => {
+      const i = list.indexOf(id);
+      return secs.find(s => s.key !== 'low' && i >= s.start && i < s.start + s.count)?.key;
+    };
     const prevSections = this.lastSections.get(w.id) ?? sections;
     const runs: Section[] = [];
     full.forEach((id, i) => {
-      const key = keyOf(fresh, sections, id) ?? keyOf(w.prev, prevSections, id) ?? sections[0]?.key ?? 'rows';
+      const key =
+        keyOf(fresh, sections, id) ?? keyOf(w.prev, prevSections, id) ?? sections[0]?.key ?? 'rows';
       const run = runs.find(r => r.key === key);
-      if (run) run.count++; else runs.push({ key, start: i, count: 1 });
+      if (run) run.count++;
+      else runs.push({ key, start: i, count: 1 });
     });
     const low = sections.find(s => s.key === 'low');
-    if (low) { const follow = runs.find(r => r.key === 'follow'); runs.splice(follow ? runs.indexOf(follow) : runs.length, 0, { ...low, start: follow?.start ?? full.length }); }
+    if (low) {
+      const follow = runs.find(r => r.key === 'follow');
+      runs.splice(follow ? runs.indexOf(follow) : runs.length, 0, {
+        ...low,
+        start: follow?.start ?? full.length,
+      });
+    }
     return runs;
   }
   private lastSections = new Map<string, Section[]>();
@@ -377,7 +593,12 @@ export class Fixture {
     const { full, ...wire } = body;
     w.prev = full;
     const table = rowTables[wire.rowType];
-    w.revs = new Map(wire.ids.map(id => [id, (table ? (this.store.get(table, id) as { rev?: number } | undefined)?.rev : undefined) ?? 0]));
+    w.revs = new Map(
+      wire.ids.map(id => [
+        id,
+        (table ? (this.store.get(table, id) as { rev?: number } | undefined)?.rev : undefined) ?? 0,
+      ]),
+    );
     w.last = JSON.stringify([wire.ids, wire.total, wire.position, wire.sections, wire.held]);
     this.lastSections.set(w.id, wire.sections);
     return wire;
@@ -387,9 +608,19 @@ export class Fixture {
   refresh(w: WindowRec) {
     if (w.timer || !this.windows.has(w.id)) return;
     const wait = w.lastSentAt + windowIntervalMs - this.now;
-    if (wait > 0) { w.timer = this.clock.after(wait, () => { w.timer = undefined; this.refresh(w); }); return; }
+    if (wait > 0) {
+      w.timer = this.clock.after(wait, () => {
+        w.timer = undefined;
+        this.refresh(w);
+      });
+      return;
+    }
     let body: WindowBody & { full: string[] };
-    try { body = this.compute(w); } catch { return; }
+    try {
+      body = this.compute(w);
+    } catch {
+      return;
+    }
     const visible = JSON.stringify([body.ids, body.total, body.position, body.sections, body.held]);
     if (visible === w.last && !body.changed) return;
     const wire = this.commitBody(w, body);
@@ -400,23 +631,43 @@ export class Fixture {
   /** Voids every window (another `dbEpoch`, a restore, a restart) and tells every session to re-open and re-read. */
   reset(reason: 'dbEpoch' | 'cannotCalculateChanges' | 'restore' | 'restart') {
     for (const id of [...this.windows.keys()]) this.closeWindow(id);
-    if (reason === 'dbEpoch' || reason === 'restore') { this.store.dbEpoch = this.newEpoch(); this.store.compact(); }
+    if (reason === 'dbEpoch' || reason === 'restore') {
+      this.store.dbEpoch = this.newEpoch();
+      this.store.compact();
+    }
     this.emit({ frame: 'reset', reason });
   }
 
   // ---- calls -------------------------------------------------------------------------------------------------
 
   dispatch(sessionId: string, method: string, rawArgs: unknown): unknown {
-    if (!isMethod(method)) throw new ContractError({ type: 'unsupported', message: 'Unsupported application method.' });
+    if (!isMethod(method))
+      throw new ContractError({ type: 'unsupported', message: 'Unsupported application method.' });
     const def = getMethod(method);
-    if (def.host !== 'engine') throw new ContractError({ type: 'unsupported', message: 'This method belongs to the desktop app, not the engine.' });
+    if (def.host !== 'engine')
+      throw new ContractError({
+        type: 'unsupported',
+        message: 'This method belongs to the desktop app, not the engine.',
+      });
     const args = parseArgs(method, rawArgs) as { opId?: string };
     const meta = this.store.get('Meta', 'meta')!;
-    if (meta.engine.state === 'parked' && !/^(Session\/get|Diagnostics\/|Setup\/status)/.test(method))
-      throw new ContractError({ type: 'unavailable', message: meta.engine.parked?.message ?? 'Aplos is not running right now.' });
-    const key = def.kind === 'command' && typeof args.opId === 'string' ? `${method}\u0000${args.opId}` : undefined;
+    if (
+      meta.engine.state === 'parked' &&
+      !/^(Session\/get|Diagnostics\/|Setup\/status)/.test(method)
+    )
+      throw new ContractError({
+        type: 'unavailable',
+        message: meta.engine.parked?.message ?? 'Aplos is not running right now.',
+      });
+    const key =
+      def.kind === 'command' && typeof args.opId === 'string'
+        ? `${method}\u0000${args.opId}`
+        : undefined;
     if (key && this.replies.has(key)) return this.replies.get(key);
-    const result = (this.handlers[method as EngineMethodName] as Handler<EngineMethodName>)(args as never, { sessionId });
+    const result = (this.handlers[method as EngineMethodName] as Handler<EngineMethodName>)(
+      args as never,
+      { sessionId },
+    );
     if (this.checkResults) checkResult(method, result);
     if (key) this.replies.set(key, result);
     return result;
@@ -424,31 +675,58 @@ export class Fixture {
 
   /** One call through a real reply envelope, with frames released in the configured order relative to the reply. */
   async call(sessionId: string, callId: number, method: string, args: unknown): Promise<unknown> {
-    if (method === controlMethod) { this.runDeferred(); return structuredClone(await this.control(args as ControlArgs) ?? { ok: true }); }
+    if (method === controlMethod) {
+      this.runDeferred();
+      return structuredClone((await this.control(args as ControlArgs)) ?? { ok: true });
+    }
     const capture = new Map<string, Frame[]>();
     this.capture = capture;
     let outcome: { result: unknown } | { error: unknown };
-    try { outcome = { result: this.dispatch(sessionId, method, args) }; } catch (error) { outcome = { error }; } finally { this.capture = undefined; }
+    try {
+      outcome = { result: this.dispatch(sessionId, method, args) };
+    } catch (error) {
+      outcome = { error };
+    } finally {
+      this.capture = undefined;
+    }
     const reply = structuredClone(toReply(callId, outcome));
-    const flush = () => { for (const [sid, frames] of capture) for (const f of frames) this.deliver(sid, f); };
+    const flush = () => {
+      for (const [sid, frames] of capture) for (const f of frames) this.deliver(sid, f);
+    };
     if (!capture.size) return fromReply(reply);
     const later = (fn: () => void) => {
-      if (this.ordering.delayMs) { this.clock.after(this.ordering.delayMs, fn); return; }
+      if (this.ordering.delayMs) {
+        this.clock.after(this.ordering.delayMs, fn);
+        return;
+      }
       this.deferred.push(fn);
       setTimeout(() => this.runDeferred(), 0);
     };
     if (this.ordering.mode === 'frameFirst') {
       flush();
-      return new Promise((resolve, reject) => later(() => { try { resolve(fromReply(reply)); } catch (e) { reject(e); } }));
+      return new Promise((resolve, reject) =>
+        later(() => {
+          try {
+            resolve(fromReply(reply));
+          } catch (e) {
+            reject(e);
+          }
+        }),
+      );
     }
-    if (this.ordering.mode === 'together') { flush(); return fromReply(reply); }
+    if (this.ordering.mode === 'together') {
+      flush();
+      return fromReply(reply);
+    }
     later(flush);
     return fromReply(reply);
   }
 
   /** Replies or frames held back one task by the ordering; a control call releases them first, so time never jumps past them. */
   private deferred: (() => void)[] = [];
-  private runDeferred() { for (const fn of this.deferred.splice(0)) fn(); }
+  private runDeferred() {
+    for (const fn of this.deferred.splice(0)) fn();
+  }
 
   connect(): EngineSession {
     const sessionId = this.id('s');
@@ -458,17 +736,42 @@ export class Fixture {
     const meta = this.store.get('Meta', 'meta');
     if (meta?.engine.parked) {
       const p = meta.engine.parked;
-      setTimeout(() => this.emit({ frame: 'host', event: { type: 'parked', reasonCode: p.reasonCode, message: p.message, canRetry: p.canRetry, at: p.at } }, sessionId), 0);
+      setTimeout(
+        () =>
+          this.emit(
+            {
+              frame: 'host',
+              event: {
+                type: 'parked',
+                reasonCode: p.reasonCode,
+                message: p.message,
+                canRetry: p.canRetry,
+                at: p.at,
+              },
+            },
+            sessionId,
+          ),
+        0,
+      );
     }
     return {
-      call: (method, args) => s.closed
-        ? Promise.reject(new ContractError({ type: 'unavailable', message: 'This connection is closed.' }))
-        : this.call(sessionId, ++callId, method, args),
-      subscribe: listener => { s.listeners.add(listener); return () => { s.listeners.delete(listener); }; },
+      call: (method, args) =>
+        s.closed
+          ? Promise.reject(
+              new ContractError({ type: 'unavailable', message: 'This connection is closed.' }),
+            )
+          : this.call(sessionId, ++callId, method, args),
+      subscribe: listener => {
+        s.listeners.add(listener);
+        return () => {
+          s.listeners.delete(listener);
+        };
+      },
       close: () => {
         s.closed = true;
         s.listeners.clear();
-        for (const w of [...this.windows.values()]) if (w.sessionId === sessionId) this.closeWindow(w.id);
+        for (const w of [...this.windows.values()])
+          if (w.sessionId === sessionId) this.closeWindow(w.id);
       },
     };
   }
@@ -490,6 +793,10 @@ export function accountsOf(touched: Touch[]): string[] {
 export class FixtureEngine implements EngineConnection {
   /** @internal The engine state; tests use the control channel, never this. */
   readonly fixture: Fixture;
-  constructor(fixture: Fixture) { this.fixture = fixture; }
-  connect(): EngineSession { return this.fixture.connect(); }
+  constructor(fixture: Fixture) {
+    this.fixture = fixture;
+  }
+  connect(): EngineSession {
+    return this.fixture.connect();
+  }
 }

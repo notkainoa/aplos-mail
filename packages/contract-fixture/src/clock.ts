@@ -18,7 +18,8 @@ export interface FixtureClock {
 export const defaultNow = Date.UTC(2026, 9, 27, 16, 0, 0);
 
 export function fakeClock(start = defaultNow): FixtureClock {
-  let now = start, nextId = 0;
+  let now = start,
+    nextId = 0;
   const timers: { id: number; at: number; fn: () => void }[] = [];
   const runUntil = (target: number) => {
     for (;;) {
@@ -37,10 +38,18 @@ export function fakeClock(start = defaultNow): FixtureClock {
     after(ms, fn) {
       const timer = { id: nextId++, at: now + Math.max(0, ms), fn };
       timers.push(timer);
-      return () => { const i = timers.indexOf(timer); if (i >= 0) timers.splice(i, 1); };
+      return () => {
+        const i = timers.indexOf(timer);
+        if (i >= 0) timers.splice(i, 1);
+      };
     },
-    set(ms) { if (ms >= now) runUntil(ms); else now = ms; },
-    advance(ms) { runUntil(now + Math.max(0, ms)); },
+    set(ms) {
+      if (ms >= now) runUntil(ms);
+      else now = ms;
+    },
+    advance(ms) {
+      runUntil(now + Math.max(0, ms));
+    },
   };
 }
 
@@ -49,9 +58,16 @@ export function realClock(start = Date.now()): FixtureClock {
   return {
     kind: 'real',
     now: () => Date.now() + offset,
-    after(ms, fn) { const handle = setTimeout(fn, Math.max(0, ms)); return () => clearTimeout(handle); },
-    set(ms) { offset = ms - Date.now(); },
-    advance(ms) { offset += Math.max(0, ms); },
+    after(ms, fn) {
+      const handle = setTimeout(fn, Math.max(0, ms));
+      return () => clearTimeout(handle);
+    },
+    set(ms) {
+      offset = ms - Date.now();
+    },
+    advance(ms) {
+      offset += Math.max(0, ms);
+    },
   };
 }
 

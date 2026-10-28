@@ -10921,6 +10921,10 @@
           },
           "quotedCount": {
             "$ref": "#/components/schemas/Count"
+          },
+          "srcdoc": {
+            "type": "string",
+            "maxLength": 5000000
           }
         },
         "required": [

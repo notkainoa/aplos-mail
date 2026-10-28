@@ -14,10 +14,21 @@ conformance({
     const control = fixtureControl(connection);
     return {
       connection,
-      advance: async ms => { await control.advanceClock({ ms }); },
-      compactLog: async () => { await control.compactLog(); },
-      reset: async reason => { await control.reset({ reason }); },
-      orderings: { modes: ['receiptFirst', 'frameFirst', 'together'], set: async mode => { await control.setOrdering({ ordering: { mode } }); } },
+      advance: async ms => {
+        await control.advanceClock({ ms });
+      },
+      compactLog: async () => {
+        await control.compactLog();
+      },
+      reset: async reason => {
+        await control.reset({ reason });
+      },
+      orderings: {
+        modes: ['receiptFirst', 'frameFirst', 'together'],
+        set: async mode => {
+          await control.setOrdering({ ordering: { mode } });
+        },
+      },
     };
   },
 });

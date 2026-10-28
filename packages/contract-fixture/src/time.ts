@@ -3,13 +3,30 @@
 const formats = new Map<string, Intl.DateTimeFormat>();
 function format(zone: string) {
   let f = formats.get(zone);
-  if (!f) formats.set(zone, f = new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+  if (!f)
+    formats.set(
+      zone,
+      (f = new Intl.DateTimeFormat('en-US', {
+        timeZone: zone,
+        hourCycle: 'h23',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })),
+    );
   return f;
 }
 
 /** The zone's offset from UTC at instant `ms`, in ms (negative west of Greenwich). */
 export function zoneOffset(ms: number, zone: string): number {
-  const p = Object.fromEntries(format(zone).formatToParts(new Date(ms)).map(x => [x.type, x.value]));
+  const p = Object.fromEntries(
+    format(zone)
+      .formatToParts(new Date(ms))
+      .map(x => [x.type, x.value]),
+  );
   const wall = Date.UTC(+p.year!, +p.month! - 1, +p.day!, +p.hour! % 24, +p.minute!, +p.second!);
   return Math.round((wall - Math.floor(ms / 1000) * 1000) / 60_000) * 60_000;
 }

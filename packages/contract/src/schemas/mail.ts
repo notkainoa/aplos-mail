@@ -181,6 +181,12 @@ export const MailFrame = z.object({
   trackersRemoved: Count,
   hasRemoteImages: z.boolean(),
   quotedCount: Count,
+  /**
+   * Stand-in engine only: the sanitized document for an `<iframe srcdoc>`, so the reader works before `eng-html`'s
+   * sealed `aplos-mail://` protocol exists (roadmap section 10, plan 30 item 3). The real engine never sets it; the reader
+   * must use `url` whenever this is absent.
+   */
+  srcdoc: z.optional(text(5_000_000)),
 });
 export type MailFrame = z.infer<typeof MailFrame>;
 
