@@ -15,7 +15,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -165,26 +165,34 @@ async function upload() {
     process.exit(1);
   }
   console.log(`release-build: uploading ${files.length} files to the draft release v${version}.`);
-  // electron-builder reads build.publish from the package.json in the current directory.
+  // electron-builder's own `publish` command is not used: in 26.18.0 it merges a `build.publish` array into
+  // itself and then rejects the result ("configuration.publish should be one of these"). This is that command's
+  // body (electron-builder/out/publish.js) with package.json `build` (in the current directory) loaded without
+  // that self-merge. Unlike that command, any error throws, so a failed upload exits 1.
   process.chdir(desktop);
-  const { publishArtifactsWithOptions } = createRequire(import.meta.url)(
-    'electron-builder/out/publish.js',
+  const { AppInfo, CancellationToken, Packager, PublishManager } = createRequire(import.meta.url)(
+    'electron-builder',
   );
-  let uploaded = null;
+  // detectUpdateChannel: false, as in electron-builder's command (there is no built app to read a channel from).
+  const options = { publish: 'always', config: { detectUpdateChannel: false } };
   try {
-    uploaded = await publishArtifactsWithOptions(
-      files.map(file => ({ file, arch: null })),
-      version,
-      undefined,
-      undefined,
-      { publish: 'always' },
-    );
+    const packager = new Packager(options, new CancellationToken());
+    await packager.validateConfig();
+    const appInfo = new AppInfo(packager, version);
+    const manager = new PublishManager(packager, options, packager.cancellationToken);
+    const configs = await manager.getGlobalPublishConfigurations();
+    if (!configs?.length) throw new Error('package.json build.publish is empty');
+    for (const file of files)
+      for (const config of configs)
+        await manager.scheduleUpload(
+          config,
+          { file, arch: null, safeArtifactName: basename(file) },
+          appInfo,
+        );
+    await manager.awaitTasks();
   } catch (error) {
-    console.error(`release-build: upload failed: ${error.message}`);
-  }
-  // publishArtifactsWithOptions logs its own error and returns null instead of throwing.
-  if (!uploaded) {
-    console.error('release-build: the upload failed (see the error above).');
+    console.error(`release-build: the upload failed: ${error.message}`);
     process.exit(1);
   }
+  console.log('release-build: uploaded.');
 }
