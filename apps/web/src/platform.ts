@@ -1,9 +1,9 @@
 import type { Target } from './release';
 
-// Which build fits the visitor's computer. Chromium browsers say so directly (User-Agent Client Hints). Safari and
-// Firefox on a Mac report "Intel" in every user agent, so there the graphics renderer may tell; when it does not, the
-// page suggests Apple silicon but waits for the visitor instead of downloading a guess. A phone, tablet or Chromebook
-// gets no automatic download. `?platform=mac-x64` overrides it, for testing.
+// Which Mac build fits the visitor's computer, for when there is a public release to offer. Chromium browsers say so
+// directly (User-Agent Client Hints). Safari and Firefox on a Mac report "Intel" in every user agent, so there the
+// graphics renderer may tell; when it does not, the page suggests Apple silicon but marks it as a guess. Anything that
+// is not a Mac gets no suggestion. `?platform=mac-x64` overrides it, for testing.
 type Hints = { platform?: string; architecture?: string; mobile?: boolean };
 type NavigatorWithHints = Navigator & {
   userAgentData?: {
@@ -14,65 +14,38 @@ type NavigatorWithHints = Navigator & {
 };
 
 // `sure` is false when the build is a best guess (a Mac whose chip the browser will not reveal).
-export type Detected = { target: Target | null; mobile: boolean; sure: boolean };
-const targets: Target[] = [
-  'mac-arm64',
-  'mac-x64',
-  'win-x64',
-  'win-arm64',
-  'linux-x64',
-  'linux-arm64',
-];
+export type Detected = { target: Target | null; sure: boolean };
+const targets: Target[] = ['mac-arm64', 'mac-x64'];
 
 export async function detect(): Promise<Detected> {
   const forced = new URLSearchParams(location.search).get('platform');
-  if (targets.includes(forced as Target))
-    return { target: forced as Target, mobile: false, sure: true };
+  if (targets.includes(forced as Target)) return { target: forced as Target, sure: true };
   const nav = navigator as NavigatorWithHints;
   const ua = navigator.userAgent;
   // iPadOS asks for desktop pages as a Mac; a touch screen gives it away.
-  // Android tablets and "desktop site" mode report mobile:false in the hints, so the user agent is checked as well.
   const mobile =
     !!nav.userAgentData?.mobile ||
     /iPhone|iPad|iPod|Android/i.test(ua) ||
     (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-  if (mobile) return { target: null, mobile: true, sure: true };
-  if (/CrOS/.test(ua)) return { target: null, mobile: false, sure: true }; // ChromeOS: no build, and its user agent says Linux
-  let os = /Mac/.test(ua)
-    ? 'mac'
-    : /Windows/.test(ua)
-      ? 'win'
-      : /Linux|X11/.test(ua)
-        ? 'linux'
-        : null;
+  let mac = !mobile && /Mac/.test(ua);
   let arm: boolean | null = /aarch64|arm64/i.test(ua) ? true : null;
   try {
     const hints = await nav.userAgentData?.getHighEntropyValues(['platform', 'architecture']);
-    if (hints?.platform === 'Android' || hints?.platform === 'Chrome OS')
-      return { target: null, mobile: hints.platform === 'Android', sure: true };
-    if (hints?.platform)
-      os =
-        hints.platform === 'macOS'
-          ? 'mac'
-          : hints.platform === 'Windows'
-            ? 'win'
-            : hints.platform === 'Linux'
-              ? 'linux'
-              : os;
+    if (hints?.platform) mac = !mobile && hints.platform === 'macOS';
     if (hints?.architecture) arm = hints.architecture === 'arm';
   } catch {
     /* hints are optional */
   }
-  if (!os) return { target: null, mobile: false, sure: true };
+  if (!mac) return { target: null, sure: true };
   let sure = true;
-  if (os === 'mac' && arm === null) {
+  if (arm === null) {
     arm = appleGpu();
     if (arm === null) {
-      arm = true;
+      arm = true; // most Macs sold since 2020 are Apple silicon
       sure = false;
     }
-  } // most Macs sold since 2020 are Apple silicon
-  return { target: `${os}-${arm ? 'arm64' : 'x64'}` as Target, mobile: false, sure };
+  }
+  return { target: arm ? 'mac-arm64' : 'mac-x64', sure };
 }
 
 function appleGpu(): boolean | null {

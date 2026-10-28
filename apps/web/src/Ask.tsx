@@ -51,7 +51,7 @@ export function Ask() {
   const [run, setRun] = useState(0); // counts asks, so asking the same question again replays it
   const timer = useRef(0);
   const panel = useRef<HTMLDivElement>(null);
-  // Hold to talk: while A (or the hint) is held the panel listens; on release it "hears" the next sample question.
+  // Hold to dictate: while A (or the hint) is held the panel listens; on release it "hears" the next sample question.
   const [listening, setListening] = useState(false);
   const hold = useRef({ on: false, since: 0, next: 0 });
   const answer = asked === null ? null : questions[asked][1];
@@ -211,14 +211,14 @@ export function Ask() {
           </span>
         ) : (
           <span className={typed ? 'askp-typed' : 'askp-placeholder'} aria-hidden="true">
-            {typed || 'Ask me anything'}
+            {typed || 'Ask about your mail or calendar'}
           </span>
         )}
         {!typed && (
           <button
             type="button"
             className="askp-talk"
-            aria-label="Hold to talk"
+            aria-label="Hold to dictate"
             onPointerDown={event => {
               event.currentTarget.setPointerCapture(event.pointerId);
               listen();
@@ -240,7 +240,7 @@ export function Ask() {
               'Release to ask'
             ) : (
               <>
-                Hold <kbd>A</kbd> to talk
+                Hold <kbd>A</kbd> to dictate
               </>
             )}
           </button>

@@ -9,7 +9,7 @@ const keys: [string, string, string[]][] = [
   ['→', 'Mark it Done', ['ArrowRight']],
   ['Z', 'Undo the last action', ['z', 'Z']],
   ['B', 'Bookmark', ['b', 'B']],
-  ['A', 'Ask, or hold it to talk', ['a', 'A']],
+  ['A', 'Ask, or hold it to dictate', ['a', 'A']],
   ['C', 'Compose', ['c', 'C']],
   ['?', 'Every shortcut in the app', ['?']],
 ];
@@ -44,7 +44,7 @@ export function KeyList() {
     };
   }, []);
   return (
-    <dl className="keylist" data-ui ref={ref}>
+    <dl className="keylist" data-ui data-claim="key-list" ref={ref}>
       {keys.map(([key, label], i) => (
         <div
           key={key}
@@ -146,7 +146,12 @@ export function ProviderPicker() {
   return (
     <div className="picker">
       <Segmented label="AI feature" options={features} value={feature} onChange={setFeature} />
-      <p className="providers" role="group" aria-label={`Provider for ${feature}`}>
+      <p
+        className="providers"
+        role="group"
+        aria-label={`Provider for ${feature}`}
+        data-claim="ai-providers"
+      >
         {providers.map((p, i) => {
           const off = feature === 'Voice' && !speech.has(p);
           return (
@@ -169,10 +174,15 @@ export function ProviderPicker() {
           );
         })}
       </p>
-      <p className="picker-result" aria-live="polite">
+      <p
+        className="picker-result"
+        aria-live="polite"
+        data-claim="provider-per-feature no-training-providers"
+      >
         <span key={`${feature}${provider}`}>
           {what} go to {where}
           {feature === 'Voice' ? ' Only Groq and OpenAI turn speech into text.' : ''}
+          {provider === 'Gemini' ? ' Mail goes to Gemini only with a paid key.' : ''}
         </span>
       </p>
     </div>
