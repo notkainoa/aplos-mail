@@ -1,41 +1,53 @@
 // Proves that a mechanical formatting commit changed layout only.
 //
-// Usage: node scripts/audit/format-equivalence.mjs --before <ref> --after <ref> [--build [--keep-dist <dir>] [--strict-bytes]]
+// Usage: node scripts/audit/format-equivalence.mjs --before <ref> --after <ref>
+//          [--allow-moves] [--build [--keep-dist <dir>] [--strict-bytes]]
 //
-// For every file that differs between the two refs (renames followed with `git diff -M`; a 100%
-// rename is accepted as is) the script compares the before and after blobs:
+// For every file that differs between the two refs the script compares the before and after blobs:
 //   .ts .tsx .js .jsx .mjs .cjs .mts .cts
 //       1. esbuild transform with minify, so the two outputs must be identical. JSX is kept
 //          (jsx: 'preserve'); if only the preserved JSX text differs, the JSX is compiled to
 //          function calls instead (JSX whitespace rules applied) and must then be identical, and
 //          the file is listed under "notes".
-//       2. the multiset of comment texts (whitespace normalised), read with the TypeScript
-//          parser, so a dropped or altered comment is caught (a minifier drops comments).
-//       3. (TypeScript files) a syntax tree fingerprint, because esbuild erases types: node
-//          kinds and identifier, string, number and template text must match, ignoring only
+//       2. the comments, read with the TypeScript parser, as a multiset of whitespace-normalised
+//          texts, so a dropped or altered comment is caught (a minifier drops comments). A
+//          directive comment (@ts-expect-error, @ts-ignore, eslint-..., prettier-ignore,
+//          @vite-ignore, #__PURE__ and similar) is also keyed by the tokens around it, so moving
+//          it to another statement is caught.
+//       3. a syntax tree fingerprint, for every code file because a minifier hides renamed locals
+//          and erases types: node kinds, operators and flags (++ vs --, let vs const, import
+//          type), and identifier, string, number and template text must match, ignoring only
 //          parentheses, stray semicolons, JSX text and the quoting of property names.
 //   .css           esbuild css minify must be identical, plus the comment multiset
 //   .json, .prettierrc   JSON (comments allowed, as in tsconfig) must parse to the same value
 // Any other changed file type, an added, deleted or type-changed file, a mode change, or any file
-// that cannot be parsed is a failure and is listed. Exit code 1 on any failure.
+// that cannot be parsed is a failure and is listed. Renames and copies are failures too, since a
+// format commit has none (a test file moved out of tests/ would silently stop running); with
+// --allow-moves a rename is accepted when both names are of the same provable type, and a deleted
+// and an added file that are the only ones with that name are paired (listed in the notes). The
+// script itself must be identical in both refs, because it lives inside the format globs; run
+// the copy from the before ref (see the runbook). Exit code 1 on any failure.
 //
 // --build also builds both refs in temporary detached git worktrees (node_modules is cloned with
 // `cp -cR` from the current checkout, workspace links are re-pointed at each worktree) with
-// `npm run build` (tsc, vite build, build-main.mjs; sourcemaps are off in the existing build files)
-// and expects apps/desktop/dist/main/*.cjs and every file under apps/desktop/dist/renderer to be
-// byte-identical with identical names. A file that differs is not hidden: it is printed as
-// "DIFFERENCE (explained)" when it can be shown to differ in layout only, and the run fails for
-// any other difference (and for the explained ones too with --strict-bytes). The explained cases
-// are: dist/main/*.cjs are not minified, so esbuild echoes the source's line breaks (compared by
-// minified output and comments); Prettier splits JSX text around {' '}, which changes adjacent
-// string children in the renderer bundle (compared with adjacent strings joined); Prettier writes
-// spaces after commas inside a css var() fallback; and the content hashes in asset names that
-// follow from the last two (compared by stem). If a build ever emitted sourcemaps, .map files are
-// ignored and sourceMappingURL comments stripped when bytes differ, and the summary says so. The
-// native helper in dist/bin (swiftc, lipo) is compared for information only. --keep-dist <dir>
-// copies both dist folders to <dir>/before and <dir>/after. Temporary worktrees are always removed.
-// The build runs without GOOGLE_CLIENT_*, MICROSOFT_CLIENT_ID and APLOS_RELEASE_BUILD in its
-// environment, so no secret is read.
+// `npm run build` (the desktop app: tsc, vite build, build-main.mjs) and `npm run web:build` (the
+// website; its formatted files are not covered by the desktop build). Sourcemaps are off in the
+// existing build files. It expects apps/desktop/dist/main/*.cjs, every file under
+// apps/desktop/dist/renderer and every file under apps/web/dist to be byte-identical with
+// identical names. A file that differs is not hidden: it is printed as "DIFFERENCE (explained)"
+// when it can be shown to differ in layout only, and the run fails for any other difference (and
+// for the explained ones too with --strict-bytes). The explained cases are: dist/main/*.cjs are
+// not minified, so esbuild echoes the source's line breaks (compared by minified output and
+// comments); Prettier splits JSX text around {' '}, which changes adjacent string children in a
+// bundle (the bundles are parsed and compared as syntax trees in which only adjacent strings
+// inside a `children` value are merged; any other difference fails); Prettier writes spaces after
+// commas inside a css var() fallback; and the content hashes in asset names that follow from the
+// last two (compared by stem). If a build ever emitted sourcemaps, .map files are ignored and
+// sourceMappingURL comments stripped when bytes differ, and the summary says so. The native
+// helper in desktop dist/bin (swiftc, lipo) is compared for information only. --keep-dist <dir>
+// copies the dist folders to <dir>/before, <dir>/after, <dir>/before-web and <dir>/after-web.
+// Temporary worktrees are always removed. The build runs without GOOGLE_CLIENT_*,
+// MICROSOFT_CLIENT_ID and APLOS_RELEASE_BUILD in its environment, so no secret is read.
 //
 // Landing runbook (restructure chain slot 2, on the branch `revamp` after the engine move):
 //   1. Start clean:  git status --short  (empty), npm ci, npm run typecheck && npm test (baseline).
@@ -44,7 +56,11 @@
 //      Then  git status --short  must list source files only, and  npm run format:check  exits 0.
 //   3. Commit:       git commit -am "[mechanical] Format the tree with Prettier"
 //      (author Kainoa Newton <k@kainoa.me>; the commit contains nothing but the format.)
-//   4. Prove it:     node scripts/audit/format-equivalence.mjs --before HEAD~1 --after HEAD --build
+//   4. Prove it with the verifier from the BEFORE commit, so the commit under test cannot judge
+//      itself (the script also fails if it differs between the two refs):
+//        git show HEAD~1:scripts/audit/format-equivalence.mjs > scripts/audit/.before-check.mjs
+//        node scripts/audit/.before-check.mjs --before HEAD~1 --after HEAD --build
+//        rm scripts/audit/.before-check.mjs
 //      It must print PASS. Also run npm run typecheck, npm test and npm run verify:release.
 //   5. Follow-up:    printf '# Prettier format commit\n%s\n' "$(git rev-parse HEAD)" > .git-blame-ignore-revs
 //      git add .git-blame-ignore-revs
@@ -98,6 +114,8 @@ const SCRIPT_KINDS = {
   '.jsx': ts.ScriptKind.JSX,
 };
 
+const VERIFIER = 'scripts/audit/format-equivalence.mjs';
+
 const git = (args, options = {}) =>
   execFileSync('git', args, {
     cwd: repoRoot,
@@ -120,28 +138,64 @@ const parse = (text, extension) =>
     SCRIPT_KINDS[extension],
   );
 
-/** Comment texts of a TypeScript or JavaScript source, found through the parser (so regular
- * expressions, strings and JSX text are never mistaken for comments). */
+/** Comments that mean something to a tool where they stand (not just text). */
+const DIRECTIVE =
+  /@ts-(?:ignore|expect-error|nocheck|check)|eslint|prettier-ignore|@vite-ignore|[#@]__(?:NO_SIDE_EFFECTS|PURE)__|istanbul|c8 |v8 ignore|@jsx|@refresh|@type\b|@satisfies|webpack[A-Z]|biome-/;
+
+/** True for the {' '} that Prettier writes for significant JSX whitespace (it is not source text). */
+const isJsxSpace = node =>
+  node.parent?.kind === ts.SyntaxKind.JsxExpression &&
+  node.parent.expression &&
+  ts.isStringLiteral(node.parent.expression) &&
+  !node.parent.expression.text.trim();
+
+/** Comments of a TypeScript or JavaScript source, found through the parser (so regular
+ * expressions, strings and JSX text are never mistaken for comments). A directive comment (such as
+ * @ts-expect-error or eslint-disable-line) is listed with the two real tokens before it and the
+ * four after it, so moving it to another statement counts as a change. Other comments compare by
+ * text, because Prettier does move those (for example into a catch block). Parentheses,
+ * semicolons and commas are not real tokens here, because Prettier adds and removes them. */
 function codeComments(text, extension) {
+  const K = ts.SyntaxKind;
   const file = parse(text, extension);
+  const leaves = [];
+  const collect = node => {
+    if (node.kind >= K.FirstJSDocNode && node.kind <= K.LastJSDocNode) return;
+    const children = node.getChildren(file);
+    if (children.length) return children.forEach(collect);
+    if (node.kind !== K.JsxText) leaves.push(node);
+  };
+  collect(file);
+  const quiet = new Set([K.OpenParenToken, K.CloseParenToken, K.SemicolonToken, K.CommaToken]);
+  const real = leaf => !quiet.has(leaf.kind) && !isJsxSpace(leaf);
+  const tokenId = leaf => leaf.text ?? leaf.kind;
   const starts = new Set();
   const found = [];
-  const visit = node => {
-    const children = node.getChildren(file);
-    if (children.length) return children.forEach(visit);
-    if (node.kind === ts.SyntaxKind.JsxText) return;
+  leaves.forEach((leaf, i) => {
     // Comments on the same line as the previous token are "trailing"; the rest are "leading".
     const ranges = [
-      ...(ts.getTrailingCommentRanges(text, node.pos) ?? []),
-      ...(ts.getLeadingCommentRanges(text, node.pos) ?? []),
+      ...(ts.getTrailingCommentRanges(text, leaf.pos) ?? []),
+      ...(ts.getLeadingCommentRanges(text, leaf.pos) ?? []),
     ];
     for (const range of ranges) {
       if (starts.has(range.pos)) continue;
       starts.add(range.pos);
-      found.push(normaliseSpace(text.slice(range.pos, range.end)));
+      const body = normaliseSpace(text.slice(range.pos, range.end));
+      if (!DIRECTIVE.test(body)) {
+        found.push(body);
+        continue;
+      }
+      const around = (from, step, wanted) => {
+        const tokens = [];
+        for (let j = from; j >= 0 && j < leaves.length && tokens.length < wanted; j += step) {
+          if (real(leaves[j])) tokens.push(tokenId(leaves[j]));
+        }
+        return tokens;
+      };
+      const previous = around(i - 1, -1, 2).reverse();
+      found.push(`${body}  after: ${previous.join(' ')}  before: ${around(i, 1, 4).join(' ')}`);
     }
-  };
-  visit(file);
+  });
   return found;
 }
 
@@ -166,12 +220,45 @@ function diffMultisets(before, after) {
   const b = count(after);
   const problems = [];
   for (const [text, n] of a) {
-    if ((b.get(text) ?? 0) < n) problems.push(`comment dropped or altered: ${clip(text)}`);
+    if ((b.get(text) ?? 0) < n) problems.push(`comment dropped, altered or moved: ${clip(text)}`);
   }
   for (const [text, n] of b) {
-    if ((a.get(text) ?? 0) < n) problems.push(`comment added or altered: ${clip(text)}`);
+    if ((a.get(text) ?? 0) < n) problems.push(`comment added, altered or moved: ${clip(text)}`);
   }
   return problems;
+}
+
+/** Fields that are plain numbers or flags on a node, which ts.forEachChild never visits: ++ vs --,
+ * keyof vs readonly, let vs const, import type vs import, and the like. */
+function nodeDetails(node) {
+  const K = ts.SyntaxKind;
+  switch (node.kind) {
+    case K.PrefixUnaryExpression:
+    case K.PostfixUnaryExpression:
+    case K.TypeOperator:
+      return `op${node.operator}`;
+    case K.VariableDeclarationList:
+      return `decl${node.flags & ts.NodeFlags.BlockScoped}`;
+    case K.ImportClause:
+      return `type:${node.isTypeOnly ?? false}:${node.phaseModifier ?? ''}`;
+    case K.ImportSpecifier:
+    case K.ExportDeclaration:
+    case K.ExportSpecifier:
+    case K.ImportEqualsDeclaration:
+      return `type:${node.isTypeOnly ?? false}`;
+    case K.ExportAssignment:
+      return `equals:${node.isExportEquals ?? false}`;
+    case K.MetaProperty:
+      return `meta${node.keywordToken}`;
+    case K.HeritageClause:
+      return `heritage${node.token}`;
+    case K.ImportType:
+      return `typeof:${node.isTypeOf ?? false}`;
+    case K.ImportAttributes:
+      return `attributes${node.token}`;
+    default:
+      return '';
+  }
 }
 
 /** A flat description of the syntax tree that ignores what Prettier may legitimately change. */
@@ -192,15 +279,10 @@ function treeFingerprint(text, extension) {
         return;
       case K.JsxExpression:
         // Prettier writes significant JSX whitespace as {' '}; the compiled JSX check covers it.
-        if (
-          node.expression &&
-          ts.isStringLiteral(node.expression) &&
-          !node.expression.text.trim()
-        ) {
-          return;
-        }
+        if (node.expression && isJsxSpace(node.expression)) return;
         break;
       case K.Identifier:
+      case K.PrivateIdentifier:
       case K.StringLiteral:
       case K.NoSubstitutionTemplateLiteral:
       case K.NumericLiteral:
@@ -215,43 +297,68 @@ function treeFingerprint(text, extension) {
         return;
       }
     }
-    out.push(String(node.kind));
+    out.push(`${node.kind}${nodeDetails(node)}`);
     ts.forEachChild(node, visit);
   };
   visit(parse(text, extension));
   return out;
 }
 
-/** The compiled form of JSX (React.createElement calls) as a flat list, with adjacent string
- * children merged, because Prettier may split " . " into " ." and {' '}. */
-function compiledFingerprint(code) {
+/** A flat list describing built or compiled JavaScript. groupOf(node) may name a node whose
+ * children are listed with adjacent string literals merged, because Prettier splits JSX text such
+ * as " . " into " ." and {' '}; it returns { label, items } or null. */
+function jsFingerprint(code, groupOf) {
   const out = [];
   const visit = node => {
-    if (ts.isCallExpression(node) && node.expression.getText() === 'React.createElement') {
-      out.push('createElement');
+    const group = groupOf(node);
+    if (group) {
+      out.push(group.label);
       let text = null;
       const flush = () => {
         if (text !== null) out.push(`S:${text}`);
         text = null;
       };
-      for (const arg of node.arguments) {
-        if (ts.isStringLiteralLike(arg)) text = (text ?? '') + arg.text;
+      for (const item of group.items) {
+        if (ts.isStringLiteralLike(item)) text = (text ?? '') + item.text;
         else {
           flush();
-          visit(arg);
+          visit(item);
         }
       }
       flush();
       return;
     }
-    out.push(ts.isStringLiteralLike(node) ? `S:${node.text}` : String(node.kind));
-    if (ts.isIdentifier(node)) out.push(node.text);
+    const detail = nodeDetails(node);
+    if (ts.isStringLiteralLike(node)) out.push(`S:${node.text}`);
+    else if (ts.isIdentifier(node) || ts.isNumericLiteral(node))
+      out.push(`${node.kind}:${node.text}`);
+    else out.push(`${node.kind}${detail}`);
     ts.forEachChild(node, visit);
   };
-  const file = ts.createSourceFile('file.js', code, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
-  visit(file);
+  visit(ts.createSourceFile('file.js', code, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS));
   return out;
 }
+
+/** The compiled form of JSX (React.createElement calls), see jsFingerprint. */
+const compiledFingerprint = code =>
+  jsFingerprint(code, node =>
+    ts.isCallExpression(node) && node.expression.getText() === 'React.createElement'
+      ? { label: 'createElement', items: node.arguments }
+      : null,
+  );
+
+/** A built renderer bundle: the same, for the children of JSX (children: [...] in the output). */
+const bundleFingerprint = code =>
+  jsFingerprint(code, node => {
+    if (!ts.isPropertyAssignment(node)) return null;
+    const name = ts.isIdentifier(node.name) || ts.isStringLiteral(node.name) ? node.name.text : '';
+    if (name !== 'children') return null;
+    const value = node.initializer;
+    return {
+      label: 'children',
+      items: ts.isArrayLiteralExpression(value) ? value.elements : [value],
+    };
+  });
 
 const sameList = (a, b) => a.length === b.length && a.every((item, i) => item === b[i]);
 
@@ -308,13 +415,10 @@ function compare(kind, extension, before, after) {
     problems.push(
       ...diffMultisets(codeComments(before, extension), codeComments(after, extension)),
     );
-    if (loader === 'ts' || loader === 'tsx') {
-      const x = treeFingerprint(before, extension);
-      const y = treeFingerprint(after, extension);
-      if (!sameList(x, y)) {
-        problems.push(`syntax tree differs ${firstDifference(x, y)}`);
-      }
-    }
+    // The tree check covers identifiers (a minifier would hide a renamed local) and types.
+    const x = treeFingerprint(before, extension);
+    const y = treeFingerprint(after, extension);
+    if (!sameList(x, y)) problems.push(`syntax tree differs ${firstDifference(x, y)}`);
   } else if (kind === 'css') {
     const a = cssForCompare(before);
     const b = cssForCompare(after);
@@ -338,7 +442,7 @@ function kindOf(path) {
 
 // ---------------------------------------------------------------- the refs
 
-function changedFiles(before, after) {
+function changedFiles(before, after, allowMoves) {
   const raw = git(['diff', '-M', '--raw', '-z', '--no-abbrev', before, after]).split('\0');
   const files = [];
   for (let i = 0; i < raw.length && raw[i]; i++) {
@@ -348,10 +452,10 @@ function changedFiles(before, after) {
     const newPath = moved ? raw[++i] : oldPath;
     files.push({ oldMode, newMode, oldSha, newSha, status, oldPath, newPath });
   }
-  return pairByName(files);
+  return allowMoves ? pairByName(files) : files;
 }
 
-/** A move combined with a format leaves too little in common for git's rename detection. A deleted
+/** Only with --allow-moves. A move combined with a format leaves too little in common for git's rename detection. A deleted
  * and an added file with the same name, each the only one of that name, count as one
  * renamed file (status R0, listed in the notes). */
 function pairByName(files) {
@@ -376,16 +480,23 @@ function pairByName(files) {
   return [...files.filter(file => !paired.has(file)), ...renames];
 }
 
-function checkFiles(before, after) {
+function checkFiles(before, after, allowMoves) {
   const counts = new Map();
   const failures = [];
   const notes = [];
   let unchangedContent = 0;
-  const files = changedFiles(before, after);
+  const files = changedFiles(before, after, allowMoves);
   for (const file of files) {
     const name = file.newPath;
     const fail = message => failures.push(`${name}: ${message}`);
     if (file.status === 'R0') notes.push(`${file.oldPath} -> ${name}: paired by file name`);
+    else if (/^R/.test(file.status) && allowMoves) notes.push(`${file.oldPath} -> ${name}: moved`);
+    if (/^[RC]/.test(file.status) && !allowMoves) {
+      fail(
+        `${file.status === 'R100' ? 'moved' : 'moved or copied'} from ${file.oldPath} (a format commit has no renames; --allow-moves accepts them)`,
+      );
+      continue;
+    }
     if (!/^[MR]/.test(file.status)) {
       fail(`status ${file.status} (added, deleted or type-changed files are not a format change)`);
       continue;
@@ -394,14 +505,21 @@ function checkFiles(before, after) {
       fail(`mode changed ${file.oldMode} -> ${file.newMode}`);
       continue;
     }
-    if (file.oldSha === file.newSha) {
-      unchangedContent++;
-      continue;
-    }
+    // The type is checked first, so a pure rename cannot hide a file leaving its folder's globs
+    // or changing its extension.
     const type = kindOf(file.newPath);
     const oldType = kindOf(file.oldPath);
-    if (!type || !oldType || type.label !== oldType.label) {
+    if (
+      !type ||
+      !oldType ||
+      type.label !== oldType.label ||
+      extname(file.oldPath) !== extname(name)
+    ) {
       fail(`file type cannot be proven equivalent (${extname(name) || name})`);
+      continue;
+    }
+    if (file.oldSha === file.newSha) {
+      unchangedContent++;
       continue;
     }
     try {
@@ -456,7 +574,9 @@ function buildRef(ref, tempRoot, label) {
   }
   delete env.APLOS_RELEASE_BUILD;
   run('npm', ['run', 'build'], { cwd: dir, env });
-  return join(dir, 'apps', 'desktop', 'dist');
+  // The website is formatted too and the desktop build does not cover it.
+  run('npm', ['run', 'web:build'], { cwd: dir, env });
+  return { desktop: join(dir, 'apps', 'desktop', 'dist'), web: join(dir, 'apps', 'web', 'dist') };
 }
 
 function listFiles(root, base = root) {
@@ -492,19 +612,10 @@ function layoutOnlyReason(kind, a, b) {
       ? 'line breaks follow the source layout; minified output and comments identical'
       : null;
   }
-  const joinStrings = text => {
-    let out = text;
-    // "a "," b" and "a  b" are the same React text; Prettier splits text around {' '}.
-    for (let n = 1; n;) {
-      const next = out.replace(/"((?:[^"\\\n]|\\.)*)","((?:[^"\\\n]|\\.)*)"/g, '"$1$2"');
-      n = next === out ? 0 : 1;
-      out = next;
-    }
-    return out;
-  };
   if (kind === 'js') {
-    const prepared = text => joinStrings(minify(text, 'js'));
-    return prepared(a) === prepared(b)
+    // Both bundles are parsed; only adjacent strings inside a `children` array or value may be
+    // split differently (Prettier writes {" "} next to JSX text). Everything else must match.
+    return sameList(bundleFingerprint(a), bundleFingerprint(b))
       ? 'JSX text split into adjacent string children (Prettier writes {" "}); everything else identical'
       : null;
   }
@@ -520,15 +631,18 @@ function compareBuilds(distBefore, distAfter) {
   const info = [];
   const explained = [];
   const state = { stripped: 0, ignoredMaps: 0 };
+  // [title, which build, folder in its dist, file filter, whether a difference fails]
   const sets = [
-    ['dist/main/*.cjs', 'main', name => name.endsWith('.cjs'), true],
-    ['dist/renderer', 'renderer', () => true, true],
-    ['dist/bin (native helper, information only)', 'bin', () => true, false],
+    ['desktop dist/main/*.cjs', 'desktop', 'main', name => name.endsWith('.cjs'), true],
+    ['desktop dist/renderer', 'desktop', 'renderer', () => true, true],
+    ['desktop dist/bin (native helper, information only)', 'desktop', 'bin', () => true, false],
+    ['website dist', 'web', '', () => true, true],
   ];
   let identical = 0;
-  for (const [title, folder, filter, strict] of sets) {
+  for (const [title, which, folder, filter, strict] of sets) {
+    const prefix = which === 'web' ? 'web' : folder;
     const list = dist =>
-      listFiles(join(dist, folder)).filter(name => {
+      listFiles(join(dist[which], folder)).filter(name => {
         if (name.endsWith('.map')) {
           state.ignoredMaps++;
           return false;
@@ -551,11 +665,11 @@ function compareBuilds(distBefore, distAfter) {
       const nameB = bByStem.get(stemOf(nameA));
       const report = problem => (strict ? failures : info).push(`${title}: ${problem}`);
       if (!nameB) {
-        report(`only in before: ${folder}/${nameA}`);
+        report(`only in before: ${prefix}/${nameA}`);
         continue;
       }
-      const pathA = join(distBefore, folder, nameA);
-      const pathB = join(distAfter, folder, nameB);
+      const pathA = join(distBefore[which], folder, nameA);
+      const pathB = join(distAfter[which], folder, nameB);
       if (nameA === nameB && readFileSync(pathA).equals(readFileSync(pathB))) {
         identical++;
         continue;
@@ -563,6 +677,7 @@ function compareBuilds(distBefore, distAfter) {
       const ext = extname(nameA);
       const kind =
         folder === 'main' ? 'main' : ext === '.js' ? 'js' : ext === '.css' ? 'css' : null;
+      const shown = name => `${prefix}/${name}`;
       let reason = null;
       if (kind || ext === '.html') {
         const textA = unhash(readBuilt(pathA, nameA, state));
@@ -573,14 +688,12 @@ function compareBuilds(distBefore, distAfter) {
             : layoutOnlyReason(kind, textA, textB);
       }
       if (reason) {
-        explained.push(
-          `${folder}/${nameA}${nameA === nameB ? '' : ` -> ${folder}/${nameB}`}: ${reason}`,
-        );
-      } else report(`bytes differ and cannot be explained: ${folder}/${nameA}`);
+        explained.push(`${shown(nameA)}${nameA === nameB ? '' : ` -> ${shown(nameB)}`}: ${reason}`);
+      } else report(`bytes differ and cannot be explained: ${shown(nameA)}`);
     }
     for (const nameB of b) {
       if (!aStems.has(stemOf(nameB))) {
-        (strict ? failures : info).push(`${title}: only in after: ${folder}/${nameB}`);
+        (strict ? failures : info).push(`${title}: only in after: ${prefix}/${nameB}`);
       }
     }
   }
@@ -596,8 +709,11 @@ function buildComparison(before, after, keepDir) {
     created.push('after');
     const distAfter = buildRef(after, tempRoot, 'after');
     if (keepDir) {
-      cpSync(distBefore, join(keepDir, 'before'), { recursive: true });
-      cpSync(distAfter, join(keepDir, 'after'), { recursive: true });
+      for (const which of ['desktop', 'web']) {
+        const suffix = which === 'web' ? '-web' : '';
+        cpSync(distBefore[which], join(keepDir, `before${suffix}`), { recursive: true });
+        cpSync(distAfter[which], join(keepDir, `after${suffix}`), { recursive: true });
+      }
     }
     return compareBuilds(distBefore, distAfter);
   } finally {
@@ -622,7 +738,7 @@ function main() {
   const after = args.includes('--after') ? value('--after') : undefined;
   if (!before || !after) {
     console.error(
-      'usage: node scripts/audit/format-equivalence.mjs --before <ref> --after <ref> [--build [--keep-dist <dir>] [--strict-bytes]]',
+      'usage: node scripts/audit/format-equivalence.mjs --before <ref> --after <ref> [--allow-moves] [--build [--keep-dist <dir>] [--strict-bytes]]',
     );
     process.exit(2);
   }
@@ -632,10 +748,21 @@ function main() {
   console.log(`before ${before} (${beforeSha.slice(0, 10)})`);
   console.log(`after  ${after} (${afterSha.slice(0, 10)})`);
 
-  const result = checkFiles(beforeSha, afterSha);
+  const allowMoves = args.includes('--allow-moves');
+  const result = checkFiles(beforeSha, afterSha, allowMoves);
   const failures = [...result.failures];
+  // The verifier must not be changed by the commit it judges (it lives inside the format globs).
+  try {
+    git(['diff', '--quiet', beforeSha, afterSha, '--', VERIFIER]);
+  } catch {
+    failures.unshift(
+      `${VERIFIER} differs between the two refs, so this run cannot be trusted; run the copy from the before ref (see the runbook)`,
+    );
+  }
   let explained = 0;
-  console.log(`\nchanged files: ${result.total} (${result.unchangedContent} pure renames)`);
+  console.log(
+    `\nchanged files: ${result.total}${allowMoves ? ` (${result.unchangedContent} pure renames)` : ''}`,
+  );
   for (const [label, count] of [...result.counts].sort()) {
     console.log(`  checked ${label}: ${count}`);
   }
