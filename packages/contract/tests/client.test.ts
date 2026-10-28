@@ -70,6 +70,18 @@ test('routeByHost sends desktop methods to main and the rest to the engine', asy
   assert.deepEqual(main.calls.map(c => c.method), ['File/save']);
 });
 
+test('routeByHost merges main\'s desktop frames into the one stream, so the engine being down still reaches the window', () => {
+  const main = fakeEngine({}), engine = fakeEngine({});
+  const session = routeByHost({ engine: engine.connection.connect(), desktop: main.connection.connect() });
+  const seen: string[] = [];
+  const stop = session.subscribe(frame => seen.push(frame.frame === 'desktop' ? `desktop:${frame.event.type}` : frame.frame));
+  main.push({ frame: 'desktop', event: { type: 'engine', state: 'unreachable', at: 1 } });
+  engine.push(f.frames[0]!);
+  stop();
+  main.push({ frame: 'desktop', event: { type: 'shown' } });
+  assert.deepEqual(seen, ['desktop:engine', 'state']);
+});
+
 
 /** Compile-time only: the client's types come from the registry, so a wrong call fails `npm run typecheck`. */
 export function typeChecks(api: ReturnType<typeof createClient>['api']) {

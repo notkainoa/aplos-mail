@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as z from 'zod/mini';
-import { Account, ContractError, Draft, Event, Frame, Message, parseArgs, Session, Settings, SettingsPatch, SetupStatus, Submission, ThreadRow, checkResult } from '../src/index';
+import { Account, ContractError, Counts, Draft, Event, Frame, Message, parseArgs, Session, Settings, SettingsPatch, SetupStatus, Submission, ThreadRow, checkResult } from '../src/index';
 import * as f from './fixtures';
 
 /** Parse, cross the wire as JSON (what HTTP and the socket do) and as a structured clone (MessagePort), parse again: nothing may change. */
@@ -22,6 +22,7 @@ test('every domain type survives JSON and structured-clone round trips unchanged
   roundTrip(Event, f.event);
   roundTrip(Settings, f.settings);
   roundTrip(SetupStatus, f.setupStatus);
+  roundTrip(Counts, f.counts);
   for (const frame of f.frames) roundTrip(Frame, frame);
 });
 
@@ -73,4 +74,40 @@ test('a settings patch is partial per section', () => {
 test('checkResult catches a host answering outside its schema', () => {
   assert.deepEqual(checkResult('Session/get', f.session), f.session);
   assert.throws(() => checkResult('Session/get', { ...f.session, apiVersion: 'one' }), /Session\/get returned a result outside its schema/);
+});
+
+/** The gaps closed for the UI threads (GAPS.md). */
+test('Thread/act takes ids or a selector at the state the owner saw, never both or neither', () => {
+  const selector = { spec: { kind: 'home' }, section: 'fromLater', atState: f.state };
+  assert.deepEqual(parseArgs('Thread/act', { opId: 'o1', selector, action: { type: 'later' } }).selector, selector);
+  assert.equal(parseArgs('Thread/act', { opId: 'o1', ids: ['a1:t1'], action: { type: 'lane', lane: 'do', alsoForSender: true } }).action.type, 'lane');
+  for (const args of [{ opId: 'o1', action: { type: 'done' } }, { opId: 'o1', ids: [], action: { type: 'done' } }, { opId: 'o1', ids: ['a1:t1'], selector, action: { type: 'done' } }]) {
+    assert.throws(() => parseArgs('Thread/act', args), (e: ContractError) => e.message === 'Choose at least one conversation.');
+  }
+});
+
+test('new methods validate their arguments and answers', () => {
+  assert.deepEqual(parseArgs('MessageBody/prefetch', { threadIds: ['a1:t1', 'a1:t2'] }), { threadIds: ['a1:t1', 'a1:t2'] });
+  assert.throws(() => parseArgs('MessageBody/prefetch', {}), ContractError);
+  assert.equal(parseArgs('Mail/allowImages', { opId: 'o1', sender: '@news.example', allow: true }).sender, '@news.example');
+  assert.throws(() => parseArgs('Mail/allowImages', { opId: 'o1', sender: 'news', allow: true }), (e: ContractError) => e.message === 'Enter a valid email address.');
+  assert.deepEqual(parseArgs('Setup/retry', { accountId: 'a1' }), { accountId: 'a1' });
+  const why = { threadId: 'a1:t1', sentence: 'Jordan asked you a question.', quote: 'Which one do you prefer?', lane: 'do', rankSource: 'ai' };
+  assert.deepEqual(checkResult('Thread/why', why), why);
+  assert.deepEqual(parseArgs('System/openSettings', { pane: 'microphone' }), { pane: 'microphone' });
+  assert.deepEqual(checkResult('Diagnostics/copy', { source: 'host' }), { source: 'host' });
+});
+
+test('no key characters ever leave a key method or the provider table', () => {
+  assert.deepEqual(checkResult('Ai/setKey', { keySource: 'keychain', last4: 'wxyz' }), { keySource: 'keychain' });
+  assert.deepEqual(checkResult('Ai/pasteKey', { keySource: 'keychain', last4: 'wxyz' }), { keySource: 'keychain' });
+});
+
+test('Settings.ui holds UI-core\'s frozen fields with their documented shapes', () => {
+  const patch = SettingsPatch.parse({ ui: { keymap: { 'mail.done': [{ chord: 'y' }] }, palette: { recents: ['mail.later'] }, calendar: { weekStart: 1 }, sidebarMinimised: true } });
+  assert.deepEqual(patch.ui?.calendar, { weekStart: 1 });
+  assert.throws(() => SettingsPatch.parse({ ui: { keymap: { 'mail.done': 'y' } } }));
+  assert.throws(() => SettingsPatch.parse({ ui: { holdMs: 0 } }));
+  assert.throws(() => SettingsPatch.parse({ ui: { calendar: { weekStart: 7 } } }));
+  assert.equal(Settings.parse(f.settings).ui.holdMs, 250);
 });

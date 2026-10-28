@@ -1,8 +1,8 @@
 import * as z from 'zod/mini';
 import { area } from '../registry/define';
-import { bool, Bytes, choice, Count, Empty, EpochMs, getResult, GetInput, Id, Ids, line, Ok, OpId, Receipt, State, text } from '../schemas/common';
+import { bool, Bytes, choice, Count, Empty, EpochMs, getResult, GetInput, Id, Ids, line, Ok, OpId, Receipt, SenderMatch, State, text } from '../schemas/common';
 import { Counts, Folder } from '../schemas/account';
-import { MailFrame, Message, MessageBody, Operation, SearchQuery, SenderGroup, ThreadAction, ThreadRow, ViewSpec, WindowAnchor, WindowBody } from '../schemas/mail';
+import { MailFrame, Message, MessageBody, Operation, SearchQuery, SenderGroup, ThreadAction, ThreadRow, ThreadSelector, ViewSpec, WindowAnchor, WindowBody, WhyItsHere } from '../schemas/mail';
 
 const limit = z.optional(z.int().check(z.minimum(1), z.maximum(200)));
 
@@ -21,7 +21,7 @@ export const view = area('view', {
   },
   'View/unwatch': { summary: 'Close a window.', kind: 'query', scope: 'read', input: z.object({ windowId: Id }), output: Ok },
   'View/hold': {
-    summary: 'Keep these rows in place (the row under the cursor and its neighbours) until released or about 2 s after the last activity.',
+    summary: 'Keep these rows in place (the row under the cursor and its neighbours) until released or about 2 s after the last activity; calling it again is the activity ping.',
     kind: 'query', scope: 'read', input: z.object({ windowId: Id, ids: Ids(200) }), output: Ok,
   },
   'View/release': {
@@ -53,10 +53,15 @@ export const view = area('view', {
 export const thread = area('thread', {
   'Thread/get': { summary: 'Body-free thread rows.', kind: 'query', scope: 'read', input: GetInput, output: getResult(ThreadRow) },
   'Thread/act': {
-    summary: 'Triage: Done, Later, trash, read state, bookmark, due date, reminder, lane and the rest, applied in one commit and queued for the provider.',
+    summary: 'Triage: Done, Later, trash, read state, bookmark, due date, reminder, lane and the rest, on ids or a whole view or section, applied in one commit and queued for the provider.',
     kind: 'command', scope: 'triage', audit: true,
-    input: z.object({ opId: OpId, ids: Ids(1_000).check(z.minLength(1, 'Choose at least one conversation.')), action: ThreadAction }),
+    input: z.object({ opId: OpId, ids: z.optional(Ids(1_000)), selector: z.optional(ThreadSelector), action: ThreadAction })
+      .check(z.refine(v => (v.ids?.length ?? 0) > 0 !== !!v.selector, 'Choose at least one conversation.')),
     output: Receipt,
+  },
+  'Thread/why': {
+    summary: '"Why it\'s here": one sentence and a quote from the mail saying why the thread is in its lane, and who placed it.',
+    kind: 'query', scope: 'read', input: z.object({ threadId: Id }), output: WhyItsHere,
   },
   'Thread/open': {
     summary: 'The reader opened a thread: fetch it whole if the row is partial (interactive lane) and mark it opened for retention.',
@@ -88,14 +93,22 @@ export const mail = area('mail', {
     kind: 'query', scope: 'read', input: z.object({ messageId: Id }), output: MessageBody,
   },
   'MessageBody/prefetch': {
-    summary: 'Prefetch bodies on intent (focus or hover), or cancel a prefetch.',
-    kind: 'query', scope: 'read', input: z.object({ ids: Ids(20), cancel: z.optional(bool()) }), output: Ok,
+    summary: 'Prefetch bodies on intent (focus or hover) by message, or by thread (the bodies the reader opens with, ARCH AM-1), or cancel a prefetch.',
+    kind: 'query', scope: 'read',
+    input: z.object({ ids: z.optional(Ids(20)), threadIds: z.optional(Ids(20)), cancel: z.optional(bool()) })
+      .check(z.refine(v => !!v.ids?.length || !!v.threadIds?.length, 'Choose at least one conversation.')),
+    output: Ok,
   },
   'Mail/frame': {
     summary: 'Render a message into the sealed `aplos-mail://` frame: sanitized on read, trackers removed, remote images blocked unless loaded or allowed.',
     kind: 'query', scope: 'read',
     input: z.object({ messageId: Id, imagePolicy: choice(['block', 'load']), findQuery: z.optional(line(500)), quotesOpen: z.optional(bool()) }),
     output: MailFrame,
+  },
+  'Mail/allowImages': {
+    summary: '"Load images from this sender": add an address or `@domain` to `Settings.mail.imageAllowList`, or remove it.',
+    kind: 'command', scope: 'admin', audit: true,
+    input: z.object({ opId: OpId, sender: SenderMatch, allow: bool() }), output: Receipt,
   },
   'Mail/release': { summary: 'Free a frame token when the reader replaces it.', kind: 'query', scope: 'read', input: z.object({ url: line(500) }), output: Ok },
   'Mail/toggleQuotes': {

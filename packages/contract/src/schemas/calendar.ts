@@ -64,6 +64,8 @@ export const Event = z.object({
   /** The thread the event was made from (a plan). */
   threadId: z.optional(Id),
   htmlLink: z.optional(text(2_000)),
+  /** Where the latest local change stands: `localOnly` is an event not yet created at the provider, so it has no Delete (acceptance 6). */
+  sync: openEnum(['localOnly', 'pending', 'synced', 'failed', 'conflict']),
 });
 export type Event = z.infer<typeof Event>;
 

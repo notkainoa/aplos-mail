@@ -4,34 +4,50 @@ import { bool, choice, Count, Id, line, messages, SenderMatch, text, HttpAddress
 /**
  * Settings, one singleton (`Settings/get`, `Settings/set`). Sections replace today's flat `Settings`. `Settings/set`
  * takes a patch per section: the fields given replace those fields, and object- or record-valued fields (`dock`,
- * `keymap`, `features`, `perAccount`) are replaced whole. Closed enums: the engine validates what it can honour.
+ * `keymap`, `palette`, `calendar`, `features`, `perAccount`) are replaced whole. Closed enums: the engine validates what it can honour.
  */
 
-/** The renderer's own preferences (plan 30 section 8.1 item 8). The engine stores them and attaches no behaviour. */
+/**
+ * One remapped key: a chord such as `meta+s` or `e`, and whether it fires on tap (default) or hold. The F9 command
+ * registry parses and checks chords; the engine only stores them.
+ */
+export const KeyBinding = z.object({ chord: line(100), phase: z.optional(choice(['tap', 'hold'])) });
+
+/**
+ * The renderer's own preferences (plan 30 section 8.1 item 8; UI-core's freeze list). The engine stores them and attaches
+ * no behaviour, except `Later/presets`, which reads `calendar.weekStart` for "This weekend" and "Next week". The default
+ * of each field, for a new install and for the stand-in engine, is given in its comment.
+ */
 export const UiSettings = z.object({
+  /** Default `system`. */
   theme: choice(['light', 'dark', 'system']),
+  /** Default `default` (DESIGN 4.4). */
   density: choice(['compact', 'default', 'roomy']),
-  /** Key hints in tooltips only, or always shown (a mode, so layout never moves on hover, DESIGN 5 rule 17). */
+  /** Key hints in tooltips only, or always shown (a mode, so layout never moves on hover, DESIGN 5 rule 17). Default `tooltip`. */
   keyHints: choice(['tooltip', 'always']),
-  /** Single-letter shortcuts; off means they are off, not moved to ⌘ (DESIGN 11.4). */
+  /** Single-letter shortcuts; off means they are off, not moved to ⌘ (DESIGN 11.4, WCAG 2.1.4). Default true. */
   singleKeys: bool(),
-  /** How long rows hold still after activity, in ms (DESIGN 5 rule 6). */
-  holdMs: z.int({ error: messages.number }).check(z.minimum(0, messages.number), z.maximum(5_000, messages.number)),
+  /** Tap versus hold threshold for every hold key, in ms (plan 30 decision 7). Default 250. */
+  holdMs: z.int({ error: messages.number }).check(z.minimum(100, messages.number), z.maximum(2_000, messages.number)),
+  /** The Ask dock: open (closed on first run, then remembered, DESIGN decision 9), its last tab, and its width in px (absent: the layout default). Default `{open: false, tab: 'ask'}`. */
   dock: z.object({ open: bool(), tab: choice(['ask', 'today']), width: z.optional(z.int().check(z.minimum(240), z.maximum(1_200))) }),
-  /** Command id → chord, only the owner's changes to the defaults. */
-  keymap: z.record(line(200), line(100)),
-  sidebar: z.object({ shown: bool(), minimised: bool() }),
+  /** Command id → its keys, only for commands the owner remapped; a listed command loses all its default keys. Default `{}`. */
+  keymap: z.record(line(200), z.array(KeyBinding).check(z.maxLength(8, messages.text))),
+  /** The sidebar is the minimised ☰ menu button (DESIGN 4.6, the [ key). Default false. */
+  sidebarMinimised: bool(),
   swipe: bool(),
-  /** Which side Done is on for → / ← and swipes (today's `triageDirection`). */
+  /** Which side Done is on for → / ← and swipes (today's `triageDirection`); `doneLeft` puts Later on →. Default `doneRight`. */
   swipeDirection: choice(['doneRight', 'doneLeft']),
   zen: bool(),
   sendSound: bool(),
+  /** Model names, scores and other developer details on screen (DESIGN 9 rule 4). Default false. */
   devDetails: bool(),
-  /** `all` or an account id: the account filter the window opens with (today's `account.select`). */
+  /** `all` or an account id: the account filter the window opens with (today's `account.select`). Default `all`. */
   lastAccount: line(1_000),
-  paletteRecents: z.array(line(200)).check(z.maxLength(50, messages.text)),
-  /** 0 Sunday to 6 Saturday; absent follows the macOS locale. */
-  weekStart: z.optional(z.int().check(z.minimum(0, messages.option), z.maximum(6, messages.option))),
+  /** The palette's recent command ids, newest first. Default `{recents: []}`. */
+  palette: z.object({ recents: z.array(line(200)).check(z.maxLength(50, messages.text)) }),
+  /** `weekStart` 0 Sunday to 6 Saturday; absent follows the macOS locale (UI-screens decision 15). Default `{}`. */
+  calendar: z.object({ weekStart: z.optional(z.int().check(z.minimum(0, messages.option), z.maximum(6, messages.option))) }),
 });
 
 const mailAction = choice(['archive', 'read', 'unread']);
@@ -58,6 +74,8 @@ export const NotificationSettings = z.object({
   /** Account id → notify; absent accounts notify. */
   perAccount: z.record(Id, bool()),
   reminders: bool(),
+  /** A notification a day before a Google account's weekly reconnect is due (plan 20 PV5 item 6). Off by default. */
+  reconnectReminder: bool(),
 });
 
 /** Resident mode (ARCH 2.2): stay in the menu bar when the last window closes, and open at login with no window. */

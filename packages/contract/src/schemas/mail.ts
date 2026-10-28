@@ -56,6 +56,8 @@ export const SummaryRef = z.object({
   text: z.optional(text(10_000)),
   provider: z.optional(line(60)),
   model: z.optional(line(200)),
+  /** The summary was written on this Mac (Ollama, LM Studio): hover says "on this Mac". Present with `provider`. */
+  local: z.optional(z.boolean()),
   action: z.optional(SuggestedAction),
 });
 
@@ -89,8 +91,10 @@ export const ThreadRow = z.object({
   workflow: WorkflowState,
   rank: Rank,
   summary: SummaryRef,
+  /** A Later item whose date has arrived: it sits at the bottom of Do now under "Back from Later" until acted on. */
+  fromLater: z.boolean(),
   /** The thread can be unsubscribed from (`Unsubscribe/get` gives the method). */
-  unsubscribe: z.optional(z.boolean()),
+  unsubscribe: z.boolean(),
   /** Follow up: the user sent the last message at `since` and no reply has come (ARCH 8.2). */
   follow: z.optional(z.object({ since: EpochMs, suggestion: z.optional(z.boolean()) })),
   /** A calendar invitation in this thread. */
@@ -178,10 +182,19 @@ export const ThreadAction = z.discriminatedUnion('type', [
   z.object({ type: z.literal('bookmark'), on: bool() }),
   /** Set or clear (absent) the user's due date. */
   z.object({ type: z.literal('due'), date: z.optional(LocalDate) }),
+  /**
+   * A reminder at `at`. With `ifNoReply` it fires only if nobody replied, and without `at` it falls due after
+   * `mail.followUpDays` (R after Done on Follow up). Neither field clears the reminder.
+   */
   z.object({ type: z.literal('reminder'), at: z.optional(EpochMs), ifNoReply: z.optional(bool()) }),
-  /** ⌥↑ / ⌥↓, or a lane chosen in "Why it's here"; stored with `rank_source='user'`. */
-  z.object({ type: z.literal('lane'), lane: choice(['do', 'update', 'low']) }),
-  z.object({ type: z.literal('laneStep'), direction: choice(['up', 'down']) }),
+  /**
+   * A lane chosen in "Why it's here", stored with `rank_source='user'`; absolute, so a retry is idempotent. The toast's
+   * "Always do this for [sender]" sends it with the lane the thread already moved to and `alsoForSender`, which only adds
+   * the sender rule.
+   */
+  z.object({ type: z.literal('lane'), lane: choice(['do', 'update', 'low']), alsoForSender: z.optional(bool()) }),
+  /** ⌥↑ / ⌥↓: one lane up or down; `alsoForSender` also writes the sender rule. */
+  z.object({ type: z.literal('laneStep'), direction: choice(['up', 'down']), alsoForSender: z.optional(bool()) }),
   z.object({ type: z.literal('importance'), importance: choice(['important', 'normal']) }),
   z.object({ type: z.literal('replyStatus'), status: choice(['none', 'needsReply', 'awaitingReply']) }),
   z.object({ type: z.literal('todo'), text: z.optional(text(2_000)) }),
@@ -266,15 +279,42 @@ export const ViewSpec = z.discriminatedUnion('kind', [
 ]);
 export type ViewSpec = z.infer<typeof ViewSpec>;
 
+/**
+ * A whole view, or one of its sections, as a `Thread/act` target beyond the 200-row window (Low importance's mark-all,
+ * "Clear from Home", ⌘A). The engine resolves it at `atState`, the state the owner saw, so threads that arrived later are
+ * not swept up. Only views whose rows are threads; others are refused.
+ */
+export const ThreadSelector = z.object({ spec: ViewSpec, section: z.optional(line(320)), atState: State });
+export type ThreadSelector = z.infer<typeof ThreadSelector>;
+
+/** "Why it's here" (DESIGN 9 rule 4): one plain sentence, a quote from the mail, and who placed the thread in its lane. */
+export const WhyItsHere = z.object({
+  threadId: Id,
+  sentence: text(1_000),
+  quote: z.optional(text(1_000)),
+  /** The message the quote is from. */
+  messageId: z.optional(Id),
+  lane: Lane,
+  rankSource: RankSource,
+});
+export type WhyItsHere = z.infer<typeof WhyItsHere>;
+
 /** The row type a window's ids refer to, so a client knows which `T/get` to call. */
 export const RowType = openEnum(['Thread', 'Message', 'Draft', 'Submission', 'Event', 'Plan', 'Conversation', 'SenderGroup']);
 
 /** A Low importance sender, the sheet's row. */
 export const SenderGroup = z.object({ id: Id, address: line(320), name: z.optional(line(200)), count: Count, latestThreadId: Id, unsubscribe: z.boolean() });
 
-/** A labelled run of a window: Home's sections, Later's groups, date groups. */
+/**
+ * A labelled run of a view, counted across the whole view, not just the window; runs never overlap. Keys: `home` has
+ * `do`, `fromLater`, `update`, `low` and `follow` in that order (`fromLater` is Back from Later at the bottom of Do now,
+ * whose count is the two together; `low` is the band, with `count` and `senders` but no rows in `ids`); `later` has
+ * `overdue`, `today`, `week` and `someday`; `lowSenders` has one per sender (the address, with `label` the name).
+ */
 export const WindowSection = z.object({
-  key: line(60),
+  key: line(320),
+  /** A label the engine owns, such as a sender's name; absent where the UI owns the copy. */
+  label: z.optional(line(200)),
   /** Index of the section's first row in the full ordered list. */
   start: Count,
   count: Count,
@@ -292,12 +332,19 @@ export const WindowBody = z.object({
   rowType: RowType,
   /** At most 200 ids, starting at `position` (events windows excepted). */
   ids: z.array(Id),
+  /** Index of `ids[0]` in the whole view (approximate under keyset paging), so a virtualised list can place the window. */
   position: Count,
   total: Count,
   /** Ids whose rows changed (`rev` moved) since the last frame of this window. */
   changed: z.optional(z.array(Id)),
-  sections: z.optional(z.array(WindowSection)),
+  /** Empty for ungrouped views. */
+  sections: z.array(WindowSection),
   /** Rows the engine kept in place because they are held (`holdIds`, `View/hold`). */
   held: z.optional(z.array(Id)),
+  /**
+   * The window stopped and sends no more frames: its thread was deleted, or remote search was paused or is unavailable.
+   * The UI shows `error.message` where the list was; `View/watch` again to retry.
+   */
+  error: z.optional(ErrorBodySchema),
 });
 export type WindowBody = z.infer<typeof WindowBody>;

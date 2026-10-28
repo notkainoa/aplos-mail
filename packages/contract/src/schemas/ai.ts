@@ -17,7 +17,7 @@ export const AiFeature = openEnum(aiFeatures);
 export const ModelRef = z.object({ provider: AiProviderId, model: line(200) });
 export type ModelRef = z.infer<typeof ModelRef>;
 
-/** A row of Settings → AI's provider table. Never a key: only where it comes from and, at most, its last four characters. */
+/** A row of Settings → AI's provider table. Never a key and never any of its characters: only where it comes from (plan 30 section 4.5). */
 export const AiProvider = z.object({
   id: AiProviderId,
   label: line(100),
@@ -26,7 +26,6 @@ export const AiProvider = z.object({
   keySource: openEnum(['env', 'keychain', 'none']),
   /** The backend variable a key can come from, e.g. `GROQ_API_KEY`. */
   envVar: line(60),
-  last4: z.optional(line(4)),
   keyOptional: z.boolean(),
   /** For Ollama, LM Studio and custom servers. */
   address: z.optional(line(500)),

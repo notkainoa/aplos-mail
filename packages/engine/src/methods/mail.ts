@@ -9,6 +9,7 @@ export const handlers: AreaHandlers<'mail'> = {
   'MessageBody/get': notImplemented('MessageBody/get'),
   'MessageBody/prefetch': notImplemented('MessageBody/prefetch'),
   'Mail/frame': notImplemented('Mail/frame'),
+  'Mail/allowImages': notImplemented('Mail/allowImages'),
   'Mail/release': notImplemented('Mail/release'),
   'Mail/toggleQuotes': notImplemented('Mail/toggleQuotes'),
   'Mail/serve': notImplemented('Mail/serve'),

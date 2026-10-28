@@ -30,6 +30,8 @@ export const AccountCapabilities = z.object({
   importance: z.optional(z.boolean()),
   /** The host shows partial folders (Yahoo limited mode). */
   partialView: z.optional(z.boolean()),
+  /** Threads come from the host (Gmail, Graph conversations, JMAP) or from headers (IMAP), as the F3 `Capabilities` say. */
+  threading: z.optional(openEnum(['native', 'headers'])),
 });
 export type AccountCapabilities = z.infer<typeof AccountCapabilities>;
 
@@ -68,7 +70,7 @@ export const Account = z.object({
   capabilities: AccountCapabilities,
   grantedScopes: z.array(z.string()),
   /** Features that lack a permission while mail still works (calendar, filters), each with its copy key. */
-  missingPermissions: z.optional(z.array(z.object({ capability: line(60), reasonCode: ReasonCodeSchema }))),
+  missingPermissions: z.optional(z.array(z.object({ capability: line(60), reasonCode: ReasonCodeSchema, missingScopes: z.optional(z.array(z.string())) }))),
   /** "Use this account's mail for AI" (ARCH 8.3). */
   aiAllowed: z.boolean(),
   notifications: z.boolean(),
@@ -76,8 +78,10 @@ export const Account = z.object({
   identities: z.array(SendIdentity),
   /** Gmail's daily send limit: sending is refused until then (ARCH 6.3 `send_limit`). */
   sendBlockedUntil: z.optional(EpochMs),
-  /** The first window (the newest ~50 Inbox threads) is in: notifications and background AI may start (AM-4). */
+  /** The first window (the newest ~50 Inbox threads) is in: notifications and background AI may start (AM-4). Absent while first sync reads it. */
   baselineDoneAt: z.optional(EpochMs),
+  /** Changes made here that have not reached the provider yet ("Offline · 2 changes waiting", "Saved here · will sync"). */
+  pendingChanges: Count,
   preset: z.optional(AccountPreset),
   server: z.optional(ServerSettings),
   createdAt: EpochMs,
@@ -100,7 +104,11 @@ export const Folder = z.object({
 export type Folder = z.infer<typeof Folder>;
 
 /** Sidebar numbers. Home counts Do now plus Important updates (DESIGN decision 19). */
-export const CountsBlock = z.object({ home: Count, do: Count, update: Count, follow: Count, laterDue: Count, drafts: Count, scheduled: Count, unread: Count });
+export const CountsBlock = z.object({
+  home: Count, do: Count, update: Count, follow: Count, laterDue: Count, drafts: Count, scheduled: Count, unread: Count,
+  /** Threads moved off Home today (Done, Later, Trash, Spam) in the owner's local day; undo subtracts. "You handled 12 emails." */
+  handledToday: Count,
+});
 export const Counts = z.object({
   all: CountsBlock,
   accounts: z.record(z.string(), CountsBlock),

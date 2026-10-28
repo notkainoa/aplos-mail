@@ -16,6 +16,7 @@ validation. The design is ARCHITECTURE.md section 9; plan 10 section 4.1 and pla
 | `src/registry/` | `area()` and `desktop()`, the merged `methods` table, `parseArgs`, `checkResult` and the type helpers (`Input<M>`, `Output<M>`) |
 | `src/client/` | `createClient(session)` and `api.<type>.<verb>()`, `routeByHost`, the `EngineConnection` interface |
 | `src/legacy-methods.ts` | Today's 66 method names (47 engine, 19 desktop) and where each capability lives in v1 |
+| `GAPS.md` | How v1 answers every gap the UI threads raised before the freeze: closed, already there, or rejected with the reason |
 | `generated/` | `methods.generated.ts` (plain string tables, no zod, for preload) and `openapi.json` (OpenAPI 3.1). Never edit by hand |
 
 ## Wire rules

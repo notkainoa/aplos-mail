@@ -71,12 +71,16 @@ export function createClient(session: EngineSession, options: { validate?: (meth
 
 /**
  * One session over two: desktop methods go to main (preload's invoke), everything else to the engine port, following the
- * generated host table. Frames come from the engine.
+ * generated host table. Frames come from the engine, plus main's own `desktop` frames, which still arrive when the engine
+ * cannot answer.
  */
 export function routeByHost(sessions: { engine: EngineSession; desktop: EngineSession }): EngineSession {
   return {
     call: (method, args, options) => (desktopSet.has(method) ? sessions.desktop : sessions.engine).call(method, args, options),
-    subscribe: listener => sessions.engine.subscribe(listener),
+    subscribe: listener => {
+      const off = [sessions.engine.subscribe(listener), sessions.desktop.subscribe(frame => { if (frame.frame === 'desktop') listener(frame); })];
+      return () => off.forEach(stop => stop());
+    },
     close: () => { sessions.engine.close(); sessions.desktop.close(); },
   };
 }

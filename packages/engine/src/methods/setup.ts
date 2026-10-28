@@ -7,5 +7,6 @@ import { notImplemented, type AreaHandlers } from './types';
 export const handlers: AreaHandlers<'setup'> = {
   'Setup/begin': notImplemented('Setup/begin'),
   'Setup/end': notImplemented('Setup/end'),
+  'Setup/retry': notImplemented('Setup/retry'),
   'Setup/status': notImplemented('Setup/status'),
 };

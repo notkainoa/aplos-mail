@@ -1,5 +1,5 @@
 /** Original sample values for the round-trip and client tests. Addresses use `.example` domains only. */
-import type { Account, Draft, Event, Frame, Message, Session, Settings, SetupStatus, Submission, ThreadRow } from '../src/index';
+import type { Account, Counts, Draft, Event, Frame, Message, Session, Settings, SetupStatus, Submission, ThreadRow } from '../src/index';
 
 export const state = { dbEpoch: 'e1', seq: 42 };
 const t0 = 1_793_000_000_000;
@@ -18,16 +18,16 @@ export const account: Account = {
   capabilities: { labels: true, folders: false, drafts: true, serverSearch: true, calendar: true, filters: true, push: false, sendAs: true, unsubscribeHeaders: true, importance: true },
   grantedScopes: ['gmail.modify', 'gmail.settings.basic'], aiAllowed: true, notifications: true,
   lease: { role: 'primary', holderDeviceName: 'MacBook Pro', until: t0 + 1_800_000 },
-  identities: [{ address: 'alex@mail.example', name: 'Alex', default: true }], createdAt: t0,
+  identities: [{ address: 'alex@mail.example', name: 'Alex', default: true }], pendingChanges: 2, createdAt: t0,
 };
 
 export const thread: ThreadRow = {
   id: 'a1:t1', accountId: 'a1', rev: 7, subject: 'Layout directions', snippet: 'Two directions are ready', fromName: 'Jordan Park',
   participants: [{ name: 'Jordan Park', address: 'jordan@studio.example' }, { name: 'Alex', me: true }],
-  lastDate: t0, messageCount: 4, unreadCount: 1, partial: false, unread: true, flagged: false, hasAttachments: true, labels: ['a1:INBOX'],
+  lastDate: t0, messageCount: 4, unreadCount: 1, partial: false, unread: true, flagged: false, hasAttachments: true, labels: ['a1:INBOX'], fromLater: false, unsubscribe: false,
   workflow: { status: 'new', dueDate: '2026-10-28', dueSource: 'ai', bookmarked: false, hiddenFromHome: false },
   rank: { lane: 'do', importance: 'important', source: 'ai', dueBand: 1 },
-  summary: { state: 'ready', text: 'Jordan wants your preference by tomorrow.', provider: 'groq', model: 'openai/gpt-oss-120b', action: { kind: 'reply', label: 'Reply' } },
+  summary: { state: 'ready', text: 'Jordan wants your preference by tomorrow.', provider: 'groq', model: 'openai/gpt-oss-120b', local: false, action: { kind: 'reply', label: 'Reply' } },
 };
 
 export const message: Message = {
@@ -47,7 +47,7 @@ export const draft: Draft = {
 
 export const submission: Submission = {
   id: 's1', rev: 1, draftId: 'd1', accountId: 'a1', threadId: 'a1:t1', internetId: '<s1@mail.example>', state: 'uncertain',
-  notBefore: t0, attemptAt: t0, toNames: ['Jordan Park'], subject: 'Re: Layout directions',
+  queuedAt: t0 - 8_000, notBefore: t0, attemptAt: t0, toNames: ['Jordan Park'], subject: 'Re: Layout directions',
   problem: { reasonCode: 'net.offline', message: 'We could not confirm this was sent. Check Sent, or Send anyway.' },
 };
 
@@ -56,21 +56,21 @@ export const event: Event = {
   recurring: true, exception: false, title: 'Design review', start: { type: 'utc', utc: t0 }, end: { type: 'utc', utc: t0 + 3_600_000 },
   allDay: false, timeZone: 'America/Los_Angeles', conference: { url: 'https://meet.example/abc' },
   attendees: [{ address: 'alex@mail.example', response: 'accepted', organizer: false, self: true }], myResponse: 'accepted', status: 'confirmed',
-  recurrence: { text: 'Every Tuesday' }, can: { edit: true, move: true, delete: true, rsvp: true, editGuests: false },
+  recurrence: { text: 'Every Tuesday' }, can: { edit: true, move: true, delete: true, rsvp: true, editGuests: false }, sync: 'synced',
 };
 
 const model = (m: string) => ({ provider: 'groq', model: m });
 export const settings: Settings = {
   ui: {
     theme: 'system', density: 'default', keyHints: 'tooltip', singleKeys: true, holdMs: 250, dock: { open: false, tab: 'ask' },
-    keymap: { 'thread.done': 'E' }, sidebar: { shown: true, minimised: false }, swipe: true, swipeDirection: 'doneRight', zen: false,
-    sendSound: true, devDetails: false, lastAccount: 'all', paletteRecents: [],
+    keymap: { 'mail.done': [{ chord: 'y' }], 'compose.dictate': [{ chord: 'meta+d', phase: 'hold' }] }, sidebarMinimised: false, swipe: true,
+    swipeDirection: 'doneRight', zen: false, sendSound: true, devDetails: false, lastAccount: 'all', palette: { recents: ['mail.done'] }, calendar: {},
   },
   mail: {
     undoSendSeconds: 8, followUpDays: 3, remoteImages: 'block', imageAllowList: ['@news.example'], doneAction: 'archive', laterAction: 'archive',
     lowAction: 'read', defaultReply: 'reply', signature: '', signatureMode: 'new', footer: false, autoPolish: false,
   },
-  notifications: { enabled: true, perAccount: { a1: true }, reminders: true },
+  notifications: { enabled: true, perAccount: { a1: true }, reminders: true, reconnectReminder: false },
   host: { menuBar: true, openAtLogin: false, microphone: 'default' },
   retention: { bodyDays: 90, maxBodyBytes: 2 * 1024 ** 3 },
   calendar: { autoAddPlans: false, providerEventsFromMail: true },
@@ -95,6 +95,17 @@ export const frames: Frame[] = [
   { frame: 'reset', ...state, reason: 'cannotCalculateChanges' },
   { frame: 'connect', ...state, connectId: 'c1', mode: 'reconnect', state: 'failed', reasonCode: 'auth.wrongAccount' },
   { frame: 'Draft/changed', ...state, draftId: 'd1', revision: 3, conflict: true },
-  { frame: 'host', ...state, event: { type: 'parked', reasonCode: 'crashLoop', message: 'Aplos stopped after repeated crashes.', canRetry: true } },
+  { frame: 'host', ...state, event: { type: 'parked', reasonCode: 'crashLoop', message: 'Aplos stopped after repeated crashes.', canRetry: true, at: t0 } },
   { frame: 'host', ...state, event: { type: 'badge', count: 6 } },
+  { frame: 'progress', ...state, runId: 'r1', source: 'ask', kind: 'citation', turnId: 't1',
+    citation: { kind: 'message', n: 1, messageId: 'a1:m1', threadId: 'a1:t1', quote: 'Two directions are ready', fromName: 'Jordan Park' } },
+  { frame: 'progress', ...state, runId: 'r1', source: 'ask', kind: 'proposal', turnId: 't1',
+    proposal: { kind: 'triage', id: 'p1', consequence: 'Mark 3 threads Done', state: 'open', threadIds: ['a1:t1'], action: { type: 'done' } } },
+  { frame: 'window', ...state, windowId: 'w2', state, rowType: 'Thread', ids: [], position: 0, total: 0, sections: [],
+    error: { type: 'paused', message: 'Google asked us to slow down. Resuming at 2:14 PM.', resumeAt: t0 + 60_000, reasonCode: 'rate.minute' } },
+  { frame: 'desktop', event: { type: 'engine', state: 'unreachable', message: 'Aplos can\'t reach its mail engine.', canRetry: true, at: t0 } },
+  { frame: 'desktop', event: { type: 'closeRequested', quitting: false } },
 ];
+
+const block = { home: 5, do: 3, update: 2, follow: 1, laterDue: 1, drafts: 2, scheduled: 0, unread: 9, handledToday: 12 };
+export const counts: Counts = { all: block, accounts: { a1: block }, folders: { 'a1:INBOX': 9 } };
