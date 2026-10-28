@@ -1,4 +1,5 @@
 import {
+  PausedError,
   ProviderError,
   type AdapterContext,
   type AttachmentFacts,
@@ -69,12 +70,13 @@ export async function openThread(
   // Drafts are never part of a conversation (D9).
   const live = messages.filter(m => !m.labelIds?.includes('DRAFT'));
   const leaves = new Map(live.map(m => [m.id, m.payload ? walkPayload(m.payload) : []]));
-  const resolved = await resolveBodyParts(client, live, leaves, lane);
+  const { parts: resolved, unresolved } = await resolveBodyParts(client, live, leaves, lane);
 
   const opened: Opened[] = live.map(m => {
     const facts = messageFacts(m, {
       self: ctx.account.address,
-      partial: false,
+      // A body part that did not arrive leaves the message partial, so the engine opens it again.
+      partial: unresolved.has(m.id),
       ...(threadSize !== undefined ? { threadSize } : {}),
     });
     const body: ProviderBody = { cidMap: {} };
@@ -109,40 +111,72 @@ export async function openThread(
   return { messages: opened, ...(removed.length ? { removed } : {}), costUnits: client.spent };
 }
 
-/** One batch (chunked to the governor's batch size) for every body part held by attachment id. */
-async function resolveBodyParts(
-  client: GmailClient,
-  messages: GmailMessage[],
-  leaves: Map<string, BodyLeaf[]>,
-  lane: 'interactive' | 'prefetch',
-): Promise<Map<string, string>> {
-  const wanted: { messageId: string; attachmentId: string }[] = [];
+interface BodyParts {
+  /** `messageId/attachmentId` -> base64url data. */
+  parts: Map<string, string>;
+  /** Messages with at least one body part that is not in `parts`. */
+  unresolved: Set<string>;
+}
+
+type PartWant = { messageId: string; attachmentId: string };
+
+function wantedParts(messages: GmailMessage[], leaves: Map<string, BodyLeaf[]>): PartWant[] {
+  const wanted: PartWant[] = [];
   for (const m of messages) {
     for (const leaf of leaves.get(m.id) ?? []) {
       if (leaf.kind !== 'attachment' && leaf.data === undefined && leaf.attachmentId)
         wanted.push({ messageId: m.id, attachmentId: leaf.attachmentId });
     }
   }
-  const out = new Map<string, string>();
+  return wanted;
+}
+
+/**
+ * One batch (chunked to the governor's batch size) for every body part held by attachment id. The thread is already
+ * paid for (120 units), so a pause, a refusal or a failed part never throws it away: whatever did not arrive leaves
+ * its message in `unresolved` and the caller marks it partial. Only an abort (the adapter closing) propagates.
+ */
+async function resolveBodyParts(
+  client: GmailClient,
+  messages: GmailMessage[],
+  leaves: Map<string, BodyLeaf[]>,
+  lane: 'interactive' | 'prefetch',
+): Promise<BodyParts> {
+  const wanted = wantedParts(messages, leaves);
+  const out: BodyParts = { parts: new Map(), unresolved: new Set() };
   const size = client.batchSize();
   for (let start = 0; start < wanted.length; start += size) {
     const chunk = wanted.slice(start, start + size);
-    const outcomes = await client.batch<{ data?: string }>(
-      chunk.map(w => ({
-        method: 'gmail.messages.attachments.get' as const,
-        path: `/messages/${w.messageId}/attachments/${w.attachmentId}`,
-        fields: 'data',
-        lane,
-        item: w.messageId,
-      })),
-      lane,
-    );
+    let outcomes;
+    try {
+      outcomes = await fetchPartChunk(client, chunk, lane);
+    } catch (error) {
+      if (!(error instanceof PausedError || error instanceof ProviderError)) throw error;
+      // Nothing more will go out now: the rest of the parts stay unresolved.
+      for (const w of wanted.slice(start)) out.unresolved.add(w.messageId);
+      break;
+    }
     outcomes.forEach((outcome, i) => {
+      const { messageId, attachmentId } = chunk[i];
       if (outcome.ok && outcome.data.data !== undefined)
-        out.set(`${chunk[i].messageId}/${chunk[i].attachmentId}`, outcome.data.data);
+        out.parts.set(`${messageId}/${attachmentId}`, outcome.data.data);
+      else out.unresolved.add(messageId);
     });
   }
   return out;
+}
+
+function fetchPartChunk(client: GmailClient, chunk: PartWant[], lane: 'interactive' | 'prefetch') {
+  return client.batch<{ data?: string }>(
+    chunk.map(w => ({
+      method: 'gmail.messages.attachments.get' as const,
+      path: `/messages/${w.messageId}/attachments/${w.attachmentId}`,
+      fields: 'data',
+      lane,
+      item: w.messageId,
+    })),
+    lane,
+  );
 }
 
 /** One attachment's bytes (`messages.attachments.get`, 20 units, interactive lane). */

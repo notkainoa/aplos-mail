@@ -48,11 +48,20 @@ interface Parsed {
   /** ErrorInfo `reason`s from `error.details`. */
   infoReasons: string[];
   text: string;
+  /** Set when the body was not Google's error JSON: its size, which is all that may be logged of it. */
+  unparseableBytes?: number;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 const str = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+/** The size of a body that is not Google's error JSON; nothing when there was no body at all. */
+function sizeOf(body: unknown): { unparseableBytes?: number } {
+  const bytes = Buffer.byteLength(typeof body === 'string' ? body : (JSON.stringify(body) ?? ''));
+  return bytes > 0 ? { unparseableBytes: bytes } : {};
+}
+const isSuccess = (status: number | undefined): boolean =>
+  status !== undefined && status >= 200 && status < 300;
 
 function parseBody(body: unknown): Parsed {
   let value = body;
@@ -60,10 +69,10 @@ function parseBody(body: unknown): Parsed {
     try {
       value = JSON.parse(value);
     } catch {
-      return { infoReasons: [], text: value as string };
+      return { infoReasons: [], text: value as string, ...sizeOf(body) };
     }
   }
-  if (!isRecord(value)) return { infoReasons: [], text: '' };
+  if (!isRecord(value)) return { infoReasons: [], text: '', ...sizeOf(body) };
   // Token endpoint: {"error": "invalid_grant", "error_description": "..."}.
   if (typeof value.error === 'string') {
     return { reason: value.error, infoReasons: [], text: str(value.error_description) ?? '' };
@@ -181,10 +190,25 @@ interface ApiReading extends Reading {
   reason?: string;
 }
 
+/**
+ * A 2xx body is mail content (a truncated `messages.get` starts with the snippet), so it is never read for words and
+ * never logged. A body that is not Google's error JSON is reduced to its size for the same reason.
+ */
+function readBody(failure: GoogleFailure): Parsed {
+  if (!isSuccess(failure.status)) return parseBody(failure.body);
+  return { infoReasons: [], text: '', ...sizeOf(failure.body) };
+}
+
+function providerMessage(parsed: Parsed): { providerMessage?: string } {
+  if (parsed.unparseableBytes !== undefined)
+    return { providerMessage: `unparseable response, ${parsed.unparseableBytes} bytes` };
+  return parsed.text ? { providerMessage: parsed.text.slice(0, 300) } : {};
+}
+
 function readFailure(failure: GoogleFailure): Reading {
   const { method, now, status } = failure;
   const provider = budgetOf(method);
-  const parsed = parseBody(failure.body);
+  const parsed = readBody(failure);
   const text = parsed.text;
   const make: Make = (cls, reason, extra = {}, scope = 'account') => ({
     error: {
@@ -193,7 +217,7 @@ function readFailure(failure: GoogleFailure): Reading {
       method,
       reason,
       ...(status !== undefined ? { status } : {}),
-      ...(text ? { providerMessage: text.slice(0, 300) } : {}),
+      ...providerMessage(parsed),
       ...extra,
     },
     scope,
@@ -238,11 +262,24 @@ function readApi(reading: Reading): ApiReading {
   };
 }
 
+const SEND_LIMIT_TEXT = /mail sending|sending quota|user sending/i;
+/** Text that names a per-minute, daily or bandwidth quota: those keep their own class even on a send. */
+const OTHER_QUOTA_TEXT = /per minute|per day|bandwidth|queries per|concurrent/i;
+
+/**
+ * A refused send whose reason is a quota but whose text names no other limit: Gmail words its sending limits several
+ * ways ("Mail sending", "Daily user sending quota exceeded") and sometimes only says `quotaExceeded`.
+ */
+function isSendQuota({ failure, parsed, text, quotaStatus }: ApiReading): boolean {
+  if (failure.kind !== 'send' || !quotaStatus || OTHER_QUOTA_TEXT.test(text)) return false;
+  return parsed.reason === 'quotaExceeded' || /\bquota\b/i.test(text);
+}
+
 /** Sending limit first: it arrives as a 429 rateLimitExceeded that only the text tells apart (D7). */
 function classifySendLimit(api: ApiReading): Classified | undefined {
   const { text, retryAfterMs, make, reason } = api;
   const { now } = api.failure;
-  if (!/mail sending/i.test(text)) return undefined;
+  if (!SEND_LIMIT_TEXT.test(text) && !isSendQuota(api)) return undefined;
   const at =
     retryAfterInText(text) ??
     (retryAfterMs !== undefined ? now + retryAfterMs : nextPacificMidnight(now));
@@ -279,14 +316,21 @@ function classifyDaily(api: ApiReading): Classified | undefined {
   return undefined;
 }
 
+/** The `Retry-After` header wins; Google's own "Retry after <ISO time>" sentence is the fallback. */
+function retryHint(api: ApiReading): { retryAfterMs?: number } {
+  if (api.retryAfterMs !== undefined) return api.withRetry;
+  const at = retryAfterInText(api.text);
+  return at !== undefined ? { retryAfterMs: Math.max(0, at - api.failure.now) } : {};
+}
+
 function classifyThrottle(api: ApiReading): Classified | undefined {
-  const { text, make, withRetry, quotaStatus, has, reason } = api;
+  const { text, make, quotaStatus, has, reason } = api;
   if (
     has(THROTTLE_REASONS) ||
     api.failure.status === 429 ||
     (quotaStatus && /rate ?limit|per minute|too many requests/i.test(text))
   ) {
-    return make('throttle', reason ?? 'rateLimitExceeded', withRetry);
+    return make('throttle', reason ?? 'rateLimitExceeded', retryHint(api));
   }
   return undefined;
 }

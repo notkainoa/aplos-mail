@@ -358,16 +358,28 @@ export class GmailClient {
 export const PACER_TARGET = 3_000;
 const PACER_WINDOW_MS = 60_000;
 
+interface Waiter {
+  first: boolean;
+  cost: number;
+  clock: Clock;
+  go: () => void;
+}
+
 /**
  * The Gmail lane's pacer (plan 20 PV0 item 1), so `prov-gmail` never runs unpaced before `prov-gov`'s governor lands:
  * wrapped around whatever governor the actor passes. A sliding 60-second log of the units sent, a 3,000-unit target,
- * one request in flight, and interactive and op-flush calls first in the queue. It only waits: it never sends past the
- * target and never retries, and pauses, refusals and tokens stay the inner governor's. One per adapter, so per account.
+ * one request in flight, and interactive and op-flush calls first. It only waits: it never sends past the target and
+ * never retries, and pauses, refusals and tokens stay the inner governor's. One per adapter, so per account.
+ *
+ * The budget wait happens in the queue, not while holding the one slot: the next call to go is the first waiter (in
+ * queue order, interactive ones before sync) whose cost fits the window now. A background batch that must wait 40 s
+ * therefore cannot hold up an open that fits, and a new arrival re-arms the wake-up.
  */
 export class GmailPacer {
   private readonly sent: { at: number; cost: number }[] = [];
   private busy = false;
-  private readonly queue: { first: boolean; go: () => void }[] = [];
+  private readonly queue: Waiter[] = [];
+  private wake?: AbortController;
 
   constructor(
     readonly target = PACER_TARGET,
@@ -384,10 +396,15 @@ export class GmailPacer {
     req: GovernedRequest,
     fn: (io: RequestIo) => Promise<T>,
   ): Promise<T> {
-    await this.acquire(req.lane === 'interactive' || req.lane === 'opFlush', req.signal);
+    await this.acquire(
+      req.lane === 'interactive' || req.lane === 'opFlush',
+      req.cost,
+      clock,
+      req.signal,
+    );
     try {
       return await inner.run(req, async io => {
-        // Waits inside the call, right before the request leaves, so a re-send by the inner governor is paced too.
+        // Admission checked the window, so this returns at once; it stays so a re-send by the inner governor is paced.
         await this.room(req.cost, clock, io.signal);
         this.sent.push({ at: clock.now(), cost: req.cost });
         return fn(io);
@@ -397,15 +414,13 @@ export class GmailPacer {
     }
   }
 
-  private acquire(first: boolean, signal?: AbortSignal): Promise<void> {
-    if (!this.busy) {
-      this.busy = true;
-      return Promise.resolve();
-    }
+  private acquire(first: boolean, cost: number, clock: Clock, signal?: AbortSignal): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (signal?.aborted) return reject(signal.reason);
-      const entry = {
+      const entry: Waiter = {
         first,
+        cost,
+        clock,
         go: () => {
           signal?.removeEventListener('abort', abort);
           resolve();
@@ -415,36 +430,72 @@ export class GmailPacer {
         const at = this.queue.indexOf(entry);
         if (at >= 0) this.queue.splice(at, 1);
         reject(signal!.reason);
+        this.pump();
       };
       signal?.addEventListener('abort', abort, { once: true });
       // The open the user is waiting for goes ahead of sync, never ahead of another interactive call.
       const at = first ? this.queue.findIndex(w => !w.first) : -1;
       this.queue.splice(at === -1 ? this.queue.length : at, 0, entry);
+      this.pump();
     });
   }
 
   private release(): void {
-    const next = this.queue.shift();
-    if (next) next.go();
-    else this.busy = false;
+    this.busy = false;
+    this.pump();
   }
 
-  /** Waits until `cost` fits in the sliding window; a call dearer than the whole target waits for an empty window. */
+  /** Admits the best waiter that fits now, or sleeps until the best group's first waiter will fit. */
+  private pump(): void {
+    this.wake?.abort();
+    this.wake = undefined;
+    if (this.busy || this.queue.length === 0) return;
+    const group = this.queue.filter(w => w.first === this.queue[0].first);
+    const now = group[0].clock.now();
+    this.expire(now);
+    const waits = group.map(w => this.waitFor(w.cost, now));
+    const at = waits.findIndex(wait => wait === 0);
+    if (at >= 0) return this.admit(group[at]);
+    this.sleepThenPump(group[0].clock, Math.min(...waits));
+  }
+
+  private admit(entry: Waiter): void {
+    this.queue.splice(this.queue.indexOf(entry), 1);
+    this.busy = true;
+    entry.go();
+  }
+
+  private sleepThenPump(clock: Clock, ms: number): void {
+    const wake = new AbortController();
+    this.wake = wake;
+    clock.sleep(Math.max(1, ms), wake.signal).then(
+      () => this.pump(),
+      () => undefined,
+    );
+  }
+
+  private expire(now: number): void {
+    while (this.sent.length && this.sent[0].at <= now - this.windowMs) this.sent.shift();
+  }
+
+  /** Milliseconds until `cost` fits in the sliding window; a call dearer than the whole target waits for an empty one. */
+  private waitFor(cost: number, now: number): number {
+    let used = this.sent.reduce((sum, e) => sum + e.cost, 0);
+    if (used === 0 || used + cost <= this.target) return 0;
+    for (const e of this.sent) {
+      used -= e.cost;
+      if (used + cost <= this.target) return Math.max(1, e.at + this.windowMs - now);
+    }
+    return this.windowMs;
+  }
+
   private async room(cost: number, clock: Clock, signal: AbortSignal): Promise<void> {
     for (;;) {
       const now = clock.now();
-      while (this.sent.length && this.sent[0].at <= now - this.windowMs) this.sent.shift();
-      let used = this.sent.reduce((sum, e) => sum + e.cost, 0);
-      if (used === 0 || used + cost <= this.target) return;
-      let wait = this.windowMs;
-      for (const e of this.sent) {
-        used -= e.cost;
-        if (used + cost <= this.target) {
-          wait = e.at + this.windowMs - now;
-          break;
-        }
-      }
-      await clock.sleep(Math.max(1, wait), signal);
+      this.expire(now);
+      const wait = this.waitFor(cost, now);
+      if (wait === 0) return;
+      await clock.sleep(wait, signal);
     }
   }
 }

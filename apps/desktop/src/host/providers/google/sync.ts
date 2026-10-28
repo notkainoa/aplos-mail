@@ -1,6 +1,7 @@
 import {
   type AdapterContext,
   type MessageFacts,
+  type ProviderError,
   type PlacementDelta,
   type PlanInput,
   type PlannedStep,
@@ -13,6 +14,7 @@ import {
 } from '@aplos/engine/ports';
 import { GmailClient, isStop, type GmailDeps, type GmailRequest } from './client';
 import { METADATA_HEADERS, messageFacts, type GmailMessage } from './facts';
+import { settleFailures } from './failures';
 
 /**
  * First sync P0-P5 (ARCH 5.1, plan 20 PV3) as pure planning plus bounded steps. Each step lists or fetches one chunk
@@ -168,6 +170,8 @@ export interface FetchOutcome {
   /** Gone at the server between list and get. */
   missing: string[];
   quarantine: Quarantine[];
+  /** Entries (also in `pending`) whose own part failed without stopping the step, for `settleFailures`. */
+  failed: { entry: string; item: string; error: Quarantine['error'] }[];
   /** Fetched messages that are drafts: never thread rows (D9), left to the caller. */
   drafts: { id: string; threadId: string }[];
   /** Set when a refusal or pause cut the fetch short. */
@@ -191,6 +195,7 @@ export async function fetchMetadata(
     pending: [],
     missing: [],
     quarantine: [],
+    failed: [],
     drafts: [],
     stopped: false,
   };
@@ -242,42 +247,53 @@ export async function fetchMetadata(
       continue;
     }
     outcomes.forEach((outcome, i) => {
-      const entry = chunk[i];
-      if (outcome.ok) {
-        const threadId = entryThread(entry);
-        const raw = threadId ? (outcome.data.messages ?? []) : [outcome.data];
-        // Drafts are never part of a conversation (D9).
-        const live = raw.filter(m => !m.labelIds?.includes('DRAFT'));
-        for (const m of raw)
-          if (m.labelIds?.includes('DRAFT')) out.drafts.push({ id: m.id, threadId: m.threadId });
-        const fetched = live.map(m => ({
-          facts: messageFacts(m, {
-            self: opts.self,
-            partial: true,
-            ...(threadId ? { threadSize: live.length } : {}),
-          }),
-          historyId: m.historyId,
-        }));
-        opts.memo?.put(entry, fetched, opts.now);
-        const facts = fetched.map(f => f.facts);
-        out.byEntry.set(entry, facts);
-        out.facts.push(...facts);
-        return;
-      }
-      const cls = outcome.error.error.class;
-      if (cls === 'permanent' && outcome.error.error.status === 404) out.missing.push(entry);
-      else if (cls === 'permanent')
-        out.quarantine.push({ item: entryThread(entry) ?? entry, error: outcome.error.error });
-      else {
-        out.pending.push(entry);
-        if (isStop(outcome.error)) {
-          out.stopped = true;
-          out.error ??= outcome.error;
-        }
-      }
+      if (outcome.ok) recordAnswer(out, chunk[i], outcome.data, opts);
+      else recordRefusal(out, chunk[i], outcome.error);
     });
   }
   return out;
+}
+
+/** One answered entry: its facts, with drafts set aside (D9). */
+function recordAnswer(
+  out: FetchOutcome,
+  entry: string,
+  data: GmailMessage & { messages?: GmailMessage[] },
+  opts: { self: string; memo?: FactsMemo; now: number },
+): void {
+  const threadId = entryThread(entry);
+  const raw = threadId ? (data.messages ?? []) : [data];
+  // Drafts are never part of a conversation (D9).
+  const live = raw.filter(m => !m.labelIds?.includes('DRAFT'));
+  for (const m of raw)
+    if (m.labelIds?.includes('DRAFT')) out.drafts.push({ id: m.id, threadId: m.threadId });
+  const fetched = live.map(m => ({
+    facts: messageFacts(m, {
+      self: opts.self,
+      partial: true,
+      ...(threadId ? { threadSize: live.length } : {}),
+    }),
+    historyId: m.historyId,
+  }));
+  opts.memo?.put(entry, fetched, opts.now);
+  const facts = fetched.map(f => f.facts);
+  out.byEntry.set(entry, facts);
+  out.facts.push(...facts);
+}
+
+/** One refused entry: gone (404), quarantined (permanent), or pending (a stop, or its own transient failure). */
+function recordRefusal(out: FetchOutcome, entry: string, error: ProviderError): void {
+  const classified = error.error;
+  const item = entryThread(entry) ?? entry;
+  if (classified.class === 'permanent' && classified.status === 404) out.missing.push(entry);
+  else if (classified.class === 'permanent') out.quarantine.push({ item, error: classified });
+  else {
+    out.pending.push(entry);
+    if (isStop(error)) {
+      out.stopped = true;
+      out.error ??= error;
+    } else out.failed.push({ entry, item, error: classified });
+  }
 }
 
 // ---- planning ----
@@ -506,6 +522,8 @@ interface ListRound {
   stopped: boolean;
   facts: MessageFacts[];
   quarantine: Quarantine[];
+  /** provider_memory writes from the fetch (failure counts), merged into the round's own. */
+  memory: Record<string, string | null>;
 }
 
 function listEnv(rt: SyncRuntime, state: SyncState, ctx: AdapterContext): ListEnv {
@@ -543,6 +561,7 @@ function openRound({ state, ctx, spec, starting }: ListEnv): ListRound {
     stopped: false,
     facts: [],
     quarantine: [],
+    memory: {},
   };
 }
 
@@ -628,15 +647,17 @@ function takeThreads(
 
 /** The round stopped at its thread cap with more of the folder left. */
 async function stopAtCap(
-  { state, ctx, spec, client, now }: ListEnv,
+  { state, ctx, spec, client, now, resync }: ListEnv,
   round: ListRound,
   listedToken: string | undefined,
   lastTaken: string | undefined,
 ): Promise<void> {
   round.capped = true;
   round.listedAll = true;
-  // P5 picks up from here: it re-lists this page and skips the messages already stored.
-  if (spec.baseline)
+  // P5 picks up from here: it re-lists this page and skips the messages already stored (5 units per 500 ids). A
+  // resync seeds it too, so Inbox mail that arrived past its 50 threads while the cursor was gone is still fetched;
+  // the resync itself stays bounded (D10).
+  if (spec.baseline || resync)
     round.seeds.push({
       scope: 'backfill:inbox',
       pageToken: listedToken,
@@ -672,6 +693,8 @@ async function fetchChunk(
     memo: rt.memo,
     now,
   });
+  // An entry that keeps failing on its own is quarantined after a few steps, so it cannot hold the round open.
+  Object.assign(round.memory, settleFailures(ctx, fetched, chunk));
   round.facts.push(...fetched.facts);
   round.quarantine.push(...fetched.quarantine);
   round.pending = [...fetched.pending, ...round.pending];
@@ -732,6 +755,7 @@ function roundMemory(
 ): Record<string, string | null> {
   const { read, extra, capped } = round;
   const memory: Record<string, string | null> = {
+    ...round.memory,
     [memKey(spec.scope, 'read')]: roundEnded ? null : String(read),
     [memKey(spec.scope, 'extra')]: roundEnded || !extra ? null : String(extra),
     [memKey(spec.scope, 'capped')]: !roundEnded && capped ? '1' : null,

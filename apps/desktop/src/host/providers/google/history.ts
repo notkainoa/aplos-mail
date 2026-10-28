@@ -12,6 +12,7 @@ import {
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
 import { FLAG_LABELS, folderFacts, type GmailLabel } from './facts';
+import { settleFailures } from './failures';
 import {
   FIRST_WINDOW_KEY,
   INBOX_ROUND_MARK,
@@ -104,7 +105,9 @@ export async function cursorStep(
 
 /**
  * The cursor is gone (404) or the pass would fetch too much: clear the cursor so the next plan() emits P0 again, and
- * start a bounded Inbox resync round whose sweep removes ghosts (D10). Never a full re-download. Before the first
+ * start a bounded Inbox resync round whose sweep removes ghosts (D10). Never a full re-download: when the resync stops
+ * at its 50 threads it re-seeds `backfill:inbox` from there, which skips stored mail and fetches only Inbox mail that
+ * arrived beyond those 50 while the cursor was gone (`stopAtCap`). Before the first
  * window round has ended, the reset restarts that round from the top instead (`FIRST_WINDOW_KEY`): it re-lists the
  * newest Inbox like a resync, skips what is stored, and still reaches the baseline and seeds Sent and backfill.
  */
@@ -290,21 +293,24 @@ interface FetchCandidates {
 
 /**
  * Which messages need a fetch: new mail in a known thread or in the Inbox (D14), a sent draft that is now mail, and
- * any message that entered the Inbox which this device lacks (D3). Everything else is a zero-cost delta.
+ * any message that entered the Inbox which this device lacks (D3) and did not leave again later on the same page.
+ * Everything else is a zero-cost delta.
  */
 async function fetchCandidates(
   ctx: AdapterContext,
   changes: PageChanges,
   current: Map<string, string> | undefined,
 ): Promise<FetchCandidates> {
-  const { added, undrafted, inboxGained, deleted } = changes;
+  const { added, undrafted, inboxGained, deleted, inboxMoves } = changes;
   const live = (m: HistoryRef) => !deleted.has(m.id);
   const isDraft = (m: HistoryRef) =>
     current ? current.has(m.id) : Boolean(m.labelIds?.includes('DRAFT'));
   const mail = [...added, ...undrafted].filter(
     m => live(m) && !isDraft(m) && !m.labelIds?.includes('DRAFT'),
   );
-  const gained = inboxGained.filter(m => live(m) && !isDraft(m));
+  // Later moves overwrite earlier ones, so this is each message's last Inbox move on the page.
+  const lastMove = new Map(inboxMoves);
+  const gained = inboxGained.filter(m => live(m) && !isDraft(m) && lastMove.get(m.id) === true);
   const threadIds = [...new Set([...mail, ...gained].map(m => m.threadId))];
   const knownThreads = threadIds.length
     ? await ctx.lookup.knownThreads(threadIds)
@@ -503,6 +509,9 @@ export async function historyStep(
     now,
   });
 
+  // A message that keeps failing on its own is quarantined after a few polls, so it cannot pin the cursor here.
+  const memory = { ...extras.memory, ...settleFailures(ctx, fetched, toFetch) };
+
   // The fetched rows carry the current labels; their deltas from this page would only repeat them.
   const upserted = new Set(fetched.facts.map(f => f.remoteId));
   const next = nextHistoryState(state, page, records, fetched, passFetches, now);
@@ -511,6 +520,7 @@ export async function historyStep(
     ...(fetched.facts.length ? { upserts: fetched.facts } : {}),
     ...(removals.length ? { removals } : {}),
     ...extras,
+    ...(Object.keys(memory).length ? { memory } : {}),
     ...(fetched.quarantine.length ? { quarantine: fetched.quarantine } : {}),
     nextStates: [next],
     done: !fetched.stopped,
