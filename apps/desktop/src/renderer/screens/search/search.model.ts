@@ -251,6 +251,51 @@ const FAILED_TEXT = {
   error: 'Google didn’t answer. Try again.',
 } as const;
 
+/** The line under the results about Google, for a remote state that belongs to the current query. */
+function remoteLineFor(remote: RemoteState, now: number, remoteCount: number): RemoteLine | null {
+  switch (remote.phase) {
+    case 'idle':
+      return { kind: 'offer', text: SEARCH_GOOGLE };
+    case 'starting':
+    case 'running':
+      return now - remote.at >= BUSY_DELAY_MS ? { kind: 'busy', text: 'Searching Google…' } : null;
+    case 'done':
+      return remoteCount === 0
+        ? { kind: 'none', text: 'Nothing on Google either. Try fewer words.' }
+        : null;
+    case 'paused':
+      return { kind: 'paused', text: pausedText(remote.resumeAt) };
+    default:
+      return {
+        kind: 'failed',
+        text: FAILED_TEXT[remote.reason],
+        retry: remote.reason === 'error' || remote.reason === 'offline',
+      };
+  }
+}
+
+/** The Google line, or null when there is none (an empty query, or an account that cannot search on Google). */
+function pageRemoteLine(
+  local: LocalResults,
+  remote: RemoteState,
+  key: string,
+  now: number,
+  remoteCount: number,
+): RemoteLine | null {
+  if (local.status === 'failed' && local.error && refusal(key, local.error).phase === 'paused') {
+    return { kind: 'paused', text: pausedText(local.error.resumeAt) };
+  }
+  return remoteLineFor(remote, now, remoteCount);
+}
+
+/** The polite live region's sentence. */
+function announceText(settled: boolean, empty: boolean, localCount: number): string {
+  if (empty || !settled) return '';
+  return localCount === 0
+    ? 'No results.'
+    : `${localCount} ${localCount === 1 ? 'result' : 'results'} in your mail.`;
+}
+
 /** The page's view of the state, the local window and the clock. */
 export function searchPage(
   state: SearchState,
@@ -259,8 +304,8 @@ export function searchPage(
   supported = true,
 ): SearchPageModel {
   const { query, key, empty } = currentQuery(state);
-  const remote =
-    'key' in state.remote && state.remote.key === key ? state.remote : ({ phase: 'idle' } as const);
+  const remote: RemoteState =
+    'key' in state.remote && state.remote.key === key ? state.remote : { phase: 'idle' };
   const before =
     remote.phase === 'running' || remote.phase === 'starting' || remote.phase === 'done'
       ? new Set(remote.localIds)
@@ -269,30 +314,8 @@ export function searchPage(
   const remoteIds = before ? local.ids.filter(id => !before.has(id)) : [];
   const localCount = before ? Math.max(0, local.total - remoteIds.length) : local.total;
 
-  let remoteLine: RemoteLine | null = null;
-  if (!empty && supported) {
-    if (local.status === 'failed' && local.error && refusal(key, local.error).phase === 'paused') {
-      remoteLine = { kind: 'paused', text: pausedText(local.error.resumeAt) };
-    } else if (remote.phase === 'idle') {
-      remoteLine = { kind: 'offer', text: SEARCH_GOOGLE };
-    } else if (remote.phase === 'starting' || remote.phase === 'running') {
-      remoteLine =
-        now - remote.at >= BUSY_DELAY_MS ? { kind: 'busy', text: 'Searching Google…' } : null;
-    } else if (remote.phase === 'done') {
-      remoteLine =
-        remoteIds.length === 0
-          ? { kind: 'none', text: 'Nothing on Google either. Try fewer words.' }
-          : null;
-    } else if (remote.phase === 'paused') {
-      remoteLine = { kind: 'paused', text: pausedText(remote.resumeAt) };
-    } else {
-      remoteLine = {
-        kind: 'failed',
-        text: FAILED_TEXT[remote.reason],
-        retry: remote.reason === 'error' || remote.reason === 'offline',
-      };
-    }
-  }
+  const remoteLine =
+    !empty && supported ? pageRemoteLine(local, remote, key, now, remoteIds.length) : null;
 
   const settled = local.status === 'live' || local.status === 'reset' || local.status === 'failed';
   const nothing = settled && localCount === 0 && remoteIds.length === 0;
@@ -300,14 +323,6 @@ export function searchPage(
   const noMatch = !empty && nothing ? `No mail matches ‘${shown}’.` : null;
   // The no-match line carries the offer itself (EmptyLine's action), so the separate offer row hides.
   const line = noMatch && remoteLine?.kind === 'offer' ? null : remoteLine;
-
-  let announce = '';
-  if (!empty && settled) {
-    announce =
-      localCount === 0
-        ? 'No results.'
-        : `${localCount} ${localCount === 1 ? 'result' : 'results'} in your mail.`;
-  }
 
   return {
     field: state.field,
@@ -320,7 +335,7 @@ export function searchPage(
     noMatch,
     noMatchOffer: noMatch !== null && remoteLine?.kind === 'offer',
     remoteLine: line,
-    announce,
+    announce: announceText(settled, empty, localCount),
   };
 }
 

@@ -310,8 +310,9 @@ export function AskContainer({ ports, today }: { ports: AskPorts; today: ReactNo
       });
   }
 
+  const dictating = dictation !== undefined;
   useEffect(() => {
-    if (!dictation) return;
+    if (!dictating) return;
     // Release keeps (the transcript goes in the field, ready to ask); Esc cancels. A typed path always exists.
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== 'a') return;
@@ -346,7 +347,7 @@ export function AskContainer({ ports, today }: { ports: AskPorts; today: ReactNo
       window.removeEventListener('keyup', onKeyUp, true);
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [dictation !== undefined]);
+  }, [dictating, ports]);
 
   /* ── the ask context's commands ── */
 
