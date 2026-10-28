@@ -110,8 +110,16 @@ export async function buildEngine(
   let closed = false;
   return {
     services,
-    connect(caller = windowCaller) {
+    connect(...args: [caller?: Caller]) {
       if (closed) throw unavailable();
+      // No argument is the stand-in's window; an argument that is undefined is a transport that lost its caller, and
+      // must not become a window with every scope.
+      const caller = args.length === 0 ? windowCaller : args[0];
+      if (!caller)
+        throw contractError({
+          type: 'forbidden',
+          message: 'This connection is not allowed in Aplos.',
+        });
       const session = openConnection(
         {
           services,

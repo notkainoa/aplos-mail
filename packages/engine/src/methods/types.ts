@@ -44,7 +44,8 @@ export interface MethodContext {
   connectionId: string;
   /**
    * Runs another method as this same caller, through the same default-deny dispatch (`Operation/retry`, a queued item):
-   * a re-dispatch never widens what the caller may do.
+   * a re-dispatch never widens what the caller may do. It shares the caller's connection, so it runs under the same
+   * abort signal (closing the session cancels it) and a `connectionId` reply from it answers the same connection.
    */
   redispatch<M extends EngineMethodName>(method: M, args: Input<M>): Promise<Output<M>>;
 }

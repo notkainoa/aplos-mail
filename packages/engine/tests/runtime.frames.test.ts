@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { Frame } from '@aplos/contract';
 import { STATE_COALESCE_MS } from '../src/index';
 import { accountWrite, folderWrites } from './store/helpers';
+import type { Caller } from '../src/methods/types';
+import { observeCommits } from '../src/runtime/frames';
 import { framesOf, testEngine } from './runtime.helpers';
 
 test('commits leave as one coalesced state frame, stamped with dbEpoch and seq', async () => {
@@ -148,4 +150,67 @@ test('the bus refuses frames only it or main may send, and is silent after close
   t.engine.services.store.commit({ opId: 'late', origin: 'sync', writes: [accountWrite] });
   assert.equal(t.clock.pending(), 0, 'no coalescing timer after close');
   await t.cleanup();
+});
+
+test('broadcasts are filtered by caller: a listener never sees host, draft, Ask or account-flow frames', async () => {
+  const t = await testEngine();
+  try {
+    const reader: Caller = { kind: 'listener', via: 'socket', clientId: 'c1', scopes: ['read'] };
+    const asker: Caller = { ...reader, clientId: 'c2', scopes: ['read', 'ai'] };
+    const main: Caller = { kind: 'host', scopes: ['host'] };
+    const seen = {
+      window: framesOf(t.engine.connect()),
+      reader: framesOf(t.engine.connect(reader)),
+      asker: framesOf(t.engine.connect(asker)),
+      main: framesOf(t.engine.connect(main)),
+    };
+    const emit = t.engine.services.frames.emit;
+    emit({ frame: 'host', event: { kind: 'badge', count: 1 } } as never);
+    emit({ frame: 'Draft/changed', draftId: 'd1', revision: 1, conflict: false });
+    emit({ frame: 'progress', runId: 'r1', source: 'ask', kind: 'text', delta: 'hi' });
+    emit({ frame: 'connect', connectId: 'k1', mode: 'connect', state: 'waiting' } as never);
+    t.engine.services.frames.reset('restart');
+    const kinds = (name: keyof typeof seen) => seen[name].map(f => f.frame);
+    assert.deepEqual(kinds('reader'), ['reset']);
+    assert.deepEqual(kinds('asker'), ['progress', 'reset']);
+    assert.deepEqual(kinds('main'), ['host', 'Draft/changed', 'progress', 'connect', 'reset']);
+    assert.deepEqual(kinds('window'), ['host', 'Draft/changed', 'progress', 'connect', 'reset']);
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('a frame sent to one connection reaches it even if a broadcast would be filtered out', async () => {
+  const t = await testEngine();
+  try {
+    const reader: Caller = { kind: 'listener', via: 'socket', clientId: 'c1', scopes: ['read'] };
+    const frames = framesOf(t.engine.connect(reader));
+    // The first connection of a test engine is c1: a reply to the caller's own call is never filtered.
+    t.engine.services.frames.emit(
+      { frame: 'progress', runId: 'r1', source: 'search', kind: 'done' },
+      'c1',
+    );
+    assert.deepEqual(
+      frames.map(f => f.frame),
+      ['progress'],
+    );
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('a commit whose changes the log cannot list resets the windows instead of sending nothing', () => {
+  const sent: string[] = [];
+  let seq = 0;
+  const store = {
+    seq: () => seq,
+    commit: () => (seq += 1),
+    changesSince: () => ({ status: 'cannotCalculateChanges', floorSeq: 9, seq: 9 }),
+  };
+  const observed = observeCommits(store as never, {
+    changed: () => void sent.push('state'),
+    reset: reason => void sent.push(`reset:${reason}`),
+  });
+  observed.commit({} as never);
+  assert.deepEqual(sent, ['reset:cannotCalculateChanges']);
 });
