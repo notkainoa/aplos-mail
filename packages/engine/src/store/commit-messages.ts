@@ -168,6 +168,8 @@ export function message(run: CommitRun, w: MessageWrite) {
       )
       .run(...fields, origin, origin, run.seq, localSeq, id);
     if (existing.thread_id !== tid) run.touched.add(existing.thread_id);
+    // A draft sent in place keeps its id: it counts when it stops being a draft.
+    if (existing.flags & FLAG.draft && !(flags & FLAG.draft)) countCorrespondents(run, w);
   } else {
     id = allocateId(run, w.internalDate);
     run
