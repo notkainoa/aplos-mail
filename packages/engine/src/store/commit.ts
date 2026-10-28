@@ -259,6 +259,13 @@ class CommitRun {
     }>(w.accountId, w.remoteId);
     if (!row) return;
     this.touchFolderThreads(row.id);
+    // The cascade drops the placements, which changes each placed message's labels (FR-15).
+    for (const m of this.q(
+      'SELECT m.id, m.remote_id FROM message_folders mf JOIN messages m ON m.id = mf.message_id WHERE mf.folder_id = ?',
+    ).all<{ id: number; remote_id: string }>(row.id)) {
+      this.q('UPDATE messages SET rev = ? WHERE id = ?').run(this.seq, m.id);
+      this.mark('Message', w.accountId, m.remote_id, 'u');
+    }
     this.q('DELETE FROM folders WHERE id = ?').run(row.id);
     this.mark('Folder', w.accountId, w.remoteId, 'd');
   }
@@ -519,6 +526,7 @@ class CommitRun {
       if (m.parts & PART.fts) this.q('DELETE FROM messages_fts WHERE rowid = ?').run(m.id);
       this.mark('Message', w.accountId, m.remote_id, 'd');
     }
+    this.markListChanges(this.lists(row.id), new Map());
     this.q('DELETE FROM threads WHERE id = ?').run(row.id); // cascades messages, placements, workflow, lists
     this.touched.delete(row.id);
     this.mark('Thread', w.accountId, w.remoteThreadId, 'd');
@@ -629,6 +637,7 @@ class CommitRun {
         FROM messages WHERE thread_id = ?`,
       ).get<Record<string, number | null>>(threadId)!;
       if (!a.total) {
+        this.markListChanges(this.lists(threadId), new Map());
         this.q('DELETE FROM threads WHERE id = ?').run(threadId);
         this.mark('Thread', t.account_id, t.remote_id, 'd');
         continue;
@@ -662,6 +671,7 @@ class CommitRun {
         threadId,
       );
       this.q('UPDATE thread_workflow SET last_date = ? WHERE thread_id = ?').run(last, threadId);
+      const before = this.lists(threadId);
       this.q('DELETE FROM thread_folders WHERE thread_id = ?').run(threadId);
       this.q(
         `INSERT INTO thread_folders(folder_id, last_date, thread_id, unread)
@@ -672,7 +682,32 @@ class CommitRun {
             WHERE x.message_id = m.id AND y.role IN ('trash', 'spam')))
         GROUP BY mf.folder_id`,
       ).run(last, threadId);
+      this.markListChanges(before, this.lists(threadId));
       this.mark('Thread', t.account_id, t.remote_id, 'u');
+    }
+  }
+
+  /** The thread's folder lists: folder id → whether the thread counts as unread there. */
+  private lists(threadId: number): Map<number, boolean> {
+    return new Map(
+      this.q('SELECT folder_id, unread FROM thread_folders WHERE thread_id = ?')
+        .all<{ folder_id: number; unread: number }>(threadId)
+        .map(r => [r.folder_id, r.unread > 0]),
+    );
+  }
+
+  /**
+   * Folder rows are derived too (FR-15): `Folder.total` and `Folder.unread` count the threads listed there, so a folder
+   * whose list gained or lost a thread, or where the thread turned read or unread, gets a change row.
+   */
+  private markListChanges(before: Map<number, boolean>, after: Map<number, boolean>) {
+    for (const id of new Set([...before.keys(), ...after.keys()])) {
+      if (before.get(id) === after.get(id)) continue;
+      const f = this.q('SELECT account_id, remote_id FROM folders WHERE id = ?').get<{
+        account_id: string;
+        remote_id: string;
+      }>(id);
+      if (f) this.mark('Folder', f.account_id, f.remote_id, 'u');
     }
   }
 

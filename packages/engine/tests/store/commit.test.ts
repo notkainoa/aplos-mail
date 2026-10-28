@@ -60,8 +60,8 @@ test('one commit writes the rows, its rollups and change rows, and bumps seq onc
     });
     assert.deepEqual(
       result,
-      { seq: 2, dbEpoch: store.dbEpoch, replayed: false, changed: 5 },
-      'workflow folds into the Thread row',
+      { seq: 2, dbEpoch: store.dbEpoch, replayed: false, changed: 6 },
+      'workflow folds into the Thread row; the thread joins the Inbox list, so one Folder row',
     );
     assert.equal(store.seq(), 2);
 
@@ -124,6 +124,7 @@ test('one commit writes the rows, its rollups and change rows, and bumps seq onc
       page.changes.filter(c => c.seq === 2).map(c => `${c.seq} ${c.type} ${c.id} ${c.op}`),
       [
         `2 Folder ${ACCOUNT}:DRAFT u`,
+        `2 Folder ${ACCOUNT}:INBOX u`,
         `2 Message ${ACCOUNT}:m1 u`,
         `2 Message ${ACCOUNT}:m2 u`,
         `2 Message ${ACCOUNT}:m3 u`,
@@ -188,7 +189,7 @@ test('a replayed opId is a no-op: no row change, no second seq bump, same receip
 test('changesSince orders by seq, never splits a commit across pages, and refuses seqs below the floor', () => {
   withStore((store, file) => {
     setup(store);
-    store.commit({ opId: 'a', origin: 'sync', writes: [msg('m1', 't1', 0), msg('m2', 't2', 1)] }); // seq 2: 4 rows
+    store.commit({ opId: 'a', origin: 'sync', writes: [msg('m1', 't1', 0), msg('m2', 't2', 1)] }); // seq 2: 5 rows (Inbox's list grew)
     store.commit({
       opId: 'b',
       origin: 'local',
@@ -216,7 +217,8 @@ test('changesSince orders by seq, never splits a commit across pages, and refuse
     );
     assert.deepEqual(
       all.changes.filter(c => c.seq === 4).map(c => `${c.type} ${c.id} ${c.op}`),
-      [`Message ${ACCOUNT}:m2 d`, `Thread ${ACCOUNT}:t2 d`],
+      [`Folder ${ACCOUNT}:INBOX u`, `Message ${ACCOUNT}:m2 d`, `Thread ${ACCOUNT}:t2 d`],
+      'the thread left the Inbox list, so the Inbox row changed too (FR-15)',
     );
     assert.equal(all.toSeq, 4);
 
@@ -224,7 +226,7 @@ test('changesSince orders by seq, never splits a commit across pages, and refuse
     assert.ok(first.status === 'ok');
     assert.deepEqual(
       first.changes.map(c => c.seq),
-      [2, 2, 2, 2],
+      [2, 2, 2, 2, 2],
       'the whole of seq 2, though the limit is 1',
     );
     assert.equal(first.toSeq, 2);
@@ -343,12 +345,13 @@ test('coarse backfill pages write one * row per type and account', () => {
       changes: 'coarse',
       writes: [msg('m1', 't1', 0), msg('m2', 't2', 1), msg('m3', 't3', 2)],
     });
-    assert.equal(r.changed, 2);
+    assert.equal(r.changed, 3);
     const page = store.changesSince(1);
     assert.ok(page.status === 'ok');
     assert.deepEqual(
       page.changes.map(c => `${c.type} ${c.id} ${c.op}`),
-      [`Message ${ACCOUNT} *`, `Thread ${ACCOUNT} *`],
+      [`Folder ${ACCOUNT}:INBOX u`, `Message ${ACCOUNT} *`, `Thread ${ACCOUNT} *`],
+      'folders stay fine-grained: there are few, and the sidebar counts must move',
     );
   });
 });
