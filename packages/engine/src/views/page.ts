@@ -8,7 +8,8 @@ import type { ViewEnv, ViewPlan, ViewPoint } from './specs';
  * One window's page (views-2): where it starts, which rows it shows and how a scroll finds a new start. Keyset only: a
  * window remembers the point of the row before its first row (`after`), so a re-run is one indexed range read that
  * ignores rows added or removed above it. A scroll to an unknown position walks the view in big strides from the
- * nearest remembered point (`marks`) and remembers the points it passes, so scrolling on or back is one read.
+ * nearest remembered point (`marks`) and remembers the points it passes, so scrolling on or back is one read. A mark
+ * remembers its row, and is used only while that row still sits just before its position.
  */
 
 /** Rows read per step while walking to a position. */
@@ -26,8 +27,15 @@ export interface PageState {
   holds: Holds;
   /** Held rows shown in their slot that the view no longer holds. */
   departed: Set<string>;
-  /** Index n -> the point of row n - 1, for positions already walked past. */
-  marks: Map<number, ViewPoint>;
+  /** Held rows shown in their slot that the view still holds elsewhere: id -> its index in the view. */
+  places: Map<string, number>;
+  /** Index n -> the row n - 1 and its point, for positions already walked past. */
+  marks: Map<number, Mark>;
+}
+
+export interface Mark {
+  id: string;
+  at: ViewPoint;
 }
 
 /** `mail.followUpDays` from the settings document, or its default. */
@@ -53,28 +61,28 @@ export function frozenPlan(ids: readonly string[]): ViewPlan {
 
 // ------------------------------------------------------------ scrolling
 
-/** The nearest remembered point at or before `target`. */
-function nearestMark(marks: ReadonlyMap<number, ViewPoint>, target: number) {
-  let pos = 0;
-  let point: ViewPoint | undefined;
-  for (const [at, p] of marks)
-    if (at <= target && at >= pos) {
-      pos = at;
-      point = p;
-    }
-  return { pos, point };
+/** The nearest remembered point at or before `target` whose row still sits where it was left. */
+function nearestMark(q: StoreReader, plan: ViewPlan, marks: Map<number, Mark>, target: number) {
+  for (;;) {
+    let pos = 0;
+    for (const at of marks.keys()) if (at <= target && at > pos) pos = at;
+    const mark = marks.get(pos);
+    if (!mark) return { pos: 0, point: undefined };
+    if (plan.locate(q, mark.id)?.index === pos - 1) return { pos, point: mark.at };
+    marks.delete(pos);
+  }
 }
 
 /** Walks forward to row `target`, remembering the points on the way; `end` when the view ran out first. */
-function walkTo(q: StoreReader, plan: ViewPlan, marks: Map<number, ViewPoint>, target: number) {
-  let { pos, point } = nearestMark(marks, target);
+function walkTo(q: StoreReader, plan: ViewPlan, marks: Map<number, Mark>, target: number) {
+  let { pos, point } = nearestMark(q, plan, marks, target);
   while (pos < target) {
     const n = Math.min(STRIDE, target - pos);
     const rows = plan.rows(q, point, n);
     if (rows.length) {
       pos += rows.length;
       point = rows[rows.length - 1].at;
-      marks.set(pos, point);
+      marks.set(pos, { id: rows[rows.length - 1].id, at: point });
     }
     if (rows.length < n) return { pos, point, end: true };
   }
@@ -103,36 +111,41 @@ export interface Page {
 
 /**
  * Reads the window's rows: the view from `after`, with held rows put back at the slot they were last sent in. A held
- * row the view no longer holds stays in its slot (`departed`) until it is released.
+ * row the view no longer holds stays in its slot (`departed`) until it is released; one the view holds elsewhere is
+ * noted in `places`, so the sections can follow the slots.
  */
 export function readPage(q: StoreReader, plan: ViewPlan, w: PageState): Page {
   const held = w.holds.ids;
-  const want = w.limit + held.size;
+  // Only held rows already on the page can keep a slot, so only they widen the read.
+  const shown = w.ids.reduce((n, id) => n + (held.has(id) ? 1 : 0), 0);
+  const want = w.limit + shown;
   const rows = plan.rows(q, w.after, want);
   const fresh = rows.map(r => r.id);
-  const { ids, kept } = placeHeld(fresh, w.ids, held, w.limit);
-  trackDeparted(q, plan, w, kept, fresh, rows.length < want);
+  const placed = placeHeld(fresh, w.ids, held, w.limit);
+  const { ids } = placed;
+  const onPage = new Set(ids);
+  const kept = placed.kept.filter(id => onPage.has(id));
+  trackKept(q, plan, w, kept, fresh);
   if (!kept.length && rows.length >= ids.length && ids.length)
-    w.marks.set(w.position + ids.length, rows[ids.length - 1].at);
+    w.marks.set(w.position + ids.length, { id: ids[ids.length - 1], at: rows[ids.length - 1].at });
   return { ids, kept };
 }
 
-function trackDeparted(
+/** Sorts the kept held rows into those the view dropped (`departed`) and those it holds at another index (`places`). */
+function trackKept(
   q: StoreReader,
   plan: ViewPlan,
   w: PageState,
   kept: string[],
   fresh: string[],
-  viewEnded: boolean,
 ): void {
-  const inFresh = new Set(fresh);
-  const keptSet = new Set(kept);
-  for (const id of w.departed) if (!keptSet.has(id) || inFresh.has(id)) w.departed.delete(id);
+  w.departed.clear();
+  w.places.clear();
+  const inFresh = new Map(fresh.map((id, i) => [id, w.position + i]));
   for (const id of kept) {
-    if (inFresh.has(id)) continue;
-    // Past the end of a short list it is gone; otherwise it may only have sorted below this page.
-    if (viewEnded || !plan.locate(q, id)) w.departed.add(id);
-    else w.departed.delete(id);
+    const index = inFresh.get(id) ?? plan.locate(q, id)?.index;
+    if (index === undefined) w.departed.add(id);
+    else w.places.set(id, index);
   }
 }
 

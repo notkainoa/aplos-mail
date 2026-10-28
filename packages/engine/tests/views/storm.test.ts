@@ -6,6 +6,7 @@ import { BIG_NOW, populate } from './big';
 import { openStore } from '../../src/store';
 import { tempDb } from '../store/helpers';
 import { incoming, openEngine, patch, worldEngine, type WindowFrame } from './harness';
+import { HOLD_LAPSE_MS } from '../../src/views/holds';
 
 /*
  * views-2's storm check (plan 10 E3 (a)): a backfill of coarse commits with three windows open. No window may send more
@@ -16,7 +17,8 @@ import { incoming, openEngine, patch, worldEngine, type WindowFrame } from './ha
 const MESSAGES = Number(process.env.APLOS_VIEWS_STORM ?? 100_000);
 const PAGE = 500;
 const PAGE_EVERY_MS = 100;
-const OLD = BIG_NOW - 40 * 86_400_000;
+/** The owner works on a row for the first pages of the storm, then stops; the hold lapses with the storm still going. */
+const HOLD_PAGES = 10;
 
 function backfillPage(page: number): MessageWrite[] {
   const out: MessageWrite[] = [];
@@ -27,7 +29,8 @@ function backfillPage(page: number): MessageWrite[] {
       incoming(thread, {
         accountId: n % 5 === 0 ? 'imap:2' : 'acct-1',
         remoteId: `bf-m${n}`,
-        date: OLD - n * 1_000,
+        // Newer than the whole mailbox, so every page pushes the inbox's top row down unless it is held.
+        date: BIG_NOW + n,
         seen: n % 3 === 0,
         folder: n % 5 === 0 || n % 2 ? 'INBOX' : 'Label_1',
       }),
@@ -66,6 +69,8 @@ test(`a ${MESSAGES}-message backfill with three windows open stays under four fr
     const reruns0 = t.views.stats.reruns;
 
     const pages = MESSAGES / PAGE;
+    const pingPages = Math.min(HOLD_PAGES, Math.ceil(pages / 2));
+    let lastPing = t.clock.now();
     let widest = 0;
     for (let p = 0; p < pages; p++) {
       const before = t.store.seq();
@@ -78,8 +83,15 @@ test(`a ${MESSAGES}-message backfill with three windows open stays under four fr
       });
       const rows = t.store.changesSince(before).status === 'ok' ? changeRows(t.store, before) : 0;
       widest = Math.max(widest, rows);
-      await t.call('View/hold', { windowId: wins[0]!.windowId, ids: [held] });
+      if (p < pingPages) {
+        await t.call('View/hold', { windowId: wins[0]!.windowId, ids: [held] });
+        lastPing = t.clock.now();
+      }
       await t.advance(PAGE_EVERY_MS);
+      if (p === pingPages - 1) {
+        const top = await t.call('View/query', { spec: specs[0], limit: 1 });
+        assert.notEqual(top.ids[0], held, 'without the hold the storm would have moved the row');
+      }
     }
     assert.ok(widest <= 12, `a coarse page writes a handful of change rows, saw ${widest}`);
 
@@ -97,10 +109,21 @@ test(`a ${MESSAGES}-message backfill with three windows open stays under four fr
     );
     assert.ok(reruns < pages * wins.length, 'fewer re-runs than commit-window pairs');
 
-    for (const f of t.windowFrames(wins[0]!.windowId)) {
-      assert.equal(f.ids[0], held, 'a held row never moves');
-      assert.deepEqual(f.held, [held]);
-    }
+    const lapsesAt = lastPing + HOLD_LAPSE_MS;
+    const heldTimes = arrivals.get(wins[0]!.windowId)!;
+    t.windowFrames(wins[0]!.windowId).forEach((f, i) => {
+      if (heldTimes[i]! < lapsesAt) {
+        assert.equal(f.ids[0], held, 'a held row never moves while the owner is working');
+        assert.deepEqual(f.held, [held]);
+      } else {
+        assert.equal(f.held, undefined, 'once the hold lapsed the window is not holding');
+      }
+    });
+    if (pages * PAGE_EVERY_MS > HOLD_LAPSE_MS * 2)
+      assert.ok(
+        heldTimes.some(at => at >= lapsesAt),
+        'the hold lapsed under load and the window reconciled while the storm went on',
+      );
 
     await t.advance(5_000);
     for (const [i, spec] of specs.entries()) {

@@ -1,4 +1,4 @@
-import type { ErrorBody, Input, Output } from '@aplos/contract';
+import type { ErrorBody, Input, Output, ViewSpec } from '@aplos/contract';
 import { toContractError } from '../runtime/errors';
 import type { EngineServices } from '../runtime/services';
 import { accountIds } from './compile';
@@ -69,10 +69,14 @@ async function runSearch(
       connectionId,
       'search',
       body,
-      spec => spec.kind === 'search' && spec.query.text === args.query.text,
+      spec => spec.kind === 'search' && sameSearch(spec, args),
     );
   }
 }
+
+/** A search window shows what this run looks for: the same query over the same account scope. */
+const sameSearch = (spec: Extract<ViewSpec, { kind: 'search' }>, args: Args) =>
+  spec.accountId === args.accountId && JSON.stringify(spec.query) === JSON.stringify(args.query);
 
 const problemOf = (body: ErrorBody) => ({
   reasonCode: body.reasonCode ?? body.type,

@@ -4,6 +4,7 @@ import {
   growSections,
   holdIds,
   HOLD_LAPSE_MS,
+  HOLD_LIMIT,
   lapseHolds,
   newHolds,
   placeHeld,
@@ -177,4 +178,49 @@ test('Home keeps sections consistent around a held row that left the view', asyn
       next += s.count;
     }
   });
+});
+
+/** The section key an index falls in, by the boundaries a frame reports. */
+function sectionAt(
+  sections: { key: string; start: number; count: number; senders?: unknown }[],
+  at: number,
+) {
+  return sections.find(s => s.senders === undefined && at >= s.start && at < s.start + s.count)
+    ?.key;
+}
+
+test('Home keeps neighbours under the right header when a held row changes section', async () => {
+  await withWorld(async t => {
+    const win = await t.call('View/watch', { spec: { kind: 'home' }, limit: 200 });
+    const doNow = win.sections.find(s => s.key === 'do')!;
+    assert.ok(doNow.count > 3, 'the seeded Home has several Do now rows');
+    const held = win.ids[1]!;
+    await t.call('View/hold', { windowId: win.windowId, ids: [held] });
+    t.commit([patch(held, { lane: 'update' })]);
+    await t.advance(300);
+    const last = framesOf(t, win.windowId).at(-1)!;
+    assert.equal(last.ids[1], held, 'the held row stays in its slot');
+    const fresh = await t.call('View/query', { spec: { kind: 'home' }, limit: 200 });
+    assert.equal(last.total, fresh.total, 'a move between sections does not change the total');
+    // What a fresh read shows, with the held row taken out of where the view puts it and set back in its slot.
+    const sectionsOf = (w: { ids: string[]; sections: Parameters<typeof sectionAt>[0] }) =>
+      w.ids.map((_, at) => sectionAt(w.sections, at));
+    const fromAt = fresh.ids.indexOf(held);
+    const wantIds = fresh.ids.filter((_, at) => at !== fromAt);
+    const wantSections = sectionsOf(fresh).filter((_, at) => at !== fromAt);
+    wantIds.splice(1, 0, held);
+    wantSections.splice(1, 0, 'do');
+    assert.deepEqual(last.ids, wantIds);
+    assert.deepEqual(sectionsOf(last), wantSections, 'every row sits under its own header');
+  });
+});
+
+test('the held set is capped, keeping the most recent holds', () => {
+  const holds = newHolds();
+  const ids = Array.from({ length: HOLD_LIMIT + 100 }, (_, i) => `t${i}`);
+  holdIds(holds, ids, 0);
+  assert.equal(holds.ids.size, HOLD_LIMIT);
+  assert.ok(holds.ids.has('t299') && !holds.ids.has('t0'));
+  holdIds(holds, ['t150'], 0);
+  assert.equal(holds.ids.size, HOLD_LIMIT, 'a ping for a held row grows nothing');
 });

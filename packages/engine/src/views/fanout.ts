@@ -19,7 +19,7 @@ export interface ChangeSummary {
   seq: number;
   /** type -> account ids it touched (`''` for a type with no account, such as settings). */
   accounts: Map<string, Set<string>>;
-  /** type -> changed ids; absent for a type that overflowed `ID_CAP` or changed coarsely. */
+  /** type -> changed ids; an empty set for a type that overflowed `ID_CAP` or changed coarsely (ids unknown). */
   ids: Map<string, Set<string>>;
   /** Threads that were deleted, so a frozen order can drop them. */
   deleted: Set<string>;
@@ -75,10 +75,6 @@ function addId(sum: ChangeSummary, change: Change): void {
   if (seen) seen.add(change.id);
   else sum.ids.set(change.type, new Set([change.id]));
 }
-
-/** An empty id set marks a type that changed coarsely or overflowed: its ids are unknown. */
-export const idsKnown = (set: Set<string> | undefined): set is Set<string> =>
-  set !== undefined && set.size > 0;
 
 // ------------------------------------------------------------ which windows a summary reaches
 

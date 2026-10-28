@@ -5,16 +5,17 @@ import type { Clock, DeadlineRegistry, Logger, StorePort } from '../ports';
 import type { StoreReader } from '../store';
 import { accountIds } from './compile';
 import { readCounts, readFolders, readSenderGroups, type SenderGroupRow } from './counts';
+import { createTicker, gateOf, reaches, summarize, type ChangeSummary, type Gate } from './fanout';
 import {
-  createTicker,
-  gateOf,
-  reaches,
-  summarize,
-  idsKnown,
-  type ChangeSummary,
-  type Gate,
-} from './fanout';
-import { growSections, holdIds, lapseHolds, newHolds, releaseHolds, touchHolds } from './holds';
+  growSections,
+  holdIds,
+  lapseHolds,
+  newHolds,
+  releaseHolds,
+  shrinkSections,
+  touchHolds,
+  withoutEmpty,
+} from './holds';
 import { changedThreads, frozenPlan, readPage, seek, viewEnv, type PageState } from './page';
 import { compileView } from './registry';
 import type { LayoutSection, RowType, ViewLayout, ViewPlan } from './specs';
@@ -118,10 +119,15 @@ interface Win extends PageState {
   lastRunAt: number;
   /** Changed ids of a non-thread row type since the last run. */
   touched: Set<string>;
+  /** Every shown row may have changed (a coarse or overflowed change, or a sender group's threads moved). */
+  touchedAll: boolean;
 }
 
 const notFound = () =>
   new ContractError({ type: 'notFound', message: 'This list is no longer open. Reopen it.' });
+
+const rowNotFound = () =>
+  new ContractError({ type: 'notFound', message: 'That item is not in this list.' });
 
 const signatureOf = (b: QueryResult) =>
   JSON.stringify([b.ids, b.total, b.position, b.sections, b.held]);
@@ -166,21 +172,29 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
     w.layoutAt = now;
   }
 
-  /** Total and sections for the page, with room for held rows the view has already let go of. */
+  /**
+   * Total and sections for the page, with room for held rows the view has already let go of (they count), and held
+   * rows the view holds at another index (they leave the section they sit in there and join the one at their slot).
+   */
   function shape(w: Win, ids: string[]): { total: number; sections: LayoutSection[] } {
     const layout = w.layout!;
+    const shown = ids.map((id, slot) => ({ id, at: w.position + slot }));
+    const dropped = shown.filter(s => w.departed.has(s.id));
+    const moved = shown.filter(s => (w.places.get(s.id) ?? s.at) !== s.at);
     let sections = layout.sections;
-    ids.forEach((id, slot) => {
-      if (w.departed.has(id)) sections = growSections(sections, w.position + slot);
-    });
-    return { total: layout.total + w.departed.size, sections };
+    const leaving = moved.map(s => w.places.get(s.id)!).sort((x, y) => y - x);
+    for (const index of leaving) sections = shrinkSections(sections, index);
+    const joining = [...moved, ...dropped].sort((x, y) => x.at - y.at);
+    for (const s of joining) sections = growSections(sections, s.at);
+    return { total: layout.total + w.departed.size, sections: withoutEmpty(sections) };
   }
 
   function changedIds(w: Win, q: StoreReader, ids: string[]): string[] {
     if (w.rowType === 'Thread') return changedThreads(q, ids, w.sentSeq, accountIds(q));
     const shown = new Set(ids);
-    const out = [...w.touched].filter(id => shown.has(id));
+    const out = w.touchedAll ? ids : [...w.touched].filter(id => shown.has(id));
     w.touched.clear();
+    w.touchedAll = false;
     return out;
   }
 
@@ -223,6 +237,7 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
       ids: [],
       holds: newHolds(),
       departed: new Set(),
+      places: new Map(),
       marks: new Map(),
       layoutStale: false,
       layoutAt: 0,
@@ -231,6 +246,7 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
       pending: false,
       lastRunAt: clock.now(),
       touched: new Set(),
+      touchedAll: false,
     };
   }
 
@@ -238,8 +254,16 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
   function target(w: Win, q: StoreReader, plan: ViewPlan, anchor?: Anchor): number {
     if (!anchor) return w.position;
     let at = anchor.position ?? w.position;
-    if (anchor.id !== undefined) at = plan.locate(q, anchor.id)?.index ?? 0;
+    if (anchor.id !== undefined) at = indexOfRow(w, q, plan, anchor.id);
     return at + (anchor.offset ?? 0);
+  }
+
+  /** The row's index in the view, remembered as a mark so the scroll can start from it. */
+  function indexOfRow(w: Win, q: StoreReader, plan: ViewPlan, id: string): number {
+    const found = plan.locate(q, id);
+    if (!found) throw rowNotFound();
+    w.marks.set(found.index + 1, { id, at: found.at });
+    return found.index;
   }
 
   /** Scrolls an open (or opening) window and reads its page. */
@@ -264,10 +288,11 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
   /** Makes room for one more window: the oldest of this connection past its share, then the oldest overall. */
   function evict(connectionId: string) {
     const mine = [...windows.values()].filter(w => w.connectionId === connectionId);
-    for (const old of mine.slice(0, Math.max(0, mine.length - MAX_WINDOWS_PER_CONNECTION + 1)))
-      windows.delete(old.id);
-    for (const id of [...windows.keys()].slice(0, Math.max(0, windows.size - MAX_WINDOWS + 1)))
-      windows.delete(id);
+    const over = Math.max(0, mine.length - MAX_WINDOWS_PER_CONNECTION + 1);
+    const gone = notFound().body;
+    for (const old of mine.slice(0, over)) stopWindow(old, gone);
+    const extra = Math.max(0, windows.size - MAX_WINDOWS + 1);
+    for (const old of [...windows.values()].slice(0, extra)) stopWindow(old, gone);
   }
 
   function watch(args: WatchArgs, connectionId: string): WindowBody {
@@ -301,6 +326,7 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
   }
 
   function move(args: MoveArgs, connectionId: string): WindowBody {
+    committed();
     const w = windowFor(args.windowId, connectionId);
     if (args.range && w.spec.kind === 'events') w.spec = { ...w.spec, ...args.range };
     if (args.limit && w.spec.kind !== 'events') w.limit = Math.min(args.limit, MAX_LIMIT);
@@ -393,6 +419,12 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
   function run(now: number): void {
     for (const w of [...windows.values()]) {
       if (!windows.has(w.id)) continue;
+      if (w.epoch !== store.dbEpoch) {
+        // A restore replaced the database: the window's rows are gone, and the next call on it answers notFound.
+        windows.delete(w.id);
+        refreshTicker();
+        continue;
+      }
       if (lapseHolds(w.holds, now)) w.pending = true;
       const overdue = w.layoutStale && now - w.layoutAt >= LAYOUT_REFRESH_MS;
       if ((w.pending || overdue) && now - w.lastRunAt >= WINDOW_INTERVAL_MS) rerun(w, now);
@@ -407,9 +439,15 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
       w.pending = true;
       w.layoutStale = true;
       if (w.frozen) w.frozen = w.frozen.filter(id => !sum.deleted.has(id));
-      const ids = sum.ids.get(w.rowType);
-      if (w.rowType !== 'Thread' && idsKnown(ids)) for (const id of ids) w.touched.add(id);
+      if (w.rowType !== 'Thread') touch(w, sum.ids.get(w.rowType));
     }
+  }
+
+  /** Notes which shown rows may have changed: the ids a commit named, or all of them when it did not say. */
+  function touch(w: Win, ids: Set<string> | undefined): void {
+    // A sender group is a summary of threads: any thread change reaching it may have moved its count.
+    if (w.rowType === 'SenderGroup' || ids?.size === 0) w.touchedAll = true;
+    else if (ids) for (const id of ids) w.touched.add(id);
   }
 
   function voidWindows(reason: 'cannotCalculateChanges'): void {

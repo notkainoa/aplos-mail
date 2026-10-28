@@ -2,7 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Frame } from '@aplos/contract';
 import type { AccountActorHost, DeadlineRegistry, DeadlineSource } from '../../src/ports';
-import { incoming, openEngine, patch, splitThread, worldEngine, type TestEngine } from './harness';
+import {
+  incoming,
+  openEngine,
+  patch,
+  splitThread,
+  worldEngine,
+  type TestEngine,
+  type WindowFrame,
+} from './harness';
 import { BIG_NOW } from './big';
 import { makeWorld } from './world';
 
@@ -176,6 +184,28 @@ test('a scrolled window keeps its place while rows arrive above it', async () =>
   });
 });
 
+test('View/move lands on the right rows after rows arrived above the window', async () => {
+  await withWorld(async t => {
+    const spec = { kind: 'mailbox', role: 'all' } as const;
+    const win = await t.call('View/watch', { spec, limit: 5 });
+    await t.call('View/move', { windowId: win.windowId, anchor: { position: 50 } });
+    for (let i = 0; i < 5; i++) arrive(t, `above-${i}`);
+    await t.advance(300);
+    const fresh = await t.call('View/query', { spec, limit: 200 });
+    const byPosition = await t.call('View/move', {
+      windowId: win.windowId,
+      anchor: { position: 55 },
+    });
+    assert.deepEqual(byPosition.ids, fresh.ids.slice(55, 60), 'a position finds the row at it');
+    const byRow = await t.call('View/move', {
+      windowId: win.windowId,
+      anchor: { id: fresh.ids[60]! },
+    });
+    assert.equal(byRow.position, 60);
+    assert.equal(byRow.ids[0], fresh.ids[60], 'a row anchor starts at the row');
+  });
+});
+
 test('another connection cannot touch a window', async () => {
   await withWorld(async t => {
     const win = await t.call('View/watch', { spec: { kind: 'done' } });
@@ -345,6 +375,84 @@ test('SenderGroup/get serves the rows of a lowSenders window', async () => {
   });
 });
 
+test('a lowSenders window reports a sender group whose count changed', async () => {
+  await withWorld(async t => {
+    const win = await t.call('View/watch', { spec: { kind: 'lowSenders' }, limit: 200 });
+    const by = await t.call('View/query', { spec: { kind: 'lowBySender' }, limit: 200 });
+    const crowd = by.sections.find(s => s.count >= 2)!;
+    assert.ok(crowd, 'a sender with several Low threads exists in the seeded mailbox');
+    const group = `sender:${crowd.key}`;
+    assert.ok(win.ids.includes(group));
+    t.commit([patch(by.ids[crowd.start]!, { lane: 'update' })]);
+    await t.advance(300);
+    const last = frameOf(t, win.windowId);
+    assert.ok(last?.changed?.includes(group), 'the group whose count moved is changed');
+  });
+});
+
+test('a coarse commit marks every shown row of a reader window as changed', async () => {
+  await withWorld(async t => {
+    const all = await t.call('View/query', { spec: { kind: 'mailbox', role: 'all' } });
+    const threadId = all.ids[0]!;
+    const { accountId, remoteThreadId } = splitThread(threadId);
+    const win = await t.call('View/watch', { spec: { kind: 'thread', threadId } });
+    const first = win.ids[0]!;
+    const before = t.store.seq();
+    t.store.commit({
+      opId: 'coarse-seen',
+      origin: 'sync',
+      step: 'backfill',
+      changes: 'coarse',
+      writes: [
+        incoming(remoteThreadId, {
+          accountId,
+          remoteId: first.slice(accountId.length + 1),
+          seen: false,
+          date: BIG_NOW - 5,
+        }),
+      ],
+    });
+    assert.ok(t.store.seq() > before, 'the commit landed');
+    await t.advance(300);
+    const last = frameOf(t, win.windowId);
+    assert.ok(last?.changed?.includes(first), 'a coarse change reaches the rows it might have hit');
+  });
+});
+
+test('a connection past its window share has its oldest window ended with an error frame', async () => {
+  await withWorld(async t => {
+    const first = await t.call('View/watch', { spec: { kind: 'done' }, limit: 1 });
+    for (let i = 0; i < 64; i++) await t.call('View/watch', { spec: { kind: 'done' }, limit: 1 });
+    const last = frameOf(t, first.windowId);
+    assert.equal(last?.error?.type, 'notFound', 'the evicted window is told, not dropped');
+    assert.deepEqual(last?.ids, []);
+    assert.equal(t.views.stats.windows, 64);
+  });
+});
+
+test('the engine-wide window cap ends another connection oldest window with an error frame', async () => {
+  await withWorld(async t => {
+    const others = Array.from({ length: 8 }, () => t.engine.connect());
+    const seen = others.map(c => {
+      const frames: Frame[] = [];
+      c.subscribe(f => frames.push(f));
+      return frames;
+    });
+    const spec = { kind: 'done' } as const;
+    const firsts = await Promise.all(others.map(c => c.call('View/watch', { spec, limit: 1 })));
+    for (const c of others)
+      for (let i = 1; i < 64; i++) await c.call('View/watch', { spec, limit: 1 });
+    assert.equal(t.views.stats.windows, 512);
+    await t.call('View/watch', { spec, limit: 1 });
+    const stopped = seen[0]!.filter(f => f.frame === 'window' && f.error);
+    assert.equal(stopped.length, 1, 'the oldest window of another connection is told');
+    assert.equal(
+      (stopped[0] as WindowFrame).windowId,
+      (firsts[0] as { windowId: string }).windowId,
+    );
+  });
+});
+
 test('Search/remote asks the provider and the results join the search window', async () => {
   const world = makeWorld(5, BIG_NOW, 60);
   const asked: string[] = [];
@@ -387,30 +495,51 @@ test('Search/remote failure ends the search window with WindowBody.error', async
     const other = await t.call('View/watch', {
       spec: { kind: 'search', query: { text: 'other' } },
     });
+    const scoped = await t.call('View/watch', {
+      spec: { kind: 'search', query: { text: 'garden' }, accountId: 'imap:2' },
+    });
     await t.call('Search/remote', { opId: 'op-2', query: { text: 'garden' } });
     await t.advance(10);
     const last = frameOf(t, win.windowId)!;
     assert.equal(last.error?.type, 'unavailable');
     assert.equal(frameOf(t, other.windowId), undefined, 'only the matching search window stops');
+    assert.equal(frameOf(t, scoped.windowId), undefined, 'a search over another scope goes on');
     const progress = t.frames.filter(f => f.frame === 'progress');
     assert.equal(progress.at(-1)?.kind, 'error');
   });
 });
 
-test('a restore voids windows: a new epoch answers notFound', async () => {
+test('a restore voids windows: a new epoch answers notFound, and a re-run after it sends nothing', async () => {
   await withWorld(async t => {
     const win = await t.call('View/watch', { spec: { kind: 'done' } });
     const store = t.store as { dbEpoch: string };
     const real = store.dbEpoch;
+    const before = t.windowFrames(win.windowId).length;
     Object.defineProperty(t.store, 'dbEpoch', { value: 'other-epoch', configurable: true });
     try {
+      t.commit([patch(win.ids[0]!, { status: 'later' })]);
+      await t.advance(600);
+      const after = t.windowFrames(win.windowId).filter(f => f.dbEpoch === 'other-epoch');
+      assert.equal(after.length, 0, 'a window of the old epoch does not answer in the new one');
+      assert.equal(t.windowFrames(win.windowId).length, before);
       await assert.rejects(
         t.call('View/move', { windowId: win.windowId, anchor: { position: 0 } }),
         /no longer open/,
       );
+      assert.equal(t.views.stats.windows, 0, 'the window was dropped');
     } finally {
       Object.defineProperty(t.store, 'dbEpoch', { value: real, configurable: true });
     }
+  });
+});
+
+test('a View/move to a row that is not in the list answers notFound', async () => {
+  await withWorld(async t => {
+    const win = await t.call('View/watch', { spec: { kind: 'done' } });
+    await assert.rejects(
+      t.call('View/move', { windowId: win.windowId, anchor: { id: 'acct-1:no-such-thread' } }),
+      /not in this list/,
+    );
   });
 });
 

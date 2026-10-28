@@ -8,6 +8,8 @@ import type { LayoutSection } from './specs';
 
 /** A hold lapses this long after the last activity signal. */
 export const HOLD_LAPSE_MS = 2_000;
+/** A window holds at most this many rows (a page is at most 200); the oldest holds are dropped first. */
+export const HOLD_LIMIT = 200;
 
 export interface Holds {
   ids: Set<string>;
@@ -24,6 +26,10 @@ export function touchHolds(holds: Holds, now: number): void {
 
 export function holdIds(holds: Holds, ids: readonly string[], now: number): void {
   for (const id of ids) holds.ids.add(id);
+  for (const old of holds.ids) {
+    if (holds.ids.size <= HOLD_LIMIT) break;
+    holds.ids.delete(old);
+  }
   touchHolds(holds, now);
 }
 
@@ -65,18 +71,36 @@ export function placeHeld(
   return { ids: ids.slice(0, limit), kept: [...kept] };
 }
 
+const holdsRows = (s: LayoutSection) => s.senders === undefined && s.count > 0;
+
 /**
  * Makes room in `sections` for a row inserted at window index `index` that the view no longer holds (a departed held
  * row): the section it sits in grows by one and the later ones start one row further on.
  */
 export function growSections(sections: LayoutSection[], index: number): LayoutSection[] {
   // A count-only band (Home's Low, the only section with `senders`) holds no rows of the window.
-  const holds = (s: LayoutSection) => s.senders === undefined && s.count > 0;
-  const hit = sections.findIndex(s => holds(s) && index >= s.start && index < s.start + s.count);
-  const at = hit >= 0 ? hit : sections.findLastIndex(holds);
-  if (at < 0) return sections;
+  const hit = sections.findIndex(
+    s => holdsRows(s) && index >= s.start && index < s.start + s.count,
+  );
+  const at = hit >= 0 ? hit : sections.findLastIndex(holdsRows);
+  return at < 0 ? sections : resize(sections, at, 1);
+}
+
+/**
+ * Takes a row at view index `index` out of the section it sits in: that section shrinks by one and the later ones start
+ * one row earlier. A section left empty stays until `withoutEmpty`, so a row put back in the same pass finds it.
+ */
+export function shrinkSections(sections: LayoutSection[], index: number): LayoutSection[] {
+  const at = sections.findIndex(s => holdsRows(s) && index >= s.start && index < s.start + s.count);
+  return at < 0 ? sections : resize(sections, at, -1);
+}
+
+export const withoutEmpty = (sections: LayoutSection[]) =>
+  sections.filter(s => s.senders !== undefined || s.count > 0);
+
+function resize(sections: LayoutSection[], at: number, by: 1 | -1): LayoutSection[] {
   return sections.map((s, i) => {
-    if (i === at) return { ...s, count: s.count + 1 };
-    return i > at ? { ...s, start: s.start + 1 } : s;
+    if (i === at) return { ...s, count: s.count + by };
+    return i > at ? { ...s, start: s.start + by } : s;
   });
 }
