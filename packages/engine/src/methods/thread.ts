@@ -7,5 +7,6 @@ import { notImplemented, type AreaHandlers } from './types';
 export const handlers: AreaHandlers<'thread'> = {
   'Thread/get': notImplemented('Thread/get'),
   'Thread/act': notImplemented('Thread/act'),
+  'Thread/why': notImplemented('Thread/why'),
   'Thread/open': notImplemented('Thread/open'),
 };

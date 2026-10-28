@@ -19,7 +19,7 @@ export const UpdateInfo = z.object({
   dismissed: z.optional(z.boolean()),
 });
 
-const key = z.object({ keySource: openEnum(['env', 'keychain', 'none']), last4: z.optional(line(4)) });
+const key = z.object({ keySource: openEnum(['env', 'keychain', 'none']) });
 
 /**
  * Main's native methods. They never reach the engine: preload routes them to main by the generated host table. Files
@@ -75,6 +75,18 @@ export const native = desktop({
     summary: 'Render SF Symbols to PNG bytes for the menu bar and icons.', kind: 'query', scope: 'read',
     input: z.object({ items: z.array(z.object({ name: line(100), size: z.optional(z.number()), weight: z.optional(line(20)) })).check(z.maxLength(200)), scale: z.optional(z.number().check(z.minimum(1), z.maximum(3))) }),
     output: z.object({ images: z.array(z.object({ name: line(100), png: Bytes, width: z.int(), height: z.int() })) }),
+  },
+  'System/openSettings': {
+    summary: 'Open the macOS System Settings pane for a permission Aplos needs.', kind: 'command', scope: 'read',
+    input: z.object({ pane: choice(['notifications', 'microphone', 'loginItems']) }), output: Ok,
+  },
+  'Engine/restart': {
+    summary: 'Restart the engine, or un-park it (Try again); main answers even when the engine cannot.',
+    kind: 'command', scope: 'admin', input: Empty, output: Ok,
+  },
+  'Diagnostics/copy': {
+    summary: 'Copy the content-free diagnostics bundle to the clipboard: the engine\'s, or main\'s host-only one when the engine is unreachable or parked.',
+    kind: 'command', scope: 'admin', input: Empty, output: z.object({ source: openEnum(['engine', 'host']) }),
   },
   'Ai/pasteKey': {
     summary: 'Main reads the clipboard and hands the key straight to `Ai/setKey`, so it never passes through the renderer.',

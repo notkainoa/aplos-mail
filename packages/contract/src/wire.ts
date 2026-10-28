@@ -5,6 +5,7 @@ import { Operation, WindowBody } from './schemas/mail';
 import { ConnectMode, ConnectState } from './schemas/account';
 import { Draft } from './schemas/compose';
 import { NotificationItem } from './schemas/session';
+import { Citation, Proposal } from './schemas/ai';
 
 /** The contract's major version. Additive changes only within it (ARCH 9.5); a breaking change bumps `v`. */
 export const apiVersion = 1;
@@ -60,13 +61,35 @@ export const HostEvent = z.discriminatedUnion('type', [
   /** A reminder came due; `wasDueAt` when it fired late because the Mac slept. */
   z.object({ type: z.literal('reminder'), item: NotificationItem }),
   /** The engine parked (repeated crashes, failed migration, damaged database): "Export diagnostics / Try again". */
-  z.object({ type: z.literal('parked'), reasonCode: line(60), message: z.string(), canRetry: z.boolean() }),
+  z.object({ type: z.literal('parked'), reasonCode: line(60), message: z.string(), canRetry: z.boolean(), at: EpochMs }),
   /** Open a provider sign-in page in the browser; main allows only provider sign-in origins. */
   z.object({ type: z.literal('openExternal'), url: text(4_000), purpose: openEnum(['oauth']) }),
   /** The engine's clock moved by more than normal ticking (a test clock, or a wake). */
   z.object({ type: z.literal('clock'), now: EpochMs }),
 ]);
 export type HostEvent = z.infer<typeof HostEvent>;
+
+/**
+ * Events main sends a window itself, outside the engine's change log (so they carry no `{dbEpoch, seq}`): the window's
+ * own lifecycle, and the engine's reachability, which only main can report when the engine cannot answer.
+ */
+export const DesktopEvent = z.discriminatedUnion('type', [
+  /** The user closed the window or quit: save, then `Window/closeReady`, or `Window/closeCancel` to keep it open. */
+  z.object({ type: z.literal('closeRequested'), quitting: z.boolean() }),
+  /** The window became visible (Electron `ready-to-show`): the onboarding window starts its entrance here. */
+  z.object({ type: z.literal('shown') }),
+  /** Whether this window can reach the engine; `parked` and `unreachable` show the fatal screen with Restart and Copy diagnostics. */
+  z.object({
+    type: z.literal('engine'),
+    state: openEnum(['connecting', 'ready', 'unreachable', 'parked']),
+    reasonCode: z.optional(line(60)),
+    /** The plain sentence, e.g. "Your disk is full." */
+    message: z.optional(z.string()),
+    canRetry: z.optional(z.boolean()),
+    at: EpochMs,
+  }),
+]);
+export type DesktopEvent = z.infer<typeof DesktopEvent>;
 
 /** Push frames on a connection's one stream (ARCH 9.2). Discriminated by `frame`. */
 export const Frame = z.discriminatedUnion('frame', [
@@ -76,17 +99,22 @@ export const Frame = z.discriminatedUnion('frame', [
   z.object({ frame: z.literal('window'), ...at, ...WindowBody.shape }),
   /**
    * Ephemeral progress for a run (Ask, remote search, polish, transcription, setup); never logged. `kind: 'done'`
-   * ends the run; the lasting result arrives as a state change (e.g. the Conversation).
+   * ends the run; the lasting result arrives as a state change (e.g. the Conversation). Ask streams `step` and `text`,
+   * and `citation` and `proposal` as each becomes known, so chips and cards appear before the turn is stored.
    */
   z.object({
     frame: z.literal('progress'), ...at,
     runId: Id,
     source: openEnum(['ask', 'search', 'ai', 'transcribe', 'setup']),
-    kind: openEnum(['step', 'text', 'done', 'error', 'usage']),
+    kind: openEnum(['step', 'text', 'citation', 'proposal', 'done', 'error', 'usage']),
     step: z.optional(z.object({ id: Id, text: line(500), state: openEnum(['running', 'done', 'error']), count: z.optional(Count) })),
     /** Streamed answer text to append. */
     delta: z.optional(text(100_000)),
     turnId: z.optional(Id),
+    /** With `kind: 'citation'`. */
+    citation: z.optional(Citation),
+    /** With `kind: 'proposal'`. */
+    proposal: z.optional(Proposal),
     problem: z.optional(Problem),
   }),
   /** Windows are void (another `dbEpoch`, below the change-log floor, a restore): re-open them and re-read. */
@@ -103,6 +131,8 @@ export const Frame = z.discriminatedUnion('frame', [
   /** A draft changed elsewhere (another window or device); `conflict` when the open copy must choose. */
   z.object({ frame: z.literal('Draft/changed'), ...at, draftId: Id, revision: Count, conflict: z.boolean(), draft: z.optional(Draft) }),
   z.object({ frame: z.literal('host'), ...at, event: HostEvent }),
+  /** From main, on the desktop half of a window's connection (`routeByHost` merges it into the one stream). */
+  z.object({ frame: z.literal('desktop'), event: DesktopEvent }),
 ]);
 export type Frame = z.infer<typeof Frame>;
 export type FrameKind = Frame['frame'];

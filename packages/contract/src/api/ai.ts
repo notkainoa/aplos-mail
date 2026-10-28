@@ -6,7 +6,8 @@ import { SetupStatus } from '../schemas/session';
 
 const provider = choice(['groq', 'openai', 'anthropic', 'gemini', 'openrouter', 'opencode-go', 'ollama', 'lmstudio', 'custom']);
 const requestId = Id;
-const keySource = z.object({ keySource: z.union([z.enum(['env', 'keychain', 'none']), z.string()]), last4: z.optional(line(4)) });
+/** Where the provider's key now comes from; never any of its characters. */
+const keySource = z.object({ keySource: z.union([z.enum(['env', 'keychain', 'none']), z.string()]) });
 
 export const ai = area('ai', {
   'Ai/request': {
@@ -121,6 +122,10 @@ export const setup = area('setup', {
   'Setup/end': {
     summary: 'End setup; idempotent, called by the renderer and by main on any window close, and always queues the one-shot backfill of unsummarised threads.',
     kind: 'command', scope: 'admin', input: z.object({ setupId: z.optional(Id), reason: choice(['finished', 'closed', 'skipped', 'demo']) }), output: Ok,
+  },
+  'Setup/retry': {
+    summary: 'First sync\'s "Try again" for one account: resume from its checkpoint; idempotent while a run is going.',
+    kind: 'command', scope: 'admin', input: z.object({ accountId: Id, setupId: z.optional(Id) }), output: Ok,
   },
   'Setup/status': {
     summary: 'First-sync progress per account for the loading screen; also pushed as `Setup` state changes.',

@@ -327,7 +327,7 @@
     "/call/View/hold": {
       "post": {
         "operationId": "View_hold",
-        "summary": "Keep these rows in place (the row under the cursor and its neighbours) until released or about 2 s after the last activity.",
+        "summary": "Keep these rows in place (the row under the cursor and its neighbours) until released or about 2 s after the last activity; calling it again is the activity ping.",
         "tags": [
           "view"
         ],
@@ -671,7 +671,7 @@
     "/call/Thread/act": {
       "post": {
         "operationId": "Thread_act",
-        "summary": "Triage: Done, Later, trash, read state, bookmark, due date, reminder, lane and the rest, applied in one commit and queued for the provider.",
+        "summary": "Triage: Done, Later, trash, read state, bookmark, due date, reminder, lane and the rest, on ids or a whole view or section, applied in one commit and queued for the provider.",
         "tags": [
           "thread"
         ],
@@ -695,6 +695,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Receipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A failed call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/call/Thread/why": {
+      "post": {
+        "operationId": "Thread_why",
+        "summary": "\"Why it's here\": one sentence and a quote from the mail saying why the thread is in its lane, and who placed it.",
+        "tags": [
+          "thread"
+        ],
+        "x-aplos-kind": "query",
+        "x-aplos-scope": "read",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Thread_why_input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhyItsHere"
                 }
               }
             }
@@ -973,7 +1016,7 @@
     "/call/MessageBody/prefetch": {
       "post": {
         "operationId": "MessageBody_prefetch",
-        "summary": "Prefetch bodies on intent (focus or hover), or cancel a prefetch.",
+        "summary": "Prefetch bodies on intent (focus or hover) by message, or by thread (the bodies the reader opens with, ARCH AM-1), or cancel a prefetch.",
         "tags": [
           "mail"
         ],
@@ -1039,6 +1082,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MailFrame"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A failed call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/call/Mail/allowImages": {
+      "post": {
+        "operationId": "Mail_allowImages",
+        "summary": "\"Load images from this sender\": add an address or `@domain` to `Settings.mail.imageAllowList`, or remove it.",
+        "tags": [
+          "mail"
+        ],
+        "x-aplos-kind": "command",
+        "x-aplos-scope": "admin",
+        "x-aplos-audit": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Mail_allowImages_input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Receipt"
                 }
               }
             }
@@ -2798,6 +2885,49 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/Setup_end_input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "A failed call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/call/Setup/retry": {
+      "post": {
+        "operationId": "Setup_retry",
+        "summary": "First sync's \"Try again\" for one account: resume from its checkpoint; idempotent while a run is going.",
+        "tags": [
+          "setup"
+        ],
+        "x-aplos-kind": "command",
+        "x-aplos-scope": "admin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Setup_retry_input"
               }
             }
           }
@@ -5071,6 +5201,12 @@
                 },
                 "reasonCode": {
                   "$ref": "#/components/schemas/ReasonCode"
+                },
+                "missingScopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               },
               "required": [
@@ -5100,6 +5236,9 @@
           "baselineDoneAt": {
             "$ref": "#/components/schemas/EpochMs"
           },
+          "pendingChanges": {
+            "$ref": "#/components/schemas/Count"
+          },
           "preset": {
             "$ref": "#/components/schemas/AccountPreset"
           },
@@ -5123,6 +5262,7 @@
           "aiAllowed",
           "notifications",
           "identities",
+          "pendingChanges",
           "createdAt"
         ]
       },
@@ -5457,6 +5597,20 @@
           },
           "partialView": {
             "type": "boolean"
+          },
+          "threading": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "native",
+                  "headers"
+                ]
+              },
+              {
+                "type": "string"
+              }
+            ]
           }
         },
         "required": [
@@ -6045,11 +6199,6 @@
                 "type": "string"
               }
             ]
-          },
-          "last4": {
-            "type": "string",
-            "maxLength": 4,
-            "pattern": "^[^\\r\\n]*$"
           }
         },
         "required": [
@@ -6366,11 +6515,6 @@
           "envVar": {
             "type": "string",
             "maxLength": 60,
-            "pattern": "^[^\\r\\n]*$"
-          },
-          "last4": {
-            "type": "string",
-            "maxLength": 4,
             "pattern": "^[^\\r\\n]*$"
           },
           "keyOptional": {
@@ -8047,6 +8191,9 @@
           },
           "unread": {
             "$ref": "#/components/schemas/Count"
+          },
+          "handledToday": {
+            "$ref": "#/components/schemas/Count"
           }
         },
         "required": [
@@ -8057,7 +8204,8 @@
           "laterDue",
           "drafts",
           "scheduled",
-          "unread"
+          "unread",
+          "handledToday"
         ]
       },
       "Data_export_input": {
@@ -8105,6 +8253,82 @@
         "required": [
           "accountIds",
           "receipt"
+        ]
+      },
+      "DesktopEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "closeRequested"
+              },
+              "quitting": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "quitting"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "shown"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "engine"
+              },
+              "state": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "connecting",
+                      "ready",
+                      "unreachable",
+                      "parked"
+                    ]
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "reasonCode": {
+                "type": "string",
+                "maxLength": 60,
+                "pattern": "^[^\\r\\n]*$"
+              },
+              "message": {
+                "type": "string"
+              },
+              "canRetry": {
+                "type": "boolean"
+              },
+              "at": {
+                "$ref": "#/components/schemas/EpochMs"
+              }
+            },
+            "required": [
+              "type",
+              "state",
+              "at"
+            ]
+          }
         ]
       },
       "Diagnostics_export_output": {
@@ -9139,6 +9363,23 @@
           "htmlLink": {
             "type": "string",
             "maxLength": 2000
+          },
+          "sync": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "localOnly",
+                  "pending",
+                  "synced",
+                  "failed",
+                  "conflict"
+                ]
+              },
+              {
+                "type": "string"
+              }
+            ]
           }
         },
         "required": [
@@ -9154,7 +9395,8 @@
           "allDay",
           "attendees",
           "status",
-          "can"
+          "can",
+          "sync"
         ]
       },
       "Event_extract_input": {
@@ -9738,6 +9980,9 @@
                 "items": {
                   "$ref": "#/components/schemas/Id"
                 }
+              },
+              "error": {
+                "$ref": "#/components/schemas/ErrorBody"
               }
             },
             "required": [
@@ -9749,7 +9994,8 @@
               "rowType",
               "ids",
               "position",
-              "total"
+              "total",
+              "sections"
             ]
           },
           {
@@ -9794,6 +10040,8 @@
                     "enum": [
                       "step",
                       "text",
+                      "citation",
+                      "proposal",
                       "done",
                       "error",
                       "usage"
@@ -9846,6 +10094,12 @@
               },
               "turnId": {
                 "$ref": "#/components/schemas/Id"
+              },
+              "citation": {
+                "$ref": "#/components/schemas/Citation"
+              },
+              "proposal": {
+                "$ref": "#/components/schemas/Proposal"
               },
               "problem": {
                 "$ref": "#/components/schemas/Problem"
@@ -10029,6 +10283,22 @@
               "seq",
               "event"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "frame": {
+                "type": "string",
+                "const": "desktop"
+              },
+              "event": {
+                "$ref": "#/components/schemas/DesktopEvent"
+              }
+            },
+            "required": [
+              "frame",
+              "event"
+            ]
           }
         ]
       },
@@ -10196,13 +10466,17 @@
               },
               "canRetry": {
                 "type": "boolean"
+              },
+              "at": {
+                "$ref": "#/components/schemas/EpochMs"
               }
             },
             "required": [
               "type",
               "reasonCode",
               "message",
-              "canRetry"
+              "canRetry",
+              "at"
             ]
           },
           {
@@ -10300,6 +10574,26 @@
           {
             "type": "string"
           }
+        ]
+      },
+      "KeyBinding": {
+        "type": "object",
+        "properties": {
+          "chord": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[^\\r\\n]*$"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "tap",
+              "hold"
+            ]
+          }
+        },
+        "required": [
+          "chord"
         ]
       },
       "Lane": {
@@ -10514,6 +10808,25 @@
           "level",
           "event",
           "data"
+        ]
+      },
+      "Mail_allowImages_input": {
+        "type": "object",
+        "properties": {
+          "opId": {
+            "$ref": "#/components/schemas/OpId"
+          },
+          "sender": {
+            "$ref": "#/components/schemas/SenderMatch"
+          },
+          "allow": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "opId",
+          "sender",
+          "allow"
         ]
       },
       "Mail_frame_input": {
@@ -10991,13 +11304,17 @@
               "$ref": "#/components/schemas/Id"
             }
           },
+          "threadIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Id"
+            }
+          },
           "cancel": {
             "type": "boolean"
           }
-        },
-        "required": [
-          "ids"
-        ]
+        }
       },
       "ModelRef": {
         "type": "object",
@@ -11085,12 +11402,16 @@
           },
           "reminders": {
             "type": "boolean"
+          },
+          "reconnectReminder": {
+            "type": "boolean"
           }
         },
         "required": [
           "enabled",
           "perAccount",
-          "reminders"
+          "reminders",
+          "reconnectReminder"
         ]
       },
       "Ok": {
@@ -12916,8 +13237,8 @@
               },
               "holdMs": {
                 "type": "integer",
-                "minimum": 0,
-                "maximum": 5000
+                "minimum": 100,
+                "maximum": 2000
               },
               "dock": {
                 "type": "object",
@@ -12951,25 +13272,15 @@
                   "pattern": "^[^\\r\\n]*$"
                 },
                 "additionalProperties": {
-                  "type": "string",
-                  "maxLength": 100,
-                  "pattern": "^[^\\r\\n]*$"
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KeyBinding"
+                  }
                 }
               },
-              "sidebar": {
-                "type": "object",
-                "properties": {
-                  "shown": {
-                    "type": "boolean"
-                  },
-                  "minimised": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "shown",
-                  "minimised"
-                ]
+              "sidebarMinimised": {
+                "type": "boolean"
               },
               "swipe": {
                 "type": "boolean"
@@ -12995,19 +13306,32 @@
                 "maxLength": 1000,
                 "pattern": "^[^\\r\\n]*$"
               },
-              "paletteRecents": {
-                "maxItems": 50,
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "maxLength": 200,
-                  "pattern": "^[^\\r\\n]*$"
-                }
+              "palette": {
+                "type": "object",
+                "properties": {
+                  "recents": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[^\\r\\n]*$"
+                    }
+                  }
+                },
+                "required": [
+                  "recents"
+                ]
               },
-              "weekStart": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 6
+              "calendar": {
+                "type": "object",
+                "properties": {
+                  "weekStart": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 6
+                  }
+                }
               }
             }
           },
@@ -13105,6 +13429,9 @@
                 }
               },
               "reminders": {
+                "type": "boolean"
+              },
+              "reconnectReminder": {
                 "type": "boolean"
               }
             }
@@ -13347,6 +13674,20 @@
         },
         "required": [
           "reason"
+        ]
+      },
+      "Setup_retry_input": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "$ref": "#/components/schemas/Id"
+          },
+          "setupId": {
+            "$ref": "#/components/schemas/Id"
+          }
+        },
+        "required": [
+          "accountId"
         ]
       },
       "Setup_status_input": {
@@ -13596,6 +13937,9 @@
           "state": {
             "$ref": "#/components/schemas/SubmissionState"
           },
+          "queuedAt": {
+            "$ref": "#/components/schemas/EpochMs"
+          },
           "notBefore": {
             "$ref": "#/components/schemas/EpochMs"
           },
@@ -13645,6 +13989,7 @@
           "accountId",
           "internetId",
           "state",
+          "queuedAt",
           "notBefore",
           "toNames",
           "subject"
@@ -13964,6 +14309,9 @@
             "maxLength": 200,
             "pattern": "^[^\\r\\n]*$"
           },
+          "local": {
+            "type": "boolean"
+          },
           "action": {
             "$ref": "#/components/schemas/SuggestedAction"
           }
@@ -14032,12 +14380,14 @@
             "$ref": "#/components/schemas/OpId"
           },
           "ids": {
-            "minItems": 1,
             "maxItems": 1000,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Id"
             }
+          },
+          "selector": {
+            "$ref": "#/components/schemas/ThreadSelector"
           },
           "action": {
             "$ref": "#/components/schemas/ThreadAction"
@@ -14045,7 +14395,6 @@
         },
         "required": [
           "opId",
-          "ids",
           "action"
         ]
       },
@@ -14102,6 +14451,17 @@
           "threadId",
           "complete",
           "state"
+        ]
+      },
+      "Thread_why_input": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "$ref": "#/components/schemas/Id"
+          }
+        },
+        "required": [
+          "threadId"
         ]
       },
       "ThreadAction": {
@@ -14272,6 +14632,9 @@
                   "update",
                   "low"
                 ]
+              },
+              "alsoForSender": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -14292,6 +14655,9 @@
                   "up",
                   "down"
                 ]
+              },
+              "alsoForSender": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -14473,6 +14839,9 @@
           "summary": {
             "$ref": "#/components/schemas/SummaryRef"
           },
+          "fromLater": {
+            "type": "boolean"
+          },
           "unsubscribe": {
             "type": "boolean"
           },
@@ -14512,7 +14881,29 @@
           "labels",
           "workflow",
           "rank",
-          "summary"
+          "summary",
+          "fromLater",
+          "unsubscribe"
+        ]
+      },
+      "ThreadSelector": {
+        "type": "object",
+        "properties": {
+          "spec": {
+            "$ref": "#/components/schemas/ViewSpec"
+          },
+          "section": {
+            "type": "string",
+            "maxLength": 320,
+            "pattern": "^[^\\r\\n]*$"
+          },
+          "atState": {
+            "$ref": "#/components/schemas/State"
+          }
+        },
+        "required": [
+          "spec",
+          "atState"
         ]
       },
       "TimeZone": {
@@ -14551,8 +14942,8 @@
           },
           "holdMs": {
             "type": "integer",
-            "minimum": 0,
-            "maximum": 5000
+            "minimum": 100,
+            "maximum": 2000
           },
           "dock": {
             "type": "object",
@@ -14586,25 +14977,15 @@
               "pattern": "^[^\\r\\n]*$"
             },
             "additionalProperties": {
-              "type": "string",
-              "maxLength": 100,
-              "pattern": "^[^\\r\\n]*$"
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/KeyBinding"
+              }
             }
           },
-          "sidebar": {
-            "type": "object",
-            "properties": {
-              "shown": {
-                "type": "boolean"
-              },
-              "minimised": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "shown",
-              "minimised"
-            ]
+          "sidebarMinimised": {
+            "type": "boolean"
           },
           "swipe": {
             "type": "boolean"
@@ -14630,19 +15011,32 @@
             "maxLength": 1000,
             "pattern": "^[^\\r\\n]*$"
           },
-          "paletteRecents": {
-            "maxItems": 50,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 200,
-              "pattern": "^[^\\r\\n]*$"
-            }
+          "palette": {
+            "type": "object",
+            "properties": {
+              "recents": {
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "pattern": "^[^\\r\\n]*$"
+                }
+              }
+            },
+            "required": [
+              "recents"
+            ]
           },
-          "weekStart": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 6
+          "calendar": {
+            "type": "object",
+            "properties": {
+              "weekStart": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 6
+              }
+            }
           }
         },
         "required": [
@@ -14653,14 +15047,15 @@
           "holdMs",
           "dock",
           "keymap",
-          "sidebar",
+          "sidebarMinimised",
           "swipe",
           "swipeDirection",
           "zen",
           "sendSound",
           "devDetails",
           "lastAccount",
-          "paletteRecents"
+          "palette",
+          "calendar"
         ]
       },
       "Unsubscribe_get_input": {
@@ -14997,6 +15392,9 @@
             "items": {
               "$ref": "#/components/schemas/Id"
             }
+          },
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
           }
         },
         "required": [
@@ -15004,7 +15402,8 @@
           "rowType",
           "ids",
           "position",
-          "total"
+          "total",
+          "sections"
         ]
       },
       "View_release_input": {
@@ -15384,6 +15783,37 @@
           }
         ]
       },
+      "WhyItsHere": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "$ref": "#/components/schemas/Id"
+          },
+          "sentence": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "messageId": {
+            "$ref": "#/components/schemas/Id"
+          },
+          "lane": {
+            "$ref": "#/components/schemas/Lane"
+          },
+          "rankSource": {
+            "$ref": "#/components/schemas/RankSource"
+          }
+        },
+        "required": [
+          "threadId",
+          "sentence",
+          "lane",
+          "rankSource"
+        ]
+      },
       "WindowAnchor": {
         "type": "object",
         "properties": {
@@ -15441,6 +15871,9 @@
             "items": {
               "$ref": "#/components/schemas/Id"
             }
+          },
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
           }
         },
         "required": [
@@ -15449,7 +15882,8 @@
           "rowType",
           "ids",
           "position",
-          "total"
+          "total",
+          "sections"
         ]
       },
       "WindowSection": {
@@ -15457,7 +15891,12 @@
         "properties": {
           "key": {
             "type": "string",
-            "maxLength": 60,
+            "maxLength": 320,
+            "pattern": "^[^\\r\\n]*$"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200,
             "pattern": "^[^\\r\\n]*$"
           },
           "start": {

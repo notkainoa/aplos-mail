@@ -74,6 +74,8 @@ export const Submission = z.object({
   /** The stable Message-ID, generated once and never regenerated. */
   internetId: line(1_000),
   state: SubmissionState,
+  /** When the send was queued; with `notBefore` it gives the undo tray's drain bar its length, whatever the undo setting says now. */
+  queuedAt: EpochMs,
   notBefore: EpochMs,
   attemptAt: z.optional(EpochMs),
   sentAt: z.optional(EpochMs),
