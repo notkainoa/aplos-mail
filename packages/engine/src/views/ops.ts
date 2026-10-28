@@ -170,6 +170,10 @@ export function commitOf(q: StoreReader, opId: string): { seq: number; at: numbe
 
 // ------------------------------------------------------------ the journal
 
+/** The sender-rule commands whose commits are journaled like `Thread/act`. */
+export type SenderMethod =
+  'SenderRule/set' | 'SenderRule/destroy' | 'SenderRule/block' | 'SenderRule/unblock';
+
 export interface RecordedStep {
   rowId: string;
   accountId: string;
@@ -184,13 +188,15 @@ export interface RecordedThread {
 }
 export interface OpRecord {
   opId: string;
-  method: 'Thread/act' | 'Operation/undo';
+  method: 'Thread/act' | 'Operation/undo' | SenderMethod;
   scope: string;
   targets: string[];
   seq: number;
   createdAt: number;
   threads: RecordedThread[];
   steps: RecordedStep[];
+  /** Writes outside the threads that put back what the operation changed (a sender rule); `Operation/undo` runs them. */
+  restore?: StoreWrite[];
   /** False for an undo: undoing an undo is a new `Thread/act`. */
   undoable: boolean;
   /** The `undoOpId` that undid it. */

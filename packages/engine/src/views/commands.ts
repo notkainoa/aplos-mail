@@ -1,30 +1,13 @@
 import type { Input, Operation, Receipt } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller } from '../methods/types';
-import type { StoreReader, StoreWrite } from '../store';
-import {
-  beforeOf,
-  factsReader,
-  idOf,
-  mailActions,
-  planThread,
-  type ActEnv,
-  type ThreadFacts,
-} from './act';
-import {
-  createJournal,
-  opsChanged,
-  opWrite,
-  priorReceipt,
-  readOperation,
-  rowId,
-  type CommandDeps,
-  type RecordedStep,
-  type RecordedThread,
-} from './ops';
+import type { StoreReader } from '../store';
+import { factsReader, planThread, type ActEnv, type ThreadFacts } from './act';
+import { addThread, commitBuilt, emptyBuilt, readEnv, type Built } from './apply';
+import { createJournal, priorReceipt, readOperation, type CommandDeps, type Journal } from './ops';
 import { viewEnv } from './page';
 import { resolveSelector } from './select';
-import { localDay } from './sections';
+import { addSenderRule, alsoForSender } from './sender-ops';
 import { retryOperation, undoOperation } from './undo';
 
 /*
@@ -32,9 +15,6 @@ import { retryOperation, undoOperation } from './undo';
  * edit in ONE commit and enqueues the provider ops in it, so a window never shows half an action. `Operation/undo`
  * (`undo.ts`) enqueues the inverse and never delays a commit (DESIGN section 5 rule 11).
  */
-
-/** The `Thread/act` scope; the operation records it and `Operation/undo` and `retry` require it again (FR-3). */
-const ACT_SCOPE = 'triage';
 
 /** The commands as `services.threadOps`. */
 export interface ThreadOps {
@@ -44,8 +24,12 @@ export interface ThreadOps {
   get(opIds: readonly string[]): { list: Operation[]; notFound: string[] };
 }
 
-export function createThreadOps(deps: Omit<CommandDeps, 'journal'>): ThreadOps {
-  const full: CommandDeps = { ...deps, journal: createJournal() };
+/** `journal` is shared with the sender rules, whose commits undo the same way. */
+export function createThreadOps(
+  deps: Omit<CommandDeps, 'journal'>,
+  journal: Journal = createJournal(),
+): ThreadOps {
+  const full: CommandDeps = { ...deps, journal };
   return {
     act: (args, _caller) => act(full, args),
     undo: (args, caller) => undoOperation(full, args, caller),
@@ -68,92 +52,29 @@ function targetIds(deps: CommandDeps, q: StoreReader, args: Input<'Thread/act'>,
   return [...new Set(args.ids)];
 }
 
-interface Built {
-  writes: StoreWrite[];
-  threads: RecordedThread[];
-  steps: RecordedStep[];
-  targets: string[];
-}
-
-function readEnv(deps: CommandDeps, q: StoreReader): ActEnv {
-  const now = deps.clock.now();
-  return {
-    now,
-    today: localDay(now, deps.zone),
-    followUpDays: viewEnv(q, now, deps.zone).followUpDays,
-    ...mailActions(q),
-  };
-}
-
 function build(deps: CommandDeps, q: StoreReader, args: Input<'Thread/act'>): Built {
   const env = readEnv(deps, q);
   const read = factsReader(q);
-  const out: Built = { writes: [], threads: [], steps: [], targets: [] };
+  const out = emptyBuilt();
+  const wanted = new Map<string, { facts: ThreadFacts; lane: 'do' | 'update' | 'low' }>();
   for (const id of targetIds(deps, q, args, env)) {
     const facts = read(id);
     if (!facts) throw notFound('This conversation is no longer available.');
     const plan = planThread(facts, args.action, env);
-    if (plan) addThread(out, facts, plan, args.opId);
+    if (!plan) continue;
+    addThread(out, facts, plan, args.opId, 'Thread/act');
+    if (plan.patch.lane && alsoForSender(args.action))
+      wanted.set(id, { facts, lane: plan.patch.lane });
   }
+  for (const w of wanted.values()) addSenderRule(q, out, w, args.opId, env);
   return out;
-}
-
-function addThread(
-  out: Built,
-  facts: ThreadFacts,
-  plan: NonNullable<ReturnType<typeof planThread>>,
-  opId: string,
-): void {
-  const accountId = facts.row.account_id;
-  const threadId = idOf(facts);
-  out.targets.push(threadId);
-  out.threads.push({
-    accountId,
-    remoteThreadId: facts.row.remote_id,
-    before: beforeOf(facts.row, plan.patch),
-  });
-  out.writes.push({
-    kind: 'workflow',
-    accountId,
-    remoteThreadId: facts.row.remote_id,
-    patch: plan.patch,
-  });
-  for (const step of plan.steps) {
-    const id = rowId(opId, out.steps.length);
-    out.steps.push({ rowId: id, accountId, threadId, step });
-    out.writes.push(
-      opWrite({ rowId: id, method: 'Thread/act', scope: ACT_SCOPE, accountId, threadId, step }),
-    );
-  }
 }
 
 function act(deps: CommandDeps, args: Input<'Thread/act'>): Receipt {
   const replay = priorReceipt(deps, args.opId, 'Thread/act');
   if (replay) return replay;
   const built = deps.store.read(q => build(deps, q, args));
-  const result = deps.store.commit({ opId: args.opId, origin: 'local', writes: built.writes });
-  const receipt: Receipt = {
-    opId: args.opId,
-    appliedState: { dbEpoch: result.dbEpoch, seq: result.seq },
-    undoable: false,
-  };
-  if (result.replayed) return { ...receipt, undoable: !!deps.journal.get(args.opId)?.undoable };
-  receipt.undoable = deps.journal.add({
-    opId: args.opId,
-    method: 'Thread/act',
-    scope: ACT_SCOPE,
-    targets: built.targets,
-    seq: result.seq,
-    createdAt: deps.clock.now(),
-    threads: built.threads,
-    steps: built.steps,
-    undoable: true,
-  });
-  opsChanged(
-    deps,
-    built.steps.map(s => s.accountId),
-  );
-  return receipt;
+  return commitBuilt(deps, args.opId, 'Thread/act', built);
 }
 
 function getOperations(deps: CommandDeps, opIds: readonly string[]) {
