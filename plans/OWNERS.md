@@ -15,13 +15,13 @@ Every path in the repo belongs to exactly one lane, and each lane belongs to one
 
 | Lane | Paths |
 |---|---|
-| `eng-contract` | `packages/contract/**`, `packages/contract-fixture/**`, `packages/engine/package.json`, `packages/engine/tsconfig*.json`, `packages/engine/src/runtime/**`, `packages/engine/src/ports.ts`, `packages/engine/src/methods/index.ts`, `packages/engine/src/methods/{session,settings,blob}.ts`, `packages/engine/src/diag/**` (except `diag/bundle/**`), `packages/engine/src/index.ts`, `apps/desktop/src/host/transports/port.ts`, `apps/desktop/src/host/logsink.ts`, `apps/desktop/src/main/{engine-host,engine-process,server,preload}.ts`, `apps/desktop/scripts/codemod-imports.mjs`, `packages/engine/tests/portability.test.ts`, `apps/desktop/src/shared/**` (the re-export stubs, removed in Phase 2) |
-| `eng-store` | `packages/engine/src/store/**` (including `store/migrations/**` and `store/import/**`), `packages/engine/src/methods/data.ts`, `packages/engine/bench/**`, `apps/desktop/src/host/sqlite.ts`, `apps/desktop/scripts/{mailbox-benchmark.ts,verify-large-mailbox.mjs}` |
+| `eng-contract` | `packages/contract/**`, `packages/contract-fixture/**`, `packages/engine/package.json`, `packages/engine/tsconfig*.json`, `packages/engine/src/runtime/**`, `packages/engine/src/ports.ts`, `packages/engine/src/ports/**`, `packages/engine/src/{ports.walk,ports.review-answers}.md`, `packages/engine/src/methods/types.ts`, `packages/engine/src/methods/index.ts`, `packages/engine/src/methods/{session,settings,blob}.ts`, `packages/engine/src/diag/**` (except `diag/bundle/**`), `packages/engine/src/index.ts`, `apps/desktop/src/host/transports/port.ts`, `apps/desktop/src/host/logsink.ts`, `apps/desktop/src/main/{engine-host,engine-process,server,preload}.ts`, `apps/desktop/scripts/codemod-imports.mjs`, `packages/engine/tests/portability.test.ts`, `apps/desktop/src/shared/**` (the re-export stubs, removed in Phase 2) |
+| `eng-store` | `packages/engine/src/store/**` (including `store/migrations/**` and `store/import/**`), `packages/engine/src/methods/data.ts`, `packages/engine/bench/**`, `apps/desktop/src/host/{sqlite,codec,files}.ts`, `apps/desktop/scripts/{mailbox-benchmark.ts,verify-large-mailbox.mjs}` |
 | `eng-views` | `packages/engine/src/views/**`, `packages/engine/src/methods/{view,thread,operation,sender}.ts` |
 | `eng-time` | `packages/engine/src/{outbox,clock}/**`, `packages/engine/src/methods/{submission,draft,outbox,later,reminder,notification}.ts` |
 | `eng-ai` | `packages/engine/src/ai/**`, `packages/engine/src/methods/{ai,ask,setup,demo,consent,queue}.ts`, `apps/desktop/src/host/ai/**`, today's `apps/desktop/src/main/{groq,llm,ollama,anthropic,ai-keys}.ts` until they move into `host/ai/`, `apps/desktop/scripts/{evaluate-groq.ts,ask-live.ts}`, `apps/desktop/scripts/quality/**` |
 | `eng-html` | `packages/mail-html/**`, `apps/desktop/src/host/{protocol,proxy}/**`, `apps/desktop/src/main/protocol.ts`, `packages/engine/src/methods/mail.ts` |
-| `eng-host` | `apps/desktop/src/main/{lifecycle,menu-bar,windows,native-methods,electron}.ts`, `apps/desktop/src/host/{lifecycle,menu-bar,power,lock,crash}.ts`, `apps/desktop/src/host/transports/{socket,http}.ts`, `apps/desktop/src/host/{mcp,cli}/**`, `packages/engine/src/selftest.ts`, `packages/engine/src/diag/bundle/**`, `packages/engine/src/methods/{diagnostics,listener,clients}.ts`, `apps/desktop/native/**`, `API.md` |
+| `eng-host` | `apps/desktop/src/main/{lifecycle,menu-bar,windows,native-methods,electron}.ts`, `apps/desktop/src/host/{lifecycle,menu-bar,power,lock,crash}.ts`, `apps/desktop/src/host/transports/{socket,http,auth}.ts`, `apps/desktop/src/main/test-mode.ts`, `apps/desktop/scripts/verify-resident.mjs`, `apps/desktop/src/host/{mcp,cli}/**`, `packages/engine/src/selftest.ts`, `packages/engine/src/diag/bundle/**`, `packages/engine/src/methods/{diagnostics,listener,clients}.ts`, `apps/desktop/native/**`, `API.md` |
 
 ## Providers thread
 
@@ -38,7 +38,7 @@ Every path in the repo belongs to exactly one lane, and each lane belongs to one
 
 | Lane | Paths |
 |---|---|
-| `ui-foundation` | `apps/desktop/src/renderer/{ui,commands}/**`, `scripts/design/**`, `apps/desktop/scripts/design/**`, `tools/lint/design/**`, `apps/desktop/tools/lint/design/**`, `.claude/skills/aplos-design/**`, `tests/{visual,perf}/**`, `apps/desktop/tests/{visual,perf}/**`, `apps/desktop/assets/fonts/**`, `scripts/check-contrast.mjs` and `apps/desktop/scripts/check-contrast.mjs` (with its reference colour list), `stylelint.config.*`, `.stylelintrc*`, `apps/desktop/stylelint.config.*`, `apps/desktop/.stylelintrc*` |
+| `ui-foundation` | `apps/desktop/src/renderer/{ui,commands}/**`, `scripts/design/**`, `apps/desktop/scripts/design/**`, `tools/lint/design/**`, `apps/desktop/tools/lint/design/**`, `.claude/skills/aplos-design/**`, `tests/{visual,perf}/**`, `apps/desktop/tests/{visual,perf}/**`, `apps/desktop/assets/fonts/**`, `scripts/check-contrast.mjs` and `apps/desktop/scripts/check-contrast.mjs` (with its reference colour list), `stylelint.config.*`, `.stylelintrc*`, `stylelint-suppressions.json`, `apps/desktop/stylelint.config.*`, `apps/desktop/.stylelintrc*` |
 | `ui-shell` | `apps/desktop/src/renderer/{data,shell,motion}/**`, `apps/desktop/src/renderer/{App,main}.tsx`, `apps/desktop/src/renderer/bridge.ts`, `apps/desktop/index.html`. In Phase 0 `ui-foundation` writes the data-hook signatures in `renderer/data/**` as part of F9; from the freeze on the folder is `ui-shell`'s. |
 | `ui-home` | `apps/desktop/src/renderer/screens/{home,later,lists,done}/**` |
 | `ui-reader` | `apps/desktop/src/renderer/screens/{reader,compose}/**`, `apps/desktop/src/renderer/mailframe/**` |
@@ -64,7 +64,7 @@ Every path in the repo belongs to exactly one lane, and each lane belongs to one
 
 | Owner | Paths |
 |---|---|
-| `integrator` | `plans/**` (except `plans/STATUS.md`, below), `AGENTS.md`, `README.md`, `SPEC.md`, `VISION.md`, `MOBILE.md`, `.env.example` (lanes request new key names; the file never holds a value), `.github/**` not listed above, any new top-level folder or new workspace under `packages/`, `packages/.gitkeep`, `mockups/vercel.json` (deploy settings only; the mockups themselves stay read-only) |
+| `integrator` | `plans/**` (except `plans/STATUS.md`, below), `AGENTS.md`, `README.md`, `SPEC.md`, `VISION.md`, `MOBILE.md`, `.env.example` (lanes request new key names; the file never holds a value), `.github/**` not listed above, any new top-level folder or new workspace under `packages/`, `packages/.gitkeep`, the root `vercel.json` (the `aplos-mockups` Vercel project's deploy settings; `apps/web/vercel.json` is `web`'s) |
 
 ## Shared files
 

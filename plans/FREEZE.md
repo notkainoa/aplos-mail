@@ -42,10 +42,46 @@ Each is a fresh Claude Opus agent (`claude-opus-5-5`) run from a Claude Code wor
 
 ## 4. Findings
 
-Every finding ends as **fixed** (with the commit) or **decided** (a DECIDED entry in STATUS.md and a DECISIONS.md line, with the reason). A blocker cannot be decided away without the owner. Rows are added on day 3.
+Every finding ends as **fixed** (with the commit) or **decided** (a DECIDED entry in STATUS.md and a DECISIONS.md line, with the reason). A blocker cannot be decided away without the owner. Round 1 ran on 2026-10-27 at 22:5x on PR #28 (214f052) plus F9 at 98dfc61: 36 findings (9 blockers, 25 gaps, 2 nits), all confirmed in the code, none dropped. The full list, with evidence and suggested fixes, is [freeze/findings.md](freeze/findings.md). Outcomes are recorded here as they land. Round 2 (2026-10-28, on 9ec6518 plus F9 at 1da5496) is [freeze/round2.md](freeze/round2.md): 30 fixed, 6 partly fixed, 24 new items (2 blockers, one found twice), with the must-fix list for the tag at its top. Round 3 (2026-10-28, on a4a2a88) is [freeze/round3.md](freeze/round3.md): the must-fix list holds except one new blocker, NB-1 (an operation must record the scope the call actually needed); R2H-1 and R2H-4 leftovers are host code, gated on the release candidate.
 
-| ID | Reviewer | Severity | Artifact | Finding | Outcome | Commit or decision |
-|---|---|---|---|---|---|---|
+| ID | Severity | Owner | Outcome | Commit or decision |
+|---|---|---|---|---|
+| FR-1 | blocker | ui-foundation | fixed (round 2) | PR #28 9ec6518 |
+| FR-2 | blocker | eng-contract | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-3 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-4 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-5 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-6 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-7 | blocker | eng-contract | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-8 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-9 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-10 | gap | eng-store | fixed (round 2) | PR #28 9ec6518 |
+| FR-11 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-12 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-13 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-14 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-15 | gap | eng-store | fixed (round 2) | PR #28 9ec6518 |
+| FR-16 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-17 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-18 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-19 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-20 | gap | eng-contract | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-21 | gap | eng-contract + ui-foundation | fixed (round 2) | PR #28 9ec6518 |
+| FR-22 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-23 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-24 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-25 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-26 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-27 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-28 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-29 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-30 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-31 | gap | eng-store | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-32 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-33 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
+| FR-34 | gap | eng-contract | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-35 | nit | eng-contract | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-36 | nit | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 
 ## 5. Exit
 
