@@ -167,7 +167,8 @@ export interface TokenSource {
  * `queued` (the undo window) and `scheduled` (send later) alike (`WAITING_SUBMISSION_STATES`); never to `sending`. A
  * waiting submission that would go out more than `OVERDUE_GRACE_MS` past `not_before`, for any reason (Mac asleep or
  * off, paused, signed out), becomes `suspended` instead: "Send now or Reschedule". The `outbox` deadline source and the
- * store's due index cover both states, so a send-later row is found when it falls due.
+ * store's due index cover both states (`store/due.ts`: `nextDueAt`, `dueSubmissions`), so a send-later row is found when it
+ * falls due.
  */
 export interface SendPort {
   /** No I/O: is the account's mail budget open for a send now (auth, pause, send-limit blocks)? */

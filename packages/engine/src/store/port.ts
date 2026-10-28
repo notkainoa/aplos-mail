@@ -142,7 +142,8 @@ export interface AccountWrite {
   provider?: string;
   address?: string;
   displayName?: string | null;
-  capabilities?: Record<string, boolean>;
+  /** Capability flags, plus string-valued facts such as `threading` (FR-35). */
+  capabilities?: Record<string, boolean | string>;
   grantedScopes?: string[] | null;
   status?: AccountStatus;
   /** The copy key for the current status (F1 `AccountHealth.reasonCode`); `status.reason` stays the provider's own code. */
