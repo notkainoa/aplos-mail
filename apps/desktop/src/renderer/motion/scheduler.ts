@@ -3,12 +3,15 @@
 // and nothing here touches React, so no component re-renders per frame.
 // While the window is hidden there is no frame request and timers are paused;
 // visible time (now()) stops too, so a spring or a hold resumes where it was.
+// A Scheduler is also the data layer's Timers (now, setTimeout, onHide), so the
+// one hold gate (data/holds.ts) runs on this visible clock as is.
+import type { Timers } from '../data/scheduler';
 import type { MotionEnv, TimerHandle } from './env';
 
 /** Runs every frame with visible time and the visible ms since its last run. Return false to stop. */
 export type FrameTask = (now: number, dt: number) => boolean;
 
-export interface Scheduler {
+export interface Scheduler extends Timers {
   readonly env: MotionEnv;
   /** Visible milliseconds: the env clock minus the time spent hidden. */
   now(): number;
@@ -19,6 +22,8 @@ export interface Scheduler {
   frame(callback: (now: number) => void): () => void;
   /** Run after `ms` of visible time. Paused while hidden. */
   after(ms: number, callback: () => void): () => void;
+  /** `after(ms, callback)` in the data layer's `Timers` shape. */
+  setTimeout(callback: () => void, ms: number): () => void;
   onHide(listener: () => void): () => void;
   onShow(listener: () => void): () => void;
   /** Frame tasks, one-shot frames and timers still waiting. */
@@ -105,6 +110,16 @@ export function createScheduler(env: MotionEnv): Scheduler {
 
   const unsubscribe = env.onVisibilityChange(onVisibility);
 
+  function after(ms: number, callback: () => void) {
+    const entry: TimerEntry = { due: now() + ms, callback, handle: null };
+    timers.add(entry);
+    if (!hidden) arm(entry);
+    return () => {
+      if (entry.handle !== null) env.clearTimer(entry.handle);
+      timers.delete(entry);
+    };
+  }
+
   return {
     env,
     now,
@@ -127,15 +142,8 @@ export function createScheduler(env: MotionEnv): Scheduler {
         frames.delete(once);
       };
     },
-    after(ms, callback) {
-      const entry: TimerEntry = { due: now() + ms, callback, handle: null };
-      timers.add(entry);
-      if (!hidden) arm(entry);
-      return () => {
-        if (entry.handle !== null) env.clearTimer(entry.handle);
-        timers.delete(entry);
-      };
-    },
+    after,
+    setTimeout: (callback, ms) => after(ms, callback),
     onHide(listener) {
       hideListeners.add(listener);
       return () => {

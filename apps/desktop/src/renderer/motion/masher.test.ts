@@ -8,12 +8,12 @@
 // Every animation used a generated duration and easing on transform or opacity.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { createHoldGate } from '../data/holds';
 import { easings, motions } from '../ui/generated/motion';
 import { createCursorLayer } from './cursor';
 import { FakeEnv, seeded, type FakeElement } from './fakes';
 import { createCloser } from './flip';
 import { createGhostLayer, MAX_GHOSTS } from './ghost';
-import { createHoldGate } from './holdGate';
 import { createRapidTracker } from './rapid';
 import { createScheduler } from './scheduler';
 import { createThemeFreeze } from './themeFreeze';

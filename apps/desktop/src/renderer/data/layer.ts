@@ -746,6 +746,7 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
       closed = true;
       scheduled?.();
       stopFrames();
+      for (const gate of holds.values()) gate.dispose();
       for (const w of windows.all()) w.close();
       client.close();
     },

@@ -1,133 +1,61 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { createHoldGate } from '../data/holds';
+import type { Timers } from '../data/scheduler';
 import { motions, timing } from '../ui/generated/motion';
 import { createCursorLayer } from './cursor';
 import { FakeEnv, type FakeElement } from './fakes';
 import { closeDeltas, createCloser, layoutTops } from './flip';
 import { createGhostLayer } from './ghost';
-import { createHoldGate } from './holdGate';
 import { createRapidTracker } from './rapid';
 import { createScheduler } from './scheduler';
 import { createTriageMotion } from './triage';
 
 const { base: HOLD, cap: CAP } = motions.hold.durations;
 
-function setup() {
+// The hold gate's rules and their cases live with the gate (data/holds.test.ts).
+// Here: the same gate on this lane's visible-time scheduler, which is a data
+// layer Timers (now, setTimeout, onHide).
+test("the data layer's hold gate runs on the motion scheduler's visible clock", () => {
   const fake = new FakeEnv();
   const scheduler = createScheduler(fake.env);
-  const hold = createHoldGate(scheduler);
+  const timers: Timers = scheduler;
+  const hold = createHoldGate(timers);
   const releases: { ids: readonly string[]; at: number }[] = [];
   hold.onRelease(r => releases.push({ ids: r.ids, at: fake.now }));
-  return { fake, scheduler, hold, releases };
-}
 
-test('hold releases 450 ms after the last key', () => {
-  const { fake, hold, releases } = setup();
   hold.begin('keys', ['a']);
   fake.advance(200);
   hold.extend(['b']);
-  assert.deepEqual(hold.heldIds, ['a', 'b']);
   fake.advance(HOLD - 1);
   assert.equal(hold.isHeld, true);
   fake.advance(1);
-  assert.equal(hold.isHeld, false);
   assert.deepEqual(releases, [{ ids: ['a', 'b'], at: 200 + HOLD }]);
-  assert.deepEqual(hold.heldIds, []);
-});
+  assert.equal(scheduler.pending, 0);
 
-test('a long burst of keys holds until 450 ms after the last key, so it closes once', () => {
-  const { fake, hold, releases } = setup();
-  hold.begin('keys', ['a']);
-  for (let i = 0; i < 19; i += 1) {
-    fake.advance(100);
-    hold.extend();
-  }
-  assert.equal(hold.isHeld, true, 'still held 1.9 s into a burst');
-  fake.advance(HOLD);
-  assert.deepEqual(
-    releases.map(r => r.at),
-    [1900 + HOLD],
-  );
-});
-
-test('a pointer still on the list after the last key: the cap releases once, and the pointer keeps holding until it leaves', () => {
-  const { fake, hold, releases } = setup();
-  hold.pointerEnter(['a']);
-  hold.extend(['b']);
-  fake.advance(CAP - 1);
-  assert.equal(hold.isHeld, true);
-  fake.advance(1);
-  assert.deepEqual(releases, [{ ids: ['a', 'b'], at: CAP }]);
-  assert.equal(hold.isHeld, true, 'the resting pointer still holds');
-  assert.equal(hold.reason, 'pointer');
-  assert.deepEqual(hold.heldIds, []);
-  fake.advance(CAP * 4);
-  assert.equal(hold.isHeld, true);
-  assert.equal(releases.length, 1);
-
-  // Another key under the resting pointer: the cap closes it once more.
+  // A resting pointer: the cap after the last key releases once, then a pointer-only hold.
+  hold.pointerEnter();
   hold.extend(['c']);
   fake.advance(CAP);
   assert.equal(releases.length, 2);
   assert.equal(hold.isHeld, true);
-  hold.pointerLeave();
+  assert.deepEqual(hold.heldIds, []);
+  assert.equal(scheduler.pending, 0);
+
+  // A hide releases and forgets the pointer; nothing waits on hidden time.
+  hold.extend(['d']);
+  fake.setHidden(true);
   assert.equal(hold.isHeld, false);
   assert.equal(releases.length, 3);
-});
-
-test('the pointer alone holds until it leaves, and leaving releases at once', () => {
-  const { fake, hold, releases } = setup();
-  hold.pointerEnter(['a']);
+  assert.equal(scheduler.pending, 0);
+  fake.setHidden(false);
   fake.advance(CAP * 2);
-  assert.equal(hold.isHeld, true);
-  hold.pointerLeave();
-  assert.equal(hold.isHeld, false);
-  assert.equal(releases[0]?.at, CAP * 2);
-
-  hold.begin('keys', ['c']);
-  fake.advance(100);
-  hold.pointerLeave();
-  assert.equal(releases.length, 2);
-  assert.equal(releases[1]?.at, CAP * 2 + 100);
-});
-
-test('hiding the window releases the hold', () => {
-  const { fake, hold, releases } = setup();
-  hold.begin('keys', ['a']);
-  fake.advance(100);
-  fake.setHidden(true);
-  assert.equal(hold.isHeld, false);
-  assert.equal(releases.length, 1);
-  fake.setHidden(false);
-  fake.advance(HOLD);
-  assert.equal(releases.length, 1);
-});
-
-test('hiding forgets the pointer; its next pointermove re-asserts the hold', () => {
-  const { fake, hold, releases } = setup();
-  hold.pointerEnter(['a']);
-  fake.setHidden(true);
-  assert.equal(hold.isHeld, false);
-  assert.equal(releases.length, 1);
-  fake.setHidden(false);
   assert.equal(hold.isHeld, false);
   hold.pointerEnter();
-  hold.pointerEnter();
   assert.equal(hold.isHeld, true);
-  fake.advance(CAP * 2);
-  assert.equal(hold.isHeld, true);
-  assert.equal(releases.length, 1);
-});
-
-test('subscribers hear every change so useSyncExternalStore stays exact', () => {
-  const { fake, hold } = setup();
-  let changes = 0;
-  hold.subscribe(() => changes++);
-  hold.begin('keys', ['a']);
-  hold.extend(['a']);
-  hold.extend(['b']);
-  fake.advance(HOLD);
-  assert.equal(changes, 3);
+  hold.pointerLeave();
+  assert.equal(releases.length, 4);
+  hold.dispose();
 });
 
 test('rapid: keys under 300 ms apart; burst from the fourth key in a second', () => {

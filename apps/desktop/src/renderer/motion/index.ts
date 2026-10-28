@@ -1,9 +1,9 @@
 // The motion runtime (plan 30 4.3, DESIGN 4.8, 4.9 and 5). Hand-written
 // modules on top of the generated ui/generated/motion.ts; screens reach motion
 // only through here.
+import { createHoldGate, type HoldGate } from '../data/holds';
 import type { MotionEnv } from './env';
 import { createGhostLayer, type GhostLayer } from './ghost';
-import { createHoldGate, type HoldGate } from './holdGate';
 import { createRapidTracker, type RapidTracker } from './rapid';
 import { createScheduler, type Scheduler } from './scheduler';
 
@@ -41,7 +41,8 @@ export {
   type GhostLayerOptions,
   type LaunchOptions,
 } from './ghost';
-export { createHoldGate, type HoldGate } from './holdGate';
+/** The one hold gate lives in the data layer (data/holds.ts); motion drives it as is. */
+export { createHoldGate, type HoldGate } from '../data/holds';
 export { createPuckSlider, puckTransform, type PuckCell, type PuckSlider } from './puck';
 export { createRapidTracker, type RapidState, type RapidTracker } from './rapid';
 export { createScheduler, type FrameTask, type Scheduler } from './scheduler';

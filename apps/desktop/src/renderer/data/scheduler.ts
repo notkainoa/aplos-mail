@@ -9,10 +9,15 @@ export interface FrameScheduler {
   request(callback: () => void): () => void;
 }
 
-/** A timer source and its notion of now (epoch ms). */
+/**
+ * A timer source and its notion of now. The data layer's are epoch ms; the motion `Scheduler` is one too, on visible
+ * time (paused while hidden), so the hold gate runs on either.
+ */
 export interface Timers {
   now(): number;
   setTimeout(callback: () => void, ms: number): () => void;
+  /** Called when the window hides (holds release then); absent where there is no window. Returns an unsubscribe. */
+  onHide?(listener: () => void): () => void;
 }
 
 /** `requestAnimationFrame` where it exists, else the next macrotask (node, a hidden window's fallback). */
@@ -27,12 +32,20 @@ export const animationFrameScheduler: FrameScheduler = {
   },
 };
 
-/** Wall-clock timers. */
+/** Wall-clock timers; hides come from `document.visibilityState` where there is a document. */
 export const realTimers: Timers = {
   now: () => Date.now(),
   setTimeout(callback, ms) {
     const handle = setTimeout(callback, ms);
     return () => clearTimeout(handle);
+  },
+  onHide(listener) {
+    if (typeof document === 'undefined') return () => {};
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') listener();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
   },
 };
 
@@ -67,11 +80,19 @@ export function createManualScheduler(): ManualScheduler {
 export interface ManualTimers extends Timers {
   advance(ms: number): void;
   set(now: number): void;
+  onHide(listener: () => void): () => void;
+  /** Show or hide the fake window; hiding tells `onHide` listeners. */
+  setHidden(hidden: boolean): void;
+  readonly hidden: boolean;
+  /** Timers still waiting. */
+  readonly pending: number;
 }
 
 export function createManualTimers(start = 0): ManualTimers {
   let now = start;
   let seq = 0;
+  let hidden = false;
+  const hideListeners = new Set<() => void>();
   const timers = new Map<number, { at: number; callback: () => void }>();
   const runUntil = (target: number) => {
     for (;;) {
@@ -98,6 +119,23 @@ export function createManualTimers(start = 0): ManualTimers {
     },
     set(target) {
       runUntil(target);
+    },
+    onHide(listener) {
+      hideListeners.add(listener);
+      return () => {
+        hideListeners.delete(listener);
+      };
+    },
+    setHidden(next) {
+      if (next === hidden) return;
+      hidden = next;
+      if (hidden) for (const listener of [...hideListeners]) listener();
+    },
+    get hidden() {
+      return hidden;
+    },
+    get pending() {
+      return timers.size;
     },
   };
 }

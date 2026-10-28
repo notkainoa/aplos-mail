@@ -13,13 +13,13 @@
 // hold releases the cursor glides on close's duration and curve, landing with
 // its row.
 import type { Id } from '../data';
+import type { HoldGate } from '../data/holds';
 import { motionMs, motions, type MotionContext } from '../ui/generated/motion';
 import type { CommitKind } from '../ui/props';
 import { play, type Playing } from './animate';
 import type { CursorCause, CursorLayer } from './cursor';
 import type { Closer } from './flip';
 import type { Ghost, GhostExtra, GhostLayer } from './ghost';
-import type { HoldGate } from './holdGate';
 import type { RapidTracker } from './rapid';
 import type { Scheduler } from './scheduler';
 import {

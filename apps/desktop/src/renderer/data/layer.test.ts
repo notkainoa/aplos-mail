@@ -9,7 +9,7 @@ import { motions } from '../ui/generated/motion';
 import { ClockStore, harnessClock, truncateNow } from './clock';
 import type { Account, Counts, ProgressFrame } from './contract-shapes';
 import { createHarness } from './harness';
-import { createHoldGate, HOLD_CAP_MS, HOLD_RELEASE_MS } from './holds';
+import { HOLD_CAP_MS, HOLD_RELEASE_MS } from './holds';
 import { HARNESS_NOW_MS, HOLD_TIMING, PREFETCH_TIMING } from './index';
 import { createManualTimers } from './scheduler';
 import { countsFor, pickStatus, ZERO_COUNTS } from './session';
@@ -19,58 +19,6 @@ test('hold timing comes from the generated hold motion', () => {
   assert.equal(HOLD_CAP_MS, motions.hold.durations.cap);
   assert.equal(HOLD_RELEASE_MS, HOLD_TIMING.releaseAfterLastKeyMs);
   assert.equal(HOLD_CAP_MS, HOLD_TIMING.capMs);
-});
-
-test('a hold releases 450 ms after the last key', () => {
-  const timers = createManualTimers(0);
-  const gate = createHoldGate(timers);
-  const released: Array<{ ids: readonly string[]; reason: string }> = [];
-  gate.onRelease(r => released.push(r));
-  gate.begin('keys', ['t1', 't2']);
-  assert.equal(gate.isHeld, true);
-  assert.deepEqual(gate.heldIds, ['t1', 't2']);
-  timers.advance(HOLD_RELEASE_MS - 1);
-  assert.equal(gate.isHeld, true);
-  timers.advance(1);
-  assert.equal(gate.isHeld, false);
-  assert.deepEqual(gate.heldIds, []);
-  assert.deepEqual(released, [{ ids: ['t1', 't2'], reason: 'keys' }]);
-});
-
-test('each key pushes the release back, never past the 1200 ms cap', () => {
-  const timers = createManualTimers(0);
-  const gate = createHoldGate(timers);
-  let releasedAt = -1;
-  gate.onRelease(() => (releasedAt = timers.now()));
-  gate.begin('keys', ['t1']);
-  for (const at of [300, 600, 900]) {
-    timers.set(at);
-    gate.extend(['t2']);
-  }
-  assert.deepEqual(gate.heldIds, ['t1', 't2']);
-  timers.set(HOLD_CAP_MS - 1);
-  assert.equal(gate.isHeld, true, 'still held just before the cap');
-  timers.set(HOLD_CAP_MS);
-  assert.equal(gate.isHeld, false);
-  assert.equal(releasedAt, HOLD_CAP_MS, 'the cap wins over 900 + 450');
-});
-
-test('the pointer leaving releases at once; a new hold starts a new cap', () => {
-  const timers = createManualTimers(0);
-  const gate = createHoldGate(timers);
-  const reasons: string[] = [];
-  gate.onRelease(r => reasons.push(r.reason));
-  gate.begin('pointer', ['t1']);
-  timers.advance(100);
-  gate.release();
-  assert.equal(gate.isHeld, false);
-  timers.set(5_000);
-  gate.begin('keys', ['t3']);
-  timers.advance(HOLD_RELEASE_MS);
-  assert.deepEqual(reasons, ['pointer', 'keys']);
-  const version = gate.version;
-  gate.release();
-  assert.equal(gate.version, version, 'releasing an idle gate is a no-op');
 });
 
 test('prefetch waits 80 ms of focus or 120 ms of hover, and cancels on move', async () => {
