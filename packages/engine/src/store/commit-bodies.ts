@@ -24,6 +24,7 @@ export function body(run: CommitRun, w: BodyWrite) {
     (w.body.text !== undefined ? PART.text : 0) |
     (w.body.html !== undefined ? PART.html : 0);
   run.q('UPDATE messages SET parts = ?, rev = ? WHERE id = ?').run(next, run.seq, m.id);
+  run.bodied.add(m.id);
   run.mark('Message', w.accountId, w.remoteId, 'u'); // Message.bodyState
 }
 

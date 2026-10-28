@@ -7,6 +7,7 @@ import type {
   Change,
   ChangesSince,
   CommitExtension,
+  IngestHooks,
   StorePort,
   StoreReader,
 } from './port';
@@ -15,6 +16,8 @@ import { transaction, type SqlDatabase, type SqlStatement } from './sql';
 export * from './port';
 export { CORE_WRITE_KINDS, FLAG, HDR, PART } from './commit';
 export { readBody } from './bodies';
+export { createKnownLookup } from './known';
+export { LANE_TEXT_CAP, STORED_HEADER } from './ingest';
 export { eventChangeKey } from './calendar';
 export * from './due';
 export { MigrationError, SchemaTooNewError, type Migration } from './migrate';
@@ -32,6 +35,8 @@ export interface OpenStoreOptions {
   extensions?: readonly CommitExtension[];
   /** The host's synchronous body compressor; codec 0 (raw) without one. */
   bodyCodec?: BodyCodec;
+  /** `laneFor` (eng-ai), run at ingest inside `commit` (seam 2). */
+  ingest?: IngestHooks;
 }
 
 const DEFAULT_PAGE = 1000;
@@ -77,7 +82,18 @@ export function openStore(db: SqlDatabase, options: OpenStoreOptions = {}): Stor
     schemaVersion: to,
     seq,
     commit: input =>
-      applyCommit({ db, dbEpoch, now, stmt, extensions, bodyCodec: options.bodyCodec }, input),
+      applyCommit(
+        {
+          db,
+          dbEpoch,
+          now,
+          stmt,
+          extensions,
+          bodyCodec: options.bodyCodec,
+          ingest: options.ingest,
+        },
+        input,
+      ),
     changesSince(since, { limit = DEFAULT_PAGE } = {}): ChangesSince {
       const floorSeq = Number(meta('change_floor_seq')),
         current = seq();

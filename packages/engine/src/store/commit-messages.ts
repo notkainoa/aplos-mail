@@ -10,6 +10,7 @@ import {
 } from './port';
 import { FLAG, HDR, PART, MESSAGE_COLS, type CommitRun, type MessageRow } from './commit';
 import { folderId as messageFolderId } from './commit-folders';
+import { countCorrespondents } from './correspondents';
 
 const ID_SLOTS = 4096,
   MAX_SECONDS = 2 ** 32;
@@ -176,7 +177,9 @@ export function message(run: CommitRun, w: MessageWrite) {
       first_seen_seq, rev, local_seq) VALUES(${fields.map(() => '?').join(', ')}, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(...fields, id, w.accountId, w.remoteId, origin, run.seq, run.seq, localSeq);
+    countCorrespondents(run, w);
   }
+  run.ingested.set(id, run.ingested.get(id) ?? !existing);
   if (w.folders && !fenced) replacePlacements(run, id, w.accountId, w.folders, w.seenGen);
   run.touched.add(tid);
   run.touchedMessage(w.accountId, id);
