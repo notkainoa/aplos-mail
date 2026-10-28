@@ -192,13 +192,18 @@ export const AskStep = z.object({
 export const AskTurn = z.object({
   id: Id,
   question: text(20_000),
-  /** Paragraphs; `strong` marks ranges to emphasise. */
+  /**
+   * Paragraphs; `strong` marks ranges to emphasise. `cites` places citation chips (FR-30): chip `n` (a `Citation.n`) sits
+   * at character `at` of `text`. Text carries no `[n]` markers: the engine strips any the model wrote, so offsets and
+   * `strong` ranges count the text as shown, and quoted mail that contains "[1]" is just text.
+   */
   answer: z.optional(
     z.object({
       blocks: z.array(
         z.object({
           text: text(20_000),
           strong: z.optional(z.array(z.object({ start: Count, end: Count }))),
+          cites: z.optional(z.array(z.object({ at: Count, n: Count }))),
         }),
       ),
     }),
@@ -211,7 +216,7 @@ export const AskTurn = z.object({
   problem: z.optional(Problem),
   proposals: z.array(Proposal),
   steps: z.array(AskStep),
-  /** Accounts left out because "Use this account's mail for AI" is off. */
+  /** Accounts left out because "Use this account's mail for AI" is off, even when `scope.accountIds` named them (FR-8). */
   excludedAccountIds: z.optional(z.array(Id)),
   createdAt: EpochMs,
 });

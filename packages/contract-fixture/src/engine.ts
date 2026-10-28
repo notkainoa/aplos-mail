@@ -6,6 +6,7 @@ import {
   parseArgs,
   toReply,
   type EngineMethodName,
+  type ErrorBody,
   type Frame,
   type Input,
   type NotificationItem,
@@ -16,12 +17,20 @@ import {
   type WindowBody,
 } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
+import { appScopes, checkAccess, type Caller } from '@aplos/contract/access';
 import type { EngineConnection, EngineSession } from '@aplos/contract/client';
 import { fakeClock, realClock, seeded, type FixtureClock } from './clock';
 import { Store, type Touch, type Tx } from './store';
 import { runView, type Section, type ViewContext } from './views';
 import type { Bytes } from './data/demo';
-import { controlMethod, type ControlArgs, type Ordering } from './control-types';
+import {
+  controlMethod,
+  type AskScript,
+  type ConnectOutcome,
+  type ControlArgs,
+  type SearchScript,
+  type Ordering,
+} from './control-types';
 
 /** Every scenario the stand-in will serve (plan 10 section 4.1). `empty` and `demo` are complete at C1; the rest arrive in Phase 1. */
 export const scenarios = [
@@ -58,7 +67,11 @@ export interface FixtureOptions {
 /** What a handler receives besides its validated arguments. */
 export interface CallContext {
   sessionId: string;
+  /** Who is calling: a window (the default for `connect()`), main, or a listener client with its granted scopes. */
+  caller: Caller;
 }
+/** What `connect()` gives a session when the caller is not named: an Electron window, holding every scope. */
+export const windowCaller: Caller = { kind: 'window', scopes: appScopes };
 export type Handler<M extends EngineMethodName> = (args: Input<M>, cx: CallContext) => Output<M>;
 export type Handlers = { [M in EngineMethodName]: Handler<M> };
 
@@ -92,6 +105,10 @@ interface OpRec {
   operation: Operation;
   touched: Touch[];
   method: string;
+  /** The scope of the method that made it; undo, retry and the queue need it too (freeze FR-3). */
+  scope?: string;
+  /** How `Operation/undo` undoes it when restoring before-images is not the inverse (a held send is cancelled). */
+  undo?: (undoOpId: string) => Receipt;
   /** Accounts whose `pendingChanges` this operation counts in while it is queued for the provider. */
   pending: string[];
 }
@@ -126,7 +143,8 @@ export class Fixture {
   store: Store;
   bodies: Record<string, string> = {};
   files: Record<string, { bytes: Bytes; mime: string; name: string }> = {};
-  blobs = new Map<string, { bytes: Bytes; mime: string; name?: string }>();
+  /** Blobs by id, each owned by the principal that made it (`principalOf`): another caller gets `notFound` (FR-6). */
+  blobs = new Map<string, { bytes: Bytes; mime: string; name?: string; owner: string }>();
   notifications: NotificationItem[] = [];
   mailFrames = new Map<
     string,
@@ -136,10 +154,26 @@ export class Fixture {
   /** Results of commands by `method + opId`, so a replayed opId never applies twice (the HTTP `Idempotency-Key`). */
   replies = new Map<string, unknown>();
   windows = new Map<string, WindowRec>();
-  sessions = new Map<string, { listeners: Set<(frame: Frame) => void>; closed: boolean }>();
+  sessions = new Map<
+    string,
+    { listeners: Set<(frame: Frame) => void>; closed: boolean; caller: Caller }
+  >();
+  /** The scope of the method being dispatched, stamped on the operations it writes. */
+  private callScope?: string;
   /** Cancels for running timers keyed by run, connect or job id (`Ask/cancel`, `Account/cancelConnect`, `Ai/cancel`). */
   runs = new Map<string, () => void>();
   ordering: Ordering = { mode: 'receiptFirst' };
+  /** Live connect flows by `connectId`, so a cancel or the `resolveConnect` knob can end one with any outcome. */
+  connects = new Map<string, { finish: (outcome: ConnectOutcome) => void }>();
+  /** Threads remote search found, by query text; they join matching search windows (`searchRemote` knob). */
+  remoteResults = new Map<string, string[]>();
+  /** Scripts the AI knobs queued: the next Ask run, the next failure per feature, the next transcription. */
+  askScripts: AskScript[] = [];
+  aiFailures = new Map<string, { reasonCode: string; message?: string }>();
+  transcripts: string[] = [];
+  searchScripts: SearchScript[] = [];
+  /** Outcomes `resolveConnect` queued for the next flows; a flow without one connects after 800 ms. */
+  connectScripts: (ConnectOutcome & { delayMs?: number })[] = [];
   failures: FailSpec[] = [];
   sendOutcomes: ('sent' | 'uncertain' | 'failed')[] = [];
   /** Submissions whose thread is marked Done once sent (`send.alsoDone`). */
@@ -173,7 +207,13 @@ export class Fixture {
     return this.clock.now();
   }
   get view(): ViewContext {
-    return { store: this.store, now: this.now, zone: this.zone, body: id => this.bodies[id] ?? '' };
+    return {
+      store: this.store,
+      now: this.now,
+      zone: this.zone,
+      body: id => this.bodies[id] ?? '',
+      remote: this.remoteResults,
+    };
   }
 
   newEpoch() {
@@ -225,6 +265,9 @@ export class Fixture {
       undoable?: boolean;
       undoUntil?: number;
       provider?: boolean;
+      /** The originating scope, when not the dispatched method's own (a send queued by `Queue/retry` is still `send`). */
+      scope?: string;
+      undo?: (undoOpId: string) => Receipt;
     },
     fn: (tx: Tx) => V,
   ): { value: V; receipt: Receipt } {
@@ -267,6 +310,7 @@ export class Fixture {
       undoable,
     };
     if (opts.opId) {
+      const scope = opts.scope ?? this.callScope;
       const operation: Operation = {
         opId: opts.opId,
         kind: opts.kind,
@@ -276,8 +320,16 @@ export class Fixture {
         undoable,
         ...(opts.undoUntil ? { undoUntil: opts.undoUntil } : {}),
         createdAt: this.now,
+        ...(scope ? { scope } : {}),
       };
-      this.ops.set(opts.opId, { operation, touched, method: opts.kind, pending });
+      this.ops.set(opts.opId, {
+        operation,
+        touched,
+        method: opts.kind,
+        scope,
+        pending,
+        ...(opts.undo ? { undo: opts.undo } : {}),
+      });
       if (opts.provider)
         this.syncLater(
           opts.opId,
@@ -628,6 +680,16 @@ export class Fixture {
     this.emit({ frame: 'window', ...wire }, w.sessionId);
   }
 
+  /** Stops one session's windows of a kind with a last frame carrying `error` (remote search paused or unavailable). */
+  stopWindows(sessionId: string, kind: ViewSpec['kind'], error: ErrorBody) {
+    for (const w of [...this.windows.values()])
+      if (w.sessionId === sessionId && w.spec.kind === kind) {
+        const wire = this.commitBody(w, this.compute(w));
+        this.emit({ frame: 'window', ...wire, error }, sessionId);
+        this.closeWindow(w.id);
+      }
+  }
+
   /** Voids every window (another `dbEpoch`, a restore, a restart) and tells every session to re-open and re-read. */
   reset(reason: 'dbEpoch' | 'cannotCalculateChanges' | 'restore' | 'restart') {
     for (const id of [...this.windows.keys()]) this.closeWindow(id);
@@ -650,6 +712,8 @@ export class Fixture {
         message: 'This method belongs to the desktop app, not the engine.',
       });
     const args = parseArgs(method, rawArgs) as { opId?: string };
+    const caller = this.sessions.get(sessionId)?.caller ?? windowCaller;
+    checkAccess(method, caller, args);
     const meta = this.store.get('Meta', 'meta')!;
     if (
       meta.engine.state === 'parked' &&
@@ -664,10 +728,17 @@ export class Fixture {
         ? `${method}\u0000${args.opId}`
         : undefined;
     if (key && this.replies.has(key)) return this.replies.get(key);
-    const result = (this.handlers[method as EngineMethodName] as Handler<EngineMethodName>)(
-      args as never,
-      { sessionId },
-    );
+    const outer = this.callScope;
+    this.callScope = def.scope;
+    let result: unknown;
+    try {
+      result = (this.handlers[method as EngineMethodName] as Handler<EngineMethodName>)(
+        args as never,
+        { sessionId, caller },
+      );
+    } finally {
+      this.callScope = outer;
+    }
     if (this.checkResults) checkResult(method, result);
     if (key) this.replies.set(key, result);
     return result;
@@ -728,9 +799,10 @@ export class Fixture {
     for (const fn of this.deferred.splice(0)) fn();
   }
 
-  connect(): EngineSession {
+  /** A new session; `caller` defaults to an Electron window. Listener callers get the listener's rules (`checkAccess`). */
+  connect(caller: Caller = windowCaller): EngineSession {
     const sessionId = this.id('s');
-    const s = { listeners: new Set<(frame: Frame) => void>(), closed: false };
+    const s = { listeners: new Set<(frame: Frame) => void>(), closed: false, caller };
     this.sessions.set(sessionId, s);
     let callId = 0;
     const meta = this.store.get('Meta', 'meta');
@@ -796,7 +868,8 @@ export class FixtureEngine implements EngineConnection {
   constructor(fixture: Fixture) {
     this.fixture = fixture;
   }
-  connect(): EngineSession {
-    return this.fixture.connect();
+  /** A session as an Electron window, or as `caller` (a listener client with its scopes, or main). */
+  connect(caller?: Caller): EngineSession {
+    return this.fixture.connect(caller);
   }
 }

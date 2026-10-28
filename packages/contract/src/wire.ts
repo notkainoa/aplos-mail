@@ -29,13 +29,41 @@ export const ReplyEnvelope = z.discriminatedUnion('ok', [
 ]);
 export type ReplyEnvelope = z.infer<typeof ReplyEnvelope>;
 
-/** The first frame a socket or HTTP client sends; an incompatible major gets `unsupported` with an upgrade message. */
+/**
+ * The first frame a socket client sends (ARCH 9.4, FR-16). `token` is the client's own token from the 0600 file
+ * `Clients/grant` wrote: compared in constant time against the stored hash, never logged or echoed. Over HTTP the same
+ * token is the `Authorization: Bearer` header instead (README "Scopes and transports").
+ */
 export const Hello = z.object({
   v: z.literal(apiVersion),
   apiVersion: z.int(),
   appVersion: z.optional(line(100)),
   client: z.object({ name: line(200), kind: line(30) }),
+  token: z.optional(line(128)),
 });
+export type Hello = z.infer<typeof Hello>;
+
+/**
+ * The listener's answer to `Hello`: the session's state and the scopes it was granted, or a refusal. `unsupported` is an
+ * incompatible `apiVersion` (the message says to update); `forbidden` is a missing, unknown or revoked token. A refused
+ * connection closes after this frame.
+ */
+export const HelloReply = z.discriminatedUnion('ok', [
+  z.object({
+    ok: z.literal(true),
+    session: z.object({
+      apiVersion: z.int(),
+      dbEpoch: line(100),
+      clientId: Id,
+      scopes: z.array(line(30)),
+    }),
+  }),
+  z.object({
+    ok: z.literal(false),
+    error: z.object({ type: openEnum(['unsupported', 'forbidden']), message: z.string() }),
+  }),
+]);
+export type HelloReply = z.infer<typeof HelloReply>;
 
 /** Turns a host-side outcome into a reply envelope. Anything that is not a `ContractError` becomes `internal` with a safe sentence. */
 export function toReply(
@@ -163,6 +191,11 @@ export const Frame = z.discriminatedUnion('frame', [
     turnId: z.optional(Id),
     /** With `kind: 'citation'`. */
     citation: z.optional(Citation),
+    /**
+     * With `kind: 'citation'`: where its chip sits, as a character offset into the answer text streamed so far (all
+     * `delta`s joined, no `[n]` markers; FR-30). Absent means at the end of the text so far.
+     */
+    at: z.optional(Count),
     /** With `kind: 'proposal'`. */
     proposal: z.optional(Proposal),
     problem: z.optional(Problem),
@@ -175,7 +208,11 @@ export const Frame = z.discriminatedUnion('frame', [
   }),
   /** A command's operation changed state after its receipt (failed, conflict, synced). */
   z.object({ frame: z.literal('operation'), ...at, operation: Operation }),
-  /** An account connect, reconnect or permission grant moved on (`Account/connect` returned its `connectId`). */
+  /**
+   * An account connect, reconnect or permission grant moved on (`Account/connect` returned its `connectId`). Frozen
+   * (FR-23): `accountId` is on every `reconnect` and `grantPermissions` frame from `waiting` on, and on every
+   * `connected`; every frame, `cancelled` and `failed` included, carries the flow's own `mode`.
+   */
   z.object({
     frame: z.literal('connect'),
     ...at,

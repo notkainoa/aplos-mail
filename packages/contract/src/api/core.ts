@@ -42,10 +42,12 @@ export const settings = area('settings', {
     output: Settings,
   },
   'Settings/set': {
-    summary: 'Change settings by section; `stateMismatch` when `ifInState` is behind.',
+    summary:
+      'Change settings by section; `stateMismatch` when `ifInState` is behind. The `ai` section (providers, their addresses, the paid mark, features, background) is for Electron windows only.',
     kind: 'command',
     scope: 'admin',
     audit: true,
+    windowOnlyArgs: ['patch.ai'],
     input: z.object({ opId: OpId, patch: SettingsPatch, ifInState: z.optional(State) }),
     output: z.object({ settings: Settings, receipt: Receipt }),
   },

@@ -54,7 +54,11 @@ export const Draft = z.object({
   conflict: z.optional(
     z.object({ theirsRevision: Count, at: EpochMs, device: z.optional(line(200)) }),
   ),
-  /** The live submission while one is queued, scheduled, sending, uncertain, failed or suspended. */
+  /**
+   * The live submission while one is queued, scheduled, sending, uncertain, failed or suspended. The draft is locked
+   * meanwhile (freeze FR-7): `Draft/set` and `Draft/resolve` answer `stateMismatch` ("undo" or "cancel" the send to edit
+   * it), or `conflict` while sending, so the bytes that leave are the revision the owner sent.
+   */
   submissionId: z.optional(Id),
 });
 export type Draft = z.infer<typeof Draft>;
@@ -62,8 +66,12 @@ export type Draft = z.infer<typeof Draft>;
 /**
  * The send state machine (ARCH 7.1-7.3): `queued` inside the undo window, `scheduled` for send later (one `notBefore`
  * mechanism, ADR-16), `sending` once the attempt marker is committed, then `sent`, `uncertain` (never replayed; the
- * engine checks Sent), `failed` (provably not sent, Retry offered), `cancelled` (undone) or `suspended` (missed its time
- * while the Mac was off).
+ * engine checks Sent), `failed` (provably not sent, Retry offered), `cancelled` (undone or cancelled) or `suspended`
+ * (missed its time while the Mac was off).
+ *
+ * The overdue rule (ARCH 7.3, freeze FR-2) covers every row waiting on `notBefore`, `queued` and `scheduled` alike: one
+ * found at launch or wake more than 5 minutes past `notBefore` becomes `suspended` ("Send now or Reschedule") and is never
+ * sent late on its own. A `sending` row is never suspended; it becomes `uncertain`.
  */
 export const SubmissionState = openEnum([
   'queued',
@@ -84,6 +92,8 @@ export const Submission = z.object({
   threadId: z.optional(Id),
   /** The stable Message-ID, generated once and never regenerated. */
   internetId: line(1_000),
+  /** The draft revision this submission sends, exactly: recorded at `send`, never moved by a later edit (FR-7). */
+  revision: Count,
   state: SubmissionState,
   /** When the send was queued; with `notBefore` it gives the undo tray's drain bar its length, whatever the undo setting says now. */
   queuedAt: EpochMs,
@@ -98,9 +108,15 @@ export const Submission = z.object({
 });
 export type Submission = z.infer<typeof Submission>;
 
-/** One `Submission/set` command per user intent. Input: closed. */
+/**
+ * One `Submission/set` command per user intent. Input: closed. `revision` on `sendNow`, `sendAnyway` and `retry`, when
+ * given, must equal `Submission.revision` (else `stateMismatch`): the confirmation names the bytes the owner saw.
+ */
 export const SubmissionAction = z.discriminatedUnion('type', [
-  /** Send the draft's current revision after the undo window, or at `notBefore` (send later). */
+  /**
+   * Send the draft's current revision after the undo window, or at `notBefore` (send later). The receipt is
+   * `undoable` until `notBefore`: `Operation/undo` on its `opId` is the same as `undo` (freeze FR-14).
+   */
   z.object({
     type: z.literal('send'),
     draftId: Id,
@@ -108,13 +124,18 @@ export const SubmissionAction = z.discriminatedUnion('type', [
     notBefore: z.optional(EpochMs),
     alsoDone: z.optional(bool()),
   }),
-  /** Cancel before `notBefore`; the draft comes back. */
+  /** Cancel a `queued` or `scheduled` send before `notBefore`; the draft comes back unlocked. */
   z.object({ type: z.literal('undo'), submissionId: Id }),
-  z.object({ type: z.literal('sendNow'), submissionId: Id }),
+  z.object({ type: z.literal('sendNow'), submissionId: Id, revision: z.optional(Count) }),
   z.object({ type: z.literal('reschedule'), submissionId: Id, notBefore: EpochMs }),
   /** After "We could not confirm this was sent": the user chose Send anyway. */
-  z.object({ type: z.literal('sendAnyway'), submissionId: Id }),
+  z.object({ type: z.literal('sendAnyway'), submissionId: Id, revision: z.optional(Count) }),
   /** After a provably-not-sent failure. */
-  z.object({ type: z.literal('retry'), submissionId: Id }),
+  z.object({ type: z.literal('retry'), submissionId: Id, revision: z.optional(Count) }),
+  /**
+   * "Don't send it" for a `failed`, `uncertain` or `suspended` send (freeze FR-13): it becomes `cancelled` and the draft
+   * comes back unlocked. An `uncertain` one may still have left; the UI says so.
+   */
+  z.object({ type: z.literal('cancel'), submissionId: Id }),
 ]);
 export type SubmissionAction = z.infer<typeof SubmissionAction>;

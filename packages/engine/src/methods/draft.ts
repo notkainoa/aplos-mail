@@ -8,5 +8,6 @@ export const handlers: AreaHandlers<'draft'> = {
   'Draft/get': notImplemented('Draft/get'),
   'Draft/set': notImplemented('Draft/set'),
   'Draft/destroy': notImplemented('Draft/destroy'),
+  'Contact/suggest': notImplemented('Contact/suggest'),
   'Draft/resolve': notImplemented('Draft/resolve'),
 };

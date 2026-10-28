@@ -153,6 +153,7 @@ export function buildScenario(fx: Fixture, scenario: Scenario) {
       accountId: work,
       threadId: draft.threadId,
       internetId: '<sub-demo@fixture.example>',
+      revision: draft.revision,
       state,
       queuedAt: now - 3_610_000,
       notBefore: now - 3_600_000,
@@ -167,7 +168,7 @@ export function buildScenario(fx: Fixture, scenario: Scenario) {
               at: now - 3_600_000,
             }
           : {
-              reasonCode: 'unknown',
+              reasonCode: 'send.overdue',
               message: 'This was due while your Mac was off. Send it now, or choose a new time.',
               at: now - 3_600_000,
             },

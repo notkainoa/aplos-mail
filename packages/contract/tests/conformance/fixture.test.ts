@@ -17,6 +17,11 @@ conformance({
       advance: async ms => {
         await control.advanceClock({ ms });
       },
+      connectAs: caller => connection.connect(caller),
+      sleep: async ms => {
+        await control.sleep({ ms });
+      },
+      standIn: true,
       compactLog: async () => {
         await control.compactLog();
       },

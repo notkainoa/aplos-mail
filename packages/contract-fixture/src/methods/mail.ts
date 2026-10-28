@@ -3,8 +3,12 @@ import { accountsOf, type Fixture } from '../engine';
 import type { Tx } from '../store';
 import { dueBand, localDay } from '../time';
 import { homeParts, runView, senderGroups } from '../views';
-import { blobOf } from './core';
+import { blobOf, ownBlob } from './core';
+import { requireScope } from '@aplos/contract/access';
 import { clean, fail, getRows, must, plainHtml, type Part } from './util';
+
+/** The stand-in srcdoc's inner policy (freeze FR-34): no script, no network, inline styles and data: images only. */
+export const srcdocCsp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
 
 const role = (t: ThreadRow, r: string) => `${t.accountId}:${r}`;
 const withLabel = (t: ThreadRow, r: string, on: boolean) => {
@@ -56,6 +60,8 @@ export function applyAction(
       break;
     case 'later':
       w.status = 'later';
+      // Snoozed again, it comes back to Home at the new date even if Clear from Home took it off.
+      w.hiddenFromHome = false;
       if (action.until === undefined) delete w.laterUntil;
       else w.laterUntil = action.until;
       after(settings.mail.laterAction);
@@ -87,11 +93,12 @@ export function applyAction(
       next.rank = { ...next.rank, dueBand: dueBand(w.dueDate, today) };
       break;
     case 'reminder':
-      if (action.at === undefined) {
+      // `clear` removes it (FR-28); without `at` it falls due after `mail.followUpDays`.
+      if (action.clear) {
         delete w.reminderAt;
         delete w.reminderIfNoReply;
       } else {
-        w.reminderAt = action.at;
+        w.reminderAt = action.at ?? now + settings.mail.followUpDays * 86_400_000;
         w.reminderIfNoReply = !!action.ifNoReply;
       }
       delete w.reminderFiredAt;
@@ -121,6 +128,10 @@ export function applyAction(
       break;
     case 'home':
       w.hiddenFromHome = action.hidden;
+      break;
+    case 'clearFromHome':
+      // Back to Later with its own date (still Overdue there), off Home until acted on (FR-28).
+      if (w.status === 'later' && t.fromLater) w.hiddenFromHome = true;
       break;
     case 'labels':
       next.labels = [
@@ -211,7 +222,8 @@ export function mail(fx: Fixture) {
     const token = `${fx.id('mf')}-${((fx.random() * 2 ** 32) >>> 0).toString(36)}`;
     const expiresAt = fx.now + 10 * 60_000;
     fx.mailFrames.set(token, { messageId, expiresAt, quotesOpen, imagePolicy });
-    const srcdoc = `<!doctype html><meta charset="utf-8"><body>${plainHtml(fx.bodies[messageId] ?? '')}</body>`;
+    // ARCH 10 Stopgap: the srcdoc document carries its own CSP, so even inside the reader's sandbox it loads nothing.
+    const srcdoc = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${srcdocCsp}"><body>${plainHtml(fx.bodies[messageId] ?? '')}</body>`;
     return {
       url: `aplos-mail://m/${token}`,
       expiresAt,
@@ -276,37 +288,36 @@ export function mail(fx: Fixture) {
         notFound: ids.filter(id => !groups.has(id)),
       };
     },
-    'Search/remote': ({ opId }, cx) => {
+    'Search/remote': ({ opId, query }, cx) => {
       const runId = fx.id('search');
       const { receipt } = fx.write(
         { opId, kind: 'Search/remote', undoable: false },
         () => undefined,
       );
+      const script = fx.searchScripts.shift();
       const step = { id: 'server', text: 'Searching the mail server' };
-      fx.clock.after(100, () =>
-        fx.emit(
-          {
-            frame: 'progress',
-            runId,
-            source: 'search',
-            kind: 'step',
-            step: { ...step, state: 'running' },
-          },
-          cx.sessionId,
-        ),
-      );
+      const progress = (frame: Record<string, unknown>) =>
+        fx.emit({ frame: 'progress', runId, source: 'search', ...frame } as never, cx.sessionId);
+      fx.clock.after(100, () => progress({ kind: 'step', step: { ...step, state: 'running' } }));
       fx.clock.after(600, () => {
-        fx.emit(
-          {
-            frame: 'progress',
-            runId,
-            source: 'search',
-            kind: 'step',
-            step: { ...step, state: 'done', count: 0 },
-          },
-          cx.sessionId,
-        );
-        fx.emit({ frame: 'progress', runId, source: 'search', kind: 'done' }, cx.sessionId);
+        // A scripted failure: the run reports it and the search windows stop with it (`paused`, `unavailable`).
+        if (script?.error) {
+          const error = script.error;
+          progress({ kind: 'step', step: { ...step, state: 'error' } });
+          progress({
+            kind: 'error',
+            problem: clean({ reasonCode: error.reasonCode ?? error.type, message: error.message }),
+          });
+          fx.stopWindows(cx.sessionId, 'search', error);
+        } else {
+          const ids = (script?.ids ?? []).filter(id => fx.store.get('Thread', id));
+          if (ids.length) {
+            fx.remoteResults.set(query.text, [...(fx.remoteResults.get(query.text) ?? []), ...ids]);
+            for (const w of fx.windows.values()) fx.refresh(w);
+          }
+          progress({ kind: 'step', step: { ...step, state: 'done', count: ids.length } });
+        }
+        progress({ kind: 'done' });
       });
       return { runId, receipt: { ...receipt, undoable: false } };
     },
@@ -371,10 +382,18 @@ export function mail(fx: Fixture) {
       return { threadId, complete: true, state: fx.store.state };
     },
 
-    'Operation/undo': ({ opId, undoOpId }) => {
+    'Operation/undo': ({ opId, undoOpId }, cx) => {
       const rec = fx.ops.get(opId) ?? fail('notFound', 'This change can no longer be undone.');
+      requireScope(cx.caller, rec.scope);
       if (!rec.operation.undoable) fail('conflict', 'This change cannot be undone.');
       if (rec.operation.state === 'cancelled') fail('conflict', 'This change was already undone.');
+      // A held send is undone by cancelling its submission, the same as `Submission/set` undo (freeze FR-14).
+      if (rec.undo) {
+        const receipt = rec.undo(undoOpId);
+        rec.operation = { ...rec.operation, state: 'cancelled' };
+        fx.emit({ frame: 'operation', operation: rec.operation });
+        return receipt;
+      }
       // Undo while still queued cancels the provider write; after it synced, the inverse goes to the provider in turn.
       const { receipt } = fx.write(
         {
@@ -396,8 +415,9 @@ export function mail(fx: Fixture) {
       list: opIds.flatMap(id => fx.ops.get(id)?.operation ?? []),
       notFound: opIds.filter(id => !fx.ops.has(id)),
     }),
-    'Operation/retry': ({ opId }) => {
+    'Operation/retry': ({ opId }, cx) => {
       const rec = fx.ops.get(opId) ?? fail('notFound', 'This change is no longer in the queue.');
+      requireScope(cx.caller, rec.scope);
       if (rec.operation.state !== 'failed')
         fail('conflict', 'Only a failed change can be retried.');
       fx.write({ kind: 'Operation/retry' }, tx => {
@@ -465,18 +485,18 @@ export function mail(fx: Fixture) {
         body: new TextEncoder().encode(html),
       };
     },
-    'Attachment/get': ({ messageId, attachmentId }) => {
+    'Attachment/get': ({ messageId, attachmentId }, cx) => {
       const file =
         fx.files[`${messageId}/${attachmentId}`] ??
         fail('notFound', 'This attachment is no longer available.');
       return {
-        blobId: blobOf(fx, file.bytes, file.mime, file.name),
+        blobId: blobOf(fx, cx.caller, file.bytes, file.mime, file.name),
         name: file.name,
         mime: file.mime,
         size: file.bytes.length,
       };
     },
-    'Message/original': ({ messageId }) => {
+    'Message/original': ({ messageId }, cx) => {
       const m = must(fx.store, 'Message', messageId, 'This message is no longer available.');
       const header = (name: string, list: { address: string; name?: string }[]) =>
         list.length
@@ -485,18 +505,23 @@ export function mail(fx: Fixture) {
       const raw = `${header('From', m.from ? [m.from] : [])}${header('To', m.to)}Subject: ${m.subject}\r\nDate: ${new Date(m.date).toUTCString()}\r\nMessage-ID: ${m.internetId ?? `<${m.id}@fixture.example>`}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${fx.bodies[messageId] ?? ''}\r\n`;
       const bytes = new TextEncoder().encode(raw);
       const name = `${m.subject.replace(/[^\w -]+/g, '').slice(0, 60) || 'message'}.eml`;
-      return { blobId: blobOf(fx, bytes, 'message/rfc822', name), name, size: bytes.length };
+      return {
+        blobId: blobOf(fx, cx.caller, bytes, 'message/rfc822', name),
+        name,
+        size: bytes.length,
+      };
     },
 
-    'Blob/put': ({ bytes, mime, name }) => {
+    'Blob/put': ({ bytes, mime, name }, cx) => {
       if (bytes.length > 25 * 1024 * 1024) fail('tooLarge', 'Files can be at most 25 MB.');
-      return { blobId: blobOf(fx, bytes, mime, name), size: bytes.length };
+      return { blobId: blobOf(fx, cx.caller, bytes, mime, name), size: bytes.length };
     },
-    'Blob/get': ({ blobId }) => {
-      const b = fx.blobs.get(blobId) ?? fail('notFound', 'This file is no longer available.');
+    'Blob/get': ({ blobId }, cx) => {
+      const b = ownBlob(fx, cx.caller, blobId, 'This file is no longer available.');
       return clean({ bytes: b.bytes, mime: b.mime, name: b.name, size: b.bytes.length });
     },
-    'Blob/release': ({ blobId }) => {
+    'Blob/release': ({ blobId }, cx) => {
+      ownBlob(fx, cx.caller, blobId, 'This file is no longer available.');
       fx.blobs.delete(blobId);
       return { ok: true as const };
     },

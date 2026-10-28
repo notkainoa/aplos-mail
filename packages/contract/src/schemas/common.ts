@@ -17,6 +17,7 @@ export const messages = {
   email: 'Enter a valid email address.',
   serverAddress: 'Enter the server address, e.g. http://localhost:11434/v1.',
   plainAddress: 'Use an http or https address without a password in it.',
+  bareAddress: 'Use the server address only, without ? or # parts.',
 } as const;
 
 type Open<T extends string> = T | (string & {});
@@ -100,10 +101,13 @@ const isPlainHttp = (v: string) => {
     return true;
   }
 };
-/** An http(s) server address with no credentials in it; empty means "use the default". */
+/** No `?query` or `#fragment`, where a key could hide and be echoed back by `Settings/get` (FR-36). */
+const isBareAddress = (v: string) => !/[?#]/.test(v.trim());
+/** An http(s) server address with no credentials, query or fragment in it; empty means "use the default". */
 export const HttpAddress = text(500).check(
   z.refine(parsesAsUrl, messages.serverAddress),
   z.refine(isPlainHttp, messages.plainAddress),
+  z.refine(isBareAddress, messages.bareAddress),
 );
 
 const isHttps = (v: string) => {
@@ -134,9 +138,13 @@ export type State = z.infer<typeof State>;
 export const Receipt = z.object({
   opId: OpId,
   appliedState: State,
-  /** Until when `Operation/undo` cancels a held change instead of sending an inverse (calendar writes that email guests). */
+  /**
+   * Until when `Operation/undo` cancels a held change instead of sending an inverse: calendar writes that email guests,
+   * and a send in its undo window or waiting to send later (freeze FR-14). Meaningful only with `undoable` true; after it,
+   * undoing a send answers `conflict`.
+   */
   undoUntil: z.optional(EpochMs),
-  /** False for changes with no inverse (a send that has left, a disconnect). */
+  /** False for changes with no inverse (a disconnect, a draft save). A send's receipt is undoable while it is held. */
   undoable: z.optional(z.boolean()),
 });
 export type Receipt = z.infer<typeof Receipt>;
@@ -150,9 +158,13 @@ export function getResult<T extends z.ZodMiniType>(row: T) {
 export const Empty = z.object({});
 export const Ok = z.object({ ok: z.literal(true) });
 
-/** A provider or AI failure reduced to what the UI may show: a copy key and, when useful, the sentence. */
+/**
+ * A provider or AI failure reduced to what the UI may show: a copy key and, when useful, the sentence. `message` is
+ * engine copy chosen by `reasonCode`, never the provider's own text, which can echo part of a key (FR-33); the
+ * provider's words go only to `ClassifiedError.providerMessage`, redacted, for diagnostics.
+ */
 export const Problem = z.object({
   reasonCode: z.string(),
-  message: z.optional(z.string()),
+  message: z.optional(text(1_000)),
   at: z.optional(EpochMs),
 });

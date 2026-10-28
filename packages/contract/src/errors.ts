@@ -80,7 +80,8 @@ export type ClassifiedError = z.infer<typeof ClassifiedErrorSchema>;
  * - `conflict`: the change raced a remote edit (calendar 412, a draft edited on another device).
  * - `cannotCalculateChanges`: the client's state is below the change-log floor or from another `dbEpoch`; re-open windows.
  * - `unsupported`: an incompatible `apiVersion`, or a method this transport does not carry (e.g. a key method over HTTP).
- * - `forbidden`: the caller's scopes do not include the method's scope (ARCH 12.3).
+ * - `forbidden`: the caller's scopes do not include the method's scope (ARCH 12.3), or what it acts on needs more
+ *   (`scopeRule`), or it names an account the owner left out of AI (`reasonCode: 'ai.accountExcluded'`, FR-8).
  * - `paused`, `needsReauth`, `permission`: the account's state refuses the call (ARCH 6.4); `resumeAt` when known.
  * - `unavailable`: the engine is starting, parked or restarting, or the feature is not built yet in this version.
  * - `notConfigured`: an AI feature has no usable provider or key.

@@ -1,18 +1,50 @@
 import type { Draft, Event, EventFields, Submission } from '@aplos/contract';
 import type { Fixture } from '../engine';
+import type { Tx } from '../store';
 import { addDays, atLocal, localDay } from '../time';
 import { instant } from '../views';
 import { actOn } from './mail';
+import { ownBlob } from './core';
 import { clean, fail, getRows, must, textOf, type Part } from './util';
 
 const live = new Set(['queued', 'scheduled', 'sending', 'uncertain', 'failed', 'suspended']);
 const uncertainCopy = 'We could not confirm this was sent. Check Sent, or Send anyway.';
+/** ARCH 7.3: a send found this long past `notBefore` at wake is suspended, never sent late on its own. */
+export const overdueGraceMs = 5 * 60_000;
+export const overdueCopy =
+  'This was due while your Mac was off. Send it now, or choose a new time.';
 
 /** Drafts, the send state machine (ARCH 7.1-7.3) on the engine clock, calendars, events and plans. */
 export function compose(fx: Fixture) {
-  const sending = (draft: Draft) => {
+  const liveSub = (draft: Draft) => {
     const s = draft.submissionId ? fx.store.get('Submission', draft.submissionId) : undefined;
-    return s?.state === 'sending' ? s : undefined;
+    return s && live.has(s.state) ? s : undefined;
+  };
+  /** A draft with a live send is locked (freeze FR-7): the submission sends the revision it recorded. */
+  const unlocked = (draft: Draft) => {
+    const s = liveSub(draft);
+    if (s?.state === 'sending')
+      fail('conflict', 'This message is sending. Wait a moment, then try again.');
+    if (s)
+      fail(
+        'stateMismatch',
+        s.state === 'queued' || s.state === 'scheduled'
+          ? 'This message is waiting to send. Undo the send to edit it.'
+          : 'This message has not been sent. Cancel the send to edit it.',
+      );
+  };
+  /** Ends a send that has not started (undo, cancel, a discarded draft): `cancelled`, timers stopped, the draft unlocked. */
+  const cancel = (tx: Tx, sub: Submission) => {
+    fx.runs.get(sub.id)?.();
+    fx.runs.delete(sub.id);
+    fx.alsoDone.delete(sub.id);
+    const d = tx.get('Draft', sub.draftId);
+    if (d?.submissionId === sub.id) {
+      const { submissionId: _, ...draft } = d;
+      tx.put('Draft', draft);
+    }
+    const { problem: __, ...rest } = sub;
+    return tx.put('Submission', { ...rest, state: 'cancelled' });
   };
 
   /** Schedules the attempt at `notBefore`; the attempt itself ends `sent`, `uncertain` or `failed` 400 ms later. */
@@ -28,6 +60,20 @@ export function compose(fx: Fixture) {
     const sub = fx.store.get('Submission', id);
     if (!sub || !['queued', 'scheduled', 'uncertain', 'failed', 'suspended'].includes(sub.state))
       return;
+    // The overdue rule (FR-2): a held send, undo window or send later alike, that wakes up past its time is suspended.
+    if (
+      (sub.state === 'queued' || sub.state === 'scheduled') &&
+      fx.now > sub.notBefore + overdueGraceMs
+    ) {
+      fx.write({ kind: 'Submission/suspend' }, tx =>
+        tx.put('Submission', {
+          ...sub,
+          state: 'suspended',
+          problem: { reasonCode: 'send.overdue', message: overdueCopy, at: fx.now },
+        }),
+      );
+      return;
+    }
     const { problem: _, ...rest } = sub;
     fx.write({ kind: 'Submission/attempt' }, tx =>
       tx.put('Submission', { ...rest, state: 'sending', attemptAt: fx.now }),
@@ -204,11 +250,15 @@ export function compose(fx: Fixture) {
 
   return {
     'Draft/get': ({ ids }) => getRows(fx.store, 'Draft', ids),
-    'Draft/set': ({ opId, id, baseRevision, fields }) => {
+    'Draft/set': ({ opId, id, baseRevision, fields }, cx) => {
       must(fx.store, 'Account', fields.accountId, 'This account is no longer connected.');
       const prev = id ? must(fx.store, 'Draft', id, 'This draft no longer exists.') : undefined;
-      if (prev && sending(prev))
-        fail('conflict', 'This message is sending. Wait a moment, then try again.');
+      if (prev) unlocked(prev);
+      // A newly attached upload must be the caller's own blob (FR-6); ones already on the draft stay.
+      const had = new Set(prev?.attachments.map(a => a.blobId));
+      for (const a of fields.attachments)
+        if (a.blobId && !had.has(a.blobId))
+          ownBlob(fx, cx.caller, a.blobId, 'This file is no longer available. Attach it again.');
       if (prev && baseRevision !== undefined && baseRevision !== prev.revision)
         fail('stateMismatch', 'This draft changed in another window. Reopen it before editing.');
       const draft: Draft = clean({
@@ -228,12 +278,58 @@ export function compose(fx: Fixture) {
     },
     'Draft/destroy': ({ opId, id }) => {
       const draft = must(fx.store, 'Draft', id, 'This draft no longer exists.');
-      if (sending(draft))
+      const sub = liveSub(draft);
+      if (sub?.state === 'sending')
         fail('conflict', 'This message is sending. Wait a moment, then try again.');
-      return fx.write({ opId, kind: 'Draft/destroy' }, tx => tx.del('Draft', id)).receipt;
+      // Discarding the draft cancels a send that has not started, so the outbox and the Quit warning clear (FR-13).
+      return fx.write({ opId, kind: 'Draft/destroy' }, tx => {
+        if (sub) cancel(tx, sub);
+        tx.del('Draft', id);
+      }).receipt;
+    },
+    'Contact/suggest': ({ query, accountId, limit = 8 }) => {
+      // The correspondents table from mail on hand: who you wrote to and heard from, most first (FR-29).
+      const q = query.trim().toLowerCase();
+      const people = new Map<
+        string,
+        { address: string; name?: string; sentTo: number; receivedFrom: number }
+      >();
+      const mine = new Set(fx.store.all('Account').map(a => a.address.toLowerCase()));
+      const count = (a: { address: string; name?: string }, key: 'sentTo' | 'receivedFrom') => {
+        const address = a.address.toLowerCase();
+        if (mine.has(address)) return;
+        const p = people.get(address) ?? { address, sentTo: 0, receivedFrom: 0 };
+        p.name ??= a.name;
+        p[key]++;
+        people.set(address, p);
+      };
+      for (const m of fx.store.all('Message')) {
+        if (accountId && m.accountId !== accountId) continue;
+        if (m.fromMe) for (const a of [...m.to, ...m.cc]) count(a, 'sentTo');
+        else if (m.from) count(m.from, 'receivedFrom');
+      }
+      const starts = (p: { address: string; name?: string }) =>
+        !q ||
+        p.address.startsWith(q) ||
+        (p.name ?? '')
+          .toLowerCase()
+          .split(/\s+/)
+          .some(w => w.startsWith(q));
+      return {
+        list: [...people.values()]
+          .filter(starts)
+          .sort(
+            (a, b) =>
+              b.sentTo * 2 + b.receivedFrom - (a.sentTo * 2 + a.receivedFrom) ||
+              a.address.localeCompare(b.address),
+          )
+          .slice(0, limit)
+          .map(p => clean(p)),
+      };
     },
     'Draft/resolve': ({ opId, id, choice }) => {
       const draft = must(fx.store, 'Draft', id, 'This draft no longer exists.');
+      unlocked(draft);
       const { conflict, ...rest } = draft;
       const revision = Math.max(draft.revision, conflict?.theirsRevision ?? 0) + 1;
       const copyId = choice === 'keepBoth' ? `${draft.accountId}:draft-${fx.id('n')}` : undefined;
@@ -288,14 +384,35 @@ export function compose(fx: Fixture) {
           accountId: draft.accountId,
           threadId: draft.threadId,
           internetId: `<${id}.${fx.seed}@fixture.example>`,
+          revision: draft.revision,
           state: later ? 'scheduled' : 'queued',
           queuedAt: fx.now,
           notBefore: later ? action.notBefore! : undoAt,
           toNames: [...draft.to, ...draft.cc].slice(0, 20).map(a => a.name ?? a.address),
           subject: draft.subject,
         });
+        // The receipt is undoable while the send is held: `Operation/undo` cancels it (FR-14), one undo stack for Z.
         const { value, receipt } = fx.write(
-          { opId, kind: 'Submission/set', targets: [id], undoable: false },
+          {
+            opId,
+            kind: 'Submission/set',
+            targets: [id],
+            undoUntil: sub.notBefore,
+            undo: undoOpId => {
+              const held = fx.store.get('Submission', id);
+              if (!held || (held.state !== 'queued' && held.state !== 'scheduled'))
+                return fail(
+                  'conflict',
+                  held?.state === 'sending'
+                    ? 'This message is sending now.'
+                    : 'This message can no longer be unsent.',
+                );
+              return fx.write(
+                { opId: undoOpId, kind: 'Submission/set', undoable: false, scope: 'send' },
+                tx => cancel(tx, held),
+              ).receipt;
+            },
+          },
           tx => {
             tx.put('Draft', { ...draft, submissionId: id });
             return tx.put('Submission', sub);
@@ -303,7 +420,7 @@ export function compose(fx: Fixture) {
         );
         if (action.alsoDone) fx.alsoDone.add(id);
         schedule(value);
-        return { submission: value, receipt: { ...receipt, undoUntil: value.notBefore } };
+        return { submission: value, receipt };
       }
       const sub = must(
         fx.store,
@@ -317,6 +434,7 @@ export function compose(fx: Fixture) {
         reschedule: ['queued', 'scheduled', 'suspended'],
         sendAnyway: ['uncertain'],
         retry: ['failed'],
+        cancel: ['failed', 'uncertain', 'suspended'],
       };
       if (!allowed[action.type]!.includes(sub.state))
         fail(
@@ -327,30 +445,23 @@ export function compose(fx: Fixture) {
               ? 'This message is sending now.'
               : 'This message cannot do that now.',
         );
+      if ('revision' in action && action.revision !== undefined && action.revision !== sub.revision)
+        fail('stateMismatch', 'This message changed. Open it again before sending.');
       const { problem: _, ...rest } = sub;
-      const next: Submission =
-        action.type === 'undo'
-          ? { ...sub, state: 'cancelled' }
-          : action.type === 'reschedule'
-            ? { ...rest, state: 'scheduled', notBefore: action.notBefore }
-            : { ...rest, state: 'queued', notBefore: fx.now };
+      const stop = action.type === 'undo' || action.type === 'cancel';
       const { value, receipt } = fx.write(
         { opId, kind: 'Submission/set', targets: [sub.id], undoable: false },
-        tx => {
-          if (action.type === 'undo') {
-            const d = tx.get('Draft', sub.draftId);
-            if (d) {
-              const { submissionId: __, ...draft } = d;
-              tx.put('Draft', draft);
-            }
-          }
-          return tx.put('Submission', next);
-        },
+        tx =>
+          stop
+            ? cancel(tx, sub)
+            : tx.put(
+                'Submission',
+                action.type === 'reschedule'
+                  ? { ...rest, state: 'scheduled', notBefore: action.notBefore }
+                  : { ...rest, state: 'queued', notBefore: fx.now },
+              ),
       );
-      if (action.type === 'undo') {
-        fx.runs.get(sub.id)?.();
-        fx.runs.delete(sub.id);
-      } else schedule(value);
+      if (!stop) schedule(value);
       return { submission: value, receipt };
     },
 
@@ -425,6 +536,14 @@ export function compose(fx: Fixture) {
       );
       return { event: value, receipt };
     },
+    'Event/hide': ({ opId, ids, hidden }) =>
+      // Aplos-side only, like a calendar's visibility: no provider write, so nobody is told (FR-21).
+      fx.write({ opId, kind: 'Event/hide', targets: ids }, tx => {
+        for (const id of ids) {
+          const e = tx.get('Event', id) ?? fail('notFound', 'This event is no longer available.');
+          tx.put('Event', clean({ ...e, hidden: hidden || undefined }));
+        }
+      }).receipt,
     'Event/rsvp': ({ opId, id, response }) => {
       const event = must(fx.store, 'Event', id, 'This event is no longer available.');
       if (!event.can.rsvp) fail('unsupported', 'This event has no invitation to answer.');
@@ -438,6 +557,11 @@ export function compose(fx: Fixture) {
     },
     'Event/extract': ({ opId, threadId }) => {
       const t = must(fx.store, 'Thread', threadId, 'This conversation is no longer available.');
+      // The Plans model reads the thread, so the account's AI toggle bounds it (FR-8).
+      if (!fx.store.get('Account', t.accountId)?.aiAllowed)
+        fail('forbidden', "AI is turned off for this account's mail.", {
+          reasonCode: 'ai.accountExcluded',
+        });
       const open = fx.store.all('Plan').filter(p => p.threadId === threadId && p.state === 'open');
       const day = addDays(localDay(fx.now, fx.zone), 1);
       const { value, receipt } = fx.write({ opId, kind: 'Event/extract', undoable: false }, tx =>

@@ -11,9 +11,12 @@ import type { Fixture } from '../engine';
 import { aiProviders, curatedModels } from '../data/defaults';
 import { atLocal, addDays, localDay } from '../time';
 import { actOn } from './mail';
+import { ownBlob } from './core';
+import { requireScope } from '@aplos/contract/access';
 import { clean, fail, getRows, must, plainHtml, type Part } from './util';
 
 type Feature = 'ask' | 'summaries' | 'drafts' | 'plans' | 'voice';
+type Block = NonNullable<AskTurn['answer']>['blocks'][number];
 
 /**
  * AI on canned answers: summaries after a short delay on the engine clock, Ask with `progress` frames and citations, and
@@ -34,10 +37,35 @@ export function ai(fx: Fixture) {
         `Add a ${model(feature).provider === 'groq' ? 'Groq' : 'provider'} key in Settings → AI to use this.`,
         { reasonCode: 'ai.missingKey' },
       );
+    // The `failNextAi` knob: the provider fails this once, with Aplos's own copy for the reason (FR-17, FR-33).
+    const failure = feature === 'ask' ? undefined : fx.aiFailures.get(feature);
+    if (failure) {
+      fx.aiFailures.delete(feature);
+      fail('providerError', failure.message ?? 'The AI provider could not answer. Try again.', {
+        reasonCode: failure.reasonCode,
+      });
+    }
   };
   const job = (j: AiJob) => fx.write({ kind: 'AiJob' }, tx => tx.put('AiJob', j));
   const conv = (id: string) =>
     must(fx.store, 'Conversation', id, 'This conversation no longer exists.');
+  /** Accounts whose mail may go to AI: "Use this account's mail for AI" bounds every AI scope (freeze FR-8). */
+  const aiAccounts = () =>
+    new Set(
+      fx.store
+        .all('Account')
+        .filter(a => a.aiAllowed)
+        .map(a => a.id),
+    );
+  /** A thread an AI call names must belong to an AI-allowed account, else `forbidden`; naming it never widens the scope. */
+  const aiThread = (threadId: string) => {
+    const t = must(fx.store, 'Thread', threadId, 'This conversation is no longer available.');
+    if (!aiAccounts().has(t.accountId))
+      fail('forbidden', "AI is turned off for this account's mail.", {
+        reasonCode: 'ai.accountExcluded',
+      });
+    return t;
+  };
 
   /** Threads that best match a question's words, else the top of Do now. */
   const sources = (question: string, accountIds?: string[]): ThreadRow[] => {
@@ -103,7 +131,7 @@ export function ai(fx: Fixture) {
 
   return {
     'Ai/request': ({ opId, kind, threadId, force }) => {
-      const t = must(fx.store, 'Thread', threadId, 'This conversation is no longer available.');
+      const t = aiThread(threadId);
       need(kind === 'plan' ? 'plans' : 'summaries');
       const id = `job-${fx.id('n')}`;
       const m = model(kind === 'plan' ? 'plans' : 'summaries');
@@ -173,9 +201,7 @@ export function ai(fx: Fixture) {
     },
     'Ai/draft': ({ instruction, threadId }) => {
       need('drafts');
-      const t = threadId
-        ? must(fx.store, 'Thread', threadId, 'This conversation is no longer available.')
-        : undefined;
+      const t = threadId ? aiThread(threadId) : undefined;
       const first = t?.fromName.split(' ')[0];
       const html = `${first ? `<p>Hi ${first},</p>` : ''}${plainHtml(`Thanks for your note. ${instruction.trim().replace(/\.?$/, '.')}`)}<p>Warmly,<br>Alex</p>`;
       return clean({
@@ -183,10 +209,12 @@ export function ai(fx: Fixture) {
         subject: t ? undefined : instruction.trim().split(/\s+/).slice(0, 6).join(' '),
       });
     },
-    'Ai/transcribe': ({ blobId }) => {
+    'Ai/transcribe': ({ blobId }, cx) => {
       need('voice');
-      if (!fx.blobs.has(blobId)) fail('notFound', 'This recording is no longer available.');
-      return { text: 'This is a stand-in transcription from the fixture engine.' };
+      ownBlob(fx, cx.caller, blobId, 'This recording is no longer available.');
+      return {
+        text: fx.transcripts.shift() ?? 'This is a stand-in transcription from the fixture engine.',
+      };
     },
     'Ai/cancel': ({ requestId }) => {
       const ids = requestId
@@ -281,24 +309,38 @@ export function ai(fx: Fixture) {
         turnId = fx.id('turn');
       const id = conversationId ? conv(conversationId).id : fx.id('conv');
       const prev = fx.store.get('Conversation', id);
-      const accountIds =
-        scope?.accountIds ??
-        fx.store
-          .all('Account')
-          .filter(a => a.aiAllowed)
-          .map(a => a.id);
+      const allowed = aiAccounts();
+      const accountIds = (scope?.accountIds ?? [...allowed]).filter(id => allowed.has(id));
       const excluded = fx.store
         .all('Account')
         .filter(a => !a.aiAllowed)
         .map(a => a.id);
       const found = sources(question, accountIds);
-      const citations = found.map((t, i) => cite(t, i + 1));
-      const parts = found.length
-        ? found.map((t, i) => `${t.summary.text ?? t.subject} [${i + 1}].`)
-        : ['I could not find anything about that in your mail.'];
-      const target = context?.threadId ? fx.store.get('Thread', context.threadId) : undefined;
+      const script = fx.askScripts.shift();
+      const failure = fx.aiFailures.get('ask');
+      fx.aiFailures.delete('ask');
+      const failAt = script?.failAt ?? (failure ? 'step' : undefined);
+      const problem = clean({
+        reasonCode: 'ai.failed',
+        message: 'Ask could not finish. Try again.',
+        ...failure,
+        ...script?.problem,
+      });
+      const citations = script?.citations ?? found.map((t, i) => cite(t, i + 1));
+      // Paragraphs without `[n]` markers; each chip's place is a `cites` offset (FR-30).
+      const blocks: Block[] =
+        script?.blocks ??
+        (found.length
+          ? found.map((t, i) => {
+              const said = (t.summary.text ?? t.subject).replace(/[.\s]+$/, '');
+              return { text: `${said}.`, cites: [{ at: said.length, n: i + 1 }] };
+            })
+          : [{ text: 'I could not find anything about that in your mail.' }]);
+      const context_ = context?.threadId ? fx.store.get('Thread', context.threadId) : undefined;
+      const target = context_ && allowed.has(context_.accountId) ? context_ : undefined;
       const proposals: Proposal[] =
-        target && /\b(reply|answer|respond|write back)\b/i.test(question)
+        script?.proposals ??
+        (target && /\b(reply|answer|respond|write back)\b/i.test(question)
           ? [
               {
                 kind: 'reply',
@@ -317,7 +359,7 @@ export function ai(fx: Fixture) {
                 },
               },
             ]
-          : [];
+          : []);
       const m = model('ask');
       const turn: AskTurn = clean({
         id: turnId,
@@ -344,54 +386,78 @@ export function ai(fx: Fixture) {
           { frame: 'progress', runId, source: 'ask', turnId, ...frame } as never,
           cx.sessionId,
         );
+      const finish = (patch: Partial<AskTurn>) => {
+        fx.runs.delete(runId);
+        setTurn(id, turnId, t => ({ ...t, ...patch }));
+        progress({ kind: 'done' });
+      };
+      const fails = (stepState: 'running' | 'done', shown: Block[]) => () => {
+        progress({ kind: 'step', step: { ...step, state: 'error' } });
+        progress({ kind: 'error', problem });
+        finish({
+          ...(shown.length ? { answer: { blocks: shown } } : {}),
+          problem,
+          steps: [{ ...step, state: stepState === 'running' ? 'error' : 'done' }],
+        });
+      };
       const timeline: [number, () => void][] = [
         [100, () => progress({ kind: 'step', step: { ...step, state: 'running' } })],
-        [
+      ];
+      if (failAt === 'step') timeline.push([400, fails('running', [])]);
+      else {
+        timeline.push([
           400,
           () => progress({ kind: 'step', step: { ...step, state: 'done', count: found.length } }),
-        ],
-        [550, () => progress({ kind: 'text', delta: parts[0]! })],
-        [
-          700,
-          () => {
-            if (parts[1]) progress({ kind: 'text', delta: ` ${parts[1]}` });
-          },
-        ],
-        // Chips and cards appear as each becomes known, before the turn is stored.
-        [
-          750,
-          () => {
-            for (const citation of citations) progress({ kind: 'citation', citation });
-          },
-        ],
-        [
-          800,
-          () => {
-            for (const proposal of proposals) progress({ kind: 'proposal', proposal });
-          },
-        ],
-        [
-          850,
-          () => {
-            fx.runs.delete(runId);
-            setTurn(id, turnId, t => ({
-              ...t,
-              answer: { blocks: parts.map(text => ({ text })) },
-              citations,
-              noSource: !found.length,
-              proposals,
-              steps: [{ ...step, state: 'done', count: found.length }],
-            }));
-            progress({ kind: 'done' });
-          },
-        ],
-      ];
+        ]);
+        // Each paragraph streams, then its chips at their offsets in the text streamed so far.
+        let streamed = 0;
+        blocks.forEach((b, i) => {
+          const sep = i ? '\n\n' : '';
+          const base = streamed + sep.length;
+          streamed = base + b.text.length;
+          timeline.push([
+            550 + 150 * i,
+            () => {
+              progress({ kind: 'text', delta: `${sep}${b.text}` });
+              for (const c of b.cites ?? []) {
+                const citation = citations.find(x => x.n === c.n);
+                if (citation) progress({ kind: 'citation', citation, at: base + c.at });
+              }
+            },
+          ]);
+          if (failAt === 'text' && i === 0) timeline.push([560, fails('done', [b])]);
+        });
+        const end = 550 + 150 * blocks.length;
+        const placed = new Set(blocks.flatMap(b => (b.cites ?? []).map(c => c.n)));
+        timeline.push(
+          [
+            end,
+            () => {
+              // Chips and cards appear as each becomes known, before the turn is stored.
+              for (const citation of citations)
+                if (!placed.has(citation.n)) progress({ kind: 'citation', citation });
+              for (const proposal of proposals) progress({ kind: 'proposal', proposal });
+            },
+          ],
+          [
+            end + 100,
+            () =>
+              finish({
+                answer: { blocks },
+                citations,
+                noSource: !found.length && !script?.citations?.length,
+                proposals,
+                steps: [{ ...step, state: 'done', count: found.length }],
+              }),
+          ],
+        );
+      }
       const cancels = timeline.map(([ms, fn]) => fx.clock.after(ms, fn));
       fx.runs.set(runId, () => {
         cancels.forEach(c => c());
         setTurn(id, turnId, t => ({
           ...t,
-          answer: { blocks: [{ text: parts[0]! }] },
+          answer: { blocks: blocks.slice(0, 1) },
           citations: citations.slice(0, 1),
           stopped: true,
           steps: [{ ...step, state: 'done', count: found.length }],
@@ -407,7 +473,7 @@ export function ai(fx: Fixture) {
       stop();
       return { cancelled: true };
     },
-    'Ask/decide': ({ opId, conversationId, turnId, proposalId, accept }) => {
+    'Ask/decide': ({ opId, conversationId, turnId, proposalId, accept }, cx) => {
       const c = conv(conversationId);
       const turn =
         c.turns.find(t => t.id === turnId) ??
@@ -417,8 +483,28 @@ export function ai(fx: Fixture) {
         fail('notFound', 'This suggestion is no longer available.');
       if (proposal.state !== 'open') fail('conflict', 'This suggestion was already answered.');
       let draftId: string | undefined, eventId: string | undefined;
+      // An event that invites anyone but the owner sends invitations, so accepting it needs `send` (FR-4).
+      const cal =
+        accept && proposal.kind === 'addEvent'
+          ? (proposal.calendarId && fx.store.get('Calendar', proposal.calendarId)) ||
+            fx.store.all('Calendar').find(x => x.primary) ||
+            fail('notFound', 'Connect a calendar first.')
+          : undefined;
+      const owner = cal ? fx.store.get('Account', cal.accountId) : undefined;
+      const guests =
+        proposal.kind === 'addEvent' && owner
+          ? (proposal.event.attendees ?? []).filter(
+              a => a.address.toLowerCase() !== owner.address.toLowerCase(),
+            )
+          : [];
+      if (guests.length) requireScope(cx.caller, 'send');
       const { receipt } = fx.write(
-        { opId, kind: 'Ask/decide', provider: accept && proposal.kind !== 'reply' },
+        {
+          opId,
+          kind: 'Ask/decide',
+          provider: accept && proposal.kind !== 'reply',
+          ...(guests.length ? { scope: 'send', undoUntil: fx.now + 10_000 } : {}),
+        },
         tx => {
           if (accept && proposal.kind === 'reply') {
             const accountId =
@@ -445,11 +531,14 @@ export function ai(fx: Fixture) {
               sync: 'localOnly',
             });
           }
-          if (accept && proposal.kind === 'addEvent') {
-            const cal =
-              (proposal.calendarId && tx.get('Calendar', proposal.calendarId)) ||
-              fx.store.all('Calendar').find(x => x.primary) ||
-              fail('notFound', 'Connect a calendar first.');
+          if (accept && proposal.kind === 'addEvent' && cal && owner) {
+            const self = {
+              address: owner.address,
+              name: owner.name,
+              response: 'accepted',
+              organizer: true,
+              self: true,
+            };
             eventId = `${cal.accountId}:ev-${fx.id('n')}`;
             tx.put(
               'Event',
@@ -465,7 +554,21 @@ export function ai(fx: Fixture) {
                 end: proposal.event.end,
                 allDay: proposal.event.allDay,
                 location: proposal.event.location,
-                attendees: [],
+                organizer: guests.length ? self : undefined,
+                attendees: guests.length
+                  ? [
+                      self,
+                      ...guests.map(a =>
+                        clean({
+                          address: a.address.toLowerCase(),
+                          name: a.name,
+                          response: 'needsAction',
+                          organizer: false,
+                          self: false,
+                        }),
+                      ),
+                    ]
+                  : [],
                 status: 'confirmed',
                 can: { edit: true, move: true, delete: true, rsvp: false, editGuests: true },
                 sync: 'pending',

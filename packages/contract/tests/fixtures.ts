@@ -168,6 +168,7 @@ export const submission: Submission = {
   accountId: 'a1',
   threadId: 'a1:t1',
   internetId: '<s1@mail.example>',
+  revision: 2,
   state: 'uncertain',
   queuedAt: t0 - 8_000,
   notBefore: t0,

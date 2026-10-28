@@ -1,4 +1,13 @@
-import type { AccountStatus, Frame, HostEvent, Submission } from '@aplos/contract';
+import type {
+  AccountStatus,
+  Citation,
+  ErrorBody,
+  Event,
+  Frame,
+  HostEvent,
+  Proposal,
+  Submission,
+} from '@aplos/contract';
 
 /**
  * The knobs of the test-only `Fixture/control` channel (plan 10 section 4.1, plan 30 section 8.1 item 1). It is a call on
@@ -14,6 +23,31 @@ import type { AccountStatus, Frame, HostEvent, Submission } from '@aplos/contrac
 export interface Ordering {
   mode: 'receiptFirst' | 'frameFirst' | 'together';
   delayMs?: number;
+}
+
+/** How a connect, reconnect or permission flow ends: `failed` with `auth.wrongAccount`, `auth.denied`, `auth.timeout`... */
+export interface ConnectOutcome {
+  outcome: 'connected' | 'failed' | 'cancelled';
+  reasonCode?: string;
+}
+
+/** What the next `Ask/run` streams and stores instead of its canned answer (FR-17). */
+export interface AskScript {
+  /** Answer paragraphs, without `[n]` markers, and where each one's chips sit. */
+  blocks?: { text: string; cites?: { at: number; n: number }[] }[];
+  citations?: Citation[];
+  /** E.g. an `addEvent` with guests, for the Ask card and `Ask/decide`'s `send` rule. */
+  proposals?: Proposal[];
+  /** Fail mid-run: after the search step starts, or after the first paragraph streams. */
+  failAt?: 'step' | 'text';
+  problem?: { reasonCode: string; message?: string };
+}
+
+/** How the next `Search/remote` ends: these thread ids join matching search windows, or the run fails (FR-17). */
+export interface SearchScript {
+  ids?: string[];
+  /** `paused` (with `resumeAt`) or `unavailable`: the run reports it and the session's search windows stop with it. */
+  error?: ErrorBody;
 }
 
 export type SetupState =
@@ -58,6 +92,32 @@ export type ControlArgs =
       state: Submission['state'];
       problem?: { reasonCode: string; message?: string; until?: number };
     }
+  /**
+   * How a connect flow ends (FR-17): with `connectId`, end that live flow after `delayMs` (default now); without it, the
+   * next flow ends this way after `delayMs` (default 800). Covers the reconnect sheet's wrong account, denied, timed out.
+   */
+  | ({ knob: 'resolveConnect'; connectId?: string; delayMs?: number } & ConnectOutcome)
+  /** Script the next `Ask/run`: its answer, citations and proposals, or a failure mid-stream (FR-17). */
+  | ({ knob: 'askScript' } & AskScript)
+  /** The next call of an AI feature fails with this copy key (Ask fails mid-stream; the others reject the call). */
+  | {
+      knob: 'failNextAi';
+      feature: 'ask' | 'summaries' | 'drafts' | 'plans' | 'voice';
+      reasonCode: string;
+      message?: string;
+    }
+  /** Script the next `Search/remote`: results that join the search window, or `paused` / `unavailable`. */
+  | ({ knob: 'searchRemote' } & SearchScript)
+  /** What the next `Ai/transcribe` hears. */
+  | { knob: 'transcribeResult'; text: string }
+  /** An event changed at the provider (another device, the organizer): the row moves as a sync would move it. */
+  | {
+      knob: 'calendarChange';
+      eventId: string;
+      patch: Partial<Omit<Event, 'id' | 'rev' | 'accountId'>>;
+      /** Gone at the provider instead. */
+      removed?: boolean;
+    }
   /** How the next send attempt ends. */
   | { knob: 'nextSendOutcome'; outcome: 'sent' | 'uncertain' | 'failed' }
   /** Move first-sync progress on: `steps` ticks (default 1), or straight `to` a state. Every account when `accountId` is absent. */
@@ -71,6 +131,8 @@ export type ControlArgs =
   /** Set the clock (`APLOS_NOW`); due timers fire on the way. Also sends the `clock` host event. */
   | { knob: 'setClock'; now: number }
   | { knob: 'advanceClock'; ms: number }
+  /** The Mac sleeps for `ms`: no timer fires on the way, then due timers fire late at wake (a send-later that falls due). */
+  | { knob: 'sleep'; ms: number }
   | { knob: 'setOrdering'; ordering: Ordering }
   /** Push frames exactly as given (stamped with the current `{dbEpoch, seq}`), to replay any ordering by hand. */
   | { knob: 'replay'; frames: FrameWithoutAt[] }
@@ -117,7 +179,7 @@ export interface Snapshot {
 }
 export type KnobResult<K extends Knob> = K extends 'snapshot'
   ? Snapshot
-  : K extends 'advanceClock' | 'setClock'
+  : K extends 'advanceClock' | 'setClock' | 'sleep'
     ? { now: number }
     : K extends 'deliverMail'
       ? { threadId: string; messageId: string }
