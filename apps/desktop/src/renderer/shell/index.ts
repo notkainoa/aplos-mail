@@ -30,7 +30,9 @@ export class NotImplementedError extends Error {
   readonly member: string;
 
   constructor(member: string) {
-    super(`renderer/shell: ${member} is not implemented yet. Lane ${SHELL_LANE} builds it on days 4-11.`);
+    super(
+      `renderer/shell: ${member} is not implemented yet. Lane ${SHELL_LANE} builds it on days 4-11.`,
+    );
     this.name = 'NotImplementedError';
     this.member = member;
   }
@@ -64,12 +66,13 @@ export interface SheetArgs {
 export type SheetName = keyof SheetArgs;
 
 /** The open sheet with its arguments. */
-export type OpenSheet = { [K in SheetName]: { readonly name: K; readonly args: SheetArgs[K] } }[SheetName];
+export type OpenSheet = {
+  [K in SheetName]: { readonly name: K; readonly args: SheetArgs[K] };
+}[SheetName];
 
 /** `openSheet`'s argument list: optional when every argument of that sheet is optional ('consent'), required otherwise ('reconnect'). */
-export type SheetArgsParam<K extends SheetName> = Record<string, never> extends SheetArgs[K]
-  ? [args?: SheetArgs[K]]
-  : [args: SheetArgs[K]];
+export type SheetArgsParam<K extends SheetName> =
+  Record<string, never> extends SheetArgs[K] ? [args?: SheetArgs[K]] : [args: SheetArgs[K]];
 
 /**
  * Opens a sheet over the current window (`--elev-dialog`, `settle`). One sheet at a time:

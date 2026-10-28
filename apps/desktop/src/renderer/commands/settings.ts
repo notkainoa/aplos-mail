@@ -6,19 +6,21 @@
 import { copyProblem } from './copy';
 
 /** The eight Settings sections, in nav order (DESIGN §7.10). */
-export type SettingSection = 'general' | 'mail' | 'calendar' | 'ai' | 'notifications' | 'accounts' | 'keyboard' | 'help';
+export type SettingSection =
+  'general' | 'mail' | 'calendar' | 'ai' | 'notifications' | 'accounts' | 'keyboard' | 'help';
 
 /** Each section's nav label, in order. */
-export const SETTING_SECTIONS: readonly { readonly id: SettingSection; readonly label: string }[] = [
-  { id: 'general', label: 'General' },
-  { id: 'mail', label: 'Mail' },
-  { id: 'calendar', label: 'Calendar' },
-  { id: 'ai', label: 'AI' },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'accounts', label: 'Accounts' },
-  { id: 'keyboard', label: 'Keyboard' },
-  { id: 'help', label: 'Help & about' },
-];
+export const SETTING_SECTIONS: readonly { readonly id: SettingSection; readonly label: string }[] =
+  [
+    { id: 'general', label: 'General' },
+    { id: 'mail', label: 'Mail' },
+    { id: 'calendar', label: 'Calendar' },
+    { id: 'ai', label: 'AI' },
+    { id: 'notifications', label: 'Notifications' },
+    { id: 'accounts', label: 'Accounts' },
+    { id: 'keyboard', label: 'Keyboard' },
+    { id: 'help', label: 'Help & about' },
+  ];
 
 /** A Settings deep link: a section, optionally with a row anchor. */
 export type SettingRoute = `settings/${SettingSection}` | `settings/${SettingSection}#${string}`;
@@ -66,10 +68,12 @@ export function settingRoute(entry: Pick<SettingEntry, 'section' | 'rowAnchor'>)
 }
 
 /** Reads "settings/<section>" or "settings/<section>#<row>"; null for anything else. */
-export function parseSettingRoute(route: string): { readonly section: SettingSection; readonly row?: string } | null {
+export function parseSettingRoute(
+  route: string,
+): { readonly section: SettingSection; readonly row?: string } | null {
   const match = /^settings\/([a-z]+)(?:#([A-Za-z][\w-]*))?$/.exec(route);
   if (!match) return null;
-  const section = SETTING_SECTIONS.find((s) => s.id === match[1])?.id;
+  const section = SETTING_SECTIONS.find(s => s.id === match[1])?.id;
   if (!section) return null;
   return match[2] ? { section, row: match[2] } : { section };
 }
@@ -85,10 +89,14 @@ function sameEntry(a: SettingEntry, b: SettingEntry): boolean {
 }
 
 function check(entry: SettingEntry): void {
-  if (!SETTING_SECTIONS.some((s) => s.id === entry.section)) throw new Error(`${entry.id}: unknown section "${entry.section}"`);
-  if (!ANCHOR.test(entry.rowAnchor)) throw new Error(`${entry.id}: bad row anchor "${entry.rowAnchor}"`);
+  if (!SETTING_SECTIONS.some(s => s.id === entry.section))
+    throw new Error(`${entry.id}: unknown section "${entry.section}"`);
+  if (!ANCHOR.test(entry.rowAnchor))
+    throw new Error(`${entry.id}: bad row anchor "${entry.rowAnchor}"`);
   if (entry.id !== settingId(entry.section, entry.rowAnchor)) {
-    throw new Error(`${entry.id}: a setting id must be ${settingId(entry.section, entry.rowAnchor)}`);
+    throw new Error(
+      `${entry.id}: a setting id must be ${settingId(entry.section, entry.rowAnchor)}`,
+    );
   }
   for (const text of [entry.label, ...(entry.keywords ?? [])]) {
     const problem = copyProblem(text);
@@ -102,7 +110,8 @@ export function createSettingsTable(): SettingsTable {
     register(entry) {
       check(entry);
       const existing = entries.get(entry.id);
-      if (existing && !sameEntry(existing, entry)) throw new Error(`Duplicate setting id ${entry.id}`);
+      if (existing && !sameEntry(existing, entry))
+        throw new Error(`Duplicate setting id ${entry.id}`);
       const kept = existing ?? entry;
       entries.set(entry.id, kept);
       return () => {
@@ -110,7 +119,7 @@ export function createSettingsTable(): SettingsTable {
       };
     },
     list: () => [...entries.values()],
-    get: (id) => entries.get(id),
+    get: id => entries.get(id),
   };
 }
 

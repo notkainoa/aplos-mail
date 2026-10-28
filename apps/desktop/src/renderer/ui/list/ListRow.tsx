@@ -22,7 +22,7 @@ function escapeRegExp(text: string): string {
 
 /** Bold the search terms (search.html); case-insensitive, never changes the text. */
 function highlighted(text: string, terms: readonly string[] | undefined): ReactNode {
-  const words = (terms ?? []).map((t) => t.trim()).filter((t) => t.length > 0);
+  const words = (terms ?? []).map(t => t.trim()).filter(t => t.length > 0);
   if (words.length === 0) return text;
   const pattern = new RegExp(`(${words.map(escapeRegExp).join('|')})`, 'gi');
   return text.split(pattern).map((part, i) =>
@@ -82,8 +82,14 @@ export function ListRow(props: ListRowProps) {
     );
 
   // The action count sizes the date column so the hover overlay never spills over the line (DESIGN §5 rule 17).
-  const rowStyle = hoverActions.length > 0 ? ({ '--ui-actions': hoverActions.length } as CSSProperties) : undefined;
-  const accountStyle = account && showAccountDot ? ({ '--swatch': `var(--tag-${account.color})` } as CSSProperties) : undefined;
+  const rowStyle =
+    hoverActions.length > 0
+      ? ({ '--ui-actions': hoverActions.length } as CSSProperties)
+      : undefined;
+  const accountStyle =
+    account && showAccountDot
+      ? ({ '--swatch': `var(--tag-${account.color})` } as CSSProperties)
+      : undefined;
 
   return (
     <div
@@ -107,11 +113,23 @@ export function ListRow(props: ListRowProps) {
     >
       {swipe ? (
         <>
-          <span className="ui-list-row__underlay" data-side="right" data-kind={swipe.right} aria-hidden="true" hidden>
+          <span
+            className="ui-list-row__underlay"
+            data-side="right"
+            data-kind={swipe.right}
+            aria-hidden="true"
+            hidden
+          >
             <Icon name={COMMIT_ICON[swipe.right]} />
             {COMMIT_WORD[swipe.right]}
           </span>
-          <span className="ui-list-row__underlay" data-side="left" data-kind={swipe.left} aria-hidden="true" hidden>
+          <span
+            className="ui-list-row__underlay"
+            data-side="left"
+            data-kind={swipe.left}
+            aria-hidden="true"
+            hidden
+          >
             <Icon name={COMMIT_ICON[swipe.left]} />
             {COMMIT_WORD[swipe.left]}
           </span>
@@ -120,7 +138,9 @@ export function ListRow(props: ListRowProps) {
 
       <span className="ui-list-row__lead" aria-hidden="true">
         {picking ? (
-          <span className="ui-list-row__pick">{picked ? <Icon name="check" size="xs" /> : null}</span>
+          <span className="ui-list-row__pick">
+            {picked ? <Icon name="check" size="xs" /> : null}
+          </span>
         ) : (
           <span className="ui-list-row__dot" />
         )}
@@ -133,14 +153,27 @@ export function ListRow(props: ListRowProps) {
 
       <span className="ui-list-row__line">
         {rejected ? (
-          <ErrorLine kind="writeRejected" op={rejected.op} placement="row" onAction={() => rejected.onRetry()} />
+          <ErrorLine
+            kind="writeRejected"
+            op={rejected.op}
+            placement="row"
+            onAction={() => rejected.onRetry()}
+          />
         ) : (
           <>
             {due ? <Chip kind="due" due={due} format="short" /> : null}
-            <span className="ui-list-row__primary" dir="auto" data-has-secondary={secondary ? 'true' : undefined}>
+            <span
+              className="ui-list-row__primary"
+              dir="auto"
+              data-has-secondary={secondary ? 'true' : undefined}
+            >
               {highlighted(primary, highlight)}
             </span>
-            {secondary ? <span className="ui-list-row__secondary" dir="auto">{highlighted(secondary, highlight)}</span> : null}
+            {secondary ? (
+              <span className="ui-list-row__secondary" dir="auto">
+                {highlighted(secondary, highlight)}
+              </span>
+            ) : null}
           </>
         )}
       </span>
@@ -174,7 +207,7 @@ export function ListRow(props: ListRowProps) {
         {hoverActions.length > 0 ? (
           <span className="ui-list-row__actions">
             <span className="ui-list-row__actions-fill">
-              {hoverActions.map((action) => (
+              {hoverActions.map(action => (
                 <Action
                   key={action.commandId}
                   variant="icon"
@@ -184,7 +217,7 @@ export function ListRow(props: ListRowProps) {
                   tooltip={tooltipText(action.label, action.commandId)}
                   hintKey={keycapFor(action.commandId)}
                   duplicate
-                  onPress={(anchor) => onAction(action.commandId, anchor)}
+                  onPress={anchor => onAction(action.commandId, anchor)}
                 />
               ))}
             </span>

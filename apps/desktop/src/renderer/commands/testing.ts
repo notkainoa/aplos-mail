@@ -16,7 +16,10 @@ export function wiredRegistry(prefs: KeyPrefs = DEFAULT_KEY_PREFS): Registry {
   const registry = createAppRegistry(prefs);
   for (const spec of [...COMMANDS, ...CONTROLS]) {
     const page = 'page' in spec && spec.page === true;
-    registry.attach(spec.id, page ? { run: () => undefined, children: () => [] } : { run: () => undefined });
+    registry.attach(
+      spec.id,
+      page ? { run: () => undefined, children: () => [] } : { run: () => undefined },
+    );
   }
   return registry;
 }

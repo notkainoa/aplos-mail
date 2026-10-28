@@ -6,7 +6,14 @@
  * --sunken track with a --paper thumb (--elev-puck); 'selection' is rows with a --puck fill (sidebar, Settings nav).
  * Before the first measure (server render) the selected item paints its own fill, so nothing is ever unselected.
  */
-import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react';
 import type { ComponentPropsMap, PuckItem } from '../props';
 import { PartIcon, PartTip, formatCount, keysFor } from './parts';
 
@@ -18,7 +25,21 @@ interface Thumb {
   h: number;
 }
 
-function PuckCell({ item, selected, role, focusable, onSelect, onKeyDown }: { item: PuckItem; selected: boolean; role: 'tabs' | 'navigation' | 'radio'; focusable: boolean; onSelect: () => void; onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void }) {
+function PuckCell({
+  item,
+  selected,
+  role,
+  focusable,
+  onSelect,
+  onKeyDown,
+}: {
+  item: PuckItem;
+  selected: boolean;
+  role: 'tabs' | 'navigation' | 'radio';
+  focusable: boolean;
+  onSelect: () => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
+}) {
   const tipId = useId();
   const chords = keysFor(item.commandId);
   const hasTip = chords.length > 0 || item.tooltip !== undefined || item.shortLabel !== undefined;
@@ -41,17 +62,38 @@ function PuckCell({ item, selected, role, focusable, onSelect, onKeyDown }: { it
         onKeyDown={onKeyDown}
       >
         {item.icon ? <PartIcon name={item.icon} /> : null}
-        {item.swatch ? <i className="ui-puck__swatch" data-color={item.swatch} aria-hidden="true" /> : null}
+        {item.swatch ? (
+          <i className="ui-puck__swatch" data-color={item.swatch} aria-hidden="true" />
+        ) : null}
         <span className="ui-puck__label">{item.shortLabel ?? item.label}</span>
-        {item.count !== undefined ? <span className="ui-puck__count">{formatCount(item.count)}</span> : null}
+        {item.count !== undefined ? (
+          <span className="ui-puck__count">{formatCount(item.count)}</span>
+        ) : null}
       </button>
-      {hasTip ? <PartTip id={tipId} label={item.label} detail={item.tooltip} chords={chords} placement={role === 'navigation' ? 'end' : 'below'} /> : null}
+      {hasTip ? (
+        <PartTip
+          id={tipId}
+          label={item.label}
+          detail={item.tooltip}
+          chords={chords}
+          placement={role === 'navigation' ? 'end' : 'below'}
+        />
+      ) : null}
     </span>
   );
 }
 
-export function Puck({ kind, role, orientation, label, items, selectedId, onSelect }: ComponentPropsMap['Puck']) {
-  const vertical = (orientation ?? (kind === 'segmented' ? 'horizontal' : 'vertical')) === 'vertical';
+export function Puck({
+  kind,
+  role,
+  orientation,
+  label,
+  items,
+  selectedId,
+  onSelect,
+}: ComponentPropsMap['Puck']) {
+  const vertical =
+    (orientation ?? (kind === 'segmented' ? 'horizontal' : 'vertical')) === 'vertical';
   const trackRef = useRef<HTMLDivElement | null>(null);
   const thumbRef = useRef<HTMLSpanElement | null>(null);
   const baseW = useRef<number | null>(null);
@@ -63,7 +105,12 @@ export function Puck({ kind, role, orientation, label, items, selectedId, onSele
     const track = trackRef.current;
     if (!track) return;
     const measure = () => {
-      const cell = selectedId === null ? null : Array.from(track.querySelectorAll<HTMLElement>('[data-puck-id]')).find((el) => el.dataset.puckId === selectedId);
+      const cell =
+        selectedId === null
+          ? null
+          : Array.from(track.querySelectorAll<HTMLElement>('[data-puck-id]')).find(
+              el => el.dataset.puckId === selectedId,
+            );
       if (!cell || cell.offsetWidth === 0) {
         setThumb(null);
         setInstant(true);
@@ -71,7 +118,13 @@ export function Puck({ kind, role, orientation, label, items, selectedId, onSele
       }
       const w = cell.offsetWidth;
       baseW.current ??= w;
-      setThumb({ x: cell.offsetLeft, y: cell.offsetTop, sx: w / baseW.current, w: baseW.current, h: cell.offsetHeight });
+      setThumb({
+        x: cell.offsetLeft,
+        y: cell.offsetTop,
+        sx: w / baseW.current,
+        w: baseW.current,
+        h: cell.offsetHeight,
+      });
     };
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
@@ -88,15 +141,18 @@ export function Puck({ kind, role, orientation, label, items, selectedId, onSele
     setInstant(false);
   }, [thumb, instant]);
 
-  const enabled = items.filter((item) => !item.disabled);
+  const enabled = items.filter(item => !item.disabled);
   const roving = role !== 'navigation';
-  const focusId = selectedId !== null && enabled.some((item) => item.id === selectedId) ? selectedId : enabled[0]?.id;
+  const focusId =
+    selectedId !== null && enabled.some(item => item.id === selectedId)
+      ? selectedId
+      : enabled[0]?.id;
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!roving || event.nativeEvent.isComposing) return;
     const nextKeys = vertical ? ['ArrowDown'] : ['ArrowRight'];
     const prevKeys = vertical ? ['ArrowUp'] : ['ArrowLeft'];
-    const at = enabled.findIndex((item) => item.id === focusId);
+    const at = enabled.findIndex(item => item.id === focusId);
     let next = -1;
     if (nextKeys.includes(event.key)) next = (at + 1) % enabled.length;
     else if (prevKeys.includes(event.key)) next = (at - 1 + enabled.length) % enabled.length;
@@ -106,7 +162,9 @@ export function Puck({ kind, role, orientation, label, items, selectedId, onSele
     event.preventDefault();
     const id = enabled[next].id;
     onSelect(id);
-    trackRef.current?.querySelector<HTMLElement>(`[data-puck-id="${CSS.escape(id)}"] button`)?.focus();
+    trackRef.current
+      ?.querySelector<HTMLElement>(`[data-puck-id="${CSS.escape(id)}"] button`)
+      ?.focus();
   };
 
   const thumbStyle = thumb
@@ -132,7 +190,7 @@ export function Puck({ kind, role, orientation, label, items, selectedId, onSele
       aria-orientation={role === 'tabs' ? (vertical ? 'vertical' : 'horizontal') : undefined}
     >
       <span ref={thumbRef} className="ui-puck__thumb" aria-hidden="true" style={thumbStyle} />
-      {items.map((item) => (
+      {items.map(item => (
         <PuckCell
           key={item.id}
           item={item}

@@ -13,9 +13,9 @@ export function parseHex(hex) {
   }
   let digits = match[1];
   if (digits.length === 3) {
-    digits = [...digits].map((d) => d + d).join("");
+    digits = [...digits].map(d => d + d).join('');
   }
-  return [0, 2, 4].map((i) => parseInt(digits.slice(i, i + 2), 16) / 255);
+  return [0, 2, 4].map(i => parseInt(digits.slice(i, i + 2), 16) / 255);
 }
 
 export function toRgb(color) {
@@ -23,8 +23,8 @@ export function toRgb(color) {
 }
 
 export function toHex(color) {
-  const bytes = toRgb(color).map((c) => Math.round(Math.min(1, Math.max(0, c)) * 255));
-  return "#" + bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+  const bytes = toRgb(color).map(c => Math.round(Math.min(1, Math.max(0, c)) * 255));
+  return '#' + bytes.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export function srgbToLinear(c) {
@@ -50,8 +50,8 @@ export function toLab(color) {
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 }
 
-const rad = (degrees) => (degrees * Math.PI) / 180;
-const deg = (radians) => (radians * 180) / Math.PI;
+const rad = degrees => (degrees * Math.PI) / 180;
+const deg = radians => (radians * 180) / Math.PI;
 
 export function deltaE2000(colorA, colorB) {
   const [L1, a1, b1] = toLab(colorA);
@@ -133,7 +133,7 @@ export function compositeOver(fg, alpha, bg) {
 
 // APCA-W3 0.0.98G-4g lightness contrast (Lc). Advisory only.
 function apcaY(color) {
-  const [r, g, b] = toRgb(color).map((c) => c ** 2.4);
+  const [r, g, b] = toRgb(color).map(c => c ** 2.4);
   const y = 0.2126729 * r + 0.7151522 * g + 0.072175 * b;
   return y < 0.022 ? y + (0.022 - y) ** 1.414 : y;
 }

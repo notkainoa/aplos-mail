@@ -56,7 +56,12 @@ export function formatTime(d: Date): string {
 
 function monthDay(d: Date): string {
   const sameYear = d.getFullYear() === new Date(clock()).getFullYear();
-  return d.toLocaleDateString(LOCALE, sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString(
+    LOCALE,
+    sameYear
+      ? { month: 'short', day: 'numeric' }
+      : { month: 'short', day: 'numeric', year: 'numeric' },
+  );
 }
 
 function weekdayShort(d: Date): string {
@@ -116,7 +121,8 @@ export function formatLaterUntil(iso: IsoDateTime): string {
   const d = parse(iso);
   if (!d) return '';
   const off = dayOffset(d);
-  const day = off >= -1 && off <= 1 ? relativeDay(d, 'short') : `${weekdayShort(d)}, ${monthDay(d)}`;
+  const day =
+    off >= -1 && off <= 1 ? relativeDay(d, 'short') : `${weekdayShort(d)}, ${monthDay(d)}`;
   return isMidnight(d) ? day : `${day}, ${formatTime(d)}`;
 }
 
@@ -155,7 +161,16 @@ export function formatMessageTime(iso: IsoDateTime): string {
 export function formatFull(iso: IsoDateTime): string {
   const d = parse(iso);
   if (!d) return '';
-  return clean(d.toLocaleString(LOCALE, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }));
+  return clean(
+    d.toLocaleString(LOCALE, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }),
+  );
 }
 
 /** Attachment size, decimal units like Finder: "1 byte", "820 bytes", "312 KB", "4.2 MB", "1.1 GB". */
@@ -174,7 +189,7 @@ export function formatCount(n: number): string {
 
 /** "Jordan", "Jordan and Mina", "Jordan, you and Mina"; past `max` names: "Jordan, you, Mina and 4 others". */
 export function joinNames(names: readonly string[], max = 3): string {
-  const list = names.filter((n) => n.length > 0);
+  const list = names.filter(n => n.length > 0);
   if (list.length === 0) return '';
   if (list.length > max) {
     const rest = list.length - max;

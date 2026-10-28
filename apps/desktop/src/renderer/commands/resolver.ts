@@ -40,7 +40,12 @@ function usableInFocus(binding: Binding, chord: KeyChord, focus: FocusKind): boo
   }
   if (focus === 'control') {
     // Plain Space and Return press the focused button; any modifier makes it a shortcut (⇧Return confirms).
-    const activates = (chord.key === 'Space' || chord.key === 'Enter') && !chord.meta && !chord.ctrl && !chord.alt && !chord.shift;
+    const activates =
+      (chord.key === 'Space' || chord.key === 'Enter') &&
+      !chord.meta &&
+      !chord.ctrl &&
+      !chord.alt &&
+      !chord.shift;
     return !activates;
   }
   return true;
@@ -55,14 +60,17 @@ function usable(
 ): boolean {
   if (!usableInFocus(binding, chord, options.focus ?? 'none')) return false;
   // WCAG 2.1.4: with the switch off, every character chord is off unless its widget has focus.
-  if (!prefs.singleKeyShortcuts && isCharacterChord(chord) && !isModal(binding.context)) return false;
+  if (!prefs.singleKeyShortcuts && isCharacterChord(chord) && !isModal(binding.context))
+    return false;
   if (event.repeat && !binding.repeat) return false;
   if (!options.isEnabled) return binding.onlyWhen === undefined;
   return options.isEnabled(binding.commandId);
 }
 
 function rank(binding: Binding): number {
-  return binding.onlyWhen === undefined ? CONDITION_PRIORITY.length : CONDITION_PRIORITY.indexOf(binding.onlyWhen);
+  return binding.onlyWhen === undefined
+    ? CONDITION_PRIORITY.length
+    : CONDITION_PRIORITY.indexOf(binding.onlyWhen);
 }
 
 /** The guarded binding with the highest-priority condition, else the unguarded one. */
@@ -98,12 +106,14 @@ export function resolve(
   const chord = chordFromEvent(event);
   if (!chord) return null;
   const id = chordId(chord);
-  const matching = bindings.filter((b) => chordId(b.chord) === id);
+  const matching = bindings.filter(b => chordId(b.chord) === id);
   for (let depth = stack.length - 1; depth >= 0; depth -= 1) {
     const context = stack[depth];
-    const live = matching.filter((b) => b.context === context && usable(b, chord, event, prefs, options));
-    const tap = pickBinding(live.filter((b) => b.phase === 'tap'));
-    const hold = pickBinding(live.filter((b) => b.phase === 'hold'));
+    const live = matching.filter(
+      b => b.context === context && usable(b, chord, event, prefs, options),
+    );
+    const tap = pickBinding(live.filter(b => b.phase === 'tap'));
+    const hold = pickBinding(live.filter(b => b.phase === 'hold'));
     if (tap) {
       return hold && hold.holdFor === tap.commandId
         ? { commandId: tap.commandId, phase: 'tap', holdCommandId: hold.commandId, context, chord }

@@ -17,10 +17,13 @@ import { sheetProps } from './sheetModel';
 
 const registry = createAppRegistry();
 const html = (node: ReactNode) =>
-  renderToStaticMarkup(<CommandKeysProvider describe={(id) => registry.describeKeys(id)}>{node}</CommandKeysProvider>);
+  renderToStaticMarkup(
+    <CommandKeysProvider describe={id => registry.describeKeys(id)}>{node}</CommandKeysProvider>,
+  );
 const text = (markup: string) => markup.replace(/<[^>]*>/g, '');
 
-const BANNED = /\b(swipe through them|hold to talk|todo|todos|hide all|magic|ai-powered|copilot|beta)\b|!/i;
+const BANNED =
+  /\b(swipe through them|hold to talk|todo|todos|hide all|magic|ai-powered|copilot|beta)\b|!/i;
 function assertClean(markup: string) {
   assert.doesNotMatch(text(markup), BANNED, 'banned copy rendered');
   assert.doesNotMatch(markup, /backdrop-filter|gradient|sparkle|wand|robot|brain|\bstar\b/i);
@@ -35,7 +38,7 @@ const noop = () => {};
 
 test('manifest: the controls components are the five of props.ts', () => {
   assert.deepEqual(
-    COMPONENTS.filter((c) => c.family === 'controls').map((c) => c.name),
+    COMPONENTS.filter(c => c.family === 'controls').map(c => c.name),
     ['Switch', 'Checkbox', 'SwatchPicker', 'TextField', 'ShortcutSheet'],
   );
 });
@@ -55,7 +58,9 @@ test('Switch: role=switch, aria-checked and data-state follow `checked`', () => 
 });
 
 test('Switch: labelledBy replaces the aria-label', () => {
-  const markup = html(<Switch checked={false} label="Show all key hints" labelledBy="row-hints" onChange={noop} />);
+  const markup = html(
+    <Switch checked={false} label="Show all key hints" labelledBy="row-hints" onChange={noop} />,
+  );
   assert.match(markup, /aria-labelledby="row-hints"/);
   assert.doesNotMatch(markup, /aria-label="/);
 });
@@ -63,7 +68,15 @@ test('Switch: labelledBy replaces the aria-label', () => {
 test('Switch: disabled, and disabled with a reason keeps focus for the tooltip', () => {
   const disabled = html(<Switch checked label="Notifications" disabled onChange={noop} />);
   assert.match(disabled, /\sdisabled(=""|\s|>)/);
-  const explained = html(<Switch checked label="Notifications" disabled disabledReason="Turn on notifications in System Settings." onChange={noop} />);
+  const explained = html(
+    <Switch
+      checked
+      label="Notifications"
+      disabled
+      disabledReason="Turn on notifications in System Settings."
+      onChange={noop}
+    />,
+  );
   assert.doesNotMatch(explained, /\sdisabled(=""|\s|>)/);
   assert.match(explained, /aria-disabled="true"/);
 });
@@ -97,13 +110,18 @@ test('Checkbox: the label shows by default, or becomes aria-label', () => {
   const shown = html(<Checkbox checked={false} label="Remember me" onChange={noop} />);
   assert.equal(text(shown), 'Remember me');
   assert.doesNotMatch(shown, /aria-label/);
-  const hidden = html(<Checkbox checked={false} label="Pick this row" labelVisible={false} onChange={noop} />);
+  const hidden = html(
+    <Checkbox checked={false} label="Pick this row" labelVisible={false} onChange={noop} />,
+  );
   assert.equal(text(hidden), '');
   assert.match(hidden, /aria-label="Pick this row"/);
 });
 
 test('Checkbox: disabled and worst-case labels', () => {
-  assert.match(html(<Checkbox checked label="Mute" disabled onChange={noop} />), /\sdisabled(=""|\s|>)/);
+  assert.match(
+    html(<Checkbox checked label="Mute" disabled onChange={noop} />),
+    /\sdisabled(=""|\s|>)/,
+  );
   for (const label of [LONG_300, EMAIL_80, 'A', CJK, ARABIC, EMOJI]) {
     const markup = html(<Checkbox checked={false} label={label} onChange={noop} />);
     assert.equal(text(markup), label);
@@ -119,7 +137,7 @@ test('SwatchPicker: a radiogroup of the six colours with the fixed names, select
   assert.match(markup, /aria-label="Colour"/);
   assert.equal((markup.match(/role="radio"/g) ?? []).length, 6);
   assert.deepEqual(
-    SWATCHES.map((s) => s.name),
+    SWATCHES.map(s => s.name),
     ['Sky', 'Hill', 'Stamp', 'Dusk', 'Sand', 'Ember'],
   );
   for (const { color, name } of SWATCHES) {
@@ -128,7 +146,11 @@ test('SwatchPicker: a radiogroup of the six colours with the fixed names, select
   }
   assert.equal((markup.match(/aria-checked="true"/g) ?? []).length, 1);
   assert.match(markup, /aria-checked="true"[^>]*aria-label="Hill"/);
-  assert.equal((markup.match(/data-icon="check"/g) ?? []).length, 1, 'selection is a check, not colour alone');
+  assert.equal(
+    (markup.match(/data-icon="check"/g) ?? []).length,
+    1,
+    'selection is a check, not colour alone',
+  );
 });
 
 test('SwatchPicker: one tab stop (roving tabindex) for every selected colour', () => {
@@ -140,7 +162,9 @@ test('SwatchPicker: one tab stop (roving tabindex) for every selected colour', (
 });
 
 test('SwatchPicker: labelledBy and disabled', () => {
-  const markup = html(<SwatchPicker label="Colour" labelledBy="row-colour" value="sky" disabled onChange={noop} />);
+  const markup = html(
+    <SwatchPicker label="Colour" labelledBy="row-colour" value="sky" disabled onChange={noop} />,
+  );
   assert.match(markup, /aria-labelledby="row-colour"/);
   assert.doesNotMatch(markup, /role="radiogroup"[^>]*aria-label=/);
   assert.equal((markup.match(/\sdisabled(=""|\s|>)/g) ?? []).length, 6);
@@ -150,7 +174,16 @@ test('SwatchPicker: labelledBy and disabled', () => {
 /* -------------------------------- TextField -------------------------------- */
 
 test('TextField: placeholder-led field keeps its name as aria-label', () => {
-  const markup = html(<TextField id="addr" value="" onChange={noop} label="Email address" placeholder="you@example.com" type="email" />);
+  const markup = html(
+    <TextField
+      id="addr"
+      value=""
+      onChange={noop}
+      label="Email address"
+      placeholder="you@example.com"
+      type="email"
+    />,
+  );
   assert.match(markup, /<input /);
   assert.match(markup, /id="addr"/);
   assert.match(markup, /aria-label="Email address"/);
@@ -163,14 +196,24 @@ test('TextField: placeholder-led field keeps its name as aria-label', () => {
 });
 
 test('TextField: a visible label is a real <label for>', () => {
-  const markup = html(<TextField id="key" value="" onChange={noop} label="API key" labelVisible type="password" />);
+  const markup = html(
+    <TextField id="key" value="" onChange={noop} label="API key" labelVisible type="password" />,
+  );
   assert.match(markup, /<label class="ui-text-field-label" for="key">API key<\/label>/);
   assert.doesNotMatch(markup, /aria-label/);
   assert.match(markup, /type="password"/);
 });
 
 test('TextField: error sets aria-invalid, aria-describedby and one plain line with an icon and role=status', () => {
-  const markup = html(<TextField id="addr" value="jordan@" onChange={noop} label="Email address" error="That address needs a domain, like gmail.com." />);
+  const markup = html(
+    <TextField
+      id="addr"
+      value="jordan@"
+      onChange={noop}
+      label="Email address"
+      error="That address needs a domain, like gmail.com."
+    />,
+  );
   assert.match(markup, /aria-invalid="true"/);
   assert.match(markup, /aria-describedby="addr-error"/);
   assert.match(markup, /<p id="addr-error" class="ui-text-field-error" role="status">/);
@@ -182,12 +225,26 @@ test('TextField: error sets aria-invalid, aria-describedby and one plain line wi
 });
 
 test('TextField: size, icon, trailing Return keycap, mono, disabled, read-only', () => {
-  const lg = html(<TextField id="a" value="" onChange={noop} label="Address" size="lg" icon="mail" trailingKeys="Return" mono />);
+  const lg = html(
+    <TextField
+      id="a"
+      value=""
+      onChange={noop}
+      label="Address"
+      size="lg"
+      icon="mail"
+      trailingKeys="Return"
+      mono
+    />,
+  );
   assert.match(lg, /data-size="lg"/);
   assert.match(lg, /data-icon="mail"/);
   assert.match(lg, /<kbd class="ui-kbd" data-reveal="always">Return<\/kbd>/);
   assert.match(lg, /data-mono="true"/);
-  assert.match(html(<TextField id="a" value="" onChange={noop} label="Address" disabled />), /\sdisabled(=""|\s|>)/);
+  assert.match(
+    html(<TextField id="a" value="" onChange={noop} label="Address" disabled />),
+    /\sdisabled(=""|\s|>)/,
+  );
   const readOnly = html(<TextField id="a" value="x" onChange={noop} label="Address" readOnly />);
   assert.match(readOnly, /readonly/i);
   assert.match(readOnly, /data-state="readonly"/);
@@ -200,7 +257,9 @@ test('TextField: worst-case values render inside one input and never as markup',
     assert.doesNotMatch(markup, /<b>x<\/b>/);
     assertClean(markup);
   }
-  const long = html(<TextField id="f" value="" onChange={noop} label={LONG_300} labelVisible error={EMAIL_80} />);
+  const long = html(
+    <TextField id="f" value="" onChange={noop} label={LONG_300} labelVisible error={EMAIL_80} />,
+  );
   assert.match(text(long), new RegExp(EMAIL_80));
 });
 
@@ -212,13 +271,46 @@ const e = (commandId: string, label: string, ...alts: Array<[string, boolean?]>)
   alternatives: alts.map(([chord, hold]) => (hold ? { chord, hold } : { chord })),
 });
 const GROUPS: readonly ShortcutGroup[] = [
-  { id: 'global', label: 'Global', entries: [e('app.palette', 'Show commands', ['⌘K']), e('mail.compose', 'New message', ['C']), e('ask.dictate', 'Dictate to Ask', ['A', true])] },
-  { id: 'lists', label: 'Lists', entries: [e('list.down', 'Next row', ['J'], ['↓']), e('mail.done', 'Done', ['E']), e('mail.later', 'Later', ['L'], ['←'])] },
-  { id: 'calendar', label: 'Calendar', entries: [e('cal.new', 'New event', ['N']), e('cal.view', 'Day, week or month', ['D'], ['W'], ['M'])] },
+  {
+    id: 'global',
+    label: 'Global',
+    entries: [
+      e('app.palette', 'Show commands', ['⌘K']),
+      e('mail.compose', 'New message', ['C']),
+      e('ask.dictate', 'Dictate to Ask', ['A', true]),
+    ],
+  },
+  {
+    id: 'lists',
+    label: 'Lists',
+    entries: [
+      e('list.down', 'Next row', ['J'], ['↓']),
+      e('mail.done', 'Done', ['E']),
+      e('mail.later', 'Later', ['L'], ['←']),
+    ],
+  },
+  {
+    id: 'calendar',
+    label: 'Calendar',
+    entries: [
+      e('cal.new', 'New event', ['N']),
+      e('cal.view', 'Day, week or month', ['D'], ['W'], ['M']),
+    ],
+  },
 ];
 const COLUMNS: ShortcutSheetProps['columns'] = [['global'], ['lists'], ['calendar']];
 const sheet = (over: Partial<ShortcutSheetProps> = {}) =>
-  html(<ShortcutSheet open groups={GROUPS} columns={COLUMNS} query="" onQueryChange={noop} onClose={noop} {...over} />);
+  html(
+    <ShortcutSheet
+      open
+      groups={GROUPS}
+      columns={COLUMNS}
+      query=""
+      onQueryChange={noop}
+      onClose={noop}
+      {...over}
+    />,
+  );
 
 test('ShortcutSheet: closed renders nothing', () => {
   assert.equal(sheet({ open: false }), '');
@@ -243,20 +335,34 @@ test('ShortcutSheet: three columns in the given places, groups labelled, alterna
   const markup = sheet();
   assert.equal((markup.match(/class="ui-shortcut-sheet-col"/g) ?? []).length, 3);
   assert.equal((markup.match(/<h3 /g) ?? []).length, 3);
-  for (const label of ['Global', 'Lists', 'Calendar']) assert.match(markup, new RegExp(`>${label}</h3>`));
-  assert.ok(markup.indexOf('>Global<') < markup.indexOf('>Lists<') && markup.indexOf('>Lists<') < markup.indexOf('>Calendar<'));
+  for (const label of ['Global', 'Lists', 'Calendar'])
+    assert.match(markup, new RegExp(`>${label}</h3>`));
+  assert.ok(
+    markup.indexOf('>Global<') < markup.indexOf('>Lists<') &&
+      markup.indexOf('>Lists<') < markup.indexOf('>Calendar<'),
+  );
   // "J or ↓"
-  assert.match(markup, /Next row<\/span><span class="ui-shortcut-keys"><span class="ui-key-caps" data-reveal="always"><kbd class="ui-kbd" data-reveal="always">J<\/kbd><span class="ui-key-word">or<\/span><kbd class="ui-kbd" data-reveal="always">↓<\/kbd>/);
+  assert.match(
+    markup,
+    /Next row<\/span><span class="ui-shortcut-keys"><span class="ui-key-caps" data-reveal="always"><kbd class="ui-kbd" data-reveal="always">J<\/kbd><span class="ui-key-word">or<\/span><kbd class="ui-kbd" data-reveal="always">↓<\/kbd>/,
+  );
   // three alternatives: two "or" words
   const view = /Day, week or month<\/span>(.*?)<\/li>/.exec(markup)?.[1] ?? '';
   assert.equal((view.match(/class="ui-key-word">or</g) ?? []).length, 2);
   // hold
-  assert.match(markup, /ui-key-word">hold<\/span><kbd class="ui-kbd" data-reveal="always">A<\/kbd>/);
+  assert.match(
+    markup,
+    /ui-key-word">hold<\/span><kbd class="ui-kbd" data-reveal="always">A<\/kbd>/,
+  );
 });
 
 test('ShortcutSheet: filtering keeps each group in its column, marks the match and counts', () => {
   const markup = sheet({ query: 'later' });
-  assert.equal((markup.match(/class="ui-shortcut-sheet-col"/g) ?? []).length, 3, 'columns keep their places');
+  assert.equal(
+    (markup.match(/class="ui-shortcut-sheet-col"/g) ?? []).length,
+    3,
+    'columns keep their places',
+  );
   assert.match(markup, /<mark>Later<\/mark>/);
   assert.match(markup, /role="status">1 of 8 shortcuts</);
   assert.doesNotMatch(markup, /Show commands/);
@@ -280,19 +386,61 @@ test('ShortcutSheet: no match says so plainly', () => {
 
 test('ShortcutSheet: worst-case labels, queries and chords', () => {
   const crazy: readonly ShortcutGroup[] = [
-    { id: 'global', label: LONG_300, entries: [e('x.long', LONG_300, [EMAIL_80]), e('x.cjk', CJK, [CJK]), e('x.ar', ARABIC, ['ع']), e('x.emoji', EMOJI, ['🙂']), e('x.one', 'A', ['A']), e('x.n', '9999', ['9999']), e('x.zero', '0', ['0'])] },
+    {
+      id: 'global',
+      label: LONG_300,
+      entries: [
+        e('x.long', LONG_300, [EMAIL_80]),
+        e('x.cjk', CJK, [CJK]),
+        e('x.ar', ARABIC, ['ع']),
+        e('x.emoji', EMOJI, ['🙂']),
+        e('x.one', 'A', ['A']),
+        e('x.n', '9999', ['9999']),
+        e('x.zero', '0', ['0']),
+      ],
+    },
     { id: 'empty', label: 'Empty', entries: [] },
   ];
   const cols: ShortcutSheetProps['columns'] = [['global', 'empty'], [], []];
-  const markup = html(<ShortcutSheet open groups={crazy} columns={cols} query="" onQueryChange={noop} onClose={noop} />);
+  const markup = html(
+    <ShortcutSheet
+      open
+      groups={crazy}
+      columns={cols}
+      query=""
+      onQueryChange={noop}
+      onClose={noop}
+    />,
+  );
   assert.match(text(markup), new RegExp(EMAIL_80));
   assert.match(text(markup), new RegExp(CJK));
   assertClean(markup);
   for (const query of [LONG_300, EMAIL_80, CJK, ARABIC, EMOJI, '<b>x</b>', 'İ']) {
-    const filtered = html(<ShortcutSheet open groups={crazy} columns={cols} query={query} onQueryChange={noop} onClose={noop} />);
+    const filtered = html(
+      <ShortcutSheet
+        open
+        groups={crazy}
+        columns={cols}
+        query={query}
+        onQueryChange={noop}
+        onClose={noop}
+      />,
+    );
     assert.doesNotMatch(filtered, /<b>x<\/b>/);
   }
-  assert.match(html(<ShortcutSheet open groups={crazy} columns={cols} query={CJK} onQueryChange={noop} onClose={noop} />), new RegExp(`<mark>${CJK}</mark>`));
+  assert.match(
+    html(
+      <ShortcutSheet
+        open
+        groups={crazy}
+        columns={cols}
+        query={CJK}
+        onQueryChange={noop}
+        onClose={noop}
+      />,
+    ),
+    new RegExp(`<mark>${CJK}</mark>`),
+  );
 });
 
 test('ShortcutSheet: generated from the real registry through sheetProps, so every sheet key is on it', () => {
@@ -300,23 +448,44 @@ test('ShortcutSheet: generated from the real registry through sheetProps, so eve
   const { groups, columns } = sheetProps(sections);
   assert.deepEqual(
     columns.flat().sort(),
-    sections.filter((s) => s.rows.length > 0).map((s) => s.id).sort(),
+    sections
+      .filter(s => s.rows.length > 0)
+      .map(s => s.id)
+      .sort(),
     'every non-empty section sits in a column',
   );
-  const markup = html(<ShortcutSheet open groups={groups} columns={columns} query="" onQueryChange={noop} onClose={noop} />);
+  const markup = html(
+    <ShortcutSheet
+      open
+      groups={groups}
+      columns={columns}
+      query=""
+      onQueryChange={noop}
+      onClose={noop}
+    />,
+  );
   for (const section of sections) {
     for (const row of section.rows) {
       assert.ok(text(markup).includes(row.label), `${row.id}: ${row.label}`);
     }
   }
   // keys the old sheet omitted (DESIGN §8): the palette, the skip-to links, the places
-  for (const needed of ['⌘K', '⌘⌥L', '⌘⌥R', '⌃5', '⌃7', '⌃8']) assert.ok(text(markup).includes(needed), needed);
+  for (const needed of ['⌘K', '⌘⌥L', '⌘⌥R', '⌃5', '⌃7', '⌃8'])
+    assert.ok(text(markup).includes(needed), needed);
   assertClean(markup);
 });
 
 test('sheetProps: groups, columns and parsed alternatives', () => {
   const { groups, columns } = sheetProps([
-    { id: 'a', title: 'A', column: 2, rows: [{ id: 'x', label: 'X', keys: 'J or ↓', kind: 'key' }, { id: 'y', label: 'Y', keys: 'Hold R', kind: 'key' }] },
+    {
+      id: 'a',
+      title: 'A',
+      column: 2,
+      rows: [
+        { id: 'x', label: 'X', keys: 'J or ↓', kind: 'key' },
+        { id: 'y', label: 'Y', keys: 'Hold R', kind: 'key' },
+      ],
+    },
     { id: 'b', title: 'B', column: 0, rows: [] },
   ]);
   assert.deepEqual(columns, [[], [], ['a']]);
@@ -327,7 +496,10 @@ test('sheetProps: groups, columns and parsed alternatives', () => {
 
 test('controls CSS: unbreakable no-match query wraps, press scale follows the press motion, switch has no hover lightening', () => {
   const css = readFileSync(new URL('./controls.css', import.meta.url), 'utf8');
-  assert.match(css.match(/\.ui-shortcut-sheet-empty \{[^}]*\}/)?.[0] ?? '', /overflow-wrap:\s*anywhere/);
+  assert.match(
+    css.match(/\.ui-shortcut-sheet-empty \{[^}]*\}/)?.[0] ?? '',
+    /overflow-wrap:\s*anywhere/,
+  );
   for (const part of ['.ui-checkbox-box', '.ui-swatch-dot']) {
     const rule = css.match(new RegExp(`\\${part} \\{[^}]*\\}`))?.[0] ?? '';
     assert.match(rule, /transform var\(--dur-press-up\)/, `${part} transitions transform`);
@@ -337,7 +509,15 @@ test('controls CSS: unbreakable no-match query wraps, press scale follows the pr
 
 test('ShortcutSheet: a worst-case no-match query is echoed inside the empty line', () => {
   const query = 'x'.repeat(200);
-  const markup = html(<ShortcutSheet {...sheetProps(buildSheet(registry))} open query={query} onQueryChange={noop} onClose={noop} />);
+  const markup = html(
+    <ShortcutSheet
+      {...sheetProps(buildSheet(registry))}
+      open
+      query={query}
+      onQueryChange={noop}
+      onClose={noop}
+    />,
+  );
   assert.match(markup, /ui-shortcut-sheet-empty/);
   assert.ok(markup.includes(query));
 });

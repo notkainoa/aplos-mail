@@ -78,7 +78,7 @@ function cssColor(flat, value) {
   const percent = isAlias(value.percent) ? cssRef(flat, value.percent) : `${value.percent}%`;
   // `solid: true` mixes into the `over` surface instead of transparent, so the
   // result is opaque and the same whatever it is painted on.
-  const rest = value.solid ? cssColor(flat, value.over) : "transparent";
+  const rest = value.solid ? cssColor(flat, value.over) : 'transparent';
   return `color-mix(in srgb, ${base} ${percent}, ${rest})`;
 }
 
@@ -189,7 +189,7 @@ function typographyDeclarations(flat, token, value) {
   // font shorthand resets font-variant-numeric, so a rule that writes
   // `font: var(--type-small)` pairs it with `font-variant-numeric: var(--num-small)`.
   if (token.ext.tabular) {
-    out.push([`--num-${role}`, "tabular-nums"]);
+    out.push([`--num-${role}`, 'tabular-nums']);
   }
   return out;
 }

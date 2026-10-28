@@ -37,7 +37,12 @@ export function TextField({
   };
 
   return (
-    <div className="ui-text-field" data-size={size} data-state={state} data-mono={mono ? 'true' : undefined}>
+    <div
+      className="ui-text-field"
+      data-size={size}
+      data-state={state}
+      data-mono={mono ? 'true' : undefined}
+    >
       {labelVisible ? (
         <label className="ui-text-field-label" htmlFor={id}>
           {label}
@@ -62,7 +67,7 @@ export function TextField({
           autoCapitalize={literal ? 'off' : undefined}
           autoCorrect={literal ? 'off' : undefined}
           spellCheck={literal ? false : undefined}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={event => onChange(event.target.value)}
           onKeyDown={onKeyDown}
         />
         {trailingKeys ? (

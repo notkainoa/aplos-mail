@@ -151,7 +151,13 @@ export const CONDITION_PRIORITY: readonly Condition[] = [
  */
 export type PaletteGroup = 'Suggested' | 'Actions' | 'Go to' | 'Ask' | 'Settings';
 
-export const PALETTE_GROUPS: readonly PaletteGroup[] = ['Suggested', 'Actions', 'Go to', 'Ask', 'Settings'];
+export const PALETTE_GROUPS: readonly PaletteGroup[] = [
+  'Suggested',
+  'Actions',
+  'Go to',
+  'Ask',
+  'Settings',
+];
 
 /** The group a command is filed under while typing; 'Suggested' is a first-open section, never a command's own group. */
 export type CommandGroup = Exclude<PaletteGroup, 'Suggested'>;
@@ -319,7 +325,16 @@ export const DEFAULT_KEY_PREFS: KeyPrefs = {
  * focused on the calendar is a 'plan' (its id is a plan id, not an event id); a
  * 'calendar' is one calendar in the sidebar; a 'provider' is a Settings → AI row.
  */
-export type TargetKind = 'thread' | 'event' | 'plan' | 'calendar' | 'account' | 'draft' | 'setting' | 'provider' | 'conversation';
+export type TargetKind =
+  | 'thread'
+  | 'event'
+  | 'plan'
+  | 'calendar'
+  | 'account'
+  | 'draft'
+  | 'setting'
+  | 'provider'
+  | 'conversation';
 
 /**
  * The focused screen's target, set through the shell's `useCommandTarget` and read

@@ -52,8 +52,19 @@ interface BubbleProps {
 }
 
 /** The floating bubble itself, separate so it can be drawn and tested without a pointer. */
-export function TooltipBubble({ id, label, detail, caps = [], placement = 'below', instant = false, anchor = null, ref }: BubbleProps) {
-  const style = anchor ? ({ '--tip-x': `${anchor.x}px`, '--tip-y': `${anchor.y}px` } as CSSProperties) : undefined;
+export function TooltipBubble({
+  id,
+  label,
+  detail,
+  caps = [],
+  placement = 'below',
+  instant = false,
+  anchor = null,
+  ref,
+}: BubbleProps) {
+  const style = anchor
+    ? ({ '--tip-x': `${anchor.x}px`, '--tip-y': `${anchor.y}px` } as CSSProperties)
+    : undefined;
   return (
     <div
       ref={ref}
@@ -84,12 +95,24 @@ type TriggerProps = {
   onBlur?: (event: FocusEvent<HTMLElement>) => void;
 };
 
-export function Tooltip({ label, detail, commandId, keys, children, placement = 'below', disabled = false }: TooltipProps) {
+export function Tooltip({
+  label,
+  detail,
+  commandId,
+  keys,
+  children,
+  placement = 'below',
+  disabled = false,
+}: TooltipProps) {
   const id = useId();
   const reasonId = `${id}-reason`;
   const caps = useControlKeys(commandId, keys);
   const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ x: number; y: number; placement: 'below' | 'above' } | null>(null);
+  const [anchor, setAnchor] = useState<{
+    x: number;
+    y: number;
+    placement: 'below' | 'above';
+  } | null>(null);
   const [instant, setInstant] = useState(false);
   const openRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -154,7 +177,10 @@ export function Tooltip({ label, detail, commandId, keys, children, placement = 
     const width = bubbleRef.current?.offsetWidth ?? 0;
     const half = width / 2;
     const centre = rect.left + rect.width / 2;
-    const x = Math.min(Math.max(centre, half + EDGE_PX), Math.max(window.innerWidth - half - EDGE_PX, half + EDGE_PX));
+    const x = Math.min(
+      Math.max(centre, half + EDGE_PX),
+      Math.max(window.innerWidth - half - EDGE_PX, half + EDGE_PX),
+    );
     // Flip to the side with room: the bubble plus its gap must fit inside the window edge.
     const needed = (bubbleRef.current?.offsetHeight ?? 0) + GAP_PX + EDGE_PX;
     const roomBelow = window.innerHeight - rect.bottom;

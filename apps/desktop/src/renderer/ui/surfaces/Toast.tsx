@@ -83,7 +83,15 @@ function useLifetime(life: number | null, onExpire: () => void) {
   };
 }
 
-export function Toast({ kind, message, actions = [], undoable, persistent, onAction, onDismiss }: ComponentPropsMap['Toast']) {
+export function Toast({
+  kind,
+  message,
+  actions = [],
+  undoable,
+  persistent,
+  onAction,
+  onDismiss,
+}: ComponentPropsMap['Toast']) {
   const [leaving, setLeaving] = useState(false);
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
@@ -92,7 +100,9 @@ export function Toast({ kind, message, actions = [], undoable, persistent, onAct
 
   useEffect(() => {
     if (!leaving) return;
-    const fade = prefersReducedMotion(themeHooks.reducedMotionQuery) ? timingReduced.toastFade : timing.toastFade;
+    const fade = prefersReducedMotion(themeHooks.reducedMotionQuery)
+      ? timingReduced.toastFade
+      : timing.toastFade;
     const t = setTimeout(() => dismiss.current(), fade);
     return () => clearTimeout(t);
   }, [leaving]);
@@ -106,16 +116,22 @@ export function Toast({ kind, message, actions = [], undoable, persistent, onAct
       onPointerEnter={() => clock.pause('hover')}
       onPointerLeave={() => clock.resume('hover')}
       onFocus={() => clock.pause('focus')}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) clock.resume('focus');
+      onBlur={event => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          clock.resume('focus');
       }}
     >
       <span className="ui-toast__icon" data-tone={look.tone}>
         <PartIcon name={look.icon} />
       </span>
       <span className="ui-toast__message">{message}</span>
-      {actions.slice(0, 3).map((action) => (
-        <button key={action.id} type="button" className="ui-toast__action" onClick={() => onAction(action.id)}>
+      {actions.slice(0, 3).map(action => (
+        <button
+          key={action.id}
+          type="button"
+          className="ui-toast__action"
+          onClick={() => onAction(action.id)}
+        >
           <span>{action.label}</span>
           <PartKeys chords={keysFor(action.commandId)} />
         </button>

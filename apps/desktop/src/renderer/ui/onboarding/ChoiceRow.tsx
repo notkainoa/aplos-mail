@@ -54,7 +54,11 @@ export function ChoiceRow({
   const hasSecond = second !== undefined && second !== null && second !== '';
 
   const lead: ReactNode = mark ? (
-    <span className="ui-choice-row__mark" aria-hidden="true" style={{ '--swatch': `var(--tag-${mark})` } as CSSProperties} />
+    <span
+      className="ui-choice-row__mark"
+      aria-hidden="true"
+      style={{ '--swatch': `var(--tag-${mark})` } as CSSProperties}
+    />
   ) : icon ? (
     <span className="ui-choice-row__icon">
       <OnbIcon name={icon} />
@@ -71,7 +75,9 @@ export function ChoiceRow({
       </span>
       {hasSecond ? (
         <span className="ui-choice-row__detail" id={detailId}>
-          {detailDot ? <i className="ui-choice-row__dot" data-state={detailDot} aria-hidden="true" /> : null}
+          {detailDot ? (
+            <i className="ui-choice-row__dot" data-state={detailDot} aria-hidden="true" />
+          ) : null}
           <span>{second}</span>
         </span>
       ) : null}
@@ -82,7 +88,11 @@ export function ChoiceRow({
     <>
       {status ? (
         <span className="ui-choice-row__status" data-tone={status.tone}>
-          {status.tone === 'ok' ? <OnbIcon name="check" /> : status.tone === 'attention' ? <OnbIcon name="alert" /> : null}
+          {status.tone === 'ok' ? (
+            <OnbIcon name="check" />
+          ) : status.tone === 'attention' ? (
+            <OnbIcon name="alert" />
+          ) : null}
           {status.text}
         </span>
       ) : null}
@@ -100,7 +110,13 @@ export function ChoiceRow({
   if (role === 'link' && control) {
     // A control (Test, Allow…) cannot live inside a button, so it sits beside the one that goes on.
     return (
-      <div id={id} className="ui-choice-row" data-role="link" data-split="true" data-has-detail={hasSecond ? 'true' : 'false'}>
+      <div
+        id={id}
+        className="ui-choice-row"
+        data-role="link"
+        data-split="true"
+        data-has-detail={hasSecond ? 'true' : 'false'}
+      >
         <button
           type="button"
           className="ui-choice-row__link"
@@ -162,7 +178,13 @@ export function ChoiceRow({
       }
     };
     return (
-      <div id={id} className="ui-choice-row" data-role="radio" data-selected={selected ? 'true' : 'false'} data-has-detail={hasSecond ? 'true' : 'false'}>
+      <div
+        id={id}
+        className="ui-choice-row"
+        data-role="radio"
+        data-selected={selected ? 'true' : 'false'}
+        data-has-detail={hasSecond ? 'true' : 'false'}
+      >
         <div
           ref={pickRef}
           role="radio"
@@ -184,7 +206,12 @@ export function ChoiceRow({
   }
 
   return (
-    <div id={id} className="ui-choice-row" data-role="static" data-has-detail={hasSecond ? 'true' : 'false'}>
+    <div
+      id={id}
+      className="ui-choice-row"
+      data-role="static"
+      data-has-detail={hasSecond ? 'true' : 'false'}
+    >
       {lead}
       {text}
       <span className="ui-choice-row__end">{end}</span>

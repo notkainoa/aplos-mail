@@ -11,7 +11,12 @@ export function NowLine({ now, variant }: NowLineProps) {
   const time = timeOf(now);
   if (variant === 'agenda') {
     return (
-      <div className="ui-now-line" data-variant="agenda" role="separator" aria-label={`Now, ${time}`}>
+      <div
+        className="ui-now-line"
+        data-variant="agenda"
+        role="separator"
+        aria-label={`Now, ${time}`}
+      >
         <span className="ui-now-line__time">{time}</span>
         <span className="ui-now-line__rule" aria-hidden="true" />
       </div>

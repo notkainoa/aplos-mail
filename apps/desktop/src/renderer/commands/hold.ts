@@ -40,7 +40,12 @@ export interface HoldTracker {
    * A keydown that resolved with a hold command. Another keydown of the armed
    * key is ignored; a different key ends the armed hold and returns how it ended.
    */
-  down(event: KeyInput, holdCommandId: CommandId, at: number, options?: HoldOptions): HoldRelease | null;
+  down(
+    event: KeyInput,
+    holdCommandId: CommandId,
+    at: number,
+    options?: HoldOptions,
+  ): HoldRelease | null;
   /**
    * True for keydowns of the armed key (its auto-repeats). Call it first on every
    * keydown and prevent the event when true: the repeats must not type into the
@@ -90,7 +95,13 @@ export function createHoldTracker(thresholdMs: number = DEFAULT_HOLD_THRESHOLD_M
       const key = holdKeyOf(event);
       if (current?.key === key) return null;
       const ended = finish(at);
-      current = { key, commandId: holdCommandId, start: at, typed: options.typed ?? false, upgraded: false };
+      current = {
+        key,
+        commandId: holdCommandId,
+        start: at,
+        typed: options.typed ?? false,
+        upgraded: false,
+      };
       return ended;
     },
     swallows(event) {

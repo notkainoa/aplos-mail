@@ -22,7 +22,7 @@ interface Stop {
  */
 function stopsOf(root: HTMLElement): Stop[] {
   const stops: Stop[] = [];
-  root.querySelectorAll<HTMLElement>('[data-walk-at]').forEach((el) => {
+  root.querySelectorAll<HTMLElement>('[data-walk-at]').forEach(el => {
     if (!el.id) return;
     stops.push({ domId: el.id, eventId: el.dataset.eventId, at: Number(el.dataset.walkAt), el });
   });
@@ -73,8 +73,11 @@ export function CalendarGrid(props: CalendarGridProps) {
     const current = activeStack ?? (selectedId ? eventDomId(selectedId) : null);
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      const at = stops.findIndex((x) => x.domId === current);
-      const next = e.key === 'ArrowDown' ? stops[Math.min(stops.length - 1, at + 1)] : stops[at < 0 ? stops.length - 1 : Math.max(0, at - 1)];
+      const at = stops.findIndex(x => x.domId === current);
+      const next =
+        e.key === 'ArrowDown'
+          ? stops[Math.min(stops.length - 1, at + 1)]
+          : stops[at < 0 ? stops.length - 1 : Math.max(0, at - 1)];
       if (!next || next.domId === current) return;
       if (next.eventId === undefined) {
         // A "+N" or "N more" button: it becomes the active descendant and Return opens it.
@@ -84,12 +87,13 @@ export function CalendarGrid(props: CalendarGridProps) {
       }
       setActiveStack(null);
       onSelect(next.eventId);
-      const event = events.find((x) => x.id === next.eventId);
-      if (event) announce?.(`${event.title}, ${event.allDay ? 'all day' : rangeOf(event.start, event.end)}`);
+      const event = events.find(x => x.id === next.eventId);
+      if (event)
+        announce?.(`${event.title}, ${event.allDay ? 'all day' : rangeOf(event.start, event.end)}`);
       return;
     }
     if (e.key === 'Enter' && current) {
-      const stop = stops.find((x) => x.domId === current);
+      const stop = stops.find(x => x.domId === current);
       if (!stop) return;
       e.preventDefault();
       if (stop.eventId === undefined) stop.el.click();
@@ -106,12 +110,20 @@ export function CalendarGrid(props: CalendarGridProps) {
       data-agenda={view === 'agenda' ? (props.agenda ?? 'full') : undefined}
       role={gridLike ? 'grid' : 'region'}
       aria-label={label}
-      aria-activedescendant={gridLike ? (activeStack ?? (selectedId ? eventDomId(selectedId) : undefined)) : undefined}
+      aria-activedescendant={
+        gridLike ? (activeStack ?? (selectedId ? eventDomId(selectedId) : undefined)) : undefined
+      }
       tabIndex={0}
       onKeyDown={onKeyDown}
     >
       <ActiveStack.Provider value={activeStack}>
-        {view === 'agenda' ? <AgendaView {...props} /> : view === 'month' ? <MonthGrid {...props} /> : <TimeGrid {...props} />}
+        {view === 'agenda' ? (
+          <AgendaView {...props} />
+        ) : view === 'month' ? (
+          <MonthGrid {...props} />
+        ) : (
+          <TimeGrid {...props} />
+        )}
       </ActiveStack.Provider>
     </div>
   );

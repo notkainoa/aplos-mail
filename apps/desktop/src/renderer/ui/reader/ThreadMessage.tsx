@@ -12,10 +12,28 @@ import { tooltipText } from '../list/internal/keys';
 import { UndoTray } from './UndoTray';
 
 /** A full message in the thread. */
-export function ThreadMessage({ id, from, toLabel, date, cursor, body, attachments, remoteImages, quoted, undoTray, ref }: ThreadMessageProps) {
+export function ThreadMessage({
+  id,
+  from,
+  toLabel,
+  date,
+  cursor,
+  body,
+  attachments,
+  remoteImages,
+  quoted,
+  undoTray,
+  ref,
+}: ThreadMessageProps) {
   const fromId = `${id}-from`;
   return (
-    <article ref={ref as Ref<HTMLElement>} id={id} className="ui-thread-message" data-cursor={cursor ? 'true' : undefined} aria-labelledby={fromId}>
+    <article
+      ref={ref as Ref<HTMLElement>}
+      id={id}
+      className="ui-thread-message"
+      data-cursor={cursor ? 'true' : undefined}
+      aria-labelledby={fromId}
+    >
       <header className="ui-thread-message__head">
         <span id={fromId} className="ui-thread-message__from" dir="auto">
           {from}
@@ -28,7 +46,13 @@ export function ThreadMessage({ id, from, toLabel, date, cursor, body, attachmen
 
       {remoteImages?.blocked ? (
         <div className="ui-thread-message__images">
-          <Action variant="text" size="sm" icon="eye" label="Load images from this sender" onPress={() => remoteImages.onLoad()} />
+          <Action
+            variant="text"
+            size="sm"
+            icon="eye"
+            label="Load images from this sender"
+            onPress={() => remoteImages.onLoad()}
+          />
         </div>
       ) : null}
 
@@ -40,7 +64,10 @@ export function ThreadMessage({ id, from, toLabel, date, cursor, body, attachmen
             variant="text"
             size="sm"
             label={quoted.shown ? 'Hide quoted text' : 'Show quoted text'}
-            tooltip={tooltipText(quoted.shown ? 'Hide quoted text' : 'Show quoted text', quoted.commandId)}
+            tooltip={tooltipText(
+              quoted.shown ? 'Hide quoted text' : 'Show quoted text',
+              quoted.commandId,
+            )}
             expanded={quoted.shown}
             onPress={() => quoted.onToggle()}
           />

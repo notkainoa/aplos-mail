@@ -7,7 +7,14 @@ import { StepAction } from './StepAction';
  * "Not now". Background summaries wait for the answer (DESIGN 7.11). Esc and Return are routed by the command
  * registry; Allow takes focus on mount. A hosted provider adds the lock line about Ollama and LM Studio.
  */
-export function ConsentCard({ provider, model, sent, showLocalNote, onAllow, onNotNow }: ConsentCardProps) {
+export function ConsentCard({
+  provider,
+  model,
+  sent,
+  showLocalNote,
+  onAllow,
+  onNotNow,
+}: ConsentCardProps) {
   return (
     <section className="ui-consent-card" aria-label="What is sent">
       <div className="ui-consent-card__card">
@@ -30,9 +37,18 @@ export function ConsentCard({ provider, model, sent, showLocalNote, onAllow, onN
         <StepAction
           placement="body"
           autoFocus
-          button={{ label: 'Allow', emphasis: 'filled', keys: 'Return', keyHint: 'always', onSelect: onAllow }}
+          button={{
+            label: 'Allow',
+            emphasis: 'filled',
+            keys: 'Return',
+            keyHint: 'always',
+            onSelect: onAllow,
+          }}
         />
-        <StepAction placement="body" button={{ label: 'Not now', emphasis: 'text', onSelect: onNotNow }} />
+        <StepAction
+          placement="body"
+          button={{ label: 'Not now', emphasis: 'text', onSelect: onNotNow }}
+        />
       </div>
     </section>
   );

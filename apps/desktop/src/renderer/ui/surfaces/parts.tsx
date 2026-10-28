@@ -171,7 +171,15 @@ const GLYPHS: Record<IconName, LucideIcon> = {
 /** One monoline icon: 16 px, 14 px ('sm') in chips and status lines, 12 px ('xs') for the smallest marks. Always decorative. */
 export function PartIcon({ name, size = 'md' }: { name: IconName; size?: 'md' | 'sm' | 'xs' }) {
   const Glyph = GLYPHS[name];
-  return <Glyph className="ui-part-icon" data-size={size} data-icon={name} aria-hidden="true" focusable="false" />;
+  return (
+    <Glyph
+      className="ui-part-icon"
+      data-size={size}
+      data-icon={name}
+      aria-hidden="true"
+      focusable="false"
+    />
+  );
 }
 
 /* ───────────── Keycaps from the registry (DESIGN 8) ───────────── */
@@ -188,7 +196,13 @@ export function keysFor(commandId?: CommandId, literal?: LiteralKey): readonly s
 }
 
 /** Caps for a set of chords, alternatives joined with "or". 'hint' caps show only in the "Show all key hints" mode. */
-export function PartKeys({ chords, reveal = 'always' }: { chords: readonly string[]; reveal?: 'always' | 'hint' }) {
+export function PartKeys({
+  chords,
+  reveal = 'always',
+}: {
+  chords: readonly string[];
+  reveal?: 'always' | 'hint';
+}) {
   if (chords.length === 0) return null;
   return (
     <span className="ui-part-keys" data-reveal={reveal}>
@@ -205,7 +219,19 @@ export function PartKeys({ chords, reveal = 'always' }: { chords: readonly strin
 /* ───────────── Overlay tooltip: label, detail and keys; never moves layout ───────────── */
 
 /** The tooltip body a trigger points at with aria-describedby. Shown on hover or keyboard focus of its wrapper. */
-export function PartTip({ id, label, detail, chords, placement = 'below' }: { id: string; label?: string; detail?: string; chords: readonly string[]; placement?: 'below' | 'above' | 'end' }) {
+export function PartTip({
+  id,
+  label,
+  detail,
+  chords,
+  placement = 'below',
+}: {
+  id: string;
+  label?: string;
+  detail?: string;
+  chords: readonly string[];
+  placement?: 'below' | 'above' | 'end';
+}) {
   return (
     <span role="tooltip" id={id} className="ui-part-tip" data-placement={placement}>
       <span className="ui-part-tip__line">
@@ -250,13 +276,40 @@ export interface PartButtonProps {
 }
 
 export function PartButton(props: PartButtonProps) {
-  const { variant, label, size = 'md', icon, trailingIcon, labelVisible, commandId, keys, keyHint = 'tooltip', tone = 'default', disabled, softDisabled, pressed, tipLabel, detail, tipPlacement, popup, presentational, id, buttonRef, onPress } = props;
+  const {
+    variant,
+    label,
+    size = 'md',
+    icon,
+    trailingIcon,
+    labelVisible,
+    commandId,
+    keys,
+    keyHint = 'tooltip',
+    tone = 'default',
+    disabled,
+    softDisabled,
+    pressed,
+    tipLabel,
+    detail,
+    tipPlacement,
+    popup,
+    presentational,
+    id,
+    buttonRef,
+    onPress,
+  } = props;
   const tipId = useId();
   const chords = keysFor(commandId, keys);
   const showLabel = variant !== 'icon' || labelVisible === true;
   const inlineKeys = keyHint === 'always' || keyHint === 'hint';
   // Icon-only controls always carry a tooltip (DESIGN 11.3); text controls carry one when keys live there.
-  const hasTip = !presentational && (variant === 'icon' || detail !== undefined || tipLabel !== undefined || (chords.length > 0 && keyHint === 'tooltip'));
+  const hasTip =
+    !presentational &&
+    (variant === 'icon' ||
+      detail !== undefined ||
+      tipLabel !== undefined ||
+      (chords.length > 0 && keyHint === 'tooltip'));
   const button = (
     <button
       type="button"
@@ -277,13 +330,15 @@ export function PartButton(props: PartButtonProps) {
       tabIndex={presentational ? -1 : undefined}
       aria-disabled={softDisabled ? true : undefined}
       disabled={disabled}
-      onClick={(event) => {
+      onClick={event => {
         if (!softDisabled) onPress(event);
       }}
     >
       {icon ? <PartIcon name={icon} /> : null}
       {showLabel ? <span className="ui-part-button__label">{label}</span> : null}
-      {inlineKeys ? <PartKeys chords={chords} reveal={keyHint === 'hint' ? 'hint' : 'always'} /> : null}
+      {inlineKeys ? (
+        <PartKeys chords={chords} reveal={keyHint === 'hint' ? 'hint' : 'always'} />
+      ) : null}
       {trailingIcon ? <PartIcon name={trailingIcon} size="xs" /> : null}
     </button>
   );
@@ -291,7 +346,13 @@ export function PartButton(props: PartButtonProps) {
   return (
     <span className="ui-part-tipwrap">
       {button}
-      <PartTip id={tipId} label={tipLabel ?? label} detail={detail} chords={chords} placement={tipPlacement} />
+      <PartTip
+        id={tipId}
+        label={tipLabel ?? label}
+        detail={detail}
+        chords={chords}
+        placement={tipPlacement}
+      />
     </span>
   );
 }
@@ -337,7 +398,8 @@ export function useFloating(open: boolean, anchor: Anchor, placement: FloatPlace
       y = a.top;
     }
     // Flip vertically when the preferred side runs out of room, then clamp inside the window.
-    if (placement.startsWith('below') && y + h > vh - pad && a.top - h - gap >= pad) y = a.top - h - gap;
+    if (placement.startsWith('below') && y + h > vh - pad && a.top - h - gap >= pad)
+      y = a.top - h - gap;
     if (placement === 'above-start' && y < pad) y = a.bottom + gap;
     x = Math.max(pad, Math.min(x, vw - w - pad));
     y = Math.max(pad, Math.min(y, vh - h - pad));
@@ -354,12 +416,19 @@ export function useFloating(open: boolean, anchor: Anchor, placement: FloatPlace
     return () => window.removeEventListener('resize', place);
   }, [open, place]);
 
-  const style = coords ? ({ '--float-x': `${coords.x}px`, '--float-y': `${coords.y}px` } as CSSProperties) : undefined;
+  const style = coords
+    ? ({ '--float-x': `${coords.x}px`, '--float-y': `${coords.y}px` } as CSSProperties)
+    : undefined;
   return { ref, style, placed: coords !== null };
 }
 
 /** An outside pointer press closes a floating surface; presses on its anchor are left to the anchor. Esc is each surface's own key handler. */
-export function useDismiss(open: boolean, surface: { current: HTMLElement | null }, anchor: Anchor, onClose: () => void) {
+export function useDismiss(
+  open: boolean,
+  surface: { current: HTMLElement | null },
+  anchor: Anchor,
+  onClose: () => void,
+) {
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
@@ -429,5 +498,8 @@ export function dayWord(iso: string, now: Date = new Date()): string {
 /** True while the user prefers reduced motion (system setting or the app's data-motion hook). */
 export function prefersReducedMotion(query: string): boolean {
   if (typeof window === 'undefined') return false;
-  return document.documentElement.dataset.motion === 'reduced' || (typeof window.matchMedia === 'function' && window.matchMedia(query).matches);
+  return (
+    document.documentElement.dataset.motion === 'reduced' ||
+    (typeof window.matchMedia === 'function' && window.matchMedia(query).matches)
+  );
 }

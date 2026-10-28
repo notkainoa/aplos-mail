@@ -28,7 +28,11 @@ export function ReaderHead({
 }: ReaderHeadProps) {
   const details = [sender.address, sender.accountLabel, sender.history].filter(Boolean).join(' · ');
   return (
-    <div ref={ref as Ref<HTMLDivElement>} className="ui-reader-head" data-demoted={demoted ? 'true' : undefined}>
+    <div
+      ref={ref as Ref<HTMLDivElement>}
+      className="ui-reader-head"
+      data-demoted={demoted ? 'true' : undefined}
+    >
       <div className="ui-reader-head__from">
         <span className="ui-reader-head__name" dir="auto" title={details}>
           {sender.name}
@@ -65,7 +69,7 @@ export function ReaderHead({
           icon="clock"
           tooltip={tooltipText('Later', commands.later)}
           hintKey={keycapFor(commands.later)}
-          onPress={(anchor) => onLater(anchor)}
+          onPress={anchor => onLater(anchor)}
         />
         {suggestion.isDone ? null : (
           <Action

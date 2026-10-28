@@ -242,9 +242,9 @@ test('every generated file is Prettier-formatted and stays deterministic', async
   }
 });
 
-test("a tabular type role emits --num-<role>; other roles do not", () => {
-  const root = rootBlock(generate()["tokens.css"]);
-  assert.ok(root.includes("--num-small: tabular-nums;"), "root lacks --num-small: tabular-nums");
-  const tabular = [...root.matchAll(/^\s+(--num-[a-z-]+):/gm)].map((m) => m[1]);
-  assert.deepEqual(tabular, ["--num-small"]);
+test('a tabular type role emits --num-<role>; other roles do not', () => {
+  const root = rootBlock(generate()['tokens.css']);
+  assert.ok(root.includes('--num-small: tabular-nums;'), 'root lacks --num-small: tabular-nums');
+  const tabular = [...root.matchAll(/^\s+(--num-[a-z-]+):/gm)].map(m => m[1]);
+  assert.deepEqual(tabular, ['--num-small']);
 });

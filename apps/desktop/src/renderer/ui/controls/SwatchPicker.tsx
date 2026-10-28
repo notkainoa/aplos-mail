@@ -14,7 +14,13 @@ export const SWATCHES: ReadonlyArray<{ color: TagColor; name: string }> = [
   { color: 'ember', name: 'Ember' },
 ];
 
-export function SwatchPicker({ label, labelledBy, value, onChange, disabled = false }: SwatchPickerProps) {
+export function SwatchPicker({
+  label,
+  labelledBy,
+  value,
+  onChange,
+  disabled = false,
+}: SwatchPickerProps) {
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
 
   const move = (from: number, step: number) => {
@@ -26,7 +32,11 @@ export function SwatchPicker({ label, labelledBy, value, onChange, disabled = fa
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (event.nativeEvent.isComposing || disabled) return;
     const step =
-      event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
+      event.key === 'ArrowRight' || event.key === 'ArrowDown'
+        ? 1
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+          ? -1
+          : 0;
     if (step === 0) return;
     event.preventDefault();
     move(index, step);
@@ -45,7 +55,7 @@ export function SwatchPicker({ label, labelledBy, value, onChange, disabled = fa
         return (
           <button
             key={color}
-            ref={(node) => {
+            ref={node => {
               buttons.current[index] = node;
             }}
             type="button"
@@ -59,7 +69,7 @@ export function SwatchPicker({ label, labelledBy, value, onChange, disabled = fa
             tabIndex={selected ? 0 : -1}
             disabled={disabled}
             onClick={() => onChange(color)}
-            onKeyDown={(event) => onKeyDown(event, index)}
+            onKeyDown={event => onKeyDown(event, index)}
           >
             <span className="ui-swatch-dot" aria-hidden="true">
               {selected ? <Icon name="check" size="xs" /> : null}

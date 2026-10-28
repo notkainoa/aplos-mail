@@ -9,15 +9,33 @@ import { Icon } from './internal/Icon';
 import { keycapFor, literalKeycap, tooltipText } from './internal/keys';
 
 /** A section, sub or date label with its count and quiet action. */
-export function SectionHeader({ id, label, variant, count, held, tone = 'default', waitingNew, action, dropTarget }: SectionHeaderProps) {
+export function SectionHeader({
+  id,
+  label,
+  variant,
+  count,
+  held,
+  tone = 'default',
+  waitingNew,
+  action,
+  dropTarget,
+}: SectionHeaderProps) {
   const inListbox = useInListbox();
-  const actionKey = action ? (action.keys ? literalKeycap(action.keys) : keycapFor(action.commandId)) : '';
+  const actionKey = action
+    ? action.keys
+      ? literalKeycap(action.keys)
+      : keycapFor(action.commandId)
+    : '';
   const content = (
     <>
       {tone === 'overdue' ? <Icon name="clock" size="sm" /> : null}
       <span className="ui-section-header__label">{label}</span>
-      {count !== undefined ? <span className="ui-section-header__count">{formatCount(count)}</span> : null}
-      {waitingNew && waitingNew > 0 ? <span className="ui-section-header__new">{formatCount(waitingNew)} new</span> : null}
+      {count !== undefined ? (
+        <span className="ui-section-header__count">{formatCount(count)}</span>
+      ) : null}
+      {waitingNew && waitingNew > 0 ? (
+        <span className="ui-section-header__new">{formatCount(waitingNew)} new</span>
+      ) : null}
       {dropTarget ? (
         <span className="ui-section-header__target" data-drop={dropTarget.state}>
           {dropTarget.state === 'unavailable' ? null : `Move to ${dropTarget.label}`}

@@ -8,7 +8,12 @@ import type { FocusSlotProps } from '../props';
 /** The fixed-height slot that holds the FocusLetter option. */
 export function FocusSlot({ density, children, ref }: FocusSlotProps) {
   return (
-    <div ref={ref as Ref<HTMLDivElement>} className="ui-focus-slot" data-density={density} role="presentation">
+    <div
+      ref={ref as Ref<HTMLDivElement>}
+      className="ui-focus-slot"
+      data-density={density}
+      role="presentation"
+    >
       {children}
     </div>
   );

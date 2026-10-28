@@ -98,7 +98,9 @@ export class NotImplementedError extends Error {
   readonly member: string;
 
   constructor(member: string) {
-    super(`renderer/data: ${member} is not implemented yet. Lane ${DATA_LANE} builds it in U2 (days 4-8).`);
+    super(
+      `renderer/data: ${member} is not implemented yet. Lane ${DATA_LANE} builds it in U2 (days 4-8).`,
+    );
     this.name = 'NotImplementedError';
     this.member = member;
   }
@@ -205,7 +207,11 @@ export function useOperation(opId: OpId | undefined): OperationView | undefined 
 // ---------------------------------------------------------------------------
 
 /** Row type a spec yields: messages for the thread view, draft rows for Drafts, thread rows for every other view. */
-export type RowForSpec<S extends ViewSpec> = S extends ThreadViewSpec ? MessageRow : S extends DraftsViewSpec ? DraftRow : ThreadRow;
+export type RowForSpec<S extends ViewSpec> = S extends ThreadViewSpec
+  ? MessageRow
+  : S extends DraftsViewSpec
+    ? DraftRow
+    : ThreadRow;
 
 /** `opening` before the first frame; `live` while frames apply; `reset` while reopening after a reset or `cannotCalculateChanges` (the previous ids stay on screen); `failed` when the view cannot open or stopped (remote search `quotaPaused` or `unavailable`, a thread that is gone): show `error.message` as an ErrorLine (DESIGN 7.15). */
 export type ViewStatus = 'opening' | 'live' | 'reset' | 'failed';
@@ -249,7 +255,10 @@ export interface ViewResult<R> {
 }
 
 /** Watch one view (`View/watch`, `View/move`, `View/unwatch`, `View/hold`, `View/release`). Re-watches only when the spec changes by value, never for a `holdIds` change. */
-export function useView<S extends ViewSpec>(spec: S, opts?: UseViewOptions): ViewResult<RowForSpec<S>> {
+export function useView<S extends ViewSpec>(
+  spec: S,
+  opts?: UseViewOptions,
+): ViewResult<RowForSpec<S>> {
   void spec;
   void opts;
   return notImplemented('useView');
@@ -336,7 +345,10 @@ export function useHome(opts?: UseHomeOptions): HomeView {
 // ---------------------------------------------------------------------------
 
 /** One cached row by type and id; undefined until known and also when gone (use `useRowState` to tell them apart). Referentially stable while `rev` is unchanged, so it is safe in memo deps. */
-export function useRow<T extends RowType>(type: T, id: string | undefined): RowTypeMap[T] | undefined {
+export function useRow<T extends RowType>(
+  type: T,
+  id: string | undefined,
+): RowTypeMap[T] | undefined {
   void type;
   void id;
   return notImplemented('useRow');
@@ -351,7 +363,10 @@ export interface RowState<R> {
 }
 
 /** One cached row with its lookup status, for screens that must show "This email is no longer here." instead of waiting forever. */
-export function useRowState<T extends RowType>(type: T, id: string | undefined): RowState<RowTypeMap[T]> {
+export function useRowState<T extends RowType>(
+  type: T,
+  id: string | undefined,
+): RowState<RowTypeMap[T]> {
   void type;
   void id;
   return notImplemented('useRowState');
@@ -365,7 +380,10 @@ export function useRowState<T extends RowType>(type: T, id: string | undefined):
 export type HoldReason = 'keys' | 'pointer';
 
 /** Called when a hold releases; the motion lane runs `close` (FLIP from fixed row heights) here. */
-export type HoldReleaseListener = (released: { readonly ids: readonly string[]; readonly reason: HoldReason }) => void;
+export type HoldReleaseListener = (released: {
+  readonly ids: readonly string[];
+  readonly reason: HoldReason;
+}) => void;
 
 /** One list's hold. Methods are synchronous and safe inside a keydown handler. */
 export interface HoldController {
@@ -563,7 +581,9 @@ export interface FrameFilterFields {
 }
 
 /** Only frames whose listed fields equal these values. Compared by value, so an inline object literal never resubscribes. */
-export type FrameFilter<K extends FrameKind> = Partial<Pick<FrameMap[K], FrameFilterFields[K] & keyof FrameMap[K]>>;
+export type FrameFilter<K extends FrameKind> = Partial<
+  Pick<FrameMap[K], FrameFilterFields[K] & keyof FrameMap[K]>
+>;
 
 /** Options for `useFrames`. */
 export interface UseFramesOptions {
@@ -580,7 +600,11 @@ export interface FramesView<F> {
 }
 
 /** Subscribe to push frames of one kind (Ask `progress`, `connect` for "Waiting for Google in your browser…", `clock`; first sync is `useSetupStatus`), batched per animation frame (DESIGN 5 rule 13). Changing the filter's values restarts the buffer. */
-export function useFrames<K extends FrameKind>(kind: K, filter?: FrameFilter<K>, opts?: UseFramesOptions): FramesView<FrameMap[K]> {
+export function useFrames<K extends FrameKind>(
+  kind: K,
+  filter?: FrameFilter<K>,
+  opts?: UseFramesOptions,
+): FramesView<FrameMap[K]> {
   void kind;
   void filter;
   void opts;
@@ -796,7 +820,10 @@ export interface DataApi {
     /** Discard a draft. */
     discard(draftId: DraftId): Promise<Receipt>;
     /** Resolve "This draft changed on another device." */
-    resolveConflict(draftId: DraftId, choice: 'keepMine' | 'takeTheirs' | 'keepBoth'): Promise<Receipt>;
+    resolveConflict(
+      draftId: DraftId,
+      choice: 'keepMine' | 'takeTheirs' | 'keepBoth',
+    ): Promise<Receipt>;
   };
   /** Message bodies. */
   readonly body: {
@@ -912,70 +939,284 @@ export interface ContractMethodRef {
 
 /** The expected mapping from `api` method to contract method, checked complete at compile time. The freeze reviewer checks F1 against it. */
 export const CONTRACT_METHODS = {
-  'thread.act': { method: 'Thread/act', kind: 'overlay', source: 'planned', needs: '{opId, ids | query: {spec, group?, atState}, action}; every ThreadAction kind incl. setLane; returns receipt {opId, appliedState, appliedSeq}; ask: query targets and setLane' },
-  'thread.why': { method: 'Thread/why', kind: 'call', source: 'ask', needs: '{threadId} -> {sentence, quote, rankSource}' },
-  'thread.followup': { method: 'Thread/followup', kind: 'call', source: 'ask', needs: '{threadId} -> {threadId, text} | null; eng-ai followup job output' },
-  'thread.unsubscribe': { method: 'Unsubscribe/run', kind: 'call', source: 'planned', needs: '{threadId} -> receipt' },
-  'operation.undo': { method: 'Operation/undo', kind: 'overlay', source: 'planned', needs: '{opId} -> receipt whose opId is the inverse operation' },
-  'operation.undoLast': { method: 'Operation/undo', kind: 'local', source: 'planned', needs: 'data layer tracks the last undoable opId' },
-  'submission.send': { method: 'Submission/set', kind: 'call', source: 'planned', needs: '{action: send, draftId, markDone?} -> {submissionId, receipt}; notBefore = now + undoSeconds; row has queuedAt; ask: markDone in the same operation' },
-  'submission.sendLater': { method: 'Submission/set', kind: 'call', source: 'planned', needs: '{action: send, draftId, notBefore, markDone?}' },
-  'submission.undo': { method: 'Submission/set', kind: 'call', source: 'planned', needs: '{action: undo, submissionId}' },
-  'submission.sendNow': { method: 'Submission/set', kind: 'call', source: 'ask', needs: '{action: sendNow, submissionId}; valid for queued, suspended, uncertain, failed' },
-  'submission.reschedule': { method: 'Submission/set', kind: 'call', source: 'ask', needs: '{action: reschedule, submissionId, notBefore}' },
-  'draft.save': { method: 'Draft/set', kind: 'call', source: 'planned', needs: 'create or update with baseRevision (ifInState); stateMismatch on conflict; ask: source {messageId, mode} on create, forward copies attachments' },
+  'thread.act': {
+    method: 'Thread/act',
+    kind: 'overlay',
+    source: 'planned',
+    needs:
+      '{opId, ids | query: {spec, group?, atState}, action}; every ThreadAction kind incl. setLane; returns receipt {opId, appliedState, appliedSeq}; ask: query targets and setLane',
+  },
+  'thread.why': {
+    method: 'Thread/why',
+    kind: 'call',
+    source: 'ask',
+    needs: '{threadId} -> {sentence, quote, rankSource}',
+  },
+  'thread.followup': {
+    method: 'Thread/followup',
+    kind: 'call',
+    source: 'ask',
+    needs: '{threadId} -> {threadId, text} | null; eng-ai followup job output',
+  },
+  'thread.unsubscribe': {
+    method: 'Unsubscribe/run',
+    kind: 'call',
+    source: 'planned',
+    needs: '{threadId} -> receipt',
+  },
+  'operation.undo': {
+    method: 'Operation/undo',
+    kind: 'overlay',
+    source: 'planned',
+    needs: '{opId} -> receipt whose opId is the inverse operation',
+  },
+  'operation.undoLast': {
+    method: 'Operation/undo',
+    kind: 'local',
+    source: 'planned',
+    needs: 'data layer tracks the last undoable opId',
+  },
+  'submission.send': {
+    method: 'Submission/set',
+    kind: 'call',
+    source: 'planned',
+    needs:
+      '{action: send, draftId, markDone?} -> {submissionId, receipt}; notBefore = now + undoSeconds; row has queuedAt; ask: markDone in the same operation',
+  },
+  'submission.sendLater': {
+    method: 'Submission/set',
+    kind: 'call',
+    source: 'planned',
+    needs: '{action: send, draftId, notBefore, markDone?}',
+  },
+  'submission.undo': {
+    method: 'Submission/set',
+    kind: 'call',
+    source: 'planned',
+    needs: '{action: undo, submissionId}',
+  },
+  'submission.sendNow': {
+    method: 'Submission/set',
+    kind: 'call',
+    source: 'ask',
+    needs: '{action: sendNow, submissionId}; valid for queued, suspended, uncertain, failed',
+  },
+  'submission.reschedule': {
+    method: 'Submission/set',
+    kind: 'call',
+    source: 'ask',
+    needs: '{action: reschedule, submissionId, notBefore}',
+  },
+  'draft.save': {
+    method: 'Draft/set',
+    kind: 'call',
+    source: 'planned',
+    needs:
+      'create or update with baseRevision (ifInState); stateMismatch on conflict; ask: source {messageId, mode} on create, forward copies attachments',
+  },
   'draft.discard': { method: 'Draft/set', kind: 'call', source: 'planned', needs: 'destroy' },
-  'draft.resolveConflict': { method: 'Draft/set', kind: 'call', source: 'ask', needs: '{draftId, resolve: keepMine|takeTheirs|keepBoth}; Draft/changed frame sets changedElsewhere' },
-  'body.get': { method: 'MessageBody/get', kind: 'call', source: 'planned', needs: '{messageId} -> {bodyKind, text, quotedRanges}' },
-  'body.prefetch': { method: 'MessageBody/prefetch', kind: 'call', source: 'ask', needs: '{threadIds} (thread-granular, ARCH AM-1) with cancel (a requestId, or a second call with an empty list)' },
-  'mail.frame': { method: 'Mail/frame', kind: 'call', source: 'planned', needs: '{messageId, imagePolicy, findQuery, showQuotes?} -> {url, expiresAt, bodyKind, trackersRemoved, hasRemoteImages, quotedCount}; honours imageAllowSenders; srcdoc from the stand-in only' },
-  'mail.releaseFrame': { method: 'Mail/frame.release', kind: 'call', source: 'planned', needs: '{url}' },
-  'mail.allowImagesFrom': { method: 'Mail/allowImagesFrom', kind: 'call', source: 'ask', needs: '{address} -> receipt; appends to Settings.mail.imageAllowSenders (name is eng-contract\'s call)' },
-  'attachment.get': { method: 'GET /v1/blob/:id', kind: 'call', source: 'planned', needs: 'transferable ArrayBuffer on MessagePort, blob route on HTTP; never base64' },
-  'attachment.put': { method: 'Blob/put (PUT /v1/blob)', kind: 'call', source: 'ask', needs: '{data, name, mime} -> AttachmentRef {id, name, mime, size, state}; 25 MB cap; transferable on MessagePort; never base64' },
-  'sync.request': { method: 'Sync/request', kind: 'call', source: 'planned', needs: '{accountId?}; also clears a throttle pause for Retry now' },
-  'account.connect': { method: 'Account/connect', kind: 'stream', source: 'planned', needs: '{provider, loginHint?} -> requestId; progress frames; cancel' },
-  'account.reconnect': { method: 'Account/reconnect', kind: 'stream', source: 'planned', needs: '{accountId} with login_hint, no resync, queued changes kept; cancel' },
-  'account.cancelConnect': { method: 'Account/cancelConnect', kind: 'call', source: 'planned', needs: '{connectId} -> {cancelled}; a late answer is then ignored (F1 f1-gaps)' },
-  'account.setAiAllowed': { method: 'Account/set', kind: 'call', source: 'ask', needs: '{accountId, aiAllowed} -> receipt; plan 10 freeze row 6 names per-account aiAllowed, the verb is eng-contract\'s call' },
+  'draft.resolveConflict': {
+    method: 'Draft/set',
+    kind: 'call',
+    source: 'ask',
+    needs:
+      '{draftId, resolve: keepMine|takeTheirs|keepBoth}; Draft/changed frame sets changedElsewhere',
+  },
+  'body.get': {
+    method: 'MessageBody/get',
+    kind: 'call',
+    source: 'planned',
+    needs: '{messageId} -> {bodyKind, text, quotedRanges}',
+  },
+  'body.prefetch': {
+    method: 'MessageBody/prefetch',
+    kind: 'call',
+    source: 'ask',
+    needs:
+      '{threadIds} (thread-granular, ARCH AM-1) with cancel (a requestId, or a second call with an empty list)',
+  },
+  'mail.frame': {
+    method: 'Mail/frame',
+    kind: 'call',
+    source: 'planned',
+    needs:
+      '{messageId, imagePolicy, findQuery, showQuotes?} -> {url, expiresAt, bodyKind, trackersRemoved, hasRemoteImages, quotedCount}; honours imageAllowSenders; srcdoc from the stand-in only',
+  },
+  'mail.releaseFrame': {
+    method: 'Mail/frame.release',
+    kind: 'call',
+    source: 'planned',
+    needs: '{url}',
+  },
+  'mail.allowImagesFrom': {
+    method: 'Mail/allowImagesFrom',
+    kind: 'call',
+    source: 'ask',
+    needs:
+      "{address} -> receipt; appends to Settings.mail.imageAllowSenders (name is eng-contract's call)",
+  },
+  'attachment.get': {
+    method: 'GET /v1/blob/:id',
+    kind: 'call',
+    source: 'planned',
+    needs: 'transferable ArrayBuffer on MessagePort, blob route on HTTP; never base64',
+  },
+  'attachment.put': {
+    method: 'Blob/put (PUT /v1/blob)',
+    kind: 'call',
+    source: 'ask',
+    needs:
+      '{data, name, mime} -> AttachmentRef {id, name, mime, size, state}; 25 MB cap; transferable on MessagePort; never base64',
+  },
+  'sync.request': {
+    method: 'Sync/request',
+    kind: 'call',
+    source: 'planned',
+    needs: '{accountId?}; also clears a throttle pause for Retry now',
+  },
+  'account.connect': {
+    method: 'Account/connect',
+    kind: 'stream',
+    source: 'planned',
+    needs: '{provider, loginHint?} -> requestId; progress frames; cancel',
+  },
+  'account.reconnect': {
+    method: 'Account/reconnect',
+    kind: 'stream',
+    source: 'planned',
+    needs: '{accountId} with login_hint, no resync, queued changes kept; cancel',
+  },
+  'account.cancelConnect': {
+    method: 'Account/cancelConnect',
+    kind: 'call',
+    source: 'planned',
+    needs: '{connectId} -> {cancelled}; a late answer is then ignored (F1 f1-gaps)',
+  },
+  'account.setAiAllowed': {
+    method: 'Account/set',
+    kind: 'call',
+    source: 'ask',
+    needs:
+      "{accountId, aiAllowed} -> receipt; plan 10 freeze row 6 names per-account aiAllowed, the verb is eng-contract's call",
+  },
   'setup.begin': { method: 'Setup/begin', kind: 'call', source: 'planned', needs: '{}' },
   'setup.end': { method: 'Setup/end', kind: 'call', source: 'planned', needs: '{}; idempotent' },
-  'setup.retry': { method: 'Setup/retry', kind: 'call', source: 'ask', needs: '{accountId}; idempotent, resumes from the checkpoint (F5); name is eng-contract\'s call' },
-  'demo.load': { method: 'Demo/load', kind: 'call', source: 'planned', needs: 'idempotent; demo accounts only' },
-  'demo.reset': { method: 'Demo/reset', kind: 'call', source: 'planned', needs: 'idempotent; demo accounts only' },
-  'demo.remove': { method: 'Demo/remove', kind: 'call', source: 'planned', needs: 'idempotent; demo accounts only' },
-  'settings.get': { method: 'Settings/get', kind: 'call', source: 'planned', needs: 'Settings with the ui object' },
-  'settings.set': { method: 'Settings/set', kind: 'call', source: 'planned', needs: 'per section, the fields given replace those fields; object-valued fields (dock, keymap, palette, calendar) are replaced whole -> receipt' },
-  'ask.run': { method: 'Ask/run', kind: 'stream', source: 'planned', needs: 'progress frames step {id, text, state, count?}|text|citation (message {n, messageId, threadId, quote, fromName?, date?, subject?} or event {n, eventId, title, start})|proposal|done|error; cancel' },
-  'ai.request': { method: 'Ai/request', kind: 'call', source: 'planned', needs: 'kinds draft, polish, summary' },
-  'ai.transcribe': { method: 'Blob/put + Ai/request', kind: 'call', source: 'ask', needs: 'audio as a transferable buffer, then {kind: transcribe, blobId} -> {text}' },
-  'ai.setConsent': { method: 'Consent/set', kind: 'call', source: 'planned', needs: '{providerId, model, version} | null -> receipt; Settings.ai.consent and consentVersion carry the record (plan 10 freeze row 6 Consent/*; the verb is eng-contract\'s call)' },
-  'engine.restart': { method: 'native engine.restart (main native-methods.ts)', kind: 'native', source: 'ask', needs: 'restarts or un-parks the engine utilityProcess; works when the engine cannot answer' },
-  'diagnostics.preview': { method: 'Diagnostics/preview', kind: 'call', source: 'planned', needs: '{} -> {text, generatedAt}; content-free' },
-  'diagnostics.copy': { method: 'Diagnostics/preview, native fallback through main', kind: 'native', source: 'ask', needs: 'clipboard write of the bundle; main builds a host-only bundle when the engine is unreachable or parked' },
+  'setup.retry': {
+    method: 'Setup/retry',
+    kind: 'call',
+    source: 'ask',
+    needs: "{accountId}; idempotent, resumes from the checkpoint (F5); name is eng-contract's call",
+  },
+  'demo.load': {
+    method: 'Demo/load',
+    kind: 'call',
+    source: 'planned',
+    needs: 'idempotent; demo accounts only',
+  },
+  'demo.reset': {
+    method: 'Demo/reset',
+    kind: 'call',
+    source: 'planned',
+    needs: 'idempotent; demo accounts only',
+  },
+  'demo.remove': {
+    method: 'Demo/remove',
+    kind: 'call',
+    source: 'planned',
+    needs: 'idempotent; demo accounts only',
+  },
+  'settings.get': {
+    method: 'Settings/get',
+    kind: 'call',
+    source: 'planned',
+    needs: 'Settings with the ui object',
+  },
+  'settings.set': {
+    method: 'Settings/set',
+    kind: 'call',
+    source: 'planned',
+    needs:
+      'per section, the fields given replace those fields; object-valued fields (dock, keymap, palette, calendar) are replaced whole -> receipt',
+  },
+  'ask.run': {
+    method: 'Ask/run',
+    kind: 'stream',
+    source: 'planned',
+    needs:
+      'progress frames step {id, text, state, count?}|text|citation (message {n, messageId, threadId, quote, fromName?, date?, subject?} or event {n, eventId, title, start})|proposal|done|error; cancel',
+  },
+  'ai.request': {
+    method: 'Ai/request',
+    kind: 'call',
+    source: 'planned',
+    needs: 'kinds draft, polish, summary',
+  },
+  'ai.transcribe': {
+    method: 'Blob/put + Ai/request',
+    kind: 'call',
+    source: 'ask',
+    needs: 'audio as a transferable buffer, then {kind: transcribe, blobId} -> {text}',
+  },
+  'ai.setConsent': {
+    method: 'Consent/set',
+    kind: 'call',
+    source: 'planned',
+    needs:
+      "{providerId, model, version} | null -> receipt; Settings.ai.consent and consentVersion carry the record (plan 10 freeze row 6 Consent/*; the verb is eng-contract's call)",
+  },
+  'engine.restart': {
+    method: 'native engine.restart (main native-methods.ts)',
+    kind: 'native',
+    source: 'ask',
+    needs: 'restarts or un-parks the engine utilityProcess; works when the engine cannot answer',
+  },
+  'diagnostics.preview': {
+    method: 'Diagnostics/preview',
+    kind: 'call',
+    source: 'planned',
+    needs: '{} -> {text, generatedAt}; content-free',
+  },
+  'diagnostics.copy': {
+    method: 'Diagnostics/preview, native fallback through main',
+    kind: 'native',
+    source: 'ask',
+    needs:
+      'clipboard write of the bundle; main builds a host-only bundle when the engine is unreachable or parked',
+  },
 } as const satisfies Record<ApiMethodName, ContractMethodRef>;
 
 /** What the hooks need from the contract besides `api`, for the freeze reviewer. */
 export const CONTRACT_HOOK_NEEDS = {
-  useView: 'View/watch {spec, holdIds?} -> window {windowId, state, seq, ids, total, changed, offset, groups}; View/move {windowId, anchor}; View/unwatch; reset frame; a failed window carries a ContractError; drafts spec yields Draft rows; Thread/get, Message/get and Draft/get for unknown or changed ids',
-  useHome: 'home spec with groups do, fromLater, update, follow; home.low spec with groups by sender (label = name)',
+  useView:
+    'View/watch {spec, holdIds?} -> window {windowId, state, seq, ids, total, changed, offset, groups}; View/move {windowId, anchor}; View/unwatch; reset frame; a failed window carries a ContractError; drafts spec yields Draft rows; Thread/get, Message/get and Draft/get for unknown or changed ids',
+  useHome:
+    'home spec with groups do, fromLater, update, follow; home.low spec with groups by sender (label = name)',
   useRow: 'T/get {ids} -> {state, list, notFound}; state frames per type',
   useRowState: 'as useRow; notFound ids and destroyed rows report notFound',
   useOperation: 'receipts; Operation rows in state frames for remote progress',
-  useHold: 'View/hold {windowId, ids}, View/release {windowId} and an activity ping on the open window (holds expire about 2 s after the last activity); never a re-watch',
+  useHold:
+    'View/hold {windowId, ids}, View/release {windowId} and an activity ping on the open window (holds expire about 2 s after the last activity); never a re-watch',
   usePrefetchIntent: 'MessageBody/prefetch {threadIds} with cancel',
   useMessageBody: 'MessageBody/get',
-  useSession: 'Session/get {apiVersion, appVersion, schemaVersion, dbEpoch, capabilities, hasAccounts}',
-  useConnection: 'the parked push frame {reason, since}, sent by main when the engine cannot; transport state from bridge.ts',
-  useAccounts: 'Account/get and state frames; status per ARCH 6.4; reconnectBy, baselineDoneAt, isDemo',
+  useSession:
+    'Session/get {apiVersion, appVersion, schemaVersion, dbEpoch, capabilities, hasAccounts}',
+  useConnection:
+    'the parked push frame {reason, since}, sent by main when the engine cannot; transport state from bridge.ts',
+  useAccounts:
+    'Account/get and state frames; status per ARCH 6.4; reconnectBy, baselineDoneAt, isDemo',
   useStatus: 'as useAccounts',
-  useCounts: 'Counts singleton {unread, home, laterDue, drafts, handledToday} per scope, in state frames; home includes Back from Later',
+  useCounts:
+    'Counts singleton {unread, home, laterDue, drafts, handledToday} per scope, in state frames; home includes Back from Later',
   useAgenda: 'Event/query {from, to, calendarIds?} -> EventRow[]; state frames for type Event',
   useSetupStatus: 'Setup/status per plan 10 4.1, pushed while setup runs',
-  useSettings: 'Settings/get and state frames; Settings.ui per F1 UiSettings (theme, density, keyHints, singleKeys, holdMs, dock, keymap, sidebarMinimised, swipe, swipeDirection, zen, sendSound, devDetails, lastAccount, palette.recents, calendar.weekStart)',
-  useFrames: 'F1 push frames progress {runId, source, kind, step, delta, turnId, citation, proposal, problem}, connect {connectId, mode, state, accountId?, reasonCode?} and the host frame clock event {type: clock, now}; a live run replays from its start',
-  useNow: 'Session/get.now and the host clock event when the fixture sets the clock (test builds only, APLOS_NOW); Date.now() otherwise',
-  useUndoTop: 'none beyond Operation/undo and OperationView.undoable; local entries never reach the engine',
+  useSettings:
+    'Settings/get and state frames; Settings.ui per F1 UiSettings (theme, density, keyHints, singleKeys, holdMs, dock, keymap, sidebarMinimised, swipe, swipeDirection, zen, sendSound, devDetails, lastAccount, palette.recents, calendar.weekStart)',
+  useFrames:
+    'F1 push frames progress {runId, source, kind, step, delta, turnId, citation, proposal, problem}, connect {connectId, mode, state, accountId?, reasonCode?} and the host frame clock event {type: clock, now}; a live run replays from its start',
+  useNow:
+    'Session/get.now and the host clock event when the fixture sets the clock (test builds only, APLOS_NOW); Date.now() otherwise',
+  useUndoTop:
+    'none beyond Operation/undo and OperationView.undoable; local entries never reach the engine',
 } as const;
 
 /** The command surface. Every method throws `NotImplementedError` until U2. */

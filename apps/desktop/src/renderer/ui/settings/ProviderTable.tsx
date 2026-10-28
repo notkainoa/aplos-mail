@@ -1,6 +1,13 @@
 import { useId } from 'react';
 import type { ReactNode } from 'react';
-import type { AiFeature, KeySource, ProviderAction, ProviderId, ProviderStatus, ProviderTableProps } from '../props';
+import type {
+  AiFeature,
+  KeySource,
+  ProviderAction,
+  ProviderId,
+  ProviderStatus,
+  ProviderTableProps,
+} from '../props';
 import { SetIcon } from './icons';
 import { FEATURE_COPY, keySourceText, PROVIDER_NAMES } from './names';
 import { SettingRow } from './SettingRow';
@@ -44,7 +51,11 @@ function StatusCell({ status }: { status: ProviderStatus }) {
       aria-live="polite"
       aria-busy={status.kind === 'testing' ? true : undefined}
     >
-      {view.icon ? <SetIcon name={view.icon} /> : <span className="ui-provider-table__dot" aria-hidden="true" />}
+      {view.icon ? (
+        <SetIcon name={view.icon} />
+      ) : (
+        <span className="ui-provider-table__dot" aria-hidden="true" />
+      )}
       <span className="ui-provider-table__status-text">{view.text}</span>
     </span>
   );
@@ -88,7 +99,9 @@ function RowButton({
 }
 
 function removeReason(source: KeySource): string | undefined {
-  return source.kind === 'environment' ? `This key comes from ${source.variable} in your environment. Remove it there.` : undefined;
+  return source.kind === 'environment'
+    ? `This key comes from ${source.variable} in your environment. Remove it there.`
+    : undefined;
 }
 
 /** The actions of a keyed row: Test, then Replace key and Remove, or Add key when no key is set. */
@@ -112,9 +125,18 @@ function Actions({
     return (
       <>
         {testWithoutKey ? (
-          <RowButton label="Test" aria={`Test ${name}`} disabled={status?.kind === 'testing'} onClick={() => onAction('test')} />
+          <RowButton
+            label="Test"
+            aria={`Test ${name}`}
+            disabled={status?.kind === 'testing'}
+            onClick={() => onAction('test')}
+          />
         ) : null}
-        <RowButton label="Add key" aria={`Add a key for ${name}`} onClick={() => onAction('addKey')} />
+        <RowButton
+          label="Add key"
+          aria={`Add a key for ${name}`}
+          onClick={() => onAction('addKey')}
+        />
       </>
     );
   }
@@ -128,7 +150,11 @@ function Actions({
         onClick={() => onAction('test')}
       />
       {replace && source.kind === 'keychain' ? (
-        <RowButton label="Replace key" aria={`Replace the key for ${name}`} onClick={() => onAction('replaceKey')} />
+        <RowButton
+          label="Replace key"
+          aria={`Replace the key for ${name}`}
+          onClick={() => onAction('replaceKey')}
+        />
       ) : null}
       {source.kind === 'local' ? null : (
         <RowButton
@@ -144,7 +170,17 @@ function Actions({
 }
 
 /** The ErrorLine under a row whose key was refused or whose server did not answer (DESIGN 7.15 voice). */
-function Fix({ name, source, status, onAction }: { name: string; source: KeySource; status: ProviderStatus; onAction: (a: ProviderAction) => void }) {
+function Fix({
+  name,
+  source,
+  status,
+  onAction,
+}: {
+  name: string;
+  source: KeySource;
+  status: ProviderStatus;
+  onAction: (a: ProviderAction) => void;
+}) {
   if (status.kind === 'refused') {
     const env = source.kind === 'environment';
     return (
@@ -156,7 +192,11 @@ function Fix({ name, source, status, onAction }: { name: string; source: KeySour
             : `${name} refused the saved key, so nothing was sent. Replace it with a fresh one. Your other providers are not affected.`}
         </span>
         {env ? null : (
-          <button type="button" className="ui-provider-table__button" onClick={() => onAction('replaceKey')}>
+          <button
+            type="button"
+            className="ui-provider-table__button"
+            onClick={() => onAction('replaceKey')}
+          >
             Replace key
           </button>
         )}
@@ -191,8 +231,8 @@ function Select({
   const list = options.includes(value) ? options : [value, ...options];
   return (
     <span className="ui-provider-table__select">
-      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
-        {list.map((o) => (
+      <select aria-label={label} value={value} onChange={e => onChange(e.target.value)}>
+        {list.map(o => (
           <option key={o} value={o}>
             {names?.[o] ?? o}
           </option>
@@ -203,10 +243,16 @@ function Select({
   );
 }
 
-function localDescription(row: Extract<ProviderTableProps, { kind: 'local' }>['rows'][number]): string {
-  const where = row.provider === 'custom' ? 'Any OpenAI-compatible server' : `On this Mac · ${row.running ? 'running' : 'not running'}`;
+function localDescription(
+  row: Extract<ProviderTableProps, { kind: 'local' }>['rows'][number],
+): string {
+  const where =
+    row.provider === 'custom'
+      ? 'Any OpenAI-compatible server'
+      : `On this Mac · ${row.running ? 'running' : 'not running'}`;
   const source = row.keySource;
-  if (!source || source.kind === 'local') return row.provider === 'custom' ? `${where} · key optional` : `${where} · no key needed`;
+  if (!source || source.kind === 'local')
+    return row.provider === 'custom' ? `${where} · key optional` : `${where} · no key needed`;
   if (source.kind === 'none') return `${where} · key optional`;
   return `${where} · ${keySourceText(source)}`;
 }
@@ -224,7 +270,7 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
     const { rows, onChange } = props;
     return (
       <div className="ui-provider-table" data-kind="features">
-        {rows.map((row) => {
+        {rows.map(row => {
           const copy = FEATURE_COPY[row.feature as AiFeature];
           const id = `${uid}-${row.feature}`;
           return (
@@ -240,13 +286,15 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
                     value={row.provider}
                     options={row.providerOptions}
                     names={PROVIDER_NAMES}
-                    onChange={(provider) => onChange(row.feature, { provider: provider as ProviderId, model: row.model })}
+                    onChange={provider =>
+                      onChange(row.feature, { provider: provider as ProviderId, model: row.model })
+                    }
                   />
                   <Select
                     label={`${copy.label} model`}
                     value={row.model}
                     options={row.modelOptions}
-                    onChange={(model) => onChange(row.feature, { provider: row.provider, model })}
+                    onChange={model => onChange(row.feature, { provider: row.provider, model })}
                   />
                 </span>
               }
@@ -261,7 +309,7 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
     const { rows, onAction } = props;
     return (
       <div className="ui-provider-table" data-kind="hosted">
-        {rows.map((row) => {
+        {rows.map(row => {
           const name = PROVIDER_NAMES[row.provider];
           const id = `${uid}-${row.provider}`;
           return (
@@ -282,11 +330,16 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
                     name={name}
                     source={row.keySource}
                     status={row.status}
-                    onAction={(action) => onAction(row.provider, action)}
+                    onAction={action => onAction(row.provider, action)}
                   />
                 </span>
               </div>
-              <Fix name={name} source={row.keySource} status={row.status} onAction={(action) => onAction(row.provider, action)} />
+              <Fix
+                name={name}
+                source={row.keySource}
+                status={row.status}
+                onAction={action => onAction(row.provider, action)}
+              />
             </div>
           );
         })}
@@ -297,7 +350,7 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
   const { rows, onAddressChange, onAction } = props;
   return (
     <div className="ui-provider-table" data-kind="local">
-      {rows.map((row) => {
+      {rows.map(row => {
         const name = PROVIDER_NAMES[row.provider as LocalId];
         const id = `${uid}-${row.provider}`;
         const source = row.keySource ?? { kind: 'local' as const };
@@ -311,13 +364,18 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
                 status={row.status}
                 replace
                 testWithoutKey
-                onAction={(action) => onAction(row.provider, action)}
+                onAction={action => onAction(row.provider, action)}
               />
             </div>
           ) : onAction ? (
             <div className="ui-provider-table__local-actions">
               {row.status ? <StatusCell status={row.status} /> : null}
-              <RowButton label="Test" aria={`Test ${name}`} disabled={row.status?.kind === 'testing'} onClick={() => onAction(row.provider, 'test')} />
+              <RowButton
+                label="Test"
+                aria={`Test ${name}`}
+                disabled={row.status?.kind === 'testing'}
+                onClick={() => onAction(row.provider, 'test')}
+              />
             </div>
           ) : undefined;
         return (
@@ -336,7 +394,7 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
                 autoComplete="off"
                 aria-label={`${name} address`}
                 aria-describedby={`${id}-description`}
-                onChange={(e) => onAddressChange(row.provider, e.target.value)}
+                onChange={e => onAddressChange(row.provider, e.target.value)}
               />
             }
             below={
@@ -344,7 +402,12 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
                 <>
                   {actions}
                   {onAction && row.status ? (
-                    <Fix name={name} source={source} status={row.status} onAction={(action) => onAction(row.provider, action)} />
+                    <Fix
+                      name={name}
+                      source={source}
+                      status={row.status}
+                      onAction={action => onAction(row.provider, action)}
+                    />
                   ) : null}
                 </>
               ) : undefined

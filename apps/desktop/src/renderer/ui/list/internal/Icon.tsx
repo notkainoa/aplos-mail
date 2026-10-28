@@ -153,5 +153,13 @@ const GLYPHS: Record<IconName, LucideIcon> = {
 /** One monoline icon, always decorative (the control around it carries the name). 16 / 14 / 12 px. */
 export function Icon({ name, size = 'md' }: { name: IconName; size?: 'md' | 'sm' | 'xs' }) {
   const Glyph = GLYPHS[name];
-  return <Glyph className="ui-list-icon" data-size={size} data-icon={name} aria-hidden="true" focusable="false" />;
+  return (
+    <Glyph
+      className="ui-list-icon"
+      data-size={size}
+      data-icon={name}
+      aria-hidden="true"
+      focusable="false"
+    />
+  );
 }

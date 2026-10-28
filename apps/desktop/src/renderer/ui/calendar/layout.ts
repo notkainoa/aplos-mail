@@ -60,7 +60,7 @@ export function timedOn(event: CalendarEventData, day: IsoDate): Timed | null {
 
 /** All-day entries that cover `day`. */
 export function allDayOn(events: readonly CalendarEventData[], day: IsoDate): CalendarEventData[] {
-  return events.filter((e) => {
+  return events.filter(e => {
     if (!e.allDay) return false;
     const first = dayOf(e.start);
     const last = isoOf(new Date(new Date(e.end).getTime() - 60000));
@@ -69,7 +69,9 @@ export function allDayOn(events: readonly CalendarEventData[], day: IsoDate): Ca
 }
 
 export function sortTimed<T extends Timed>(list: readonly T[]): T[] {
-  return [...list].sort((a, b) => a.at - b.at || b.end - b.at - (a.end - a.at) || a.event.id.localeCompare(b.event.id));
+  return [...list].sort(
+    (a, b) => a.at - b.at || b.end - b.at - (a.end - a.at) || a.event.id.localeCompare(b.event.id),
+  );
 }
 
 export function layoutDay(timed: readonly Timed[], maxLanes: number): DayLayout {
@@ -82,7 +84,7 @@ export function layoutDay(timed: readonly Timed[], maxLanes: number): DayLayout 
     if (cluster.length === 0) return;
     const laneEnds: number[] = [];
     for (const e of cluster) {
-      let lane = laneEnds.findIndex((end) => end <= e.at + EPS);
+      let lane = laneEnds.findIndex(end => end <= e.at + EPS);
       if (lane < 0) {
         lane = laneEnds.length;
         laneEnds.push(0);
@@ -95,12 +97,13 @@ export function layoutDay(timed: readonly Timed[], maxLanes: number): DayLayout 
       for (const e of cluster) out.items.push({ ...e, lane: e.lane, lanes, beside: false });
     } else {
       const keep = maxLanes - 1;
-      const folded = cluster.filter((e) => e.lane >= keep);
-      for (const e of cluster.filter((e) => e.lane < keep)) out.items.push({ ...e, lane: e.lane, lanes: keep, beside: true });
+      const folded = cluster.filter(e => e.lane >= keep);
+      for (const e of cluster.filter(e => e.lane < keep))
+        out.items.push({ ...e, lane: e.lane, lanes: keep, beside: true });
       out.stacks.push({
-        events: folded.map((e) => e.event),
-        at: Math.min(...folded.map((e) => e.at)),
-        end: Math.max(...folded.map((e) => e.end)),
+        events: folded.map(e => e.event),
+        at: Math.min(...folded.map(e => e.at)),
+        end: Math.max(...folded.map(e => e.end)),
         alone: keep === 0,
       });
     }
@@ -120,7 +123,7 @@ export function layoutDay(timed: readonly Timed[], maxLanes: number): DayLayout 
 /** Days shown for a view, in column order. */
 export function daysOf(view: 'day' | 'week' | 'agenda', start: IsoDate): IsoDate[] {
   if (view === 'day') return [start];
-  return [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(start, i));
+  return [0, 1, 2, 3, 4, 5, 6].map(i => addDays(start, i));
 }
 
 /** Where a pointer move puts an entry or a new range: snapped start and end in hours, at least 15 minutes long. */
@@ -137,7 +140,11 @@ export function dragRange(
     const at = Math.min(24 - length, Math.max(0, snap(origin.at + delta)));
     return { at, end: at + length };
   }
-  if (kind === 'resize') return { at: origin.at, end: Math.min(24, Math.max(origin.at + step, snap(origin.end + delta))) };
+  if (kind === 'resize')
+    return {
+      at: origin.at,
+      end: Math.min(24, Math.max(origin.at + step, snap(origin.end + delta))),
+    };
   const a = snap(origin.pointer);
   const b = snap(pointer);
   const at = Math.max(0, Math.min(a, b));

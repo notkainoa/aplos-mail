@@ -27,7 +27,7 @@ export function OnboardingStep({
   const uid = useId();
   const tipId = `${uid}-demo`;
   const moreId = `${uid}-more`;
-  const firstFilled = actions?.findIndex((a) => a.emphasis === 'filled') ?? -1;
+  const firstFilled = actions?.findIndex(a => a.emphasis === 'filled') ?? -1;
   const { dashes, note, buttons } = footer;
 
   return (
@@ -74,11 +74,18 @@ export function OnboardingStep({
                 onClick={moreOptions.onToggle}
               >
                 <span>More options</span>
-                <span className="ui-onboarding-step__chevron" data-expanded={moreOptions.expanded ? 'true' : 'false'}>
+                <span
+                  className="ui-onboarding-step__chevron"
+                  data-expanded={moreOptions.expanded ? 'true' : 'false'}
+                >
                   <OnbIcon name="chevron-down" />
                 </span>
               </button>
-              <div className="ui-onboarding-step__more-content" id={moreId} hidden={!moreOptions.expanded}>
+              <div
+                className="ui-onboarding-step__more-content"
+                id={moreId}
+                hidden={!moreOptions.expanded}
+              >
                 {moreOptions.content}
               </div>
             </>
@@ -86,7 +93,12 @@ export function OnboardingStep({
           {actions && actions.length > 0 ? (
             <div className="ui-onboarding-step__actions">
               {actions.map((button, i) => (
-                <StepAction key={button.label} button={button} placement="body" autoFocus={i === firstFilled} />
+                <StepAction
+                  key={button.label}
+                  button={button}
+                  placement="body"
+                  autoFocus={i === firstFilled}
+                />
               ))}
             </div>
           ) : null}
@@ -95,9 +107,16 @@ export function OnboardingStep({
 
       <footer className="ui-onboarding-step__foot">
         {dashes ? (
-          <div className="ui-onboarding-step__dashes" role="img" aria-label={`Step ${dashes.step} of ${dashes.of}`}>
+          <div
+            className="ui-onboarding-step__dashes"
+            role="img"
+            aria-label={`Step ${dashes.step} of ${dashes.of}`}
+          >
             {Array.from({ length: dashes.of }, (_, i) => (
-              <i key={i} data-state={i + 1 < dashes.step ? 'done' : i + 1 === dashes.step ? 'on' : 'todo'} />
+              <i
+                key={i}
+                data-state={i + 1 < dashes.step ? 'done' : i + 1 === dashes.step ? 'on' : 'todo'}
+              />
             ))}
           </div>
         ) : null}
@@ -111,7 +130,7 @@ export function OnboardingStep({
           )}
         </span>
         <div className="ui-onboarding-step__buttons">
-          {buttons.map((button) => (
+          {buttons.map(button => (
             <StepAction key={button.label} button={button} placement="footer" />
           ))}
         </div>

@@ -52,7 +52,14 @@ export function FocusLetter({
 
       <Summary {...summary} clamp="two-lines" />
 
-      {rejected ? <ErrorLine kind="writeRejected" op={rejected.op} placement="row" onAction={() => rejected.onRetry()} /> : null}
+      {rejected ? (
+        <ErrorLine
+          kind="writeRejected"
+          op={rejected.op}
+          placement="row"
+          onAction={() => rejected.onRetry()}
+        />
+      ) : null}
 
       <div className="ui-focus-letter__actions">
         <span className="ui-focus-letter__suggest">
@@ -76,7 +83,7 @@ export function FocusLetter({
           tooltip={tooltipText('Later', commands.later)}
           hintKey={keycapFor(commands.later)}
           duplicate
-          onPress={(anchor) => onLater(anchor)}
+          onPress={anchor => onLater(anchor)}
         />
         {suggestion.isDone ? null : (
           <Action
@@ -99,7 +106,7 @@ export function FocusLetter({
           tooltip={tooltipText('More: bookmark, trash, why it’s here', commands.more)}
           hintKey={keycapFor(commands.more)}
           duplicate
-          onPress={(anchor) => onMore(anchor)}
+          onPress={anchor => onMore(anchor)}
         />
       </div>
     </div>

@@ -11,7 +11,14 @@ export function SpinnerGlyph() {
   return (
     <svg className="ui-spinner__glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <circle className="ui-spinner__track" cx="12" cy="12" r="8.5" />
-      <circle className="ui-spinner__arc" cx="12" cy="12" r="8.5" pathLength="100" strokeDasharray="26 74" />
+      <circle
+        className="ui-spinner__arc"
+        cx="12"
+        cy="12"
+        r="8.5"
+        pathLength="100"
+        strokeDasharray="26 74"
+      />
     </svg>
   );
 }
@@ -23,7 +30,14 @@ export function Spinner({ label, size = 'md' }: ComponentPropsMap['Spinner']) {
     return () => clearTimeout(t);
   }, []);
   return (
-    <span className="ui-spinner" data-size={size} data-state={shown ? 'shown' : 'waiting'} role="img" aria-label={label} aria-hidden={shown ? undefined : true}>
+    <span
+      className="ui-spinner"
+      data-size={size}
+      data-state={shown ? 'shown' : 'waiting'}
+      role="img"
+      aria-label={label}
+      aria-hidden={shown ? undefined : true}
+    >
       <SpinnerGlyph />
     </span>
   );

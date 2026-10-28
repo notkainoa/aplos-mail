@@ -5,7 +5,16 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeSheet, NotImplementedError, openRoute, openSheet, SHELL_LANE, useCommandTarget, useCurrentTarget, useSheet } from './index';
+import {
+  closeSheet,
+  NotImplementedError,
+  openRoute,
+  openSheet,
+  SHELL_LANE,
+  useCommandTarget,
+  useCurrentTarget,
+  useSheet,
+} from './index';
 import type { OpenSheet } from './index';
 
 /** The status slot, Settings and Ask open sheets; the sheet slot renders whichever is open. */
@@ -26,7 +35,12 @@ function sheetExample(): string {
 
 /** The reader names its thread for the palette's context line; Settings rows deep-link. */
 function targetExample(): string {
-  useCommandTarget({ kind: 'thread', id: 't1', title: 'Drew Bell', detail: 'October illustrations' });
+  useCommandTarget({
+    kind: 'thread',
+    id: 't1',
+    title: 'Drew Bell',
+    detail: 'October illustrations',
+  });
   // @ts-expect-error: a target says what it is.
   useCommandTarget({ id: 't1', title: 'Drew Bell' });
   openRoute('settings/mail#undoSeconds');
@@ -37,7 +51,10 @@ function targetExample(): string {
 
 function assertNotImplemented(fn: () => unknown, member: string): void {
   assert.throws(fn, (err: unknown) => {
-    assert.ok(err instanceof NotImplementedError, `${member} threw something other than NotImplementedError`);
+    assert.ok(
+      err instanceof NotImplementedError,
+      `${member} threw something other than NotImplementedError`,
+    );
     assert.equal(err.lane, 'ui-shell');
     assert.equal(err.code, 'NOT_IMPLEMENTED');
     assert.equal(err.member, member);

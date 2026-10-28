@@ -11,7 +11,12 @@ const GLYPH: Record<CommitKind, IconName> = { done: 'check', later: 'clock', tra
 /** The commit chip drawn on a leaving letter's ghost: icon plus word, never a colour flood. */
 export function CommitChip({ kind, ref }: CommitChipProps) {
   return (
-    <span ref={ref as Ref<HTMLSpanElement>} className="ui-commit-chip" data-kind={kind} aria-hidden="true">
+    <span
+      ref={ref as Ref<HTMLSpanElement>}
+      className="ui-commit-chip"
+      data-kind={kind}
+      aria-hidden="true"
+    >
       <Icon name={GLYPH[kind]} size="sm" />
       <span className="ui-commit-chip__word">{WORD[kind]}</span>
     </span>

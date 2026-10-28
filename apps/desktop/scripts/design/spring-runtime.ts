@@ -67,7 +67,12 @@ export function createSpring(from: number, to: number): SpringState {
 // The travel becomes the remaining distance (kept from before when that is 0).
 export function retargetSpring(state: SpringState, target: number): SpringState {
   const distance = Math.abs(target - state.value);
-  return { value: state.value, velocity: state.velocity, target, travel: distance > 0 ? distance : travelOf(state) };
+  return {
+    value: state.value,
+    velocity: state.velocity,
+    target,
+    travel: distance > 0 ? distance : travelOf(state),
+  };
 }
 
 function travelOf(state: SpringState): number {
@@ -80,7 +85,9 @@ function travelOf(state: SpringState): number {
 // 0 -> 300 px move both stop at 0.5 % of their travel, never early.
 export function springAtRest(state: SpringState, epsilon: number = SETTLE_EPSILON): boolean {
   const tolerance = epsilon * travelOf(state);
-  return Math.abs(state.value - state.target) <= tolerance && Math.abs(state.velocity) <= tolerance * 10;
+  return (
+    Math.abs(state.value - state.target) <= tolerance && Math.abs(state.velocity) <= tolerance * 10
+  );
 }
 
 export function springProgress(params: SpringParams, t: number): number {
@@ -128,6 +135,6 @@ export function springLinear(
   count: number = LINEAR_SAMPLES,
   epsilon: number = SETTLE_EPSILON,
 ): string {
-  const parts = springSamples(params, count, epsilon).map((s) => String(Number(s.toFixed(3))));
-  return `linear(${parts.join(", ")})`;
+  const parts = springSamples(params, count, epsilon).map(s => String(Number(s.toFixed(3))));
+  return `linear(${parts.join(', ')})`;
 }

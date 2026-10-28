@@ -214,7 +214,8 @@ export function parseChord(text: string): KeyChord {
   const chord = { key: '', meta: false, ctrl: false, alt: false, shift: false };
   for (const part of parts) {
     const modifier = MODIFIER_WORDS[part.toLowerCase()];
-    if (!modifier) throw new Error(`Unknown modifier "${part}" in "${text}" (use meta, ctrl, alt or shift)`);
+    if (!modifier)
+      throw new Error(`Unknown modifier "${part}" in "${text}" (use meta, ctrl, alt or shift)`);
     chord[modifier] = true;
   }
   const key = canonicalKey(rawKey);
@@ -270,8 +271,8 @@ export function chordFromEvent(event: KeyInput): KeyChord | null {
 
 /** A stable id for lookups: "ctrl+alt+shift+meta+key" with absent modifiers left out. */
 export function chordId(chord: KeyChord): string {
-  const prefix = MODIFIER_ORDER.filter((m) => chord[m])
-    .map((m) => `${m}+`)
+  const prefix = MODIFIER_ORDER.filter(m => chord[m])
+    .map(m => `${m}+`)
     .join('');
   return `${prefix}${chord.key}`;
 }
@@ -302,10 +303,11 @@ export function holdKeyOf(event: KeyInput): string {
 
 /** "⌘K", "⌃1", "⇧A", "⌥↓", "⌘⌥L", "⌘⇧Return", "Space", "Return", "Esc". */
 export function formatChord(chord: KeyChord): string {
-  const modifiers = DISPLAY_ORDER.filter((m) => chord[m])
-    .map((m) => MODIFIER_GLYPHS[m])
+  const modifiers = DISPLAY_ORDER.filter(m => chord[m])
+    .map(m => MODIFIER_GLYPHS[m])
     .join('');
-  const glyph = KEY_GLYPHS[chord.key] ?? (isLetter(chord.key) ? chord.key.toUpperCase() : chord.key);
+  const glyph =
+    KEY_GLYPHS[chord.key] ?? (isLetter(chord.key) ? chord.key.toUpperCase() : chord.key);
   return `${modifiers}${glyph}`;
 }
 
@@ -376,7 +378,8 @@ export function focusKindOf(target: unknown): FocusKind {
   if (el.isContentEditable) return 'text';
   const tag = (el.tagName ?? '').toUpperCase();
   if (tag === 'TEXTAREA') return 'text';
-  if (tag === 'INPUT') return NON_TEXT_INPUTS.has((el.type ?? 'text').toLowerCase()) ? 'control' : 'text';
+  if (tag === 'INPUT')
+    return NON_TEXT_INPUTS.has((el.type ?? 'text').toLowerCase()) ? 'control' : 'text';
   if (tag === 'SELECT' || tag === 'BUTTON' || tag === 'A') return 'control';
   const role = el.getAttribute?.('role') ?? '';
   if (TEXT_ROLES.has(role)) return 'text';

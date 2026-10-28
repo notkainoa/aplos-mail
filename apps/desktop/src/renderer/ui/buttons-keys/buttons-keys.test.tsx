@@ -26,12 +26,14 @@ import { Tooltip, TooltipBubble } from './Tooltip';
 const registry = createAppRegistry();
 const describe = (id: string) => registry.describeKeys(id);
 
-const html = (node: ReactNode) => renderToStaticMarkup(<CommandKeysProvider describe={describe}>{node}</CommandKeysProvider>);
+const html = (node: ReactNode) =>
+  renderToStaticMarkup(<CommandKeysProvider describe={describe}>{node}</CommandKeysProvider>);
 const inMode = (showKeys: 'tooltips' | 'held' | 'all', node: ReactNode) =>
   html(<KeyHintsProvider value={{ showKeys }}>{node}</KeyHintsProvider>);
 const text = (markup: string) => markup.replace(/<[^>]*>/g, '');
 
-const BANNED = /\b(swipe through them|hold to talk|todo|todos|hide all|magic|ai-powered|copilot|beta)\b|!/i;
+const BANNED =
+  /\b(swipe through them|hold to talk|todo|todos|hide all|magic|ai-powered|copilot|beta)\b|!/i;
 function assertClean(markup: string) {
   assert.doesNotMatch(text(markup), BANNED, 'banned copy rendered');
   assert.doesNotMatch(markup, /backdrop-filter|gradient|sparkle|wand|robot|brain|\bstar\b/i);
@@ -50,7 +52,7 @@ test('worst-case fixtures are the sizes they claim', () => {
 });
 
 test('manifest: the buttons-keys files exist where props.ts says', () => {
-  const entries = COMPONENTS.filter((c) => c.family === 'buttons-keys').map((c) => c.name);
+  const entries = COMPONENTS.filter(c => c.family === 'buttons-keys').map(c => c.name);
   assert.deepEqual(entries, ['Button', 'Kbd', 'Tooltip']);
 });
 
@@ -58,7 +60,11 @@ test('manifest: the buttons-keys files exist where props.ts says', () => {
 
 test('Icon: every IconName renders one aria-hidden glyph at 16, 14 and 12 px with a 1.5 stroke', () => {
   for (const name of Object.keys(LUCIDE_ICONS) as IconName[]) {
-    for (const [size, px] of [['md', 16], ['sm', 14], ['xs', 12]] as const) {
+    for (const [size, px] of [
+      ['md', 16],
+      ['sm', 14],
+      ['xs', 12],
+    ] as const) {
       const markup = renderToStaticMarkup(<Icon name={name} size={size} />);
       assert.match(markup, /aria-hidden="true"/, name);
       assert.match(markup, new RegExp(`data-icon="${name}"`), name);
@@ -71,7 +77,9 @@ test('Icon: every IconName renders one aria-hidden glyph at 16, 14 and 12 px wit
 });
 
 test('Icon: no AI glyph, bubble is a speech bubble, search the magnifier, bookmark a bookmark', () => {
-  const all = (Object.keys(LUCIDE_ICONS) as IconName[]).map((n) => renderToStaticMarkup(<Icon name={n} />)).join('');
+  const all = (Object.keys(LUCIDE_ICONS) as IconName[])
+    .map(n => renderToStaticMarkup(<Icon name={n} />))
+    .join('');
   assert.doesNotMatch(all, /lucide-(star|sparkle|wand|brain|bot)/i);
   assert.match(renderToStaticMarkup(<Icon name="bubble" />), /lucide-message-square/);
   assert.match(renderToStaticMarkup(<Icon name="search" />), /lucide-search/);
@@ -80,7 +88,7 @@ test('Icon: no AI glyph, bubble is a speech bubble, search the magnifier, bookma
 
 test('Icon: the native renderer seam wins over Lucide and null falls back', () => {
   const native = renderToStaticMarkup(
-    <IconSetContext.Provider value={(name) => (name === 'home' ? <i data-native="home" /> : null)}>
+    <IconSetContext.Provider value={name => (name === 'home' ? <i data-native="home" /> : null)}>
       <Icon name="home" />
       <Icon name="clock" />
     </IconSetContext.Provider>,
@@ -106,7 +114,17 @@ test('Kbd: one cap, never hover-driven; reveal modes follow the key-hint mode on
 });
 
 test('Kbd: worst-case chords render as given inside one element', () => {
-  for (const chord of ['⌘⇧Return', '⌃1–8', 'Space', EMOJI, CJK, ARABIC, LONG_300, EMAIL_80, '9999']) {
+  for (const chord of [
+    '⌘⇧Return',
+    '⌃1–8',
+    'Space',
+    EMOJI,
+    CJK,
+    ARABIC,
+    LONG_300,
+    EMAIL_80,
+    '9999',
+  ]) {
     const markup = html(<Kbd chord={chord} />);
     assert.equal(text(markup), chord);
     assert.equal((markup.match(/<kbd/g) ?? []).length, 1);
@@ -119,7 +137,10 @@ test('KeyCaps: alternatives join with "or", a hold chord gets the word "hold", e
   assert.equal((markup.match(/<kbd/g) ?? []).length, 2);
   assert.match(markup, /<span class="ui-key-word">or<\/span>/);
   const hold = html(<KeyCaps caps={parseKeyText('Hold R')} />);
-  assert.match(hold, /<span class="ui-key-word">hold<\/span><kbd class="ui-kbd" data-reveal="always">R<\/kbd>/);
+  assert.match(
+    hold,
+    /<span class="ui-key-word">hold<\/span><kbd class="ui-kbd" data-reveal="always">R<\/kbd>/,
+  );
   assert.equal(html(<KeyCaps caps={[]} />), '');
 });
 
@@ -154,9 +175,15 @@ test('Button: three idioms, radius and size hooks, plain type=button', () => {
   assert.match(filled, /data-size="md"/);
   assert.equal(text(filled), 'Send');
   for (const size of ['sm', 'md', 'lg'] as const) {
-    assert.match(html(<Button variant="text" label="Later" size={size} onPress={noop} />), new RegExp(`data-size="${size}"`));
+    assert.match(
+      html(<Button variant="text" label="Later" size={size} onPress={noop} />),
+      new RegExp(`data-size="${size}"`),
+    );
   }
-  assert.match(html(<Button variant="text" label="Later" icon="clock" onPress={noop} />), /data-variant="text"/);
+  assert.match(
+    html(<Button variant="text" label="Later" icon="clock" onPress={noop} />),
+    /data-variant="text"/,
+  );
 });
 
 test('Button: icon variant has aria-label, no visible label, and a tooltip wrapper path', () => {
@@ -165,7 +192,9 @@ test('Button: icon variant has aria-label, no visible label, and a tooltip wrapp
   assert.equal(text(markup), '');
   assert.doesNotMatch(markup, /ui-button-label/);
   assert.match(markup, /data-icon="close"/);
-  const labelled = html(<Button variant="icon" icon="bubble" label="Ask" labelVisible onPress={noop} />);
+  const labelled = html(
+    <Button variant="icon" icon="bubble" label="Ask" labelVisible onPress={noop} />,
+  );
   assert.doesNotMatch(labelled, /aria-label/);
   assert.equal(text(labelled), 'Ask');
   assert.match(labelled, /data-labelled="true"/);
@@ -180,12 +209,26 @@ test('Button: keycaps come from the registry and never show inline by default', 
 test('Button: keyHint always shows the registry key inline, hint only in "all", badge only while held', () => {
   const expected = parseKeyText(describe('mail.suggested'))[0].chord;
   assert.equal(expected, 'Space');
-  const always = inMode('tooltips', <Button variant="filled" label="Reply with times" commandId="mail.suggested" keyHint="always" onPress={noop} />);
-  assert.match(always, /<span class="ui-button-keys" aria-hidden="true"><span class="ui-key-caps" data-reveal="always"><kbd class="ui-kbd" data-reveal="always">Space<\/kbd>/);
+  const always = inMode(
+    'tooltips',
+    <Button
+      variant="filled"
+      label="Reply with times"
+      commandId="mail.suggested"
+      keyHint="always"
+      onPress={noop}
+    />,
+  );
+  assert.match(
+    always,
+    /<span class="ui-button-keys" aria-hidden="true"><span class="ui-key-caps" data-reveal="always"><kbd class="ui-kbd" data-reveal="always">Space<\/kbd>/,
+  );
   // accessible name stays the label because the caps are aria-hidden
   assert.match(always, /aria-hidden="true"/);
 
-  const hint = <Button variant="text" label="Done" commandId="mail.done" keyHint="hint" onPress={noop} />;
+  const hint = (
+    <Button variant="text" label="Done" commandId="mail.done" keyHint="hint" onPress={noop} />
+  );
   assert.doesNotMatch(inMode('tooltips', hint), /<kbd/);
   assert.match(inMode('all', hint), /<kbd class="ui-kbd" data-reveal="always">E<\/kbd>/);
 
@@ -195,16 +238,37 @@ test('Button: keyHint always shows the registry key inline, hint only in "all", 
   assert.match(held, /ui-button-badge/);
   assert.match(held, /data-reveal="badge">E<\/kbd>/);
   // a button with no key shows no badge while held
-  assert.doesNotMatch(inMode('held', <Button variant="text" label="Cancel" onPress={noop} />), /<kbd/);
+  assert.doesNotMatch(
+    inMode('held', <Button variant="text" label="Cancel" onPress={noop} />),
+    /<kbd/,
+  );
 });
 
 test('Button: literal keys for dialogs and onboarding (Return, Esc)', () => {
-  const ret = html(<Button variant="filled" size="lg" label="Continue" keys="Return" keyHint="always" onPress={noop} />);
+  const ret = html(
+    <Button
+      variant="filled"
+      size="lg"
+      label="Continue"
+      keys="Return"
+      keyHint="always"
+      onPress={noop}
+    />,
+  );
   assert.match(ret, />Return<\/kbd>/);
   assert.match(ret, /data-size="lg"/);
-  const esc = inMode('all', <Button variant="text" label="Back" keys="Esc" keyHint="hint" onPress={noop} />);
+  const esc = inMode(
+    'all',
+    <Button variant="text" label="Back" keys="Esc" keyHint="hint" onPress={noop} />,
+  );
   assert.match(esc, />Esc<\/kbd>/);
-  assert.doesNotMatch(inMode('tooltips', <Button variant="text" label="Back" keys="Esc" keyHint="hint" onPress={noop} />), /<kbd/);
+  assert.doesNotMatch(
+    inMode(
+      'tooltips',
+      <Button variant="text" label="Back" keys="Esc" keyHint="hint" onPress={noop} />,
+    ),
+    /<kbd/,
+  );
 });
 
 test('Button: disabled, explained-disabled, busy, pressed and popup states', () => {
@@ -212,7 +276,15 @@ test('Button: disabled, explained-disabled, busy, pressed and popup states', () 
   assert.match(disabled, /\sdisabled(=""|\s|>)/);
   assert.match(disabled, /data-state="disabled"/);
 
-  const explained = html(<Button variant="text" label="Remove" disabled disabledReason="This key comes from the environment." onPress={noop} />);
+  const explained = html(
+    <Button
+      variant="text"
+      label="Remove"
+      disabled
+      disabledReason="This key comes from the environment."
+      onPress={noop}
+    />,
+  );
   assert.doesNotMatch(explained, /\sdisabled(=""|\s|>)/);
   assert.match(explained, /aria-disabled="true"/);
   assert.match(explained, /data-state="disabled"/);
@@ -227,7 +299,13 @@ test('Button: disabled, explained-disabled, busy, pressed and popup states', () 
   assert.match(pressed, /aria-pressed="true"/);
 
   const popup = html(
-    <Button variant="text" label="Groq" trailingIcon="chevron-down" popup={{ kind: 'menu', expanded: true, controls: 'provider-menu' }} onPress={noop} />,
+    <Button
+      variant="text"
+      label="Groq"
+      trailingIcon="chevron-down"
+      popup={{ kind: 'menu', expanded: true, controls: 'provider-menu' }}
+      onPress={noop}
+    />,
   );
   assert.match(popup, /aria-haspopup="menu"/);
   assert.match(popup, /aria-expanded="true"/);
@@ -256,7 +334,9 @@ test('Button: worst-case labels stay one element with an ellipsis hook', () => {
 test('Button: every icon-only button of every size has an aria-label', () => {
   for (const size of ['sm', 'md', 'lg'] as const) {
     for (const name of Object.keys(LUCIDE_ICONS) as IconName[]) {
-      const markup = html(<Button variant="icon" icon={name} label={`Action ${name}`} size={size} onPress={noop} />);
+      const markup = html(
+        <Button variant="icon" icon={name} label={`Action ${name}`} size={size} onPress={noop} />,
+      );
       assert.match(markup, /aria-label="Action /);
     }
   }
@@ -286,7 +366,14 @@ test('Tooltip: keeps the child own aria-describedby while closed', () => {
 
 test('TooltipBubble: label, then keycaps from the registry, then the detail line', () => {
   const keys = parseKeyText(describe('mail.done'));
-  const markup = html(<TooltipBubble id="tip" label="Done" caps={keys} detail="Moves this conversation out of Home." />);
+  const markup = html(
+    <TooltipBubble
+      id="tip"
+      label="Done"
+      caps={keys}
+      detail="Moves this conversation out of Home."
+    />,
+  );
   assert.match(markup, /role="tooltip"/);
   assert.match(markup, /id="tip"/);
   assert.match(markup, /class="ui-tooltip-label">Done</);
@@ -300,7 +387,12 @@ test('TooltipBubble: label, then keycaps from the registry, then the detail line
 test('TooltipBubble: alternatives from the registry read "J or ↓"; hold reads "hold R"', () => {
   const next = html(<TooltipBubble label="Next row" caps={parseKeyText(describe('list.down'))} />);
   assert.match(text(next), /^Next rowJor↓$/);
-  const dictate = html(<TooltipBubble label="Hold R to dictate a reply" caps={parseKeyText(describe('mail.dictateReply'))} />);
+  const dictate = html(
+    <TooltipBubble
+      label="Hold R to dictate a reply"
+      caps={parseKeyText(describe('mail.dictateReply'))}
+    />,
+  );
   assert.match(dictate, /ui-key-word">hold</);
   assert.match(dictate, />R<\/kbd>/);
 });
@@ -318,18 +410,30 @@ test('TooltipBubble: worst-case label and detail', () => {
   const markup = html(<TooltipBubble label={LONG_300} detail={sender} />);
   assert.match(text(markup), new RegExp(LONG_300));
   assert.match(text(markup), new RegExp(EMAIL_80));
-  for (const label of ['A', CJK, ARABIC, EMOJI, '0', '9999']) assert.equal(text(html(<TooltipBubble label={label} />)), label);
+  for (const label of ['A', CJK, ARABIC, EMOJI, '0', '9999'])
+    assert.equal(text(html(<TooltipBubble label={label} />)), label);
 });
 
 test('Tooltip children: a Button needing a tooltip renders as the bare button until the pointer rests', () => {
-  const markup = html(<Button variant="icon" icon="compose" label="New message" commandId="mail.compose" onPress={noop} />);
+  const markup = html(
+    <Button
+      variant="icon"
+      icon="compose"
+      label="New message"
+      commandId="mail.compose"
+      onPress={noop}
+    />,
+  );
   assert.match(markup, /^<button /);
   assert.doesNotMatch(markup, /role="tooltip"/);
   assert.match(markup, /aria-label="New message"/);
 });
 
 test('Button CSS: a button can shrink so its label ellipsises; filled+danger keeps readable ink', () => {
-  const css = readFileSync(new URL('./buttons-keys.css', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('./buttons-keys.css', import.meta.url), 'utf8').replaceAll(
+    "'",
+    '"',
+  );
   const button = css.match(/\n\.ui-button \{[^}]*\}/)?.[0] ?? '';
   assert.match(button, /flex:\s*0 1 auto/);
   assert.match(button, /min-width:\s*0/);
@@ -357,20 +461,38 @@ test('Button: a 300-character label and an unbreakable email render in the ellip
 });
 
 test('Button: filled with tone danger renders both attributes (the stylesheet keeps the ink readable)', () => {
-  const markup = html(<Button variant="filled" tone="danger" label="Delete event" onPress={noop} />);
+  const markup = html(
+    <Button variant="filled" tone="danger" label="Delete event" onPress={noop} />,
+  );
   assert.match(markup, /data-variant="filled"/);
   assert.match(markup, /data-tone="danger"/);
 });
 
 test('Tooltip: a disabled reason is a permanent hidden description, so it is read on focus', () => {
   const markup = html(
-    <Button variant="text" label="Remove" disabled disabledReason="This key comes from the environment." onPress={noop} />,
+    <Button
+      variant="text"
+      label="Remove"
+      disabled
+      disabledReason="This key comes from the environment."
+      onPress={noop}
+    />,
   );
   const describedby = markup.match(/aria-describedby="([^"]+)"/)?.[1];
   assert.ok(describedby, 'the trigger points at the reason before any focus');
-  const span = markup.match(new RegExp(`<span id="${describedby}" class="ui-visually-hidden">([^<]*)</span>`));
+  const span = markup.match(
+    new RegExp(`<span id="${describedby}" class="ui-visually-hidden">([^<]*)</span>`),
+  );
   assert.equal(span?.[1], 'This key comes from the environment.');
-  const sw = html(<Switch checked={false} label="Sync" disabled disabledReason="Reconnect first." onChange={noop} />);
+  const sw = html(
+    <Switch
+      checked={false}
+      label="Sync"
+      disabled
+      disabledReason="Reconnect first."
+      onChange={noop}
+    />,
+  );
   assert.match(sw, /aria-describedby="[^"]+"/);
   assert.match(sw, /ui-visually-hidden">Reconnect first\./);
 });
@@ -381,7 +503,11 @@ test('Key hints: the shell resolves the mode with "all" winning over "held"', ()
   assert.equal(resolveShowKeys({ all: false, held: true }), 'held');
   assert.equal(resolveShowKeys({ all: false, held: false }), 'tooltips');
   // "all" keeps an inline hint on while the command key goes down: nothing unmounts, nothing shifts
-  const inline = (mode: 'tooltips' | 'held' | 'all') => inMode(mode, <Button variant="text" label="Done" commandId="mail.done" keyHint="hint" onPress={noop} />);
+  const inline = (mode: 'tooltips' | 'held' | 'all') =>
+    inMode(
+      mode,
+      <Button variant="text" label="Done" commandId="mail.done" keyHint="hint" onPress={noop} />,
+    );
   assert.match(inline(resolveShowKeys({ all: true, held: true })), /ui-button-keys/);
 });
 
@@ -391,7 +517,13 @@ test('Key hints: CommandKeysProvider closes over the current context stack, so t
     calls.push(stack);
     return registry.describeKeys(id, stack as never);
   };
-  const Probe = () => <span>{useControlKeys('mail.done').map((cap) => cap.chord).join('|')}</span>;
+  const Probe = () => (
+    <span>
+      {useControlKeys('mail.done')
+        .map(cap => cap.chord)
+        .join('|')}
+    </span>
+  );
   const render = (stack?: readonly string[]) =>
     text(
       renderToStaticMarkup(
@@ -407,5 +539,9 @@ test('Key hints: CommandKeysProvider closes over the current context stack, so t
 });
 
 // Type-level: the helper accepts any ReactElement child.
-const _typecheck: ReactElement = <Tooltip label="x"><span /></Tooltip>;
+const _typecheck: ReactElement = (
+  <Tooltip label="x">
+    <span />
+  </Tooltip>
+);
 void _typecheck;

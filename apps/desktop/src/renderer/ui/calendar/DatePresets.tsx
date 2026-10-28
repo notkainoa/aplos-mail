@@ -60,7 +60,7 @@ export function DatePresets(props: DatePresetsProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const title = purpose === 'later' ? 'Later until' : 'Due date';
   const confirmLabel = purpose === 'later' ? 'Move to Later' : 'Set due date';
-  const order: Entry[] = [...presets.map((p) => p.id), 'date'];
+  const order: Entry[] = [...presets.map(p => p.id), 'date'];
   const itemId = (id: Entry): string => `${uid}-${id}`;
 
   // Sit under the anchor, kept inside the window. The runtime writes the position as custom properties.
@@ -118,7 +118,16 @@ export function DatePresets(props: DatePresetsProps) {
 
     const lower = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (activeId === 'date' && calendarOpen) {
-      const step = { ArrowLeft: -1, h: -1, ArrowRight: 1, l: 1, ArrowUp: -7, k: -7, ArrowDown: 7, j: 7 }[lower];
+      const step = {
+        ArrowLeft: -1,
+        h: -1,
+        ArrowRight: 1,
+        l: 1,
+        ArrowUp: -7,
+        k: -7,
+        ArrowDown: 7,
+        j: 7,
+      }[lower];
       if (step !== undefined) {
         handled();
         const base = pickedDate ?? `${month}-01`;
@@ -161,7 +170,9 @@ export function DatePresets(props: DatePresetsProps) {
         ) : null}
         {content}
         {/* With the month open, Return confirms in the footer button, which carries the keycap. */}
-        {active && !(id === 'date' && calendarOpen) ? <kbd className="ui-date-presets__kbd">Return</kbd> : null}
+        {active && !(id === 'date' && calendarOpen) ? (
+          <kbd className="ui-date-presets__kbd">Return</kbd>
+        ) : null}
       </div>
     );
   };
@@ -206,7 +217,9 @@ export function DatePresets(props: DatePresetsProps) {
             <>
               <CalIcon name="calendar" />
               <span className="ui-date-presets__text">Pick a date…</span>
-              {calendarOpen && pickedDate ? <span className="ui-date-presets__aside">{shortDay(pickedDate)}</span> : null}
+              {calendarOpen && pickedDate ? (
+                <span className="ui-date-presets__aside">{shortDay(pickedDate)}</span>
+              ) : null}
             </>,
             () => onActiveChange('date'),
           )}
@@ -239,15 +252,15 @@ export function DatePresets(props: DatePresetsProps) {
             </div>
             <div className="ui-date-presets__grid" role="grid" aria-label={monthTitle(month)}>
               <div role="row" className="ui-date-presets__dow">
-                {WEEKDAYS.map((d) => (
+                {WEEKDAYS.map(d => (
                   <span key={d} role="columnheader" aria-label={d}>
                     {d[0]}
                   </span>
                 ))}
               </div>
-              {weeks.map((week) => (
+              {weeks.map(week => (
                 <div role="row" className="ui-date-presets__week" key={week[0]}>
-                  {week.map((date) => (
+                  {week.map(date => (
                     <span role="gridcell" key={date} aria-selected={pickedDate === date}>
                       <button
                         type="button"
@@ -273,9 +286,9 @@ export function DatePresets(props: DatePresetsProps) {
                 className="ui-date-presets__time"
                 aria-label="Time"
                 value={pickedTime}
-                onChange={(e) => onTimeChange(e.target.value)}
+                onChange={e => onTimeChange(e.target.value)}
               >
-                {times.map((t) => (
+                {times.map(t => (
                   <option key={t} value={t}>
                     {formatClock(t)}
                   </option>

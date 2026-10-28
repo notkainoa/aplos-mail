@@ -32,23 +32,23 @@
 
 /* The filled button's hover tint sits on an overlay so the solid accent shifts with the shared --press token. */
 .ui-onb-button::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
 }
 
-.ui-onb-button[data-size="xs"] {
+.ui-onb-button[data-size='xs'] {
   height: var(--control-xs);
   padding: 0 var(--space-2);
 }
 
-.ui-onb-button[data-size="md"] {
+.ui-onb-button[data-size='md'] {
   height: var(--control-md);
 }
 
-.ui-onb-button[data-size="lg"] {
+.ui-onb-button[data-size='lg'] {
   height: var(--control-lg);
   padding: 0 var(--space-5);
   font: var(--type-base);
@@ -62,11 +62,11 @@
   background: var(--press);
 }
 
-.ui-onb-button[data-variant="text"] .ui-onb-icon {
+.ui-onb-button[data-variant='text'] .ui-onb-icon {
   color: var(--dim);
 }
 
-.ui-onb-button[data-variant="filled"] {
+.ui-onb-button[data-variant='filled'] {
   background: var(--accent);
   color: var(--accent-ink);
   box-shadow:
@@ -74,7 +74,7 @@
     inset 0 -1px 0 var(--press-lo);
 }
 
-.ui-onb-button[data-variant="filled"]:active:not(:disabled) {
+.ui-onb-button[data-variant='filled']:active:not(:disabled) {
   background: var(--accent);
   box-shadow: inset 0 1px 0 var(--press-lo);
 }
@@ -83,7 +83,7 @@
   color: var(--dim);
 }
 
-.ui-onb-button[data-variant="filled"]:disabled {
+.ui-onb-button[data-variant='filled']:disabled {
   background: var(--sunken);
   box-shadow: none;
 }
@@ -103,22 +103,22 @@
   letter-spacing: var(--track-caption);
 }
 
-.ui-onb-button[data-variant="filled"] .ui-onb-kbd {
+.ui-onb-button[data-variant='filled'] .ui-onb-kbd {
   background: var(--press-hi);
   color: var(--accent-ink);
 }
 
-.ui-onb-button[data-variant="filled"]:disabled .ui-onb-kbd {
+.ui-onb-button[data-variant='filled']:disabled .ui-onb-kbd {
   background: var(--raised);
   color: var(--dim);
 }
 
 /* A footer Esc is a hint: it shows only with "Show all key hints" (the shell sets data-show-keys on the root). */
-.ui-onb-kbd[data-key-hint="hint"] {
+.ui-onb-kbd[data-key-hint='hint'] {
   display: none;
 }
 
-:root[data-show-keys="all"] .ui-onb-kbd[data-key-hint="hint"] {
+:root[data-show-keys='all'] .ui-onb-kbd[data-key-hint='hint'] {
   display: inline-flex;
 }
 
@@ -151,12 +151,12 @@
     color: var(--ink);
   }
 
-  .ui-onb-button[data-variant="filled"]:hover:not(:disabled) {
+  .ui-onb-button[data-variant='filled']:hover:not(:disabled) {
     background: var(--accent);
     color: var(--accent-ink);
   }
 
-  .ui-onb-button[data-variant="filled"]:hover:not(:disabled)::after {
+  .ui-onb-button[data-variant='filled']:hover:not(:disabled)::after {
     background: var(--press);
   }
 }
@@ -200,7 +200,7 @@
   scrollbar-width: none;
 }
 
-.ui-onboarding-step__body[data-layout="welcome"] {
+.ui-onboarding-step__body[data-layout='welcome'] {
   justify-content: safe center;
   padding-top: 0;
 }
@@ -237,17 +237,17 @@
   overflow-wrap: anywhere;
 }
 
-.ui-onboarding-step__body[data-layout="welcome"] .ui-onboarding-step__head {
+.ui-onboarding-step__body[data-layout='welcome'] .ui-onboarding-step__head {
   gap: var(--space-4);
 }
 
-.ui-onboarding-step__body[data-layout="welcome"] .ui-onboarding-step__title {
+.ui-onboarding-step__body[data-layout='welcome'] .ui-onboarding-step__title {
   max-width: 16ch;
   font: var(--type-display);
   letter-spacing: var(--track-display);
 }
 
-.ui-onboarding-step__body[data-layout="welcome"] .ui-onboarding-step__lede {
+.ui-onboarding-step__body[data-layout='welcome'] .ui-onboarding-step__lede {
   max-width: 40ch;
 }
 
@@ -265,7 +265,7 @@
   height: var(--icon-sm);
 }
 
-.ui-onboarding-step__chevron[data-expanded="true"] {
+.ui-onboarding-step__chevron[data-expanded='true'] {
   transform: rotate(180deg);
 }
 
@@ -284,7 +284,7 @@
   margin-top: var(--space-2);
 }
 
-.ui-onboarding-step__body[data-layout="welcome"] .ui-onboarding-step__actions {
+.ui-onboarding-step__body[data-layout='welcome'] .ui-onboarding-step__actions {
   margin-top: var(--space-4);
 }
 
@@ -326,11 +326,11 @@
   background: var(--line-strong);
 }
 
-.ui-onboarding-step__dashes i[data-state="on"] {
+.ui-onboarding-step__dashes i[data-state='on'] {
   background: var(--ink);
 }
 
-.ui-onboarding-step__dashes i[data-state="done"] {
+.ui-onboarding-step__dashes i[data-state='done'] {
   background: var(--dim);
 }
 
@@ -359,13 +359,13 @@
   color: var(--ink);
 }
 
-.ui-choice-row[data-has-detail="true"] {
+.ui-choice-row[data-has-detail='true'] {
   padding-top: var(--space-3);
   padding-bottom: var(--space-3);
 }
 
 .ui-choice-row + .ui-choice-row::before {
-  content: "";
+  content: '';
   position: absolute;
   top: 0;
   left: var(--space-3);
@@ -374,25 +374,25 @@
   background: var(--line);
 }
 
-.ui-choice-row[data-role="static"],
-.ui-choice-row[data-role="radio"] {
+.ui-choice-row[data-role='static'],
+.ui-choice-row[data-role='radio'] {
   padding-left: 0;
   padding-right: 0;
   border-radius: 0;
 }
 
-.ui-choice-row[data-role="static"]::before,
-.ui-choice-row[data-role="radio"]::before {
+.ui-choice-row[data-role='static']::before,
+.ui-choice-row[data-role='radio']::before {
   left: 0;
   right: 0;
 }
 
-.ui-choice-row[data-role="link"] {
+.ui-choice-row[data-role='link'] {
   width: calc(100% + 2 * var(--space-3));
   margin: 0 calc(-1 * var(--space-3));
 }
 
-.ui-choice-row[data-role="link"]:focus-visible {
+.ui-choice-row[data-role='link']:focus-visible {
   outline-offset: calc(-1 * var(--focus-width));
 }
 
@@ -449,7 +449,7 @@
   box-shadow: inset 0 0 0 1px var(--control-edge);
 }
 
-.ui-choice-row__pick[aria-checked="true"] .ui-choice-row__radio {
+.ui-choice-row__pick[aria-checked='true'] .ui-choice-row__radio {
   box-shadow: inset 0 0 0 var(--radio-dot) var(--accent);
 }
 
@@ -503,7 +503,7 @@
   background: var(--faint);
 }
 
-.ui-choice-row__dot[data-state="ok"] {
+.ui-choice-row__dot[data-state='ok'] {
   background: var(--hill);
 }
 
@@ -529,26 +529,26 @@
   height: var(--icon-sm);
 }
 
-.ui-choice-row__status[data-tone="ok"] .ui-onb-icon {
+.ui-choice-row__status[data-tone='ok'] .ui-onb-icon {
   color: var(--hill);
 }
 
-.ui-choice-row__status[data-tone="attention"],
-.ui-choice-row__status[data-tone="attention"] .ui-onb-icon {
+.ui-choice-row__status[data-tone='attention'],
+.ui-choice-row__status[data-tone='attention'] .ui-onb-icon {
   color: var(--stamp-ink);
 }
 
 @media (hover: hover) {
-  .ui-choice-row[data-role="link"]:hover {
+  .ui-choice-row[data-role='link']:hover {
     background: var(--hover);
   }
 
-  .ui-choice-row[data-role="link"]:hover .ui-choice-row__go {
+  .ui-choice-row[data-role='link']:hover .ui-choice-row__go {
     color: var(--ink);
   }
 
-  .ui-choice-row[data-role="link"]:hover::before,
-  .ui-choice-row[data-role="link"]:hover + .ui-choice-row::before {
+  .ui-choice-row[data-role='link']:hover::before,
+  .ui-choice-row[data-role='link']:hover + .ui-choice-row::before {
     background: transparent;
   }
 }

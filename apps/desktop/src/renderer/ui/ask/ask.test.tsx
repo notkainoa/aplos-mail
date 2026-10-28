@@ -2,8 +2,25 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { AskDockProps, AskTurnProps, CitationData, PaletteItem, PaletteProps, ProposalCardProps, SearchFieldProps } from '../props';
-import { AskDock, AskTurn, Citation, OperatorToken, Palette, ProposalCard, SearchField, StepLog } from './index';
+import type {
+  AskDockProps,
+  AskTurnProps,
+  CitationData,
+  PaletteItem,
+  PaletteProps,
+  ProposalCardProps,
+  SearchFieldProps,
+} from '../props';
+import {
+  AskDock,
+  AskTurn,
+  Citation,
+  OperatorToken,
+  Palette,
+  ProposalCard,
+  SearchField,
+  StepLog,
+} from './index';
 import { formatRecent, formatSource } from './format';
 import { nextActiveId } from './palette-nav';
 
@@ -16,7 +33,19 @@ const text = (markup: string) =>
     .replace(/&quot;/g, '"')
     .replace(/&amp;/g, '&');
 
-const BANNED = [/sparkle/i, /wand/i, /✨|⭐|🪄|🤖|🧠/, /magic/i, /AI-powered/i, /Copilot/i, /Ask me anything/i, /Hold to talk/i, /Todo/, /gradient/i, /backdrop/i];
+const BANNED = [
+  /sparkle/i,
+  /wand/i,
+  /✨|⭐|🪄|🤖|🧠/,
+  /magic/i,
+  /AI-powered/i,
+  /Copilot/i,
+  /Ask me anything/i,
+  /Hold to talk/i,
+  /Todo/,
+  /gradient/i,
+  /backdrop/i,
+];
 function clean(markup: string) {
   assert.ok(!text(markup).includes('!'), `an exclamation mark in: ${text(markup)}`);
   for (const pattern of BANNED) assert.ok(!pattern.test(markup), `${pattern} rendered`);
@@ -42,7 +71,12 @@ const source2: CitationData = {
   threadId: 't2',
 };
 
-const fold = { summary: 'Read 14 emails from Jordan · 3 steps', steps: ['Searched mail for “design review”', 'Read 14 emails from Jordan and Mina'], expanded: false, onToggle: noop };
+const fold = {
+  summary: 'Read 14 emails from Jordan · 3 steps',
+  steps: ['Searched mail for “design review”', 'Read 14 emails from Jordan and Mina'],
+  expanded: false,
+  onToggle: noop,
+};
 
 function turn(over: Partial<AskTurnProps> = {}) {
   return (
@@ -69,23 +103,38 @@ function turn(over: Partial<AskTurnProps> = {}) {
 
 test('Citation: a mono [n] chip with the quote as a described tooltip and a source line', () => {
   const markup = html(<Citation {...source1} onOpen={noop} />);
-  assert.match(markup, /<button[^>]*aria-label="Source 1: Mina Cho, Hollow Creek review"[^>]*aria-describedby="([^"]+)"[^>]*>\[1\]<\/button>/);
+  assert.match(
+    markup,
+    /<button[^>]*aria-label="Source 1: Mina Cho, Hollow Creek review"[^>]*aria-describedby="([^"]+)"[^>]*>\[1\]<\/button>/,
+  );
   const id = /aria-describedby="([^"]+)"/.exec(markup)![1];
   assert.match(markup, new RegExp(`id="${id.replace(/[:]/g, '\\:')}"[^>]*role="tooltip"`));
-  assert.ok(text(markup).includes('“Can we do the design review Thursday, 2:00 to 2:30? Jordan can join.”'));
+  assert.ok(
+    text(markup).includes('“Can we do the design review Thursday, 2:00 to 2:30? Jordan can join.”'),
+  );
   assert.match(text(markup), /Mina Cho · Mar 20, 2020 · Hollow Creek review/);
   clean(markup);
 });
 
 test('Citation survives a 1-character index, 9999, a very long quote and RTL text', () => {
-  const big = html(<Citation {...source1} index={9999} quote={'x'.repeat(400)} from="منى الحسن" onOpen={noop} />);
+  const big = html(
+    <Citation {...source1} index={9999} quote={'x'.repeat(400)} from="منى الحسن" onOpen={noop} />,
+  );
   assert.match(big, />\[9999\]</);
   assert.ok(big.includes('x'.repeat(400)));
   assert.match(big, /dir="auto"/);
 });
 
 test('StepLog: a steady status line while working, a disclosure after', () => {
-  const working = html(<StepLog current="Reading 14 emails from Jordan" summary="" steps={[]} expanded={false} onToggle={noop} />);
+  const working = html(
+    <StepLog
+      current="Reading 14 emails from Jordan"
+      summary=""
+      steps={[]}
+      expanded={false}
+      onToggle={noop}
+    />,
+  );
   assert.match(working, /data-state="working"/);
   assert.match(working, /role="status"/);
   assert.match(text(working), /^Reading 14 emails from Jordan$/);
@@ -124,14 +173,28 @@ test('ProposalCard: the one card, the filled button with Return, Not now with Es
   assert.match(text(pending), /Add to CalendarDesign reviewThu 2:00–2:30 PM · Hollow Creek/);
   clean(pending);
 
-  const applied = html(<ProposalCard {...base} state="applied" appliedText="Added to Calendar · Thu 2:00–2:30 PM · Hollow Creek" />);
+  const applied = html(
+    <ProposalCard
+      {...base}
+      state="applied"
+      appliedText="Added to Calendar · Thu 2:00–2:30 PM · Hollow Creek"
+    />,
+  );
   assert.match(applied, /data-state="applied"/);
   assert.match(applied, /role="status"/);
   assert.doesNotMatch(applied, /<button/);
   assert.equal(text(applied), 'Added to Calendar · Thu 2:00–2:30 PM · Hollow Creek');
   assert.equal(html(<ProposalCard {...base} state="dismissed" />), '');
 
-  const worst = html(<ProposalCard {...base} title={LONG_QUESTION} consequence={LONG_ADDRESS} kicker="カレンダーに追加" color={undefined} />);
+  const worst = html(
+    <ProposalCard
+      {...base}
+      title={LONG_QUESTION}
+      consequence={LONG_ADDRESS}
+      kicker="カレンダーに追加"
+      color={undefined}
+    />,
+  );
   assert.ok(worst.includes(LONG_ADDRESS));
   assert.doesNotMatch(worst, /ui-proposal-card__mark/);
 });
@@ -139,7 +202,10 @@ test('ProposalCard: the one card, the filled button with Return, Not now with Es
 test('AskTurn: question line, serif prose with the decisive fact, citation chips', () => {
   const markup = html(turn());
   assert.match(markup, /<article id="q1"[^>]*aria-labelledby="q1-question"/);
-  assert.match(markup, /class="ui-ask-turn__question" id="q1-question"[^>]*>When is the Hollow Creek design review\?/);
+  assert.match(
+    markup,
+    /class="ui-ask-turn__question" id="q1-question"[^>]*>When is the Hollow Creek design review\?/,
+  );
   assert.match(markup, /<strong>Thursday, 2:00–2:30 PM<\/strong>/);
   assert.equal((markup.match(/role="tooltip"/g) ?? []).length, 2);
   assert.doesNotMatch(markup, /No source in your mail/);
@@ -151,14 +217,23 @@ test('AskTurn: question line, serif prose with the decisive fact, citation chips
 
 test('AskTurn: every answer cites or says "No source in your mail"; unreferenced sources still show', () => {
   assert.match(text(html(turn({ citations: [] }))), /No source in your mail/);
-  const loose = html(turn({ answer: [[{ kind: 'text', text: 'Nothing is pending.' }]], citations: [source1] }));
+  const loose = html(
+    turn({ answer: [[{ kind: 'text', text: 'Nothing is pending.' }]], citations: [source1] }),
+  );
   assert.match(loose, /class="ui-ask-turn__sources"/);
   assert.match(loose, /\[1\]/);
   assert.doesNotMatch(loose, /No source in your mail/);
 });
 
 test('AskTurn states: working, streaming with one caret, stopped, failed', () => {
-  const working = html(turn({ state: 'working', answer: undefined, citations: [], steps: { ...fold, current: 'Reading 14 emails from Jordan' } }));
+  const working = html(
+    turn({
+      state: 'working',
+      answer: undefined,
+      citations: [],
+      steps: { ...fold, current: 'Reading 14 emails from Jordan' },
+    }),
+  );
   assert.match(working, /data-state="working"/);
   assert.match(working, /aria-busy="true"/);
   assert.match(text(working), /Reading 14 emails from Jordan/);
@@ -170,17 +245,37 @@ test('AskTurn states: working, streaming with one caret, stopped, failed', () =>
 
   assert.match(text(html(turn({ state: 'stopped' }))), /Stopped/);
 
-  const failed = html(turn({ state: 'failed', answer: undefined, citations: [], provider: 'Groq', onRetry: noop, onUseAnotherProvider: noop }));
+  const failed = html(
+    turn({
+      state: 'failed',
+      answer: undefined,
+      citations: [],
+      provider: 'Groq',
+      onRetry: noop,
+      onUseAnotherProvider: noop,
+    }),
+  );
   assert.match(failed, /role="alert"/);
   assert.match(text(failed), /Groq didn't answer\.RetryUse another provider/);
-  assert.match(text(html(turn({ state: 'failed', answer: undefined, citations: [] }))), /Ask didn't answer\./);
+  assert.match(
+    text(html(turn({ state: 'failed', answer: undefined, citations: [] }))),
+    /Ask didn't answer\./,
+  );
   clean(failed);
 });
 
 test('AskTurn with a proposal puts the card after the answer', () => {
   const markup = html(
     turn({
-      proposal: { kicker: 'Add to Calendar', title: 'Design review', consequence: 'Thu 2:00–2:30 PM', confirmLabel: 'Add', state: 'pending', onConfirm: noop, onDismiss: noop },
+      proposal: {
+        kicker: 'Add to Calendar',
+        title: 'Design review',
+        consequence: 'Thu 2:00–2:30 PM',
+        confirmLabel: 'Add',
+        state: 'pending',
+        onConfirm: noop,
+        onDismiss: noop,
+      },
     }),
   );
   assert.ok(markup.indexOf('ui-ask-turn__answer') < markup.indexOf('ui-proposal-card'));
@@ -193,7 +288,10 @@ test('AskTurn worst case: a 300-character question, CJK, Arabic, emoji and a 999
       question: LONG_QUESTION,
       citations: [{ ...source1, index: 9999, from: LONG_ADDRESS }],
       answer: [
-        [{ kind: 'text', text: 'デザインレビューは木曜日です。', strong: true }, { kind: 'cite', index: 9999 }],
+        [
+          { kind: 'text', text: 'デザインレビューは木曜日です。', strong: true },
+          { kind: 'cite', index: 9999 },
+        ],
         [{ kind: 'text', text: 'الاجتماع يوم الخميس 🧗' }],
       ],
     }),
@@ -231,9 +329,17 @@ function dock(over: Partial<AskDockProps> = {}) {
 }
 
 const empty = {
-  suggestions: ['What needs a reply from me today?', 'When am I free tomorrow afternoon?', 'Summarize this week’s mail from Jordan'],
+  suggestions: [
+    'What needs a reply from me today?',
+    'When am I free tomorrow afternoon?',
+    'Summarize this week’s mail from Jordan',
+  ],
   recents: [
-    { id: 'r1', question: 'When is the Hollow Creek design review?', at: '2020-03-02T09:42:00-07:00' },
+    {
+      id: 'r1',
+      question: 'When is the Hollow Creek design review?',
+      at: '2020-03-02T09:42:00-07:00',
+    },
     { id: 'r2', question: 'How much is Drew’s October invoice?', at: '2019-12-31T09:00:00-07:00' },
   ],
   cursorIndex: 1,
@@ -283,7 +389,10 @@ test('AskDock: input is never disabled; working shows Stop; queued follow-ups ar
   assert.match(markup, /Stop/);
   assert.match(markup, /role="group"[^>]*aria-label="Queued follow-up"/);
   assert.match(text(markup), /Queued · ⌘Return sends now/);
-  assert.match(markup, /<textarea[^>]*aria-label="Queued follow-up"[^>]*>And is Mina free then\?<\/textarea>/);
+  assert.match(
+    markup,
+    /<textarea[^>]*aria-label="Queued follow-up"[^>]*>And is Mina free then\?<\/textarea>/,
+  );
   assert.doesNotMatch(html(dock()), />Stop</);
   clean(markup);
 });
@@ -313,7 +422,17 @@ test('AskDock clamps its width to 300 to 440 and survives worst-case recents', (
   assert.match(html(dock({ width: 9999 })), /--ask-dock-w:440px/);
   assert.match(html(dock({ width: Number.NaN })), /--ask-dock-w:360px/);
   const markup = html(
-    dock({ empty: { ...empty, suggestions: ['q'], recents: [{ id: 'x', question: LONG_QUESTION, at: '2020-03-02T09:42:00-07:00' }, { id: 'y', question: '佐藤さんに何を送った？ 🧗', at: '2020-03-01T09:42:00-07:00' }], cursorIndex: undefined } }),
+    dock({
+      empty: {
+        ...empty,
+        suggestions: ['q'],
+        recents: [
+          { id: 'x', question: LONG_QUESTION, at: '2020-03-02T09:42:00-07:00' },
+          { id: 'y', question: '佐藤さんに何を送った？ 🧗', at: '2020-03-01T09:42:00-07:00' },
+        ],
+        cursorIndex: undefined,
+      },
+    }),
   );
   assert.ok(markup.includes(LONG_QUESTION));
   assert.ok(markup.includes('佐藤さんに何を送った？ 🧗'));
@@ -324,7 +443,14 @@ const items: PaletteItem[] = [
   { id: 'cmd-reply', commandId: 'mail.reply', label: 'Reply', icon: 'reply' },
   { id: 'cmd-done', commandId: 'mail.done', label: 'Done', icon: 'check' },
   { id: 'cmd-home', commandId: 'nav.home', label: 'Home', icon: 'home' },
-  { id: 'cmd-delete', commandId: 'mail.deleteForever', label: 'Delete forever', icon: 'trash', destructive: true, group: 'Actions' },
+  {
+    id: 'cmd-delete',
+    commandId: 'mail.deleteForever',
+    label: 'Delete forever',
+    icon: 'trash',
+    destructive: true,
+    group: 'Actions',
+  },
 ];
 
 function palette(over: Partial<PaletteProps> = {}) {
@@ -380,7 +506,16 @@ test('Palette filtering: flat list, match bolding, group names, no digits', () =
   const markup = html(
     palette({
       query: 'rep',
-      sections: [{ id: 'results', label: 'Results', items: [{ ...items[0], matches: [0, 1, 2], group: 'Actions' }, { ...items[3], matches: [0], group: 'Actions' }] }],
+      sections: [
+        {
+          id: 'results',
+          label: 'Results',
+          items: [
+            { ...items[0], matches: [0, 1, 2], group: 'Actions' },
+            { ...items[3], matches: [0], group: 'Actions' },
+          ],
+        },
+      ],
     }),
   );
   assert.match(markup, /<b>Rep<\/b>ly/);
@@ -408,7 +543,8 @@ test('Palette destructive confirm defaults to Cancel: Return cancels, ⇧Return 
     palette({
       confirm: {
         question: 'Delete forever?',
-        consequence: '“Invoice #0412 · October illustrations” will be removed from your account. This can’t be undone.',
+        consequence:
+          '“Invoice #0412 · October illustrations” will be removed from your account. This can’t be undone.',
         confirmLabel: 'Delete forever',
         destructive: true,
         presentation: 'inline',
@@ -422,7 +558,10 @@ test('Palette destructive confirm defaults to Cancel: Return cancels, ⇧Return 
   assert.match(text(markup), /Delete forever\?/);
   assert.ok(markup.indexOf('Cancel') < markup.indexOf('Delete forever</span>'), 'Cancel row first');
   assert.match(markup, /data-primary="true"[^>]*><span>Cancel<\/span><kbd[^>]*>Return<\/kbd>/);
-  assert.match(markup, /data-tone="danger"[^>]*>.*<span>Delete forever<\/span><kbd[^>]*>⇧Return<\/kbd>/);
+  assert.match(
+    markup,
+    /data-tone="danger"[^>]*>.*<span>Delete forever<\/span><kbd[^>]*>⇧Return<\/kbd>/,
+  );
   assert.match(markup, /readOnly|readonly/);
   assert.doesNotMatch(markup, /role="listbox"/);
   assert.doesNotMatch(markup, /For: /);
@@ -431,7 +570,18 @@ test('Palette destructive confirm defaults to Cancel: Return cancels, ⇧Return 
 
 test('Palette plain confirm makes the confirm row the default', () => {
   const markup = html(
-    palette({ confirm: { question: 'Discard this draft?', consequence: 'It cannot be recovered.', confirmLabel: 'Discard', cancelLabel: 'Keep editing', destructive: false, presentation: 'inline', onConfirm: noop, onCancel: noop } }),
+    palette({
+      confirm: {
+        question: 'Discard this draft?',
+        consequence: 'It cannot be recovered.',
+        confirmLabel: 'Discard',
+        cancelLabel: 'Keep editing',
+        destructive: false,
+        presentation: 'inline',
+        onConfirm: noop,
+        onCancel: noop,
+      },
+    }),
   );
   assert.match(markup, /data-primary="true"[^>]*><span>Discard<\/span><kbd[^>]*>Return<\/kbd>/);
   assert.match(markup, /><span>Keep editing<\/span><kbd[^>]*>Esc<\/kbd>/);
@@ -447,7 +597,13 @@ test('Palette worst case: 300-character context, CJK and Arabic labels, 80-chara
           label: 'Actions',
           items: [
             { id: 'a', commandId: 'mail.reply', label: `Reply to ${LONG_ADDRESS}`, icon: 'reply' },
-            { id: 'b', commandId: 'mail.done', label: '完了にする', icon: 'check', matches: [0, 1] },
+            {
+              id: 'b',
+              commandId: 'mail.done',
+              label: '完了にする',
+              icon: 'check',
+              matches: [0, 1],
+            },
             { id: 'c', commandId: 'mail.later', label: 'ردّ على الرسالة', icon: 'clock' },
             { id: 'd', commandId: 'mail.later', label: 'Later 🧗', icon: 'clock' },
           ],
@@ -487,7 +643,10 @@ test('SearchField: heading-size combobox, the fixed hint when there are no token
   assert.match(markup, /aria-controls="results"/);
   assert.match(markup, /aria-label="Search mail"/);
   assert.match(markup, /placeholder="Search mail"/);
-  assert.match(text(markup), /Narrow with from:, to:, subject:, has:attachment, before:, after:, in:done/);
+  assert.match(
+    text(markup),
+    /Narrow with from:, to:, subject:, has:attachment, before:, after:, in:done/,
+  );
   assert.match(text(markup), /All accounts/);
   assert.doesNotMatch(markup, /<button/);
   clean(markup);

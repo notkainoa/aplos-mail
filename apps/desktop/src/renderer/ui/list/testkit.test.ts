@@ -72,14 +72,18 @@ export const BANNED = [
 
 /** Every banned phrase or glyph found in the markup, plus any exclamation mark in its text. */
 export function bannedIn(markup: string): string[] {
-  const found: string[] = BANNED.filter((b) => markup.toLowerCase().includes(b.toLowerCase()));
+  const found: string[] = BANNED.filter(b => markup.toLowerCase().includes(b.toLowerCase()));
   if (text(markup).includes('!')) found.push('!');
   return found;
 }
 
 /** Worst-case data (break-ui): long, unbreakable, tiny, huge, CJK, RTL and emoji. */
 export const WORST = {
-  subject: `${'A very long subject about the Hollow Creek launch plan and its many moving parts, '.repeat(4)}end`.slice(0, 300),
+  subject:
+    `${'A very long subject about the Hollow Creek launch plan and its many moving parts, '.repeat(4)}end`.slice(
+      0,
+      300,
+    ),
   email: `${'x'.repeat(66)}@example.test`.padEnd(80, 'z'),
   oneLetter: 'Q',
   cjk: '山田太郎からの請求書の確認をお願いします',

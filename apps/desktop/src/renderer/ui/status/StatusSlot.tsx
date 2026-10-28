@@ -29,14 +29,24 @@ export function statusCopy(status: SyncStatus, now: Date = new Date()): StatusCo
       return { text: 'Starting…', icon: 'refresh', attention: false };
     case 'syncing':
       return status.firstWindow
-        ? { text: `Reading your newest mail · ${formatCount(status.firstWindow.read)} of ${formatCount(status.firstWindow.of)}`, icon: 'refresh', attention: false }
+        ? {
+            text: `Reading your newest mail · ${formatCount(status.firstWindow.read)} of ${formatCount(status.firstWindow.of)}`,
+            icon: 'refresh',
+            attention: false,
+          }
         : { text: 'Syncing…', icon: 'refresh', attention: false };
     case 'ok': {
       if (!status.reconnectBy) return null;
       const left = new Date(status.reconnectBy).getTime() - now.getTime();
       if (left > DAY_MS) return null;
       // The deadline has passed: Gmail is already asking, so it reads as an expired sign-in (DESIGN 7.15).
-      if (left <= 0) return { text: 'Google needs you to sign in again.', icon: 'alert', action: { kind: 'reconnect', label: 'Reconnect', tone: 'danger' }, attention: true };
+      if (left <= 0)
+        return {
+          text: 'Google needs you to sign in again.',
+          icon: 'alert',
+          action: { kind: 'reconnect', label: 'Reconnect', tone: 'danger' },
+          attention: true,
+        };
       return {
         text: `Gmail will ask you to reconnect ${dayWord(status.reconnectBy, now)} at ${formatTime(status.reconnectBy)}.`,
         icon: 'clock',
@@ -45,32 +55,69 @@ export function statusCopy(status: SyncStatus, now: Date = new Date()): StatusCo
       };
     }
     case 'backfilling':
-      return { text: `Importing ${formatCount(status.done)} of ${formatCount(status.of)}`, icon: 'refresh', attention: false };
+      return {
+        text: `Importing ${formatCount(status.done)} of ${formatCount(status.of)}`,
+        icon: 'refresh',
+        attention: false,
+      };
     case 'paused':
       return status.reason === 'dailyLimit'
-        ? { text: 'Google’s daily limit is reached. Resuming tomorrow.', icon: 'pause', attention: false }
+        ? {
+            text: 'Google’s daily limit is reached. Resuming tomorrow.',
+            icon: 'pause',
+            attention: false,
+          }
         : {
-            text: status.resumeAt ? `Google asked us to slow down. Resuming at ${formatTime(status.resumeAt)}.` : 'Google asked us to slow down.',
+            text: status.resumeAt
+              ? `Google asked us to slow down. Resuming at ${formatTime(status.resumeAt)}.`
+              : 'Google asked us to slow down.',
             icon: 'pause',
             action: { kind: 'retry', label: 'Retry now', tone: 'default' },
             attention: false,
           };
     case 'needsReauth':
-      return { text: 'Google needs you to sign in again.', icon: 'alert', action: { kind: 'reconnect', label: 'Reconnect', tone: 'danger' }, attention: true };
+      return {
+        text: 'Google needs you to sign in again.',
+        icon: 'alert',
+        action: { kind: 'reconnect', label: 'Reconnect', tone: 'danger' },
+        attention: true,
+      };
     case 'needsPermission':
-      return { text: 'Aplos needs permission to read your Gmail.', icon: 'alert', action: { kind: 'reconnect', label: 'Reconnect', tone: 'danger' }, attention: true };
+      return {
+        text: 'Aplos needs permission to read your Gmail.',
+        icon: 'alert',
+        action: { kind: 'reconnect', label: 'Reconnect', tone: 'danger' },
+        attention: true,
+      };
     case 'needsAdmin':
-      return { text: 'Your organisation has blocked Aplos. Ask your administrator.', icon: 'alert', attention: true };
+      return {
+        text: 'Your organisation has blocked Aplos. Ask your administrator.',
+        icon: 'alert',
+        attention: true,
+      };
     case 'misconfigured':
-      return { text: 'Google sign-in isn’t set up in this build.', icon: 'alert', action: { kind: 'copyDiagnostics', label: 'Copy diagnostics', tone: 'default' }, attention: true };
+      return {
+        text: 'Google sign-in isn’t set up in this build.',
+        icon: 'alert',
+        action: { kind: 'copyDiagnostics', label: 'Copy diagnostics', tone: 'default' },
+        attention: true,
+      };
     case 'offline':
       return {
-        text: status.changesWaiting > 0 ? `Offline · ${formatCount(status.changesWaiting)} ${status.changesWaiting === 1 ? 'change' : 'changes'} waiting` : 'Offline',
+        text:
+          status.changesWaiting > 0
+            ? `Offline · ${formatCount(status.changesWaiting)} ${status.changesWaiting === 1 ? 'change' : 'changes'} waiting`
+            : 'Offline',
         icon: 'cloud-off',
         attention: false,
       };
     case 'error':
-      return { text: 'Sync hit a problem.', icon: 'alert', action: { kind: 'viewDetails', label: 'View details', tone: 'default' }, attention: true };
+      return {
+        text: 'Sync hit a problem.',
+        icon: 'alert',
+        action: { kind: 'viewDetails', label: 'View details', tone: 'default' },
+        attention: true,
+      };
     case 'demo':
       return { text: 'Demo mail. Remove it in Settings.', icon: 'mail', attention: false };
   }
@@ -84,7 +131,12 @@ export function syncedLine(lastSyncedAt: string, now: Date = new Date()): string
   return `Synced at ${formatTime(lastSyncedAt)}`;
 }
 
-export function StatusSlot({ status, account, multipleAccounts, onAction }: ComponentPropsMap['StatusSlot']) {
+export function StatusSlot({
+  status,
+  account,
+  multipleAccounts,
+  onAction,
+}: ComponentPropsMap['StatusSlot']) {
   const delayed = status.kind === 'starting' || (status.kind === 'syncing' && !status.firstWindow);
   const [revealed, setRevealed] = useState(!delayed);
   useEffect(() => {
@@ -99,7 +151,9 @@ export function StatusSlot({ status, account, multipleAccounts, onAction }: Comp
 
   const copy = statusCopy(status);
   const action = copy?.action;
-  const ticking = status.kind === 'backfilling' || (status.kind === 'syncing' && status.firstWindow !== undefined);
+  const ticking =
+    status.kind === 'backfilling' ||
+    (status.kind === 'syncing' && status.firstWindow !== undefined);
   const named = multipleAccounts && account ? account : undefined;
   return (
     <div
@@ -115,13 +169,22 @@ export function StatusSlot({ status, account, multipleAccounts, onAction }: Comp
           <div className="ui-status-slot__body">
             {status.kind === 'backfilling' && account ? (
               <div aria-live="off">
-                <ProgressSegments variant="importing" account={account} done={status.done} of={status.of} />
+                <ProgressSegments
+                  variant="importing"
+                  account={account}
+                  done={status.done}
+                  of={status.of}
+                />
               </div>
             ) : (
               <p className="ui-status-slot__text" aria-live={ticking ? 'off' : undefined}>
                 {named ? (
                   <>
-                    <i className="ui-status-slot__dot" data-color={named.color} aria-hidden="true" />
+                    <i
+                      className="ui-status-slot__dot"
+                      data-color={named.color}
+                      aria-hidden="true"
+                    />
                     <SrOnly>{`${named.address}: `}</SrOnly>
                   </>
                 ) : null}
@@ -135,7 +198,14 @@ export function StatusSlot({ status, account, multipleAccounts, onAction }: Comp
             ) : null}
             {action ? (
               <span className="ui-status-slot__action">
-                <PartButton variant="text" size="sm" label={action.label} tone={action.tone} detail={named?.address} onPress={() => onAction(action.kind, account)} />
+                <PartButton
+                  variant="text"
+                  size="sm"
+                  label={action.label}
+                  tone={action.tone}
+                  detail={named?.address}
+                  onPress={() => onAction(action.kind, account)}
+                />
               </span>
             ) : null}
           </div>

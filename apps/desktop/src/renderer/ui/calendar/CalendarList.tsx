@@ -17,7 +17,7 @@ export function CalendarList({ calendars, onToggle, onSolo }: CalendarListProps)
         Calendars
       </div>
       <ul className="ui-calendar-list__items">
-        {calendars.map((calendar) => (
+        {calendars.map(calendar => (
           <li key={calendar.id}>
             <button
               type="button"
@@ -27,12 +27,14 @@ export function CalendarList({ calendars, onToggle, onSolo }: CalendarListProps)
               data-state={calendar.visible ? 'shown' : 'hidden'}
               title={`${calendar.visible ? 'Hide' : 'Show'} ${calendar.name}. Option-click shows only this one.`}
               style={{ '--swatch': calVar(calendar.color) } as CSSProperties}
-              onClick={(e) => (e.altKey ? onSolo(calendar.id) : onToggle(calendar.id))}
+              onClick={e => (e.altKey ? onSolo(calendar.id) : onToggle(calendar.id))}
             >
               <span className="ui-calendar-list__swatch" aria-hidden="true">
                 {calendar.visible ? <CalIcon name="check" /> : null}
               </span>
-              <span className="ui-calendar-list__name" dir="auto">{calendar.name}</span>
+              <span className="ui-calendar-list__name" dir="auto">
+                {calendar.name}
+              </span>
             </button>
           </li>
         ))}

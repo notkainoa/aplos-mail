@@ -5,7 +5,16 @@ import assert from 'node:assert/strict';
 import { before, describe, test } from 'node:test';
 import type { ReaderHeadProps, UndoTrayProps } from '../props';
 import { bannedIn, freezeClock, html, text, WORST } from '../list/testkit.test';
-import { EarlierMessages, LoadingLine, ReaderHead, ReplyStub, Summary, ThreadMessage, UndoTray, Why } from './index';
+import {
+  EarlierMessages,
+  LoadingLine,
+  ReaderHead,
+  ReplyStub,
+  Summary,
+  ThreadMessage,
+  UndoTray,
+  Why,
+} from './index';
 import { earlierLine } from './EarlierMessages';
 
 const noop = () => {};
@@ -18,7 +27,12 @@ function render(element: Parameters<typeof html>[0]): string {
 
 function head(over: Partial<ReaderHeadProps> = {}): ReaderHeadProps {
   return {
-    sender: { name: 'Jordan Park', address: 'jordan@parkandpine.test', accountLabel: 'alex.moreno@example.test', history: '14 emails both ways since March' },
+    sender: {
+      name: 'Jordan Park',
+      address: 'jordan@parkandpine.test',
+      accountLabel: 'alex.moreno@example.test',
+      history: '14 emails both ways since March',
+    },
     recipientsLabel: 'to you and Mina Cho',
     due: { at: '2026-10-30T00:00:00-07:00', overdue: false, source: 'ai' },
     date: '2026-10-29T10:00:00-07:00',
@@ -53,15 +67,42 @@ before(() => freezeClock());
 
 describe('Summary', () => {
   test('ready is the serif line with provenance on hover; local models say "on this Mac"', () => {
-    const m = render(<Summary state="ready" text="Priya needs the revised deck today." subject="Re: Q4 review deck" provenance={{ provider: 'Groq', local: false }} />);
-    assert.match(m, /^<p class="ui-summary" dir="auto" data-state="ready" data-clamp="none" title="Summary by Groq">Priya needs the revised deck today\./);
-    const local = render(<Summary state="ready" text="T" subject="S" provenance={{ provider: 'Ollama', local: true }} clamp="two-lines" id="sum" />);
-    assert.match(local, /id="sum" class="ui-summary" dir="auto" data-state="ready" data-clamp="two-lines" title="Summary by Ollama on this Mac"/);
+    const m = render(
+      <Summary
+        state="ready"
+        text="Priya needs the revised deck today."
+        subject="Re: Q4 review deck"
+        provenance={{ provider: 'Groq', local: false }}
+      />,
+    );
+    assert.match(
+      m,
+      /^<p class="ui-summary" dir="auto" data-state="ready" data-clamp="none" title="Summary by Groq">Priya needs the revised deck today\./,
+    );
+    const local = render(
+      <Summary
+        state="ready"
+        text="T"
+        subject="S"
+        provenance={{ provider: 'Ollama', local: true }}
+        clamp="two-lines"
+        id="sum"
+      />,
+    );
+    assert.match(
+      local,
+      /id="sum" class="ui-summary" dir="auto" data-state="ready" data-clamp="two-lines" title="Summary by Ollama on this Mac"/,
+    );
   });
 
   test('pending breathes the subject in SF; absent shows the subject and nothing else', () => {
-    const pending = render(<Summary state="pending" subject="A quieter home for the Hollow Creek site" />);
-    assert.match(pending, /data-state="pending" data-clamp="none" aria-busy="true">A quieter home for the Hollow Creek site<\/p>$/);
+    const pending = render(
+      <Summary state="pending" subject="A quieter home for the Hollow Creek site" />,
+    );
+    assert.match(
+      pending,
+      /data-state="pending" data-clamp="none" aria-busy="true">A quieter home for the Hollow Creek site<\/p>$/,
+    );
     const absent = render(<Summary state="absent" subject={WORST.subject} />);
     assert.match(absent, /data-state="absent"/);
     assert.doesNotMatch(absent, /title=|aria-busy|Summary by/);
@@ -72,12 +113,21 @@ describe('Summary', () => {
 describe('ReaderHead', () => {
   test('sender line, summary landmark, filled Reply with Space then Later and Done; no monogram', () => {
     const m = render(<ReaderHead {...head()} />);
-    assert.match(m, /ui-reader-head__name" dir="auto" title="jordan@parkandpine.test · alex.moreno@example.test · 14 emails both ways since March">Jordan Park</);
+    assert.match(
+      m,
+      /ui-reader-head__name" dir="auto" title="jordan@parkandpine.test · alex.moreno@example.test · 14 emails both ways since March">Jordan Park</,
+    );
     assert.match(m, /ui-reader-head__to">to you and Mina Cho</);
     assert.match(m, /data-kind="due" data-source="ai" title="[^"]+ · from the email"/);
     assert.match(text(m), /Due tomorrow 10:00 AM/);
-    assert.match(m, /<section class="ui-reader-head__summary" aria-label="Summary"><p class="ui-summary" dir="auto" data-state="ready" data-clamp="none"/);
-    assert.match(m, /data-variant="filled" data-size="md" title="Reply · Space">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/);
+    assert.match(
+      m,
+      /<section class="ui-reader-head__summary" aria-label="Summary"><p class="ui-summary" dir="auto" data-state="ready" data-clamp="none"/,
+    );
+    assert.match(
+      m,
+      /data-variant="filled" data-size="md" title="Reply · Space">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/,
+    );
     assert.match(m, /title="Later · L"/);
     assert.match(m, /title="Done · E"/);
     assert.doesNotMatch(m, /tabindex="-1"/, 'the reader is not a listbox: buttons are focusable');
@@ -85,21 +135,35 @@ describe('ReaderHead', () => {
   });
 
   test('Add to calendar suggestion; Done omitted when the suggestion is Done; demoted while replying', () => {
-    const cal = render(<ReaderHead {...head({ suggestion: { verb: 'Add to calendar', icon: 'calendar', isDone: false } })} />);
+    const cal = render(
+      <ReaderHead
+        {...head({ suggestion: { verb: 'Add to calendar', icon: 'calendar', isDone: false } })}
+      />,
+    );
     assert.match(cal, /data-icon="calendar"/);
-    const done = render(<ReaderHead {...head({ suggestion: { verb: 'Done', icon: 'check', isDone: true } })} />);
+    const done = render(
+      <ReaderHead {...head({ suggestion: { verb: 'Done', icon: 'check', isDone: true } })} />,
+    );
     assert.equal((text(done).match(/Done/g) ?? []).length, 1);
     const demoted = render(<ReaderHead {...head({ demoted: true })} />);
     assert.doesNotMatch(demoted, /data-variant="filled"|<kbd/);
   });
 
   test('pending, absent and worst-case sender data', () => {
-    const pending = render(<ReaderHead {...head({ summary: { state: 'pending', subject: 'A quieter home' }, due: undefined })} />);
+    const pending = render(
+      <ReaderHead
+        {...head({ summary: { state: 'pending', subject: 'A quieter home' }, due: undefined })}
+      />,
+    );
     assert.match(pending, /data-state="pending"/);
     assert.doesNotMatch(pending, /data-kind="due"/);
     const worst = render(
       <ReaderHead
-        {...head({ sender: { name: WORST.arabic, address: WORST.email, accountLabel: WORST.cjk }, recipientsLabel: `to you and ${WORST.emoji}`, date: '2025-12-24T16:12:00-08:00' })}
+        {...head({
+          sender: { name: WORST.arabic, address: WORST.email, accountLabel: WORST.cjk },
+          recipientsLabel: `to you and ${WORST.emoji}`,
+          date: '2025-12-24T16:12:00-08:00',
+        })}
       />,
     );
     assert.ok(text(worst).includes(WORST.arabic));
@@ -109,14 +173,37 @@ describe('ReaderHead', () => {
 
 describe('EarlierMessages', () => {
   const messages = [
-    { id: 'm1', from: 'Jordan Park', preview: 'Kicking off: here is the brief we agreed on Friday.', date: '2026-10-20T09:00:00-07:00' },
-    { id: 'm2', from: 'You', preview: 'Love the brief. Two things to keep.', date: '2026-10-21T09:00:00-07:00' },
-    { id: 'm3', from: 'Mina Cho', preview: 'Early sketches before Jordan sends the full set.', date: '2026-10-27T09:00:00-07:00' },
+    {
+      id: 'm1',
+      from: 'Jordan Park',
+      preview: 'Kicking off: here is the brief we agreed on Friday.',
+      date: '2026-10-20T09:00:00-07:00',
+    },
+    {
+      id: 'm2',
+      from: 'You',
+      preview: 'Love the brief. Two things to keep.',
+      date: '2026-10-21T09:00:00-07:00',
+    },
+    {
+      id: 'm3',
+      from: 'Mina Cho',
+      preview: 'Early sketches before Jordan sends the full set.',
+      date: '2026-10-27T09:00:00-07:00',
+    },
   ];
 
   test('collapsed: one line with the O keycap', () => {
     const m = render(
-      <EarlierMessages count={3} participants={['Jordan', 'you', 'Mina']} expanded={false} messages={messages} commandId="reader.expand" onToggle={noop} onOpenMessage={noop} />,
+      <EarlierMessages
+        count={3}
+        participants={['Jordan', 'you', 'Mina']}
+        expanded={false}
+        messages={messages}
+        commandId="reader.expand"
+        onToggle={noop}
+        onOpenMessage={noop}
+      />,
     );
     assert.match(m, /data-state="collapsed"/);
     assert.match(m, /aria-expanded="false"/);
@@ -127,18 +214,49 @@ describe('EarlierMessages', () => {
 
   test('expanded: 36 px one-liners, the cursor rail on one', () => {
     const m = render(
-      <EarlierMessages count={3} participants={['Jordan', 'you', 'Mina']} expanded messages={messages} cursorId="m2" commandId="reader.expand" onToggle={noop} onOpenMessage={noop} />,
+      <EarlierMessages
+        count={3}
+        participants={['Jordan', 'you', 'Mina']}
+        expanded
+        messages={messages}
+        cursorId="m2"
+        commandId="reader.expand"
+        onToggle={noop}
+        onOpenMessage={noop}
+      />,
     );
     assert.match(m, /data-state="expanded"/);
     assert.equal((m.match(/class="ui-earlier-messages__message"/g) ?? []).length, 3);
-    assert.match(m, /id="m2" class="ui-earlier-messages__message" data-cursor="true" aria-current="true"/);
-    assert.match(text(m), /Jordan Park Kicking off.* Oct 20 You Love the brief.* Oct 21 Mina Cho Early sketches.* Tuesday/);
+    assert.match(
+      m,
+      /id="m2" class="ui-earlier-messages__message" data-cursor="true" aria-current="true"/,
+    );
+    assert.match(
+      text(m),
+      /Jordan Park Kicking off.* Oct 20 You Love the brief.* Oct 21 Mina Cho Early sketches.* Tuesday/,
+    );
   });
 
   test('singular, zero, many participants', () => {
     assert.equal(earlierLine(1, ['Jordan']), '1 earlier message from Jordan');
-    assert.equal(earlierLine(9999, ['Jordan', 'you', 'Mina', 'Q', 'Owen']), '9,999 earlier messages from Jordan, you, Mina and 2 others');
-    assert.equal(render(<EarlierMessages count={0} participants={[]} expanded={false} messages={[]} commandId="reader.expand" onToggle={noop} onOpenMessage={noop} />), '');
+    assert.equal(
+      earlierLine(9999, ['Jordan', 'you', 'Mina', 'Q', 'Owen']),
+      '9,999 earlier messages from Jordan, you, Mina and 2 others',
+    );
+    assert.equal(
+      render(
+        <EarlierMessages
+          count={0}
+          participants={[]}
+          expanded={false}
+          messages={[]}
+          commandId="reader.expand"
+          onToggle={noop}
+          onOpenMessage={noop}
+        />,
+      ),
+      '',
+    );
   });
 });
 
@@ -153,23 +271,53 @@ describe('ThreadMessage', () => {
         cursor
         body={<p>Both directions are ready.</p>}
         attachments={[
-          { kind: 'attachment', name: 'direction-a.pdf', sizeBytes: 4_200_000, state: 'ready', onOpen: noop },
-          { kind: 'attachment', name: 'direction-b.pdf', sizeBytes: 3_100_000, state: 'failed', onOpen: noop, onRetry: noop },
+          {
+            kind: 'attachment',
+            name: 'direction-a.pdf',
+            sizeBytes: 4_200_000,
+            state: 'ready',
+            onOpen: noop,
+          },
+          {
+            kind: 'attachment',
+            name: 'direction-b.pdf',
+            sizeBytes: 3_100_000,
+            state: 'failed',
+            onOpen: noop,
+            onRetry: noop,
+          },
         ]}
         remoteImages={{ blocked: true, onLoad: noop }}
         quoted={{ shown: false, onToggle: noop, commandId: 'reader.expand' }}
       />,
     );
-    assert.match(m, /^<article id="msg-4" class="ui-thread-message" data-cursor="true" aria-labelledby="msg-4-from">/);
-    assert.match(text(m), /^Jordan Park to you, Mina Cho Today, 9:40 AM Load images from this sender Both directions are ready\. Show quoted text/);
+    assert.match(
+      m,
+      /^<article id="msg-4" class="ui-thread-message" data-cursor="true" aria-labelledby="msg-4-from">/,
+    );
+    assert.match(
+      text(m),
+      /^Jordan Park to you, Mina Cho Today, 9:40 AM Load images from this sender Both directions are ready\. Show quoted text/,
+    );
     assert.match(m, /aria-expanded="false"/);
     assert.match(m, /role="list" aria-label="Attachments"/);
-    assert.match(text(m), /direction-a\.pdf 4\.2 MB direction-b\.pdf Couldn’t download\. Try again/);
+    assert.match(
+      text(m),
+      /direction-a\.pdf 4\.2 MB direction-b\.pdf Couldn’t download\. Try again/,
+    );
   });
 
   test('a message you just sent carries the undo tray in place', () => {
     const m = render(
-      <ThreadMessage id="sent" from="You" toLabel="to Jordan Park" date="2026-10-29T09:59:30-07:00" cursor={false} body={<p>Direction B.</p>} undoTray={tray()} />,
+      <ThreadMessage
+        id="sent"
+        from="You"
+        toLabel="to Jordan Park"
+        date="2026-10-29T09:59:30-07:00"
+        cursor={false}
+        body={<p>Direction B.</p>}
+        undoTray={tray()}
+      />,
     );
     assert.match(text(m), /^You to Jordan Park Just now/);
     assert.match(m, /class="ui-undo-tray" data-state="sending" data-placement="thread"/);
@@ -179,7 +327,10 @@ describe('ThreadMessage', () => {
 describe('LoadingLine and ReplyStub', () => {
   test('one quiet status line with the label', () => {
     const m = render(<LoadingLine label="Loading Maple Library…" />);
-    assert.match(m, /^<p class="ui-loading-line" role="status"><span class="ui-loading-line__spinner" aria-hidden="true"><\/span>/);
+    assert.match(
+      m,
+      /^<p class="ui-loading-line" role="status"><span class="ui-loading-line__spinner" aria-hidden="true"><\/span>/,
+    );
     assert.equal(text(m), 'Loading Maple Library…');
   });
 
@@ -187,7 +338,12 @@ describe('LoadingLine and ReplyStub', () => {
     const m = render(<ReplyStub recipientName="Jordan" commandId="mail.reply" onOpen={noop} />);
     assert.match(m, /^<button type="button" class="ui-reply-stub" title="Reply · R">/);
     assert.equal(text(m), 'Reply to Jordan… R');
-    assert.equal(text(render(<ReplyStub recipientName={WORST.oneLetter} commandId="mail.reply" onOpen={noop} />)), 'Reply to Q… R');
+    assert.equal(
+      text(
+        render(<ReplyStub recipientName={WORST.oneLetter} commandId="mail.reply" onOpen={noop} />),
+      ),
+      'Reply to Q… R',
+    );
   });
 });
 
@@ -203,16 +359,33 @@ describe('Why', () => {
       />,
     );
     assert.match(m, /role="group" aria-labelledby="[^"]+" data-lane="update"/);
-    assert.equal(text(m), 'Why it’s here Jordan asked you a direct question with a deadline. Can you send me your preference by tomorrow? Move up a lane ⌥↑ Move down a lane ⌥↓');
+    assert.equal(
+      text(m),
+      'Why it’s here Jordan asked you a direct question with a deadline. Can you send me your preference by tomorrow? Move up a lane ⌥↑ Move down a lane ⌥↓',
+    );
     assert.match(m, /<blockquote class="ui-why__quote">/);
     assert.doesNotMatch(m, /disabled/);
   });
 
   test('up is off in Do now, down is off in Low importance', () => {
-    const top = render(<Why reason="R" lane="do" commands={{ up: 'mail.laneUp', down: 'mail.laneDown' }} onMove={noop} />);
+    const top = render(
+      <Why
+        reason="R"
+        lane="do"
+        commands={{ up: 'mail.laneUp', down: 'mail.laneDown' }}
+        onMove={noop}
+      />,
+    );
     assert.match(top, /title="Move up a lane · ⌥↑" disabled=""/);
     assert.doesNotMatch(top, /title="Move down a lane · ⌥↓" disabled=""/);
-    const bottom = render(<Why reason="R" lane="low" commands={{ up: 'mail.laneUp', down: 'mail.laneDown' }} onMove={noop} />);
+    const bottom = render(
+      <Why
+        reason="R"
+        lane="low"
+        commands={{ up: 'mail.laneUp', down: 'mail.laneDown' }}
+        onMove={noop}
+      />,
+    );
     assert.match(bottom, /title="Move down a lane · ⌥↓" disabled=""/);
   });
 });
@@ -220,28 +393,63 @@ describe('Why', () => {
 describe('UndoTray', () => {
   test('sending: "Sending to Jordan in 8 s · Undo Z · Send now" with the neutral drain', () => {
     const m = render(<UndoTray {...tray()} />);
-    assert.match(m, /data-state="sending" data-placement="thread" role="group" aria-label="Undo send"/);
+    assert.match(
+      m,
+      /data-state="sending" data-placement="thread" role="group" aria-label="Undo send"/,
+    );
     assert.equal(text(m), 'Sending to Jordan in 8 s Undo Z Send now');
-    assert.match(m, /class="ui-undo-tray__drain" style="--undo-scale:1;--undo-elapsed:0" aria-hidden="true"/);
-    const longer = render(<UndoTray {...tray({ state: { kind: 'sending', recipients: 'Jordan and Mina', secondsLeft: 15, totalSeconds: 20 } })} />);
+    assert.match(
+      m,
+      /class="ui-undo-tray__drain" style="--undo-scale:1;--undo-elapsed:0" aria-hidden="true"/,
+    );
+    const longer = render(
+      <UndoTray
+        {...tray({
+          state: {
+            kind: 'sending',
+            recipients: 'Jordan and Mina',
+            secondsLeft: 15,
+            totalSeconds: 20,
+          },
+        })}
+      />,
+    );
     assert.match(longer, /--undo-scale:2.5;--undo-elapsed:0.25/);
     assert.match(text(longer), /Sending to Jordan and Mina in 15 s/);
   });
 
   test('reduced motion: no drain, the text countdown only', () => {
-    const m = render(<UndoTray {...tray({ reducedMotion: true, state: { kind: 'sending', recipients: 'Jordan', secondsLeft: 3, totalSeconds: 8 } })} />);
+    const m = render(
+      <UndoTray
+        {...tray({
+          reducedMotion: true,
+          state: { kind: 'sending', recipients: 'Jordan', secondsLeft: 3, totalSeconds: 8 },
+        })}
+      />,
+    );
     assert.match(m, /data-motion="reduced"/);
     assert.doesNotMatch(m, /ui-undo-tray__drain/);
     assert.match(text(m), /Sending to Jordan in 3 s/);
   });
 
   test('uncertain, suspended and deferred notices write their copy as status lines', () => {
-    const uncertain = render(<UndoTray {...tray({ state: { kind: 'uncertain' }, placement: 'toast' })} />);
+    const uncertain = render(
+      <UndoTray {...tray({ state: { kind: 'uncertain' }, placement: 'toast' })} />,
+    );
     assert.match(uncertain, /data-placement="toast" role="status"/);
     assert.equal(text(uncertain), 'We could not confirm this was sent. Check Sent Send anyway');
-    assert.equal(text(render(<UndoTray {...tray({ state: { kind: 'suspended' } })} />)), 'Missed its time while your Mac was off. Send now Reschedule');
     assert.equal(
-      text(render(<UndoTray {...tray({ state: { kind: 'deferred', until: '2026-10-29T14:14:00-07:00' } })} />)),
+      text(render(<UndoTray {...tray({ state: { kind: 'suspended' } })} />)),
+      'Missed its time while your Mac was off. Send now Reschedule',
+    );
+    assert.equal(
+      text(
+        render(
+          <UndoTray
+            {...tray({ state: { kind: 'deferred', until: '2026-10-29T14:14:00-07:00' } })}
+          />,
+        ),
+      ),
       'Couldn’t send until 2:14 PM. Your draft is saved.',
     );
   });

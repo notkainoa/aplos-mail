@@ -42,7 +42,10 @@ function copyFor(state: UndoTrayState): TrayCopy {
         ],
       };
     case 'deferred':
-      return { text: `Couldn’t send until ${formatReaderTime(state.until)}. Your draft is saved.`, actions: [] };
+      return {
+        text: `Couldn’t send until ${formatReaderTime(state.until)}. Your draft is saved.`,
+        actions: [],
+      };
   }
 }
 
@@ -56,14 +59,22 @@ function announcement(state: UndoTrayState, undoKey: string): string {
 }
 
 /** The undo-send line and its follow-up notices. */
-export function UndoTray({ state, reducedMotion, placement, undoCommandId, onAction, announce }: UndoTrayProps) {
+export function UndoTray({
+  state,
+  reducedMotion,
+  placement,
+  undoCommandId,
+  onAction,
+  announce,
+}: UndoTrayProps) {
   const undoKey = keycapFor(undoCommandId);
   const { text, actions } = copyFor(state);
 
   // The drain is laid out once per send from the undo window and the time already gone; React never
   // re-renders it per frame, and later secondsLeft updates only change the text.
   const start = useRef<{ total: number; left: number } | null>(null);
-  if (state.kind === 'sending' && start.current === null) start.current = { total: state.totalSeconds, left: state.secondsLeft };
+  if (state.kind === 'sending' && start.current === null)
+    start.current = { total: state.totalSeconds, left: state.secondsLeft };
   if (state.kind !== 'sending') start.current = null;
 
   useEffect(() => {
@@ -108,7 +119,9 @@ export function UndoTray({ state, reducedMotion, placement, undoCommandId, onAct
           </span>
         ) : null}
       </div>
-      {drainStyle ? <span className="ui-undo-tray__drain" style={drainStyle} aria-hidden="true" /> : null}
+      {drainStyle ? (
+        <span className="ui-undo-tray__drain" style={drainStyle} aria-hidden="true" />
+      ) : null}
     </div>
   );
 }

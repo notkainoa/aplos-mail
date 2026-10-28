@@ -2,7 +2,14 @@
 import type { SwitchProps } from '../props';
 import { Tooltip } from '../buttons-keys/Tooltip';
 
-export function Switch({ checked, onChange, label, labelledBy, disabled = false, disabledReason }: SwitchProps) {
+export function Switch({
+  checked,
+  onChange,
+  label,
+  labelledBy,
+  disabled = false,
+  disabledReason,
+}: SwitchProps) {
   // An explained-disabled switch stays focusable and hoverable so its tooltip can say why.
   const explained = disabled && Boolean(disabledReason);
   const control = (

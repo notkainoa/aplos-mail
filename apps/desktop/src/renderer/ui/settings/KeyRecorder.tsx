@@ -67,7 +67,9 @@ export function KeyRecorder({
   useEffect(() => {
     if (state === 'recording') announce?.(`Press the new keys for ${label}. Escape cancels.`);
     if (state === 'conflict' && pending && conflictWith) {
-      announce?.(`${pending} is already used by ${conflictWith.label}. Press Return or choose Replace, or press other keys.`);
+      announce?.(
+        `${pending} is already used by ${conflictWith.label}. Press Return or choose Replace, or press other keys.`,
+      );
     }
   }, [state, pending, conflictWith, label, announce]);
 
@@ -79,7 +81,10 @@ export function KeyRecorder({
       onCancel();
       return;
     }
-    const action = recorderKeyAction(state === 'conflict' ? 'conflict' : 'recording', e.nativeEvent);
+    const action = recorderKeyAction(
+      state === 'conflict' ? 'conflict' : 'recording',
+      e.nativeEvent,
+    );
     if (action === 'move') return; // Tab and Shift+Tab leave the capture button for Replace and Cancel
     if (action === 'replace') {
       e.preventDefault();
@@ -90,7 +95,14 @@ export function KeyRecorder({
     const chord = chordFromEvent(e.nativeEvent);
     if (!chord) {
       // A lone modifier is ignored; Tab and the like are still ours while recording.
-      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta' || e.key === 'CapsLock') return;
+      if (
+        e.key === 'Shift' ||
+        e.key === 'Control' ||
+        e.key === 'Alt' ||
+        e.key === 'Meta' ||
+        e.key === 'CapsLock'
+      )
+        return;
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -103,13 +115,21 @@ export function KeyRecorder({
   if (state === 'idle') {
     const spoken = shown.length > 0 ? shown.join(' or ') : 'not set';
     return (
-      <div className="ui-key-recorder" data-state="idle" data-changed={changed ? 'true' : undefined} data-command={commandId}>
+      <div
+        className="ui-key-recorder"
+        data-state="idle"
+        data-changed={changed ? 'true' : undefined}
+        data-command={commandId}
+      >
         <span className="ui-key-recorder__label" id={labelId} dir="auto" title={label}>
           {label}
         </span>
         <span className="ui-key-recorder__controls">
           {conflictWith ? (
-            <span className="ui-key-recorder__conflict" title={`Same keys as ${conflictWith.label}`}>
+            <span
+              className="ui-key-recorder__conflict"
+              title={`Same keys as ${conflictWith.label}`}
+            >
               <SetIcon name="alert" />
               <span className="ui-key-recorder__conflict-text">{`Same keys as ${conflictWith.label}`}</span>
             </span>
@@ -133,7 +153,7 @@ export function KeyRecorder({
             onClick={onStart}
           >
             {shown.length > 0 ? (
-              shown.map((k) => (
+              shown.map(k => (
                 <kbd key={k} className="ui-key-recorder__kbd">
                   {k}
                 </kbd>
@@ -152,7 +172,7 @@ export function KeyRecorder({
       className="ui-key-recorder"
       data-state={state}
       data-command={commandId}
-      onKeyDown={(e) => {
+      onKeyDown={e => {
         // Esc cancels from Replace and Cancel too (the capture button handles its own).
         if (e.key === 'Escape' && !e.nativeEvent.isComposing) {
           e.preventDefault();
@@ -187,7 +207,11 @@ export function KeyRecorder({
         </button>
         {state === 'conflict' && conflictWith ? (
           <>
-            <span className="ui-key-recorder__conflict" role="status" title={`Already used by ${conflictWith.label}`}>
+            <span
+              className="ui-key-recorder__conflict"
+              role="status"
+              title={`Already used by ${conflictWith.label}`}
+            >
               <SetIcon name="alert" />
               <span className="ui-key-recorder__conflict-text">{`Already used by ${conflictWith.label}`}</span>
             </span>

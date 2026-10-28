@@ -4,7 +4,7 @@ import { minutesBetween, rangeOf, timeOf } from './dates';
 
 /** Encodes `id` to id-safe characters, one to one: anything outside letters, digits and "-" becomes `_<hex>_`. */
 function safe(id: string): string {
-  return id.replace(/[^A-Za-z0-9-]/g, (c) => `_${(c.codePointAt(0) ?? 0).toString(16)}_`);
+  return id.replace(/[^A-Za-z0-9-]/g, c => `_${(c.codePointAt(0) ?? 0).toString(16)}_`);
 }
 
 /** A DOM id for an entry, safe for `aria-activedescendant`. Distinct ids never share a DOM id. */

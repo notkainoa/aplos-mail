@@ -29,7 +29,13 @@ const DEFAULT_TONE: Record<TextVariant, 'ink' | 'ink-2' | 'dim'> = {
 export function Text({ variant, as, tone, icon, id, children }: ComponentPropsMap['Text']) {
   const Element = as ?? DEFAULT_ELEMENT[variant];
   return (
-    <Element className="ui-text" data-variant={variant} data-tone={tone ?? DEFAULT_TONE[variant]} data-icon={icon ? 'true' : undefined} id={id}>
+    <Element
+      className="ui-text"
+      data-variant={variant}
+      data-tone={tone ?? DEFAULT_TONE[variant]}
+      data-icon={icon ? 'true' : undefined}
+      id={id}
+    >
       {icon ? <PartIcon name={icon} size="sm" /> : null}
       {icon ? <span className="ui-text__body">{children}</span> : children}
     </Element>

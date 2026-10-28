@@ -19,16 +19,31 @@ function MatchedLabel({ label, matches }: { label: string; matches?: readonly nu
   });
   return (
     <>
-      {runs.map((run, index) => (run.bold ? <b key={index}>{run.text}</b> : <Fragment key={index}>{run.text}</Fragment>))}
+      {runs.map((run, index) =>
+        run.bold ? <b key={index}>{run.text}</b> : <Fragment key={index}>{run.text}</Fragment>,
+      )}
     </>
   );
 }
 
 function ConfirmView({ confirm }: { confirm: ConfirmProps }) {
   const titleId = useId();
-  const { question, consequence, confirmLabel, cancelLabel = 'Cancel', destructive, onConfirm, onCancel } = confirm;
+  const {
+    question,
+    consequence,
+    confirmLabel,
+    cancelLabel = 'Cancel',
+    destructive,
+    onConfirm,
+    onCancel,
+  } = confirm;
   const cancel = (
-    <button type="button" className="ui-palette__key-row" data-primary={destructive ? 'true' : undefined} onClick={onCancel}>
+    <button
+      type="button"
+      className="ui-palette__key-row"
+      data-primary={destructive ? 'true' : undefined}
+      onClick={onCancel}
+    >
       <span>{cancelLabel}</span>
       <Kbd>{destructive ? 'Return' : 'Esc'}</Kbd>
     </button>
@@ -47,7 +62,12 @@ function ConfirmView({ confirm }: { confirm: ConfirmProps }) {
     </button>
   );
   return (
-    <div className="ui-palette__confirm" role="group" aria-labelledby={titleId} data-destructive={destructive ? 'true' : undefined}>
+    <div
+      className="ui-palette__confirm"
+      role="group"
+      aria-labelledby={titleId}
+      data-destructive={destructive ? 'true' : undefined}
+    >
       <p className="ui-palette__confirm-ask" id={titleId} dir="auto">
         {question}
       </p>
@@ -71,11 +91,26 @@ function ConfirmView({ confirm }: { confirm: ConfirmProps }) {
  * The `settle` in and out is the motion runtime's.
  */
 export function Palette(props: PaletteProps) {
-  const { open, query, onQueryChange, context, trail, sections, activeId, onActiveChange, onRun, confirm, listboxId, onBack, onClose, announce } = props;
+  const {
+    open,
+    query,
+    onQueryChange,
+    context,
+    trail,
+    sections,
+    activeId,
+    onActiveChange,
+    onRun,
+    confirm,
+    listboxId,
+    onBack,
+    onClose,
+    announce,
+  } = props;
   const resultsRef = useRef<HTMLDivElement>(null);
   // Only the keyboard (and digits) may scroll the list; a pointer-driven change never does, so hover moves nothing.
   const keyboardMoved = useRef(false);
-  const flat: PaletteItem[] = sections.flatMap((section) => [...section.items]);
+  const flat: PaletteItem[] = sections.flatMap(section => [...section.items]);
   const empty = query === '';
 
   useEffect(() => {
@@ -92,13 +127,19 @@ export function Palette(props: PaletteProps) {
   useEffect(() => {
     if (!keyboardMoved.current) return;
     keyboardMoved.current = false;
-    resultsRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView?.({ block: 'nearest' });
+    resultsRef.current
+      ?.querySelector<HTMLElement>('[data-active="true"]')
+      ?.scrollIntoView?.({ block: 'nearest' });
   }, [activeId]);
 
   if (!open) return null;
 
   function move(step: 1 | -1) {
-    const next = nextActiveId(flat.map((item) => item.id), activeId, step);
+    const next = nextActiveId(
+      flat.map(item => item.id),
+      activeId,
+      step,
+    );
     if (next === undefined) return;
     keyboardMoved.current = true;
     onActiveChange(next);
@@ -139,7 +180,14 @@ export function Palette(props: PaletteProps) {
         event.preventDefault();
         onRun(activeId);
       }
-    } else if (/^[1-9]$/.test(key) && empty && !event.metaKey && !event.ctrlKey && !event.altKey && Number(key) <= Math.min(9, flat.length)) {
+    } else if (
+      /^[1-9]$/.test(key) &&
+      empty &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      Number(key) <= Math.min(9, flat.length)
+    ) {
       event.preventDefault();
       onRun(flat[Number(key) - 1].id);
     }
@@ -151,11 +199,17 @@ export function Palette(props: PaletteProps) {
     <div
       className="ui-palette"
       data-open="true"
-      onMouseDown={(event) => {
+      onMouseDown={event => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="ui-palette__panel" role="dialog" aria-modal="true" aria-label="Commands" onKeyDown={onKeyDown}>
+      <div
+        className="ui-palette__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Commands"
+        onKeyDown={onKeyDown}
+      >
         <div className="ui-palette__field">
           <Icon name="search" />
           {trail && trail.length > 0 ? (
@@ -184,7 +238,7 @@ export function Palette(props: PaletteProps) {
             dir="auto"
             readOnly={Boolean(confirm)}
             value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
+            onChange={event => onQueryChange(event.target.value)}
           />
         </div>
         {confirm ? (
@@ -197,17 +251,36 @@ export function Palette(props: PaletteProps) {
               </p>
             ) : null}
             {flat.length === 0 ? (
-              <p className="ui-palette__none" role="status" dir="auto">{`No commands match “${query.trim()}”.`}</p>
+              <p
+                className="ui-palette__none"
+                role="status"
+                dir="auto"
+              >{`No commands match “${query.trim()}”.`}</p>
             ) : (
-              <div id={listboxId} ref={resultsRef} className="ui-palette__results" role="listbox" aria-label="Commands">
-                {sections.map((section) => {
+              <div
+                id={listboxId}
+                ref={resultsRef}
+                className="ui-palette__results"
+                role="listbox"
+                aria-label="Commands"
+              >
+                {sections.map(section => {
                   const labelId = `${listboxId}-${section.id}`;
                   return (
-                    <div key={section.id} className="ui-palette__section" role="group" aria-labelledby={labelId}>
-                      <div id={labelId} className="ui-palette__section-label" data-hidden={empty ? undefined : 'true'}>
+                    <div
+                      key={section.id}
+                      className="ui-palette__section"
+                      role="group"
+                      aria-labelledby={labelId}
+                    >
+                      <div
+                        id={labelId}
+                        className="ui-palette__section-label"
+                        data-hidden={empty ? undefined : 'true'}
+                      >
                         {section.label}
                       </div>
-                      {section.items.map((item) => {
+                      {section.items.map(item => {
                         number += 1;
                         const active = item.id === activeId;
                         return (
@@ -219,21 +292,29 @@ export function Palette(props: PaletteProps) {
                             aria-selected={active}
                             data-active={active ? 'true' : undefined}
                             data-destructive={item.destructive ? 'true' : undefined}
-                            onMouseDown={(event) => event.preventDefault()}
+                            onMouseDown={event => event.preventDefault()}
                             onPointerMove={() => {
                               keyboardMoved.current = false;
                               if (!active) onActiveChange(item.id);
                             }}
                             onClick={() => onRun(item.id)}
                           >
-                            {empty && number <= 9 ? <span className="ui-palette__num">{number}</span> : null}
-                            {item.icon ? <Icon name={item.icon} /> : <span className="ui-palette__icon-gap" aria-hidden="true" />}
+                            {empty && number <= 9 ? (
+                              <span className="ui-palette__num">{number}</span>
+                            ) : null}
+                            {item.icon ? (
+                              <Icon name={item.icon} />
+                            ) : (
+                              <span className="ui-palette__icon-gap" aria-hidden="true" />
+                            )}
                             <span className="ui-palette__label" dir="auto">
                               <MatchedLabel label={item.label} matches={item.matches} />
                             </span>
                             <span className="ui-palette__right">
-                              {!empty && item.group ? <span className="ui-palette__group">{item.group}</span> : null}
-                              {keycapsFor(item.commandId).map((cap) => (
+                              {!empty && item.group ? (
+                                <span className="ui-palette__group">{item.group}</span>
+                              ) : null}
+                              {keycapsFor(item.commandId).map(cap => (
                                 <Kbd key={cap}>{cap}</Kbd>
                               ))}
                             </span>

@@ -37,18 +37,22 @@ function row(
       tabIndex={-1}
       style={{ '--cal': calVar(event.calendar.color) } as CSSProperties}
       onClick={() => onSelect(event.id)}
-      onDoubleClick={(e) => onOpen(event.id, e.currentTarget)}
-      onKeyDown={(e) => {
+      onDoubleClick={e => onOpen(event.id, e.currentTarget)}
+      onKeyDown={e => {
         if (e.nativeEvent.isComposing || e.key !== 'Enter') return;
         e.preventDefault();
         onOpen(event.id, e.currentTarget);
       }}
     >
-      <span className="ui-calendar-grid__ag-time">{event.allDay ? 'All day' : timeOf(event.start)}</span>
+      <span className="ui-calendar-grid__ag-time">
+        {event.allDay ? 'All day' : timeOf(event.start)}
+      </span>
       <span className="ui-calendar-grid__ag-event">
         <i aria-hidden="true" data-plan={event.kind === 'plan' ? 'true' : undefined} />
         <span className="ui-calendar-grid__ag-text">
-          <span className="ui-calendar-grid__ag-name" dir="auto">{event.title}</span>
+          <span className="ui-calendar-grid__ag-name" dir="auto">
+            {event.title}
+          </span>
           {sub ? <span className="ui-calendar-grid__ag-sub">{sub}</span> : null}
         </span>
       </span>
@@ -66,21 +70,27 @@ function TodayAgenda(props: CalendarGridProps) {
   const nowMs = new Date(now).getTime();
   const todays = [
     ...allDayOn(events, day),
-    ...events.filter((e) => !e.allDay && dayOf(e.start) === day).sort((a, b) => a.start.localeCompare(b.start)),
+    ...events
+      .filter(e => !e.allDay && dayOf(e.start) === day)
+      .sort((a, b) => a.start.localeCompare(b.start)),
   ];
-  const timed = todays.filter((e) => !e.allDay);
-  const upcoming = timed.filter((e) => new Date(e.start).getTime() >= nowMs);
-  const current = timed.filter((e) => new Date(e.start).getTime() < nowMs && new Date(e.end).getTime() > nowMs);
-  const past = timed.filter((e) => new Date(e.end).getTime() <= nowMs);
+  const timed = todays.filter(e => !e.allDay);
+  const upcoming = timed.filter(e => new Date(e.start).getTime() >= nowMs);
+  const current = timed.filter(
+    e => new Date(e.start).getTime() < nowMs && new Date(e.end).getTime() > nowMs,
+  );
+  const past = timed.filter(e => new Date(e.end).getTime() <= nowMs);
   const behind = past.length > 0 ? past[past.length - 1] : undefined;
   const ahead = upcoming.slice(0, 3);
   const next = upcoming[0];
   const sub = `${plural(todays.length)} · ${next ? `next at ${timeOf(next.start)}` : 'none left today'}`;
   const detail = (e: CalendarEventData, lead?: string): string =>
-    [lead, e.calendar.name, durationText(minutesBetween(e.start, e.end))].filter(Boolean).join(' · ');
+    [lead, e.calendar.name, durationText(minutesBetween(e.start, e.end))]
+      .filter(Boolean)
+      .join(' · ');
 
   const parts: ReactNode[] = [];
-  for (const e of todays.filter((x) => x.allDay)) parts.push(row(props, e, e.calendar.name));
+  for (const e of todays.filter(x => x.allDay)) parts.push(row(props, e, e.calendar.name));
   if (behind) parts.push(row(props, behind, undefined, 'past'));
   for (const e of current) parts.push(row(props, e, detail(e, 'Now')));
   parts.push(<NowLine key="now" now={now} variant="agenda" />);
@@ -88,7 +98,7 @@ function TodayAgenda(props: CalendarGridProps) {
     const before = i === 0 ? undefined : ahead[i - 1];
     const from = before
       ? new Date(before.end).getTime()
-      : Math.max(nowMs, ...current.map((c) => new Date(c.end).getTime()));
+      : Math.max(nowMs, ...current.map(c => new Date(c.end).getTime()));
     const gap = Math.round((new Date(e.start).getTime() - from) / 60000);
     if (gap >= 30) {
       parts.push(
@@ -125,16 +135,18 @@ function FullAgenda(props: CalendarGridProps) {
   const today = dayOf(now);
   const seen = new Set<string>(); // a multi-day entry is listed on each day, but only the first row is the DOM target
   const days = daysOf('agenda', start)
-    .map((day) => ({
+    .map(day => ({
       day,
       list: [
         ...allDayOn(events, day),
-        ...events.filter((e) => !e.allDay && dayOf(e.start) === day).sort((a, b) => a.start.localeCompare(b.start)),
+        ...events
+          .filter(e => !e.allDay && dayOf(e.start) === day)
+          .sort((a, b) => a.start.localeCompare(b.start)),
       ],
     }))
-    .filter((d) => d.list.length > 0 || d.day === today);
+    .filter(d => d.list.length > 0 || d.day === today);
 
-  if (days.every((d) => d.list.length === 0)) {
+  if (days.every(d => d.list.length === 0)) {
     return (
       <div className="ui-calendar-grid__empty" data-view="agenda" role="status">
         <span>Nothing scheduled.</span>
@@ -157,11 +169,24 @@ function FullAgenda(props: CalendarGridProps) {
           }
           const first = !seen.has(e.id);
           seen.add(e.id);
-          parts.push(row(props, e, e.place ? `${e.calendar.name} · ${e.place}` : e.calendar.name, 'later', first));
+          parts.push(
+            row(
+              props,
+              e,
+              e.place ? `${e.calendar.name} · ${e.place}` : e.calendar.name,
+              'later',
+              first,
+            ),
+          );
         }
         if (!placed) parts.push(<NowLine key="now" now={now} variant="agenda" />);
         return (
-          <section key={day} className="ui-calendar-grid__day" aria-labelledby={headId} data-today={day === today ? 'true' : undefined}>
+          <section
+            key={day}
+            className="ui-calendar-grid__day"
+            aria-labelledby={headId}
+            data-today={day === today ? 'true' : undefined}
+          >
             <h3 className="ui-calendar-grid__day-title" id={headId}>
               {dayTitle(day)}
             </h3>

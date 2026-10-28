@@ -9,16 +9,47 @@ import type { ComponentPropsMap, LiteralKey } from '../props';
 import { Dialog } from './Dialog';
 import { PartKeys, lowerFirst } from './parts';
 
-function KeyRow({ row, label, keys, primary, danger, onPress }: { row: 'confirm' | 'cancel'; label: string; keys: LiteralKey; primary: boolean; danger: boolean; onPress: () => void }) {
+function KeyRow({
+  row,
+  label,
+  keys,
+  primary,
+  danger,
+  onPress,
+}: {
+  row: 'confirm' | 'cancel';
+  label: string;
+  keys: LiteralKey;
+  primary: boolean;
+  danger: boolean;
+  onPress: () => void;
+}) {
   return (
-    <button type="button" className="ui-confirm__row" data-row={row} data-primary={primary ? 'true' : undefined} data-tone={danger ? 'danger' : undefined} onClick={onPress}>
+    <button
+      type="button"
+      className="ui-confirm__row"
+      data-row={row}
+      data-primary={primary ? 'true' : undefined}
+      data-tone={danger ? 'danger' : undefined}
+      onClick={onPress}
+    >
       <span className="ui-confirm__row-label">{label}</span>
       <PartKeys chords={[keys]} />
     </button>
   );
 }
 
-export function Confirm({ question, consequence, confirmLabel, cancelLabel = 'Cancel', destructive, presentation, onConfirm, onCancel, announce }: ComponentPropsMap['Confirm']) {
+export function Confirm({
+  question,
+  consequence,
+  confirmLabel,
+  cancelLabel = 'Cancel',
+  destructive,
+  presentation,
+  onConfirm,
+  onCancel,
+  announce,
+}: ComponentPropsMap['Confirm']) {
   const questionId = useId();
   const consequenceId = useId();
   const rowsRef = useRef<HTMLDivElement | null>(null);
@@ -35,7 +66,8 @@ export function Confirm({ question, consequence, confirmLabel, cancelLabel = 'Ca
   }, []);
 
   useEffect(() => {
-    if (presentation === 'inline') rowsRef.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
+    if (presentation === 'inline')
+      rowsRef.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
   }, [presentation]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -47,7 +79,10 @@ export function Confirm({ question, consequence, confirmLabel, cancelLabel = 'Ca
         else onCancel();
       } else if (!event.shiftKey) {
         // Return never confirms from the Cancel row: it activates the row that has focus.
-        const row = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[data-row]')?.dataset.row : undefined;
+        const row =
+          event.target instanceof HTMLElement
+            ? event.target.closest<HTMLElement>('[data-row]')?.dataset.row
+            : undefined;
         if (row === 'cancel') onCancel();
         else onConfirm();
       }
@@ -63,8 +98,28 @@ export function Confirm({ question, consequence, confirmLabel, cancelLabel = 'Ca
     }
   };
 
-  const cancelRow = <KeyRow key="cancel" row="cancel" label={cancelLabel} keys={destructive ? 'Return' : 'Esc'} primary={destructive} danger={false} onPress={onCancel} />;
-  const confirmRow = <KeyRow key="confirm" row="confirm" label={confirmLabel} keys={destructive ? '⇧Return' : 'Return'} primary={!destructive} danger={destructive} onPress={onConfirm} />;
+  const cancelRow = (
+    <KeyRow
+      key="cancel"
+      row="cancel"
+      label={cancelLabel}
+      keys={destructive ? 'Return' : 'Esc'}
+      primary={destructive}
+      danger={false}
+      onPress={onCancel}
+    />
+  );
+  const confirmRow = (
+    <KeyRow
+      key="confirm"
+      row="confirm"
+      label={confirmLabel}
+      keys={destructive ? '⇧Return' : 'Return'}
+      primary={!destructive}
+      danger={destructive}
+      onPress={onConfirm}
+    />
+  );
   const rows = (
     <div ref={rowsRef} className="ui-confirm__rows" onKeyDown={onKeyDown}>
       {destructive ? [cancelRow, confirmRow] : [confirmRow, cancelRow]}
@@ -74,7 +129,11 @@ export function Confirm({ question, consequence, confirmLabel, cancelLabel = 'Ca
   if (presentation === 'dialog') {
     return (
       <Dialog open title={question} description={consequence} size="sm" onClose={onCancel}>
-        <div className="ui-confirm" data-presentation="dialog" data-destructive={destructive ? 'true' : undefined}>
+        <div
+          className="ui-confirm"
+          data-presentation="dialog"
+          data-destructive={destructive ? 'true' : undefined}
+        >
           {rows}
         </div>
       </Dialog>
@@ -82,7 +141,14 @@ export function Confirm({ question, consequence, confirmLabel, cancelLabel = 'Ca
   }
 
   return (
-    <div className="ui-confirm" role="group" aria-labelledby={questionId} aria-describedby={consequenceId} data-presentation="inline" data-destructive={destructive ? 'true' : undefined}>
+    <div
+      className="ui-confirm"
+      role="group"
+      aria-labelledby={questionId}
+      aria-describedby={consequenceId}
+      data-presentation="inline"
+      data-destructive={destructive ? 'true' : undefined}
+    >
       <p className="ui-confirm__question" id={questionId}>
         {question}
       </p>

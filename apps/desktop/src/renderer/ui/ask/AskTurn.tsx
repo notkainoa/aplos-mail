@@ -12,14 +12,32 @@ import { StepLog } from './StepLog';
  * A failure is an inline line with Retry and "Use another provider", never a red wall.
  */
 export function AskTurn(props: AskTurnProps) {
-  const { id, question, state, steps, answer, citations, provider, proposal, onOpenCitation, onRetry, onUseAnotherProvider } = props;
+  const {
+    id,
+    question,
+    state,
+    steps,
+    answer,
+    citations,
+    provider,
+    proposal,
+    onOpenCitation,
+    onRetry,
+    onUseAnotherProvider,
+  } = props;
   const questionId = `${id}-question`;
-  const byIndex = new Map<number, CitationData>(citations.map((c) => [c.index, c]));
+  const byIndex = new Map<number, CitationData>(citations.map(c => [c.index, c]));
   const referenced = new Set<number>();
   const hasAnswer = Boolean(answer && answer.length > 0);
 
   return (
-    <article id={id} className="ui-ask-turn" aria-labelledby={questionId} data-state={state} aria-busy={state === 'working' || state === 'streaming'}>
+    <article
+      id={id}
+      className="ui-ask-turn"
+      aria-labelledby={questionId}
+      data-state={state}
+      aria-busy={state === 'working' || state === 'streaming'}
+    >
       <p className="ui-ask-turn__question" id={questionId} dir="auto">
         {question}
       </p>
@@ -30,22 +48,32 @@ export function AskTurn(props: AskTurnProps) {
             <p key={p}>
               {paragraph.map((segment, s) => {
                 if (segment.kind === 'text') {
-                  return segment.strong ? <strong key={s}>{segment.text}</strong> : <span key={s}>{segment.text}</span>;
+                  return segment.strong ? (
+                    <strong key={s}>{segment.text}</strong>
+                  ) : (
+                    <span key={s}>{segment.text}</span>
+                  );
                 }
                 const source = byIndex.get(segment.index);
                 referenced.add(segment.index);
-                return source ? <Citation key={s} {...source} onOpen={onOpenCitation} /> : <span key={s} className="ui-ask-turn__orphan">{`[${segment.index}]`}</span>;
+                return source ? (
+                  <Citation key={s} {...source} onOpen={onOpenCitation} />
+                ) : (
+                  <span key={s} className="ui-ask-turn__orphan">{`[${segment.index}]`}</span>
+                );
               })}
-              {state === 'streaming' && p === answer!.length - 1 ? <span className="ui-ask-turn__caret" aria-hidden="true" /> : null}
+              {state === 'streaming' && p === answer!.length - 1 ? (
+                <span className="ui-ask-turn__caret" aria-hidden="true" />
+              ) : null}
             </p>
           ))}
         </div>
       ) : null}
-      {hasAnswer && citations.some((c) => !referenced.has(c.index)) ? (
+      {hasAnswer && citations.some(c => !referenced.has(c.index)) ? (
         <p className="ui-ask-turn__sources">
           {citations
-            .filter((c) => !referenced.has(c.index))
-            .map((c) => (
+            .filter(c => !referenced.has(c.index))
+            .map(c => (
               <Citation key={c.index} {...c} onOpen={onOpenCitation} />
             ))}
         </p>
@@ -64,7 +92,9 @@ export function AskTurn(props: AskTurnProps) {
           <span dir="auto">{`${provider?.trim() || 'Ask'} didn't answer.`}</span>
           <span className="ui-ask-turn__error-acts">
             {onRetry ? <Btn variant="text" label="Retry" onPress={onRetry} /> : null}
-            {onUseAnotherProvider ? <Btn variant="text" label="Use another provider" onPress={onUseAnotherProvider} /> : null}
+            {onUseAnotherProvider ? (
+              <Btn variant="text" label="Use another provider" onPress={onUseAnotherProvider} />
+            ) : null}
           </span>
         </div>
       ) : null}

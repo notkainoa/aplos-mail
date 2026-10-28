@@ -12,15 +12,39 @@ import { Spinner } from './Spinner';
 
 const PROVIDER_NAME = { google: 'Google', microsoft: 'Microsoft' } as const;
 
-export function ReconnectSheet({ open, address, provider = 'google', state, reason, onCancel, onRetry }: ComponentPropsMap['ReconnectSheet']) {
+export function ReconnectSheet({
+  open,
+  address,
+  provider = 'google',
+  state,
+  reason,
+  onCancel,
+  onRetry,
+}: ComponentPropsMap['ReconnectSheet']) {
   const retryId = useId();
   const cancelId = useId();
   const name = PROVIDER_NAME[provider];
   const waiting = `Waiting for ${name} in your browser…`;
   const footer = (
     <>
-      <PartButton id={cancelId} variant="text" label="Cancel" keys="Esc" keyHint="always" onPress={() => onCancel()} />
-      {state === 'failed' ? <PartButton id={retryId} variant="filled" label="Try again" keys="Return" keyHint="always" onPress={() => onRetry()} /> : null}
+      <PartButton
+        id={cancelId}
+        variant="text"
+        label="Cancel"
+        keys="Esc"
+        keyHint="always"
+        onPress={() => onCancel()}
+      />
+      {state === 'failed' ? (
+        <PartButton
+          id={retryId}
+          variant="filled"
+          label="Try again"
+          keys="Return"
+          keyHint="always"
+          onPress={() => onRetry()}
+        />
+      ) : null}
     </>
   );
   return (
@@ -45,7 +69,9 @@ export function ReconnectSheet({ open, address, provider = 'google', state, reas
         ) : (
           <p className="ui-reconnect-sheet__line" role="alert">
             <PartIcon name="alert" size="sm" />
-            <span>{reason ?? `${name} didn’t finish the sign-in. Your mail is safe on this Mac.`}</span>
+            <span>
+              {reason ?? `${name} didn’t finish the sign-in. Your mail is safe on this Mac.`}
+            </span>
           </p>
         )}
       </div>

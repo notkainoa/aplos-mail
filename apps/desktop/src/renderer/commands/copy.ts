@@ -20,6 +20,6 @@ export const BANNED_PHRASES: readonly string[] = [
 export function copyProblem(text: string): string | null {
   if (text.includes('!')) return `"${text}" has an exclamation mark`;
   const lower = text.toLowerCase();
-  const phrase = BANNED_PHRASES.find((p) => lower.includes(p));
+  const phrase = BANNED_PHRASES.find(p => lower.includes(p));
   return phrase ? `"${text}" contains "${phrase}"` : null;
 }

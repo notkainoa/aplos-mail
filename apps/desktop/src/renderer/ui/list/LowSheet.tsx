@@ -53,7 +53,9 @@ export function LowSheet({
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const panel = panelRef.current;
     const target =
-      panel?.querySelector<HTMLElement>('.ui-list-box') ?? panel?.querySelector<HTMLElement>('.ui-empty-line button') ?? panel;
+      panel?.querySelector<HTMLElement>('.ui-list-box') ??
+      panel?.querySelector<HTMLElement>('.ui-empty-line button') ??
+      panel;
     target?.focus();
     return () => {
       if (opener?.isConnected) opener.focus();
@@ -64,7 +66,8 @@ export function LowSheet({
   useLayoutEffect(() => {
     if (!open || !empty) return;
     const panel = panelRef.current;
-    if (panel && !panel.contains(document.activeElement)) panel.querySelector<HTMLElement>('.ui-empty-line button')?.focus();
+    if (panel && !panel.contains(document.activeElement))
+      panel.querySelector<HTMLElement>('.ui-empty-line button')?.focus();
   }, [open, empty]);
 
   if (!open) return null;
@@ -117,17 +120,27 @@ export function LowSheet({
           </h2>
           <span className="ui-low-sheet__count">{formatCount(total)}</span>
           <span className="ui-low-sheet__close">
-            <Action variant="icon" size="sm" label="Close" icon="close" tooltip="Close · Esc" onPress={() => onClose()} />
+            <Action
+              variant="icon"
+              size="sm"
+              label="Close"
+              icon="close"
+              tooltip="Close · Esc"
+              onPress={() => onClose()}
+            />
           </span>
         </div>
 
         {empty ? (
-          <EmptyLine text="No low-importance mail." action={{ label: 'Back to Home', emphasis: 'text', keys: 'Esc', onSelect: onClose }} />
+          <EmptyLine
+            text="No low-importance mail."
+            action={{ label: 'Back to Home', emphasis: 'text', keys: 'Esc', onSelect: onClose }}
+          />
         ) : (
           <>
             <div className="ui-low-sheet__body">
               <ListBox binding={binding}>
-                {groups.map((group) => (
+                {groups.map(group => (
                   <ListGroup
                     key={group.id}
                     header={{
@@ -136,10 +149,12 @@ export function LowSheet({
                       variant: 'section',
                       count: group.rows.length,
                       held: true,
-                      action: group.onUnsubscribe ? { label: 'Unsubscribe', onSelect: group.onUnsubscribe } : undefined,
+                      action: group.onUnsubscribe
+                        ? { label: 'Unsubscribe', onSelect: group.onUnsubscribe }
+                        : undefined,
                     }}
                   >
-                    {group.rows.map((row) => (
+                    {group.rows.map(row => (
                       <div
                         key={row.id}
                         className="ui-low-sheet__row"
@@ -158,7 +173,11 @@ export function LowSheet({
               {preview ? preview.text : null}
             </p>
             {/* With the shell's announcer the armed line is spoken once through it; otherwise this line is the live region. */}
-            <p className="ui-low-sheet__foot" role={announce ? undefined : 'status'} data-armed={armed ? 'true' : undefined}>
+            <p
+              className="ui-low-sheet__foot"
+              role={announce ? undefined : 'status'}
+              data-armed={armed ? 'true' : undefined}
+            >
               {armed ? (
                 armedLine(key, total)
               ) : (

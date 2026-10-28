@@ -14,7 +14,9 @@ export function DraftState({ state, onRetry }: DraftStateProps) {
           <span className="ui-draft-state__text">{"Couldn't save"}</span>
           {onRetry ? (
             <>
-              <span className="ui-draft-state__dot" aria-hidden="true">·</span>
+              <span className="ui-draft-state__dot" aria-hidden="true">
+                ·
+              </span>
               <Btn variant="text" label="Retry" onPress={onRetry} />
             </>
           ) : null}

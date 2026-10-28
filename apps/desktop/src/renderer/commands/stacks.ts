@@ -10,10 +10,21 @@ import type { ContextName, ContextStack } from './types';
  * resolver reaches one, outer contexts never answer: E behind a Trash confirm,
  * or ⌘Return behind the palette, does nothing.
  */
-export const MODAL_CONTEXTS: readonly ContextName[] = ['palette', 'menu', 'datePicker', 'dialog', 'sheet', 'lowImportance'];
+export const MODAL_CONTEXTS: readonly ContextName[] = [
+  'palette',
+  'menu',
+  'datePicker',
+  'dialog',
+  'sheet',
+  'lowImportance',
+];
 
 /** The onboarding window's contexts: that window has no 'global', so no app command reaches it. */
-export const ONBOARDING_WINDOW_CONTEXTS: readonly ContextName[] = ['onboarding', 'firstSync', 'drill'];
+export const ONBOARDING_WINDOW_CONTEXTS: readonly ContextName[] = [
+  'onboarding',
+  'firstSync',
+  'drill',
+];
 
 /** Contexts that must sit under another, outer to inner. */
 const IMPLIED: Readonly<Partial<Record<ContextName, readonly ContextName[]>>> = {
@@ -71,8 +82,10 @@ export function canShareStack(a: ContextName, b: ContextName): boolean {
  */
 export function buildStack(contexts: readonly ContextName[]): ContextStack {
   const modals = contexts.filter(isModal);
-  const onboardingWindow = contexts.some((c) => ONBOARDING_WINDOW_CONTEXTS.includes(c));
-  const base = contexts.filter((c) => !isModal(c) && ONBOARDING_WINDOW_CONTEXTS.includes(c) === onboardingWindow);
+  const onboardingWindow = contexts.some(c => ONBOARDING_WINDOW_CONTEXTS.includes(c));
+  const base = contexts.filter(
+    c => !isModal(c) && ONBOARDING_WINDOW_CONTEXTS.includes(c) === onboardingWindow,
+  );
   const out: ContextName[] = onboardingWindow ? [] : ['global'];
   const add = (c: ContextName) => {
     if (!out.includes(c)) out.push(c);

@@ -6,7 +6,13 @@ import { useId } from 'react';
 import type { ComponentPropsMap } from '../props';
 import { PartIcon, PartTip } from './parts';
 
-export function AccountSwitcher({ label, monogram, open, menuId, onOpen }: ComponentPropsMap['AccountSwitcher']) {
+export function AccountSwitcher({
+  label,
+  monogram,
+  open,
+  menuId,
+  onOpen,
+}: ComponentPropsMap['AccountSwitcher']) {
   const tipId = useId();
   return (
     <span className="ui-part-tipwrap ui-account-switcher__wrap">
@@ -18,7 +24,7 @@ export function AccountSwitcher({ label, monogram, open, menuId, onOpen }: Compo
         aria-expanded={open}
         aria-controls={menuId}
         aria-describedby={tipId}
-        onClick={(event) => onOpen(event.currentTarget)}
+        onClick={event => onOpen(event.currentTarget)}
       >
         <span className="ui-account-switcher__mono" aria-hidden="true">
           {monogram.slice(0, 2)}

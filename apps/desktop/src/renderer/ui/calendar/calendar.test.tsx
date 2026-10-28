@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { copyProblem } from '../../commands/internal';
-import type { CalendarEventData, CalendarGridProps, CalendarInfo, DatePresetsProps, EventDetailProps } from '../props';
+import type {
+  CalendarEventData,
+  CalendarGridProps,
+  CalendarInfo,
+  DatePresetsProps,
+  EventDetailProps,
+} from '../props';
 import {
   CalendarGrid,
   CalendarList,
@@ -14,7 +20,17 @@ import {
   NowLine,
   PlanOutline,
 } from './index';
-import { addDays, dayTitle, durationText, hourRange, monthMatrix, rangeOf, shiftMonth, snapHours, timeOf } from './dates';
+import {
+  addDays,
+  dayTitle,
+  durationText,
+  hourRange,
+  monthMatrix,
+  rangeOf,
+  shiftMonth,
+  snapHours,
+  timeOf,
+} from './dates';
 import { firstNameOf } from './EventDetail';
 import { eventDomId, stackDomId } from './eventText';
 import { dragRange, lanesFor, layoutDay, timedOn } from './layout';
@@ -26,12 +42,19 @@ const html = (node: React.ReactElement): string => renderToStaticMarkup(node);
 /** Visible copy of a render: text nodes plus aria-label, title and placeholder values, entities decoded. */
 function copyOf(markup: string): string[] {
   const decode = (s: string): string =>
-    s.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-  const attrs = [...markup.matchAll(/(?:aria-label|title|placeholder)="([^"]*)"/g)].map((m) => decode(m[1]));
+    s
+      .replace(/&#x27;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+  const attrs = [...markup.matchAll(/(?:aria-label|title|placeholder)="([^"]*)"/g)].map(m =>
+    decode(m[1]),
+  );
   const text = markup
     .replace(/<[^>]+>/g, '\n')
     .split('\n')
-    .map((t) => decode(t.trim()))
+    .map(t => decode(t.trim()))
     .filter(Boolean);
   return [...attrs, ...text];
 }
@@ -46,18 +69,39 @@ const WORK = cal('work', 'Work', 'hill');
 const PERSONAL = cal('personal', 'Personal', 'sky');
 const HOLLOW = cal('hollow', 'Hollow Creek', 'ember');
 
-function ev(id: string, title: string, start: string, end: string, extra: Partial<CalendarEventData> = {}): CalendarEventData {
+function ev(
+  id: string,
+  title: string,
+  start: string,
+  end: string,
+  extra: Partial<CalendarEventData> = {},
+): CalendarEventData {
   return { id, title, start, end, calendar: WORK, kind: 'event', persisted: true, ...extra };
 }
 
 const DEMO: CalendarEventData[] = [
-  ev('brunch', 'Brunch with Mom', '2026-10-25T10:00:00', '2026-10-25T11:30:00', { calendar: cal('family', 'Family', 'sand') }),
-  ev('dental', 'Northwind Dental', '2026-10-29T09:30:00', '2026-10-29T10:30:00', { calendar: PERSONAL, place: 'Northwind Dental, 14 Alder Street' }),
+  ev('brunch', 'Brunch with Mom', '2026-10-25T10:00:00', '2026-10-25T11:30:00', {
+    calendar: cal('family', 'Family', 'sand'),
+  }),
+  ev('dental', 'Northwind Dental', '2026-10-29T09:30:00', '2026-10-29T10:30:00', {
+    calendar: PERSONAL,
+    place: 'Northwind Dental, 14 Alder Street',
+  }),
   ev('standup', 'Standup', '2026-10-29T11:00:00', '2026-10-29T11:15:00'),
-  ev('design', 'Design review with Mina and Jordan', '2026-10-29T14:00:00', '2026-10-29T14:30:00', { calendar: HOLLOW, isOrganizer: true }),
-  ev('climb', 'Climbing with Theo', '2026-10-29T17:30:00', '2026-10-29T19:00:00', { calendar: PERSONAL }),
-  ev('q4', 'Q4 review', '2026-10-30T11:00:00', '2026-10-30T12:00:00', { unanswered: true, persisted: true }),
-  ev('lunch', 'Lunch with Leah', '2026-10-30T12:30:00', '2026-10-30T13:30:00', { calendar: PERSONAL }),
+  ev('design', 'Design review with Mina and Jordan', '2026-10-29T14:00:00', '2026-10-29T14:30:00', {
+    calendar: HOLLOW,
+    isOrganizer: true,
+  }),
+  ev('climb', 'Climbing with Theo', '2026-10-29T17:30:00', '2026-10-29T19:00:00', {
+    calendar: PERSONAL,
+  }),
+  ev('q4', 'Q4 review', '2026-10-30T11:00:00', '2026-10-30T12:00:00', {
+    unanswered: true,
+    persisted: true,
+  }),
+  ev('lunch', 'Lunch with Leah', '2026-10-30T12:30:00', '2026-10-30T13:30:00', {
+    calendar: PERSONAL,
+  }),
   ev('launch', 'Hollow Creek launch prep', '2026-10-30T15:00:00', '2026-10-30T16:30:00', {
     calendar: HOLLOW,
     kind: 'plan',
@@ -67,7 +111,9 @@ const DEMO: CalendarEventData[] = [
   // Three overlapping entries on Wednesday: the first lane plus a "+2" stack.
   ev('o1', 'Focus time', '2026-10-28T10:00:00', '2026-10-28T12:00:00'),
   ev('o2', '1:1 with Mina', '2026-10-28T11:00:00', '2026-10-28T11:45:00', { calendar: HOLLOW }),
-  ev('o3', 'Call Sami about the lease', '2026-10-28T11:15:00', '2026-10-28T11:30:00', { calendar: PERSONAL }),
+  ev('o3', 'Call Sami about the lease', '2026-10-28T11:15:00', '2026-10-28T11:30:00', {
+    calendar: PERSONAL,
+  }),
 ];
 
 const gridProps = (over: Partial<CalendarGridProps> = {}): CalendarGridProps => ({
@@ -98,58 +144,78 @@ test('dates: titles carry the comma, ranges share AM or PM, durations read plain
   assert.equal(addDays('2026-10-31', 1), '2026-11-01');
   assert.equal(shiftMonth('2026-12', 1), '2027-01');
   assert.equal(snapHours(10.1), 10);
-  assert.deepEqual(hourRange([{ start: 6.5, end: 7 }, { start: 21, end: 22.5 }]), { first: 6, last: 23 });
+  assert.deepEqual(
+    hourRange([
+      { start: 6.5, end: 7 },
+      { start: 21, end: 22.5 },
+    ]),
+    { first: 6, last: 23 },
+  );
 });
 
 test('dates: a month matrix is six weeks of seven and starts on the locale weekday', () => {
   const sunday = monthMatrix('2026-10', 0);
   assert.equal(sunday.length, 6);
-  assert.ok(sunday.every((w) => w.length === 7));
+  assert.ok(sunday.every(w => w.length === 7));
   assert.equal(sunday[0][0], '2026-09-27');
   assert.equal(monthMatrix('2026-10', 1)[0][0], '2026-09-28');
 });
 
 test('layout: two overlaps share the width, three fold into the first lane plus a stack', () => {
   const day = '2026-10-28';
-  const timed = DEMO.map((e) => timedOn(e, day)).filter((t) => t !== null);
+  const timed = DEMO.map(e => timedOn(e, day)).filter(t => t !== null);
   const week = layoutDay(timed, 2);
   assert.equal(week.items.length, 1);
   assert.equal(week.items[0].beside, true);
   assert.equal(week.items[0].event.id, 'o1');
-  assert.deepEqual(week.stacks[0].events.map((e) => e.id).sort(), ['o2', 'o3']);
+  assert.deepEqual(week.stacks[0].events.map(e => e.id).sort(), ['o2', 'o3']);
   const wide = layoutDay(timed, 6);
   assert.equal(wide.stacks.length, 0);
-  assert.ok(wide.items.every((i) => i.lanes === 3));
+  assert.ok(wide.items.every(i => i.lanes === 3));
   const two = layoutDay(timed.slice(0, 2), 2);
   assert.equal(two.stacks.length, 0);
-  assert.ok(two.items.every((i) => i.lanes === 2));
+  assert.ok(two.items.every(i => i.lanes === 2));
 });
 
 test('layout: drag math snaps to 15 minutes, keeps the length when moving and never inverts', () => {
-  assert.deepEqual(dragRange('create', { at: 10, end: 10, pointer: 10 }, 11.1), { at: 10, end: 11 });
+  assert.deepEqual(dragRange('create', { at: 10, end: 10, pointer: 10 }, 11.1), {
+    at: 10,
+    end: 11,
+  });
   assert.deepEqual(dragRange('create', { at: 10, end: 10, pointer: 10 }, 9), { at: 9, end: 10 });
-  assert.deepEqual(dragRange('move', { at: 14, end: 14.5, pointer: 14.2 }, 15.2), { at: 15, end: 15.5 });
-  assert.deepEqual(dragRange('resize', { at: 14, end: 14.5, pointer: 14.5 }, 13), { at: 14, end: 14.25 });
+  assert.deepEqual(dragRange('move', { at: 14, end: 14.5, pointer: 14.2 }, 15.2), {
+    at: 15,
+    end: 15.5,
+  });
+  assert.deepEqual(dragRange('resize', { at: 14, end: 14.5, pointer: 14.5 }, 13), {
+    at: 14,
+    end: 14.25,
+  });
 });
 
 test('layout: seven overlaps in a day column keep their own lanes beside one stack; none share a slot', () => {
-  const seven = Array.from({ length: 7 }, (_, i) => ev(`o${i + 1}`, `Overlap ${i + 1}`, '2026-10-28T10:00:00', '2026-10-28T12:30:00'));
-  const timed = seven.map((e) => timedOn(e, '2026-10-28')).filter((t) => t !== null);
+  const seven = Array.from({ length: 7 }, (_, i) =>
+    ev(`o${i + 1}`, `Overlap ${i + 1}`, '2026-10-28T10:00:00', '2026-10-28T12:30:00'),
+  );
+  const timed = seven.map(e => timedOn(e, '2026-10-28')).filter(t => t !== null);
   const day = layoutDay(timed, 6);
   assert.equal(day.items.length, 5);
-  assert.deepEqual(day.items.map((i) => i.lane).sort(), [0, 1, 2, 3, 4]);
-  assert.ok(day.items.every((i) => i.lanes === 5 && i.beside));
+  assert.deepEqual(day.items.map(i => i.lane).sort(), [0, 1, 2, 3, 4]);
+  assert.ok(day.items.every(i => i.lanes === 5 && i.beside));
   assert.equal(day.stacks.length, 1);
   assert.equal(day.stacks[0].events.length, 2);
   assert.equal(day.stacks[0].alone, false);
   // Every entry is either on the grid in its own lane or in the stack, exactly once.
-  const all = [...day.items.map((i) => i.event.id), ...day.stacks.flatMap((x) => x.events.map((e) => e.id))].sort();
-  assert.deepEqual(all, seven.map((e) => e.id).sort());
+  const all = [
+    ...day.items.map(i => i.event.id),
+    ...day.stacks.flatMap(x => x.events.map(e => e.id)),
+  ].sort();
+  assert.deepEqual(all, seven.map(e => e.id).sort());
 });
 
 test('layout: when not even one lane and the stack fit, everything folds into one stack; lanes follow the width', () => {
-  const three = ['a', 'b', 'c'].map((id) => ev(id, id, '2026-10-28T10:00:00', '2026-10-28T11:00:00'));
-  const timed = three.map((e) => timedOn(e, '2026-10-28')).filter((t) => t !== null);
+  const three = ['a', 'b', 'c'].map(id => ev(id, id, '2026-10-28T10:00:00', '2026-10-28T11:00:00'));
+  const timed = three.map(e => timedOn(e, '2026-10-28')).filter(t => t !== null);
   const narrow = layoutDay(timed, 1);
   assert.equal(narrow.items.length, 0);
   assert.equal(narrow.stacks[0].events.length, 3);
@@ -188,7 +254,14 @@ const place = { lane: 0, lanes: 1, wide: false };
 
 test('EventBlock: title and time, calendar colour as a custom property, label for screen readers', () => {
   const out = html(
-    <EventBlock kind="event" event={DEMO[1]} placement={place} selected={false} onSelect={noop} onOpen={noop} />,
+    <EventBlock
+      kind="event"
+      event={DEMO[1]}
+      placement={place}
+      selected={false}
+      onSelect={noop}
+      onOpen={noop}
+    />,
   );
   assert.match(out, /class="ui-event-block"/);
   assert.match(out, /data-density="full"/);
@@ -200,29 +273,72 @@ test('EventBlock: title and time, calendar colour as a custom property, label fo
 });
 
 test('EventBlock: under 30 minutes is one line with the title only; selected and unanswered are marked', () => {
-  const tiny = html(<EventBlock kind="event" event={DEMO[2]} placement={place} selected onSelect={noop} onOpen={noop} />);
+  const tiny = html(
+    <EventBlock
+      kind="event"
+      event={DEMO[2]}
+      placement={place}
+      selected
+      onSelect={noop}
+      onOpen={noop}
+    />,
+  );
   assert.match(tiny, /data-density="tiny"/);
   assert.doesNotMatch(tiny, /ui-event-block__time/);
   assert.match(tiny, /aria-pressed="true"/);
   assert.match(tiny, /data-selected="true"/);
-  const invite = html(<EventBlock kind="event" event={DEMO[5]} placement={place} selected={false} onSelect={noop} onOpen={noop} />);
+  const invite = html(
+    <EventBlock
+      kind="event"
+      event={DEMO[5]}
+      placement={place}
+      selected={false}
+      onSelect={noop}
+      onOpen={noop}
+    />,
+  );
   assert.match(invite, /data-unanswered="true"/);
   assert.match(invite, /invitation, not answered yet/);
 });
 
 test('EventBlock: a wide column adds the place to the time line; a short wide block adds the time', () => {
   const wide = { ...place, wide: true };
-  const full = html(<EventBlock kind="event" event={DEMO[1]} placement={wide} selected={false} onSelect={noop} onOpen={noop} />);
+  const full = html(
+    <EventBlock
+      kind="event"
+      event={DEMO[1]}
+      placement={wide}
+      selected={false}
+      onSelect={noop}
+      onOpen={noop}
+    />,
+  );
   assert.match(full, /9:30 – 10:30 AM · Northwind Dental, 14 Alder Street/);
   const half = ev('half', 'Short', '2026-10-29T09:00:00', '2026-10-29T09:45:00');
-  const one = html(<EventBlock kind="event" event={half} placement={wide} selected={false} onSelect={noop} onOpen={noop} />);
+  const one = html(
+    <EventBlock
+      kind="event"
+      event={half}
+      placement={wide}
+      selected={false}
+      onSelect={noop}
+      onOpen={noop}
+    />,
+  );
   assert.match(one, /data-density="one"/);
   assert.match(one, /ui-event-block__time/);
 });
 
 test('EventBlock stack: "+N" with a plain label and a menu popup', () => {
   const out = html(
-    <EventBlock kind="stack" ids={['o2', 'o3']} start="2026-10-28T11:00:00" end="2026-10-28T11:45:00" color="ember" onOpen={noop} />,
+    <EventBlock
+      kind="stack"
+      ids={['o2', 'o3']}
+      start="2026-10-28T11:00:00"
+      end="2026-10-28T11:45:00"
+      color="ember"
+      onOpen={noop}
+    />,
   );
   assert.match(out, /data-kind="stack"/);
   assert.match(out, />\+2</);
@@ -232,7 +348,9 @@ test('EventBlock stack: "+N" with a plain label and a menu popup', () => {
 });
 
 test('PlanOutline: the label "From mail" and a name that says it is not added yet', () => {
-  const out = html(<PlanOutline plan={DEMO[7]} placement={place} selected={false} onSelect={noop} onOpen={noop} />);
+  const out = html(
+    <PlanOutline plan={DEMO[7]} placement={place} selected={false} onSelect={noop} onOpen={noop} />,
+  );
   assert.match(out, /class="ui-plan-outline"/);
   assert.match(out, /From mail/);
   assert.match(out, /found in mail, not added yet/);
@@ -251,12 +369,30 @@ test('EventBlock worst case: 300-character title, unbreakable 80-character name,
   ];
   for (const title of titles) {
     const out = html(
-      <EventBlock kind="event" event={ev('w', title, '2026-10-29T10:00:00', '2026-10-29T11:00:00')} placement={place} selected={false} onSelect={noop} onOpen={noop} />,
+      <EventBlock
+        kind="event"
+        event={ev('w', title, '2026-10-29T10:00:00', '2026-10-29T11:00:00')}
+        placement={place}
+        selected={false}
+        onSelect={noop}
+        onOpen={noop}
+      />,
     );
     assert.ok(out.includes(`${title}</span>`), `title rendered: ${title.slice(0, 20)}`);
     assert.match(out, /aria-label="/);
   }
-  const rtl = html(<PlanOutline plan={ev('p', titles[4], '2026-10-29T10:00:00', '2026-10-29T11:00:00', { kind: 'plan', persisted: false })} placement={place} selected={false} onSelect={noop} onOpen={noop} />);
+  const rtl = html(
+    <PlanOutline
+      plan={ev('p', titles[4], '2026-10-29T10:00:00', '2026-10-29T11:00:00', {
+        kind: 'plan',
+        persisted: false,
+      })}
+      placement={place}
+      selected={false}
+      onSelect={noop}
+      onOpen={noop}
+    />,
+  );
   assert.ok(rtl.includes(titles[4]));
 });
 
@@ -276,7 +412,10 @@ test('MiniMonth: six weeks, out-of-month days dim, today filled, the range marke
   assert.match(out, />October 2026</);
   assert.equal((out.match(/class="ui-mini-month__day"/g) ?? []).length, 42);
   assert.equal((out.match(/data-out="true"/g) ?? []).length, 11); // 4 days of September, 7 of November
-  assert.match(out, /data-today="true"[^>]*aria-label="Thursday, October 29, 2026"[^>]*aria-current="date"/);
+  assert.match(
+    out,
+    /data-today="true"[^>]*aria-label="Thursday, October 29, 2026"[^>]*aria-current="date"/,
+  );
   assert.equal((out.match(/data-in-range="true"/g) ?? []).length, 7);
   assert.equal((out.match(/tabindex="0"/g) ?? []).length, 1);
   assert.match(out, /aria-label="Previous month"/);
@@ -286,7 +425,15 @@ test('MiniMonth: six weeks, out-of-month days dim, today filled, the range marke
 });
 
 test('MiniMonth: Monday first changes the column order', () => {
-  const out = html(<MiniMonth month="2026-10" today="2026-10-29" weekStartsOn={1} onMonthChange={noop} onPick={noop} />);
+  const out = html(
+    <MiniMonth
+      month="2026-10"
+      today="2026-10-29"
+      weekStartsOn={1}
+      onMonthChange={noop}
+      onPick={noop}
+    />,
+  );
   assert.match(out, /<th scope="col" abbr="Monday">M<\/th>/);
   assert.ok(out.indexOf('abbr="Monday"') < out.indexOf('abbr="Sunday"'));
   assert.doesNotMatch(out, /data-in-range/);
@@ -298,7 +445,12 @@ test('CalendarList: swatches as custom properties, shown and hidden states, Opti
   const calendars: CalendarInfo[] = [
     { ...WORK, visible: true },
     { ...PERSONAL, visible: false },
-    { id: 'long', name: 'A calendar with a name that goes on and on and on past any sidebar width', color: 'dusk', visible: true },
+    {
+      id: 'long',
+      name: 'A calendar with a name that goes on and on and on past any sidebar width',
+      color: 'dusk',
+      visible: true,
+    },
     { id: 'cjk', name: '家族', color: 'stamp', visible: true },
   ];
   const out = html(<CalendarList calendars={calendars} onToggle={noop} onSolo={noop} />);
@@ -309,7 +461,10 @@ test('CalendarList: swatches as custom properties, shown and hidden states, Opti
   assert.match(out, /--swatch:var\(--tag-hill\)/);
   assert.match(out, /Option-click shows only this one/);
   assert.ok(out.includes('家族'));
-  assert.equal(html(<CalendarList calendars={[]} onToggle={noop} onSolo={noop} />).includes('role="checkbox"'), false);
+  assert.equal(
+    html(<CalendarList calendars={[]} onToggle={noop} onSolo={noop} />).includes('role="checkbox"'),
+    false,
+  );
 });
 
 /* ---------------------------------- CalendarGrid ---------------------------------- */
@@ -320,7 +475,10 @@ test('CalendarGrid week: a labelled grid, seven day headers, today badge, hour l
   assert.match(out, /aria-label="Week of October 25, 2026"/);
   assert.equal((out.match(/role="columnheader"/g) ?? []).length, 7);
   assert.match(out, /aria-label="Sunday, October 25, 2026"/);
-  assert.match(out, /data-today="true"[^>]*aria-label="Thursday, October 29, 2026"[^>]*aria-current="date"/);
+  assert.match(
+    out,
+    /data-today="true"[^>]*aria-label="Thursday, October 29, 2026"[^>]*aria-current="date"/,
+  );
   assert.equal((out.match(/class="ui-calendar-grid__hour"/g) ?? []).length, 13);
   assert.match(out, />8 AM</);
   assert.match(out, />8 PM</);
@@ -342,7 +500,10 @@ test('CalendarGrid week: plans show "From mail", three overlaps show the first l
   const two = html(
     <CalendarGrid
       {...gridProps({
-        events: [ev('a', 'First', '2026-10-27T10:00:00', '2026-10-27T11:00:00'), ev('b', 'Second', '2026-10-27T10:30:00', '2026-10-27T11:30:00')],
+        events: [
+          ev('a', 'First', '2026-10-27T10:00:00', '2026-10-27T11:00:00'),
+          ev('b', 'Second', '2026-10-27T10:30:00', '2026-10-27T11:30:00'),
+        ],
       })}
     />,
   );
@@ -353,12 +514,25 @@ test('CalendarGrid week: plans show "From mail", three overlaps show the first l
 
 /** Elements the ↑ ↓ walk can land on in a render: those with a walk time and an id. */
 function walkables(markup: string): string[] {
-  return [...markup.matchAll(/<[^>]*data-walk-at="[^"]*"[^>]*>/g)].map((m) => /\sid="([^"]*)"/.exec(m[0])?.[1] ?? '');
+  return [...markup.matchAll(/<[^>]*data-walk-at="[^"]*"[^>]*>/g)].map(
+    m => /\sid="([^"]*)"/.exec(m[0])?.[1] ?? '',
+  );
 }
 
 test('CalendarGrid day: with seven overlaps every walkable element has its own id; folded entries are reached through "+N"', () => {
-  const seven = Array.from({ length: 7 }, (_, i) => ev(`o${i + 1}`, `Overlap ${i + 1}`, '2026-10-28T10:00:00', '2026-10-28T12:30:00'));
-  const out = html(<CalendarGrid {...gridProps({ view: 'day', start: '2026-10-28', events: seven, label: 'Wednesday, October 28, 2026' })} />);
+  const seven = Array.from({ length: 7 }, (_, i) =>
+    ev(`o${i + 1}`, `Overlap ${i + 1}`, '2026-10-28T10:00:00', '2026-10-28T12:30:00'),
+  );
+  const out = html(
+    <CalendarGrid
+      {...gridProps({
+        view: 'day',
+        start: '2026-10-28',
+        events: seven,
+        label: 'Wednesday, October 28, 2026',
+      })}
+    />,
+  );
   const ids = walkables(out);
   assert.equal(ids.length, 6); // five entries and one stack
   assert.ok(ids.every(Boolean));
@@ -366,7 +540,7 @@ test('CalendarGrid day: with seven overlaps every walkable element has its own i
   assert.ok(ids.includes('ui-stack-o6'));
   assert.doesNotMatch(out, /id="ui-event-o6"/);
   // Five different lanes, none stacked on another.
-  const lanes = [...out.matchAll(/--lane:(\d);--lanes:5/g)].map((m) => m[1]);
+  const lanes = [...out.matchAll(/--lane:(\d);--lanes:5/g)].map(m => m[1]);
   assert.deepEqual([...new Set(lanes)].sort(), ['0', '1', '2', '3', '4']);
   assert.match(out, />\+2</);
 });
@@ -374,27 +548,55 @@ test('CalendarGrid day: with seven overlaps every walkable element has its own i
 test('CalendarGrid: a multi-day all-day entry has one DOM id in week and month, and the agenda', () => {
   const trip = ev('trip', 'Trip to Hollow Creek', '2026-10-27', '2026-10-30', { allDay: true });
   for (const view of ['week', 'month'] as const) {
-    const out = html(<CalendarGrid {...gridProps({ view, start: view === 'week' ? '2026-10-25' : '2026-10-01', events: [trip] })} />);
+    const out = html(
+      <CalendarGrid
+        {...gridProps({
+          view,
+          start: view === 'week' ? '2026-10-25' : '2026-10-01',
+          events: [trip],
+        })}
+      />,
+    );
     assert.equal((out.match(/id="ui-event-trip"/g) ?? []).length, 1, view);
     assert.equal(walkables(out).length, 1, view);
   }
-  const agenda = html(<CalendarGrid {...gridProps({ view: 'agenda', agenda: 'full', start: '2026-10-25', events: [trip] })} />);
+  const agenda = html(
+    <CalendarGrid
+      {...gridProps({ view: 'agenda', agenda: 'full', start: '2026-10-25', events: [trip] })}
+    />,
+  );
   assert.equal((agenda.match(/id="ui-event-trip"/g) ?? []).length, 1);
   // Ids that only differ in punctuation still stay apart.
   const two = html(
     <CalendarGrid
-      {...gridProps({ events: [ev('a b', 'One', '2026-10-27T10:00:00', '2026-10-27T11:00:00'), ev('a-b', 'Two', '2026-10-27T12:00:00', '2026-10-27T13:00:00')] })}
+      {...gridProps({
+        events: [
+          ev('a b', 'One', '2026-10-27T10:00:00', '2026-10-27T11:00:00'),
+          ev('a-b', 'Two', '2026-10-27T12:00:00', '2026-10-27T13:00:00'),
+        ],
+      })}
     />,
   );
   assert.equal(new Set(walkables(two)).size, 2);
 });
 
 test('CalendarGrid month: "N more" is a walkable stop with its own id', () => {
-  const crowded = ['a', 'b', 'c', 'd'].map((id, i) => ev(id, `Item ${id}`, `2026-10-29T${String(8 + i).padStart(2, '0')}:00:00`, `2026-10-29T${String(8 + i).padStart(2, '0')}:30:00`));
-  const out = html(<CalendarGrid {...gridProps({ view: 'month', start: '2026-10-01', events: crowded, label: 'October 2026' })} />);
+  const crowded = ['a', 'b', 'c', 'd'].map((id, i) =>
+    ev(
+      id,
+      `Item ${id}`,
+      `2026-10-29T${String(8 + i).padStart(2, '0')}:00:00`,
+      `2026-10-29T${String(8 + i).padStart(2, '0')}:30:00`,
+    ),
+  );
+  const out = html(
+    <CalendarGrid
+      {...gridProps({ view: 'month', start: '2026-10-01', events: crowded, label: 'October 2026' })}
+    />,
+  );
   const ids = walkables(out);
   assert.equal(ids.length, 3); // a, b and "2 more"
-  assert.ok(ids.some((id) => id.startsWith('ui-stack-')));
+  assert.ok(ids.some(id => id.startsWith('ui-stack-')));
   assert.ok(ids.every(Boolean));
 });
 
@@ -421,7 +623,11 @@ test('CalendarGrid day: wide columns, an empty day says "Nothing scheduled." wit
   assert.match(empty, /<kbd class="ui-cal-kbd">N<\/kbd>/);
   assert.equal((empty.match(/role="columnheader"/g) ?? []).length, 1);
   assert.equal((empty.match(/ui-now-line/g) ?? []).length, 0);
-  const full = html(<CalendarGrid {...gridProps({ view: 'day', start: '2026-10-29', label: 'Thursday, October 29, 2026' })} />);
+  const full = html(
+    <CalendarGrid
+      {...gridProps({ view: 'day', start: '2026-10-29', label: 'Thursday, October 29, 2026' })}
+    />,
+  );
   assert.match(full, /data-wide="true"/);
   assert.match(full, /9:30 – 10:30 AM · Northwind Dental, 14 Alder Street/);
   assert.doesNotMatch(full, /Nothing scheduled/);
@@ -445,19 +651,36 @@ test('CalendarGrid: an entry outside 8 AM to 8 PM widens the hour range; all-day
 });
 
 test('CalendarGrid month: six weeks, "N more" past three, never a lonely "1 more"', () => {
-  const crowded = ['a', 'b', 'c', 'd'].map((id, i) => ev(id, `Item ${id}`, `2026-10-29T${String(8 + i).padStart(2, "0")}:00:00`, `2026-10-29T${String(8 + i).padStart(2, "0")}:30:00`));
+  const crowded = ['a', 'b', 'c', 'd'].map((id, i) =>
+    ev(
+      id,
+      `Item ${id}`,
+      `2026-10-29T${String(8 + i).padStart(2, '0')}:00:00`,
+      `2026-10-29T${String(8 + i).padStart(2, '0')}:30:00`,
+    ),
+  );
   const three = crowded.slice(0, 3);
-  const out = html(<CalendarGrid {...gridProps({ view: 'month', start: '2026-10-01', events: crowded, label: 'October 2026' })} />);
+  const out = html(
+    <CalendarGrid
+      {...gridProps({ view: 'month', start: '2026-10-01', events: crowded, label: 'October 2026' })}
+    />,
+  );
   assert.equal((out.match(/role="gridcell"/g) ?? []).length, 42);
   assert.match(out, /2 more/);
   assert.match(out, /aria-label="2 more events on Thursday, October 29, 2026"/);
-  const calm = html(<CalendarGrid {...gridProps({ view: 'month', start: '2026-10-01', events: three, label: 'October 2026' })} />);
+  const calm = html(
+    <CalendarGrid
+      {...gridProps({ view: 'month', start: '2026-10-01', events: three, label: 'October 2026' })}
+    />,
+  );
   assert.doesNotMatch(calm, /more</);
   assert.match(calm, /Item c/);
 });
 
 test('CalendarGrid agenda today: header, now-line, next event, following gaps', () => {
-  const out = html(<CalendarGrid {...gridProps({ view: 'agenda', agenda: 'today', label: 'Today' })} />);
+  const out = html(
+    <CalendarGrid {...gridProps({ view: 'agenda', agenda: 'today', label: 'Today' })} />,
+  );
   assert.match(out, /<h2[^>]*>Thursday, October 29<\/h2>/);
   assert.match(out, /4 events · next at 11:00 AM/);
   assert.match(out, /role="separator"[^>]*aria-label="Now, 10:00 AM"/);
@@ -470,18 +693,37 @@ test('CalendarGrid agenda today: header, now-line, next event, following gaps', 
 });
 
 test('CalendarGrid agenda today: nothing left says so; an empty day offers the action', () => {
-  const later = html(<CalendarGrid {...gridProps({ view: 'agenda', agenda: 'today', now: '2026-10-29T20:00:00', label: 'Today' })} />);
+  const later = html(
+    <CalendarGrid
+      {...gridProps({
+        view: 'agenda',
+        agenda: 'today',
+        now: '2026-10-29T20:00:00',
+        label: 'Today',
+      })}
+    />,
+  );
   assert.match(later, /4 events · none left today/);
   assert.match(later, /Climbing with Theo/);
   const empty = html(
-    <CalendarGrid {...gridProps({ view: 'agenda', agenda: 'today', events: [], label: 'Today', emptyAction: { label: 'New event', commandId: 'calendar.newEvent', onSelect: noop } })} />,
+    <CalendarGrid
+      {...gridProps({
+        view: 'agenda',
+        agenda: 'today',
+        events: [],
+        label: 'Today',
+        emptyAction: { label: 'New event', commandId: 'calendar.newEvent', onSelect: noop },
+      })}
+    />,
   );
   assert.match(empty, /0 events · none left today/);
   assert.match(empty, /Nothing scheduled\./);
 });
 
 test('CalendarGrid agenda full: days with the comma title, only days with entries and today', () => {
-  const out = html(<CalendarGrid {...gridProps({ view: 'agenda', label: 'Week of October 25, 2026' })} />);
+  const out = html(
+    <CalendarGrid {...gridProps({ view: 'agenda', label: 'Week of October 25, 2026' })} />,
+  );
   assert.match(out, /Friday, October 30, 2026/);
   assert.match(out, /Thursday, October 29, 2026/);
   assert.doesNotMatch(out, /Saturday, October 31, 2026/);
@@ -490,13 +732,31 @@ test('CalendarGrid agenda full: days with the comma title, only days with entrie
 });
 
 test('CalendarGrid worst case: hundreds of entries in one slot, CJK and RTL titles, counts, no crash', () => {
-  const many = Array.from({ length: 40 }, (_, i) => ev(`m${i}`, i % 2 ? '会議 田中さん' : 'اجتماع الفريق', '2026-10-27T10:00:00', '2026-10-27T11:00:00'));
+  const many = Array.from({ length: 40 }, (_, i) =>
+    ev(
+      `m${i}`,
+      i % 2 ? '会議 田中さん' : 'اجتماع الفريق',
+      '2026-10-27T10:00:00',
+      '2026-10-27T11:00:00',
+    ),
+  );
   const out = html(<CalendarGrid {...gridProps({ events: many })} />);
   assert.match(out, />\+39</);
-  const monthMany = html(<CalendarGrid {...gridProps({ view: 'month', start: '2026-10-01', events: many, label: 'October 2026' })} />);
+  const monthMany = html(
+    <CalendarGrid
+      {...gridProps({ view: 'month', start: '2026-10-01', events: many, label: 'October 2026' })}
+    />,
+  );
   assert.match(monthMany, /38 more/);
   const longTitle = 'x'.repeat(300);
-  const agenda = html(<CalendarGrid {...gridProps({ view: 'agenda', events: [ev('l', longTitle, '2026-10-29T12:00:00', '2026-10-29T13:00:00')] })} />);
+  const agenda = html(
+    <CalendarGrid
+      {...gridProps({
+        view: 'agenda',
+        events: [ev('l', longTitle, '2026-10-29T12:00:00', '2026-10-29T13:00:00')],
+      })}
+    />,
+  );
   assert.ok(agenda.includes(longTitle));
 });
 
@@ -571,19 +831,30 @@ test('EventDetail: "Invite from" uses the first name, skipping titles, and falls
   assert.equal(firstNameOf('Dr.'), 'Dr.');
   assert.equal(firstNameOf('priya@fernworks.studio'), 'priya@fernworks.studio');
   assert.equal(firstNameOf(''), '');
-  assert.match(detail({ ...Q4, invite: { from: 'Dr. Priya Raman', threadId: 't' } }), />Invite from Priya</);
+  assert.match(
+    detail({ ...Q4, invite: { from: 'Dr. Priya Raman', threadId: 't' } }),
+    />Invite from Priya</,
+  );
   assert.match(detail({ ...Q4, invite: { from: '', threadId: 't' } }), />Invite</);
 });
 
 test('EventDetail rsvp: one tab stop, the chosen answer or the first when nothing is chosen', () => {
   const none = detail(Q4, { reply: reply(null) });
-  assert.deepEqual([...none.matchAll(/role="radio"[^>]*?tabindex="(-?\d)"/g)].map((m) => m[1]), ['0', '-1', '-1']);
+  assert.deepEqual(
+    [...none.matchAll(/role="radio"[^>]*?tabindex="(-?\d)"/g)].map(m => m[1]),
+    ['0', '-1', '-1'],
+  );
   const maybe = detail(Q4, { reply: reply('maybe') });
-  assert.deepEqual([...maybe.matchAll(/role="radio"[^>]*?tabindex="(-?\d)"/g)].map((m) => m[1]), ['-1', '0', '-1']);
+  assert.deepEqual(
+    [...maybe.matchAll(/role="radio"[^>]*?tabindex="(-?\d)"/g)].map(m => m[1]),
+    ['-1', '0', '-1'],
+  );
 });
 
 test('EventDetail: Delete is named only on a saved event you organise; the rail has no close', () => {
-  const mine = ev('m', 'Design review', '2026-10-29T14:00:00', '2026-10-29T14:30:00', { isOrganizer: true });
+  const mine = ev('m', 'Design review', '2026-10-29T14:00:00', '2026-10-29T14:30:00', {
+    isOrganizer: true,
+  });
   assert.match(detail(mine), /title="More: edit, delete"/);
   assert.match(detail({ ...mine, persisted: false }), /title="More: edit"/);
   const rail = detail(mine, { presentation: 'rail', onClose: undefined });
@@ -597,7 +868,9 @@ test('EventDetail plan: confirm and source email, and all-day wording', () => {
   assert.match(out, />Add to Calendar</);
   assert.match(out, />From Jordan Park: Build timing</);
   assert.match(out, /title="More: hide"/);
-  const allDay = detail(ev('ad', 'Offsite', '2026-10-29T00:00:00', '2026-10-30T00:00:00', { allDay: true }));
+  const allDay = detail(
+    ev('ad', 'Offsite', '2026-10-29T00:00:00', '2026-10-30T00:00:00', { allDay: true }),
+  );
   assert.match(allDay, /Thursday, October 29 · All day/);
 });
 
@@ -658,8 +931,19 @@ test('DatePresets: closed renders nothing', () => {
 test('DatePresets: five presets with digits always visible, fixed copy, Return on the active one', () => {
   const out = html(<DatePresets {...presetsProps()} />);
   assert.match(out, /role="menu"[^>]*aria-label="Later until"/);
-  for (const [i, label] of ['Today evening', 'Tomorrow', 'This weekend', 'Next week', 'Someday'].entries()) {
-    assert.match(out, new RegExp(`ui-date-presets__num" aria-hidden="true">${i + 1}</span><span class="ui-date-presets__text">${label}<`));
+  for (const [i, label] of [
+    'Today evening',
+    'Tomorrow',
+    'This weekend',
+    'Next week',
+    'Someday',
+  ].entries()) {
+    assert.match(
+      out,
+      new RegExp(
+        `ui-date-presets__num" aria-hidden="true">${i + 1}</span><span class="ui-date-presets__text">${label}<`,
+      ),
+    );
   }
   assert.match(out, /Thu 6:00 PM/);
   assert.match(out, /Fri 8:00 AM/);
@@ -673,7 +957,11 @@ test('DatePresets: five presets with digits always visible, fixed copy, Return o
 });
 
 test('DatePresets calendar: month grid of six weeks, picked day, time list, "Move to Later" with Return', () => {
-  const out = html(<DatePresets {...presetsProps({ activeId: 'date', calendarOpen: true, pickedDate: '2026-11-04' })} />);
+  const out = html(
+    <DatePresets
+      {...presetsProps({ activeId: 'date', calendarOpen: true, pickedDate: '2026-11-04' })}
+    />,
+  );
   assert.match(out, /November 2026/);
   assert.equal((out.match(/class="ui-date-presets__day"/g) ?? []).length, 42);
   assert.match(out, /data-picked="true"[^>]*aria-label="Wed, Nov 4"/);
@@ -683,7 +971,17 @@ test('DatePresets calendar: month grid of six weeks, picked day, time list, "Mov
   assert.doesNotMatch(out, /disabled=""/);
   const none = html(<DatePresets {...presetsProps({ activeId: 'date', calendarOpen: true })} />);
   assert.match(none, /<button[^>]*disabled=""[^>]*>Move to Later/);
-  const due = html(<DatePresets {...presetsProps({ purpose: 'due', activeId: 'date', calendarOpen: true, pickedDate: '2026-11-04', pickedTime: '09:15' })} />);
+  const due = html(
+    <DatePresets
+      {...presetsProps({
+        purpose: 'due',
+        activeId: 'date',
+        calendarOpen: true,
+        pickedDate: '2026-11-04',
+        pickedTime: '09:15',
+      })}
+    />,
+  );
   // With the month open, the footer button carries Return; the "Pick a date…" row does not repeat it.
   assert.equal((out.match(/class="ui-date-presets__kbd"/g) ?? []).length, 0);
   assert.match(due, /aria-label="Due date"/);

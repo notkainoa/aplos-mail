@@ -7,17 +7,37 @@ import { Composer, DraftState, InlineReply, LevelMeter, RecipientField, Suggesti
 
 const noop = () => undefined;
 const html = (element: ReactElement) => renderToStaticMarkup(element);
-const text = (markup: string) => markup.replace(/<[^>]*>/g, '').replace(/&#x27;/g, "'").replace(/&amp;/g, '&');
+const text = (markup: string) =>
+  markup
+    .replace(/<[^>]*>/g, '')
+    .replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, '&');
 
 /** Things that must never render in any state (DESIGN §9 rule 8, §10). */
-const BANNED = [/sparkle/i, /wand/i, /✨|⭐|🪄|🤖|🧠/, /magic/i, /AI-powered/i, /Copilot/i, /Hold to talk/i, /Todo/, /gradient/i, /backdrop/i];
+const BANNED = [
+  /sparkle/i,
+  /wand/i,
+  /✨|⭐|🪄|🤖|🧠/,
+  /magic/i,
+  /AI-powered/i,
+  /Copilot/i,
+  /Hold to talk/i,
+  /Todo/,
+  /gradient/i,
+  /backdrop/i,
+];
 function clean(markup: string) {
   const copy = text(markup);
   assert.ok(!copy.includes('!'), `an exclamation mark in: ${copy}`);
   for (const pattern of BANNED) assert.ok(!pattern.test(markup), `${pattern} rendered`);
 }
 
-const commands: ComposeCommands = { send: 'compose.send', attach: 'compose.attach', more: 'compose.format', cc: 'compose.ccBcc' };
+const commands: ComposeCommands = {
+  send: 'compose.send',
+  attach: 'compose.attach',
+  more: 'compose.format',
+  cc: 'compose.ccBcc',
+};
 
 const LONG_SUBJECT = 'Re: '.padEnd(300, 'Hollow Creek launch plan ');
 const LONG_ADDRESS = `${'a'.repeat(62)}@${'b'.repeat(17)}.co`;
@@ -55,7 +75,10 @@ test('LevelMeter is a meter with a name, a clamped value and five bars, and no r
   assert.match(quiet, /aria-valuenow="0"/);
   assert.match(quiet, /data-state="idle"/);
   assert.equal((quiet.match(/<i /g) ?? []).length, 5);
-  assert.match(html(<LevelMeter level={0.5} label="Listening" />), /data-state="active"[^>]*style="--level:0.5"/);
+  assert.match(
+    html(<LevelMeter level={0.5} label="Listening" />),
+    /data-state="active"[^>]*style="--level:0.5"/,
+  );
   assert.match(html(<LevelMeter level={7} label="Listening" />), /aria-valuenow="1"/);
   assert.match(html(<LevelMeter level={Number.NaN} label="Listening" />), /aria-valuenow="0"/);
   assert.doesNotMatch(quiet, /ring|breath/i);
@@ -76,7 +99,8 @@ test('DraftState writes the three lines of DESIGN 7.6', () => {
   // Worst case at a 300 px pane: the text gives way (own span), the dot and Retry come after it and never shrink.
   assert.ok(failed.indexOf('ui-draft-state__text') < failed.indexOf('ui-draft-state__dot'));
   assert.ok(failed.indexOf('ui-draft-state__dot') < failed.indexOf('Retry'));
-  for (const state of ['saving', 'saved', 'failed'] as const) clean(html(<DraftState state={state} onRetry={noop} />));
+  for (const state of ['saving', 'saved', 'failed'] as const)
+    clean(html(<DraftState state={state} onRetry={noop} />));
 });
 
 test('Suggestion says what DESIGN says for an AI draft and for the follow-up nudge', () => {
@@ -120,7 +144,9 @@ test('RecipientField is a combobox with a labelled listbox, removable people and
 });
 
 test('RecipientField survives worst-case people: long address, one letter, CJK, Arabic, emoji, invalid', () => {
-  const markup = html(field({ label: 'Cc', recipients: worstPeople, invalidIds: ['long'], listboxId: 'cc-list' }));
+  const markup = html(
+    field({ label: 'Cc', recipients: worstPeople, invalidIds: ['long'], listboxId: 'cc-list' }),
+  );
   assert.ok(markup.includes(LONG_ADDRESS));
   assert.match(markup, /data-invalid="true"[^>]*title="a{62}@/);
   assert.match(markup, /not a valid address/);
@@ -171,15 +197,22 @@ test('InlineReply: dictation, blocked send, conflict, follow-up hint and a faile
   assert.doesNotMatch(dictating, /Draft saved/);
   clean(dictating);
 
-  const blocked = html(reply({ blocked: { field: 'to', message: 'Add at least one recipient before you send.' } }));
+  const blocked = html(
+    reply({ blocked: { field: 'to', message: 'Add at least one recipient before you send.' } }),
+  );
   assert.match(blocked, /data-blocked="true"/);
   assert.match(blocked, /role="alert"/);
   assert.match(text(blocked), /Add at least one recipient before you send\./);
   assert.doesNotMatch(blocked, /shake/i);
   clean(blocked);
 
-  const conflict = html(reply({ conflict: { onKeepMine: noop, onTakeTheirs: noop, onKeepBoth: noop } }));
-  assert.match(text(conflict), /This draft changed on another device\.Keep mineTake theirsKeep both/);
+  const conflict = html(
+    reply({ conflict: { onKeepMine: noop, onTakeTheirs: noop, onKeepBoth: noop } }),
+  );
+  assert.match(
+    text(conflict),
+    /This draft changed on another device\.Keep mineTake theirsKeep both/,
+  );
 
   const nudge = html(reply({ suggestion: { kind: 'followUp', onKeep: noop, onDismiss: noop } }));
   assert.match(text(nudge), /Aplos drafted this follow-up from your last email\./);
@@ -209,7 +242,10 @@ function composer(over: Partial<Parameters<typeof Composer>[0]> = {}) {
 test('Composer: To row, heading-size subject, body, footer with Send, draft state, attach and format', () => {
   const markup = html(composer());
   assert.match(markup, /aria-label="New message"/);
-  assert.match(markup, /<input[^>]*aria-label="Subject"[^>]*placeholder="Subject"[^>]*value="Hollow Creek: going with Direction B"/);
+  assert.match(
+    markup,
+    /<input[^>]*aria-label="Subject"[^>]*placeholder="Subject"[^>]*value="Hollow Creek: going with Direction B"/,
+  );
   assert.match(markup, /<footer[^>]*class="ui-composer__foot"/);
   assert.match(markup, /<kbd[^>]*>⌘↩<\/kbd>/);
   assert.match(markup, /aria-label="Format"[^>]*title="Format \(⌘\/\)"/);
@@ -220,15 +256,27 @@ test('Composer: To row, heading-size subject, body, footer with Send, draft stat
 });
 
 test('Composer: AI draft hint, Polish bar, follow-up hint and dictation from an empty body', () => {
-  assert.match(text(html(composer({ suggestion: { kind: 'draft', onKeep: noop, onDismiss: noop } }))), /The grey sentence is a suggestion\./);
-  assert.match(text(html(composer({ suggestion: { kind: 'followUp', onKeep: noop, onDismiss: noop } }))), /Aplos drafted this follow-up from your last email\./);
+  assert.match(
+    text(html(composer({ suggestion: { kind: 'draft', onKeep: noop, onDismiss: noop } }))),
+    /The grey sentence is a suggestion\./,
+  );
+  assert.match(
+    text(html(composer({ suggestion: { kind: 'followUp', onKeep: noop, onDismiss: noop } }))),
+    /Aplos drafted this follow-up from your last email\./,
+  );
 
   const polish = html(composer({ polish: { changes: 3, onUse: noop, onKeep: noop } }));
   assert.match(text(polish), /Polish suggests 3 changes\. Yours stays until you choose\./);
   assert.match(polish, /Use these.*<kbd[^>]*>Return<\/kbd>/);
   assert.match(polish, /Keep mine.*<kbd[^>]*>Esc<\/kbd>/);
-  assert.match(text(html(composer({ polish: { changes: 1, onUse: noop, onKeep: noop } }))), /Polish suggests 1 change\./);
-  assert.match(text(html(composer({ polish: { changes: 9999, onUse: noop, onKeep: noop } }))), /Polish suggests 9999 changes\./);
+  assert.match(
+    text(html(composer({ polish: { changes: 1, onUse: noop, onKeep: noop } }))),
+    /Polish suggests 1 change\./,
+  );
+  assert.match(
+    text(html(composer({ polish: { changes: 9999, onUse: noop, onKeep: noop } }))),
+    /Polish suggests 9999 changes\./,
+  );
   clean(polish);
 
   const dictating = html(composer({ dictation: { holdKey: 'Space', level: 0.2 } }));
@@ -237,7 +285,9 @@ test('Composer: AI draft hint, Polish bar, follow-up hint and dictation from an 
 
 test('Composer: a blocked send outlines the named field and says why in one sentence', () => {
   for (const field of ['to', 'subject', 'body'] as const) {
-    const markup = html(composer({ blocked: { field, message: 'Add a subject or send without one.' } }));
+    const markup = html(
+      composer({ blocked: { field, message: 'Add a subject or send without one.' } }),
+    );
     assert.equal((markup.match(/data-blocked="true"/g) ?? []).length, 1, `${field} outlined once`);
     assert.match(markup, /role="alert"/);
   }
@@ -248,7 +298,9 @@ test('Composer: a blocked send outlines the named field and says why in one sent
 
 test('Composer survives a 300-character subject, CJK, Arabic and emoji', () => {
   assert.equal(LONG_SUBJECT.length, 300);
-  const long = html(composer({ subject: LONG_SUBJECT, recipients: field({ recipients: worstPeople }) }));
+  const long = html(
+    composer({ subject: LONG_SUBJECT, recipients: field({ recipients: worstPeople }) }),
+  );
   assert.ok(long.includes(`value="${LONG_SUBJECT}"`));
   assert.ok(long.includes(LONG_ADDRESS));
   for (const subject of ['件名：ホロークリーク', 'الموضوع: مراجعة التصميم', 'Launch 🚀 plan']) {
@@ -262,5 +314,8 @@ test('Composer survives a 300-character subject, CJK, Arabic and emoji', () => {
 test('Composer: failed save and a draft conflict', () => {
   assert.match(text(html(composer({ draftState: 'failed' }))), /Couldn't save·Retry/);
   assert.match(text(html(composer({ draftState: 'saving' }))), /Saving…/);
-  assert.match(text(html(composer({ conflict: { onKeepMine: noop, onTakeTheirs: noop, onKeepBoth: noop } }))), /This draft changed on another device\./);
+  assert.match(
+    text(html(composer({ conflict: { onKeepMine: noop, onTakeTheirs: noop, onKeepBoth: noop } }))),
+    /This draft changed on another device\./,
+  );
 });

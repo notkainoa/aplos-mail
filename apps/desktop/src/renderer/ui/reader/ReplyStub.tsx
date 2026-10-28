@@ -10,7 +10,12 @@ import { keycapFor, tooltipText } from '../list/internal/keys';
 export function ReplyStub({ recipientName, commandId, onOpen }: ReplyStubProps) {
   const text = `Reply to ${recipientName}…`;
   return (
-    <button type="button" className="ui-reply-stub" title={tooltipText('Reply', commandId)} onClick={onOpen}>
+    <button
+      type="button"
+      className="ui-reply-stub"
+      title={tooltipText('Reply', commandId)}
+      onClick={onOpen}
+    >
       <Icon name="reply" />
       <span className="ui-reply-stub__text">{text}</span>
       <Keycap chord={keycapFor(commandId)} />

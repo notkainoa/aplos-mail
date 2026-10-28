@@ -3,13 +3,35 @@
  * source; size and stroke come from the stylesheet (`--icon`, `--icon-stroke`), never from props.
  * Replace with the shared Icon once the buttons-keys family lands.
  */
-import { Calendar, Check, ChevronLeft, ChevronRight, Circle, CircleHelp, Ellipsis, Mail, MapPin, Video, X } from 'lucide-react';
+import {
+  Calendar,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  CircleHelp,
+  Ellipsis,
+  Mail,
+  MapPin,
+  Video,
+  X,
+} from 'lucide-react';
 import type { ComponentType, SVGProps } from 'react';
 import type { IconName } from '../props';
 
 type CalendarIconName = Extract<
   IconName,
-  'calendar' | 'check' | 'chevron-left' | 'chevron-right' | 'circle' | 'close' | 'help' | 'mail' | 'more' | 'pin' | 'video'
+  | 'calendar'
+  | 'check'
+  | 'chevron-left'
+  | 'chevron-right'
+  | 'circle'
+  | 'close'
+  | 'help'
+  | 'mail'
+  | 'more'
+  | 'pin'
+  | 'video'
 >;
 
 const ICONS: Record<CalendarIconName, ComponentType<SVGProps<SVGSVGElement>>> = {

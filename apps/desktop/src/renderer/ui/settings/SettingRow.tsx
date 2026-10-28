@@ -36,13 +36,23 @@ export function SettingRow({
         <span className="ui-setting-row__label" id={id} dir="auto">
           {label}
         </span>
-        {meta ? <span className="ui-setting-row__meta" dir="auto">{meta}</span> : null}
+        {meta ? (
+          <span className="ui-setting-row__meta" dir="auto">
+            {meta}
+          </span>
+        ) : null}
         {tag ? <span className="ui-setting-row__tag">{tag}</span> : null}
       </span>
       {description ? (
-        <span className="ui-setting-row__description" id={descriptionId} data-tone={descriptionTone}>
+        <span
+          className="ui-setting-row__description"
+          id={descriptionId}
+          data-tone={descriptionTone}
+        >
           {descriptionTone === 'attention' ? <SetIcon name="alert" /> : null}
-          <span className="ui-setting-row__description-text" dir="auto">{description}</span>
+          <span className="ui-setting-row__description-text" dir="auto">
+            {description}
+          </span>
         </span>
       ) : null}
     </span>
@@ -50,7 +60,11 @@ export function SettingRow({
 
   if (disclosure) {
     return (
-      <div className="ui-setting-row" data-has-description={description ? 'true' : 'false'} data-disclosure="true">
+      <div
+        className="ui-setting-row"
+        data-has-description={description ? 'true' : 'false'}
+        data-disclosure="true"
+      >
         <button
           type="button"
           className="ui-setting-row__toggle"
@@ -60,7 +74,10 @@ export function SettingRow({
           onClick={disclosure.onToggle}
         >
           {text}
-          <span className="ui-setting-row__control" data-expanded={disclosure.expanded ? 'true' : 'false'}>
+          <span
+            className="ui-setting-row__control"
+            data-expanded={disclosure.expanded ? 'true' : 'false'}
+          >
             <SetIcon name="chevron-down" />
           </span>
         </button>

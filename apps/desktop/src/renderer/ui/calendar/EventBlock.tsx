@@ -31,7 +31,7 @@ export function EventBlock(props: EventBlockProps) {
         aria-label={`${count} more ${count === 1 ? 'event' : 'events'} at ${timeOf(props.start)}`}
         title={`${count} more, ${rangeOf(props.start, props.end)}`}
         style={{ '--cal': calVar(props.color) } as CSSProperties}
-        onClick={(e) => props.onOpen(e.currentTarget)}
+        onClick={e => props.onOpen(e.currentTarget)}
       >
         <span className="ui-event-block__count">+{count}</span>
       </button>
@@ -42,7 +42,8 @@ export function EventBlock(props: EventBlockProps) {
   const density = densityOf(event);
   const showTime = density === 'full' || (density === 'one' && placement.wide);
   const time = rangeOf(event.start, event.end);
-  const detail = placement.wide && event.place && density === 'full' ? `${time} · ${event.place}` : time;
+  const detail =
+    placement.wide && event.place && density === 'full' ? `${time} · ${event.place}` : time;
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
     if (e.nativeEvent.isComposing) return;
@@ -69,10 +70,12 @@ export function EventBlock(props: EventBlockProps) {
       tabIndex={-1}
       style={{ '--cal': calVar(event.calendar.color) } as CSSProperties}
       onClick={onSelect}
-      onDoubleClick={(e) => onOpen(e.currentTarget)}
+      onDoubleClick={e => onOpen(e.currentTarget)}
       onKeyDown={onKeyDown}
     >
-      <span className="ui-event-block__title" dir="auto">{event.title}</span>
+      <span className="ui-event-block__title" dir="auto">
+        {event.title}
+      </span>
       {showTime ? <span className="ui-event-block__time">{detail}</span> : null}
     </button>
   );

@@ -50,7 +50,9 @@ export function Button(props: ButtonProps) {
   // (and only without a tooltip, which already says the label).
   const checkClipped = () => {
     const el = labelRef.current;
-    setClipped(Boolean(el) && (el as HTMLSpanElement).scrollWidth > (el as HTMLSpanElement).clientWidth);
+    setClipped(
+      Boolean(el) && (el as HTMLSpanElement).scrollWidth > (el as HTMLSpanElement).clientWidth,
+    );
   };
 
   const onClick = (event: MouseEvent<HTMLButtonElement>) => {
@@ -91,7 +93,11 @@ export function Button(props: ButtonProps) {
       ) : icon ? (
         <Icon name={icon} />
       ) : null}
-      {labelVisible ? <span ref={labelRef} className="ui-button-label">{label}</span> : null}
+      {labelVisible ? (
+        <span ref={labelRef} className="ui-button-label">
+          {label}
+        </span>
+      ) : null}
       {trailingIcon ? <Icon name={trailingIcon} size="xs" /> : null}
       {inline && caps.length > 0 ? (
         <span className="ui-button-keys" aria-hidden="true">

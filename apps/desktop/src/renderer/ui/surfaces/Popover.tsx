@@ -8,9 +8,18 @@ import { motions } from '../generated/motion';
 import type { ComponentPropsMap } from '../props';
 import { useDismiss, useFloating, usePresence } from './parts';
 
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Popover({ open, anchor, label, role, placement = 'below-start', children, onClose }: ComponentPropsMap['Popover']) {
+export function Popover({
+  open,
+  anchor,
+  label,
+  role,
+  placement = 'below-start',
+  children,
+  onClose,
+}: ComponentPropsMap['Popover']) {
   const { mounted, leaving } = usePresence(open, motions.reveal.durations.out);
   const { ref, style, placed } = useFloating(mounted, anchor, placement);
   useDismiss(open, ref, anchor, onClose);

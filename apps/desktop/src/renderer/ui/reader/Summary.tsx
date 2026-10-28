@@ -12,14 +12,28 @@ export function Summary(props: SummaryProps) {
     const { provider, local } = props.provenance;
     const provenance = `Summary by ${provider}${local ? ' on this Mac' : ''}`;
     return (
-      <p id={id} className="ui-summary" dir="auto" data-state="ready" data-clamp={clamp} title={provenance}>
+      <p
+        id={id}
+        className="ui-summary"
+        dir="auto"
+        data-state="ready"
+        data-clamp={clamp}
+        title={provenance}
+      >
         {props.text}
         <span className="ui-summary__subject"> Subject: {props.subject}</span>
       </p>
     );
   }
   return (
-    <p id={id} className="ui-summary" dir="auto" data-state={props.state} data-clamp={clamp} aria-busy={props.state === 'pending' ? true : undefined}>
+    <p
+      id={id}
+      className="ui-summary"
+      dir="auto"
+      data-state={props.state}
+      data-clamp={clamp}
+      aria-busy={props.state === 'pending' ? true : undefined}
+    >
       {props.subject}
     </p>
   );

@@ -156,5 +156,7 @@ const GLYPHS: Readonly<Record<IconName, Glyph>> = {
 /** A decorative icon: always hidden from assistive tech, because the control or line that holds it carries the name. */
 export function Icon({ name, size = 'md' }: { name: IconName; size?: 'xs' | 'sm' | 'md' }) {
   const Glyph = GLYPHS[name];
-  return <Glyph className="ui-compose-icon" data-size={size} aria-hidden="true" focusable="false" />;
+  return (
+    <Glyph className="ui-compose-icon" data-size={size} aria-hidden="true" focusable="false" />
+  );
 }

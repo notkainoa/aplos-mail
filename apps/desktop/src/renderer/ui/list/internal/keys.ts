@@ -21,7 +21,7 @@ export function keycapFor(id: CommandId | undefined): string {
   if (!id) return '';
   const binding = appRegistry()
     ?.keysFor(id)
-    .find((b) => b.phase === 'tap');
+    .find(b => b.phase === 'tap');
   return binding ? formatChord(binding.chord) : '';
 }
 

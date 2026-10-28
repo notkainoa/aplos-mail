@@ -3,7 +3,11 @@ import type { Recipient, RecipientFieldProps } from '../props';
 import { Icon } from './icons';
 import { Btn } from './parts';
 
-const INPUT_LABEL = { To: 'Add recipients', Cc: 'Add Cc recipients', Bcc: 'Add Bcc recipients' } as const;
+const INPUT_LABEL = {
+  To: 'Add recipients',
+  Cc: 'Add Cc recipients',
+  Bcc: 'Add Bcc recipients',
+} as const;
 
 function shownName(person: Recipient): string {
   return person.name?.trim() || person.address;
@@ -31,7 +35,8 @@ export function RecipientField(props: RecipientFieldProps) {
     autoFocus,
   } = props;
   const open = suggestions.length > 0;
-  const activeOption = open && activeSuggestionId ? `${listboxId}-${activeSuggestionId}` : undefined;
+  const activeOption =
+    open && activeSuggestionId ? `${listboxId}-${activeSuggestionId}` : undefined;
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.nativeEvent.isComposing) return;
@@ -52,19 +57,32 @@ export function RecipientField(props: RecipientFieldProps) {
   }
 
   return (
-    <div className="ui-recipient-field" role="group" aria-label={label} data-label={label.toLowerCase()} data-open={open ? 'true' : undefined}>
+    <div
+      className="ui-recipient-field"
+      role="group"
+      aria-label={label}
+      data-label={label.toLowerCase()}
+      data-open={open ? 'true' : undefined}
+    >
       <span className="ui-recipient-field__label" aria-hidden="true">
         {label}
       </span>
       <div className="ui-recipient-field__people">
-        {recipients.map((person) => {
+        {recipients.map(person => {
           const invalid = invalidIds.includes(person.id);
           return (
-            <span key={person.id} className="ui-recipient-field__chip" data-invalid={invalid ? 'true' : undefined} title={person.address}>
+            <span
+              key={person.id}
+              className="ui-recipient-field__chip"
+              data-invalid={invalid ? 'true' : undefined}
+              title={person.address}
+            >
               <span className="ui-recipient-field__name" dir="auto">
                 {shownName(person)}
               </span>
-              {invalid ? <span className="ui-recipient-field__sr">, not a valid address</span> : null}
+              {invalid ? (
+                <span className="ui-recipient-field__sr">, not a valid address</span>
+              ) : null}
               <button
                 type="button"
                 className="ui-recipient-field__remove"
@@ -89,7 +107,7 @@ export function RecipientField(props: RecipientFieldProps) {
           spellCheck={false}
           autoFocus={autoFocus}
           value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
+          onChange={event => onQueryChange(event.target.value)}
           onKeyDown={onKeyDown}
           onBlur={() => {
             if (query.trim()) onCommit(query);
@@ -97,7 +115,13 @@ export function RecipientField(props: RecipientFieldProps) {
         />
       </div>
       {ccButton ? (
-        <Btn variant="text" label="Cc" hint="Add Cc or Bcc" commandId={ccButton.commandId} onPress={ccButton.onSelect} />
+        <Btn
+          variant="text"
+          label="Cc"
+          hint="Add Cc or Bcc"
+          commandId={ccButton.commandId}
+          onPress={ccButton.onSelect}
+        />
       ) : null}
       <ul
         id={listboxId}
@@ -105,9 +129,9 @@ export function RecipientField(props: RecipientFieldProps) {
         role="listbox"
         aria-label={`${label} suggestions`}
         hidden={!open}
-        onMouseDown={(event) => event.preventDefault()}
+        onMouseDown={event => event.preventDefault()}
       >
-        {suggestions.map((person) => (
+        {suggestions.map(person => (
           <li
             key={person.id}
             id={`${listboxId}-${person.id}`}
@@ -120,7 +144,9 @@ export function RecipientField(props: RecipientFieldProps) {
             <span className="ui-recipient-field__option-name" dir="auto">
               {shownName(person)}
             </span>
-            {person.name?.trim() ? <span className="ui-recipient-field__option-address">{person.address}</span> : null}
+            {person.name?.trim() ? (
+              <span className="ui-recipient-field__option-address">{person.address}</span>
+            ) : null}
           </li>
         ))}
       </ul>

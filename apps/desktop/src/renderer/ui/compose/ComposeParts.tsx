@@ -1,7 +1,14 @@
 /**
  * Pieces Composer and InlineReply share so the sentences and the footer exist once. Not manifest components.
  */
-import type { BlockedSend, ComposeCommands, DictationState, DraftConflict, DraftStateKind, IconName } from '../props';
+import type {
+  BlockedSend,
+  ComposeCommands,
+  DictationState,
+  DraftConflict,
+  DraftStateKind,
+  IconName,
+} from '../props';
 import { DictationLine } from './DictationLine';
 import { DraftState } from './DraftState';
 import { Icon } from './icons';
@@ -51,10 +58,22 @@ export function ComposeFooter(props: {
   const { commands, draftState, onRetrySave, dictation, onSend, trailing } = props;
   return (
     <div className="ui-compose-footer">
-      <Btn variant="filled" size="md" icon="send" label="Send" commandId={commands.send} keyHint="always" onPress={onSend} />
-      {dictation ? <DictationLine dictation={dictation} /> : <DraftState state={draftState} onRetry={onRetrySave} />}
+      <Btn
+        variant="filled"
+        size="md"
+        icon="send"
+        label="Send"
+        commandId={commands.send}
+        keyHint="always"
+        onPress={onSend}
+      />
+      {dictation ? (
+        <DictationLine dictation={dictation} />
+      ) : (
+        <DraftState state={draftState} onRetry={onRetrySave} />
+      )}
       <span className="ui-compose-footer__right">
-        {trailing.map((action) => (
+        {trailing.map(action => (
           <Btn
             key={action.label}
             variant="icon"

@@ -86,7 +86,10 @@ function homeExample(lastOpId: OpId | undefined): string[] {
         continue;
       }
       const text = row.summary ? row.summary.text : row.subject;
-      const chip = row.dueDate && row.dueSource === 'ai' ? `${row.dueDate} (from the email)` : row.dueDate ?? '';
+      const chip =
+        row.dueDate && row.dueSource === 'ai'
+          ? `${row.dueDate} (from the email)`
+          : (row.dueDate ?? '');
       const failure = home.failures.get(id);
       lines.push(`${row.from.name} ${chip} ${text} ${failure ? failure.message : ''}`);
     }
@@ -99,7 +102,7 @@ function homeExample(lastOpId: OpId | undefined): string[] {
     lines.push(`Low importance ${home.low.names.join(', ')}${more} ${home.low.count}`);
   }
 
-  const doNow = home.sections.find((s) => s.key === 'do');
+  const doNow = home.sections.find(s => s.key === 'do');
   const focused = doNow ? doNow.ids[0] : undefined;
   if (focused) {
     prefetch.focus(focused, doNow ? doNow.ids.slice(1, 2) : []);
@@ -147,7 +150,7 @@ function homeExample(lastOpId: OpId | undefined): string[] {
 function inboxZeroExample(now: number): string[] {
   const counts = useCounts();
   const agenda = useAgenda({ from: now, to: now + 12 * 3_600_000 });
-  const next = agenda.events.find((e) => !e.allDay && e.start > now);
+  const next = agenda.events.find(e => !e.allDay && e.start > now);
   const lines = [`You handled ${counts.counts.handledToday} emails.`];
   if (next) {
     lines.push(`Next: ${next.title}`);
@@ -205,7 +208,10 @@ function fatalExample(): string | null {
 }
 
 /** Reader: the thread row, its messages, the latest body and the UndoTray; hooks first, commands in handlers. */
-function readerExample(threadId: string, submissionId: string | undefined): { lines: string[]; sendReply: () => Promise<void> } {
+function readerExample(
+  threadId: string,
+  submissionId: string | undefined,
+): { lines: string[]; sendReply: () => Promise<void> } {
   const thread = useRow('Thread', threadId);
   const threadState = useRowState('Thread', threadId);
   const view = useView({ kind: 'thread', threadId });
@@ -220,7 +226,9 @@ function readerExample(threadId: string, submissionId: string | undefined): { li
   }
   if (thread) {
     lines.push(thread.summary ? thread.summary.text : thread.subject);
-    lines.push(thread.partial ? thread.subject : `${thread.subject} · ${thread.messageCount} messages`);
+    lines.push(
+      thread.partial ? thread.subject : `${thread.subject} · ${thread.messageCount} messages`,
+    );
     if (thread.suggestedAction) {
       lines.push(`${thread.suggestedAction.label} Space`);
     }
@@ -232,12 +240,16 @@ function readerExample(threadId: string, submissionId: string | undefined): { li
     body.retry();
   }
   if (submission && submission.state === 'queued') {
-    lines.push(`Sending to ${submission.to.map((p) => p.name).join(', ')}`);
+    lines.push(`Sending to ${submission.to.map(p => p.name).join(', ')}`);
   }
 
   const sendReply = async (): Promise<void> => {
     if (body.status === 'ready' && body.body && body.body.bodyKind === 'html' && latest) {
-      const frame = await api.mail.frame({ messageId: latest.id, imagePolicy: 'blocked', showQuotes: true });
+      const frame = await api.mail.frame({
+        messageId: latest.id,
+        imagePolicy: 'blocked',
+        showQuotes: true,
+      });
       lines.push(`${frame.trackersRemoved} trackers removed`);
       if (frame.hasRemoteImages) {
         await api.mail.allowImagesFrom(latest.from.address);
@@ -245,7 +257,14 @@ function readerExample(threadId: string, submissionId: string | undefined): { li
       await api.mail.releaseFrame(frame.url);
     }
     const source = latest ? { messageId: latest.id, mode: 'reply' as const } : undefined;
-    const saved = await api.draft.save({ accountId: 'a1', threadId, source, to: [], subject: 'Re:', html: '' });
+    const saved = await api.draft.save({
+      accountId: 'a1',
+      threadId,
+      source,
+      to: [],
+      subject: 'Re:',
+      html: '',
+    });
     const sent = await api.submission.send(saved.id);
     await api.submission.undo(sent.submissionId);
   };
@@ -278,9 +297,13 @@ function statusSlotExample(): string {
     case 'syncing':
       return 'Syncing…';
     case 'backfilling':
-      return status.firstWindow ? `Reading your newest mail ${status.n} of ${status.m}` : `Importing ${status.n} of ${status.m}`;
+      return status.firstWindow
+        ? `Reading your newest mail ${status.n} of ${status.m}`
+        : `Importing ${status.n} of ${status.m}`;
     case 'paused':
-      return status.reason === 'daily' ? 'Daily limit reached.' : `Resuming at ${status.until ?? 'later'}.`;
+      return status.reason === 'daily'
+        ? 'Daily limit reached.'
+        : `Resuming at ${status.until ?? 'later'}.`;
     case 'needsReauth':
       return 'Sign in again. Reconnect';
     case 'needsPermission':
@@ -312,9 +335,14 @@ function askStreamExample(runId: string): string {
   let step = '';
   const sources: string[] = [];
   for (const frame of frames) {
-    if (frame.kind === 'step' && frame.step) step = frame.step.count === undefined ? frame.step.text : `${frame.step.text} · ${frame.step.count}`;
+    if (frame.kind === 'step' && frame.step)
+      step =
+        frame.step.count === undefined
+          ? frame.step.text
+          : `${frame.step.text} · ${frame.step.count}`;
     else if (frame.kind === 'text') text += frame.delta ?? '';
-    else if (frame.kind === 'citation' && frame.citation) sources.push(citationTarget(frame.citation));
+    else if (frame.kind === 'citation' && frame.citation)
+      sources.push(citationTarget(frame.citation));
     else if (frame.kind === 'error') return frame.problem?.message ?? '';
   }
   const typed: ProgressFrame | undefined = last;
@@ -331,7 +359,10 @@ function reconnectSheetExample(requestId: string): string {
     void api.account.cancelConnect(requestId);
     return 'Waiting for Google in your browser…';
   }
-  if (last.state === 'failed') return last.reasonCode === 'wrongAccount' ? 'That was a different account.' : 'Couldn’t reconnect.';
+  if (last.state === 'failed')
+    return last.reasonCode === 'wrongAccount'
+      ? 'That was a different account.'
+      : 'Couldn’t reconnect.';
   return last.state === 'connected' ? 'Reconnected' : '';
 }
 
@@ -340,12 +371,17 @@ function clockAndUndoExample(reconnectBy: number): boolean {
   const now = useNow({ granularity: 'minute' });
   const top = useUndoTop();
   const label = top?.kind === 'local' ? `${top.label} · Undo Z` : '';
-  const handle = undoStack.push({ label: 'Done is now L', undo: () => api.settings.set({ ui: { keymap: {} } }).then(() => undefined) });
+  const handle = undoStack.push({
+    label: 'Done is now L',
+    undo: () => api.settings.set({ ui: { keymap: {} } }).then(() => undefined),
+  });
   handle.forget();
   const outcome = undoStack.undoLast();
   if (outcome?.kind === 'operation') void outcome.result.receipt;
   // Object-valued fields are replaced whole (F1), so a width change sends the whole dock.
-  const patch: SettingsPatch = { ui: { dock: { ...UI_SETTINGS_DEFAULTS.dock, width: 400 }, palette: { recents: ['mail.done'] } } };
+  const patch: SettingsPatch = {
+    ui: { dock: { ...UI_SETTINGS_DEFAULTS.dock, width: 400 }, palette: { recents: ['mail.done'] } },
+  };
   // @ts-expect-error: a partial dock would wipe `open` and `tab`.
   const partial: SettingsPatch = { ui: { dock: { width: 400 } } };
   void patch;
@@ -380,7 +416,10 @@ const noMissingState: MissingState extends never ? true : false = true;
 
 function assertNotImplemented(fn: () => unknown, member: string): void {
   assert.throws(fn, (err: unknown) => {
-    assert.ok(err instanceof NotImplementedError, `${member} threw something other than NotImplementedError`);
+    assert.ok(
+      err instanceof NotImplementedError,
+      `${member} threw something other than NotImplementedError`,
+    );
     assert.equal(err.lane, 'ui-shell');
     assert.equal(err.code, 'NOT_IMPLEMENTED');
     assert.equal(err.member, member);
@@ -436,7 +475,14 @@ test('every api method throws NotImplemented and has a contract mapping', () => 
     }
   }
   assert.deepEqual(seen.sort(), Object.keys(CONTRACT_METHODS).sort());
-  const names: ApiMethodName[] = ['thread.act', 'operation.undo', 'submission.sendNow', 'ask.run', 'attachment.put', 'engine.restart'];
+  const names: ApiMethodName[] = [
+    'thread.act',
+    'operation.undo',
+    'submission.sendNow',
+    'ask.run',
+    'attachment.put',
+    'engine.restart',
+  ];
   for (const name of names) {
     assert.ok(CONTRACT_METHODS[name].method.length > 0);
   }
@@ -459,7 +505,10 @@ test('the stream, clock and undo examples stop at the first stub', () => {
 test('the clock and the undo stack are stubs that name ui-shell', () => {
   assertNotImplemented(() => getNow(), 'getNow');
   assertNotImplemented(() => setClock({ now: () => 0 }), 'setClock');
-  assertNotImplemented(() => undoStack.push({ label: 'Done is now L', undo: () => undefined }), 'undoStack.push');
+  assertNotImplemented(
+    () => undoStack.push({ label: 'Done is now L', undo: () => undefined }),
+    'undoStack.push',
+  );
   assertNotImplemented(() => undoStack.undoLast(), 'undoStack.undoLast');
   assertNotImplemented(() => undoStack.peek(), 'undoStack.peek');
 });
@@ -488,9 +537,22 @@ const F1_UI_DEFAULTS = {
 
 test('the ui defaults are F1 UiSettings field for field and map onto the registry prefs', () => {
   assert.deepEqual(UI_SETTINGS_DEFAULTS, F1_UI_DEFAULTS);
-  assert.equal(UI_SETTINGS_DEFAULTS.dock.open, false, 'the dock is closed on first run (decision 9)');
-  assert.deepEqual(DEFAULT_KEY_PREFS_FROM_UI, { singleKeyShortcuts: true, holdThresholdMs: 250, swapTriageArrows: false, keymap: {} });
-  const swapped = keyPrefsFromUi({ ...UI_SETTINGS_DEFAULTS, swipeDirection: 'doneLeft', keymap: { 'mail.done': [{ chord: 'y' }] } });
+  assert.equal(
+    UI_SETTINGS_DEFAULTS.dock.open,
+    false,
+    'the dock is closed on first run (decision 9)',
+  );
+  assert.deepEqual(DEFAULT_KEY_PREFS_FROM_UI, {
+    singleKeyShortcuts: true,
+    holdThresholdMs: 250,
+    swapTriageArrows: false,
+    keymap: {},
+  });
+  const swapped = keyPrefsFromUi({
+    ...UI_SETTINGS_DEFAULTS,
+    swipeDirection: 'doneLeft',
+    keymap: { 'mail.done': [{ chord: 'y' }] },
+  });
   assert.equal(swapped.swapTriageArrows, true);
   assert.deepEqual(swapped.keymap, { 'mail.done': [{ chord: 'y' }] });
 });
@@ -503,9 +565,16 @@ test('epoch to ISO conversion is local with an offset, never UTC', () => {
   assert.equal(new Date(iso).getTime(), ms, 'the offset round-trips');
   assert.equal(HARNESS_TIME_ZONE, 'America/Los_Angeles');
   assert.equal(HARNESS_NOW_LOCAL, '2026-10-29T10:00:00');
-  assert.equal(new Date(`${HARNESS_NOW_LOCAL}-07:00`).getTime(), HARNESS_NOW_MS, 'October 29 2026 is PDT');
+  assert.equal(
+    new Date(`${HARNESS_NOW_LOCAL}-07:00`).getTime(),
+    HARNESS_NOW_MS,
+    'October 29 2026 is PDT',
+  );
 });
 
 test('the drafts example stops at the first stub', async () => {
-  await assert.rejects(draftsExample(new Blob([]), 'm1'), (err: unknown) => err instanceof NotImplementedError && err.member === 'useView');
+  await assert.rejects(
+    draftsExample(new Blob([]), 'm1'),
+    (err: unknown) => err instanceof NotImplementedError && err.member === 'useView',
+  );
 });

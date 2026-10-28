@@ -9,9 +9,19 @@ import { motions } from '../generated/motion';
 import type { ComponentPropsMap } from '../props';
 import { usePresence } from './parts';
 
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Dialog({ open, title, description, size, children, footer, initialFocusId, onClose }: ComponentPropsMap['Dialog']) {
+export function Dialog({
+  open,
+  title,
+  description,
+  size,
+  children,
+  footer,
+  initialFocusId,
+  onClose,
+}: ComponentPropsMap['Dialog']) {
   const titleId = useId();
   const descId = useId();
   const ref = useRef<HTMLElement | null>(null);
@@ -21,7 +31,10 @@ export function Dialog({ open, title, description, size, children, footer, initi
     if (!open) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const el = ref.current;
-    const target = (initialFocusId ? document.getElementById(initialFocusId) : null) ?? el?.querySelector<HTMLElement>(FOCUSABLE) ?? el;
+    const target =
+      (initialFocusId ? document.getElementById(initialFocusId) : null) ??
+      el?.querySelector<HTMLElement>(FOCUSABLE) ??
+      el;
     target?.focus({ preventScroll: true });
     return () => opener?.focus({ preventScroll: true });
   }, [open, initialFocusId]);
@@ -58,7 +71,13 @@ export function Dialog({ open, title, description, size, children, footer, initi
   };
 
   return (
-    <div className="ui-dialog__scrim" data-state={leaving ? 'leaving' : 'open'} aria-hidden={leaving ? true : undefined} inert={leaving} onMouseDown={onScrim}>
+    <div
+      className="ui-dialog__scrim"
+      data-state={leaving ? 'leaving' : 'open'}
+      aria-hidden={leaving ? true : undefined}
+      inert={leaving}
+      onMouseDown={onScrim}
+    >
       <section
         ref={ref}
         role="dialog"

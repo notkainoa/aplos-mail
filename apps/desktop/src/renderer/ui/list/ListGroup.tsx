@@ -9,7 +9,12 @@ import { SectionHeader } from './SectionHeader';
 export function ListGroup({ header, children }: ListGroupProps) {
   if (header.count === 0 && !header.held) return null;
   return (
-    <div className="ui-list-group" role="group" aria-labelledby={header.id} data-variant={header.variant}>
+    <div
+      className="ui-list-group"
+      role="group"
+      aria-labelledby={header.id}
+      data-variant={header.variant}
+    >
       <SectionHeader {...header} />
       {children}
     </div>

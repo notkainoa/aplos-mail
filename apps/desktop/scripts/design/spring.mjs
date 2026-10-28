@@ -57,7 +57,12 @@ export function createSpring(from, to) {
 // The travel becomes the remaining distance (kept from before when that is 0).
 export function retargetSpring(state, target) {
   const distance = Math.abs(target - state.value);
-  return { value: state.value, velocity: state.velocity, target, travel: distance > 0 ? distance : travelOf(state) };
+  return {
+    value: state.value,
+    velocity: state.velocity,
+    target,
+    travel: distance > 0 ? distance : travelOf(state),
+  };
 }
 
 // States made by hand without a travel are treated as unit springs (0 -> 1).
@@ -71,7 +76,9 @@ function travelOf(state) {
 // value tolerance is the same 0.5 % that defines the settle time.
 export function springAtRest(state, epsilon = SETTLE_EPSILON) {
   const tolerance = epsilon * travelOf(state);
-  return Math.abs(state.value - state.target) <= tolerance && Math.abs(state.velocity) <= tolerance * 10;
+  return (
+    Math.abs(state.value - state.target) <= tolerance && Math.abs(state.velocity) <= tolerance * 10
+  );
 }
 
 // Value of a unit spring (0 -> 1 from rest) at time t seconds.
@@ -119,7 +126,7 @@ export function formatSample(value) {
 }
 
 export function springLinear(params, count = LINEAR_SAMPLES, epsilon = SETTLE_EPSILON) {
-  return `linear(${springSamples(params, count, epsilon).map(formatSample).join(", ")})`;
+  return `linear(${springSamples(params, count, epsilon).map(formatSample).join(', ')})`;
 }
 
 export function compileSpring(params) {

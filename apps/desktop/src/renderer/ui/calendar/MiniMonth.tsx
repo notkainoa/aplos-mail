@@ -1,7 +1,17 @@
 import { useEffect, useId, useRef } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { MiniMonthProps } from '../props';
-import { dateOf, dayTitle, monthMatrix, monthTitle, parseDate, shiftMonth, WEEKDAYS, weekdayOrder, addDays } from './dates';
+import {
+  dateOf,
+  dayTitle,
+  monthMatrix,
+  monthTitle,
+  parseDate,
+  shiftMonth,
+  WEEKDAYS,
+  weekdayOrder,
+  addDays,
+} from './dates';
 import { CalIcon } from './icons';
 
 /**
@@ -9,7 +19,14 @@ import { CalIcon } from './icons';
  * badge, and the range the grid shows (a week band or one day) rests on `--puck` (DESIGN 6 MiniMonth, 7.8).
  * Arrow keys move between days; Return or Space picks the focused one.
  */
-export function MiniMonth({ month, today, range, weekStartsOn, onMonthChange, onPick }: MiniMonthProps) {
+export function MiniMonth({
+  month,
+  today,
+  range,
+  weekStartsOn,
+  onMonthChange,
+  onPick,
+}: MiniMonthProps) {
   const headId = useId();
   const tableRef = useRef<HTMLTableElement>(null);
   const pendingFocus = useRef<string | null>(null);
@@ -76,10 +93,16 @@ export function MiniMonth({ month, today, range, weekStartsOn, onMonthChange, on
           <CalIcon name="chevron-right" />
         </button>
       </div>
-      <table ref={tableRef} className="ui-mini-month__table" role="grid" aria-labelledby={headId} onKeyDown={onKeyDown}>
+      <table
+        ref={tableRef}
+        className="ui-mini-month__table"
+        role="grid"
+        aria-labelledby={headId}
+        onKeyDown={onKeyDown}
+      >
         <thead>
           <tr>
-            {order.map((d) => (
+            {order.map(d => (
               <th key={d} scope="col" abbr={WEEKDAYS[d]}>
                 {WEEKDAYS[d][0]}
               </th>
@@ -87,9 +110,9 @@ export function MiniMonth({ month, today, range, weekStartsOn, onMonthChange, on
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map(row => (
             <tr key={row[0]}>
-              {row.map((date) => {
+              {row.map(date => {
                 const selected = range ? range.start <= date && date <= range.end : false;
                 const isToday = date === today;
                 return (

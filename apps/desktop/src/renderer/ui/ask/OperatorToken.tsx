@@ -13,7 +13,13 @@ export function OperatorToken({ operator, value, onRemove }: OperatorTokenProps)
       <span className="ui-operator-token__value" dir="auto">
         {value}
       </span>
-      <button type="button" className="ui-operator-token__remove" aria-label={`Remove ${operator}: ${value}`} title="Remove" onClick={onRemove}>
+      <button
+        type="button"
+        className="ui-operator-token__remove"
+        aria-label={`Remove ${operator}: ${value}`}
+        title="Remove"
+        onClick={onRemove}
+      >
         <Icon name="close" size="xs" />
       </button>
     </span>

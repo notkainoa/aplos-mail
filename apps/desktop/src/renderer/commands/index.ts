@@ -39,10 +39,24 @@ export { CONTEXT_NAMES, DEFAULT_KEY_PREFS, PALETTE_GROUPS } from './types';
 // The app's registry over the whole catalog; screens attach run/when, the shell calls resolve and run.
 export { createAppRegistry } from './catalog';
 export { contextLine } from './registry';
-export type { BindingConflict, KeymapIssue, PaletteEntry, Registry, RegistryEntry, RegistryErrorHandler, RunResult } from './registry';
+export type {
+  BindingConflict,
+  KeymapIssue,
+  PaletteEntry,
+  Registry,
+  RegistryEntry,
+  RegistryErrorHandler,
+  RunResult,
+} from './registry';
 
 // Settings rows in the palette: Settings' manifest registers each row at module load; a row's route is "settings/<section>#<row>".
-export { parseSettingRoute, registerSetting, SETTING_SECTIONS, settingId, settingRoute } from './settings';
+export {
+  parseSettingRoute,
+  registerSetting,
+  SETTING_SECTIONS,
+  settingId,
+  settingRoute,
+} from './settings';
 export type { SettingEntry, SettingRoute, SettingSection } from './settings';
 
 // Normalizes the contexts the shell collects (route + data-keyctx) into a stack; which contexts are modal.

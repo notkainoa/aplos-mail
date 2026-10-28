@@ -3,7 +3,13 @@
 import { Icon } from '../buttons-keys/Icon';
 import type { CheckboxProps } from '../props';
 
-export function Checkbox({ checked, onChange, label, labelVisible = true, disabled = false }: CheckboxProps) {
+export function Checkbox({
+  checked,
+  onChange,
+  label,
+  labelVisible = true,
+  disabled = false,
+}: CheckboxProps) {
   const state = checked === 'mixed' ? 'mixed' : checked ? 'checked' : 'unchecked';
   return (
     <button
@@ -18,7 +24,11 @@ export function Checkbox({ checked, onChange, label, labelVisible = true, disabl
       onClick={() => onChange(checked !== true)}
     >
       <span className="ui-checkbox-box" aria-hidden="true">
-        {checked === 'mixed' ? <Icon name="minus" size="xs" /> : checked ? <Icon name="check" size="xs" /> : null}
+        {checked === 'mixed' ? (
+          <Icon name="minus" size="xs" />
+        ) : checked ? (
+          <Icon name="check" size="xs" />
+        ) : null}
       </span>
       {labelVisible ? <span className="ui-checkbox-label">{label}</span> : null}
     </button>

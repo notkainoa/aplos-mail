@@ -34,11 +34,21 @@ interface SectionDef {
  */
 export const SHEET_SECTIONS: readonly SectionDef[] = [
   { id: 'global', title: 'Global', column: 0, contexts: ['global'] },
-  { id: 'home', title: 'Home and one by one', column: 0, contexts: ['home', 'oneByOne', 'lowImportance'] },
+  {
+    id: 'home',
+    title: 'Home and one by one',
+    column: 0,
+    contexts: ['home', 'oneByOne', 'lowImportance'],
+  },
   { id: 'done', title: 'Done', column: 0, contexts: ['done'] },
   { id: 'reader', title: 'Reader', column: 0, contexts: ['reader'] },
   { id: 'lists', title: 'Lists', column: 1, contexts: ['list', 'search'] },
-  { id: 'palette', title: 'Palette, menus and date picker', column: 1, contexts: ['palette', 'menu', 'datePicker', 'dialog'] },
+  {
+    id: 'palette',
+    title: 'Palette, menus and date picker',
+    column: 1,
+    contexts: ['palette', 'menu', 'datePicker', 'dialog'],
+  },
   { id: 'compose', title: 'Compose', column: 2, contexts: ['compose'] },
   { id: 'ask', title: 'Ask', column: 2, contexts: ['ask'] },
   { id: 'calendar', title: 'Calendar', column: 2, contexts: ['calendar'] },
@@ -65,12 +75,14 @@ function uniqueBindings(bindings: readonly Binding[]): Binding[] {
 }
 
 export function buildSheet(registry: Registry): SheetSection[] {
-  const ids = [...registry.list().map((c) => c.id), ...registry.controls().map((c) => c.id)];
+  const ids = [...registry.list().map(c => c.id), ...registry.controls().map(c => c.id)];
   const all = registry.bindings();
-  return SHEET_SECTIONS.map((section) => {
+  return SHEET_SECTIONS.map(section => {
     const rows: SheetRow[] = [];
     for (const id of ids) {
-      const bound = uniqueBindings(all.filter((b) => b.commandId === id && section.contexts.includes(b.context)));
+      const bound = uniqueBindings(
+        all.filter(b => b.commandId === id && section.contexts.includes(b.context)),
+      );
       if (bound.length === 0) continue;
       const label = registry.get(id)?.spec.label ?? id;
       rows.push({ id, label, keys: formatAlternatives(bound), kind: 'key' });

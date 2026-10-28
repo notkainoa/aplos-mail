@@ -7,26 +7,26 @@
 // Not wired into any package.json yet (that file belongs to another lane); until
 // it is, CI does not enforce these gates. Exits 1 if any step fails.
 
-import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { spawnSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 function testFiles() {
   return readdirSync(here)
-    .filter((name) => name.endsWith(".test.mjs"))
+    .filter(name => name.endsWith('.test.mjs'))
     .sort()
-    .map((name) => join(here, name));
+    .map(name => join(here, name));
 }
 
 export function steps() {
   return [
-    { name: "generated files", args: [join(here, "build-tokens.mjs"), "--check"] },
-    { name: "contrast and identity", args: [join(here, "check-contrast.mjs")] },
-    { name: "skill tokens", args: [join(here, "check-skill-tokens.mjs")] },
-    { name: "unit tests", args: ["--test", ...testFiles()] },
+    { name: 'generated files', args: [join(here, 'build-tokens.mjs'), '--check'] },
+    { name: 'contrast and identity', args: [join(here, 'check-contrast.mjs')] },
+    { name: 'skill tokens', args: [join(here, 'check-skill-tokens.mjs')] },
+    { name: 'unit tests', args: ['--test', ...testFiles()] },
   ];
 }
 
@@ -34,12 +34,16 @@ function main() {
   const failed = [];
   for (const step of steps()) {
     console.log(`\n== ${step.name} ==`);
-    const result = spawnSync(process.execPath, step.args, { stdio: "inherit" });
+    const result = spawnSync(process.execPath, step.args, { stdio: 'inherit' });
     if (result.status !== 0) {
       failed.push(step.name);
     }
   }
-  console.log(failed.length === 0 ? "\nAll design gates passed." : `\nDesign gates failed: ${failed.join(", ")}.`);
+  console.log(
+    failed.length === 0
+      ? '\nAll design gates passed.'
+      : `\nDesign gates failed: ${failed.join(', ')}.`,
+  );
   return failed.length === 0 ? 0 : 1;
 }
 

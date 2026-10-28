@@ -22,7 +22,7 @@ export function LevelMeter({ level, label, ref }: LevelMeterProps) {
       data-state={value > 0 ? 'active' : 'idle'}
       style={{ '--level': value } as CSSProperties}
     >
-      {BARS.map((bar) => (
+      {BARS.map(bar => (
         <i key={bar} aria-hidden="true" />
       ))}
     </span>

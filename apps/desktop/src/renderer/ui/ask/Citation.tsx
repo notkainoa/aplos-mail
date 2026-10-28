@@ -13,13 +13,15 @@ export function Citation({ index, quote, from, date, subject, threadId, onOpen }
   const quoteId = useId();
   const [hover, setHover] = useState(false);
   // A unique dashed ident per chip lets the stylesheet anchor the quote to its own chip (CSS anchor positioning).
-  const anchor = { '--cite-anchor': `--cite-${quoteId.replace(/[^a-zA-Z0-9]/g, '')}` } as CSSProperties;
+  const anchor = {
+    '--cite-anchor': `--cite-${quoteId.replace(/[^a-zA-Z0-9]/g, '')}`,
+  } as CSSProperties;
   return (
     <span
       className="ui-citation"
       style={anchor}
       data-hover={hover ? 'true' : undefined}
-      onPointerEnter={(event) => setHover(event.pointerType !== 'touch')}
+      onPointerEnter={event => setHover(event.pointerType !== 'touch')}
       onPointerLeave={() => setHover(false)}
     >
       <button
@@ -33,7 +35,10 @@ export function Citation({ index, quote, from, date, subject, threadId, onOpen }
       </button>
       <span id={quoteId} role="tooltip" className="ui-citation__quote">
         <span className="ui-citation__text" dir="auto">{`“${quote}”`}</span>
-        <span className="ui-citation__source" dir="auto">{`${from} · ${formatSource(date)} · ${subject}`}</span>
+        <span
+          className="ui-citation__source"
+          dir="auto"
+        >{`${from} · ${formatSource(date)} · ${subject}`}</span>
       </span>
     </span>
   );

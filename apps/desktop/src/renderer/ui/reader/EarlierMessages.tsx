@@ -17,7 +17,16 @@ export function earlierLine(count: number, participants: readonly string[]): str
 }
 
 /** The earlier messages of a thread, collapsed or as one-liners. */
-export function EarlierMessages({ count, participants, expanded, messages, cursorId, commandId, onToggle, onOpenMessage }: EarlierMessagesProps) {
+export function EarlierMessages({
+  count,
+  participants,
+  expanded,
+  messages,
+  cursorId,
+  commandId,
+  onToggle,
+  onOpenMessage,
+}: EarlierMessagesProps) {
   const listId = useId();
   if (count <= 0) return null;
   const line = earlierLine(count, participants);
@@ -39,7 +48,7 @@ export function EarlierMessages({ count, participants, expanded, messages, curso
       )}
       <ul id={listId} className="ui-earlier-messages__list" aria-label={line} hidden={!expanded}>
         {expanded
-          ? messages.map((message) => (
+          ? messages.map(message => (
               <li key={message.id} className="ui-earlier-messages__item">
                 <button
                   type="button"
@@ -49,9 +58,17 @@ export function EarlierMessages({ count, participants, expanded, messages, curso
                   aria-current={message.id === cursorId ? 'true' : undefined}
                   onClick={() => onOpenMessage(message.id)}
                 >
-                  <span className="ui-earlier-messages__from" dir="auto">{message.from}</span>
-                  <span className="ui-earlier-messages__preview" dir="auto">{message.preview}</span>
-                  <time className="ui-earlier-messages__date" dateTime={message.date} title={formatFull(message.date)}>
+                  <span className="ui-earlier-messages__from" dir="auto">
+                    {message.from}
+                  </span>
+                  <span className="ui-earlier-messages__preview" dir="auto">
+                    {message.preview}
+                  </span>
+                  <time
+                    className="ui-earlier-messages__date"
+                    dateTime={message.date}
+                    title={formatFull(message.date)}
+                  >
                     {formatListDate(message.date)}
                   </time>
                 </button>

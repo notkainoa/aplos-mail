@@ -36,10 +36,12 @@ export function PlanOutline({ plan, placement, selected, onSelect, onOpen }: Pla
       tabIndex={-1}
       style={{ '--cal': calVar(plan.calendar.color) } as CSSProperties}
       onClick={onSelect}
-      onDoubleClick={(e) => onOpen(e.currentTarget)}
+      onDoubleClick={e => onOpen(e.currentTarget)}
       onKeyDown={onKeyDown}
     >
-      <span className="ui-plan-outline__title" dir="auto">{plan.title}</span>
+      <span className="ui-plan-outline__title" dir="auto">
+        {plan.title}
+      </span>
       <span className="ui-plan-outline__from">
         <CalIcon name="mail" />
         From mail

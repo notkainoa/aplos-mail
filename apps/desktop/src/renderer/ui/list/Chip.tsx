@@ -38,12 +38,16 @@ export function Chip(props: ChipProps) {
           title={until.kind === 'at' ? formatFull(until.at) : undefined}
         >
           <Icon name="clock" size="sm" />
-          <span className="ui-chip__text">{until.kind === 'someday' ? 'Someday' : formatLaterUntil(until.at)}</span>
+          <span className="ui-chip__text">
+            {until.kind === 'someday' ? 'Someday' : formatLaterUntil(until.at)}
+          </span>
         </span>
       );
     }
     case 'label': {
-      const style = props.color ? ({ '--swatch': `var(--tag-${props.color})` } as CSSProperties) : undefined;
+      const style = props.color
+        ? ({ '--swatch': `var(--tag-${props.color})` } as CSSProperties)
+        : undefined;
       return (
         <span className="ui-chip" data-kind="label" data-color={props.color} style={style}>
           <span className="ui-chip__text">{props.text}</span>
@@ -70,7 +74,15 @@ export function Chip(props: ChipProps) {
           {state === 'failed' ? (
             <>
               <span className="ui-chip__error">Couldn’t download.</span>
-              {onRetry ? <Action variant="text" size="sm" tone="danger" label="Try again" onPress={() => onRetry()} /> : null}
+              {onRetry ? (
+                <Action
+                  variant="text"
+                  size="sm"
+                  tone="danger"
+                  label="Try again"
+                  onPress={() => onRetry()}
+                />
+              ) : null}
             </>
           ) : null}
         </span>

@@ -23,7 +23,12 @@ function EmptyView({ empty, listId }: { empty: AskEmptyData; listId: string }) {
   const suggestId = `${listId}-suggest`;
   const recentId = `${listId}-recent`;
   return (
-    <div id={listId} className="ui-ask-dock__empty" role="listbox" aria-label="Suggestions and recent chats">
+    <div
+      id={listId}
+      className="ui-ask-dock__empty"
+      role="listbox"
+      aria-label="Suggestions and recent chats"
+    >
       <div role="group" aria-labelledby={suggestId}>
         <div id={suggestId} className="ui-ask-dock__group-label">
           Try asking
@@ -36,7 +41,7 @@ function EmptyView({ empty, listId }: { empty: AskEmptyData; listId: string }) {
             role="option"
             aria-selected={cursorIndex === index}
             data-cursor={cursorIndex === index ? 'true' : undefined}
-            onMouseDown={(event) => event.preventDefault()}
+            onMouseDown={event => event.preventDefault()}
             onClick={() => onPickSuggestion(question)}
           >
             <span className="ui-ask-dock__option-text" dir="auto">
@@ -60,7 +65,7 @@ function EmptyView({ empty, listId }: { empty: AskEmptyData; listId: string }) {
                 role="option"
                 aria-selected={cursorIndex === at}
                 data-cursor={cursorIndex === at ? 'true' : undefined}
-                onMouseDown={(event) => event.preventDefault()}
+                onMouseDown={event => event.preventDefault()}
                 onClick={() => onOpenRecent(recent.id)}
               >
                 <span className="ui-ask-dock__option-text" data-recent="true" dir="auto">
@@ -116,7 +121,8 @@ export function AskDock(props: AskDockProps) {
   let activeOption: string | undefined;
   if (showEmpty && empty && cursor !== undefined && cursor >= 0 && cursor < total) {
     const suggested = Math.min(3, empty.suggestions.length);
-    activeOption = cursor < suggested ? `${emptyId}-s${cursor}` : `${emptyId}-r${cursor - suggested}`;
+    activeOption =
+      cursor < suggested ? `${emptyId}-s${cursor}` : `${emptyId}-r${cursor - suggested}`;
   }
   const sendNowKeys = describeKeys('ask.sendNow');
 
@@ -135,7 +141,15 @@ export function AskDock(props: AskDockProps) {
   }
   function onResizeKey(event: KeyboardEvent<HTMLDivElement>) {
     const next =
-      event.key === 'ArrowLeft' ? size + STEP : event.key === 'ArrowRight' ? size - STEP : event.key === 'Home' ? DOCK_MIN : event.key === 'End' ? DOCK_MAX : null;
+      event.key === 'ArrowLeft'
+        ? size + STEP
+        : event.key === 'ArrowRight'
+          ? size - STEP
+          : event.key === 'Home'
+            ? DOCK_MIN
+            : event.key === 'End'
+              ? DOCK_MAX
+              : null;
     if (next === null) return;
     event.preventDefault();
     onWidthChange(clampWidth(next));
@@ -158,7 +172,12 @@ export function AskDock(props: AskDockProps) {
   ] as const;
 
   return (
-    <aside className="ui-ask-dock" aria-label="Ask" data-tab={tab} style={{ '--ask-dock-w': `${size}px` } as CSSProperties}>
+    <aside
+      className="ui-ask-dock"
+      aria-label="Ask"
+      data-tab={tab}
+      style={{ '--ask-dock-w': `${size}px` } as CSSProperties}
+    >
       <div
         className="ui-ask-dock__resize"
         role="separator"
@@ -175,8 +194,13 @@ export function AskDock(props: AskDockProps) {
         onKeyDown={onResizeKey}
       />
       <header className="ui-ask-dock__head">
-        <div className="ui-ask-dock__tabs" role="tablist" aria-label="Ask or Today" onKeyDown={onTabsKey}>
-          {tabs.map((item) => (
+        <div
+          className="ui-ask-dock__tabs"
+          role="tablist"
+          aria-label="Ask or Today"
+          onKeyDown={onTabsKey}
+        >
+          {tabs.map(item => (
             <button
               key={item.id}
               type="button"
@@ -192,9 +216,21 @@ export function AskDock(props: AskDockProps) {
             </button>
           ))}
         </div>
-        <Btn variant="icon" icon="close" label="Close" hint="Close Ask" commandId="ask.toggleDock" onPress={() => onClose()} />
+        <Btn
+          variant="icon"
+          icon="close"
+          label="Close"
+          hint="Close Ask"
+          commandId="ask.toggleDock"
+          onPress={() => onClose()}
+        />
       </header>
-      <div className="ui-ask-dock__body" role="tabpanel" id={`${baseId}-panel`} aria-labelledby={`${baseId}-tab-${tab}`}>
+      <div
+        className="ui-ask-dock__body"
+        role="tabpanel"
+        id={`${baseId}-panel`}
+        aria-labelledby={`${baseId}-tab-${tab}`}
+      >
         {tab === 'today' ? today : null}
         {tab === 'ask' && !providerReady ? (
           <div className="ui-ask-dock__noprovider">
@@ -209,11 +245,21 @@ export function AskDock(props: AskDockProps) {
       </div>
       {tab === 'ask' ? (
         <footer className="ui-ask-dock__foot">
-          {queued.map((card) => (
-            <div key={card.id} className="ui-ask-dock__queued" role="group" aria-label="Queued follow-up">
+          {queued.map(card => (
+            <div
+              key={card.id}
+              className="ui-ask-dock__queued"
+              role="group"
+              aria-label="Queued follow-up"
+            >
               <div className="ui-ask-dock__queued-head">
                 <span>{`Queued · ${sendNowKeys} sends now`}</span>
-                <Btn variant="text" label="Send now" tabIndex={-1} onPress={() => onSendQueuedNow(card.id)} />
+                <Btn
+                  variant="text"
+                  label="Send now"
+                  tabIndex={-1}
+                  onPress={() => onSendQueuedNow(card.id)}
+                />
               </div>
               <textarea
                 className="ui-ask-dock__queued-text"
@@ -221,8 +267,8 @@ export function AskDock(props: AskDockProps) {
                 dir="auto"
                 aria-label="Queued follow-up"
                 value={card.text}
-                onChange={(event) => onQueuedChange(card.id, event.target.value)}
-                onKeyDown={(event) => {
+                onChange={event => onQueuedChange(card.id, event.target.value)}
+                onKeyDown={event => {
                   if (event.nativeEvent.isComposing) return;
                   if (event.metaKey && event.key === 'Enter') {
                     event.preventDefault();
@@ -232,7 +278,11 @@ export function AskDock(props: AskDockProps) {
               />
             </div>
           ))}
-          <div className="ui-ask-dock__field" data-dictating={dictation ? 'true' : undefined} data-working={working ? 'true' : undefined}>
+          <div
+            className="ui-ask-dock__field"
+            data-dictating={dictation ? 'true' : undefined}
+            data-working={working ? 'true' : undefined}
+          >
             <div className="ui-ask-dock__field-row">
               <textarea
                 ref={fieldRef}
@@ -244,12 +294,26 @@ export function AskDock(props: AskDockProps) {
                 aria-controls={activeOption ? emptyId : undefined}
                 aria-activedescendant={activeOption}
                 value={value}
-                onChange={(event) => onChange(event.target.value)}
+                onChange={event => onChange(event.target.value)}
                 onKeyDown={onFieldKey}
               />
               <span className="ui-ask-dock__acts">
-                {working ? <Btn variant="text" label="Stop" hint="Stop the answer" commandId="ask.stop" onPress={() => onStop()} /> : null}
-                <Btn variant="icon" icon="arrow-up" label="Ask" commandId="ask.submit" onPress={() => onSubmit('ask')} />
+                {working ? (
+                  <Btn
+                    variant="text"
+                    label="Stop"
+                    hint="Stop the answer"
+                    commandId="ask.stop"
+                    onPress={() => onStop()}
+                  />
+                ) : null}
+                <Btn
+                  variant="icon"
+                  icon="arrow-up"
+                  label="Ask"
+                  commandId="ask.submit"
+                  onPress={() => onSubmit('ask')}
+                />
               </span>
             </div>
             {dictation ? <DictationLine dictation={dictation} /> : null}

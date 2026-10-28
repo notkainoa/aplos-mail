@@ -96,10 +96,12 @@ export function Action({
       aria-controls={controls}
       disabled={disabled}
       onClick={handle}
-      onDoubleClick={(event) => event.stopPropagation()}
+      onDoubleClick={event => event.stopPropagation()}
     >
       {icon ? <Icon name={icon} /> : null}
-      {variant === 'icon' || labelHidden ? null : <span className="ui-list-btn__label">{label}</span>}
+      {variant === 'icon' || labelHidden ? null : (
+        <span className="ui-list-btn__label">{label}</span>
+      )}
       {keycap ? <Keycap chord={keycap} /> : null}
       {hintInline && hintKey ? <Keycap chord={hintKey} reveal="hint" /> : null}
       {hintBadge && hintKey ? <Keycap chord={hintKey} reveal="badge" /> : null}

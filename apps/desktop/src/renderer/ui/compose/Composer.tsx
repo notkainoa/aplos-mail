@@ -12,10 +12,24 @@ import { Suggestion } from './Suggestion';
  * owns; AI drafts and follow-up nudges are dim text the editor itself renders, announced by `suggestion`.
  */
 export function Composer(props: ComposerProps) {
-  const { recipients, subject, onSubjectChange, editor, suggestion, dictation, polish, draftState, onRetrySave, blocked, conflict, commands } = props;
+  const {
+    recipients,
+    subject,
+    onSubjectChange,
+    editor,
+    suggestion,
+    dictation,
+    polish,
+    draftState,
+    onRetrySave,
+    blocked,
+    conflict,
+    commands,
+  } = props;
   const blockedId = `${useId()}-blocked`;
   const blockedLine = blocked ? <BlockedLine id={blockedId} blocked={blocked} /> : null;
-  const outlined = (field: 'to' | 'subject' | 'body') => (blocked?.field === field ? 'true' : undefined);
+  const outlined = (field: 'to' | 'subject' | 'body') =>
+    blocked?.field === field ? 'true' : undefined;
 
   return (
     <section className="ui-composer" aria-label="New message">
@@ -35,7 +49,7 @@ export function Composer(props: ComposerProps) {
             data-blocked={outlined('subject')}
             aria-invalid={blocked?.field === 'subject' ? true : undefined}
             aria-describedby={blocked?.field === 'subject' ? blockedId : undefined}
-            onChange={(event) => onSubjectChange(event.target.value)}
+            onChange={event => onSubjectChange(event.target.value)}
           />
           {blocked?.field === 'subject' ? blockedLine : null}
           {polish ? (
@@ -43,12 +57,28 @@ export function Composer(props: ComposerProps) {
               <Icon name="type" size="sm" />
               <span>{`Polish suggests ${polish.changes} ${polish.changes === 1 ? 'change' : 'changes'}. Yours stays until you choose.`}</span>
               <span className="ui-composer__polish-acts">
-                <Btn variant="text" label="Use these" keys="Return" keyHint="always" onPress={polish.onUse} />
-                <Btn variant="text" label="Keep mine" keys="Esc" keyHint="always" onPress={polish.onKeep} />
+                <Btn
+                  variant="text"
+                  label="Use these"
+                  keys="Return"
+                  keyHint="always"
+                  onPress={polish.onUse}
+                />
+                <Btn
+                  variant="text"
+                  label="Keep mine"
+                  keys="Esc"
+                  keyHint="always"
+                  onPress={polish.onKeep}
+                />
               </span>
             </div>
           ) : null}
-          <div className="ui-composer__editor" data-blocked={outlined('body')} data-dictating={dictation ? 'true' : undefined}>
+          <div
+            className="ui-composer__editor"
+            data-blocked={outlined('body')}
+            data-dictating={dictation ? 'true' : undefined}
+          >
             {editor}
           </div>
           {blocked?.field === 'body' ? blockedLine : null}
@@ -64,8 +94,20 @@ export function Composer(props: ComposerProps) {
           dictation={dictation}
           onSend={props.onSend}
           trailing={[
-            { label: 'Attach', icon: 'paperclip', hint: 'Attach a file', commandId: commands.attach, onPress: () => props.onAttach() },
-            { label: 'Format', icon: 'type', hint: 'Format', commandId: commands.more, onPress: props.onFormat },
+            {
+              label: 'Attach',
+              icon: 'paperclip',
+              hint: 'Attach a file',
+              commandId: commands.attach,
+              onPress: () => props.onAttach(),
+            },
+            {
+              label: 'Format',
+              icon: 'type',
+              hint: 'Format',
+              commandId: commands.more,
+              onPress: props.onFormat,
+            },
           ]}
         />
       </footer>

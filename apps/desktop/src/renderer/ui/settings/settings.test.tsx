@@ -13,12 +13,19 @@ const html = (node: React.ReactElement): string => renderToStaticMarkup(node);
 
 function copyOf(markup: string): string[] {
   const decode = (s: string): string =>
-    s.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-  const attrs = [...markup.matchAll(/(?:aria-label|title|placeholder)="([^"]*)"/g)].map((m) => decode(m[1]));
+    s
+      .replace(/&#x27;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+  const attrs = [...markup.matchAll(/(?:aria-label|title|placeholder)="([^"]*)"/g)].map(m =>
+    decode(m[1]),
+  );
   const text = markup
     .replace(/<[^>]+>/g, '\n')
     .split('\n')
-    .map((t) => decode(t.trim()))
+    .map(t => decode(t.trim()))
     .filter(Boolean);
   return [...attrs, ...text];
 }
@@ -38,7 +45,11 @@ test('SettingRow: label id for the control, description, tag, meta and the contr
       description="Light, dark, or match the system."
       tag="Default"
       meta="Google"
-      control={<button type="button" role="switch" aria-checked="true" aria-labelledby="theme">Theme</button>}
+      control={
+        <button type="button" role="switch" aria-checked="true" aria-labelledby="theme">
+          Theme
+        </button>
+      }
     />,
   );
   assert.match(out, /class="ui-setting-row"[^>]*data-has-description="true"/);
@@ -95,8 +106,17 @@ test('SettingRow disclosure: one button with aria-expanded and the folded text h
 });
 
 test('SettingRow worst case: 300-character label, unbreakable address, one-letter label, CJK, Arabic, emoji', () => {
-  for (const label of ['L'.repeat(300), 'a'.repeat(40) + '@' + 'b'.repeat(39), 'A', '通知の設定', 'إعدادات الإشعارات', 'Party 🎉']) {
-    const out = html(<SettingRow id="w" label={label} description={label} meta={label} tag="Default" />);
+  for (const label of [
+    'L'.repeat(300),
+    'a'.repeat(40) + '@' + 'b'.repeat(39),
+    'A',
+    '通知の設定',
+    'إعدادات الإشعارات',
+    'Party 🎉',
+  ]) {
+    const out = html(
+      <SettingRow id="w" label={label} description={label} meta={label} tag="Default" />,
+    );
     assert.ok(out.includes(`dir="auto">${label}</span>`), label.slice(0, 12));
   }
 });
@@ -106,11 +126,41 @@ test('SettingRow worst case: 300-character label, unbreakable address, one-lette
 const features: ProviderTableProps = {
   kind: 'features',
   rows: [
-    { feature: 'ask', provider: 'groq', model: 'openai/gpt-oss-120b', providerOptions: ['groq', 'openai', 'ollama'], modelOptions: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'] },
-    { feature: 'summaries', provider: 'groq', model: 'llama-3.1-8b-instant', providerOptions: ['groq'], modelOptions: ['llama-3.1-8b-instant'] },
-    { feature: 'drafts', provider: 'openai', model: 'gpt-5-mini', providerOptions: ['groq', 'openai'], modelOptions: ['gpt-5-mini'] },
-    { feature: 'plans', provider: 'groq', model: 'openai/gpt-oss-120b', providerOptions: ['groq'], modelOptions: ['openai/gpt-oss-120b'] },
-    { feature: 'voice', provider: 'groq', model: 'whisper-large-v3-turbo', providerOptions: ['groq', 'openai'], modelOptions: ['whisper-large-v3-turbo'] },
+    {
+      feature: 'ask',
+      provider: 'groq',
+      model: 'openai/gpt-oss-120b',
+      providerOptions: ['groq', 'openai', 'ollama'],
+      modelOptions: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'],
+    },
+    {
+      feature: 'summaries',
+      provider: 'groq',
+      model: 'llama-3.1-8b-instant',
+      providerOptions: ['groq'],
+      modelOptions: ['llama-3.1-8b-instant'],
+    },
+    {
+      feature: 'drafts',
+      provider: 'openai',
+      model: 'gpt-5-mini',
+      providerOptions: ['groq', 'openai'],
+      modelOptions: ['gpt-5-mini'],
+    },
+    {
+      feature: 'plans',
+      provider: 'groq',
+      model: 'openai/gpt-oss-120b',
+      providerOptions: ['groq'],
+      modelOptions: ['openai/gpt-oss-120b'],
+    },
+    {
+      feature: 'voice',
+      provider: 'groq',
+      model: 'whisper-large-v3-turbo',
+      providerOptions: ['groq', 'openai'],
+      modelOptions: ['whisper-large-v3-turbo'],
+    },
   ],
   onChange: noop,
 };
@@ -133,22 +183,62 @@ test('ProviderTable features: a model that is not in the list is still shown and
     <ProviderTable
       kind="features"
       onChange={noop}
-      rows={[{ feature: 'ask', provider: 'groq', model: 'custom/legacy-model', providerOptions: ['groq'], modelOptions: ['a'] }]}
+      rows={[
+        {
+          feature: 'ask',
+          provider: 'groq',
+          model: 'custom/legacy-model',
+          providerOptions: ['groq'],
+          modelOptions: ['a'],
+        },
+      ]}
     />,
   );
   assert.match(out, /<option value="custom\/legacy-model" selected="">/);
 });
 
-const hosted = (over: Partial<Extract<ProviderTableProps, { kind: 'hosted' }>> = {}): ProviderTableProps => ({
+const hosted = (
+  over: Partial<Extract<ProviderTableProps, { kind: 'hosted' }>> = {},
+): ProviderTableProps => ({
   kind: 'hosted',
   onAction: noop,
   rows: [
-    { provider: 'groq', isDefault: true, keySource: { kind: 'environment', variable: 'GROQ_API_KEY' }, status: { kind: 'works', latencyMs: 400 } },
-    { provider: 'openai', isDefault: false, keySource: { kind: 'keychain' }, status: { kind: 'testing' } },
-    { provider: 'anthropic', isDefault: false, keySource: { kind: 'none', variable: 'ANTHROPIC_API_KEY' }, status: { kind: 'needsKey' } },
-    { provider: 'openrouter', isDefault: false, keySource: { kind: 'keychain' }, status: { kind: 'refused' } },
-    { provider: 'gemini', isDefault: false, keySource: { kind: 'keychain' }, status: { kind: 'ready' } },
-    { provider: 'opencode', isDefault: false, keySource: { kind: 'environment', variable: 'OPENCODE_API_KEY' }, status: { kind: 'unreachable' } },
+    {
+      provider: 'groq',
+      isDefault: true,
+      keySource: { kind: 'environment', variable: 'GROQ_API_KEY' },
+      status: { kind: 'works', latencyMs: 400 },
+    },
+    {
+      provider: 'openai',
+      isDefault: false,
+      keySource: { kind: 'keychain' },
+      status: { kind: 'testing' },
+    },
+    {
+      provider: 'anthropic',
+      isDefault: false,
+      keySource: { kind: 'none', variable: 'ANTHROPIC_API_KEY' },
+      status: { kind: 'needsKey' },
+    },
+    {
+      provider: 'openrouter',
+      isDefault: false,
+      keySource: { kind: 'keychain' },
+      status: { kind: 'refused' },
+    },
+    {
+      provider: 'gemini',
+      isDefault: false,
+      keySource: { kind: 'keychain' },
+      status: { kind: 'ready' },
+    },
+    {
+      provider: 'opencode',
+      isDefault: false,
+      keySource: { kind: 'environment', variable: 'OPENCODE_API_KEY' },
+      status: { kind: 'unreachable' },
+    },
   ],
   ...over,
 });
@@ -173,33 +263,64 @@ test('ProviderTable hosted: key source and status in words, Default tag, never a
 
 test('ProviderTable hosted: Remove is disabled for an environment key, with the reason as tooltip and description', () => {
   const out = html(<ProviderTable {...hosted()} />);
-  const groqRow = out.slice(out.indexOf('data-provider="groq"'), out.indexOf('data-provider="openai"'));
-  assert.match(groqRow, /aria-disabled="true"[^>]*title="This key comes from GROQ_API_KEY in your environment\. Remove it there\."/);
+  const groqRow = out.slice(
+    out.indexOf('data-provider="groq"'),
+    out.indexOf('data-provider="openai"'),
+  );
+  assert.match(
+    groqRow,
+    /aria-disabled="true"[^>]*title="This key comes from GROQ_API_KEY in your environment\. Remove it there\."/,
+  );
   assert.match(groqRow, /aria-describedby="[^"]+"/);
-  assert.match(groqRow, /<span class="ui-provider-table__sr"[^>]*>This key comes from GROQ_API_KEY in your environment\. Remove it there\.<\/span>/);
-  const openaiRow = out.slice(out.indexOf('data-provider="openai"'), out.indexOf('data-provider="anthropic"'));
+  assert.match(
+    groqRow,
+    /<span class="ui-provider-table__sr"[^>]*>This key comes from GROQ_API_KEY in your environment\. Remove it there\.<\/span>/,
+  );
+  const openaiRow = out.slice(
+    out.indexOf('data-provider="openai"'),
+    out.indexOf('data-provider="anthropic"'),
+  );
   assert.match(openaiRow, />Remove</);
   assert.doesNotMatch(openaiRow, /Remove it there/);
   // Test is disabled while it runs.
-  assert.match(openaiRow, /aria-disabled="true"[^>]*aria-label="Test OpenAI"|aria-label="Test OpenAI"[^>]*aria-disabled="true"/);
+  assert.match(
+    openaiRow,
+    /aria-disabled="true"[^>]*aria-label="Test OpenAI"|aria-label="Test OpenAI"[^>]*aria-disabled="true"/,
+  );
 });
 
 test('ProviderTable hosted: no key offers "Add key"; a refused key adds a plain line with Replace key', () => {
   const out = html(<ProviderTable {...hosted()} />);
-  const claude = out.slice(out.indexOf('data-provider="anthropic"'), out.indexOf('data-provider="openrouter"'));
+  const claude = out.slice(
+    out.indexOf('data-provider="anthropic"'),
+    out.indexOf('data-provider="openrouter"'),
+  );
   assert.match(claude, />Add key</);
   assert.doesNotMatch(claude, />Test</);
-  assert.match(out, /OpenRouter refused the saved key, so nothing was sent\. Replace it with a fresh one\. Your other providers are not affected\./);
+  assert.match(
+    out,
+    /OpenRouter refused the saved key, so nothing was sent\. Replace it with a fresh one\. Your other providers are not affected\./,
+  );
   assert.match(out, />Replace key</);
   assert.match(out, /Couldn&#x27;t reach OpenCode Go\. Nothing was sent\./);
   const env = html(
     <ProviderTable
       {...hosted({
-        rows: [{ provider: 'groq', isDefault: true, keySource: { kind: 'environment', variable: 'GROQ_API_KEY' }, status: { kind: 'refused' } }],
+        rows: [
+          {
+            provider: 'groq',
+            isDefault: true,
+            keySource: { kind: 'environment', variable: 'GROQ_API_KEY' },
+            status: { kind: 'refused' },
+          },
+        ],
       })}
     />,
   );
-  assert.match(env, /Groq refused the key from your environment, so nothing was sent\. Fix GROQ_API_KEY there\./);
+  assert.match(
+    env,
+    /Groq refused the key from your environment, so nothing was sent\. Fix GROQ_API_KEY there\./,
+  );
   assert.doesNotMatch(env, />Replace key</);
 });
 
@@ -216,9 +337,26 @@ test('ProviderTable local: address field with the default as placeholder, runnin
       onAddressChange={noop}
       onAction={noop}
       rows={[
-        { provider: 'ollama', address: 'http://localhost:11434', defaultAddress: 'http://localhost:11434', running: true, keySource: { kind: 'local' }, status: { kind: 'works', latencyMs: 90 } },
-        { provider: 'lmstudio', address: '', defaultAddress: 'http://localhost:1234', running: false },
-        { provider: 'custom', address: 'https://llm.example.org/v1', defaultAddress: '', keySource: { kind: 'none', variable: 'CUSTOM_AI_API_KEY' } },
+        {
+          provider: 'ollama',
+          address: 'http://localhost:11434',
+          defaultAddress: 'http://localhost:11434',
+          running: true,
+          keySource: { kind: 'local' },
+          status: { kind: 'works', latencyMs: 90 },
+        },
+        {
+          provider: 'lmstudio',
+          address: '',
+          defaultAddress: 'http://localhost:1234',
+          running: false,
+        },
+        {
+          provider: 'custom',
+          address: 'https://llm.example.org/v1',
+          defaultAddress: '',
+          keySource: { kind: 'none', variable: 'CUSTOM_AI_API_KEY' },
+        },
       ]}
     />,
   );
@@ -244,14 +382,28 @@ test('ProviderTable local: a saved or environment key offers Replace key and Rem
       onAddressChange={noop}
       onAction={noop}
       rows={[
-        { provider: 'ollama', address: 'http://localhost:11434', defaultAddress: 'http://localhost:11434', running: true, keySource: { kind: 'keychain' } },
-        { provider: 'custom', address: 'https://x.example/v1', defaultAddress: '', keySource: { kind: 'environment', variable: 'CUSTOM_AI_API_KEY' } },
+        {
+          provider: 'ollama',
+          address: 'http://localhost:11434',
+          defaultAddress: 'http://localhost:11434',
+          running: true,
+          keySource: { kind: 'keychain' },
+        },
+        {
+          provider: 'custom',
+          address: 'https://x.example/v1',
+          defaultAddress: '',
+          keySource: { kind: 'environment', variable: 'CUSTOM_AI_API_KEY' },
+        },
       ]}
     />,
   );
   assert.match(out, />Replace key</);
   assert.match(out, /Saved in Keychain/);
-  assert.match(out, /title="This key comes from CUSTOM_AI_API_KEY in your environment\. Remove it there\."/);
+  assert.match(
+    out,
+    /title="This key comes from CUSTOM_AI_API_KEY in your environment\. Remove it there\."/,
+  );
 });
 
 test('ProviderTable local: a refused or unreachable server explains itself like a hosted row', () => {
@@ -261,8 +413,20 @@ test('ProviderTable local: a refused or unreachable server explains itself like 
       onAddressChange={noop}
       onAction={noop}
       rows={[
-        { provider: 'custom', address: 'https://x.example/v1', defaultAddress: '', keySource: { kind: 'keychain' }, status: { kind: 'refused' } },
-        { provider: 'ollama', address: 'http://localhost:11434', defaultAddress: 'http://localhost:11434', running: false, status: { kind: 'unreachable' } },
+        {
+          provider: 'custom',
+          address: 'https://x.example/v1',
+          defaultAddress: '',
+          keySource: { kind: 'keychain' },
+          status: { kind: 'refused' },
+        },
+        {
+          provider: 'ollama',
+          address: 'http://localhost:11434',
+          defaultAddress: 'http://localhost:11434',
+          running: false,
+          status: { kind: 'unreachable' },
+        },
       ]}
     />,
   );
@@ -282,7 +446,15 @@ test('ProviderTable worst case: unbreakable address, 300-character model, CJK an
     <ProviderTable
       kind="features"
       onChange={noop}
-      rows={[{ feature: 'ask', provider: 'groq', model: longModel, providerOptions: ['groq'], modelOptions: [longModel] }]}
+      rows={[
+        {
+          feature: 'ask',
+          provider: 'groq',
+          model: longModel,
+          providerOptions: ['groq'],
+          modelOptions: [longModel],
+        },
+      ]}
     />,
   );
   assert.ok(feat.includes(longModel));
@@ -293,8 +465,16 @@ test('ProviderTable worst case: unbreakable address, 300-character model, CJK an
       onAddressChange={noop}
       rows={[
         { provider: 'custom', address: addr, defaultAddress: '' },
-        { provider: 'ollama', address: 'http://サーバー.example', defaultAddress: 'http://localhost:11434' },
-        { provider: 'lmstudio', address: 'http://خادم.example', defaultAddress: 'http://localhost:1234' },
+        {
+          provider: 'ollama',
+          address: 'http://サーバー.example',
+          defaultAddress: 'http://localhost:11434',
+        },
+        {
+          provider: 'lmstudio',
+          address: 'http://خادم.example',
+          defaultAddress: 'http://localhost:1234',
+        },
       ]}
     />,
   );
@@ -333,7 +513,10 @@ test('KeyRecorder idle: label, a button that names the shortcut, keycaps, no Res
   assert.match(out, />Done</);
   assert.match(out, /aria-label="Change the shortcut for Done\. Now J or ↓"/);
   assert.match(out, /title="Click to change"/);
-  assert.match(out, /<kbd class="ui-key-recorder__kbd">J<\/kbd><kbd class="ui-key-recorder__kbd">↓<\/kbd>/);
+  assert.match(
+    out,
+    /<kbd class="ui-key-recorder__kbd">J<\/kbd><kbd class="ui-key-recorder__kbd">↓<\/kbd>/,
+  );
   assert.doesNotMatch(out, />Reset</);
   assert.doesNotMatch(out, /conflict/);
   assertCleanCopy(out);
@@ -341,7 +524,13 @@ test('KeyRecorder idle: label, a button that names the shortcut, keycaps, no Res
 
 test('KeyRecorder idle: a changed shortcut offers Reset; a clash at rest is marked with words and an icon', () => {
   const out = html(
-    <KeyRecorder {...recorder({ chords: ['meta+j'], changed: true, conflictWith: { commandId: 'ask.dock', label: 'Toggle the Ask dock' } })} />,
+    <KeyRecorder
+      {...recorder({
+        chords: ['meta+j'],
+        changed: true,
+        conflictWith: { commandId: 'ask.dock', label: 'Toggle the Ask dock' },
+      })}
+    />,
   );
   assert.match(out, /aria-label="Reset Done to its default"[^>]*>Reset</);
   assert.match(out, /Same keys as Toggle the Ask dock/);
@@ -356,7 +545,10 @@ test('KeyRecorder recording: the hint, a waiting keycap, a capture button and Ca
   const out = html(<KeyRecorder {...recorder({ state: 'recording' })} />);
   assert.match(out, /data-state="recording"/);
   assert.match(out, /Press the new keys · Esc to cancel/);
-  assert.match(out, /aria-label="Recording a new shortcut for Done\. Press the new keys, or Escape to cancel\."/);
+  assert.match(
+    out,
+    /aria-label="Recording a new shortcut for Done\. Press the new keys, or Escape to cancel\."/,
+  );
   assert.match(out, /data-role="wait"/);
   assert.match(out, />Cancel</);
   assert.doesNotMatch(out, />Replace</);
@@ -365,7 +557,13 @@ test('KeyRecorder recording: the hint, a waiting keycap, a capture button and Ca
 
 test('KeyRecorder conflict: the pressed chord, who owns it, Replace and Cancel', () => {
   const out = html(
-    <KeyRecorder {...recorder({ state: 'conflict', pendingChord: 'l', conflictWith: { commandId: 'mail.later', label: 'Later' } })} />,
+    <KeyRecorder
+      {...recorder({
+        state: 'conflict',
+        pendingChord: 'l',
+        conflictWith: { commandId: 'mail.later', label: 'Later' },
+      })}
+    />,
   );
   assert.match(out, /data-state="conflict"/);
   assert.match(out, /data-role="new">L<\/kbd>/);
@@ -377,7 +575,10 @@ test('KeyRecorder conflict: the pressed chord, who owns it, Replace and Cancel',
 });
 
 test('KeyRecorder conflict: Return replaces and Tab is not recorded, so Replace and Cancel are reachable by key', () => {
-  const key = (k: string, extra: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean }> = {}) => ({ key: k, metaKey: false, ctrlKey: false, altKey: false, ...extra });
+  const key = (
+    k: string,
+    extra: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean }> = {},
+  ) => ({ key: k, metaKey: false, ctrlKey: false, altKey: false, ...extra });
   assert.equal(recorderKeyAction('conflict', key('Enter')), 'replace');
   assert.equal(recorderKeyAction('conflict', key('Tab')), 'move');
   assert.equal(recorderKeyAction('conflict', key('x')), 'record');
@@ -389,10 +590,22 @@ test('KeyRecorder conflict: Return replaces and Tab is not recorded, so Replace 
 
 test('KeyRecorder: a long conflicting label is truncated in one line, with the full text as a tooltip', () => {
   const long = 'Later '.repeat(60).trim();
-  const out = html(<KeyRecorder {...recorder({ state: 'conflict', pendingChord: 'l', conflictWith: { commandId: 'mail.later', label: long } })} />);
+  const out = html(
+    <KeyRecorder
+      {...recorder({
+        state: 'conflict',
+        pendingChord: 'l',
+        conflictWith: { commandId: 'mail.later', label: long },
+      })}
+    />,
+  );
   assert.match(out, /class="ui-key-recorder__conflict-text"/);
   assert.ok(out.includes(`title="Already used by ${long}"`));
-  const idle = html(<KeyRecorder {...recorder({ label: long, conflictWith: { commandId: 'mail.later', label: long } })} />);
+  const idle = html(
+    <KeyRecorder
+      {...recorder({ label: long, conflictWith: { commandId: 'mail.later', label: long } })}
+    />,
+  );
   assert.match(idle, /class="ui-key-recorder__conflict-text"/);
   assert.ok(idle.includes(`title="${long}"`));
 });
@@ -402,6 +615,10 @@ test('KeyRecorder worst case: 300-character label, many chords, one-letter comma
   const out = html(<KeyRecorder {...recorder({ label: 'L'.repeat(300), chords: many })} />);
   assert.equal((out.match(/class="ui-key-recorder__kbd"/g) ?? []).length, 6);
   for (const label of ['A', '完了', 'تم', 'Done 🎉']) {
-    assert.ok(html(<KeyRecorder {...recorder({ label })} />).includes(`dir="auto" title="${label}">${label}</span>`));
+    assert.ok(
+      html(<KeyRecorder {...recorder({ label })} />).includes(
+        `dir="auto" title="${label}">${label}</span>`,
+      ),
+    );
   }
 });

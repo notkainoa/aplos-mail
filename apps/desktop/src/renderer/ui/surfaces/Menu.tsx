@@ -7,7 +7,16 @@
 import { useEffect, useId, type KeyboardEvent } from 'react';
 import { motions } from '../generated/motion';
 import type { ComponentPropsMap, MenuEntry, TagColor } from '../props';
-import { PartIcon, PartKeys, SrOnly, keysFor, lowerFirst, useDismiss, useFloating, usePresence } from './parts';
+import {
+  PartIcon,
+  PartKeys,
+  SrOnly,
+  keysFor,
+  lowerFirst,
+  useDismiss,
+  useFloating,
+  usePresence,
+} from './parts';
 
 type ItemEntry = Extract<MenuEntry, { kind: 'item' }>;
 
@@ -15,7 +24,7 @@ function Swatches({ swatch }: { swatch: TagColor | readonly TagColor[] }) {
   const colors = typeof swatch === 'string' ? [swatch] : swatch;
   return (
     <span className="ui-menu__swatches" aria-hidden="true">
-      {colors.map((color) => (
+      {colors.map(color => (
         <i key={color} className="ui-menu__swatch" data-color={color} />
       ))}
     </span>
@@ -23,7 +32,18 @@ function Swatches({ swatch }: { swatch: TagColor | readonly TagColor[] }) {
 }
 
 export function Menu(props: ComponentPropsMap['Menu']) {
-  const { open, anchor, label, entries, activeId, checkedId, numbered, onActiveChange, onSelect, onClose } = props;
+  const {
+    open,
+    anchor,
+    label,
+    entries,
+    activeId,
+    checkedId,
+    numbered,
+    onActiveChange,
+    onSelect,
+    onClose,
+  } = props;
   const baseId = useId();
   const { mounted, leaving } = usePresence(open, motions.reveal.durations.out);
   const { ref, style, placed } = useFloating(mounted, anchor, 'below-start');
@@ -36,7 +56,7 @@ export function Menu(props: ComponentPropsMap['Menu']) {
   if (!mounted) return null;
 
   const items = entries.filter((entry): entry is ItemEntry => entry.kind === 'item');
-  const enabled = items.filter((item) => !item.disabled);
+  const enabled = items.filter(item => !item.disabled);
   const digitOf = new Map<string, number>();
   if (numbered) items.slice(0, 9).forEach((item, i) => digitOf.set(item.id, i + 1));
   const domId = (id: string) => `${baseId}-${id}`;
@@ -48,7 +68,7 @@ export function Menu(props: ComponentPropsMap['Menu']) {
     onClose();
   };
   const choose = (id: string) => {
-    const item = items.find((entry) => entry.id === id);
+    const item = items.find(entry => entry.id === id);
     if (!item || item.disabled) return;
     anchor?.focus({ preventScroll: true });
     onSelect(id);
@@ -62,7 +82,7 @@ export function Menu(props: ComponentPropsMap['Menu']) {
   };
   const move = (delta: number | 'first' | 'last') => {
     if (enabled.length === 0) return;
-    const at = enabled.findIndex((item) => item.id === activeId);
+    const at = enabled.findIndex(item => item.id === activeId);
     let next: number;
     if (delta === 'first') next = 0;
     else if (delta === 'last') next = enabled.length - 1;
@@ -81,7 +101,7 @@ export function Menu(props: ComponentPropsMap['Menu']) {
       event.preventDefault();
       if (activeId) choose(activeId);
     } else if (key === 'ArrowRight') {
-      const item = items.find((entry) => entry.id === activeId);
+      const item = items.find(entry => entry.id === activeId);
       if (item?.inlineAction) {
         event.preventDefault();
         fireInline(item);
@@ -92,7 +112,13 @@ export function Menu(props: ComponentPropsMap['Menu']) {
       close();
     } else if (key === 'Tab') {
       onClose();
-    } else if (numbered && /^[1-9]$/.test(key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    } else if (
+      numbered &&
+      /^[1-9]$/.test(key) &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
       const item = items[Number(key) - 1];
       if (item) {
         event.preventDefault();
@@ -101,7 +127,7 @@ export function Menu(props: ComponentPropsMap['Menu']) {
     }
   };
 
-  const activeItem = items.find((item) => item.id === activeId && !item.disabled);
+  const activeItem = items.find(item => item.id === activeId && !item.disabled);
 
   return (
     <div
@@ -120,7 +146,8 @@ export function Menu(props: ComponentPropsMap['Menu']) {
       onKeyDown={onKeyDown}
     >
       {entries.map((entry, index) => {
-        if (entry.kind === 'separator') return <div key={`sep-${index}`} role="separator" className="ui-menu__sep" />;
+        if (entry.kind === 'separator')
+          return <div key={`sep-${index}`} role="separator" className="ui-menu__sep" />;
         if (entry.kind === 'label') {
           return (
             <div key={`label-${index}`} role="presentation" className="ui-menu__label">
@@ -153,7 +180,9 @@ export function Menu(props: ComponentPropsMap['Menu']) {
             onClick={() => choose(entry.id)}
           >
             {numbered ? <span className="ui-menu__num">{digit ?? ''}</span> : null}
-            {picker ? <span className="ui-menu__check">{checked ? <PartIcon name="check" /> : null}</span> : null}
+            {picker ? (
+              <span className="ui-menu__check">{checked ? <PartIcon name="check" /> : null}</span>
+            ) : null}
             {entry.icon ? <PartIcon name={entry.icon} /> : null}
             {entry.swatch ? <Swatches swatch={entry.swatch} /> : null}
             <span className="ui-menu__text">
@@ -174,14 +203,16 @@ export function Menu(props: ComponentPropsMap['Menu']) {
                     aria-hidden="true"
                     className="ui-menu__inline"
                     data-tone={entry.inlineAction.tone}
-                    onClick={(event) => {
+                    onClick={event => {
                       event.stopPropagation();
                       fireInline(entry);
                     }}
                   >
                     {entry.inlineAction.label}
                   </button>
-                  <SrOnly id={hintId}>{`Press Right Arrow to ${lowerFirst(entry.inlineAction.label)}.`}</SrOnly>
+                  <SrOnly
+                    id={hintId}
+                  >{`Press Right Arrow to ${lowerFirst(entry.inlineAction.label)}.`}</SrOnly>
                 </>
               ) : null}
             </span>

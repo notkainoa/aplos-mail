@@ -12,11 +12,13 @@ import { TextField } from './TextField';
 const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 function plainKeys(entry: ShortcutEntry): string {
-  return entry.alternatives.map((alt) => (alt.hold ? `hold ${alt.chord}` : alt.chord)).join(' or ');
+  return entry.alternatives.map(alt => (alt.hold ? `hold ${alt.chord}` : alt.chord)).join(' or ');
 }
 
 function matches(entry: ShortcutEntry, needle: string): boolean {
-  return entry.label.toLowerCase().includes(needle) || plainKeys(entry).toLowerCase().includes(needle);
+  return (
+    entry.label.toLowerCase().includes(needle) || plainKeys(entry).toLowerCase().includes(needle)
+  );
 }
 
 /** The label with the first match marked; unchanged when lower-casing would shift the indexes (rare scripts). */
@@ -34,7 +36,14 @@ function highlight(text: string, needle: string): ReactNode {
   );
 }
 
-export function ShortcutSheet({ open, groups, columns, query, onQueryChange, onClose }: ShortcutSheetProps) {
+export function ShortcutSheet({
+  open,
+  groups,
+  columns,
+  query,
+  onQueryChange,
+  onClose,
+}: ShortcutSheetProps) {
   const uid = useId();
   const titleId = `${uid}-title`;
   const filterId = `${uid}-filter`;
@@ -42,7 +51,12 @@ export function ShortcutSheet({ open, groups, columns, query, onQueryChange, onC
   const opener = useRef<HTMLElement | null>(null);
 
   // Focus goes back to whatever opened the sheet. It is read during render, before the filter field takes focus.
-  if (open && opener.current === null && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+  if (
+    open &&
+    opener.current === null &&
+    typeof document !== 'undefined' &&
+    document.activeElement instanceof HTMLElement
+  ) {
     opener.current = document.activeElement;
   }
   useEffect(() => {
@@ -55,13 +69,13 @@ export function ShortcutSheet({ open, groups, columns, query, onQueryChange, onC
   if (!open) return null;
 
   const needle = query.trim().toLowerCase();
-  const byId = new Map<string, ShortcutGroup>(groups.map((group) => [group.id, group]));
+  const byId = new Map<string, ShortcutGroup>(groups.map(group => [group.id, group]));
   const visible = new Map<string, readonly ShortcutEntry[]>();
   let shown = 0;
   let total = 0;
   for (const group of groups) {
     total += group.entries.length;
-    const entries = needle ? group.entries.filter((entry) => matches(entry, needle)) : group.entries;
+    const entries = needle ? group.entries.filter(entry => matches(entry, needle)) : group.entries;
     if (entries.length > 0) visible.set(group.id, entries);
     shown += entries.length;
   }
@@ -96,7 +110,7 @@ export function ShortcutSheet({ open, groups, columns, query, onQueryChange, onC
     <div
       className="ui-shortcut-sheet"
       data-state="open"
-      onPointerDown={(event) => {
+      onPointerDown={event => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
@@ -131,27 +145,38 @@ export function ShortcutSheet({ open, groups, columns, query, onQueryChange, onC
           </div>
           <Button variant="icon" icon="close" label="Close" keys="Esc" onPress={onClose} />
         </header>
-        <div className="ui-shortcut-sheet-body" tabIndex={0} role="region" aria-label="All shortcuts">
+        <div
+          className="ui-shortcut-sheet-body"
+          tabIndex={0}
+          role="region"
+          aria-label="All shortcuts"
+        >
           {shown === 0 ? (
             <p className="ui-shortcut-sheet-empty">No shortcut matches ‘{query.trim()}’.</p>
           ) : (
             <div className="ui-shortcut-sheet-cols">
               {columns.map((ids, columnIndex) => (
                 <div key={columnIndex} className="ui-shortcut-sheet-col">
-                  {ids.map((groupId) => {
+                  {ids.map(groupId => {
                     const group = byId.get(groupId);
                     const entries = visible.get(groupId);
                     if (!group || !entries) return null;
                     const headingId = `${uid}-g-${groupId}`;
                     return (
-                      <section key={groupId} className="ui-shortcut-group" aria-labelledby={headingId}>
+                      <section
+                        key={groupId}
+                        className="ui-shortcut-group"
+                        aria-labelledby={headingId}
+                      >
                         <h3 id={headingId} className="ui-shortcut-group-label">
                           {group.label}
                         </h3>
                         <ul className="ui-shortcut-list">
                           {entries.map((entry, index) => (
                             <li key={`${entry.commandId}:${index}`} className="ui-shortcut-row">
-                              <span className="ui-shortcut-label">{highlight(entry.label, needle)}</span>
+                              <span className="ui-shortcut-label">
+                                {highlight(entry.label, needle)}
+                              </span>
                               <span className="ui-shortcut-keys">
                                 <KeyCaps caps={entry.alternatives} reveal="always" />
                               </span>

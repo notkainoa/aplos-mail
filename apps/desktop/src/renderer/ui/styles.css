@@ -1,15 +1,15 @@
 /* The renderer's one stylesheet: the base layer, then every component family
    (DESIGN 6). Screens import this file once and never style their own controls. */
 
-@import "./base.css";
-@import "./buttons-keys/buttons-keys.css";
-@import "./controls/controls.css";
-@import "./surfaces/surfaces.css";
-@import "./status/status.css";
-@import "./list/list.css";
-@import "./reader/reader.css";
-@import "./compose/compose.css";
-@import "./ask/ask.css";
-@import "./calendar/calendar.css";
-@import "./settings/settings.css";
-@import "./onboarding/onboarding.css";
+@import './base.css';
+@import './buttons-keys/buttons-keys.css';
+@import './controls/controls.css';
+@import './surfaces/surfaces.css';
+@import './status/status.css';
+@import './list/list.css';
+@import './reader/reader.css';
+@import './compose/compose.css';
+@import './ask/ask.css';
+@import './calendar/calendar.css';
+@import './settings/settings.css';
+@import './onboarding/onboarding.css';

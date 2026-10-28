@@ -39,7 +39,7 @@ export function firstNameOf(from: string): string {
   const whole = from.trim();
   if (whole === '' || whole.includes('@')) return whole;
   const words = whole.split(/\s+/);
-  const name = words.find((w) => !TITLES.has(w.replace(/\.$/, '').toLowerCase()));
+  const name = words.find(w => !TITLES.has(w.replace(/\.$/, '').toLowerCase()));
   return name ?? whole;
 }
 
@@ -78,7 +78,12 @@ export function EventDetail({
   // The radiogroup pattern: one tab stop (the chosen answer, or the first), arrows move to and choose the next.
   const onAnswerKey = (e: KeyboardEvent<HTMLButtonElement>, at: number): void => {
     if (e.nativeEvent.isComposing) return;
-    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    const step =
+      e.key === 'ArrowRight' || e.key === 'ArrowDown'
+        ? 1
+        : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+          ? -1
+          : 0;
     if (step === 0) return;
     e.preventDefault();
     const next = (at + step + ANSWERS.length) % ANSWERS.length;
@@ -103,12 +108,18 @@ export function EventDetail({
           aria-label="More"
           aria-haspopup="menu"
           title={more}
-          onClick={(e) => onMore(e.currentTarget)}
+          onClick={e => onMore(e.currentTarget)}
         >
           <CalIcon name="more" />
         </button>
         {onClose ? (
-          <button type="button" className="ui-cal-icon-button" aria-label="Close" title="Close · Esc" onClick={onClose}>
+          <button
+            type="button"
+            className="ui-cal-icon-button"
+            aria-label="Close"
+            title="Close · Esc"
+            onClick={onClose}
+          >
             <CalIcon name="close" />
           </button>
         ) : null}
@@ -145,14 +156,20 @@ export function EventDetail({
               title="Open the invite email · O"
               onClick={() => onOpenInvite?.(event.invite!.threadId)}
             >
-              {firstNameOf(event.invite.from) ? `Invite from ${firstNameOf(event.invite.from)}` : 'Invite'}
+              {firstNameOf(event.invite.from)
+                ? `Invite from ${firstNameOf(event.invite.from)}`
+                : 'Invite'}
             </button>
           </li>
         ) : null}
         {isPlan && event.source ? (
           <li>
             <CalIcon name="mail" />
-            <button type="button" className="ui-cal-link" onClick={() => onOpenSource?.(event.source!.threadId)}>
+            <button
+              type="button"
+              className="ui-cal-link"
+              onClick={() => onOpenSource?.(event.source!.threadId)}
+            >
               {`From ${event.source.from}: ${event.source.subject}`}
             </button>
           </li>
@@ -161,8 +178,15 @@ export function EventDetail({
 
       {isPlan ? (
         <div className="ui-event-detail__plan">
-          <p className="ui-event-detail__note">Found in your mail. Nothing is added until you confirm.</p>
-          <button type="button" className="ui-cal-button" data-variant="filled" onClick={onConfirmPlan}>
+          <p className="ui-event-detail__note">
+            Found in your mail. Nothing is added until you confirm.
+          </p>
+          <button
+            type="button"
+            className="ui-cal-button"
+            data-variant="filled"
+            onClick={onConfirmPlan}
+          >
             Add to Calendar
           </button>
         </div>
@@ -174,20 +198,24 @@ export function EventDetail({
             Going?
           </h3>
           <div className="ui-event-detail__rsvp-row">
-            <div className="ui-event-detail__answers" role="radiogroup" aria-labelledby={rsvpLabelId}>
+            <div
+              className="ui-event-detail__answers"
+              role="radiogroup"
+              aria-labelledby={rsvpLabelId}
+            >
               {ANSWERS.map((a, i) => {
                 const key = keycapOf(reply.commands[a.command]);
                 const checked = reply.answer === a.id;
                 return (
                   <button
                     key={a.id}
-                    ref={(el) => {
+                    ref={el => {
                       answerRefs.current[i] = el;
                     }}
                     type="button"
                     role="radio"
                     tabIndex={checked || (reply.answer === null && i === 0) ? 0 : -1}
-                    onKeyDown={(e) => onAnswerKey(e, i)}
+                    onKeyDown={e => onAnswerKey(e, i)}
                     className="ui-event-detail__answer"
                     aria-checked={checked}
                     data-checked={checked ? 'true' : 'false'}
@@ -217,7 +245,7 @@ export function EventDetail({
         <>
           <h3 className="ui-event-detail__label">Guests</h3>
           <ul className="ui-event-detail__guests">
-            {guests.map((guest) => {
+            {guests.map(guest => {
               const status = GUEST_STATUS[guest.status];
               const role = guestRole(guest);
               return (
@@ -237,7 +265,9 @@ export function EventDetail({
         </>
       ) : null}
 
-      {event.description ? <p className="ui-event-detail__description">{event.description}</p> : null}
+      {event.description ? (
+        <p className="ui-event-detail__description">{event.description}</p>
+      ) : null}
     </section>
   );
 }

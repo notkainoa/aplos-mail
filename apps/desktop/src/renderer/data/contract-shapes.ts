@@ -314,20 +314,10 @@ export type HomeGroupKey = 'do' | 'fromLater' | 'update' | 'follow';
 export type LaterBucket = 'overdue' | 'today' | 'week' | 'someday';
 /** Mailbox roles a list can show; `done` is the Done place (DESIGN 7.4). Open string enum. `drafts` is not a valid role: drafts are not threads (ARCH 7.4), so the Drafts list is the `drafts` view spec. provisional: replaced by import from @aplos/contract at the freeze */
 export type MailboxRole =
-  | 'all'
-  | 'done'
-  | 'sent'
-  | 'trash'
-  | 'spam'
-  | 'inbox'
-  | 'starred'
-  | 'important'
-  | (string & {});
+  'all' | 'done' | 'sent' | 'trash' | 'spam' | 'inbox' | 'starred' | 'important' | (string & {});
 
 /** A mailbox by role or by label id. provisional: replaced by import from @aplos/contract at the freeze */
-export type MailboxRef =
-  | { readonly role: MailboxRole }
-  | { readonly labelId: LabelId };
+export type MailboxRef = { readonly role: MailboxRole } | { readonly labelId: LabelId };
 
 /** One parsed search operator, shown as a removable pill (DESIGN 7.9). provisional: replaced by import from @aplos/contract at the freeze */
 export type SearchOperator =
@@ -490,7 +480,8 @@ export interface ResetFrame {
 }
 
 /** Why a connect or reconnect ended, for the copy (open enum; gap list P2, P11). provisional: replaced by import from @aplos/contract at the freeze */
-export type ConnectReasonCode = 'wrongAccount' | 'scopeMissing' | 'denied' | 'timeout' | 'cancelled' | (string & {});
+export type ConnectReasonCode =
+  'wrongAccount' | 'scopeMissing' | 'denied' | 'timeout' | 'cancelled' | (string & {});
 
 /**
  * `connect` push frame: one account connect, reconnect or permission grant in the browser ("Waiting for Google in
@@ -543,7 +534,8 @@ export interface ProgressFrame {
   /** Which kind of run (open enum). */
   readonly source: 'ask' | 'search' | 'ai' | 'transcribe' | 'setup' | (string & {});
   /** What happened (open enum); `done` and `error` end the run. */
-  readonly kind: 'step' | 'text' | 'citation' | 'proposal' | 'done' | 'error' | 'usage' | (string & {});
+  readonly kind:
+    'step' | 'text' | 'citation' | 'proposal' | 'done' | 'error' | 'usage' | (string & {});
   /** With `kind: 'step'`. */
   readonly step?: ProgressStep;
   /** With `kind: 'text'`: answer text to append. */
@@ -684,7 +676,12 @@ export type AccountStatus =
   /** "Syncing…" after 150 ms. */
   | { readonly state: 'syncing' }
   /** "Importing n of m"; `firstWindow` is true while reading the newest ~50 (first-sync "Reading your newest mail"). */
-  | { readonly state: 'backfilling'; readonly n: number; readonly m: number; readonly firstWindow: boolean }
+  | {
+      readonly state: 'backfilling';
+      readonly n: number;
+      readonly m: number;
+      readonly firstWindow: boolean;
+    }
   /** "Google asked us to slow down. Resuming at 2:14 PM." / daily limit copy; `until` null when unknown. */
   | { readonly state: 'paused'; readonly until: EpochMs | null; readonly reason: PausedReason }
   /** Token already expired: Reconnect. */
@@ -789,11 +786,25 @@ export interface SetupAccountStatus {
   /** Account id. */
   readonly accountId: AccountId;
   /** Checkpoint state. */
-  readonly state: 'connecting' | 'finding' | 'reading' | 'sorting' | 'ready' | 'paused' | 'partial' | 'failed' | 'notConnected';
+  readonly state:
+    | 'connecting'
+    | 'finding'
+    | 'reading'
+    | 'sorting'
+    | 'ready'
+    | 'paused'
+    | 'partial'
+    | 'failed'
+    | 'notConnected';
   /** First window: `found` is an estimate only when the provider gives one; `total` is the window target (~50), never the mailbox size. */
   readonly firstWindow: { readonly found?: number; readonly read: number; readonly total: number };
   /** Sorting pass; absent without stored consent and a provider. */
-  readonly ai?: { readonly sorted: number; readonly total: number; readonly capped: boolean; readonly failed: number };
+  readonly ai?: {
+    readonly sorted: number;
+    readonly total: number;
+    readonly capped: boolean;
+    readonly failed: number;
+  };
   /** Backfill; never gates anything. */
   readonly backfill: { readonly read: number; readonly target: number };
   /** Resume time when paused. */
@@ -893,7 +904,8 @@ export interface DraftSaveResult {
 }
 
 /** Submission states (ARCH 7.1-7.3). provisional: replaced by import from @aplos/contract at the freeze */
-export type SubmissionState = 'queued' | 'sending' | 'sent' | 'uncertain' | 'failed' | 'cancelled' | 'suspended';
+export type SubmissionState =
+  'queued' | 'sending' | 'sent' | 'uncertain' | 'failed' | 'cancelled' | 'suspended';
 
 /** Options for `Submission/set {action: send}`. provisional: replaced by import from @aplos/contract at the freeze */
 export interface SendOptions {
@@ -997,7 +1009,13 @@ export interface AskRequest {
 /** `progress` frames of one Ask run; ephemeral and never logged (ARCH 9.2). provisional: replaced by import from @aplos/contract at the freeze */
 export type AskFrame =
   /** The one steady step line, for example "Reading 14 emails from Jordan"; `id`, `state` and `count` as in `ProgressStep` (the fold summary). */
-  | { readonly kind: 'step'; readonly text: string; readonly id?: string; readonly state?: ProgressStep['state']; readonly count?: number }
+  | {
+      readonly kind: 'step';
+      readonly text: string;
+      readonly id?: string;
+      readonly state?: ProgressStep['state'];
+      readonly count?: number;
+    }
   /** Appended answer text. */
   | { readonly kind: 'text'; readonly text: string }
   /** A citation became available. */
@@ -1040,7 +1058,12 @@ export interface WhyItsHere {
 /** Interactive AI requests the composer and reader make (`Ai/request`). provisional: replaced by import from @aplos/contract at the freeze */
 export type AiRequest =
   /** Draft a reply or message into the composer as a dim suggestion. */
-  | { readonly kind: 'draft'; readonly draftId: DraftId; readonly threadId: ThreadId | null; readonly hint?: string }
+  | {
+      readonly kind: 'draft';
+      readonly draftId: DraftId;
+      readonly threadId: ThreadId | null;
+      readonly hint?: string;
+    }
   /** Polish: suggested edits shown as a diff, never applied by themselves. */
   | { readonly kind: 'polish'; readonly draftId: DraftId; readonly text: string }
   /** Re-run a thread's summary; the result arrives as a row change. */
@@ -1157,7 +1180,10 @@ export interface AiProviderInfo {
   /** Hosted, or on this Mac and custom. */
   readonly group: 'hosted' | 'local';
   /** Where the key comes from; the env var name shows as "From environment: GROQ_API_KEY". */
-  readonly keySource: { readonly kind: 'env'; readonly envVar: string } | { readonly kind: 'keychain' } | { readonly kind: 'none' };
+  readonly keySource:
+    | { readonly kind: 'env'; readonly envVar: string }
+    | { readonly kind: 'keychain' }
+    | { readonly kind: 'none' };
   /** Editable address for local and custom servers. */
   readonly address: string | null;
   /** Can do speech-to-text (Voice lists only these). */
@@ -1207,7 +1233,11 @@ export interface AiConsent {
 }
 
 /** What Allow sends (`Consent/set`); null revokes. provisional: replaced by import from @aplos/contract at the freeze */
-export type AiConsentGrant = { readonly providerId: string; readonly model: string; readonly version: number } | null;
+export type AiConsentGrant = {
+  readonly providerId: string;
+  readonly model: string;
+  readonly version: number;
+} | null;
 
 /** One calendar event as Today and Home's "Next:" line show it; the minimal frozen shape, extended additively by `ui-calendar` (plan 30 4.1 view specs). provisional: replaced by import from @aplos/contract at the freeze */
 export interface EventRow {

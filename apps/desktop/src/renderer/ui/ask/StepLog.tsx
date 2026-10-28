@@ -21,7 +21,13 @@ export function StepLog({ current, summary, steps, expanded, onToggle }: StepLog
   }
   return (
     <div className="ui-step-log" data-state={expanded ? 'open' : 'folded'}>
-      <button type="button" className="ui-step-log__toggle" aria-expanded={expanded} aria-controls={listId} onClick={onToggle}>
+      <button
+        type="button"
+        className="ui-step-log__toggle"
+        aria-expanded={expanded}
+        aria-controls={listId}
+        onClick={onToggle}
+      >
         <Icon name="chevron-right" size="xs" />
         <span dir="auto">{summary}</span>
       </button>

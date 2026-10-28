@@ -23,7 +23,15 @@ export const MONTHS = [
   'December',
 ] as const;
 
-export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+export const WEEKDAYS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const;
 
 const pad = (n: number): string => String(n).padStart(2, '0');
 
@@ -170,7 +178,7 @@ export function monthMatrix(ym: IsoYearMonth, weekStartsOn: 0 | 1): IsoDate[][] 
 
 /** Weekday indexes (0 Sunday) in column order. */
 export function weekdayOrder(weekStartsOn: 0 | 1): number[] {
-  return [0, 1, 2, 3, 4, 5, 6].map((i) => (i + weekStartsOn) % 7);
+  return [0, 1, 2, 3, 4, 5, 6].map(i => (i + weekStartsOn) % 7);
 }
 
 /** Half-hour options "00:00" to "23:30", with `extra` added if it falls between. */
@@ -185,7 +193,10 @@ export function timeOptions(extra?: IsoTime): IsoTime[] {
 }
 
 /** The grid's vertical scale: first and last hour shown, widened when an entry lies outside 8 AM to 8 PM. */
-export function hourRange(spans: ReadonlyArray<{ start: number; end: number }>): { first: number; last: number } {
+export function hourRange(spans: ReadonlyArray<{ start: number; end: number }>): {
+  first: number;
+  last: number;
+} {
   let first = 8;
   let last = 20;
   for (const s of spans) {

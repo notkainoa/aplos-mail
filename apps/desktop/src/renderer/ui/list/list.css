@@ -11,11 +11,11 @@
   height: var(--icon);
   stroke-width: var(--icon-stroke);
 }
-.ui-list-icon[data-size="sm"] {
+.ui-list-icon[data-size='sm'] {
   width: var(--icon-sm);
   height: var(--icon-sm);
 }
-.ui-list-icon[data-size="xs"] {
+.ui-list-icon[data-size='xs'] {
   width: var(--icon-xs);
   height: var(--icon-xs);
 }
@@ -44,7 +44,7 @@
   letter-spacing: var(--track-caption);
 }
 /* While ⌘ is held the command's key overlays the button's corner; it never takes space (DESIGN §8). */
-.ui-list-kbd[data-reveal="badge"] {
+.ui-list-kbd[data-reveal='badge'] {
   position: absolute;
   top: calc(-1 * var(--space-1));
   right: calc(-1 * var(--space-1));
@@ -81,7 +81,7 @@
     color var(--dur-hover) var(--ease-std),
     box-shadow var(--dur-hover) var(--ease-std);
 }
-.ui-list-btn[data-size="md"] {
+.ui-list-btn[data-size='md'] {
   --ui-btn-h: var(--control-md);
 }
 .ui-list-btn__label {
@@ -99,36 +99,36 @@
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
 }
-.ui-list-btn[data-variant="text"] .ui-list-icon {
+.ui-list-btn[data-variant='text'] .ui-list-icon {
   color: var(--dim);
 }
-.ui-list-btn[data-variant="icon"],
-.ui-list-btn[data-label-hidden="true"] {
+.ui-list-btn[data-variant='icon'],
+.ui-list-btn[data-label-hidden='true'] {
   width: var(--ui-btn-h);
   padding: 0;
   color: var(--dim);
 }
-.ui-list-btn[data-variant="icon"]:active,
-.ui-list-btn[data-label-hidden="true"]:active {
+.ui-list-btn[data-variant='icon']:active,
+.ui-list-btn[data-label-hidden='true']:active {
   transform: scale(var(--press-scale-icon));
 }
 /* The one filled button: ink blue, a 1 px top highlight and bottom shade that swap on press. */
-.ui-list-btn[data-variant="filled"] {
+.ui-list-btn[data-variant='filled'] {
   background-color: var(--accent);
   color: var(--accent-ink);
   box-shadow:
     inset 0 1px 0 var(--press-hi),
     inset 0 calc(-1 * 1px) 0 var(--press-lo);
 }
-.ui-list-btn[data-variant="filled"]:active {
+.ui-list-btn[data-variant='filled']:active {
   box-shadow: inset 0 1px 0 var(--press-lo);
 }
-.ui-list-btn[data-variant="filled"] .ui-list-kbd {
+.ui-list-btn[data-variant='filled'] .ui-list-kbd {
   background-color: color-mix(in srgb, var(--accent-ink) 16%, transparent);
   color: var(--accent-ink);
 }
-.ui-list-btn[data-tone="danger"],
-.ui-list-btn[data-tone="danger"] .ui-list-icon {
+.ui-list-btn[data-tone='danger'],
+.ui-list-btn[data-tone='danger'] .ui-list-icon {
   color: var(--stamp-ink);
 }
 .ui-list-btn:disabled {
@@ -140,28 +140,28 @@
 .ui-list-btn:disabled .ui-list-kbd {
   color: var(--dim);
 }
-.ui-list-btn[data-variant="filled"]:disabled {
+.ui-list-btn[data-variant='filled']:disabled {
   background-color: var(--sunken);
   box-shadow: none;
 }
 
 @media (hover: hover) {
-  .ui-list-btn[data-variant="text"]:hover,
-  .ui-list-btn[data-variant="icon"]:hover,
-  .ui-list-btn[data-label-hidden="true"]:hover {
+  .ui-list-btn[data-variant='text']:hover,
+  .ui-list-btn[data-variant='icon']:hover,
+  .ui-list-btn[data-label-hidden='true']:hover {
     background-color: var(--hover);
     color: var(--ink);
   }
-  .ui-list-btn[data-variant="text"]:hover .ui-list-icon {
+  .ui-list-btn[data-variant='text']:hover .ui-list-icon {
     color: var(--ink);
   }
-  .ui-list-btn[data-tone="danger"]:hover,
-  .ui-list-btn[data-tone="danger"]:hover .ui-list-icon {
+  .ui-list-btn[data-tone='danger']:hover,
+  .ui-list-btn[data-tone='danger']:hover .ui-list-icon {
     background-color: var(--stamp-tint);
     color: var(--stamp-ink);
   }
   /* A spread larger than half the height fills the whole button with the hover tint, no gradient. */
-  .ui-list-btn[data-variant="filled"]:hover {
+  .ui-list-btn[data-variant='filled']:hover {
     box-shadow:
       inset 0 1px 0 var(--press-hi),
       inset 0 calc(-1 * 1px) 0 var(--press-lo),
@@ -200,19 +200,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ui-chip[data-overdue="true"],
-.ui-chip[data-overdue="true"] .ui-list-icon {
+.ui-chip[data-overdue='true'],
+.ui-chip[data-overdue='true'] .ui-list-icon {
   background-color: var(--stamp-tint);
   color: var(--stamp-ink);
 }
-.ui-chip[data-overdue="true"] .ui-list-icon {
+.ui-chip[data-overdue='true'] .ui-list-icon {
   background-color: transparent;
 }
-.ui-chip[data-kind="label"][data-color] {
+.ui-chip[data-kind='label'][data-color] {
   box-shadow: inset 0 0 0 1px var(--swatch);
 }
 
-.ui-chip[data-kind="attachment"] {
+.ui-chip[data-kind='attachment'] {
   gap: var(--space-2);
   height: var(--control-md);
   padding: 0;
@@ -248,19 +248,19 @@
   font: var(--type-small);
   letter-spacing: var(--track-small);
 }
-.ui-chip[data-state="failed"] {
+.ui-chip[data-state='failed'] {
   padding-right: var(--space-1);
   background-color: var(--stamp-tint);
   color: var(--stamp-ink);
 }
-.ui-chip[data-state="failed"] .ui-list-icon {
+.ui-chip[data-state='failed'] .ui-list-icon {
   color: var(--stamp-ink);
 }
 .ui-chip__error {
   flex: none;
 }
 
-.ui-chip[data-kind="operator"] {
+.ui-chip[data-kind='operator'] {
   padding: 0 var(--space-1) 0 var(--space-2);
   border-radius: var(--radius-pill);
   color: var(--ink);
@@ -282,7 +282,9 @@
   background-color: transparent;
   color: var(--dim);
   cursor: default;
-  transition: background-color var(--dur-hover) var(--ease-std), color var(--dur-hover) var(--ease-std);
+  transition:
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
 }
 
 @media (hover: hover) {
@@ -317,13 +319,13 @@
 .ui-commit-chip .ui-list-icon {
   color: inherit;
 }
-.ui-commit-chip[data-kind="done"] {
+.ui-commit-chip[data-kind='done'] {
   background-color: var(--hill);
 }
-.ui-commit-chip[data-kind="later"] {
+.ui-commit-chip[data-kind='later'] {
   background-color: var(--dusk);
 }
-.ui-commit-chip[data-kind="trash"] {
+.ui-commit-chip[data-kind='trash'] {
   background-color: var(--stamp);
 }
 
@@ -335,19 +337,19 @@
   transform-origin: top;
   pointer-events: none;
 }
-.ui-commit-edge[data-side="right"] {
+.ui-commit-edge[data-side='right'] {
   right: 0;
 }
-.ui-commit-edge[data-side="left"] {
+.ui-commit-edge[data-side='left'] {
   left: 0;
 }
-.ui-commit-edge[data-kind="done"] {
+.ui-commit-edge[data-kind='done'] {
   background-color: var(--hill);
 }
-.ui-commit-edge[data-kind="later"] {
+.ui-commit-edge[data-kind='later'] {
   background-color: var(--dusk);
 }
-.ui-commit-edge[data-kind="trash"] {
+.ui-commit-edge[data-kind='trash'] {
   background-color: var(--stamp);
 }
 
@@ -385,7 +387,7 @@
   gap: var(--space-2);
 }
 /* Inbox zero: a calm centred block; the space carries it. No sky, no card, no icon. */
-.ui-empty-line[data-size="display"] {
+.ui-empty-line[data-size='display'] {
   box-sizing: border-box;
   align-items: center;
   justify-content: center;
@@ -394,21 +396,21 @@
   padding: var(--pane-head) var(--space-8) var(--space-10);
   text-align: center;
 }
-.ui-empty-line[data-size="display"] .ui-empty-line__copy {
+.ui-empty-line[data-size='display'] .ui-empty-line__copy {
   align-items: center;
   gap: var(--space-3);
 }
-.ui-empty-line[data-size="display"] .ui-empty-line__text {
+.ui-empty-line[data-size='display'] .ui-empty-line__text {
   color: var(--ink);
   font: var(--type-display);
   letter-spacing: var(--track-display);
   text-wrap: balance;
 }
-.ui-empty-line[data-size="display"] .ui-empty-line__detail {
+.ui-empty-line[data-size='display'] .ui-empty-line__detail {
   font: var(--type-base);
   letter-spacing: var(--track-base);
 }
-.ui-empty-line[data-size="display"] .ui-empty-line__actions {
+.ui-empty-line[data-size='display'] .ui-empty-line__actions {
   justify-content: center;
 }
 
@@ -438,30 +440,30 @@
   gap: var(--space-1);
   margin-left: auto;
 }
-.ui-error-line[data-placement="column"],
-.ui-error-line[data-placement="dock"],
-.ui-error-line[data-placement="settings"] {
+.ui-error-line[data-placement='column'],
+.ui-error-line[data-placement='dock'],
+.ui-error-line[data-placement='settings'] {
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   background-color: var(--stamp-tint);
 }
-.ui-error-line[data-placement="column"] {
+.ui-error-line[data-placement='column'] {
   margin-top: var(--space-8);
 }
-.ui-error-line[data-placement="row"] {
+.ui-error-line[data-placement='row'] {
   color: var(--stamp-ink);
   font: inherit;
   letter-spacing: inherit;
 }
-.ui-error-line[data-placement="row"] .ui-error-line__text {
+.ui-error-line[data-placement='row'] .ui-error-line__text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ui-error-line[data-placement="row"] .ui-error-line__actions {
+.ui-error-line[data-placement='row'] .ui-error-line__actions {
   margin-left: 0;
 }
-.ui-error-line[data-placement="checklist"] {
+.ui-error-line[data-placement='checklist'] {
   font: var(--type-small);
   letter-spacing: var(--track-small);
 }
@@ -527,7 +529,7 @@
   letter-spacing: var(--track-small);
   white-space: nowrap;
 }
-.ui-section-header__target[data-drop="over"] {
+.ui-section-header__target[data-drop='over'] {
   color: var(--ink);
   font-weight: 500;
 }
@@ -544,22 +546,22 @@
   color: var(--dim);
   font-weight: 400;
 }
-.ui-section-header[data-variant="sub"] .ui-section-header__label,
-.ui-section-header[data-variant="sub"] .ui-section-header__count {
+.ui-section-header[data-variant='sub'] .ui-section-header__label,
+.ui-section-header[data-variant='sub'] .ui-section-header__count {
   color: var(--dim);
   font: var(--type-small);
   letter-spacing: var(--track-small);
 }
-.ui-section-header[data-variant="sub"] .ui-section-header__label {
+.ui-section-header[data-variant='sub'] .ui-section-header__label {
   font-weight: 500;
 }
-.ui-section-header[data-tone="overdue"],
-.ui-section-header[data-tone="overdue"] .ui-section-header__label,
-.ui-section-header[data-tone="overdue"] .ui-list-icon {
+.ui-section-header[data-tone='overdue'],
+.ui-section-header[data-tone='overdue'] .ui-section-header__label,
+.ui-section-header[data-tone='overdue'] .ui-list-icon {
   color: var(--stamp-ink);
 }
-.ui-section-header[data-drop="unavailable"] .ui-section-header__label,
-.ui-section-header[data-drop="unavailable"] .ui-section-header__count {
+.ui-section-header[data-drop='unavailable'] .ui-section-header__label,
+.ui-section-header[data-drop='unavailable'] .ui-section-header__count {
   color: var(--dim);
 }
 
@@ -593,16 +595,16 @@
   user-select: none;
   transition: background-color var(--dur-hover) var(--ease-std);
 }
-.ui-list-row[data-density="roomy"] {
+.ui-list-row[data-density='roomy'] {
   height: var(--row-roomy);
 }
-.ui-list-row[data-density="compact"] {
+.ui-list-row[data-density='compact'] {
   height: var(--row-compact);
 }
-.ui-list-row[data-layout="home"] {
+.ui-list-row[data-layout='home'] {
   --ui-sender-w: var(--sender-w-home);
 }
-.ui-list-row[data-layout="done"] {
+.ui-list-row[data-layout='done'] {
   --ui-date-w: calc(var(--space-10) * 2 + var(--space-7));
 }
 
@@ -616,7 +618,7 @@
   height: var(--unread-dot);
   border-radius: var(--radius-pill);
 }
-.ui-list-row[data-unread="true"] .ui-list-row__dot {
+.ui-list-row[data-unread='true'] .ui-list-row__dot {
   background-color: var(--accent);
 }
 .ui-list-row__pick {
@@ -629,7 +631,7 @@
   box-shadow: inset 0 0 0 1px var(--control-edge);
   color: var(--accent-ink);
 }
-.ui-list-row[data-picked="true"] .ui-list-row__pick {
+.ui-list-row[data-picked='true'] .ui-list-row__pick {
   background-color: var(--accent);
   box-shadow: none;
 }
@@ -642,7 +644,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ui-list-row[data-unread="true"] .ui-list-row__sender {
+.ui-list-row[data-unread='true'] .ui-list-row__sender {
   color: var(--ink);
   font-weight: 600;
 }
@@ -654,7 +656,7 @@
   min-width: 0;
   color: var(--dim);
 }
-.ui-list-row[data-unread="true"] .ui-list-row__line {
+.ui-list-row[data-unread='true'] .ui-list-row__line {
   color: var(--ink-2);
 }
 .ui-list-row__primary,
@@ -667,7 +669,7 @@
 .ui-list-row__primary {
   flex: 1 1 auto;
 }
-.ui-list-row__primary[data-has-secondary="true"] {
+.ui-list-row__primary[data-has-secondary='true'] {
   flex: 0 1 auto;
   max-width: 45%;
 }
@@ -738,10 +740,10 @@
   padding-left: var(--space-3);
 }
 /* Done: the stamp column has a fixed width; the actions sit left of the stamp, which stays visible. */
-.ui-list-row[data-layout="done"] .ui-list-row__meta {
+.ui-list-row[data-layout='done'] .ui-list-row__meta {
   min-width: 0;
 }
-.ui-list-row[data-layout="done"] .ui-list-row__actions {
+.ui-list-row[data-layout='done'] .ui-list-row__actions {
   right: calc(100% + var(--space-3));
   min-width: 0;
 }
@@ -766,16 +768,16 @@
 .ui-list-row__underlay[hidden] {
   display: none;
 }
-.ui-list-row__underlay[data-side="left"] {
+.ui-list-row__underlay[data-side='left'] {
   justify-content: flex-end;
 }
-.ui-list-row__underlay[data-kind="done"] {
+.ui-list-row__underlay[data-kind='done'] {
   background-color: var(--hill);
 }
-.ui-list-row__underlay[data-kind="later"] {
+.ui-list-row__underlay[data-kind='later'] {
   background-color: var(--dusk);
 }
-.ui-list-row__underlay[data-kind="trash"] {
+.ui-list-row__underlay[data-kind='trash'] {
   background-color: var(--stamp);
 }
 
@@ -792,12 +794,12 @@
 }
 
 /* The keyboard cursor is neutral: --puck plus a 2 px accent bar on the leading edge. */
-.ui-list-row[data-cursor="true"],
-.ui-list-row[data-cursor="true"] .ui-list-row__actions-fill {
+.ui-list-row[data-cursor='true'],
+.ui-list-row[data-cursor='true'] .ui-list-row__actions-fill {
   background-color: var(--puck);
 }
-.ui-list-row[data-cursor="true"]::before {
-  content: "";
+.ui-list-row[data-cursor='true']::before {
+  content: '';
   position: absolute;
   top: var(--space-3);
   bottom: var(--space-3);
@@ -807,18 +809,18 @@
   background-color: var(--accent);
 }
 /* --accent-wash is for bulk-picked rows only. */
-.ui-list-row[data-picked="true"],
-.ui-list-row[data-picked="true"] .ui-list-row__actions-fill {
+.ui-list-row[data-picked='true'],
+.ui-list-row[data-picked='true'] .ui-list-row__actions-fill {
   background-color: var(--accent-wash);
 }
-.ui-list-row[data-state="rejected"],
-.ui-list-row[data-state="rejected"] .ui-list-row__actions-fill {
+.ui-list-row[data-state='rejected'],
+.ui-list-row[data-state='rejected'] .ui-list-row__actions-fill {
   background-color: var(--stamp-tint);
 }
-.ui-list-row[data-state="rejected"] .ui-list-row__sender {
+.ui-list-row[data-state='rejected'] .ui-list-row__sender {
   color: var(--ink);
 }
-.ui-list-row[data-lifted="true"] {
+.ui-list-row[data-lifted='true'] {
   background-color: var(--paper);
   box-shadow: var(--elev-lift);
   transform: scale(var(--scale-lift));
@@ -831,10 +833,10 @@
   height: var(--focus-letter);
   margin: var(--space-2) 0;
 }
-.ui-focus-slot[data-density="roomy"] {
+.ui-focus-slot[data-density='roomy'] {
   height: var(--focus-letter-roomy);
 }
-.ui-focus-slot[data-density="compact"] {
+.ui-focus-slot[data-density='compact'] {
   height: var(--focus-letter-compact);
 }
 
@@ -885,7 +887,7 @@
 .ui-focus-letter .ui-error-line {
   margin-top: var(--space-1);
 }
-.ui-focus-letter[data-state="rejected"] .ui-summary {
+.ui-focus-letter[data-state='rejected'] .ui-summary {
   -webkit-line-clamp: 1;
 }
 .ui-focus-letter__actions {
@@ -926,10 +928,10 @@
   user-select: none;
   transition: box-shadow var(--dur-hover) var(--ease-std);
 }
-.ui-low-band[data-density="roomy"] {
+.ui-low-band[data-density='roomy'] {
   height: var(--row-roomy);
 }
-.ui-low-band[data-density="compact"] {
+.ui-low-band[data-density='compact'] {
   height: var(--row-compact);
 }
 .ui-low-band__label {
@@ -962,8 +964,8 @@
   letter-spacing: var(--track-small);
   font-variant-numeric: tabular-nums;
 }
-.ui-low-band[data-cursor="true"]::before {
-  content: "";
+.ui-low-band[data-cursor='true']::before {
+  content: '';
   position: absolute;
   top: var(--space-3);
   bottom: var(--space-3);
@@ -1073,6 +1075,6 @@
   font: var(--type-small);
   letter-spacing: var(--track-small);
 }
-.ui-low-sheet__foot[data-armed="true"] {
+.ui-low-sheet__foot[data-armed='true'] {
   color: var(--ink);
 }

@@ -13,7 +13,17 @@ import { Btn } from '../compose/parts';
  * never runs twice.
  */
 export function ProposalCard(props: ProposalCardProps) {
-  const { kicker, title, consequence, color, confirmLabel, state, appliedText, onConfirm, onDismiss } = props;
+  const {
+    kicker,
+    title,
+    consequence,
+    color,
+    confirmLabel,
+    state,
+    appliedText,
+    onConfirm,
+    onDismiss,
+  } = props;
   const titleId = useId();
 
   if (state === 'dismissed') return null;
@@ -36,7 +46,12 @@ export function ProposalCard(props: ProposalCardProps) {
 
   const mark = color ? ({ '--swatch': `var(--tag-${color})` } as CSSProperties) : undefined;
   return (
-    <section className="ui-proposal-card" data-state="pending" aria-labelledby={titleId} onKeyDown={onKeyDown}>
+    <section
+      className="ui-proposal-card"
+      data-state="pending"
+      aria-labelledby={titleId}
+      onKeyDown={onKeyDown}
+    >
       <p className="ui-proposal-card__kicker" dir="auto">
         {kicker}
       </p>
@@ -48,8 +63,22 @@ export function ProposalCard(props: ProposalCardProps) {
         {consequence}
       </p>
       <div className="ui-proposal-card__keys">
-        <Btn variant="filled" size="md" label={confirmLabel} commandId="ask.acceptProposal" keyHint="always" onPress={() => onConfirm()} />
-        <Btn variant="text" size="md" label="Not now" hint="Not now" commandId="ask.declineProposal" onPress={() => onDismiss()} />
+        <Btn
+          variant="filled"
+          size="md"
+          label={confirmLabel}
+          commandId="ask.acceptProposal"
+          keyHint="always"
+          onPress={() => onConfirm()}
+        />
+        <Btn
+          variant="text"
+          size="md"
+          label="Not now"
+          hint="Not now"
+          commandId="ask.declineProposal"
+          onPress={() => onDismiss()}
+        />
       </div>
     </section>
   );

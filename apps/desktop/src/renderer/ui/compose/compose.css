@@ -2,7 +2,13 @@
    Tokens only. Hover is colour, fill and shadow under (hover: hover). Mockups: reply.html, compose.html. */
 
 /* Native control reset at zero specificity, so every rule below wins and no browser chrome shows through. */
-:where(.ui-compose-btn, .ui-suggestion__act, .ui-recipient-field__remove, .ui-recipient-field__input, .ui-composer__subject) {
+:where(
+  .ui-compose-btn,
+  .ui-suggestion__act,
+  .ui-recipient-field__remove,
+  .ui-recipient-field__input,
+  .ui-composer__subject
+) {
   appearance: none;
   margin: 0;
   padding: 0;
@@ -25,8 +31,14 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.ui-compose-icon[data-size="sm"] { width: var(--icon-sm); height: var(--icon-sm); }
-.ui-compose-icon[data-size="xs"] { width: var(--icon-xs); height: var(--icon-xs); }
+.ui-compose-icon[data-size='sm'] {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.ui-compose-icon[data-size='xs'] {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
 
 .ui-compose-kbd {
   display: inline-flex;
@@ -42,7 +54,9 @@
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
 }
-.ui-compose-kbd + .ui-compose-kbd { margin-left: var(--space-half); }
+.ui-compose-kbd + .ui-compose-kbd {
+  margin-left: var(--space-half);
+}
 
 .ui-compose-btn {
   --btn-h: var(--control-sm);
@@ -65,28 +79,64 @@
     background-color var(--dur-hover) var(--ease-std),
     color var(--dur-hover) var(--ease-std);
 }
-.ui-compose-btn[data-size="md"] { --btn-h: var(--control-md); }
-.ui-compose-btn[data-variant="text"] { padding: 0 var(--space-2); }
-.ui-compose-btn[data-variant="text"] .ui-compose-icon { color: var(--dim); }
-.ui-compose-btn[data-variant="icon"] { width: var(--btn-h); padding: 0; color: var(--dim); }
-.ui-compose-btn[data-variant="filled"] {
+.ui-compose-btn[data-size='md'] {
+  --btn-h: var(--control-md);
+}
+.ui-compose-btn[data-variant='text'] {
+  padding: 0 var(--space-2);
+}
+.ui-compose-btn[data-variant='text'] .ui-compose-icon {
+  color: var(--dim);
+}
+.ui-compose-btn[data-variant='icon'] {
+  width: var(--btn-h);
+  padding: 0;
+  color: var(--dim);
+}
+.ui-compose-btn[data-variant='filled'] {
   background: var(--accent);
   color: var(--accent-ink);
-  box-shadow: inset 0 1px 0 var(--press-hi), inset 0 -1px 0 var(--press-lo);
+  box-shadow:
+    inset 0 1px 0 var(--press-hi),
+    inset 0 -1px 0 var(--press-lo);
 }
-.ui-compose-btn[data-variant="filled"] .ui-compose-kbd {
+.ui-compose-btn[data-variant='filled'] .ui-compose-kbd {
   background: color-mix(in srgb, var(--accent-ink) 16%, transparent);
   color: var(--accent-ink);
 }
-.ui-compose-btn[data-tone="danger"], .ui-compose-btn[data-tone="danger"] .ui-compose-icon { color: var(--stamp-ink); }
-.ui-compose-btn[aria-pressed="true"] { background: var(--press); color: var(--ink); }
-.ui-compose-btn:active { transform: scale(var(--press-scale)); transition-duration: var(--dur-press-down); }
-.ui-compose-btn[data-variant="icon"]:active { transform: scale(var(--press-scale-icon)); }
-.ui-compose-btn[data-variant="text"]:active, .ui-compose-btn[data-variant="icon"]:active { background: var(--press); }
-.ui-compose-btn[data-variant="filled"]:active { box-shadow: inset 0 1px 0 var(--press-lo); }
-.ui-compose-btn:disabled { color: var(--dim); pointer-events: none; }
-.ui-compose-btn:disabled .ui-compose-icon { color: var(--faint); }
-.ui-compose-btn[data-variant="filled"]:disabled { background: var(--sunken); box-shadow: none; }
+.ui-compose-btn[data-tone='danger'],
+.ui-compose-btn[data-tone='danger'] .ui-compose-icon {
+  color: var(--stamp-ink);
+}
+.ui-compose-btn[aria-pressed='true'] {
+  background: var(--press);
+  color: var(--ink);
+}
+.ui-compose-btn:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-compose-btn[data-variant='icon']:active {
+  transform: scale(var(--press-scale-icon));
+}
+.ui-compose-btn[data-variant='text']:active,
+.ui-compose-btn[data-variant='icon']:active {
+  background: var(--press);
+}
+.ui-compose-btn[data-variant='filled']:active {
+  box-shadow: inset 0 1px 0 var(--press-lo);
+}
+.ui-compose-btn:disabled {
+  color: var(--dim);
+  pointer-events: none;
+}
+.ui-compose-btn:disabled .ui-compose-icon {
+  color: var(--faint);
+}
+.ui-compose-btn[data-variant='filled']:disabled {
+  background: var(--sunken);
+  box-shadow: none;
+}
 .ui-compose-btn:focus-visible,
 .ui-suggestion__act:focus-visible,
 .ui-recipient-field__remove:focus-visible,
@@ -96,9 +146,17 @@
   outline-offset: var(--focus-gap);
 }
 @media (hover: hover) {
-  .ui-compose-btn[data-variant="text"]:hover, .ui-compose-btn[data-variant="icon"]:hover { background: var(--hover); color: var(--ink); }
-  .ui-compose-btn[data-variant="text"]:hover .ui-compose-icon { color: var(--ink); }
-  .ui-compose-btn[data-variant="filled"]:hover { background: color-mix(in srgb, var(--accent) 90%, var(--ink)); }
+  .ui-compose-btn[data-variant='text']:hover,
+  .ui-compose-btn[data-variant='icon']:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+  .ui-compose-btn[data-variant='text']:hover .ui-compose-icon {
+    color: var(--ink);
+  }
+  .ui-compose-btn[data-variant='filled']:hover {
+    background: color-mix(in srgb, var(--accent) 90%, var(--ink));
+  }
 }
 
 /* ---------- LevelMeter: five stamp bars, no ring ---------- */
@@ -120,10 +178,18 @@
   transform-origin: bottom;
   transform: scaleY(max(0.2, calc(var(--level) * var(--weight))));
 }
-.ui-level-meter > i:nth-child(2) { --weight: 0.8; }
-.ui-level-meter > i:nth-child(3) { --weight: 1; }
-.ui-level-meter > i:nth-child(4) { --weight: 0.6; }
-.ui-level-meter > i:nth-child(5) { --weight: 0.3; }
+.ui-level-meter > i:nth-child(2) {
+  --weight: 0.8;
+}
+.ui-level-meter > i:nth-child(3) {
+  --weight: 1;
+}
+.ui-level-meter > i:nth-child(4) {
+  --weight: 0.6;
+}
+.ui-level-meter > i:nth-child(5) {
+  --weight: 0.3;
+}
 /* No idle rule: `max(0.2, …)` above is the floor, so writing --level through `ref` per frame always shows. */
 
 .ui-dictation-line {
@@ -135,7 +201,12 @@
   font: var(--type-small);
   letter-spacing: var(--track-small);
 }
-.ui-dictation-line__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-dictation-line__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ---------- DraftState ---------- */
 .ui-draft-state {
@@ -149,11 +220,26 @@
   white-space: nowrap;
 }
 /* A long "Couldn't save" gives way with an ellipsis; the icon, the dot and Retry never shrink, so Retry stays visible. */
-.ui-draft-state__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.ui-draft-state > .ui-compose-icon, .ui-draft-state > .ui-draft-state__dot, .ui-draft-state > .ui-compose-btn { flex: none; }
-.ui-draft-state[data-state="failed"] { color: var(--stamp-ink); }
-.ui-draft-state[data-state="failed"] .ui-compose-icon { color: var(--stamp-ink); }
-.ui-draft-state[data-state="failed"] .ui-compose-btn { color: var(--stamp-ink); font-weight: 500; }
+.ui-draft-state__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-draft-state > .ui-compose-icon,
+.ui-draft-state > .ui-draft-state__dot,
+.ui-draft-state > .ui-compose-btn {
+  flex: none;
+}
+.ui-draft-state[data-state='failed'] {
+  color: var(--stamp-ink);
+}
+.ui-draft-state[data-state='failed'] .ui-compose-icon {
+  color: var(--stamp-ink);
+}
+.ui-draft-state[data-state='failed'] .ui-compose-btn {
+  color: var(--stamp-ink);
+  font-weight: 500;
+}
 
 /* ---------- Suggestion hint ---------- */
 .ui-suggestion {
@@ -175,10 +261,15 @@
   border-radius: var(--radius-sm);
   color: var(--dim);
   font: var(--type-small);
-  transition: background-color var(--dur-hover) var(--ease-std), color var(--dur-hover) var(--ease-std);
+  transition:
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
 }
 @media (hover: hover) {
-  .ui-suggestion__act:hover { background: var(--hover); color: var(--ink); }
+  .ui-suggestion__act:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
 }
 
 /* ---------- RecipientField ---------- */
@@ -219,8 +310,17 @@
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
 }
-.ui-recipient-field__chip[data-invalid="true"] { background: var(--stamp-tint); color: var(--stamp-ink); box-shadow: inset 0 0 0 1px var(--stamp-ink); }
-.ui-recipient-field__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-recipient-field__chip[data-invalid='true'] {
+  background: var(--stamp-tint);
+  color: var(--stamp-ink);
+  box-shadow: inset 0 0 0 1px var(--stamp-ink);
+}
+.ui-recipient-field__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ui-recipient-field__sr {
   position: absolute;
   width: 1px;
@@ -238,10 +338,15 @@
   height: var(--control-xs);
   border-radius: var(--radius-sm);
   color: var(--dim);
-  transition: background-color var(--dur-hover) var(--ease-std), color var(--dur-hover) var(--ease-std);
+  transition:
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
 }
 @media (hover: hover) {
-  .ui-recipient-field__remove:hover { background: var(--hover); color: var(--ink); }
+  .ui-recipient-field__remove:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
 }
 .ui-recipient-field__input {
   flex: 1;
@@ -254,8 +359,12 @@
   font: var(--type-base);
   letter-spacing: var(--track-base);
 }
-.ui-recipient-field__input::placeholder { color: var(--dim); }
-.ui-recipient-field > .ui-compose-btn { margin-top: calc((var(--control-lg) - var(--control-sm)) / 2); }
+.ui-recipient-field__input::placeholder {
+  color: var(--dim);
+}
+.ui-recipient-field > .ui-compose-btn {
+  margin-top: calc((var(--control-lg) - var(--control-sm)) / 2);
+}
 .ui-recipient-field__list {
   position: absolute;
   top: 100%;
@@ -270,7 +379,9 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--elev-float);
 }
-.ui-recipient-field__list[hidden] { display: none; }
+.ui-recipient-field__list[hidden] {
+  display: none;
+}
 .ui-recipient-field__option {
   display: flex;
   align-items: baseline;
@@ -282,8 +393,16 @@
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
 }
-.ui-recipient-field__option[data-active="true"] { background: var(--puck); }
-.ui-recipient-field__option-name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-recipient-field__option[data-active='true'] {
+  background: var(--puck);
+}
+.ui-recipient-field__option-name {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ui-recipient-field__option-address {
   min-width: 0;
   overflow: hidden;
@@ -294,7 +413,9 @@
   white-space: nowrap;
 }
 @media (hover: hover) {
-  .ui-recipient-field__option:hover { background: var(--hover); }
+  .ui-recipient-field__option:hover {
+    background: var(--hover);
+  }
 }
 
 /* ---------- notices shared by the composer and the inline reply ---------- */
@@ -320,7 +441,12 @@
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
 }
-.ui-compose-conflict__acts { display: inline-flex; flex-wrap: wrap; gap: var(--space-half); margin-left: auto; }
+.ui-compose-conflict__acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+  margin-left: auto;
+}
 
 /* The footer row: Send, the draft line, trailing icon buttons. */
 .ui-compose-footer {
@@ -329,25 +455,67 @@
   gap: var(--space-3);
   min-width: 0;
 }
-.ui-compose-footer__right { display: inline-flex; flex: none; gap: var(--space-half); margin-left: auto; }
+.ui-compose-footer__right {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-half);
+  margin-left: auto;
+}
 /* In a narrow pane (the 900 px window with the dock open) the draft or dictation line drops to its own row under
    Send and the icons, so nothing is clipped and nothing overlaps. Width is the container's, not the window's. */
-.ui-composer__foot, .ui-inline-reply { container-type: inline-size; }
+.ui-composer__foot,
+.ui-inline-reply {
+  container-type: inline-size;
+}
 @container (max-width: 420px) {
-  .ui-composer__foot .ui-compose-footer { flex-wrap: wrap; gap: var(--space-1) var(--space-3); height: auto; min-height: var(--space-10); padding: var(--space-3) 0; }
-  .ui-composer__foot .ui-compose-footer > .ui-draft-state, .ui-composer__foot .ui-compose-footer > .ui-dictation-line { order: 3; flex: 1 0 100%; }
-  .ui-composer__foot .ui-dictation-line__text { overflow: visible; white-space: normal; }
+  .ui-composer__foot .ui-compose-footer {
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    height: auto;
+    min-height: var(--space-10);
+    padding: var(--space-3) 0;
+  }
+  .ui-composer__foot .ui-compose-footer > .ui-draft-state,
+  .ui-composer__foot .ui-compose-footer > .ui-dictation-line {
+    order: 3;
+    flex: 1 0 100%;
+  }
+  .ui-composer__foot .ui-dictation-line__text {
+    overflow: visible;
+    white-space: normal;
+  }
 }
 @container (max-width: 380px) {
-  .ui-inline-reply > .ui-compose-footer { flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
-  .ui-inline-reply > .ui-compose-footer > .ui-draft-state, .ui-inline-reply > .ui-compose-footer > .ui-dictation-line { order: 3; flex: 1 0 100%; }
-  .ui-inline-reply .ui-dictation-line__text { overflow: visible; white-space: normal; }
+  .ui-inline-reply > .ui-compose-footer {
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+  }
+  .ui-inline-reply > .ui-compose-footer > .ui-draft-state,
+  .ui-inline-reply > .ui-compose-footer > .ui-dictation-line {
+    order: 3;
+    flex: 1 0 100%;
+  }
+  .ui-inline-reply .ui-dictation-line__text {
+    overflow: visible;
+    white-space: normal;
+  }
 }
 /* The middle slot is the one that shrinks: it takes the free space and truncates, so the footer never overlaps or grows. */
-.ui-compose-footer > .ui-draft-state, .ui-compose-footer > .ui-dictation-line { flex: 1 1 0; min-width: 0; overflow: hidden; }
+.ui-compose-footer > .ui-draft-state,
+.ui-compose-footer > .ui-dictation-line {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
 
 /* A blocked field is outlined, once, in the stamp ink, standing off the text. An outline takes no space, so nothing moves. */
-:where(.ui-composer__to, .ui-composer__subject, .ui-composer__editor, .ui-inline-reply__to, .ui-inline-reply__editor)[data-blocked="true"]:not(:focus-visible) {
+:where(
+    .ui-composer__to,
+    .ui-composer__subject,
+    .ui-composer__editor,
+    .ui-inline-reply__to,
+    .ui-inline-reply__editor
+  )[data-blocked='true']:not(:focus-visible) {
   border-radius: var(--radius-md);
   outline: 1px solid var(--stamp-ink);
   outline-offset: var(--space-1);
@@ -360,13 +528,19 @@
   height: 100%;
   min-height: 0;
 }
-.ui-composer__scroll { flex: 1; min-height: 0; overflow: auto; }
+.ui-composer__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
 .ui-composer__page {
   width: min(var(--composer-w), 100% - 2 * var(--gutter));
   margin: 0 auto;
   padding: var(--space-7) 0 var(--space-8);
 }
-.ui-composer__to .ui-recipient-field__label { min-width: var(--space-8); }
+.ui-composer__to .ui-recipient-field__label {
+  min-width: var(--space-8);
+}
 .ui-composer__subject {
   display: block;
   width: 100%;
@@ -378,7 +552,9 @@
   font: var(--type-heading);
   letter-spacing: var(--track-heading);
 }
-.ui-composer__subject::placeholder { color: var(--dim); }
+.ui-composer__subject::placeholder {
+  color: var(--dim);
+}
 .ui-composer__polish {
   display: flex;
   flex-wrap: wrap;
@@ -392,8 +568,14 @@
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
 }
-.ui-composer__polish .ui-compose-icon { color: var(--dim); }
-.ui-composer__polish-acts { display: inline-flex; gap: var(--space-half); margin-left: auto; }
+.ui-composer__polish .ui-compose-icon {
+  color: var(--dim);
+}
+.ui-composer__polish-acts {
+  display: inline-flex;
+  gap: var(--space-half);
+  margin-left: auto;
+}
 .ui-composer__editor {
   max-width: var(--measure-read);
   min-height: calc(var(--space-10) * 2);
@@ -402,7 +584,10 @@
   font: var(--type-read);
   letter-spacing: var(--track-read);
 }
-.ui-composer__foot { flex: none; box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line); }
+.ui-composer__foot {
+  flex: none;
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
 .ui-composer__foot .ui-compose-footer {
   width: min(var(--composer-w), 100% - 2 * var(--gutter));
   height: var(--space-10);
@@ -423,15 +608,29 @@
   padding: 0 var(--space-3) 0 var(--space-4);
   box-shadow: 0 var(--hairline) 0 var(--line);
 }
-.ui-inline-reply__to { flex: 1; min-width: 0; }
-.ui-inline-reply__head > .ui-compose-btn { margin-top: calc((var(--control-lg) - var(--control-sm)) / 2); }
-.ui-inline-reply__to .ui-recipient-field { font: var(--type-ui); letter-spacing: var(--track-ui); }
-.ui-inline-reply > .ui-compose-blocked { padding: 0 var(--space-4); }
-.ui-inline-reply__body { padding: var(--space-4); }
+.ui-inline-reply__to {
+  flex: 1;
+  min-width: 0;
+}
+.ui-inline-reply__head > .ui-compose-btn {
+  margin-top: calc((var(--control-lg) - var(--control-sm)) / 2);
+}
+.ui-inline-reply__to .ui-recipient-field {
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-inline-reply > .ui-compose-blocked {
+  padding: 0 var(--space-4);
+}
+.ui-inline-reply__body {
+  padding: var(--space-4);
+}
 .ui-inline-reply__editor {
   min-height: calc(var(--space-10) * 2);
   color: var(--ink);
   font: var(--type-read);
   letter-spacing: var(--track-read);
 }
-.ui-inline-reply > .ui-compose-footer { padding: 0 var(--space-3) var(--space-3); }
+.ui-inline-reply > .ui-compose-footer {
+  padding: 0 var(--space-3) var(--space-3);
+}

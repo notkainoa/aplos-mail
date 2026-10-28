@@ -127,7 +127,8 @@ export type IconName =
   | 'repeat';
 
 /** Icons an AI suggestion may wear: its action's icon, never an AI mark (DESIGN §4.7, §9 rule 2). */
-export type SuggestionIcon = 'reply' | 'calendar' | 'link' | 'paperclip' | 'cart' | 'phone' | 'file' | 'check' | 'clock';
+export type SuggestionIcon =
+  'reply' | 'calendar' | 'link' | 'paperclip' | 'cart' | 'phone' | 'file' | 'check' | 'clock';
 
 /** Literal keycaps DESIGN requires on specific controls (§8 Discoverability): Return in onboarding and dialogs, ⇧Return on destructive confirms, Esc, Tab on suggestions. Everything else comes from `commandId`. */
 export type LiteralKey = 'Return' | '⇧Return' | 'Esc' | 'Tab';
@@ -361,7 +362,11 @@ export interface PaneTool {
 }
 
 /** At most three icon tools (DESIGN §7.1); the tuple type enforces the limit. */
-export type PaneTools = readonly [] | readonly [PaneTool] | readonly [PaneTool, PaneTool] | readonly [PaneTool, PaneTool, PaneTool];
+export type PaneTools =
+  | readonly []
+  | readonly [PaneTool]
+  | readonly [PaneTool, PaneTool]
+  | readonly [PaneTool, PaneTool, PaneTool];
 
 /** The 48 px pane header, structured so a lane cannot add a fourth tool, a page title or move Ask (DESIGN §7.1, §4.4). The hairline after scroll is internal. Mockups: every main-window page (`.toolbar`), reader.html, compose.html, inbox.html (#bulk), calendar-week.html. */
 export interface PaneHeaderProps {
@@ -1054,7 +1059,8 @@ export interface EmptyLineProps {
 }
 
 /** Actions an ErrorLine can offer. */
-export type ErrorLineAction = 'retry' | 'edit' | 'useAnotherProvider' | 'review' | 'replaceKey' | 'openSettings';
+export type ErrorLineAction =
+  'retry' | 'edit' | 'useAnotherProvider' | 'review' | 'replaceKey' | 'openSettings';
 
 /** What went wrong; the component writes DESIGN §7.15's copy: what happened, what is safe, what to do; no exclamation marks. */
 export type ErrorLineKind =
@@ -2060,7 +2066,16 @@ export interface SettingRowProps {
 export type AiFeature = 'ask' | 'summaries' | 'drafts' | 'plans' | 'voice';
 
 /** Providers; display names are fixed copy: Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio, Custom server (AGENTS.md). */
-export type ProviderId = 'groq' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode' | 'ollama' | 'lmstudio' | 'custom';
+export type ProviderId =
+  | 'groq'
+  | 'openai'
+  | 'anthropic'
+  | 'gemini'
+  | 'openrouter'
+  | 'opencode'
+  | 'ollama'
+  | 'lmstudio'
+  | 'custom';
 
 /** Where a provider's key comes from; key characters are never shown (DESIGN §7.10). */
 export type KeySource =
@@ -2122,7 +2137,12 @@ export type ProviderTableProps =
       /** Hosted providers with status, key source, Test and Remove or Add key; a refused key adds an ErrorLine below. */
       kind: 'hosted';
       /** One row per provider. */
-      rows: readonly { provider: ProviderId; isDefault: boolean; keySource: KeySource; status: ProviderStatus }[];
+      rows: readonly {
+        provider: ProviderId;
+        isDefault: boolean;
+        keySource: KeySource;
+        status: ProviderStatus;
+      }[];
       /** A row action. */
       onAction: (provider: ProviderId, action: ProviderAction) => void;
     }
@@ -2681,27 +2701,71 @@ export interface ComponentEntry {
 
 /** Every component of DESIGN §6 with its planned implementation path, one file per component. */
 export const COMPONENTS = [
-  { name: 'Button', family: 'buttons-keys', file: 'apps/desktop/src/renderer/ui/buttons-keys/Button.tsx' },
-  { name: 'Kbd', family: 'buttons-keys', file: 'apps/desktop/src/renderer/ui/buttons-keys/Kbd.tsx' },
-  { name: 'Tooltip', family: 'buttons-keys', file: 'apps/desktop/src/renderer/ui/buttons-keys/Tooltip.tsx' },
+  {
+    name: 'Button',
+    family: 'buttons-keys',
+    file: 'apps/desktop/src/renderer/ui/buttons-keys/Button.tsx',
+  },
+  {
+    name: 'Kbd',
+    family: 'buttons-keys',
+    file: 'apps/desktop/src/renderer/ui/buttons-keys/Kbd.tsx',
+  },
+  {
+    name: 'Tooltip',
+    family: 'buttons-keys',
+    file: 'apps/desktop/src/renderer/ui/buttons-keys/Tooltip.tsx',
+  },
   { name: 'Pane', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Pane.tsx' },
-  { name: 'PageHead', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/PageHead.tsx' },
-  { name: 'NavHead', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/NavHead.tsx' },
-  { name: 'AccountSwitcher', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/AccountSwitcher.tsx' },
+  {
+    name: 'PageHead',
+    family: 'surfaces',
+    file: 'apps/desktop/src/renderer/ui/surfaces/PageHead.tsx',
+  },
+  {
+    name: 'NavHead',
+    family: 'surfaces',
+    file: 'apps/desktop/src/renderer/ui/surfaces/NavHead.tsx',
+  },
+  {
+    name: 'AccountSwitcher',
+    family: 'surfaces',
+    file: 'apps/desktop/src/renderer/ui/surfaces/AccountSwitcher.tsx',
+  },
   { name: 'Text', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Text.tsx' },
   { name: 'Menu', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Menu.tsx' },
-  { name: 'Popover', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Popover.tsx' },
+  {
+    name: 'Popover',
+    family: 'surfaces',
+    file: 'apps/desktop/src/renderer/ui/surfaces/Popover.tsx',
+  },
   { name: 'Dialog', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Dialog.tsx' },
-  { name: 'Confirm', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Confirm.tsx' },
+  {
+    name: 'Confirm',
+    family: 'surfaces',
+    file: 'apps/desktop/src/renderer/ui/surfaces/Confirm.tsx',
+  },
   { name: 'Puck', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Puck.tsx' },
   { name: 'Toast', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/Toast.tsx' },
-  { name: 'ToastStack', family: 'surfaces', file: 'apps/desktop/src/renderer/ui/surfaces/ToastStack.tsx' },
+  {
+    name: 'ToastStack',
+    family: 'surfaces',
+    file: 'apps/desktop/src/renderer/ui/surfaces/ToastStack.tsx',
+  },
   { name: 'ListBox', family: 'list', file: 'apps/desktop/src/renderer/ui/list/ListBox.tsx' },
   { name: 'ListGroup', family: 'list', file: 'apps/desktop/src/renderer/ui/list/ListGroup.tsx' },
   { name: 'ListRow', family: 'list', file: 'apps/desktop/src/renderer/ui/list/ListRow.tsx' },
-  { name: 'SectionHeader', family: 'list', file: 'apps/desktop/src/renderer/ui/list/SectionHeader.tsx' },
+  {
+    name: 'SectionHeader',
+    family: 'list',
+    file: 'apps/desktop/src/renderer/ui/list/SectionHeader.tsx',
+  },
   { name: 'FocusSlot', family: 'list', file: 'apps/desktop/src/renderer/ui/list/FocusSlot.tsx' },
-  { name: 'FocusLetter', family: 'list', file: 'apps/desktop/src/renderer/ui/list/FocusLetter.tsx' },
+  {
+    name: 'FocusLetter',
+    family: 'list',
+    file: 'apps/desktop/src/renderer/ui/list/FocusLetter.tsx',
+  },
   { name: 'LowBand', family: 'list', file: 'apps/desktop/src/renderer/ui/list/LowBand.tsx' },
   { name: 'LowSheet', family: 'list', file: 'apps/desktop/src/renderer/ui/list/LowSheet.tsx' },
   { name: 'CommitChip', family: 'list', file: 'apps/desktop/src/renderer/ui/list/CommitChip.tsx' },
@@ -2709,53 +2773,197 @@ export const COMPONENTS = [
   { name: 'Chip', family: 'list', file: 'apps/desktop/src/renderer/ui/list/Chip.tsx' },
   { name: 'EmptyLine', family: 'list', file: 'apps/desktop/src/renderer/ui/list/EmptyLine.tsx' },
   { name: 'ErrorLine', family: 'list', file: 'apps/desktop/src/renderer/ui/list/ErrorLine.tsx' },
-  { name: 'ReaderHead', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/ReaderHead.tsx' },
-  { name: 'EarlierMessages', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/EarlierMessages.tsx' },
-  { name: 'ThreadMessage', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/ThreadMessage.tsx' },
-  { name: 'LoadingLine', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/LoadingLine.tsx' },
-  { name: 'ReplyStub', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/ReplyStub.tsx' },
+  {
+    name: 'ReaderHead',
+    family: 'reader',
+    file: 'apps/desktop/src/renderer/ui/reader/ReaderHead.tsx',
+  },
+  {
+    name: 'EarlierMessages',
+    family: 'reader',
+    file: 'apps/desktop/src/renderer/ui/reader/EarlierMessages.tsx',
+  },
+  {
+    name: 'ThreadMessage',
+    family: 'reader',
+    file: 'apps/desktop/src/renderer/ui/reader/ThreadMessage.tsx',
+  },
+  {
+    name: 'LoadingLine',
+    family: 'reader',
+    file: 'apps/desktop/src/renderer/ui/reader/LoadingLine.tsx',
+  },
+  {
+    name: 'ReplyStub',
+    family: 'reader',
+    file: 'apps/desktop/src/renderer/ui/reader/ReplyStub.tsx',
+  },
   { name: 'Summary', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/Summary.tsx' },
   { name: 'Why', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/Why.tsx' },
   { name: 'UndoTray', family: 'reader', file: 'apps/desktop/src/renderer/ui/reader/UndoTray.tsx' },
-  { name: 'Composer', family: 'compose', file: 'apps/desktop/src/renderer/ui/compose/Composer.tsx' },
-  { name: 'InlineReply', family: 'compose', file: 'apps/desktop/src/renderer/ui/compose/InlineReply.tsx' },
-  { name: 'RecipientField', family: 'compose', file: 'apps/desktop/src/renderer/ui/compose/RecipientField.tsx' },
-  { name: 'DraftState', family: 'compose', file: 'apps/desktop/src/renderer/ui/compose/DraftState.tsx' },
-  { name: 'Suggestion', family: 'compose', file: 'apps/desktop/src/renderer/ui/compose/Suggestion.tsx' },
-  { name: 'LevelMeter', family: 'compose', file: 'apps/desktop/src/renderer/ui/compose/LevelMeter.tsx' },
+  {
+    name: 'Composer',
+    family: 'compose',
+    file: 'apps/desktop/src/renderer/ui/compose/Composer.tsx',
+  },
+  {
+    name: 'InlineReply',
+    family: 'compose',
+    file: 'apps/desktop/src/renderer/ui/compose/InlineReply.tsx',
+  },
+  {
+    name: 'RecipientField',
+    family: 'compose',
+    file: 'apps/desktop/src/renderer/ui/compose/RecipientField.tsx',
+  },
+  {
+    name: 'DraftState',
+    family: 'compose',
+    file: 'apps/desktop/src/renderer/ui/compose/DraftState.tsx',
+  },
+  {
+    name: 'Suggestion',
+    family: 'compose',
+    file: 'apps/desktop/src/renderer/ui/compose/Suggestion.tsx',
+  },
+  {
+    name: 'LevelMeter',
+    family: 'compose',
+    file: 'apps/desktop/src/renderer/ui/compose/LevelMeter.tsx',
+  },
   { name: 'AskDock', family: 'ask', file: 'apps/desktop/src/renderer/ui/ask/AskDock.tsx' },
   { name: 'AskTurn', family: 'ask', file: 'apps/desktop/src/renderer/ui/ask/AskTurn.tsx' },
   { name: 'StepLog', family: 'ask', file: 'apps/desktop/src/renderer/ui/ask/StepLog.tsx' },
   { name: 'Citation', family: 'ask', file: 'apps/desktop/src/renderer/ui/ask/Citation.tsx' },
-  { name: 'ProposalCard', family: 'ask', file: 'apps/desktop/src/renderer/ui/ask/ProposalCard.tsx' },
+  {
+    name: 'ProposalCard',
+    family: 'ask',
+    file: 'apps/desktop/src/renderer/ui/ask/ProposalCard.tsx',
+  },
   { name: 'Palette', family: 'ask', file: 'apps/desktop/src/renderer/ui/ask/Palette.tsx' },
   { name: 'SearchField', family: 'ask', file: 'apps/desktop/src/renderer/ui/ask/SearchField.tsx' },
-  { name: 'OperatorToken', family: 'ask', file: 'apps/desktop/src/renderer/ui/ask/OperatorToken.tsx' },
-  { name: 'MiniMonth', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/MiniMonth.tsx' },
-  { name: 'CalendarList', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/CalendarList.tsx' },
-  { name: 'CalendarGrid', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/CalendarGrid.tsx' },
-  { name: 'EventBlock', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/EventBlock.tsx' },
-  { name: 'PlanOutline', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/PlanOutline.tsx' },
-  { name: 'NowLine', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/NowLine.tsx' },
-  { name: 'EventDetail', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/EventDetail.tsx' },
-  { name: 'DatePresets', family: 'calendar', file: 'apps/desktop/src/renderer/ui/calendar/DatePresets.tsx' },
-  { name: 'SettingRow', family: 'settings', file: 'apps/desktop/src/renderer/ui/settings/SettingRow.tsx' },
-  { name: 'ProviderTable', family: 'settings', file: 'apps/desktop/src/renderer/ui/settings/ProviderTable.tsx' },
-  { name: 'KeyRecorder', family: 'settings', file: 'apps/desktop/src/renderer/ui/settings/KeyRecorder.tsx' },
-  { name: 'StatusSlot', family: 'status', file: 'apps/desktop/src/renderer/ui/status/StatusSlot.tsx' },
-  { name: 'ReconnectSheet', family: 'status', file: 'apps/desktop/src/renderer/ui/status/ReconnectSheet.tsx' },
-  { name: 'ProgressSegments', family: 'status', file: 'apps/desktop/src/renderer/ui/status/ProgressSegments.tsx' },
-  { name: 'FatalScreen', family: 'status', file: 'apps/desktop/src/renderer/ui/status/FatalScreen.tsx' },
+  {
+    name: 'OperatorToken',
+    family: 'ask',
+    file: 'apps/desktop/src/renderer/ui/ask/OperatorToken.tsx',
+  },
+  {
+    name: 'MiniMonth',
+    family: 'calendar',
+    file: 'apps/desktop/src/renderer/ui/calendar/MiniMonth.tsx',
+  },
+  {
+    name: 'CalendarList',
+    family: 'calendar',
+    file: 'apps/desktop/src/renderer/ui/calendar/CalendarList.tsx',
+  },
+  {
+    name: 'CalendarGrid',
+    family: 'calendar',
+    file: 'apps/desktop/src/renderer/ui/calendar/CalendarGrid.tsx',
+  },
+  {
+    name: 'EventBlock',
+    family: 'calendar',
+    file: 'apps/desktop/src/renderer/ui/calendar/EventBlock.tsx',
+  },
+  {
+    name: 'PlanOutline',
+    family: 'calendar',
+    file: 'apps/desktop/src/renderer/ui/calendar/PlanOutline.tsx',
+  },
+  {
+    name: 'NowLine',
+    family: 'calendar',
+    file: 'apps/desktop/src/renderer/ui/calendar/NowLine.tsx',
+  },
+  {
+    name: 'EventDetail',
+    family: 'calendar',
+    file: 'apps/desktop/src/renderer/ui/calendar/EventDetail.tsx',
+  },
+  {
+    name: 'DatePresets',
+    family: 'calendar',
+    file: 'apps/desktop/src/renderer/ui/calendar/DatePresets.tsx',
+  },
+  {
+    name: 'SettingRow',
+    family: 'settings',
+    file: 'apps/desktop/src/renderer/ui/settings/SettingRow.tsx',
+  },
+  {
+    name: 'ProviderTable',
+    family: 'settings',
+    file: 'apps/desktop/src/renderer/ui/settings/ProviderTable.tsx',
+  },
+  {
+    name: 'KeyRecorder',
+    family: 'settings',
+    file: 'apps/desktop/src/renderer/ui/settings/KeyRecorder.tsx',
+  },
+  {
+    name: 'StatusSlot',
+    family: 'status',
+    file: 'apps/desktop/src/renderer/ui/status/StatusSlot.tsx',
+  },
+  {
+    name: 'ReconnectSheet',
+    family: 'status',
+    file: 'apps/desktop/src/renderer/ui/status/ReconnectSheet.tsx',
+  },
+  {
+    name: 'ProgressSegments',
+    family: 'status',
+    file: 'apps/desktop/src/renderer/ui/status/ProgressSegments.tsx',
+  },
+  {
+    name: 'FatalScreen',
+    family: 'status',
+    file: 'apps/desktop/src/renderer/ui/status/FatalScreen.tsx',
+  },
   { name: 'Spinner', family: 'status', file: 'apps/desktop/src/renderer/ui/status/Spinner.tsx' },
   { name: 'Switch', family: 'controls', file: 'apps/desktop/src/renderer/ui/controls/Switch.tsx' },
-  { name: 'Checkbox', family: 'controls', file: 'apps/desktop/src/renderer/ui/controls/Checkbox.tsx' },
-  { name: 'SwatchPicker', family: 'controls', file: 'apps/desktop/src/renderer/ui/controls/SwatchPicker.tsx' },
-  { name: 'TextField', family: 'controls', file: 'apps/desktop/src/renderer/ui/controls/TextField.tsx' },
-  { name: 'ShortcutSheet', family: 'controls', file: 'apps/desktop/src/renderer/ui/controls/ShortcutSheet.tsx' },
-  { name: 'OnboardingStep', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/OnboardingStep.tsx' },
-  { name: 'ChoiceRow', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/ChoiceRow.tsx' },
-  { name: 'ConsentCard', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/ConsentCard.tsx' },
-  { name: 'ChoiceGroup', family: 'onboarding', file: 'apps/desktop/src/renderer/ui/onboarding/ChoiceGroup.tsx' },
+  {
+    name: 'Checkbox',
+    family: 'controls',
+    file: 'apps/desktop/src/renderer/ui/controls/Checkbox.tsx',
+  },
+  {
+    name: 'SwatchPicker',
+    family: 'controls',
+    file: 'apps/desktop/src/renderer/ui/controls/SwatchPicker.tsx',
+  },
+  {
+    name: 'TextField',
+    family: 'controls',
+    file: 'apps/desktop/src/renderer/ui/controls/TextField.tsx',
+  },
+  {
+    name: 'ShortcutSheet',
+    family: 'controls',
+    file: 'apps/desktop/src/renderer/ui/controls/ShortcutSheet.tsx',
+  },
+  {
+    name: 'OnboardingStep',
+    family: 'onboarding',
+    file: 'apps/desktop/src/renderer/ui/onboarding/OnboardingStep.tsx',
+  },
+  {
+    name: 'ChoiceRow',
+    family: 'onboarding',
+    file: 'apps/desktop/src/renderer/ui/onboarding/ChoiceRow.tsx',
+  },
+  {
+    name: 'ConsentCard',
+    family: 'onboarding',
+    file: 'apps/desktop/src/renderer/ui/onboarding/ConsentCard.tsx',
+  },
+  {
+    name: 'ChoiceGroup',
+    family: 'onboarding',
+    file: 'apps/desktop/src/renderer/ui/onboarding/ChoiceGroup.tsx',
+  },
 ] as const satisfies readonly ComponentEntry[];
 
 /** Name of every component in the manifest. */

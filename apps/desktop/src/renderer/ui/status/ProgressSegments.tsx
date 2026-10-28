@@ -6,7 +6,15 @@
  * the ready check.
  */
 import type { CSSProperties } from 'react';
-import type { ComponentPropsMap, ErrorLineKind, ProgressSegment, ProgressSegmentsProps, SegmentState, SyncAccount, SyncCheckpoint } from '../props';
+import type {
+  ComponentPropsMap,
+  ErrorLineKind,
+  ProgressSegment,
+  ProgressSegmentsProps,
+  SegmentState,
+  SyncAccount,
+  SyncCheckpoint,
+} from '../props';
 import { PartButton, PartIcon, formatCount, formatTime } from '../surfaces/parts';
 import { SpinnerGlyph } from './Spinner';
 
@@ -28,7 +36,12 @@ export function failureCopy(failure: ErrorLineKind): string {
     case 'keyRefused':
       return `${failure.provider} refused the saved key, so nothing was sent.`;
     case 'sortFailed': {
-      const why = failure.cause === 'keyRefused' ? 'the key was refused' : failure.cause === 'unreachable' ? `${failure.provider} didn’t answer` : 'today’s AI limit is reached';
+      const why =
+        failure.cause === 'keyRefused'
+          ? 'the key was refused'
+          : failure.cause === 'unreachable'
+            ? `${failure.provider} didn’t answer`
+            : 'today’s AI limit is reached';
       return `Couldn’t sort with ${failure.provider}: ${why}. Mail is ready; sorting will retry.`;
     }
     case 'reason':
@@ -42,7 +55,10 @@ function lineFor(cp: SyncCheckpoint): string {
     case 'connect':
       return cp.state === 'done' ? 'Connected' : cp.state === 'current' ? 'Connecting…' : 'Connect';
     case 'find':
-      if (cp.state === 'done') return cp.estimate !== undefined ? `Found about ${formatCount(cp.estimate)} recent emails` : 'Found recent mail';
+      if (cp.state === 'done')
+        return cp.estimate !== undefined
+          ? `Found about ${formatCount(cp.estimate)} recent emails`
+          : 'Found recent mail';
       return cp.state === 'current' ? 'Finding recent mail…' : 'Find recent mail';
     case 'read': {
       const count = `${formatCount(cp.read)} of ${formatCount(cp.of)}`;
@@ -86,7 +102,12 @@ function Segment({ cp }: { cp: SyncCheckpoint }) {
   const indeterminate = cp.state === 'current' && fraction === null;
   return (
     <i className="ui-progress-segments__seg" data-state={cp.state} data-step={cp.step}>
-      {filling ? <i className="ui-progress-segments__fill" style={{ '--fill': String(fraction) } as CSSProperties} /> : null}
+      {filling ? (
+        <i
+          className="ui-progress-segments__fill"
+          style={{ '--fill': String(fraction) } as CSSProperties}
+        />
+      ) : null}
       {indeterminate ? <i className="ui-progress-segments__runner" /> : null}
     </i>
   );
@@ -98,7 +119,12 @@ function PlainSegment({ segment }: { segment: ProgressSegment }) {
   const indeterminate = segment.state === 'current' && fraction === null;
   return (
     <i className="ui-progress-segments__seg" data-state={segment.state} title={segment.label}>
-      {filling ? <i className="ui-progress-segments__fill" style={{ '--fill': String(fraction) } as CSSProperties} /> : null}
+      {filling ? (
+        <i
+          className="ui-progress-segments__fill"
+          style={{ '--fill': String(fraction) } as CSSProperties}
+        />
+      ) : null}
       {indeterminate ? <i className="ui-progress-segments__runner" /> : null}
     </i>
   );
@@ -111,16 +137,18 @@ function Dot({ color }: { color: SyncAccount['color'] }) {
 function checkpointsStatus(p: CheckpointsProps): string {
   const { checkpoints } = p;
   if (p.notConnected) return 'Not connected';
-  if (checkpoints.some((cp) => cp.state === 'failed')) return 'Stopped';
-  if (checkpoints.some((cp) => cp.state === 'paused')) return p.pausedUntil ? `Paused until ${formatTime(p.pausedUntil)}` : 'Paused';
-  const current = checkpoints.find((cp) => cp.state === 'current');
+  if (checkpoints.some(cp => cp.state === 'failed')) return 'Stopped';
+  if (checkpoints.some(cp => cp.state === 'paused'))
+    return p.pausedUntil ? `Paused until ${formatTime(p.pausedUntil)}` : 'Paused';
+  const current = checkpoints.find(cp => cp.state === 'current');
   if (current) {
-    if (current.step === 'read') return `Reading ${formatCount(current.read)} of ${formatCount(current.of)}`;
+    if (current.step === 'read')
+      return `Reading ${formatCount(current.read)} of ${formatCount(current.of)}`;
     if (current.step === 'sort') return 'Sorting';
     return current.step === 'find' ? 'Finding mail' : 'Connecting';
   }
-  if (checkpoints.some((cp) => cp.state === 'partial')) return 'Sorting continues';
-  if (checkpoints.length > 0 && checkpoints.every((cp) => cp.state === 'done')) return 'Ready';
+  if (checkpoints.some(cp => cp.state === 'partial')) return 'Sorting continues';
+  if (checkpoints.length > 0 && checkpoints.every(cp => cp.state === 'done')) return 'Ready';
   return '';
 }
 
@@ -128,22 +156,40 @@ function checkpointsStatus(p: CheckpointsProps): string {
 function phaseOf(p: CheckpointsProps): string {
   const { address } = p.account;
   const { checkpoints } = p;
-  if (p.notConnected || checkpoints.some((cp) => cp.state === 'failed')) return `${address} sync stopped.`;
-  if (checkpoints.length > 0 && checkpoints.every((cp) => cp.state === 'done' || cp.state === 'partial')) return `${address} is ready.`;
-  if (checkpoints.some((cp) => cp.step === 'find' && cp.state === 'done')) return `${address}: found recent mail.`;
-  if (checkpoints.some((cp) => cp.step === 'connect' && cp.state === 'done')) return `${address} connected.`;
+  if (p.notConnected || checkpoints.some(cp => cp.state === 'failed'))
+    return `${address} sync stopped.`;
+  if (
+    checkpoints.length > 0 &&
+    checkpoints.every(cp => cp.state === 'done' || cp.state === 'partial')
+  )
+    return `${address} is ready.`;
+  if (checkpoints.some(cp => cp.step === 'find' && cp.state === 'done'))
+    return `${address}: found recent mail.`;
+  if (checkpoints.some(cp => cp.step === 'connect' && cp.state === 'done'))
+    return `${address} connected.`;
   return '';
 }
 
 function Checkpoints(p: CheckpointsProps) {
   const { account, checkpoints, failure, notConnected, onRetry, onOpenSettings, compact } = p;
-  const failed = notConnected || checkpoints.some((cp) => cp.state === 'failed');
+  const failed = notConnected || checkpoints.some(cp => cp.state === 'failed');
   const status = checkpointsStatus(p);
-  const current = checkpoints.find((cp) => cp.state === 'current' || cp.state === 'paused' || cp.state === 'failed');
-  const valuetext = current ? (current.state === 'failed' && failure ? failureCopy(failure) : lineFor(current)) : status;
+  const current = checkpoints.find(
+    cp => cp.state === 'current' || cp.state === 'paused' || cp.state === 'failed',
+  );
+  const valuetext = current
+    ? current.state === 'failed' && failure
+      ? failureCopy(failure)
+      : lineFor(current)
+    : status;
   const lines = notConnected ? [] : checkpoints;
   return (
-    <div className="ui-progress-segments" data-variant="checkpoints" data-state={failed ? 'failed' : status === 'Ready' ? 'ready' : 'working'} data-compact={compact ? 'true' : undefined}>
+    <div
+      className="ui-progress-segments"
+      data-variant="checkpoints"
+      data-state={failed ? 'failed' : status === 'Ready' ? 'ready' : 'working'}
+      data-compact={compact ? 'true' : undefined}
+    >
       <div className="ui-progress-segments__top">
         <Dot color={account.color} />
         <span className="ui-progress-segments__address">{account.address}</span>
@@ -156,33 +202,52 @@ function Checkpoints(p: CheckpointsProps) {
           <span className="ui-progress-segments__status">{status}</span>
         )}
       </div>
-      <div className="ui-progress-segments__bar" role="progressbar" aria-label={`${account.address} sync`} aria-valuetext={valuetext || undefined}>
-        {checkpoints.map((cp) => (
+      <div
+        className="ui-progress-segments__bar"
+        role="progressbar"
+        aria-label={`${account.address} sync`}
+        aria-valuetext={valuetext || undefined}
+      >
+        {checkpoints.map(cp => (
           <Segment key={cp.step} cp={cp} />
         ))}
       </div>
       {compact || lines.length === 0 ? null : (
         <ul className="ui-progress-segments__checklist">
-          {lines.map((cp) => {
+          {lines.map(cp => {
             const text = cp.state === 'failed' && failure ? failureCopy(failure) : lineFor(cp);
             const marker = MARKER[cp.state];
             return (
               <li key={cp.step} className="ui-progress-segments__line" data-state={cp.state}>
-                <span className="ui-progress-segments__marker">{marker === 'spin' ? <SpinnerGlyph /> : <PartIcon name={marker} />}</span>
+                <span className="ui-progress-segments__marker">
+                  {marker === 'spin' ? <SpinnerGlyph /> : <PartIcon name={marker} />}
+                </span>
                 <span className="ui-progress-segments__text">{text}</span>
                 {cp.state === 'failed' && failure?.kind === 'sortFailed' && onOpenSettings ? (
-                  <PartButton variant="text" size="sm" label="Open Settings" onPress={() => onOpenSettings()} />
+                  <PartButton
+                    variant="text"
+                    size="sm"
+                    label="Open Settings"
+                    onPress={() => onOpenSettings()}
+                  />
                 ) : null}
               </li>
             );
           })}
         </ul>
       )}
-      {failure && !checkpoints.some((cp) => cp.state === 'failed') && !compact ? (
+      {failure && !checkpoints.some(cp => cp.state === 'failed') && !compact ? (
         <p className="ui-progress-segments__failure">
           <PartIcon name="alert" />
           <span>{failureCopy(failure)}</span>
-          {failure.kind === 'sortFailed' && onOpenSettings ? <PartButton variant="text" size="sm" label="Open Settings" onPress={() => onOpenSettings()} /> : null}
+          {failure.kind === 'sortFailed' && onOpenSettings ? (
+            <PartButton
+              variant="text"
+              size="sm"
+              label="Open Settings"
+              onPress={() => onOpenSettings()}
+            />
+          ) : null}
         </p>
       ) : null}
       <span className="ui-sr-only" role="status">
@@ -212,18 +277,28 @@ export function ProgressSegments(props: ComponentPropsMap['ProgressSegments']) {
           aria-valuenow={Math.min(done, of)}
           aria-valuetext={`Importing ${formatCount(done)} of ${formatCount(of)}`}
         >
-          <i className="ui-progress-segments__fill" style={{ '--fill': String(fraction) } as CSSProperties} />
+          <i
+            className="ui-progress-segments__fill"
+            style={{ '--fill': String(fraction) } as CSSProperties}
+          />
         </div>
       </div>
     );
   }
 
   if (props.variant === 'segments') {
-    const current = props.segments.find((s) => s.state === 'current' || s.state === 'paused' || s.state === 'failed');
+    const current = props.segments.find(
+      s => s.state === 'current' || s.state === 'paused' || s.state === 'failed',
+    );
     return (
       <div className="ui-progress-segments" data-variant="segments">
-        <div className="ui-progress-segments__bar" role="progressbar" aria-label={props.label} aria-valuetext={current?.label}>
-          {props.segments.map((s) => (
+        <div
+          className="ui-progress-segments__bar"
+          role="progressbar"
+          aria-label={props.label}
+          aria-valuetext={current?.label}
+        >
+          {props.segments.map(s => (
             <PlainSegment key={s.label} segment={s} />
           ))}
         </div>
@@ -244,7 +319,12 @@ export function ProgressSegments(props: ComponentPropsMap['ProgressSegments']) {
   const label = props.label === 'ready' ? 'Your mail is ready' : 'Account connected';
   return (
     <div className="ui-progress-segments" data-variant="ready">
-      <svg className="ui-progress-segments__check" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <svg
+        className="ui-progress-segments__check"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        focusable="false"
+      >
         <path d="M5 12.5l4.5 4.5L19 7.5" pathLength="1" />
       </svg>
       <p className="ui-progress-segments__ready-label" role="status">
@@ -252,13 +332,15 @@ export function ProgressSegments(props: ComponentPropsMap['ProgressSegments']) {
       </p>
       {props.accounts && props.accounts.length > 0 ? (
         <ul className="ui-progress-segments__accounts">
-          {props.accounts.map((a) => (
+          {props.accounts.map(a => (
             <li key={a.address} className="ui-progress-segments__account">
               <Dot color={a.color} />
               <span className="ui-progress-segments__address">{a.address}</span>
               <span className="ui-progress-segments__status">
                 {`Newest ${formatCount(a.read)} read`}
-                {a.sorted ? ` · sorted ${formatCount(a.sorted.done)} of ${formatCount(a.sorted.of)}` : ''}
+                {a.sorted
+                  ? ` · sorted ${formatCount(a.sorted.done)} of ${formatCount(a.sorted.of)}`
+                  : ''}
               </span>
             </li>
           ))}

@@ -6,7 +6,17 @@
 import { useContext } from 'react';
 import type { CSSProperties } from 'react';
 import type { CalendarEventData, CalendarGridProps } from '../props';
-import { dateOf, dayOf, dayTitle, hoursOf, monthMatrix, parseYearMonth, WEEKDAYS, weekdayOrder, yearMonthOf } from './dates';
+import {
+  dateOf,
+  dayOf,
+  dayTitle,
+  hoursOf,
+  monthMatrix,
+  parseYearMonth,
+  WEEKDAYS,
+  weekdayOrder,
+  yearMonthOf,
+} from './dates';
 import { calVar, eventDomId, eventLabel, stackDomId, walkAt } from './eventText';
 import { allDayOn } from './layout';
 import { GridAction } from './GridAction';
@@ -16,12 +26,22 @@ import { ActiveStack } from './segment';
 function onDay(events: readonly CalendarEventData[], day: string): CalendarEventData[] {
   const allDay = allDayOn(events, day);
   const timed = events
-    .filter((e) => !e.allDay && dayOf(e.start) === day)
+    .filter(e => !e.allDay && dayOf(e.start) === day)
     .sort((a, b) => hoursOf(a.start) - hoursOf(b.start) || a.id.localeCompare(b.id));
   return [...allDay, ...timed];
 }
 
-export function MonthGrid({ start, events, now, weekStartsOn, selectedId, onSelect, onOpen, onOpenStack, emptyAction }: CalendarGridProps) {
+export function MonthGrid({
+  start,
+  events,
+  now,
+  weekStartsOn,
+  selectedId,
+  onSelect,
+  onOpen,
+  onOpenStack,
+  emptyAction,
+}: CalendarGridProps) {
   const ym = yearMonthOf(start);
   const month = parseYearMonth(ym).m;
   const weeks = monthMatrix(ym, weekStartsOn);
@@ -33,15 +53,20 @@ export function MonthGrid({ start, events, now, weekStartsOn, selectedId, onSele
   return (
     <div className="ui-calendar-grid__month">
       <div className="ui-calendar-grid__mrow" role="row" data-head="true">
-        {weekdayOrder(weekStartsOn).map((d) => (
-          <div key={d} role="columnheader" className="ui-calendar-grid__mh" aria-label={WEEKDAYS[d]}>
+        {weekdayOrder(weekStartsOn).map(d => (
+          <div
+            key={d}
+            role="columnheader"
+            className="ui-calendar-grid__mh"
+            aria-label={WEEKDAYS[d]}
+          >
             {WEEKDAYS[d].slice(0, 3)}
           </div>
         ))}
       </div>
-      {weeks.map((week) => (
+      {weeks.map(week => (
         <div className="ui-calendar-grid__mrow" role="row" key={week[0]}>
-          {week.map((day) => {
+          {week.map(day => {
             const list = onDay(events, day);
             const shown = list.length <= 3 ? list : list.slice(0, 2);
             const hidden = list.slice(shown.length);
@@ -55,10 +80,13 @@ export function MonthGrid({ start, events, now, weekStartsOn, selectedId, onSele
                 data-today={isToday ? 'true' : undefined}
                 aria-label={dayTitle(day)}
               >
-                <span className="ui-calendar-grid__mnum" aria-current={isToday ? 'date' : undefined}>
+                <span
+                  className="ui-calendar-grid__mnum"
+                  aria-current={isToday ? 'date' : undefined}
+                >
                   {dateOf(day).getDate()}
                 </span>
-                {shown.map((event) => {
+                {shown.map(event => {
                   const first = !seen.has(event.id);
                   seen.add(event.id);
                   return (
@@ -75,8 +103,8 @@ export function MonthGrid({ start, events, now, weekStartsOn, selectedId, onSele
                       tabIndex={-1}
                       style={{ '--cal': calVar(event.calendar.color) } as CSSProperties}
                       onClick={() => onSelect(event.id)}
-                      onDoubleClick={(e) => onOpen(event.id, e.currentTarget)}
-                      onKeyDown={(e) => {
+                      onDoubleClick={e => onOpen(event.id, e.currentTarget)}
+                      onKeyDown={e => {
                         if (e.nativeEvent.isComposing || e.key !== 'Enter') return;
                         e.preventDefault();
                         onOpen(event.id, e.currentTarget);
@@ -94,11 +122,18 @@ export function MonthGrid({ start, events, now, weekStartsOn, selectedId, onSele
                     className="ui-calendar-grid__mev"
                     data-more="true"
                     data-walk-at={walkAt(hidden[0])}
-                    data-active={activeStack === stackDomId([`${day}:${hidden[0].id}`]) ? 'true' : undefined}
+                    data-active={
+                      activeStack === stackDomId([`${day}:${hidden[0].id}`]) ? 'true' : undefined
+                    }
                     tabIndex={-1}
                     aria-haspopup="menu"
                     aria-label={`${hidden.length} more ${hidden.length === 1 ? 'event' : 'events'} on ${dayTitle(day)}`}
-                    onClick={(e) => onOpenStack(hidden.map((h) => h.id), e.currentTarget)}
+                    onClick={e =>
+                      onOpenStack(
+                        hidden.map(h => h.id),
+                        e.currentTarget,
+                      )
+                    }
                   >
                     {hidden.length} more
                   </button>

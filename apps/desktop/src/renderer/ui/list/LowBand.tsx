@@ -10,10 +10,14 @@ const SHOWN = 3;
 
 /** The names and the "and N more" suffix apart, so the suffix survives when the names are cut. */
 export function lowBandParts(senders: readonly string[]): { names: string; more: string } {
-  const names = senders.filter((s) => s.length > 0);
+  const names = senders.filter(s => s.length > 0);
   if (names.length <= 1) return { names: names[0] ?? '', more: '' };
-  if (names.length <= SHOWN) return { names: `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`, more: '' };
-  return { names: names.slice(0, SHOWN).join(', '), more: `and ${formatCount(names.length - SHOWN)} more` };
+  if (names.length <= SHOWN)
+    return { names: `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`, more: '' };
+  return {
+    names: names.slice(0, SHOWN).join(', '),
+    more: `and ${formatCount(names.length - SHOWN)} more`,
+  };
 }
 
 /** "Field Notes", "Field Notes and Cedar Market", "Field Notes, Cedar Market and Google", "…, Google and 3 more". */

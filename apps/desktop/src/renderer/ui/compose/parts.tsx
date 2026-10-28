@@ -18,7 +18,7 @@ export function Keycaps({ commandId, literal }: { commandId?: CommandId; literal
   const caps = literal ? [literal as string] : keycapsFor(commandId);
   return (
     <>
-      {caps.map((cap) => (
+      {caps.map(cap => (
         <Kbd key={cap}>{cap}</Kbd>
       ))}
     </>
@@ -52,7 +52,17 @@ export interface BtnProps {
 
 /** filled, text or icon. Press, focus and hover are in the stylesheet; this file only decides the markup. */
 export function Btn(props: BtnProps) {
-  const { variant, label, size = 'sm', icon, trailingIcon, commandId, keys, keyHint = 'tooltip', tone = 'default' } = props;
+  const {
+    variant,
+    label,
+    size = 'sm',
+    icon,
+    trailingIcon,
+    commandId,
+    keys,
+    keyHint = 'tooltip',
+    tone = 'default',
+  } = props;
   const caps = keys ? [keys as string] : keycapsFor(commandId);
   const base = props.hint ?? (variant === 'icon' ? label : undefined);
   const tooltip = base ? (caps.length ? `${base} (${caps.join(' ')})` : base) : undefined;
@@ -77,7 +87,9 @@ export function Btn(props: BtnProps) {
       {icon ? <Icon name={icon} /> : null}
       {variant === 'icon' ? null : <span className="ui-compose-btn__label">{label}</span>}
       {trailingIcon ? <Icon name={trailingIcon} size="sm" /> : null}
-      {keyHint === 'always' && caps.length ? <Keycaps commandId={commandId} literal={keys} /> : null}
+      {keyHint === 'always' && caps.length ? (
+        <Keycaps commandId={commandId} literal={keys} />
+      ) : null}
     </button>
   );
 }

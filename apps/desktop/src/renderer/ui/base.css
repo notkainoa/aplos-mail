@@ -7,8 +7,8 @@
    - Increase Contrast and reduced motion are handled by the tokens themselves.
    - The caret is left to the platform: its blink is never altered. */
 
-@import "./generated/tokens.css";
-@import "../../../assets/fonts/fonts.css";
+@import './generated/tokens.css';
+@import '../../../assets/fonts/fonts.css';
 
 /* The root keeps the platform's font size, so 1rem stays 16px and follows the
    user's zoom and text size: every rem token is px/16 (DESIGN 11.6). Never set
@@ -76,17 +76,17 @@ table {
 }
 
 :where(
-    h1,
-    h2,
-    h3,
-    h4,
-    h5,
-    h6,
-    .ui-display,
-    .ui-heading,
-    .ui-text[data-variant="display"],
-    .ui-text[data-variant="heading"]
-  ) {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  .ui-display,
+  .ui-heading,
+  .ui-text[data-variant='display'],
+  .ui-text[data-variant='heading']
+) {
   text-wrap: balance;
 }
 

@@ -12,7 +12,12 @@ function radiosOf(el: HTMLElement): HTMLElement[] {
 
 /** The radio an arrow key moves to (wrapping), or null for any other key. */
 export function arrowTarget(from: HTMLElement, key: string): HTMLElement | null {
-  const step = key === 'ArrowDown' || key === 'ArrowRight' ? 1 : key === 'ArrowUp' || key === 'ArrowLeft' ? -1 : 0;
+  const step =
+    key === 'ArrowDown' || key === 'ArrowRight'
+      ? 1
+      : key === 'ArrowUp' || key === 'ArrowLeft'
+        ? -1
+        : 0;
   if (step === 0) return null;
   const radios = radiosOf(from);
   const at = radios.indexOf(from);
@@ -24,7 +29,7 @@ export function arrowTarget(from: HTMLElement, key: string): HTMLElement | null 
 export function syncTabStops(el: HTMLElement | null): void {
   if (!el) return;
   const radios = radiosOf(el);
-  const chosen = radios.some((r) => r.getAttribute('aria-checked') === 'true');
+  const chosen = radios.some(r => r.getAttribute('aria-checked') === 'true');
   radios.forEach((r, i) => {
     const stop = chosen ? r.getAttribute('aria-checked') === 'true' : i === 0;
     r.tabIndex = stop ? 0 : -1;

@@ -41,10 +41,10 @@ function plain(key: string, id: string, extra: Partial<KeyInput> = {}): GenKey {
 }
 
 const KEY_POOL: readonly GenKey[] = [
-  ...'abcdefhijklmnorstuwxyz'.split('').map((k) => plain(k, k)),
-  ...'aejlrsx'.split('').map((k) => plain(k.toUpperCase(), k)), // Caps Lock on
-  ...'arx'.split('').map((k) => plain(k.toUpperCase(), `shift+${k}`, { shiftKey: true })),
-  ...'12345679'.split('').map((d) => plain(d, d)),
+  ...'abcdefhijklmnorstuwxyz'.split('').map(k => plain(k, k)),
+  ...'aejlrsx'.split('').map(k => plain(k.toUpperCase(), k)), // Caps Lock on
+  ...'arx'.split('').map(k => plain(k.toUpperCase(), `shift+${k}`, { shiftKey: true })),
+  ...'12345679'.split('').map(d => plain(d, d)),
   plain('?', '?', { shiftKey: true, code: 'Slash' }),
   plain('#', '#', { shiftKey: true, code: 'Digit3' }),
   plain('/', '/'),
@@ -74,7 +74,7 @@ const KEY_POOL: readonly GenKey[] = [
   plain('Enter', 'shift+meta+Enter', { metaKey: true, shiftKey: true }),
   plain('¬', 'alt+meta+l', { metaKey: true, altKey: true, code: 'KeyL' }),
   plain('®', 'alt+meta+r', { metaKey: true, altKey: true, code: 'KeyR' }),
-  ...'12345678'.split('').map((d) => plain(d, `ctrl+${d}`, { ctrlKey: true })),
+  ...'12345678'.split('').map(d => plain(d, `ctrl+${d}`, { ctrlKey: true })),
 ];
 
 const STACKS: readonly (readonly ContextName[])[] = [
@@ -128,7 +128,14 @@ const CONDITIONS: readonly Condition[] = [
 ];
 
 /** Focus-scoped and modal: exempt from the single-key switch, and nothing outside them answers. */
-const MODAL = new Set<ContextName>(['palette', 'menu', 'datePicker', 'dialog', 'sheet', 'lowImportance']);
+const MODAL = new Set<ContextName>([
+  'palette',
+  'menu',
+  'datePicker',
+  'dialog',
+  'sheet',
+  'lowImportance',
+]);
 const TEXT_EDITING = new Set(['meta+a', 'ctrl+a', 'ctrl+e', 'ctrl+k']);
 
 type Pick = () => number;
@@ -138,16 +145,25 @@ function choose<T>(rand: Pick, items: readonly T[]): T {
 }
 
 /** DESIGN §5 rule 16 and the focus rules, one binding at a time. */
-function oracleAllows(b: Binding, key: GenKey, focus: FocusKind, prefs: KeyPrefs, repeat: boolean, ctx: CommandContext, guardOf: (id: string) => Condition | undefined): boolean {
+function oracleAllows(
+  b: Binding,
+  key: GenKey,
+  focus: FocusKind,
+  prefs: KeyPrefs,
+  repeat: boolean,
+  ctx: CommandContext,
+  guardOf: (id: string) => Condition | undefined,
+): boolean {
   const hasCommandModifier = key.event.metaKey || key.event.ctrlKey;
-  const textOk = b.inTextField || key.id === 'Escape' || (hasCommandModifier && !TEXT_EDITING.has(key.id));
+  const textOk =
+    b.inTextField || key.id === 'Escape' || (hasCommandModifier && !TEXT_EDITING.has(key.id));
   const controlOk = b.inTextField || !(key.id === 'Space' || key.id === 'Enter');
   if (focus === 'text' && !textOk) return false;
   if (focus === 'control' && !controlOk) return false;
   // WCAG 2.1.4 is independent of the field rule: inTextField does not exempt a character key.
   if (!prefs.singleKeyShortcuts && key.character && !MODAL.has(b.context)) return false;
   if (repeat && !b.repeat) return false;
-  if (ctx.stack.some((c) => DISABLED_IN[c]?.includes(b.commandId))) return false;
+  if (ctx.stack.some(c => DISABLED_IN[c]?.includes(b.commandId))) return false;
   const guard = guardOf(b.commandId);
   return guard === undefined || ctx.conditions[guard] === true;
 }
@@ -162,25 +178,33 @@ function reachable(stack: readonly ContextName[]): readonly ContextName[] {
 }
 
 /** The innermost reachable context that answers decides; the highest-priority guard first; a hold rides only with its partner tap. */
-function oracle(key: GenKey, ctx: CommandContext, table: readonly Binding[], repeat: boolean, composing: boolean, guardOf: (id: string) => Condition | undefined) {
+function oracle(
+  key: GenKey,
+  ctx: CommandContext,
+  table: readonly Binding[],
+  repeat: boolean,
+  composing: boolean,
+  guardOf: (id: string) => Condition | undefined,
+) {
   if (composing) return null;
   const contexts = reachable(ctx.stack);
-  const candidates = table.filter((b) => chordId(b.chord) === key.id && contexts.includes(b.context));
+  const candidates = table.filter(b => chordId(b.chord) === key.id && contexts.includes(b.context));
   const depthOf = (b: Binding) => contexts.lastIndexOf(b.context);
   const deciding = candidates
-    .filter((b) => oracleAllows(b, key, ctx.focus, ctx.prefs, repeat, ctx, guardOf))
+    .filter(b => oracleAllows(b, key, ctx.focus, ctx.prefs, repeat, ctx, guardOf))
     .sort((a, b) => depthOf(b) - depthOf(a));
   if (deciding.length === 0) return null;
   const depth = depthOf(deciding[0]);
-  const level = deciding.filter((b) => depthOf(b) === depth);
+  const level = deciding.filter(b => depthOf(b) === depth);
   const rank = (b: Binding) => {
     const guard = guardOf(b.commandId);
     return guard === undefined ? 99 : CONDITION_PRIORITY.indexOf(guard);
   };
-  const taps = level.filter((b) => b.phase === 'tap').sort((a, b) => rank(a) - rank(b));
-  const holds = level.filter((b) => b.phase === 'hold').sort((a, b) => rank(a) - rank(b));
+  const taps = level.filter(b => b.phase === 'tap').sort((a, b) => rank(a) - rank(b));
+  const holds = level.filter(b => b.phase === 'hold').sort((a, b) => rank(a) - rank(b));
   if (taps.length > 0) {
-    const partner = holds[0] && holds[0].holdFor === taps[0].commandId ? holds[0].commandId : undefined;
+    const partner =
+      holds[0] && holds[0].holdFor === taps[0].commandId ? holds[0].commandId : undefined;
     return { commandId: taps[0].commandId, phase: 'tap', holdCommandId: partner };
   }
   return { commandId: holds[0].commandId, phase: 'hold', holdCommandId: undefined };
@@ -234,24 +258,60 @@ test(`resolver agrees with the oracle over ${SEQUENCES} seeded sequences`, () =>
       if (actual) {
         resolved += 1;
         assert.ok(stack.includes(actual.context), label);
-        const owner = table.find((b) => b.commandId === actual.commandId && b.context === actual.context && chordId(b.chord) === key.id);
+        const owner = table.find(
+          b =>
+            b.commandId === actual.commandId &&
+            b.context === actual.context &&
+            chordId(b.chord) === key.id,
+        );
         assert.ok(owner, label);
-        if (focus === 'text' && key.character) assert.ok(owner.inTextField, `single key fired in a text field: ${label}`);
-        if (!prefs.singleKeyShortcuts && key.character) assert.ok(MODAL.has(owner.context), `single key fired with the switch off: ${label}`);
-        assert.ok(reachable(stack).includes(actual.context), `a key reached behind a modal: ${label}`);
-        if (stack.includes('done')) assert.ok(actual.commandId !== 'mail.done' && actual.commandId !== 'mail.later', `Done or Later in the Done place: ${label}`);
-        if (stack.some((c) => ONBOARDING_WINDOW.has(c))) {
-          assert.ok(ONBOARDING_WINDOW.has(actual.context) || MODAL.has(actual.context), `an app command answered in the onboarding window: ${label}`);
+        if (focus === 'text' && key.character)
+          assert.ok(owner.inTextField, `single key fired in a text field: ${label}`);
+        if (!prefs.singleKeyShortcuts && key.character)
+          assert.ok(MODAL.has(owner.context), `single key fired with the switch off: ${label}`);
+        assert.ok(
+          reachable(stack).includes(actual.context),
+          `a key reached behind a modal: ${label}`,
+        );
+        if (stack.includes('done'))
+          assert.ok(
+            actual.commandId !== 'mail.done' && actual.commandId !== 'mail.later',
+            `Done or Later in the Done place: ${label}`,
+          );
+        if (stack.some(c => ONBOARDING_WINDOW.has(c))) {
+          assert.ok(
+            ONBOARDING_WINDOW.has(actual.context) || MODAL.has(actual.context),
+            `an app command answered in the onboarding window: ${label}`,
+          );
         }
-        if (stack.includes('drill') && /^[a-z]$/.test(key.id)) assert.ok(actual.commandId.startsWith('drill.'), `a letter in the drill reached ${actual.commandId}: ${label}`);
-        if (stack.includes('firstSync') && key.id === 'Escape' && !MODAL.has(stack[stack.length - 1])) {
-          assert.equal(actual.commandId, 'onboarding.openAplos', `Esc on first sync must open Aplos: ${label}`);
+        if (stack.includes('drill') && /^[a-z]$/.test(key.id))
+          assert.ok(
+            actual.commandId.startsWith('drill.'),
+            `a letter in the drill reached ${actual.commandId}: ${label}`,
+          );
+        if (
+          stack.includes('firstSync') &&
+          key.id === 'Escape' &&
+          !MODAL.has(stack[stack.length - 1])
+        ) {
+          assert.equal(
+            actual.commandId,
+            'onboarding.openAplos',
+            `Esc on first sync must open Aplos: ${label}`,
+          );
         }
         const triageArrow = key.id === 'ArrowLeft' || key.id === 'ArrowRight';
-        if (triageArrow && (actual.commandId === 'mail.done' || actual.commandId === 'mail.later')) {
-          assert.ok(['home', 'oneByOne', 'reader'].includes(actual.context), `arrow triage outside Home/one by one/reader: ${label}`);
+        if (
+          triageArrow &&
+          (actual.commandId === 'mail.done' || actual.commandId === 'mail.later')
+        ) {
+          assert.ok(
+            ['home', 'oneByOne', 'reader'].includes(actual.context),
+            `arrow triage outside Home/one by one/reader: ${label}`,
+          );
         }
-        if (key.id === 'Space' && actual.phase === 'hold') assert.equal(actual.context, 'compose', label);
+        if (key.id === 'Space' && actual.phase === 'hold')
+          assert.equal(actual.context, 'compose', label);
       }
 
       // Hold timing: a hold-capable keydown, held for a random time.
@@ -259,7 +319,10 @@ test(`resolver agrees with the oracle over ${SEQUENCES} seeded sequences`, () =>
       if (actual && (actual.phase === 'hold' || holdId)) {
         const heldFor = Math.floor(rand() * 600);
         tracker.down(key.event, holdId!, clock);
-        assert.ok(tracker.swallows({ ...key.event, repeat: true }), `auto-repeat of the armed key is swallowed: ${label}`);
+        assert.ok(
+          tracker.swallows({ ...key.event, repeat: true }),
+          `auto-repeat of the armed key is swallowed: ${label}`,
+        );
         const upgrade = tracker.tick(clock + heldFor);
         const release = tracker.up(key.event, clock + heldFor);
         const isHold = heldFor >= prefs.holdThresholdMs;
@@ -282,5 +345,8 @@ test(`resolver agrees with the oracle over ${SEQUENCES} seeded sequences`, () =>
   }
   assert.equal(checked, SEQUENCES * SEQUENCE_LENGTH);
   // The onboarding-window and modal stacks bind few keys, so most keys there resolve to nothing by design.
-  assert.ok(resolved > checked * 0.15, `enough keys resolved to mean something (${resolved} of ${checked})`);
+  assert.ok(
+    resolved > checked * 0.15,
+    `enough keys resolved to mean something (${resolved} of ${checked})`,
+  );
 });

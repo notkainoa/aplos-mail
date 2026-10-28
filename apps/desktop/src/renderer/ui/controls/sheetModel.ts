@@ -19,7 +19,7 @@ export function sheetProps(sections: readonly SheetSection[]): SheetProps {
     groups.push({
       id: section.id,
       label: section.title,
-      entries: section.rows.map((row) => ({
+      entries: section.rows.map(row => ({
         commandId: row.id,
         label: row.label,
         alternatives: parseKeyText(row.keys),

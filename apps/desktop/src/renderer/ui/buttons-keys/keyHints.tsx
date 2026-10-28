@@ -12,7 +12,14 @@
 //   Without a stack the registry lists every context's bindings, which is wrong on screen.
 import { createContext, createElement, useContext, useMemo, type ReactNode } from 'react';
 import type { ContextName } from '../../commands';
-import type { CommandId, KeyHint, KeyHintsContextValue, LiteralKey, ShortcutChord, ShowKeysMode } from '../props';
+import type {
+  CommandId,
+  KeyHint,
+  KeyHintsContextValue,
+  LiteralKey,
+  ShortcutChord,
+  ShowKeysMode,
+} from '../props';
 
 const DEFAULT_HINTS: KeyHintsContextValue = { showKeys: 'tooltips' };
 
@@ -25,7 +32,13 @@ export function resolveShowKeys(state: { all: boolean; held: boolean }): ShowKey
 }
 
 /** Provided once by the shell; compute `showKeys` with resolveShowKeys so 'all' wins over 'held'. */
-export function KeyHintsProvider({ value, children }: { value: KeyHintsContextValue; children: ReactNode }) {
+export function KeyHintsProvider({
+  value,
+  children,
+}: {
+  value: KeyHintsContextValue;
+  children: ReactNode;
+}) {
   return createElement(KeyHintsContext.Provider, { value }, children);
 }
 
@@ -58,7 +71,7 @@ export function CommandKeysProvider({
   stack?: readonly ContextName[];
   children: ReactNode;
 }) {
-  const value = useMemo<DescribeCurrent>(() => (id) => describe(id, stack), [describe, stack]);
+  const value = useMemo<DescribeCurrent>(() => id => describe(id, stack), [describe, stack]);
   return createElement(CommandKeysContext.Provider, { value }, children);
 }
 
@@ -69,9 +82,13 @@ const HOLD_PREFIX = 'Hold ';
 export function parseKeyText(text: string): ShortcutChord[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
-  return trimmed.split(ALTERNATIVE_SEPARATOR).map((part) =>
-    part.startsWith(HOLD_PREFIX) ? { chord: part.slice(HOLD_PREFIX.length), hold: true } : { chord: part },
-  );
+  return trimmed
+    .split(ALTERNATIVE_SEPARATOR)
+    .map(part =>
+      part.startsWith(HOLD_PREFIX)
+        ? { chord: part.slice(HOLD_PREFIX.length), hold: true }
+        : { chord: part },
+    );
 }
 
 /** The keycaps of a control: a literal key where DESIGN requires one, otherwise the command's registry keys. */

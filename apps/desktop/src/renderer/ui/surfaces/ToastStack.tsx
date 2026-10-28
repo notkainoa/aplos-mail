@@ -24,14 +24,20 @@ export function visibleToasts(toasts: readonly ToastData[], reserved: number): T
   const room = Math.max(0, MAX_VISIBLE - reserved);
   const list = [...toasts];
   while (list.length > room) {
-    const plain = list.findIndex((toast) => !toast.undoable);
+    const plain = list.findIndex(toast => !toast.undoable);
     if (plain === -1) break;
     list.splice(plain, 1);
   }
   return list;
 }
 
-function UndoSendNotice({ state, reducedMotion, undoCommandId, onAction, announce }: NonNullable<ToastStackProps['undoSend']>) {
+function UndoSendNotice({
+  state,
+  reducedMotion,
+  undoCommandId,
+  onAction,
+  announce,
+}: NonNullable<ToastStackProps['undoSend']>) {
   const announced = useRef(false);
   useEffect(() => {
     if (announced.current || !announce || state.kind !== 'sending') return;
@@ -40,7 +46,12 @@ function UndoSendNotice({ state, reducedMotion, undoCommandId, onAction, announc
   }, [announce, state]);
 
   const verb = (action: UndoTrayAction, label: string, withKeys = false) => (
-    <button key={action} type="button" className="ui-toast__action" onClick={() => onAction(action)}>
+    <button
+      key={action}
+      type="button"
+      className="ui-toast__action"
+      onClick={() => onAction(action)}
+    >
       <span>{label}</span>
       {withKeys ? <PartKeys chords={keysFor(undoCommandId)} /> : null}
     </button>
@@ -65,7 +76,10 @@ function UndoSendNotice({ state, reducedMotion, undoCommandId, onAction, announc
       message = `Couldn’t send until ${formatTime(state.until)}. Your draft is saved.`;
       break;
   }
-  const fraction = state.kind === 'sending' && state.totalSeconds > 0 ? Math.max(0, Math.min(1, state.secondsLeft / state.totalSeconds)) : 0;
+  const fraction =
+    state.kind === 'sending' && state.totalSeconds > 0
+      ? Math.max(0, Math.min(1, state.secondsLeft / state.totalSeconds))
+      : 0;
   return (
     // Opted out of the stack's live region: the countdown ticks every second; the start is spoken once through `announce`.
     <div className="ui-toast" data-kind="undo-send" data-state="shown" aria-live="off">
@@ -75,18 +89,27 @@ function UndoSendNotice({ state, reducedMotion, undoCommandId, onAction, announc
       <span className="ui-toast__message">{message}</span>
       {verbs}
       {state.kind === 'sending' && !reducedMotion ? (
-        <span className="ui-toast__drain" aria-hidden="true" style={{ '--drain': String(fraction) } as CSSProperties} />
+        <span
+          className="ui-toast__drain"
+          aria-hidden="true"
+          style={{ '--drain': String(fraction) } as CSSProperties}
+        />
       ) : null}
     </div>
   );
 }
 
-export function ToastStack({ toasts, undoSend, onAction, onDismiss }: ComponentPropsMap['ToastStack']) {
+export function ToastStack({
+  toasts,
+  undoSend,
+  onAction,
+  onDismiss,
+}: ComponentPropsMap['ToastStack']) {
   const shown = visibleToasts(toasts, undoSend ? 1 : 0);
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
   // Plain toasts that gave way are removed for real, so they never come back later with a fresh timer.
-  const dropped = toasts.filter((toast) => !shown.includes(toast)).map((toast) => toast.id);
+  const dropped = toasts.filter(toast => !shown.includes(toast)).map(toast => toast.id);
   const droppedKey = dropped.join('\u0000');
   useEffect(() => {
     if (droppedKey) for (const id of droppedKey.split('\u0000')) dismiss.current(id);
@@ -94,8 +117,13 @@ export function ToastStack({ toasts, undoSend, onAction, onDismiss }: ComponentP
   return (
     // A plain container, not a landmark: always mounted so it is a live region before any toast arrives.
     <div className="ui-toast-stack" aria-live="polite">
-      {shown.map((toast) => (
-        <Toast key={toast.id} {...toast} onAction={(actionId) => onAction(toast.id, actionId)} onDismiss={() => onDismiss(toast.id)} />
+      {shown.map(toast => (
+        <Toast
+          key={toast.id}
+          {...toast}
+          onAction={actionId => onAction(toast.id, actionId)}
+          onDismiss={() => onDismiss(toast.id)}
+        />
       ))}
       {undoSend ? <UndoSendNotice {...undoSend} /> : null}
     </div>

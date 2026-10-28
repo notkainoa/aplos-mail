@@ -15,7 +15,10 @@ interface Copy {
 function copyFor(kind: ErrorLineKind): Copy {
   switch (kind.kind) {
     case 'writeRejected':
-      return { text: `Couldn’t ${kind.op}.`, actions: [{ action: 'retry', label: 'Retry', emphasis: 'text' }] };
+      return {
+        text: `Couldn’t ${kind.op}.`,
+        actions: [{ action: 'retry', label: 'Retry', emphasis: 'text' }],
+      };
     case 'sendFailed':
       return {
         text: `Couldn’t send to ${kind.recipient}. Your draft is saved.`,
@@ -25,7 +28,10 @@ function copyFor(kind: ErrorLineKind): Copy {
         ],
       };
     case 'bodyFailed':
-      return { text: 'Couldn’t load this email.', actions: [{ action: 'retry', label: 'Try again', emphasis: 'text' }] };
+      return {
+        text: 'Couldn’t load this email.',
+        actions: [{ action: 'retry', label: 'Try again', emphasis: 'text' }],
+      };
     case 'askFailed':
       return {
         text: `${kind.provider} didn’t answer.`,
@@ -59,7 +65,10 @@ function copyFor(kind: ErrorLineKind): Copy {
       };
     }
     case 'reason':
-      return { text: kind.text, actions: kind.retryable ? [{ action: 'retry', label: 'Try again', emphasis: 'text' }] : [] };
+      return {
+        text: kind.text,
+        actions: kind.retryable ? [{ action: 'retry', label: 'Try again', emphasis: 'text' }] : [],
+      };
   }
 }
 
@@ -73,7 +82,12 @@ export function ErrorLine(props: ErrorLineProps) {
   const editKey = keycapFor(editCommandId);
   const live = placement === 'column' || placement === 'dock' || placement === 'settings';
   return (
-    <div className="ui-error-line" data-placement={placement} data-kind={props.kind} role={live ? 'alert' : undefined}>
+    <div
+      className="ui-error-line"
+      data-placement={placement}
+      data-kind={props.kind}
+      role={live ? 'alert' : undefined}
+    >
       <Icon name="alert" size={placement === 'row' ? 'sm' : 'md'} />
       <span className="ui-error-line__text">{text}</span>
       {actions.length > 0 ? (

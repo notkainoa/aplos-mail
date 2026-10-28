@@ -27,14 +27,22 @@ test('parseChord normalizes spec strings', () => {
   assert.throws(() => parseChord('mod+k'), /Unknown modifier/);
   assert.throws(() => parseChord('shift+/'), /shifted symbol/);
   assert.throws(() => parseChord('shift+1'), /shifted symbol/);
-  assert.equal(chordId(parseChord('ctrl+shift+1')), 'ctrl+shift+1', 'under ⌃ the digit keeps shift');
+  assert.equal(
+    chordId(parseChord('ctrl+shift+1')),
+    'ctrl+shift+1',
+    'under ⌃ the digit keeps shift',
+  );
   assert.throws(() => parseChord('meta+Banana'), /Unknown key/);
 });
 
 test('chordFromEvent ignores Caps Lock and reads shift from shiftKey', () => {
   assert.equal(chordId(chordFromEvent(key('E'))!), 'e', 'Caps Lock on, no shift');
   assert.equal(chordId(chordFromEvent(key('A', { shiftKey: true }))!), 'shift+a');
-  assert.equal(chordId(chordFromEvent(key('a', { shiftKey: true }))!), 'shift+a', 'Caps Lock plus shift');
+  assert.equal(
+    chordId(chordFromEvent(key('a', { shiftKey: true }))!),
+    'shift+a',
+    'Caps Lock plus shift',
+  );
 });
 
 test('chordFromEvent keeps shifted symbols as the symbol', () => {
@@ -44,14 +52,20 @@ test('chordFromEvent keeps shifted symbols as the symbol', () => {
 });
 
 test('chordFromEvent falls back to the physical key for Option and non-Latin layouts', () => {
-  assert.equal(chordId(chordFromEvent(key('¬', { metaKey: true, altKey: true, code: 'KeyL' }))!), 'alt+meta+l');
+  assert.equal(
+    chordId(chordFromEvent(key('¬', { metaKey: true, altKey: true, code: 'KeyL' }))!),
+    'alt+meta+l',
+  );
   assert.equal(chordId(chordFromEvent(key('Dead', { altKey: true, code: 'KeyE' }))!), 'alt+e');
   assert.equal(chordId(chordFromEvent(key('о', { code: 'KeyJ' }))!), 'j');
   assert.equal(chordId(chordFromEvent(key('&', { ctrlKey: true, code: 'Digit1' }))!), 'ctrl+1');
 });
 
 test('the digit row falls back to the physical digit only under ⌘ or ⌃, keeping shift', () => {
-  assert.equal(chordId(chordFromEvent(key('!', { ctrlKey: true, shiftKey: true, code: 'Digit1' }))!), 'ctrl+shift+1');
+  assert.equal(
+    chordId(chordFromEvent(key('!', { ctrlKey: true, shiftKey: true, code: 'Digit1' }))!),
+    'ctrl+shift+1',
+  );
   assert.equal(chordId(chordFromEvent(key('§', { shiftKey: true, code: 'Digit3' }))!), '§');
   assert.equal(chordId(chordFromEvent(key('é', { code: 'Digit2' }))!), 'é');
   assert.equal(chordId(chordFromEvent(key('&', { code: 'Digit1' }))!), '&');
