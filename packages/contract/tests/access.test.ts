@@ -20,8 +20,10 @@ const tool = (...scopes: string[]): Caller => ({
   clientId: 'c1',
   scopes,
 });
-const denied = (fn: () => void) =>
-  assert.throws(fn, (e: unknown) => e instanceof ContractError && e.type === 'forbidden');
+const refused = (type: string) => (fn: () => void) =>
+  assert.throws(fn, (e: unknown) => e instanceof ContractError && e.type === type);
+const denied = refused('forbidden');
+const unsupported = refused('unsupported');
 
 test('a listener holding read is refused a send, a host method and a UI-only method', () => {
   denied(() => checkAccess('Submission/set', tool('read')));
@@ -116,18 +118,23 @@ test('the originating-scope check fails closed', () => {
 /** R2B-3: who a listener is comes from its stored Client row, and a listener nobody identified gets nothing. */
 test('a listener caller comes from the stored client; MCP limits follow the client, not the transport', () => {
   const row = { id: 'c9', kind: 'mcp', scopes: ['read', 'draft', 'send', 'host'] };
+  // A listener method the client's scopes reach but MCP does not (a send).
   const notTool = (tables.listenerMethods as readonly string[]).find(
-    m => !(tables.mcpMethods as readonly string[]).includes(m) && tables.methodScope[m] === 'read',
+    m => !(tables.mcpMethods as readonly string[]).includes(m) && tables.methodScope[m] === 'send',
   )!;
+  assert.ok(notTool);
   for (const transport of ['socket', 'http', 'mcp'] as const) {
     const caller = listenerCaller(row, transport);
     assert.equal(caller.via, 'mcp', `an mcp client over ${transport} is an MCP caller`);
     assert.equal(caller.clientId, 'c9');
     assert.ok(!caller.scopes.includes('host'), 'host is never a listener scope');
     denied(() => checkAccess(notTool, caller));
-    checkAccess(tables.mcpMethods.find(m => tables.methodScope[m] === 'read')!, caller);
+    checkAccess(
+      tables.mcpMethods.find(m => tables.methodScope[m] === 'read')!,
+      caller,
+    );
   }
-  const cli = listenerCaller({ id: 'c8', kind: 'cli', scopes: ['read'] }, 'socket');
+  const cli = listenerCaller({ id: 'c8', kind: 'cli', scopes: ['send'] }, 'socket');
   assert.equal(cli.via, 'socket');
   checkAccess(notTool, cli);
   denied(() => listenerCaller({ ...row, revokedAt: 5 }, 'socket'));
@@ -137,6 +144,29 @@ test('a listener caller comes from the stored client; MCP limits follow the clie
   denied(() => checkAccess('Thread/get', { kind: 'listener', clientId: 'c1', scopes: ['read'] }));
   denied(() => principalOf(anonymous));
   checkAccess('Thread/get', tool('read'));
+});
+
+/** R2H-3: no name outside the engine table slips through, and a listener gets nothing outside `listenerMethods`. */
+test('checkAccess refuses desktop, unknown and prototype names instead of returning', () => {
+  const all = tool(...appScopes);
+  for (const name of [
+    'Ai/pasteKey',
+    'Shell/open',
+    'System/login',
+    'Fixture/control',
+    'Nope/nope',
+    'toString',
+    '__proto__',
+    'constructor',
+    'hasOwnProperty',
+  ]) {
+    denied(() => checkAccess(name, all));
+    denied(() => checkAccess(name, { ...all, via: 'mcp' }));
+    unsupported(() => checkAccess(name, window));
+    unsupported(() => checkAccess(name, { kind: 'host', scopes: appScopes }));
+  }
+  // A prototype key never reads as a recorded originating scope either.
+  denied(() => requireOriginating(all, { method: 'toString' }));
 });
 
 /** FR-4: a triage-scoped call must never carry who to invite or mail; that is `send`. */

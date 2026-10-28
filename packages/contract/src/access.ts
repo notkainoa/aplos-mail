@@ -63,12 +63,21 @@ const has = (args: unknown, path: string) => {
 /**
  * The default-deny check every dispatch makes before a handler runs, after `parseArgs`. Throws `forbidden` unless the
  * method's scope is in `caller.scopes`; `host` methods need main's connection; `uiOnly` and `secret` methods (everything
- * outside `listenerMethods`) need a window or main; and a listener may not set a `windowOnlyArgs` path. An unknown or
- * desktop method is the dispatcher's own `unsupported`, not checked here.
+ * outside `listenerMethods`) need a window or main; and a listener may not set a `windowOnlyArgs` path. A listener is
+ * refused anything outside `listenerMethods` first, whatever the name; any other name that is not a registered engine
+ * method (a desktop method, `Fixture/control`, `toString`) is `unsupported` (freeze R2H-3).
  */
 export function checkAccess(method: string, caller: Caller, args?: unknown): void {
-  const scope = methodScope[method];
-  if (!scope || methodHost[method] !== 'engine') return;
+  if (caller.kind === 'listener') {
+    // Fail closed (R2B-3): a listener the transport did not identify from its stored client gets nothing.
+    if (!caller.clientId || !caller.via) throw forbidden('This tool is not allowed in Aplos.');
+    if (!(listenerMethods as readonly string[]).includes(method))
+      throw forbidden('Only the Aplos app itself can do that.');
+  }
+  // Own-property lookups only, so a prototype key never reads as a method (R2H-3).
+  const scope = Object.hasOwn(methodScope, method) ? methodScope[method] : undefined;
+  if (!scope || !Object.hasOwn(methodHost, method) || methodHost[method] !== 'engine')
+    throw new ContractError({ type: 'unsupported', message: 'Unsupported application method.' });
   if (scope === 'host') {
     // Main's control connection only, and it must also hold the `host` scope the transport grants it.
     if (caller.kind !== 'host' || !caller.scopes.includes('host'))
@@ -76,14 +85,10 @@ export function checkAccess(method: string, caller: Caller, args?: unknown): voi
     return;
   }
   if (caller.kind === 'listener') {
-    // Fail closed (R2B-3): a listener the transport did not identify from its stored client gets nothing.
-    if (!caller.clientId || !caller.via) throw forbidden('This tool is not allowed in Aplos.');
-    if (!(listenerMethods as readonly string[]).includes(method))
-      throw forbidden('Only the Aplos app itself can do that.');
     if (caller.via === 'mcp' && !(mcpMethods as readonly string[]).includes(method))
       throw forbidden('That is not available to MCP clients.');
-    if (windowOnlyArgs[method]?.some(path => has(args, path)))
-      throw forbidden('Change this in Aplos itself.');
+    const paths = Object.hasOwn(windowOnlyArgs, method) ? windowOnlyArgs[method] : undefined;
+    if (paths?.some(path => has(args, path))) throw forbidden('Change this in Aplos itself.');
   }
   requireScope(caller, scope);
 }
@@ -99,11 +104,16 @@ export function requireScope(caller: Caller, scope: string): void {
 
 /**
  * The `originating` check (FR-3), fail closed (freeze R2B-1): the caller must also hold the scope of the method that made
- * the operation or queue item. `op.scope` is that scope as recorded; when it was not recorded, the method's own
- * `methodScope` stands in, and when neither is known a listener is refused. Windows and main hold every scope.
+ * the operation or queue item. `op.scope` is that scope as recorded (always, from v1); when it was not recorded, the scope
+ * of `op.method`, the method that made it, stands in, and when neither is known a listener is refused. Windows and main
+ * hold every scope.
  */
-export function requireOriginating(caller: Caller, op: { scope?: string; method: string }): void {
-  const scope = op.scope || methodScope[op.method];
+export function requireOriginating(
+  caller: Caller,
+  op: { scope?: string | null; method: string },
+): void {
+  const scope =
+    op.scope || (Object.hasOwn(methodScope, op.method) ? methodScope[op.method] : undefined);
   if (scope) return requireScope(caller, scope);
   if (caller.kind === 'listener') throw forbidden('This tool does not have permission to do that.');
 }
