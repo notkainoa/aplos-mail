@@ -5,8 +5,8 @@
  * (`data-theme` on the root), and draws one state inside a 640 × 600 window frame (640 × 520 for the minimum-size
  * check). The capture script `shoot.mjs` drives it headlessly.
  *
- * First-sync states come from `../firstSync/states.tsx` when that file exists on the branch; the glob keeps the
- * gallery compiling without it.
+ * First-sync states come from `../firstSync/states.tsx`, and the weekly reconnect and zero-accounts states from
+ * `../reconnect/states.tsx`, when those files exist on the branch; the globs keep the gallery compiling without them.
  */
 import { StrictMode, useEffect, type JSX } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -22,10 +22,18 @@ const firstSyncModules = import.meta.glob<{ firstSyncStates?: StateTable }>('../
 });
 const firstSyncStates: StateTable = Object.values(firstSyncModules)[0]?.firstSyncStates ?? {};
 
-/** Every state, steps first; a first-sync state with a step's name is kept under a prefix. */
+const reconnectModules = import.meta.glob<{ reconnectStates?: StateTable }>('../reconnect/states.tsx', {
+  eager: true,
+});
+const reconnectStates: StateTable = Object.values(reconnectModules)[0]?.reconnectStates ?? {};
+
+/** Every state, steps first; a first-sync or reconnect state with an earlier state's name is kept under a prefix. */
 export const allStates: StateTable = { ...stepStates };
 for (const [name, entry] of Object.entries(firstSyncStates)) {
   allStates[name in allStates ? `firstSync-${name}` : name] = entry;
+}
+for (const [name, entry] of Object.entries(reconnectStates)) {
+  allStates[name in allStates ? `reconnect-${name}` : name] = entry;
 }
 
 const params = new URLSearchParams(window.location.search);
