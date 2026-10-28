@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-10-28 — Revamp Phase 0 artifacts F1-F5 and F7
+
+- **Change.** `@aplos/contract` v1 (147 methods with zod/mini schemas, frames with `{dbEpoch, seq}`, registry, generated allowlists and OpenAPI, typed client, the 66 legacy names mapped, `GAPS.md`); `packages/engine/src/ports/**` (F3) with a five-provider paper walk; `packages/engine/src/store/**` (F4: SQL port, `node:sqlite` adapter, forward-only migrations, schema 0001, `StorePort`, minimal idempotent commit, sweep); `packages/engine/src/methods/**` (F5: dispatch table, 29 area stubs); the log catalog, `Logger` and redactor, and `apps/desktop/src/host/logsink.ts` (F7).
+- **Evidence.** `npm run typecheck` clean; `npm test` 313 of 313 (231 app, 32 contract, 50 engine). SQLite here is 3.54.0 and FTS5 `contentless_delete` works. The Providers review's sweep blocker has a reproducing test (`tests/store/sweep.test.ts`). E0 acceptance line: `{"t":1793000000000,"level":"warn","event":"sync.gmail.request_refused","account":"acc_1","lane":"interactive","data":{"error":{"class":"throttle","provider":"google","method":"gmail.users.messages.list","reason":"rateLimitExceeded","status":403,"providerMessage":"User-rate limit exceeded"},"units":5},"dropped":2}`. Canary sweep: 24,514 canaries planted, 0 found in the log folder; the hostile round found four leaks, all fixed. Log files 0600, folder 0700, rotation at 10 MB x 5 (tested at a small cap).
+- **Sizes.** New engine without `legacy/`: about 70 KB unminified before the review fixes, well under 400,000 bytes; contract schemas plus zod/mini about 178 KB unminified (host side only).
+- **Not done yet.** F2's host wiring (preload, `engine-host.ts`, `server.ts` reading the generated allowlists) waits for restructure step 3; F6 (stand-in engine and conformance suite) and F8 (`APLOS_TEST=1`) are in progress.
+
 ## 2026-10-27 — Revamp Phase 0 step 1: engine, contract and renderer in legacy folders
 
 - **Change.** `git mv` of `apps/desktop/src/engine` to `packages/engine/src/legacy`, of `src/shared/{types,ask,mailbox,summary,live}.ts` to `packages/contract/src/legacy`, and of `src/renderer` to `src/renderer/legacy`; import specifiers rewritten by `scripts/codemod-imports.mjs`; workspaces `@aplos/engine` and `@aplos/contract`; tsconfig paths, Vite alias, esbuild bundling `@aplos/*`; the recursive portability test with a planted-import negative test; `appVersion` through `EngineOptions`. Decisions are in DECISIONS.md under the same date.
