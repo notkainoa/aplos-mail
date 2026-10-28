@@ -38,7 +38,7 @@ Every path in the repo belongs to exactly one lane, and each lane belongs to one
 
 | Lane | Paths |
 |---|---|
-| `ui-foundation` | `apps/desktop/src/renderer/{ui,commands}/**`, `scripts/design/**`, `apps/desktop/scripts/design/**`, `tools/lint/design/**`, `apps/desktop/tools/lint/design/**`, `.claude/skills/aplos-design/**`, `tests/{visual,perf}/**`, `apps/desktop/tests/{visual,perf}/**`, `apps/desktop/assets/fonts/**`, `scripts/check-contrast.mjs` and `apps/desktop/scripts/check-contrast.mjs` (with its reference colour list), `stylelint.config.*`, `.stylelintrc*`, `apps/desktop/stylelint.config.*`, `apps/desktop/.stylelintrc*` |
+| `ui-foundation` | `apps/desktop/src/renderer/{ui,commands}/**`, `scripts/design/**`, `apps/desktop/scripts/design/**`, `tools/lint/design/**`, `apps/desktop/tools/lint/design/**`, `.claude/skills/aplos-design/**`, `tests/{visual,perf}/**`, `apps/desktop/tests/{visual,perf}/**`, `apps/desktop/assets/fonts/**`, `scripts/check-contrast.mjs` and `apps/desktop/scripts/check-contrast.mjs` (with its reference colour list), `stylelint.config.*`, `.stylelintrc*`, `stylelint-suppressions.json`, `apps/desktop/stylelint.config.*`, `apps/desktop/.stylelintrc*` |
 | `ui-shell` | `apps/desktop/src/renderer/{data,shell,motion}/**`, `apps/desktop/src/renderer/{App,main}.tsx`, `apps/desktop/src/renderer/bridge.ts`, `apps/desktop/index.html`. In Phase 0 `ui-foundation` writes the data-hook signatures in `renderer/data/**` as part of F9; from the freeze on the folder is `ui-shell`'s. |
 | `ui-home` | `apps/desktop/src/renderer/screens/{home,later,lists,done}/**` |
 | `ui-reader` | `apps/desktop/src/renderer/screens/{reader,compose}/**`, `apps/desktop/src/renderer/mailframe/**` |
