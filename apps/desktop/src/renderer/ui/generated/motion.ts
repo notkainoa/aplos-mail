@@ -73,7 +73,12 @@ export function createSpring(from: number, to: number): SpringState {
 // The travel becomes the remaining distance (kept from before when that is 0).
 export function retargetSpring(state: SpringState, target: number): SpringState {
   const distance = Math.abs(target - state.value);
-  return { value: state.value, velocity: state.velocity, target, travel: distance > 0 ? distance : travelOf(state) };
+  return {
+    value: state.value,
+    velocity: state.velocity,
+    target,
+    travel: distance > 0 ? distance : travelOf(state),
+  };
 }
 
 function travelOf(state: SpringState): number {
@@ -86,7 +91,9 @@ function travelOf(state: SpringState): number {
 // 0 -> 300 px move both stop at 0.5 % of their travel, never early.
 export function springAtRest(state: SpringState, epsilon: number = SETTLE_EPSILON): boolean {
   const tolerance = epsilon * travelOf(state);
-  return Math.abs(state.value - state.target) <= tolerance && Math.abs(state.velocity) <= tolerance * 10;
+  return (
+    Math.abs(state.value - state.target) <= tolerance && Math.abs(state.velocity) <= tolerance * 10
+  );
 }
 
 export function springProgress(params: SpringParams, t: number): number {
@@ -134,11 +141,11 @@ export function springLinear(
   count: number = LINEAR_SAMPLES,
   epsilon: number = SETTLE_EPSILON,
 ): string {
-  const parts = springSamples(params, count, epsilon).map((s) => String(Number(s.toFixed(3))));
-  return `linear(${parts.join(", ")})`;
+  const parts = springSamples(params, count, epsilon).map(s => String(Number(s.toFixed(3))));
+  return `linear(${parts.join(', ')})`;
 }
 
-export type ReducedMode = "none" | "opacity" | "colour" | "static" | "same";
+export type ReducedMode = 'none' | 'opacity' | 'colour' | 'static' | 'same';
 
 export interface Easing {
   readonly css: string;
@@ -166,27 +173,27 @@ export interface MotionSpec {
 
 export const easings = {
   out: {
-    css: "cubic-bezier(0.16, 1, 0.3, 1)",
+    css: 'cubic-bezier(0.16, 1, 0.3, 1)',
     points: [0.16, 1, 0.3, 1],
   },
   std: {
-    css: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+    css: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
     points: [0.2, 0.8, 0.2, 1],
   },
   in: {
-    css: "cubic-bezier(0.5, 0, 0.75, 0)",
+    css: 'cubic-bezier(0.5, 0, 0.75, 0)',
     points: [0.5, 0, 0.75, 0],
   },
   carry: {
-    css: "cubic-bezier(0.4, 0, 1, 1)",
+    css: 'cubic-bezier(0.4, 0, 1, 1)',
     points: [0.4, 0, 1, 1],
   },
   inout: {
-    css: "cubic-bezier(0.65, 0, 0.35, 1)",
+    css: 'cubic-bezier(0.65, 0, 0.35, 1)',
     points: [0.65, 0, 0.35, 1],
   },
   linear: {
-    css: "linear",
+    css: 'linear',
     points: [0, 0, 1, 1],
   },
 } as const satisfies Record<string, Easing>;
@@ -200,7 +207,8 @@ export const springs = {
     mass: 1,
     dampingRatio: 0.857,
     settleMs: 265.5,
-    linear: "linear(0, 0.059, 0.189, 0.343, 0.492, 0.624, 0.732, 0.816, 0.88, 0.925, 0.957, 0.978, 0.991, 0.999, 1.003, 1.005, 1.005, 1)",
+    linear:
+      'linear(0, 0.059, 0.189, 0.343, 0.492, 0.624, 0.732, 0.816, 0.88, 0.925, 0.957, 0.978, 0.991, 0.999, 1.003, 1.005, 1.005, 1)',
   },
   snap: {
     stiffness: 420,
@@ -208,7 +216,8 @@ export const springs = {
     mass: 1,
     dampingRatio: 0.878,
     settleMs: 248.3,
-    linear: "linear(0, 0.038, 0.126, 0.239, 0.359, 0.474, 0.578, 0.669, 0.745, 0.808, 0.859, 0.898, 0.929, 0.952, 0.969, 0.981, 0.989, 1)",
+    linear:
+      'linear(0, 0.038, 0.126, 0.239, 0.359, 0.474, 0.578, 0.669, 0.745, 0.808, 0.859, 0.898, 0.929, 0.952, 0.969, 0.981, 0.989, 1)',
   },
   lift: {
     stiffness: 500,
@@ -216,7 +225,8 @@ export const springs = {
     mass: 1,
     dampingRatio: 0.894,
     settleMs: 240.2,
-    linear: "linear(0, 0.041, 0.137, 0.257, 0.381, 0.499, 0.603, 0.693, 0.767, 0.827, 0.874, 0.91, 0.937, 0.958, 0.972, 0.983, 0.99, 1)",
+    linear:
+      'linear(0, 0.041, 0.137, 0.257, 0.381, 0.499, 0.603, 0.693, 0.767, 0.827, 0.874, 0.91, 0.937, 0.958, 0.972, 0.983, 0.99, 1)',
   },
   follow: {
     stiffness: 700,
@@ -224,7 +234,8 @@ export const springs = {
     mass: 1,
     dampingRatio: 0.907,
     settleMs: 211.9,
-    linear: "linear(0, 0.045, 0.147, 0.272, 0.4, 0.519, 0.623, 0.711, 0.783, 0.84, 0.884, 0.918, 0.943, 0.962, 0.975, 0.984, 0.991, 1)",
+    linear:
+      'linear(0, 0.045, 0.147, 0.272, 0.4, 0.519, 0.623, 0.711, 0.783, 0.84, 0.884, 0.918, 0.943, 0.962, 0.975, 0.984, 0.991, 1)',
   },
   thumb: {
     stiffness: 500,
@@ -232,7 +243,8 @@ export const springs = {
     mass: 1,
     dampingRatio: 0.671,
     settleMs: 306,
-    linear: "linear(0, 0.067, 0.222, 0.408, 0.589, 0.746, 0.868, 0.956, 1.013, 1.044, 1.057, 1.057, 1.051, 1.04, 1.029, 1.019, 1.011, 1)",
+    linear:
+      'linear(0, 0.067, 0.222, 0.408, 0.589, 0.746, 0.868, 0.956, 1.013, 1.044, 1.057, 1.057, 1.051, 1.04, 1.029, 1.019, 1.011, 1)',
   },
 } as const satisfies Record<string, SpringToken>;
 
@@ -244,7 +256,7 @@ export const motions = {
     rapid: { base: 0 },
     deferWhenRapid: false,
     reduced: { base: 0 },
-    reducedMode: "none",
+    reducedMode: 'none',
     curve: null,
     curveName: null,
   },
@@ -253,101 +265,102 @@ export const motions = {
     rapid: { down: 80, up: 140 },
     deferWhenRapid: false,
     reduced: { down: 80, up: 140 },
-    reducedMode: "colour",
-    curve: "cubic-bezier(0.16, 1, 0.3, 1)",
-    curveName: "ease.out",
+    reducedMode: 'colour',
+    curve: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    curveName: 'ease.out',
   },
   hover: {
     durations: { base: 100 },
     rapid: { base: 100 },
     deferWhenRapid: false,
     reduced: { base: 100 },
-    reducedMode: "same",
-    curve: "cubic-bezier(0.2, 0.8, 0.2, 1)",
-    curveName: "ease.std",
+    reducedMode: 'same',
+    curve: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+    curveName: 'ease.std',
   },
   cursor: {
     durations: { base: 120, focus: 160 },
     rapid: { base: 0, focus: 0 },
     deferWhenRapid: false,
     reduced: { base: 0, focus: 0 },
-    reducedMode: "none",
-    curve: "cubic-bezier(0.16, 1, 0.3, 1)",
-    curveName: "ease.out",
+    reducedMode: 'none',
+    curve: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    curveName: 'ease.out',
   },
   reveal: {
     durations: { in: 140, out: 100 },
     rapid: { in: 140, out: 100 },
     deferWhenRapid: false,
     reduced: { in: 100, out: 100 },
-    reducedMode: "opacity",
-    curve: "cubic-bezier(0.16, 1, 0.3, 1)",
-    curveName: "ease.out",
-    curveOut: "cubic-bezier(0.5, 0, 0.75, 0)",
-    curveOutName: "ease.in",
+    reducedMode: 'opacity',
+    curve: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    curveName: 'ease.out',
+    curveOut: 'cubic-bezier(0.5, 0, 0.75, 0)',
+    curveOutName: 'ease.in',
   },
   settle: {
     durations: { in: 180, out: 120 },
     rapid: { in: 180, out: 120 },
     deferWhenRapid: false,
     reduced: { in: 120, out: 120 },
-    reducedMode: "opacity",
-    curve: "cubic-bezier(0.16, 1, 0.3, 1)",
-    curveName: "ease.out",
-    curveOut: "cubic-bezier(0.5, 0, 0.75, 0)",
-    curveOutName: "ease.in",
+    reducedMode: 'opacity',
+    curve: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    curveName: 'ease.out',
+    curveOut: 'cubic-bezier(0.5, 0, 0.75, 0)',
+    curveOutName: 'ease.in',
   },
   slide: {
     durations: { base: 270 },
     rapid: { base: 270 },
     deferWhenRapid: false,
     reduced: { base: 0 },
-    reducedMode: "none",
-    curve: "linear(0, 0.059, 0.189, 0.343, 0.492, 0.624, 0.732, 0.816, 0.88, 0.925, 0.957, 0.978, 0.991, 0.999, 1.003, 1.005, 1.005, 1)",
-    curveName: "spring.slide",
+    reducedMode: 'none',
+    curve:
+      'linear(0, 0.059, 0.189, 0.343, 0.492, 0.624, 0.732, 0.816, 0.88, 0.925, 0.957, 0.978, 0.991, 0.999, 1.003, 1.005, 1.005, 1)',
+    curveName: 'spring.slide',
   },
   commit: {
     durations: { base: 60 },
     rapid: { base: 30 },
     deferWhenRapid: false,
     reduced: { base: 60 },
-    reducedMode: "opacity",
-    curve: "cubic-bezier(0.16, 1, 0.3, 1)",
-    curveName: "ease.out",
+    reducedMode: 'opacity',
+    curve: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    curveName: 'ease.out',
   },
   carry: {
     durations: { base: 120 },
     rapid: { base: 60 },
     deferWhenRapid: false,
     reduced: { base: 80 },
-    reducedMode: "opacity",
-    curve: "cubic-bezier(0.4, 0, 1, 1)",
-    curveName: "ease.carry",
+    reducedMode: 'opacity',
+    curve: 'cubic-bezier(0.4, 0, 1, 1)',
+    curveName: 'ease.carry',
   },
   flight: {
     durations: { base: 220 },
     rapid: { base: 110 },
     deferWhenRapid: false,
     reduced: { base: 120 },
-    reducedMode: "opacity",
-    curve: "cubic-bezier(0.4, 0, 1, 1)",
-    curveName: "ease.carry",
+    reducedMode: 'opacity',
+    curve: 'cubic-bezier(0.4, 0, 1, 1)',
+    curveName: 'ease.carry',
   },
   deal: {
     durations: { base: 140 },
     rapid: { base: 0 },
     deferWhenRapid: false,
     reduced: { base: 0 },
-    reducedMode: "none",
-    curve: "cubic-bezier(0.16, 1, 0.3, 1)",
-    curveName: "ease.out",
+    reducedMode: 'none',
+    curve: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    curveName: 'ease.out',
   },
   hold: {
     durations: { base: 450, cap: 1200 },
     rapid: { base: 450, cap: 1200 },
     deferWhenRapid: false,
     reduced: { base: 450, cap: 1200 },
-    reducedMode: "same",
+    reducedMode: 'same',
     curve: null,
     curveName: null,
   },
@@ -356,116 +369,120 @@ export const motions = {
     rapid: { base: 180 },
     deferWhenRapid: false,
     reduced: { base: 0 },
-    reducedMode: "none",
-    curve: "cubic-bezier(0.16, 1, 0.3, 1)",
-    curveName: "ease.out",
+    reducedMode: 'none',
+    curve: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    curveName: 'ease.out',
   },
   swap: {
     durations: { base: 120 },
     rapid: { base: 60 },
     deferWhenRapid: false,
     reduced: { base: 100 },
-    reducedMode: "opacity",
-    curve: "cubic-bezier(0.2, 0.8, 0.2, 1)",
-    curveName: "ease.std",
+    reducedMode: 'opacity',
+    curve: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+    curveName: 'ease.std',
   },
   arrive: {
     durations: { base: 200 },
     rapid: { base: 200 },
     deferWhenRapid: true,
     reduced: { base: 120 },
-    reducedMode: "opacity",
-    curve: "cubic-bezier(0.16, 1, 0.3, 1)",
-    curveName: "ease.out",
+    reducedMode: 'opacity',
+    curve: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    curveName: 'ease.out',
   },
   dock: {
     durations: { in: 200, out: 140 },
     rapid: { in: 200, out: 140 },
     deferWhenRapid: false,
     reduced: { in: 0, out: 0 },
-    reducedMode: "none",
-    curve: "cubic-bezier(0.16, 1, 0.3, 1)",
-    curveName: "ease.out",
-    curveOut: "cubic-bezier(0.5, 0, 0.75, 0)",
-    curveOutName: "ease.in",
+    reducedMode: 'none',
+    curve: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    curveName: 'ease.out',
+    curveOut: 'cubic-bezier(0.5, 0, 0.75, 0)',
+    curveOutName: 'ease.in',
   },
-  "undo-send": {
+  'undo-send': {
     durations: { base: 8000 },
     rapid: { base: 8000 },
     deferWhenRapid: false,
     reduced: { base: 8000 },
-    reducedMode: "static",
-    curve: "linear",
-    curveName: "ease.linear",
+    reducedMode: 'static',
+    curve: 'linear',
+    curveName: 'ease.linear',
   },
   lift: {
     durations: { base: 240 },
     rapid: { base: 240 },
     deferWhenRapid: false,
     reduced: { base: 0 },
-    reducedMode: "none",
-    curve: "linear(0, 0.041, 0.137, 0.257, 0.381, 0.499, 0.603, 0.693, 0.767, 0.827, 0.874, 0.91, 0.937, 0.958, 0.972, 0.983, 0.99, 1)",
-    curveName: "spring.lift",
+    reducedMode: 'none',
+    curve:
+      'linear(0, 0.041, 0.137, 0.257, 0.381, 0.499, 0.603, 0.693, 0.767, 0.827, 0.874, 0.91, 0.937, 0.958, 0.972, 0.983, 0.99, 1)',
+    curveName: 'spring.lift',
   },
   follow: {
     durations: { base: 210 },
     rapid: { base: 210 },
     deferWhenRapid: false,
     reduced: { base: 0 },
-    reducedMode: "none",
-    curve: "linear(0, 0.045, 0.147, 0.272, 0.4, 0.519, 0.623, 0.711, 0.783, 0.84, 0.884, 0.918, 0.943, 0.962, 0.975, 0.984, 0.991, 1)",
-    curveName: "spring.follow",
+    reducedMode: 'none',
+    curve:
+      'linear(0, 0.045, 0.147, 0.272, 0.4, 0.519, 0.623, 0.711, 0.783, 0.84, 0.884, 0.918, 0.943, 0.962, 0.975, 0.984, 0.991, 1)',
+    curveName: 'spring.follow',
   },
   snap: {
     durations: { base: 250 },
     rapid: { base: 250 },
     deferWhenRapid: false,
     reduced: { base: 0 },
-    reducedMode: "none",
-    curve: "linear(0, 0.038, 0.126, 0.239, 0.359, 0.474, 0.578, 0.669, 0.745, 0.808, 0.859, 0.898, 0.929, 0.952, 0.969, 0.981, 0.989, 1)",
-    curveName: "spring.snap",
+    reducedMode: 'none',
+    curve:
+      'linear(0, 0.038, 0.126, 0.239, 0.359, 0.474, 0.578, 0.669, 0.745, 0.808, 0.859, 0.898, 0.929, 0.952, 0.969, 0.981, 0.989, 1)',
+    curveName: 'spring.snap',
   },
   thumb: {
     durations: { base: 310 },
     rapid: { base: 310 },
     deferWhenRapid: false,
     reduced: { base: 0 },
-    reducedMode: "none",
-    curve: "linear(0, 0.067, 0.222, 0.408, 0.589, 0.746, 0.868, 0.956, 1.013, 1.044, 1.057, 1.057, 1.051, 1.04, 1.029, 1.019, 1.011, 1)",
-    curveName: "spring.thumb",
+    reducedMode: 'none',
+    curve:
+      'linear(0, 0.067, 0.222, 0.408, 0.589, 0.746, 0.868, 0.956, 1.013, 1.044, 1.057, 1.057, 1.051, 1.04, 1.029, 1.019, 1.011, 1)',
+    curveName: 'spring.thumb',
   },
   breathe: {
     durations: { base: 1600 },
     rapid: { base: 1600 },
     deferWhenRapid: false,
     reduced: { base: 1600 },
-    reducedMode: "static",
-    curve: "cubic-bezier(0.65, 0, 0.35, 1)",
-    curveName: "ease.inout",
+    reducedMode: 'static',
+    curve: 'cubic-bezier(0.65, 0, 0.35, 1)',
+    curveName: 'ease.inout',
   },
   status: {
     durations: { base: 1500 },
     rapid: { base: 1500 },
     deferWhenRapid: false,
     reduced: { base: 1500 },
-    reducedMode: "static",
-    curve: "cubic-bezier(0.65, 0, 0.35, 1)",
-    curveName: "ease.inout",
+    reducedMode: 'static',
+    curve: 'cubic-bezier(0.65, 0, 0.35, 1)',
+    curveName: 'ease.inout',
   },
   count: {
     durations: { base: 140 },
     rapid: { base: 0 },
     deferWhenRapid: false,
     reduced: { base: 0 },
-    reducedMode: "none",
-    curve: "cubic-bezier(0.16, 1, 0.3, 1)",
-    curveName: "ease.out",
+    reducedMode: 'none',
+    curve: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    curveName: 'ease.out',
   },
 } as const satisfies Record<string, MotionSpec>;
 
 export type MotionName = keyof typeof motions;
 
-export type MotionPhase<N extends MotionName> = keyof (typeof motions)[N]["durations"] & string;
+export type MotionPhase<N extends MotionName> = keyof (typeof motions)[N]['durations'] & string;
 
 export const moves = {
   reveal: 4,
@@ -521,15 +538,17 @@ export const layers = {
 export type LayerName = keyof typeof layers;
 
 // Timing values that change under reduced motion.
-export const timingReduced = { toastFade: 120 } as const satisfies Partial<Record<keyof typeof timing, number>>;
+export const timingReduced = { toastFade: 120 } as const satisfies Partial<
+  Record<keyof typeof timing, number>
+>;
 
 export const themeHooks = {
-  theme: "data-theme",
-  contrast: "data-contrast",
-  motion: "data-motion",
-  switching: "data-theme-switching",
-  contrastQuery: "(prefers-contrast: more)",
-  reducedMotionQuery: "(prefers-reduced-motion: reduce)",
+  theme: 'data-theme',
+  contrast: 'data-contrast',
+  motion: 'data-motion',
+  switching: 'data-theme-switching',
+  contrastQuery: '(prefers-contrast: more)',
+  reducedMotionQuery: '(prefers-reduced-motion: reduce)',
 } as const;
 
 export interface MotionContext {
@@ -545,7 +564,11 @@ export function motionDeferred(name: MotionName, context: MotionContext = {}): b
 
 // The duration of one phase of a named motion. Reduced wins over rapid. For a
 // motion with deferWhenRapid, check motionDeferred() first.
-export function motionMs<N extends MotionName>(name: N, phase: MotionPhase<N>, context: MotionContext = {}): number {
+export function motionMs<N extends MotionName>(
+  name: N,
+  phase: MotionPhase<N>,
+  context: MotionContext = {},
+): number {
   const spec: MotionSpec = motions[name];
   if (context.reduced) {
     return spec.reduced[phase];

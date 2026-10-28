@@ -14,11 +14,12 @@
 //   node apps/desktop/scripts/design/build-tokens.mjs --check   exit 1 if any file on disk differs
 // --tokens <path> and --out <dir> point at other copies (used by the tests).
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { toHex } from "./color.mjs";
-import { compileSpring } from "./spring.mjs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import * as prettier from 'prettier';
+import { fileURLToPath } from 'node:url';
+import { toHex } from './color.mjs';
+import { compileSpring } from './spring.mjs';
 import {
   GENERATED_DIR,
   MODES,
@@ -34,21 +35,21 @@ import {
   pairModes,
   readJson,
   resolvePair,
-} from "./tokens-lib.mjs";
+} from './tokens-lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SPRING_RUNTIME_PATH = join(here, "spring-runtime.ts");
-const HEADER_TEXT = "Generated from tokens.json by scripts/design/build-tokens.mjs. Do not edit.";
+const SPRING_RUNTIME_PATH = join(here, 'spring-runtime.ts');
+const HEADER_TEXT = 'Generated from tokens.json by scripts/design/build-tokens.mjs. Do not edit.';
 const CSS_KEYWORD_FAMILIES = new Set([
-  "-apple-system",
-  "BlinkMacSystemFont",
-  "system-ui",
-  "ui-monospace",
-  "ui-serif",
-  "ui-sans-serif",
-  "sans-serif",
-  "serif",
-  "monospace",
+  '-apple-system',
+  'BlinkMacSystemFont',
+  'system-ui',
+  'ui-monospace',
+  'ui-serif',
+  'ui-sans-serif',
+  'sans-serif',
+  'serif',
+  'monospace',
 ]);
 
 // ---------- CSS values ----------
@@ -65,7 +66,7 @@ function cssColor(flat, value) {
   if (isAlias(value)) {
     return cssRef(flat, value);
   }
-  if (typeof value === "string") {
+  if (typeof value === 'string') {
     return value;
   }
   const base = cssColor(flat, value.mix);
@@ -86,7 +87,7 @@ export function remFromPx(value) {
     return String(value);
   }
   const n = Number(match[1]);
-  return n === 0 ? "0" : `${Number((n / REM_BASE).toFixed(6))}rem`;
+  return n === 0 ? '0' : `${Number((n / REM_BASE).toFixed(6))}rem`;
 }
 
 function cssDimension(flat, token, value) {
@@ -97,24 +98,26 @@ function cssDimension(flat, token, value) {
 }
 
 function cssFamily(list) {
-  return list.map((name) => (CSS_KEYWORD_FAMILIES.has(name) ? name : `"${name}"`)).join(", ");
+  return list.map(name => (CSS_KEYWORD_FAMILIES.has(name) ? name : `"${name}"`)).join(', ');
 }
 
 function cssShadow(flat, layers) {
   return layers
-    .map((layer) => {
-      const parts = [layer.offsetX, layer.offsetY, layer.blur, layer.spread].map((v) => cssPlain(flat, v));
-      const inset = layer.inset ? "inset " : "";
-      return `${inset}${parts.join(" ")} ${cssColor(flat, layer.color)}`;
+    .map(layer => {
+      const parts = [layer.offsetX, layer.offsetY, layer.blur, layer.spread].map(v =>
+        cssPlain(flat, v),
+      );
+      const inset = layer.inset ? 'inset ' : '';
+      return `${inset}${parts.join(' ')} ${cssColor(flat, layer.color)}`;
     })
-    .join(", ");
+    .join(', ');
 }
 
 function cssBezier(points) {
-  if (points.join(",") === "0,0,1,1") {
-    return "linear";
+  if (points.join(',') === '0,0,1,1') {
+    return 'linear';
   }
-  return `cubic-bezier(${points.join(", ")})`;
+  return `cubic-bezier(${points.join(', ')})`;
 }
 
 function cssNumber(token, value) {
@@ -122,7 +125,7 @@ function cssNumber(token, value) {
 }
 
 function durationVar(token, phase) {
-  return phase === "base" ? token.css : `${token.css}-${phase}`;
+  return phase === 'base' ? token.css : `${token.css}-${phase}`;
 }
 
 function playVar(token) {
@@ -132,26 +135,26 @@ function playVar(token) {
 // Declarations a token contributes for a raw value (light, dark or more).
 function declarations(flat, token, value, springCache) {
   switch (token.type) {
-    case "color":
+    case 'color':
       return [[token.css, cssColor(flat, value)]];
-    case "dimension":
+    case 'dimension':
       return [[token.css, cssDimension(flat, token, value)]];
-    case "string":
-    case "duration":
+    case 'string':
+    case 'duration':
       return [[token.css, cssPlain(flat, value)]];
-    case "number":
+    case 'number':
       return [[token.css, cssNumber(token, value)]];
-    case "fontFamily":
+    case 'fontFamily':
       return [[token.css, cssFamily(value)]];
-    case "shadow":
+    case 'shadow':
       return [[token.css, cssShadow(flat, value)]];
-    case "cubicBezier":
+    case 'cubicBezier':
       return [[token.css, cssBezier(value)]];
-    case "spring":
+    case 'spring':
       return [[token.css, springCache.get(token.path).linear]];
-    case "typography":
+    case 'typography':
       return typographyDeclarations(flat, token, value);
-    case "motion":
+    case 'motion':
       return motionDeclarations(token, value);
     default:
       throw new Error(`No CSS for $type ${token.type} (${token.path})`);
@@ -161,7 +164,7 @@ function declarations(flat, token, value, springCache) {
 function typographyDeclarations(flat, token, value) {
   const role = token.key;
   const family = cssRef(flat, value.fontFamily);
-  const unit = (v) => (token.rem ? remFromPx(v) : String(v));
+  const unit = v => (token.rem ? remFromPx(v) : String(v));
   const size = `${unit(value.fontSize)}/${unit(value.lineHeight)}`;
   const out = [];
   if (token.ext.opsz !== undefined) {
@@ -180,14 +183,14 @@ function typographyDeclarations(flat, token, value) {
 // Each role's tracking plus the shared boost (tracking.boost), which base.css
 // raises on non-Retina screens. Without a boost token the value is plain.
 function trackValue(flat, letterSpacing) {
-  const boost = flat.byPath.get("tracking.boost");
+  const boost = flat.byPath.get('tracking.boost');
   return boost && boost.css ? `calc(${letterSpacing} + var(${boost.css}))` : String(letterSpacing);
 }
 
 function motionDeclarations(token, value) {
   const out = Object.entries(value.durations).map(([phase, d]) => [durationVar(token, phase), d]);
-  if (value.reducedMode === "static") {
-    out.push([playVar(token), "running"]);
+  if (value.reducedMode === 'static') {
+    out.push([playVar(token), 'running']);
   }
   return out;
 }
@@ -196,14 +199,14 @@ function darkDeclarations(flat, token) {
   if (token.dark === undefined) {
     return [];
   }
-  if (token.type === "typography") {
+  if (token.type === 'typography') {
     return [[`--w-${token.key}`, String(token.dark.fontWeight)]];
   }
   return declarations(flat, token, token.dark);
 }
 
 function reducedDeclarations(token) {
-  if (token.type === "motion") {
+  if (token.type === 'motion') {
     const value = token.value;
     const out = [];
     for (const [phase, d] of Object.entries(value.durations)) {
@@ -212,52 +215,56 @@ function reducedDeclarations(token) {
         out.push([durationVar(token, phase), reduced]);
       }
     }
-    if (value.reducedMode === "static") {
-      out.push([playVar(token), "paused"]);
+    if (value.reducedMode === 'static') {
+      out.push([playVar(token), 'paused']);
     }
     return out;
   }
   if (token.reduced === undefined || !token.css) {
     return [];
   }
-  return [[token.css, token.type === "number" ? cssNumber(token, token.reduced) : String(token.reduced)]];
+  return [
+    [token.css, token.type === 'number' ? cssNumber(token, token.reduced) : String(token.reduced)],
+  ];
 }
 
-function block(selector, decls, indent = "") {
+function block(selector, decls, indent = '') {
   const lines = decls.map(([name, value]) => `${indent}  ${name}: ${value};`);
-  return `${indent}${selector} {\n${lines.join("\n")}\n${indent}}`;
+  return `${indent}${selector} {\n${lines.join('\n')}\n${indent}}`;
 }
 
 export function buildCss(flat, springCache) {
-  const cssTokens = flat.tokens.filter((t) => t.css);
-  const light = [["color-scheme", "light"]];
+  const cssTokens = flat.tokens.filter(t => t.css);
+  const light = [['color-scheme', 'light']];
   for (const token of cssTokens) {
     light.push(...declarations(flat, token, token.value, springCache));
   }
-  const dark = [["color-scheme", "dark"]];
+  const dark = [['color-scheme', 'dark']];
   for (const token of cssTokens) {
     dark.push(...darkDeclarations(flat, token));
   }
   const more = cssTokens
-    .filter((t) => t.more !== undefined)
-    .flatMap((t) => declarations(flat, t, t.more, springCache));
-  const reduced = cssTokens.flatMap((t) => reducedDeclarations(t));
-  return [
-    `/* ${HEADER_TEXT}\n   Paper design tokens (plans/DESIGN.md section 4). Hooks: :root is light,\n   :root[data-theme="dark"] is night, Increase Contrast is prefers-contrast: more\n   or :root[data-contrast="more"], reduced motion is prefers-reduced-motion: reduce\n   or :root[data-motion="reduced"]. */`,
-    block(":root", light),
-    block(':root[data-theme="dark"]', dark),
-    "/* Increase Contrast. The dark selector is repeated so these win over the night block. */",
-    `@media (prefers-contrast: more) {\n${block(':root,\n  :root[data-theme="dark"]', more, "  ")}\n}`,
-    block(':root[data-contrast="more"],\n:root[data-theme="dark"][data-contrast="more"]', more),
-    "/* Reduced motion: durations take their reduced values, travel and scale go neutral,\n   static loops pause. CSS that uses these tokens is neutralised without extra rules. */",
-    `@media (prefers-reduced-motion: reduce) {\n${block(":root", reduced, "  ")}\n}`,
-    block(':root[data-motion="reduced"]', reduced),
-    "/* Theme switch: set data-theme-switching on :root for one frame so the app changes at once. */",
-    block(
-      ":root[data-theme-switching] *,\n:root[data-theme-switching] *::before,\n:root[data-theme-switching] *::after",
-      [["transition", "none !important"]],
-    ),
-  ].join("\n\n") + "\n";
+    .filter(t => t.more !== undefined)
+    .flatMap(t => declarations(flat, t, t.more, springCache));
+  const reduced = cssTokens.flatMap(t => reducedDeclarations(t));
+  return (
+    [
+      `/* ${HEADER_TEXT}\n   Paper design tokens (plans/DESIGN.md section 4). Hooks: :root is light,\n   :root[data-theme="dark"] is night, Increase Contrast is prefers-contrast: more\n   or :root[data-contrast="more"], reduced motion is prefers-reduced-motion: reduce\n   or :root[data-motion="reduced"]. */`,
+      block(':root', light),
+      block(':root[data-theme="dark"]', dark),
+      '/* Increase Contrast. The dark selector is repeated so these win over the night block. */',
+      `@media (prefers-contrast: more) {\n${block(':root,\n  :root[data-theme="dark"]', more, '  ')}\n}`,
+      block(':root[data-contrast="more"],\n:root[data-theme="dark"][data-contrast="more"]', more),
+      '/* Reduced motion: durations take their reduced values, travel and scale go neutral,\n   static loops pause. CSS that uses these tokens is neutralised without extra rules. */',
+      `@media (prefers-reduced-motion: reduce) {\n${block(':root', reduced, '  ')}\n}`,
+      block(':root[data-motion="reduced"]', reduced),
+      '/* Theme switch: set data-theme-switching on :root for one frame so the app changes at once. */',
+      block(
+        ':root[data-theme-switching] *,\n:root[data-theme-switching] *::before,\n:root[data-theme-switching] *::after',
+        [['transition', 'none !important']],
+      ),
+    ].join('\n\n') + '\n'
+  );
 }
 
 // ---------- motion.ts ----------
@@ -268,7 +275,7 @@ export function parseDuration(value) {
     throw new Error(`Not a duration: ${value}`);
   }
   const n = Number(match[1]);
-  return match[2] === "s" ? Math.round(n * 1000) : n;
+  return match[2] === 's' ? Math.round(n * 1000) : n;
 }
 
 function parseLength(value) {
@@ -283,24 +290,28 @@ function msMap(durations) {
   return Object.fromEntries(Object.entries(durations).map(([k, v]) => [k, parseDuration(v)]));
 }
 
-function tsLiteral(value, indent = "") {
-  if (value === null || typeof value !== "object") {
+function tsLiteral(value, indent = '') {
+  if (value === null || typeof value !== 'object') {
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
-    return `[${value.map((v) => tsLiteral(v)).join(", ")}]`;
+    return `[${value.map(v => tsLiteral(v)).join(', ')}]`;
   }
-  const inner = indent + "  ";
-  const tsKey = (k) => (/^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k));
-  const flatEntries = Object.values(value).every((v) => v === null || typeof v !== "object");
+  const inner = indent + '  ';
+  const tsKey = k => (/^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k));
+  const flatEntries = Object.values(value).every(v => v === null || typeof v !== 'object');
   if (flatEntries) {
-    const inline = `{ ${Object.entries(value).map(([k, v]) => `${tsKey(k)}: ${tsLiteral(v)}`).join(", ")} }`;
+    const inline = `{ ${Object.entries(value)
+      .map(([k, v]) => `${tsKey(k)}: ${tsLiteral(v)}`)
+      .join(', ')} }`;
     if (inline.length <= 72) {
       return inline;
     }
   }
-  const entries = Object.entries(value).map(([k, v]) => `${inner}${tsKey(k)}: ${tsLiteral(v, inner)},`);
-  return `{\n${entries.join("\n")}\n${indent}}`;
+  const entries = Object.entries(value).map(
+    ([k, v]) => `${inner}${tsKey(k)}: ${tsLiteral(v, inner)},`,
+  );
+  return `{\n${entries.join('\n')}\n${indent}}`;
 }
 
 function curveInfo(flat, ref, springCache) {
@@ -308,16 +319,16 @@ function curveInfo(flat, ref, springCache) {
     return { curve: null, curveName: null };
   }
   const token = lookup(flat, ref);
-  const css = token.type === "spring" ? springCache.get(token.path).linear : cssBezier(token.value);
+  const css = token.type === 'spring' ? springCache.get(token.path).linear : cssBezier(token.value);
   return { curve: css, curveName: aliasPath(ref) };
 }
 
 // "same": rapid keeps the normal durations. "defer-until-hold": during a burst
 // the motion waits for hold to end, then plays at its normal durations.
-const RAPID_KEYWORDS = new Set(["same", "defer-until-hold"]);
+const RAPID_KEYWORDS = new Set(['same', 'defer-until-hold']);
 
 function groupTokens(flat, group) {
-  return flat.tokens.filter((t) => t.group === group);
+  return flat.tokens.filter(t => t.group === group);
 }
 
 function camel(key) {
@@ -325,27 +336,27 @@ function camel(key) {
 }
 
 function springRuntimeSource() {
-  return readFileSync(SPRING_RUNTIME_PATH, "utf8").trim();
+  return readFileSync(SPRING_RUNTIME_PATH, 'utf8').trim();
 }
 
 export function buildMotionTs(flat, springCache) {
   const easings = {};
-  for (const t of groupTokens(flat, "ease")) {
+  for (const t of groupTokens(flat, 'ease')) {
     easings[t.key] = { css: cssBezier(t.value), points: t.value };
   }
   const springs = {};
-  for (const t of groupTokens(flat, "spring")) {
+  for (const t of groupTokens(flat, 'spring')) {
     springs[t.key] = springCache.get(t.path);
   }
   const motions = {};
-  for (const t of groupTokens(flat, "motion")) {
+  for (const t of groupTokens(flat, 'motion')) {
     const v = t.value;
     const durations = msMap(v.durations);
     const { curve, curveName } = curveInfo(flat, v.curve, springCache);
     const spec = {
       durations,
       rapid: RAPID_KEYWORDS.has(v.rapid) ? durations : msMap(v.rapid),
-      deferWhenRapid: v.rapid === "defer-until-hold",
+      deferWhenRapid: v.rapid === 'defer-until-hold',
       reduced: msMap(v.reduced),
       reducedMode: v.reducedMode,
       curve,
@@ -358,16 +369,22 @@ export function buildMotionTs(flat, springCache) {
     }
     motions[t.key] = spec;
   }
-  const moves = Object.fromEntries(groupTokens(flat, "move").map((t) => [camel(t.key), parseLength(t.value)]));
-  const scales = Object.fromEntries(groupTokens(flat, "scale").map((t) => [camel(t.key), t.value]));
-  const breathe = Object.fromEntries(groupTokens(flat, "breathe").map((t) => [camel(t.key), t.value]));
-  const layers = Object.fromEntries(groupTokens(flat, "layer").map((t) => [camel(t.key), t.value]));
-  const timingTokens = groupTokens(flat, "timing");
+  const moves = Object.fromEntries(
+    groupTokens(flat, 'move').map(t => [camel(t.key), parseLength(t.value)]),
+  );
+  const scales = Object.fromEntries(groupTokens(flat, 'scale').map(t => [camel(t.key), t.value]));
+  const breathe = Object.fromEntries(
+    groupTokens(flat, 'breathe').map(t => [camel(t.key), t.value]),
+  );
+  const layers = Object.fromEntries(groupTokens(flat, 'layer').map(t => [camel(t.key), t.value]));
+  const timingTokens = groupTokens(flat, 'timing');
   const timing = Object.fromEntries(
-    timingTokens.map((t) => [camel(t.key), t.type === "number" ? t.value : parseDuration(t.value)]),
+    timingTokens.map(t => [camel(t.key), t.type === 'number' ? t.value : parseDuration(t.value)]),
   );
   const timingReduced = Object.fromEntries(
-    timingTokens.filter((t) => t.reduced !== undefined).map((t) => [camel(t.key), parseDuration(t.reduced)]),
+    timingTokens
+      .filter(t => t.reduced !== undefined)
+      .map(t => [camel(t.key), parseDuration(t.reduced)]),
   );
 
   return `// ${HEADER_TEXT}
@@ -473,7 +490,7 @@ export function motionMs<N extends MotionName>(name: N, phase: MotionPhase<N>, c
 // ---------- contrast-pairs.json ----------
 
 function round6(rgb) {
-  return rgb.map((c) => Math.round(c * 1e6) / 1e6);
+  return rgb.map(c => Math.round(c * 1e6) / 1e6);
 }
 
 function cssName(flat, ref) {
@@ -515,7 +532,10 @@ export function pairsDocument(flat) {
 }
 
 export function buildPairs(flat) {
-  const json = JSON.stringify(pairsDocument(flat), null, 2).replace(/\[\s+([^[\]{}]*?)\s+\]/g, (_, inner) => `[${inner.split(/,\s+/).join(", ")}]`);
+  const json = JSON.stringify(pairsDocument(flat), null, 2).replace(
+    /\[\s+([^[\]{}]*?)\s+\]/g,
+    (_, inner) => `[${inner.split(/,\s+/).join(', ')}]`,
+  );
   return `${json}\n`;
 }
 
@@ -523,7 +543,7 @@ export function buildPairs(flat) {
 
 function compileSprings(flat) {
   const cache = new Map();
-  for (const token of flat.tokens.filter((t) => t.type === "spring")) {
+  for (const token of flat.tokens.filter(t => t.type === 'spring')) {
     cache.set(token.path, compileSpring(token.value));
   }
   return cache;
@@ -533,10 +553,27 @@ export function generate(tokensPath = TOKENS_PATH) {
   const flat = flattenTokens(readJson(tokensPath));
   const springCache = compileSprings(flat);
   return {
-    "tokens.css": buildCss(flat, springCache),
-    "motion.ts": buildMotionTs(flat, springCache),
-    "contrast-pairs.json": buildPairs(flat),
+    'tokens.css': buildCss(flat, springCache),
+    'motion.ts': buildMotionTs(flat, springCache),
+    'contrast-pairs.json': buildPairs(flat),
   };
+}
+
+// Format every output with the repository's Prettier config. Options come from
+// the committed file's path, not the write target, so --out copies format the
+// same way as generated/.
+export async function formatOutputs(outputs) {
+  const formatted = {};
+  for (const [name, content] of Object.entries(outputs)) {
+    const filepath = join(GENERATED_DIR, name);
+    const options = await prettier.resolveConfig(filepath);
+    formatted[name] = await prettier.format(content, { ...options, filepath });
+  }
+  return formatted;
+}
+
+export async function generateFormatted(tokensPath = TOKENS_PATH) {
+  return formatOutputs(generate(tokensPath));
 }
 
 // Generated files that differ from disk, plus any file in the output folder
@@ -546,11 +583,11 @@ export function diffOutputs(outputs, outDir) {
   const changed = Object.entries(outputs)
     .filter(([name, content]) => {
       const path = join(outDir, name);
-      return !existsSync(path) || readFileSync(path, "utf8") !== content;
+      return !existsSync(path) || readFileSync(path, 'utf8') !== content;
     })
     .map(([name]) => name);
-  const stray = existsSync(outDir) ? readdirSync(outDir).filter((name) => !(name in outputs)) : [];
-  return [...changed, ...stray.map((name) => `${name} (not generated; remove it)`)];
+  const stray = existsSync(outDir) ? readdirSync(outDir).filter(name => !(name in outputs)) : [];
+  return [...changed, ...stray.map(name => `${name} (not generated; remove it)`)];
 }
 
 function argValue(args, flag) {
@@ -558,27 +595,32 @@ function argValue(args, flag) {
   return i >= 0 ? args[i + 1] : undefined;
 }
 
-function main(args) {
-  const tokensPath = resolve(argValue(args, "--tokens") ?? TOKENS_PATH);
-  const outDir = resolve(argValue(args, "--out") ?? GENERATED_DIR);
-  const outputs = generate(tokensPath);
-  if (args.includes("--check")) {
+async function main(args) {
+  const tokensPath = resolve(argValue(args, '--tokens') ?? TOKENS_PATH);
+  const outDir = resolve(argValue(args, '--out') ?? GENERATED_DIR);
+  const outputs = await generateFormatted(tokensPath);
+  if (args.includes('--check')) {
     const stale = diffOutputs(outputs, outDir);
     if (stale.length > 0) {
-      console.error(`Generated files differ from tokens.json: ${stale.join(", ")}`);
-      console.error("Run node apps/desktop/scripts/design/build-tokens.mjs and do not edit generated files by hand.");
+      console.error(`Generated files differ from tokens.json: ${stale.join(', ')}`);
+      console.error(
+        'Run node apps/desktop/scripts/design/build-tokens.mjs and do not edit generated files by hand.',
+      );
       process.exit(1);
     }
-    console.log(`Generated files match tokens.json (${Object.keys(outputs).join(", ")}).`);
+    console.log(`Generated files match tokens.json (${Object.keys(outputs).join(', ')}).`);
     return;
   }
   mkdirSync(outDir, { recursive: true });
   for (const [name, content] of Object.entries(outputs)) {
     writeFileSync(join(outDir, name), content);
   }
-  console.log(`Wrote ${Object.keys(outputs).join(", ")} to ${outDir}`);
+  console.log(`Wrote ${Object.keys(outputs).join(', ')} to ${outDir}`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main(process.argv.slice(2));
+  main(process.argv.slice(2)).catch(error => {
+    console.error(error);
+    process.exit(1);
+  });
 }

@@ -42,9 +42,11 @@
   --tag-sand: #8a6320;
   --tag-ember: #b4531f;
   --event-fill: 12%;
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-  --font-serif: "Newsreader", "Newsreader Fallback New York", "Newsreader Fallback Georgia", "New York", "Georgia", serif;
-  --font-mono: ui-monospace, "SF Mono", "Menlo", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --font-serif:
+    'Newsreader', 'Newsreader Fallback New York', 'Newsreader Fallback Georgia', 'New York',
+    'Georgia', serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Menlo', monospace;
   --type-caption: 500 0.6875rem/1rem var(--font-sans);
   --track-caption: calc(0.04px + var(--track-boost));
   --type-small: 400 0.75rem/1.125rem var(--font-sans);
@@ -143,12 +145,29 @@
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
   --radius-pill: 62.4375rem;
-  --elev-pane: 0px 0px 0px var(--hairline) var(--line), 0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 3%, transparent);
-  --elev-card: 0px 0px 0px var(--hairline) var(--line-strong), 0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 4%, transparent), 0px 6px 20px 0px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
-  --elev-float: 0px 0px 0px var(--hairline) var(--line-strong), 0px 4px 12px 0px color-mix(in srgb, var(--shadow-ink) 6%, transparent), 0px 16px 40px 0px color-mix(in srgb, var(--shadow-ink) 10%, transparent);
-  --elev-dialog: 0px 0px 0px var(--hairline) var(--line-strong), 0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 8%, transparent), 0px 32px 72px 0px color-mix(in srgb, var(--shadow-ink) 14%, transparent);
-  --elev-lift: 0px 0px 0px var(--hairline) var(--line-strong), 0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 4%, transparent), 0px 6px 20px 0px color-mix(in srgb, var(--shadow-ink) 5%, transparent), 0px 12px 32px 0px color-mix(in srgb, var(--shadow-ink) 10%, transparent);
-  --elev-puck: 0px 0px 0px var(--hairline) var(--line-strong), 0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 6%, transparent);
+  --elev-pane:
+    0px 0px 0px var(--hairline) var(--line),
+    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 3%, transparent);
+  --elev-card:
+    0px 0px 0px var(--hairline) var(--line-strong),
+    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 4%, transparent),
+    0px 6px 20px 0px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
+  --elev-float:
+    0px 0px 0px var(--hairline) var(--line-strong),
+    0px 4px 12px 0px color-mix(in srgb, var(--shadow-ink) 6%, transparent),
+    0px 16px 40px 0px color-mix(in srgb, var(--shadow-ink) 10%, transparent);
+  --elev-dialog:
+    0px 0px 0px var(--hairline) var(--line-strong),
+    0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 8%, transparent),
+    0px 32px 72px 0px color-mix(in srgb, var(--shadow-ink) 14%, transparent);
+  --elev-lift:
+    0px 0px 0px var(--hairline) var(--line-strong),
+    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 4%, transparent),
+    0px 6px 20px 0px color-mix(in srgb, var(--shadow-ink) 5%, transparent),
+    0px 12px 32px 0px color-mix(in srgb, var(--shadow-ink) 10%, transparent);
+  --elev-puck:
+    0px 0px 0px var(--hairline) var(--line-strong),
+    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 6%, transparent);
   --elev-thumb: 0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 25%, transparent);
   --z-sticky: 10;
   --z-dock: 20;
@@ -165,11 +184,106 @@
   --ease-carry: cubic-bezier(0.4, 0, 1, 1);
   --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-linear: linear;
-  --spring-slide: linear(0, 0.059, 0.189, 0.343, 0.492, 0.624, 0.732, 0.816, 0.88, 0.925, 0.957, 0.978, 0.991, 0.999, 1.003, 1.005, 1.005, 1);
-  --spring-snap: linear(0, 0.038, 0.126, 0.239, 0.359, 0.474, 0.578, 0.669, 0.745, 0.808, 0.859, 0.898, 0.929, 0.952, 0.969, 0.981, 0.989, 1);
-  --spring-lift: linear(0, 0.041, 0.137, 0.257, 0.381, 0.499, 0.603, 0.693, 0.767, 0.827, 0.874, 0.91, 0.937, 0.958, 0.972, 0.983, 0.99, 1);
-  --spring-follow: linear(0, 0.045, 0.147, 0.272, 0.4, 0.519, 0.623, 0.711, 0.783, 0.84, 0.884, 0.918, 0.943, 0.962, 0.975, 0.984, 0.991, 1);
-  --spring-thumb: linear(0, 0.067, 0.222, 0.408, 0.589, 0.746, 0.868, 0.956, 1.013, 1.044, 1.057, 1.057, 1.051, 1.04, 1.029, 1.019, 1.011, 1);
+  --spring-slide: linear(
+    0,
+    0.059,
+    0.189,
+    0.343,
+    0.492,
+    0.624,
+    0.732,
+    0.816,
+    0.88,
+    0.925,
+    0.957,
+    0.978,
+    0.991,
+    0.999,
+    1.003,
+    1.005,
+    1.005,
+    1
+  );
+  --spring-snap: linear(
+    0,
+    0.038,
+    0.126,
+    0.239,
+    0.359,
+    0.474,
+    0.578,
+    0.669,
+    0.745,
+    0.808,
+    0.859,
+    0.898,
+    0.929,
+    0.952,
+    0.969,
+    0.981,
+    0.989,
+    1
+  );
+  --spring-lift: linear(
+    0,
+    0.041,
+    0.137,
+    0.257,
+    0.381,
+    0.499,
+    0.603,
+    0.693,
+    0.767,
+    0.827,
+    0.874,
+    0.91,
+    0.937,
+    0.958,
+    0.972,
+    0.983,
+    0.99,
+    1
+  );
+  --spring-follow: linear(
+    0,
+    0.045,
+    0.147,
+    0.272,
+    0.4,
+    0.519,
+    0.623,
+    0.711,
+    0.783,
+    0.84,
+    0.884,
+    0.918,
+    0.943,
+    0.962,
+    0.975,
+    0.984,
+    0.991,
+    1
+  );
+  --spring-thumb: linear(
+    0,
+    0.067,
+    0.222,
+    0.408,
+    0.589,
+    0.746,
+    0.868,
+    0.956,
+    1.013,
+    1.044,
+    1.057,
+    1.057,
+    1.051,
+    1.04,
+    1.029,
+    1.019,
+    1.011,
+    1
+  );
   --dur-nav: 0ms;
   --dur-press-down: 80ms;
   --dur-press-up: 140ms;
@@ -231,7 +345,7 @@
   --dur-reveal-grace: 600ms;
 }
 
-:root[data-theme="dark"] {
+:root[data-theme='dark'] {
   color-scheme: dark;
   --shell: #121314;
   --canvas: #191a1c;
@@ -272,10 +386,21 @@
   --w-summary: 410;
   --w-answer: 390;
   --elev-pane: 0px 0px 0px var(--hairline) var(--line), inset 0px 1px 0px 0px var(--sheen);
-  --elev-card: 0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen), 0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 30%, transparent);
-  --elev-float: 0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen), 0px 4px 12px 0px color-mix(in srgb, var(--shadow-ink) 30%, transparent), 0px 16px 40px 0px color-mix(in srgb, var(--shadow-ink) 40%, transparent);
-  --elev-dialog: 0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen), 0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 40%, transparent), 0px 32px 72px 0px color-mix(in srgb, var(--shadow-ink) 50%, transparent);
-  --elev-lift: 0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen), 0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 30%, transparent), 0px 12px 32px 0px color-mix(in srgb, var(--shadow-ink) 45%, transparent);
+  --elev-card:
+    0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen),
+    0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 30%, transparent);
+  --elev-float:
+    0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen),
+    0px 4px 12px 0px color-mix(in srgb, var(--shadow-ink) 30%, transparent),
+    0px 16px 40px 0px color-mix(in srgb, var(--shadow-ink) 40%, transparent);
+  --elev-dialog:
+    0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen),
+    0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 40%, transparent),
+    0px 32px 72px 0px color-mix(in srgb, var(--shadow-ink) 50%, transparent);
+  --elev-lift:
+    0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen),
+    0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 30%, transparent),
+    0px 12px 32px 0px color-mix(in srgb, var(--shadow-ink) 45%, transparent);
   --elev-puck: 0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen);
   --press-lo: color-mix(in srgb, var(--shadow-ink) 22%, transparent);
 }
@@ -284,7 +409,7 @@
 
 @media (prefers-contrast: more) {
   :root,
-  :root[data-theme="dark"] {
+  :root[data-theme='dark'] {
     --faint: var(--dim);
     --line: var(--control-edge);
     --line-strong: var(--control-edge);
@@ -292,8 +417,8 @@
   }
 }
 
-:root[data-contrast="more"],
-:root[data-theme="dark"][data-contrast="more"] {
+:root[data-contrast='more'],
+:root[data-theme='dark'][data-contrast='more'] {
   --faint: var(--dim);
   --line: var(--control-edge);
   --line-strong: var(--control-edge);
@@ -351,7 +476,7 @@
   }
 }
 
-:root[data-motion="reduced"] {
+:root[data-motion='reduced'] {
   --dur-cursor: 0ms;
   --dur-cursor-focus: 0ms;
   --dur-reveal-in: 100ms;
