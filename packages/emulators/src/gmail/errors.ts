@@ -151,7 +151,10 @@ export function dailyLimitError(kind: DailyLimitKind): ApiError {
   );
 }
 
-export const insufficientScopeError = (apiMethod: string): ApiError =>
+export const insufficientScopeError = (
+  apiMethod: string,
+  service = 'gmail.googleapis.com',
+): ApiError =>
   new ApiError(403, 'insufficientPermissions', 'Request had insufficient authentication scopes.', {
     status: 'PERMISSION_DENIED',
     shortMessage: 'Insufficient Permission',
@@ -160,7 +163,7 @@ export const insufficientScopeError = (apiMethod: string): ApiError =>
         '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
         reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT',
         domain: 'googleapis.com',
-        metadata: { service: 'gmail.googleapis.com', method: apiMethod },
+        metadata: { service, method: apiMethod },
       },
     ],
   });
@@ -205,6 +208,11 @@ export const authChallenge = (missing: boolean): Record<string, string> => ({
   'www-authenticate': missing
     ? 'Bearer realm="https://accounts.google.com/"'
     : 'Bearer realm="https://accounts.google.com/", error="invalid_token"',
+});
+
+/** RFC 6750 section 3.1: a token without the needed scope gets `error="insufficient_scope"` and the scope it needs. */
+export const scopeChallenge = (scope: string): Record<string, string> => ({
+  'www-authenticate': `Bearer realm="https://accounts.google.com/", error="insufficient_scope", scope="${scope}"`,
 });
 
 /** A Gmail id (message or thread) is a 64-bit number in hex; anything else fails before lookup. */
