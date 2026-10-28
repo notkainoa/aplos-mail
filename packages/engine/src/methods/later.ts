@@ -1,9 +1,10 @@
-import { notImplemented, type AreaHandlers } from './types';
+import '../clock/sources';
+import type { AreaHandlers } from './types';
 
 /**
- * The `later` area, owned by lane `eng-time`. Replace a stub with the real handler; never edit `index.ts`.
- * Arguments arrive validated; throw `ContractError` (`@aplos/contract/contract-error`) with the sentence the UI shows.
+ * The `later` area, owned by lane `eng-time`. The choices are resolved by the engine's clock and configured zone, so
+ * every client shows the same times.
  */
 export const handlers: AreaHandlers<'later'> = {
-  'Later/presets': notImplemented('Later/presets'),
+  'Later/presets': (_args, ctx) => ctx.services.later.presets(),
 };

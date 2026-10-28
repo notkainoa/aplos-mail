@@ -1,10 +1,15 @@
-import { notImplemented, type AreaHandlers } from './types';
+import '../clock/sources';
+import type { AreaHandlers } from './types';
 
 /**
- * The `reminder` area, owned by lane `eng-time`. Replace a stub with the real handler; never edit `index.ts`.
- * Arguments arrive validated; throw `ContractError` (`@aplos/contract/contract-error`) with the sentence the UI shows.
+ * The `reminder` area, owned by lane `eng-time`. The reminders service lives in `clock/sources/reminders.ts`.
+ * `Reminder/ack` only marks fired reminders seen, so it has no inverse.
  */
 export const handlers: AreaHandlers<'reminder'> = {
-  'Reminder/list': notImplemented('Reminder/list'),
-  'Reminder/ack': notImplemented('Reminder/ack'),
+  'Reminder/list': (_args, ctx) => ({ items: ctx.services.reminders.list() }),
+  'Reminder/ack': (args, ctx) => ({
+    opId: args.opId,
+    appliedState: ctx.services.reminders.ack(args.opId, args.threadIds),
+    undoable: false,
+  }),
 };
