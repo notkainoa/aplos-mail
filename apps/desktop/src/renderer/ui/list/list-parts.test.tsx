@@ -447,6 +447,6 @@ describe('ErrorLine', () => {
 });
 
 test('no banned phrase, glyph or exclamation mark rendered anywhere in the list parts', () => {
-  assert.ok(collected.length > 35);
+  assert.ok(collected.length > 40);
   for (const markup of collected) assert.deepEqual(bannedIn(markup), [], markup.slice(0, 160));
 });
