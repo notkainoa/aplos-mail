@@ -123,8 +123,8 @@ export function ai(fx: Fixture) {
         byModel: m.usage.backgroundTokens ? [{ model: model('summaries'), lane: 'background', requests: Math.ceil(m.usage.backgroundTokens / 1_500), tokensIn: Math.round(m.usage.backgroundTokens * 0.8), tokensOut: Math.round(m.usage.backgroundTokens * 0.2) }] : [],
       });
     },
-    'Ai/setKey': ({ provider, key }) => {
-      const entry = { keySource: 'keychain' as const, last4: key.slice(-4) };
+    'Ai/setKey': ({ provider }) => {
+      const entry = { keySource: 'keychain' as const };
       fx.write({ kind: 'Ai/setKey' }, tx => tx.put('Meta', { ...meta(), keys: { ...meta().keys, [provider]: entry } }));
       return entry;
     },
@@ -167,6 +167,9 @@ export function ai(fx: Fixture) {
         [400, () => progress({ kind: 'step', step: { ...step, state: 'done', count: found.length } })],
         [550, () => progress({ kind: 'text', delta: parts[0]! })],
         [700, () => { if (parts[1]) progress({ kind: 'text', delta: ` ${parts[1]}` }); }],
+        // Chips and cards appear as each becomes known, before the turn is stored.
+        [750, () => { for (const citation of citations) progress({ kind: 'citation', citation }); }],
+        [800, () => { for (const proposal of proposals) progress({ kind: 'proposal', proposal }); }],
         [850, () => {
           fx.runs.delete(runId);
           setTurn(id, turnId, t => ({ ...t, answer: { blocks: parts.map(text => ({ text })) }, citations, noSource: !found.length, proposals, steps: [{ ...step, state: 'done', count: found.length }] }));
@@ -194,7 +197,7 @@ export function ai(fx: Fixture) {
       const proposal = turn.proposals.find(p => p.id === proposalId) ?? fail('notFound', 'This suggestion is no longer available.');
       if (proposal.state !== 'open') fail('conflict', 'This suggestion was already answered.');
       let draftId: string | undefined, eventId: string | undefined;
-      const { receipt } = fx.write({ opId, kind: 'Ask/decide' }, tx => {
+      const { receipt } = fx.write({ opId, kind: 'Ask/decide', provider: accept && proposal.kind !== 'reply' }, tx => {
         if (accept && proposal.kind === 'reply') {
           const accountId = proposal.draft.accountId ?? fx.store.all('Account')[0]?.id ?? fail('notFound', 'Connect an account first.');
           draftId = `${accountId}:draft-${fx.id('n')}`;
@@ -203,7 +206,7 @@ export function ai(fx: Fixture) {
         if (accept && proposal.kind === 'addEvent') {
           const cal = (proposal.calendarId && tx.get('Calendar', proposal.calendarId)) || fx.store.all('Calendar').find(x => x.primary) || fail('notFound', 'Connect a calendar first.');
           eventId = `${cal.accountId}:ev-${fx.id('n')}`;
-          tx.put('Event', clean({ id: eventId, rev: 0, accountId: cal.accountId, calendarId: cal.id, recurring: false, exception: false, title: proposal.event.title, start: proposal.event.start, end: proposal.event.end, allDay: proposal.event.allDay, location: proposal.event.location, attendees: [], status: 'confirmed', can: { edit: true, move: true, delete: true, rsvp: false, editGuests: true } }));
+          tx.put('Event', clean({ id: eventId, rev: 0, accountId: cal.accountId, calendarId: cal.id, recurring: false, exception: false, title: proposal.event.title, start: proposal.event.start, end: proposal.event.end, allDay: proposal.event.allDay, location: proposal.event.location, attendees: [], status: 'confirmed', can: { edit: true, move: true, delete: true, rsvp: false, editGuests: true }, sync: 'pending' }));
         }
         if (accept && proposal.kind === 'triage') actOn(fx, tx, proposal.threadIds, proposal.action);
         tx.put('Conversation', { ...c, updatedAt: fx.now, turns: c.turns.map(t => t.id !== turnId ? t : { ...t, proposals: t.proposals.map(p => p.id === proposalId ? { ...p, state: accept ? 'accepted' : 'dismissed' } : p) }) });

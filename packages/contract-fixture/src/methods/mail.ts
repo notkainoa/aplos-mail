@@ -1,5 +1,5 @@
-import type { Settings, ThreadAction, ThreadRow } from '@aplos/contract';
-import type { Fixture } from '../engine';
+import type { Settings, ThreadAction, ThreadRow, ThreadSelector, ViewSpec } from '@aplos/contract';
+import { accountsOf, type Fixture } from '../engine';
 import type { Tx } from '../store';
 import { dueBand, localDay } from '../time';
 import { homeParts, runView, senderGroups } from '../views';
@@ -54,6 +54,8 @@ export function applyAction(t: ThreadRow, action: ThreadAction, settings: Settin
     case 'home': w.hiddenFromHome = action.hidden; break;
     case 'labels': next.labels = [...new Set([...next.labels.filter(l => !action.remove.includes(l)), ...action.add])]; break;
   }
+  // Acting on a Back from Later row moves it on; Later again waits for the new date.
+  if (['done', 'restore', 'later', 'trash', 'spam', 'home'].includes(action.type)) next.fromLater = false;
   w.editedAt = now;
   return next;
 }
@@ -73,11 +75,17 @@ export function actOn(fx: Fixture, tx: Tx, ids: string[], action: ThreadAction) 
 function counts(fx: Fixture, accountId?: string) {
   const p = homeParts(fx.view, accountId);
   const mine = <T extends { accountId: string }>(rows: T[]) => rows.filter(r => !accountId || r.accountId === accountId);
+  const today = localDay(fx.now, fx.zone);
+  // Moved off Home today: the last edit was today and left it Done, waiting in Later, or in Trash or Spam. Undo puts the
+  // edit time back, so it subtracts.
+  const handled = (t: ThreadRow) => t.workflow.editedAt !== undefined && localDay(t.workflow.editedAt, fx.zone) === today
+    && (t.workflow.status === 'done' || (t.workflow.status === 'later' && !t.fromLater) || t.labels.some(l => /:(TRASH|SPAM)$/.test(l)));
   return {
     home: p.doNew.length + p.fromLater.length + p.update.length, do: p.doNew.length + p.fromLater.length, update: p.update.length, follow: p.follow.length,
     laterDue: p.fromLater.length, drafts: mine(fx.store.all('Draft')).filter(d => !d.submissionId).length,
     scheduled: mine(fx.store.all('Submission')).filter(s => s.state === 'queued' || s.state === 'scheduled').length,
     unread: mine(fx.store.all('Thread')).filter(t => t.unread && t.labels.includes(`${t.accountId}:INBOX`)).length,
+    handledToday: mine(fx.store.all('Thread')).filter(handled).length,
   };
 }
 
@@ -111,7 +119,7 @@ export function mail(fx: Fixture) {
     'View/query': ({ spec, anchor, limit = 100 }) => {
       const r = runView(fx.view, spec);
       const position = Math.max(0, Math.min(anchor?.position ?? (anchor?.id ? Math.max(0, r.ids.indexOf(anchor.id)) : 0) + (anchor?.offset ?? 0), Math.max(0, r.ids.length - 1)));
-      return clean({ state: fx.store.state, rowType: r.rowType, ids: spec.kind === 'events' ? r.ids : r.ids.slice(position, position + limit), position, total: r.ids.length, sections: r.sections });
+      return { state: fx.store.state, rowType: r.rowType, ids: spec.kind === 'events' ? r.ids : r.ids.slice(position, position + limit), position, total: r.ids.length, sections: r.sections };
     },
     'Folder/get': ({ accountId }) => ({ state: fx.store.state, list: folders(accountId) }),
     'Counts/get': () => ({
@@ -136,9 +144,22 @@ export function mail(fx: Fixture) {
     },
 
     'Thread/get': ({ ids }) => getRows(fx.store, 'Thread', ids),
-    'Thread/act': ({ opId, ids, action }) => {
-      for (const id of ids) must(fx.store, 'Thread', id, 'This conversation is no longer available.');
-      return fx.write({ opId, kind: 'Thread/act', targets: ids, provider: true }, tx => actOn(fx, tx, ids, action)).receipt;
+    'Thread/act': ({ opId, ids, selector, action }) => {
+      const targets = selector ? resolveSelector(fx, selector) : ids!;
+      for (const id of targets) must(fx.store, 'Thread', id, 'This conversation is no longer available.');
+      return fx.write({ opId, kind: 'Thread/act', targets, provider: true }, tx => actOn(fx, tx, targets, action)).receipt;
+    },
+    'Thread/why': ({ threadId }) => {
+      const t = must(fx.store, 'Thread', threadId, 'This conversation is no longer available.');
+      const m = fx.store.all('Message').filter(x => x.threadId === threadId && !x.fromMe).sort((a, b) => b.date - a.date)[0];
+      const quote = m ? (fx.bodies[m.id] ?? '').replace(/^(hi|hello)[^\n]*\n/i, '').split(/(?<=[.?!])\s/)[0]?.trim().slice(0, 300) : undefined;
+      const lane = t.rank.lane === 'do' ? 'Do now' : t.rank.lane === 'low' ? 'Low importance' : 'Important updates';
+      const sentence = t.rank.source === 'user' ? `You moved this to ${lane}.`
+        : t.rank.source === 'rule' ? `Your rule for ${t.fromName} puts their mail in ${lane}.`
+        : t.rank.lane === 'do' ? (t.workflow.todo ? `${t.fromName} is waiting on you: ${t.workflow.todo.charAt(0).toLowerCase()}${t.workflow.todo.slice(1)}.` : `${t.fromName} asked you something and is waiting for a reply.`)
+        : t.rank.lane === 'low' ? `${t.fromName} sends notices and newsletters that rarely need you.`
+        : `An update from ${t.fromName} worth knowing about, with nothing for you to do.`;
+      return clean({ threadId, sentence, quote: quote || undefined, messageId: quote ? m?.id : undefined, lane: t.rank.lane, rankSource: t.rank.source });
     },
     'Thread/open': ({ threadId }) => {
       const t = must(fx.store, 'Thread', threadId, 'This conversation is no longer available.');
@@ -153,7 +174,11 @@ export function mail(fx: Fixture) {
       const rec = fx.ops.get(opId) ?? fail('notFound', 'This change can no longer be undone.');
       if (!rec.operation.undoable) fail('conflict', 'This change cannot be undone.');
       if (rec.operation.state === 'cancelled') fail('conflict', 'This change was already undone.');
-      const { receipt } = fx.write({ opId: undoOpId, kind: 'Operation/undo', targets: rec.operation.targets, provider: rec.operation.state !== 'applied' }, tx => fx.restore(tx, rec.touched, 'before'));
+      // Undo while still queued cancels the provider write; after it synced, the inverse goes to the provider in turn.
+      const { receipt } = fx.write({ opId: undoOpId, kind: 'Operation/undo', targets: rec.operation.targets, provider: rec.operation.state === 'synced' }, tx => {
+        fx.settlePending(tx, rec);
+        fx.restore(tx, rec.touched, 'before');
+      });
       rec.operation = { ...rec.operation, state: 'cancelled' };
       fx.emit({ frame: 'operation', operation: rec.operation });
       return receipt;
@@ -162,7 +187,10 @@ export function mail(fx: Fixture) {
     'Operation/retry': ({ opId }) => {
       const rec = fx.ops.get(opId) ?? fail('notFound', 'This change is no longer in the queue.');
       if (rec.operation.state !== 'failed') fail('conflict', 'Only a failed change can be retried.');
-      fx.write({ kind: 'Operation/retry' }, tx => fx.restore(tx, rec.touched, 'after'));
+      fx.write({ kind: 'Operation/retry' }, tx => {
+        fx.restore(tx, rec.touched, 'after');
+        for (const id of accountsOf(rec.touched)) if (fx.bumpPending(tx, id, 1)) rec.pending.push(id);
+      });
       const { error: _, ...operation } = rec.operation;
       rec.operation = { ...operation, state: 'queued', appliedState: fx.store.state };
       fx.syncLater(opId);
@@ -176,6 +204,11 @@ export function mail(fx: Fixture) {
     },
     'MessageBody/prefetch': () => ({ ok: true as const }),
     'Mail/frame': ({ messageId, imagePolicy, quotesOpen }) => frameFor(messageId, imagePolicy, !!quotesOpen),
+    'Mail/allowImages': ({ opId, sender, allow }) => {
+      const s = must(fx.store, 'Settings', 'settings');
+      const match = sender.toLowerCase(), list = s.mail.imageAllowList.filter(x => x !== match);
+      return fx.write({ opId, kind: 'Mail/allowImages' }, tx => tx.put('Settings', { ...s, mail: { ...s.mail, imageAllowList: allow ? [...list, match] : list } })).receipt;
+    },
     'Mail/release': ({ url }) => { fx.mailFrames.delete(token(url)); return { ok: true as const }; },
     'Mail/toggleQuotes': ({ url, open }) => {
       const frame = fx.mailFrames.get(token(url)) ?? fail('notFound', 'This message view has expired. Open the message again.');
@@ -254,6 +287,20 @@ export function mail(fx: Fixture) {
       for (const r of fx.store.all('SenderRule')) if (r.action === 'block' && r.match === address.toLowerCase()) tx.del('SenderRule', r.id);
     }).receipt,
   } satisfies Part;
+}
+
+/**
+ * The threads a `ThreadSelector` names: the view (Low importance's band on Home is its own section view) or one of its
+ * sections, without threads created after `atState`, which the owner never saw.
+ */
+function resolveSelector(fx: Fixture, { spec, section, atState }: ThreadSelector): string[] {
+  if (atState.dbEpoch !== fx.store.dbEpoch) fail('stateMismatch', 'This list changed while you were looking at it. Look again, then try once more.');
+  const view: ViewSpec = spec.kind === 'home' && section === 'low' ? { kind: 'homeSection', section: 'low', ...(spec.accountId ? { accountId: spec.accountId } : {}) } : spec;
+  const r = runView(fx.view, view);
+  if (r.rowType !== 'Thread') fail('unsupported', 'Only a list of conversations can be acted on as a whole.');
+  const run = section ? r.sections.find(s => s.key === section) ?? fail('notFound', 'This section is empty now.') : undefined;
+  const ids = run ? r.ids.slice(run.start, run.start + run.count) : r.ids;
+  return ids.filter(id => (fx.store.born.get(`Thread\u0000${id}`) ?? 0) <= atState.seq);
 }
 
 function senderThreads(fx: Fixture, match: string, accountId?: string) {

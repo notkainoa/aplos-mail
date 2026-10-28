@@ -154,6 +154,8 @@ export function conformance(target: ConformanceTarget, expectedFail: readonly st
     let seq = 0;
     for (const f of c.frames) {
       assert.ok(Frame.safeParse(f).success, `frame ${f.frame} matches the schema`);
+      // `desktop` frames are main's own and carry no state token; an engine never sends one.
+      assert.ok(f.frame !== 'desktop', 'the engine sends no desktop frames');
       assert.equal(f.dbEpoch, s.dbEpoch, 'every frame carries the dbEpoch');
       assert.ok(f.seq >= seq, 'seq never goes backwards on one connection');
       seq = f.seq;
@@ -315,6 +317,19 @@ export function conformance(target: ConformanceTarget, expectedFail: readonly st
       assert.ok(a.runId.length > 0);
     }
     for (const e of status.errors) assert.ok(errorTypes.length && e.reasonCode.length > 0);
+  });
+  scenario('act/selector', async (_e, c) => {
+    const home = await c.call('View/query', { spec: { kind: 'home' } });
+    const update = home.sections.find(s => s.key === 'update');
+    assert.ok(update && update.count > 0, 'the demo has Important updates');
+    const seen = home.ids.slice(update.start, update.start + update.count);
+    const act = opId('sel');
+    await c.call('Thread/act', { opId: act, selector: { spec: { kind: 'home' }, section: 'update', atState: home.state }, action: { type: 'done' } });
+    assert.ok((await c.call('Thread/get', { ids: seen })).list.every(t => t.workflow.status === 'done'), 'every row of the section is Done');
+    assert.equal((await c.call('View/query', { spec: { kind: 'home' } })).sections.find(s => s.key === 'update'), undefined, 'the section is empty');
+    await c.call('Operation/undo', { opId: act, undoOpId: opId('undo') });
+    assert.ok((await c.call('Thread/get', { ids: seen })).list.every(t => t.workflow.status === 'new'), 'one undo restores the whole section');
+    await rejects(c.session.call('Thread/act', { opId: opId(), selector: { spec: { kind: 'drafts' }, atState: home.state }, action: { type: 'done' } }), 'unsupported');
   });
   scenario('undo/restores-thread', async (_e, c) => {
     const ctx = new SampleContext(c.session, async () => {});

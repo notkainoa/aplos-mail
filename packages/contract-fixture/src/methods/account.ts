@@ -98,7 +98,7 @@ export function account(fx: Fixture) {
           capabilities: { labels: true, folders: false, drafts: true, serverSearch: true, calendar: true, filters: true, push: false, sendAs: true, unsubscribeHeaders: true, importance: true },
           grantedScopes: ['gmail.modify', 'gmail.settings.basic', 'calendar.events'], aiAllowed: true, notifications: true,
           lease: { role: 'primary', holderDeviceId: 'fixture-device', holderDeviceName: 'Fixture Mac' },
-          identities: [{ address, name: name ?? 'Practice account', default: true }], preset: 'gmail', createdAt: fx.now,
+          identities: [{ address, name: name ?? 'Practice account', default: true }], preset: 'gmail', createdAt: fx.now, pendingChanges: 0,
         };
         // The practice mailbox is the demo's, under one account, landing during `reading`.
         const data = demoData(fx.now, fx.zone, { work: id, personal: id });
@@ -184,6 +184,17 @@ export function account(fx: Fixture) {
         : reason === 'closed' ? meta.setup : { ...meta.setup, completedAt: meta.setup.completedAt ?? fx.now };
       if (setup !== meta.setup) fx.write({ kind: 'Setup/end' }, tx => tx.put('Meta', { ...meta, setup }));
       fx.setupId = undefined;
+      return { ok: true as const };
+    },
+    'Setup/retry': ({ accountId }) => {
+      accountOf(accountId);
+      const r = must(fx.store, 'Setup', accountId, 'This account has no first sync to resume.');
+      // Resume from the checkpoint: a paused or failed run goes back to reading; a running or finished one is left alone.
+      if (r.state === 'paused' || r.state === 'failed') {
+        const { pausedUntil: _, ...rest } = r;
+        fx.write({ kind: 'Setup/retry' }, tx => tx.put('Setup', { ...rest, state: r.done ? (r.ai && r.ai.sorted < r.ai.total ? 'sorting' : 'ready') : 'reading', runId: fx.id('run') }));
+      }
+      if (!fx.runs.has(`setup:${accountId}`) && fx.store.get('Setup', accountId)?.state !== 'ready') ticking(accountId);
       return { ok: true as const };
     },
     'Setup/status': ({ setupId }) => {

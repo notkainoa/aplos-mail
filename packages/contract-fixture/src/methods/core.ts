@@ -81,7 +81,9 @@ export function core(fx: Fixture) {
       if (fx.now < at(today, 17)) presets.push({ key: 'evening', label: 'This evening', until: at(today, 18) });
       presets.push({ key: 'tomorrow', label: 'Tomorrow', until: at(addDays(today, 1), 8) });
       if (wd >= 1 && wd <= 4) presets.push({ key: 'weekend', label: 'This weekend', until: at(addDays(today, 6 - wd), 8) });
-      presets.push({ key: 'nextWeek', label: 'Next week', until: at(addDays(today, ((8 - wd) % 7) || 7), 8) });
+      // Next week starts on the owner's first day (`ui.calendar.weekStart`; absent follows the locale, Monday here).
+      const first = settings().ui.calendar.weekStart ?? 1;
+      presets.push({ key: 'nextWeek', label: 'Next week', until: at(addDays(today, ((first - wd + 7) % 7) || 7), 8) });
       presets.push({ key: 'someday', label: 'Someday' });
       return { now: fx.now, presets };
     },

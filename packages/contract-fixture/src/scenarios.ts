@@ -85,7 +85,7 @@ export function buildScenario(fx: Fixture, scenario: Scenario) {
     put('Draft', { ...draft, submissionId: 'sub-demo' });
     put('Submission', {
       id: 'sub-demo', rev: 1, draftId: draft.id, accountId: work, threadId: draft.threadId, internetId: '<sub-demo@fixture.example>', state,
-      notBefore: now - 3_600_000, attemptAt: now - 3_600_000, toNames: ['Jordan Park'], subject: draft.subject,
+      queuedAt: now - 3_610_000, notBefore: now - 3_600_000, attemptAt: now - 3_600_000, toNames: ['Jordan Park'], subject: draft.subject,
       problem: state === 'uncertain'
         ? { reasonCode: 'net.offline', message: 'We could not confirm this was sent. Check Sent, or Send anyway.', at: now - 3_600_000 }
         : { reasonCode: 'unknown', message: 'This was due while your Mac was off. Send it now, or choose a new time.', at: now - 3_600_000 },

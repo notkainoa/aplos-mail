@@ -30,8 +30,8 @@ export interface MetaRecord {
   workflowSync: boolean;
   verboseUntil?: number;
   usage: { backgroundTokens: number; pausedUntil?: number };
-  /** Provider id → where its key comes from and its last four characters. The fixture never holds a key. */
-  keys: Record<string, { keySource: 'env' | 'keychain' | 'none'; last4?: string }>;
+  /** Provider id → where its key comes from. The fixture never holds a key or any of its characters. */
+  keys: Record<string, { keySource: 'env' | 'keychain' | 'none' }>;
 }
 
 /** Every table of the fixture's database, keyed by row id. Singletons use a fixed id. */
@@ -75,6 +75,8 @@ export interface Tx {
   /** Writes a row; a row with `rev` gets the next revision, so windows report it in `changed` and clients re-read it. */
   put<T extends Table>(table: T, row: Tables[T]): Tables[T];
   del(table: Table, id: string): void;
+  /** The rows this transaction has touched so far. */
+  touched(): Touch[];
 }
 
 /**
@@ -87,6 +89,8 @@ export class Store {
   seq = 1;
   floor = 1;
   log: LogEntry[] = [];
+  /** `table + id` → the seq that created the row, so a `ThreadSelector` resolved at an older state skips newer rows. */
+  born = new Map<string, number>();
   /** How many log entries survive before the floor moves up (a real engine compacts its change log too). */
   maxLog = 5_000;
 
@@ -120,6 +124,7 @@ export class Store {
         return next as Tables[typeof table];
       },
       del: (table, id) => { if (this.tables[table].has(id)) { touch(table, id).after = undefined; this.tables[table].delete(id); } },
+      touched: () => [...touched.values()],
     };
     const value = fn(tx);
     const changes = [...touched.values()].filter(t => t.before !== t.after);
@@ -129,6 +134,7 @@ export class Store {
       for (const t of changes) {
         types.add(changeType[t.table]);
         this.log.push({ seq: this.seq, type: changeType[t.table], id: t.id, op: t.after === undefined ? 'd' : 'u' });
+        if (t.before === undefined) this.born.set(`${t.table}\u0000${t.id}`, this.seq);
       }
       if (types.has('Thread') || types.has('Draft') || types.has('Submission')) types.add('Counts');
       if (this.log.length > this.maxLog) this.compact(this.log[this.log.length - this.maxLog]!.seq - 1);

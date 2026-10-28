@@ -57,7 +57,11 @@ interface WindowRec {
   timer?: () => void;
 }
 
-interface OpRec { operation: Operation; touched: Touch[]; method: string }
+interface OpRec {
+  operation: Operation; touched: Touch[]; method: string;
+  /** Accounts whose `pendingChanges` this operation counts in while it is queued for the provider. */
+  pending: string[];
+}
 interface FailSpec { mode: 'reject' | 'afterReceipt'; type: string; message: string; reasonCode?: string; afterMs: number }
 
 const rowTables: Record<string, 'Thread' | 'Message' | 'Draft' | 'Submission' | 'Event' | 'Plan' | 'Conversation' | undefined> = {
@@ -148,7 +152,21 @@ export class Fixture {
       this.failures.shift();
       throw new ContractError({ type: fail.type, message: fail.message, ...(fail.reasonCode ? { reasonCode: fail.reasonCode } : {}) });
     }
-    const { value, touched, types } = this.store.commit(fn);
+    // A provider-bound operation counts in its accounts' `pendingChanges` until it syncs or fails. That bump is kept out
+    // of the operation's own before-images, so undo never restores a stale account row.
+    const pending: string[] = [], bumpOnly = new Set<string>();
+    const { value, touched: all, types } = this.store.commit(tx => {
+      const v = fn(tx);
+      if (opts.provider && opts.opId) {
+        const mine = tx.touched();
+        for (const id of accountsOf(mine)) {
+          if (!mine.some(t => t.table === 'Account' && t.id === id)) bumpOnly.add(id);
+          if (this.bumpPending(tx, id, 1)) pending.push(id);
+        }
+      }
+      return v;
+    });
+    const touched = all.filter(t => !(t.table === 'Account' && bumpOnly.has(t.id)));
     this.changed(types);
     const appliedState = this.store.state;
     const undoable = opts.undoable ?? true;
@@ -158,7 +176,7 @@ export class Fixture {
         opId: opts.opId, kind: opts.kind, targets: opts.targets ?? [...new Set(touched.map(t => t.id))], state: opts.provider ? 'queued' : 'applied',
         appliedState, undoable, ...(opts.undoUntil ? { undoUntil: opts.undoUntil } : {}), createdAt: this.now,
       };
-      this.ops.set(opts.opId, { operation, touched, method: opts.kind });
+      this.ops.set(opts.opId, { operation, touched, method: opts.kind, pending });
       if (opts.provider) this.syncLater(opts.opId, fail?.mode === 'afterReceipt' ? this.failures.shift() : undefined);
     }
     return { value, receipt };
@@ -169,12 +187,30 @@ export class Fixture {
     this.clock.after(fail?.afterMs ?? 600, () => {
       const rec = this.ops.get(opId);
       if (!rec || rec.operation.state !== 'queued') return;
-      if (fail) {
-        this.replay(rec.touched, 'before');
-        rec.operation = { ...rec.operation, state: 'failed', error: { type: fail.type, message: fail.message, ...(fail.reasonCode ? { reasonCode: fail.reasonCode } : {}) } };
-      } else rec.operation = { ...rec.operation, state: 'synced' };
+      const { types } = this.store.commit(tx => {
+        this.settlePending(tx, rec);
+        if (fail) this.restore(tx, rec.touched, 'before');
+        // Events written here now exist at the provider.
+        else for (const t of rec.touched) if (t.table === 'Event') { const e = tx.get('Event', t.id); if (e?.sync === 'pending') tx.put('Event', { ...e, sync: 'synced' }); }
+      });
+      this.changed(types);
+      rec.operation = fail
+        ? { ...rec.operation, state: 'failed', error: { type: fail.type, message: fail.message, ...(fail.reasonCode ? { reasonCode: fail.reasonCode } : {}) } }
+        : { ...rec.operation, state: 'synced' };
       this.emit({ frame: 'operation', operation: rec.operation });
     });
+  }
+
+  /** Moves an account's `pendingChanges` by `delta`; false when the account is gone. */
+  bumpPending(tx: Tx, accountId: string, delta: number) {
+    const a = tx.get('Account', accountId);
+    if (!a) return false;
+    tx.put('Account', { ...a, pendingChanges: Math.max(0, a.pendingChanges + delta) });
+    return true;
+  }
+  /** An operation left the provider queue (synced, failed or cancelled): stop counting it, once. */
+  settlePending(tx: Tx, rec: OpRec) {
+    for (const id of rec.pending.splice(0)) this.bumpPending(tx, id, -1);
   }
 
   /** Writes rows back to their before- or after-images inside a transaction (undo, a failed write, retry). Revisions still move forward. */
@@ -195,6 +231,7 @@ export class Fixture {
   /** After a commit: queue the coalesced `state` frame and let every open window reconcile. */
   changed(types: Set<string>) {
     if (!types.size) return;
+    if (types.has('Thread')) this.scheduleLater();
     for (const type of types) this.pendingTypes.set(type, this.store.seq);
     this.stateTimer ??= this.clock.after(stateCoalesceMs, () => {
       this.stateTimer = undefined;
@@ -203,6 +240,24 @@ export class Fixture {
       this.emit({ frame: 'state', types });
     });
     for (const w of this.windows.values()) this.refresh(w);
+  }
+
+  /**
+   * Back from Later (`ThreadRow.fromLater`): a timer at the soonest `laterUntil` flips the flag in its own commit, as the
+   * real engine's timer does, so Home's windows move the row to the bottom of Do now when its time comes.
+   */
+  private laterTimer?: { at: number; cancel: () => void };
+  scheduleLater(seeding = false) {
+    const waiting = this.store.all('Thread').filter(t => t.workflow.status === 'later' && t.workflow.laterUntil !== undefined && !t.fromLater);
+    const due = waiting.filter(t => t.workflow.laterUntil! <= this.now);
+    if (due.length) {
+      if (seeding) for (const t of due) this.store.seed('Thread', { ...t, fromLater: true });
+      else { const { types } = this.store.commit(tx => { for (const t of due) tx.put('Thread', { ...t, fromLater: true }); }); this.changed(types); return; }
+    }
+    const next = Math.min(...waiting.filter(t => t.workflow.laterUntil! > this.now).map(t => t.workflow.laterUntil!));
+    if (this.laterTimer?.at === next) return;
+    this.laterTimer?.cancel();
+    this.laterTimer = Number.isFinite(next) ? { at: next, cancel: this.clock.after(next - this.now, () => { this.laterTimer = undefined; this.scheduleLater(); }) } : undefined;
   }
 
   // ---- windows -----------------------------------------------------------------------------------------------
@@ -262,7 +317,7 @@ export class Fixture {
   private fullList(w: WindowRec) {
     if (w.frozen) {
       const rowType = 'Thread';
-      return { rowType, ids: w.frozen.filter(id => this.store.get('Thread', id)), sections: undefined as Section[] | undefined };
+      return { rowType, ids: w.frozen.filter(id => this.store.get('Thread', id)), sections: [] as Section[] };
     }
     return runView(this.view, w.spec);
   }
@@ -284,7 +339,7 @@ export class Fixture {
         else for (const id of keptIds) if (!out.includes(id)) out.push(id);
       }
       full = out;
-      if (sections) sections = this.resection(full, result.ids, result.sections!, w);
+      if (sections.length) sections = this.resection(full, result.ids, sections, w);
     }
     const end = w.limit === Infinity ? full.length : w.position + w.limit;
     const ids = full.slice(w.position, end);
@@ -297,7 +352,7 @@ export class Fixture {
     const held = full.filter(id => w.holds.has(id));
     return {
       windowId: w.id, state: this.store.state, rowType: result.rowType, ids, position: w.position, total: full.length,
-      ...(changed.length ? { changed } : {}), ...(sections ? { sections } : {}), ...(held.length ? { held } : {}), full,
+      sections, ...(changed.length ? { changed } : {}), ...(held.length ? { held } : {}), full,
     };
   }
 
@@ -324,7 +379,7 @@ export class Fixture {
     const table = rowTables[wire.rowType];
     w.revs = new Map(wire.ids.map(id => [id, (table ? (this.store.get(table, id) as { rev?: number } | undefined)?.rev : undefined) ?? 0]));
     w.last = JSON.stringify([wire.ids, wire.total, wire.position, wire.sections, wire.held]);
-    if (wire.sections) this.lastSections.set(w.id, wire.sections);
+    this.lastSections.set(w.id, wire.sections);
     return wire;
   }
 
@@ -403,7 +458,7 @@ export class Fixture {
     const meta = this.store.get('Meta', 'meta');
     if (meta?.engine.parked) {
       const p = meta.engine.parked;
-      setTimeout(() => this.emit({ frame: 'host', event: { type: 'parked', reasonCode: p.reasonCode, message: p.message, canRetry: p.canRetry } }, sessionId), 0);
+      setTimeout(() => this.emit({ frame: 'host', event: { type: 'parked', reasonCode: p.reasonCode, message: p.message, canRetry: p.canRetry, at: p.at } }, sessionId), 0);
     }
     return {
       call: (method, args) => s.closed
@@ -420,6 +475,17 @@ export class Fixture {
 }
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** The accounts whose rows a commit touched (threads, messages, events and the rest carry `accountId`). */
+export function accountsOf(touched: Touch[]): string[] {
+  const ids = new Set<string>();
+  for (const t of touched) {
+    if (t.table === 'Account') continue;
+    const row = (t.after ?? t.before) as { accountId?: string } | undefined;
+    if (row?.accountId) ids.add(row.accountId);
+  }
+  return [...ids];
+}
 
 export class FixtureEngine implements EngineConnection {
   /** @internal The engine state; tests use the control channel, never this. */

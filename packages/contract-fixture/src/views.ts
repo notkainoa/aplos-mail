@@ -8,8 +8,9 @@ import { atLocal, localDay } from './time';
  * list; the window layer slices it, holds rows in place and coalesces frames.
  */
 
-export interface Section { key: string; start: number; count: number; senders?: string[] }
-export interface ViewResult { rowType: string; ids: string[]; sections?: Section[] }
+export interface Section { key: string; label?: string; start: number; count: number; senders?: string[] }
+/** `sections` is empty for ungrouped views (the wire field is required). */
+export interface ViewResult { rowType: string; ids: string[]; sections: Section[] }
 export interface ViewContext { store: Store; now: number; zone: string; body(messageId: string): string }
 
 const has = (t: ThreadRow, role: string) => t.labels.includes(`${t.accountId}:${role}`);
@@ -25,7 +26,7 @@ const updateOrder = (a: ThreadRow, b: ThreadRow) => important(a) - important(b) 
 /** Home's sections. A Later item whose date has arrived sits at the bottom of Do now, as Back from Later. */
 export function homeParts(ctx: ViewContext, accountId?: string) {
   const threads = ctx.store.all('Thread').filter(t => !away(t) && (!accountId || t.accountId === accountId));
-  const back = (t: ThreadRow) => t.workflow.status === 'later' && t.workflow.laterUntil !== undefined && t.workflow.laterUntil <= ctx.now;
+  const back = (t: ThreadRow) => t.workflow.status === 'later' && t.fromLater;
   const onHome = threads.filter(t => !t.workflow.hiddenFromHome && (t.workflow.status === 'new' || back(t)));
   const lane = (l: string) => onHome.filter(t => t.rank.lane === l);
   const doNew = lane('do').filter(t => !back(t)).sort(doOrder);
@@ -110,14 +111,18 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
       const list = spec.section === 'update' ? p.update : spec.section === 'low' ? p.low : p.follow;
       return sectioned([[spec.section, ids(list)]]);
     }
-    case 'lowSenders': return { rowType: 'SenderGroup', ids: ids(lowGroups(ctx, spec.accountId)) };
+    case 'lowSenders': {
+      // One run per sender: the address as the key and the name as the engine-owned label.
+      const groups = lowGroups(ctx, spec.accountId);
+      return { rowType: 'SenderGroup', ids: ids(groups), sections: groups.map((g, i) => ({ key: g.address, label: g.name, start: i, count: 1 })) };
+    }
     case 'mailbox': {
       const role = spec.role;
       const filter = (t: ThreadRow) => role === 'all' ? !away(t) : role === 'archive' ? !away(t) && !has(t, 'INBOX')
         : role === 'starred' ? t.flagged && !away(t) : role === 'important' ? has(t, 'IMPORTANT') && !away(t) : has(t, role.toUpperCase());
-      return { rowType: 'Thread', ids: ids(threads(filter, spec.accountId).sort(newest)) };
+      return { rowType: 'Thread', ids: ids(threads(filter, spec.accountId).sort(newest)), sections: [] };
     }
-    case 'label': return { rowType: 'Thread', ids: ids(threads(t => t.labels.includes(spec.folderId) && !away(t)).sort(newest)) };
+    case 'label': return { rowType: 'Thread', ids: ids(threads(t => t.labels.includes(spec.folderId) && !away(t)).sort(newest)), sections: [] };
     case 'later': {
       const today = localDay(ctx.now, ctx.zone);
       const list = threads(t => t.workflow.status === 'later' && !away(t), spec.accountId)
@@ -131,25 +136,25 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
       };
       return sectioned(['overdue', 'today', 'week', 'someday'].map(key => [key, ids(list.filter(t => group(t) === key))]));
     }
-    case 'bookmarks': return { rowType: 'Thread', ids: ids(threads(t => t.workflow.bookmarked && !away(t), spec.accountId).sort(newest)) };
-    case 'replyState': return { rowType: 'Thread', ids: ids(threads(t => t.workflow.replyStatus === spec.status && !away(t), spec.accountId).sort(newest)) };
-    case 'done': return { rowType: 'Thread', ids: ids(threads(t => t.workflow.status === 'done' && !away(t), spec.accountId).sort((a, b) => (b.workflow.doneAt ?? 0) - (a.workflow.doneAt ?? 0) || newest(a, b))) };
-    case 'drafts': return { rowType: 'Draft', ids: ids(ctx.store.all('Draft').filter(d => (!spec.accountId || d.accountId === spec.accountId) && !d.submissionId).sort((a, b) => b.updatedAt - a.updatedAt)) };
+    case 'bookmarks': return { rowType: 'Thread', ids: ids(threads(t => t.workflow.bookmarked && !away(t), spec.accountId).sort(newest)), sections: [] };
+    case 'replyState': return { rowType: 'Thread', ids: ids(threads(t => t.workflow.replyStatus === spec.status && !away(t), spec.accountId).sort(newest)), sections: [] };
+    case 'done': return { rowType: 'Thread', ids: ids(threads(t => t.workflow.status === 'done' && !away(t), spec.accountId).sort((a, b) => (b.workflow.doneAt ?? 0) - (a.workflow.doneAt ?? 0) || newest(a, b))), sections: [] };
+    case 'drafts': return { rowType: 'Draft', ids: ids(ctx.store.all('Draft').filter(d => (!spec.accountId || d.accountId === spec.accountId) && !d.submissionId).sort((a, b) => b.updatedAt - a.updatedAt)), sections: [] };
     case 'scheduled': {
       const live = new Set(['queued', 'scheduled', 'sending', 'uncertain', 'failed', 'suspended']);
-      return { rowType: 'Submission', ids: ids(ctx.store.all('Submission').filter(s => live.has(s.state) && (!spec.accountId || s.accountId === spec.accountId)).sort((a, b) => a.notBefore - b.notBefore)) };
+      return { rowType: 'Submission', ids: ids(ctx.store.all('Submission').filter(s => live.has(s.state) && (!spec.accountId || s.accountId === spec.accountId)).sort((a, b) => a.notBefore - b.notBefore)), sections: [] };
     }
-    case 'search': return { rowType: 'Thread', ids: ids(threads(t => matches(ctx, t, spec.query), spec.accountId).sort(newest)) };
+    case 'search': return { rowType: 'Thread', ids: ids(threads(t => matches(ctx, t, spec.query), spec.accountId).sort(newest)), sections: [] };
     case 'thread': {
       if (!ctx.store.get('Thread', spec.threadId)) throw new ContractError({ type: 'notFound', message: 'This conversation is no longer available.' });
-      return { rowType: 'Message', ids: ids(ctx.store.all('Message').filter(m => m.threadId === spec.threadId).sort((a, b) => a.date - b.date)) };
+      return { rowType: 'Message', ids: ids(ctx.store.all('Message').filter(m => m.threadId === spec.threadId).sort((a, b) => a.date - b.date)), sections: [] };
     }
     case 'events': {
       if (spec.to < spec.from || spec.to - spec.from > maxEventRangeMs) throw new ContractError({ type: 'rangeTooLarge', message: 'Choose a range of at most 62 days.' });
-      return { rowType: 'Event', ids: ids(eventsIn(ctx, spec.from, spec.to, spec.calendarIds, spec.includeDeclined)) };
+      return { rowType: 'Event', ids: ids(eventsIn(ctx, spec.from, spec.to, spec.calendarIds, spec.includeDeclined)), sections: [] };
     }
-    case 'plans': return { rowType: 'Plan', ids: ids(ctx.store.all('Plan').filter(p => p.state === 'open' && (!spec.threadId || p.threadId === spec.threadId))) };
-    case 'conversations': return { rowType: 'Conversation', ids: ids(ctx.store.all('Conversation').sort((a, b) => b.updatedAt - a.updatedAt)) };
+    case 'plans': return { rowType: 'Plan', ids: ids(ctx.store.all('Plan').filter(p => p.state === 'open' && (!spec.threadId || p.threadId === spec.threadId))), sections: [] };
+    case 'conversations': return { rowType: 'Conversation', ids: ids(ctx.store.all('Conversation').sort((a, b) => b.updatedAt - a.updatedAt)), sections: [] };
   }
 }
 

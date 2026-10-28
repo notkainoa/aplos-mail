@@ -16,6 +16,7 @@ export function createFixtureEngine(options: FixtureOptions & { scenario: Scenar
   if (!scenarios.includes(options.scenario)) throw new Error(`Unknown scenario ${String(options.scenario)}.`);
   const fx = new Fixture(options.scenario, options);
   buildScenario(fx, options.scenario);
+  fx.scheduleLater(true);
   fx.handlers = handlers(fx);
   fx.control = controlHandler(fx);
   return new FixtureEngine(fx);

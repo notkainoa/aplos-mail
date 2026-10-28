@@ -7,15 +7,15 @@ export function defaultSettings(): Settings {
   const groq = (model: string) => ({ provider: 'groq', model });
   return {
     ui: {
-      theme: 'system', density: 'default', keyHints: 'tooltip', singleKeys: true, holdMs: 1_200, dock: { open: false, tab: 'ask' }, keymap: {},
-      sidebar: { shown: true, minimised: false }, swipe: true, swipeDirection: 'doneRight', zen: false, sendSound: true, devDetails: false,
-      lastAccount: 'all', paletteRecents: [],
+      theme: 'system', density: 'default', keyHints: 'tooltip', singleKeys: true, holdMs: 250, dock: { open: false, tab: 'ask' }, keymap: {},
+      sidebarMinimised: false, swipe: true, swipeDirection: 'doneRight', zen: false, sendSound: true, devDetails: false,
+      lastAccount: 'all', palette: { recents: [] }, calendar: {},
     },
     mail: {
       undoSendSeconds: 8, followUpDays: 3, remoteImages: 'block', imageAllowList: [], doneAction: 'archive', laterAction: 'read', lowAction: 'archive',
       defaultReply: 'reply', signature: 'Warmly,\nAlex', signatureMode: 'new', footer: false, autoPolish: false,
     },
-    notifications: { enabled: true, perAccount: {}, reminders: true },
+    notifications: { enabled: true, perAccount: {}, reminders: true, reconnectReminder: false },
     host: { menuBar: true, openAtLogin: false, microphone: 'default' },
     retention: { bodyDays: 90, maxBodyBytes: 2 * 1024 ** 3 },
     calendar: { autoAddPlans: false, providerEventsFromMail: true },
@@ -39,11 +39,11 @@ const providerRows: Omit<AiProvider, 'status' | 'keySource'>[] = [
   { id: 'custom', label: 'Custom server', group: 'local', envVar: 'CUSTOM_AI_API_KEY', keyOptional: true, trainsOnInputs: false, sttCapable: false, local: false },
 ];
 
-export function aiProviders(keys: Record<string, { keySource: 'env' | 'keychain' | 'none'; last4?: string }>): AiProvider[] {
+export function aiProviders(keys: Record<string, { keySource: 'env' | 'keychain' | 'none' }>): AiProvider[] {
   return providerRows.map(row => {
     const key = keys[row.id] ?? { keySource: 'none' as const };
     const status = row.group === 'local' ? (row.id === 'custom' ? 'notConfigured' : 'unreachable') : key.keySource === 'none' ? 'missingKey' : 'ready';
-    return { ...row, status, keySource: key.keySource, ...(key.last4 ? { last4: key.last4 } : {}) };
+    return { ...row, status, keySource: key.keySource };
   });
 }
 

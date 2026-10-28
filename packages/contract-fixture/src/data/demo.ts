@@ -37,7 +37,7 @@ export function demoAccount(id: string, slot: Slot, now: number, extra: Partial<
     grantedScopes: [], aiAllowed: true, notifications: true,
     lease: { role: 'primary', holderDeviceId: 'fixture-device', holderDeviceName: 'Fixture Mac' },
     identities: [{ address, name: 'Alex Morgan', default: true }],
-    baselineDoneAt: now - 30 * day, createdAt: now - 30 * day,
+    baselineDoneAt: now - 30 * day, createdAt: now - 30 * day, pendingChanges: 0,
     ...extra,
   };
 }
@@ -191,7 +191,7 @@ export function demoData(now: number, zone: string, accounts: Record<Slot, strin
       rank: { lane: row.lane, importance: row.importance ?? 'important', source: 'ai', dueBand: dueBand(dueDate, today), rankedAt: date },
       summary: { state: 'ready', text: row.summary, provider: 'groq', model: 'openai/gpt-oss-120b',
         ...(row.action ? { action: row.action } : {}) },
-      ...(row.unsubscribe ? { unsubscribe: true } : {}),
+      unsubscribe: !!row.unsubscribe, fromLater: false,
       ...(row.fromMe ? { follow: { since: date } } : {}),
     });
     out.messages.push({
@@ -248,7 +248,7 @@ export function demoData(now: number, zone: string, accounts: Record<Slot, strin
       id: `${accountId}:ev-${key}`, rev: 1, accountId, calendarId: `${accountId}:cal-${calendar}`, recurring: false, exception: false, title, start, end,
       allDay: start.type === 'date', timeZone: zone, ...(extra.location ? { location: extra.location } : {}), ...(extra.description ? { description: extra.description } : {}),
       organizer: self, attendees: extra.guests ? [self, ...extra.guests.map(address => ({ address, response: 'accepted', organizer: false, self: false }))] : [],
-      myResponse: 'accepted', status: 'confirmed', can,
+      myResponse: 'accepted', status: 'confirmed', can, sync: 'synced',
     });
   }
   // An invitation from mail, so RSVP has something to answer.
@@ -258,7 +258,7 @@ export function demoData(now: number, zone: string, accounts: Record<Slot, strin
     title: 'Project review', start: { type: 'utc', utc: atLocal(addDays(today, 2), 14, 0, zone) }, end: { type: 'utc', utc: atLocal(addDays(today, 2), 15, 0, zone) },
     allDay: false, timeZone: zone, location: 'Oak room', description: 'Review the prototype and agree on next steps.', organizer: theo,
     attendees: [theo, { address: 'alex@studio.example', name: 'Alex Morgan', response: 'needsAction', organizer: false, self: true }],
-    myResponse: 'needsAction', status: 'confirmed', can: { edit: false, move: false, delete: true, rsvp: true, editGuests: false },
+    myResponse: 'needsAction', status: 'confirmed', can: { edit: false, move: false, delete: true, rsvp: true, editGuests: false }, sync: 'synced',
     invite: { threadId: `${accounts.work}:review`, messageId: `${accounts.work}:review.m1`, fromName: 'Theo Kim' },
   });
 

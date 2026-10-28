@@ -66,7 +66,7 @@ export function controlHandler(fx: Fixture) {
       case 'park': {
         const parked = { reasonCode: args.reasonCode, message: args.message, at: fx.now, canRetry: args.canRetry ?? true };
         fx.write({ kind: 'Fixture/control' }, tx => tx.put('Meta', { ...meta(), engine: { state: 'parked', parked } }));
-        fx.emit({ frame: 'host', event: { type: 'parked', reasonCode: parked.reasonCode, message: parked.message, canRetry: parked.canRetry } });
+        fx.emit({ frame: 'host', event: { type: 'parked', reasonCode: parked.reasonCode, message: parked.message, canRetry: parked.canRetry, at: parked.at } });
         return ok;
       }
       case 'unpark': fx.write({ kind: 'Fixture/control' }, tx => tx.put('Meta', { ...meta(), engine: { state: 'ready' } })); return ok;
@@ -94,12 +94,12 @@ export function controlHandler(fx: Fixture) {
           tx.put('Thread', {
             ...(prev ?? {
               id: threadId, accountId: a.id, rev: 0, subject: args.subject, messageCount: 0, unreadCount: 0, partial: false, flagged: false, hasAttachments: false,
-              participants: [{ name: args.fromName, address: args.from }, { ...me, me: true }], summary: { state: 'none' },
+              participants: [{ name: args.fromName, address: args.from }, { ...me, me: true }], summary: { state: 'none' }, unsubscribe: false, fromLater: false,
               workflow: { status: 'new', bookmarked: false, hiddenFromHome: false, replyStatus: 'none' },
               rank: { lane: args.lane ?? 'update', importance: 'normal', source: 'heuristic', dueBand: 3 },
             }),
             snippet, fromName: args.fromName, lastDate: fx.now, lastInboundDate: fx.now, messageCount: (prev?.messageCount ?? 0) + 1, unreadCount: (prev?.unreadCount ?? 0) + 1,
-            unread: true, labels, workflow: { ...(prev?.workflow ?? { bookmarked: false, hiddenFromHome: false, replyStatus: 'none' }), status: 'new' },
+            unread: true, labels, fromLater: false, workflow: { ...(prev?.workflow ?? { bookmarked: false, hiddenFromHome: false, replyStatus: 'none' }), status: 'new' },
             ...(args.lane && prev ? { rank: { ...prev.rank, lane: args.lane, source: 'heuristic' } } : {}),
           });
         });

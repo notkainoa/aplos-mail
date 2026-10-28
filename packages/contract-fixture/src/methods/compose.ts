@@ -62,7 +62,7 @@ export function compose(fx: Fixture) {
         participants: [{ ...me, me: true }, ...draft.to.slice(0, 5).map(a => clean({ name: a.name, address: a.address }))], lastDate: fx.now,
         messageCount: 1, unreadCount: 0, partial: false, unread: false, flagged: false, hasAttachments: false, labels: [`${account.id}:SENT`],
         workflow: { status: 'done', doneAt: fx.now, bookmarked: false, hiddenFromHome: false, replyStatus: 'awaitingReply' },
-        rank: { lane: 'update', importance: 'normal', source: 'heuristic', dueBand: 3 }, summary: { state: 'none' }, follow: { since: fx.now },
+        rank: { lane: 'update', importance: 'normal', source: 'heuristic', dueBand: 3 }, summary: { state: 'none' }, follow: { since: fx.now }, unsubscribe: false, fromLater: false,
       });
       tx.del('Draft', draft.id);
       if (fx.alsoDone.delete(sub.id) && draft.threadId && tx.get('Thread', draft.threadId)) actOn(fx, tx, [draft.threadId], { type: 'done' });
@@ -78,7 +78,7 @@ export function compose(fx: Fixture) {
       id, rev: 0, accountId, calendarId, recurring: false, exception: false, title: f.title, start: f.start, end: f.end, allDay: f.allDay,
       timeZone: f.timeZone ?? fx.zone, location: f.location, description: f.description, organizer: self,
       attendees: f.attendees?.length ? [self, ...f.attendees.map(a => clean({ address: a.address.toLowerCase(), name: a.name, response: 'needsAction', organizer: false, self: false, optional: a.optional }))] : [],
-      myResponse: 'accepted', status: 'confirmed', can: { edit: true, move: true, delete: true, rsvp: false, editGuests: true }, threadId: f.threadId,
+      myResponse: 'accepted', status: 'confirmed', can: { edit: true, move: true, delete: true, rsvp: false, editGuests: true }, threadId: f.threadId, sync: 'pending',
     });
   };
 
@@ -129,7 +129,7 @@ export function compose(fx: Fixture) {
         const id = `sub-${fx.id('n')}`;
         const sub: Submission = clean({
           id, rev: 0, draftId: draft.id, accountId: draft.accountId, threadId: draft.threadId, internetId: `<${id}.${fx.seed}@fixture.example>`,
-          state: later ? 'scheduled' : 'queued', notBefore: later ? action.notBefore! : undoAt,
+          state: later ? 'scheduled' : 'queued', queuedAt: fx.now, notBefore: later ? action.notBefore! : undoAt,
           toNames: [...draft.to, ...draft.cc].slice(0, 20).map(a => a.name ?? a.address), subject: draft.subject,
         });
         const { value, receipt } = fx.write({ opId, kind: 'Submission/set', targets: [id], undoable: false }, tx => {
