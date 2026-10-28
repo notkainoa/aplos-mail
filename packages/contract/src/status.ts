@@ -1,4 +1,4 @@
-import * as z from 'zod';
+import * as z from 'zod/mini';
 import { ErrorClassSchema } from './errors';
 
 /**
@@ -11,7 +11,7 @@ export const AccountStatusSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('ok') }),
   z.object({ state: z.literal('syncing') }),
   /** Quiet history fill after the first window; never gates anything. `of` is absent when the provider gives no estimate. */
-  z.object({ state: z.literal('backfilling'), done: z.number().int().nonnegative(), of: z.number().int().nonnegative().optional() }),
+  z.object({ state: z.literal('backfilling'), done: z.int().check(z.nonnegative()), of: z.optional(z.int().check(z.nonnegative())) }),
   /** Governor pause: epoch ms `until`, the error class and the provider's reason code (never copy). */
   z.object({ state: z.literal('paused'), until: z.number(), class: ErrorClassSchema, reason: z.string() }),
   /** The grant has expired or was revoked: Reconnect, with `login_hint`, no resync, queued changes kept. */
@@ -20,7 +20,7 @@ export const AccountStatusSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('needsAdmin'), reason: z.string() }),
   /** The provider's API is not configured for this app (`accessNotConfigured`): every account of that provider. */
   z.object({ state: z.literal('misconfigured'), reason: z.string() }),
-  z.object({ state: z.literal('offline'), since: z.number().optional() }),
+  z.object({ state: z.literal('offline'), since: z.optional(z.number()) }),
   z.object({ state: z.literal('error'), reason: z.string() }),
 ]);
 export type AccountStatus = z.infer<typeof AccountStatusSchema>;
@@ -33,8 +33,8 @@ export type AccountState = AccountStatus['state'];
 export const AccountHealthSchema = z.object({
   status: AccountStatusSchema,
   /** Epoch ms. */
-  reconnectBy: z.number().optional(),
+  reconnectBy: z.optional(z.number()),
   /** Epoch ms of the last completed sync step. */
-  lastSyncAt: z.number().optional(),
+  lastSyncAt: z.optional(z.number()),
 });
 export type AccountHealth = z.infer<typeof AccountHealthSchema>;

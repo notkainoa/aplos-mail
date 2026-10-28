@@ -1,4 +1,4 @@
-import * as z from 'zod';
+import * as z from 'zod/mini';
 
 /**
  * Why a provider (or AI) call failed, as one class the governor acts on (ARCH 6.3).
@@ -23,19 +23,19 @@ export const ClassifiedErrorSchema = z.object({
   method: z.string(),
   /** The provider's own reason code, verbatim: `rateLimitExceeded`, `invalid_grant`, `notFound`. */
   reason: z.string(),
-  status: z.number().int().optional(),
+  status: z.optional(z.int()),
   /** The provider's own error code when it differs from `status` (IMAP response code, AADSTS number). */
-  code: z.string().optional(),
-  retryAfterMs: z.number().nonnegative().optional(),
+  code: z.optional(z.string()),
+  retryAfterMs: z.optional(z.number().check(z.nonnegative())),
   /** Absolute end of a daily stop, epoch ms (Gmail: next midnight America/Los_Angeles). */
-  resumeAt: z.number().optional(),
+  resumeAt: z.optional(z.number()),
   /** The refusal was a concurrency cap: in-flight drops to 1. */
-  concurrency: z.boolean().optional(),
+  concurrency: z.optional(z.boolean()),
   /** A write whose outcome is unknown (timed out after the request was written). */
-  uncertain: z.boolean().optional(),
-  missingScopes: z.array(z.string()).optional(),
+  uncertain: z.optional(z.boolean()),
+  missingScopes: z.optional(z.array(z.string())),
   /** For `permanent`: the remote item to quarantine. */
-  item: z.string().optional(),
-  providerMessage: z.string().max(300).optional(),
+  item: z.optional(z.string()),
+  providerMessage: z.optional(z.string().check(z.maxLength(300))),
 });
 export type ClassifiedError = z.infer<typeof ClassifiedErrorSchema>;
