@@ -35,7 +35,7 @@ function guardOn(tier: Tier, answer: (seen: Seen) => unknown = () => ({})) {
     const entry: Seen = { method: init?.method ?? 'GET', url: String(input), headers: [...new Headers(init?.headers)], body: init?.body, frozenInit: Object.isFrozen(init) };
     seen.push(entry);
     return new Response(JSON.stringify(answer(entry)), { status: 200, headers: json });
-  }, { tier, selfAddress: SELF, allowCalendarWrites: true });
+  }, { tier, selfAddress: SELF, calendarRunId: 'run-test' });
   return { guard, seen };
 }
 
@@ -97,7 +97,7 @@ test('query: repeats and other spellings of the keys the guard reads are refused
     assert.equal(seen.length, 0);
   }
   const { guard, seen } = guardOn('M');
-  assert.equal(await reason(guard(`${CAL}/calendars/primary/events?sendUpdates=none&sendNotifications=false`, { method: 'POST', headers: json, body: '{}' })), 'sent');
+  assert.equal(await reason(guard(`${CAL}/calendars/primary/events?sendUpdates=none&sendNotifications=false`, { method: 'POST', headers: json, body: JSON.stringify({ extendedProperties: { private: { aplosLiveRun: 'run-test' } } }) })), 'sent');
   // Reads may repeat keys that carry lists, but not the keys the guard prices or reads.
   assert.equal(await reason(guard(`${GMAIL}/messages/m1?metadataHeaders=From&metadataHeaders=Subject`)), 'sent');
   assert.equal(await reason(guard(`${GMAIL}/messages/m1?format=metadata&format=full`)), 'unsupported-request');

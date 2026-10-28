@@ -36,6 +36,8 @@ export type GuardReason =
   | 'calendar-attendees'
   | 'calendar-rsvp'
   | 'calendar-write-not-allowed'
+  | 'calendar-field'
+  | 'calendar-run-id'
   | 'body-unparseable'
   | 'send-tier'
   | 'send-upload-type'
@@ -63,11 +65,12 @@ export interface GuardOptions {
    */
   allowRunFilterIds?: Set<string>;
   /**
-   * Calendar event writes (run-scoped, no guests, no notifications). Off by default: the agent test
-   * account's rules allow labels, archive, read state, stars, drafts, one run-scoped filter and
-   * send-to-self only, so calendar edit checks are owner hand checks (STATUS, 2026-10-28).
+   * Turns on run-scoped calendar writes (tier M only; orchestrator decision 2026-10-28). The agent
+   * test account may create, rename, re-time, re-describe and delete events on its own primary
+   * calendar, only events this run created, each tagged with this id in a private extended
+   * property; no attendees, no RSVPs, no notifications, no PUT. Absent means no calendar writes.
    */
-  allowCalendarWrites?: boolean;
+  calendarRunId?: string;
 }
 
 export interface GuardedFetch {
@@ -429,6 +432,21 @@ interface Pending {
 /** Rows whose request body must be read and checked before anything is sent. */
 const BODY_CHECKED: ReadonlySet<Effect> = new Set(['send-json', 'send-media', 'draft-send', 'draft-write', 'filter-create', 'calendar-write', 'label-modify']);
 
+const PATCH_FIELDS: ReadonlySet<string> = new Set(['summary', 'description', 'start', 'end']);
+const INSERT_FIELDS: ReadonlySet<string> = new Set([...PATCH_FIELDS, 'conferenceData', 'extendedProperties']);
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Only `{createRequest: {requestId, conferenceSolutionKey: {type: 'hangoutsMeet'}}}`: a new Meet room, nothing copied in. */
+function isMeetCreateRequest(value: unknown): boolean {
+  if (!isRecord(value) || Object.keys(value).join() !== 'createRequest' || !isRecord(value.createRequest)) return false;
+  const request = value.createRequest;
+  const keys = Object.keys(request).sort().join();
+  return keys === 'conferenceSolutionKey,requestId' && typeof request.requestId === 'string'
+    && isRecord(request.conferenceSolutionKey) && Object.keys(request.conferenceSolutionKey).join() === 'type'
+    && request.conferenceSolutionKey.type === 'hangoutsMeet';
+}
+
 const JSON_TYPE = /^application\/json(?:\s*;\s*charset=utf-8)?$/;
 
 export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): GuardedFetch {
@@ -475,6 +493,25 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
   const requireSelfOnly = (verdict: Verdict, api: string): void => {
     if (verdict === 'unparseable') refuse('send-unparseable', api);
     if (verdict === 'other-recipients') refuse('send-recipients', api);
+  };
+
+  /**
+   * Run-scoped events carry only these fields. An insert must tag the event with this run's id
+   * (extendedProperties.private.aplosLiveRun) and may ask for a new Meet room; a patch may rename,
+   * re-time or re-describe it and may not touch the tag or the room.
+   */
+  const checkCalendarFields = (body: Record<string, unknown>, api: string): void => {
+    const insert = api === 'calendar.events.insert';
+    const allowed = insert ? INSERT_FIELDS : PATCH_FIELDS;
+    if (Object.keys(body).some(key => !allowed.has(key))) refuse('calendar-field', api);
+    if (body.conferenceData !== undefined && !isMeetCreateRequest(body.conferenceData)) refuse('calendar-field', api);
+    if (insert) {
+      const tag = body.extendedProperties;
+      const run = options.calendarRunId;
+      const ok = isRecord(tag) && Object.keys(tag).length === 1 && isRecord(tag.private)
+        && Object.keys(tag.private).length === 1 && run !== undefined && tag.private.aplosLiveRun === run;
+      if (!ok) refuse('calendar-run-id', api);
+    }
   };
 
   const ownCalendar = (url: URL): boolean => {
@@ -544,6 +581,8 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
         return {};
       }
       case 'calendar-write': {
+        // Calendar writes exist only in tier M with a run id (orchestrator decision 2026-10-28).
+        if (tier !== 'M' || options.calendarRunId === undefined) refuse('calendar-write-not-allowed', api);
         // Guests are notified by default, so "none" must be written out, not left to a default.
         // sendNotifications is the older spelling of the same switch: only an explicit "false" is safe.
         const notifications = url.searchParams.get('sendNotifications');
@@ -552,6 +591,9 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
           const body = jsonObject(bytes, api);
           if (hasKeyDeep(body, new Set(['responseStatus']))) refuse('calendar-rsvp', api);
           if (hasKeyDeep(body, new Set(['attendees']))) refuse('calendar-attendees', api);
+          checkCalendarFields(body, api);
+        } else if (api !== 'calendar.events.delete') {
+          refuse('calendar-run-id', api);
         }
         return {};
       }
@@ -591,8 +633,12 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
         break;
       case 'calendar-write': {
         if (rule.api === 'calendar.events.insert') {
-          const id = await createdId();
-          if (id !== undefined) runEventIds.add(id);
+          // Only an event Google stored with this run's tag becomes changeable or deletable.
+          const created = await response.clone().json().catch(() => undefined);
+          const id = stringId(created);
+          const tag = isRecord(created) && isRecord(created.extendedProperties) && isRecord(created.extendedProperties.private)
+            ? created.extendedProperties.private.aplosLiveRun : undefined;
+          if (id !== undefined && tag === options.calendarRunId) runEventIds.add(id);
         } else if (rule.api === 'calendar.events.delete') {
           runEventIds.delete(lastSegment(url));
         }
@@ -653,8 +699,8 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
 
     return withDraftLock(lockKey, async () => {
       const pending = bodyChecked ? checkBody(rule, url, headers, body.bytes) : {};
-      // Last gate, after the specific checks above, so their reasons still show in refusals.
-      if (rule.effect === 'calendar-write' && !options.allowCalendarWrites) refuse('calendar-write-not-allowed', rule.api);
+      // Deletes carry no body, so the tier and run-id gate is repeated here for them.
+      if (rule.effect === 'calendar-write' && (tier !== 'M' || options.calendarRunId === undefined)) refuse('calendar-write-not-allowed', rule.api);
 
       const key = `${rule.api}\0${method}`;
       const entry = sent.get(key) ?? { method: rule.api, httpMethod: method, count: 0 };

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { printableMessage, RunnerError } from './errors';
 import { clientFromEnv, refreshAccessToken, TokenRefusal, withBearer } from './auth';
@@ -107,8 +108,14 @@ export async function runLive(args: RunArgs, deps: RunDeps): Promise<RunOutcome>
   // One pipeline: probe -> guard -> pacer -> bearer -> network. The guard is the only fetch a probe gets.
   let accessToken = '';
   const pacer = new UnitPacer({ now: deps.now, sleep: deps.sleep });
+  // Run-scoped calendar writes are tier M only (orchestrator decision 2026-10-28).
+  const runId = `run-${randomUUID()}`;
   const pipeline = (guardTier: Tier, selfAddress?: string): GuardedFetch =>
-    createGuardedFetch(createPacedFetch(withBearer(deps.fetch, () => accessToken), pacer), { tier: guardTier, selfAddress });
+    createGuardedFetch(createPacedFetch(withBearer(deps.fetch, () => accessToken), pacer), {
+      tier: guardTier,
+      selfAddress,
+      ...(guardTier === 'M' ? { calendarRunId: runId } : {}),
+    });
 
   const bootstrap = pipeline('R');
   try {
@@ -138,7 +145,7 @@ export async function runLive(args: RunArgs, deps: RunDeps): Promise<RunOutcome>
     const mark = pacer.mark();
     let result: ProbeResult;
     try {
-      result = await probe.run({ fetch: guard, tier: args.tier, now: clock });
+      result = await probe.run({ fetch: guard, tier: args.tier, now: clock, runId });
     } catch (error) {
       // Only the class of the failure is kept; messages could carry content.
       const errorClass = error instanceof GuardRefusal ? 'guard' : 'other';

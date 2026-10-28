@@ -44,6 +44,11 @@ export interface ProbeContext {
   tier: Tier;
   /** Monotonic milliseconds, for timings. */
   now(): number;
+  /**
+   * Random id of this run. Tier M calendar probes tag every event they create with it
+   * (extendedProperties.private.aplosLiveRun); the guard lets them change or delete only those.
+   */
+  runId: string;
 }
 
 /** Plan 40's SmokeProbe interface; tier R probes of plan 20 satisfy it directly. */

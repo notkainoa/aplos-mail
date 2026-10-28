@@ -30,7 +30,7 @@ function network(answer: (url: string, method: string) => unknown = () => ({})) 
 
 function guardFor(tier: Tier, answer?: (url: string, method: string) => unknown) {
   const net = network(answer);
-  const guard = createGuardedFetch(net.fetchImpl, { tier, selfAddress: SELF, allowCalendarWrites: true });
+  const guard = createGuardedFetch(net.fetchImpl, { tier, selfAddress: SELF, calendarRunId: 'run-test' });
   return { ...net, guard };
 }
 
@@ -210,9 +210,9 @@ test('reversible mailbox changes are allowed in M and S-self', async () => {
 
 /** A tier M guard that has inserted event e1, so e1 counts as made by this run. */
 async function guardWithRunEvent() {
-  const net = network((_url, method) => (method === 'POST' ? { id: 'e1' } : {}));
-  const guard = createGuardedFetch(net.fetchImpl, { tier: 'M', selfAddress: SELF, allowCalendarWrites: true });
-  await guard(`${CAL}/calendars/primary/events?sendUpdates=none`, json({ summary: 'run event' }));
+  const net = network((_url, method) => (method === 'POST' ? { id: 'e1', extendedProperties: { private: { aplosLiveRun: 'run-test' } } } : {}));
+  const guard = createGuardedFetch(net.fetchImpl, { tier: 'M', selfAddress: SELF, calendarRunId: 'run-test' });
+  await guard(`${CAL}/calendars/primary/events?sendUpdates=none`, json({ summary: 'run event', extendedProperties: { private: { aplosLiveRun: 'run-test' } } }));
   net.calls.length = 0;
   return { ...net, guard };
 }
@@ -252,8 +252,8 @@ test('calendar: only events this run inserted can be changed or deleted', async 
   await assertRefused('M', 'calendar-event-not-created-by-run', `${CAL}/calendars/primary/events/owners-event${q}`, json({ summary: 'x' }, 'PATCH'));
   await assertRefused('M', 'calendar-event-not-created-by-run', `${CAL}/calendars/primary/events/owners-event${q}`, { method: 'DELETE' });
   // A failed insert makes nothing deletable, and a deleted event is no longer one of ours.
-  const failing = createGuardedFetch(async () => new Response('{"id":"e9"}', { status: 500 }), { tier: 'M', selfAddress: SELF, allowCalendarWrites: true });
-  await failing(`${CAL}/calendars/primary/events${q}`, json({ summary: 'x' }));
+  const failing = createGuardedFetch(async () => new Response('{"id":"e9"}', { status: 500 }), { tier: 'M', selfAddress: SELF, calendarRunId: 'run-test' });
+  await failing(`${CAL}/calendars/primary/events${q}`, json({ summary: 'x', extendedProperties: { private: { aplosLiveRun: 'run-test' } } }));
   await assert.rejects(failing(`${CAL}/calendars/primary/events/e9${q}`, { method: 'DELETE' }), { reason: 'calendar-event-not-created-by-run' });
   const { guard } = await guardWithRunEvent();
   await guard(`${CAL}/calendars/primary/events/e1${q}`, { method: 'DELETE' });
@@ -261,15 +261,15 @@ test('calendar: only events this run inserted can be changed or deleted', async 
 });
 
 test('calendar: plain event changes on the own calendar with sendUpdates=none are allowed', async () => {
-  const { guard, calls } = guardFor('M', (_url, method) => (method === 'POST' ? { id: 'e1' } : {}));
-  await guard(`${CAL}/calendars/primary/events?sendUpdates=none`, json({ summary: 'Test event', start: {}, end: {} }));
+  const { guard, calls } = guardFor('M', (_url, method) => (method === 'POST' ? { id: 'e1', extendedProperties: { private: { aplosLiveRun: 'run-test' } } } : {}));
+  await guard(`${CAL}/calendars/primary/events?sendUpdates=none`, json({ summary: 'Test event', start: {}, end: {}, extendedProperties: { private: { aplosLiveRun: 'run-test' } } }));
   await guard(`${CAL}/calendars/${SELF.replace('@', '%40')}/events/e1?sendUpdates=none`, json({ summary: 'Renamed' }, 'PATCH'));
   await guard(`${CAL}/calendars/primary/events/e1?sendUpdates=none`, { method: 'DELETE' });
   await guard(`${CAL}/calendars/primary/events`);
   await guard(`${CAL}/users/me/calendarList`);
   assert.equal(calls.length, 5);
   // The body that was checked is the body that was sent.
-  assert.equal(String(calls[0]!.body), JSON.stringify({ summary: 'Test event', start: {}, end: {} }));
+  assert.equal(String(calls[0]!.body), JSON.stringify({ summary: 'Test event', start: {}, end: {}, extendedProperties: { private: { aplosLiveRun: 'run-test' } } }));
 });
 
 test('mail: modify and batchModify cannot move mail to Spam or Trash', async () => {
@@ -291,10 +291,10 @@ test('batch requests are refused because a part could hide any of the above', as
 
 test('the body that was checked is the body that is sent, even if the caller reuses its buffer', async () => {
   const { guard, calls } = guardFor('M');
-  const body = Buffer.from(JSON.stringify({ summary: 'safe' }));
+  const body = Buffer.from(JSON.stringify({ summary: 'safe', extendedProperties: { private: { aplosLiveRun: 'run-test' } } }));
   await guard(`${CAL}/calendars/primary/events?sendUpdates=none`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
   body.fill(0x58);
-  assert.equal(Buffer.from(calls[0]!.body as Uint8Array).toString(), JSON.stringify({ summary: 'safe' }));
+  assert.equal(Buffer.from(calls[0]!.body as Uint8Array).toString(), JSON.stringify({ summary: 'safe', extendedProperties: { private: { aplosLiveRun: 'run-test' } } }));
 });
 
 test('a refusal never contains the address, the URL or the id', async () => {
@@ -502,6 +502,41 @@ test('calendar writes are refused by default in every tier (agent test account r
       guard(`${CAL}/calendars/primary/events?sendUpdates=none`, json({ summary: 'Test event', start: {}, end: {} })),
       { reason: 'calendar-write-not-allowed' },
     );
+    assert.equal(net.calls.length, 0, `${tier}: nothing reached the network`);
+  }
+});
+
+test('calendar (orchestrator 2026-10-28): run-scoped events only, tagged with the run id, no guests, no other fields', async () => {
+  const q = '?sendUpdates=none';
+  const tag = { extendedProperties: { private: { aplosLiveRun: 'run-test' } } };
+  const meet = { conferenceData: { createRequest: { requestId: 'req-1', conferenceSolutionKey: { type: 'hangoutsMeet' } } } };
+  // Insert: the tag is required and must be this run's; only the allowed fields; a new Meet room is fine.
+  await assertRefused('M', 'calendar-run-id', `${CAL}/calendars/primary/events${q}`, json({ summary: 'x' }));
+  await assertRefused('M', 'calendar-run-id', `${CAL}/calendars/primary/events${q}`, json({ summary: 'x', extendedProperties: { private: { aplosLiveRun: 'other-run' } } }));
+  await assertRefused('M', 'calendar-run-id', `${CAL}/calendars/primary/events${q}`, json({ summary: 'x', extendedProperties: { private: { aplosLiveRun: 'run-test', extra: '1' } } }));
+  await assertRefused('M', 'calendar-run-id', `${CAL}/calendars/primary/events${q}`, json({ summary: 'x', extendedProperties: { shared: { aplosLiveRun: 'run-test' } } }));
+  await assertRefused('M', 'calendar-field', `${CAL}/calendars/primary/events${q}`, json({ summary: 'x', location: 'y', ...tag }));
+  await assertRefused('M', 'calendar-field', `${CAL}/calendars/primary/events${q}`, json({ summary: 'x', guestsCanModify: true, ...tag }));
+  await assertRefused('M', 'calendar-field', `${CAL}/calendars/primary/events${q}`, json({ summary: 'x', ...tag, conferenceData: { conferenceId: 'abc', entryPoints: [] } }));
+  const { guard, calls } = guardFor('M', (_url, method) => (method === 'POST' ? { id: 'e1', ...tag } : {}));
+  await guard(`${CAL}/calendars/primary/events${q}&conferenceDataVersion=1`, json({ summary: 'Run event', start: {}, end: {}, ...tag, ...meet }));
+  // Patch: rename, re-time and re-describe only; never the tag or the room.
+  await guard(`${CAL}/calendars/primary/events/e1${q}`, json({ summary: 'Renamed', description: 'd', start: {}, end: {} }, 'PATCH'));
+  await assert.rejects(guard(`${CAL}/calendars/primary/events/e1${q}`, json({ extendedProperties: { private: { aplosLiveRun: 'x' } } }, 'PATCH')), { reason: 'calendar-field' });
+  await assert.rejects(guard(`${CAL}/calendars/primary/events/e1${q}`, json({ ...meet }, 'PATCH')), { reason: 'calendar-field' });
+  await assert.rejects(guard(`${CAL}/calendars/primary/events/e1${q}`, json({ colorId: '5' }, 'PATCH')), { reason: 'calendar-field' });
+  await guard(`${CAL}/calendars/primary/events/e1${q}`, { method: 'DELETE' });
+  assert.equal(calls.length, 3);
+  // An insert the server answers without this run's tag is never adopted.
+  const untagged = guardFor('M', (_url, method) => (method === 'POST' ? { id: 'e2' } : {}));
+  await untagged.guard(`${CAL}/calendars/primary/events${q}`, json({ summary: 'x', ...tag }));
+  await assert.rejects(untagged.guard(`${CAL}/calendars/primary/events/e2${q}`, { method: 'DELETE' }), { reason: 'calendar-event-not-created-by-run' });
+  // No run id, or another tier: no calendar writes at all, deletes included.
+  for (const [tier, runId] of [['M', undefined], ['S-self', 'run-test'], ['R', 'run-test']] as const) {
+    const net = network();
+    const g = createGuardedFetch(net.fetchImpl, { tier, selfAddress: SELF, ...(runId ? { calendarRunId: runId } : {}) });
+    await assert.rejects(g(`${CAL}/calendars/primary/events${q}`, json({ summary: 'x', ...tag })), (error: { reason: string }) => ['calendar-write-not-allowed', 'tier-r-read-only'].includes(error.reason));
+    await assert.rejects(g(`${CAL}/calendars/primary/events/e1${q}`, { method: 'DELETE' }), (error: { reason: string }) => ['calendar-write-not-allowed', 'tier-r-read-only', 'calendar-event-not-created-by-run'].includes(error.reason));
     assert.equal(net.calls.length, 0, `${tier}: nothing reached the network`);
   }
 });

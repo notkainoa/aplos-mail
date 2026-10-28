@@ -51,7 +51,7 @@ function wire(answer: Answer = () => ({})) {
 function pipeline(tier: Tier, answer?: Answer) {
   const net = wire(answer);
   const pacer = new UnitPacer({ now: () => 0, sleep: async () => undefined });
-  const guard = createGuardedFetch(createPacedFetch(withBearer(net.fetchImpl, () => FAKE_ACCESS), pacer), { tier, allowCalendarWrites: true, ...(tier === 'R' ? {} : { selfAddress: SELF }) });
+  const guard = createGuardedFetch(createPacedFetch(withBearer(net.fetchImpl, () => FAKE_ACCESS), pacer), { tier, calendarRunId: 'run-test', ...(tier === 'R' ? {} : { selfAddress: SELF }) });
   return { guard, sent: net.sent };
 }
 
