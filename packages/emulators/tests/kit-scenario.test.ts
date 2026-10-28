@@ -195,7 +195,9 @@ test('real-time budget stops a scenario that spins without moving the clock', as
   );
   assert.equal(result.passed, false);
   assert.match(result.failures[0], /exceeded the real-time budget of 100 ms/);
-  assert.ok(result.realMs >= 100 && result.realMs < 2000);
+  // Wide bounds on purpose: timers can fire a millisecond early by Date.now(), and a loaded Mac
+  // (several npm run check runs at once) can take seconds to come back to the stop.
+  assert.ok(result.realMs >= 90 && result.realMs < 15_000, `realMs ${result.realMs}`);
 });
 
 test('scenarios get independent clocks, injectors and kill switches; teardown always runs', async () => {

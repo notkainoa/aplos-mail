@@ -214,7 +214,7 @@ Each milestone below lists **work packages (WPs)**. A WP is one Claude Code work
 `ui/motion.ts` is generated from `tokens.json` (durations, easings, springs with their `linear()` strings) plus hand-written runtime modules next to it:
 
 - **`ghost.ts`.** Clones the leaving element with fixed geometry, removes the real one, animates the clone with WAAPI (`transform`, `opacity`). At most three ghosts; a fourth finishes the oldest. Reduced motion maps `flight` and `carry` to an 80-120 ms fade.
-- **`holdGate.ts`.** Starts on a triage key, releases 450 ms after the last key or when the pointer leaves the list (cap 1,200 ms); rows below are pinned by transform. Release runs `close`, a FLIP computed from **fixed row heights**, so no measuring and virtualisation does not matter.
+- **The hold controller (`renderer/data/holds.ts`, one controller for data and motion; planned as `motion/holdGate.ts`).** Starts on a triage key, releases 450 ms after the last key or when the pointer leaves the list (cap 1,200 ms past the last key, ui-shell DECIDED 2026-10-28 03:03); rows below are pinned by transform. Release runs `close`, a FLIP computed from **fixed row heights**, so no measuring and virtualisation does not matter.
 - **`rapid.ts`.** Rapid mode starts when triage keys arrive under 300 ms apart; from the fourth key in a second, `flight` becomes a 60 ms `carry`.
 - **`spring.ts`.** A JS solver keeping value and velocity so a gesture retargets mid-flight; compiles each spring to its `linear()` string; stops on `pointercancel`, pauses when hidden.
 - **`cursor.ts`.** One shared cursor layer moved by transform; 0 ms on key repeat and pointer moves.
