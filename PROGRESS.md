@@ -480,3 +480,13 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 - Production renderer CSP without dev ports or inline script, set at build time.
 - `release-build.mjs` and the Release workflow verify before they upload; only a Developer ID release is ever uploaded; the workflow's checkout keeps no token.
 - Open: a release build still honours `APLOS_DATA_DIR` until F8 lands (DECISIONS 2026-10-28); DevTools gating on the release define is requested from `eng-host`; the entitlement-removal experiment needs the second Mac.
+## 2026-10-27/28 — Revamp F9: Paper design foundation (UI-core, ui-foundation)
+
+- **Tokens.** `renderer/ui/tokens.json` → `ui/generated/{tokens.css,motion.ts,contrast-pairs.json}`. The generator's `--check` mode passes. Contrast is checked for 268 pairs in light, dark and Increase Contrast, with one accepted exception: the resting field ring, DESIGN decision 20. The identity check runs 152 distances against DESIGN 12.4's reference list. The shell's Lab b* is −0.48 in light and −0.74 in dark. The five springs reproduce DESIGN 4.8 within 0.0014 per sample. Sizes are in rem.
+- **Design lint.** 11 rules (`tools/lint/design`), each with failing and passing fixtures. An adversarial "rule breaker" tried 30 evasions and all are caught. 45 tests.
+- **Skill.** `.claude/skills/aplos-design/SKILL.md` v1.1. A token-sync check runs against it. A fresh agent given only the skill built a toast with Undo that passed the lint.
+- **Components.** Frozen props for 75 components (`renderer/ui/props.ts`), with plain implementations of all of them. Each family was built, reviewed adversarially (break-ui data, hover shifts, DESIGN and mockup conformance) and fixed. 514 renderer tests.
+- **Commands.** Catalog, registry, pure resolver, hold tracker, key queue and the generated shortcut sheet. The property test runs 2,500 sequences.
+- **Data surface.** Signatures of the data hooks and shell, typed from `@aplos/contract` (freeze findings FR-1 and FR-21 fixed). A new dev entry (`renderer/main.tsx`) boots on the stand-in engine.
+- **Fonts.** Newsreader is bundled (OFL), with metric-matched New York and Georgia fallbacks.
+- **Not verified here.** The live engine. Real Gmail is out of scope until Phase 2 (WP5.6).

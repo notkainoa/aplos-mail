@@ -1,0 +1,12 @@
+/* Planted violations carry an expect marker; the test requires exactly those lines to be reported. */
+.hide::after {
+  content: "Hide all"; /* @expect */
+}
+
+.welcome::before {
+  content: "Welcome!"; /* @expect */
+}
+
+.todo-label::before {
+  content: "Todo"; /* @expect */
+}
