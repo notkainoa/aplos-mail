@@ -1,0 +1,176 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { motions, timing } from '../ui/generated/motion';
+import { FakeEnv, type FakeElement } from './fakes';
+import { closeDeltas, createCloser, layoutTops } from './flip';
+import { createHoldGate } from './holdGate';
+import { createRapidTracker } from './rapid';
+import { createScheduler } from './scheduler';
+
+const { base: HOLD, cap: CAP } = motions.hold.durations;
+
+function setup() {
+  const fake = new FakeEnv();
+  const scheduler = createScheduler(fake.env);
+  const hold = createHoldGate(scheduler);
+  const releases: { ids: readonly string[]; at: number }[] = [];
+  hold.onRelease(r => releases.push({ ids: r.ids, at: fake.now }));
+  return { fake, scheduler, hold, releases };
+}
+
+test('hold releases 450 ms after the last key', () => {
+  const { fake, hold, releases } = setup();
+  hold.begin('keys', ['a']);
+  fake.advance(200);
+  hold.extend(['b']);
+  assert.deepEqual(hold.heldIds, ['a', 'b']);
+  fake.advance(HOLD - 1);
+  assert.equal(hold.isHeld, true);
+  fake.advance(1);
+  assert.equal(hold.isHeld, false);
+  assert.deepEqual(releases, [{ ids: ['a', 'b'], at: 200 + HOLD }]);
+  assert.deepEqual(hold.heldIds, []);
+});
+
+test('hold never lasts past the 1200 ms cap', () => {
+  const { fake, hold, releases } = setup();
+  hold.begin('keys', ['a']);
+  for (let t = 0; t < 2000; t += 100) {
+    fake.advance(100);
+    if (fake.now < CAP) hold.extend();
+  }
+  assert.equal(releases[0]?.at, CAP);
+  assert.equal(releases.length, 1);
+});
+
+test('the pointer holds until it leaves, and leaving releases at once', () => {
+  const { fake, hold, releases } = setup();
+  hold.pointerEnter(['a']);
+  hold.extend(['b']);
+  fake.advance(CAP * 2);
+  assert.equal(hold.isHeld, true);
+  hold.pointerLeave();
+  assert.equal(hold.isHeld, false);
+  assert.equal(releases.length, 1);
+  assert.equal(releases[0]?.at, CAP * 2);
+
+  hold.begin('keys', ['c']);
+  fake.advance(100);
+  hold.pointerLeave();
+  assert.equal(releases.length, 2);
+  assert.equal(releases[1]?.at, CAP * 2 + 100);
+});
+
+test('a hidden window pauses the hold timer', () => {
+  const { fake, hold } = setup();
+  hold.begin('keys', ['a']);
+  fake.advance(100);
+  fake.setHidden(true);
+  fake.advance(5000);
+  assert.equal(hold.isHeld, true);
+  fake.setHidden(false);
+  fake.advance(HOLD - 100 - 1);
+  assert.equal(hold.isHeld, true);
+  fake.advance(1);
+  assert.equal(hold.isHeld, false);
+});
+
+test('subscribers hear every change so useSyncExternalStore stays exact', () => {
+  const { fake, hold } = setup();
+  let changes = 0;
+  hold.subscribe(() => changes++);
+  hold.begin('keys', ['a']);
+  hold.extend(['a']);
+  hold.extend(['b']);
+  fake.advance(HOLD);
+  assert.equal(changes, 3);
+});
+
+test('rapid: keys under 300 ms apart; burst from the fourth key in a second', () => {
+  const rapid = createRapidTracker();
+  const gap = timing.rapidGap;
+  assert.deepEqual(rapid.key(0), { rapid: false, burst: false });
+  assert.deepEqual(rapid.key(gap - 1), { rapid: true, burst: false });
+  assert.deepEqual(rapid.key(2 * gap - 2), { rapid: true, burst: false });
+  assert.deepEqual(rapid.key(3 * gap - 3), { rapid: true, burst: true });
+  assert.deepEqual(rapid.key(3 * gap - 3 + gap), { rapid: false, burst: true });
+  assert.deepEqual(rapid.key(10_000), { rapid: false, burst: false });
+  // Four keys a little over the rapid gap apart are still a burst inside one second.
+  const slow = createRapidTracker();
+  const step = timing.rapidGap + 10;
+  assert.ok(step * (timing.burstKeys - 1) < timing.burstWindow);
+  let last = { rapid: false, burst: false };
+  for (let i = 0; i < timing.burstKeys; i++) last = slow.key(i * step);
+  assert.deepEqual(last, { rapid: false, burst: true });
+});
+
+test('FLIP math from fixed row heights', () => {
+  const height = (id: string) => (id === 'focus' ? 180 : 40);
+  const before = layoutTops(['focus', 'a', 'b', 'c', 'd'], height, 48);
+  assert.deepEqual([...before.values()], [48, 228, 268, 308, 348]);
+  const after = layoutTops(['focus', 'a', 'c', 'd'], height, 48);
+  assert.deepEqual(
+    [...closeDeltas(before, after)],
+    [
+      ['c', 40],
+      ['d', 40],
+    ],
+  );
+  const twoGone = layoutTops(['a', 'd'], height, 48);
+  assert.deepEqual(
+    [...closeDeltas(before, twoGone)],
+    [
+      ['a', 180],
+      ['d', 260],
+    ],
+  );
+});
+
+test('the closer pins rows during the hold and FLIPs them up once it releases', () => {
+  const fake = new FakeEnv();
+  const scheduler = createScheduler(fake.env);
+  const hold = createHoldGate(scheduler);
+  const rows = new Map<string, FakeElement>();
+  for (const id of ['a', 'b', 'c', 'd']) rows.set(id, fake.element({ height: 40 }));
+  const closer = createCloser<string>({
+    heightOf: () => 40,
+    elementOf: id => rows.get(id)?.el ?? null,
+  });
+  hold.onRelease(() => closer.close());
+
+  closer.anchor(['a', 'b', 'c', 'd']);
+  hold.begin('keys', ['b']);
+  closer.pin(['a', 'c', 'd']);
+  hold.extend();
+  closer.pin(['a', 'd']);
+  assert.equal(rows.get('d')?.style.transform, 'translateY(80px)');
+  assert.equal(rows.get('c')?.style.transform, '');
+  assert.equal(fake.running().length, 0);
+
+  fake.advance(HOLD);
+  assert.equal(hold.isHeld, false);
+  const running = fake.running();
+  assert.equal(running.length, 1);
+  assert.equal(running[0]?.target, rows.get('d'));
+  assert.deepEqual(
+    running[0]?.keyframes.map(k => k.transform),
+    ['translateY(80px)', 'none'],
+  );
+  assert.equal(running[0]?.options.duration, motions.close.durations.base);
+  assert.equal(running[0]?.options.easing, motions.close.curve);
+  assert.equal(rows.get('d')?.style.transform, '');
+  fake.advance(motions.close.durations.base);
+  assert.equal(fake.running().length, 0);
+  assert.equal(rows.get('d')?.style.willChange, '');
+});
+
+test('reduced motion: close lands at once', () => {
+  const fake = new FakeEnv();
+  const row = fake.element({ height: 40 });
+  const closer = createCloser<string>({ heightOf: () => 40, elementOf: () => row.el });
+  closer.anchor(['x', 'y']);
+  closer.pin(['y']);
+  assert.equal(closer.close({ reduced: true }), 0);
+  assert.equal(row.style.transform, '');
+  assert.equal(fake.running().length, 0);
+});
