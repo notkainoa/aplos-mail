@@ -1,13 +1,17 @@
 import type { CommitExtension } from '../store/port';
 import type { EngineServices, LaneModule } from '../runtime/services';
+import { createViewEngine, type ViewEngine } from './windows';
+
+declare module '../runtime/services' {
+  interface EngineServices {
+    /** The live windows (views-2): `View/*`, `Folder/get`, `Counts/get`, `SenderGroup/get`. */
+    views: ViewEngine;
+  }
+}
 
 /**
- * Seam 1: lane `eng-views`'s module, imported by the composition root (`src/index.ts`) from this fixed path. It will hold
- * the live windows (`ViewEngine`), `Thread/act`'s operations and sender rules. Add the lane's own services by declaration merging, so no other file changes:
- *
- *   declare module '../runtime/services' { interface EngineServices { myService: MyService } }
- *
- * Owned by `eng-views`; this empty stub was created by `eng-contract`'s contract-1 with the lane's approval.
+ * Seam 1: lane `eng-views`'s module, imported by the composition root (`src/index.ts`) from this fixed path. It holds
+ * the live windows (`ViewEngine`); `Thread/act`'s operations and sender rules join it in views-3 and views-4.
  */
 export const lane = 'eng-views';
 
@@ -15,6 +19,14 @@ export const lane = 'eng-views';
 export const extensions: readonly CommitExtension[] = [];
 
 /** Builds the lane's services once the core services exist; runs once, in the root's fixed order. */
-export function createModule(_services: EngineServices): LaneModule {
-  return {};
+export function createModule(services: EngineServices): LaneModule {
+  const views = createViewEngine({
+    store: services.store,
+    clock: services.clock,
+    frames: services.frames,
+    log: services.log,
+    deadlines: services.deadlines,
+    randomBytes: services.randomBytes,
+  });
+  return { services: { views }, stop: () => views.close() };
 }

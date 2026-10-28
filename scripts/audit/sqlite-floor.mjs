@@ -61,12 +61,15 @@ function main() {
 
   const here = join(dirname(fileURLToPath(import.meta.url)), 'electron-node.mjs');
   const self = fileURLToPath(import.meta.url);
-  const run = spawnSync(process.execPath, [here, self, '--self'], { encoding: 'utf8' });
+  const run = spawnSync(process.execPath, [here, self, '--self'], {
+    encoding: 'utf8',
+    timeout: 60000,
+  });
 
   if (run.status !== 0 || run.error) {
     console.error(`Electron Node probe failed (status ${run.error ?? run.status}):`);
-    console.error(run.stdout.trim());
-    console.error(run.stderr.trim());
+    console.error((run.stdout ?? '').trim());
+    console.error((run.stderr ?? '').trim());
     process.exit(1);
   }
 
