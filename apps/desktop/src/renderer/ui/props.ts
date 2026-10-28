@@ -1893,6 +1893,23 @@ export interface CalendarEventData {
   invite?: { from: string; threadId: string };
   /** Plain-text description. */
   description?: string;
+  /** One occurrence of a repeating event: moving, resizing, deleting or answering asks for a scope first (ScopeChooser, freeze finding FR-21). */
+  recurring?: boolean;
+}
+
+/** Which occurrences a change or an answer touches. Round 1 offers "This event" and "All events" (roadmap 8.3 #32); the contract's EditScope 'following' is refused until built. */
+export type EventScope = 'occurrence' | 'series';
+
+/** Asks which occurrences of a repeating event a change touches: "This event" (Return, the default) or "All events" (⇧Return), Esc cancels (DESIGN §7.8; roadmap 8.3 #32; freeze finding FR-21). Plain + refines: ui-foundation; used by ui-calendar before Event/set or Event/rsvp on a recurring event. */
+export interface ScopeChooserProps {
+  /** What is about to change; picks the question ("Move", "Change", "Delete", "Reply to"). */
+  action: 'move' | 'change' | 'delete' | 'reply';
+  /** The event title, for the accessible name. */
+  title: string;
+  /** A scope was chosen. */
+  onChoose: (scope: EventScope) => void;
+  /** Esc or Cancel. */
+  onCancel: () => void;
 }
 
 /** An RSVP answer (Y / M / N, DESIGN §7.8). */
@@ -2018,8 +2035,8 @@ export interface EventDetailProps {
     commands: { yes: CommandId; maybe: CommandId; no: CommandId };
     /** An answer was chosen. */
     onAnswer: (answer: RsvpAnswer) => void;
-    /** "Send reply". */
-    onSend: () => void;
+    /** "Send reply"; for a recurring event the screen asks ScopeChooser first and passes the scope. */
+    onSend: (scope?: EventScope) => void;
   };
   /** Open the invite email (O). */
   onOpenInvite?: (threadId: string) => void;
@@ -2074,14 +2091,14 @@ export interface SettingRowProps {
 /** AI features with a provider and model each (DESIGN §7.10 AI). */
 export type AiFeature = 'ask' | 'summaries' | 'drafts' | 'plans' | 'voice';
 
-/** Providers; display names are fixed copy: Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio, Custom server (AGENTS.md). */
+/** Providers; display names are fixed copy: Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio, Custom server (AGENTS.md). Matches @aplos/contract's aiProviderIds (freeze finding FR-1). */
 export type ProviderId =
   | 'groq'
   | 'openai'
   | 'anthropic'
   | 'gemini'
   | 'openrouter'
-  | 'opencode'
+  | 'opencode-go'
   | 'ollama'
   | 'lmstudio'
   | 'custom';
@@ -2892,6 +2909,11 @@ export const COMPONENTS = [
     file: 'apps/desktop/src/renderer/ui/calendar/EventDetail.tsx',
   },
   {
+    name: 'ScopeChooser',
+    family: 'calendar',
+    file: 'apps/desktop/src/renderer/ui/calendar/ScopeChooser.tsx',
+  },
+  {
     name: 'DatePresets',
     family: 'calendar',
     file: 'apps/desktop/src/renderer/ui/calendar/DatePresets.tsx',
@@ -3037,6 +3059,7 @@ export interface ComponentPropsMap {
   PlanOutline: PlanOutlineProps;
   NowLine: NowLineProps;
   EventDetail: EventDetailProps;
+  ScopeChooser: ScopeChooserProps;
   DatePresets: DatePresetsProps;
   SettingRow: SettingRowProps;
   ProviderTable: ProviderTableProps;

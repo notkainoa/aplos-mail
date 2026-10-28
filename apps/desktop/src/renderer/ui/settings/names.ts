@@ -7,7 +7,7 @@ export const PROVIDER_NAMES: Record<ProviderId, string> = {
   anthropic: 'Claude',
   gemini: 'Gemini',
   openrouter: 'OpenRouter',
-  opencode: 'OpenCode Go',
+  'opencode-go': 'OpenCode Go',
   ollama: 'Ollama',
   lmstudio: 'LM Studio',
   custom: 'Custom server',

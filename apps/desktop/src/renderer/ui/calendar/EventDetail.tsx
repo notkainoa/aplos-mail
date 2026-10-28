@@ -232,7 +232,7 @@ export function EventDetail({
               className="ui-cal-button"
               data-variant="filled"
               disabled={reply.answer === null}
-              onClick={reply.onSend}
+              onClick={() => reply.onSend()}
             >
               Send reply
               <kbd className="ui-cal-kbd">Return</kbd>

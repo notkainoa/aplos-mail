@@ -234,7 +234,7 @@ const hosted = (
       status: { kind: 'ready' },
     },
     {
-      provider: 'opencode',
+      provider: 'opencode-go',
       isDefault: false,
       keySource: { kind: 'environment', variable: 'OPENCODE_API_KEY' },
       status: { kind: 'unreachable' },

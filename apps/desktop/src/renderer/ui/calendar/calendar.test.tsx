@@ -19,6 +19,7 @@ import {
   MiniMonth,
   NowLine,
   PlanOutline,
+  ScopeChooser,
 } from './index';
 import {
   addDays,
@@ -991,7 +992,7 @@ test('DatePresets calendar: month grid of six weeks, picked day, time list, "Mov
 
 /* ---------------------------------- manifest ---------------------------------- */
 
-test('the barrel exports all eight components of the family', async () => {
+test('the barrel exports all nine components of the family', async () => {
   const barrel = await import('./index');
   assert.deepEqual(Object.keys(barrel).sort(), [
     'CalendarGrid',
@@ -1002,5 +1003,23 @@ test('the barrel exports all eight components of the family', async () => {
     'MiniMonth',
     'NowLine',
     'PlanOutline',
+    'ScopeChooser',
   ]);
+});
+
+test('ScopeChooser: "This event" is the filled default on Return, "All events" on ⇧Return, Esc cancels', () => {
+  const html = renderToStaticMarkup(
+    <ScopeChooser action="move" title="Design review" onChoose={() => {}} onCancel={() => {}} />,
+  );
+  assert.match(html, /role="group"/);
+  assert.match(html, /aria-label="Move this repeating event\? Design review"/);
+  assert.match(html, /This event/);
+  assert.match(html, /All events/);
+  assert.equal((html.match(/data-variant="filled"/g) ?? []).length, 1);
+  for (const action of ['change', 'delete', 'reply'] as const) {
+    const text = renderToStaticMarkup(
+      <ScopeChooser action={action} title="x" onChoose={() => {}} onCancel={() => {}} />,
+    );
+    assert.equal(copyProblem(text.replace(/<[^>]+>/g, ' ')), null);
+  }
 });

@@ -1445,3 +1445,23 @@
     background: var(--hover);
   }
 }
+
+/* ScopeChooser: which occurrences of a repeating event a change touches (DESIGN 7.8, freeze finding FR-21). */
+.ui-scope-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.ui-scope-chooser__question {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-scope-chooser__rows {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
