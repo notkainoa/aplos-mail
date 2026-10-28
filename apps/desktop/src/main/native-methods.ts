@@ -11,14 +11,28 @@ import { writeFile, mkdtemp } from 'node:fs/promises';
 import { join, basename, extname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { record, text, external } from './security';
-import { claims, pendingClose, permittedClose, main, emit, focusMain, popout } from './windows';
+import {
+  claims,
+  pendingClose,
+  permittedClose,
+  main,
+  emit,
+  focusMain,
+  popout,
+  onboarding,
+} from './windows';
 import { updates, restartToUpdate, cancelInstall } from './updater';
 import { latestState } from './engine-host';
 import { cancelQuit } from './lifecycle';
 import { legacyDesktopMethods } from '@aplos/contract/allowlists';
 import { isTest, recordNotification } from './test-mode';
+import { settingsPaneUrl } from '../host/lifecycle';
 
 const nativeMethods = new Set<string>(legacyDesktopMethods);
+// Contract v1 desktop methods main already answers. A window reaches them once preload moves to the generated v1 table.
+for (const name of ['Window/openOnboarding', 'Window/finishOnboarding', 'System/openSettings'])
+  nativeMethods.add(name);
+const ok = { ok: true } as const;
 function notify(title: string, body: string, threadId?: string) {
   if (isTest) return recordNotification(title, body, threadId);
   if (!Notification.isSupported())
@@ -50,6 +64,22 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
     cancelQuit();
     cancelInstall();
     return true;
+  }
+  if (method === 'Window/openOnboarding') {
+    if (payload.mode !== 'first' && payload.mode !== 'review')
+      throw new Error('Choose an onboarding mode.');
+    onboarding.open(payload.mode);
+    return ok;
+  }
+  if (method === 'Window/finishOnboarding') {
+    await onboarding.finish();
+    return ok;
+  }
+  if (method === 'System/openSettings') {
+    const url = settingsPaneUrl(payload.pane);
+    // Test mode opens no other app (it would take focus).
+    if (!isTest) await shell.openExternal(url);
+    return ok;
   }
   if (method === 'app.info')
     return { name: 'Aplos Mail', version: app.getVersion(), desktop: true };

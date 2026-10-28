@@ -143,3 +143,27 @@ export function silenceDialogs(dialog: object, log: (line: string) => void) {
   target.showSaveDialogSync = () => undefined;
   target.showOpenDialogSync = () => undefined;
 }
+
+/** Links the app asked the system to open in test mode; an emulator or a test reads them to finish an OAuth connect. */
+export const recordedExternalLinks: string[] = [];
+/**
+ * Freeze round 2, R2H-5: the engine's `openExternal` request (OAuth connect) and the session's microphone permission
+ * handler reach `shell.openExternal` and `systemPreferences.askForMediaAccess` without a test-mode check, which would
+ * open the default browser or raise a macOS permission prompt. Like `silenceDialogs`, this replaces both in place, so no
+ * module (including future ones) can reach them: a link is recorded and dropped, the microphone is "not allowed".
+ */
+export function silenceSystem(
+  shell: object,
+  systemPreferences: object,
+  log: (line: string) => void,
+) {
+  const sh = shell as Record<string, Method>;
+  const prefs = systemPreferences as Record<string, Method>;
+  sh.openExternal = async (...args) => {
+    recordedExternalLinks.push(String(args[0]));
+    log(`openExternal dropped: ${String(args[0]).replace(/[?#].*$/, '')}`);
+  };
+  sh.openPath = async () => '';
+  sh.showItemInFolder = () => {};
+  prefs.askForMediaAccess = async () => false;
+}

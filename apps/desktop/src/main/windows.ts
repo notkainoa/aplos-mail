@@ -3,10 +3,18 @@ import { join } from 'node:path';
 import { DraftOwnership } from './desktop-policy';
 import type { AppState, Listener } from '@aplos/contract/legacy/types';
 import { rendererFile, devURL, trustedURL, external } from './security';
-import { pendingLinks } from './protocol';
-import { latestState } from './engine-host';
+import { handleLink, pendingLinks } from './protocol';
+import { latestState, service } from './engine-host';
 import { closing, quitting, finishQuit } from './lifecycle';
 import { isTest } from './test-mode';
+import {
+  createOnboarding,
+  type Activation,
+  type OnboardingMode,
+  type SessionFacts,
+  type WindowChoice,
+  type WindowPort,
+} from '../host/lifecycle';
 
 const windows = new Set<BrowserWindow>();
 const claims = new DraftOwnership();
@@ -21,9 +29,17 @@ function command(value: string) {
   const win = BrowserWindow.getFocusedWindow() || main;
   win?.webContents.send('aplos:event', { type: 'command', payload: value });
 }
+/** What `Session/get.hasAccounts` and `.setup` will say; until the engine serves them, today's state answers. */
+function sessionFacts(): SessionFacts {
+  return {
+    hasAccounts: !!latestState?.accounts.length,
+    setup: latestState?.settings.onboardingDone ? { completedAt: 1 } : {},
+  };
+}
 function focusMain() {
-  // Test mode never shows or focuses a window (a window is still created so the renderer can be inspected).
-  if (isTest) return;
+  // Dock, second launch, links and notifications all land here. An open welcome window answers them: never a second window.
+  const decision = activateWindows();
+  if (isTest || decision === 'focus-onboarding' || decision === 'open-onboarding') return;
   if (!main || main.isDestroyed()) main = createWindow();
   if (main.isMinimized()) main.restore();
   main.show();
@@ -69,6 +85,52 @@ function syncTheme(redraw: boolean) {
     syncingTheme = false;
   }
 }
+const webPreferences = () => ({
+  preload: join(__dirname, 'preload.cjs'),
+  nodeIntegration: false,
+  contextIsolation: true,
+  sandbox: true,
+  webSecurity: true,
+  spellcheck: true,
+  // A test window is never shown, and Chromium throttles hidden pages' timers hard: the renderer's save-before-close
+  // answer to a quit could then take tens of seconds (plat-release, 2026-10-28 06:12).
+  backgroundThrottling: !isTest,
+});
+/** ARCH 10: links leave Aplos or open Compose, and nothing but the app's own page ever loads in any frame. */
+function lockNavigation(win: BrowserWindow) {
+  const contents = win.webContents;
+  contents.on('will-navigate', (event, url) => {
+    if (!trustedURL(url)) {
+      event.preventDefault();
+      if (!isTest) void external(url).catch(() => {});
+    }
+  });
+  contents.on('will-frame-navigate', event => {
+    if (!trustedURL(event.url) && !event.url.startsWith('aplos-mail:')) event.preventDefault();
+  });
+  contents.on('will-redirect', (event, url) => {
+    if (!trustedURL(url)) event.preventDefault();
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^mailto:/i.test(url)) handleLink(url);
+    else if (!isTest) void external(url).catch(() => {});
+    return { action: 'deny' };
+  });
+}
+function loadRenderer(win: BrowserWindow, query?: Record<string, string>) {
+  if (devURL) {
+    const url = new URL(devURL);
+    if (query) for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+    void win.loadURL(url.href);
+  } else void win.loadFile(rendererFile, { query });
+}
+// A window's first paint: show it (never in test mode) and tell its renderer, once, that it is up (F4, the `shown` event).
+const announced = new WeakSet<BrowserWindow>();
+function announceShown(win: BrowserWindow) {
+  if (announced.has(win) || win.isDestroyed()) return;
+  announced.add(win);
+  win.webContents.send('aplos:event', { type: 'shown' });
+}
 function createWindow(query?: { draft?: string; thread?: string }) {
   const mac = process.platform === 'darwin';
   // macOS: a transparent window base lets the native sidebar material show through the
@@ -94,17 +156,7 @@ function createWindow(query?: { draft?: string; thread?: string }) {
     ...chrome,
     show: false,
     icon: join(__dirname, 'icon.png'),
-    webPreferences: {
-      preload: join(__dirname, 'preload.cjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-      webSecurity: true,
-      spellcheck: true,
-      // A test window is never shown, and Chromium throttles hidden pages' timers hard: the renderer's save-before-close
-      // answer to a quit could then take tens of seconds (plat-release, 2026-10-28 06:12).
-      backgroundThrottling: !isTest,
-    },
+    webPreferences: webPreferences(),
   });
   windows.add(win);
   let rendererReady = false;
@@ -128,21 +180,12 @@ function createWindow(query?: { draft?: string; thread?: string }) {
   win.webContents.on('will-prevent-unload', event => {
     if (permittedClose.has(win.id) || closing) event.preventDefault();
   });
-  if (!isTest) win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    if (!isTest && !quitting) win.show();
+    announceShown(win);
+  });
   win.on('focus', () => syncTheme(false));
-  win.webContents.on('will-navigate', (event, url) => {
-    if (!trustedURL(url)) {
-      event.preventDefault();
-      if (!isTest) void external(url).catch(() => {});
-    }
-  });
-  win.webContents.on('will-redirect', (event, url) => {
-    if (!trustedURL(url)) event.preventDefault();
-  });
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (!isTest) void external(url).catch(() => {});
-    return { action: 'deny' };
-  });
+  lockNavigation(win);
   win.webContents.on('did-finish-load', () => {
     if (latestState) win.webContents.send('aplos:event', { type: 'state', payload: latestState });
     if (win === main)
@@ -159,11 +202,7 @@ function createWindow(query?: { draft?: string; thread?: string }) {
     if (main === win) main = undefined;
     if (quitting && !windows.size) finishQuit();
   });
-  if (devURL) {
-    const url = new URL(devURL);
-    if (query) for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
-    void win.loadURL(url.href);
-  } else void win.loadFile(rendererFile, { query });
+  loadRenderer(win, query);
   return win;
 }
 function popout(kind: 'draft' | 'thread', id: string, fromWindowId: number) {
@@ -188,6 +227,76 @@ function setMain(win: BrowserWindow) {
   main = win;
 }
 
+// The welcome window (DESIGN 7.11). Opt-in until `ui-onboard`'s renderer route exists: today's renderer shows its own
+// welcome inside the mail window, and loading it in a small separate window would show the whole app there.
+const onboardingEnabled = process.env.APLOS_ONBOARDING_WINDOW === '1';
+const welcome = { width: 640, height: 600, minHeight: 520 };
+function portOf(win: BrowserWindow): WindowPort {
+  return {
+    id: win.id,
+    isDestroyed: () => win.isDestroyed(),
+    isVisible: () => win.isVisible(),
+    isMinimized: () => win.isMinimized(),
+    restore: () => win.restore(),
+    show: () => win.show(),
+    focus: () => win.focus(),
+    close: () => win.close(),
+    onReadyToShow: listener => void win.once('ready-to-show', listener),
+    onClosed: listener => void win.once('closed', listener),
+  };
+}
+function createWelcomeWindow(mode: OnboardingMode): WindowPort {
+  const win = new BrowserWindow({
+    ...welcome,
+    minWidth: welcome.width,
+    maxWidth: welcome.width,
+    title: 'Aplos Mail',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 20, y: 16 },
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#191a1c' : '#ffffff',
+    show: false,
+    icon: join(__dirname, 'icon.png'),
+    webPreferences: webPreferences(),
+  });
+  windows.add(win);
+  win.once('ready-to-show', () => {
+    if (!isTest && !quitting) win.show();
+    announceShown(win);
+  });
+  win.on('focus', () => syncTheme(false));
+  lockNavigation(win);
+  win.webContents.on('did-finish-load', () => {
+    if (latestState) win.webContents.send('aplos:event', { type: 'state', payload: latestState });
+  });
+  win.on('closed', () => {
+    windows.delete(win);
+    if (quitting && !windows.size) finishQuit();
+  });
+  loadRenderer(win, { window: 'onboarding', mode });
+  return portOf(win);
+}
+const onboarding = createOnboarding({
+  createOnboarding: createWelcomeWindow,
+  createMail: () => portOf((main = createWindow())),
+  currentMail: () => (main && !main.isDestroyed() ? portOf(main) : undefined),
+  endSetup: async () => service?.invoke('Setup/end', { reason: 'closed' }),
+  announceShown: port => {
+    for (const win of windows) if (win.id === port.id) announceShown(win);
+  },
+  isQuitting: () => quitting || closing,
+  testMode: isTest,
+  setTimer: (run, ms) => setTimeout(run, ms),
+  clearTimer: handle => clearTimeout(handle as NodeJS.Timeout),
+});
+/** Startup: which window to open. Without the welcome window enabled it is always the mail window, as before. */
+function startWindows(atLogin: boolean): WindowChoice {
+  return onboardingEnabled ? onboarding.start(sessionFacts(), { atLogin }) : 'mail';
+}
+function activateWindows(): Activation {
+  if (onboardingEnabled || onboarding.isOpen()) return onboarding.activate(sessionFacts());
+  return main && !main.isDestroyed() ? 'focus-mail' : 'open-mail';
+}
+
 export {
   windows,
   claims,
@@ -203,4 +312,7 @@ export {
   createWindow,
   popout,
   setMain,
+  onboarding,
+  sessionFacts,
+  startWindows,
 };
