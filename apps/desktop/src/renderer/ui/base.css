@@ -37,6 +37,18 @@ textarea {
   color: inherit;
 }
 
+/* Buttons start bare and each component draws its own, so the platform's raised
+   button never shows (DESIGN 4.6: filled, text and icon only). :where() keeps this
+   at zero specificity, so any component rule wins. */
+:where(button) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: inherit;
+  appearance: none;
+}
+
 /* Numbers that line up use tabular figures (DESIGN 4.3). This is only the
    fallback for elements nobody styles: `font: var(--type-<role>)` resets
    font-variant-numeric, so a component rule that sets a type role on a time,
