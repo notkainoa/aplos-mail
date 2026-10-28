@@ -8,7 +8,7 @@ import {
   type WorkflowChannel,
 } from '../src/ports';
 import type { StorePort } from '../src/store';
-import { gmailBudget } from '../src/sync/budgets';
+import { gcalBudget, gmailBudget } from '../src/sync/budgets';
 import { HEARTBEAT_MS } from '../src/sync/actor';
 import { opPayload } from '../src/sync/ops';
 import { readGovernor } from '../src/sync/persist';
@@ -668,6 +668,49 @@ test('prov-gov-T35 the heartbeat beats every 30 s idle and while waiting on the 
     stall.resolve();
     await settle();
     assert.equal(stateOf(w.store, 'history')?.cursor, 'wait');
+  } finally {
+    await w.kill();
+    d.cleanup();
+  }
+});
+
+test('a pause on another budget backs the step off until it ends instead of spinning', async () => {
+  const d = disk();
+  let calls = 0;
+  const adapter = new FakeAdapter(
+    input => {
+      const history = stateIn(input, 'history');
+      const notBefore = history ? history.updatedAt + 60_000 : input.env.now;
+      return [step('history', 'incremental', 'incremental', input.trigger, notBefore)];
+    },
+    {
+      history: async (s, _state, ctx) => {
+        const request = {
+          budget: 'gcal',
+          lane: s.lane,
+          kind: 'read',
+          method: 'fake.events',
+          cost: 1,
+        };
+        await ctx.governor.run(request as never, async () => {
+          if (++calls === 1) throw refusal('throttle', { provider: 'gcal' });
+        });
+        return {
+          nextStates: [{ scope: 'history', cursor: `c-${calls}`, generation: 0, updatedAt: 0 }],
+          done: true,
+          costUnits: 1,
+        };
+      },
+    },
+  );
+  const w = world(d, () => adapter, { budgets: [gmailBudget, gcalBudget] });
+  try {
+    await w.host.start(ACCOUNT);
+    await until(() => calls === 1, 'the refused call');
+    await settle(40);
+    assert.equal(calls, 1, 'the step is not run again while gcal is paused');
+    await w.clock.advance(60_000);
+    await until(() => calls === 2, 'the step after the pause');
   } finally {
     await w.kill();
     d.cleanup();
