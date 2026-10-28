@@ -67,7 +67,7 @@ if (process.platform === 'darwin') {
     const out = `dist/bin/aplos-symbols-${arch}`;
     execFileSync(
       'swiftc',
-      ['-O', '-target', `${arch}-apple-macos12`, 'native/symbols.swift', '-o', out],
+      ['-O', '-target', `${arch}-apple-macos13`, 'native/symbols.swift', '-o', out],
       { stdio: 'inherit' },
     );
     return out;

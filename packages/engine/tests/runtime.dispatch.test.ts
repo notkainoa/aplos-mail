@@ -154,6 +154,8 @@ test('a caller of no known kind is refused at connect, and the default window ca
       { scopes: ['read'] },
       { kind: 'Listener', scopes: ['read'] },
       { kind: 'window' },
+      undefined,
+      null,
     ])
       assert.throws(() => t.engine.connect(bad as never), isType('forbidden'));
     assert.ok(Object.isFrozen(windowCaller) && Object.isFrozen(windowCaller.scopes));

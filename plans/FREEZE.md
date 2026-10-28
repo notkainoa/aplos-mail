@@ -47,12 +47,12 @@ Every finding ends as **fixed** (with the commit) or **decided** (a DECIDED entr
 | ID | Severity | Owner | Outcome | Commit or decision |
 |---|---|---|---|---|
 | FR-1 | blocker | ui-foundation | fixed (round 2) | PR #28 9ec6518 |
-| FR-2 | blocker | eng-contract | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-2 | blocker | eng-contract | fixed (round 2; remainder deferred, DECISIONS.md 2026-10-28 freeze sign-off) | PR #28 9ec6518 |
 | FR-3 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-4 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-5 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-6 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
-| FR-7 | blocker | eng-contract | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-7 | blocker | eng-contract | fixed (round 2; remainder deferred, DECISIONS.md 2026-10-28 freeze sign-off) | PR #28 9ec6518 |
 | FR-8 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-9 | blocker | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-10 | gap | eng-store | fixed (round 2) | PR #28 9ec6518 |
@@ -65,7 +65,7 @@ Every finding ends as **fixed** (with the commit) or **decided** (a DECIDED entr
 | FR-17 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-18 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-19 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
-| FR-20 | gap | eng-contract | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-20 | gap | eng-contract | fixed (round 2; remainder deferred, DECISIONS.md 2026-10-28 freeze sign-off) | PR #28 9ec6518 |
 | FR-21 | gap | eng-contract + ui-foundation | fixed (round 2) | PR #28 9ec6518 |
 | FR-22 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-23 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
@@ -76,11 +76,11 @@ Every finding ends as **fixed** (with the commit) or **decided** (a DECIDED entr
 | FR-28 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-29 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-30 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
-| FR-31 | gap | eng-store | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-31 | gap | eng-store | fixed (round 2; remainder deferred, DECISIONS.md 2026-10-28 freeze sign-off) | PR #28 9ec6518 |
 | FR-32 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 | FR-33 | gap | eng-contract | fixed (round 2) | PR #28 9ec6518 |
-| FR-34 | gap | eng-contract | partly-fixed (round 2) | PR #28 9ec6518 |
-| FR-35 | nit | eng-contract | partly-fixed (round 2) | PR #28 9ec6518 |
+| FR-34 | gap | eng-contract | fixed (round 2; remainder deferred, DECISIONS.md 2026-10-28 freeze sign-off) | PR #28 9ec6518 |
+| FR-35 | nit | eng-contract | fixed (round 2; remainder deferred, DECISIONS.md 2026-10-28 freeze sign-off) | PR #28 9ec6518 |
 | FR-36 | nit | eng-contract | fixed (round 2) | PR #28 9ec6518 |
 
 ## 5. Exit

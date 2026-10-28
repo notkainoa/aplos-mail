@@ -1,0 +1,250 @@
+#!/usr/bin/env node
+// Budget measurement (plan 40 Q3 deliverable 6). Usage:
+//   node scripts/audit/measure-budgets.mjs [--record] [--tighten] [--only <id,...>] [--time-unit-suite]
+// Measures the rows owned by plat-ci (bundle and package sizes, unit-suite time) and compares each with
+// its budgets.json limit. An artifact that is absent is reported as "not measurable here" and never fails.
+// Exit 1 when a measured row is over its limit. --record writes lastMeasured (today, UTC) for the rows it
+// measured, and a value only for a calibrate row with no value yet or, with --tighten, a tighten-only row
+// measured below its limit. Rows owned by anyone else are never touched.
+import { spawnSync } from 'node:child_process';
+import { builtinModules } from 'node:module';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+export const owner = 'plat-ci';
+export const defaultMaxAgeDays = 30;
+// MB here is MiB, what `du -sm` prints and what the plan's 369 MB baseline was read from.
+const bytesPerMb = 1024 * 1024;
+const bundleExtensions = ['.js', '.mjs', '.css'];
+
+// Directory sizing
+
+/** Every file under `dir` at any depth, as absolute paths. Symlinks are not followed or counted. */
+export function listFiles(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return listFiles(path);
+    return entry.isFile() ? [path] : [];
+  });
+}
+
+const hasExtension = (path, extensions) => extensions.some(ext => path.endsWith(ext));
+
+/** Total bytes of the files under `dir`, optionally only those with one of `extensions`. */
+export function directoryBytes(dir, extensions) {
+  const files = listFiles(dir).filter(file => !extensions || hasExtension(file, extensions));
+  return files.reduce((sum, file) => sum + statSync(file).size, 0);
+}
+
+/** Directories and files under `dir` (to `depth` levels) whose name ends with `suffix`. */
+export function findEntries(dir, suffix, depth = 3) {
+  if (depth < 0 || !existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    const path = join(dir, entry.name);
+    if (entry.name.endsWith(suffix)) return [path];
+    return entry.isDirectory() ? findEntries(path, suffix, depth - 1) : [];
+  });
+}
+
+const toMb = bytes => bytes / bytesPerMb;
+const roundUp = (number, places) => Math.ceil(number * 10 ** places) / 10 ** places;
+
+// Comparing and ratcheting
+
+/** The most a measurement may be: the row value plus its alertPct allowance. Null when there is no value. */
+export function limitOf(row) {
+  if (row.value == null) return null;
+  return row.alertPct ? row.value * (1 + row.alertPct / 100) : row.value;
+}
+
+/** 'ok' or 'FAIL' for a measurement against the row's limit; a row with no limit yet is 'ok'. */
+export function compare(row, measured) {
+  const limit = limitOf(row);
+  return limit != null && measured > limit ? 'FAIL' : 'ok';
+}
+
+/** The value to write back: the first measurement of a calibrate row, or a lower one with --tighten. */
+export function nextValue(row, measured, { tighten = false } = {}) {
+  if (row.value == null) return row.calibration === 'calibrate' ? measured : row.value;
+  const lower = measured < row.value;
+  return tighten && row.gate === 'tighten-only' && lower ? measured : row.value;
+}
+
+/** Returns a copy of the register with plat-ci rows updated from `results` ({ id: { measured, unit } }). */
+export function applyRecords(register, results, today, options = {}) {
+  const rows = register.rows.map(row => {
+    const result = results[row.id];
+    if (row.owner !== owner || !result) return row;
+    return recordRow(row, result, today, options);
+  });
+  return { ...register, rows };
+}
+
+function recordRow(row, result, today, options) {
+  const value = nextValue(row, result.measured, options);
+  const next = { ...row, value, lastMeasured: today };
+  if (value != null && next.unit == null) next.unit = result.unit;
+  if (value != null && next.maxAgeDays == null) next.maxAgeDays = defaultMaxAgeDays;
+  return next;
+}
+
+/** budgets.json text: 2-space JSON and a final newline, exactly as the file is kept. */
+export function serialise(register) {
+  return `${JSON.stringify(register, null, 2)}\n`;
+}
+
+// Measurers: each returns { measured, unit } or { skip: reason }
+
+const missing = reason => ({ skip: reason });
+
+function measureRenderer(root) {
+  const dir = join(root, 'apps', 'desktop', 'dist', 'renderer');
+  if (!existsSync(dir))
+    return missing(`${relative(root, dir)} is absent (run npm run build -w @aplos/desktop)`);
+  return { measured: directoryBytes(dir, bundleExtensions), unit: 'bytes' };
+}
+
+function packageDirs(root) {
+  return ['release', 'dist'].map(name => join(root, 'apps', 'desktop', name));
+}
+
+function measureApp(root) {
+  const apps = packageDirs(root).flatMap(dir => findEntries(dir, '.app'));
+  if (apps.length === 0) return missing('no packaged .app under apps/desktop/release or dist');
+  const biggest = Math.max(...apps.map(app => directoryBytes(app)));
+  return { measured: roundUp(toMb(biggest), 1), unit: 'MB' };
+}
+
+function measureZip(root) {
+  const zips = packageDirs(root).flatMap(dir => findEntries(dir, '.zip', 1));
+  if (zips.length === 0) return missing('no packaged .zip under apps/desktop/release or dist');
+  const biggest = Math.max(...zips.map(zip => statSync(zip).size));
+  return { measured: roundUp(toMb(biggest), 1), unit: 'MB' };
+}
+
+const nodeModules = [
+  ...new Set(builtinModules.map(name => name.replace(/^node:/, '').split('/')[0])),
+];
+
+/** Bundles the engine source (legacy/ excluded) the way packages/engine/tests/portability.test.ts does. */
+export async function bundleEngine(srcDir, esbuild) {
+  const legacy = join(srcDir, 'legacy');
+  const files = listFiles(srcDir).filter(file => /\.tsx?$/.test(file) && !file.endsWith('.d.ts'));
+  const entries = files.filter(file => !file.startsWith(legacy));
+  const contents = entries
+    .map((file, i) => `export * as m${i} from './${relative(srcDir, file).split('\\').join('/')}';`)
+    .join('\n');
+  const result = await esbuild.build({
+    stdin: { contents, resolveDir: srcDir, loader: 'ts' },
+    bundle: true,
+    platform: 'neutral',
+    format: 'esm',
+    mainFields: ['module', 'main'],
+    target: 'es2022',
+    write: false,
+    logLevel: 'silent',
+    external: ['node:*', 'electron', ...nodeModules, ...nodeModules.map(name => `${name}/*`)],
+  });
+  return new TextEncoder().encode(result.outputFiles[0].text).length;
+}
+
+async function measureEngine(root) {
+  const srcDir = join(root, 'packages', 'engine', 'src');
+  if (!existsSync(srcDir)) return missing('packages/engine/src is absent');
+  const esbuild = await import('esbuild').catch(() => null);
+  if (!esbuild) return missing('esbuild is not installed (run npm install)');
+  return { measured: await bundleEngine(srcDir, esbuild), unit: 'bytes' };
+}
+
+function measureSuite(root, options) {
+  if (!options.timeUnitSuite) return missing('pass --time-unit-suite to run npm test and time it');
+  const started = Date.now();
+  const run = spawnSync('npm', ['test'], { cwd: root, stdio: 'ignore' });
+  if (run.status !== 0)
+    return missing(`npm test exited ${run.status ?? run.signal}, so its time means nothing`);
+  return { measured: roundUp((Date.now() - started) / 1000, 1), unit: 's' };
+}
+
+export const measurers = {
+  'size.engine-bundle': measureEngine,
+  'size.renderer-bundle': measureRenderer,
+  'size.app-bundle': measureApp,
+  'size.app-zip': measureZip,
+  'time.unit-suite': measureSuite,
+};
+
+// Running
+
+/** Measures the chosen plat-ci rows. Returns [{ row, result }] where result is a measurement or a skip. */
+export async function measureRows(register, root, options = {}) {
+  const only = options.only ?? null;
+  const rows = register.rows.filter(row => row.owner === owner && row.id in measurers);
+  const chosen = rows.filter(row => !only || only.includes(row.id));
+  const outcomes = [];
+  for (const row of chosen) outcomes.push({ row, result: await measurers[row.id](root, options) });
+  return outcomes;
+}
+
+const withUnit = (value, unit) => `${value}${unit ? ` ${unit}` : ''}`;
+
+/** One report line: id, measured, limit, ok/FAIL/skipped. */
+export function formatLine({ row, result }) {
+  if (result.skip) return `${row.id}  skipped  not measurable here: ${result.skip}`;
+  const limit = limitOf(row);
+  const shown = limit == null ? 'none yet' : withUnit(limit, row.unit);
+  return `${row.id}  ${withUnit(result.measured, result.unit)}  limit ${shown}  ${compare(row, result.measured)}`;
+}
+
+/** The { id: { measured, unit } } map of the rows that really were measured. */
+export function measuredResults(outcomes) {
+  const entries = outcomes
+    .filter(({ result }) => !result.skip)
+    .map(({ row, result }) => [row.id, result]);
+  return Object.fromEntries(entries);
+}
+
+const flags = {
+  '--record': 'record',
+  '--tighten': 'tighten',
+  '--time-unit-suite': 'timeUnitSuite',
+};
+
+export function parseArgs(argv) {
+  const options = { record: false, tighten: false, timeUnitSuite: false, only: null };
+  const args = [...argv];
+  while (args.length > 0) {
+    const arg = args.shift();
+    if (arg in flags) options[flags[arg]] = true;
+    else if (arg === '--only') options.only = (args.shift() ?? '').split(',').filter(Boolean);
+    else throw new Error(`unknown argument ${arg}`);
+  }
+  return options;
+}
+
+async function main() {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const file = join(root, 'budgets.json');
+  const options = parseArgs(process.argv.slice(2));
+  const register = JSON.parse(readFileSync(file, 'utf8'));
+  const outcomes = await measureRows(register, root, options);
+  for (const outcome of outcomes) console.log(formatLine(outcome));
+  const failing = outcomes.filter(
+    ({ row, result }) => !result.skip && compare(row, result.measured) === 'FAIL',
+  );
+  if (options.record) {
+    const today = new Date().toISOString().slice(0, 10);
+    const results = measuredResults(outcomes);
+    writeFileSync(file, serialise(applyRecords(register, results, today, options)));
+    console.log(`recorded ${Object.keys(results).length} row(s) in budgets.json`);
+  }
+  process.exit(failing.length ? 1 : 0);
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(error => {
+    console.error(error.message);
+    process.exit(2);
+  });
+}

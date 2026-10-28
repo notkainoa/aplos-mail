@@ -2,7 +2,7 @@ import type { Frame } from '@aplos/contract';
 import type { EngineSession } from '@aplos/contract/client';
 import type { Caller, MethodContext } from '../methods/types';
 import { closedError, contractError, toContractError } from './errors';
-import type { FrameHub } from './frames';
+import { frameFilter, type FrameHub } from './frames';
 import type { EngineServices } from './services';
 
 /** Runs one validated call; the engine passes the F5 table's `dispatch`. */
@@ -30,15 +30,19 @@ export function openConnection(deps: ConnectionDeps, caller: Caller): EngineSess
   const running = new Set<AbortController>();
   let closed = false;
 
-  deps.hub.attach(deps.connectionId, frame => {
-    for (const listener of [...listeners]) {
-      try {
-        listener(structuredClone(frame));
-      } catch {
-        // A listener's bug is not the engine's.
+  deps.hub.attach(
+    deps.connectionId,
+    frame => {
+      for (const listener of [...listeners]) {
+        try {
+          listener(structuredClone(frame));
+        } catch {
+          // A listener's bug is not the engine's.
+        }
       }
-    }
-  });
+    },
+    frameFilter(who),
+  );
 
   const run = async (method: string, args: unknown, signal: AbortSignal): Promise<unknown> => {
     if (signal.aborted) throw closedError();

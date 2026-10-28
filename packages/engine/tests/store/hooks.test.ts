@@ -423,3 +423,29 @@ test('a stored body that cannot be decoded gives up the rank, not the commit', (
     file.cleanup();
   }
 });
+
+test('a failing SQL read while building the lane input still fails the commit (only decoding is forgiven)', () => {
+  const db = openSqlite(':memory:');
+  const store = openStore(db, {
+    now: () => T0,
+    ingest: { laneFor: () => ({ lane: 'low', importance: 'normal' }) },
+  });
+  store.commit({
+    opId: 'setup',
+    origin: 'sync',
+    writes: [accountWrite, ...folderWrites, msg('m1', 't1', 0)],
+  });
+  store.commit({
+    opId: 'b',
+    origin: 'sync',
+    step: 'prefetch',
+    writes: [{ kind: 'body', accountId: ACCOUNT, remoteId: 'm1', body: { text: 'Hello' } }],
+  });
+  db.exec('DROP TABLE bodies');
+  assert.throws(() => store.commit({ opId: 'n', origin: 'sync', writes: [msg('m2', 't1', -1)] }));
+  assert.equal(
+    store.read(q => q.get<{ n: number }>('SELECT count(*) AS n FROM messages')!.n),
+    1,
+  );
+  store.close();
+});
