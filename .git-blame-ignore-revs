@@ -6,3 +6,7 @@ dfbf4ab68cbd4e1453b16b431676991f68081d61
 
 # Restructure step 2 (plan 40 Q1a): Prettier format of the moved tree
 34d86586d74ace0a240129c95522cd98d823200f
+
+# Step 3: rename main/engine-host.ts to main/engine-process.ts, then split main/electron.ts into owned modules (code moves)
+f1311f4484e0e1b778b2e52712fa0b08be5bbb45
+c5f559e8fdb4d677c459d3e750d2bce437312c6d
