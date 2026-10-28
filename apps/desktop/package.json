@@ -19,7 +19,7 @@
     "desktop": "npm run build && electron .",
     "build": "tsc --noEmit && vite build && node scripts/build-main.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test \"tests/*.test.ts\" \"tests/*/**/*.test.ts\"",
     "package": "npm run build && electron-builder --mac dir",
     "start": "electron .",
     "verify:release": "node scripts/verify-release.mjs",

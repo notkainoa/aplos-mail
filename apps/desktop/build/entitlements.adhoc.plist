@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for ad-hoc signed builds made from source (npm run package, or a local
+  release build without a Developer ID certificate). Developer ID releases use
+  entitlements.mac.plist instead, which plan 40 Q2 item 3 tries to shrink.
+
+  disable-library-validation stays here on purpose: an ad-hoc signature has no Team ID,
+  so under the hardened runtime library validation would refuse to load Electron's own
+  ad-hoc signed frameworks and helpers, and the app would not launch.
+
+  scripts/verify-hardening.mjs with "expect adhoc" compares a source build against this file.
+-->
+<plist version="1.0">
+<dict>
+  <!-- V8 needs to generate code at runtime under the hardened runtime. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!-- Electron's frameworks and helpers; required for ad-hoc signed builds to launch (see above). -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- Hold-to-talk dictation and voice Ask. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>
