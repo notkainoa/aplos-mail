@@ -297,6 +297,8 @@ export interface Capabilities {
   push: boolean;
   sendAs: boolean;
   unsubscribeHeaders: boolean;
+  /** The host has an importance marker Aplos can set (Gmail IMPORTANT); F1 `AccountCapabilities.importance`. */
+  importance?: boolean;
   threading: 'native' | 'headers';
   /** The host may show partial folders (Yahoo limited mode): the actor ignores `scopeCovered` there. */
   partialView?: boolean;
@@ -317,6 +319,12 @@ export interface KnownLookup {
   knownMessages(remoteIds: string[]): Promise<ReadonlySet<string>>;
   /** Drafts are recognised by draft id, not message id (D9). */
   trackedDraftIds(remoteDraftIds: string[]): Promise<ReadonlySet<string>>;
+  /**
+   * Remote message id to remote draft id, for the copies this device wrote (`drafts.remote_message_id`). A Gmail DRAFT
+   * history record carries only a message id: one found here is Aplos's own save; one absent from it, on a tracked
+   * draft, is an edit made elsewhere (ARCH 7.4).
+   */
+  draftsByMessageId(remoteMessageIds: string[]): Promise<ReadonlyMap<string, string>>;
   threadMessages(remoteThreadId: string): Promise<{ remoteId: string; placements: Placement[] }[]>;
   /** Current placements, for ops on placement providers (IMAP `UID MOVE` needs the source UID). */
   placements(remoteIds: string[]): Promise<ReadonlyMap<string, Placement[]>>;
@@ -360,8 +368,13 @@ export interface ConnectRequest {
   address?: string;
   preset?: 'gmail' | 'outlook' | 'icloud' | 'fastmail' | 'yahoo' | 'generic';
   server?: { imap?: HostPort; smtp?: HostPort; jmapSession?: string; caldav?: string };
-  /** Vault reference of an app password or API token; never the secret. */
+  /**
+   * Vault reference of an app password or API token; never the secret. A `reconnect` of an app-password or API-token
+   * account (iCloud, generic IMAP, Fastmail) carries the NEW secret's reference, stored by the host before the call.
+   */
   secretRef?: string;
+  /** A second secret for the calendar half when the provider needs one (Fastmail: an API token for JMAP, an app password for CalDAV). */
+  calendarSecretRef?: string;
 }
 
 /**
@@ -491,12 +504,28 @@ export interface DraftUpload {
   mime: Uint8Array;
   remoteDraftId?: string;
   remoteThreadId?: string;
+  /**
+   * The remote message id of the copy this device last synced (`drafts.remote_message_id`). The adapter checks it
+   * before replacing the copy (Gmail `drafts.get` message id, IMAP and JMAP the current id); a different one is
+   * `conflict`, so a 5 s idle save never overwrites a phone edit that history has not reported yet.
+   */
+  baseRemoteMessageId?: string;
+  /** Graph's `changeKey` of the last synced copy, sent as the precondition where the message id does not change on edit. */
+  baseChangeKey?: string;
 }
 
 export type DraftSaveResult =
-  | { kind: 'saved'; remoteDraftId: string; remoteMessageId: string; revision: number }
+  | {
+      kind: 'saved';
+      remoteDraftId: string;
+      remoteMessageId: string;
+      revision: number;
+      changeKey?: string;
+    }
   /** The remote draft no longer exists (deleted or sent from another device): the engine decides, never recreates blindly. */
-  | { kind: 'gone' };
+  | { kind: 'gone' }
+  /** The remote copy changed since `baseRemoteMessageId`: nothing was written; the engine asks "keep mine, take theirs, or keep both". */
+  | { kind: 'conflict'; remoteMessageId?: string };
 
 export interface SubmissionPayload {
   submissionId: string;
@@ -592,7 +621,12 @@ export interface ProviderAdapter {
    * patches, flag stores), re-sent on transient; `write` for moves that are not (Graph `/move`, IMAP `UID MOVE`), never re-sent.
    */
   apply(op: CoalescedOp, ctx: AdapterContext): Promise<OpOutcome[]>;
-  /** Create (`write`) when `remoteDraftId` is absent, else update by revision (`idempotentWrite`). */
+  /**
+   * Create when `remoteDraftId` is absent, else replace that copy, after checking `baseRemoteMessageId` when set. The
+   * adapter picks each request's kind: an in-place update by id (Gmail `drafts.update`, Graph PATCH) is
+   * `idempotentWrite`; a create, and an update that is a create plus destroy (IMAP `APPEND` then delete, JMAP
+   * `Email/set`), is `write` and never re-sent, and an uncertain create is recognised by `DraftUpload.internetId`.
+   */
   saveDraft?(draft: DraftUpload, ctx: AdapterContext): Promise<DraftSaveResult>;
   /** Idempotent: an absent draft is success. */
   deleteDraft?(remoteDraftId: string, ctx: AdapterContext): Promise<void>;

@@ -112,3 +112,51 @@ export interface LaneResult {
  * (stored with `rank_source='heuristic'`) and again after a body fetch. Never waits for AI; rule and user choices win.
  */
 export type LaneFor = (input: LaneInput) => LaneResult;
+
+// ---- the image proxy (ARCH 10, plan 10 E4 item 6) ----
+
+/** Why the proxy refused an image; the frame keeps the sized placeholder and the reason goes to the log only. */
+export type ImageRefusal =
+  | 'scheme' // not http or https
+  | 'port' // not 80 or 443
+  | 'address' // a resolved address is loopback, private, link-local, CGNAT, ULA, multicast, unspecified, benchmarking, or a mapped/NAT64 form of one
+  | 'redirects' // more than 3, or one that failed the same checks
+  | 'size' // over `IMAGE_PROXY_LIMITS.maxBytes` or `maxPixels`
+  | 'type' // not PNG, JPEG, GIF or WebP by its leading bytes (never SVG)
+  | 'budget' // the token's request budget is spent
+  | 'timeout'
+  | 'http'; // any other non-2xx answer or network failure
+
+export type ProxiedImage =
+  | {
+      kind: 'image';
+      mime: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+      bytes: Uint8Array;
+    }
+  | { kind: 'refused'; reason: ImageRefusal };
+
+/** The proxy's caps, frozen as upper bounds: an implementation may tighten them, never loosen them. */
+export const IMAGE_PROXY_LIMITS = {
+  maxRedirects: 3,
+  maxBytes: 10_000_000,
+  /** Width times height read from the image header, before decoding. */
+  maxPixels: 40_000_000,
+  /** The whole fetch, redirects included. */
+  timeoutMs: 10_000,
+  /** Requests per render token. */
+  perToken: 100,
+  ports: [80, 443],
+} as const;
+
+/**
+ * Fetches one remote image for `Mail/serve`'s `img/<n>` route, only for a token rendered with `imagePolicy: 'allow'`.
+ * Implemented by `eng-html` as a host adapter (`apps/desktop/src/host/`, Node networking; never in the neutral core);
+ * called by the `Mail/serve` handler (`methods/mail.ts`) with the URL from `MailHtmlResult.remoteImages`. Rules:
+ * resolve DNS once and refuse when ANY answer is in a refused range, then connect to that checked address with the
+ * original name as SNI and `Host` (no second lookup, so a rebinding resolver cannot swap it); follow redirects by hand,
+ * each one re-checked from scratch; send no cookies, credentials, `Referer` or client headers; check the type from the
+ * bytes, not `Content-Type`. Never throws for a refusal: it resolves `refused`, and aborts with `signal`.
+ */
+export interface ImageProxy {
+  fetch(url: string, opts: { token: string; signal: AbortSignal }): Promise<ProxiedImage>;
+}
