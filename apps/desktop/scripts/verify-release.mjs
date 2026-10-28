@@ -102,6 +102,14 @@ async function launch() {
     { env, detached: process.argv.includes('--keep-open'), stdio: ['ignore', log.fd, log.fd] },
   );
   child.on('error', () => {});
+  // 78 is the ADR 40-6 debug guard in src/main/security.ts: a release build refuses --remote-debugging-port.
+  child.on('exit', code => {
+    if (code !== 78) return;
+    console.error(
+      'verify-release: the app refused --remote-debugging-port, so it was built with APLOS_RELEASE_BUILD=1. Run this against a local build instead: npm run package -w @aplos/desktop',
+    );
+    process.exit(1);
+  });
   await log.close();
   const target = await until(async () => {
     if (child.exitCode !== null) throw new Error('Desktop exited');

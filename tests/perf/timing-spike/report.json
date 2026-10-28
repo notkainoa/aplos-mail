@@ -1,0 +1,107 @@
+{
+  "electron": "44.7.2",
+  "chrome": "152.0.7977.149",
+  "date": "2026-10-28T02:01:14.082Z",
+  "results": [
+    {
+      "name": "hidden-throttling-off",
+      "visible": false,
+      "visibility": "visible",
+      "hidden": false,
+      "frames": 115,
+      "rafMedianMs": 16.7,
+      "rafP95Ms": 18.6,
+      "rafMaxMs": 115.9,
+      "animations": 1,
+      "animationTimeMs": 2034,
+      "keydowns": 20,
+      "longAnimationFrames": [
+        138
+      ],
+      "eventTimings": [
+        {
+          "name": "keydown",
+          "duration": 24,
+          "processing": 21
+        },
+        {
+          "name": "keypress",
+          "duration": 24,
+          "processing": 0
+        },
+        {
+          "name": "keyup",
+          "duration": 24,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "duration": 24,
+          "processing": 20
+        },
+        {
+          "name": "keypress",
+          "duration": 24,
+          "processing": 0
+        }
+      ],
+      "eventTimingCount": 60,
+      "capture": {
+        "width": 2880,
+        "height": 1496,
+        "sampledColours": 40,
+        "empty": false
+      }
+    },
+    {
+      "name": "hidden-throttling-on",
+      "visible": false,
+      "visibility": "visible",
+      "hidden": false,
+      "frames": 115,
+      "rafMedianMs": 16.7,
+      "rafP95Ms": 18.5,
+      "rafMaxMs": 114.7,
+      "animations": 1,
+      "animationTimeMs": 4284,
+      "keydowns": 20,
+      "longAnimationFrames": [
+        139
+      ],
+      "eventTimings": [
+        {
+          "name": "keydown",
+          "duration": 24,
+          "processing": 20
+        },
+        {
+          "name": "keypress",
+          "duration": 24,
+          "processing": 0
+        },
+        {
+          "name": "keyup",
+          "duration": 24,
+          "processing": 0
+        },
+        {
+          "name": "keydown",
+          "duration": 24,
+          "processing": 20
+        },
+        {
+          "name": "keypress",
+          "duration": 24,
+          "processing": 0
+        }
+      ],
+      "eventTimingCount": 60,
+      "capture": {
+        "width": 2880,
+        "height": 1496,
+        "sampledColours": 40,
+        "empty": false
+      }
+    }
+  ]
+}
