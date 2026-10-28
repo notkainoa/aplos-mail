@@ -125,6 +125,7 @@ const providers = [
   'your own server',
 ];
 const local = new Set(['Ollama', 'LM Studio']);
+const routers = new Set(['OpenRouter', 'OpenCode Go']); // they pass each request on to the company that runs the model
 const speech = new Set(['Groq', 'OpenAI']);
 export function ProviderPicker() {
   const [feature, setFeature] = useState<Feature>('Summaries');
@@ -139,10 +140,12 @@ export function ProviderPicker() {
   const what =
     feature === 'Voice' ? 'Voice recordings' : feature === 'Ask' ? 'Questions to Ask' : feature;
   const where = local.has(provider)
-    ? `${provider}, on your Mac. Nothing leaves it.`
-    : provider === 'your own server'
-      ? 'your own server, at the address you set.'
-      : `${provider}${provider === 'Groq' ? ', the default' : ''}, and to no one else.`;
+    ? `${provider}, running on your Mac at its default address, so they stay there.`
+    : routers.has(provider)
+      ? `${provider}, which passes them to the company that runs the model you pick.`
+      : provider === 'your own server'
+        ? 'your own server, at the address you set.'
+        : `${provider}${provider === 'Groq' ? ', the default' : ''}, and to no one else.`;
   return (
     <div className="picker">
       <Segmented label="AI feature" options={features} value={feature} onChange={setFeature} />
@@ -177,7 +180,7 @@ export function ProviderPicker() {
       <p
         className="picker-result"
         aria-live="polite"
-        data-claim="provider-per-feature no-training-providers"
+        data-claim="provider-per-feature ai-providers ai-routers local-models no-training-providers"
       >
         <span key={`${feature}${provider}`}>
           {what} go to {where}

@@ -57,16 +57,20 @@ export function Download() {
           <h1 id="dl-title">
             <Rise text={title} />
           </h1>
-          <p
-            className="dl-lead"
-            data-reveal
-            data-claim={release ? undefined : 'invited-testers-builds'}
-            style={delay(80)}
-          >
-            {release
-              ? `Aplos Mail ${release.version} for Mac. It takes about a minute to install.`
-              : 'There is no public download yet. Builds are shared directly with invited testers.'}
-          </p>
+          {release ? (
+            <p className="dl-lead" data-reveal style={delay(80)}>
+              Aplos Mail {release.version} for Mac. It takes about a minute to install.
+            </p>
+          ) : (
+            <p
+              className="dl-lead"
+              data-reveal
+              data-claim="invited-testers-builds"
+              style={delay(80)}
+            >
+              There is no public download yet. Builds are shared directly with invited testers.
+            </p>
+          )}
           <div className="dl-actions" data-reveal style={delay(160)}>
             <a className="dl-pill" href="#all">
               <span>{release ? 'All versions' : 'Who can use it'}</span>
@@ -87,7 +91,7 @@ export function Download() {
           <h2 id="steps-title" className="sr">
             How to install
           </h2>
-          <ol>
+          <ol data-claim="dmg-install">
             {steps.map(([Art, text], i) => (
               <li key={i} data-reveal style={delay(i * 90)}>
                 <div className="dl-art" data-ui aria-hidden="true">

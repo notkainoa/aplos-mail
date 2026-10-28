@@ -170,7 +170,13 @@ export function Ask() {
   }, []);
 
   return (
-    <div className="askp" data-ui ref={panel} tabIndex={-1}>
+    <div
+      className="askp"
+      data-ui
+      data-claim="ask-cites ask-dictate plans-confirm"
+      ref={panel}
+      tabIndex={-1}
+    >
       <div className="askp-top">
         <div className="askp-tabs" aria-hidden="true">
           <span className="on">Ask</span>

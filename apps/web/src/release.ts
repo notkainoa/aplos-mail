@@ -1,6 +1,6 @@
 // What the download page offers. There is no public release yet: the repository is private and builds are shared with
 // invited testers directly, so `release` is null and the page says so. Once the repository is public, `release` is
-// filled from its published GitHub release at build time (see VISION.md), and a production build must never ship
+// filled from its published releases at build time (see VISION.md), and a production build must never ship
 // sample data. Aplos Mail is built for macOS only, for Apple silicon and Intel.
 export type Target = 'mac-arm64' | 'mac-x64';
 export type File = {

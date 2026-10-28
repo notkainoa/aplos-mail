@@ -133,6 +133,20 @@
       "verifiedAt": "2026-10-27"
     },
     {
+      "id": "dmg-install",
+      "says": "Install: open the Aplos Mail disk image from Downloads, drag it into Applications, open it",
+      "pages": ["download"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/package.json build.mac.target dmg (and build/dmg-background.html for the Applications drag window)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27"
+    },
+    {
       "id": "summaries-with-ai",
       "says": "Once AI is on, emails get a short summary of what they say and need",
       "pages": ["landing"],
@@ -166,6 +180,26 @@
       "status": "verified",
       "verifiedAt": "2026-10-27",
       "note": "The demos are scripted on original demo data and the screenshots show the 0.2.x app; both are kept until the redesign."
+    },
+    {
+      "id": "several-accounts",
+      "says": "Several Google accounts can be connected at once; the screenshots show All accounts and a calendar week with events from two accounts",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md decision 16 (account dots with two or more accounts) and section 7.11 / F7 (opens on All accounts)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/renderer/legacy/components/Sidebar.tsx \"All accounts\" switcher",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Carried by the tour screenshots and their alt text (Tour.tsx). The images are the 0.2.x app on demo data."
     },
     {
       "id": "google-calendar-views",
@@ -203,7 +237,8 @@
         }
       ],
       "status": "verified",
-      "verifiedAt": "2026-10-27"
+      "verifiedAt": "2026-10-27",
+      "note": "Also carried by the Ask demo answer \"It goes on your calendar only when you add it\" (Ask.tsx)."
     },
     {
       "id": "ask-dictate",
@@ -236,7 +271,8 @@
         }
       ],
       "status": "verified",
-      "verifiedAt": "2026-10-27"
+      "verifiedAt": "2026-10-27",
+      "note": "Also carried by the Ask demo panel (sources under each answer)."
     },
     {
       "id": "ask-never-sends",
@@ -312,7 +348,7 @@
     },
     {
       "id": "provider-per-feature",
-      "says": "Pick a provider per feature in Settings; a message goes only to that feature's provider",
+      "says": "Pick a provider per feature in Settings; a feature's text goes only to that feature's provider (routers pass it on to the model host, see ai-routers)",
       "pages": ["landing"],
       "evidence": [
         {
@@ -352,6 +388,26 @@
       ],
       "status": "verified",
       "verifiedAt": "2026-10-27"
+    },
+    {
+      "id": "ai-routers",
+      "says": "OpenRouter and OpenCode Go pass each request on to the company that runs the chosen model",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "packages/contract/src/legacy/ask.ts: OpenRouter \"Hundreds of models on one key\"; OpenCode Go serves third-party models (Kimi, GLM, DeepSeek) on one plan",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "plain fact: both services are routers that forward requests to the model's host",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-10-27",
+      "note": "Replaces the earlier picker text \"and to no one else\" for these two providers."
     },
     {
       "id": "keys-on-mac",
@@ -539,8 +595,8 @@
     },
     {
       "id": "local-models",
-      "says": "Ollama and LM Studio run on your Mac, so text sent to them stays there",
-      "pages": ["privacy"],
+      "says": "Ollama and LM Studio run on your Mac at their default addresses, so text sent to them stays there",
+      "pages": ["landing", "privacy"],
       "evidence": [
         {
           "kind": "design",
@@ -551,11 +607,16 @@
           "kind": "fact",
           "ref": "AGENTS.md (default local ports)",
           "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "packages/contract/src/legacy/ask.ts Ollama and LM Studio default local base URLs",
+          "maxAgeDays": null
         }
       ],
       "status": "verified",
       "verifiedAt": "2026-10-27",
-      "note": "True at the default local addresses; Settings lets the owner point them elsewhere."
+      "note": "True at the default local addresses, which is how both the landing picker (\"running on your Mac at its default address\") and the privacy page state it; Settings lets the owner point them elsewhere."
     },
     {
       "id": "remote-images-blocked",
@@ -652,12 +713,12 @@
     },
     {
       "id": "google-limited-use",
-      "says": "Google user data used only for in-app features, not sold, not for ads or training, never reaches an Aplos server; Limited Use statement",
+      "says": "Google user data used only for in-app features, not sold, not for ads or training, never reaches an Aplos server; Google's Limited Use sentence quoted word for word",
       "pages": ["privacy"],
       "evidence": [
         {
           "kind": "fact",
-          "ref": "Limited Use sentence taken verbatim (app name added) from https://developers.google.com/workspace/workspace-api-user-data-developer-policy, fetched 2026-10-27, page last updated 2026-09-03",
+          "ref": "Limited Use sentence quoted word for word, with Google's two links, from the example on https://developers.google.com/workspace/workspace-api-user-data-developer-policy (fetched 2026-10-27, page last updated 2026-09-03); the site introduces it with \"As Google asks, Aplos Mail states:\"",
           "maxAgeDays": null
         },
         {
@@ -692,7 +753,7 @@
     },
     {
       "id": "delete-data",
-      "says": "Disconnecting removes the account's mail, drafts and events; delete the data folder; revoke at myaccount.google.com/permissions",
+      "says": "Disconnecting removes the account's mail, drafts and events; delete the data folder, plus the preferences file and the Aplos Mail Safe Storage keychain key outside it; revoke at myaccount.google.com/permissions",
       "pages": ["privacy"],
       "evidence": [
         {
@@ -704,10 +765,16 @@
           "kind": "fact",
           "ref": "apps/desktop/src/main/electron.ts userData path",
           "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/package.json appId com.aplos.mail (~/Library/Preferences/com.aplos.mail.plist); Electron safeStorage keychain item \"Aplos Mail Safe Storage\" (attributes seen with security find-generic-password on the owner's Mac, 2026-10-27)",
+          "maxAgeDays": null
         }
       ],
       "status": "verified",
-      "verifiedAt": "2026-10-27"
+      "verifiedAt": "2026-10-27",
+      "note": "When ARCH section 11 adds logs in ~/Library/Logs/Aplos Mail, add that folder to this paragraph."
     },
     {
       "id": "privacy-contact",

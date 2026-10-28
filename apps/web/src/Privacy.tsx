@@ -2,8 +2,17 @@ import { Footer, Header } from './Chrome';
 import { useReveal } from './reveal';
 import { contactEmail } from './site';
 
-const policy = 'https://developers.google.com/terms/api-services-user-data-policy';
 const dataFolder = '~/Library/Application Support/Aplos Mail';
+// Break points so the long path wraps on a phone instead of widening the page.
+const prefsFile = (
+  <>
+    ~/Library/
+    <wbr />
+    Preferences/
+    <wbr />
+    com.aplos.mail.plist
+  </>
+);
 
 export function Privacy() {
   useReveal();
@@ -56,6 +65,7 @@ export function Privacy() {
             a request from your internet connection.
           </li>
           <li data-claim="update-check">
+            {/* claims-allow: github */}
             <b>GitHub</b> receives the app’s checks for new versions.
           </li>
         </ul>
@@ -69,13 +79,16 @@ export function Privacy() {
           Aplos Mail asks Google for access to your Gmail and Google Calendar only to show, organize
           and send your mail and manage your events inside the app. That data is not sold, used for
           advertising or used to train AI models, and it never reaches an Aplos server. It goes to
-          an AI provider only for the features above, after you agree. Aplos Mail’s use of
-          information received from Google Workspace scopes will adhere to the{' '}
-          <a href={policy}>Google User Data Policy</a>, including the{' '}
-          <a href={`${policy}#additional_requirements_for_specific_api_scopes`}>
+          an AI provider only for the features above, after you agree. As Google asks, Aplos Mail
+          states: “The use of information received from Google Workspace scopes will adhere to the{' '}
+          <a href="https://developers.google.com/terms/api-services-user-data-policy">
+            Google User Data Policy
+          </a>
+          , including the{' '}
+          <a href="https://developers.google.com/terms/api-services-user-data-policy#additional_requirements_for_specific_api_scopes">
             Limited Use requirements
           </a>
-          .
+          .”
         </p>
 
         <h2>This website</h2>
@@ -87,8 +100,10 @@ export function Privacy() {
         <h2>Deleting your data</h2>
         <p data-claim="delete-data">
           Disconnecting an account in Settings removes its mail, drafts and events from the app. To
-          remove everything, quit Aplos Mail and delete <code>{dataFolder}</code>. To withdraw the
-          app’s access to your Google account, remove Aplos Mail at{' '}
+          remove the app’s data, quit Aplos Mail and delete <code>{dataFolder}</code>. Outside that
+          folder the app also keeps its preferences file, <code>{prefsFile}</code>, and a key named{' '}
+          <b>Aplos Mail Safe Storage</b> in your login keychain, which you can delete in Keychain
+          Access. To withdraw the app’s access to your Google account, remove Aplos Mail at{' '}
           <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
         </p>
 
