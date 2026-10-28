@@ -7,6 +7,17 @@ import { join } from 'node:path';
 
 const entry = join(import.meta.dirname, '..', 'src', 'store', 'index.ts');
 for (const minify of [false, true]) {
-  const result = await build({ entryPoints: [entry], bundle: true, platform: 'neutral', format: 'esm', target: 'es2022', write: false, minify, logLevel: 'silent' });
-  console.log(`store bundle ${minify ? 'minified' : 'unminified'}: ${result.outputFiles[0].contents.byteLength} bytes`);
+  const result = await build({
+    entryPoints: [entry],
+    bundle: true,
+    platform: 'neutral',
+    format: 'esm',
+    target: 'es2022',
+    write: false,
+    minify,
+    logLevel: 'silent',
+  });
+  console.log(
+    `store bundle ${minify ? 'minified' : 'unminified'}: ${result.outputFiles[0].contents.byteLength} bytes`,
+  );
 }

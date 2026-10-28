@@ -313,11 +313,7 @@ export const rendererMethods = [
 ] as const;
 
 /** Methods only main's own control connection may call. */
-export const hostMethods = [
-  'Mail/serve',
-  'Notification/ack',
-  'Notification/claim',
-] as const;
+export const hostMethods = ['Mail/serve', 'Notification/ack', 'Notification/claim'] as const;
 
 /** What the local socket and loopback HTTP listener may carry (ARCH 12.3). */
 export const listenerMethods = [
@@ -707,7 +703,10 @@ export const methodHost: Record<string, 'engine' | 'desktop'> = {
 };
 
 /** Listener scope per method. */
-export const methodScope: Record<string, 'read' | 'triage' | 'draft' | 'send' | 'ai' | 'admin' | 'host'> = {
+export const methodScope: Record<
+  string,
+  'read' | 'triage' | 'draft' | 'send' | 'ai' | 'admin' | 'host'
+> = {
   'Session/get': 'read',
   'Session/changes': 'read',
   'Settings/get': 'read',

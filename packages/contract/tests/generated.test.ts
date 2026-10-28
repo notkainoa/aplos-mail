@@ -10,10 +10,10 @@ const root = join(import.meta.dirname, '..');
 
 /** The golden-file test (ARCH 9.3, E7): a schema or registry change without `npm run generate -w @aplos/contract` fails here. */
 for (const [file, render] of Object.entries(generatedFiles)) {
-  test(`${file} is up to date with the registry`, () => {
+  test(`${file} is up to date with the registry`, async () => {
     assert.equal(
       readFileSync(join(root, file), 'utf8'),
-      render(),
+      await render(),
       `${file} is stale: run npm run generate -w @aplos/contract`,
     );
   });

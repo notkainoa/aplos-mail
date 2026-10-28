@@ -26,9 +26,7 @@
       "post": {
         "operationId": "Session_get",
         "summary": "Handshake facts: versions, dbEpoch and state, engine state, capabilities, whether any account exists, the engine clock.",
-        "tags": [
-          "session"
-        ],
+        "tags": ["session"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -69,9 +67,7 @@
       "post": {
         "operationId": "Session_changes",
         "summary": "What changed since a state, for catch-up after a reconnect; `cannotCalculateChanges` below the change-log floor or across dbEpochs.",
-        "tags": [
-          "session"
-        ],
+        "tags": ["session"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -112,9 +108,7 @@
       "post": {
         "operationId": "Settings_get",
         "summary": "The settings singleton.",
-        "tags": [
-          "settings"
-        ],
+        "tags": ["settings"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -155,15 +149,11 @@
       "post": {
         "operationId": "Settings_set",
         "summary": "Change settings by section; `stateMismatch` when `ifInState` is behind. The `ai` section (providers, their addresses, the paid mark, features, background) is for Electron windows only.",
-        "tags": [
-          "settings"
-        ],
+        "tags": ["settings"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
-        "x-aplos-window-only-args": [
-          "patch.ai"
-        ],
+        "x-aplos-window-only-args": ["patch.ai"],
         "requestBody": {
           "required": true,
           "content": {
@@ -202,9 +192,7 @@
       "post": {
         "operationId": "View_watch",
         "summary": "Open a live window of at most 200 ids over a view; later changes arrive as `window` frames. `holdIds` stay in place.",
-        "tags": [
-          "view"
-        ],
+        "tags": ["view"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -245,9 +233,7 @@
       "post": {
         "operationId": "View_move",
         "summary": "Scroll a window to a position or anchor, or, for events windows, to another range.",
-        "tags": [
-          "view"
-        ],
+        "tags": ["view"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -288,9 +274,7 @@
       "post": {
         "operationId": "View_unwatch",
         "summary": "Close a window.",
-        "tags": [
-          "view"
-        ],
+        "tags": ["view"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -331,9 +315,7 @@
       "post": {
         "operationId": "View_hold",
         "summary": "Keep these rows in place (the row under the cursor and its neighbours) until released or about 2 s after the last activity; calling it again is the activity ping.",
-        "tags": [
-          "view"
-        ],
+        "tags": ["view"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -374,9 +356,7 @@
       "post": {
         "operationId": "View_release",
         "summary": "Release held rows (all when `ids` is absent); the window then reconciles.",
-        "tags": [
-          "view"
-        ],
+        "tags": ["view"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -417,9 +397,7 @@
       "post": {
         "operationId": "View_query",
         "summary": "A one-shot read of a view (CLI, MCP, Today, Home's \"Next:\"); no window stays open.",
-        "tags": [
-          "view"
-        ],
+        "tags": ["view"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -460,9 +438,7 @@
       "post": {
         "operationId": "Folder_get",
         "summary": "Labels and folders with unread thread counts.",
-        "tags": [
-          "view"
-        ],
+        "tags": ["view"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -503,9 +479,7 @@
       "post": {
         "operationId": "Counts_get",
         "summary": "Sidebar counts for every account and each one.",
-        "tags": [
-          "view"
-        ],
+        "tags": ["view"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -546,9 +520,7 @@
       "post": {
         "operationId": "SenderGroup_get",
         "summary": "Rows of a `lowSenders` window.",
-        "tags": [
-          "view"
-        ],
+        "tags": ["view"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -589,9 +561,7 @@
       "post": {
         "operationId": "Search_remote",
         "summary": "Search the provider once, on Return only; results join the matching search window, progress arrives as `progress` frames.",
-        "tags": [
-          "view"
-        ],
+        "tags": ["view"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -632,9 +602,7 @@
       "post": {
         "operationId": "Thread_get",
         "summary": "Body-free thread rows.",
-        "tags": [
-          "thread"
-        ],
+        "tags": ["thread"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -675,9 +643,7 @@
       "post": {
         "operationId": "Thread_act",
         "summary": "Triage: Done, Later, trash, read state, bookmark, due date, reminder, lane and the rest, on ids or a whole view or section, applied in one commit and queued for the provider.",
-        "tags": [
-          "thread"
-        ],
+        "tags": ["thread"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "x-aplos-audit": true,
@@ -719,9 +685,7 @@
       "post": {
         "operationId": "Thread_why",
         "summary": "\"Why it's here\": one sentence and a quote from the mail saying why the thread is in its lane, and who placed it.",
-        "tags": [
-          "thread"
-        ],
+        "tags": ["thread"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -762,9 +726,7 @@
       "post": {
         "operationId": "Thread_open",
         "summary": "The reader opened a thread: fetch it whole if the row is partial (interactive lane) and mark it opened for retention.",
-        "tags": [
-          "thread"
-        ],
+        "tags": ["thread"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -805,9 +767,7 @@
       "post": {
         "operationId": "Operation_undo",
         "summary": "Undo an operation: cancel it while held (`undoUntil`), else queue its inverse under `undoOpId`; never a delayed commit. A send is cancelled while queued or scheduled. Needs the scope of the method that made the operation.",
-        "tags": [
-          "operation"
-        ],
+        "tags": ["operation"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "x-aplos-audit": true,
@@ -850,9 +810,7 @@
       "post": {
         "operationId": "Operation_get",
         "summary": "The state of operations after their receipts (queued, synced, failed, conflict).",
-        "tags": [
-          "operation"
-        ],
+        "tags": ["operation"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -893,9 +851,7 @@
       "post": {
         "operationId": "Operation_retry",
         "summary": "Retry a failed operation (the inline Retry after a rejected write). Needs the scope of the method that made the operation.",
-        "tags": [
-          "operation"
-        ],
+        "tags": ["operation"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "x-aplos-audit": true,
@@ -938,9 +894,7 @@
       "post": {
         "operationId": "Message_get",
         "summary": "Message headers and attachment lists, no bodies.",
-        "tags": [
-          "mail"
-        ],
+        "tags": ["mail"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -981,9 +935,7 @@
       "post": {
         "operationId": "MessageBody_get",
         "summary": "The plain-text rendering and quote ranges of a body, fetching it if absent. HTML is shown only through `Mail/frame`.",
-        "tags": [
-          "mail"
-        ],
+        "tags": ["mail"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1024,9 +976,7 @@
       "post": {
         "operationId": "MessageBody_prefetch",
         "summary": "Prefetch bodies on intent (focus or hover) by message, or by thread (the bodies the reader opens with, ARCH AM-1), or cancel a prefetch.",
-        "tags": [
-          "mail"
-        ],
+        "tags": ["mail"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1067,9 +1017,7 @@
       "post": {
         "operationId": "Mail_frame",
         "summary": "Render a message into the sealed `aplos-mail://` frame: sanitized on read, trackers removed, remote images blocked unless loaded or allowed. Electron windows only: a frame URL means nothing elsewhere, and the 64-token cap is per window.",
-        "tags": [
-          "mail"
-        ],
+        "tags": ["mail"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "x-aplos-ui-only": true,
@@ -1111,9 +1059,7 @@
       "post": {
         "operationId": "Mail_allowImages",
         "summary": "\"Load images from this sender\": add an address or `@domain` to `Settings.mail.imageAllowList`, or remove it.",
-        "tags": [
-          "mail"
-        ],
+        "tags": ["mail"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -1155,9 +1101,7 @@
       "post": {
         "operationId": "Mail_release",
         "summary": "Free a frame token when the reader replaces it.",
-        "tags": [
-          "mail"
-        ],
+        "tags": ["mail"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "x-aplos-ui-only": true,
@@ -1199,9 +1143,7 @@
       "post": {
         "operationId": "Mail_toggleQuotes",
         "summary": "Re-render a frame with quoted history opened or closed (the O key); returns the new frame.",
-        "tags": [
-          "mail"
-        ],
+        "tags": ["mail"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "x-aplos-ui-only": true,
@@ -1243,9 +1185,7 @@
       "post": {
         "operationId": "Attachment_get",
         "summary": "Make an attachment's bytes available as a blob, fetching it if absent.",
-        "tags": [
-          "mail"
-        ],
+        "tags": ["mail"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1286,9 +1226,7 @@
       "post": {
         "operationId": "Message_original",
         "summary": "The raw message for \"Show original\" and `.eml` export, fetched live, as a blob.",
-        "tags": [
-          "mail"
-        ],
+        "tags": ["mail"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1329,9 +1267,7 @@
       "post": {
         "operationId": "Blob_put",
         "summary": "Upload bytes (an attachment, a dictation) as a transferable `Uint8Array`, never base64; 25 MB at most.",
-        "tags": [
-          "blob"
-        ],
+        "tags": ["blob"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "draft",
         "requestBody": {
@@ -1372,9 +1308,7 @@
       "post": {
         "operationId": "Blob_get",
         "summary": "Read a blob's bytes (over HTTP this is `GET /v1/blob/:id`).",
-        "tags": [
-          "blob"
-        ],
+        "tags": ["blob"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1415,9 +1349,7 @@
       "post": {
         "operationId": "Blob_release",
         "summary": "Drop a blob the caller no longer needs. A blob attached to a draft with a live send stays until the send settles (FR-7): `stateMismatch` \"This file is attached to a message waiting to send.\"",
-        "tags": [
-          "blob"
-        ],
+        "tags": ["blob"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1458,9 +1390,7 @@
       "post": {
         "operationId": "Draft_get",
         "summary": "Drafts, local and from other devices.",
-        "tags": [
-          "draft"
-        ],
+        "tags": ["draft"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1501,9 +1431,7 @@
       "post": {
         "operationId": "Draft_set",
         "summary": "Create (no `id`) or save a draft, compare-and-set on `baseRevision`: `stateMismatch` \"This draft changed in another window. Reopen it before editing.\" Refused while a send of it is live (`Draft.submissionId`).",
-        "tags": [
-          "draft"
-        ],
+        "tags": ["draft"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "draft",
         "requestBody": {
@@ -1544,9 +1472,7 @@
       "post": {
         "operationId": "Draft_destroy",
         "summary": "Discard a draft, cancelling any send of it that has not started; refused while it is sending. A draft with a live send (`Draft.submissionId`) also needs `send`, the scope that cancels a send.",
-        "tags": [
-          "draft"
-        ],
+        "tags": ["draft"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "draft",
         "x-aplos-audit": true,
@@ -1589,9 +1515,7 @@
       "post": {
         "operationId": "Contact_suggest",
         "summary": "Recipient type-ahead for To, Cc and Bcc: addresses you have written to or heard from, ranked by how much (the correspondents table), matching the start of a name or address.",
-        "tags": [
-          "draft"
-        ],
+        "tags": ["draft"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1632,9 +1556,7 @@
       "post": {
         "operationId": "Draft_resolve",
         "summary": "Settle a draft changed on another device: keep mine, take theirs, or keep both (a copy). Refused while a send of it is live.",
-        "tags": [
-          "draft"
-        ],
+        "tags": ["draft"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "draft",
         "requestBody": {
@@ -1675,9 +1597,7 @@
       "post": {
         "operationId": "Submission_get",
         "summary": "Sends in the outbox and their states.",
-        "tags": [
-          "submission"
-        ],
+        "tags": ["submission"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1718,9 +1638,7 @@
       "post": {
         "operationId": "Submission_set",
         "summary": "Send with undo, send later, undo, send now, reschedule, send anyway after an unconfirmed send, retry a failed one, or cancel one that failed, is unconfirmed or missed its time.",
-        "tags": [
-          "submission"
-        ],
+        "tags": ["submission"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "send",
         "x-aplos-audit": true,
@@ -1762,9 +1680,7 @@
       "post": {
         "operationId": "Outbox_pending",
         "summary": "Work that will not happen while Aplos is quit, for the ⌘Q warning: scheduled sends, reminders and unconfirmed sends.",
-        "tags": [
-          "outbox"
-        ],
+        "tags": ["outbox"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1805,9 +1721,7 @@
       "post": {
         "operationId": "Later_presets",
         "summary": "The Later choices resolved by the engine's clock and zone: Today evening, Tomorrow, This weekend, Next week, Someday.",
-        "tags": [
-          "later"
-        ],
+        "tags": ["later"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1848,9 +1762,7 @@
       "post": {
         "operationId": "Reminder_list",
         "summary": "Upcoming reminders and fired ones not yet seen.",
-        "tags": [
-          "reminder"
-        ],
+        "tags": ["reminder"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -1891,9 +1803,7 @@
       "post": {
         "operationId": "Reminder_ack",
         "summary": "Mark fired reminders seen.",
-        "tags": [
-          "reminder"
-        ],
+        "tags": ["reminder"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "requestBody": {
@@ -1934,9 +1844,7 @@
       "post": {
         "operationId": "Ai_request",
         "summary": "Queue AI work for a thread ahead of the background order (today's `ai.summarize`); the result arrives as a Summary change. Without `force`, a thread with a summary is left alone. `forbidden` (`ai.accountExcluded`) for an account left out of AI.",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
         "requestBody": {
@@ -1977,9 +1885,7 @@
       "post": {
         "operationId": "Ai_jobs",
         "summary": "AI jobs, e.g. which threads are being summarized (today's `ai.summarizing`).",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -2020,9 +1926,7 @@
       "post": {
         "operationId": "Ai_polish",
         "summary": "Suggest edits to a draft's text; the user's text stays until they choose. A `draftId` in an account left out of AI, or answering a thread there, is `forbidden` (`ai.accountExcluded`).",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
         "requestBody": {
@@ -2063,9 +1967,7 @@
       "post": {
         "operationId": "Ai_draft",
         "summary": "Write a draft or reply from an instruction, as a suggestion at the caret; a `threadId` or `draftId` in an account left out of AI (or a draft answering a thread there) is `forbidden` (`ai.accountExcluded`).",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
         "requestBody": {
@@ -2106,9 +2008,7 @@
       "post": {
         "operationId": "Ai_transcribe",
         "summary": "Speech to text for dictation, from audio uploaded with `Blob/put` (25 MB at most) on the Voice provider.",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
         "requestBody": {
@@ -2149,9 +2049,7 @@
       "post": {
         "operationId": "Ai_cancel",
         "summary": "Cancel an interactive AI request, or all of them when `requestId` is absent.",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
         "requestBody": {
@@ -2192,9 +2090,7 @@
       "post": {
         "operationId": "Ai_followup",
         "summary": "The Follow up nudge for a thread, if the background job wrote one (absent with AI off or without consent).",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -2235,9 +2131,7 @@
       "post": {
         "operationId": "Ai_dismissFollowup",
         "summary": "Dismiss a Follow up nudge.",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "requestBody": {
@@ -2278,9 +2172,7 @@
       "post": {
         "operationId": "Ai_providers",
         "summary": "Settings → AI's provider table: status, where each key comes from, never the key.",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -2321,9 +2213,7 @@
       "post": {
         "operationId": "Ai_models",
         "summary": "A provider's models; local servers are asked live, hosted providers fall back to the curated list offline.",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -2364,9 +2254,7 @@
       "post": {
         "operationId": "Ai_status",
         "summary": "Whether each AI feature is ready, and why not.",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -2407,9 +2295,7 @@
       "post": {
         "operationId": "Ai_usage",
         "summary": "Today's AI use against the daily background cap.",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -2450,9 +2336,7 @@
       "post": {
         "operationId": "Ai_setKey",
         "summary": "Save a provider key to the Keychain-backed vault; never echoed back.",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -2495,9 +2379,7 @@
       "post": {
         "operationId": "Ai_removeKey",
         "summary": "Remove a saved key; refused for a key from the backend environment.",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -2540,9 +2422,7 @@
       "post": {
         "operationId": "Ai_testKey",
         "summary": "One cheap request with the provider's current key (usually its model list). No mail is sent. `message` is Aplos's own sentence for `reasonCode`, never the provider's text (FR-33).",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -2583,9 +2463,7 @@
       "post": {
         "operationId": "Ai_test",
         "summary": "One tiny request asking a model to call a tool, so a pass means Ask's tools work too. No mail is sent. A failure's message is Aplos's own sentence for its `reasonCode`, never the provider's text (FR-33).",
-        "tags": [
-          "ai"
-        ],
+        "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -2626,9 +2504,7 @@
       "post": {
         "operationId": "Ask_run",
         "summary": "Ask about your mail; returns at once with a run id, streams `progress` frames, and the answer lands in the Conversation. `scope.accountIds` and `context` only narrow the accounts whose \"Use this account's mail for AI\" is on; they never widen past them.",
-        "tags": [
-          "ask"
-        ],
+        "tags": ["ask"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
         "requestBody": {
@@ -2669,9 +2545,7 @@
       "post": {
         "operationId": "Ask_cancel",
         "summary": "Stop a run, keeping the partial answer.",
-        "tags": [
-          "ask"
-        ],
+        "tags": ["ask"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
         "requestBody": {
@@ -2712,9 +2586,7 @@
       "post": {
         "operationId": "Ask_decide",
         "summary": "Accept or dismiss something Ask proposed (a reply, an event, a triage); accepting returns the receipt for Undo. Accepting an event with a guest other than you also needs `send`, and invites go out only then.",
-        "tags": [
-          "ask"
-        ],
+        "tags": ["ask"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "x-aplos-audit": true,
@@ -2757,9 +2629,7 @@
       "post": {
         "operationId": "Ask_suggestions",
         "summary": "Three plain suggested questions.",
-        "tags": [
-          "ask"
-        ],
+        "tags": ["ask"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -2800,9 +2670,7 @@
       "post": {
         "operationId": "Conversation_get",
         "summary": "Ask conversations.",
-        "tags": [
-          "ask"
-        ],
+        "tags": ["ask"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -2843,9 +2711,7 @@
       "post": {
         "operationId": "Conversation_destroy",
         "summary": "Delete a conversation.",
-        "tags": [
-          "ask"
-        ],
+        "tags": ["ask"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
         "x-aplos-audit": true,
@@ -2887,9 +2753,7 @@
       "post": {
         "operationId": "Setup_begin",
         "summary": "Start a setup session (onboarding, or \"Show welcome\" from Settings); background AI waits for its end.",
-        "tags": [
-          "setup"
-        ],
+        "tags": ["setup"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -2930,9 +2794,7 @@
       "post": {
         "operationId": "Setup_end",
         "summary": "End setup; idempotent, called by the renderer and by main on any window close, and always queues the one-shot backfill of unsummarised threads.",
-        "tags": [
-          "setup"
-        ],
+        "tags": ["setup"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -2973,9 +2835,7 @@
       "post": {
         "operationId": "Setup_retry",
         "summary": "First sync's \"Try again\" for one account: resume from its checkpoint; idempotent while a run is going.",
-        "tags": [
-          "setup"
-        ],
+        "tags": ["setup"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -3016,9 +2876,7 @@
       "post": {
         "operationId": "Setup_status",
         "summary": "First-sync progress per account for the loading screen; also pushed as `Setup` state changes.",
-        "tags": [
-          "setup"
-        ],
+        "tags": ["setup"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -3059,9 +2917,7 @@
       "post": {
         "operationId": "Demo_load",
         "summary": "Add the demo accounts and their original demo mail; idempotent, never touches real accounts.",
-        "tags": [
-          "demo"
-        ],
+        "tags": ["demo"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -3102,9 +2958,7 @@
       "post": {
         "operationId": "Demo_reset",
         "summary": "Put the demo accounts back to their starting mail; refused while sending.",
-        "tags": [
-          "demo"
-        ],
+        "tags": ["demo"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -3145,9 +2999,7 @@
       "post": {
         "operationId": "Demo_remove",
         "summary": "Remove the demo accounts and their mail.",
-        "tags": [
-          "demo"
-        ],
+        "tags": ["demo"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -3189,9 +3041,7 @@
       "post": {
         "operationId": "Consent_get",
         "summary": "The stored consent for background AI and whether a provider or scope change needs it again.",
-        "tags": [
-          "consent"
-        ],
+        "tags": ["consent"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -3232,9 +3082,7 @@
       "post": {
         "operationId": "Consent_grant",
         "summary": "Agree to background AI for the version shown, naming the provider and model on the card. Electron windows only: the owner must see the card (ARCH 8.3).",
-        "tags": [
-          "consent"
-        ],
+        "tags": ["consent"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -3277,9 +3125,7 @@
       "post": {
         "operationId": "Consent_revoke",
         "summary": "Withdraw consent; background AI stops.",
-        "tags": [
-          "consent"
-        ],
+        "tags": ["consent"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -3321,9 +3167,7 @@
       "post": {
         "operationId": "Queue_list",
         "summary": "The queue inspector: ops, AI jobs and submissions, content-free.",
-        "tags": [
-          "queue"
-        ],
+        "tags": ["queue"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -3364,9 +3208,7 @@
       "post": {
         "operationId": "Queue_retry",
         "summary": "Retry a queued item now. Needs the scope of the method that made it (`QueueItem.scope`; `send` for a submission).",
-        "tags": [
-          "queue"
-        ],
+        "tags": ["queue"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -3409,9 +3251,7 @@
       "post": {
         "operationId": "Queue_discard",
         "summary": "Discard a queued item. Needs the scope of the method that made it (`QueueItem.scope`; `send` for a submission).",
-        "tags": [
-          "queue"
-        ],
+        "tags": ["queue"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -3454,9 +3294,7 @@
       "post": {
         "operationId": "Diagnostics_preview",
         "summary": "The content-free diagnostics bundle, to preview before saving. Never uploaded.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -3497,9 +3335,7 @@
       "post": {
         "operationId": "Diagnostics_export",
         "summary": "The same bundle as a file blob, for main's save dialog (`File/save`).",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -3540,9 +3376,7 @@
       "post": {
         "operationId": "Diagnostics_verbose",
         "summary": "Turn the verbose protocol log (headers only) on, switching itself off after 15 minutes, or off.",
-        "tags": [
-          "diagnostics"
-        ],
+        "tags": ["diagnostics"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -3584,9 +3418,7 @@
       "post": {
         "operationId": "Listener_get",
         "summary": "Whether \"Allow tools on this Mac\" is on, and where.",
-        "tags": [
-          "listener"
-        ],
+        "tags": ["listener"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "admin",
         "x-aplos-ui-only": true,
@@ -3628,9 +3460,7 @@
       "post": {
         "operationId": "Listener_set",
         "summary": "Turn the local socket and loopback HTTP listener on or off (off by default in release builds).",
-        "tags": [
-          "listener"
-        ],
+        "tags": ["listener"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -3673,9 +3503,7 @@
       "post": {
         "operationId": "Clients_list",
         "summary": "Tools allowed on this Mac.",
-        "tags": [
-          "clients"
-        ],
+        "tags": ["clients"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "admin",
         "x-aplos-ui-only": true,
@@ -3717,9 +3545,7 @@
       "post": {
         "operationId": "Clients_grant",
         "summary": "Allow a tool with scopes; the host writes its token to a 0600 file and the token never crosses the contract.",
-        "tags": [
-          "clients"
-        ],
+        "tags": ["clients"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -3762,9 +3588,7 @@
       "post": {
         "operationId": "Clients_revoke",
         "summary": "Revoke a tool; its open connections close within a second.",
-        "tags": [
-          "clients"
-        ],
+        "tags": ["clients"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -3807,9 +3631,7 @@
       "post": {
         "operationId": "Clients_audit",
         "summary": "Sends, deletes and settings changes made by tools.",
-        "tags": [
-          "clients"
-        ],
+        "tags": ["clients"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "admin",
         "x-aplos-ui-only": true,
@@ -3851,9 +3673,7 @@
       "post": {
         "operationId": "Account_get",
         "summary": "Accounts with health, capabilities, lease and identities; all of them when `ids` is absent.",
-        "tags": [
-          "account"
-        ],
+        "tags": ["account"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -3894,9 +3714,7 @@
       "post": {
         "operationId": "Account_discover",
         "summary": "Which provider an address or domain belongs to, with preset server settings (today's `account.discover` and `domain.check`). Round 1 connects Google only.",
-        "tags": [
-          "account"
-        ],
+        "tags": ["account"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -3937,9 +3755,7 @@
       "post": {
         "operationId": "Account_connect",
         "summary": "Start connecting an account; returns at once with a `connectId` and reports through `connect` frames (OAuth opens the browser via the host channel).",
-        "tags": [
-          "account"
-        ],
+        "tags": ["account"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -3982,9 +3798,7 @@
       "post": {
         "operationId": "Account_reconnect",
         "summary": "Sign in again (the weekly Gmail reconnect, `needsReauth`): passes `login_hint`, refuses another identity, keeps queued changes, no resync.",
-        "tags": [
-          "account"
-        ],
+        "tags": ["account"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -4026,9 +3840,7 @@
       "post": {
         "operationId": "Account_updateSecret",
         "summary": "Reconnect an app-password or API-token account (iCloud, IMAP, Fastmail) with its new secret after `needsReauth`; reports through `reconnect` connect frames, keeps queued changes, no resync. `calendarSecret` replaces a separate CalDAV app password.",
-        "tags": [
-          "account"
-        ],
+        "tags": ["account"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -4071,9 +3883,7 @@
       "post": {
         "operationId": "Account_grantPermissions",
         "summary": "Full re-consent for missing scopes (installed apps cannot do incremental auth).",
-        "tags": [
-          "account"
-        ],
+        "tags": ["account"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -4115,9 +3925,7 @@
       "post": {
         "operationId": "Account_cancelConnect",
         "summary": "Cancel a connect still waiting for the browser; a late answer is then ignored.",
-        "tags": [
-          "account"
-        ],
+        "tags": ["account"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "requestBody": {
@@ -4158,15 +3966,11 @@
       "post": {
         "operationId": "Account_set",
         "summary": "Rename an account, change its colour, its notifications or \"Use this account's mail for AI\" (Electron windows only).",
-        "tags": [
-          "account"
-        ],
+        "tags": ["account"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
-        "x-aplos-window-only-args": [
-          "aiAllowed"
-        ],
+        "x-aplos-window-only-args": ["aiAllowed"],
         "requestBody": {
           "required": true,
           "content": {
@@ -4205,9 +4009,7 @@
       "post": {
         "operationId": "Account_lease",
         "summary": "\"Use this Mac\" for background work (pin), or back to automatic; every account when `accountId` is absent (ARCH 6.5).",
-        "tags": [
-          "account"
-        ],
+        "tags": ["account"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -4249,9 +4051,7 @@
       "post": {
         "operationId": "Account_disconnect",
         "summary": "Remove an account and everything Aplos stored for it; refused while one of its messages is sending.",
-        "tags": [
-          "account"
-        ],
+        "tags": ["account"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -4293,9 +4093,7 @@
       "post": {
         "operationId": "Sync_request",
         "summary": "Ask for a sync now; refused without any network call while an account is paused, unless `force` (once per throttle pause).",
-        "tags": [
-          "sync"
-        ],
+        "tags": ["sync"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -4336,9 +4134,7 @@
       "post": {
         "operationId": "Workflow_status",
         "summary": "Whether Done, Later and reminders sync between your Macs on the encrypted channel.",
-        "tags": [
-          "workflow"
-        ],
+        "tags": ["workflow"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -4379,9 +4175,7 @@
       "post": {
         "operationId": "Workflow_enable",
         "summary": "Turn on device sync, joining with a pairing code from another Mac or creating one.",
-        "tags": [
-          "workflow"
-        ],
+        "tags": ["workflow"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -4424,9 +4218,7 @@
       "post": {
         "operationId": "Workflow_code",
         "summary": "The pairing code to enter on another Mac.",
-        "tags": [
-          "workflow"
-        ],
+        "tags": ["workflow"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "admin",
         "x-aplos-ui-only": true,
@@ -4468,9 +4260,7 @@
       "post": {
         "operationId": "Workflow_disable",
         "summary": "Turn off device sync.",
-        "tags": [
-          "workflow"
-        ],
+        "tags": ["workflow"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -4512,9 +4302,7 @@
       "post": {
         "operationId": "Unsubscribe_get",
         "summary": "How this thread can be unsubscribed from: one-click (RFC 8058), mailto, a link to review, or not at all.",
-        "tags": [
-          "unsubscribe"
-        ],
+        "tags": ["unsubscribe"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -4555,9 +4343,7 @@
       "post": {
         "operationId": "Unsubscribe_run",
         "summary": "Unsubscribe (today's `thread.unsubscribe`): one-click POST or mailto where offered, else an https link to review.",
-        "tags": [
-          "unsubscribe"
-        ],
+        "tags": ["unsubscribe"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "send",
         "x-aplos-audit": true,
@@ -4599,9 +4385,7 @@
       "post": {
         "operationId": "Calendar_get",
         "summary": "Calendars with Aplos-side visibility and colour.",
-        "tags": [
-          "event"
-        ],
+        "tags": ["event"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -4642,9 +4426,7 @@
       "post": {
         "operationId": "Calendar_set",
         "summary": "Show or hide a calendar in Aplos, or change its colour; never written to the provider.",
-        "tags": [
-          "event"
-        ],
+        "tags": ["event"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "requestBody": {
@@ -4685,9 +4467,7 @@
       "post": {
         "operationId": "Event_get",
         "summary": "Events and occurrences by id.",
-        "tags": [
-          "event"
-        ],
+        "tags": ["event"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -4728,9 +4508,7 @@
       "post": {
         "operationId": "Event_set",
         "summary": "Create, edit or delete an event, for one occurrence, the series or the following ones; may notify guests, so it is held briefly for undo.",
-        "tags": [
-          "event"
-        ],
+        "tags": ["event"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "send",
         "x-aplos-audit": true,
@@ -4772,9 +4550,7 @@
       "post": {
         "operationId": "Event_hide",
         "summary": "Hide events in Aplos only (the event detail's Hide), or show them again; never written to the provider, so nobody is told.",
-        "tags": [
-          "event"
-        ],
+        "tags": ["event"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "requestBody": {
@@ -4815,9 +4591,7 @@
       "post": {
         "operationId": "Event_rsvp",
         "summary": "Answer an invitation for one occurrence or the series.",
-        "tags": [
-          "event"
-        ],
+        "tags": ["event"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "send",
         "x-aplos-audit": true,
@@ -4859,9 +4633,7 @@
       "post": {
         "operationId": "Event_extract",
         "summary": "Find dates and meetings in a thread with the Plans model (today's `calendar.extract`); results are Plans to confirm. `forbidden` (`ai.accountExcluded`) for an account left out of AI.",
-        "tags": [
-          "event"
-        ],
+        "tags": ["event"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
         "requestBody": {
@@ -4902,9 +4674,7 @@
       "post": {
         "operationId": "Plan_get",
         "summary": "Plans found in mail.",
-        "tags": [
-          "event"
-        ],
+        "tags": ["event"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -4945,9 +4715,7 @@
       "post": {
         "operationId": "Plan_confirm",
         "summary": "Add a plan to a calendar, with optional edits. Never with guests, so nobody is invited: add them afterwards with `Event/set`.",
-        "tags": [
-          "event"
-        ],
+        "tags": ["event"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "x-aplos-audit": true,
@@ -4989,9 +4757,7 @@
       "post": {
         "operationId": "Plan_dismiss",
         "summary": "Dismiss a plan.",
-        "tags": [
-          "event"
-        ],
+        "tags": ["event"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "requestBody": {
@@ -5032,9 +4798,7 @@
       "post": {
         "operationId": "SenderRule_get",
         "summary": "Block, lane and skip-Inbox rules.",
-        "tags": [
-          "sender"
-        ],
+        "tags": ["sender"],
         "x-aplos-kind": "query",
         "x-aplos-scope": "read",
         "requestBody": {
@@ -5075,9 +4839,7 @@
       "post": {
         "operationId": "SenderRule_set",
         "summary": "Create (no `id`) or change a rule, e.g. \"Always do this for [sender]\" after a lane correction.",
-        "tags": [
-          "sender"
-        ],
+        "tags": ["sender"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "x-aplos-audit": true,
@@ -5119,9 +4881,7 @@
       "post": {
         "operationId": "SenderRule_destroy",
         "summary": "Delete a rule.",
-        "tags": [
-          "sender"
-        ],
+        "tags": ["sender"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "x-aplos-audit": true,
@@ -5163,9 +4923,7 @@
       "post": {
         "operationId": "SenderRule_block",
         "summary": "Block a sender: their mail goes to Spam now and later (today's `sender.block`).",
-        "tags": [
-          "sender"
-        ],
+        "tags": ["sender"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "x-aplos-audit": true,
@@ -5207,9 +4965,7 @@
       "post": {
         "operationId": "SenderRule_unblock",
         "summary": "Unblock a sender (today's `sender.unblock`).",
-        "tags": [
-          "sender"
-        ],
+        "tags": ["sender"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "triage",
         "x-aplos-audit": true,
@@ -5251,9 +5007,7 @@
       "post": {
         "operationId": "Data_export",
         "summary": "Export your Aplos data (accounts, settings, workflow, drafts, conversations) as a file blob; no credentials.",
-        "tags": [
-          "data"
-        ],
+        "tags": ["data"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
@@ -5363,10 +5117,7 @@
                   }
                 }
               },
-              "required": [
-                "capability",
-                "reasonCode"
-              ]
+              "required": ["capability", "reasonCode"]
             }
           },
           "aiAllowed": {
@@ -5427,9 +5178,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "connectId"
-        ]
+        "required": ["connectId"]
       },
       "Account_cancelConnect_output": {
         "type": "object",
@@ -5438,21 +5187,14 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "cancelled"
-        ]
+        "required": ["cancelled"]
       },
       "Account_connect_input": {
         "type": "object",
         "properties": {
           "provider": {
             "type": "string",
-            "enum": [
-              "google",
-              "microsoft",
-              "imap",
-              "jmap"
-            ]
+            "enum": ["google", "microsoft", "imap", "jmap"]
           },
           "loginHint": {
             "$ref": "#/components/schemas/Email"
@@ -5462,15 +5204,7 @@
           },
           "preset": {
             "type": "string",
-            "enum": [
-              "gmail",
-              "outlook",
-              "icloud",
-              "yahoo",
-              "aol",
-              "fastmail",
-              "generic"
-            ]
+            "enum": ["gmail", "outlook", "icloud", "yahoo", "aol", "fastmail", "generic"]
           },
           "address": {
             "$ref": "#/components/schemas/Email"
@@ -5497,9 +5231,7 @@
             "$ref": "#/components/schemas/HttpsUrl"
           }
         },
-        "required": [
-          "provider"
-        ]
+        "required": ["provider"]
       },
       "Account_disconnect_input": {
         "type": "object",
@@ -5511,10 +5243,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "opId",
-          "accountId"
-        ]
+        "required": ["opId", "accountId"]
       },
       "Account_discover_input": {
         "type": "object",
@@ -5572,9 +5301,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "provider"
-        ]
+        "required": ["provider"]
       },
       "Account_get_input": {
         "type": "object",
@@ -5607,11 +5334,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list",
-          "notFound"
-        ]
+        "required": ["state", "list", "notFound"]
       },
       "Account_grantPermissions_input": {
         "type": "object",
@@ -5620,9 +5343,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "accountId"
-        ]
+        "required": ["accountId"]
       },
       "Account_lease_input": {
         "type": "object",
@@ -5634,9 +5355,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "pin"
-        ]
+        "required": ["pin"]
       },
       "Account_lease_output": {
         "type": "object",
@@ -5653,16 +5372,11 @@
                   "$ref": "#/components/schemas/Lease"
                 }
               },
-              "required": [
-                "accountId",
-                "lease"
-              ]
+              "required": ["accountId", "lease"]
             }
           }
         },
-        "required": [
-          "leases"
-        ]
+        "required": ["leases"]
       },
       "Account_reconnect_input": {
         "type": "object",
@@ -5671,9 +5385,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "accountId"
-        ]
+        "required": ["accountId"]
       },
       "Account_set_input": {
         "type": "object",
@@ -5701,10 +5413,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "opId",
-          "accountId"
-        ]
+        "required": ["opId", "accountId"]
       },
       "Account_set_output": {
         "type": "object",
@@ -5716,10 +5425,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "account",
-          "receipt"
-        ]
+        "required": ["account", "receipt"]
       },
       "Account_updateSecret_input": {
         "type": "object",
@@ -5738,9 +5444,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "accountId"
-        ]
+        "required": ["accountId"]
       },
       "AccountCapabilities": {
         "type": "object",
@@ -5782,10 +5486,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "native",
-                  "headers"
-                ]
+                "enum": ["native", "headers"]
               },
               {
                 "type": "string"
@@ -5821,23 +5522,13 @@
             "type": "number"
           }
         },
-        "required": [
-          "status"
-        ]
+        "required": ["status"]
       },
       "AccountPreset": {
         "anyOf": [
           {
             "type": "string",
-            "enum": [
-              "gmail",
-              "outlook",
-              "icloud",
-              "yahoo",
-              "aol",
-              "fastmail",
-              "generic"
-            ]
+            "enum": ["gmail", "outlook", "icloud", "yahoo", "aol", "fastmail", "generic"]
           },
           {
             "type": "string"
@@ -5854,9 +5545,7 @@
                 "const": "starting"
               }
             },
-            "required": [
-              "state"
-            ]
+            "required": ["state"]
           },
           {
             "type": "object",
@@ -5866,9 +5555,7 @@
                 "const": "ok"
               }
             },
-            "required": [
-              "state"
-            ]
+            "required": ["state"]
           },
           {
             "type": "object",
@@ -5878,9 +5565,7 @@
                 "const": "syncing"
               }
             },
-            "required": [
-              "state"
-            ]
+            "required": ["state"]
           },
           {
             "type": "object",
@@ -5900,10 +5585,7 @@
                 "maximum": 9007199254740991
               }
             },
-            "required": [
-              "state",
-              "done"
-            ]
+            "required": ["state", "done"]
           },
           {
             "type": "object",
@@ -5922,12 +5604,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "state",
-              "until",
-              "class",
-              "reason"
-            ]
+            "required": ["state", "until", "class", "reason"]
           },
           {
             "type": "object",
@@ -5940,10 +5617,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "state",
-              "reason"
-            ]
+            "required": ["state", "reason"]
           },
           {
             "type": "object",
@@ -5959,10 +5633,7 @@
                 }
               }
             },
-            "required": [
-              "state",
-              "missingScopes"
-            ]
+            "required": ["state", "missingScopes"]
           },
           {
             "type": "object",
@@ -5975,10 +5646,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "state",
-              "reason"
-            ]
+            "required": ["state", "reason"]
           },
           {
             "type": "object",
@@ -5991,10 +5659,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "state",
-              "reason"
-            ]
+            "required": ["state", "reason"]
           },
           {
             "type": "object",
@@ -6007,9 +5672,7 @@
                 "type": "number"
               }
             },
-            "required": [
-              "state"
-            ]
+            "required": ["state"]
           },
           {
             "type": "object",
@@ -6022,10 +5685,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "state",
-              "reason"
-            ]
+            "required": ["state", "reason"]
           }
         ]
       },
@@ -6041,9 +5701,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "address"
-        ]
+        "required": ["address"]
       },
       "Ai_cancel_input": {
         "type": "object",
@@ -6060,9 +5718,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "cancelled"
-        ]
+        "required": ["cancelled"]
       },
       "Ai_dismissFollowup_input": {
         "type": "object",
@@ -6074,10 +5730,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "opId",
-          "threadId"
-        ]
+        "required": ["opId", "threadId"]
       },
       "Ai_draft_input": {
         "type": "object",
@@ -6096,10 +5749,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "requestId",
-          "instruction"
-        ]
+        "required": ["requestId", "instruction"]
       },
       "Ai_draft_output": {
         "type": "object",
@@ -6113,9 +5763,7 @@
             "maxLength": 2000
           }
         },
-        "required": [
-          "html"
-        ]
+        "required": ["html"]
       },
       "Ai_followup_input": {
         "type": "object",
@@ -6124,9 +5772,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "threadId"
-        ]
+        "required": ["threadId"]
       },
       "Ai_followup_output": {
         "type": "object",
@@ -6151,12 +5797,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": [
-                "queued",
-                "running",
-                "failed",
-                "dead"
-              ]
+              "enum": ["queued", "running", "failed", "dead"]
             }
           }
         }
@@ -6171,9 +5812,7 @@
             }
           }
         },
-        "required": [
-          "list"
-        ]
+        "required": ["list"]
       },
       "Ai_models_input": {
         "type": "object",
@@ -6193,9 +5832,7 @@
             ]
           }
         },
-        "required": [
-          "provider"
-        ]
+        "required": ["provider"]
       },
       "Ai_models_output": {
         "type": "object",
@@ -6210,10 +5847,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "list",
-          "live"
-        ]
+        "required": ["list", "live"]
       },
       "Ai_polish_input": {
         "type": "object",
@@ -6233,10 +5867,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "requestId",
-          "html"
-        ]
+        "required": ["requestId", "html"]
       },
       "Ai_polish_output": {
         "type": "object",
@@ -6249,10 +5880,7 @@
             "$ref": "#/components/schemas/Count"
           }
         },
-        "required": [
-          "html",
-          "changes"
-        ]
+        "required": ["html", "changes"]
       },
       "Ai_providers_output": {
         "type": "object",
@@ -6264,9 +5892,7 @@
             }
           }
         },
-        "required": [
-          "list"
-        ]
+        "required": ["list"]
       },
       "Ai_removeKey_input": {
         "type": "object",
@@ -6286,9 +5912,7 @@
             ]
           }
         },
-        "required": [
-          "provider"
-        ]
+        "required": ["provider"]
       },
       "Ai_request_input": {
         "type": "object",
@@ -6298,12 +5922,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "summary",
-              "classify",
-              "plan",
-              "suggestAction"
-            ]
+            "enum": ["summary", "classify", "plan", "suggestAction"]
           },
           "threadId": {
             "$ref": "#/components/schemas/Id"
@@ -6312,11 +5931,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "opId",
-          "kind",
-          "threadId"
-        ]
+        "required": ["opId", "kind", "threadId"]
       },
       "Ai_request_output": {
         "type": "object",
@@ -6328,10 +5943,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "job",
-          "receipt"
-        ]
+        "required": ["job", "receipt"]
       },
       "Ai_setKey_input": {
         "type": "object",
@@ -6357,10 +5969,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "provider",
-          "key"
-        ]
+        "required": ["provider", "key"]
       },
       "Ai_setKey_output": {
         "type": "object",
@@ -6369,11 +5978,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "env",
-                  "keychain",
-                  "none"
-                ]
+                "enum": ["env", "keychain", "none"]
               },
               {
                 "type": "string"
@@ -6381,9 +5986,7 @@
             ]
           }
         },
-        "required": [
-          "keySource"
-        ]
+        "required": ["keySource"]
       },
       "Ai_status_output": {
         "type": "object",
@@ -6395,9 +5998,7 @@
             }
           }
         },
-        "required": [
-          "features"
-        ]
+        "required": ["features"]
       },
       "Ai_test_input": {
         "type": "object",
@@ -6406,9 +6007,7 @@
             "$ref": "#/components/schemas/ModelRef"
           }
         },
-        "required": [
-          "model"
-        ]
+        "required": ["model"]
       },
       "Ai_test_output": {
         "type": "object",
@@ -6420,10 +6019,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "ms",
-          "tools"
-        ]
+        "required": ["ms", "tools"]
       },
       "Ai_testKey_input": {
         "type": "object",
@@ -6443,9 +6039,7 @@
             ]
           }
         },
-        "required": [
-          "provider"
-        ]
+        "required": ["provider"]
       },
       "Ai_testKey_output": {
         "type": "object",
@@ -6467,9 +6061,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "ok"
-        ]
+        "required": ["ok"]
       },
       "Ai_transcribe_input": {
         "type": "object",
@@ -6486,10 +6078,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "requestId",
-          "blobId"
-        ]
+        "required": ["requestId", "blobId"]
       },
       "Ai_transcribe_output": {
         "type": "object",
@@ -6499,21 +6088,13 @@
             "maxLength": 1000000
           }
         },
-        "required": [
-          "text"
-        ]
+        "required": ["text"]
       },
       "AiFeature": {
         "anyOf": [
           {
             "type": "string",
-            "enum": [
-              "ask",
-              "summaries",
-              "drafts",
-              "plans",
-              "voice"
-            ]
+            "enum": ["ask", "summaries", "drafts", "plans", "voice"]
           },
           {
             "type": "string"
@@ -6538,10 +6119,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "feature",
-          "ready"
-        ]
+        "required": ["feature", "ready"]
       },
       "AiJob": {
         "type": "object",
@@ -6553,13 +6131,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "summary",
-                  "classify",
-                  "plan",
-                  "suggestAction",
-                  "followup"
-                ]
+                "enum": ["summary", "classify", "plan", "suggestAction", "followup"]
               },
               {
                 "type": "string"
@@ -6573,14 +6145,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "queued",
-                  "running",
-                  "done",
-                  "failed",
-                  "dead",
-                  "skipped"
-                ]
+                "enum": ["queued", "running", "done", "failed", "dead", "skipped"]
               },
               {
                 "type": "string"
@@ -6600,12 +6165,7 @@
             "$ref": "#/components/schemas/Problem"
           }
         },
-        "required": [
-          "id",
-          "kind",
-          "state",
-          "attempts"
-        ]
+        "required": ["id", "kind", "state", "attempts"]
       },
       "AiModel": {
         "type": "object",
@@ -6632,10 +6192,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "id",
-          "label"
-        ]
+        "required": ["id", "label"]
       },
       "AiProvider": {
         "type": "object",
@@ -6652,10 +6209,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "hosted",
-                  "local"
-                ]
+                "enum": ["hosted", "local"]
               },
               {
                 "type": "string"
@@ -6666,13 +6220,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "ready",
-                  "missingKey",
-                  "unreachable",
-                  "notConfigured",
-                  "error"
-                ]
+                "enum": ["ready", "missingKey", "unreachable", "notConfigured", "error"]
               },
               {
                 "type": "string"
@@ -6683,11 +6231,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "env",
-                  "keychain",
-                  "none"
-                ]
+                "enum": ["env", "keychain", "none"]
               },
               {
                 "type": "string"
@@ -6750,10 +6294,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "ok",
-              "at"
-            ]
+            "required": ["ok", "at"]
           }
         },
         "required": [
@@ -6810,10 +6351,7 @@
                     "pattern": "^[^\\r\\n]*$"
                   }
                 },
-                "required": [
-                  "provider",
-                  "model"
-                ]
+                "required": ["provider", "model"]
               },
               "summaries": {
                 "type": "object",
@@ -6829,10 +6367,7 @@
                     "pattern": "^[^\\r\\n]*$"
                   }
                 },
-                "required": [
-                  "provider",
-                  "model"
-                ]
+                "required": ["provider", "model"]
               },
               "drafts": {
                 "type": "object",
@@ -6848,10 +6383,7 @@
                     "pattern": "^[^\\r\\n]*$"
                   }
                 },
-                "required": [
-                  "provider",
-                  "model"
-                ]
+                "required": ["provider", "model"]
               },
               "plans": {
                 "type": "object",
@@ -6867,10 +6399,7 @@
                     "pattern": "^[^\\r\\n]*$"
                   }
                 },
-                "required": [
-                  "provider",
-                  "model"
-                ]
+                "required": ["provider", "model"]
               },
               "voice": {
                 "type": "object",
@@ -6886,19 +6415,10 @@
                     "pattern": "^[^\\r\\n]*$"
                   }
                 },
-                "required": [
-                  "provider",
-                  "model"
-                ]
+                "required": ["provider", "model"]
               }
             },
-            "required": [
-              "ask",
-              "summaries",
-              "drafts",
-              "plans",
-              "voice"
-            ]
+            "required": ["ask", "summaries", "drafts", "plans", "voice"]
           },
           "providers": {
             "type": "object",
@@ -6932,18 +6452,10 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "enabled",
-              "tokens"
-            ]
+            "required": ["enabled", "tokens"]
           }
         },
-        "required": [
-          "features",
-          "providers",
-          "background",
-          "dailyCap"
-        ]
+        "required": ["features", "providers", "background", "dailyCap"]
       },
       "AiUsage": {
         "type": "object",
@@ -6974,10 +6486,7 @@
                   "anyOf": [
                     {
                       "type": "string",
-                      "enum": [
-                        "interactive",
-                        "background"
-                      ]
+                      "enum": ["interactive", "background"]
                     },
                     {
                       "type": "string"
@@ -6994,21 +6503,11 @@
                   "$ref": "#/components/schemas/Count"
                 }
               },
-              "required": [
-                "model",
-                "lane",
-                "requests",
-                "tokensIn",
-                "tokensOut"
-              ]
+              "required": ["model", "lane", "requests", "tokensIn", "tokensOut"]
             }
           }
         },
-        "required": [
-          "day",
-          "backgroundTokens",
-          "byModel"
-        ]
+        "required": ["day", "backgroundTokens", "byModel"]
       },
       "Ask_cancel_input": {
         "type": "object",
@@ -7017,9 +6516,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "runId"
-        ]
+        "required": ["runId"]
       },
       "Ask_cancel_output": {
         "type": "object",
@@ -7028,9 +6525,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "cancelled"
-        ]
+        "required": ["cancelled"]
       },
       "Ask_decide_input": {
         "type": "object",
@@ -7051,13 +6546,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "opId",
-          "conversationId",
-          "turnId",
-          "proposalId",
-          "accept"
-        ]
+        "required": ["opId", "conversationId", "turnId", "proposalId", "accept"]
       },
       "Ask_decide_output": {
         "type": "object",
@@ -7072,9 +6561,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "receipt"
-        ]
+        "required": ["receipt"]
       },
       "Ask_run_input": {
         "type": "object",
@@ -7153,9 +6640,7 @@
             "$ref": "#/components/schemas/TimeZone"
           }
         },
-        "required": [
-          "question"
-        ]
+        "required": ["question"]
       },
       "Ask_run_output": {
         "type": "object",
@@ -7167,10 +6652,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "runId",
-          "conversationId"
-        ]
+        "required": ["runId", "conversationId"]
       },
       "Ask_suggestions_output": {
         "type": "object",
@@ -7184,9 +6666,7 @@
             }
           }
         },
-        "required": [
-          "list"
-        ]
+        "required": ["list"]
       },
       "AskStep": {
         "type": "object",
@@ -7203,11 +6683,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "running",
-                  "done",
-                  "error"
-                ]
+                "enum": ["running", "done", "error"]
               },
               {
                 "type": "string"
@@ -7218,11 +6694,7 @@
             "$ref": "#/components/schemas/Count"
           }
         },
-        "required": [
-          "id",
-          "text",
-          "state"
-        ]
+        "required": ["id", "text", "state"]
       },
       "AskTurn": {
         "type": "object",
@@ -7258,10 +6730,7 @@
                             "$ref": "#/components/schemas/Count"
                           }
                         },
-                        "required": [
-                          "start",
-                          "end"
-                        ]
+                        "required": ["start", "end"]
                       }
                     },
                     "cites": {
@@ -7276,22 +6745,15 @@
                             "$ref": "#/components/schemas/Count"
                           }
                         },
-                        "required": [
-                          "at",
-                          "n"
-                        ]
+                        "required": ["at", "n"]
                       }
                     }
                   },
-                  "required": [
-                    "text"
-                  ]
+                  "required": ["text"]
                 }
               }
             },
-            "required": [
-              "blocks"
-            ]
+            "required": ["blocks"]
           },
           "citations": {
             "type": "array",
@@ -7333,15 +6795,7 @@
             "$ref": "#/components/schemas/EpochMs"
           }
         },
-        "required": [
-          "id",
-          "question",
-          "citations",
-          "noSource",
-          "proposals",
-          "steps",
-          "createdAt"
-        ]
+        "required": ["id", "question", "citations", "noSource", "proposals", "steps", "createdAt"]
       },
       "Attachment_get_input": {
         "type": "object",
@@ -7353,10 +6807,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "messageId",
-          "attachmentId"
-        ]
+        "required": ["messageId", "attachmentId"]
       },
       "Attachment_get_output": {
         "type": "object",
@@ -7378,12 +6829,7 @@
             "$ref": "#/components/schemas/Count"
           }
         },
-        "required": [
-          "blobId",
-          "name",
-          "mime",
-          "size"
-        ]
+        "required": ["blobId", "name", "mime", "size"]
       },
       "AttachmentMeta": {
         "type": "object",
@@ -7416,13 +6862,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "absent",
-                  "fetching",
-                  "present",
-                  "evicted",
-                  "failed"
-                ]
+                "enum": ["absent", "fetching", "present", "evicted", "failed"]
               },
               {
                 "type": "string"
@@ -7430,14 +6870,7 @@
             ]
           }
         },
-        "required": [
-          "id",
-          "name",
-          "mime",
-          "size",
-          "inline",
-          "state"
-        ]
+        "required": ["id", "name", "mime", "size", "inline", "state"]
       },
       "Attendee": {
         "type": "object",
@@ -7465,12 +6898,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "address",
-          "response",
-          "organizer",
-          "self"
-        ]
+        "required": ["address", "response", "organizer", "self"]
       },
       "AuditEntry": {
         "type": "object",
@@ -7495,12 +6923,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "id",
-          "at",
-          "clientId",
-          "method"
-        ]
+        "required": ["id", "at", "clientId", "method"]
       },
       "Blob_get_input": {
         "type": "object",
@@ -7509,9 +6932,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "blobId"
-        ]
+        "required": ["blobId"]
       },
       "Blob_get_output": {
         "type": "object",
@@ -7533,11 +6954,7 @@
             "$ref": "#/components/schemas/Count"
           }
         },
-        "required": [
-          "bytes",
-          "mime",
-          "size"
-        ]
+        "required": ["bytes", "mime", "size"]
       },
       "Blob_put_input": {
         "type": "object",
@@ -7556,10 +6973,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "bytes",
-          "mime"
-        ]
+        "required": ["bytes", "mime"]
       },
       "Blob_put_output": {
         "type": "object",
@@ -7571,10 +6985,7 @@
             "$ref": "#/components/schemas/Count"
           }
         },
-        "required": [
-          "blobId",
-          "size"
-        ]
+        "required": ["blobId", "size"]
       },
       "Blob_release_input": {
         "type": "object",
@@ -7583,9 +6994,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "blobId"
-        ]
+        "required": ["blobId"]
       },
       "Bytes": {
         "type": "string",
@@ -7632,11 +7041,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "ok",
-                      "paused",
-                      "error"
-                    ]
+                    "enum": ["ok", "paused", "error"]
                   },
                   {
                     "type": "string"
@@ -7650,20 +7055,10 @@
                 "$ref": "#/components/schemas/ReasonCode"
               }
             },
-            "required": [
-              "state"
-            ]
+            "required": ["state"]
           }
         },
-        "required": [
-          "id",
-          "accountId",
-          "name",
-          "primary",
-          "readOnly",
-          "shown",
-          "providerHidden"
-        ]
+        "required": ["id", "accountId", "name", "primary", "readOnly", "shown", "providerHidden"]
       },
       "Calendar_get_input": {
         "type": "object",
@@ -7683,9 +7078,7 @@
             }
           }
         },
-        "required": [
-          "list"
-        ]
+        "required": ["list"]
       },
       "Calendar_set_input": {
         "type": "object",
@@ -7705,10 +7098,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "opId",
-          "id"
-        ]
+        "required": ["opId", "id"]
       },
       "Calendar_set_output": {
         "type": "object",
@@ -7720,10 +7110,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "calendar",
-          "receipt"
-        ]
+        "required": ["calendar", "receipt"]
       },
       "CalendarSettings": {
         "type": "object",
@@ -7738,10 +7125,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "autoAddPlans",
-          "providerEventsFromMail"
-        ]
+        "required": ["autoAddPlans", "providerEventsFromMail"]
       },
       "CallEnvelope": {
         "type": "object",
@@ -7751,10 +7135,7 @@
             "const": 1
           },
           "id": {
-            "type": [
-              "string",
-              "number"
-            ]
+            "type": ["string", "number"]
           },
           "method": {
             "type": "string",
@@ -7763,12 +7144,7 @@
           },
           "args": {}
         },
-        "required": [
-          "v",
-          "id",
-          "method",
-          "args"
-        ]
+        "required": ["v", "id", "method", "args"]
       },
       "ChangeType": {
         "anyOf": [
@@ -7839,13 +7215,7 @@
                 "maxLength": 2000
               }
             },
-            "required": [
-              "kind",
-              "n",
-              "messageId",
-              "threadId",
-              "quote"
-            ]
+            "required": ["kind", "n", "messageId", "threadId", "quote"]
           },
           {
             "type": "object",
@@ -7868,13 +7238,7 @@
                 "$ref": "#/components/schemas/EventTime"
               }
             },
-            "required": [
-              "kind",
-              "n",
-              "eventId",
-              "title",
-              "start"
-            ]
+            "required": ["kind", "n", "eventId", "title", "start"]
           }
         ]
       },
@@ -7928,12 +7292,7 @@
             "maxLength": 300
           }
         },
-        "required": [
-          "class",
-          "provider",
-          "method",
-          "reason"
-        ]
+        "required": ["class", "provider", "method", "reason"]
       },
       "Client": {
         "type": "object",
@@ -7950,12 +7309,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "cli",
-                  "mcp",
-                  "preview",
-                  "phone"
-                ]
+                "enum": ["cli", "mcp", "preview", "phone"]
               },
               {
                 "type": "string"
@@ -7968,15 +7322,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "enum": [
-                    "read",
-                    "triage",
-                    "draft",
-                    "send",
-                    "ai",
-                    "admin",
-                    "host"
-                  ]
+                  "enum": ["read", "triage", "draft", "send", "ai", "admin", "host"]
                 },
                 {
                   "type": "string"
@@ -7999,13 +7345,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "id",
-          "name",
-          "kind",
-          "scopes",
-          "createdAt"
-        ]
+        "required": ["id", "name", "kind", "scopes", "createdAt"]
       },
       "Clients_audit_input": {
         "type": "object",
@@ -8030,9 +7370,7 @@
             }
           }
         },
-        "required": [
-          "list"
-        ]
+        "required": ["list"]
       },
       "Clients_grant_input": {
         "type": "object",
@@ -8045,12 +7383,7 @@
           },
           "kind": {
             "type": "string",
-            "enum": [
-              "cli",
-              "mcp",
-              "preview",
-              "phone"
-            ]
+            "enum": ["cli", "mcp", "preview", "phone"]
           },
           "scopes": {
             "minItems": 1,
@@ -8061,11 +7394,7 @@
             }
           }
         },
-        "required": [
-          "name",
-          "kind",
-          "scopes"
-        ]
+        "required": ["name", "kind", "scopes"]
       },
       "Clients_grant_output": {
         "type": "object",
@@ -8074,9 +7403,7 @@
             "$ref": "#/components/schemas/Client"
           }
         },
-        "required": [
-          "client"
-        ]
+        "required": ["client"]
       },
       "Clients_list_output": {
         "type": "object",
@@ -8088,9 +7415,7 @@
             }
           }
         },
-        "required": [
-          "list"
-        ]
+        "required": ["list"]
       },
       "Clients_revoke_input": {
         "type": "object",
@@ -8099,19 +7424,13 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "ConnectMode": {
         "anyOf": [
           {
             "type": "string",
-            "enum": [
-              "new",
-              "reconnect",
-              "grantPermissions"
-            ]
+            "enum": ["new", "reconnect", "grantPermissions"]
           },
           {
             "type": "string"
@@ -8125,20 +7444,13 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "connectId"
-        ]
+        "required": ["connectId"]
       },
       "ConnectState": {
         "anyOf": [
           {
             "type": "string",
-            "enum": [
-              "waiting",
-              "connected",
-              "failed",
-              "cancelled"
-            ]
+            "enum": ["waiting", "connected", "failed", "cancelled"]
           },
           {
             "type": "string"
@@ -8152,9 +7464,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "background"
-                ]
+                "enum": ["background"]
               },
               {
                 "type": "string"
@@ -8185,22 +7495,14 @@
             "$ref": "#/components/schemas/EpochMs"
           }
         },
-        "required": [
-          "scope",
-          "granted",
-          "version",
-          "currentVersion",
-          "needsReconsent"
-        ]
+        "required": ["scope", "granted", "version", "currentVersion", "needsReconsent"]
       },
       "Consent_get_input": {
         "type": "object",
         "properties": {
           "scope": {
             "type": "string",
-            "enum": [
-              "background"
-            ]
+            "enum": ["background"]
           }
         }
       },
@@ -8209,9 +7511,7 @@
         "properties": {
           "scope": {
             "type": "string",
-            "enum": [
-              "background"
-            ]
+            "enum": ["background"]
           },
           "version": {
             "$ref": "#/components/schemas/Count"
@@ -8236,26 +7536,17 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "scope",
-          "version",
-          "provider",
-          "model"
-        ]
+        "required": ["scope", "version", "provider", "model"]
       },
       "Consent_revoke_input": {
         "type": "object",
         "properties": {
           "scope": {
             "type": "string",
-            "enum": [
-              "background"
-            ]
+            "enum": ["background"]
           }
         },
-        "required": [
-          "scope"
-        ]
+        "required": ["scope"]
       },
       "Contact_suggest_input": {
         "type": "object",
@@ -8274,9 +7565,7 @@
             "maximum": 20
           }
         },
-        "required": [
-          "query"
-        ]
+        "required": ["query"]
       },
       "Contact_suggest_output": {
         "type": "object",
@@ -8303,17 +7592,11 @@
                   "$ref": "#/components/schemas/Count"
                 }
               },
-              "required": [
-                "address",
-                "sentTo",
-                "receivedFrom"
-              ]
+              "required": ["address", "sentTo", "receivedFrom"]
             }
           }
         },
-        "required": [
-          "list"
-        ]
+        "required": ["list"]
       },
       "Conversation": {
         "type": "object",
@@ -8339,13 +7622,7 @@
             }
           }
         },
-        "required": [
-          "id",
-          "rev",
-          "title",
-          "updatedAt",
-          "turns"
-        ]
+        "required": ["id", "rev", "title", "updatedAt", "turns"]
       },
       "Conversation_destroy_input": {
         "type": "object",
@@ -8357,10 +7634,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "opId",
-          "id"
-        ]
+        "required": ["opId", "id"]
       },
       "Conversation_get_output": {
         "type": "object",
@@ -8381,11 +7655,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list",
-          "notFound"
-        ]
+        "required": ["state", "list", "notFound"]
       },
       "Count": {
         "type": "integer",
@@ -8417,11 +7687,7 @@
             }
           }
         },
-        "required": [
-          "all",
-          "accounts",
-          "folders"
-        ]
+        "required": ["all", "accounts", "folders"]
       },
       "CountsBlock": {
         "type": "object",
@@ -8471,9 +7737,7 @@
         "properties": {
           "format": {
             "type": "string",
-            "enum": [
-              "json"
-            ]
+            "enum": ["json"]
           }
         }
       },
@@ -8490,10 +7754,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "accountIds",
-          "receipt"
-        ]
+        "required": ["accountIds", "receipt"]
       },
       "Demo_reset_output": {
         "type": "object",
@@ -8508,10 +7769,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "accountIds",
-          "receipt"
-        ]
+        "required": ["accountIds", "receipt"]
       },
       "DesktopEvent": {
         "oneOf": [
@@ -8526,10 +7784,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "type",
-              "quitting"
-            ]
+            "required": ["type", "quitting"]
           },
           {
             "type": "object",
@@ -8539,9 +7794,7 @@
                 "const": "shown"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -8554,12 +7807,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "connecting",
-                      "ready",
-                      "unreachable",
-                      "parked"
-                    ]
+                    "enum": ["connecting", "ready", "unreachable", "parked"]
                   },
                   {
                     "type": "string"
@@ -8581,11 +7829,7 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "type",
-              "state",
-              "at"
-            ]
+            "required": ["type", "state", "at"]
           }
         ]
       },
@@ -8604,11 +7848,7 @@
             "$ref": "#/components/schemas/Count"
           }
         },
-        "required": [
-          "blobId",
-          "name",
-          "size"
-        ]
+        "required": ["blobId", "name", "size"]
       },
       "Diagnostics_verbose_input": {
         "type": "object",
@@ -8617,9 +7857,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "on"
-        ]
+        "required": ["on"]
       },
       "Diagnostics_verbose_output": {
         "type": "object",
@@ -8669,11 +7907,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "app",
-              "api",
-              "schema"
-            ]
+            "required": ["app", "api", "schema"]
           },
           "engine": {
             "type": "object",
@@ -8695,10 +7929,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "state",
-              "uptimeMs"
-            ]
+            "required": ["state", "uptimeMs"]
           },
           "accounts": {
             "type": "array",
@@ -8757,18 +7988,11 @@
                         "$ref": "#/components/schemas/EpochMs"
                       }
                     },
-                    "required": [
-                      "budget"
-                    ]
+                    "required": ["budget"]
                   }
                 }
               },
-              "required": [
-                "accountHash",
-                "provider",
-                "state",
-                "budgets"
-              ]
+              "required": ["accountHash", "provider", "state", "budgets"]
             }
           },
           "queues": {
@@ -8787,12 +8011,7 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "ops",
-              "jobs",
-              "submissions",
-              "failed"
-            ]
+            "required": ["ops", "jobs", "submissions", "failed"]
           },
           "errors": {
             "type": "array",
@@ -8806,10 +8025,7 @@
                   "$ref": "#/components/schemas/ClassifiedError"
                 }
               },
-              "required": [
-                "at",
-                "error"
-              ]
+              "required": ["at", "error"]
             }
           },
           "storage": {
@@ -8831,13 +8047,7 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "dbBytes",
-              "walBytes",
-              "ftsBacklog",
-              "bodyBytes",
-              "attachmentBytes"
-            ]
+            "required": ["dbBytes", "walBytes", "ftsBacklog", "bodyBytes", "attachmentBytes"]
           },
           "crashes": {
             "type": "object",
@@ -8849,9 +8059,7 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "count"
-            ]
+            "required": ["count"]
           }
         },
         "required": [
@@ -8875,12 +8083,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "new",
-                  "reply",
-                  "replyAll",
-                  "forward"
-                ]
+                "enum": ["new", "reply", "replyAll", "forward"]
               },
               {
                 "type": "string"
@@ -8939,10 +8142,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "custom",
-                  "account"
-                ]
+                "enum": ["custom", "account"]
               },
               {
                 "type": "string"
@@ -8965,10 +8165,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "local",
-                  "remote"
-                ]
+                "enum": ["local", "remote"]
               },
               {
                 "type": "string"
@@ -8979,12 +8176,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "localOnly",
-                  "pending",
-                  "synced",
-                  "failed"
-                ]
+                "enum": ["localOnly", "pending", "synced", "failed"]
               },
               {
                 "type": "string"
@@ -9006,10 +8198,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "theirsRevision",
-              "at"
-            ]
+            "required": ["theirsRevision", "at"]
           },
           "submissionId": {
             "$ref": "#/components/schemas/Id"
@@ -9043,10 +8232,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "opId",
-          "id"
-        ]
+        "required": ["opId", "id"]
       },
       "Draft_get_output": {
         "type": "object",
@@ -9067,11 +8253,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list",
-          "notFound"
-        ]
+        "required": ["state", "list", "notFound"]
       },
       "Draft_resolve_input": {
         "type": "object",
@@ -9084,18 +8266,10 @@
           },
           "choice": {
             "type": "string",
-            "enum": [
-              "keepMine",
-              "takeTheirs",
-              "keepBoth"
-            ]
+            "enum": ["keepMine", "takeTheirs", "keepBoth"]
           }
         },
-        "required": [
-          "opId",
-          "id",
-          "choice"
-        ]
+        "required": ["opId", "id", "choice"]
       },
       "Draft_resolve_output": {
         "type": "object",
@@ -9110,10 +8284,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "draft",
-          "receipt"
-        ]
+        "required": ["draft", "receipt"]
       },
       "Draft_set_input": {
         "type": "object",
@@ -9131,10 +8302,7 @@
             "$ref": "#/components/schemas/DraftFields"
           }
         },
-        "required": [
-          "opId",
-          "fields"
-        ]
+        "required": ["opId", "fields"]
       },
       "Draft_set_output": {
         "type": "object",
@@ -9146,10 +8314,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "draft",
-          "receipt"
-        ]
+        "required": ["draft", "receipt"]
       },
       "DraftAttachment": {
         "type": "object",
@@ -9191,18 +8356,10 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "messageId",
-              "attachmentId"
-            ]
+            "required": ["messageId", "attachmentId"]
           }
         },
-        "required": [
-          "id",
-          "name",
-          "mime",
-          "size"
-        ]
+        "required": ["id", "name", "mime", "size"]
       },
       "DraftFields": {
         "type": "object",
@@ -9212,12 +8369,7 @@
           },
           "mode": {
             "type": "string",
-            "enum": [
-              "new",
-              "reply",
-              "replyAll",
-              "forward"
-            ]
+            "enum": ["new", "reply", "replyAll", "forward"]
           },
           "threadId": {
             "$ref": "#/components/schemas/Id"
@@ -9269,10 +8421,7 @@
           },
           "signatureSource": {
             "type": "string",
-            "enum": [
-              "custom",
-              "account"
-            ]
+            "enum": ["custom", "account"]
           }
         },
         "required": [
@@ -9291,11 +8440,7 @@
         "anyOf": [
           {
             "type": "string",
-            "enum": [
-              "user",
-              "structured",
-              "ai"
-            ]
+            "enum": ["user", "structured", "ai"]
           },
           {
             "type": "string"
@@ -9309,11 +8454,7 @@
       },
       "EditScope": {
         "type": "string",
-        "enum": [
-          "occurrence",
-          "series",
-          "following"
-        ]
+        "enum": ["occurrence", "series", "following"]
       },
       "Email": {
         "type": "string",
@@ -9340,10 +8481,7 @@
           "path": {
             "type": "array",
             "items": {
-              "type": [
-                "string",
-                "number"
-              ]
+              "type": ["string", "number"]
             }
           },
           "retryAfterMs": {
@@ -9360,10 +8498,7 @@
             "$ref": "#/components/schemas/ClassifiedError"
           }
         },
-        "required": [
-          "type",
-          "message"
-        ]
+        "required": ["type", "message"]
       },
       "ErrorClass": {
         "anyOf": [
@@ -9504,9 +8639,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "url"
-            ]
+            "required": ["url"]
           },
           "organizer": {
             "$ref": "#/components/schemas/Attendee"
@@ -9524,11 +8657,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "confirmed",
-                  "tentative",
-                  "cancelled"
-                ]
+                "enum": ["confirmed", "tentative", "cancelled"]
               },
               {
                 "type": "string"
@@ -9539,10 +8668,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "opaque",
-                  "transparent"
-                ]
+                "enum": ["opaque", "transparent"]
               },
               {
                 "type": "string"
@@ -9562,9 +8688,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "text"
-            ]
+            "required": ["text"]
           },
           "can": {
             "type": "object",
@@ -9585,13 +8709,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "edit",
-              "move",
-              "delete",
-              "rsvp",
-              "editGuests"
-            ]
+            "required": ["edit", "move", "delete", "rsvp", "editGuests"]
           },
           "lockedReason": {
             "type": "string",
@@ -9613,10 +8731,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "threadId",
-              "messageId"
-            ]
+            "required": ["threadId", "messageId"]
           },
           "threadId": {
             "$ref": "#/components/schemas/Id"
@@ -9632,13 +8747,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "localOnly",
-                  "pending",
-                  "synced",
-                  "failed",
-                  "conflict"
-                ]
+                "enum": ["localOnly", "pending", "synced", "failed", "conflict"]
               },
               {
                 "type": "string"
@@ -9676,10 +8785,7 @@
             "$ref": "#/components/schemas/TimeZone"
           }
         },
-        "required": [
-          "opId",
-          "threadId"
-        ]
+        "required": ["opId", "threadId"]
       },
       "Event_extract_output": {
         "type": "object",
@@ -9694,10 +8800,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "plans",
-          "receipt"
-        ]
+        "required": ["plans", "receipt"]
       },
       "Event_get_output": {
         "type": "object",
@@ -9718,11 +8821,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list",
-          "notFound"
-        ]
+        "required": ["state", "list", "notFound"]
       },
       "Event_hide_input": {
         "type": "object",
@@ -9741,11 +8840,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "opId",
-          "ids",
-          "hidden"
-        ]
+        "required": ["opId", "ids", "hidden"]
       },
       "Event_rsvp_input": {
         "type": "object",
@@ -9758,29 +8853,17 @@
           },
           "response": {
             "type": "string",
-            "enum": [
-              "accepted",
-              "tentative",
-              "declined"
-            ]
+            "enum": ["accepted", "tentative", "declined"]
           },
           "scope": {
             "type": "string",
-            "enum": [
-              "occurrence",
-              "series"
-            ]
+            "enum": ["occurrence", "series"]
           },
           "notify": {
             "type": "boolean"
           }
         },
-        "required": [
-          "opId",
-          "id",
-          "response",
-          "scope"
-        ]
+        "required": ["opId", "id", "response", "scope"]
       },
       "Event_set_input": {
         "type": "object",
@@ -9795,10 +8878,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "opId",
-          "change"
-        ]
+        "required": ["opId", "change"]
       },
       "Event_set_output": {
         "type": "object",
@@ -9810,9 +8890,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "receipt"
-        ]
+        "required": ["receipt"]
       },
       "EventChange": {
         "oneOf": [
@@ -9830,11 +8908,7 @@
                 "$ref": "#/components/schemas/EventFields"
               }
             },
-            "required": [
-              "type",
-              "calendarId",
-              "fields"
-            ]
+            "required": ["type", "calendarId", "fields"]
           },
           {
             "type": "object",
@@ -9894,9 +8968,7 @@
                           "type": "boolean"
                         }
                       },
-                      "required": [
-                        "address"
-                      ]
+                      "required": ["address"]
                     }
                   },
                   "threadId": {
@@ -9905,12 +8977,7 @@
                 }
               }
             },
-            "required": [
-              "type",
-              "id",
-              "scope",
-              "fields"
-            ]
+            "required": ["type", "id", "scope", "fields"]
           },
           {
             "type": "object",
@@ -9926,11 +8993,7 @@
                 "$ref": "#/components/schemas/EditScope"
               }
             },
-            "required": [
-              "type",
-              "id",
-              "scope"
-            ]
+            "required": ["type", "id", "scope"]
           }
         ]
       },
@@ -9979,21 +9042,14 @@
                   "type": "boolean"
                 }
               },
-              "required": [
-                "address"
-              ]
+              "required": ["address"]
             }
           },
           "threadId": {
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "title",
-          "start",
-          "end",
-          "allDay"
-        ]
+        "required": ["title", "start", "end", "allDay"]
       },
       "EventTime": {
         "oneOf": [
@@ -10008,10 +9064,7 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "type",
-              "utc"
-            ]
+            "required": ["type", "utc"]
           },
           {
             "type": "object",
@@ -10024,10 +9077,7 @@
                 "$ref": "#/components/schemas/LocalDate"
               }
             },
-            "required": [
-              "type",
-              "date"
-            ]
+            "required": ["type", "date"]
           },
           {
             "type": "object",
@@ -10045,10 +9095,7 @@
                 "$ref": "#/components/schemas/TimeZone"
               }
             },
-            "required": [
-              "type",
-              "local"
-            ]
+            "required": ["type", "local"]
           }
         ]
       },
@@ -10091,11 +9138,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "label",
-                  "folder",
-                  "system"
-                ]
+                "enum": ["label", "folder", "system"]
               },
               {
                 "type": "string"
@@ -10117,14 +9160,7 @@
             "$ref": "#/components/schemas/Count"
           }
         },
-        "required": [
-          "id",
-          "accountId",
-          "name",
-          "kind",
-          "hidden",
-          "unread"
-        ]
+        "required": ["id", "accountId", "name", "kind", "hidden", "unread"]
       },
       "Folder_get_input": {
         "type": "object",
@@ -10147,10 +9183,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list"
-        ]
+        "required": ["state", "list"]
       },
       "FollowupSuggestion": {
         "type": "object",
@@ -10172,13 +9205,7 @@
             "$ref": "#/components/schemas/EpochMs"
           }
         },
-        "required": [
-          "threadId",
-          "html",
-          "basedOnMessageId",
-          "model",
-          "createdAt"
-        ]
+        "required": ["threadId", "html", "basedOnMessageId", "model", "createdAt"]
       },
       "Frame": {
         "oneOf": [
@@ -10207,12 +9234,7 @@
                 }
               }
             },
-            "required": [
-              "frame",
-              "dbEpoch",
-              "seq",
-              "types"
-            ]
+            "required": ["frame", "dbEpoch", "seq", "types"]
           },
           {
             "type": "object",
@@ -10307,13 +9329,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "search",
-                      "ai",
-                      "transcribe",
-                      "setup"
-                    ]
+                    "enum": ["ask", "search", "ai", "transcribe", "setup"]
                   },
                   {
                     "type": "string"
@@ -10324,15 +9340,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "step",
-                      "text",
-                      "citation",
-                      "proposal",
-                      "done",
-                      "error",
-                      "usage"
-                    ]
+                    "enum": ["step", "text", "citation", "proposal", "done", "error", "usage"]
                   },
                   {
                     "type": "string"
@@ -10354,11 +9362,7 @@
                     "anyOf": [
                       {
                         "type": "string",
-                        "enum": [
-                          "running",
-                          "done",
-                          "error"
-                        ]
+                        "enum": ["running", "done", "error"]
                       },
                       {
                         "type": "string"
@@ -10369,11 +9373,7 @@
                     "$ref": "#/components/schemas/Count"
                   }
                 },
-                "required": [
-                  "id",
-                  "text",
-                  "state"
-                ]
+                "required": ["id", "text", "state"]
               },
               "delta": {
                 "type": "string",
@@ -10395,14 +9395,7 @@
                 "$ref": "#/components/schemas/Problem"
               }
             },
-            "required": [
-              "frame",
-              "dbEpoch",
-              "seq",
-              "runId",
-              "source",
-              "kind"
-            ]
+            "required": ["frame", "dbEpoch", "seq", "runId", "source", "kind"]
           },
           {
             "type": "object",
@@ -10423,12 +9416,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "dbEpoch",
-                      "cannotCalculateChanges",
-                      "restore",
-                      "restart"
-                    ]
+                    "enum": ["dbEpoch", "cannotCalculateChanges", "restore", "restart"]
                   },
                   {
                     "type": "string"
@@ -10436,12 +9424,7 @@
                 ]
               }
             },
-            "required": [
-              "frame",
-              "dbEpoch",
-              "seq",
-              "reason"
-            ]
+            "required": ["frame", "dbEpoch", "seq", "reason"]
           },
           {
             "type": "object",
@@ -10462,12 +9445,7 @@
                 "$ref": "#/components/schemas/Operation"
               }
             },
-            "required": [
-              "frame",
-              "dbEpoch",
-              "seq",
-              "operation"
-            ]
+            "required": ["frame", "dbEpoch", "seq", "operation"]
           },
           {
             "type": "object",
@@ -10502,14 +9480,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "frame",
-              "dbEpoch",
-              "seq",
-              "connectId",
-              "mode",
-              "state"
-            ]
+            "required": ["frame", "dbEpoch", "seq", "connectId", "mode", "state"]
           },
           {
             "type": "object",
@@ -10539,14 +9510,7 @@
                 "$ref": "#/components/schemas/Draft"
               }
             },
-            "required": [
-              "frame",
-              "dbEpoch",
-              "seq",
-              "draftId",
-              "revision",
-              "conflict"
-            ]
+            "required": ["frame", "dbEpoch", "seq", "draftId", "revision", "conflict"]
           },
           {
             "type": "object",
@@ -10567,12 +9531,7 @@
                 "$ref": "#/components/schemas/HostEvent"
               }
             },
-            "required": [
-              "frame",
-              "dbEpoch",
-              "seq",
-              "event"
-            ]
+            "required": ["frame", "dbEpoch", "seq", "event"]
           },
           {
             "type": "object",
@@ -10585,10 +9544,7 @@
                 "$ref": "#/components/schemas/DesktopEvent"
               }
             },
-            "required": [
-              "frame",
-              "event"
-            ]
+            "required": ["frame", "event"]
           }
         ]
       },
@@ -10603,20 +9559,11 @@
             }
           }
         },
-        "required": [
-          "ids"
-        ]
+        "required": ["ids"]
       },
       "GrantableScope": {
         "type": "string",
-        "enum": [
-          "read",
-          "triage",
-          "draft",
-          "send",
-          "ai",
-          "admin"
-        ]
+        "enum": ["read", "triage", "draft", "send", "ai", "admin"]
       },
       "Hello": {
         "type": "object",
@@ -10649,10 +9596,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "name",
-              "kind"
-            ]
+            "required": ["name", "kind"]
           },
           "token": {
             "type": "string",
@@ -10660,11 +9604,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "v",
-          "apiVersion",
-          "client"
-        ]
+        "required": ["v", "apiVersion", "client"]
       },
       "HelloReply": {
         "oneOf": [
@@ -10700,18 +9640,10 @@
                     }
                   }
                 },
-                "required": [
-                  "apiVersion",
-                  "dbEpoch",
-                  "clientId",
-                  "scopes"
-                ]
+                "required": ["apiVersion", "dbEpoch", "clientId", "scopes"]
               }
             },
-            "required": [
-              "ok",
-              "session"
-            ]
+            "required": ["ok", "session"]
           },
           {
             "type": "object",
@@ -10727,10 +9659,7 @@
                     "anyOf": [
                       {
                         "type": "string",
-                        "enum": [
-                          "unsupported",
-                          "forbidden"
-                        ]
+                        "enum": ["unsupported", "forbidden"]
                       },
                       {
                         "type": "string"
@@ -10741,16 +9670,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "type",
-                  "message"
-                ]
+                "required": ["type", "message"]
               }
             },
-            "required": [
-              "ok",
-              "error"
-            ]
+            "required": ["ok", "error"]
           }
         ]
       },
@@ -10767,10 +9690,7 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "type",
-              "pending"
-            ]
+            "required": ["type", "pending"]
           },
           {
             "type": "object",
@@ -10783,10 +9703,7 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "type",
-              "count"
-            ]
+            "required": ["type", "count"]
           },
           {
             "type": "object",
@@ -10799,11 +9716,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "light",
-                      "dark",
-                      "system"
-                    ]
+                    "enum": ["light", "dark", "system"]
                   },
                   {
                     "type": "string"
@@ -10811,10 +9724,7 @@
                 ]
               }
             },
-            "required": [
-              "type",
-              "theme"
-            ]
+            "required": ["type", "theme"]
           },
           {
             "type": "object",
@@ -10827,10 +9737,7 @@
                 "$ref": "#/components/schemas/NotificationItem"
               }
             },
-            "required": [
-              "type",
-              "item"
-            ]
+            "required": ["type", "item"]
           },
           {
             "type": "object",
@@ -10854,13 +9761,7 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "type",
-              "reasonCode",
-              "message",
-              "canRetry",
-              "at"
-            ]
+            "required": ["type", "reasonCode", "message", "canRetry", "at"]
           },
           {
             "type": "object",
@@ -10877,9 +9778,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "oauth"
-                    ]
+                    "enum": ["oauth"]
                   },
                   {
                     "type": "string"
@@ -10887,11 +9786,7 @@
                 ]
               }
             },
-            "required": [
-              "type",
-              "url",
-              "purpose"
-            ]
+            "required": ["type", "url", "purpose"]
           },
           {
             "type": "object",
@@ -10904,10 +9799,7 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "type",
-              "now"
-            ]
+            "required": ["type", "now"]
           }
         ]
       },
@@ -10926,11 +9818,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "menuBar",
-          "openAtLogin",
-          "microphone"
-        ]
+        "required": ["menuBar", "openAtLogin", "microphone"]
       },
       "HttpAddress": {
         "type": "string",
@@ -10949,10 +9837,7 @@
         "anyOf": [
           {
             "type": "string",
-            "enum": [
-              "important",
-              "normal"
-            ]
+            "enum": ["important", "normal"]
           },
           {
             "type": "string"
@@ -10969,25 +9854,16 @@
           },
           "phase": {
             "type": "string",
-            "enum": [
-              "tap",
-              "hold"
-            ]
+            "enum": ["tap", "hold"]
           }
         },
-        "required": [
-          "chord"
-        ]
+        "required": ["chord"]
       },
       "Lane": {
         "anyOf": [
           {
             "type": "string",
-            "enum": [
-              "do",
-              "update",
-              "low"
-            ]
+            "enum": ["do", "update", "low"]
           },
           {
             "type": "string"
@@ -11019,17 +9895,11 @@
                   "$ref": "#/components/schemas/EpochMs"
                 }
               },
-              "required": [
-                "key",
-                "label"
-              ]
+              "required": ["key", "label"]
             }
           }
         },
-        "required": [
-          "now",
-          "presets"
-        ]
+        "required": ["now", "presets"]
       },
       "Lease": {
         "type": "object",
@@ -11038,10 +9908,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "primary",
-                  "secondary"
-                ]
+                "enum": ["primary", "secondary"]
               },
               {
                 "type": "string"
@@ -11065,9 +9932,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "role"
-        ]
+        "required": ["role"]
       },
       "Listener_set_input": {
         "type": "object",
@@ -11076,9 +9941,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "enabled"
-        ]
+        "required": ["enabled"]
       },
       "ListenerState": {
         "type": "object",
@@ -11097,9 +9960,7 @@
             "maximum": 9007199254740991
           }
         },
-        "required": [
-          "enabled"
-        ]
+        "required": ["enabled"]
       },
       "LocalDate": {
         "type": "string"
@@ -11140,12 +10001,7 @@
           },
           "level": {
             "type": "string",
-            "enum": [
-              "debug",
-              "info",
-              "warn",
-              "error"
-            ]
+            "enum": ["debug", "info", "warn", "error"]
           },
           "event": {
             "type": "string"
@@ -11186,12 +10042,7 @@
             "maximum": 9007199254740991
           }
         },
-        "required": [
-          "t",
-          "level",
-          "event",
-          "data"
-        ]
+        "required": ["t", "level", "event", "data"]
       },
       "Mail_allowImages_input": {
         "type": "object",
@@ -11206,11 +10057,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "opId",
-          "sender",
-          "allow"
-        ]
+        "required": ["opId", "sender", "allow"]
       },
       "Mail_frame_input": {
         "type": "object",
@@ -11220,10 +10067,7 @@
           },
           "imagePolicy": {
             "type": "string",
-            "enum": [
-              "block",
-              "load"
-            ]
+            "enum": ["block", "load"]
           },
           "findQuery": {
             "type": "string",
@@ -11234,10 +10078,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "messageId",
-          "imagePolicy"
-        ]
+        "required": ["messageId", "imagePolicy"]
       },
       "Mail_release_input": {
         "type": "object",
@@ -11248,9 +10089,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "url"
-        ]
+        "required": ["url"]
       },
       "Mail_toggleQuotes_input": {
         "type": "object",
@@ -11264,10 +10103,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "url",
-          "open"
-        ]
+        "required": ["url", "open"]
       },
       "MailFrame": {
         "type": "object",
@@ -11283,10 +10119,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "html",
-                  "text"
-                ]
+                "enum": ["html", "text"]
               },
               {
                 "type": "string"
@@ -11331,10 +10164,7 @@
           },
           "remoteImages": {
             "type": "string",
-            "enum": [
-              "block",
-              "allow"
-            ]
+            "enum": ["block", "allow"]
           },
           "imageAllowList": {
             "maxItems": 5000,
@@ -11345,34 +10175,19 @@
           },
           "doneAction": {
             "type": "string",
-            "enum": [
-              "archive",
-              "read",
-              "unread"
-            ]
+            "enum": ["archive", "read", "unread"]
           },
           "laterAction": {
             "type": "string",
-            "enum": [
-              "archive",
-              "read",
-              "unread"
-            ]
+            "enum": ["archive", "read", "unread"]
           },
           "lowAction": {
             "type": "string",
-            "enum": [
-              "archive",
-              "read",
-              "unread"
-            ]
+            "enum": ["archive", "read", "unread"]
           },
           "defaultReply": {
             "type": "string",
-            "enum": [
-              "reply",
-              "replyAll"
-            ]
+            "enum": ["reply", "replyAll"]
           },
           "signature": {
             "type": "string",
@@ -11380,11 +10195,7 @@
           },
           "signatureMode": {
             "type": "string",
-            "enum": [
-              "always",
-              "new",
-              "never"
-            ]
+            "enum": ["always", "new", "never"]
           },
           "footer": {
             "type": "boolean"
@@ -11494,13 +10305,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "absent",
-                  "fetching",
-                  "present",
-                  "evicted",
-                  "failed"
-                ]
+                "enum": ["absent", "fetching", "present", "evicted", "failed"]
               },
               {
                 "type": "string"
@@ -11511,10 +10316,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "html",
-                  "text"
-                ]
+                "enum": ["html", "text"]
               },
               {
                 "type": "string"
@@ -11573,11 +10375,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list",
-          "notFound"
-        ]
+        "required": ["state", "list", "notFound"]
       },
       "Message_original_input": {
         "type": "object",
@@ -11586,9 +10384,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "messageId"
-        ]
+        "required": ["messageId"]
       },
       "Message_original_output": {
         "type": "object",
@@ -11605,11 +10401,7 @@
             "$ref": "#/components/schemas/Count"
           }
         },
-        "required": [
-          "blobId",
-          "name",
-          "size"
-        ]
+        "required": ["blobId", "name", "size"]
       },
       "MessageBody": {
         "type": "object",
@@ -11621,11 +10413,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "html",
-                  "text",
-                  "none"
-                ]
+                "enum": ["html", "text", "none"]
               },
               {
                 "type": "string"
@@ -11648,10 +10436,7 @@
                   "$ref": "#/components/schemas/Count"
                 }
               },
-              "required": [
-                "start",
-                "end"
-              ]
+              "required": ["start", "end"]
             }
           },
           "quotedCount": {
@@ -11661,14 +10446,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "messageId",
-          "bodyKind",
-          "text",
-          "quoted",
-          "quotedCount",
-          "hasRemoteImages"
-        ]
+        "required": ["messageId", "bodyKind", "text", "quoted", "quotedCount", "hasRemoteImages"]
       },
       "MessageBody_get_input": {
         "type": "object",
@@ -11677,9 +10455,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "messageId"
-        ]
+        "required": ["messageId"]
       },
       "MessageBody_prefetch_input": {
         "type": "object",
@@ -11715,10 +10491,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "provider",
-          "model"
-        ]
+        "required": ["provider", "model"]
       },
       "NotificationItem": {
         "type": "object",
@@ -11730,12 +10503,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "mail",
-                  "reminder",
-                  "later",
-                  "send"
-                ]
+                "enum": ["mail", "reminder", "later", "send"]
               },
               {
                 "type": "string"
@@ -11765,12 +10533,7 @@
             "$ref": "#/components/schemas/EpochMs"
           }
         },
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "at"
-        ]
+        "required": ["id", "kind", "title", "at"]
       },
       "NotificationSettings": {
         "type": "object",
@@ -11794,12 +10557,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "enabled",
-          "perAccount",
-          "reminders",
-          "reconnectReminder"
-        ]
+        "required": ["enabled", "perAccount", "reminders", "reconnectReminder"]
       },
       "Ok": {
         "type": "object",
@@ -11809,9 +10567,7 @@
             "const": true
           }
         },
-        "required": [
-          "ok"
-        ]
+        "required": ["ok"]
       },
       "Operation": {
         "type": "object",
@@ -11868,14 +10624,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "read",
-                  "triage",
-                  "draft",
-                  "send",
-                  "ai",
-                  "admin"
-                ]
+                "enum": ["read", "triage", "draft", "send", "ai", "admin"]
               },
               {
                 "type": "string"
@@ -11905,9 +10654,7 @@
             }
           }
         },
-        "required": [
-          "opIds"
-        ]
+        "required": ["opIds"]
       },
       "Operation_get_output": {
         "type": "object",
@@ -11925,10 +10672,7 @@
             }
           }
         },
-        "required": [
-          "list",
-          "notFound"
-        ]
+        "required": ["list", "notFound"]
       },
       "Operation_retry_input": {
         "type": "object",
@@ -11937,9 +10681,7 @@
             "$ref": "#/components/schemas/OpId"
           }
         },
-        "required": [
-          "opId"
-        ]
+        "required": ["opId"]
       },
       "Operation_undo_input": {
         "type": "object",
@@ -11951,10 +10693,7 @@
             "$ref": "#/components/schemas/OpId"
           }
         },
-        "required": [
-          "opId",
-          "undoOpId"
-        ]
+        "required": ["opId", "undoOpId"]
       },
       "OpId": {
         "type": "string",
@@ -11977,11 +10716,7 @@
             "$ref": "#/components/schemas/Count"
           }
         },
-        "required": [
-          "scheduledSends",
-          "reminders",
-          "uncertain"
-        ]
+        "required": ["scheduledSends", "reminders", "uncertain"]
       },
       "Participant": {
         "type": "object",
@@ -12049,11 +10784,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "open",
-                  "confirmed",
-                  "dismissed"
-                ]
+                "enum": ["open", "confirmed", "dismissed"]
               },
               {
                 "type": "string"
@@ -12064,16 +10795,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "id",
-          "rev",
-          "threadId",
-          "title",
-          "start",
-          "end",
-          "allDay",
-          "state"
-        ]
+        "required": ["id", "rev", "threadId", "title", "start", "end", "allDay", "state"]
       },
       "Plan_confirm_input": {
         "type": "object",
@@ -12120,10 +10842,7 @@
             }
           }
         },
-        "required": [
-          "opId",
-          "id"
-        ]
+        "required": ["opId", "id"]
       },
       "Plan_confirm_output": {
         "type": "object",
@@ -12135,10 +10854,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "eventId",
-          "receipt"
-        ]
+        "required": ["eventId", "receipt"]
       },
       "Plan_dismiss_input": {
         "type": "object",
@@ -12154,10 +10870,7 @@
             }
           }
         },
-        "required": [
-          "opId",
-          "ids"
-        ]
+        "required": ["opId", "ids"]
       },
       "Plan_get_output": {
         "type": "object",
@@ -12178,11 +10891,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list",
-          "notFound"
-        ]
+        "required": ["state", "list", "notFound"]
       },
       "Problem": {
         "type": "object",
@@ -12198,9 +10907,7 @@
             "$ref": "#/components/schemas/EpochMs"
           }
         },
-        "required": [
-          "reasonCode"
-        ]
+        "required": ["reasonCode"]
       },
       "Proposal": {
         "oneOf": [
@@ -12223,11 +10930,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "accepted",
-                      "dismissed"
-                    ]
+                    "enum": ["open", "accepted", "dismissed"]
                   },
                   {
                     "type": "string"
@@ -12242,12 +10945,7 @@
                   },
                   "mode": {
                     "type": "string",
-                    "enum": [
-                      "new",
-                      "reply",
-                      "replyAll",
-                      "forward"
-                    ]
+                    "enum": ["new", "reply", "replyAll", "forward"]
                   },
                   "threadId": {
                     "$ref": "#/components/schemas/Id"
@@ -12299,21 +10997,12 @@
                   },
                   "signatureSource": {
                     "type": "string",
-                    "enum": [
-                      "custom",
-                      "account"
-                    ]
+                    "enum": ["custom", "account"]
                   }
                 }
               }
             },
-            "required": [
-              "kind",
-              "id",
-              "consequence",
-              "state",
-              "draft"
-            ]
+            "required": ["kind", "id", "consequence", "state", "draft"]
           },
           {
             "type": "object",
@@ -12334,11 +11023,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "accepted",
-                      "dismissed"
-                    ]
+                    "enum": ["open", "accepted", "dismissed"]
                   },
                   {
                     "type": "string"
@@ -12352,13 +11037,7 @@
                 "$ref": "#/components/schemas/EventFields"
               }
             },
-            "required": [
-              "kind",
-              "id",
-              "consequence",
-              "state",
-              "event"
-            ]
+            "required": ["kind", "id", "consequence", "state", "event"]
           },
           {
             "type": "object",
@@ -12379,11 +11058,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "open",
-                      "accepted",
-                      "dismissed"
-                    ]
+                    "enum": ["open", "accepted", "dismissed"]
                   },
                   {
                     "type": "string"
@@ -12400,14 +11075,7 @@
                 "$ref": "#/components/schemas/ThreadAction"
               }
             },
-            "required": [
-              "kind",
-              "id",
-              "consequence",
-              "state",
-              "threadIds",
-              "action"
-            ]
+            "required": ["kind", "id", "consequence", "state", "threadIds", "action"]
           }
         ]
       },
@@ -12415,13 +11083,7 @@
         "anyOf": [
           {
             "type": "string",
-            "enum": [
-              "google",
-              "microsoft",
-              "imap",
-              "jmap",
-              "demo"
-            ]
+            "enum": ["google", "microsoft", "imap", "jmap", "demo"]
           },
           {
             "type": "string"
@@ -12435,9 +11097,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "Queue_list_input": {
         "type": "object",
@@ -12447,11 +11107,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": [
-                "op",
-                "job",
-                "submission"
-              ]
+              "enum": ["op", "job", "submission"]
             }
           }
         }
@@ -12466,9 +11122,7 @@
             }
           }
         },
-        "required": [
-          "list"
-        ]
+        "required": ["list"]
       },
       "Queue_retry_input": {
         "type": "object",
@@ -12477,9 +11131,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "id"
-        ]
+        "required": ["id"]
       },
       "QueueItem": {
         "type": "object",
@@ -12491,11 +11143,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "op",
-                  "job",
-                  "submission"
-                ]
+                "enum": ["op", "job", "submission"]
               },
               {
                 "type": "string"
@@ -12536,9 +11184,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "reasonCode"
-            ]
+            "required": ["reasonCode"]
           },
           "canRetry": {
             "type": "boolean"
@@ -12550,15 +11196,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "read",
-                  "triage",
-                  "draft",
-                  "send",
-                  "ai",
-                  "admin",
-                  "host"
-                ]
+                "enum": ["read", "triage", "draft", "send", "ai", "admin", "host"]
               },
               {
                 "type": "string"
@@ -12599,23 +11237,13 @@
             "$ref": "#/components/schemas/EpochMs"
           }
         },
-        "required": [
-          "lane",
-          "importance",
-          "source",
-          "dueBand"
-        ]
+        "required": ["lane", "importance", "source", "dueBand"]
       },
       "RankSource": {
         "anyOf": [
           {
             "type": "string",
-            "enum": [
-              "heuristic",
-              "ai",
-              "rule",
-              "user"
-            ]
+            "enum": ["heuristic", "ai", "rule", "user"]
           },
           {
             "type": "string"
@@ -12688,10 +11316,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "opId",
-          "appliedState"
-        ]
+        "required": ["opId", "appliedState"]
       },
       "Reminder_ack_input": {
         "type": "object",
@@ -12707,10 +11332,7 @@
             }
           }
         },
-        "required": [
-          "opId",
-          "threadIds"
-        ]
+        "required": ["opId", "threadIds"]
       },
       "Reminder_list_output": {
         "type": "object",
@@ -12737,18 +11359,11 @@
                   "maxLength": 2000
                 }
               },
-              "required": [
-                "threadId",
-                "at",
-                "ifNoReply",
-                "title"
-              ]
+              "required": ["threadId", "at", "ifNoReply", "title"]
             }
           }
         },
-        "required": [
-          "items"
-        ]
+        "required": ["items"]
       },
       "ReplyEnvelope": {
         "oneOf": [
@@ -12756,10 +11371,7 @@
             "type": "object",
             "properties": {
               "id": {
-                "type": [
-                  "string",
-                  "number"
-                ]
+                "type": ["string", "number"]
               },
               "ok": {
                 "type": "boolean",
@@ -12767,20 +11379,13 @@
               },
               "result": {}
             },
-            "required": [
-              "id",
-              "ok",
-              "result"
-            ]
+            "required": ["id", "ok", "result"]
           },
           {
             "type": "object",
             "properties": {
               "id": {
-                "type": [
-                  "string",
-                  "number"
-                ]
+                "type": ["string", "number"]
               },
               "ok": {
                 "type": "boolean",
@@ -12790,11 +11395,7 @@
                 "$ref": "#/components/schemas/ErrorBody"
               }
             },
-            "required": [
-              "id",
-              "ok",
-              "error"
-            ]
+            "required": ["id", "ok", "error"]
           }
         ]
       },
@@ -12810,10 +11411,7 @@
             "$ref": "#/components/schemas/Count"
           }
         },
-        "required": [
-          "bodyDays",
-          "maxBodyBytes"
-        ]
+        "required": ["bodyDays", "maxBodyBytes"]
       },
       "RowType": {
         "anyOf": [
@@ -12839,12 +11437,7 @@
         "anyOf": [
           {
             "type": "string",
-            "enum": [
-              "needsAction",
-              "accepted",
-              "declined",
-              "tentative"
-            ]
+            "enum": ["needsAction", "accepted", "declined", "tentative"]
           },
           {
             "type": "string"
@@ -12864,10 +11457,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "opId",
-          "query"
-        ]
+        "required": ["opId", "query"]
       },
       "Search_remote_output": {
         "type": "object",
@@ -12879,10 +11469,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "runId",
-          "receipt"
-        ]
+        "required": ["runId", "receipt"]
       },
       "SearchQuery": {
         "type": "object",
@@ -12925,18 +11512,11 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": [
-                "unread",
-                "read",
-                "flagged",
-                "bookmarked"
-              ]
+              "enum": ["unread", "read", "flagged", "bookmarked"]
             }
           }
         },
-        "required": [
-          "text"
-        ]
+        "required": ["text"]
       },
       "SenderGroup": {
         "type": "object",
@@ -12964,13 +11544,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "id",
-          "address",
-          "count",
-          "latestThreadId",
-          "unsubscribe"
-        ]
+        "required": ["id", "address", "count", "latestThreadId", "unsubscribe"]
       },
       "SenderGroup_get_output": {
         "type": "object",
@@ -12991,11 +11565,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list",
-          "notFound"
-        ]
+        "required": ["state", "list", "notFound"]
       },
       "SenderMatch": {
         "type": "string",
@@ -13022,11 +11592,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "block",
-                  "lane",
-                  "skipInbox"
-                ]
+                "enum": ["block", "lane", "skipInbox"]
               },
               {
                 "type": "string"
@@ -13037,11 +11603,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "do",
-                  "update",
-                  "low"
-                ]
+                "enum": ["do", "update", "low"]
               },
               {
                 "type": "string"
@@ -13055,14 +11617,7 @@
             "$ref": "#/components/schemas/EpochMs"
           }
         },
-        "required": [
-          "id",
-          "rev",
-          "match",
-          "action",
-          "atProvider",
-          "createdAt"
-        ]
+        "required": ["id", "rev", "match", "action", "atProvider", "createdAt"]
       },
       "SenderRule_block_input": {
         "type": "object",
@@ -13077,10 +11632,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "opId",
-          "address"
-        ]
+        "required": ["opId", "address"]
       },
       "SenderRule_block_output": {
         "type": "object",
@@ -13092,10 +11644,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "rule",
-          "receipt"
-        ]
+        "required": ["rule", "receipt"]
       },
       "SenderRule_destroy_input": {
         "type": "object",
@@ -13107,10 +11656,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "opId",
-          "id"
-        ]
+        "required": ["opId", "id"]
       },
       "SenderRule_get_input": {
         "type": "object",
@@ -13133,10 +11679,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list"
-        ]
+        "required": ["state", "list"]
       },
       "SenderRule_set_input": {
         "type": "object",
@@ -13155,26 +11698,14 @@
           },
           "action": {
             "type": "string",
-            "enum": [
-              "block",
-              "lane",
-              "skipInbox"
-            ]
+            "enum": ["block", "lane", "skipInbox"]
           },
           "lane": {
             "type": "string",
-            "enum": [
-              "do",
-              "update",
-              "low"
-            ]
+            "enum": ["do", "update", "low"]
           }
         },
-        "required": [
-          "opId",
-          "match",
-          "action"
-        ]
+        "required": ["opId", "match", "action"]
       },
       "SenderRule_set_output": {
         "type": "object",
@@ -13186,10 +11717,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "rule",
-          "receipt"
-        ]
+        "required": ["rule", "receipt"]
       },
       "SenderRule_unblock_input": {
         "type": "object",
@@ -13201,10 +11729,7 @@
             "$ref": "#/components/schemas/SenderMatch"
           }
         },
-        "required": [
-          "opId",
-          "address"
-        ]
+        "required": ["opId", "address"]
       },
       "SendIdentity": {
         "type": "object",
@@ -13227,10 +11752,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "address",
-          "default"
-        ]
+        "required": ["address", "default"]
       },
       "ServerSettings": {
         "type": "object",
@@ -13252,11 +11774,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "host",
-              "port",
-              "secure"
-            ]
+            "required": ["host", "port", "secure"]
           },
           "smtp": {
             "type": "object",
@@ -13275,11 +11793,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "host",
-              "port",
-              "secure"
-            ]
+            "required": ["host", "port", "secure"]
           },
           "username": {
             "type": "string",
@@ -13291,10 +11805,7 @@
             "maxLength": 2000
           }
         },
-        "required": [
-          "imap",
-          "smtp"
-        ]
+        "required": ["imap", "smtp"]
       },
       "Session": {
         "type": "object",
@@ -13329,11 +11840,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": [
-                      "starting",
-                      "ready",
-                      "parked"
-                    ]
+                    "enum": ["starting", "ready", "parked"]
                   },
                   {
                     "type": "string"
@@ -13358,21 +11865,13 @@
                     "type": "boolean"
                   }
                 },
-                "required": [
-                  "reasonCode",
-                  "message",
-                  "at",
-                  "canRetry"
-                ]
+                "required": ["reasonCode", "message", "at", "canRetry"]
               },
               "resident": {
                 "type": "boolean"
               }
             },
-            "required": [
-              "state",
-              "resident"
-            ]
+            "required": ["state", "resident"]
           },
           "capabilities": {
             "type": "object",
@@ -13402,10 +11901,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "kind",
-                "available"
-              ]
+              "required": ["kind", "available"]
             }
           },
           "hasAccounts": {
@@ -13439,10 +11935,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "id",
-              "name"
-            ]
+            "required": ["id", "name"]
           }
         },
         "required": [
@@ -13481,9 +11974,7 @@
             "maximum": 10000
           }
         },
-        "required": [
-          "since"
-        ]
+        "required": ["since"]
       },
       "Session_changes_output": {
         "type": "object",
@@ -13514,11 +12005,7 @@
                   "anyOf": [
                     {
                       "type": "string",
-                      "enum": [
-                        "u",
-                        "d",
-                        "*"
-                      ]
+                      "enum": ["u", "d", "*"]
                     },
                     {
                       "type": "string"
@@ -13526,20 +12013,11 @@
                   ]
                 }
               },
-              "required": [
-                "type",
-                "id",
-                "op"
-              ]
+              "required": ["type", "id", "op"]
             }
           }
         },
-        "required": [
-          "oldState",
-          "newState",
-          "hasMore",
-          "changes"
-        ]
+        "required": ["oldState", "newState", "hasMore", "changes"]
       },
       "Settings": {
         "type": "object",
@@ -13566,15 +12044,7 @@
             "$ref": "#/components/schemas/AiSettings"
           }
         },
-        "required": [
-          "ui",
-          "mail",
-          "notifications",
-          "host",
-          "retention",
-          "calendar",
-          "ai"
-        ]
+        "required": ["ui", "mail", "notifications", "host", "retention", "calendar", "ai"]
       },
       "Settings_set_input": {
         "type": "object",
@@ -13589,10 +12059,7 @@
             "$ref": "#/components/schemas/State"
           }
         },
-        "required": [
-          "opId",
-          "patch"
-        ]
+        "required": ["opId", "patch"]
       },
       "Settings_set_output": {
         "type": "object",
@@ -13604,10 +12071,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "settings",
-          "receipt"
-        ]
+        "required": ["settings", "receipt"]
       },
       "SettingsPatch": {
         "type": "object",
@@ -13617,26 +12081,15 @@
             "properties": {
               "theme": {
                 "type": "string",
-                "enum": [
-                  "light",
-                  "dark",
-                  "system"
-                ]
+                "enum": ["light", "dark", "system"]
               },
               "density": {
                 "type": "string",
-                "enum": [
-                  "compact",
-                  "default",
-                  "roomy"
-                ]
+                "enum": ["compact", "default", "roomy"]
               },
               "keyHints": {
                 "type": "string",
-                "enum": [
-                  "tooltip",
-                  "always"
-                ]
+                "enum": ["tooltip", "always"]
               },
               "singleKeys": {
                 "type": "boolean"
@@ -13654,10 +12107,7 @@
                   },
                   "tab": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "today"
-                    ]
+                    "enum": ["ask", "today"]
                   },
                   "width": {
                     "type": "integer",
@@ -13665,10 +12115,7 @@
                     "maximum": 1200
                   }
                 },
-                "required": [
-                  "open",
-                  "tab"
-                ]
+                "required": ["open", "tab"]
               },
               "keymap": {
                 "type": "object",
@@ -13693,10 +12140,7 @@
               },
               "swipeDirection": {
                 "type": "string",
-                "enum": [
-                  "doneRight",
-                  "doneLeft"
-                ]
+                "enum": ["doneRight", "doneLeft"]
               },
               "zen": {
                 "type": "boolean"
@@ -13725,9 +12169,7 @@
                     }
                   }
                 },
-                "required": [
-                  "recents"
-                ]
+                "required": ["recents"]
               },
               "calendar": {
                 "type": "object",
@@ -13756,10 +12198,7 @@
               },
               "remoteImages": {
                 "type": "string",
-                "enum": [
-                  "block",
-                  "allow"
-                ]
+                "enum": ["block", "allow"]
               },
               "imageAllowList": {
                 "maxItems": 5000,
@@ -13770,34 +12209,19 @@
               },
               "doneAction": {
                 "type": "string",
-                "enum": [
-                  "archive",
-                  "read",
-                  "unread"
-                ]
+                "enum": ["archive", "read", "unread"]
               },
               "laterAction": {
                 "type": "string",
-                "enum": [
-                  "archive",
-                  "read",
-                  "unread"
-                ]
+                "enum": ["archive", "read", "unread"]
               },
               "lowAction": {
                 "type": "string",
-                "enum": [
-                  "archive",
-                  "read",
-                  "unread"
-                ]
+                "enum": ["archive", "read", "unread"]
               },
               "defaultReply": {
                 "type": "string",
-                "enum": [
-                  "reply",
-                  "replyAll"
-                ]
+                "enum": ["reply", "replyAll"]
               },
               "signature": {
                 "type": "string",
@@ -13805,11 +12229,7 @@
               },
               "signatureMode": {
                 "type": "string",
-                "enum": [
-                  "always",
-                  "new",
-                  "never"
-                ]
+                "enum": ["always", "new", "never"]
               },
               "footer": {
                 "type": "boolean"
@@ -13905,10 +12325,7 @@
                         "pattern": "^[^\\r\\n]*$"
                       }
                     },
-                    "required": [
-                      "provider",
-                      "model"
-                    ]
+                    "required": ["provider", "model"]
                   },
                   "summaries": {
                     "type": "object",
@@ -13924,10 +12341,7 @@
                         "pattern": "^[^\\r\\n]*$"
                       }
                     },
-                    "required": [
-                      "provider",
-                      "model"
-                    ]
+                    "required": ["provider", "model"]
                   },
                   "drafts": {
                     "type": "object",
@@ -13943,10 +12357,7 @@
                         "pattern": "^[^\\r\\n]*$"
                       }
                     },
-                    "required": [
-                      "provider",
-                      "model"
-                    ]
+                    "required": ["provider", "model"]
                   },
                   "plans": {
                     "type": "object",
@@ -13962,10 +12373,7 @@
                         "pattern": "^[^\\r\\n]*$"
                       }
                     },
-                    "required": [
-                      "provider",
-                      "model"
-                    ]
+                    "required": ["provider", "model"]
                   },
                   "voice": {
                     "type": "object",
@@ -13981,19 +12389,10 @@
                         "pattern": "^[^\\r\\n]*$"
                       }
                     },
-                    "required": [
-                      "provider",
-                      "model"
-                    ]
+                    "required": ["provider", "model"]
                   }
                 },
-                "required": [
-                  "ask",
-                  "summaries",
-                  "drafts",
-                  "plans",
-                  "voice"
-                ]
+                "required": ["ask", "summaries", "drafts", "plans", "voice"]
               },
               "providers": {
                 "type": "object",
@@ -14027,10 +12426,7 @@
                     "$ref": "#/components/schemas/Count"
                   }
                 },
-                "required": [
-                  "enabled",
-                  "tokens"
-                ]
+                "required": ["enabled", "tokens"]
               }
             }
           }
@@ -14041,15 +12437,10 @@
         "properties": {
           "origin": {
             "type": "string",
-            "enum": [
-              "onboarding",
-              "settings"
-            ]
+            "enum": ["onboarding", "settings"]
           }
         },
-        "required": [
-          "origin"
-        ]
+        "required": ["origin"]
       },
       "Setup_begin_output": {
         "type": "object",
@@ -14058,9 +12449,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "setupId"
-        ]
+        "required": ["setupId"]
       },
       "Setup_end_input": {
         "type": "object",
@@ -14070,17 +12459,10 @@
           },
           "reason": {
             "type": "string",
-            "enum": [
-              "finished",
-              "closed",
-              "skipped",
-              "demo"
-            ]
+            "enum": ["finished", "closed", "skipped", "demo"]
           }
         },
-        "required": [
-          "reason"
-        ]
+        "required": ["reason"]
       },
       "Setup_retry_input": {
         "type": "object",
@@ -14092,9 +12474,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "accountId"
-        ]
+        "required": ["accountId"]
       },
       "Setup_status_input": {
         "type": "object",
@@ -14146,11 +12526,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "read",
-              "total",
-              "done"
-            ]
+            "required": ["read", "total", "done"]
           },
           "ai": {
             "type": "object",
@@ -14179,21 +12555,13 @@
                     "pattern": "^[^\\r\\n]*$"
                   }
                 },
-                "required": [
-                  "provider",
-                  "model"
-                ]
+                "required": ["provider", "model"]
               },
               "reasonCode": {
                 "$ref": "#/components/schemas/ReasonCode"
               }
             },
-            "required": [
-              "sorted",
-              "total",
-              "capped",
-              "failed"
-            ]
+            "required": ["sorted", "total", "capped", "failed"]
           },
           "backfill": {
             "type": "object",
@@ -14205,10 +12573,7 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "read",
-              "target"
-            ]
+            "required": ["read", "target"]
           },
           "pausedUntil": {
             "$ref": "#/components/schemas/EpochMs"
@@ -14223,13 +12588,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "accountId",
-          "state",
-          "firstWindow",
-          "backfill",
-          "runId"
-        ]
+        "required": ["accountId", "state", "firstWindow", "backfill", "runId"]
       },
       "SetupStatus": {
         "type": "object",
@@ -14261,12 +12620,7 @@
                   "anyOf": [
                     {
                       "type": "string",
-                      "enum": [
-                        "connect",
-                        "firstWindow",
-                        "ai",
-                        "backfill"
-                      ]
+                      "enum": ["connect", "firstWindow", "ai", "backfill"]
                     },
                     {
                       "type": "string"
@@ -14280,20 +12634,11 @@
                   "$ref": "#/components/schemas/EpochMs"
                 }
               },
-              "required": [
-                "phase",
-                "reasonCode",
-                "at"
-              ]
+              "required": ["phase", "reasonCode", "at"]
             }
           }
         },
-        "required": [
-          "accounts",
-          "done",
-          "partial",
-          "errors"
-        ]
+        "required": ["accounts", "done", "partial", "errors"]
       },
       "State": {
         "type": "object",
@@ -14312,10 +12657,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "dbEpoch",
-          "seq"
-        ]
+        "required": ["dbEpoch", "seq"]
       },
       "StrictDiagnosticsBundle": {
         "type": "object",
@@ -14357,11 +12699,7 @@
                 "pattern": "^[^\\r\\n]*$"
               }
             },
-            "required": [
-              "app",
-              "api",
-              "schema"
-            ]
+            "required": ["app", "api", "schema"]
           },
           "engine": {
             "type": "object",
@@ -14381,10 +12719,7 @@
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,99}$"
               }
             },
-            "required": [
-              "state",
-              "uptimeMs"
-            ]
+            "required": ["state", "uptimeMs"]
           },
           "accounts": {
             "type": "array",
@@ -14438,18 +12773,11 @@
                         "$ref": "#/components/schemas/EpochMs"
                       }
                     },
-                    "required": [
-                      "budget"
-                    ]
+                    "required": ["budget"]
                   }
                 }
               },
-              "required": [
-                "accountHash",
-                "provider",
-                "state",
-                "budgets"
-              ]
+              "required": ["accountHash", "provider", "state", "budgets"]
             }
           },
           "queues": {
@@ -14468,12 +12796,7 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "ops",
-              "jobs",
-              "submissions",
-              "failed"
-            ]
+            "required": ["ops", "jobs", "submissions", "failed"]
           },
           "errors": {
             "type": "array",
@@ -14532,18 +12855,10 @@
                       }
                     }
                   },
-                  "required": [
-                    "class",
-                    "provider",
-                    "method",
-                    "reason"
-                  ]
+                  "required": ["class", "provider", "method", "reason"]
                 }
               },
-              "required": [
-                "at",
-                "error"
-              ]
+              "required": ["at", "error"]
             }
           },
           "storage": {
@@ -14565,13 +12880,7 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "dbBytes",
-              "walBytes",
-              "ftsBacklog",
-              "bodyBytes",
-              "attachmentBytes"
-            ]
+            "required": ["dbBytes", "walBytes", "ftsBacklog", "bodyBytes", "attachmentBytes"]
           },
           "crashes": {
             "type": "object",
@@ -14583,9 +12892,7 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "count"
-            ]
+            "required": ["count"]
           }
         },
         "required": [
@@ -14669,9 +12976,7 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "reasonCode"
-            ]
+            "required": ["reasonCode"]
           }
         },
         "required": [
@@ -14707,11 +13012,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list",
-          "notFound"
-        ]
+        "required": ["state", "list", "notFound"]
       },
       "Submission_set_input": {
         "type": "object",
@@ -14723,10 +13024,7 @@
             "$ref": "#/components/schemas/SubmissionAction"
           }
         },
-        "required": [
-          "opId",
-          "action"
-        ]
+        "required": ["opId", "action"]
       },
       "Submission_set_output": {
         "type": "object",
@@ -14738,10 +13036,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "submission",
-          "receipt"
-        ]
+        "required": ["submission", "receipt"]
       },
       "SubmissionAction": {
         "oneOf": [
@@ -14765,11 +13060,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "type",
-              "draftId",
-              "revision"
-            ]
+            "required": ["type", "draftId", "revision"]
           },
           {
             "type": "object",
@@ -14782,10 +13073,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "type",
-              "submissionId"
-            ]
+            "required": ["type", "submissionId"]
           },
           {
             "type": "object",
@@ -14801,10 +13089,7 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "type",
-              "submissionId"
-            ]
+            "required": ["type", "submissionId"]
           },
           {
             "type": "object",
@@ -14820,11 +13105,7 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "type",
-              "submissionId",
-              "notBefore"
-            ]
+            "required": ["type", "submissionId", "notBefore"]
           },
           {
             "type": "object",
@@ -14840,10 +13121,7 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "type",
-              "submissionId"
-            ]
+            "required": ["type", "submissionId"]
           },
           {
             "type": "object",
@@ -14859,10 +13137,7 @@
                 "$ref": "#/components/schemas/Count"
               }
             },
-            "required": [
-              "type",
-              "submissionId"
-            ]
+            "required": ["type", "submissionId"]
           },
           {
             "type": "object",
@@ -14875,10 +13150,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "type",
-              "submissionId"
-            ]
+            "required": ["type", "submissionId"]
           }
         ]
       },
@@ -14945,10 +13217,7 @@
             "maxLength": 2000
           }
         },
-        "required": [
-          "kind",
-          "label"
-        ]
+        "required": ["kind", "label"]
       },
       "Summary": {
         "type": "object",
@@ -14964,11 +13233,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "ready",
-                  "stale",
-                  "failed"
-                ]
+                "enum": ["ready", "stale", "failed"]
               },
               {
                 "type": "string"
@@ -14985,13 +13250,7 @@
             "$ref": "#/components/schemas/EpochMs"
           }
         },
-        "required": [
-          "threadId",
-          "text",
-          "state",
-          "model",
-          "createdAt"
-        ]
+        "required": ["threadId", "text", "state", "model", "createdAt"]
       },
       "SummaryRef": {
         "type": "object",
@@ -15000,13 +13259,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "none",
-                  "pending",
-                  "ready",
-                  "stale",
-                  "failed"
-                ]
+                "enum": ["none", "pending", "ready", "stale", "failed"]
               },
               {
                 "type": "string"
@@ -15034,9 +13287,7 @@
             "$ref": "#/components/schemas/SuggestedAction"
           }
         },
-        "required": [
-          "state"
-        ]
+        "required": ["state"]
       },
       "Sync_request_input": {
         "type": "object",
@@ -15046,11 +13297,7 @@
           },
           "scope": {
             "type": "string",
-            "enum": [
-              "mail",
-              "calendar",
-              "all"
-            ]
+            "enum": ["mail", "calendar", "all"]
           },
           "force": {
             "type": "boolean"
@@ -15080,16 +13327,11 @@
                   "$ref": "#/components/schemas/EpochMs"
                 }
               },
-              "required": [
-                "accountId",
-                "accepted"
-              ]
+              "required": ["accountId", "accepted"]
             }
           }
         },
-        "required": [
-          "accounts"
-        ]
+        "required": ["accounts"]
       },
       "Thread_act_input": {
         "type": "object",
@@ -15111,10 +13353,7 @@
             "$ref": "#/components/schemas/ThreadAction"
           }
         },
-        "required": [
-          "opId",
-          "action"
-        ]
+        "required": ["opId", "action"]
       },
       "Thread_get_output": {
         "type": "object",
@@ -15135,11 +13374,7 @@
             }
           }
         },
-        "required": [
-          "state",
-          "list",
-          "notFound"
-        ]
+        "required": ["state", "list", "notFound"]
       },
       "Thread_open_input": {
         "type": "object",
@@ -15148,9 +13383,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "threadId"
-        ]
+        "required": ["threadId"]
       },
       "Thread_open_output": {
         "type": "object",
@@ -15165,11 +13398,7 @@
             "$ref": "#/components/schemas/State"
           }
         },
-        "required": [
-          "threadId",
-          "complete",
-          "state"
-        ]
+        "required": ["threadId", "complete", "state"]
       },
       "Thread_why_input": {
         "type": "object",
@@ -15178,9 +13407,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "threadId"
-        ]
+        "required": ["threadId"]
       },
       "ThreadAction": {
         "oneOf": [
@@ -15192,9 +13419,7 @@
                 "const": "done"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15204,9 +13429,7 @@
                 "const": "restore"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15219,9 +13442,7 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15231,9 +13452,7 @@
                 "const": "trash"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15243,9 +13462,7 @@
                 "const": "spam"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15255,9 +13472,7 @@
                 "const": "read"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15267,9 +13482,7 @@
                 "const": "unread"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15282,10 +13495,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "type",
-              "on"
-            ]
+            "required": ["type", "on"]
           },
           {
             "type": "object",
@@ -15298,10 +13508,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "type",
-              "on"
-            ]
+            "required": ["type", "on"]
           },
           {
             "type": "object",
@@ -15314,9 +13521,7 @@
                 "$ref": "#/components/schemas/LocalDate"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15335,9 +13540,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15348,20 +13551,13 @@
               },
               "lane": {
                 "type": "string",
-                "enum": [
-                  "do",
-                  "update",
-                  "low"
-                ]
+                "enum": ["do", "update", "low"]
               },
               "alsoForSender": {
                 "type": "boolean"
               }
             },
-            "required": [
-              "type",
-              "lane"
-            ]
+            "required": ["type", "lane"]
           },
           {
             "type": "object",
@@ -15372,19 +13568,13 @@
               },
               "direction": {
                 "type": "string",
-                "enum": [
-                  "up",
-                  "down"
-                ]
+                "enum": ["up", "down"]
               },
               "alsoForSender": {
                 "type": "boolean"
               }
             },
-            "required": [
-              "type",
-              "direction"
-            ]
+            "required": ["type", "direction"]
           },
           {
             "type": "object",
@@ -15395,16 +13585,10 @@
               },
               "importance": {
                 "type": "string",
-                "enum": [
-                  "important",
-                  "normal"
-                ]
+                "enum": ["important", "normal"]
               }
             },
-            "required": [
-              "type",
-              "importance"
-            ]
+            "required": ["type", "importance"]
           },
           {
             "type": "object",
@@ -15415,17 +13599,10 @@
               },
               "status": {
                 "type": "string",
-                "enum": [
-                  "none",
-                  "needsReply",
-                  "awaitingReply"
-                ]
+                "enum": ["none", "needsReply", "awaitingReply"]
               }
             },
-            "required": [
-              "type",
-              "status"
-            ]
+            "required": ["type", "status"]
           },
           {
             "type": "object",
@@ -15439,9 +13616,7 @@
                 "maxLength": 2000
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15454,10 +13629,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "type",
-              "hidden"
-            ]
+            "required": ["type", "hidden"]
           },
           {
             "type": "object",
@@ -15467,9 +13639,7 @@
                 "const": "clearFromHome"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           {
             "type": "object",
@@ -15493,11 +13663,7 @@
                 }
               }
             },
-            "required": [
-              "type",
-              "add",
-              "remove"
-            ]
+            "required": ["type", "add", "remove"]
           }
         ]
       },
@@ -15588,9 +13754,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "since"
-            ]
+            "required": ["since"]
           },
           "eventId": {
             "$ref": "#/components/schemas/Id"
@@ -15634,10 +13798,7 @@
             "$ref": "#/components/schemas/State"
           }
         },
-        "required": [
-          "spec",
-          "atState"
-        ]
+        "required": ["spec", "atState"]
       },
       "TimeZone": {
         "type": "string",
@@ -15649,26 +13810,15 @@
         "properties": {
           "theme": {
             "type": "string",
-            "enum": [
-              "light",
-              "dark",
-              "system"
-            ]
+            "enum": ["light", "dark", "system"]
           },
           "density": {
             "type": "string",
-            "enum": [
-              "compact",
-              "default",
-              "roomy"
-            ]
+            "enum": ["compact", "default", "roomy"]
           },
           "keyHints": {
             "type": "string",
-            "enum": [
-              "tooltip",
-              "always"
-            ]
+            "enum": ["tooltip", "always"]
           },
           "singleKeys": {
             "type": "boolean"
@@ -15686,10 +13836,7 @@
               },
               "tab": {
                 "type": "string",
-                "enum": [
-                  "ask",
-                  "today"
-                ]
+                "enum": ["ask", "today"]
               },
               "width": {
                 "type": "integer",
@@ -15697,10 +13844,7 @@
                 "maximum": 1200
               }
             },
-            "required": [
-              "open",
-              "tab"
-            ]
+            "required": ["open", "tab"]
           },
           "keymap": {
             "type": "object",
@@ -15725,10 +13869,7 @@
           },
           "swipeDirection": {
             "type": "string",
-            "enum": [
-              "doneRight",
-              "doneLeft"
-            ]
+            "enum": ["doneRight", "doneLeft"]
           },
           "zen": {
             "type": "boolean"
@@ -15757,9 +13898,7 @@
                 }
               }
             },
-            "required": [
-              "recents"
-            ]
+            "required": ["recents"]
           },
           "calendar": {
             "type": "object",
@@ -15798,9 +13937,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "threadId"
-        ]
+        "required": ["threadId"]
       },
       "Unsubscribe_get_output": {
         "type": "object",
@@ -15809,12 +13946,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "oneClick",
-                  "mailto",
-                  "link",
-                  "none"
-                ]
+                "enum": ["oneClick", "mailto", "link", "none"]
               },
               {
                 "type": "string"
@@ -15827,9 +13959,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "method"
-        ]
+        "required": ["method"]
       },
       "Unsubscribe_run_input": {
         "type": "object",
@@ -15841,10 +13971,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "opId",
-          "threadId"
-        ]
+        "required": ["opId", "threadId"]
       },
       "Unsubscribe_run_output": {
         "type": "object",
@@ -15853,11 +13980,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "done",
-                  "openLink",
-                  "unavailable"
-                ]
+                "enum": ["done", "openLink", "unavailable"]
               },
               {
                 "type": "string"
@@ -15876,10 +13999,7 @@
             "$ref": "#/components/schemas/Receipt"
           }
         },
-        "required": [
-          "outcome",
-          "message"
-        ]
+        "required": ["outcome", "message"]
       },
       "UpdateInfo": {
         "type": "object",
@@ -15902,10 +14022,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "state",
-                  "reason"
-                ]
+                "required": ["state", "reason"]
               },
               {
                 "type": "object",
@@ -15915,9 +14032,7 @@
                     "const": "idle"
                   }
                 },
-                "required": [
-                  "state"
-                ]
+                "required": ["state"]
               },
               {
                 "type": "object",
@@ -15927,9 +14042,7 @@
                     "const": "checking"
                   }
                 },
-                "required": [
-                  "state"
-                ]
+                "required": ["state"]
               },
               {
                 "type": "object",
@@ -15939,9 +14052,7 @@
                     "const": "current"
                   }
                 },
-                "required": [
-                  "state"
-                ]
+                "required": ["state"]
               },
               {
                 "type": "object",
@@ -15959,10 +14070,7 @@
                     "type": "number"
                   }
                 },
-                "required": [
-                  "state",
-                  "version"
-                ]
+                "required": ["state", "version"]
               },
               {
                 "type": "object",
@@ -15977,10 +14085,7 @@
                     "pattern": "^[^\\r\\n]*$"
                   }
                 },
-                "required": [
-                  "state",
-                  "version"
-                ]
+                "required": ["state", "version"]
               },
               {
                 "type": "object",
@@ -15993,10 +14098,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "state",
-                  "message"
-                ]
+                "required": ["state", "message"]
               }
             ]
           },
@@ -16007,10 +14109,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "currentVersion",
-          "status"
-        ]
+        "required": ["currentVersion", "status"]
       },
       "View_hold_input": {
         "type": "object",
@@ -16026,10 +14125,7 @@
             }
           }
         },
-        "required": [
-          "windowId",
-          "ids"
-        ]
+        "required": ["windowId", "ids"]
       },
       "View_move_input": {
         "type": "object",
@@ -16055,15 +14151,10 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "from",
-              "to"
-            ]
+            "required": ["from", "to"]
           }
         },
-        "required": [
-          "windowId"
-        ]
+        "required": ["windowId"]
       },
       "View_query_input": {
         "type": "object",
@@ -16080,9 +14171,7 @@
             "maximum": 200
           }
         },
-        "required": [
-          "spec"
-        ]
+        "required": ["spec"]
       },
       "View_query_output": {
         "type": "object",
@@ -16130,14 +14219,7 @@
             "$ref": "#/components/schemas/ErrorBody"
           }
         },
-        "required": [
-          "state",
-          "rowType",
-          "ids",
-          "position",
-          "total",
-          "sections"
-        ]
+        "required": ["state", "rowType", "ids", "position", "total", "sections"]
       },
       "View_release_input": {
         "type": "object",
@@ -16153,9 +14235,7 @@
             }
           }
         },
-        "required": [
-          "windowId"
-        ]
+        "required": ["windowId"]
       },
       "View_unwatch_input": {
         "type": "object",
@@ -16164,9 +14244,7 @@
             "$ref": "#/components/schemas/Id"
           }
         },
-        "required": [
-          "windowId"
-        ]
+        "required": ["windowId"]
       },
       "View_watch_input": {
         "type": "object",
@@ -16190,9 +14268,7 @@
             "maximum": 200
           }
         },
-        "required": [
-          "spec"
-        ]
+        "required": ["spec"]
       },
       "ViewSpec": {
         "oneOf": [
@@ -16207,9 +14283,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind"
-            ]
+            "required": ["kind"]
           },
           {
             "type": "object",
@@ -16220,21 +14294,13 @@
               },
               "section": {
                 "type": "string",
-                "enum": [
-                  "do",
-                  "update",
-                  "low",
-                  "follow"
-                ]
+                "enum": ["do", "update", "low", "follow"]
               },
               "accountId": {
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind",
-              "section"
-            ]
+            "required": ["kind", "section"]
           },
           {
             "type": "object",
@@ -16247,9 +14313,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind"
-            ]
+            "required": ["kind"]
           },
           {
             "type": "object",
@@ -16262,9 +14326,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind"
-            ]
+            "required": ["kind"]
           },
           {
             "type": "object",
@@ -16275,21 +14337,13 @@
               },
               "section": {
                 "type": "string",
-                "enum": [
-                  "do",
-                  "update",
-                  "low",
-                  "follow"
-                ]
+                "enum": ["do", "update", "low", "follow"]
               },
               "accountId": {
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind",
-              "section"
-            ]
+            "required": ["kind", "section"]
           },
           {
             "type": "object",
@@ -16300,25 +14354,13 @@
               },
               "role": {
                 "type": "string",
-                "enum": [
-                  "inbox",
-                  "all",
-                  "sent",
-                  "trash",
-                  "spam",
-                  "archive",
-                  "starred",
-                  "important"
-                ]
+                "enum": ["inbox", "all", "sent", "trash", "spam", "archive", "starred", "important"]
               },
               "accountId": {
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind",
-              "role"
-            ]
+            "required": ["kind", "role"]
           },
           {
             "type": "object",
@@ -16331,10 +14373,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind",
-              "folderId"
-            ]
+            "required": ["kind", "folderId"]
           },
           {
             "type": "object",
@@ -16347,9 +14386,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind"
-            ]
+            "required": ["kind"]
           },
           {
             "type": "object",
@@ -16362,9 +14399,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind"
-            ]
+            "required": ["kind"]
           },
           {
             "type": "object",
@@ -16375,19 +14410,13 @@
               },
               "status": {
                 "type": "string",
-                "enum": [
-                  "needsReply",
-                  "awaitingReply"
-                ]
+                "enum": ["needsReply", "awaitingReply"]
               },
               "accountId": {
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind",
-              "status"
-            ]
+            "required": ["kind", "status"]
           },
           {
             "type": "object",
@@ -16400,9 +14429,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind"
-            ]
+            "required": ["kind"]
           },
           {
             "type": "object",
@@ -16415,9 +14442,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind"
-            ]
+            "required": ["kind"]
           },
           {
             "type": "object",
@@ -16430,9 +14455,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind"
-            ]
+            "required": ["kind"]
           },
           {
             "type": "object",
@@ -16448,10 +14471,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind",
-              "query"
-            ]
+            "required": ["kind", "query"]
           },
           {
             "type": "object",
@@ -16464,10 +14484,7 @@
                 "$ref": "#/components/schemas/Id"
               }
             },
-            "required": [
-              "kind",
-              "threadId"
-            ]
+            "required": ["kind", "threadId"]
           },
           {
             "type": "object",
@@ -16499,11 +14516,7 @@
                 "type": "boolean"
               }
             },
-            "required": [
-              "kind",
-              "from",
-              "to"
-            ]
+            "required": ["kind", "from", "to"]
           },
           {
             "type": "object",
@@ -16522,9 +14535,7 @@
                 "$ref": "#/components/schemas/EpochMs"
               }
             },
-            "required": [
-              "kind"
-            ]
+            "required": ["kind"]
           },
           {
             "type": "object",
@@ -16534,9 +14545,7 @@
                 "const": "conversations"
               }
             },
-            "required": [
-              "kind"
-            ]
+            "required": ["kind"]
           }
         ]
       },
@@ -16564,12 +14573,7 @@
             "$ref": "#/components/schemas/RankSource"
           }
         },
-        "required": [
-          "threadId",
-          "sentence",
-          "lane",
-          "rankSource"
-        ]
+        "required": ["threadId", "sentence", "lane", "rankSource"]
       },
       "WindowAnchor": {
         "type": "object",
@@ -16633,15 +14637,7 @@
             "$ref": "#/components/schemas/ErrorBody"
           }
         },
-        "required": [
-          "windowId",
-          "state",
-          "rowType",
-          "ids",
-          "position",
-          "total",
-          "sections"
-        ]
+        "required": ["windowId", "state", "rowType", "ids", "position", "total", "sections"]
       },
       "WindowSection": {
         "type": "object",
@@ -16672,11 +14668,7 @@
             }
           }
         },
-        "required": [
-          "key",
-          "start",
-          "count"
-        ]
+        "required": ["key", "start", "count"]
       },
       "Workflow_code_output": {
         "type": "object",
@@ -16687,9 +14679,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "code"
-        ]
+        "required": ["code"]
       },
       "Workflow_disable_output": {
         "type": "object",
@@ -16699,9 +14689,7 @@
             "const": false
           }
         },
-        "required": [
-          "enabled"
-        ]
+        "required": ["enabled"]
       },
       "Workflow_enable_input": {
         "type": "object",
@@ -16722,9 +14710,7 @@
             "pattern": "^[^\\r\\n]*$"
           }
         },
-        "required": [
-          "code"
-        ]
+        "required": ["code"]
       },
       "Workflow_status_output": {
         "type": "object",
@@ -16739,10 +14725,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "enabled",
-          "available"
-        ]
+        "required": ["enabled", "available"]
       },
       "WorkflowState": {
         "type": "object",
@@ -16751,11 +14734,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "new",
-                  "done",
-                  "later"
-                ]
+                "enum": ["new", "done", "later"]
               },
               {
                 "type": "string"
@@ -16787,11 +14766,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "none",
-                  "needsReply",
-                  "awaitingReply"
-                ]
+                "enum": ["none", "needsReply", "awaitingReply"]
               },
               {
                 "type": "string"
@@ -16812,11 +14787,7 @@
             "$ref": "#/components/schemas/EpochMs"
           }
         },
-        "required": [
-          "status",
-          "bookmarked",
-          "hiddenFromHome"
-        ]
+        "required": ["status", "bookmarked", "hiddenFromHome"]
       },
       "ErrorReply": {
         "type": "object",
@@ -16825,9 +14796,7 @@
             "$ref": "#/components/schemas/ErrorBody"
           }
         },
-        "required": [
-          "error"
-        ]
+        "required": ["error"]
       }
     }
   }
