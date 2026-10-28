@@ -7,11 +7,11 @@ import {homedir,tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {connectEngine,type EngineInit} from './engine-rpc';
 import {createCipher,loadDataKey,migrateCredentials} from './keyring';
-import {applyChanges,type StateChanges} from '../shared/live';
+import {applyChanges,type StateChanges} from '@aplos/contract/legacy/live';
 import {DraftOwnership,draftMutationId} from './desktop-policy';
 import {UpdateController,disabledReason,teamIdentifier,type Updater} from './updates';
 import {spawnSync} from 'node:child_process';
-import type {AppState,Listener} from '../shared/types';
+import type {AppState,Listener} from '@aplos/contract/legacy/types';
 
 const methods=new Set([
   'state.get','threads.page','capabilities.get','symbols.render','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',

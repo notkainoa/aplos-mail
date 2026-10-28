@@ -1,0 +1,14 @@
+{
+  "name": "@aplos/contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Aplos Mail engine contract: the shared types and, from Phase 0, the method registry",
+  "license": "UNLICENSED",
+  "exports": {
+    "./legacy/*": "./src/legacy/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

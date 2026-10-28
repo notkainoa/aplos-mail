@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import nodemailer, { type SendMailOptions } from 'nodemailer';
 import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser';
-import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
-import { ProviderError, type AppDataRecord, type CalendarBackend, type CalendarCredentials, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type ProviderMemory, type RemoteThread, type ServerSettings, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '@aplos/contract/legacy/types';
+import { ProviderError, type AppDataRecord, type CalendarBackend, type CalendarCredentials, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type ProviderMemory, type RemoteThread, type ServerSettings, type SyncContext, type SyncResult, type ThreadFlags } from '@aplos/engine/legacy/provider';
 import { createVault } from './vault';
 import { createIndex, normalizeId, referenceIds, type ImapIndex, type MessageRecord, type Role } from './imap-index';
 import { imapflowSession, nodemailerSender, type ImapBox, type ImapFetched, type ImapLogin, type ImapSession, type SmtpLogin, type SmtpSender } from './imap-session';

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { blockedAddress, checkDomain, dohLookup, discoverAccount, parseAutoconfig, publicHost, type DomainReport } from '../src/engine/discover';
-import { duplicateTags, resolveDns } from '../src/engine/dns';
+import { blockedAddress, checkDomain, dohLookup, discoverAccount, parseAutoconfig, publicHost, type DomainReport } from '@aplos/engine/legacy/discover';
+import { duplicateTags, resolveDns } from '@aplos/engine/legacy/dns';
 
 type Zone=Record<string,Partial<Record<'MX'|'TXT'|'CNAME'|'A',string[]>>>;
 const CODES={A:1,CNAME:5,MX:15,TXT:16} as const;

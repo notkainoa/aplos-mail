@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { ChatMessage, ChatRequest, ChatTurn } from '../engine/agent';
-import type { ChatProvider } from '../engine/ports';
-import { askProvider, type AskModelInfo } from '../shared/ask';
+import type { ChatMessage, ChatRequest, ChatTurn } from '@aplos/engine/legacy/agent';
+import type { ChatProvider } from '@aplos/engine/legacy/ports';
+import { askProvider, type AskModelInfo } from '@aplos/contract/legacy/ask';
 import { missingKey, readKey, redact, rejected, type ApiKey } from './llm';
 
 /**

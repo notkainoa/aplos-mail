@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGroq, localNow, messageWeek } from '../src/main/groq';
-import type { Thread } from '../src/shared/types';
+import type { Thread } from '@aplos/contract/legacy/types';
 
 test('the clock Ask resolves relative dates with spells out weekdays and offsets',async()=>{
   const now=new Date('2026-10-20T16:00:00Z');

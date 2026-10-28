@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
-import { ProviderError, calendarColor, type CalendarBackend, type CalendarCredentials, type CalendarInfo } from '../engine/provider';
-import type { Account, CalendarEvent } from '../shared/types';
+import { ProviderError, calendarColor, type CalendarBackend, type CalendarCredentials, type CalendarInfo } from '@aplos/engine/legacy/provider';
+import type { Account, CalendarEvent } from '@aplos/contract/legacy/types';
 import { applyFields, createCalendar, isScheduling, parseComponents, prop, readEvents, serialize, utcStamp, zonesOf, type EventFields, type IcalComponent, type ParsedEvent } from './ical';
 
 export class CalDavError extends ProviderError {}

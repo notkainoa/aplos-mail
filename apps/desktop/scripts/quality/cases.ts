@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import type { GroqAdapter } from '../../src/main/groq';
-import type { Thread } from '../../src/shared/types';
-import { runAgent } from '../../src/engine/agent';
-import { createAskSession } from '../../src/engine/ask';
-import { localNow } from '../../src/engine/proposals';
+import type { Thread } from '@aplos/contract/legacy/types';
+import { runAgent } from '@aplos/engine/legacy/agent';
+import { createAskSession } from '@aplos/engine/legacy/ask';
+import { localNow } from '@aplos/engine/legacy/proposals';
 
 /** The Groq model Ask is evaluated with; GROQ_ASK_MODEL picks another verified one. */
 export const askModel=process.env.GROQ_ASK_MODEL??'openai/gpt-oss-120b';

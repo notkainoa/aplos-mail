@@ -3,13 +3,13 @@ import { mkdtemp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createDemo } from '../src/engine/demo';
+import { createDemo } from '@aplos/engine/legacy/demo';
 import { createStore } from '../src/main/store';
 import { createService } from '../src/main/service';
 import { createGroq } from '../src/main/groq';
-import type { AppState, Thread } from '../src/shared/types';
-import type { ThreadPage } from '../src/shared/live';
-import type { StoreDiff } from '../src/engine/store';
+import type { AppState, Thread } from '@aplos/contract/legacy/types';
+import type { ThreadPage } from '@aplos/contract/legacy/live';
+import type { StoreDiff } from '@aplos/engine/legacy/store';
 
 export function syntheticMailbox(count:number,bodySize=2000):AppState {
   const state=createDemo(new Date('2026-10-16T12:00:00Z'));

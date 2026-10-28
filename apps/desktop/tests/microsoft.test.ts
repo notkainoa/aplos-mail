@@ -7,8 +7,8 @@ import { createHash } from 'node:crypto';
 import { simpleParser } from 'mailparser';
 import { createMicrosoft, MicrosoftError } from '../src/main/microsoft';
 import { createVault } from '../src/main/vault';
-import type { ProviderMemory, SyncResult } from '../src/engine/provider';
-import type { Account, CalendarEvent, Draft, Thread } from '../src/shared/types';
+import type { ProviderMemory, SyncResult } from '@aplos/engine/legacy/provider';
+import type { Account, CalendarEvent, Draft, Thread } from '@aplos/contract/legacy/types';
 
 type Json=Record<string,any>;
 const graph='https://graph.microsoft.com/v1.0';

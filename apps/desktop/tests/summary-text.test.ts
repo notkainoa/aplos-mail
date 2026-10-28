@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {providerRequest} from '../src/main/llm';
-import {describeSummaryError,hasRealSummary,summaryProvider} from '../src/renderer/summaryText';
-import type {Thread} from '../src/shared/types';
+import {describeSummaryError,hasRealSummary,summaryProvider} from '../src/renderer/legacy/summaryText';
+import type {Thread} from '@aplos/contract/legacy/types';
 
 const groq=(status:number,headers:Record<string,string>={},key='test')=>providerRequest({name:'Groq',env:'GROQ_API_KEY',baseUrl:'https://groq.example',apiKey:key,fetch:async()=>new Response('{}',{status,headers})},'chat',undefined).then(()=>'',(error:Error)=>error.message);
 

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { CalendarEvent } from '../src/shared/types';
-import { openingHour, resist, swipeDecision, swipeThreshold, zoomHour, zoomScroll, hourLimits } from '../src/renderer/calendarMotion';
-import { clashes, emailContext, planKey, plansToReview } from '../src/renderer/calendarLayout';
+import type { CalendarEvent } from '@aplos/contract/legacy/types';
+import { openingHour, resist, swipeDecision, swipeThreshold, zoomHour, zoomScroll, hourLimits } from '../src/renderer/legacy/calendarMotion';
+import { clashes, emailContext, planKey, plansToReview } from '../src/renderer/legacy/calendarLayout';
 
 test('a period swipe turns the page by distance or a quick flick, and otherwise settles back',()=>{
   const width=800;const limit=swipeThreshold(width);

@@ -5,8 +5,8 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Account, Thread } from '../src/shared/types';
-import type { AppDataRecord, MailProvider, ProviderMemory } from '../src/engine/provider';
+import type { Account, Thread } from '@aplos/contract/legacy/types';
+import type { AppDataRecord, MailProvider, ProviderMemory } from '@aplos/engine/legacy/provider';
 import { createWorkflowSync } from '../src/main/workflow-sync';
 import { openWorkflow, sealWorkflow } from '../src/main/workflow-crypto';
 

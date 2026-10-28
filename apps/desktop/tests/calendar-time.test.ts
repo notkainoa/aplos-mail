@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, localInput, moveStart, parseGuests, setAllDay, slotOn, timeRange } from '../src/renderer/calendarTime';
+import { addDays, localInput, moveStart, parseGuests, setAllDay, slotOn, timeRange } from '../src/renderer/legacy/calendarTime';
 
 const at=(y:number,m:number,d:number,h=0,min=0)=>new Date(y,m-1,d,h,min).toISOString();
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import type { Account, Thread } from '../shared/types';
-import type { MailProvider, ProviderMemory } from '../engine/provider';
-import { applyLog, compactLog, keySchemeFor, parseWorkflowLog, publishLog, sameLog, workflowEdit, type WorkflowEdit, type WorkflowLog, type WorkflowPatch } from '../engine/workflow';
+import type { Account, Thread } from '@aplos/contract/legacy/types';
+import type { MailProvider, ProviderMemory } from '@aplos/engine/legacy/provider';
+import { applyLog, compactLog, keySchemeFor, parseWorkflowLog, publishLog, sameLog, workflowEdit, type WorkflowEdit, type WorkflowLog, type WorkflowPatch } from '@aplos/engine/legacy/workflow';
 import { generateSyncCode, normalizeSyncCode, openWorkflow, sealWorkflow, WorkflowCryptoError } from './workflow-crypto';
 import { createVault } from './vault';
 

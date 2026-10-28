@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ImapFlow } from 'imapflow';
-import { ProviderError } from '../src/engine/provider';
+import { ProviderError } from '@aplos/engine/legacy/provider';
 import { imapflowSession } from '../src/main/imap-session';
 
 /** Just enough of imapflow to see which commands the session issues and how it treats false results. */

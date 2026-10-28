@@ -1,6 +1,6 @@
 import { ImapFlow, type FetchMessageObject, type ImapFlowOptions, type MessageStructureObject } from 'imapflow';
 import nodemailer, { type SendMailOptions } from 'nodemailer';
-import { ProviderError } from '../engine/provider';
+import { ProviderError } from '@aplos/engine/legacy/provider';
 
 export interface ImapLogin {host:string; port:number; secure:boolean; user:string; pass:string}
 export interface SmtpLogin {host:string; port:number; secure:boolean; user:string; pass:string}

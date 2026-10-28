@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createEmulatedSession } from '../scripts/emulation/session';
 import { emulatedIdentity } from '../scripts/emulation/providers';
 import { startServer } from '../src/main/server';
-import type { AppState, Draft } from '../src/shared/types';
+import type { AppState, Draft } from '@aplos/contract/legacy/types';
 
 test('real application API and provider adapters handle local OAuth, refresh, sync, queue recovery, send and restart',async()=>{
   const session=await createEmulatedSession();

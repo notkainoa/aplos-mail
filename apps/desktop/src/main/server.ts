@@ -6,7 +6,7 @@ import {loadDevEnv} from './env';
 import {createServer as createViteServer} from 'vite';
 import {createService} from './service';
 import {appVersion} from '../shared/version';
-import type {Listener} from '../shared/types';
+import type {Listener} from '@aplos/contract/legacy/types';
 
 export const serviceMethods=new Set([
   'state.get','threads.page','capabilities.get','symbols.render','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',

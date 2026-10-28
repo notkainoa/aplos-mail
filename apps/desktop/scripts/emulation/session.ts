@@ -7,7 +7,7 @@ import { createGoogle } from '../../src/main/google';
 import { createMicrosoft } from '../../src/main/microsoft';
 import { createGroq } from '../../src/main/groq';
 import { startProviderEmulator } from './providers';
-import type { MailProvider, ProviderKind } from '../../src/engine/provider';
+import type { MailProvider, ProviderKind } from '@aplos/engine/legacy/provider';
 
 function disabledProvider(kind:ProviderKind):MailProvider {
   const reject=async():Promise<never>=>{throw new Error('Only local Google and Outlook emulators are available in this session.');};

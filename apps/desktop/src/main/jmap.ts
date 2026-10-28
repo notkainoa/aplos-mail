@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Account, Attachment, Draft, Message, Thread } from '../shared/types';
-import { ProviderError, type AppDataRecord, type CalendarBackend, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import type { Account, Attachment, Draft, Message, Thread } from '@aplos/contract/legacy/types';
+import { ProviderError, type AppDataRecord, type CalendarBackend, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '@aplos/engine/legacy/provider';
 import { createVault } from './vault';
 
 type Json=Record<string,any>;

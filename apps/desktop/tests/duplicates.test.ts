@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Thread } from '../src/shared/types';
-import { olderInboxDuplicates } from '../src/engine/duplicates';
+import type { Thread } from '@aplos/contract/legacy/types';
+import { olderInboxDuplicates } from '@aplos/engine/legacy/duplicates';
 
 const copy=(id:string,date='2026-10-18T12:00:00Z'):Thread=>({
   id,accountId:'a',remoteId:id,subject:'Original studio update',summary:'',date,
