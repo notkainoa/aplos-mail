@@ -9,11 +9,12 @@
     "./store": "./src/store/index.ts",
     "./store/*": "./src/store/*.ts",
     "./diag/*": "./src/diag/*.ts",
+    "./ports": "./src/ports.ts",
     "./legacy/*": "./src/legacy/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/**/*.test.ts"
+    "test": "tsx --test \"tests/**/*.test.ts\""
   },
   "dependencies": {
     "@aplos/contract": "*",
