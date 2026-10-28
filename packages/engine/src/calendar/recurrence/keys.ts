@@ -19,7 +19,8 @@ export function occurrenceKey(time: EventTime | string): string {
   }
   const text = typeof time === 'string' ? time : 'date' in time ? time.date : time.local;
   // Offsets are only meaningful in the bare-string form: a { local } reading carries its zone in `tzid`.
-  const value = parseIcalValue(text) ?? (typeof time === 'string' ? parseOffsetTime(text) : undefined);
+  const value =
+    parseIcalValue(text) ?? (typeof time === 'string' ? parseOffsetTime(text) : undefined);
   if (!value) throw new RangeError(`'${text}' is not a date or date-time`);
   const tzid = typeof time === 'string' || 'date' in time ? undefined : time.tzid;
   // A zoned local time names an instant; everything else keeps its own form.
@@ -33,6 +34,7 @@ export function occurrenceKey(time: EventTime | string): string {
  */
 export function googleInstanceId(masterId: string, originalStart: EventTime | string): string {
   const key = occurrenceKey(originalStart);
-  if (/^\d{8}T\d{6}$/.test(key)) throw new RangeError(`a floating time (${key}) has no Google instance id; give its zone`);
+  if (/^\d{8}T\d{6}$/.test(key))
+    throw new RangeError(`a floating time (${key}) has no Google instance id; give its zone`);
   return `${masterId}_${key}`;
 }

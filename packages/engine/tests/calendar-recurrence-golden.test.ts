@@ -20,11 +20,14 @@ interface GoldenCase {
   tags: string[];
   oracles: string[];
   input: Omit<ExpandRequest, 'range'> & { range: { from: string; to: string } };
-  expected: { ok: true; occurrences: Expected[] } | { ok: false; refused: 'unsupported' | 'invalid'; occurrences: Expected[] };
+  expected:
+    | { ok: true; occurrences: Expected[] }
+    | { ok: false; refused: 'unsupported' | 'invalid'; occurrences: Expected[] };
 }
 
 const dir = join(import.meta.dirname, 'fixtures', 'calendar');
-const load = (name: string): GoldenCase[] => JSON.parse(readFileSync(join(dir, name), 'utf8')).cases;
+const load = (name: string): GoldenCase[] =>
+  JSON.parse(readFileSync(join(dir, name), 'utf8')).cases;
 const golden = load('golden.json');
 const disputed = load('disputed.json');
 
@@ -38,19 +41,53 @@ function key(t: EventTime): string {
 }
 
 function run(c: GoldenCase) {
-  const result = expand({ ...c.input, range: { from: Date.parse(c.input.range.from), to: Date.parse(c.input.range.to) } });
-  const occurrences = result.occurrences.map(o => ({ recurrenceId: o.recurrenceId, start: key(o.start), end: key(o.end), overridden: o.overridden }));
-  return result.ok ? { ok: true, occurrences } : { ok: false, refused: result.refused, occurrences };
+  const result = expand({
+    ...c.input,
+    range: { from: Date.parse(c.input.range.from), to: Date.parse(c.input.range.to) },
+  });
+  const occurrences = result.occurrences.map(o => ({
+    recurrenceId: o.recurrenceId,
+    start: key(o.start),
+    end: key(o.end),
+    overridden: o.overridden,
+  }));
+  return result.ok
+    ? { ok: true, occurrences }
+    : { ok: false, refused: result.refused, occurrences };
 }
 
 test('the corpus is big enough and covers what PV8 names', () => {
   assert.ok(golden.length >= 90, `${golden.length} golden cases`);
   const tags = new Set(golden.flatMap(c => c.tags));
-  for (const tag of ['dst-la', 'dst-london', 'dst-sydney', 'gap', 'ambiguous', 'ordinal', 'bysetpos', 'bymonthday', 'leap', 'wkst', 'count', 'until', 'until-date', 'override', 'cancelled', 'moved-day', 'exdate', 'rdate', 'floating', 'all-day']) {
+  for (const tag of [
+    'dst-la',
+    'dst-london',
+    'dst-sydney',
+    'gap',
+    'ambiguous',
+    'ordinal',
+    'bysetpos',
+    'bymonthday',
+    'leap',
+    'wkst',
+    'count',
+    'until',
+    'until-date',
+    'override',
+    'cancelled',
+    'moved-day',
+    'exdate',
+    'rdate',
+    'floating',
+    'all-day',
+  ]) {
     assert.ok(tags.has(tag), `a case tagged ${tag}`);
   }
   assert.ok(golden.filter(c => c.tags.includes('refused')).length >= 10, 'ten refused cases');
-  assert.ok(golden.filter(c => c.oracles.length === 2).length >= 90, 'at least 90 cases agreed by both oracles');
+  assert.ok(
+    golden.filter(c => c.oracles.length === 2).length >= 90,
+    'at least 90 cases agreed by both oracles',
+  );
 });
 
 for (const c of golden) {

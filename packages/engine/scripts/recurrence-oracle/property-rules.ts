@@ -26,7 +26,16 @@ function prng(seed: number): () => number {
   };
 }
 
-const ZONES = ['America/Los_Angeles', 'Europe/London', 'Australia/Sydney', 'America/New_York', 'Asia/Kolkata', 'UTC', 'floating', 'all-day'];
+const ZONES = [
+  'America/Los_Angeles',
+  'Europe/London',
+  'Australia/Sydney',
+  'America/New_York',
+  'Asia/Kolkata',
+  'UTC',
+  'floating',
+  'all-day',
+];
 const DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 const YEAR = 365.25 * 86_400_000;
 
@@ -34,7 +43,9 @@ export function propertyRules(seed: number, n: number): PropertyRule[] {
   const rnd = prng(seed);
   const int = (lo: number, hi: number): number => lo + Math.floor(rnd() * (hi - lo + 1));
   const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)];
-  const some = <T>(xs: readonly T[], k: number): T[] => [...new Set(Array.from({ length: k }, () => pick(xs)))];
+  const some = <T>(xs: readonly T[], k: number): T[] => [
+    ...new Set(Array.from({ length: k }, () => pick(xs))),
+  ];
   const pad = (x: number): string => String(x).padStart(2, '0');
   const out: PropertyRule[] = [];
 
@@ -54,7 +65,8 @@ export function propertyRules(seed: number, n: number): PropertyRule[] {
     if (rnd() < 0.5) parts.push(`INTERVAL=${int(2, 4)}`);
     if (freq === 'DAILY') {
       if (rnd() < 0.3) parts.push(`BYDAY=${some(DAYS, int(1, 3)).join(',')}`);
-      if (rnd() < 0.2) parts.push(`BYMONTHDAY=${some([1, 10, 15, 28, 31, -1, -2], int(1, 2)).join(',')}`);
+      if (rnd() < 0.2)
+        parts.push(`BYMONTHDAY=${some([1, 10, 15, 28, 31, -1, -2], int(1, 2)).join(',')}`);
       if (rnd() < 0.2) parts.push(`BYMONTH=${some([1, 3, 6, 10, 11, 12], int(1, 3)).join(',')}`);
     } else if (freq === 'WEEKLY') {
       if (rnd() < 0.8) parts.push(`BYDAY=${some(DAYS, int(1, 4)).join(',')}`);
@@ -62,18 +74,45 @@ export function propertyRules(seed: number, n: number): PropertyRule[] {
       if (rnd() < 0.15) parts.push(`BYMONTH=${some([2, 3, 4, 10, 11], int(1, 2)).join(',')}`);
     } else if (freq === 'MONTHLY') {
       const shape = int(0, 5);
-      if (shape === 1) parts.push(`BYMONTHDAY=${some([1, 5, 15, 29, 30, 31, -1, -3, -10], int(1, 3)).join(',')}`);
-      if (shape === 2) parts.push(`BYDAY=${some([1, 2, 3, 4, 5, -1, -2], int(1, 2)).map(o => `${o}${pick(DAYS)}`).join(',')}`);
-      if (shape === 3) parts.push(`BYDAY=${some(DAYS, int(2, 5)).join(',')}`, `BYSETPOS=${some([1, 2, -1, -2], int(1, 2)).join(',')}`);
-      if (shape === 4) parts.push(`BYDAY=${some(DAYS, int(1, 2)).join(',')}`, `BYMONTHDAY=${some([1, 7, 13, 20, -1], int(1, 3)).join(',')}`);
+      if (shape === 1)
+        parts.push(`BYMONTHDAY=${some([1, 5, 15, 29, 30, 31, -1, -3, -10], int(1, 3)).join(',')}`);
+      if (shape === 2)
+        parts.push(
+          `BYDAY=${some([1, 2, 3, 4, 5, -1, -2], int(1, 2))
+            .map(o => `${o}${pick(DAYS)}`)
+            .join(',')}`,
+        );
+      if (shape === 3)
+        parts.push(
+          `BYDAY=${some(DAYS, int(2, 5)).join(',')}`,
+          `BYSETPOS=${some([1, 2, -1, -2], int(1, 2)).join(',')}`,
+        );
+      if (shape === 4)
+        parts.push(
+          `BYDAY=${some(DAYS, int(1, 2)).join(',')}`,
+          `BYMONTHDAY=${some([1, 7, 13, 20, -1], int(1, 3)).join(',')}`,
+        );
       if (shape === 5) parts.push(`BYDAY=${some(DAYS, int(1, 3)).join(',')}`);
       if (rnd() < 0.2) parts.push(`BYMONTH=${some([1, 2, 3, 4, 10, 11, 12], int(2, 4)).join(',')}`);
     } else {
       const shape = int(0, 4);
       if (shape === 1) parts.push(`BYMONTH=${some([1, 2, 3, 6, 10, 11, 12], int(1, 3)).join(',')}`);
-      if (shape === 2) parts.push(`BYMONTH=${some([2, 3, 10, 11], int(1, 2)).join(',')}`, `BYMONTHDAY=${some([1, 29, 30, 31, -1], int(1, 2)).join(',')}`);
-      if (shape === 3) parts.push(`BYMONTH=${some([3, 4, 10, 11], int(1, 2)).join(',')}`, `BYDAY=${pick([1, 2, -1, 4])}${pick(DAYS)}`);
-      if (shape === 4) parts.push(`BYMONTH=${pick([2, 3, 10, 11])}`, `BYDAY=${some(DAYS, int(2, 5)).join(',')}`, `BYSETPOS=${pick([1, -1, 2])}`);
+      if (shape === 2)
+        parts.push(
+          `BYMONTH=${some([2, 3, 10, 11], int(1, 2)).join(',')}`,
+          `BYMONTHDAY=${some([1, 29, 30, 31, -1], int(1, 2)).join(',')}`,
+        );
+      if (shape === 3)
+        parts.push(
+          `BYMONTH=${some([3, 4, 10, 11], int(1, 2)).join(',')}`,
+          `BYDAY=${pick([1, 2, -1, 4])}${pick(DAYS)}`,
+        );
+      if (shape === 4)
+        parts.push(
+          `BYMONTH=${pick([2, 3, 10, 11])}`,
+          `BYDAY=${some(DAYS, int(2, 5)).join(',')}`,
+          `BYSETPOS=${pick([1, -1, 2])}`,
+        );
     }
     const ending = int(0, 2);
     const startMs = Date.UTC(y, mo - 1, d);
@@ -81,7 +120,9 @@ export function propertyRules(seed: number, n: number): PropertyRule[] {
     if (ending === 2) {
       const u = new Date(startMs + int(30, 900) * 86_400_000).toISOString();
       const ud = u.slice(0, 10).replace(/-/g, '');
-      parts.push(`UNTIL=${zone === 'all-day' ? ud : zone === 'floating' ? `${ud}T120000` : `${ud}T120000Z`}`);
+      parts.push(
+        `UNTIL=${zone === 'all-day' ? ud : zone === 'floating' ? `${ud}T120000` : `${ud}T120000Z`}`,
+      );
     }
     const rrule = parts.join(';');
 
@@ -92,12 +133,18 @@ export function propertyRules(seed: number, n: number): PropertyRule[] {
     } else {
       const minutes = pick([30, 60, 90]);
       const end = new Date(Date.parse(`${local}Z`) + minutes * 60_000).toISOString().slice(0, 19);
-      event = zone === 'floating'
-        ? { start: { local }, end: { local: end }, allDay: false, rrule }
-        : { start: { local, tzid: zone }, end: { local: end, tzid: zone }, allDay: false, rrule };
+      event =
+        zone === 'floating'
+          ? { start: { local }, end: { local: end }, allDay: false, rrule }
+          : { start: { local, tzid: zone }, end: { local: end, tzid: zone }, allDay: false, rrule };
     }
     // From a day before the start (wide of any offset) to three years on.
-    out.push({ id: `p${String(i).padStart(3, '0')}`, event, from: startMs - 86_400_000, to: startMs + 3 * YEAR });
+    out.push({
+      id: `p${String(i).padStart(3, '0')}`,
+      event,
+      from: startMs - 86_400_000,
+      to: startMs + 3 * YEAR,
+    });
   }
   return out;
 }

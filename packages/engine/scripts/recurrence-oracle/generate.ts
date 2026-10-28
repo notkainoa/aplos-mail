@@ -64,7 +64,9 @@ function materialise(res: Extract<OracleResult, { status: 'ok' }>, c: Case): Exp
     const o = overrides.get(id);
     if (o?.cancelled) continue;
     const start = o?.start ?? id;
-    const end = o?.end ?? (o?.start ? after(o.start, res.durationMs, res.mode) : after(id, res.durationMs, res.mode));
+    const end =
+      o?.end ??
+      (o?.start ? after(o.start, res.durationMs, res.mode) : after(id, res.durationMs, res.mode));
     const [s, e] = [keyMs(start), keyMs(end)];
     const inside = e > s ? s < to && e > from : s >= from && s < to;
     if (inside) list.push({ recurrenceId: id, start, end, overridden: o !== undefined, at: s });
@@ -79,7 +81,14 @@ function cutoffOf(c: Pick<Case, 'range' | 'event'>): number {
   let cutoff = Date.parse(c.range.to);
   for (const o of c.event.overrides ?? []) {
     const id = o.recurrenceId;
-    const text = typeof id === 'string' ? id : 'utc' in id ? new Date(id.utc).toISOString() : 'date' in id ? id.date : id.local;
+    const text =
+      typeof id === 'string'
+        ? id
+        : 'utc' in id
+          ? new Date(id.utc).toISOString()
+          : 'date' in id
+            ? id.date
+            : id.local;
     cutoff = Math.max(cutoff, keyMs(text.replace(/[-:]/g, '').slice(0, 15).replace(/\..*$/, '')));
   }
   return cutoff + 3 * DAY;
@@ -90,7 +99,10 @@ function jobOf(id: string, event: CaseEvent, cutoff: number): Job {
 }
 
 function runA(jobs: Job[]): { engine: string; results: Map<string, OracleResult> } {
-  const raw = execFileSync(PYTHON, ['-I', join(here, 'oracle_a.py')], { input: JSON.stringify(jobs), maxBuffer: 1 << 28 });
+  const raw = execFileSync(PYTHON, ['-I', join(here, 'oracle_a.py')], {
+    input: JSON.stringify(jobs),
+    maxBuffer: 1 << 28,
+  });
   const parsed = JSON.parse(raw.toString()) as { engine: string; results: OracleResult[] };
   return { engine: parsed.engine, results: new Map(parsed.results.map(r => [r.id, r])) };
 }
@@ -99,7 +111,12 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.str
 
 function agree(a: OracleResult, b: OracleResult): boolean {
   if (a.status !== 'ok' || b.status !== 'ok') return false;
-  return a.mode === b.mode && a.durationMs === b.durationMs && same(a.instances, b.instances) && same(a.overrides, b.overrides);
+  return (
+    a.mode === b.mode &&
+    a.durationMs === b.durationMs &&
+    same(a.instances, b.instances) &&
+    same(a.overrides, b.overrides)
+  );
 }
 
 // ---------- the reading of RFC 5545 for every known dispute ----------
@@ -113,7 +130,7 @@ const READINGS: Record<string, { side: 'A' | 'B'; reading: string }> = {
   'ordinal-yearly-last-sunday-june-start': {
     side: 'A',
     reading:
-      'YEARLY;BYDAY=-1SU without BYMONTH is the last Sunday of the year (late December). B reads the ordinal within DTSTART\'s month and returns the last Sunday of June each year. A also drops the June DTSTART because the rule does not produce it (see the DTSTART note below). The corpus takes A.',
+      "YEARLY;BYDAY=-1SU without BYMONTH is the last Sunday of the year (late December). B reads the ordinal within DTSTART's month and returns the last Sunday of June each year. A also drops the June DTSTART because the rule does not produce it (see the DTSTART note below). The corpus takes A.",
   },
   'setpos-weekly-last-of-week': {
     side: 'A',
@@ -123,7 +140,7 @@ const READINGS: Record<string, { side: 'A' | 'B'; reading: string }> = {
   'setpos-yearly-across-months': {
     side: 'A',
     reading:
-      'For YEARLY, BYSETPOS selects within the whole year\'s set (here every Monday of January and February), so BYSETPOS=1 is the first Monday of January only. B applies BYSETPOS month by month and also keeps the first Monday of February. The corpus takes A.',
+      "For YEARLY, BYSETPOS selects within the whole year's set (here every Monday of January and February), so BYSETPOS=1 is the first Monday of January only. B applies BYSETPOS month by month and also keeps the first Monday of February. The corpus takes A.",
   },
   'mday-yearly-no-bymonth': {
     side: 'A',
@@ -138,7 +155,9 @@ async function main(): Promise<void> {
   const oracleB = await loadOracleB();
   const bCommit = (() => {
     try {
-      return execFileSync('git', ['-C', ORACLE_B_DIR, 'rev-parse', '--short', 'HEAD']).toString().trim();
+      return execFileSync('git', ['-C', ORACLE_B_DIR, 'rev-parse', '--short', 'HEAD'])
+        .toString()
+        .trim();
     } catch {
       return 'unknown';
     }
@@ -157,22 +176,41 @@ async function main(): Promise<void> {
   for (const [i, c] of cases.entries()) {
     const ra = a.results.get(c.id)!;
     const rb = oracleB(jobs[i]);
-    const input = { ...c.event, range: c.range, ...(c.limit !== undefined ? { limit: c.limit } : {}) };
+    const input = {
+      ...c.event,
+      range: c.range,
+      ...(c.limit !== undefined ? { limit: c.limit } : {}),
+    };
     const record = (oracles: string[], expected: unknown): void => {
-      golden.push({ id: c.id, tags: c.tags, ...(c.note ? { note: c.note } : {}), oracles, input, expected });
+      golden.push({
+        id: c.id,
+        tags: c.tags,
+        ...(c.note ? { note: c.note } : {}),
+        oracles,
+        input,
+        expected,
+      });
     };
 
     if (c.refusal) {
       // A refused series still shows its own first instance: both oracles expand the event without its rule.
       const fa = firstA.results.get(c.id)!;
       const fb = oracleB(firstJobs[i]);
-      if (rb.status === 'ok') problems.push(`${c.id}: oracle B accepts a rule the case expects to be refused`);
-      else if (fa.status !== 'ok' || fb.status !== 'ok' || !agree(fa, fb)) problems.push(`${c.id}: the oracles disagree on the first instance`);
+      if (rb.status === 'ok')
+        problems.push(`${c.id}: oracle B accepts a rule the case expects to be refused`);
+      else if (fa.status !== 'ok' || fb.status !== 'ok' || !agree(fa, fb))
+        problems.push(`${c.id}: the oracles disagree on the first instance`);
       else {
         const first = materialise(fa, c);
         const refused = ra.status === 'ok' ? 'unsupported' : 'invalid';
-        if (ra.status === 'ok' && ra.instances[0] !== fa.instances[0]) problems.push(`${c.id}: DTSTART is not the rule's first instance`);
-        record(['A', 'B'], { ok: false, refused, occurrences: first, why: { A: ra.status === 'ok' ? 'expands it' : ra.error, B: rb.error } });
+        if (ra.status === 'ok' && ra.instances[0] !== fa.instances[0])
+          problems.push(`${c.id}: DTSTART is not the rule's first instance`);
+        record(['A', 'B'], {
+          ok: false,
+          refused,
+          occurrences: first,
+          why: { A: ra.status === 'ok' ? 'expands it' : ra.error, B: rb.error },
+        });
       }
       continue;
     }
@@ -199,17 +237,21 @@ async function main(): Promise<void> {
         const reading = READINGS[c.id];
         if (!reading) problems.push(`${c.id}: oracles disagree and no reading is recorded`);
         disputed.push({
-          id: c.id, tags: c.tags, input,
+          id: c.id,
+          tags: c.tags,
+          input,
           side: reading?.side ?? 'A',
           reading: reading?.reading ?? 'UNREVIEWED',
           expected: { ok: true, occurrences: (reading?.side ?? 'A') === 'A' ? ea : eb },
-          A: ea, B: eb,
+          A: ea,
+          B: eb,
         });
       }
     }
   }
   for (const [id, r] of Object.entries(READINGS)) {
-    if (!disputed.some(d => (d as { id: string }).id === id)) problems.push(`${id}: a reading is recorded but the oracles now agree`);
+    if (!disputed.some(d => (d as { id: string }).id === id))
+      problems.push(`${id}: a reading is recorded but the oracles now agree`);
   }
 
   // ---------- property sweep: random rules inside B's subset, three years each ----------
@@ -222,31 +264,74 @@ async function main(): Promise<void> {
     if (property.length >= 300) break;
     const rb = oracleB(pJobs[i]);
     const ra = pa.results.get(r.id)!;
-    if (rb.status !== 'ok') throw new Error(`${r.id}: the property generator left B's subset (${rb.error})`);
+    if (rb.status !== 'ok')
+      throw new Error(`${r.id}: the property generator left B's subset (${rb.error})`);
     const keys = rb.instances.filter(k => keyMs(k) < r.to && keyMs(k) >= r.from);
-    const aKeys = ra.status === 'ok' ? ra.instances.filter(k => keyMs(k) < r.to && keyMs(k) >= r.from) : undefined;
+    const aKeys =
+      ra.status === 'ok'
+        ? ra.instances.filter(k => keyMs(k) < r.to && keyMs(k) >= r.from)
+        : undefined;
     if (!aKeys || !same(aKeys, keys)) {
-      sweepDisagreements.push(`${r.id} ${r.event.rrule} (${ra.status === 'ok' ? `A ${aKeys!.length} vs B ${keys.length}` : ra.error})`);
+      sweepDisagreements.push(
+        `${r.id} ${r.event.rrule} (${ra.status === 'ok' ? `A ${aKeys!.length} vs B ${keys.length}` : ra.error})`,
+      );
       continue;
     }
-    property.push({ id: r.id, event: r.event, range: { from: r.from, to: r.to }, count: keys.length, hash: fnv(keys.join(' ')), head: keys.slice(0, 30) });
+    property.push({
+      id: r.id,
+      event: r.event,
+      range: { from: r.from, to: r.to },
+      count: keys.length,
+      hash: fnv(keys.join(' ')),
+      head: keys.slice(0, 30),
+    });
   }
 
-  writeFileSync(join(out, 'golden.json'), `${JSON.stringify({
-    about: 'Recurrence golden corpus. Inputs from scripts/recurrence-oracle/cases.ts; expected outputs from the oracles listed per case, never from the engine. Regenerate with scripts/recurrence-oracle/generate.ts.',
-    oracles: { A: a.engine, B: `Google Calendar emulator rrule.ts (prov-emu-gcal ${bCommit})` },
-    cases: golden,
-  }, null, 1)}\n`);
-  writeFileSync(join(out, 'disputed.json'), `${JSON.stringify({ about: 'Cases where the oracles disagree; `expected` follows `side`. See disagreements.md.', cases: disputed }, null, 1)}\n`);
-  writeFileSync(join(out, 'property-b.json'), `${JSON.stringify({
-    about: 'Seeded random rules inside oracle B\'s subset, each over three years. count, FNV-1a hash and first keys of the occurrence keys B and A both produce. Regenerate with generate.ts.',
-    seed: 20261027,
-    rules: property,
-  })}\n`);
-  writeFileSync(join(out, 'disagreements.md'), report({ a: a.engine, bCommit, golden: golden.length, disputed, aOnly, bOnly, sweepDisagreements, property: property.length, swept: rules.length }));
+  writeFileSync(
+    join(out, 'golden.json'),
+    `${JSON.stringify(
+      {
+        about:
+          'Recurrence golden corpus. Inputs from scripts/recurrence-oracle/cases.ts; expected outputs from the oracles listed per case, never from the engine. Regenerate with scripts/recurrence-oracle/generate.ts.',
+        oracles: { A: a.engine, B: `Google Calendar emulator rrule.ts (prov-emu-gcal ${bCommit})` },
+        cases: golden,
+      },
+      null,
+      1,
+    )}\n`,
+  );
+  writeFileSync(
+    join(out, 'disputed.json'),
+    `${JSON.stringify({ about: 'Cases where the oracles disagree; `expected` follows `side`. See disagreements.md.', cases: disputed }, null, 1)}\n`,
+  );
+  writeFileSync(
+    join(out, 'property-b.json'),
+    `${JSON.stringify({
+      about:
+        "Seeded random rules inside oracle B's subset, each over three years. count, FNV-1a hash and first keys of the occurrence keys B and A both produce. Regenerate with generate.ts.",
+      seed: 20261027,
+      rules: property,
+    })}\n`,
+  );
+  writeFileSync(
+    join(out, 'disagreements.md'),
+    report({
+      a: a.engine,
+      bCommit,
+      golden: golden.length,
+      disputed,
+      aOnly,
+      bOnly,
+      sweepDisagreements,
+      property: property.length,
+      swept: rules.length,
+    }),
+  );
 
   const twoOracle = golden.filter(g => (g as { oracles: string[] }).oracles.length === 2).length;
-  console.log(`golden: ${golden.length} cases (${twoOracle} with both oracles, ${aOnly.length} A only, ${bOnly.length} B only); disputed: ${disputed.length}; property: ${property.length} kept, ${sweepDisagreements.length} dropped`);
+  console.log(
+    `golden: ${golden.length} cases (${twoOracle} with both oracles, ${aOnly.length} A only, ${bOnly.length} B only); disputed: ${disputed.length}; property: ${property.length} kept, ${sweepDisagreements.length} dropped`,
+  );
   if (problems.length) {
     console.error(`problems:\n  ${problems.join('\n  ')}`);
     process.exitCode = 1;
@@ -264,18 +349,26 @@ function fnv(text: string): string {
 
 /** Found by the fuzz review, not by this generator; kept here so a regeneration keeps them. */
 const ORACLE_A_DEFECTS: string[] = [
-  "## Oracle A defects the fuzz found (the module follows RFC 5545)",
-  "",
+  '## Oracle A defects the fuzz found (the module follows RFC 5545)',
+  '',
   "The seeded fuzz (`calendar-recurrence-fuzz.test.ts`) compares the module with oracle A over ten years. In three places dateutil is wrong and the module is right; the fuzz steers around the first two and hand tests pin the module's answers. No golden or disputed case depends on them.",
-  "",
-  "- **WEEKLY with BYSETPOS.** RFC 5545 §3.3.10 applies BYSETPOS to \"the set of recurrence instances\" of each interval, which for WEEKLY is the whole week from WKST. dateutil counts only the days of DTSTART's week from DTSTART on. `WEEKLY;BYDAY=FR,WE,SA;WKST=WE;BYSETPOS=1` from Sat 15 Aug 2026: dateutil says 15 Aug, the RFC (and the module) say 19 Aug, because position 1 of that week is Wed 12 Aug, before DTSTART.",
-  "- **BYWEEKNO near 1 January.** Week 1 is the first week with at least four days of the year (§3.3.10). dateutil sizes the previous year from the current one, so with `WKST=SU` it calls 1-2 Jan 2027 week 53, but 2026 has 52 weeks and they are week 52. The three BYWEEKNO golden cases avoid this and rest on oracle A alone.",
+  '',
+  '- **WEEKLY with BYSETPOS.** RFC 5545 §3.3.10 applies BYSETPOS to "the set of recurrence instances" of each interval, which for WEEKLY is the whole week from WKST. dateutil counts only the days of DTSTART\'s week from DTSTART on. `WEEKLY;BYDAY=FR,WE,SA;WKST=WE;BYSETPOS=1` from Sat 15 Aug 2026: dateutil says 15 Aug, the RFC (and the module) say 19 Aug, because position 1 of that week is Wed 12 Aug, before DTSTART.',
+  '- **BYWEEKNO near 1 January.** Week 1 is the first week with at least four days of the year (§3.3.10). dateutil sizes the previous year from the current one, so with `WKST=SU` it calls 1-2 Jan 2027 week 53, but 2026 has 52 weeks and they are week 52. The three BYWEEKNO golden cases avoid this and rest on oracle A alone.',
   "- **A start given as an exact instant on a fall-back night.** RFC 5545 §3.3.5 picks the first of two equal wall readings only for a local time with TZID. A start given as an instant (Google's `start.dateTime` with an offset) is that instant: 09:30Z on 1 Nov 2026 in Los Angeles is the second 01:30, and Google's id for that instance ends `_20261101T093000Z`. Oracle A reads the instant back as a wall time and lands on the first 01:30, as the module did before the fix; later instances take the first reading in both.",
-  "",
+  '',
 ];
 
 function report(r: {
-  a: string; bCommit: string; golden: number; disputed: unknown[]; aOnly: string[]; bOnly: string[]; sweepDisagreements: string[]; property: number; swept: number;
+  a: string;
+  bCommit: string;
+  golden: number;
+  disputed: unknown[];
+  aOnly: string[];
+  bOnly: string[];
+  sweepDisagreements: string[];
+  property: number;
+  swept: number;
 }): string {
   const lines = [
     '# Recurrence oracle disagreements',
@@ -291,9 +384,31 @@ function report(r: {
     'Each is in `disputed.json` with both answers; the module is tested against the side named here.',
     '',
   ];
-  for (const d of r.disputed as { id: string; input: { rrule?: string }; side: string; reading: string; A: Expected[]; B: Expected[] }[]) {
-    const show = (list: Expected[]): string => (list.length ? list.slice(0, 6).map(e => e.recurrenceId).join(', ') + (list.length > 6 ? `, ... (${list.length})` : ` (${list.length})`) : 'none');
-    lines.push(`### ${d.id}`, '', `Rule \`${d.input.rrule}\`.`, '', `- A: ${show(d.A)}`, `- B: ${show(d.B)}`, `- Corpus side: **${d.side}**. ${d.reading}`, '');
+  for (const d of r.disputed as {
+    id: string;
+    input: { rrule?: string };
+    side: string;
+    reading: string;
+    A: Expected[];
+    B: Expected[];
+  }[]) {
+    const show = (list: Expected[]): string =>
+      list.length
+        ? list
+            .slice(0, 6)
+            .map(e => e.recurrenceId)
+            .join(', ') + (list.length > 6 ? `, ... (${list.length})` : ` (${list.length})`)
+        : 'none';
+    lines.push(
+      `### ${d.id}`,
+      '',
+      `Rule \`${d.input.rrule}\`.`,
+      '',
+      `- A: ${show(d.A)}`,
+      `- B: ${show(d.B)}`,
+      `- Corpus side: **${d.side}**. ${d.reading}`,
+      '',
+    );
   }
   lines.push(
     '## A note that is not a disagreement: DTSTART that does not match the rule',
@@ -307,14 +422,16 @@ function report(r: {
     '',
     ...r.aOnly.map(x => `- ${x}`),
     '',
-    'Oracle B only (dateutil refuses an UNTIL whose form differs from DTSTART\'s; RFC 5545 says it MUST match, but Google writes such rules, so the module reads them leniently the same way B does):',
+    "Oracle B only (dateutil refuses an UNTIL whose form differs from DTSTART's; RFC 5545 says it MUST match, but Google writes such rules, so the module reads them leniently the same way B does):",
     '',
     ...r.bOnly.map(x => `- ${x}`),
     '',
     '## Property sweep',
     '',
     `${r.swept} seeded rules were generated inside oracle B's subset; the first ${r.property} on which A and B agree over three years are in \`property-b.json\`.`,
-    r.sweepDisagreements.length ? 'Rules dropped because A and B disagree:' : 'No generated rule was dropped for a disagreement before the 300 were reached.',
+    r.sweepDisagreements.length
+      ? 'Rules dropped because A and B disagree:'
+      : 'No generated rule was dropped for a disagreement before the 300 were reached.',
     '',
     ...r.sweepDisagreements.map(x => `- ${x}`),
     '',

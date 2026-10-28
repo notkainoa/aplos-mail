@@ -4,7 +4,19 @@
  */
 import { timesPerDay } from './generate';
 import { EXPANDABLE, Refusal, fail, parseRRule, type Rule } from './rule';
-import { DAY_MS, dateKey, dayOfWall, isoDate, isoLocal, parseIcalValue, parseOffsetTime, utcKey, valueMs, wallKey, type IcalValue } from './time';
+import {
+  DAY_MS,
+  dateKey,
+  dayOfWall,
+  isoDate,
+  isoLocal,
+  parseIcalValue,
+  parseOffsetTime,
+  utcKey,
+  valueMs,
+  wallKey,
+  type IcalValue,
+} from './time';
 import type { EventTime, Override, Series } from './types';
 import { fromWall, isKnownZone, toWall } from './zone';
 
@@ -59,7 +71,12 @@ export type Prepared =
   | { ok: false; refused: 'unsupported' | 'invalid'; reason: string; normal?: Normal };
 
 function parseEventTime(t: EventTime): { value: IcalValue; tzid?: string } {
-  const value = 'utc' in t ? (Number.isFinite(t.utc) ? ({ kind: 'utc', ms: t.utc } as const) : undefined) : parseIcalValue('date' in t ? t.date : t.local);
+  const value =
+    'utc' in t
+      ? Number.isFinite(t.utc)
+        ? ({ kind: 'utc', ms: t.utc } as const)
+        : undefined
+      : parseIcalValue('date' in t ? t.date : t.local);
   // { date } must hold a DATE and { local } a DATE-TIME.
   if (!value || 'date' in t !== (value.kind === 'date')) fail(`bad time ${JSON.stringify(t)}`);
   return { value, tzid: 'local' in t ? t.tzid : undefined };
@@ -88,7 +105,8 @@ export function instAt(n: Normal, wall: number): Inst {
  */
 export function instOf(n: Normal, value: IcalValue, tzid?: string): Inst {
   if (n.mode === 'date') return instAt(n, dayOfWall(valueMs(value)) * DAY_MS);
-  if (value.kind === 'date') return instAt(n, valueMs(value) + n.startWall - dayOfWall(n.startWall) * DAY_MS);
+  if (value.kind === 'date')
+    return instAt(n, valueMs(value) + n.startWall - dayOfWall(n.startWall) * DAY_MS);
   if (n.mode === 'floating') return instAt(n, valueMs(value));
   if (value.kind === 'local' && (!tzid || tzid === n.tz)) return instAt(n, value.wall);
   const at = value.kind === 'utc' ? value.ms : fromWall(value.wall, zone(tzid!));
@@ -97,7 +115,10 @@ export function instOf(n: Normal, value: IcalValue, tzid?: string): Inst {
 
 /** Normalises a recurrence id given as an EventTime, a key, or an RFC 3339 time (Google's originalStartTime). */
 export function instOfId(n: Normal, id: string | EventTime): Inst {
-  const { value, tzid } = typeof id === 'string' ? { value: parseIcalValue(id) ?? parseOffsetTime(id), tzid: undefined } : parseEventTime(id);
+  const { value, tzid } =
+    typeof id === 'string'
+      ? { value: parseIcalValue(id) ?? parseOffsetTime(id), tzid: undefined }
+      : parseEventTime(id);
   if (!value) fail(`bad occurrence key ${id}`);
   return instOf(n, value, tzid);
 }
@@ -106,7 +127,8 @@ export function instOfId(n: Normal, id: string | EventTime): Inst {
 function place(n: Normal, t: EventTime): Placed {
   const { value, tzid } = parseEventTime(t);
   if (value.kind === 'utc') return { time: { utc: value.ms }, at: value.ms };
-  if (value.kind === 'date') return { time: { date: isoDate(value.day) }, at: fromWall(value.day * DAY_MS, n.floatingZone) };
+  if (value.kind === 'date')
+    return { time: { date: isoDate(value.day) }, at: fromWall(value.day * DAY_MS, n.floatingZone) };
   const tz = tzid ?? (n.mode === 'zoned' ? n.tz : undefined);
   if (tz) {
     const at = fromWall(value.wall, zone(tz));
@@ -119,26 +141,44 @@ function place(n: Normal, t: EventTime): Placed {
 export function shift(n: Normal, p: Placed): Placed {
   const t = p.time;
   if ('utc' in t) return place(n, { utc: t.utc + n.duration });
-  if ('date' in t) return place(n, { date: isoDate(dayOfWall(valueMs(parseIcalValue(t.date)!)) + (n.mode === 'date' ? Math.round(n.duration / DAY_MS) : 1)) });
+  if ('date' in t)
+    return place(n, {
+      date: isoDate(
+        dayOfWall(valueMs(parseIcalValue(t.date)!)) +
+          (n.mode === 'date' ? Math.round(n.duration / DAY_MS) : 1),
+      ),
+    });
   return place(n, { local: isoLocal(valueMs(parseIcalValue(t.local)!) + n.duration) });
 }
 
 /** 'EXDATE;TZID=Europe/London:20261025T013000,20261101T013000' or a bare value list. */
-export function parseDateLine(line: string): { prefix?: string; params: Map<string, string>; values: string[] } {
+export function parseDateLine(line: string): {
+  prefix?: string;
+  params: Map<string, string>;
+  values: string[];
+} {
   const m = /^([A-Z-]+(?:;[^:]*)?):(.*)$/i.exec(line);
   const params = new Map<string, string>();
   for (const item of m ? m[1].split(';').slice(1) : []) {
     const [k, v = ''] = item.split('=');
     params.set(k.toUpperCase(), v.replace(/"/g, ''));
   }
-  return { prefix: m?.[1], params, values: (m ? m[2] : line).split(',').map(v => v.trim()).filter(Boolean) };
+  return {
+    prefix: m?.[1],
+    params,
+    values: (m ? m[2] : line)
+      .split(',')
+      .map(v => v.trim())
+      .filter(Boolean),
+  };
 }
 
 function datedInsts(n: Normal, lines: string[] | undefined, what: string): Inst[] {
   return (lines ?? []).flatMap(line => {
     const { params, values } = parseDateLine(line);
     // RDATE;VALUE=PERIOD gives each extra instance its own end; no provider Aplos syncs writes it.
-    if (params.get('VALUE')?.toUpperCase() === 'PERIOD') fail(`${what};VALUE=PERIOD`, 'unsupported');
+    if (params.get('VALUE')?.toUpperCase() === 'PERIOD')
+      fail(`${what};VALUE=PERIOD`, 'unsupported');
     const tzid = params.get('TZID');
     return values.map(raw => {
       const value = parseIcalValue(raw);
@@ -149,7 +189,9 @@ function datedInsts(n: Normal, lines: string[] | undefined, what: string): Inst[
 }
 
 function rulesOf(rrule: Series['rrule']): string[] {
-  return (Array.isArray(rrule) ? rrule : rrule === undefined ? [] : [rrule]).map(r => r.trim()).filter(Boolean);
+  return (Array.isArray(rrule) ? rrule : rrule === undefined ? [] : [rrule])
+    .map(r => r.trim())
+    .filter(Boolean);
 }
 
 /** Normalises a master. Never throws: bad input comes back as a typed refusal. */
@@ -160,43 +202,79 @@ export function prepare(series: Series, floatingZone = 'UTC'): Prepared {
     const start = parseEventTime(series.start);
     const end = parseEventTime(series.end);
     if (series.allDay !== (start.value.kind === 'date')) fail('allDay must match a { date } start');
-    if ((start.value.kind === 'date') !== (end.value.kind === 'date')) fail('start and end must both be dates or both be times');
+    if ((start.value.kind === 'date') !== (end.value.kind === 'date'))
+      fail('start and end must both be dates or both be times');
     const tzid = start.tzid ?? series.tzid;
-    const zoned = start.value.kind === 'utc' || (start.value.kind === 'local' && tzid !== undefined);
+    const zoned =
+      start.value.kind === 'utc' || (start.value.kind === 'local' && tzid !== undefined);
     const mode: Mode = start.value.kind === 'date' ? 'date' : zoned ? 'zoned' : 'floating';
     const tz = zoned ? zone(tzid ?? 'UTC') : floatingZone;
     // A zoned start inside a DST gap repeats at its written wall time, so the wall is kept as given.
-    const startWall = start.value.kind === 'utc' ? toWall(start.value.ms, tz) : valueMs(start.value);
+    const startWall =
+      start.value.kind === 'utc' ? toWall(start.value.ms, tz) : valueMs(start.value);
     // Start and end may name different zones; the exact gap between the two instants is the duration.
-    const instant = (t: typeof start): number => (t.value.kind === 'utc' ? t.value.ms : fromWall(valueMs(t.value), zone(t.tzid ?? tz)));
+    const instant = (t: typeof start): number =>
+      t.value.kind === 'utc' ? t.value.ms : fromWall(valueMs(t.value), zone(t.tzid ?? tz));
     const duration = zoned ? instant(end) - instant(start) : valueMs(end.value) - startWall;
     normal = {
-      mode, tz, floatingZone, startWall, duration: Math.max(0, duration),
+      mode,
+      tz,
+      floatingZone,
+      startWall,
+      duration: Math.max(0, duration),
       startAt: zoned && start.value.kind === 'utc' ? start.value.ms : undefined,
-      rdates: [], exKeys: new Set(), overrides: new Map(),
+      rdates: [],
+      exKeys: new Set(),
+      overrides: new Map(),
     };
     normal.rdates = datedInsts(normal, series.rdate, 'RDATE');
     normal.exKeys = new Set(datedInsts(normal, series.exdate, 'EXDATE').map(i => i.key));
     for (const o of series.overrides ?? []) normal.overrides.set(...normalOverride(normal, o));
   } catch (err) {
-    if (err instanceof Refusal) return { ok: false, refused: err.kind, reason: err.message, normal: err.kind === 'unsupported' ? normal : undefined };
+    if (err instanceof Refusal)
+      return {
+        ok: false,
+        refused: err.kind,
+        reason: err.message,
+        normal: err.kind === 'unsupported' ? normal : undefined,
+      };
     if (err instanceof RangeError) return { ok: false, refused: 'invalid', reason: err.message };
     throw err;
   }
   const rules = rulesOf(series.rrule);
-  if (rules.length > 1) return { ok: false, refused: 'unsupported', reason: 'more than one RRULE', normal };
+  if (rules.length > 1)
+    return { ok: false, refused: 'unsupported', reason: 'more than one RRULE', normal };
   if (rules.length === 1) {
     const parsed = parseRRule(rules[0]);
     if (!parsed.ok) return { ok: false, refused: parsed.error, reason: parsed.reason, normal };
     const rule = parsed.rule;
-    if (normal.mode === 'date' && (rule.byHour.length || rule.byMinute.length || rule.bySecond.length)) {
-      return { ok: false, refused: 'invalid', reason: 'BYHOUR, BYMINUTE and BYSECOND need a timed start', normal };
+    if (
+      normal.mode === 'date' &&
+      (rule.byHour.length || rule.byMinute.length || rule.bySecond.length)
+    ) {
+      return {
+        ok: false,
+        refused: 'invalid',
+        reason: 'BYHOUR, BYMINUTE and BYSECOND need a timed start',
+        normal,
+      };
     }
-    if (!EXPANDABLE.has(rule.freq)) return { ok: false, refused: 'unsupported', reason: `FREQ=${rule.freq} is not expanded`, normal };
+    if (!EXPANDABLE.has(rule.freq))
+      return {
+        ok: false,
+        refused: 'unsupported',
+        reason: `FREQ=${rule.freq} is not expanded`,
+        normal,
+      };
     // DAILY;BYHOUR=0..23;BYMINUTE=0..59 is MINUTELY in disguise (86,400 a day with BYSECOND), and one
     // such invite would stall expansion. More than once an hour is refused like HOURLY and finer.
     if (timesPerDay(rule) > MAX_TIMES_PER_DAY) {
-      return { ok: false, refused: 'unsupported', reason: `more than ${MAX_TIMES_PER_DAY} start times a day (HOURLY or finer in effect)`, normal };
+      return {
+        ok: false,
+        refused: 'unsupported',
+        reason: `more than ${MAX_TIMES_PER_DAY} start times a day (HOURLY or finer in effect)`,
+        normal,
+      };
     }
     normal.rule = rule;
   }
@@ -205,12 +283,15 @@ export function prepare(series: Series, floatingZone = 'UTC'): Prepared {
 
 function normalOverride(n: Normal, o: Override): [string, NormalOverride] {
   const inst = instOfId(n, o.recurrenceId);
-  return [inst.key, {
-    inst,
-    start: o.start ? place(n, o.start) : undefined,
-    end: o.end ? place(n, o.end) : undefined,
-    cancelled: o.cancelled === true,
-  }];
+  return [
+    inst.key,
+    {
+      inst,
+      start: o.start ? place(n, o.start) : undefined,
+      end: o.end ? place(n, o.end) : undefined,
+      cancelled: o.cancelled === true,
+    },
+  ];
 }
 
 /**

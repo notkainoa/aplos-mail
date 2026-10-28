@@ -13,7 +13,8 @@ export interface Civil {
 }
 
 /** Day number of a proleptic Gregorian date; month and day may overflow (month 13 is next January). */
-export const dayFromCivil = (y: number, m: number, d: number): number => new Date(0).setUTCFullYear(y, m - 1, d) / DAY_MS;
+export const dayFromCivil = (y: number, m: number, d: number): number =>
+  new Date(0).setUTCFullYear(y, m - 1, d) / DAY_MS;
 
 export function civilFromDay(day: number): Civil {
   const t = new Date(day * DAY_MS);
@@ -23,7 +24,8 @@ export function civilFromDay(day: number): Civil {
 /** 0 = Monday ... 6 = Sunday, the order RFC 5545 weeks use. */
 export const weekdayOf = (day: number): number => (((day + 3) % 7) + 7) % 7;
 
-export const daysInMonth = (y: number, m: number): number => dayFromCivil(y, m + 1, 1) - dayFromCivil(y, m, 1);
+export const daysInMonth = (y: number, m: number): number =>
+  dayFromCivil(y, m + 1, 1) - dayFromCivil(y, m, 1);
 
 export const dayOfWall = (wall: number): number => Math.floor(wall / DAY_MS);
 
@@ -43,13 +45,16 @@ export const utcKey = (ms: number): string => `${wallKey(ms)}Z`;
 export const dateKey = (day: number): string => wallKey(day * DAY_MS).slice(0, 8);
 
 /** A parsed iCalendar DATE or DATE-TIME value. */
-export type IcalValue = { kind: 'date'; day: number } | { kind: 'utc'; ms: number } | { kind: 'local'; wall: number };
+export type IcalValue =
+  { kind: 'date'; day: number } | { kind: 'utc'; ms: number } | { kind: 'local'; wall: number };
 
 /** A value on the day scale whatever its kind (a UTC time reads as its UTC wall clock). */
-export const valueMs = (v: IcalValue): number => (v.kind === 'date' ? v.day * DAY_MS : v.kind === 'utc' ? v.ms : v.wall);
+export const valueMs = (v: IcalValue): number =>
+  v.kind === 'date' ? v.day * DAY_MS : v.kind === 'utc' ? v.ms : v.wall;
 
 /** The occurrence-key text of a value: 'YYYYMMDD', 'YYYYMMDDTHHMMSS' or 'YYYYMMDDTHHMMSSZ'. */
-export const valueKey = (v: IcalValue): string => (v.kind === 'date' ? dateKey(v.day) : v.kind === 'utc' ? utcKey(v.ms) : wallKey(v.wall));
+export const valueKey = (v: IcalValue): string =>
+  v.kind === 'date' ? dateKey(v.day) : v.kind === 'utc' ? utcKey(v.ms) : wallKey(v.wall);
 
 const VALUE = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/;
 
@@ -58,7 +63,9 @@ const VALUE = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/;
  * '2026-10-25' / '2026-10-25T01:30:00(Z)'. Undefined when the text is not a real date and time.
  */
 export function parseIcalValue(text: string): IcalValue | undefined {
-  const compact = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z?)?$/i.test(text) ? text.replace(/[-:]/g, '') : text;
+  const compact = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z?)?$/i.test(text)
+    ? text.replace(/[-:]/g, '')
+    : text;
   const m = VALUE.exec(compact.toUpperCase());
   if (!m) return undefined;
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
@@ -71,7 +78,8 @@ export function parseIcalValue(text: string): IcalValue | undefined {
   return m[7] ? { kind: 'utc', ms } : { kind: 'local', wall: ms };
 }
 
-const OFFSET_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/i;
+const OFFSET_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/i;
 
 /**
  * An RFC 3339 time with an offset or fractional seconds, the form Google's `originalStartTime.dateTime`

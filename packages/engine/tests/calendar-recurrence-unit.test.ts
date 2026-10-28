@@ -42,18 +42,30 @@ function okExpand(series: Series, range = YEAR_2026): string[] {
 // ---------- parser ----------
 
 test('parseRRule reads every rule part', () => {
-  const r = parseRRule('RRULE:FREQ=YEARLY;INTERVAL=2;BYMONTH=1,3;BYDAY=-1SU,2MO,TU;BYMONTHDAY=-1,15;BYSETPOS=1,-1;BYHOUR=9;BYMINUTE=30;BYSECOND=0;WKST=SU;UNTIL=20301231T235959Z');
+  const r = parseRRule(
+    'RRULE:FREQ=YEARLY;INTERVAL=2;BYMONTH=1,3;BYDAY=-1SU,2MO,TU;BYMONTHDAY=-1,15;BYSETPOS=1,-1;BYHOUR=9;BYMINUTE=30;BYSECOND=0;WKST=SU;UNTIL=20301231T235959Z',
+  );
   assert.ok(r.ok);
   assert.equal(r.rule.freq, 'YEARLY');
   assert.equal(r.rule.interval, 2);
-  assert.deepEqual(r.rule.byDay, [{ weekday: 'SU', ordinal: -1 }, { weekday: 'MO', ordinal: 2 }, { weekday: 'TU' }]);
+  assert.deepEqual(r.rule.byDay, [
+    { weekday: 'SU', ordinal: -1 },
+    { weekday: 'MO', ordinal: 2 },
+    { weekday: 'TU' },
+  ]);
   assert.deepEqual(r.rule.byMonthDay, [-1, 15]);
   assert.deepEqual(r.rule.bySetPos, [1, -1]);
   assert.equal(r.rule.wkst, 'SU');
   assert.deepEqual(r.rule.until, { kind: 'utc', ms: Date.UTC(2030, 11, 31, 23, 59, 59) });
   const y = parseRRule('FREQ=YEARLY;BYYEARDAY=1,-1;BYWEEKNO=20,-1');
   assert.ok(y.ok);
-  assert.deepEqual([y.rule.byYearDay, y.rule.byWeekNo], [[1, -1], [20, -1]]);
+  assert.deepEqual(
+    [y.rule.byYearDay, y.rule.byWeekNo],
+    [
+      [1, -1],
+      [20, -1],
+    ],
+  );
 });
 
 test('UNTIL keeps its form: UTC, floating or date', () => {
@@ -91,12 +103,29 @@ test('formatRRule is the exact inverse of parseRRule', () => {
 
 test('parseRRule refuses what RFC 5545 forbids, and RFC 7529 as unsupported', () => {
   const invalid = [
-    '', 'COUNT=3', 'FREQ=FORTNIGHTLY', 'FREQ=DAILY;FREQ=WEEKLY', 'FREQ=DAILY;COUNT=0', 'FREQ=DAILY;INTERVAL=0',
-    'FREQ=DAILY;COUNT=2;UNTIL=20260101T000000Z', 'FREQ=DAILY;UNTIL=20260231', 'FREQ=DAILY;UNTIL=2026-01-01',
-    'FREQ=WEEKLY;BYDAY=1MO', 'FREQ=DAILY;BYDAY=-1FR', 'FREQ=YEARLY;BYWEEKNO=1;BYDAY=1MO',
-    'FREQ=WEEKLY;BYMONTHDAY=1', 'FREQ=MONTHLY;BYYEARDAY=1', 'FREQ=MONTHLY;BYWEEKNO=1', 'FREQ=MONTHLY;BYSETPOS=1',
-    'FREQ=MONTHLY;BYMONTHDAY=32', 'FREQ=MONTHLY;BYMONTHDAY=0', 'FREQ=YEARLY;BYMONTH=13', 'FREQ=MONTHLY;BYDAY=6XX',
-    'FREQ=DAILY;BYHOUR=24', 'FREQ=DAILY;X-NAME=1', 'FREQ=DAILY;COUNT',
+    '',
+    'COUNT=3',
+    'FREQ=FORTNIGHTLY',
+    'FREQ=DAILY;FREQ=WEEKLY',
+    'FREQ=DAILY;COUNT=0',
+    'FREQ=DAILY;INTERVAL=0',
+    'FREQ=DAILY;COUNT=2;UNTIL=20260101T000000Z',
+    'FREQ=DAILY;UNTIL=20260231',
+    'FREQ=DAILY;UNTIL=2026-01-01',
+    'FREQ=WEEKLY;BYDAY=1MO',
+    'FREQ=DAILY;BYDAY=-1FR',
+    'FREQ=YEARLY;BYWEEKNO=1;BYDAY=1MO',
+    'FREQ=WEEKLY;BYMONTHDAY=1',
+    'FREQ=MONTHLY;BYYEARDAY=1',
+    'FREQ=MONTHLY;BYWEEKNO=1',
+    'FREQ=MONTHLY;BYSETPOS=1',
+    'FREQ=MONTHLY;BYMONTHDAY=32',
+    'FREQ=MONTHLY;BYMONTHDAY=0',
+    'FREQ=YEARLY;BYMONTH=13',
+    'FREQ=MONTHLY;BYDAY=6XX',
+    'FREQ=DAILY;BYHOUR=24',
+    'FREQ=DAILY;X-NAME=1',
+    'FREQ=DAILY;COUNT',
   ];
   for (const text of invalid) {
     const r = parseRRule(text);
@@ -128,7 +157,11 @@ test('an endless rule stops at the limit (default 5,000) and says it was cut', (
 });
 
 test('a series that started long ago still counts COUNT from DTSTART', () => {
-  const old = { ...weekly('FREQ=WEEKLY;COUNT=600'), start: { local: '2015-01-05T09:00:00', tzid: LA }, end: { local: '2015-01-05T10:00:00', tzid: LA } };
+  const old = {
+    ...weekly('FREQ=WEEKLY;COUNT=600'),
+    start: { local: '2015-01-05T09:00:00', tzid: LA },
+    end: { local: '2015-01-05T10:00:00', tzid: LA },
+  };
   const later = okExpand(old, { from: Date.UTC(2026, 6, 1), to: Date.UTC(2026, 8, 1) });
   // 600 weeks from 5 January 2015 end in June 2026, so nothing is left in July.
   assert.deepEqual(later, []);
@@ -142,21 +175,38 @@ test('HOURLY and finer are refused as unsupported and show only the first instan
     assert.deepEqual(ids(r), ['20260202T170000Z']);
   }
   // The first instance is still range-filtered.
-  const outside = expand({ ...weekly('FREQ=HOURLY'), range: { from: Date.UTC(2027, 0, 1), to: Date.UTC(2028, 0, 1) } });
+  const outside = expand({
+    ...weekly('FREQ=HOURLY'),
+    range: { from: Date.UTC(2027, 0, 1), to: Date.UTC(2028, 0, 1) },
+  });
   assert.deepEqual(outside.occurrences, []);
 });
 
 test('other refusals are typed', () => {
   const two = expand({ ...weekly(''), rrule: ['FREQ=DAILY', 'FREQ=WEEKLY'], range: YEAR_2026 });
   assert.ok(!two.ok && two.refused === 'unsupported');
-  const zone = expand({ ...weekly('FREQ=DAILY'), start: { local: '2026-02-02T09:00:00', tzid: 'Mars/Olympus' }, range: YEAR_2026 });
+  const zone = expand({
+    ...weekly('FREQ=DAILY'),
+    start: { local: '2026-02-02T09:00:00', tzid: 'Mars/Olympus' },
+    range: YEAR_2026,
+  });
   assert.ok(!zone.ok && zone.refused === 'invalid');
   assert.deepEqual(zone.occurrences, []);
   const allDayMismatch = expand({ ...weekly('FREQ=DAILY'), allDay: true, range: YEAR_2026 });
   assert.ok(!allDayMismatch.ok && allDayMismatch.refused === 'invalid');
-  const byHourAllDay = expand({ start: { date: '2026-02-02' }, end: { date: '2026-02-03' }, allDay: true, rrule: 'FREQ=DAILY;BYHOUR=9', range: YEAR_2026 });
+  const byHourAllDay = expand({
+    start: { date: '2026-02-02' },
+    end: { date: '2026-02-03' },
+    allDay: true,
+    rrule: 'FREQ=DAILY;BYHOUR=9',
+    range: YEAR_2026,
+  });
   assert.ok(!byHourAllDay.ok && byHourAllDay.refused === 'invalid');
-  const badExdate = expand({ ...weekly('FREQ=DAILY'), exdate: ['EXDATE:yesterday'], range: YEAR_2026 });
+  const badExdate = expand({
+    ...weekly('FREQ=DAILY'),
+    exdate: ['EXDATE:yesterday'],
+    range: YEAR_2026,
+  });
   assert.ok(!badExdate.ok && badExdate.refused === 'invalid');
 });
 
@@ -166,8 +216,14 @@ test('wall clock to instant: gaps move forward, overlaps take the first reading'
   const wall = (s: string): number => Date.parse(`${s}Z`);
   assert.equal(fromWall(wall('2026-03-08T02:30:00'), LA), Date.UTC(2026, 2, 8, 10, 30));
   assert.equal(fromWall(wall('2026-11-01T01:30:00'), LA), Date.UTC(2026, 10, 1, 8, 30));
-  assert.equal(fromWall(wall('2026-10-04T02:30:00'), 'Australia/Sydney'), Date.UTC(2026, 9, 3, 16, 30));
-  assert.equal(fromWall(wall('2026-04-05T02:30:00'), 'Australia/Sydney'), Date.UTC(2026, 3, 4, 15, 30));
+  assert.equal(
+    fromWall(wall('2026-10-04T02:30:00'), 'Australia/Sydney'),
+    Date.UTC(2026, 9, 3, 16, 30),
+  );
+  assert.equal(
+    fromWall(wall('2026-04-05T02:30:00'), 'Australia/Sydney'),
+    Date.UTC(2026, 3, 4, 15, 30),
+  );
   assert.equal(toWall(Date.UTC(2026, 10, 1, 9, 30), LA), wall('2026-11-01T01:30:00'));
 });
 
@@ -175,21 +231,56 @@ test('the fallback offset reader agrees with the fast one', () => {
   for (const tz of [LA, 'Europe/London', 'Australia/Sydney', 'Asia/Kolkata', 'America/St_Johns']) {
     const fast = offsetReader(tz);
     const slow = partsReader(tz);
-    for (let ms = Date.UTC(2025, 0, 1); ms < Date.UTC(2027, 0, 1); ms += 7 * 3_600_000 + 13 * 60_000) assert.equal(slow(ms), fast(ms), `${tz} at ${ms}`);
+    for (
+      let ms = Date.UTC(2025, 0, 1);
+      ms < Date.UTC(2027, 0, 1);
+      ms += 7 * 3_600_000 + 13 * 60_000
+    )
+      assert.equal(slow(ms), fast(ms), `${tz} at ${ms}`);
   }
 });
 
 test('floating and all-day series never shift, whatever zone they are viewed in', () => {
-  const floating: Series = { start: { local: '2026-03-07T02:30:00' }, end: { local: '2026-03-07T03:00:00' }, allDay: false, rrule: 'FREQ=DAILY;COUNT=3' };
+  const floating: Series = {
+    start: { local: '2026-03-07T02:30:00' },
+    end: { local: '2026-03-07T03:00:00' },
+    allDay: false,
+    rrule: 'FREQ=DAILY;COUNT=3',
+  };
   const r = expand({ ...floating, range: YEAR_2026, floatingZone: LA });
   assert.ok(r.ok);
-  assert.deepEqual(r.occurrences.map(o => o.start), [{ local: '2026-03-07T02:30:00' }, { local: '2026-03-08T02:30:00' }, { local: '2026-03-09T02:30:00' }]);
-  const allDay = expand({ start: { date: '2026-03-07' }, end: { date: '2026-03-08' }, allDay: true, tzid: LA, rrule: 'FREQ=DAILY;COUNT=2', range: YEAR_2026 });
-  assert.deepEqual(allDay.occurrences.map(o => [o.start, o.end]), [[{ date: '2026-03-07' }, { date: '2026-03-08' }], [{ date: '2026-03-08' }, { date: '2026-03-09' }]]);
+  assert.deepEqual(
+    r.occurrences.map(o => o.start),
+    [
+      { local: '2026-03-07T02:30:00' },
+      { local: '2026-03-08T02:30:00' },
+      { local: '2026-03-09T02:30:00' },
+    ],
+  );
+  const allDay = expand({
+    start: { date: '2026-03-07' },
+    end: { date: '2026-03-08' },
+    allDay: true,
+    tzid: LA,
+    rrule: 'FREQ=DAILY;COUNT=2',
+    range: YEAR_2026,
+  });
+  assert.deepEqual(
+    allDay.occurrences.map(o => [o.start, o.end]),
+    [
+      [{ date: '2026-03-07' }, { date: '2026-03-08' }],
+      [{ date: '2026-03-08' }, { date: '2026-03-09' }],
+    ],
+  );
 });
 
 test('the range is placed in floatingZone for floating times', () => {
-  const floating: Series = { start: { local: '2026-03-07T23:00:00' }, end: { local: '2026-03-07T23:30:00' }, allDay: false, rrule: 'FREQ=DAILY;COUNT=1' };
+  const floating: Series = {
+    start: { local: '2026-03-07T23:00:00' },
+    end: { local: '2026-03-07T23:30:00' },
+    allDay: false,
+    rrule: 'FREQ=DAILY;COUNT=1',
+  };
   // 23:00 floating is 07:00Z the next day in Los Angeles, so a UTC range on the 7th misses it there.
   const range = { from: Date.UTC(2026, 2, 7), to: Date.UTC(2026, 2, 8) };
   assert.equal(expand({ ...floating, range }).occurrences.length, 1);
@@ -197,12 +288,22 @@ test('the range is placed in floatingZone for floating times', () => {
 });
 
 test('a DATE in EXDATE or RDATE on a timed series means that day at the series time', () => {
-  const s = weekly('FREQ=DAILY;COUNT=4', { exdate: ['EXDATE;VALUE=DATE:20260203'], rdate: ['RDATE;VALUE=DATE:20260210'] });
-  assert.deepEqual(okExpand(s), ['20260202T170000Z', '20260204T170000Z', '20260205T170000Z', '20260210T170000Z']);
+  const s = weekly('FREQ=DAILY;COUNT=4', {
+    exdate: ['EXDATE;VALUE=DATE:20260203'],
+    rdate: ['RDATE;VALUE=DATE:20260210'],
+  });
+  assert.deepEqual(okExpand(s), [
+    '20260202T170000Z',
+    '20260204T170000Z',
+    '20260205T170000Z',
+    '20260210T170000Z',
+  ]);
 });
 
 test('an RDATE PERIOD is refused as unsupported, never half-read', () => {
-  const s = weekly('FREQ=WEEKLY;COUNT=2', { rdate: ['RDATE;VALUE=PERIOD;TZID=America/Los_Angeles:20260204T120000/PT2H30M'] });
+  const s = weekly('FREQ=WEEKLY;COUNT=2', {
+    rdate: ['RDATE;VALUE=PERIOD;TZID=America/Los_Angeles:20260204T120000/PT2H30M'],
+  });
   const r = expand({ ...s, range: YEAR_2026 });
   assert.ok(!r.ok && r.refused === 'unsupported');
   assert.deepEqual(ids(r), ['20260202T170000Z']);
@@ -218,7 +319,10 @@ test('occurrence keys and Google instance ids', () => {
   assert.equal(occurrenceKey('2026-03-08T16:00:00Z'), '20260308T160000Z');
   assert.throws(() => occurrenceKey('next tuesday'), RangeError);
 
-  assert.equal(googleInstanceId('abc123', { local: '2026-11-01T01:30:00', tzid: LA }), 'abc123_20261101T083000Z');
+  assert.equal(
+    googleInstanceId('abc123', { local: '2026-11-01T01:30:00', tzid: LA }),
+    'abc123_20261101T083000Z',
+  );
   assert.equal(googleInstanceId('abc123', { date: '2026-12-25' }), 'abc123_20261225');
 
   // An expanded occurrence's recurrenceId is exactly the instance id suffix.
@@ -232,28 +336,46 @@ test('occurrence keys and Google instance ids', () => {
 
 test('editOccurrence creates, updates and cancels an override', () => {
   const s = weekly('FREQ=WEEKLY;COUNT=4');
-  const moved = editOccurrence(s, '20260209T170000Z', { start: { local: '2026-02-10T09:00:00', tzid: LA }, end: { local: '2026-02-10T10:00:00', tzid: LA } });
+  const moved = editOccurrence(s, '20260209T170000Z', {
+    start: { local: '2026-02-10T09:00:00', tzid: LA },
+    end: { local: '2026-02-10T10:00:00', tzid: LA },
+  });
   assert.ok(moved.ok);
   assert.equal(moved.override.recurrenceId, '20260209T170000Z');
   const r1 = expand({ ...moved.series, range: YEAR_2026 });
   assert.deepEqual(r1.occurrences[1], {
-    recurrenceId: '20260209T170000Z', start: { utc: Date.UTC(2026, 1, 10, 17) }, end: { utc: Date.UTC(2026, 1, 10, 18) }, overridden: true,
+    recurrenceId: '20260209T170000Z',
+    start: { utc: Date.UTC(2026, 1, 10, 17) },
+    end: { utc: Date.UTC(2026, 1, 10, 18) },
+    overridden: true,
   });
 
   // The same occurrence named by an EventTime updates the same override (end only).
-  const longer = editOccurrence(moved.series, { local: '2026-02-09T09:00:00', tzid: LA }, { end: { local: '2026-02-10T11:00:00', tzid: LA } });
+  const longer = editOccurrence(
+    moved.series,
+    { local: '2026-02-09T09:00:00', tzid: LA },
+    { end: { local: '2026-02-10T11:00:00', tzid: LA } },
+  );
   assert.ok(longer.ok);
   assert.equal(longer.series.overrides?.length, 1);
   assert.deepEqual(longer.override.start, { local: '2026-02-10T09:00:00', tzid: LA });
 
   const cancelled = editOccurrence(longer.series, '20260216T170000Z', { cancelled: true });
   assert.ok(cancelled.ok);
-  assert.deepEqual(okExpand(cancelled.series), ['20260202T170000Z', '20260209T170000Z', '20260223T170000Z']);
+  assert.deepEqual(okExpand(cancelled.series), [
+    '20260202T170000Z',
+    '20260209T170000Z',
+    '20260223T170000Z',
+  ]);
   assert.deepEqual(s.overrides, undefined, 'the input is not mutated');
 
   const missing = editOccurrence(s, '20260210T170000Z', { cancelled: true });
   assert.ok(!missing.ok && missing.error === 'not-an-occurrence');
-  const excluded = editOccurrence({ ...s, exdate: ['EXDATE:20260209T170000Z'] }, '20260209T170000Z', { cancelled: true });
+  const excluded = editOccurrence(
+    { ...s, exdate: ['EXDATE:20260209T170000Z'] },
+    '20260209T170000Z',
+    { cancelled: true },
+  );
   assert.ok(!excluded.ok && excluded.error === 'not-an-occurrence');
   const refused = editOccurrence(weekly('FREQ=HOURLY'), '20260202T170000Z', { cancelled: true });
   assert.ok(!refused.ok && refused.error === 'unsupported');
@@ -270,10 +392,16 @@ test('editSeries keeps overrides that still exist and reports the others', () =>
   });
   const shorter = editSeries(s, { rrule: 'FREQ=WEEKLY;COUNT=3' });
   assert.ok(shorter.ok);
-  assert.deepEqual(shorter.series.overrides?.map(o => o.recurrenceId), ['20260209T170000Z']);
+  assert.deepEqual(
+    shorter.series.overrides?.map(o => o.recurrenceId),
+    ['20260209T170000Z'],
+  );
   assert.deepEqual(shorter.dropped, ['20260302T170000Z']);
 
-  const retimed = editSeries(s, { start: { local: '2026-02-02T10:00:00', tzid: LA }, end: { local: '2026-02-02T11:00:00', tzid: LA } });
+  const retimed = editSeries(s, {
+    start: { local: '2026-02-02T10:00:00', tzid: LA },
+    end: { local: '2026-02-02T11:00:00', tzid: LA },
+  });
   assert.ok(retimed.ok);
   assert.deepEqual(retimed.series.overrides, []);
   assert.deepEqual(retimed.dropped, ['20260209T170000Z', '20260302T170000Z']);
@@ -307,8 +435,14 @@ test('splitFollowing with COUNT: UNTIL before the split, the remaining COUNT aft
   assert.deepEqual(r.after.end, { local: '2026-03-02T10:00:00', tzid: LA });
   assert.deepEqual(r.before.exdate, ['EXDATE;TZID=America/Los_Angeles:20260216T090000']);
   assert.deepEqual(r.after.exdate, ['EXDATE;TZID=America/Los_Angeles:20260323T090000']);
-  assert.deepEqual(r.before.overrides?.map(o => o.recurrenceId), ['20260209T170000Z']);
-  assert.deepEqual(r.after.overrides?.map(o => o.recurrenceId), ['20260316T160000Z']);
+  assert.deepEqual(
+    r.before.overrides?.map(o => o.recurrenceId),
+    ['20260209T170000Z'],
+  );
+  assert.deepEqual(
+    r.after.overrides?.map(o => o.recurrenceId),
+    ['20260316T160000Z'],
+  );
   assert.deepEqual([...okExpand(r.before), ...okExpand(r.after)], original);
   assert.deepEqual(r.dropped, []);
 });
@@ -326,7 +460,12 @@ test('splitFollowing with UNTIL keeps the end on the new series, across DST', ()
 });
 
 test('splitFollowing on all-day and floating series writes UNTIL in their own form', () => {
-  const allDay: Series = { start: { date: '2026-02-02' }, end: { date: '2026-02-03' }, allDay: true, rrule: 'FREQ=DAILY;COUNT=10' };
+  const allDay: Series = {
+    start: { date: '2026-02-02' },
+    end: { date: '2026-02-03' },
+    allDay: true,
+    rrule: 'FREQ=DAILY;COUNT=10',
+  };
   const a = splitFollowing(allDay, '20260205');
   assert.ok(a.ok);
   assert.equal(a.before.rrule, 'FREQ=DAILY;UNTIL=20260204');
@@ -334,7 +473,12 @@ test('splitFollowing on all-day and floating series writes UNTIL in their own fo
   assert.deepEqual([a.after.start, a.after.end], [{ date: '2026-02-05' }, { date: '2026-02-06' }]);
   assert.deepEqual([...okExpand(a.before), ...okExpand(a.after)], okExpand(allDay));
 
-  const floating: Series = { start: { local: '2026-02-02T09:00:00' }, end: { local: '2026-02-02T09:30:00' }, allDay: false, rrule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,FR' };
+  const floating: Series = {
+    start: { local: '2026-02-02T09:00:00' },
+    end: { local: '2026-02-02T09:30:00' },
+    allDay: false,
+    rrule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,FR',
+  };
   const f = splitFollowing(floating, { local: '2026-02-16T09:00:00' });
   assert.ok(f.ok);
   assert.equal(f.before.rrule, 'FREQ=WEEKLY;UNTIL=20260216T085959;INTERVAL=2;BYDAY=MO,FR');
@@ -342,16 +486,29 @@ test('splitFollowing on all-day and floating series writes UNTIL in their own fo
 });
 
 test('splitFollowing applies a change to the new series and reports overrides it loses', () => {
-  const s = weekly('FREQ=WEEKLY;COUNT=6', { overrides: [{ recurrenceId: '20260302T170000Z', cancelled: true }] });
-  const r = splitFollowing(s, '20260216T170000Z', { start: { local: '2026-02-16T14:00:00', tzid: LA }, end: { local: '2026-02-16T15:00:00', tzid: LA } });
+  const s = weekly('FREQ=WEEKLY;COUNT=6', {
+    overrides: [{ recurrenceId: '20260302T170000Z', cancelled: true }],
+  });
+  const r = splitFollowing(s, '20260216T170000Z', {
+    start: { local: '2026-02-16T14:00:00', tzid: LA },
+    end: { local: '2026-02-16T15:00:00', tzid: LA },
+  });
   assert.ok(r.ok, r.ok ? '' : r.reason);
   assert.deepEqual(okExpand(r.before), ['20260202T170000Z', '20260209T170000Z']);
-  assert.deepEqual(okExpand(r.after), ['20260216T220000Z', '20260223T220000Z', '20260302T220000Z', '20260309T210000Z']);
+  assert.deepEqual(okExpand(r.after), [
+    '20260216T220000Z',
+    '20260223T220000Z',
+    '20260302T220000Z',
+    '20260309T210000Z',
+  ]);
   assert.deepEqual(r.dropped, ['20260302T170000Z']);
 });
 
 test('splitFollowing refuses what it cannot write back exactly', () => {
-  const s = weekly('FREQ=WEEKLY;COUNT=4', { rdate: ['RDATE:20260204T200000Z'], exdate: ['EXDATE:20260216T170000Z'] });
+  const s = weekly('FREQ=WEEKLY;COUNT=4', {
+    rdate: ['RDATE:20260204T200000Z'],
+    exdate: ['EXDATE:20260216T170000Z'],
+  });
   const reasons = [
     splitFollowing(s, '20260202T170000Z'), // the first occurrence: a whole-series edit
     splitFollowing(s, '20260203T170000Z'), // not an occurrence

@@ -19,7 +19,9 @@ interface PropertyRule {
   head: string[];
 }
 
-const fixture = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'calendar', 'property-b.json'), 'utf8')) as { rules: PropertyRule[] };
+const fixture = JSON.parse(
+  readFileSync(join(import.meta.dirname, 'fixtures', 'calendar', 'property-b.json'), 'utf8'),
+) as { rules: PropertyRule[] };
 
 function fnv(text: string): string {
   let h = 0x811c9dc5;
@@ -42,7 +44,9 @@ test('300 seeded random rules match oracle B over three years', () => {
     const keys = result.occurrences.map(o => o.recurrenceId);
     if (keys.length !== r.count || fnv(keys.join(' ')) !== r.hash) {
       const firstDiff = keys.findIndex((k, i) => k !== r.head[i]);
-      failures.push(`${r.id} ${r.event.rrule} ${JSON.stringify(r.event.start)}: ${keys.length} vs ${r.count}, first difference at ${firstDiff} (${keys[firstDiff]} vs ${r.head[firstDiff]})`);
+      failures.push(
+        `${r.id} ${r.event.rrule} ${JSON.stringify(r.event.start)}: ${keys.length} vs ${r.count}, first difference at ${firstDiff} (${keys[firstDiff]} vs ${r.head[firstDiff]})`,
+      );
     }
   }
   assert.deepEqual(failures, []);

@@ -6,7 +6,16 @@
 import { instanceKeys } from './expand';
 import { ruleWalls } from './generate';
 import { formatRRule, type Rule } from './rule';
-import { instAt, instOf, instOfId, parseDateLine, pastUntil, prepare, type Inst, type Normal } from './series';
+import {
+  instAt,
+  instOf,
+  instOfId,
+  parseDateLine,
+  pastUntil,
+  prepare,
+  type Inst,
+  type Normal,
+} from './series';
 import { DAY_MS, dayOfWall, isoDate, isoLocal, parseIcalValue } from './time';
 import type { EventTime, Override, Series } from './types';
 import { toWall } from './zone';
@@ -18,7 +27,9 @@ export interface OccurrenceChange {
 }
 
 /** Fields of the master a series edit may change; `rrule: null` makes it a single event. */
-export type SeriesChange = Partial<Pick<Series, 'start' | 'end' | 'allDay' | 'tzid' | 'rdate' | 'exdate'>> & {
+export type SeriesChange = Partial<
+  Pick<Series, 'start' | 'end' | 'allDay' | 'tzid' | 'rdate' | 'exdate'>
+> & {
   rrule?: Series['rrule'] | null;
 };
 
@@ -27,7 +38,11 @@ export type EditOccurrenceResult =
   | { ok: false; error: 'not-an-occurrence' | 'invalid' | 'unsupported'; reason: string };
 
 export type EditSeriesResult =
-  | { ok: true; series: Series; /** Keys of overrides whose occurrence no longer exists. */ dropped: string[] }
+  | {
+      ok: true;
+      series: Series;
+      /** Keys of overrides whose occurrence no longer exists. */ dropped: string[];
+    }
   | { ok: false; error: 'invalid' | 'unsupported'; reason: string };
 
 export type SplitResult =
@@ -47,7 +62,11 @@ function findInstance(n: Normal, id: string | EventTime): string | undefined {
 }
 
 /** Creates or updates the override for one occurrence. */
-export function editOccurrence(series: Series, recurrenceId: string | EventTime, change: OccurrenceChange): EditOccurrenceResult {
+export function editOccurrence(
+  series: Series,
+  recurrenceId: string | EventTime,
+  change: OccurrenceChange,
+): EditOccurrenceResult {
   const prepared = prepare(series);
   if (!prepared.ok) return { ok: false, error: prepared.refused, reason: prepared.reason };
   const n = prepared.normal;
@@ -65,7 +84,11 @@ export function editOccurrence(series: Series, recurrenceId: string | EventTime,
 /** Changes the master; keeps each override whose original start is still an occurrence. */
 export function editSeries(series: Series, change: SeriesChange): EditSeriesResult {
   const { rrule, ...rest } = change;
-  const next: Series = { ...series, ...rest, rrule: rrule === null ? undefined : (rrule ?? series.rrule) };
+  const next: Series = {
+    ...series,
+    ...rest,
+    rrule: rrule === null ? undefined : (rrule ?? series.rrule),
+  };
   if (next.rrule === undefined) delete next.rrule;
   const old = prepare(series).normal;
   const prepared = prepare({ ...next, overrides: [] });
@@ -74,7 +97,8 @@ export function editSeries(series: Series, change: SeriesChange): EditSeriesResu
   const dropped: string[] = [];
   for (const o of series.overrides ?? []) {
     // A move between timed and all-day changes every occurrence, so no override can carry over.
-    if (old?.mode === prepared.normal.mode && findInstance(prepared.normal, o.recurrenceId)) kept.push(o);
+    if (old?.mode === prepared.normal.mode && findInstance(prepared.normal, o.recurrenceId))
+      kept.push(o);
     else dropped.push(old ? instOfId(old, o.recurrenceId).key : JSON.stringify(o.recurrenceId));
   }
   return { ok: true, series: { ...next, overrides: kept }, dropped };
@@ -84,7 +108,9 @@ export function editSeries(series: Series, change: SeriesChange): EditSeriesResu
 function filterLines(n: Normal, lines: string[] = [], keep: (inst: Inst) => boolean): string[] {
   return lines.flatMap(line => {
     const { prefix, params, values } = parseDateLine(line);
-    const chosen = values.filter(v => keep(instOf(n, parseIcalValue(v)!, params.get('TZID')))).join(',');
+    const chosen = values
+      .filter(v => keep(instOf(n, parseIcalValue(v)!, params.get('TZID'))))
+      .join(',');
     return chosen ? [prefix ? `${prefix}:${chosen}` : chosen] : [];
   });
 }
@@ -105,15 +131,22 @@ function timeLike(n: Normal, like: EventTime, at: number, wall: number): EventTi
  */
 function startLike(n: Normal, like: EventTime, split: Inst): EventTime {
   if (n.mode !== 'zoned' || 'date' in like) return timeLike(n, like, split.at, split.wall);
-  if ('utc' in like) return toWall(split.at, n.tz) === split.wall ? { utc: split.at } : { local: isoLocal(split.wall), tzid: n.tz };
+  if ('utc' in like)
+    return toWall(split.at, n.tz) === split.wall
+      ? { utc: split.at }
+      : { local: isoLocal(split.wall), tzid: n.tz };
   // A zoned series' start is in the series zone (`tz` is the start's own tzid, or the series tzid).
-  return like.tzid ? { local: isoLocal(split.wall), tzid: like.tzid } : { local: isoLocal(split.wall) };
+  return like.tzid
+    ? { local: isoLocal(split.wall), tzid: like.tzid }
+    : { local: isoLocal(split.wall) };
 }
 
 function untilBefore(n: Normal, split: Inst): Rule['until'] {
   if (n.mode === 'date') return { kind: 'date', day: dayOfWall(split.wall) - 1 };
   // RFC 5545: UNTIL is UTC when DTSTART has a zone, and floating when DTSTART is floating.
-  return n.mode === 'zoned' ? { kind: 'utc', ms: split.at - 1000 } : { kind: 'local', wall: split.wall - 1000 };
+  return n.mode === 'zoned'
+    ? { kind: 'utc', ms: split.at - 1000 }
+    : { kind: 'local', wall: split.wall - 1000 };
 }
 
 /**
@@ -121,7 +154,11 @@ function untilBefore(n: Normal, split: Inst): Rule['until'] {
  * new master starts there with the remaining COUNT (or the same UNTIL). `change` is then applied
  * to the new master as a series edit.
  */
-export function splitFollowing(series: Series, recurrenceId: string | EventTime, change: SeriesChange = {}): SplitResult {
+export function splitFollowing(
+  series: Series,
+  recurrenceId: string | EventTime,
+  change: SeriesChange = {},
+): SplitResult {
   const refuse = (reason: string): SplitResult => ({ ok: false, error: 'cannot-split', reason });
   const prepared = prepare(series);
   if (!prepared.ok) return refuse(`the series is refused: ${prepared.reason}`);
@@ -141,7 +178,13 @@ export function splitFollowing(series: Series, recurrenceId: string | EventTime,
   const firstWall = ruleWalls(n.rule, n.startWall, lastDay, n.mode === 'date').next().value;
   let earlier = 0;
   let split: Inst | undefined;
-  for (const wall of ruleWalls(n.rule, n.startWall, lastDay, n.mode === 'date', dayOfWall(target.wall) - 2)) {
+  for (const wall of ruleWalls(
+    n.rule,
+    n.startWall,
+    lastDay,
+    n.mode === 'date',
+    dayOfWall(target.wall) - 2,
+  )) {
     if (pastUntil(n, wall) || wall > target.wall + 2 * DAY_MS) break;
     const inst = instAt(n, wall);
     if (inst.key === target.key) {
@@ -151,18 +194,30 @@ export function splitFollowing(series: Series, recurrenceId: string | EventTime,
     earlier++;
   }
   if (!split) {
-    return refuse(n.rdates.some(r => r.key === target.key) ? 'an RDATE-only occurrence cannot start a series' : 'the series has no such occurrence');
+    return refuse(
+      n.rdates.some(r => r.key === target.key)
+        ? 'an RDATE-only occurrence cannot start a series'
+        : 'the series has no such occurrence',
+    );
   }
-  if (split.wall === firstWall) return refuse('this is the first occurrence: edit the whole series instead');
+  if (split.wall === firstWall)
+    return refuse('this is the first occurrence: edit the whole series instead');
   const at = split.at;
 
   // Both halves are re-parsed from this text below, so a rule that did not survive formatting fails the check.
   const beforeRule = formatRRule({ ...n.rule, count: undefined, until: untilBefore(n, split) });
-  const afterRule = formatRRule({ ...n.rule, count: n.rule.count === undefined ? undefined : n.rule.count - earlier });
+  const afterRule = formatRRule({
+    ...n.rule,
+    count: n.rule.count === undefined ? undefined : n.rule.count - earlier,
+  });
 
   // Each half keeps the RDATEs, EXDATEs and overrides on its side of the split.
   const half = (keep: (i: Inst) => boolean, fields: Partial<Series>): Series => {
-    const out: Series = { ...series, ...fields, overrides: (series.overrides ?? []).filter(o => keep(instOfId(n, o.recurrenceId))) };
+    const out: Series = {
+      ...series,
+      ...fields,
+      overrides: (series.overrides ?? []).filter(o => keep(instOfId(n, o.recurrenceId))),
+    };
     for (const k of ['rdate', 'exdate'] as const) {
       const lines = filterLines(n, series[k], keep);
       if (lines.length) out[k] = lines;
@@ -186,7 +241,9 @@ export function splitFollowing(series: Series, recurrenceId: string | EventTime,
   const from = Math.max(instAt(n, n.startWall).at - DAY_MS, at - TEN_YEARS);
   const to = at + TEN_YEARS;
   const original = instanceKeys(n, from, to).join();
-  if (original !== [...instanceKeys(pb.normal, from, to), ...instanceKeys(pa.normal, from, to)].join()) {
+  if (
+    original !== [...instanceKeys(pb.normal, from, to), ...instanceKeys(pa.normal, from, to)].join()
+  ) {
     return refuse('the halves would not reproduce the original occurrences');
   }
 

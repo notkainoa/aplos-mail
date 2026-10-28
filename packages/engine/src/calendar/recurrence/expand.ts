@@ -22,9 +22,18 @@ function plain(n: Normal, inst: Inst): Placement {
   const endWall = inst.wall + n.duration;
   const endAt = n.mode === 'zoned' ? inst.at + n.duration : instAt(n, endWall).at;
   const time = (wall: number, at: number) =>
-    n.mode === 'zoned' ? { utc: at } : n.mode === 'date' ? { date: isoDate(dayOfWall(wall)) } : { local: isoLocal(wall) };
+    n.mode === 'zoned'
+      ? { utc: at }
+      : n.mode === 'date'
+        ? { date: isoDate(dayOfWall(wall)) }
+        : { local: isoLocal(wall) };
   return {
-    occurrence: { recurrenceId: inst.key, start: time(inst.wall, inst.at), end: time(endWall, endAt), overridden: false },
+    occurrence: {
+      recurrenceId: inst.key,
+      start: time(inst.wall, inst.at),
+      end: time(endWall, endAt),
+      overridden: false,
+    },
     at: inst.at,
     endAt,
   };
@@ -37,8 +46,13 @@ function resolve(n: Normal, inst: Inst): Placement | undefined {
   if (o.cancelled) return undefined;
   const base = plain(n, inst);
   const start: Placed = o.start ?? { time: base.occurrence.start, at: base.at };
-  const end: Placed = o.end ?? (o.start ? shift(n, o.start) : { time: base.occurrence.end, at: base.endAt });
-  return { occurrence: { recurrenceId: inst.key, start: start.time, end: end.time, overridden: true }, at: start.at, endAt: end.at };
+  const end: Placed =
+    o.end ?? (o.start ? shift(n, o.start) : { time: base.occurrence.end, at: base.endAt });
+  return {
+    occurrence: { recurrenceId: inst.key, start: start.time, end: end.time, overridden: true },
+    at: start.at,
+    endAt: end.at,
+  };
 }
 
 function overlaps(p: Placement, from: number, to: number): boolean {
@@ -63,7 +77,9 @@ export function expand(req: ExpandRequest): ExpandResult {
 
 /** Occurrence keys of the recurrence set alone (overrides ignored) overlapping [from, to). */
 export const instanceKeys = (n: Normal, from: number, to: number): string[] =>
-  expandNormal({ ...n, overrides: new Map() }, from, to, 20_000).occurrences.map(o => o.recurrenceId);
+  expandNormal({ ...n, overrides: new Map() }, from, to, 20_000).occurrences.map(
+    o => o.recurrenceId,
+  );
 
 /** Rule walls (or the lone start) from about `fromDay` to `toDay`; may begin earlier, never later. */
 function walls(n: Normal, fromDay: number, toDay: number): Iterable<number> {
@@ -81,7 +97,12 @@ function ruleInstNear(n: Normal, key: string, wall: number): Inst | undefined {
   return undefined;
 }
 
-function expandNormal(n: Normal, from: number, to: number, limit: number): { occurrences: Occurrence[]; truncated: boolean } {
+function expandNormal(
+  n: Normal,
+  from: number,
+  to: number,
+  limit: number,
+): { occurrences: Occurrence[]; truncated: boolean } {
   const lo = from - n.duration - SLACK;
   const hi = to + SLACK;
 
@@ -126,6 +147,11 @@ function expandNormal(n: Normal, from: number, to: number, limit: number): { occ
     const p = n.exKeys.has(inst.key) ? undefined : resolve(n, inst);
     if (p && overlaps(p, from, to)) placed.push(p);
   }
-  placed.sort((a, b) => a.at - b.at || (a.occurrence.recurrenceId < b.occurrence.recurrenceId ? -1 : 1));
-  return { occurrences: placed.slice(0, limit).map(p => p.occurrence), truncated: truncated || placed.length > limit };
+  placed.sort(
+    (a, b) => a.at - b.at || (a.occurrence.recurrenceId < b.occurrence.recurrenceId ? -1 : 1),
+  );
+  return {
+    occurrences: placed.slice(0, limit).map(p => p.occurrence),
+    truncated: truncated || placed.length > limit,
+  };
 }

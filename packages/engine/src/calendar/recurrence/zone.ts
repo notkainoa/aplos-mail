@@ -25,13 +25,24 @@ export function offsetReader(tz: string): Reader {
 /** Fallback for runtimes without 'longOffset': read the wall clock and subtract. */
 export function partsReader(tz: string): Reader {
   const f = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric',
+    timeZone: tz,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
   });
   return ms => {
     const at = Math.floor(ms / 1000) * 1000;
     const p: Record<string, number> = {};
     for (const part of f.formatToParts(at)) p[part.type] = Number(part.value);
-    return dayFromCivil(p.year, p.month, p.day) * DAY_MS + ((p.hour * 60 + p.minute) * 60 + p.second) * 1000 - at;
+    return (
+      dayFromCivil(p.year, p.month, p.day) * DAY_MS +
+      ((p.hour * 60 + p.minute) * 60 + p.second) * 1000 -
+      at
+    );
   };
 }
 
@@ -94,7 +105,9 @@ export function fromWall(wall: number, tz: string): number {
   const before = offsetAt(wall - DAY_MS, tz);
   const after = offsetAt(wall + DAY_MS, tz);
   // The larger offset gives the earlier instant, so trying it first picks the first of two readings.
-  for (const off of before === after ? [before] : [Math.max(before, after), Math.min(before, after)]) {
+  for (const off of before === after
+    ? [before]
+    : [Math.max(before, after), Math.min(before, after)]) {
     if (offsetAt(wall - off, tz) === off) return wall - off;
   }
   return wall - before;
