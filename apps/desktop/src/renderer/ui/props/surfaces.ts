@@ -210,6 +210,8 @@ export type MenuEntry =
 
 /** Opaque `--paper` menu, `--elev-float`, radius 12, 32 px items, at least 220 px wide; 1–9 pick in short menus (DESIGN §6 Menu). Mockups: errors.html (account menu), later-picker.html, calendar-week.html (+N stack), settings.js pickers. Plain + refines: ui-foundation. */
 export interface MenuProps {
+  /** DOM id of the `menu` element, so its trigger's `aria-controls` can point at it (e.g. AccountSwitcher `menuId`). */
+  id?: string;
   /** Whether the menu is shown (`reveal`). */
   open: boolean;
   /** Element the menu opens from (the trigger callback's element). */
@@ -353,6 +355,8 @@ export interface ToastAction {
   label: string;
   /** Registry command whose keycap shows inside the toast. */
   commandId?: CommandId;
+  /** Display-only: shows that command's keycap while selecting the action calls only `onAction(id)` and never runs the command. For a verb whose click runs its own callback (Undo Z, Remind R, Set a date D). `commandId` takes precedence if both are set. */
+  keysFrom?: CommandId;
 }
 
 /** One toast's data, worded from the op queue (DESIGN §7.13). */

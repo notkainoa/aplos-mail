@@ -309,6 +309,38 @@ describe('Menu', () => {
     );
   });
 
+  it('takes an id for aria-controls, and two items with one colour log no duplicate-key warning', () => {
+    const errors: unknown[][] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => void errors.push(args);
+    let html: string;
+    try {
+      html = render(
+        <Menu
+          id="account-menu"
+          open
+          anchor={null}
+          label="Accounts"
+          entries={[
+            { kind: 'item', id: 'a', label: 'One', swatch: ['sky', 'sky'] },
+            { kind: 'item', id: 'b', label: 'Two', swatch: 'sky' },
+          ]}
+          onSelect={noop}
+          onClose={noop}
+        />,
+      );
+    } finally {
+      console.error = original;
+    }
+    assert.match(html, /<div id="account-menu" role="menu"/);
+    assert.equal(count(html, 'data-color="sky"'), 3);
+    assert.deepEqual(errors, []);
+    const switcher = render(
+      <AccountSwitcher label="All" monogram="A" open menuId="account-menu" onOpen={noop} />,
+    );
+    assert.match(switcher, /aria-controls="account-menu"/);
+  });
+
   it('the account menu: label, stacked dots, detail with an inline Reconnect, aside, separator', () => {
     const html = render(
       <Menu

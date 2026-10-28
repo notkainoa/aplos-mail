@@ -220,6 +220,8 @@ export interface LowBandProps {
   id: string;
   /** Sender names; the band shows the first three. */
   senders: readonly string[];
+  /** Senders beyond those in `senders`, when the caller passes only the first few: they add to "and N more" after the names. Default 0. */
+  moreSenders?: number;
   /** Number of threads in the band. */
   count: number;
   /** Under the keyboard cursor. */
@@ -390,6 +392,10 @@ export type ErrorLineKind =
       provider: string;
       /** Why. */
       cause: 'keyRefused' | 'unreachable' | 'cap';
+    }
+  | {
+      /** "Couldn't load this list." with Try again (a mail list's first load or refresh failed; DESIGN §7.15 pattern of Body failed). */
+      kind: 'listFailed';
     }
   | {
       /** A plain reason sentence from the engine, already in DESIGN §10's voice (first-sync failures). */

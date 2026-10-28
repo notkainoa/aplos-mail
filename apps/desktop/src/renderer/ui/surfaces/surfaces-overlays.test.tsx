@@ -285,6 +285,25 @@ describe('Toast', () => {
     assert.ok(!html.includes('tabindex'), 'never takes focus');
     assertClean(html);
   });
+  it('keysFrom shows the keycap like commandId; commandId wins; no keys without either', () => {
+    const html = render(
+      <Toast
+        id="k1"
+        kind="later"
+        message="Moved to Later"
+        actions={[
+          { id: 'undo', label: 'Undo', keysFrom: 'app.undo' },
+          { id: 'date', label: 'Set a date', commandId: 'mail.setDate', keysFrom: 'app.undo' },
+          { id: 'plain', label: 'Open' },
+        ]}
+        undoable
+        onAction={noop}
+        onDismiss={noop}
+      />,
+    );
+    assert.match(textOf(html), /Moved to Later Undo Z Set a date D Open/);
+    assert.equal(count(html, 'class="ui-toast__action"'), 3);
+  });
   it('every kind wears an icon; at most three verbs; worst-case message', () => {
     const kinds = [
       'done',
@@ -354,6 +373,26 @@ describe('ToastStack', () => {
     assert.deepEqual(
       visibleToasts([...undos, t('p')], 1).map(x => x.id),
       ['1', '2', '3', '4'],
+    );
+  });
+
+  it('never drops a persistent (failure) toast: only plain ones give way, oldest first', () => {
+    const list = [
+      t('f1', { persistent: true }),
+      t('p1'),
+      t('p2'),
+      t('u1', { undoable: true }),
+      t('f2', { persistent: true }),
+      t('p3'),
+    ];
+    assert.deepEqual(
+      visibleToasts(list, 0).map(x => x.id),
+      ['f1', 'u1', 'f2'],
+    );
+    const failures = [1, 2, 3, 4].map(n => t(`f${n}`, { persistent: true }));
+    assert.deepEqual(
+      visibleToasts([...failures, t('p')], 1).map(x => x.id),
+      ['f1', 'f2', 'f3', 'f4'],
     );
   });
 
