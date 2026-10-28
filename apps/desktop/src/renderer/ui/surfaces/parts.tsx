@@ -275,6 +275,18 @@ export interface PartButtonProps {
   onPress: (event: MouseEvent<HTMLButtonElement>) => void;
 }
 
+/** Icon-only controls always carry a tooltip (DESIGN 11.3); text controls carry one when keys live there. */
+function wantsTip(props: PartButtonProps, chords: ReturnType<typeof keysFor>): boolean {
+  const { variant, detail, tipLabel, keyHint = 'tooltip', presentational } = props;
+  return (
+    !presentational &&
+    (variant === 'icon' ||
+      detail !== undefined ||
+      tipLabel !== undefined ||
+      (chords.length > 0 && keyHint === 'tooltip'))
+  );
+}
+
 export function PartButton(props: PartButtonProps) {
   const {
     variant,
@@ -303,13 +315,7 @@ export function PartButton(props: PartButtonProps) {
   const chords = keysFor(commandId, keys);
   const showLabel = variant !== 'icon' || labelVisible === true;
   const inlineKeys = keyHint === 'always' || keyHint === 'hint';
-  // Icon-only controls always carry a tooltip (DESIGN 11.3); text controls carry one when keys live there.
-  const hasTip =
-    !presentational &&
-    (variant === 'icon' ||
-      detail !== undefined ||
-      tipLabel !== undefined ||
-      (chords.length > 0 && keyHint === 'tooltip'));
+  const hasTip = wantsTip(props, chords);
   const button = (
     <button
       type="button"

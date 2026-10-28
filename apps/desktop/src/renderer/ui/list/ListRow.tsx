@@ -36,50 +36,145 @@ function highlighted(text: string, terms: readonly string[] | undefined): ReactN
   );
 }
 
-/** A mail row in any list: Home, Later, All mail, Done, Drafts, Sent, Trash, Spam, search, the Low sheet. */
-export function ListRow(props: ListRowProps) {
-  const {
-    id,
-    layout,
-    density,
-    sender,
-    primary,
-    secondary,
-    highlight,
-    unread,
-    date,
-    due,
-    laterUntil,
-    doneAt,
-    marks,
-    account,
-    showAccountDot,
-    cursor,
-    picked,
-    picking,
-    hoverActions,
-    swipe,
-    rejected,
-    lifted,
-    onSelect,
-    onOpen,
-    onAction,
-    ref,
-  } = props;
+type RowProps = ListRowProps;
 
-  const dateColumn =
-    layout === 'done' ? (
+/** The Done stamp, the Later-until chip or the date, whichever the layout puts in the date column. */
+function DateColumn({
+  layout,
+  date,
+  doneAt,
+  laterUntil,
+}: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'laterUntil'>) {
+  if (layout === 'done') {
+    return (
       <span className="ui-list-row__stamp" title={doneAt ? formatFull(doneAt) : undefined}>
         <Icon name="check" size="sm" />
         {doneAt ? formatDoneStamp(doneAt) : 'Done'}
       </span>
-    ) : layout === 'later' && laterUntil ? (
-      <Chip kind="laterUntil" until={laterUntil} />
-    ) : (
-      <time className="ui-list-row__date" dateTime={date} title={formatFull(date)}>
-        {formatListDate(date)}
-      </time>
     );
+  }
+  if (layout === 'later' && laterUntil) return <Chip kind="laterUntil" until={laterUntil} />;
+  return (
+    <time className="ui-list-row__date" dateTime={date} title={formatFull(date)}>
+      {formatListDate(date)}
+    </time>
+  );
+}
+
+/** The two swipe underlays, right then left; hidden until the swipe starts. */
+function Underlays({ swipe }: { swipe: NonNullable<RowProps['swipe']> }) {
+  return (
+    <>
+      {(['right', 'left'] as const).map(side => (
+        <span
+          key={side}
+          className="ui-list-row__underlay"
+          data-side={side}
+          data-kind={swipe[side]}
+          aria-hidden="true"
+          hidden
+        >
+          <Icon name={COMMIT_ICON[swipe[side]]} />
+          {COMMIT_WORD[swipe[side]]}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** The sentence: a rejected write's error line, or the due chip, the primary text and the secondary text. */
+function RowLine({
+  rejected,
+  due,
+  primary,
+  secondary,
+  highlight,
+}: Pick<RowProps, 'rejected' | 'due' | 'primary' | 'secondary' | 'highlight'>) {
+  return (
+    <span className="ui-list-row__line">
+      {rejected ? (
+        <ErrorLine
+          kind="writeRejected"
+          op={rejected.op}
+          placement="row"
+          onAction={() => rejected.onRetry()}
+        />
+      ) : (
+        <>
+          {due ? <Chip kind="due" due={due} format="short" /> : null}
+          <span
+            className="ui-list-row__primary"
+            dir="auto"
+            data-has-secondary={secondary ? 'true' : undefined}
+          >
+            {highlighted(primary, highlight)}
+          </span>
+          {secondary ? (
+            <span className="ui-list-row__secondary" dir="auto">
+              {highlighted(secondary, highlight)}
+            </span>
+          ) : null}
+        </>
+      )}
+    </span>
+  );
+}
+
+const MARKS = [
+  { key: 'replied', title: 'Replied', icon: 'reply', word: 'Replied.' },
+  { key: 'bookmarked', title: 'Bookmarked', icon: 'bookmark', word: 'Bookmarked.' },
+  { key: 'attachment', title: 'Has attachments', icon: 'paperclip', word: 'Has attachments.' },
+] as const;
+
+/** Replied, bookmarked and attachment marks, in that order, each only when set. */
+function RowMarks({ marks }: Pick<RowProps, 'marks'>) {
+  return (
+    <>
+      {MARKS.map(({ key, title, icon, word }) =>
+        marks?.[key] ? (
+          <span key={key} className="ui-list-row__mark" title={title}>
+            <Icon name={icon} size="sm" />
+            <span className="ui-list-sr">{word}</span>
+          </span>
+        ) : null,
+      )}
+    </>
+  );
+}
+
+/** The hover actions: an overlay inside the meta cell, so it always covers the whole date column. */
+function HoverActions({
+  actions,
+  onAction,
+}: {
+  actions: RowProps['hoverActions'];
+  onAction: RowProps['onAction'];
+}) {
+  return (
+    <span className="ui-list-row__actions">
+      <span className="ui-list-row__actions-fill">
+        {actions.map(action => (
+          <Action
+            key={action.commandId}
+            variant="icon"
+            size="sm"
+            label={action.label}
+            icon={action.icon}
+            tooltip={tooltipText(action.label, action.commandId)}
+            hintKey={keycapFor(action.commandId)}
+            duplicate
+            onPress={anchor => onAction(action.commandId, anchor)}
+          />
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/** A mail row in any list: Home, Later, All mail, Done, Drafts, Sent, Trash, Spam, search, the Low sheet. */
+export function ListRow(props: ListRowProps) {
+  const { id, layout, density, sender, account, showAccountDot, unread, cursor, picked } = props;
+  const { picking, hoverActions, swipe, rejected, lifted, onSelect, onOpen, onAction, ref } = props;
 
   // The action count sizes the date column so the hover overlay never spills over the line (DESIGN §5 rule 17).
   const rowStyle =
@@ -111,30 +206,7 @@ export function ListRow(props: ListRowProps) {
       onClick={onSelect}
       onDoubleClick={onOpen}
     >
-      {swipe ? (
-        <>
-          <span
-            className="ui-list-row__underlay"
-            data-side="right"
-            data-kind={swipe.right}
-            aria-hidden="true"
-            hidden
-          >
-            <Icon name={COMMIT_ICON[swipe.right]} />
-            {COMMIT_WORD[swipe.right]}
-          </span>
-          <span
-            className="ui-list-row__underlay"
-            data-side="left"
-            data-kind={swipe.left}
-            aria-hidden="true"
-            hidden
-          >
-            <Icon name={COMMIT_ICON[swipe.left]} />
-            {COMMIT_WORD[swipe.left]}
-          </span>
-        </>
-      ) : null}
+      {swipe ? <Underlays swipe={swipe} /> : null}
 
       <span className="ui-list-row__lead" aria-hidden="true">
         {picking ? (
@@ -151,77 +223,19 @@ export function ListRow(props: ListRowProps) {
         {sender}
       </span>
 
-      <span className="ui-list-row__line">
-        {rejected ? (
-          <ErrorLine
-            kind="writeRejected"
-            op={rejected.op}
-            placement="row"
-            onAction={() => rejected.onRetry()}
-          />
-        ) : (
-          <>
-            {due ? <Chip kind="due" due={due} format="short" /> : null}
-            <span
-              className="ui-list-row__primary"
-              dir="auto"
-              data-has-secondary={secondary ? 'true' : undefined}
-            >
-              {highlighted(primary, highlight)}
-            </span>
-            {secondary ? (
-              <span className="ui-list-row__secondary" dir="auto">
-                {highlighted(secondary, highlight)}
-              </span>
-            ) : null}
-          </>
-        )}
-      </span>
+      <RowLine {...props} />
 
       <span className="ui-list-row__meta">
-        {marks?.replied ? (
-          <span className="ui-list-row__mark" title="Replied">
-            <Icon name="reply" size="sm" />
-            <span className="ui-list-sr">Replied.</span>
-          </span>
-        ) : null}
-        {marks?.bookmarked ? (
-          <span className="ui-list-row__mark" title="Bookmarked">
-            <Icon name="bookmark" size="sm" />
-            <span className="ui-list-sr">Bookmarked.</span>
-          </span>
-        ) : null}
-        {marks?.attachment ? (
-          <span className="ui-list-row__mark" title="Has attachments">
-            <Icon name="paperclip" size="sm" />
-            <span className="ui-list-sr">Has attachments.</span>
-          </span>
-        ) : null}
+        <RowMarks marks={props.marks} />
         {accountStyle && account ? (
           <span className="ui-list-row__account" style={accountStyle}>
             <span className="ui-list-sr">{account.label}</span>
           </span>
         ) : null}
-        {dateColumn}
+        <DateColumn {...props} />
         {/* Inside the meta cell so the overlay always covers the whole date column: no half glyph or chip. */}
         {hoverActions.length > 0 ? (
-          <span className="ui-list-row__actions">
-            <span className="ui-list-row__actions-fill">
-              {hoverActions.map(action => (
-                <Action
-                  key={action.commandId}
-                  variant="icon"
-                  size="sm"
-                  label={action.label}
-                  icon={action.icon}
-                  tooltip={tooltipText(action.label, action.commandId)}
-                  hintKey={keycapFor(action.commandId)}
-                  duplicate
-                  onPress={anchor => onAction(action.commandId, anchor)}
-                />
-              ))}
-            </span>
-          </span>
+          <HoverActions actions={hoverActions} onAction={onAction} />
         ) : null}
       </span>
     </div>

@@ -104,7 +104,8 @@ export function TimeGrid(props: CalendarGridProps) {
   // so paging between weeks keeps the reader's place. A grid mounted without layout (a hidden tab or dock, a pane
   // laid out after mount; the first render in tests) has no height yet: the scroll waits, once, for the first
   // layout instead of being lost.
-  const opensAt = openHour({ today: days.includes(today), nowHours, override: scrollToHour });
+  const opensAt = useRef(0);
+  opensAt.current = openHour({ today: days.includes(today), nowHours, override: scrollToHour });
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     const track = trackRefs.current[0];
@@ -112,7 +113,7 @@ export function TimeGrid(props: CalendarGridProps) {
     const open = (): boolean => {
       const perHour = track.offsetHeight / DAY_HOURS;
       if (perHour <= 0) return false;
-      scroller.scrollTop = perHour * opensAt;
+      scroller.scrollTop = perHour * opensAt.current;
       return true;
     };
     if (open() || typeof ResizeObserver === 'undefined') return;
@@ -213,8 +214,9 @@ export function TimeGrid(props: CalendarGridProps) {
   // Esc cancels a drag that is under way wherever focus is (a press on an empty track focuses the grid root).
   const finishRef = useRef(finish);
   finishRef.current = finish;
+  const dragging = drag !== null;
   useEffect(() => {
-    if (!drag) return;
+    if (!dragging) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape' || e.isComposing) return;
       e.preventDefault();
@@ -223,7 +225,7 @@ export function TimeGrid(props: CalendarGridProps) {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [drag !== null]);
+  }, [dragging]);
 
   const movable = (e: CalendarEventData): boolean =>
     e.kind === 'event' && e.persisted && !e.allDay && !e.locked;

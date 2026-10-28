@@ -32,5 +32,7 @@ async function boot(): Promise<void> {
   );
 }
 
+// The entry is the one place allowed to reach the legacy renderer (its production path until WP5.6).
+// eslint-disable-next-line aplos/boundaries
 if (legacy) void import('./legacy/main');
 else void boot();

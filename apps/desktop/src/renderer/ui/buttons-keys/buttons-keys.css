@@ -125,8 +125,6 @@
 }
 .ui-button-keys {
   flex: none;
-}
-.ui-button-keys {
   display: inline-flex;
   align-items: center;
   margin-right: calc(-1 * var(--space-1));
@@ -194,10 +192,12 @@
 
 /* tone */
 /* filled keeps --accent-ink: red text on the ink-blue fill would be unreadable */
-.ui-button[data-tone='danger']:is([data-variant='text'], [data-variant='icon']):not(:disabled):not(
+.ui-button[data-tone='danger']:is([data-variant='text'], [data-variant='icon']):not(
+    :disabled,
     [aria-disabled='true']
   ),
-.ui-button[data-tone='danger']:is([data-variant='text'], [data-variant='icon']):not(:disabled):not(
+.ui-button[data-tone='danger']:is([data-variant='text'], [data-variant='icon']):not(
+    :disabled,
     [aria-disabled='true']
   )
   .ui-icon {
@@ -263,28 +263,28 @@
 }
 
 @media (hover: hover) {
-  .ui-button[data-variant='text']:hover:not(:disabled):not([aria-disabled='true']),
-  .ui-button[data-variant='icon']:hover:not(:disabled):not([aria-disabled='true']) {
+  .ui-button[data-variant='text']:hover:not(:disabled, [aria-disabled='true']),
+  .ui-button[data-variant='icon']:hover:not(:disabled, [aria-disabled='true']) {
     background: var(--hover);
     color: var(--ink);
   }
-  .ui-button[data-variant='text']:hover:not(:disabled):not([aria-disabled='true']) .ui-icon,
-  .ui-button[data-variant='icon'][data-labelled='true']:hover:not(:disabled):not(
-      [aria-disabled='true']
-    )
+  .ui-button[data-variant='text']:hover:not(:disabled, [aria-disabled='true']) .ui-icon,
+  .ui-button[data-variant='icon'][data-labelled='true']:hover:not(:disabled, [aria-disabled='true'])
     .ui-icon {
     color: var(--ink);
   }
   /* the DESIGN hover strength (--hover, ink 4 %, dark 5 %) laid over the accent */
-  .ui-button[data-variant='filled']:hover:not(:disabled):not([aria-disabled='true'])::after {
+  .ui-button[data-variant='filled']:hover:not(:disabled, [aria-disabled='true'])::after {
     background: var(--hover);
   }
   .ui-button[data-tone='danger']:is([data-variant='text'], [data-variant='icon']):hover:not(
-      :disabled
-    ):not([aria-disabled='true']),
+      :disabled,
+      [aria-disabled='true']
+    ),
   .ui-button[data-tone='danger']:is([data-variant='text'], [data-variant='icon']):hover:not(
-      :disabled
-    ):not([aria-disabled='true'])
+      :disabled,
+      [aria-disabled='true']
+    )
     .ui-icon {
     color: var(--stamp-ink);
   }

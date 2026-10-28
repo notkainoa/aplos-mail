@@ -2,7 +2,7 @@
 // One filled button per screen, owned by the topmost surface; that is the screen's job, not this file's.
 // Keycaps: inline when keyHint says so ('always', or 'hint' in "Show all key hints"), a badge overlay while ⌘ is
 // held, and always in the tooltip. Hover never reveals one.
-import { useRef, useState, type MouseEvent } from 'react';
+import { useRef, useState, type MouseEvent, type RefObject } from 'react';
 import { timing } from '../generated/motion';
 import type { ButtonProps } from '../props';
 import { Icon } from './Icon';
@@ -11,83 +11,117 @@ import { showsInline, useControlKeys, useKeyHints } from './keyHints';
 import { Tooltip } from './Tooltip';
 import { useDelayedFlag } from './useDelayedFlag';
 
-export function Button(props: ButtonProps) {
-  const {
-    variant,
-    label,
-    size = 'md',
-    icon,
-    trailingIcon,
-    commandId,
-    keys,
-    keyHint = 'tooltip',
-    tone = 'default',
-    disabled = false,
-    disabledReason,
-    busy = false,
-    pressed,
-    popup,
-    onPress,
-    type = 'button',
-    id,
-    ref,
-  } = props;
+interface ButtonModel {
+  labelVisible: boolean;
+  caps: ReturnType<typeof useControlKeys>;
+  // An explained-disabled button stays focusable and hoverable so its tooltip can say why.
+  explained: boolean;
+  inline: boolean;
+  badge: boolean;
+  needsTooltip: boolean;
+  spinning: boolean;
+}
+
+/** What the button shows, derived from its props and the key-hint settings. */
+function useButtonModel(props: ButtonProps): ButtonModel {
+  const { variant, commandId, keys, keyHint = 'tooltip', disabled = false, busy = false } = props;
   const labelVisible = variant !== 'icon' || props.labelVisible === true;
   const caps = useControlKeys(commandId, keys);
   const { showKeys } = useKeyHints();
   const showSpinner = useDelayedFlag(busy, timing.spinnerDelay);
-  const labelRef = useRef<HTMLSpanElement | null>(null);
-  const [clipped, setClipped] = useState(false);
-
-  // An explained-disabled button stays focusable and hoverable so its tooltip can say why.
-  const explained = disabled && Boolean(disabledReason);
+  const explained = disabled && Boolean(props.disabledReason);
   const inline = labelVisible && showsInline(keyHint, showKeys);
   const badge = !inline && showKeys === 'held';
   const needsTooltip = variant === 'icon' || explained || (caps.length > 0 && keyHint !== 'always');
-  const state = disabled ? 'disabled' : busy ? 'busy' : undefined;
-  const spinning = busy && showSpinner;
-  // A long label ellipsises inside its container; the full text is the native title, set only while it is clipped
-  // (and only without a tooltip, which already says the label).
+  return {
+    labelVisible,
+    caps,
+    explained,
+    inline,
+    badge,
+    needsTooltip,
+    spinning: busy && showSpinner,
+  };
+}
+
+/** A long label ellipsises inside its container; the full text is the native title, set only while it is clipped. */
+function useLabelClip() {
+  const labelRef = useRef<HTMLSpanElement | null>(null);
+  const [clipped, setClipped] = useState(false);
   const checkClipped = () => {
     const el = labelRef.current;
     setClipped(
       Boolean(el) && (el as HTMLSpanElement).scrollWidth > (el as HTMLSpanElement).clientWidth,
     );
   };
+  return { labelRef, clipped, checkClipped };
+}
 
+/** The attributes of the <button>, in the order the markup has always carried them. */
+function buttonAttributes(
+  props: ButtonProps,
+  model: ButtonModel,
+  clip: { clipped: boolean; checkClipped: () => void },
+) {
+  const {
+    variant,
+    label,
+    size = 'md',
+    icon,
+    tone = 'default',
+    disabled = false,
+    busy = false,
+  } = props;
+  const { labelVisible, explained, needsTooltip, spinning } = model;
+  const { popup } = props;
+  const state = disabled ? 'disabled' : busy ? 'busy' : undefined;
   const onClick = (event: MouseEvent<HTMLButtonElement>) => {
     if (disabled || busy) {
       event.preventDefault();
       return;
     }
-    onPress();
+    props.onPress();
   };
+  return {
+    ref: props.ref,
+    id: props.id,
+    type: props.type ?? 'button',
+    className: 'ui-button',
+    'data-variant': variant,
+    'data-size': size,
+    'data-tone': tone,
+    'data-state': state,
+    'data-labelled': labelVisible ? 'true' : undefined,
+    'data-spinner': spinning ? (icon ? 'icon' : 'overlay') : undefined,
+    // Only without a tooltip, which already says the label.
+    title: labelVisible && !needsTooltip && clip.clipped ? label : undefined,
+    disabled: disabled && !explained,
+    'aria-disabled': explained ? true : undefined,
+    'aria-label': labelVisible ? undefined : label,
+    'aria-pressed': props.pressed,
+    'aria-busy': busy || undefined,
+    'aria-haspopup': popup ? popup.kind : undefined,
+    'aria-expanded': popup ? popup.expanded : undefined,
+    'aria-controls': popup?.controls,
+    onClick,
+    onPointerEnter: labelVisible ? clip.checkClipped : undefined,
+    onFocus: labelVisible ? clip.checkClipped : undefined,
+  };
+}
 
-  const button = (
-    <button
-      ref={ref}
-      id={id}
-      type={type}
-      className="ui-button"
-      data-variant={variant}
-      data-size={size}
-      data-tone={tone}
-      data-state={state}
-      data-labelled={labelVisible ? 'true' : undefined}
-      data-spinner={spinning ? (icon ? 'icon' : 'overlay') : undefined}
-      title={labelVisible && !needsTooltip && clipped ? label : undefined}
-      disabled={disabled && !explained}
-      aria-disabled={explained ? true : undefined}
-      aria-label={labelVisible ? undefined : label}
-      aria-pressed={pressed}
-      aria-busy={busy || undefined}
-      aria-haspopup={popup ? popup.kind : undefined}
-      aria-expanded={popup ? popup.expanded : undefined}
-      aria-controls={popup?.controls}
-      onClick={onClick}
-      onPointerEnter={labelVisible ? checkClipped : undefined}
-      onFocus={labelVisible ? checkClipped : undefined}
-    >
+interface FaceProps {
+  props: ButtonProps;
+  model: ButtonModel;
+  labelRef: RefObject<HTMLSpanElement | null>;
+}
+
+/** Spinner or icon, label, trailing icon, then the inline keycap or the held-⌘ badge. */
+function ButtonFace({ props, model, labelRef }: FaceProps) {
+  const { icon, trailingIcon, label } = props;
+  const { labelVisible, caps, inline, badge, spinning } = model;
+  const hasCaps = caps.length > 0;
+  return (
+    <>
       {spinning ? (
         <span className="ui-button-spinner" aria-hidden="true" />
       ) : icon ? (
@@ -99,27 +133,37 @@ export function Button(props: ButtonProps) {
         </span>
       ) : null}
       {trailingIcon ? <Icon name={trailingIcon} size="xs" /> : null}
-      {inline && caps.length > 0 ? (
+      {inline && hasCaps ? (
         <span className="ui-button-keys" aria-hidden="true">
           <KeyCaps caps={caps.slice(0, 1)} reveal="always" />
         </span>
       ) : null}
-      {badge && caps.length > 0 ? (
+      {badge && hasCaps ? (
         <span className="ui-button-badge" aria-hidden="true">
           <KeyCaps caps={caps.slice(0, 1)} reveal="badge" />
         </span>
       ) : null}
+    </>
+  );
+}
+
+export function Button(props: ButtonProps) {
+  const model = useButtonModel(props);
+  const { labelRef, clipped, checkClipped } = useLabelClip();
+  const button = (
+    <button {...buttonAttributes(props, model, { clipped, checkClipped })}>
+      <ButtonFace props={props} model={model} labelRef={labelRef} />
     </button>
   );
 
-  if (!needsTooltip) return button;
+  if (!model.needsTooltip) return button;
   return (
     <Tooltip
-      label={label}
-      detail={explained ? disabledReason : undefined}
-      commandId={commandId}
-      keys={keys}
-      disabled={popup?.expanded}
+      label={props.label}
+      detail={model.explained ? props.disabledReason : undefined}
+      commandId={props.commandId}
+      keys={props.keys}
+      disabled={props.popup?.expanded}
     >
       {button}
     </Tooltip>

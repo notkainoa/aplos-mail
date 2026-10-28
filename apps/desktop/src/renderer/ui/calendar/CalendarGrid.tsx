@@ -29,6 +29,13 @@ function stopsOf(root: HTMLElement): Stop[] {
   return stops.sort((a, b) => a.at - b.at || a.domId.localeCompare(b.domId));
 }
 
+/** The stop one step down (1) or up (-1) from the current one; ↑ with none current starts at the last. */
+function nextStop(stops: readonly Stop[], current: string | null, step: 1 | -1): Stop | undefined {
+  const at = stops.findIndex(x => x.domId === current);
+  if (step === 1) return stops[Math.min(stops.length - 1, at + 1)];
+  return stops[at < 0 ? stops.length - 1 : Math.max(0, at - 1)];
+}
+
 /**
  * The calendar grid (DESIGN 6 CalendarGrid, 7.8): `--line` hairlines at 56 px per hour, today's column on
  * `--today-tint` with a filled accent date badge, the now-line, overlap lanes with a "+N" stack, plans from mail,
@@ -60,36 +67,36 @@ export function CalendarGrid(props: CalendarGridProps) {
     if (id) document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' });
   }, [selectedId, activeStack]);
 
+  const currentDomId = () => activeStack ?? (selectedId ? eventDomId(selectedId) : null);
+
+  /** Move the walk to a stop: a "+N" button becomes the active descendant, an entry becomes the selection. */
+  const walkTo = (next: Stop) => {
+    if (next.eventId === undefined) {
+      // A "+N" or "N more" button: it becomes the active descendant and Return opens it.
+      setActiveStack(next.domId);
+      announce?.(next.el.getAttribute('aria-label') ?? next.el.textContent ?? '');
+      return;
+    }
+    setActiveStack(null);
+    onSelect(next.eventId);
+    const event = events.find(x => x.id === next.eventId);
+    if (event)
+      announce?.(`${event.title}, ${event.allDay ? 'all day' : rangeOf(event.start, event.end)}`);
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
     if (e.nativeEvent.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-    if (e.target !== e.currentTarget) {
-      // Buttons inside keep Return and Space for themselves; only the walk is shared.
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-    }
+    const walking = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+    // Buttons inside keep Return and Space for themselves; only the walk is shared.
+    if (e.target !== e.currentTarget && !walking) return;
     const root = rootRef.current;
-    if (!root) return;
-    const stops = stopsOf(root);
+    const stops = root ? stopsOf(root) : [];
     if (stops.length === 0) return;
-    const current = activeStack ?? (selectedId ? eventDomId(selectedId) : null);
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const current = currentDomId();
+    if (walking) {
       e.preventDefault();
-      const at = stops.findIndex(x => x.domId === current);
-      const next =
-        e.key === 'ArrowDown'
-          ? stops[Math.min(stops.length - 1, at + 1)]
-          : stops[at < 0 ? stops.length - 1 : Math.max(0, at - 1)];
-      if (!next || next.domId === current) return;
-      if (next.eventId === undefined) {
-        // A "+N" or "N more" button: it becomes the active descendant and Return opens it.
-        setActiveStack(next.domId);
-        announce?.(next.el.getAttribute('aria-label') ?? next.el.textContent ?? '');
-        return;
-      }
-      setActiveStack(null);
-      onSelect(next.eventId);
-      const event = events.find(x => x.id === next.eventId);
-      if (event)
-        announce?.(`${event.title}, ${event.allDay ? 'all day' : rangeOf(event.start, event.end)}`);
+      const next = nextStop(stops, current, e.key === 'ArrowDown' ? 1 : -1);
+      if (next && next.domId !== current) walkTo(next);
       return;
     }
     if (e.key === 'Enter' && current) {

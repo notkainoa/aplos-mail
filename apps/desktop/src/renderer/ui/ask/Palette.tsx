@@ -145,6 +145,22 @@ export function Palette(props: PaletteProps) {
     onActiveChange(next);
   }
 
+  function onConfirmKey(event: KeyboardEvent<HTMLElement>, pending: ConfirmProps) {
+    // On a focused key row Return is that button's own click; the Return mapping is for the field.
+    if (event.key !== 'Enter' || (event.target as HTMLElement).tagName === 'BUTTON') return;
+    event.preventDefault();
+    if (event.shiftKey || !pending.destructive) pending.onConfirm();
+    else pending.onCancel();
+  }
+
+  /** A bare digit 1 to 9 picks that result, in the empty palette only. */
+  function digitPick(event: KeyboardEvent<HTMLElement>): PaletteItem | undefined {
+    const { key } = event;
+    const bare = !event.metaKey && !event.ctrlKey && !event.altKey;
+    if (!/^[1-9]$/.test(key) || !empty || !bare || Number(key) > Math.min(9, flat.length)) return;
+    return flat[Number(key) - 1];
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.nativeEvent.isComposing) return;
     const key = event.key;
@@ -161,12 +177,7 @@ export function Palette(props: PaletteProps) {
       return;
     }
     if (confirm) {
-      // On a focused key row Return is that button's own click; the Return mapping is for the field.
-      if (key === 'Enter' && (event.target as HTMLElement).tagName !== 'BUTTON') {
-        event.preventDefault();
-        if (event.shiftKey || !confirm.destructive) confirm.onConfirm();
-        else confirm.onCancel();
-      }
+      onConfirmKey(event, confirm);
       return;
     }
     if (key === 'ArrowDown' || (event.ctrlKey && key === 'n')) {
@@ -180,16 +191,11 @@ export function Palette(props: PaletteProps) {
         event.preventDefault();
         onRun(activeId);
       }
-    } else if (
-      /^[1-9]$/.test(key) &&
-      empty &&
-      !event.metaKey &&
-      !event.ctrlKey &&
-      !event.altKey &&
-      Number(key) <= Math.min(9, flat.length)
-    ) {
+    } else {
+      const picked = digitPick(event);
+      if (!picked) return;
       event.preventDefault();
-      onRun(flat[Number(key) - 1].id);
+      onRun(picked.id);
     }
   }
 

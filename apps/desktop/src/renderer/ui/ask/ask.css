@@ -423,9 +423,7 @@
   letter-spacing: var(--track-caption);
   vertical-align: var(--space-half);
   transition: color var(--dur-hover) var(--ease-std);
-}
-/* The chip draws at --kbd (18); its hit area is the 24 floor. */
-.ui-citation__chip {
+  /* The chip draws at --kbd (18); its hit area is the 24 floor. */
   position: relative;
 }
 .ui-citation__chip::before {
@@ -606,8 +604,6 @@
   transition:
     background-color var(--dur-hover) var(--ease-std),
     color var(--dur-hover) var(--ease-std);
-}
-.ui-operator-token__remove {
   position: relative;
 }
 /* 16 px drawn, 24 px to hit. */
@@ -636,9 +632,7 @@
   align-items: center;
   gap: var(--space-3);
   min-height: var(--space-8);
-}
-/* The 2 px accent underline is a straight bar under the row, so it has no curved ends. */
-.ui-search-field__title {
+  /* The 2 px accent underline is a straight bar under the row, so it has no curved ends. */
   position: relative;
 }
 .ui-search-field__title::after {
@@ -815,7 +809,7 @@
   height: 1px;
   padding: 0;
   overflow: hidden;
-  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 .ui-palette__option {

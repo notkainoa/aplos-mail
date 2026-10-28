@@ -12,7 +12,7 @@ interface Copy {
   actions: readonly { action: ErrorLineAction; label: string; emphasis: 'text' | 'filled' }[];
 }
 
-function copyFor(kind: ErrorLineKind): Copy {
+function copyFor(kind: ErrorLineKind, mainAction: boolean): Copy {
   switch (kind.kind) {
     case 'writeRejected':
       return {
@@ -43,7 +43,7 @@ function copyFor(kind: ErrorLineKind): Copy {
     case 'consentNeeded':
       return {
         text: 'Background summaries are paused until you agree to the new provider.',
-        actions: [{ action: 'review', label: 'Review', emphasis: 'filled' }],
+        actions: [{ action: 'review', label: 'Review', emphasis: mainAction ? 'filled' : 'text' }],
       };
     case 'keyRefused': {
       const fresh = kind.keyPage ? ` Copy a fresh one from ${kind.keyPage}.` : '';
@@ -74,9 +74,9 @@ function copyFor(kind: ErrorLineKind): Copy {
 
 /** One inline error line: a --stamp-ink icon, the sentence, and its actions. */
 export function ErrorLine(props: ErrorLineProps) {
-  const { placement, onAction, editCommandId } = props;
+  const { placement, onAction, editCommandId, mainAction = false } = props;
   const inListbox = useInListbox();
-  const { text, actions } = copyFor(props);
+  const { text, actions } = copyFor(props, mainAction);
   // Inside an option the line is read with the row. A button with a registry key is a pointer duplicate of that key
   // (README Accessibility); one without a key (Retry has no command yet) stays reachable with Tab and VoiceOver.
   const editKey = keycapFor(editCommandId);

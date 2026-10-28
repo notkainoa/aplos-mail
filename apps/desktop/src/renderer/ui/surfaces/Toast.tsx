@@ -5,7 +5,7 @@
  * Announced politely by the stack's persistent live region (a region inserted with its text already inside is
  * often not read); it never takes focus.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { themeHooks, timing, timingReduced } from '../generated/motion';
 import type { ComponentPropsMap, IconName, ToastKind } from '../props';
 import { PartIcon, PartKeys, keysFor, prefersReducedMotion } from './parts';
@@ -34,20 +34,21 @@ function useLifetime(life: number | null, onExpire: () => void) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reasons = useRef(new Set<PauseReason>());
 
-  const stop = () => {
+  // stop reads refs only; start also reads `life`, so it changes identity (and the effect restarts) only with it.
+  const stop = useCallback(() => {
     if (timer.current === null) return;
     clearTimeout(timer.current);
     timer.current = null;
     left.current = Math.max(0, left.current - (Date.now() - startedAt.current));
-  };
-  const start = () => {
+  }, []);
+  const start = useCallback(() => {
     if (life === null || timer.current !== null || reasons.current.size > 0) return;
     startedAt.current = Date.now();
     timer.current = setTimeout(() => {
       timer.current = null;
       expire.current();
     }, left.current);
-  };
+  }, [life]);
 
   useEffect(() => {
     if (life === null) return;
@@ -68,8 +69,7 @@ function useLifetime(life: number | null, onExpire: () => void) {
       document.removeEventListener('visibilitychange', onVisibility);
       stop();
     };
-    // start/stop read refs only; the lifetime restarts only when the life itself changes.
-  }, [life]);
+  }, [life, start, stop]);
 
   return {
     pause(reason: PauseReason) {
