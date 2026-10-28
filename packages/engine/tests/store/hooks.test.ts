@@ -9,7 +9,7 @@ import {
   type IngestBatch,
   type OpenStoreOptions,
 } from '../../src/store';
-import { ACCOUNT, T0, accountWrite, folderWrites, msg } from './helpers';
+import { ACCOUNT, T0, accountWrite, folderWrites, msg, tempDb } from './helpers';
 
 const OWNER = accountWrite.address;
 const importantFolder = {
@@ -104,6 +104,30 @@ test('a failed commit leaves no correspondents behind', () => {
   );
   assert.deepEqual(people(store), []);
   store.close();
+});
+
+test('a draft that is sent in place counts its recipients once it stops being a draft', () => {
+  const store = open();
+  const draft = { seen: true, flagged: false, draft: true, fromMe: true };
+  const to = [{ address: 'friend@mail.example' }];
+  store.commit({
+    opId: 'd1',
+    origin: 'sync',
+    writes: [msg('m1', 't1', 0, { to, flags: draft })],
+  });
+  assert.deepEqual(people(store), []);
+  store.commit({
+    opId: 'd2',
+    origin: 'sync',
+    writes: [sent('m1', 't1', 0, ['friend@mail.example'])],
+  });
+  assert.equal(people(store)[0]?.sent_to, 1);
+  store.commit({
+    opId: 'd3',
+    origin: 'sync',
+    writes: [sent('m1', 't1', 0, ['friend@mail.example'])],
+  });
+  assert.equal(people(store)[0]?.sent_to, 1);
 });
 
 // ------------------------------------------------------------ laneFor
@@ -362,5 +386,40 @@ test('a throwing ingest hook rolls the whole commit back; it cannot forge store 
     );
     assert.equal(notifications(store), 0);
     store.close();
+  }
+});
+
+test('a stored body that cannot be decoded gives up the rank, not the commit', () => {
+  const file = tempDb();
+  const codec = {
+    encode: (d: Uint8Array) => ({ codec: 1, data: Uint8Array.from(d) }),
+    decode: (_c: number, d: Uint8Array) => d,
+  };
+  const setup = openStore(file.open(), { now: () => T0, bodyCodec: codec });
+  setup.commit({
+    opId: 'setup',
+    origin: 'sync',
+    writes: [accountWrite, ...folderWrites, msg('m1', 't1', 0)],
+  });
+  setup.commit({
+    opId: 'b',
+    origin: 'sync',
+    step: 'prefetch',
+    writes: [{ kind: 'body', accountId: ACCOUNT, remoteId: 'm1', body: { text: 'Hello' } }],
+  });
+  setup.close();
+  const store = openStore(file.open(), {
+    now: () => T0,
+    ingest: { laneFor: () => ({ lane: 'low', importance: 'normal' }) },
+  });
+  try {
+    store.commit({ opId: 'n', origin: 'sync', writes: [msg('m2', 't1', -1)] });
+    assert.equal(
+      store.read(q => q.get<{ n: number }>('SELECT count(*) AS n FROM messages')!.n),
+      2,
+    );
+  } finally {
+    store.close();
+    file.cleanup();
   }
 });
