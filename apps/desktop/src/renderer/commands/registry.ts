@@ -1,7 +1,9 @@
 // The CommandRegistry (DESIGN §6; plan 30 §4.2): one table that feeds the key
 // handler, the palette, menus, tooltips, the shortcut sheet and toast keycaps.
-import { chordId, formatAlternatives, formatChord, parseChord } from './keys';
+import { copyProblem } from './copy';
+import { chordId, formatAlternatives, formatChord, isCharacterChord, isTextEditingChord, parseChord } from './keys';
 import { resolve } from './resolver';
+import { buildStack, canShareStack, isModal } from './stacks';
 import {
   CONTEXT_NAMES,
   DEFAULT_KEY_PREFS,
@@ -11,13 +13,16 @@ import {
   type CommandHandlers,
   type CommandId,
   type CommandSpec,
+  type Condition,
   type ContextName,
   type ControlSpec,
   type IconName,
+  type KeyChord,
   type KeyInput,
   type KeyPrefs,
   type KeySpec,
   type Keymap,
+  type KeymapEntry,
   type PaletteGroup,
   type Resolution,
   type TargetSummary,
@@ -28,15 +33,22 @@ export type RegistryEntry =
   | { readonly kind: 'control'; readonly spec: ControlSpec; readonly handlers?: CommandHandlers };
 
 export interface BindingConflict {
-  readonly context: ContextName;
+  /** One context for a clash; two for shadowing (the outer, then the inner). */
+  readonly contexts: readonly ContextName[];
   /** Display form, e.g. "S". */
   readonly keys: string;
-  readonly commandIds: readonly (CommandId | null)[];
+  readonly commandIds: readonly CommandId[];
 }
 
 export interface KeymapIssue {
   readonly commandId: CommandId;
-  readonly reason: 'unknownCommand' | 'invalidChord' | 'conflict';
+  /**
+   * unknownCommand / invalidEntry / invalidChord: the remap cannot be read.
+   * reserved: the chord edits text (⌘C, ⌘V, ⌘A…). conflict: another command has
+   * the chord in the same context. shadowed: a context that sits inside or around
+   * this one has the chord, so one of the two could never be reached by key.
+   */
+  readonly reason: 'unknownCommand' | 'invalidEntry' | 'invalidChord' | 'reserved' | 'conflict' | 'shadowed';
   readonly detail: string;
 }
 
@@ -52,19 +64,31 @@ export interface PaletteEntry {
 }
 
 export type RunResult =
-  | { readonly status: 'ran' }
+  /** `done` settles with the handler; a failure is also reported to onError. */
+  | { readonly status: 'ran'; readonly done: Promise<void> }
+  /** The handler threw synchronously; already reported to onError. */
+  | { readonly status: 'failed'; readonly error: unknown }
   | { readonly status: 'unknown' | 'unhandled' | 'disabled' }
   | { readonly status: 'confirm'; readonly prompt: string; readonly destructive: boolean };
 
+/** A failed command, or a runtime label that breaks DESIGN §10 (the spec label is shown instead). */
+export type RegistryErrorHandler = (error: unknown, commandId: CommandId) => void;
+
 export interface RegistryOptions {
   readonly controls?: readonly ControlSpec[];
-  /** Chords that do nothing in a context (see CONTEXT_BLOCKS). */
-  readonly blocks?: Readonly<Partial<Record<ContextName, readonly string[]>>>;
+  /** Commands that are off while a context is on the stack (see DISABLED_IN). */
+  readonly disabledIn?: Readonly<Partial<Record<ContextName, readonly CommandId[]>>>;
   readonly prefs?: KeyPrefs;
+  /** Where failures go so the toast or inline Retry can show them (DESIGN §5 rule 11). Defaults to console.error. */
+  readonly onError?: RegistryErrorHandler;
 }
 
 export interface Registry {
-  /** Attaches the screen's handlers. Returns a detach function. */
+  /**
+   * Attaches a screen's handlers. Attachments stack per command: the newest is
+   * active, and detaching it makes the previous one active again (the reader's
+   * Done over a list that stays mounted). Returns the detach function.
+   */
   attach(id: CommandId, handlers: CommandHandlers): () => void;
   get(id: CommandId): RegistryEntry | undefined;
   /** Palette commands, in catalog order. */
@@ -80,24 +104,27 @@ export interface Registry {
   isEnabled(id: CommandId, ctx: CommandContext): boolean;
   /** The palette's commands for the stack under it, grouped in PALETTE_GROUPS order. */
   commandsForPalette(ctx: CommandContext): readonly PaletteEntry[];
+  /** Resolves a keydown against ctx.stack, normalized with buildStack. */
   resolve(event: KeyInput, ctx: CommandContext): Resolution | null;
   /** Runs a command, asking for confirmation first when its spec says so. */
   run(id: CommandId, ctx: CommandContext, options?: { readonly confirmed?: boolean }): RunResult;
   /** Applies new prefs (keymap, swipe direction). Rejected remaps keep their defaults and are reported. */
   configure(prefs: KeyPrefs): readonly KeymapIssue[];
   readonly keymapIssues: readonly KeymapIssue[];
-  /** Ids with keys or palette presence but no attached handler (a sheet key with no handler). */
+  /** Ids with no attached handler (a sheet key with no handler). */
   missingHandlers(): readonly CommandId[];
 }
-
-/** Contexts that sit on top of the target and never define what a command acts on. */
-const TRANSIENT_CONTEXTS: readonly ContextName[] = ['palette', 'menu', 'datePicker', 'dialog'];
 
 interface Owner {
   readonly id: CommandId;
   readonly contexts: readonly ContextName[];
-  readonly guarded: boolean;
+  readonly onlyWhen?: Condition;
+  readonly holdFor?: CommandId;
   readonly repeat: boolean;
+}
+
+interface Slot {
+  readonly handlers: CommandHandlers;
 }
 
 function assertContexts(id: CommandId, contexts: readonly ContextName[]): void {
@@ -106,63 +133,118 @@ function assertContexts(id: CommandId, contexts: readonly ContextName[]): void {
   }
 }
 
-/** Expands one command's key specs into flat bindings. Throws on a bad chord string. */
+function parseFor(id: CommandId, text: string): KeyChord {
+  try {
+    return parseChord(text);
+  } catch (error) {
+    throw new Error(`${id}: ${(error as Error).message}`);
+  }
+}
+
+function makeBinding(owner: Owner, chord: KeyChord, context: ContextName, rest: Pick<Binding, 'phase' | 'inTextField' | 'followsSwipe'>): Binding {
+  const binding: Binding = { commandId: owner.id, chord, context, repeat: owner.repeat, ...rest };
+  return {
+    ...binding,
+    ...(owner.onlyWhen ? { onlyWhen: owner.onlyWhen } : {}),
+    ...(owner.holdFor && rest.phase === 'hold' ? { holdFor: owner.holdFor } : {}),
+  };
+}
+
+/** Expands one command's catalog key specs into flat bindings. Throws on a bad chord string. */
 export function expandKeys(owner: Owner, keys: readonly KeySpec[]): Binding[] {
   const out: Binding[] = [];
   for (const spec of keys) {
     const entry = typeof spec === 'string' ? { chord: spec } : spec;
     const contexts = entry.contexts ?? owner.contexts;
     assertContexts(owner.id, contexts);
-    let chord;
-    try {
-      chord = parseChord(entry.chord);
-    } catch (error) {
-      throw new Error(`${owner.id}: ${(error as Error).message}`);
-    }
+    const chord = parseFor(owner.id, entry.chord);
     for (const context of contexts) {
-      out.push({
-        commandId: owner.id,
-        chord,
-        context,
-        phase: entry.phase ?? 'tap',
-        inTextField: entry.inTextField ?? false,
-        repeat: owner.repeat,
-        guarded: owner.guarded,
-        followsSwipe: entry.followsSwipe ?? false,
-      });
+      out.push(
+        makeBinding(owner, chord, context, {
+          phase: entry.phase ?? 'tap',
+          inTextField: entry.inTextField ?? false,
+          followsSwipe: entry.followsSwipe ?? false,
+        }),
+      );
     }
   }
   return out;
 }
 
-function blockBindings(blocks: RegistryOptions['blocks']): Binding[] {
+/** Thrown for a keymap entry the registry refuses; `reason` becomes the issue's reason. */
+class KeymapRefusal extends Error {
+  readonly reason: KeymapIssue['reason'];
+
+  constructor(reason: KeymapIssue['reason'], message: string) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
+function readEntry(id: CommandId, entry: KeymapEntry): { chord: string; phase: 'tap' | 'hold' } {
+  if (typeof entry === 'string') return { chord: entry, phase: 'tap' };
+  if (!entry || typeof entry !== 'object' || typeof entry.chord !== 'string') {
+    throw new KeymapRefusal('invalidEntry', `${id}: a remap is a chord string or { chord, phase }`);
+  }
+  const extra = Object.keys(entry).filter((k) => k !== 'chord' && k !== 'phase');
+  if (extra.length > 0) {
+    throw new KeymapRefusal('invalidEntry', `${id}: a remap may set only chord and phase, not ${extra.join(', ')}`);
+  }
+  const phase = entry.phase ?? 'tap';
+  if (phase !== 'tap' && phase !== 'hold') throw new KeymapRefusal('invalidEntry', `${id}: unknown phase "${String(phase)}"`);
+  return { chord: entry.chord, phase };
+}
+
+/**
+ * Expands a user remap. Contexts come from the command; the text-field rule is
+ * inherited from the command's default keys in that context, except for chords
+ * that type (single keys, outside focused widgets) or edit text.
+ */
+export function expandKeymapEntries(owner: Owner, entries: readonly KeymapEntry[], defaults: readonly Binding[]): Binding[] {
   const out: Binding[] = [];
-  for (const context of CONTEXT_NAMES) {
-    for (const text of blocks?.[context] ?? []) {
-      out.push({
-        commandId: null,
-        chord: parseChord(text),
-        context,
-        phase: 'tap',
-        inTextField: false,
-        repeat: true,
-        guarded: false,
-        followsSwipe: false,
-      });
+  for (const raw of entries) {
+    const entry = readEntry(owner.id, raw);
+    let chord: KeyChord;
+    try {
+      chord = parseFor(owner.id, entry.chord);
+    } catch (error) {
+      throw new KeymapRefusal('invalidChord', (error as Error).message);
+    }
+    const ownDefault = defaults.some((d) => chordId(d.chord) === chordId(chord));
+    if (isTextEditingChord(chord) && !ownDefault) {
+      throw new KeymapRefusal('reserved', `${formatChord(chord)} edits text, so it can’t run ${owner.id}`);
+    }
+    for (const context of owner.contexts) {
+      const fieldOwner = defaults.some((d) => d.inTextField && d.context === context);
+      const types = isCharacterChord(chord) && !isModal(context);
+      out.push(
+        makeBinding(owner, chord, context, {
+          phase: entry.phase,
+          inTextField: fieldOwner && !types && !isTextEditingChord(chord),
+          followsSwipe: false,
+        }),
+      );
     }
   }
   return out;
+}
+
+function bindingSignature(bindings: readonly Binding[]): string {
+  return bindings
+    .map((b) => `${b.context}|${b.phase}|${chordId(b.chord)}`)
+    .sort()
+    .join(',');
+}
+
+function keyText(b: Binding): string {
+  return `${b.phase === 'hold' ? 'Hold ' : ''}${formatChord(b.chord)}`;
 }
 
 /**
  * Two bindings conflict when they share a chord, a phase and a context, unless
- * they are told apart by distinct `onlyWhen` conditions with at most one
- * unguarded. A block (null) conflicts with any binding beside it.
+ * they are told apart by distinct `onlyWhen` conditions with at most one unguarded.
  */
-export function findConflicts(
-  bindings: readonly Binding[],
-  guardOf: (id: CommandId) => string | undefined,
-): BindingConflict[] {
+export function findConflicts(bindings: readonly Binding[]): BindingConflict[] {
   const groups = new Map<string, Binding[]>();
   for (const b of bindings) {
     const key = `${b.context}|${b.phase}|${chordId(b.chord)}`;
@@ -173,26 +255,47 @@ export function findConflicts(
   const conflicts: BindingConflict[] = [];
   for (const group of groups.values()) {
     if (group.length < 2) continue;
-    const hasBlock = group.some((b) => b.commandId === null);
-    const guards = group.map((b) => (b.commandId === null ? undefined : guardOf(b.commandId)));
-    const unguarded = guards.filter((g) => g === undefined).length;
-    const named = guards.filter((g): g is string => g !== undefined);
+    const named = group.map((b) => b.onlyWhen).filter((g): g is Condition => g !== undefined);
+    const unguarded = group.length - named.length;
     const repeatedGuard = new Set(named).size !== named.length;
-    if (hasBlock || unguarded > 1 || repeatedGuard) {
-      const first = group[0];
-      const prefix = first.phase === 'hold' ? 'Hold ' : '';
-      conflicts.push({
-        context: first.context,
-        keys: `${prefix}${formatChord(first.chord)}`,
-        commandIds: group.map((b) => b.commandId),
-      });
+    if (unguarded > 1 || repeatedGuard) {
+      conflicts.push({ contexts: [group[0].context], keys: keyText(group[0]), commandIds: group.map((b) => b.commandId) });
     }
   }
   return conflicts;
 }
 
+/**
+ * Pairs where one context's binding hides another's because the two contexts
+ * can share a stack (nav.search on J in global, under list.down on J in list).
+ * Only pairs touching `isRemapped` count: the catalog's own overrides are by design.
+ */
+export function findShadows(bindings: readonly Binding[], isRemapped: (id: CommandId) => boolean): BindingConflict[] {
+  const byChord = new Map<string, Binding[]>();
+  for (const b of bindings) {
+    const key = chordId(b.chord);
+    byChord.set(key, [...(byChord.get(key) ?? []), b]);
+  }
+  const out: BindingConflict[] = [];
+  const seen = new Set<string>();
+  for (const group of byChord.values()) {
+    for (const a of group) {
+      for (const b of group) {
+        if (a.commandId === b.commandId || !canShareStack(a.context, b.context)) continue;
+        if (!isRemapped(a.commandId) && !isRemapped(b.commandId)) continue;
+        const [outer, inner] = CONTEXT_NAMES.indexOf(a.context) < CONTEXT_NAMES.indexOf(b.context) ? [a, b] : [b, a];
+        const key = `${outer.commandId}@${outer.context}|${inner.commandId}@${inner.context}|${chordId(a.chord)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ contexts: [outer.context, inner.context], keys: keyText(a), commandIds: [outer.commandId, inner.commandId] });
+      }
+    }
+  }
+  return out;
+}
+
 function describeConflicts(conflicts: readonly BindingConflict[]): string {
-  return conflicts.map((c) => `${c.keys} in ${c.context}: ${c.commandIds.map((id) => id ?? '(blocked)').join(', ')}`).join('; ');
+  return conflicts.map((c) => `${c.keys} in ${c.contexts.join(' and ')}: ${c.commandIds.join(', ')}`).join('; ');
 }
 
 function swapArrows(bindings: readonly Binding[]): Binding[] {
@@ -211,32 +314,56 @@ export function contextLine(target: TargetSummary | null, selectionCount = 0): s
   return target.detail ? `For: ${target.title} · ${target.detail}` : `For: ${target.title}`;
 }
 
+function defaultOnError(error: unknown, commandId: CommandId): void {
+  console.error(`Command ${commandId} failed`, error);
+}
+
 export function createRegistry(commands: readonly CommandSpec[], options: RegistryOptions = {}): Registry {
   const controls = options.controls ?? [];
-  const entries = new Map<CommandId, RegistryEntry>();
+  const onError = options.onError ?? defaultOnError;
+  const specs = new Map<CommandId, { kind: 'command'; spec: CommandSpec } | { kind: 'control'; spec: ControlSpec }>();
   for (const spec of commands) {
-    if (entries.has(spec.id)) throw new Error(`Duplicate command id ${spec.id}`);
+    if (specs.has(spec.id)) throw new Error(`Duplicate command id ${spec.id}`);
     assertContexts(spec.id, spec.contexts);
-    entries.set(spec.id, { kind: 'command', spec });
+    specs.set(spec.id, { kind: 'command', spec });
   }
   for (const spec of controls) {
-    if (entries.has(spec.id)) throw new Error(`Duplicate command id ${spec.id}`);
+    if (specs.has(spec.id)) throw new Error(`Duplicate command id ${spec.id}`);
     assertContexts(spec.id, spec.contexts);
-    entries.set(spec.id, { kind: 'control', spec });
+    specs.set(spec.id, { kind: 'control', spec });
   }
-  const order = [...entries.keys()];
-  const guardOf = (id: CommandId) => entries.get(id)?.spec.onlyWhen;
+  const order = [...specs.keys()];
+  const disabledIn = options.disabledIn ?? {};
+  for (const [context, ids] of Object.entries(disabledIn)) {
+    assertContexts('disabledIn', [context as ContextName]);
+    for (const id of ids ?? []) if (!specs.has(id)) throw new Error(`disabledIn.${context}: no command ${id}`);
+  }
+  for (const { spec } of specs.values()) {
+    const holdFor = 'holdFor' in spec ? spec.holdFor : undefined;
+    if (holdFor && !specs.has(holdFor)) throw new Error(`${spec.id}: holdFor names no command ${holdFor}`);
+  }
+  const slots = new Map<CommandId, Slot[]>();
 
   function ownerOf(id: CommandId): Owner {
-    const spec = entries.get(id)!.spec;
-    return { id, contexts: spec.contexts, guarded: spec.onlyWhen !== undefined, repeat: spec.repeat ?? false };
+    const spec = specs.get(id)!.spec;
+    return {
+      id,
+      contexts: spec.contexts,
+      onlyWhen: spec.onlyWhen,
+      holdFor: 'holdFor' in spec ? spec.holdFor : undefined,
+      repeat: spec.repeat ?? false,
+    };
+  }
+
+  function activeHandlers(id: CommandId): CommandHandlers | undefined {
+    const stack = slots.get(id);
+    return stack?.[stack.length - 1]?.handlers;
   }
 
   const defaults = new Map<CommandId, Binding[]>();
-  for (const id of order) defaults.set(id, expandKeys(ownerOf(id), entries.get(id)!.spec.keys));
-  const blocks = blockBindings(options.blocks);
+  for (const id of order) defaults.set(id, expandKeys(ownerOf(id), specs.get(id)!.spec.keys));
 
-  const initialConflicts = findConflicts([...[...defaults.values()].flat(), ...blocks], guardOf);
+  const initialConflicts = findConflicts([...defaults.values()].flat());
   if (initialConflicts.length > 0) {
     throw new Error(`Duplicate key bindings: ${describeConflicts(initialConflicts)}`);
   }
@@ -244,39 +371,41 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
   let effective: Binding[] = [];
   let issues: KeymapIssue[] = [];
 
-  function applyKeymap(keymap: Keymap): { bindings: Map<CommandId, Binding[]>; issues: KeymapIssue[] } {
+  function applyKeymap(keymap: Keymap): { bindings: Binding[]; issues: KeymapIssue[] } {
     const found: KeymapIssue[] = [];
     const overrides = new Map<CommandId, Binding[]>();
-    for (const [id, keys] of Object.entries(keymap)) {
-      if (!entries.has(id)) {
+    for (const [id, entries] of Object.entries(keymap)) {
+      if (!specs.has(id)) {
         found.push({ commandId: id, reason: 'unknownCommand', detail: `No command ${id}` });
         continue;
       }
       try {
-        overrides.set(id, expandKeys(ownerOf(id), keys));
+        const expanded = expandKeymapEntries(ownerOf(id), entries, defaults.get(id)!);
+        if (bindingSignature(expanded) !== bindingSignature(defaults.get(id)!)) overrides.set(id, expanded);
       } catch (error) {
-        found.push({ commandId: id, reason: 'invalidChord', detail: (error as Error).message });
+        const reason = error instanceof KeymapRefusal ? error.reason : 'invalidEntry';
+        found.push({ commandId: id, reason, detail: (error as Error).message });
       }
     }
-    const rejected = new Map<CommandId, string>();
+    const rejected = new Map<CommandId, { reason: 'conflict' | 'shadowed'; detail: string }>();
+    const isRemapped = (id: CommandId) => overrides.has(id) && !rejected.has(id);
     for (;;) {
-      const table = new Map<CommandId, Binding[]>();
-      for (const id of order) {
-        const override = overrides.get(id);
-        table.set(id, override && !rejected.has(id) ? override : defaults.get(id)!);
-      }
-      const conflicts = findConflicts([...[...table.values()].flat(), ...blocks], guardOf);
+      const table = order.flatMap((id) => (isRemapped(id) ? overrides.get(id)! : defaults.get(id)!));
+      const clashes = [
+        ...findConflicts(table).map((c) => ({ c, reason: 'conflict' as const })),
+        ...findShadows(table, isRemapped).map((c) => ({ c, reason: 'shadowed' as const })),
+      ];
       let progressed = false;
-      for (const conflict of conflicts) {
-        for (const id of conflict.commandIds) {
-          if (id === null || !overrides.has(id) || rejected.has(id)) continue;
-          rejected.set(id, describeConflicts([conflict]));
+      for (const { c, reason } of clashes) {
+        for (const id of c.commandIds) {
+          if (!isRemapped(id)) continue;
+          rejected.set(id, { reason, detail: describeConflicts([c]) });
           progressed = true;
         }
       }
       if (!progressed) {
-        for (const [id, clash] of rejected) {
-          found.push({ commandId: id, reason: 'conflict', detail: `Kept the default keys. The new keys clash: ${clash}` });
+        for (const [id, { reason, detail }] of rejected) {
+          found.push({ commandId: id, reason, detail: `Kept the default keys. The new keys clash: ${detail}` });
         }
         return { bindings: table, issues: found };
       }
@@ -285,46 +414,56 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
 
   function configure(prefs: KeyPrefs): readonly KeymapIssue[] {
     const result = applyKeymap(prefs.keymap);
-    const flat = [...[...result.bindings.values()].flat(), ...blocks];
-    effective = prefs.swapTriageArrows ? swapArrows(flat) : flat;
+    effective = prefs.swapTriageArrows ? swapArrows(result.bindings) : result.bindings;
     issues = result.issues;
     return issues;
   }
 
   configure(options.prefs ?? DEFAULT_KEY_PREFS);
 
+  function disabledHere(id: CommandId, stack: readonly ContextName[]): boolean {
+    return buildStack(stack).some((c) => disabledIn[c]?.includes(id) ?? false);
+  }
+
   function isEnabled(id: CommandId, ctx: CommandContext): boolean {
-    const entry = entries.get(id);
-    if (!entry?.handlers) return false;
+    const entry = specs.get(id);
+    const handlers = activeHandlers(id);
+    if (!entry || !handlers) return false;
     const guard = entry.spec.onlyWhen;
     if (guard && ctx.conditions[guard] !== true) return false;
-    return entry.handlers.when ? entry.handlers.when(ctx) : true;
+    if (disabledHere(id, ctx.stack)) return false;
+    return handlers.when ? handlers.when(ctx) : true;
   }
 
   function keysFor(id: CommandId, stack?: readonly ContextName[]): readonly Binding[] {
-    return effective.filter((b) => b.commandId === id && (!stack || stack.includes(b.context)));
+    const contexts = stack ? buildStack(stack) : undefined;
+    return effective.filter((b) => b.commandId === id && (!contexts || contexts.includes(b.context)));
   }
 
   function describeKeys(id: CommandId, stack?: readonly ContextName[]): string {
     return formatAlternatives(keysFor(id, stack));
   }
 
-  function targetStack(stack: readonly ContextName[]): readonly ContextName[] {
-    return stack.filter((c) => !TRANSIENT_CONTEXTS.includes(c));
+  function labelOf(id: CommandId, spec: CommandSpec, ctx: CommandContext): string {
+    const label = activeHandlers(id)?.labelFor?.(ctx);
+    if (label === undefined) return spec.label;
+    const problem = copyProblem(label);
+    if (!problem) return label;
+    onError(new Error(`labelFor: ${problem}`), id);
+    return spec.label;
   }
 
   function commandsForPalette(ctx: CommandContext): readonly PaletteEntry[] {
-    const stack = targetStack(ctx.stack);
+    const stack = buildStack(ctx.stack).filter((c) => !isModal(c));
     const out: PaletteEntry[] = [];
     for (const group of PALETTE_GROUPS) {
       for (const spec of commands) {
         if (spec.group !== group) continue;
         if (!spec.contexts.some((c) => stack.includes(c))) continue;
         if (!isEnabled(spec.id, ctx)) continue;
-        const handlers = entries.get(spec.id)?.handlers;
         out.push({
           id: spec.id,
-          label: handlers?.labelFor?.(ctx) ?? spec.label,
+          label: labelOf(spec.id, spec, ctx),
           icon: spec.icon,
           group,
           keys: describeKeys(spec.id, stack),
@@ -337,30 +476,45 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
   }
 
   function run(id: CommandId, ctx: CommandContext, runOptions: { readonly confirmed?: boolean } = {}): RunResult {
-    const entry = entries.get(id);
+    const entry = specs.get(id);
     if (!entry) return { status: 'unknown' };
-    if (!entry.handlers) return { status: 'unhandled' };
+    const handlers = activeHandlers(id);
+    if (!handlers) return { status: 'unhandled' };
     if (!isEnabled(id, ctx)) return { status: 'disabled' };
     const confirm = entry.kind === 'command' ? entry.spec.confirm : undefined;
     const needsConfirm = confirm && (confirm.scope !== 'bulk' || ctx.selection.length > 1);
     if (confirm && needsConfirm && !runOptions.confirmed) {
       return { status: 'confirm', prompt: confirm.prompt, destructive: confirm.destructive };
     }
-    void entry.handlers.run(ctx);
-    return { status: 'ran' };
+    let outcome: void | Promise<void>;
+    try {
+      outcome = handlers.run(ctx);
+    } catch (error) {
+      onError(error, id);
+      return { status: 'failed', error };
+    }
+    const done = Promise.resolve(outcome);
+    done.catch((error: unknown) => onError(error, id));
+    return { status: 'ran', done };
   }
 
   return {
     attach(id, handlers) {
-      const entry = entries.get(id);
-      if (!entry) throw new Error(`No command ${id}`);
-      entries.set(id, { ...entry, handlers } as RegistryEntry);
+      if (!specs.has(id)) throw new Error(`No command ${id}`);
+      const slot: Slot = { handlers };
+      slots.set(id, [...(slots.get(id) ?? []), slot]);
       return () => {
-        const current = entries.get(id);
-        if (current?.handlers === handlers) entries.set(id, { ...current, handlers: undefined } as RegistryEntry);
+        slots.set(
+          id,
+          (slots.get(id) ?? []).filter((s) => s !== slot),
+        );
       };
     },
-    get: (id) => entries.get(id),
+    get(id) {
+      const entry = specs.get(id);
+      if (!entry) return undefined;
+      return { ...entry, handlers: activeHandlers(id) } as RegistryEntry;
+    },
     list: () => commands,
     controls: () => controls,
     bindings: () => effective,
@@ -370,7 +524,7 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
     isEnabled,
     commandsForPalette,
     resolve(event, ctx) {
-      return resolve(event, ctx.stack, effective, ctx.prefs, {
+      return resolve(event, buildStack(ctx.stack), effective, ctx.prefs, {
         focus: ctx.focus,
         isEnabled: (id) => isEnabled(id, ctx),
       });
@@ -380,6 +534,6 @@ export function createRegistry(commands: readonly CommandSpec[], options: Regist
     get keymapIssues() {
       return issues;
     },
-    missingHandlers: () => order.filter((id) => !entries.get(id)?.handlers),
+    missingHandlers: () => order.filter((id) => !activeHandlers(id)),
   };
 }

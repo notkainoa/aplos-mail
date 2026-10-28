@@ -7,6 +7,7 @@ import {
   formatAlternatives,
   formatBinding,
   formatChord,
+  holdKeyOf,
   parseChord,
 } from './keys';
 import type { KeyInput } from './types';
@@ -25,6 +26,8 @@ test('parseChord normalizes spec strings', () => {
   assert.equal(chordId(parseChord('+')), '+');
   assert.throws(() => parseChord('mod+k'), /Unknown modifier/);
   assert.throws(() => parseChord('shift+/'), /shifted symbol/);
+  assert.throws(() => parseChord('shift+1'), /shifted symbol/);
+  assert.equal(chordId(parseChord('ctrl+shift+1')), 'ctrl+shift+1', 'under ⌃ the digit keeps shift');
   assert.throws(() => parseChord('meta+Banana'), /Unknown key/);
 });
 
@@ -47,6 +50,22 @@ test('chordFromEvent falls back to the physical key for Option and non-Latin lay
   assert.equal(chordId(chordFromEvent(key('&', { ctrlKey: true, code: 'Digit1' }))!), 'ctrl+1');
 });
 
+test('the digit row falls back to the physical digit only under ⌘ or ⌃, keeping shift', () => {
+  assert.equal(chordId(chordFromEvent(key('!', { ctrlKey: true, shiftKey: true, code: 'Digit1' }))!), 'ctrl+shift+1');
+  assert.equal(chordId(chordFromEvent(key('§', { shiftKey: true, code: 'Digit3' }))!), '§');
+  assert.equal(chordId(chordFromEvent(key('é', { code: 'Digit2' }))!), 'é');
+  assert.equal(chordId(chordFromEvent(key('&', { code: 'Digit1' }))!), '&');
+  assert.equal(chordId(chordFromEvent(key('1', { shiftKey: true, code: 'Digit1' }))!), '1');
+});
+
+test('holdKeyOf names the physical key, whatever modifiers are down', () => {
+  assert.equal(holdKeyOf(key('r', { code: 'KeyR' })), 'r');
+  assert.equal(holdKeyOf(key('R', { code: 'KeyR', shiftKey: true })), 'r');
+  assert.equal(holdKeyOf(key('®', { code: 'KeyR', altKey: true })), 'r');
+  assert.equal(holdKeyOf(key(' ', { code: 'Space' })), 'Space');
+  assert.equal(holdKeyOf(key('A', { shiftKey: true })), 'a');
+});
+
 test('chordFromEvent returns null for composition and lone modifiers', () => {
   assert.equal(chordFromEvent(key('a', { isComposing: true })), null);
   assert.equal(chordFromEvent(key('Process')), null);
@@ -61,8 +80,13 @@ test('formatChord draws macOS keycaps', () => {
     ['ctrl+1', '⌃1'],
     ['shift+a', '⇧A'],
     ['alt+ArrowDown', '⌥↓'],
-    ['meta+alt+l', '⌥⌘L'],
-    ['meta+shift+Enter', '⇧⌘Return'],
+    // DESIGN §8 and the mockups draw ⌘ first.
+    ['meta+alt+l', '⌘⌥L'],
+    ['meta+alt+r', '⌘⌥R'],
+    ['meta+shift+Enter', '⌘⇧Return'],
+    ['meta+shift+c', '⌘⇧C'],
+    ['meta+shift+a', '⌘⇧A'],
+    ['ctrl+shift+1', '⌃⇧1'],
     ['Space', 'Space'],
     ['Enter', 'Return'],
     ['Escape', 'Esc'],

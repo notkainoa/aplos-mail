@@ -5,8 +5,9 @@
 export type CommandId = string;
 
 /**
- * Key contexts, outer to inner. A context stack is built from the route plus
- * `data-keyctx` on the focused element's ancestors (plan 30 §4.2).
+ * Key contexts, outer to inner. The shell collects the route's contexts plus
+ * `data-keyctx` on the focused element's ancestors, and the registry normalizes
+ * them with buildStack (stacks.ts), so the reader always sits on 'list'.
  * - global: every window surface (DESIGN §8 Global)
  * - list: Home, Later, All mail, Done, Drafts, Sent, Trash, Spam, search results
  * - home: Home only (adds arrow triage)
@@ -16,7 +17,9 @@ export type CommandId = string;
  * - compose: inline reply or the compose page
  * - ask: the Ask dock
  * - calendar: the calendar page
- * - palette, menu, datePicker, dialog: focus-scoped transients (DESIGN §8 last row)
+ * - palette, menu, datePicker, dialog: focus-scoped modal transients (DESIGN §8 last row)
+ * - lowImportance: the Low-importance sheet over Home, with → → to mark everything done
+ *   (DESIGN §7.2); a modal transient like a dialog. Added because §8 has no row for it.
  * - onboarding: the separate setup window and first-sync screen (DESIGN §7.11, §7.12)
  * - settings: Settings; owns no keys yet, the key recorder bypasses the resolver
  */
@@ -34,6 +37,7 @@ export type ContextName =
   | 'menu'
   | 'datePicker'
   | 'dialog'
+  | 'lowImportance'
   | 'onboarding'
   | 'settings';
 
@@ -51,11 +55,17 @@ export const CONTEXT_NAMES: readonly ContextName[] = [
   'menu',
   'datePicker',
   'dialog',
+  'lowImportance',
   'onboarding',
   'settings',
 ];
 
-/** Outer to inner, e.g. ['global', 'list', 'reader']. The last entry wins. */
+/**
+ * Outer to inner, e.g. ['global', 'list', 'reader']. The last entry wins.
+ * Normalized shapes (buildStack): 'global' first (except onboarding, its own
+ * window); home, done and reader sit on 'list'; oneByOne sits on 'list' and
+ * 'reader'; modal transients come last.
+ */
 export type ContextStack = readonly ContextName[];
 
 /**
@@ -93,9 +103,30 @@ export type Condition =
   | 'proposal' // an Ask proposal card has focus
   | 'queued' // Ask has a queued follow-up
   | 'remindOffer' // a "Remind me if no reply · R" toast is showing
+  | 'welcome' // onboarding's Welcome step is showing (Esc skips setup)
   | 'firstSync'; // the first-sync screen is showing
 
 export type ConditionState = Readonly<Partial<Record<Condition, boolean>>>;
+
+/**
+ * When several guarded bindings for one chord are live in one context, the
+ * earlier condition wins (a focused proposal's Esc is "Not now" even while
+ * Ask streams). Unguarded bindings come after all of these.
+ */
+export const CONDITION_PRIORITY: readonly Condition[] = [
+  'proposal',
+  'streaming',
+  'queued',
+  'askText',
+  'suggestion',
+  'emptyBody',
+  'emptyField',
+  'invite',
+  'remindOffer',
+  'selection',
+  'welcome',
+  'firstSync',
+];
 
 export type PaletteGroup = 'Suggested' | 'Actions' | 'Go to' | 'Ask' | 'Settings';
 
@@ -124,6 +155,7 @@ export type IconName =
   | 'phone'
   | 'doc'
   | 'gearshape'
+  | 'house'
   | 'keyboard';
 
 /**
@@ -170,6 +202,8 @@ export interface CommandSpec {
   /** Extra words the palette matches on ("archive" for Done). */
   readonly keywords?: readonly string[];
   readonly onlyWhen?: Condition;
+  /** For a hold command: the tap it upgrades (mail.dictateReply upgrades mail.reply). */
+  readonly holdFor?: CommandId;
   /** Auto-repeat keydowns run it again (movement only). */
   readonly repeat?: boolean;
   readonly undo?: UndoSpec;
@@ -193,21 +227,29 @@ export interface ControlSpec {
   readonly repeat?: boolean;
 }
 
-/** One flattened binding: one chord in one context. `commandId: null` means the key does nothing there. */
+/** One flattened binding: one chord in one context. */
 export interface Binding {
-  readonly commandId: CommandId | null;
+  readonly commandId: CommandId;
   readonly chord: KeyChord;
   readonly context: ContextName;
   readonly phase: Phase;
   readonly inTextField: boolean;
   readonly repeat: boolean;
-  /** The owner has `onlyWhen`, so it may share the chord with an unguarded command. */
-  readonly guarded: boolean;
+  /** The owner's `onlyWhen`; a guarded binding may share the chord with an unguarded one. */
+  readonly onlyWhen?: Condition;
+  /** The owner's `holdFor`. */
+  readonly holdFor?: CommandId;
   readonly followsSwipe: boolean;
 }
 
+/**
+ * One remapped key. Only the chord and phase are the owner's to choose; contexts,
+ * the text-field rule and the swipe swap always come from the catalog.
+ */
+export type KeymapEntry = string | { readonly chord: string; readonly phase?: Phase };
+
 /** Remapped keys, by command id. A command listed here loses all its default keys. */
-export type Keymap = Readonly<Record<CommandId, readonly KeySpec[]>>;
+export type Keymap = Readonly<Record<CommandId, readonly KeymapEntry[]>>;
 
 export interface KeyPrefs {
   /** WCAG 2.1.4: unmodified character keys can be switched off. */
@@ -267,10 +309,18 @@ export interface KeyInput {
 }
 
 /**
- * phase 'tap': run `commandId` now and prevent the default. If `holdCommandId`
- * is set, also arm a HoldTracker; a hold upgrades the tap (R reply, then dictate).
- * phase 'hold': nothing runs now and the key goes through (it types); arm a
- * HoldTracker and run `commandId` if the hold completes (hold Space in an empty body).
+ * What the shell does with an answer (null: let the key through untouched).
+ * - Before resolving, ask the HoldTracker: while a hold is armed,
+ *   `tracker.swallows(event)` is true for the armed key's auto-repeats; prevent
+ *   them, so a held R or A never types "rrr" into the field the tap focused.
+ * - phase 'tap': run `commandId` now and prevent the default. If `holdCommandId`
+ *   is set, also `tracker.down(event, holdCommandId, at)`; a hold upgrades the tap
+ *   (R opens the reply, the hold dictates into it).
+ * - phase 'hold': nothing runs now and the keydown goes through, so in a field it
+ *   types one character. Arm with `tracker.down(event, commandId, at, { typed })`.
+ *   If the hold completes, the upgrade says `removeTyped`: delete that one
+ *   character, then run `commandId` (hold A in Ask's field, hold Space in an
+ *   empty body, which must stay empty).
  */
 export interface Resolution {
   readonly commandId: CommandId;

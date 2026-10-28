@@ -1,7 +1,8 @@
 // Every command in DESIGN §8, declared once. Screens attach run/when through the
 // registry; nothing else may bind a key. Labels follow DESIGN §10 (plain, no
 // exclamation marks); icons come from DESIGN §4.7.
-import type { CommandSpec, ContextName, ControlSpec } from './types';
+import { createRegistry, type Registry, type RegistryErrorHandler } from './registry';
+import type { CommandId, CommandSpec, ContextName, ControlSpec, KeyPrefs } from './types';
 
 const TRIAGE_ARROW_CONTEXTS: readonly ContextName[] = ['home', 'oneByOne', 'reader'];
 
@@ -22,6 +23,8 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
     id: 'ask.dictate',
     label: 'Dictate to Ask',
     icon: 'text.bubble',
+    // In Ask's field the A types and a hold dictates (the field rule). The
+    // single-key switch still turns both off (WCAG 2.1.4).
     keys: [
       { chord: 'a', phase: 'hold' },
       { chord: 'a', phase: 'hold', contexts: ['ask'], inTextField: true },
@@ -29,6 +32,7 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
     contexts: ['global'],
     group: 'Ask',
     keywords: ['voice', 'speak'],
+    holdFor: 'ask.open',
   },
   { id: 'ask.toggleDock', label: 'Show or hide the Ask pane', keys: ['meta+j'], contexts: ['global'], group: 'Ask', keywords: ['dock'] },
   { id: 'nav.today', label: 'Today', icon: 'calendar', keys: ['shift+a'], contexts: ['global'], group: 'Ask', keywords: ['agenda'] },
@@ -74,6 +78,7 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
     contexts: ['list'],
     group: 'Actions',
     keywords: ['voice', 'speak'],
+    holdFor: 'mail.reply',
   },
   {
     id: 'mail.done',
@@ -161,6 +166,7 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
   {
     id: 'done.moveToHome',
     label: 'Move to Home',
+    icon: 'house',
     keys: ['h'],
     contexts: ['done'],
     group: 'Actions',
@@ -260,7 +266,7 @@ export const ASK_COMMANDS: readonly CommandSpec[] = [
   {
     id: 'ask.searchAllMail',
     label: 'Search all mail',
-    icon: 'magnifyingglass',
+    icon: 'text.bubble',
     keys: [{ chord: 'meta+Enter', inTextField: true }],
     contexts: ['ask'],
     group: 'Ask',
@@ -357,13 +363,33 @@ export const CONTROLS: readonly ControlSpec[] = [
   { id: 'dialog.confirmDestructive', label: 'Confirm', keys: ['shift+Enter'], contexts: ['dialog'] },
   { id: 'dialog.cancel', label: 'Cancel', keys: ['Escape'], contexts: ['dialog'] },
 
+  // DESIGN §7.2: the first → arms and the second commits; the handler keeps that state.
+  { id: 'lowImportance.next', label: 'Next sender', keys: ['ArrowDown'], contexts: ['lowImportance'], repeat: true },
+  { id: 'lowImportance.previous', label: 'Previous sender', keys: ['ArrowUp'], contexts: ['lowImportance'], repeat: true },
+  {
+    id: 'lowImportance.markAllDone',
+    label: 'Mark everything done (press twice)',
+    keys: [{ chord: 'ArrowRight', followsSwipe: true }],
+    contexts: ['lowImportance'],
+  },
+  { id: 'lowImportance.close', label: 'Close the sheet', keys: ['Escape'], contexts: ['lowImportance'] },
+
   { id: 'onboarding.continue', label: 'Continue', keys: ['Enter'], contexts: ['onboarding'] },
   { id: 'onboarding.back', label: 'Go back a step', keys: ['Escape'], contexts: ['onboarding'] },
+  { id: 'onboarding.skipSetup', label: 'Skip setup', keys: ['Escape'], contexts: ['onboarding'], onlyWhen: 'welcome' },
   { id: 'onboarding.openAplos', label: 'Open Aplos', keys: ['Escape'], contexts: ['onboarding'], onlyWhen: 'firstSync' },
 ];
 
-/** Chords that do nothing in a context even though an outer context binds them. */
-export const CONTEXT_BLOCKS: Readonly<Partial<Record<ContextName, readonly string[]>>> = {
-  // DESIGN §7.4: E and L do nothing on done rows.
-  done: ['e', 'l'],
+/**
+ * Commands that are off while a context is on the stack, whatever keys they have
+ * after remapping. DESIGN §7.4: Done and Later do nothing on done rows, also in
+ * a reader opened from Done (so → / ← do nothing there too).
+ */
+export const DISABLED_IN: Readonly<Partial<Record<ContextName, readonly CommandId[]>>> = {
+  done: ['mail.done', 'mail.later'],
 };
+
+/** The app's registry over the full catalog, with the user's prefs applied. */
+export function createAppRegistry(prefs?: KeyPrefs, onError?: RegistryErrorHandler): Registry {
+  return createRegistry(COMMANDS, { controls: CONTROLS, disabledIn: DISABLED_IN, prefs, onError });
+}

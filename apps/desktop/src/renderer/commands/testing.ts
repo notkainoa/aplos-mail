@@ -1,6 +1,6 @@
 // Shared helpers for this folder's tests. Not exported from index.ts.
-import { CONTEXT_BLOCKS, COMMANDS, CONTROLS } from './catalog';
-import { createRegistry, type Registry } from './registry';
+import { COMMANDS, CONTROLS, createAppRegistry } from './catalog';
+import type { Registry } from './registry';
 import {
   DEFAULT_KEY_PREFS,
   type CommandContext,
@@ -13,7 +13,7 @@ import {
 
 /** The full catalog with a no-op handler on every command and control. */
 export function wiredRegistry(prefs: KeyPrefs = DEFAULT_KEY_PREFS): Registry {
-  const registry = createRegistry(COMMANDS, { controls: CONTROLS, blocks: CONTEXT_BLOCKS, prefs });
+  const registry = createAppRegistry(prefs);
   for (const spec of [...COMMANDS, ...CONTROLS]) registry.attach(spec.id, { run: () => undefined });
   return registry;
 }

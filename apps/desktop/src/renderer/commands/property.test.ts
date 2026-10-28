@@ -5,11 +5,13 @@
 // directly to the binding table.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { DISABLED_IN } from './catalog';
 import { createHoldTracker } from './hold';
 import { createKeyQueue } from './keyQueue';
 import { chordId } from './keys';
 import { context, prng, wiredRegistry } from './testing';
 import {
+  CONDITION_PRIORITY,
   DEFAULT_KEY_PREFS,
   type Binding,
   type CommandContext,
@@ -90,7 +92,13 @@ const STACKS: readonly (readonly ContextName[])[] = [
   ['global', 'list', 'home', 'menu'],
   ['global', 'list', 'datePicker'],
   ['global', 'calendar', 'dialog'],
+  ['global', 'list', 'reader', 'compose', 'palette'],
+  ['global', 'list', 'reader', 'dialog'],
+  ['global', 'list', 'home', 'lowImportance'],
+  ['global', 'list', 'done', 'reader'],
+  ['global', 'list', 'home', 'reader', 'oneByOne'],
   ['onboarding'],
+  ['onboarding', 'dialog'],
 ];
 
 const CONDITIONS: readonly Condition[] = [
@@ -104,10 +112,12 @@ const CONDITIONS: readonly Condition[] = [
   'proposal',
   'queued',
   'remindOffer',
+  'welcome',
   'firstSync',
 ];
 
-const FOCUS_SCOPED = new Set<ContextName>(['palette', 'menu', 'datePicker', 'dialog']);
+/** Focus-scoped and modal: exempt from the single-key switch, and nothing outside them answers. */
+const MODAL = new Set<ContextName>(['palette', 'menu', 'datePicker', 'dialog', 'lowImportance']);
 const TEXT_EDITING = new Set(['meta+a', 'ctrl+a', 'ctrl+e', 'ctrl+k']);
 
 type Pick = () => number;
@@ -123,29 +133,45 @@ function oracleAllows(b: Binding, key: GenKey, focus: FocusKind, prefs: KeyPrefs
   const controlOk = b.inTextField || !(key.id === 'Space' || key.id === 'Enter');
   if (focus === 'text' && !textOk) return false;
   if (focus === 'control' && !controlOk) return false;
-  if (!prefs.singleKeyShortcuts && key.character && !b.inTextField && !FOCUS_SCOPED.has(b.context)) return false;
+  // WCAG 2.1.4 is independent of the field rule: inTextField does not exempt a character key.
+  if (!prefs.singleKeyShortcuts && key.character && !MODAL.has(b.context)) return false;
   if (repeat && !b.repeat) return false;
-  if (b.commandId === null) return true;
+  if (ctx.stack.some((c) => DISABLED_IN[c]?.includes(b.commandId))) return false;
   const guard = guardOf(b.commandId);
   return guard === undefined || ctx.conditions[guard] === true;
 }
 
-/** The innermost context that blocks or answers decides; guarded before unguarded; tap before hold. */
+/** Contexts that may answer: the innermost modal and anything inside it, else the whole stack. */
+function reachable(stack: readonly ContextName[]): readonly ContextName[] {
+  let start = 0;
+  stack.forEach((c, i) => {
+    if (MODAL.has(c)) start = i;
+  });
+  return stack.slice(start);
+}
+
+/** The innermost reachable context that answers decides; the highest-priority guard first; a hold rides only with its partner tap. */
 function oracle(key: GenKey, ctx: CommandContext, table: readonly Binding[], repeat: boolean, composing: boolean, guardOf: (id: string) => Condition | undefined) {
   if (composing) return null;
-  const candidates = table.filter((b) => chordId(b.chord) === key.id && ctx.stack.includes(b.context));
-  const depthOf = (b: Binding) => ctx.stack.lastIndexOf(b.context);
+  const contexts = reachable(ctx.stack);
+  const candidates = table.filter((b) => chordId(b.chord) === key.id && contexts.includes(b.context));
+  const depthOf = (b: Binding) => contexts.lastIndexOf(b.context);
   const deciding = candidates
-    .filter((b) => b.commandId === null || oracleAllows(b, key, ctx.focus, ctx.prefs, repeat, ctx, guardOf))
+    .filter((b) => oracleAllows(b, key, ctx.focus, ctx.prefs, repeat, ctx, guardOf))
     .sort((a, b) => depthOf(b) - depthOf(a));
   if (deciding.length === 0) return null;
   const depth = depthOf(deciding[0]);
   const level = deciding.filter((b) => depthOf(b) === depth);
-  if (level.some((b) => b.commandId === null)) return null;
-  const rank = (b: Binding) => (b.guarded ? 0 : 1);
+  const rank = (b: Binding) => {
+    const guard = guardOf(b.commandId);
+    return guard === undefined ? 99 : CONDITION_PRIORITY.indexOf(guard);
+  };
   const taps = level.filter((b) => b.phase === 'tap').sort((a, b) => rank(a) - rank(b));
   const holds = level.filter((b) => b.phase === 'hold').sort((a, b) => rank(a) - rank(b));
-  if (taps.length > 0) return { commandId: taps[0].commandId, phase: 'tap', holdCommandId: holds[0]?.commandId ?? undefined };
+  if (taps.length > 0) {
+    const partner = holds[0] && holds[0].holdFor === taps[0].commandId ? holds[0].commandId : undefined;
+    return { commandId: taps[0].commandId, phase: 'tap', holdCommandId: partner };
+  }
   return { commandId: holds[0].commandId, phase: 'hold', holdCommandId: undefined };
 }
 
@@ -200,7 +226,9 @@ test(`resolver agrees with the oracle over ${SEQUENCES} seeded sequences`, () =>
         const owner = table.find((b) => b.commandId === actual.commandId && b.context === actual.context && chordId(b.chord) === key.id);
         assert.ok(owner, label);
         if (focus === 'text' && key.character) assert.ok(owner.inTextField, `single key fired in a text field: ${label}`);
-        if (!prefs.singleKeyShortcuts && key.character) assert.ok(owner.inTextField || FOCUS_SCOPED.has(owner.context), label);
+        if (!prefs.singleKeyShortcuts && key.character) assert.ok(MODAL.has(owner.context), `single key fired with the switch off: ${label}`);
+        assert.ok(reachable(stack).includes(actual.context), `a key reached behind a modal: ${label}`);
+        if (stack.includes('done')) assert.ok(actual.commandId !== 'mail.done' && actual.commandId !== 'mail.later', `Done or Later in the Done place: ${label}`);
         const triageArrow = key.id === 'ArrowLeft' || key.id === 'ArrowRight';
         if (triageArrow && (actual.commandId === 'mail.done' || actual.commandId === 'mail.later')) {
           assert.ok(['home', 'oneByOne', 'reader'].includes(actual.context), `arrow triage outside Home/one by one/reader: ${label}`);
@@ -212,9 +240,10 @@ test(`resolver agrees with the oracle over ${SEQUENCES} seeded sequences`, () =>
       const holdId = actual?.phase === 'tap' ? actual.holdCommandId : actual?.commandId;
       if (actual && (actual.phase === 'hold' || holdId)) {
         const heldFor = Math.floor(rand() * 600);
-        tracker.down(key.id, holdId!, clock);
+        tracker.down(key.event, holdId!, clock);
+        assert.ok(tracker.swallows({ ...key.event, repeat: true }), `auto-repeat of the armed key is swallowed: ${label}`);
         const upgrade = tracker.tick(clock + heldFor);
-        const release = tracker.up(key.id, clock + heldFor);
+        const release = tracker.up(key.event, clock + heldFor);
         const isHold = heldFor >= prefs.holdThresholdMs;
         assert.equal(upgrade !== null, isHold, label);
         assert.equal(release?.phase, isHold ? 'hold' : 'tap', label);

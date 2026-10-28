@@ -33,7 +33,7 @@ interface SectionDef {
  */
 export const SHEET_SECTIONS: readonly SectionDef[] = [
   { id: 'global', title: 'Global', column: 0, contexts: ['global'] },
-  { id: 'home', title: 'Home and one by one', column: 0, contexts: ['home', 'oneByOne'] },
+  { id: 'home', title: 'Home and one by one', column: 0, contexts: ['home', 'oneByOne', 'lowImportance'] },
   { id: 'done', title: 'Done', column: 0, contexts: ['done'] },
   { id: 'reader', title: 'Reader', column: 0, contexts: ['reader'] },
   { id: 'lists', title: 'Lists', column: 1, contexts: ['list'] },

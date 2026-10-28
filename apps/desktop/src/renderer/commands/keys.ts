@@ -54,8 +54,15 @@ const IGNORED_KEYS = new Set([
   'Unidentified',
 ]);
 
-/** macOS order, the same one native menus draw: ⌃ ⌥ ⇧ ⌘. */
+/** The order of modifiers in chord ids ("alt+meta+l"). Internal only; never shown. */
 const MODIFIER_ORDER = ['ctrl', 'alt', 'shift', 'meta'] as const;
+
+/**
+ * The order keycaps are drawn in. DESIGN §8 and the mockups write ⌘ first
+ * (⌘⌥L, ⌘⇧Return, ⌘⇧C); macOS menus put ⌘ last. DESIGN wins until the owner
+ * changes it there.
+ */
+const DISPLAY_ORDER = ['meta', 'ctrl', 'alt', 'shift'] as const;
 
 const MODIFIER_GLYPHS: Readonly<Record<(typeof MODIFIER_ORDER)[number], string>> = {
   ctrl: '⌃',
@@ -123,6 +130,18 @@ function isLetter(key: string): boolean {
   return /^\p{L}$/u.test(key);
 }
 
+function isDigit(key: string): boolean {
+  return /^[0-9]$/.test(key);
+}
+
+/**
+ * Shift is part of the chord for letters and named keys, and for digits under
+ * ⌘ or ⌃ (⌃⇧1 is not ⌃1). A symbol carries shift in the character itself.
+ */
+function shiftMatters(key: string, meta: boolean, ctrl: boolean): boolean {
+  return !isSingleChar(key) || isLetter(key) || (isDigit(key) && (meta || ctrl));
+}
+
 /** The canonical key name, or null for keys that cannot be bound. */
 export function canonicalKey(key: string): string | null {
   const named = NAMED_KEYS[key.toLowerCase()];
@@ -132,16 +151,15 @@ export function canonicalKey(key: string): string | null {
   return null;
 }
 
-/** Applies the shift rule: symbols and digits carry shift in the character itself. */
+/** Applies the shift rule (see shiftMatters). */
 export function normalizeChord(chord: KeyChord): KeyChord {
   const key = canonicalKey(chord.key) ?? chord.key;
-  const shiftMatters = !isSingleChar(key) || isLetter(key);
   return {
     key,
     meta: chord.meta,
     ctrl: chord.ctrl,
     alt: chord.alt,
-    shift: shiftMatters && chord.shift,
+    shift: shiftMatters(key, chord.meta, chord.ctrl) && chord.shift,
   };
 }
 
@@ -165,7 +183,7 @@ export function parseChord(text: string): KeyChord {
   }
   const key = canonicalKey(rawKey);
   if (key === null) throw new Error(`Unknown key "${rawKey}" in "${text}"`);
-  if (chord.shift && isSingleChar(key) && !isLetter(key)) {
+  if (chord.shift && !shiftMatters(key, chord.meta, chord.ctrl)) {
     throw new Error(`Write the shifted symbol itself, not shift+"${key}", in "${text}"`);
   }
   return normalizeChord({ ...chord, key });
@@ -186,19 +204,22 @@ function isPrintableAscii(key: string): boolean {
 
 /**
  * Normalizes a keydown. Caps Lock is ignored (letters are lower-cased and shift
- * comes from shiftKey). Option-composed characters ("¬" for ⌥L), dead keys and
- * non-Latin layouts fall back to the physical letter, so ⌘⌥L works everywhere.
+ * comes from shiftKey). On a letter key, Option-composed characters ("¬" for ⌥L),
+ * dead keys and non-Latin layouts fall back to the physical letter, so ⌘⌥L works
+ * everywhere. The digit row falls back to the physical digit only under ⌘ or ⌃
+ * (⌃1 on AZERTY), keeping shift; without them a digit-row key is whatever it
+ * types, so German ⇧3 ("§") and AZERTY "é" are not 3 and 2.
  * Returns null during IME composition and for lone modifiers.
  */
 export function chordFromEvent(event: KeyInput): KeyChord | null {
   if (event.isComposing || event.key === 'Process') return null;
   let key = event.key;
   const physical = codeCharacter(event.code);
-  if (physical) {
+  if (physical && isLetter(physical)) {
     const composed = key === 'Dead' || (isSingleChar(key) && !isPrintableAscii(key));
-    const layoutDigit = (event.metaKey || event.ctrlKey) && /^[0-9]$/.test(physical);
-    if (composed || layoutDigit) key = physical;
+    if (composed) key = physical;
   }
+  if (physical && isDigit(physical) && (event.metaKey || event.ctrlKey)) key = physical;
   if (key === 'Dead' || IGNORED_KEYS.has(key)) return null;
   const canonical = canonicalKey(key);
   if (canonical === null) return null;
@@ -232,9 +253,20 @@ export function isTextEditingChord(chord: KeyChord): boolean {
   return TEXT_EDITING_CHORDS.has(chordId(chord));
 }
 
-/** "⌘K", "⌃1", "⇧A", "⌥↓", "⌥⌘L", "Space", "Return", "Esc". */
+/**
+ * The physical key a hold is tracked by, with modifiers left out: 'r' for R, ⇧R
+ * and ⌘R alike, 'Space' for the space bar. Pressing or releasing ⇧ mid-hold
+ * cannot strand a running dictation.
+ */
+export function holdKeyOf(event: KeyInput): string {
+  const physical = codeCharacter(event.code);
+  if (physical) return physical;
+  return canonicalKey(event.key) ?? event.key;
+}
+
+/** "⌘K", "⌃1", "⇧A", "⌥↓", "⌘⌥L", "⌘⇧Return", "Space", "Return", "Esc". */
 export function formatChord(chord: KeyChord): string {
-  const modifiers = MODIFIER_ORDER.filter((m) => chord[m])
+  const modifiers = DISPLAY_ORDER.filter((m) => chord[m])
     .map((m) => MODIFIER_GLYPHS[m])
     .join('');
   const glyph = KEY_GLYPHS[chord.key] ?? (isLetter(chord.key) ? chord.key.toUpperCase() : chord.key);
@@ -257,7 +289,7 @@ function digitRange(bindings: readonly Bindable[]): string | null {
   const first = bindings[0];
   const digits: number[] = [];
   for (const b of bindings) {
-    if (b.phase !== 'tap' || !/^[0-9]$/.test(b.chord.key)) return null;
+    if (b.phase !== 'tap' || !isDigit(b.chord.key)) return null;
     if (chordId({ ...b.chord, key: '0' }) !== chordId({ ...first.chord, key: '0' })) return null;
     digits.push(Number(b.chord.key));
   }
