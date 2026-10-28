@@ -114,6 +114,7 @@ export type CoreWrite =
  * Lane write kinds, added by declaration merging from the lane's own file, e.g. in `outbox/store.ts`:
  * `declare module '../store/port' { interface ExtensionWrites { submission: SubmissionWrite } }`. The key is the kind.
  */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- filled by declaration merging from each lane's file
 export interface ExtensionWrites {}
 export type ExtensionWrite = ExtensionWrites[keyof ExtensionWrites];
 

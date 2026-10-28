@@ -12,8 +12,11 @@ import { sha256Hex } from './sha256';
 const SCAN_MAX = 2000;
 
 // Zero-width, bidi, soft-hyphen and variation characters vanish; other control characters become spaces.
+/* eslint-disable no-misleading-character-class -- the ranges list combining and invisible code points on purpose */
 const INVISIBLE =
   /[\u00ad\u061c\u115f\u1160\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff]/g;
+/* eslint-enable no-misleading-character-class */
+// eslint-disable-next-line no-control-regex -- control characters are exactly what this pattern removes
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 
 /** Provider token and key shapes, and PEM blocks. Each match becomes `[secret]`. */

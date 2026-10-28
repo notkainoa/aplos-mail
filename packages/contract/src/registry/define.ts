@@ -45,7 +45,7 @@ export type Host = 'engine' | 'desktop';
 /** Queries change nothing durable; commands change state and return a receipt or the changed row. */
 export type Kind = 'query' | 'command';
 
-type Schema = z.ZodMiniType<any, any>;
+type Schema = z.ZodMiniType;
 
 /** What an area file writes for each method. */
 export interface MethodSpec<I extends Schema = Schema, O extends Schema = Schema> {

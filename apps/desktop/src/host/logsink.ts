@@ -78,7 +78,9 @@ export function createLogSink({
     if (fd !== undefined)
       try {
         closeSync(fd);
-      } catch {}
+      } catch {
+        // Already closed or gone: there is nothing left to flush, and the sink never throws.
+      }
     fd = undefined;
   }
 

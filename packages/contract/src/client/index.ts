@@ -26,6 +26,8 @@ export interface EngineConnection {
 type Verbs<T extends string> = { [M in MethodName as M extends `${T}/${infer V}` ? V : never]: M };
 type TypeOf<M> = M extends `${infer T}/${string}` ? T : never;
 type Call<M extends MethodName> =
+  // `{} extends X` is the type-level test for "X has no required field", so the arguments may be omitted.
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- a type test, not a value type
   {} extends Input<M>
     ? (args?: Input<M>, options?: { transfer?: ArrayBuffer[] }) => Promise<Output<M>>
     : (args: Input<M>, options?: { transfer?: ArrayBuffer[] }) => Promise<Output<M>>;
