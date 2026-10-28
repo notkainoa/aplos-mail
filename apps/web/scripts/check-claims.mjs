@@ -1,27 +1,45 @@
-// Checks that every claim shown on the site has proof, and that the copy has no banned wording.
+// Checks that every claim shown on the site has proof, and that the copy keeps to the owner's decisions.
 //
 //   node apps/web/scripts/check-claims.mjs [--production] [--src <dir|file>]... [--claims claims.json]
 //                                          [--status provider-status.json] [--today YYYY-MM-DD]
 //
 // Copy marks a claim with data-claim="<id>" (several ids separated by spaces). apps/web/claims.json lists
-// every claim with its evidence. Always fails on: an id used in copy but missing from claims.json, a
-// malformed or duplicate row, a placeholder or "to be added" marker in Privacy.tsx, or a banned phrase in
-// any copy file. Fails only with --production (or VERCEL_ENV=production) when a used claim is not verified
-// or its evidence is stale; otherwise those claims are printed as warnings.
+// every claim with its evidence. Always fails on:
+//   - an id used in copy but missing from claims.json, a data-claim written in a way this check cannot read
+//     (an expression, a spread of a variable, a boolean attribute), or a missing, malformed or duplicate registry;
+//   - a placeholder ("[contact email]", TODO, TBD, "to be added", lorem ipsum) in any copy file;
+//   - banned wording in any copy file, .css included, after normalising the text (entities, \u escapes, soft
+//     hyphens, non-breaking hyphens and inline tags such as <wbr /> or <Key>A</Key> cannot hide a phrase):
+//     the owner's voice rules (airmail, magic, AI-powered, copilot, "hold A and say it", "smart" and "beta" as
+//     labels, sparkle/wand/star glyphs and icons) and the owner's scope decisions (no Windows or Linux, no
+//     Outlook/iCloud/Fastmail/IMAP, no macOS 12, no GitHub, no "updates install themselves").
+//     A line can opt out of one rule with a comment `claims-allow: <rule-id>` on that line or the line above;
+//     the rule ids are printed with each failure.
+// Fails only with --production (or VERCEL_ENV=production) when a used claim is not verified or its evidence is
+// stale; otherwise those claims are printed as warnings.
+//
+// NOTE for whoever tags claims: Vercel production builds run this strict. A claim that is only "pending" (for
+// example Gmail for invited testers, whose only proof is a future live smoke run) fails the production build
+// if it is tagged in copy. Either leave such a claim untagged, or register it with dated "owner" evidence
+// (the owner's decision note) and status "verified", or wire the live runner first. This check does not
+// weaken that on its own.
 //
 // Rules for a used claim to count as verified:
 //   - status is "verified" and verifiedAt is a YYYY-MM-DD date;
 //   - "live" evidence (ref = provider name, e.g. "gmail"): provider-status.json must show that provider
-//     passing, checked within maxAgeDays (null = any age). Accepted shapes:
+//     passing, checked within maxAgeDays (null = any age) and not in the future. Accepted shapes:
 //       { "gmail": { "status": "pass", "checkedAt": "2026-10-27T10:00:00Z" } }  or
 //       { "providers": { "gmail": { ... } } }; status may be "pass"/"passed"/"ok"/true; the time key may be
-//       checkedAt, at, passedAt, verifiedAt, lastPassedAt or timestamp;
+//       checkedAt, at, passedAt, verifiedAt, lastPassedAt or timestamp. If `status` is present it alone
+//       decides; a contradictory `ok` or `passed` next to a failing status is a failure;
 //   - "owner" evidence: the ref must carry a dated note (YYYY-MM-DD); with maxAgeDays that date must be recent;
 //   - "design", "fact", "test" evidence: with status "verified" it counts; with maxAgeDays, verifiedAt must be
 //     recent. A "test" ref that looks like a file path must exist in the repo (a missing file is a warning,
 //     and a failure with --production).
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, join, relative, resolve } from 'node:path';
+import { basename, extname, join, relative, resolve } from 'node:path';
+import ts from 'typescript';
+import { decodeCssEscapes, decodeEntities, decodeJsEscapes } from './lib/decode.mjs';
 
 const webDir = resolve(import.meta.dirname, '..');
 const repoRoot = resolve(webDir, '../..');
@@ -49,6 +67,7 @@ const roots = opts.src.length
       join(webDir, 'index.html'),
       join(webDir, 'download'),
       join(webDir, 'privacy'),
+      join(webDir, 'public'),
     ];
 const claimsPath = opts.claims ?? join(webDir, 'claims.json');
 const statusPath = opts.status ?? join(webDir, 'provider-status.json');
@@ -64,6 +83,7 @@ const warnings = [];
 const err = m => errors.push(m);
 
 // ---------- copy files ----------
+const COPY_EXT = /\.(tsx?|html?|css|svg)$/i;
 function collect(path, out) {
   if (!existsSync(path)) return;
   if (statSync(path).isDirectory()) {
@@ -71,7 +91,7 @@ function collect(path, out) {
       if (name === 'node_modules' || name === 'dist' || name.startsWith('.')) continue;
       collect(join(path, name), out);
     }
-  } else if (/\.(tsx?|html)$/i.test(path) && !/\.d\.ts$/.test(path)) out.push(path);
+  } else if (COPY_EXT.test(path) && !/\.d\.ts$/.test(path)) out.push(path);
 }
 const files = [];
 for (const r of roots) {
@@ -79,81 +99,278 @@ for (const r of roots) {
   collect(r, files);
 }
 
+const lineOf = (text, index) => {
+  let n = 1;
+  for (let i = text.indexOf('\n'); i !== -1 && i < index; i = text.indexOf('\n', i + 1)) n += 1;
+  return n;
+};
+const isTs = f => /\.tsx?$/i.test(f);
+const isHtml = f => /\.html?$/i.test(f);
+
+// ---------- reading each file: data-claim uses and visible-text pieces ----------
+// A "piece" is a run of visible text: { text, line, tight }. tight = it continues the previous piece with no
+// gap (JSX text next to an inline element or {' '}). Copy files are read once; hits come from raw lines and
+// from the joined pieces.
 const used = new Map(); // id -> [{file, line}]
-const lineOf = (text, index) => text.slice(0, index).split('\n').length;
-for (const file of files) {
-  const text = readFileSync(file, 'utf8');
-  const re = /data-claim\s*=\s*(?:"([^"]*)"|'([^']*)'|\{\s*(["'`])([^"'`]*)\3\s*\}|(\{[^}]*\}))/g;
-  let m;
-  while ((m = re.exec(text))) {
-    const where = { file, line: lineOf(text, m.index) };
-    if (m[5] !== undefined) {
-      err(`${rel(file)}:${where.line} data-claim uses an expression (${m[5]}); use a literal id`);
-      continue;
-    }
-    const ids = (m[1] ?? m[2] ?? m[4] ?? '').split(/\s+/).filter(Boolean);
-    if (ids.length === 0) err(`${rel(file)}:${where.line} data-claim is empty`);
-    for (const id of ids) {
-      if (!used.has(id)) used.set(id, []);
-      used.get(id).push(where);
-    }
-  }
+const useId = (id, file, line) => {
+  if (!used.has(id)) used.set(id, []);
+  used.get(id).push({ file, line });
+};
+const parsed = new Map(); // file -> { text, lines, pieces }
+
+function claimIds(file, line, value) {
+  const ids = String(value).split(/\s+/).filter(Boolean);
+  if (ids.length === 0) err(`${rel(file)}:${line} data-claim is empty`);
+  for (const id of ids) useId(id, file, line);
 }
 
-// ---------- banned phrases ----------
-const BANNED = [
-  'airmail',
-  'magic',
-  'ai-powered',
-  'copilot',
-  'hold a and say it',
-  'windows and linux',
-  '✨',
-  '⭐',
-  '★',
-  '☆',
-  '✦',
-  '✧',
-  '\u{1F31F}',
-];
-const sparkle = new Set(BANNED.filter(b => b.codePointAt(0) > 0x2000));
-const bannedHits = [];
-for (const file of files) {
-  const text = readFileSync(file, 'utf8');
-  const lower = text.toLowerCase();
-  for (const phrase of BANNED) {
-    let at = lower.indexOf(phrase);
-    while (at !== -1) {
-      bannedHits.push({
-        file,
-        line: lineOf(text, at),
-        phrase: sparkle.has(phrase)
-          ? `glyph U+${phrase.codePointAt(0).toString(16).toUpperCase()}`
-          : phrase,
+function readTs(file, text) {
+  const sf = ts.createSourceFile(
+    file,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const lineAt = pos => sf.getLineAndCharacterOfPosition(pos).line + 1;
+  const handled = []; // [start, end) ranges where a data-claim was understood
+  const pieces = [];
+  const stringLike = n =>
+    ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) ? n.text : null;
+  const isClaimName = n => /^data-claim$/i.test(n && (n.text ?? n.escapedText ?? ''));
+  const literalValue = (init, where) => {
+    const expr = init && ts.isJsxExpression(init) ? init.expression : init;
+    const v = expr ? stringLike(expr) : null;
+    if (v === null)
+      err(
+        `${rel(file)}:${lineAt(where.getStart(sf))} data-claim uses an expression (${(expr ?? where).getText(sf).slice(0, 60)}); use a literal id`,
+      );
+    return v;
+  };
+
+  const visit = node => {
+    if (ts.isJsxAttribute(node) && isClaimName(node.name)) {
+      handled.push([node.getStart(sf), node.getEnd()]);
+      if (!node.initializer)
+        err(`${rel(file)}:${lineAt(node.getStart(sf))} data-claim has no value`);
+      else {
+        const v = literalValue(node.initializer, node);
+        if (v !== null) claimIds(file, lineAt(node.getStart(sf)), v);
+      }
+      return;
+    }
+    if (
+      ts.isPropertyAssignment(node) &&
+      (ts.isStringLiteral(node.name) || ts.isIdentifier(node.name)) &&
+      isClaimName(node.name)
+    ) {
+      handled.push([node.getStart(sf), node.getEnd()]);
+      const v = literalValue(node.initializer, node);
+      if (v !== null) claimIds(file, lineAt(node.getStart(sf)), v);
+      return;
+    }
+    if (
+      ts.isCallExpression(node) &&
+      /^setAttribute$/.test(
+        ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : '',
+      ) &&
+      node.arguments[0] &&
+      /^data-claim$/i.test(stringLike(node.arguments[0]) ?? '')
+    ) {
+      handled.push([node.getStart(sf), node.getEnd()]);
+      const v = node.arguments[1] ? stringLike(node.arguments[1]) : null;
+      if (v === null)
+        err(
+          `${rel(file)}:${lineAt(node.getStart(sf))} data-claim set from an expression; use a literal id`,
+        );
+      else claimIds(file, lineAt(node.getStart(sf)), v);
+      return;
+    }
+    if (ts.isJsxText(node)) {
+      pieces.push({
+        text: decodeEntities(node.text).text,
+        line: lineAt(node.getStart(sf)),
+        tight: true,
       });
-      at = lower.indexOf(phrase, at + phrase.length);
+    } else if (
+      (ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node) ||
+        ts.isTemplateHead(node) ||
+        ts.isTemplateMiddle(node) ||
+        ts.isTemplateTail(node)) &&
+      !(node.parent && (ts.isImportDeclaration(node.parent) || ts.isExportDeclaration(node.parent)))
+    ) {
+      const inJsx =
+        node.parent &&
+        ts.isJsxExpression(node.parent) &&
+        node.parent.parent &&
+        (ts.isJsxElement(node.parent.parent) || ts.isJsxFragment(node.parent.parent));
+      pieces.push({ text: node.text, line: lineAt(node.getStart(sf)), tight: Boolean(inJsx) });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+
+  // Any other mention of data-claim (a spread of a variable, dataset.claim, a boolean attribute...) is unreadable.
+  const blanked = text
+    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|\s)\/\/[^\n]*/g, m => m.replace(/[^\n]/g, ' '));
+  for (const m of blanked.matchAll(/data-?claim|dataset\s*(?:\.|\[\s*['"])claim/gi)) {
+    if (!handled.some(([a, b]) => m.index >= a && m.index < b))
+      err(
+        `${rel(file)}:${lineOf(text, m.index)} data-claim used in a form this check cannot read; write data-claim="id"`,
+      );
+  }
+  return pieces;
+}
+
+function readHtml(file, text) {
+  const blank = s => s.replace(/[^\n]/g, ' ');
+  const clean = text
+    .replace(/<!--[\s\S]*?-->/g, blank)
+    .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, blank);
+  // data-claim attributes (any case, quoted or not)
+  const found = new Set();
+  const attrRe = /data-claim(?![\w-])\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+))/gi;
+  for (const m of clean.matchAll(attrRe)) {
+    found.add(m.index);
+    claimIds(file, lineOf(text, m.index), decodeEntities(m[1] ?? m[2] ?? m[3]).text);
+  }
+  for (const m of clean.matchAll(/data-?claim/gi))
+    if (!found.has(m.index))
+      err(
+        `${rel(file)}:${lineOf(text, m.index)} data-claim used in a form this check cannot read; write data-claim="id"`,
+      );
+  // visible text and text-bearing attributes
+  const pieces = [];
+  let offset = 0;
+  for (const part of clean.split(/(<[^>]*>)/)) {
+    if (part.startsWith('<') && part.endsWith('>')) {
+      for (const m of part.matchAll(
+        /\b(alt|title|aria-label|aria-description|placeholder|content)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi,
+      ))
+        pieces.push({
+          text: decodeEntities(m[2] ?? m[3]).text,
+          line: lineOf(text, offset),
+          tight: false,
+        });
+    } else if (part.trim()) {
+      pieces.push({ text: decodeEntities(part).text, line: lineOf(text, offset), tight: true });
+    }
+    offset += part.length;
+  }
+  return pieces;
+}
+
+for (const file of files) {
+  const text = readFileSync(file, 'utf8');
+  const pieces = isTs(file) ? readTs(file, text) : isHtml(file) ? readHtml(file, text) : [];
+  parsed.set(file, { text, lines: text.split('\n'), pieces });
+}
+
+// ---------- text rules ----------
+const GLYPHS = '✨⭐★☆✦✧🌟🪄❇✩✪✫✬✭✮✯✰⚝💫🔮';
+const RULES = [
+  { id: 'airmail', re: /air[\s-]?mail/i },
+  { id: 'magic', re: /\bmagic/i },
+  { id: 'ai-powered', re: /\bai[\s-]*powered\b/i },
+  { id: 'copilot', re: /\bco-?pilot\b/i },
+  { id: 'hold-a-and-say-it', re: /\bhold\s+a\s+and\s+say\s+it\b/i },
+  { id: 'smart-label', re: /\bsmart\b/i },
+  { id: 'beta-badge', re: /\bbeta\b/i },
+  { id: 'sparkle-glyph', re: new RegExp(`[${GLYPHS}]`, 'u') },
+  { id: 'sparkle-icon', re: /sparkle|magic-?wand|\bwands?\b|\bstars?\b/i },
+  { id: 'sparkle-icon', re: /\bWand[A-Z]|\bStar[A-Z][a-z]|[a-z]Stars?\b/ },
+  { id: 'windows', re: /\bWindows\b/ },
+  { id: 'linux', re: /\blinux\b/i },
+  { id: 'installer-formats', re: /\bappimage\b|\.exe\b/i },
+  { id: 'later-providers', re: /\b(?:outlook|icloud|fastmail|imap|(?:microsoft|office)\s*365)\b/i },
+  { id: 'old-macos', re: /\bmac\s?os\s*(?:x\s*)?(?:12|11|10)\b|\bmonterey\b|\bbig sur\b/i },
+  { id: 'github', re: /\bgithub\b/i },
+  {
+    id: 'auto-update',
+    re: /\bupdates?\s+(?:install|download|apply)\s+(?:themselves|automatically)\b|\bauto-?updat\w*|\bupdates?\s+itself\b|\bkeeps?\s+itself\s+up\s+to\s+date\b|\bautomatic(?:ally)?\s+updates?\b|\bupdates?\s+automatically\b/i,
+  },
+];
+// Placeholders only count in visible text, so ordinary code brackets cannot trigger them.
+const PLACEHOLDER_RULES = [
+  {
+    id: 'placeholder',
+    re: /(?<![\w)\]])\[(?!(?:data|aria)-|[a-z-]+=)[^[\]\n]*[A-Za-z][^[\]\n]*\]/,
+  },
+  { id: 'placeholder', re: /\bto be (?:added|confirmed|decided|written|filled in|determined)\b/i },
+  { id: 'placeholder', re: /\b(?:TODO|TBD|TBA|FIXME|XXX)\b/ },
+  { id: 'placeholder', re: /lorem ipsum/i },
+];
+
+function normalize(s) {
+  return s
+    .normalize('NFKC')
+    .replace(/[­​-‏⁠﻿]/g, '')
+    .replace(/[‐-―−]/g, '-')
+    .replace(/\s+/g, ' ');
+}
+
+const hits = new Map(); // key -> hit
+function addHit(file, line, rule, match) {
+  const { lines } = parsed.get(file);
+  const marker = `${lines[line - 1] ?? ''}\n${lines[line - 2] ?? ''}`;
+  const allow = /claims-allow:\s*([\w,\s-]+)/.exec(marker)?.[1] ?? '';
+  if (allow.split(/[\s,]+/).includes(rule)) return;
+  const key = `${file}:${line}:${rule}`;
+  if (!hits.has(key))
+    hits.set(key, { file, line, rule, match: match.replace(/\s+/g, ' ').trim().slice(0, 40) });
+}
+
+for (const [file, { text, pieces }] of parsed) {
+  // 1. raw lines: catches identifiers, class names, comments, CSS (escapes decoded)
+  text.split('\n').forEach((raw, i) => {
+    let line = decodeJsEscapes(raw);
+    line = decodeEntities(line).text;
+    if (extname(file).toLowerCase() === '.css') line = decodeCssEscapes(line);
+    line = normalize(line);
+    for (const r of RULES) {
+      const m = r.re.exec(line);
+      if (m) addHit(file, i + 1, r.id, m[0]);
+    }
+  });
+  // 2. visible text, joined two ways so inline tags and {' '} cannot split a phrase
+  if (pieces.length) {
+    for (const tight of [false, true]) {
+      let joined = '';
+      const starts = [];
+      for (const p of pieces) {
+        if (!(tight && p.tight)) joined += '\n';
+        starts.push({ at: joined.length, line: p.line });
+        joined += normalize(p.text);
+      }
+      const lineAt = idx => {
+        let line = starts[0].line;
+        for (const s of starts) {
+          if (s.at > idx) break;
+          line = s.line;
+        }
+        return line;
+      };
+      for (const r of [...RULES, ...PLACEHOLDER_RULES]) {
+        const re = new RegExp(
+          r.re.source,
+          r.re.flags.includes('g') ? r.re.flags : `${r.re.flags}g`,
+        );
+        for (const m of joined.matchAll(re)) addHit(file, lineAt(m.index), r.id, m[0]);
+      }
     }
   }
 }
-bannedHits.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
-for (const h of bannedHits) err(`${rel(h.file)}:${h.line} banned phrase "${h.phrase}"`);
-
-// ---------- Privacy.tsx placeholders ----------
-for (const file of files.filter(f => basename(f) === 'Privacy.tsx')) {
-  const text = readFileSync(file, 'utf8');
-  const tba = /to be added/i.exec(text);
-  if (tba) err(`${rel(file)}:${lineOf(text, tba.index)} contains a "to be added" marker`);
-  // Placeholders are "[...]" in visible text, so look only inside string literals and JSX text.
-  const spans = [];
-  const strRe = /(["'])((?:\\.|(?!\1)[^\\\n])*)\1|(`)((?:\\.|[^\\`])*)`/g;
-  let m;
-  while ((m = strRe.exec(text))) spans.push({ at: m.index, body: m[2] ?? m[4] });
-  const jsxRe = />([^<>{}]+)</g;
-  while ((m = jsxRe.exec(text))) if (!/[;=]/.test(m[1])) spans.push({ at: m.index, body: m[1] });
-  for (const s of spans) {
-    const ph = /(?<![\w)\]])\[[^[\]\n]*[A-Za-z][^[\]\n]*\]/.exec(s.body);
-    if (ph) err(`${rel(file)}:${lineOf(text, s.at)} placeholder ${ph[0]} in copy`);
-  }
+for (const h of [...hits.values()].sort(
+  (a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.rule.localeCompare(b.rule),
+)) {
+  const glyph =
+    h.rule === 'sparkle-glyph' ? ` U+${h.match.codePointAt(0).toString(16).toUpperCase()}` : '';
+  const kind = h.rule === 'placeholder' ? 'placeholder' : 'banned phrase';
+  err(
+    `${rel(h.file)}:${h.line} ${kind} "${h.match}"${glyph} [${h.rule}]${basename(h.file) === 'Privacy.tsx' && h.rule === 'placeholder' ? ' (Privacy.tsx must have no placeholders)' : ''}`,
+  );
 }
 
 // ---------- claims.json ----------
@@ -213,7 +430,7 @@ const byId = new Map();
 for (const c of claims) if (!byId.has(c.id)) byId.set(c.id, c);
 for (const [id, where] of used)
   if (!byId.has(id))
-    err(`${rel(where[0].file)}:${where[0].line} data-claim "${id}" is not in claims.json`);
+    for (const w of where) err(`${rel(w.file)}:${w.line} data-claim "${id}" is not in claims.json`);
 
 // ---------- evaluate used claims ----------
 let providerStatus = null;
@@ -228,14 +445,20 @@ function providerEntry(name) {
   const table = providerStatus?.providers ?? providerStatus;
   return table && typeof table === 'object' ? table[name] : undefined;
 }
-const passed = v =>
-  v === true ||
-  ['pass', 'passed', 'ok'].includes(String(v?.status ?? v?.passed ?? '').toLowerCase()) ||
-  v?.passed === true ||
-  v?.ok === true;
+const PASS_WORDS = new Set(['pass', 'passed', 'ok', 'success']);
+/** `status` decides when present; otherwise `passed`, then `ok`. Nothing can turn an explicit failure into a pass. */
+function passed(v) {
+  if (v === true) return true;
+  if (!v || typeof v !== 'object') return false;
+  if (v.status !== undefined)
+    return v.status === true || PASS_WORDS.has(String(v.status).toLowerCase());
+  if (v.passed !== undefined)
+    return v.passed === true || PASS_WORDS.has(String(v.passed).toLowerCase());
+  return v.ok === true;
+}
 const stamp = v => {
   for (const k of ['checkedAt', 'at', 'passedAt', 'verifiedAt', 'lastPassedAt', 'timestamp']) {
-    if (typeof v?.[k] === 'string' && !Number.isNaN(Date.parse(v[k]))) return v[k].slice(0, 10);
+    if (typeof v?.[k] === 'string' && !Number.isNaN(Date.parse(v[k]))) return v[k];
   }
   return null;
 };
@@ -260,8 +483,11 @@ function evaluate(c) {
         worsen('unproven', `live ${e.ref}: not in provider-status.json`);
       else if (!passed(entry)) worsen('unproven', `live ${e.ref}: not passing`);
       else {
-        const when = stamp(entry);
-        if (!when) worsen('unproven', `live ${e.ref}: passing but has no timestamp`);
+        const at = stamp(entry);
+        const when = at?.slice(0, 10);
+        if (!at) worsen('unproven', `live ${e.ref}: passing but has no timestamp`);
+        else if (Date.parse(at) > Date.parse(todayStr) + 2 * DAY)
+          worsen('unproven', `live ${e.ref}: timestamp ${at} is in the future`);
         else if (max !== null && ageDays(when) > max)
           worsen('stale', `live ${e.ref}: last pass ${when} is older than ${max} days`);
       }
