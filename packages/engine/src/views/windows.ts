@@ -84,6 +84,8 @@ export interface ViewEngine {
   ): void;
   /** Open windows of a connection whose spec matches. */
   specsOf(connectionId: string, kind: ViewSpec['kind']): ViewSpec[];
+  /** The owner's IANA zone, for local days (`Thread/act`'s due bands). */
+  readonly zone: string;
   /** Counters for tests and the diagnostics bundle. */
   readonly stats: { reruns: number; layouts: number; frames: number; windows: number };
   close(): void;
@@ -480,6 +482,7 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
     query,
     committed,
     stats,
+    zone,
     folders: accountId => store.read(q => ({ state: state(), list: readFolders(q, accountId) })),
     counts: () => store.read(q => readCounts(q, viewEnv(q, clock.now(), zone))),
     senderGroups: ids => store.read(q => readSenderGroups(q, ids, state())),
