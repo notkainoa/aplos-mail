@@ -31,7 +31,7 @@
   --press: color-mix(in srgb, var(--ink) 8%, transparent);
   --puck: color-mix(in srgb, var(--ink) 6%, transparent);
   --today-tint: color-mix(in srgb, var(--accent) 4%, transparent);
-  --selection: color-mix(in srgb, var(--accent) 18%, transparent);
+  --selection: color-mix(in srgb, var(--accent) 18%, var(--canvas));
   --scrim: color-mix(in srgb, var(--ink) 18%, transparent);
   --shadow-ink: #1d1e21;
   --sheen: transparent;
@@ -51,6 +51,7 @@
   --track-caption: calc(0.04px + var(--track-boost));
   --type-small: 400 0.75rem/1.125rem var(--font-sans);
   --track-small: calc(0px + var(--track-boost));
+  --num-small: tabular-nums;
   --type-ui: 400 0.8125rem/1.25rem var(--font-sans);
   --track-ui: calc(-0.04px + var(--track-boost));
   --type-base: 400 0.875rem/1.375rem var(--font-sans);
@@ -372,7 +373,7 @@
   --press: color-mix(in srgb, var(--ink) 10%, transparent);
   --puck: color-mix(in srgb, var(--ink) 8%, transparent);
   --today-tint: color-mix(in srgb, var(--accent) 6%, transparent);
-  --selection: color-mix(in srgb, var(--accent) 30%, transparent);
+  --selection: color-mix(in srgb, var(--accent) 30%, var(--canvas));
   --scrim: color-mix(in srgb, #000000 50%, transparent);
   --shadow-ink: #000000;
   --sheen: color-mix(in srgb, #ffffff 4%, transparent);

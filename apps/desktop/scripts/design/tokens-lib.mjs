@@ -136,7 +136,15 @@ export function resolveColorValue(flat, value, mode) {
   if (value && typeof value === "object" && "mix" in value) {
     const base = resolveColorValue(flat, value.mix, mode);
     const percent = resolveNumber(flat, value.percent, mode);
-    return { rgb: base.rgb, alpha: base.alpha * (percent / 100), over: value.over };
+    const alpha = base.alpha * (percent / 100);
+    if (value.solid) {
+      // Mixed into its surface: opaque, so whatever lies under it does not matter.
+      if (!value.over) {
+        throw new Error(`A solid mix needs an over surface: ${JSON.stringify(value)}`);
+      }
+      return { rgb: compositeOver(base.rgb, alpha, solidColor(flat, value.over, mode)), alpha: 1 };
+    }
+    return { rgb: base.rgb, alpha, over: value.over };
   }
   throw new Error(`Not a colour: ${JSON.stringify(value)}`);
 }

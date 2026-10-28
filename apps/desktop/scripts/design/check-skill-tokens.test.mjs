@@ -58,16 +58,16 @@ test("a new colour, radius, elevation or layer token that the skill does not lis
     (path) => {
       const { problems } = checkSkillTokens(SKILL, path);
       assert.deepEqual(problems, [
-        "colour token --ochre is not in SKILL.md; add it to the skill's token tables",
-        "radius token --radius-xxl is not in SKILL.md; add it to the skill's token tables",
-        "elevation token --elev-halo is not in SKILL.md; add it to the skill's token tables",
-        "layer token --z-overlay is not in SKILL.md; add it to the skill's token tables",
+        "colour token --ochre has no row in SKILL.md's colour table; add one",
+        "radius token --radius-xxl has no row in SKILL.md's radius table; add one",
+        "elevation token --elev-halo has no row in SKILL.md's elevation table; add one",
+        "layer token --z-overlay has no row in SKILL.md's layer table; add one",
       ]);
     },
   );
 });
 
-test("a family wildcard covers its tokens, but not type roles or motion names", () => {
+test("a family wildcard row covers its tokens, but not type roles or motion names", () => {
   withTokens(
     (tokens) => {
       tokens.tag.moss = { $value: "#4a6a2a", $extensions: { aplos: { usage: ["nontext"] } } };
@@ -75,7 +75,12 @@ test("a family wildcard covers its tokens, but not type roles or motion names", 
       tokens.motion.drift = { $value: tokens.motion.swap.$value };
     },
     (path) => {
-      const skill = `${SKILL}\nTags are \`--tag-*\`; durations are \`--dur-*\`.\n`;
+      // The tag row becomes `--tag-*`; `--dur-*` sits in a Motion row.
+      const skill = SKILL.replace(/^\| `--tag-sky`[^|]*\|/m, "| `--tag-*` |").replace(
+        /^(\| Motion \|.*\n\|.*\n)/m,
+        "$1| `--dur-*` | any |\n",
+      );
+      assert.notEqual(skill, SKILL);
       const { problems } = checkSkillTokens(skill, path);
       assert.deepEqual(problems, [
         "type role `huge` has no row in SKILL.md's table; add one",
@@ -85,12 +90,51 @@ test("a family wildcard covers its tokens, but not type roles or motion names", 
   );
 });
 
+test("a family wildcard outside the table's first cell covers nothing", () => {
+  withTokens(
+    (tokens) => {
+      tokens.tag.moss = { $value: "#4a6a2a", $extensions: { aplos: { usage: ["nontext"] } } };
+    },
+    (path) => {
+      const { problems } = checkSkillTokens(`${SKILL}\nTags are \`--tag-*\`.\n`, path);
+      assert.deepEqual(problems, ["colour token --tag-moss has no row in SKILL.md's colour table; add one"]);
+    },
+  );
+});
+
+test("a colour, layer or elevation mentioned elsewhere still needs its own row", () => {
+  // --hill is also backticked in the Signature bullet, --scrim in other rows.
+  const skill = SKILL.replace(/^\| `--hill` .*\n/m, "")
+    .replace(/^\| `--scrim` .*\n/m, "")
+    .replace(/^\| `--z-dock` .*\n/m, "")
+    .replace(/^\| `--elev-puck` .*\n/m, "");
+  assert.notEqual(skill, SKILL);
+  assert.match(skill, /`--hill`/);
+  assert.match(skill, /`--scrim`/);
+  const { problems } = checkSkillTokens(skill);
+  assert.deepEqual(problems.sort(), [
+    "colour token --hill has no row in SKILL.md's colour table; add one",
+    "colour token --scrim has no row in SKILL.md's colour table; add one",
+    "elevation token --elev-puck has no row in SKILL.md's elevation table; add one",
+    "layer token --z-dock has no row in SKILL.md's layer table; add one",
+  ]);
+});
+
+test("colour rows may join names with slashes and end in a parenthetical", () => {
+  const rows = tableRowNames(SKILL);
+  for (const name of ["--line", "--line-strong", "--accent", "--stamp", "--stamp-ink", "--stamp-tint", "--tag-ember", "--event-fill"]) {
+    assert.ok(rows.colour.has(name), `colour rows lack ${name}`);
+  }
+  assert.ok(rows.layer.has("--z-tooltip") && rows.radius.has("--radius-pill") && rows.elevation.has("--elev-thumb"));
+  assert.ok(!rows.colour.has("--radius-md"), "radius rows are not colour rows");
+});
+
 test("removing a row from the skill's tables fails", () => {
   const skill = SKILL.replace(/^\| `--radius-xl` .*\n/m, "").replace(/^\| `breathe` .*\n/m, "");
   assert.notEqual(skill, SKILL);
   const { problems } = checkSkillTokens(skill);
   assert.deepEqual(problems, [
-    "radius token --radius-xl is not in SKILL.md; add it to the skill's token tables",
+    "radius token --radius-xl has no row in SKILL.md's radius table; add one",
     "motion `breathe` has no row in SKILL.md's table; add one",
   ]);
 });

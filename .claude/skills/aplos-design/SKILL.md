@@ -74,7 +74,7 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 | `--hover` / `--press` | Hover and press fills |
 | `--puck` | Sidebar selection, the keyboard cursor, segmented thumbs |
 | `--today-tint` | The calendar's today column |
-| `--selection` | Selected text (set once in `base.css`; selected text turns `--ink`) |
+| `--selection` | Selected text (set once in `base.css`). Opaque, the accent mixed into the pane, so selected text turns `--ink` at full contrast on any surface or fill. |
 | `--scrim` | Behind dialogs and the palette |
 | `--shadow-ink` / `--sheen` | Shadow base / the 1 px top sheen on dark panes and cards |
 | `--press-hi` / `--press-lo` | The filled button's top inset highlight / bottom inset shade |
@@ -95,7 +95,7 @@ Rules:
 | Role | Size / line | Face | Use |
 |---|---|---|---|
 | `caption` | 11/16 | SF 500 | Keycaps, chips, calendar hours. The floor: nothing is smaller. |
-| `small` | 12/18 | SF 400/500, tabular | Metadata, timestamps, counts, sub-labels. Always `--dim`. |
+| `small` | 12/18 | SF 400/500, tabular (`--num-small`) | Metadata, timestamps, counts, sub-labels. Always `--dim`. |
 | `ui` | 13/20 | SF 400/500; 600 for section labels | Sidebar, menus, controls, buttons |
 | `base` | 14/22 | SF 400; 600 unread senders | List rows, settings rows, fields |
 | `read` | 15/26, 64ch | SF 400 | Message bodies and the text you write |
@@ -106,12 +106,13 @@ Rules:
 | `answer` | 16/27 | Newsreader 400 (dark 390) | Ask answer prose |
 
 - Use `font: var(--type-<role>)` with `letter-spacing: var(--track-<role>)`. Each `--track-<role>` adds `--track-boost`, which `base.css` sets to `--track-boost-lowres` (+0.005 em) on non-Retina screens.
+- **Tabular figures.** The `font` shorthand resets `font-variant-numeric`, so `font: var(--type-small)` is always followed by `font-variant-numeric: var(--num-small)` in the same rule. Anywhere else numbers line up (keycaps, calendar hours, a count in another role), write `font-variant-numeric: tabular-nums` after the `font`. `base.css` only covers unstyled `time`, `kbd` and `table`.
 - The serif stack is Newsreader, then its metric-matched fallback faces (New York and Georgia with size-adjust, in `assets/fonts/fonts.css`), then plain New York and Georgia: `--font-serif`. Also `--font-sans` and `--font-mono`.
 - SF weights are 400, 500 and 600 only.
 - **There are no page titles.** Section labels are `ui` 600 `--ink` with the count in `--dim`.
 - The serif is only for words Aplos wrote. A pending summary shows the subject in SF until the real summary lands.
 - The reader's subject line is `small` `--dim`, so it never outweighs the summary.
-- Summaries use `text-wrap: pretty`. Display lines and headings use `balance`.
+- Summaries use `text-wrap: pretty`. Display lines and headings use `balance`. `base.css` sets both: pretty on `p`, `li` and `.ui-summary`; balance on `h1`–`h6`, Text's `display` and `heading` variants and the `.ui-display` and `.ui-heading` hooks. A display or heading line in any other element takes one of those hooks.
 
 ### Space, size, layout
 
