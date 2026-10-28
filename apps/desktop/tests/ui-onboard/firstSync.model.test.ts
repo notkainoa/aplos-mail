@@ -246,7 +246,7 @@ describe('first sync: when Aplos may open', () => {
   test('pause copy: daily limit says tomorrow once; no resume time falls back to DESIGN 7.12; a past time is never shown', () => {
     assert.equal(
       pauseLede('quota.daily', at(0, 0, 1), NOW, false),
-      "Google's daily limit is reached. Resuming tomorrow. Your newest mail will appear first.",
+      "Google’s daily limit is reached. Resuming tomorrow. Your newest mail will appear first.",
     );
     assert.equal(pauseLede('rate.minute', undefined, NOW, true), `${COPY.pauseFallback} ${COPY.pauseAfterWindow}`);
     assert.equal(pauseLede(undefined, undefined, NOW, false), `${COPY.pauseFallback} ${COPY.pauseBeforeWindow}`);
@@ -304,7 +304,7 @@ describe('first sync: honest outcomes [F10]', () => {
     assert.equal(v.title, 'Some mail didn’t come through');
     assert.deepEqual(v.primary, { label: 'Continue to Aplos', enabled: true });
     assert.equal(v.rows[0].action, 'retry');
-    assert.deepEqual(v.rows[0].failure, { kind: 'reason', text: "Google isn't answering right now. Aplos will try again.", retryable: true });
+    assert.deepEqual(v.rows[0].failure, { kind: 'reason', text: "Google isn’t answering right now. Aplos will try again.", retryable: true });
     assert.equal(v.rows[1].action, 'reconnect');
     assert.equal(cp(v, 1, 'connect')?.state, 'failed', 'with no sign of a connection, Connected is never claimed');
     const lapsed = view(
