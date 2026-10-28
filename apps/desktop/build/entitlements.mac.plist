@@ -1,13 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for Developer ID release builds (scripts/release-build.mjs with CSC_LINK or CSC_NAME set).
+  Source and ad-hoc builds (npm run package, an unsigned release-build) use entitlements.adhoc.plist.
+  electron-builder signs the app with this file (mac.entitlements) and every nested helper with it too
+  (mac.entitlementsInherit). scripts/verify-hardening.mjs with "expect release" requires an exact match.
+
+  Which keys stay and why (plan 40 Q2 item 3):
+  - allow-jit: stays. V8 generates code at runtime; the hardened runtime blocks that without it.
+  - audio-input: stays. Hold-to-talk dictation and voice Ask record from the microphone.
+  - allow-unsigned-executable-memory and disable-library-validation: kept for now. Plan 40 Q2 item 3 tries
+    removing both from Developer ID builds, but the experiment needs a signed build launched on a second,
+    clean Mac. It has NOT been run yet, so this file is unchanged from v0.2.3. When it runs, record the
+    result and the launch log in DECISIONS.md and update this comment with whatever has to stay.
+-->
 <plist version="1.0">
 <dict>
   <!-- V8 needs to generate code at runtime under the hardened runtime. -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>
+  <!-- Kept until the second-Mac entitlement experiment shows V8 and Electron's helpers run without it. -->
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
   <true/>
-  <!-- Electron's frameworks and helpers; also required for ad-hoc signed builds to launch. -->
+  <!-- Electron's frameworks and helpers; kept until the same experiment. Ad-hoc builds need it to launch
+       and keep it in entitlements.adhoc.plist regardless. -->
   <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
   <!-- Hold-to-talk dictation and voice Ask. -->
