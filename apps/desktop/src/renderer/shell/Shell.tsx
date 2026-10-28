@@ -4,7 +4,7 @@
  * also mounts the singletons: the one ToastStack, the sheet host, the key-hint providers and, when the engine cannot be
  * reached, the FatalScreen in place of everything.
  */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { api, useAccounts, useConnection, useCounts, useSettings, type AccountId } from '../data';
 import { FatalScreen } from '../ui/status';
 import { Pane } from '../ui/surfaces';
@@ -16,19 +16,23 @@ import { SheetHost } from './SheetHost';
 import { Sidebar } from './Sidebar';
 import { StatusHost } from './StatusHost';
 import { ToastHost } from './ToastHost';
-import { placeCounts, screenLabel } from './nav';
+import { placeCounts, screenLabel, type PlaceId } from './nav';
 import { PlaceholderScreen } from './states';
 import { accountReconnectMode } from './status-map';
-import { navigate, openSheet, useAppRoute, useSheetContextActive, type Screen } from './index';
+import {
+  closeSheet,
+  navigate,
+  openSheet,
+  pushToast,
+  useAppRoute,
+  useSheetContextActive,
+  type Screen,
+} from './index';
 
 /** Props for `Shell`. */
 export interface ShellProps {
   /** A screen's content, or undefined for the placeholder line. */
   readonly renderScreen?: (screen: Screen) => ReactNode | undefined;
-}
-
-function ignore(): void {
-  return undefined;
 }
 
 /** Which dock tab the pane header's Ask and Today buttons show as pressed. No dock is mounted yet; ui-ask owns it. */
@@ -48,19 +52,28 @@ function paneHeader(dock: DockTab, setDock: (tab: DockTab) => void): PaneHeaderP
   };
 }
 
-function FatalHost({ kind }: { readonly kind: 'unreachable' | 'parked' }) {
+const RESTART_FAILED_COPY = 'Couldn’t restart. Your mail is safe on this Mac.';
+
+function notify(id: string, message: string): void {
+  pushToast({ id, kind: 'info', message, undoable: false });
+}
+
+/** The fatal screen in place of everything (DESIGN 7.15), with Restart and Copy diagnostics wired to the engine. A failure of either says so in a toast: the screen has no slot for it. */
+export function FatalHost({ kind }: { readonly kind: 'unreachable' | 'parked' }) {
   const [restarting, setRestarting] = useState(false);
   const restart = () => {
     setRestarting(true);
     Promise.resolve()
       .then(() => api.engine.restart())
-      .catch(ignore)
+      .catch(() => notify('fatal-restart-failed', RESTART_FAILED_COPY))
       .finally(() => setRestarting(false));
   };
   const diagnostics = () => {
+    const done = kind === 'parked' ? 'Diagnostics exported' : 'Diagnostics copied';
     Promise.resolve()
       .then(() => api.diagnostics.copy())
-      .catch(ignore);
+      .then(() => notify('fatal-diagnostics', done))
+      .catch(() => notify('fatal-diagnostics', 'Couldn’t get the diagnostics.'));
   };
   return (
     <div className="aplos-shell">
@@ -71,6 +84,7 @@ function FatalHost({ kind }: { readonly kind: 'unreachable' | 'parked' }) {
           onRestart={restart}
           onDiagnostics={diagnostics}
         />
+        <ToastHost />
       </Pane>
     </div>
   );
@@ -81,6 +95,50 @@ function useAccountScope() {
   return { scope, setScope };
 }
 
+/** Props for `ShellLayout`. */
+export interface ShellLayoutProps {
+  readonly screen: Screen;
+  readonly counts: Readonly<Partial<Record<PlaceId, number>>>;
+  readonly minimised: boolean;
+  readonly onNavigate: (screen: Screen) => void;
+  readonly onCompose: () => void;
+  readonly accountSwitcher: ReactNode;
+  readonly status: ReactNode;
+  readonly header: PaneHeaderProps;
+  /** The toast stack, mounted inside the pane. */
+  readonly toasts: ReactNode;
+  /** Singletons beside the pane: the sheet host. */
+  readonly overlay?: ReactNode;
+  /** The screen slot's content. */
+  readonly children: ReactNode;
+}
+
+/** The shell's frame drawn from plain props: kept apart from the data hooks so the harness can draw any state. */
+export function ShellLayout(props: ShellLayoutProps) {
+  const { screen, counts, minimised, onNavigate, children } = props;
+  return (
+    <div className="aplos-shell" data-minimised={minimised ? 'true' : undefined}>
+      {minimised ? (
+        <MinimisedNav screen={screen} counts={counts} onNavigate={onNavigate} />
+      ) : (
+        <Sidebar
+          screen={screen}
+          counts={counts}
+          onNavigate={onNavigate}
+          onCompose={props.onCompose}
+          accountSwitcher={props.accountSwitcher}
+          status={props.status}
+        />
+      )}
+      <Pane kind="main" label={screenLabel(screen)} header={props.header}>
+        <div className="aplos-screen">{children}</div>
+        {props.toasts}
+      </Pane>
+      {props.overlay}
+    </div>
+  );
+}
+
 function ShellFrame({ renderScreen }: ShellProps) {
   const screen = useAppRoute();
   const accounts = useAccounts();
@@ -89,7 +147,6 @@ function ShellFrame({ renderScreen }: ShellProps) {
   const minimised = useSettings()?.ui.sidebarMinimised === true;
   const [dock, setDock] = useState<DockTab>('closed');
   const sheetOpen = useSheetContextActive();
-  const placeCountsNow = placeCounts(counts.counts, counts.hidden);
   const account = (
     <AccountMenu
       accounts={accounts}
@@ -99,30 +156,22 @@ function ShellFrame({ renderScreen }: ShellProps) {
       onAddAccount={() => navigate('settings')}
     />
   );
-  const compose = () => navigate({ label: 'New message' });
   return (
     <KeysProviders screen={screen} sheetOpen={sheetOpen}>
-      <div className="aplos-shell" data-minimised={minimised ? 'true' : undefined}>
-        {minimised ? (
-          <MinimisedNav screen={screen} counts={placeCountsNow} onNavigate={navigate} />
-        ) : (
-          <Sidebar
-            screen={screen}
-            counts={placeCountsNow}
-            onNavigate={navigate}
-            onCompose={compose}
-            accountSwitcher={account}
-            status={<StatusHost />}
-          />
-        )}
-        <Pane kind="main" label={screenLabel(screen)} header={paneHeader(dock, setDock)}>
-          <div className="aplos-screen">
-            {renderScreen?.(screen) ?? <PlaceholderScreen screen={screen} />}
-          </div>
-          <ToastHost />
-        </Pane>
-        <SheetHost />
-      </div>
+      <ShellLayout
+        screen={screen}
+        counts={placeCounts(counts.counts, counts.hidden)}
+        minimised={minimised}
+        onNavigate={navigate}
+        onCompose={() => navigate({ label: 'New message' })}
+        accountSwitcher={account}
+        status={<StatusHost />}
+        header={paneHeader(dock, setDock)}
+        toasts={<ToastHost />}
+        overlay={<SheetHost />}
+      >
+        {renderScreen?.(screen) ?? <PlaceholderScreen screen={screen} />}
+      </ShellLayout>
     </KeysProviders>
   );
 }
@@ -130,6 +179,11 @@ function ShellFrame({ renderScreen }: ShellProps) {
 /** The shell: fatal when the engine is gone or parked, otherwise the sidebar, the pane and the singletons. */
 export function Shell(props: ShellProps) {
   const connection = useConnection();
+  const fatal = connection.state === 'unreachable' || connection.state === 'parked';
+  // A sheet left open behind the fatal screen would restart its sign-in flow, unasked, when the engine returns.
+  useEffect(() => {
+    if (fatal) closeSheet();
+  }, [fatal]);
   if (connection.state === 'unreachable' || connection.state === 'parked')
     return <FatalHost kind={connection.state} />;
   return <ShellFrame {...props} />;

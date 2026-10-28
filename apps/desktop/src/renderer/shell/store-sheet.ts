@@ -13,15 +13,24 @@ const sheetStore = createStore<OpenSheet | null>(null);
 const cancelHooks = new Set<(replaced: OpenSheet) => void>();
 
 /** The element to refocus on close: the one focused when the first sheet opened. */
-let opener: { focus(): void; isConnected?: boolean } | null = null;
+type Opener = { focus(): void; isConnected?: boolean } | null;
+let opener: Opener = null;
 
-function focusedElement(): typeof opener {
+/** Set by `setSheetOpener` for the next sheet that opens from nothing; consumed there. */
+let pendingOpener: Opener = null;
+
+/** Names the element to refocus when the sheet about to open closes (use when the focused element is about to unmount, like a menu item). The next `showSheet` from no sheet takes it; null clears. */
+export function setSheetOpener(element: Opener): void {
+  pendingOpener = element;
+}
+
+function focusedElement(): Opener {
   if (typeof document === 'undefined') return null;
   const active: unknown = document.activeElement;
   if (typeof active !== 'object' || active === null) return null;
   if (active === document.body) return null;
   return typeof (active as { focus?: unknown }).focus === 'function'
-    ? (active as NonNullable<typeof opener>)
+    ? (active as NonNullable<Opener>)
     : null;
 }
 
@@ -54,7 +63,8 @@ export function registerSheetCancel(hook: (replaced: OpenSheet) => void): () => 
 export function showSheet(next: OpenSheet): void {
   const current = sheetStore.get();
   if (current && current.name === next.name && deepEqual(current.args, next.args)) return;
-  if (!current) opener = focusedElement();
+  if (!current) opener = pendingOpener ?? focusedElement();
+  pendingOpener = null;
   sheetStore.set(next);
   if (current) runCancelHooks(current);
 }

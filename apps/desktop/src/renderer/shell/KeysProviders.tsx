@@ -1,13 +1,16 @@
 /**
  * The key-hint providers the shell mounts once (ui README "Keys"): `KeyHintsProvider` (tooltips, ⌘ held, or all) and
  * `CommandKeysProvider` (the registry's `describeKeys`, closed over the current context stack). They only describe keys.
- * Binding keys is the registry's resolver and the key listener, which are not mounted here.
+ * Binding keys is the registry's resolver and the key listener, which are not mounted here. It also hands the toast
+ * store a command runner over the same registry and stack, so a toast's Undo runs `app.undo`.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createAppRegistry, keyPrefsFromUi, type ContextName } from '../commands';
 import { useSettings } from '../data';
 import { CommandKeysProvider, KeyHintsProvider, resolveShowKeys } from '../ui/buttons-keys';
-import type { Screen } from './index';
+import { setToastCommandRunner, type Screen } from './index';
+import { getTarget } from './store-target';
+import { toastCommandRunner, toastContext } from './toast-runner';
 
 const META_KEY = 'Meta';
 
@@ -65,6 +68,13 @@ export function KeysProviders({ screen, sheetOpen, children }: KeysProvidersProp
     const base: ContextName[] = context ? ['global', context] : ['global'];
     return sheetOpen ? [...base, 'sheet'] : base;
   }, [context, sheetOpen]);
+  useEffect(() => {
+    const prefs = ui ? keyPrefsFromUi(ui) : undefined;
+    setToastCommandRunner(
+      toastCommandRunner(registry, () => toastContext(stack, getTarget(), prefs)),
+    );
+    return () => setToastCommandRunner(null);
+  }, [registry, stack, ui]);
   const showKeys = resolveShowKeys({ all: ui?.keyHints === 'always', held });
   return (
     <KeyHintsProvider value={{ showKeys }}>

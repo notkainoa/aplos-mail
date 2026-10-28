@@ -1,6 +1,6 @@
 import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeSheet, openSheet, registerSheetCancel } from './index';
+import { closeSheet, openSheet, registerSheetCancel, setSheetOpener } from './index';
 import { getSheet } from './store-sheet';
 import type { OpenSheet } from './index';
 
@@ -80,4 +80,17 @@ test('a detached opener is not focused', () => {
   openSheet('consent');
   closeSheet();
   assert.deepEqual(focused, []);
+});
+
+test('setSheetOpener names the element focus returns to, even when another is focused at open', () => {
+  const focused: string[] = [];
+  const el = (name: string) => ({ focus: () => focused.push(name), isConnected: true });
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: { activeElement: el('menu item'), body: {} },
+  });
+  setSheetOpener(el('trigger'));
+  openSheet('reconnect', { accountId: 'a1', mode: 'reconnect' });
+  closeSheet();
+  assert.deepEqual(focused, ['trigger']);
 });
