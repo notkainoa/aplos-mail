@@ -24,8 +24,8 @@ function Swatches({ swatch }: { swatch: TagColor | readonly TagColor[] }) {
   const colors = typeof swatch === 'string' ? [swatch] : swatch;
   return (
     <span className="ui-menu__swatches" aria-hidden="true">
-      {colors.map(color => (
-        <i key={color} className="ui-menu__swatch" data-color={color} />
+      {colors.map((color, index) => (
+        <i key={index} className="ui-menu__swatch" data-color={color} />
       ))}
     </span>
   );
@@ -33,6 +33,7 @@ function Swatches({ swatch }: { swatch: TagColor | readonly TagColor[] }) {
 
 export function Menu(props: ComponentPropsMap['Menu']) {
   const {
+    id,
     open,
     anchor,
     label,
@@ -132,6 +133,7 @@ export function Menu(props: ComponentPropsMap['Menu']) {
   return (
     <div
       ref={ref}
+      id={id}
       role="menu"
       aria-label={label}
       aria-activedescendant={activeItem ? domId(activeItem.id) : undefined}

@@ -183,6 +183,44 @@ describe('StatusSlot', () => {
     assert.match(html, /data-icon="pause"/);
     assert.ok(!html.includes('data-tone="attention"'));
   });
+  it('now replaces the real clock for reconnectBy; a healthy account carries the synced line as its title only', () => {
+    const now = '2026-10-29T10:00:00-07:00';
+    const soon = render(
+      <StatusSlot
+        status={{ kind: 'ok', reconnectBy: '2026-10-29T12:00:00-07:00' }}
+        now={now}
+        onAction={noop}
+      />,
+    );
+    assert.match(textOf(soon), /Gmail will ask you to reconnect today at 12:00 PM\. Reconnect now/);
+    const far = render(
+      <StatusSlot
+        status={{ kind: 'ok', reconnectBy: '2026-11-02T12:00:00-07:00' }}
+        now={now}
+        onAction={noop}
+      />,
+    );
+    assert.equal(textOf(far).trim(), '');
+    const late = render(
+      <StatusSlot
+        status={{ kind: 'ok', reconnectBy: '2026-10-29T09:00:00-07:00' }}
+        now={now}
+        onAction={noop}
+      />,
+    );
+    assert.match(textOf(late), /Google needs you to sign in again\. Reconnect/);
+    const ok = render(
+      <StatusSlot
+        status={{ kind: 'ok', lastSyncedAt: '2026-10-29T09:58:00-07:00' }}
+        now={now}
+        onAction={noop}
+      />,
+    );
+    assert.match(ok, /role="status" title="Synced 2 min ago" data-status="ok"/);
+    assert.equal(textOf(ok).trim(), '', 'nothing visible when ok');
+    const never = render(<StatusSlot status={{ kind: 'ok' }} now={now} onAction={noop} />);
+    assert.ok(!never.includes('title='));
+  });
   it('Starting… waits 150 ms before it shows; ok leaves an empty live region', () => {
     const starting = render(<StatusSlot status={{ kind: 'starting' }} onAction={noop} />);
     assert.match(starting, /data-state="waiting"/);
@@ -190,12 +228,14 @@ describe('StatusSlot', () => {
     const ok = render(
       <StatusSlot
         status={{ kind: 'ok', lastSyncedAt: '2026-10-29T09:58:00-07:00' }}
+        now="2026-10-29T10:00:00-07:00"
         onAction={noop}
       />,
     );
+    // Nothing visible; the hover line is only the element's title (DESIGN 7.1).
     assert.equal(
       ok,
-      '<div class="ui-status-slot" role="status" data-status="ok" data-state="empty"></div>',
+      '<div class="ui-status-slot" role="status" title="Synced 2 min ago" data-status="ok" data-state="empty"></div>',
     );
   });
   it('backfilling: "Importing 214 of 500" on a neutral track labelled "<address> sync", counts kept out of the live region', () => {
