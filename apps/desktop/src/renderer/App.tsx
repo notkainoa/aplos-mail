@@ -1,10 +1,11 @@
 /**
- * The new app (F9 boot proof; `ui-shell` grows it into the shell from day 4).
+ * The new app: the shell (`./shell/Shell`) around the screen slot.
  *
- * For now it proves the boot path and nothing more: one Pane holding Home's section labels and counts and the Low
- * importance band, read from a `home` window on the engine it is given, through the F2 typed client and the
- * contract's types. It talks to the client directly only because the data hooks are still stubs; U2 replaces this
- * with `useHome()` and the shell.
+ * The slot shows the F9 boot-proof Home for the `home` screen, and a plain placeholder line for every other screen
+ * (Later and the lists are `ui-home`'s, Settings and Calendar `ui-screens`'). The boot proof reads Home's section
+ * labels and counts and the Low importance band from a `home` window on the engine it is given, through the F2 typed
+ * client and the contract's types. It talks to the client directly because `ui-home` has not replaced it with
+ * `useHome()` yet.
  *
  * Boot-proof debt for U2 (all of it goes away with `useHome`): the band's "and N more" needs the `lowSenders`
  * window's `total` (here it only ever shows the section's up-to-three names); there is no cursor, density setting or
@@ -15,7 +16,12 @@ import { ContractError } from '@aplos/contract/contract-error';
 import type { StandIn } from './data/standin';
 import type { ErrorBody, Frame, HomeSectionKey, WindowBody, WindowSection } from './data';
 import { EmptyLine, LowBand, SectionHeader } from './ui/list';
-import { Pane } from './ui/surfaces';
+import { useAccounts, useCounts, useStatus, api } from './data';
+import { statusCopy } from './ui/status';
+import { navigate, type Screen } from './shell';
+import { Shell } from './shell/Shell';
+import { FirstSyncLine, NoAccountsLine } from './shell/states';
+import { toSyncStatus } from './shell/status-map';
 
 /** The typed client the app reads from (the stand-in's today; the real engine's after the switch). */
 export type AppClient = StandIn['client'];
@@ -202,12 +208,37 @@ export function HomeContent({ home }: HomeContentProps) {
   );
 }
 
+/** States where Home must not claim inbox zero: an account is still on its first mail, importing or paused (DESIGN 7.14). */
+const SETTLING_STATES: readonly string[] = ['backfilling', 'paused'];
+
+/** The `home` screen: the boot-proof Home, or the first-sync and no-accounts lines where inbox zero would be a lie. */
+export function HomeScreen({ client }: AppProps) {
+  const home = useHomeWindow(client);
+  const accounts = useAccounts();
+  const counts = useCounts();
+  const status = useStatus();
+  if (accounts.length === 0)
+    return (
+      <NoAccountsLine
+        onAddAccount={() => navigate('settings')}
+        onTryDemo={() => void api.demo.load({}).catch(() => undefined)}
+      />
+    );
+  const empty = home.status === 'live' && homeLines(home.window).every(line => line.count === 0);
+  const settling = counts.hidden || SETTLING_STATES.includes(status?.status.state ?? '');
+  if (empty && settling) {
+    const reason = status ? statusCopy(toSyncStatus(status))?.text : undefined;
+    return <FirstSyncLine reason={reason} />;
+  }
+  return <HomeContent home={home} />;
+}
+
+/** The screen slot: Home's boot proof for `home`, nothing (so the placeholder) for the rest. */
+export function renderScreen(client: AppClient, screen: Screen) {
+  return screen === 'home' ? <HomeScreen client={client} /> : undefined;
+}
+
 /** The new renderer's root. */
 export function App({ client }: AppProps) {
-  const home = useHomeWindow(client);
-  return (
-    <Pane kind="main" label="Home">
-      <HomeContent home={home} />
-    </Pane>
-  );
+  return <Shell renderScreen={screen => renderScreen(client, screen)} />;
 }

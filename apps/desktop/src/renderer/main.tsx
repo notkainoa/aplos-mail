@@ -1,8 +1,8 @@
 /**
  * The renderer entry (F9; plan 30 4.1 build order step 1).
  *
- * In a development build it boots the new app on the stand-in engine (F6) in-process, on the `demo` scenario, and
- * mounts `<App/>` with the one stylesheet. Today's renderer stays reachable: `VITE_APLOS_LEGACY=1` or `?legacy=1`
+ * In a development build it boots the new app on the stand-in engine (F6) in-process, on the `demo` scenario, installs
+ * the data layer on it and mounts `<App/>` with the one stylesheet and the shell's layout. Today's renderer stays reachable: `VITE_APLOS_LEGACY=1` or `?legacy=1`
  * loads `./legacy/main` instead, and so does every production build, because no release ships stand-in data (plan 30
  * 4.1 release rule). The real transports (a MessagePort in Electron, tokenised HTTP and SSE in the browser preview)
  * replace the in-process stand-in in U2, and the switch to the real engine is WP5.6.
@@ -19,12 +19,16 @@ const legacy =
   !import.meta.env.DEV;
 
 async function boot(): Promise<void> {
-  const [{ App }, { connectStandIn }] = await Promise.all([
+  const [{ App }, { connectStandInDataLayer }, { createClient }] = await Promise.all([
     import('./App'),
-    import('./data/standin'),
+    import('./data/standin-layer'),
+    import('@aplos/contract/client'),
     import('./ui/styles.css'),
+    import('./shell/shell.css'),
   ]);
-  const { client } = connectStandIn({ scenario: 'demo' });
+  // The data layer (hooks and `api`) and a second client on the same engine for the Home boot proof.
+  const layer = connectStandInDataLayer({ scenario: 'demo' });
+  const client = createClient(layer.engine.connect());
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App client={client} />

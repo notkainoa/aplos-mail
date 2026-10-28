@@ -1,0 +1,68 @@
+/**
+ * Routes and the current screen (F9, gap list U3/S15).
+ *
+ * `openRoute` records a pending Settings deep link; the Settings screen reads it with
+ * `useSettingsTarget`, opens the section, scrolls the row into view, focuses its control and then
+ * calls `consumeRoute(seq)` so a remount does not scroll again. The shell's current screen is a
+ * second tiny store: `useAppRoute()` reads it and `navigate(screen)` sets it.
+ */
+import { parseSettingRoute } from '../commands';
+import { createStore } from './store-core';
+import type { SettingSection } from '../commands';
+import type { ShellRoute } from './index';
+
+/** The screens the shell can show: a mail view, the calendar, Settings, or a label view. */
+export type Screen =
+  | 'home'
+  | 'later'
+  | 'all'
+  | 'drafts'
+  | 'sent'
+  | 'trash'
+  | 'spam'
+  | 'done'
+  | 'calendar'
+  | 'settings'
+  | { readonly label: string };
+
+/** A pending Settings deep link. `seq` is new for every `openRoute`, so opening the same row twice still fires. */
+export interface RouteTarget {
+  readonly route: ShellRoute;
+  readonly section: SettingSection;
+  /** The row anchor, absent for a bare section ("settings/ai"). */
+  readonly row?: string;
+  readonly seq: number;
+}
+
+const screenStore = createStore<Screen>('home');
+const routeStore = createStore<RouteTarget | null>(null);
+let seq = 0;
+
+function sameScreen(a: Screen, b: Screen): boolean {
+  if (typeof a === 'string' || typeof b === 'string') return a === b;
+  return a.label === b.label;
+}
+
+/** Shows `screen`; the same screen keeps its snapshot. */
+export function setScreen(screen: Screen): void {
+  if (!sameScreen(screenStore.get(), screen)) screenStore.set(screen);
+}
+
+/** Opens Settings on a route's section and leaves the route pending for Settings; an unparseable route does nothing. */
+export function setRoute(route: ShellRoute): void {
+  const parsed = parseSettingRoute(route);
+  if (!parsed) return;
+  seq += 1;
+  routeStore.set({ route, section: parsed.section, row: parsed.row, seq });
+  setScreen('settings');
+}
+
+/** Marks the pending route handled; ignored when a newer route has arrived. */
+export function consumeRoute(handled: number): void {
+  if (routeStore.get()?.seq === handled) routeStore.set(null);
+}
+
+export const getScreen = screenStore.get;
+export const subscribeScreen = screenStore.subscribe;
+export const getRoute = routeStore.get;
+export const subscribeRoute = routeStore.subscribe;
