@@ -3,7 +3,7 @@
  * `StatusSlot`, the only place sync status is drawn in the main window. Reconnect opens the reconnect sheet; the other
  * verbs call the engine. Nothing here writes a sentence.
  */
-import { api, useAccounts, useStatus, type StatusSlotState } from '../data';
+import { api, toIsoDateTime, useAccounts, useNow, useStatus, type StatusSlotState } from '../data';
 import type { StatusAction, SyncAccount } from '../ui/props';
 import { StatusSlot } from '../ui/status';
 import { navigate, openSheet, pushToast } from './index';
@@ -43,16 +43,19 @@ export function runStatusAction(action: StatusAction, state: StatusSlotState): v
 export interface StatusViewProps {
   readonly state: StatusSlotState;
   readonly accountCount: number;
+  /** The data clock as an ISO string; the slot compares reconnectBy and lastSyncedAt with it. */
+  readonly now?: string;
   readonly onAction: (action: StatusAction, account?: SyncAccount) => void;
 }
 
 /** The slot for one resolved state; kept apart from the hooks so tests can drive it with any state. */
-export function StatusView({ state, accountCount, onAction }: StatusViewProps) {
+export function StatusView({ state, accountCount, now, onAction }: StatusViewProps) {
   return (
     <StatusSlot
       status={toSyncStatus(state)}
       account={state.account ? syncAccount(state.account) : undefined}
       multipleAccounts={accountCount > 1}
+      now={now}
       onAction={onAction}
     />
   );
@@ -62,11 +65,13 @@ export function StatusView({ state, accountCount, onAction }: StatusViewProps) {
 export function StatusHost() {
   const state = useStatus();
   const accounts = useAccounts();
+  const now = useNow({ granularity: 'minute' });
   if (!state) return null;
   return (
     <StatusView
       state={state}
       accountCount={accounts.length}
+      now={toIsoDateTime(now)}
       onAction={action => runStatusAction(action, state)}
     />
   );
