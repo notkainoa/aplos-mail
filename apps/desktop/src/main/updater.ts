@@ -15,7 +15,8 @@ function bundlePath() {
 function createUpdates() {
   const devFeed = !app.isPackaged && process.env.APLOS_UPDATE_DEV === '1';
   const log = (line: string) => console.log(`Aplos Mail: ${line}`);
-  // Test mode is off even in a packaged, signed app: it must never reach the update feed or replace the build under test.
+  // Updates are off in test mode (a local package build; release builds compile test mode out): a test must never reach
+  // the update feed or replace the build under test.
   const disabled = isTest
     ? 'Updates are off in test mode.'
     : disabledReason({

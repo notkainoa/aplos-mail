@@ -2,12 +2,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { errorClasses, type ClassifiedError } from '@aplos/contract';
+import * as rules from '@aplos/contract/rules';
 import {
   GOVERNOR_CLASS_POLICY,
   IMAGE_PROXY_LIMITS,
   NotSentError,
   OVERDUE_GRACE_MS,
   RECURRENCE_ID_FORMAT,
+  sendsRemoteDraft,
   WAITING_SUBMISSION_STATES,
   PausedError,
   PROJECT,
@@ -641,6 +643,57 @@ test('a send-later row that fell due while the Mac was off is suspended, like a 
     woke.map(r => `${r.id}:${r.state}`),
     ['later:suspended', 'undo:suspended', 'fresh:queued', 'lost:sending'],
   );
+});
+
+test('the ports re-export the one definition of the waiting states and the grace', () => {
+  assert.equal(
+    WAITING_SUBMISSION_STATES,
+    rules.WAITING_SUBMISSION_STATES,
+    'the same array, not a copy',
+  );
+  assert.equal(OVERDUE_GRACE_MS, rules.OVERDUE_GRACE_MS);
+  assert.deepEqual([...WAITING_SUBMISSION_STATES], ['queued', 'scheduled']);
+});
+
+test('a remote draft edited during the hold never leaves: the pinned mime does', async () => {
+  const bytes = (s: string) => new TextEncoder().encode(s);
+  const text = (b: Uint8Array) => new TextDecoder().decode(b);
+  // Gmail's view of the synced draft; `drafts.send` sends whatever it holds now.
+  const remote = { id: 'r1', message: { id: 'rm-pinned', raw: 'pinned' } };
+  const left: string[] = [];
+  const adapter: Pick<ProviderAdapter, 'send'> = {
+    send: async s => {
+      const current =
+        remote.id === s.remoteDraftId ? { remoteMessageId: remote.message.id } : undefined;
+      if (sendsRemoteDraft(s, current)) {
+        left.push(remote.message.raw);
+        return { acceptedAt: 1, draftConsumed: true };
+      }
+      left.push(text(s.mime));
+      return { acceptedAt: 1 };
+    },
+  };
+  const pinned = {
+    submissionId: 's1',
+    internetId: '<s1@mail.example>',
+    mime: bytes('pinned'),
+    envelope: { from: 'me@mail.example', rcpt: ['you@mail.example'] },
+    remoteDraftId: 'r1',
+  };
+  const ctx = {} as AdapterContext;
+  assert.equal(
+    (await adapter.send({ ...pinned, baseRemoteMessageId: 'rm-pinned' }, ctx)).draftConsumed,
+    true,
+  );
+  remote.message = { id: 'rm-phone', raw: 'phone edit' };
+  await adapter.send({ ...pinned, baseRemoteMessageId: 'rm-pinned' }, ctx);
+  await adapter.send(pinned, ctx);
+  assert.deepEqual(left, ['pinned', 'pinned', 'pinned'], 'the phone edit never leaves');
+  // Graph keeps the id on edit, so the change key decides.
+  const graph = { ...pinned, baseRemoteMessageId: 'm1', baseChangeKey: 'ck1' };
+  assert.equal(sendsRemoteDraft(graph, { remoteMessageId: 'm1', changeKey: 'ck2' }), false);
+  assert.equal(sendsRemoteDraft(graph, { remoteMessageId: 'm1', changeKey: 'ck1' }), true);
+  assert.equal(sendsRemoteDraft(graph, undefined), false, 'a gone draft');
 });
 
 test('the governor policy has one row per F1 error class', () => {

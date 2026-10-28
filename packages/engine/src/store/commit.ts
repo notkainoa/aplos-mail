@@ -1,7 +1,7 @@
 import { transaction, type SqlDatabase, type SqlStatement, type SqlValue } from './sql';
 import { encodeBody } from './bodies';
 import { governor, providerMemory, syncFailure } from './bookkeeping';
-import { calendar, calendarDelete, event, eventDelete, eventSweep } from './calendar';
+import { calendar, calendarDelete, event, eventDelete, eventHidden, eventSweep } from './calendar';
 import type { WriteScope } from './scope';
 import {
   StoreError,
@@ -105,6 +105,7 @@ export const CORE_WRITE_KINDS: ReadonlySet<string> = new Set([
   'event',
   'eventDelete',
   'eventSweep',
+  'eventHidden',
 ]);
 /** Op states whose effect is still replayed over sync (ARCH 4.3). */
 const REPLAYED_OPS = `state IN ('queued', 'inflight')`;
@@ -234,6 +235,8 @@ class CommitRun implements WriteScope {
         return eventDelete(this, w);
       case 'eventSweep':
         return eventSweep(this, w);
+      case 'eventHidden':
+        return eventHidden(this, w);
       default:
         return this.extension(w as { kind: string });
     }
@@ -379,7 +382,8 @@ class CommitRun implements WriteScope {
       'SELECT id, role, uidvalidity FROM folders WHERE account_id = ? AND remote_id = ?',
     ).get<{ id: number; role: string | null; uidvalidity: number | null }>(w.accountId, w.remoteId);
     // A new UIDVALIDITY voids every UID stored for the folder (FR-31): the resync re-stamps them, and an old UID left in
-    // place would collide with a relisted message's new one on `mf_uid` and fail every page of the reset.
+    // place would collide with a relisted message's new one on `mf_uid` and fail every page of the reset. An absent
+    // `uidValidity` keeps the stored value (R2G-1): a LIST without STATUS must not reset the guard to "first validity".
     if (
       before?.uidvalidity != null &&
       w.uidValidity != null &&
@@ -389,7 +393,7 @@ class CommitRun implements WriteScope {
     this.q(
       `INSERT INTO folders(account_id, remote_id, name, role, kind, sync_scope, uidvalidity, hidden) VALUES(?, ?, ?, ?, ?, COALESCE(?, 'lazy'), ?, ?)
       ON CONFLICT(account_id, remote_id) DO UPDATE SET name = excluded.name, role = excluded.role, kind = excluded.kind,
-        sync_scope = COALESCE(?, sync_scope), uidvalidity = excluded.uidvalidity, hidden = excluded.hidden`,
+        sync_scope = COALESCE(?, sync_scope), uidvalidity = IIF(?, excluded.uidvalidity, uidvalidity), hidden = excluded.hidden`,
     ).run(
       w.accountId,
       w.remoteId,
@@ -400,6 +404,7 @@ class CommitRun implements WriteScope {
       w.uidValidity ?? null,
       Number(w.hidden ?? false),
       w.syncScope ?? null,
+      Number(w.uidValidity !== undefined),
     );
     // A role change (a label becoming Trash) changes which threads the folder lists.
     if (before && before.role !== (w.role ?? null)) this.touchFolderThreads(before.id);
@@ -765,6 +770,9 @@ class CommitRun implements WriteScope {
   private op(w: OpWrite) {
     if (!w.opId || !w.accountId || !w.opKind)
       throw new StoreError('invalid', 'An op needs opId, accountId and opKind');
+    // Undo, retry and discard check the caller against this scope again (FR-3); an op without one would pass them all.
+    if (typeof w.scope !== 'string' || !w.scope)
+      throw new StoreError('invalid', `Op ${w.opId} needs the scope of the method that made it`);
     if (!Array.isArray(w.effect))
       throw new StoreError('invalid', `Op ${w.opId} needs an effect array`);
     if (this.q('SELECT 1 FROM ops WHERE op_id = ?').get(w.opId))
@@ -782,7 +790,7 @@ class CommitRun implements WriteScope {
       w.base ?? null,
       w.effect.length ? JSON.stringify(w.effect) : null,
       this.seq,
-      w.scope ?? null,
+      w.scope,
     );
     this.mark('Account', w.accountId, null, 'u'); // Account.pendingChanges
   }

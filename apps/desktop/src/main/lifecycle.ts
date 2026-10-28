@@ -9,7 +9,14 @@ import { handleLink } from './protocol';
 import { menus } from './menu-bar';
 import { updates, installUpdate, startUpdates } from './updater';
 import { service, bootEngine } from './engine-host';
-import { isTest, testModeError, testDataDir, testAppName, silenceDialogs } from './test-mode';
+import {
+  isTest,
+  testModeError,
+  testDataDir,
+  testAppName,
+  silenceDialogs,
+  markTestDir,
+} from './test-mode';
 
 let started = false;
 let closing = false;
@@ -40,6 +47,7 @@ if (isTest) {
   // The separate app name below is the second line of defence should the switch ever be ignored.
   app.commandLine.appendSwitch('use-mock-keychain');
   silenceDialogs(dialog, line => console.error(`Aplos Mail test: ${line}`));
+  markTestDir(testDataDir!);
   app.setPath('userData', join(testDataDir!, 'electron'));
 }
 app.setName(isTest ? testAppName : 'Aplos Mail');

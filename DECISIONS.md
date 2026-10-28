@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-28 — Test mode: only on data made for the run, never in release builds
+
+- **Release builds compile test mode out.** `scripts/build-main.mjs` defines `__APLOS_TEST_MODE__` as false when `APLOS_RELEASE_BUILD=1` (`release:build`, `release:publish`), so a distributed app ignores `APLOS_TEST` and `APLOS_DATA_DIR` and behaves normally, which is what plan 40's `verify-hardening` checks. Local `npm run package` builds and development runs keep test mode, and agents verify packaged behaviour on those (freeze R2H-4).
+- **Only a directory made for the run.** With `APLOS_TEST=1`, `APLOS_DATA_DIR` must exist and resolve (symlinks followed) inside the system temp folder or an explicit `APLOS_TEST_ROOT`. It must not be that folder itself, `/`, home, or the real or preview Aplos data folder. A folder that holds a mailbox key without the `.aplos-test` marker is refused. The marker is written on first start, so a restart of the same run works (freeze R2H-1).
+
 ## 2026-10-28 — Revamp Phase 0 artifacts F1-F5 and F7 (freeze candidate)
 
 - **zod/mini, types-only in the engine.** The contract's schemas use `zod/mini` (about 35 KB against full zod's 188 KB in a neutral bundle). The engine core imports contract *types* and the zod-free error classes only; transports validate with `parseArgs` at the host boundary (ARCH 9.3; plan 10 section 3's named fallback), because the runtime schemas plus zod cost about 158 KB of the 400,000-byte budget.

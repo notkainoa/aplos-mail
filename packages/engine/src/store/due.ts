@@ -1,16 +1,17 @@
+import {
+  OVERDUE_GRACE_MS,
+  WAITING_SUBMISSION_STATES,
+  type WaitingSubmissionState,
+} from '@aplos/contract/rules';
 import type { StoreReader } from './port';
 
 /**
  * The outbox's reads over `sub_due` (FR-2). Every submission that waits on `not_before` is in the index: `queued`
- * (inside the undo window) and `scheduled` (send later). The overdue rule (ARCH 7.3) covers both, so a send-later
- * message that fell due while the Mac was off is suspended at wake ("Send now or Reschedule"), never sent late.
- * `sending` rows are not waiting: the start rule turns them `uncertain`, never `suspended`.
+ * (inside the undo window) and `scheduled` (send later), `WAITING_SUBMISSION_STATES`. The overdue rule (ARCH 7.3) covers
+ * both, so a send-later message that fell due while the Mac was off is suspended at wake ("Send now or Reschedule"),
+ * never sent late. `sending` rows are not waiting: the start rule turns them `uncertain`, never `suspended`. The states
+ * and the grace are defined once in `@aplos/contract/rules` (FR-2), never here.
  */
-export const WAITING_SUBMISSION_STATES = ['queued', 'scheduled'] as const;
-export type WaitingSubmissionState = (typeof WAITING_SUBMISSION_STATES)[number];
-/** A waiting row that would go out more than this past `not_before`, for any reason, becomes `suspended`. */
-export const OVERDUE_MS = 5 * 60_000;
-
 export interface DueSubmission {
   id: string;
   accountId: string;
@@ -18,8 +19,8 @@ export interface DueSubmission {
   notBefore: number;
 }
 
-// The predicate repeats the index's own `state IN (...)` term verbatim, so SQLite can use the partial index.
-const WAITING = `state IN ('queued', 'scheduled')`;
+// Spells out the index's own `state IN ('queued', 'scheduled')` term verbatim, so SQLite can use the partial index.
+const WAITING = `state IN (${WAITING_SUBMISSION_STATES.map(s => `'${s}'`).join(', ')})`;
 const DUE = `SELECT id, account_id AS accountId, state, not_before AS notBefore FROM submissions
   WHERE ${WAITING} AND not_before <= ? ORDER BY not_before, id`;
 const NEXT = `SELECT min(not_before) AS at FROM submissions WHERE ${WAITING}`;
@@ -31,7 +32,7 @@ export function nextDueAt(q: StoreReader): number | undefined {
 
 /**
  * Waiting submissions whose time has come, split by the overdue rule: `due` may go out now, `overdue` (more than
- * `OVERDUE_MS` late) must become `suspended` instead. Oldest first.
+ * `OVERDUE_GRACE_MS` late) must become `suspended` instead. Oldest first.
  */
 export function dueSubmissions(
   q: StoreReader,
@@ -40,7 +41,7 @@ export function dueSubmissions(
   const due: DueSubmission[] = [],
     overdue: DueSubmission[] = [];
   for (const row of q.all<DueSubmission & Record<string, string | number>>(DUE, now))
-    (now - row.notBefore > OVERDUE_MS ? overdue : due).push({ ...row });
+    (now - row.notBefore > OVERDUE_GRACE_MS ? overdue : due).push({ ...row });
   return { due, overdue };
 }
 
