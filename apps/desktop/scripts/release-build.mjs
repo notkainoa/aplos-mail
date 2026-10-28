@@ -11,8 +11,12 @@
 // or whose fuses, entitlements or debug guard drifted, never ends in a green run.
 // electron-builder itself never uploads (`--publish never`): with `--publish always` this script uploads the
 // DMGs, ZIPs, blockmaps and latest-mac.yml to the draft release only after verification passed.
-// `--upload-only` skips the build and the verification and only uploads this version's artifacts; the
-// Release workflow runs it as its own step after its verification step, so a failed check uploads nothing.
+// Only a Developer ID release is ever uploaded: `--publish always` refuses before building when CSC_LINK /
+// CSC_NAME are missing or `--expect adhoc` is given, so a local release:publish without the certificate
+// uploads nothing.
+// `--upload-only` skips the build and only uploads this version's artifacts, after the .app bundles under
+// release/ pass verify-hardening `--expect release` again (static rows; the Release workflow's own
+// verification step before it runs the debug-guard launches), so a failed check uploads nothing.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -56,6 +60,12 @@ if (forcedExpect !== undefined && !['release', 'adhoc'].includes(forcedExpect)) 
   console.error(`release-build: --expect must be release or adhoc, not ${forcedExpect}.`);
   process.exit(2);
 }
+if (publish === 'always' && forcedExpect === 'adhoc') {
+  console.error(
+    'release-build: --publish always uploads only a release; it cannot take --expect adhoc.',
+  );
+  process.exit(2);
+}
 const desktop = join(here, '..');
 const output = join(desktop, 'release');
 
@@ -64,8 +74,31 @@ if (uploadOnly) {
     console.error('release-build: --upload-only needs --publish always.');
     process.exit(2);
   }
+  const apps = builtApps();
+  if (!apps.length) {
+    console.error(
+      `release-build: not uploading; found no Aplos Mail.app under ${output} to verify.`,
+    );
+    process.exit(1);
+  }
+  if (!verifyApps(apps, ['--expect', 'release'])) {
+    console.error(
+      'release-build: not uploading; verify-hardening --expect release failed (see the FAIL rows above).',
+    );
+    process.exit(1);
+  }
   await upload();
   process.exit(0);
+}
+
+const signed = Boolean(env.CSC_LINK || env.CSC_NAME);
+if (publish === 'always' && !signed) {
+  // An ad-hoc build passes only the ad-hoc expectation (no Gatekeeper, stapling, designated requirement or
+  // debug-guard launches), so it is never a release candidate. Fail before building, as the workflow does.
+  console.error(
+    'release-build: --publish always needs a Developer ID certificate (CSC_LINK or CSC_NAME); nothing was packaged or uploaded. Use npm run release:build for a local ad-hoc build.',
+  );
+  process.exit(1);
 }
 
 // Only a bundle built with APLOS_RELEASE_BUILD=1 carries the release define, and with it the ADR 40-6
@@ -87,7 +120,6 @@ for (const bundle of ['electron.cjs', 'engine.cjs']) {
 }
 
 const extra = ['--publish', 'never'];
-const signed = Boolean(env.CSC_LINK || env.CSC_NAME);
 const notaryVars = ['APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'];
 const notary = notaryVars.filter(name => env[name]);
 
@@ -125,14 +157,8 @@ const result = spawnSync(process.execPath, [cli, '--mac', ...args, ...extra], {
 });
 if (result.status !== 0) process.exit(result.status ?? 1);
 
-// The .app bundles this run wrote (release/mac/ for x64, release/mac-arm64/ for arm64); older ones are ignored.
-const apps = readdirSync(output, { withFileTypes: true })
-  .filter(entry => entry.isDirectory() && entry.name.startsWith('mac'))
-  .map(entry => join(output, entry.name, 'Aplos Mail.app'))
-  .filter(app => {
-    const info = join(app, 'Contents', 'Info.plist');
-    return existsSync(info) && statSync(info).mtimeMs >= startedAt - 1000;
-  });
+// The .app bundles this run wrote; older ones are ignored.
+const apps = builtApps(startedAt - 1000);
 if (!apps.length) {
   console.error(`release-build: found no freshly built Aplos Mail.app under ${output} to verify.`);
   process.exit(1);
@@ -141,23 +167,47 @@ const expect = forcedExpect ?? (signed ? 'release' : 'adhoc');
 // The debug-guard launches exit before any window when the guard works; an ad-hoc build skips them so an
 // agent's local build never starts the app.
 const verifyArgs = ['--expect', expect, ...(expect === 'release' ? ['--launch-checks=guard'] : [])];
-let failed = false;
-for (const app of apps) {
-  console.log(`release-build: verify-hardening ${verifyArgs.join(' ')} ${app}`);
-  const verify = spawnSync(
-    process.execPath,
-    [join(here, 'verify-hardening.mjs'), app, ...verifyArgs],
-    { stdio: 'inherit' },
-  );
-  if (verify.status !== 0) failed = true;
-}
-if (failed) {
+if (!verifyApps(apps, verifyArgs)) {
   console.error(
     'release-build: verify-hardening failed (see the FAIL rows above); this build is not a release candidate and nothing was uploaded.',
   );
   process.exit(1);
 }
 if (publish === 'always') await upload();
+
+/** The .app bundles under release/ (mac/ for x64, mac-arm64/ for arm64) whose Info.plist is not older than `since`. */
+function builtApps(since = 0) {
+  if (!existsSync(output)) return [];
+  return readdirSync(output, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && entry.name.startsWith('mac'))
+    .map(entry => join(output, entry.name, 'Aplos Mail.app'))
+    .filter(app => {
+      const info = join(app, 'Contents', 'Info.plist');
+      return existsSync(info) && statSync(info).mtimeMs >= since;
+    });
+}
+
+/** Runs scripts/verify-hardening.mjs on every app; true only when every one passed. */
+function verifyApps(apps, verifyArgs) {
+  let passed = true;
+  for (const app of apps) {
+    console.log(`release-build: verify-hardening ${verifyArgs.join(' ')} ${app}`);
+    const verify = spawnSync(
+      process.execPath,
+      [join(here, 'verify-hardening.mjs'), app, ...verifyArgs],
+      // The guard launches start the app under test: give it no signing, notary, OAuth or GitHub secrets.
+      { stdio: 'inherit', env: withoutSecrets(process.env) },
+    );
+    if (verify.status !== 0) passed = false;
+  }
+  return passed;
+}
+
+/** A copy of `source` without the variables that hold signing, notarization, OAuth or GitHub secrets. */
+function withoutSecrets(source) {
+  const secret = /^(CSC_|APPLE_|GOOGLE_|MICROSOFT_|GH_TOKEN$|GITHUB_TOKEN$)/;
+  return Object.fromEntries(Object.entries(source).filter(([name]) => !secret.test(name)));
+}
 
 /** Uploads this version's artifacts to the draft release with electron-builder's publisher (build.publish). */
 async function upload() {

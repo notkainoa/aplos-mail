@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { UpdateController, disabledReason, teamIdentifier, type Updater } from './updates';
 import { emit, focusMain } from './windows';
+import { releaseBuild } from './oauth-config';
 
 let updates: UpdateController | undefined;
 /** Set by Restart: the normal quit (drafts saved, engine closed) ends by installing the update instead of quitting. */
@@ -12,7 +13,8 @@ function bundlePath() {
   return resolve(process.execPath, '..', '..', '..');
 }
 function createUpdates() {
-  const devFeed = !app.isPackaged && process.env.APLOS_UPDATE_DEV === '1';
+  // Never in a release build, whatever app.isPackaged says (it follows the executable's name).
+  const devFeed = !releaseBuild && !app.isPackaged && process.env.APLOS_UPDATE_DEV === '1';
   const log = (line: string) => console.log(`Aplos Mail: ${line}`);
   const disabled = disabledReason({
     platform: process.platform,

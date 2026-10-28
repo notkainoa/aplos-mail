@@ -174,7 +174,7 @@ export const processRunning = name => spawnSync('pgrep', ['-x', '--', name]).sta
 export async function runLaunchChecks({
   executable,
   spawn = nodeSpawn,
-  timeoutMs = 8000,
+  timeoutMs,
   baseEnv = process.env,
   makeTempDir = () => mkdtempSync(join(tmpdir(), 'aplos-hardening-')),
   removeDir = dir => rmSync(dir, { recursive: true, force: true }),
@@ -183,6 +183,9 @@ export async function runLaunchChecks({
   only,
 }) {
   const cases = only === 'guard' ? GUARD_CASES : LAUNCH_CASES;
+  // A working guard exits in about a second, but the first launch of a freshly built binary can be slow
+  // (macOS checks it), and a guard-mode timeout fails a release run, so give it room.
+  const limit = timeoutMs ?? (only === 'guard' ? 20000 : 8000);
   // A running copy would take the single-instance hand-off (and raise its window), so every launch would "exit".
   // The guard subset is exempt: its launches exit before the hand-off, each has its own --user-data-dir (which
   // is what the single-instance lock is keyed on), and a release build must be checkable on a Mac that runs Aplos.
@@ -214,10 +217,10 @@ export async function runLaunchChecks({
         executable,
         args: [`--user-data-dir=${profile}`, ...testCase.args],
         env,
-        timeoutMs,
+        timeoutMs: limit,
       });
       const devtoolsFile = exists(join(profile, 'DevToolsActivePort'));
-      const verdict = judgeLaunch(testCase, { ...result, devtoolsFile }, timeoutMs, controlPassed);
+      const verdict = judgeLaunch(testCase, { ...result, devtoolsFile }, limit, controlPassed);
       if (testCase.control) controlPassed = verdict.status === 'PASS';
       rows.push(verdict);
     } finally {

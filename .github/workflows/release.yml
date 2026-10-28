@@ -20,6 +20,10 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The job's write token would otherwise stay in .git/config for every later step, including the
+          # build and the app launches. Nothing here uses git credentials; the upload step reads GH_TOKEN.
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -73,6 +77,7 @@ jobs:
           done
           exit $status
       - name: Upload to the draft release (only after verification passed)
+        # release-build.mjs verifies both apps as a release once more (static rows) before uploading anything.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node apps/desktop/scripts/release-build.mjs --upload-only --publish always

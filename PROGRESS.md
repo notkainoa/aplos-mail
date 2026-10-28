@@ -465,3 +465,11 @@ Evidence:
 
 Not verified: a live provider accepting a real key from the Settings field (Test against real Groq/OpenAI/Claude etc.), and the macOS microphone prompt itself from the welcome (needs a person at the screen).
 
+
+## 2026-10-28 — Platform: Q2 Electron hardening (plan 40 Q2)
+
+- Fuses on (RunAsNode, NODE_OPTIONS and the Node inspector off; asar integrity and app-from-asar-only on), macOS 13 minimum, a separate ad-hoc entitlements file for `npm run package`; `verify-hardening --expect adhoc` passes 10/10 static rows on a local package.
+- `src/main/security.ts`: one guard for every webContents (navigation, redirects, subframes, window.open, `<webview>`, permission, device and display-media requests denied; the trusted window's microphone rule kept; links still open in the browser) and the release-only debug guard (exit 78, before the single-instance lock), proven on a release-define build for seven switch spellings.
+- Production renderer CSP without dev ports or inline script, set at build time.
+- `release-build.mjs` and the Release workflow verify before they upload; only a Developer ID release is ever uploaded; the workflow's checkout keeps no token.
+- Open: a release build still honours `APLOS_DATA_DIR` until F8 lands (DECISIONS 2026-10-28); DevTools gating on the release define is requested from `eng-host`; the entitlement-removal experiment needs the second Mac.
