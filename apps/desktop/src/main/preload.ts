@@ -1,5 +1,5 @@
 import {contextBridge,ipcRenderer} from 'electron';
-import type {Bridge,Listener} from '../shared/types';
+import type {Bridge,Listener} from '@aplos/contract/legacy/types';
 
 const allowed = new Set([
   'state.get','threads.page','capabilities.get','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',

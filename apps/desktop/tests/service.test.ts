@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AppState, Draft } from '../src/shared/types';
+import type { AppState, Draft } from '@aplos/contract/legacy/types';
 import { createService, type ServiceOptions } from '../src/main/service';
 import { createGoogle } from '../src/main/google';
 import { createGroq } from '../src/main/groq';

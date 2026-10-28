@@ -1,10 +1,10 @@
-import type { CalendarEvent, Draft, Thread } from '../shared/types';
+import type { CalendarEvent, Draft, Thread } from '@aplos/contract/legacy/types';
 import { checkKey, providerRequest, readChatStream, readKey, streamChat, transcribeAudio, type ApiKey, type ProviderTarget } from './llm';
 export { readChatStream };
-import { threadLinks } from '../shared/mailbox';
-import { localNow, messageWeek } from '../engine/proposals';
-import { createWriter, jsonObject, jsonSystem } from '../engine/writer';
-export { suggestedAction } from '../engine/writer';
+import { threadLinks } from '@aplos/contract/legacy/mailbox';
+import { localNow, messageWeek } from '@aplos/engine/legacy/proposals';
+import { createWriter, jsonObject, jsonSystem } from '@aplos/engine/legacy/writer';
+export { suggestedAction } from '@aplos/engine/legacy/writer';
 export { threadLinks, localNow, messageWeek };
 
 /** `apiKey` is a key or a resolver read per request; without one GROQ_API_KEY is used. */

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dateLabel } from '../src/renderer/dateLabel';
+import { dateLabel } from '../src/renderer/legacy/dateLabel';
 
 const now=new Date(2026,9,20,15,30); // Tuesday
 const iso=(y:number,m:number,d:number,h=10,min=0)=>new Date(y,m-1,d,h,min).toISOString();

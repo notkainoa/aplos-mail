@@ -1,4 +1,4 @@
-import type { Chat, ChatRequest, ChatTurn } from '../engine/agent';
+import type { Chat, ChatRequest, ChatTurn } from '@aplos/engine/legacy/agent';
 
 /**
  * OpenAI-compatible chat transports (Groq, OpenAI, Gemini, OpenRouter, OpenCode Go, local servers). Keys come from the encrypted

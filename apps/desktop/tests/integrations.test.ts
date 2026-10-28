@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { simpleParser } from 'mailparser';
 import { createGroq } from '../src/main/groq';
 import { createGoogle, normalizeGmailThread } from '../src/main/google';
-import type { Account, Draft, Thread } from '../src/shared/types';
+import type { Account, Draft, Thread } from '@aplos/contract/legacy/types';
 
 const account:Account={id:'google-test',name:'Alex',email:'alex@example.test',provider:'google',connected:true,color:'#aaa'};
 const thread:Thread={id:'google-test:thread1',accountId:account.id,remoteId:'thread1',subject:'Studio review',summary:'Review on Friday',messages:[{id:'m1',from:'sam@example.test',fromName:'Sam',to:[account.email],text:'Meet October 16 at 10:00 UTC for one hour.',date:'2026-10-14T10:00:00Z',attachments:[]}],date:'2026-10-14T10:00:00Z',unread:true,status:'new',importance:'important',bookmarked:false,replyStatus:'needs-reply'};

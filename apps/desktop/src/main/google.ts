@@ -4,8 +4,8 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import nodemailer from 'nodemailer';
 import { simpleParser } from 'mailparser';
-import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
-import { ProviderError, calendarColor, type AppDataRecord, type ConnectRequest, type MailProvider, type ProviderCapabilities, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '@aplos/contract/legacy/types';
+import { ProviderError, calendarColor, type AppDataRecord, type ConnectRequest, type MailProvider, type ProviderCapabilities, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '@aplos/engine/legacy/provider';
 import { bundledOAuth, oauthClient, releaseBuild, type OAuthClient } from './oauth-config';
 
 export interface GoogleOptions {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {UpdateController,checkIntervalMs,disabledReason,firstCheckMs,teamIdentifier,type Updater} from '../src/main/updates';
-import type {UpdateInfo} from '../src/shared/types';
+import type {UpdateInfo} from '@aplos/contract/legacy/types';
 
 /** Stands in for electron-updater: each check runs the scripted events, like the real updater emits them. */
 class FakeUpdater extends EventEmitter implements Updater {

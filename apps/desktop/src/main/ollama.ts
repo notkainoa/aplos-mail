@@ -1,6 +1,6 @@
-import type { ChatMessage, ChatRequest, ChatTurn } from '../engine/agent';
-import type { ChatProvider } from '../engine/ports';
-import type { AskModelInfo } from '../shared/ask';
+import type { ChatMessage, ChatRequest, ChatTurn } from '@aplos/engine/legacy/agent';
+import type { ChatProvider } from '@aplos/engine/legacy/ports';
+import type { AskModelInfo } from '@aplos/contract/legacy/ask';
 import { readKey, type ApiKey } from './llm';
 
 /**

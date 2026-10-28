@@ -4,8 +4,8 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import nodemailer, { type SendMailOptions } from 'nodemailer';
-import type { Account, Draft, Thread } from '../src/shared/types';
-import type { CalendarBackend, CalendarCredentials, ProviderMemory, SyncResult } from '../src/engine/provider';
+import type { Account, Draft, Thread } from '@aplos/contract/legacy/types';
+import type { CalendarBackend, CalendarCredentials, ProviderMemory, SyncResult } from '@aplos/engine/legacy/provider';
 import { createImap, IMAP_PRESETS, MAX_SOURCE, type ImapFetched, type ImapLogin, type ImapPart, type ImapQuery, type ImapSession, type SmtpSender } from '../src/main/imap';
 
 const encrypt=(text:string)=>Buffer.from([...Buffer.from(text)].map(x=>x^0x5a));

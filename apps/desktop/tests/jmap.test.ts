@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Account, Draft, Thread } from '../src/shared/types';
-import type { ProviderMemory } from '../src/engine/provider';
+import type { Account, Draft, Thread } from '@aplos/contract/legacy/types';
+import type { ProviderMemory } from '@aplos/engine/legacy/provider';
 import { createJmap, JmapError, JMAP_PRESETS } from '../src/main/jmap';
 
 type Json=Record<string,any>;

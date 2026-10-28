@@ -1,5 +1,5 @@
-import type { AiKeyInfo, AiKeyStore } from '../engine/ports';
-import { askProvider, askProviders, type AskProviderId } from '../shared/ask';
+import type { AiKeyInfo, AiKeyStore } from '@aplos/engine/legacy/ports';
+import { askProvider, askProviders, type AskProviderId } from '@aplos/contract/legacy/ask';
 import { createVault, type Vault } from './vault';
 
 /**

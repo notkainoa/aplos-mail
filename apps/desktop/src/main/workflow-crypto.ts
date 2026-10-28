@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
-import { parseWorkflowLog, type WorkflowLog } from '../engine/workflow';
+import { parseWorkflowLog, type WorkflowLog } from '@aplos/engine/legacy/workflow';
 
 /**
  * Sync codes are 26 random Crockford base32 symbols (130 bits) plus 2 check symbols, shown as seven groups

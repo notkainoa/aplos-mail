@@ -11,7 +11,7 @@ import { createOpenRouter } from '../src/main/providers';
 import { createService } from '../src/main/service';
 import { createGoogle } from '../src/main/google';
 import { checkKey } from '../src/main/llm';
-import type { AppState } from '../src/shared/types';
+import type { AppState } from '@aplos/contract/legacy/types';
 
 const SAVED='gsk_saved_SYNTHETIC_key_0000000000wxyz',FROM_ENV='gsk_env_SYNTHETIC_key_000000000000abcd';
 async function folder(){return mkdtemp(join(tmpdir(),'aplos-keys-'));}

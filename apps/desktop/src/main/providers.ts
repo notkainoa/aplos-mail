@@ -1,6 +1,6 @@
-import type { ChatProvider } from '../engine/ports';
-import type { AskModelInfo, AskProviderId } from '../shared/ask';
-import { askProvider, voiceProviders } from '../shared/ask';
+import type { ChatProvider } from '@aplos/engine/legacy/ports';
+import type { AskModelInfo, AskProviderId } from '@aplos/contract/legacy/ask';
+import { askProvider, voiceProviders } from '@aplos/contract/legacy/ask';
 import { checkKey, providerRequest, readKey, streamChat, transcribeAudio, type ApiKey, type ProviderTarget, type StreamOptions } from './llm';
 
 /** The providers besides Groq and Claude. All speak OpenAI-compatible chat/completions with streamed tool calls. */

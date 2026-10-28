@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Account, AppState, Thread } from '../src/shared/types';
-import type { ConnectRequest, MailProvider, SyncResult } from '../src/engine/provider';
+import type { Account, AppState, Thread } from '@aplos/contract/legacy/types';
+import type { ConnectRequest, MailProvider, SyncResult } from '@aplos/engine/legacy/provider';
 import { createGroq } from '../src/main/groq';
 import { createService } from '../src/main/service';
 

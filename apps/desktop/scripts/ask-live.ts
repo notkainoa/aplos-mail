@@ -2,11 +2,11 @@ import { loadDevEnv } from '../src/main/env';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Conversation } from '../src/shared/types';
+import type { Conversation } from '@aplos/contract/legacy/types';
 import { createService } from '../src/main/service';
 import { createGoogle } from '../src/main/google';
 import { createGroq } from '../src/main/groq';
-import { defaultAskModel, parseAskModel } from '../src/shared/ask';
+import { defaultAskModel, parseAskModel } from '@aplos/contract/legacy/ask';
 
 /**
  * An explicit live check of Ask's agent loop against Groq on fresh original demo mail in a temporary

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ProviderMemory } from '../engine/provider';
+import type { ProviderMemory } from '@aplos/engine/legacy/provider';
 
 /** Folders Aplos syncs, by role rather than by the host's name for them. */
 export type Role='inbox'|'archive'|'sent'|'trash'|'junk';
