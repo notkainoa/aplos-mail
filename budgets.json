@@ -424,8 +424,8 @@
       "unit": "bytes",
       "notes": "Asserted by tests/portability.test.ts; a failing test is never silenced. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
-      "maxAgeDays": null,
-      "lastMeasured": null,
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-10-28",
       "dueBy": "2026-11-07"
     },
     {
@@ -435,12 +435,12 @@
       "environment": "every merge (CI summary and local runs)",
       "gate": "tighten-only",
       "calibration": "calibrate",
-      "value": null,
-      "unit": null,
+      "value": 727525,
+      "unit": "bytes",
       "notes": "No number in the plans; recorded at the first measurement. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
-      "maxAgeDays": null,
-      "lastMeasured": null,
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-10-28",
       "dueBy": "2026-11-07"
     },
     {
