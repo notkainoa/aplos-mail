@@ -1,0 +1,17 @@
+<style>
+  @font-face { font-family: "Remote One"; src: url({{CANARY}}/{{ID}}/one.woff2) format("woff2"); }
+  @font-face { font-family: "Remote Two"; src: url("{{CANARY}}/{{ID}}/two.woff"), url("{{CANARY}}/{{ID}}/two.ttf") format("truetype"); }
+  @font-face { font-family: "Remote Three"; src: local("Arial"), url({{CANARY}}/{{ID}}/three.otf); font-weight: 700; }
+  @font-face { font-family: "Remote Four"; src: url({{CANARY}}/{{ID}}/four.woff2) format("woff2"); unicode-range: U+0020-007E; font-display: block; }
+  @font-face { font-family: "Remote Five"; src: url(//{{CANARY_HOST}}/five.woff2); }
+  @font-face { font-family: "Remote Six"; src: url({{CANARY}}/{{ID}}/six.woff2) format("woff2") tech(variations); }
+  @font-face { font-family: "Remote Seven"; src: url({{CANARY}}/{{ID}}/seven.svg#f) format("svg"); }
+  @font-face { font-family: "Remote Eight"; src: url({{CANARY}}/{{ID}}/eight.eot?#iefix); }
+  @font-face{font-family:"Remote Nine";src:url({{CANARY}}/{{ID}}/nine.woff2)}
+  @FONT-FACE { font-family: "Remote Ten"; SRC: URL({{CANARY}}/{{ID}}/ten.woff2); }
+  @font-feature-values "Remote One" { @styleset { x: 1 } }
+  body { font-family: "Remote One", "Remote Two", "Remote Three", "Remote Four", "Remote Five", "Remote Six", "Remote Seven", "Remote Eight", "Remote Nine", "Remote Ten", Georgia, serif; }
+</style>
+<p>New typeface for the village newsletter, set in a friendly serif.</p>
+<p style="font-family: 'Remote Two'">A second paragraph that asks for another face.</p>
+<p style="font:12px/1 url({{CANARY}}/{{ID}}/font-shorthand-url)">A shorthand that includes a url.</p>

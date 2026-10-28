@@ -1,0 +1,426 @@
+[
+  {
+    "id": "001-tracking-three-pixels",
+    "title": "A message that tries to track you",
+    "classes": ["tracking-pixel", "remote-image"],
+    "html": "messages/001-tracking-three-pixels.html",
+    "expect": {
+      "trackersRemovedMin": 3,
+      "remoteImages": 3,
+      "mustKeepText": [
+        "Harbor Market autumn catalogue",
+        "Free shipping on orders over 40",
+        "Visit the shop"
+      ],
+      "notes": "Owner demo. Exactly three tracking pixels (1x1 attributes, 0x0 attributes, CSS 1px with opacity 0) and three ordinary sized images that must remain as remote images."
+    }
+  },
+  {
+    "id": "002-runs-code-everywhere",
+    "title": "A message that tries to run code",
+    "classes": [
+      "script-inline",
+      "event-handler",
+      "javascript-url",
+      "form-autosubmit",
+      "svg-script",
+      "iframe-nested"
+    ],
+    "html": "messages/002-runs-code-everywhere.html",
+    "expect": {
+      "mustKeepText": [
+        "Your parcel is waiting",
+        "Please confirm the delivery window",
+        "Thank you for choosing Quayside Couriers"
+      ],
+      "notes": "Owner demo. Scripts, handlers, javascript: URLs, an auto-submitting form, SVG script and iframes around ordinary prose. The prose must survive and nothing may run or connect."
+    }
+  },
+  {
+    "id": "003-script-beacons",
+    "title": "Scripts that phone home in every way they can",
+    "classes": ["script-inline", "storage-cookie"],
+    "html": "messages/003-script-beacons.html",
+    "expect": {
+      "mustKeepText": ["Monthly allotment report", "Water usage was lower than last month"]
+    }
+  },
+  {
+    "id": "004-script-external-sources",
+    "title": "Scripts loaded from outside",
+    "classes": ["script-inline"],
+    "html": "messages/004-script-external-sources.html",
+    "expect": {
+      "mustKeepText": ["Reminder: choir rehearsal moves to Thursday"]
+    }
+  },
+  {
+    "id": "005-script-obfuscated-tags",
+    "title": "Script tags written to confuse a filter",
+    "classes": ["script-inline", "mxss"],
+    "html": "messages/005-script-obfuscated-tags.html",
+    "expect": {
+      "mustKeepText": ["Notes from the garden club"]
+    }
+  },
+  {
+    "id": "006-script-types-and-speculation",
+    "title": "Script blocks that are not scripts, until a browser feature reads them",
+    "classes": ["script-inline", "link-prefetch"],
+    "html": "messages/006-script-types-and-speculation.html",
+    "expect": {
+      "mustKeepText": ["Spring fair volunteer list"]
+    }
+  },
+  {
+    "id": "007-script-workers-and-eval",
+    "title": "Workers, eval and string timers",
+    "classes": ["script-inline", "storage-cookie"],
+    "html": "messages/007-script-workers-and-eval.html",
+    "expect": {
+      "mustKeepText": ["Library opening hours"]
+    }
+  },
+  {
+    "id": "008-handlers-img-and-body",
+    "title": "Image and body event handlers",
+    "classes": ["event-handler", "script-inline"],
+    "html": "messages/008-handlers-img-and-body.html",
+    "expect": {
+      "mustKeepText": ["Your table is booked", "See you on Saturday evening"]
+    }
+  },
+  {
+    "id": "009-handlers-focus-and-autofocus",
+    "title": "Handlers that fire without a click",
+    "classes": ["event-handler", "form-autosubmit"],
+    "html": "messages/009-handlers-focus-and-autofocus.html",
+    "expect": {
+      "mustKeepText": ["Poll results are in"]
+    }
+  },
+  {
+    "id": "010-handlers-animation-and-popover",
+    "title": "Handlers triggered by CSS animation, transitions and popovers",
+    "classes": ["event-handler", "css-url"],
+    "html": "messages/010-handlers-animation-and-popover.html",
+    "expect": {
+      "mustKeepText": ["Garage sale this weekend"]
+    }
+  },
+  {
+    "id": "011-handlers-svg-media-forms",
+    "title": "Handlers on SVG, audio, video and form controls",
+    "classes": ["event-handler", "svg-script", "audio-video"],
+    "html": "messages/011-handlers-svg-media-forms.html",
+    "expect": {
+      "mustKeepText": ["Bake sale totals"]
+    }
+  },
+  {
+    "id": "012-handlers-obfuscated-syntax",
+    "title": "Event handlers hidden behind odd syntax",
+    "classes": ["event-handler", "mxss"],
+    "html": "messages/012-handlers-obfuscated-syntax.html",
+    "expect": {
+      "mustKeepText": ["Concert tickets go on sale at noon"]
+    }
+  },
+  {
+    "id": "013-js-url-href-plain",
+    "title": "Links that run code when clicked",
+    "classes": ["javascript-url"],
+    "html": "messages/013-js-url-href-plain.html",
+    "expect": {
+      "mustKeepText": ["Renew your library card"]
+    }
+  },
+  {
+    "id": "014-js-url-obfuscated-schemes",
+    "title": "javascript URLs disguised with entities, whitespace and control characters",
+    "classes": ["javascript-url", "mxss"],
+    "html": "messages/014-js-url-obfuscated-schemes.html",
+    "expect": {
+      "mustKeepText": ["Neighbourhood watch update"]
+    }
+  },
+  {
+    "id": "015-js-url-other-attributes",
+    "title": "javascript URLs in attributes other than href",
+    "classes": ["javascript-url", "form-autosubmit", "iframe-nested", "object-embed", "svg-other"],
+    "html": "messages/015-js-url-other-attributes.html",
+    "expect": {
+      "mustKeepText": ["Annual general meeting notice"]
+    }
+  },
+  {
+    "id": "016-link-schemes-other-than-web",
+    "title": "Links using other URL schemes",
+    "classes": ["link-scheme", "javascript-url", "data-url"],
+    "html": "messages/016-link-schemes-other-than-web.html",
+    "expect": {
+      "mustKeepText": ["Contact the committee"]
+    }
+  },
+  {
+    "id": "017-data-url-links",
+    "title": "Links to data URLs",
+    "classes": ["data-url", "javascript-url"],
+    "html": "messages/017-data-url-links.html",
+    "expect": {
+      "mustKeepText": ["Download the attached form"]
+    }
+  },
+  {
+    "id": "018-data-url-embedded-documents",
+    "title": "Data URLs used to embed active documents",
+    "classes": ["data-url", "iframe-nested", "object-embed"],
+    "html": "messages/018-data-url-embedded-documents.html",
+    "expect": {
+      "mustKeepText": ["Meeting minutes attached below"]
+    }
+  },
+  {
+    "id": "019-data-url-svg-and-images",
+    "title": "Data URL images, some benign and some not",
+    "classes": ["data-url", "svg-other", "cid-inline"],
+    "html": "messages/019-data-url-svg-and-images.html",
+    "expect": {
+      "mustKeepText": ["Our new logo is below"]
+    }
+  },
+  {
+    "id": "020-data-url-in-css",
+    "title": "Data URLs inside CSS",
+    "classes": ["data-url", "css-url", "css-import", "css-font-face"],
+    "html": "messages/020-data-url-in-css.html",
+    "expect": {
+      "mustKeepText": ["Style notes for the newsletter"]
+    }
+  },
+  {
+    "id": "021-meta-refresh-redirects",
+    "title": "A message that redirects the viewer",
+    "classes": ["meta-refresh"],
+    "html": "messages/021-meta-refresh-redirects.html",
+    "expect": {
+      "mustKeepText": ["This message has moved"]
+    }
+  },
+  {
+    "id": "022-meta-refresh-obfuscated",
+    "title": "Refresh redirects written in unusual ways",
+    "classes": ["meta-refresh", "javascript-url", "data-url"],
+    "html": "messages/022-meta-refresh-obfuscated.html",
+    "expect": {
+      "mustKeepText": ["Please wait while we update your preferences"]
+    }
+  },
+  {
+    "id": "023-link-dns-prefetch-preconnect",
+    "title": "Hints that make the browser contact a server before anything is clicked",
+    "classes": ["link-prefetch"],
+    "html": "messages/023-link-dns-prefetch-preconnect.html",
+    "expect": {
+      "mustKeepText": ["Conference schedule for next week"]
+    }
+  },
+  {
+    "id": "024-link-prefetch-preload-prerender",
+    "title": "Resources fetched ahead of time",
+    "classes": ["link-prefetch", "remote-font"],
+    "html": "messages/024-link-prefetch-preload-prerender.html",
+    "expect": {
+      "mustKeepText": ["Reading list for the long weekend"]
+    }
+  },
+  {
+    "id": "025-link-stylesheet-icon-manifest",
+    "title": "Linked stylesheets, icons and manifests",
+    "classes": ["link-prefetch", "css-import"],
+    "html": "messages/025-link-stylesheet-icon-manifest.html",
+    "expect": {
+      "mustKeepText": ["Welcome to the allotment society newsletter"]
+    }
+  },
+  {
+    "id": "026-link-tag-variants-and-confusion",
+    "title": "Link tags hidden in unusual places",
+    "classes": ["link-prefetch", "mxss", "svg-other"],
+    "html": "messages/026-link-tag-variants-and-confusion.html",
+    "expect": {
+      "mustKeepText": ["Parking permits are due for renewal"]
+    }
+  },
+  {
+    "id": "027-css-url-style-attribute",
+    "title": "Style attributes that load things",
+    "classes": ["css-url", "remote-image"],
+    "html": "messages/027-css-url-style-attribute.html",
+    "expect": {
+      "mustKeepText": ["Seasonal price list"]
+    }
+  },
+  {
+    "id": "028-css-url-style-element",
+    "title": "A style block with URLs in many properties and contexts",
+    "classes": ["css-url", "remote-image"],
+    "html": "messages/028-css-url-style-element.html",
+    "expect": {
+      "mustKeepText": ["Opening hours"]
+    }
+  },
+  {
+    "id": "029-css-url-escaped-forms",
+    "title": "CSS url() written with escapes",
+    "classes": ["css-url", "mxss"],
+    "html": "messages/029-css-url-escaped-forms.html",
+    "expect": {
+      "mustKeepText": ["Garden tool library"]
+    }
+  },
+  {
+    "id": "030-css-url-comments-and-whitespace",
+    "title": "CSS comments and whitespace splitting url() and at-rules",
+    "classes": ["css-url", "css-import", "mxss"],
+    "html": "messages/030-css-url-comments-and-whitespace.html",
+    "expect": {
+      "mustKeepText": ["Recycling calendar"]
+    }
+  },
+  {
+    "id": "031-css-legacy-vectors",
+    "title": "Old browser features inside CSS",
+    "classes": ["css-legacy", "css-url"],
+    "html": "messages/031-css-legacy-vectors.html",
+    "expect": {
+      "mustKeepText": ["Costume hire list"]
+    }
+  },
+  {
+    "id": "032-css-variables-and-attr",
+    "title": "URLs smuggled through CSS variables, attr() and registered properties",
+    "classes": ["css-url", "css-image-set"],
+    "html": "messages/032-css-variables-and-attr.html",
+    "expect": {
+      "mustKeepText": ["Volunteer rota for November"]
+    }
+  },
+  {
+    "id": "033-css-attribute-selector-exfiltration",
+    "title": "Style rules that report which fields or links exist",
+    "classes": ["css-url", "css-exfil"],
+    "html": "messages/033-css-attribute-selector-exfiltration.html",
+    "expect": {
+      "mustKeepText": ["Your recovery code is below"]
+    }
+  },
+  {
+    "id": "034-css-import",
+    "title": "Stylesheets imported from a style block",
+    "classes": ["css-import"],
+    "html": "messages/034-css-import.html",
+    "expect": {
+      "mustKeepText": ["Club newsletter, issue forty"]
+    }
+  },
+  {
+    "id": "035-css-import-obfuscated",
+    "title": "Imports hidden from a simple scanner",
+    "classes": ["css-import", "mxss"],
+    "html": "messages/035-css-import-obfuscated.html",
+    "expect": {
+      "mustKeepText": ["Treasurer's report"]
+    }
+  },
+  {
+    "id": "036-css-font-face-remote",
+    "title": "Web fonts loaded from outside",
+    "classes": ["css-font-face", "remote-font"],
+    "html": "messages/036-css-font-face-remote.html",
+    "expect": {
+      "mustKeepText": ["New typeface for the village newsletter"]
+    }
+  },
+  {
+    "id": "037-css-font-face-local-and-data",
+    "title": "Font rules that should be kept or dropped safely",
+    "classes": ["css-font-face", "remote-font", "benign-newsletter", "data-url"],
+    "html": "messages/037-css-font-face-local-and-data.html",
+    "expect": {
+      "mustKeepText": ["Local fonts are fine"]
+    }
+  },
+  {
+    "id": "038-css-image-set",
+    "title": "Images chosen by image-set and friends",
+    "classes": ["css-image-set", "css-url", "remote-image"],
+    "html": "messages/038-css-image-set.html",
+    "expect": {
+      "mustKeepText": ["Retina ready"]
+    }
+  },
+  {
+    "id": "039-base-tag-relative-urls",
+    "title": "A base tag that redirects every relative URL",
+    "classes": ["base-tag", "remote-image"],
+    "html": "messages/039-base-tag-relative-urls.html",
+    "expect": {
+      "mustKeepText": ["Welcome to the community noticeboard"]
+    }
+  },
+  {
+    "id": "040-base-tag-variants",
+    "title": "Base tags in strange forms",
+    "classes": ["base-tag", "javascript-url", "data-url", "mxss"],
+    "html": "messages/040-base-tag-variants.html",
+    "expect": {
+      "mustKeepText": ["Notice of the next committee meeting"]
+    }
+  },
+  {
+    "id": "041-svg-script-elements",
+    "title": "Script elements inside SVG",
+    "classes": ["svg-script", "script-inline"],
+    "html": "messages/041-svg-script-elements.html",
+    "expect": {
+      "mustKeepText": ["Holiday parade route"]
+    }
+  },
+  {
+    "id": "042-svg-foreignobject",
+    "title": "Foreign objects carrying HTML inside SVG",
+    "classes": ["svg-foreignobject", "iframe-nested", "form-autosubmit"],
+    "html": "messages/042-svg-foreignobject.html",
+    "expect": {
+      "mustKeepText": ["Raffle winners"]
+    }
+  },
+  {
+    "id": "043-svg-use-image-feimage",
+    "title": "SVG elements that reference external files",
+    "classes": ["svg-other", "remote-image"],
+    "html": "messages/043-svg-use-image-feimage.html",
+    "expect": {
+      "mustKeepText": ["Icon pack announcement"]
+    }
+  },
+  {
+    "id": "044-svg-animate-changes-href",
+    "title": "SVG animation that swaps in a dangerous link",
+    "classes": ["svg-other", "javascript-url", "event-handler"],
+    "html": "messages/044-svg-animate-changes-href.html",
+    "expect": {
+      "mustKeepText": ["Choir concert programme"]
+    }
+  },
+  {
+    "id": "045-svg-links-and-benign-graphics",
+    "title": "SVG links, plus ordinary SVG art that may stay",
+    "classes": ["svg-other", "benign-newsletter"],
+    "html": "messages/045-svg-links-and-benign-graphics.html",
+    "expect": {
+      "mustKeepText": ["Our logo is drawn as a vector"]
+    }
+  }
+]

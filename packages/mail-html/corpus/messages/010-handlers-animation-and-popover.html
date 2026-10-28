@@ -1,0 +1,13 @@
+<style>
+  @keyframes pulse { from { opacity: 0.99 } to { opacity: 1 } }
+  .a { animation: pulse 1ms; }
+  .t { transition: color 1ms; color: red; }
+  .t:hover, .t { color: blue; }
+</style>
+<p>Garage sale this weekend on Elm Street.</p>
+<div class="a" onanimationstart="fetch('{{CANARY}}/{{ID}}/animationstart')" onanimationend="fetch('{{CANARY}}/{{ID}}/animationend')" onanimationiteration="fetch('{{CANARY}}/{{ID}}/animationiteration')">animated</div>
+<div class="t" ontransitionend="fetch('{{CANARY}}/{{ID}}/transitionend')" ontransitionstart="fetch('{{CANARY}}/{{ID}}/transitionstart')" ontransitionrun="fetch('{{CANARY}}/{{ID}}/transitionrun')">transition</div>
+<button popovertarget="p1" onclick="fetch('{{CANARY}}/{{ID}}/popover-click')">open</button>
+<div id="p1" popover onbeforetoggle="fetch('{{CANARY}}/{{ID}}/beforetoggle')" ontoggle="fetch('{{CANARY}}/{{ID}}/popover-toggle')">popover</div>
+<div style="content-visibility:auto" oncontentvisibilityautostatechange="fetch('{{CANARY}}/{{ID}}/cv')">cv</div>
+<div style="overflow:scroll;height:10px" onscroll="fetch('{{CANARY}}/{{ID}}/scroll')" onscrollend="fetch('{{CANARY}}/{{ID}}/scrollend')"><div style="height:100px">scroll</div></div>

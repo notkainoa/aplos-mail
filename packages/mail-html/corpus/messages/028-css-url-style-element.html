@@ -1,0 +1,28 @@
+<style>
+  body { background: url({{CANARY}}/{{ID}}/body-bg); }
+  .hero { background-image: url("{{CANARY}}/{{ID}}/hero-bg"); }
+  .list { list-style: url({{CANARY}}/{{ID}}/list-style) square; }
+  .cur { cursor: url({{CANARY}}/{{ID}}/cursor), pointer; }
+  .bi { border-image: url({{CANARY}}/{{ID}}/border-image) 10; }
+  .after::after { content: url({{CANARY}}/{{ID}}/after-content); }
+  .before::before { content: "x" url({{CANARY}}/{{ID}}/before-content) "y"; }
+  .m { mask: url({{CANARY}}/{{ID}}/mask) no-repeat; }
+  .f { filter: url({{CANARY}}/{{ID}}/filter#f) blur(1px); }
+  .hover:hover { background: url({{CANARY}}/{{ID}}/hover); }
+  .focus:focus { background: url({{CANARY}}/{{ID}}/focus); }
+  .active:active { background: url({{CANARY}}/{{ID}}/active); }
+  @media screen { .media { background: url({{CANARY}}/{{ID}}/in-media); } }
+  @media print { .print { background: url({{CANARY}}/{{ID}}/in-print); } }
+  @media (max-width: 99999px) { .wide { background: url({{CANARY}}/{{ID}}/in-media-query); } }
+  @supports (display: grid) { .sup { background: url({{CANARY}}/{{ID}}/in-supports); } }
+  @layer base { .layered { background: url({{CANARY}}/{{ID}}/in-layer); } }
+  @container (min-width: 1px) { .cont { background: url({{CANARY}}/{{ID}}/in-container); } }
+  @page { background: url({{CANARY}}/{{ID}}/in-page); }
+  .nest { & .inner { background: url({{CANARY}}/{{ID}}/nested); } }
+  @scope (.s) { .t { background: url({{CANARY}}/{{ID}}/in-scope); } }
+  @-webkit-keyframes k { from { background: url({{CANARY}}/{{ID}}/keyframes-from); } to { background: url({{CANARY}}/{{ID}}/keyframes-to); } }
+  @starting-style { .ss { background: url({{CANARY}}/{{ID}}/starting-style); } }
+</style>
+<p>Opening hours: weekdays from nine to five.</p>
+<div class="hero hover focus active media print wide sup layered cont nest s t ss m f cur bi after before">Styled</div>
+<ul class="list"><li>one</li></ul>
