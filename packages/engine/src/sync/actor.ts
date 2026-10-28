@@ -103,6 +103,8 @@ export class AccountActor {
   /** `retryNow` granted one call: the next step runs through the cooldown. */
   private forced = false;
   private opsDirty = true;
+  /** A pause on a budget other than this account's mail budget holds op flushes until it ends. */
+  private opsHoldUntil = 0;
   /** Ops whose write may have landed wait for the next incremental pass (F3 `OpOutcome`). */
   private heldUncertain = true;
   private readonly backoff = new Map<ScopeId, { failures: number; until: number }>();
@@ -188,6 +190,7 @@ export class AccountActor {
     this.wakeAt = undefined;
     this.halted = undefined;
     this.backoff.clear();
+    this.opsHoldUntil = 0;
     if (forced) this.forced = true;
     this.interrupt();
   }
@@ -208,6 +211,7 @@ export class AccountActor {
     this.halted = undefined;
     this.failure = undefined;
     this.backoff.clear();
+    this.opsHoldUntil = 0;
     if (facts.grantedScopes) this.runtime.grantedScopes = facts.grantedScopes;
     if (facts.reconnectBy !== undefined) {
       this.runtime.reconnectBy = facts.reconnectBy;
@@ -284,7 +288,8 @@ export class AccountActor {
       return;
     }
     // opFlush outranks every sync lane (ARCH 4.1).
-    if (this.opsDirty && !this.forced && (await this.flushOps())) return;
+    const opsHeld = this.opsHoldUntil > now;
+    if (this.opsDirty && !this.forced && !opsHeld && (await this.flushOps())) return;
     if (this.stopped) return;
     const states = readStates(store, this.id);
     const memory = readMemory(store, this.id);
@@ -304,8 +309,7 @@ export class AccountActor {
       this.setTrigger('poll');
       this.forced = false;
       this.setStatus(this.idleStatus());
-      const next = Math.min(...steps.map(step => this.dueAt(step, now)));
-      await this.idle(next);
+      await this.idle(this.nextWake(steps, now));
       return;
     }
     if (this.trigger !== 'poll' && !this.pass) this.pass = new Set(due.map(step => step.scope));
@@ -327,6 +331,12 @@ export class AccountActor {
     );
     this.pass?.delete(step.scope);
     if (this.pass && !this.pass.size) this.setTrigger('poll');
+  }
+
+  /** When the loop next has work: the earliest due step, or the end of a hold on queued ops. */
+  private nextWake(steps: PlannedStep[], now: number): number {
+    const opsWake = this.opsDirty && this.opsHoldUntil > now ? this.opsHoldUntil : Infinity;
+    return Math.min(opsWake, ...steps.map(step => this.dueAt(step, now)));
   }
 
   private allowed(step: PlannedStep): boolean {
@@ -426,7 +436,7 @@ export class AccountActor {
   /** A step that threw: the governor already holds pauses and blocks; everything else backs this scope off. */
   private stepFailed(step: PlannedStep, error: unknown): void {
     const now = this.deps.clock.now();
-    if (error instanceof PausedError) return; // the loop's admission check shows it and sleeps until it ends
+    if (error instanceof PausedError) return this.holdScope(step, error.until);
     const classified = classifiedOf(error);
     const cls = classified?.class;
     if (
@@ -436,7 +446,8 @@ export class AccountActor {
       cls === 'config' ||
       cls === 'anti_abuse'
     ) {
-      return;
+      const retryAt = classified?.retryAfterMs ? now + classified.retryAfterMs : undefined;
+      return this.holdScope(step, retryAt);
     }
     if (cls === 'cancelled') return;
     const view = statusOfFailure(classified, now);
@@ -457,6 +468,25 @@ export class AccountActor {
       this.failure = view;
       this.setStatus(view);
     }
+  }
+
+  /**
+   * The governor holds a pause and the loop's admission check sleeps through it, but only for this account's mail budget.
+   * A pause on another budget (calendar, OAuth) passes that check, so the step would run, be refused without I/O and
+   * run again at once. Back the scope off until the pause ends.
+   */
+  private holdScope(step: PlannedStep, until: number | undefined): void {
+    const now = this.deps.clock.now();
+    if (!this.deps.governor.admission(this.id, this.deps.budget.id, 'incremental').ok) return;
+    const failures = this.backoff.get(step.scope)?.failures ?? 0;
+    this.backoff.set(step.scope, { failures, until: until ?? now + STEP_BACKOFF_MS });
+  }
+
+  /** Same for op flushes: a refusal from a budget the mail admission check does not cover holds the flush. */
+  private holdOps(until: number | undefined): void {
+    const now = this.deps.clock.now();
+    if (!this.deps.governor.admission(this.id, this.deps.budget.id, 'opFlush').ok) return;
+    this.opsHoldUntil = until ?? now + STEP_BACKOFF_MS;
   }
 
   // ---------------------------------------------------------------- op flush (ARCH 4.3)
@@ -511,6 +541,7 @@ export class AccountActor {
         if (error instanceof PausedError) {
           requeue(calls.slice(index).flatMap(c => c.opIds));
           this.opsDirty = true;
+          this.holdOps(error.until);
           return true;
         }
         const failed = classifiedOf(error) ?? {
@@ -546,7 +577,10 @@ export class AccountActor {
       if (holds) {
         requeue(calls.slice(index + 1).flatMap(c => c.opIds));
         // A refusal the governor holds: the loop's admission check sleeps through the pause, then flushes again.
-        if (paused) this.opsDirty = true;
+        if (paused) {
+          this.opsDirty = true;
+          this.holdOps(undefined);
+        }
         return true;
       }
     }

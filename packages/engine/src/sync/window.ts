@@ -67,6 +67,10 @@ export class SlidingWindow {
   }
 
   private prune(now: number): void {
+    // The system clock stepped back: a charge cannot be from the future, so it counts from now rather than keeping the
+    // window full for the size of the jump.
+    for (let i = this.charges.length - 1; i >= 0 && this.charges[i].at > now; i--)
+      this.charges[i].at = now;
     let drop = 0;
     while (drop < this.charges.length && now - this.charges[drop].at >= this.windowMs) {
       this.add(this.charges[drop], -this.charges[drop].units);

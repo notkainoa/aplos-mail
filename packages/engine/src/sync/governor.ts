@@ -306,6 +306,7 @@ export class Governor extends GovernorState implements GovernorPort {
           m.window.restamp(ticket.charge, this.clock.now());
           this.reserve(m);
         }
+        // Extra budgets are accounted and checked for blocks, but not waited on for room: no caller sets `costs` yet.
         for (const [budget, extra] of Object.entries(req.costs ?? {}) as [BudgetId, number][]) {
           if (budget !== req.budget) this.charge(account, budget, extra);
         }

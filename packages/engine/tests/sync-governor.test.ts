@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LANES, gmailBudget } from '../src/sync/budgets';
+import { SlidingWindow } from '../src/sync/window';
 import type { SyncLane as Lane } from '../src/ports';
 import { ACCOUNT, MINUTE, deferred, maxWindow, req, settle, setup } from './sync-governor-helpers';
 
@@ -182,4 +183,15 @@ test('the Calendar budget counts requests: 300 a minute, two in flight', async (
   );
   assert.ok(maxWindow(calls) <= 300);
   assert.equal(maxInFlight, 2);
+});
+
+test('a system clock stepped back does not keep the window full for the size of the jump', () => {
+  const window = new SlidingWindow(MINUTE);
+  const hour = 60 * MINUTE;
+  window.charge(hour, 4_000);
+  assert.equal(window.used(hour), 4_000);
+  // NTP moves the clock back one hour: the charge counts from the new now and ages out after one window.
+  assert.equal(window.used(0), 4_000);
+  assert.equal(window.used(MINUTE - 1), 4_000);
+  assert.equal(window.used(MINUTE), 0);
 });
