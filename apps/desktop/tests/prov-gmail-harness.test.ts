@@ -27,6 +27,7 @@ import {
   type Placement,
   type RemoteDraftFact,
   type RequestIo,
+  type RequestKind,
   type ScopeId,
   type StepResult,
   type SyncLane,
@@ -78,6 +79,7 @@ export interface GovCall {
   method: string;
   cost: number;
   lane: SyncLane;
+  kind: RequestKind;
   outcome: 'sent' | 'paused';
 }
 
@@ -153,7 +155,7 @@ export class StubGovernor implements BoundGovernor {
   private async refresh(): Promise<string> {
     const paused = this.refusal();
     if (paused) throw paused;
-    this.calls.push({ at: this.clock.now(), method: 'oauth.token', cost: 0, lane: 'interactive', outcome: 'sent' });
+    this.calls.push({ at: this.clock.now(), method: 'oauth.token', cost: 0, lane: 'interactive', kind: 'idempotentWrite', outcome: 'sent' });
     try {
       return await this.tokens!.refresh(() => this.clock.now());
     } catch (error) {
@@ -178,7 +180,7 @@ export class StubGovernor implements BoundGovernor {
   private async attempt<T>(req: GovernedRequest, fn: (io: RequestIo) => Promise<T>, first: boolean): Promise<T> {
     const early = this.refusal();
     if (early) {
-      this.calls.push({ at: this.clock.now(), method: req.method, cost: req.cost, lane: req.lane, outcome: 'paused' });
+      this.calls.push({ at: this.clock.now(), method: req.method, cost: req.cost, lane: req.lane, kind: req.kind, outcome: 'paused' });
       throw early;
     }
     await this.slot(req.lane === 'interactive');
@@ -187,7 +189,7 @@ export class StubGovernor implements BoundGovernor {
       for (;;) {
         const paused = this.refusal();
         if (paused) {
-          this.calls.push({ at: this.clock.now(), method: req.method, cost: req.cost, lane: req.lane, outcome: 'paused' });
+          this.calls.push({ at: this.clock.now(), method: req.method, cost: req.cost, lane: req.lane, kind: req.kind, outcome: 'paused' });
           throw paused;
         }
         const wait = this.budgetWait(req.cost);
@@ -202,7 +204,7 @@ export class StubGovernor implements BoundGovernor {
         throw this.refusal()!;
       }
       this.dispatched.push({ at: this.clock.now(), cost: req.cost });
-      this.calls.push({ at: this.clock.now(), method: req.method, cost: req.cost, lane: req.lane, outcome: 'sent' });
+      this.calls.push({ at: this.clock.now(), method: req.method, cost: req.cost, lane: req.lane, kind: req.kind, outcome: 'sent' });
       try {
         return await fn({ signal: req.signal ?? new AbortController().signal, ...(accessToken ? { accessToken } : {}) });
       } catch (error) {
@@ -264,6 +266,8 @@ export class FakeStore implements KnownLookup {
   readonly folders = new Map<string, FolderFacts>();
   readonly drafts = new Map<string, RemoteDraftFact>();
   readonly tracked = new Set<string>();
+  /** Message id -> draft id of the copies this device wrote (`drafts.remote_message_id`). */
+  readonly ownDrafts = new Map<string, string>();
   readonly commits: Commit[] = [];
   readonly swept: string[] = [];
   seq = 0;
@@ -278,6 +282,9 @@ export class FakeStore implements KnownLookup {
   }
   async trackedDraftIds(ids: string[]): Promise<ReadonlySet<string>> {
     return new Set(ids.filter(id => this.tracked.has(id)));
+  }
+  async draftsByMessageId(ids: string[]): Promise<ReadonlyMap<string, string>> {
+    return new Map(ids.filter(id => this.ownDrafts.has(id)).map(id => [id, this.ownDrafts.get(id)!]));
   }
   async threadMessages(threadId: string): Promise<{ remoteId: string; placements: Placement[] }[]> {
     return [...this.rows.values()]

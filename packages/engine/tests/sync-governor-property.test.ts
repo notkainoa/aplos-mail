@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LANES } from '../../src/sync/budgets';
-import { COOLDOWN_STEPS_MS, Governor, TRANSIENT_TRIES } from '../../src/sync/governor';
-import { nextPacificMidnight } from '../../src/sync/pacific';
-import type { ClassifiedError, RequestKind } from '../../src/sync/types';
-import { ACCOUNT, FakeClock, MINUTE, refusal, req, seeded, settle } from './governor-helpers';
+import { LANES } from '../src/sync/budgets';
+import { COOLDOWN_STEPS_MS, Governor, TRANSIENT_TRIES } from '../src/sync/governor';
+import { nextPacificMidnight } from '../src/sync/pacific';
+import type { ClassifiedError } from '@aplos/contract';
+import type { RequestKind } from '../src/ports';
+import { ACCOUNT, FakeClock, MINUTE, refusal, req, seeded, settle } from './sync-governor-helpers';
 
 const COSTS = [1, 2, 5, 10, 20, 40, 60, 100, 120];
 const KINDS: RequestKind[] = ['read', 'read', 'read', 'idempotentWrite', 'write', 'send'];
@@ -66,7 +67,7 @@ async function scenario(seed: number): Promise<{ violations: string[]; calls: nu
     controllers.push(controller);
     let tries = 0;
     pending++;
-    governor.run(ACCOUNT, req(lane, cost, { kind, signal: rand() < 0.2 ? controller.signal : undefined }), async signal => {
+    governor.run(ACCOUNT, req(lane, cost, { kind, signal: rand() < 0.2 ? controller.signal : undefined }), async ({ signal }) => {
       const now = clock.now();
       tries++;
       if (!governor.admission(ACCOUNT, 'gmail', lane).ok) violations.push(`seed ${seed}: call at ${now} while the governor reports a pause`);
@@ -78,7 +79,7 @@ async function scenario(seed: number): Promise<{ violations: string[]; calls: nu
       const target = governor.snapshot(ACCOUNT).find(s => s.budget === 'gmail')!.target;
       const window = calls.filter(c => now - c.at < MINUTE);
       const used = window.reduce((sum, c) => sum + c.units, 0);
-      if (used > target && window.length > 1) violations.push(`seed ${seed}: ${used} units in the window at ${now}, target ${target}, governor used ${governor.snapshot(ACCOUNT)[0].usedInWindow}, cost ${cost}, lane ${lane}, n ${window.length}`);
+      if (used > target && window.length > 1) violations.push(`seed ${seed}: ${used} units in the window at ${now}, target ${target}, governor used ${governor.inspect(ACCOUNT, 'gmail').used}, cost ${cost}, lane ${lane}, n ${window.length}`);
       try {
         await clock.sleep(50 + Math.floor(rand() * 2_000), signal);
       } finally {
@@ -101,12 +102,12 @@ async function scenario(seed: number): Promise<{ violations: string[]; calls: nu
       forbid(error, clock.now());
       governor.observe(ACCOUNT, 'gmail', error);
     } else if (roll < 0.91) governor.setRole(ACCOUNT, rand() < 0.5 ? 'primary' : 'secondary');
-    else if (roll < 0.95 && stopped) { stopped = false; governor.resume(ACCOUNT, 'gmail'); }
+    else if (roll < 0.95 && stopped) { stopped = false; governor.clear(ACCOUNT, 'auth'); }
     else if (controllers.length) pick(controllers).abort(new Error('caller'));
   }
   // Drain: everything still waiting must settle once time passes and any stop is lifted.
   for (let i = 0; i < 200 && pending > 0; i++) {
-    if (stopped) { stopped = false; governor.resume(ACCOUNT, 'gmail'); }
+    if (stopped) { stopped = false; governor.clear(ACCOUNT, 'auth'); }
     await clock.advance(3_600_000);
   }
   if (pending > 0) violations.push(`seed ${seed}: ${pending} requests never settled`);

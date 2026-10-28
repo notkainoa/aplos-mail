@@ -1,7 +1,7 @@
 // Temporary home: these move next to the shared provider code when the engine restructure lands.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseGoogleError } from '../../../../apps/desktop/src/host/providers/shared/google-error';
+import { parseGoogleError } from '../../../apps/desktop/src/host/providers/shared/google-error';
 
 test('Gmail v1 error: errors[0] wins over the rpc status', () => {
   const body = JSON.stringify({

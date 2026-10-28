@@ -338,6 +338,13 @@ export const INBOX_ROUND_MARK = memKey('window:inbox', 'read');
  */
 export const REGAINED_KEY = 'inbox.regained';
 
+/**
+ * Set once the first Inbox window round (P1-P2, the 500 threads) has ended. Until then a cursor reset restarts that
+ * round instead of starting a 50-thread resync: a resync is not a baseline round, so it would never set
+ * `baseline_done_at` or seed Sent and backfill, and the account would stay `syncing` with 50 threads (prov-gov-attack-04).
+ */
+export const FIRST_WINDOW_KEY = 'inbox.firstWindow';
+
 /** The date of an answered entry's listed message: its own, or a thread's newest message in the listed folder. */
 function listedDate(entry: string, facts: readonly MessageFacts[], folder: string): number {
   if (!facts.length) return Infinity;
@@ -522,6 +529,7 @@ export async function listStep(rt: SyncRuntime, state: SyncState, ctx: AdapterCo
   };
   // History records regained ids only while a round runs; a new round starts from an empty list.
   if (spec.coverage && (starting || roundEnded)) memory[REGAINED_KEY] = null;
+  if (spec.baseline && spec.scope === 'window:inbox' && roundEnded) memory[FIRST_WINDOW_KEY] = '1';
   // A pause before anything was listed leaves the state exactly as it was.
   const untouched = stopped && !placements.length && !facts.length;
   return {

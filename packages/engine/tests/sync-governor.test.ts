@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LANES, gmailBudget } from '../../src/sync/budgets';
-import type { Lane } from '../../src/sync/types';
-import { ACCOUNT, MINUTE, deferred, maxWindow, req, settle, setup } from './governor-helpers';
+import { LANES, gmailBudget } from '../src/sync/budgets';
+import type { SyncLane as Lane } from '../src/ports';
+import { ACCOUNT, MINUTE, deferred, maxWindow, req, settle, setup } from './sync-governor-helpers';
 
 test('a flood from every lane never goes above the target in any 60 s window', async () => {
   const { clock, governor } = setup();
@@ -70,7 +70,7 @@ test('one in-flight slot stays reserved for interactive and op flush', async () 
   const d = governor.run(ACCOUNT, req('opFlush', 10), hold('opFlush', gates[2]));
   await settle();
   assert.deepEqual(started, ['backfill1', 'incremental', 'opFlush']);
-  assert.equal(governor.snapshot(ACCOUNT)[0].inFlight, 3);
+  assert.equal(governor.inspect(ACCOUNT, 'gmail').inFlight, 3);
   // Background lanes never take the last free slot: with opFlush and incremental running, backfill waits.
   gates[0].resolve();
   await a;
@@ -137,7 +137,7 @@ test('a caller abort removes a queued request without charging it', async () => 
   await assert.rejects(queued, /closed/);
   await clock.advance(MINUTE);
   assert.equal(called, false);
-  assert.equal(governor.snapshot(ACCOUNT)[0].usedInWindow, 0);
+  assert.equal(governor.inspect(ACCOUNT, 'gmail').used, 0);
 });
 
 test('the Calendar budget counts requests: 300 a minute, two in flight', async () => {

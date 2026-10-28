@@ -12,7 +12,7 @@ import {
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
 import { FLAG_LABELS, folderFacts, type GmailLabel } from './facts';
-import { INBOX_ROUND_MARK, REGAINED_KEY, entriesFor, entryThread, fetchMetadata, type SyncRuntime } from './sync';
+import { FIRST_WINDOW_KEY, INBOX_ROUND_MARK, REGAINED_KEY, entriesFor, entryThread, fetchMetadata, type SyncRuntime } from './sync';
 
 /**
  * The `history` scope: P0 (cursor first) when there is no cursor, otherwise one `history.list` page (ARCH 5.1,
@@ -72,13 +72,16 @@ export async function cursorStep(rt: SyncRuntime, step: PlannedStep, state: Sync
 
 /**
  * The cursor is gone (404) or the pass would fetch too much: clear the cursor so the next plan() emits P0 again, and
- * start a bounded Inbox resync round whose sweep removes ghosts (D10). Never a full re-download.
+ * start a bounded Inbox resync round whose sweep removes ghosts (D10). Never a full re-download. Before the first
+ * window round has ended, the reset restarts that round from the top instead (`FIRST_WINDOW_KEY`): it re-lists the
+ * newest Inbox like a resync, skips what is stored, and still reaches the baseline and seeds Sent and backfill.
  */
 function resetStates(state: SyncState, ctx: AdapterContext): SyncState[] {
   const now = ctx.clock.now();
+  const firstWindowDone = ctx.memory.get(FIRST_WINDOW_KEY) === '1';
   return [
     { scope: 'history', phase: 'reset', generation: state.generation, updatedAt: now },
-    { scope: 'window:inbox', phase: 'resync', generation: ctx.generation, updatedAt: now },
+    { scope: 'window:inbox', ...(firstWindowDone ? { phase: 'resync' } : {}), generation: ctx.generation, updatedAt: now },
   ];
 }
 
@@ -209,10 +212,15 @@ export async function historyStep(rt: SyncRuntime, step: PlannedStep, state: Syn
       // Deleted or sent elsewhere: it leaves Drafts.
       else drafts.push({ remoteDraftId: draftId, remoteMessageId: messageId, changedAt: now, removed: true });
     }
+    // A draft copy this device wrote (`drafts.remote_message_id`) is Aplos's own save, not news; any other message id on
+    // a draft is a phone draft or an edit made elsewhere, which the engine reconciles (ARCH 7.4, FR-26).
+    const candidates = added.filter(m => live(m) && current!.has(m.id)).map(m => m.id);
+    const own = candidates.length ? await ctx.lookup.draftsByMessageId(candidates) : new Map<string, string>();
     for (const m of added) {
       const draftId = current.get(m.id);
       if (!draftId || !live(m)) continue;
       nextDraftMap.set(m.id, draftId);
+      if (own.has(m.id)) continue;
       drafts.push({ remoteDraftId: draftId, remoteMessageId: m.id, remoteThreadId: m.threadId, changedAt: now });
     }
   }

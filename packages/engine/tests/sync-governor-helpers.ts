@@ -1,7 +1,8 @@
-import { FakeClock } from '../../../emulators/src/kit/clock';
-import { gmailBudget } from '../../src/sync/budgets';
-import { Governor, type GovernorLogEvent, type GovernorLogFields, type GovernorOptions } from '../../src/sync/governor';
-import { ProviderError, type ClassifiedError, type GovernedRequest, type Lane } from '../../src/sync/types';
+import { FakeClock } from '../../emulators/src/kit/clock';
+import { gmailBudget } from '../src/sync/budgets';
+import { Governor, type GovernorLogEvent, type GovernorLogFields, type GovernorOptions } from '../src/sync/governor';
+import type { ClassifiedError } from '@aplos/contract';
+import { ProviderError, type GovernedRequest, type SyncLane } from '../src/ports';
 
 export { FakeClock };
 
@@ -23,12 +24,12 @@ export function setup(options: Partial<GovernorOptions> & { auto?: boolean; cloc
   return { clock, governor, logs };
 }
 
-export function req(lane: Lane, cost: number, extra: Partial<GovernedRequest> = {}): GovernedRequest {
+export function req(lane: SyncLane, cost: number, extra: Partial<GovernedRequest> = {}): GovernedRequest {
   return { budget: 'gmail', lane, cost, kind: 'read', method: 'gmail.threads.get', ...extra };
 }
 
-export function refusal(cls: ClassifiedError['class'], extra: Partial<ClassifiedError> = {}): ProviderError {
-  return new ProviderError({ class: cls, provider: 'google', method: 'gmail.threads.get', reason: reasonFor(cls), status: 403, ...extra });
+export function refusal(cls: ClassifiedError['class'], extra: Partial<ClassifiedError> = {}, scope?: 'account' | 'project'): ProviderError {
+  return new ProviderError({ class: cls, provider: 'google', method: 'gmail.threads.get', reason: reasonFor(cls), status: 403, ...extra }, scope);
 }
 
 function reasonFor(cls: ClassifiedError['class']): string {

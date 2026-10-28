@@ -1,8 +1,8 @@
 // Temporary home: these move next to the shared provider code when the engine restructure lands.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHttpClient, HttpFailure } from '../../../../apps/desktop/src/host/providers/shared/http';
-import { FakeClock } from '../../../emulators/src/kit/clock';
+import { createHttpClient, HttpFailure } from '../../../apps/desktop/src/host/providers/shared/http';
+import { FakeClock } from '../../emulators/src/kit/clock';
 
 type Call = { url: string; init: RequestInit };
 

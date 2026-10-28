@@ -28,13 +28,14 @@ import { fetchAttachment, openThread } from './bodies';
 import { GmailPacer, PACER_TARGET, type GmailDeps } from './client';
 import { GMAIL_COSTS, type GmailCostTable } from './costs';
 import { historyStep } from './history';
+import { applyOp, coalesceOps } from './ops';
 import { search } from './search';
 import { FactsMemo, listStep, plan, type SyncRuntime, type WindowCall } from './sync';
 
 /**
  * The google `ProviderFactory` and its per-account `ProviderAdapter` (plan 20 section 3.2): the read path of
  * `prov-gmail`. Parts that belong to other lanes are explicit stubs that throw `NotInThisLaneError`, never silent
- * no-ops: connect (prov-gov's OAuth host), send and findSent (prov-gmail-write), ops (next prov-gmail package),
+ * no-ops: connect (prov-gov's OAuth host), send and findSent (prov-gmail-write),
  * drafts, filters, the workflow channel and calendar (left undefined; prov-gmail-write, prov-gmail workflow, prov-cal).
  */
 
@@ -139,12 +140,12 @@ export class GmailAdapter implements ProviderAdapter {
     return search(this.rt.deps, query, this.paced(ctx));
   }
 
-  coalesce(_ops: PendingOp[]): CoalescedOp[] {
-    throw new NotInThisLaneError('coalesce', 'the prov-gmail ops package');
+  coalesce(ops: PendingOp[]): CoalescedOp[] {
+    return coalesceOps(ops, this.rt.deps.costs);
   }
 
-  apply(_op: CoalescedOp, _ctx: AdapterContext): Promise<OpOutcome[]> {
-    return Promise.reject(new NotInThisLaneError('apply', 'the prov-gmail ops package'));
+  apply(op: CoalescedOp, ctx: AdapterContext): Promise<OpOutcome[]> {
+    return applyOp(this.rt.deps, op, this.paced(ctx));
   }
 
   send(_submission: SubmissionPayload, _ctx: AdapterContext): Promise<SendReceipt> {

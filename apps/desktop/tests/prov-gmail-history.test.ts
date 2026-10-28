@@ -124,6 +124,19 @@ test('prov-gmail-T45 D9 a draft made on a phone becomes a RemoteDraftFact, never
   assert.equal(fact.remoteThreadId, known.remoteThreadId);
 });
 
+test('prov-gmail-T45 D9 a draft copy this device wrote (KnownLookup.draftsByMessageId) is not reported back; an edit elsewhere is', async () => {
+  const r = await synced(600);
+  const known = [...r.store.rows.values()][0].facts;
+  const spec = { to: ['maren.ashgrove@mail.example.test'], subject: 'Re: synthetic', text: 'Draft text.', threadId: known.remoteThreadId };
+  const mine = r.emu.mailbox.createDraftElsewhere(spec);
+  r.store.ownDrafts.set(mine.messageId, mine.draftId);
+  const theirs = r.emu.mailbox.createDraftElsewhere({ ...spec, subject: 'Re: from the phone' });
+  await historyPass(r);
+  assert.ok(!r.store.drafts.has(mine.draftId), 'Aplos\'s own save is not news');
+  assert.equal(r.store.drafts.get(theirs.draftId)?.remoteMessageId, theirs.messageId);
+  assert.ok(![...r.store.rows.keys()].includes(mine.messageId), 'and never a thread row');
+});
+
 test('prov-gmail-T41 D3 the cursor advances per history page; a failed page replays only itself', async () => {
   const faults = createFaultInjector();
   const r = await rig({ threads: 600, emulator: { faults } });

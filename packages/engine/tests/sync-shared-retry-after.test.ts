@@ -1,7 +1,7 @@
 // Temporary home: these move next to the shared provider code when the engine restructure lands.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRetryAfter } from '../../../../apps/desktop/src/host/providers/shared/retry-after';
+import { parseRetryAfter } from '../../../apps/desktop/src/host/providers/shared/retry-after';
 
 const NOW = Date.UTC(1994, 10, 6, 8, 49, 0); // Sun, 06 Nov 1994 08:49:00 GMT
 

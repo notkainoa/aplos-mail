@@ -49,6 +49,10 @@ export interface GmailRequest {
   kind?: RequestKind;
   /** The remote item, so a one-item 404 is classified `permanent` with it. */
   item?: string;
+  /** Default GET. Writes (`modify`, `trash`) are POSTs. */
+  httpMethod?: 'GET' | 'POST';
+  /** JSON request body of a POST. */
+  body?: unknown;
 }
 
 export type PartOutcome<T> = { ok: true; data: T } | { ok: false; error: ProviderError };
@@ -132,8 +136,9 @@ export class GmailClient {
         let response: Response;
         try {
           response = await this.deps.fetch(`${API}${this.target(req)}`, {
-            method: 'GET',
-            headers: this.headers(io.accessToken),
+            method: req.httpMethod ?? 'GET',
+            headers: this.headers(io.accessToken, req.body !== undefined ? { 'content-type': 'application/json' } : {}),
+            ...(req.body !== undefined ? { body: JSON.stringify(req.body) } : {}),
             signal: io.signal,
           });
         } catch (error) {
@@ -145,7 +150,8 @@ export class GmailClient {
         if (!response.ok) return fail(googleError(failure));
         let data: T;
         try {
-          data = JSON.parse(text) as T;
+          // `batchModify` answers 204 with no body: success, nothing to parse.
+          data = (text === '' && kind !== 'read' ? undefined : JSON.parse(text)) as T;
         } catch {
           return fail(googleError(failure));
         }

@@ -1,7 +1,7 @@
 // Temporary home: these move next to the shared provider code when the engine restructure lands.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextPacificMidnight } from '../../../../apps/desktop/src/host/providers/shared/pacific';
+import { nextPacificMidnight } from '../../../apps/desktop/src/host/providers/shared/pacific';
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const at = (s: string) => Date.parse(s);

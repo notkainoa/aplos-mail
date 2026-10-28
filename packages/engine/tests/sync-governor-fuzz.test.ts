@@ -9,16 +9,16 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHttpClient, HttpFailure } from '../../../../apps/desktop/src/host/providers/shared/http';
-import { nextPacificMidnight as sharedMidnight } from '../../../../apps/desktop/src/host/providers/shared/pacific';
-import { parseRetryAfter } from '../../../../apps/desktop/src/host/providers/shared/retry-after';
-import { LANES } from '../../src/sync/budgets';
-import { Governor, QUIET_MS, REGROW_INTERVAL_MS, TRANSIENT_TRIES } from '../../src/sync/governor';
-import { nextPacificMidnight as engineMidnight } from '../../src/sync/pacific';
-import {
-  PausedError, ProviderError, type ClassifiedError, type DeviceRole, type ErrorClass, type GovernorSnapshot, type Lane, type RequestKind,
-} from '../../src/sync/types';
-import { ACCOUNT, FakeClock, MINUTE, deferred, maxWindow, refusal, req, seeded, settle, setup } from './governor-helpers';
+import { createHttpClient, HttpFailure } from '../../../apps/desktop/src/host/providers/shared/http';
+import { nextPacificMidnight as sharedMidnight } from '../../../apps/desktop/src/host/providers/shared/pacific';
+import { parseRetryAfter } from '../../../apps/desktop/src/host/providers/shared/retry-after';
+import { LANES } from '../src/sync/budgets';
+import { Governor, QUIET_MS, REGROW_INTERVAL_MS, TRANSIENT_TRIES } from '../src/sync/governor';
+import { nextPacificMidnight as engineMidnight } from '../src/sync/pacific';
+import type { ClassifiedError, ErrorClass } from '@aplos/contract';
+import { PausedError, ProviderError, type GovernorSnapshot, type RequestIo, type RequestKind, type SyncLane as Lane } from '../src/ports';
+import type { DeviceRole } from '../src/sync/governor';
+import { ACCOUNT, FakeClock, MINUTE, deferred, maxWindow, refusal, req, seeded, settle, setup } from './sync-governor-helpers';
 
 const COSTS = [1, 2, 5, 10, 20, 40, 50, 60, 100, 120];
 const KINDS: RequestKind[] = ['read', 'read', 'read', 'idempotentWrite', 'write', 'send'];
@@ -112,7 +112,7 @@ async function fuzz(seed: number, steps = 400): Promise<{ violations: Violation[
   /** After the governor applied a throttle, record the AIMD bound it must respect from now on. */
   const afterThrottle = (g: Gen) => {
     const snap = gmail(g.governor.snapshot(ACCOUNT));
-    aimd = { H: snap.target, q: snap.quietSince ?? clock.now() };
+    aimd = { H: snap.target, q: snap.cooldownUntil ?? clock.now() };
   };
 
   const answer = (kind: RequestKind, now: number): ClassifiedError | 'unclassified' | undefined => {
@@ -142,7 +142,7 @@ async function fuzz(seed: number, steps = 400): Promise<{ violations: Violation[
     let lastFailure: ErrorClass | 'unclassified' | 'aborted' | undefined;
     let leftOnce = false;
     pending++;
-    g.governor.run(ACCOUNT, req(lane, cost, { kind, signal: controller.signal }), async signal => {
+    g.governor.run(ACCOUNT, req(lane, cost, { kind, signal: controller.signal }), async ({ signal }) => {
       const now = clock.now();
       tries++;
       if (!g.alive) { flag('2-call-during-pause', `dead process called fn at ${now}`); throw new Error('dead'); }
@@ -164,7 +164,7 @@ async function fuzz(seed: number, steps = 400): Promise<{ violations: Violation[
       t(`call ${kind}/${lane} ${cost} gen${restarts}`);
       const used = calls.filter(c => now - c.at < MINUTE).reduce((s, c) => s + c.units, 0);
       const snap = gmail(g.governor.snapshot(ACCOUNT));
-      if (used > snap.target) flag('1-window-over-target', `${now - lastRestartAt < MINUTE ? '[within 60 s of a restart] ' : '[no recent restart] '}${used} units in the 60 s window at ${now}, target in force ${snap.target} (governor thinks ${snap.usedInWindow}), restarts so far ${restarts}`);
+      if (used > snap.target) flag('1-window-over-target', `${now - lastRestartAt < MINUTE ? '[within 60 s of a restart] ' : '[no recent restart] '}${used} units in the 60 s window at ${now}, target in force ${snap.target} (governor thinks ${g.governor.inspect(ACCOUNT, 'gmail').used}), restarts so far ${restarts}`);
       if (used > ROLE_TARGET[role]) flag('1-window-over-target', `${used} units over role target ${ROLE_TARGET[role]} (${role})`);
       const bound = Math.min(ROLE_TARGET[role], aimdBound(now));
       if (snap.target > bound) flag('1b-target-above-aimd-bound', `target ${snap.target} > AIMD bound ${bound} at ${now} (H ${aimd?.H}, q ${aimd?.q}), role ${role}, restarts ${restarts}`);
@@ -184,7 +184,7 @@ async function fuzz(seed: number, steps = 400): Promise<{ violations: Violation[
       const a = answer(kind, clock.now());
       if (a === undefined) return;
       if (a === 'unclassified') { lastFailure = 'unclassified'; throw new Error('socket hang up'); }
-      lastFailure = a.class;
+      lastFailure = a.class as ErrorClass;
       learn(g, a);
       t(`fn answer ${kind} ${a.class} ra=${a.retryAfterMs} -> model ${JSON.stringify(model)}`);
       const err = new ProviderError(a);
@@ -221,7 +221,7 @@ async function fuzz(seed: number, steps = 400): Promise<{ violations: Violation[
       gen.governor.setRole(ACCOUNT, role);
     } else if (roll < 0.85 && model.stopped) {
       model.stopped = false;
-      gen.governor.resume(ACCOUNT, 'gmail');
+      gen.governor.clear(ACCOUNT, 'auth');
     } else if (roll < 0.88) {
       // Crash and restart: the new process sees only what onChange persisted.
       restarts++;
@@ -237,7 +237,7 @@ async function fuzz(seed: number, steps = 400): Promise<{ violations: Violation[
     } else if (gen.controllers.length) pick(gen.controllers).abort(new Error('caller'));
   }
   for (let i = 0; i < 200 && pending > 0; i++) {
-    if (model.stopped) { model.stopped = false; gen.governor.resume(ACCOUNT, 'gmail'); }
+    if (model.stopped) { model.stopped = false; gen.governor.clear(ACCOUNT, 'auth'); }
     await clock.advance(3_600_000);
   }
   if (pending > 0) flag('liveness', `${pending} runs never settled`);
@@ -316,7 +316,7 @@ test('repro 3b: a throttle on a sibling aborts an in-flight send and reports it 
   const answered = deferred();
   let sendSignal: AbortSignal | undefined;
   // The send goes through http.ts, which ties fetch to the signal it is given.
-  const send = governor.run(ACCOUNT, req('interactive', 100, { kind: 'send', method: 'gmail.messages.send' }), async signal => {
+  const send = governor.run(ACCOUNT, req('interactive', 100, { kind: 'send', method: 'gmail.messages.send' }), async ({ signal }) => {
     sendSignal = signal;
     bytesLeft.resolve();
     await new Promise<void>((resolve, reject) => {
@@ -368,7 +368,7 @@ test('repro 1b: a role flip primary -> secondary -> primary forgets the AIMD hal
 test('repro 1b: restore double-counts AIMD regrowth', async () => {
   const { clock, governor } = setup({ auto: false });
   governor.observe(ACCOUNT, 'gmail', refusal('throttle', { status: 429 }).error);
-  const q = gmail(governor.snapshot(ACCOUNT)).quietSince!;
+  const q = gmail(governor.snapshot(ACCOUNT)).cooldownUntil!;
   await clock.advanceTo(q + QUIET_MS + 4 * MINUTE); // 5 regrowth steps: 2,250 + 1,250 = 3,500
   const before = governor.snapshot(ACCOUNT);
   assert.equal(gmail(before).target, 3_500);
@@ -397,7 +397,7 @@ test('by hand: auth stop then daily: after resume the remaining daily stop is la
   const { governor } = setup({ auto: false });
   governor.observe(ACCOUNT, 'gmail', refusal('daily', { reason: 'dailyLimitExceeded' }).error);
   governor.observe(ACCOUNT, 'gmail', refusal('auth').error);
-  governor.resume(ACCOUNT, 'gmail');
+  governor.clear(ACCOUNT, 'auth');
   const adm = governor.admission(ACCOUNT, 'gmail', 'interactive');
   assert.ok(!adm.ok);
   assert.equal(adm.ok ? '' : `${adm.cls}/${adm.reason}`, 'daily/dailyLimitExceeded');
@@ -423,7 +423,7 @@ test('by hand: invalid_grant does not loop', async () => {
 test('by hand: concurrency refusal with three in flight, then cooldown: never two in flight', async () => {
   const { clock, governor } = setup({ auto: false });
   let running = 0; let peak = 0; let afterRefusal = false;
-  const body = (fail: boolean) => async (signal: AbortSignal) => {
+  const body = (fail: boolean) => async ({ signal }: RequestIo) => {
     running++; if (afterRefusal) peak = Math.max(peak, running);
     try { await clock.sleep(500, signal); } finally { running--; }
     if (fail) { afterRefusal = true; throw refusal('throttle', { status: 429, concurrency: true }); }

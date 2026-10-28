@@ -1,5 +1,8 @@
-import type { Clock } from '../../../../../../packages/engine/src/sync/types';
+import type { Clock as PortClock } from '@aplos/engine/ports';
 import { parseRetryAfter } from './retry-after';
+
+/** The client only waits (timeouts); it never arms a timer through `Clock.timer`. */
+type Clock = Pick<PortClock, 'now' | 'sleep'>;
 
 /**
  * The one HTTP door for provider adapters.

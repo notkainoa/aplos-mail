@@ -328,8 +328,7 @@ test('prov-gmail parts owned by other lanes are typed not-in-this-lane stubs', a
   const adapter: ProviderAdapter = factory.open(ACCOUNT);
   await assert.rejects(adapter.send({} as never, {} as never), NotImplementedError);
   await assert.rejects(adapter.findSent('x', 0, {} as never), NotInThisLaneError);
-  await assert.rejects(adapter.apply({} as never, {} as never), NotInThisLaneError);
-  assert.throws(() => adapter.coalesce([]), NotInThisLaneError);
+  assert.deepEqual(adapter.coalesce([]), [], 'ops are built (prov-gmail-ops.test.ts)');
   assert.throws(() => adapter.syncStep({ scope: 'workflow', lane: 'enrichment', origin: 'workflow', trigger: 'poll' }, st('workflow'), {} as never), NotInThisLaneError);
   assert.equal(adapter.workflow, undefined);
   assert.equal(adapter.calendar, undefined);

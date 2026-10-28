@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COOLDOWN_STEPS_MS } from '../../src/sync/governor';
-import { nextPacificMidnight } from '../../src/sync/pacific';
-import { PausedError, ProviderError, type GovernorSnapshot } from '../../src/sync/types';
-import { ACCOUNT, MINUTE, deferred, maxWindow, refusal, req, settle, setup } from './governor-helpers';
+import { COOLDOWN_STEPS_MS } from '../src/sync/governor';
+import { nextPacificMidnight } from '../src/sync/pacific';
+import { PausedError, PROJECT, ProviderError, type GovernorSnapshot, type RequestIo } from '../src/ports';
+import { ACCOUNT, MINUTE, deferred, maxWindow, refusal, req, settle, setup } from './sync-governor-helpers';
 
 const gmail = (snaps: GovernorSnapshot[]) => snaps.find(s => s.budget === 'gmail')!;
 const throwing = (error: unknown) => async () => { throw error; };
@@ -47,7 +47,8 @@ test('AIMD halves the target to a floor of 1,000 and regrows 250 a minute only a
     await clock.advanceTo(snap.cooldownUntil!);
   }
   assert.deepEqual(targets, [2_250, 1_125, 1_000]);
-  const quietSince = gmail(governor.snapshot(ACCOUNT)).quietSince!;
+  // The cooldown's end stays in the snapshot as the start of the quiet period (what a restart regrows from).
+  const quietSince = gmail(governor.snapshot(ACCOUNT)).cooldownUntil!;
   assert.equal(quietSince, clock.now());
   await clock.advance(10 * MINUTE - 1);
   assert.equal(gmail(governor.snapshot(ACCOUNT)).target, 1_000);
@@ -117,11 +118,12 @@ test('the next Pacific midnight, across both daylight-saving changes', () => {
   assert.equal(nextPacificMidnight(Date.UTC(2026, 2, 8, 19)), Date.UTC(2026, 2, 9, 7)); // Mar 8 12:00 PDT
 });
 
-test('a concurrency refusal drops in-flight to 1 until 10 quiet minutes pass', async () => {
+// Corrected for the frozen F3 port: the limit grows back by 1 per 10 quiet minutes (BudgetSpec.inFlight), not all at once.
+test('prov-gov-T18 a concurrency refusal drops in-flight to 1, then regrows one slot per 10 quiet minutes', async () => {
   const { clock, governor } = setup({ auto: false });
   await assert.rejects(governor.run(ACCOUNT, req('interactive', 10), throwing(refusal('throttle', { status: 429, reason: 'concurrentLimitExceeded', concurrency: true }))));
   const end = gmail(governor.snapshot(ACCOUNT)).cooldownUntil!;
-  assert.equal(gmail(governor.snapshot(ACCOUNT)).inFlightCap, 1);
+  assert.equal(gmail(governor.snapshot(ACCOUNT)).inFlightLimit, 1);
   await clock.advanceTo(end);
 
   const measure = async () => {
@@ -139,8 +141,13 @@ test('a concurrency refusal drops in-flight to 1 until 10 quiet minutes pass', a
     return peak;
   };
   assert.equal(await measure(), 1);
+  await clock.advanceTo(end + 10 * MINUTE - 1);
+  assert.equal(gmail(governor.snapshot(ACCOUNT)).inFlightLimit, 1);
   await clock.advanceTo(end + 10 * MINUTE);
-  assert.equal(gmail(governor.snapshot(ACCOUNT)).inFlightCap, undefined);
+  assert.equal(gmail(governor.snapshot(ACCOUNT)).inFlightLimit, 2);
+  assert.equal(await measure(), 2);
+  await clock.advanceTo(end + 20 * MINUTE);
+  assert.equal(gmail(governor.snapshot(ACCOUNT)).inFlightLimit, 3);
   assert.equal(await measure(), 3);
 });
 
@@ -153,7 +160,7 @@ test('a transient failure of a read is retried after 1 s and 2 s, three tries in
   assert.equal(error.error.class, 'transient');
   assert.deepEqual(at, [0, 1_000, 3_000]);
   assert.equal(logs.filter(l => l.event === 'governor.admitted').length, 3);
-  assert.equal(gmail(governor.snapshot(ACCOUNT)).usedInWindow, 6);
+  assert.equal(governor.inspect(ACCOUNT, 'gmail').used, 6);
 
   let tries = 0;
   const value = await governor.run(ACCOUNT, req('opFlush', 5, { kind: 'idempotentWrite' }), async () => {
@@ -212,18 +219,19 @@ test('a permission refusal is rethrown and leaves the budget running', async () 
   assert.equal(calls, 2);
 });
 
-test('auth and config failures stop the budget until resume', async () => {
+test('auth and config failures stop the budget until clear', async () => {
   for (const cls of ['auth', 'config'] as const) {
     const { governor } = setup({ auto: false });
     let calls = 0;
     await assert.rejects(governor.run(ACCOUNT, req('incremental', 2), async () => { calls++; throw refusal(cls); }), ProviderError);
     const paused = await governor.run(ACCOUNT, req('interactive', 2), async () => { calls++; }).catch(e => e);
     assert.ok(paused instanceof PausedError);
-    assert.equal(paused.until, Infinity);
+    assert.equal(paused.until, undefined);
+    assert.equal(paused.account, cls === 'config' ? PROJECT : ACCOUNT);
     assert.equal(paused.cls, cls);
     assert.equal(calls, 1);
     assert.equal(governor.admission(ACCOUNT, 'gmail', 'interactive').ok, false);
-    governor.resume(ACCOUNT, 'gmail');
+    governor.clear(cls === 'config' ? PROJECT : ACCOUNT, cls);
     assert.deepEqual(governor.admission(ACCOUNT, 'gmail', 'interactive'), { ok: true });
     await governor.run(ACCOUNT, req('interactive', 2), async () => { calls++; });
     assert.equal(calls, 2);
@@ -233,7 +241,7 @@ test('auth and config failures stop the budget until resume', async () => {
 test('a pause aborts in-flight siblings and rejects queued requests without calling them', async () => {
   const { governor } = setup({ auto: false });
   const signals: AbortSignal[] = [];
-  const untilAborted = async (signal: AbortSignal) => {
+  const untilAborted = async ({ signal }: RequestIo) => {
     signals.push(signal);
     await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
   };
@@ -249,7 +257,7 @@ test('a pause aborts in-flight siblings and rejects queued requests without call
     governor.run(ACCOUNT, req('interactive', 10), async () => { queuedCalls++; }),
   ];
   await settle();
-  assert.equal(gmail(governor.snapshot(ACCOUNT)).inFlight, 3);
+  assert.equal(governor.inspect(ACCOUNT, 'gmail').inFlight, 3);
   trigger.resolve();
   await assert.rejects(failing, ProviderError);
   for (const run of [...siblings, ...queued]) {
@@ -259,7 +267,7 @@ test('a pause aborts in-flight siblings and rejects queued requests without call
   }
   assert.equal(queuedCalls, 0);
   assert.ok(signals.every(s => s.aborted));
-  assert.equal(gmail(governor.snapshot(ACCOUNT)).inFlight, 0);
+  assert.equal(governor.inspect(ACCOUNT, 'gmail').inFlight, 0);
 });
 
 test('observe applies a refusal found inside a successful batch', async () => {
@@ -288,25 +296,27 @@ test('restore with an active cooldown makes zero calls until it ends', async () 
   assert.equal(calls, 0);
   const restored = gmail(second.governor.snapshot(ACCOUNT));
   assert.equal(restored.target, 2_250);
-  assert.equal(restored.inFlightCap, 1);
+  assert.equal(restored.inFlightLimit, 1);
   assert.equal(restored.cooldownStep, 1);
   await second.clock.advanceTo(saved[0].cooldownUntil!);
   await second.governor.run(ACCOUNT, req('interactive', 1), async () => { calls++; });
   assert.equal(calls, 1);
 });
 
-test('restore keeps a stop until resume and re-charges the saved window', async () => {
+test('restore keeps an auth block until clear and re-charges the saved window', async () => {
   const { clock, governor } = setup({ auto: false });
-  governor.restore(ACCOUNT, [{ budget: 'gmail', target: 4_500, usedInWindow: 4_400, inFlight: 2, cooldownStep: 0 }]);
+  governor.restore(ACCOUNT, [{ budget: 'gmail', target: 4_500, inFlightLimit: 3, batchSize: 10, windowSpent: 4_400, windowAt: clock.now(), cooldownStep: 0 }]);
   let at = 0;
   const run = governor.run(ACCOUNT, req('interactive', 200), async () => { at = clock.now(); });
   await clock.advance(MINUTE);
   await run;
   assert.equal(at, clock.now());
 
-  governor.restore(ACCOUNT, [{ budget: 'gmail', target: 4_500, usedInWindow: 0, inFlight: 0, cooldownStep: 0, cls: 'auth', reason: 'invalid_grant' }]);
+  governor.restore(ACCOUNT, [{ budget: 'gmail', target: 4_500, inFlightLimit: 3, batchSize: 10, windowSpent: 0, windowAt: 0, cooldownStep: 0, blocked: { cls: 'auth', since: clock.now() }, cls: 'auth', reason: 'invalid_grant' }]);
   assert.equal(governor.admission(ACCOUNT, 'gmail', 'interactive').ok, false);
-  governor.resume(ACCOUNT, 'gmail');
+  // An auth block is the account's: the restored block covers every budget, token calls included.
+  assert.equal(governor.admission(ACCOUNT, 'oauth', 'interactive').ok, false);
+  governor.clear(ACCOUNT, 'auth');
   assert.equal(governor.admission(ACCOUNT, 'gmail', 'interactive').ok, true);
 });
 
@@ -329,7 +339,7 @@ test('onChange reports pauses and target changes, not every request; logs carry 
   await clock.advance(MINUTE);
   governor.admission(ACCOUNT, 'gmail', 'interactive');
   assert.equal(changes.length, 3);
-  assert.equal(changes[2].cooldownUntil, undefined);
+  assert.equal(changes[2].cls, undefined);
   off();
 
   const allowed = new Set(['account', 'budget', 'lane', 'method', 'units', 'waitMs', 'cls', 'reason', 'status']);

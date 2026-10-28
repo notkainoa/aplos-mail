@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Governor } from '../../src/sync/governor';
-import type { Lane } from '../../src/sync/types';
-import { ACCOUNT, FakeClock, MINUTE, maxWindow, refusal, req } from './governor-helpers';
+import { Governor } from '../src/sync/governor';
+import type { SyncLane as Lane } from '../src/ports';
+import { ACCOUNT, FakeClock, MINUTE, maxWindow, refusal, req } from './sync-governor-helpers';
 
 /** A stand-in for Google's per-user meter: 6,000 units in any 60 s, shared by every device. */
 class SharedMeter {
