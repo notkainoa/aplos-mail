@@ -4,8 +4,20 @@ import type { StorePort } from '../store/port';
 import type { AccountId, Admission, DeviceId, ProviderKind } from './base';
 import type { GovernorPort, RequestIo } from './governor';
 import type {
-  AttachmentRef, Capabilities, ConnectRequest, ConnectResult, DraftSaveResult, DraftUpload, FindSentResult, OpenedThread,
-  PlanEnv, ProviderFactory, ScopeId, SendReceipt, ServerSearch, SubmissionPayload,
+  AttachmentRef,
+  Capabilities,
+  ConnectRequest,
+  ConnectResult,
+  DraftSaveResult,
+  DraftUpload,
+  FindSentResult,
+  OpenedThread,
+  PlanEnv,
+  ProviderFactory,
+  ScopeId,
+  SendReceipt,
+  ServerSearch,
+  SubmissionPayload,
 } from './provider';
 import type { Clock, DeadlineRegistry } from './time';
 
@@ -24,9 +36,16 @@ export interface ProviderPort {
    * `knownCount` is the server-reported size (`threads.remote_count`, from `MessageFacts.threadSize`), never the local
    * `msg_count`: a 5-message thread with 1 message stored must not be opened with the 1-message call.
    */
-  openThread(account: AccountId, remoteThreadId: string, opts?: { knownCount?: number; lane?: 'interactive' | 'prefetch' }): Promise<OpenedThread>;
+  openThread(
+    account: AccountId,
+    remoteThreadId: string,
+    opts?: { knownCount?: number; lane?: 'interactive' | 'prefetch' },
+  ): Promise<OpenedThread>;
   /** Server search on Enter; rows are committed with `origin='search'` and the ranked thread ids returned. */
-  search(account: AccountId, query: ServerSearch): Promise<{ remoteThreadIds: string[]; nextPageToken?: string }>;
+  search(
+    account: AccountId,
+    query: ServerSearch,
+  ): Promise<{ remoteThreadIds: string[]; nextPageToken?: string }>;
   attachment(account: AccountId, ref: AttachmentRef): Promise<AsyncIterable<Uint8Array>>;
 }
 
@@ -43,7 +62,13 @@ export interface AccountRuntime extends AccountHealth {
   /** "Background work runs on: <Mac>" (ARCH 6.5). */
   lease?: { role: 'primary' | 'secondary'; holder?: DeviceId; until?: number };
   /** Calendar pauses show per calendar, never as the mail status (D12). */
-  calendars?: { remoteId: string; state: 'ok' | 'paused' | 'error'; until?: number; reason?: string; reasonCode?: ReasonCode }[];
+  calendars?: {
+    remoteId: string;
+    state: 'ok' | 'paused' | 'error';
+    until?: number;
+    reason?: string;
+    reasonCode?: ReasonCode;
+  }[];
 }
 
 /**

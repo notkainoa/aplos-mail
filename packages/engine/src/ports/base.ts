@@ -12,7 +12,8 @@ export type ProviderKind = 'google' | 'microsoft' | 'imap' | 'jmap';
  * The six sync lanes, highest priority first (ARCH 4.1). Named `SyncLane` because Home's `do|update|low` is also
  * called a lane (`HomeLane`, `laneFor`). AI is never a sync lane; it has its own budgets (`ai:*`).
  */
-export type SyncLane = 'interactive' | 'opFlush' | 'incremental' | 'prefetch' | 'backfill' | 'enrichment';
+export type SyncLane =
+  'interactive' | 'opFlush' | 'incremental' | 'prefetch' | 'backfill' | 'enrichment';
 
 /**
  * What a governed call may do to remote state, which decides whether the governor may ever re-send it (ARCH 6.3).
@@ -24,7 +25,8 @@ export type RequestKind = 'read' | 'idempotentWrite' | 'write' | 'send';
  * One rate budget, the `governor_state.budget` value. `oauth` is the token endpoint; `imapBytes` the daily byte cap
  * charged after each FETCH; `ai:<provider>:<model>` belongs to `eng-ai`'s governor, which shares the base class.
  */
-export type BudgetId = 'gmail' | 'gcal' | 'graph' | 'imap' | 'imapBytes' | 'jmap' | 'caldav' | 'oauth' | `ai:${string}`;
+export type BudgetId =
+  'gmail' | 'gcal' | 'graph' | 'imap' | 'imapBytes' | 'jmap' | 'caldav' | 'oauth' | `ai:${string}`;
 
 /** `governor_state.account_id` for project-wide blocks: `config`, and Gmail `dailyLimitExceeded` (a per-project limit). */
 export const PROJECT = '*';
@@ -32,8 +34,7 @@ export type ProjectScope = typeof PROJECT;
 
 /** The governor's no-I/O answer to "may this go out now?" (`Sync/request`, the timer loop and `SendPort` ask first). */
 export type Admission =
-  | { ok: true }
-  | { ok: false; cls: ErrorClass; reason: string; until?: number };
+  { ok: true } | { ok: false; cls: ErrorClass; reason: string; until?: number };
 
 /**
  * A refusal or failure from a provider call, classified by the adapter's classifier (plan 20 section 3.3).
@@ -42,7 +43,12 @@ export type Admission =
  */
 export class ProviderError extends Error {
   override readonly name = 'ProviderError';
-  constructor(readonly error: ClassifiedError, readonly scope: 'account' | 'project' = 'account') { super(error.reason); }
+  constructor(
+    readonly error: ClassifiedError,
+    readonly scope: 'account' | 'project' = 'account',
+  ) {
+    super(error.reason);
+  }
 }
 
 /**
@@ -53,7 +59,15 @@ export class ProviderError extends Error {
  */
 export class PausedError extends Error {
   override readonly name = 'PausedError';
-  constructor(readonly account: AccountId | ProjectScope, readonly budget: BudgetId, readonly cls: ErrorClass, readonly reason: string, readonly until?: number) { super(`paused: ${reason}`); }
+  constructor(
+    readonly account: AccountId | ProjectScope,
+    readonly budget: BudgetId,
+    readonly cls: ErrorClass,
+    readonly reason: string,
+    readonly until?: number,
+  ) {
+    super(`paused: ${reason}`);
+  }
 }
 
 /**
@@ -63,5 +77,7 @@ export class PausedError extends Error {
  */
 export class NotSentError extends Error {
   override readonly name = 'NotSentError';
-  constructor(readonly error: ClassifiedError) { super(error.reason); }
+  constructor(readonly error: ClassifiedError) {
+    super(error.reason);
+  }
 }

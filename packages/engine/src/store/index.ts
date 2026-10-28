@@ -28,14 +28,18 @@ const DEFAULT_PAGE = 1000;
 export function openStore(db: SqlDatabase, options: OpenStoreOptions = {}): StorePort {
   const now = options.now ?? Date.now;
   const random = options.randomBytes ?? (n => globalThis.crypto.getRandomValues(new Uint8Array(n)));
-  const { to } = migrate(db, options.migrations ?? MIGRATIONS, { now, beforeUpgrade: options.beforeUpgrade });
+  const { to } = migrate(db, options.migrations ?? MIGRATIONS, {
+    now,
+    beforeUpgrade: options.beforeUpgrade,
+  });
   const cache = new Map<string, SqlStatement>();
   const stmt = (sql: string) => {
     let s = cache.get(sql);
-    if (!s) cache.set(sql, s = db.prepare(sql));
+    if (!s) cache.set(sql, (s = db.prepare(sql)));
     return s;
   };
-  const meta = (key: string) => stmt('SELECT value FROM meta WHERE key = ?').get<{ value: string }>(key)?.value;
+  const meta = (key: string) =>
+    stmt('SELECT value FROM meta WHERE key = ?').get<{ value: string }>(key)?.value;
   transaction(db, () => {
     if (meta('db_epoch') !== undefined) return;
     const put = stmt('INSERT INTO meta(key, value) VALUES(?, ?)');
@@ -58,24 +62,41 @@ export function openStore(db: SqlDatabase, options: OpenStoreOptions = {}): Stor
     seq,
     commit: input => applyCommit({ db, dbEpoch, now, stmt }, input),
     changesSince(since, { limit = DEFAULT_PAGE } = {}): ChangesSince {
-      const floorSeq = Number(meta('change_floor_seq')), current = seq();
-      if (!Number.isSafeInteger(since) || since < floorSeq || since > current) return { status: 'cannotCalculateChanges', floorSeq, seq: current };
+      const floorSeq = Number(meta('change_floor_seq')),
+        current = seq();
+      if (!Number.isSafeInteger(since) || since < floorSeq || since > current)
+        return { status: 'cannotCalculateChanges', floorSeq, seq: current };
       const page = Math.max(1, Math.trunc(limit));
-      const changes = stmt('SELECT seq, type, id, op FROM changes WHERE seq > ? ORDER BY seq, type, id LIMIT ?').all<Change & Record<string, string | number>>(since, page + 1);
-      if (changes.length <= page) return { status: 'ok', fromSeq: since, toSeq: current, hasMore: false, changes };
+      const changes = stmt(
+        'SELECT seq, type, id, op FROM changes WHERE seq > ? ORDER BY seq, type, id LIMIT ?',
+      ).all<Change & Record<string, string | number>>(since, page + 1);
+      if (changes.length <= page)
+        return { status: 'ok', fromSeq: since, toSeq: current, hasMore: false, changes };
       // Never split a commit: finish the last seq on this page, then report whether later commits remain.
       changes.length = page;
       const last = changes[page - 1];
-      changes.push(...stmt('SELECT seq, type, id, op FROM changes WHERE seq = ? AND (type, id) > (?, ?) ORDER BY type, id').all<Change & Record<string, string | number>>(last.seq, last.type, last.id));
-      const hasMore = stmt('SELECT 1 FROM changes WHERE seq > ? LIMIT 1').get(last.seq) !== undefined;
-      return { status: 'ok', fromSeq: since, toSeq: hasMore ? last.seq : current, hasMore, changes };
+      changes.push(
+        ...stmt(
+          'SELECT seq, type, id, op FROM changes WHERE seq = ? AND (type, id) > (?, ?) ORDER BY type, id',
+        ).all<Change & Record<string, string | number>>(last.seq, last.type, last.id),
+      );
+      const hasMore =
+        stmt('SELECT 1 FROM changes WHERE seq > ? LIMIT 1').get(last.seq) !== undefined;
+      return {
+        status: 'ok',
+        fromSeq: since,
+        toSeq: hasMore ? last.seq : current,
+        hasMore,
+        changes,
+      };
     },
     read(fn) {
       // query_only makes the "commit is the only write path" rule hold at runtime, not just in the types.
       db.exec('PRAGMA query_only=1');
       try {
         const result = fn(reader);
-        if (result && typeof (result as { then?: unknown }).then === 'function') throw new Error('store.read() callbacks must be synchronous');
+        if (result && typeof (result as { then?: unknown }).then === 'function')
+          throw new Error('store.read() callbacks must be synchronous');
         return result;
       } finally {
         db.exec('PRAGMA query_only=0');
@@ -85,7 +106,9 @@ export function openStore(db: SqlDatabase, options: OpenStoreOptions = {}): Stor
   };
 }
 
-function hex(bytes: Uint8Array) { return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join(''); }
+function hex(bytes: Uint8Array) {
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
 
 /** RFC 4122 version 4 from 16 random bytes. */
 function uuid(b: Uint8Array) {

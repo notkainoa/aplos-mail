@@ -1,7 +1,14 @@
 import type { ClassifiedError } from '@aplos/contract';
 // The zod-free half of the catalog: the Logger enforces each kind itself, so logging pulls no validator into the bundle.
 import { logEvents, logLevels } from '@aplos/contract/log/events';
-import type { LogContext, LogEventId, LogFieldSpec, LogFields, LogLevel, LogRecord } from '@aplos/contract/log/events';
+import type {
+  LogContext,
+  LogEventId,
+  LogFieldSpec,
+  LogFields,
+  LogLevel,
+  LogRecord,
+} from '@aplos/contract/log/events';
 import { cleanCode, cleanId, cleanScope, hashAddress, redactText } from './redact';
 
 /**
@@ -19,7 +26,9 @@ export interface Logger {
 }
 
 /** Where finished lines go. Must not throw; the Logger catches it anyway and counts a failure. */
-export interface LogSink { write(record: LogRecord): void }
+export interface LogSink {
+  write(record: LogRecord): void;
+}
 
 export interface LoggerStats {
   lines: number;
@@ -29,7 +38,9 @@ export interface LoggerStats {
   failures: number;
 }
 
-export interface RootLogger extends Logger { stats(): LoggerStats }
+export interface RootLogger extends Logger {
+  stats(): LoggerStats;
+}
 
 export interface LoggerOptions {
   sink: LogSink;
@@ -41,23 +52,42 @@ export interface LoggerOptions {
 }
 
 const rank = (level: LogLevel) => logLevels.indexOf(level);
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
-const nonNegative = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+const nonNegative = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 /** Reads an own property without letting a getter or proxy trap throw into the caller. */
-function read(source: Record<string, unknown>, key: string): { ok: true; value: unknown } | { ok: false } {
-  try { return { ok: true, value: Object.prototype.hasOwnProperty.call(source, key) ? source[key] : undefined }; }
-  catch { return { ok: false }; }
+function read(
+  source: Record<string, unknown>,
+  key: string,
+): { ok: true; value: unknown } | { ok: false } {
+  try {
+    return {
+      ok: true,
+      value: Object.prototype.hasOwnProperty.call(source, key) ? source[key] : undefined,
+    };
+  } catch {
+    return { ok: false };
+  }
 }
 
 function ownKeys(source: Record<string, unknown>): string[] {
-  try { return Object.keys(source); } catch { return []; }
+  try {
+    return Object.keys(source);
+  } catch {
+    return [];
+  }
 }
 
 /** The ClassifiedError keys the Logger reads, each with its treatment. Anything else on the object (a `cause`, a `stack`, a body) is never read. */
 function cleanError(value: unknown, salt: string, drop: () => void): ClassifiedError | undefined {
   if (!isObject(value)) return undefined;
-  const get = (key: string) => { const r = read(value, key); if (!r.ok) drop(); return r.ok ? r.value : undefined; };
+  const get = (key: string) => {
+    const r = read(value, key);
+    if (!r.ok) drop();
+    return r.ok ? r.value : undefined;
+  };
   const code = (key: string) => {
     const raw = get(key);
     if (raw === undefined) return undefined;
@@ -65,48 +95,88 @@ function cleanError(value: unknown, salt: string, drop: () => void): ClassifiedE
     if (clean === undefined) drop();
     return clean;
   };
-  const known = new Set(['class', 'provider', 'method', 'reason', 'status', 'code', 'retryAfterMs', 'resumeAt', 'concurrency', 'uncertain', 'missingScopes', 'item', 'providerMessage']);
+  const known = new Set([
+    'class',
+    'provider',
+    'method',
+    'reason',
+    'status',
+    'code',
+    'retryAfterMs',
+    'resumeAt',
+    'concurrency',
+    'uncertain',
+    'missingScopes',
+    'item',
+    'providerMessage',
+  ]);
   for (const key of ownKeys(value)) if (!known.has(key)) drop();
 
-  const out: ClassifiedError = { class: code('class') ?? 'unknown', provider: code('provider') ?? 'unknown', method: code('method') ?? 'unknown', reason: code('reason') ?? 'unknown' };
+  const out: ClassifiedError = {
+    class: code('class') ?? 'unknown',
+    provider: code('provider') ?? 'unknown',
+    method: code('method') ?? 'unknown',
+    reason: code('reason') ?? 'unknown',
+  };
   const status = get('status');
-  if (Number.isInteger(status) && (status as number) >= 0 && (status as number) < 1000) out.status = status as number; else if (status !== undefined) drop();
+  if (Number.isInteger(status) && (status as number) >= 0 && (status as number) < 1000)
+    out.status = status as number;
+  else if (status !== undefined) drop();
   const providerCode = code('code');
   if (providerCode !== undefined) out.code = providerCode;
   for (const key of ['retryAfterMs', 'resumeAt'] as const) {
     const n = get(key);
-    if (nonNegative(n)) out[key] = n as number; else if (n !== undefined) drop();
+    if (nonNegative(n)) out[key] = n as number;
+    else if (n !== undefined) drop();
   }
   for (const key of ['concurrency', 'uncertain'] as const) {
     const b = get(key);
-    if (typeof b === 'boolean') out[key] = b; else if (b !== undefined) drop();
+    if (typeof b === 'boolean') out[key] = b;
+    else if (b !== undefined) drop();
   }
   const scopes = get('missingScopes');
   if (Array.isArray(scopes)) {
-    const clean = scopes.slice(0, 20).map(cleanScope).filter((s): s is string => s !== undefined);
+    const clean = scopes
+      .slice(0, 20)
+      .map(cleanScope)
+      .filter((s): s is string => s !== undefined);
     if (clean.length < Math.min(scopes.length, 20)) drop();
     out.missingScopes = clean;
   } else if (scopes !== undefined) drop();
   // A remote item id is the provider's, not ours: hashed like an address so lines still correlate.
   const item = get('item');
-  if (typeof item === 'string' && item.length <= 512) out.item = hashAddress(salt, item); else if (item !== undefined) drop();
+  if (typeof item === 'string' && item.length <= 512) out.item = hashAddress(salt, item);
+  else if (item !== undefined) drop();
   const message = get('providerMessage');
-  if (typeof message === 'string') out.providerMessage = redactText(message, salt); else if (message !== undefined) drop();
+  if (typeof message === 'string') out.providerMessage = redactText(message, salt);
+  else if (message !== undefined) drop();
   return out;
 }
 
 /** One field through its kind's treatment; undefined means refused. */
 function cleanField(spec: LogFieldSpec, value: unknown, salt: string, drop: () => void): unknown {
   switch (spec.kind) {
-    case 'count': return Number.isSafeInteger(value) && (value as number) >= 0 ? value : undefined;
-    case 'duration': case 'time': return nonNegative(value) ? value : undefined;
-    case 'bool': return typeof value === 'boolean' ? value : undefined;
-    case 'id': return cleanId(value);
-    case 'code': return cleanCode(value);
-    case 'enum': return typeof value === 'string' && spec.values?.includes(value) ? value : undefined;
-    case 'address': return typeof value === 'string' && value.length <= 512 ? hashAddress(salt, value) : undefined;
-    case 'text': return typeof value === 'string' ? redactText(value, salt) : undefined;
-    case 'error': return cleanError(value, salt, drop);
+    case 'count':
+      return Number.isSafeInteger(value) && (value as number) >= 0 ? value : undefined;
+    case 'duration':
+    case 'time':
+      return nonNegative(value) ? value : undefined;
+    case 'bool':
+      return typeof value === 'boolean' ? value : undefined;
+    case 'id':
+      return cleanId(value);
+    case 'code':
+      return cleanCode(value);
+    case 'enum':
+      return typeof value === 'string' && spec.values?.includes(value) ? value : undefined;
+    case 'address':
+      return typeof value === 'string' && value.length <= 512
+        ? hashAddress(salt, value)
+        : undefined;
+    case 'text':
+      return typeof value === 'string' ? redactText(value, salt) : undefined;
+    case 'error':
+      return cleanError(value, salt, drop);
   }
 }
 
@@ -124,26 +194,40 @@ function cleanContext(context: unknown): LogContext {
 export function createLogger({ sink, salt, clock, level = 'info' }: LoggerOptions): RootLogger {
   const stats: LoggerStats = { lines: 0, droppedFields: 0, failures: 0 };
   const min = rank(level);
-  const events: Record<string, { level: LogLevel; fields: Record<string, LogFieldSpec> }> = logEvents;
+  const events: Record<string, { level: LogLevel; fields: Record<string, LogFieldSpec> }> =
+    logEvents;
 
   function write(context: LogContext, id: string, fields: unknown) {
     try {
       const spec = Object.prototype.hasOwnProperty.call(events, id) ? events[id] : undefined;
-      if (!spec || !isObject(fields)) { stats.failures++; return; }
+      if (!spec || !isObject(fields)) {
+        stats.failures++;
+        return;
+      }
       if (rank(spec.level) < min) return;
       let dropped = 0;
-      const drop = () => { dropped++; };
+      const drop = () => {
+        dropped++;
+      };
       const data: Record<string, unknown> = {};
-      for (const key of ownKeys(fields)) if (!Object.prototype.hasOwnProperty.call(spec.fields, key)) drop();
+      for (const key of ownKeys(fields))
+        if (!Object.prototype.hasOwnProperty.call(spec.fields, key)) drop();
       for (const [key, fieldSpec] of Object.entries(spec.fields)) {
         const raw = read(fields, key);
-        if (!raw.ok) { drop(); continue; }
+        if (!raw.ok) {
+          drop();
+          continue;
+        }
         if (raw.value === undefined) continue;
         const clean = cleanField(fieldSpec, raw.value, salt, drop);
-        if (clean !== undefined) data[key] = clean; else drop();
+        if (clean !== undefined) data[key] = clean;
+        else drop();
       }
       const record: LogRecord = { t: clock.now(), level: spec.level, event: id, ...context, data };
-      if (dropped) { record.dropped = dropped; stats.droppedFields += dropped; }
+      if (dropped) {
+        record.dropped = dropped;
+        stats.droppedFields += dropped;
+      }
       sink.write(record);
       stats.lines++;
     } catch {

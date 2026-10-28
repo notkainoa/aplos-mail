@@ -1,6 +1,20 @@
 import * as z from 'zod/mini';
 import { ErrorBodySchema } from '../errors';
-import { Address, bool, choice, Count, EpochMs, Id, Ids, line, LocalDate, OpId, openEnum, State, text } from './common';
+import {
+  Address,
+  bool,
+  choice,
+  Count,
+  EpochMs,
+  Id,
+  Ids,
+  line,
+  LocalDate,
+  OpId,
+  openEnum,
+  State,
+  text,
+} from './common';
 
 /** Home's lanes: respond, see or skip (ARCH 8.2, DESIGN 7.2). Follow up is computed, never stored. */
 export const Lane = openEnum(['do', 'update', 'low']);
@@ -61,7 +75,11 @@ export const SummaryRef = z.object({
   action: z.optional(SuggestedAction),
 });
 
-export const Participant = z.object({ name: z.optional(line(200)), address: z.optional(line(320)), me: z.optional(z.boolean()) });
+export const Participant = z.object({
+  name: z.optional(line(200)),
+  address: z.optional(line(320)),
+  me: z.optional(z.boolean()),
+});
 
 /**
  * A body-free list row (ARCH 9.1). Windows push ids only; clients `Thread/get` unknown or stale rows (`rev` changed).
@@ -192,11 +210,22 @@ export const ThreadAction = z.discriminatedUnion('type', [
    * "Always do this for [sender]" sends it with the lane the thread already moved to and `alsoForSender`, which only adds
    * the sender rule.
    */
-  z.object({ type: z.literal('lane'), lane: choice(['do', 'update', 'low']), alsoForSender: z.optional(bool()) }),
+  z.object({
+    type: z.literal('lane'),
+    lane: choice(['do', 'update', 'low']),
+    alsoForSender: z.optional(bool()),
+  }),
   /** ⌥↑ / ⌥↓: one lane up or down; `alsoForSender` also writes the sender rule. */
-  z.object({ type: z.literal('laneStep'), direction: choice(['up', 'down']), alsoForSender: z.optional(bool()) }),
+  z.object({
+    type: z.literal('laneStep'),
+    direction: choice(['up', 'down']),
+    alsoForSender: z.optional(bool()),
+  }),
   z.object({ type: z.literal('importance'), importance: choice(['important', 'normal']) }),
-  z.object({ type: z.literal('replyStatus'), status: choice(['none', 'needsReply', 'awaitingReply']) }),
+  z.object({
+    type: z.literal('replyStatus'),
+    status: choice(['none', 'needsReply', 'awaitingReply']),
+  }),
   z.object({ type: z.literal('todo'), text: z.optional(text(2_000)) }),
   /** Hide from Home or show there again (today's `home.hide`). "Clear from Home" on Back from Later is `later` instead. */
   z.object({ type: z.literal('home'), hidden: bool() }),
@@ -232,7 +261,9 @@ export const SearchQuery = z.object({
   after: z.optional(LocalDate),
   /** A place: a folder role, `done`, `later`, or a folder id. */
   in: z.optional(line(200)),
-  is: z.optional(z.array(choice(['unread', 'read', 'flagged', 'bookmarked'])).check(z.maxLength(4))),
+  is: z.optional(
+    z.array(choice(['unread', 'read', 'flagged', 'bookmarked'])).check(z.maxLength(4)),
+  ),
 });
 export type SearchQuery = z.infer<typeof SearchQuery>;
 
@@ -253,13 +284,21 @@ export const ViewSpec = z.discriminatedUnion('kind', [
   /** Go one by one: a frozen order taken when the window opens, so items never reshuffle while you work through them. */
   z.object({ kind: z.literal('oneByOne'), section: homeSection, ...account }),
   /** Inbox, All mail, Sent, Trash, Spam, Archive, Starred by folder role. */
-  z.object({ kind: z.literal('mailbox'), role: choice(['inbox', 'all', 'sent', 'trash', 'spam', 'archive', 'starred', 'important']), ...account }),
+  z.object({
+    kind: z.literal('mailbox'),
+    role: choice(['inbox', 'all', 'sent', 'trash', 'spam', 'archive', 'starred', 'important']),
+    ...account,
+  }),
   z.object({ kind: z.literal('label'), folderId: Id }),
   /** Later in groups Overdue, Today, This week, Someday. */
   z.object({ kind: z.literal('later'), ...account }),
   z.object({ kind: z.literal('bookmarks'), ...account }),
   /** Threads by reply state: waiting on you, or on others (today's Needs reply and Awaiting reply views). */
-  z.object({ kind: z.literal('replyState'), status: choice(['needsReply', 'awaitingReply']), ...account }),
+  z.object({
+    kind: z.literal('replyState'),
+    status: choice(['needsReply', 'awaitingReply']),
+    ...account,
+  }),
   /** The Done place, newest done first. */
   z.object({ kind: z.literal('done'), ...account }),
   /** Drafts are `Draft` rows, never threads (D9). */
@@ -271,7 +310,14 @@ export const ViewSpec = z.discriminatedUnion('kind', [
   /** The reader: a thread's messages, oldest first. */
   z.object({ kind: z.literal('thread'), threadId: Id }),
   /** Calendar occurrences in a range of at most 62 days, not capped at 200 rows (else `rangeTooLarge`). */
-  z.object({ kind: z.literal('events'), from: EpochMs, to: EpochMs, calendarIds: z.optional(Ids(200)), includeDeclined: z.optional(bool()), includePlans: z.optional(bool()) }),
+  z.object({
+    kind: z.literal('events'),
+    from: EpochMs,
+    to: EpochMs,
+    calendarIds: z.optional(Ids(200)),
+    includeDeclined: z.optional(bool()),
+    includePlans: z.optional(bool()),
+  }),
   /** Plans found in mail and not yet confirmed or dismissed. */
   z.object({ kind: z.literal('plans'), threadId: z.optional(Id) }),
   /** Ask history, newest first. */
@@ -284,7 +330,11 @@ export type ViewSpec = z.infer<typeof ViewSpec>;
  * "Clear from Home", ⌘A). The engine resolves it at `atState`, the state the owner saw, so threads that arrived later are
  * not swept up. Only views whose rows are threads; others are refused.
  */
-export const ThreadSelector = z.object({ spec: ViewSpec, section: z.optional(line(320)), atState: State });
+export const ThreadSelector = z.object({
+  spec: ViewSpec,
+  section: z.optional(line(320)),
+  atState: State,
+});
 export type ThreadSelector = z.infer<typeof ThreadSelector>;
 
 /** "Why it's here" (DESIGN 9 rule 4): one plain sentence, a quote from the mail, and who placed the thread in its lane. */
@@ -300,10 +350,26 @@ export const WhyItsHere = z.object({
 export type WhyItsHere = z.infer<typeof WhyItsHere>;
 
 /** The row type a window's ids refer to, so a client knows which `T/get` to call. */
-export const RowType = openEnum(['Thread', 'Message', 'Draft', 'Submission', 'Event', 'Plan', 'Conversation', 'SenderGroup']);
+export const RowType = openEnum([
+  'Thread',
+  'Message',
+  'Draft',
+  'Submission',
+  'Event',
+  'Plan',
+  'Conversation',
+  'SenderGroup',
+]);
 
 /** A Low importance sender, the sheet's row. */
-export const SenderGroup = z.object({ id: Id, address: line(320), name: z.optional(line(200)), count: Count, latestThreadId: Id, unsubscribe: z.boolean() });
+export const SenderGroup = z.object({
+  id: Id,
+  address: line(320),
+  name: z.optional(line(200)),
+  count: Count,
+  latestThreadId: Id,
+  unsubscribe: z.boolean(),
+});
 
 /**
  * A labelled run of a view, counted across the whole view, not just the window; runs never overlap. Keys: `home` has
@@ -323,7 +389,11 @@ export const WindowSection = z.object({
 });
 
 /** Where a window should start: an absolute position, or relative to a known row (keyset, never OFFSET in SQL). */
-export const WindowAnchor = z.object({ id: z.optional(Id), offset: z.optional(z.int()), position: z.optional(Count) });
+export const WindowAnchor = z.object({
+  id: z.optional(Id),
+  offset: z.optional(z.int()),
+  position: z.optional(Count),
+});
 
 /** The body of every `window` frame and of `View/watch`, `View/move` and `View/query` answers. */
 export const WindowBody = z.object({

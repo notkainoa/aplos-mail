@@ -6,14 +6,40 @@ import type { Scope } from '../schemas/session';
  * (F5). `blob`, `sender`, `data` and `workflow` were added to the plan's list in contract v1.
  */
 export const engineAreas = [
-  'session', 'settings', 'view', 'thread', 'operation', 'submission', 'draft', 'outbox', 'later', 'reminder', 'notification',
-  'ai', 'ask', 'setup', 'demo', 'consent', 'queue', 'mail', 'diagnostics', 'listener', 'clients', 'account', 'sync',
-  'unsubscribe', 'event', 'blob', 'sender', 'data', 'workflow',
+  'session',
+  'settings',
+  'view',
+  'thread',
+  'operation',
+  'submission',
+  'draft',
+  'outbox',
+  'later',
+  'reminder',
+  'notification',
+  'ai',
+  'ask',
+  'setup',
+  'demo',
+  'consent',
+  'queue',
+  'mail',
+  'diagnostics',
+  'listener',
+  'clients',
+  'account',
+  'sync',
+  'unsubscribe',
+  'event',
+  'blob',
+  'sender',
+  'data',
+  'workflow',
 ] as const;
 /** Desktop methods live in main (`main/native-methods.ts` after restructure step 3), never in the engine. */
 export const desktopAreas = ['native'] as const;
-export type EngineArea = typeof engineAreas[number];
-export type DesktopArea = typeof desktopAreas[number];
+export type EngineArea = (typeof engineAreas)[number];
+export type DesktopArea = (typeof desktopAreas)[number];
 export type Area = EngineArea | DesktopArea;
 export type Host = 'engine' | 'desktop';
 /** Queries change nothing durable; commands change state and return a receipt or the changed row. */
@@ -39,23 +65,35 @@ export interface MethodSpec<I extends Schema = Schema, O extends Schema = Schema
 }
 
 /** A registered method: its spec plus the host and area the registry stamps on it. */
-export type MethodDef<A extends Area = Area, H extends Host = Host, I extends Schema = Schema, O extends Schema = Schema> =
-  MethodSpec<I, O> & { area: A; host: H };
+export type MethodDef<
+  A extends Area = Area,
+  H extends Host = Host,
+  I extends Schema = Schema,
+  O extends Schema = Schema,
+> = MethodSpec<I, O> & { area: A; host: H };
 
 type MethodName = `${string}/${string}`;
 type Stamped<M, A extends Area, H extends Host> = { [K in keyof M]: M[K] & { area: A; host: H } };
 
-function stamp<M extends Record<string, MethodSpec>, A extends Area, H extends Host>(area: A, host: H, methods: M): Stamped<M, A, H> {
+function stamp<M extends Record<string, MethodSpec>, A extends Area, H extends Host>(
+  area: A,
+  host: H,
+  methods: M,
+): Stamped<M, A, H> {
   const out: Record<string, unknown> = {};
   for (const [name, spec] of Object.entries(methods)) {
-    if (!/^[A-Z][A-Za-z]*\/[a-z][A-Za-z]*$/.test(name)) throw new Error(`Method name ${name} is not Type/verb.`);
+    if (!/^[A-Z][A-Za-z]*\/[a-z][A-Za-z]*$/.test(name))
+      throw new Error(`Method name ${name} is not Type/verb.`);
     out[name] = { ...spec, area, host };
   }
   return out as Stamped<M, A, H>;
 }
 
 /** Declares one engine area's methods. Names are `Type/verb`: a PascalCase type and a camelCase verb. */
-export function area<A extends EngineArea, M extends Record<MethodName, MethodSpec>>(name: A, methods: M) {
+export function area<A extends EngineArea, M extends Record<MethodName, MethodSpec>>(
+  name: A,
+  methods: M,
+) {
   return stamp(name, 'engine', methods);
 }
 

@@ -28,7 +28,9 @@ export function sha256Hex(text: string): string {
   view.setUint32(padded.length - 8, Math.floor(bitLength / 0x100000000));
   view.setUint32(padded.length - 4, bitLength >>> 0);
 
-  const h = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const h = new Uint32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ]);
   const w = new Uint32Array(64);
   for (let offset = 0; offset < padded.length; offset += 64) {
     for (let i = 0; i < 16; i++) w[i] = view.getUint32(offset + i * 4);
@@ -41,9 +43,23 @@ export function sha256Hex(text: string): string {
     for (let i = 0; i < 64; i++) {
       const t1 = hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i];
       const t2 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
-      hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      hh = g;
+      g = f;
+      f = e;
+      e = (d + t1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) >>> 0;
     }
-    h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
+    h[0] += a;
+    h[1] += b;
+    h[2] += c;
+    h[3] += d;
+    h[4] += e;
+    h[5] += f;
+    h[6] += g;
+    h[7] += hh;
   }
   return Array.from(h, x => x.toString(16).padStart(8, '0')).join('');
 }

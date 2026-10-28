@@ -25,7 +25,10 @@ export const LOG_TEXT_MAX = 300;
 
 /** The value each kind takes at the call site. `time` is epoch ms, `duration` milliseconds. */
 export interface LogKindTypes {
-  count: number; duration: number; time: number; bool: boolean;
+  count: number;
+  duration: number;
+  time: number;
+  bool: boolean;
   /** Opaque local id (`logIdPattern`). */
   id: string;
   /** Method id, reason code, model (`logCodePattern`). */
@@ -48,25 +51,52 @@ export interface LogFieldSpec<K extends LogFieldKind = LogFieldKind> {
   optional?: true;
 }
 
-const spec = <K extends LogFieldKind>(kind: K) => (): LogFieldSpec<K> => ({ kind });
+const spec =
+  <K extends LogFieldKind>(kind: K) =>
+  (): LogFieldSpec<K> => ({ kind });
 
 /** Field constructors. */
 export const logField = {
-  count: spec('count'), duration: spec('duration'), time: spec('time'), bool: spec('bool'),
-  id: spec('id'), code: spec('code'), address: spec('address'), text: spec('text'), error: spec('error'),
-  oneOf: <const V extends readonly [string, ...string[]]>(values: V): LogFieldSpec<'enum'> & { values: V } => ({ kind: 'enum', values }),
+  count: spec('count'),
+  duration: spec('duration'),
+  time: spec('time'),
+  bool: spec('bool'),
+  id: spec('id'),
+  code: spec('code'),
+  address: spec('address'),
+  text: spec('text'),
+  error: spec('error'),
+  oneOf: <const V extends readonly [string, ...string[]]>(
+    values: V,
+  ): LogFieldSpec<'enum'> & { values: V } => ({ kind: 'enum', values }),
 };
 
 /** Marks a field as optional. */
-export const opt = <S extends LogFieldSpec>(s: S): S & { optional: true } => ({ ...s, optional: true });
+export const opt = <S extends LogFieldSpec>(s: S): S & { optional: true } => ({
+  ...s,
+  optional: true,
+});
 
 export const logLevels = ['debug', 'info', 'warn', 'error'] as const;
-export type LogLevel = typeof logLevels[number];
+export type LogLevel = (typeof logLevels)[number];
 
 /** The Phase 1 lanes (roadmap 2.1, 2.2) and round 2's provider lanes. */
 export type LogEmitter =
-  | 'eng-contract' | 'eng-store' | 'eng-views' | 'eng-time' | 'eng-ai' | 'eng-html' | 'eng-host'
-  | 'prov-gov' | 'prov-gmail' | 'prov-gmail-write' | 'prov-cal' | 'prov-imap' | 'prov-jmap' | 'prov-graph' | 'plat-release';
+  | 'eng-contract'
+  | 'eng-store'
+  | 'eng-views'
+  | 'eng-time'
+  | 'eng-ai'
+  | 'eng-html'
+  | 'eng-host'
+  | 'prov-gov'
+  | 'prov-gmail'
+  | 'prov-gmail-write'
+  | 'prov-cal'
+  | 'prov-imap'
+  | 'prov-jmap'
+  | 'prov-graph'
+  | 'plat-release';
 
 export interface LogEventSpec {
   level: LogLevel;
@@ -74,19 +104,48 @@ export interface LogEventSpec {
   fields: Record<string, LogFieldSpec>;
 }
 
-const event = <const F extends Record<string, LogFieldSpec>>(level: LogLevel, emitters: readonly LogEmitter[], fields: F) => ({ level, emitters, fields });
+const event = <const F extends Record<string, LogFieldSpec>>(
+  level: LogLevel,
+  emitters: readonly LogEmitter[],
+  fields: F,
+) => ({ level, emitters, fields });
 
 const f = logField;
 
 /** The account states of ARCH 6.4 (`AccountStatusSchema`'s discriminants). */
-const accountStates = ['starting', 'ok', 'syncing', 'backfilling', 'paused', 'needsReauth', 'needsPermission', 'needsAdmin', 'misconfigured', 'offline', 'error'] as const satisfies readonly AccountState[];
+const accountStates = [
+  'starting',
+  'ok',
+  'syncing',
+  'backfilling',
+  'paused',
+  'needsReauth',
+  'needsPermission',
+  'needsAdmin',
+  'misconfigured',
+  'offline',
+  'error',
+] as const satisfies readonly AccountState[];
 /** ARCH 7.1 / plan 10 E6. */
-export const submissionStates = ['queued', 'sending', 'sent', 'uncertain', 'failed', 'cancelled', 'suspended'] as const;
+export const submissionStates = [
+  'queued',
+  'sending',
+  'sent',
+  'uncertain',
+  'failed',
+  'cancelled',
+  'suspended',
+] as const;
 /** The provider families with their own sync events. Each is also a governor budget id. */
 export const syncProviders = ['gmail', 'gcal', 'graph', 'imap', 'jmap', 'caldav'] as const;
-export type SyncProvider = typeof syncProviders[number];
+export type SyncProvider = (typeof syncProviders)[number];
 const syncEmitters: Record<SyncProvider, readonly LogEmitter[]> = {
-  gmail: ['prov-gmail', 'prov-gmail-write'], gcal: ['prov-cal'], graph: ['prov-graph'], imap: ['prov-imap'], jmap: ['prov-jmap'], caldav: ['prov-cal'],
+  gmail: ['prov-gmail', 'prov-gmail-write'],
+  gcal: ['prov-cal'],
+  graph: ['prov-graph'],
+  imap: ['prov-imap'],
+  jmap: ['prov-jmap'],
+  caldav: ['prov-cal'],
 };
 
 /**
@@ -97,120 +156,314 @@ function syncEvents<P extends SyncProvider>(p: P) {
   const emitters = syncEmitters[p];
   const events = {
     /** One provider call, the verbose protocol log (ARCH 11): headers-level facts only. */
-    request: event('debug', emitters, { method: f.code(), status: opt(f.count()), units: opt(f.count()), durationMs: f.duration(), waitMs: opt(f.duration()) }),
+    request: event('debug', emitters, {
+      method: f.code(),
+      status: opt(f.count()),
+      units: opt(f.count()),
+      durationMs: f.duration(),
+      waitMs: opt(f.duration()),
+    }),
     /** The provider refused a call; `error.reason` is the provider's exact reason (E0: the 403 that explained nothing). */
-    request_refused: event('warn', emitters, { error: f.error(), units: opt(f.count()), attempt: opt(f.count()), waitMs: opt(f.duration()) }),
+    request_refused: event('warn', emitters, {
+      error: f.error(),
+      units: opt(f.count()),
+      attempt: opt(f.count()),
+      waitMs: opt(f.duration()),
+    }),
     page_committed: event('info', emitters, {
       phase: f.oneOf(['first_window', 'backfill', 'incremental', 'resync']),
-      threads: opt(f.count()), messages: opt(f.count()), events: opt(f.count()), units: opt(f.count()), durationMs: f.duration(),
+      threads: opt(f.count()),
+      messages: opt(f.count()),
+      events: opt(f.count()),
+      units: opt(f.count()),
+      durationMs: f.duration(),
     }),
     /** The provider invalidated our cursor (plan 20's informational `reset`). */
-    cursor_reset: event('warn', emitters, { reset: f.oneOf(['cursorExpired', 'uidValidityChanged', 'syncTokenInvalid', 'cannotCalculateChanges', 'changeCapExceeded', 'windowRolled']) }),
+    cursor_reset: event('warn', emitters, {
+      reset: f.oneOf([
+        'cursorExpired',
+        'uidValidityChanged',
+        'syncTokenInvalid',
+        'cannotCalculateChanges',
+        'changeCapExceeded',
+        'windowRolled',
+      ]),
+    }),
   };
-  return Object.fromEntries(Object.entries(events).map(([k, v]) => [`sync.${p}.${k}`, v])) as { [K in keyof typeof events as `sync.${P}.${K & string}`]: typeof events[K] };
+  return Object.fromEntries(Object.entries(events).map(([k, v]) => [`sync.${p}.${k}`, v])) as {
+    [K in keyof typeof events as `sync.${P}.${K & string}`]: (typeof events)[K];
+  };
 }
 
 export const logEvents = {
-  ...syncEvents('gmail'), ...syncEvents('gcal'), ...syncEvents('graph'), ...syncEvents('imap'), ...syncEvents('jmap'), ...syncEvents('caldav'),
-  'sync.status_changed': event('info', ['prov-gov'], { from: f.oneOf(accountStates), to: f.oneOf(accountStates), class: opt(f.code()), reason: opt(f.code()) }),
+  ...syncEvents('gmail'),
+  ...syncEvents('gcal'),
+  ...syncEvents('graph'),
+  ...syncEvents('imap'),
+  ...syncEvents('jmap'),
+  ...syncEvents('caldav'),
+  'sync.status_changed': event('info', ['prov-gov'], {
+    from: f.oneOf(accountStates),
+    to: f.oneOf(accountStates),
+    class: opt(f.code()),
+    reason: opt(f.code()),
+  }),
 
   // Governor and lease (ARCH 6.2-6.5). `budget` is a BudgetId, including `ai:<provider>`.
-  'governor.paused': event('warn', ['prov-gov', 'eng-ai'], { budget: f.code(), class: f.code(), reason: f.code(), pauseMs: f.duration(), until: opt(f.time()), step: opt(f.count()), concurrency: opt(f.bool()) }),
-  'governor.resumed': event('info', ['prov-gov', 'eng-ai'], { budget: f.code(), pausedMs: f.duration(), why: f.oneOf(['timer', 'reconnect', 'wake', 'manual']) }),
-  'governor.daily_stopped': event('warn', ['prov-gov', 'eng-ai'], { budget: f.code(), reason: f.code(), until: f.time() }),
-  'governor.target_changed': event('info', ['prov-gov'], { budget: f.code(), from: f.count(), to: f.count(), why: f.oneOf(['aimd_decrease', 'aimd_increase', 'concurrency_cap', 'quiet_reset']) }),
-  'lease.changed': event('info', ['prov-gov'], { role: f.oneOf(['primary', 'secondary']), device: f.id(), why: f.oneOf(['acquired', 'lost', 'override', 'tie']) }),
+  'governor.paused': event('warn', ['prov-gov', 'eng-ai'], {
+    budget: f.code(),
+    class: f.code(),
+    reason: f.code(),
+    pauseMs: f.duration(),
+    until: opt(f.time()),
+    step: opt(f.count()),
+    concurrency: opt(f.bool()),
+  }),
+  'governor.resumed': event('info', ['prov-gov', 'eng-ai'], {
+    budget: f.code(),
+    pausedMs: f.duration(),
+    why: f.oneOf(['timer', 'reconnect', 'wake', 'manual']),
+  }),
+  'governor.daily_stopped': event('warn', ['prov-gov', 'eng-ai'], {
+    budget: f.code(),
+    reason: f.code(),
+    until: f.time(),
+  }),
+  'governor.target_changed': event('info', ['prov-gov'], {
+    budget: f.code(),
+    from: f.count(),
+    to: f.count(),
+    why: f.oneOf(['aimd_decrease', 'aimd_increase', 'concurrency_cap', 'quiet_reset']),
+  }),
+  'lease.changed': event('info', ['prov-gov'], {
+    role: f.oneOf(['primary', 'secondary']),
+    device: f.id(),
+    why: f.oneOf(['acquired', 'lost', 'override', 'tie']),
+  }),
 
   // Auth (ARCH 6.3-6.4, 12.5). `provider` is a BudgetId.
-  'auth.reconnect_needed': event('warn', ['prov-gov', 'prov-gmail'], { provider: f.code(), reason: f.code(), testingExpiry: f.bool() }),
+  'auth.reconnect_needed': event('warn', ['prov-gov', 'prov-gmail'], {
+    provider: f.code(),
+    reason: f.code(),
+    testingExpiry: f.bool(),
+  }),
   'auth.reconnected': event('info', ['prov-gov'], { provider: f.code(), resynced: f.bool() }),
   /** A reconnect signed in to a different account than the one it was for (`expectedSubject`); both only as hashes. */
-  'auth.identity_mismatch': event('warn', ['prov-gov'], { provider: f.code(), expected: f.address(), got: f.address() }),
-  'auth.token_refreshed': event('debug', ['prov-gov'], { provider: f.code(), durationMs: f.duration() }),
+  'auth.identity_mismatch': event('warn', ['prov-gov'], {
+    provider: f.code(),
+    expected: f.address(),
+    got: f.address(),
+  }),
+  'auth.token_refreshed': event('debug', ['prov-gov'], {
+    provider: f.code(),
+    durationMs: f.duration(),
+  }),
   'auth.refresh_failed': event('warn', ['prov-gov'], { error: f.error() }),
 
   // Sending (ARCH 7, plan 10 E6).
-  'submission.state': event('info', ['eng-time'], { submission: f.id(), from: f.oneOf(submissionStates), to: f.oneOf(submissionStates), why: opt(f.code()) }),
-  'send.sent': event('info', ['prov-gmail-write', 'eng-time'], { submission: f.id(), durationMs: f.duration(), recipients: f.count(), attachments: f.count(), bytes: f.count() }),
-  'send.uncertain': event('warn', ['prov-gmail-write', 'eng-time'], { submission: f.id(), method: f.code(), durationMs: f.duration(), error: opt(f.error()) }),
-  'send.failed': event('warn', ['prov-gmail-write', 'eng-time'], { submission: f.id(), error: f.error() }),
-  'send.reconciled': event('info', ['eng-time'], { submission: f.id(), found: f.bool(), method: f.code() }),
+  'submission.state': event('info', ['eng-time'], {
+    submission: f.id(),
+    from: f.oneOf(submissionStates),
+    to: f.oneOf(submissionStates),
+    why: opt(f.code()),
+  }),
+  'send.sent': event('info', ['prov-gmail-write', 'eng-time'], {
+    submission: f.id(),
+    durationMs: f.duration(),
+    recipients: f.count(),
+    attachments: f.count(),
+    bytes: f.count(),
+  }),
+  'send.uncertain': event('warn', ['prov-gmail-write', 'eng-time'], {
+    submission: f.id(),
+    method: f.code(),
+    durationMs: f.duration(),
+    error: opt(f.error()),
+  }),
+  'send.failed': event('warn', ['prov-gmail-write', 'eng-time'], {
+    submission: f.id(),
+    error: f.error(),
+  }),
+  'send.reconciled': event('info', ['eng-time'], {
+    submission: f.id(),
+    found: f.bool(),
+    method: f.code(),
+  }),
   'outbox.suspended': event('info', ['eng-time'], { submission: f.id(), lateMs: f.duration() }),
-  'draft.sync_failed': event('warn', ['prov-gmail-write', 'eng-time'], { draft: f.id(), error: f.error() }),
-  'timer.fired': event('debug', ['eng-time'], { kind: f.oneOf(['send', 'later', 'reminder', 'snooze', 'deadline']), lateMs: f.duration() }),
-  'notification.posted': event('debug', ['eng-time'], { kind: f.oneOf(['mail', 'reminder', 'send_failed', 'reconnect']) }),
+  'draft.sync_failed': event('warn', ['prov-gmail-write', 'eng-time'], {
+    draft: f.id(),
+    error: f.error(),
+  }),
+  'timer.fired': event('debug', ['eng-time'], {
+    kind: f.oneOf(['send', 'later', 'reminder', 'snooze', 'deadline']),
+    lateMs: f.duration(),
+  }),
+  'notification.posted': event('debug', ['eng-time'], {
+    kind: f.oneOf(['mail', 'reminder', 'send_failed', 'reconnect']),
+  }),
 
   // AI (ARCH 8, plan 10 E5). `model` is the provider's model id.
   'ai.job.done': event('debug', ['eng-ai'], {
-    job: f.id(), feature: f.oneOf(['ask', 'summaries', 'drafts', 'plans', 'voice', 'triage']), provider: f.code(), model: f.code(),
-    tokensIn: opt(f.count()), tokensOut: opt(f.count()), durationMs: f.duration(),
+    job: f.id(),
+    feature: f.oneOf(['ask', 'summaries', 'drafts', 'plans', 'voice', 'triage']),
+    provider: f.code(),
+    model: f.code(),
+    tokensIn: opt(f.count()),
+    tokensOut: opt(f.count()),
+    durationMs: f.duration(),
   }),
-  'ai.job.failed': event('warn', ['eng-ai'], { job: f.id(), feature: f.oneOf(['ask', 'summaries', 'drafts', 'plans', 'voice', 'triage']), provider: f.code(), model: f.code(), error: f.error() }),
+  'ai.job.failed': event('warn', ['eng-ai'], {
+    job: f.id(),
+    feature: f.oneOf(['ask', 'summaries', 'drafts', 'plans', 'voice', 'triage']),
+    provider: f.code(),
+    model: f.code(),
+    error: f.error(),
+  }),
   'ai.budget_exhausted': event('info', ['eng-ai'], { used: f.count(), limit: f.count() }),
 
   // Store (ARCH 3, plan 10 E2).
-  'store.opened': event('info', ['eng-store'], { schema: f.count(), durationMs: f.duration(), bytes: opt(f.count()), walBytes: opt(f.count()) }),
-  'store.migrated': event('info', ['eng-store'], { from: f.count(), to: f.count(), durationMs: f.duration() }),
-  'store.import_done': event('info', ['eng-store'], { threads: f.count(), messages: f.count(), skipped: f.count(), durationMs: f.duration() }),
-  'store.integrity_failed': event('error', ['eng-store'], { check: f.oneOf(['quick', 'full']), reason: f.code() }),
+  'store.opened': event('info', ['eng-store'], {
+    schema: f.count(),
+    durationMs: f.duration(),
+    bytes: opt(f.count()),
+    walBytes: opt(f.count()),
+  }),
+  'store.migrated': event('info', ['eng-store'], {
+    from: f.count(),
+    to: f.count(),
+    durationMs: f.duration(),
+  }),
+  'store.import_done': event('info', ['eng-store'], {
+    threads: f.count(),
+    messages: f.count(),
+    skipped: f.count(),
+    durationMs: f.duration(),
+  }),
+  'store.integrity_failed': event('error', ['eng-store'], {
+    check: f.oneOf(['quick', 'full']),
+    reason: f.code(),
+  }),
   'store.disk_full': event('error', ['eng-store'], { freeBytes: opt(f.count()) }),
 
   // Methods, views and operations (ARCH 9, plan 10 E1, E3). `method` is a contract method name.
   'rpc.invalid_input': event('warn', ['eng-contract'], { method: f.code(), issues: f.count() }),
   'rpc.failed': event('warn', ['eng-contract'], { method: f.code(), reason: f.code() }),
   'rpc.slow': event('info', ['eng-contract'], { method: f.code(), durationMs: f.duration() }),
-  'view.window_slow': event('info', ['eng-views'], { view: f.code(), rows: f.count(), durationMs: f.duration() }),
-  'operation.failed': event('warn', ['eng-views'], { op: f.id(), kind: f.code(), error: opt(f.error()) }),
+  'view.window_slow': event('info', ['eng-views'], {
+    view: f.code(),
+    rows: f.count(),
+    durationMs: f.duration(),
+  }),
+  'operation.failed': event('warn', ['eng-views'], {
+    op: f.id(),
+    kind: f.code(),
+    error: opt(f.error()),
+  }),
   'operation.undone': event('debug', ['eng-views'], { op: f.id(), kind: f.code() }),
 
   // HTML isolation (ARCH 10, plan 10 E4).
-  'html.sanitized': event('debug', ['eng-html'], { removed: f.count(), bytesIn: f.count(), bytesOut: f.count(), durationMs: f.duration() }),
-  'html.blocked': event('info', ['eng-html'], { what: f.oneOf(['remote_image', 'script', 'frame', 'form', 'navigation', 'style']), count: f.count() }),
+  'html.sanitized': event('debug', ['eng-html'], {
+    removed: f.count(),
+    bytesIn: f.count(),
+    bytesOut: f.count(),
+    durationMs: f.duration(),
+  }),
+  'html.blocked': event('info', ['eng-html'], {
+    what: f.oneOf(['remote_image', 'script', 'frame', 'form', 'navigation', 'style']),
+    count: f.count(),
+  }),
   'proxy.image_failed': event('debug', ['eng-html'], { status: opt(f.count()), reason: f.code() }),
 
   // Engine host, resident mode, listener (ARCH 2, 11, 12.3; plan 10 E1, E7).
-  'engine.started': event('info', ['eng-host'], { version: f.code(), mode: f.oneOf(['window', 'resident', 'test', 'selftest']), durationMs: f.duration() }),
-  'engine.stopping': event('info', ['eng-host'], { why: f.oneOf(['quit', 'update', 'restart', 'crash_guard']) }),
-  'engine.parked': event('error', ['eng-host', 'eng-store'], { why: f.oneOf(['disk_full', 'corrupt', 'crash_loop', 'migration_failed', 'selftest_failed']), exits: opt(f.count()) }),
-  'engine.watchdog': event('warn', ['eng-host'], { kind: f.oneOf(['event_loop', 'actor_stalled', 'timer_drift']), lagMs: f.duration() }),
-  'power.changed': event('info', ['eng-host'], { state: f.oneOf(['sleep', 'wake', 'lock', 'unlock', 'battery', 'ac']) }),
-  'crash.recorded': event('error', ['eng-host'], { process: f.oneOf(['engine', 'main', 'renderer', 'gpu', 'utility']), why: f.code() }),
+  'engine.started': event('info', ['eng-host'], {
+    version: f.code(),
+    mode: f.oneOf(['window', 'resident', 'test', 'selftest']),
+    durationMs: f.duration(),
+  }),
+  'engine.stopping': event('info', ['eng-host'], {
+    why: f.oneOf(['quit', 'update', 'restart', 'crash_guard']),
+  }),
+  'engine.parked': event('error', ['eng-host', 'eng-store'], {
+    why: f.oneOf(['disk_full', 'corrupt', 'crash_loop', 'migration_failed', 'selftest_failed']),
+    exits: opt(f.count()),
+  }),
+  'engine.watchdog': event('warn', ['eng-host'], {
+    kind: f.oneOf(['event_loop', 'actor_stalled', 'timer_drift']),
+    lagMs: f.duration(),
+  }),
+  'power.changed': event('info', ['eng-host'], {
+    state: f.oneOf(['sleep', 'wake', 'lock', 'unlock', 'battery', 'ac']),
+  }),
+  'crash.recorded': event('error', ['eng-host'], {
+    process: f.oneOf(['engine', 'main', 'renderer', 'gpu', 'utility']),
+    why: f.code(),
+  }),
   'listener.request_denied': event('warn', ['eng-host'], {
     transport: f.oneOf(['socket', 'http', 'port', 'mcp']),
-    why: f.oneOf(['no_token', 'bad_token', 'bad_host', 'bad_origin', 'scope', 'revoked', 'unknown_method', 'rate']),
-    method: opt(f.code()), client: opt(f.id()),
+    why: f.oneOf([
+      'no_token',
+      'bad_token',
+      'bad_host',
+      'bad_origin',
+      'scope',
+      'revoked',
+      'unknown_method',
+      'rate',
+    ]),
+    method: opt(f.code()),
+    client: opt(f.id()),
   }),
-  'listener.client_changed': event('info', ['eng-host'], { client: f.id(), change: f.oneOf(['paired', 'revoked', 'scopes']) }),
+  'listener.client_changed': event('info', ['eng-host'], {
+    client: f.id(),
+    change: f.oneOf(['paired', 'revoked', 'scopes']),
+  }),
 
   // Updates (plan 40).
-  'update.checked': event('info', ['plat-release'], { available: f.bool(), version: opt(f.code()) }),
+  'update.checked': event('info', ['plat-release'], {
+    available: f.bool(),
+    version: opt(f.code()),
+  }),
   'update.ready': event('info', ['plat-release'], { version: f.code() }),
   'update.failed': event('warn', ['plat-release'], { reason: f.code(), detail: opt(f.text()) }),
 
   /** Written by a log sink itself once it can write again, or for a line it refused (F7). */
-  'log.lines_dropped': event('warn', ['eng-contract'], { lines: f.count(), why: f.oneOf(['disk', 'oversize']) }),
+  'log.lines_dropped': event('warn', ['eng-contract'], {
+    lines: f.count(),
+    why: f.oneOf(['disk', 'oversize']),
+  }),
 } satisfies Record<string, LogEventSpec>;
 
 export type LogEvents = typeof logEvents;
 export type LogEventId = keyof LogEvents;
 
 type FieldsOf<Id extends LogEventId> = LogEvents[Id]['fields'];
-type ValueOf<S> = S extends { kind: 'enum'; values: readonly (infer V)[] } ? V : S extends { kind: infer K extends LogFieldKind } ? LogKindTypes[K] : never;
+type ValueOf<S> = S extends { kind: 'enum'; values: readonly (infer V)[] }
+  ? V
+  : S extends { kind: infer K extends LogFieldKind }
+    ? LogKindTypes[K]
+    : never;
 type RequiredKeys<F> = { [K in keyof F]: F[K] extends { optional: true } ? never : K }[keyof F];
 
 /** The fields `Logger.event(id, fields)` accepts for `id`: an unlisted key is a type error and is dropped at runtime. */
-export type LogFields<Id extends LogEventId> =
-  & { [K in RequiredKeys<FieldsOf<Id>>]: ValueOf<FieldsOf<Id>[K]> }
-  & { [K in Exclude<keyof FieldsOf<Id>, RequiredKeys<FieldsOf<Id>>>]?: ValueOf<FieldsOf<Id>[K]> };
+export type LogFields<Id extends LogEventId> = {
+  [K in RequiredKeys<FieldsOf<Id>>]: ValueOf<FieldsOf<Id>[K]>;
+} & { [K in Exclude<keyof FieldsOf<Id>, RequiredKeys<FieldsOf<Id>>>]?: ValueOf<FieldsOf<Id>[K]> };
 
 /** The governor lanes (ARCH 4.1; `Lane` in the ports). */
-export const logLanes = ['interactive', 'opFlush', 'incremental', 'prefetch', 'backfill', 'enrichment'] as const;
+export const logLanes = [
+  'interactive',
+  'opFlush',
+  'incremental',
+  'prefetch',
+  'backfill',
+  'enrichment',
+] as const;
 
 /** Context a child logger stamps on its lines (`Logger.with`): opaque ids only. */
 export interface LogContext {
   account?: string;
   /** The governor lane; open, because the ports own that list. */
-  lane?: typeof logLanes[number] | (string & {});
+  lane?: (typeof logLanes)[number] | (string & {});
 }
 
 /** One line of the log, as a sink receives it and writes it (JSON, one per line). */

@@ -73,7 +73,12 @@ export const handlers: EngineHandlers = {
  * Runs one call whose arguments the transport has already validated (`parseArgs`) and whose scope it has checked.
  * Rejects with `unsupported` for a name the engine does not serve.
  */
-export async function dispatch(method: string, args: unknown, ctx: MethodContext): Promise<unknown> {
-  if (!Object.prototype.hasOwnProperty.call(handlers, method)) throw new ContractError({ type: 'unsupported', message: 'Unsupported application method.' });
+export async function dispatch(
+  method: string,
+  args: unknown,
+  ctx: MethodContext,
+): Promise<unknown> {
+  if (!Object.prototype.hasOwnProperty.call(handlers, method))
+    throw new ContractError({ type: 'unsupported', message: 'Unsupported application method.' });
   return (handlers[method as EngineMethodName] as Handler<EngineMethodName>)(args as never, ctx);
 }

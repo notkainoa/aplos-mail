@@ -11,5 +11,12 @@ export * from './ports/calendar';
 export * from './ports/engine';
 export * from './ports/content';
 // Defined beside their implementations (F4 store, F7 logger) and re-exported here so lanes import every port from one place.
-export type { StorePort, StoreReader, CommitInput, CommitResult, CommitOrigin, StoreWrite } from './store/port';
+export type {
+  StorePort,
+  StoreReader,
+  CommitInput,
+  CommitResult,
+  CommitOrigin,
+  StoreWrite,
+} from './store/port';
 export type { Logger, LogSink } from './diag/log';

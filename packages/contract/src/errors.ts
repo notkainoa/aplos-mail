@@ -6,8 +6,19 @@ import * as z from 'zod/mini';
  * An edit that raced a remote change (Google Calendar's 412 `conditionNotMet`) is not a class: adapters return it as a
  * result (`CalendarWriteResult.conflict`, F3), and a reply that reaches the UI uses the `conflict` error type below.
  */
-export const errorClasses = ['auth', 'permission', 'throttle', 'daily', 'send_limit', 'anti_abuse', 'config', 'transient', 'permanent', 'cancelled'] as const;
-export type ErrorClass = typeof errorClasses[number];
+export const errorClasses = [
+  'auth',
+  'permission',
+  'throttle',
+  'daily',
+  'send_limit',
+  'anti_abuse',
+  'config',
+  'transient',
+  'permanent',
+  'cancelled',
+] as const;
+export type ErrorClass = (typeof errorClasses)[number];
 export const ErrorClassSchema = z.union([z.enum(errorClasses), z.string()]);
 
 /**
@@ -15,9 +26,22 @@ export const ErrorClassSchema = z.union([z.enum(errorClasses), z.string()]);
  * `imapBytes`, `jmap`, `caldav`, `oauth`, `ai:<provider>:<model>`), or the provider kind for a call outside a budget
  * (`google`, `microsoft`, `ai`). Open, so `ai:*` budgets and later providers fit.
  */
-export const ErrorProviderSchema = z.union([z.enum([
-  'gmail', 'gcal', 'graph', 'imap', 'imapBytes', 'jmap', 'caldav', 'oauth', 'google', 'microsoft', 'ai',
-]), z.string()]);
+export const ErrorProviderSchema = z.union([
+  z.enum([
+    'gmail',
+    'gcal',
+    'graph',
+    'imap',
+    'imapBytes',
+    'jmap',
+    'caldav',
+    'oauth',
+    'google',
+    'microsoft',
+    'ai',
+  ]),
+  z.string(),
+]);
 
 /**
  * The classified-error record (plan 10 E0, ARCH 6.3; the Providers port proposal section 2).
@@ -62,10 +86,26 @@ export type ClassifiedError = z.infer<typeof ClassifiedErrorSchema>;
  * - `notConfigured`: an AI feature has no usable provider or key.
  */
 export const errorTypes = [
-  'validation', 'notFound', 'notImplemented', 'stateMismatch', 'conflict', 'cannotCalculateChanges', 'unsupported', 'forbidden',
-  'paused', 'needsReauth', 'permission', 'unavailable', 'notConfigured', 'providerError', 'rangeTooLarge', 'tooLarge', 'cancelled', 'internal',
+  'validation',
+  'notFound',
+  'notImplemented',
+  'stateMismatch',
+  'conflict',
+  'cannotCalculateChanges',
+  'unsupported',
+  'forbidden',
+  'paused',
+  'needsReauth',
+  'permission',
+  'unavailable',
+  'notConfigured',
+  'providerError',
+  'rangeTooLarge',
+  'tooLarge',
+  'cancelled',
+  'internal',
 ] as const;
-export type ErrorType = typeof errorTypes[number];
+export type ErrorType = (typeof errorTypes)[number];
 export const ErrorTypeSchema = z.union([z.enum(errorTypes), z.string()]);
 
 /** The `error` of a failed reply: `{id, ok:false, error}`. Everything but `type` and `message` is optional detail. */

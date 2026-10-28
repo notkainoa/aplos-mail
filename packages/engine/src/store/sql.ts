@@ -6,7 +6,10 @@
  */
 export type SqlValue = string | number | null | Uint8Array;
 export type SqlRow = Record<string, SqlValue>;
-export interface SqlRunResult { changes: number; lastInsertRowid: number }
+export interface SqlRunResult {
+  changes: number;
+  lastInsertRowid: number;
+}
 
 export interface SqlStatement {
   run(...params: SqlValue[]): SqlRunResult;
@@ -23,7 +26,9 @@ export interface SqlDatabase {
 }
 
 export class NestedTransactionError extends Error {
-  constructor() { super('transaction() does not nest: every store write is one transaction'); }
+  constructor() {
+    super('transaction() does not nest: every store write is one transaction');
+  }
 }
 
 const open = new WeakSet<SqlDatabase>();
@@ -39,12 +44,17 @@ export function transaction<T>(db: SqlDatabase, fn: () => T): T {
   open.add(db);
   try {
     const result = fn();
-    if (result && typeof (result as { then?: unknown }).then === 'function') throw new Error('transaction() callbacks must be synchronous');
+    if (result && typeof (result as { then?: unknown }).then === 'function')
+      throw new Error('transaction() callbacks must be synchronous');
     db.exec('COMMIT');
     return result;
   } catch (error) {
     // SQLite may already have rolled back on its own (SQLITE_FULL, SQLITE_IOERR); keep the original error.
-    try { db.exec('ROLLBACK'); } catch { /* no transaction left to roll back */ }
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      /* no transaction left to roll back */
+    }
     throw error;
   } finally {
     open.delete(db);

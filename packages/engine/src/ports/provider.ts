@@ -13,10 +13,16 @@ import type { Clock } from './time';
 
 // ---- facts adapters return ----
 
-export interface Address { address: string; name?: string }
+export interface Address {
+  address: string;
+  name?: string;
+}
 
 /** One message's place in a folder or label. `uid` is IMAP's per-folder UID (`message_folders.uid`); absent elsewhere. */
-export interface Placement { folder: string; uid?: number }
+export interface Placement {
+  folder: string;
+  uid?: number;
+}
 
 /** The list and automation headers of ARCH 5.1's field mask, verbatim, for `laneFor` and `Unsubscribe/run`. */
 export interface ListHeaders {
@@ -27,7 +33,13 @@ export interface ListHeaders {
   autoSubmitted?: string;
 }
 
-export interface MessageFlags { seen: boolean; flagged: boolean; answered?: boolean; draft: boolean; fromMe: boolean }
+export interface MessageFlags {
+  seen: boolean;
+  flagged: boolean;
+  answered?: boolean;
+  draft: boolean;
+  fromMe: boolean;
+}
 
 export interface AttachmentFacts {
   /** Provider part id: Gmail attachmentId, IMAP body section, JMAP blobId, Graph attachment id. */
@@ -85,19 +97,37 @@ export interface MessageFacts {
 }
 
 /** Gmail history label changes, applied at zero fetch cost (D13). Folder ids. */
-export interface LabelDelta { remoteId: string; add: string[]; remove: string[] }
+export interface LabelDelta {
+  remoteId: string;
+  add: string[];
+  remove: string[];
+}
 
 /** Identified by `remoteId`, or by `folder` + `uid` when the server gave only a UID (IMAP CONDSTORE `FETCH FLAGS`). */
-export interface FlagDelta { remoteId?: string; folder?: string; uid?: number; seen?: boolean; flagged?: boolean; answered?: boolean }
+export interface FlagDelta {
+  remoteId?: string;
+  folder?: string;
+  uid?: number;
+  seen?: boolean;
+  flagged?: boolean;
+  answered?: boolean;
+}
 
 /**
  * A message entering or leaving one folder: IMAP arrivals and `VANISHED`, JMAP `mailboxIds`, Graph per-folder delta
  * (`@removed` is a placement removal, never a deletion). Identified as `FlagDelta` is.
  */
-export interface PlacementDelta { remoteId?: string; folder: string; uid?: number; present: boolean }
+export interface PlacementDelta {
+  remoteId?: string;
+  folder: string;
+  uid?: number;
+  present: boolean;
+}
 
 /** A deletion the server stated (Gmail `messagesDeleted`, JMAP `destroyed`). Inferred removals only come from a sweep. */
-export interface Removal { remoteId: string }
+export interface Removal {
+  remoteId: string;
+}
 
 /** Defined beside `folders.role` (`store/port.ts`); the `category.*` roles are Gmail's tabs, read by `laneFor`. */
 export type { FolderRole };
@@ -129,8 +159,16 @@ export interface RemoteDraftFact {
 
 /** `sync_state.scope`. `provider:*` is an escape hatch for a provider-private scope that needs no engine semantics. */
 export type ScopeId =
-  | 'history' | 'window:inbox' | 'backfill:inbox' | 'sent:recent' | 'prefetch' | 'workflow' | 'calendars'
-  | `folder:${string}` | `cal:${string}` | `provider:${string}`;
+  | 'history'
+  | 'window:inbox'
+  | 'backfill:inbox'
+  | 'sent:recent'
+  | 'prefetch'
+  | 'workflow'
+  | 'calendars'
+  | `folder:${string}`
+  | `cal:${string}`
+  | `provider:${string}`;
 
 /** One `sync_state` row. */
 export interface SyncState {
@@ -152,7 +190,12 @@ export interface SyncState {
 }
 
 /** Cadence inputs: Gmail polls every 15 s focused, 60 s with no window, 5 min on battery with no window (ARCH 5.1). */
-export interface PlanEnv { now: number; focused: boolean; windowVisible: boolean; onBattery: boolean }
+export interface PlanEnv {
+  now: number;
+  focused: boolean;
+  windowVisible: boolean;
+  onBattery: boolean;
+}
 
 export type PlanTrigger = 'first' | 'poll' | 'push' | 'wake' | 'manual' | 'resume' | 'reset';
 
@@ -160,7 +203,8 @@ export type PlanTrigger = 'first' | 'poll' | 'push' | 'wake' | 'manual' | 'resum
  * How the store treats a step's facts. Notifications and background AI only for `incremental` after the baseline;
  * one coarse `*` change per `backfill` page; `resync` may be followed by a sweep.
  */
-export type StepOrigin = 'baseline' | 'incremental' | 'backfill' | 'resync' | 'prefetch' | 'workflow';
+export type StepOrigin =
+  'baseline' | 'incremental' | 'backfill' | 'resync' | 'prefetch' | 'workflow';
 
 export interface PlannedStep {
   scope: ScopeId;
@@ -185,11 +229,26 @@ export interface PlanInput {
  * `since`/`until` are exclusive internal-date bounds, epoch ms, set to the oldest and newest message the round listed
  * (absent `until` for a round that started at the top of the folder); `uidFrom`/`uidTo` are inclusive.
  */
-export interface SweepBound { folder: string; since?: number; until?: number; uidFrom?: number; uidTo?: number }
+export interface SweepBound {
+  folder: string;
+  since?: number;
+  until?: number;
+  uidFrom?: number;
+  uidTo?: number;
+}
 
-export type ResetReason = 'cursorExpired' | 'uidValidityChanged' | 'syncTokenInvalid' | 'cannotCalculateChanges' | 'changeCapExceeded' | 'windowRolled';
+export type ResetReason =
+  | 'cursorExpired'
+  | 'uidValidityChanged'
+  | 'syncTokenInvalid'
+  | 'cannotCalculateChanges'
+  | 'changeCapExceeded'
+  | 'windowRolled';
 
-export interface Quarantine { item: string; error: ClassifiedError }
+export interface Quarantine {
+  item: string;
+  error: ClassifiedError;
+}
 
 /** Everything one bounded step learned, committed by the actor in one transaction with every `nextStates` row. */
 export interface StepResult {
@@ -286,7 +345,11 @@ export interface AdapterContext {
 
 // ---- connect ----
 
-export interface HostPort { host: string; port: number; security: 'tls' | 'starttls' }
+export interface HostPort {
+  host: string;
+  port: number;
+  security: 'tls' | 'starttls';
+}
 
 export interface ConnectRequest {
   mode: 'new' | 'reconnect' | 'grantPermissions';
@@ -306,7 +369,13 @@ export interface ConnectRequest {
  * `governor` ignores the account's `auth` block (a reconnect is how it ends) while honouring cooldowns, daily stops and
  * `config` blocks.
  */
-export interface ConnectContext { accountId: AccountId; governor: BoundGovernor; clock: Clock; log: Logger; signal: AbortSignal }
+export interface ConnectContext {
+  accountId: AccountId;
+  governor: BoundGovernor;
+  clock: Clock;
+  log: Logger;
+  signal: AbortSignal;
+}
 
 export interface ConnectResult {
   /** Google: from the `id_token`, so connect and reconnect make no Gmail call and work during a Gmail daily stop. */
@@ -335,7 +404,11 @@ export interface ThreadOpenRef {
 }
 
 /** The provider-original body record (ARCH 3.3), unsanitized; `cidMap` is Content-ID to attachment `part`. */
-export interface ProviderBody { text?: string; html?: string; cidMap: Record<string, string> }
+export interface ProviderBody {
+  text?: string;
+  html?: string;
+  cidMap: Record<string, string>;
+}
 
 export interface OpenedThread {
   messages: (MessageFacts & { body: ProviderBody })[];
@@ -344,11 +417,24 @@ export interface OpenedThread {
   costUnits: number;
 }
 
-export interface AttachmentRef { remoteMessageId: string; part: string }
+export interface AttachmentRef {
+  remoteMessageId: string;
+  part: string;
+}
 
-export interface ServerSearch { text: string; folder?: string; limit: number; pageToken?: string }
+export interface ServerSearch {
+  text: string;
+  folder?: string;
+  limit: number;
+  pageToken?: string;
+}
 /** Ranked; the store keeps the rows with `origin='search'`. */
-export interface SearchResult { upserts: MessageFacts[]; remoteThreadIds: string[]; nextPageToken?: string; costUnits: number }
+export interface SearchResult {
+  upserts: MessageFacts[];
+  remoteThreadIds: string[];
+  nextPageToken?: string;
+  costUnits: number;
+}
 
 /** Data-free push hint (ARCH 4.2 rule 8): it only triggers the normal checkpointed pull. */
 export type Hint = { kind: 'changed'; scope?: ScopeId } | { kind: 'alive' };
@@ -365,10 +451,20 @@ export type OpChange =
   | { kind: 'trash' }
   | { kind: 'untrash' };
 
-export interface PendingOp { opId: string; seq: number; remoteId: string; change: OpChange }
+export interface PendingOp {
+  opId: string;
+  seq: number;
+  remoteId: string;
+  change: OpChange;
+}
 
 /** One provider call covering several ops (Gmail: identical add/remove sets, one `batchModify` per 1,000 ids). `body` is the adapter's own. */
-export interface CoalescedOp { opIds: string[]; method: string; cost: number; body: unknown }
+export interface CoalescedOp {
+  opIds: string[];
+  method: string;
+  cost: number;
+  body: unknown;
+}
 
 export interface OpOutcome {
   opId: string;
@@ -431,20 +527,33 @@ export type FindSentResult =
 // ---- workflow channel and filters ----
 
 /** One encrypted copy of the workflow blob (Done, Later, the lease), as stored at the provider (D17, D18). */
-export interface WorkflowCopy { remoteId?: string; deviceId: string; writtenAt: number; data: string }
+export interface WorkflowCopy {
+  remoteId?: string;
+  deviceId: string;
+  writtenAt: number;
+  data: string;
+}
 
 /** Implemented per provider (Gmail: hidden label + `messages.insert`); the actor runs it as the `workflow` scope in `enrichment`. */
 export interface WorkflowChannel {
   /** One gated round: a cheap change check first (Gmail history on the app label, 2 units); reads only copies not seen before. */
-  round(state: SyncState, ctx: AdapterContext): Promise<{ copies: WorkflowCopy[]; nextState: SyncState; costUnits: number }>;
+  round(
+    state: SyncState,
+    ctx: AdapterContext,
+  ): Promise<{ copies: WorkflowCopy[]; nextState: SyncState; costUnits: number }>;
   /** Writes one copy (`write`; checks for its own copy first, ARCH 6.3). Returns its remote id. */
   put(copy: WorkflowCopy, ctx: AdapterContext): Promise<string>;
   /** Removes superseded copies (Gmail moves them to Trash: `gmail.modify` cannot delete). */
   compact(remoteIds: string[], ctx: AdapterContext): Promise<void>;
 }
 
-export interface SenderRule { addressOrDomain: string; action: 'block' | 'skipInbox' }
-export interface RemoteRule extends SenderRule { remoteId: string }
+export interface SenderRule {
+  addressOrDomain: string;
+  action: 'block' | 'skipInbox';
+}
+export interface RemoteRule extends SenderRule {
+  remoteId: string;
+}
 
 /** Gmail filters, Graph `messageRules`; so block and skip-Inbox act while the Mac sleeps. Edits are delete-and-recreate. */
 export interface RulesAdapter {
@@ -470,7 +579,11 @@ export interface ProviderAdapter {
    */
   syncStep(step: PlannedStep, state: SyncState, ctx: AdapterContext): Promise<StepResult>;
   /** `ProviderPort.openThread`'s adapter half (AM-1). */
-  openThread(ref: ThreadOpenRef, lane: 'interactive' | 'prefetch', ctx: AdapterContext): Promise<OpenedThread>;
+  openThread(
+    ref: ThreadOpenRef,
+    lane: 'interactive' | 'prefetch',
+    ctx: AdapterContext,
+  ): Promise<OpenedThread>;
   fetchAttachment(ref: AttachmentRef, ctx: AdapterContext): Promise<AsyncIterable<Uint8Array>>;
   /** Pure: merges pending ops into provider calls. */
   coalesce(ops: PendingOp[]): CoalescedOp[];

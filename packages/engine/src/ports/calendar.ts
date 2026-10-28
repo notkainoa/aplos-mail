@@ -98,7 +98,11 @@ export interface CalendarStepResult {
    * are removed, inside `bound` when set (Graph `calendarView` covers a window, epoch ms `start_utc` from inclusive, to
    * exclusive), so a deletion missed while the sync token was invalid does not stay as a ghost. Generation as `SyncState`.
    */
-  scopeCovered?: { scope: `cal:${string}`; generation: number; bound?: { from: number; to: number } };
+  scopeCovered?: {
+    scope: `cal:${string}`;
+    generation: number;
+    bound?: { from: number; to: number };
+  };
   reset?: 'syncTokenInvalid' | 'windowRolled';
   quarantine?: Quarantine[];
   costUnits: number;
@@ -121,11 +125,29 @@ export interface CalendarAdapter {
   readonly budget: BudgetId;
   /** Pure: cadence for `calendars` and each `cal:<id>` scope (primary 2-5 min, others 15-30, list 30, jittered). */
   plan(input: PlanInput): PlannedStep[];
-  listCalendars(state: SyncState | undefined, ctx: AdapterContext): Promise<{ calendars: CalendarFacts[]; removed: string[]; nextState: SyncState; costUnits: number }>;
-  syncStep(calendarRemoteId: string, state: SyncState, lane: SyncLane, ctx: AdapterContext): Promise<CalendarStepResult>;
+  listCalendars(
+    state: SyncState | undefined,
+    ctx: AdapterContext,
+  ): Promise<{
+    calendars: CalendarFacts[];
+    removed: string[];
+    nextState: SyncState;
+    costUnits: number;
+  }>;
+  syncStep(
+    calendarRemoteId: string,
+    state: SyncState,
+    lane: SyncLane,
+    ctx: AdapterContext,
+  ): Promise<CalendarStepResult>;
   /** An occurrence edit creates an override; `following` splits the series. */
   put(change: EventChange, ctx: AdapterContext): Promise<CalendarWriteResult>;
   remove(ref: EventRef & { scope: EditScope }, ctx: AdapterContext): Promise<CalendarWriteResult>;
   /** Edits only the self attendee (Google sends the whole list; CalDAV the own PARTSTAT). */
-  rsvp(ref: EventRef & { scope: EditScope }, response: 'accepted' | 'declined' | 'tentative', opts: { notify: boolean }, ctx: AdapterContext): Promise<CalendarWriteResult>;
+  rsvp(
+    ref: EventRef & { scope: EditScope },
+    response: 'accepted' | 'declined' | 'tentative',
+    opts: { notify: boolean },
+    ctx: AdapterContext,
+  ): Promise<CalendarWriteResult>;
 }

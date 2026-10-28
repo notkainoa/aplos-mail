@@ -11,7 +11,27 @@ import { Bytes, getMethod, methodNames } from '../src/index';
  */
 type Def = { type: string; [key: string]: unknown };
 const defOf = (schema: unknown): Def => (schema as { _zod: { def: Def } })._zod.def;
-const forbidden = new Set(['tuple', 'date', 'map', 'set', 'bigint', 'transform', 'pipe', 'default', 'prefault', 'catch', 'promise', 'symbol', 'nan', 'file', 'function', 'lazy', 'intersection', 'undefined', 'void']);
+const forbidden = new Set([
+  'tuple',
+  'date',
+  'map',
+  'set',
+  'bigint',
+  'transform',
+  'pipe',
+  'default',
+  'prefault',
+  'catch',
+  'promise',
+  'symbol',
+  'nan',
+  'file',
+  'function',
+  'lazy',
+  'intersection',
+  'undefined',
+  'void',
+]);
 const wrappers = new Set(['optional', 'nullable', 'readonly', 'nonoptional']);
 
 function unwrap(schema: unknown): Def {
@@ -25,15 +45,19 @@ function lint(schema: unknown, path: string, problems: string[], seen = new Set<
   seen.add(schema);
   const def = defOf(schema);
   if (forbidden.has(def.type)) problems.push(`${path}: ${def.type}`);
-  if (def.type === 'custom' && schema !== Bytes) problems.push(`${path}: a custom type other than Bytes`);
+  if (def.type === 'custom' && schema !== Bytes)
+    problems.push(`${path}: a custom type other than Bytes`);
   const children: [string, unknown][] = [];
   if (wrappers.has(def.type)) children.push(['', def.innerType]);
-  if (def.type === 'object') for (const [key, value] of Object.entries(def.shape as Record<string, unknown>)) children.push([`.${key}`, value]);
+  if (def.type === 'object')
+    for (const [key, value] of Object.entries(def.shape as Record<string, unknown>))
+      children.push([`.${key}`, value]);
   if (def.type === 'array') children.push(['[]', def.element]);
   if (def.type === 'record') children.push(['{key}', def.keyType], ['{}', def.valueType]);
   if (def.type === 'union') {
     const options = def.options as unknown[];
-    if (options.some(o => unwrap(o).type === 'object') && !def.discriminator) problems.push(`${path}: a union of objects without a discriminator`);
+    if (options.some(o => unwrap(o).type === 'object') && !def.discriminator)
+      problems.push(`${path}: a union of objects without a discriminator`);
     options.forEach((o, i) => children.push([`|${i}`, o]));
   }
   for (const [suffix, child] of children) lint(child, path + suffix, problems, seen);
@@ -41,8 +65,10 @@ function lint(schema: unknown, path: string, problems: string[], seen = new Set<
 
 function allSchemas(): [string, unknown][] {
   const out: [string, unknown][] = [];
-  for (const name of methodNames) out.push([`${name} input`, getMethod(name).input], [`${name} output`, getMethod(name).output]);
-  for (const [name, value] of Object.entries(contract)) if (value && typeof value === 'object' && '_zod' in value) out.push([name, value]);
+  for (const name of methodNames)
+    out.push([`${name} input`, getMethod(name).input], [`${name} output`, getMethod(name).output]);
+  for (const [name, value] of Object.entries(contract))
+    if (value && typeof value === 'object' && '_zod' in value) out.push([name, value]);
   return out;
 }
 
@@ -58,7 +84,13 @@ test('the lint catches each forbidden shape', () => {
     ['date', z.object({ at: z.date() })],
     ['map', z.map(z.string(), z.string())],
     ['bigint', z.bigint()],
-    ['transform', z.pipe(z.string(), z.transform(v => v.length))],
+    [
+      'transform',
+      z.pipe(
+        z.string(),
+        z.transform(v => v.length),
+      ),
+    ],
     ['default', z._default(z.string(), 'x')],
     ['union', z.union([z.object({ a: z.string() }), z.object({ b: z.string() })])],
     ['custom', z.custom<string>(() => true)],
@@ -78,6 +110,13 @@ test('every method input is an object, so HTTP bodies are JSON objects and field
 test('every registered schema converts to JSON Schema 2020-12', () => {
   // zod refuses custom types before an override runs, so `Bytes` is allowed by the lint above, not here.
   for (const [name, schema] of allSchemas()) {
-    assert.doesNotThrow(() => z.toJSONSchema(schema as z.ZodMiniType, { target: 'draft-2020-12', unrepresentable: 'any' }), name);
+    assert.doesNotThrow(
+      () =>
+        z.toJSONSchema(schema as z.ZodMiniType, {
+          target: 'draft-2020-12',
+          unrepresentable: 'any',
+        }),
+      name,
+    );
   }
 });

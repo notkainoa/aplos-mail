@@ -26,7 +26,10 @@ type Open<T extends string> = T | (string & {});
  * newer engine can add one (ARCH 9.3). Use it for outputs; inputs a method must understand use a closed `z.enum`.
  */
 export function openEnum<const T extends readonly [string, ...string[]]>(values: T) {
-  return z.union([z.enum(values), z.string()]) as unknown as z.ZodMiniType<Open<T[number]>, Open<T[number]>>;
+  return z.union([z.enum(values), z.string()]) as unknown as z.ZodMiniType<
+    Open<T[number]>,
+    Open<T[number]>
+  >;
 }
 
 /** A closed enum with today's "Invalid option." sentence. */
@@ -37,7 +40,8 @@ export function choice<const T extends readonly [string, ...string[]]>(values: T
 export const bool = () => z.boolean({ error: messages.checkbox });
 
 /** Bounded text. Every free-text field has a ceiling so a hostile caller cannot hand the engine a 1 GB string. */
-export const text = (max: number) => z.string({ error: messages.text }).check(z.maxLength(max, messages.text));
+export const text = (max: number) =>
+  z.string({ error: messages.text }).check(z.maxLength(max, messages.text));
 /** Single-line text: no CR or LF, for names and header-bound values. */
 export const line = (max: number) => text(max).check(z.regex(/^[^\r\n]*$/, messages.text));
 
@@ -53,28 +57,63 @@ export const EpochMs = z.int({ error: messages.date }).check(z.nonnegative(messa
 export const DurationMs = z.int({ error: messages.number }).check(z.nonnegative(messages.number));
 export const Count = z.int({ error: messages.number }).check(z.nonnegative(messages.number));
 
-const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
+const isDay = (v: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(v) &&
+  Number.isFinite(Date.parse(v)) &&
+  new Date(v).toISOString().slice(0, 10) === v;
 /** A calendar day with no time zone, `YYYY-MM-DD` (due dates, all-day events). */
-export const LocalDate = z.string({ error: messages.dueDate }).check(z.refine(isDay, messages.dueDate));
+export const LocalDate = z
+  .string({ error: messages.dueDate })
+  .check(z.refine(isDay, messages.dueDate));
 
 /** An IANA time zone name such as `America/Los_Angeles`. */
 export const TimeZone = line(100);
 
 const isEmail = (v: string) => /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(v);
 /** An email address as typed; the engine lower-cases it (no transforms on the wire). */
-export const Email = z.string({ error: messages.email }).check(z.maxLength(320, messages.email), z.refine(isEmail, messages.email));
+export const Email = z
+  .string({ error: messages.email })
+  .check(z.maxLength(320, messages.email), z.refine(isEmail, messages.email));
 export const Address = z.object({ address: Email, name: z.optional(line(200)) });
 export type Address = z.infer<typeof Address>;
 /** A sender match for rules and the image allow-list: a full address or `@domain`. */
-export const SenderMatch = z.string({ error: messages.email }).check(z.maxLength(320, messages.email),
-  z.refine(v => isEmail(v) || /^@[^\s@<>]+\.[^\s@<>]+$/.test(v), messages.email));
+export const SenderMatch = z.string({ error: messages.email }).check(
+  z.maxLength(320, messages.email),
+  z.refine(v => isEmail(v) || /^@[^\s@<>]+\.[^\s@<>]+$/.test(v), messages.email),
+);
 
-const parsesAsUrl = (v: string) => { if (!v.trim()) return true; try { new URL(v.trim()); return true; } catch { return false; } };
-const isPlainHttp = (v: string) => { if (!v.trim()) return true; try { const u = new URL(v.trim()); return /^https?:$/.test(u.protocol) && !u.username && !u.password; } catch { return true; } };
+const parsesAsUrl = (v: string) => {
+  if (!v.trim()) return true;
+  try {
+    new URL(v.trim());
+    return true;
+  } catch {
+    return false;
+  }
+};
+const isPlainHttp = (v: string) => {
+  if (!v.trim()) return true;
+  try {
+    const u = new URL(v.trim());
+    return /^https?:$/.test(u.protocol) && !u.username && !u.password;
+  } catch {
+    return true;
+  }
+};
 /** An http(s) server address with no credentials in it; empty means "use the default". */
-export const HttpAddress = text(500).check(z.refine(parsesAsUrl, messages.serverAddress), z.refine(isPlainHttp, messages.plainAddress));
+export const HttpAddress = text(500).check(
+  z.refine(parsesAsUrl, messages.serverAddress),
+  z.refine(isPlainHttp, messages.plainAddress),
+);
 
-const isHttps = (v: string) => { try { const u = new URL(v); return u.protocol === 'https:' && !u.username && !u.password; } catch { return false; } };
+const isHttps = (v: string) => {
+  try {
+    const u = new URL(v);
+    return u.protocol === 'https:' && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+};
 export const HttpsUrl = text(2_000).check(z.refine(isHttps, 'Use an https address.'));
 
 /**
@@ -112,4 +151,8 @@ export const Empty = z.object({});
 export const Ok = z.object({ ok: z.literal(true) });
 
 /** A provider or AI failure reduced to what the UI may show: a copy key and, when useful, the sentence. */
-export const Problem = z.object({ reasonCode: z.string(), message: z.optional(z.string()), at: z.optional(EpochMs) });
+export const Problem = z.object({
+  reasonCode: z.string(),
+  message: z.optional(z.string()),
+  at: z.optional(EpochMs),
+});

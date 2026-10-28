@@ -9,8 +9,24 @@ import { AiProviderId } from './ai';
  * is open: an absent key means unavailable, and a newer engine may add keys.
  */
 export const capabilityKeys = [
-  'desktop', 'mailFrame', 'listener', 'clients', 'mcp', 'diagnostics', 'queueInspector', 'calendar', 'calendarWrite', 'remoteSearch',
-  'transcribe', 'microphone', 'notifications', 'loginItem', 'menuBar', 'workflowSync', 'unsubscribeOneClick', 'eventFollowingScope',
+  'desktop',
+  'mailFrame',
+  'listener',
+  'clients',
+  'mcp',
+  'diagnostics',
+  'queueInspector',
+  'calendar',
+  'calendarWrite',
+  'remoteSearch',
+  'transcribe',
+  'microphone',
+  'notifications',
+  'loginItem',
+  'menuBar',
+  'workflowSync',
+  'unsubscribeOneClick',
+  'eventFollowingScope',
 ] as const;
 
 /** `Session/get` (ARCH 9.5): the handshake facts every window reads first. */
@@ -23,13 +39,17 @@ export const Session = z.object({
   /** `starting` until migrations or the import finish; `parked` after repeated crashes or a damaged database (ARCH 2.4). */
   engine: z.object({
     state: openEnum(['starting', 'ready', 'parked']),
-    parked: z.optional(z.object({ reasonCode: line(60), message: z.string(), at: EpochMs, canRetry: z.boolean() })),
+    parked: z.optional(
+      z.object({ reasonCode: line(60), message: z.string(), at: EpochMs, canRetry: z.boolean() }),
+    ),
     /** The engine keeps running with no window (resident menu-bar mode, ARCH 2.2). */
     resident: z.boolean(),
   }),
   capabilities: z.record(line(60), z.boolean()),
   /** Which account kinds this build can connect, and why not when it cannot (today's `capabilities.get`). */
-  providers: z.array(z.object({ kind: line(30), available: z.boolean(), unavailableReason: z.optional(z.string()) })),
+  providers: z.array(
+    z.object({ kind: line(30), available: z.boolean(), unavailableReason: z.optional(z.string()) }),
+  ),
   /** Any account exists, demo accounts included, so main chooses the onboarding or the mail window. */
   hasAccounts: z.boolean(),
   /** First-run facts: onboarding opens only when neither is set, so "Skip setup" with zero accounts does not reopen it forever. */
@@ -48,7 +68,16 @@ export type Session = z.infer<typeof Session>;
  */
 export const SetupAccount = z.object({
   accountId: Id,
-  state: openEnum(['connecting', 'finding', 'reading', 'sorting', 'ready', 'paused', 'failed', 'notConnected']),
+  state: openEnum([
+    'connecting',
+    'finding',
+    'reading',
+    'sorting',
+    'ready',
+    'paused',
+    'failed',
+    'notConnected',
+  ]),
   firstWindow: z.object({
     found: z.optional(Count),
     read: Count,
@@ -56,14 +85,16 @@ export const SetupAccount = z.object({
     /** The first window is committed (`baselineDoneAt` set), even when it held fewer than `total` threads. */
     done: z.boolean(),
   }),
-  ai: z.optional(z.object({
-    sorted: Count,
-    total: Count,
-    capped: Count,
-    failed: Count,
-    model: z.optional(z.object({ provider: AiProviderId, model: line(200) })),
-    reasonCode: z.optional(ReasonCodeSchema),
-  })),
+  ai: z.optional(
+    z.object({
+      sorted: Count,
+      total: Count,
+      capped: Count,
+      failed: Count,
+      model: z.optional(z.object({ provider: AiProviderId, model: line(200) })),
+      reasonCode: z.optional(ReasonCodeSchema),
+    }),
+  ),
   backfill: z.object({ read: Count, target: Count }),
   pausedUntil: z.optional(EpochMs),
   reconnectBy: z.optional(EpochMs),
@@ -80,7 +111,14 @@ export const SetupStatus = z.object({
   done: z.boolean(),
   /** Something was paused, failed or capped: "Done" says "partly done" and Aplos does not open by itself (DESIGN 7.12). */
   partial: z.boolean(),
-  errors: z.array(z.object({ accountId: z.optional(Id), phase: openEnum(['connect', 'firstWindow', 'ai', 'backfill']), reasonCode: ReasonCodeSchema, at: EpochMs })),
+  errors: z.array(
+    z.object({
+      accountId: z.optional(Id),
+      phase: openEnum(['connect', 'firstWindow', 'ai', 'backfill']),
+      reasonCode: ReasonCodeSchema,
+      at: EpochMs,
+    }),
+  ),
 });
 export type SetupStatus = z.infer<typeof SetupStatus>;
 
@@ -105,8 +143,10 @@ export type SenderRule = z.infer<typeof SenderRule>;
  * `host` methods are only for main's own control connection and are never granted.
  */
 export const scopes = ['read', 'triage', 'draft', 'send', 'ai', 'admin', 'host'] as const;
-export type Scope = typeof scopes[number];
-export const GrantableScope = z.enum(['read', 'triage', 'draft', 'send', 'ai', 'admin'], { error: 'Invalid option.' });
+export type Scope = (typeof scopes)[number];
+export const GrantableScope = z.enum(['read', 'triage', 'draft', 'send', 'ai', 'admin'], {
+  error: 'Invalid option.',
+});
 
 /** A tool on this Mac allowed through the listener. Its token lives only as a hash in the engine and in a 0600 file. */
 export const Client = z.object({
@@ -122,7 +162,13 @@ export const Client = z.object({
 });
 export type Client = z.infer<typeof Client>;
 
-export const AuditEntry = z.object({ id: Id, at: EpochMs, clientId: Id, method: line(100), target: z.optional(line(1_000)) });
+export const AuditEntry = z.object({
+  id: Id,
+  at: EpochMs,
+  clientId: Id,
+  method: line(100),
+  target: z.optional(line(1_000)),
+});
 
 export const ListenerState = z.object({
   enabled: z.boolean(),
@@ -153,22 +199,50 @@ export type QueueItem = z.infer<typeof QueueItem>;
  */
 export const DiagnosticsBundle = z.object({
   generatedAt: EpochMs,
-  versions: z.object({ app: line(100), api: z.int(), schema: z.int(), os: z.optional(line(100)), electron: z.optional(line(100)), sqlite: z.optional(line(40)) }),
-  engine: z.object({ state: line(40), uptimeMs: DurationMs, eventLoopP99Ms: z.optional(z.number()), parkedReason: z.optional(line(60)) }),
-  accounts: z.array(z.object({
-    accountHash: line(64),
-    provider: line(30),
+  versions: z.object({
+    app: line(100),
+    api: z.int(),
+    schema: z.int(),
+    os: z.optional(line(100)),
+    electron: z.optional(line(100)),
+    sqlite: z.optional(line(40)),
+  }),
+  engine: z.object({
     state: line(40),
-    reasonCode: z.optional(line(60)),
-    cursorAgeMs: z.optional(DurationMs),
-    lastSyncAt: z.optional(EpochMs),
-    reconnectBy: z.optional(EpochMs),
-    budgets: z.array(z.object({ budget: line(60), target: z.optional(z.number()), unitsPerMinute: z.optional(z.number()), cooldownUntil: z.optional(EpochMs), dailyBlockUntil: z.optional(EpochMs) })),
-  })),
+    uptimeMs: DurationMs,
+    eventLoopP99Ms: z.optional(z.number()),
+    parkedReason: z.optional(line(60)),
+  }),
+  accounts: z.array(
+    z.object({
+      accountHash: line(64),
+      provider: line(30),
+      state: line(40),
+      reasonCode: z.optional(line(60)),
+      cursorAgeMs: z.optional(DurationMs),
+      lastSyncAt: z.optional(EpochMs),
+      reconnectBy: z.optional(EpochMs),
+      budgets: z.array(
+        z.object({
+          budget: line(60),
+          target: z.optional(z.number()),
+          unitsPerMinute: z.optional(z.number()),
+          cooldownUntil: z.optional(EpochMs),
+          dailyBlockUntil: z.optional(EpochMs),
+        }),
+      ),
+    }),
+  ),
   queues: z.object({ ops: Count, jobs: Count, submissions: Count, failed: Count }),
   /** Recent classified errors; `providerMessage` is already redacted by the Logger. */
   errors: z.array(z.object({ at: EpochMs, error: ClassifiedErrorSchema })),
-  storage: z.object({ dbBytes: Count, walBytes: Count, ftsBacklog: Count, bodyBytes: Count, attachmentBytes: Count }),
+  storage: z.object({
+    dbBytes: Count,
+    walBytes: Count,
+    ftsBacklog: Count,
+    bodyBytes: Count,
+    attachmentBytes: Count,
+  }),
   crashes: z.object({ count: Count, lastAt: z.optional(EpochMs) }),
 });
 export type DiagnosticsBundle = z.infer<typeof DiagnosticsBundle>;

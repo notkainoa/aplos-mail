@@ -12,7 +12,8 @@ import { sha256Hex } from './sha256';
 const SCAN_MAX = 2000;
 
 // Zero-width, bidi, soft-hyphen and variation characters vanish; other control characters become spaces.
-const INVISIBLE = /[\u00ad\u061c\u115f\u1160\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff]/g;
+const INVISIBLE =
+  /[\u00ad\u061c\u115f\u1160\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff]/g;
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 
 /** Provider token and key shapes, and PEM blocks. Each match becomes `[secret]`. */
@@ -30,18 +31,22 @@ const TOKEN_SHAPES = [
   /\bxox[abposr]-[\w-]{8,}/g,
 ];
 /** `key: value` and `key=value` pairs whose value is a credential, including JSON-escaped quotes. Short numbers stay (`"code":403`). */
-const SECRET_PAIR = /\b(authorization|proxy-authorization|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|api[_-]?key|x-api-key|x-goog-api-key|token|password|passwd|pwd|secret|code|cookie|set-cookie|session|sig|signature|key)(\\?["']?\s*[:=]\s*\\?["']?\s*)(?:(?:bearer|basic|token)\s+)?(?!\d{1,5}(?![\w.~+/-]))[^\s"'\\&,;}]+/gi;
+const SECRET_PAIR =
+  /\b(authorization|proxy-authorization|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|api[_-]?key|x-api-key|x-goog-api-key|token|password|passwd|pwd|secret|code|cookie|set-cookie|session|sig|signature|key)(\\?["']?\s*[:=]\s*\\?["']?\s*)(?:(?:bearer|basic|token)\s+)?(?!\d{1,5}(?![\w.~+/-]))[^\s"'\\&,;}]+/gi;
 const AUTH_SCHEME = /\b(bearer|basic)\s+[\w.~+/=-]+/gi;
 /** `token <value>` with a space and no `=`: providers and libraries write it in prose. Short words (`token has`) stay. */
-const SECRET_WORD = /\b((?:access|refresh|id)?[_ -]?token|api[_ -]?key|key|password|passwd|secret)\s+(?=[\w.~+/=-]{12,})[\w.~+/=-]+/gi;
+const SECRET_WORD =
+  /\b((?:access|refresh|id)?[_ -]?token|api[_ -]?key|key|password|passwd|secret)\s+(?=[\w.~+/=-]{12,})[\w.~+/=-]+/gi;
 /** `user:password@host` outside a URL. */
 const USER_INFO = /[^\s@"'<>/:]+:[^\s@"'<>/]+@(?=[A-Za-z0-9])/g;
 /** A labelled piece of mail (`Subject: …`, `To: …`) outside quotes: everything after the label goes, to the end. */
-const CONTENT_LABEL = /\b(subject|title|summary|snippet|body|preview|file ?name|display ?name|name|from|to|cc|bcc|reply-to|sender|recipients?)\s*[:=]\s*\S.*$/gi;
+const CONTENT_LABEL =
+  /\b(subject|title|summary|snippet|body|preview|file ?name|display ?name|name|from|to|cc|bcc|reply-to|sender|recipients?)\s*[:=]\s*\S.*$/gi;
 const URL = /\b([a-z][a-z0-9+.-]{1,15}):\/\/([^\s"'<>\\]+)/gi;
 const ADDRESS = /[^\s@"'<>()[\]{},;:\\/]+@[^\s@"'<>()[\]{},;:\\/]+/g;
 /** Quoted text is where providers echo user data (`Invalid label "…"`); only a bare identifier without digits survives. */
-const QUOTED = /"((?:[^"\\]|\\.)*)"|“([^”]*)”|«([^»]*)»|(?<![A-Za-z])'((?:[^'\\]|\\.){1,200})'(?![A-Za-z])/g;
+const QUOTED =
+  /"((?:[^"\\]|\\.)*)"|“([^”]*)”|«([^»]*)»|(?<![A-Za-z])'((?:[^'\\]|\\.){1,200})'(?![A-Za-z])/g;
 const SAFE_QUOTED = /^[A-Za-z_][A-Za-z_.-]{0,40}$/;
 /** A run of 8+ word characters mixing letters and digits: ids, tokens, hex, canaries. Plain words and short codes stay. */
 const MIXED_RUN = /(?<![\w-])(?=[\w-]*[A-Za-z])(?=[\w-]*\d)[\w-]{8,}(?![\w-])/g;
@@ -54,9 +59,14 @@ const IP = /\b\d{1,3}(?:\.\d{1,3}){3}\b|(?<![\w:])(?:[0-9a-f]{0,4}:){3,7}[0-9a-f
 
 /** NFKC-folds (fullwidth `＠` becomes `@`), drops invisible characters and undoes common escapes of `@`. */
 function fold(text: string): string {
-  return text.normalize('NFKC').replace(INVISIBLE, '').replace(CONTROL, ' ')
-    .replace(/%(?:25)?40/gi, '@').replace(/&#0*64;|&#x0*40;|&commat;|\\u0040/gi, '@')
-    .replace(/\s*[[({]\s*at\s*[\])}]\s*/gi, '@').replace(/\s*[[({]\s*dot\s*[\])}]\s*/gi, '.');
+  return text
+    .normalize('NFKC')
+    .replace(INVISIBLE, '')
+    .replace(CONTROL, ' ')
+    .replace(/%(?:25)?40/gi, '@')
+    .replace(/&#0*64;|&#x0*40;|&commat;|\\u0040/gi, '@')
+    .replace(/\s*[[({]\s*at\s*[\])}]\s*/gi, '@')
+    .replace(/\s*[[({]\s*dot\s*[\])}]\s*/gi, '.');
 }
 
 /** Lower-cased, NFKC-folded, invisible characters removed, so `Bob@X.example` and `ｂｏｂ@x.example` hash alike. */
@@ -71,24 +81,49 @@ export function hashAddress(salt: string, address: string): string {
 
 /** True when a short string has the shape of a credential: a known token prefix or a long alphanumeric run with digits. */
 export function looksSecret(text: string): boolean {
-  if (TOKEN_SHAPES.some(re => { re.lastIndex = 0; return re.test(text); })) return true;
-  return /(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{24,}/.test(text) || /\b(bearer|basic)\s/i.test(text);
+  if (
+    TOKEN_SHAPES.some(re => {
+      re.lastIndex = 0;
+      return re.test(text);
+    })
+  )
+    return true;
+  return (
+    /(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{24,}/.test(text) ||
+    /\b(bearer|basic)\s/i.test(text)
+  );
 }
 
 /** An opaque local id, or undefined when the value is anything else. */
 export function cleanId(value: unknown): string | undefined {
-  return typeof value === 'string' && logIdPattern.test(value) && !looksSecret(value) ? value : undefined;
+  return typeof value === 'string' && logIdPattern.test(value) && !looksSecret(value)
+    ? value
+    : undefined;
 }
 
 /** A method id, reason code or model id, or undefined when the value is anything else (a URL included). */
 export function cleanCode(value: unknown): string | undefined {
-  return typeof value === 'string' && logCodePattern.test(value) && !value.includes('//') && !looksSecret(value) ? value : undefined;
+  return typeof value === 'string' &&
+    logCodePattern.test(value) &&
+    !value.includes('//') &&
+    !looksSecret(value)
+    ? value
+    : undefined;
 }
 
 /** An OAuth scope: a code (`Mail.Send`, `openid`), or a URL scope on a provider's own scope host. */
 export function cleanScope(value: unknown): string | undefined {
-  const url = typeof value === 'string' && value.length <= 100 ? /^https:\/\/(www\.googleapis\.com|mail\.google\.com|graph\.microsoft\.com|outlook\.office\.com)\/([A-Za-z0-9_./-]*)$/.exec(value) : null;
-  return url ? (url[2] === '' || cleanCode(url[2]) ? value as string : undefined) : cleanCode(value);
+  const url =
+    typeof value === 'string' && value.length <= 100
+      ? /^https:\/\/(www\.googleapis\.com|mail\.google\.com|graph\.microsoft\.com|outlook\.office\.com)\/([A-Za-z0-9_./-]*)$/.exec(
+          value,
+        )
+      : null;
+  return url
+    ? url[2] === '' || cleanCode(url[2])
+      ? (value as string)
+      : undefined
+    : cleanCode(value);
 }
 
 /** The URL with its user-info, query and fragment removed; the path stays for the later passes. */
@@ -112,8 +147,12 @@ export function redactText(input: string, salt: string, max = LOG_TEXT_MAX): str
   if (input.length > SCAN_MAX) return '[long text]';
   let text = fold(input);
   for (const re of TOKEN_SHAPES) text = text.replace(re, '[secret]');
-  text = text.replace(SECRET_PAIR, '$1$2[secret]').replace(AUTH_SCHEME, '$1 [secret]').replace(SECRET_WORD, '$1 [secret]')
-    .replace(URL, trimUrl).replace(USER_INFO, '[secret]@');
+  text = text
+    .replace(SECRET_PAIR, '$1$2[secret]')
+    .replace(AUTH_SCHEME, '$1 [secret]')
+    .replace(SECRET_WORD, '$1 [secret]')
+    .replace(URL, trimUrl)
+    .replace(USER_INFO, '[secret]@');
   // Address hashes are parked behind private-use markers so the later passes cannot mangle them.
   const hashes: string[] = [];
   text = text.replace(ADDRESS, match => {
@@ -129,8 +168,15 @@ export function redactText(input: string, salt: string, max = LOG_TEXT_MAX): str
   // label inside a quoted string can never eat that string's closing quote.
   if ((text.match(/"/g)?.length ?? 0) % 2) text = text.replace(/"[^"]*$/, '"[text]');
   text = text.replace(CONTENT_LABEL, '$1: [text]');
-  text = text.replace(IP, '[ip]').replace(BASE64_PLUS, '[secret]').replace(MIXED_RUN, '[id]').replace(LONG_LETTERS, '[secret]').replace(LONG_DIGITS, '[n]');
-  text = text.replace(/\ue000(\d+)\ue001/g, (_m, i: string) => `[addr:${hashes[Number(i)]}]`).replace(/[\ue000\ue001]/g, '');
+  text = text
+    .replace(IP, '[ip]')
+    .replace(BASE64_PLUS, '[secret]')
+    .replace(MIXED_RUN, '[id]')
+    .replace(LONG_LETTERS, '[secret]')
+    .replace(LONG_DIGITS, '[n]');
+  text = text
+    .replace(/\ue000(\d+)\ue001/g, (_m, i: string) => `[addr:${hashes[Number(i)]}]`)
+    .replace(/[\ue000\ue001]/g, '');
   text = text.replace(/\s+/g, ' ').trim();
   if (text.length > max) {
     text = text.slice(0, max);

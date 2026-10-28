@@ -168,4 +168,8 @@ target TEXT) STRICT`,
   `CREATE INDEX audit_at ON audit_log(at)`,
 ];
 
-export const migration0001: Migration = { version: 1, name: 'initial', sql: statements.join(';\n') + ';\n' };
+export const migration0001: Migration = {
+  version: 1,
+  name: 'initial',
+  sql: statements.join(';\n') + ';\n',
+};

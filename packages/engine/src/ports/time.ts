@@ -1,7 +1,9 @@
 // Time: the injected clock and the one engine timer loop's deadline-source registry (ARCH 7.5, plan 10 E6 item 5).
 
 /** A one-shot timer from `Clock.timer`; `cancel` is idempotent. */
-export interface Timer { cancel(): void }
+export interface Timer {
+  cancel(): void;
+}
 
 /**
  * The only source of time in the neutral engine, so every timed rule runs on a fake clock in tests.
@@ -23,14 +25,14 @@ export interface Clock {
 
 /** Known deadline sources; open so a later module registers its own without a port change. */
 export type DeadlineSourceId =
-  | 'outbox'        // submissions.not_before (eng-time)
-  | 'reminders'     // thread_workflow.reminder_at (eng-time)
-  | 'later'         // thread_workflow.later_until, Later and snooze returns (eng-time)
-  | 'drafts'        // the next draft upload: 5 s idle, or a paused upload's retry (eng-time)
-  | 'dueBand'       // the next local midnight, when due_band is refreshed (eng-ai)
-  | 'jobs'          // jobs.next_at (eng-ai)
-  | 'ops'           // ops.next_at, the op-flush retry time (prov-gov)
-  | 'governor'      // the earliest cooldown_until or daily_block_until (prov-gov)
+  | 'outbox' // submissions.not_before (eng-time)
+  | 'reminders' // thread_workflow.reminder_at (eng-time)
+  | 'later' // thread_workflow.later_until, Later and snooze returns (eng-time)
+  | 'drafts' // the next draft upload: 5 s idle, or a paused upload's retry (eng-time)
+  | 'dueBand' // the next local midnight, when due_band is refreshed (eng-ai)
+  | 'jobs' // jobs.next_at (eng-ai)
+  | 'ops' // ops.next_at, the op-flush retry time (prov-gov)
+  | 'governor' // the earliest cooldown_until or daily_block_until (prov-gov)
   | `sync:${string}` // one account actor's next planned step (`PlannedStep.notBefore`) (prov-gov)
   | (string & {});
 

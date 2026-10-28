@@ -39,7 +39,8 @@ export interface StoreReader {
 /** Who is writing. `sync` commits can carry a mutation fence; `local` commits mark rows for it. */
 export type CommitOrigin = 'sync' | 'local' | 'import' | 'system';
 /** Which sync step produced the facts (the port's `StepOrigin`, plus `search`); decides notifications and search rows. */
-export type SyncStepOrigin = 'baseline' | 'incremental' | 'backfill' | 'resync' | 'prefetch' | 'workflow' | 'search';
+export type SyncStepOrigin =
+  'baseline' | 'incremental' | 'backfill' | 'resync' | 'prefetch' | 'workflow' | 'search';
 
 export interface CommitInput {
   /** Idempotency key. A commit whose opId was already applied changes nothing and returns that commit's seq. */
@@ -67,14 +68,29 @@ export interface CommitResult {
 }
 
 export type StoreWrite =
-  | AccountWrite | FolderWrite | FolderDeleteWrite
-  | MessageWrite | MessageDeleteWrite | PlacementsWrite | FlagsWrite
-  | ThreadWrite | ThreadDeleteWrite | WorkflowWrite
-  | SyncStateWrite | SweepWrite | MetaWrite;
+  | AccountWrite
+  | FolderWrite
+  | FolderDeleteWrite
+  | MessageWrite
+  | MessageDeleteWrite
+  | PlacementsWrite
+  | FlagsWrite
+  | ThreadWrite
+  | ThreadDeleteWrite
+  | WorkflowWrite
+  | SyncStateWrite
+  | SweepWrite
+  | MetaWrite;
 
-export interface Address { address: string; name?: string }
+export interface Address {
+  address: string;
+  name?: string;
+}
 /** One message's place in a folder. `uid` is the IMAP UID in that folder; absent elsewhere. */
-export interface FolderRef { folder: string; uid?: number }
+export interface FolderRef {
+  folder: string;
+  uid?: number;
+}
 /** Which messages a delta touches: one message, or every non-draft message of a thread (thread-level actions). */
 export type MessageTarget = { remoteId: string } | { remoteThreadId: string };
 
@@ -103,8 +119,20 @@ export interface AccountWrite {
 
 /** What `folders.role` stores (F3 re-exports it); the `category.*` roles are Gmail's tabs, read by `laneFor`. */
 export type FolderRole =
-  | 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'archive' | 'starred' | 'important' | 'all'
-  | 'category.personal' | 'category.social' | 'category.promotions' | 'category.updates' | 'category.forums';
+  | 'inbox'
+  | 'sent'
+  | 'drafts'
+  | 'trash'
+  | 'spam'
+  | 'archive'
+  | 'starred'
+  | 'important'
+  | 'all'
+  | 'category.personal'
+  | 'category.social'
+  | 'category.promotions'
+  | 'category.updates'
+  | 'category.forums';
 
 export interface FolderWrite {
   kind: 'folder';
@@ -117,10 +145,27 @@ export interface FolderWrite {
   uidValidity?: number | null;
   hidden?: boolean;
 }
-export interface FolderDeleteWrite { kind: 'folderDelete'; accountId: string; remoteId: string }
+export interface FolderDeleteWrite {
+  kind: 'folderDelete';
+  accountId: string;
+  remoteId: string;
+}
 
-export interface MessageFlags { seen: boolean; flagged: boolean; answered?: boolean; draft: boolean; fromMe: boolean }
-export interface HeaderBits { bulk?: boolean; list?: boolean; autoSubmitted?: boolean; noreply?: boolean; directToMe?: boolean; ccMe?: boolean }
+export interface MessageFlags {
+  seen: boolean;
+  flagged: boolean;
+  answered?: boolean;
+  draft: boolean;
+  fromMe: boolean;
+}
+export interface HeaderBits {
+  bulk?: boolean;
+  list?: boolean;
+  autoSubmitted?: boolean;
+  noreply?: boolean;
+  directToMe?: boolean;
+  ccMe?: boolean;
+}
 
 /**
  * Upsert of one message's metadata (body-free). The thread is created when unknown. `folders`, when present, is the
@@ -161,7 +206,11 @@ export interface MessageWrite {
   /** Defaults: `search` for `step: 'search'`, `local` for local and import commits, else `sync`. */
   origin?: 'sync' | 'search' | 'local';
 }
-export interface MessageDeleteWrite { kind: 'messageDelete'; accountId: string; remoteId: string }
+export interface MessageDeleteWrite {
+  kind: 'messageDelete';
+  accountId: string;
+  remoteId: string;
+}
 
 /** Placement delta: Gmail labelsAdded/labelsRemoved at zero fetch, IMAP/JMAP/Graph moves, local label and archive. */
 export interface PlacementsWrite {
@@ -173,14 +222,31 @@ export interface PlacementsWrite {
   seenGen?: number;
 }
 /** Flag delta (Gmail UNREAD/STARRED, IMAP flags, local read/star). Absent fields stay. */
-export interface FlagsWrite { kind: 'flags'; accountId: string; target: MessageTarget; seen?: boolean; flagged?: boolean; answered?: boolean }
+export interface FlagsWrite {
+  kind: 'flags';
+  accountId: string;
+  target: MessageTarget;
+  seen?: boolean;
+  flagged?: boolean;
+  answered?: boolean;
+}
 
 /**
  * Thread-level facts that are not rollups. Rollups always come from the messages. `remoteCount` is the server's own
  * message count (`MessageFacts.threadSize`), kept apart from `msg_count` for `openThread`'s `knownCount`.
  */
-export interface ThreadWrite { kind: 'thread'; accountId: string; remoteThreadId: string; complete?: boolean; remoteCount?: number | null }
-export interface ThreadDeleteWrite { kind: 'threadDelete'; accountId: string; remoteThreadId: string }
+export interface ThreadWrite {
+  kind: 'thread';
+  accountId: string;
+  remoteThreadId: string;
+  complete?: boolean;
+  remoteCount?: number | null;
+}
+export interface ThreadDeleteWrite {
+  kind: 'threadDelete';
+  accountId: string;
+  remoteThreadId: string;
+}
 
 export interface WorkflowFields {
   status: 'new' | 'done' | 'later';
@@ -203,7 +269,12 @@ export interface WorkflowFields {
   editGen: number | null;
 }
 /** Patch of a known thread's workflow row. An unknown thread fails the whole commit. */
-export interface WorkflowWrite { kind: 'workflow'; accountId: string; remoteThreadId: string; patch: Partial<WorkflowFields> }
+export interface WorkflowWrite {
+  kind: 'workflow';
+  accountId: string;
+  remoteThreadId: string;
+  patch: Partial<WorkflowFields>;
+}
 
 /** The whole `sync_state` row for one scope, committed with the facts it covers (ARCH 4.2 rule 2). */
 export interface SyncStateWrite {
@@ -236,11 +307,20 @@ export interface SweepWrite {
 }
 
 /** Engine-owned key/values (`import_state`, `imported_from`, `consent_version`). `null` deletes. Reserved keys refuse. */
-export interface MetaWrite { kind: 'meta'; key: string; value: string | null }
+export interface MetaWrite {
+  kind: 'meta';
+  key: string;
+  value: string | null;
+}
 
 // ---------------------------------------------------------------- change log
 
-export interface Change { seq: number; type: ChangeType; id: string; op: 'u' | 'd' | '*' }
+export interface Change {
+  seq: number;
+  type: ChangeType;
+  id: string;
+  op: 'u' | 'd' | '*';
+}
 /** Contract type names. Open: later lanes add Draft, Submission, Calendar, Event. */
 export type ChangeType = 'Account' | 'Folder' | 'Thread' | 'Message' | (string & {});
 
@@ -253,5 +333,10 @@ export type ChangesSince =
 
 export type StoreErrorCode = 'notFound' | 'invalid';
 export class StoreError extends Error {
-  constructor(readonly code: StoreErrorCode, message: string) { super(message); }
+  constructor(
+    readonly code: StoreErrorCode,
+    message: string,
+  ) {
+    super(message);
+  }
 }

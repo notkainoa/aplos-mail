@@ -1,6 +1,12 @@
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { chmodSync } from 'node:fs';
-import type { SqlDatabase, SqlRow, SqlRunResult, SqlStatement, SqlValue } from '@aplos/engine/store/sql';
+import type {
+  SqlDatabase,
+  SqlRow,
+  SqlRunResult,
+  SqlStatement,
+  SqlValue,
+} from '@aplos/engine/store/sql';
 
 export interface OpenSqliteOptions {
   /** Read-only connections (the importer reading `aplos.db`) skip every pragma that writes. */
@@ -15,7 +21,11 @@ export interface OpenSqliteOptions {
  */
 export function openSqlite(path: string, options: OpenSqliteOptions = {}): SqlDatabase {
   const busy = options.busyTimeoutMs ?? 5000;
-  const db = new DatabaseSync(path, { readOnly: options.readOnly ?? false, timeout: busy, enableForeignKeyConstraints: true });
+  const db = new DatabaseSync(path, {
+    readOnly: options.readOnly ?? false,
+    timeout: busy,
+    enableForeignKeyConstraints: true,
+  });
   try {
     if (!options.readOnly) {
       // auto_vacuum only takes effect before the first table exists, so it runs first; on an existing file it is a no-op.
@@ -46,6 +56,7 @@ function wrap(statement: StatementSync): SqlStatement {
     },
     get: <R extends SqlRow>(...params: SqlValue[]) => statement.get(...params) as R | undefined,
     all: <R extends SqlRow>(...params: SqlValue[]) => statement.all(...params) as R[],
-    iterate: <R extends SqlRow>(...params: SqlValue[]) => statement.iterate(...params) as IterableIterator<R>,
+    iterate: <R extends SqlRow>(...params: SqlValue[]) =>
+      statement.iterate(...params) as IterableIterator<R>,
   };
 }

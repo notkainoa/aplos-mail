@@ -51,7 +51,9 @@ export const Draft = z.object({
   origin: openEnum(['local', 'remote']),
   sync: openEnum(['localOnly', 'pending', 'synced', 'failed']),
   /** Set when another device changed the draft: "keep mine, take theirs, or keep both" (`Draft/resolve`). */
-  conflict: z.optional(z.object({ theirsRevision: Count, at: EpochMs, device: z.optional(line(200)) })),
+  conflict: z.optional(
+    z.object({ theirsRevision: Count, at: EpochMs, device: z.optional(line(200)) }),
+  ),
   /** The live submission while one is queued, scheduled, sending, uncertain, failed or suspended. */
   submissionId: z.optional(Id),
 });
@@ -63,7 +65,16 @@ export type Draft = z.infer<typeof Draft>;
  * engine checks Sent), `failed` (provably not sent, Retry offered), `cancelled` (undone) or `suspended` (missed its time
  * while the Mac was off).
  */
-export const SubmissionState = openEnum(['queued', 'scheduled', 'sending', 'sent', 'uncertain', 'failed', 'cancelled', 'suspended']);
+export const SubmissionState = openEnum([
+  'queued',
+  'scheduled',
+  'sending',
+  'sent',
+  'uncertain',
+  'failed',
+  'cancelled',
+  'suspended',
+]);
 
 export const Submission = z.object({
   id: Id,
@@ -90,7 +101,13 @@ export type Submission = z.infer<typeof Submission>;
 /** One `Submission/set` command per user intent. Input: closed. */
 export const SubmissionAction = z.discriminatedUnion('type', [
   /** Send the draft's current revision after the undo window, or at `notBefore` (send later). */
-  z.object({ type: z.literal('send'), draftId: Id, revision: Count, notBefore: z.optional(EpochMs), alsoDone: z.optional(bool()) }),
+  z.object({
+    type: z.literal('send'),
+    draftId: Id,
+    revision: Count,
+    notBefore: z.optional(EpochMs),
+    alsoDone: z.optional(bool()),
+  }),
   /** Cancel before `notBefore`; the draft comes back. */
   z.object({ type: z.literal('undo'), submissionId: Id }),
   z.object({ type: z.literal('sendNow'), submissionId: Id }),

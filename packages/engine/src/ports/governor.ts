@@ -57,7 +57,10 @@ export interface GovernedRequest {
 }
 
 /** What `fn` receives: the merged signal (caller cancel, plus a pause for `read` and `idempotentWrite` only) and the token. */
-export interface RequestIo { signal: AbortSignal; accessToken?: string }
+export interface RequestIo {
+  signal: AbortSignal;
+  accessToken?: string;
+}
 
 /**
  * Persisted to `governor_state` by the actor on every `onChange`, restored before the first request after a restart.
@@ -112,7 +115,12 @@ export interface GovernorPort {
    * aborts the caller. `scope` as on `ProviderError` (`project`: Gmail's `dailyLimitExceeded` in a batch part blocks every
    * account). Called after `run` resolves, never from inside `fn`, so the refusal is not counted against the call itself.
    */
-  observe(account: AccountId, budget: BudgetId, error: ClassifiedError, scope?: 'account' | 'project'): void;
+  observe(
+    account: AccountId,
+    budget: BudgetId,
+    error: ClassifiedError,
+    scope?: 'account' | 'project',
+  ): void;
   /** Post-hoc charge, e.g. IMAP bytes known only after the reply. */
   charge(account: AccountId, budget: BudgetId, amount: number): void;
   /** No I/O. `kind: 'send'` also checks `sendBlockedUntil`. */
@@ -125,7 +133,9 @@ export interface GovernorPort {
   clear(account: AccountId | ProjectScope, cls: 'auth' | 'config'): void;
   snapshot(account: AccountId | ProjectScope): GovernorSnapshot[];
   restore(account: AccountId | ProjectScope, snapshots: GovernorSnapshot[]): void;
-  onChange(listener: (account: AccountId | ProjectScope, snapshot: GovernorSnapshot) => void): () => void;
+  onChange(
+    listener: (account: AccountId | ProjectScope, snapshot: GovernorSnapshot) => void,
+  ): () => void;
 }
 
 /**

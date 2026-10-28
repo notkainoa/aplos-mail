@@ -5,7 +5,15 @@ import { Count, EpochMs, Id, line, openEnum, text } from './common';
 /** Mail adapters (Providers port proposal section 2); `demo` accounts hold original demo data only. CalDAV is a calendar on an imap or jmap account. */
 export const ProviderKind = openEnum(['google', 'microsoft', 'imap', 'jmap', 'demo']);
 /** Add-account presets that fill server settings and copy (round 2 beyond `gmail`). */
-export const AccountPreset = openEnum(['gmail', 'outlook', 'icloud', 'yahoo', 'aol', 'fastmail', 'generic']);
+export const AccountPreset = openEnum([
+  'gmail',
+  'outlook',
+  'icloud',
+  'yahoo',
+  'aol',
+  'fastmail',
+  'generic',
+]);
 
 /**
  * What the account's host supports, from the grant and server capabilities, never from names (ARCH 5.1). Every frozen
@@ -36,7 +44,12 @@ export const AccountCapabilities = z.object({
 export type AccountCapabilities = z.infer<typeof AccountCapabilities>;
 
 /** A sending identity: the account address or a provider alias. */
-export const SendIdentity = z.object({ address: line(320), name: z.optional(line(200)), signatureHtml: z.optional(text(20_000)), default: z.boolean() });
+export const SendIdentity = z.object({
+  address: line(320),
+  name: z.optional(line(200)),
+  signatureHtml: z.optional(text(20_000)),
+  default: z.boolean(),
+});
 
 /** The primary-device lease (ARCH 6.5): only the primary runs backfill, prefetch, background AI and compaction. */
 export const Lease = z.object({
@@ -51,8 +64,16 @@ export const Lease = z.object({
 
 /** Non-secret IMAP/SMTP settings (round 2); a password never appears in any contract type. */
 export const ServerSettings = z.object({
-  imap: z.object({ host: line(253), port: z.int().check(z.minimum(1), z.maximum(65_535)), secure: z.boolean() }),
-  smtp: z.object({ host: line(253), port: z.int().check(z.minimum(1), z.maximum(65_535)), secure: z.boolean() }),
+  imap: z.object({
+    host: line(253),
+    port: z.int().check(z.minimum(1), z.maximum(65_535)),
+    secure: z.boolean(),
+  }),
+  smtp: z.object({
+    host: line(253),
+    port: z.int().check(z.minimum(1), z.maximum(65_535)),
+    secure: z.boolean(),
+  }),
   username: z.optional(line(320)),
   caldav: z.optional(text(2_000)),
 });
@@ -70,7 +91,15 @@ export const Account = z.object({
   capabilities: AccountCapabilities,
   grantedScopes: z.array(z.string()),
   /** Features that lack a permission while mail still works (calendar, filters), each with its copy key. */
-  missingPermissions: z.optional(z.array(z.object({ capability: line(60), reasonCode: ReasonCodeSchema, missingScopes: z.optional(z.array(z.string())) }))),
+  missingPermissions: z.optional(
+    z.array(
+      z.object({
+        capability: line(60),
+        reasonCode: ReasonCodeSchema,
+        missingScopes: z.optional(z.array(z.string())),
+      }),
+    ),
+  ),
   /** "Use this account's mail for AI" (ARCH 8.3). */
   aiAllowed: z.boolean(),
   notifications: z.boolean(),
@@ -93,7 +122,19 @@ export const Folder = z.object({
   id: Id,
   accountId: Id,
   name: line(500),
-  role: z.optional(openEnum(['inbox', 'sent', 'drafts', 'trash', 'spam', 'archive', 'starred', 'important', 'all'])),
+  role: z.optional(
+    openEnum([
+      'inbox',
+      'sent',
+      'drafts',
+      'trash',
+      'spam',
+      'archive',
+      'starred',
+      'important',
+      'all',
+    ]),
+  ),
   kind: openEnum(['label', 'folder', 'system']),
   hidden: z.boolean(),
   colorTag: z.optional(line(40)),
@@ -105,7 +146,14 @@ export type Folder = z.infer<typeof Folder>;
 
 /** Sidebar numbers. Home counts Do now plus Important updates (DESIGN decision 19). */
 export const CountsBlock = z.object({
-  home: Count, do: Count, update: Count, follow: Count, laterDue: Count, drafts: Count, scheduled: Count, unread: Count,
+  home: Count,
+  do: Count,
+  update: Count,
+  follow: Count,
+  laterDue: Count,
+  drafts: Count,
+  scheduled: Count,
+  unread: Count,
   /** Threads moved off Home today (Done, Later, Trash, Spam) in the owner's local day; undo subtracts. "You handled 12 emails." */
   handledToday: Count,
 });

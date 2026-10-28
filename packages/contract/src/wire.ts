@@ -15,7 +15,12 @@ export const apiVersion = 1;
  * `id` is per connection, for multiplexing only. Over HTTP the method is the path (`POST /v1/call/<Type>/<verb>`) and
  * `args.opId`, when present, is the `Idempotency-Key`.
  */
-export const CallEnvelope = z.object({ v: z.literal(apiVersion), id: z.union([z.string(), z.number()]), method: line(100), args: z.unknown() });
+export const CallEnvelope = z.object({
+  v: z.literal(apiVersion),
+  id: z.union([z.string(), z.number()]),
+  method: line(100),
+  args: z.unknown(),
+});
 export type CallEnvelope = z.infer<typeof CallEnvelope>;
 
 export const ReplyEnvelope = z.discriminatedUnion('ok', [
@@ -25,12 +30,23 @@ export const ReplyEnvelope = z.discriminatedUnion('ok', [
 export type ReplyEnvelope = z.infer<typeof ReplyEnvelope>;
 
 /** The first frame a socket or HTTP client sends; an incompatible major gets `unsupported` with an upgrade message. */
-export const Hello = z.object({ v: z.literal(apiVersion), apiVersion: z.int(), appVersion: z.optional(line(100)), client: z.object({ name: line(200), kind: line(30) }) });
+export const Hello = z.object({
+  v: z.literal(apiVersion),
+  apiVersion: z.int(),
+  appVersion: z.optional(line(100)),
+  client: z.object({ name: line(200), kind: line(30) }),
+});
 
 /** Turns a host-side outcome into a reply envelope. Anything that is not a `ContractError` becomes `internal` with a safe sentence. */
-export function toReply(id: string | number, outcome: { result: unknown } | { error: unknown }): ReplyEnvelope {
+export function toReply(
+  id: string | number,
+  outcome: { result: unknown } | { error: unknown },
+): ReplyEnvelope {
   if ('result' in outcome) return { id, ok: true, result: outcome.result };
-  const error: ErrorBody = outcome.error instanceof ContractError ? outcome.error.body : { type: 'internal', message: 'Something went wrong. Try again.' };
+  const error: ErrorBody =
+    outcome.error instanceof ContractError
+      ? outcome.error.body
+      : { type: 'internal', message: 'Something went wrong. Try again.' };
   return { id, ok: false, error };
 }
 
@@ -45,8 +61,28 @@ const at = { dbEpoch: line(100), seq: Count };
 
 /** The types a `state` frame reports, so screens re-read singletons and caches whose token moved. */
 export const ChangeType = openEnum([
-  'Session', 'Account', 'Folder', 'Counts', 'Thread', 'Message', 'Draft', 'Submission', 'Operation', 'Event', 'Calendar', 'Plan',
-  'Summary', 'AiJob', 'AiProvider', 'Conversation', 'Settings', 'Setup', 'Consent', 'SenderRule', 'Client', 'Queue',
+  'Session',
+  'Account',
+  'Folder',
+  'Counts',
+  'Thread',
+  'Message',
+  'Draft',
+  'Submission',
+  'Operation',
+  'Event',
+  'Calendar',
+  'Plan',
+  'Summary',
+  'AiJob',
+  'AiProvider',
+  'Conversation',
+  'Settings',
+  'Setup',
+  'Consent',
+  'SenderRule',
+  'Client',
+  'Queue',
 ]);
 
 /**
@@ -61,7 +97,13 @@ export const HostEvent = z.discriminatedUnion('type', [
   /** A reminder came due; `wasDueAt` when it fired late because the Mac slept. */
   z.object({ type: z.literal('reminder'), item: NotificationItem }),
   /** The engine parked (repeated crashes, failed migration, damaged database): "Export diagnostics / Try again". */
-  z.object({ type: z.literal('parked'), reasonCode: line(60), message: z.string(), canRetry: z.boolean(), at: EpochMs }),
+  z.object({
+    type: z.literal('parked'),
+    reasonCode: line(60),
+    message: z.string(),
+    canRetry: z.boolean(),
+    at: EpochMs,
+  }),
   /** Open a provider sign-in page in the browser; main allows only provider sign-in origins. */
   z.object({ type: z.literal('openExternal'), url: text(4_000), purpose: openEnum(['oauth']) }),
   /** The engine's clock moved by more than normal ticking (a test clock, or a wake). */
@@ -103,11 +145,19 @@ export const Frame = z.discriminatedUnion('frame', [
    * and `citation` and `proposal` as each becomes known, so chips and cards appear before the turn is stored.
    */
   z.object({
-    frame: z.literal('progress'), ...at,
+    frame: z.literal('progress'),
+    ...at,
     runId: Id,
     source: openEnum(['ask', 'search', 'ai', 'transcribe', 'setup']),
     kind: openEnum(['step', 'text', 'citation', 'proposal', 'done', 'error', 'usage']),
-    step: z.optional(z.object({ id: Id, text: line(500), state: openEnum(['running', 'done', 'error']), count: z.optional(Count) })),
+    step: z.optional(
+      z.object({
+        id: Id,
+        text: line(500),
+        state: openEnum(['running', 'done', 'error']),
+        count: z.optional(Count),
+      }),
+    ),
     /** Streamed answer text to append. */
     delta: z.optional(text(100_000)),
     turnId: z.optional(Id),
@@ -118,22 +168,35 @@ export const Frame = z.discriminatedUnion('frame', [
     problem: z.optional(Problem),
   }),
   /** Windows are void (another `dbEpoch`, below the change-log floor, a restore): re-open them and re-read. */
-  z.object({ frame: z.literal('reset'), ...at, reason: openEnum(['dbEpoch', 'cannotCalculateChanges', 'restore', 'restart']) }),
+  z.object({
+    frame: z.literal('reset'),
+    ...at,
+    reason: openEnum(['dbEpoch', 'cannotCalculateChanges', 'restore', 'restart']),
+  }),
   /** A command's operation changed state after its receipt (failed, conflict, synced). */
   z.object({ frame: z.literal('operation'), ...at, operation: Operation }),
   /** An account connect, reconnect or permission grant moved on (`Account/connect` returned its `connectId`). */
   z.object({
-    frame: z.literal('connect'), ...at,
-    connectId: Id, mode: ConnectMode, state: ConnectState,
+    frame: z.literal('connect'),
+    ...at,
+    connectId: Id,
+    mode: ConnectMode,
+    state: ConnectState,
     accountId: z.optional(Id),
     reasonCode: z.optional(line(60)),
   }),
   /** A draft changed elsewhere (another window or device); `conflict` when the open copy must choose. */
-  z.object({ frame: z.literal('Draft/changed'), ...at, draftId: Id, revision: Count, conflict: z.boolean(), draft: z.optional(Draft) }),
+  z.object({
+    frame: z.literal('Draft/changed'),
+    ...at,
+    draftId: Id,
+    revision: Count,
+    conflict: z.boolean(),
+    draft: z.optional(Draft),
+  }),
   z.object({ frame: z.literal('host'), ...at, event: HostEvent }),
   /** From main, on the desktop half of a window's connection (`routeByHost` merges it into the one stream). */
   z.object({ frame: z.literal('desktop'), event: DesktopEvent }),
 ]);
 export type Frame = z.infer<typeof Frame>;
 export type FrameKind = Frame['frame'];
-

@@ -1,5 +1,17 @@
 import * as z from 'zod/mini';
-import { bool, choice, Count, Email, EpochMs, Id, line, LocalDate, openEnum, text, TimeZone } from './common';
+import {
+  bool,
+  choice,
+  Count,
+  Email,
+  EpochMs,
+  Id,
+  line,
+  LocalDate,
+  openEnum,
+  text,
+  TimeZone,
+} from './common';
 import { ReasonCodeSchema } from '../status';
 
 /**
@@ -57,7 +69,13 @@ export const Event = z.object({
   status: openEnum(['confirmed', 'tentative', 'cancelled']),
   transparency: z.optional(openEnum(['opaque', 'transparent'])),
   recurrence: z.optional(z.object({ rrule: z.optional(text(2_000)), text: line(500) })),
-  can: z.object({ edit: z.boolean(), move: z.boolean(), delete: z.boolean(), rsvp: z.boolean(), editGuests: z.boolean() }),
+  can: z.object({
+    edit: z.boolean(),
+    move: z.boolean(),
+    delete: z.boolean(),
+    rsvp: z.boolean(),
+    editGuests: z.boolean(),
+  }),
   lockedReason: z.optional(line(500)),
   /** The invitation mail this event came from ("Invite from Priya Raman"). */
   invite: z.optional(z.object({ threadId: Id, messageId: Id, fromName: z.optional(line(200)) })),
@@ -81,7 +99,13 @@ export const Calendar = z.object({
   /** Hidden in the provider's own UI (D24). */
   providerHidden: z.boolean(),
   timeZone: z.optional(TimeZone),
-  status: z.optional(z.object({ state: openEnum(['ok', 'paused', 'error']), until: z.optional(EpochMs), reasonCode: z.optional(ReasonCodeSchema) })),
+  status: z.optional(
+    z.object({
+      state: openEnum(['ok', 'paused', 'error']),
+      until: z.optional(EpochMs),
+      reasonCode: z.optional(ReasonCodeSchema),
+    }),
+  ),
 });
 export type Calendar = z.infer<typeof Calendar>;
 
@@ -94,7 +118,13 @@ export const EventFields = z.object({
   timeZone: z.optional(TimeZone),
   location: z.optional(text(2_000)),
   description: z.optional(text(20_000)),
-  attendees: z.optional(z.array(z.object({ address: Email, name: z.optional(line(200)), optional: z.optional(bool()) })).check(z.maxLength(500))),
+  attendees: z.optional(
+    z
+      .array(
+        z.object({ address: Email, name: z.optional(line(200)), optional: z.optional(bool()) }),
+      )
+      .check(z.maxLength(500)),
+  ),
   threadId: z.optional(Id),
 });
 export type EventFields = z.infer<typeof EventFields>;

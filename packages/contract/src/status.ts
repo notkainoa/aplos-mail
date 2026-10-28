@@ -11,9 +11,18 @@ export const AccountStatusSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('ok') }),
   z.object({ state: z.literal('syncing') }),
   /** Quiet history fill after the first window; never gates anything. `of` is absent when the provider gives no estimate. */
-  z.object({ state: z.literal('backfilling'), done: z.int().check(z.nonnegative()), of: z.optional(z.int().check(z.nonnegative())) }),
+  z.object({
+    state: z.literal('backfilling'),
+    done: z.int().check(z.nonnegative()),
+    of: z.optional(z.int().check(z.nonnegative())),
+  }),
   /** Governor pause: epoch ms `until`, the error class and the provider's reason code (never copy). */
-  z.object({ state: z.literal('paused'), until: z.number(), class: ErrorClassSchema, reason: z.string() }),
+  z.object({
+    state: z.literal('paused'),
+    until: z.number(),
+    class: ErrorClassSchema,
+    reason: z.string(),
+  }),
   /** The grant has expired or was revoked: Reconnect, with `login_hint`, no resync, queued changes kept. */
   z.object({ state: z.literal('needsReauth'), reason: z.string() }),
   z.object({ state: z.literal('needsPermission'), missingScopes: z.array(z.string()) }),
@@ -31,17 +40,44 @@ export type AccountState = AccountStatus['state'];
  * section 5). Additive only; round-2 codes are listed now. Open on the wire: an unknown code is shown as `unknown`.
  */
 export const reasonCodes = [
-  'rate.minute', 'rate.concurrency', 'quota.daily', 'quota.project', 'quota.sendLimit', 'quota.calendarAbuse', 'quota.bandwidth',
-  'auth.expired', 'auth.revoked', 'auth.adminPolicy', 'auth.adminConsent', 'auth.wrongAccount', 'auth.testingModeExpiry',
-  'auth.denied', 'auth.cancelled', 'auth.timeout',
-  'permission.mailModify', 'permission.filters', 'permission.calendar', 'permission.settings',
-  'config.apiDisabled', 'config.clientMissing',
-  'net.offline', 'server.unavailable', 'server.connectionLimit', 'server.limitedMode',
+  'rate.minute',
+  'rate.concurrency',
+  'quota.daily',
+  'quota.project',
+  'quota.sendLimit',
+  'quota.calendarAbuse',
+  'quota.bandwidth',
+  'auth.expired',
+  'auth.revoked',
+  'auth.adminPolicy',
+  'auth.adminConsent',
+  'auth.wrongAccount',
+  'auth.testingModeExpiry',
+  'auth.denied',
+  'auth.cancelled',
+  'auth.timeout',
+  'permission.mailModify',
+  'permission.filters',
+  'permission.calendar',
+  'permission.settings',
+  'config.apiDisabled',
+  'config.clientMissing',
+  'net.offline',
+  'server.unavailable',
+  'server.connectionLimit',
+  'server.limitedMode',
   'cursor.expired',
-  'ai.noProvider', 'ai.missingKey', 'ai.unreachable', 'ai.dailyCap', 'ai.rateLimited', 'ai.noConsent', 'ai.trainsOnInputs', 'ai.failed',
+  'ai.noProvider',
+  'ai.missingKey',
+  'ai.unreachable',
+  'ai.dailyCap',
+  'ai.rateLimited',
+  'ai.noConsent',
+  'ai.trainsOnInputs',
+  'ai.failed',
   'unknown',
 ] as const;
-export type ReasonCode = typeof reasonCodes[number];
+export type ReasonCode = (typeof reasonCodes)[number];
 export const ReasonCodeSchema = z.union([z.enum(reasonCodes), z.string()]);
 
 /**
@@ -60,4 +96,3 @@ export const AccountHealthSchema = z.object({
   lastSyncAt: z.optional(z.number()),
 });
 export type AccountHealth = z.infer<typeof AccountHealthSchema>;
-

@@ -8,7 +8,17 @@ import { SuggestedAction, ThreadAction } from './mail';
  * AI providers (AGENTS.md): Groq is the default for every feature; OpenAI, Claude, Gemini, OpenRouter, the owner's
  * OpenCode Go plan, Ollama and LM Studio on this Mac, or a custom OpenAI-compatible server.
  */
-export const aiProviderIds = ['groq', 'openai', 'anthropic', 'gemini', 'openrouter', 'opencode-go', 'ollama', 'lmstudio', 'custom'] as const;
+export const aiProviderIds = [
+  'groq',
+  'openai',
+  'anthropic',
+  'gemini',
+  'openrouter',
+  'opencode-go',
+  'ollama',
+  'lmstudio',
+  'custom',
+] as const;
 export const AiProviderId = openEnum(aiProviderIds);
 /** The features the owner picks a provider and model for in Settings → AI. Voice needs speech to text (Groq or OpenAI). */
 export const aiFeatures = ['ask', 'summaries', 'drafts', 'plans', 'voice'] as const;
@@ -38,14 +48,32 @@ export const AiProvider = z.object({
   sttCapable: z.boolean(),
   /** Mail never leaves this Mac. */
   local: z.boolean(),
-  lastTest: z.optional(z.object({ ok: z.boolean(), at: EpochMs, ms: z.optional(DurationMs), reasonCode: z.optional(line(60)) })),
+  lastTest: z.optional(
+    z.object({
+      ok: z.boolean(),
+      at: EpochMs,
+      ms: z.optional(DurationMs),
+      reasonCode: z.optional(line(60)),
+    }),
+  ),
 });
 export type AiProvider = z.infer<typeof AiProvider>;
 
-export const AiModel = z.object({ id: line(200), label: line(200), description: z.optional(line(500)), tools: z.optional(z.boolean()), stt: z.optional(z.boolean()) });
+export const AiModel = z.object({
+  id: line(200),
+  label: line(200),
+  description: z.optional(line(500)),
+  tools: z.optional(z.boolean()),
+  stt: z.optional(z.boolean()),
+});
 
 /** Readiness per feature, for Ask's no-provider state and Settings. */
-export const AiFeatureStatus = z.object({ feature: AiFeature, ready: z.boolean(), model: z.optional(ModelRef), reasonCode: z.optional(line(60)) });
+export const AiFeatureStatus = z.object({
+  feature: AiFeature,
+  ready: z.boolean(),
+  model: z.optional(ModelRef),
+  reasonCode: z.optional(line(60)),
+});
 
 /** A background or interactive AI job (ARCH 8.1). Background jobs run with no tools, on the primary device, after consent. */
 export const AiJob = z.object({
@@ -71,7 +99,13 @@ export const Summary = z.object({
 });
 
 /** The Follow up nudge: a local suggestion, never a synced draft, until the user keeps it (ARCH 8.1). */
-export const FollowupSuggestion = z.object({ threadId: Id, html: text(40_000), basedOnMessageId: Id, model: ModelRef, createdAt: EpochMs });
+export const FollowupSuggestion = z.object({
+  threadId: Id,
+  html: text(40_000),
+  basedOnMessageId: Id,
+  model: ModelRef,
+  createdAt: EpochMs,
+});
 
 export const AiUsage = z.object({
   day: line(10),
@@ -79,7 +113,15 @@ export const AiUsage = z.object({
   /** The daily background cap in tokens; absent means no limit. */
   cap: z.optional(Count),
   pausedUntil: z.optional(EpochMs),
-  byModel: z.array(z.object({ model: ModelRef, lane: openEnum(['interactive', 'background']), requests: Count, tokensIn: Count, tokensOut: Count })),
+  byModel: z.array(
+    z.object({
+      model: ModelRef,
+      lane: openEnum(['interactive', 'background']),
+      requests: Count,
+      tokensIn: Count,
+      tokensOut: Count,
+    }),
+  ),
 });
 
 /** A versioned consent record (ARCH 8.3). A provider or scope change bumps `currentVersion` and pauses background AI. */
@@ -97,27 +139,70 @@ export type Consent = z.infer<typeof Consent>;
 
 /** What a citation points at, so hover and click work for mail and calendar sources alike. */
 export const Citation = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('message'), n: Count, messageId: Id, threadId: Id, quote: text(1_000), fromName: z.optional(line(200)), date: z.optional(EpochMs), subject: z.optional(text(2_000)) }),
-  z.object({ kind: z.literal('event'), n: Count, eventId: Id, title: text(1_000), start: EventTime }),
+  z.object({
+    kind: z.literal('message'),
+    n: Count,
+    messageId: Id,
+    threadId: Id,
+    quote: text(1_000),
+    fromName: z.optional(line(200)),
+    date: z.optional(EpochMs),
+    subject: z.optional(text(2_000)),
+  }),
+  z.object({
+    kind: z.literal('event'),
+    n: Count,
+    eventId: Id,
+    title: text(1_000),
+    start: EventTime,
+  }),
 ]);
 export type Citation = z.infer<typeof Citation>;
 
-const proposal = { id: Id, consequence: line(500), state: openEnum(['open', 'accepted', 'dismissed']) };
+const proposal = {
+  id: Id,
+  consequence: line(500),
+  state: openEnum(['open', 'accepted', 'dismissed']),
+};
 /** Something Ask prepared that only happens when the user accepts it (`Ask/decide`). */
 export const Proposal = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reply'), ...proposal, draft: z.partial(DraftFields) }),
-  z.object({ kind: z.literal('addEvent'), ...proposal, calendarId: z.optional(Id), event: EventFields }),
-  z.object({ kind: z.literal('triage'), ...proposal, threadIds: z.array(Id), action: ThreadAction }),
+  z.object({
+    kind: z.literal('addEvent'),
+    ...proposal,
+    calendarId: z.optional(Id),
+    event: EventFields,
+  }),
+  z.object({
+    kind: z.literal('triage'),
+    ...proposal,
+    threadIds: z.array(Id),
+    action: ThreadAction,
+  }),
 ]);
 export type Proposal = z.infer<typeof Proposal>;
 
-export const AskStep = z.object({ id: Id, text: line(500), state: openEnum(['running', 'done', 'error']), count: z.optional(Count) });
+export const AskStep = z.object({
+  id: Id,
+  text: line(500),
+  state: openEnum(['running', 'done', 'error']),
+  count: z.optional(Count),
+});
 
 export const AskTurn = z.object({
   id: Id,
   question: text(20_000),
   /** Paragraphs; `strong` marks ranges to emphasise. */
-  answer: z.optional(z.object({ blocks: z.array(z.object({ text: text(20_000), strong: z.optional(z.array(z.object({ start: Count, end: Count }))) })) })),
+  answer: z.optional(
+    z.object({
+      blocks: z.array(
+        z.object({
+          text: text(20_000),
+          strong: z.optional(z.array(z.object({ start: Count, end: Count }))),
+        }),
+      ),
+    }),
+  ),
   citations: z.array(Citation),
   /** The answer used no source from the mailbox; the UI says so. */
   noSource: z.boolean(),
@@ -132,5 +217,11 @@ export const AskTurn = z.object({
 });
 export type AskTurn = z.infer<typeof AskTurn>;
 
-export const Conversation = z.object({ id: Id, rev: Count, title: line(200), updatedAt: EpochMs, turns: z.array(AskTurn) });
+export const Conversation = z.object({
+  id: Id,
+  rev: Count,
+  title: line(200),
+  updatedAt: EpochMs,
+  turns: z.array(AskTurn),
+});
 export type Conversation = z.infer<typeof Conversation>;

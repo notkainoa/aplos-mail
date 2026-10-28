@@ -1,6 +1,14 @@
 import * as z from 'zod/mini';
 import { ClassifiedErrorSchema } from '../errors';
-import { LOG_TEXT_MAX, logAddressHashPattern, logCodePattern, logEvents, logIdPattern, logLanes, logLevels } from './events';
+import {
+  LOG_TEXT_MAX,
+  logAddressHashPattern,
+  logCodePattern,
+  logEvents,
+  logIdPattern,
+  logLanes,
+  logLevels,
+} from './events';
 import type { LogContext, LogEventId, LogFieldKind, LogFieldSpec, LogRecord } from './events';
 
 /**
@@ -23,7 +31,9 @@ const kindSchemas: Record<Exclude<LogFieldKind, 'enum'>, () => z.ZodMiniType> = 
 
 /** The schema of one field as written (an address as its hash). */
 export function logFieldSchema(spec: LogFieldSpec): z.ZodMiniType {
-  return spec.kind === 'enum' ? z.enum(spec.values as [string, ...string[]]) : kindSchemas[spec.kind]();
+  return spec.kind === 'enum'
+    ? z.enum(spec.values as [string, ...string[]])
+    : kindSchemas[spec.kind]();
 }
 
 const cache = new Map<string, z.ZodMiniType>();
@@ -37,7 +47,9 @@ export function logEventSchema(id: LogEventId): z.ZodMiniType {
   let schema = cache.get(id);
   if (!schema) {
     const fields: Record<string, LogFieldSpec> = logEvents[id].fields;
-    schema = z.strictObject(Object.fromEntries(Object.keys(fields).map(k => [k, z.optional(logFieldSchema(fields[k]))])));
+    schema = z.strictObject(
+      Object.fromEntries(Object.keys(fields).map(k => [k, z.optional(logFieldSchema(fields[k]))])),
+    );
     cache.set(id, schema);
   }
   return schema;

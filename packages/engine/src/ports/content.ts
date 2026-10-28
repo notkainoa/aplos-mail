@@ -10,7 +10,9 @@ export type DataKey = { kind: 'key'; key: Uint8Array } | { kind: 'unavailable'; 
  * `eng-host` (main unwraps it and hands it over at engine start; a future LaunchAgent engine would read the Keychain
  * itself, ARCH 2.6). Called by the vault and workflow crypto. The key never leaves engine memory and is never logged.
  */
-export interface KeyProvider { dataKey(): Promise<DataKey> }
+export interface KeyProvider {
+  dataKey(): Promise<DataKey>;
+}
 
 /** One body to render, from the stored original (ARCH 3.3). */
 export interface MailHtmlInput {
@@ -36,12 +38,13 @@ export type MailHtmlResult = {
   quotedCount: number;
   /** Find `<mark>`s injected. */
   marks: number;
-} & (
+} &
   /** A complete document with reading CSS, for the sealed frame. */
-  | { bodyKind: 'html'; document: string }
-  /** Plain-text mail: the host escapes it into its own DOM, no frame. */
-  | { bodyKind: 'text'; text: string }
-);
+  (
+    | { bodyKind: 'html'; document: string }
+    /** Plain-text mail: the host escapes it into its own DOM, no frame. */
+    | { bodyKind: 'text'; text: string }
+  );
 
 /**
  * The allowlist sanitizer (ARCH 10). Implemented by `eng-html` in `packages/mail-html` (pure JS, no DOM, no Node,
@@ -75,7 +78,11 @@ export interface LaneMessage {
 }
 
 /** Calendar invitation or structured markup (delivery, reservation, bill) found once a body is present. */
-export interface StructuredHint { kind: 'invite' | 'delivery' | 'reservation' | 'bill'; final?: boolean; due?: string }
+export interface StructuredHint {
+  kind: 'invite' | 'delivery' | 'reservation' | 'bill';
+  final?: boolean;
+  due?: string;
+}
 
 export interface LaneInput {
   /** The thread's newest inbound message. */
@@ -94,7 +101,11 @@ export interface LaneInput {
 }
 
 /** `due` is a calendar date (`YYYY-MM-DD`) stored with `due_source='structured'`. */
-export interface LaneResult { lane: HomeLane; importance: Importance; due?: string }
+export interface LaneResult {
+  lane: HomeLane;
+  importance: Importance;
+  due?: string;
+}
 
 /**
  * Pure and deterministic. Implemented by `eng-ai` (`ai/lanes.ts`); called by the store's ingest inside the sync commit
