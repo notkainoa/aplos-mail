@@ -364,3 +364,9 @@ The owner's `apps/desktop/assets/AppIcon.icon` is the only app icon. The Setting
 
 - **Engine size.** The neutral engine bundle the budget test counts (new engine without `legacy/`, no zod) measures 165,845 bytes at 9544e97, against the 400,000-byte budget.
 - **Round-2 leftovers deferred to Phase 1, additively within `v:1`.** FR-34 / R2G-2 (stand-in reports `mailFrame: true` while the `srcdoc` rule says "only while `mailFrame` is false"), FR-35 (`Folder.role` does not list `category.*`; the enum is open), FR-7's additive points, R2B-7, R2G-5 to R2G-7 and R2H-5 to R2H-10. None changes a frozen shape. The owning lane fixes each in a contract-change PR the integrator merges.
+
+## 2026-10-28 Google OAuth client secret (providers, #59)
+
+- **A bundled Desktop-client secret is allowed; keys are not.** Google treats the client secret of an installed (Desktop) app as non-confidential, and the token exchange needs it. `oauth/client.ts` may therefore resolve an embedded client id and secret for official builds. This is an exemption from the AGENTS.md "no bundled keys" rule for this one value only; API keys, user tokens and `.env` stay out of the bundle. The secret is never printed or logged.
+- **Reconnect always asks for consent.** Google returns a refresh token only on a consent grant, so `reconnectAuthParams` sends `prompt=consent` and `access_type=offline` with the login hint. A reconnect that returns no refresh token is a failed reconnect and keeps the old state.
+- **`reconnectBy` carries a margin.** It is the refresh-token expiry less 18 hours (at most half the lifetime), so the weekly reconnect is asked for before the token dies.

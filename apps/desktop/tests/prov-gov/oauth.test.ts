@@ -18,6 +18,7 @@ import {
   grantFromTokenResponse,
   reconnectAuthParams,
   testingRefreshLifetimeMs,
+  reconnectMarginMs,
 } from '../../src/host/providers/oauth/grant';
 
 const src = fileURLToPath(new URL('../../src', import.meta.url));
@@ -36,7 +37,7 @@ test('every Google scope requested in the source tree is in the manifest', () =>
   const known = new Set(googleScopeManifest.map(entry => entry.scope));
   const found = new Set<string>();
   for (const file of sourceFiles(src)) {
-    if (file.includes('/oauth/')) continue;
+    if (file.includes('src/host/providers/oauth/')) continue;
     for (const hit of readFileSync(file, 'utf8').matchAll(
       /https:\/\/www\.googleapis\.com\/auth\/[\w.]+/g,
     ))
@@ -103,15 +104,15 @@ test('Testing mode is the default and can be switched off for a published projec
   assert.equal(resolveGoogleClient({ env, bundled: {} }).testingMode, false);
 });
 
-test('reconnectBy is the earlier of grant + 7 days and the lifetime Google reports', () => {
+test('reconnectBy is the earlier of grant + 7 days and the lifetime Google reports, less a margin', () => {
   const now = 1_000_000;
   const at = (testingMode: boolean, refresh_token_expires_in?: unknown) =>
     grantFromTokenResponse({ now, testingMode, response: { refresh_token_expires_in } })
       .refreshExpiresAt;
-  assert.equal(at(true), now + testingRefreshLifetimeMs);
-  assert.equal(at(true, 3600), now + 3600_000);
-  assert.equal(at(true, '99999999'), now + 7 * day);
-  assert.equal(at(false, 86400), now + day);
+  assert.equal(at(true), now + testingRefreshLifetimeMs - reconnectMarginMs);
+  assert.equal(at(true, 3600), now + 1800_000);
+  assert.equal(at(true, '99999999'), now + 7 * day - reconnectMarginMs);
+  assert.equal(at(false, 86400), now + day / 2);
   assert.equal(at(false), undefined);
   assert.equal(at(false, 'soon'), undefined);
   assert.equal(at(false, -5), undefined);
@@ -126,7 +127,7 @@ test('a grant records the client and the scopes the response carried', () => {
   });
   assert.deepEqual(grant, {
     grantedAt: 5,
-    refreshExpiresAt: 5 + 7 * day,
+    refreshExpiresAt: 5 + 7 * day - reconnectMarginMs,
     client: 'c',
     scopes: ['openid', mail],
   });
@@ -139,10 +140,11 @@ test('a reconnect with a different account is refused; the same one passes', () 
   assert.ok(!refused.ok && refused.reason === 'wrongAccount' && refused.kind === 'auth');
 });
 
-test('a reconnect preselects the account and does not force consent', () => {
+test('a reconnect preselects the account and still asks for consent so a refresh token comes back', () => {
   assert.deepEqual(reconnectAuthParams('a@example.test'), {
+    access_type: 'offline',
+    prompt: 'consent',
     login_hint: 'a@example.test',
-    prompt: 'select_account',
   });
-  assert.deepEqual(reconnectAuthParams(undefined), { prompt: 'consent' });
+  assert.deepEqual(reconnectAuthParams(undefined), { access_type: 'offline', prompt: 'consent' });
 });

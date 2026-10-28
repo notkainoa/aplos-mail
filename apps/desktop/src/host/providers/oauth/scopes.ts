@@ -27,7 +27,8 @@ export const googleScopeManifest: readonly ScopeEntry[] = [
     scope: google('gmail.settings.basic'),
     feature: 'filters',
     required: false,
-    consent: 'Create and edit Gmail filters, such as the ones Aplos suggests for newsletters.',
+    consent:
+      'Create and edit Gmail filters and basic settings (Gmail groups filters with signature, vacation reply and send-as under one permission). Aplos uses it for filters, such as the ones it suggests for newsletters.',
   },
   {
     scope: google('calendar.calendarlist.readonly'),
@@ -39,7 +40,7 @@ export const googleScopeManifest: readonly ScopeEntry[] = [
     scope: google('calendar.events'),
     feature: 'calendarEvents',
     required: false,
-    consent: 'See and change events on your calendars.',
+    consent: 'See, create, change and delete events on your calendars.',
   },
 ];
 

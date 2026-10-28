@@ -4,6 +4,8 @@
 import { parseGrantedScopes, missingRequiredScopes } from './scopes';
 
 export const testingRefreshLifetimeMs = 7 * 24 * 60 * 60 * 1000;
+/** Ask for the reconnect this long before the refresh token dies, so a user who is away overnight is not locked out. */
+export const reconnectMarginMs = 18 * 60 * 60 * 1000;
 
 export interface GrantInputs {
   /** Epoch ms of the token response. */
@@ -29,15 +31,21 @@ function reportedLifetimeMs(value: unknown): number | undefined {
   return seconds * 1000;
 }
 
-/** The earlier of grant + 7 days (Testing mode) and the lifetime Google reports; none when neither applies. */
+/**
+ * The earlier of grant + 7 days (Testing mode) and the lifetime Google reports, less a margin (at most half the
+ * lifetime, so a very short one still leaves time); none when neither applies.
+ */
 export function refreshExpiresAt(inputs: GrantInputs): number | undefined {
   const reported = reportedLifetimeMs(inputs.response.refresh_token_expires_in);
   const limits = [inputs.testingMode ? testingRefreshLifetimeMs : undefined, reported].filter(
     (ms): ms is number => ms !== undefined,
   );
-  return limits.length ? inputs.now + Math.min(...limits) : undefined;
+  if (!limits.length) return undefined;
+  const lifetime = Math.min(...limits);
+  return inputs.now + lifetime - Math.min(reconnectMarginMs, lifetime / 2);
 }
 
+/** For authorization-code exchanges only: a refresh-grant response carries no `refresh_token_expires_in`. */
 export function grantFromTokenResponse(inputs: GrantInputs): Grant {
   return {
     grantedAt: inputs.now,
@@ -82,7 +90,12 @@ export function checkReconnectIdentity(
   };
 }
 
-/** The OAuth parameters that differ for a reconnect: the same account is preselected and consent is not forced (D21). */
+/**
+ * The OAuth parameters that differ for a reconnect: the same account is preselected (D21). Consent is always asked
+ * for, because Google returns a refresh token only on a consent grant; a reconnect that comes back without one must
+ * be treated as failed and keep the old state.
+ */
 export function reconnectAuthParams(loginHint: string | undefined): Record<string, string> {
-  return loginHint ? { login_hint: loginHint, prompt: 'select_account' } : { prompt: 'consent' };
+  const base = { access_type: 'offline', prompt: 'consent' };
+  return loginHint ? { ...base, login_hint: loginHint } : base;
 }
