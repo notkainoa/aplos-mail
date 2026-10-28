@@ -39,10 +39,11 @@ export const draft = area('draft', {
   },
   'Draft/destroy': {
     summary:
-      'Discard a draft, cancelling any send of it that has not started; refused while it is sending.',
+      'Discard a draft, cancelling any send of it that has not started; refused while it is sending. A draft with a live send (`Draft.submissionId`) also needs `send`, the scope that cancels a send.',
     kind: 'command',
     scope: 'draft',
     audit: true,
+    scopeRule: 'originating',
     input: z.object({ opId: OpId, id: Id }),
     output: Receipt,
   },

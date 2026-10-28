@@ -317,7 +317,8 @@ export const blob = area('blob', {
     output: z.object({ bytes: Bytes, mime: line(200), name: z.optional(line(500)), size: Count }),
   },
   'Blob/release': {
-    summary: 'Drop a blob the caller no longer needs.',
+    summary:
+      'Drop a blob the caller no longer needs. A blob attached to a draft with a live send stays until the send settles (FR-7): `stateMismatch` "This file is attached to a message waiting to send."',
     kind: 'command',
     scope: 'read',
     input: z.object({ blobId: Id }),

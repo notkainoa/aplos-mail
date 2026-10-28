@@ -6,6 +6,9 @@ import type { Store, Table, Tables } from '../store';
 /** A slice of the handler table; contextual typing comes from `satisfies`, completeness from `methods/index.ts`. */
 export type Part<K extends EngineMethodName = EngineMethodName> = Partial<Pick<Handlers, K>>;
 
+/** A submission in one of these states is live: its draft is locked and its attachments are kept (FR-7). */
+export const live = new Set(['queued', 'scheduled', 'sending', 'uncertain', 'failed', 'suspended']);
+
 export const fail = (type: string, message: string, extra: Record<string, unknown> = {}): never => {
   throw new ContractError({ type, message, ...extra });
 };

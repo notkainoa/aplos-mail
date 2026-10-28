@@ -1172,6 +1172,7 @@ export const methodArea: Record<string, string> = {
 export const methodScopeRule: Record<string, 'originating' | 'guests'> = {
   'Operation/undo': 'originating',
   'Operation/retry': 'originating',
+  'Draft/destroy': 'originating',
   'Ask/decide': 'guests',
   'Queue/retry': 'originating',
   'Queue/discard': 'originating',

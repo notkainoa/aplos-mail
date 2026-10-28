@@ -2,6 +2,7 @@ import type { Plan, SearchQuery, ThreadRow, ViewSpec } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Store } from './store';
 import { atLocal, localDay } from './time';
+import { live } from './methods/util';
 
 /**
  * View specs as in-memory sorts (the real engine runs them as SQL keyset queries). Each returns the full ordered id
@@ -301,7 +302,6 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
         sections: [],
       };
     case 'scheduled': {
-      const live = new Set(['queued', 'scheduled', 'sending', 'uncertain', 'failed', 'suspended']);
       return {
         rowType: 'Submission',
         ids: ids(

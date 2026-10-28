@@ -17,6 +17,7 @@ import {
   type WindowBody,
 } from '../../src/index';
 import type { EngineSession } from '../../src/client/index';
+import { listenerCaller } from '../../src/access';
 import { runLast, SampleContext, samples, opId } from './samples';
 import type { ConformanceTarget, EngineUnderTest, OrderingMode } from './target';
 
@@ -586,9 +587,12 @@ export function conformance(
 
   // ---- freeze rules (plans/freeze/findings.md) -------------------------------------------------------------
 
+  /** A socket client holding `scopes`, its caller made from its stored Client row as every transport must (R2B-3). */
   const listener = (engine: EngineUnderTest, ...scopes: string[]) =>
     openSession(
-      engine.connectAs!({ kind: 'listener', clientId: `conf-${scopes.join('-')}`, scopes }),
+      engine.connectAs!(
+        listenerCaller({ id: `conf-${scopes.join('-')}`, kind: 'cli', scopes }, 'socket'),
+      ),
     );
   const noCaller = (e: EngineUnderTest) =>
     !e.connectAs && `${target.name} cannot connect as a tool`;
@@ -668,6 +672,40 @@ export function conformance(
     await c.call('Draft/set', { opId: opId(), id: draft.id, baseRevision: revision, fields });
   });
 
+  /** FR-7: a file attached to a held send stays until the send settles; `Blob/release` cannot drop it. */
+  scenario('send/attachment-kept-while-held', async (_e, c) => {
+    const now = (await c.call('Session/get', {})).now;
+    const bytes = new TextEncoder().encode('attached');
+    const { blobId } = await c.call('Blob/put', { bytes, mime: 'text/plain', name: 'a.txt' });
+    const ctx = new SampleContext(c.session, async () => {});
+    const { draft } = await c.call('Draft/set', {
+      opId: opId('draft'),
+      fields: {
+        accountId: await ctx.account(),
+        mode: 'new',
+        to: [{ address: 'someone@conformance.example' }],
+        cc: [],
+        bcc: [],
+        subject: 'With a file',
+        html: '<p>Attached.</p>',
+        attachments: [{ id: 'a1', name: 'a.txt', mime: 'text/plain', size: bytes.length, blobId }],
+        signature: false,
+      },
+    });
+    const { submission: s } = await c.call('Submission/set', {
+      opId: opId('send'),
+      action: { type: 'send', draftId: draft.id, revision: draft.revision, notBefore: now + hour },
+    });
+    await rejects(c.session.call('Blob/release', { blobId }), 'stateMismatch');
+    assert.equal(
+      (await c.call('Blob/get', { blobId })).size,
+      bytes.length,
+      'the bytes are still there',
+    );
+    await c.call('Submission/set', { opId: opId(), action: { type: 'undo', submissionId: s.id } });
+    await c.call('Blob/release', { blobId });
+  });
+
   /** FR-14: a send's receipt is undoable while held, and `Operation/undo` on it cancels the send. */
   scenario('send/undo-through-receipt', async (_e, c) => {
     const { draft, submission: s, receipt } = await send(c);
@@ -728,7 +766,11 @@ export function conformance(
         },
       });
       const op = (await c.call('Operation/get', { opIds: [created.receipt.opId] })).list[0]!;
-      if (op.scope !== undefined) assert.equal(op.scope, 'send');
+      assert.equal(
+        op.scope,
+        'send',
+        'every operation records the scope of the method that made it',
+      );
       const triage = listener(engine, 'read', 'triage');
       await rejects(
         triage.session.call('Operation/undo', {
@@ -745,6 +787,77 @@ export function conformance(
       await rejects(admin.session.call('Queue/discard', { id: created.receipt.opId }), 'forbidden');
       const sender = listener(engine, 'read', 'triage', 'send');
       await sender.call('Operation/undo', { opId: created.receipt.opId, undoOpId: opId('undo') });
+    },
+    noCaller,
+  );
+
+  /** R2B-1: an RSVP and an unsubscribe record `send` too, so a triage or admin tool cannot undo, retry or drop them. */
+  scenario(
+    'access/originating-scope-every-op',
+    async (engine, c) => {
+      const ctx = new SampleContext(c.session, async () => {});
+      const opIds: string[] = [];
+      const invitation = await ctx.invitation();
+      if (invitation !== 'none')
+        opIds.push(
+          (
+            await c.call('Event/rsvp', {
+              opId: opId('rsvp'),
+              id: invitation,
+              response: 'accepted',
+              scope: 'occurrence',
+            })
+          ).opId,
+        );
+      for (const threadId of (
+        await c.call('View/query', { spec: { kind: 'mailbox', role: 'inbox' } })
+      ).ids) {
+        if ((await c.call('Unsubscribe/get', { threadId })).method === 'none') continue;
+        const out = await c.call('Unsubscribe/run', { opId: opId('unsub'), threadId });
+        if (out.receipt) opIds.push(out.receipt.opId);
+        break;
+      }
+      assert.ok(opIds.length > 0, 'the demo data has an invitation or a newsletter');
+      const triage = listener(engine, 'read', 'triage');
+      const admin = listener(engine, 'read', 'triage', 'admin');
+      for (const op of (await c.call('Operation/get', { opIds })).list) {
+        assert.equal(op.scope, 'send', `${op.kind} records send`);
+        await rejects(
+          triage.session.call('Operation/undo', { opId: op.opId, undoOpId: opId('undo') }),
+          'forbidden',
+        );
+        await rejects(triage.session.call('Operation/retry', { opId: op.opId }), 'forbidden');
+        await rejects(admin.session.call('Queue/retry', { id: op.opId }), 'forbidden');
+        await rejects(admin.session.call('Queue/discard', { id: op.opId }), 'forbidden');
+      }
+    },
+    noCaller,
+  );
+
+  /** R2B-2: discarding a draft cancels its held send, so a draft-only tool may not do it; one holding send may. */
+  scenario(
+    'access/destroy-held-draft-needs-send',
+    async (engine, c) => {
+      const now = (await c.call('Session/get', {})).now;
+      const held = await send(c, now + hour);
+      const drafter = listener(engine, 'read', 'draft');
+      await rejects(
+        drafter.session.call('Draft/destroy', { opId: opId(), id: held.draft.id }),
+        'forbidden',
+      );
+      assert.equal(
+        (await submission(c, held.submission.id)).state,
+        'scheduled',
+        'the send still waits',
+      );
+      assert.equal((await c.call('Draft/get', { ids: [held.draft.id] })).list.length, 1);
+      const free = await new SampleContext(c.session, async () => {}).draft();
+      await drafter.call('Draft/destroy', { opId: opId(), id: free.id });
+      await listener(engine, 'read', 'draft', 'send').call('Draft/destroy', {
+        opId: opId(),
+        id: held.draft.id,
+      });
+      assert.equal((await submission(c, held.submission.id)).state, 'cancelled');
     },
     noCaller,
   );
@@ -863,6 +976,66 @@ export function conformance(
         }),
         'forbidden',
       );
+    // A draft in that account carries its mail as context, so Ai/draft and Ai/polish refuse it too (R2B-5).
+    const { draft } = await c.call('Draft/set', {
+      opId: opId('draft'),
+      fields: {
+        accountId: excluded.id,
+        mode: 'new',
+        to: [{ address: 'someone@conformance.example' }],
+        cc: [],
+        bcc: [],
+        subject: 'Excluded',
+        html: '<p>Private</p>',
+        attachments: [],
+        signature: false,
+      },
+    });
+    const refused = [
+      c.session.call('Ai/draft', {
+        requestId: opId('ai'),
+        instruction: 'Say thanks.',
+        draftId: draft.id,
+      }),
+      c.session.call('Ai/polish', {
+        requestId: opId('ai'),
+        html: '<p>Private</p>',
+        draftId: draft.id,
+      }),
+    ];
+    for (const call of refused) {
+      const error = await rejects(call, 'forbidden');
+      assert.equal(error?.body.reasonCode, 'ai.accountExcluded');
+    }
+  });
+
+  /** R2B-4: background consent covers every model background jobs run on, not only Summaries. */
+  scenario('ai/consent-covers-background-features', async (_e, c) => {
+    for (const feature of ['plans', 'drafts'] as const) {
+      const consent = await c.call('Consent/get', {});
+      const { features } = (await c.call('Settings/get', {})).ai;
+      await c.call('Consent/grant', {
+        scope: 'background',
+        version: consent.currentVersion,
+        provider: features.summaries.provider as Input<'Consent/grant'>['provider'],
+        model: features.summaries.model,
+      });
+      const other =
+        features[feature].provider === 'ollama'
+          ? ({ provider: 'groq', model: 'openai/gpt-oss-120b' } as const)
+          : ({ provider: 'ollama', model: 'llama3.2' } as const);
+      await c.call('Settings/set', {
+        opId: opId(),
+        patch: { ai: { features: { ...features, [feature]: other } } },
+      });
+      const after = await c.call('Consent/get', {});
+      assert.equal(
+        after.needsReconsent,
+        true,
+        `moving ${feature} to another provider needs the card again`,
+      );
+      assert.ok(after.currentVersion > consent.currentVersion);
+    }
   });
 
   /** FR-23: a reconnect sheet reopened anywhere finds its flow by account, and a cancel keeps its mode. */

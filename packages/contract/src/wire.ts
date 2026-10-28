@@ -32,7 +32,9 @@ export type ReplyEnvelope = z.infer<typeof ReplyEnvelope>;
 /**
  * The first frame a socket client sends (ARCH 9.4, FR-16). `token` is the client's own token from the 0600 file
  * `Clients/grant` wrote: compared in constant time against the stored hash, never logged or echoed. Over HTTP the same
- * token is the `Authorization: Bearer` header instead (README "Scopes and transports").
+ * token is the `Authorization: Bearer` header instead (README "Scopes and transports"). `client` is self-declared and
+ * only labels the connection: the caller is built from the stored `Client` row the token matched (`listenerCaller`,
+ * freeze R2B-3), so `client.kind` never sets `via` or lifts the MCP limit.
  */
 export const Hello = z.object({
   v: z.literal(apiVersion),

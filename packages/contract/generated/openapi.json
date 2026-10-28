@@ -1414,7 +1414,7 @@
     "/call/Blob/release": {
       "post": {
         "operationId": "Blob_release",
-        "summary": "Drop a blob the caller no longer needs.",
+        "summary": "Drop a blob the caller no longer needs. A blob attached to a draft with a live send stays until the send settles (FR-7): `stateMismatch` \"This file is attached to a message waiting to send.\"",
         "tags": [
           "blob"
         ],
@@ -1543,13 +1543,14 @@
     "/call/Draft/destroy": {
       "post": {
         "operationId": "Draft_destroy",
-        "summary": "Discard a draft, cancelling any send of it that has not started; refused while it is sending.",
+        "summary": "Discard a draft, cancelling any send of it that has not started; refused while it is sending. A draft with a live send (`Draft.submissionId`) also needs `send`, the scope that cancels a send.",
         "tags": [
           "draft"
         ],
         "x-aplos-kind": "command",
         "x-aplos-scope": "draft",
         "x-aplos-audit": true,
+        "x-aplos-scope-rule": "originating",
         "requestBody": {
           "required": true,
           "content": {
@@ -2018,7 +2019,7 @@
     "/call/Ai/polish": {
       "post": {
         "operationId": "Ai_polish",
-        "summary": "Suggest edits to a draft's text; the user's text stays until they choose.",
+        "summary": "Suggest edits to a draft's text; the user's text stays until they choose. A `draftId` in an account left out of AI, or answering a thread there, is `forbidden` (`ai.accountExcluded`).",
         "tags": [
           "ai"
         ],
@@ -2061,7 +2062,7 @@
     "/call/Ai/draft": {
       "post": {
         "operationId": "Ai_draft",
-        "summary": "Write a draft or reply from an instruction, as a suggestion at the caret; a `threadId` in an account left out of AI is `forbidden`.",
+        "summary": "Write a draft or reply from an instruction, as a suggestion at the caret; a `threadId` or `draftId` in an account left out of AI (or a draft answering a thread there) is `forbidden` (`ai.accountExcluded`).",
         "tags": [
           "ai"
         ],
@@ -11889,7 +11890,8 @@
           "state",
           "appliedState",
           "undoable",
-          "createdAt"
+          "createdAt",
+          "scope"
         ]
       },
       "Operation_get_input": {
@@ -12572,7 +12574,8 @@
           "attempts",
           "createdAt",
           "canRetry",
-          "canDiscard"
+          "canDiscard",
+          "scope"
         ]
       },
       "Rank": {

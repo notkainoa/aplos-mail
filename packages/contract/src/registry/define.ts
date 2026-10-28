@@ -66,8 +66,9 @@ export interface MethodSpec<I extends Schema = Schema, O extends Schema = Schema
    * A check the handler makes from the data it acts on, after the method's own scope (freeze FR-3, FR-4). Scopes are a
    * set, not a hierarchy, so a cheap scope must never reach an effect a dearer one guards:
    * - `originating`: the call acts on an operation, queue item or submission another method created. The caller's scopes
-   *   must also include that method's scope (`Operation.scope`, `QueueItem.scope`; `send` for submissions), else
-   *   `forbidden`. `requireScope` in `@aplos/contract/access` makes the check.
+   *   must also include that method's scope (`Operation.scope`, `QueueItem.scope`; `send` for submissions, so also for
+   *   `Draft/destroy` of a draft with a live send, R2B-2), else `forbidden`. `requireOriginating` in
+   *   `@aplos/contract/access` makes the check, failing closed when the scope is unknown (R2B-1).
    * - `guests`: what the call creates would invite or email someone other than the owner (an event with a non-self
    *   attendee). The caller's scopes must also include `send`, else `forbidden`.
    */

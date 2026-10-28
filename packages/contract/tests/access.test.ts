@@ -1,14 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appScopes, checkAccess, principalOf, requireScope, type Caller } from '../src/access';
-import { ContractError, getMethod, methodNames } from '../src/index';
+import {
+  appScopes,
+  checkAccess,
+  listenerCaller,
+  principalOf,
+  requireOriginating,
+  requireScope,
+  type Caller,
+} from '../src/access';
+import { ContractError, getMethod, methodNames, Operation, QueueItem } from '../src/index';
 import * as tables from '../generated/methods.generated';
 
 /** The default-deny rules of `@aplos/contract/access` (freeze FR-3, FR-4, FR-5, FR-6, FR-11). */
 const window: Caller = { kind: 'window', scopes: appScopes };
-const tool = (...scopes: string[]): Caller => ({ kind: 'listener', clientId: 'c1', scopes });
-const denied = (fn: () => void) =>
-  assert.throws(fn, (e: unknown) => e instanceof ContractError && e.type === 'forbidden');
+const tool = (...scopes: string[]): Caller => ({
+  kind: 'listener',
+  via: 'socket',
+  clientId: 'c1',
+  scopes,
+});
+const refused = (type: string) => (fn: () => void) =>
+  assert.throws(fn, (e: unknown) => e instanceof ContractError && e.type === type);
+const denied = refused('forbidden');
+const unsupported = refused('unsupported');
 
 test('a listener holding read is refused a send, a host method and a UI-only method', () => {
   denied(() => checkAccess('Submission/set', tool('read')));
@@ -46,7 +61,13 @@ test('mail frames are for Electron windows only', () => {
 
 /** FR-3: undo, retry and the queue act on another method's effect, so they carry that method's scope too. */
 test('undo, retry and the queue are audited and need the originating scope', () => {
-  for (const name of ['Operation/undo', 'Operation/retry', 'Queue/retry', 'Queue/discard']) {
+  for (const name of [
+    'Operation/undo',
+    'Operation/retry',
+    'Queue/retry',
+    'Queue/discard',
+    'Draft/destroy',
+  ]) {
     const def = getMethod(name);
     assert.equal(def.scopeRule, 'originating', name);
     assert.ok(def.audit, `${name} is audited`);
@@ -54,6 +75,98 @@ test('undo, retry and the queue are audited and need the originating scope', () 
   denied(() => requireScope(tool('triage'), 'send'));
   requireScope(tool('triage', 'send'), 'send');
   requireScope(window, 'send');
+});
+
+/** R2B-1: an operation whose scope was not recorded falls back to its method's scope, and is refused when unknown. */
+test('the originating-scope check fails closed', () => {
+  const triage = tool('read', 'triage');
+  for (const method of ['Event/rsvp', 'Unsubscribe/run', 'Submission/set'])
+    denied(() => requireOriginating(triage, { method }));
+  requireOriginating(tool('triage', 'send'), { method: 'Event/rsvp' });
+  denied(() => requireOriginating(triage, { scope: 'send', method: 'Thread/act' }));
+  requireOriginating(triage, { scope: 'triage', method: 'Thread/act' });
+  // Neither a recorded scope nor a known method: no listener passes, whatever it holds; a window does.
+  denied(() => requireOriginating(tool(...appScopes), { method: 'Nope/nope' }));
+  denied(() => requireOriginating(tool(...appScopes), { scope: '', method: 'Nope/nope' }));
+  requireOriginating(window, { method: 'Nope/nope' });
+  // Outputs must carry the scope, so an engine cannot leave it out.
+  const op = {
+    opId: 'o',
+    kind: 'Event/rsvp',
+    targets: [],
+    state: 'queued',
+    appliedState: { dbEpoch: 'e', seq: 1 },
+    undoable: true,
+    createdAt: 1,
+  };
+  assert.equal(Operation.safeParse(op).success, false, 'an Operation needs its scope');
+  assert.equal(Operation.safeParse({ ...op, scope: 'send' }).success, true);
+  const item = {
+    id: 'q',
+    kind: 'op',
+    label: 'Rsvp 1 item',
+    state: 'queued',
+    attempts: 1,
+    createdAt: 1,
+    canRetry: false,
+    canDiscard: true,
+  };
+  assert.equal(QueueItem.safeParse(item).success, false, 'a QueueItem needs its scope');
+  assert.equal(QueueItem.safeParse({ ...item, scope: 'send' }).success, true);
+});
+
+/** R2B-3: who a listener is comes from its stored Client row, and a listener nobody identified gets nothing. */
+test('a listener caller comes from the stored client; MCP limits follow the client, not the transport', () => {
+  const row = { id: 'c9', kind: 'mcp', scopes: ['read', 'draft', 'send', 'host'] };
+  // A listener method the client's scopes reach but MCP does not (a send).
+  const notTool = (tables.listenerMethods as readonly string[]).find(
+    m => !(tables.mcpMethods as readonly string[]).includes(m) && tables.methodScope[m] === 'send',
+  )!;
+  assert.ok(notTool);
+  for (const transport of ['socket', 'http', 'mcp'] as const) {
+    const caller = listenerCaller(row, transport);
+    assert.equal(caller.via, 'mcp', `an mcp client over ${transport} is an MCP caller`);
+    assert.equal(caller.clientId, 'c9');
+    assert.ok(!caller.scopes.includes('host'), 'host is never a listener scope');
+    denied(() => checkAccess(notTool, caller));
+    checkAccess(
+      tables.mcpMethods.find(m => tables.methodScope[m] === 'read')!,
+      caller,
+    );
+  }
+  const cli = listenerCaller({ id: 'c8', kind: 'cli', scopes: ['send'] }, 'socket');
+  assert.equal(cli.via, 'socket');
+  checkAccess(notTool, cli);
+  denied(() => listenerCaller({ ...row, revokedAt: 5 }, 'socket'));
+  // A transport that skipped `listenerCaller` is refused, and never shares a blob principal.
+  const anonymous: Caller = { kind: 'listener', via: 'socket', scopes: ['read'] };
+  denied(() => checkAccess('Thread/get', anonymous));
+  denied(() => checkAccess('Thread/get', { kind: 'listener', clientId: 'c1', scopes: ['read'] }));
+  denied(() => principalOf(anonymous));
+  checkAccess('Thread/get', tool('read'));
+});
+
+/** R2H-3: no name outside the engine table slips through, and a listener gets nothing outside `listenerMethods`. */
+test('checkAccess refuses desktop, unknown and prototype names instead of returning', () => {
+  const all = tool(...appScopes);
+  for (const name of [
+    'Ai/pasteKey',
+    'Shell/open',
+    'System/login',
+    'Fixture/control',
+    'Nope/nope',
+    'toString',
+    '__proto__',
+    'constructor',
+    'hasOwnProperty',
+  ]) {
+    denied(() => checkAccess(name, all));
+    denied(() => checkAccess(name, { ...all, via: 'mcp' }));
+    unsupported(() => checkAccess(name, window));
+    unsupported(() => checkAccess(name, { kind: 'host', scopes: appScopes }));
+  }
+  // A prototype key never reads as a recorded originating scope either.
+  denied(() => requireOriginating(all, { method: 'toString' }));
 });
 
 /** FR-4: a triage-scoped call must never carry who to invite or mail; that is `send`. */

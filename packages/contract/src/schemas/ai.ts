@@ -128,9 +128,10 @@ export const AiUsage = z.object({
 });
 
 /**
- * A versioned consent record (ARCH 8.3). The version covers the scope, the Summaries provider and model, and that
- * provider's address host: changing any of them bumps `currentVersion`, sets `needsReconsent` and pauses background AI
- * until the owner agrees again on the card (`Consent/grant`, Electron windows only; freeze FR-5).
+ * A versioned consent record (ARCH 8.3). The version covers the scope and, for every feature background jobs run on
+ * (`summaries`; `plans` for plan jobs; `drafts` for follow-ups; freeze R2B-4), its provider, model and that provider's
+ * address host: changing any of them bumps `currentVersion`, sets `needsReconsent` and pauses background AI until the
+ * owner agrees again on the card (`Consent/grant`, Electron windows only; freeze FR-5).
  */
 export const Consent = z.object({
   scope: openEnum(['background']),

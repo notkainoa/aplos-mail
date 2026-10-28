@@ -92,7 +92,7 @@ test('dispatch denies by default: scope, host-only, uiOnly, secret and MCP are c
     reached,
   );
   // An admin listener still cannot reach a uiOnly (Data/export) or secret (Ai/setKey) method; a window can.
-  const admin = as({ kind: 'listener', via: 'http', scopes: grantable });
+  const admin = as({ kind: 'listener', via: 'http', clientId: 'c1', scopes: grantable });
   for (const method of ['Data/export', 'Ai/setKey']) {
     await assert.rejects(dispatch(method, {}, admin), forbidden, method);
     await assert.rejects(dispatch(method, {}, ctx), reached, method);
@@ -103,7 +103,7 @@ test('dispatch denies by default: scope, host-only, uiOnly, secret and MCP are c
     forbidden,
   );
   // MCP clients reach only the MCP tools, even with a wider grant.
-  const mcp = as({ kind: 'listener', via: 'mcp', scopes: grantable });
+  const mcp = as({ kind: 'listener', via: 'mcp', clientId: 'c2', scopes: grantable });
   const notTool = listenerMethods.find(m => !(mcpMethods as readonly string[]).includes(m))!;
   await assert.rejects(dispatch(notTool, {}, mcp), forbidden, notTool);
   await assert.rejects(dispatch(mcpMethods[0], {}, mcp), reached);

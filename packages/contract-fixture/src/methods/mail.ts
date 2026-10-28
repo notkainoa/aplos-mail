@@ -4,8 +4,8 @@ import type { Tx } from '../store';
 import { dueBand, localDay } from '../time';
 import { homeParts, runView, senderGroups } from '../views';
 import { blobOf, ownBlob } from './core';
-import { requireScope } from '@aplos/contract/access';
-import { clean, fail, getRows, must, plainHtml, type Part } from './util';
+import { requireOriginating } from '@aplos/contract/access';
+import { clean, fail, getRows, live, must, plainHtml, type Part } from './util';
 
 /** The stand-in srcdoc's inner policy (freeze FR-34): no script, no network, inline styles and data: images only. */
 export const srcdocCsp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
@@ -384,7 +384,7 @@ export function mail(fx: Fixture) {
 
     'Operation/undo': ({ opId, undoOpId }, cx) => {
       const rec = fx.ops.get(opId) ?? fail('notFound', 'This change can no longer be undone.');
-      requireScope(cx.caller, rec.scope);
+      requireOriginating(cx.caller, rec);
       if (!rec.operation.undoable) fail('conflict', 'This change cannot be undone.');
       if (rec.operation.state === 'cancelled') fail('conflict', 'This change was already undone.');
       // A held send is undone by cancelling its submission, the same as `Submission/set` undo (freeze FR-14).
@@ -417,7 +417,7 @@ export function mail(fx: Fixture) {
     }),
     'Operation/retry': ({ opId }, cx) => {
       const rec = fx.ops.get(opId) ?? fail('notFound', 'This change is no longer in the queue.');
-      requireScope(cx.caller, rec.scope);
+      requireOriginating(cx.caller, rec);
       if (rec.operation.state !== 'failed')
         fail('conflict', 'Only a failed change can be retried.');
       fx.write({ kind: 'Operation/retry' }, tx => {
@@ -522,6 +522,16 @@ export function mail(fx: Fixture) {
     },
     'Blob/release': ({ blobId }, cx) => {
       ownBlob(fx, cx.caller, blobId, 'This file is no longer available.');
+      // An attachment of a held, failed or suspended send stays until the send settles (FR-7).
+      const held = fx.store
+        .all('Draft')
+        .some(
+          d =>
+            d.submissionId &&
+            live.has(fx.store.get('Submission', d.submissionId)?.state ?? '') &&
+            d.attachments.some(a => a.blobId === blobId),
+        );
+      if (held) fail('stateMismatch', 'This file is attached to a message waiting to send.');
       fx.blobs.delete(blobId);
       return { ok: true as const };
     },

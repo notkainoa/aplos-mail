@@ -3,7 +3,11 @@ import { Address, bool, choice, Count, EpochMs, Id, line, openEnum, Problem, tex
 
 const mode = ['new', 'reply', 'replyAll', 'forward'] as const;
 
-/** An attachment on a draft: bytes uploaded with `Blob/put`, or a part of an existing message (forward). Never base64. */
+/**
+ * An attachment on a draft: bytes uploaded with `Blob/put`, or a part of an existing message (forward). Never base64.
+ * While the draft has a live submission its `blobId` is kept until the submission settles (freeze FR-7): `Blob/release`
+ * answers `stateMismatch` and no disconnect drops it, so the bytes that leave are the ones attached at `send`.
+ */
 export const DraftAttachment = z.object({
   id: Id,
   name: line(500),
@@ -69,9 +73,10 @@ export type Draft = z.infer<typeof Draft>;
  * engine checks Sent), `failed` (provably not sent, Retry offered), `cancelled` (undone or cancelled) or `suspended`
  * (missed its time while the Mac was off).
  *
- * The overdue rule (ARCH 7.3, freeze FR-2) covers every row waiting on `notBefore`, `queued` and `scheduled` alike: one
- * found at launch or wake more than 5 minutes past `notBefore` becomes `suspended` ("Send now or Reschedule") and is never
- * sent late on its own. A `sending` row is never suspended; it becomes `uncertain`.
+ * The overdue rule (ARCH 7.3, freeze FR-2) covers every row waiting on `notBefore` (`WAITING_SUBMISSION_STATES` in
+ * `@aplos/contract/rules`: `queued` and `scheduled` alike): one found at launch or wake more than `OVERDUE_GRACE_MS`
+ * (5 minutes) past `notBefore` becomes `suspended` ("Send now or Reschedule") and is never sent late on its own. A
+ * `sending` row is never suspended; it becomes `uncertain`. Both are defined once there, for the engine and the stand-in.
  */
 export const SubmissionState = openEnum([
   'queued',

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   checkResult,
   ContractError,
@@ -8,7 +10,7 @@ import {
   type Input,
   type Output,
 } from '@aplos/contract';
-import type { Caller } from '@aplos/contract/access';
+import { listenerCaller, type Caller } from '@aplos/contract/access';
 import type { EngineSession } from '@aplos/contract/client';
 import { createFixtureEngine } from '@aplos/contract-fixture';
 import { fixtureControl } from '@aplos/contract-fixture/control';
@@ -32,7 +34,8 @@ let n = 0;
 const opId = () => `freeze-${++n}`;
 const fails = (promise: Promise<unknown>, type: string) =>
   assert.rejects(promise, (e: unknown) => e instanceof ContractError && e.type === type);
-const tool = (...scopes: string[]): Caller => ({ kind: 'listener', clientId: 'tool', scopes });
+const tool = (...scopes: string[]): Caller =>
+  listenerCaller({ id: 'tool', kind: 'cli', scopes }, 'socket');
 const hour = 3_600_000;
 
 async function draftAndSend(fx: ReturnType<typeof start>, notBefore?: number) {
@@ -411,4 +414,18 @@ test('FR-5: moving the Summaries provider to another host needs consent again, a
   const moved = await fx.call('Consent/get', {});
   assert.equal(moved.needsReconsent, true);
   assert.ok(moved.currentVersion > v);
+});
+
+test('FR-2: the stand-in takes the waiting states and the overdue grace from @aplos/contract/rules', () => {
+  const src = join(import.meta.dirname, '..', 'src');
+  const files = readdirSync(src, { recursive: true, encoding: 'utf8' }).filter(f =>
+    f.endsWith('.ts'),
+  );
+  const text = (f: string) => readFileSync(join(src, f), 'utf8');
+  assert.match(
+    text('methods/compose.ts'),
+    /OVERDUE_GRACE_MS, WAITING_SUBMISSION_STATES } from '@aplos\/contract\/rules'/,
+  );
+  for (const f of files)
+    assert.doesNotMatch(text(f), /\b5 \* 60_000|overdueGrace/i, `${f} keeps no copy of the grace`);
 });
