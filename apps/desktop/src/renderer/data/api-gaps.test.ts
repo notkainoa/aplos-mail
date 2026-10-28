@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getMethod } from '@aplos/contract';
 import { createHarness, type Harness } from './harness';
-import { CONTRACT_METHODS, HARNESS_NOW_MS } from './index';
+import { CONTRACT_METHODS, HARNESS_NOW_MS, OperationFailedError } from './index';
 
 const DAY = 86_400_000;
 import { isNativeStubbed } from './native-stub';
@@ -136,31 +136,53 @@ test('a calendar toggle, an RSVP and an event edit are operations too', async ()
     const events = (await h.truth.api.event.get({ ids: window.ids.slice(0, 200) })).list;
     const invite = events.find(e => e.can.rsvp);
     const mine = events.find(e => e.can.edit);
-    if (invite) {
-      const receipt = await api.event.rsvp({
-        id: invite.id,
-        response: 'accepted',
-        scope: 'occurrence',
-      });
-      assert.equal(operations.view(receipt.opId)?.state, 'confirmed');
-    }
-    if (mine) {
-      const edited = await api.event.set({
-        change: { type: 'update', id: mine.id, scope: 'series', fields: { title: 'Renamed' } },
-        notify: false,
-      });
-      assert.equal(operations.view(edited.receipt.opId)?.state, 'confirmed');
-    }
-    assert.ok(invite || mine, 'the demo week has events to answer or edit');
+    assert.ok(invite, 'the demo week has an event to answer');
+    assert.ok(mine, 'the demo week has an event to edit');
+
+    const answered = await api.event.rsvp({
+      id: invite.id,
+      response: 'accepted',
+      scope: 'occurrence',
+    });
+    assert.equal(operations.view(answered.opId)?.state, 'confirmed');
+    assert.deepEqual(
+      { ...h.layer.undoStack.peek(), id: '' },
+      { kind: 'operation', id: '', opId: answered.opId },
+    );
+
+    const edited = await api.event.set({
+      change: { type: 'update', id: mine.id, scope: 'series', fields: { title: 'Renamed' } },
+      notify: false,
+    });
+    assert.equal(operations.view(edited.receipt.opId)?.state, 'confirmed');
+    assert.deepEqual(
+      { ...h.layer.undoStack.peek(), id: '' },
+      { kind: 'operation', id: '', opId: edited.receipt.opId },
+    );
+    const back = h.layer.undoStack.undoLast();
+    if (back?.kind === 'operation') await back.result.receipt;
+    assert.equal(
+      (await h.truth.api.event.get({ ids: [mine.id] })).list[0]?.title,
+      mine.title,
+      'Z put the event back',
+    );
+    assert.deepEqual(
+      { ...h.layer.undoStack.peek(), id: '' },
+      { kind: 'operation', id: '', opId: answered.opId },
+      'the RSVP is next on the stack',
+    );
   });
 });
 
-test('a refused command rejects with the engine error, marks the operation failed, and retry sends a fresh opId', async () => {
+test('a refused command rejects with OperationFailedError, marks the operation failed, and retry sends a fresh opId', async () => {
   await withHarness(async h => {
     const { api, operations, undoStack } = h.layer;
     await assert.rejects(
       () => api.plan.confirm({ id: 'no-such-plan', opId: 'op-bad' }),
-      (error: { body?: { type?: string } }) => error.body?.type === 'notFound',
+      (error: unknown) =>
+        error instanceof OperationFailedError &&
+        error.opId === 'op-bad' &&
+        error.error.type === 'notFound',
     );
     const view = operations.view('op-bad')!;
     assert.equal(view.state, 'failed');
@@ -247,5 +269,115 @@ test('main-served methods are native in the table and answered by the stand-in s
     assert.deepEqual(await api.system.defaultMail(), { success: false });
     assert.deepEqual(h.callsOf('Window/openOnboarding')[0]!.args, { mode: 'review' });
     assert.equal(h.layer.operations.all().length, 0, 'native calls are not operations');
+  });
+});
+
+test('a command is on the undo stack while its receipt is in flight, in issue order, and undoing marks it undone at once', async () => {
+  await withHarness(async h => {
+    const { api, operations, undoStack } = h.layer;
+    const [calendar] = (await api.calendar.get()).list;
+    assert.ok(calendar);
+    const id = await openPlan(h);
+    const first = api.plan.dismiss({ ids: [id], opId: 'op-first' });
+    const mid = undoStack.peek();
+    assert.equal(
+      mid?.kind === 'operation' ? mid.opId : null,
+      'op-first',
+      'on the stack before the receipt',
+    );
+    assert.equal(operations.view('op-first')?.state, 'pending');
+    assert.equal(operations.view('op-first')?.undoable, true);
+    const second = api.calendar.set({ id: calendar.id, shown: !calendar.shown, opId: 'op-second' });
+    const top = undoStack.peek();
+    assert.equal(
+      top?.kind === 'operation' ? top.opId : null,
+      'op-second',
+      'newest issued is on top',
+    );
+    await Promise.all([first, second]);
+    const after = undoStack.peek();
+    assert.equal(after?.kind === 'operation' ? after.opId : null, 'op-second');
+
+    // Z: the view is not undoable the moment Operation/undo is issued, so a toast cannot send it twice.
+    const outcome = undoStack.undoLast();
+    assert.equal(operations.view('op-second')?.undoable, false);
+    assert.equal(operations.view('op-first')?.undoable, true);
+    if (outcome?.kind === 'operation') await outcome.result.receipt;
+    assert.equal(operations.view('op-second')?.undoable, false);
+    const next = undoStack.peek();
+    assert.equal(next?.kind === 'operation' ? next.opId : null, 'op-first');
+  });
+});
+
+test('a receipt that cannot be undone takes the command off the undo stack again', async () => {
+  await withHarness(async h => {
+    const { api, undoStack } = h.layer;
+    const target = (await h.truth.api.account.get({})).list.at(-1)!;
+    const pending = api.account.disconnect({ accountId: target.id, opId: 'op-gone' });
+    const top = undoStack.peek();
+    assert.equal(
+      top?.kind === 'operation' ? top.opId : null,
+      'op-gone',
+      'on the stack when issued',
+    );
+    await pending;
+    assert.equal(undoStack.peek(), null, 'and off it once the receipt says undoable: false');
+  });
+});
+
+test('Ask: accepting a proposal makes its draft and can be undone; dismissing makes nothing', async () => {
+  await withHarness(async h => {
+    const { api, operations, undoStack } = h.layer;
+    const threads = await h.truth.api.view.query({ spec: { kind: 'homeSection', section: 'do' } });
+    const threadId = threads.ids[0];
+    assert.ok(threadId, 'the demo inbox has a thread to reply to');
+    async function proposal() {
+      const run = await api.ask.run({
+        question: 'Write back to this',
+        context: { threadId },
+      });
+      await h.control.advanceClock({ ms: 2_000 });
+      await h.settle();
+      const conversation = (await h.truth.api.conversation.get({ ids: [run.conversationId] }))
+        .list[0]!;
+      const turn = conversation.turns.at(-1)!;
+      const found = turn.proposals[0];
+      assert.ok(found, 'Ask proposed a reply');
+      return { conversationId: conversation.id, turnId: turn.id, proposalId: found.id };
+    }
+
+    const accepted = await proposal();
+    const result = await api.ask.decide({ ...accepted, accept: true });
+    assert.ok(result.draftId, 'accepting a reply makes a draft');
+    assert.equal(operations.view(result.receipt.opId)?.state, 'confirmed');
+    const top = undoStack.peek();
+    assert.equal(top?.kind === 'operation' ? top.opId : null, result.receipt.opId);
+    assert.equal((await h.truth.api.draft.get({ ids: [result.draftId] })).list.length, 1);
+    const outcome = undoStack.undoLast();
+    if (outcome?.kind === 'operation') await outcome.result.receipt;
+    assert.equal((await h.truth.api.draft.get({ ids: [result.draftId] })).list.length, 0);
+
+    const declined = await proposal();
+    const dismissed = await api.ask.decide({ ...declined, accept: false });
+    assert.equal(dismissed.draftId, undefined);
+    assert.equal(dismissed.eventId, undefined);
+    assert.equal(operations.view(dismissed.receipt.opId)?.state, 'confirmed');
+    // A decided proposal cannot be decided again: the refusal is an OperationFailedError.
+    await assert.rejects(
+      () => api.ask.decide({ ...declined, accept: true }),
+      (error: unknown) => error instanceof OperationFailedError && error.error.type === 'conflict',
+    );
+  });
+});
+
+test('the native stub refuses what main would refuse under the contract schema', async () => {
+  await withHarness(async h => {
+    const { api } = h.layer;
+    await assert.rejects(
+      () => api.system.openSettings({ pane: 'nonsense' } as never),
+      (error: { body?: { type?: string }; type?: string }) =>
+        (error.body?.type ?? error.type) === 'validation',
+    );
+    assert.deepEqual(await api.system.openSettings({ pane: 'microphone' }), { ok: true });
   });
 });

@@ -449,14 +449,17 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
       !!record?.undoneBy || rows.get('Operation', args.opId)?.state === 'cancelled';
     let effect: Effect | null = null;
     emitter.batch(() => {
-      if (record?.effect && !alreadyUndone) {
-        const original = overlay.get(args.opId);
-        if (original) {
-          original.superseded = true;
-          overlay.touch(original);
+      if (record && !alreadyUndone) {
+        // Every record is marked, effect or not (a command has none), so its view stops being undoable at once.
+        if (record.effect) {
+          const original = overlay.get(args.opId);
+          if (original) {
+            original.superseded = true;
+            overlay.touch(original);
+          }
+          effect = inverse(record.effect);
+          addEntry(entryFor(undoOpId, effect));
         }
-        effect = inverse(record.effect);
-        addEntry(entryFor(undoOpId, effect));
         record.undoneBy = undoOpId;
         operations.changed(args.opId);
       }
@@ -538,9 +541,10 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
   /**
    * A write that returns a receipt but has no overlay (calendar, plans, Ask proposals, conversations, calendars,
    * disconnect): it joins the operations the toasts read, its receipt retains the `Operation` row, and when the
-   * receipt is undoable it joins the one undo stack, so Z reverses it through `Operation/undo` like `Thread/act`. A
-   * rejection marks the operation failed (its `OperationView.retry` sends the write again under a fresh `opId`) and
-   * rethrows the engine's own error to the caller.
+   * receipt is undoable it joins the one undo stack when issued (and leaves it if the receipt turns out not undoable), so Z reverses it through `Operation/undo` like `Thread/act`. A
+   * rejection takes the same path as `act` and undo (`onReject`): the operation is marked failed (its
+   * `OperationView.retry` sends the write again under a fresh `opId`, and yields only the receipt, so a screen
+   * re-reads the rows rather than rely on the original result) and the caller gets an `OperationFailedError`.
    */
   function command<A extends { opId?: OpId }, R>(
     args: A,
@@ -569,19 +573,25 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
           return { opId: next, receipt };
         },
       };
-      operations.add(record);
-      return send({ ...args, opId }).then(
+      // Like `act`: the record and its place on the undo stack are in the same batch, before the call leaves, so Z
+      // pressed while the receipt is in flight undoes this write and the stack keeps issue order.
+      emitter.batch(() => {
+        operations.add(record);
+        undoStack.pushOperation(opId);
+      });
+      let call: Promise<R>;
+      try {
+        call = send({ ...args, opId });
+      } catch (error) {
+        call = Promise.reject(error);
+      }
+      return call.then(
         result => {
           const receipt = onReceipt(opId, receiptOf(result));
-          if (receipt.undoable !== false) undoStack.pushOperation(opId);
+          if (receipt.undoable === false) undoStack.dropOperation(opId);
           return result;
         },
-        error => {
-          record.state = 'failed';
-          record.error = toErrorBody(error);
-          operations.changed(opId);
-          throw error;
-        },
+        error => onReject(opId, error),
       );
     };
     const result = issue(args.opId ?? mint('op'));

@@ -195,6 +195,14 @@ export class UndoStackStore implements UndoStack {
     this.add({ kind: 'operation', id: this.deps.mintId('undo'), opId });
   }
 
+  /** Take an operation off the stack (its receipt said it cannot be undone). */
+  dropOperation(opId: OpId): void {
+    const kept = this.entries.filter(e => !(e.kind === 'operation' && e.opId === opId));
+    if (kept.length === this.entries.length) return;
+    this.entries = kept;
+    this.deps.emitter.emit(UNDO_TOPIC);
+  }
+
   push(entry: LocalUndo): UndoHandle {
     const id = this.deps.mintId('undo');
     this.add({ kind: 'local', id, label: entry.label, entry });

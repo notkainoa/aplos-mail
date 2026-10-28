@@ -5,6 +5,7 @@
  * "nothing happened here" result: windows do not open, permissions are not granted, nothing is posted. Development and
  * tests only, like the stand-in; a release uses the real transport.
  */
+import { parseArgs, type MethodName } from '@aplos/contract';
 import type { EngineSession } from '@aplos/contract/client';
 
 type Stub = (args: Record<string, unknown>) => unknown;
@@ -34,7 +35,13 @@ export function withNativeStubs(session: EngineSession): EngineSession {
     call(method, args, options) {
       const stub = isNativeStubbed(method) ? STUBS[method] : undefined;
       if (!stub) return session.call(method, args, options);
-      return Promise.resolve(stub((args ?? {}) as Record<string, unknown>));
+      // Main validates against the contract schema before it answers; so does the stand-in, with the same refusals.
+      try {
+        const parsed = parseArgs(method as MethodName, args) as Record<string, unknown>;
+        return Promise.resolve(stub(parsed));
+      } catch (error) {
+        return Promise.reject(error);
+      }
     },
     subscribe: listener => session.subscribe(listener),
     close: () => session.close(),
