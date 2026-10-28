@@ -1,7 +1,8 @@
 // Builds one image of every captured shot, light beside dark, so a person can look at the whole set.
 //   node tests/visual/contact-sheet.mjs [project] [first-state-index] [count]
-// Reads artifacts/visual/shots/<project>/ (default 1440x900) and writes
-// artifacts/visual/contact-<project>-<n>.png. Headless Chromium only.
+// Reads <shots>/<project>/ (default 1440x900) and writes
+// artifacts/visual/contact-<project>-<n>.png. <shots> is VISUAL_CAPTURE_DIR when set (the same rule as
+// visual.spec.ts), else artifacts/visual/shots. Headless Chromium only.
 import { chromium } from '@playwright/test';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -10,7 +11,10 @@ const root = resolve(import.meta.dirname, '..', '..', 'artifacts', 'visual');
 const project = process.argv[2] ?? '1440x900';
 const first = Number(process.argv[3] ?? 0);
 const count = Number(process.argv[4] ?? 6);
-const dir = join(root, 'shots', project);
+const shots = process.env.VISUAL_CAPTURE_DIR
+  ? resolve(process.env.VISUAL_CAPTURE_DIR)
+  : join(root, 'shots');
+const dir = join(shots, project);
 if (!existsSync(dir)) throw new Error(`No shots in ${dir}. Run the visual spec first.`);
 
 const ids = [

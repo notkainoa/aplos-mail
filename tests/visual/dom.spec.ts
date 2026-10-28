@@ -107,10 +107,31 @@ async function audit(page: Page): Promise<Findings> {
           if (/gradient/.test(s.backgroundImage))
             decoration.push(`${label} has a gradient background`);
           if (/gradient/.test(s.maskImage || '')) decoration.push(`${label} has a gradient mask`);
+          if (/gradient/.test(s.borderImageSource || ''))
+            decoration.push(`${label} has a gradient border-image`);
+          if (/gradient/.test(s.listStyleImage || ''))
+            decoration.push(`${label} has a gradient list-style-image`);
           if (s.backdropFilter && s.backdropFilter !== 'none')
             decoration.push(`${label} has backdrop-filter`);
           const webkit = s.getPropertyValue('-webkit-backdrop-filter');
           if (webkit && webkit !== 'none') decoration.push(`${label} has -webkit-backdrop-filter`);
+        }
+      }
+
+      // SVG paint servers: a gradient or pattern drawn in markup is as banned as one in CSS. Any such
+      // element under the stage counts, and so does a fill or stroke that points at one anywhere.
+      const paintServer = /^(lineargradient|radialgradient|pattern)$/;
+      for (const el of all)
+        if (paintServer.test(el.localName.toLowerCase()))
+          decoration.push(`svg ${el.localName}${el.id ? `#${el.id}` : ''} under the stage`);
+      for (const el of all) {
+        if (!(el instanceof SVGElement)) continue;
+        const style = getComputedStyle(el);
+        for (const property of ['fill', 'stroke'] as const) {
+          const id = /url\(\s*["']?#([^"')\s]+)/.exec(style[property])?.[1];
+          const target = id ? document.getElementById(id) : null;
+          if (target && paintServer.test(target.localName.toLowerCase()))
+            decoration.push(`${name(el)} ${property} uses ${target.localName}#${id}`);
         }
       }
 
@@ -261,6 +282,8 @@ test('the audit catches planted violations', async ({ page }) => {
       <div class="planted-fade">Todo</div>
       <div class="planted-blur" style="font-size: 10px">Ready!</div>
       <svg class="lucide lucide-sparkles" width="8" height="8"></svg>
+      <svg width="20" height="20"><defs><linearGradient id="planted-sky"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/></linearGradient></defs><rect width="20" height="20" fill="url(#planted-sky)"/></svg>
+      <div class="planted-border" style="border: 4px solid; border-image: linear-gradient(red, blue) 1">Edge</div>
       <button data-variant="filled" style="border-radius: 20px">First</button>
       <button data-variant="filled">Second</button>`,
     );
@@ -271,8 +294,35 @@ test('the audit catches planted violations', async ({ page }) => {
   expect(found.layoutTransitions.join()).toContain('width');
   expect(found.decoration.join()).toContain('gradient');
   expect(found.decoration.join()).toContain('backdrop-filter');
+  expect(found.decoration.join()).toContain('svg linearGradient#planted-sky under the stage');
+  expect(found.decoration.join()).toContain('gradient border-image');
   expect(found.smallText.join()).toContain('10px');
   expect(found.banned.join()).toMatch(/Todo/);
   expect(found.banned.join()).toMatch(/exclamation/);
   expect(found.banned.join()).toMatch(/sparkles/);
+});
+
+// A paint server defined outside the stage (a shared sprite sheet) and used only through fill or
+// stroke is found by the reference, not by the element scan.
+test('the audit catches a pattern reached only through fill and stroke', async ({ page }) => {
+  const state = STATES.find(candidate => candidate.id === 'empty-inbox-zero')!;
+  await openState(page, state);
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      `<svg width="0" height="0" style="position:absolute"><defs>
+        <pattern id="planted-stripe" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="2" height="4" fill="red"/></pattern>
+        <radialGradient id="planted-glow"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/></radialGradient>
+      </defs></svg>`,
+    );
+    document
+      .querySelector('.stage__column')!
+      .insertAdjacentHTML(
+        'beforeend',
+        `<svg width="20" height="20"><rect width="20" height="20" fill="url(#planted-stripe)" stroke="url('#planted-glow')"/></svg>`,
+      );
+  });
+  const found = await audit(page);
+  expect(found.decoration.join()).toContain('fill uses pattern#planted-stripe');
+  expect(found.decoration.join()).toContain('stroke uses radialGradient#planted-glow');
 });

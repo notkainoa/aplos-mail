@@ -420,7 +420,10 @@ function InlineReplyScene(): ReactElement {
         onPopOut={noop}
         editor={
           <Editor>
-            <p>Thanks Jordan. Direction two reads better to me, with the quieter header.</p>
+            <p>
+              Thanks Jordan. Direction two reads better to me, with the quieter header.
+              <span className="stage__suggestion"> I can review the final pass on Thursday.</span>
+            </p>
           </Editor>
         }
         suggestion={{ kind: 'draft', onKeep: noop, onDismiss: noop }}

@@ -11,6 +11,7 @@ npx playwright test -c tests/visual/playwright.config.ts --project 1440x900   # 
 npx playwright test -c tests/visual/playwright.config.ts hover.spec           # one spec
 npx playwright test -c tests/visual/playwright.config.ts -g "home-focus"      # one state
 node tests/visual/contact-sheet.mjs 1440x900 0 4                              # look at the shots, light beside dark
+VISUAL_CAPTURE_DIR=/tmp/base node tests/visual/contact-sheet.mjs 1440x900 0 4  # the same, for a run made with that capture dir
 ```
 
 Run from the repo root. The npm script names (`test:visual`) are plat-ci's to wire. Output goes to
@@ -90,8 +91,11 @@ for each one: snapshots every box on the stage, moves the real pointer onto it, 
 box moved or resized by more than 0.5 px fails the state, named with its delta, for example
 `hover button.ui-onb-button "Open Aplos": svg moved by (2.39, 2.39)`. Tooltips are overlays and are
 not counted; elements animating a transform forever (the spinner) are skipped, because their
-bounding box changes with no hover involved. One test plants a hover rule that nudges a row and
-requires the check to report it.
+bounding box changes with no hover involved. A keycap (`kbd` or any `*-kbd` class, outside tooltips
+and `data-reveal="badge"`) that is on show after the hover and was not before is reported as
+`hover X revealed keycap Y`, whether it came from `display`, `visibility` or `opacity` (DESIGN 5
+rule 17). Controls plant a row nudge and a keycap revealed by visibility and by opacity, and require
+each to be reported.
 
 ## DOM assertions
 
@@ -100,7 +104,9 @@ Per state, light and dark:
 - at most one filled button, and exactly the count `states.ts` declares; its radius is at most 8 px
 - no computed `transition-property` with a layout property (`all` counts when its duration is not
   zero) on any element
-- no gradient background or mask, no `backdrop-filter`, on elements or `::before` and `::after`
+- no gradient background, mask, border-image or list-style-image, no `backdrop-filter`, on elements
+  or `::before` and `::after`; no SVG `linearGradient`, `radialGradient` or `pattern` under the
+  stage, and no `fill` or `stroke` that points at one
 - no text under 11 px
 - none of the banned phrases of DESIGN 10 and 13, no `!`, no sparkle, wand, star, brain or robot
   glyph or icon name, in text, `aria-label`, `title`, `placeholder`, SVG classes and `data-icon`

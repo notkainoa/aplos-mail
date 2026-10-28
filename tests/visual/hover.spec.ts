@@ -29,6 +29,9 @@ const INTERACTIVE = [
   '[data-event-id]',
 ].join(',');
 
+/** Keycaps: the `kbd` tag and every `*-kbd` class (ui-kbd, ui-list-kbd, ui-compose-kbd, ui-cal-kbd). */
+const KEYCAP = "kbd, [class*='-kbd']";
+
 interface Moved {
   element: string;
   dx: number;
@@ -65,48 +68,72 @@ async function markTargets(page: Page): Promise<number> {
   );
 }
 
-async function hoverOne(page: Page, index: number): Promise<{ target: string; moved: Moved[] }> {
+async function hoverOne(
+  page: Page,
+  index: number,
+): Promise<{ target: string; moved: Moved[]; revealed: string[] }> {
   // Rest state first: every box that exists now, so only those can be said to have moved.
-  const target = await page.evaluate(i => {
-    const el = document.querySelector(`[data-hover-target="${i}"]`) as HTMLElement;
-    el.scrollIntoView({ block: 'nearest' });
-    const stage = document.querySelector('.stage')!;
-    const name = (e: Element) =>
-      `${e.tagName.toLowerCase()}${e.id ? `#${e.id}` : ''}${typeof e.className === 'string' && e.className ? `.${e.className.trim().split(/\s+/)[0]}` : ''}`;
-    // A running transform animation (the spinner) changes a bounding box with no hover involved.
-    const spinning = new Set<Element>();
-    for (const animation of document.getAnimations()) {
-      const effect = animation.effect as KeyframeEffect | null;
-      if (!effect?.target || effect.getComputedTiming().iterations !== Infinity) continue;
-      if (
-        effect
-          .getKeyframes()
-          .some(k => ['transform', 'rotate', 'scale', 'translate'].some(p => p in k))
-      )
-        spinning.add(effect.target);
-    }
-    const watched = [...stage.querySelectorAll('*')].filter(
-      e =>
-        !e.closest('[role="tooltip"]') &&
-        ![...spinning].some(s => s.contains(e)) &&
-        e.getBoundingClientRect().width + e.getBoundingClientRect().height > 0,
-    );
-    const w = window as unknown as {
-      __watched: Element[];
-      __before: DOMRect[];
-      __name: (e: Element) => string;
-    };
-    w.__watched = watched;
-    w.__before = watched.map(e => e.getBoundingClientRect());
-    w.__name = name;
-    const r = el.getBoundingClientRect();
-    const label = (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 24);
-    return {
-      label: `${name(el)} "${label}"`,
-      x: Math.min(Math.max(r.left + r.width / 2, 1), innerWidth - 1),
-      y: Math.min(Math.max(r.top + r.height / 2, 1), innerHeight - 1),
-    };
-  }, index);
+  const target = await page.evaluate(
+    ({ i, keycap }) => {
+      const el = document.querySelector(`[data-hover-target="${i}"]`) as HTMLElement;
+      el.scrollIntoView({ block: 'nearest' });
+      const stage = document.querySelector('.stage')!;
+      const name = (e: Element) =>
+        `${e.tagName.toLowerCase()}${e.id ? `#${e.id}` : ''}${typeof e.className === 'string' && e.className ? `.${e.className.trim().split(/\s+/)[0]}` : ''}`;
+      // A running transform animation (the spinner) changes a bounding box with no hover involved.
+      const spinning = new Set<Element>();
+      for (const animation of document.getAnimations()) {
+        const effect = animation.effect as KeyframeEffect | null;
+        if (!effect?.target || effect.getComputedTiming().iterations !== Infinity) continue;
+        if (
+          effect
+            .getKeyframes()
+            .some(k => ['transform', 'rotate', 'scale', 'translate'].some(p => p in k))
+        )
+          spinning.add(effect.target);
+      }
+      const watched = [...stage.querySelectorAll('*')].filter(
+        e =>
+          !e.closest('[role="tooltip"]') &&
+          ![...spinning].some(s => s.contains(e)) &&
+          e.getBoundingClientRect().width + e.getBoundingClientRect().height > 0,
+      );
+      const w = window as unknown as {
+        __watched: Element[];
+        __before: DOMRect[];
+        __name: (e: Element) => string;
+        __showing: () => Set<Element>;
+        __keysBefore: Set<Element>;
+      };
+      // A keycap is on show when it has a box, is not hidden and is not transparent (itself or any
+      // ancestor). Tooltips and the badge reveal are the allowed ways to show one on hover.
+      const showing = () =>
+        new Set(
+          [...stage.querySelectorAll(keycap)].filter(k => {
+            if (k.closest('[role="tooltip"], [data-reveal="badge"]')) return false;
+            const r = k.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0 || getComputedStyle(k).visibility === 'hidden')
+              return false;
+            for (let e: Element | null = k; e && e !== stage.parentElement; e = e.parentElement)
+              if (parseFloat(getComputedStyle(e).opacity) <= 0) return false;
+            return true;
+          }),
+        );
+      w.__watched = watched;
+      w.__before = watched.map(e => e.getBoundingClientRect());
+      w.__name = name;
+      w.__showing = showing;
+      w.__keysBefore = showing();
+      const r = el.getBoundingClientRect();
+      const label = (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 24);
+      return {
+        label: `${name(el)} "${label}"`,
+        x: Math.min(Math.max(r.left + r.width / 2, 1), innerWidth - 1),
+        y: Math.min(Math.max(r.top + r.height / 2, 1), innerHeight - 1),
+      };
+    },
+    { i: index, keycap: KEYCAP },
+  );
 
   await page.mouse.move(target.x, target.y);
   await page.waitForTimeout(SETTLE_MS);
@@ -119,13 +146,16 @@ async function hoverOne(page: Page, index: number): Promise<{ target: string; mo
     ),
   );
 
-  const moved = await page.evaluate(tolerance => {
+  const { moved, revealed } = await page.evaluate(tolerance => {
     const w = window as unknown as {
       __watched: Element[];
       __before: DOMRect[];
       __name: (e: Element) => string;
+      __showing: () => Set<Element>;
+      __keysBefore: Set<Element>;
     };
     const out: Moved[] = [];
+    const revealed = [...w.__showing()].filter(k => !w.__keysBefore.has(k)).map(w.__name);
     w.__watched.forEach((el, i) => {
       if (el.closest('[role="tooltip"]')) return;
       const a = w.__before[i];
@@ -134,11 +164,11 @@ async function hoverOne(page: Page, index: number): Promise<{ target: string; mo
       if (Object.values(d).some(v => Math.abs(v) > tolerance))
         out.push({ element: w.__name(el), ...d });
     });
-    return out;
+    return { moved: out, revealed };
   }, TOLERANCE_PX);
 
   await page.mouse.move(0, 0);
-  return { target: target.label, moved };
+  return { target: target.label, moved, revealed };
 }
 
 /** Hovers every target of the open state and reports each element that moved, with the delta. */
@@ -146,7 +176,9 @@ async function hoverAll(page: Page): Promise<{ count: number; failures: string[]
   const count = await markTargets(page);
   const failures: string[] = [];
   for (let index = 0; index < count; index += 1) {
-    const { target, moved } = await hoverOne(page, index);
+    const { target, moved, revealed } = await hoverOne(page, index);
+    // Rule 17: hover never reveals an inline keycap, even when its space is kept.
+    for (const keycap of revealed) failures.push(`hover ${target} revealed keycap ${keycap}`);
     if (moved.length === 0) continue;
     const shown = moved
       .slice(0, 4)
@@ -182,4 +214,20 @@ test.describe('hover', () => {
     expect(failures.length, 'the planted shift was not reported').toBeGreaterThan(0);
     expect(failures[0]).toMatch(/moved by \(0\.00, [\d.-]+\)/);
   });
+
+  // Positive control: a keycap that keeps its space and only turns visible on hover moves no box,
+  // so the box comparison alone passes it. Visibility and opacity versions must both be reported.
+  for (const hidden of ['visibility: hidden', 'opacity: 0']) {
+    test(`the check catches a keycap revealed by ${hidden.split(':')[0]}`, async ({ page }) => {
+      const state = STATES.find(candidate => candidate.id === 'compose-page')!;
+      await openState(page, state, { theme: 'light' });
+      const revealed = hidden.replace(/hidden|0/, m => (m === '0' ? '1' : 'visible'));
+      await page.addStyleTag({
+        content: `[data-variant='filled'] :is(kbd, [class*='-kbd']) { ${hidden} !important; }
+          [data-variant='filled']:hover :is(kbd, [class*='-kbd']) { ${revealed} !important; }`,
+      });
+      const { failures } = await hoverAll(page);
+      expect(failures.join('\n')).toMatch(/revealed keycap/);
+    });
+  }
 });
