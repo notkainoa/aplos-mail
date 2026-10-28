@@ -1,6 +1,6 @@
 /**
- * Plain sentences for the engine's reason codes, as onboarding, first sync and the reconnect sheet show them
- * (DESIGN 7.12, 7.15, 10). The screens never show a provider's own wording or a raw error; they pass the code
+ * Plain sentences for the engine’s reason codes, as onboarding, first sync and the reconnect sheet show them
+ * (DESIGN 7.12, 7.15, 10). The screens never show a provider’s own wording or a raw error; they pass the code
  * and a few facts, and this file writes the sentence. The words say what happened and, where it helps, what
  * happens next. They never mention Testing mode, verification or cost.
  *
@@ -11,20 +11,20 @@ import type { ReasonCode } from '@aplos/contract';
 
 /** Facts a sentence may name. */
 export interface ReasonFacts {
-  /** The account's address, for "Choose jordan@gmail.com to reconnect." */
+  /** The account’s address, for "Choose jordan@gmail.com to reconnect." */
   readonly address?: string;
-  /** The AI provider's display name, e.g. "Groq". */
+  /** The AI provider’s display name, e.g. "Groq". */
   readonly aiProvider?: string;
 }
 
-/** The engine's codes are an open string enum: unknown codes fall back to a neutral sentence. */
+/** The engine’s codes are an open string enum: unknown codes fall back to a neutral sentence. */
 export type AnyReasonCode = ReasonCode | (string & {});
 
 const account: Record<string, string> = {
   'rate.minute': 'Google asked us to slow down.',
   'rate.concurrency': 'Google asked us to slow down.',
-  'quota.daily': "Google's daily limit is reached. Resuming tomorrow.",
-  'quota.bandwidth': "Google's daily download limit is reached. Resuming tomorrow.",
+  'quota.daily': "Google’s daily limit is reached. Resuming tomorrow.",
+  'quota.bandwidth': "Google’s daily download limit is reached. Resuming tomorrow.",
   'quota.project': 'Google is limiting Aplos for a while. It will try again by itself.',
   'quota.calendarAbuse': 'Google Calendar asked us to wait a few hours.',
   'auth.expired': 'Google needs you to sign in again.',
@@ -39,10 +39,10 @@ const account: Record<string, string> = {
   'permission.filters': 'Aplos needs permission to manage your Gmail filters.',
   'permission.calendar': 'Aplos needs permission to use your Google Calendar.',
   'permission.settings': 'Aplos needs permission to read your Gmail settings.',
-  'config.apiDisabled': "Google sign-in isn't set up in this build.",
-  'config.clientMissing': "Google sign-in isn't set up in this build.",
-  'net.offline': "You're offline. Aplos continues when you're back online.",
-  'server.unavailable': "Google isn't answering right now. Aplos will try again.",
+  'config.apiDisabled': "Google sign-in isn’t set up in this build.",
+  'config.clientMissing': "Google sign-in isn’t set up in this build.",
+  'net.offline': "You’re offline. Aplos continues when you’re back online.",
+  'server.unavailable': "Google isn’t answering right now. Aplos will try again.",
   'server.connectionLimit': 'The mail server is busy. Aplos will try again.',
   'server.limitedMode': 'The mail server is busy. Aplos will try again.',
   'cursor.expired': 'Aplos is catching up on recent changes.',
@@ -63,7 +63,7 @@ export function reasonSentence(code: AnyReasonCode | undefined, facts: ReasonFac
 }
 
 /**
- * The sorting pass's reason (DESIGN 7.12: "Couldn't sort with Groq: the key was refused. Mail is ready;
+ * The sorting pass’s reason (DESIGN 7.12: "Couldn’t sort with Groq: the key was refused. Mail is ready;
  * sorting will retry."). Returns the first sentence only; the screen adds what is safe and what happens next.
  */
 export function aiSentence(code: AnyReasonCode | undefined, facts: ReasonFacts = {}): string {
@@ -72,21 +72,21 @@ export function aiSentence(code: AnyReasonCode | undefined, facts: ReasonFacts =
     case 'ai.noProvider':
       return 'No AI provider is set up.';
     case 'ai.missingKey':
-      return `Couldn't sort with ${name}: the key was refused.`;
+      return `Couldn’t sort with ${name}: the key was refused.`;
     case 'ai.unreachable':
-      return `Couldn't sort with ${name}: it didn't answer.`;
+      return `Couldn’t sort with ${name}: it didn’t answer.`;
     case 'ai.rateLimited':
       return `${name} asked us to slow down.`;
     case 'ai.dailyCap':
-      return "Today's AI limit is reached. Sorting resumes tomorrow.";
+      return "Today’s AI limit is reached. Sorting resumes tomorrow.";
     case 'ai.noConsent':
       return 'Sorting waits until you allow it.';
     case 'ai.trainsOnInputs':
-      return `${name} may learn from what it's sent, so Aplos doesn't send it your mail.`;
+      return `${name} may learn from what it’s sent, so Aplos doesn’t send it your mail.`;
     case 'ai.accountExcluded':
-      return "This account's mail isn't used for AI.";
+      return "This account’s mail isn’t used for AI.";
     default:
-      return `Couldn't sort with ${name}.`;
+      return `Couldn’t sort with ${name}.`;
   }
 }
 
