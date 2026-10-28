@@ -15,7 +15,7 @@ const OWNERS = `# Ownership
 
 Text and tables without Path and Lane columns are ignored.
 
-| Lane | Owner |
+| Name | Role |
 |---|---|
 | web | someone |
 
@@ -28,6 +28,8 @@ Text and tables without Path and Lane columns are ignored.
 | \`apps/desktop/src/renderer/{ui,commands}/**\` | ui-foundation | UI-core | |
 | \`packages/engine/src/**\` | eng-store | Engine | |
 | \`plans/**\` | integrator | Integrator | |
+| \`apps/desktop/src/renderer/screens/home/**\` | ui-home | UI-core | |
+| \`apps/desktop/src/renderer/screens/settings/**\` | ui-settings | UI-screens | |
 | \`PROGRESS.md\`, \`DECISIONS.md\` | * | | shared |
 | \`TODO.md\` | all | | shared |
 `;
@@ -99,7 +101,7 @@ describe('change check', () => {
     commit(dir, { 'packages/engine/src/store.ts': 'y' }, ['touch engine', 'Lane-Approved: eng-store']);
     const res = check(dir);
     assert.equal(res.code, 0, res.out);
-    assert.match(res.out, /eng-store \(trailer\)/);
+    assert.match(res.out, /eng-store \(trailer [0-9a-f]{7}\)/);
   });
 
   test('a trailer for another lane does not approve', () => {
@@ -110,14 +112,14 @@ describe('change check', () => {
 
   test('--approved approves the owning lane', () => {
     const dir = makeRepo();
-    commit(dir, { 'plans/STATUS.md': 'y' });
+    commit(dir, { 'plans/DESIGN.md': 'y' });
     assert.equal(check(dir).code, 1);
     assert.equal(check(dir, ['--approved', 'integrator']).code, 0);
   });
 
   test('--pr reads lane-approved labels through gh', () => {
     const dir = makeRepo();
-    commit(dir, { 'plans/STATUS.md': 'y' });
+    commit(dir, { 'plans/DESIGN.md': 'y' });
     const bin = path.join(tmpRoot, `bin-${counter++}`);
     mkdirSync(bin);
     writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho '{"labels":[{"name":"bug"},{"name":"lane-approved:integrator"}]}'\n`);
@@ -276,13 +278,223 @@ describe('glob matching and parsing', () => {
     assert.deepEqual(expandBraces('m/{a,b}.{ts,js}').sort(), ['m/a.js', 'm/a.ts', 'm/b.js', 'm/b.ts']);
   });
 
-  test('a trailing slash means everything below, and unticked <br> separated cells parse', () => {
-    const parsed = parseOwners('| **Paths** | `Lane` | THREAD |\n|:--|:-:|--|\n| scripts/design/, docs/a.md<br/>x/{y,z}/** | **UI-Core** | T |\n');
+  test('unticked <br> separated cells parse; a glob ending in "/" is ignored with a warning', () => {
+    const parsed = parseOwners('| **Paths** | `Lane` | THREAD |\n|:--|:-:|--|\n| scripts/design/**, docs/a.md<br/>x/{y,z}/**, old/ | **UI-Core** | T |\n');
     assert.deepEqual(parsed.errors, []);
+    assert.equal(parsed.warnings.length, 1);
+    assert.match(parsed.warnings[0], /"old\/" ends with "\/"/);
     const owner = file => resolveOwner(parsed.rules, file)?.rule.lane;
     assert.equal(owner('scripts/design/a/b.ts'), 'ui-core');
     assert.equal(owner('docs/a.md'), 'ui-core');
     assert.equal(owner('x/z/q'), 'ui-core');
     assert.equal(owner('x/w/q'), undefined);
+    assert.equal(owner('old/file'), undefined);
+  });
+});
+
+describe('rules come from the base, not from the change', () => {
+  test('deleting or renaming OWNERS.md does not disable the check', () => {
+    const dir = makeRepo({ files: { 'packages/engine/src/s.ts': 'a' } });
+    commit(dir, { 'packages/engine/src/s.ts': 'hack' });
+    git(dir, 'rm', '-q', 'plans/OWNERS.md');
+    git(dir, 'commit', '-q', '-m', 'evil');
+    const res = check(dir, ['--json']);
+    assert.equal(res.code, 1, res.out);
+    assert.deepEqual(violationFiles(res), ['packages/engine/src/s.ts', 'plans/OWNERS.md']);
+    git(dir, 'reset', '-q', '--hard', 'HEAD~1');
+    git(dir, 'mv', 'plans/OWNERS.md', 'plans/OWNERS.old.md');
+    git(dir, 'commit', '-q', '-m', 'rename');
+    const renamed = check(dir, ['--json']);
+    assert.equal(renamed.code, 1, renamed.out);
+    assert.deepEqual(violationFiles(renamed), ['packages/engine/src/s.ts', 'plans/OWNERS.md', 'plans/OWNERS.old.md']);
+  });
+
+  test('a change cannot rewrite OWNERS.md to give itself ownership', () => {
+    const dir = makeRepo({ files: { 'packages/engine/src/s.ts': 'a' } });
+    commit(dir, {
+      'packages/engine/src/s.ts': 'hack',
+      'plans/OWNERS.md': `${OWNERS}\n| Path | Lane | Thread |\n|---|---|---|\n| \`plans/OWNERS.md\` | web | Platform and website |\n| \`packages/engine/src/s.ts\` | web | Platform and website |\n`,
+    });
+    const res = check(dir, ['--json']);
+    assert.equal(res.code, 1, res.out);
+    assert.deepEqual(violationFiles(res), ['packages/engine/src/s.ts', 'plans/OWNERS.md']);
+  });
+
+  test('an OWNERS.md that exists only on the head is pending (the bootstrap commit)', () => {
+    const dir = makeRepo({ owners: null });
+    commit(dir, { 'plans/OWNERS.md': OWNERS, 'packages/engine/src/s.ts': 'a' });
+    assert.match(check(dir).out, /^pending:/);
+  });
+});
+
+describe('approval trailers', () => {
+  test('prose in a trailer approves nothing; a comma separated list approves several lanes', () => {
+    const dir = makeRepo({ files: { 'packages/engine/src/s.ts': 'a', 'tools/lint/design/d.mjs': 'a' } });
+    commit(dir, { 'packages/engine/src/s.ts': 'b', 'tools/lint/design/d.mjs': 'b' }, ['touch', 'Lane-Approved: eng-store per ui-foundation review pending']);
+    const bad = check(dir, ['--json']);
+    assert.equal(bad.code, 1);
+    assert.deepEqual(JSON.parse(bad.out).approvals, []);
+    assert.equal(JSON.parse(bad.out).ignoredTrailers.length, 1);
+    assert.match(check(dir).out, /ignored Lane-Approved value/);
+    const fresh = makeRepo({ files: { 'packages/engine/src/s.ts': 'a', 'tools/lint/design/d.mjs': 'a' } });
+    commit(fresh, { 'packages/engine/src/s.ts': 'b', 'tools/lint/design/d.mjs': 'b' }, ['touch', 'Lane-Approved: eng-store, ui-foundation']);
+    assert.equal(check(fresh).code, 0);
+  });
+
+  test('a trailer covers only the files of its own commit', () => {
+    const dir = makeRepo({ files: { 'packages/engine/src/one.ts': 'a', 'packages/engine/src/two.ts': 'a' } });
+    commit(dir, { 'packages/engine/src/one.ts': 'b' }, ['fix one', 'Lane-Approved: eng-store']);
+    commit(dir, { 'packages/engine/src/two.ts': 'rewrite' }, ['rewrite two']);
+    const res = check(dir, ['--json']);
+    assert.equal(res.code, 1);
+    assert.deepEqual(violationFiles(res), ['packages/engine/src/two.ts']);
+    assert.equal(check(dir, ['--no-trailers']).code, 1);
+  });
+
+  test('every commit touching a file must carry the approval', () => {
+    const dir = makeRepo({ files: { 'packages/engine/src/one.ts': 'a' } });
+    commit(dir, { 'packages/engine/src/one.ts': 'b' }, ['fix one', 'Lane-Approved: eng-store']);
+    assert.equal(check(dir).code, 0);
+    commit(dir, { 'packages/engine/src/one.ts': 'c' }, ['follow-up without approval']);
+    assert.equal(check(dir).code, 1);
+  });
+
+  test('Owners-Exempt: phase-0 needs the integrator lane to approve it', () => {
+    const dir = makeRepo({ files: { 'packages/engine/src/one.ts': 'a' } });
+    commit(dir, { 'packages/engine/src/one.ts': 'b', 'new-root/file.ts': 'x' }, ['restructure', 'Owners-Exempt: phase-0']);
+    assert.equal(check(dir).code, 1);
+    assert.equal(check(dir, ['--approved', 'integrator']).code, 0);
+    git(dir, 'checkout', '-q', '-B', 'rv/thread/integrator');
+    assert.equal(check(dir).code, 0);
+  });
+});
+
+describe('acting lane resolution', () => {
+  test('rv/thread/<prefix> that fits two threads is an error', () => {
+    const dir = makeRepo({ branch: 'rv/thread/ui' });
+    commit(dir, { 'apps/desktop/src/renderer/screens/settings/a.ts': 'a' });
+    const res = check(dir);
+    assert.equal(res.code, 2);
+    assert.match(res.err, /ambiguous/);
+    git(dir, 'checkout', '-q', '-B', 'rv/thread/ui-screens');
+    assert.equal(check(dir).code, 0);
+    git(dir, 'checkout', '-q', '-B', 'rv/thread/ui-core');
+    assert.equal(check(dir).code, 1);
+  });
+
+  test('no changes pass on any branch; integration branches are skipped', () => {
+    const dir = makeRepo({ branch: 'feature/anything' });
+    assert.equal(check(dir).code, 0);
+    assert.match(check(dir).out, /no changed files/);
+    git(dir, 'checkout', '-q', '-B', 'revamp');
+    commit(dir, { 'packages/engine/src/x.ts': 'a' });
+    const res = check(dir);
+    assert.equal(res.code, 0);
+    assert.match(res.out, /^skipped:/);
+    assert.equal(check(dir, ['--lane', 'web']).code, 1);
+    assert.equal(check(dir, [], { GITHUB_BASE_REF: 'revamp' }).code, 2);
+  });
+});
+
+describe('table parsing', () => {
+  const owner = (parsed, file) => {
+    const res = resolveOwner(parsed.rules, file);
+    return res?.rule?.lane ?? null;
+  };
+
+  test('a row without a leading pipe is an error instead of being dropped', () => {
+    const parsed = parseOwners('| Path | Lane |\n|---|---|\n| `tools/lint/**` | plat-ci |\n`tools/lint/design/**` | ui-foundation |\n');
+    assert.match(parsed.errors.join('\n'), /line 4: table row must start with "\|"/);
+  });
+
+  test('a header without a leading pipe is an error', () => {
+    const parsed = parseOwners('Path | Lane\n--- | ---\n| `a/**` | x |\n');
+    assert.match(parsed.errors.join('\n'), /header must start with/);
+  });
+
+  test('a table with Lane but no Path column is an error', () => {
+    const parsed = parseOwners('| Path | Lane |\n|---|---|\n| `a/**` | x |\n\n| Lane | Owns |\n|---|---|\n| eng-store | the store |\n');
+    assert.match(parsed.errors.join('\n'), /line 5: table has a Lane column but no Path column/);
+  });
+
+  test('an escaped pipe is literal and shifts nothing', () => {
+    const parsed = parseOwners('| Path | Lane | Thread |\n|---|---|---|\n| `a/**` \\| eng-store | ui-home |\n');
+    assert.match(parsed.errors.join('\n'), /row has 2 cell\(s\) but the header has 3/);
+    const two = parseOwners('| Path | Lane |\n|---|---|\n| `a/**` \\| eng-store | ui-home |\n');
+    assert.deepEqual(two.errors, []);
+    assert.equal(owner(two, 'a/x'), 'ui-home');
+  });
+
+  test('lane names must be slugs or *', () => {
+    const parsed = parseOwners('| Path | Lane |\n|---|---|\n| `a/**` | eng-store (assumed) |\n| `b/**` | ** |\n| `c/**` | Not A Lane |\n| `d/**` | ok-lane |\n');
+    assert.equal(parsed.errors.filter(e => /invalid lane/.test(e)).length, 3);
+  });
+
+  test('built-in shared files can be overridden by an explicit row', () => {
+    const parsed = parseOwners('| Path | Lane |\n|---|---|\n| `PROGRESS.md` | integrator |\n| `a/**` | web |\n');
+    assert.equal(owner(parsed, 'PROGRESS.md'), 'integrator');
+    assert.equal(owner(parsed, 'DECISIONS.md'), '*');
+  });
+
+  test('the Integrator layout parses: lane-first tables, threads from headings, except notes, round 2', () => {
+    const text = `# Path ownership
+
+## Platform and website thread
+
+| Lane | Paths |
+|---|---|
+| \`plat-ci\` | \`tools/lint/**\` (except \`design/\`), \`package.json\` (scripts), \`tsconfig*.json\` at the root and in \`apps/desktop/\`. In Phase 0 \`ui-foundation\` and \`renderer/data/**\` are mentioned. |
+| \`web\` | \`apps/web/**\` |
+
+## UI-core thread
+
+| Lane | Paths |
+|---|---|
+| \`ui-foundation\` | \`tools/lint/design/**\` |
+
+## Providers thread
+
+| Lane | Paths |
+|---|---|
+| Round 2 (reserved, nobody edits this round) | \`prov-imap\`: \`apps/desktop/src/host/providers/imap/**\`; the CalDAV half: \`apps/desktop/src/host/providers/caldav/**\`. Today's \`apps/desktop/src/main/jmap.ts\` stays. |
+
+## Integrator
+
+| Owner | Paths |
+|---|---|
+| \`integrator\` | \`plans/**\` |
+
+## Shared files
+
+| File | Rule |
+|---|---|
+| \`mockups/**\` | Read-only. |
+`;
+    const parsed = parseOwners(text);
+    assert.deepEqual(parsed.errors, []);
+    assert.equal(owner(parsed, 'tools/lint/a.mjs'), 'plat-ci');
+    assert.equal(owner(parsed, 'tools/lint/design/a.mjs'), 'ui-foundation');
+    assert.equal(owner(parsed, 'design/x'), null);
+    assert.equal(owner(parsed, 'renderer/data/x'), null);
+    assert.equal(owner(parsed, 'apps/desktop/anything'), null);
+    assert.equal(owner(parsed, 'apps/desktop/src/host/providers/imap/a.ts'), 'prov-imap');
+    assert.equal(owner(parsed, 'apps/desktop/src/host/providers/caldav/a.ts'), 'reserved');
+    assert.equal(owner(parsed, 'apps/desktop/src/main/jmap.ts'), null);
+    assert.equal(owner(parsed, 'mockups/a.png'), null);
+    assert.equal(owner(parsed, 'plans/STATUS.md'), '*');
+    assert.equal(owner(parsed, 'plans/x.md'), 'integrator');
+    assert.deepEqual([...parsed.laneThread], [['plat-ci', 'Platform and website'], ['web', 'Platform and website'], ['ui-foundation', 'UI-core']]);
+    assert.ok(parsed.warnings.length >= 1);
+  });
+
+  test('rv/thread/integrator acts as the lane integrator without a Thread column', () => {
+    const dir = makeRepo({
+      branch: 'rv/thread/integrator',
+      owners: '## Integrator\n\n| Owner | Paths |\n|---|---|\n| `integrator` | `plans/**` |\n| `web` | `apps/web/**` |\n',
+    });
+    commit(dir, { 'plans/a.md': 'a' });
+    const res = check(dir);
+    assert.equal(res.code, 0, res.out + res.err);
+    assert.match(res.out, /acting lane\(s\) integrator;/);
   });
 });
