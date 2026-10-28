@@ -60,7 +60,9 @@ const LIVE = new Set(['queued', 'scheduled', 'sending', 'uncertain', 'failed', '
 
 export function load(q: StoreReader): Data {
   const folders = q
-    .all<{ id: number; account_id: string; remote_id: string; role: string | null }>('SELECT * FROM folders')
+    .all<{ id: number; account_id: string; remote_id: string; role: string | null }>(
+      'SELECT * FROM folders',
+    )
     .map(f => ({ row: f.id, account: f.account_id, remote: f.remote_id, role: f.role }));
   const placements = new Map<number, number[]>();
   for (const p of q.all<{ message_id: number; folder_id: number }>('SELECT * FROM message_folders'))
@@ -113,13 +115,21 @@ export function load(q: StoreReader): Data {
   return {
     threads,
     folders,
-    accounts: q.all<{ id: string; address: string }>('SELECT id, address FROM accounts ORDER BY id'),
+    accounts: q.all<{ id: string; address: string }>(
+      'SELECT id, address FROM accounts ORDER BY id',
+    ),
     drafts: q
       .all<{ id: string; account_id: string; updated_at: number }>('SELECT * FROM drafts')
       .map(d => ({ id: d.id, account: d.account_id, updated: d.updated_at })),
     subs: q
       .all<Record<string, never>>('SELECT * FROM submissions')
-      .map(s => ({ id: s.id, draft: s.draft_id, account: s.account_id, notBefore: s.not_before, state: s.state })),
+      .map(s => ({
+        id: s.id,
+        draft: s.draft_id,
+        account: s.account_id,
+        notBefore: s.not_before,
+        state: s.state,
+      })),
   };
 }
 
@@ -135,10 +145,17 @@ const awayRoles = new Set(['trash', 'spam']);
 function reference(d: Data, env: ViewEnv) {
   const role = (f: number) => d.folders.find(x => x.row === f)?.role ?? null;
   const roleFolder = (account: string, r: string) =>
-    d.folders.filter(f => f.account === account && f.role === r).sort((a, b) => a.row - b.row)[0]?.row;
-  const accounts = (a?: string) => d.accounts.map(x => x.id).filter(x => a === undefined || x === a);
+    d.folders.filter(f => f.account === account && f.role === r).sort((a, b) => a.row - b.row)[0]
+      ?.row;
+  const accounts = (a?: string) =>
+    d.accounts.map(x => x.id).filter(x => a === undefined || x === a);
   const visible = (t: RThread) =>
-    t.msgs.some(m => !(m.flags & 8) && m.origin !== 'search' && !m.folders.some(f => awayRoles.has(role(f) ?? '')));
+    t.msgs.some(
+      m =>
+        !(m.flags & 8) &&
+        m.origin !== 'search' &&
+        !m.folders.some(f => awayRoles.has(role(f) ?? '')),
+    );
   const inAcct = (a?: string) => (t: RThread) => a === undefined || t.account === a;
   const wfNewest = (a: RThread, b: RThread) => b.last - a.last || a.row - b.row;
   const tfNewest = (a: RThread, b: RThread) => b.last - a.last || b.row - a.row;
@@ -152,12 +169,21 @@ const byteOrder = (a: string, b: string) => (a === b ? 0 : a < b ? -1 : 1);
 
 const ids = (list: RThread[]) => list.map(t => t.id);
 
-function sectioned(parts: [string, string[]][], countOnly: [string, number, string[]?][] = []): Expected {
+function sectioned(
+  parts: [string, string[]][],
+  countOnly: [string, number, string[]?][] = [],
+): Expected {
   const out: Expected = { ids: [], sections: [], total: 0 };
   for (const [key, list] of parts) {
     const only = countOnly.find(c => c[0] === key);
     if (only) {
-      if (only[1]) out.sections.push({ key, start: out.ids.length, count: only[1], ...(only[2] ? { senders: only[2] } : {}) });
+      if (only[1])
+        out.sections.push({
+          key,
+          start: out.ids.length,
+          count: only[1],
+          ...(only[2] ? { senders: only[2] } : {}),
+        });
       continue;
     }
     if (list.length) out.sections.push({ key, start: out.ids.length, count: list.length });
@@ -177,10 +203,17 @@ function homeLists(r: Ref, a?: string) {
     r.wfNewest(x, y);
   const newIn = (lane: string) => onHome.filter(t => t.status === 'new' && t.lane === lane);
   const cutoff = r.env.now - r.env.followUpDays * 86_400_000;
-  const sent = new Set(r.accounts(a).map(x => r.roleFolder(x, 'sent')).filter(x => x !== undefined));
+  const sent = new Set(
+    r
+      .accounts(a)
+      .map(x => r.roleFolder(x, 'sent'))
+      .filter(x => x !== undefined),
+  );
   return {
     do: newIn('do').sort(doOrder),
-    fromLater: onHome.filter(t => t.status === 'later' && t.until !== null && t.until <= r.env.now).sort(doOrder),
+    fromLater: onHome
+      .filter(t => t.status === 'later' && t.until !== null && t.until <= r.env.now)
+      .sort(doOrder),
     update: newIn('update').sort((x, y) => r.imp(x) - r.imp(y) || r.wfNewest(x, y)),
     low: newIn('low').sort(r.wfNewest),
     follow: r.d.threads
@@ -198,7 +231,10 @@ function homeLists(r: Ref, a?: string) {
 
 const fromName = (t: RThread) => t.participants[0]?.name ?? t.participants[0]?.address ?? '';
 
-function homeExpected(r: Ref, spec: Extract<ViewSpec, { kind: 'home' | 'homeSection' | 'oneByOne' }>): Expected {
+function homeExpected(
+  r: Ref,
+  spec: Extract<ViewSpec, { kind: 'home' | 'homeSection' | 'oneByOne' }>,
+): Expected {
   const h = homeLists(r, spec.accountId);
   if (spec.kind !== 'home') {
     if (spec.section === 'do')
@@ -221,7 +257,10 @@ function homeExpected(r: Ref, spec: Extract<ViewSpec, { kind: 'home' | 'homeSect
   );
 }
 
-function lowGroups(r: Ref, spec: Extract<ViewSpec, { kind: 'lowSenders' | 'lowBySender' }>): Expected {
+function lowGroups(
+  r: Ref,
+  spec: Extract<ViewSpec, { kind: 'lowSenders' | 'lowBySender' }>,
+): Expected {
   const groups = new Map<string, { name: string; ids: string[] }>();
   for (const t of homeLists(r, spec.accountId).low) {
     const me = r.d.accounts.find(x => x.id === t.account)?.address.toLowerCase();
@@ -254,7 +293,12 @@ function mailboxThreads(r: Ref, role: string, a?: string): RThread[] {
         return r.visible(t) && (inbox === undefined || !t.lists.has(inbox));
       })
       .sort(r.tfNewest);
-  return live.filter(t => { const f = r.roleFolder(t.account, role); return f !== undefined && t.lists.has(f); }).sort(r.tfNewest);
+  return live
+    .filter(t => {
+      const f = r.roleFolder(t.account, role);
+      return f !== undefined && t.lists.has(f);
+    })
+    .sort(r.tfNewest);
 }
 
 function laterExpected(r: Ref, a?: string): Expected {
@@ -270,14 +314,21 @@ function laterExpected(r: Ref, a?: string): Expected {
   const order = (x: RThread, y: RThread) =>
     (x.until ?? Infinity) - (y.until ?? Infinity) || r.wfNewest(x, y);
   return sectioned(
-    ['overdue', 'today', 'week', 'someday'].map(k => [k, ids(list.filter(t => group(t) === k).sort(order))]),
+    ['overdue', 'today', 'week', 'someday'].map(k => [
+      k,
+      ids(list.filter(t => group(t) === k).sort(order)),
+    ]),
   );
 }
 
 const flat = (list: string[]): Expected => ({ ids: list, sections: [], total: list.length });
 
 /** FTS5's unicode61 view of a text: lower-case alphanumeric tokens. */
-const tokens = (s: string) => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+const tokens = (s: string) =>
+  s
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
 
 /** A quoted prefix phrase against a token list: consecutive tokens, the last one by prefix. */
 function phraseIn(word: string, hay: string[]): boolean {
@@ -326,7 +377,12 @@ function threadOk(r: Ref, t: RThread, qy: SearchQuery, startOf: (day: string) =>
   return placeOk(r, t, qy.in);
 }
 
-function searchExpected(r: Ref, spec: Extract<ViewSpec, { kind: 'search' }>, startOf: (day: string) => number, fts: boolean): Expected {
+function searchExpected(
+  r: Ref,
+  spec: Extract<ViewSpec, { kind: 'search' }>,
+  startOf: (day: string) => number,
+  fts: boolean,
+): Expected {
   const qy = spec.query;
   const list = r.d.threads.filter(t => r.inAcct(spec.accountId)(t) && threadOk(r, t, qy, startOf));
   if (fts) {
@@ -344,9 +400,13 @@ function searchExpected(r: Ref, spec: Extract<ViewSpec, { kind: 'search' }>, sta
   const p = qy.in?.toLowerCase();
   const tfOrdered = p !== undefined && p !== 'done' && p !== 'later' && p !== 'starred';
   // A role place reads one folder per account: the account's first folder with that role.
-  const inPlace = tfOrdered && ['inbox', 'sent', 'trash', 'spam', 'important'].includes(p!)
-    ? list.filter(t => { const f = r.roleFolder(t.account, p!); return f !== undefined && t.lists.has(f); })
-    : list;
+  const inPlace =
+    tfOrdered && ['inbox', 'sent', 'trash', 'spam', 'important'].includes(p!)
+      ? list.filter(t => {
+          const f = r.roleFolder(t.account, p!);
+          return f !== undefined && t.lists.has(f);
+        })
+      : list;
   return flat(ids(inPlace.sort(tfOrdered ? r.tfNewest : r.wfNewest)));
 }
 
@@ -375,11 +435,25 @@ export function expected(
     case 'later':
       return laterExpected(r, a);
     case 'bookmarks':
-      return flat(ids(d.threads.filter(t => r.inAcct(a)(t) && t.bookmarked && r.visible(t)).sort(r.wfNewest)));
+      return flat(
+        ids(d.threads.filter(t => r.inAcct(a)(t) && t.bookmarked && r.visible(t)).sort(r.wfNewest)),
+      );
     case 'replyState':
-      return flat(ids(d.threads.filter(t => r.inAcct(a)(t) && t.reply === spec.status && r.visible(t)).sort(r.wfNewest)));
+      return flat(
+        ids(
+          d.threads
+            .filter(t => r.inAcct(a)(t) && t.reply === spec.status && r.visible(t))
+            .sort(r.wfNewest),
+        ),
+      );
     case 'done':
-      return flat(ids(d.threads.filter(t => r.inAcct(a)(t) && t.status === 'done' && r.visible(t)).sort(r.wfNewest)));
+      return flat(
+        ids(
+          d.threads
+            .filter(t => r.inAcct(a)(t) && t.status === 'done' && r.visible(t))
+            .sort(r.wfNewest),
+        ),
+      );
     case 'drafts': {
       const locked = new Set(d.subs.filter(s => LIVE.has(s.state)).map(s => s.draft));
       return flat(

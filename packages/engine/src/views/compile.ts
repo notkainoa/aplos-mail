@@ -38,7 +38,11 @@ function countSql(c: CursorDef, extra: string[]): string {
  * The disjoint ranges strictly after (`side` 1) or before (`side` -1) `key`, nearest first: equal on the first i
  * columns and past `key` on column i, for i from the last column down to the first.
  */
-function ranges(c: CursorDef, key: SqlValue[], side: 1 | -1): { extra: string[]; params: SqlValue[] }[] {
+function ranges(
+  c: CursorDef,
+  key: SqlValue[],
+  side: 1 | -1,
+): { extra: string[]; params: SqlValue[] }[] {
   const out = [];
   for (let i = c.key.length - 1; i >= 0; i--) {
     const col = c.key[i];
@@ -63,7 +67,12 @@ export function cursorRows(
   const out: { id: string; key: SqlValue[] }[] = [];
   for (const part of parts) {
     if (out.length >= limit) break;
-    for (const row of q.all(pageSql(c, part.extra), ...c.params, ...part.params, limit - out.length))
+    for (const row of q.all(
+      pageSql(c, part.extra),
+      ...c.params,
+      ...part.params,
+      limit - out.length,
+    ))
       out.push({ id: row.id as string, key: keyOfRow(c, row) });
   }
   return out;
@@ -265,7 +274,10 @@ export function visible(col: string): string {
 }
 
 /** Splits a contract id `accountId:remoteId` against the stored accounts (an account id may itself hold a colon). */
-export function splitId(q: StoreReader, id: string): { accountId: string; remoteId: string } | undefined {
+export function splitId(
+  q: StoreReader,
+  id: string,
+): { accountId: string; remoteId: string } | undefined {
   let best: string | undefined;
   for (const { id: a } of q.all<{ id: string }>('SELECT id FROM accounts'))
     if (id.startsWith(`${a}:`) && (!best || a.length > best.length)) best = a;

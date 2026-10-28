@@ -1,6 +1,13 @@
 import type { ViewSpec } from '@aplos/contract';
 import type { StoreReader } from '../store';
-import { accountIds, keysetPlan, materializedPlan, roleFolder, threadRowId, visible } from './compile';
+import {
+  accountIds,
+  keysetPlan,
+  materializedPlan,
+  roleFolder,
+  threadRowId,
+  visible,
+} from './compile';
 import { NEWEST_WF, accountPred, tfCursor, wfCursor, type Pred } from './lists';
 import {
   MATERIALIZED_LIMIT,
@@ -242,13 +249,24 @@ export function laterPlan(spec: Extract<ViewSpec, { kind: 'later' }>, env: ViewE
         { key: 'overdue', runs: [laterRun([['w.later_until <= ?', env.now]], a)] },
         {
           key: 'today',
-          runs: [laterRun([['w.later_until > ?', env.now], ['w.later_until < ?', tomorrow]], a)],
+          runs: [
+            laterRun(
+              [
+                ['w.later_until > ?', env.now],
+                ['w.later_until < ?', tomorrow],
+              ],
+              a,
+            ),
+          ],
         },
         {
           key: 'week',
           runs: [
             laterRun(
-              [['w.later_until >= ?', tomorrow], ['w.later_until < ?', weekEnd]],
+              [
+                ['w.later_until >= ?', tomorrow],
+                ['w.later_until < ?', weekEnd],
+              ],
               a,
             ),
           ],

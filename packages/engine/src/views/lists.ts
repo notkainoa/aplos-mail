@@ -125,7 +125,10 @@ export function mailboxPlan(spec: Mailbox): ViewPlan {
       case 'starred':
         return [
           statusRun(
-            [['EXISTS (SELECT 1 FROM threads st WHERE st.id = w.thread_id AND st.flagged = 1)'], shown],
+            [
+              ['EXISTS (SELECT 1 FROM threads st WHERE st.id = w.thread_id AND st.flagged = 1)'],
+              shown,
+            ],
             spec.accountId,
           ),
         ];
@@ -167,13 +170,24 @@ export function workflowListPlan(
         return [statusRun([['w.reply_status = ?', spec.status], shown], spec.accountId)];
       case 'done':
         // Newest first by the thread's date: schema 0001 has no done time (requested from eng-store).
-        return [{ cursors: [wfCursor([['w.status = ?', 'done'], ...accountPred(spec.accountId), shown])] }];
+        return [
+          {
+            cursors: [wfCursor([['w.status = ?', 'done'], ...accountPred(spec.accountId), shown])],
+          },
+        ];
     }
   });
 }
 
 /** Submission states that lock their draft (the stand-in's `live`, FR-7). */
-export const LIVE_SUBMISSION = ['queued', 'scheduled', 'sending', 'uncertain', 'failed', 'suspended'];
+export const LIVE_SUBMISSION = [
+  'queued',
+  'scheduled',
+  'sending',
+  'uncertain',
+  'failed',
+  'suspended',
+];
 const inLive = `(${LIVE_SUBMISSION.map(s => `'${s}'`).join(', ')})`;
 
 const identity = (_q: StoreReader, id: string) => id;

@@ -1,7 +1,15 @@
 import type { SearchQuery, ViewSpec } from '@aplos/contract';
 import type { SqlValue, StoreReader } from '../store';
 import { keysetPlan, materializedPlan, threadRowId, visible } from './compile';
-import { folderRowId, roleRun, statusRun, tfCursor, wfCursor, accountPred, type Pred } from './lists';
+import {
+  folderRowId,
+  roleRun,
+  statusRun,
+  tfCursor,
+  wfCursor,
+  accountPred,
+  type Pred,
+} from './lists';
 import { startOfDay } from './sections';
 import { MATERIALIZED_LIMIT, type Run, type Statement, type ViewEnv, type ViewPlan } from './specs';
 
@@ -59,7 +67,10 @@ function placePred(q: StoreReader, place: string | undefined, col: string): Pred
   // Starred is a flag at Gmail, not a folder.
   if (p === 'starred') return [FLAGGED.replace('%s', col)];
   if (p === 'done' || p === 'later')
-    return [`EXISTS (SELECT 1 FROM thread_workflow pw WHERE pw.thread_id = ${col} AND pw.status = ?)`, p];
+    return [
+      `EXISTS (SELECT 1 FROM thread_workflow pw WHERE pw.thread_id = ${col} AND pw.status = ?)`,
+      p,
+    ];
   if (ROLES.has(p))
     return [
       `EXISTS (SELECT 1 FROM thread_folders px JOIN folders pf ON pf.id = px.folder_id WHERE px.thread_id = ${col} AND pf.role = ?)`,
@@ -78,7 +89,8 @@ function threadPreds(query: SearchQuery, env: ViewEnv, col: string): Pred[] {
     `EXISTS (SELECT 1 FROM threads st WHERE st.id = ${col} AND ${cond})`,
     ...params,
   ];
-  if (query.hasAttachment !== undefined) out.push(thread('st.has_attach = ?', Number(query.hasAttachment)));
+  if (query.hasAttachment !== undefined)
+    out.push(thread('st.has_attach = ?', Number(query.hasAttachment)));
   if (query.before) out.push(thread('st.last_date < ?', startOfDay(query.before, env.zone)));
   if (query.after) out.push(thread('st.last_date >= ?', startOfDay(query.after, env.zone)));
   for (const flag of new Set(query.is ?? [])) {
@@ -86,7 +98,9 @@ function threadPreds(query: SearchQuery, env: ViewEnv, col: string): Pred[] {
     if (flag === 'read') out.push(thread('st.unread_count = 0'));
     if (flag === 'flagged') out.push(thread('st.flagged = 1'));
     if (flag === 'bookmarked')
-      out.push([`EXISTS (SELECT 1 FROM thread_workflow bw WHERE bw.thread_id = ${col} AND bw.bookmarked = 1)`]);
+      out.push([
+        `EXISTS (SELECT 1 FROM thread_workflow bw WHERE bw.thread_id = ${col} AND bw.bookmarked = 1)`,
+      ]);
   }
   return out;
 }
@@ -140,7 +154,10 @@ function placeRun(q: StoreReader, spec: SearchSpec, env: ViewEnv): Run {
   if (spec.query.in !== undefined) {
     const folder = folderRowId(q, spec.query.in);
     return {
-      cursors: folder === undefined ? [] : [tfCursor(folder, threadPreds(spec.query, env, 'tf.thread_id'))],
+      cursors:
+        folder === undefined
+          ? []
+          : [tfCursor(folder, threadPreds(spec.query, env, 'tf.thread_id'))],
     };
   }
   return statusRun([[visible('w.thread_id')], ...threadPreds(spec.query, env, 'w.thread_id')], a);
