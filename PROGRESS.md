@@ -479,7 +479,7 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 - `src/main/security.ts`: one guard for every webContents (navigation, redirects, subframes, window.open, `<webview>`, permission, device and display-media requests denied; the trusted window's microphone rule kept; links still open in the browser) and the release-only debug guard (exit 78, before the single-instance lock), proven on a release-define build for seven switch spellings.
 - Production renderer CSP without dev ports or inline script, set at build time.
 - `release-build.mjs` and the Release workflow verify before they upload; only a Developer ID release is ever uploaded; the workflow's checkout keeps no token.
-- Open: a release build still honours `APLOS_DATA_DIR` until F8 lands (DECISIONS 2026-10-28); DevTools gating on the release define is requested from `eng-host`; the entitlement-removal experiment needs the second Mac.
+- Closed (#40, 2026-10-28): DevTools and the Toggle Developer Tools menu are gated on the release define, and release builds ignore `APLOS_TEST` and `APLOS_DATA_DIR` via `test-mode.ts`; the entitlement-removal experiment still needs the second Mac.
 ## 2026-10-27/28 — Revamp F9: Paper design foundation (UI-core, ui-foundation)
 
 - **Tokens.** `renderer/ui/tokens.json` → `ui/generated/{tokens.css,motion.ts,contrast-pairs.json}`. The generator's `--check` mode passes. Contrast is checked for 268 pairs in light, dark and Increase Contrast, with one accepted exception: the resting field ring, DESIGN decision 20. The identity check runs 152 distances against DESIGN 12.4's reference list. The shell's Lab b* is −0.48 in light and −0.74 in dark. The five springs reproduce DESIGN 4.8 within 0.0014 per sample. Sizes are in rem.

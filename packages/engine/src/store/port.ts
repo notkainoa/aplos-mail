@@ -1,4 +1,5 @@
 import type { AccountStatus } from '@aplos/contract';
+import type { LaneFor } from '../ports/content';
 import type { SqlRow, SqlValue } from './sql';
 
 /**
@@ -23,6 +24,11 @@ export interface StorePort {
   commit(input: CommitInput): CommitResult;
   /** Change rows after `seq`, whole commits only, oldest first. Below the compaction floor: re-open windows. */
   changesSince(seq: number, options?: { limit?: number }): ChangesSince;
+  /**
+   * Trims the change log (ARCH 3.5): raises the floor to keep at most `maxRows` rows (50,000) and nothing older than
+   * `maxAgeMs` (30 days, on the store's clock), whole commits only, in one transaction. The floor never moves down.
+   */
+  compact(options?: CompactOptions): CompactResult;
   /** A short synchronous read for views, the importer and diagnostics. Never return a promise or a live iterator. */
   read<T>(fn: (q: StoreReader) => T): T;
   close(): void;
@@ -453,6 +459,23 @@ export interface BodyCodec {
   decode(codec: number, data: Uint8Array): Uint8Array;
 }
 
+/**
+ * The attachment files under `attachments/.noindex/` (ARCH 3.3), implemented by the host (`apps/desktop/src/host/files.ts`,
+ * store-3; seam 4) because the neutral engine cannot import `node:fs`. Bytes never go in a row or over IPC. File I/O runs
+ * outside `commit`: fetch, `write`, then commit `attachmentState` `present` with the returned path; evict by committing
+ * `evicted` first, then `remove`. Paths are relative to the attachments folder and chosen by the host.
+ */
+export interface AttachmentFiles {
+  /** Writes the bytes atomically (temp file, then rename) and returns the relative path. */
+  write(accountId: string, remoteId: string, remotePart: string, data: Uint8Array): Promise<string>;
+  /** Undefined when the file is gone (evicted, or removed behind the app's back). */
+  read(path: string): Promise<Uint8Array | undefined>;
+  /** Idempotent. */
+  remove(path: string): Promise<void>;
+  /** Bytes under the folder, for the retention cap (store-5). */
+  usage(): Promise<number>;
+}
+
 export interface AttachmentFacts {
   /** Gmail attachmentId, IMAP section, Graph or JMAP blob id. */
   remotePart: string;
@@ -681,6 +704,51 @@ export interface CommitExtension {
   /** Change types this extension may write (`Draft`, `Submission`, ...); any other `mark` fails the commit. */
   changeTypes: readonly ChangeType[];
   apply(write: { kind: string }, tx: CommitExtensionTx): void;
+  /**
+   * The ingest hook point (seam 2): runs once per commit that wrote a `message`, after the writes, op replay, rollups
+   * and the store's own ingest (correspondents, `laneFor`), inside the same transaction and with the same `tx` rules.
+   * `eng-time`'s notification outbox (time-5) writes `notifications` rows here; the store never decides what notifies.
+   */
+  ingest?(batch: IngestBatch, tx: CommitExtensionTx): void;
+}
+
+// ---------------------------------------------------------------- ingest (seam 2)
+
+/** One message a `message` write stored in this commit, as ingest hooks see it after rollups. */
+export interface IngestedMessage {
+  accountId: string;
+  remoteId: string;
+  remoteThreadId: string;
+  /** `messages.id`, only for a lane table's foreign key (`notifications.message_id`); never on the wire. */
+  rowId: number;
+  /** First stored by this commit; false when the write updated a known row. */
+  added: boolean;
+  /** `sync`, `search` (a server-search hit) or `local`. */
+  origin: 'sync' | 'search' | 'local';
+  internalDate: number;
+  flags: MessageFlags;
+  /** The message's folders (remote ids) and their roles, as stored after the commit. */
+  folders: string[];
+  roles: FolderRole[];
+}
+
+export interface IngestBatch {
+  origin: CommitOrigin;
+  step?: SyncStepOrigin;
+  /** Messages a `message` write stored, still present at the end of the commit; rowid (date) order. */
+  messages: readonly IngestedMessage[];
+}
+
+/**
+ * What the store runs at ingest besides the lanes' `CommitExtension.ingest` (given to `openStore`):
+ * - `laneFor` (`eng-ai`, `ai/lanes.ts`) runs for every thread that gained or changed a message, or got a body, in the
+ *   commit. Its result is stored with `rank_source='heuristic'` and only over a heuristic rank: `ai`, `rule` and `user`
+ *   are never overridden. Its `due` is stored with `due_source='structured'` unless the user or the AI set a date.
+ *   Without one, threads keep the schema defaults until `eng-ai` re-ranks them.
+ * Correspondents are not a hook: the store counts them itself in every commit (`correspondents.ts`).
+ */
+export interface IngestHooks {
+  laneFor?: LaneFor;
 }
 
 // ---------------------------------------------------------------- change log
@@ -699,6 +767,19 @@ export type ChangesSince =
   | { status: 'ok'; fromSeq: number; toSeq: number; hasMore: boolean; changes: Change[] }
   /** The seq is below the compaction floor or not from this database: re-open windows from a snapshot. */
   | { status: 'cannotCalculateChanges'; floorSeq: number; seq: number };
+
+export interface CompactOptions {
+  /** Change rows to keep at most; defaults to 50,000. */
+  maxRows?: number;
+  /** Commits older than this are dropped from the log; defaults to 30 days. */
+  maxAgeMs?: number;
+}
+export interface CompactResult {
+  /** The floor after compaction: `changesSince` below it returns `cannotCalculateChanges`. */
+  floorSeq: number;
+  /** `changes` rows deleted. */
+  deleted: number;
+}
 
 // ---------------------------------------------------------------- errors
 

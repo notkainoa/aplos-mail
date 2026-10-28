@@ -26,6 +26,13 @@ export function readBody(
     accountId,
     remoteId,
   );
-  if (!row) return undefined;
+  return row ? decodeBody(row, codec) : undefined;
+}
+
+/** One `bodies` row back to its record. */
+export function decodeBody(
+  row: { codec: number; data: Uint8Array },
+  codec: BodyCodec = RAW,
+): BodyRecord {
   return JSON.parse(new TextDecoder().decode(codec.decode(row.codec, row.data))) as BodyRecord;
 }
