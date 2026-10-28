@@ -16,11 +16,11 @@ import type { ReactElement, ReactNode, Ref } from 'react';
 /* ───────────────────────── Shared vocabulary ───────────────────────── */
 
 /**
- * A CommandRegistry id (DESIGN §6 `CommandRegistry`, §8). Same type as `CommandId` in renderer/commands/types.ts
- * (a plain string there too); exported so screens can import it from here. When that file lands on this branch,
- * this line becomes `export type { CommandId } from '../commands/types'`, which changes nothing for callers.
+ * A CommandRegistry id (DESIGN §6 `CommandRegistry`, §8), re-exported from renderer/commands/types.ts so screens
+ * can import it from here. If the registry narrows it to a literal union of catalog ids, these props follow.
  */
-export type CommandId = string;
+import type { CommandId } from '../commands/types';
+export type { CommandId };
 
 /** ISO 8601 date-time with offset, e.g. "2026-10-29T10:00:00-07:00". Components format it with the shared formatter (en-US in the harness, frozen clock). */
 export type IsoDateTime = string;

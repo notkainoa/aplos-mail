@@ -1,0 +1,79 @@
+/* The Paper base layer (DESIGN 4 and 11): the generated tokens, the bundled
+   fonts, then document-wide type, focus, selection and wrapping rules.
+   No component styles live here; those are in ui/<family>/<family>.css,
+   imported after this file by ui/styles.css.
+   - The theme-switch helper (:root[data-theme-switching] turns transitions off
+     for one frame) is generated in tokens.css; set the attribute from TS.
+   - Increase Contrast and reduced motion are handled by the tokens themselves.
+   - The caret is left to the platform: its blink is never altered. */
+
+@import "./generated/tokens.css";
+@import "../../../assets/fonts/fonts.css";
+
+/* The root keeps the platform's font size, so 1rem stays 16px and follows the
+   user's zoom and text size: every rem token is px/16 (DESIGN 11.6). Never set
+   font or font-size on html or :root; the type lives on body. */
+html {
+  color: var(--ink);
+  background-color: var(--shell);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
+
+/* Controls take the document's type instead of the platform's. */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+/* Numbers that line up use tabular figures (DESIGN 4.3). */
+time,
+kbd,
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* One focus ring everywhere (DESIGN 4.6, 11): 2px accent with a 2px gap, 3px
+   under Increase Contrast through --focus-width. Pointer focus shows no ring. */
+:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Selected text turns ink on the accent tint. */
+::selection {
+  background-color: var(--selection);
+  color: var(--ink);
+}
+
+/* Display lines and headings balance; summaries and prose wrap pretty (DESIGN 4.3). */
+:where(h1, h2, h3, h4, h5, h6) {
+  text-wrap: balance;
+}
+
+:where(p, li, dd, blockquote, figcaption, .ui-summary) {
+  text-wrap: pretty;
+}
+
+/* +0.005em tracking on non-Retina displays (DESIGN 4.3): every --track-<role>
+   adds --track-boost. */
+@media (max-resolution: 1.5dppx), (-webkit-max-device-pixel-ratio: 1.5) {
+  :root {
+    --track-boost: var(--track-boost-lowres);
+  }
+}

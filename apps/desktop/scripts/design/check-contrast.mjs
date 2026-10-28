@@ -3,8 +3,10 @@
 //   --contrast  every declared pair, resolved from tokens.json, meets its WCAG
 //               2.x minimum in every mode (APCA Lc printed as advice); the
 //               committed contrast-pairs.json must match; and token coverage
-//   --identity  ΔE00 of accent, hill, dusk and stamp against the reference
-//               list, the not-Avec distances, and the shell's Lab b*
+//   --identity  ΔE00 of accent, hill, dusk and stamp against DESIGN 12.4's
+//               gated reference list (Avec plus the audited brand and link
+//               blues), the not-Avec distances, and the shell's Lab b*; every
+//               other audited colour is printed as advice and never gated
 // Both run by default. Exits 1 on any failure.
 // --tokens, --pairs and --refs point at other copies (used by the tests);
 // --today YYYY-MM-DD fixes the date used for identity exception review dates.
@@ -272,18 +274,31 @@ export function identityResults(flat, refs) {
   return rows;
 }
 
-// Nearest reference for tokens outside the gate (printed, never failing).
+// Nearest colour for anything outside the gate, printed and never failing:
+// each gated target against the advisory colours (every audited colour that
+// DESIGN 12.4 leaves out, such as Mimestream's system green), and each
+// advisory target (the tag colours) against both lists.
 export function advisoryResults(flat, refs) {
-  const tokens = refs.advisoryTargets?.tokens ?? [];
-  return tokens.flatMap((ref) =>
+  const advisoryRefs = refs.advisoryReferences ?? [];
+  const nearestOf = (ref, list) =>
     ["light", "dark"].map((mode) => {
       const hex = toHex(solidColor(flat, ref, mode));
-      const nearest = refs.references
+      const nearest = list
         .map((reference) => ({ reference, de: deltaE2000(hex, reference.hex) }))
         .reduce((a, b) => (b.de < a.de ? b : a));
       return { token: lookup(flat, ref).css, mode, hex, ...nearest };
-    }),
-  );
+    });
+  const rows = advisoryRefs.length > 0 ? refs.targets.flatMap((ref) => nearestOf(ref, advisoryRefs)) : [];
+  const all = [...refs.references, ...advisoryRefs];
+  return [...rows, ...(refs.advisoryTargets?.tokens ?? []).flatMap((ref) => nearestOf(ref, all))];
+}
+
+// An exception that no gated distance needs (it passes now, or its colour is
+// not on the gated list) is stale and must be removed.
+export function unusedExceptionProblems(rows, refs) {
+  return (refs.exceptions ?? [])
+    .filter((e) => !rows.some((r) => r.status === "exception" && r.exception === e))
+    .map((e) => `identity exception ${e.token} ${e.mode} vs ${e.reference} is not needed (no gated distance under ${refs.threshold} uses it); remove it`);
 }
 
 export function notAvecResults(flat, refs) {
@@ -330,13 +345,13 @@ function runIdentity(flat, refs, today) {
     console.log(`FAIL identity: ${r.token} ${r.mode} ${r.hex} is ${r.de.toFixed(2)} from ${r.reference.name} ${r.reference.hex}`);
   }
 
-  const expired = identityExceptionProblems(refs, today);
+  const expired = [...identityExceptionProblems(refs, today), ...unusedExceptionProblems(rows, refs)];
   for (const problem of expired) {
     console.log(`FAIL ${problem}`);
   }
   const advisory = advisoryResults(flat, refs);
   if (advisory.length > 0) {
-    console.log("Advisory, not gated (DESIGN 12.4 scopes the gate to accent and commit colours)");
+    console.log("Advisory, not gated (DESIGN 12.4 gates only Avec and the audited brand and link blues; tags are outside the gate)");
     for (const r of advisory) {
       const flag = r.de < refs.threshold ? ` (under ${refs.threshold})` : "";
       console.log(`  ${pad(`${r.token} ${r.mode}`, 18)} ${r.hex}  nearest ${r.de.toFixed(2)} ${r.reference.name} ${r.reference.hex}${flag}`);

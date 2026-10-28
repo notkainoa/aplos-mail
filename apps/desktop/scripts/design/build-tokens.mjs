@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 // Generates ui/generated/{tokens.css, motion.ts, contrast-pairs.json} from
 // ui/tokens.json. Output is deterministic.
+//
+// Units (DESIGN 11.6, "everything is in rem"): tokens.json keeps px, the
+// source of truth. A token whose group or own $extensions.aplos.rem is true has
+// each px value written as rem here (px / 16, shortest decimal: 11px is
+// 0.6875rem); `rem: false` keeps a token in px. So type sizes and line
+// heights, spacing, controls, rows, layout sizes, icons and radii are rem, while
+// hairlines, strokes, the focus ring, edges, bars, tracks, tracking, shadows
+// and motion travel (moves in motion.ts) stay px. Values in ch, vh, em or %
+// pass through unchanged.
 //   node apps/desktop/scripts/design/build-tokens.mjs           write the files
 //   node apps/desktop/scripts/design/build-tokens.mjs --check   exit 1 if any file on disk differs
 // --tokens <path> and --out <dir> point at other copies (used by the tests).
@@ -68,6 +77,25 @@ function cssPlain(flat, value) {
   return isAlias(value) ? cssRef(flat, value) : String(value);
 }
 
+const REM_BASE = 16;
+
+// "11px" -> "0.6875rem". Anything that is not a plain px length is returned as is.
+export function remFromPx(value) {
+  const match = /^(-?\d*\.?\d+)px$/.exec(String(value));
+  if (!match) {
+    return String(value);
+  }
+  const n = Number(match[1]);
+  return n === 0 ? "0" : `${Number((n / REM_BASE).toFixed(6))}rem`;
+}
+
+function cssDimension(flat, token, value) {
+  if (isAlias(value)) {
+    return cssRef(flat, value);
+  }
+  return token.rem ? remFromPx(value) : String(value);
+}
+
 function cssFamily(list) {
   return list.map((name) => (CSS_KEYWORD_FAMILIES.has(name) ? name : `"${name}"`)).join(", ");
 }
@@ -107,6 +135,7 @@ function declarations(flat, token, value, springCache) {
     case "color":
       return [[token.css, cssColor(flat, value)]];
     case "dimension":
+      return [[token.css, cssDimension(flat, token, value)]];
     case "string":
     case "duration":
       return [[token.css, cssPlain(flat, value)]];
@@ -132,7 +161,8 @@ function declarations(flat, token, value, springCache) {
 function typographyDeclarations(flat, token, value) {
   const role = token.key;
   const family = cssRef(flat, value.fontFamily);
-  const size = `${value.fontSize}/${value.lineHeight}`;
+  const unit = (v) => (token.rem ? remFromPx(v) : String(v));
+  const size = `${unit(value.fontSize)}/${unit(value.lineHeight)}`;
   const out = [];
   if (token.ext.opsz !== undefined) {
     out.push([`--w-${role}`, String(value.fontWeight)]);
@@ -140,11 +170,18 @@ function typographyDeclarations(flat, token, value) {
   } else {
     out.push([token.css, `${value.fontWeight} ${size} ${family}`]);
   }
-  out.push([`--track-${role}`, value.letterSpacing]);
+  out.push([`--track-${role}`, trackValue(flat, value.letterSpacing)]);
   if (token.ext.opsz !== undefined) {
     out.push([`--opsz-${role}`, String(token.ext.opsz)]);
   }
   return out;
+}
+
+// Each role's tracking plus the shared boost (tracking.boost), which base.css
+// raises on non-Retina screens. Without a boost token the value is plain.
+function trackValue(flat, letterSpacing) {
+  const boost = flat.byPath.get("tracking.boost");
+  return boost && boost.css ? `calc(${letterSpacing} + var(${boost.css}))` : String(letterSpacing);
 }
 
 function motionDeclarations(token, value) {
@@ -324,6 +361,7 @@ export function buildMotionTs(flat, springCache) {
   const moves = Object.fromEntries(groupTokens(flat, "move").map((t) => [camel(t.key), parseLength(t.value)]));
   const scales = Object.fromEntries(groupTokens(flat, "scale").map((t) => [camel(t.key), t.value]));
   const breathe = Object.fromEntries(groupTokens(flat, "breathe").map((t) => [camel(t.key), t.value]));
+  const layers = Object.fromEntries(groupTokens(flat, "layer").map((t) => [camel(t.key), t.value]));
   const timingTokens = groupTokens(flat, "timing");
   const timing = Object.fromEntries(
     timingTokens.map((t) => [camel(t.key), t.type === "number" ? t.value : parseDuration(t.value)]),
@@ -333,9 +371,10 @@ export function buildMotionTs(flat, springCache) {
   );
 
   return `// ${HEADER_TEXT}
-// Paper motion tokens (plans/DESIGN.md section 4.8). Durations are in ms,
-// moves in px (flightRotate in deg). The spring solver below is inlined from
-// scripts/design/spring-runtime.ts.
+// Paper motion tokens (plans/DESIGN.md section 4.8) and stacking layers.
+// Durations are in ms, moves in px (flightRotate in deg): the runtime needs
+// pixel travel even though CSS sizes are in rem. The spring solver below is
+// inlined from scripts/design/spring-runtime.ts.
 
 ${springRuntimeSource()}
 
@@ -386,6 +425,12 @@ export const scales = ${tsLiteral(scales)} as const;
 export const breathe = ${tsLiteral(breathe)} as const;
 
 export const timing = ${tsLiteral(timing)} as const;
+
+// Stacking layers (z-index), lowest to highest; the same values as the --z-* CSS
+// variables. Use these only where a style is written from TS.
+export const layers = ${tsLiteral(layers)} as const;
+
+export type LayerName = keyof typeof layers;
 
 // Timing values that change under reduced motion.
 export const timingReduced = ${tsLiteral(timingReduced)} as const satisfies Partial<Record<keyof typeof timing, number>>;

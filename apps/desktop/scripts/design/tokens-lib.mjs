@@ -32,7 +32,7 @@ function isToken(node) {
 // Flattens the token tree into records in file order.
 export function flattenTokens(tree) {
   const tokens = [];
-  walk(tree, [], { type: undefined, prefix: "", reduced: undefined }, tokens);
+  walk(tree, [], { type: undefined, prefix: "", reduced: undefined, rem: false }, tokens);
   const byPath = new Map(tokens.map((t) => [t.path, t]));
   return { tokens, byPath, root: tree };
 }
@@ -52,6 +52,7 @@ function walk(node, path, inherited, out) {
       type: child.$type ?? inherited.type,
       prefix: ext.cssPrefix ?? inherited.prefix,
       reduced: ext.reduced ?? inherited.reduced,
+      rem: ext.rem ?? inherited.rem,
     }, out);
   }
 }
@@ -68,6 +69,8 @@ function makeToken(key, path, node, ext, inherited) {
     dark: ext.dark,
     more: ext.more,
     reduced: ext.reduced ?? inherited.reduced,
+    // px values emitted in rem (DESIGN 11.6); see build-tokens.mjs remFromPx.
+    rem: ext.rem ?? inherited.rem,
     usage: ext.usage,
     ext,
     css,

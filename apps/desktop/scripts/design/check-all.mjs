@@ -2,7 +2,8 @@
 // Every design gate in one command, for CI and the `test` script:
 //   1. build-tokens.mjs --check  generated files match tokens.json, nothing stray
 //   2. check-contrast.mjs        contrast, coverage and identity (DESIGN 12.4)
-//   3. node --test               the scripts/design unit tests
+//   3. check-skill-tokens.mjs    the aplos-design skill names the current tokens (DESIGN 12.3)
+//   4. node --test               the scripts/design unit tests
 // Not wired into any package.json yet (that file belongs to another lane); until
 // it is, CI does not enforce these gates. Exits 1 if any step fails.
 
@@ -24,6 +25,7 @@ export function steps() {
   return [
     { name: "generated files", args: [join(here, "build-tokens.mjs"), "--check"] },
     { name: "contrast and identity", args: [join(here, "check-contrast.mjs")] },
+    { name: "skill tokens", args: [join(here, "check-skill-tokens.mjs")] },
     { name: "unit tests", args: ["--test", ...testFiles()] },
   ];
 }
