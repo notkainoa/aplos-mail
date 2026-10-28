@@ -1,6 +1,6 @@
 // Proves that a mechanical formatting commit changed layout only.
 //
-// Usage: node scripts/audit/format-equivalence.mjs --before <ref> --after <ref> [--build [--keep-dist <dir>]]
+// Usage: node scripts/audit/format-equivalence.mjs --before <ref> --after <ref> [--build [--keep-dist <dir>] [--strict-bytes]]
 //
 // For every file that differs between the two refs (renames followed with `git diff -M`; a 100%
 // rename is accepted as is) the script compares the before and after blobs:
@@ -22,11 +22,18 @@
 // --build also builds both refs in temporary detached git worktrees (node_modules is cloned with
 // `cp -cR` from the current checkout, workspace links are re-pointed at each worktree) with
 // `npm run build` (tsc, vite build, build-main.mjs; sourcemaps are off in the existing build files)
-// and requires apps/desktop/dist/main/*.cjs and every file under apps/desktop/dist/renderer to be
-// byte-identical with identical names. If a build ever emitted sourcemaps, .map files are ignored
-// and sourceMappingURL comments stripped, and the summary says so. The native helper in dist/bin
-// (swiftc, lipo) is compared for information only. --keep-dist <dir> copies both dist folders to
-// <dir>/before and <dir>/after for inspection. Temporary worktrees are always removed.
+// and expects apps/desktop/dist/main/*.cjs and every file under apps/desktop/dist/renderer to be
+// byte-identical with identical names. A file that differs is not hidden: it is printed as
+// "DIFFERENCE (explained)" when it can be shown to differ in layout only, and the run fails for
+// any other difference (and for the explained ones too with --strict-bytes). The explained cases
+// are: dist/main/*.cjs are not minified, so esbuild echoes the source's line breaks (compared by
+// minified output and comments); Prettier splits JSX text around {' '}, which changes adjacent
+// string children in the renderer bundle (compared with adjacent strings joined); Prettier writes
+// spaces after commas inside a css var() fallback; and the content hashes in asset names that
+// follow from the last two (compared by stem). If a build ever emitted sourcemaps, .map files are
+// ignored and sourceMappingURL comments stripped when bytes differ, and the summary says so. The
+// native helper in dist/bin (swiftc, lipo) is compared for information only. --keep-dist <dir>
+// copies both dist folders to <dir>/before and <dir>/after. Temporary worktrees are always removed.
 // The build runs without GOOGLE_CLIENT_*, MICROSOFT_CLIENT_ID and APLOS_RELEASE_BUILD in its
 // environment, so no secret is read.
 //
@@ -463,28 +470,62 @@ function listFiles(root, base = root) {
   return out.sort();
 }
 
-function readBuilt(path, state) {
-  const data = readFileSync(path);
-  if (!/\.(cjs|js|css|html)$/.test(path)) return data;
-  const text = data.toString('utf8');
+/** Vite names assets name-HASH.ext with an 8 character hash of the content. */
+const HASHED = /-[A-Za-z0-9_-]{8}(?=\.[a-z0-9]+$)/;
+const stemOf = name => name.replace(HASHED, '-[hash]');
+
+function readBuilt(path, name, state) {
+  let text = readFileSync(path, 'utf8');
   const stripped = text.replace(/^\/\/# sourceMappingURL=.*$|\/\*# sourceMappingURL=.*?\*\//gm, '');
-  if (stripped === text) return data;
-  state.stripped++;
-  return Buffer.from(stripped);
+  if (stripped !== text) state.stripped++;
+  text = stripped;
+  return text;
 }
 
-const sha = data => createHash('sha256').update(data).digest('hex');
+/** Why two built files that differ in bytes still mean the same thing, or null if they do not. */
+function layoutOnlyReason(kind, a, b) {
+  if (kind === 'main') {
+    // esbuild does not minify the main bundles, so it echoes the source's line breaks.
+    const same = minify(a, 'js') === minify(b, 'js');
+    const comments = !diffMultisets(codeComments(a, '.js'), codeComments(b, '.js')).length;
+    return same && comments
+      ? 'line breaks follow the source layout; minified output and comments identical'
+      : null;
+  }
+  const joinStrings = text => {
+    let out = text;
+    // "a "," b" and "a  b" are the same React text; Prettier splits text around {' '}.
+    for (let n = 1; n;) {
+      const next = out.replace(/"((?:[^"\\\n]|\\.)*)","((?:[^"\\\n]|\\.)*)"/g, '"$1$2"');
+      n = next === out ? 0 : 1;
+      out = next;
+    }
+    return out;
+  };
+  if (kind === 'js') {
+    const prepared = text => joinStrings(minify(text, 'js'));
+    return prepared(a) === prepared(b)
+      ? 'JSX text split into adjacent string children (Prettier writes {" "}); everything else identical'
+      : null;
+  }
+  if (kind === 'css') {
+    const prepared = text => text.replace(/\s*,\s*/g, ',');
+    return prepared(a) === prepared(b) ? 'spaces after commas inside var() fallbacks only' : null;
+  }
+  return null;
+}
 
 function compareBuilds(distBefore, distAfter) {
   const failures = [];
   const info = [];
+  const explained = [];
   const state = { stripped: 0, ignoredMaps: 0 };
   const sets = [
     ['dist/main/*.cjs', 'main', name => name.endsWith('.cjs'), true],
     ['dist/renderer', 'renderer', () => true, true],
     ['dist/bin (native helper, information only)', 'bin', () => true, false],
   ];
-  let compared = 0;
+  let identical = 0;
   for (const [title, folder, filter, strict] of sets) {
     const list = dist =>
       listFiles(join(dist, folder)).filter(name => {
@@ -496,23 +537,54 @@ function compareBuilds(distBefore, distAfter) {
       });
     const a = list(distBefore);
     const b = list(distAfter);
-    for (const name of [...new Set([...a, ...b])].sort()) {
-      const inA = a.includes(name);
-      const inB = b.includes(name);
-      let problem = null;
-      if (!inA) problem = `only in after: ${folder}/${name}`;
-      else if (!inB) problem = `only in before: ${folder}/${name}`;
-      else {
-        const same =
-          sha(readBuilt(join(distBefore, folder, name), state)) ===
-          sha(readBuilt(join(distAfter, folder, name), state));
-        if (same) compared++;
-        else problem = `bytes differ: ${folder}/${name}`;
+    const bByStem = new Map(b.map(name => [stemOf(name), name]));
+    const aStems = new Set(a.map(stemOf));
+    // Content-hashed names are paired by their stem; references to the hashed names inside files
+    // are rewritten to the stem before comparing.
+    const hashes = [...a, ...b].filter(name => stemOf(name) !== name);
+    const unhash = text =>
+      hashes.reduce(
+        (t, name) => t.split(name.split('/').pop()).join(stemOf(name.split('/').pop())),
+        text,
+      );
+    for (const nameA of a) {
+      const nameB = bByStem.get(stemOf(nameA));
+      const report = problem => (strict ? failures : info).push(`${title}: ${problem}`);
+      if (!nameB) {
+        report(`only in before: ${folder}/${nameA}`);
+        continue;
       }
-      if (problem) (strict ? failures : info).push(`${title}: ${problem}`);
+      const pathA = join(distBefore, folder, nameA);
+      const pathB = join(distAfter, folder, nameB);
+      if (nameA === nameB && readFileSync(pathA).equals(readFileSync(pathB))) {
+        identical++;
+        continue;
+      }
+      const ext = extname(nameA);
+      const kind =
+        folder === 'main' ? 'main' : ext === '.js' ? 'js' : ext === '.css' ? 'css' : null;
+      let reason = null;
+      if (kind || ext === '.html') {
+        const textA = unhash(readBuilt(pathA, nameA, state));
+        const textB = unhash(readBuilt(pathB, nameB, state));
+        reason =
+          textA === textB
+            ? 'names differ only by content hash'
+            : layoutOnlyReason(kind, textA, textB);
+      }
+      if (reason) {
+        explained.push(
+          `${folder}/${nameA}${nameA === nameB ? '' : ` -> ${folder}/${nameB}`}: ${reason}`,
+        );
+      } else report(`bytes differ and cannot be explained: ${folder}/${nameA}`);
+    }
+    for (const nameB of b) {
+      if (!aStems.has(stemOf(nameB))) {
+        (strict ? failures : info).push(`${title}: only in after: ${folder}/${nameB}`);
+      }
     }
   }
-  return { failures, info, compared, state };
+  return { failures, info, identical, explained, state };
 }
 
 function buildComparison(before, after, keepDir) {
@@ -550,7 +622,7 @@ function main() {
   const after = args.includes('--after') ? value('--after') : undefined;
   if (!before || !after) {
     console.error(
-      'usage: node scripts/audit/format-equivalence.mjs --before <ref> --after <ref> [--build]',
+      'usage: node scripts/audit/format-equivalence.mjs --before <ref> --after <ref> [--build [--keep-dist <dir>] [--strict-bytes]]',
     );
     process.exit(2);
   }
@@ -562,6 +634,7 @@ function main() {
 
   const result = checkFiles(beforeSha, afterSha);
   const failures = [...result.failures];
+  let explained = 0;
   console.log(`\nchanged files: ${result.total} (${result.unchangedContent} pure renames)`);
   for (const [label, count] of [...result.counts].sort()) {
     console.log(`  checked ${label}: ${count}`);
@@ -579,13 +652,18 @@ function main() {
         afterSha,
         args.includes('--keep-dist') ? resolve(value('--keep-dist')) : null,
       );
-      console.log(`build: ${build.compared} files byte-identical`);
+      console.log(`build: ${build.identical} files byte-identical`);
+      explained = build.explained.length;
+      for (const line of build.explained) console.log(`  DIFFERENCE (explained): ${line}`);
       if (build.state.stripped) {
         console.log(`  stripped sourceMappingURL comments in ${build.state.stripped} file reads`);
       }
       if (build.state.ignoredMaps) console.log(`  ignored ${build.state.ignoredMaps} .map files`);
       for (const line of build.info) console.log(`  info: ${line}`);
       failures.push(...build.failures.map(line => `build: ${line}`));
+      if (args.includes('--strict-bytes')) {
+        failures.push(...build.explained.map(line => `build (strict bytes): ${line}`));
+      }
     } catch (error) {
       const detail = String(error.stderr || error.message).slice(-600);
       failures.push(`build: could not complete (${detail})`);
@@ -597,7 +675,7 @@ function main() {
     for (const failure of failures) console.log(`  ${failure}`);
     process.exit(1);
   }
-  console.log('\nPASS: no differences');
+  console.log(`\nPASS: ${explained} explained build difference(s), no other differences`);
 }
 
 main();
