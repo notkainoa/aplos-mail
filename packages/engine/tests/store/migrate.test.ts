@@ -83,7 +83,7 @@ test('a new mail.db migrates from empty with the ARCH 3.7 pragmas, STRICT tables
       /cannot store TEXT value in INTEGER column/,
     );
     const history = db.prepare('SELECT version, name, checksum FROM schema_migrations').all();
-    assert.equal(history.length, 1);
+    assert.equal(history.length, MIGRATIONS.length);
     assert.equal(history[0].name, 'initial');
     store.close();
 
@@ -126,19 +126,24 @@ test('a failing migration rolls back whole and an edited shipped migration is ca
   const file = tempDb();
   try {
     const db = file.open();
+    const last = MIGRATIONS.length;
     const broken = [
       ...MIGRATIONS,
       {
-        version: 2,
+        version: last + 1,
         name: 'broken',
         sql: 'CREATE TABLE half(a INTEGER) STRICT; INSERT INTO nowhere VALUES(1);',
       },
     ];
     assert.throws(
       () => migrate(db, broken),
-      (e: unknown) => e instanceof MigrationError && e.version === 2,
+      (e: unknown) => e instanceof MigrationError && e.version === last + 1,
     );
-    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 1, 'still at version 1');
+    assert.equal(
+      db.prepare('PRAGMA user_version').get()!.user_version,
+      last,
+      'still at the last good version',
+    );
     assert.equal(
       db.prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name = 'half'").get()!.n,
       0,
@@ -148,7 +153,7 @@ test('a failing migration rolls back whole and an edited shipped migration is ca
     let upgradedFrom = -1;
     const next = [
       ...MIGRATIONS,
-      { version: 2, name: 'extra', sql: 'CREATE TABLE extra(a INTEGER) STRICT;' },
+      { version: last + 1, name: 'extra', sql: 'CREATE TABLE extra(a INTEGER) STRICT;' },
     ];
     assert.deepEqual(
       migrate(db, next, {
@@ -156,11 +161,11 @@ test('a failing migration rolls back whole and an edited shipped migration is ca
           upgradedFrom = from;
         },
       }).applied,
-      [2],
+      [last + 1],
     );
-    assert.equal(upgradedFrom, 1, 'the host gets its chance to copy mail.db.pre-1');
+    assert.equal(upgradedFrom, last, 'the host gets its chance to copy mail.db.pre-<last>');
 
-    const edited = [MIGRATIONS[0], { ...next[1], sql: next[1].sql + ' -- edited' }];
+    const edited = [...MIGRATIONS, { ...next[last], sql: next[last].sql + ' -- edited' }];
     assert.throws(() => migrate(db, edited), /was edited after it shipped/);
     db.close();
   } finally {
