@@ -7,6 +7,7 @@ import type { MethodContext } from '../src/methods/types';
 import type { EngineServices } from '../src/runtime/services';
 import type { AccountActorHost, AccountRuntime, ConnectRequest, ConnectResult } from '../src/ports';
 import { ProviderError } from '../src/ports/base';
+import { disposeConnectSessions } from '../src/sync/connect-sessions';
 import { openStore, type StorePort } from '../src/store';
 import { tempDb, T0 } from './store/helpers';
 
@@ -48,12 +49,16 @@ function setup() {
   const calls: string[] = [];
   const pending: Pending[] = [];
   const statuses = new Map<string, AccountRuntime>();
+  const flags = { failStart: false };
   const accounts = {
     connect: (account: string, kind: string, req: ConnectRequest) =>
       new Promise<ConnectResult>((resolve, reject) => {
         pending.push({ account, kind, req, resolve, reject });
       }),
-    start: async (id: string) => void calls.push(`start:${id}`),
+    start: async (id: string) => {
+      calls.push(`start:${id}`);
+      if (flags.failStart) throw new Error('actor did not start');
+    },
     stop: async (id: string, why: string) => void calls.push(`stop:${id}:${why}`),
     reconnected: async (id: string) => void calls.push(`reconnected:${id}`),
     claimLease: async (id: string) => void calls.push(`claim:${id}`),
@@ -85,6 +90,7 @@ function setup() {
     calls,
     pending,
     statuses,
+    flags,
     ctx,
     db,
     connectFrames: () => frames.filter(f => f.frame === 'connect'),
@@ -125,7 +131,13 @@ test('Account/get lists every account with health, capabilities, lease and ident
   try {
     seed(t.store, 'acct-1');
     seed(t.store, 'acct-2', 'sub-2', 'two@gmail.com');
+    // Where a secret could ride along: the detail JSON, the settings JSON, and the live runtime object.
+    t.db.exec(
+      `UPDATE accounts SET status_detail = '{"credentialRef":"vault:LEAK","token":"ya29.LEAK"}', settings = '{"colorTag":"blue","credentialRef":"vault:LEAK","secret":"LEAK"}' WHERE id = 'acct-2'`,
+    );
     t.statuses.set('acct-1', {
+      credentialRef: 'vault:LEAK',
+      refreshToken: 'LEAK',
       status: { state: 'syncing' },
       lastSyncAt: T0,
       reconnectBy: T0 + 5,
@@ -160,13 +172,13 @@ test('Account/get lists every account with health, capabilities, lease and ident
       { address: 'owner@gmail.com', name: 'Owner', default: true },
     ]);
     assert.equal(one.missingPermissions?.[0].capability, 'calendar');
-    assert.equal(out.list[1].health.status.state, 'ok');
+    assert.deepEqual(out.list[1].health.status, { state: 'ok' });
+    assert.equal(out.list[1].colorTag, 'blue');
     assert.equal(out.list[1].health.reconnectBy, T0 + 1000);
     assert.equal(out.state.dbEpoch, t.store.dbEpoch);
     const text = JSON.stringify(out);
-    for (const word of ['credential', 'vault', 'token', 'secret', 'remoteSubject', 'sub-1']) {
-      assert.ok(!text.includes(word), `${word} must not appear`);
-    }
+    assert.ok(!text.includes('LEAK'), 'a stored or live secret reached the output');
+    assert.ok(!text.includes('sub-1'), 'the provider subject reached the output');
   } finally {
     t.cleanup();
   }
@@ -524,6 +536,206 @@ test('Account/disconnect is refused while a message is sending, and stops and de
     );
     assert.deepEqual(t.calls, []);
     assert.equal((await handlers['Account/get']({}, t.ctx)).list.length, 1);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a cancel that lands after the answer won the race but before it was stored stands: no connected after cancelled', async () => {
+  const t = setup();
+  try {
+    seed(t.store);
+    const { connectId } = await handlers['Account/reconnect']({ accountId: 'acct-1' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(answer('sub-1', 'owner@gmail.com'));
+    // One turn: the answer has settled the wait, its continuation has not run yet.
+    await Promise.resolve();
+    assert.deepEqual(await handlers['Account/cancelConnect']({ connectId }, t.ctx), {
+      cancelled: true,
+    });
+    await tick();
+    assert.deepEqual(
+      t.connectFrames().map(f => f.frame === 'connect' && f.state),
+      ['waiting', 'cancelled'],
+    );
+    assert.deepEqual(t.calls, []);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('cancelling a new-account sign-in emits cancelled in mode new, without an account id, and frees the address', async () => {
+  const t = setup();
+  try {
+    const { connectId } = await handlers['Account/connect'](
+      { provider: 'google', address: 'c@gmail.com' },
+      t.ctx,
+    );
+    await tick();
+    await handlers['Account/cancelConnect']({ connectId }, t.ctx);
+    t.pending[0].resolve(answer('sub-c', 'c@gmail.com'));
+    await tick();
+    assert.deepEqual(
+      t.connectFrames().map(f => f.frame === 'connect' && [f.mode, f.state, f.accountId]),
+      [
+        ['new', 'waiting', undefined],
+        ['new', 'cancelled', undefined],
+      ],
+    );
+    assert.deepEqual(t.calls, []);
+    assert.equal((await handlers['Account/get']({}, t.ctx)).list.length, 0);
+    await handlers['Account/connect']({ provider: 'google', address: 'c@gmail.com' }, t.ctx);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('when start() throws after the row was committed, a retry for the same address finishes it instead of refusing', async () => {
+  const t = setup();
+  try {
+    t.flags.failStart = true;
+    await handlers['Account/connect']({ provider: 'google', address: 'r@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(answer('sub-r', 'r@gmail.com'));
+    await tick();
+    const failed = t.connectFrames().at(-1);
+    assert.ok(failed?.frame === 'connect' && failed.state === 'failed');
+    const stored = (await handlers['Account/get']({}, t.ctx)).list;
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].health.status.state, 'starting');
+    t.flags.failStart = false;
+    t.calls.length = 0;
+    // Not refused up front, and not as a duplicate once Google answers.
+    await handlers['Account/connect']({ provider: 'google', address: 'r@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[1].resolve(answer('sub-r', 'r@gmail.com'));
+    await tick();
+    const last = t.connectFrames().at(-1);
+    assert.ok(last?.frame === 'connect' && last.state === 'connected');
+    assert.equal(last.accountId, stored[0].id);
+    assert.deepEqual(t.calls, [`reconnected:${stored[0].id}`, `start:${stored[0].id}`]);
+    assert.equal((await handlers['Account/get']({}, t.ctx)).list.length, 1);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('an added account is refused up front from the address, before any browser opens', async () => {
+  const t = setup();
+  try {
+    seed(t.store);
+    await assert.rejects(
+      async () =>
+        handlers['Account/connect']({ provider: 'google', address: 'OWNER@gmail.com' }, t.ctx),
+      (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'account.exists',
+    );
+    await tick();
+    assert.equal(t.pending.length, 0);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a reconnect re-reads the stored identity when Google answers, not only when it started', async () => {
+  const t = setup();
+  try {
+    seed(t.store);
+    t.db.exec(`UPDATE accounts SET remote_subject = NULL WHERE id = 'acct-1'`);
+    await handlers['Account/reconnect']({ accountId: 'acct-1' }, t.ctx);
+    await tick();
+    assert.equal(t.pending[0].req.expectedSubject, undefined);
+    // While the browser was open another window completed a sign-in that stored the subject.
+    t.db.exec(`UPDATE accounts SET remote_subject = 'sub-1' WHERE id = 'acct-1'`);
+    t.pending[0].resolve(answer('sub-OTHER', 'owner@gmail.com'));
+    await tick();
+    const last = t.connectFrames().at(-1);
+    assert.ok(last?.frame === 'connect' && last.state === 'failed');
+    assert.equal(last.reasonCode, 'auth.wrongAccount');
+    assert.deepEqual(t.calls, []);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('with no stored subject the address match is accepted once, and the new subject is adopted', async () => {
+  const t = setup();
+  try {
+    seed(t.store);
+    t.db.exec(`UPDATE accounts SET remote_subject = NULL WHERE id = 'acct-1'`);
+    await handlers['Account/reconnect']({ accountId: 'acct-1' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(answer('sub-new', 'OWNER@gmail.com'));
+    await tick();
+    assert.deepEqual(t.calls, ['reconnected:acct-1']);
+    // A different address with no stored subject is still another identity.
+    await handlers['Account/reconnect']({ accountId: 'acct-1' }, t.ctx);
+    await tick();
+    t.pending[1].resolve(answer('sub-x', 'someone@gmail.com'));
+    await tick();
+    const last = t.connectFrames().at(-1);
+    assert.ok(last?.frame === 'connect' && last.reasonCode === 'auth.wrongAccount');
+    assert.deepEqual(t.calls, ['reconnected:acct-1']);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('Account/lease is all or nothing: a failing pin puts the earlier ones back', async () => {
+  const t = setup();
+  try {
+    seed(t.store, 'acct-1');
+    seed(t.store, 'acct-2', 'sub-2', 'two@gmail.com');
+    const host = t.ctx.services.accounts;
+    host.claimLease = async id => {
+      t.calls.push(`claim:${id}`);
+      if (id === 'acct-2') throw new Error('workflow channel down');
+    };
+    await assert.rejects(
+      async () => handlers['Account/lease']({ pin: true }, t.ctx),
+      /channel down/,
+    );
+    assert.deepEqual(t.calls, ['claim:acct-1', 'claim:acct-2', 'release:acct-1', 'release:acct-2']);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('Account/lease stops between accounts when the call is cancelled, and undoes what it did', async () => {
+  const t = setup();
+  try {
+    seed(t.store, 'acct-1');
+    seed(t.store, 'acct-2', 'sub-2', 'two@gmail.com');
+    const controller = new AbortController();
+    const ctx = { ...t.ctx, signal: controller.signal } as MethodContext;
+    ctx.services.accounts.claimLease = async id => {
+      t.calls.push(`claim:${id}`);
+      controller.abort();
+    };
+    await assert.rejects(
+      async () => handlers['Account/lease']({ pin: true }, ctx),
+      (e: unknown) => e instanceof ContractError && e.type === 'cancelled',
+    );
+    assert.deepEqual(t.calls, ['claim:acct-1', 'release:acct-1']);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('disposing the sessions aborts a waiting sign-in and frees its key', async () => {
+  const t = setup();
+  try {
+    seed(t.store);
+    await handlers['Account/reconnect']({ accountId: 'acct-1' }, t.ctx);
+    await tick();
+    disposeConnectSessions(t.ctx.services);
+    t.pending[0].resolve(answer('sub-1', 'owner@gmail.com'));
+    await tick();
+    assert.deepEqual(t.calls, []);
+    assert.deepEqual(
+      t.connectFrames().map(f => f.frame === 'connect' && f.state),
+      ['waiting'],
+    );
+    await handlers['Account/reconnect']({ accountId: 'acct-1' }, t.ctx);
   } finally {
     t.cleanup();
   }

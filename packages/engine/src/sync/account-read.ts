@@ -78,21 +78,21 @@ export function storedIdentity(
   };
 }
 
-/** Whether a different account of this provider already has the address or the provider's own subject. */
+/** The account of this provider that already has the address or the provider's own subject, with its stored status. */
 export function accountWithIdentity(
   store: StorePort,
   provider: string,
   address: string,
-  subject: string,
-): string | undefined {
-  return store.read(
-    q =>
-      q.get<{ id: string }>(
-        'SELECT id FROM accounts WHERE provider = ? AND (remote_subject = ? OR lower(address) = lower(?))',
-        provider,
-        subject,
-        address,
-      )?.id,
+  subject?: string,
+): { id: string; status: string } | undefined {
+  return store.read(q =>
+    q.get<{ id: string; status: string }>(
+      'SELECT id, status FROM accounts WHERE provider = ? AND (lower(address) = lower(?) OR (? IS NOT NULL AND remote_subject = ?))',
+      provider,
+      address,
+      subject ?? null,
+      subject ?? null,
+    ),
   );
 }
 
@@ -189,11 +189,16 @@ function healthOf(row: AccountRow, runtime: AccountRuntime | undefined): Account
   };
 }
 
-/** The inverse of the store's status split: `state`, `reason`, `resume_at` and the rest of the detail JSON. */
+const STATUS_DETAIL_KEYS = ['class', 'missingScopes', 'since', 'done', 'of'] as const;
+
+/** The inverse of the store's status split. Only the status vocabulary's own fields come back from the detail JSON. */
 function statusOfRow(row: AccountRow): AccountStatus {
   const detail = parseJson<Record<string, unknown>>(row.status_detail, {});
+  const known = Object.fromEntries(
+    STATUS_DETAIL_KEYS.filter(key => key in detail).map(key => [key, detail[key]]),
+  );
   return {
-    ...detail,
+    ...known,
     state: row.status,
     ...(row.status_reason !== null ? { reason: row.status_reason } : {}),
     ...(row.resume_at !== null ? { until: row.resume_at } : {}),

@@ -9,7 +9,7 @@ import {
   readAccount,
   readAccounts,
 } from '../sync/account-read';
-import { ConnectSessions } from '../sync/connect-sessions';
+import { connectSessionsOf as sessionsOf } from '../sync/connect-sessions';
 import type { StorePort } from '../store/port';
 import type { AreaHandlers, EngineServices, MethodContext } from './types';
 
@@ -17,18 +17,6 @@ import type { AreaHandlers, EngineServices, MethodContext } from './types';
  * The `account` area, owned by lane `prov-gov`. The sign-in flows, the account view and the sessions live in
  * `sync/account-*.ts` and `sync/connect-sessions.ts`; this file only wires the contract to them.
  */
-
-const sessionsByEngine = new WeakMap<object, ConnectSessions>();
-
-/** One map of live sign-ins per engine: the account actors host is the engine's own, so it keys the map. */
-function sessionsOf(services: EngineServices): ConnectSessions {
-  let sessions = sessionsByEngine.get(services.accounts);
-  if (!sessions) {
-    sessions = new ConnectSessions(services.accounts, services.frames, services.randomBytes);
-    sessionsByEngine.set(services.accounts, sessions);
-  }
-  return sessions;
-}
 
 function flowDeps(services: EngineServices): FlowDeps {
   return { store: services.store, accounts: services.accounts, randomBytes: services.randomBytes };
@@ -103,6 +91,7 @@ function set(args: Input<'Account/set'>, ctx: MethodContext): Output<'Account/se
   };
 }
 
+/** All or nothing: when a pin fails or the call is cancelled midway, the accounts already changed go back as they were. */
 async function lease(
   args: Input<'Account/lease'>,
   ctx: MethodContext,
@@ -110,15 +99,40 @@ async function lease(
   const { store, accounts } = ctx.services;
   if (args.accountId !== undefined && !accountExists(store, args.accountId)) throw notFound();
   const ids = args.accountId !== undefined ? [args.accountId] : accountIds(store);
-  for (const id of ids) {
-    if (args.pin) await accounts.claimLease(id);
-    else await accounts.releaseLease(id);
+  const before = new Map(ids.map(id => [id, accounts.status(id)?.lease?.pinned === true]));
+  const touched: string[] = [];
+  try {
+    for (const id of ids) {
+      if (ctx.signal.aborted) throw new ContractError({ type: 'cancelled', message: 'Cancelled.' });
+      touched.push(id);
+      if (args.pin) await accounts.claimLease(id);
+      else await accounts.releaseLease(id);
+    }
+  } catch (error) {
+    await restoreLeases(accounts, touched, before);
+    throw error;
   }
   const leases = ids.flatMap(accountId => {
     const held = accounts.status(accountId)?.lease;
     return held ? [{ accountId, lease: leaseView(held) }] : [];
   });
   return { leases };
+}
+
+/** Best effort: puts each touched account's pin back to what it was (the failing one included, it may be half done). */
+async function restoreLeases(
+  accounts: EngineServices['accounts'],
+  touched: readonly string[],
+  before: ReadonlyMap<string, boolean>,
+): Promise<void> {
+  for (const id of touched) {
+    try {
+      if (before.get(id)) await accounts.claimLease(id);
+      else await accounts.releaseLease(id);
+    } catch {
+      // Nothing more can be done for this one; the original error is what the caller sees.
+    }
+  }
 }
 
 function disconnect(args: Input<'Account/disconnect'>, ctx: MethodContext): never {

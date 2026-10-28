@@ -108,12 +108,19 @@ test('dispatch denies by default: scope, host-only, uiOnly, secret and MCP are c
   const mcp = as({ kind: 'listener', via: 'mcp', clientId: 'c2', scopes: grantable });
   const notTool = listenerMethods.find(m => !(mcpMethods as readonly string[]).includes(m))!;
   await assert.rejects(dispatch(notTool, {}, mcp), forbidden, notTool);
-  // The first MCP tool is past the gate: whatever its handler does (a stub throws, a built one may answer), it is not `forbidden`.
-  const outcome = await dispatch(mcpMethods[0], {}, mcp).then(
-    () => undefined,
-    (e: unknown) => e,
+  // Every MCP tool is past the gate, whatever its handler does; the first one still a stub is reached and says so.
+  const outcomes = await Promise.all(
+    mcpMethods.map(m =>
+      dispatch(m, {}, mcp).then(
+        () => undefined,
+        (e: unknown) => e,
+      ),
+    ),
   );
-  assert.ok(!forbidden(outcome), `${mcpMethods[0]} is reachable by an MCP client`);
+  outcomes.forEach((outcome, i) => assert.ok(!forbidden(outcome), `${mcpMethods[i]} is reachable`));
+  const stub = mcpMethods.find((_, i) => reached(outcomes[i]));
+  assert.ok(stub, 'a stub MCP method is left to check');
+  await assert.rejects(dispatch(stub, {}, mcp), reached);
 });
 
 test('every engine method is refused to a caller that holds no scope', async () => {

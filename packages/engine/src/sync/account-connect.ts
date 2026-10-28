@@ -26,6 +26,8 @@ type ConnectArgs = Input<'Account/connect'>;
 export function newAccountFlow(deps: FlowDeps, args: ConnectArgs): ConnectFlow {
   if (args.provider !== 'google')
     throw new ContractError({ type: 'unsupported', message: GOOGLE_ONLY });
+  // Refused before any browser opens. A row still `starting` is a connect whose actor never started: a retry may finish it.
+  if (args.address) refuseAdded(accountWithIdentity(deps.store, 'google', args.address));
   const accountId = hexId(deps.randomBytes, 'a');
   const address = args.address ?? args.loginHint;
   const request: ConnectRequest = {
@@ -40,21 +42,51 @@ export function newAccountFlow(deps: FlowDeps, args: ConnectArgs): ConnectFlow {
     key: `new:${address?.toLowerCase() ?? ''}`,
     kind: 'google',
     request,
-    accept: async result => {
-      refuseDuplicate(deps.store, result);
-      deps.store.commit({
-        opId: `connect:${accountId}`,
-        origin: 'system',
-        writes: newAccountWrites(accountId, result, args.name),
-      });
-      await deps.accounts.start(accountId);
-    },
+    accept: result => acceptNewAccount(deps, accountId, args.name, result),
   };
 }
 
-function refuseDuplicate(store: StorePort, result: ConnectResult): void {
+async function acceptNewAccount(
+  deps: FlowDeps,
+  accountId: string,
+  name: string | undefined,
+  result: ConnectResult,
+): Promise<{ accountId: string }> {
   const { address, subject } = result.identity;
-  if (!accountWithIdentity(store, 'google', address, subject)) return;
+  const existing = accountWithIdentity(deps.store, 'google', address, subject);
+  // TODO(port): when the answer is refused below, the host has already stored the new credential in the vault under
+  // `accountId` and the engine cannot discard it (no port call for that). Needs a `discardCredential` on the host.
+  refuseAdded(existing);
+  if (existing) {
+    const stored = storedIdentity(deps.store, existing.id);
+    if (stored) refuseOtherIdentity(stored, result);
+    return resume(deps, existing.id, result);
+  }
+  deps.store.commit({
+    opId: `connect:${accountId}`,
+    origin: 'system',
+    writes: newAccountWrites(accountId, result, name),
+  });
+  await deps.accounts.start(accountId);
+  return { accountId };
+}
+
+/**
+ * A retry for an account whose row was committed but whose actor never started (`start` threw): keep the row, store the
+ * new grant, and start again instead of refusing it as already added.
+ */
+async function resume(
+  deps: FlowDeps,
+  accountId: string,
+  result: ConnectResult,
+): Promise<{ accountId: string }> {
+  await deps.accounts.reconnected(accountId, result);
+  await deps.accounts.start(accountId);
+  return { accountId };
+}
+
+function refuseAdded(existing: { status: string } | undefined): void {
+  if (!existing || existing.status === 'starting') return;
   throw new ContractError({
     type: 'conflict',
     message: ALREADY_ADDED,
@@ -90,8 +122,7 @@ export function existingAccountFlow(
   accountId: string,
 ): ConnectFlow {
   const stored = storedIdentity(deps.store, accountId);
-  if (!stored)
-    throw new ContractError({ type: 'notFound', message: 'That account is not in Aplos.' });
+  if (!stored) throw notFound();
   if (stored.provider !== 'google')
     throw new ContractError({ type: 'unsupported', message: GOOGLE_ONLY });
   return {
@@ -106,13 +137,26 @@ export function existingAccountFlow(
       ...(stored.subject ? { expectedSubject: stored.subject } : {}),
     },
     accept: async result => {
-      refuseOtherIdentity(stored, result);
+      // Read again: the account may have changed or gone while the browser was open.
+      const current = storedIdentity(deps.store, accountId);
+      if (!current) throw notFound();
+      // TODO(port): a refusal here leaves the credential the host already stored for the wrong grant in the vault;
+      // the engine has no port call to discard it. Needs a `discardCredential` on the host.
+      refuseOtherIdentity(current, result);
       await deps.accounts.reconnected(accountId, result);
     },
   };
 }
 
-/** The host refuses another identity too; the engine checks again so a host that forgot cannot store the wrong grant. */
+function notFound() {
+  return new ContractError({ type: 'notFound', message: 'That account is not in Aplos.' });
+}
+
+/**
+ * The host refuses another identity too; the engine checks again so a host that forgot cannot store the wrong grant.
+ * A stored subject must match exactly. An account saved before subjects were kept has none: the address match is accepted
+ * once, and `reconnected` then stores the subject Google returned (the first and only adoption; from then on it is compared).
+ */
 function refuseOtherIdentity(
   stored: { address: string; subject?: string },
   result: ConnectResult,

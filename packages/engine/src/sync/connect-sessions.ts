@@ -3,12 +3,15 @@ import type { Frame } from '@aplos/contract';
 import { PausedError, ProviderError } from '../ports/base';
 import type { AccountActorHost, ConnectRequest, ConnectResult, ProviderKind } from '../ports';
 import type { FrameBus } from '../runtime/frames';
+import type { EngineServices } from '../runtime/services';
 
 // Connect, reconnect and permission grants run in the background, one live sign-in per account. The caller gets a
 // `connectId` at once; `connect` frames report the outcome (freeze FR-23). A frame carries a copy key and never a
 // sentence, a token or a secret.
 
 /** What one sign-in does once the provider answered. Throw a `ContractError` to refuse the answer and store nothing. */
+export type AcceptOutcome = { accountId?: string } | void;
+
 export interface ConnectFlow {
   mode: Extract<Frame, { frame: 'connect' }>['mode'];
   accountId: string;
@@ -16,7 +19,8 @@ export interface ConnectFlow {
   key: string;
   kind: ProviderKind;
   request: ConnectRequest;
-  accept(result: ConnectResult): Promise<void> | void;
+  /** May answer with the id of the account it actually stored, when that is not `accountId` (a retried new account). */
+  accept(result: ConnectResult): Promise<AcceptOutcome> | AcceptOutcome;
 }
 
 interface Session {
@@ -25,6 +29,8 @@ interface Session {
   controller: AbortController;
   /** The provider answered and the engine is storing it: too late to cancel. */
   accepting: boolean;
+  /** The account the sign-in ended up on, when the flow reports one other than its own. */
+  storedAccountId?: string;
 }
 
 export const ALREADY_OPEN =
@@ -72,10 +78,14 @@ export class ConnectSessions {
     this.emit(session, 'waiting');
     try {
       const { accountId, kind, request } = session.flow;
+      // TODO(port): `AccountActorHost.connect` takes no AbortSignal, so a cancel only drops the answer here; the host's
+      // browser or loopback flow runs on until its own timeout. Needs a `signal` on the port or on `ConnectRequest`.
       const result = await untilAborted(this.accounts.connect(accountId, kind, request), signal);
-      if (result === ABORTED) return;
+      // The answer can win the race and still be followed by a cancel before this line runs: the cancel stands.
+      if (result === ABORTED || signal.aborted) return;
       session.accepting = true;
-      await session.flow.accept(result);
+      const outcome = await session.flow.accept(result);
+      if (outcome?.accountId) session.storedAccountId = outcome.accountId;
       this.release(session);
       this.emit(session, 'connected');
     } catch (error) {
@@ -83,6 +93,13 @@ export class ConnectSessions {
       this.release(session);
       this.emit(session, 'failed', failureCode(error));
     }
+  }
+
+  /** Engine stop: abort every waiting sign-in without a frame (the connections are closing) and forget them. */
+  dispose(): void {
+    for (const session of this.byId.values()) session.controller.abort();
+    this.byId.clear();
+    this.byKey.clear();
   }
 
   private release(session: Session): void {
@@ -95,7 +112,8 @@ export class ConnectSessions {
     state: 'waiting' | 'connected' | 'failed' | 'cancelled',
     reasonCode?: string,
   ) {
-    const { mode, accountId } = session.flow;
+    const { mode } = session.flow;
+    const accountId = session.storedAccountId ?? session.flow.accountId;
     // A new account has no id the UI knows until it is connected; a reconnect or grant names its account from `waiting` on.
     const named = mode !== 'new' || state === 'connected';
     this.frames.emit({
@@ -107,6 +125,28 @@ export class ConnectSessions {
       ...(reasonCode ? { reasonCode } : {}),
     });
   }
+}
+
+const sessionsByEngine = new WeakMap<object, ConnectSessions>();
+
+/** One map of live sign-ins per engine; the engine's own account actors host keys it. */
+export function connectSessionsOf(services: EngineServices): ConnectSessions {
+  let sessions = sessionsByEngine.get(services.accounts);
+  if (!sessions) {
+    sessions = new ConnectSessions(services.accounts, services.frames, services.randomBytes);
+    sessionsByEngine.set(services.accounts, sessions);
+  }
+  return sessions;
+}
+
+/**
+ * Aborts and forgets this engine's waiting sign-ins. NOTE: nothing calls it yet. The composition root
+ * (`src/index.ts`, eng-contract's) has no prov-gov lane module, so there is no `LaneModule.stop` to hang it on; the
+ * module that adds one (`sync/module.ts`) must call this from its `stop`.
+ */
+export function disposeConnectSessions(services: EngineServices): void {
+  sessionsByEngine.get(services.accounts)?.dispose();
+  sessionsByEngine.delete(services.accounts);
 }
 
 const ABORTED = Symbol('aborted');
