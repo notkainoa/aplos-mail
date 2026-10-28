@@ -72,6 +72,11 @@ else {
   void app
     .whenReady()
     .then(async () => {
+      // Electron makes the app a regular (Dock) app when launching finishes, so test mode re-applies accessory here.
+      if (isTest) {
+        if (process.platform === 'darwin') app.setActivationPolicy('accessory');
+        app.dock?.hide();
+      }
       // A packaged app shows its bundle icon (AppIcon.icon); a development run would otherwise show Electron's.
       if (!app.isPackaged && !isTest) app.dock?.setIcon(join(__dirname, 'icon.png'));
       // A test run gets only the environment its caller passes: never the owner's config file or a checkout's .env.
