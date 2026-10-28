@@ -49,6 +49,40 @@ textarea {
   appearance: none;
 }
 
+/* The native-control reset (zero specificity, so any component rule wins). Every family starts from the same
+   bare elements: border-box sizing, no list bullets or indent, no heading or paragraph margins, and plain
+   fieldsets. Each component draws its own spacing from tokens. */
+:where(*, *::before, *::after) {
+  box-sizing: border-box;
+}
+
+/* Keycaps were drawn as `min-width: var(--kbd)` plus padding, which is content-box sizing, in every family. They
+   keep it, so the global reset does not narrow every keycap by its padding. */
+:where(kbd, [class*='kbd']) {
+  box-sizing: content-box;
+}
+
+:where(ul, ol) {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+:where(h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd) {
+  margin: 0;
+}
+
+:where(fieldset) {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+:where(legend) {
+  padding: 0;
+}
+
 /* Numbers that line up use tabular figures (DESIGN 4.3). This is only the
    fallback for elements nobody styles: `font: var(--type-<role>)` resets
    font-variant-numeric, so a component rule that sets a type role on a time,

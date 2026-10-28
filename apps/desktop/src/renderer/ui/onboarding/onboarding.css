@@ -572,7 +572,6 @@
 
 .ui-consent-card__facts dt,
 .ui-consent-card__facts dd {
-  margin: 0;
   padding: var(--space-3) 0;
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
@@ -611,4 +610,10 @@
   align-items: center;
   gap: var(--space-3);
   margin-top: var(--space-6);
+}
+
+/* ---------- ChoiceGroup: the radiogroup around radio ChoiceRows; it draws nothing ---------- */
+.ui-choice-group {
+  display: flex;
+  flex-direction: column;
 }

@@ -192,18 +192,19 @@ export function timeOptions(extra?: IsoTime): IsoTime[] {
   return out;
 }
 
-/** The grid's vertical scale: first and last hour shown, widened when an entry lies outside 8 AM to 8 PM. */
-export function hourRange(spans: ReadonlyArray<{ start: number; end: number }>): {
-  first: number;
-  last: number;
-} {
-  let first = 8;
-  let last = 20;
-  for (const s of spans) {
-    first = Math.min(first, Math.floor(s.start));
-    last = Math.max(last, Math.ceil(s.end));
-  }
-  return { first: Math.max(0, first), last: Math.min(24, last) };
+/** The grid draws the whole day, midnight to midnight, and scrolls (DESIGN 7.8). */
+export const DAY_HOURS = 24;
+
+/** The hour the grid opens at when nothing else says (DESIGN 7.8: 8 AM to 8 PM fits the pane at 56 px an hour). */
+export const OPEN_HOUR = 8;
+
+/**
+ * The hour at the top of the grid when it opens: `override` if the screen gives one, else now (an hour of lead-in
+ * above the line) when today is among the days shown, else 8 AM. Clamped to the day.
+ */
+export function openHour(opts: { today: boolean; nowHours: number; override?: number }): number {
+  const raw = opts.override ?? (opts.today ? opts.nowHours - 1 : OPEN_HOUR);
+  return Math.min(DAY_HOURS, Math.max(0, Number.isFinite(raw) ? raw : OPEN_HOUR));
 }
 
 /** Snap a position in hours to a step of `stepMinutes`. */

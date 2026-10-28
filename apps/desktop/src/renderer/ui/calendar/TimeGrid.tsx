@@ -3,16 +3,17 @@
  * with 56 px per hour, lanes, the "+N" stack, the now-line and pointer drag (create, move, resize).
  * Internal to the calendar family; CalendarGrid is the public component.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { CalendarEventData, CalendarGridProps } from '../props';
 import {
   dateOf,
   dateTimeAt,
   dayOf,
+  DAY_HOURS,
   dayTitle,
   hourLabel,
-  hourRange,
+  openHour,
   rangeOf,
   shortWeekday,
   snapHours,
@@ -73,6 +74,7 @@ export function TimeGrid(props: CalendarGridProps) {
     onResize,
     onOpenStack,
     emptyAction,
+    scrollToHour,
   } = props;
   const wide = view === 'day';
   const days = daysOf(wide ? 'day' : 'week', start);
@@ -86,17 +88,28 @@ export function TimeGrid(props: CalendarGridProps) {
     const timed = events.map(e => timedOn(e, day)).filter((t): t is Timed => t !== null);
     return { day, timed, allDay: allDayOn(events, day), layout: layoutDay(timed, maxLanes) };
   });
-  const { first, last } = hourRange(
-    perDay.flatMap(d => d.timed.map(t => ({ start: t.at, end: t.end }))),
-  );
-  const count = last - first;
+  // The whole day is always drawn; the body scrolls (see the opening scroll below).
+  const first = 0;
+  const count = DAY_HOURS;
   const hasAllDay = perDay.some(d => d.allDay.length > 0);
   const nowHours = new Date(now).getHours() + new Date(now).getMinutes() / 60;
 
+  const scrollRef = useRef<HTMLDivElement>(null);
   const trackRefs = useRef<Array<HTMLDivElement | null>>([]);
   const run = useRef<DragRun | null>(null);
   const suppressClick = useRef(false);
   const [drag, setDrag] = useState<DragState | null>(null);
+
+  // Opens at 8 AM, or at now when today is shown (or at `scrollToHour`); runs on mount and when the view changes,
+  // so paging between weeks keeps the reader's place. Without layout (first render, tests) there is nothing to do.
+  const opensAt = openHour({ today: days.includes(today), nowHours, override: scrollToHour });
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    const track = trackRefs.current[0];
+    if (!scroller || !track) return;
+    const perHour = track.offsetHeight / DAY_HOURS;
+    if (perHour > 0) scroller.scrollTop = perHour * opensAt;
+  }, [view]);
 
   useEffect(() => {
     const track = trackRefs.current[0];
@@ -200,7 +213,8 @@ export function TimeGrid(props: CalendarGridProps) {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [drag !== null]);
 
-  const movable = (e: CalendarEventData): boolean => e.kind === 'event' && e.persisted && !e.allDay;
+  const movable = (e: CalendarEventData): boolean =>
+    e.kind === 'event' && e.persisted && !e.allDay && !e.locked;
 
   const block = (
     event: CalendarEventData,
@@ -285,10 +299,11 @@ export function TimeGrid(props: CalendarGridProps) {
         </div>
       ) : null}
 
-      <div className="ui-calendar-grid__scroll">
+      <div className="ui-calendar-grid__scroll" ref={scrollRef}>
         <div className="ui-calendar-grid__body" role="row">
           <div className="ui-calendar-grid__hours" aria-hidden="true">
-            {Array.from({ length: count + 1 }, (_, i) => (
+            {/* One label per hour; the line that closes the day (the second midnight) has none. */}
+            {Array.from({ length: count }, (_, i) => (
               <span
                 key={i}
                 className="ui-calendar-grid__hour"
@@ -411,9 +426,7 @@ export function TimeGrid(props: CalendarGridProps) {
                       {rangeOf(dateTimeAt(day, drag.at), dateTimeAt(day, drag.end))}
                     </div>
                   ) : null}
-                  {isToday && nowHours >= first && nowHours <= last ? (
-                    <NowLine now={now} variant="grid" />
-                  ) : null}
+                  {isToday ? <NowLine now={now} variant="grid" /> : null}
                   {wide &&
                   timed.length === 0 &&
                   perDay[dayIndex].allDay.length === 0 &&

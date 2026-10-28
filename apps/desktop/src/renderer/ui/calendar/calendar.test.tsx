@@ -25,8 +25,8 @@ import {
   addDays,
   dayTitle,
   durationText,
-  hourRange,
   monthMatrix,
+  openHour,
   rangeOf,
   shiftMonth,
   snapHours,
@@ -145,13 +145,14 @@ test('dates: titles carry the comma, ranges share AM or PM, durations read plain
   assert.equal(addDays('2026-10-31', 1), '2026-11-01');
   assert.equal(shiftMonth('2026-12', 1), '2027-01');
   assert.equal(snapHours(10.1), 10);
-  assert.deepEqual(
-    hourRange([
-      { start: 6.5, end: 7 },
-      { start: 21, end: 22.5 },
-    ]),
-    { first: 6, last: 23 },
-  );
+});
+
+test('dates: the grid opens at 8 AM, or an hour before now when today is shown, or where the screen says', () => {
+  assert.equal(openHour({ today: false, nowHours: 15 }), 8);
+  assert.equal(openHour({ today: true, nowHours: 15.5 }), 14.5);
+  assert.equal(openHour({ today: true, nowHours: 0.25 }), 0);
+  assert.equal(openHour({ today: true, nowHours: 15, override: 6 }), 6);
+  assert.equal(openHour({ today: false, nowHours: 15, override: 99 }), 24);
 });
 
 test('dates: a month matrix is six weeks of seven and starts on the locale weekday', () => {
@@ -480,11 +481,14 @@ test('CalendarGrid week: a labelled grid, seven day headers, today badge, hour l
     out,
     /data-today="true"[^>]*aria-label="Thursday, October 29, 2026"[^>]*aria-current="date"/,
   );
-  assert.equal((out.match(/class="ui-calendar-grid__hour"/g) ?? []).length, 13);
+  // The whole day is drawn: 24 hour labels, and 25 lines per column (the last closes the day).
+  assert.equal((out.match(/class="ui-calendar-grid__hour"/g) ?? []).length, 24);
+  assert.match(out, />12 AM</);
   assert.match(out, />8 AM</);
   assert.match(out, />8 PM</);
+  assert.match(out, />11 PM</);
   assert.equal((out.match(/class="ui-now-line"/g) ?? []).length, 1);
-  assert.equal((out.match(/class="ui-calendar-grid__line"/g) ?? []).length, 7 * 13);
+  assert.equal((out.match(/class="ui-calendar-grid__line"/g) ?? []).length, 7 * 25);
   assert.match(out, /--ncols:7/);
   assert.match(out, /tabindex="0"/);
   assertCleanCopy(out);
@@ -634,7 +638,7 @@ test('CalendarGrid day: wide columns, an empty day says "Nothing scheduled." wit
   assert.doesNotMatch(full, /Nothing scheduled/);
 });
 
-test('CalendarGrid: an entry outside 8 AM to 8 PM widens the hour range; all-day entries get a strip', () => {
+test('CalendarGrid: an early entry sits on the full-day scale; all-day entries get a strip', () => {
   const out = html(
     <CalendarGrid
       {...gridProps({
@@ -646,7 +650,8 @@ test('CalendarGrid: an entry outside 8 AM to 8 PM widens the hour range; all-day
     />,
   );
   assert.match(out, />6 AM</);
-  assert.match(out, /--nhours:14/);
+  assert.match(out, /--nhours:24/);
+  assert.match(out, /--grid-first:0/);
   assert.match(out, /All day/);
   assert.match(out, /Offsite, all day, Work/);
 });
@@ -1022,4 +1027,42 @@ test('ScopeChooser: "This event" is the filled default on Return, "All events" o
     );
     assert.equal(copyProblem(text.replace(/<[^>]+>/g, ' ')), null);
   }
+});
+
+test('EventBlock locked: marks itself and the grid offers no resize handle to a locked entry', () => {
+  const placement = { lane: 0, lanes: 1, wide: false };
+  const block = (event: CalendarEventData, locked?: boolean): string =>
+    html(
+      <EventBlock
+        kind="event"
+        event={event}
+        placement={placement}
+        selected={false}
+        locked={locked}
+        onSelect={noop}
+        onOpen={noop}
+      />,
+    );
+  const open = ev('free', 'Planning', '2026-10-29T09:00:00', '2026-10-29T10:00:00');
+  assert.doesNotMatch(block(open), /data-locked/);
+  assert.match(block(open, true), /data-locked="true"/);
+  assert.match(block({ ...open, locked: true }), /data-locked="true"/);
+  const grid = (events: CalendarEventData[]): string =>
+    html(<CalendarGrid {...gridProps({ view: 'day', start: '2026-10-29', events })} />);
+  assert.equal((grid([open]).match(/data-resize="true"/g) ?? []).length, 1);
+  const shut = grid([{ ...open, locked: true }]);
+  assert.equal((shut.match(/data-resize="true"/g) ?? []).length, 0);
+  assert.match(shut, /data-locked="true"/);
+});
+
+test('EventDetail: a multi-day entry names both days; an all-day one is a date range', () => {
+  const timed = ev('trip', 'Offsite', '2026-10-26T09:00:00', '2026-10-28T17:00:00');
+  assert.match(detail(timed), /Mon, Oct 26, 9:00 AM – Wed, Oct 28, 5:00 PM/);
+  const allDay = ev('away', 'Away', '2026-10-26T00:00:00', '2026-10-29T00:00:00', { allDay: true });
+  assert.match(detail(allDay), /Mon, Oct 26 – Wed, Oct 28 · All day/);
+  // One all-day day, and an evening that ends at midnight, stay single-day.
+  const one = ev('one', 'Holiday', '2026-10-29T00:00:00', '2026-10-30T00:00:00', { allDay: true });
+  assert.match(detail(one), /Thursday, October 29 · All day/);
+  const late = ev('late', 'Late', '2026-10-29T22:00:00', '2026-10-30T00:00:00');
+  assert.match(detail(late), /Thursday, October 29 · 10:00 PM – 12:00 AM/);
 });

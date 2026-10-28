@@ -1895,6 +1895,8 @@ export interface CalendarEventData {
   description?: string;
   /** One occurrence of a repeating event: moving, resizing, deleting or answering asks for a scope first (ScopeChooser, freeze finding FR-21). */
   recurring?: boolean;
+  /** Read-only here: a read-only calendar, or an invite you don't organise. The grid offers no drag to move and no resize handle; selecting and opening still work. */
+  locked?: boolean;
 }
 
 /** Which occurrences a change or an answer touches. Round 1 offers "This event" and "All events" (roadmap 8.3 #32); the contract's EditScope 'following' is refused until built. */
@@ -1930,7 +1932,7 @@ export interface EventGuest {
 /** Views of the grid; 'agenda' is the narrow-pane list and the Today tab (DESIGN §7.7 Today, §7.8 Narrow). */
 export type CalendarView = 'day' | 'week' | 'month' | 'agenda';
 
-/** The calendar grid: `--line` hairlines, 56 px per hour (8 AM–8 PM in view), today column `--today-tint`, now-line, overlap lanes with a "+N" stack, drag to create, move or resize with `lift` and `snap` (DESIGN §6 CalendarGrid, §7.8). Mockups: calendar-week.html (default, overlap), calendar-day.html (default, empty), calendar-event.html, ask.html (today). Plain + refines: ui-calendar. */
+/** The calendar grid: `--line` hairlines, 56 px per hour (the whole day is drawn and scrolls; it opens at 8 AM, or at now when today is shown), today column `--today-tint`, now-line, overlap lanes with a "+N" stack, drag to create, move or resize with `lift` and `snap` (DESIGN §6 CalendarGrid, §7.8). Mockups: calendar-week.html (default, overlap), calendar-day.html (default, empty), calendar-event.html, ask.html (today). Plain + refines: ui-calendar. */
 export interface CalendarGridProps {
   /** View. */
   view: CalendarView;
@@ -1964,6 +1966,8 @@ export interface CalendarGridProps {
   label: string;
   /** Announces range and selection changes (DESIGN §11.3). */
   announce?: Announce;
+  /** Day and week views: the hour (0–24, fractions allowed) at the top of the grid when it opens. Default: 8, or an hour before now when today is shown. Applied on mount and when `view` changes, never when paging, so the reader keeps their place. */
+  scrollToHour?: number;
 }
 
 /** Where the grid placed an entry among overlapping lanes; lanes are never under 44 px (DESIGN §7.8). */
@@ -1991,6 +1995,8 @@ export type EventBlockProps =
       onSelect: () => void;
       /** Open the detail. */
       onOpen: (anchor: HTMLElement) => void;
+      /** Locked: no drag or resize affordance (`data-locked`, no move cursor). Defaults to `event.locked`. */
+      locked?: boolean;
     }
   | {
       /** The "+N" stack for the third and later overlapping events. */
@@ -2399,6 +2405,8 @@ export type ProgressSegmentsProps =
       onOpenSettings?: () => void;
       /** Only the segments and status, no checklist (the drill keeps progress visible this way). */
       compact?: boolean;
+      /** How many accounts are connected. The account's colour dot shows only with two or more (DESIGN decision 16); omitted means one, so no dot. */
+      accountCount?: number;
     }
   | {
       /** The status slot's "Importing N of M" track. */

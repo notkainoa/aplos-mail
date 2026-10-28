@@ -601,3 +601,116 @@ describe('Spinner', () => {
     assert.match(render(<Spinner label="Loading Maple Library…" size="sm" />), /data-size="sm"/);
   });
 });
+
+describe('ReconnectSheet grant mode', () => {
+  it('has its own title, line and button; reconnect keeps Reconnect and Try again', () => {
+    const grant = render(
+      <ReconnectSheet
+        open
+        mode="grant"
+        address={GM.address}
+        state="failed"
+        onCancel={noop}
+        onRetry={noop}
+      />,
+    );
+    assert.match(grant, /ui-dialog__title[^>]*>Grant access for alex\.moreno@gmail\.com</);
+    assert.match(textOf(grant), /Aplos needs permission to read your Gmail\./);
+    assert.match(grant, /data-variant="filled"[^>]*>.*Grant access/);
+    assert.doesNotMatch(textOf(grant), /Reconnect|Try again/);
+    assertClean(grant, [GM.address]);
+    const reconnect = render(
+      <ReconnectSheet open address={GM.address} state="failed" onCancel={noop} onRetry={noop} />,
+    );
+    assert.match(reconnect, /ui-dialog__title[^>]*>Reconnect alex/);
+    assert.match(reconnect, /Try again/);
+    assert.doesNotMatch(textOf(reconnect), /Grant access/);
+  });
+});
+
+describe('ProgressSegments live regions and account dot', () => {
+  const account = { address: GM.address, color: 'sky' } as const;
+  const cps = (read: number) =>
+    [
+      { step: 'connect', state: 'done' },
+      { step: 'find', state: 'done' },
+      { step: 'read', state: 'current', read, of: 50 },
+    ] as const;
+  const status = (html: string): string[] =>
+    [...html.matchAll(/role="status">([^<]*)</g)].map(m => m[1]);
+
+  it('one visually hidden status that says the phase and does not move while counts tick', () => {
+    const a = render(
+      <ProgressSegments variant="checkpoints" account={account} checkpoints={cps(10)} />,
+    );
+    const b = render(
+      <ProgressSegments variant="checkpoints" account={account} checkpoints={cps(11)} />,
+    );
+    assert.deepEqual(status(a), [`${GM.address}: found recent mail.`]);
+    assert.deepEqual(status(a), status(b));
+    assert.equal(count(a, 'role="status"'), 1);
+    assert.equal(count(a, 'aria-live'), 0);
+    const paused = render(
+      <ProgressSegments
+        variant="checkpoints"
+        account={account}
+        checkpoints={[
+          { step: 'connect', state: 'done' },
+          { step: 'find', state: 'done' },
+          { step: 'read', state: 'paused', read: 10, of: 50 },
+        ]}
+      />,
+    );
+    assert.deepEqual(status(paused), [`${GM.address} sync paused.`]);
+  });
+
+  it('the plain segments variant announces stopped, paused and finished only', () => {
+    const seg = (state: 'current' | 'done' | 'failed' | 'paused', value?: number) =>
+      render(
+        <ProgressSegments
+          variant="segments"
+          label="jordan@gmail.com sync"
+          segments={[
+            { label: 'Connect', state: 'done' },
+            { label: 'Read', state, value },
+          ]}
+        />,
+      );
+    assert.deepEqual(status(seg('current', 0.2)), ['']);
+    assert.deepEqual(status(seg('current', 0.6)), ['']);
+    assert.deepEqual(status(seg('failed')), ['jordan@gmail.com sync stopped.']);
+    assert.deepEqual(status(seg('paused')), ['jordan@gmail.com sync paused.']);
+    assert.deepEqual(status(seg('done')), ['jordan@gmail.com sync finished.']);
+  });
+
+  it('the account dot shows only with two or more accounts', () => {
+    const one = render(
+      <ProgressSegments variant="checkpoints" account={account} checkpoints={cps(5)} />,
+    );
+    assert.equal(count(one, 'ui-progress-segments__dot'), 0);
+    const two = render(
+      <ProgressSegments
+        variant="checkpoints"
+        account={account}
+        checkpoints={cps(5)}
+        accountCount={2}
+      />,
+    );
+    assert.equal(count(two, 'ui-progress-segments__dot'), 1);
+    const readyOne = render(
+      <ProgressSegments variant="ready" label="ready" accounts={[{ ...account, read: 50 }]} />,
+    );
+    assert.equal(count(readyOne, 'ui-progress-segments__dot'), 0);
+    const readyTwo = render(
+      <ProgressSegments
+        variant="ready"
+        label="ready"
+        accounts={[
+          { ...account, read: 50 },
+          { address: ONE.address, color: 'hill', read: 50 },
+        ]}
+      />,
+    );
+    assert.equal(count(readyTwo, 'ui-progress-segments__dot'), 2);
+  });
+});

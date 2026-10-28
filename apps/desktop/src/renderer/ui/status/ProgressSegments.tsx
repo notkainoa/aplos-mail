@@ -163,6 +163,7 @@ function phaseOf(p: CheckpointsProps): string {
     checkpoints.every(cp => cp.state === 'done' || cp.state === 'partial')
   )
     return `${address} is ready.`;
+  if (checkpoints.some(cp => cp.state === 'paused')) return `${address} sync paused.`;
   if (checkpoints.some(cp => cp.step === 'find' && cp.state === 'done'))
     return `${address}: found recent mail.`;
   if (checkpoints.some(cp => cp.step === 'connect' && cp.state === 'done'))
@@ -170,8 +171,26 @@ function phaseOf(p: CheckpointsProps): string {
   return '';
 }
 
+/** Phase only for the plain segments variant: stopped, paused or finished; empty while it simply works. */
+function segmentsPhase(label: string, segments: readonly ProgressSegment[]): string {
+  if (segments.some(s => s.state === 'failed')) return `${label} stopped.`;
+  if (segments.some(s => s.state === 'paused')) return `${label} paused.`;
+  if (segments.length > 0 && segments.every(s => s.state === 'done' || s.state === 'partial'))
+    return `${label} finished.`;
+  return '';
+}
+
 function Checkpoints(p: CheckpointsProps) {
-  const { account, checkpoints, failure, notConnected, onRetry, onOpenSettings, compact } = p;
+  const {
+    account,
+    checkpoints,
+    failure,
+    notConnected,
+    onRetry,
+    onOpenSettings,
+    compact,
+    accountCount = 1,
+  } = p;
   const failed = notConnected || checkpoints.some(cp => cp.state === 'failed');
   const status = checkpointsStatus(p);
   const current = checkpoints.find(
@@ -191,7 +210,7 @@ function Checkpoints(p: CheckpointsProps) {
       data-compact={compact ? 'true' : undefined}
     >
       <div className="ui-progress-segments__top">
-        <Dot color={account.color} />
+        {accountCount >= 2 ? <Dot color={account.color} /> : null}
         <span className="ui-progress-segments__address">{account.address}</span>
         {failed && onRetry ? (
           <span className="ui-progress-segments__retry">
@@ -302,6 +321,9 @@ export function ProgressSegments(props: ComponentPropsMap['ProgressSegments']) {
             <PlainSegment key={s.label} segment={s} />
           ))}
         </div>
+        <span className="ui-sr-only" role="status">
+          {segmentsPhase(props.label, props.segments)}
+        </span>
       </div>
     );
   }
@@ -334,7 +356,7 @@ export function ProgressSegments(props: ComponentPropsMap['ProgressSegments']) {
         <ul className="ui-progress-segments__accounts">
           {props.accounts.map(a => (
             <li key={a.address} className="ui-progress-segments__account">
-              <Dot color={a.color} />
+              {(props.accounts?.length ?? 0) >= 2 ? <Dot color={a.color} /> : null}
               <span className="ui-progress-segments__address">{a.address}</span>
               <span className="ui-progress-segments__status">
                 {`Newest ${formatCount(a.read)} read`}

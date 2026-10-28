@@ -622,3 +622,32 @@ test('KeyRecorder worst case: 300-character label, many chords, one-letter comma
     );
   }
 });
+
+test('SettingRow paletteId: the row carries its anchor so settings/<section>#<row> can scroll to it', () => {
+  const out = html(
+    <SettingRow id="undo-label" label="Undo send" paletteId="setting.mail.undoSeconds" />,
+  );
+  assert.match(
+    out,
+    /<div id="undoSeconds" class="ui-setting-row"[^>]*data-setting-anchor="undoSeconds"/,
+  );
+  // The label keeps its own id, so the two never clash.
+  assert.match(out, /id="undo-label"/);
+  // When the anchor is the label's id the label is the target and the row does not repeat it.
+  const same = html(
+    <SettingRow id="undoSeconds" label="Undo send" paletteId="setting.mail.undoSeconds" />,
+  );
+  assert.equal((same.match(/id="undoSeconds"/g) ?? []).length, 1);
+  assert.match(same, /data-setting-anchor="undoSeconds"/);
+  // A disclosure row carries it too; no paletteId, no anchor.
+  const folded = html(
+    <SettingRow
+      id="how"
+      label="How your mail is used"
+      paletteId="setting.ai.how"
+      disclosure={{ expanded: false, onToggle: noop, content: 'Text' }}
+    />,
+  );
+  assert.match(folded, /data-setting-anchor="how"/);
+  assert.doesNotMatch(html(<SettingRow id="plain" label="Plain" />), /data-setting-anchor/);
+});

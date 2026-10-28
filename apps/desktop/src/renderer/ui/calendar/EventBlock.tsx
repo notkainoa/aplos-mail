@@ -39,6 +39,7 @@ export function EventBlock(props: EventBlockProps) {
   }
 
   const { event, placement, selected, onSelect, onOpen } = props;
+  const locked = props.locked ?? event.locked ?? false;
   const density = densityOf(event);
   const showTime = density === 'full' || (density === 'one' && placement.wide);
   const time = rangeOf(event.start, event.end);
@@ -65,6 +66,7 @@ export function EventBlock(props: EventBlockProps) {
       data-selected={selected ? 'true' : 'false'}
       data-wide={placement.wide ? 'true' : 'false'}
       data-unanswered={event.unanswered ? 'true' : undefined}
+      data-locked={locked ? 'true' : undefined}
       aria-pressed={selected}
       aria-label={eventLabel(event)}
       tabIndex={-1}

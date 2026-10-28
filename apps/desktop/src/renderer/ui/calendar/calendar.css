@@ -345,6 +345,7 @@
   --ev-gap: var(--space-half);
   --drag-source: 0.5; /* the entry being dragged stays behind, dimmed (no token for it yet: see prop_gaps) */
   flex: 1;
+  height: 100%; /* bounded under a parent that is not a flex column too, so the 24 hours scroll inside it */
   min-height: 0;
   min-width: 0;
   display: flex;
@@ -1454,7 +1455,6 @@
   padding: var(--space-4);
 }
 .ui-scope-chooser__question {
-  margin: 0;
   color: var(--ink);
   font: var(--type-title);
   letter-spacing: var(--track-title);

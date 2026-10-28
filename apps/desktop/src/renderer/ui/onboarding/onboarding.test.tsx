@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { copyProblem } from '../../commands/internal';
 import type { ChoiceRowProps, OnboardingStepProps, StepButton } from '../props';
-import { ChoiceRow, ConsentCard, OnboardingStep } from './index';
+import { ChoiceGroup, ChoiceRow, ConsentCard, OnboardingStep } from './index';
 
 const noop = () => {};
 const html = (node: React.ReactElement): string => renderToStaticMarkup(node);
@@ -445,7 +445,32 @@ test('ConsentCard worst case: a 300-character model and sentence, CJK and RTL pr
   assert.ok(out.includes('プロバイダー') && out.includes('🎉'));
 });
 
-test('the barrel exports the three components of the family', async () => {
+test('the barrel exports the four components of the family', async () => {
   const barrel = await import('./index');
-  assert.deepEqual(Object.keys(barrel).sort(), ['ChoiceRow', 'ConsentCard', 'OnboardingStep']);
+  assert.deepEqual(Object.keys(barrel).sort(), [
+    'ChoiceGroup',
+    'ChoiceRow',
+    'ConsentCard',
+    'OnboardingStep',
+  ]);
+});
+
+test('ChoiceGroup: a named radiogroup around radio rows with one tab stop', () => {
+  const out = html(
+    <ChoiceGroup label="AI provider" value="groq" onChange={noop}>
+      <ChoiceRow id="groq" role="radio" label="Groq" selected onPress={noop} />
+      <ChoiceRow id="openai" role="radio" label="OpenAI" onPress={noop} />
+    </ChoiceGroup>,
+  );
+  assert.match(out, /^<div class="ui-choice-group" role="radiogroup" aria-label="AI provider">/);
+  assert.equal((out.match(/ role="radio"/g) ?? []).length, 2);
+  assert.equal((out.match(/tabindex="0"/g) ?? []).length, 1);
+  assert.match(out, /aria-checked="true"[^>]*tabindex="0"/);
+  const named = html(
+    <ChoiceGroup label="AI provider" labelledBy="ai-title" value={null} onChange={noop}>
+      <ChoiceRow id="groq" role="radio" label="Groq" />
+    </ChoiceGroup>,
+  );
+  assert.match(named, /aria-labelledby="ai-title"/);
+  assert.doesNotMatch(named, /aria-label="AI provider"/);
 });

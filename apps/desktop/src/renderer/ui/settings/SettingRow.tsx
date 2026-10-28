@@ -7,7 +7,18 @@ import { SetIcon } from './icons';
  * fixed control column on the right (DESIGN 6 SettingRow, 7.10). The label element has the DOM id `id`, so the
  * control can name itself with `aria-labelledby={id}`; the description has the id `${id}-description`.
  * A folded row is one button; its long text opens beneath it.
+ *
+ * `paletteId` (`setting.<section>.<rowAnchor>`) makes the row an anchor for deep links and ⌘K: the row element
+ * gets the DOM id `<rowAnchor>` (the last segment) and `data-palette-id`, so `settings/<section>#<rowAnchor>`
+ * scrolls to it and the screen can focus its control. `scroll-margin` keeps the row clear of the sticky header.
  */
+/** `setting.<section>.<rowAnchor>` to `<rowAnchor>`; undefined for anything that does not have that shape. */
+export function anchorOf(paletteId: string | undefined): string | undefined {
+  if (!paletteId) return undefined;
+  const parts = paletteId.split('.');
+  return parts.length >= 3 && parts[0] === 'setting' ? parts.slice(2).join('.') : undefined;
+}
+
 export function SettingRow({
   id,
   label,
@@ -19,7 +30,11 @@ export function SettingRow({
   control,
   disclosure,
   below,
+  paletteId,
 }: SettingRowProps) {
+  const anchor = anchorOf(paletteId);
+  // The label already owns `id`; when the anchor is the same word the label is the deep link's target.
+  const rowId = anchor !== undefined && anchor !== id ? anchor : undefined;
   const descriptionId = `${id}-description`;
   const contentId = `${id}-content`;
 
@@ -61,9 +76,11 @@ export function SettingRow({
   if (disclosure) {
     return (
       <div
+        id={rowId}
         className="ui-setting-row"
         data-has-description={description ? 'true' : 'false'}
         data-disclosure="true"
+        data-setting-anchor={anchor}
       >
         <button
           type="button"
@@ -90,7 +107,12 @@ export function SettingRow({
   }
 
   return (
-    <div className="ui-setting-row" data-has-description={description ? 'true' : 'false'}>
+    <div
+      id={rowId}
+      className="ui-setting-row"
+      data-has-description={description ? 'true' : 'false'}
+      data-setting-anchor={anchor}
+    >
       <div className="ui-setting-row__main">
         {text}
         {control ? <div className="ui-setting-row__control">{control}</div> : null}
