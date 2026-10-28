@@ -19,6 +19,8 @@ const as = (caller: Caller): MethodContext => ({
   caller,
   signal: new AbortController().signal,
   services: {} as EngineServices,
+  connectionId: 'c1',
+  redispatch: () => Promise.reject(new Error('no re-dispatch in these tests')),
 });
 const ctx = as({ kind: 'window', scopes: grantable });
 const forbidden = (e: unknown) => e instanceof ContractError && e.type === 'forbidden';

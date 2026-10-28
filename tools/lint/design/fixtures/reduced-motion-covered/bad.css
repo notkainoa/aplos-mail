@@ -1,0 +1,42 @@
+/* Planted violations carry an expect marker; the test requires exactly those lines to be reported. */
+@keyframes used {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes orphan { /* @expect */
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes also-orphan { /* @expect */
+  to { transform: translateX(0); }
+}
+
+.animations {
+  animation: used 300ms ease; /* @expect */
+  animation-duration: 0.3s; /* @expect */
+  animation: used var(--sidebar-w); /* @expect */
+  animation: used; /* @expect */
+  animation: used var(--dur-flight) var(--ease-out) infinite; /* @expect */
+  animation: used var(--dur-flight) var(--ease-out), used 1s; /* @expect */
+}
+
+.loop {
+  animation-name: used;
+  animation-duration: var(--dur-flight);
+  animation-iteration-count: infinite; /* @expect */
+}
+
+.loop-without-duration {
+  animation-iteration-count: infinite; /* @expect */
+}
+
+.big-count {
+  animation: used var(--dur-quick) 9999; /* @expect */
+}
+
+.counted {
+  animation-duration: var(--dur-quick);
+  animation-iteration-count: 50; /* @expect */
+}

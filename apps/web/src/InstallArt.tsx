@@ -1,5 +1,4 @@
 import icon from './assets/icon-512.webp';
-import { megabytes, type File } from './release';
 
 // Close-up drawings for the install steps: one big, cropped piece of the computer per step, each playing its step on a
 // loop while it is on screen. Everything is drawn here; the only image is the Aplos Mail icon. Sizes are in container
@@ -148,45 +147,22 @@ export function DragArt() {
 // Step 3 on a Mac: Applications in the Finder, the selection moving to Aplos Mail and the pointer opening it.
 const apps = ['Calculator', 'Chess', 'Aplos Mail', 'Dictionary', 'Maps', 'Notes', 'Preview'];
 const tints = ['#8e8e93', '#b8956a', '', '#d9534f', '#34a853', '#f2c94c', '#5b8def'];
-export function FinderArt({
-  title = 'Applications',
-  rows = apps,
-  pick = 2,
-  file,
-}: {
-  title?: string;
-  rows?: string[];
-  pick?: number;
-  file?: File;
-}) {
-  const mac = !file || file.target.startsWith('mac');
-  const side = mac
-    ? ['Recents', 'Applications', 'Desktop', 'Documents', 'Downloads']
-    : ['Home', 'Desktop', 'Documents', 'Downloads', 'Pictures'];
+const side = ['Recents', 'Applications', 'Desktop', 'Documents', 'Downloads'];
+export function FinderArt() {
+  const title = 'Applications',
+    pick = 2;
   return (
-    <div
-      className={`art art-finder${file ? ' is-files' : ''}`}
-      style={{ '--pick': pick } as React.CSSProperties}
-    >
+    <div className="art art-finder" style={{ '--pick': pick } as React.CSSProperties}>
       <div className="art-win">
-        <div className={`art-win-bar${mac ? '' : ' is-pc'}`}>
-          {mac ? (
-            <>
-              <i />
-              <i />
-              <i />
-            </>
-          ) : null}
+        <div className="art-win-bar">
+          <i />
+          <i />
+          <i />
           <b>{title}</b>
-          {!mac && (
-            <span className="art-win-controls" aria-hidden="true">
-              –&ensp;□&ensp;×
-            </span>
-          )}
         </div>
         <div className="art-win-body">
           <ul className="art-side">
-            {mac && <li className="art-side-label">Favorites</li>}
+            <li className="art-side-label">Favorites</li>
             {side.map(s => (
               <li key={s} className={s === title ? 'is-on' : ''}>
                 {s}
@@ -195,7 +171,7 @@ export function FinderArt({
           </ul>
           <ul className="art-list">
             <li className="art-sel" aria-hidden="true" />
-            {rows.map((r, i) => (
+            {apps.map((r, i) => (
               <li key={r} className={i === pick ? 'is-ours' : ''}>
                 {i === pick ? (
                   <img src={icon} alt="" />
@@ -208,69 +184,12 @@ export function FinderArt({
           </ul>
           <div className="art-preview">
             <img src={icon} alt="" />
-            <b>{file ? file.name : 'Aplos Mail'}</b>
-            <span>{file ? megabytes(file.size) : 'Application'}</span>
+            <b>Aplos Mail</b>
+            <span>Application</span>
           </div>
         </div>
       </div>
-      {!file && <Arrow className="art-pointer" />}
-    </div>
-  );
-}
-
-// Windows and Linux: the downloaded file picked out in the Downloads folder.
-export function DownloadsArt({ file }: { file: File }) {
-  return (
-    <FinderArt
-      title="Downloads"
-      rows={['trip-photos.zip', 'october-invoice.pdf', file.name, 'garden-plan.png', 'notes.txt']}
-      pick={2}
-      file={file}
-    />
-  );
-}
-
-export function InstallerArt() {
-  return (
-    <div className="art art-sheet">
-      <div className="art-win art-win-sheet">
-        <img src={icon} alt="" />
-        <b>Installing Aplos Mail</b>
-        <span className="art-progress">
-          <i />
-        </span>
-        <span className="art-caption">Copying files…</span>
-      </div>
-    </div>
-  );
-}
-
-export function AllowRunArt({ file }: { file: File }) {
-  return (
-    <div className="art art-sheet">
-      <div className="art-win art-win-sheet art-win-props">
-        <b>Properties</b>
-        <span className="art-caption">{file.name}</span>
-        <span className="art-row">
-          Allow executing file as program
-          <i className="art-switch" />
-        </span>
-      </div>
-      <Arrow className="art-pointer art-pointer-switch" />
-    </div>
-  );
-}
-
-export function WelcomeArt() {
-  return (
-    <div className="art art-sheet">
-      <div className="art-win art-win-sheet art-win-welcome">
-        <img src={icon} alt="" />
-        <b>Welcome to Aplos Mail</b>
-        <span className="art-account is-primary">Add Google account</span>
-        <span className="art-account">Add Microsoft account</span>
-        <span className="art-account">Other mail (IMAP)</span>
-      </div>
+      <Arrow className="art-pointer" />
     </div>
   );
 }

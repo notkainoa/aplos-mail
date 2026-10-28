@@ -7,6 +7,7 @@ import { pendingLinks } from './protocol';
 import { latestState } from './engine-host';
 import { closing, quitting, finishQuit } from './lifecycle';
 import { isTest } from './test-mode';
+import { releaseBuild } from './oauth-config';
 
 const windows = new Set<BrowserWindow>();
 const claims = new DraftOwnership();
@@ -101,6 +102,10 @@ function createWindow(query?: { draft?: string; thread?: string }) {
       sandbox: true,
       webSecurity: true,
       spellcheck: true,
+      devTools: !releaseBuild,
+      // A test window is never shown, and Chromium throttles hidden pages' timers hard: the renderer's save-before-close
+      // answer to a quit could then take tens of seconds (plat-release, 2026-10-28 06:12).
+      backgroundThrottling: !isTest,
     },
   });
   windows.add(win);

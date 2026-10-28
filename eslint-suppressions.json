@@ -636,6 +636,25 @@
       "count": 2
     }
   },
+  "apps/web/scripts/check-claims.mjs": {
+    "complexity": {
+      "count": 2
+    },
+    "no-irregular-whitespace": {
+      "count": 2
+    }
+  },
+  "apps/web/scripts/check-web-external.mjs": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "no-control-regex": {
+      "count": 3
+    }
+  },
   "apps/web/src/InstallArt.tsx": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
