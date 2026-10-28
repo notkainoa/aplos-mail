@@ -9,7 +9,6 @@ import type {
   ErrorBody,
   Id,
   MailSettings,
-  State,
   ViewSpec,
   WindowBody,
   WindowFrame,
@@ -326,8 +325,8 @@ export class EngineWindow {
       if (this.retainedType) rows.release(this.retainedType, this.retainedIds, true);
       this.retainedType = type;
       this.retainedIds = body.ids;
-      const { changed: _changed, ...rest } = body;
-      this.base = rest;
+      this.base = { ...body };
+      delete this.base.changed;
       this.status = body.error ? 'failed' : 'live';
       this.error = body.error ?? null;
       this.changed();

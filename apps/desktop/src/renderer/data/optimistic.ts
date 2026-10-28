@@ -68,25 +68,10 @@ export function leavesView(
   const type = action.type;
   if (type === 'trash' || type === 'spam')
     return !(spec.kind === 'mailbox' && spec.role === type) && spec.kind !== 'thread';
-  if (HOME_KINDS.has(spec.kind)) {
-    if (type === 'done' || type === 'later') return true;
-    if (type === 'home') return action.hidden;
-    if (type === 'lane') {
-      if (spec.kind === 'home') return action.lane === 'low';
-      return 'section' in spec && spec.section !== 'follow' && spec.section !== action.lane;
-    }
-    return false;
-  }
+  if (HOME_KINDS.has(spec.kind)) return leavesHomeView(spec, action);
   switch (spec.kind) {
     case 'mailbox':
-      if (spec.role === 'inbox') {
-        if (type === 'done') return (mail?.doneAction ?? 'archive') === 'archive';
-        if (type === 'later') return (mail?.laterAction ?? 'archive') === 'archive';
-        return false;
-      }
-      if (spec.role === 'trash' || spec.role === 'spam') return type === 'restore';
-      if (spec.role === 'starred') return type === 'flag' && !action.on;
-      return false;
+      return leavesMailbox(spec, action, mail);
     case 'later':
       return type === 'done' || type === 'restore';
     case 'bookmarks':
@@ -96,6 +81,33 @@ export function leavesView(
     default:
       return false;
   }
+}
+
+function leavesHomeView(spec: ViewSpec, action: ThreadAction): boolean {
+  const type = action.type;
+  if (type === 'done' || type === 'later') return true;
+  if (type === 'home') return action.hidden;
+  if (type === 'lane') {
+    if (spec.kind === 'home') return action.lane === 'low';
+    return 'section' in spec && spec.section !== 'follow' && spec.section !== action.lane;
+  }
+  return false;
+}
+
+function leavesMailbox(
+  spec: Extract<ViewSpec, { kind: 'mailbox' }>,
+  action: ThreadAction,
+  mail?: Pick<MailSettings, 'doneAction' | 'laterAction'>,
+): boolean {
+  const type = action.type;
+  if (spec.role === 'inbox') {
+    if (type === 'done') return (mail?.doneAction ?? 'archive') === 'archive';
+    if (type === 'later') return (mail?.laterAction ?? 'archive') === 'archive';
+    return false;
+  }
+  if (spec.role === 'trash' || spec.role === 'spam') return type === 'restore';
+  if (spec.role === 'starred') return type === 'flag' && !action.on;
+  return false;
 }
 
 /**
@@ -223,73 +235,77 @@ function applies(entry: OverlayEntry, state: State | null, order: StateOrder): b
   return !(entry.appliedState && order.reached(state, entry.appliedState));
 }
 
-/** Lays the entries (oldest first) over one window's body. */
-export function overlayWindow(
+type ViewMail = Pick<MailSettings, 'doneAction' | 'laterAction'>;
+
+/** What the entries have done to one window so far. */
+interface WindowDraft {
+  readonly ids: Id[];
+  readonly sectionOf: Map<Id, string | null>;
+  readonly delta: Map<string | null, number>;
+  readonly zeroed: Set<string>;
+  cleared: boolean;
+}
+
+function bumpSection(draft: WindowDraft, section: string | null, by: number): void {
+  draft.delta.set(section, (draft.delta.get(section) ?? 0) + by);
+}
+
+function removeFromDraft(draft: WindowDraft, id: Id): void {
+  const i = draft.ids.indexOf(id);
+  if (i < 0) return;
+  draft.ids.splice(i, 1);
+  bumpSection(draft, draft.sectionOf.get(id) ?? null, -1);
+}
+
+function applyActEntry(
+  draft: WindowDraft,
+  entry: OverlayEntry,
+  spec: ViewSpec,
+  thisSpec: string,
+  mail?: ViewMail,
+): void {
+  if (entry.selector && specKey(entry.selector.spec) === thisSpec) {
+    const section = entry.selector.section;
+    for (const id of [...draft.ids])
+      if (!section || draft.sectionOf.get(id) === section) removeFromDraft(draft, id);
+    if (section) draft.zeroed.add(section);
+    else draft.cleared = true;
+  }
+  if (entry.action && leavesView(spec, entry.action, mail))
+    for (const id of entry.targets) removeFromDraft(draft, id);
+}
+
+function applyRestoreEntry(
+  draft: WindowDraft,
+  entry: OverlayEntry,
   key: string,
   spec: ViewSpec,
+  mail?: ViewMail,
+): void {
+  const placed = entry.originalPosition.get(key);
+  if (!placed) {
+    if (entry.action && entersView(spec, entry.action, mail))
+      for (const id of entry.targets) removeFromDraft(draft, id);
+    return;
+  }
+  for (const id of entry.targets) {
+    const where = placed.get(id);
+    if (!where || draft.ids.includes(id)) continue;
+    draft.ids.splice(Math.min(where.index, draft.ids.length), 0, id);
+    draft.sectionOf.set(id, where.section);
+    bumpSection(draft, where.section, 1);
+    if (where.section) draft.zeroed.delete(where.section);
+    draft.cleared = false;
+  }
+}
+
+/** The section keys after the overlay: the engine's, plus any section a restored row brings back, in section order. */
+function overlaidSectionKeys(
+  spec: ViewSpec,
   base: WindowBody,
-  entries: readonly OverlayEntry[],
-  order: StateOrder,
-  mail?: Pick<MailSettings, 'doneAction' | 'laterAction'>,
-): OverlaidWindow {
-  const live = entries.filter(entry => applies(entry, base.state, order));
-  if (!live.length) return base;
-  const ids = [...base.ids];
-  const sectionOf = new Map<Id, string | null>();
-  base.ids.forEach((id, i) => sectionOf.set(id, sectionAt(base, i)));
-  const delta = new Map<string | null, number>();
-  const bump = (section: string | null, by: number) =>
-    delta.set(section, (delta.get(section) ?? 0) + by);
-  const zeroed = new Set<string>();
-  let cleared = false;
-  const thisSpec = specKey(spec);
-
-  const remove = (id: Id) => {
-    const i = ids.indexOf(id);
-    if (i < 0) return;
-    ids.splice(i, 1);
-    bump(sectionOf.get(id) ?? null, -1);
-  };
-
-  for (const entry of live) {
-    if (entry.kind === 'act') {
-      if (entry.selector && specKey(entry.selector.spec) === thisSpec) {
-        const section = entry.selector.section;
-        for (const id of [...ids]) if (!section || sectionOf.get(id) === section) remove(id);
-        if (section) zeroed.add(section);
-        else cleared = true;
-      }
-      if (entry.action && leavesView(spec, entry.action, mail))
-        for (const id of entry.targets) remove(id);
-    } else {
-      const placed = entry.originalPosition.get(key);
-      if (!placed) {
-        if (entry.action && entersView(spec, entry.action, mail))
-          for (const id of entry.targets) remove(id);
-        continue;
-      }
-      for (const id of entry.targets) {
-        const where = placed.get(id);
-        if (!where || ids.includes(id)) continue;
-        ids.splice(Math.min(where.index, ids.length), 0, id);
-        sectionOf.set(id, where.section);
-        bump(where.section, 1);
-        if (where.section) zeroed.delete(where.section);
-        cleared = false;
-      }
-    }
-  }
-
-  if (!base.sections.length) {
-    const added = [...delta.values()].reduce((n, d) => n + d, 0);
-    return {
-      ids,
-      total: cleared ? ids.length : Math.max(ids.length, base.total + added),
-      sections: [],
-    };
-  }
-
-  const known = new Map(base.sections.map(s => [s.key, s]));
+  known: ReadonlyMap<string, WindowSection>,
+  delta: ReadonlyMap<string | null, number>,
+): string[] {
   const order_ = SECTION_ORDER[spec.kind] ?? [];
   const keys = [...base.sections.map(s => s.key)];
   for (const section of delta.keys())
@@ -298,6 +314,13 @@ export function overlayWindow(
       const at = keys.findIndex(k => order_.indexOf(k) > rank);
       keys.splice(at < 0 || rank < 0 ? keys.length : at, 0, section);
     }
+  return keys;
+}
+
+function overlaySections(spec: ViewSpec, base: WindowBody, draft: WindowDraft): OverlaidWindow {
+  const { ids, delta, zeroed, cleared } = draft;
+  const known = new Map(base.sections.map(s => [s.key, s]));
+  const keys = overlaidSectionKeys(spec, base, known, delta);
   let shift = 0;
   const sections: WindowSection[] = [];
   for (const k of keys) {
@@ -315,6 +338,42 @@ export function overlayWindow(
     if (count > 0) sections.push({ ...s, start, count });
   }
   return { ids, total: Math.max(ids.length, base.total + shift), sections };
+}
+
+/** Lays the entries (oldest first) over one window's body. */
+export function overlayWindow(
+  key: string,
+  spec: ViewSpec,
+  base: WindowBody,
+  entries: readonly OverlayEntry[],
+  order: StateOrder,
+  mail?: ViewMail,
+): OverlaidWindow {
+  const live = entries.filter(entry => applies(entry, base.state, order));
+  if (!live.length) return base;
+  const draft: WindowDraft = {
+    ids: [...base.ids],
+    sectionOf: new Map(),
+    delta: new Map(),
+    zeroed: new Set(),
+    cleared: false,
+  };
+  base.ids.forEach((id, i) => draft.sectionOf.set(id, sectionAt(base, i)));
+  const thisSpec = specKey(spec);
+  for (const entry of live) {
+    if (entry.kind === 'act') applyActEntry(draft, entry, spec, thisSpec, mail);
+    else applyRestoreEntry(draft, entry, key, spec, mail);
+  }
+
+  if (!base.sections.length) {
+    const added = [...draft.delta.values()].reduce((n, d) => n + d, 0);
+    return {
+      ids: draft.ids,
+      total: draft.cleared ? draft.ids.length : Math.max(draft.ids.length, base.total + added),
+      sections: [],
+    };
+  }
+  return overlaySections(spec, base, draft);
 }
 
 /** Lays the entries over one row read at `rowState`; returns the row itself when nothing applies. */

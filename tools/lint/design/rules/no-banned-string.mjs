@@ -10,23 +10,47 @@ import { violation } from '../lib/context.mjs';
 import { parseValue, walkNodes } from '../lib/value.mjs';
 
 export const id = 'no-banned-string';
-export const description = 'Banned phrases (DESIGN 10 and 13) and exclamation marks in JSX text, JSX string props, copy-named object properties and CSS content.';
+export const description =
+  'Banned phrases (DESIGN 10 and 13) and exclamation marks in JSX text, JSX string props, copy-named object properties and CSS content.';
 export const appliesTo = ['css', 'ts'];
 
 export const BANNED_PHRASES = [
-  'Swipe through them', 'Hold to talk', 'Hold Space to talk', 'Tap to write', 'Hide all', 'Todo',
-  'Todos', 'Be here now', 'Sent with', 'Ask me anything', 'magic', 'AI-powered', 'AI powered',
-  'Copilot', 'Ready when you are', 'Waiting on you', 'No reply yet', 'All clear for now',
-  'Making room for your mail', 'Aplos needs a moment', "Couldn't summarize this email",
-  'Your day beside your mail', 'A comfortable place for your mail', 'Make light work of your inbox',
-  'A little less inbox', 'Aplos is ready when your day begins', 'Skypaper', 'Airmail', 'par avion',
+  'Swipe through them',
+  'Hold to talk',
+  'Hold Space to talk',
+  'Tap to write',
+  'Hide all',
+  'Todo',
+  'Todos',
+  'Be here now',
+  'Sent with',
+  'Ask me anything',
+  'magic',
+  'AI-powered',
+  'AI powered',
+  'Copilot',
+  'Ready when you are',
+  'Waiting on you',
+  'No reply yet',
+  'All clear for now',
+  'Making room for your mail',
+  'Aplos needs a moment',
+  "Couldn't summarize this email",
+  'Your day beside your mail',
+  'A comfortable place for your mail',
+  'Make light work of your inbox',
+  'A little less inbox',
+  'Aplos is ready when your day begins',
+  'Skypaper',
+  'Airmail',
+  'par avion',
 ];
 
 function escapeRegExp(text) {
   return text.replace(/[\\^$*+?.()|[\]{}]/g, '\\$&');
 }
 
-const PHRASE_PATTERNS = BANNED_PHRASES.map((phrase) => ({
+const PHRASE_PATTERNS = BANNED_PHRASES.map(phrase => ({
   phrase,
   pattern: new RegExp(
     `(?<![\\p{L}\\p{N}_])${escapeRegExp(phrase).replace(/ /g, '\\s+').replace(/'/g, "['\\u2019]")}(?![\\p{L}\\p{N}_])`,
@@ -40,12 +64,28 @@ const ALONE_LABELS = /^\s*(smart|beta)\s*$/i;
 // decides, so label, emptyLabel, confirm_label and aria-label all count while
 // context and labelledBy do not.
 const COPY_WORDS = new Set([
-  'label', 'title', 'description', 'placeholder', 'hint', 'tooltip', 'message', 'copy', 'text',
-  'subtitle', 'caption', 'heading', 'headline', 'summary', 'blurb', 'prompt',
+  'label',
+  'title',
+  'description',
+  'placeholder',
+  'hint',
+  'tooltip',
+  'message',
+  'copy',
+  'text',
+  'subtitle',
+  'caption',
+  'heading',
+  'headline',
+  'summary',
+  'blurb',
+  'prompt',
 ]);
 
 export function isCopyKey(key) {
-  const words = key.split(/[-_.]+/).flatMap((part) => part.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+/g) || []);
+  const words = key
+    .split(/[-_.]+/)
+    .flatMap(part => part.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+/g) || []);
   const last = words[words.length - 1];
   return Boolean(last) && COPY_WORDS.has(last.toLowerCase());
 }
@@ -54,36 +94,164 @@ export function isCopyKey(key) {
 const COPY_WRITES = new Set(['textContent', 'innerText', 'innerHTML', 'nodeValue', 'title', 'alt']);
 
 // Helpers whose arguments are copy, so an exclamation mark there fails too.
-const COPY_CALLS = /^(toast|notify|notice|announce|alert|confirm|prompt|group|titled|heading|say|speak|showToast|pushToast|addToast|setTitle|setMessage|setLabel|setStatus|success|error|warning|info)$/i;
+const COPY_CALLS =
+  /^(toast|notify|notice|announce|alert|confirm|prompt|group|titled|heading|say|speak|showToast|pushToast|addToast|setTitle|setMessage|setLabel|setStatus|success|error|warning|info)$/i;
 
 // Calls that take identifiers, keys, selectors or log text, never copy.
 const CODE_CALLS = new Set([
-  'require', 'import', 'Symbol', 'String', 'Number', 'Boolean', 'parseInt', 'parseFloat', 'log', 'warn',
-  'debug', 'trace', 'getItem', 'setItem', 'removeItem', 'querySelector', 'querySelectorAll',
-  'getElementById', 'closest', 'matches', 'addEventListener', 'removeEventListener', 'dispatchEvent',
-  'createElement', 'getAttribute', 'hasAttribute', 'removeAttribute', 'includes', 'startsWith',
-  'endsWith', 'indexOf', 'lastIndexOf', 'split', 'replace', 'replaceAll', 'test', 'match', 'matchAll',
-  'localeCompare', 'join', 'padStart', 'padEnd', 'charAt', 'has', 'get', 'set', 'add', 'delete',
-  'remove', 'toggle', 'contains', 'invoke', 'handle', 'on', 'off', 'once', 'emit', 'send', 'cx',
-  'clsx', 'classNames', 'cn', 'describe', 'it', 'expect', 'assert', 'equal', 'format', 'RegExp',
-  'Error', 'createContext', 'useState', 'useRef', 'lazy', 'memo', 'forwardRef', 'fetch', 'open',
-  'getComputedStyle', 'setProperty', 'getPropertyValue', 'animate', 'matchMedia', 'toLocaleString',
+  'require',
+  'import',
+  'Symbol',
+  'String',
+  'Number',
+  'Boolean',
+  'parseInt',
+  'parseFloat',
+  'log',
+  'warn',
+  'debug',
+  'trace',
+  'getItem',
+  'setItem',
+  'removeItem',
+  'querySelector',
+  'querySelectorAll',
+  'getElementById',
+  'closest',
+  'matches',
+  'addEventListener',
+  'removeEventListener',
+  'dispatchEvent',
+  'createElement',
+  'getAttribute',
+  'hasAttribute',
+  'removeAttribute',
+  'includes',
+  'startsWith',
+  'endsWith',
+  'indexOf',
+  'lastIndexOf',
+  'split',
+  'replace',
+  'replaceAll',
+  'test',
+  'match',
+  'matchAll',
+  'localeCompare',
+  'join',
+  'padStart',
+  'padEnd',
+  'charAt',
+  'has',
+  'get',
+  'set',
+  'add',
+  'delete',
+  'remove',
+  'toggle',
+  'contains',
+  'invoke',
+  'handle',
+  'on',
+  'off',
+  'once',
+  'emit',
+  'send',
+  'cx',
+  'clsx',
+  'classNames',
+  'cn',
+  'describe',
+  'it',
+  'expect',
+  'assert',
+  'equal',
+  'format',
+  'RegExp',
+  'Error',
+  'createContext',
+  'useState',
+  'useRef',
+  'lazy',
+  'memo',
+  'forwardRef',
+  'fetch',
+  'open',
+  'getComputedStyle',
+  'setProperty',
+  'getPropertyValue',
+  'animate',
+  'matchMedia',
+  'toLocaleString',
 ]);
 
 // JSX props that are always copy, even when the value is one lowercase word.
 const COPY_PROPS = new Set([
-  'aria-label', 'aria-description', 'aria-placeholder', 'aria-roledescription', 'aria-valuetext',
-  'title', 'placeholder', 'label', 'alt', 'description', 'hint', 'tooltip', 'message', 'text',
-  'caption', 'heading', 'subtitle',
+  'aria-label',
+  'aria-description',
+  'aria-placeholder',
+  'aria-roledescription',
+  'aria-valuetext',
+  'title',
+  'placeholder',
+  'label',
+  'alt',
+  'description',
+  'hint',
+  'tooltip',
+  'message',
+  'text',
+  'caption',
+  'heading',
+  'subtitle',
 ]);
 
 // JSX props that carry identifiers, URLs or styling, never copy.
 const CODE_PROPS = new Set([
-  'className', 'class', 'id', 'key', 'ref', 'style', 'htmlFor', 'for', 'type', 'name', 'role',
-  'href', 'src', 'srcSet', 'rel', 'target', 'to', 'variant', 'size', 'tone', 'kind', 'as', 'd',
-  'points', 'fill', 'stroke', 'viewBox', 'xmlns', 'transform', 'tabIndex', 'autoComplete',
-  'inputMode', 'pattern', 'accept', 'method', 'lang', 'dir', 'slot', 'value', 'icon', 'shortcut',
-  'command', 'commandId', 'testId',
+  'className',
+  'class',
+  'id',
+  'key',
+  'ref',
+  'style',
+  'htmlFor',
+  'for',
+  'type',
+  'name',
+  'role',
+  'href',
+  'src',
+  'srcSet',
+  'rel',
+  'target',
+  'to',
+  'variant',
+  'size',
+  'tone',
+  'kind',
+  'as',
+  'd',
+  'points',
+  'fill',
+  'stroke',
+  'viewBox',
+  'xmlns',
+  'transform',
+  'tabIndex',
+  'autoComplete',
+  'inputMode',
+  'pattern',
+  'accept',
+  'method',
+  'lang',
+  'dir',
+  'slot',
+  'value',
+  'icon',
+  'shortcut',
+  'command',
+  'commandId',
+  'testId',
 ]);
 
 function isCodeProp(name) {
@@ -116,8 +284,10 @@ function copyProblems(text) {
   for (const { phrase, pattern } of PHRASE_PATTERNS) {
     if (pattern.test(normalised)) problems.push(`banned phrase "${phrase}" (DESIGN 10)`);
   }
-  if (ALONE_LABELS.test(normalised)) problems.push(`"${normalised.trim()}" alone as a label (DESIGN 9 rule 8)`);
-  if (normalised.includes('!')) problems.push('an exclamation mark (DESIGN 10: no exclamation marks)');
+  if (ALONE_LABELS.test(normalised))
+    problems.push(`"${normalised.trim()}" alone as a label (DESIGN 9 rule 8)`);
+  if (normalised.includes('!'))
+    problems.push('an exclamation mark (DESIGN 10: no exclamation marks)');
   return problems;
 }
 
@@ -125,7 +295,8 @@ function jsxAttributeLeaves(sf, attribute) {
   const initializer = attribute.initializer;
   if (!initializer) return [];
   if (ts.isStringLiteral(initializer)) return [{ text: initializer.text, node: initializer }];
-  if (ts.isJsxExpression(initializer) && initializer.expression) return valueLeaves(initializer.expression, sf);
+  if (ts.isJsxExpression(initializer) && initializer.expression)
+    return valueLeaves(initializer.expression, sf);
   return [];
 }
 
@@ -133,9 +304,10 @@ function tsChecks(ctx, out) {
   const { sf } = ctx;
   const report = (node, problems, where) => {
     const at = positionOf(sf, node);
-    for (const problem of problems) out.push(violation(at.line, at.column, `${where} contains ${problem}.`));
+    for (const problem of problems)
+      out.push(violation(at.line, at.column, `${where} contains ${problem}.`));
   };
-  visit(sf, (node) => {
+  visit(sf, node => {
     if (ts.isJsxText(node)) {
       if (node.text.trim()) report(node, copyProblems(node.text), 'JSX text');
     } else if (ts.isJsxAttribute(node)) {
@@ -145,15 +317,25 @@ function tsChecks(ctx, out) {
         if (!COPY_PROPS.has(name) && looksLikeCode(leaf.text)) continue;
         report(node, copyProblems(leaf.text), `Prop ${name}`);
       }
-    } else if (ts.isJsxExpression(node) && node.expression && node.parent && (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))) {
-      for (const leaf of valueLeaves(node.expression, sf)) report(node, copyProblems(leaf.text), 'JSX child');
+    } else if (
+      ts.isJsxExpression(node) &&
+      node.expression &&
+      node.parent &&
+      (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))
+    ) {
+      for (const leaf of valueLeaves(node.expression, sf))
+        report(node, copyProblems(leaf.text), 'JSX child');
     } else if (ts.isPropertyAssignment(node)) {
       const key = nameOfProperty(node.name);
       if (!key || !isCopyKey(key)) return;
-      for (const leaf of valueLeaves(node.initializer, sf)) report(node, copyProblems(leaf.text), `Property ${key}`);
+      for (const leaf of valueLeaves(node.initializer, sf))
+        report(node, copyProblems(leaf.text), `Property ${key}`);
     } else if (ts.isCallExpression(node)) {
       callChecks(sf, node, report);
-    } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
       assignmentChecks(sf, node, report);
     }
   });
@@ -178,7 +360,9 @@ function callChecks(sf, call, report) {
     for (const leaf of valueLeaves(argument, sf)) {
       if (!helper && looksLikeCode(leaf.text)) continue;
       const sentence = /[A-Za-z].*\s.*!|[A-Za-z].*!\s/.test(leaf.text);
-      const problems = copyProblems(leaf.text).filter((problem) => helper || sentence || !problem.includes('exclamation'));
+      const problems = copyProblems(leaf.text).filter(
+        problem => helper || sentence || !problem.includes('exclamation'),
+      );
       report(leaf.node, problems, `Argument of ${name || 'a call'}()`);
     }
   }
@@ -188,13 +372,14 @@ function assignmentChecks(sf, assignment, report) {
   const left = assignment.left;
   const name = ts.isPropertyAccessExpression(left) ? left.name.text : '';
   if (!name || !(COPY_WRITES.has(name) || isCopyKey(name))) return;
-  for (const leaf of valueLeaves(assignment.right, sf)) report(leaf.node, copyProblems(leaf.text), `Assignment to ${name}`);
+  for (const leaf of valueLeaves(assignment.right, sf))
+    report(leaf.node, copyProblems(leaf.text), `Assignment to ${name}`);
 }
 
 function cssChecks(ctx, out) {
   for (const decl of collectDecls(ctx)) {
     if (decl.prop !== 'content') continue;
-    walkNodes(parseValue(decl.value), (node) => {
+    walkNodes(parseValue(decl.value), node => {
       if (node.type !== 'string') return true;
       for (const problem of copyProblems(node.text)) {
         out.push(violation(decl.line, decl.column, `CSS content contains ${problem}.`, decl.node));

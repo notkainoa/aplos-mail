@@ -37,7 +37,7 @@ export function globToRegExp(glob) {
 }
 
 export function matchesAny(relativePath, globs) {
-  return globs.some((glob) => globToRegExp(glob).test(relativePath));
+  return globs.some(glob => globToRegExp(glob).test(relativePath));
 }
 
 const SKIPPED_DIRS = new Set(['node_modules', '.git', 'dist', 'release']);

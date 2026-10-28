@@ -13,29 +13,59 @@
 import postcss from 'postcss';
 import ts from 'typescript';
 import {
-  foldExpression, isStringLike, nameOfProperty, positionOf, textOf, unwrap, valueLeaves, visit,
+  foldExpression,
+  isStringLike,
+  nameOfProperty,
+  positionOf,
+  textOf,
+  unwrap,
+  valueLeaves,
+  visit,
 } from './ast.mjs';
 import { isKnownProp, toKebab } from './props.mjs';
 import { DYNAMIC } from './value.mjs';
 
 const STYLE_SIGNAL_KEYS = new Set([
-  'color', 'background', 'backgroundColor', 'fontSize', 'fontWeight', 'padding', 'margin',
-  'display', 'position', 'transform', 'opacity', 'transition', 'cursor', 'pointerEvents',
-  'flexDirection', 'alignItems', 'justifyContent', 'overflow', 'zIndex', 'lineHeight',
-  'letterSpacing', 'borderRadius', 'boxShadow', 'border', 'borderColor', 'outline', 'gap',
-  'whiteSpace', 'textAlign', 'willChange', 'animation', 'paddingLeft', 'paddingRight',
-  'paddingTop', 'paddingBottom', 'marginLeft', 'marginRight', 'marginTop', 'marginBottom',
+  'color',
+  'background',
+  'backgroundColor',
+  'fontSize',
+  'fontWeight',
+  'padding',
+  'margin',
+  'display',
+  'position',
+  'transform',
+  'opacity',
+  'transition',
+  'cursor',
+  'pointerEvents',
+  'flexDirection',
+  'alignItems',
+  'justifyContent',
+  'overflow',
+  'zIndex',
+  'lineHeight',
+  'letterSpacing',
+  'borderRadius',
+  'boxShadow',
+  'border',
+  'borderColor',
+  'outline',
+  'gap',
+  'whiteSpace',
+  'textAlign',
+  'willChange',
+  'animation',
+  'paddingLeft',
+  'paddingRight',
+  'paddingTop',
+  'paddingBottom',
+  'marginLeft',
+  'marginRight',
+  'marginTop',
+  'marginBottom',
 ]);
-
-function ancestorsOf(node) {
-  const list = [];
-  let current = node.parent;
-  while (current) {
-    list.push(current);
-    current = current.parent;
-  }
-  return list;
-}
 
 function typeTextHasCssProperties(typeNode) {
   return Boolean(typeNode) && /CSSProperties/.test(typeNode.getText());
@@ -45,9 +75,12 @@ function identifiersOf(expression) {
   const node = unwrap(expression);
   if (!node) return [];
   if (ts.isIdentifier(node)) return [node.text];
-  if (ts.isConditionalExpression(node)) return [...identifiersOf(node.whenTrue), ...identifiersOf(node.whenFalse)];
-  if (ts.isBinaryExpression(node)) return [...identifiersOf(node.left), ...identifiersOf(node.right)];
-  if (ts.isArrayLiteralExpression(node)) return node.elements.flatMap((element) => identifiersOf(element));
+  if (ts.isConditionalExpression(node))
+    return [...identifiersOf(node.whenTrue), ...identifiersOf(node.whenFalse)];
+  if (ts.isBinaryExpression(node))
+    return [...identifiersOf(node.left), ...identifiersOf(node.right)];
+  if (ts.isArrayLiteralExpression(node))
+    return node.elements.flatMap(element => identifiersOf(element));
   return [];
 }
 
@@ -61,55 +94,86 @@ function styleReferencedNames(sf) {
   const names = new Set();
   styleNameCache.set(sf, names);
   const spreads = [];
-  visit(sf, (node) => {
-    if (ts.isJsxAttribute(node) && /style$/i.test(node.name.getText()) && node.initializer && ts.isJsxExpression(node.initializer) && node.initializer.expression) {
+  visit(sf, node => {
+    if (
+      ts.isJsxAttribute(node) &&
+      /style$/i.test(node.name.getText()) &&
+      node.initializer &&
+      ts.isJsxExpression(node.initializer) &&
+      node.initializer.expression
+    ) {
       for (const name of identifiersOf(node.initializer.expression)) names.add(name);
     } else if (ts.isCallExpression(node) && /Object\.assign$/.test(node.expression.getText())) {
       const first = node.arguments[0];
-      if (first && /style$/.test(first.getText())) node.arguments.slice(1).forEach((arg) => identifiersOf(arg).forEach((name) => names.add(name)));
+      if (first && /style$/.test(first.getText()))
+        node.arguments.slice(1).forEach(arg => identifiersOf(arg).forEach(name => names.add(name)));
     } else if (ts.isSpreadAssignment(node) && ts.isObjectLiteralExpression(node.parent)) {
       spreads.push(node);
     }
   });
   for (const spread of spreads) {
-    if (isStyleObject(spread.parent, false)) identifiersOf(spread.expression).forEach((name) => names.add(name));
+    if (isStyleObject(spread.parent, false))
+      identifiersOf(spread.expression).forEach(name => names.add(name));
   }
   return names;
 }
 
-function isStyleObject(node, followReferences = true) {
-  const passThrough = [
-    ts.isParenthesizedExpression, ts.isConditionalExpression, ts.isObjectLiteralExpression,
-    ts.isArrayLiteralExpression, ts.isSpreadAssignment, ts.isBinaryExpression,
-  ];
+const STYLE_PASS_THROUGH = [
+  ts.isParenthesizedExpression,
+  ts.isConditionalExpression,
+  ts.isObjectLiteralExpression,
+  ts.isArrayLiteralExpression,
+  ts.isSpreadAssignment,
+  ts.isBinaryExpression,
+];
+
+// Climbs out of the object literal through wrappers that do not change what it
+// is. Returns {style: true} when a wrapper already proves a style object, else
+// {current} with the first ancestor that is not a wrapper.
+function climbStyleWrappers(node) {
   let current = node.parent;
   while (current) {
-    if ((ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) && typeTextHasCssProperties(current.type)) return true;
-    if (ts.isAsExpression(current) || ts.isSatisfiesExpression(current)) {
-      current = current.parent;
-    } else if (ts.isPropertyAssignment(current)) {
+    const isCast = ts.isAsExpression(current) || ts.isSatisfiesExpression(current);
+    if (isCast && typeTextHasCssProperties(current.type)) return { style: true };
+    if (ts.isPropertyAssignment(current)) {
       const name = nameOfProperty(current.name);
-      if (name && /style/i.test(name)) return true;
-      current = current.parent;
-    } else if (passThrough.some((test) => test(current))) {
-      current = current.parent;
-    } else {
+      if (name && /style/i.test(name)) return { style: true };
+    } else if (!isCast && !STYLE_PASS_THROUGH.some(test => test(current))) {
       break;
     }
+    current = current.parent;
   }
-  if (current && ts.isJsxExpression(current) && current.parent && ts.isJsxAttribute(current.parent)) {
+  return { current };
+}
+
+// True or false when the destination settles the question; null when it does not.
+function styleDestination(node, current, followReferences) {
+  if (!current) return null;
+  if (ts.isJsxExpression(current) && current.parent && ts.isJsxAttribute(current.parent))
     return /style$/i.test(current.parent.name.getText());
-  }
-  if (current && ts.isVariableDeclaration(current)) {
+  if (ts.isVariableDeclaration(current)) {
     const name = current.name.getText();
     if (typeTextHasCssProperties(current.type) || /style/i.test(name)) return true;
-    if (followReferences && ts.isIdentifier(current.name) && styleReferencedNames(node.getSourceFile()).has(name)) return true;
+    if (
+      followReferences &&
+      ts.isIdentifier(current.name) &&
+      styleReferencedNames(node.getSourceFile()).has(name)
+    )
+      return true;
   }
-  if (current && ts.isCallExpression(current) && /Object\.assign$/.test(current.expression.getText())) {
+  if (ts.isCallExpression(current) && /Object\.assign$/.test(current.expression.getText())) {
     const first = current.arguments[0];
     if (first && /style$/.test(first.getText())) return true;
   }
-  const signals = node.properties.filter((p) => {
+  return null;
+}
+
+function isStyleObject(node, followReferences = true) {
+  const climbed = climbStyleWrappers(node);
+  if (climbed.style) return true;
+  const destination = styleDestination(node, climbed.current, followReferences);
+  if (destination !== null) return destination;
+  const signals = node.properties.filter(p => {
     const name = nameOfProperty(p.name);
     return name && STYLE_SIGNAL_KEYS.has(name);
   });
@@ -118,7 +182,7 @@ function isStyleObject(node, followReferences = true) {
 
 function cssDecls(ctx) {
   const decls = [];
-  ctx.root.walkDecls((decl) => {
+  ctx.root.walkDecls(decl => {
     const start = decl.source && decl.source.start;
     if (!start) return;
     decls.push(makeCssDecl(decl, start.line, start.column, 'css'));
@@ -170,7 +234,7 @@ function tryEmbeddedStylesheet(text, node, sf, decls) {
     return false;
   }
   const at = positionOf(sf, node);
-  root.walkDecls((decl) => {
+  root.walkDecls(decl => {
     const start = decl.source.start;
     const line = at.line + start.line - 1;
     const column = start.line === 1 ? at.column + start.column : start.column;
@@ -237,9 +301,15 @@ function objectDecls(node, sf, decls) {
 
 // SVG presentation attributes carry colour too: <path fill="red" />.
 const COLOR_ATTRIBUTES = new Map([
-  ['fill', 'fill'], ['stroke', 'stroke'], ['color', 'color'], ['stopColor', 'stop-color'],
-  ['stop-color', 'stop-color'], ['floodColor', 'flood-color'], ['flood-color', 'flood-color'],
-  ['lightingColor', 'lighting-color'], ['lighting-color', 'lighting-color'],
+  ['fill', 'fill'],
+  ['stroke', 'stroke'],
+  ['color', 'color'],
+  ['stopColor', 'stop-color'],
+  ['stop-color', 'stop-color'],
+  ['floodColor', 'flood-color'],
+  ['flood-color', 'flood-color'],
+  ['lightingColor', 'lighting-color'],
+  ['lighting-color', 'lighting-color'],
 ]);
 
 function attributeDecl(node, sf, decls) {
@@ -292,10 +362,11 @@ function tsDecls(ctx) {
   const { sf } = ctx;
   const decls = [];
   const embedded = new Set();
-  visit(sf, (node) => {
+  visit(sf, node => {
     if (ts.isObjectLiteralExpression(node)) objectDecls(node, sf, decls);
     else if (ts.isJsxAttribute(node)) attributeDecl(node, sf, decls);
-    else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) assignDecl(node, sf, decls);
+    else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+      assignDecl(node, sf, decls);
     else if (ts.isCallExpression(node)) setPropertyDecl(node, sf, decls);
     if (!isStringLike(node) || isIgnoredString(node)) return;
     const text = textOf(node, sf);
@@ -320,7 +391,7 @@ export function collectDecls(ctx) {
 export function forEachString(ctx, callback, { skipEmbedded = false } = {}) {
   collectDecls(ctx);
   const { sf } = ctx;
-  visit(sf, (node) => {
+  visit(sf, node => {
     if (isTopConcatenation(node)) {
       const folded = foldExpression(sf, node);
       if (folded && folded.complete && !isIgnoredString(node)) {
@@ -337,8 +408,13 @@ export function forEachString(ctx, callback, { skipEmbedded = false } = {}) {
 }
 
 function isTopConcatenation(node) {
-  if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.PlusToken) return false;
+  if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.PlusToken)
+    return false;
   let parent = node.parent;
   while (parent && ts.isParenthesizedExpression(parent)) parent = parent.parent;
-  return !(parent && ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.PlusToken);
+  return !(
+    parent &&
+    ts.isBinaryExpression(parent) &&
+    parent.operatorToken.kind === ts.SyntaxKind.PlusToken
+  );
 }

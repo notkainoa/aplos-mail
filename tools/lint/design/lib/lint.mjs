@@ -14,7 +14,14 @@ export function lintText({ path: file, text, rules = allRules, kind }) {
     if (resolved === 'css') void ctx.root;
     else void ctx.sf;
   } catch (error) {
-    return [{ rule: 'parse-error', line: error.line || 1, column: error.column || 1, message: `Could not parse: ${error.reason || error.message}` }];
+    return [
+      {
+        rule: 'parse-error',
+        line: error.line || 1,
+        column: error.column || 1,
+        message: `Could not parse: ${error.reason || error.message}`,
+      },
+    ];
   }
   const found = [];
   for (const rule of rules) {
@@ -23,7 +30,9 @@ export function lintText({ path: file, text, rules = allRules, kind }) {
       found.push({ rule: rule.id, line: item.line, column: item.column, message: item.message });
     }
   }
-  return found.sort((a, b) => a.line - b.line || a.column - b.column || a.rule.localeCompare(b.rule));
+  return found.sort(
+    (a, b) => a.line - b.line || a.column - b.column || a.rule.localeCompare(b.rule),
+  );
 }
 
 export function lintFile(file, rules) {

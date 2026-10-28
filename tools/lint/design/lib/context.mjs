@@ -40,7 +40,9 @@ export function createTsContext({ path: file = 'input.tsx', text, sourceFile }) 
     text,
     get sf() {
       if (!this._sf) {
-        this._sf = sourceFile || ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindOf(file));
+        this._sf =
+          sourceFile ||
+          ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindOf(file));
       }
       return this._sf;
     },

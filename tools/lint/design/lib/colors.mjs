@@ -21,5 +21,15 @@ export const NAMED_COLORS = new Set(
 );
 
 export const COLOR_FUNCTIONS = new Set([
-  'rgb', 'rgba', 'hsl', 'hsla', 'hwb', 'lab', 'lch', 'oklab', 'oklch', 'color', 'device-cmyk',
+  'rgb',
+  'rgba',
+  'hsl',
+  'hsla',
+  'hwb',
+  'lab',
+  'lch',
+  'oklab',
+  'oklch',
+  'color',
+  'device-cmyk',
 ]);

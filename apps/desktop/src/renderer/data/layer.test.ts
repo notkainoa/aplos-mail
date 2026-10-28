@@ -131,8 +131,9 @@ test('counts hide while any account in scope is in its first sync', async () => 
   };
   const done = (a: Account) => ({ ...a, baselineDoneAt: defaultNow });
   const fresh = (a: Account) => {
-    const { baselineDoneAt: _, ...rest } = a;
-    return rest as Account;
+    const rest = { ...a };
+    delete rest.baselineDoneAt;
+    return rest;
   };
   assert.equal(countsFor(undefined, [], undefined).hidden, true, 'hidden until counts answer');
   const all = countsFor(counts, [done(work!), done(personal!)], undefined);

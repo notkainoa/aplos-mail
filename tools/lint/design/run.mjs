@@ -34,7 +34,7 @@ function expand(inputs, cwd) {
   for (const input of inputs) {
     const full = path.resolve(cwd, input);
     if (!fs.existsSync(full)) throw new Error(`No such file or directory: ${input}`);
-    if (fs.statSync(full).isDirectory()) files.push(...walk(full).filter((file) => kindOfPath(file)));
+    if (fs.statSync(full).isDirectory()) files.push(...walk(full).filter(file => kindOfPath(file)));
     else files.push(full);
   }
   return files;
@@ -43,8 +43,8 @@ function expand(inputs, cwd) {
 export function selectFiles({ inputs, cwd = process.cwd(), noIgnore = false }) {
   const files = inputs.length > 0 ? expand(inputs, cwd) : defaultFiles();
   return files
-    .filter((file) => kindOfPath(file))
-    .filter((file) => noIgnore || !matchesAny(toRepoRelative(file), exclude))
+    .filter(file => kindOfPath(file))
+    .filter(file => noIgnore || !matchesAny(toRepoRelative(file), exclude))
     .sort();
 }
 
@@ -64,7 +64,10 @@ export function parseArgs(argv) {
   return options;
 }
 
-export function run(argv, { cwd = process.cwd(), out = (line) => process.stdout.write(`${line}\n`) } = {}) {
+export function run(
+  argv,
+  { cwd = process.cwd(), out = line => process.stdout.write(`${line}\n`) } = {},
+) {
   let options;
   try {
     options = parseArgs(argv);
@@ -72,9 +75,9 @@ export function run(argv, { cwd = process.cwd(), out = (line) => process.stdout.
     out(error.message);
     return 2;
   }
-  const unknown = options.rules.filter((id) => !id || !ruleById(id));
+  const unknown = options.rules.filter(id => !id || !ruleById(id));
   if (unknown.length > 0) {
-    out(`Unknown rule: ${unknown.join(', ')}. Known rules: ${allRules.map((r) => r.id).join(', ')}`);
+    out(`Unknown rule: ${unknown.join(', ')}. Known rules: ${allRules.map(r => r.id).join(', ')}`);
     return 2;
   }
   const rules = options.rules.length > 0 ? options.rules.map(ruleById) : allRules;
@@ -95,12 +98,16 @@ export function run(argv, { cwd = process.cwd(), out = (line) => process.stdout.
     out(JSON.stringify(results, null, 2));
   } else {
     for (const r of results) out(`${r.file}:${r.line}:${r.column} ${r.rule} ${r.message}`);
-    if (results.length > 0) out(`\n${results.length} design lint violation${results.length === 1 ? '' : 's'} in ${new Set(results.map((r) => r.file)).size} file(s).`);
+    if (results.length > 0)
+      out(
+        `\n${results.length} design lint violation${results.length === 1 ? '' : 's'} in ${new Set(results.map(r => r.file)).size} file(s).`,
+      );
   }
   return results.length > 0 ? 1 : 0;
 }
 
-const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href;
+const invokedDirectly =
+  process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href;
 if (invokedDirectly) {
   process.exitCode = run(process.argv.slice(2));
 }

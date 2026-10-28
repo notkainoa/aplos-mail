@@ -8,13 +8,27 @@ import { violation } from '../lib/context.mjs';
 import { stripVendor } from '../lib/props.mjs';
 
 export const id = 'hover-no-layout';
-export const description = 'A :hover rule may set only colour and fill properties (plus opacity, visibility, cursor, --hover-* and --press-*); a <Kbd> is never rendered on hover state.';
+export const description =
+  'A :hover rule may set only colour and fill properties (plus opacity, visibility, cursor, --hover-* and --press-*); a <Kbd> is never rendered on hover state.';
 export const appliesTo = ['css', 'ts'];
 
 const HOVER_ALLOWED = new Set([
-  'color', 'background', 'background-color', 'border-color', 'border-top-color',
-  'border-right-color', 'border-bottom-color', 'border-left-color', 'outline-color',
-  'fill', 'stroke', 'text-decoration-color', 'box-shadow', 'opacity', 'visibility', 'cursor',
+  'color',
+  'background',
+  'background-color',
+  'border-color',
+  'border-top-color',
+  'border-right-color',
+  'border-bottom-color',
+  'border-left-color',
+  'outline-color',
+  'fill',
+  'stroke',
+  'text-decoration-color',
+  'box-shadow',
+  'opacity',
+  'visibility',
+  'cursor',
 ]);
 
 function hoverAllowed(prop) {
@@ -26,23 +40,36 @@ function cssChecks(ctx, out) {
   for (const decl of collectDecls(ctx)) {
     if (!decl.selector || !/:hover/i.test(decl.selector)) continue;
     if (hoverAllowed(decl.prop)) continue;
-    out.push(violation(decl.line, decl.column, `${decl.prop} inside a :hover rule can move or reshape things. Hover may change colour and fill only (DESIGN 5 rule 17).`, decl.node));
+    out.push(
+      violation(
+        decl.line,
+        decl.column,
+        `${decl.prop} inside a :hover rule can move or reshape things. Hover may change colour and fill only (DESIGN 5 rule 17).`,
+        decl.node,
+      ),
+    );
   }
 }
 
 const HOVER_NAME = /hover|mouse-?over|pointer-?over/i;
-const HOVER_HANDLERS = /^on(MouseEnter|MouseOver|PointerEnter|PointerOver|MouseLeave|PointerLeave)$/;
+const HOVER_HANDLERS =
+  /^on(MouseEnter|MouseOver|PointerEnter|PointerOver|MouseLeave|PointerLeave)$/;
 const KBD_TAG = /^(kbd|keycap|keyhint)$/i;
 const KBD_CLASS = /(^|[\s_-])(kbd|keycap|key-?hint)([\s_-]|$)/i;
 
 function isKeycap(sf, node) {
   if (KBD_TAG.test(lastSegment(jsxTagName(node)))) return true;
-  return node.attributes.properties.some((attribute) => {
-    if (!ts.isJsxAttribute(attribute) || !/^class(Name)?$/.test(attribute.name.getText())) return false;
+  return node.attributes.properties.some(attribute => {
+    if (!ts.isJsxAttribute(attribute) || !/^class(Name)?$/.test(attribute.name.getText()))
+      return false;
     const initializer = attribute.initializer;
     if (!initializer) return false;
-    const leaves = ts.isStringLiteral(initializer) ? [{ text: initializer.text }] : initializer.expression ? valueLeaves(initializer.expression, sf) : [];
-    return leaves.some((leaf) => KBD_CLASS.test(leaf.text));
+    const leaves = ts.isStringLiteral(initializer)
+      ? [{ text: initializer.text }]
+      : initializer.expression
+        ? valueLeaves(initializer.expression, sf)
+        : [];
+    return leaves.some(leaf => KBD_CLASS.test(leaf.text));
   });
 }
 
@@ -50,10 +77,14 @@ function isKeycap(sf, node) {
 // setX(...) calls inside onMouseEnter-style attributes.
 function hoverStateNames(sf) {
   const names = new Set();
-  visit(sf, (node) => {
+  visit(sf, node => {
     if (!ts.isJsxAttribute(node) || !HOVER_HANDLERS.test(node.name.getText())) return;
-    visit(node, (inner) => {
-      if (ts.isCallExpression(inner) && ts.isIdentifier(inner.expression) && /^set[A-Z]/.test(inner.expression.text)) {
+    visit(node, inner => {
+      if (
+        ts.isCallExpression(inner) &&
+        ts.isIdentifier(inner.expression) &&
+        /^set[A-Z]/.test(inner.expression.text)
+      ) {
         const base = inner.expression.text.slice(3);
         names.add(base.charAt(0).toLowerCase() + base.slice(1));
       }
@@ -64,8 +95,9 @@ function hoverStateNames(sf) {
 
 function mentionsHover(expression, stateNames) {
   let mentioned = false;
-  visit(expression, (node) => {
-    if (ts.isIdentifier(node) && (HOVER_NAME.test(node.text) || stateNames.has(node.text))) mentioned = true;
+  visit(expression, node => {
+    if (ts.isIdentifier(node) && (HOVER_NAME.test(node.text) || stateNames.has(node.text)))
+      mentioned = true;
   });
   return mentioned;
 }
@@ -74,7 +106,11 @@ function conditionalAncestorMentionsHover(node, stateNames) {
   let child = node;
   let current = node.parent;
   while (current && !ts.isStatement(current)) {
-    if (ts.isBinaryExpression(current) && current.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken && current.right === child) {
+    if (
+      ts.isBinaryExpression(current) &&
+      current.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+      current.right === child
+    ) {
       if (mentionsHover(current.left, stateNames)) return true;
     }
     if (ts.isConditionalExpression(current) && current.condition !== child) {
@@ -89,12 +125,18 @@ function conditionalAncestorMentionsHover(node, stateNames) {
 function kbdChecks(ctx, out) {
   const { sf } = ctx;
   const stateNames = hoverStateNames(sf);
-  visit(sf, (node) => {
+  visit(sf, node => {
     if (!ts.isJsxSelfClosingElement(node) && !ts.isJsxOpeningElement(node)) return;
     if (!isKeycap(sf, node)) return;
     if (!conditionalAncestorMentionsHover(node, stateNames)) return;
     const at = positionOf(sf, node);
-    out.push(violation(at.line, at.column, 'A keycap rendered on hover moves the row. Key hints live in tooltips, in the held-command badges and in the "Show all key hints" mode (DESIGN 5 rule 17).'));
+    out.push(
+      violation(
+        at.line,
+        at.column,
+        'A keycap rendered on hover moves the row. Key hints live in tooltips, in the held-command badges and in the "Show all key hints" mode (DESIGN 5 rule 17).',
+      ),
+    );
   });
 }
 

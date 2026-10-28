@@ -33,9 +33,9 @@ function toEslintRule(core) {
   };
 }
 
-const tsRules = coreRules.filter((rule) => rule.appliesTo.includes('ts'));
+const tsRules = coreRules.filter(rule => rule.appliesTo.includes('ts'));
 
-export const rules = Object.fromEntries(tsRules.map((rule) => [rule.id, toEslintRule(rule)]));
+export const rules = Object.fromEntries(tsRules.map(rule => [rule.id, toEslintRule(rule)]));
 
 const plugin = {
   meta: { name: 'eslint-plugin-aplos-design' },
@@ -45,7 +45,7 @@ const plugin = {
 
 plugin.configs.all = {
   plugins: { 'aplos-design': plugin },
-  rules: Object.fromEntries(tsRules.map((rule) => [`aplos-design/${rule.id}`, 'error'])),
+  rules: Object.fromEntries(tsRules.map(rule => [`aplos-design/${rule.id}`, 'error'])),
 };
 
 export default plugin;

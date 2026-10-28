@@ -121,17 +121,19 @@ function mash(seed: number, presses: number) {
   };
   let cursorHeldChecks = 0;
 
-  for (let press = 0; press < presses; press++) {
-    fake.advance(Math.floor(random() * 401));
-    const roll = random();
+  const randomRow = () => rows[Math.floor(random() * rows.length)] ?? '';
+
+  // What happens to the window around a press: hides, theme switches, new mail, the pointer.
+  const disturb = (press: number) => {
     // What the screen shows under a resting pointer before this press's events.
     const restingBefore: string[] | null =
       pointerInside && !fake.hidden && hold.isHeld ? [...rows] : null;
+    const roll = random();
     if (roll < 0.04) {
       fake.setHidden(!fake.hidden);
       // A resting pointer re-asserts itself on its next pointermove after a hide, naming the row under it.
       if (!fake.hidden && pointerInside) {
-        hovered = rows[Math.floor(random() * rows.length)] ?? '';
+        hovered = randomRow();
         hold.pointerEnter(hovered ? [hovered] : []);
       }
     } else if (roll < 0.06) freeze.switchTheme(() => {});
@@ -153,17 +155,52 @@ function mash(seed: number, presses: number) {
     } else if (roll < 0.16) {
       if (pointerInside) hold.pointerLeave();
       else {
-        hovered = rows[Math.floor(random() * rows.length)] ?? '';
+        hovered = randomRow();
         hold.pointerEnter(hovered ? [hovered] : []);
       }
       pointerInside = !pointerInside;
     } else if (roll < 0.2 && pointerInside && !fake.hidden) {
       // A pointermove over another row.
-      hovered = rows[Math.floor(random() * rows.length)] ?? '';
+      hovered = randomRow();
       hold.pointerEnter(hovered ? [hovered] : []);
     }
-    if (fake.hidden) continue;
+  };
 
+  // Triage the focused row (E or L).
+  const commitFocused = (key: 'e' | 'l') => {
+    const at = focusAt();
+    const id = rows[at];
+    if (id === undefined) return;
+    const element = elements.get(id) ?? null;
+    const after = rows.filter(r => r !== id);
+    // The hold starts inside commit(); the screen it keeps is the one before this key.
+    if (!anchored) anchored = new Map(rows.map((r, i) => [r, i * ROW]));
+    const delta = change(after);
+    removed.push({ id, index: at });
+    elements.delete(id);
+    focus = rows[Math.min(at, rows.length - 1)] ?? '';
+    triage.commit({
+      kind: key === 'e' ? 'done' : 'later',
+      surface: random() < 0.5 ? 'letter' : 'row',
+      element: element?.el ?? null,
+      holdIds: rows.slice(Math.max(0, at - 2), at + 3),
+      rows: delta,
+      decorate: clone => ({ chip: clone.querySelector('[data-chip]') as HTMLElement }),
+      focus: focus === '' ? undefined : focus,
+    });
+  };
+
+  // Undo the last triage (Z).
+  const undoLast = () => {
+    const last = removed.pop();
+    if (!last) return;
+    const index = Math.min(last.index, rows.length);
+    triage.relayout(change([...rows.slice(0, index), mount(last.id, index), ...rows.slice(index)]));
+    focus = last.id;
+    triage.focus(rows, focus);
+  };
+
+  const pressKey = () => {
     const key = KEYS[Math.floor(random() * KEYS.length)] ?? 'j';
     const repeat = fake.now - lastKeyAt < 35;
     lastKeyAt = fake.now;
@@ -171,38 +208,11 @@ function mash(seed: number, presses: number) {
       const at = Math.max(0, Math.min(rows.length - 1, focusAt() + (DOWN.has(key) ? 1 : -1)));
       focus = rows[at] ?? focus;
       triage.focus(rows, focus, { cause: repeat ? 'repeat' : 'key' });
-    } else if (key === 'e' || key === 'l') {
-      const at = focusAt();
-      const id = rows[at];
-      if (id === undefined) continue;
-      const element = elements.get(id) ?? null;
-      const after = rows.filter(r => r !== id);
-      // The hold starts inside commit(); the screen it keeps is the one before this key.
-      if (!anchored) anchored = new Map(rows.map((r, i) => [r, i * ROW]));
-      const delta = change(after);
-      removed.push({ id, index: at });
-      elements.delete(id);
-      focus = rows[Math.min(at, rows.length - 1)] ?? '';
-      triage.commit({
-        kind: key === 'e' ? 'done' : 'later',
-        surface: random() < 0.5 ? 'letter' : 'row',
-        element: element?.el ?? null,
-        holdIds: rows.slice(Math.max(0, at - 2), at + 3),
-        rows: delta,
-        decorate: clone => ({ chip: clone.querySelector('[data-chip]') as HTMLElement }),
-        focus: focus === '' ? undefined : focus,
-      });
-    } else {
-      const last = removed.pop();
-      if (!last) continue;
-      const index = Math.min(last.index, rows.length);
-      triage.relayout(
-        change([...rows.slice(0, index), mount(last.id, index), ...rows.slice(index)]),
-      );
-      focus = last.id;
-      triage.focus(rows, focus);
-    }
+    } else if (key === 'e' || key === 'l') commitFocused(key);
+    else undoLast();
+  };
 
+  const checkAfterPress = (press: number) => {
     maxActive = Math.max(maxActive, ghosts.active.length);
     assert.ok(ghosts.active.length <= MAX_GHOSTS, `seed ${seed}: too many ghosts`);
     assert.equal(host.children.length, ghosts.active.length, `seed ${seed}: stray clone`);
@@ -223,6 +233,14 @@ function mash(seed: number, presses: number) {
         heldChecks += 1;
       });
     }
+  };
+
+  for (let press = 0; press < presses; press++) {
+    fake.advance(Math.floor(random() * 401));
+    disturb(press);
+    if (fake.hidden) continue;
+    pressKey();
+    checkAfterPress(press);
   }
 
   if (fake.hidden) fake.setHidden(false);
