@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "exports": {
     ".": "./src/index.ts",
+    "./log/*": "./src/log/*.ts",
     "./legacy/*": "./src/legacy/*.ts"
   },
   "scripts": {
