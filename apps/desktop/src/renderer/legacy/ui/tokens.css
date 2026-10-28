@@ -11,7 +11,7 @@
  */
 
 :root {
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
   --sidebar-width: 248px;
   --ask-width: 360px;
   --toolbar-height: 48px;
@@ -44,13 +44,13 @@
   --leading-xl: 24px;
   --leading-2xl: 28px;
   /* Optical tracking in the manner of SF Pro: tiny labels open up slightly, larger text tightens. */
-  --tracking-xs: .06px;
+  --tracking-xs: 0.06px;
   --tracking-sm: 0px;
-  --tracking-md: -.06px;
-  --tracking-base: -.12px;
-  --tracking-lg: -.24px;
-  --tracking-xl: -.34px;
-  --tracking-2xl: -.42px;
+  --tracking-md: -0.06px;
+  --tracking-base: -0.12px;
+  --tracking-lg: -0.24px;
+  --tracking-xl: -0.34px;
+  --tracking-2xl: -0.42px;
 
   /* Radii and control heights */
   --radius-xs: 5px;
@@ -70,13 +70,13 @@
   --dur-base: 160ms;
   --dur-slow: 200ms;
   --dur-dock: 200ms;
-  --ease: cubic-bezier(.2, .8, .2, 1);
-  --ease-out-strong: cubic-bezier(.16, 1, .3, 1);
-  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
-  --ease-in: cubic-bezier(.5, 0, .75, 0);
-  --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-out-strong: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-in: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
   /* For something released mid-motion: it keeps its speed instead of easing in from rest. */
-  --ease-release: cubic-bezier(.3, .7, .4, 1);
+  --ease-release: cubic-bezier(0.3, 0.7, 0.4, 1);
 
   /* Layers */
   --z-sticky: 5;
@@ -112,30 +112,23 @@
   --green: #0a9c0a;
   --red: #d33a2c;
   --amber: #ad8301;
-  --scrim: rgba(229, 228, 225, .8);
+  --scrim: rgba(229, 228, 225, 0.8);
   --toolbar-fill: color-mix(in srgb, var(--canvas) 72%, transparent);
 
   /* Glass: a bright top rim and a faint lower edge on the inside, a soft lift outside. */
   --glass:
-    0 0 0 .5px rgba(0, 0, 0, .07),
-    0 1px 1.5px -.5px rgba(0, 0, 0, .09),
-    0 3px 6px -2px rgba(0, 0, 0, .07),
-    inset 0 -1px 2px -1px rgba(0, 0, 0, .08),
-    inset 0 2px 1px -1.5px #fff,
-    inset 0 5px 6px -5px rgba(255, 255, 255, .9);
+    0 0 0 0.5px rgba(0, 0, 0, 0.07), 0 1px 1.5px -0.5px rgba(0, 0, 0, 0.09),
+    0 3px 6px -2px rgba(0, 0, 0, 0.07), inset 0 -1px 2px -1px rgba(0, 0, 0, 0.08),
+    inset 0 2px 1px -1.5px #fff, inset 0 5px 6px -5px rgba(255, 255, 255, 0.9);
   --glass-raised:
-    0 0 0 .5px rgba(0, 0, 0, .06),
-    0 6px 16px -4px rgba(0, 0, 0, .14),
-    0 18px 48px -12px rgba(0, 0, 0, .18),
-    inset 0 2px 1px -1.5px #fff,
-    inset 0 -1px 2px -1px rgba(0, 0, 0, .06);
+    0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 6px 16px -4px rgba(0, 0, 0, 0.14),
+    0 18px 48px -12px rgba(0, 0, 0, 0.18), inset 0 2px 1px -1.5px #fff,
+    inset 0 -1px 2px -1px rgba(0, 0, 0, 0.06);
   --glass-primary:
-    0 2px 6px rgba(0, 136, 255, .24),
-    0 0 0 .5px rgba(0, 60, 140, .25),
-    inset 0 2px 1px -1.5px #a6d6ff,
-    inset 0 6px 6px -5px rgba(166, 214, 255, .75),
-    inset 0 -1px 2px -1px rgba(0, 0, 0, .16);
-  --card-edge: 0 0 0 .5px rgba(0, 0, 0, .06), 0 1px 2px rgba(0, 0, 0, .05);
+    0 2px 6px rgba(0, 136, 255, 0.24), 0 0 0 0.5px rgba(0, 60, 140, 0.25),
+    inset 0 2px 1px -1.5px #a6d6ff, inset 0 6px 6px -5px rgba(166, 214, 255, 0.75),
+    inset 0 -1px 2px -1px rgba(0, 0, 0, 0.16);
+  --card-edge: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.05);
   --row-hover: color-mix(in srgb, var(--blue) 7%, var(--card));
   --row-active: color-mix(in srgb, var(--blue) 14%, var(--card));
 
@@ -156,7 +149,7 @@
   --surface-line: color-mix(in srgb, var(--ink) 9%, transparent);
 }
 
-:root[data-theme=dark] {
+:root[data-theme='dark'] {
   color-scheme: dark;
   --canvas: #000000;
   --card: #181716;
@@ -180,28 +173,24 @@
   --green: #4fcf4f;
   --red: #ff6b5e;
   --amber: #dfb431;
-  --scrim: rgba(0, 0, 0, .74);
+  --scrim: rgba(0, 0, 0, 0.74);
   --toolbar-fill: color-mix(in srgb, var(--canvas) 70%, transparent);
 
   --glass:
-    0 0 0 .5px rgba(255, 255, 255, .07),
-    0 2px 6px -1px rgba(0, 0, 0, .5),
-    inset 0 1px .5px -.5px rgba(255, 255, 255, .3),
-    inset 0 5px 6px -5px rgba(255, 255, 255, .1),
-    inset -1px -2px 1px -2px rgba(255, 255, 255, .07);
+    0 0 0 0.5px rgba(255, 255, 255, 0.07), 0 2px 6px -1px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0.5px -0.5px rgba(255, 255, 255, 0.3),
+    inset 0 5px 6px -5px rgba(255, 255, 255, 0.1),
+    inset -1px -2px 1px -2px rgba(255, 255, 255, 0.07);
   --glass-raised:
-    0 0 0 .5px rgba(255, 255, 255, .09),
-    0 10px 30px -6px rgba(0, 0, 0, .7),
-    0 24px 64px -12px rgba(0, 0, 0, .6),
-    inset 0 1px .5px -.5px rgba(255, 255, 255, .26),
-    inset 0 5px 8px -6px rgba(255, 255, 255, .08);
+    0 0 0 0.5px rgba(255, 255, 255, 0.09), 0 10px 30px -6px rgba(0, 0, 0, 0.7),
+    0 24px 64px -12px rgba(0, 0, 0, 0.6), inset 0 1px 0.5px -0.5px rgba(255, 255, 255, 0.26),
+    inset 0 5px 8px -6px rgba(255, 255, 255, 0.08);
   --glass-primary:
-    0 2px 10px rgba(0, 110, 230, .25),
-    0 0 0 .5px rgba(120, 190, 255, .25),
-    inset 0 1px .5px -.5px rgba(190, 225, 255, .75),
-    inset 0 6px 7px -5px rgba(150, 205, 255, .3),
-    inset 0 -1px 2px -1px rgba(0, 0, 0, .3);
-  --card-edge: 0 0 0 .5px rgba(255, 255, 255, .06), inset 0 1px .5px -.5px rgba(255, 255, 255, .12);
+    0 2px 10px rgba(0, 110, 230, 0.25), 0 0 0 0.5px rgba(120, 190, 255, 0.25),
+    inset 0 1px 0.5px -0.5px rgba(190, 225, 255, 0.75),
+    inset 0 6px 7px -5px rgba(150, 205, 255, 0.3), inset 0 -1px 2px -1px rgba(0, 0, 0, 0.3);
+  --card-edge:
+    0 0 0 0.5px rgba(255, 255, 255, 0.06), inset 0 1px 0.5px -0.5px rgba(255, 255, 255, 0.12);
 
   /* Floating surfaces sit a step lighter than cards so they separate from the page in the dark. */
   --surface: color-mix(in srgb, var(--raised) 86%, transparent);
@@ -210,8 +199,13 @@
 
 /* ---------- Base ---------- */
 
-* { box-sizing: border-box; }
-html, body { height: 100%; }
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
 body {
   margin: 0;
   font: 14px/20px var(--font);
@@ -223,21 +217,42 @@ body {
   font-synthesis: none;
   user-select: none;
 }
-body:has(.app-shell.desktop.mac) { background: transparent; }
-button, input, textarea, select { font: inherit; color: inherit; }
+body:has(.app-shell.desktop.mac) {
+  background: transparent;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
 button {
   border: 0;
   background: none;
   cursor: default;
   padding: 0;
-  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast), transform var(--dur-fast) var(--ease);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    opacity var(--dur-fast),
+    transform var(--dur-fast) var(--ease);
 }
-button:disabled { opacity: .4; }
-button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [contenteditable]:focus-visible {
+button:disabled {
+  opacity: 0.4;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[contenteditable]:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--blue) 70%, transparent);
   outline-offset: 2px;
 }
-input, textarea, select {
+input,
+textarea,
+select {
   background: var(--raised);
   border: 1px solid transparent;
   border-radius: var(--radius-control);
@@ -245,17 +260,68 @@ input, textarea, select {
   min-width: 0;
   user-select: text;
 }
-input::placeholder, textarea::placeholder, [data-placeholder]:empty::before { color: var(--faint); }
-select { max-width: 260px; appearance: none; padding-right: 26px; background-image: linear-gradient(45deg, transparent 50%, var(--dim) 50%), linear-gradient(135deg, var(--dim) 50%, transparent 50%); background-position: calc(100% - 14px) 52%, calc(100% - 10px) 52%; background-size: 4px 4px; background-repeat: no-repeat; }
-textarea { resize: vertical; }
-input[type=checkbox] { accent-color: var(--blue); width: 15px; height: 15px; margin: 0; flex: none; }
-:is(svg, .sym) { flex-shrink: 0; stroke-width: 1.7; }
-h1, h2, h3, p { margin: 0; }
-h1 { font-size: var(--text-xl); line-height: var(--leading-xl); font-weight: 500; letter-spacing: var(--tracking-xl); }
-h2 { font-size: var(--text-base); line-height: var(--leading-base); font-weight: 500; }
-h3 { font-size: 14px; font-weight: 500; }
-a { color: var(--blue); }
-hr { border: 0; height: 1px; background: var(--surface-line); margin: 4px 6px; }
+input::placeholder,
+textarea::placeholder,
+[data-placeholder]:empty::before {
+  color: var(--faint);
+}
+select {
+  max-width: 260px;
+  appearance: none;
+  padding-right: 26px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--dim) 50%),
+    linear-gradient(135deg, var(--dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 52%,
+    calc(100% - 10px) 52%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+textarea {
+  resize: vertical;
+}
+input[type='checkbox'] {
+  accent-color: var(--blue);
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: none;
+}
+:is(svg, .sym) {
+  flex-shrink: 0;
+  stroke-width: 1.7;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1 {
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: 500;
+  letter-spacing: var(--tracking-xl);
+}
+h2 {
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  font-weight: 500;
+}
+h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+a {
+  color: var(--blue);
+}
+hr {
+  border: 0;
+  height: 1px;
+  background: var(--surface-line);
+  margin: 4px 6px;
+}
 kbd {
   display: inline-flex;
   align-items: center;
@@ -270,33 +336,131 @@ kbd {
   background: var(--hover);
   white-space: nowrap;
 }
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ink) 16%, transparent); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 
-.muted { color: var(--dim); }
-.small { font-size: var(--text-sm); line-height: var(--leading-sm); letter-spacing: var(--tracking-sm); }
-.accent { color: var(--blue) !important; }
-.danger { color: var(--red) !important; }
-.eyebrow { font-size: var(--text-sm); letter-spacing: var(--tracking-sm); color: var(--dim); font-weight: 500; }
-.actions, .title-with-icon { display: flex; align-items: center; gap: 6px; }
-.title-with-icon { gap: 10px; }
-.spin { animation: spin 1.2s linear infinite; }
-.pop { animation: pop 320ms var(--ease-spring); }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes pulse { 50% { opacity: .3; } }
-@keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.985); } }
-@keyframes fade { from { opacity: 0; } }
-@keyframes fade-out { to { opacity: 0; } }
-@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.28); } 100% { transform: scale(1); } }
-@keyframes scale-in { from { opacity: 0; transform: scale(.96); } }
-@keyframes scale-out { to { opacity: 0; transform: scale(.97); } }
-@keyframes slide-down { from { opacity: 0; transform: translateY(-6px); } }
-@keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+.muted {
+  color: var(--dim);
+}
+.small {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  letter-spacing: var(--tracking-sm);
+}
+.accent {
+  color: var(--blue) !important;
+}
+.danger {
+  color: var(--red) !important;
+}
+.eyebrow {
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-sm);
+  color: var(--dim);
+  font-weight: 500;
+}
+.actions,
+.title-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.title-with-icon {
+  gap: 10px;
+}
+.spin {
+  animation: spin 1.2s linear infinite;
+}
+.pop {
+  animation: pop 320ms var(--ease-spring);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.28);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes scale-out {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
-  .spin { animation-duration: 1.2s !important; animation-iteration-count: infinite !important; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  .spin {
+    animation-duration: 1.2s !important;
+    animation-iteration-count: infinite !important;
+  }
 }
 
 /* ---------- System symbols ---------- */
