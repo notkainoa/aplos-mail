@@ -1,0 +1,395 @@
+/* Generated from tokens.json by scripts/design/build-tokens.mjs. Do not edit.
+   Paper design tokens (plans/DESIGN.md section 4). Hooks: :root is light,
+   :root[data-theme="dark"] is night, Increase Contrast is prefers-contrast: more
+   or :root[data-contrast="more"], reduced motion is prefers-reduced-motion: reduce
+   or :root[data-motion="reduced"]. */
+
+:root {
+  color-scheme: light;
+  --shell: #f5f5f6;
+  --canvas: #ffffff;
+  --paper: #ffffff;
+  --raised: #f6f6f7;
+  --sunken: #efeff1;
+  --ink: #1d1e21;
+  --ink-2: #46484d;
+  --dim: #63666c;
+  --faint: #8f9298;
+  --line: color-mix(in srgb, var(--ink) 9%, transparent);
+  --line-strong: color-mix(in srgb, var(--ink) 14%, transparent);
+  --control-edge: color-mix(in srgb, var(--ink) 48%, transparent);
+  --accent: #0b5394;
+  --accent-ink: #ffffff;
+  --accent-wash: color-mix(in srgb, var(--accent) 8%, transparent);
+  --hill: #2f6f2a;
+  --dusk: #3e5878;
+  --stamp: #c4302b;
+  --stamp-ink: #a3221e;
+  --stamp-tint: color-mix(in srgb, var(--stamp) 8%, transparent);
+  --fill-ink: #ffffff;
+  --hover: color-mix(in srgb, var(--ink) 4%, transparent);
+  --press: color-mix(in srgb, var(--ink) 8%, transparent);
+  --puck: color-mix(in srgb, var(--ink) 6%, transparent);
+  --today-tint: color-mix(in srgb, var(--accent) 4%, transparent);
+  --scrim: color-mix(in srgb, var(--ink) 18%, transparent);
+  --shadow-ink: #1d1e21;
+  --sheen: transparent;
+  --tag-sky: #2f6fa3;
+  --tag-hill: #2f6f2a;
+  --tag-stamp: #c4302b;
+  --tag-dusk: #3e5878;
+  --tag-sand: #8a6320;
+  --tag-ember: #b4531f;
+  --event-fill: 12%;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-serif: "Newsreader", "New York", "Georgia", serif;
+  --font-mono: ui-monospace, "SF Mono", "Menlo", monospace;
+  --type-caption: 500 11px/16px var(--font-sans);
+  --track-caption: 0.04px;
+  --type-small: 400 12px/18px var(--font-sans);
+  --track-small: 0px;
+  --type-ui: 400 13px/20px var(--font-sans);
+  --track-ui: -0.04px;
+  --type-base: 400 14px/22px var(--font-sans);
+  --track-base: -0.1px;
+  --type-read: 400 15px/26px var(--font-sans);
+  --track-read: -0.12px;
+  --type-title: 600 15px/22px var(--font-sans);
+  --track-title: -0.16px;
+  --type-heading: 600 24px/32px var(--font-sans);
+  --track-heading: -0.5px;
+  --type-display: 600 30px/38px var(--font-sans);
+  --track-display: -0.7px;
+  --w-summary: 430;
+  --type-summary: var(--w-summary) 21px/31px var(--font-serif);
+  --track-summary: -0.1px;
+  --opsz-summary: 21;
+  --w-answer: 400;
+  --type-answer: var(--w-answer) 16px/27px var(--font-serif);
+  --track-answer: -0.05px;
+  --opsz-answer: 16;
+  --measure-read: 64ch;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 64px;
+  --space-half: 2px;
+  --gutter: var(--space-8);
+  --group-gap: var(--space-7);
+  --control-xs: 24px;
+  --control-sm: 28px;
+  --control-md: 32px;
+  --control-lg: 40px;
+  --kbd: 18px;
+  --row: 40px;
+  --focus-letter: 180px;
+  --row-roomy: 48px;
+  --focus-letter-roomy: 196px;
+  --row-compact: 34px;
+  --focus-letter-compact: 164px;
+  --message-collapsed: 36px;
+  --shell-pad: 8px;
+  --sidebar-w: 232px;
+  --pane-head: 48px;
+  --list-w: 720px;
+  --reader-w: 640px;
+  --composer-w: 640px;
+  --dock-w: 360px;
+  --dock-w-narrow: 320px;
+  --dock-narrow-at: 1180px;
+  --dock-min: 300px;
+  --dock-max: 440px;
+  --palette-w: 600px;
+  --palette-top: 16vh;
+  --palette-max: 420px;
+  --settings-nav: 180px;
+  --settings-content: 600px;
+  --toast-max: 440px;
+  --sender-w: 152px;
+  --sender-w-home: 148px;
+  --menu-min: 220px;
+  --icon: 16px;
+  --icon-sm: 14px;
+  --icon-xs: 12px;
+  --icon-stroke: 1.5px;
+  --unread-dot: 6px;
+  --mark-dot: 8px;
+  --commit-edge: 3px;
+  --commit-chip: 26px;
+  --select-bar: 2px;
+  --thread-rail: 2px;
+  --track: 2px;
+  --seg-h: 3px;
+  --hairline: 0.75px;
+  --focus-width: 2px;
+  --focus-gap: 2px;
+  --switch-w: 30px;
+  --switch-h: 18px;
+  --switch-thumb: 14px;
+  --switch-pad: 2px;
+  --radio-dot: 4px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --elev-pane: 0px 0px 0px var(--hairline) var(--line), 0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 3%, transparent);
+  --elev-card: 0px 0px 0px var(--hairline) var(--line-strong), 0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 4%, transparent), 0px 6px 20px 0px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
+  --elev-float: 0px 0px 0px var(--hairline) var(--line-strong), 0px 4px 12px 0px color-mix(in srgb, var(--shadow-ink) 6%, transparent), 0px 16px 40px 0px color-mix(in srgb, var(--shadow-ink) 10%, transparent);
+  --elev-dialog: 0px 0px 0px var(--hairline) var(--line-strong), 0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 8%, transparent), 0px 32px 72px 0px color-mix(in srgb, var(--shadow-ink) 14%, transparent);
+  --elev-lift: 0px 0px 0px var(--hairline) var(--line-strong), 0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 4%, transparent), 0px 6px 20px 0px color-mix(in srgb, var(--shadow-ink) 5%, transparent), 0px 12px 32px 0px color-mix(in srgb, var(--shadow-ink) 10%, transparent);
+  --elev-puck: 0px 0px 0px var(--hairline) var(--line-strong), 0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 6%, transparent);
+  --elev-thumb: 0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 25%, transparent);
+  --press-hi: color-mix(in srgb, #ffffff 16%, transparent);
+  --press-lo: color-mix(in srgb, var(--shadow-ink) 14%, transparent);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-std: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-carry: cubic-bezier(0.4, 0, 1, 1);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-linear: linear;
+  --spring-slide: linear(0, 0.059, 0.189, 0.343, 0.492, 0.624, 0.732, 0.816, 0.88, 0.925, 0.957, 0.978, 0.991, 0.999, 1.003, 1.005, 1.005, 1);
+  --spring-snap: linear(0, 0.038, 0.126, 0.239, 0.359, 0.474, 0.578, 0.669, 0.745, 0.808, 0.859, 0.898, 0.929, 0.952, 0.969, 0.981, 0.989, 1);
+  --spring-lift: linear(0, 0.041, 0.137, 0.257, 0.381, 0.499, 0.603, 0.693, 0.767, 0.827, 0.874, 0.91, 0.937, 0.958, 0.972, 0.983, 0.99, 1);
+  --spring-follow: linear(0, 0.045, 0.147, 0.272, 0.4, 0.519, 0.623, 0.711, 0.783, 0.84, 0.884, 0.918, 0.943, 0.962, 0.975, 0.984, 0.991, 1);
+  --spring-thumb: linear(0, 0.067, 0.222, 0.408, 0.589, 0.746, 0.868, 0.956, 1.013, 1.044, 1.057, 1.057, 1.051, 1.04, 1.029, 1.019, 1.011, 1);
+  --dur-nav: 0ms;
+  --dur-press-down: 80ms;
+  --dur-press-up: 140ms;
+  --dur-hover: 100ms;
+  --dur-cursor: 120ms;
+  --dur-cursor-focus: 160ms;
+  --dur-reveal-in: 140ms;
+  --dur-reveal-out: 100ms;
+  --dur-settle-in: 180ms;
+  --dur-settle-out: 120ms;
+  --dur-slide: 270ms;
+  --dur-commit: 60ms;
+  --dur-carry: 120ms;
+  --dur-flight: 220ms;
+  --dur-deal: 140ms;
+  --dur-hold: 450ms;
+  --dur-hold-cap: 1200ms;
+  --dur-close: 180ms;
+  --dur-swap: 120ms;
+  --dur-arrive: 200ms;
+  --dur-dock-in: 200ms;
+  --dur-dock-out: 140ms;
+  --dur-undo-send: 8s;
+  --play-undo-send: running;
+  --dur-lift: 240ms;
+  --dur-follow: 210ms;
+  --dur-snap: 250ms;
+  --dur-thumb: 310ms;
+  --dur-breathe: 1600ms;
+  --play-breathe: running;
+  --dur-status: 1500ms;
+  --play-status: running;
+  --dur-count: 140ms;
+  --move-reveal: 4px;
+  --move-settle: 8px;
+  --move-deal: 6px;
+  --move-arrive: 6px;
+  --move-swap: 12px;
+  --move-carry: 28px;
+  --move-dock: 24px;
+  --move-count: 4px;
+  --move-flight-x: 96px;
+  --move-flight-y: 12px;
+  --move-flight-rotate: 2deg;
+  --press-scale: 0.97;
+  --press-scale-icon: 0.94;
+  --scale-reveal: 0.98;
+  --scale-settle: 0.98;
+  --scale-commit: 0.9;
+  --scale-commit-edge: 0;
+  --scale-lift: 1.02;
+  --scale-snap: 1.08;
+  --breathe-lo: 0.75;
+  --breathe-hi: 1;
+  --breathe-static: 0.85;
+  --dur-toast: 4s;
+  --dur-toast-undo: 8s;
+  --dur-toast-fade: 400ms;
+  --dur-reveal-grace: 600ms;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --shell: #121314;
+  --canvas: #191a1c;
+  --paper: #1f2023;
+  --raised: #212225;
+  --sunken: #0e0f10;
+  --ink: #ececed;
+  --ink-2: #c4c5c9;
+  --dim: #9a9da4;
+  --faint: #6f7278;
+  --line: color-mix(in srgb, var(--ink) 8%, transparent);
+  --line-strong: color-mix(in srgb, var(--ink) 12%, transparent);
+  --control-edge: color-mix(in srgb, var(--ink) 40%, transparent);
+  --accent: #88aee0;
+  --accent-ink: #08111a;
+  --accent-wash: color-mix(in srgb, var(--accent) 12%, transparent);
+  --hill: #86b86a;
+  --dusk: #8fa9cc;
+  --stamp: #ff7a6e;
+  --stamp-ink: #ff8d82;
+  --stamp-tint: color-mix(in srgb, var(--stamp) 12%, transparent);
+  --fill-ink: #08111a;
+  --hover: color-mix(in srgb, var(--ink) 5%, transparent);
+  --press: color-mix(in srgb, var(--ink) 10%, transparent);
+  --puck: color-mix(in srgb, var(--ink) 8%, transparent);
+  --today-tint: color-mix(in srgb, var(--accent) 6%, transparent);
+  --scrim: color-mix(in srgb, #000000 50%, transparent);
+  --shadow-ink: #000000;
+  --sheen: color-mix(in srgb, #ffffff 4%, transparent);
+  --tag-sky: #6aa5d6;
+  --tag-hill: #86b86a;
+  --tag-stamp: #ff7a6e;
+  --tag-dusk: #8fa9cc;
+  --tag-sand: #d9a65a;
+  --tag-ember: #e08a5a;
+  --event-fill: 20%;
+  --w-summary: 410;
+  --w-answer: 390;
+  --elev-pane: 0px 0px 0px var(--hairline) var(--line), inset 0px 1px 0px 0px var(--sheen);
+  --elev-card: 0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen), 0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 30%, transparent);
+  --elev-float: 0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen), 0px 4px 12px 0px color-mix(in srgb, var(--shadow-ink) 30%, transparent), 0px 16px 40px 0px color-mix(in srgb, var(--shadow-ink) 40%, transparent);
+  --elev-dialog: 0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen), 0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 40%, transparent), 0px 32px 72px 0px color-mix(in srgb, var(--shadow-ink) 50%, transparent);
+  --elev-lift: 0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen), 0px 8px 24px 0px color-mix(in srgb, var(--shadow-ink) 30%, transparent), 0px 12px 32px 0px color-mix(in srgb, var(--shadow-ink) 45%, transparent);
+  --elev-puck: 0px 0px 0px var(--hairline) var(--line-strong), inset 0px 1px 0px 0px var(--sheen);
+  --press-lo: color-mix(in srgb, var(--shadow-ink) 22%, transparent);
+}
+
+/* Increase Contrast. The dark selector is repeated so these win over the night block. */
+
+@media (prefers-contrast: more) {
+  :root,
+  :root[data-theme="dark"] {
+    --faint: var(--dim);
+    --line: var(--control-edge);
+    --line-strong: var(--control-edge);
+    --focus-width: 3px;
+  }
+}
+
+:root[data-contrast="more"],
+:root[data-theme="dark"][data-contrast="more"] {
+  --faint: var(--dim);
+  --line: var(--control-edge);
+  --line-strong: var(--control-edge);
+  --focus-width: 3px;
+}
+
+/* Reduced motion: durations take their reduced values, travel and scale go neutral,
+   static loops pause. CSS that uses these tokens is neutralised without extra rules. */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-cursor: 0ms;
+    --dur-cursor-focus: 0ms;
+    --dur-reveal-in: 100ms;
+    --dur-settle-in: 120ms;
+    --dur-slide: 0ms;
+    --dur-carry: 80ms;
+    --dur-flight: 120ms;
+    --dur-deal: 0ms;
+    --dur-close: 0ms;
+    --dur-swap: 100ms;
+    --dur-arrive: 120ms;
+    --dur-dock-in: 0ms;
+    --dur-dock-out: 0ms;
+    --play-undo-send: paused;
+    --dur-lift: 0ms;
+    --dur-follow: 0ms;
+    --dur-snap: 0ms;
+    --dur-thumb: 0ms;
+    --play-breathe: paused;
+    --play-status: paused;
+    --dur-count: 0ms;
+    --move-reveal: 0px;
+    --move-settle: 0px;
+    --move-deal: 0px;
+    --move-arrive: 0px;
+    --move-swap: 0px;
+    --move-carry: 0px;
+    --move-dock: 0px;
+    --move-count: 0px;
+    --move-flight-x: 0px;
+    --move-flight-y: 0px;
+    --move-flight-rotate: 0deg;
+    --press-scale: 1;
+    --press-scale-icon: 1;
+    --scale-reveal: 1;
+    --scale-settle: 1;
+    --scale-commit: 1;
+    --scale-commit-edge: 1;
+    --scale-lift: 1;
+    --scale-snap: 1;
+    --breathe-lo: 0.85;
+    --breathe-hi: 0.85;
+    --dur-toast-fade: 120ms;
+  }
+}
+
+:root[data-motion="reduced"] {
+  --dur-cursor: 0ms;
+  --dur-cursor-focus: 0ms;
+  --dur-reveal-in: 100ms;
+  --dur-settle-in: 120ms;
+  --dur-slide: 0ms;
+  --dur-carry: 80ms;
+  --dur-flight: 120ms;
+  --dur-deal: 0ms;
+  --dur-close: 0ms;
+  --dur-swap: 100ms;
+  --dur-arrive: 120ms;
+  --dur-dock-in: 0ms;
+  --dur-dock-out: 0ms;
+  --play-undo-send: paused;
+  --dur-lift: 0ms;
+  --dur-follow: 0ms;
+  --dur-snap: 0ms;
+  --dur-thumb: 0ms;
+  --play-breathe: paused;
+  --play-status: paused;
+  --dur-count: 0ms;
+  --move-reveal: 0px;
+  --move-settle: 0px;
+  --move-deal: 0px;
+  --move-arrive: 0px;
+  --move-swap: 0px;
+  --move-carry: 0px;
+  --move-dock: 0px;
+  --move-count: 0px;
+  --move-flight-x: 0px;
+  --move-flight-y: 0px;
+  --move-flight-rotate: 0deg;
+  --press-scale: 1;
+  --press-scale-icon: 1;
+  --scale-reveal: 1;
+  --scale-settle: 1;
+  --scale-commit: 1;
+  --scale-commit-edge: 1;
+  --scale-lift: 1;
+  --scale-snap: 1;
+  --breathe-lo: 0.85;
+  --breathe-hi: 0.85;
+  --dur-toast-fade: 120ms;
+}
+
+/* Theme switch: set data-theme-switching on :root for one frame so the app changes at once. */
+
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after {
+  transition: none !important;
+}
