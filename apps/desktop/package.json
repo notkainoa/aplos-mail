@@ -20,9 +20,10 @@
     "build": "tsc --noEmit && vite build && node scripts/build-main.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"tests/*.test.ts\" \"tests/*/**/*.test.ts\"",
-    "package": "npm run build && electron-builder --mac dir",
+    "package": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir -c.mac.identity=- -c.mac.entitlements=build/entitlements.adhoc.plist -c.mac.entitlementsInherit=build/entitlements.adhoc.plist",
     "start": "electron .",
     "verify:release": "node scripts/verify-release.mjs",
+    "verify:hardening": "node scripts/verify-hardening.mjs",
     "verify:large": "node scripts/verify-large-mailbox.mjs",
     "release:build": "APLOS_RELEASE_BUILD=1 npm run build && node scripts/release-build.mjs",
     "release:publish": "APLOS_RELEASE_BUILD=1 npm run build && node scripts/release-build.mjs --publish always",
@@ -110,9 +111,18 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "13.0"
     },
     "asar": true,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "enableCookieEncryption": false,
+      "grantFileProtocolExtraPrivileges": true
+    },
     "dmg": {
       "title": "${productName}",
       "iconSize": 160,

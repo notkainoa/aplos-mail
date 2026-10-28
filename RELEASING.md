@@ -59,7 +59,18 @@ git push --atomic origin main vX.Y.Z
 
 The *Release* workflow checks that the tag matches the app version, runs the typecheck and tests, builds both architectures, signs and notarizes when the secrets exist, and uploads everything to a draft release named after the version. The same files are kept as a workflow artifact.
 
-To build the artifacts locally instead (no upload): `npm run release:build`. Output goes to `apps/desktop/release/`. Locally the build signs only when `CSC_LINK` or `CSC_NAME` is set in your shell; a certificate in your keychain is never picked up by accident. `npm run package` stays the fast, unsigned, this-Mac-only `.app` build.
+To build the artifacts locally instead (no upload): `npm run release:build`. Output goes to `apps/desktop/release/`. Locally the build signs only when `CSC_LINK` or `CSC_NAME` is set in your shell; a certificate in your keychain is never picked up by accident. `npm run package` stays the fast, this-Mac-only `.app` build; it is always ad-hoc signed (never with a keychain identity) and uses `build/entitlements.adhoc.plist`, as does an unsigned `release:build`. Developer ID builds use `build/entitlements.mac.plist`.
+
+### Hardening check
+
+Every build carries the Electron fuses in `build.electronFuses` (no `ELECTRON_RUN_AS_NODE`, no `NODE_OPTIONS`, no `--inspect`, asar integrity on, the app only loads from `app.asar`) and requires macOS 13. `scripts/verify-hardening.mjs` checks a built `.app` for these, plus the signature, Gatekeeper, stapling, entitlements, the Developer ID designated requirement and secrets in the bundle:
+
+```sh
+npm run verify:hardening -- "apps/desktop/release/mac-arm64/Aplos Mail.app" --expect adhoc    # npm run package
+npm run verify:hardening -- "apps/desktop/release/mac-arm64/Aplos Mail.app" --expect release  # signed and notarized
+```
+
+`release:build` runs it on every `.app` it built (`--expect release` when signed, `adhoc` otherwise) and exits 1 on any FAIL. The *Release* workflow runs it again with `--expect release` after the build, so a run without the signing secrets ends red. The draft is already uploaded by then: a red run means do not publish that draft.
 
 The app icon is the Icon Composer file `apps/desktop/assets/AppIcon.icon`; electron-builder compiles it with Xcode's `actool` into `Assets.car` (the macOS 26 icon) plus `icon.icns` for older systems. That needs full Xcode 26 or later, not just the Command Line Tools: run `sudo xcode-select -s /Applications/Xcode.app` once, or prefix the build with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`. The release workflow runs on `macos-26` for the same reason.
 
@@ -71,6 +82,7 @@ On github.com → Releases → the draft:
 
 - Six assets plus blockmaps: two DMGs, two ZIPs and `latest-mac.yml`. The version in `latest-mac.yml` matches the tag.
 - The workflow log says "signing and notarizing" and "notarization successful". If it says "ad-hoc signed and not notarized", the secrets are missing.
+- The "Verify hardening" step is green and every row of both tables says PASS.
 - Download the DMG for your Mac on a machine that has never run Aplos (or after `xattr` is reset by downloading through a browser), open it and launch the app. A notarized build opens with only the usual "downloaded from the internet" prompt. `spctl -a -vv "/Applications/Aplos Mail.app"` should say `accepted, source=Notarized Developer ID`.
 - Settings → General → Updates shows the new version.
 - Write release notes, then **Publish release**.
