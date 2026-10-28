@@ -828,8 +828,30 @@ test('hold tracker: a tap under the threshold stays a tap', () => {
     phase: 'tap',
     upgraded: false,
     heldMs: 180,
+    ended: 'up',
   });
   assert.equal(tracker.armed, false);
+});
+
+test('hold tracker: ended says how the hold stopped, whatever the duration', () => {
+  const make = () => {
+    const tracker = createHoldTracker(250);
+    tracker.down(keydown('r'), 'mail.dictateReply', 0);
+    tracker.tick(300);
+    return tracker;
+  };
+  const up = make().up(keydown('r'), 2000);
+  const cancel = make().cancel(2000);
+  const interrupt = make().interrupt(2000);
+  const down = make().down(keydown('s'), 'mail.other', 2000);
+  assert.deepEqual(
+    [up, cancel, interrupt, down].map(r => r?.ended),
+    ['up', 'cancel', 'interrupt', 'down'],
+  );
+  for (const r of [up, cancel, interrupt, down]) {
+    assert.equal(r?.phase, 'hold');
+    assert.equal(r?.upgraded, true);
+  }
 });
 
 test('hold tracker: crossing the threshold upgrades once, keyup releases', () => {

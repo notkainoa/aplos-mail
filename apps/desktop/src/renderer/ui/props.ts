@@ -1601,8 +1601,8 @@ export interface AskTurnProps {
   id: string;
   /** The question. */
   question: string;
-  /** 'working' = steady step line; 'streaming' = one thin non-blinking caret; 'answered'; 'stopped'; 'failed' = ErrorLine askFailed. */
-  state: 'working' | 'streaming' | 'answered' | 'stopped' | 'failed';
+  /** 'working' = steady step line; 'streaming' = one thin non-blinking caret; 'answered'; 'stopped' = "Stopped."; 'failed' = ErrorLine askFailed; 'paused' = the model's daily limit is reached: "Paused for today. Resumes tomorrow." (a quiet line, never red; shows "Use another provider" when `onUseAnotherProvider` is given; the plan 30 §4.5 phrase is reused for Ask's per-model daily limit, ARCH §8.4). */
+  state: 'working' | 'streaming' | 'answered' | 'stopped' | 'failed' | 'paused';
   /** The step log (live line while working, dim fold after). */
   steps?: StepLogProps;
   /** Answer prose. */
@@ -1611,15 +1611,17 @@ export interface AskTurnProps {
   citations: readonly CitationData[];
   /** Provider display name for "<Provider> didn't answer." */
   provider?: string;
+  /** Who wrote the answer, shown only on hover of the answer (DESIGN §9 rule 5): "Answer by Groq", "Answer by Ollama on this Mac". */
+  provenance?: { provider: string; local: boolean };
   /** The turn's one proposal card. */
   proposal?: ProposalCardProps;
-  /** Open a cited thread. */
-  onOpenCitation: (threadId: string) => void;
-  /** Open a cited calendar event (a citation with `kind: 'event'`). */
-  onOpenEventCitation?: (eventId: string) => void;
+  /** Open a cited thread; `index` is the citation's number ([1] = 1) so the screen can scroll to or mark it. */
+  onOpenCitation: (threadId: string, index: number) => void;
+  /** Open a cited calendar event (a citation with `kind: 'event'`); `index` as above. */
+  onOpenEventCitation?: (eventId: string, index: number) => void;
   /** Retry after a failure. */
   onRetry?: () => void;
-  /** "Use another provider" after a failure. */
+  /** "Use another provider" after a failure or when the state is 'paused'. */
   onUseAnotherProvider?: () => void;
 }
 
@@ -1639,10 +1641,10 @@ export interface StepLogProps {
 
 /** A mono "[1]" chip that shows the quoted sentence on hover or focus and opens the source on click (DESIGN §6 Citation, §7.7). Mockups: ask.html. Plain + refines: ui-ask. */
 export interface CitationProps extends CitationData {
-  /** Open the source thread. */
-  onOpen: (threadId: string) => void;
-  /** Open the source event when `kind` is 'event' (calls this with `eventId` instead of `onOpen`). */
-  onOpenEvent?: (eventId: string) => void;
+  /** Open the source thread, with the chip's number. */
+  onOpen: (threadId: string, index: number) => void;
+  /** Open the source event when `kind` is 'event' (calls this with `eventId` instead of `onOpen`), with the chip's number. */
+  onOpenEvent?: (eventId: string, index: number) => void;
 }
 
 /** The dock's one card; owns the filled button; a consequence line and two key rows (Return / Esc); nothing applies without confirmation (DESIGN §6 ProposalCard, §7.7, §9 rule 6). Mockups: ask.html (answer). Plain + refines: ui-ask. */
@@ -1707,7 +1709,7 @@ export interface PaletteProps {
   query: string;
   /** Field text changed. */
   onQueryChange: (value: string) => void;
-  /** The target, shown as "For: <context>", e.g. "Drew Bell · October illustrations". */
+  /** The target, shown as "For: <context>", e.g. "Drew Bell · October illustrations". One line: a long one ends in an ellipsis and carries the full text as its tooltip. */
   context?: string;
   /** Breadcrumbs for nested pages. */
   trail?: readonly string[];
