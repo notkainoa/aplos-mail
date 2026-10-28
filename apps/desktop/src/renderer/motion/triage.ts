@@ -5,9 +5,18 @@
 // hold releases, the rows below close. While a hold lasts (keys or a resting
 // pointer), every other change to the list's rows, such as an undo, must go
 // through relayout() so the rows stay where they were drawn.
+//
+// With a cursor layer it also owns the cursor's drawn y: every focus change
+// (commit's `focus`, or focus() for J/K and undo) puts the cursor on the row's
+// drawn top, its layout top plus its hold pin, so during a hold the cursor
+// walks down with the pinned rows instead of sitting over the gap. When the
+// hold releases the cursor glides on close's duration and curve, landing with
+// its row.
 import type { Id } from '../data';
+import { motionMs, motions, type MotionContext } from '../ui/generated/motion';
 import type { CommitKind } from '../ui/props';
 import { play, type Playing } from './animate';
+import type { CursorCause, CursorLayer } from './cursor';
 import type { Closer } from './flip';
 import type { Ghost, GhostExtra, GhostLayer } from './ghost';
 import type { HoldGate } from './holdGate';
@@ -40,6 +49,13 @@ export interface TriageCommit {
   readonly release?: 'remove' | 'hide';
   /** Adds the commit chip and edge to the ghost and returns them. */
   readonly decorate?: (clone: HTMLElement) => { chip?: HTMLElement; edge?: HTMLElement };
+  /** The row focus moved to, in `rows.after`; the cursor follows it on this key's context. */
+  readonly focus?: Id;
+}
+
+export interface FocusMove {
+  readonly cause?: CursorCause;
+  readonly context?: MotionContext;
 }
 
 export interface TriageMotion {
@@ -51,6 +67,8 @@ export interface TriageMotion {
    * layout stands.
    */
   relayout(rows: ListChange): void;
+  /** Focus moved to row `id` of `rows` (the rendered order): the cursor goes to its drawn top. */
+  focus(rows: readonly Id[], id: Id, move?: FocusMove): void;
   /** Deals the next letter's content into the fixed Home slot. */
   deal(content: HTMLElement, context?: TriageContext): void;
   dispose(): void;
@@ -63,27 +81,55 @@ export interface TriageMotionOptions {
   readonly rapid: RapidTracker;
   /** The list's closer; its rows close when the hold releases. */
   readonly closer?: Closer<Id>;
+  /** The list's cursor layer; needs `closer` for row tops. */
+  readonly cursor?: CursorLayer;
 }
 
 export function createTriageMotion(options: TriageMotionOptions): TriageMotion {
-  const { scheduler, ghosts, hold, rapid, closer } = options;
+  const { scheduler, ghosts, hold, rapid, closer, cursor } = options;
   const reduced = () => scheduler.env.prefersReducedMotion();
   const dealing = new WeakMap<HTMLElement, Playing>();
   // The closer is anchored once per hold, at the first change it sees, whether
   // the hold began with a key or with the pointer resting on the list.
   let anchored = false;
+  // The rendered order last seen and the focused row in it, for the cursor.
+  let rowsNow: readonly Id[] = [];
+  let focused: Id | null = null;
+
   const unsubscribe = hold.onRelease(() => {
     anchored = false;
-    closer?.close({ reduced: reduced() });
+    const context = { reduced: reduced() };
+    const riding = focused !== null && closer?.pinned.has(focused);
+    closer?.close(context);
+    if (!riding || !cursor || !closer || focused === null) return;
+    const top = closer.drawnTop(rowsNow, focused);
+    if (top === null || top === cursor.target[1]) return;
+    cursor.glide(
+      { x: cursor.target[0], y: top },
+      'close',
+      motionMs('close', 'base', context),
+      motions.close.curve,
+    );
   });
 
   function pinRows(rows: ListChange | undefined) {
-    if (!closer || !rows || !hold.isHeld) return;
+    if (!rows) return;
+    rowsNow = rows.after;
+    if (!closer || !hold.isHeld) return;
     if (!anchored) {
       closer.anchor(rows.before);
       anchored = true;
     }
     closer.pin(rows.after);
+  }
+
+  function focus(rows: readonly Id[], id: Id, move: FocusMove = {}) {
+    rowsNow = rows;
+    focused = id;
+    if (!cursor || !closer) return;
+    const top = closer.drawnTop(rows, id);
+    if (top === null || top === cursor.target[1]) return;
+    cursor.move({ x: cursor.target[0], y: top, cause: move.cause ?? 'key' }, move.context);
   }
 
   return {
@@ -92,6 +138,8 @@ export function createTriageMotion(options: TriageMotionOptions): TriageMotion {
       const context: TriageContext = { ...key, reduced: reduced() };
       hold.extend(commit.holdIds);
       pinRows(commit.rows);
+      if (commit.focus !== undefined && commit.rows)
+        focus(commit.rows.after, commit.focus, { context });
       if (!commit.element) return { context, ghost: null };
       const decorate = commit.decorate;
       const ghost = ghosts.launch(
@@ -114,7 +162,10 @@ export function createTriageMotion(options: TriageMotionOptions): TriageMotion {
     },
     relayout(rows) {
       pinRows(rows);
+      // A row the hold did not anchor (one restored mid-hold) can still move.
+      if (focused !== null && rows.after.includes(focused)) focus(rows.after, focused);
     },
+    focus,
     deal(content, context = {}) {
       dealing.get(content)?.stop();
       const plan = dealPlan({ ...context, reduced: context.reduced ?? reduced() });

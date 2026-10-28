@@ -2,17 +2,21 @@
 // triage key starts or extends a hold that releases hold.base (450 ms) after the
 // last key, so a burst of any length closes once. If the pointer is still on the
 // list then, the hold waits for it to leave, but never past hold.cap (1200 ms)
-// after the last key. A pointer resting on the list with no key holds until it
-// leaves (new mail never moves the row under it). Leaving releases at once.
+// after the last key. The cap still releases once, so the burst closes, and a
+// pointer still resting there at once begins a fresh pointer hold with no pins.
+// A pointer resting on the list with no key holds until it leaves (new mail
+// never moves the row under it); only pointerLeave() forgets the pointer.
 // Hiding the window releases too: nothing paints while hidden, so arrivals land
-// instead of queueing. It satisfies the data layer's HoldController, so
+// instead of queueing. Where the pointer is after a hide is unknown, so the
+// gate forgets it and the list re-asserts it with pointerEnter() on the next
+// pointermove (pointerEnter is idempotent). It satisfies the data layer's HoldController, so
 // `useHold` can hand one out as is.
 import type { HoldController, HoldReason, HoldReleaseListener, Id } from '../data';
 import { motions } from '../ui/generated/motion';
 import type { Scheduler } from './scheduler';
 
 export interface HoldGate extends HoldController {
-  /** The pointer entered the list (same as begin('pointer', ids)). */
+  /** The pointer is over the list (same as begin('pointer', ids)). Idempotent, so call it on pointermove too. */
   pointerEnter(ids?: readonly Id[]): void;
   /** The pointer left the list: release now. */
   pointerLeave(): void;
@@ -60,6 +64,20 @@ export function createHoldGate(scheduler: Scheduler): HoldGate {
     cancelTimer = scheduler.after(Math.max(0, cap - waited), release);
   }
 
+  function release() {
+    clearTimer();
+    if (!held) return;
+    const released = { ids, reason: reason ?? 'keys' };
+    held = false;
+    reason = null;
+    ids = [];
+    lastKeyAt = null;
+    notify();
+    for (const listener of [...releaseListeners]) listener(released);
+    // The pointer is still resting on the list: it keeps holding, with no pins.
+    if (pointerInside && !held) begin('pointer', []);
+  }
+
   function armKeyTimer() {
     clearTimer();
     lastKeyAt = scheduler.now();
@@ -72,19 +90,6 @@ export function createHoldGate(scheduler: Scheduler): HoldGate {
     lastKeyAt = null;
   }
 
-  function release() {
-    clearTimer();
-    if (!held) return;
-    const released = { ids, reason: reason ?? 'keys' };
-    held = false;
-    reason = null;
-    ids = [];
-    pointerInside = false;
-    lastKeyAt = null;
-    notify();
-    for (const listener of [...releaseListeners]) listener(released);
-  }
-
   function begin(why: HoldReason, more: readonly Id[]) {
     const wasHeld = held;
     if (!held) start(why);
@@ -93,7 +98,10 @@ export function createHoldGate(scheduler: Scheduler): HoldGate {
     if (addIds(more) || !wasHeld) notify();
   }
 
-  const stopHide = scheduler.onHide(release);
+  const stopHide = scheduler.onHide(() => {
+    pointerInside = false;
+    release();
+  });
 
   return {
     begin,

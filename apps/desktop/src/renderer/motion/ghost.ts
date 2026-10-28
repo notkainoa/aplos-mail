@@ -64,18 +64,33 @@ function cloneFixed(element: HTMLElement): HTMLElement {
   style.boxSizing = 'border-box';
   style.pointerEvents = 'none';
   style.transform = 'none';
+  // The element may already be hidden by an earlier ghost of the same node.
+  style.visibility = 'visible';
   return clone;
 }
+
+// Ghosts hiding each element, and the visibility it had before the first one, so
+// a node ghosted again before the first ghost ends is restored only once, by the
+// last ghost, to what it was before either.
+const hides = new WeakMap<HTMLElement, { count: number; before: string }>();
 
 function releaseElement(element: HTMLElement, mode: 'remove' | 'hide'): () => void {
   if (mode === 'remove') {
     element.remove();
     return () => {};
   }
-  const before = element.style.visibility;
+  const entry = hides.get(element) ?? { count: 0, before: element.style.visibility };
+  entry.count += 1;
+  hides.set(element, entry);
   element.style.visibility = 'hidden';
+  let restored = false;
   return () => {
-    if (element.isConnected) element.style.visibility = before;
+    if (restored) return;
+    restored = true;
+    entry.count -= 1;
+    if (entry.count > 0) return;
+    hides.delete(element);
+    if (element.isConnected) element.style.visibility = entry.before;
   };
 }
 

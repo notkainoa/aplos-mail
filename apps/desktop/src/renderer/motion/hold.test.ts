@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { motions, timing } from '../ui/generated/motion';
+import { createCursorLayer } from './cursor';
 import { FakeEnv, type FakeElement } from './fakes';
 import { closeDeltas, createCloser, layoutTops } from './flip';
 import { createGhostLayer } from './ghost';
@@ -49,15 +50,29 @@ test('a long burst of keys holds until 450 ms after the last key, so it closes o
   );
 });
 
-test('a pointer still on the list after the last key holds, but never past the cap', () => {
+test('a pointer still on the list after the last key: the cap releases once, and the pointer keeps holding until it leaves', () => {
   const { fake, hold, releases } = setup();
   hold.pointerEnter(['a']);
   hold.extend(['b']);
   fake.advance(CAP - 1);
   assert.equal(hold.isHeld, true);
   fake.advance(1);
-  assert.equal(hold.isHeld, false);
   assert.deepEqual(releases, [{ ids: ['a', 'b'], at: CAP }]);
+  assert.equal(hold.isHeld, true, 'the resting pointer still holds');
+  assert.equal(hold.reason, 'pointer');
+  assert.deepEqual(hold.heldIds, []);
+  fake.advance(CAP * 4);
+  assert.equal(hold.isHeld, true);
+  assert.equal(releases.length, 1);
+
+  // Another key under the resting pointer: the cap closes it once more.
+  hold.extend(['c']);
+  fake.advance(CAP);
+  assert.equal(releases.length, 2);
+  assert.equal(hold.isHeld, true);
+  hold.pointerLeave();
+  assert.equal(hold.isHeld, false);
+  assert.equal(releases.length, 3);
 });
 
 test('the pointer alone holds until it leaves, and leaving releases at once', () => {
@@ -85,6 +100,22 @@ test('hiding the window releases the hold', () => {
   assert.equal(releases.length, 1);
   fake.setHidden(false);
   fake.advance(HOLD);
+  assert.equal(releases.length, 1);
+});
+
+test('hiding forgets the pointer; its next pointermove re-asserts the hold', () => {
+  const { fake, hold, releases } = setup();
+  hold.pointerEnter(['a']);
+  fake.setHidden(true);
+  assert.equal(hold.isHeld, false);
+  assert.equal(releases.length, 1);
+  fake.setHidden(false);
+  assert.equal(hold.isHeld, false);
+  hold.pointerEnter();
+  hold.pointerEnter();
+  assert.equal(hold.isHeld, true);
+  fake.advance(CAP * 2);
+  assert.equal(hold.isHeld, true);
   assert.equal(releases.length, 1);
 });
 
@@ -271,4 +302,61 @@ test('an undo during the hold goes through relayout and keeps the rows still', (
   s.triage.relayout({ before: ['a', 'c', 'd'], after: ['a', 'd'] });
   assert.equal(s.elements.get('d')?.style.transform, '');
   assert.equal(s.closer.pinned.size, 0);
+});
+
+test('during a hold the cursor rides the focused row; on release it lands with the row on close', () => {
+  const fake = new FakeEnv();
+  const scheduler = createScheduler(fake.env);
+  const hold = createHoldGate(scheduler);
+  const elements = new Map<string, FakeElement>();
+  ['a', 'b', 'c', 'd', 'e', 'f'].forEach((id, i) =>
+    elements.set(id, fake.element({ top: i * 40, height: 40 })),
+  );
+  const closer = createCloser<string>({
+    heightOf: () => 40,
+    elementOf: id => elements.get(id)?.el ?? null,
+  });
+  const cursorEl = fake.element();
+  const cursor = createCursorLayer(cursorEl.el, scheduler);
+  const triage = createTriageMotion({
+    scheduler,
+    ghosts: createGhostLayer({ scheduler, host: fake.element().el }),
+    hold,
+    rapid: createRapidTracker(),
+    closer,
+    cursor,
+  });
+  let rows = ['a', 'b', 'c', 'd', 'e', 'f'];
+  triage.focus(rows, 'b');
+  fake.advance(300);
+  for (const [i, next] of ['c', 'd', 'e'].entries()) {
+    const before = rows;
+    rows = rows.filter(r => r !== before[1]);
+    triage.commit({
+      kind: 'done',
+      surface: 'row',
+      element: null,
+      rows: { before, after: rows },
+      focus: next,
+    });
+    assert.equal(cursor.target[1], 80 + i * 40, `E${i + 1}: cursor on ${next}'s drawn top`);
+    assert.equal(elements.get(next)?.style.transform, `translateY(${(i + 1) * 40}px)`);
+    fake.advance(200);
+  }
+  assert.equal(hold.isHeld, true);
+
+  fake.advance(HOLD - 200);
+  assert.equal(hold.isHeld, false);
+  const glide = fake.running().find(a => a.target === cursorEl);
+  assert.equal(glide?.options.duration, motions.close.durations.base);
+  assert.equal(glide?.options.easing, motions.close.curve);
+  assert.deepEqual(
+    glide?.keyframes.map(k => k.transform),
+    ['translate(0px, 160px)', 'translate(0px, 40px)'],
+  );
+  const row = fake.running().find(a => a.target === elements.get('e'));
+  assert.equal(row?.options.duration, glide?.options.duration);
+  fake.advance(motions.close.durations.base);
+  assert.deepEqual(cursor.position, [0, 40]);
+  assert.equal(fake.running().length, 0);
 });

@@ -1,7 +1,8 @@
 // The button masher (plan 30 U4): random J, K, arrows, E, L and Z at 0-400 ms
 // gaps, with window hides, theme switches, new rows and the pointer entering
 // and leaving the list mid-flight. While a hold lasts, every row the hold
-// anchored is drawn exactly where it was. Two seconds after the last key
+// anchored is drawn exactly where it was, and after every press the cursor is
+// headed for the focused row's drawn top (layout plus pin). Two seconds after the last key
 // nothing may be stuck: no ghost, no animation, no will-change, no pin, no
 // pending frame or timer, and the cursor sits on the model's focused row.
 // Every animation used a generated duration and easing on transform or opacity.
@@ -50,15 +51,16 @@ function mash(seed: number, presses: number) {
     heightOf: () => ROW,
     elementOf: id => elements.get(id)?.el ?? null,
   });
+  const cursorEl = fake.element();
+  const cursor = createCursorLayer(cursorEl.el, scheduler);
   const triage = createTriageMotion({
     scheduler,
     ghosts,
     hold,
     rapid: createRapidTracker(),
     closer,
+    cursor,
   });
-  const cursorEl = fake.element();
-  const cursor = createCursorLayer(cursorEl.el, scheduler);
   const freeze = createThemeFreeze(fake.document.documentElement.el, scheduler);
 
   let serial = 0;
@@ -91,12 +93,20 @@ function mash(seed: number, presses: number) {
     return { before, after };
   };
   const focusAt = () => Math.max(0, rows.indexOf(focus));
+  const drawnTop = (id: string) => {
+    const pin = /^translateY\(([-\d.e]+)px\)$/.exec(elements.get(id)?.style.transform ?? '');
+    return rows.indexOf(id) * ROW + (pin ? Number(pin[1]) : 0);
+  };
+  let cursorHeldChecks = 0;
 
   for (let press = 0; press < presses; press++) {
     fake.advance(Math.floor(random() * 401));
     const roll = random();
-    if (roll < 0.04) fake.setHidden(!fake.hidden);
-    else if (roll < 0.06) freeze.switchTheme(() => {});
+    if (roll < 0.04) {
+      fake.setHidden(!fake.hidden);
+      // A resting pointer re-asserts itself on its next pointermove after a hide.
+      if (!fake.hidden && pointerInside) hold.pointerEnter();
+    } else if (roll < 0.06) freeze.switchTheme(() => {});
     else if (roll < 0.09) {
       const id = `t${serial++}`;
       triage.relayout(change([...rows, mount(id, rows.length)]));
@@ -113,7 +123,7 @@ function mash(seed: number, presses: number) {
     if (MOVES.has(key)) {
       const at = Math.max(0, Math.min(rows.length - 1, focusAt() + (DOWN.has(key) ? 1 : -1)));
       focus = rows[at] ?? focus;
-      cursor.move({ y: at * ROW, cause: repeat ? 'repeat' : 'key' });
+      triage.focus(rows, focus, { cause: repeat ? 'repeat' : 'key' });
     } else if (key === 'e' || key === 'l') {
       const at = focusAt();
       const id = rows[at];
@@ -125,6 +135,7 @@ function mash(seed: number, presses: number) {
       const delta = change(after);
       removed.push({ id, index: at });
       elements.delete(id);
+      focus = rows[Math.min(at, rows.length - 1)] ?? '';
       triage.commit({
         kind: key === 'e' ? 'done' : 'later',
         surface: random() < 0.5 ? 'letter' : 'row',
@@ -132,9 +143,8 @@ function mash(seed: number, presses: number) {
         holdIds: rows.slice(Math.max(0, at - 2), at + 3),
         rows: delta,
         decorate: clone => ({ chip: clone.querySelector('[data-chip]') as HTMLElement }),
+        focus: focus === '' ? undefined : focus,
       });
-      focus = rows[Math.min(at, rows.length - 1)] ?? '';
-      cursor.move({ y: focusAt() * ROW, cause: 'key' });
     } else {
       const last = removed.pop();
       if (!last) continue;
@@ -143,20 +153,26 @@ function mash(seed: number, presses: number) {
         change([...rows.slice(0, index), mount(last.id, index), ...rows.slice(index)]),
       );
       focus = last.id;
-      cursor.move({ y: index * ROW, cause: 'key' });
+      triage.focus(rows, focus);
     }
 
     maxActive = Math.max(maxActive, ghosts.active.length);
     assert.ok(ghosts.active.length <= MAX_GHOSTS, `seed ${seed}: too many ghosts`);
     assert.equal(host.children.length, ghosts.active.length, `seed ${seed}: stray clone`);
     assert.equal(new Set(ghosts.active.map(g => g.clone)).size, ghosts.active.length);
+    if (rows.includes(focus)) {
+      assert.equal(
+        cursor.target[1],
+        drawnTop(focus),
+        `seed ${seed} press ${press}: cursor off the focused row's drawn top`,
+      );
+      if (hold.isHeld) cursorHeldChecks += 1;
+    }
     if (hold.isHeld && anchored) {
-      rows.forEach((id, index) => {
+      rows.forEach(id => {
         const top = anchored?.get(id);
         if (top === undefined) return;
-        const pin = /^translateY\(([-\d.e]+)px\)$/.exec(elements.get(id)?.style.transform ?? '');
-        const drawn = index * ROW + (pin ? Number(pin[1]) : 0);
-        assert.equal(drawn, top, `seed ${seed} press ${press}: ${id} moved during the hold`);
+        assert.equal(drawnTop(id), top, `seed ${seed} press ${press}: ${id} moved during the hold`);
         heldChecks += 1;
       });
     }
@@ -182,6 +198,7 @@ function mash(seed: number, presses: number) {
     maxActive,
     closes,
     heldChecks,
+    cursorHeldChecks,
     cursorY: focusAt() * ROW,
   };
 }
@@ -190,11 +207,13 @@ test('button masher: nothing stuck or duplicated two seconds after the last key'
   let capHits = 0;
   let closes = 0;
   let heldChecks = 0;
+  let cursorHeldChecks = 0;
   for (let seed = 1; seed <= 120; seed++) {
     const r = mash(seed, 60);
     if (r.maxActive === MAX_GHOSTS) capHits += 1;
     closes += r.closes;
     heldChecks += r.heldChecks;
+    cursorHeldChecks += r.cursorHeldChecks;
     assert.equal(r.ghosts.active.length, 0, `seed ${seed}: ghost left`);
     assert.equal(r.host.children.length, 0, `seed ${seed}: clone left`);
     assert.equal(r.fake.running().length, 0, `seed ${seed}: animation left`);
@@ -237,4 +256,5 @@ test('button masher: nothing stuck or duplicated two seconds after the last key'
   assert.ok(capHits > 0, 'the fuzz reached the ghost cap');
   assert.ok(closes > 0, 'the fuzz ran close');
   assert.ok(heldChecks > 0, 'the fuzz checked rows during holds');
+  assert.ok(cursorHeldChecks > 0, 'the fuzz checked the cursor during holds');
 });

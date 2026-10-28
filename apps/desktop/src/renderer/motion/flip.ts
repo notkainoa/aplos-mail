@@ -61,6 +61,8 @@ export interface Closer<K> {
   /** The hold released: FLIPs pinned rows to their places. Returns how many rows animate. */
   close(context?: TriageContext): number;
   readonly pinned: ReadonlyMap<K, number>;
+  /** Where row `id` of `rows` (the rendered order) is drawn: its layout top plus its pin. Null when absent. */
+  drawnTop(rows: readonly K[], id: K): number | null;
   /** Rows still animating their close. */
   readonly running: number;
   /** Ends running closes; rows land in place. */
@@ -120,6 +122,14 @@ export function createCloser<K>(options: CloserOptions<K>): Closer<K> {
     },
     get pinned() {
       return pinned;
+    },
+    drawnTop(rows, id) {
+      let y = options.origin ?? 0;
+      for (const row of rows) {
+        if (row === id) return y + (pinned.get(id) ?? 0);
+        y += options.heightOf(row);
+      }
+      return null;
     },
     get running() {
       return playing.filter(p => !p.done).length;

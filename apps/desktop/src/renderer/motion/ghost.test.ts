@@ -106,6 +106,23 @@ test("'hide' leaves a React-owned node in place, hidden, and shows it again if i
   assert.equal(row.style.visibility, '');
 });
 
+test("'hide' twice on a node that survives: both clones show, and the last ghost restores it", () => {
+  const { fake, ghosts } = setup();
+  const row = fake.element({ height: 40 });
+  const first = ghosts.launch(row.el, flightPlan('done'), { release: 'hide' });
+  fake.advance(motions.flight.durations.base / 2);
+  const second = ghosts.launch(row.el, flightPlan('done'), { release: 'hide' });
+  assert.equal(second?.clone.style.visibility, 'visible');
+  assert.equal(row.style.visibility, 'hidden');
+  fake.advance(motions.flight.durations.base / 2 + 1);
+  assert.equal(first?.done, true);
+  assert.equal(row.style.visibility, 'hidden', 'the second ghost still flies');
+  fake.advance(motions.flight.durations.base);
+  assert.equal(second?.done, true);
+  assert.equal(row.isConnected, true);
+  assert.equal(row.style.visibility, '');
+});
+
 test('an instant plan releases the element without a ghost', () => {
   const { fake, ghosts, host } = setup();
   const row = fake.element({ height: 40 });

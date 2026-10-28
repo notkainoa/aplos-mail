@@ -72,6 +72,7 @@ export {
 export { createThemeFreeze, type ThemeFreeze } from './themeFreeze';
 export {
   createTriageMotion,
+  type FocusMove,
   type ListChange,
   type TriageCommit,
   type TriageMotion,
