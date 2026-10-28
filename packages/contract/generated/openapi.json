@@ -9134,13 +9134,16 @@
           {
             "type": "string",
             "enum": [
+              "gmail",
+              "gcal",
+              "graph",
+              "imap",
+              "imapBytes",
+              "jmap",
+              "caldav",
+              "oauth",
               "google",
               "microsoft",
-              "imap",
-              "jmap",
-              "gcal",
-              "oauth",
-              "caldav",
               "ai"
             ]
           },

@@ -1,4 +1,4 @@
-import type { AccountHealth } from '@aplos/contract';
+import type { AccountHealth, ReasonCode } from '@aplos/contract';
 import type { Logger } from '../diag/log';
 import type { StorePort } from '../store/port';
 import type { AccountId, Admission, DeviceId, ProviderKind } from './base';
@@ -21,6 +21,8 @@ export interface ProviderPort {
   /**
    * Opens one thread on the interactive (or prefetch) lane, commits it (bodies stored, `threads.complete=1`, `laneFor`
    * re-run) and resolves with the committed facts so the caller need not re-read. The adapter picks the call (AM-1).
+   * `knownCount` is the server-reported size (`threads.remote_count`, from `MessageFacts.threadSize`), never the local
+   * `msg_count`: a 5-message thread with 1 message stored must not be opened with the 1-message call.
    */
   openThread(account: AccountId, remoteThreadId: string, opts?: { knownCount?: number; lane?: 'interactive' | 'prefetch' }): Promise<OpenedThread>;
   /** Server search on Enter; rows are committed with `origin='search'` and the ranked thread ids returned. */
@@ -41,7 +43,7 @@ export interface AccountRuntime extends AccountHealth {
   /** "Background work runs on: <Mac>" (ARCH 6.5). */
   lease?: { role: 'primary' | 'secondary'; holder?: DeviceId; until?: number };
   /** Calendar pauses show per calendar, never as the mail status (D12). */
-  calendars?: { remoteId: string; state: 'ok' | 'paused' | 'error'; until?: number; reason?: string }[];
+  calendars?: { remoteId: string; state: 'ok' | 'paused' | 'error'; until?: number; reason?: string; reasonCode?: ReasonCode }[];
 }
 
 /**
@@ -50,9 +52,16 @@ export interface AccountRuntime extends AccountHealth {
  * heartbeat supervisor (plan 10 E1 item 4), which restarts a silent actor alone.
  */
 export interface AccountActorHost extends ProviderPort {
-  /** Runs `connect` under the governor with an engine-assigned account id; `Account/connect|reconnect|grantPermissions`. */
+  /**
+   * Runs `connect` under the governor with an engine-assigned account id; `Account/connect|reconnect|grantPermissions`.
+   * Its `ConnectContext.governor` ignores the account's `auth` block (the reconnect is what lifts it) but honours
+   * cooldowns, daily stops and `config` blocks.
+   */
   connect(account: AccountId, kind: ProviderKind, req: ConnectRequest): Promise<ConnectResult>;
-  /** Restores governor state, then plans from committed cursors; outbox items obey the overdue rule (`SendPort`). */
+  /**
+   * Restores governor state, then plans from committed cursors. The outbox start rules are `SendPort`'s: a `sending` row
+   * becomes `uncertain` and is settled by `findSent` before anything else; only `queued` rows obey the overdue rule.
+   */
   start(account: AccountId): Promise<void>;
   stop(account: AccountId, why: 'disconnect' | 'quit' | 'restart'): Promise<void>;
   /**
@@ -87,12 +96,20 @@ export interface TokenSource {
 
 /**
  * Sending. Implemented by `prov-gov` (routes to `ProviderAdapter.send`/`findSent` on the interactive lane); called by
- * `eng-time`'s outbox, which commits the `sending` marker after `admission` and before `send`. Outcomes:
+ * `eng-time`'s outbox, which commits the `sending` marker (state and `attempt_at`) after `admission` and before `send`.
+ * Outcomes:
  * resolves → `sent`. `NotSentError` → `failed` with Retry (class `send_limit`: "until" `resumeAt`, never auto-retried, D7).
- * `PausedError` → stays `queued` until `until`, except `cls: 'send_limit'`, which is `failed` as above.
+ * `PausedError` → stays `queued` until `until` (auth: until reconnect), except `cls: 'send_limit'`, which is `failed` as above.
  * Anything else → `uncertain`, never replayed: `findSent`, once more after 60 s, then ask the user.
- * Overdue rule (ARCH 7.3, extended to pauses and reconnects): a submission dispatched more than 5 minutes past
- * `not_before`, for any reason, becomes `suspended` instead.
+ * The governor turns anything thrown before the request is written (token refresh, a block) into `PausedError` or
+ * `NotSentError`, so "anything else" means the bytes may have left.
+ *
+ * Start rule (never re-send): when the outbox starts or wakes, every `sending` row it finds is a send whose outcome was
+ * lost (the app died after the marker). It becomes `uncertain` at once and runs `findSent(internetId, attempt_at)`
+ * before any other submission of that account goes out; it is never `suspended`, re-queued or re-sent, however late.
+ *
+ * Overdue rule (ARCH 7.3, extended to pauses and reconnects): applies to `queued` rows only. A `queued` submission
+ * that would go out more than 5 minutes past `not_before`, for any reason, becomes `suspended` instead.
  */
 export interface SendPort {
   /** No I/O: is the account's mail budget open for a send now (auth, pause, send-limit blocks)? */

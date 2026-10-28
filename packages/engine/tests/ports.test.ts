@@ -111,7 +111,7 @@ const factory: ProviderFactory = {
 };
 
 const ctxFor = (clock: Clock, governor: GovernorPort): AdapterContext => ({
-  account, governor: bind(governor, account.id), clock, log, signal: new AbortController().signal, lookup, memory: new Map(),
+  account, governor: bind(governor, account.id), clock, log, signal: new AbortController().signal, lookup, memory: new Map(), generation: 0,
 });
 
 test('a governor that is paused refuses before any I/O', async () => {

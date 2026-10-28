@@ -8,10 +8,10 @@ Source: `migrations/0001_initial.ts` (ARCH 3.2 plus the Providers review S1-S11)
 | `changes` | eng-store (every commit) | `(seq, type, id, op)`, key `(seq, type, id)`: one commit = one seq, many rows. `op` `u`/`d`, or `*` = "type changed in account `id`" (backfill pages) |
 | `commits` | eng-store | applied `op_id` → `seq`: replays are no-ops; receipts |
 | `accounts` | prov-gov, prov-gmail; eng-ai (`ai_allowed`) | `status*`/`resume_at` (AccountStatus); `baseline_done_at` (AM-4); `granted_scopes` (G, O); `token_granted_at`, `refresh_expires_at` (G reconnectBy, S1); `remote_subject` (G `sub`, O `oid`, S2); `primary_lease_*` (all, S3); `oauth_client` (G, O, S4) |
-| `folders` | prov-gmail, later prov-imap/jmap/graph | `role` inbox/sent/drafts/trash/spam/archive/starred/important/all; `kind` label (G) / folder (O, I, F) / system / unknown (placeholder); `uidvalidity` (I); `sync_scope` live/backfill/lazy/none |
-| `threads` | eng-store (rollups) | `remote_id` = G threadId, O conversationId, F threadId, I THREADID or header root; `complete`; `participants` JSON (6 senders); `rev` = seq of last change |
+| `folders` | prov-gmail, later prov-imap/jmap/graph | `role` (`FolderRole`) inbox/sent/drafts/trash/spam/archive/starred/important/all, and `category.personal`/`social`/`promotions`/`updates`/`forums` (G tabs, read by `laneFor`); `kind` label (G) / folder (O, I, F) / system / unknown (placeholder); `uidvalidity` (I); `sync_scope` live/backfill/lazy/none |
+| `threads` | eng-store (rollups) | `remote_id` = G threadId, O conversationId, F threadId, I THREADID or header root; `complete`; `remote_count` (the server's message count, G `threads.get`; `openThread`'s `knownCount`, never `msg_count`); `participants` JSON (6 senders); `rev` = seq of last change |
 | `messages` | eng-store from prov-* facts | id = `internal_date_s × 4096 + n`; `remote_id` = G id, O immutable id, F Email id, I EMAILID or hash; `flags` 1 seen, 2 flagged, 4 answered (I, F), 8 draft, 16 from_me, 32 has_attach; `hdr` 1 bulk, 2 list, 4 auto_submitted, 8 noreply, 16 direct_to_me, 32 cc_me; `parts` 1 meta, 2 text, 4 html, 8 fts, 16 attach_listed, 32 evicted; `origin` sync/search/local; `local_seq` (mutation fence); `list_unsub` JSON `{urls, oneClick}` |
-| `message_folders` | eng-store | G labels; O/I/F placements; `uid` (I, unique per folder); `seen_gen` (bounded sweep, all; S7) |
+| `message_folders` | eng-store | G labels; O/I/F placements; `uid` (I, unique per folder); `seen_gen` (bounded sweep, all; S7): the generation (store `seq` at round start) of the last round that listed it; only rises; NULL = written outside a round, never swept. `sweep` removes `seen_gen < generation` inside `(since, until)` and the UID range |
 | `thread_folders` | eng-store (derived) | keyset lists `(folder_id, last_date, thread_id)` and `unread`; Trash/Spam messages count only there (D8); drafts and `search` rows excluded |
 | `bodies` | eng-store | provider-original record; `codec` 0 raw, 1 zstd-3, 2 gzip |
 | `attachments` | eng-store | metadata only; `remote_part` (G attachmentId, I section, O/F blob id); `state` absent/fetching/present/evicted |
@@ -23,16 +23,16 @@ Source: `migrations/0001_initial.ts` (ARCH 3.2 plus the Providers review S1-S11)
 | `conversations` | eng-ai | Ask history, imported unchanged |
 | `settings` | eng-contract | one JSON document |
 | `ops` | eng-views enqueue, prov-gov drain | per-account FIFO, replayed over sync until done |
-| `drafts` | eng-time, prov-gmail-write | `remote_draft_id` (G, O, F), `remote_message_id` (I APPEND), `origin` local/remote (S10) |
+| `drafts` | eng-time, prov-gmail-write | `remote_draft_id` (G, O, F), `remote_message_id` (I APPEND), `remote_internet_id` (the synced copy's per-revision Message-ID: I deletes the old copy by it without UIDPLUS), `origin` local/remote (S10) |
 | `submissions` | eng-time | state machine; `internet_id` (findSent on all); `mime`; `remote_message_id`, `remote_thread_id` (S11) |
 | `jobs`, `ai_usage`, `consent` | eng-ai | AI queue, budget and consent |
 | `notifications` | eng-time | outbox per message: pending/posted/claimed |
 | `sync_state` | prov-gmail, prov-cal | `scope` history / window:inbox / backfill:inbox / folder:<id> (I, O) / cal:<id> (GC, D); `cursor` (G historyId, O deltaLink, I `uidvalidity:modseq:uidnext`, F state, GC/D sync token); `page_token` (G, O nextLink, D 507 paging); `pending` (S9) |
 | `sync_failures` | prov-gov | quarantined poison items |
-| `governor_state` | prov-gov, eng-ai | `budget` gmail/gcal/graph/imap/imapBytes/jmap/caldav/oauth/ai:*; S8 escalation, AIMD, sliding window, send and auth blocks; `account_id='*'` project-wide (G daily limit) |
+| `governor_state` | prov-gov, eng-ai | `budget` gmail/gcal/graph/imap/imapBytes/jmap/caldav/oauth/ai:*; S8 escalation, AIMD, sliding window, send and auth blocks (`blocked_cls`, `blocked_since`); an auth block is written to every budget of the account; `account_id='*'` project-wide (G daily limit) |
 | `provider_memory` | prov-* | small key/values (I indexes, O delta links) |
 | `calendars` | prov-cal | `selected`, `time_zone` (GC, D), `change_tag` (D ctag) (S6) |
-| `events` | prov-cal | unique `(calendar_id, remote_id, recurrence_id)`; `recurrence_id` '' for masters (GC originalStartTime, D RECURRENCE-ID); `master_remote_id` (GC recurringEventId, D UID); `status` incl. cancelled; `etag` (GC, D, O); `ics` (D) (S5) |
+| `events` | prov-cal | unique `(calendar_id, remote_id, recurrence_id)`; `recurrence_id` '' for masters (GC originalStartTime, D RECURRENCE-ID); `master_remote_id` (GC recurringEventId, D UID); `status` incl. cancelled; `etag` (GC, D, O); `ics` (D) (S5); `seen_gen` (the 410 / resync sweep, as `message_folders`) |
 | `clients`, `audit_log` | eng-host | listener clients (token hash only) and a content-free audit |
 | `schema_migrations` | migrate.ts | version, name, checksum: catches an edited shipped migration |
 

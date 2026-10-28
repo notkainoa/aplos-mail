@@ -1,5 +1,6 @@
 import type { ClassifiedError } from '@aplos/contract';
 import type { Logger } from '../diag/log';
+import type { FolderRole } from '../store/port';
 import type { AccountId, ProviderKind, SyncLane } from './base';
 import type { CalendarAdapter } from './calendar';
 import type { BoundGovernor, BudgetSpec } from './governor';
@@ -66,10 +67,19 @@ export interface MessageFacts {
    * flags) and DRAFT (a flag); CATEGORY_* and IMPORTANT stay, with folder roles that say what they mean.
    */
   placements: Placement[];
+  /**
+   * Default true: `placements` is the message's complete folder set and replaces the stored one (`MessageWrite.folders`).
+   * False when the step saw one folder only (IMAP and Graph per-folder steps): the actor writes `PlacementsWrite` adds
+   * instead, so the message's other placements stay.
+   */
+  placementsComplete?: boolean;
   list: ListHeaders;
   /** Metadata only: the row surfaces as `partial: true` until the thread is opened. */
   partial: boolean;
-  /** Messages in the thread, when the call returned it (Gmail `threads.get` metadata): lets `openThread` pick the 60-unit call. */
+  /**
+   * Messages in the thread as the server counts them, when the call returned it (Gmail `threads.get` metadata). Stored as
+   * `threads.remote_count` (`ThreadWrite.remoteCount`); it is what `openThread`'s `knownCount` passes (AM-1).
+   */
   threadSize?: number;
   attachments?: AttachmentFacts[];
 }
@@ -89,10 +99,8 @@ export interface PlacementDelta { remoteId?: string; folder: string; uid?: numbe
 /** A deletion the server stated (Gmail `messagesDeleted`, JMAP `destroyed`). Inferred removals only come from a sweep. */
 export interface Removal { remoteId: string }
 
-/** Role values are what `folders.role` stores; the `category.*` roles are Gmail's tabs, read by `laneFor`. */
-export type FolderRole =
-  | 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'archive' | 'starred' | 'important' | 'all'
-  | 'category.personal' | 'category.social' | 'category.promotions' | 'category.updates' | 'category.forums';
+/** Defined beside `folders.role` (`store/port.ts`); the `category.*` roles are Gmail's tabs, read by `laneFor`. */
+export type { FolderRole };
 
 export interface FolderFacts {
   remoteId: string;
@@ -131,6 +139,12 @@ export interface SyncState {
   pageToken?: string;
   phase?: string;
   oldestLoaded?: number;
+  /**
+   * The round this state belongs to, for the bounded sweep. Every scope of every account draws it from one monotonic
+   * source, the store's `seq()` when the round's first step starts (`AdapterContext.generation`), so a later round of
+   * any scope always has a higher generation than every placement an earlier round stamped. A step that starts a round
+   * (no `pageToken`) writes `ctx.generation`; later pages keep the state's value. Never a per-scope counter.
+   */
   generation: number;
   updatedAt: number;
   /** Remote ids fetched-but-refused or still to fetch in this step, at most 500: what a paused step resumes with. */
@@ -165,8 +179,13 @@ export interface PlanInput {
   memory: ReadonlyMap<string, string>;
 }
 
-/** Bounds a generation sweep: only placements in `folder` inside this range, listed before `generation`, are removed. */
-export interface SweepBound { folder: string; since?: number; uidFrom?: number; uidTo?: number }
+/**
+ * Bounds a generation sweep (store `SweepWrite`): it removes placements in `folder` with `seen_gen IS NOT NULL AND
+ * seen_gen < generation` inside this range. A NULL `seen_gen` (written by history, open or search) is kept.
+ * `since`/`until` are exclusive internal-date bounds, epoch ms, set to the oldest and newest message the round listed
+ * (absent `until` for a round that started at the top of the folder); `uidFrom`/`uidTo` are inclusive.
+ */
+export interface SweepBound { folder: string; since?: number; until?: number; uidFrom?: number; uidTo?: number }
 
 export type ResetReason = 'cursorExpired' | 'uidValidityChanged' | 'syncTokenInvalid' | 'cannotCalculateChanges' | 'changeCapExceeded' | 'windowRolled';
 
@@ -187,13 +206,20 @@ export interface StepResult {
   nextStates: SyncState[];
   /** False when a pause cut the step short: the partial facts commit and `pending` holds the rest. */
   done: boolean;
-  /** Set only when the scope's round listed everything inside `bound`; never on a partial answer (`MESSAGELIMIT`, a limited-mode host). */
+  /**
+   * Set only when the scope's round listed everything inside `bound`; never on a partial answer (`MESSAGELIMIT`, a
+   * limited-mode host). Every id the round listed inside the bound must have come back stamped, as an upsert or as a
+   * `PlacementDelta { present: true }` for `bound.folder`, fetched or not: the Gmail window returns one for every id
+   * `messages.list` gave, so older Inbox messages of a thread whose newest message alone was fetched are not swept.
+   * The actor commits it as a store `sweep` write in the same transaction as this step.
+   */
   scopeCovered?: { scope: ScopeId; generation: number; bound: SweepBound };
   /** Informational (log and reason code); the next `plan()` emits the resync steps. */
   reset?: ResetReason;
   /** The first window (newest ~50 Inbox threads) is committed: set `baseline_done_at` (AM-4). */
   baselineReached?: boolean;
-  progress?: { read: number; total?: number };
+  /** `found` feeds `AccountRuntime.firstWindow.found` when the provider estimates it. */
+  progress?: { read: number; total?: number; found?: number };
   /** `provider_memory` writes; null deletes. */
   memory?: Record<string, string | null>;
   quarantine?: Quarantine[];
@@ -254,6 +280,8 @@ export interface AdapterContext {
   lookup: KnownLookup;
   /** `provider_memory` as committed; a step's writes go in `StepResult.memory`. */
   memory: ReadonlyMap<string, string>;
+  /** The store's `seq()` when this call started: the generation a step that starts a new round writes (`SyncState.generation`). */
+  generation: number;
 }
 
 // ---- connect ----
@@ -273,7 +301,11 @@ export interface ConnectRequest {
   secretRef?: string;
 }
 
-/** The engine assigns the account id before connecting, so connect-time calls are governed like any other. */
+/**
+ * The engine assigns the account id before connecting, so connect-time calls are governed like any other, except that
+ * `governor` ignores the account's `auth` block (a reconnect is how it ends) while honouring cooldowns, daily stops and
+ * `config` blocks.
+ */
 export interface ConnectContext { accountId: AccountId; governor: BoundGovernor; clock: Clock; log: Logger; signal: AbortSignal }
 
 export interface ConnectResult {
@@ -283,10 +315,11 @@ export interface ConnectResult {
   grantedScopes: string[];
   capabilities: Capabilities;
   /**
-   * OAuth only. `refreshExpiresAt` is the earliest the refresh token stops working: for a Google client in Testing mode
-   * the host's OAuth config folds in grant + 7 days, and `refresh_token_expires_in` when sent. It becomes `reconnectBy`.
+   * OAuth only. `refreshExpiresAt` is the earliest the refresh token stops working: min(grant + 7 days for a Google client
+   * in Testing mode, `refresh_token_expires_in` when sent), folded in by the host's OAuth config. It becomes `reconnectBy`.
+   * `client` is the OAuth client id the grant belongs to (`accounts.oauth_client`, D21).
    */
-  grant?: { grantedAt: number; refreshExpiresAt?: number };
+  grant?: { grantedAt: number; refreshExpiresAt?: number; client?: string };
   /** Vault reference of the stored token bundle (refresh token + client id, D21) or of the app password. */
   credentialRef: string;
   /** Initial `provider_memory`: limits learned at connect (JMAP session, IMAP host table), capabilities detail. */
@@ -339,7 +372,11 @@ export interface CoalescedOp { opIds: string[]; method: string; cost: number; bo
 
 export interface OpOutcome {
   opId: string;
-  /** `notFound` drops the op (ARCH 4.3); `failed` holds back that account's later ops. */
+  /**
+   * `notFound` drops the op (ARCH 4.3); `failed` holds back that account's later ops. A `write` whose reply was lost is
+   * `failed` with `error.uncertain: true`: never re-sent, the actor holds the op until the next incremental pass shows
+   * whether it landed (then drops it, or applies it again).
+   */
   result: 'applied' | 'notFound' | 'failed';
   error?: ClassifiedError;
   /** IMAP `UID MOVE` / COPYUID: the message's new placements. */
@@ -437,13 +474,21 @@ export interface ProviderAdapter {
   fetchAttachment(ref: AttachmentRef, ctx: AdapterContext): Promise<AsyncIterable<Uint8Array>>;
   /** Pure: merges pending ops into provider calls. */
   coalesce(ops: PendingOp[]): CoalescedOp[];
-  /** Idempotent writes only; one outcome per op id. */
+  /**
+   * One outcome per op id. Runs `idempotentWrite` where the provider has one (Gmail `batchModify`, JMAP `Email/set`
+   * patches, flag stores), re-sent on transient; `write` for moves that are not (Graph `/move`, IMAP `UID MOVE`), never re-sent.
+   */
   apply(op: CoalescedOp, ctx: AdapterContext): Promise<OpOutcome[]>;
   /** Create (`write`) when `remoteDraftId` is absent, else update by revision (`idempotentWrite`). */
   saveDraft?(draft: DraftUpload, ctx: AdapterContext): Promise<DraftSaveResult>;
   /** Idempotent: an absent draft is success. */
   deleteDraft?(remoteDraftId: string, ctx: AdapterContext): Promise<void>;
-  /** Never retried (`kind: 'send'`). Throws `NotSentError` or `PausedError` only with proof; anything else means uncertain. */
+  /**
+   * Never retried (`kind: 'send'`). Throws `NotSentError` or `PausedError` only with proof; anything else means uncertain.
+   * When one call makes several requests (iCloud: SMTP, then an `APPEND` to Sent), it may let `PausedError` or
+   * `NotSentError` escape only if no earlier request in the call could have delivered the mail; after SMTP accepted the
+   * message, a failed `APPEND` still resolves (the receipt), it never throws.
+   */
   send(submission: SubmissionPayload, ctx: AdapterContext): Promise<SendReceipt>;
   /** Searches Sent by Message-ID: Gmail `rfc822msgid:`, IMAP `HEADER Message-ID`, Graph `internetMessageId`, JMAP `Email/query`. */
   findSent(internetId: string, since: number, ctx: AdapterContext): Promise<FindSentResult>;

@@ -38,8 +38,8 @@ export interface StoreReader {
 
 /** Who is writing. `sync` commits can carry a mutation fence; `local` commits mark rows for it. */
 export type CommitOrigin = 'sync' | 'local' | 'import' | 'system';
-/** Which sync step produced the facts (Providers proposal `StepOrigin`); decides notifications and search rows. */
-export type SyncStepOrigin = 'baseline' | 'incremental' | 'backfill' | 'resync' | 'prefetch' | 'search';
+/** Which sync step produced the facts (the port's `StepOrigin`, plus `search`); decides notifications and search rows. */
+export type SyncStepOrigin = 'baseline' | 'incremental' | 'backfill' | 'resync' | 'prefetch' | 'workflow' | 'search';
 
 export interface CommitInput {
   /** Idempotency key. A commit whose opId was already applied changes nothing and returns that commit's seq. */
@@ -70,7 +70,7 @@ export type StoreWrite =
   | AccountWrite | FolderWrite | FolderDeleteWrite
   | MessageWrite | MessageDeleteWrite | PlacementsWrite | FlagsWrite
   | ThreadWrite | ThreadDeleteWrite | WorkflowWrite
-  | SyncStateWrite | MetaWrite;
+  | SyncStateWrite | SweepWrite | MetaWrite;
 
 export interface Address { address: string; name?: string }
 /** One message's place in a folder. `uid` is the IMAP UID in that folder; absent elsewhere. */
@@ -101,12 +101,17 @@ export interface AccountWrite {
   primaryLeaseDevice?: string | null;
 }
 
+/** What `folders.role` stores (F3 re-exports it); the `category.*` roles are Gmail's tabs, read by `laneFor`. */
+export type FolderRole =
+  | 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'archive' | 'starred' | 'important' | 'all'
+  | 'category.personal' | 'category.social' | 'category.promotions' | 'category.updates' | 'category.forums';
+
 export interface FolderWrite {
   kind: 'folder';
   accountId: string;
   remoteId: string;
   name: string;
-  role?: 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'archive' | 'starred' | 'important' | 'all' | null;
+  role?: FolderRole | null;
   folderKind: 'label' | 'folder' | 'system';
   syncScope?: 'live' | 'backfill' | 'lazy' | 'none';
   uidValidity?: number | null;
@@ -147,7 +152,11 @@ export interface MessageWrite {
   hdr?: HeaderBits;
   listUnsubscribe?: { urls: string[]; oneClick?: boolean };
   folders?: FolderRef[];
-  /** Generation of the sync round that listed this message; stamped on its placements for the bounded sweep. */
+  /**
+   * Generation of the sync round that listed this message (`SyncState.generation`); stamped on its placements for the
+   * bounded sweep. A stamp only ever rises; absent keeps the stored stamp, and a new placement without one is NULL,
+   * which a sweep never removes (history, open and search writes leave it out).
+   */
   seenGen?: number;
   /** Defaults: `search` for `step: 'search'`, `local` for local and import commits, else `sync`. */
   origin?: 'sync' | 'search' | 'local';
@@ -166,8 +175,11 @@ export interface PlacementsWrite {
 /** Flag delta (Gmail UNREAD/STARRED, IMAP flags, local read/star). Absent fields stay. */
 export interface FlagsWrite { kind: 'flags'; accountId: string; target: MessageTarget; seen?: boolean; flagged?: boolean; answered?: boolean }
 
-/** Thread-level facts that are not rollups. Rollups always come from the messages. */
-export interface ThreadWrite { kind: 'thread'; accountId: string; remoteThreadId: string; complete?: boolean }
+/**
+ * Thread-level facts that are not rollups. Rollups always come from the messages. `remoteCount` is the server's own
+ * message count (`MessageFacts.threadSize`), kept apart from `msg_count` for `openThread`'s `knownCount`.
+ */
+export interface ThreadWrite { kind: 'thread'; accountId: string; remoteThreadId: string; complete?: boolean; remoteCount?: number | null }
 export interface ThreadDeleteWrite { kind: 'threadDelete'; accountId: string; remoteThreadId: string }
 
 export interface WorkflowFields {
@@ -204,6 +216,23 @@ export interface SyncStateWrite {
   oldestLoaded?: number;
   generation: number;
   pending?: string[];
+}
+
+/**
+ * The bounded generation sweep (F3 `StepResult.scopeCovered`), committed in the same transaction as the step that
+ * covered the scope. Removes the placements in `folder` with `seen_gen IS NOT NULL AND seen_gen < generation` whose
+ * message is inside the bound: `since < internal_date < until` (exclusive, epoch ms; each absent = open) and
+ * `uidFrom <= uid <= uidTo`. Messages are kept (they leave only that folder); fenced messages are skipped.
+ */
+export interface SweepWrite {
+  kind: 'sweep';
+  accountId: string;
+  folder: string;
+  generation: number;
+  since?: number;
+  until?: number;
+  uidFrom?: number;
+  uidTo?: number;
 }
 
 /** Engine-owned key/values (`import_state`, `imported_from`, `consent_version`). `null` deletes. Reserved keys refuse. */

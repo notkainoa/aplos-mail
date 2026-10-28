@@ -10,8 +10,14 @@ export const errorClasses = ['auth', 'permission', 'throttle', 'daily', 'send_li
 export type ErrorClass = typeof errorClasses[number];
 export const ErrorClassSchema = z.union([z.enum(errorClasses), z.string()]);
 
-/** The provider the failed call went to; `gcal`, `oauth` and `caldav` are separate budgets from the mail adapters. */
-export const ErrorProviderSchema = z.union([z.enum(['google', 'microsoft', 'imap', 'jmap', 'gcal', 'oauth', 'caldav', 'ai']), z.string()]);
+/**
+ * Where the failed call went: the governor budget it ran on (F3 `BudgetId`: `gmail`, `gcal`, `graph`, `imap`,
+ * `imapBytes`, `jmap`, `caldav`, `oauth`, `ai:<provider>:<model>`), or the provider kind for a call outside a budget
+ * (`google`, `microsoft`, `ai`). Open, so `ai:*` budgets and later providers fit.
+ */
+export const ErrorProviderSchema = z.union([z.enum([
+  'gmail', 'gcal', 'graph', 'imap', 'imapBytes', 'jmap', 'caldav', 'oauth', 'google', 'microsoft', 'ai',
+]), z.string()]);
 
 /**
  * The classified-error record (plan 10 E0, ARCH 6.3; the Providers port proposal section 2).
