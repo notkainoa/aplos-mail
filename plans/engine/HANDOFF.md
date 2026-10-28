@@ -1,43 +1,25 @@
-# Engine thread handoff (written 2026-10-28 for the 2026-10-29 restart)
+# Engine thread handoff (written 2026-10-28 23:30, second lean thread; context past 150k)
 
-> **What this means:** the old Engine thread was paused by the owner on 2026-10-28 (Claude usage limit, then lean mode). Phase 1 got through the runtime seam, the first store proofs, and early work in every other lane. Nothing is merged yet except Phase 0. Fresh Sonnet thread: read this, `plans/lanes/<lane>.md`, roadmap 5.1a. Do not read the old thread. All branch SHAs are on origin.
+Fresh Sonnet thread: read this, then `plans/lanes/eng-views.md`, roadmap 5.1a, and new STATUS lines only. Routing is unchanged (explicit model on every subagent, Opus only for the store commit path / window and undo correctness review, free OpenCode models for mechanical work with a Sonnet diff review). Never merge to main; push STATUS lines straight to `revamp` (pull first, check for conflict markers with `grep -E '^(<<<<|====|>>>>)'`; BSD sed needs `sed -i ''`).
 
-Old thread: `mcp:aa00aa53-b513-42d2-96d1-ecb158cd11f0` (read-only). Rules: no leads of leads, at most 4 subagents, one Sonnet review per PR, Opus only for the store commit path and contract changes. Lane PRs carry Phase 0 history that #28 squashed, so ask the Integrator to squash-merge them.
+## PR state (all into `revamp`; the Integrator merges)
 
-## Lane state (tips on origin; none has green `npm run check` evidence unless noted)
+| PR | Lane | Branch @ head | State |
+|---|---|---|---|
+| #46 | eng-contract runtime seam | `rv/eng-contract/runtime-seam` @ 38c48e4 | Integrator fixes A (frame filter by caller), B (refuse undefined caller), low items pushed; READY posted. Worktree `../rv-thread-engine-seam` (branch `rv/eng-contract/seam-fixes`, push with `git push origin rv/eng-contract/seam-fixes:rv/eng-contract/runtime-seam`). |
+| #54 | eng-store (store-1 + store-2) | `rv/eng-store/commit` @ f1990bb | READY, CLEAN, check exit 0. Opus review done, both defects fixed, Integrator's safeLane point fixed. Worktree: `rv-thread-engine` (this dir). |
+| #57 | eng-views views-1 compiler | `rv/eng-views/views-1` | Stacked on #54. Sonnet review done, fixes pushed, comment posted. Needs revamp merged into it after #54 merges (owners row for `tests/views/**` is now in OWNERS.md). One open item for store-4: `from:`/`to:` still use an ASCII-only `LIKE` re-check because the FTS index has one `people` column; ask eng-store for separate `from_people`/`to_people` columns. |
+| #58 | eng-views views-2 live windows | `rv/eng-views/windows` @ b746a93 | Stacked on #46, #54, #57; ready for review, Opus review done, 6 defects fixed with tests (55 views tests, 53 pass, 2 opt-in). Worktree: `../rv-thread-engine-views`. After #46/#54/#57 merge: merge `revamp` into it, rerun check, push. |
+| #47 | eng-ai ai-1 `laneFor` | merged | done. |
+| #43 | eng-host quit fix | merged | done. |
 
-| Lane | Branch @ SHA | State |
-|---|---|---|
-| eng-contract | `rv/eng-contract/runtime-seam` @ 3e77eed | PR #46 open, CLEAN (contract-1: runtime seam, scoped dispatch). Every lane plugs into it. |
-| eng-contract | `rv/eng-contract/voice-notify` @ 315f12c | WIP, no PR: Voice may be unset; `System/notifications {request:true}` (UI-screens' two contract additions). Contract change: Opus review. |
-| eng-store | `rv/eng-store/commit-extensions` @ 42c1b0c | store-2 work: ingest hooks (`laneFor`), correspondents, `KnownLookup`, schema 0002. No PR. |
-| eng-store | `rv/eng-store/commit-proof` @ d6ce06f | store-1 work: `compact.ts`, replay and rollup property tests (935 lines). No PR. Does NOT contain commit-extensions; the two must be combined. |
-| eng-views | `rv/eng-views/compiler` @ 91cfaf9 | views-1 WIP (compiler, specs, lists, sections, search). |
-| eng-time | `rv/eng-time/clock-loop` @ 84de2d4 | time-1 done; an Opus review confirmed 10 defects not yet fixed. |
-| eng-time | `rv/eng-time/reminders-later` @ 4d1da61 | time-4, 10 of 10 tests pass. |
-| eng-time | `rv/eng-time/submissions` @ b756418 | time-2 send state machine, WIP, unverified. |
-| eng-ai | `rv/eng-ai/heuristic-lanes` @ 37df8f5 | PR #47 open, CLEAN (ai-1 `laneFor`). ai-2 (Demo) not started; local branch `rv/eng-ai/demo-data` is the same SHA. |
-| eng-html | `rv/eng-html/{parser-spike 8ee97ab, corpus c42e51a, image-proxy 7f2600e, sanitizer d748899}` | html-1, html-2 (128 messages), html-6 done in branches; html-3 sanitizer WIP. No PRs. |
-| eng-host | `rv/eng-host/quit-race` @ 40735c4 | PR #43 open, CLEAN (quit during startup no longer hangs). |
-| eng-host | `{onboarding-hooks 0b2fd28, resident-mode 2a26bef, selftest 1cef858, doorway-transports bca4026}` | host-1 to host-4 WIP; host-1 smoke spec never ran green; doorway is a committed WIP. |
+Worktrees (all share the main checkout's `node_modules` only where noted; `rv-thread-engine-ai` and `-views` and `-seam` have their own `npm ci`). `npm run check` needs the Electron binary: the first run after `npm ci` downloads it and fails `check:sqlite`; rerun. The pre-commit hook format-checks every staged file, so a merge commit that brings in intentionally unformatted lint fixtures needs `--no-verify` (the real `npm run check` passes).
 
-## Preserved uncommitted work (pushed as WIP, never reviewed, fails or skips hooks where noted)
+## Next actions
 
-- `rv/eng-views/wip-pause-1028` @ dae3de4 (on top of compiler; split `populate` in `tests/views/big.ts`, complexity 36 > 25; prettier fails; committed with `--no-verify`).
-- `rv/eng-html/wip-pause-1028` @ 36851fa (bounds a quadratic slowdown in `quotes.ts` quote detection; `no-control-regex` lint error; `tmpbench.ts` deleted; `--no-verify`).
-- `rv/eng-contract/wip-pause-1028-r3-a` @ e22a402, `...-f34-review-fixes-2` @ ef5f8ce, `...-f6-fixture` @ 2d3b215 (old Phase 0 worktrees: one test edit each, plus a fixture README and two tests; likely stale, check against `revamp` before using).
-- Nothing secret or large was found.
-
-## Open PRs touching this thread
-
-#43 eng-host quit fix, #46 eng-contract runtime seam, #47 eng-ai Home lanes. Also open, not ours: #45 (test:engine under Electron Node), #44 (UI-core F9, last freeze item), #40, #38.
-
-## Next 5 actions
-
-1. `eng-store` first (critical path, day-6 target slipped by the pause): merge commit-proof into commit-extensions, run `npx tsx --test 'packages/engine/tests/store/**/*.test.ts'` and `npm run check`, open one PR for the real `store.commit` plus change log, compaction and hooks. Opus reviews the commit path only. Post HANDOFF-READY.
-2. `eng-views` second: rebase compiler plus its WIP onto the store branch (or revamp), finish views-1 (lint: split `populate`, prettier), EXPLAIN QUERY PLAN test, then PR.
-3. Ask the Integrator (STATUS REQUEST) to merge #46 then #47 then #43, squash. Rebase lane branches on `revamp` after each.
-4. Post a STATUS NOTICE that the engine thread restarted fresh with two building lanes (store, views); eng-ai, eng-time, eng-html, eng-host are parked.
-5. Parked, resume in this order after their PR merges and a slot frees: eng-ai (ai-2 Demo, needed for conformance), eng-time (fix the 10 clock-loop defects, then time-2), eng-host (finish host-1 to host-3, then PR), eng-html (finish the sanitizer, Opus review, security area).
-
-Test everything with `npx tsx --test <paths>` per the lane card. Seams 1 to 4 are in `plans/engine/phase1-lanes.md` lines 76 to 100.
+1. Answer any Integrator REQUEST on #46/#54/#57/#58 first (read new STATUS lines).
+2. views-3 (commands, receipts, undo): `packages/engine/src/views/{act,ops,undo,why}.ts`, `methods/{thread,operation}.ts`, tests `act`, `undo`, `overlay.property`. Needs store-2's `ops` and `sender_rules` writers (merged with #54) and the runtime seam (#46). Spec: `plans/engine/phase1-lanes.md` lines 255-312 (views-3) and `plans/10-engine-foundation.md` E3 item 4. Write it as a Sonnet subagent task on a new branch off `rv/eng-views/windows`, then one Opus review (undo and stale overlay are in the allowed Opus list), fix findings, PR stacked on #58.
+3. views-4 (sender rules, Sonnet), views-5 (conformance burn-down once the real-engine conformance runner lands on revamp; `expected-fail.engine.json` is not there yet).
+4. Known gaps handed to others: the runtime has no commit subscription (views polls `store.seq()` every 50 ms; `services.views.committed()` is ready for `observeCommits`) and no connection-close hook (windows capped at 64 per connection); the frame bus and `eng-time` should wire both.
+5. Parked lanes, resume in this order after their PR merges and a slot frees: eng-ai (ai-2 Demo, Setup/*; branch `rv/eng-ai/heuristic-lanes` merged, `rv/eng-ai/demo-data` local only), eng-time (fix the 10 clock-loop defects on `rv/eng-time/clock-loop`, then time-2 on `rv/eng-time/submissions`), eng-html (finish the sanitizer on `rv/eng-html/wip-pause-1028`, Opus security review), eng-host (host-1 to host-3; PRs on `rv/eng-host/*`). See the 2026-10-28 handoff table in git history (`git show 59e6470:plans/engine/HANDOFF.md`) for those SHAs.
+6. Optional follow-ups from reviews, not blocking: raise the replay property test default from 80 to 1000 sequences if the CI budget allows (22 s); `lowSenders` sections can pass 150 KB near 2,000 senders; `events` view range validation is latent until prov-cal registers it.
