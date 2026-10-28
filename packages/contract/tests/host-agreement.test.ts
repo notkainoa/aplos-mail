@@ -9,84 +9,54 @@ import {
 } from '../generated/methods.generated';
 
 /**
- * Today three hand lists decide which methods a window may call (preload), main serves (electron.ts) and the browser
- * preview serves (server.ts), and they drift. This test reads them as they are and reports how each differs from the
- * generated legacy set, which must contain them all. Restructure step 3 makes the three files derive from the
- * generated set; then the drift printed here is empty and the equality assertions at the bottom can be switched on.
+ * Preload (what a window may call), main (what it sends to the engine or answers natively) and the browser preview
+ * used to keep three hand lists that drifted (66/66/62). Since restructure step 3 each derives its set from the
+ * generated tables, so they agree by construction. This test keeps it that way: every host builds its set from the
+ * named generated list, and no hand-written list of method names comes back.
  */
 const main = join(import.meta.dirname, '..', '..', '..', 'apps', 'desktop', 'src', 'main');
 const source = (file: string) => readFileSync(join(main, file), 'utf8');
-/** The string literals of `<name> = new Set([...])` (or `<name>=new Set([...])`) in a file. */
-function setLiteral(file: string, name: string): Set<string> {
-  const match = new RegExp(`\\b${name}\\s*=\\s*new Set\\(\\[([\\s\\S]*?)\\]\\)`).exec(source(file));
-  assert.ok(
-    match,
-    `${file} no longer declares ${name} as a Set literal; update this test with the wiring`,
-  );
-  return new Set([...match[1]!.matchAll(/'([^']+)'/g)].map(m => m[1]!));
-}
-const minus = (a: Iterable<string>, b: Set<string>) => [...a].filter(x => !b.has(x)).sort();
 
-test('the generated legacy set covers every hand list, and the drift between them is reported', t => {
-  const generated = new Set<string>(legacyMethods),
-    engine = new Set<string>(legacyEngineMethods),
-    desktop = new Set<string>(legacyDesktopMethods);
-  const preload = setLiteral('preload.ts', 'allowed');
-  const electronEngine = setLiteral('electron.ts', 'methods');
-  const electronNative = setLiteral('electron.ts', 'nativeMethods');
-  // main answers `ai.key.paste` itself before either set is consulted
-  const electronAll = new Set([
-    ...electronEngine,
-    ...electronNative,
-    ...(/method==='ai\.key\.paste'/.test(source('electron.ts')) ? ['ai.key.paste'] : []),
-  ]);
-  const serverEngine = setLiteral('server.ts', 'serviceMethods');
-  const serverWeb = setLiteral('server.ts', 'webMethods');
-  const serverAll = new Set([...serverEngine, ...serverWeb]);
+const hosts = [
+  { file: 'preload.ts', set: 'allowed', list: 'legacyMethods' },
+  { file: 'engine-host.ts', set: 'methods', list: 'legacyEngineMethods' },
+  { file: 'native-methods.ts', set: 'nativeMethods', list: 'legacyDesktopMethods' },
+  { file: 'server.ts', set: 'serviceMethods', list: 'legacyEngineMethods' },
+  { file: 'server.ts', set: 'webMethods', list: 'legacyDesktopMethods' },
+] as const;
 
-  for (const [name, list] of [
-    ['preload', preload],
-    ['electron', electronAll],
-    ['server', serverAll],
-  ] as const) {
-    assert.deepEqual(
-      minus(list, generated),
-      [],
-      `${name} allows methods missing from the generated legacy set`,
+test('every host derives its method set from the generated allowlists', () => {
+  for (const { file, set, list } of hosts) {
+    const text = source(file);
+    assert.match(
+      text,
+      /from '@aplos\/contract\/allowlists'/,
+      `${file} imports the generated allowlists`,
+    );
+    assert.match(
+      text,
+      new RegExp(`\\b${set}\\s*=\\s*new Set<string>\\(${list}\\)`),
+      `${file} builds ${set} from ${list}`,
     );
   }
-  assert.deepEqual(
-    minus(electronEngine, engine),
-    [],
-    'electron.ts sends only engine methods to the engine',
-  );
-  assert.deepEqual(
-    minus(electronNative, desktop),
-    [],
-    'electron.ts serves only desktop methods natively',
-  );
-  assert.deepEqual(
-    minus(serverEngine, engine),
-    [],
-    'server.ts sends only engine methods to the engine',
-  );
+});
 
-  const drift = {
-    'generated legacy methods preload does not allow': minus(generated, preload),
-    'generated legacy methods electron.ts does not serve (engine set + native set + ai.key.paste)':
-      minus(generated, electronAll),
-    'generated legacy methods server.ts does not serve (service set + web set)': minus(
-      generated,
-      serverAll,
-    ),
-    'server.ts web methods that main does not serve natively': minus(serverWeb, electronNative),
-    'counts preload / electron / server / generated': [
-      preload.size,
-      electronAll.size,
-      serverAll.size,
-      generated.size,
-    ].map(String),
-  };
-  for (const [label, names] of Object.entries(drift))
-    t.diagnostic(`${label}: ${names.length ? names.join(', ') : 'none'}`);
+test('no host keeps a hand-written list of method names', () => {
+  for (const file of new Set(hosts.map(h => h.file))) {
+    const literal = /new Set(?:<[^>]*>)?\(\[\s*'[a-z]+\.[A-Za-z.]+'/.exec(source(file));
+    assert.equal(literal, null, `${file} declares a method list by hand: ${literal?.[0]}`);
+  }
+});
+
+test('the generated legacy tables split cleanly into engine and desktop methods', () => {
+  const engine = new Set<string>(legacyEngineMethods),
+    desktop = new Set<string>(legacyDesktopMethods);
+  assert.deepEqual(
+    [...engine].filter(m => desktop.has(m)),
+    [],
+    'no method is both an engine and a desktop method',
+  );
+  assert.deepEqual(new Set<string>(legacyMethods), new Set([...engine, ...desktop]));
+  // Main answers the clipboard paste itself so the key never passes through the renderer.
+  assert.ok(desktop.has('ai.key.paste'));
 });

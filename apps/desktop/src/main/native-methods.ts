@@ -15,27 +15,9 @@ import { claims, pendingClose, permittedClose, main, emit, focusMain, popout } f
 import { updates, restartToUpdate, cancelInstall } from './updater';
 import { latestState } from './engine-host';
 import { cancelQuit } from './lifecycle';
+import { legacyDesktopMethods } from '@aplos/contract/allowlists';
 
-const nativeMethods = new Set([
-  'window.compose',
-  'window.thread',
-  'window.claim',
-  'window.release',
-  'window.closeReady',
-  'window.closeCancel',
-  'shell.open',
-  'file.save',
-  'file.open',
-  'notification.test',
-  'system.login',
-  'system.defaultMail',
-  'system.microphone',
-  'app.info',
-  'update.status',
-  'update.check',
-  'update.restart',
-  'update.later',
-]);
+const nativeMethods = new Set<string>(legacyDesktopMethods);
 function notify(title: string, body: string, threadId?: string) {
   if (!Notification.isSupported())
     throw new Error('Desktop notifications are unavailable on this system.');
