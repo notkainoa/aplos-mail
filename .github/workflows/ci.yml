@@ -107,6 +107,29 @@ jobs:
       # Runs under system Node.
       - run: npm test
 
+  e2e-browser:
+    name: Browser E2E (headless, loopback only)
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      # The base config starts the preview on its own ports with a temporary APLOS_DATA_DIR and no AI keys.
+      - run: npm run test:e2e:browser
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-browser-results
+          path: artifacts/e2e
+          retention-days: 7
+
   web:
     name: Website (typecheck, build)
     needs: changes
@@ -140,6 +163,8 @@ jobs:
       - run: npm test
       # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
       - run: npm run build -w @aplos/desktop
+      # Electron tier: the built app starts hidden on a temporary data directory (APLOS_TEST=1, never a visible window).
+      - run: APLOS_E2E_ELECTRON=1 npx playwright test -c tests/e2e/playwright.config.ts --project electron
 
   slots:
     name: slots
