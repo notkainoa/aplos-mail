@@ -70,12 +70,16 @@ else {
     if (process.platform !== 'darwin') app.quit();
   });
   app.on('before-quit', event => {
-    if (started && !closing) {
-      event.preventDefault();
-      quitting = true;
-      if (!windows.size) finishQuit();
-      else for (const win of windows) win.close();
-    }
+    if (closing) return;
+    // Every quit runs through here, even one that arrives while Aplos is still starting: a window's save-before-close
+    // would otherwise cancel Electron's own quit, and with no window left nothing on macOS would restart it.
+    event.preventDefault();
+    if (quitting) return;
+    quitting = true;
+    // A test run must always end: if a window never answers its save-before-close, quit anyway after 15 s.
+    if (isTest) setTimeout(() => app.exit(0), 15_000);
+    if (!windows.size) finishQuit();
+    else for (const win of windows) win.close();
   });
   void app
     .whenReady()
