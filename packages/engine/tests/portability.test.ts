@@ -4,11 +4,13 @@ import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { builtinModules } from 'node:module';
 import { build } from 'esbuild';
 import ts from 'typescript';
 
 const src=join(import.meta.dirname,'..','src');
-const nodeModules=['fs','path','crypto','os','net','tls','http','https','child_process','worker_threads','electron'];
+// Every Node built-in, so a bare `string_decoder` cannot pass through a same-named polyfill.
+const nodeModules=[...new Set([...builtinModules.filter(m=>!m.startsWith('_')).map(m=>m.replace(/^node:/,'').split('/')[0]),'electron'])];
 const nodeOnly=new RegExp(`^(${nodeModules.join('|')})(/|$)`);
 
 /** Every TypeScript file under `dir`, at any depth, so a subfolder can never be skipped. */

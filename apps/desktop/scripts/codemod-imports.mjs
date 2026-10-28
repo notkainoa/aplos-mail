@@ -10,6 +10,7 @@ import {dirname,join,relative,resolve,sep} from 'node:path';
 const root=resolve(import.meta.dirname,'..','..','..');
 const desktop=join(root,'apps','desktop');
 const shared=['types','ask','mailbox','summary','live'];
+if(!existsSync(join(desktop,'src','engine'))){console.log('Already applied: apps/desktop/src/engine is gone. This codemod runs once.');process.exit(0);}
 
 /** Old absolute path (no extension change) → new absolute path, for every moved file. */
 const moves=new Map();
