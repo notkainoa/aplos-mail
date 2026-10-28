@@ -459,6 +459,8 @@ A submission's `not_before` is `now + undo window` (default 10 s) or the schedul
 
 If, at launch or wake, a queued submission is past `not_before` by more than the grace (5 minutes), it becomes `suspended`: "Missed its time while your Mac was off. Send now or Reschedule" (Bulwark's laptop rule, `RC/arch/extra-bulwark-legacy-proxy.md` §6; Decision 9). An undo-window send interrupted by a quit and relaunched within the grace sends normally.
 
+The overdue rule applies to `queued` rows only. A row found in `sending` at launch or wake is never suspended and never re-sent: it becomes `uncertain` and runs `findSent` first, then resolves to sent or to a queued retry the owner confirms (frozen `SendPort` rule, 2026-10-27; Providers F3 review should-fix 4).
+
 ### 7.4 Drafts sync
 
 The local draft with a revision number is the source of truth (compare-and-set saves). **Gmail:** upload after 5 s idle and on close (15 units), skipped when the content fingerprint is unchanged, serialized per draft, keyed by the stable `draftId`; a `DRAFT` history record with a message id Aplos did not write is a remote edit → "keep mine, take theirs, or keep both". **IMAP:** `APPEND`, then delete the previous copy by `APPENDUID`, or by a per-revision Message-ID without UIDPLUS (Nylas). **JMAP and Graph:** native drafts, M8. Other devices' drafts appear in Drafts, never in threads (D9).
