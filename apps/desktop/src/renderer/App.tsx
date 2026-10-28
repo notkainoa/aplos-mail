@@ -19,6 +19,7 @@ import { EmptyLine, LowBand, SectionHeader } from './ui/list';
 import { useAccounts, useCounts, useStatus, api } from './data';
 import { statusCopy } from './ui/status';
 import { navigate, type Screen } from './shell';
+import { HomeScreen as HomeRoute } from './screens/home';
 import { Shell } from './shell/Shell';
 import { FirstSyncLine, NoAccountsLine } from './shell/states';
 import { toSyncStatus } from './shell/status-map';
@@ -233,9 +234,9 @@ export function HomeScreen({ client }: AppProps) {
   return <HomeContent home={home} />;
 }
 
-/** The screen slot: Home's boot proof for `home`, nothing (so the placeholder) for the rest. */
-export function renderScreen(client: AppClient, screen: Screen) {
-  return screen === 'home' ? <HomeScreen client={client} /> : undefined;
+/** The screen slot: ui-home's Home for `home` (`screens/home`), nothing (so the placeholder) for the rest. */
+export function renderScreen(_client: AppClient, screen: Screen) {
+  return screen === 'home' ? <HomeRoute /> : undefined;
 }
 
 /** The new renderer's root. */

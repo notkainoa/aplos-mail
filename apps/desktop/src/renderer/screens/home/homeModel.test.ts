@@ -1,0 +1,355 @@
+/**
+ * Home's pure logic: the order inside each section, the cursor stops, section jumps, the cursor under leaving and
+ * arriving rows (a seeded fuzz of a triage burst with mail arriving), lanes and the suggested command.
+ * Run: `cd apps/desktop && npx tsx --test 'src/renderer/screens/home/*.test.ts*'`.
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import type { ThreadRow } from '../../data';
+import {
+  LOW_KEY,
+  buildItems,
+  compareDoNow,
+  compareFollow,
+  compareUpdate,
+  initialKey,
+  jumpSection,
+  keyOf,
+  laneOf,
+  neighbourIds,
+  offersReminder,
+  orderLayout,
+  settleCursor,
+  stepCursor,
+  stepLane,
+  suggestedCommand,
+  type HomeItem,
+  type HomeLayout,
+} from './homeModel';
+
+interface RowInit {
+  id: string;
+  dueBand?: number;
+  importance?: 'important' | 'normal';
+  dueDate?: string;
+  at?: number;
+  lane?: string;
+  action?: string;
+  replyStatus?: string;
+  since?: number;
+}
+
+function row(init: RowInit): ThreadRow {
+  return {
+    id: init.id,
+    lastDate: init.at ?? 1_000,
+    rank: {
+      lane: init.lane ?? 'do',
+      importance: init.importance ?? 'normal',
+      dueBand: init.dueBand ?? 3,
+      source: 'heuristic',
+    },
+    workflow: { dueDate: init.dueDate, replyStatus: init.replyStatus, bookmarked: false },
+    summary: {
+      state: 'ready',
+      action: init.action ? { kind: init.action, label: 'x' } : undefined,
+    },
+    follow: init.since === undefined ? undefined : { since: init.since },
+  } as unknown as ThreadRow;
+}
+
+const layoutOf = (parts: Partial<HomeLayout>): HomeLayout => ({
+  do: [],
+  fromLater: [],
+  update: [],
+  follow: [],
+  lowCount: 0,
+  ...parts,
+});
+
+const lookup = (rows: ThreadRow[]) => {
+  const byId = new Map(rows.map(r => [r.id, r]));
+  return (id: string) => byId.get(id);
+};
+
+test('Do now orders by due band, then importance, then soonest due, then newest', () => {
+  const rows = [
+    row({ id: 'newest-undated', at: 900 }),
+    row({ id: 'older-undated', at: 100 }),
+    row({ id: 'band1-normal', dueBand: 1, dueDate: '2026-10-30' }),
+    row({ id: 'band1-important', dueBand: 1, importance: 'important', dueDate: '2026-10-31' }),
+    row({ id: 'overdue', dueBand: 0, dueDate: '2026-10-20' }),
+    row({ id: 'band3-sooner', dueBand: 3, dueDate: '2026-11-04' }),
+    row({ id: 'band3-later', dueBand: 3, dueDate: '2026-11-09' }),
+  ];
+  const sorted = [...rows].sort(compareDoNow).map(r => r.id);
+  assert.deepEqual(sorted, [
+    'overdue',
+    'band1-important',
+    'band1-normal',
+    'band3-sooner',
+    'band3-later',
+    'newest-undated',
+    'older-undated',
+  ]);
+});
+
+test('Important updates sort important first then newest; Follow up the longest wait first', () => {
+  const updates = [
+    row({ id: 'u-new', at: 500 }),
+    row({ id: 'u-imp-old', importance: 'important', at: 100 }),
+    row({ id: 'u-old', at: 200 }),
+  ];
+  assert.deepEqual(
+    [...updates].sort(compareUpdate).map(r => r.id),
+    ['u-imp-old', 'u-new', 'u-old'],
+  );
+  const follows = [
+    row({ id: 'f-6d', since: 20 }),
+    row({ id: 'f-3d', since: 80 }),
+    row({ id: 'f-9d', since: 5 }),
+  ];
+  assert.deepEqual(
+    [...follows].sort(compareFollow).map(r => r.id),
+    ['f-9d', 'f-6d', 'f-3d'],
+  );
+});
+
+test('orderLayout sorts when free, returns the layout untouched while held, and keeps uncached ids last', () => {
+  const rows = [row({ id: 'a', at: 1 }), row({ id: 'b', at: 9 })];
+  const layout = layoutOf({ do: ['a', 'ghost', 'b'], fromLater: ['a'] });
+  assert.deepEqual(orderLayout(layout, lookup(rows), false).do, ['b', 'a', 'ghost']);
+  assert.equal(orderLayout(layout, lookup(rows), true), layout);
+});
+
+test('cursor stops run Do now, Back from Later, Important updates, the Low band, Follow up', () => {
+  const items = buildItems(
+    layoutOf({ do: ['d'], fromLater: ['l'], update: ['u'], follow: ['f'], lowCount: 4 }),
+  );
+  assert.deepEqual(items.map(keyOf), ['d', 'l', 'u', LOW_KEY, 'f']);
+  assert.deepEqual(buildItems(layoutOf({ lowCount: 0, do: ['d'] })).map(keyOf), ['d']);
+});
+
+test('the cursor starts on Do now, else Important updates, else Follow up, else the band', () => {
+  assert.equal(initialKey(buildItems(layoutOf({ do: ['d'], update: ['u'] }))), 'd');
+  assert.equal(
+    initialKey(buildItems(layoutOf({ update: ['u'], follow: ['f'], lowCount: 2 }))),
+    'u',
+  );
+  assert.equal(initialKey(buildItems(layoutOf({ follow: ['f'], lowCount: 2 }))), 'f');
+  assert.equal(initialKey(buildItems(layoutOf({ lowCount: 2 }))), LOW_KEY);
+  assert.equal(initialKey([]), null);
+});
+
+test('arrows stop at the ends and land on the band', () => {
+  const items = buildItems(layoutOf({ do: ['d'], update: ['u'], follow: ['f'], lowCount: 1 }));
+  assert.equal(stepCursor(items, 'd', -1), 'd');
+  assert.equal(stepCursor(items, 'u', 1), LOW_KEY);
+  assert.equal(stepCursor(items, LOW_KEY, 1), 'f');
+  assert.equal(stepCursor(items, 'f', 1), 'f');
+  assert.equal(stepCursor(items, 'gone', 1), 'd');
+});
+
+test('Tab and Shift-Tab jump between present sections, skip empty ones and wrap', () => {
+  const all = buildItems(
+    layoutOf({
+      do: ['d1', 'd2'],
+      fromLater: ['l'],
+      update: ['u1', 'u2'],
+      follow: ['f'],
+      lowCount: 3,
+    }),
+  );
+  assert.equal(jumpSection(all, 'd2', 1), 'u1');
+  assert.equal(jumpSection(all, 'l', 1), 'u1', 'Back from Later is part of Do now');
+  assert.equal(jumpSection(all, 'u2', 1), 'f', 'the band is not a Tab stop');
+  assert.equal(jumpSection(all, 'f', 1), 'd1', 'wraps to Do now');
+  assert.equal(jumpSection(all, 'd1', -1), 'f');
+  assert.equal(jumpSection(all, LOW_KEY, 1), 'f');
+  assert.equal(jumpSection(all, LOW_KEY, -1), 'u1');
+  const noUpdates = buildItems(layoutOf({ do: ['d'], follow: ['f'] }));
+  assert.equal(jumpSection(noUpdates, 'd', 1), 'f');
+  assert.equal(jumpSection(buildItems(layoutOf({ lowCount: 2 })), LOW_KEY, 1), LOW_KEY);
+});
+
+test('a row that leaves hands the cursor to its neighbour; the rest of the list changes nothing', () => {
+  const before = buildItems(layoutOf({ do: ['a', 'b', 'c'], update: ['u'] }));
+  assert.equal(
+    settleCursor(before, buildItems(layoutOf({ do: ['a', 'c'], update: ['u'] })), 'b'),
+    'c',
+  );
+  assert.equal(
+    settleCursor(before, buildItems(layoutOf({ do: ['a', 'b'], update: [] })), 'u'),
+    'b',
+  );
+  assert.equal(
+    settleCursor(before, buildItems(layoutOf({ do: ['new', 'a', 'b', 'c'] })), 'b'),
+    'b',
+  );
+  assert.equal(settleCursor(before, [], 'b'), null);
+  assert.equal(settleCursor([], before, null), 'a');
+});
+
+test('neighbours around the cursor, skipping the band, are what the hold pins', () => {
+  const items = buildItems(layoutOf({ do: ['a', 'b'], update: ['u'], lowCount: 1, follow: ['f'] }));
+  assert.deepEqual(neighbourIds(items, 'u', 1), ['b', 'u']);
+  assert.deepEqual(neighbourIds(items, 'a', 2), ['a', 'b', 'u']);
+  assert.deepEqual(neighbourIds(items, 'nope', 2), []);
+});
+
+test('lanes step one at a time and stop at the ends; an unknown lane has no controls', () => {
+  assert.equal(stepLane('do', 'down'), 'update');
+  assert.equal(stepLane('update', 'down'), 'low');
+  assert.equal(stepLane('low', 'down'), null);
+  assert.equal(stepLane('low', 'up'), 'update');
+  assert.equal(stepLane('do', 'up'), null);
+  assert.equal(laneOf(row({ id: 'x', lane: 'do' })), 'do');
+  assert.equal(laneOf(row({ id: 'x', lane: 'someNewLane' })), null);
+});
+
+test('Space runs Reply on Follow up, Done on an update, and the summary action elsewhere', () => {
+  assert.equal(suggestedCommand(row({ id: 'f', since: 1 }), 'follow'), 'mail.reply');
+  assert.equal(suggestedCommand(row({ id: 'u', lane: 'update' }), 'update'), 'mail.done');
+  assert.equal(suggestedCommand(row({ id: 'd', action: 'reply' }), 'do'), 'mail.reply');
+  assert.equal(suggestedCommand(row({ id: 'd', action: 'link' }), 'do'), 'mail.open');
+  assert.equal(suggestedCommand(row({ id: 'd', action: 'done' }), 'do'), 'mail.done');
+});
+
+test('Done offers the reminder on Follow up and on a thread needing or awaiting a reply', () => {
+  assert.equal(offersReminder(row({ id: 'f' }), 'follow'), true);
+  assert.equal(offersReminder(row({ id: 'n', replyStatus: 'needsReply' }), 'do'), true);
+  assert.equal(offersReminder(row({ id: 'w', replyStatus: 'awaitingReply' }), 'update'), true);
+  assert.equal(offersReminder(row({ id: 'p', replyStatus: 'none' }), 'do'), false);
+});
+
+// ---------------------------------------------------------------------------
+// Fuzz: a triage burst with mail arriving never moves the row under the cursor
+// ---------------------------------------------------------------------------
+
+function mulberry32(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+interface World {
+  rows: Map<string, ThreadRow>;
+  layout: HomeLayout;
+  waiting: ThreadRow[];
+  key: string | null;
+  held: boolean;
+  items: HomeItem[];
+}
+
+function build(world: World, layout: HomeLayout): void {
+  world.layout = layout;
+  world.items = buildItems(layout);
+}
+
+function arrive(world: World, rand: () => number, serial: number): void {
+  const fresh = row({
+    id: `new${serial}`,
+    dueBand: Math.floor(rand() * 4),
+    importance: rand() < 0.3 ? 'important' : 'normal',
+    at: Math.floor(rand() * 10_000),
+  });
+  world.rows.set(fresh.id, fresh);
+  if (world.held) {
+    world.waiting.push(fresh);
+    return;
+  }
+  const next = { ...world.layout, do: [...world.layout.do, fresh.id] };
+  build(
+    world,
+    orderLayout(next, id => world.rows.get(id), false),
+  );
+}
+
+function release(world: World): void {
+  const merged = { ...world.layout, do: [...world.layout.do, ...world.waiting.map(r => r.id)] };
+  world.waiting = [];
+  world.held = false;
+  build(
+    world,
+    orderLayout(merged, id => world.rows.get(id), false),
+  );
+}
+
+function triage(world: World): void {
+  const at = world.items.findIndex(item => keyOf(item) === world.key);
+  const item = world.items[at];
+  if (!item || item.kind !== 'row') return;
+  const gone = (ids: readonly string[]) => ids.filter(id => id !== item.id);
+  const before = world.items;
+  build(world, {
+    ...world.layout,
+    do: gone(world.layout.do),
+    fromLater: gone(world.layout.fromLater),
+    update: gone(world.layout.update),
+    follow: gone(world.layout.follow),
+  });
+  world.key = settleCursor(before, world.items, world.key);
+}
+
+test('fuzz: mail arriving during a triage burst never moves the row under the cursor', () => {
+  for (let seed = 1; seed <= 200; seed++) {
+    const rand = mulberry32(seed);
+    const initial = Array.from({ length: 6 + Math.floor(rand() * 8) }, (_, i) =>
+      row({ id: `r${i}`, dueBand: Math.floor(rand() * 4), at: Math.floor(rand() * 10_000) }),
+    );
+    const world: World = {
+      rows: new Map(initial.map(r => [r.id, r])),
+      layout: layoutOf({}),
+      waiting: [],
+      key: null,
+      held: false,
+      items: [],
+    };
+    build(
+      world,
+      orderLayout(
+        layoutOf({ do: initial.map(r => r.id), lowCount: 2 }),
+        id => world.rows.get(id),
+        false,
+      ),
+    );
+    world.key = initialKey(world.items);
+    for (let step = 0; step < 60; step++) {
+      const before = { key: world.key, order: world.items.map(keyOf) };
+      const roll = rand();
+      let arrived = false;
+      if (roll < 0.35) {
+        arrived = true;
+        arrive(world, rand, seed * 1000 + step);
+      } else if (roll < 0.6) {
+        world.held = true;
+        triage(world);
+      } else if (roll < 0.8) {
+        world.held = true;
+        world.key = stepCursor(world.items, world.key, rand() < 0.5 ? 1 : -1);
+      } else if (roll < 0.9) {
+        world.key = jumpSection(world.items, world.key, rand() < 0.5 ? 1 : -1);
+      } else {
+        release(world);
+      }
+      if (arrived) {
+        assert.equal(world.key, before.key, `seed ${seed} step ${step}: arrival moved the cursor`);
+        if (world.held)
+          assert.deepEqual(
+            world.items.map(keyOf),
+            before.order,
+            `seed ${seed} step ${step}: arrival reordered a held list`,
+          );
+      }
+      const keys = world.items.map(keyOf);
+      assert.equal(new Set(keys).size, keys.length, 'no duplicate stops');
+      if (world.key !== null)
+        assert.ok(keys.includes(world.key), `seed ${seed} step ${step}: cursor left the list`);
+      else assert.equal(keys.length, 0);
+    }
+  }
+});
