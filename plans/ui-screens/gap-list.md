@@ -174,3 +174,36 @@ All other UNCLEAR items in the four maps carry a recommended reading. We apply t
 - Day 2 morning: this list goes to the Engine, Providers and UI-core threads as a HANDOFF-READY entry in `plans/STATUS.md`, and to the UI freeze reviewer.
 - Days 2-3: we answer the freeze authors' questions, and then check the frozen F1, F6 and F9 against this list. Anything still missing at C1 becomes a CONTRACT-CHANGE-PROPOSED or a REQUEST.
 - Days 2-3: the pending test files for each lane are drafted from the maps' test lists. They go into our own folders and merge after restructure step 4.
+
+## 6. Status after the Engine thread's answer (day 2)
+
+The Engine thread answered every row in `origin/rv/thread/engine:packages/contract/GAPS.md`. The UI-screens thread spot-checked ten of its "already there" and "closed" claims against `packages/contract/src` on `rv/thread/engine`, and all ten hold:
+- `Setup/begin`, `Setup/end` (reasons include `demo`) and `Setup/retry`;
+- `Account/cancelConnect`;
+- the `events` view spec;
+- `Event.sync`;
+- `Window/openOnboarding`;
+- `Lease.holderDeviceName`;
+- `NotificationSettings.reconnectReminder`;
+- `Ask/run.scope.searchAllMail`.
+
+We also checked UI-core's F9 (`origin/rv/ui-foundation/f9`) against section 3.
+
+Accepted as answered:
+- E13: we keep the engine's names, `Setup/status.pausedUntil`, `Account.status.until` and `resumeAt` on errors. The screens map them.
+- E51: no shared parser. `ui-ask` owns the search-field parser in `screens/search/`, and the engine takes the structured `SearchQuery`.
+- U1, U2, U4, U6, U8, U10: covered by F9:
+  - `TargetSummary` and `contextLine`;
+  - `keywords`, `group`, `confirm`, and `ControlSpec` for non-palette keys;
+  - the `onboarding` and `settings` contexts;
+  - reserved chords and conflicts in `configure`;
+  - `AskRun.subscribe`, `AccountFlow.cancel`;
+  - the props for `ProgressSegments` (`SyncCheckpoint`), `ReconnectSheet`, `SettingRow`, `KeyRecorder`, `CalendarGrid`, `EventDetail`, `Palette` with breadcrumbs, `AskTurn`, `Citation`, `ProposalCard`, `OnboardingStep` and `ConsentCard`.
+- U7: `Settings/set` returns a receipt the undo stack can hold.
+
+Still open, posted to STATUS.md on day 2:
+- **E10 and E11** (the `Fixture/control` knobs and the stand-in scenarios) went to F6, which isn't on any branch yet. They are posted as CONTRACT-CHANGE-PROPOSED to `eng-contract` (F6), because the knob signatures freeze with F6.
+- **U3, settings in ⌘K:** the registry's commands come from the static `catalog.ts`. That catalog has two Settings entries, and there's no way for a screen to add its rows. This is a REQUEST to `ui-shell`. `createRegistry` takes the catalog plus `SETTINGS_COMMANDS`, which `screens/settings/paletteEntries.ts` exports (group `Settings`, ids `settings.<section>.<row>`, context `global`, run = open Settings at that row).
+- **U9, `useNow()`:** missing from F9. This is a REQUEST to `ui-shell` for a hook on `Session.now` plus the `clock` host event. Today, the now line, the reconnect-within-24-hours rule and "Synced 2 min ago" need it.
+- **useView row types:** F9's `ViewSpec` mirror lacks the contract's `events`, `plans` and `conversations` specs, and `useAgenda`'s `EventRow` is a minimal subset of the contract `Event`. This is a REQUEST to `ui-shell`: extend the union and `RowForSpec` (additive) before `ui-calendar` and `ui-ask` start on day 6.
+- **U5, sheet host:** solved without a host. F9 gives the visual `ReconnectSheet` to `ui-foundation`. `ui-onboard` exports the flow, `<ReconnectFlow accountId onClose>`: it calls `Account/reconnect` or `Account/grantPermissions` by status, runs the `connect` frame and Cancel, and shows the "Reconnected" toast. `ui-shell` (status slot) and `ui-settings` mount it where they need it. Recorded as DECIDED.
