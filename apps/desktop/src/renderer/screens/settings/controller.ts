@@ -14,7 +14,6 @@ import {
   cascadeChoice,
   featureLabel,
   featurePatch,
-  inversePatch,
   paidPatch,
   providerName,
   testResultStatus,

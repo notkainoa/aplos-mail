@@ -96,9 +96,11 @@ function Loaded({
 }: SettingsContainerProps & { host: SettingsHost; base: Base }) {
   const parsed = route ? parseSettingRoute(route) : null;
   const [section, setSection] = useState<SettingSection>(parsed?.section ?? 'general');
+  const routeSection = parsed?.section;
+  const routeRow = parsed?.row;
   useEffect(() => {
-    if (parsed) setSection(parsed.section);
-  }, [parsed?.section, parsed?.row]);
+    if (routeSection) setSection(routeSection);
+  }, [routeSection, routeRow]);
 
   const resolved = useMemo(() => ports ?? dataPorts(), [ports]);
   const { data, view, actions, failure } = useSettingsState(base, host, resolved, section);
@@ -151,6 +153,11 @@ export function useSettingsState(
   };
   dataRef.current = data;
 
+  const keepData = useCallback((patch: Partial<SettingsData>) => {
+    loadedRef.current = { ...loadedRef.current, ...patch };
+    setLoaded(loadedRef.current);
+  }, []);
+
   const actions = useMemo(
     () =>
       createController({
@@ -185,22 +192,25 @@ export function useSettingsState(
     [],
   );
 
-  function keepData(patch: Partial<SettingsData>) {
-    loadedRef.current = { ...loadedRef.current, ...patch };
-    setLoaded(loadedRef.current);
-  }
   function setProvidersFrom(p: SettingsApiPort) {
     return p.aiProviders().then(providers => keepData({ providers }));
   }
 
+  // The latest ports and AI features, read by the loading effect without making it re-run when they change identity.
+  const portsRef = useRef(ports);
+  portsRef.current = ports;
+  const featuresRef = useRef(base.settings.ai.features);
+  featuresRef.current = base.settings.ai.features;
+
   // Each section asks only for what it shows.
   useEffect(() => {
+    const ports = portsRef.current;
     const keep = keepData;
     const quiet = (p: Promise<unknown>) => void p.catch(() => {});
     if (section === 'ai') {
       quiet(ports.aiProviders().then(providers => keep({ providers })));
       quiet(ports.aiUsage().then(usage => keep({ usage })));
-      const providers = new Set(Object.values(base.settings.ai.features).map(f => f.provider));
+      const providers = new Set(Object.values(featuresRef.current).map(f => f.provider));
       for (const provider of providers) quiet(actions.loadModels(provider));
     }
     if (section === 'general') {
@@ -210,7 +220,7 @@ export function useSettingsState(
     if (section === 'help' && view.queue) {
       quiet(ports.queueList().then(queue => keep({ queue })));
     }
-  }, [section, view.queue]);
+  }, [section, view.queue, actions, keepData]);
 
   useEffect(() => () => actions.leave(), [actions]);
 

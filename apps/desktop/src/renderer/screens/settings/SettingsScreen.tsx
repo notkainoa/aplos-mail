@@ -53,6 +53,7 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   const root = useRef<HTMLDivElement | null>(null);
   const View = SECTION_VIEWS[section];
+  const recordingId = rest.view.recording?.commandId;
   const label = SETTING_SECTIONS.find(s => s.id === section)?.label ?? 'Settings';
 
   // A deep link lands on its row; a plain section switch starts at the top. Navigation is instant (no transition).
@@ -60,10 +61,8 @@ export function SettingsScreen({
     const el = root.current;
     if (!el) return;
     // A row being recorded is where the eyes are; otherwise the row the link named.
-    const recording = rest.view.recording
-      ? el.querySelector<HTMLElement>(
-          `[data-command="${CSS.escape(rest.view.recording.commandId)}"]`,
-        )
+    const recording = recordingId
+      ? el.querySelector<HTMLElement>(`[data-command="${CSS.escape(recordingId)}"]`)
       : null;
     const target =
       recording ??
@@ -76,7 +75,7 @@ export function SettingsScreen({
     } else {
       (el.closest('.ui-pane__body') ?? document.scrollingElement)?.scrollTo?.(0, 0);
     }
-  }, [section, anchor, rest.view.recording?.commandId]);
+  }, [section, anchor, recordingId]);
 
   return (
     <div className="settings-screen" ref={root} data-section={section}>
