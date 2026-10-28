@@ -12,7 +12,7 @@ Keep `revamp` green and the contract guarded. Merge dependency and infrastructur
 
 ## Read (sections only)
 
-- `plans/RESUME.md` lines 20-55: merge order table (Integrator row) and rules.
+- `plans/RESUME.md` lines 36-56: step 4 merge-order table (Integrator row), then the hard rules.
 - `plans/STATUS.md` lines 17-32: "How a PR gets into revamp" (the merge checklist). Log lines since your last read only.
 - `plans/00-roadmap.md` lines 333-388 (5.1a/5.1b lean mode), 411-428 (7: branch and merge strategy), 598-700 (12: feature review loop, 12.3 steps d-g, 12.5 who watches what).
 - `plans/50-thread-briefs.md` lines 662-757 (Brief 6): sections 4 (Phase 1 merge rules), 7 (digest), 8 (branch rules), 12 (queue).
