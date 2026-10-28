@@ -61,6 +61,7 @@ import type {
   ContractMethodOf,
   DataApi,
   Draft,
+  HomeView,
   Message,
   OpId,
   Output,
@@ -124,14 +125,9 @@ function primaryLine(row: ThreadRow): string {
   return row.summary.state === 'ready' && row.summary.text ? row.summary.text : row.subject;
 }
 
-/** Home: sections in order, held labels showing 0, the Low band, triage on keydown, undo and inline errors. */
-function homeExample(lastOpId: OpId | undefined): string[] {
-  const hold = useHold('home');
-  const home = useHome({ holdIds: hold.heldIds });
-  const prefetch = usePrefetchIntent();
-  const lastOp = useOperation(lastOpId);
+/** One line per visible Home section and per row in it, with the due chip and the inline failure. */
+function sectionLines(home: HomeView): string[] {
   const lines: string[] = [];
-
   for (const section of home.sections) {
     if (!section.visible) {
       continue;
@@ -152,6 +148,18 @@ function homeExample(lastOpId: OpId | undefined): string[] {
       lines.push(`Back from Later ${section.fromLater.count}`);
     }
   }
+  return lines;
+}
+
+/** Home: sections in order, held labels showing 0, the Low band, triage on keydown, undo and inline errors. */
+function homeExample(lastOpId: OpId | undefined): string[] {
+  const hold = useHold('home');
+  const home = useHome({ holdIds: hold.heldIds });
+  const prefetch = usePrefetchIntent();
+  const lastOp = useOperation(lastOpId);
+  const lines: string[] = [];
+
+  lines.push(...sectionLines(home));
   if (home.low.count > 0) {
     const more = home.low.moreSenders > 0 ? ` and ${home.low.moreSenders} more` : '';
     lines.push(`Low importance ${home.low.names.join(', ')}${more} ${home.low.count}`);

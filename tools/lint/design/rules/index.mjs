@@ -25,5 +25,5 @@ export const rules = [
 ];
 
 export function ruleById(id) {
-  return rules.find((rule) => rule.id === id);
+  return rules.find(rule => rule.id === id);
 }

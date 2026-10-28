@@ -472,17 +472,15 @@ function defaultOnError(error: unknown, commandId: CommandId): void {
   console.error(`Command ${commandId} failed`, error);
 }
 
-export function createRegistry(
+type SpecEntry = { kind: 'command'; spec: CommandSpec } | { kind: 'control'; spec: ControlSpec };
+
+/** Validates the specs and `disabledIn`, and returns every spec by id in declaration order. */
+function buildSpecTable(
   commands: readonly CommandSpec[],
-  options: RegistryOptions = {},
-): Registry {
-  const controls = options.controls ?? [];
-  const onError = options.onError ?? defaultOnError;
-  const specs = new Map<
-    CommandId,
-    { kind: 'command'; spec: CommandSpec } | { kind: 'control'; spec: ControlSpec }
-  >();
-  const settingsTable = options.settings;
+  controls: readonly ControlSpec[],
+  disabledIn: NonNullable<RegistryOptions['disabledIn']>,
+): Map<CommandId, SpecEntry> {
+  const specs = new Map<CommandId, SpecEntry>();
   for (const spec of commands) {
     if (specs.has(spec.id)) throw new Error(`Duplicate command id ${spec.id}`);
     assertContexts(spec.id, spec.contexts);
@@ -501,8 +499,6 @@ export function createRegistry(
     if (id.startsWith(SETTING_ID_PREFIX))
       throw new Error(`${id}: "${SETTING_ID_PREFIX}" ids belong to setting entries`);
   }
-  const order = [...specs.keys()];
-  const disabledIn = options.disabledIn ?? {};
   for (const [context, ids] of Object.entries(disabledIn)) {
     assertContexts('disabledIn', [context as ContextName]);
     for (const id of ids ?? [])
@@ -513,6 +509,19 @@ export function createRegistry(
     if (holdFor && !specs.has(holdFor))
       throw new Error(`${spec.id}: holdFor names no command ${holdFor}`);
   }
+  return specs;
+}
+
+export function createRegistry(
+  commands: readonly CommandSpec[],
+  options: RegistryOptions = {},
+): Registry {
+  const controls = options.controls ?? [];
+  const onError = options.onError ?? defaultOnError;
+  const settingsTable = options.settings;
+  const disabledIn = options.disabledIn ?? {};
+  const specs = buildSpecTable(commands, controls, disabledIn);
+  const order = [...specs.keys()];
   const slots = new Map<CommandId, Slot[]>();
 
   function ownerOf(id: CommandId): Owner {

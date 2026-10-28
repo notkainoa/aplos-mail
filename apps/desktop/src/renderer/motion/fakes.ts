@@ -70,12 +70,9 @@ export class FakeElement {
   }
 
   get isConnected(): boolean {
-    let node: FakeElement | null = this;
-    while (node) {
-      if (node === this.fake.document.documentElement) return true;
-      node = node.parent;
-    }
-    return false;
+    const root = this.fake.document.documentElement;
+    for (let node = this.parent; node; node = node.parent) if (node === root) return true;
+    return this === root;
   }
 
   setAttribute(name: string, value: string) {

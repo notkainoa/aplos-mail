@@ -91,8 +91,10 @@ async function audit(page: Page): Promise<Findings> {
 
       const layoutTransitions: string[] = [];
       const decoration: string[] = [];
-      for (const el of all) {
-        const style = getComputedStyle(el);
+      const smallText: string[] = [];
+      const banned: string[] = [];
+
+      const auditTransitions = (el: Element, style: CSSStyleDeclaration) => {
         const properties = style.transitionProperty.split(',').map(s => s.trim());
         const durations = style.transitionDuration.split(',').map(s => parseFloat(s));
         properties.forEach((property, index) => {
@@ -100,60 +102,71 @@ async function audit(page: Page): Promise<Findings> {
           if (duration > 0 && layoutProperty.test(property))
             layoutTransitions.push(`${name(el)} transitions ${property} for ${duration}s`);
         });
+      };
+      const gradientChecks: [keyof CSSStyleDeclaration, string][] = [
+        ['backgroundImage', 'gradient background'],
+        ['maskImage', 'gradient mask'],
+        ['borderImageSource', 'gradient border-image'],
+        ['listStyleImage', 'gradient list-style-image'],
+      ];
+      const auditPseudo = (label: string, s: CSSStyleDeclaration) => {
+        for (const [key, what] of gradientChecks)
+          if (/gradient/.test(String(s[key] || ''))) decoration.push(`${label} has a ${what}`);
+        if (s.backdropFilter && s.backdropFilter !== 'none')
+          decoration.push(`${label} has backdrop-filter`);
+        const webkit = s.getPropertyValue('-webkit-backdrop-filter');
+        if (webkit && webkit !== 'none') decoration.push(`${label} has -webkit-backdrop-filter`);
+      };
+      for (const el of all) {
+        const style = getComputedStyle(el);
+        auditTransitions(el, style);
         for (const pseudo of [null, '::before', '::after'] as const) {
           const s = pseudo ? getComputedStyle(el, pseudo) : style;
           if (pseudo && s.content === 'none') continue;
-          const label = `${name(el)}${pseudo ?? ''}`;
-          if (/gradient/.test(s.backgroundImage))
-            decoration.push(`${label} has a gradient background`);
-          if (/gradient/.test(s.maskImage || '')) decoration.push(`${label} has a gradient mask`);
-          if (/gradient/.test(s.borderImageSource || ''))
-            decoration.push(`${label} has a gradient border-image`);
-          if (/gradient/.test(s.listStyleImage || ''))
-            decoration.push(`${label} has a gradient list-style-image`);
-          if (s.backdropFilter && s.backdropFilter !== 'none')
-            decoration.push(`${label} has backdrop-filter`);
-          const webkit = s.getPropertyValue('-webkit-backdrop-filter');
-          if (webkit && webkit !== 'none') decoration.push(`${label} has -webkit-backdrop-filter`);
+          auditPseudo(`${name(el)}${pseudo ?? ''}`, s);
         }
       }
 
       // SVG paint servers: a gradient or pattern drawn in markup is as banned as one in CSS. Any such
       // element under the stage counts, and so does a fill or stroke that points at one anywhere.
-      const paintServer = /^(lineargradient|radialgradient|pattern)$/;
-      for (const el of all)
-        if (paintServer.test(el.localName.toLowerCase()))
-          decoration.push(`svg ${el.localName}${el.id ? `#${el.id}` : ''} under the stage`);
-      for (const el of all) {
-        if (!(el instanceof SVGElement)) continue;
-        const style = getComputedStyle(el);
-        for (const property of ['fill', 'stroke'] as const) {
-          const id = /url\(\s*["']?#([^"')\s]+)/.exec(style[property])?.[1];
-          const target = id ? document.getElementById(id) : null;
-          if (target && paintServer.test(target.localName.toLowerCase()))
-            decoration.push(`${name(el)} ${property} uses ${target.localName}#${id}`);
+      const auditPaintServers = () => {
+        const paintServer = /^(lineargradient|radialgradient|pattern)$/;
+        for (const el of all)
+          if (paintServer.test(el.localName.toLowerCase()))
+            decoration.push(`svg ${el.localName}${el.id ? `#${el.id}` : ''} under the stage`);
+        for (const el of all) {
+          if (!(el instanceof SVGElement)) continue;
+          const style = getComputedStyle(el);
+          for (const property of ['fill', 'stroke'] as const) {
+            const id = /url\(\s*["']?#([^"')\s]+)/.exec(style[property])?.[1];
+            const target = id ? document.getElementById(id) : null;
+            if (target && paintServer.test(target.localName.toLowerCase()))
+              decoration.push(`${name(el)} ${property} uses ${target.localName}#${id}`);
+          }
         }
-      }
+      };
+      auditPaintServers();
 
-      const smallText: string[] = [];
-      const walker = document.createTreeWalker(stage, NodeFilter.SHOW_TEXT);
       const copy: string[] = [];
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        const text = node.textContent?.trim();
-        const parent = node.parentElement;
-        if (!text || !parent || !visible(parent)) continue;
-        copy.push(text);
-        const size = parseFloat(getComputedStyle(parent).fontSize);
-        if (size < 11) smallText.push(`${name(parent)} is ${size}px: "${text.slice(0, 30)}"`);
-      }
-      for (const el of all) {
-        for (const attribute of ['aria-label', 'title', 'placeholder', 'alt'] as const) {
-          const value = el.getAttribute(attribute);
-          if (value) copy.push(value);
+      const collectText = () => {
+        const walker = document.createTreeWalker(stage, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const text = node.textContent?.trim();
+          const parent = node.parentElement;
+          if (!text || !parent || !visible(parent)) continue;
+          copy.push(text);
+          const size = parseFloat(getComputedStyle(parent).fontSize);
+          if (size < 11) smallText.push(`${name(parent)} is ${size}px: "${text.slice(0, 30)}"`);
         }
-      }
+        for (const el of all) {
+          for (const attribute of ['aria-label', 'title', 'placeholder', 'alt'] as const) {
+            const value = el.getAttribute(attribute);
+            if (value) copy.push(value);
+          }
+        }
+      };
+      collectText();
 
-      const banned: string[] = [];
       for (const text of copy) {
         const hit = bannedPhrase.exec(text);
         if (hit) banned.push(`phrase "${hit[2]}" in "${text.slice(0, 50)}"`);
@@ -161,18 +174,17 @@ async function audit(page: Page): Promise<Findings> {
         for (const glyph of glyphs)
           if (text.includes(glyph)) banned.push(`glyph ${glyph} in "${text.slice(0, 50)}"`);
       }
-      for (const el of all) {
-        const handles = [
-          el.getAttribute('data-icon'),
-          el.getAttribute('data-name'),
-          el.getAttribute('href'),
-          el.getAttribute('xlink:href'),
-          el instanceof SVGElement ? el.getAttribute('class') : null,
-          el.tagName === 'symbol' ? el.id : null,
-        ];
-        for (const handle of handles)
+      const iconHandles = (el: Element) => [
+        el.getAttribute('data-icon'),
+        el.getAttribute('data-name'),
+        el.getAttribute('href'),
+        el.getAttribute('xlink:href'),
+        el instanceof SVGElement ? el.getAttribute('class') : null,
+        el.tagName === 'symbol' ? el.id : null,
+      ];
+      for (const el of all)
+        for (const handle of iconHandles(el))
           if (handle && bannedIcon.test(handle)) banned.push(`icon "${handle}" on ${name(el)}`);
-      }
 
       const family = (el: Element) => getComputedStyle(el).fontFamily;
       const summaries = [...stage.querySelectorAll('.ui-summary')];

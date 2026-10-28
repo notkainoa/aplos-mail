@@ -7,7 +7,7 @@ const { SyntaxKind } = ts;
 
 export function visit(node, callback) {
   callback(node);
-  ts.forEachChild(node, (child) => visit(child, callback));
+  ts.forEachChild(node, child => visit(child, callback));
 }
 
 export function positionOf(sf, node) {
@@ -31,7 +31,11 @@ export function unwrap(node) {
 }
 
 export function isStringLike(node) {
-  return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node);
+  return (
+    ts.isStringLiteral(node) ||
+    ts.isNoSubstitutionTemplateLiteral(node) ||
+    ts.isTemplateExpression(node)
+  );
 }
 
 // Cooked text of a string or template. Substitutions become the DYNAMIC marker.
@@ -41,7 +45,7 @@ export function textOf(node, sf = null) {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   if (ts.isTemplateExpression(node)) {
     if (sf) return foldExpression(sf, node).text;
-    return node.head.text + node.templateSpans.map((span) => DYNAMIC + span.literal.text).join('');
+    return node.head.text + node.templateSpans.map(span => DYNAMIC + span.literal.text).join('');
   }
   return '';
 }
@@ -56,38 +60,50 @@ export function foldExpression(sf, expression, depth = 0) {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
     return { text: node.text, numeric: false, complete: true };
   }
-  if (isNumericLiteralLike(node)) return { text: String(numericValue(node)), numeric: true, complete: true };
-  if (ts.isIdentifier(node)) {
-    const resolved = sf ? resolveIdentifier(sf, node) : node;
-    if (resolved === node || isFunctionLike(resolved)) return null;
-    return foldExpression(sf, resolved, depth + 1);
+  if (isNumericLiteralLike(node))
+    return { text: String(numericValue(node)), numeric: true, complete: true };
+  if (ts.isIdentifier(node)) return foldIdentifier(sf, node, depth);
+  if (ts.isTemplateExpression(node)) return foldTemplate(sf, node, depth);
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.PlusToken)
+    return foldPlus(sf, node, depth);
+  return null;
+}
+
+function foldIdentifier(sf, node, depth) {
+  const resolved = sf ? resolveIdentifier(sf, node) : node;
+  if (resolved === node || isFunctionLike(resolved)) return null;
+  return foldExpression(sf, resolved, depth + 1);
+}
+
+function foldTemplate(sf, node, depth) {
+  let text = node.head.text;
+  let complete = true;
+  for (const span of node.templateSpans) {
+    const part = foldExpression(sf, span.expression, depth + 1);
+    text += (part ? part.text : DYNAMIC) + span.literal.text;
+    if (!part || !part.complete) complete = false;
   }
-  if (ts.isTemplateExpression(node)) {
-    let text = node.head.text;
-    let complete = true;
-    for (const span of node.templateSpans) {
-      const part = foldExpression(sf, span.expression, depth + 1);
-      text += (part ? part.text : DYNAMIC) + span.literal.text;
-      if (!part || !part.complete) complete = false;
-    }
-    return { text, numeric: false, complete };
-  }
-  if (ts.isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.PlusToken) {
-    const left = foldExpression(sf, node.left, depth + 1);
-    const right = foldExpression(sf, node.right, depth + 1);
-    if (!left && !right) return null;
-    if (left && right && left.complete && right.complete && left.numeric && right.numeric) {
-      return { text: String(Number(left.text) + Number(right.text)), numeric: true, complete: true };
-    }
-    const known = left || right;
-    if (known.numeric && !(left && right)) return null;
+  return { text, numeric: false, complete };
+}
+
+function foldPlus(sf, node, depth) {
+  const left = foldExpression(sf, node.left, depth + 1);
+  const right = foldExpression(sf, node.right, depth + 1);
+  if (!left && !right) return null;
+  if (left && right && left.complete && right.complete && left.numeric && right.numeric) {
     return {
-      text: (left ? left.text : DYNAMIC) + (right ? right.text : DYNAMIC),
-      numeric: false,
-      complete: Boolean(left && right && left.complete && right.complete),
+      text: String(Number(left.text) + Number(right.text)),
+      numeric: true,
+      complete: true,
     };
   }
-  return null;
+  const known = left || right;
+  if (known.numeric && !(left && right)) return null;
+  return {
+    text: (left ? left.text : DYNAMIC) + (right ? right.text : DYNAMIC),
+    numeric: false,
+    complete: Boolean(left && right && left.complete && right.complete),
+  };
 }
 
 // True when the expression is a literal or folds completely to one.
@@ -98,7 +114,8 @@ export function isConstantExpression(sf, expression) {
 
 export function nameOfProperty(name) {
   if (!name) return null;
-  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)) return name.text;
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name))
+    return name.text;
   if (ts.isComputedPropertyName(name)) {
     const inner = unwrap(name.expression);
     if (ts.isStringLiteral(inner) || ts.isNoSubstitutionTemplateLiteral(inner)) return inner.text;
@@ -117,7 +134,9 @@ export function numericValue(node) {
   const inner = unwrap(node);
   if (ts.isNumericLiteral(inner)) return Number(inner.text);
   if (ts.isPrefixUnaryExpression(inner) && ts.isNumericLiteral(inner.operand)) {
-    return inner.operator === SyntaxKind.MinusToken ? -Number(inner.operand.text) : Number(inner.operand.text);
+    return inner.operator === SyntaxKind.MinusToken
+      ? -Number(inner.operand.text)
+      : Number(inner.operand.text);
   }
   return null;
 }
@@ -126,9 +145,16 @@ export function numericValue(node) {
 export function isLiteralExpression(node) {
   const inner = unwrap(node);
   if (!inner) return false;
-  if (isNumericLiteralLike(inner) || ts.isStringLiteral(inner) || ts.isNoSubstitutionTemplateLiteral(inner)) return true;
-  if (ts.isTemplateExpression(inner)) return inner.templateSpans.every((span) => isLiteralExpression(span.expression));
-  if (ts.isBinaryExpression(inner)) return isLiteralExpression(inner.left) && isLiteralExpression(inner.right);
+  if (
+    isNumericLiteralLike(inner) ||
+    ts.isStringLiteral(inner) ||
+    ts.isNoSubstitutionTemplateLiteral(inner)
+  )
+    return true;
+  if (ts.isTemplateExpression(inner))
+    return inner.templateSpans.every(span => isLiteralExpression(span.expression));
+  if (ts.isBinaryExpression(inner))
+    return isLiteralExpression(inner.left) && isLiteralExpression(inner.right);
   return false;
 }
 
@@ -146,8 +172,10 @@ export function valueLeaves(expression, sf = null, depth = 0) {
     return [{ text: node.text, node, numeric: false }];
   }
   if (ts.isTemplateExpression(node)) return [{ text: textOf(node, sf), node, numeric: false }];
-  if (isNumericLiteralLike(node)) return [{ text: String(numericValue(node)), node, numeric: true }];
-  if (ts.isConditionalExpression(node)) return [...valueLeaves(node.whenTrue, sf, depth), ...valueLeaves(node.whenFalse, sf, depth)];
+  if (isNumericLiteralLike(node))
+    return [{ text: String(numericValue(node)), node, numeric: true }];
+  if (ts.isConditionalExpression(node))
+    return [...valueLeaves(node.whenTrue, sf, depth), ...valueLeaves(node.whenFalse, sf, depth)];
   if (ts.isBinaryExpression(node)) {
     const op = node.operatorToken.kind;
     if (op === SyntaxKind.BarBarToken || op === SyntaxKind.QuestionQuestionToken) {
@@ -176,12 +204,22 @@ export function resolveIdentifier(sf, expression) {
   const node = unwrap(expression);
   if (!node || !ts.isIdentifier(node)) return node;
   let found = null;
-  visit(sf, (child) => {
+  visit(sf, child => {
     if (found) return;
-    if (ts.isVariableDeclaration(child) && ts.isIdentifier(child.name) && child.name.text === node.text && child.initializer) {
+    if (
+      ts.isVariableDeclaration(child) &&
+      ts.isIdentifier(child.name) &&
+      child.name.text === node.text &&
+      child.initializer
+    ) {
       found = child.initializer;
     }
-    if (ts.isFunctionDeclaration(child) && child.name && child.name.text === node.text && child.body) {
+    if (
+      ts.isFunctionDeclaration(child) &&
+      child.name &&
+      child.name.text === node.text &&
+      child.body
+    ) {
       found = child;
     }
   });
@@ -189,5 +227,7 @@ export function resolveIdentifier(sf, expression) {
 }
 
 export function isFunctionLike(node) {
-  return ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node);
+  return (
+    ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)
+  );
 }

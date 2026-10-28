@@ -9,6 +9,7 @@ import {
   type FocusKind,
   type KeyInput,
   type KeyPrefs,
+  type Keymap,
 } from './types';
 
 /** The full catalog with a no-op handler on every command and control (an empty page for page commands). */
@@ -22,6 +23,13 @@ export function wiredRegistry(prefs: KeyPrefs = DEFAULT_KEY_PREFS): Registry {
     );
   }
   return registry;
+}
+
+/** The [command, reason] pairs configuring the whole catalog with this keymap reports. */
+export function issuesFor(keymap: Keymap) {
+  return wiredRegistry()
+    .configure({ ...DEFAULT_KEY_PREFS, keymap })
+    .map(i => [i.commandId, i.reason]);
 }
 
 export function context(

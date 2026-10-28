@@ -210,6 +210,104 @@ function oracle(
   return { commandId: holds[0].commandId, phase: 'hold', holdCommandId: undefined };
 }
 
+type Resolved = NonNullable<ReturnType<ReturnType<typeof wiredRegistry>['resolve']>>;
+
+/** Invariants stated by DESIGN, independent of the table. */
+function assertInvariants(
+  actual: Resolved | null,
+  composing: boolean,
+  key: GenKey,
+  stack: readonly ContextName[],
+  focus: FocusKind,
+  prefs: KeyPrefs,
+  table: readonly Binding[],
+  label: string,
+): boolean {
+  if (composing) assert.equal(actual, null, label);
+  if (!actual) return false;
+  assert.ok(stack.includes(actual.context), label);
+  const owner = table.find(
+    b =>
+      b.commandId === actual.commandId &&
+      b.context === actual.context &&
+      chordId(b.chord) === key.id,
+  );
+  assert.ok(owner, label);
+  if (focus === 'text' && key.character)
+    assert.ok(owner.inTextField, `single key fired in a text field: ${label}`);
+  if (!prefs.singleKeyShortcuts && key.character)
+    assert.ok(MODAL.has(owner.context), `single key fired with the switch off: ${label}`);
+  assert.ok(reachable(stack).includes(actual.context), `a key reached behind a modal: ${label}`);
+  assertPlaceInvariants(actual, key, stack, label);
+  return true;
+}
+
+/** Invariants of particular places: Done, onboarding, the drill, first sync, triage arrows, Space. */
+function assertPlaceInvariants(
+  actual: Resolved,
+  key: GenKey,
+  stack: readonly ContextName[],
+  label: string,
+): void {
+  if (stack.includes('done'))
+    assert.ok(
+      actual.commandId !== 'mail.done' && actual.commandId !== 'mail.later',
+      `Done or Later in the Done place: ${label}`,
+    );
+  if (stack.some(c => ONBOARDING_WINDOW.has(c))) {
+    assert.ok(
+      ONBOARDING_WINDOW.has(actual.context) || MODAL.has(actual.context),
+      `an app command answered in the onboarding window: ${label}`,
+    );
+  }
+  if (stack.includes('drill') && /^[a-z]$/.test(key.id))
+    assert.ok(
+      actual.commandId.startsWith('drill.'),
+      `a letter in the drill reached ${actual.commandId}: ${label}`,
+    );
+  if (stack.includes('firstSync') && key.id === 'Escape' && !MODAL.has(stack[stack.length - 1])) {
+    assert.equal(
+      actual.commandId,
+      'onboarding.openAplos',
+      `Esc on first sync must open Aplos: ${label}`,
+    );
+  }
+  const triageArrow = key.id === 'ArrowLeft' || key.id === 'ArrowRight';
+  if (triageArrow && (actual.commandId === 'mail.done' || actual.commandId === 'mail.later')) {
+    assert.ok(
+      ['home', 'oneByOne', 'reader'].includes(actual.context),
+      `arrow triage outside Home/one by one/reader: ${label}`,
+    );
+  }
+  if (key.id === 'Space' && actual.phase === 'hold') assert.equal(actual.context, 'compose', label);
+}
+
+/** Hold timing: a hold-capable keydown, held for a random time. Returns how long it was held. */
+function checkHold(
+  actual: Resolved | null,
+  key: GenKey,
+  tracker: ReturnType<typeof createHoldTracker>,
+  prefs: KeyPrefs,
+  clock: number,
+  rand: () => number,
+  label: string,
+): number {
+  const holdId = actual?.phase === 'tap' ? actual.holdCommandId : actual?.commandId;
+  if (!actual || !(actual.phase === 'hold' || holdId)) return 0;
+  const heldFor = Math.floor(rand() * 600);
+  tracker.down(key.event, holdId!, clock);
+  assert.ok(
+    tracker.swallows({ ...key.event, repeat: true }),
+    `auto-repeat of the armed key is swallowed: ${label}`,
+  );
+  const upgrade = tracker.tick(clock + heldFor);
+  const release = tracker.up(key.event, clock + heldFor);
+  const isHold = heldFor >= prefs.holdThresholdMs;
+  assert.equal(upgrade !== null, isHold, label);
+  assert.equal(release?.phase, isHold ? 'hold' : 'tap', label);
+  return heldFor;
+}
+
 test(`resolver agrees with the oracle over ${SEQUENCES} seeded sequences`, () => {
   const rand = prng(SEED);
   const registries = new Map<string, ReturnType<typeof wiredRegistry>>();
@@ -253,83 +351,10 @@ test(`resolver agrees with the oracle over ${SEQUENCES} seeded sequences`, () =>
       assert.equal(actual?.holdCommandId, expected?.holdCommandId, label);
       checked += 1;
 
-      // Invariants stated by DESIGN, independent of the table.
-      if (composing) assert.equal(actual, null, label);
-      if (actual) {
+      if (assertInvariants(actual, composing, key, stack, focus, prefs, table, label))
         resolved += 1;
-        assert.ok(stack.includes(actual.context), label);
-        const owner = table.find(
-          b =>
-            b.commandId === actual.commandId &&
-            b.context === actual.context &&
-            chordId(b.chord) === key.id,
-        );
-        assert.ok(owner, label);
-        if (focus === 'text' && key.character)
-          assert.ok(owner.inTextField, `single key fired in a text field: ${label}`);
-        if (!prefs.singleKeyShortcuts && key.character)
-          assert.ok(MODAL.has(owner.context), `single key fired with the switch off: ${label}`);
-        assert.ok(
-          reachable(stack).includes(actual.context),
-          `a key reached behind a modal: ${label}`,
-        );
-        if (stack.includes('done'))
-          assert.ok(
-            actual.commandId !== 'mail.done' && actual.commandId !== 'mail.later',
-            `Done or Later in the Done place: ${label}`,
-          );
-        if (stack.some(c => ONBOARDING_WINDOW.has(c))) {
-          assert.ok(
-            ONBOARDING_WINDOW.has(actual.context) || MODAL.has(actual.context),
-            `an app command answered in the onboarding window: ${label}`,
-          );
-        }
-        if (stack.includes('drill') && /^[a-z]$/.test(key.id))
-          assert.ok(
-            actual.commandId.startsWith('drill.'),
-            `a letter in the drill reached ${actual.commandId}: ${label}`,
-          );
-        if (
-          stack.includes('firstSync') &&
-          key.id === 'Escape' &&
-          !MODAL.has(stack[stack.length - 1])
-        ) {
-          assert.equal(
-            actual.commandId,
-            'onboarding.openAplos',
-            `Esc on first sync must open Aplos: ${label}`,
-          );
-        }
-        const triageArrow = key.id === 'ArrowLeft' || key.id === 'ArrowRight';
-        if (
-          triageArrow &&
-          (actual.commandId === 'mail.done' || actual.commandId === 'mail.later')
-        ) {
-          assert.ok(
-            ['home', 'oneByOne', 'reader'].includes(actual.context),
-            `arrow triage outside Home/one by one/reader: ${label}`,
-          );
-        }
-        if (key.id === 'Space' && actual.phase === 'hold')
-          assert.equal(actual.context, 'compose', label);
-      }
 
-      // Hold timing: a hold-capable keydown, held for a random time.
-      const holdId = actual?.phase === 'tap' ? actual.holdCommandId : actual?.commandId;
-      if (actual && (actual.phase === 'hold' || holdId)) {
-        const heldFor = Math.floor(rand() * 600);
-        tracker.down(key.event, holdId!, clock);
-        assert.ok(
-          tracker.swallows({ ...key.event, repeat: true }),
-          `auto-repeat of the armed key is swallowed: ${label}`,
-        );
-        const upgrade = tracker.tick(clock + heldFor);
-        const release = tracker.up(key.event, clock + heldFor);
-        const isHold = heldFor >= prefs.holdThresholdMs;
-        assert.equal(upgrade !== null, isHold, label);
-        assert.equal(release?.phase, isHold ? 'hold' : 'tap', label);
-        clock += heldFor;
-      }
+      clock += checkHold(actual, key, tracker, prefs, clock, rand, label);
       clock += 1 + Math.floor(rand() * 40);
 
       // Transitions open and close at random; nothing is dropped or reordered.

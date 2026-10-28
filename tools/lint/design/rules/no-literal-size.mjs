@@ -10,7 +10,8 @@ import { sizeKind } from '../lib/props.mjs';
 import { isDynamic, parseNumber, parseValue } from '../lib/value.mjs';
 
 export const id = 'no-literal-size';
-export const description = 'padding, margin, gap, font-size, line-height, font, letter-spacing, border-radius, box-shadow and z-index take var(--token) values; only 0, 1px hairlines, 100%, auto and normal are literal.';
+export const description =
+  'padding, margin, gap, font-size, line-height, font, letter-spacing, border-radius, box-shadow and z-index take var(--token) values; only 0, 1px hairlines, 100%, auto and normal are literal.';
 export const appliesTo = ['css', 'ts'];
 
 const HINTS = {
@@ -93,7 +94,8 @@ function valueProblems(kind, value, numeric) {
   const problems = [];
   if (numeric) {
     const number = parseNumber(value);
-    if (number && !isAllowedTopLevelNumber({ value: number.value, unit: 'px' }, kind)) problems.push(`${value}`);
+    if (number && !isAllowedTopLevelNumber({ value: number.value, unit: 'px' }, kind))
+      problems.push(`${value}`);
     return problems;
   }
   nodeProblems(parseValue(value), kind, problems);
@@ -109,7 +111,14 @@ export function check(ctx) {
     const problems = valueProblems(kind, decl.value, decl.numeric);
     if (problems.length === 0) continue;
     const literal = decl.numeric ? `${decl.value} (a number is px)` : problems.join(' ');
-    out.push(violation(decl.line, decl.column, `${decl.prop} uses the literal ${literal}. Use ${HINTS[kind]} (DESIGN 4.3-4.6).`, decl.node));
+    out.push(
+      violation(
+        decl.line,
+        decl.column,
+        `${decl.prop} uses the literal ${literal}. Use ${HINTS[kind]} (DESIGN 4.3-4.6).`,
+        decl.node,
+      ),
+    );
   }
   return out;
 }
