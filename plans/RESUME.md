@@ -1,4 +1,4 @@
-# Resuming the revamp in lean mode (2026-10-29)
+# Resuming the revamp in lean mode (started early, on 2026-10-28 at the owner's request)
 
 > **What this means:** tomorrow the revamp restarts with fresh, cheaper threads. There are three building threads plus the Integrator, Sonnet by default, and every rule in roadmap §5.1a applies. Everything paused tonight is either pushed, or still on disk in its worktree, so nothing is lost.
 
@@ -42,7 +42,7 @@ The owner paused everything on 2026-10-28 at 20:05 UTC and approved lean mode (r
    | Providers | Linux | The #38 guard fixes, then `prov-gov`, then `prov-gmail` on the real store | The send and live-run guard, governor correctness |
    | UI-core | Linux | Any #44 fixes, then `ui-shell` and `ui-home` on the stand-in engine | High-visibility screen calls the owner will judge |
 
-   Parked until their inputs exist: UI-screens (resumes when UI-core's base has merged) and Platform (resumes for #40 review fixes, and for the website once the owner has reviewed feature 14). The parked lanes from Engine are `eng-ai`, `eng-time`, `eng-html` and `eng-host`; each resumes after its open PR merges and a building slot frees up.
+   Platform also restarts, as a fresh Sonnet thread on the Mac with one small job: the owner APPROVED feature 14 (the website) on 2026-10-28. It runs the §12 steps d–g: an approval snapshot, one Sonnet review of the diff, a PR into `revamp`, then the merge. After that it handles #40's review fixes and stays parked. The new logo is a known follow-up for later. UI-screens stays parked until UI-core's base has merged. The parked lanes from Engine are `eng-ai`, `eng-time`, `eng-html` and `eng-host`; each resumes after its open PR merges and a building slot frees up.
 5. **Watching.** Create one scheduled task with `bindToCurrentThread: false` (a fresh small thread each run), every 60 minutes. Its prompt: run `sh plans/tools/watch.sh` in the Mac worktree. On NOTHING NEW, reply in one line and stop. Otherwise route each new line to the thread that should act, and nudge idle threads. Re-enable the Integrator's 08:00 daily digest with one added line from `token-report.py`.
 6. **Check after 3 hours.** Run the token report again. If Opus is above 25% of calls, or the average context is above 120,000 tokens, find the cause and fix the routing the same day.
 
