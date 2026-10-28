@@ -9,3 +9,10 @@ Groq is the default for every AI feature, including transcription; read GROQ_API
 Layout: an npm-workspaces monorepo. `apps/desktop` is the Electron app (all source paths in these docs, such as `src/engine` and `scripts/`, are relative to it), `apps/web` is the marketing site, `packages/` is reserved for shared code. Run every command from the repo root.
 
 Commands: `npm run dev`, `npm run typecheck`, `npm test`, `npm run package`, `node scripts/launch.mjs`, plus `npm run web` / `npm run web:build` for the site. Put `.env` at the repo root (or in `apps/desktop`). Browser preview uses separate local state from desktop. Use original demo data or isolated test storage for sending/triage tests; do not send external messages as part of autonomous verification.
+
+## Code hygiene
+
+- Run `npm run check` before every commit. It runs the format check, ESLint, stylelint, the owners check, typecheck and tests (checks that do not exist yet print `pending: <name>`).
+- No multi-statement one-liners.
+- New files use named exports and small functions.
+- Whoever touches a dense function tidies it.
