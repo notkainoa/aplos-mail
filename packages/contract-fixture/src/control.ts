@@ -12,9 +12,12 @@ export type {
 } from './control-types';
 export { controlMethod };
 
+/** A knob that takes no arguments, e.g. `control.unpark()` or `control.snapshot()`. */
+type EmptyArgs = Record<string, never>;
+
 /** `control.failNextWrite({mode: 'reject'})`, `control.advanceClock({ms: 250})`: one typed function per knob. */
 export type FixtureControl = {
-  [K in Knob]: {} extends KnobArgs<K>
+  [K in Knob]: EmptyArgs extends KnobArgs<K>
     ? (args?: KnobArgs<K>) => Promise<KnobResult<K>>
     : (args: KnobArgs<K>) => Promise<KnobResult<K>>;
 };
