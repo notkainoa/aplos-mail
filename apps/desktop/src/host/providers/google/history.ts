@@ -3,6 +3,7 @@ import {
   type AdapterContext,
   type FlagDelta,
   type LabelDelta,
+  type MessageFacts,
   type PlannedStep,
   type RemoteDraftFact,
   type Removal,
@@ -12,10 +13,11 @@ import {
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
 import { FLAG_LABELS, folderFacts, type GmailLabel } from './facts';
-import { settleFailures } from './failures';
+import { passWrites, settleFailures } from './failures';
 import {
   FIRST_WINDOW_KEY,
   INBOX_ROUND_MARK,
+  LAST_SEEN_KEY,
   REGAINED_KEY,
   entriesFor,
   entryThread,
@@ -62,6 +64,54 @@ const untouched = (state: SyncState, costUnits: number): StepResult => ({
   costUnits,
 });
 
+/** Newest Inbox page a missed-arrivals check lists: arrivals past it reach the device through the quiet resync. */
+const ARRIVAL_PAGE = 50;
+
+/**
+ * Inbox mail newer than `since` that this device lacks, fetched as metadata (G-B). One list page (5 units) and one
+ * fetch per unknown thread, the same calls the resync would make; what the resync would also fetch but is not new
+ * stays in the run memo for it. Undefined when a pause or refusal stopped the check (nothing is committed then).
+ */
+async function missedArrivals(
+  rt: SyncRuntime,
+  step: PlannedStep,
+  ctx: AdapterContext,
+  client: GmailClient,
+  since: number,
+): Promise<MessageFacts[] | undefined> {
+  const list = await client.call<{ messages?: { id: string; threadId: string }[] }>({
+    method: 'gmail.messages.list',
+    path: '/messages',
+    query: { labelIds: ['INBOX'], maxResults: ARRIVAL_PAGE },
+    fields: 'messages(id,threadId)',
+    lane: step.lane,
+  });
+  const listed = list.messages ?? [];
+  const known = await ctx.lookup.knownMessages(listed.map(m => m.id));
+  const knownThreads = await ctx.lookup.knownThreads(listed.map(m => m.threadId));
+  const byThread = new Map<string, string[]>();
+  for (const m of listed.filter(m => !known.has(m.id)))
+    byThread.set(m.threadId, [...(byThread.get(m.threadId) ?? []), m.id]);
+  const entries = [...byThread].flatMap(([thread, ids]) =>
+    entriesFor(thread, ids, knownThreads.has(thread)),
+  );
+  const fetched = await fetchMetadata(client, entries, {
+    lane: step.lane,
+    self: ctx.account.address,
+    memo: rt.memo,
+    now: ctx.clock.now(),
+  });
+  if (fetched.stopped) return undefined;
+  return fetched.facts.filter(
+    f => f.internalDate > since && f.placements.some(p => p.folder === 'INBOX'),
+  );
+}
+
+const lastSeen = (memory: ReadonlyMap<string, string>): number | undefined => {
+  const at = Number(memory.get(LAST_SEEN_KEY));
+  return Number.isFinite(at) && memory.has(LAST_SEEN_KEY) ? at : undefined;
+};
+
 /** P0: `getProfile` for the history id first (so nothing that happens during the window is missed), then labels. */
 export async function cursorStep(
   rt: SyncRuntime,
@@ -84,8 +134,13 @@ export async function cursorStep(
       lane: step.lane,
     });
     if (!profile.historyId) throw new Error('getProfile returned no historyId');
+    const since = lastSeen(ctx.memory);
+    const arrivals = since === undefined ? [] : await missedArrivals(rt, step, ctx, client, since);
+    if (!arrivals) return untouched(state, client.spent);
     return {
       folders: folderFacts(labels.labels ?? []),
+      ...(arrivals.length ? { upserts: arrivals } : {}),
+      ...(since !== undefined ? { memory: { [LAST_SEEN_KEY]: null } } : {}),
       nextStates: [
         {
           scope: 'history',
@@ -123,6 +178,12 @@ function resetStates(state: SyncState, ctx: AdapterContext): SyncState[] {
       updatedAt: now,
     },
   ];
+}
+
+/** After the baseline a reset remembers when this device last saw the Inbox, for `missedArrivals`; before it, nothing. */
+function lastSeenWrite(state: SyncState, ctx: AdapterContext): Record<string, string> {
+  if (ctx.memory.get(FIRST_WINDOW_KEY) !== '1' || !state.updatedAt) return {};
+  return { [LAST_SEEN_KEY]: String(state.updatedAt) };
 }
 
 interface Pending {
@@ -432,6 +493,7 @@ export async function historyStep(
     ctx.log.event('sync.gmail.cursor_reset', { reset: reason });
     return {
       ...partial,
+      memory: { ...partial.memory, ...lastSeenWrite(state, ctx) },
       reset: reason,
       nextStates: resetStates(state, ctx),
       done: true,
@@ -510,7 +572,10 @@ export async function historyStep(
   });
 
   // A message that keeps failing on its own is quarantined after a few polls, so it cannot pin the cursor here.
-  const memory = { ...extras.memory, ...settleFailures(ctx, fetched, toFetch) };
+  // This pass counts toward the back-off of entries quarantined earlier, not of one quarantined by this very pass.
+  const memory = { ...extras.memory };
+  Object.assign(memory, passWrites(ctx.memory, memory));
+  Object.assign(memory, settleFailures(ctx, fetched, toFetch, memory));
 
   // The fetched rows carry the current labels; their deltas from this page would only repeat them.
   const upserted = new Set(fetched.facts.map(f => f.remoteId));

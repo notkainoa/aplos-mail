@@ -362,6 +362,13 @@ test('ADV-08 D10 a thread re-inboxed during a paused resync is falsely swept fro
   r.emu.mailbox.expireHistory();
   await r.drive({ trigger: 'manual', scopes: ['history'], maxSteps: 1 }); // 404 -> reset
   await r.drive({ trigger: 'reset', scopes: ['history'], maxSteps: 1 }); // P0: a fresh cursor
+  // P0 already delivered the three arrivals; one more lands after it, so the resync still has a fetch to be paused in.
+  r.emu.mailbox.addMessage({
+    from: 'Cy Wren <cy.wren@mail.example.test>',
+    subject: 'Synthetic late',
+    text: 'x',
+    labelIds: ['INBOX'],
+  });
   r.governor.pauseAfter = 2; // the list and the date probe go out, then the batch meets a pause
   await r.drive({ trigger: 'reset', scopes: ['window:inbox'], maxSteps: 1 });
   assert.equal(r.store.states.get('window:inbox')?.phase, 'resyncing');

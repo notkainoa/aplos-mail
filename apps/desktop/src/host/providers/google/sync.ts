@@ -14,7 +14,7 @@ import {
 } from '@aplos/engine/ports';
 import { GmailClient, isStop, type GmailDeps, type GmailRequest } from './client';
 import { METADATA_HEADERS, messageFacts, type GmailMessage } from './facts';
-import { settleFailures } from './failures';
+import { RETRY_SCOPE, dueRetries, readSchedule, settleFailures } from './failures';
 
 /**
  * First sync P0-P5 (ARCH 5.1, plan 20 PV3) as pure planning plus bounded steps. Each step lists or fetches one chunk
@@ -322,6 +322,15 @@ const IMMEDIATE: ReadonlySet<PlanTrigger> = new Set([
   'reset',
 ]);
 
+/** A re-seeded cursor after a reset delivers missed Inbox arrivals as `incremental`; a first sync is a `baseline`. */
+function resetOrigin(
+  history: SyncState | undefined,
+  memory: ReadonlyMap<string, string>,
+): PlannedStep['origin'] {
+  if (history?.phase !== 'reset') return 'baseline';
+  return memory.has(LAST_SEEN_KEY) ? 'incremental' : 'resync';
+}
+
 /**
  * Pure: steps from committed state. The cursor comes first (P0); then the Inbox window (P1, continuing to 500 as P2);
  * the history poll at its cadence; and once the window is done, Sent (P3) and Inbox backfill (P5). P4 (body prefetch)
@@ -335,7 +344,7 @@ export function plan(input: PlanInput): PlannedStep[] {
       {
         scope: 'history',
         lane: 'incremental',
-        origin: history?.phase === 'reset' ? 'resync' : 'baseline',
+        origin: resetOrigin(history, input.memory),
         trigger,
       },
     ];
@@ -368,6 +377,9 @@ export function plan(input: PlanInput): PlannedStep[] {
     const backfill = stateOf(states, 'backfill:inbox');
     if (backfill && backfill.phase !== 'done')
       steps.push({ scope: 'backfill:inbox', lane: 'backfill', origin: 'backfill', trigger });
+    // A quarantined message due for another try (by sync passes, so never a tight loop); quiet, like backfill.
+    if (dueRetries(readSchedule(input.memory)).length)
+      steps.push({ scope: RETRY_SCOPE, lane: 'backfill', origin: 'backfill', trigger });
   }
   return steps;
 }
@@ -444,6 +456,14 @@ export const REGAINED_KEY = 'inbox.regained';
  * `baseline_done_at` or seed Sent and backfill, and the account would stay `syncing` with 50 threads (prov-gov-attack-04).
  */
 export const FIRST_WINDOW_KEY = 'inbox.firstWindow';
+
+/**
+ * provider_memory: epoch ms of the last history pass that worked, written when a cursor reset begins after the baseline
+ * and cleared by the P0 step that re-seeds the cursor. While it is set, that step is planned as `incremental` (the one
+ * origin the store's notification hook treats as new mail) and delivers the Inbox mail newer than this time that the
+ * device lacks (`missedArrivals`); the resync that follows is `resync` and stays quiet.
+ */
+export const LAST_SEEN_KEY = 'inbox.lastSeen';
 
 /** The date of an answered entry's listed message: its own, or a thread's newest message in the listed folder. */
 function listedDate(entry: string, facts: readonly MessageFacts[], folder: string): number {
