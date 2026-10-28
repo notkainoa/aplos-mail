@@ -39,8 +39,7 @@ function fakeSpawn(
     return child; // no exit planned: keeps "running" until killed
   };
 }
-const debugArg = (args: string[]) =>
-  args.some(a => a.startsWith('--inspect') || a.startsWith('--remote-debugging'));
+const debugArg = (args: string[]) => args.some(a => /^--?(inspect|remote-debugging)/.test(a));
 const GUARD = 78;
 const IDS = [
   'launch-control',
@@ -48,6 +47,7 @@ const IDS = [
   'launch-inspect',
   'launch-run-as-node',
   'launch-node-options',
+  'launch-remote-debugging-dash',
 ];
 
 async function launch(behaviour: Behaviour, extra: Record<string, unknown> = {}) {
@@ -93,6 +93,7 @@ test('launch checks: a hardened release passes (control stays up, debug flags hi
     '/tmp/fake-3',
     '/tmp/fake-4',
     '/tmp/fake-5',
+    '/tmp/fake-6',
   ]);
   // Each launch gets its own temp data dir and Chromium profile, and only its own hostile variable.
   calls.forEach((call, i) => {
@@ -107,6 +108,7 @@ test('launch checks: a hardened release passes (control stays up, debug flags hi
       [undefined, undefined],
       ['1', undefined],
       [undefined, '--inspect=0'],
+      [undefined, undefined],
     ],
   );
 });
@@ -119,7 +121,7 @@ test("launch checks: an app that exits on every launch passes nothing (the revie
     { exitCode: GUARD },
   ]) {
     const { rows, calls, statuses } = await launch(() => plan);
-    assert.deepEqual(statuses, ['FAIL', 'FAIL', 'FAIL', 'FAIL', 'FAIL'], JSON.stringify(plan));
+    assert.deepEqual(statuses, Array(IDS.length).fill('FAIL'), JSON.stringify(plan));
     assert.match(rows[0].reason, /a plain launch exited .* so the hostile launches prove nothing/);
     assert.match(rows[1].reason, /not run, the plain control launch did not stay up/);
     assert.equal(calls.length, 1, 'no hostile launch after a failed control');
@@ -144,7 +146,7 @@ test('launch checks: a debug flag must exit with the guard code, not crash or ha
         ? { exitCode: 0 }
         : undefined,
   );
-  assert.deepEqual(early.statuses, ['PASS', 'PASS', 'PASS', 'FAIL', 'FAIL']);
+  assert.deepEqual(early.statuses, ['PASS', 'PASS', 'PASS', 'FAIL', 'FAIL', 'PASS']);
   assert.match(early.rows[3].reason, /exited \(code 0\) early, while a plain launch stays up/);
 });
 
@@ -169,14 +171,15 @@ test("launch checks: today's unfused build fails every hostile launch", async ()
   const { rows, statuses } = await launch((args, env) => {
     if (env.ELECTRON_RUN_AS_NODE === '1')
       return { output: `node: bad option: ${args[0]}\n`, exitCode: 9 };
-    if (args.some(a => a.startsWith('--remote-debugging')))
+    if (args.some(a => /^--?remote-debugging/.test(a)))
       return { output: 'DevTools listening on ws://127.0.0.1:53111/devtools/browser/x\n' };
     if (args.some(a => a.startsWith('--inspect')) || env.NODE_OPTIONS)
       return { output: 'Debugger listening on ws://127.0.0.1:9229/x\n' };
     return undefined;
   });
-  assert.deepEqual(statuses, ['PASS', 'FAIL', 'FAIL', 'FAIL', 'FAIL']);
+  assert.deepEqual(statuses, ['PASS', 'FAIL', 'FAIL', 'FAIL', 'FAIL', 'FAIL']);
   assert.match(rows[1].reason, /exposed a debugger/);
+  assert.match(rows[5].reason, /-remote-debugging-port=0 exposed a debugger/);
   assert.match(rows[3].reason, /ran as Node/);
   assert.match(rows[4].reason, /exposed a debugger/);
 });
@@ -195,7 +198,7 @@ test('launch checks: Node output, a DevToolsActivePort file, staying up and spaw
   const portFile = await launch(args => (debugArg(args) ? { exitCode: GUARD } : undefined), {
     exists: (path: string) => path.endsWith('/fake-2/chromium/DevToolsActivePort'),
   });
-  assert.deepEqual(portFile.statuses, ['PASS', 'FAIL', 'PASS', 'PASS', 'PASS']);
+  assert.deepEqual(portFile.statuses, ['PASS', 'FAIL', 'PASS', 'PASS', 'PASS', 'PASS']);
 
   const stays = await launch(() => undefined);
   assert.match(
@@ -212,4 +215,32 @@ test('launch checks: Node output, a DevToolsActivePort file, staying up and spaw
   assert.match(broken.rows[0].reason, /could not start the app: ENOENT/);
   assert.ok(broken.rows.every((r: Row) => r.status === 'FAIL'));
   assert.equal(broken.removed.length, 1);
+});
+
+test('launch checks, guard subset: only the debug launches, no control, allowed beside a running copy', async () => {
+  const guardIds = ['launch-remote-debugging', 'launch-inspect', 'launch-remote-debugging-dash'];
+  assert.deepEqual(
+    vh.GUARD_CASES.map((c: { id: string }) => c.id),
+    guardIds,
+  );
+  const ok = await launch(args => (debugArg(args) ? { exitCode: GUARD } : undefined), {
+    only: 'guard',
+    isRunning: () => true,
+  });
+  assert.deepEqual(
+    ok.rows.map((r: Row) => [r.id, r.status]),
+    guardIds.map(id => [id, 'PASS']),
+  );
+  assert.equal(ok.calls.length, 3);
+  assert.ok(ok.calls.every(c => debugArg(c.args) && c.args[0].startsWith('--user-data-dir=')));
+
+  // A build without the guard (it starts normally, or exposes a debugger) fails every row.
+  const stays = await launch(() => undefined, { only: 'guard' });
+  assert.deepEqual(stays.statuses, ['FAIL', 'FAIL', 'FAIL']);
+  assert.match(stays.rows[0].reason, /a release must exit/);
+  const open = await launch(
+    args => (debugArg(args) ? { output: 'DevTools listening on ws://127.0.0.1:1/x\n' } : undefined),
+    { only: 'guard' },
+  );
+  assert.deepEqual(open.statuses, ['FAIL', 'FAIL', 'FAIL']);
 });

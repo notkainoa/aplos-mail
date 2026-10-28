@@ -56,7 +56,21 @@ export const LAUNCH_CASES = [
     stay: true,
     note: 'behavioural smoke test only (packaged Electron ignores NODE_OPTIONS either way; the fuses row is the evidence)',
   },
+  // Chromium on macOS also parses a switch with one leading dash, so a guard that only looks for "--" misses it.
+  {
+    id: 'launch-remote-debugging-dash',
+    what: '-remote-debugging-port=0',
+    args: ['-remote-debugging-port=0'],
+    guardExit: true,
+  },
 ];
+/**
+ * The `--launch-checks=guard` subset: only the launches that the debug guard must refuse. If the guard works,
+ * each exits before the app is ready, so no window opens and no engine starts; release-build.mjs and the
+ * Release workflow run these on the real release artifact (which has no test mode). They need no control
+ * launch, because only the guard's own exit code passes.
+ */
+export const GUARD_CASES = LAUNCH_CASES.filter(testCase => testCase.guardExit);
 const DEBUGGER_LINE = /DevTools listening on|Debugger listening on/;
 
 /**
@@ -165,10 +179,14 @@ export async function runLaunchChecks({
   removeDir = dir => rmSync(dir, { recursive: true, force: true }),
   exists = existsSync,
   isRunning = processRunning,
+  only,
 }) {
+  const cases = only === 'guard' ? GUARD_CASES : LAUNCH_CASES;
   // A running copy would take the single-instance hand-off (and raise its window), so every launch would "exit".
-  if (isRunning(basename(executable)))
-    return LAUNCH_CASES.map(testCase =>
+  // The guard subset is exempt: its launches exit before the hand-off, each has its own --user-data-dir (which
+  // is what the single-instance lock is keyed on), and a release build must be checkable on a Mac that runs Aplos.
+  if (only !== 'guard' && isRunning(basename(executable)))
+    return cases.map(testCase =>
       fail(
         testCase.id,
         `not run: ${basename(executable)} is already running; quit it first so no launch hands off to it`,
@@ -176,7 +194,7 @@ export async function runLaunchChecks({
     );
   const rows = [];
   let controlPassed = true;
-  for (const testCase of LAUNCH_CASES) {
+  for (const testCase of cases) {
     if (!controlPassed) {
       rows.push(
         fail(testCase.id, `${testCase.what}: not run, the plain control launch did not stay up`),

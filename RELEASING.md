@@ -12,7 +12,7 @@ What a release contains:
 
 ## One-time setup
 
-Without these secrets the pipeline still works: it produces ad-hoc signed, un-notarized builds. macOS warns before opening those (right-click → Open, or System Settings → Privacy & Security → Open Anyway), and the in-app updater stays off in them, because macOS refuses to swap in an update for an app that has no Developer ID signature.
+Without these secrets a local `npm run release:build` still works: it produces ad-hoc signed, un-notarized builds. (The *Release* workflow builds one too, but its hardening check expects a signed, notarized release, so the run ends red and nothing is uploaded.) macOS warns before opening those (right-click → Open, or System Settings → Privacy & Security → Open Anyway), and the in-app updater stays off in them, because macOS refuses to swap in an update for an app that has no Developer ID signature.
 
 To sign and notarize, you need an Apple Developer Program membership (paid, individual is fine).
 
@@ -57,7 +57,7 @@ This bumps the version in `package.json`, `apps/desktop/package.json` and `packa
 git push --atomic origin main vX.Y.Z
 ```
 
-The *Release* workflow checks that the tag matches the app version, runs the typecheck and tests, builds both architectures, signs and notarizes when the secrets exist, and uploads everything to a draft release named after the version. The same files are kept as a workflow artifact.
+The *Release* workflow checks that the tag matches the app version, runs the typecheck and tests, builds both architectures, signs and notarizes when the secrets exist, runs the hardening check and, only if it passes, uploads everything to a draft release named after the version. Without the signing secrets the run ends red at the check and uploads nothing. The same files are kept as a workflow artifact.
 
 To build the artifacts locally instead (no upload): `npm run release:build`. Output goes to `apps/desktop/release/`. Locally the build signs only when `CSC_LINK` or `CSC_NAME` is set in your shell; a certificate in your keychain is never picked up by accident. `npm run package` stays the fast, this-Mac-only `.app` build; it is always ad-hoc signed (never with a keychain identity) and uses `build/entitlements.adhoc.plist`, as does an unsigned `release:build`. Developer ID builds use `build/entitlements.mac.plist`.
 
@@ -70,7 +70,11 @@ npm run verify:hardening -- "apps/desktop/release/mac-arm64/Aplos Mail.app" --ex
 npm run verify:hardening -- "apps/desktop/release/mac-arm64/Aplos Mail.app" --expect release  # signed and notarized
 ```
 
-`release:build` runs it on every `.app` it built (`--expect release` when signed, `adhoc` otherwise) and exits 1 on any FAIL. The *Release* workflow runs it again with `--expect release` after the build, so a run without the signing secrets ends red. The draft is already uploaded by then: a red run means do not publish that draft.
+`release:build` runs it on every `.app` it built (`--expect release` when signed, `adhoc` otherwise; `-- --expect release` forces it) and exits 1 on any FAIL. A release expectation also runs `--launch-checks=guard`: the app is started with `--remote-debugging-port=0`, `-remote-debugging-port=0` and `--inspect=0` and must exit at once with code 78 (the debug guard below), before any window opens.
+
+Nothing is uploaded before the check passes. electron-builder always builds with `--publish never`; `release:publish` uploads the DMGs, ZIPs, blockmaps and `latest-mac.yml` only after every row passed. The *Release* workflow builds with `--expect release` (so a run without the signing secrets ends red), verifies both apps again in its own step, and only then runs the upload step, which is the only step that gets `GH_TOKEN`. A red run leaves no new files on the draft.
+
+**Debug guard (ADR 40-6).** A packaged build refuses to start with `--remote-debugging-*`, `--inspect*` or `--debug*` (one or two leading dashes) and exits with code 78; `src/main/security.ts` does this while the main process loads, before the app is ready. `npm run desktop` / `electron .` are not packaged and are unaffected. `scripts/verify-release.mjs` drives the packaged app over `--remote-debugging-port`, so it needs the E2E variant: `APLOS_E2E=1 npm run package -w @aplos/desktop`, then `npm run verify:release`. `build-main.mjs` refuses `APLOS_E2E=1` together with `APLOS_RELEASE_BUILD=1`, so a release is never the E2E variant.
 
 The app icon is the Icon Composer file `apps/desktop/assets/AppIcon.icon`; electron-builder compiles it with Xcode's `actool` into `Assets.car` (the macOS 26 icon) plus `icon.icns` for older systems. That needs full Xcode 26 or later, not just the Command Line Tools: run `sudo xcode-select -s /Applications/Xcode.app` once, or prefix the build with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`. The release workflow runs on `macos-26` for the same reason.
 
@@ -82,7 +86,7 @@ On github.com → Releases → the draft:
 
 - Six assets plus blockmaps: two DMGs, two ZIPs and `latest-mac.yml`. The version in `latest-mac.yml` matches the tag.
 - The workflow log says "signing and notarizing" and "notarization successful". If it says "ad-hoc signed and not notarized", the secrets are missing.
-- The "Verify hardening" step is green and every row of both tables says PASS.
+- The "Verify hardening" step is green and every row of both tables says PASS (the launch rows other than the three debug-guard ones say SKIP), and the upload step ran.
 - Download the DMG for your Mac on a machine that has never run Aplos (or after `xattr` is reset by downloading through a browser), open it and launch the app. A notarized build opens with only the usual "downloaded from the internet" prompt. `spctl -a -vv "/Applications/Aplos Mail.app"` should say `accepted, source=Notarized Developer ID`.
 - Settings → General → Updates shows the new version.
 - Write release notes, then **Publish release**.

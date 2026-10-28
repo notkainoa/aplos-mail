@@ -705,6 +705,7 @@ test('CLI arguments, table output and exit codes', () => {
     vh.parseArgs(['/x/A.app/', '--expect=release', '--launch-checks']).launchChecks,
     true,
   );
+  assert.equal(vh.parseArgs(['/x/A.app', '--launch-checks=guard']).launchChecks, 'guard');
   assert.throws(() => vh.parseArgs([]), /missing the path/);
   assert.throws(() => vh.parseArgs(['/x/A.app', '--expect', 'beta']), /release or adhoc/);
   assert.throws(() => vh.parseArgs(['/x/binary']), /not a \.app/);

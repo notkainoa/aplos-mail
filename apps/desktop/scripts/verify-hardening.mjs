@@ -3,11 +3,13 @@
 // requirement, no secrets in app.asar or anywhere else under Contents/Resources, and the aplos-symbols
 // helper. Prints one PASS/FAIL/SKIP row per check and exits 1 on any FAIL.
 //
-// Usage: node scripts/verify-hardening.mjs <path-to-.app> [--expect release|adhoc] [--json] [--launch-checks]
+// Usage: node scripts/verify-hardening.mjs <path-to-.app> [--expect release|adhoc] [--json] [--launch-checks[=guard]]
 //   --expect adhoc   a source build: skips notarization, stapling and the team checks, uses entitlements.adhoc.plist
 //   --launch-checks  also starts the app: once plainly (the control, which must stay up), then with hostile
 //                    flags (debug ports, ELECTRON_RUN_AS_NODE, NODE_OPTIONS). Off by default because it launches
 //                    the real app, which shows a window today. Refuses to run while another copy is running.
+//   --launch-checks=guard  only the debug-switch launches, which a working guard refuses before any window
+//                    (release-build.mjs and the Release workflow use this on the release artifact).
 //
 // A matched secret is never printed: rows name the file, the byte offset and a redacted marker.
 import { spawn as nodeSpawn, spawnSync } from 'node:child_process';
@@ -716,14 +718,16 @@ export async function verifyApp(
     );
   });
 
+  const only = launchChecks === 'guard' ? 'guard' : undefined;
   if (launchChecks) {
     const name = info.CFBundleExecutable || 'Aplos Mail';
     await add('launch', () =>
-      runLaunchChecks({ executable: join(contents, 'MacOS', name), spawn }),
+      runLaunchChecks({ executable: join(contents, 'MacOS', name), spawn, only }),
     );
-  } else
-    for (const testCase of LAUNCH_CASES)
-      rows.push(skip(testCase.id, 'not run (pass --launch-checks; it launches the app)'));
+  }
+  for (const testCase of LAUNCH_CASES)
+    if (!launchChecks || (only && !testCase.guardExit))
+      rows.push(skip(testCase.id, `not run (pass --launch-checks${only ? '' : '[=guard]'})`));
   return rows;
 }
 
@@ -744,6 +748,7 @@ export function parseArgs(argv) {
     const arg = argv[i];
     if (arg === '--json') options.json = true;
     else if (arg === '--launch-checks') options.launchChecks = true;
+    else if (arg === '--launch-checks=guard') options.launchChecks = 'guard';
     else if (arg === '--expect') options.expect = argv[++i];
     else if (arg.startsWith('--expect=')) options.expect = arg.slice('--expect='.length);
     else if (arg === '--help' || arg === '-h') options.help = true;
@@ -759,7 +764,7 @@ export function parseArgs(argv) {
 }
 
 const USAGE =
-  'Usage: node scripts/verify-hardening.mjs <path-to-.app> [--expect release|adhoc] [--json] [--launch-checks]';
+  'Usage: node scripts/verify-hardening.mjs <path-to-.app> [--expect release|adhoc] [--json] [--launch-checks[=guard]]';
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let options;
