@@ -102,13 +102,10 @@ function createWindow(query?: { draft?: string; thread?: string }) {
       sandbox: true,
       webSecurity: true,
       spellcheck: true,
-<<<<<<< HEAD
       devTools: !releaseBuild,
-=======
       // A test window is never shown, and Chromium throttles hidden pages' timers hard: the renderer's save-before-close
       // answer to a quit could then take tens of seconds (plat-release, 2026-10-28 06:12).
       backgroundThrottling: !isTest,
->>>>>>> origin/revamp
     },
   });
   windows.add(win);
