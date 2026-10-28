@@ -155,17 +155,38 @@ function missingScopes(headers: GoogleFailure['headers']): string[] | undefined 
   return scope ? scope.split(/\s+/).filter(Boolean) : undefined;
 }
 
-export function classifyGoogle(failure: GoogleFailure): Classified {
-  const { method, kind, now, status } = failure;
+type Make = (
+  cls: ErrorClass,
+  reason: string,
+  extra?: Partial<ClassifiedError>,
+  scope?: 'account' | 'project',
+) => Classified;
+
+/** What every class test reads, worked out once per failure. */
+interface Reading {
+  failure: GoogleFailure;
+  provider: string;
+  parsed: Parsed;
+  text: string;
+  make: Make;
+  retryAfterMs?: number;
+  withRetry: { retryAfterMs?: number };
+}
+
+/** A Google API (not OAuth) failure's reasons, for the classifier steps below. */
+interface ApiReading extends Reading {
+  /** Text alone only decides for the statuses Google refuses quota with, so a 400 that mentions "per day" stays a 400. */
+  quotaStatus: boolean;
+  has: (set: Set<string>) => boolean;
+  reason?: string;
+}
+
+function readFailure(failure: GoogleFailure): Reading {
+  const { method, now, status } = failure;
   const provider = budgetOf(method);
   const parsed = parseBody(failure.body);
   const text = parsed.text;
-  const make = (
-    cls: ErrorClass,
-    reason: string,
-    extra: Partial<ClassifiedError> = {},
-    scope: 'account' | 'project' = 'account',
-  ): Classified => ({
+  const make: Make = (cls, reason, extra = {}, scope = 'account') => ({
     error: {
       class: cls,
       provider,
@@ -179,47 +200,72 @@ export function classifyGoogle(failure: GoogleFailure): Classified {
   });
   const retryAfterMs = parseRetryAfter(header(failure.headers, 'retry-after'), now);
   const withRetry = retryAfterMs !== undefined ? { retryAfterMs } : {};
+  return { failure, provider, parsed, text, make, retryAfterMs, withRetry };
+}
 
-  // No response at all.
-  if (failure.network) {
-    const mayHaveLeft = failure.network !== 'refused' && (kind === 'write' || kind === 'send');
-    return make('transient', failure.network, mayHaveLeft ? { uncertain: true } : {});
-  }
+/** No response at all. */
+function classifyNetwork(
+  { failure, make }: Reading,
+  network: 'timeout' | 'reset' | 'refused',
+): Classified {
+  const mayHaveLeft =
+    network !== 'refused' && (failure.kind === 'write' || failure.kind === 'send');
+  return make('transient', network, mayHaveLeft ? { uncertain: true } : {});
+}
 
-  // The token endpoint speaks OAuth, not google.rpc.
-  if (provider === 'oauth') {
-    const reason = parsed.reason ?? `status_${status ?? 0}`;
-    if (reason === 'invalid_grant' || reason === 'admin_policy_enforced')
-      return make('auth', reason);
-    if (reason === 'invalid_client' || reason === 'unauthorized_client')
-      return make('config', reason, {}, 'project');
-    if (status === undefined || status === 408 || status === 429 || status >= 500)
-      return make('transient', reason, withRetry);
-    return make('permanent', reason);
-  }
+/** The token endpoint speaks OAuth, not google.rpc. */
+function classifyOAuth({ failure, parsed, make, withRetry }: Reading): Classified {
+  const { status } = failure;
+  const reason = parsed.reason ?? `status_${status ?? 0}`;
+  if (reason === 'invalid_grant' || reason === 'admin_policy_enforced') return make('auth', reason);
+  if (reason === 'invalid_client' || reason === 'unauthorized_client')
+    return make('config', reason, {}, 'project');
+  if (status === undefined || status === 408 || status === 429 || status >= 500)
+    return make('transient', reason, withRetry);
+  return make('permanent', reason);
+}
 
+function readApi(reading: Reading): ApiReading {
+  const { parsed, failure } = reading;
   const reasons = [parsed.reason, parsed.rpcStatus, ...parsed.infoReasons].filter(
     (r): r is string => Boolean(r),
   );
-  // Text alone only decides for the statuses Google refuses quota with, so a 400 that mentions "per day" stays a 400.
-  const quotaStatus = status === 403 || status === 429;
-  const has = (set: Set<string>) => reasons.some(r => set.has(r));
-  const reason = parsed.reason ?? parsed.infoReasons[0] ?? parsed.rpcStatus;
+  return {
+    ...reading,
+    quotaStatus: failure.status === 403 || failure.status === 429,
+    has: (set: Set<string>) => reasons.some(r => set.has(r)),
+    reason: parsed.reason ?? parsed.infoReasons[0] ?? parsed.rpcStatus,
+  };
+}
 
-  // Sending limit first: it arrives as a 429 rateLimitExceeded that only the text tells apart (D7).
-  if (/mail sending/i.test(text)) {
-    const at =
-      retryAfterInText(text) ??
-      (retryAfterMs !== undefined ? now + retryAfterMs : nextPacificMidnight(now));
-    return make('send_limit', reason ?? 'rateLimitExceeded', {
-      resumeAt: at,
-      retryAfterMs: Math.max(0, at - now),
-    });
-  }
-  if (/too many concurrent requests/i.test(text)) {
-    return make('throttle', reason ?? 'rateLimitExceeded', { concurrency: true, ...withRetry });
-  }
-  // Daily stops are never retried: they end at midnight Pacific. dailyLimitExceeded is the project's limit.
+/** Sending limit first: it arrives as a 429 rateLimitExceeded that only the text tells apart (D7). */
+function classifySendLimit(api: ApiReading): Classified | undefined {
+  const { text, retryAfterMs, make, reason } = api;
+  const { now } = api.failure;
+  if (!/mail sending/i.test(text)) return undefined;
+  const at =
+    retryAfterInText(text) ??
+    (retryAfterMs !== undefined ? now + retryAfterMs : nextPacificMidnight(now));
+  return make('send_limit', reason ?? 'rateLimitExceeded', {
+    resumeAt: at,
+    retryAfterMs: Math.max(0, at - now),
+  });
+}
+
+function classifyConcurrency({
+  text,
+  make,
+  withRetry,
+  reason,
+}: ApiReading): Classified | undefined {
+  if (!/too many concurrent requests/i.test(text)) return undefined;
+  return make('throttle', reason ?? 'rateLimitExceeded', { concurrency: true, ...withRetry });
+}
+
+/** Daily stops are never retried: they end at midnight Pacific. dailyLimitExceeded is the project's limit. */
+function classifyDaily(api: ApiReading): Classified | undefined {
+  const { parsed, provider, text, make, withRetry, quotaStatus, reason } = api;
+  const { now } = api.failure;
   if (parsed.reason === 'dailyLimitExceeded') {
     return make('daily', 'dailyLimitExceeded', { resumeAt: nextPacificMidnight(now) }, 'project');
   }
@@ -230,14 +276,24 @@ export function classifyGoogle(failure: GoogleFailure): Classified {
   if (parsed.reason === 'quotaExceeded' || (quotaStatus && /per day|bandwidth/i.test(text))) {
     return make('daily', reason ?? 'quotaExceeded', { resumeAt: nextPacificMidnight(now) });
   }
+  return undefined;
+}
+
+function classifyThrottle(api: ApiReading): Classified | undefined {
+  const { text, make, withRetry, quotaStatus, has, reason } = api;
   if (
     has(THROTTLE_REASONS) ||
-    status === 429 ||
+    api.failure.status === 429 ||
     (quotaStatus && /rate ?limit|per minute|too many requests/i.test(text))
   ) {
     return make('throttle', reason ?? 'rateLimitExceeded', withRetry);
   }
-  if (status === 401) return make('auth', reason ?? 'authError');
+  return undefined;
+}
+
+function classifyAccess(api: ApiReading): Classified | undefined {
+  const { failure, parsed, text, make, has, reason } = api;
+  if (failure.status === 401) return make('auth', reason ?? 'authError');
   if (
     has(SCOPE_REASONS) ||
     /insufficient_scope/.test(header(failure.headers, 'www-authenticate') ?? '')
@@ -253,12 +309,32 @@ export function classifyGoogle(failure: GoogleFailure): Classified {
     return make('config', reason ?? 'accessNotConfigured', {}, 'project');
   }
   if (parsed.reason === 'domainPolicy') return make('auth', 'domainPolicy');
+  return undefined;
+}
+
+function classifyRest({ failure, make, reason }: ApiReading): Classified {
+  const { status } = failure;
   if (status === undefined || status === 408 || status >= 500)
     return make('transient', reason ?? `status_${status ?? 0}`);
   if (status >= 200 && status < 300) return make('transient', 'invalidResponse');
   const item = failure.item !== undefined ? { item: failure.item } : {};
   if (status === 404) return make('permanent', reason ?? 'notFound', item);
   return make('permanent', reason ?? `status_${status}`, item);
+}
+
+export function classifyGoogle(failure: GoogleFailure): Classified {
+  const reading = readFailure(failure);
+  if (failure.network) return classifyNetwork(reading, failure.network);
+  if (reading.provider === 'oauth') return classifyOAuth(reading);
+  const api = readApi(reading);
+  return (
+    classifySendLimit(api) ??
+    classifyConcurrency(api) ??
+    classifyDaily(api) ??
+    classifyThrottle(api) ??
+    classifyAccess(api) ??
+    classifyRest(api)
+  );
 }
 
 /** The error to throw from inside `governor.run`, so the governor sees the class and the scope. */

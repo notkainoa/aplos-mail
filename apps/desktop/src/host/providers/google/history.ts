@@ -146,6 +146,273 @@ function readDraftMap(memory: ReadonlyMap<string, string>): Map<string, string> 
   }
 }
 
+/** What one history page says, in record order. */
+interface PageChanges {
+  labels: Map<string, Pending>;
+  added: HistoryRef[];
+  inboxGained: HistoryRef[];
+  /** Messages that lost DRAFT without being deleted: a draft sent with `drafts.send` keeps its id and becomes mail. */
+  undrafted: HistoryRef[];
+  deleted: Set<string>;
+  /** Inbox entries and exits in record order, for the running Inbox round's sweep (REGAINED_KEY). */
+  inboxMoves: [string, boolean][];
+}
+
+function changeLabels(
+  labels: Map<string, Pending>,
+  ref: HistoryRef,
+  ids: readonly string[] | undefined,
+  adding: boolean,
+): void {
+  const entry = labels.get(ref.id) ?? { add: new Set<string>(), remove: new Set<string>() };
+  labels.set(ref.id, entry);
+  for (const label of ids ?? []) {
+    if (label === 'UNREAD') entry.seen = !adding;
+    else if (label === 'STARRED') entry.flagged = adding;
+    else if (FLAG_LABELS.has(label)) continue;
+    else if (adding) {
+      entry.add.add(label);
+      entry.remove.delete(label);
+    } else {
+      entry.remove.add(label);
+      entry.add.delete(label);
+    }
+  }
+}
+
+/** Reads the page's records, updating the run memo as it goes. */
+function collectChanges(rt: SyncRuntime, records: readonly HistoryRecord[]): PageChanges {
+  const changes: PageChanges = {
+    labels: new Map(),
+    added: [],
+    inboxGained: [],
+    undrafted: [],
+    deleted: new Set(),
+    inboxMoves: [],
+  };
+  const { labels, added, inboxGained, undrafted, deleted, inboxMoves } = changes;
+  for (const record of records) {
+    for (const { message } of record.messagesAdded ?? []) {
+      rt.memo.changed(message.id, record.id);
+      deleted.delete(message.id);
+      added.push(message);
+      if (message.labelIds?.includes('INBOX')) inboxMoves.push([message.id, true]);
+    }
+    for (const { message } of record.messagesDeleted ?? []) {
+      rt.memo.forget([message.id]);
+      deleted.add(message.id);
+      inboxMoves.push([message.id, false]);
+    }
+    for (const entry of record.labelsAdded ?? []) {
+      rt.memo.changed(entry.message.id, record.id);
+      changeLabels(labels, entry.message, entry.labelIds, true);
+      if (entry.labelIds?.includes('INBOX')) {
+        inboxGained.push(entry.message);
+        inboxMoves.push([entry.message.id, true]);
+      }
+    }
+    for (const entry of record.labelsRemoved ?? []) {
+      rt.memo.changed(entry.message.id, record.id);
+      changeLabels(labels, entry.message, entry.labelIds, false);
+      if (entry.labelIds?.includes('DRAFT')) undrafted.push(entry.message);
+      if (entry.labelIds?.includes('INBOX')) inboxMoves.push([entry.message.id, false]);
+    }
+  }
+  return changes;
+}
+
+/**
+ * Drafts (D9). Google documents history messages as "typically" carrying only id and threadId (proto-google D17), so a
+ * message without labelIds may be a draft; one `drafts.list` (5 units) settles every such message, finds the drafts
+ * deleted or sent elsewhere, and maps message ids to draft ids. It runs only when the page touches a draft.
+ */
+function needsDrafts(changes: PageChanges, draftMap: ReadonlyMap<string, string>): boolean {
+  const { added, undrafted, deleted } = changes;
+  return (
+    added.some(m => !deleted.has(m.id) && (!m.labelIds || m.labelIds.includes('DRAFT'))) ||
+    undrafted.length > 0 ||
+    [...deleted].some(id => draftMap.has(id))
+  );
+}
+
+/** The drafts facts and the next message id -> draft id map, given the drafts Gmail has now (`current`). */
+async function settleDrafts(
+  ctx: AdapterContext,
+  changes: PageChanges,
+  draftMap: Map<string, string>,
+  current: Map<string, string>,
+  now: number,
+): Promise<{ drafts: RemoteDraftFact[]; nextDraftMap: Map<string, string> }> {
+  const { added, deleted } = changes;
+  const live = (m: HistoryRef) => !deleted.has(m.id);
+  const drafts: RemoteDraftFact[] = [];
+  const currentIds = new Set(current.values());
+  const nextDraftMap = new Map<string, string>();
+  const draftOf = new Map([...current].map(([messageId, draftId]) => [draftId, messageId]));
+  for (const [messageId, draftId] of draftMap) {
+    if (currentIds.has(draftId)) nextDraftMap.set(draftOf.get(draftId)!, draftId);
+    // Deleted or sent elsewhere: it leaves Drafts.
+    else
+      drafts.push({
+        remoteDraftId: draftId,
+        remoteMessageId: messageId,
+        changedAt: now,
+        removed: true,
+      });
+  }
+  // A draft copy this device wrote (`drafts.remote_message_id`) is Aplos's own save, not news; any other message id on
+  // a draft is a phone draft or an edit made elsewhere, which the engine reconciles (ARCH 7.4, FR-26).
+  const candidates = added.filter(m => live(m) && current.has(m.id)).map(m => m.id);
+  const own = candidates.length
+    ? await ctx.lookup.draftsByMessageId(candidates)
+    : new Map<string, string>();
+  for (const m of added) {
+    const draftId = current.get(m.id);
+    if (!draftId || !live(m)) continue;
+    nextDraftMap.set(m.id, draftId);
+    if (own.has(m.id)) continue;
+    drafts.push({
+      remoteDraftId: draftId,
+      remoteMessageId: m.id,
+      remoteThreadId: m.threadId,
+      changedAt: now,
+    });
+  }
+  return { drafts, nextDraftMap };
+}
+
+/** New mail and Inbox gains that are not drafts: the only messages a page may fetch. */
+interface FetchCandidates {
+  mail: HistoryRef[];
+  gained: HistoryRef[];
+  knownThreads: ReadonlySet<string>;
+}
+
+/**
+ * Which messages need a fetch: new mail in a known thread or in the Inbox (D14), a sent draft that is now mail, and
+ * any message that entered the Inbox which this device lacks (D3). Everything else is a zero-cost delta.
+ */
+async function fetchCandidates(
+  ctx: AdapterContext,
+  changes: PageChanges,
+  current: Map<string, string> | undefined,
+): Promise<FetchCandidates> {
+  const { added, undrafted, inboxGained, deleted } = changes;
+  const live = (m: HistoryRef) => !deleted.has(m.id);
+  const isDraft = (m: HistoryRef) =>
+    current ? current.has(m.id) : Boolean(m.labelIds?.includes('DRAFT'));
+  const mail = [...added, ...undrafted].filter(
+    m => live(m) && !isDraft(m) && !m.labelIds?.includes('DRAFT'),
+  );
+  const gained = inboxGained.filter(m => live(m) && !isDraft(m));
+  const threadIds = [...new Set([...mail, ...gained].map(m => m.threadId))];
+  const knownThreads = threadIds.length
+    ? await ctx.lookup.knownThreads(threadIds)
+    : new Set<string>();
+  return { mail, gained, knownThreads };
+}
+
+/** The fetch entries, given which candidates the newest Inbox page holds (`inboxNow`). */
+async function decideFetches(
+  ctx: AdapterContext,
+  { mail, gained, knownThreads }: FetchCandidates,
+  inboxNow: ReadonlySet<string>,
+): Promise<string[]> {
+  const wanted = new Map<string, HistoryRef>();
+  for (const m of mail) {
+    const inbox = m.labelIds ? m.labelIds.includes('INBOX') : inboxNow.has(m.id);
+    if (knownThreads.has(m.threadId) || inbox) wanted.set(m.id, m);
+  }
+  for (const m of gained) wanted.set(m.id, m);
+  const knownMessages = wanted.size
+    ? await ctx.lookup.knownMessages([...wanted.keys()])
+    : new Set<string>();
+  const byThread = new Map<string, string[]>();
+  for (const m of wanted.values()) {
+    if (!knownMessages.has(m.id))
+      byThread.set(m.threadId, [...(byThread.get(m.threadId) ?? []), m.id]);
+  }
+  // One call per new thread, however many of its messages moved (D3); single messages in threads already known.
+  return [...byThread].flatMap(([threadId, ids]) =>
+    entriesFor(threadId, ids, knownThreads.has(threadId)),
+  );
+}
+
+/** Label and flag deltas for the page's messages, leaving out deleted ones and `skip`. */
+function pageDeltas(
+  { labels, deleted }: PageChanges,
+  skip: ReadonlySet<string>,
+): Pick<StepResult, 'labelDeltas' | 'flagDeltas'> {
+  const labelDeltas: LabelDelta[] = [];
+  const flagDeltas: FlagDelta[] = [];
+  for (const [remoteId, entry] of labels) {
+    if (deleted.has(remoteId) || skip.has(remoteId)) continue;
+    if (entry.add.size || entry.remove.size)
+      labelDeltas.push({ remoteId, add: [...entry.add], remove: [...entry.remove] });
+    if (entry.seen !== undefined || entry.flagged !== undefined) {
+      flagDeltas.push({
+        remoteId,
+        ...(entry.seen !== undefined ? { seen: entry.seen } : {}),
+        ...(entry.flagged !== undefined ? { flagged: entry.flagged } : {}),
+      });
+    }
+  }
+  return {
+    ...(labelDeltas.length ? { labelDeltas } : {}),
+    ...(flagDeltas.length ? { flagDeltas } : {}),
+  };
+}
+
+/** The drafts facts and provider_memory writes of a page, which both the capped and the normal result carry. */
+function pageExtras(
+  ctx: AdapterContext,
+  drafts: RemoteDraftFact[],
+  nextDraftMap: ReadonlyMap<string, string>,
+  inboxMoves: readonly [string, boolean][],
+): Pick<StepResult, 'drafts' | 'memory'> {
+  const memory: Record<string, string | null> = {};
+  const draftsJson = nextDraftMap.size ? JSON.stringify(Object.fromEntries(nextDraftMap)) : null;
+  if (draftsJson !== (ctx.memory.get(DRAFTS_KEY) ?? null)) memory[DRAFTS_KEY] = draftsJson;
+  const regained = regainedList(ctx.memory, inboxMoves);
+  if (regained !== undefined) memory[REGAINED_KEY] = regained;
+  return {
+    ...(drafts.length ? { drafts } : {}),
+    ...(Object.keys(memory).length ? { memory } : {}),
+  };
+}
+
+/** The history state after the page's fetches: the cursor moves only when every fetch is in. */
+function nextHistoryState(
+  state: SyncState,
+  page: HistoryPage,
+  records: readonly HistoryRecord[],
+  fetched: { stopped: boolean; pending: string[] },
+  passFetches: number,
+  now: number,
+): SyncState {
+  const { stopped, pending } = fetched;
+  const complete = !stopped && !pending.length;
+  const more = Boolean(page.nextPageToken);
+  const lastRecord = records[records.length - 1]?.id;
+  const cursor = !complete
+    ? state.cursor
+    : more
+      ? (lastRecord ?? state.cursor)
+      : (page.historyId ?? lastRecord ?? state.cursor);
+  return {
+    scope: 'history',
+    cursor,
+    generation: state.generation,
+    updatedAt: now,
+    ...(complete && more
+      ? { phase: `pass:${passFetches}` }
+      : !complete && state.phase
+        ? { phase: state.phase }
+        : {}),
+    ...(pending.length ? { pending } : {}),
+  };
+}
+
 export async function historyStep(
   rt: SyncRuntime,
   step: PlannedStep,
@@ -182,126 +449,26 @@ export async function historyStep(
   }
 
   const records = page.history ?? [];
-  const labels = new Map<string, Pending>();
-  const added: HistoryRef[] = [];
-  const inboxGained: HistoryRef[] = [];
-  /** Messages that lost DRAFT without being deleted: a draft sent with `drafts.send` keeps its id and becomes mail. */
-  const undrafted: HistoryRef[] = [];
-  const deleted = new Set<string>();
-  // Inbox entries and exits in record order, for the running Inbox round's sweep (REGAINED_KEY).
-  const inboxMoves: [string, boolean][] = [];
-  const change = (ref: HistoryRef, ids: readonly string[] | undefined, adding: boolean) => {
-    const entry = labels.get(ref.id) ?? { add: new Set<string>(), remove: new Set<string>() };
-    labels.set(ref.id, entry);
-    for (const label of ids ?? []) {
-      if (label === 'UNREAD') entry.seen = !adding;
-      else if (label === 'STARRED') entry.flagged = adding;
-      else if (FLAG_LABELS.has(label)) continue;
-      else if (adding) {
-        entry.add.add(label);
-        entry.remove.delete(label);
-      } else {
-        entry.remove.add(label);
-        entry.add.delete(label);
-      }
-    }
-  };
-  for (const record of records) {
-    for (const { message } of record.messagesAdded ?? []) {
-      rt.memo.changed(message.id, record.id);
-      deleted.delete(message.id);
-      added.push(message);
-      if (message.labelIds?.includes('INBOX')) inboxMoves.push([message.id, true]);
-    }
-    for (const { message } of record.messagesDeleted ?? []) {
-      rt.memo.forget([message.id]);
-      deleted.add(message.id);
-      inboxMoves.push([message.id, false]);
-    }
-    for (const entry of record.labelsAdded ?? []) {
-      rt.memo.changed(entry.message.id, record.id);
-      change(entry.message, entry.labelIds, true);
-      if (entry.labelIds?.includes('INBOX')) {
-        inboxGained.push(entry.message);
-        inboxMoves.push([entry.message.id, true]);
-      }
-    }
-    for (const entry of record.labelsRemoved ?? []) {
-      rt.memo.changed(entry.message.id, record.id);
-      change(entry.message, entry.labelIds, false);
-      if (entry.labelIds?.includes('DRAFT')) undrafted.push(entry.message);
-      if (entry.labelIds?.includes('INBOX')) inboxMoves.push([entry.message.id, false]);
-    }
-  }
+  const changes = collectChanges(rt, records);
 
-  // Drafts (D9). Google documents history messages as "typically" carrying only id and threadId (proto-google D17), so
-  // a message without labelIds may be a draft; one `drafts.list` (5 units) settles every such message, finds the
-  // drafts deleted or sent elsewhere, and maps message ids to draft ids. It runs only when the page touches a draft.
   const draftMap = readDraftMap(ctx.memory);
-  const live = (m: HistoryRef) => !deleted.has(m.id);
-  const needDrafts =
-    added.some(m => live(m) && (!m.labelIds || m.labelIds.includes('DRAFT'))) ||
-    undrafted.length > 0 ||
-    [...deleted].some(id => draftMap.has(id));
   let current: Map<string, string> | undefined; // message id -> draft id, as Gmail has them now
-  let drafts: RemoteDraftFact[] = [];
-  let nextDraftMap = draftMap;
   try {
-    if (needDrafts) current = await listDrafts(client, step);
+    if (needsDrafts(changes, draftMap)) current = await listDrafts(client, step);
   } catch (error) {
     if (isStop(error)) return untouched(state, client.spent);
     throw error;
   }
-  const isDraft = (m: HistoryRef) =>
-    current ? current.has(m.id) : Boolean(m.labelIds?.includes('DRAFT'));
-  if (current) {
-    const currentIds = new Set(current.values());
-    nextDraftMap = new Map();
-    const draftOf = new Map([...current].map(([messageId, draftId]) => [draftId, messageId]));
-    for (const [messageId, draftId] of draftMap) {
-      if (currentIds.has(draftId)) nextDraftMap.set(draftOf.get(draftId)!, draftId);
-      // Deleted or sent elsewhere: it leaves Drafts.
-      else
-        drafts.push({
-          remoteDraftId: draftId,
-          remoteMessageId: messageId,
-          changedAt: now,
-          removed: true,
-        });
-    }
-    // A draft copy this device wrote (`drafts.remote_message_id`) is Aplos's own save, not news; any other message id on
-    // a draft is a phone draft or an edit made elsewhere, which the engine reconciles (ARCH 7.4, FR-26).
-    const candidates = added.filter(m => live(m) && current!.has(m.id)).map(m => m.id);
-    const own = candidates.length
-      ? await ctx.lookup.draftsByMessageId(candidates)
-      : new Map<string, string>();
-    for (const m of added) {
-      const draftId = current.get(m.id);
-      if (!draftId || !live(m)) continue;
-      nextDraftMap.set(m.id, draftId);
-      if (own.has(m.id)) continue;
-      drafts.push({
-        remoteDraftId: draftId,
-        remoteMessageId: m.id,
-        remoteThreadId: m.threadId,
-        changedAt: now,
-      });
-    }
-  }
+  const { drafts, nextDraftMap } = current
+    ? await settleDrafts(ctx, changes, draftMap, current, now)
+    : { drafts: [], nextDraftMap: draftMap };
 
-  // Which messages need a fetch: new mail in a known thread or in the Inbox (D14), a sent draft that is now mail, and
-  // any message that entered the Inbox which this device lacks (D3). Everything else is a zero-cost delta.
-  const mail = [...added, ...undrafted].filter(
-    m => live(m) && !isDraft(m) && !m.labelIds?.includes('DRAFT'),
-  );
-  const gained = inboxGained.filter(m => live(m) && !isDraft(m));
-  const threadIds = [...new Set([...mail, ...gained].map(m => m.threadId))];
-  const knownThreads = threadIds.length
-    ? await ctx.lookup.knownThreads(threadIds)
-    : new Set<string>();
+  const candidates = await fetchCandidates(ctx, changes, current);
   // Without labelIds, Inbox membership of mail in an unknown thread comes from one Inbox list page (5 units): new mail
   // is the newest, so it is on that page if it is in the Inbox at all. Never a fetch per message to find out.
-  const unsure = mail.filter(m => !m.labelIds && !knownThreads.has(m.threadId));
+  const unsure = candidates.mail.filter(
+    m => !m.labelIds && !candidates.knownThreads.has(m.threadId),
+  );
   let inboxNow = new Set<string>();
   try {
     if (unsure.length) inboxNow = await listInbox(client, step);
@@ -309,66 +476,21 @@ export async function historyStep(
     if (isStop(error)) return untouched(state, client.spent);
     throw error;
   }
-  const wanted = new Map<string, HistoryRef>();
-  for (const m of mail) {
-    const inbox = m.labelIds ? m.labelIds.includes('INBOX') : inboxNow.has(m.id);
-    if (knownThreads.has(m.threadId) || inbox) wanted.set(m.id, m);
-  }
-  for (const m of gained) wanted.set(m.id, m);
-  const knownMessages = wanted.size
-    ? await ctx.lookup.knownMessages([...wanted.keys()])
-    : new Set<string>();
-  const byThread = new Map<string, string[]>();
-  for (const m of wanted.values()) {
-    if (!knownMessages.has(m.id))
-      byThread.set(m.threadId, [...(byThread.get(m.threadId) ?? []), m.id]);
-  }
-  // One call per new thread, however many of its messages moved (D3); single messages in threads already known.
-  const toFetch = [...byThread].flatMap(([threadId, ids]) =>
-    entriesFor(threadId, ids, knownThreads.has(threadId)),
-  );
+  const toFetch = await decideFetches(ctx, candidates, inboxNow);
 
   const passFetches =
     Number(/^pass:(\d+)$/.exec(state.phase ?? '')?.[1] ?? 0) +
     toFetch.reduce((sum, e) => sum + weight(e), 0);
   const draftMessages = new Set([...draftMap.keys(), ...(current?.keys() ?? [])]);
-  const removals: Removal[] = [...deleted]
+  const removals: Removal[] = [...changes.deleted]
     .filter(id => !draftMessages.has(id))
     .map(remoteId => ({ remoteId }));
-  const deltas = (skip: ReadonlySet<string>) => {
-    const labelDeltas: LabelDelta[] = [];
-    const flagDeltas: FlagDelta[] = [];
-    for (const [remoteId, entry] of labels) {
-      if (deleted.has(remoteId) || skip.has(remoteId)) continue;
-      if (entry.add.size || entry.remove.size)
-        labelDeltas.push({ remoteId, add: [...entry.add], remove: [...entry.remove] });
-      if (entry.seen !== undefined || entry.flagged !== undefined) {
-        flagDeltas.push({
-          remoteId,
-          ...(entry.seen !== undefined ? { seen: entry.seen } : {}),
-          ...(entry.flagged !== undefined ? { flagged: entry.flagged } : {}),
-        });
-      }
-    }
-    return {
-      ...(labelDeltas.length ? { labelDeltas } : {}),
-      ...(flagDeltas.length ? { flagDeltas } : {}),
-    };
-  };
-  const memory: Record<string, string | null> = {};
-  const draftsJson = nextDraftMap.size ? JSON.stringify(Object.fromEntries(nextDraftMap)) : null;
-  if (draftsJson !== (ctx.memory.get(DRAFTS_KEY) ?? null)) memory[DRAFTS_KEY] = draftsJson;
-  const regained = regainedList(ctx.memory, inboxMoves);
-  if (regained !== undefined) memory[REGAINED_KEY] = regained;
-  const extras = {
-    ...(drafts.length ? { drafts } : {}),
-    ...(Object.keys(memory).length ? { memory } : {}),
-  };
+  const extras = pageExtras(ctx, drafts, nextDraftMap, changes.inboxMoves);
 
   if (passFetches > CHANGE_CAP) {
     // Keep the free part of this page (deltas, removals, drafts); the resync fetches what the Inbox now holds.
     return reset('changeCapExceeded', {
-      ...deltas(new Set()),
+      ...pageDeltas(changes, new Set()),
       ...(removals.length ? { removals } : {}),
       ...extras,
     });
@@ -380,39 +502,18 @@ export async function historyStep(
     memo: rt.memo,
     now,
   });
-  const stopped = fetched.stopped;
-  const pending = fetched.pending;
 
   // The fetched rows carry the current labels; their deltas from this page would only repeat them.
   const upserted = new Set(fetched.facts.map(f => f.remoteId));
-  const complete = !stopped && !pending.length;
-  const more = Boolean(page.nextPageToken);
-  const lastRecord = records[records.length - 1]?.id;
-  const cursor = !complete
-    ? state.cursor
-    : more
-      ? (lastRecord ?? state.cursor)
-      : (page.historyId ?? lastRecord ?? state.cursor);
-  const next: SyncState = {
-    scope: 'history',
-    cursor,
-    generation: state.generation,
-    updatedAt: now,
-    ...(complete && more
-      ? { phase: `pass:${passFetches}` }
-      : !complete && state.phase
-        ? { phase: state.phase }
-        : {}),
-    ...(pending.length ? { pending } : {}),
-  };
+  const next = nextHistoryState(state, page, records, fetched, passFetches, now);
   return {
-    ...deltas(upserted),
+    ...pageDeltas(changes, upserted),
     ...(fetched.facts.length ? { upserts: fetched.facts } : {}),
     ...(removals.length ? { removals } : {}),
     ...extras,
     ...(fetched.quarantine.length ? { quarantine: fetched.quarantine } : {}),
     nextStates: [next],
-    done: !stopped,
+    done: !fetched.stopped,
     costUnits: client.spent,
   };
 }

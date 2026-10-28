@@ -184,8 +184,10 @@ function replay(ops: PendingOp[]): Labels {
       c.add.forEach(l => set.add(l));
       c.remove.forEach(l => set.delete(l));
     } else if (c.kind === 'flags') {
-      if (c.seen !== undefined) c.seen ? set.delete('UNREAD') : set.add('UNREAD');
-      if (c.flagged !== undefined) c.flagged ? set.add('STARRED') : set.delete('STARRED');
+      if (c.seen === true) set.delete('UNREAD');
+      else if (c.seen === false) set.add('UNREAD');
+      if (c.flagged === true) set.add('STARRED');
+      else if (c.flagged === false) set.delete('STARRED');
     } else if (c.kind === 'trash') {
       set.add('TRASH');
       set.delete('INBOX');
@@ -202,9 +204,13 @@ function replayCalls(calls: CoalescedOp[], start: string[]): Labels {
     const b = body(c);
     for (const t of b.targets) {
       const set = state.get(t.id)!;
-      if (b.call === 'trash') (set.add('TRASH'), set.delete('INBOX'));
-      else if (b.call === 'untrash') (set.delete('TRASH'), set.add('INBOX'));
-      else {
+      if (b.call === 'trash') {
+        set.add('TRASH');
+        set.delete('INBOX');
+      } else if (b.call === 'untrash') {
+        set.delete('TRASH');
+        set.add('INBOX');
+      } else {
         b.addLabelIds.forEach(l => set.add(l));
         b.removeLabelIds.forEach(l => set.delete(l));
       }

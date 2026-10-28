@@ -387,6 +387,21 @@ export class FakeStore implements KnownLookup {
     const own = result.nextStates.find(s => s.scope === step.scope);
     const stamp = ROUND_SCOPES.has(step.scope) && own ? own.generation : null;
     for (const f of result.folders ?? []) this.folders.set(f.remoteId, f);
+    this.commitUpserts(result, stamp);
+    this.commitPlacements(result, stamp);
+    this.commitDeltas(result);
+    for (const r of result.removals ?? []) this.rows.delete(r.remoteId);
+    for (const d of result.drafts ?? []) this.drafts.set(d.remoteDraftId, d);
+    if (result.scopeCovered) this.sweep(result.scopeCovered);
+    for (const s of result.nextStates) this.states.set(s.scope, s);
+    for (const [k, v] of Object.entries(result.memory ?? {})) {
+      if (v === null) this.memory.delete(k);
+      else this.memory.set(k, v);
+    }
+    if (result.baselineReached && this.baselineAt === undefined) this.baselineAt = now;
+  }
+
+  private commitUpserts(result: StepResult, stamp: number | null): void {
     for (const facts of result.upserts ?? []) {
       const before = this.rows.get(facts.remoteId);
       const folders = new Map<string, number | null>();
@@ -399,6 +414,9 @@ export class FakeStore implements KnownLookup {
         flagged: facts.flags.flagged,
       });
     }
+  }
+
+  private commitPlacements(result: StepResult, stamp: number | null): void {
     for (const p of result.placements ?? []) {
       const row = p.remoteId ? this.rows.get(p.remoteId) : undefined;
       if (!row) continue;
@@ -408,6 +426,9 @@ export class FakeStore implements KnownLookup {
         row.folders.set(p.folder, stamp === null ? (old ?? null) : Math.max(old ?? stamp, stamp));
       }
     }
+  }
+
+  private commitDeltas(result: StepResult): void {
     for (const d of result.labelDeltas ?? []) {
       const row = this.rows.get(d.remoteId);
       if (!row) continue;
@@ -420,26 +441,18 @@ export class FakeStore implements KnownLookup {
       if (d.seen !== undefined) row.seen = d.seen;
       if (d.flagged !== undefined) row.flagged = d.flagged;
     }
-    for (const r of result.removals ?? []) this.rows.delete(r.remoteId);
-    for (const d of result.drafts ?? []) this.drafts.set(d.remoteDraftId, d);
-    if (result.scopeCovered) {
-      const { bound, generation } = result.scopeCovered;
-      for (const [id, row] of this.rows) {
-        const gen = row.folders.get(bound.folder);
-        const date = row.facts.internalDate;
-        if (gen === undefined || gen === null || gen >= generation) continue;
-        if (bound.since !== undefined && !(date > bound.since)) continue;
-        if (bound.until !== undefined && !(date < bound.until)) continue;
-        row.folders.delete(bound.folder);
-        this.swept.push(id);
-      }
+  }
+
+  private sweep({ bound, generation }: NonNullable<StepResult['scopeCovered']>): void {
+    for (const [id, row] of this.rows) {
+      const gen = row.folders.get(bound.folder);
+      const date = row.facts.internalDate;
+      if (gen === undefined || gen === null || gen >= generation) continue;
+      if (bound.since !== undefined && !(date > bound.since)) continue;
+      if (bound.until !== undefined && !(date < bound.until)) continue;
+      row.folders.delete(bound.folder);
+      this.swept.push(id);
     }
-    for (const s of result.nextStates) this.states.set(s.scope, s);
-    for (const [k, v] of Object.entries(result.memory ?? {})) {
-      if (v === null) this.memory.delete(k);
-      else this.memory.set(k, v);
-    }
-    if (result.baselineReached && this.baselineAt === undefined) this.baselineAt = now;
   }
 
   /** Threads with at least one message in `folder`. */

@@ -454,185 +454,301 @@ export async function listStep(
   state: SyncState,
   ctx: AdapterContext,
 ): Promise<StepResult> {
+  const env = listEnv(rt, state, ctx);
+  const round = openRound(env);
+  // Work done: each thread taken is one unit, each fetch entry beyond its first one more.
+  const doneBefore = round.read + round.extra - round.pending.length;
+
+  try {
+    // List the next page when nothing is left to fetch from the last one.
+    if (!round.pending.length && !round.listedAll && round.read < env.spec.cap)
+      await listPage(env, round);
+    await fetchChunk(env, round);
+  } catch (error) {
+    if (!isStop(error)) throw error;
+    round.stopped = true;
+  }
+
+  return endStep(env, round, doneBefore);
+}
+
+/** What a list step knows before it starts and never changes. */
+interface ListEnv {
+  rt: SyncRuntime;
+  state: SyncState;
+  ctx: AdapterContext;
+  spec: ListSpec;
+  client: GmailClient;
+  now: number;
+  starting: boolean;
+  resync: boolean;
+  generation: number;
+  /** Threads this round took, for its cap only. */
+  handled: Set<string>;
+}
+
+/**
+ * A list step's progress. The phase helpers update it in place, so a stop thrown part-way through one leaves exactly
+ * what was done before it, and the step result is built from that.
+ */
+interface ListRound {
+  read: number;
+  extra: number;
+  capped: boolean;
+  pending: string[];
+  pageToken?: string;
+  oldestLoaded?: number;
+  /** No further page to list in this round. */
+  listedAll: boolean;
+  placements: PlacementDelta[];
+  seeds: SyncState[];
+  result: Omit<StepResult, 'nextStates' | 'done' | 'costUnits'>;
+  stopped: boolean;
+  facts: MessageFacts[];
+  quarantine: Quarantine[];
+}
+
+function listEnv(rt: SyncRuntime, state: SyncState, ctx: AdapterContext): ListEnv {
   const now = ctx.clock.now();
   const spec = specFor(state.scope, state, now);
   const client = new GmailClient(rt.deps, ctx);
   const starting = state.phase === undefined || state.phase === 'resync';
   const resync = state.phase === 'resync' || state.phase === 'resyncing';
   const generation = starting ? ctx.generation : state.generation;
-  const remembered = (key: RoundKey) =>
-    starting ? undefined : ctx.memory.get(memKey(spec.scope, key));
-  let read = Number(remembered('read') ?? 0);
-  let extra = Number(remembered('extra') ?? 0);
-  let capped = remembered('capped') === '1';
-  let pending = starting ? [] : [...(state.pending ?? [])];
-  let pageToken = state.pageToken;
-  let oldestLoaded = starting ? undefined : state.oldestLoaded;
-  let listedAll = !starting && !pageToken; // no further page to list in this round
-  // Work done: each thread taken is one unit, each fetch entry beyond its first one more.
-  const doneBefore = read + extra - pending.length;
-
-  // Threads this round took, for its cap only. What to fetch comes from the store, so a restart that loses this set
-  // fetches nothing twice; at worst a thread spanning two pages then counts twice toward the cap.
+  // What to fetch comes from the store, so a restart that loses `handled` fetches nothing twice; at worst a thread
+  // spanning two pages then counts twice toward the cap.
   const roundKey = `${spec.scope}@${generation}`;
   if (starting)
     for (const key of rt.rounds.keys()) if (key.startsWith(`${spec.scope}@`)) rt.rounds.delete(key);
   const handled = rt.rounds.get(roundKey) ?? new Set<string>();
   rt.rounds.set(roundKey, handled);
+  return { rt, state, ctx, spec, client, now, starting, resync, generation, handled };
+}
 
-  const placements: PlacementDelta[] = [];
-  const seeds: SyncState[] = [];
-  const result: Omit<StepResult, 'nextStates' | 'done' | 'costUnits'> = {};
-  let stopped = false;
-  const facts: MessageFacts[] = [];
-  const quarantine: Quarantine[] = [];
+function openRound({ state, ctx, spec, starting }: ListEnv): ListRound {
+  const remembered = (key: RoundKey) =>
+    starting ? undefined : ctx.memory.get(memKey(spec.scope, key));
+  const pageToken = state.pageToken;
+  return {
+    read: Number(remembered('read') ?? 0),
+    extra: Number(remembered('extra') ?? 0),
+    capped: remembered('capped') === '1',
+    pending: starting ? [] : [...(state.pending ?? [])],
+    pageToken,
+    oldestLoaded: starting ? undefined : state.oldestLoaded,
+    listedAll: !starting && !pageToken,
+    placements: [],
+    seeds: [],
+    result: {},
+    stopped: false,
+    facts: [],
+    quarantine: [],
+  };
+}
 
-  try {
-    // List the next page when nothing is left to fetch from the last one.
-    if (!pending.length && !listedAll && read < spec.cap) {
-      const listedToken = pageToken;
-      const page = await client.call<{
-        messages?: { id: string; threadId: string }[];
-        nextPageToken?: string;
-      }>({
-        method: 'gmail.messages.list',
-        path: '/messages',
-        query: { labelIds: spec.labelIds, maxResults: LIST_PAGE, pageToken, q: spec.q },
-        fields: LIST_FIELDS,
-        lane: stepLane(state, spec),
-      });
-      const listed = page.messages ?? [];
-      pageToken = page.nextPageToken;
-      listedAll = !pageToken;
-      for (const m of listed)
-        placements.push({ remoteId: m.id, folder: spec.folder, present: true });
+/** Lists one page, queues what this device lacks from it, and stops the round at its thread cap. */
+async function listPage(env: ListEnv, round: ListRound): Promise<void> {
+  const { state, ctx, spec, client } = env;
+  const listedToken = round.pageToken;
+  const page = await client.call<{
+    messages?: { id: string; threadId: string }[];
+    nextPageToken?: string;
+  }>({
+    method: 'gmail.messages.list',
+    path: '/messages',
+    query: {
+      labelIds: spec.labelIds,
+      maxResults: LIST_PAGE,
+      pageToken: round.pageToken,
+      q: spec.q,
+    },
+    fields: LIST_FIELDS,
+    lane: stepLane(state, spec),
+  });
+  const listed = page.messages ?? [];
+  round.pageToken = page.nextPageToken;
+  round.listedAll = !round.pageToken;
+  for (const m of listed)
+    round.placements.push({ remoteId: m.id, folder: spec.folder, present: true });
 
-      // The page by thread, newest first: a thread's first id is its newest listed message.
-      const groups = new Map<string, string[]>();
-      for (const m of listed) groups.set(m.threadId, [...(groups.get(m.threadId) ?? []), m.id]);
-      const known = listed.length
-        ? await ctx.lookup.knownMessages(listed.map(m => m.id))
-        : new Set<string>();
-      const knownThreads = groups.size
-        ? await ctx.lookup.knownThreads([...groups.keys()])
-        : new Set<string>();
-      let lastTaken: string | undefined;
-      let left = false;
-      for (const [threadId, ids] of groups) {
-        const missing = ids.filter(id => !known.has(id));
-        if (handled.has(threadId)) {
-          // Older Inbox messages of a thread an earlier page gave: fetched, but not a new thread for the cap.
-          const entries = entriesFor(threadId, missing, true);
-          pending.push(...entries);
-          extra += entries.length;
-          continue;
-        }
-        if (read >= spec.cap) {
-          left = true;
-          continue;
-        }
-        handled.add(threadId);
-        read++;
-        lastTaken = ids[0];
-        const entries =
-          rt.windowCall === 'threads.get' &&
-          spec.scope === 'window:inbox' &&
-          missing.length &&
-          !knownThreads.has(threadId)
-            ? [threadEntry(threadId)]
-            : entriesFor(threadId, missing, knownThreads.has(threadId));
-        pending.push(...entries);
-        extra += Math.max(0, entries.length - 1);
-      }
-      // Stopped at the cap with more of the folder left (threads past the cap here, or another page). Reaching the
-      // cap exactly at the folder's end is not a stop: that round listed everything and may sweep the whole folder.
-      if (read >= spec.cap && (left || pageToken)) {
-        capped = true;
-        listedAll = true;
-        // P5 picks up from here: it re-lists this page and skips the messages already stored.
-        if (spec.baseline)
-          seeds.push({
-            scope: 'backfill:inbox',
-            pageToken: listedToken,
-            generation: ctx.generation,
-            updatedAt: now,
-          });
-        // Everything newer than the last thread taken was listed, so the sweep may cover (its date, now).
-        // Ask Gmail for that date (minimal, 20 units) rather than trust a guess.
-        if (spec.coverage && lastTaken) {
-          const minimal = await client.call<{ internalDate?: string }>({
-            method: 'gmail.messages.get',
-            path: `/messages/${lastTaken}`,
-            format: 'minimal',
-            fields: 'id,internalDate',
-            lane: stepLane(state, spec),
-            item: lastTaken,
-          });
-          oldestLoaded = Number(minimal.internalDate ?? 0) || undefined;
-        }
-      }
+  // The page by thread, newest first: a thread's first id is its newest listed message.
+  const groups = new Map<string, string[]>();
+  for (const m of listed) groups.set(m.threadId, [...(groups.get(m.threadId) ?? []), m.id]);
+  const known = listed.length
+    ? await ctx.lookup.knownMessages(listed.map(m => m.id))
+    : new Set<string>();
+  const knownThreads = groups.size
+    ? await ctx.lookup.knownThreads([...groups.keys()])
+    : new Set<string>();
+  const { lastTaken, left } = takeThreads(env, round, groups, known, knownThreads);
+  // Stopped at the cap with more of the folder left (threads past the cap here, or another page). Reaching the cap
+  // exactly at the folder's end is not a stop: that round listed everything and may sweep the whole folder.
+  if (round.read >= spec.cap && (left || round.pageToken))
+    await stopAtCap(env, round, listedToken, lastTaken);
+}
+
+/** Queues the fetch entries of a listed page's threads, up to the round's cap. */
+function takeThreads(
+  { rt, spec, handled }: ListEnv,
+  round: ListRound,
+  groups: ReadonlyMap<string, string[]>,
+  known: ReadonlySet<string>,
+  knownThreads: ReadonlySet<string>,
+): { lastTaken?: string; left: boolean } {
+  let lastTaken: string | undefined;
+  let left = false;
+  for (const [threadId, ids] of groups) {
+    const missing = ids.filter(id => !known.has(id));
+    if (handled.has(threadId)) {
+      // Older Inbox messages of a thread an earlier page gave: fetched, but not a new thread for the cap.
+      const entries = entriesFor(threadId, missing, true);
+      round.pending.push(...entries);
+      round.extra += entries.length;
+      continue;
     }
-
-    // Fetch the next chunk.
-    const chunk = pending.slice(0, CHUNK);
-    pending = pending.slice(CHUNK);
-    if (chunk.length) {
-      const fetched = await fetchMetadata(client, chunk, {
-        lane: stepLane(state, spec),
-        self: ctx.account.address,
-        memo: rt.memo,
-        now,
-      });
-      facts.push(...fetched.facts);
-      quarantine.push(...fetched.quarantine);
-      pending = [...fetched.pending, ...pending];
-      stopped = fetched.stopped;
-      const before = spec.stopBefore;
-      if (
-        before !== undefined &&
-        [...fetched.byEntry].some(([entry, f]) => listedDate(entry, f, spec.folder) < before)
-      ) {
-        // Backfill reached 90 days: older Inbox mail stays reachable through server search.
-        pending = [];
-        listedAll = true;
-      }
+    if (round.read >= spec.cap) {
+      left = true;
+      continue;
     }
-  } catch (error) {
-    if (!isStop(error)) throw error;
-    stopped = true;
+    handled.add(threadId);
+    round.read++;
+    lastTaken = ids[0];
+    const entries =
+      rt.windowCall === 'threads.get' &&
+      spec.scope === 'window:inbox' &&
+      missing.length &&
+      !knownThreads.has(threadId)
+        ? [threadEntry(threadId)]
+        : entriesFor(threadId, missing, knownThreads.has(threadId));
+    round.pending.push(...entries);
+    round.extra += Math.max(0, entries.length - 1);
   }
+  return { lastTaken, left };
+}
 
-  const roundEnded = !stopped && !pending.length && (listedAll || read >= spec.cap);
-  const done = read + extra - pending.length;
-  const nextPhase = roundEnded
-    ? 'done'
-    : resync
-      ? 'resyncing'
-      : spec.scope !== 'window:inbox'
-        ? 'running'
-        : done >= BASELINE_THREADS
-          ? 'more'
-          : 'baseline';
+/** The round stopped at its thread cap with more of the folder left. */
+async function stopAtCap(
+  { state, ctx, spec, client, now }: ListEnv,
+  round: ListRound,
+  listedToken: string | undefined,
+  lastTaken: string | undefined,
+): Promise<void> {
+  round.capped = true;
+  round.listedAll = true;
+  // P5 picks up from here: it re-lists this page and skips the messages already stored.
+  if (spec.baseline)
+    round.seeds.push({
+      scope: 'backfill:inbox',
+      pageToken: listedToken,
+      generation: ctx.generation,
+      updatedAt: now,
+    });
+  // Everything newer than the last thread taken was listed, so the sweep may cover (its date, now).
+  // Ask Gmail for that date (minimal, 20 units) rather than trust a guess.
+  if (spec.coverage && lastTaken) {
+    const minimal = await client.call<{ internalDate?: string }>({
+      method: 'gmail.messages.get',
+      path: `/messages/${lastTaken}`,
+      format: 'minimal',
+      fields: 'id,internalDate',
+      lane: stepLane(state, spec),
+      item: lastTaken,
+    });
+    round.oldestLoaded = Number(minimal.internalDate ?? 0) || undefined;
+  }
+}
 
+/** Fetches the next chunk of pending entries. */
+async function fetchChunk(
+  { rt, state, ctx, spec, client, now }: ListEnv,
+  round: ListRound,
+): Promise<void> {
+  const chunk = round.pending.slice(0, CHUNK);
+  round.pending = round.pending.slice(CHUNK);
+  if (!chunk.length) return;
+  const fetched = await fetchMetadata(client, chunk, {
+    lane: stepLane(state, spec),
+    self: ctx.account.address,
+    memo: rt.memo,
+    now,
+  });
+  round.facts.push(...fetched.facts);
+  round.quarantine.push(...fetched.quarantine);
+  round.pending = [...fetched.pending, ...round.pending];
+  round.stopped = fetched.stopped;
+  const before = spec.stopBefore;
+  if (
+    before !== undefined &&
+    [...fetched.byEntry].some(([entry, f]) => listedDate(entry, f, spec.folder) < before)
+  ) {
+    // Backfill reached 90 days: older Inbox mail stays reachable through server search.
+    round.pending = [];
+    round.listedAll = true;
+  }
+}
+
+function nextListPhase({ spec, resync }: ListEnv, roundEnded: boolean, done: number): string {
+  if (roundEnded) return 'done';
+  if (resync) return 'resyncing';
+  if (spec.scope !== 'window:inbox') return 'running';
+  return done >= BASELINE_THREADS ? 'more' : 'baseline';
+}
+
+/**
+ * The baseline seed and the round's sweep. A round that stopped at its cap covers only (oldestLoaded, now); one that
+ * listed to the end covers the folder. Without a known bound there is no sweep at all: a missed ghost is better than a
+ * false removal.
+ */
+function settleRound(
+  { ctx, spec, now, starting, generation }: ListEnv,
+  round: ListRound,
+  doneBefore: number,
+  done: number,
+  roundEnded: boolean,
+): void {
   if (spec.baseline && doneBefore < BASELINE_THREADS && (done >= BASELINE_THREADS || roundEnded)) {
-    result.baselineReached = true;
+    round.result.baselineReached = true;
     // Sent (P3) waits for the window to finish (plan()), but its state exists from the baseline on.
-    seeds.push({ scope: 'sent:recent', generation: ctx.generation, updatedAt: now });
+    round.seeds.push({ scope: 'sent:recent', generation: ctx.generation, updatedAt: now });
   }
-  // A round that stopped at its cap covers only (oldestLoaded, now); one that listed to the end covers the folder.
-  // Without a known bound there is no sweep at all: a missed ghost is better than a false removal.
-  if (roundEnded && spec.coverage && (!capped || oldestLoaded !== undefined)) {
+  if (roundEnded && spec.coverage && (!round.capped || round.oldestLoaded !== undefined)) {
     const regained = starting ? '' : (ctx.memory.get(REGAINED_KEY) ?? '');
     if (regained !== '*') {
       for (const id of regained.split(' ').filter(Boolean))
-        placements.push({ remoteId: id, folder: spec.folder, present: true });
-      result.scopeCovered = {
+        round.placements.push({ remoteId: id, folder: spec.folder, present: true });
+      round.result.scopeCovered = {
         scope: spec.scope,
         generation,
-        bound: { folder: spec.folder, ...(capped ? { since: oldestLoaded } : {}) },
+        bound: { folder: spec.folder, ...(round.capped ? { since: round.oldestLoaded } : {}) },
       };
     }
   }
+}
+
+function roundMemory(
+  { spec, starting }: ListEnv,
+  round: ListRound,
+  roundEnded: boolean,
+): Record<string, string | null> {
+  const { read, extra, capped } = round;
+  const memory: Record<string, string | null> = {
+    [memKey(spec.scope, 'read')]: roundEnded ? null : String(read),
+    [memKey(spec.scope, 'extra')]: roundEnded || !extra ? null : String(extra),
+    [memKey(spec.scope, 'capped')]: !roundEnded && capped ? '1' : null,
+  };
+  // History records regained ids only while a round runs; a new round starts from an empty list.
+  if (spec.coverage && (starting || roundEnded)) memory[REGAINED_KEY] = null;
+  if (spec.baseline && spec.scope === 'window:inbox' && roundEnded) memory[FIRST_WINDOW_KEY] = '1';
+  return memory;
+}
+
+function endStep(env: ListEnv, round: ListRound, doneBefore: number): StepResult {
+  const { state, spec, client, now, generation } = env;
+  const { stopped, pending, pageToken, oldestLoaded, placements, facts, quarantine } = round;
+  const roundEnded = !stopped && !pending.length && (round.listedAll || round.read >= spec.cap);
+  const done = round.read + round.extra - pending.length;
+  const nextPhase = nextListPhase(env, roundEnded, done);
+  settleRound(env, round, doneBefore, done, roundEnded);
 
   const next: SyncState = {
     scope: spec.scope,
@@ -643,22 +759,15 @@ export async function listStep(
     ...(pending.length ? { pending: pending.slice(0, 500) } : {}),
     ...(oldestLoaded !== undefined ? { oldestLoaded } : {}),
   };
-  const memory: Record<string, string | null> = {
-    [memKey(spec.scope, 'read')]: roundEnded ? null : String(read),
-    [memKey(spec.scope, 'extra')]: roundEnded || !extra ? null : String(extra),
-    [memKey(spec.scope, 'capped')]: !roundEnded && capped ? '1' : null,
-  };
-  // History records regained ids only while a round runs; a new round starts from an empty list.
-  if (spec.coverage && (starting || roundEnded)) memory[REGAINED_KEY] = null;
-  if (spec.baseline && spec.scope === 'window:inbox' && roundEnded) memory[FIRST_WINDOW_KEY] = '1';
+  const memory = roundMemory(env, round, roundEnded);
   // A pause before anything was listed leaves the state exactly as it was.
   const untouched = stopped && !placements.length && !facts.length;
   return {
-    ...result,
+    ...round.result,
     ...(facts.length ? { upserts: facts } : {}),
     ...(placements.length ? { placements } : {}),
     ...(quarantine.length ? { quarantine } : {}),
-    nextStates: untouched ? [state] : [next, ...seeds],
+    nextStates: untouched ? [state] : [next, ...round.seeds],
     done: !stopped,
     progress: {
       read: Number.isFinite(spec.cap) ? Math.min(done, spec.cap) : done,
