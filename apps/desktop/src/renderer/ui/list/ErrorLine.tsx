@@ -32,6 +32,11 @@ function copyFor(kind: ErrorLineKind, mainAction: boolean): Copy {
         text: 'Couldn’t load this email.',
         actions: [{ action: 'retry', label: 'Try again', emphasis: 'text' }],
       };
+    case 'listFailed':
+      return {
+        text: 'Couldn’t load this list.',
+        actions: [{ action: 'retry', label: 'Try again', emphasis: 'text' }],
+      };
     case 'askFailed':
       return {
         text: `${kind.provider} didn’t answer.`,

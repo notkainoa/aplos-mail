@@ -67,6 +67,28 @@ describe('LowBand and LowSheet', () => {
     assert.match(text(big), /^Low importance 9,999$/);
   });
 
+  test('moreSenders adds senders the caller did not pass to "and N more"; default unchanged', () => {
+    const band = (senders: string[], moreSenders?: number) =>
+      render(
+        <LowBand
+          id="low"
+          senders={senders}
+          moreSenders={moreSenders}
+          count={40}
+          cursor={false}
+          density="comfortable"
+          commandId="mail.open"
+          onOpen={noop}
+        />,
+      );
+    assert.match(text(band(['A', 'B', 'C'], 12)), /^Low importance A, B, C and 12 more 40$/);
+    assert.match(text(band(['A', 'B', 'C', 'D'], 12)), /^Low importance A, B, C and 13 more 40$/);
+    assert.match(text(band(['A'], 5)), /^Low importance A and 5 more 40$/);
+    assert.match(text(band(['A', 'B', 'C'], 0)), /^Low importance A, B and C 40$/);
+    assert.match(text(band(['A', 'B', 'C', 'D'])), /^Low importance A, B, C and 1 more 40$/);
+    assert.match(text(band([], 5)), /^Low importance 40$/);
+  });
+
   const groups: LowSheetGroup[] = [
     {
       id: 'g-field',
@@ -337,6 +359,10 @@ describe('ErrorLine', () => {
     [
       { kind: 'askFailed', provider: 'Groq', placement: 'dock', onAction: noop },
       'Groq didn’t answer. Retry Use another provider',
+    ],
+    [
+      { kind: 'listFailed', placement: 'column', onAction: noop },
+      'Couldn’t load this list. Try again',
     ],
     [
       { kind: 'consentNeeded', placement: 'settings', onAction: noop },
