@@ -5,8 +5,9 @@
 //   into a temp directory that is deleted afterwards.
 // The expected file set comes from build.* in apps/desktop/package.json, see expectedAssets().
 import {createHash} from 'node:crypto';
+import {gunzipSync} from 'node:zlib';
 import {createReadStream,existsSync,readFileSync,statSync} from 'node:fs';
-import {mkdtemp,readdir,rm,stat} from 'node:fs/promises';
+import {mkdtemp,open,readdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {basename,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -55,6 +56,30 @@ async function sha256(file){
   return hash.digest('hex');
 }
 
+/** True if the last 512 bytes of a file start with the UDIF trailer magic `koly` (every .dmg ends with one). */
+async function hasUdifTrailer(file,size){
+  if(size<512)return false;
+  const handle=await open(file,'r');
+  try{
+    const buffer=Buffer.alloc(4);
+    await handle.read(buffer,0,4,size-512);
+    return buffer.toString('latin1')==='koly';
+  }finally{await handle.close();}
+}
+
+/** electron-builder writes a blockmap as gzip-compressed JSON {version, files:[...]}. Returns a problem or undefined. */
+function blockmapProblem(file){
+  const bytes=readFileSync(file);
+  if(bytes.length<2||bytes[0]!==0x1f||bytes[1]!==0x8b)return 'is not gzip data';
+  try{
+    const map=JSON.parse(gunzipSync(bytes).toString('utf8'));
+    if(!map||!Array.isArray(map.files))return 'has no files[] list';
+  }catch(error){return 'does not decompress to JSON: '+error.message;}
+}
+
+/** A DMG is roughly its same-arch ZIP in size; outside this band it is truncated or the wrong file. */
+const DMG_TO_ZIP_RATIO=[0.5,2];
+
 /** Check a directory. Returns [{ok:boolean,message:string}] and never throws for a bad draft. */
 export async function verifyDirectory(dir,version,build=loadBuildConfig()){
   const results=[];
@@ -81,12 +106,12 @@ export async function verifyDirectory(dir,version,build=loadBuildConfig()){
 
   const entries=Array.isArray(feed.files)?feed.files:[];
   const listed=new Map();
-  for(const entry of entries){
+  // electron-updater takes the FIRST entry matching the arch, so every entry is checked and a repeated url fails.
+  for(const [index,entry] of entries.entries()){
     const url=entry?.url;
     if(typeof url!=='string'){fail('a files[] entry in '+want.feed+' has no url');continue;}
-    listed.set(url,entry);
-  }
-  for(const [url,entry] of listed){
+    if(listed.has(url))fail(`${want.feed} lists ${url} more than once (entry ${index + 1}); the updater uses the first match`);
+    else listed.set(url,entry);
     if(!present.has(url)){fail(`${want.feed} lists ${url} but the file is missing`);continue;}
     const file=join(dir,url);
     const size=statSync(file).size;
@@ -101,10 +126,31 @@ export async function verifyDirectory(dir,version,build=loadBuildConfig()){
   }
   // Top-level path/sha512 are what older updaters read; they must agree with the matching entry.
   if(feed.path!==undefined){
-    const top=listed.get(feed.path);
+    const top=entries.find(e=>e?.url===feed.path);
     if(!top)fail(`${want.feed} path ${feed.path} is not in files[]`);
     else top.sha512===feed.sha512?pass('top-level path and sha512 agree with files[]'):fail('top-level sha512 differs from the files[] entry for '+feed.path);
   }
+  for(const file of want.blockmaps)if(present.has(file)){
+    const problem=blockmapProblem(join(dir,file));
+    problem?fail(`${file} ${problem}`):pass(`blockmap ok ${file}`);
+  }
+  // The feed does not cover DMGs, the files testers install: check they are plausible disk images.
+  const dmgHashes=new Map();
+  for(const dmg of want.dmgs){
+    if(!present.has(dmg))continue;
+    const size=statSync(join(dir,dmg)).size;
+    if(!size){fail(`${dmg} is empty`);continue;}
+    (await hasUdifTrailer(join(dir,dmg),size))?pass(`disk image trailer ok ${dmg}`):fail(`${dmg} does not end with a disk image (koly) trailer`);
+    const zip=dmg.replace(/\.dmg$/,'.zip');
+    if(present.has(zip)){
+      const ratio=size/statSync(join(dir,zip)).size;
+      ratio>=DMG_TO_ZIP_RATIO[0]&&ratio<=DMG_TO_ZIP_RATIO[1]?pass(`size plausible ${dmg} (${ratio.toFixed(2)}x its zip)`):fail(`${dmg} is ${ratio.toFixed(2)}x the size of ${zip}; expected between ${DMG_TO_ZIP_RATIO.join(' and ')}`);
+    }
+    const digest=await sha256(join(dir,dmg));
+    if(dmgHashes.has(digest))fail(`${dmg} is byte-identical to ${dmgHashes.get(digest)}`);
+    dmgHashes.set(digest,dmg);
+  }
+  info('arm64 versus x64 DMG contents are not checked here (needs mounting); only names, size and disk image trailer are');
   for(const file of [...want.dmgs,...want.zips])if(present.has(file))info(`sha256 ${await sha256(join(dir,file))}  ${file}`);
   return results;
 }
