@@ -6,6 +6,7 @@ import { rendererFile, devURL, trustedURL, external } from './security';
 import { pendingLinks } from './protocol';
 import { latestState } from './engine-host';
 import { closing, quitting, finishQuit } from './lifecycle';
+import { isTest } from './test-mode';
 
 const windows = new Set<BrowserWindow>();
 const claims = new DraftOwnership();
@@ -21,6 +22,8 @@ function command(value: string) {
   win?.webContents.send('aplos:event', { type: 'command', payload: value });
 }
 function focusMain() {
+  // Test mode never shows or focuses a window (a window is still created so the renderer can be inspected).
+  if (isTest) return;
   if (!main || main.isDestroyed()) main = createWindow();
   if (main.isMinimized()) main.restore();
   main.show();
@@ -39,7 +42,7 @@ function applyAppearance(state: AppState) {
   const badge = state.settings.zen
     ? 0
     : state.threads.filter(thread => thread.unread && thread.status === 'new').length;
-  if (badge !== activeBadge) {
+  if (badge !== activeBadge && !isTest) {
     app.setBadgeCount(badge);
     activeBadge = badge;
   }
@@ -122,19 +125,19 @@ function createWindow(query?: { draft?: string; thread?: string }) {
   win.webContents.on('will-prevent-unload', event => {
     if (permittedClose.has(win.id) || closing) event.preventDefault();
   });
-  win.once('ready-to-show', () => win.show());
+  if (!isTest) win.once('ready-to-show', () => win.show());
   win.on('focus', () => syncTheme(false));
   win.webContents.on('will-navigate', (event, url) => {
     if (!trustedURL(url)) {
       event.preventDefault();
-      void external(url).catch(() => {});
+      if (!isTest) void external(url).catch(() => {});
     }
   });
   win.webContents.on('will-redirect', (event, url) => {
     if (!trustedURL(url)) event.preventDefault();
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void external(url).catch(() => {});
+    if (!isTest) void external(url).catch(() => {});
     return { action: 'deny' };
   });
   win.webContents.on('did-finish-load', () => {
@@ -164,8 +167,10 @@ function popout(kind: 'draft' | 'thread', id: string, fromWindowId: number) {
   const key = `${kind}:${id}`;
   const existing = popouts.get(key);
   if (existing && !existing.isDestroyed()) {
-    existing.show();
-    existing.focus();
+    if (!isTest) {
+      existing.show();
+      existing.focus();
+    }
     return;
   }
   if (kind === 'draft') claims.assertEditable(id, fromWindowId);
