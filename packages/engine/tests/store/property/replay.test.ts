@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { openSqlite } from '../../../../../apps/desktop/src/host/sqlite';
 import {
+  eventChangeKey,
   openStore,
   StoreError,
   type CommitInput,
@@ -26,7 +27,19 @@ function snapshot(store: StorePort): Snapshot {
   const put = (type: string, id: string, value: unknown) =>
     out.set(`${type}\0${id}`, JSON.stringify(value));
   store.read(q => {
-    for (const a of q.all('SELECT * FROM accounts')) put('Account', String(a.id), a);
+    for (const a of q.all(
+      'SELECT a.*, (SELECT count(*) FROM ops o WHERE o.account_id = a.id) AS pending_changes FROM accounts a',
+    ))
+      put('Account', String(a.id), a);
+    for (const c of q.all('SELECT account_id, remote_id, name, hidden, selected FROM calendars'))
+      put('Calendar', `${c.account_id}:${c.remote_id}`, c);
+    for (const e of q.all(
+      `SELECT c.account_id, c.remote_id AS cal, e.remote_id,
+        json_group_array(json_array(e.recurrence_id, e.status, e.start_utc, e.data)) AS rows
+      FROM (SELECT * FROM events ORDER BY recurrence_id) e JOIN calendars c ON c.id = e.calendar_id
+      GROUP BY c.account_id, c.remote_id, e.remote_id`,
+    ))
+      put('Event', `${e.account_id}:${eventChangeKey(String(e.cal), String(e.remote_id))}`, e);
     for (const f of q.all(
       `SELECT f.account_id, f.remote_id, f.name, f.role, f.kind, f.hidden,
         (SELECT count(*) FROM thread_folders tf WHERE tf.folder_id = f.id) AS total,
@@ -106,10 +119,96 @@ const THREADS = ['t0', 't1', 't2', 't3', 't4'];
 const FOLDERS = ['INBOX', 'TRASH', 'Label_1', 'Label_2', 'Label_3'];
 const LABELS = ['Label_1', 'Label_2', 'Label_3'];
 
-function randomWrite(r: ReturnType<typeof rng>, step: number): StoreWrite {
+const CALENDARS = ['primary', 'team'];
+const EVENTS = ['e0', 'e1', 'e2'];
+
+function randomWrite(r: ReturnType<typeof rng>, step: number, local: boolean): StoreWrite {
   const refs = (): FolderRef[] => FOLDERS.filter(() => r.chance(0.3)).map(folder => ({ folder }));
   const target = (): MessageTarget =>
     r.chance(0.7) ? { remoteId: r.pick(MESSAGES) } : { remoteThreadId: r.pick(THREADS) };
+  // Local commits also enqueue and settle ops; sync commits merge threads, address UIDs and write calendars.
+  if (r.chance(0.25)) {
+    if (local) {
+      const opId = `op${r.int(6)}`;
+      if (r.chance(0.6))
+        return {
+          kind: 'op',
+          opId: `${opId}-${step}`,
+          accountId: ACCOUNT,
+          opKind: 'label',
+          targets: [],
+          payload: '{}',
+          effect: r.chance(0.5)
+            ? [
+                {
+                  kind: 'placements',
+                  target: target(),
+                  add: refs(),
+                  remove: FOLDERS.filter(() => r.chance(0.3)),
+                },
+              ]
+            : [{ kind: 'flags', target: target(), seen: r.chance(0.5) }],
+        };
+    }
+    const roll = r.int(7);
+    if (roll === 0)
+      return {
+        kind: 'threadMerge',
+        accountId: ACCOUNT,
+        from: [r.pick(THREADS)],
+        into: r.pick(THREADS),
+      };
+    if (roll === 1)
+      return {
+        kind: 'flags',
+        accountId: ACCOUNT,
+        target: { folder: r.pick(FOLDERS), uid: 1 + r.int(MESSAGES.length) },
+        flagged: r.chance(0.5),
+      };
+    if (roll === 2)
+      return {
+        kind: 'calendar',
+        accountId: ACCOUNT,
+        remoteId: r.pick(CALENDARS),
+        name: `Cal ${r.int(3)}`,
+        hidden: r.chance(0.2),
+        readOnly: false,
+        selected: r.chance(0.3) ? r.chance(0.5) : undefined,
+      };
+    if (roll === 3)
+      return { kind: 'calendarDelete', accountId: ACCOUNT, remoteId: r.pick(CALENDARS) };
+    if (roll === 4)
+      return {
+        kind: 'event',
+        accountId: ACCOUNT,
+        calendarRemoteId: r.pick(CALENDARS),
+        remoteId: r.pick(EVENTS),
+        rows: ['', 'r1', 'r2']
+          .filter(() => r.chance(0.5))
+          .map(id => ({
+            recurrenceId: id || undefined,
+            status: 'confirmed',
+            allDay: false,
+            startUtc: T0 + r.int(5),
+            data: String(r.int(3)),
+          })),
+        seenGen: r.chance(0.7) ? step : undefined,
+      };
+    if (roll === 5)
+      return {
+        kind: 'eventSweep',
+        accountId: ACCOUNT,
+        calendarRemoteId: r.pick(CALENDARS),
+        generation: step,
+        from: r.chance(0.5) ? T0 + 2 : undefined,
+      };
+    return {
+      kind: 'eventDelete',
+      accountId: ACCOUNT,
+      calendarRemoteId: r.pick(CALENDARS),
+      remoteId: r.pick(EVENTS),
+    };
+  }
   const roll = r.int(100);
   if (roll < 30) {
     const id = r.pick(MESSAGES);
@@ -124,7 +223,9 @@ function randomWrite(r: ReturnType<typeof rng>, step: number): StoreWrite {
           draft: r.chance(0.08),
           fromMe: r.chance(0.2),
         },
-        folders: r.chance(0.8) ? refs() : undefined,
+        folders: r.chance(0.8)
+          ? refs().map(f => (r.chance(0.3) ? { ...f, uid: 1 + MESSAGES.indexOf(id) } : f))
+          : undefined,
         seenGen: r.chance(0.5) ? step : undefined,
         hasAttachments: r.chance(0.2),
       },
@@ -190,8 +291,20 @@ function runSequence(seed: number, commits: number) {
         origin,
         fenceSeq: origin === 'sync' && r.chance(0.3) ? r.int(store.seq() + 1) : undefined,
         changes: origin === 'sync' && r.chance(0.15) ? 'coarse' : 'fine',
-        writes: Array.from({ length: 1 + r.int(4) }, () => randomWrite(r, i + 2)),
+        writes: Array.from({ length: 1 + r.int(4) }, () =>
+          randomWrite(r, i + 2, origin === 'local'),
+        ),
       };
+      // Settle some open op: drained, failed, retried or undone.
+      const open = store.read(q =>
+        q.all<{ op_id: string }>('SELECT op_id FROM ops').map(o => o.op_id),
+      );
+      if (open.length && r.chance(0.3))
+        input.writes.push({
+          kind: 'opSettle',
+          opId: r.pick(open),
+          state: r.pick(['inflight', 'failed', 'queued', 'synced', 'cancelled'] as const),
+        });
       try {
         store.commit(input);
       } catch (error) {

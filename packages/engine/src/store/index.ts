@@ -1,11 +1,21 @@
 import { applyCommit } from './commit';
+import { registerExtensions } from './extend';
 import { migrate, type Migration } from './migrate';
 import { MIGRATIONS } from './migrations';
-import type { Change, ChangesSince, StorePort, StoreReader } from './port';
+import type {
+  BodyCodec,
+  Change,
+  ChangesSince,
+  CommitExtension,
+  StorePort,
+  StoreReader,
+} from './port';
 import { transaction, type SqlDatabase, type SqlStatement } from './sql';
 
 export * from './port';
-export { FLAG, HDR, PART } from './commit';
+export { CORE_WRITE_KINDS, FLAG, HDR, PART } from './commit';
+export { readBody } from './bodies';
+export { eventChangeKey } from './calendar';
 export * from './due';
 export { MigrationError, SchemaTooNewError, type Migration } from './migrate';
 export { MIGRATIONS } from './migrations';
@@ -18,6 +28,10 @@ export interface OpenStoreOptions {
   migrations?: readonly Migration[];
   /** See `MigrateOptions.beforeUpgrade`: the host copies `mail.db.pre-<from>` here. */
   beforeUpgrade?: (from: number, to: number) => void;
+  /** The lanes' writers for their own tables (seam 2), applied inside `commit`. Validated here; a clash throws. */
+  extensions?: readonly CommitExtension[];
+  /** The host's synchronous body compressor; codec 0 (raw) without one. */
+  bodyCodec?: BodyCodec;
 }
 
 const DEFAULT_PAGE = 1000;
@@ -28,6 +42,7 @@ const DEFAULT_PAGE = 1000;
  */
 export function openStore(db: SqlDatabase, options: OpenStoreOptions = {}): StorePort {
   const now = options.now ?? Date.now;
+  const extensions = registerExtensions(options.extensions);
   const random = options.randomBytes ?? (n => globalThis.crypto.getRandomValues(new Uint8Array(n)));
   const { to } = migrate(db, options.migrations ?? MIGRATIONS, {
     now,
@@ -61,7 +76,8 @@ export function openStore(db: SqlDatabase, options: OpenStoreOptions = {}): Stor
     dbEpoch,
     schemaVersion: to,
     seq,
-    commit: input => applyCommit({ db, dbEpoch, now, stmt }, input),
+    commit: input =>
+      applyCommit({ db, dbEpoch, now, stmt, extensions, bodyCodec: options.bodyCodec }, input),
     changesSince(since, { limit = DEFAULT_PAGE } = {}): ChangesSince {
       const floorSeq = Number(meta('change_floor_seq')),
         current = seq();

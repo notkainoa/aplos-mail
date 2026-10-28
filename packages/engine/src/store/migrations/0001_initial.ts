@@ -23,7 +23,7 @@ op TEXT NOT NULL CHECK(op IN ('u','d','*')), PRIMARY KEY(seq, type, id)) STRICT,
   // prov-gov / prov-gmail: one row per mailbox with status, grant facts (S1-S4) and the baseline marker (AM-4).
   `CREATE TABLE accounts(id TEXT PRIMARY KEY, provider TEXT NOT NULL, address TEXT NOT NULL, display_name TEXT,
 capabilities TEXT NOT NULL, granted_scopes TEXT,
-status TEXT NOT NULL, status_reason TEXT, status_detail TEXT, resume_at INTEGER,
+status TEXT NOT NULL, status_reason TEXT, status_reason_code TEXT, status_detail TEXT, resume_at INTEGER,
 baseline_done_at INTEGER, token_granted_at INTEGER, refresh_expires_at INTEGER, remote_subject TEXT, oauth_client TEXT,
 ai_allowed INTEGER NOT NULL DEFAULT 0, primary_lease_until INTEGER, primary_lease_device TEXT,
 settings TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL) STRICT`,
@@ -98,10 +98,10 @@ address_or_domain TEXT NOT NULL, action TEXT NOT NULL, remote_filter_id TEXT) ST
   `CREATE TABLE conversations(id TEXT PRIMARY KEY, pos INTEGER NOT NULL, data TEXT NOT NULL) STRICT`,
   // eng-contract (Settings/*): the owner's settings document.
   `CREATE TABLE settings(id INTEGER PRIMARY KEY CHECK(id = 1), data TEXT NOT NULL) STRICT`,
-  // eng-views enqueues, prov-gov drains: provider writes replayed over sync until done (ARCH 4.3).
+  // eng-views enqueues, prov-gov drains: provider writes whose local effect is replayed over sync until done (ARCH 4.3).
   `CREATE TABLE ops(seq INTEGER PRIMARY KEY, op_id TEXT NOT NULL UNIQUE,
 account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE, kind TEXT NOT NULL, target TEXT NOT NULL,
-payload TEXT NOT NULL, base TEXT, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER,
+payload TEXT NOT NULL, base TEXT, effect TEXT, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER,
 last_error TEXT, created_seq INTEGER NOT NULL) STRICT`,
   `CREATE INDEX ops_queue ON ops(account_id, state, seq)`,
   // eng-time, prov-gmail-write: local drafts with revisions; S10 origin marks phone drafts (D9).
