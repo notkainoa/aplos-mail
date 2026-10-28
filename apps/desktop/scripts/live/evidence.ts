@@ -1,8 +1,8 @@
 import { RunnerError } from './errors';
 import { appendFile, mkdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { GUARD_API_METHODS } from './guard';
+import { applicationSupportDir } from './vault';
 import type { LiveProvider, ProbeResult, ProbeStatus, Tier } from './types';
 
 /**
@@ -72,6 +72,8 @@ export interface RunEvidence {
   node: string;
   /** Whole days until the test account's token expires; null when the run did not check one. */
   daysToExpiry: number | null;
+  /** The commit the run was made from (checked against --expect-sha on a clean tree), when known. */
+  commit?: string;
   skipReason?: SkipReason;
   results: EvidenceResult[];
   /** The run's units per clock minute. */
@@ -135,6 +137,10 @@ function isoTime(value: unknown, where: string): string {
     throw new EvidenceRejected(where);
   return value;
 }
+function commitSha(value: unknown, where: string): string {
+  if (typeof value !== 'string' || !/^[0-9a-f]{40}$/.test(value)) throw new EvidenceRejected(where);
+  return value;
+}
 function version(value: unknown, where: string): string {
   if (typeof value !== 'string' || !/^\d+\.\d+\.\d+$/.test(value))
     throw new EvidenceRejected(where);
@@ -169,6 +175,7 @@ export function renderEvidence(run: RunEvidence, allowedProbeIds: Iterable<strin
       'startedAt',
       'node',
       'daysToExpiry',
+      'commit',
       'skipReason',
       'results',
       'unitsPerMinute',
@@ -188,6 +195,7 @@ export function renderEvidence(run: RunEvidence, allowedProbeIds: Iterable<strin
         : (() => {
             throw new EvidenceRejected('daysToExpiry');
           })();
+  const commit = top.commit === undefined ? undefined : commitSha(top.commit, 'commit');
   const skip =
     top.skipReason === undefined ? undefined : oneOf(SKIP_REASONS, top.skipReason, 'skipReason');
   const perMinute = series(top.unitsPerMinute, 'unitsPerMinute');
@@ -199,6 +207,7 @@ export function renderEvidence(run: RunEvidence, allowedProbeIds: Iterable<strin
     `## ${startedAt}, ${provider}, tier ${tier}`,
     '',
     `- Runner ${RUNNER_VERSION}, Node ${node}`,
+    `- Commit: ${commit ?? 'not checked'}`,
     `- Days left before the test account must be reconnected: ${days === null ? 'not checked' : days}`,
     ...(skip ? [`- Skipped: ${skip}`] : []),
     `- Units per minute (minute 0 first): ${perMinute.length ? perMinute.join(', ') : 'none'}`,
@@ -251,10 +260,13 @@ export function renderEvidence(run: RunEvidence, allowedProbeIds: Iterable<strin
   return text;
 }
 
-/** verification/live at the repository root. */
-export const DEFAULT_EVIDENCE_DIR = fileURLToPath(
-  new URL('../../../../verification/live/', import.meta.url),
-);
+/**
+ * `~/Library/Application Support/Aplos Mail Review/live/<date>/`, outside the repository
+ * (plans/LIVE-RUNS.md). A caller may still pass its own folder to `writeEvidence` (tests do).
+ */
+export function defaultEvidenceDir(date: string): string {
+  return applicationSupportDir('Aplos Mail Review', 'live', isoDay(date, 'date'));
+}
 
 /**
  * Appends a run to `<dir>/<date>-<provider>.md`. Several runs on one day (tier R in the morning,

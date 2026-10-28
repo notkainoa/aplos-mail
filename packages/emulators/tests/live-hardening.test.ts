@@ -347,11 +347,12 @@ test('drafts: an encoded spelling of the id is refused, so the draft it names is
   );
 });
 
-test('recipients: an address inside an unquoted display name or group name is refused', () => {
+test('recipients: an address in a display name (bare or quoted) and any group are refused', () => {
   assert.throws(() => parseAddressList(`${OTHER} <${SELF}>`), /display name/);
-  assert.throws(() => parseAddressList(`${OTHER}: ${SELF};`), /display name/);
-  assert.deepEqual(parseAddressList(`"${OTHER}" <${SELF}>`), [SELF]);
+  assert.throws(() => parseAddressList(`${OTHER}: ${SELF};`), /unsupported character/);
+  assert.throws(() => parseAddressList(`"${OTHER}" <${SELF}>`), /quoted display name/);
   assert.deepEqual(parseAddressList(`Me Myself <${SELF}>`), [SELF]);
+  assert.deepEqual(parseAddressList(`"Me Myself" <${SELF}>, ${SELF}`), [SELF, SELF]);
 });
 
 test("printing: only the runner's own messages are shown; parser and system errors show a class name", () => {

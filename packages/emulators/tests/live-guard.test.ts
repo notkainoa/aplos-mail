@@ -343,13 +343,7 @@ const ALLOWED: Record<string, string[]> = {
   'upper case and display name': [`To: Me <SELF@Example.Test>`],
   'to, cc and bcc all self': [`To: ${SELF}`, `Cc: ${SELF}`, `Bcc: ${SELF}`],
   'bcc only, self': [`Bcc: ${SELF}`],
-  'group of self': [`To: Me: ${SELF};`],
-  'empty group plus self': [`To: undisclosed-recipients:;, ${SELF}`],
-  'display name that looks like another address': [`To: "${OTHER}" <${SELF}>`],
-  'encoded-word display name that decodes to another address': [
-    `To: =?utf-8?q?other=40example.test?= <${SELF}>`,
-  ],
-  'comment that looks like another address': [`To: ${SELF} (${OTHER})`],
+  'quoted plain display name': [`To: "Self Test" <${SELF}>`],
   'folded header': [`To: ${SELF},`, `  ${SELF}`],
   'duplicate headers, all self': [`To: ${SELF}`, `To: ${SELF}`],
   'resent-to self': [
@@ -368,7 +362,25 @@ const REFUSED: Record<string, { headers: string[]; reason: GuardReason }> = {
   },
   'quoted spoof: "self@x" <other@y>': {
     headers: [`To: "${SELF}" <${OTHER}>`],
-    reason: 'send-recipients',
+    reason: 'send-unparseable',
+  },
+  // Only `addr` and `Name <addr>` with a plain-word name: Gmail may read anything else differently.
+  'group of self': { headers: [`To: Me: ${SELF};`], reason: 'send-unparseable' },
+  'empty group plus self': {
+    headers: [`To: undisclosed-recipients:;, ${SELF}`],
+    reason: 'send-unparseable',
+  },
+  'quoted display name that looks like another address': {
+    headers: [`To: "${OTHER}" <${SELF}>`],
+    reason: 'send-unparseable',
+  },
+  'encoded-word display name that decodes to another address': {
+    headers: [`To: =?utf-8?q?other=40example.test?= <${SELF}>`],
+    reason: 'send-unparseable',
+  },
+  'comment that looks like another address': {
+    headers: [`To: ${SELF} (${OTHER})`],
+    reason: 'send-unparseable',
   },
   'other only': { headers: [`To: ${OTHER}`], reason: 'send-recipients' },
   'self and other in one header': { headers: [`To: ${SELF}, ${OTHER}`], reason: 'send-recipients' },
@@ -402,16 +414,16 @@ const REFUSED: Record<string, { headers: string[]; reason: GuardReason }> = {
     reason: 'send-recipients',
   },
   'folded second address': { headers: [`To: ${SELF},`, `\t${OTHER}`], reason: 'send-recipients' },
-  'group of other': { headers: [`To: Friends: ${OTHER};`], reason: 'send-recipients' },
+  'group of other': { headers: [`To: Friends: ${OTHER};`], reason: 'send-unparseable' },
   'group with self and other': {
     headers: [`To: Team: ${SELF}, ${OTHER};`],
-    reason: 'send-recipients',
+    reason: 'send-unparseable',
   },
   'plus address is not self': { headers: [`To: self+tag@example.test`], reason: 'send-recipients' },
   'look-alike domain': { headers: [`To: self@example.test.evil.test`], reason: 'send-recipients' },
   'no recipients at all': { headers: ['Subject: nobody'], reason: 'send-recipients' },
   'empty To': { headers: ['To:'], reason: 'send-recipients' },
-  'only an empty group': { headers: ['To: undisclosed-recipients:;'], reason: 'send-recipients' },
+  'only an empty group': { headers: ['To: undisclosed-recipients:;'], reason: 'send-unparseable' },
   'encoded word as the address': {
     headers: [`To: =?utf-8?q?self=40example.test?=`],
     reason: 'send-unparseable',

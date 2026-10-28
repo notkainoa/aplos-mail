@@ -40,10 +40,13 @@ export type AccountsFile = Record<string, AccountMeta>;
 export type SecretReader = (service: string) => Promise<string>;
 export type SecretWriter = (service: string, secret: string) => Promise<void>;
 
+/** A folder under ~/Library/Application Support, outside the repository. */
+export function applicationSupportDir(...parts: string[]): string {
+  return join(homedir(), 'Library', 'Application Support', ...parts);
+}
+
 export function vaultDir(env: Record<string, string | undefined> = process.env): string {
-  return (
-    env.APLOS_LIVE_VAULT || join(homedir(), 'Library', 'Application Support', 'Aplos Mail Live')
-  );
+  return env.APLOS_LIVE_VAULT || applicationSupportDir('Aplos Mail Live');
 }
 
 const isoTime = (value: unknown): value is string =>
@@ -210,9 +213,13 @@ export function reconnectBy(account: AccountMeta): number {
 export type Preflight =
   { ok: true; daysLeft: number } | { ok: false; daysLeft: number; message: string };
 
+/** A token closer than this to its reconnect date is not used (plans/LIVE-RUNS.md, check 5). */
+export const RECONNECT_MARGIN_MS = DAY_MS;
+
 /**
- * Checks an account before a run. A token that has expired, or will expire while the run is going,
- * is a skip with a plain message: it is not a failure of the code under test.
+ * Checks an account before a run. A token that has expired, will expire while the run is going, or
+ * must be reconnected within a day is a skip with a plain message: it is not a failure of the code
+ * under test.
  */
 export function preflight(
   account: AccountMeta,
@@ -222,7 +229,7 @@ export function preflight(
 ): Preflight {
   const by = reconnectBy(account);
   const daysLeft = Math.floor((by - now) / DAY_MS);
-  if (by > now + expectedRunMs) return { ok: true, daysLeft };
+  if (by > now + Math.max(expectedRunMs, RECONNECT_MARGIN_MS)) return { ok: true, daysLeft };
   const date = new Date(by).toISOString().slice(0, 10);
   return {
     ok: false,

@@ -3,7 +3,8 @@ import { classify } from './guard';
 /**
  * A run-level sliding window for Gmail quota units. Every run stays under 3,000 units in any 60 s
  * (the roadmap's budget for live runs, half of the per-user limit), so the agent test account is
- * never throttled and a second live run has room. The real governor (plan 20 PV2) replaces this.
+ * never throttled. The budget is per run, so only one run may go at a time: run.ts holds the
+ * run lock (run-lock.ts) while it makes requests. The real governor (plan 20 PV2) replaces this.
  */
 export const WINDOW_MS = 60_000;
 /** Strictly under 3,000, with a little room for the call that is in flight. */

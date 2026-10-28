@@ -38,6 +38,16 @@ test('reconnectBy is the earlier of grant + 7 days and the expiry Google reporte
   );
 });
 
+test('preflight: a token that must be reconnected within 24 hours is skipped, however short the run', () => {
+  const run = 10 * 60_000;
+  const reconnect = GRANT + 7 * DAY;
+  const soon = preflight(account(), 'agent', run, reconnect - 23 * 3600_000);
+  assert.equal(soon.ok, false);
+  assert.match((soon as { message: string }).message, /reconnect it first/);
+  assert.equal(preflight(account(), 'agent', run, reconnect - 11 * 60_000).ok, false);
+  assert.equal(preflight(account(), 'agent', run, reconnect - DAY - 60_000).ok, true);
+});
+
 test('preflight: ok with days left, and a plain skip when the token has expired or expires inside the run', () => {
   const run = 10 * 60_000;
   assert.deepEqual(preflight(account(), 'agent', run, GRANT + 2 * DAY), { ok: true, daysLeft: 5 });
@@ -56,7 +66,7 @@ test('preflight: ok with days left, and a plain skip when the token has expired 
 
   // Expires 5 minutes into a 10 minute run: skip. Expires after the run ends: go.
   assert.equal(preflight(account(), 'agent', run, GRANT + 7 * DAY - 5 * 60_000).ok, false);
-  assert.equal(preflight(account(), 'agent', run, GRANT + 7 * DAY - 11 * 60_000).ok, true);
+  assert.equal(preflight(account(), 'agent', run, GRANT + 7 * DAY - 25 * 3600_000).ok, true);
   // Google's own earlier date wins over the 7-day rule.
   assert.equal(
     preflight(

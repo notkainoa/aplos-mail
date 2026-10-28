@@ -3,8 +3,9 @@ import { Buffer } from 'node:buffer';
 /**
  * Who would an RFC 822 message be delivered to? This is the check behind "send to self only", so it
  * is strict on purpose: anything it cannot parse unambiguously throws, and the guard then refuses
- * the send. It never decodes display names or encoded words, because delivery uses the
- * `<addr-spec>` and nothing else.
+ * the send. Only `addr` and `Name <addr>` with a plain-word name are accepted: comments, groups,
+ * escapes, encoded words and non-ASCII are refused, because Gmail's parser may read them
+ * differently from this one.
  */
 export class UnparseableMessage extends Error {
   constructor(why: string) {
@@ -34,16 +35,25 @@ export function isPlainAddress(value: string): boolean {
   return ADDRESS.test(value) && !value.includes('=?');
 }
 
-/** Strict base64 or base64url, as the `raw` field of the Gmail API carries a message. */
+/**
+ * Strict base64url, as the Gmail API documents the `raw` field: the URL-safe alphabet only (no "+"
+ * or "/"), optional padding to a whole quantum, and a canonical spelling, so no other decoder can
+ * read different bytes out of the same text.
+ */
 export function decodeRaw(raw: unknown): Buffer {
   if (typeof raw !== 'string' || !raw) throw new UnparseableMessage('raw is missing');
-  if (!/^[A-Za-z0-9_+/-]+={0,2}$/.test(raw)) throw new UnparseableMessage('raw is not base64');
-  return Buffer.from(raw, 'base64');
+  if (!/^[A-Za-z0-9_-]+={0,2}$/.test(raw)) throw new UnparseableMessage('raw is not base64url');
+  const unpadded = raw.replace(/=+$/, '');
+  if (unpadded !== raw && raw.length % 4 !== 0) throw new UnparseableMessage('bad base64 padding');
+  const bytes = Buffer.from(unpadded, 'base64url');
+  if (bytes.toString('base64url') !== unpadded)
+    throw new UnparseableMessage('raw is not canonical base64url');
+  return bytes;
 }
 
 /** The header lines of the outer message, unfolded. Everything after the first blank line is body. */
 function outerHeaders(message: Buffer): { name: string; value: string }[] {
-  // latin1 keeps bytes one-to-one; non-ASCII only ever shows up in display names, which we ignore.
+  // latin1 keeps bytes one-to-one; a non-ASCII byte in a recipient header is refused when parsed.
   const lines = message.toString('latin1').split('\n');
   const headers: { name: string; value: string }[] = [];
   for (const rawLine of lines) {
@@ -68,29 +78,26 @@ function outerHeaders(message: Buffer): { name: string; value: string }[] {
   return headers;
 }
 
-type Token =
-  { kind: 'atom'; text: string } | { kind: 'quoted' } | { kind: '<' | '>' | ',' | ';' | ':' };
+type Token = { kind: 'atom'; text: string } | { kind: 'quoted' } | { kind: '<' | '>' | ',' };
 
-/** Skips one comment; comments nest and may hold anything, including things that look like addresses. */
-function skipComment(text: string, start: number): number {
-  let depth = 0;
-  let i = start;
-  for (; i < text.length; i++) {
-    const d = text[i]!;
-    if (d === '\\') i++;
-    else if (d === '(') depth++;
-    else if (d === ')' && --depth === 0) break;
-  }
-  if (depth !== 0) throw new UnparseableMessage('unterminated comment');
-  return i + 1;
-}
+/**
+ * Display names are plain words only: letters, digits and spaces. Gmail's parser may read a
+ * comment, an escape, an encoded word or an "@" in a name differently from this one, so a name that
+ * holds anything else is refused rather than interpreted.
+ */
+const NAME_WORD = /^[A-Za-z0-9]+$/;
+const QUOTED_NAME = /^[A-Za-z0-9 ]*$/;
 
-/** Skips a quoted string, whatever it holds, and returns the index just past its closing quote. */
-function skipQuoted(text: string, start: number): number {
-  let i = start + 1;
-  while (i < text.length && text[i] !== '"') i += text[i] === '\\' ? 2 : 1;
-  if (i >= text.length) throw new UnparseableMessage('unterminated quoted string');
-  return i + 1;
+/**
+ * Reads a quoted display name and returns the index just past its closing quote. Only plain words
+ * may be inside: no backslash, "@", "<" or comma (or any other mark) that a parser could take apart.
+ */
+function readQuoted(text: string, start: number): number {
+  const end = text.indexOf('"', start + 1);
+  if (end < 0) throw new UnparseableMessage('unterminated quoted string');
+  if (!QUOTED_NAME.test(text.slice(start + 1, end)))
+    throw new UnparseableMessage('unsupported character in quoted display name');
+  return end + 1;
 }
 
 function tokenize(text: string): Token[] {
@@ -103,21 +110,19 @@ function tokenize(text: string): Token[] {
   let i = 0;
   while (i < text.length) {
     const c = text[i]!;
-    if (c === '(') {
+    if (c === '"') {
       flush();
-      i = skipComment(text, i);
-    } else if (c === '"') {
-      flush();
-      i = skipQuoted(text, i);
+      i = readQuoted(text, i);
       tokens.push({ kind: 'quoted' });
-    } else if (c === '<' || c === '>' || c === ',' || c === ';' || c === ':') {
+    } else if (c === '<' || c === '>' || c === ',') {
       flush();
       tokens.push({ kind: c });
       i++;
     } else if (c === ' ' || c === '\t') {
       flush();
       i++;
-    } else if (c === '[' || c === ']' || c === ')' || c === '\\' || c < ' ') {
+    } else if ('()[]\\:;'.includes(c) || c < ' ' || c > '~') {
+      // Comments, domain literals, escapes, groups and non-ASCII: none is needed to write to self.
       throw new UnparseableMessage('unsupported character in address');
     } else {
       atom += c;
@@ -133,65 +138,42 @@ function checked(address: string): string {
   return address.toLowerCase();
 }
 
-/** RFC 5322 address-list: mailboxes, `Name <addr>`, and groups `Name: a, b;`. Returns lowercase addresses. */
+/** The comma-separated parts of an address list; an empty part (",," or a trailing comma) is refused. */
+function mailboxParts(tokens: Token[]): Token[][] {
+  const parts: Token[][] = [[]];
+  for (const token of tokens) {
+    if (token.kind === ',') parts.push([]);
+    else parts[parts.length - 1]!.push(token);
+  }
+  if (parts.some(part => part.length === 0)) throw new UnparseableMessage('empty mailbox');
+  return parts;
+}
+
+/** `addr`, or `Name <addr>` where the name is plain words (bare or quoted). Nothing else. */
+function mailbox(part: Token[]): string {
+  const only = part[0]!;
+  if (part.length === 1 && only.kind === 'atom') return checked(only.text);
+  const nameLength = part.length - 3;
+  const [open, inner, close] = part.slice(nameLength);
+  if (nameLength < 0 || open?.kind !== '<' || inner?.kind !== 'atom' || close?.kind !== '>')
+    throw new UnparseableMessage('not a mailbox');
+  const name = part.slice(0, nameLength);
+  if (
+    !name.every(
+      token => token.kind === 'quoted' || (token.kind === 'atom' && NAME_WORD.test(token.text)),
+    )
+  )
+    throw new UnparseableMessage('unsupported display name');
+  return checked(inner.text);
+}
+
+/**
+ * A strict subset of the RFC 5322 address-list: mailboxes `addr` and `Name <addr>` separated by
+ * commas. Comments, groups, escapes and encoded words are refused. Returns lowercase addresses.
+ */
 export function parseAddressList(text: string): string[] {
   const tokens = tokenize(text);
-  const found: string[] = [];
-  let inGroup = false;
-  let i = 0;
-
-  const bare = (phrase: Token[]): void => {
-    if (!phrase.length) return;
-    const only = phrase[0]!;
-    // A bare address is exactly one atom with an @. "self@x other@y" is not a mailbox.
-    if (phrase.length !== 1 || only.kind !== 'atom' || !only.text.includes('@'))
-      throw new UnparseableMessage('not a mailbox');
-    found.push(checked(only.text));
-  };
-
-  // RFC 5322 does not allow "@" in an unquoted display name. A lenient reader may take it as a
-  // second address, so the strict reading and the lenient one must not differ: refuse it.
-  const noAddressInName = (phrase: Token[]): void => {
-    if (phrase.some(token => token.kind === 'atom' && token.text.includes('@')))
-      throw new UnparseableMessage('address in display name');
-  };
-
-  while (i < tokens.length) {
-    const phrase: Token[] = [];
-    while (i < tokens.length && (tokens[i]!.kind === 'atom' || tokens[i]!.kind === 'quoted'))
-      phrase.push(tokens[i++]!);
-    const next = tokens[i];
-    if (!next) {
-      bare(phrase);
-      break;
-    }
-    i++;
-    if (next.kind === '<') {
-      noAddressInName(phrase);
-      const inner = tokens[i];
-      if (!inner || inner.kind !== 'atom' || tokens[i + 1]?.kind !== '>')
-        throw new UnparseableMessage('bad angle address');
-      found.push(checked(inner.text));
-      i += 2;
-      const after = tokens[i];
-      if (after && after.kind !== ',' && after.kind !== ';')
-        throw new UnparseableMessage('text after angle address');
-    } else if (next.kind === ',') {
-      bare(phrase);
-    } else if (next.kind === ';') {
-      if (!inGroup) throw new UnparseableMessage('stray semicolon');
-      bare(phrase);
-      inGroup = false;
-    } else if (next.kind === ':') {
-      if (inGroup || !phrase.length) throw new UnparseableMessage('bad group');
-      noAddressInName(phrase);
-      inGroup = true;
-    } else {
-      throw new UnparseableMessage('stray angle bracket');
-    }
-  }
-  if (inGroup) throw new UnparseableMessage('unterminated group');
-  return found;
+  return tokens.length ? mailboxParts(tokens).map(mailbox) : [];
 }
 
 /**

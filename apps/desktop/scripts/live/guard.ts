@@ -17,6 +17,7 @@ import {
   lastSegment,
   PATCH_FIELDS,
   rawLastSegment,
+  READ_QUERY_KEYS,
   RESERVED_QUERY_KEYS,
   stringId,
   tokenBodyProblem,
@@ -249,20 +250,13 @@ const RULES: readonly Rule[] = [
   // Gmail sends (tier S-self only, recipients checked)
   gmail(['POST'], 'messages/send', 'gmail.users.messages.send', 'send', { effect: 'send-json' }),
   gmail(['POST'], 'drafts/send', 'gmail.users.drafts.send', 'send', { effect: 'draft-send' }),
+  // The media upload of messages.send only. drafts.send has no media form here: its upload body is
+  // a whole message, which would skip the "only drafts this run verified" check above.
   {
     origin: GMAIL_HOST,
     methods: ['POST'],
     path: pathOf(UP + 'messages/send'),
     api: 'gmail.users.messages.send',
-    kind: 'send',
-    effect: 'send-media',
-    query: ['uploadType'],
-  },
-  {
-    origin: GMAIL_HOST,
-    methods: ['POST'],
-    path: pathOf(UP + 'drafts/send'),
-    api: 'gmail.users.drafts.send',
     kind: 'send',
     effect: 'send-media',
     query: ['uploadType'],
@@ -840,12 +834,11 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
   };
 
   /**
-   * Writes take only the query keys their row lists (reads keep their free-form query). A key with
-   * '_' is refused outright: Google reads snake_case spellings as the camelCase parameter.
+   * Writes take only the query keys their row lists, reads only the documented read parameters. A
+   * key with '_' is refused outright: Google reads snake_case spellings as the camelCase parameter.
    */
   const checkQuery = (rule: Rule, url: URL, method: string): void => {
-    if (method === 'GET') return;
-    const allowed = rule.query ?? [];
+    const allowed = method === 'GET' ? READ_QUERY_KEYS : (rule.query ?? []);
     if ([...url.searchParams.keys()].some(key => key.includes('_') || !allowed.includes(key)))
       refuse('query-not-allowed', rule.api);
   };

@@ -14,7 +14,12 @@ import {
 import { createPacedFetch, UnitPacer } from '../../../apps/desktop/scripts/live/pacer';
 import { runLive, type RunDeps } from '../../../apps/desktop/scripts/live/run';
 import { emptyResult, type SmokeProbe, type Tier } from '../../../apps/desktop/scripts/live/types';
-import { keychainWriter, saveAccount } from '../../../apps/desktop/scripts/live/vault';
+import {
+  addressHash,
+  keychainWriter,
+  newAddressSalt,
+  saveAccount,
+} from '../../../apps/desktop/scripts/live/vault';
 
 /**
  * Security attack suite for the live runner. Each test states the SAFE expectation, so a failing
@@ -101,6 +106,25 @@ const jsonInit = (value: unknown, method = 'POST'): RequestInit => ({
   body: JSON.stringify(value),
 });
 
+/** The agent account in a fresh vault, with the account check of SELF stored as sign-in would. */
+async function saveAgent(vault: string, now: number): Promise<void> {
+  const addressSalt = newAddressSalt();
+  await saveAccount(vault, 'agent', {
+    provider: 'gmail',
+    grantedAt: new Date(now).toISOString(),
+    keychainService: 'aplos-mail-live-agent',
+    addressSalt,
+    addressHash: addressHash(SELF, addressSalt),
+  });
+}
+
+/** Google as the runner sees it: the token endpoint and the profile of the agent account. */
+const agentAnswers: Answer = request => {
+  if (request.url.startsWith('https://oauth2.googleapis.com/token'))
+    return { access_token: FAKE_ACCESS, expires_in: 3600 };
+  return request.url.startsWith(`${GMAIL}/profile`) ? { emailAddress: SELF } : {};
+};
+
 /** Every recipient address in an RFC 822 message on the wire, by a deliberately loose scan. */
 function wireMentions(request: WireRequest, address: string): boolean {
   let text = request.body;
@@ -138,16 +162,8 @@ test('TOCTOU: tier R end to end, a probe that flips the method fails the run and
   const vault = await mkdtemp(join(tmpdir(), 'aplos-attack-vault-'));
   const evidence = await mkdtemp(join(tmpdir(), 'aplos-attack-evidence-'));
   const now = Date.parse('2026-10-27T10:00:00Z');
-  await saveAccount(vault, 'agent', {
-    provider: 'gmail',
-    grantedAt: new Date(now).toISOString(),
-    keychainService: 'aplos-mail-live-agent',
-  });
-  const net = wire(request =>
-    request.url.startsWith('https://oauth2.googleapis.com/token')
-      ? { access_token: FAKE_ACCESS, expires_in: 3600 }
-      : {},
-  );
+  await saveAgent(vault, now);
+  const net = wire(agentAnswers);
   const sneaky: SmokeProbe = {
     id: 'attack.method-flip',
     provider: 'gmail',
@@ -493,12 +509,12 @@ test('holds: header injection and line-ending tricks in recipient headers are re
   );
 });
 
-test('holds: case, comments, encoded display names and attached messages do not change the verdict', async () => {
+test('holds: case, plain display names and attached messages do not change the verdict', async () => {
   const allowed: string[][] = [
     ['To: SELF@EXAMPLE.TEST'],
-    [`To: ${SELF} (other@example.test)`],
-    [`To: =?utf-8?B?b3RoZXJAZXhhbXBsZS50ZXN0?= <${SELF}>`],
-    [`To: "a\\" <${OTHER}> \\"" <${SELF}>`],
+    [`To: Self Test <${SELF}>`],
+    [`To: "Self Test" <${SELF}>`],
+    [`To: <${SELF}>, ${SELF}`],
   ];
   for (const headers of allowed) {
     const { guard } = pipeline('S-self');
@@ -515,6 +531,60 @@ test('holds: case, comments, encoded display names and attached messages do not 
   );
   const { guard } = pipeline('S-self');
   assert.equal(await outcome(guard, `${GMAIL}/messages/send`, jsonInit({ raw: attached })), 'sent');
+});
+
+test('strict recipients: comments, escapes, encoded words and marks in quoted names are refused, even around self', async () => {
+  // Gmail's parser may disagree with ours on any of these, so none of them is interpreted.
+  const refused: string[][] = [
+    [`To: ${SELF} (other@example.test)`],
+    [`To: ${SELF} (just a note)`],
+    [`To: Self (note) <${SELF}>`],
+    [`To: =?utf-8?B?b3RoZXJAZXhhbXBsZS50ZXN0?= <${SELF}>`],
+    [`To: "a\\" <${OTHER}> \\"" <${SELF}>`],
+    [`To: "Self\\ Test" <${SELF}>`],
+    [`To: "self@example.test" <${SELF}>`],
+    [`To: "Self <x>" <${SELF}>`],
+    [`To: "Self, Test" <${SELF}>`],
+    [`To: "Self; Test" <${SELF}>`],
+    [`To: Self.Test <${SELF}>`],
+    [`To: Me: ${SELF};`],
+    [`To: undisclosed-recipients:;, ${SELF}`],
+    [`To: ${SELF},`],
+    [`To: Sélf <${SELF}>`],
+  ];
+  for (const headers of refused) {
+    const { guard, sent } = pipeline('S-self');
+    assert.equal(
+      await outcome(guard, `${GMAIL}/messages/send`, jsonInit({ raw: raw(headers) })),
+      'refused:send-unparseable',
+      headers.join(' / '),
+    );
+    assert.equal(sent.length, 0, headers.join(' / '));
+  }
+});
+
+test('strict raw: only the base64url alphabet, canonical and correctly padded, is decoded', async () => {
+  // 34 bytes: the base64 text ends in a 2-character group, so it has padding and spare bits.
+  const message = rfc822([`To: ${SELF}`], 'Hello?>>!');
+  const standard = Buffer.from(message, 'latin1').toString('base64');
+  assert.match(standard, /[+/]/, 'the fixture must use a character base64url does not have');
+  const url = Buffer.from(message, 'latin1').toString('base64url');
+  const padded = `${url}==`;
+  assert.equal(padded.length % 4, 0);
+  // Standard alphabet, too much padding, padding that ends mid-group, and non-zero spare bits.
+  for (const value of [standard, `${url}===`, `${url}=`, `${url.slice(0, -1)}B`]) {
+    const { guard, sent } = pipeline('S-self');
+    assert.equal(
+      await outcome(guard, `${GMAIL}/messages/send`, jsonInit({ raw: value })),
+      'refused:send-unparseable',
+      value.slice(-6),
+    );
+    assert.equal(sent.length, 0);
+  }
+  for (const value of [url, padded]) {
+    const { guard } = pipeline('S-self');
+    assert.equal(await outcome(guard, `${GMAIL}/messages/send`, jsonInit({ raw: value })), 'sent');
+  }
 });
 
 test('holds: a 2 MB recipient header is parsed quickly and a trailing other address is still found', async () => {
@@ -639,12 +709,28 @@ test('holds: method overrides, odd verbs and query overrides are refused', async
   await expectRefused('R', `${GMAIL}/messages/m1?%24httpMethod=DELETE`);
   await expectRefused('R', `${GMAIL}/messages/m1?_method=DELETE`);
   await expectRefused('R', `${GMAIL}/messages/m1?X-HTTP-Method-Override=DELETE`);
-  // alt= is harmless on a read and must stay a read.
+  // Reads take only documented read parameters: alt, a second credential or an upload form are refused.
+  for (const query of [
+    'alt=media',
+    'access_token=x',
+    'key=x',
+    'oauth_token=x',
+    'quotaUser=x',
+    'uploadType=media',
+    'callback=x',
+    '%24.xgafv=2',
+    'max_results=5',
+  ])
+    await expectRefused('R', `${GMAIL}/messages/m1?${query}`);
   const { guard, sent } = pipeline('R');
-  await guard(`${GMAIL}/messages/m1?alt=media`);
+  await guard(
+    `${GMAIL}/threads?labelIds=INBOX&maxResults=5&pageToken=p&q=x&fields=threads(id)&prettyPrint=false`,
+  );
+  await guard(`${GMAIL}/messages/m1?format=metadata&metadataHeaders=From&metadataHeaders=Date`);
+  await guard(`${CAL}/calendars/primary/events?timeMin=t&singleEvents=true&orderBy=startTime`);
   assert.deepEqual(
     sent.map(r => r.method),
-    ['GET'],
+    ['GET', 'GET', 'GET'],
   );
 });
 

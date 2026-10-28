@@ -160,7 +160,7 @@ test('review 7: another signed-in account refuses tiers M and S-self before any 
   assert.deepEqual(writesIn(f), []);
 });
 
-test('review 7: an account signed in without an address hash refuses M and S-self, and still runs R', async () => {
+test('review 7: an account signed in without an address hash refuses every tier, R included', async () => {
   const f = await fixture();
   await signInAgent(f);
   const {
@@ -169,15 +169,42 @@ test('review 7: an account signed in without an address hash refuses M and S-sel
     ...legacy
   } = (await vault.loadAccounts(f.vaultDir)).agent!;
   await vault.saveAccount(f.vaultDir, 'agent', legacy);
-  for (const tier of ['M', 'S-self'] as const) {
+  const logBefore = f.emu.log.length;
+  for (const tier of ['R', 'M', 'S-self'] as const) {
     const ran: string[] = [];
     f.deps.probes = [writingProbe(tier, ran)];
     await assert.rejects(runLive(args(tier), f.deps), /sign it in again/);
     assert.deepEqual(ran, []);
   }
-  assert.deepEqual(writesIn(f), []);
-  f.deps.probes = [{ id: PROBE_ID, provider: 'gmail', tier: 'R', run: async () => emptyResult() }];
-  assert.equal((await runLive(args('R'), f.deps)).exitCode, 0);
+  assert.equal(f.emu.log.length, logBefore, 'no request at all, not even the token refresh');
+});
+
+test('account binding: tier R checks the signed-in account too, and runs on the agent label only', async () => {
+  const f = await fixture();
+  await signInAgent(f);
+  const stored = (await vault.loadAccounts(f.vaultDir)).agent!;
+  await vault.saveAccount(f.vaultDir, 'agent', {
+    ...stored,
+    addressHash: vault.addressHash('owner.main@example.test', stored.addressSalt!),
+  });
+  const ran: string[] = [];
+  const reader: SmokeProbe = {
+    id: PROBE_ID,
+    provider: 'gmail',
+    tier: 'R',
+    async run() {
+      ran.push('R');
+      return emptyResult();
+    },
+  };
+  f.deps.probes = [reader];
+  await assert.rejects(runLive(args('R'), f.deps), /does not match/);
+  assert.deepEqual(ran, [], 'no probe read the mailbox of another account');
+
+  // Another vault label is refused before the vault is read, whatever the tier.
+  await vault.saveAccount(f.vaultDir, 'spare', stored);
+  await assert.rejects(runLive({ ...args('R'), account: 'spare' }, f.deps), /agent test account/);
+  assert.deepEqual(ran, []);
 });
 
 test('review 7: a malformed hash or salt in the vault is rejected as metadata', async () => {
@@ -222,7 +249,7 @@ test('review 8: parseArgs names both providers it accepts', () => {
     /gmail or gcal/,
   );
   assert.equal(
-    parseArgs(['--provider', 'gcal', '--tier', 'R', '--account', 'agent']).provider,
+    parseArgs(['--provider', 'gcal', '--tier', 'R', '--account', 'agent', '--dry-run']).provider,
     'gcal',
   );
 });

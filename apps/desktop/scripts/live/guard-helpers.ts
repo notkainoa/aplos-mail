@@ -86,6 +86,45 @@ export const RESERVED_QUERY_KEYS: ReadonlyMap<string, string> = new Map(
     key,
   ]),
 );
+/**
+ * The only query keys a read may carry: the documented parameters of the Gmail and Calendar reads
+ * in the rule table, plus `fields` and `prettyPrint`. Left out on purpose: `access_token`, `key`
+ * and `oauth_token` (another credential could act on another account), `alt` and `uploadType`
+ * (another response or upload form), `quotaUser`, `callback` and `$.xgafv`.
+ */
+export const READ_QUERY_KEYS: readonly string[] = [
+  'fields',
+  'prettyPrint',
+  // Gmail
+  'format',
+  'metadataHeaders',
+  'maxResults',
+  'pageToken',
+  'q',
+  'labelIds',
+  'includeSpamTrash',
+  'startHistoryId',
+  'labelId',
+  'historyTypes',
+  // Calendar
+  'timeMin',
+  'timeMax',
+  'singleEvents',
+  'orderBy',
+  'showDeleted',
+  'syncToken',
+  'updatedMin',
+  'timeZone',
+  'maxAttendees',
+  'iCalUID',
+  'eventTypes',
+  'privateExtendedProperty',
+  'sharedExtendedProperty',
+  'showHiddenInvitations',
+  'originalStart',
+  'minAccessRole',
+  'showHidden',
+];
 export const SYSTEM_LABELS_REFUSED: ReadonlySet<string> = new Set(['SPAM', 'TRASH']);
 
 /** Google APIs accept a verb override on a POST, which would turn a "POST" into a DELETE. */
