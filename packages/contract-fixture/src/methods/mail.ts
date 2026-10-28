@@ -18,6 +18,172 @@ const withLabel = (t: ThreadRow, r: string, on: boolean) => {
 };
 const lanes = ['do', 'update', 'low'] as const;
 
+const withLabelled = (t: ThreadRow, r: string, on: boolean): ThreadRow => ({
+  ...t,
+  labels: withLabel(t, r, on),
+});
+
+/** The row and workflow a handler edits, plus the settings and clock its action reads. */
+interface ActionState {
+  next: ThreadRow;
+  w: ThreadRow['workflow'];
+  settings: Settings;
+  now: number;
+  today: string;
+}
+
+type ActionOf<K extends ThreadAction['type']> = Extract<ThreadAction, { type: K }>;
+
+/** What the account's `doneAction`/`laterAction` asks for after the status change. */
+const after = (s: ActionState, mode: 'archive' | 'read' | 'unread') => {
+  if (mode === 'archive') s.next.labels = withLabel(s.next, 'INBOX', false);
+  else
+    s.next = {
+      ...s.next,
+      unread: mode === 'unread',
+      unreadCount: mode === 'unread' ? Math.max(1, s.next.unreadCount) : 0,
+    };
+};
+
+const user = (s: ActionState, rank: Partial<ThreadRow['rank']>) => {
+  s.next.rank = { ...s.next.rank, ...rank, source: 'user', rankedAt: s.now };
+};
+
+function actDone(s: ActionState) {
+  s.w.status = 'done';
+  s.w.doneAt = s.now;
+  delete s.w.laterUntil;
+  after(s, s.settings.mail.doneAction);
+}
+
+function actRestore(s: ActionState) {
+  s.w.status = 'new';
+  delete s.w.laterUntil;
+  delete s.w.doneAt;
+  s.w.hiddenFromHome = false;
+  s.next.labels = withLabel(
+    withLabelled(withLabelled(s.next, 'TRASH', false), 'SPAM', false),
+    'INBOX',
+    true,
+  );
+}
+
+function actLater(s: ActionState, a: ActionOf<'later'>) {
+  s.w.status = 'later';
+  // Snoozed again, it comes back to Home at the new date even if Clear from Home took it off.
+  s.w.hiddenFromHome = false;
+  if (a.until === undefined) delete s.w.laterUntil;
+  else s.w.laterUntil = a.until;
+  after(s, s.settings.mail.laterAction);
+}
+
+function actTrash(s: ActionState) {
+  s.next.labels = withLabel(withLabelled(s.next, 'INBOX', false), 'TRASH', true);
+}
+
+function actSpam(s: ActionState) {
+  s.next.labels = withLabel(withLabelled(s.next, 'INBOX', false), 'SPAM', true);
+}
+
+function actReadState(s: ActionState, a: ActionOf<'read' | 'unread'>) {
+  after(s, a.type);
+}
+
+function actFlag(s: ActionState, a: ActionOf<'flag'>) {
+  s.next = { ...s.next, flagged: a.on, labels: withLabel(s.next, 'STARRED', a.on) };
+}
+
+function actBookmark(s: ActionState, a: ActionOf<'bookmark'>) {
+  s.w.bookmarked = a.on;
+}
+
+function actDue(s: ActionState, a: ActionOf<'due'>) {
+  if (a.date) {
+    s.w.dueDate = a.date;
+    s.w.dueSource = 'user';
+  } else {
+    delete s.w.dueDate;
+    delete s.w.dueSource;
+  }
+  s.next.rank = { ...s.next.rank, dueBand: dueBand(s.w.dueDate, s.today) };
+}
+
+function actReminder(s: ActionState, a: ActionOf<'reminder'>) {
+  // `clear` removes it (FR-28); without `at` it falls due after `mail.followUpDays`.
+  if (a.clear) {
+    delete s.w.reminderAt;
+    delete s.w.reminderIfNoReply;
+  } else {
+    s.w.reminderAt = a.at ?? s.now + s.settings.mail.followUpDays * 86_400_000;
+    s.w.reminderIfNoReply = !!a.ifNoReply;
+  }
+  delete s.w.reminderFiredAt;
+}
+
+function actLane(s: ActionState, a: ActionOf<'lane'>) {
+  user(s, { lane: a.lane });
+}
+
+function actLaneStep(s: ActionState, a: ActionOf<'laneStep'>) {
+  const i = lanes.indexOf(s.next.rank.lane as (typeof lanes)[number]);
+  user(s, {
+    lane: lanes[Math.max(0, Math.min(2, (i < 0 ? 1 : i) + (a.direction === 'up' ? -1 : 1)))]!,
+  });
+}
+
+function actImportance(s: ActionState, a: ActionOf<'importance'>) {
+  user(s, { importance: a.importance });
+  s.next.labels = withLabel(s.next, 'IMPORTANT', a.importance === 'important');
+}
+
+function actReplyStatus(s: ActionState, a: ActionOf<'replyStatus'>) {
+  s.w.replyStatus = a.status;
+}
+
+function actTodo(s: ActionState, a: ActionOf<'todo'>) {
+  if (a.text) s.w.todo = a.text;
+  else delete s.w.todo;
+}
+
+function actHome(s: ActionState, a: ActionOf<'home'>) {
+  s.w.hiddenFromHome = a.hidden;
+}
+
+function actClearFromHome(s: ActionState) {
+  // Back to Later with its own date (still Overdue there), off Home until acted on (FR-28).
+  if (s.w.status === 'later' && s.next.fromLater) s.w.hiddenFromHome = true;
+}
+
+function actLabels(s: ActionState, a: ActionOf<'labels'>) {
+  s.next.labels = [...new Set([...s.next.labels.filter(l => !a.remove.includes(l)), ...a.add])];
+}
+
+type ActionHandlers = {
+  [K in ThreadAction['type']]: (s: ActionState, a: ActionOf<K>) => void;
+};
+
+const actionHandlers: ActionHandlers = {
+  done: actDone,
+  restore: actRestore,
+  later: actLater,
+  trash: actTrash,
+  spam: actSpam,
+  read: actReadState,
+  unread: actReadState,
+  flag: actFlag,
+  bookmark: actBookmark,
+  due: actDue,
+  reminder: actReminder,
+  lane: actLane,
+  laneStep: actLaneStep,
+  importance: actImportance,
+  replyStatus: actReplyStatus,
+  todo: actTodo,
+  home: actHome,
+  clearFromHome: actClearFromHome,
+  labels: actLabels,
+};
+
 /** Applies one `Thread/act` action to a row (ARCH 3.2 workflow facts, DESIGN 7.2 for what Done and Later do). */
 export function applyAction(
   t: ThreadRow,
@@ -27,128 +193,16 @@ export function applyAction(
   today: string,
 ): ThreadRow {
   const w = { ...t.workflow };
-  let next: ThreadRow = { ...t, workflow: w };
-  const after = (mode: 'archive' | 'read' | 'unread') => {
-    if (mode === 'archive') next.labels = withLabel(next, 'INBOX', false);
-    else
-      next = {
-        ...next,
-        unread: mode === 'unread',
-        unreadCount: mode === 'unread' ? Math.max(1, next.unreadCount) : 0,
-      };
-  };
-  const user = (rank: Partial<ThreadRow['rank']>) => {
-    next.rank = { ...next.rank, ...rank, source: 'user', rankedAt: now };
-  };
-  switch (action.type) {
-    case 'done':
-      w.status = 'done';
-      w.doneAt = now;
-      delete w.laterUntil;
-      after(settings.mail.doneAction);
-      break;
-    case 'restore':
-      w.status = 'new';
-      delete w.laterUntil;
-      delete w.doneAt;
-      w.hiddenFromHome = false;
-      next.labels = withLabel(
-        withLabelled(withLabelled(next, 'TRASH', false), 'SPAM', false),
-        'INBOX',
-        true,
-      );
-      break;
-    case 'later':
-      w.status = 'later';
-      // Snoozed again, it comes back to Home at the new date even if Clear from Home took it off.
-      w.hiddenFromHome = false;
-      if (action.until === undefined) delete w.laterUntil;
-      else w.laterUntil = action.until;
-      after(settings.mail.laterAction);
-      break;
-    case 'trash':
-      next.labels = withLabel(withLabelled(next, 'INBOX', false), 'TRASH', true);
-      break;
-    case 'spam':
-      next.labels = withLabel(withLabelled(next, 'INBOX', false), 'SPAM', true);
-      break;
-    case 'read':
-    case 'unread':
-      after(action.type);
-      break;
-    case 'flag':
-      next = { ...next, flagged: action.on, labels: withLabel(next, 'STARRED', action.on) };
-      break;
-    case 'bookmark':
-      w.bookmarked = action.on;
-      break;
-    case 'due':
-      if (action.date) {
-        w.dueDate = action.date;
-        w.dueSource = 'user';
-      } else {
-        delete w.dueDate;
-        delete w.dueSource;
-      }
-      next.rank = { ...next.rank, dueBand: dueBand(w.dueDate, today) };
-      break;
-    case 'reminder':
-      // `clear` removes it (FR-28); without `at` it falls due after `mail.followUpDays`.
-      if (action.clear) {
-        delete w.reminderAt;
-        delete w.reminderIfNoReply;
-      } else {
-        w.reminderAt = action.at ?? now + settings.mail.followUpDays * 86_400_000;
-        w.reminderIfNoReply = !!action.ifNoReply;
-      }
-      delete w.reminderFiredAt;
-      break;
-    case 'lane':
-      user({ lane: action.lane });
-      break;
-    case 'laneStep': {
-      const i = lanes.indexOf(next.rank.lane as (typeof lanes)[number]);
-      user({
-        lane: lanes[
-          Math.max(0, Math.min(2, (i < 0 ? 1 : i) + (action.direction === 'up' ? -1 : 1)))
-        ]!,
-      });
-      break;
-    }
-    case 'importance':
-      user({ importance: action.importance });
-      next.labels = withLabel(next, 'IMPORTANT', action.importance === 'important');
-      break;
-    case 'replyStatus':
-      w.replyStatus = action.status;
-      break;
-    case 'todo':
-      if (action.text) w.todo = action.text;
-      else delete w.todo;
-      break;
-    case 'home':
-      w.hiddenFromHome = action.hidden;
-      break;
-    case 'clearFromHome':
-      // Back to Later with its own date (still Overdue there), off Home until acted on (FR-28).
-      if (w.status === 'later' && t.fromLater) w.hiddenFromHome = true;
-      break;
-    case 'labels':
-      next.labels = [
-        ...new Set([...next.labels.filter(l => !action.remove.includes(l)), ...action.add]),
-      ];
-      break;
-  }
+  const state: ActionState = { next: { ...t, workflow: w }, w, settings, now, today };
+  const handle = actionHandlers[action.type] as (s: ActionState, a: ThreadAction) => void;
+  handle(state, action);
+  const next = state.next;
   // Acting on a Back from Later row moves it on; Later again waits for the new date.
   if (['done', 'restore', 'later', 'trash', 'spam', 'home'].includes(action.type))
     next.fromLater = false;
   w.editedAt = now;
   return next;
 }
-const withLabelled = (t: ThreadRow, r: string, on: boolean): ThreadRow => ({
-  ...t,
-  labels: withLabel(t, r, on),
-});
 
 /** `Thread/act` inside a transaction, keeping each message's read flag in step with its thread. */
 export function actOn(fx: Fixture, tx: Tx, ids: string[], action: ThreadAction) {

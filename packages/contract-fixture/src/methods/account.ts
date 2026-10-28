@@ -9,7 +9,6 @@ import { clean, fail, getRows, must, type Part } from './util';
 const week = 7 * 86_400_000;
 /** One tick of first-sync progress on the engine clock. */
 export const setupTickMs = 400;
-const order: SetupRecord['state'][] = ['connecting', 'finding', 'reading', 'sorting', 'ready'];
 
 /**
  * One step of an account's first sync: connecting → finding → reading (six threads a tick land in the mailbox) →

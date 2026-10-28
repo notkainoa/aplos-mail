@@ -1,4 +1,4 @@
-import type { Plan, SearchQuery, ThreadRow, ViewSpec } from '@aplos/contract';
+import type { Message, Plan, SearchQuery, ThreadRow, ViewSpec } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Store } from './store';
 import { atLocal, localDay } from './time';
@@ -98,8 +98,10 @@ function lowGroups(ctx: ViewContext, accountId?: string) {
 }
 export const senderGroups = (ctx: ViewContext) => lowGroups(ctx).map(({ threadIds: _, ...g }) => g);
 
-function matches(ctx: ViewContext, t: ThreadRow, q: SearchQuery) {
-  const messages = ctx.store.all('Message').filter(m => m.threadId === t.id);
+const addressMatches = (list: { address?: string; name?: string }[], v: string) =>
+  list.some(p => `${p.name ?? ''} ${p.address ?? ''}`.toLowerCase().includes(v.toLowerCase()));
+
+function matchesWords(ctx: ViewContext, t: ThreadRow, messages: Message[], q: SearchQuery) {
   const words = q.text.toLowerCase().split(/\s+/).filter(Boolean);
   const hay = [
     t.subject,
@@ -110,16 +112,29 @@ function matches(ctx: ViewContext, t: ThreadRow, q: SearchQuery) {
   ]
     .join(' ')
     .toLowerCase();
-  if (!words.every(w => hay.includes(w))) return false;
-  const addr = (list: { address?: string; name?: string }[], v: string) =>
-    list.some(p => `${p.name ?? ''} ${p.address ?? ''}`.toLowerCase().includes(v.toLowerCase()));
-  if (q.from && !messages.some(m => m.from && addr([m.from], q.from!))) return false;
-  if (q.to && !messages.some(m => addr(m.to, q.to!))) return false;
+  return words.every(w => hay.includes(w));
+}
+
+function matchesPeople(messages: Message[], q: SearchQuery) {
+  if (q.from && !messages.some(m => m.from && addressMatches([m.from], q.from!))) return false;
+  if (q.to && !messages.some(m => addressMatches(m.to, q.to!))) return false;
+  return true;
+}
+
+function matchesSubject(t: ThreadRow, q: SearchQuery) {
   if (q.subject && !t.subject.toLowerCase().includes(q.subject.toLowerCase())) return false;
   if (q.hasAttachment !== undefined && t.hasAttachments !== q.hasAttachment) return false;
+  return true;
+}
+
+function matchesDates(ctx: ViewContext, t: ThreadRow, q: SearchQuery) {
   const day = localDay(t.lastDate, ctx.zone);
   if (q.before && !(day < q.before)) return false;
   if (q.after && !(day >= q.after)) return false;
+  return true;
+}
+
+function matchesPlace(t: ThreadRow, q: SearchQuery) {
   if (q.in) {
     const place = q.in.toLowerCase();
     const ok =
@@ -132,6 +147,10 @@ function matches(ctx: ViewContext, t: ThreadRow, q: SearchQuery) {
             : t.labels.includes(q.in);
     if (!ok) return false;
   } else if (away(t)) return false;
+  return true;
+}
+
+function matchesFlags(t: ThreadRow, q: SearchQuery) {
   for (const flag of q.is ?? []) {
     if (flag === 'unread' && !t.unread) return false;
     if (flag === 'read' && t.unread) return false;
@@ -139,6 +158,18 @@ function matches(ctx: ViewContext, t: ThreadRow, q: SearchQuery) {
     if (flag === 'bookmarked' && !t.workflow.bookmarked) return false;
   }
   return true;
+}
+
+function matches(ctx: ViewContext, t: ThreadRow, q: SearchQuery) {
+  const messages = ctx.store.all('Message').filter(m => m.threadId === t.id);
+  return (
+    matchesWords(ctx, t, messages, q) &&
+    matchesPeople(messages, q) &&
+    matchesSubject(t, q) &&
+    matchesDates(ctx, t, q) &&
+    matchesPlace(t, q) &&
+    matchesFlags(t, q)
+  );
 }
 
 function sectioned(parts: [string, string[]][]): ViewResult & { rowType: 'Thread' } {
@@ -154,18 +185,35 @@ function sectioned(parts: [string, string[]][]): ViewResult & { rowType: 'Thread
 
 export const maxEventRangeMs = 62 * 86_400_000;
 
-/** Runs a spec. `frozen` is a `oneByOne` window's order, taken once when it opened. */
-export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
-  const threads = (filter: (t: ThreadRow) => boolean, accountId?: string) =>
-    ctx.store.all('Thread').filter(t => (!accountId || t.accountId === accountId) && filter(t));
-  const ids = (list: { id: string }[]) => list.map(x => x.id);
+const idsOf = (list: { id: string }[]) => list.map(x => x.id);
+
+const threadRows = (ctx: ViewContext, filter: (t: ThreadRow) => boolean, accountId?: string) =>
+  ctx.store.all('Thread').filter(t => (!accountId || t.accountId === accountId) && filter(t));
+
+type HomeSpec = Extract<
+  ViewSpec,
+  { kind: 'home' | 'homeSection' | 'oneByOne' | 'lowSenders' | 'lowBySender' }
+>;
+type MailboxSpec = Extract<
+  ViewSpec,
+  {
+    kind:
+      'mailbox' | 'label' | 'later' | 'bookmarks' | 'replyState' | 'done' | 'drafts' | 'scheduled';
+  }
+>;
+type OtherSpec = Extract<
+  ViewSpec,
+  { kind: 'search' | 'thread' | 'events' | 'plans' | 'conversations' }
+>;
+
+function homeView(ctx: ViewContext, spec: HomeSpec): ViewResult {
   switch (spec.kind) {
     case 'home': {
       const p = homeParts(ctx, spec.accountId);
       const result = sectioned([
-        ['do', ids(p.doNew)],
-        ['fromLater', ids(p.fromLater)],
-        ['update', ids(p.update)],
+        ['do', idsOf(p.doNew)],
+        ['fromLater', idsOf(p.fromLater)],
+        ['update', idsOf(p.update)],
       ]);
       // The Low band is a count-only section: its rows are not in `ids` (open `homeSection: low` or `lowSenders` for them).
       if (p.low.length)
@@ -177,7 +225,7 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
         });
       if (p.follow.length) {
         result.sections!.push({ key: 'follow', start: result.ids.length, count: p.follow.length });
-        result.ids.push(...ids(p.follow));
+        result.ids.push(...idsOf(p.follow));
       }
       return result;
     }
@@ -186,18 +234,18 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
       const p = homeParts(ctx, spec.accountId);
       if (spec.section === 'do')
         return sectioned([
-          ['do', ids(p.doNew)],
-          ['fromLater', ids(p.fromLater)],
+          ['do', idsOf(p.doNew)],
+          ['fromLater', idsOf(p.fromLater)],
         ]);
       const list = spec.section === 'update' ? p.update : spec.section === 'low' ? p.low : p.follow;
-      return sectioned([[spec.section, ids(list)]]);
+      return sectioned([[spec.section, idsOf(list)]]);
     }
     case 'lowSenders': {
       // One run per sender: the address as the key and the name as the engine-owned label.
       const groups = lowGroups(ctx, spec.accountId);
       return {
         rowType: 'SenderGroup',
-        ids: ids(groups),
+        ids: idsOf(groups),
         sections: groups.map((g, i) => ({ key: g.address, label: g.name, start: i, count: 1 })),
       };
     }
@@ -216,6 +264,11 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
       }
       return result;
     }
+  }
+}
+
+function mailboxView(ctx: ViewContext, spec: MailboxSpec): ViewResult {
+  switch (spec.kind) {
     case 'mailbox': {
       const role = spec.role;
       const filter = (t: ThreadRow) =>
@@ -230,19 +283,23 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
                 : has(t, role.toUpperCase());
       return {
         rowType: 'Thread',
-        ids: ids(threads(filter, spec.accountId).sort(newest)),
+        ids: idsOf(threadRows(ctx, filter, spec.accountId).sort(newest)),
         sections: [],
       };
     }
     case 'label':
       return {
         rowType: 'Thread',
-        ids: ids(threads(t => t.labels.includes(spec.folderId) && !away(t)).sort(newest)),
+        ids: idsOf(threadRows(ctx, t => t.labels.includes(spec.folderId) && !away(t)).sort(newest)),
         sections: [],
       };
     case 'later': {
       const today = localDay(ctx.now, ctx.zone);
-      const list = threads(t => t.workflow.status === 'later' && !away(t), spec.accountId).sort(
+      const list = threadRows(
+        ctx,
+        t => t.workflow.status === 'later' && !away(t),
+        spec.accountId,
+      ).sort(
         (a, b) =>
           (a.workflow.laterUntil ?? Infinity) - (b.workflow.laterUntil ?? Infinity) || newest(a, b),
       );
@@ -260,31 +317,35 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
       return sectioned(
         ['overdue', 'today', 'week', 'someday'].map(key => [
           key,
-          ids(list.filter(t => group(t) === key)),
+          idsOf(list.filter(t => group(t) === key)),
         ]),
       );
     }
     case 'bookmarks':
       return {
         rowType: 'Thread',
-        ids: ids(threads(t => t.workflow.bookmarked && !away(t), spec.accountId).sort(newest)),
+        ids: idsOf(
+          threadRows(ctx, t => t.workflow.bookmarked && !away(t), spec.accountId).sort(newest),
+        ),
         sections: [],
       };
     case 'replyState':
       return {
         rowType: 'Thread',
-        ids: ids(
-          threads(t => t.workflow.replyStatus === spec.status && !away(t), spec.accountId).sort(
-            newest,
-          ),
+        ids: idsOf(
+          threadRows(
+            ctx,
+            t => t.workflow.replyStatus === spec.status && !away(t),
+            spec.accountId,
+          ).sort(newest),
         ),
         sections: [],
       };
     case 'done':
       return {
         rowType: 'Thread',
-        ids: ids(
-          threads(t => t.workflow.status === 'done' && !away(t), spec.accountId).sort(
+        ids: idsOf(
+          threadRows(ctx, t => t.workflow.status === 'done' && !away(t), spec.accountId).sort(
             (a, b) => (b.workflow.doneAt ?? 0) - (a.workflow.doneAt ?? 0) || newest(a, b),
           ),
         ),
@@ -293,7 +354,7 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
     case 'drafts':
       return {
         rowType: 'Draft',
-        ids: ids(
+        ids: idsOf(
           ctx.store
             .all('Draft')
             .filter(d => (!spec.accountId || d.accountId === spec.accountId) && !d.submissionId)
@@ -304,7 +365,7 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
     case 'scheduled': {
       return {
         rowType: 'Submission',
-        ids: ids(
+        ids: idsOf(
           ctx.store
             .all('Submission')
             .filter(s => live.has(s.state) && (!spec.accountId || s.accountId === spec.accountId))
@@ -313,11 +374,17 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
         sections: [],
       };
     }
+  }
+}
+
+function otherViews(ctx: ViewContext, spec: OtherSpec): ViewResult {
+  switch (spec.kind) {
     case 'search':
       return {
         rowType: 'Thread',
-        ids: ids(
-          threads(
+        ids: idsOf(
+          threadRows(
+            ctx,
             t => matches(ctx, t, spec.query) || !!ctx.remote?.get(spec.query.text)?.includes(t.id),
             spec.accountId,
           ).sort(newest),
@@ -332,7 +399,7 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
         });
       return {
         rowType: 'Message',
-        ids: ids(
+        ids: idsOf(
           ctx.store
             .all('Message')
             .filter(m => m.threadId === spec.threadId)
@@ -349,7 +416,7 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
         });
       return {
         rowType: 'Event',
-        ids: ids(
+        ids: idsOf(
           eventsIn(ctx, spec.from, spec.to, spec.calendarIds, spec.includeDeclined).filter(
             e => spec.includeHidden || !e.hidden,
           ),
@@ -370,7 +437,7 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
         (to === undefined || instant(p.start, ctx.zone) < to);
       return {
         rowType: 'Plan',
-        ids: ids(
+        ids: idsOf(
           ctx.store
             .all('Plan')
             .filter(
@@ -387,9 +454,36 @@ export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
     case 'conversations':
       return {
         rowType: 'Conversation',
-        ids: ids(ctx.store.all('Conversation').sort((a, b) => b.updatedAt - a.updatedAt)),
+        ids: idsOf(ctx.store.all('Conversation').sort((a, b) => b.updatedAt - a.updatedAt)),
         sections: [],
       };
+  }
+}
+
+/** Runs a spec. `frozen` is a `oneByOne` window's order, taken once when it opened. */
+export function runView(ctx: ViewContext, spec: ViewSpec): ViewResult {
+  switch (spec.kind) {
+    case 'home':
+    case 'homeSection':
+    case 'oneByOne':
+    case 'lowSenders':
+    case 'lowBySender':
+      return homeView(ctx, spec);
+    case 'mailbox':
+    case 'label':
+    case 'later':
+    case 'bookmarks':
+    case 'replyState':
+    case 'done':
+    case 'drafts':
+    case 'scheduled':
+      return mailboxView(ctx, spec);
+    case 'search':
+    case 'thread':
+    case 'events':
+    case 'plans':
+    case 'conversations':
+      return otherViews(ctx, spec);
   }
 }
 

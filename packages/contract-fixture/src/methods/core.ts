@@ -75,8 +75,8 @@ export function core(fx: Fixture) {
         fail('cannotCalculateChanges', 'Aplos needs to reload this view.');
       const entries = s.log.filter(e => e.seq > since.seq && (!types || types.includes(e.type)));
       // Whole commits only, so `newState` never claims half of one; the first commit always fits.
-      let upto = s.seq,
-        unique = new Set<string>();
+      let upto = s.seq;
+      const unique = new Set<string>();
       for (const e of entries) {
         const key = `${e.type}\u0000${e.id}`;
         if (!unique.has(key) && unique.size >= maxChanges && e.seq > (entries[0]?.seq ?? 0)) {
