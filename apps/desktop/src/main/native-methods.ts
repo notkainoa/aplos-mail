@@ -16,9 +16,11 @@ import { updates, restartToUpdate, cancelInstall } from './updater';
 import { latestState } from './engine-host';
 import { cancelQuit } from './lifecycle';
 import { legacyDesktopMethods } from '@aplos/contract/allowlists';
+import { isTest, recordNotification } from './test-mode';
 
 const nativeMethods = new Set<string>(legacyDesktopMethods);
 function notify(title: string, body: string, threadId?: string) {
+  if (isTest) return recordNotification(title, body, threadId);
   if (!Notification.isSupported())
     throw new Error('Desktop notifications are unavailable on this system.');
   const notification = new Notification({ title, body, silent: !latestState?.settings.sendSound });
@@ -62,6 +64,8 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
     return true;
   }
   if (method === 'shell.open') {
+    // Test mode never opens a browser (it would take focus); the request is accepted and dropped.
+    if (isTest) return true;
     await external(payload.url);
     return true;
   }
@@ -127,6 +131,7 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
       ]).has(extname(name).toLowerCase())
     )
       throw new Error('Save this attachment to inspect it before opening.');
+    if (isTest) return true; // no other app is launched in test mode
     const directory = await mkdtemp(join(tmpdir(), 'aplos-attachment-'));
     const file = join(directory, name);
     await writeFile(file, data, { mode: 0o600 });
@@ -140,10 +145,14 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
   }
   if (method === 'system.login') {
     if (typeof payload.enabled !== 'boolean') throw new Error('Choose whether to launch at login.');
+    // Test mode touches nothing system-wide and answers as the real call does: `{ enabled }` echoing the request.
+    if (isTest) return { enabled: payload.enabled };
     app.setLoginItemSettings({ openAtLogin: payload.enabled });
     return { enabled: app.getLoginItemSettings().openAtLogin };
   }
   if (method === 'system.defaultMail') {
+    // Test mode does not register as the mailto handler; it answers `{ success: true }` as if it had.
+    if (isTest) return { success: true };
     const success = app.setAsDefaultProtocolClient('mailto');
     return { success };
   }
@@ -154,6 +163,8 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
       const status = systemPreferences.getMediaAccessStatus('microphone');
       return { granted: status === 'granted', status };
     }
+    // The macOS permission prompt is a system dialog, so test mode answers "not asked yet" instead.
+    if (isTest) return { granted: false, status: 'not-determined' };
     const granted = await systemPreferences.askForMediaAccess('microphone');
     return { granted, status: systemPreferences.getMediaAccessStatus('microphone') };
   }
