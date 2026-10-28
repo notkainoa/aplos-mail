@@ -93,7 +93,8 @@ function compileGlob(raw) {
   };
 }
 
-const bySpecificity = (a, b) => b.prefix - a.prefix || a.wildcards - b.wildcards || b.length - a.length;
+const bySpecificity = (a, b) =>
+  b.prefix - a.prefix || a.wildcards - b.wildcards || b.length - a.length;
 const sameSpecificity = (a, b) => bySpecificity(a, b) === 0;
 
 /** Returns null (unowned), { rule } or { ambiguous: true, rules } for the best matching rule. */
@@ -110,7 +111,13 @@ export function resolveOwner(rules, file) {
 
 // Paths that are shared in every OWNERS.md (roadmap section 7: append-only logs; the lockfile only
 // changes together with a manifest). An explicit row for the same glob overrides the built-in one.
-export const BUILTIN_SHARED = ['PROGRESS.md', 'DECISIONS.md', 'TODO.md', 'plans/STATUS.md', 'package-lock.json'];
+export const BUILTIN_SHARED = [
+  'PROGRESS.md',
+  'DECISIONS.md',
+  'TODO.md',
+  'plans/STATUS.md',
+  'package-lock.json',
+];
 
 const LANE_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const RESERVED = 'reserved';
@@ -130,8 +137,13 @@ const splitRow = line => {
   }
   return cells.map(cell => cell.trim());
 };
-const isSeparator = line => /^\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(line.trim()) && line.includes('-');
-const stripMarkup = cell => cell.replace(/[`*_\\]/g, ' ').trim().toLowerCase();
+const isSeparator = line =>
+  /^\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(line.trim()) && line.includes('-');
+const stripMarkup = cell =>
+  cell
+    .replace(/[`*_\\]/g, ' ')
+    .trim()
+    .toLowerCase();
 
 function splitTopLevel(text) {
   const out = [];
@@ -156,16 +168,18 @@ function splitTopLevel(text) {
  * split on commas and <br>.
  */
 function extractGlobs(cell) {
-  const text = cell
-    .replace(/\((?:except|but not)\b[^)]*\)/gi, '')
-    .split(/\.\s+(?=[A-Z])/)[0];
+  const text = cell.replace(/\((?:except|but not)\b[^)]*\)/gi, '').split(/\.\s+(?=[A-Z])/)[0];
   const ticks = [...text.matchAll(/`([^`]+)`/g)].map(m => m[1]);
   const pieces = ticks.length ? ticks : [text.replace(/<br\s*\/?>/gi, ',')];
   return pieces.flatMap(splitTopLevel).filter(glob => !/^(-|—|–|n\/a)$/i.test(glob));
 }
 
 // Strips backticks, escapes and **bold** but keeps a bare "*" (the shared lane).
-const cleanCell = cell => cell.replace(/\*\*(.+?)\*\*/g, '$1').replace(/[`\\]/g, '').trim();
+const cleanCell = cell =>
+  cell
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/[`\\]/g, '')
+    .trim();
 const normalizeLane = cell => {
   const lane = cleanCell(cell).toLowerCase();
   return lane === 'all' ? SHARED : lane;
@@ -180,7 +194,9 @@ function reservedSegments(pathCell) {
   const first = pathCell.split(/\.\s+(?=[A-Z])/)[0];
   return first.split(';').map(segment => {
     const labelled = segment.match(/^\s*`([a-z0-9-]+)`\s*:(.*)$/s);
-    return labelled ? { lane: labelled[1], globs: extractGlobs(labelled[2]) } : { lane: RESERVED, globs: extractGlobs(segment) };
+    return labelled
+      ? { lane: labelled[1], globs: extractGlobs(labelled[2]) }
+      : { lane: RESERVED, globs: extractGlobs(segment) };
   });
 }
 
@@ -196,11 +212,14 @@ export function parseOwners(text) {
   const addRules = (globs, lane, line, where) => {
     for (const raw of globs) {
       if (raw.trim().endsWith('/')) {
-        warnings.push(`${where}: glob "${raw}" ends with "/" and is ignored; write "${raw.trim()}**" for everything below`);
+        warnings.push(
+          `${where}: glob "${raw}" ends with "/" and is ignored; write "${raw.trim()}**" for everything below`,
+        );
         continue;
       }
       try {
-        for (const expanded of expandBraces(raw)) rules.push({ ...compileGlob(expanded), lane, line });
+        for (const expanded of expandBraces(raw))
+          rules.push({ ...compileGlob(expanded), lane, line });
       } catch (error) {
         errors.push(`${where}: ${error.message}`);
       }
@@ -218,29 +237,44 @@ export function parseOwners(text) {
     }
     if (!line.includes('|') || !lines[i + 1]?.includes('|') || !isSeparator(lines[i + 1])) continue;
     const start = i + 1;
-    if (!line.trim().startsWith('|')) errors.push(`line ${start}: table header must start with "|"`);
+    if (!line.trim().startsWith('|'))
+      errors.push(`line ${start}: table header must start with "|"`);
     const header = splitRow(line).map(stripMarkup);
     const pathCol = header.findIndex(h => h === 'path' || h === 'paths');
     const laneCol = header.includes('lane') ? header.indexOf('lane') : header.indexOf('owner');
     const threadCol = header.indexOf('thread');
-    if (pathCol !== -1 && laneCol === -1) errors.push(`line ${start}: table has a Path column but no Lane column`);
-    if (laneCol !== -1 && pathCol === -1) errors.push(`line ${start}: table has a Lane column but no Path column`);
+    if (pathCol !== -1 && laneCol === -1)
+      errors.push(`line ${start}: table has a Path column but no Lane column`);
+    if (laneCol !== -1 && pathCol === -1)
+      errors.push(`line ${start}: table has a Lane column but no Path column`);
     let row = i + 2;
-    for (; row < lines.length && lines[row].trim() && !/^#{1,6}\s/.test(lines[row]) && !/^\s*(```|~~~)/.test(lines[row]); row++) {
+    for (
+      ;
+      row < lines.length &&
+      lines[row].trim() &&
+      !/^#{1,6}\s/.test(lines[row]) &&
+      !/^\s*(```|~~~)/.test(lines[row]);
+      row++
+    ) {
       if (pathCol === -1 || laneCol === -1) continue;
       const where = `line ${row + 1}`;
       if (!lines[row].trim().startsWith('|')) {
-        errors.push(`${where}: table row must start with "|" (a row without it is dropped from the table)`);
+        errors.push(
+          `${where}: table row must start with "|" (a row without it is dropped from the table)`,
+        );
         continue;
       }
       const cells = splitRow(lines[row]);
       if (cells.length !== header.length) {
-        errors.push(`${where}: row has ${cells.length} cell(s) but the header has ${header.length} (unescaped or escaped "|" inside a cell?)`);
+        errors.push(
+          `${where}: row has ${cells.length} cell(s) but the header has ${header.length} (unescaped or escaped "|" inside a cell?)`,
+        );
         continue;
       }
       const laneCell = cleanCell(cells[laneCol]);
       if (/^round\s*2\b|reserved/i.test(laneCell)) {
-        for (const { lane, globs } of reservedSegments(cells[pathCol])) addRules(globs, lane, row + 1, where);
+        for (const { lane, globs } of reservedSegments(cells[pathCol]))
+          addRules(globs, lane, row + 1, where);
         continue;
       }
       const lane = normalizeLane(cells[laneCol]);
@@ -251,29 +285,36 @@ export function parseOwners(text) {
         continue;
       }
       if (lane !== SHARED && !LANE_NAME.test(lane)) {
-        errors.push(`${where}: invalid lane "${lane}" (a lane is a lowercase slug such as eng-store, or * for shared)`);
+        errors.push(
+          `${where}: invalid lane "${lane}" (a lane is a lowercase slug such as eng-store, or * for shared)`,
+        );
         continue;
       }
       const thread = threadCol === -1 ? headingThread : cleanCell(cells[threadCol]);
       if (thread && lane !== SHARED) {
         const known = laneThread.get(lane);
-        if (known && known !== thread) errors.push(`${where}: lane ${lane} is in thread "${thread}" but earlier in "${known}"`);
+        if (known && known !== thread)
+          errors.push(`${where}: lane ${lane} is in thread "${thread}" but earlier in "${known}"`);
         else laneThread.set(lane, thread);
       }
       addRules(globs, lane, row + 1, where);
     }
     i = row - 1;
   }
-  if (!rules.length) errors.push('no ownership rows found (need a table with Path and Lane columns)');
+  if (!rules.length)
+    errors.push('no ownership rows found (need a table with Path and Lane columns)');
   for (const glob of BUILTIN_SHARED) {
-    if (!rules.some(rule => rule.glob === glob)) rules.push({ ...compileGlob(glob), lane: SHARED, line: 0, builtin: true });
+    if (!rules.some(rule => rule.glob === glob))
+      rules.push({ ...compileGlob(glob), lane: SHARED, line: 0, builtin: true });
   }
   // The same glob given to two different lanes is a tie by construction.
   const seen = new Map();
   for (const rule of rules) {
     const earlier = seen.get(rule.glob);
     if (earlier && earlier.lane !== rule.lane) {
-      errors.push(`tie: glob ${rule.glob} is listed for ${earlier.lane} (line ${earlier.line}) and ${rule.lane} (line ${rule.line})`);
+      errors.push(
+        `tie: glob ${rule.glob} is listed for ${earlier.lane} (line ${earlier.line}) and ${rule.lane} (line ${rule.line})`,
+      );
     } else if (!earlier) seen.set(rule.glob, rule);
   }
   const lanes = new Set(rules.map(rule => rule.lane).filter(lane => lane !== SHARED));
@@ -286,10 +327,17 @@ class UsageError extends Error {}
 
 function git(args, cwd, { allowFail = false } = {}) {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      maxBuffer: 256 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
   } catch (error) {
     if (allowFail) return null;
-    throw new UsageError(`git ${args.join(' ')} failed: ${String(error.stderr ?? error.message).trim()}`);
+    throw new UsageError(
+      `git ${args.join(' ')} failed: ${String(error.stderr ?? error.message).trim()}`,
+    );
   }
 }
 
@@ -307,13 +355,24 @@ function parseArgs(argv) {
       const value = inline ?? argv[++i];
       if (value === undefined) throw new UsageError(`--${name} needs a value`);
       opts[name] = value;
-    } else throw new UsageError(`unknown argument ${arg} (see the header of scripts/audit/owners-check.mjs)`);
+    } else
+      throw new UsageError(
+        `unknown argument ${arg} (see the header of scripts/audit/owners-check.mjs)`,
+      );
   }
   return opts;
 }
 
-const csv = value => String(value ?? '').split(/[,\s]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
-const normalizeName = name => name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const csv = value =>
+  String(value ?? '')
+    .split(/[,\s]+/)
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+const normalizeName = name =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 
 /**
  * Lanes of rv/thread/<name>: the threads named exactly <name> (punctuation and case ignored), else
@@ -325,11 +384,17 @@ function lanesForThread(name, laneThread, known) {
   const wanted = normalizeName(name);
   const entries = [...laneThread].map(([lane, thread]) => [lane, normalizeName(thread)]);
   const exact = entries.filter(([, thread]) => thread === wanted);
-  const pool = exact.length ? exact : entries.filter(([, thread]) => thread.startsWith(`${wanted} `));
+  const pool = exact.length
+    ? exact
+    : entries.filter(([, thread]) => thread.startsWith(`${wanted} `));
   const threads = new Set(pool.map(([, thread]) => thread));
-  if (threads.size > 1) throw new UsageError(`thread "${name}" is ambiguous (it fits ${[...threads].join(', ')}); use the full thread name`);
+  if (threads.size > 1)
+    throw new UsageError(
+      `thread "${name}" is ambiguous (it fits ${[...threads].join(', ')}); use the full thread name`,
+    );
   const lanes = pool.map(([lane]) => lane);
-  for (const lane of known) if (normalizeName(lane) === wanted && !lanes.includes(lane)) lanes.push(lane);
+  for (const lane of known)
+    if (normalizeName(lane) === wanted && !lanes.includes(lane)) lanes.push(lane);
   return lanes;
 }
 
@@ -342,23 +407,31 @@ function actingLanes(opts, branch, { lanes: known, laneThread }) {
   if (opts.lane) {
     const lanes = csv(opts.lane);
     const unknown = lanes.filter(lane => !known.has(lane));
-    if (unknown.length) throw new UsageError(`unknown lane ${unknown.join(', ')}; known lanes: ${[...known].join(', ')}`);
+    if (unknown.length)
+      throw new UsageError(
+        `unknown lane ${unknown.join(', ')}; known lanes: ${[...known].join(', ')}`,
+      );
     return lanes;
   }
   const thread = branch.match(/^rv\/thread\/(.+)$/);
   if (thread) {
     const lanes = lanesForThread(thread[1], laneThread, known);
-    if (!lanes.length) throw new UsageError(`no lanes belong to thread "${thread[1]}" in OWNERS.md; pass --lane`);
+    if (!lanes.length)
+      throw new UsageError(`no lanes belong to thread "${thread[1]}" in OWNERS.md; pass --lane`);
     return lanes;
   }
   const lane = branch.match(/^rv\/([^/]+)\/.+$/)?.[1];
   if (lane && known.has(lane)) return [lane];
-  throw new UsageError(`cannot tell the acting lane from branch "${branch}"; pass --lane <lane> (known lanes: ${[...known].join(', ')})`);
+  throw new UsageError(
+    `cannot tell the acting lane from branch "${branch}"; pass --lane <lane> (known lanes: ${[...known].join(', ')})`,
+  );
 }
 
 /** The branch the rules are read from (its tip, like CODEOWNERS) and the merge-base to diff from. */
 function integrationRef(cwd) {
-  for (const ref of ['origin/revamp', 'revamp']) if (git(['rev-parse', '--verify', '-q', `${ref}^{commit}`], cwd, { allowFail: true })) return ref;
+  for (const ref of ['origin/revamp', 'revamp'])
+    if (git(['rev-parse', '--verify', '-q', `${ref}^{commit}`], cwd, { allowFail: true }))
+      return ref;
   return null;
 }
 const NO_REF = 'cannot find origin/revamp or revamp to diff against; pass --base <ref>';
@@ -367,14 +440,15 @@ const NO_REF = 'cannot find origin/revamp or revamp to diff against; pass --base
 function nameStatusFiles(output) {
   const tokens = output.split('\0');
   const files = new Set();
-  for (let i = 0; i < tokens.length && tokens[i]; ) {
+  for (let i = 0; i < tokens.length && tokens[i];) {
     const status = tokens[i++];
     const count = /^[RC]/.test(status) ? 2 : 1;
     for (let k = 0; k < count; k++) files.add(tokens[i++]);
   }
   return files;
 }
-const changedFiles = (base, head, cwd) => [...nameStatusFiles(git(['diff', '--name-status', '-M', '-z', `${base}...${head}`], cwd))].sort();
+const changedFiles = (base, head, cwd) =>
+  [...nameStatusFiles(git(['diff', '--name-status', '-M', '-z', `${base}...${head}`], cwd))].sort();
 
 /** Approvals that cover the whole change: --approved and PR labels. */
 function globalApprovals(opts, cwd) {
@@ -384,12 +458,24 @@ function globalApprovals(opts, cwd) {
   if (opts.pr) {
     let labels;
     try {
-      const out = execFileSync('gh', ['pr', 'view', String(opts.pr), '--json', 'labels'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      const out = execFileSync('gh', ['pr', 'view', String(opts.pr), '--json', 'labels'], {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
       labels = JSON.parse(out).labels.map(label => label.name);
     } catch (error) {
-      throw new UsageError(`could not read labels of PR ${opts.pr} with gh: ${String(error.stderr ?? error.message).trim()}`);
+      throw new UsageError(
+        `could not read labels of PR ${opts.pr} with gh: ${String(error.stderr ?? error.message).trim()}`,
+      );
     }
-    add(labels.map(l => l.match(/^lane-approved:(.+)$/i)?.[1]).filter(Boolean).map(l => l.toLowerCase()), 'PR label');
+    add(
+      labels
+        .map(l => l.match(/^lane-approved:(.+)$/i)?.[1])
+        .filter(Boolean)
+        .map(l => l.toLowerCase()),
+      'PR label',
+    );
   }
   return found;
 }
@@ -403,33 +489,65 @@ function globalApprovals(opts, cwd) {
 function commitTrailers(base, head, cwd, knownLanes) {
   const commits = [];
   const ignored = [];
-  const shas = git(['rev-list', '--no-merges', `${base}..${head}`], cwd).split('\n').filter(Boolean);
+  const shas = git(['rev-list', '--no-merges', `${base}..${head}`], cwd)
+    .split('\n')
+    .filter(Boolean);
   for (const sha of shas) {
-    const raw = git(['log', '-1', '--format=%(trailers:key=Lane-Approved,valueonly,unfold)%x00%(trailers:key=Owners-Exempt,valueonly,unfold)', sha], cwd);
+    const raw = git(
+      [
+        'log',
+        '-1',
+        '--format=%(trailers:key=Lane-Approved,valueonly,unfold)%x00%(trailers:key=Owners-Exempt,valueonly,unfold)',
+        sha,
+      ],
+      cwd,
+    );
     const [approvedRaw, exemptRaw = ''] = raw.split('\0');
     const approves = new Set();
-    for (const item of approvedRaw.split(/[\n,]/).map(v => v.trim()).filter(Boolean)) {
+    for (const item of approvedRaw
+      .split(/[\n,]/)
+      .map(v => v.trim())
+      .filter(Boolean)) {
       if (LANE_NAME.test(item) && knownLanes.has(item)) approves.add(item);
       else ignored.push({ commit: sha.slice(0, 7), value: item });
     }
-    const files = nameStatusFiles(git(['diff-tree', '--root', '--no-commit-id', '--name-status', '-r', '-M', '-z', sha], cwd));
-    commits.push({ sha: sha.slice(0, 7), approves, exempt: /^\s*phase-0\s*$/i.test(exemptRaw.trim()), files });
+    const files = nameStatusFiles(
+      git(['diff-tree', '--root', '--no-commit-id', '--name-status', '-r', '-M', '-z', sha], cwd),
+    );
+    commits.push({
+      sha: sha.slice(0, 7),
+      approves,
+      exempt: /^\s*phase-0\s*$/i.test(exemptRaw.trim()),
+      files,
+    });
   }
   return { commits, ignored };
 }
 
 // ---------- modes ----------
 
-const pad = (rows) => {
+const pad = rows => {
   const widths = rows[0].map((_, col) => Math.max(...rows.map(row => String(row[col]).length)));
-  return rows.map(row => '  ' + row.map((cell, col) => String(cell).padEnd(widths[col])).join('  ').trimEnd()).join('\n');
+  return rows
+    .map(
+      row =>
+        '  ' +
+        row
+          .map((cell, col) => String(cell).padEnd(widths[col]))
+          .join('  ')
+          .trimEnd(),
+    )
+    .join('\n');
 };
 
 function topAreas(files) {
   const counts = new Map();
   for (const file of files) {
     const parts = file.split('/');
-    const area = parts.length > 2 && ['apps', 'packages'].includes(parts[0]) ? parts.slice(0, 2).join('/') : parts[0];
+    const area =
+      parts.length > 2 && ['apps', 'packages'].includes(parts[0])
+        ? parts.slice(0, 2).join('/')
+        : parts[0];
     counts.set(area, (counts.get(area) ?? 0) + 1);
   }
   return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
@@ -443,21 +561,52 @@ function runValidate(parsed, opts, cwd, out) {
   for (const file of tracked) {
     const owner = resolveOwner(parsed.rules, file);
     if (!owner) unowned.push(file);
-    else if (owner.ambiguous) tieFiles.set(owner.lanes.join(' vs '), [...(tieFiles.get(owner.lanes.join(' vs ')) ?? []), file]);
+    else if (owner.ambiguous)
+      tieFiles.set(owner.lanes.join(' vs '), [
+        ...(tieFiles.get(owner.lanes.join(' vs ')) ?? []),
+        file,
+      ]);
   }
-  for (const [lanes, files] of tieFiles) errors.push(`tie between ${lanes} on ${files.length} file(s), e.g. ${files[0]}`);
+  for (const [lanes, files] of tieFiles)
+    errors.push(`tie between ${lanes} on ${files.length} file(s), e.g. ${files[0]}`);
   const areas = topAreas(unowned);
   const warnings = parsed.warnings;
-  const result = { mode: 'validate', ok: !errors.length && !(opts.strict && unowned.length), errors, warnings, trackedFiles: tracked.length, unowned: unowned.length, unownedAreas: Object.fromEntries(areas), unownedFiles: unowned };
-  if (opts.json) return out(JSON.stringify(result, null, 2)), result.ok;
-  out(`owners-check --validate: ${parsed.rules.length} rule(s), ${new Set(parsed.rules.map(r => r.lane)).size} lane(s), ${tracked.length} tracked file(s)`);
+  const result = {
+    mode: 'validate',
+    ok: !errors.length && !(opts.strict && unowned.length),
+    errors,
+    warnings,
+    trackedFiles: tracked.length,
+    unowned: unowned.length,
+    unownedAreas: Object.fromEntries(areas),
+    unownedFiles: unowned,
+  };
+  if (opts.json) return (out(JSON.stringify(result, null, 2)), result.ok);
+  out(
+    `owners-check --validate: ${parsed.rules.length} rule(s), ${new Set(parsed.rules.map(r => r.lane)).size} lane(s), ${tracked.length} tracked file(s)`,
+  );
   if (errors.length) out(`errors (${errors.length}):\n${errors.map(e => `  ${e}`).join('\n')}`);
-  if (warnings.length) out(`warnings (${warnings.length}):\n${warnings.map(w => `  ${w}`).join('\n')}`);
+  if (warnings.length)
+    out(`warnings (${warnings.length}):\n${warnings.map(w => `  ${w}`).join('\n')}`);
   if (unowned.length) {
-    out(`warning: ${unowned.length} tracked file(s) match no glob:\n${pad(areas.map(([area, n]) => [area, n]))}`);
-    out(unowned.slice(0, 15).map(f => `    ${f}`).join('\n') + (unowned.length > 15 ? `\n    ... and ${unowned.length - 15} more (use --json for all)` : ''));
+    out(
+      `warning: ${unowned.length} tracked file(s) match no glob:\n${pad(areas.map(([area, n]) => [area, n]))}`,
+    );
+    out(
+      unowned
+        .slice(0, 15)
+        .map(f => `    ${f}`)
+        .join('\n') +
+        (unowned.length > 15
+          ? `\n    ... and ${unowned.length - 15} more (use --json for all)`
+          : ''),
+    );
   }
-  out(result.ok ? `OK: OWNERS.md is valid${unowned.length ? ` (${unowned.length} unowned file(s), pass --strict to fail on them)` : ''}` : `FAIL: ${errors.length ? `${errors.length} error(s)` : `${unowned.length} unowned file(s) under --strict`}`);
+  out(
+    result.ok
+      ? `OK: OWNERS.md is valid${unowned.length ? ` (${unowned.length} unowned file(s), pass --strict to fail on them)` : ''}`
+      : `FAIL: ${errors.length ? `${errors.length} error(s)` : `${unowned.length} unowned file(s) under --strict`}`,
+  );
   return result.ok;
 }
 
@@ -470,22 +619,38 @@ function runCheck(parsed, opts, cwd, out, rulesRef) {
     else out(text);
     return result.ok;
   };
-  if (!files.length) return finish({ mode: 'check', ok: true, base, head, changedFiles: [], violations: [] }, `OK: no changed files in ${base.slice(0, 10)}...${head}`);
+  if (!files.length)
+    return finish(
+      { mode: 'check', ok: true, base, head, changedFiles: [], violations: [] },
+      `OK: no changed files in ${base.slice(0, 10)}...${head}`,
+    );
   const branch = currentBranch(cwd);
   if (!opts.lane && /^(revamp|main)$/.test(branch) && !process.env.GITHUB_BASE_REF) {
-    return finish({ mode: 'check', ok: true, skipped: true, base, head, changedFiles: files, violations: [] }, `skipped: ${branch} is an integration branch; ownership is checked on pull requests (pass --lane to check anyway)`);
+    return finish(
+      { mode: 'check', ok: true, skipped: true, base, head, changedFiles: files, violations: [] },
+      `skipped: ${branch} is an integration branch; ownership is checked on pull requests (pass --lane to check anyway)`,
+    );
   }
   const lanes = actingLanes(opts, branch, parsed);
   const approved = globalApprovals(opts, cwd);
   const exemptAllowed = lanes.includes('integrator') || approved.has('integrator');
-  const trailers = opts.trailers === false ? { commits: [], ignored: [] } : commitTrailers(base, head, cwd, parsed.lanes);
+  const trailers =
+    opts.trailers === false
+      ? { commits: [], ignored: [] }
+      : commitTrailers(base, head, cwd, parsed.lanes);
   const trailerSources = new Map();
   // A file is covered by trailers when it was touched by at least one commit and every commit that
   // touched it approves the owning lane (or is an authorised phase-0 commit).
   const coveredByTrailer = (file, owner) => {
     const touching = trailers.commits.filter(commit => commit.files.has(file));
-    const covered = touching.length > 0 && touching.every(commit => (owner && commit.approves.has(owner)) || (commit.exempt && exemptAllowed));
-    if (covered) for (const commit of touching) trailerSources.set(`${owner ?? 'phase-0'} (trailer ${commit.sha})`, true);
+    const covered =
+      touching.length > 0 &&
+      touching.every(
+        commit => (owner && commit.approves.has(owner)) || (commit.exempt && exemptAllowed),
+      );
+    if (covered)
+      for (const commit of touching)
+        trailerSources.set(`${owner ?? 'phase-0'} (trailer ${commit.sha})`, true);
     return covered;
   };
   const violations = [];
@@ -494,46 +659,97 @@ function runCheck(parsed, opts, cwd, out, rulesRef) {
     if (!owner) {
       if (!coveredByTrailer(file, null)) violations.push({ file, owner: null, reason: 'unowned' });
     } else if (owner.ambiguous) {
-      if (!coveredByTrailer(file, null)) violations.push({ file, owner: owner.lanes.join(' vs '), reason: 'ambiguous' });
+      if (!coveredByTrailer(file, null))
+        violations.push({ file, owner: owner.lanes.join(' vs '), reason: 'ambiguous' });
     } else {
       const lane = owner.rule.lane;
-      if (lane !== SHARED && !lanes.includes(lane) && !approved.has(lane) && !coveredByTrailer(file, lane)) violations.push({ file, owner: lane, reason: 'other-lane' });
+      if (
+        lane !== SHARED &&
+        !lanes.includes(lane) &&
+        !approved.has(lane) &&
+        !coveredByTrailer(file, lane)
+      )
+        violations.push({ file, owner: lane, reason: 'other-lane' });
     }
   }
   const ok = !violations.length;
-  const approvals = [...[...approved].map(([lane, source]) => `${lane} (${source})`), ...trailerSources.keys()];
-  const result = { mode: 'check', ok, base, head, actingLanes: lanes, approvals, ignoredTrailers: trailers.ignored, changedFiles: files, violations };
-  if (opts.json) return out(JSON.stringify(result, null, 2)), ok;
-  out(`owners-check: acting lane(s) ${lanes.join(', ')}; ${files.length} changed file(s) in ${base.slice(0, 10)}...${head}`);
+  const approvals = [
+    ...[...approved].map(([lane, source]) => `${lane} (${source})`),
+    ...trailerSources.keys(),
+  ];
+  const result = {
+    mode: 'check',
+    ok,
+    base,
+    head,
+    actingLanes: lanes,
+    approvals,
+    ignoredTrailers: trailers.ignored,
+    changedFiles: files,
+    violations,
+  };
+  if (opts.json) return (out(JSON.stringify(result, null, 2)), ok);
+  out(
+    `owners-check: acting lane(s) ${lanes.join(', ')}; ${files.length} changed file(s) in ${base.slice(0, 10)}...${head}`,
+  );
   if (approvals.length) out(`approved: ${approvals.join(', ')}`);
-  for (const { commit, value } of trailers.ignored) out(`ignored Lane-Approved value in ${commit}: "${value}" is not a single known lane name`);
+  for (const { commit, value } of trailers.ignored)
+    out(`ignored Lane-Approved value in ${commit}: "${value}" is not a single known lane name`);
   if (!ok) {
     const shown = violations.slice(0, MAX_ROWS);
-    out(pad([['FILE', 'OWNER', 'ACTING'], ...shown.map(v => [v.file, v.owner ?? '(unowned)', lanes.join(',')])]));
-    if (violations.length > shown.length) out(`  ... and ${violations.length - shown.length} more (use --json for all)`);
-    if (violations.some(v => v.reason === 'unowned')) out('Unowned file(s): ask the Integrator to add them to plans/OWNERS.md.');
-    if (violations.some(v => v.reason === 'ambiguous')) out('Ambiguous file(s): two lanes own the same path equally; the Integrator must fix plans/OWNERS.md.');
-    if (violations.some(v => v.reason === 'other-lane')) out('Other-lane file(s): get the owning lane to approve (commit trailer "Lane-Approved: <lane>" on every commit touching the file, --approved <lane>, or PR label "lane-approved:<lane>").');
+    out(
+      pad([
+        ['FILE', 'OWNER', 'ACTING'],
+        ...shown.map(v => [v.file, v.owner ?? '(unowned)', lanes.join(',')]),
+      ]),
+    );
+    if (violations.length > shown.length)
+      out(`  ... and ${violations.length - shown.length} more (use --json for all)`);
+    if (violations.some(v => v.reason === 'unowned'))
+      out('Unowned file(s): ask the Integrator to add them to plans/OWNERS.md.');
+    if (violations.some(v => v.reason === 'ambiguous'))
+      out(
+        'Ambiguous file(s): two lanes own the same path equally; the Integrator must fix plans/OWNERS.md.',
+      );
+    if (violations.some(v => v.reason === 'other-lane'))
+      out(
+        'Other-lane file(s): get the owning lane to approve (commit trailer "Lane-Approved: <lane>" on every commit touching the file, --approved <lane>, or PR label "lane-approved:<lane>").',
+      );
   }
-  out(ok ? `OK: ${files.length} file(s) within ${lanes.join(', ')}, shared or approved` : `FAIL: ${violations.length} of ${files.length} changed file(s) outside lane ${lanes.join(', ')}`);
+  out(
+    ok
+      ? `OK: ${files.length} file(s) within ${lanes.join(', ')}, shared or approved`
+      : `FAIL: ${violations.length} of ${files.length} changed file(s) outside lane ${lanes.join(', ')}`,
+  );
   return ok;
 }
 
 export function main(argv, { cwd = process.cwd(), out = console.log } = {}) {
   const opts = parseArgs(argv);
   if (opts.help) {
-    out('usage: node scripts/audit/owners-check.mjs [--base <ref>] [--head <ref>] [--lane <lane,...>] [--approved <lane,...>] [--pr <n>] [--owners <file>] [--validate] [--strict] [--no-trailers] [--json]');
+    out(
+      'usage: node scripts/audit/owners-check.mjs [--base <ref>] [--head <ref>] [--lane <lane,...>] [--approved <lane,...>] [--pr <n>] [--owners <file>] [--validate] [--strict] [--no-trailers] [--json]',
+    );
     return 0;
   }
   const root = git(['rev-parse', '--show-toplevel'], cwd).trim();
   const pending = () => {
-    out(opts.json ? JSON.stringify({ pending: true, ok: true, message: `${DEFAULT_OWNERS} not on this branch yet` }) : `pending: ${DEFAULT_OWNERS} not on this branch yet`);
+    out(
+      opts.json
+        ? JSON.stringify({
+            pending: true,
+            ok: true,
+            message: `${DEFAULT_OWNERS} not on this branch yet`,
+          })
+        : `pending: ${DEFAULT_OWNERS} not on this branch yet`,
+    );
     return 0;
   };
   // The change check enforces the rules of the integration branch (the --base ref, or the tip of
   // origin/revamp), never the head's own copy: a PR cannot delete or rewrite OWNERS.md to pass.
   const rulesRef = opts.validate ? undefined : (opts.base ?? integrationRef(root));
-  if (!opts.validate && !rulesRef && (opts.owners || existsSync(path.join(root, DEFAULT_OWNERS)))) throw new UsageError(NO_REF);
+  if (!opts.validate && !rulesRef && (opts.owners || existsSync(path.join(root, DEFAULT_OWNERS))))
+    throw new UsageError(NO_REF);
   let text;
   let label = DEFAULT_OWNERS;
   if (opts.owners) {
@@ -546,16 +762,22 @@ export function main(argv, { cwd = process.cwd(), out = console.log } = {}) {
     if (!existsSync(file)) return pending();
     text = readFileSync(file, 'utf8');
   } else {
-    text = rulesRef ? git(['show', `${rulesRef}:${DEFAULT_OWNERS}`], root, { allowFail: true }) : null;
+    text = rulesRef
+      ? git(['show', `${rulesRef}:${DEFAULT_OWNERS}`], root, { allowFail: true })
+      : null;
     if (text === null) return pending();
     label = `${rulesRef}:${DEFAULT_OWNERS}`;
   }
   const parsed = parseOwners(text);
   if (!opts.validate && parsed.errors.length) {
-    out(`owners-check: ${label} is invalid:\n${parsed.errors.map(e => `  ${e}`).join('\n')}\nRun with --validate for details.`);
+    out(
+      `owners-check: ${label} is invalid:\n${parsed.errors.map(e => `  ${e}`).join('\n')}\nRun with --validate for details.`,
+    );
     return 1;
   }
-  const ok = opts.validate ? runValidate(parsed, opts, root, out) : runCheck(parsed, opts, root, out, rulesRef);
+  const ok = opts.validate
+    ? runValidate(parsed, opts, root, out)
+    : runCheck(parsed, opts, root, out, rulesRef);
   return ok ? 0 : 1;
 }
 

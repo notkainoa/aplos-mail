@@ -37,7 +37,8 @@ export const boundaryZones = [
       },
       {
         builtin: true,
-        message: 'engine core takes no node: or Node builtin imports; go through a port (ARCHITECTURE 2.6).',
+        message:
+          'engine core takes no node: or Node builtin imports; go through a port (ARCHITECTURE 2.6).',
       },
     ],
   },
@@ -79,7 +80,9 @@ export const boundaryZones = [
     name: 'legacy',
     from: ['**'],
     except: LEGACY_ROOTS,
-    deny: [{ segment: 'legacy', message: 'legacy/ code may be imported only by other legacy code.' }],
+    deny: [
+      { segment: 'legacy', message: 'legacy/ code may be imported only by other legacy code.' },
+    ],
   },
 ];
 
@@ -127,7 +130,11 @@ export default [
   },
   {
     files: [RENDERER],
-    rules: { 'no-eval': ['error', { allowIndirect: false }], 'no-new-func': 'error', 'no-implied-eval': 'error' },
+    rules: {
+      'no-eval': ['error', { allowIndirect: false }],
+      'no-new-func': 'error',
+      'no-implied-eval': 'error',
+    },
   },
   { files: [MAILFRAME], rules: { 'aplos/no-dangerous-html': 'off' } },
   {

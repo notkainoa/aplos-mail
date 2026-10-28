@@ -34,8 +34,22 @@ Text and tables without Path and Lane columns are ignored.
 | \`TODO.md\` | all | | shared |
 `;
 
-const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-const GIT_ARGS = ['-c', 'user.name=Test Author', '-c', 'user.email=k@kainoa.me', '-c', 'commit.gpgsign=false', '-c', 'init.defaultBranch=main'];
+const GIT_ENV = {
+  ...process.env,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1',
+};
+const GIT_ARGS = [
+  '-c',
+  'user.name=Test Author',
+  '-c',
+  'user.email=k@kainoa.me',
+  '-c',
+  'commit.gpgsign=false',
+  '-c',
+  'init.defaultBranch=main',
+];
 
 const git = (cwd, ...args) => {
   const result = spawnSync('git', [...GIT_ARGS, ...args], { cwd, env: GIT_ENV, encoding: 'utf8' });
@@ -70,7 +84,11 @@ function commit(dir, files, message = ['change']) {
 }
 
 function run(dir, args = [], env = {}) {
-  const result = spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, env: { ...GIT_ENV, ...env }, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [SCRIPT, ...args], {
+    cwd: dir,
+    env: { ...GIT_ENV, ...env },
+    encoding: 'utf8',
+  });
   return { code: result.status, out: result.stdout, err: result.stderr };
 }
 
@@ -98,7 +116,10 @@ describe('change check', () => {
 
   test('a Lane-Approved commit trailer approves the owning lane', () => {
     const dir = makeRepo();
-    commit(dir, { 'packages/engine/src/store.ts': 'y' }, ['touch engine', 'Lane-Approved: eng-store']);
+    commit(dir, { 'packages/engine/src/store.ts': 'y' }, [
+      'touch engine',
+      'Lane-Approved: eng-store',
+    ]);
     const res = check(dir);
     assert.equal(res.code, 0, res.out);
     assert.match(res.out, /eng-store \(trailer [0-9a-f]{7}\)/);
@@ -106,7 +127,10 @@ describe('change check', () => {
 
   test('a trailer for another lane does not approve', () => {
     const dir = makeRepo();
-    commit(dir, { 'packages/engine/src/store.ts': 'y' }, ['touch engine', 'Lane-Approved: integrator']);
+    commit(dir, { 'packages/engine/src/store.ts': 'y' }, [
+      'touch engine',
+      'Lane-Approved: integrator',
+    ]);
     assert.equal(check(dir).code, 1);
   });
 
@@ -122,9 +146,14 @@ describe('change check', () => {
     commit(dir, { 'plans/DESIGN.md': 'y' });
     const bin = path.join(tmpRoot, `bin-${counter++}`);
     mkdirSync(bin);
-    writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\necho '{"labels":[{"name":"bug"},{"name":"lane-approved:integrator"}]}'\n`);
+    writeFileSync(
+      path.join(bin, 'gh'),
+      `#!/bin/sh\necho '{"labels":[{"name":"bug"},{"name":"lane-approved:integrator"}]}'\n`,
+    );
     chmodSync(path.join(bin, 'gh'), 0o755);
-    const withLabel = check(dir, ['--pr', '7'], { PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+    const withLabel = check(dir, ['--pr', '7'], {
+      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+    });
     assert.equal(withLabel.code, 0, withLabel.out + withLabel.err);
     assert.match(withLabel.out, /integrator \(PR label\)/);
   });
@@ -143,7 +172,10 @@ describe('change check', () => {
 
   test('brace globs and <br> separated globs are honoured', () => {
     const dir = makeRepo({ branch: 'rv/ui-foundation/x' });
-    commit(dir, { 'apps/desktop/src/renderer/commands/a.ts': 'a', 'apps/desktop/src/renderer/ui/b.ts': 'b' });
+    commit(dir, {
+      'apps/desktop/src/renderer/commands/a.ts': 'a',
+      'apps/desktop/src/renderer/ui/b.ts': 'b',
+    });
     assert.equal(check(dir).code, 0);
     const ci = makeRepo({ branch: 'rv/plat-ci/x' });
     commit(ci, { '.github/workflows/ci.yml': 'a', 'scripts/audit/x.mjs': 'b' });
@@ -275,11 +307,18 @@ describe('glob matching and parsing', () => {
     assert.ok(!m('a/{b,c/d}/**', 'a/c/e'));
     assert.ok(m('x.mjs', 'x.mjs'));
     assert.ok(!m('x.mjs', 'xamjs'));
-    assert.deepEqual(expandBraces('m/{a,b}.{ts,js}').sort(), ['m/a.js', 'm/a.ts', 'm/b.js', 'm/b.ts']);
+    assert.deepEqual(expandBraces('m/{a,b}.{ts,js}').sort(), [
+      'm/a.js',
+      'm/a.ts',
+      'm/b.js',
+      'm/b.ts',
+    ]);
   });
 
   test('unticked <br> separated cells parse; a glob ending in "/" is ignored with a warning', () => {
-    const parsed = parseOwners('| **Paths** | `Lane` | THREAD |\n|:--|:-:|--|\n| scripts/design/**, docs/a.md<br/>x/{y,z}/**, old/ | **UI-Core** | T |\n');
+    const parsed = parseOwners(
+      '| **Paths** | `Lane` | THREAD |\n|:--|:-:|--|\n| scripts/design/**, docs/a.md<br/>x/{y,z}/**, old/ | **UI-Core** | T |\n',
+    );
     assert.deepEqual(parsed.errors, []);
     assert.equal(parsed.warnings.length, 1);
     assert.match(parsed.warnings[0], /"old\/" ends with "\/"/);
@@ -306,7 +345,11 @@ describe('rules come from the base, not from the change', () => {
     git(dir, 'commit', '-q', '-m', 'rename');
     const renamed = check(dir, ['--json']);
     assert.equal(renamed.code, 1, renamed.out);
-    assert.deepEqual(violationFiles(renamed), ['packages/engine/src/s.ts', 'plans/OWNERS.md', 'plans/OWNERS.old.md']);
+    assert.deepEqual(violationFiles(renamed), [
+      'packages/engine/src/s.ts',
+      'plans/OWNERS.md',
+      'plans/OWNERS.old.md',
+    ]);
   });
 
   test('a change cannot rewrite OWNERS.md to give itself ownership', () => {
@@ -329,20 +372,32 @@ describe('rules come from the base, not from the change', () => {
 
 describe('approval trailers', () => {
   test('prose in a trailer approves nothing; a comma separated list approves several lanes', () => {
-    const dir = makeRepo({ files: { 'packages/engine/src/s.ts': 'a', 'tools/lint/design/d.mjs': 'a' } });
-    commit(dir, { 'packages/engine/src/s.ts': 'b', 'tools/lint/design/d.mjs': 'b' }, ['touch', 'Lane-Approved: eng-store per ui-foundation review pending']);
+    const dir = makeRepo({
+      files: { 'packages/engine/src/s.ts': 'a', 'tools/lint/design/d.mjs': 'a' },
+    });
+    commit(dir, { 'packages/engine/src/s.ts': 'b', 'tools/lint/design/d.mjs': 'b' }, [
+      'touch',
+      'Lane-Approved: eng-store per ui-foundation review pending',
+    ]);
     const bad = check(dir, ['--json']);
     assert.equal(bad.code, 1);
     assert.deepEqual(JSON.parse(bad.out).approvals, []);
     assert.equal(JSON.parse(bad.out).ignoredTrailers.length, 1);
     assert.match(check(dir).out, /ignored Lane-Approved value/);
-    const fresh = makeRepo({ files: { 'packages/engine/src/s.ts': 'a', 'tools/lint/design/d.mjs': 'a' } });
-    commit(fresh, { 'packages/engine/src/s.ts': 'b', 'tools/lint/design/d.mjs': 'b' }, ['touch', 'Lane-Approved: eng-store, ui-foundation']);
+    const fresh = makeRepo({
+      files: { 'packages/engine/src/s.ts': 'a', 'tools/lint/design/d.mjs': 'a' },
+    });
+    commit(fresh, { 'packages/engine/src/s.ts': 'b', 'tools/lint/design/d.mjs': 'b' }, [
+      'touch',
+      'Lane-Approved: eng-store, ui-foundation',
+    ]);
     assert.equal(check(fresh).code, 0);
   });
 
   test('a trailer covers only the files of its own commit', () => {
-    const dir = makeRepo({ files: { 'packages/engine/src/one.ts': 'a', 'packages/engine/src/two.ts': 'a' } });
+    const dir = makeRepo({
+      files: { 'packages/engine/src/one.ts': 'a', 'packages/engine/src/two.ts': 'a' },
+    });
     commit(dir, { 'packages/engine/src/one.ts': 'b' }, ['fix one', 'Lane-Approved: eng-store']);
     commit(dir, { 'packages/engine/src/two.ts': 'rewrite' }, ['rewrite two']);
     const res = check(dir, ['--json']);
@@ -361,7 +416,10 @@ describe('approval trailers', () => {
 
   test('Owners-Exempt: phase-0 needs the integrator lane to approve it', () => {
     const dir = makeRepo({ files: { 'packages/engine/src/one.ts': 'a' } });
-    commit(dir, { 'packages/engine/src/one.ts': 'b', 'new-root/file.ts': 'x' }, ['restructure', 'Owners-Exempt: phase-0']);
+    commit(dir, { 'packages/engine/src/one.ts': 'b', 'new-root/file.ts': 'x' }, [
+      'restructure',
+      'Owners-Exempt: phase-0',
+    ]);
     assert.equal(check(dir).code, 1);
     assert.equal(check(dir, ['--approved', 'integrator']).code, 0);
     git(dir, 'checkout', '-q', '-B', 'rv/thread/integrator');
@@ -403,7 +461,9 @@ describe('table parsing', () => {
   };
 
   test('a row without a leading pipe is an error instead of being dropped', () => {
-    const parsed = parseOwners('| Path | Lane |\n|---|---|\n| `tools/lint/**` | plat-ci |\n`tools/lint/design/**` | ui-foundation |\n');
+    const parsed = parseOwners(
+      '| Path | Lane |\n|---|---|\n| `tools/lint/**` | plat-ci |\n`tools/lint/design/**` | ui-foundation |\n',
+    );
     assert.match(parsed.errors.join('\n'), /line 4: table row must start with "\|"/);
   });
 
@@ -413,12 +473,16 @@ describe('table parsing', () => {
   });
 
   test('a table with Lane but no Path column is an error', () => {
-    const parsed = parseOwners('| Path | Lane |\n|---|---|\n| `a/**` | x |\n\n| Lane | Owns |\n|---|---|\n| eng-store | the store |\n');
+    const parsed = parseOwners(
+      '| Path | Lane |\n|---|---|\n| `a/**` | x |\n\n| Lane | Owns |\n|---|---|\n| eng-store | the store |\n',
+    );
     assert.match(parsed.errors.join('\n'), /line 5: table has a Lane column but no Path column/);
   });
 
   test('an escaped pipe is literal and shifts nothing', () => {
-    const parsed = parseOwners('| Path | Lane | Thread |\n|---|---|---|\n| `a/**` \\| eng-store | ui-home |\n');
+    const parsed = parseOwners(
+      '| Path | Lane | Thread |\n|---|---|---|\n| `a/**` \\| eng-store | ui-home |\n',
+    );
     assert.match(parsed.errors.join('\n'), /row has 2 cell\(s\) but the header has 3/);
     const two = parseOwners('| Path | Lane |\n|---|---|\n| `a/**` \\| eng-store | ui-home |\n');
     assert.deepEqual(two.errors, []);
@@ -426,12 +490,16 @@ describe('table parsing', () => {
   });
 
   test('lane names must be slugs or *', () => {
-    const parsed = parseOwners('| Path | Lane |\n|---|---|\n| `a/**` | eng-store (assumed) |\n| `b/**` | ** |\n| `c/**` | Not A Lane |\n| `d/**` | ok-lane |\n');
+    const parsed = parseOwners(
+      '| Path | Lane |\n|---|---|\n| `a/**` | eng-store (assumed) |\n| `b/**` | ** |\n| `c/**` | Not A Lane |\n| `d/**` | ok-lane |\n',
+    );
     assert.equal(parsed.errors.filter(e => /invalid lane/.test(e)).length, 3);
   });
 
   test('built-in shared files can be overridden by an explicit row', () => {
-    const parsed = parseOwners('| Path | Lane |\n|---|---|\n| `PROGRESS.md` | integrator |\n| `a/**` | web |\n');
+    const parsed = parseOwners(
+      '| Path | Lane |\n|---|---|\n| `PROGRESS.md` | integrator |\n| `a/**` | web |\n',
+    );
     assert.equal(owner(parsed, 'PROGRESS.md'), 'integrator');
     assert.equal(owner(parsed, 'DECISIONS.md'), '*');
   });
@@ -483,14 +551,22 @@ describe('table parsing', () => {
     assert.equal(owner(parsed, 'mockups/a.png'), null);
     assert.equal(owner(parsed, 'plans/STATUS.md'), '*');
     assert.equal(owner(parsed, 'plans/x.md'), 'integrator');
-    assert.deepEqual([...parsed.laneThread], [['plat-ci', 'Platform and website'], ['web', 'Platform and website'], ['ui-foundation', 'UI-core']]);
+    assert.deepEqual(
+      [...parsed.laneThread],
+      [
+        ['plat-ci', 'Platform and website'],
+        ['web', 'Platform and website'],
+        ['ui-foundation', 'UI-core'],
+      ],
+    );
     assert.ok(parsed.warnings.length >= 1);
   });
 
   test('rv/thread/integrator acts as the lane integrator without a Thread column', () => {
     const dir = makeRepo({
       branch: 'rv/thread/integrator',
-      owners: '## Integrator\n\n| Owner | Paths |\n|---|---|\n| `integrator` | `plans/**` |\n| `web` | `apps/web/**` |\n',
+      owners:
+        '## Integrator\n\n| Owner | Paths |\n|---|---|\n| `integrator` | `plans/**` |\n| `web` | `apps/web/**` |\n',
     });
     commit(dir, { 'plans/a.md': 'a' });
     const res = check(dir);

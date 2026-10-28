@@ -10,7 +10,9 @@ if (!name) {
   process.exit(2);
 }
 
-const { scripts = {} } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+const { scripts = {} } = JSON.parse(
+  readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+);
 if (!(name in scripts)) {
   console.log(`pending: ${name}`);
   process.exit(0);

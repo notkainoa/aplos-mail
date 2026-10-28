@@ -57,7 +57,11 @@ function denyReason(deny, specifier, resolved) {
   if (deny.specifier && new RegExp(deny.specifier).test(specifier)) return deny.message;
   if (deny.builtin && !isRelative) {
     const bare = specifier.replace(/^node:/, '');
-    if (specifier.startsWith('node:') || NODE_BUILTINS.has(bare) || NODE_BUILTINS.has(bare.split('/')[0])) {
+    if (
+      specifier.startsWith('node:') ||
+      NODE_BUILTINS.has(bare) ||
+      NODE_BUILTINS.has(bare.split('/')[0])
+    ) {
       return deny.message;
     }
   }
@@ -119,7 +123,8 @@ const rule = {
     ],
     messages: {
       denied: '[{{zone}}] import of "{{specifier}}" is not allowed: {{reason}}',
-      dynamic: '[{{zone}}] dynamic import or require with a non-literal specifier cannot be checked.',
+      dynamic:
+        '[{{zone}}] dynamic import or require with a non-literal specifier cannot be checked.',
     },
   },
   create(context) {
@@ -140,7 +145,8 @@ const rule = {
 
     function checkDynamic(node) {
       for (const zone of active) {
-        if (zone.flagDynamic) context.report({ node, messageId: 'dynamic', data: { zone: zone.name } });
+        if (zone.flagDynamic)
+          context.report({ node, messageId: 'dynamic', data: { zone: zone.name } });
       }
     }
 
@@ -179,7 +185,9 @@ const HTML_PROP = 'dangerouslySetInnerHTML';
 const noDangerousHtml = {
   meta: {
     type: 'problem',
-    docs: { description: `Disallow ${HTML_PROP}; turn the rule off only for the sandboxed mail frame` },
+    docs: {
+      description: `Disallow ${HTML_PROP}; turn the rule off only for the sandboxed mail frame`,
+    },
     schema: [],
     messages: {
       banned: `${HTML_PROP} is allowed only in apps/desktop/src/renderer/mailframe (ARCHITECTURE 10).`,

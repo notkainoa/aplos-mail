@@ -69,8 +69,11 @@ jobs:
       - run: node scripts/audit/run-if-present.mjs format:check
       - run: npm run lint
       - run: npm run test:lint
+      - run: npm run test:audit
       - run: npm run lint:css
-      - run: node scripts/audit/run-if-present.mjs owners:check
+      # The change check (a PR against revamp) runs locally in npm run check and in the integrator's merge procedure;
+      # a push to revamp has nothing to compare, so CI validates OWNERS.md itself.
+      - run: node scripts/audit/owners-check.mjs --validate
       - run: npm run typecheck
       - run: npm audit --omit=dev --audit-level=high
 
