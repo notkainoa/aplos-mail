@@ -4,6 +4,7 @@ export { CalendarList } from './CalendarList';
 export { DatePresets } from './DatePresets';
 export { EventBlock } from './EventBlock';
 export { EventDetail } from './EventDetail';
+export { ScopeChooser } from './ScopeChooser';
 export { MiniMonth } from './MiniMonth';
 export { NowLine } from './NowLine';
 export { PlanOutline } from './PlanOutline';

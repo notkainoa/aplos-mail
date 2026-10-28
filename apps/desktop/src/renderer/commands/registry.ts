@@ -20,6 +20,7 @@ import {
   type SettingsTable,
 } from './settings';
 import { buildStack, canShareStack, isModal } from './stacks';
+import type { HoldRelease } from './hold';
 import {
   CONTEXT_NAMES,
   DEFAULT_KEY_PREFS,
@@ -161,6 +162,12 @@ export interface Registry {
    * "Suggested", then Go to; typing filters everything by label and keywords.
    */
   commandsForPalette(ctx: CommandContext): readonly PaletteEntry[];
+  /**
+   * Tells a hold command's handler that its key came up or the hold ended: pass what `tracker.up`, `tracker.cancel`,
+   * `tracker.interrupt` or `tracker.down` returned (null is ignored). Calls the active `release` handler of
+   * `release.commandId`; a throw or rejection goes to onError under that id.
+   */
+  release(release: HoldRelease | null, ctx: CommandContext): RunResult;
   /** Resolves a keydown against ctx.stack, normalized with buildStack. */
   resolve(event: KeyInput, ctx: CommandContext): Resolution | null;
   /**
@@ -804,6 +811,14 @@ export function createRegistry(
           (slots.get(id) ?? []).filter(s => s !== slot),
         );
       };
+    },
+    release(release, ctx) {
+      if (!release) return { status: 'unhandled' };
+      const handler = activeHandlers(release.commandId)?.release;
+      if (!handler) return { status: specs.has(release.commandId) ? 'unhandled' : 'unknown' };
+      return invoke(release.commandId, () =>
+        handler.call(activeHandlers(release.commandId), ctx, release),
+      );
     },
     get(id) {
       const entry = specs.get(id);

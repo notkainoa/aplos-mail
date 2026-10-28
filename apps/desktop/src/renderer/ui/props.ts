@@ -43,10 +43,19 @@ export type TagColor = 'sky' | 'hill' | 'stamp' | 'dusk' | 'sand' | 'ember';
 /** A triage commit that carries a letter off (DESIGN §4.9): hill + check, dusk + clock, stamp + trash. */
 export type CommitKind = 'done' | 'later' | 'trash';
 
-/** Home lane of a thread (DESIGN §7.2): Do now, Important updates, Low importance. */
+/**
+ * Home lane of a thread (DESIGN §7.2): Do now, Important updates, Low importance. Closed on purpose: the contract's
+ * `Lane` is open (a newer engine may add a value), so the screen narrows `row.rank.lane` to one of these three and
+ * draws no lane controls for any other value. `renderer/data`'s tests check these are exactly the contract's known
+ * values.
+ */
 export type Lane = 'do' | 'update' | 'low';
 
-/** Where a due date came from, in order of trust (DESIGN §7.2). 'ai' shows "from the email" on hover (DESIGN §9 rule 5). */
+/**
+ * Where a due date came from, in order of trust (DESIGN §7.2). 'ai' shows "from the email" on hover (DESIGN §9 rule 5).
+ * Closed like `Lane`: the screen narrows the contract's open `DueSource` (an unknown source is shown as 'ai', the
+ * least trusted). `renderer/data`'s tests check these are exactly the contract's known values.
+ */
 export type DueSource = 'user' | 'structured' | 'ai';
 
 /**
@@ -1592,8 +1601,8 @@ export interface AskTurnProps {
   id: string;
   /** The question. */
   question: string;
-  /** 'working' = steady step line; 'streaming' = one thin non-blinking caret; 'answered'; 'stopped'; 'failed' = ErrorLine askFailed. */
-  state: 'working' | 'streaming' | 'answered' | 'stopped' | 'failed';
+  /** 'working' = steady step line; 'streaming' = one thin non-blinking caret; 'answered'; 'stopped' = "Stopped."; 'failed' = ErrorLine askFailed; 'paused' = the model's daily limit is reached: "Paused for today. Resumes tomorrow." (a quiet line, never red; shows "Use another provider" when `onUseAnotherProvider` is given; the plan 30 §4.5 phrase is reused for Ask's per-model daily limit, ARCH §8.4). */
+  state: 'working' | 'streaming' | 'answered' | 'stopped' | 'failed' | 'paused';
   /** The step log (live line while working, dim fold after). */
   steps?: StepLogProps;
   /** Answer prose. */
@@ -1602,15 +1611,17 @@ export interface AskTurnProps {
   citations: readonly CitationData[];
   /** Provider display name for "<Provider> didn't answer." */
   provider?: string;
+  /** Who wrote the answer, shown only on hover of the answer (DESIGN §9 rule 5): "Answer by Groq", "Answer by Ollama on this Mac". */
+  provenance?: { provider: string; local: boolean };
   /** The turn's one proposal card. */
   proposal?: ProposalCardProps;
-  /** Open a cited thread. */
-  onOpenCitation: (threadId: string) => void;
-  /** Open a cited calendar event (a citation with `kind: 'event'`). */
-  onOpenEventCitation?: (eventId: string) => void;
+  /** Open a cited thread; `index` is the citation's number ([1] = 1) so the screen can scroll to or mark it. */
+  onOpenCitation: (threadId: string, index: number) => void;
+  /** Open a cited calendar event (a citation with `kind: 'event'`); `index` as above. */
+  onOpenEventCitation?: (eventId: string, index: number) => void;
   /** Retry after a failure. */
   onRetry?: () => void;
-  /** "Use another provider" after a failure. */
+  /** "Use another provider" after a failure or when the state is 'paused'. */
   onUseAnotherProvider?: () => void;
 }
 
@@ -1630,10 +1641,10 @@ export interface StepLogProps {
 
 /** A mono "[1]" chip that shows the quoted sentence on hover or focus and opens the source on click (DESIGN §6 Citation, §7.7). Mockups: ask.html. Plain + refines: ui-ask. */
 export interface CitationProps extends CitationData {
-  /** Open the source thread. */
-  onOpen: (threadId: string) => void;
-  /** Open the source event when `kind` is 'event' (calls this with `eventId` instead of `onOpen`). */
-  onOpenEvent?: (eventId: string) => void;
+  /** Open the source thread, with the chip's number. */
+  onOpen: (threadId: string, index: number) => void;
+  /** Open the source event when `kind` is 'event' (calls this with `eventId` instead of `onOpen`), with the chip's number. */
+  onOpenEvent?: (eventId: string, index: number) => void;
 }
 
 /** The dock's one card; owns the filled button; a consequence line and two key rows (Return / Esc); nothing applies without confirmation (DESIGN §6 ProposalCard, §7.7, §9 rule 6). Mockups: ask.html (answer). Plain + refines: ui-ask. */
@@ -1698,7 +1709,7 @@ export interface PaletteProps {
   query: string;
   /** Field text changed. */
   onQueryChange: (value: string) => void;
-  /** The target, shown as "For: <context>", e.g. "Drew Bell · October illustrations". */
+  /** The target, shown as "For: <context>", e.g. "Drew Bell · October illustrations". One line: a long one ends in an ellipsis and carries the full text as its tooltip. */
   context?: string;
   /** Breadcrumbs for nested pages. */
   trail?: readonly string[];
@@ -1884,6 +1895,25 @@ export interface CalendarEventData {
   invite?: { from: string; threadId: string };
   /** Plain-text description. */
   description?: string;
+  /** One occurrence of a repeating event: moving, resizing, deleting or answering asks for a scope first (ScopeChooser, freeze finding FR-21). */
+  recurring?: boolean;
+  /** Read-only here: a read-only calendar, or an invite you don't organise. The grid offers no drag to move and no resize handle; selecting and opening still work. */
+  locked?: boolean;
+}
+
+/** Which occurrences a change or an answer touches. Round 1 offers "This event" and "All events" (roadmap 8.3 #32); the contract's EditScope 'following' is refused until built. */
+export type EventScope = 'occurrence' | 'series';
+
+/** Asks which occurrences of a repeating event a change touches: "This event" (Return, the default) or "All events" (⇧Return), Esc cancels (DESIGN §7.8; roadmap 8.3 #32; freeze finding FR-21). Plain + refines: ui-foundation; used by ui-calendar before Event/set or Event/rsvp on a recurring event. */
+export interface ScopeChooserProps {
+  /** What is about to change; picks the question ("Move", "Change", "Delete", "Reply to"). */
+  action: 'move' | 'change' | 'delete' | 'reply';
+  /** The event title, for the accessible name. */
+  title: string;
+  /** A scope was chosen. */
+  onChoose: (scope: EventScope) => void;
+  /** Esc or Cancel. */
+  onCancel: () => void;
 }
 
 /** An RSVP answer (Y / M / N, DESIGN §7.8). */
@@ -1904,7 +1934,7 @@ export interface EventGuest {
 /** Views of the grid; 'agenda' is the narrow-pane list and the Today tab (DESIGN §7.7 Today, §7.8 Narrow). */
 export type CalendarView = 'day' | 'week' | 'month' | 'agenda';
 
-/** The calendar grid: `--line` hairlines, 56 px per hour (8 AM–8 PM in view), today column `--today-tint`, now-line, overlap lanes with a "+N" stack, drag to create, move or resize with `lift` and `snap` (DESIGN §6 CalendarGrid, §7.8). Mockups: calendar-week.html (default, overlap), calendar-day.html (default, empty), calendar-event.html, ask.html (today). Plain + refines: ui-calendar. */
+/** The calendar grid: `--line` hairlines, 56 px per hour (the whole day is drawn and scrolls; it opens at 8 AM, or at now when today is shown), today column `--today-tint`, now-line, overlap lanes with a "+N" stack, drag to create, move or resize with `lift` and `snap` (DESIGN §6 CalendarGrid, §7.8). Mockups: calendar-week.html (default, overlap), calendar-day.html (default, empty), calendar-event.html, ask.html (today). Plain + refines: ui-calendar. */
 export interface CalendarGridProps {
   /** View. */
   view: CalendarView;
@@ -1938,6 +1968,8 @@ export interface CalendarGridProps {
   label: string;
   /** Announces range and selection changes (DESIGN §11.3). */
   announce?: Announce;
+  /** Day and week views: the hour (0–24, fractions allowed) at the top of the grid when it opens. Default: 8, or an hour before now when today is shown. Applied on mount and when `view` changes, never when paging, so the reader keeps their place. */
+  scrollToHour?: number;
 }
 
 /** Where the grid placed an entry among overlapping lanes; lanes are never under 44 px (DESIGN §7.8). */
@@ -1965,6 +1997,8 @@ export type EventBlockProps =
       onSelect: () => void;
       /** Open the detail. */
       onOpen: (anchor: HTMLElement) => void;
+      /** Locked: no drag or resize affordance (`data-locked`, no move cursor). Defaults to `event.locked`. */
+      locked?: boolean;
     }
   | {
       /** The "+N" stack for the third and later overlapping events. */
@@ -2009,8 +2043,8 @@ export interface EventDetailProps {
     commands: { yes: CommandId; maybe: CommandId; no: CommandId };
     /** An answer was chosen. */
     onAnswer: (answer: RsvpAnswer) => void;
-    /** "Send reply". */
-    onSend: () => void;
+    /** "Send reply"; for a recurring event the screen asks ScopeChooser first and passes the scope. */
+    onSend: (scope?: EventScope) => void;
   };
   /** Open the invite email (O). */
   onOpenInvite?: (threadId: string) => void;
@@ -2065,14 +2099,14 @@ export interface SettingRowProps {
 /** AI features with a provider and model each (DESIGN §7.10 AI). */
 export type AiFeature = 'ask' | 'summaries' | 'drafts' | 'plans' | 'voice';
 
-/** Providers; display names are fixed copy: Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio, Custom server (AGENTS.md). */
+/** Providers; display names are fixed copy: Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio, Custom server (AGENTS.md). Matches @aplos/contract's aiProviderIds (freeze finding FR-1). */
 export type ProviderId =
   | 'groq'
   | 'openai'
   | 'anthropic'
   | 'gemini'
   | 'openrouter'
-  | 'opencode'
+  | 'opencode-go'
   | 'ollama'
   | 'lmstudio'
   | 'custom';
@@ -2373,6 +2407,8 @@ export type ProgressSegmentsProps =
       onOpenSettings?: () => void;
       /** Only the segments and status, no checklist (the drill keeps progress visible this way). */
       compact?: boolean;
+      /** How many accounts are connected. The account's colour dot shows only with two or more (DESIGN decision 16); omitted means one, so no dot. */
+      accountCount?: number;
     }
   | {
       /** The status slot's "Importing N of M" track. */
@@ -2883,6 +2919,11 @@ export const COMPONENTS = [
     file: 'apps/desktop/src/renderer/ui/calendar/EventDetail.tsx',
   },
   {
+    name: 'ScopeChooser',
+    family: 'calendar',
+    file: 'apps/desktop/src/renderer/ui/calendar/ScopeChooser.tsx',
+  },
+  {
     name: 'DatePresets',
     family: 'calendar',
     file: 'apps/desktop/src/renderer/ui/calendar/DatePresets.tsx',
@@ -3028,6 +3069,7 @@ export interface ComponentPropsMap {
   PlanOutline: PlanOutlineProps;
   NowLine: NowLineProps;
   EventDetail: EventDetailProps;
+  ScopeChooser: ScopeChooserProps;
   DatePresets: DatePresetsProps;
   SettingRow: SettingRowProps;
   ProviderTable: ProviderTableProps;

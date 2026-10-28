@@ -1,6 +1,7 @@
 // Surfaces family: static render checks of structure, copy, ARIA and states, with demo and worst-case data.
 // Run from the repo root: npx tsx --tsconfig apps/desktop/tsconfig.json --test apps/desktop/src/renderer/ui/surfaces/surfaces.test.tsx
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -923,5 +924,30 @@ describe('ToastStack', () => {
       render(<ToastStack toasts={[]} onAction={noop} onDismiss={noop} />),
       '<div class="ui-toast-stack" aria-live="polite"></div>',
     );
+  });
+});
+
+/* ───────────── Dialog entrance leaves no transform ───────────── */
+describe('Dialog entrance animation', () => {
+  const css = readFileSync(new URL('./surfaces.css', import.meta.url), 'utf8');
+  const animationOf = (selector: string): string => {
+    const start = css.indexOf(`\n${selector} {`);
+    assert.ok(start >= 0, `rule ${selector} exists`);
+    const block = css.slice(start, css.indexOf('}', start));
+    const line = block.match(/animation:([^;]*);/);
+    assert.ok(line, `rule ${selector} animates`);
+    return line[1];
+  };
+
+  it('fills backwards only, so no identity transform stays on the dialog', () => {
+    // A transform left on the dialog makes it the containing block of every fixed Menu and Popover inside it.
+    const entrance = animationOf('.ui-dialog');
+    assert.match(entrance, /ui-settle/);
+    assert.match(entrance, /\bbackwards\b/);
+    assert.doesNotMatch(entrance, /\b(both|forwards)\b/);
+  });
+
+  it('the leaving animation keeps its end state, because it ends invisible', () => {
+    assert.match(animationOf(".ui-dialog[data-state='leaving']"), /\bboth\b/);
   });
 });

@@ -79,7 +79,6 @@
   vertical-align: middle;
 }
 .ui-status-slot__text {
-  margin: 0;
   overflow-wrap: anywhere;
 }
 .ui-status-slot__action {
@@ -222,8 +221,6 @@
   display: flex;
   flex-direction: column;
   margin: var(--space-2) 0 0;
-  padding: 0;
-  list-style: none;
 }
 .ui-progress-segments__line {
   display: flex;
@@ -313,8 +310,6 @@
 }
 .ui-progress-segments__accounts {
   margin: var(--space-4) 0 0;
-  padding: 0;
-  list-style: none;
 }
 .ui-progress-segments__account {
   display: flex;
@@ -367,7 +362,6 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 0;
   color: var(--ink-2);
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
@@ -399,7 +393,6 @@
 }
 .ui-fatal-screen__title {
   max-width: var(--reader-w);
-  margin: 0;
   color: var(--ink);
   font: var(--type-display);
   letter-spacing: var(--track-display);

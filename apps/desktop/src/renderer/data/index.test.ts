@@ -1,15 +1,17 @@
 /**
- * F9 data surface tests. Run: `npx tsx --test apps/desktop/src/renderer/data/index.test.ts`.
+ * F9 data surface tests. Run: `cd apps/desktop && npx tsx --test src/renderer/data/index.test.ts`.
  *
  * Two halves:
- * 1. Compile-time: example usage for Home, the reader and the status slot must type-check
- *    under `tsc --noEmit -p apps/desktop/tsconfig.json`; `@ts-expect-error` lines pin what
- *    must not compile.
- * 2. Runtime: every stub throws `NotImplementedError` naming lane `ui-shell`, and every
- *    `api` method has a contract mapping.
+ * 1. Compile-time: example usage for Home, the reader and the status slot, in the contract's types, must type-check
+ *    under `tsc --noEmit -p apps/desktop/tsconfig.json`; `@ts-expect-error` lines pin what must not compile, and the
+ *    `Equals` checks pin that `api` is the F2 client's surface.
+ * 2. Runtime: every stub throws `NotImplementedError` naming lane `ui-shell`, and every `api` method maps onto a
+ *    registered contract method of the same name.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { getMethod, methodNames, UiSettings as UiSettingsSchema } from '@aplos/contract';
+import type { Api as ClientApi } from '@aplos/contract/client';
 import {
   CONTRACT_HOOK_NEEDS,
   CONTRACT_METHODS,
@@ -20,6 +22,7 @@ import {
   useAccounts,
   useAgenda,
   useConnection,
+  useConsent,
   useCounts,
   useHold,
   useHome,
@@ -49,22 +52,77 @@ import {
 import type {
   AccountState,
   ApiMethodName,
+  ConnectionState,
+  DueSource,
+  KnownValues,
+  Lane,
   Citation,
   ConnectFrame,
-  DraftRow,
-  MessageRow,
+  ContractMethodOf,
+  DataApi,
+  Draft,
+  Message,
   OpId,
+  Output,
   ProgressFrame,
   Receipt,
   SettingsPatch,
   StatusSlotState,
   ThreadRow,
+  UiSettings,
 } from './index';
 import { keyPrefsFromUi } from '../commands';
+import type { DueSource as UiDueSource, Lane as UiLane } from '../ui/props';
+
+// ---------------------------------------------------------------------------
+// Compile-time: `api` is the F2 client's surface
+// ---------------------------------------------------------------------------
+
+type Equals<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+/** Plain calls are the client's own members, so they cannot drift. */
+const sameAsClient: [
+  Equals<DataApi['thread']['why'], ClientApi['thread']['why']>,
+  Equals<DataApi['mail']['frame'], ClientApi['mail']['frame']>,
+  Equals<DataApi['blob']['put'], ClientApi['blob']['put']>,
+  Equals<DataApi['consent']['grant'], ClientApi['consent']['grant']>,
+  Equals<DataApi['engine']['restart'], ClientApi['engine']['restart']>,
+  Equals<DataApi['thread']['open'], ClientApi['thread']['open']>,
+  Equals<DataApi['ai']['cancel'], ClientApi['ai']['cancel']>,
+  Equals<DataApi['operation']['retry'], ClientApi['operation']['retry']>,
+] = [true, true, true, true, true, true, true, true];
+
+/** Commands return the client's result; only the fresh `opId` or `requestId` becomes optional. */
+const commandResults: [
+  Equals<ReturnType<DataApi['draft']['set']>, Promise<Output<'Draft/set'>>>,
+  Equals<ReturnType<DataApi['submission']['set']>, Promise<Output<'Submission/set'>>>,
+  Equals<ReturnType<DataApi['settings']['set']>, Promise<Output<'Settings/set'>>>,
+  Equals<ReturnType<DataApi['ai']['transcribe']>, Promise<Output<'Ai/transcribe'>>>,
+  Equals<ContractMethodOf<'messageBody.prefetch'>, 'MessageBody/prefetch'>,
+  Equals<ReturnType<DataApi['search']['remote']>, Promise<Output<'Search/remote'>>>,
+  Equals<ReturnType<DataApi['ai']['dismissFollowup']>, Promise<Output<'Ai/dismissFollowup'>>>,
+] = [true, true, true, true, true, true, true];
+
+/**
+ * `ui/props.ts` keeps `Lane` and `DueSource` closed (components never import renderer/data) and screens narrow the
+ * contract's open enums to them; these pin the closed sets to the contract's known values, so neither can drift.
+ * `ConnectionState` is derived from the contract's `engine` desktop event the same way.
+ */
+const closedSetsMatch: [
+  Equals<KnownValues<Lane>, UiLane>,
+  Equals<KnownValues<DueSource>, UiDueSource>,
+  Equals<ConnectionState, 'connecting' | 'ready' | 'unreachable' | 'parked'>,
+] = [true, true, true];
 
 // ---------------------------------------------------------------------------
 // Compile-time examples (never run past their first hook; they only need to type-check)
 // ---------------------------------------------------------------------------
+
+/** The serif summary when there is one, else the subject (DESIGN 7.2 No AI). */
+function primaryLine(row: ThreadRow): string {
+  return row.summary.state === 'ready' && row.summary.text ? row.summary.text : row.subject;
+}
 
 /** Home: sections in order, held labels showing 0, the Low band, triage on keydown, undo and inline errors. */
 function homeExample(lastOpId: OpId | undefined): string[] {
@@ -85,13 +143,10 @@ function homeExample(lastOpId: OpId | undefined): string[] {
       if (!row) {
         continue;
       }
-      const text = row.summary ? row.summary.text : row.subject;
-      const chip =
-        row.dueDate && row.dueSource === 'ai'
-          ? `${row.dueDate} (from the email)`
-          : (row.dueDate ?? '');
+      const { dueDate, dueSource } = row.workflow;
+      const chip = dueDate && dueSource === 'ai' ? `${dueDate} (from the email)` : (dueDate ?? '');
       const failure = home.failures.get(id);
-      lines.push(`${row.from.name} ${chip} ${text} ${failure ? failure.message : ''}`);
+      lines.push(`${row.fromName} ${chip} ${primaryLine(row)} ${failure ? failure.message : ''}`);
     }
     if (section.fromLater && section.fromLater.visible) {
       lines.push(`Back from Later ${section.fromLater.count}`);
@@ -107,20 +162,40 @@ function homeExample(lastOpId: OpId | undefined): string[] {
   if (focused) {
     prefetch.focus(focused, doNow ? doNow.ids.slice(1, 2) : []);
     hold.begin('keys', [focused]);
-    const result = api.thread.act([focused], { kind: 'later', at: null });
+    // L then Someday: Later with no `until`.
+    const result = api.thread.act({ ids: [focused], action: { type: 'later' } });
     result.receipt.catch((err: unknown) => {
       if (err instanceof OperationFailedError) {
         lines.push(err.error.message);
       }
     });
-    api.thread.act([focused], { kind: 'laneDown', alsoForSender: true });
+    api.thread.act({
+      ids: [focused],
+      action: { type: 'laneStep', direction: 'down', alsoForSender: true },
+    });
     // The toast's "Always do this for [sender]" after a correction: absolute, so it never moves a second lane.
-    api.thread.act([focused], { kind: 'setLane', lane: 'update', alsoForSender: true });
+    api.thread.act({
+      ids: [focused],
+      action: { type: 'lane', lane: 'update', alsoForSender: true },
+    });
     prefetch.hover(focused, doNow ? doNow.ids.slice(1, 2) : []);
   }
-  // Bulk targets past the 200-row window: the Low sheet's "mark everything done" and "Clear from Home".
-  api.thread.act({ spec: { kind: 'home.low' } }, { kind: 'done' });
-  api.thread.act({ spec: { kind: 'home' }, group: 'fromLater' }, { kind: 'clearFromHome' });
+  // Bulk targets past the 200-row window, at the state the owner saw: the Low sheet's "mark everything done" and
+  // "Clear from Home" (Later with no date).
+  if (home.state) {
+    const atState = home.state;
+    api.thread.act({
+      selector: { spec: { kind: 'homeSection', section: 'low' }, atState },
+      action: { type: 'done' },
+    });
+    api.thread.act({
+      selector: { spec: { kind: 'home' }, section: 'fromLater', atState },
+      action: { type: 'later' },
+    });
+    const reader = { kind: 'thread', threadId: 't1' } as const;
+    // @ts-expect-error: a selector cannot target the reader's message list.
+    api.thread.act({ selector: { spec: reader, atState }, action: { type: 'done' } });
+  }
   if (home.status === 'failed' && home.error) {
     lines.push(home.error.message);
   }
@@ -130,27 +205,27 @@ function homeExample(lastOpId: OpId | undefined): string[] {
   unsubscribe();
 
   if (lastOp && lastOp.state === 'confirmed' && lastOp.undoable) {
-    api.operation.undo(lastOp.opId);
+    api.operation.undo({ opId: lastOp.opId });
   }
   if (lastOp && lastOp.state === 'failed') {
     lastOp.retry();
   }
   home.move({ start: 0, end: 60 });
 
-  // @ts-expect-error: unknown action kinds do not compile.
-  api.thread.act(['t1'], { kind: 'archiveForever' });
-  // @ts-expect-error: lane corrections must say whether they apply to the sender.
-  api.thread.act(['t1'], { kind: 'laneUp' });
-  // @ts-expect-error: a selector cannot target the reader's message list.
-  api.thread.act({ spec: { kind: 'thread', threadId: 't1' } }, { kind: 'done' });
+  // @ts-expect-error: unknown action types do not compile.
+  api.thread.act({ ids: ['t1'], action: { type: 'archiveForever' } });
+  // @ts-expect-error: the discriminator is `type`, as in the contract.
+  api.thread.act({ ids: ['t1'], action: { kind: 'done' } });
+  // @ts-expect-error: a lane step says which way.
+  api.thread.act({ ids: ['t1'], action: { type: 'laneStep' } });
   return lines;
 }
 
 /** Inbox zero: "You handled 12 emails." and "Next: Design review at 2:00 PM" (DESIGN 7.14). */
 function inboxZeroExample(now: number): string[] {
   const counts = useCounts();
-  const agenda = useAgenda({ from: now, to: now + 12 * 3_600_000 });
-  const next = agenda.events.find(e => !e.allDay && e.start > now);
+  const agenda = useAgenda({ kind: 'events', from: now, to: now + 12 * 3_600_000 });
+  const next = agenda.events.find(e => !e.allDay && e.start.type === 'utc' && e.start.utc > now);
   const lines = [`You handled ${counts.counts.handledToday} emails.`];
   if (next) {
     lines.push(`Next: ${next.title}`);
@@ -163,7 +238,7 @@ async function draftsExample(file: Blob, sourceMessageId: string): Promise<strin
   const drafts = useView({ kind: 'drafts' });
   const lines: string[] = [];
   for (const id of drafts.ids) {
-    const row: DraftRow | undefined = drafts.rows.get(id);
+    const row: Draft | undefined = drafts.rows.get(id);
     if (row) {
       lines.push(`${row.subject} ${row.updatedAt}`);
     }
@@ -171,19 +246,45 @@ async function draftsExample(file: Blob, sourceMessageId: string): Promise<strin
   // @ts-expect-error: the Drafts view yields draft rows, not thread rows.
   const wrong: ThreadRow | undefined = drafts.rows.get('x');
   void wrong;
-  const uploaded = await api.attachment.put(file, 'plan.pdf', 'application/pdf');
-  const saved = await api.draft.save({
-    accountId: 'a1',
-    threadId: 't1',
-    source: { messageId: sourceMessageId, mode: 'forward' },
-    to: [],
-    subject: 'Fwd:',
-    html: '',
-    attachments: [uploaded.id],
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const uploaded = await api.blob.put(
+    { bytes, mime: 'application/pdf', name: 'plan.pdf' },
+    { transfer: [bytes.buffer as ArrayBuffer] },
+  );
+  const saved = await api.draft.set({
+    fields: {
+      accountId: 'a1',
+      mode: 'forward',
+      threadId: 't1',
+      replyToMessageId: sourceMessageId,
+      to: [],
+      cc: [],
+      bcc: [],
+      subject: 'Fwd:',
+      html: '',
+      attachments: [
+        {
+          id: 'plan',
+          name: 'plan.pdf',
+          mime: 'application/pdf',
+          size: uploaded.size,
+          blobId: uploaded.blobId,
+        },
+      ],
+      signature: true,
+    },
   });
-  const sent = await api.submission.send(saved.id, { markDone: true });
+  // ⌘⇧Return: send and Done in one operation.
+  const sent = await api.submission.set({
+    action: {
+      type: 'send',
+      draftId: saved.draft.id,
+      revision: saved.draft.revision,
+      alsoDone: true,
+    },
+  });
   const receipt: Receipt = sent.receipt;
-  lines.push(`seq ${receipt.appliedSeq}`);
+  lines.push(`seq ${receipt.appliedState.seq} queued ${sent.submission.queuedAt}`);
   return lines;
 }
 
@@ -199,7 +300,7 @@ function fatalExample(): string | null {
       return "Aplos can't reach its mail engine.";
     case 'parked':
       void api.diagnostics.copy();
-      return connection.reason;
+      return connection.canRetry ? connection.reason : null;
     default: {
       const unreachable: never = connection.state;
       return unreachable;
@@ -216,7 +317,7 @@ function readerExample(
   const threadState = useRowState('Thread', threadId);
   const view = useView({ kind: 'thread', threadId });
   const latestId = view.ids[view.ids.length - 1];
-  const latest: MessageRow | undefined = latestId ? view.rows.get(latestId) : undefined;
+  const latest: Message | undefined = latestId ? view.rows.get(latestId) : undefined;
   const body = useMessageBody(latest ? latest.id : undefined);
   const submission = useRow('Submission', submissionId);
   const lines: string[] = [];
@@ -225,12 +326,12 @@ function readerExample(
     lines.push('This email is no longer here.');
   }
   if (thread) {
-    lines.push(thread.summary ? thread.summary.text : thread.subject);
+    lines.push(primaryLine(thread));
     lines.push(
       thread.partial ? thread.subject : `${thread.subject} · ${thread.messageCount} messages`,
     );
-    if (thread.suggestedAction) {
-      lines.push(`${thread.suggestedAction.label} Space`);
+    if (thread.summary.action) {
+      lines.push(`${thread.summary.action.label} Space`);
     }
   }
   if (body.slow) {
@@ -240,40 +341,48 @@ function readerExample(
     body.retry();
   }
   if (submission && submission.state === 'queued') {
-    lines.push(`Sending to ${submission.to.map(p => p.name).join(', ')}`);
+    lines.push(`Sending to ${submission.toNames.join(', ')}`);
   }
 
   const sendReply = async (): Promise<void> => {
     if (body.status === 'ready' && body.body && body.body.bodyKind === 'html' && latest) {
       const frame = await api.mail.frame({
         messageId: latest.id,
-        imagePolicy: 'blocked',
-        showQuotes: true,
+        imagePolicy: 'block',
+        quotesOpen: true,
       });
       lines.push(`${frame.trackersRemoved} trackers removed`);
-      if (frame.hasRemoteImages) {
-        await api.mail.allowImagesFrom(latest.from.address);
+      if (frame.hasRemoteImages && latest.from) {
+        await api.mail.allowImages({ sender: latest.from.address, allow: true });
       }
-      await api.mail.releaseFrame(frame.url);
+      await api.mail.release({ url: frame.url });
     }
-    const source = latest ? { messageId: latest.id, mode: 'reply' as const } : undefined;
-    const saved = await api.draft.save({
-      accountId: 'a1',
-      threadId,
-      source,
-      to: [],
-      subject: 'Re:',
-      html: '',
+    const saved = await api.draft.set({
+      fields: {
+        accountId: 'a1',
+        mode: 'reply',
+        threadId,
+        ...(latest ? { replyToMessageId: latest.id } : {}),
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: 'Re:',
+        html: '',
+        attachments: [],
+        signature: true,
+      },
     });
-    const sent = await api.submission.send(saved.id);
-    await api.submission.undo(sent.submissionId);
+    const sent = await api.submission.set({
+      action: { type: 'send', draftId: saved.draft.id, revision: saved.draft.revision },
+    });
+    await api.submission.set({ action: { type: 'undo', submissionId: sent.submission.id } });
   };
 
-  // @ts-expect-error: a thread row is not a message row.
-  const wrong: MessageRow | undefined = useRow('Thread', threadId);
+  // @ts-expect-error: a thread row is not a message.
+  const wrong: Message | undefined = useRow('Thread', threadId);
   void wrong;
-  // @ts-expect-error: home views yield thread rows, not message rows.
-  const wrongRow: MessageRow | undefined = useView({ kind: 'home' }).rows.get('x');
+  // @ts-expect-error: home views yield thread rows, not messages.
+  const wrongRow: Message | undefined = useView({ kind: 'home' }).rows.get('x');
   void wrongRow;
   return { lines, sendReply };
 }
@@ -285,7 +394,7 @@ function statusSlotExample(): string {
   if (!slot) {
     return 'No accounts';
   }
-  if (slot.reconnectSoon && slot.account && slot.account.reconnectBy !== null) {
+  if (slot.reconnectSoon && slot.account && slot.account.health.reconnectBy !== undefined) {
     return 'Gmail will ask you to reconnect soon. Reconnect now';
   }
   const status = slot.status;
@@ -297,25 +406,23 @@ function statusSlotExample(): string {
     case 'syncing':
       return 'Syncing…';
     case 'backfilling':
-      return status.firstWindow
-        ? `Reading your newest mail ${status.n} of ${status.m}`
-        : `Importing ${status.n} of ${status.m}`;
+      return status.of === undefined
+        ? `Importing ${status.done}`
+        : `Importing ${status.done} of ${status.of}`;
     case 'paused':
-      return status.reason === 'daily'
-        ? 'Daily limit reached.'
-        : `Resuming at ${status.until ?? 'later'}.`;
+      return status.class === 'daily' ? 'Daily limit reached.' : `Resuming at ${status.until}.`;
     case 'needsReauth':
       return 'Sign in again. Reconnect';
     case 'needsPermission':
-      return 'Permission needed. Reconnect';
+      return `Permission needed. Reconnect (${status.missingScopes.length})`;
     case 'needsAdmin':
       return 'Blocked by your administrator.';
     case 'misconfigured':
       return 'Sign-in is not set up in this build.';
     case 'offline':
-      return `Offline · ${status.changesWaiting} changes waiting`;
+      return `Offline · ${slot.account?.pendingChanges ?? 0} changes waiting`;
     case 'error':
-      return counts.hidden ? status.message : `${status.message} ${counts.counts.home}`;
+      return counts.hidden ? (slot.reasonCode ?? 'unknown') : `${counts.counts.home}`;
     default: {
       const unreachable: never = status;
       return unreachable;
@@ -328,7 +435,7 @@ function citationTarget(c: Citation): string {
   return c.kind === 'message' ? `thread:${c.threadId}` : `event:${c.eventId}`;
 }
 
-/** Ask streaming: one run's F1 progress frames, the step line with its count, the answer text, citations. */
+/** Ask streaming: one run's progress frames, the step line with its count, the answer text, citations. */
 function askStreamExample(runId: string): string {
   const { frames, last } = useFrames('progress', { runId });
   let text = '';
@@ -352,32 +459,41 @@ function askStreamExample(runId: string): string {
   return typed?.kind === 'done' ? text : `${step} ${text} ${sources.join(' ')}`;
 }
 
-/** The reconnect sheet: "Waiting for Google in your browser…" from the connect frames of one flow; Cancel by id once the handle is gone. */
-function reconnectSheetExample(requestId: string): string {
-  const last: ConnectFrame | undefined = useFrames('connect', { connectId: requestId }).last;
+/** The reconnect sheet: "Waiting for Google in your browser…" from the connect frames of one flow; Cancel by id. */
+function reconnectSheetExample(connectId: string): string {
+  const last: ConnectFrame | undefined = useFrames('connect', { connectId }).last;
   if (!last || last.state === 'waiting') {
-    void api.account.cancelConnect(requestId);
+    void api.account.cancelConnect({ connectId });
     return 'Waiting for Google in your browser…';
   }
   if (last.state === 'failed')
-    return last.reasonCode === 'wrongAccount'
+    return last.reasonCode === 'auth.wrongAccount'
       ? 'That was a different account.'
       : 'Couldn’t reconnect.';
   return last.state === 'connected' ? 'Reconnected' : '';
 }
 
-/** One clock for the now-line and "reconnect within 24 hours"; a settings change Z can undo. */
+/** One clock for the now-line and "reconnect within 24 hours"; a settings change Z can undo; the consent card. */
 function clockAndUndoExample(reconnectBy: number): boolean {
   const now = useNow({ granularity: 'minute' });
   const top = useUndoTop();
+  const consent = useConsent();
   const label = top?.kind === 'local' ? `${top.label} · Undo Z` : '';
   const handle = undoStack.push({
     label: 'Done is now L',
-    undo: () => api.settings.set({ ui: { keymap: {} } }).then(() => undefined),
+    undo: () => api.settings.set({ patch: { ui: { keymap: {} } } }).then(() => undefined),
   });
   handle.forget();
   const outcome = undoStack.undoLast();
   if (outcome?.kind === 'operation') void outcome.result.receipt;
+  if (consent?.needsReconsent) {
+    void api.consent.grant({
+      scope: 'background',
+      version: consent.currentVersion,
+      provider: 'groq',
+      model: 'llama-3.3-70b-versatile',
+    });
+  }
   // Object-valued fields are replaced whole (F1), so a width change sends the whole dock.
   const patch: SettingsPatch = {
     ui: { dock: { ...UI_SETTINGS_DEFAULTS.dock, width: 400 }, palette: { recents: ['mail.done'] } },
@@ -390,10 +506,11 @@ function clockAndUndoExample(reconnectBy: number): boolean {
   return reconnectBy - now < 24 * 60 * 60 * 1000;
 }
 
-/** The stored ui fields drive the registry's key prefs without an adapter. */
+/** The stored ui fields drive the registry's key prefs without an adapter, the contract's type included. */
 const DEFAULT_KEY_PREFS_FROM_UI = keyPrefsFromUi(UI_SETTINGS_DEFAULTS);
+const keyPrefsFromStored = (ui: UiSettings) => keyPrefsFromUi(ui);
 
-/** The ARCH 6.4 vocabulary, checked both ways against `AccountState`. */
+/** The ARCH 6.4 vocabulary, checked both ways against the contract's `AccountState`. */
 const ARCH_STATES = [
   'starting',
   'ok',
@@ -428,10 +545,12 @@ function assertNotImplemented(fn: () => unknown, member: string): void {
   });
 }
 
-test('the lane marker is ui-shell', () => {
+test('the lane marker is ui-shell and the type checks hold', () => {
   assert.equal(DATA_LANE, 'ui-shell');
   assert.equal(noMissingState, true);
   assert.equal(ARCH_STATES.length, 11);
+  assert.ok([...sameAsClient, ...commandResults, ...closedSetsMatch].every(Boolean));
+  assert.equal(typeof keyPrefsFromStored, 'function');
 });
 
 test('every hook stub throws NotImplemented naming ui-shell', () => {
@@ -449,9 +568,10 @@ test('every hook stub throws NotImplemented naming ui-shell', () => {
     ['useAccounts', () => useAccounts()],
     ['useStatus', () => useStatus()],
     ['useCounts', () => useCounts()],
-    ['useAgenda', () => useAgenda({ from: 0, to: 1 })],
+    ['useAgenda', () => useAgenda({ kind: 'events', from: 0, to: 1 })],
     ['useSetupStatus', () => useSetupStatus()],
     ['useSettings', () => useSettings()],
+    ['useConsent', () => useConsent()],
     ['useFrames', () => useFrames('progress', { runId: 'r1' })],
     ['useNow', () => useNow({ granularity: 'minute' })],
     ['useUndoTop', () => useUndoTop()],
@@ -466,26 +586,26 @@ test('every hook stub throws NotImplemented naming ui-shell', () => {
   );
 });
 
-test('every api method throws NotImplemented and has a contract mapping', () => {
+test('every api method throws NotImplemented and is the contract method of the same name', () => {
   const seen: string[] = [];
+  const registered = new Set<string>(methodNames);
   for (const [group, methods] of Object.entries(api)) {
-    for (const [name, method] of Object.entries(methods as Record<string, () => unknown>)) {
-      seen.push(`${group}.${name}`);
-      assertNotImplemented(() => method(), `api.${group}.${name}`);
+    for (const [verb, method] of Object.entries(methods as Record<string, () => unknown>)) {
+      const name = `${group}.${verb}` as ApiMethodName;
+      seen.push(name);
+      assertNotImplemented(() => method(), `api.${name}`);
+      const ref = CONTRACT_METHODS[name];
+      const expected = `${group[0]!.toUpperCase()}${group.slice(1)}/${verb}`;
+      assert.equal(ref.method, expected, `${name} maps onto the client method of the same name`);
+      assert.ok(registered.has(ref.method), `${ref.method} is a registered contract method`);
+      assert.equal(
+        ref.kind === 'native',
+        getMethod(ref.method).host === 'desktop',
+        `${name} is native exactly when main serves it`,
+      );
     }
   }
   assert.deepEqual(seen.sort(), Object.keys(CONTRACT_METHODS).sort());
-  const names: ApiMethodName[] = [
-    'thread.act',
-    'operation.undo',
-    'submission.sendNow',
-    'ask.run',
-    'attachment.put',
-    'engine.restart',
-  ];
-  for (const name of names) {
-    assert.ok(CONTRACT_METHODS[name].method.length > 0);
-  }
 });
 
 test('the examples type-check and stop at the first stub', () => {
@@ -498,7 +618,7 @@ test('the examples type-check and stop at the first stub', () => {
 
 test('the stream, clock and undo examples stop at the first stub', () => {
   assertNotImplemented(() => askStreamExample('r1'), 'useFrames');
-  assertNotImplemented(() => reconnectSheetExample('q1'), 'useFrames');
+  assertNotImplemented(() => reconnectSheetExample('c1'), 'useFrames');
   assertNotImplemented(() => clockAndUndoExample(0), 'useNow');
 });
 
@@ -513,30 +633,8 @@ test('the clock and the undo stack are stubs that name ui-shell', () => {
   assertNotImplemented(() => undoStack.peek(), 'undoStack.peek');
 });
 
-// F1's UiSettings defaults (eng-contract f1-gaps, packages/contract/src/schemas/settings.ts field comments and
-// tests/fixtures.ts). Until @aplos/contract is in this tree, this copy is the check; at the swap it becomes
-// `UI_SETTINGS_DEFAULTS satisfies import('@aplos/contract').UiSettings` (data/README "Provisional types").
-const F1_UI_DEFAULTS = {
-  theme: 'system',
-  density: 'default',
-  keyHints: 'tooltip',
-  singleKeys: true,
-  holdMs: 250,
-  dock: { open: false, tab: 'ask' },
-  keymap: {},
-  sidebarMinimised: false,
-  swipe: true,
-  swipeDirection: 'doneRight',
-  zen: false,
-  sendSound: true,
-  devDetails: false,
-  lastAccount: 'all',
-  palette: { recents: [] },
-  calendar: {},
-} as const;
-
-test('the ui defaults are F1 UiSettings field for field and map onto the registry prefs', () => {
-  assert.deepEqual(UI_SETTINGS_DEFAULTS, F1_UI_DEFAULTS);
+test('the ui defaults pass the contract schema and map onto the registry prefs', () => {
+  assert.ok(UiSettingsSchema.safeParse(UI_SETTINGS_DEFAULTS).success);
   assert.equal(
     UI_SETTINGS_DEFAULTS.dock.open,
     false,

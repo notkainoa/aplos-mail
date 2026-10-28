@@ -11,7 +11,8 @@
  */
 
 import type { SettingRoute, TargetSummary } from '../commands';
-import type { AccountId } from '../data';
+import type { AccountId, AiProviderId } from '../data';
+import type { ToastData } from '../ui/props';
 
 // ---------------------------------------------------------------------------
 // Lane marker and the not-implemented error
@@ -50,16 +51,19 @@ function notImplemented(member: string): never {
 export interface SheetArgs {
   /**
    * The weekly Gmail reconnect (DESIGN 7.1, ReconnectSheet): 'reconnect' for `needsReauth`
-   * and `reconnectBy` within 24 hours, 'grant' for `needsPermission`. Either way the sheet
-   * calls `api.account.reconnect` and follows its `connect` frames (where 'grant' is F1's
-   * `grantPermissions`); the shell passes `mode` on as `ReconnectSheetProps.mode` for the copy.
+   * and `health.reconnectBy` within 24 hours, 'grant' for `needsPermission`. The sheet calls
+   * `api.account.reconnect` ('reconnect') or `api.account.grantPermissions` ('grant') and
+   * follows that flow's `connect` frames by `connectId` (the frame's `mode` is
+   * `reconnect` or `grantPermissions`); the shell passes `mode` on as
+   * `ReconnectSheetProps.mode` for the copy.
    */
   reconnect: { readonly accountId: AccountId; readonly mode: 'reconnect' | 'grant' };
   /**
    * The AI consent card as a sheet (plan 30 4.5 #1: Settings → AI "Review" after a provider
-   * change). Provider and model default to the Summaries choice in `Settings.ai.features`.
+   * change, or `Consent.needsReconsent`). Provider and model default to the Summaries choice in
+   * `Settings.ai.features`; Allow sends `api.consent.grant` with `Consent.currentVersion`.
    */
-  consent: { readonly providerId?: string; readonly model?: string };
+  consent: { readonly provider?: AiProviderId; readonly model?: string };
 }
 
 /** A sheet name. */
@@ -77,7 +81,7 @@ export type SheetArgsParam<K extends SheetName> =
 /**
  * Opens a sheet over the current window (`--elev-dialog`, `settle`). One sheet at a time:
  * opening the sheet that is already open with equal arguments keeps it; any other sheet
- * replaces it, cancelling the first (a reconnect's `AccountFlow.cancel()`). While it is open
+ * replaces it, cancelling the first (a waiting reconnect's `api.account.cancelConnect`). While it is open
  * the shell adds the modal `sheet` context to the key stack, so Esc runs `sheet.cancel` and
  * nothing behind it answers. Focus returns to the opener when it closes.
  */
@@ -115,6 +119,40 @@ export function useCommandTarget(target: TargetSummary | null): void {
 /** The current command target, live; the shell puts it in every `CommandContext` and the palette's context line (`contextLine`). */
 export function useCurrentTarget(): TargetSummary | null {
   return notImplemented('useCurrentTarget');
+}
+
+// ---------------------------------------------------------------------------
+// Toasts (DESIGN 7.13): the shell mounts the one ToastStack; screens push data
+// ---------------------------------------------------------------------------
+
+/** A toast a screen or command handler pushes. A chosen action runs its `commandId` through the registry; `onAction` covers actions with no command. */
+export interface PushedToast extends ToastData {
+  /** Called when an action without a `commandId` is chosen (rare; prefer a command so keys, palette and toast agree). */
+  onAction?: (actionId: string) => void;
+}
+
+/** Pushes a toast onto the shell's stack and returns its id. One operation, one notice: use the operation's opId as the id. Undo toasts are never silently replaced; the stack shows three. Navigation, saves and sync ticks never toast. */
+export function pushToast(toast: PushedToast): string {
+  void toast;
+  return notImplemented('pushToast');
+}
+
+/** Rewords a toast in place as its operation moves on ("Archiving…" → "Done · Undo Z", DESIGN 7.13); a no-op when it has already closed. */
+export function updateToast(id: string, patch: Partial<Omit<PushedToast, 'id'>>): void {
+  void id;
+  void patch;
+  notImplemented('updateToast');
+}
+
+/** Closes a toast early (its operation failed and an inline error took over, or Undo ran). */
+export function dismissToast(id: string): void {
+  void id;
+  notImplemented('dismissToast');
+}
+
+/** The live stack, newest last, for the shell's own ToastStack. Screens don't render toasts themselves. */
+export function useToasts(): readonly ToastData[] {
+  return notImplemented('useToasts');
 }
 
 // ---------------------------------------------------------------------------

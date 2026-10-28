@@ -20,14 +20,24 @@ export interface HoldUpgrade {
   readonly removeTyped: boolean;
 }
 
+/** How a hold ended: the key came up, Esc/blur/hide cancelled it, another key interrupted it, or a different hold key went down. */
+export type HoldEnd = 'up' | 'cancel' | 'interrupt' | 'down';
+
+/**
+ * What the tracker returns when an armed key ends. Keep what a hold command heard only when
+ * `upgraded && ended === 'up'` ("Release R to keep"); every other ending discards it ("Esc to cancel").
+ * `phase` is by duration alone and does not say how the hold ended.
+ */
 export interface HoldRelease {
   readonly key: string;
   readonly commandId: CommandId;
-  /** 'hold' when the key stayed down at least the threshold. */
+  /** 'hold' when the key stayed down at least the threshold. Duration only: Esc after a long hold is still 'hold'. */
   readonly phase: 'tap' | 'hold';
   /** True when tick() already reported the upgrade, so the hold command is running and should stop. */
   readonly upgraded: boolean;
   readonly heldMs: number;
+  /** How the hold ended (see HoldEnd). */
+  readonly ended: HoldEnd;
 }
 
 export interface HoldOptions {
@@ -76,7 +86,7 @@ interface Armed {
 export function createHoldTracker(thresholdMs: number = DEFAULT_HOLD_THRESHOLD_MS): HoldTracker {
   let current: Armed | null = null;
 
-  function finish(at: number): HoldRelease | null {
+  function finish(at: number, ended: HoldEnd): HoldRelease | null {
     if (!current) return null;
     const heldMs = Math.max(0, at - current.start);
     const release: HoldRelease = {
@@ -85,6 +95,7 @@ export function createHoldTracker(thresholdMs: number = DEFAULT_HOLD_THRESHOLD_M
       phase: heldMs >= thresholdMs ? 'hold' : 'tap',
       upgraded: current.upgraded,
       heldMs,
+      ended,
     };
     current = null;
     return release;
@@ -94,7 +105,7 @@ export function createHoldTracker(thresholdMs: number = DEFAULT_HOLD_THRESHOLD_M
     down(event, holdCommandId, at, options = {}) {
       const key = holdKeyOf(event);
       if (current?.key === key) return null;
-      const ended = finish(at);
+      const previous = finish(at, 'down');
       current = {
         key,
         commandId: holdCommandId,
@@ -102,13 +113,13 @@ export function createHoldTracker(thresholdMs: number = DEFAULT_HOLD_THRESHOLD_M
         typed: options.typed ?? false,
         upgraded: false,
       };
-      return ended;
+      return previous;
     },
     swallows(event) {
       return current !== null && holdKeyOf(event) === current.key;
     },
     interrupt(at) {
-      return finish(at);
+      return finish(at, 'interrupt');
     },
     tick(at) {
       if (!current || current.upgraded) return null;
@@ -119,10 +130,10 @@ export function createHoldTracker(thresholdMs: number = DEFAULT_HOLD_THRESHOLD_M
     },
     up(event, at) {
       if (current?.key !== holdKeyOf(event)) return null;
-      return finish(at);
+      return finish(at, 'up');
     },
     cancel(at) {
-      return finish(at);
+      return finish(at, 'cancel');
     },
     get deadline() {
       return current && !current.upgraded ? current.start + thresholdMs : null;

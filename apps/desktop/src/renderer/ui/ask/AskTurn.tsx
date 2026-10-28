@@ -20,8 +20,10 @@ export function AskTurn(props: AskTurnProps) {
     answer,
     citations,
     provider,
+    provenance,
     proposal,
     onOpenCitation,
+    onOpenEventCitation,
     onRetry,
     onUseAnotherProvider,
   } = props;
@@ -29,6 +31,10 @@ export function AskTurn(props: AskTurnProps) {
   const byIndex = new Map<number, CitationData>(citations.map(c => [c.index, c]));
   const referenced = new Set<number>();
   const hasAnswer = Boolean(answer && answer.length > 0);
+  // Hover only (DESIGN §9 rule 5): "Answer by Groq", "Answer by Ollama on this Mac".
+  const provenanceText = provenance
+    ? `Answer by ${provenance.provider}${provenance.local ? ' on this Mac' : ''}`
+    : undefined;
 
   return (
     <article
@@ -43,7 +49,7 @@ export function AskTurn(props: AskTurnProps) {
       </p>
       {steps ? <StepLog {...steps} /> : null}
       {hasAnswer ? (
-        <div className="ui-ask-turn__answer" dir="auto">
+        <div className="ui-ask-turn__answer" dir="auto" title={provenanceText}>
           {answer!.map((paragraph, p) => (
             <p key={p}>
               {paragraph.map((segment, s) => {
@@ -57,7 +63,12 @@ export function AskTurn(props: AskTurnProps) {
                 const source = byIndex.get(segment.index);
                 referenced.add(segment.index);
                 return source ? (
-                  <Citation key={s} {...source} onOpen={onOpenCitation} />
+                  <Citation
+                    key={s}
+                    {...source}
+                    onOpen={onOpenCitation}
+                    onOpenEvent={onOpenEventCitation}
+                  />
                 ) : (
                   <span key={s} className="ui-ask-turn__orphan">{`[${segment.index}]`}</span>
                 );
@@ -74,7 +85,12 @@ export function AskTurn(props: AskTurnProps) {
           {citations
             .filter(c => !referenced.has(c.index))
             .map(c => (
-              <Citation key={c.index} {...c} onOpen={onOpenCitation} />
+              <Citation
+                key={c.index}
+                {...c}
+                onOpen={onOpenCitation}
+                onOpenEvent={onOpenEventCitation}
+              />
             ))}
         </p>
       ) : null}
@@ -83,7 +99,18 @@ export function AskTurn(props: AskTurnProps) {
       ) : null}
       {state === 'stopped' ? (
         <p className="ui-ask-turn__stopped" role="status">
-          Stopped
+          Stopped.
+        </p>
+      ) : null}
+      {state === 'paused' ? (
+        <p className="ui-ask-turn__paused" role="status">
+          Paused for today. Resumes tomorrow.
+          {onUseAnotherProvider ? (
+            <>
+              {' '}
+              <Btn variant="text" label="Use another provider" onPress={onUseAnotherProvider} />
+            </>
+          ) : null}
         </p>
       ) : null}
       {state === 'failed' ? (

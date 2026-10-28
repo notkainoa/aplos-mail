@@ -345,6 +345,7 @@
   --ev-gap: var(--space-half);
   --drag-source: 0.5; /* the entry being dragged stays behind, dimmed (no token for it yet: see prop_gaps) */
   flex: 1;
+  height: 100%; /* bounded under a parent that is not a flex column too, so the 24 hours scroll inside it */
   min-height: 0;
   min-width: 0;
   display: flex;
@@ -1444,4 +1445,23 @@
   .ui-date-presets__day:hover:not([data-picked='true']) {
     background: var(--hover);
   }
+}
+
+/* ScopeChooser: which occurrences of a repeating event a change touches (DESIGN 7.8, freeze finding FR-21). */
+.ui-scope-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.ui-scope-chooser__question {
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-scope-chooser__rows {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }

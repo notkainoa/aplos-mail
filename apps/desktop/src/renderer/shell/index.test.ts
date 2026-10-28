@@ -7,13 +7,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   closeSheet,
+  dismissToast,
   NotImplementedError,
   openRoute,
   openSheet,
+  pushToast,
   SHELL_LANE,
+  updateToast,
   useCommandTarget,
   useCurrentTarget,
   useSheet,
+  useToasts,
 } from './index';
 import type { OpenSheet } from './index';
 
@@ -22,7 +26,7 @@ function sheetExample(): string {
   openSheet('reconnect', { accountId: 'a1', mode: 'reconnect' });
   openSheet('reconnect', { accountId: 'a1', mode: 'grant' });
   openSheet('consent');
-  openSheet('consent', { providerId: 'groq', model: 'llama-3.3-70b-versatile' });
+  openSheet('consent', { provider: 'groq', model: 'llama-3.3-70b-versatile' });
   // @ts-expect-error: the reconnect sheet needs its account.
   openSheet('reconnect');
   // @ts-expect-error: there is no such sheet.
@@ -74,6 +78,11 @@ test('every shell stub throws NotImplemented naming ui-shell', () => {
   assertNotImplemented(() => useCommandTarget(null), 'useCommandTarget');
   assertNotImplemented(() => useCurrentTarget(), 'useCurrentTarget');
   assertNotImplemented(() => openRoute('settings/ai'), 'openRoute');
+  const toast = { id: 'op-1', kind: 'later', message: 'Moved to Later', undoable: true } as const;
+  assertNotImplemented(() => pushToast(toast), 'pushToast');
+  assertNotImplemented(() => updateToast('op-1', { message: 'Done' }), 'updateToast');
+  assertNotImplemented(() => dismissToast('op-1'), 'dismissToast');
+  assertNotImplemented(() => useToasts(), 'useToasts');
 });
 
 test('the examples type-check and stop at the first stub', () => {
