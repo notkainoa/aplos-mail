@@ -27,6 +27,7 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
     'list.previousSection': run(() => actions.jump(-1)),
     'mail.done': run(() => actions.done()),
     'mail.later': run(() => actions.later()),
+    'mail.setDate': run(() => actions.setDate()),
     'mail.laneDown': run(() => actions.lane('down')),
     'mail.laneUp': run(() => actions.lane('up')),
     'mail.trash': run(() => actions.trash()),
@@ -37,7 +38,7 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
     'mail.remindIfNoReply': run(() => actions.remind()),
     'home.oneByOne': run(extra.oneByOne),
     'list.more': run(extra.more),
-    'app.undo': run(extra.undo),
+    'app.undo': run(() => extra.undo()),
   };
 }
 

@@ -15,7 +15,7 @@ import { connectDataLayer } from '../../data/connect';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
 import { harnessClock } from '../../data/clock';
 import { api, setClock, undoStack, type ThreadRow } from '../../data';
-import { dismissToast, pushToast } from '../../shell';
+import { dismissToast, pushToast, runToastAction } from '../../shell';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import { DoneScreen } from '../done';
 import { commandsForDone } from '../done/doneCommands';
@@ -35,7 +35,7 @@ import { asListRow, listRowPropsFor } from './listRows';
 import { ListRow } from '../../ui/list';
 import { setFormatClock } from '../../ui/list/internal/format';
 import { ListScreen } from './ListScreen';
-import { ListEmpty } from './ListStates';
+import { ListEmpty, ListFailed } from './ListStates';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
 
 const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -394,4 +394,37 @@ test('Done: H moves a row back to Home with Undo, and E and L do nothing', async
   } finally {
     world.connection.close();
   }
+});
+
+test('a list toast Undo undoes its own operation, not the newest one', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const { deps, cursor, window } = depsOver(world, ALL_CONFIG);
+    const [first, second] = window.snapshot().ids;
+    assert.ok(first && second);
+    const actions = createListActions(deps);
+    cursor.key = first;
+    actions.done();
+    const older = getToasts().find(toast => toast.kind === 'done');
+    assert.ok(older);
+    assert.equal(older.actions?.[0]?.commandId, undefined);
+    cursor.key = second;
+    actions.done();
+    const newer = getToasts().find(toast => toast.kind === 'done' && toast.id !== older.id);
+    assert.ok(newer);
+    runToastAction(older.id, 'undo');
+    const top = undoStack.peek();
+    assert.ok(
+      top?.kind === 'operation' && top.opId === newer.id,
+      'the older operation was undone and the newer one is still the newest to undo',
+    );
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('a list that failed with nothing to show says so in one sentence', () => {
+  assert.match(renderToStaticMarkup(createElement(ListFailed)), /Couldn’t load this list\./);
 });

@@ -22,6 +22,7 @@ import {
   type SectionKey,
 } from './homeModel';
 import { senderOf } from './homeRows';
+import { UNDO_ACTION, undoHandler } from '../undoOperation';
 
 /** The live state an action reads when its key arrives. */
 export interface HomeSnapshot {
@@ -50,10 +51,12 @@ export interface HomeDeps {
   /** The hold gate (`useHold('home')`): a key starts or extends it around `ids`. */
   hold: { extend(ids?: readonly Id[]): void };
   /** Draws the commit (ghost, chip, edge); it also extends the hold, so only one of the two is called. */
-  commit?(kind: CommitKind, holdIds: readonly Id[]): void;
+  commit?(kind: CommitKind, holdIds: readonly Id[], rowId: ThreadId): void;
   /** Who may press R: the thread a "Remind me if no reply" toast is offering, or null. */
   offerReminder(id: ThreadId | null): void;
   reminderOffer(): ThreadId | null;
+  /** Opens the Later date presets for this thread (D on the cursor row, or "Set a date" on its Later toast). */
+  openDatePicker(id: ThreadId): void;
   /** Runs a registry command (Space on a reply runs `mail.reply`, which the reader lane owns). */
   runCommand(id: string): RunStatus;
   /** Fallback when a command is not handled yet. */
@@ -80,7 +83,12 @@ export interface HomeActions {
   suggested(): void;
   open(): void;
   clearFromHome(): void;
-  remind(): void;
+  /** R, or "Remind me if no reply" on that thread's own Done toast. */
+  remind(id?: ThreadId): void;
+  /** D on the cursor row, or "Set a date" on that thread's own Later toast: opens the date presets. */
+  setDate(id?: ThreadId): void;
+  /** An operation was undone (its toast's Undo, or Z): its reminder offer, if it had one, is withdrawn. */
+  undone(opId: string): void;
 }
 
 /** Radius of rows pinned around the cursor while a burst lasts. */
@@ -91,8 +99,6 @@ const LANE_LABEL: Readonly<Record<MovableLane, string>> = {
   update: 'Important updates',
   low: 'Low importance',
 };
-
-const UNDO = { id: 'undo', label: 'Undo', commandId: 'app.undo' } as const;
 
 interface Target {
   readonly row: ThreadRow;
@@ -107,12 +113,27 @@ function targetOf(snapshot: HomeSnapshot): Target | null {
 }
 
 export function createHomeActions(deps: HomeDeps): HomeActions {
+  /** The operation whose Done toast is offering a reminder (the one R answers), or null. */
+  let offeredOp: string | null = null;
+
+  const undone = (opId: string): void => {
+    if (opId !== offeredOp) return;
+    offeredOp = null;
+    deps.offerReminder(null);
+  };
+
+  const offer = (opId: string | null, id: ThreadId | null): void => {
+    offeredOp = opId;
+    deps.offerReminder(id);
+  };
+
   const around = (snapshot: HomeSnapshot) =>
     neighbourIds(snapshot.items, snapshot.key, HOLD_RADIUS);
 
-  function startHold(snapshot: HomeSnapshot, kind?: CommitKind): void {
+  /** Pins the rows around the key; with a `kind` it also draws the commit on the row that is leaving (`rowId`). */
+  function startHold(snapshot: HomeSnapshot, kind?: CommitKind, rowId?: ThreadId): void {
     const ids = around(snapshot);
-    if (kind && deps.commit) deps.commit(kind, ids);
+    if (kind && rowId !== undefined && deps.commit) deps.commit(kind, ids, rowId);
     else deps.hold.extend(ids);
   }
 
@@ -129,7 +150,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     const snapshot = read(key);
     const target = targetOf(snapshot);
     if (!target) return;
-    startHold(snapshot, 'done');
+    startHold(snapshot, 'done', target.row.id);
     const { opId, receipt } = deps.act({ ids: [target.row.id], action: { type: 'done' } });
     const remind = offersReminder(target.row, target.section);
     deps.push({
@@ -138,13 +159,14 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
       message: deps.undoLabel('mail.done', 'Done'),
       undoable: true,
       actions: remind
-        ? [
-            { id: 'remind', label: 'Remind me if no reply', commandId: 'mail.remindIfNoReply' },
-            UNDO,
-          ]
-        : [UNDO],
+        ? [{ id: 'remind', label: 'Remind me if no reply' }, UNDO_ACTION]
+        : [UNDO_ACTION],
+      onAction: actionId => {
+        if (actionId === 'remind') remindAbout(target.row.id);
+        else undoHandler(opId, () => undone(opId))(actionId);
+      },
     });
-    deps.offerReminder(remind ? target.row.id : null);
+    offer(remind ? opId : null, remind ? target.row.id : null);
     failOnReject(opId, receipt);
   }
 
@@ -152,14 +174,18 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     const snapshot = read(key);
     const target = targetOf(snapshot);
     if (!target) return;
-    startHold(snapshot, 'later');
+    startHold(snapshot, 'later', target.row.id);
     const { opId, receipt } = deps.act({ ids: [target.row.id], action: { type: 'later' } });
     deps.push({
       id: opId,
       kind: 'later',
       message: deps.undoLabel('mail.later', 'Moved to Later'),
       undoable: true,
-      actions: [{ id: 'setDate', label: 'Set a date', commandId: 'mail.setDate' }, UNDO],
+      actions: [{ id: 'setDate', label: 'Set a date' }, UNDO_ACTION],
+      onAction: actionId => {
+        if (actionId === 'setDate') deps.openDatePicker(target.row.id);
+        else undoHandler(opId, () => undone(opId))(actionId);
+      },
     });
     failOnReject(opId, receipt);
   }
@@ -182,9 +208,9 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
       kind: 'info',
       message: `Moved to ${LANE_LABEL[to]}`,
       undoable: true,
-      actions: [{ id: 'always', label: always }, UNDO],
+      actions: [{ id: 'always', label: always }, UNDO_ACTION],
       onAction: actionId => {
-        if (actionId !== 'always') return;
+        if (actionId !== 'always') return undoHandler(opId)(actionId);
         deps.act({
           ids: [target.row.id],
           action: { type: 'lane', lane: to, alsoForSender: true },
@@ -198,14 +224,15 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     const snapshot = deps.snapshot();
     const target = targetOf(snapshot);
     if (!target) return;
-    startHold(snapshot, 'trash');
+    startHold(snapshot, 'trash', target.row.id);
     const { opId, receipt } = deps.act({ ids: [target.row.id], action: { type: 'trash' } });
     deps.push({
       id: opId,
       kind: 'trash',
       message: deps.undoLabel('mail.trash', 'Moved to Trash'),
       undoable: true,
-      actions: [UNDO],
+      actions: [UNDO_ACTION],
+      onAction: undoHandler(opId),
     });
     failOnReject(opId, receipt);
   }
@@ -220,7 +247,8 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
       kind: 'bookmark',
       message: on ? 'Bookmarked' : 'Bookmark removed',
       undoable: true,
-      actions: [UNDO],
+      actions: [UNDO_ACTION],
+      onAction: undoHandler(opId),
     });
     failOnReject(opId, receipt);
   }
@@ -254,21 +282,38 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
       kind: 'later',
       message: deps.undoLabel('home.clearFromHome', 'Moved to Later'),
       undoable: true,
-      actions: [UNDO],
+      actions: [UNDO_ACTION],
+      onAction: undoHandler(opId),
     });
     failOnReject(opId, receipt);
   }
 
-  function remind(): void {
-    const id = deps.reminderOffer();
-    if (id === null) return;
-    deps.offerReminder(null);
+  /** Sets "Remind me if no reply" on `id`; the live offer ends when it was for this thread. */
+  function remindAbout(id: ThreadId): void {
+    if (deps.reminderOffer() === id) offer(null, null);
     const { opId, receipt } = deps.act({
       ids: [id],
       action: { type: 'reminder', ifNoReply: true },
     });
-    deps.push({ id: opId, kind: 'info', message: 'Reminder set', undoable: true, actions: [UNDO] });
+    deps.push({
+      id: opId,
+      kind: 'info',
+      message: 'Reminder set',
+      undoable: true,
+      actions: [UNDO_ACTION],
+      onAction: undoHandler(opId),
+    });
     failOnReject(opId, receipt);
+  }
+
+  function remind(id?: ThreadId): void {
+    const at = id ?? deps.reminderOffer();
+    if (at !== null) remindAbout(at);
+  }
+
+  function setDate(id?: ThreadId): void {
+    const at = id ?? targetOf(deps.snapshot())?.row.id;
+    if (at !== undefined) deps.openDatePicker(at);
   }
 
   function moveCursor(next: (snapshot: HomeSnapshot) => string | null): void {
@@ -290,5 +335,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     open,
     clearFromHome,
     remind,
+    setDate,
+    undone,
   };
 }

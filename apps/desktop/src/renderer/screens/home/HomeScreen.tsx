@@ -20,14 +20,22 @@ import { toSyncStatus } from '../../shell/status-map';
 import { useCommandTarget, useCurrentTarget, useShellKeyLayer } from '../../shell';
 import { CommitChip, CommitEdge } from '../../ui/list';
 import { statusCopy } from '../../ui/status';
+import { ListFailed } from '../lists/ListStates';
 import { HomeEmpty } from './HomeStates';
-import { activeDomId, HomeList, threadIdOfDomId, type HomeListHandlers } from './HomeList';
+import {
+  activeDomId,
+  HomeList,
+  rowDomId,
+  threadIdOfDomId,
+  type HomeListHandlers,
+} from './HomeList';
 import { HomeOverlays } from './HomeOverlays';
 import type { HomeSnapshot, OpenHow } from './homeActions';
 import { homeRunContext } from './homeCommands';
 import { buildItems, orderLayout, type HomeLayout } from './homeModel';
 import { densityOf, senderOf } from './homeRows';
 import { useHomeActions } from './useHomeActions';
+import { useHomeDatePicker } from './useHomeDatePicker';
 import { useHomeCursor } from './useHomeCursor';
 import { isGate, useHomeMotion } from './useHomeMotion';
 
@@ -60,6 +68,12 @@ function layoutOf(home: HomeData): HomeLayout {
     follow: bySection('follow')?.ids ?? [],
     lowCount: home.low.count,
   };
+}
+
+function hasRows(layout: HomeLayout): boolean {
+  return (
+    layout.do.length + layout.fromLater.length + layout.update.length + layout.follow.length > 0
+  );
 }
 
 /** The pointer rests on a row: pin it (the hold waits until the pointer leaves). */
@@ -146,12 +160,13 @@ export function HomeScreen({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     [],
   );
   const commit = useCallback(
-    (kind: 'done' | 'later' | 'trash', ids: readonly string[]) => {
-      const dom = activeDomId(snapshot.current.key);
-      motionCommit(kind, dom ? document.getElementById(dom) : null, ids);
+    (kind: 'done' | 'later' | 'trash', ids: readonly string[], rowId: ThreadId) => {
+      // The row acted on, which is not the one under the cursor when a hover button was pressed.
+      motionCommit(kind, document.getElementById(rowDomId(rowId)), ids);
     },
     [motionCommit],
   );
+  const datePicker = useHomeDatePicker(hold);
   const openLow = useCallback(() => setLowOpen(true), []);
   const openMore = useCallback(() => {
     const dom = activeDomId(snapshot.current.key);
@@ -168,10 +183,11 @@ export function HomeScreen({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     openLow,
     oneByOne,
     openMore,
+    openDatePicker: datePicker.open,
   });
   keyState.current = { lowSheetOpen: lowOpen, remindOffer, target };
   useShellKeyLayer({
-    contexts: lowOpen ? ['lowImportance'] : [],
+    contexts: lowOpen ? ['lowImportance'] : datePicker.isOpen ? ['datePicker'] : [],
     conditions: { remindOffer },
   });
   const pointer = usePointerHold(hold);
@@ -204,7 +220,8 @@ export function HomeScreen({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
       />
     );
   }
-  if (home.status !== 'live') return null;
+  if (home.status === 'failed' && !hasRows(layout)) return <ListFailed />;
+  if (home.status === 'opening') return null;
   return (
     <div className="aplos-list-column" data-screen="home" {...pointer}>
       <HomeList
@@ -217,6 +234,7 @@ export function HomeScreen({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
         handlers={handlers}
       />
       <CommitTemplates forwardedRef={templates} />
+      {datePicker.element}
       <HomeOverlays
         accountId={accountId}
         lowOpen={lowOpen}

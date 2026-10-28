@@ -28,7 +28,7 @@ import {
 } from './shell';
 import { HomeScreen as HomeRoute } from './screens/home';
 import { LaterScreen } from './screens/later';
-import { ListScreen, type ListWhich } from './screens/lists';
+import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
 import { Shell } from './shell/Shell';
 import { FirstSyncLine, NoAccountsLine } from './shell/states';
@@ -249,11 +249,14 @@ function HomeSlot() {
   return <HomeRoute {...useHomeShellProps()} />;
 }
 
-/** The scope's account (undefined for All accounts) and the opener every list shares: a row of any kind opens its thread for now. */
+/** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader; drafts and submissions wait for the composer lane (no-op until it lands). */
 function useListProps() {
   const scope = useAccountScope();
   return useMemo(
-    () => ({ accountId: scope ?? undefined, onOpen: (id: string) => openThread(id) }),
+    () => ({
+      accountId: scope ?? undefined,
+      onOpen: (id: string, kind: OpenKind) => (kind === 'thread' ? openThread(id) : undefined),
+    }),
     [scope],
   );
 }
@@ -267,7 +270,8 @@ function DoneSlot() {
 }
 
 function ListSlot({ which }: { readonly which: ListWhich }) {
-  return <ListScreen which={which} {...useListProps()} />;
+  // Keyed by place, so Trash -> Spam -> All mail never carries an open Confirm or a cursor across.
+  return <ListScreen key={JSON.stringify(which)} which={which} {...useListProps()} />;
 }
 
 /** Labels other lanes open as placeholders (the reader, one by one, search, help, compose); any other label is a folder id. */

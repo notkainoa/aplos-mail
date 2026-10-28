@@ -5,6 +5,7 @@
  */
 import type { DataApi } from '../../data';
 import type { PushedToast } from '../../shell';
+import { UNDO_ACTION, undoHandler } from '../undoOperation';
 
 /** The screen's side of re-dating. */
 export interface RescheduleDeps {
@@ -15,8 +16,6 @@ export interface RescheduleDeps {
   /** Starts or extends the list's hold around these ids. */
   hold(ids: readonly string[]): void;
 }
-
-const UNDO = { id: 'undo', label: 'Undo', commandId: 'app.undo' } as const;
 
 /** Moves one thread to `until` (absent: Someday) and says where, e.g. "Moved to Tomorrow, 8:00 AM". */
 export function reschedule(
@@ -32,7 +31,8 @@ export function reschedule(
     kind: 'later',
     message: `Moved to ${label}`,
     undoable: true,
-    actions: [UNDO],
+    actions: [UNDO_ACTION],
+    onAction: undoHandler(opId),
   });
   receipt.catch(() => deps.dismiss(opId));
 }

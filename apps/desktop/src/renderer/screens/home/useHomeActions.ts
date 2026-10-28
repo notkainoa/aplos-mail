@@ -31,12 +31,14 @@ export interface HomeActionInputs {
   readonly context: () => CommandContext;
   readonly hold: HoldController;
   readonly setCursor: (key: string | null) => void;
-  /** Draws a commit on the element under the cursor and extends the hold. */
-  readonly commit: (kind: CommitKind, holdIds: readonly string[]) => void;
+  /** Draws a commit on the row that is leaving (the one acted on, not necessarily under the cursor) and extends the hold. */
+  readonly commit: (kind: CommitKind, holdIds: readonly string[], rowId: ThreadId) => void;
   readonly openThread: (id: ThreadId, how: OpenHow) => void;
   readonly openLow: () => void;
   readonly oneByOne: () => void;
   readonly openMore: () => void;
+  /** Opens the Later date presets for this thread. */
+  readonly openDatePicker: (id: ThreadId) => void;
 }
 
 /** What the screen reads back: the thread a Remind toast is offering (so R is live), and the actions. */
@@ -71,16 +73,18 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
     latest.current = inputs;
   });
   const offer = useRef<ThreadId | null>(null);
-  const [remindOffer, setRemindOffer] = useState(false);
+  // A new object per offer, so a second Done that needs a reply restarts the clock even for the same thread.
+  const [current, setCurrent] = useState<{ readonly id: ThreadId } | null>(null);
+  const remindOffer = current !== null;
 
   useEffect(() => {
-    if (!remindOffer) return;
+    if (!current) return;
     const timer = setTimeout(() => {
       offer.current = null;
-      setRemindOffer(false);
+      setCurrent(null);
     }, UNDO_TOAST_MS);
     return () => clearTimeout(timer);
-  }, [remindOffer]);
+  }, [current]);
 
   const actions = useMemo(() => {
     const now = () => latest.current;
@@ -91,11 +95,12 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
       push: pushToast,
       dismiss: dismissToast,
       hold: { extend: ids => now().hold.extend(ids) },
-      commit: (kind, ids) => now().commit(kind, ids),
+      commit: (kind, ids, rowId) => now().commit(kind, ids, rowId),
       offerReminder: id => {
         offer.current = id;
-        setRemindOffer(id !== null);
+        setCurrent(id === null ? null : { id });
       },
+      openDatePicker: id => now().openDatePicker(id),
       reminderOffer: () => offer.current,
       runCommand: id => statusOf(registry.run(id, now().context())),
       openThread: (id, how) => now().openThread(id, how),
@@ -109,7 +114,7 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
 
   const { oneByOne, openMore } = inputs;
   const table = useMemo(
-    () => commandsForHome(actions, { oneByOne, more: openMore, undo: undoLast }),
+    () => commandsForHome(actions, { oneByOne, more: openMore, undo: () => undoLast(actions) }),
     [actions, oneByOne, openMore],
   );
   useRegisterCommands(table);
@@ -118,6 +123,8 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
 
 const EMPTY: HomeSnapshot = { items: [], key: null, rowOf: () => undefined, state: null };
 
-function undoLast(): void {
-  undoStack.undoLast();
+/** Z: undoes the newest change; if it was the operation behind the live reminder offer, the offer ends with it. */
+function undoLast(actions: HomeActions): void {
+  const outcome = undoStack.undoLast();
+  if (outcome?.kind === 'operation') actions.undone(outcome.opId);
 }

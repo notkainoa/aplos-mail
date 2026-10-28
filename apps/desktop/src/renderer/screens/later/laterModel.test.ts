@@ -7,7 +7,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { WindowSection } from '../../data';
-import { GROUP_ORDER, flatIds, groupsOf, keepEmptied, type LaterGroup } from './laterGroups';
+import {
+  GROUP_ORDER,
+  flatIds,
+  groupsOf,
+  keepEmptied,
+  withDropZones,
+  type LaterGroup,
+} from './laterGroups';
 import {
   DRAG_THRESHOLD,
   IDLE,
@@ -158,8 +165,11 @@ test('drop targets: Today lands on this evening, This week on tomorrow, Someday 
   );
 });
 
-function lifted(over: 'today' | 'week' | 'someday' | 'overdue' | null): DragState {
-  return { phase: 'lifted', id: 't', from: 'someday', over };
+function lifted(
+  over: 'today' | 'week' | 'someday' | 'overdue' | null,
+  from: 'today' | 'week' | 'someday' | 'overdue' = 'overdue',
+): DragState {
+  return { phase: 'lifted', id: 't', from, over };
 }
 
 test('a press lifts only after the threshold, and the state changes only when something visible does', () => {
@@ -227,6 +237,11 @@ test('a release resolves to a moment, or to nothing over Overdue, outside a grou
   });
   assert.equal(dropFor(lifted('overdue'), targets), null, 'you cannot reschedule into the past');
   assert.equal(dropFor(lifted(null), targets), null);
+  assert.equal(
+    dropFor(lifted('week', 'week'), targets),
+    null,
+    'a drop on its own group re-dates nothing',
+  );
   assert.equal(dropFor(IDLE, targets), null);
   assert.equal(dropFor({ phase: 'pressed', id: 't', from: 'week', x: 0, y: 0 }, targets), null);
 });
@@ -279,4 +294,23 @@ test('the date picker model: open on the first preset, Pick a date opens the mon
   assert.equal(pickedUntil(opened, now), null, 'no day picked');
   assert.equal(pickerReducer(moved, { type: 'close' }), CLOSED);
   assert.equal(dayAfter('2026-12-31'), '2027-01-01');
+});
+
+test('while a row is lifted every target group is on screen, empty ones at 0, and Overdue only with rows', () => {
+  const groups = groupsOf(['a', 'b'], [section('week', 0, 2)], 0);
+  const zones = withDropZones(groups);
+  assert.deepEqual(
+    zones.map(group => group.key),
+    ['today', 'week', 'someday'],
+  );
+  assert.deepEqual(
+    zones.map(group => group.count),
+    [0, 2, 0],
+  );
+  assert.ok(zones.filter(group => group.ids.length === 0).every(group => group.held));
+  const withOverdue = withDropZones(groupsOf(['a'], [section('overdue', 0, 1)], 0));
+  assert.deepEqual(
+    withOverdue.map(group => group.key),
+    ['overdue', 'today', 'week', 'someday'],
+  );
 });

@@ -10,6 +10,7 @@ import type { PushedToast } from '../../shell';
 import { stepKey, neighbourKeys } from './listModel';
 import { openKindOf, isThread, type ListRowData, type OpenKind } from './listRows';
 import type { ListKind } from './listKinds';
+import { UNDO_ACTION, undoHandler } from '../undoOperation';
 
 /** The live state an action reads when its key arrives. */
 export interface ListSnapshot {
@@ -69,7 +70,6 @@ export interface ListActions {
   cancelConfirm(): void;
 }
 
-const UNDO = { id: 'undo', label: 'Undo', commandId: 'app.undo' } as const;
 const TRIAGE_KINDS: readonly ListKind[] = ['all', 'label', 'sent', 'bookmarks', 'later'];
 
 interface Target {
@@ -106,7 +106,13 @@ export function createListActions(deps: ListDeps): ListActions {
   ): void {
     hold();
     const { opId, receipt } = deps.act({ ids: [row.id], action });
-    deps.push({ id: opId, undoable: true, actions: [UNDO], ...toast });
+    deps.push({
+      id: opId,
+      undoable: true,
+      actions: [UNDO_ACTION],
+      onAction: undoHandler(opId),
+      ...toast,
+    });
     failOnReject(opId, receipt);
   }
 

@@ -3,12 +3,15 @@
  * the sheet is open, so the window is watched only then. The first → arms and the second marks every thread done in
  * one operation (a selector over the section, at the state the owner saw), with one Undo toast.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, useView } from '../../data';
 import type { Account, AccountId, ThreadId, ThreadRow, ViewResult } from '../../data';
 import { dismissToast, pushToast, useRegisterCommands } from '../../shell';
 import type { Density, ListRowProps, LowSheetGroup } from '../../ui/props';
 import { LowSheet } from '../../ui/list';
+import { stepKey } from '../lists/listModel';
+import { useIdCursor } from '../lists/useIdCursor';
+import { UNDO_ACTION, undoHandler } from '../undoOperation';
 import { listRowProps, primaryOf } from './homeRows';
 
 const BINDING_ID = 'home-low-list';
@@ -41,18 +44,25 @@ export function groupsOf(
   });
 }
 
-function useSheetCursor(ids: readonly string[]) {
-  const [at, setAt] = useState(0);
-  const count = ids.length;
+/** The sheet's cursor is a thread id, so mail arriving above it never moves the highlighted row. */
+function useSheetCursor(source: readonly string[]) {
+  const cursor = useIdCursor(source);
+  const latest = useRef(cursor);
+  useEffect(() => {
+    latest.current = cursor;
+  });
   const table = useMemo(() => {
-    const step = (delta: 1 | -1) => setAt(i => Math.max(0, Math.min(count - 1, i + delta)));
+    const step = (delta: 1 | -1) => {
+      const { ids, key, setCursor } = latest.current;
+      setCursor(stepKey(ids, key, delta));
+    };
     return {
       'lowImportance.next': { run: () => step(1) },
       'lowImportance.previous': { run: () => step(-1) },
     };
-  }, [count]);
+  }, []);
   useRegisterCommands(table);
-  return ids[Math.min(at, ids.length - 1)];
+  return cursor.key ?? undefined;
 }
 
 /** The sheet over Home. */
@@ -88,7 +98,8 @@ export function LowSheetHost(props: LowSheetHostProps) {
       kind: 'done',
       message: 'Done',
       undoable: true,
-      actions: [{ id: 'undo', label: 'Undo', commandId: 'app.undo' }],
+      actions: [UNDO_ACTION],
+      onAction: undoHandler(opId),
     });
     receipt.catch(() => dismissToast(opId));
     onClose();

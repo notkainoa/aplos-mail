@@ -77,3 +77,17 @@ export function keepEmptied(
 export function flatIds(groups: readonly LaterGroup[]): string[] {
   return groups.flatMap(group => group.ids);
 }
+
+/**
+ * While a row is lifted every group Later offers as a drop target is on screen, even one with no rows, so there is
+ * always somewhere to drop (DESIGN 7.3). Overdue is never a target, so it appears only when it has rows. The empty
+ * zones show at 0, like a group emptied under a hold.
+ */
+export function withDropZones(groups: readonly LaterGroup[]): LaterGroup[] {
+  return GROUP_ORDER.flatMap(key => {
+    const present = groups.find(group => group.key === key);
+    if (present) return [present];
+    if (key === 'overdue') return [];
+    return [{ key, label: GROUP_LABEL[key], ids: [], count: 0, held: true }];
+  });
+}

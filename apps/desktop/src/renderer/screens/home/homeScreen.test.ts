@@ -16,7 +16,7 @@ import { createManualScheduler, createManualTimers } from '../../data/scheduler'
 import { api, setClock, undoStack, type ThreadRow } from '../../data';
 import { harnessClock } from '../../data/clock';
 import { getToasts, resetToasts } from '../../shell/store-toast';
-import { pushToast, dismissToast } from '../../shell';
+import { pushToast, dismissToast, runToastAction } from '../../shell';
 import { createHomeActions, type HomeDeps, type HomeSnapshot, type RunStatus } from './homeActions';
 import { commandsForHome } from './homeCommands';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
@@ -118,6 +118,8 @@ function depsOver(world: Awaited<ReturnType<typeof boot>>, key: { current: strin
     openLow: () => void calls.push('low'),
     oneByOne: () => void calls.push('oneByOne'),
     openMore: () => void calls.push('more'),
+    openDatePicker: id => void calls.push(`picker:${id}`),
+    commit: (kind, _ids, rowId) => void calls.push(`commit:${kind}:${rowId}`),
     undoLabel: (_id, fallback) => fallback,
   };
   return { deps, calls, ran, offer: () => offer };
@@ -184,7 +186,7 @@ test('Done: the row leaves at once, one toast with the opId offers Undo, and Z b
     actions.done();
     assert.ok(!world.home.snapshot().ids.includes(target), 'the overlay removed it synchronously');
     assert.ok(
-      calls.some(c => c.startsWith('hold:')),
+      calls.some(c => c.startsWith('hold:') || c.startsWith('commit:')),
       'the hold started',
     );
     const toast = getToasts().find(t => t.kind === 'done');
@@ -219,7 +221,7 @@ test('Done on a Follow up row offers Remind me if no reply, and R sets the remin
       toast?.actions?.map(a => a.id),
       ['remind', 'undo'],
     );
-    assert.equal(toast?.actions?.[0]?.commandId, 'mail.remindIfNoReply');
+    assert.equal(toast?.actions?.[0]?.commandId, undefined, 'the button acts on its own thread');
     assert.equal(offer(), follow);
     actions.remind();
     assert.equal(offer(), null);
@@ -343,6 +345,119 @@ test("the registry runs Home's commands: E is Done, Tab jumps a section, Z undoe
     assert.equal(press('z'), 'ran');
     assert.ok(world.home.snapshot().ids.includes(start));
     detach();
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('a toast Undo undoes its own operation, not the newest one', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const [first, second] = layoutOf(world.home.snapshot()).do;
+    assert.ok(first && second, 'the demo has two Do now rows');
+    const key = { current: first as string | null };
+    const { deps } = depsOver(world, key);
+    const actions = createHomeActions(deps);
+    actions.done();
+    const older = getToasts().find(t => t.kind === 'done');
+    assert.ok(older, 'the first Done toast');
+    key.current = second;
+    actions.done();
+    runToastAction(older.id, 'undo');
+    const ids = world.home.snapshot().ids;
+    assert.ok(ids.includes(first), 'the older toast restored its own thread');
+    assert.ok(!ids.includes(second), 'and left the newer one done');
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('every Done that needs a reply carries its own Remind, and Undo withdraws the offer', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const follow = layoutOf(world.home.snapshot()).follow;
+    const [a, b] = follow;
+    if (!a || !b) return;
+    const key = { current: a as string | null };
+    const { deps, offer } = depsOver(world, key);
+    const actions = createHomeActions(deps);
+    actions.done();
+    const older = getToasts().find(t => t.kind === 'done');
+    key.current = b;
+    actions.done();
+    assert.equal(offer(), b, 'R answers the newest offer');
+    runToastAction(older!.id, 'remind');
+    const reminded = getToasts().filter(t => t.message === 'Reminder set');
+    assert.equal(reminded.length, 1, 'the older toast set its own reminder');
+    assert.equal(offer(), b, 'and the newest offer is untouched');
+    const newest = getToasts().find(t => t.kind === 'done' && t.id !== older!.id);
+    runToastAction(newest!.id, 'undo');
+    assert.equal(offer(), null, 'Undo on the offering toast ends the offer');
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('Later offers Set a date for its own thread, and D opens the picker for the cursor row', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const [first, second] = layoutOf(world.home.snapshot()).do;
+    assert.ok(first && second);
+    const key = { current: first as string | null };
+    const { deps, calls } = depsOver(world, key);
+    const actions = createHomeActions(deps);
+    actions.later();
+    const toast = getToasts().find(t => t.kind === 'later');
+    assert.deepEqual(
+      toast?.actions?.map(a => a.id),
+      ['setDate', 'undo'],
+    );
+    key.current = second;
+    runToastAction(toast!.id, 'setDate');
+    assert.deepEqual(
+      calls.filter(c => c.startsWith('picker:')),
+      [`picker:${first}`],
+    );
+    const registry = createAppRegistry();
+    const detach = shellRegistryFor(registry).register(
+      commandsForHome(actions, { oneByOne: () => {}, more: () => {}, undo: () => {} }),
+    );
+    const context: CommandContext = {
+      stack: ['global', 'list', 'home'],
+      target: null,
+      selection: [],
+      conditions: {},
+      prefs: DEFAULT_KEY_PREFS,
+      focus: 'none',
+    };
+    assert.equal(registry.run('mail.setDate', context).status, 'ran');
+    assert.ok(calls.includes(`picker:${second}`), 'D re-dates the row under the cursor');
+    detach();
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('the commit animates the row that was acted on, not the one under the cursor', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const [first, second] = layoutOf(world.home.snapshot()).do;
+    assert.ok(first && second);
+    const key = { current: first as string | null };
+    const { deps, calls } = depsOver(world, key);
+    createHomeActions(deps).done(second);
+    assert.deepEqual(
+      calls.filter(c => c.startsWith('commit:')),
+      [`commit:done:${second}`],
+    );
     await world.flush();
   } finally {
     world.connection.close();

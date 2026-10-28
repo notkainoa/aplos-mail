@@ -119,12 +119,12 @@ export interface Drop {
   readonly label: string;
 }
 
-/** The drop for a release, or null: not lifted, released outside a group, or over an unavailable group. */
+/** The drop for a release, or null: not lifted, released outside a group, on the row's own group, or over an unavailable group. */
 export function dropFor(
   drag: DragState,
   targets: Readonly<Record<LaterGroupKey, DropTarget>>,
 ): Drop | null {
-  if (drag.phase !== 'lifted' || drag.over === null) return null;
+  if (drag.phase !== 'lifted' || drag.over === null || drag.over === drag.from) return null;
   const target = targets[drag.over];
   if (target.state === 'unavailable') return null;
   return { id: drag.id, until: target.until, label: target.label };

@@ -14,6 +14,17 @@ export function ListEmpty({ text, state }: { readonly text: string; readonly sta
   return <EmptyLine text={text} />;
 }
 
+/**
+ * The line a list shows when its view failed with nothing to show. One fixed sentence, as DESIGN 7.15 words it.
+ * TODO(ui): this becomes `ErrorLine` kind 'listFailed' ("Couldn’t load this list." with Retry) once that kind lands in
+ * renderer/ui; until then the same sentence is an `EmptyLine`.
+ */
+export function ListFailed() {
+  return <EmptyLine text={LIST_FAILED_TEXT} />;
+}
+
+export const LIST_FAILED_TEXT = 'Couldn’t load this list.';
+
 /** The words of each confirmation: what happens and whether it can be undone (DESIGN 10). */
 export const CONFIRM_COPY = {
   deleteForever: {

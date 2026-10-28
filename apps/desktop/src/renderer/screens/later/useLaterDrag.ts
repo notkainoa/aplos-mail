@@ -142,7 +142,6 @@ export function useLaterDrag(options: LaterDragOptions): LaterDrag {
       const id = row ? rowIdOfDom(config, row.id) : null;
       const from = id === null ? undefined : groupOf(id);
       if (!row || id === null || from === undefined) return;
-      event.currentTarget.setPointerCapture?.(event.pointerId);
       apply({ type: 'press', id, from, x: event.clientX, y: event.clientY });
     },
     [apply],
@@ -155,6 +154,8 @@ export function useLaterDrag(options: LaterDragOptions): LaterDrag {
       const over = groupAt(measure(event.currentTarget), event.clientY);
       const after = apply({ type: 'move', x: event.clientX, y: event.clientY, over });
       if (after.phase !== 'lifted') return;
+      // Capture only once the row lifts: capturing at pointer-down would retarget a plain click's events.
+      if (before.phase !== 'lifted') event.currentTarget.setPointerCapture?.(event.pointerId);
       if (!ghost.current) {
         const origin = before.phase === 'pressed' ? before : null;
         const row = event.currentTarget.ownerDocument.getElementById(
@@ -171,7 +172,8 @@ export function useLaterDrag(options: LaterDragOptions): LaterDrag {
   const onPointerUp = useCallback(
     (event: PointerEvent<HTMLElement>) => {
       const drop = dropFor(state.current, latest.current.targets);
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId))
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
       finish();
       if (drop) latest.current.onDrop(drop);
     },

@@ -10,7 +10,7 @@ import { failurePhrase } from '../home/homeRows';
 import type { ListActions } from './listActions';
 import { groupByDate } from './listModel';
 import { dateMsOf, listRowPropsFor } from './listRows';
-import { ListConfirm, ListEmpty } from './ListStates';
+import { ListConfirm, ListEmpty, ListFailed } from './ListStates';
 import { rowDomId, type MailListState } from './useMailList';
 
 /** The hover buttons' commands, routed to the row they sit on. */
@@ -101,6 +101,7 @@ export function MailListView({ list }: { readonly list: MailListState }) {
   const { config, view, cursor, actions, confirmation, pointer } = list;
   if (view.status === 'live' && view.ids.length === 0 && view.total === 0)
     return <ListEmpty text={config.empty} state={list.empty} />;
+  if (view.status === 'failed' && view.ids.length === 0) return <ListFailed />;
   if (view.status !== 'live' && view.ids.length === 0) return null;
   const binding: ListboxBinding = {
     id: config.id,

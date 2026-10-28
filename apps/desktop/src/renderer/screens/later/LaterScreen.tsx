@@ -19,7 +19,13 @@ import { rowDomId, useMailList, type MailListState } from '../lists/useMailList'
 import { reschedule } from './laterActions';
 import { useLaterKeys, type LaterActions } from './laterCommands';
 import { dropTargets, headerDrop } from './laterDrag';
-import { keepEmptied, type LaterGroup, type LaterGroupKey, groupsOf } from './laterGroups';
+import {
+  keepEmptied,
+  withDropZones,
+  type LaterGroup,
+  type LaterGroupKey,
+  groupsOf,
+} from './laterGroups';
 import { CLOSED, pickerReducer } from './laterPicker';
 import { laterPresets, momentLabel } from './laterPresets';
 import { LaterPicker } from './LaterPicker';
@@ -125,7 +131,7 @@ function LaterBody(props: LaterScreenProps) {
     >
       <LaterGroups
         list={list}
-        groups={groups}
+        groups={drag.phase === 'lifted' ? withDropZones(groups) : groups}
         nowMs={nowMs}
         drag={{ drag, targets }}
         onAction={rowAction}
