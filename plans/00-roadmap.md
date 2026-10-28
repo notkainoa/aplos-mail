@@ -50,7 +50,11 @@ The longest chain runs through Gmail. The database write path is ready around da
 - Keep the Gmail filter permission.
 - One repo, no releases repo. You get local or private draft builds.
 - Going public is decided later. In phase 3 the threads prepare a secret and history scan, notices and a draft LICENSE (GPL-3.0 app, MIT contract).
-- Automatic live checks use throwaway test accounts only. They run on this Mac at set times, so no Google token sits on GitHub.
+- **The agent test account.** Automatic live checks use your spare Gmail account, which you approved on 27 October for agents to read in full. They run on this Mac at set times, so no Google token sits on GitHub.
+  - Agents may read all of its mail, run every AI feature over it with the Groq test key, sync and backfill all of it, label, archive, mark read, star, write drafts, add a filter they remove after the run, and send mail **only to its own address**.
+  - Agents may never send to anyone else, delete permanently, empty Trash, unsubscribe, RSVP, invite attendees or change account settings.
+  - Its address and its mail stay off the repo: not in commits, logs, eval reports, screenshots or PRs. PR pictures use demo mail.
+  - Your main Gmail is still only touched by you, in the hand checks on days 14 to 16.
 - Six threads: Engine, Providers, UI-core, UI-screens, Platform and website, Integrator.
 - The weekly Gmail reconnect is a quiet line in the sidebar a day before it expires, then one click.
 - Ink blue and a serif for AI text, inside the revised look.
@@ -68,7 +72,7 @@ All free.
 - [x] Confirm the Gmail limit: 6,000 units a minute per user (done 27 October).
 - [x] A separate free Groq key for tests (done 27 October, kept in this Mac's Keychain as `aplos-groq-test`).
 - [ ] Day 1: say go.
-- [ ] Day 1: create one or two throwaway Gmail accounts and add them to the Google project's test users.
+- [ ] Day 1: add your spare Gmail account to the Google project's test users (skip if it is already there, or is the project's own account).
 - [ ] Days 1-3: check which branch Vercel treats as production for aplos.email.
 - [ ] From about day 7: review features as they arrive, about 10 to 15 minutes each, when it suits you.
 - [ ] Days 14-16: about an hour of live checks on your own Gmail, including one send to yourself.
@@ -200,7 +204,7 @@ Each lane owns its paths exclusively. A pull request that touches a path outside
 
 | Lane | Owns | Implements | Needs | Days |
 |---|---|---|---|---|
-| `plat-ci` | `.github/workflows/ci.yml`, `tools/lint/**` except `design/`, `tests/e2e/**`, `budgets.json`, `scripts/audit/**`, `scripts/smoke/**` except probes | Plan 40 Q1 (Phase 0 slots), Q3 (CI, emulator E2E, budget register), Q4 (AI eval replay, live smoke runner on throwaway accounts) | none | 1-3, then 4-12 |
+| `plat-ci` | `.github/workflows/ci.yml`, `tools/lint/**` except `design/`, `tests/e2e/**`, `budgets.json`, `scripts/audit/**`, `scripts/smoke/**` except probes | Plan 40 Q1 (Phase 0 slots), Q3 (CI, emulator E2E, budget register), Q4 (AI eval replay, live smoke runner on the agent test account) | none | 1-3, then 4-12 |
 | `plat-release` | `apps/desktop/build/**` except the DMG background, `main/{security,updater}.ts`, `.github/workflows/release.yml`, `scripts/{release,verify-release,release-build}.mjs`, `RELEASING.md`, `THIRD_PARTY_NOTICES*`, `LICENSE` draft, `docs/release-checklist.md` | Plan 40 Q0 without the releases repo, Q2 (fuses, permission handler, CSP stages, unfused E2E build), Q7a and Q7b (draft releases in this repo, verifier, beta channel, Keychain evidence), Q6 without CASA or the paid name search, Q8's release gate | `eng-host` self-test; `eng-html` for the CSP stage 2 | 4-14, OSS prep in Phase 3 |
 | `web` | `apps/web/**`, `apps/desktop/build/dmg-background.html` | Plan 40 Q5A and Q5B; remove the stripe and fix untrue claims only; the full site redesign waits for the new logo (owner, 2026-10-27); the privacy page on aplos.email with Google's Limited Use sentence, what is stored, what leaves the Mac, no telemetry and how to delete data; Gmail described as available to invited testers | F9 tokens | 2-8 |
 
@@ -287,7 +291,7 @@ flowchart LR
 
 ### 4.1 The critical path
 
-1. **Gmail chain, the longest.** Freeze (day 3), then `eng-store`'s real `store.commit`, ids and change log (day 6), then `prov-gmail` on the real store and, from day 7, the real governor, to the emulator gate (day 11). Then scheduled live runs on the throwaway accounts (days 12-14) and the owner's hand-run check on their own Gmail (days 14-15). Fixes and the release candidate follow (days 17-18), then a week of daily use (days 18-25).
+1. **Gmail chain, the longest.** Freeze (day 3), then `eng-store`'s real `store.commit`, ids and change log (day 6), then `prov-gmail` on the real store and, from day 7, the real governor, to the emulator gate (day 11). Then scheduled live runs on the agent test account (days 12-14) and the owner's hand-run check on their own Gmail (days 14-15). Fixes and the release candidate follow (days 17-18), then a week of daily use (days 18-25).
 2. **Screens chain, close behind.** Freeze with F9 (day 3), then components and data hooks (days 4-8), then screens on the stand-in engine (days 5-13). `eng-views` passes the conformance suite on the real engine (day 11), the switch follows (days 11-13), then end-to-end on emulators (days 12-15) and the owner's look check on real mail (day 15). It meets the Gmail chain at the release candidate.
 3. **Near-critical.** `ui-reader` (needs `eng-html` and `eng-time`), and `prov-cal` (repeating events and Google Calendar's meeting links).
 
@@ -338,7 +342,7 @@ flowchart LR
 |---|---|
 | Contract and schema freeze quality | Three adversarial reviewers from the consumers' side, the 4.1 checklist of UI asks, Providers walking every adapter through the ports, additive-only changes after the freeze, one owner (`eng-contract`) |
 | Merge conflicts | Exclusive paths in `plans/OWNERS.md` enforced by `owners-check`; one shared dispatch table frozen with one file per lane; small PRs (one work package, ideally under 500 changed lines excluding generated files); lanes merge `revamp` into their branch before each PR; the Integrator merges dependency and infrastructure PRs continuously; features merge once, after approval |
-| Gmail quota for live tests | Emulators first: the Gmail emulator must reproduce 0.2.3's failure before anything is tested on it. Live runs are scheduled, read-only first, each under 3,000 units a minute, on one or two throwaway accounts (per-user quota, so a second account doubles the room). Runs follow the weekly reconnect. |
+| Gmail quota for live tests | Emulators first: the Gmail emulator must reproduce 0.2.3's failure before anything is tested on it. Live runs are scheduled, read-only first, each under 3,000 units a minute, on the agent test account (per-user quota, so a second account doubles the room). Runs follow the weekly reconnect. |
 | Testing mode's 7-day tokens | Weekly reconnect ritual covers the owner and test accounts together; the live runner checks `reconnectBy` before starting and skips with a clear message |
 | Owner review time | Per-feature reviews with steps to try, screenshots and a recording; the Integrator queues them by priority in the daily digest; the owner judges behaviour and feel, never code; agents verify everything a machine can; features that need no judgement have no owner review |
 | Integration bugs | The conformance suite runs against both the stand-in and the real engine from day 4, with a shrinking expected-fail list; the switch happens on day 11, not at the end; daily end-to-end on emulators from day 12; providers not ready by day 16 ship switched off rather than holding the release |
@@ -377,7 +381,7 @@ flowchart LR
 | 4 | Google review and CASA? | No. Nothing that costs money. See 8.4 |
 | 5 | Keep the Gmail filter permission? | Yes |
 | 6 | Where do downloads come from? | This repo. No releases repo. Public later, the owner's call |
-| 7 | Which mailboxes may automatic live checks use? | Throwaway test accounts only |
+| 7 | Which mailboxes may automatic live checks use? | The owner's spare Gmail account, approved 2026-10-27 for full reading and AI, under the agent test account rules in "Decisions already made" |
 | 8 | How many threads? | Replaced by new decision N1 |
 | 9 | One big release with betas? | Yes, one redesigned release, no 0.3.0/0.4.0 split |
 | 10 | Ink blue and a serif for AI? | Yes, inside the revised look |
@@ -490,7 +494,7 @@ A later pass aligns plans 10-40, ARCH and DESIGN to this roadmap. These are the 
 2. Remove PV5's verification and CASA track, brand verification, demo video and scope justifications; keep client resolution, the scope manifest and its test, and granted-scope handling in `prov-gov`.
 3. Add the weekly-reconnect engine behaviour to `prov-gov` (grant time, `reconnectBy`, `login_hint`, no resync, queued changes kept) and live-runner checks for expiring tokens.
 4. Re-cut PV1-PV10 into the eight `prov-*` lanes; PV11 moves to Phases 2-3; weeks become days.
-5. Decision answers: 1 no review or CASA; 2 Microsoft moved to round 2; 3 throwaway accounts only, runs local by default (N4); 4 keep filters; 7 moot.
+5. Decision answers: 1 no review or CASA; 2 Microsoft moved to round 2; 3 the agent test account (the owner's spare Gmail), runs local (N4); 4 keep filters; 7 moot.
 6. Drop the dependency on the legacy bridge; a provider not ready by day 16 ships switched off.
 7. Section 5.4: Testing-mode expiry applies to test accounts; delete "the Production switch unblocks the harness". Section 6: drop Google-review risks, add weekly expiry. Section 7: drop the releases repository and CASA documents.
 
@@ -506,7 +510,7 @@ A later pass aligns plans 10-40, ARCH and DESIGN to this roadmap. These are the 
 **Plan 40 (platform).**
 1. Remove Q0-main, the releases repository, `RELEASES_REPO_TOKEN`, decision B and every "public releases repo" line; drafts publish to this repo.
 2. Remove section 4A's active calendar, Q6.8's CASA pack and decision J's name search; keep a short "later, if ever" note.
-3. Decision answers: M aplos.email; N moot; L replaced by the Platform and website thread; F the owner's call when ready, same repo; D decided at flip time; G throwaway accounts, local runs by default; H free minutes only.
+3. Decision answers: M aplos.email; N moot; L replaced by the Platform and website thread; F the owner's call when ready, same repo; D decided at flip time; G the agent test account, local runs; H free minutes only.
 4. Q1a and Q1b run inside Phase 0; drop `format-merge.mjs`. Add `owners-check.mjs`.
 5. Q5A: privacy page on aplos.email; replace "invite-only until Google approves" with "available to invited testers"; restyle the site to the revised design without the stripe.
 6. Re-cut into `plat-ci`, `plat-release` and `web`; section 5's chart becomes days; Q8's public-flip rehearsal becomes optional.
@@ -634,7 +638,7 @@ Only `revamp` merges are automatic. Main is only ever touched by the owner.
 
 ### 12.6 What stays with the owner
 
-- Approval of each feature on demo or practice data. It is not live acceptance. Gmail and Google Calendar features stay "done pending live check" until the throwaway-account evidence exists and the owner's hand checks on days 14 to 16 pass.
+- Approval of each feature on demo or practice data. It is not live acceptance. Gmail and Google Calendar features stay "done pending live check" until the agent-test-account evidence exists and the owner's hand checks on days 14 to 16 pass.
 - Installing the release candidate and the daily-use week.
 - Merging `revamp` into main, publishing, and the public-or-private decision.
 

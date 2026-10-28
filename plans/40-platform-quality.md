@@ -12,7 +12,7 @@ Today only you can reach the download link, since the code is private. Electron,
 
 On day 1, one commit reformats every file, and a script proves nothing changed. Then come lint rules and a test robot that opens the app on fake accounts. The safety switches get tightened and a script checks them. Releases stay in this one repository as drafts you install by hand. If you make it public later, installed copies start updating themselves. The website drops every claim not yet proven, and its privacy page goes on aplos.email.
 
-Nothing costs money. GitHub test runs use free Linux minutes. Mac runs happen on request. Live checks run on this Mac against throwaway Gmail accounts. Google stays in Testing mode.
+Nothing costs money. GitHub test runs use free Linux minutes. Mac runs happen on request. Live checks run on this Mac against your spare Gmail account. Google stays in Testing mode.
 
 Five questions below have defaults, so you can stay silent. You publish drafts, tag betas and decide about going public.
 
@@ -25,7 +25,7 @@ The roadmap gives the Platform and website thread three lanes: `plat-ci`, `plat-
 | Q1a | `plat-ci` | 0 | 1 (restructure chain step 2) | Prettier format commit over the moved tree, proved by identical minified output |
 | Q1b | `plat-ci` | 0 | 1 (step 4); owners check by day 3 | ESLint, stylelint, suppressions, boundaries, hook, `static` job, `owners-check.mjs` |
 | Q3 | `plat-ci` | 0, 1, 2 | Slots 1-3; jobs 4-12; emulator journeys 12-16 with the Integrator | CI jobs, Playwright base, journeys, budget register |
-| Q4 | `plat-ci` | 1, 2 | 4-12; live runs 12-16 | Policy tests, AI replay evals, live-smoke runner on throwaway accounts |
+| Q4 | `plat-ci` | 1, 2 | 4-12; live runs 12-16 | Policy tests, AI replay evals, live-smoke runner on the agent test account |
 | Q0 | `plat-release` | 1 | 4-8 | Draft releases in this repo, draft verifier, notices, local signed feed for update tests |
 | Q2 | `plat-release` | 1, 2 | 4-14; CSP stage 2 about 12-16 | Fuses, macOS 13, entitlements, security guard, CSP, `verify-hardening` |
 | Q7a | `plat-release` | 1 | 8-14 | Release workflow v2 and the update matrix |
@@ -53,7 +53,7 @@ Silence means the default. The owner's answers of 2026-10-27 settled or voided n
 
 **F. When does the code go public?** **Answered 2026-10-27: when the redesigned version is ready, at your call, in this repository.** Not before the secret and history scan and a LICENSE file.
 
-**G. May the test robot use test accounts and keys?** **Answered 2026-10-27: throwaway test accounts only.** One or two throwaway Gmail accounts listed as test users in the Google project, and a separate free Groq key (created 2026-10-27, kept in this Mac's Keychain as `aplos-groq-test`); iCloud and Fastmail test accounts in round 2. Live checks run on this Mac at scheduled times by default (roadmap N4), so no Google token sits on GitHub. Your real mailbox is used only in hand checks you run yourself.
+**G. May the test robot use test accounts and keys?** **Answered 2026-10-27: the agent test account.** Your spare Gmail account, approved for full reading and AI by agents, under the rules in the roadmap's "Decisions already made" (send only to itself, nothing permanent), and a separate free Groq key (created 2026-10-27, kept in this Mac's Keychain as `aplos-groq-test`); iCloud and Fastmail test accounts in round 2. Live checks run on this Mac at scheduled times by default (roadmap N4), so no Google token sits on GitHub. Your main mailbox is used only in hand checks you run yourself.
 
 **H. How much may cloud testing (CI) cost?** **Answered 2026-10-27: nothing.** GitHub Actions stays inside the free minutes. Linux jobs run on pushes to `revamp`, and Mac jobs run on demand. A Mac minute bills as 10 Linux minutes on private repositories, so one 20-minute Mac run uses about 200 included minutes [U: check the account's allowance under Settings, Billing]. Lanes run their checks locally first.
 
@@ -71,7 +71,7 @@ Silence means the default. The owner's answers of 2026-10-27 settled or voided n
 
 ## 1. Scope and non-goals
 
-**In scope** (per `plans/_council/task-plan-40-platform-quality.md`, as cut down by the roadmap): Electron hardening (fuses, CSP, entitlements, macOS 13); Keychain evidence and provisioning profiles (a spike only if triggered); release engineering from this one repository (draft releases, verifier, update testing, rollback); open-source readiness (licence drafts, secret-history audit, provenance, CONTRIBUTING, public docs), prepared in Phase 3 for the owner's later call; CI inside free minutes (formatter and linter adoption in one mechanical commit, the owners check, emulator E2E, AI evals, live-provider smoke on throwaway accounts); modernization of the dense one-line files; the website truthfulness pass and restyle; performance budgets (the register in Q3).
+**In scope** (per `plans/_council/task-plan-40-platform-quality.md`, as cut down by the roadmap): Electron hardening (fuses, CSP, entitlements, macOS 13); Keychain evidence and provisioning profiles (a spike only if triggered); release engineering from this one repository (draft releases, verifier, update testing, rollback); open-source readiness (licence drafts, secret-history audit, provenance, CONTRIBUTING, public docs), prepared in Phase 3 for the owner's later call; CI inside free minutes (formatter and linter adoption in one mechanical commit, the owners check, emulator E2E, AI evals, live-provider smoke on the agent test account); modernization of the dense one-line files; the website truthfulness pass and restyle; performance budgets (the register in Q3).
 
 **Non-goals.**
 - No engine, store, contract, provider or renderer feature work (plans 10, 20, 30).
@@ -123,7 +123,7 @@ Checked on 2026-10-27 in this worktree (revamp at `27cf52f`, the same app code a
 | 40-4 | CI platforms and SQLite | GitHub Actions stays inside free minutes (decision H). Linux jobs (static, unit, browser E2E) run on pushes to `revamp`; macOS jobs (Electron, packaging, signing) run on demand and on the release candidate. Lanes run their checks locally first, and the Integrator runs the full suite before each merge. [U] Some tests may need macOS; the first CI run finds them. **Any test that opens `node:sqlite` runs under Electron's own Node** (`ELECTRON_RUN_AS_NODE=1`, which needs no display, so Linux can do it): `node:sqlite` follows the host runtime's SQLite, and system Node differs from Electron's (fact 6) |
 | 40-5 | Release home | Build and publish draft releases in this one repository (decision B), with `GITHUB_TOKEN` granted `contents: write` in the release job only. While the repository is private, only the owner sees drafts and installs them by hand. After the owner makes it public, the same repository is the update feed. No second repository and no extra token. Local builds on the owner's Mac are the default; the tagged workflow runs on the owner's go-ahead |
 | 40-6 | Debug access in shipped builds | Release builds refuse Chromium debugging switches; E2E runs use a separate **unfused, unsigned, never-uploaded** build variant, because Playwright needs the inspector fuse on (fact 21). With `RunAsNode` off, a debugging port is the remaining way to use Aplos's Keychain trust as a puppet |
-| 40-7 | AI evals and live checks | Replay runs offline in every lane's checks and on pushes to `revamp`; live evals are advisory, then required after ten stable nights; live provider checks are read-only (tier R), run on this Mac at scheduled times on throwaway accounts only (decision G), and never send (AGENTS.md) |
+| 40-7 | AI evals and live checks | Replay runs offline in every lane's checks and on pushes to `revamp`; live evals are advisory, then required after ten stable nights; live provider checks are read-only (tier R), run on this Mac at scheduled times on the agent test account only (decision G), and never send (AGENTS.md) |
 | 40-8 | Website claims | A machine-readable registry; the production build fails on an unproven claim |
 | 40-9 | Public repo shape | One repository (decision B). Before the owner makes it public, `plans/`, `research/` and the provenance docs either leave the tree together with an in-place history rewrite, or are published knowingly (decision D, at flip time). A curated `docs/` and the ADRs are published either way. Licence drafts wait aside until decision C |
 | 40-10 | Work that must reach main | None. There is no 0.2.4 train, no `hotfix/*` branch and no main-bound slice. Everything lands on `revamp` and reaches main when the owner merges it for the one redesigned release (proposed 0.3.0). The format commit runs once, in Phase 0, so no format-aware merge helper is needed |
@@ -427,16 +427,16 @@ The keyboard-from-inside-a-mail-frame behaviour (ARCH §10, marked [U]; the mail
 *Layer 2, live mail-provider smoke.* **One harness, two runners.** Plan 20 section 5.4 owns the live-provider harness (`apps/desktop/scripts/live/`, tiers R read-only, M mutating on test objects, S send owner-only, content-free evidence files in `verification/live/<date>-<provider>.md`) and says tiers M and S never run in CI. This plan does not build a second harness: `npm run smoke:live -- gmail|gcal|icloud|fastmail|graph` is a thin **runner over plan 20's tier R only**, in `scripts/smoke/` (the probes in `scripts/smoke/probes/` belong to the Providers thread). It schedules the probes, reuses their evidence format and adds `provider-status.json`. By decision G it runs on this Mac at scheduled times (launchd [I]), so no Google token sits on GitHub; running it on GitHub is possible only if the owner chooses to store a token there and refresh it weekly. It goes through the existing `MailProvider` adapters, so it can start as soon as `prov-gmail` has a read path:
 - **Gmail:** token refresh, profile, labels, one `messages.list` page, one metadata `messages.get`, `history.list`; about 30 units a night (ARCH §5.1). Records granted scopes and quota headroom.
 - **Google Calendar:** login, list, one sync-token fetch. iCloud IMAP and CalDAV and Fastmail JMAP join in round 2.
-- **Accounts.** **The owner's real mailbox is never used by automatic runs.** The runner signs in only to throwaway test accounts (one or two Gmail accounts listed as test users in the Google project; iCloud and Fastmail test accounts later if the owner has them). Runs against the owner's own account are by hand, from the Integrator's checklist on days 14-16.
+- **Accounts.** **The owner's main mailbox is never used by automatic runs.** The runner signs in only to the agent test account (the owner's spare Gmail, listed as a test user; iCloud and Fastmail accounts in round 2). Its address lives only in the local vault config, never in the repo. Live AI evals may read its mail locally; reports keep scores and ids only, no content. Runs against the owner's own account are by hand, from the Integrator's checklist on days 14-16.
 - **Writes** (plan 20's tier M) never run in CI; locally, with the owner's flag, only in dedicated test accounts, only on objects the test created (a label, a draft), always cleaned up. **Never send.** The owner may run a manual `--allow-send-to-self` locally.
 - **Cadence and secrets.** Scheduled on this Mac after the weekly reconnect, one account at a time, each run under 3,000 Gmail units a minute. Tokens live in the Mac's Keychain or environment, never in the repository, logs or artifacts. Logs hold hashed ids, units and latency, never subjects or bodies.
 - **Credential expiry.** The project stays in Testing mode, so refresh tokens last 7 days (`RC/protocols/proto-google.md` §8.1) and every Gmail account checked here needs a reconnect each week. The runner reads `reconnectBy` before starting; when it has passed, the runner skips with a clear message and updates one notice (one GitHub issue, or a local note) instead of failing, and it treats `invalid_grant` the same way. The owner's weekly reconnect covers the test accounts together (roadmap section 4.3). `npm run smoke:auth` runs loopback OAuth locally and stores the new token in the Keychain, never printing it. There is no Production switch.
-- **Caveat.** Repeated scripted logins can trigger Google account challenges [U]; a throwaway account and a tiny call count lower the odds, and if challenged the runs drop to a weekly hand check.
+- **Caveat.** Repeated scripted logins can trigger Google account challenges [U]; a small call count lowers the odds, and if challenged the runs drop to a weekly hand check.
 - **Output:** `provider-status.json` becomes evidence for website claims (Q5B). These are real endpoints, so live, but they do not replace the owner's acceptance on their own mailbox (ARCH §15).
 
 **Ownership.** Owns `tests/policy/`, `tests/evals/`, `scripts/smoke/` except `probes/`, `.github/workflows/evals.yml` (manual dispatch only), the local schedule files and the `ci-data` branch; touches `scripts/{evaluate-groq,ask-live,quality/cases}.ts`. The Engine thread owns the queue the policy tests assert about; plan 20 owns the adapters and probes.
 
-**Depends on.** `eng-ai` (queue, consent) for full Layer 0 and 1; the Providers thread's tier R probes for smoke coverage; decision G and the owner's throwaway accounts.
+**Depends on.** `eng-ai` (queue, consent) for full Layer 0 and 1; the Providers thread's tier R probes for smoke coverage; decision G and the agent test account.
 
 **Acceptance (evidence).**
 - The replay suite runs in the `revamp` push job in under a minute and goes red when a prompt wrapper is removed or retries are re-enabled (deliberate breakage shown).
@@ -445,7 +445,7 @@ The keyboard-from-inside-a-mail-frame behaviour (ARCH §10, marked [U]; the mail
 - The Gmail smoke runs green on every day of a reconnect week. When the test account's grant is older than 7 days, the runner skips with the reconnect message and the expiry notice opens exactly once; after `smoke:auth` the next run passes.
 - Gitleaks over eval and smoke artifacts finds nothing.
 
-**Estimate.** 5-7 days (days 4-12; live runs on days 12-16); about 20 owner minutes for the throwaway accounts, test-user listing and a free Groq key.
+**Estimate.** 5-7 days (days 4-12; live runs on days 12-16); about 5 owner minutes for the test-user listing (the Groq key is done).
 
 **Work packages.**
 
@@ -563,7 +563,7 @@ Drafts, kept under `docs/legal-drafts/` until the owner answers decision C so no
    The unsigned local fake feed (`npm run update-feed`) stays for state-machine and UI tests. **Release builds ship no feed override**, since a hostile feed could offer an older signed build; signed-update tests use Q0's local signed feed, built with a build-time publish override.
 4. **Keychain behaviour without a profile.** Today's `safeStorage` item is in the login keychain and its trust follows the app's designated requirement. With Developer ID that requirement is stable across versions, so updates should not prompt (`RC/gaps/macos-daemon-lifecycle.md` §3; the ad-hoc prompt is in `PROGRESS.md:448`). This is evidence work, not code: `verify-hardening` compares the requirement across two releases, and matrix row 2 observes no prompt. `security find-generic-password` is used for **metadata only**, never `-w`.
 5. **Provisioning-profile spike (conditional, 2-3 days).** Trigger: ARCH A1 or CloudKit is scheduled (§2.6, §13.2), or prompts appear despite Developer ID. Steps: the owner creates the App ID and a Developer ID profile with Keychain Sharing; embed it with `mac.provisioningProfile`; entitlements gain `com.apple.application-identifier` (`VW9NDM428H.com.aplos.mail`), `com.apple.developer.team-identifier` and `keychain-access-groups`; the notarized build is launched on the **second Mac before anything ships**, because a restricted entitlement without a matching profile can make macOS refuse to launch the app. Evidence: launch, a key written and read under the group, an update that keeps it. If it fails, the unprofiled build stays the shipping default. The data-key migration belongs to ARCH A1 and plan 10.
-6. **Secrets calendar** (private archive): Developer ID certificate, app-specific password, Google client secret, test Groq key, throwaway-account grants (they expire every 7 days), each with owner, expiry and rotation steps; reminders 30 days ahead where an expiry is that long.
+6. **Secrets calendar** (private archive): Developer ID certificate, app-specific password, Google client secret, test Groq key, the agent test account's grant (it expires every 7 days), each with owner, expiry and rotation steps; reminders 30 days ahead where an expiry is that long.
 7. **Rollback runbook.** While the repository is private, delete the bad draft and tell testers to reinstall the previous build. After it is public, unpublish the bad release (the `latest` feed then answers with the previous one), then ship a higher patch version; the updater does not downgrade, so already-updated machines need the fix. Rehearsed once on the local feed.
 8. **`RELEASING.md`** in final shape.
 
@@ -627,7 +627,7 @@ Drafts, kept under `docs/legal-drafts/` until the owner answers decision C so no
 
 The Google project stays in Testing mode (owner, 2026-10-27). That means up to 100 listed test users, an "unverified app" warning on sign-in, and refresh tokens that expire after 7 days (`RC/protocols/proto-google.md` §8.1), so the app asks for a one-click reconnect each week (roadmap decision N3; plan 20 owns the behaviour). Opening Gmail to anyone else needs Google's restricted-scope review (`gmail.modify` and `gmail.settings.basic` are restricted scopes) and a yearly CASA security assessment, which costs money. It is off the plan (roadmap section 8.4), and nothing in the build prevents it later.
 
-What this plan keeps in place so that later stays cheap: the privacy page on aplos.email with Google's Limited Use sentence (Q5A), the scope manifest and its test (plan 20), the no-telemetry rule, and `verify-hardening` output (Q2). The owner's actions are only these, on days 1-3: list the throwaway test accounts as test users, confirm 6,000 units per user per minute in the Cloud console, and check Vercel's production branch.
+What this plan keeps in place so that later stays cheap: the privacy page on aplos.email with Google's Limited Use sentence (Q5A), the scope manifest and its test (plan 20), the no-telemetry rule, and `verify-hardening` output (Q2). The owner's actions are only these, on days 1-3: list the agent test account as a test user, confirm 6,000 units per user per minute in the Cloud console, and check Vercel's production branch.
 
 > **What this means:** Gmail stays limited to people you list, with a weekly reconnect, and nothing here costs money. If you ever want Gmail open to everyone, the paperwork starts from a page and a scope list that are already true.
 
@@ -715,7 +715,7 @@ Sign-off                                S
 | Fuses or asar integrity break the packaged engine, helper or update | Medium / high | Shared first build with resident mode; hostile and positive launch matrix; update test on the local signed feed; fuses are config, reversible in one commit |
 | Removing entitlements stops launch on another Mac | Medium / high | Experiment on the second Mac first, and keep today's entitlements if no second Mac is offered (Q2) |
 | Existing 0.2.x installs cannot self-update | High / low | Known; builds are installed by hand, and once the repository is public every copy updates itself (Q0) |
-| Google blocks the smoke account | Medium / medium | Throwaway account, tiny call count, a notice instead of a red build, manual-run fallback |
+| Google blocks the smoke account | Medium / medium | Small call count, a notice instead of a red build, manual-run fallback |
 | Groq daily limit starved by CI | Medium / medium | Separate free key, per-run cap, `inconclusive` on exhaustion |
 | AI eval flake turns the push gate red | High / medium | Replay gates pushes; live is advisory until ten stable nights |
 | Public history exposes the Avec analysis, local paths, a second author identity | High / high | Decision D at flip time, with the scan report in front of the owner: flip as is or rewrite in place; docs split; provenance gate; scrub |
@@ -775,7 +775,7 @@ In this order:
 All free.
 
 - **Done 2026-10-27:** 6,000 units per user per minute confirmed; the separate free Groq test key is in the Keychain as `aplos-groq-test`.
-- **Days 1-3:** list one or two throwaway Gmail accounts as test users in the Google project; check Vercel's production branch (Q5A); set up a free forwarding address on aplos.email (decision I) [U: the registrar's forwarding or Cloudflare Email Routing].
+- **Days 1-3:** list your spare Gmail account as a test user in the Google project; check Vercel's production branch (Q5A); set up a free forwarding address on aplos.email (decision I) [U: the registrar's forwarding or Cloudflare Email Routing].
 - **Second Mac time** for the first-launch, entitlement and update tests (Q0, Q2, Q7), when you offer it. Agents SSH there only when you ask.
 - **Weekly:** reconnect Gmail for yourself and the test accounts, about two minutes (Q4).
 - **GitHub plan check:** the included CI minutes (decision H).

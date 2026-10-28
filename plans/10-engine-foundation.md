@@ -536,7 +536,7 @@ Adversarial: a "murphy" agent runs the fault scenarios in random combinations an
 
 ## 5. Test strategy
 
-**Principles.** Mocked Google never counts as live acceptance (AGENTS.md). Agents run headless only; checks needing a visible window are owner steps or a background Cua-driver run on one exact window that never takes the foreground. Automatic live checks use throwaway test accounts only; checks on the owner's own accounts are hand-run. A milestone is checked off only with evidence in PROGRESS.md.
+**Principles.** Mocked Google never counts as live acceptance (AGENTS.md). Agents run headless only; checks needing a visible window are owner steps or a background Cua-driver run on one exact window that never takes the foreground. Automatic live checks use the agent test account only (the owner's spare Gmail; roadmap, "Decisions already made"); checks on the owner's own accounts are hand-run. A milestone is checked off only with evidence in PROGRESS.md.
 
 | Layer | Proves | Where |
 |---|---|---|
@@ -572,7 +572,7 @@ Adversarial: a "murphy" agent runs the fault scenarios in random combinations an
 | 11 | Image-proxy SSRF (L / H) | Resolve once and connect to the address, full special-use table, revalidated redirects, table tests, RFC 6890 audit |
 | 12 | Listener exposed by mistake (L / H) | Off by default, loopback and socket only, request matrix, plan 40 review; no `0.0.0.0` path until A2 |
 | 13 | Adapters misreport `uncertain` vs `failed` (L / H) | Narrow `NotSentError`, everything else uncertain; kill-point matrix per provider; real sends in E6 |
-| 14 | Live verification lags: owner time, Google Testing mode (H / M) | Emulators first; scheduled live runs on throwaway accounts that follow the weekly reconnect; short owner checklists written ahead; evidence recorded as gathered |
+| 14 | Live verification lags: owner time, Google Testing mode (H / M) | Emulators first; scheduled live runs on the agent test account that follow the weekly reconnect; short owner checklists written ahead; evidence recorded as gathered |
 | 15 | PR #21 touches the file Phase 0 splits (M / L) | Not merged; engine side reimplemented as `Setup/*`; plan 30 absorbs its UI; dropped in the rebase if merged first |
 | 16 | Old code lingers and confuses agents (M / M) | Legacy code sits in `legacy/` folders from day 1, read-only, and is deleted in Phase 2 (4.2) |
 | 17 | The Phase 0 move breaks the packaged app: `@aplos/*` left unbundled, package dependencies missing from the asar (M / H) | Build wiring is a deliverable; `npm run package` and `verify-release.mjs` in Phase 0 acceptance (E1); adapter dependencies stay in `apps/desktop/package.json` |
