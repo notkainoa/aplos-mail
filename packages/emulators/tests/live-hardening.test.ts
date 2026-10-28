@@ -31,11 +31,20 @@ interface Seen {
 
 function guardOn(tier: Tier, answer: (seen: Seen) => unknown = () => ({})) {
   const seen: Seen[] = [];
-  const guard = createGuardedFetch(async (input, init) => {
-    const entry: Seen = { method: init?.method ?? 'GET', url: String(input), headers: [...new Headers(init?.headers)], body: init?.body, frozenInit: Object.isFrozen(init) };
-    seen.push(entry);
-    return new Response(JSON.stringify(answer(entry)), { status: 200, headers: json });
-  }, { tier, selfAddress: SELF, calendarRunId: 'run-test' });
+  const guard = createGuardedFetch(
+    async (input, init) => {
+      const entry: Seen = {
+        method: init?.method ?? 'GET',
+        url: String(input),
+        headers: [...new Headers(init?.headers)],
+        body: init?.body,
+        frozenInit: Object.isFrozen(init),
+      };
+      seen.push(entry);
+      return new Response(JSON.stringify(answer(entry)), { status: 200, headers: json });
+    },
+    { tier, selfAddress: SELF, calendarRunId: 'run-test' },
+  );
   return { guard, seen };
 }
 
@@ -50,7 +59,11 @@ async function reason(promise: Promise<unknown>): Promise<string> {
 
 test('snapshot: what reaches the network is the plain data the guard checked', async () => {
   const { guard, seen } = guardOn('M');
-  await guard(`${GMAIL}/messages/m1/modify`, { method: 'post', headers: new Headers(json), body: new Blob(['{"addLabelIds":["STARRED"]}']) });
+  await guard(`${GMAIL}/messages/m1/modify`, {
+    method: 'post',
+    headers: new Headers(json),
+    body: new Blob(['{"addLabelIds":["STARRED"]}']),
+  });
   assert.equal(seen[0]!.method, 'POST');
   assert.equal(String(Buffer.from(seen[0]!.body as Uint8Array)), '{"addLabelIds":["STARRED"]}');
   // The layers below get frozen plain pairs, so nothing there can see a live object of the caller's.
@@ -60,47 +73,142 @@ test('snapshot: what reaches the network is the plain data the guard checked', a
 test('snapshot: accessors, unknown keys, proxies and odd bodies are refused, not read twice', async () => {
   const { guard, seen } = guardOn('R');
   let reads = 0;
-  const getter = { get headers() { return reads++ === 0 ? {} : { 'x-http-method-override': 'DELETE' }; } } as RequestInit;
+  const getter = {
+    get headers() {
+      return reads++ === 0 ? {} : { 'x-http-method-override': 'DELETE' };
+    },
+  } as RequestInit;
   assert.equal(await reason(guard(`${GMAIL}/profile`, getter)), 'sent');
   assert.equal(reads, 1, 'init.headers is read exactly once');
   assert.ok(!seen[0]!.headers.some(([name]) => name.includes('override')));
-  assert.equal(await reason(guard(`${GMAIL}/profile`, { cache: 'no-store' } as RequestInit)), 'unsupported-request');
-  assert.equal(await reason(guard(`${GMAIL}/profile`, new Proxy({}, { ownKeys() { throw new Error('trap'); } }))), 'unsupported-request');
-  assert.equal(await reason(guard(`${GMAIL}/profile`, { method: 5 } as unknown as RequestInit)), 'unsupported-request');
-  assert.equal(await reason(guard(`${GMAIL}/profile`, null as unknown as RequestInit)), 'unsupported-request');
+  assert.equal(
+    await reason(guard(`${GMAIL}/profile`, { cache: 'no-store' } as RequestInit)),
+    'unsupported-request',
+  );
+  assert.equal(
+    await reason(
+      guard(
+        `${GMAIL}/profile`,
+        new Proxy(
+          {},
+          {
+            ownKeys() {
+              throw new Error('trap');
+            },
+          },
+        ),
+      ),
+    ),
+    'unsupported-request',
+  );
+  assert.equal(
+    await reason(guard(`${GMAIL}/profile`, { method: 5 } as unknown as RequestInit)),
+    'unsupported-request',
+  );
+  assert.equal(
+    await reason(guard(`${GMAIL}/profile`, null as unknown as RequestInit)),
+    'unsupported-request',
+  );
   assert.equal(seen.length, 1);
 });
 
 test('snapshot: a body object that fakes its type cannot choose what is checked', async () => {
   const { guard, seen } = guardOn('M');
-  const fake = Object.setPrototypeOf({ toString: () => '{"addLabelIds":["TRASH"]}' }, URLSearchParams.prototype);
-  assert.equal(await reason(guard(`${GMAIL}/messages/m1/modify`, { method: 'POST', headers: json, body: fake })), 'body-unparseable');
+  const fake = Object.setPrototypeOf(
+    { toString: () => '{"addLabelIds":["TRASH"]}' },
+    URLSearchParams.prototype,
+  );
+  assert.equal(
+    await reason(
+      guard(`${GMAIL}/messages/m1/modify`, { method: 'POST', headers: json, body: fake }),
+    ),
+    'body-unparseable',
+  );
   const fakeBlob = Object.setPrototypeOf({ type: 'application/json' }, Blob.prototype);
-  assert.equal(await reason(guard(`${GMAIL}/messages/m1/modify`, { method: 'POST', headers: json, body: fakeBlob })), 'body-unparseable');
+  assert.equal(
+    await reason(
+      guard(`${GMAIL}/messages/m1/modify`, { method: 'POST', headers: json, body: fakeBlob }),
+    ),
+    'body-unparseable',
+  );
   assert.equal(seen.length, 0);
 });
 
 test('headers: only an allowlist gets through, and a repeated header is refused', async () => {
   const { guard, seen } = guardOn('R');
-  for (const headers of [{ Host: 'evil.example.test' }, { Authorization: 'Bearer x' }, { 'Content-Length': '0' }, { 'Transfer-Encoding': 'chunked' }, { 'X-Anything': '1' }] as Record<string, string>[]) {
-    assert.equal(await reason(guard(`${GMAIL}/profile`, { headers })), 'unsupported-request', JSON.stringify(headers));
+  for (const headers of [
+    { Host: 'evil.example.test' },
+    { Authorization: 'Bearer x' },
+    { 'Content-Length': '0' },
+    { 'Transfer-Encoding': 'chunked' },
+    { 'X-Anything': '1' },
+  ] as Record<string, string>[]) {
+    assert.equal(
+      await reason(guard(`${GMAIL}/profile`, { headers })),
+      'unsupported-request',
+      JSON.stringify(headers),
+    );
   }
-  assert.equal(await reason(guard(`${GMAIL}/profile`, { headers: [['accept', 'a'], ['Accept', 'b']] })), 'unsupported-request');
-  assert.equal(await reason(guard(`${GMAIL}/profile`, { headers: { Accept: 'application/json' } })), 'sent');
+  assert.equal(
+    await reason(
+      guard(`${GMAIL}/profile`, {
+        headers: [
+          ['accept', 'a'],
+          ['Accept', 'b'],
+        ],
+      }),
+    ),
+    'unsupported-request',
+  );
+  assert.equal(
+    await reason(guard(`${GMAIL}/profile`, { headers: { Accept: 'application/json' } })),
+    'sent',
+  );
   assert.equal(seen.length, 1);
 });
 
 test('query: repeats and other spellings of the keys the guard reads are refused on writes', async () => {
-  for (const query of ['sendUpdates=none&sendUpdates=none', 'sendUpdates=none&SENDUPDATES=all', 'SendUpdates=none', 'sendUpdates=none&sendNotifications=false&sendnotifications=true', 'sendUpdates=none&x=1&x=2']) {
+  for (const query of [
+    'sendUpdates=none&sendUpdates=none',
+    'sendUpdates=none&SENDUPDATES=all',
+    'SendUpdates=none',
+    'sendUpdates=none&sendNotifications=false&sendnotifications=true',
+    'sendUpdates=none&x=1&x=2',
+  ]) {
     const { guard, seen } = guardOn('M');
-    assert.equal(await reason(guard(`${CAL}/calendars/primary/events?${query}`, { method: 'POST', headers: json, body: '{}' })), 'unsupported-request', query);
+    assert.equal(
+      await reason(
+        guard(`${CAL}/calendars/primary/events?${query}`, {
+          method: 'POST',
+          headers: json,
+          body: '{}',
+        }),
+      ),
+      'unsupported-request',
+      query,
+    );
     assert.equal(seen.length, 0);
   }
   const { guard, seen } = guardOn('M');
-  assert.equal(await reason(guard(`${CAL}/calendars/primary/events?sendUpdates=none&sendNotifications=false`, { method: 'POST', headers: json, body: JSON.stringify({ extendedProperties: { private: { aplosLiveRun: 'run-test' } } }) })), 'sent');
+  assert.equal(
+    await reason(
+      guard(`${CAL}/calendars/primary/events?sendUpdates=none&sendNotifications=false`, {
+        method: 'POST',
+        headers: json,
+        body: JSON.stringify({ extendedProperties: { private: { aplosLiveRun: 'run-test' } } }),
+      }),
+    ),
+    'sent',
+  );
   // Reads may repeat keys that carry lists, but not the keys the guard prices or reads.
-  assert.equal(await reason(guard(`${GMAIL}/messages/m1?metadataHeaders=From&metadataHeaders=Subject`)), 'sent');
-  assert.equal(await reason(guard(`${GMAIL}/messages/m1?format=metadata&format=full`)), 'unsupported-request');
+  assert.equal(
+    await reason(guard(`${GMAIL}/messages/m1?metadataHeaders=From&metadataHeaders=Subject`)),
+    'sent',
+  );
+  assert.equal(
+    await reason(guard(`${GMAIL}/messages/m1?format=metadata&format=full`)),
+    'unsupported-request',
+  );
   assert.equal(await reason(guard(`${GMAIL}/messages/m1?Format=metadata`)), 'unsupported-request');
   assert.equal(seen.length, 2);
 });
@@ -113,32 +221,82 @@ test('json: duplicate keys at any depth, including escaped spellings, are refuse
   ];
   for (const body of bodies) {
     const { guard, seen } = guardOn('S-self');
-    assert.equal(await reason(guard(`${GMAIL}/messages/send`, { method: 'POST', headers: json, body })), 'body-unparseable', body.slice(0, 30));
-    assert.equal(await reason(guard(`${GMAIL}/drafts`, { method: 'POST', headers: json, body })), 'body-unparseable');
+    assert.equal(
+      await reason(guard(`${GMAIL}/messages/send`, { method: 'POST', headers: json, body })),
+      'body-unparseable',
+      body.slice(0, 30),
+    );
+    assert.equal(
+      await reason(guard(`${GMAIL}/drafts`, { method: 'POST', headers: json, body })),
+      'body-unparseable',
+    );
     assert.equal(seen.length, 0);
   }
   // Same key in different objects, and keys inside strings, are fine.
   const { guard } = guardOn('S-self');
-  assert.equal(await reason(guard(`${GMAIL}/drafts`, { method: 'POST', headers: json, body: JSON.stringify({ message: { raw: raw(SELF) }, note: '"raw":1,"raw":2', list: [{ a: 1 }, { a: 2 }] }) })), 'sent');
+  assert.equal(
+    await reason(
+      guard(`${GMAIL}/drafts`, {
+        method: 'POST',
+        headers: json,
+        body: JSON.stringify({
+          message: { raw: raw(SELF) },
+          note: '"raw":1,"raw":2',
+          list: [{ a: 1 }, { a: 2 }],
+        }),
+      }),
+    ),
+    'sent',
+  );
   // Invalid UTF-8 is refused rather than repaired.
-  assert.equal(await reason(guard(`${GMAIL}/messages/send`, { method: 'POST', headers: json, body: new Uint8Array([0x7b, 0xff, 0x7d]) })), 'body-unparseable');
+  assert.equal(
+    await reason(
+      guard(`${GMAIL}/messages/send`, {
+        method: 'POST',
+        headers: json,
+        body: new Uint8Array([0x7b, 0xff, 0x7d]),
+      }),
+    ),
+    'body-unparseable',
+  );
 });
 
 test('drafts: a send queues behind an update in flight and then sees the draft as changed', async () => {
   const gates: (() => void)[] = [];
   let counter = 0;
   const seen: string[] = [];
-  const guard = createGuardedFetch(async (_input, init) => {
-    seen.push(init?.method ?? 'GET');
-    // Updates (PUT) wait for the test to release them; everything else answers at once.
-    if (init?.method === 'PUT') await new Promise<void>(resolve => gates.push(resolve));
-    return new Response(JSON.stringify({ id: `d${++counter}` }), { status: 200, headers: json });
-  }, { tier: 'S-self', selfAddress: SELF });
-  await guard(`${GMAIL}/drafts`, { method: 'POST', headers: json, body: JSON.stringify({ message: { raw: raw(SELF) } }) });
-  const update = guard(`${GMAIL}/drafts/d1`, { method: 'PUT', headers: json, body: JSON.stringify({ message: { raw: raw(OTHER) } }) });
-  const send = reason(guard(`${GMAIL}/drafts/send`, { method: 'POST', headers: json, body: JSON.stringify({ id: 'd1' }) }));
+  const guard = createGuardedFetch(
+    async (_input, init) => {
+      seen.push(init?.method ?? 'GET');
+      // Updates (PUT) wait for the test to release them; everything else answers at once.
+      if (init?.method === 'PUT') await new Promise<void>(resolve => gates.push(resolve));
+      return new Response(JSON.stringify({ id: `d${++counter}` }), { status: 200, headers: json });
+    },
+    { tier: 'S-self', selfAddress: SELF },
+  );
+  await guard(`${GMAIL}/drafts`, {
+    method: 'POST',
+    headers: json,
+    body: JSON.stringify({ message: { raw: raw(SELF) } }),
+  });
+  const update = guard(`${GMAIL}/drafts/d1`, {
+    method: 'PUT',
+    headers: json,
+    body: JSON.stringify({ message: { raw: raw(OTHER) } }),
+  });
+  const send = reason(
+    guard(`${GMAIL}/drafts/send`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ id: 'd1' }),
+    }),
+  );
   await new Promise(resolve => setTimeout(resolve, 20));
-  assert.deepEqual(seen, ['POST', 'PUT'], 'the send has not gone out while the update is in flight');
+  assert.deepEqual(
+    seen,
+    ['POST', 'PUT'],
+    'the send has not gone out while the update is in flight',
+  );
   gates.forEach(open => open());
   await update;
   assert.equal(await send, 'draft-not-verified-self');
@@ -146,10 +304,29 @@ test('drafts: a send queues behind an update in flight and then sees the draft a
 });
 
 test('drafts: an encoded spelling of the id is the same draft', async () => {
-  const { guard, seen } = guardOn('S-self', request => (request.method === 'POST' && request.url.endsWith('/drafts') ? { id: 'd+1' } : {}));
-  await guard(`${GMAIL}/drafts`, { method: 'POST', headers: json, body: JSON.stringify({ message: { raw: raw(SELF) } }) });
-  await guard(`${GMAIL}/drafts/d%2B1`, { method: 'PUT', headers: json, body: JSON.stringify({ message: { raw: raw(OTHER) } }) });
-  assert.equal(await reason(guard(`${GMAIL}/drafts/send`, { method: 'POST', headers: json, body: JSON.stringify({ id: 'd+1' }) })), 'draft-not-verified-self');
+  const { guard, seen } = guardOn('S-self', request =>
+    request.method === 'POST' && request.url.endsWith('/drafts') ? { id: 'd+1' } : {},
+  );
+  await guard(`${GMAIL}/drafts`, {
+    method: 'POST',
+    headers: json,
+    body: JSON.stringify({ message: { raw: raw(SELF) } }),
+  });
+  await guard(`${GMAIL}/drafts/d%2B1`, {
+    method: 'PUT',
+    headers: json,
+    body: JSON.stringify({ message: { raw: raw(OTHER) } }),
+  });
+  assert.equal(
+    await reason(
+      guard(`${GMAIL}/drafts/send`, {
+        method: 'POST',
+        headers: json,
+        body: JSON.stringify({ id: 'd+1' }),
+      }),
+    ),
+    'draft-not-verified-self',
+  );
   assert.equal(seen.length, 2);
 });
 
@@ -160,9 +337,12 @@ test('recipients: an address inside an unquoted display name or group name is re
   assert.deepEqual(parseAddressList(`Me Myself <${SELF}>`), [SELF]);
 });
 
-test('printing: only the runner\'s own messages are shown; parser and system errors show a class name', () => {
+test("printing: only the runner's own messages are shown; parser and system errors show a class name", () => {
   assert.equal(printableMessage(new RunnerError('Sign in first'), 'Run failed'), 'Sign in first');
-  assert.equal(printableMessage(new GuardRefusal('batch-unsupported'), 'Run failed'), 'Guard refused a request (batch-unsupported)');
+  assert.equal(
+    printableMessage(new GuardRefusal('batch-unsupported'), 'Run failed'),
+    'Guard refused a request (batch-unsupported)',
+  );
   let parse: unknown;
   try {
     JSON.parse('{"agent": ya29FAKEPASTEDTOKEN}');
@@ -176,15 +356,37 @@ test('printing: only the runner\'s own messages are shown; parser and system err
 
 test('evidence: numbers are capped so they stay counts and times', () => {
   const run: RunEvidence = {
-    provider: 'gmail', tier: 'R', date: '2026-10-27', startedAt: '2026-10-27T16:00:00.000Z', node: '24.1.0', daysToExpiry: 3,
-    results: [{ id: 'p', status: 'pass', counts: { labels: 12 }, timingsMs: { total: 40.5 }, errorClasses: {}, requests: [], unitsPerMinute: [5] }],
-    unitsPerMinute: [5], peakUnitsPerWindow: 5,
+    provider: 'gmail',
+    tier: 'R',
+    date: '2026-10-27',
+    startedAt: '2026-10-27T16:00:00.000Z',
+    node: '24.1.0',
+    daysToExpiry: 3,
+    results: [
+      {
+        id: 'p',
+        status: 'pass',
+        counts: { labels: 12 },
+        timingsMs: { total: 40.5 },
+        errorClasses: {},
+        requests: [],
+        unitsPerMinute: [5],
+      },
+    ],
+    unitsPerMinute: [5],
+    peakUnitsPerWindow: 5,
   };
   assert.match(renderEvidence(run, ['p']), /labels=12/);
   for (const change of [
-    (r: RunEvidence) => { r.results[0]!.counts.labels = 4_000_000_000; },
-    (r: RunEvidence) => { r.results[0]!.timingsMs.total = 1e12; },
-    (r: RunEvidence) => { r.peakUnitsPerWindow = 2 ** 40; },
+    (r: RunEvidence) => {
+      r.results[0]!.counts.labels = 4_000_000_000;
+    },
+    (r: RunEvidence) => {
+      r.results[0]!.timingsMs.total = 1e12;
+    },
+    (r: RunEvidence) => {
+      r.peakUnitsPerWindow = 2 ** 40;
+    },
   ]) {
     const copy = structuredClone(run);
     change(copy);

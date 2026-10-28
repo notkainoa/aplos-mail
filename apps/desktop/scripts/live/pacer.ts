@@ -57,7 +57,9 @@ export function unitCost(api: string, format: string | null): number {
   if (!entry) return 100;
   // The API's own default format is full, so a call that forgot the format is priced as full.
   const effective = format ?? 'full';
-  return ['full', 'raw', 'html'].includes(effective) && entry.full !== undefined ? entry.full : entry.base;
+  return ['full', 'raw', 'html'].includes(effective) && entry.full !== undefined
+    ? entry.full
+    : entry.base;
 }
 
 export interface PacerOptions {
@@ -84,7 +86,8 @@ export class UnitPacer {
 
   /** Resolves when `units` fit in the window, and charges them. */
   acquire(units: number): Promise<void> {
-    if (units > this.budget) return Promise.reject(new Error('A single request is larger than the unit budget'));
+    if (units > this.budget)
+      return Promise.reject(new Error('A single request is larger than the unit budget'));
     const turn = this.tail.then(() => this.take(units));
     this.tail = turn.catch(() => undefined);
     return turn;

@@ -3,10 +3,23 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { renderEvidence, writeEvidence, type RunEvidence } from '../../../apps/desktop/scripts/live/evidence';
+import {
+  renderEvidence,
+  writeEvidence,
+  type RunEvidence,
+  type SkipReason,
+} from '../../../apps/desktop/scripts/live/evidence';
+import type { LiveProvider, ProbeStatus, Tier } from '../../../apps/desktop/scripts/live/types';
 
 const IDS = ['gmail.profile-and-labels', 'gmail.inbox-window-metadata'];
-const PLANTS = ['Quarterly numbers for Alice', 'alice@example.test', 'ya29.a0AfH6SMB-not-a-real-token', '1//0gNotARealRefreshToken', 'https://example.test/u?id=1', 'Label_1234'];
+const PLANTS = [
+  'Quarterly numbers for Alice',
+  'alice@example.test',
+  'ya29.a0AfH6SMB-not-a-real-token',
+  '1//0gNotARealRefreshToken',
+  'https://example.test/u?id=1',
+  'Label_1234',
+];
 
 const good = (): RunEvidence => ({
   provider: 'gmail',
@@ -49,32 +62,38 @@ test('a good run renders with the units-per-minute series and the peak', () => {
   assert.match(text, /### gmail\.inbox-window-metadata: fail/);
 });
 
-type Mutation = [string, (run: any, value: string) => void];
+type Mutation = [string, (run: RunEvidence, value: string) => void];
 const mutations: Mutation[] = [
-  ['provider', (r, v) => (r.provider = v)],
-  ['tier', (r, v) => (r.tier = v)],
+  ['provider', (r, v) => (r.provider = v as unknown as LiveProvider)],
+  ['tier', (r, v) => (r.tier = v as unknown as Tier)],
   ['date', (r, v) => (r.date = v)],
   ['startedAt', (r, v) => (r.startedAt = v)],
   ['node version', (r, v) => (r.node = v)],
-  ['daysToExpiry', (r, v) => (r.daysToExpiry = v)],
-  ['skipReason', (r, v) => (r.skipReason = v)],
-  ['top-level unitsPerMinute', (r, v) => (r.unitsPerMinute = [v])],
-  ['peak', (r, v) => (r.peakUnitsPerWindow = v)],
-  ['unknown top-level field', (r, v) => (r[v] = 1)],
+  ['daysToExpiry', (r, v) => (r.daysToExpiry = v as unknown as number)],
+  ['skipReason', (r, v) => (r.skipReason = v as unknown as SkipReason)],
+  ['top-level unitsPerMinute', (r, v) => (r.unitsPerMinute = [v as unknown as number])],
+  ['peak', (r, v) => (r.peakUnitsPerWindow = v as unknown as number)],
+  ['unknown top-level field', (r, v) => ((r as unknown as Record<string, unknown>)[v] = 1)],
   ['result id', (r, v) => (r.results[0].id = v)],
-  ['result status', (r, v) => (r.results[0].status = v)],
+  ['result status', (r, v) => (r.results[0].status = v as unknown as ProbeStatus)],
   ['count name', (r, v) => (r.results[0].counts[v] = 1)],
-  ['count value', (r, v) => (r.results[0].counts.labels = v)],
+  ['count value', (r, v) => (r.results[0].counts.labels = v as unknown as number)],
   ['timing name', (r, v) => (r.results[0].timingsMs[v] = 1)],
-  ['timing value', (r, v) => (r.results[0].timingsMs.profile = v)],
+  ['timing value', (r, v) => (r.results[0].timingsMs.profile = v as unknown as number)],
   ['error class name', (r, v) => (r.results[0].errorClasses[v] = 1)],
-  ['error class value', (r, v) => (r.results[0].errorClasses['rate-limit'] = v)],
+  [
+    'error class value',
+    (r, v) => (r.results[0].errorClasses['rate-limit'] = v as unknown as number),
+  ],
   ['request method', (r, v) => (r.results[0].requests[0].method = v)],
   ['request http method', (r, v) => (r.results[0].requests[0].httpMethod = v)],
-  ['request count', (r, v) => (r.results[0].requests[0].count = v)],
-  ['request extra field', (r, v) => (r.results[0].requests[0][v] = 'x')],
-  ['probe units per minute', (r, v) => (r.results[0].unitsPerMinute = [v])],
-  ['unknown result field', (r, v) => (r.results[0][v] = 1)],
+  ['request count', (r, v) => (r.results[0].requests[0].count = v as unknown as number)],
+  [
+    'request extra field',
+    (r, v) => ((r.results[0].requests[0] as unknown as Record<string, unknown>)[v] = 'x'),
+  ],
+  ['probe units per minute', (r, v) => (r.results[0].unitsPerMinute = [v as unknown as number])],
+  ['unknown result field', (r, v) => ((r.results[0] as unknown as Record<string, unknown>)[v] = 1)],
 ];
 
 test('every field rejects a planted subject, address, token, URL or id, and the error does not repeat it', () => {
@@ -85,8 +104,14 @@ test('every field rejects a planted subject, address, token, URL or id, and the 
       assert.throws(
         () => renderEvidence(run, IDS),
         (error: unknown) => {
-          assert.ok(error instanceof Error && error.name === 'EvidenceRejected', `${field}: ${String(error)}`);
-          assert.ok(!error.message.includes(plant), `${field}: the error repeated the planted value`);
+          assert.ok(
+            error instanceof Error && error.name === 'EvidenceRejected',
+            `${field}: ${String(error)}`,
+          );
+          assert.ok(
+            !error.message.includes(plant),
+            `${field}: the error repeated the planted value`,
+          );
           return true;
         },
         `${field} accepted ${plant}`,
@@ -104,7 +129,10 @@ test('free text cannot get in through values that look like allowed types either
   assert.throws(() => renderEvidence(negative, IDS));
   const wrongMethod = good();
   wrongMethod.results[0]!.requests[0]!.method = 'gmail.users.messages.delete';
-  assert.throws(() => renderEvidence(wrongMethod, IDS), 'a method the guard can never send is not in the list');
+  assert.throws(
+    () => renderEvidence(wrongMethod, IDS),
+    'a method the guard can never send is not in the list',
+  );
   const unregistered = good();
   assert.throws(() => renderEvidence(unregistered, ['gmail.something-else']));
 });
@@ -113,7 +141,15 @@ test('a skipped run records the reason and the days left', () => {
   const run = good();
   run.skipReason = 'token-expiry';
   run.daysToExpiry = -2;
-  run.results = run.results.map(r => ({ id: r.id, status: 'skip', counts: {}, timingsMs: {}, errorClasses: {}, requests: [], unitsPerMinute: [] }));
+  run.results = run.results.map(r => ({
+    id: r.id,
+    status: 'skip',
+    counts: {},
+    timingsMs: {},
+    errorClasses: {},
+    requests: [],
+    unitsPerMinute: [],
+  }));
   run.unitsPerMinute = [];
   run.peakUnitsPerWindow = 0;
   const text = renderEvidence(run, IDS);

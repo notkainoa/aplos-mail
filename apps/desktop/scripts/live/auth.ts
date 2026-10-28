@@ -22,12 +22,22 @@ export interface OAuthClient {
 
 export function clientFromEnv(env: Record<string, string | undefined>): OAuthClient {
   const clientId = env.APLOS_GOOGLE_CLIENT_ID;
-  if (!clientId) throw new RunnerError('Set APLOS_GOOGLE_CLIENT_ID (and APLOS_GOOGLE_CLIENT_SECRET if the client has one)');
-  return { clientId, ...(env.APLOS_GOOGLE_CLIENT_SECRET ? { clientSecret: env.APLOS_GOOGLE_CLIENT_SECRET } : {}) };
+  if (!clientId)
+    throw new RunnerError(
+      'Set APLOS_GOOGLE_CLIENT_ID (and APLOS_GOOGLE_CLIENT_SECRET if the client has one)',
+    );
+  return {
+    clientId,
+    ...(env.APLOS_GOOGLE_CLIENT_SECRET ? { clientSecret: env.APLOS_GOOGLE_CLIENT_SECRET } : {}),
+  };
 }
 
 /** Exchanges the refresh token for an access token. `send` should be a guarded fetch. */
-export async function refreshAccessToken(send: typeof fetch, client: OAuthClient, refreshToken: string): Promise<string> {
+export async function refreshAccessToken(
+  send: typeof fetch,
+  client: OAuthClient,
+  refreshToken: string,
+): Promise<string> {
   const response = await send(TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -38,9 +48,13 @@ export async function refreshAccessToken(send: typeof fetch, client: OAuthClient
       ...(client.clientSecret ? { client_secret: client.clientSecret } : {}),
     }),
   });
-  const body = (await response.json().catch(() => ({}))) as { access_token?: unknown; error?: unknown };
+  const body = (await response.json().catch(() => ({}))) as {
+    access_token?: unknown;
+    error?: unknown;
+  };
   if (!response.ok || typeof body.access_token !== 'string') {
-    const code = typeof body.error === 'string' && /^[a-z_]{1,40}$/.test(body.error) ? body.error : 'unknown';
+    const code =
+      typeof body.error === 'string' && /^[a-z_]{1,40}$/.test(body.error) ? body.error : 'unknown';
     throw new TokenRefusal(code);
   }
   return body.access_token;
@@ -49,7 +63,8 @@ export async function refreshAccessToken(send: typeof fetch, client: OAuthClient
 /** Adds the bearer token to every request except the OAuth ones. */
 export function withBearer(inner: typeof fetch, getToken: () => string): typeof fetch {
   return (input, init) => {
-    const url = typeof input === 'string' ? new URL(input) : input instanceof URL ? input : undefined;
+    const url =
+      typeof input === 'string' ? new URL(input) : input instanceof URL ? input : undefined;
     if (!url || url.origin === 'https://oauth2.googleapis.com') return inner(input, init);
     const headers = new Headers(init?.headers);
     headers.set('authorization', `Bearer ${getToken()}`);

@@ -14,7 +14,16 @@ export class UnparseableMessage extends Error {
 }
 
 /** Headers whose addresses decide where a message goes (plus envelope-style ones some tools add). */
-const RECIPIENT_HEADERS = new Set(['to', 'cc', 'bcc', 'reply-to', 'envelope-to', 'x-envelope-to', 'delivered-to', 'x-original-to']);
+const RECIPIENT_HEADERS = new Set([
+  'to',
+  'cc',
+  'bcc',
+  'reply-to',
+  'envelope-to',
+  'x-envelope-to',
+  'delivered-to',
+  'x-original-to',
+]);
 /** The Resent-* headers that hold dates and ids, not addresses. */
 const RESENT_NON_ADDRESS = new Set(['resent-date', 'resent-message-id']);
 
@@ -41,7 +50,8 @@ function outerHeaders(message: Buffer): { name: string; value: string }[] {
     const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
     if (line === '') break;
     // A bare CR, a NUL or a whitespace-only line are read differently by different parsers.
-    if (line.includes('\r') || line.includes('\0')) throw new UnparseableMessage('ambiguous line ending');
+    if (line.includes('\r') || line.includes('\0'))
+      throw new UnparseableMessage('ambiguous line ending');
     if (/^[ \t]+$/.test(line)) throw new UnparseableMessage('whitespace-only line in headers');
     if (/^[ \t]/.test(line)) {
       const last = headers[headers.length - 1];
@@ -58,7 +68,30 @@ function outerHeaders(message: Buffer): { name: string; value: string }[] {
   return headers;
 }
 
-type Token = { kind: 'atom'; text: string } | { kind: 'quoted' } | { kind: '<' | '>' | ',' | ';' | ':' };
+type Token =
+  { kind: 'atom'; text: string } | { kind: 'quoted' } | { kind: '<' | '>' | ',' | ';' | ':' };
+
+/** Skips one comment; comments nest and may hold anything, including things that look like addresses. */
+function skipComment(text: string, start: number): number {
+  let depth = 0;
+  let i = start;
+  for (; i < text.length; i++) {
+    const d = text[i]!;
+    if (d === '\\') i++;
+    else if (d === '(') depth++;
+    else if (d === ')' && --depth === 0) break;
+  }
+  if (depth !== 0) throw new UnparseableMessage('unterminated comment');
+  return i + 1;
+}
+
+/** Skips a quoted string, whatever it holds, and returns the index just past its closing quote. */
+function skipQuoted(text: string, start: number): number {
+  let i = start + 1;
+  while (i < text.length && text[i] !== '"') i += text[i] === '\\' ? 2 : 1;
+  if (i >= text.length) throw new UnparseableMessage('unterminated quoted string');
+  return i + 1;
+}
 
 function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
@@ -71,23 +104,11 @@ function tokenize(text: string): Token[] {
   while (i < text.length) {
     const c = text[i]!;
     if (c === '(') {
-      // Comments nest and may hold anything, including things that look like addresses.
       flush();
-      let depth = 0;
-      for (; i < text.length; i++) {
-        const d = text[i]!;
-        if (d === '\\') i++;
-        else if (d === '(') depth++;
-        else if (d === ')' && --depth === 0) break;
-      }
-      if (depth !== 0) throw new UnparseableMessage('unterminated comment');
-      i++;
+      i = skipComment(text, i);
     } else if (c === '"') {
       flush();
-      i++;
-      while (i < text.length && text[i] !== '"') i += text[i] === '\\' ? 2 : 1;
-      if (i >= text.length) throw new UnparseableMessage('unterminated quoted string');
-      i++;
+      i = skipQuoted(text, i);
       tokens.push({ kind: 'quoted' });
     } else if (c === '<' || c === '>' || c === ',' || c === ';' || c === ':') {
       flush();
@@ -123,19 +144,22 @@ export function parseAddressList(text: string): string[] {
     if (!phrase.length) return;
     const only = phrase[0]!;
     // A bare address is exactly one atom with an @. "self@x other@y" is not a mailbox.
-    if (phrase.length !== 1 || only.kind !== 'atom' || !only.text.includes('@')) throw new UnparseableMessage('not a mailbox');
+    if (phrase.length !== 1 || only.kind !== 'atom' || !only.text.includes('@'))
+      throw new UnparseableMessage('not a mailbox');
     found.push(checked(only.text));
   };
 
   // RFC 5322 does not allow "@" in an unquoted display name. A lenient reader may take it as a
   // second address, so the strict reading and the lenient one must not differ: refuse it.
   const noAddressInName = (phrase: Token[]): void => {
-    if (phrase.some(token => token.kind === 'atom' && token.text.includes('@'))) throw new UnparseableMessage('address in display name');
+    if (phrase.some(token => token.kind === 'atom' && token.text.includes('@')))
+      throw new UnparseableMessage('address in display name');
   };
 
   while (i < tokens.length) {
     const phrase: Token[] = [];
-    while (i < tokens.length && (tokens[i]!.kind === 'atom' || tokens[i]!.kind === 'quoted')) phrase.push(tokens[i++]!);
+    while (i < tokens.length && (tokens[i]!.kind === 'atom' || tokens[i]!.kind === 'quoted'))
+      phrase.push(tokens[i++]!);
     const next = tokens[i];
     if (!next) {
       bare(phrase);
@@ -145,11 +169,13 @@ export function parseAddressList(text: string): string[] {
     if (next.kind === '<') {
       noAddressInName(phrase);
       const inner = tokens[i];
-      if (!inner || inner.kind !== 'atom' || tokens[i + 1]?.kind !== '>') throw new UnparseableMessage('bad angle address');
+      if (!inner || inner.kind !== 'atom' || tokens[i + 1]?.kind !== '>')
+        throw new UnparseableMessage('bad angle address');
       found.push(checked(inner.text));
       i += 2;
       const after = tokens[i];
-      if (after && after.kind !== ',' && after.kind !== ';') throw new UnparseableMessage('text after angle address');
+      if (after && after.kind !== ',' && after.kind !== ';')
+        throw new UnparseableMessage('text after angle address');
     } else if (next.kind === ',') {
       bare(phrase);
     } else if (next.kind === ';') {
@@ -176,7 +202,9 @@ export function parseAddressList(text: string): string[] {
 export function recipientAddresses(message: Buffer): string[] {
   const addresses: string[] = [];
   for (const header of outerHeaders(message)) {
-    const relevant = RECIPIENT_HEADERS.has(header.name) || (header.name.startsWith('resent-') && !RESENT_NON_ADDRESS.has(header.name));
+    const relevant =
+      RECIPIENT_HEADERS.has(header.name) ||
+      (header.name.startsWith('resent-') && !RESENT_NON_ADDRESS.has(header.name));
     if (relevant) addresses.push(...parseAddressList(header.value));
   }
   return addresses;

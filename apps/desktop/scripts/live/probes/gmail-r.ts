@@ -51,8 +51,14 @@ export const inboxWindowMetadata: SmokeProbe = {
     const result = emptyResult();
     const started = ctx.now();
     try {
-      const list = await getJson(ctx, '/threads', { labelIds: 'INBOX', maxResults: String(INBOX_WINDOW), fields: 'threads(id),nextPageToken' });
-      const ids: string[] = (Array.isArray(list.json.threads) ? list.json.threads : []).map((thread: { id?: unknown }) => String(thread.id));
+      const list = await getJson(ctx, '/threads', {
+        labelIds: 'INBOX',
+        maxResults: String(INBOX_WINDOW),
+        fields: 'threads(id),nextPageToken',
+      });
+      const ids: string[] = (Array.isArray(list.json.threads) ? list.json.threads : []).map(
+        (thread: { id?: unknown }) => String(thread.id),
+      );
       result.counts.threadsListed = ids.length;
       result.counts.pages = 1;
       result.timingsMs.list = list.ms;
@@ -74,13 +80,21 @@ export const inboxWindowMetadata: SmokeProbe = {
             fields: 'id,messages(id,labelIds,internalDate)',
           });
           result.counts.threadsFetched++;
-          result.counts.messagesInThreads = (result.counts.messagesInThreads ?? 0) + (Array.isArray(thread.json.messages) ? thread.json.messages.length : 0);
+          result.counts.messagesInThreads =
+            (result.counts.messagesInThreads ?? 0) +
+            (Array.isArray(thread.json.messages) ? thread.json.messages.length : 0);
           fetchTotal += thread.ms;
           slowest = Math.max(slowest, thread.ms);
         } catch (error) {
           failed(error, result);
           // Do not keep hammering an account that is being throttled.
-          if (error instanceof ProbeHttpError && (error.errorClass === 'rate-limit' || error.errorClass === 'quota' || error.errorClass === 'auth')) break;
+          if (
+            error instanceof ProbeHttpError &&
+            (error.errorClass === 'rate-limit' ||
+              error.errorClass === 'quota' ||
+              error.errorClass === 'auth')
+          )
+            break;
         }
       }
       result.timingsMs.fetchTotal = fetchTotal;

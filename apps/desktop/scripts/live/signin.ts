@@ -6,7 +6,17 @@ import { pathToFileURL } from 'node:url';
 import { printableMessage, RunnerError } from './errors';
 import { clientFromEnv, type OAuthClient } from './auth';
 import { createGuardedFetch } from './guard';
-import { defaultKeychainService, keychainReader, keychainWriter, LABEL, reconnectBy, saveAccount, vaultDir, type SecretReader, type SecretWriter } from './vault';
+import {
+  defaultKeychainService,
+  keychainReader,
+  keychainWriter,
+  LABEL,
+  reconnectBy,
+  saveAccount,
+  vaultDir,
+  type SecretReader,
+  type SecretWriter,
+} from './vault';
 
 /**
  * The one-time sign-in for a test account, run by the owner (never by an agent): loopback redirect
@@ -56,19 +66,25 @@ function listen(server: Server): Promise<number> {
 }
 
 export async function signIn(args: SignInArgs, deps: SignInDeps): Promise<SignInOutcome> {
-  if (!LABEL.test(args.label)) throw new RunnerError('Account labels are lowercase names such as "agent"');
+  if (!LABEL.test(args.label))
+    throw new RunnerError('Account labels are lowercase names such as "agent"');
   const verifier = base64url(randomBytes(48));
   const state = base64url(randomBytes(24));
   const server = createServer();
   const callback = new Promise<URL>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new RunnerError('Sign-in timed out')), deps.timeoutMs ?? 5 * 60_000);
+    const timer = setTimeout(
+      () => reject(new RunnerError('Sign-in timed out')),
+      deps.timeoutMs ?? 5 * 60_000,
+    );
     server.on('request', (request, response) => {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
       if (url.pathname !== '/oauth/callback') {
         response.writeHead(404).end();
         return;
       }
-      response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end('You can close this tab and return to the terminal.');
+      response
+        .writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+        .end('You can close this tab and return to the terminal.');
       clearTimeout(timer);
       resolve(url);
     });
@@ -95,9 +111,13 @@ export async function signIn(args: SignInArgs, deps: SignInDeps): Promise<SignIn
     await deps.opener(auth.href);
 
     const returned = await callback;
-    if (returned.searchParams.get('state') !== state) throw new RunnerError('Sign-in answer did not match this request');
+    if (returned.searchParams.get('state') !== state)
+      throw new RunnerError('Sign-in answer did not match this request');
     const error = returned.searchParams.get('error');
-    if (error) throw new RunnerError(`Google did not grant access (${/^[a-z_]{1,40}$/.test(error) ? error : 'unknown'})`);
+    if (error)
+      throw new RunnerError(
+        `Google did not grant access (${/^[a-z_]{1,40}$/.test(error) ? error : 'unknown'})`,
+      );
     const code = returned.searchParams.get('code');
     if (!code) throw new RunnerError('Sign-in answer had no code');
 
@@ -114,23 +134,41 @@ export async function signIn(args: SignInArgs, deps: SignInDeps): Promise<SignIn
         ...(args.client.clientSecret ? { client_secret: args.client.clientSecret } : {}),
       }),
     });
-    const body = (await response.json().catch(() => ({}))) as { refresh_token?: unknown; refresh_token_expires_in?: unknown; scope?: unknown; error?: unknown };
-    if (!response.ok) throw new RunnerError(`Google refused the sign-in code (${typeof body.error === 'string' && /^[a-z_]{1,40}$/.test(body.error) ? body.error : 'unknown'})`);
-    if (typeof body.refresh_token !== 'string') throw new RunnerError('Google returned no refresh token; remove the app under Google account permissions and sign in again');
+    const body = (await response.json().catch(() => ({}))) as {
+      refresh_token?: unknown;
+      refresh_token_expires_in?: unknown;
+      scope?: unknown;
+      error?: unknown;
+    };
+    if (!response.ok)
+      throw new RunnerError(
+        `Google refused the sign-in code (${typeof body.error === 'string' && /^[a-z_]{1,40}$/.test(body.error) ? body.error : 'unknown'})`,
+      );
+    if (typeof body.refresh_token !== 'string')
+      throw new RunnerError(
+        'Google returned no refresh token; remove the app under Google account permissions and sign in again',
+      );
     const granted = typeof body.scope === 'string' ? body.scope.split(' ') : [];
-    if (!granted.includes(LIVE_SCOPES[0]!)) throw new RunnerError('Gmail access was not granted; tick every permission on the consent screen');
+    if (!granted.includes(LIVE_SCOPES[0]!))
+      throw new RunnerError(
+        'Gmail access was not granted; tick every permission on the consent screen',
+      );
 
     const service = defaultKeychainService(args.label);
     await deps.writeSecret(service, body.refresh_token);
     // Read it back so a keychain that silently kept the old value is noticed now, not at the next run.
-    if ((await deps.readSecret(service)) !== body.refresh_token) throw new RunnerError('The keychain did not keep the new token');
+    if ((await deps.readSecret(service)) !== body.refresh_token)
+      throw new RunnerError('The keychain did not keep the new token');
 
     const grantedAtMs = deps.now();
-    const expiresIn = typeof body.refresh_token_expires_in === 'number' ? body.refresh_token_expires_in : undefined;
+    const expiresIn =
+      typeof body.refresh_token_expires_in === 'number' ? body.refresh_token_expires_in : undefined;
     const meta = {
       provider: 'gmail' as const,
       grantedAt: new Date(grantedAtMs).toISOString(),
-      ...(expiresIn ? { refreshExpiresAt: new Date(grantedAtMs + expiresIn * 1000).toISOString() } : {}),
+      ...(expiresIn
+        ? { refreshExpiresAt: new Date(grantedAtMs + expiresIn * 1000).toISOString() }
+        : {}),
       keychainService: service,
     };
     await saveAccount(deps.vaultDir, args.label, meta);
@@ -151,7 +189,9 @@ function flag(argv: string[], name: string): string | undefined {
 async function main(argv: string[]): Promise<void> {
   const label = flag(argv, '--label');
   if (flag(argv, '--provider') !== 'gmail' || !label) {
-    console.error('Usage: tsx apps/desktop/scripts/live/signin.ts --provider gmail --label agent [--login-hint <address>]');
+    console.error(
+      'Usage: tsx apps/desktop/scripts/live/signin.ts --provider gmail --label agent [--login-hint <address>]',
+    );
     process.exitCode = 2;
     return;
   }
@@ -160,14 +200,21 @@ async function main(argv: string[]): Promise<void> {
     {
       fetch,
       // `open` shows the page in the owner's browser. This only runs when the owner types the command.
-      opener: url => new Promise((resolve, reject) => execFile('open', [url], error => (error ? reject(new RunnerError('Could not open the browser')) : resolve()))),
+      opener: url =>
+        new Promise((resolve, reject) =>
+          execFile('open', [url], error =>
+            error ? reject(new RunnerError('Could not open the browser')) : resolve(),
+          ),
+        ),
       readSecret: keychainReader,
       writeSecret: keychainWriter,
       now: Date.now,
       vaultDir: vaultDir(),
     },
   );
-  console.log(`Signed in test account ${label}. Reconnect it by ${outcome.reconnectBy.slice(0, 10)}.`);
+  console.log(
+    `Signed in test account ${label}. Reconnect it by ${outcome.reconnectBy.slice(0, 10)}.`,
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
