@@ -138,6 +138,7 @@ function randomWrite(r: ReturnType<typeof rng>, step: number, local: boolean): S
           opKind: 'label',
           targets: [],
           payload: '{}',
+          scope: 'triage',
           effect: r.chance(0.5)
             ? [
                 {

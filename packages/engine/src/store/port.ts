@@ -107,7 +107,8 @@ export type CoreWrite =
   | CalendarDeleteWrite
   | EventWrite
   | EventDeleteWrite
-  | EventSweepWrite;
+  | EventSweepWrite
+  | EventHiddenWrite;
 
 /**
  * Lane write kinds, added by declaration merging from the lane's own file, e.g. in `outbox/store.ts`:
@@ -178,7 +179,9 @@ export type FolderRole =
 /**
  * Upsert of one folder or label. A `uidValidity` that differs from the stored non-null one (IMAP `UIDVALIDITY` changed)
  * clears every `message_folders.uid` of the folder in the same transaction; the adapter's full resync then re-stamps
- * the UIDs and sweeps without UID bounds. Placements, flags and messages stay.
+ * the UIDs and sweeps without UID bounds. Placements, flags and messages stay. `uidValidity` is a patch (R2G-1): absent
+ * keeps the stored value (a folder list without STATUS), `null` clears it, and only a present, different value clears
+ * the UIDs.
  */
 export interface FolderWrite {
   kind: 'folder';
@@ -398,8 +401,12 @@ export interface OpWrite {
   /** The state before the edit, opaque JSON, for undo and conflict display. */
   base?: string;
   effect: OpEffect[];
-  /** The scope of the method that made the op, which undo, retry and discard require again (contract `Operation.scope`, FR-3). */
-  scope?: string;
+  /**
+   * The scope of the method that made the op (`ops.scope`, NOT NULL), which undo, retry and discard require again: the
+   * contract's `Operation.scope` and `QueueItem.scope` are read from it (FR-3). Required, so the check fails closed: a
+   * commit carrying an op without one is refused (R2H-2). Engine-internal ops name the scope of the method they serve.
+   */
+  scope: string;
 }
 
 /** Open op states. `synced` and `cancelled` are terminal: the row is deleted and replay stops. */
@@ -535,7 +542,11 @@ export interface CalendarDeleteWrite {
 }
 /** One stored row of an event resource: a master, an override (`recurrenceId` set) or a single event. */
 export interface EventRow {
-  /** The original start of an override (`events.recurrence_id`); absent for masters and single events. */
+  /**
+   * The original start of an override (`events.recurrence_id`) in the canonical `RECURRENCE_ID_FORMAT` form of
+   * `ports/calendar.ts`: UTC `YYYYMMDDTHHMMSSZ`, `YYYYMMDD` all-day, `YYYYMMDDTHHMMSS` floating. Absent (or '') for
+   * masters and single events. Any other form is refused (FR-20), so one occurrence never gets two rows.
+   */
   recurrenceId?: string;
   masterRemoteId?: string;
   status: 'confirmed' | 'tentative' | 'cancelled' | (string & {});
@@ -579,6 +590,22 @@ export interface EventSweepWrite {
   generation: number;
   from?: number;
   to?: number;
+}
+
+/**
+ * Event/hide (R2G-4): hides an event in Aplos only, or shows it again; never sent to the provider. Stored in
+ * `event_hidden`, apart from `events`, because an unedited occurrence has no `events` row and a provider refresh rewrites
+ * the rows it does have. No `recurrenceId` hides the whole resource (a single event, or a series with every occurrence);
+ * a canonical `recurrenceId` hides that one occurrence, with or without an override row. The resource must be stored.
+ * Writes the resource's `Event` change row. Deleting the resource or its calendar drops its hidden rows.
+ */
+export interface EventHiddenWrite {
+  kind: 'eventHidden';
+  accountId: string;
+  calendarRemoteId: string;
+  remoteId: string;
+  recurrenceId?: string;
+  hidden: boolean;
 }
 
 // ---------------------------------------------------------------- lane kinds

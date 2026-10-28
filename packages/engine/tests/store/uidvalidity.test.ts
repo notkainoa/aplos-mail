@@ -90,3 +90,54 @@ test('a first UIDVALIDITY after an absent one keeps the stored UIDs', () => {
     assert.deepEqual(uids(store), [{ id: 'a', uid: 1 }]);
   });
 });
+
+test('a folder write without uidValidity keeps the stored one, so a later real change still clears the UIDs (R2G-1)', () => {
+  withStore(store => {
+    store.commit({
+      opId: 'list',
+      origin: 'sync',
+      writes: [
+        accountWrite,
+        imapFolder(1),
+        msg('a', 'ta', 0, { folders: [{ folder: 'INBOX', uid: 1 }] }),
+        msg('b', 'tb', 1, { folders: [{ folder: 'INBOX', uid: 2 }] }),
+      ],
+    });
+    // A folder list from LIST without STATUS: no validity at all.
+    store.commit({
+      opId: 'list-no-status',
+      origin: 'sync',
+      writes: [{ ...imapFolder(1), uidValidity: undefined }],
+    });
+    const stored = () =>
+      store.read(q => q.get<{ v: number | null }>('SELECT uidvalidity AS v FROM folders')?.v);
+    assert.equal(stored(), 1, 'absent keeps the stored value');
+    // UIDVALIDITY really changes, and the first resync page gives `b` UID 1: no collision with `a`'s stale UID 1.
+    store.commit({
+      opId: 'reset',
+      origin: 'sync',
+      step: 'resync',
+      writes: [
+        imapFolder(7),
+        {
+          kind: 'placements',
+          accountId: ACCOUNT,
+          target: { remoteId: 'b' },
+          add: [{ folder: 'INBOX', uid: 1 }],
+          remove: [],
+        },
+      ],
+    });
+    assert.deepEqual(uids(store), [
+      { id: 'a', uid: null },
+      { id: 'b', uid: 1 },
+    ]);
+    // An explicit null still clears the stored value.
+    store.commit({
+      opId: 'clear',
+      origin: 'sync',
+      writes: [{ ...imapFolder(7), uidValidity: null }],
+    });
+    assert.equal(stored(), null);
+  });
+});

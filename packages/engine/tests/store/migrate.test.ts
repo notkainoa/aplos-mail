@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openSqlite } from '../../../../apps/desktop/src/host/sqlite';
 import { MIGRATIONS, MigrationError, openStore, SchemaTooNewError } from '../../src/store';
 import { migrate } from '../../src/store/migrate';
-import { tempDb } from './helpers';
+import { accountWrite, tempDb, withStore } from './helpers';
 
 const TABLES = [
   'meta',
@@ -37,6 +37,7 @@ const TABLES = [
   'consent',
   'calendars',
   'events',
+  'event_hidden',
   'clients',
   'audit_log',
   'schema_migrations',
@@ -209,4 +210,40 @@ test("this runtime's SQLite is 3.43 or later and FTS5 contentless_delete works",
   assert.deepEqual(hits('invoice'), [], 'deleted by rowid from a contentless table');
   assert.deepEqual(hits('lunch'), [8]);
   db.close();
+});
+
+test('correspondents are per account: one address in two accounts, purged with its account (R2G-3)', () => {
+  withStore((store, file) => {
+    store.commit({
+      opId: 'accounts',
+      origin: 'sync',
+      writes: [accountWrite, { ...accountWrite, id: 'acct-2', address: 'other@mail.example' }],
+    });
+    const db = file.open();
+    try {
+      const add = db.prepare(
+        'INSERT INTO correspondents(account_id, address, name, sent_to, received_from) VALUES(?, ?, ?, ?, ?)',
+      );
+      add.run('acct-1', 'friend@mail.example', 'Friend', 3, 1);
+      add.run('acct-2', 'friend@mail.example', 'Friend', 1, 4);
+      add.run('acct-2', 'shop@mail.example', null, 0, 9);
+      // Contact/suggest with an accountId reads that account's rows; without one it sums them per address.
+      const total = db
+        .prepare(
+          `SELECT sum(sent_to) AS sent, sum(received_from) AS received FROM correspondents WHERE address = ?`,
+        )
+        .get('friend@mail.example');
+      assert.deepEqual({ ...total }, { sent: 4, received: 5 });
+      assert.throws(() => add.run('acct-9', 'x@mail.example', null, 0, 0), /FOREIGN KEY/);
+      // Account/disconnect deletes the account row; its correspondents go with it.
+      db.prepare("DELETE FROM accounts WHERE id = 'acct-2'").run();
+      const left = db
+        .prepare('SELECT account_id AS a, address FROM correspondents ORDER BY a, address')
+        .all()
+        .map(r => `${r.a} ${r.address}`);
+      assert.deepEqual(left, ['acct-1 friend@mail.example']);
+    } finally {
+      db.close();
+    }
+  });
 });
