@@ -111,12 +111,13 @@ remote_draft_id TEXT, remote_message_id TEXT, remote_internet_id TEXT, synced_re
 origin TEXT NOT NULL DEFAULT 'local',
 updated_at INTEGER NOT NULL) STRICT`,
   `CREATE INDEX drafts_account ON drafts(account_id, updated_at)`,
-  // eng-time: the outbox state machine; undo send and send later share not_before (ARCH 7.1-7.3).
+  // eng-time: the outbox state machine; undo send and send later share not_before (ARCH 7.1-7.3). Both waiting states,
+  // `queued` (undo window) and `scheduled` (send later), are in sub_due, so the timer and the overdue rule see both (FR-2).
   `CREATE TABLE submissions(id TEXT PRIMARY KEY, draft_id TEXT NOT NULL,
 account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE, internet_id TEXT NOT NULL, mime BLOB,
 not_before INTEGER NOT NULL, state TEXT NOT NULL, attempt_at INTEGER, error TEXT, error_until INTEGER,
 remote_message_id TEXT, remote_thread_id TEXT) STRICT`,
-  `CREATE INDEX sub_due ON submissions(not_before) WHERE state = 'queued'`,
+  `CREATE INDEX sub_due ON submissions(not_before) WHERE state IN ('queued', 'scheduled')`,
   // eng-ai: background AI work, one job per key, behind its own governor (ARCH 8).
   `CREATE TABLE jobs(id INTEGER PRIMARY KEY, kind TEXT NOT NULL, key TEXT NOT NULL UNIQUE, priority INTEGER NOT NULL,
 payload TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL,

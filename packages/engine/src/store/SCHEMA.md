@@ -24,7 +24,7 @@ Source: `migrations/0001_initial.ts` (ARCH 3.2 plus the Providers review S1-S11)
 | `settings` | eng-contract | one JSON document |
 | `ops` | eng-views enqueue, prov-gov drain | per-account FIFO, replayed over sync until done |
 | `drafts` | eng-time, prov-gmail-write | `remote_draft_id` (G, O, F), `remote_message_id` (I APPEND), `remote_internet_id` (the synced copy's per-revision Message-ID: I deletes the old copy by it without UIDPLUS), `origin` local/remote (S10) |
-| `submissions` | eng-time | state machine; `internet_id` (findSent on all); `mime`; `remote_message_id`, `remote_thread_id` (S11) |
+| `submissions` | eng-time | state machine; rows waiting on `not_before` are `queued` (undo window) or `scheduled` (send later), both in `sub_due` and both under the overdue rule (`due.ts`, FR-2); `internet_id` (findSent on all); `mime`; `remote_message_id`, `remote_thread_id` (S11) |
 | `jobs`, `ai_usage`, `consent` | eng-ai | AI queue, budget and consent |
 | `notifications` | eng-time | outbox per message: pending/posted/claimed |
 | `sync_state` | prov-gmail, prov-cal | `scope` history / window:inbox / backfill:inbox / folder:<id> (I, O) / cal:<id> (GC, D); `cursor` (G historyId, O deltaLink, I `uidvalidity:modseq:uidnext`, F state, GC/D sync token); `page_token` (G, O nextLink, D 507 paging); `pending` (S9) |
@@ -36,6 +36,6 @@ Source: `migrations/0001_initial.ts` (ARCH 3.2 plus the Providers review S1-S11)
 | `clients`, `audit_log` | eng-host | listener clients (token hash only) and a content-free audit |
 | `schema_migrations` | migrate.ts | version, name, checksum: catches an edited shipped migration |
 
-**Indexes for the views at 100k threads.** Inbox and labels: `thread_folders` primary key, reverse scan; unread counts: `tf_unread`. Home: `home`. Done and New by date: `wf_status`. Later and its timer: `wf_later`. Reminders: `timers_wf`. Search: FTS rowid order (date-ordered ids), then `messages` by primary key. A thread's messages: `messages_thread`. Send reconciliation: `messages_iid`. IMAP by UID: `mf_uid`. Paced FTS backlog: `messages_unindexed`.
+**Indexes for the views at 100k threads.** Inbox and labels: `thread_folders` primary key, reverse scan; unread counts: `tf_unread`. Home: `home`. Done and New by date: `wf_status`. Later and its timer: `wf_later`. Reminders: `timers_wf`. Search: FTS rowid order (date-ordered ids), then `messages` by primary key. A thread's messages: `messages_thread`. Send reconciliation: `messages_iid`. Outbox timer and overdue rule: `sub_due` (`due.ts`). IMAP by UID: `mf_uid`. Paced FTS backlog: `messages_unindexed`.
 
 **Deliberate differences from ARCH 3.2.** `changes` keyed `(seq, type, id)` because one commit writes many rows under one seq. `commits` and `messages.local_seq` are new (idempotency, mutation fence). `events.master_id` became `master_remote_id` (an override can arrive before its master). Foreign keys cascade from accounts, threads, messages and folders so a delete is one statement (FTS rows are removed explicitly). `messages.bcc_json` and flag bit 32 (`has_attach`) were added for sent mail and the thread rollup.

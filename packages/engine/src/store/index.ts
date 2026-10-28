@@ -6,6 +6,7 @@ import { transaction, type SqlDatabase, type SqlStatement } from './sql';
 
 export * from './port';
 export { FLAG, HDR, PART } from './commit';
+export * from './due';
 export { MigrationError, SchemaTooNewError, type Migration } from './migrate';
 export { MIGRATIONS } from './migrations';
 export type { SqlDatabase, SqlRow, SqlStatement, SqlValue } from './sql';
