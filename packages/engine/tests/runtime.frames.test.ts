@@ -168,7 +168,8 @@ test('broadcasts are filtered by caller: a listener never sees host, draft, Ask 
       main: framesOf(t.engine.connect(main)),
     };
     const emit = t.engine.services.frames.emit;
-    emit({ frame: 'host', event: { kind: 'badge', count: 1 } } as never);
+    emit({ frame: 'host', event: { type: 'badge', count: 1 } });
+    emit({ frame: 'host', event: { type: 'appearance', theme: 'dark' } });
     emit({ frame: 'Draft/changed', draftId: 'd1', revision: 1, conflict: false });
     emit({ frame: 'progress', runId: 'r1', source: 'ask', kind: 'text', delta: 'hi' });
     emit({ frame: 'connect', connectId: 'k1', mode: 'connect', state: 'waiting' } as never);
@@ -176,15 +177,27 @@ test('broadcasts are filtered by caller: a listener never sees host, draft, Ask 
     const kinds = (name: keyof typeof seen) => seen[name].map(f => f.frame);
     assert.deepEqual(kinds('reader'), ['reset']);
     assert.deepEqual(kinds('asker'), ['progress', 'reset']);
-    assert.deepEqual(kinds('main'), ['host', 'Draft/changed', 'progress', 'connect', 'reset']);
-    // A window is not main: host events never reach it.
-    assert.deepEqual(kinds('window'), ['Draft/changed', 'progress', 'connect', 'reset']);
+    assert.deepEqual(kinds('main'), [
+      'host',
+      'host',
+      'Draft/changed',
+      'progress',
+      'connect',
+      'reset',
+    ]);
+    // A window gets the appearance event, not the badge: only parked, appearance and clock are its own.
+    assert.deepEqual(kinds('window'), ['host', 'Draft/changed', 'progress', 'connect', 'reset']);
+    const windowHost = seen.window.filter(f => f.frame === 'host');
+    assert.deepEqual(
+      windowHost.map(f => f.frame === 'host' && f.event.type),
+      ['appearance'],
+    );
   } finally {
     await t.cleanup();
   }
 });
 
-test('operation and progress frames need their own scope, and unknown ones are withheld from everyone but main', async () => {
+test('operation and progress frames need their own scope, and unknown ones are withheld from everyone, main included', async () => {
   const t = await testEngine();
   try {
     const base = { kind: 'listener', via: 'socket', clientId: 'c' } as const;
@@ -210,13 +223,8 @@ test('operation and progress frames need their own scope, and unknown ones are w
       );
     assert.deepEqual(shown('triager'), ['operation:triage', 'progress']);
     assert.deepEqual(shown('searcher'), ['progress']);
-    assert.deepEqual(shown('main'), [
-      'operation:triage',
-      'operation:send',
-      'operation:-',
-      'progress',
-      'progress',
-    ]);
+    // Main sees every known frame; an operation without a scope and an unknown source are nobody's.
+    assert.deepEqual(shown('main'), ['operation:triage', 'operation:send', 'progress']);
   } finally {
     await t.cleanup();
   }

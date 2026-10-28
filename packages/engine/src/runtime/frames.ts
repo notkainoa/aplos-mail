@@ -76,25 +76,35 @@ function frameScope(frame: StampedFrame): Scope | null | undefined {
     case 'progress':
       return PROGRESS_SCOPE[frame.source];
     case 'operation':
-      return frame.operation.scope as Scope | undefined;
+      return frame.operation?.scope as Scope | undefined;
     default:
       return undefined;
   }
 }
 
+/** Host events a window needs to draw itself (parked banner, theme, clock); every other one is main's alone. */
+const WINDOW_HOST_EVENTS: ReadonlySet<string> = new Set(['parked', 'appearance', 'clock']);
+
+function hostEventVisible(caller: Caller, type: string): boolean {
+  if (caller.kind === 'window') return WINDOW_HOST_EVENTS.has(type);
+  return caller.kind === 'host' && caller.scopes.includes('host');
+}
+
 /**
- * What a connection's broadcasts may contain, by its caller. Fail closed for every kind of caller: a frame or source
- * this file does not know is withheld, `host` events (notify, badge, reminder) go to main's control connection alone,
- * and every other frame needs its scope (a window holds every grantable scope; a listener only its grant). Main's
- * control connection sees every known frame. A targeted `emit` reply is not filtered at all.
+ * What a connection's broadcasts may contain, by its caller. Fail closed for every kind of caller, main included: a
+ * frame kind, progress source or operation without a scope that this file does not know is withheld from everyone.
+ * `host` events go to main's control connection, except parked, appearance and clock, which windows also get
+ * (notify, badge, reminder, openExternal stay main's). Every other frame needs its scope: a window holds every
+ * grantable scope, a listener only its grant, main's control connection every known one. A targeted `emit` reply is
+ * not filtered at all.
  */
 export function frameFilter(caller: Caller): (frame: StampedFrame) => boolean {
   return frame => {
-    if (frame.frame === 'host') return caller.kind === 'host' && caller.scopes.includes('host');
+    if (frame.frame === 'host') return hostEventVisible(caller, frame.event.type);
     const scope = frameScope(frame);
     if (scope === null) return true;
-    if (caller.kind === 'host') return true;
-    return scope !== undefined && caller.scopes.includes(scope);
+    if (scope === undefined) return false;
+    return caller.kind === 'host' || caller.scopes.includes(scope);
   };
 }
 
