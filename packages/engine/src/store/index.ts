@@ -1,4 +1,5 @@
 import { applyCommit } from './commit';
+import { compactChanges } from './compact';
 import { registerExtensions } from './extend';
 import { migrate, type Migration } from './migrate';
 import { MIGRATIONS } from './migrations';
@@ -123,6 +124,7 @@ export function openStore(db: SqlDatabase, options: OpenStoreOptions = {}): Stor
         changes,
       };
     },
+    compact: options => compactChanges(db, { ...options, now: now() }),
     read(fn) {
       // query_only makes the "commit is the only write path" rule hold at runtime, not just in the types.
       db.exec('PRAGMA query_only=1');

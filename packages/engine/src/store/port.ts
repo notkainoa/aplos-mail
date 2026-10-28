@@ -24,6 +24,11 @@ export interface StorePort {
   commit(input: CommitInput): CommitResult;
   /** Change rows after `seq`, whole commits only, oldest first. Below the compaction floor: re-open windows. */
   changesSince(seq: number, options?: { limit?: number }): ChangesSince;
+  /**
+   * Trims the change log (ARCH 3.5): raises the floor to keep at most `maxRows` rows (50,000) and nothing older than
+   * `maxAgeMs` (30 days, on the store's clock), whole commits only, in one transaction. The floor never moves down.
+   */
+  compact(options?: CompactOptions): CompactResult;
   /** A short synchronous read for views, the importer and diagnostics. Never return a promise or a live iterator. */
   read<T>(fn: (q: StoreReader) => T): T;
   close(): void;
@@ -762,6 +767,19 @@ export type ChangesSince =
   | { status: 'ok'; fromSeq: number; toSeq: number; hasMore: boolean; changes: Change[] }
   /** The seq is below the compaction floor or not from this database: re-open windows from a snapshot. */
   | { status: 'cannotCalculateChanges'; floorSeq: number; seq: number };
+
+export interface CompactOptions {
+  /** Change rows to keep at most; defaults to 50,000. */
+  maxRows?: number;
+  /** Commits older than this are dropped from the log; defaults to 30 days. */
+  maxAgeMs?: number;
+}
+export interface CompactResult {
+  /** The floor after compaction: `changesSince` below it returns `cannotCalculateChanges`. */
+  floorSeq: number;
+  /** `changes` rows deleted. */
+  deleted: number;
+}
 
 // ---------------------------------------------------------------- errors
 
