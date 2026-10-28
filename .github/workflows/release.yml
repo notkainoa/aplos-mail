@@ -36,14 +36,16 @@ jobs:
       - run: npm ci
       - run: npm run typecheck -w @aplos/desktop -w @aplos/engine -w @aplos/contract
       - run: npm test -w @aplos/desktop -w @aplos/engine
-      - name: Build, sign, notarize and publish a draft release
+      - name: Build, sign and notarize (nothing is uploaded yet)
         # Missing secrets arrive as empty strings; release-build.mjs then makes an ad-hoc signed,
         # un-notarized build instead of failing. Signing needs CSC_LINK + CSC_KEY_PASSWORD;
         # notarization additionally needs all three APPLE_* secrets. GOOGLE_CLIENT_ID/SECRET and
         # MICROSOFT_CLIENT_ID are inlined into the app so downloads can sign in without a .env;
         # the build fails without the Google pair (APLOS_ALLOW_NO_GOOGLE=1 overrides). Microsoft is optional.
+        # `--expect release` makes release-build.mjs verify both apps as a signed, notarized release (including
+        # the debug-guard launches), so a run without the signing secrets ends red here. electron-builder runs
+        # with --publish never, so this step has no GH_TOKEN.
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
@@ -52,7 +54,28 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run release:publish -w @aplos/desktop
+        run: npm run release:build -w @aplos/desktop -- --expect release
+      - name: Verify hardening of both apps as a release
+        # Plan 40 Q2 item 7: fuses, LSMinimumSystemVersion 13.0, codesign, Gatekeeper, stapling, entitlements,
+        # the Developer ID designated requirement, a secret scan of the app and the ADR 40-6 debug guard
+        # (--launch-checks=guard: --remote-debugging-port and --inspect must make the app exit with code 78).
+        # It requires both apps, and it needs no secrets.
+        run: |
+          status=0
+          for app in "apps/desktop/release/mac-arm64/Aplos Mail.app" "apps/desktop/release/mac/Aplos Mail.app"; do
+            if [ ! -d "$app" ]; then
+              echo "::error::$app was not built."
+              status=1
+            elif ! node apps/desktop/scripts/verify-hardening.mjs "$app" --expect release --launch-checks=guard; then
+              echo "::error::verify-hardening failed for $app."
+              status=1
+            fi
+          done
+          exit $status
+      - name: Upload to the draft release (only after verification passed)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node apps/desktop/scripts/release-build.mjs --upload-only --publish always
       - name: Keep the artifacts with the run
         uses: actions/upload-artifact@v4
         with:
