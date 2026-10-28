@@ -6,11 +6,12 @@ import type { SectionHeaderProps } from '../props';
 import { Action, useInListbox } from './internal/Action';
 import { formatCount } from './internal/format';
 import { Icon } from './internal/Icon';
-import { tooltipText } from './internal/keys';
+import { keycapFor, literalKeycap, tooltipText } from './internal/keys';
 
 /** A section, sub or date label with its count and quiet action. */
 export function SectionHeader({ id, label, variant, count, held, tone = 'default', waitingNew, action, dropTarget }: SectionHeaderProps) {
   const inListbox = useInListbox();
+  const actionKey = action ? (action.keys ? literalKeycap(action.keys) : keycapFor(action.commandId)) : '';
   const content = (
     <>
       {tone === 'overdue' ? <Icon name="clock" size="sm" /> : null}
@@ -30,7 +31,9 @@ export function SectionHeader({ id, label, variant, count, held, tone = 'default
             label={action.label}
             icon={action.icon}
             tooltip={tooltipText(action.label, action.commandId, action.keys)}
-            duplicate={inListbox}
+            hintKey={actionKey}
+            // A pointer duplicate only when a key does the same; otherwise (Unsubscribe) it stays reachable.
+            duplicate={inListbox && actionKey !== ''}
             onPress={() => action.onSelect()}
           />
         </span>

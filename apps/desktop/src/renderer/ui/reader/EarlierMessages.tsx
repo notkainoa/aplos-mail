@@ -49,8 +49,8 @@ export function EarlierMessages({ count, participants, expanded, messages, curso
                   aria-current={message.id === cursorId ? 'true' : undefined}
                   onClick={() => onOpenMessage(message.id)}
                 >
-                  <span className="ui-earlier-messages__from">{message.from}</span>
-                  <span className="ui-earlier-messages__preview">{message.preview}</span>
+                  <span className="ui-earlier-messages__from" dir="auto">{message.from}</span>
+                  <span className="ui-earlier-messages__preview" dir="auto">{message.preview}</span>
                   <time className="ui-earlier-messages__date" dateTime={message.date} title={formatFull(message.date)}>
                     {formatListDate(message.date)}
                   </time>

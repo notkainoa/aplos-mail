@@ -30,7 +30,7 @@ export function ReaderHead({
   return (
     <div ref={ref as Ref<HTMLDivElement>} className="ui-reader-head" data-demoted={demoted ? 'true' : undefined}>
       <div className="ui-reader-head__from">
-        <span className="ui-reader-head__name" title={details}>
+        <span className="ui-reader-head__name" dir="auto" title={details}>
           {sender.name}
         </span>
         <span className="ui-reader-head__to">{recipientsLabel}</span>
@@ -58,9 +58,25 @@ export function ReaderHead({
             onPress={() => onSuggestion()}
           />
         </span>
-        <Action variant="text" size="md" label="Later" icon="clock" tooltip={tooltipText('Later', commands.later)} onPress={(anchor) => onLater(anchor)} />
+        <Action
+          variant="text"
+          size="md"
+          label="Later"
+          icon="clock"
+          tooltip={tooltipText('Later', commands.later)}
+          hintKey={keycapFor(commands.later)}
+          onPress={(anchor) => onLater(anchor)}
+        />
         {suggestion.isDone ? null : (
-          <Action variant="text" size="md" label="Done" icon="check" tooltip={tooltipText('Done', commands.done)} onPress={() => onDone()} />
+          <Action
+            variant="text"
+            size="md"
+            label="Done"
+            icon="check"
+            tooltip={tooltipText('Done', commands.done)}
+            hintKey={keycapFor(commands.done)}
+            onPress={() => onDone()}
+          />
         )}
       </div>
     </div>

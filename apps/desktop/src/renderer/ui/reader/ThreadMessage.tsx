@@ -17,7 +17,7 @@ export function ThreadMessage({ id, from, toLabel, date, cursor, body, attachmen
   return (
     <article ref={ref as Ref<HTMLElement>} id={id} className="ui-thread-message" data-cursor={cursor ? 'true' : undefined} aria-labelledby={fromId}>
       <header className="ui-thread-message__head">
-        <span id={fromId} className="ui-thread-message__from">
+        <span id={fromId} className="ui-thread-message__from" dir="auto">
           {from}
         </span>
         <span className="ui-thread-message__to">{toLabel}</span>

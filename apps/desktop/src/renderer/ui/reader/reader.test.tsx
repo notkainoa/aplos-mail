@@ -54,9 +54,9 @@ before(() => freezeClock());
 describe('Summary', () => {
   test('ready is the serif line with provenance on hover; local models say "on this Mac"', () => {
     const m = render(<Summary state="ready" text="Priya needs the revised deck today." subject="Re: Q4 review deck" provenance={{ provider: 'Groq', local: false }} />);
-    assert.match(m, /^<p class="ui-summary" data-state="ready" data-clamp="none" title="Summary by Groq">Priya needs the revised deck today\./);
+    assert.match(m, /^<p class="ui-summary" dir="auto" data-state="ready" data-clamp="none" title="Summary by Groq">Priya needs the revised deck today\./);
     const local = render(<Summary state="ready" text="T" subject="S" provenance={{ provider: 'Ollama', local: true }} clamp="two-lines" id="sum" />);
-    assert.match(local, /id="sum" class="ui-summary" data-state="ready" data-clamp="two-lines" title="Summary by Ollama on this Mac"/);
+    assert.match(local, /id="sum" class="ui-summary" dir="auto" data-state="ready" data-clamp="two-lines" title="Summary by Ollama on this Mac"/);
   });
 
   test('pending breathes the subject in SF; absent shows the subject and nothing else', () => {
@@ -72,11 +72,11 @@ describe('Summary', () => {
 describe('ReaderHead', () => {
   test('sender line, summary landmark, filled Reply with Space then Later and Done; no monogram', () => {
     const m = render(<ReaderHead {...head()} />);
-    assert.match(m, /ui-reader-head__name" title="jordan@parkandpine.test · alex.moreno@example.test · 14 emails both ways since March">Jordan Park</);
+    assert.match(m, /ui-reader-head__name" dir="auto" title="jordan@parkandpine.test · alex.moreno@example.test · 14 emails both ways since March">Jordan Park</);
     assert.match(m, /ui-reader-head__to">to you and Mina Cho</);
     assert.match(m, /data-kind="due" data-source="ai" title="[^"]+ · from the email"/);
     assert.match(text(m), /Due tomorrow 10:00 AM/);
-    assert.match(m, /<section class="ui-reader-head__summary" aria-label="Summary"><p class="ui-summary" data-state="ready" data-clamp="none"/);
+    assert.match(m, /<section class="ui-reader-head__summary" aria-label="Summary"><p class="ui-summary" dir="auto" data-state="ready" data-clamp="none"/);
     assert.match(m, /data-variant="filled" data-size="md" title="Reply · Space">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/);
     assert.match(m, /title="Later · L"/);
     assert.match(m, /title="Done · E"/);

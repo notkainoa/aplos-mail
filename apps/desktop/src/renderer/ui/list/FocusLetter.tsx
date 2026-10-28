@@ -41,7 +41,9 @@ export function FocusLetter({
       data-state={rejected ? 'rejected' : undefined}
     >
       <div className="ui-focus-letter__meta">
-        <span className="ui-focus-letter__sender">{sender}</span>
+        <span className="ui-focus-letter__sender" dir="auto">
+          {sender}
+        </span>
         {due ? <Chip kind="due" due={due} format="short" /> : null}
         <time className="ui-focus-letter__date" dateTime={date} title={formatFull(date)}>
           {formatListDate(date)}
@@ -72,6 +74,7 @@ export function FocusLetter({
           icon="clock"
           labelHidden={narrow}
           tooltip={tooltipText('Later', commands.later)}
+          hintKey={keycapFor(commands.later)}
           duplicate
           onPress={(anchor) => onLater(anchor)}
         />
@@ -83,6 +86,7 @@ export function FocusLetter({
             icon="check"
             labelHidden={narrow}
             tooltip={tooltipText('Done', commands.done)}
+            hintKey={keycapFor(commands.done)}
             duplicate
             onPress={() => onDone()}
           />
@@ -93,6 +97,7 @@ export function FocusLetter({
           label="More"
           icon="more"
           tooltip={tooltipText('More: bookmark, trash, why it’s here', commands.more)}
+          hintKey={keycapFor(commands.more)}
           duplicate
           onPress={(anchor) => onMore(anchor)}
         />

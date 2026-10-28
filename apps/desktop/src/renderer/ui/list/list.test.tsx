@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { before, describe, test } from 'node:test';
 import type { DueInfo, FocusLetterProps, ListRowProps, LowSheetGroup, TriageCommands } from '../props';
 import { Chip, CommitChip, CommitEdge, EmptyLine, ErrorLine, FocusLetter, FocusSlot, ListBox, ListGroup, ListRow, LowBand, LowSheet, SectionHeader } from './index';
+import { ListKeyHintsContext } from './internal/keyHints';
 import { lowBandNames } from './LowBand';
 import { bannedIn, freezeClock, html, text, WORST } from './testkit.test';
 
@@ -133,6 +134,37 @@ describe('ListRow', () => {
     assert.doesNotMatch(m, /role="alert"/, 'inside an option the error is read with the row');
   });
 
+  test('inside a listbox Retry stays reachable (no key retries yet); hover actions stay pointer duplicates', () => {
+    const m = render(
+      <ListBox binding={{ id: 'home', label: 'Home', activeDescendantId: 'row-leah' }}>
+        <ListRow {...row({ cursor: true, rejected: { op: 'move to Later', onRetry: noop } })} />
+      </ListBox>,
+    );
+    const retry = m.match(/<button[^>]*title="Retry"[^>]*>/)?.[0] ?? '';
+    assert.ok(retry, 'Retry renders');
+    assert.doesNotMatch(retry, /tabindex|aria-hidden/);
+    assert.match(m, /<button[^>]*aria-label="Later"[^>]*tabindex="-1" aria-hidden="true"/);
+  });
+
+  test('dates: weekday names only earlier this week, month-day before that', () => {
+    const monday = render(<ListRow {...row({ date: '2026-10-26T09:00:00-07:00' })} />);
+    assert.match(monday, />Monday<\/time>/);
+    const lastFriday = render(<ListRow {...row({ date: '2026-10-23T09:00:00-07:00' })} />);
+    assert.match(lastFriday, />Oct 23<\/time>/);
+  });
+
+  test('hover actions sit inside the meta cell so they cover the whole date column', () => {
+    const m = render(<ListRow {...row()} />);
+    assert.match(m, /<span class="ui-list-row__meta">.*<time[^>]*>Tuesday<\/time><span class="ui-list-row__actions">/);
+  });
+
+  test('mail-derived text follows its own direction (dir="auto")', () => {
+    const m = render(<ListRow {...row({ sender: WORST.arabic, primary: WORST.arabic, secondary: WORST.cjk, layout: 'list' })} />);
+    assert.match(m, /class="ui-list-row__sender" dir="auto"/);
+    assert.match(m, /class="ui-list-row__primary" dir="auto"/);
+    assert.match(m, /class="ui-list-row__secondary" dir="auto"/);
+  });
+
   test('search: secondary snippet and bold terms, marks with screen-reader words', () => {
     const m = render(
       <ListRow
@@ -225,10 +257,10 @@ describe('FocusSlot and FocusLetter', () => {
   test('meta line, serif summary clamped to two lines, filled suggestion with Space, Later, Done, More', () => {
     const m = render(<FocusLetter {...letter()} />);
     assert.match(m, /^<div id="focus-jordan" role="option" aria-selected="true" class="ui-focus-letter"/);
-    assert.match(m, /ui-focus-letter__sender">Jordan Park</);
+    assert.match(m, /ui-focus-letter__sender" dir="auto">Jordan Park</);
     assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
     assert.match(m, /10:00 AM<\/time>/);
-    assert.match(m, /class="ui-summary" data-state="ready" data-clamp="two-lines" title="Summary by Groq"/);
+    assert.match(m, /class="ui-summary" dir="auto" data-state="ready" data-clamp="two-lines" title="Summary by Groq"/);
     assert.match(m, /data-variant="filled" data-size="md" title="Reply · Space" tabindex="-1" aria-hidden="true">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/);
     assert.match(m, /title="Later · L"/);
     assert.match(m, /title="Done · E"/);
@@ -260,6 +292,19 @@ describe('FocusSlot and FocusLetter', () => {
     assert.doesNotMatch(absent, /Summary by/);
   });
 
+  test('key hints: ⌘ held shows badges on Later, Done and More; the default shows none', () => {
+    const plain = render(<FocusLetter {...letter()} />);
+    assert.doesNotMatch(plain, /data-reveal/);
+    const held = render(
+      <ListKeyHintsContext.Provider value={{ showKeys: 'held' }}>
+        <FocusLetter {...letter()} />
+      </ListKeyHintsContext.Provider>,
+    );
+    const badges = [...held.matchAll(/<kbd class="ui-list-kbd" data-reveal="badge" aria-hidden="true">([^<]+)<\/kbd>/g)].map((x) => x[1]);
+    assert.equal(badges.length, 3, held);
+    assert.match(held, /class="ui-focus-letter__sender" dir="auto"/);
+  });
+
   test('rejected write shows on the card; worst-case sender and verb', () => {
     const m = render(
       <FocusLetter
@@ -286,6 +331,9 @@ describe('LowBand and LowSheet', () => {
     assert.equal(lowBandNames(['A', 'B']), 'A and B');
     assert.equal(lowBandNames(['A', 'B', 'C']), 'A, B and C');
     assert.equal(lowBandNames([]), '');
+    assert.match(m, /<span class="ui-low-band__names" dir="auto">Field Notes, Cedar Market, Google<\/span><span class="ui-low-band__more"> and 3 more<\/span>/);
+    const long = render(<LowBand id="low" senders={[WORST.email, WORST.subject, 'X', ...Array(9999).fill('Y')]} count={9999} cursor={false} density="comfortable" commandId="mail.open" onOpen={noop} />);
+    assert.match(long, /<span class="ui-low-band__more"> and 9,999 more<\/span>/, 'the count of hidden senders is its own span');
     const big = render(<LowBand id="low" senders={[]} count={9999} cursor density="compact" commandId="mail.open" onOpen={noop} />);
     assert.match(big, /data-cursor="true"/);
     assert.match(text(big), /^Low importance 9,999$/);
@@ -306,9 +354,14 @@ describe('LowBand and LowSheet', () => {
     assert.match(text(m), /Field Notes 1 Unsubscribe/);
     assert.match(text(m), /Press → twice to mark all 3 done/);
     assert.match(text(m), /Winter light, in five short notes\./);
+    assert.match(m, /role="dialog" aria-modal="true" aria-labelledby="[^"]+" tabindex="-1"/, 'focusable fallback for focus on open');
     const armed = render(<LowSheet open {...base} armed />);
     assert.match(armed, /data-armed="true"/);
     assert.match(text(armed), /Press → again to mark all 3 done · Esc cancels/);
+    assert.match(armed, /class="ui-low-sheet__foot" role="status"/, 'without the shell announcer the foot is the live region');
+    const announced = render(<LowSheet open {...base} armed announce={noop} />);
+    assert.doesNotMatch(announced, /class="ui-low-sheet__foot" role="status"/, 'with the announcer arming is spoken once');
+    assert.match(announced, /<button[^>]*title="Unsubscribe"(?![^>]*tabindex)[^>]*>/, 'Unsubscribe has no key, so it stays reachable');
   });
 
   test('empty sheet: "No low-importance mail." with Back to Home', () => {
@@ -415,6 +468,17 @@ describe('ErrorLine', () => {
     [{ kind: 'sortFailed', provider: 'Groq', cause: 'cap', placement: 'checklist', onAction: noop }, 'Couldn’t sort with Groq: today’s AI limit is reached. Mail is ready; sorting will retry. Open Settings'],
     [{ kind: 'reason', text: 'Fastmail refused the app password. Replace it in Settings → Accounts.', retryable: false, placement: 'checklist', onAction: noop }, 'Fastmail refused the app password. Replace it in Settings → Accounts.'],
   ];
+  test('Edit shows its hint keycap only with "Show all key hints"; Retry is never a hidden duplicate', () => {
+    const props = { kind: 'sendFailed', recipient: 'Jordan', placement: 'column', onAction: noop, editCommandId: 'mail.done' } as const;
+    assert.doesNotMatch(render(<ErrorLine {...props} />), /data-reveal/);
+    const all = render(
+      <ListKeyHintsContext.Provider value={{ showKeys: 'all' }}>
+        <ErrorLine {...props} />
+      </ListKeyHintsContext.Provider>,
+    );
+    assert.match(all, /Edit<\/span><kbd class="ui-list-kbd" data-reveal="hint" aria-hidden="true">[^<]+<\/kbd>/);
+  });
+
   for (const [props, copy] of cases) {
     test(`${props.kind} (${props.placement}) writes DESIGN's copy`, () => {
       const m = render(<ErrorLine {...props} />);

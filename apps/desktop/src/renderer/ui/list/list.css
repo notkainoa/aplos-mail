@@ -43,10 +43,20 @@
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
 }
+/* While ⌘ is held the command's key overlays the button's corner; it never takes space (DESIGN §8). */
+.ui-list-kbd[data-reveal="badge"] {
+  position: absolute;
+  top: calc(-1 * var(--space-1));
+  right: calc(-1 * var(--space-1));
+  background-color: var(--ink);
+  color: var(--canvas);
+  pointer-events: none;
+}
 
 .ui-list-btn {
   --ui-btn-h: var(--control-sm);
   box-sizing: border-box;
+  position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -462,11 +472,8 @@
   position: relative;
   border-radius: var(--radius-md);
 }
-/* With an active option the cursor row is the visible focus (puck + accent bar); otherwise the ring shows. */
+/* The ring is never removed (DESIGN §11.2): it marks that the list has focus; the cursor row marks the option. */
 .ui-list-box:focus-visible {
-  outline: none;
-}
-.ui-list-box:focus-visible:not([aria-activedescendant]) {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
 }
@@ -568,6 +575,7 @@
   --ui-row-base: var(--canvas);
   --ui-sender-w: var(--sender-w);
   --ui-date-w: auto;
+  --ui-actions: 0;
   box-sizing: border-box;
   position: relative;
   display: grid;
@@ -673,11 +681,14 @@
 }
 
 .ui-list-row__meta {
+  position: relative;
+  align-self: stretch;
   display: flex;
+  /* At least as wide as the hover actions, so the overlay covers only the date column. */
+  min-width: calc(var(--ui-actions) * (var(--control-sm) + var(--space-half)) + var(--space-3));
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-2);
-  min-width: 0;
   color: var(--dim);
   font: var(--type-small);
   letter-spacing: var(--track-small);
@@ -704,25 +715,35 @@
   color: var(--hill);
 }
 
-/* Hover actions overlay the date column and never reflow the row. The outer layer is the pane colour,
-   the inner layer repeats the row's own fill, so the overlay matches the row in every state. */
+/* Hover actions overlay the date column and never reflow the row. They sit in the meta cell and are at least
+   as wide as it, so no half glyph or chip shows beside them. The outer layer is the pane colour, the inner
+   layer repeats the row's own fill, so the overlay matches the row in every state. */
 .ui-list-row__actions {
   position: absolute;
   top: 0;
-  right: var(--space-2);
+  right: 0;
   bottom: 0;
   display: flex;
+  justify-content: flex-end;
+  min-width: 100%;
   background-color: var(--ui-row-base);
   visibility: hidden;
 }
 .ui-list-row__actions-fill {
   display: flex;
+  flex: 1 0 auto;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-half);
   padding-left: var(--space-3);
 }
+/* Done: the stamp column has a fixed width; the actions sit left of the stamp, which stays visible. */
+.ui-list-row[data-layout="done"] .ui-list-row__meta {
+  min-width: 0;
+}
 .ui-list-row[data-layout="done"] .ui-list-row__actions {
-  right: calc(var(--ui-date-w) + var(--space-3) + var(--space-3));
+  right: calc(100% + var(--space-3));
+  min-width: 0;
 }
 
 .ui-list-row__underlay {
@@ -917,12 +938,21 @@
   font-weight: 500;
   white-space: nowrap;
 }
+.ui-low-band__senders {
+  display: flex;
+  min-width: 0;
+  color: var(--dim);
+  white-space: pre;
+}
 .ui-low-band__names {
   min-width: 0;
   overflow: hidden;
-  color: var(--dim);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* "and N more" never ellipsizes away (DESIGN §7.2). */
+.ui-low-band__more {
+  flex: none;
 }
 .ui-low-band__count {
   flex: none;
@@ -1013,6 +1043,8 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  /* Room for the listbox's focus ring inside the scroller, which would otherwise clip it. */
+  padding: calc(var(--focus-width) + var(--focus-gap));
 }
 .ui-low-sheet__preview {
   box-sizing: border-box;

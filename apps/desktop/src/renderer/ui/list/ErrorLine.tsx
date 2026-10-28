@@ -4,7 +4,7 @@
 
 import type { ErrorLineAction, ErrorLineKind, ErrorLineProps } from '../props';
 import { Action, useInListbox } from './internal/Action';
-import { tooltipText } from './internal/keys';
+import { keycapFor, tooltipText } from './internal/keys';
 import { Icon } from './internal/Icon';
 
 interface Copy {
@@ -68,7 +68,9 @@ export function ErrorLine(props: ErrorLineProps) {
   const { placement, onAction, editCommandId } = props;
   const inListbox = useInListbox();
   const { text, actions } = copyFor(props);
-  // Inside an option the line is read with the row and its buttons are pointer duplicates (README Accessibility).
+  // Inside an option the line is read with the row. A button with a registry key is a pointer duplicate of that key
+  // (README Accessibility); one without a key (Retry has no command yet) stays reachable with Tab and VoiceOver.
+  const editKey = keycapFor(editCommandId);
   const live = placement === 'column' || placement === 'dock' || placement === 'settings';
   return (
     <div className="ui-error-line" data-placement={placement} data-kind={props.kind} role={live ? 'alert' : undefined}>
@@ -84,7 +86,9 @@ export function ErrorLine(props: ErrorLineProps) {
               tone={placement === 'row' ? 'danger' : 'default'}
               label={label}
               tooltip={action === 'edit' ? tooltipText('Edit draft', editCommandId) : label}
-              duplicate={inListbox}
+              hintKey={action === 'edit' ? editKey : undefined}
+              keyHint={action === 'edit' ? 'hint' : undefined}
+              duplicate={inListbox && action === 'edit' && editKey !== ''}
               onPress={() => onAction(action)}
             />
           ))}

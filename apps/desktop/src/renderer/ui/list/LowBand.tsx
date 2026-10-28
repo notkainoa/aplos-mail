@@ -8,17 +8,23 @@ import { tooltipText } from './internal/keys';
 
 const SHOWN = 3;
 
+/** The names and the "and N more" suffix apart, so the suffix survives when the names are cut. */
+export function lowBandParts(senders: readonly string[]): { names: string; more: string } {
+  const names = senders.filter((s) => s.length > 0);
+  if (names.length <= 1) return { names: names[0] ?? '', more: '' };
+  if (names.length <= SHOWN) return { names: `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`, more: '' };
+  return { names: names.slice(0, SHOWN).join(', '), more: `and ${formatCount(names.length - SHOWN)} more` };
+}
+
 /** "Field Notes", "Field Notes and Cedar Market", "Field Notes, Cedar Market and Google", "…, Google and 3 more". */
 export function lowBandNames(senders: readonly string[]): string {
-  const names = senders.filter((s) => s.length > 0);
-  if (names.length <= 1) return names[0] ?? '';
-  if (names.length <= SHOWN) return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  return `${names.slice(0, SHOWN).join(', ')} and ${formatCount(names.length - SHOWN)} more`;
+  const { names, more } = lowBandParts(senders);
+  return more ? `${names} ${more}` : names;
 }
 
 /** The low-importance band option on Home. */
 export function LowBand({ id, senders, count, cursor, density, commandId, onOpen }: LowBandProps) {
-  const names = lowBandNames(senders);
+  const { names, more } = lowBandParts(senders);
   return (
     <div
       id={id}
@@ -31,7 +37,14 @@ export function LowBand({ id, senders, count, cursor, density, commandId, onOpen
       onClick={onOpen}
     >
       <span className="ui-low-band__label">Low importance</span>
-      {names ? <span className="ui-low-band__names">{names}</span> : null}
+      {names ? (
+        <span className="ui-low-band__senders">
+          <span className="ui-low-band__names" dir="auto">
+            {names}
+          </span>
+          {more ? <span className="ui-low-band__more"> {more}</span> : null}
+        </span>
+      ) : null}
       <span className="ui-low-band__count">{formatCount(count)}</span>
     </div>
   );

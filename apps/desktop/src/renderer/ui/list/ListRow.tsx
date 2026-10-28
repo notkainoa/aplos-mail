@@ -11,7 +11,7 @@ import { ErrorLine } from './ErrorLine';
 import { Action } from './internal/Action';
 import { formatDoneStamp, formatFull, formatListDate } from './internal/format';
 import { Icon } from './internal/Icon';
-import { tooltipText } from './internal/keys';
+import { keycapFor, tooltipText } from './internal/keys';
 
 const COMMIT_WORD: Record<CommitKind, string> = { done: 'Done', later: 'Later', trash: 'Trash' };
 const COMMIT_ICON: Record<CommitKind, IconName> = { done: 'check', later: 'clock', trash: 'trash' };
@@ -81,6 +81,8 @@ export function ListRow(props: ListRowProps) {
       </time>
     );
 
+  // The action count sizes the date column so the hover overlay never spills over the line (DESIGN §5 rule 17).
+  const rowStyle = hoverActions.length > 0 ? ({ '--ui-actions': hoverActions.length } as CSSProperties) : undefined;
   const accountStyle = account && showAccountDot ? ({ '--swatch': `var(--tag-${account.color})` } as CSSProperties) : undefined;
 
   return (
@@ -99,6 +101,7 @@ export function ListRow(props: ListRowProps) {
       data-lifted={lifted ? 'true' : undefined}
       data-state={rejected ? 'rejected' : undefined}
       title={account ? account.label : undefined}
+      style={rowStyle}
       onClick={onSelect}
       onDoubleClick={onOpen}
     >
@@ -124,7 +127,9 @@ export function ListRow(props: ListRowProps) {
       </span>
       {unread ? <span className="ui-list-sr">Unread. </span> : null}
 
-      <span className="ui-list-row__sender">{sender}</span>
+      <span className="ui-list-row__sender" dir="auto">
+        {sender}
+      </span>
 
       <span className="ui-list-row__line">
         {rejected ? (
@@ -132,10 +137,10 @@ export function ListRow(props: ListRowProps) {
         ) : (
           <>
             {due ? <Chip kind="due" due={due} format="short" /> : null}
-            <span className="ui-list-row__primary" data-has-secondary={secondary ? 'true' : undefined}>
+            <span className="ui-list-row__primary" dir="auto" data-has-secondary={secondary ? 'true' : undefined}>
               {highlighted(primary, highlight)}
             </span>
-            {secondary ? <span className="ui-list-row__secondary">{highlighted(secondary, highlight)}</span> : null}
+            {secondary ? <span className="ui-list-row__secondary" dir="auto">{highlighted(secondary, highlight)}</span> : null}
           </>
         )}
       </span>
@@ -165,26 +170,27 @@ export function ListRow(props: ListRowProps) {
           </span>
         ) : null}
         {dateColumn}
-      </span>
-
-      {hoverActions.length > 0 ? (
-        <span className="ui-list-row__actions">
-          <span className="ui-list-row__actions-fill">
-            {hoverActions.map((action) => (
-              <Action
-                key={action.commandId}
-                variant="icon"
-                size="sm"
-                label={action.label}
-                icon={action.icon}
-                tooltip={tooltipText(action.label, action.commandId)}
-                duplicate
-                onPress={(anchor) => onAction(action.commandId, anchor)}
-              />
-            ))}
+        {/* Inside the meta cell so the overlay always covers the whole date column: no half glyph or chip. */}
+        {hoverActions.length > 0 ? (
+          <span className="ui-list-row__actions">
+            <span className="ui-list-row__actions-fill">
+              {hoverActions.map((action) => (
+                <Action
+                  key={action.commandId}
+                  variant="icon"
+                  size="sm"
+                  label={action.label}
+                  icon={action.icon}
+                  tooltip={tooltipText(action.label, action.commandId)}
+                  hintKey={keycapFor(action.commandId)}
+                  duplicate
+                  onPress={(anchor) => onAction(action.commandId, anchor)}
+                />
+              ))}
+            </span>
           </span>
-        </span>
-      ) : null}
+        ) : null}
+      </span>
     </div>
   );
 }

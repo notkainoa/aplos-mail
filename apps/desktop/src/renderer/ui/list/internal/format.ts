@@ -34,6 +34,12 @@ function laterThisWeek(off: number): boolean {
   return off > 1 && off <= daysToSunday;
 }
 
+/** An earlier day of the current week (Monday onwards, before yesterday), where a bare weekday cannot be misread. */
+function earlierThisWeek(off: number): boolean {
+  const daysSinceMonday = (new Date(clock()).getDay() + 6) % 7;
+  return off < -1 && off >= -daysSinceMonday;
+}
+
 function isMidnight(d: Date): boolean {
   return d.getHours() === 0 && d.getMinutes() === 0;
 }
@@ -61,7 +67,7 @@ function weekdayLong(d: Date): string {
   return d.toLocaleDateString(LOCALE, { weekday: 'long' });
 }
 
-/** The list date column: "10:00 AM" today, "Yesterday", "Tuesday" this week, "Oct 23", "Oct 23, 2025". */
+/** The list date column: "10:00 AM" today, "Yesterday", "Tuesday" earlier this week, then "Oct 23", "Oct 23, 2025". */
 export function formatListDate(iso: IsoDateTime): string {
   const d = parse(iso);
   if (!d) return '';
@@ -69,7 +75,7 @@ export function formatListDate(iso: IsoDateTime): string {
   if (off === 0) return formatTime(d);
   if (off === -1) return 'Yesterday';
   if (off === 1) return 'Tomorrow';
-  if (off < -1 && off > -7) return weekdayLong(d);
+  if (earlierThisWeek(off)) return weekdayLong(d);
   return monthDay(d);
 }
 
