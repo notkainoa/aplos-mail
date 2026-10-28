@@ -817,7 +817,7 @@ test('registry.release tells the hold command when the key comes up', () => {
   registry.attach('mail.dictateReply', {
     run: () => undefined,
     release: (_ctx, release) => {
-      seen.push(`${release.commandId}:${release.phase}:${release.upgraded}`);
+      seen.push(`${release.commandId}:${release.phase}:${release.upgraded}:${release.ended}`);
     },
   });
   const tracker = createHoldTracker(250);
@@ -826,18 +826,26 @@ test('registry.release tells the hold command when the key comes up', () => {
   tracker.tick(300);
   const result = registry.release(tracker.up(key, 400), ctx);
   assert.equal(result.status, 'ran');
-  assert.deepEqual(seen, ['mail.dictateReply:hold:true']);
+  assert.deepEqual(seen, ['mail.dictateReply:hold:true:up']);
+  // Esc after the same long hold reads differently: keep only upgraded && ended === 'up'.
+  tracker.down(key, 'mail.dictateReply', 1000);
+  tracker.tick(1300);
+  registry.release(tracker.cancel(3000), ctx);
+  assert.equal(seen[1], 'mail.dictateReply:hold:true:cancel');
+  const keeps = (line: string) => line.endsWith(':true:up');
+  assert.equal(keeps(seen[0]!), true);
+  assert.equal(keeps(seen[1]!), false, 'Esc after an upgrade discards what was heard');
   assert.equal(registry.release(null, ctx).status, 'unhandled');
   assert.equal(
     registry.release(
-      { key: 'r', commandId: 'mail.done', phase: 'tap', upgraded: false, heldMs: 5 },
+      { key: 'r', commandId: 'mail.done', phase: 'tap', upgraded: false, heldMs: 5, ended: 'up' },
       ctx,
     ).status,
     'unhandled',
   );
   assert.equal(
     registry.release(
-      { key: 'r', commandId: 'no.such', phase: 'tap', upgraded: false, heldMs: 5 },
+      { key: 'r', commandId: 'no.such', phase: 'tap', upgraded: false, heldMs: 5, ended: 'up' },
       ctx,
     ).status,
     'unknown',

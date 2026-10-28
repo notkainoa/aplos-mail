@@ -81,9 +81,10 @@ export type { UiKeyFields } from './prefs';
 
 // Tap versus hold: the tap runs on keydown, the tracker reports the upgrade and swallows repeats.
 export { createHoldTracker, DEFAULT_HOLD_THRESHOLD_MS } from './hold';
-export type { HoldOptions, HoldRelease, HoldTracker, HoldUpgrade } from './hold';
 // Hold-release hook: pass the HoldRelease the tracker returns (up, cancel, interrupt, down) to `registry.release(release, ctx)`;
-// it calls the `release(ctx, release)` handler a screen attached to the hold command (dictation stops; keep it on phase 'hold').
+// it calls the `release(ctx, release)` handler a screen attached to the hold command. Dictation keeps what it heard only
+// when `release.upgraded && release.ended === 'up'`; any other ending discards it.
+export type { HoldEnd, HoldOptions, HoldRelease, HoldTracker, HoldUpgrade } from './hold';
 
 // Command icons are SF names; `uiIconFor` gives the UI's closed icon for a PaletteItem or menu row.
 export { UI_ICON_FOR_COMMAND, uiIconFor } from './icons';

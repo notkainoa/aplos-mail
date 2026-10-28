@@ -105,6 +105,12 @@ export function AskTurn(props: AskTurnProps) {
       {state === 'paused' ? (
         <p className="ui-ask-turn__paused" role="status">
           Paused for today. Resumes tomorrow.
+          {onUseAnotherProvider ? (
+            <>
+              {' '}
+              <Btn variant="text" label="Use another provider" onPress={onUseAnotherProvider} />
+            </>
+          ) : null}
         </p>
       ) : null}
       {state === 'failed' ? (

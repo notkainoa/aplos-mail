@@ -14,7 +14,8 @@ export function openCitation(source: {
 }): void {
   const { kind, eventId, threadId, index, onOpen, onOpenEvent } = source;
   if (kind === 'event' && onOpenEvent && eventId) onOpenEvent(eventId, index);
-  else onOpen(threadId, index);
+  // An event source has no thread (threadId ''): without an event handler the chip does nothing rather than open ''.
+  else if (threadId !== '') onOpen(threadId, index);
 }
 
 /**
@@ -52,6 +53,8 @@ export function Citation({
   return (
     <span
       className="ui-citation"
+      // An empty title stops the answer's provenance title from showing over the quote tooltip (HTML title inheritance).
+      title=""
       style={anchor}
       data-hover={hover ? 'true' : undefined}
       onPointerEnter={event => setHover(event.pointerType !== 'touch')}

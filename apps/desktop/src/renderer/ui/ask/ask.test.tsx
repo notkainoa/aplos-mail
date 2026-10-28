@@ -739,6 +739,29 @@ test('AskTurn: provenance on hover only, local models say "on this Mac"; a daily
   assert.doesNotMatch(paused, /role="alert"/);
   assert.doesNotMatch(paused, /No source/);
   clean(paused);
+  assert.doesNotMatch(text(paused), /Use another provider/);
+  const other = html(
+    turn({ state: 'paused', answer: undefined, citations: [], onUseAnotherProvider: noop }),
+  );
+  assert.match(text(other), /Paused for today\. Resumes tomorrow\. Use another provider/);
+  assert.doesNotMatch(other, /role="alert"/);
+});
+
+test("Citation blocks the answer's provenance title, so only the quote tooltip shows on hover", () => {
+  const markup = html(turn({ provenance: { provider: 'Groq', local: false } }));
+  assert.match(markup, /<span class="ui-citation" title=""/);
+});
+
+test('An event citation without an event handler is inert instead of opening an empty thread', () => {
+  const opened: unknown[] = [];
+  openCitation({
+    ...source1,
+    kind: 'event',
+    eventId: 'e1',
+    threadId: '',
+    onOpen: (id, index) => opened.push([id, index]),
+  });
+  assert.deepEqual(opened, []);
 });
 
 test('Citation clicks pass the citation number, for threads and for events', () => {

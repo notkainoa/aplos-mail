@@ -405,8 +405,10 @@ export interface CommandHandlers {
   /**
    * For a hold command (the one the HoldTracker upgrades to): the key came up, or the hold ended (another key, Esc, blur).
    * The shell passes every HoldRelease the tracker returns to `registry.release`, so a dictation handler learns when to
-   * stop and whether to keep (`release.phase` 'hold') or discard what it heard. Not called for a tap that never upgraded
-   * unless the screen attached `release` to that command.
+   * stop and whether to keep what it heard. Keep it only when `release.upgraded && release.ended === 'up'` (the key came
+   * up: "Release R to keep"); discard it for 'cancel' (Esc, blur, hide), 'interrupt' and 'down' ("Esc to cancel"). Do not
+   * use `release.phase`: it is by duration alone. Called for every release of that command once a handler is attached,
+   * taps included, so check `upgraded` before treating it as a running hold.
    */
   release?(ctx: CommandContext, release: HoldRelease): void | Promise<void>;
 }

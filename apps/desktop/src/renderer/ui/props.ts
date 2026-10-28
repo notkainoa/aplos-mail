@@ -1601,7 +1601,7 @@ export interface AskTurnProps {
   id: string;
   /** The question. */
   question: string;
-  /** 'working' = steady step line; 'streaming' = one thin non-blinking caret; 'answered'; 'stopped' = "Stopped."; 'failed' = ErrorLine askFailed; 'paused' = the daily AI cap is reached: "Paused for today. Resumes tomorrow." (a quiet line, never red). */
+  /** 'working' = steady step line; 'streaming' = one thin non-blinking caret; 'answered'; 'stopped' = "Stopped."; 'failed' = ErrorLine askFailed; 'paused' = the model's daily limit is reached: "Paused for today. Resumes tomorrow." (a quiet line, never red; shows "Use another provider" when `onUseAnotherProvider` is given; the plan 30 §4.5 phrase is reused for Ask's per-model daily limit, ARCH §8.4). */
   state: 'working' | 'streaming' | 'answered' | 'stopped' | 'failed' | 'paused';
   /** The step log (live line while working, dim fold after). */
   steps?: StepLogProps;
@@ -1621,7 +1621,7 @@ export interface AskTurnProps {
   onOpenEventCitation?: (eventId: string, index: number) => void;
   /** Retry after a failure. */
   onRetry?: () => void;
-  /** "Use another provider" after a failure. */
+  /** "Use another provider" after a failure or when the state is 'paused'. */
   onUseAnotherProvider?: () => void;
 }
 
