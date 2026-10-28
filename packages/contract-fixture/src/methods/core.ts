@@ -4,6 +4,7 @@ import type { Bytes } from '../data/demo';
 import { capabilities } from '../data/defaults';
 import { addDays, atLocal, localDay, weekday } from '../time';
 import { principalOf, requireScope, type Caller } from '@aplos/contract/access';
+import { consentKey } from './ai';
 import { clean, fail, must, type Part } from './util';
 
 const hash = (s: string) => {
@@ -112,7 +113,13 @@ export function core(fx: Fixture) {
       const next = { ...current } as Settings & { id: 'settings' };
       for (const section of Object.keys(patch) as (keyof Settings)[])
         (next as Record<string, unknown>)[section] = { ...current[section], ...patch[section] };
-      const { receipt } = fx.write({ opId, kind: 'Settings/set' }, tx => tx.put('Settings', next));
+      const { receipt } = fx.write({ opId, kind: 'Settings/set' }, tx => {
+        tx.put('Settings', next);
+        // Another Summaries provider, model or address host needs consent again (FR-5).
+        const c = tx.get('Consent', 'background');
+        if (c?.granted && consentKey(current.ai) !== consentKey(next.ai))
+          tx.put('Consent', { ...c, currentVersion: c.currentVersion + 1, needsReconsent: true });
+      });
       if (patch.ui?.theme && patch.ui.theme !== current.ui.theme)
         fx.emit({ frame: 'host', event: { type: 'appearance', theme: patch.ui.theme } });
       const { id: _, ...out } = next;

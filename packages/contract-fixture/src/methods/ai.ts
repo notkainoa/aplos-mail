@@ -1,4 +1,5 @@
 import type {
+  Settings,
   AiJob,
   AskTurn,
   Citation,
@@ -16,6 +17,28 @@ import { requireScope } from '@aplos/contract/access';
 import { clean, fail, getRows, must, plainHtml, type Part } from './util';
 
 type Feature = 'ask' | 'summaries' | 'drafts' | 'plans' | 'voice';
+
+/** A loopback host: mail sent there stays on this Mac. */
+export const loopback = (address: string) => {
+  try {
+    const host = new URL(address).hostname.replace(/^\[|\]$/g, '');
+    return host === 'localhost' || host === '::1' || /^127(\.\d{1,3}){3}$/.test(host);
+  } catch {
+    return false;
+  }
+};
+/** What background consent covers (FR-5): the Summaries provider and model, and that provider's address host. */
+export const consentKey = (ai: Settings['ai']) => {
+  const { provider, model } = ai.features.summaries;
+  const address = ai.providers[provider]?.address;
+  let host = '';
+  try {
+    host = address ? new URL(address).host : '';
+  } catch {
+    /* an empty or default address */
+  }
+  return `${provider}\u0000${model}\u0000${host}`;
+};
 type Block = NonNullable<AskTurn['answer']>['blocks'][number];
 
 /**
@@ -241,7 +264,16 @@ export function ai(fx: Fixture) {
       fx.write({ opId, kind: 'Ai/dismissFollowup', targets: [threadId] }, tx =>
         tx.del('Followup', threadId),
       ).receipt,
-    'Ai/providers': () => ({ list: aiProviders(meta().keys) }),
+    'Ai/providers': () => {
+      const providers = must(fx.store, 'Settings', 'settings').ai.providers;
+      return {
+        list: aiProviders(meta().keys).map(p => {
+          const address = providers[p.id]?.address || p.address;
+          // `local` follows the address, not the provider id (FR-5).
+          return clean({ ...p, address, local: !!address && loopback(address) });
+        }),
+      };
+    },
     'Ai/models': ({ provider }) => ({ list: curatedModels[provider] ?? [], live: false }),
     'Ai/status': () => ({
       features: (['ask', 'summaries', 'drafts', 'plans', 'voice'] as const).map(feature =>

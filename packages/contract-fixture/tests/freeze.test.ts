@@ -371,3 +371,44 @@ test('FR-25: a Google account reconnects in the browser, not with a pasted secre
     'unsupported',
   );
 });
+
+test('FR-5: moving the Summaries provider to another host needs consent again, and is not local', async () => {
+  const fx = start();
+  const consent = await fx.call('Consent/get', {});
+  await fx.call('Consent/grant', {
+    scope: 'background',
+    version: consent.currentVersion,
+    provider: 'ollama',
+    model: 'llama3.2',
+  });
+  await fx.call('Settings/set', {
+    opId: opId(),
+    patch: {
+      ai: {
+        features: {
+          ...(await fx.call('Settings/get', {})).ai.features,
+          summaries: { provider: 'ollama', model: 'llama3.2' },
+        },
+      },
+    },
+  });
+  const again = await fx.call('Consent/get', {});
+  assert.equal(again.needsReconsent, true, 'a provider change needs the card again');
+  const v = again.currentVersion;
+  await fx.call('Consent/grant', {
+    scope: 'background',
+    version: v,
+    provider: 'ollama',
+    model: 'llama3.2',
+  });
+  const ollama = () => fx.call('Ai/providers', {}).then(r => r.list.find(p => p.id === 'ollama')!);
+  assert.equal((await ollama()).local, true);
+  await fx.call('Settings/set', {
+    opId: opId(),
+    patch: { ai: { providers: { ollama: { address: 'http://198.51.100.4:11434/v1' } } } },
+  });
+  assert.equal((await ollama()).local, false, 'local follows the address');
+  const moved = await fx.call('Consent/get', {});
+  assert.equal(moved.needsReconsent, true);
+  assert.ok(moved.currentVersion > v);
+});
