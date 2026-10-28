@@ -134,10 +134,9 @@ export const AiSettings = z.object({
     summaries: featureModel('Choose a model for summaries.'),
     drafts: featureModel('Choose a model for drafts.'),
     plans: featureModel('Choose a model for plans.'),
-    /** Voice needs a speech-to-text API. */
-    voice: featureModel(
-      'Choose a Voice model on Groq or ChatGPT.',
-      p => p === 'groq' || p === 'openai',
+    /** Voice needs a speech-to-text API; null while neither Groq nor OpenAI has a key (no model to pick). */
+    voice: z.nullable(
+      featureModel('Choose a Voice model on Groq or ChatGPT.', p => p === 'groq' || p === 'openai'),
     ),
   }),
   /** Provider id → its non-secret settings: the local server address (Ollama, LM Studio, custom) and the paid-key mark (Gemini). */

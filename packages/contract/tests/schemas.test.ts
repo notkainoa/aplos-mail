@@ -276,3 +276,20 @@ test("Settings.ui holds UI-core's frozen fields with their documented shapes", (
   assert.throws(() => SettingsPatch.parse({ ui: { calendar: { weekStart: 7 } } }));
   assert.equal(Settings.parse(f.settings).ui.holdMs, 250);
 });
+
+test('additive after v1: Voice may be unset, and System/notifications may ask without posting', () => {
+  const settings = structuredClone(f.settings);
+  settings.ai.features.voice = null;
+  assert.equal(Settings.parse(settings).ai.features.voice, null);
+  const patch = { opId: 'o1', patch: { ai: { features: { ...settings.ai.features } } } };
+  assert.equal(parseArgs('Settings/set', patch).patch.ai?.features?.voice, null);
+  // A set Voice model still has to be speech to text.
+  patch.patch.ai.features.voice = { provider: 'anthropic', model: 'claude' } as never;
+  assert.throws(
+    () => parseArgs('Settings/set', patch),
+    (e: ContractError) => e.message === 'Choose a Voice model on Groq or ChatGPT.',
+  );
+  assert.deepEqual(parseArgs('System/notifications', { request: true }), { request: true });
+  assert.deepEqual(parseArgs('System/notifications', {}), {});
+  assert.throws(() => parseArgs('System/notifications', { request: 'yes' }), ContractError);
+});

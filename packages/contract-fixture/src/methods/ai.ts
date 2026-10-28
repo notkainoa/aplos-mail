@@ -52,19 +52,22 @@ export const consentKey = (ai: Settings['ai']) =>
  */
 export function ai(fx: Fixture) {
   const meta = () => must(fx.store, 'Meta', 'meta');
-  const model = (feature: Feature): ModelRef =>
-    must(fx.store, 'Settings', 'settings').ai.features[feature];
+  const chosen = (feature: Feature): ModelRef | undefined =>
+    must(fx.store, 'Settings', 'settings').ai.features[feature] ?? undefined;
+  /** Text features always hold a model; only Voice may be unset (null) while no speech-to-text key exists. */
+  const model = (feature: Exclude<Feature, 'voice'>): ModelRef => chosen(feature)!;
   const ready = (feature: Feature) => {
-    const m = model(feature);
-    return aiProviders(meta().keys).find(p => p.id === m.provider)?.status === 'ready';
+    const m = chosen(feature);
+    return !!m && aiProviders(meta().keys).find(p => p.id === m.provider)?.status === 'ready';
+  };
+  const missingKeyMessage = (feature: Feature) => {
+    const m = chosen(feature);
+    if (!m) return 'Add a Groq or OpenAI key in Settings → AI to use Voice.';
+    return `Add a ${m.provider === 'groq' ? 'Groq' : 'provider'} key in Settings → AI to use this.`;
   };
   const need = (feature: Feature) => {
     if (!ready(feature))
-      fail(
-        'notConfigured',
-        `Add a ${model(feature).provider === 'groq' ? 'Groq' : 'provider'} key in Settings → AI to use this.`,
-        { reasonCode: 'ai.missingKey' },
-      );
+      fail('notConfigured', missingKeyMessage(feature), { reasonCode: 'ai.missingKey' });
     // The `failNextAi` knob: the provider fails this once, with Aplos's own copy for the reason (FR-17, FR-33).
     const failure = feature === 'ask' ? undefined : fx.aiFailures.get(feature);
     if (failure) {
@@ -298,7 +301,7 @@ export function ai(fx: Fixture) {
         clean({
           feature,
           ready: ready(feature),
-          model: model(feature),
+          model: chosen(feature),
           reasonCode: ready(feature) ? undefined : 'ai.missingKey',
         }),
       ),

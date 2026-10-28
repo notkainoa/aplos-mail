@@ -333,3 +333,19 @@ test('the control channel parks the engine and forces account states; desktop me
   await fails(session.call('Window/openOnboarding', {}), 'unsupported');
   await fails(session.call('Fixture/nope', {}), 'unsupported');
 });
+
+test('with Voice unset, Ai/status reports it not ready and transcription asks for a key', async () => {
+  const { call } = start();
+  const settings = await call('Settings/get', {});
+  const features = { ...settings.ai.features, voice: null };
+  await call('Settings/set', { opId: opId(), patch: { ai: { features } } });
+  assert.equal((await call('Settings/get', {})).ai.features.voice, null);
+  const voice = (await call('Ai/status', {})).features.find(s => s.feature === 'voice')!;
+  assert.deepEqual(voice, { feature: 'voice', ready: false, reasonCode: 'ai.missingKey' });
+  const { blobId } = await call('Blob/put', {
+    bytes: new Uint8Array([1, 2, 3]),
+    mime: 'audio/webm',
+  });
+  const error = await fails(call('Ai/transcribe', { requestId: 'r1', blobId }), 'notConfigured');
+  assert.equal(error.message, 'Add a Groq or OpenAI key in Settings → AI to use Voice.');
+});

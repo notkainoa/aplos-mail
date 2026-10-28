@@ -6402,20 +6402,27 @@
                 "required": ["provider", "model"]
               },
               "voice": {
-                "type": "object",
-                "properties": {
-                  "provider": {
-                    "type": "string",
-                    "maxLength": 60,
-                    "pattern": "^[^\\r\\n]*$"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "maxLength": 60,
+                        "pattern": "^[^\\r\\n]*$"
+                      },
+                      "model": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[^\\r\\n]*$"
+                      }
+                    },
+                    "required": ["provider", "model"]
                   },
-                  "model": {
-                    "type": "string",
-                    "maxLength": 200,
-                    "pattern": "^[^\\r\\n]*$"
+                  {
+                    "type": "null"
                   }
-                },
-                "required": ["provider", "model"]
+                ]
               }
             },
             "required": ["ask", "summaries", "drafts", "plans", "voice"]
@@ -12376,20 +12383,27 @@
                     "required": ["provider", "model"]
                   },
                   "voice": {
-                    "type": "object",
-                    "properties": {
-                      "provider": {
-                        "type": "string",
-                        "maxLength": 60,
-                        "pattern": "^[^\\r\\n]*$"
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "provider": {
+                            "type": "string",
+                            "maxLength": 60,
+                            "pattern": "^[^\\r\\n]*$"
+                          },
+                          "model": {
+                            "type": "string",
+                            "maxLength": 200,
+                            "pattern": "^[^\\r\\n]*$"
+                          }
+                        },
+                        "required": ["provider", "model"]
                       },
-                      "model": {
-                        "type": "string",
-                        "maxLength": 200,
-                        "pattern": "^[^\\r\\n]*$"
+                      {
+                        "type": "null"
                       }
-                    },
-                    "required": ["provider", "model"]
+                    ]
                   }
                 },
                 "required": ["ask", "summaries", "drafts", "plans", "voice"]

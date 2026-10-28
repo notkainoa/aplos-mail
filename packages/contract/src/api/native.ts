@@ -149,10 +149,11 @@ export const native = desktop({
     output: z.object({ granted: z.boolean(), status: line(40) }),
   },
   'System/notifications': {
-    summary: 'Notification permission, as far as macOS reports it.',
+    summary:
+      'Notification permission, as far as macOS reports it. With `request: true`, asks for it first (the macOS prompt, shown once) without posting a notification.',
     kind: 'query',
     scope: 'read',
-    input: Empty,
+    input: z.object({ request: z.optional(bool()) }),
     output: z.object({ status: openEnum(['granted', 'denied', 'notDetermined', 'unknown']) }),
   },
   'App/info': {
