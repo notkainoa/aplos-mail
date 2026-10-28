@@ -24,8 +24,10 @@
 export type EpochMs = number;
 /** A calendar day, `YYYY-MM-DD`, in the owner's time zone. provisional: replaced by import from @aplos/contract at the freeze */
 export type IsoDay = string;
-/** Opaque state token, `{dbEpoch, seq}` encoded by the engine (ARCH 3.5). Compare only by equality or via the engine. provisional: replaced by import from @aplos/contract at the freeze */
+/** Opaque state token, `{dbEpoch, seq}` encoded by the engine (ARCH 3.5). Never parse it; to order states, compare the plain `seq` numbers that frames and receipts carry beside it (`StateSeq`). provisional: replaced by import from @aplos/contract at the freeze */
 export type StateToken = string;
+/** The `seq` half of a state token as a plain number (ARCH 3.5 `changes.seq`). Ordered within one `dbEpoch`; a `dbEpoch` change always arrives as a `reset` frame, which drops every overlay. provisional: replaced by import from @aplos/contract at the freeze */
+export type StateSeq = number;
 /** Account id; never the literal `all`. provisional: replaced by import from @aplos/contract at the freeze */
 export type AccountId = string;
 /** Thread id. provisional: replaced by import from @aplos/contract at the freeze */
@@ -44,6 +46,10 @@ export type WindowId = string;
 export type LabelId = string;
 /** Attachment id, fetched through the blob route. provisional: replaced by import from @aplos/contract at the freeze */
 export type AttachmentId = string;
+/** Calendar id (one account can hold several calendars). provisional: replaced by import from @aplos/contract at the freeze */
+export type CalendarId = string;
+/** Event id. provisional: replaced by import from @aplos/contract at the freeze */
+export type EventId = string;
 /** Id of a streaming request (`Ask/run`, connect flows) used to match `progress` frames. provisional: replaced by import from @aplos/contract at the freeze */
 export type RequestId = string;
 
@@ -270,10 +276,12 @@ export type ImagePolicy = 'blocked' | 'allowed';
 export interface MailFrameRequest {
   /** The message to render. */
   readonly messageId: MessageId;
-  /** Remote images; blocked by default. */
+  /** Remote images for this render; blocked by default. The engine loads them anyway for senders in `Settings.mail.imageAllowSenders`. */
   readonly imagePolicy: ImagePolicy;
   /** ⌘F query; the engine injects marks. */
   readonly findQuery?: string;
+  /** O in the reader: render quoted history open instead of collapsed in `<details>` (DESIGN 7.5, plan 30 8.1 item 4 `toggleQuotes`). Absent means collapsed. */
+  readonly showQuotes?: boolean;
 }
 
 /** `Mail/frame` result: a single-render token URL plus host-chrome facts (plan 10 E4). provisional: replaced by import from @aplos/contract at the freeze */
@@ -304,11 +312,10 @@ export type HomeSection = 'do' | 'update' | 'follow';
 export type HomeGroupKey = 'do' | 'fromLater' | 'update' | 'follow';
 /** Group keys of the `later` window, in order (DESIGN 7.3). provisional: replaced by import from @aplos/contract at the freeze */
 export type LaterBucket = 'overdue' | 'today' | 'week' | 'someday';
-/** Mailbox roles a list can show; `done` is the Done place (DESIGN 7.4). Open string enum. provisional: replaced by import from @aplos/contract at the freeze */
+/** Mailbox roles a list can show; `done` is the Done place (DESIGN 7.4). Open string enum. `drafts` is not a valid role: drafts are not threads (ARCH 7.4), so the Drafts list is the `drafts` view spec. provisional: replaced by import from @aplos/contract at the freeze */
 export type MailboxRole =
   | 'all'
   | 'done'
-  | 'drafts'
   | 'sent'
   | 'trash'
   | 'spam'
@@ -382,6 +389,13 @@ export interface SearchViewSpec {
   readonly accountId?: AccountId;
 }
 
+/** Drafts, newest edit first: local drafts plus other devices' drafts (ARCH 7.4), including new messages with no thread. Rows are `DraftRow`s, not thread rows. provisional: replaced by import from @aplos/contract at the freeze */
+export interface DraftsViewSpec {
+  readonly kind: 'drafts';
+  /** One account, or absent for All accounts. */
+  readonly accountId?: AccountId;
+}
+
 /** A thread's messages, oldest first, for the reader. provisional: replaced by import from @aplos/contract at the freeze */
 export interface ThreadViewSpec {
   readonly kind: 'thread';
@@ -397,7 +411,11 @@ export type ViewSpec =
   | BookmarksViewSpec
   | MailboxViewSpec
   | SearchViewSpec
+  | DraftsViewSpec
   | ThreadViewSpec;
+
+/** Specs whose rows are thread rows: every list a thread action or a selector can target. provisional: replaced by import from @aplos/contract at the freeze */
+export type ThreadListSpec = Exclude<ViewSpec, ThreadViewSpec | DraftsViewSpec>;
 
 /** A contiguous group inside a window's whole ordering: Home sections, Later buckets, Low senders. provisional: replaced by import from @aplos/contract at the freeze */
 export interface WindowGroup {
@@ -411,12 +429,14 @@ export interface WindowGroup {
   readonly start: number;
 }
 
-/** `window` push frame (ARCH 9.2) plus the fields this surface asks for (`offset`, `groups`). provisional: replaced by import from @aplos/contract at the freeze */
+/** `window` push frame (ARCH 9.2) plus the fields this surface asks for (`seq`, `offset`, `groups`). provisional: replaced by import from @aplos/contract at the freeze */
 export interface WindowFrame {
   /** Window id from `View/watch`. */
   readonly windowId: WindowId;
-  /** State the window reflects; overlays drop once a window reaches a receipt's `appliedState`. */
+  /** State the window reflects. */
   readonly state: StateToken;
+  /** `seq` of `state` as a number. Frames are coalesced and can skip states, so an overlay drops once `seq >= receipt.appliedSeq`, never on token equality. Ask of this surface. */
+  readonly seq: StateSeq;
   /** Ordered ids in the window, at most 200. */
   readonly ids: readonly string[];
   /** Rows in the whole view. */
@@ -427,6 +447,40 @@ export interface WindowFrame {
   readonly offset: number;
   /** Groups for grouped views, in order; empty for ungrouped views. Ask of this surface. */
   readonly groups: readonly WindowGroup[];
+}
+
+/** One row type's changed ids inside a `state` frame. provisional: replaced by import from @aplos/contract at the freeze */
+export interface StateFrameChange {
+  /** Row type. */
+  readonly type: RowType;
+  /** Ids whose rows changed; the client refetches the cached ones with `T/get`. */
+  readonly ids: readonly string[];
+}
+
+/** `state` push frame (ARCH 9.2, coalesced 50-250 ms): row changes outside windows, including the Counts and Settings singletons. Ask: it carries `seq`. provisional: replaced by import from @aplos/contract at the freeze */
+export interface StateFrame {
+  /** State after these changes. */
+  readonly state: StateToken;
+  /** `seq` of `state` as a number, ordered within one `dbEpoch`. */
+  readonly seq: StateSeq;
+  /** Changed rows by type. */
+  readonly changed: readonly StateFrameChange[];
+}
+
+/** `parked` push frame (plan 10 E1 item 4, ARCH 2 crash guard): the engine stopped after repeated exits, a full disk or a damaged store, and waits for Try again. Main sends it when the engine itself cannot. provisional: replaced by import from @aplos/contract at the freeze */
+export interface ParkedFrame {
+  /** The engine's plain sentence, for example "Your disk is full."; null when it has none. */
+  readonly reason: string | null;
+  /** When it parked. */
+  readonly since: EpochMs;
+}
+
+/** `Diagnostics/preview` result: the content-free bundle as the owner sees it before copying (ARCH 11). provisional: replaced by import from @aplos/contract at the freeze */
+export interface DiagnosticsPreview {
+  /** The bundle as plain text; no mail content, addresses or keys. */
+  readonly text: string;
+  /** When it was built. */
+  readonly generatedAt: EpochMs;
 }
 
 /** `reset` push frame: windows must reopen (ARCH 9.2, 3.5 `cannotCalculateChanges`). provisional: replaced by import from @aplos/contract at the freeze */
@@ -443,8 +497,10 @@ export interface ResetFrame {
 export interface Receipt {
   /** The operation this receipt confirms (for `Operation/undo`, the inverse operation's id). */
   readonly opId: OpId;
-  /** The overlay drops once a window frame reaches this state. */
+  /** State the write committed at. */
   readonly appliedState: StateToken;
+  /** `seq` of `appliedState`; the overlay drops once a window frame has `seq >= appliedSeq` (frames can skip states). Ask of this surface. */
+  readonly appliedSeq: StateSeq;
 }
 
 /** Operation lifecycle as screens see it: pending until the receipt, confirmed after it, failed on rejection. provisional: replaced by import from @aplos/contract at the freeze */
@@ -494,6 +550,8 @@ export type ThreadAction =
   | { readonly kind: 'laneUp'; readonly alsoForSender: boolean }
   /** ⌥↓: one lane down; `alsoForSender` as for laneUp. */
   | { readonly kind: 'laneDown'; readonly alsoForSender: boolean }
+  /** Put the thread in `lane` (absolute, so a retry is idempotent). The toast's "Always do this for [sender]" sends this with the lane the thread already moved to and `alsoForSender: true`, which only adds the sender rule (DESIGN 7.13). */
+  | { readonly kind: 'setLane'; readonly lane: Lane; readonly alsoForSender: boolean }
   /** Restore from Trash or Spam. */
   | { readonly kind: 'restore' }
   /** H in the Done place: back to Home. */
@@ -504,6 +562,17 @@ export type ThreadAction =
   | { readonly kind: 'remindIfNoReply'; readonly at: EpochMs | null }
   /** "Clear from Home" on Back from Later: returns those items to Later without a new date. */
   | { readonly kind: 'clearFromHome' };
+
+/** A whole view, or one group of it, as a `Thread/act` target beyond the 200-row window (DESIGN 7.2 "→ → to mark everything done" and "Clear from Home"; DESIGN 7.4 ⌘A). The engine resolves it at the state the owner saw, so rows that arrive later are not swept up. provisional: replaced by import from @aplos/contract at the freeze */
+export interface ThreadSelector {
+  /** The list. */
+  readonly spec: ThreadListSpec;
+  /** One group key from the window's `groups` (for example `fromLater`, or a sender address in `home.low`); absent means the whole view. */
+  readonly group?: string;
+}
+
+/** What `Thread/act` targets: explicit ids, or a selector. provisional: replaced by import from @aplos/contract at the freeze */
+export type ThreadTarget = readonly ThreadId[] | ThreadSelector;
 
 // ---------------------------------------------------------------------------
 // Accounts and the status vocabulary (ARCH 6.4, 6.3; DESIGN 7.1 status table)
@@ -611,12 +680,14 @@ export interface Session {
 export interface Counts {
   /** Unread threads in All mail. */
   readonly unread: number;
-  /** Home: Do now plus Important updates (DESIGN decision 19). */
+  /** Home: Do now (including Back from Later) plus Important updates (DESIGN decision 19). */
   readonly home: number;
   /** Later items whose date has arrived. */
   readonly laterDue: number;
   /** Drafts. */
   readonly drafts: number;
+  /** Threads the owner moved off Home today (Done, Later, Trash, Spam; owner's local day; undo subtracts): "You handled 12 emails." on inbox zero (DESIGN 7.14). Ask of this surface. */
+  readonly handledToday: number;
 }
 
 /** Per-account first-sync progress for the first-sync screen (plan 10 4.1, plan 30 8.1 item 12). provisional: replaced by import from @aplos/contract at the freeze */
@@ -661,6 +732,8 @@ export interface DraftRow {
   readonly accountId: AccountId;
   /** Thread for replies; null for a new message. */
   readonly threadId: ThreadId | null;
+  /** The message this draft replies to or forwards; null for a new message. */
+  readonly source: DraftSource | null;
   /** Compare-and-set revision. */
   readonly revision: number;
   /** To. */
@@ -673,12 +746,20 @@ export interface DraftRow {
   readonly subject: string;
   /** Body HTML as composed. */
   readonly html: string;
-  /** Attachment ids. */
+  /** Attachment ids (uploads from `api.attachment.put`, or the source message's attachments on forward). */
   readonly attachments: readonly AttachmentId[];
   /** Last local edit; Drafts shows it. */
   readonly updatedAt: EpochMs;
   /** True after another device changed it: show "keep mine, take theirs, keep both" (ARCH 7.4). */
   readonly changedElsewhere: boolean;
+}
+
+/** How a draft relates to an existing message (DESIGN 7.5-7.6): reply threading and forwarded attachments are explicit, never guessed from the subject. provisional: replaced by import from @aplos/contract at the freeze */
+export interface DraftSource {
+  /** The message replied to or forwarded. */
+  readonly messageId: MessageId;
+  /** Reply, reply all, or forward (the ⋯ menu). */
+  readonly mode: 'reply' | 'replyAll' | 'forward';
 }
 
 /** What a save sends; `baseRevision` makes it compare-and-set. provisional: replaced by import from @aplos/contract at the freeze */
@@ -691,6 +772,8 @@ export interface DraftInput {
   readonly accountId: AccountId;
   /** Thread for replies. */
   readonly threadId?: ThreadId | null;
+  /** The message replied to or forwarded; set on create. On `forward` the engine copies the source's attachments into the draft, and their ids appear in `DraftRow.attachments`. */
+  readonly source?: DraftSource;
   /** To. */
   readonly to: readonly Person[];
   /** Cc. */
@@ -701,7 +784,7 @@ export interface DraftInput {
   readonly subject: string;
   /** Body HTML. */
   readonly html: string;
-  /** Attachment ids. */
+  /** Attachment ids from `api.attachment.put` or the source message; replaces the list on update. */
   readonly attachments?: readonly AttachmentId[];
 }
 
@@ -718,6 +801,12 @@ export interface DraftSaveResult {
 /** Submission states (ARCH 7.1-7.3). provisional: replaced by import from @aplos/contract at the freeze */
 export type SubmissionState = 'queued' | 'sending' | 'sent' | 'uncertain' | 'failed' | 'cancelled' | 'suspended';
 
+/** Options for `Submission/set {action: send}`. provisional: replaced by import from @aplos/contract at the freeze */
+export interface SendOptions {
+  /** ⌘⇧Return: mark the thread Done in the same operation, so one receipt and one notice cover both (DESIGN 7.6, 7.13). Undoing the send also undoes the Done. */
+  readonly markDone?: boolean;
+}
+
 /** One send (undo-send and send-later are one `notBefore` mechanism, ARCH 7.2). provisional: replaced by import from @aplos/contract at the freeze */
 export interface SubmissionRow {
   /** Submission id. */
@@ -732,6 +821,8 @@ export interface SubmissionRow {
   readonly threadId: ThreadId | null;
   /** Recipients, for "Sending to Jordan in 8 s". */
   readonly to: readonly Person[];
+  /** When it was queued; with `notBefore` this gives the UndoTray drain bar its length (DESIGN 7.6), whatever `undoSeconds` says now. */
+  readonly queuedAt: EpochMs;
   /** Earliest send time (undo window end or the scheduled time). */
   readonly notBefore: EpochMs;
   /** State. */
@@ -921,6 +1012,8 @@ export interface Settings {
     readonly undoSeconds: number;
     /** Follow-up nudge period in days (DESIGN 7.2, default 3). */
     readonly nudgeDays: number;
+    /** Sender addresses whose remote images always load ("Load images from this sender", DESIGN 7.5; plan 30 8.1 item 4). */
+    readonly imageAllowSenders: readonly string[];
   };
   /** AI configuration. */
   readonly ai: {
@@ -930,7 +1023,60 @@ export interface Settings {
     readonly providers: readonly AiProviderInfo[];
     /** Daily background token cap (ARCH 8.4). */
     readonly dailyTokenCap: number;
+    /** The stored consent record, or null when never given or revoked (plan 30 8.1 item 6). */
+    readonly consent: AiConsent | null;
+    /** Consent text version the engine currently requires. Consent counts as given only when `consent.version` equals it and its provider and model match the Summaries choice; otherwise background summaries pause ("Background summaries are paused until you agree to the new provider."). */
+    readonly consentVersion: number;
   };
+}
+
+/** A versioned AI consent record (plan 30 8.1 item 6, ARCH 8.3). provisional: replaced by import from @aplos/contract at the freeze */
+export interface AiConsent {
+  /** Provider agreed to. */
+  readonly providerId: string;
+  /** Model agreed to. */
+  readonly model: string;
+  /** Consent text version agreed to. */
+  readonly version: number;
+  /** When the owner chose Allow. */
+  readonly grantedAt: EpochMs;
+}
+
+/** What Allow sends (`Consent/set`); null revokes. provisional: replaced by import from @aplos/contract at the freeze */
+export type AiConsentGrant = { readonly providerId: string; readonly model: string; readonly version: number } | null;
+
+/** One calendar event as Today and Home's "Next:" line show it; the minimal frozen shape, extended additively by `ui-calendar` (plan 30 4.1 view specs). provisional: replaced by import from @aplos/contract at the freeze */
+export interface EventRow {
+  /** Event id (one occurrence for recurring events). */
+  readonly id: EventId;
+  /** Row revision. */
+  readonly rev: number;
+  /** Owning account. */
+  readonly accountId: AccountId;
+  /** Calendar it belongs to. */
+  readonly calendarId: CalendarId;
+  /** Title as written. */
+  readonly title: string;
+  /** Start instant; for all-day events, local midnight of the first day. */
+  readonly start: EpochMs;
+  /** End instant, exclusive; for all-day events, local midnight after the last day. */
+  readonly end: EpochMs;
+  /** All-day event. */
+  readonly allDay: boolean;
+  /** Location text, or null. */
+  readonly location: string | null;
+  /** The owner's reply, or null when the owner organises it or was not invited. */
+  readonly response: 'accepted' | 'tentative' | 'declined' | 'needsAction' | null;
+}
+
+/** `Event/query` arguments. provisional: replaced by import from @aplos/contract at the freeze */
+export interface AgendaQuery {
+  /** Range start, inclusive. */
+  readonly from: EpochMs;
+  /** Range end, exclusive. */
+  readonly to: EpochMs;
+  /** Only these calendars; absent means every visible calendar. */
+  readonly calendarIds?: readonly CalendarId[];
 }
 
 /** A partial settings update; nested objects merge. provisional: replaced by import from @aplos/contract at the freeze */
@@ -957,6 +1103,7 @@ export interface RowTypeMap {
   Draft: DraftRow;
   Submission: SubmissionRow;
   Operation: OperationRow;
+  Event: EventRow;
 }
 
 /** A cacheable row type name. provisional: replaced by import from @aplos/contract at the freeze */

@@ -22,18 +22,25 @@ import type {
   AccountId,
   AccountRow,
   AccountStatus,
+  AgendaQuery,
+  AiConsentGrant,
   AiRequest,
   AiResult,
   AskAnswer,
   AskFrame,
   AskRequest,
   AttachmentId,
+  AttachmentRef,
   ContractError,
   Counts,
+  DiagnosticsPreview,
   DraftId,
   DraftInput,
+  DraftRow,
   DraftSaveResult,
+  DraftsViewSpec,
   EpochMs,
+  EventRow,
   HomeGroupKey,
   HomeSection,
   MailFrameRef,
@@ -49,6 +56,7 @@ import type {
   RequestId,
   RowType,
   RowTypeMap,
+  SendOptions,
   Session,
   SetupStatus,
   Settings,
@@ -58,6 +66,8 @@ import type {
   ThreadAction,
   ThreadId,
   ThreadRow,
+  ThreadSelector,
+  ThreadTarget,
   ThreadViewSpec,
   Transcript,
   ViewSpec,
@@ -155,8 +165,10 @@ export interface OperationView {
   readonly remote: OperationRemoteState | null;
   /** The action, for toast wording; null for non-thread operations. */
   readonly action: ThreadAction | null;
-  /** Target ids. */
+  /** Target ids. For a selector target: empty while pending, the ids the engine resolved once confirmed. */
   readonly targets: readonly string[];
+  /** The selector when the operation targeted a whole view or group; null for explicit ids. */
+  readonly selector: ThreadSelector | null;
   /** Set when failed; `message` is shown as written. */
   readonly error: ContractError | null;
   /** True when `api.operation.undo` applies (confirmed or pending, not already undone). */
@@ -189,11 +201,11 @@ export function useOperation(opId: OpId | undefined): OperationView | undefined 
 // Views (ARCH 9.2 windows; plan 30 4.1 windows.ts)
 // ---------------------------------------------------------------------------
 
-/** Row type a spec yields: messages for the thread view, thread rows for every other view. */
-export type RowForSpec<S extends ViewSpec> = S extends ThreadViewSpec ? MessageRow : ThreadRow;
+/** Row type a spec yields: messages for the thread view, draft rows for Drafts, thread rows for every other view. */
+export type RowForSpec<S extends ViewSpec> = S extends ThreadViewSpec ? MessageRow : S extends DraftsViewSpec ? DraftRow : ThreadRow;
 
-/** `opening` before the first frame; `live` while frames apply; `reset` while reopening after a reset or `cannotCalculateChanges` (the previous ids stay on screen). */
-export type ViewStatus = 'opening' | 'live' | 'reset';
+/** `opening` before the first frame; `live` while frames apply; `reset` while reopening after a reset or `cannotCalculateChanges` (the previous ids stay on screen); `failed` when the view cannot open or stopped (remote search `quotaPaused` or `unavailable`, a thread that is gone): show `error.message` as an ErrorLine (DESIGN 7.15). */
+export type ViewStatus = 'opening' | 'live' | 'reset' | 'failed';
 
 /** A range of indices in the whole view, end exclusive; the data layer turns it into a keyset `View/move` anchor. */
 export interface ViewRange {
@@ -205,7 +217,7 @@ export interface ViewRange {
 
 /** Options for `useView`. */
 export interface UseViewOptions {
-  /** Engine half of holding still (plan 30 4.1): rows around the cursor that a re-rank must not move. Non-empty also freezes the rendered order and queues frames until it empties again. Pass `HoldController.heldIds`. */
+  /** Engine half of holding still (plan 30 4.1): rows around the cursor that a re-rank must not move. Non-empty also freezes the rendered order and queues frames until it empties again. Pass `HoldController.heldIds`. A change to `holdIds` never re-watches: the data layer sends `View/hold {windowId, ids}` or `View/release` on the open window and pings activity while it is non-empty, so status stays `live` and the offset is kept. */
   readonly holdIds?: readonly string[];
 }
 
@@ -225,13 +237,15 @@ export interface ViewResult<R> {
   readonly state: StateToken | null;
   /** Window lifecycle. */
   readonly status: ViewStatus;
+  /** Why the view failed; null unless `status` is `failed`. A thread view whose thread is gone fails with type `notFound`. */
+  readonly error: ContractError | null;
   /** Rows whose last write was rejected, by id (DESIGN 5 rule 11). */
   readonly failures: ReadonlyMap<string, RowFailure>;
   /** Scroll the window; call with the virtualised list's visible range plus overscan. */
   move(range: ViewRange): void;
 }
 
-/** Watch one view (`View/watch`, `View/move`, `View/unwatch`, `View/hold`, `View/release`). Re-watches when the spec changes by value. */
+/** Watch one view (`View/watch`, `View/move`, `View/unwatch`, `View/hold`, `View/release`). Re-watches only when the spec changes by value, never for a `holdIds` change. */
 export function useView<S extends ViewSpec>(spec: S, opts?: UseViewOptions): ViewResult<RowForSpec<S>> {
   void spec;
   void opts;
@@ -242,9 +256,9 @@ export function useView<S extends ViewSpec>(spec: S, opts?: UseViewOptions): Vie
 export interface HomeSectionView {
   /** Section key, in display order. */
   readonly key: HomeSection;
-  /** Ids in this section within the current window, in order. For `do`, excludes the Back from Later block. */
+  /** Ids in this section within the current window, in order. For `do`, excludes the Back from Later block, whose ids are in `fromLater.ids` (render them after these). */
   readonly ids: readonly ThreadId[];
-  /** Rows in the section across the whole view. For `do`, excludes Back from Later. */
+  /** Rows in the section across the whole view, the number beside the label. For `do`, includes Back from Later (DESIGN 7.2: it is a sub-label inside Do now); `fromLater.count` is the block alone. */
   readonly count: number;
   /** Index of the section's first row in the whole view (Tab and ⇧Tab jump here). */
   readonly start: number;
@@ -302,6 +316,8 @@ export interface HomeView {
   readonly total: number;
   /** Lifecycle of the underlying `home` window. */
   readonly status: ViewStatus;
+  /** Why it failed; null unless `status` is `failed`. */
+  readonly error: ContractError | null;
   /** Scroll the underlying `home` window. */
   move(range: ViewRange): void;
 }
@@ -316,11 +332,26 @@ export function useHome(opts?: UseHomeOptions): HomeView {
 // Rows (plan 30 4.1 rows.ts)
 // ---------------------------------------------------------------------------
 
-/** One cached row by type and id; undefined until known. Referentially stable while `rev` is unchanged, so it is safe in memo deps. */
+/** One cached row by type and id; undefined until known and also when gone (use `useRowState` to tell them apart). Referentially stable while `rev` is unchanged, so it is safe in memo deps. */
 export function useRow<T extends RowType>(type: T, id: string | undefined): RowTypeMap[T] | undefined {
   void type;
   void id;
   return notImplemented('useRow');
+}
+
+/** A row lookup that can say the row is gone (the reader open on a thread that was deleted or moved elsewhere). */
+export interface RowState<R> {
+  /** The row once known; stable while `rev` is unchanged. */
+  readonly row: R | undefined;
+  /** loading until the first answer; ready with a row; notFound once `T/get` reports the id in `notFound` or the row is destroyed. */
+  readonly status: 'loading' | 'ready' | 'notFound';
+}
+
+/** One cached row with its lookup status, for screens that must show "This email is no longer here." instead of waiting forever. */
+export function useRowState<T extends RowType>(type: T, id: string | undefined): RowState<RowTypeMap[T]> {
+  void type;
+  void id;
+  return notImplemented('useRowState');
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +374,7 @@ export interface HoldController {
   release(): void;
   /** True while held. */
   readonly isHeld: boolean;
-  /** Ids to pass as `holdIds` to `useView` or `useHome`; empty when not held. */
+  /** Ids to pass as `holdIds` to `useView` or `useHome`; empty when not held. Changing them sends `View/hold` or `View/release`, never a re-watch. */
   readonly heldIds: readonly string[];
   /** Current reason, or null. */
   readonly reason: HoldReason | null;
@@ -369,10 +400,10 @@ export interface PrefetchHandle {
 
 /** Intent tracker for one list: applies the 80 ms focus and 120 ms hover delays and cancels the previous request on move. */
 export interface PrefetchIntent {
-  /** Keyboard focus rested on a thread; `neighbours` are the rows above and below. */
+  /** Keyboard focus rests on a thread (after 80 ms); `neighbours` are the rows above and below. */
   focus(threadId: ThreadId, neighbours: readonly ThreadId[]): void;
-  /** Pointer rests on a thread. */
-  hover(threadId: ThreadId): void;
+  /** Pointer rests on a thread (after 120 ms); `neighbours` as for `focus`. */
+  hover(threadId: ThreadId, neighbours: readonly ThreadId[]): void;
   /** Cancel any pending or running prefetch. */
   cancel(): void;
 }
@@ -410,9 +441,25 @@ export function useMessageBody(messageId: MessageId | undefined): BodyResult {
 // Session, accounts, status slot, counts, setup, settings (ARCH 6.4, 9.5)
 // ---------------------------------------------------------------------------
 
-/** The session singleton; undefined until `Session/get` answers. */
+/** The session singleton; undefined until `Session/get` answers. Whether the engine is still coming or gone is `useConnection`'s job. */
 export function useSession(): Session | undefined {
   return notImplemented('useSession');
+}
+
+/** The data layer's link to the engine: `connecting` until `Session/get` answers (and while reconnecting), `ready`, `unreachable` when the transport is gone and does not come back (FatalScreen "Aplos can't reach its mail engine.", DESIGN 7.15), `parked` after a `parked` frame (FatalScreen with Try again and Export diagnostics, plan 30 4.5 #3). */
+export type ConnectionState = 'connecting' | 'ready' | 'unreachable' | 'parked';
+
+/** Connection state for the FatalScreen and the status slot. */
+export interface ConnectionView {
+  /** Current state. */
+  readonly state: ConnectionState;
+  /** The parked frame's sentence, or a plain transport sentence when unreachable; null otherwise. */
+  readonly reason: string | null;
+}
+
+/** Whether the engine is reachable, connecting or parked. Transport details stay in `bridge.ts`. */
+export function useConnection(): ConnectionView {
+  return notImplemented('useConnection');
 }
 
 /** All accounts, in sidebar order, with status and `reconnectBy`. */
@@ -446,10 +493,26 @@ export interface CountsView {
   readonly hidden: boolean;
 }
 
-/** Sidebar counts: Home is Do now plus Important updates, Later is due now, Drafts. */
+/** Sidebar counts: Home is Do now (with Back from Later) plus Important updates, Later is due now, Drafts; plus `handledToday` for inbox zero. */
 export function useCounts(accountId?: AccountId): CountsView {
   void accountId;
   return notImplemented('useCounts');
+}
+
+/** Events in a range, live, for Today and Home's inbox-zero "Next: Design review at 2:00 PM" (DESIGN 7.14). */
+export interface AgendaView {
+  /** Events ordered by start, all-day first within a day. */
+  readonly events: readonly EventRow[];
+  /** loading until the first answer, then ready; failed with `error` set. */
+  readonly status: 'loading' | 'ready' | 'failed';
+  /** Set when failed. */
+  readonly error: ContractError | null;
+}
+
+/** Watch events in a range (`Event/query`, refreshed by `state` frames for type Event). The calendar grid, Event/set and Event/rsvp are additive for `ui-calendar`. */
+export function useAgenda(query: AgendaQuery): AgendaView {
+  void query;
+  return notImplemented('useAgenda');
 }
 
 /** First-sync progress (`Setup/status`), live; undefined until known. */
@@ -508,8 +571,8 @@ export interface ConnectRequest {
 export interface DataApi {
   /** Thread commands. */
   readonly thread: {
-    /** Act on threads with the optimistic overlay applied synchronously (`Thread/act`). */
-    act(ids: readonly ThreadId[], action: ThreadAction): ActResult;
+    /** Act on threads with the optimistic overlay applied synchronously (`Thread/act`). A selector target (a whole view or one group, past the 200-row window) overlays the rows in open windows and the group counts at once; the receipt covers every resolved row. */
+    act(target: ThreadTarget, action: ThreadAction): ActResult;
     /** "Why it's here" for one thread. */
     why(threadId: ThreadId): Promise<WhyItsHere>;
     /** The follow-up nudge suggestion, or null with AI off, not consented or not ready. */
@@ -526,10 +589,10 @@ export interface DataApi {
   };
   /** Sending (undo-send and send-later are one mechanism, ARCH 7.2). */
   readonly submission: {
-    /** Send after the undo window. */
-    send(draftId: DraftId): Promise<SubmissionReceipt>;
-    /** Schedule a send. */
-    sendLater(draftId: DraftId, at: EpochMs): Promise<SubmissionReceipt>;
+    /** Send after the undo window; `{markDone: true}` is ⌘⇧Return (one operation, one notice). */
+    send(draftId: DraftId, opts?: SendOptions): Promise<SubmissionReceipt>;
+    /** Schedule a send; `opts` as for `send`. */
+    sendLater(draftId: DraftId, at: EpochMs, opts?: SendOptions): Promise<SubmissionReceipt>;
     /** Undo before `notBefore`; the draft comes back. */
     undo(submissionId: SubmissionId): Promise<Receipt>;
     /** Send now: skip the undo window, "Send now" on suspended, "Send anyway" on uncertain, "Try again" on failed. */
@@ -550,8 +613,8 @@ export interface DataApi {
   readonly body: {
     /** One body. */
     get(messageId: MessageId): Promise<MessageBody>;
-    /** Warm the engine's LRU of 12 rendered bodies; cancel on move. */
-    prefetch(messageIds: readonly MessageId[]): PrefetchHandle;
+    /** Warm the engine's LRU of 12 rendered bodies for these threads (thread-granular, ARCH AM-1: list rows carry thread ids, not message ids); cancel on move. */
+    prefetch(threadIds: readonly ThreadId[]): PrefetchHandle;
   };
   /** The sandboxed mail frame (ARCH 10). */
   readonly mail: {
@@ -559,11 +622,15 @@ export interface DataApi {
     frame(req: MailFrameRequest): Promise<MailFrameRef>;
     /** Free a frame token when the reader replaces it. */
     releaseFrame(url: string): Promise<void>;
+    /** "Load images from this sender": adds the address to `Settings.mail.imageAllowSenders` (no read-modify-write race); re-request the frame afterwards. Removal is a `settings.set` of the list. */
+    allowImagesFrom(address: string): Promise<Receipt>;
   };
   /** Attachments over the blob route (never base64). */
   readonly attachment: {
     /** Fetch the bytes. */
     get(attachmentId: AttachmentId): Promise<Blob>;
+    /** Upload a file for a draft (Attach a file, ⌘⇧A, DESIGN 7.6); bytes move as a transferable or the blob route, never base64; over 25 MB rejects with `invalidArguments`. Put the returned id in `DraftInput.attachments`. */
+    put(data: Blob | ArrayBuffer, name: string, mime: string): Promise<AttachmentRef>;
   };
   /** Sync control. */
   readonly sync: {
@@ -576,6 +643,8 @@ export interface DataApi {
     connect(req: ConnectRequest): AccountFlow;
     /** Weekly reconnect with `login_hint`; no resync, queued changes kept (roadmap N3). */
     reconnect(accountId: AccountId): AccountFlow;
+    /** "Use this account's mail for AI" (ARCH 8.3, plan 30 8.1 item 6). */
+    setAiAllowed(accountId: AccountId, allowed: boolean): Promise<Receipt>;
   };
   /** First-sync session (`Setup/*`); the UI calls `end` on every window close. */
   readonly setup: {
@@ -583,6 +652,8 @@ export interface DataApi {
     begin(): Promise<void>;
     /** End it; idempotent. */
     end(): Promise<void>;
+    /** First sync's "Try again" for one account (`notConnected`, `failed` or `partial`, DESIGN 7.12); idempotent, resumes from the checkpoint. */
+    retry(accountId: AccountId): Promise<void>;
   };
   /** Demo mail on request (plan 30 8.1 item 11). */
   readonly demo: {
@@ -611,6 +682,20 @@ export interface DataApi {
     request<R extends AiRequest>(req: R): Promise<Extract<AiResult, { kind: R['kind'] }>>;
     /** Speech to text; audio moves as a transferable buffer or blob, never base64. */
     transcribe(audio: Blob | ArrayBuffer, mime: string): Promise<Transcript>;
+    /** Record Allow on the consent card (or null to revoke in Settings); "Not now" records nothing. */
+    setConsent(grant: AiConsentGrant): Promise<Receipt>;
+  };
+  /** The engine process, through main (it works when the engine cannot answer). */
+  readonly engine: {
+    /** "Restart engine" on the unreachable FatalScreen and "Try again" when parked; resolves once the restart begins, and `useConnection` reports the outcome. */
+    restart(): Promise<void>;
+  };
+  /** The content-free diagnostics bundle (ARCH 11). */
+  readonly diagnostics: {
+    /** The bundle text for the preview Dialog (Help → Export diagnostics). */
+    preview(): Promise<DiagnosticsPreview>;
+    /** "Copy diagnostics": copies the bundle to the clipboard; when the engine is unreachable or parked, main builds a host-only bundle instead. */
+    copy(): Promise<void>;
   };
 }
 
@@ -619,8 +704,8 @@ export type ApiMethodName = {
   [G in keyof DataApi]: `${G & string}.${keyof DataApi[G] & string}`;
 }[keyof DataApi];
 
-/** How a method reaches the engine: a plain call, a call wrapped by the optimistic overlay, a streamed call, or data-layer only. */
-export type ContractCallKind = 'call' | 'overlay' | 'stream' | 'local';
+/** How a method reaches the engine: a plain call, a call wrapped by the optimistic overlay, a streamed call, data-layer only, or a native method served by main. */
+export type ContractCallKind = 'call' | 'overlay' | 'stream' | 'local' | 'native';
 
 /** One row of the method mapping the F2 client must satisfy. */
 export interface ContractMethodRef {
@@ -636,30 +721,34 @@ export interface ContractMethodRef {
 
 /** The expected mapping from `api` method to contract method, checked complete at compile time. The freeze reviewer checks F1 against it. */
 export const CONTRACT_METHODS = {
-  'thread.act': { method: 'Thread/act', kind: 'overlay', source: 'planned', needs: '{opId, ids, action}; every ThreadAction kind; returns receipt {opId, appliedState}' },
+  'thread.act': { method: 'Thread/act', kind: 'overlay', source: 'planned', needs: '{opId, ids | query: {spec, group?, atState}, action}; every ThreadAction kind incl. setLane; returns receipt {opId, appliedState, appliedSeq}; ask: query targets and setLane' },
   'thread.why': { method: 'Thread/why', kind: 'call', source: 'ask', needs: '{threadId} -> {sentence, quote, rankSource}' },
   'thread.followup': { method: 'Thread/followup', kind: 'call', source: 'ask', needs: '{threadId} -> {threadId, text} | null; eng-ai followup job output' },
   'thread.unsubscribe': { method: 'Unsubscribe/run', kind: 'call', source: 'planned', needs: '{threadId} -> receipt' },
   'operation.undo': { method: 'Operation/undo', kind: 'overlay', source: 'planned', needs: '{opId} -> receipt whose opId is the inverse operation' },
   'operation.undoLast': { method: 'Operation/undo', kind: 'local', source: 'planned', needs: 'data layer tracks the last undoable opId' },
-  'submission.send': { method: 'Submission/set', kind: 'call', source: 'planned', needs: '{action: send, draftId} -> {submissionId, receipt}; notBefore = now + undoSeconds' },
-  'submission.sendLater': { method: 'Submission/set', kind: 'call', source: 'planned', needs: '{action: send, draftId, notBefore}' },
+  'submission.send': { method: 'Submission/set', kind: 'call', source: 'planned', needs: '{action: send, draftId, markDone?} -> {submissionId, receipt}; notBefore = now + undoSeconds; row has queuedAt; ask: markDone in the same operation' },
+  'submission.sendLater': { method: 'Submission/set', kind: 'call', source: 'planned', needs: '{action: send, draftId, notBefore, markDone?}' },
   'submission.undo': { method: 'Submission/set', kind: 'call', source: 'planned', needs: '{action: undo, submissionId}' },
   'submission.sendNow': { method: 'Submission/set', kind: 'call', source: 'ask', needs: '{action: sendNow, submissionId}; valid for queued, suspended, uncertain, failed' },
   'submission.reschedule': { method: 'Submission/set', kind: 'call', source: 'ask', needs: '{action: reschedule, submissionId, notBefore}' },
-  'draft.save': { method: 'Draft/set', kind: 'call', source: 'planned', needs: 'create or update with baseRevision (ifInState); stateMismatch on conflict' },
+  'draft.save': { method: 'Draft/set', kind: 'call', source: 'planned', needs: 'create or update with baseRevision (ifInState); stateMismatch on conflict; ask: source {messageId, mode} on create, forward copies attachments' },
   'draft.discard': { method: 'Draft/set', kind: 'call', source: 'planned', needs: 'destroy' },
   'draft.resolveConflict': { method: 'Draft/set', kind: 'call', source: 'ask', needs: '{draftId, resolve: keepMine|takeTheirs|keepBoth}; Draft/changed frame sets changedElsewhere' },
   'body.get': { method: 'MessageBody/get', kind: 'call', source: 'planned', needs: '{messageId} -> {bodyKind, text, quotedRanges}' },
-  'body.prefetch': { method: 'MessageBody/prefetch', kind: 'call', source: 'planned', needs: '{ids} with cancel (a requestId, or a second call with an empty list)' },
-  'mail.frame': { method: 'Mail/frame', kind: 'call', source: 'planned', needs: '{messageId, imagePolicy, findQuery} -> {url, expiresAt, bodyKind, trackersRemoved, hasRemoteImages, quotedCount}; srcdoc from the stand-in only' },
+  'body.prefetch': { method: 'MessageBody/prefetch', kind: 'call', source: 'ask', needs: '{threadIds} (thread-granular, ARCH AM-1) with cancel (a requestId, or a second call with an empty list)' },
+  'mail.frame': { method: 'Mail/frame', kind: 'call', source: 'planned', needs: '{messageId, imagePolicy, findQuery, showQuotes?} -> {url, expiresAt, bodyKind, trackersRemoved, hasRemoteImages, quotedCount}; honours imageAllowSenders; srcdoc from the stand-in only' },
   'mail.releaseFrame': { method: 'Mail/frame.release', kind: 'call', source: 'planned', needs: '{url}' },
+  'mail.allowImagesFrom': { method: 'Mail/allowImagesFrom', kind: 'call', source: 'ask', needs: '{address} -> receipt; appends to Settings.mail.imageAllowSenders (name is eng-contract\'s call)' },
   'attachment.get': { method: 'GET /v1/blob/:id', kind: 'call', source: 'planned', needs: 'transferable ArrayBuffer on MessagePort, blob route on HTTP; never base64' },
+  'attachment.put': { method: 'Blob/put (PUT /v1/blob)', kind: 'call', source: 'ask', needs: '{data, name, mime} -> AttachmentRef {id, name, mime, size, state}; 25 MB cap; transferable on MessagePort; never base64' },
   'sync.request': { method: 'Sync/request', kind: 'call', source: 'planned', needs: '{accountId?}; also clears a throttle pause for Retry now' },
   'account.connect': { method: 'Account/connect', kind: 'stream', source: 'planned', needs: '{provider, loginHint?} -> requestId; progress frames; cancel' },
   'account.reconnect': { method: 'Account/reconnect', kind: 'stream', source: 'planned', needs: '{accountId} with login_hint, no resync, queued changes kept; cancel' },
+  'account.setAiAllowed': { method: 'Account/set', kind: 'call', source: 'ask', needs: '{accountId, aiAllowed} -> receipt; plan 10 freeze row 6 names per-account aiAllowed, the verb is eng-contract\'s call' },
   'setup.begin': { method: 'Setup/begin', kind: 'call', source: 'planned', needs: '{}' },
   'setup.end': { method: 'Setup/end', kind: 'call', source: 'planned', needs: '{}; idempotent' },
+  'setup.retry': { method: 'Setup/retry', kind: 'call', source: 'ask', needs: '{accountId}; idempotent, resumes from the checkpoint (F5); name is eng-contract\'s call' },
   'demo.load': { method: 'Demo/load', kind: 'call', source: 'planned', needs: 'idempotent; demo accounts only' },
   'demo.reset': { method: 'Demo/reset', kind: 'call', source: 'planned', needs: 'idempotent; demo accounts only' },
   'demo.remove': { method: 'Demo/remove', kind: 'call', source: 'planned', needs: 'idempotent; demo accounts only' },
@@ -668,21 +757,28 @@ export const CONTRACT_METHODS = {
   'ask.run': { method: 'Ask/run', kind: 'stream', source: 'planned', needs: 'progress frames step|text|citation{n, messageId, quote}|proposal; cancel' },
   'ai.request': { method: 'Ai/request', kind: 'call', source: 'planned', needs: 'kinds draft, polish, summary' },
   'ai.transcribe': { method: 'Blob/put + Ai/request', kind: 'call', source: 'ask', needs: 'audio as a transferable buffer, then {kind: transcribe, blobId} -> {text}' },
+  'ai.setConsent': { method: 'Consent/set', kind: 'call', source: 'planned', needs: '{providerId, model, version} | null -> receipt; Settings.ai.consent and consentVersion carry the record (plan 10 freeze row 6 Consent/*; the verb is eng-contract\'s call)' },
+  'engine.restart': { method: 'native engine.restart (main native-methods.ts)', kind: 'native', source: 'ask', needs: 'restarts or un-parks the engine utilityProcess; works when the engine cannot answer' },
+  'diagnostics.preview': { method: 'Diagnostics/preview', kind: 'call', source: 'planned', needs: '{} -> {text, generatedAt}; content-free' },
+  'diagnostics.copy': { method: 'Diagnostics/preview, native fallback through main', kind: 'native', source: 'ask', needs: 'clipboard write of the bundle; main builds a host-only bundle when the engine is unreachable or parked' },
 } as const satisfies Record<ApiMethodName, ContractMethodRef>;
 
 /** What the hooks need from the contract besides `api`, for the freeze reviewer. */
 export const CONTRACT_HOOK_NEEDS = {
-  useView: 'View/watch {spec, holdIds?} -> window {windowId, state, ids, total, changed, offset, groups}; View/move {windowId, anchor}; View/unwatch; reset frame; Thread/get and Message/get for unknown or changed ids',
+  useView: 'View/watch {spec, holdIds?} -> window {windowId, state, seq, ids, total, changed, offset, groups}; View/move {windowId, anchor}; View/unwatch; reset frame; a failed window carries a ContractError; drafts spec yields Draft rows; Thread/get, Message/get and Draft/get for unknown or changed ids',
   useHome: 'home spec with groups do, fromLater, update, follow; home.low spec with groups by sender (label = name)',
   useRow: 'T/get {ids} -> {state, list, notFound}; state frames per type',
+  useRowState: 'as useRow; notFound ids and destroyed rows report notFound',
   useOperation: 'receipts; Operation rows in state frames for remote progress',
-  useHold: 'View/hold {windowId, ids} and View/release, or holdIds on View/watch',
-  usePrefetchIntent: 'MessageBody/prefetch {ids} with cancel',
+  useHold: 'View/hold {windowId, ids}, View/release {windowId} and an activity ping on the open window (holds expire about 2 s after the last activity); never a re-watch',
+  usePrefetchIntent: 'MessageBody/prefetch {threadIds} with cancel',
   useMessageBody: 'MessageBody/get',
   useSession: 'Session/get {apiVersion, appVersion, schemaVersion, dbEpoch, capabilities, hasAccounts}',
+  useConnection: 'the parked push frame {reason, since}, sent by main when the engine cannot; transport state from bridge.ts',
   useAccounts: 'Account/get and state frames; status per ARCH 6.4; reconnectBy, baselineDoneAt, isDemo',
   useStatus: 'as useAccounts',
-  useCounts: 'Counts singleton {unread, home, laterDue, drafts} per scope, in state frames',
+  useCounts: 'Counts singleton {unread, home, laterDue, drafts, handledToday} per scope, in state frames; home includes Back from Later',
+  useAgenda: 'Event/query {from, to, calendarIds?} -> EventRow[]; state frames for type Event',
   useSetupStatus: 'Setup/status per plan 10 4.1, pushed while setup runs',
   useSettings: 'Settings/get and state frames',
 } as const;
@@ -718,9 +814,11 @@ export const api: DataApi = {
   mail: {
     frame: () => notImplemented('api.mail.frame'),
     releaseFrame: () => notImplemented('api.mail.releaseFrame'),
+    allowImagesFrom: () => notImplemented('api.mail.allowImagesFrom'),
   },
   attachment: {
     get: () => notImplemented('api.attachment.get'),
+    put: () => notImplemented('api.attachment.put'),
   },
   sync: {
     request: () => notImplemented('api.sync.request'),
@@ -728,10 +826,12 @@ export const api: DataApi = {
   account: {
     connect: () => notImplemented('api.account.connect'),
     reconnect: () => notImplemented('api.account.reconnect'),
+    setAiAllowed: () => notImplemented('api.account.setAiAllowed'),
   },
   setup: {
     begin: () => notImplemented('api.setup.begin'),
     end: () => notImplemented('api.setup.end'),
+    retry: () => notImplemented('api.setup.retry'),
   },
   demo: {
     load: () => notImplemented('api.demo.load'),
@@ -748,5 +848,13 @@ export const api: DataApi = {
   ai: {
     request: () => notImplemented('api.ai.request'),
     transcribe: () => notImplemented('api.ai.transcribe'),
+    setConsent: () => notImplemented('api.ai.setConsent'),
+  },
+  engine: {
+    restart: () => notImplemented('api.engine.restart'),
+  },
+  diagnostics: {
+    preview: () => notImplemented('api.diagnostics.preview'),
+    copy: () => notImplemented('api.diagnostics.copy'),
   },
 };

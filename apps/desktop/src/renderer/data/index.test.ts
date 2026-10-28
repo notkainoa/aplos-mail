@@ -18,6 +18,8 @@ import {
   OperationFailedError,
   api,
   useAccounts,
+  useAgenda,
+  useConnection,
   useCounts,
   useHold,
   useHome,
@@ -25,6 +27,7 @@ import {
   useOperation,
   usePrefetchIntent,
   useRow,
+  useRowState,
   useSession,
   useSettings,
   useSetupStatus,
@@ -34,8 +37,10 @@ import {
 import type {
   AccountState,
   ApiMethodName,
+  DraftRow,
   MessageRow,
   OpId,
+  Receipt,
   StatusSlotState,
   ThreadRow,
 } from './index';
@@ -89,6 +94,15 @@ function homeExample(lastOpId: OpId | undefined): string[] {
       }
     });
     api.thread.act([focused], { kind: 'laneDown', alsoForSender: true });
+    // The toast's "Always do this for [sender]" after a correction: absolute, so it never moves a second lane.
+    api.thread.act([focused], { kind: 'setLane', lane: 'update', alsoForSender: true });
+    prefetch.hover(focused, doNow ? doNow.ids.slice(1, 2) : []);
+  }
+  // Bulk targets past the 200-row window: the Low sheet's "mark everything done" and "Clear from Home".
+  api.thread.act({ spec: { kind: 'home.low' } }, { kind: 'done' });
+  api.thread.act({ spec: { kind: 'home' }, group: 'fromLater' }, { kind: 'clearFromHome' });
+  if (home.status === 'failed' && home.error) {
+    lines.push(home.error.message);
   }
   const unsubscribe = hold.onRelease(({ ids }) => {
     lines.push(`close ${ids.length}`);
@@ -107,12 +121,76 @@ function homeExample(lastOpId: OpId | undefined): string[] {
   api.thread.act(['t1'], { kind: 'archiveForever' });
   // @ts-expect-error: lane corrections must say whether they apply to the sender.
   api.thread.act(['t1'], { kind: 'laneUp' });
+  // @ts-expect-error: a selector cannot target the reader's message list.
+  api.thread.act({ spec: { kind: 'thread', threadId: 't1' } }, { kind: 'done' });
   return lines;
+}
+
+/** Inbox zero: "You handled 12 emails." and "Next: Design review at 2:00 PM" (DESIGN 7.14). */
+function inboxZeroExample(now: number): string[] {
+  const counts = useCounts();
+  const agenda = useAgenda({ from: now, to: now + 12 * 3_600_000 });
+  const next = agenda.events.find((e) => !e.allDay && e.start > now);
+  const lines = [`You handled ${counts.counts.handledToday} emails.`];
+  if (next) {
+    lines.push(`Next: ${next.title}`);
+  }
+  return lines;
+}
+
+/** Drafts list and compose: draft rows (not thread rows), upload, forward with the original's attachments, send and Done. */
+async function draftsExample(file: Blob, sourceMessageId: string): Promise<string[]> {
+  const drafts = useView({ kind: 'drafts' });
+  const lines: string[] = [];
+  for (const id of drafts.ids) {
+    const row: DraftRow | undefined = drafts.rows.get(id);
+    if (row) {
+      lines.push(`${row.subject} ${row.updatedAt}`);
+    }
+  }
+  // @ts-expect-error: the Drafts view yields draft rows, not thread rows.
+  const wrong: ThreadRow | undefined = drafts.rows.get('x');
+  void wrong;
+  const uploaded = await api.attachment.put(file, 'plan.pdf', 'application/pdf');
+  const saved = await api.draft.save({
+    accountId: 'a1',
+    threadId: 't1',
+    source: { messageId: sourceMessageId, mode: 'forward' },
+    to: [],
+    subject: 'Fwd:',
+    html: '',
+    attachments: [uploaded.id],
+  });
+  const sent = await api.submission.send(saved.id, { markDone: true });
+  const receipt: Receipt = sent.receipt;
+  lines.push(`seq ${receipt.appliedSeq}`);
+  return lines;
+}
+
+/** FatalScreen: unreachable or parked engine, Restart engine, Copy diagnostics (DESIGN 7.15). */
+function fatalExample(): string | null {
+  const connection = useConnection();
+  switch (connection.state) {
+    case 'connecting':
+    case 'ready':
+      return null;
+    case 'unreachable':
+      void api.engine.restart();
+      return "Aplos can't reach its mail engine.";
+    case 'parked':
+      void api.diagnostics.copy();
+      return connection.reason;
+    default: {
+      const unreachable: never = connection.state;
+      return unreachable;
+    }
+  }
 }
 
 /** Reader: the thread row, its messages, the latest body and the UndoTray; hooks first, commands in handlers. */
 function readerExample(threadId: string, submissionId: string | undefined): { lines: string[]; sendReply: () => Promise<void> } {
   const thread = useRow('Thread', threadId);
+  const threadState = useRowState('Thread', threadId);
   const view = useView({ kind: 'thread', threadId });
   const latestId = view.ids[view.ids.length - 1];
   const latest: MessageRow | undefined = latestId ? view.rows.get(latestId) : undefined;
@@ -120,6 +198,9 @@ function readerExample(threadId: string, submissionId: string | undefined): { li
   const submission = useRow('Submission', submissionId);
   const lines: string[] = [];
 
+  if (threadState.status === 'notFound' || view.status === 'failed') {
+    lines.push('This email is no longer here.');
+  }
   if (thread) {
     lines.push(thread.summary ? thread.summary.text : thread.subject);
     lines.push(thread.partial ? thread.subject : `${thread.subject} · ${thread.messageCount} messages`);
@@ -139,11 +220,15 @@ function readerExample(threadId: string, submissionId: string | undefined): { li
 
   const sendReply = async (): Promise<void> => {
     if (body.status === 'ready' && body.body && body.body.bodyKind === 'html' && latest) {
-      const frame = await api.mail.frame({ messageId: latest.id, imagePolicy: 'blocked' });
+      const frame = await api.mail.frame({ messageId: latest.id, imagePolicy: 'blocked', showQuotes: true });
       lines.push(`${frame.trackersRemoved} trackers removed`);
+      if (frame.hasRemoteImages) {
+        await api.mail.allowImagesFrom(latest.from.address);
+      }
       await api.mail.releaseFrame(frame.url);
     }
-    const saved = await api.draft.save({ accountId: 'a1', threadId, to: [], subject: 'Re:', html: '' });
+    const source = latest ? { messageId: latest.id, mode: 'reply' as const } : undefined;
+    const saved = await api.draft.save({ accountId: 'a1', threadId, source, to: [], subject: 'Re:', html: '' });
     const sent = await api.submission.send(saved.id);
     await api.submission.undo(sent.submissionId);
   };
@@ -241,14 +326,17 @@ test('every hook stub throws NotImplemented naming ui-shell', () => {
     ['useView', () => useView({ kind: 'home' })],
     ['useHome', () => useHome()],
     ['useRow', () => useRow('Thread', 't1')],
+    ['useRowState', () => useRowState('Thread', 't1')],
     ['useOperation', () => useOperation('op1')],
     ['useHold', () => useHold('home')],
     ['usePrefetchIntent', () => usePrefetchIntent()],
     ['useMessageBody', () => useMessageBody('m1')],
     ['useSession', () => useSession()],
+    ['useConnection', () => useConnection()],
     ['useAccounts', () => useAccounts()],
     ['useStatus', () => useStatus()],
     ['useCounts', () => useCounts()],
+    ['useAgenda', () => useAgenda({ from: 0, to: 1 })],
     ['useSetupStatus', () => useSetupStatus()],
     ['useSettings', () => useSettings()],
   ];
@@ -271,7 +359,7 @@ test('every api method throws NotImplemented and has a contract mapping', () => 
     }
   }
   assert.deepEqual(seen.sort(), Object.keys(CONTRACT_METHODS).sort());
-  const names: ApiMethodName[] = ['thread.act', 'operation.undo', 'submission.sendNow', 'ask.run'];
+  const names: ApiMethodName[] = ['thread.act', 'operation.undo', 'submission.sendNow', 'ask.run', 'attachment.put', 'engine.restart'];
   for (const name of names) {
     assert.ok(CONTRACT_METHODS[name].method.length > 0);
   }
@@ -281,4 +369,10 @@ test('the examples type-check and stop at the first stub', () => {
   assertNotImplemented(() => homeExample(undefined), 'useHold');
   assertNotImplemented(() => readerExample('t1', undefined), 'useRow');
   assertNotImplemented(() => statusSlotExample(), 'useStatus');
+  assertNotImplemented(() => inboxZeroExample(0), 'useCounts');
+  assertNotImplemented(() => fatalExample(), 'useConnection');
+});
+
+test('the drafts example stops at the first stub', async () => {
+  await assert.rejects(draftsExample(new Blob([]), 'm1'), (err: unknown) => err instanceof NotImplementedError && err.member === 'useView');
 });
