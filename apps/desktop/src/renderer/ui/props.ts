@@ -608,11 +608,11 @@ export interface DialogProps {
 
 /** A confirmation as two key rows; destructive ones default to Cancel (Return cancels, ⇧Return confirms) (DESIGN §6 Confirm, §7.9). Mockups: palette.html (confirm). Plain + refines: ui-foundation; used by ui-ask, ui-home. */
 export interface ConfirmProps {
-  /** The question, e.g. "Delete forever?" */
+  /** The question, e.g. "Discard this draft?" */
   question: string;
   /** What will happen and whether it can be undone. */
   consequence: string;
-  /** Confirm verb, e.g. "Delete forever". Never "OK" (DESIGN §10). */
+  /** Confirm verb, e.g. "Discard". Never "OK" (DESIGN §10). */
   confirmLabel: string;
   /** Cancel verb; default "Cancel". */
   cancelLabel?: string;
@@ -1560,20 +1560,24 @@ export type AnswerSegment =
 /** A paragraph of answer prose. */
 export type AnswerParagraph = readonly AnswerSegment[];
 
-/** A source behind a citation. */
+/** A source behind a citation: a message (default), or a calendar event when `kind` is 'event' (data `Citation`, F1). */
 export interface CitationData {
   /** 1-based number shown as mono "[1]". */
   index: number;
   /** The quoted sentence shown on hover or focus. */
   quote: string;
-  /** Sender name. */
+  /** Sender name; for an event, its calendar's name. */
   from: string;
-  /** Message time. */
+  /** Message time; for an event, its start. */
   date: IsoDateTime;
-  /** Thread subject. */
+  /** Thread subject; for an event, its title. */
   subject: string;
-  /** Thread to open on click. */
+  /** Thread to open on click; '' for an event. */
   threadId: string;
+  /** What the source is; absent means 'message'. An 'event' source opens with `eventId`. */
+  kind?: 'message' | 'event';
+  /** The event to open on click when `kind` is 'event'. */
+  eventId?: string;
 }
 
 /** One question and its answer: the question as a `base` 500 line (no bubble), serif `answer` prose, citations, step log, an optional proposal (DESIGN §6 AskTurn, §7.7). Mockups: ask.html (answer, working). Plain + refines: ui-ask. */
@@ -1596,6 +1600,8 @@ export interface AskTurnProps {
   proposal?: ProposalCardProps;
   /** Open a cited thread. */
   onOpenCitation: (threadId: string) => void;
+  /** Open a cited calendar event (a citation with `kind: 'event'`). */
+  onOpenEventCitation?: (eventId: string) => void;
   /** Retry after a failure. */
   onRetry?: () => void;
   /** "Use another provider" after a failure. */
@@ -1620,6 +1626,8 @@ export interface StepLogProps {
 export interface CitationProps extends CitationData {
   /** Open the source thread. */
   onOpen: (threadId: string) => void;
+  /** Open the source event when `kind` is 'event' (calls this with `eventId` instead of `onOpen`). */
+  onOpenEvent?: (eventId: string) => void;
 }
 
 /** The dock's one card; owns the filled button; a consequence line and two key rows (Return / Esc); nothing applies without confirmation (DESIGN §6 ProposalCard, §7.7, §9 rule 6). Mockups: ask.html (answer). Plain + refines: ui-ask. */
@@ -1648,12 +1656,12 @@ export interface ProposalCardProps {
 export interface PaletteItem {
   /** Stable option id (DOM id for `aria-activedescendant`). */
   id: string;
-  /** Registry command it runs; supplies the keycap. */
+  /** Registry command it runs; supplies the keycap. For a Settings row it is the setting entry id ("setting.mail.undoSeconds"), for a nested page row the row's id; neither has a keycap. */
   commandId: CommandId;
   /** Command label. */
   label: string;
-  /** Command icon. */
-  icon: IconName;
+  /** Command icon; absent for commands without one, Settings rows and most nested page rows (the row keeps its icon column empty). */
+  icon?: IconName;
   /** Character indices of `label` to bold for the match. */
   matches?: readonly number[];
   /** Group name shown on the right while filtering, e.g. "Actions". */
@@ -2280,6 +2288,8 @@ export interface ReconnectSheetProps {
   onCancel: () => void;
   /** Try again after a failure. */
   onRetry: () => void;
+  /** 'reconnect' (default) = the weekly reconnect copy; 'grant' = a missing permission ("Aplos needs permission to read your Gmail", `needsPermission`), the shell's `openSheet('reconnect', {mode})`. */
+  mode?: 'reconnect' | 'grant';
 }
 
 /** State of one first-sync checkpoint (DESIGN §7.12): done `--ink-2`, paused `--dusk`, failed `--stamp`; 'current' carries the `status` motion; 'partial' = a capped pass. */

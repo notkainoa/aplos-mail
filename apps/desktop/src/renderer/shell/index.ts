@@ -49,7 +49,8 @@ export interface SheetArgs {
   /**
    * The weekly Gmail reconnect (DESIGN 7.1, ReconnectSheet): 'reconnect' for `needsReauth`
    * and `reconnectBy` within 24 hours, 'grant' for `needsPermission`. Either way the sheet
-   * calls `api.account.reconnect` and follows its `connect` frames.
+   * calls `api.account.reconnect` and follows its `connect` frames (where 'grant' is F1's
+   * `grantPermissions`); the shell passes `mode` on as `ReconnectSheetProps.mode` for the copy.
    */
   reconnect: { readonly accountId: AccountId; readonly mode: 'reconnect' | 'grant' };
   /**

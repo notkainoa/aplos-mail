@@ -11,10 +11,13 @@ import {
   type KeyPrefs,
 } from './types';
 
-/** The full catalog with a no-op handler on every command and control. */
+/** The full catalog with a no-op handler on every command and control (an empty page for page commands). */
 export function wiredRegistry(prefs: KeyPrefs = DEFAULT_KEY_PREFS): Registry {
   const registry = createAppRegistry(prefs);
-  for (const spec of [...COMMANDS, ...CONTROLS]) registry.attach(spec.id, { run: () => undefined });
+  for (const spec of [...COMMANDS, ...CONTROLS]) {
+    const page = 'page' in spec && spec.page === true;
+    registry.attach(spec.id, page ? { run: () => undefined, children: () => [] } : { run: () => undefined });
+  }
   return registry;
 }
 

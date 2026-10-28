@@ -8,8 +8,8 @@ export interface UiKeyFields {
   readonly singleKeys: boolean;
   /** Tap versus hold threshold, default 250 ms. */
   readonly holdMs: number;
-  /** 'rightDone': → Done, ← Later (DESIGN §8 default); 'rightLater' swaps them. */
-  readonly swipeDirection: 'rightDone' | 'rightLater';
+  /** 'doneRight': → Done, ← Later (DESIGN §8 default); 'doneLeft' swaps them (F1 names). */
+  readonly swipeDirection: 'doneRight' | 'doneLeft';
   /** Remapped keys by command id. */
   readonly keymap: Keymap;
 }
@@ -19,7 +19,7 @@ export function keyPrefsFromUi(ui: UiKeyFields): KeyPrefs {
   return {
     singleKeyShortcuts: ui.singleKeys,
     holdThresholdMs: ui.holdMs,
-    swapTriageArrows: ui.swipeDirection === 'rightLater',
+    swapTriageArrows: ui.swipeDirection === 'doneLeft',
     keymap: ui.keymap,
   };
 }

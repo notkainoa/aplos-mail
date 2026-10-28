@@ -34,7 +34,12 @@ import {
   useStatus,
   useView,
   UI_SETTINGS_DEFAULTS,
+  HARNESS_NOW_LOCAL,
+  HARNESS_NOW_MS,
+  HARNESS_TIME_ZONE,
   getNow,
+  toIsoDate,
+  toIsoDateTime,
   setClock,
   undoStack,
   useFrames,
@@ -44,6 +49,7 @@ import {
 import type {
   AccountState,
   ApiMethodName,
+  Citation,
   ConnectFrame,
   DraftRow,
   MessageRow,
@@ -294,29 +300,38 @@ function statusSlotExample(): string {
   }
 }
 
-/** Ask streaming: one run's progress frames, the step line, the answer text, and a pause. */
+/** Where a citation chip goes on click: a thread for a message, the calendar for an event. */
+function citationTarget(c: Citation): string {
+  return c.kind === 'message' ? `thread:${c.threadId}` : `event:${c.eventId}`;
+}
+
+/** Ask streaming: one run's F1 progress frames, the step line with its count, the answer text, citations. */
 function askStreamExample(runId: string): string {
   const { frames, last } = useFrames('progress', { runId });
   let text = '';
   let step = '';
+  const sources: string[] = [];
   for (const frame of frames) {
-    const event = frame.event;
-    if (event.kind === 'step') step = event.text;
-    else if (event.kind === 'text') text += event.text;
-    else if (event.kind === 'paused') step = event.resumeAt === null ? 'Waiting…' : `Waiting until ${event.resumeAt}`;
-    else if (event.kind === 'error') return event.error.message;
+    if (frame.kind === 'step' && frame.step) step = frame.step.count === undefined ? frame.step.text : `${frame.step.text} · ${frame.step.count}`;
+    else if (frame.kind === 'text') text += frame.delta ?? '';
+    else if (frame.kind === 'citation' && frame.citation) sources.push(citationTarget(frame.citation));
+    else if (frame.kind === 'error') return frame.problem?.message ?? '';
   }
   const typed: ProgressFrame | undefined = last;
+  useFrames('progress', { source: 'ask' });
   // @ts-expect-error: progress frames cannot be filtered by a field that is not listed.
   useFrames('progress', { seq: 3 });
-  return typed?.event.kind === 'done' ? text : `${step} ${text}`;
+  return typed?.kind === 'done' ? text : `${step} ${text} ${sources.join(' ')}`;
 }
 
-/** The reconnect sheet: "Waiting for Google in your browser…" from the connect frames of one flow. */
+/** The reconnect sheet: "Waiting for Google in your browser…" from the connect frames of one flow; Cancel by id once the handle is gone. */
 function reconnectSheetExample(requestId: string): string {
-  const last: ConnectFrame | undefined = useFrames('connect', { requestId }).last;
-  if (!last || last.state === 'waiting') return 'Waiting for Google in your browser…';
-  if (last.state === 'failed') return last.reasonCode === 'wrongAccount' ? 'That was a different account.' : last.message ?? 'Couldn’t reconnect.';
+  const last: ConnectFrame | undefined = useFrames('connect', { connectId: requestId }).last;
+  if (!last || last.state === 'waiting') {
+    void api.account.cancelConnect(requestId);
+    return 'Waiting for Google in your browser…';
+  }
+  if (last.state === 'failed') return last.reasonCode === 'wrongAccount' ? 'That was a different account.' : 'Couldn’t reconnect.';
   return last.state === 'connected' ? 'Reconnected' : '';
 }
 
@@ -329,8 +344,12 @@ function clockAndUndoExample(reconnectBy: number): boolean {
   handle.forget();
   const outcome = undoStack.undoLast();
   if (outcome?.kind === 'operation') void outcome.result.receipt;
-  const patch: SettingsPatch = { ui: { dock: { width: 400 }, palette: { recents: ['mail.done'] } } };
+  // Object-valued fields are replaced whole (F1), so a width change sends the whole dock.
+  const patch: SettingsPatch = { ui: { dock: { ...UI_SETTINGS_DEFAULTS.dock, width: 400 }, palette: { recents: ['mail.done'] } } };
+  // @ts-expect-error: a partial dock would wipe `open` and `tab`.
+  const partial: SettingsPatch = { ui: { dock: { width: 400 } } };
   void patch;
+  void partial;
   void label;
   return reconnectBy - now < 24 * 60 * 60 * 1000;
 }
@@ -445,13 +464,46 @@ test('the clock and the undo stack are stubs that name ui-shell', () => {
   assertNotImplemented(() => undoStack.peek(), 'undoStack.peek');
 });
 
-test('the ui defaults follow DESIGN and map onto the registry prefs', () => {
-  assert.equal(UI_SETTINGS_DEFAULTS.holdMs, 250);
+// F1's UiSettings defaults (eng-contract f1-gaps, packages/contract/src/schemas/settings.ts field comments and
+// tests/fixtures.ts). Until @aplos/contract is in this tree, this copy is the check; at the swap it becomes
+// `UI_SETTINGS_DEFAULTS satisfies import('@aplos/contract').UiSettings` (data/README "Provisional types").
+const F1_UI_DEFAULTS = {
+  theme: 'system',
+  density: 'default',
+  keyHints: 'tooltip',
+  singleKeys: true,
+  holdMs: 250,
+  dock: { open: false, tab: 'ask' },
+  keymap: {},
+  sidebarMinimised: false,
+  swipe: true,
+  swipeDirection: 'doneRight',
+  zen: false,
+  sendSound: true,
+  devDetails: false,
+  lastAccount: 'all',
+  palette: { recents: [] },
+  calendar: {},
+} as const;
+
+test('the ui defaults are F1 UiSettings field for field and map onto the registry prefs', () => {
+  assert.deepEqual(UI_SETTINGS_DEFAULTS, F1_UI_DEFAULTS);
   assert.equal(UI_SETTINGS_DEFAULTS.dock.open, false, 'the dock is closed on first run (decision 9)');
-  assert.equal(UI_SETTINGS_DEFAULTS.dock.width, 360);
-  assert.equal(UI_SETTINGS_DEFAULTS.density, 'comfortable');
-  assert.equal(UI_SETTINGS_DEFAULTS.keyHints, 'tooltip');
   assert.deepEqual(DEFAULT_KEY_PREFS_FROM_UI, { singleKeyShortcuts: true, holdThresholdMs: 250, swapTriageArrows: false, keymap: {} });
+  const swapped = keyPrefsFromUi({ ...UI_SETTINGS_DEFAULTS, swipeDirection: 'doneLeft', keymap: { 'mail.done': [{ chord: 'y' }] } });
+  assert.equal(swapped.swapTriageArrows, true);
+  assert.deepEqual(swapped.keymap, { 'mail.done': [{ chord: 'y' }] });
+});
+
+test('epoch to ISO conversion is local with an offset, never UTC', () => {
+  const ms = new Date(2026, 9, 29, 22, 30, 5).getTime(); // 10:30 PM local: UTC is already the 30th west of Greenwich
+  assert.equal(toIsoDate(ms), '2026-10-29');
+  const iso = toIsoDateTime(ms);
+  assert.match(iso, /^2026-10-29T22:30:05[+-]\d{2}:\d{2}$/);
+  assert.equal(new Date(iso).getTime(), ms, 'the offset round-trips');
+  assert.equal(HARNESS_TIME_ZONE, 'America/Los_Angeles');
+  assert.equal(HARNESS_NOW_LOCAL, '2026-10-29T10:00:00');
+  assert.equal(new Date(`${HARNESS_NOW_LOCAL}-07:00`).getTime(), HARNESS_NOW_MS, 'October 29 2026 is PDT');
 });
 
 test('the drafts example stops at the first stub', async () => {

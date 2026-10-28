@@ -26,9 +26,9 @@ Run the tests with `npx tsx --test apps/desktop/src/renderer/data/index.test.ts`
 
 **Session and status.** `useSession()` returns the API version, capability flags and `hasAccounts`. `useConnection()` says whether the engine is `connecting`, `ready`, `unreachable` or `parked`, with a reason, so the FatalScreen can show "Aplos can't reach its mail engine." with Restart engine (`api.engine.restart`) and Copy diagnostics (`api.diagnostics.copy`), both served by main when the engine cannot answer. `useAccounts()` returns each account with its status (ARCH 6.4) and the `reconnectBy` fact. `useStatus()` picks the single line the status slot shows, most urgent first. `useCounts()` gives the sidebar counts (Home is Do now with Back from Later plus Important updates, Later is what is due now, plus Drafts) with `hidden` set during first sync, and `handledToday` for inbox zero's "You handled 12 emails." `useAgenda({from, to, calendarIds?})` gives the events for Today and inbox zero's "Next:" line. `useSetupStatus()` drives the first-sync screen, and `useSettings()` reads the settings, including the `ui` object.
 
-**Streams.** `useFrames(kind, filter)` subscribes to push frames by kind: `progress` for an Ask run (and remote search once it lands), `connect` for "Waiting for Google in your browser…" in onboarding and the reconnect sheet, `setup` for first sync, and `clock` in test builds. The filter names fields such as `runId` or `requestId` and is compared by value, so an inline object never resubscribes. Frames are batched per animation frame (DESIGN 5 rule 13), and a filter on a live run replays from the run's start.
+**Streams.** `useFrames(kind, filter)` subscribes to push frames by kind, in F1's shapes (`packages/contract/src/wire.ts` on `rv/eng-contract/f1-gaps`): `progress` for an Ask run (and remote search once it lands), `connect` for "Waiting for Google in your browser…" in onboarding and the reconnect sheet, and `clock` (the host frame's clock event) in test builds. First sync has no frame of its own: `useSetupStatus` re-reads `Setup/status` on a `state` frame. The filter names fields such as `runId`, `source` or `connectId` (the same id as `AccountFlow.requestId`) and is compared by value, so an inline object never resubscribes. A reopened sheet that lost its `AccountFlow` finds the flow with `useFrames('connect', {accountId})` and cancels it with `api.account.cancelConnect(requestId)`. Frames are batched per animation frame (DESIGN 5 rule 13), and a filter on a live run replays from the run's start.
 
-**One clock.** `useNow({granularity: 'second' | 'minute'})` is the only way a screen reads now. Today, the now-line, "Synced 2 min ago", "Resuming at 2:14 PM" and "reconnect within 24 hours" all use it, so the harness's frozen 2026-10-29T10:00 and the fixture's `APLOS_NOW` reach every label. The order is: a clock injected with `setClock` (harness, unit tests), then the engine's fixture clock (`Session/get` now plus `clock` frames), then `Date.now()`. It stops ticking while the window is hidden and catches up when it shows (DESIGN 5 rule 15). `getNow()` reads the same clock inside event handlers.
+**One clock.** `useNow({granularity: 'second' | 'minute'})` is the only way a screen reads now. Today, the now-line, "Synced 2 min ago", "Resuming at 2:14 PM" and "reconnect within 24 hours" all use it, so the harness's frozen 2026-10-29T10:00 and the fixture's `APLOS_NOW` reach every label. The order is: a clock injected with `setClock` (harness, unit tests), then the engine's fixture clock (`Session/get` now plus the host `clock` event), then `Date.now()`. It stops ticking while the window is hidden and catches up when it shows (DESIGN 5 rule 15). `getNow()` reads the same clock inside event handlers. Props take ISO strings, so convert with `toIsoDateTime(ms)` (local time with its offset, for `CalendarGrid.now`) and `toIsoDate(ms)` (the local day, for `MiniMonth.today`). Never use `toISOString()`, which is UTC and flips the day at 5 PM in Pacific time. The harness runs with `TZ=America/Los_Angeles` (`HARNESS_TIME_ZONE`), so `HARNESS_NOW_LOCAL` is `HARNESS_NOW_MS` on every machine.
 
 **One undo stack.** `undoStack` holds engine operations and local changes together, so Z undoes whichever came last. Undoable `api` writes such as `thread.act` join it by themselves. Screens `push({label, undo})` for changes the engine never sees as operations, such as a settings write or a remap ("Done is now L · Undo Z"). The shell's `app.undo` calls `undoStack.undoLast()`. `useUndoTop()` gives the toast its entry: an operation is worded from `useOperation(opId)`, and a local change shows its `label`. `api.operation.undoLast` still covers engine operations alone.
 
@@ -40,7 +40,7 @@ Run the tests with `npx tsx --test apps/desktop/src/renderer/data/index.test.ts`
 
 The Engine thread is writing the real contract (F1, `packages/contract`) and its typed client (F2) in parallel. Until they freeze, `contract-shapes.ts` declares stand-ins that mirror ARCH 9, plan 10 (4.1, E3-E6) and plan 30 (4.1, 8.1), using the field names those plans already use. Each one carries the comment `provisional: replaced by import from @aplos/contract at the freeze`.
 
-The swap is mechanical. Delete each declaration and re-export the contract type under the same name. Where F1 chooses a different field name, the data layer adapts it inside `ui-shell`, and screens keep the names in this folder. The F2 client sits under `api`: each `api` method maps onto one contract method, listed in `CONTRACT_METHODS` in `index.ts` and checked complete at compile time.
+The swap is mechanical. Delete each declaration and re-export the contract type under the same name. Where F1 chooses a different field name, the data layer adapts it inside `ui-shell`, and screens keep the names in this folder. `UiSettings`, `SettingsPatch`'s `ui` half, the `progress`, `connect` and clock frames, and `Citation` already use F1's names and values (checked against `rv/eng-contract/f1-gaps` at 4c01233), so those swaps need no adapter. `index.test.ts` compares `UI_SETTINGS_DEFAULTS` with F1's documented defaults. When `@aplos/contract` is in this tree, that test becomes the compile-time check `UI_SETTINGS_DEFAULTS satisfies UiSettings` against the imported type. The F2 client sits under `api`: each `api` method maps onto one contract method, listed in `CONTRACT_METHODS` in `index.ts` and checked complete at compile time.
 
 ## Release rule
 
@@ -78,12 +78,13 @@ The Engine thread and the day-3 freeze reviewer should check F1 against this lis
 | `sync.request` | `Sync/request` | planned | `{accountId?}`; also ends a throttle pause, for "Retry now" |
 | `account.connect` | `Account/connect` | planned | `{provider, loginHint?}` → request id, progress, cancel |
 | `account.reconnect` | `Account/reconnect` | planned | `{accountId}` with `login_hint`, no resync, queued changes kept; ask: a cancel for the sheet's Cancel |
+| `account.cancelConnect` | `Account/cancelConnect` | planned | `{connectId}` → `{cancelled}`; a late answer is then ignored (in F1 f1-gaps) |
 | `account.setAiAllowed` | `Account/set` (verb is eng-contract's call) | ask | `{accountId, aiAllowed}` → receipt (plan 30 8.1 item 6, the per-account AI toggle) |
 | `setup.begin`, `setup.end` | `Setup/begin`, `Setup/end` | planned | `end` is idempotent; the UI calls it on every window close |
 | `setup.retry` | `Setup/retry` (name is eng-contract's call) | ask | `{accountId}`; first sync's "Try again" and "Not connected · Try again" (DESIGN 7.12); idempotent, resumes from the checkpoint |
 | `demo.load`, `demo.reset`, `demo.remove` | `Demo/load`, `Demo/reset`, `Demo/remove` | planned | Idempotent; they touch only demo accounts |
-| `settings.get`, `settings.set` | `Settings/get`, `Settings/set` | planned | `Settings` with the `ui` object (below); `set` merges a partial update |
-| `ask.run` | `Ask/run` + `progress` frames | planned | Frames `step`, `text`, `citation {n, messageId, quote}`, `proposal`; cancel |
+| `settings.get`, `settings.set` | `Settings/get`, `Settings/set` | planned | `Settings` with the `ui` object (below); `set` takes a patch per section: the fields given replace those fields, and object-valued fields (`dock`, `keymap`, `palette`, `calendar`) are replaced whole |
+| `ask.run` | `Ask/run` + `progress` frames | planned | Frames `step {id, text, state, count?}`, `text {delta}`, `citation` (message `{n, messageId, threadId, quote, fromName?, date?, subject?}` or event `{n, eventId, title, start}`), `proposal`, `done`, `error`; cancel. A stopped run is told apart by the stored turn's `stopped` (`AskAnswer.stopped`) |
 | `ai.request` | `Ai/request` | planned | Kinds `draft`, `polish` (returns changes, never applied by themselves), `summary` |
 | `ai.transcribe` | `Blob/put` + `Ai/request {kind: transcribe, blobId}` | ask | Audio as a transferable buffer; returns `{text}` |
 | `ai.setConsent` | `Consent/set` (plan 10 row 6 names `Consent/*`; the verb is eng-contract's call) | planned | `{providerId, model, version}` or null to revoke → receipt; `Settings.ai.consent {providerId, model, version, grantedAt}` and `Settings.ai.consentVersion` carry the record |
@@ -111,8 +112,8 @@ The Engine thread and the day-3 freeze reviewer should check F1 against this lis
 | `useAgenda` | `Event/query` and `state` frames for type Event | planned / ask | `{from, to, calendarIds?}` → minimal `EventRow {id, rev, accountId, calendarId, title, start, end, allDay, location, response}`; plan 30 4.1 lists the spec, plan 10 freezes the `Event/*` names at C1 |
 | `useSetupStatus` | `Setup/status` | planned | The plan 10 4.1 shape, pushed while setup runs; ask: a plain `message` beside `reasonCode` |
 | `useSettings` | `Settings/get` and `state` frames | planned / ask | As above; the `ui` object per the list below |
-| `useFrames` | `progress`, `connect`, `setup` and `clock` push frames | ask | `progress {runId, channel, seq, event}` where `event` is an Ask step, text, citation or proposal, `paused {resumeAt}`, `done` or `error`; `connect {requestId, mode: new, reconnect or grant, state: waiting, connected, failed or cancelled, accountId, reasonCode, message}`; `setup` is `Setup/status` pushed; a live run's frames replay from its start (gap list U8, E27, P1) |
-| `useNow`, `getNow` | `Session/get` now and a `clock` frame | ask | The fixture clock (`APLOS_NOW`, `Fixture/control` clock) reaches the renderer in test builds; production uses `Date.now()` (gap list U9, E3) |
+| `useFrames` | `progress`, `connect` and `host` (clock event) push frames | planned | F1's shapes: `progress {runId, source, kind, step?, delta?, turnId?, citation?, proposal?, problem?}`; `connect {connectId, mode: new, reconnect or grantPermissions, state: waiting, connected, failed or cancelled, accountId?, reasonCode?}`; clock `{type: 'clock', now}`. Ask: a live run's frames replay from its start (gap list U8, E27, P1) |
+| `useNow`, `getNow` | `Session/get` now and the host `clock` event | planned | The fixture clock (`APLOS_NOW`, `Fixture/control` clock) reaches the renderer in test builds; production uses `Date.now()` (gap list U9, E3) |
 | `useUndoTop`, `undoStack` | `Operation/undo`, `OperationView.undoable` | planned | Nothing new: local entries never reach the engine (gap list U7) |
 
 ### Shapes the contract must carry
@@ -125,28 +126,52 @@ The Engine thread and the day-3 freeze reviewer should check F1 against this lis
 - **Draft rows** (ask): `source {messageId, mode}` or null.
 - **Push frames**: `window` and `state` carry `seq`; `parked {reason, since}`.
 - **The `ui` settings object** (plan 30 8.1 item 8; the Engine thread takes this as its input): the fields in the next section. Also `mail.undoSeconds`, `mail.nudgeDays`, `mail.imageAllowSenders`, the per-feature AI provider and model, the provider list with key source (never key characters) and `trainsOnInputs`, the daily token cap, and `ai.consent` with `ai.consentVersion`.
-- **Push frames** (ask): `progress`, `connect` and `clock` as in the hooks table; `setup` is `Setup/status`.
+- **Push frames**: `progress`, `connect` and the host clock event as in the hooks table (F1 f1-gaps has them). Still asked: a rate-limit pause on `progress` ("Waiting for Groq, about 20 s"), which F1's open `kind` enum can take as `paused {resumeAt}`.
 
-### `Settings.ui` fields (ask of `eng-contract`, F1)
+### `Settings.ui` fields (F1, `eng-contract`)
 
-The UI-screens gap list (U11, with S9, A14, A15 and C14) settled these names. `UiSettings` in `contract-shapes.ts` carries them, and `UI_SETTINGS_DEFAULTS` in `index.ts` gives the defaults the stand-in engine should serve. A `Settings/set` patch merges `dock`, `palette`, `calendar` and `seen` field by field. `keymap` replaces the whole map, so a remap can be removed. These names replace the earlier draft's `appearance`, `showAllKeyHints`, `singleKeyShortcuts`, `holdThresholdMs`, `dockOpen` and `dockTab`. Density now uses the props names (`comfortable`, not `default`).
+The UI-screens gap list (U11, with S9, A14, A15 and C14) asked for these, and F1 (`rv/eng-contract/f1-gaps`, `schemas/settings.ts` `UiSettings`) now has them. `UiSettings` in `contract-shapes.ts` copies F1 field for field, and `UI_SETTINGS_DEFAULTS` in `index.ts` gives F1's documented defaults, which the stand-in engine serves. A `Settings/set` patch replaces the fields it names, and object-valued fields (`dock`, `keymap`, `palette`, `calendar`) are replaced whole. To change the dock width, send `{dock: {...current.dock, width}}`.
 
 | Field | Type | Default | Why |
 |---|---|---|---|
 | `theme` | `'light' \| 'dark' \| 'system'` | `'system'` | Settings → General, "Light, dark, or match the system." |
-| `density` | `'roomy' \| 'comfortable' \| 'compact'` | `'comfortable'` | DESIGN 4.4 rows 48 / 40 / 34 |
+| `density` | `'compact' \| 'default' \| 'roomy'` | `'default'` | DESIGN 4.4 rows 34 / 40 / 48; props call the middle one `'comfortable'` |
 | `keyHints` | `'tooltip' \| 'always'` | `'tooltip'` | "Show all key hints" (DESIGN 5 rule 17, decision 8) |
 | `singleKeys` | `boolean` | `true` | WCAG 2.1.4 switch (DESIGN 11.4) |
-| `holdMs` | `number` | `250` | One tap-versus-hold threshold (plan 30 4.2) |
-| `dock` | `{open, tab: 'ask' \| 'today', width}` | `{false, 'ask', 360}` | Closed on first run, then remembered; resizable 300-440 (DESIGN 4.4, 7.7, decision 9) |
-| `keymap` | `Record<commandId, (chord \| {chord, phase})[]>` | `{}` | Remaps, the same shape as `renderer/commands` `Keymap`; `keyPrefsFromUi` reads it |
+| `holdMs` | `number` (100-2000) | `250` | One tap-versus-hold threshold (plan 30 4.2) |
+| `dock` | `{open, tab: 'ask' \| 'today', width?}` | `{open: false, tab: 'ask'}` | Closed on first run, then remembered; `width` only once resized (the shell clamps it to 300-440; F1 accepts 240-1200) (DESIGN 4.4, 7.7, decision 9) |
+| `keymap` | `Record<commandId, {chord, phase?}[]>` | `{}` | Remaps; `renderer/commands` `Keymap` reads it and `keyPrefsFromUi` passes it on. Listing one of the command's default chords keeps that default as it is (→ Done on Home keeps its contexts and swipe swap) |
 | `sidebarMinimised` | `boolean` | `false` | ☰ mode (DESIGN 7.1) |
-| `swipeDirection` | `'rightDone' \| 'rightLater'` | `'rightDone'` | Arrow triage sides (DESIGN 8) |
+| `swipe` | `boolean` | `true` | Two-finger swipe triage |
+| `swipeDirection` | `'doneRight' \| 'doneLeft'` | `'doneRight'` | Arrow and swipe triage sides (DESIGN 8) |
+| `zen` | `boolean` | `false` | Zen mode |
+| `sendSound` | `boolean` | `true` | The send sound |
 | `devDetails` | `boolean` | `false` | The developer toggle for model names and scores (DESIGN 9 rule 4) |
-| `lastAccount` | `accountId \| 'all' \| null` | `null` | The account switcher's last scope |
-| `palette.recents` | `string[]`, at most 20 | `[]` | Recent commands are boosted but never beat an exact match (DESIGN 7.9) |
-| `calendar.weekStart` | `0 \| 1 \| null` | `null` (follow the macOS locale) | Gap list decision 15 |
-| `seen.holdCommandHint` | `boolean` | `false` | The first-launch "Hold ⌘ to see keys." toast, shown once (DESIGN 7.13) |
+| `lastAccount` | `accountId \| 'all'` | `'all'` | The account switcher's last scope |
+| `palette.recents` | `string[]` (F1 keeps 50, the palette shows 20) | `[]` | Recent commands are boosted but never beat an exact match (DESIGN 7.9) |
+| `calendar.weekStart` | `0`-`6`, optional | absent (follow the macOS locale) | Gap list decision 15 |
+
+Still asked of F1: `seen.holdCommandHint` (`boolean`, default `false`) for the first-launch "Hold ⌘ to see keys." toast, shown once (DESIGN 7.13). F1's `z.object` strips unknown fields, so until F1 adds it the shell keeps that one flag in its own local state, and `UiSettings` here leaves it out.
+
+### Changes against the F9 base (pre-freeze waiver)
+
+The gap-list round (U1, U2, U4, U11) renamed or removed some exported names that the F9 base (46e2acd) had. The freeze is day 3, so this is allowed once, and it is recorded here. A grep of every `rv/*` branch on 2026-10-27 found no code outside `renderer/commands` and `renderer/data` using the old names. The only hits were `legacy/App.tsx` and `tokens.css`, which are unrelated. After the freeze, changes are additive only.
+
+| Where | Before | Now | Why |
+|---|---|---|---|
+| data `UiSettings` | `appearance`, `showAllKeyHints: boolean`, `singleKeyShortcuts`, `holdThresholdMs`, `dockOpen`, `dockTab`, `keymap: string[]` | `theme`, `keyHints: 'tooltip' \| 'always'`, `singleKeys`, `holdMs`, `dock {open, tab, width?}`, `keymap: {chord, phase?}[]`, plus `swipe`, `zen`, `sendSound`, `devDetails`, `lastAccount`, `palette`, `calendar` | F1's names (U11) |
+| data `UiSettings.swipeDirection` | `'rightDone' \| 'rightLater'` | `'doneRight' \| 'doneLeft'` | F1's names |
+| data `Density` | `'compact' \| 'default' \| 'roomy'` | unchanged (the gap-list draft's `'comfortable'` was reverted) | F1's names |
+| data `SettingsPatch.ui` | nested objects merged | object-valued fields replaced whole | F1's `Settings/set` |
+| data `Citation` | `{n, messageId, quote}` | `{kind: 'message', n, messageId, threadId, quote, fromName?, date?, subject?} \| {kind: 'event', n, eventId, title, start}` | F1's union; E29 |
+| commands `Condition` | `'firstSync'` | removed; the first-sync screen is the `firstSync` context, which sits on `onboarding` | U4: a screen that pushes `onboarding` alone is the setup steps, where Esc goes back |
+| commands `CommandSpec` | `paletteHidden?: never`; `group: PaletteGroup` | `palette?: false` (movement only); `group: CommandGroup` (no `'Suggested'`) | U2 |
+| commands `ConfirmSpec` | `{destructive, prompt, scope?}` | adds required `title`, `confirmLabel` | U2, DESIGN 6 Confirm |
+| commands `TargetSummary` | `{title, detail?}` | adds required `kind`, `id` | U1 |
+| commands `PaletteEntry`, `Registry` | | adds `suggested`, `page`, `route?`, `detail?`; `runChild`, `settings` | U2, U3 (outputs and the one implementation) |
+| commands `RunResult` | | adds `'page'` and `'navigate'`; `'confirm'` adds `title`, `confirmLabel` | U2, U3 |
+| commands `KeymapIssue.reason` | | adds `'dropsDefault'` (a warning) | Review of this round |
+| commands catalog | `mail.deleteForever` | removed | Gap list decision 7: not in round 1 (needs the `mail.google.com` scope) |
 
 ### Plan 30's asks (section 8.1) and where this surface uses them
 
@@ -174,3 +199,4 @@ These belong to lanes that start later. Each one adds members and renames nothin
 - Settings extras: removing an account, provider Test, retention and resident-mode toggles, and the queue inspector (`ui-settings`).
 - Conversations (Ask history) and Ask proposal confirmation (`ui-ask`).
 - Pop-out windows use the same hooks on their own port; that needs no new member.
+- Calendar data the screens still lack (engine requests, additive): month-range agenda past 200 rows for MiniMonth marks (E50); a `Plan` row and `usePlans` for `PlanOutline` and `CalendarEventData` kind `'plan'` (E53); `useCalendars` with each calendar's colour, name and visibility, and `EventRow.calendar` colour and name, for `CalendarList` and `CalendarEventData.calendar` (P10). Whether plan days are marked in MiniMonth is decided when E53 lands.

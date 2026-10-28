@@ -162,15 +162,11 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
   },
   { id: 'home.clearFromHome', label: 'Clear from Home', keys: [], contexts: ['home'], group: 'Actions', undo: { label: 'Moved to Later' } },
   { id: 'mail.restore', label: 'Restore', keys: [], contexts: ['list'], group: 'Actions', undo: { label: 'Restored' } },
-  {
-    id: 'mail.deleteForever',
-    label: 'Delete forever',
-    icon: 'trash',
-    keys: [],
-    contexts: ['list'],
-    group: 'Actions',
-    confirm: { destructive: true, title: 'Delete forever?', prompt: 'This can’t be undone.', confirmLabel: 'Delete forever' },
-  },
+  // Nested palette pages (DESIGN §7.9): the handler's `children` lists the rows, the
+  // breadcrumb is the label without "…". No keys: D, L and the Later picker stay as they are.
+  { id: 'mail.moveToLabel', label: 'Move to label…', keys: [], contexts: ['list'], group: 'Actions', page: true, keywords: ['label', 'folder', 'tag'] },
+  { id: 'mail.laterUntil', label: 'Later until…', icon: 'clock', keys: [], contexts: ['list'], group: 'Actions', page: true, keywords: ['snooze', 'remind'] },
+  { id: 'mail.setDueDate', label: 'Set due date…', icon: 'calendar', keys: [], contexts: ['list'], group: 'Actions', page: true, keywords: ['due', 'deadline'] },
   {
     id: 'done.moveToHome',
     label: 'Move to Home',
@@ -291,6 +287,8 @@ export const ASK_COMMANDS: readonly CommandSpec[] = [
   { id: 'ask.stop', label: 'Stop the answer', keys: ['Escape'], contexts: ['ask'], group: 'Ask', onlyWhen: 'streaming' },
   { id: 'ask.clear', label: 'Clear the question', keys: ['Escape'], contexts: ['ask'], group: 'Ask', onlyWhen: 'askText' },
   { id: 'ask.close', label: 'Close Ask', keys: ['Escape'], contexts: ['ask'], group: 'Ask' },
+  // After a failed answer: a page of the providers set up in Settings → AI.
+  { id: 'ask.useAnotherProvider', label: 'Use another provider…', keys: [], contexts: ['ask'], group: 'Ask', page: true, keywords: ['model', 'groq', 'retry'] },
 ];
 
 export const CALENDAR_COMMANDS: readonly CommandSpec[] = [

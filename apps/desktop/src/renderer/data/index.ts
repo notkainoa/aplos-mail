@@ -528,36 +528,36 @@ export function useSettings(): Settings | undefined {
   return notImplemented('useSettings');
 }
 
-/** The `ui` object's defaults (gap list U11): what a fresh install and the stand-in engine start with. F1 owns the schema; the stand-in serves these. */
+/** The `ui` object's defaults (gap list U11): F1's documented defaults (schemas/settings.ts), what a fresh install and the stand-in engine start with. */
 export const UI_SETTINGS_DEFAULTS: UiSettings = {
   theme: 'system',
-  density: 'comfortable',
+  density: 'default',
   keyHints: 'tooltip',
   singleKeys: true,
   holdMs: 250,
-  dock: { open: false, tab: 'ask', width: 360 },
+  dock: { open: false, tab: 'ask' },
   keymap: {},
   sidebarMinimised: false,
-  swipeDirection: 'rightDone',
+  swipe: true,
+  swipeDirection: 'doneRight',
+  zen: false,
+  sendSound: true,
   devDetails: false,
-  lastAccount: null,
+  lastAccount: 'all',
   palette: { recents: [] },
-  calendar: { weekStart: null },
-  seen: { holdCommandHint: false },
+  calendar: {},
 };
 
 // ---------------------------------------------------------------------------
-// Push frames: streamed progress, connect flows, setup, the fixture clock
+// Push frames: streamed progress, connect flows, the engine clock
 // ---------------------------------------------------------------------------
 
 /** The fields `useFrames` can filter each frame kind by; other fields are not filterable. */
 export interface FrameFilterFields {
-  /** Ask or search progress: one run, or one channel. */
-  progress: 'runId' | 'channel';
-  /** Connect flows: one flow, one account, or one mode. */
-  connect: 'requestId' | 'accountId' | 'mode';
-  /** Setup status is one stream; no filter. */
-  setup: never;
+  /** Run progress: one run, one source ('ask', 'search'), or one Ask turn. */
+  progress: 'runId' | 'source' | 'turnId';
+  /** Connect flows: one flow (`connectId` = `AccountFlow.requestId`), one account, or one mode. */
+  connect: 'connectId' | 'accountId' | 'mode';
   /** The clock is one stream; no filter. */
   clock: never;
 }
@@ -573,13 +573,13 @@ export interface UseFramesOptions {
 
 /** The matching frames of one kind. */
 export interface FramesView<F> {
-  /** Matching frames in arrival order: since the hook mounted, or since the run started when the filter names a live run (`runId` or `requestId`). */
+  /** Matching frames in arrival order: since the hook mounted, or since the run started when the filter names a live run (`runId` or `connectId`). */
   readonly frames: readonly F[];
   /** The newest matching frame; undefined until one arrives. */
   readonly last: F | undefined;
 }
 
-/** Subscribe to push frames of one kind (Ask `progress`, `connect` for "Waiting for Google in your browser…", `setup`, `clock`), batched per animation frame (DESIGN 5 rule 13). Changing the filter's values restarts the buffer. */
+/** Subscribe to push frames of one kind (Ask `progress`, `connect` for "Waiting for Google in your browser…", `clock`; first sync is `useSetupStatus`), batched per animation frame (DESIGN 5 rule 13). Changing the filter's values restarts the buffer. */
 export function useFrames<K extends FrameKind>(kind: K, filter?: FrameFilter<K>, opts?: UseFramesOptions): FramesView<FrameMap[K]> {
   void kind;
   void filter;
@@ -606,15 +606,40 @@ export interface Clock {
   now(): EpochMs;
 }
 
-/** The harness's frozen wall-clock time, local to its time zone with the en-US locale (ui/README "Times are ISO strings"). */
+/** The harness's frozen wall-clock time, local to `HARNESS_TIME_ZONE` with the en-US locale (ui/README "Times are ISO strings"). */
 export const HARNESS_NOW_LOCAL = '2026-10-29T10:00:00' as const;
+
+/** The harness's time zone: it runs with `TZ=America/Los_Angeles`, so `HARNESS_NOW_LOCAL` is 2026-10-29T10:00:00-07:00 and fixture epochs render the same on every machine. */
+export const HARNESS_TIME_ZONE = 'America/Los_Angeles' as const;
+
+/** The harness's frozen now as epoch ms (`HARNESS_NOW_LOCAL` in `HARNESS_TIME_ZONE`, PDT). */
+export const HARNESS_NOW_MS: EpochMs = Date.UTC(2026, 9, 29, 17, 0, 0);
+
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+/** Epoch ms to the local calendar day, "2026-10-29", for props typed `IsoDate` (MiniMonth `today`). Local, never UTC, so the day does not flip at 5 PM in Pacific time. */
+export function toIsoDate(ms: EpochMs): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** Epoch ms to local wall-clock time with its offset, "2026-10-29T10:00:00-07:00", for props typed `IsoDateTime` (CalendarGrid `now`). Never `toISOString()`, which is UTC. */
+export function toIsoDateTime(ms: EpochMs): string {
+  const d = new Date(ms);
+  const offset = -d.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const abs = Math.abs(offset);
+  const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  return `${toIsoDate(ms)}T${time}${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
+}
 
 /**
  * The one renderer clock, as epoch ms truncated to the granularity. Every label that
  * depends on now (Today, the now-line, "reconnect within 24 hours", "Resuming at 2:14 PM")
  * reads this, never `Date.now()`. Source, first that applies: a clock injected with
- * `setClock`; the engine's fixture clock (`Session/get` now plus `clock` frames, test
- * builds only); `Date.now()`. Ticks pause while the window is hidden and catch up at
+ * `setClock`; the engine's fixture clock (`Session/get` now plus `clock` events, test
+ * builds only); `Date.now()`. Props take ISO strings: convert with `toIsoDateTime` and
+ * `toIsoDate`. Ticks pause while the window is hidden and catch up at
  * once when it shows again (DESIGN 5 rule 15).
  */
 export function useNow(opts: UseNowOptions): EpochMs {
@@ -807,6 +832,8 @@ export interface DataApi {
     connect(req: ConnectRequest): AccountFlow;
     /** Weekly reconnect with `login_hint`; no resync, queued changes kept (roadmap N3). */
     reconnect(accountId: AccountId): AccountFlow;
+    /** Cancel a flow by id when its `AccountFlow` handle is gone (a reopened sheet found it with `useFrames('connect', {accountId})`); resolves false when it already ended. */
+    cancelConnect(requestId: RequestId): Promise<boolean>;
     /** "Use this account's mail for AI" (ARCH 8.3, plan 30 8.1 item 6). */
     setAiAllowed(accountId: AccountId, allowed: boolean): Promise<Receipt>;
   };
@@ -909,6 +936,7 @@ export const CONTRACT_METHODS = {
   'sync.request': { method: 'Sync/request', kind: 'call', source: 'planned', needs: '{accountId?}; also clears a throttle pause for Retry now' },
   'account.connect': { method: 'Account/connect', kind: 'stream', source: 'planned', needs: '{provider, loginHint?} -> requestId; progress frames; cancel' },
   'account.reconnect': { method: 'Account/reconnect', kind: 'stream', source: 'planned', needs: '{accountId} with login_hint, no resync, queued changes kept; cancel' },
+  'account.cancelConnect': { method: 'Account/cancelConnect', kind: 'call', source: 'planned', needs: '{connectId} -> {cancelled}; a late answer is then ignored (F1 f1-gaps)' },
   'account.setAiAllowed': { method: 'Account/set', kind: 'call', source: 'ask', needs: '{accountId, aiAllowed} -> receipt; plan 10 freeze row 6 names per-account aiAllowed, the verb is eng-contract\'s call' },
   'setup.begin': { method: 'Setup/begin', kind: 'call', source: 'planned', needs: '{}' },
   'setup.end': { method: 'Setup/end', kind: 'call', source: 'planned', needs: '{}; idempotent' },
@@ -917,8 +945,8 @@ export const CONTRACT_METHODS = {
   'demo.reset': { method: 'Demo/reset', kind: 'call', source: 'planned', needs: 'idempotent; demo accounts only' },
   'demo.remove': { method: 'Demo/remove', kind: 'call', source: 'planned', needs: 'idempotent; demo accounts only' },
   'settings.get': { method: 'Settings/get', kind: 'call', source: 'planned', needs: 'Settings with the ui object' },
-  'settings.set': { method: 'Settings/set', kind: 'call', source: 'planned', needs: 'partial merge -> receipt' },
-  'ask.run': { method: 'Ask/run', kind: 'stream', source: 'planned', needs: 'progress frames step|text|citation{n, messageId, quote}|proposal; cancel' },
+  'settings.set': { method: 'Settings/set', kind: 'call', source: 'planned', needs: 'per section, the fields given replace those fields; object-valued fields (dock, keymap, palette, calendar) are replaced whole -> receipt' },
+  'ask.run': { method: 'Ask/run', kind: 'stream', source: 'planned', needs: 'progress frames step {id, text, state, count?}|text|citation (message {n, messageId, threadId, quote, fromName?, date?, subject?} or event {n, eventId, title, start})|proposal|done|error; cancel' },
   'ai.request': { method: 'Ai/request', kind: 'call', source: 'planned', needs: 'kinds draft, polish, summary' },
   'ai.transcribe': { method: 'Blob/put + Ai/request', kind: 'call', source: 'ask', needs: 'audio as a transferable buffer, then {kind: transcribe, blobId} -> {text}' },
   'ai.setConsent': { method: 'Consent/set', kind: 'call', source: 'planned', needs: '{providerId, model, version} | null -> receipt; Settings.ai.consent and consentVersion carry the record (plan 10 freeze row 6 Consent/*; the verb is eng-contract\'s call)' },
@@ -944,9 +972,9 @@ export const CONTRACT_HOOK_NEEDS = {
   useCounts: 'Counts singleton {unread, home, laterDue, drafts, handledToday} per scope, in state frames; home includes Back from Later',
   useAgenda: 'Event/query {from, to, calendarIds?} -> EventRow[]; state frames for type Event',
   useSetupStatus: 'Setup/status per plan 10 4.1, pushed while setup runs',
-  useSettings: 'Settings/get and state frames; Settings.ui per UiSettings (theme, density, keyHints, singleKeys, holdMs, dock, keymap, sidebarMinimised, swipeDirection, devDetails, lastAccount, palette.recents, calendar.weekStart, seen)',
-  useFrames: 'push frames progress {runId, channel, seq, event}, connect {requestId, mode, state, accountId, reasonCode, message}, setup (Setup/status) and clock {now, frozen}; a live run replays from its start',
-  useNow: 'Session/get.now and the clock frame when the fixture sets the clock (test builds only, APLOS_NOW); Date.now() otherwise',
+  useSettings: 'Settings/get and state frames; Settings.ui per F1 UiSettings (theme, density, keyHints, singleKeys, holdMs, dock, keymap, sidebarMinimised, swipe, swipeDirection, zen, sendSound, devDetails, lastAccount, palette.recents, calendar.weekStart)',
+  useFrames: 'F1 push frames progress {runId, source, kind, step, delta, turnId, citation, proposal, problem}, connect {connectId, mode, state, accountId?, reasonCode?} and the host frame clock event {type: clock, now}; a live run replays from its start',
+  useNow: 'Session/get.now and the host clock event when the fixture sets the clock (test builds only, APLOS_NOW); Date.now() otherwise',
   useUndoTop: 'none beyond Operation/undo and OperationView.undoable; local entries never reach the engine',
 } as const;
 
@@ -993,6 +1021,7 @@ export const api: DataApi = {
   account: {
     connect: () => notImplemented('api.account.connect'),
     reconnect: () => notImplemented('api.account.reconnect'),
+    cancelConnect: () => notImplemented('api.account.cancelConnect'),
     setAiAllowed: () => notImplemented('api.account.setAiAllowed'),
   },
   setup: {

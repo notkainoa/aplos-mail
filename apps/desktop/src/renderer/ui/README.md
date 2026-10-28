@@ -89,6 +89,11 @@ The UI-screens thread checked every screen it builds against these props (`plans
 - `MiniMonth.marks`: days with events.
 - `SettingRow.paletteId`: the row's palette entry.
 - `PaletteItem.detail` and `PaletteItem.opensPage`: a Settings row's section, and the chevron for nested pages.
+- `CitationData.kind` and `eventId`, `CitationProps.onOpenEvent`, `AskTurnProps.onOpenEventCitation`: calendar-event citations (data `Citation` kind `'event'`, F1). For an event, `from` is the calendar, `date` the start, `subject` the title and `threadId` is `''`.
+- `ReconnectSheetProps.mode`: `'grant'` shows the missing-permission copy instead of the weekly reconnect copy.
+- `PaletteItem.icon` is now optional, because Settings rows, nested page rows and several commands have no icon. The one loosening in this list: a palette that passes `item.icon` straight to `Icon` must check it first (`Palette.tsx` on `rv/ui-foundation/c-compose-ask`, line 222). `commandId` carries the setting entry id or the page row id for those rows.
+- Density stays `'roomy' | 'comfortable' | 'compact'` here. The stored setting uses F1's names (`'compact' | 'default' | 'roomy'`), so screens map `'default'` to `'comfortable'`.
+- For props typed `IsoDateTime` or `IsoDate`, convert the data layer's clock with `toIsoDateTime(ms)` and `toIsoDate(ms)` from `renderer/data`. Both are local with an offset, never `toISOString()` (UTC). The harness runs in `America/Los_Angeles`.
 
 Already present, so not added: `Radio` (`Puck` `role: 'radio'`, `ChoiceRow` `role: 'radio'`, `SwatchPicker`), `Select` (Button + Menu, above), `StepDashes` (`OnboardingFooter.dashes`), plain rows for the drill (`ListRow`, `FocusLetter`), `EventBlock` plans and stacks (`PlanOutline`, `EventBlock` `kind: 'stack'`), `SettingRow` hint (`description`), and `CalendarGrid`, `NowLine`, `CalendarList`, `AskTurn`, `Citation`, `StepLog`, `ProposalCard`, `Palette`, `SearchField`, `OperatorToken`, `ProviderTable` and `KeyRecorder`.
 

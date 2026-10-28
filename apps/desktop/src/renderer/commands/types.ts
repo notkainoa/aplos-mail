@@ -286,8 +286,11 @@ export interface Binding {
 }
 
 /**
- * One remapped key. Only the chord and phase are the owner's to choose; contexts,
- * the text-field rule and the swipe swap always come from the catalog.
+ * One remapped key (stored as F1's `KeyBinding {chord, phase?}`; a bare chord string
+ * is also read). Only the chord and phase are the owner's to choose. A chord and
+ * phase equal to one of the command's default keys keeps that default as it is
+ * (contexts, text-field rule, swipe swap); any other chord gets the command's
+ * contexts, and never follows the swipe direction.
  */
 export type KeymapEntry = string | { readonly chord: string; readonly phase?: Phase };
 
@@ -311,8 +314,12 @@ export const DEFAULT_KEY_PREFS: KeyPrefs = {
   keymap: {},
 };
 
-/** What a command target is (DESIGN §7.9 context line). */
-export type TargetKind = 'thread' | 'event' | 'account' | 'draft' | 'setting' | 'conversation';
+/**
+ * What a command target is (DESIGN §7.9 context line): a plan found in mail and
+ * focused on the calendar is a 'plan' (its id is a plan id, not an event id); a
+ * 'calendar' is one calendar in the sidebar; a 'provider' is a Settings → AI row.
+ */
+export type TargetKind = 'thread' | 'event' | 'plan' | 'calendar' | 'account' | 'draft' | 'setting' | 'provider' | 'conversation';
 
 /**
  * The focused screen's target, set through the shell's `useCommandTarget` and read
@@ -322,7 +329,7 @@ export type TargetKind = 'thread' | 'event' | 'account' | 'draft' | 'setting' | 
 export interface TargetSummary {
   /** What it is. */
   readonly kind: TargetKind;
-  /** Its id: a thread, event, account, draft, setting entry or conversation id. */
+  /** Its id: a thread, event, plan, calendar, account, draft, setting entry, provider or conversation id. */
   readonly id: string;
   /** The label's first part: a sender's display name, an event title, an address. */
   readonly title: string;
@@ -357,6 +364,8 @@ export interface PaletteChild {
   readonly keywords?: readonly string[];
   /** Dim text on the right, e.g. a label's account or a preset's resolved time. */
   readonly detail?: string;
+  /** Ask first with the two-row Confirm (a destructive pick on "Remove account…"); `runChild` returns status 'confirm' until run with `{confirmed: true}`. */
+  readonly confirm?: ConfirmSpec;
   /** Runs the row; ignored when `children` is set. */
   run?(ctx: CommandContext): void | Promise<void>;
   /** A further page under this row; its breadcrumb is this row's label. */

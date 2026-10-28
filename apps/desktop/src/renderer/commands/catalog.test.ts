@@ -192,6 +192,7 @@ test('remapping replaces defaults and reports conflicts instead of accepting the
     [
       ['no.such', 'unknownCommand'],
       ['mail.bookmark', 'conflict'],
+      ['mail.done', 'dropsDefault'],
     ],
   );
   assert.equal(registry.describeKeys('mail.bookmark'), 'B', 'the rejected remap keeps its default');
@@ -201,10 +202,56 @@ test('remapping replaces defaults and reports conflicts instead of accepting the
   assert.equal(registry.resolve({ key: 'e', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }, ctx), null);
 });
 
-test('swapping E and L by remap is accepted', () => {
+test('swapping E and L by remap is accepted; listing the arrows keeps them as they were', () => {
   const registry = wiredRegistry();
-  const issues = registry.configure({ ...DEFAULT_KEY_PREFS, keymap: { 'mail.done': ['l'], 'mail.later': ['e'] } });
-  assert.deepEqual(issues, []);
+  const bare = registry.configure({ ...DEFAULT_KEY_PREFS, keymap: { 'mail.done': ['l'], 'mail.later': ['e'] } });
+  assert.deepEqual(
+    bare.map((i) => [i.commandId, i.reason]),
+    [
+      ['mail.done', 'dropsDefault'],
+      ['mail.later', 'dropsDefault'],
+    ],
+    'a warning only: the remap applied',
+  );
+  assert.equal(registry.describeKeys('mail.done', ['global', 'list']), 'L');
+  const kept = registry.configure({ ...DEFAULT_KEY_PREFS, keymap: { 'mail.done': ['l', 'ArrowRight'], 'mail.later': ['e', 'ArrowLeft'] } });
+  assert.deepEqual(kept, []);
+  const home = context(['global', 'list', 'home']);
+  assert.equal(registry.resolve(keydown('ArrowRight'), home)?.commandId, 'mail.done');
+  assert.equal(registry.resolve(keydown('ArrowRight'), context(['global', 'list'])), null, '→ stays off in plain lists');
+});
+
+test('a remap that drops a scoped or swipe default is reported, and re-adding it keeps its contexts and swap', () => {
+  const dropped = conflicts({ 'mail.done': ['q'] });
+  assert.deepEqual(
+    dropped.map((i) => [i.commandId, i.reason]),
+    [['mail.done', 'dropsDefault']],
+  );
+  assert.match(dropped[0].detail, /→ no longer runs mail\.done in home, oneByOne, reader/);
+  assert.deepEqual(
+    conflicts({ 'mail.later': ['e'], 'mail.done': ['ArrowRight'] }).map((i) => [i.commandId, i.reason]),
+    [['mail.later', 'dropsDefault']],
+    'Later loses ←; Done giving up E everywhere it lives is the remap itself',
+  );
+  const registry = wiredRegistry();
+  registry.configure({ ...DEFAULT_KEY_PREFS, keymap: { 'mail.later': ['e'], 'mail.done': ['ArrowRight'] } });
+  const bindings = registry.keysFor('mail.done');
+  assert.deepEqual(
+    bindings.map((b) => [b.context, b.followsSwipe]),
+    [
+      ['home', true],
+      ['oneByOne', true],
+      ['reader', true],
+    ],
+    'the default → as it was, not → in every list',
+  );
+  assert.equal(registry.resolve(keydown('ArrowRight'), context(['global', 'list'])), null, 'All mail, Trash and results get no →');
+  const swapped = wiredRegistry();
+  swapped.configure({ ...DEFAULT_KEY_PREFS, swapTriageArrows: true, keymap: { 'mail.done': ['e', 'ArrowRight'] } });
+  const home = context(['global', 'list', 'home']);
+  assert.equal(swapped.resolve(keydown('ArrowLeft'), home)?.commandId, 'mail.done', 'the kept arrow still follows the swipe direction');
+  assert.equal(swapped.resolve(keydown('ArrowRight'), home)?.commandId, 'mail.later');
+  assert.deepEqual(conflicts({ 'mail.bookmark': ['n'] }), [], 'a command whose keys all share its contexts drops nothing scoped');
 });
 
 function issuesFor(keymap: Keymap) {
@@ -238,7 +285,7 @@ test('a remapped command keeps the field rule only for chords that do not type',
 
 test('Done and Later stay off in the Done place whatever keys they are remapped to', () => {
   const registry = wiredRegistry();
-  const issues = registry.configure({ ...DEFAULT_KEY_PREFS, keymap: { 'mail.done': ['g'], 'done.moveToHome': ['e'] } });
+  const issues = registry.configure({ ...DEFAULT_KEY_PREFS, keymap: { 'mail.done': ['g', 'ArrowRight'], 'done.moveToHome': ['e'] } });
   assert.deepEqual(issues, []);
   const done = context(['global', 'list', 'done']);
   assert.equal(registry.resolve(keydown('g'), done), null);
@@ -300,6 +347,10 @@ test('the palette context line names its target, whatever kind it is', () => {
   assert.equal(contextLine({ kind: 'account', id: 'a1', title: 'jordan@gmail.com' }), 'For: jordan@gmail.com');
   assert.equal(contextLine({ kind: 'draft', id: 'd1', title: 'Draft to Mina' }), 'For: Draft to Mina');
   assert.equal(contextLine({ kind: 'setting', id: 'setting.mail.undoSeconds', title: 'Undo send', detail: 'Mail' }), 'For: Undo send · Mail');
+  assert.equal(contextLine({ kind: 'plan', id: 'p1', title: 'Dinner with Mina', detail: 'Sat 7:00 PM' }), 'For: Dinner with Mina · Sat 7:00 PM');
+  assert.equal(contextLine({ kind: 'calendar', id: 'c1', title: 'Work' }), 'For: Work');
+  assert.equal(contextLine({ kind: 'provider', id: 'groq', title: 'Groq', detail: 'AI' }), 'For: Groq · AI');
+  assert.equal(contextLine({ kind: 'conversation', id: 'v1', title: 'Flights in November' }), 'For: Flights in November');
   assert.equal(contextLine(null, 3), 'For: 3 selected');
   assert.equal(contextLine(null), '');
 });
@@ -323,8 +374,7 @@ test('a confirm carries title, prompt and confirm label, and promptFor names the
 });
 
 test('nested palette pages: a command with children opens a page, rows can open further pages', async () => {
-  const pageCommand: CommandSpec = { id: 'mail.moveToLabel', label: 'Move to label…', keys: [], contexts: ['list'], group: 'Actions', page: true };
-  const registry = createRegistry([...COMMANDS, pageCommand], { controls: CONTROLS });
+  const registry = createAppRegistry();
   const moved: string[] = [];
   registry.attach('mail.moveToLabel', {
     run: () => undefined,
@@ -347,8 +397,42 @@ test('nested palette pages: a command with children opens a page, rows can open 
   assert.equal(ran.status, 'ran');
   if (ran.status === 'ran') await ran.done;
   assert.deepEqual(moved, ['acme']);
-  const unlabelled: CommandSpec = { ...pageCommand, id: 'mail.page2', label: 'Move to label' };
+  const unlabelled: CommandSpec = { id: 'mail.page2', label: 'Move to label', keys: [], contexts: ['list'], group: 'Actions', page: true };
   assert.throws(() => createRegistry([...COMMANDS, unlabelled], { controls: CONTROLS }), /ends its label/);
+});
+
+test('the catalog declares the gap list’s nested pages, and the page flag always matches the handler', () => {
+  const pages = COMMANDS.filter((c) => c.page).map((c) => c.label);
+  assert.deepEqual(pages, ['Move to label…', 'Later until…', 'Set due date…', 'Use another provider…']);
+  for (const c of COMMANDS) assert.equal(c.label.endsWith('…'), c.page === true, c.id);
+  const registry = createAppRegistry();
+  assert.throws(() => registry.attach('mail.later', { run: () => undefined, children: () => [] }), /only a command with page: true/);
+  assert.throws(() => registry.attach('mail.laterUntil', { run: () => undefined }), /needs children/);
+  assert.throws(() => registry.attach('palette.choose', { run: () => undefined, children: () => [] }), /only a command with page: true/);
+});
+
+test('a nested row with confirm asks first, then runs on ⇧Return', async () => {
+  const registry = createAppRegistry();
+  const removed: string[] = [];
+  const row = {
+    id: 'remove.a1',
+    label: 'jordan@gmail.com',
+    confirm: { destructive: true, title: 'Remove jordan@gmail.com?', prompt: 'Its mail leaves this Mac.', confirmLabel: 'Remove' },
+    run: () => void removed.push('a1'),
+  };
+  const ctx = context(['global', 'list']);
+  assert.deepEqual(registry.runChild(row, ctx), {
+    status: 'confirm',
+    title: 'Remove jordan@gmail.com?',
+    prompt: 'Its mail leaves this Mac.',
+    confirmLabel: 'Remove',
+    destructive: true,
+  });
+  assert.deepEqual(removed, []);
+  const ran = registry.runChild(row, ctx, { confirmed: true });
+  assert.equal(ran.status, 'ran');
+  if (ran.status === 'ran') await ran.done;
+  assert.deepEqual(removed, ['a1']);
 });
 
 const UNDO_SEND: SettingEntry = { id: 'setting.mail.undoSeconds', label: 'Undo send', section: 'mail', keywords: ['delay', 'unsend'], rowAnchor: 'undoSeconds' };
@@ -407,15 +491,15 @@ test('conflicts(keymap) checks a keymap without touching a live registry and nam
     issues.map((i) => [i.commandId, i.reason, i.with]),
     [['mail.bookmark', 'conflict', ['mail.later']]],
   );
-  assert.deepEqual(conflicts({ 'mail.done': ['l'], 'mail.later': ['e'] }), []);
+  assert.deepEqual(conflicts({ 'mail.done': ['l', 'ArrowRight'], 'mail.later': ['e', 'ArrowLeft'] }), []);
 });
 
 test('keyPrefsFromUi maps the stored ui fields onto the registry prefs', () => {
-  assert.deepEqual(keyPrefsFromUi({ singleKeys: false, holdMs: 300, swipeDirection: 'rightLater', keymap: { 'mail.done': ['y'] } }), {
+  assert.deepEqual(keyPrefsFromUi({ singleKeys: false, holdMs: 300, swipeDirection: 'doneLeft', keymap: { 'mail.done': ['y'] } }), {
     singleKeyShortcuts: false,
     holdThresholdMs: 300,
     swapTriageArrows: true,
     keymap: { 'mail.done': ['y'] },
   });
-  assert.equal(keyPrefsFromUi({ singleKeys: true, holdMs: 250, swipeDirection: 'rightDone', keymap: {} }).swapTriageArrows, false);
+  assert.equal(keyPrefsFromUi({ singleKeys: true, holdMs: 250, swipeDirection: 'doneRight', keymap: {} }).swapTriageArrows, false);
 });
