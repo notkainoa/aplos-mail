@@ -40,7 +40,9 @@ export const Attendee = z.object({
 
 /**
  * One event or one occurrence of a series. Masters and overrides are stored; occurrences are expanded on the client side
- * of the engine (ADR-20). An occurrence's id is `<seriesId>@<originalStartUtc>`; treat it as opaque.
+ * of the engine (ADR-20). An occurrence's id is `<seriesId>@<recurrenceId>`, the recurrence id in the one canonical form (UTC `YYYYMMDDTHHMMSSZ`,
+ * `YYYYMMDD` for all-day, no `Z` when floating; `RECURRENCE_ID_FORMAT` in the engine's calendar port, freeze FR-20).
+ * Treat it as opaque.
  */
 export const Event = z.object({
   id: Id,

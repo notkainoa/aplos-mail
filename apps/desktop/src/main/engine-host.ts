@@ -18,6 +18,7 @@ import { claims, emit, applyAppearance } from './windows';
 import { nativeMethods, notify, invokeNative } from './native-methods';
 import { closing } from './lifecycle';
 import { legacyEngineMethods } from '@aplos/contract/allowlists';
+import { dataDirOverride } from './test-mode';
 
 const methods = new Set<string>(legacyEngineMethods);
 type Engine = ReturnType<typeof connectEngine>;
@@ -158,9 +159,7 @@ function restartEngine(init: EngineInit, lastError?: unknown) {
   );
 }
 async function bootEngine() {
-  service = await startEngine(
-    await engineInit(process.env.APLOS_DATA_DIR || app.getPath('userData')),
-  );
+  service = await startEngine(await engineInit(dataDirOverride ?? app.getPath('userData')));
   ipcMain.handle('aplos:invoke', async (event, method: unknown, payload: unknown) => {
     assertCaller(event);
     if (typeof method !== 'string') throw new Error('Invalid application method.');

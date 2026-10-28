@@ -141,3 +141,47 @@ test('a folder write without uidValidity keeps the stored one, so a later real c
     assert.equal(stored(), null);
   });
 });
+
+// Freeze round 3: an explicit null clears the validity and the UIDs with it, so the next real UIDVALIDITY cannot collide.
+test('an explicit null uidValidity clears the UIDs too, so the next real validity resyncs cleanly', () => {
+  withStore(store => {
+    store.commit({
+      opId: 'list',
+      origin: 'sync',
+      writes: [
+        accountWrite,
+        imapFolder(1),
+        msg('a', 'ta', 0, { folders: [{ folder: 'INBOX', uid: 1 }] }),
+        msg('b', 'tb', 1, { folders: [{ folder: 'INBOX', uid: 2 }] }),
+      ],
+    });
+    store.commit({
+      opId: 'clear',
+      origin: 'sync',
+      writes: [{ ...imapFolder(1), uidValidity: null }],
+    });
+    assert.deepEqual(uids(store), [
+      { id: 'a', uid: null },
+      { id: 'b', uid: null },
+    ]);
+    store.commit({
+      opId: 'reset',
+      origin: 'sync',
+      step: 'resync',
+      writes: [
+        imapFolder(9),
+        {
+          kind: 'placements',
+          accountId: ACCOUNT,
+          target: { remoteId: 'b' },
+          add: [{ folder: 'INBOX', uid: 1 }],
+          remove: [],
+        },
+      ],
+    });
+    assert.deepEqual(uids(store), [
+      { id: 'a', uid: null },
+      { id: 'b', uid: 1 },
+    ]);
+  });
+});

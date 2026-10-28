@@ -384,9 +384,11 @@ class CommitRun implements WriteScope {
     // A new UIDVALIDITY voids every UID stored for the folder (FR-31): the resync re-stamps them, and an old UID left in
     // place would collide with a relisted message's new one on `mf_uid` and fail every page of the reset. An absent
     // `uidValidity` keeps the stored value (R2G-1): a LIST without STATUS must not reset the guard to "first validity".
+    // An explicit null clears it, and the UIDs go with it: they belong to a validity nobody knows any more, so they could
+    // not be voided when the next real one arrives (freeze round 3).
     if (
       before?.uidvalidity != null &&
-      w.uidValidity != null &&
+      w.uidValidity !== undefined &&
       before.uidvalidity !== w.uidValidity
     )
       this.q('UPDATE message_folders SET uid = NULL WHERE folder_id = ?').run(before.id);

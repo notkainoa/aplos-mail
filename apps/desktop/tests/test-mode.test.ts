@@ -11,12 +11,18 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { silenceDialogs, testMarker, testMode, type TestModeHost } from '../src/main/test-mode';
+import {
+  silenceDialogs,
+  systemTempRoots,
+  testMarker,
+  testMode,
+  type TestModeHost,
+} from '../src/main/test-mode';
 
 /** A fake machine: home /Users/owner, temp /private/var/tmp; `dirs` exist, `files` exist, realpath is identity. */
 const fake = (dirs: string[], files: string[] = [], compiledIn = true): TestModeHost => ({
   compiledIn,
-  tmpdir: '/private/var/tmp',
+  tempRoots: ['/private/var/tmp'],
   home: '/Users/owner',
   realpath: path => path,
   exists: path => ['/', '/Users/owner', '/private/var/tmp', ...dirs, ...files].includes(path),
@@ -96,17 +102,27 @@ test('test mode refuses a directory holding a non-test mailbox, and accepts its 
   );
 });
 
-test('an explicit APLOS_TEST_ROOT is allowed, but never as the data directory itself', () => {
-  const root = '/Volumes/scratch/aplos',
-    dir = `${root}/run-2`;
-  assert.deepEqual(
-    testMode({ APLOS_TEST: '1', APLOS_DATA_DIR: dir, APLOS_TEST_ROOT: root }, fake([root, dir])),
-    { enabled: true, dataDir: dir },
-  );
-  assert.ok(
-    'error' in
-      testMode({ APLOS_TEST: '1', APLOS_DATA_DIR: root, APLOS_TEST_ROOT: root }, fake([root])),
-  );
+// Round 3 (R2H-1): no caller-chosen root, no TMPDIR, and no case trick gets past the check.
+test('APLOS_TEST_ROOT and TMPDIR cannot widen where test data may live', () => {
+  for (const [dir, extra] of [
+    ['/usr/local', { APLOS_TEST_ROOT: '/' }],
+    ['/Users/owner/Library', { APLOS_TEST_ROOT: '/Users/owner' }],
+    ['/Users/owner/Library', { TMPDIR: '/Users/owner' }],
+  ] as const)
+    assert.ok(
+      'error' in
+        testMode(
+          { APLOS_TEST: '1', APLOS_DATA_DIR: dir, ...extra },
+          fake([dir, '/usr', '/Users/owner/Library']),
+        ),
+      dir,
+    );
+  assert.ok(!systemTempRoots.includes(process.env.TMPDIR ?? '/'), 'roots are fixed, not TMPDIR');
+});
+
+test('a differently cased path to the real data folders is still refused', () => {
+  const preview = '/users/owner/library/application support/aplos mail preview';
+  assert.ok('error' in testMode({ APLOS_TEST: '1', APLOS_DATA_DIR: preview }, fake([preview])));
 });
 
 test('a symlink into the real data folder is resolved and refused (real file system)', () => {
@@ -120,7 +136,7 @@ test('a symlink into the real data folder is resolved and refused (real file sys
     writeFileSync(join(base, 'note'), '');
     const host = {
       compiledIn: true,
-      tmpdir: tmpdir(),
+      tempRoots: [realpathSync(tmpdir())],
       home: fakeHome,
       realpath: (p: string) => realpathSync(p),
       exists: (p: string) => existsSync(p),

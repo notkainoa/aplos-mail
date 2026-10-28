@@ -283,7 +283,8 @@ export function compose(fx: Fixture) {
       if (sub?.state === 'sending')
         fail('conflict', 'This message is sending. Wait a moment, then try again.');
       // Discarding the draft cancels a send that has not started, so the outbox and the Quit warning clear (FR-13).
-      return fx.write({ opId, kind: 'Draft/destroy' }, tx => {
+      // The op records the scope the call needed, so undoing a destroy that cancelled a send needs `send` too (NB-1).
+      return fx.write({ opId, kind: 'Draft/destroy', ...(sub ? { scope: 'send' } : {}) }, tx => {
         if (sub) cancel(tx, sub);
         tx.del('Draft', id);
       }).receipt;

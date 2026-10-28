@@ -862,6 +862,37 @@ export function conformance(
     noCaller,
   );
 
+  /**
+   * NB-1: an operation records the strongest scope its call needed. The owner's Draft/destroy of a held draft cancelled
+   * a send, so undoing it (which would put the send back on schedule) needs `send`, not just `draft` and `triage`.
+   */
+  scenario(
+    'access/undo-of-elevated-destroy-needs-send',
+    async (engine, c) => {
+      const now = (await c.call('Session/get', {})).now;
+      const held = await send(c, now + hour);
+      const destroyed = await c.call('Draft/destroy', { opId: opId(), id: held.draft.id });
+      assert.equal((await submission(c, held.submission.id)).state, 'cancelled');
+      const op = (await c.call('Operation/get', { opIds: [destroyed.opId] })).list[0];
+      if (op?.undoable) {
+        assert.equal(op.scope, 'send', 'a destroy that cancelled a send records send');
+        await rejects(
+          listener(engine, 'read', 'triage', 'draft').session.call('Operation/undo', {
+            opId: destroyed.opId,
+            undoOpId: opId('undo'),
+          }),
+          'forbidden',
+        );
+      }
+      assert.equal(
+        (await submission(c, held.submission.id)).state,
+        'cancelled',
+        'the discarded send stays cancelled',
+      );
+    },
+    noCaller,
+  );
+
   /** FR-5 and FR-6: what only the owner may do in Aplos itself. */
   scenario(
     'access/window-only',

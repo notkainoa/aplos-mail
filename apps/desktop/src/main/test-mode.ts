@@ -1,5 +1,5 @@
 import { existsSync, realpathSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { isAbsolute, join, sep } from 'node:path';
 
 /**
@@ -27,14 +27,20 @@ const compiledIn = typeof __APLOS_TEST_MODE__ === 'undefined' ? true : __APLOS_T
 /** What `testMode` needs from the machine, injectable for tests. */
 export interface TestModeHost {
   compiledIn: boolean;
-  tmpdir: string;
+  /** The system temp roots a test data directory must sit inside (never taken from TMPDIR). */
+  tempRoots: string[];
   home: string;
   realpath(path: string): string;
   exists(path: string): boolean;
 }
+/**
+ * Fixed system temp roots (freeze round 3, R2H-1): macOS per-user temp (`/var/folders`, what `mkdtemp(os.tmpdir())`
+ * gives) and `/tmp`. Never `TMPDIR` or a caller-chosen root, which an environment could point at `/` or home.
+ */
+export const systemTempRoots = ['/private/var/folders', '/private/tmp', '/tmp', '/var/folders'];
 const machine: TestModeHost = {
   compiledIn,
-  tmpdir: tmpdir(),
+  tempRoots: systemTempRoots,
   home: homedir(),
   realpath: path => realpathSync(path),
   exists: path => existsSync(path),
@@ -43,13 +49,16 @@ const machine: TestModeHost = {
 const refuse = (why: string) => ({
   error: `APLOS_TEST=1 refuses this APLOS_DATA_DIR: ${why}. Create a fresh directory under the system temp folder (mkdtemp) for each run.`,
 });
+// macOS disks are case-insensitive by default, so every comparison ignores case.
+const fold = (path: string) => path.toLowerCase();
 const within = (child: string, parent: string) =>
-  child.startsWith(parent.endsWith(sep) ? parent : parent + sep);
+  fold(child).startsWith(fold(parent.endsWith(sep) ? parent : parent + sep));
+const same = (a: string, b: string) => fold(a) === fold(b);
 
 /**
  * Test mode needs a directory made for the run (freeze R2H-1): it must exist, resolve (symlinks followed) to a
- * directory inside the system temp folder or inside an explicit `APLOS_TEST_ROOT`, and never be that folder itself,
- * `/`, the home folder or the real or preview Aplos data folders. A directory that already holds a mailbox key from a
+ * directory inside a fixed system temp root (`systemTempRoots`; never `TMPDIR`), and never be a root itself, `/`, the
+ * home folder or the real or preview Aplos data folders (compared without regard to case). A directory that already holds a mailbox key from a
  * non-test run (no marker) is refused too.
  */
 export function testMode(
@@ -62,15 +71,18 @@ export function testMode(
     return { error: 'APLOS_TEST=1 requires APLOS_DATA_DIR to be set to an absolute path.' };
   if (!host.exists(dataDir)) return refuse('it does not exist');
   const real = host.realpath(dataDir);
-  const roots = [host.realpath(host.tmpdir)];
-  if (env.APLOS_TEST_ROOT && isAbsolute(env.APLOS_TEST_ROOT) && host.exists(env.APLOS_TEST_ROOT))
-    roots.push(host.realpath(env.APLOS_TEST_ROOT));
+  const roots = host.tempRoots;
   const home = host.realpath(host.home);
   const appDirs = [
     join(home, 'Library', 'Application Support', 'Aplos Mail'),
     join(home, 'Library', 'Application Support', 'Aplos Mail Preview'),
   ];
-  if (real === sep || real === home || roots.includes(real) || appDirs.includes(real))
+  if (
+    real === sep ||
+    same(real, home) ||
+    roots.some(root => same(real, root)) ||
+    appDirs.some(app => same(real, app))
+  )
     return refuse('it is a system, home or app folder');
   if (appDirs.some(app => within(real, app)))
     return refuse('it is inside the real Aplos data folder');
@@ -87,6 +99,13 @@ export const isTest = 'enabled' in mode && mode.enabled;
 /** Set when `APLOS_TEST=1` but the environment is unusable; lifecycle prints it and exits 2 before touching data. */
 export const testModeError = 'error' in mode ? mode.error : undefined;
 export const testDataDir = 'dataDir' in mode ? mode.dataDir : undefined;
+/**
+ * Where the engine keeps its data when not the app's own folder: the test directory in test mode, else a development
+ * `APLOS_DATA_DIR`. Release builds ignore `APLOS_DATA_DIR` entirely (freeze round 3, R2H-4).
+ */
+export const dataDirOverride = compiledIn
+  ? (testDataDir ?? (process.env.APLOS_DATA_DIR || undefined))
+  : undefined;
 
 /** Marks the test data directory, so a restart of the same run is accepted (a fresh mailbox key alone is not). */
 export function markTestDir(dataDir: string) {
