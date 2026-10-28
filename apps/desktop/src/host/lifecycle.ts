@@ -201,3 +201,155 @@ export function settingsPaneUrl(pane: unknown): string {
     throw new Error('Choose a settings pane to open.');
   return settingsPanes[pane as SettingsPane];
 }
+
+// ---- host-2: resident mode, the quit warning, process states and the quit drain ----------------------------------
+
+/** macOS Dock presence. With no window Aplos is an `accessory` (no Dock icon, no app menu); test mode always is. */
+export type ActivationPolicy = 'regular' | 'accessory';
+
+export function activationPolicy(openWindows: number, testMode: boolean): ActivationPolicy {
+  if (testMode) return 'accessory';
+  return openWindows > 0 ? 'regular' : 'accessory';
+}
+
+/** An at-login launch stays windowless (resident) whether or not accounts exist; the Dock or menu bar opens a window. */
+export function startsWindowless(launch: { atLogin: boolean }): boolean {
+  return launch.atLogin;
+}
+
+/** The shape of `Outbox/pending` (packages/contract/src/api/core.ts). `nextAt` is epoch milliseconds. */
+export interface PendingWork {
+  readonly scheduledSends: number;
+  readonly reminders: number;
+  readonly uncertain: number;
+  readonly nextAt?: number;
+}
+
+/** The part of today's `AppState` the quit warning reads. */
+export interface PendingSource {
+  readonly drafts: ReadonlyArray<{ pendingSendAt?: string; sendAttemptAt?: string }>;
+  readonly threads: ReadonlyArray<{ reminderAt?: string; reminderFired?: boolean }>;
+}
+
+const timeOf = (iso: string | undefined) => (iso === undefined ? NaN : Date.parse(iso));
+
+/**
+ * What will not happen while Aplos is quit, from today's `latestState`. Later `Outbox/pending` answers the same shape.
+ * A draft with a send attempt that is still unsent is `uncertain` (never counted as scheduled as well).
+ */
+export function pendingWork(state: PendingSource | undefined): PendingWork {
+  let scheduledSends = 0;
+  let reminders = 0;
+  let uncertain = 0;
+  const due: number[] = [];
+  for (const draft of state?.drafts ?? []) {
+    if (draft.sendAttemptAt) uncertain++;
+    else if (draft.pendingSendAt) {
+      scheduledSends++;
+      due.push(timeOf(draft.pendingSendAt));
+    }
+  }
+  for (const thread of state?.threads ?? []) {
+    if (!thread.reminderAt || thread.reminderFired) continue;
+    reminders++;
+    due.push(timeOf(thread.reminderAt));
+  }
+  const times = due.filter(Number.isFinite);
+  const nextAt = times.length ? Math.min(...times) : undefined;
+  return { scheduledSends, reminders, uncertain, ...(nextAt === undefined ? {} : { nextAt }) };
+}
+
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+function joinList(parts: string[]): string {
+  if (parts.length < 2) return parts.join('');
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
+/** The ⌘Q confirm dialog text, or undefined when nothing is pending. The buttons are `Quit` and `Keep running`. */
+export function quitWarning(
+  pending: PendingWork,
+  formatTime: (at: number) => string = at => new Date(at).toLocaleString(),
+): { message: string; detail: string } | undefined {
+  const parts: string[] = [];
+  if (pending.scheduledSends)
+    parts.push(plural(pending.scheduledSends, 'scheduled send', 'scheduled sends'));
+  if (pending.reminders) parts.push(plural(pending.reminders, 'reminder', 'reminders'));
+  const lines: string[] = [];
+  if (pending.nextAt !== undefined && parts.length)
+    lines.push(`The next one is due ${formatTime(pending.nextAt)}.`);
+  if (pending.uncertain)
+    lines.push(
+      `${plural(pending.uncertain, 'send', 'sends')} not yet confirmed as sent will be checked when Aplos opens again.`,
+    );
+  if (!parts.length && !pending.uncertain) return undefined;
+  const message = parts.length
+    ? `${joinList(parts)} will not happen while Aplos is quit`
+    : `${plural(pending.uncertain, 'send is', 'sends are')} not yet confirmed`;
+  return {
+    message,
+    detail: [...lines, 'Close the window instead to keep Aplos running.'].join(' '),
+  };
+}
+
+/** `Quit` is the first button because that is the order the owner asked for; `Keep running` is the default and the cancel. */
+export const quitWarningButtons = ['Quit', 'Keep running'] as const;
+
+export type ProcessStateName = 'starting' | 'ready' | 'parked';
+
+export const PARK_AFTER_EXITS = 3;
+export const PARK_WINDOW_MS = 60_000;
+
+export interface ProcessState {
+  readonly state: ProcessStateName;
+  /** The engine answered. Ignored once parked. */
+  engineReady(): void;
+  /** The engine process stopped. Returns true when this exit parks the app (the third within 60 s). */
+  noteEngineExit(now: number): boolean;
+  /** "Try again" after a park: forget the exits and start over. */
+  tryAgain(): void;
+}
+
+/** `starting` until the engine answers, `ready`, and `parked` after 3 engine exits within 60 s. */
+export function createProcessState(): ProcessState {
+  let state: ProcessStateName = 'starting';
+  const exits: number[] = [];
+  return {
+    get state() {
+      return state;
+    },
+    engineReady() {
+      if (state === 'starting') state = 'ready';
+    },
+    noteEngineExit(now) {
+      if (state === 'parked') return false;
+      exits.push(now);
+      while (exits.length && now - exits[0] > PARK_WINDOW_MS) exits.shift();
+      state = exits.length >= PARK_AFTER_EXITS ? 'parked' : 'starting';
+      return state === 'parked';
+    },
+    tryAgain() {
+      exits.length = 0;
+      state = 'starting';
+    },
+  };
+}
+
+/** The most `finishQuit` waits for the engine to close before quitting anyway. */
+export const QUIT_DRAIN_MS = 3000;
+
+/** Resolves when `work` settles or after `ms`, whichever is first. Never rejects. */
+export function drain(
+  work: Promise<unknown>,
+  ms: number,
+  timers: { set(run: () => void, ms: number): unknown; clear(handle: unknown): void },
+): Promise<void> {
+  return new Promise<void>(resolve => {
+    const handle = timers.set(resolve, ms);
+    const done = () => {
+      timers.clear(handle);
+      resolve();
+    };
+    work.then(done, done);
+  });
+}
