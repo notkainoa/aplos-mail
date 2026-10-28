@@ -28,6 +28,11 @@
     "web:preview": "npm run preview -w @aplos/web",
     "release": "node scripts/release.mjs",
     "release:build": "npm run release:build -w @aplos/desktop",
-    "update-feed": "npm run update-feed -w @aplos/desktop --"
+    "update-feed": "npm run update-feed -w @aplos/desktop --",
+    "format": "prettier --write --no-error-on-unmatched-pattern 'apps/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'apps/*/scripts/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json}' 'apps/desktop/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'packages/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'packages/*/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'scripts/**/*.{ts,mjs,cjs,mts,cts,js}' 'apps/*/*.{ts,mts,mjs,cjs,json}' '*.{json,mjs,cjs}' .prettierrc",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern 'apps/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'apps/*/scripts/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,json}' 'apps/desktop/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'packages/*/src/**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,css,json}' 'packages/*/tests/**/*.{ts,tsx,js,mjs,cjs,mts,cts,json}' 'scripts/**/*.{ts,mjs,cjs,mts,cts,js}' 'apps/*/*.{ts,mts,mjs,cjs,json}' '*.{json,mjs,cjs}' .prettierrc"
+  },
+  "devDependencies": {
+    "prettier": "3.9.10"
   }
 }
