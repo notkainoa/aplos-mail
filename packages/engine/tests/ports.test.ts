@@ -80,7 +80,7 @@ function gmailLike(): ProviderAdapter {
       }
       return {
         upserts, done: true, baselineReached: true, costUnits: upserts.length * 20,
-        nextStates: [{ ...state, pending: undefined, phase: 'done', updatedAt: ctx.clock.now() }, { scope: 'backfill:inbox', generation: state.generation, updatedAt: ctx.clock.now() }],
+        nextStates: [{ ...state, pending: undefined, phase: 'done', updatedAt: ctx.clock.now() }, { scope: 'backfill:inbox', generation: ctx.generation, updatedAt: ctx.clock.now() }],
         scopeCovered: { scope: step.scope, generation: state.generation, bound: { folder: 'INBOX', since: 0 } },
       };
     },
@@ -99,7 +99,7 @@ function gmailLike(): ProviderAdapter {
 
 const gmailBudget: BudgetSpec = {
   id: 'gmail', unit: 'units', windowMs: 60_000, ceiling: 6_000, target: { primary: 4_500, secondary: 1_500 }, floor: 1_000,
-  laneShare: { interactive: 1, opFlush: 1, incremental: 0.9, prefetch: 0.2, backfill: 0.75 }, inFlight: 3, reservedInteractive: 1,
+  laneShare: { interactive: 1, opFlush: 1, incremental: 0.9, prefetch: 0.2, backfill: 0.75, enrichment: 0.1 }, inFlight: 3, reservedInteractive: 1,
   batch: { start: 10, min: 1, max: 25, growBy: 5 },
 };
 
@@ -111,7 +111,7 @@ const factory: ProviderFactory = {
 };
 
 const ctxFor = (clock: Clock, governor: GovernorPort): AdapterContext => ({
-  account, governor: bind(governor, account.id), clock, log, signal: new AbortController().signal, lookup, memory: new Map(),
+  account, governor: bind(governor, account.id), clock, log, signal: new AbortController().signal, lookup, memory: new Map(), generation: 0,
 });
 
 test('a governor that is paused refuses before any I/O', async () => {
