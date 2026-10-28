@@ -1,4 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
+import { Buffer } from 'node:buffer';
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -25,6 +27,13 @@ export interface AccountMeta {
   refreshExpiresAt?: string;
   /** Keychain service that holds the refresh token. */
   keychainService: string;
+  /**
+   * The signed-in account's address, salted and hashed (never the address itself), so the
+   * mutating tiers can check they run on the account that signed in. The salt is random per
+   * sign-in and stored beside the hash.
+   */
+  addressSalt?: string;
+  addressHash?: string;
 }
 
 export type AccountsFile = Record<string, AccountMeta>;
@@ -47,7 +56,15 @@ function validate(label: string, value: unknown): AccountMeta {
   const meta = value as Partial<AccountMeta> | null;
   if (!meta || typeof meta !== 'object') throw new RunnerError(`Account ${label} is malformed`);
   const extra = Object.keys(meta).filter(
-    key => !['provider', 'grantedAt', 'refreshExpiresAt', 'keychainService'].includes(key),
+    key =>
+      ![
+        'provider',
+        'grantedAt',
+        'refreshExpiresAt',
+        'keychainService',
+        'addressSalt',
+        'addressHash',
+      ].includes(key),
   );
   if (extra.length)
     throw new RunnerError(
@@ -63,11 +80,23 @@ function validate(label: string, value: unknown): AccountMeta {
     !/^[A-Za-z0-9._-]{1,80}$/.test(meta.keychainService)
   )
     throw new RunnerError(`Account ${label} has an invalid keychainService`);
+  const hashed = meta.addressSalt !== undefined || meta.addressHash !== undefined;
+  if (
+    hashed &&
+    !(
+      typeof meta.addressSalt === 'string' &&
+      SALT.test(meta.addressSalt) &&
+      typeof meta.addressHash === 'string' &&
+      HASH.test(meta.addressHash)
+    )
+  )
+    throw new RunnerError(`Account ${label} has an invalid address hash`);
   return {
     provider: meta.provider,
     grantedAt: meta.grantedAt,
     ...(meta.refreshExpiresAt ? { refreshExpiresAt: meta.refreshExpiresAt } : {}),
     keychainService: meta.keychainService,
+    ...(hashed ? { addressSalt: meta.addressSalt, addressHash: meta.addressHash } : {}),
   };
 }
 
@@ -101,6 +130,28 @@ export async function saveAccount(dir: string, label: string, meta: AccountMeta)
   const temp = join(dir, `accounts.json.${process.pid}.tmp`);
   await writeFile(temp, `${JSON.stringify(accounts, null, 2)}\n`, { mode: 0o600 });
   await rename(temp, join(dir, 'accounts.json'));
+}
+
+// ---------- the account check ----------
+
+const SALT = /^[A-Za-z0-9_-]{22,64}$/;
+const HASH = /^[0-9a-f]{64}$/;
+
+export function newAddressSalt(): string {
+  return randomBytes(16).toString('base64url');
+}
+
+/** A slow salted hash of an address, compared case-blind like Gmail compares addresses. */
+export function addressHash(address: string, salt: string): string {
+  return scryptSync(address.trim().toLowerCase(), salt, 32).toString('hex');
+}
+
+/** True only when the account has a stored hash and `address` hashes to it. */
+export function addressMatches(account: AccountMeta, address: string): boolean {
+  if (account.addressSalt === undefined || account.addressHash === undefined) return false;
+  const expected = Buffer.from(account.addressHash, 'hex');
+  const actual = Buffer.from(addressHash(address, account.addressSalt), 'hex');
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
 export function defaultKeychainService(label: string): string {

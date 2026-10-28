@@ -201,14 +201,16 @@ test('TOCTOU: S-self, swapping init.body after the call cannot send to another a
 });
 
 test('TOCTOU: tier M, flipping init.method after a draft update cannot become drafts.delete', async () => {
-  const { guard, sent } = pipeline('M');
+  const { guard, sent } = pipeline('M', r => (r.method === 'POST' ? { id: 'd1' } : {}));
+  // Only a draft this run created can be updated.
+  await guard(`${GMAIL}/drafts`, jsonInit({ message: { raw: raw([`To: ${SELF}`]) } }));
   const init: RequestInit = jsonInit({ message: { raw: raw([`To: ${SELF}`]) } }, 'PUT');
   const pending = outcome(guard, `${GMAIL}/drafts/d1`, init);
   init.method = 'DELETE';
   await pending;
   assert.deepEqual(
     sent.map(r => r.method),
-    ['PUT'],
+    ['POST', 'PUT'],
     'drafts.delete (a permanent delete) reached the wire',
   );
 });

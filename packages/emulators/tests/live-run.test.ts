@@ -35,7 +35,7 @@ async function fixture(users = 1): Promise<Fixture> {
   emu.oauth.addClient(CLIENT.clientId, CLIENT.clientSecret);
   emu.seedMailbox({ threads: 120, seed: 5 });
   for (let i = 1; i < users; i++)
-    emu.oauth.addUser({
+    emu.addUser({
       sub: `10000000000000000000${i + 1}`,
       email: `second${i}.user@example.test`,
       name: `Second ${i}`,

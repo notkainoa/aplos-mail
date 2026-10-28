@@ -28,6 +28,7 @@ import {
   type Tier,
 } from './types';
 import {
+  addressMatches,
   keychainReader,
   loadAccounts,
   preflight,
@@ -89,7 +90,7 @@ export function parseArgs(argv: string[]): RunArgs {
   if (!TIERS.includes(tier as Tier)) throw new RunnerError('--tier must be R, M or S-self');
   const provider = value('--provider');
   if (provider !== 'gmail' && provider !== 'gcal')
-    throw new RunnerError('--provider must be gmail');
+    throw new RunnerError('--provider must be gmail or gcal');
   const account = value('--account');
   if (!account) throw new RunnerError('--account is required');
   return {
@@ -147,6 +148,30 @@ async function runOneProbe(
   };
 }
 
+/**
+ * The signed-in account's own address, read with a tier R request. Sends are checked against it,
+ * and it must hash to the one stored at sign-in: the token could belong to another account (the
+ * owner's main one, say), and then nothing is changed.
+ */
+async function checkedSelfAddress(
+  bootstrap: GuardedFetch,
+  account: AccountMeta,
+  label: string,
+): Promise<string> {
+  const profile = await bootstrap(
+    'https://gmail.googleapis.com/gmail/v1/users/me/profile?fields=emailAddress',
+  );
+  const self = ((await profile.json().catch(() => ({}))) as { emailAddress?: unknown })
+    .emailAddress;
+  if (!profile.ok || typeof self !== 'string')
+    throw new RunnerError('Could not read the account profile');
+  if (!addressMatches(account, self))
+    throw new RunnerError(
+      `The signed-in account does not match test account ${label}; nothing was changed`,
+    );
+  return self;
+}
+
 export async function runLive(args: RunArgs, deps: RunDeps): Promise<RunOutcome> {
   if (args.tier !== 'R') {
     if (!MUTATING_ACCOUNTS.includes(args.account))
@@ -155,6 +180,11 @@ export async function runLive(args: RunArgs, deps: RunDeps): Promise<RunOutcome>
       throw new RunnerError(`Tier ${args.tier} changes the mailbox: add --confirm-mutating`);
   }
   const account = await accountFor(args, deps.env);
+  // The mutating tiers compare the signed-in account with the one that signed in (below).
+  if (args.tier !== 'R' && (account.addressHash === undefined || account.addressSalt === undefined))
+    throw new RunnerError(
+      `Test account ${args.account} has no stored account check; sign it in again before tier ${args.tier}`,
+    );
 
   const probes = probesFor(args.provider, args.tier, deps.probes);
   const expectedRunMs = probes.length * EXPECTED_MS_PER_PROBE + EXPECTED_SLACK_MS;
@@ -247,20 +277,13 @@ export async function runLive(args: RunArgs, deps: RunDeps): Promise<RunOutcome>
   const guards = [bootstrap];
   let guard = bootstrap;
   if (args.tier !== 'R') {
-    // Sends are checked against the account's own address, which only the account itself can tell us.
-    const profile = await bootstrap(
-      'https://gmail.googleapis.com/gmail/v1/users/me/profile?fields=emailAddress',
-    );
-    const self = ((await profile.json().catch(() => ({}))) as { emailAddress?: unknown })
-      .emailAddress;
-    if (!profile.ok || typeof self !== 'string')
-      throw new RunnerError('Could not read the account profile');
-    guard = pipeline(args.tier, self);
+    guard = pipeline(args.tier, await checkedSelfAddress(bootstrap, account, args.account));
     guards.push(guard);
   }
 
   const clock = deps.clock ?? (() => performance.now());
-  const ctx: ProbeContext = { fetch: guard, tier: args.tier, now: clock, runId };
+  // Frozen: one probe cannot swap the fetch (or anything else) the probes after it get.
+  const ctx: ProbeContext = Object.freeze({ fetch: guard, tier: args.tier, now: clock, runId });
   const results: EvidenceResult[] = [];
   for (const probe of probes) {
     const sentBefore = mergeRequests(...guards.map(g => g.requests()));

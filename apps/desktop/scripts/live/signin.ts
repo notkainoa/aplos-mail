@@ -4,13 +4,15 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { printableMessage, RunnerError } from './errors';
-import { clientFromEnv, type OAuthClient } from './auth';
+import { clientFromEnv, withBearer, type OAuthClient } from './auth';
 import { createGuardedFetch } from './guard';
 import {
   defaultKeychainService,
   keychainReader,
   keychainWriter,
+  addressHash,
   LABEL,
+  newAddressSalt,
   reconnectBy,
   saveAccount,
   vaultDir,
@@ -31,6 +33,9 @@ export const LIVE_SCOPES = [
 ];
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const PROFILE_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/profile?fields=emailAddress';
+/** The login hint is an address, so it is read from the environment, never from argv. */
+const LOGIN_HINT_ENV = 'APLOS_LIVE_LOGIN_HINT';
 
 export interface SignInDeps {
   /** Reaches the token endpoint; the sign-in wraps it in a tier R guard. */
@@ -121,7 +126,12 @@ export async function signIn(args: SignInArgs, deps: SignInDeps): Promise<SignIn
     const code = returned.searchParams.get('code');
     if (!code) throw new RunnerError('Sign-in answer had no code');
 
-    const send = createGuardedFetch(deps.fetch, { tier: 'R' });
+    // Tier R plus the one code exchange; the bearer layer signs the profile read with the new token.
+    let accessToken = '';
+    const send = createGuardedFetch(
+      withBearer(deps.fetch, () => accessToken),
+      { tier: 'R', allowCodeExchange: true },
+    );
     const response = await send(TOKEN_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -135,6 +145,7 @@ export async function signIn(args: SignInArgs, deps: SignInDeps): Promise<SignIn
       }),
     });
     const body = (await response.json().catch(() => ({}))) as {
+      access_token?: unknown;
       refresh_token?: unknown;
       refresh_token_expires_in?: unknown;
       scope?: unknown;
@@ -154,6 +165,17 @@ export async function signIn(args: SignInArgs, deps: SignInDeps): Promise<SignIn
         'Gmail access was not granted; tick every permission on the consent screen',
       );
 
+    // The account's own address, kept only as a salted hash for the runner's account check.
+    if (typeof body.access_token !== 'string')
+      throw new RunnerError('Google returned no access token');
+    accessToken = body.access_token;
+    const profile = await send(PROFILE_URL);
+    const address = ((await profile.json().catch(() => ({}))) as { emailAddress?: unknown })
+      .emailAddress;
+    if (!profile.ok || typeof address !== 'string')
+      throw new RunnerError('Could not read the account profile');
+    const addressSalt = newAddressSalt();
+
     const service = defaultKeychainService(args.label);
     await deps.writeSecret(service, body.refresh_token);
     // Read it back so a keychain that silently kept the old value is noticed now, not at the next run.
@@ -170,6 +192,8 @@ export async function signIn(args: SignInArgs, deps: SignInDeps): Promise<SignIn
         ? { refreshExpiresAt: new Date(grantedAtMs + expiresIn * 1000).toISOString() }
         : {}),
       keychainService: service,
+      addressSalt,
+      addressHash: addressHash(address, addressSalt),
     };
     await saveAccount(deps.vaultDir, args.label, meta);
     return { grantedAt: meta.grantedAt, reconnectBy: new Date(reconnectBy(meta)).toISOString() };
@@ -186,17 +210,39 @@ function flag(argv: string[], name: string): string | undefined {
   return at >= 0 ? argv[at + 1] : undefined;
 }
 
-async function main(argv: string[]): Promise<void> {
-  const label = flag(argv, '--label');
-  if (flag(argv, '--provider') !== 'gmail' || !label) {
-    console.error(
-      'Usage: tsx apps/desktop/scripts/live/signin.ts --provider gmail --label agent [--login-hint <address>]',
+/**
+ * The command line's label and hint. The hint is an address, and argv is visible to every process
+ * on the Mac (and lands in shell history), so it comes from APLOS_LIVE_LOGIN_HINT instead.
+ */
+export function signInArgsFrom(
+  argv: string[],
+  env: Record<string, string | undefined>,
+): { label: string; loginHint?: string } {
+  if (argv.some(arg => arg === '--login-hint' || arg.startsWith('--login-hint=')))
+    throw new RunnerError(
+      `--login-hint is not accepted on the command line (other processes can read it); set ${LOGIN_HINT_ENV} instead`,
     );
+  const label = flag(argv, '--label');
+  if (flag(argv, '--provider') !== 'gmail' || !label)
+    throw new RunnerError(
+      `Usage: ${LOGIN_HINT_ENV}=<address, optional> tsx apps/desktop/scripts/live/signin.ts --provider gmail --label agent`,
+    );
+  const loginHint = env[LOGIN_HINT_ENV]?.trim();
+  return { label, ...(loginHint ? { loginHint } : {}) };
+}
+
+async function main(argv: string[]): Promise<void> {
+  let parsed: { label: string; loginHint?: string };
+  try {
+    parsed = signInArgsFrom(argv, process.env);
+  } catch (error) {
+    console.error(printableMessage(error, 'Sign-in failed'));
     process.exitCode = 2;
     return;
   }
+  const { label } = parsed;
   const outcome = await signIn(
-    { label, client: clientFromEnv(process.env), loginHint: flag(argv, '--login-hint') },
+    { ...parsed, client: clientFromEnv(process.env) },
     {
       fetch,
       // `open` shows the page in the owner's browser. This only runs when the owner types the command.

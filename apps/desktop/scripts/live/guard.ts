@@ -2,6 +2,8 @@ import { Buffer } from 'node:buffer';
 import { types } from 'node:util';
 import {
   ALLOWED_HEADERS,
+  draftShapeOk,
+  filterProblem,
   GuardRefusal,
   hasKeyDeep,
   hasMethodOverride,
@@ -11,11 +13,13 @@ import {
   isRecord,
   JSON_TYPE,
   jsonObject,
+  labelModifyProblem,
   lastSegment,
   PATCH_FIELDS,
+  rawLastSegment,
   RESERVED_QUERY_KEYS,
   stringId,
-  SYSTEM_LABELS_REFUSED,
+  tokenBodyProblem,
   VERBS,
   type GuardReason,
 } from './guard-helpers';
@@ -51,6 +55,11 @@ export interface GuardOptions {
    * property; no attendees, no RSVPs, no notifications, no PUT. Absent means no calendar writes.
    */
   calendarRunId?: string;
+  /**
+   * The sign-in's own guard only: also lets the one authorization-code exchange through the token
+   * endpoint (exact keys, loopback redirect). Every other guard sends nothing there but a refresh.
+   */
+  allowCodeExchange?: boolean;
 }
 
 export interface GuardedFetch {
@@ -59,7 +68,9 @@ export interface GuardedFetch {
   requests(): RequestCount[];
   /** How often each refusal reason fired. */
   refusals(): Partial<Record<GuardReason, number>>;
-  createdLabelIds: ReadonlySet<string>;
+  /** Copies, made fresh on every read: changing one changes nothing in the guard. */
+  readonly createdLabelIds: ReadonlySet<string>;
+  readonly createdFilterIds: ReadonlySet<string>;
 }
 
 // ---------- the rule table ----------
@@ -78,6 +89,7 @@ const ALLOWED_ORIGINS: ReadonlySet<string> = new Set([
 type Kind = 'read' | 'write' | 'send' | 'token' | 'forbidden';
 /** Extra checks and bookkeeping a row needs. */
 type Effect =
+  | 'token'
   | 'label-create'
   | 'label-delete'
   | 'filter-create'
@@ -97,6 +109,8 @@ interface Rule {
   kind: Kind;
   reason?: GuardReason;
   effect?: Effect;
+  /** The only query keys a non-GET request of this row may carry (none when absent). */
+  query?: readonly string[];
 }
 
 // An id segment: letters, digits and a few safe marks. No ':' (custom verbs) and no encoded slashes.
@@ -143,10 +157,20 @@ const calendar = (
   ...extra,
 });
 
+/** Calendar writes: the notification switches (checked below) and the Meet-room version, nothing else. */
+const CALENDAR_WRITE_QUERY = ['sendUpdates', 'sendNotifications', 'conferenceDataVersion'];
+
 /** First match wins, so specific rows come before the catch-alls at the end of each group. */
 const RULES: readonly Rule[] = [
   // OAuth. The token endpoint is the one POST tier R may make (access-token refresh).
-  { origin: OAUTH_HOST, methods: ['POST'], path: /^\/token$/, api: 'oauth.token', kind: 'token' },
+  {
+    origin: OAUTH_HOST,
+    methods: ['POST'],
+    path: /^\/token$/,
+    api: 'oauth.token',
+    kind: 'token',
+    effect: 'token',
+  },
   {
     origin: OPENID_HOST,
     methods: ['GET'],
@@ -232,6 +256,7 @@ const RULES: readonly Rule[] = [
     api: 'gmail.users.messages.send',
     kind: 'send',
     effect: 'send-media',
+    query: ['uploadType'],
   },
   {
     origin: GMAIL_HOST,
@@ -240,6 +265,7 @@ const RULES: readonly Rule[] = [
     api: 'gmail.users.drafts.send',
     kind: 'send',
     effect: 'send-media',
+    query: ['uploadType'],
   },
   // A batch could hide any of the above in a part, so batches are not supported at all yet.
   {
@@ -280,12 +306,15 @@ const RULES: readonly Rule[] = [
   }),
   calendar(['POST'], 'calendars/:cid/events', 'calendar.events.insert', 'write', {
     effect: 'calendar-write',
+    query: CALENDAR_WRITE_QUERY,
   }),
   calendar(['PATCH'], 'calendars/:cid/events/:id', 'calendar.events.patch', 'write', {
     effect: 'calendar-write',
+    query: CALENDAR_WRITE_QUERY,
   }),
   calendar(['DELETE'], 'calendars/:cid/events/:id', 'calendar.events.delete', 'write', {
     effect: 'calendar-write',
+    query: ['sendUpdates', 'sendNotifications'],
   }),
 ];
 
@@ -449,6 +478,7 @@ interface Pending {
 
 /** Rows whose request body must be read and checked before anything is sent. */
 const BODY_CHECKED: ReadonlySet<Effect> = new Set([
+  'token',
   'send-json',
   'send-media',
   'draft-send',
@@ -465,11 +495,16 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
     throw new Error('selfAddress is not a plain address');
   if (tier === 'S-self' && self === undefined)
     throw new Error('Tier S-self needs the account address');
-  const runFilterIds = options.allowRunFilterIds ?? new Set<string>();
+  // Copied once: neither the caller nor a probe can change what the guard checks against later.
+  const runFilterIds = new Set(options.allowRunFilterIds ?? []);
+  const calendarRunId = options.calendarRunId;
+  const allowCodeExchange = options.allowCodeExchange === true;
   const createdLabelIds = new Set<string>();
   // Calendar events this run inserted. Only these may be changed or deleted.
   const runEventIds = new Set<string>();
-  // Drafts this guard saw created or updated holding only the account's own address.
+  // Draft ids exactly as Gmail returned them to this guard's creates. Only these may be updated or sent.
+  const runDrafts = new Set<string>();
+  // Run drafts whose last checked write held only the account's own address.
   const selfDrafts = new Set<string>();
   // Requests on one draft run one at a time, so the order the guard checks them in is the order
   // the server applies them in (otherwise the last answer to arrive could re-mark a draft that the
@@ -521,7 +556,7 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
       refuse('calendar-field', api);
     if (insert) {
       const tag = body.extendedProperties;
-      const run = options.calendarRunId;
+      const run = calendarRunId;
       const ok =
         isRecord(tag) &&
         Object.keys(tag).length === 1 &&
@@ -559,7 +594,13 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
 
   /** Sends: the whole body is one message whose every recipient is the account itself. */
   const checkSendJson = (bytes: Buffer, api: string): Pending => {
-    requireSelfOnly(verdictOfRaw(jsonObject(bytes, api).raw), api);
+    const body = jsonObject(bytes, api);
+    // Exact keys only, like every other checked body: a send carries the message and its thread.
+    if (Object.keys(body).some(key => key !== 'raw' && key !== 'threadId'))
+      refuse('body-unparseable', api);
+    if (body.threadId !== undefined && typeof body.threadId !== 'string')
+      refuse('body-unparseable', api);
+    requireSelfOnly(verdictOfRaw(body.raw), api);
     return {};
   };
 
@@ -571,48 +612,48 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
 
   const checkDraftSend = (bytes: Buffer, api: string): Pending => {
     const body = jsonObject(bytes, api);
+    if (!draftShapeOk(body)) refuse('body-unparseable', api);
     const draftId = typeof body.id === 'string' ? body.id : undefined;
-    // The guard cannot see a stored draft's recipients, so only drafts it verified itself may be sent.
-    if (draftId === undefined || !selfDrafts.has(draftId)) refuse('draft-not-verified-self', api);
+    // The guard cannot see a stored draft's recipients, so only drafts it verified itself may be
+    // sent, named exactly as Gmail returned them (another spelling could be read as the same id).
+    if (draftId === undefined || !runDrafts.has(draftId) || !selfDrafts.has(draftId))
+      refuse('draft-not-verified-self', api);
     if (body.message !== undefined)
       requireSelfOnly(verdictOfRaw((body.message as { raw?: unknown } | null)?.raw), api);
     return { draftId };
   };
 
   const checkDraftWrite = (rule: Rule, url: URL, bytes: Buffer, api: string): Pending => {
-    const message = jsonObject(bytes, api).message as { raw?: unknown } | undefined;
-    if (!message || typeof message !== 'object') refuse('body-unparseable', api);
-    // A draft may hold other recipients; it just stops being sendable by this guard.
+    const body = jsonObject(bytes, api);
+    const message = body.message as { raw?: unknown } | undefined;
+    if (!message || typeof message !== 'object' || !draftShapeOk(body))
+      refuse('body-unparseable', api);
     const draftId = rule.methods[0] === 'PUT' ? lastSegment(url) : undefined;
+    // The body may not name a draft other than the one in the path (and a create names none).
+    if (body.id !== undefined && body.id !== draftId) refuse('body-unparseable', api);
+    // Any update makes the draft unsendable until this update's own body is found self-only; a
+    // draft may hold other recipients, it just stops being sendable by this guard.
     if (draftId !== undefined) selfDrafts.delete(draftId);
     return { selfOnly: verdictOfRaw(message?.raw) === 'self-only', draftId };
   };
 
-  /** A filter can forward every matching message to another address, which is a send. */
+  /** Filters: criteria plus label actions only (no forward, no Trash or Spam, no other action). */
   const checkFilterCreate = (bytes: Buffer, api: string): Pending => {
-    if (hasKeyDeep(jsonObject(bytes, api), new Set(['forward']))) refuse('filter-forward', api);
+    const problem = filterProblem(jsonObject(bytes, api));
+    if (problem) refuse(problem, api);
     return {};
   };
 
+  /** Label changes: the exact keys of the method and never into Spam or Trash. */
   const checkLabelModify = (bytes: Buffer, api: string): Pending => {
-    // Spam reports go back to Google and Trash is purged after 30 days: neither is reversible.
-    const added = jsonObject(bytes, api).addLabelIds;
-    if (
-      added !== undefined &&
-      (!Array.isArray(added) || added.some(label => typeof label !== 'string'))
-    )
-      refuse('body-unparseable', api);
-    if (
-      (added as string[] | undefined)?.some(label => SYSTEM_LABELS_REFUSED.has(label.toUpperCase()))
-    )
-      refuse('label-spam-trash', api);
+    const problem = labelModifyProblem(jsonObject(bytes, api), api);
+    if (problem) refuse(problem, api);
     return {};
   };
 
   const checkCalendarWrite = (url: URL, bytes: Buffer, api: string): Pending => {
     // Calendar writes exist only in tier M with a run id (orchestrator decision 2026-10-28).
-    if (tier !== 'M' || options.calendarRunId === undefined)
-      refuse('calendar-write-not-allowed', api);
+    if (tier !== 'M' || calendarRunId === undefined) refuse('calendar-write-not-allowed', api);
     // Guests are notified by default, so "none" must be written out, not left to a default.
     // sendNotifications is the older spelling of the same switch: only an explicit "false" is safe.
     const notifications = url.searchParams.get('sendNotifications');
@@ -643,6 +684,12 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
     // The server picks its parser from the content type, so a body checked as JSON must be
     // labelled as JSON (and a media upload as a plain RFC 822 message), nothing else.
     const type = headers.get('content-type')?.trim().toLowerCase();
+    // The token endpoint reads a form, so its body has its own check.
+    if (rule.effect === 'token') {
+      const problem = tokenBodyProblem(bytes, type, allowCodeExchange);
+      if (problem) refuse(problem, api);
+      return {};
+    }
     if (rule.effect === 'send-media' && url.searchParams.get('uploadType') !== 'media')
       refuse('send-upload-type', api);
     // (An empty body has no parser to confuse; rows that need a body refuse it below.)
@@ -707,12 +754,18 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
         runFilterIds.delete(lastSegment(url));
         break;
       case 'draft-write': {
+        // A create's id is kept exactly as Gmail spelled it; an update keeps its (checked) path id.
         const id = pending.draftId ?? (await createdId());
-        if (pending.selfOnly && id !== undefined) selfDrafts.add(id);
+        if (id === undefined) break;
+        if (pending.draftId === undefined) runDrafts.add(id);
+        if (pending.selfOnly) selfDrafts.add(id);
         break;
       }
       case 'draft-send':
-        if (pending.draftId !== undefined) selfDrafts.delete(pending.draftId);
+        if (pending.draftId !== undefined) {
+          selfDrafts.delete(pending.draftId);
+          runDrafts.delete(pending.draftId);
+        }
         break;
       case 'calendar-write': {
         if (rule.api === 'calendar.events.insert') {
@@ -728,7 +781,7 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
             isRecord(created.extendedProperties.private)
               ? created.extendedProperties.private.aplosLiveRun
               : undefined;
-          if (id !== undefined && tag === options.calendarRunId) runEventIds.add(id);
+          if (id !== undefined && tag === calendarRunId) runEventIds.add(id);
         } else if (rule.api === 'calendar.events.delete') {
           runEventIds.delete(lastSegment(url));
         }
@@ -786,8 +839,25 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
     return rule;
   };
 
-  /** Deletes and calendar writes are limited to things this run made. */
+  /**
+   * Writes take only the query keys their row lists (reads keep their free-form query). A key with
+   * '_' is refused outright: Google reads snake_case spellings as the camelCase parameter.
+   */
+  const checkQuery = (rule: Rule, url: URL, method: string): void => {
+    if (method === 'GET') return;
+    const allowed = rule.query ?? [];
+    if ([...url.searchParams.keys()].some(key => key.includes('_') || !allowed.includes(key)))
+      refuse('query-not-allowed', rule.api);
+  };
+
+  /** Deletes, draft updates and calendar writes are limited to things this run made. */
   const checkRunScoped = (rule: Rule, url: URL): void => {
+    // A draft is named exactly as Gmail returned it: no encoded spelling, no other form of the id.
+    if (rule.effect === 'draft-write' && rule.methods[0] === 'PUT') {
+      const raw = rawLastSegment(url);
+      if (raw !== lastSegment(url) || !runDrafts.has(raw))
+        refuse('draft-not-created-by-run', rule.api);
+    }
     if (rule.effect === 'label-delete' && !createdLabelIds.has(lastSegment(url)))
       refuse('label-not-created-by-run', rule.api);
     if (rule.effect === 'filter-delete' && !runFilterIds.has(lastSegment(url)))
@@ -817,6 +887,7 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
 
     checkRequestShape(url, method, headers);
     const rule = ruleFor(url, method);
+    checkQuery(rule, url, method);
     checkRunScoped(rule, url);
 
     const body = await resolveBody(request.body).catch(() => refuse('body-unparseable', rule.api));
@@ -834,7 +905,7 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
     return withDraftLock(lockKey, async () => {
       const pending = bodyChecked ? checkBody(rule, url, headers, body.bytes) : {};
       // Deletes carry no body, so the tier and run-id gate is repeated here for them.
-      if (rule.effect === 'calendar-write' && (tier !== 'M' || options.calendarRunId === undefined))
+      if (rule.effect === 'calendar-write' && (tier !== 'M' || calendarRunId === undefined))
         refuse('calendar-write-not-allowed', rule.api);
 
       const key = `${rule.api}\0${method}`;
@@ -860,11 +931,16 @@ export function createGuardedFetch(inner: typeof fetch, options: GuardOptions): 
     });
   };
 
-  return Object.assign(guarded, {
-    requests: (): RequestCount[] => [...sent.values()].map(entry => ({ ...entry })),
-    refusals: () => ({ ...refused }),
-    createdLabelIds,
-  });
+  // Frozen, and every view a copy: a probe holding this function cannot replace the request log the
+  // runner reads, nor add ids to the sets that decide which deletes may pass.
+  return Object.freeze(
+    Object.defineProperties(guarded, {
+      requests: { value: (): RequestCount[] => [...sent.values()].map(entry => ({ ...entry })) },
+      refusals: { value: () => ({ ...refused }) },
+      createdLabelIds: { get: () => new Set(createdLabelIds) },
+      createdFilterIds: { get: () => new Set(runFilterIds) },
+    }),
+  ) as GuardedFetch;
 }
 
 /** The draft a drafts.send body names, or undefined; the real check happens later, under the lock. */

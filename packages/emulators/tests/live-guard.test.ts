@@ -79,7 +79,11 @@ test('tier R: every write is refused except the OAuth token refresh', async () =
   await guard(`${GMAIL}/threads?labelIds=INBOX`);
   await guard('https://oauth2.googleapis.com/token', {
     method: 'POST',
-    body: new URLSearchParams({ grant_type: 'refresh_token' }),
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: 'rt-fake',
+      client_id: 'client-fake',
+    }),
   });
   assert.equal(calls.length, 3);
   assert.deepEqual(readOnlyViolations(guard.requests()), []);
@@ -208,13 +212,13 @@ test("filters: creation is allowed without forwarding, and only this run's filte
     `${GMAIL}/settings/filters`,
     json({ criteria: { from: 'a' }, action: { addLabelIds: ['STARRED'] } }),
   );
-  assert.deepEqual([...run], ['filter-1']);
+  assert.deepEqual([...guard.createdFilterIds], ['filter-1']);
   await assert.rejects(
     guard(`${GMAIL}/settings/filters/someone-elses`, { method: 'DELETE' }),
     (e: unknown) => e instanceof GuardRefusal && e.reason === 'filter-not-created-by-run',
   );
   await guard(`${GMAIL}/settings/filters/filter-1`, { method: 'DELETE' });
-  assert.equal(run.size, 0);
+  assert.equal(guard.createdFilterIds.size, 0);
   assert.equal(net.calls.length, 2);
 
   // A caller can also hand the guard a set of ids it created in an earlier step.

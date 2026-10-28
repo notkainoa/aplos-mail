@@ -239,10 +239,22 @@ test('json: duplicate keys at any depth, including escaped spellings, are refuse
       guard(`${GMAIL}/drafts`, {
         method: 'POST',
         headers: json,
+        body: JSON.stringify({ message: { raw: raw(SELF), threadId: '"raw":1,"raw":2' } }),
+      }),
+    ),
+    'sent',
+  );
+  const calendar = guardOn('M');
+  assert.equal(
+    await reason(
+      calendar.guard(`${CAL}/calendars/primary/events?sendUpdates=none`, {
+        method: 'POST',
+        headers: json,
         body: JSON.stringify({
-          message: { raw: raw(SELF) },
-          note: '"raw":1,"raw":2',
-          list: [{ a: 1 }, { a: 2 }],
+          summary: 'x',
+          start: { dateTime: '2026-10-28T10:00:00Z' },
+          end: { dateTime: '2026-10-28T11:00:00Z' },
+          extendedProperties: { private: { aplosLiveRun: 'run-test' } },
         }),
       }),
     ),
@@ -303,7 +315,7 @@ test('drafts: a send queues behind an update in flight and then sees the draft a
   assert.deepEqual(seen, ['POST', 'PUT']);
 });
 
-test('drafts: an encoded spelling of the id is the same draft', async () => {
+test('drafts: an encoded spelling of the id is refused, so the draft it names is unchanged', async () => {
   const { guard, seen } = guardOn('S-self', request =>
     request.method === 'POST' && request.url.endsWith('/drafts') ? { id: 'd+1' } : {},
   );
@@ -312,22 +324,27 @@ test('drafts: an encoded spelling of the id is the same draft', async () => {
     headers: json,
     body: JSON.stringify({ message: { raw: raw(SELF) } }),
   });
-  await guard(`${GMAIL}/drafts/d%2B1`, {
-    method: 'PUT',
-    headers: json,
-    body: JSON.stringify({ message: { raw: raw(OTHER) } }),
-  });
   assert.equal(
     await reason(
-      guard(`${GMAIL}/drafts/send`, {
-        method: 'POST',
+      guard(`${GMAIL}/drafts/d%2B1`, {
+        method: 'PUT',
         headers: json,
-        body: JSON.stringify({ id: 'd+1' }),
+        body: JSON.stringify({ message: { raw: raw(OTHER) } }),
       }),
     ),
-    'draft-not-verified-self',
+    'draft-not-created-by-run',
   );
-  assert.equal(seen.length, 2);
+  assert.equal(seen.length, 1);
+  // The stored draft is still the self-only one the guard checked, so it may be sent.
+  await guard(`${GMAIL}/drafts/send`, {
+    method: 'POST',
+    headers: json,
+    body: JSON.stringify({ id: 'd+1' }),
+  });
+  assert.deepEqual(
+    seen.map(entry => entry.method),
+    ['POST', 'POST'],
+  );
 });
 
 test('recipients: an address inside an unquoted display name or group name is refused', () => {
