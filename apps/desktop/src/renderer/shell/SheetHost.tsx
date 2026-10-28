@@ -38,15 +38,27 @@ function startFlow(args: ReconnectArgs) {
     : api.account.reconnect({ accountId: args.accountId });
 }
 
+/** True once the frame for this flow says it ended (anything but waiting). */
+export function flowEnded(
+  latest: { connectId: string; state: string | undefined },
+  connectId: string,
+) {
+  return latest.connectId === connectId && latest.state !== undefined && latest.state !== 'waiting';
+}
+
 /** Starts the flow and follows its frames; returns the connect id once known. */
 function useReconnectFlow({ accountId, mode }: ReconnectArgs, attempt: number) {
   const [connectId, setConnectId] = useState('');
   const [refused, setRefused] = useState(false);
-  const finished = useRef(false);
+  const last = useFrames('connect', { connectId }).last;
+  const latest = useRef({ connectId, state: last?.state as string | undefined });
+  useEffect(() => {
+    latest.current = { connectId, state: last?.state };
+  }, [connectId, last?.state]);
   useEffect(() => {
     let stale = false;
     let started = '';
-    finished.current = false;
+    setConnectId('');
     setRefused(false);
     startFlow({ accountId, mode }).then(
       result => {
@@ -60,12 +72,10 @@ function useReconnectFlow({ accountId, mode }: ReconnectArgs, attempt: number) {
     );
     return () => {
       stale = true;
-      if (started && !finished.current)
+      if (started && !flowEnded(latest.current, started))
         void api.account.cancelConnect({ connectId: started }).catch(ignore);
     };
   }, [accountId, mode, attempt]);
-  const last = useFrames('connect', { connectId }).last;
-  if (last && last.state !== 'waiting') finished.current = true;
   return { connectId, last, refused };
 }
 
@@ -152,10 +162,17 @@ function ConsentHost({ args }: { readonly args: SheetArgs['consent'] }) {
   );
 }
 
+/** Identity of a reconnect sheet: another account or mode is another flow, so it gets fresh state. */
+export function reconnectKey({ accountId, mode }: ReconnectArgs): string {
+  return `${accountId}:${mode}`;
+}
+
 /** The open sheet, or nothing. */
 export function SheetHost() {
   const sheet = useSheet();
   if (!sheet) return null;
-  if (sheet.name === 'reconnect') return <ReconnectHost args={sheet.args} />;
+  if (sheet.name === 'reconnect') {
+    return <ReconnectHost key={reconnectKey(sheet.args)} args={sheet.args} />;
+  }
   return <ConsentHost args={sheet.args} />;
 }

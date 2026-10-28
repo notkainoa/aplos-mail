@@ -18,7 +18,7 @@ import { HARNESS_NOW_MS, setClock } from '../data';
 import { createManualScheduler, createManualTimers } from '../data/scheduler';
 import { closeSheet, navigate, pushToast, dismissToast } from './index';
 import { Shell } from './Shell';
-import { failureReason } from './SheetHost';
+import { failureReason, flowEnded, reconnectKey } from './SheetHost';
 import { toSyncStatus } from './status-map';
 import { StatusHost } from './StatusHost';
 import { ToastHostView } from './ToastHost';
@@ -255,4 +255,23 @@ test('a daily-limit pause maps to its own line and failures map to plain words',
   assert.equal(throttled.kind === 'paused' && throttled.reason, 'throttle');
   assert.match(failureReason('auth.wrongAccount'), /different account/);
   assert.doesNotMatch(failureReason('invalid_grant: raw provider text'), /invalid_grant|raw/);
+});
+
+test('a reconnect sheet is keyed by account and mode, so replacing it starts fresh state', () => {
+  assert.notEqual(
+    reconnectKey({ accountId: 'a1', mode: 'reconnect' }),
+    reconnectKey({ accountId: 'a2', mode: 'reconnect' }),
+  );
+  assert.notEqual(
+    reconnectKey({ accountId: 'a1', mode: 'reconnect' }),
+    reconnectKey({ accountId: 'a1', mode: 'grant' }),
+  );
+});
+
+test('a flow counts as ended only by the last frame of its own connect id', () => {
+  assert.equal(flowEnded({ connectId: 'c1', state: 'failed' }, 'c1'), true);
+  assert.equal(flowEnded({ connectId: 'c1', state: 'waiting' }, 'c1'), false);
+  assert.equal(flowEnded({ connectId: 'c1', state: undefined }, 'c1'), false);
+  // A retry starts c2 while the old failed frame (c1) is still the latest: c2 is not ended.
+  assert.equal(flowEnded({ connectId: 'c1', state: 'failed' }, 'c2'), false);
 });
