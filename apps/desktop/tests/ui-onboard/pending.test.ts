@@ -17,6 +17,7 @@ import {
 import { stepStates } from '../../src/renderer/onboarding/steps/states';
 import { firstSyncStates } from '../../src/renderer/onboarding/firstSync/states';
 import { reconnectStates } from '../../src/renderer/onboarding/reconnect/states';
+import { demoStates } from '../../src/renderer/onboarding/demo.states';
 
 /** The static markup of one fixture state. */
 const markup = (state: { render(): React.ReactNode }): string => renderToStaticMarkup(state.render());
@@ -152,11 +153,20 @@ describe('ui-onboard: visual states, light and dark, 640 × 600 and 640 × 520 (
   test.todo(`accounts – choose, typed, waiting, connected, unsupported [waits: Playwright base]`);
   test.todo(`ai – groq, groq-no-key, byok, local, consent, consent-gemini-free (plus the no-consent state) [waits: Playwright base]`);
   test.todo(`permissions – default, granted, denied [waits: Playwright base]`);
+  test('permissions-denied-copy – a blocked microphone says where to turn it on and offers System Settings; the other rows are unchanged', () => {
+    const denied = markup(stepStates['permissions-denied']);
+    assert.match(denied, /Turned off/);
+    assert.match(denied, /Turn it on for Aplos in System Settings, under Privacy &amp; Security\./);
+    assert.match(denied, /Open System Settings/);
+    assert.doesNotMatch(denied, /Speech goes to/, 'a blocked microphone does not promise speech');
+    assert.match(denied, /Allow…/, 'notifications is still undecided and offers Allow…');
+    assert.doesNotMatch(markup(stepStates['permissions-granted']), /blocked|Open System Settings/);
+  });
   test.todo(`sync progress – 1 and 2 accounts, found-no-estimate, paused (rate-limited before and after the first window), paused-daily, ready, partial, ai-failed, failed, not-connected, no-ai (3 segments), 5 accounts (scrolls, top not clipped [F13]) [waits: Playwright base]`);
   test.todo(`drill – step1, step3, done [waits: Playwright base]`);
   test.todo(`mail window – no-accounts, first-mail, demo; slot reconnect-due, needs-reauth, needs-permission, quota [waits: Playwright base]`);
   test.todo(`reconnect sheet – waiting, failed (wrong account), reconnected toast (also reconnecting state) [waits: Playwright base]`);
-  test.skip('all onboarding and loading states exist in the harness in both themes – six steps, partial, failed, multi-account, no-AI, no-consent, complete, zero-accounts, demo, reconnect due/reconnecting/failed/reconnected (U8 acc. 6; added as a coverage check) [FAILS: harness has no demo, reconnect-due, reconnecting or reconnected-toast state (permissions has no denied state either)]', () => {
+  test('all onboarding and loading states exist in the harness in both themes – six steps, partial, failed, multi-account, no-AI, no-consent, complete, zero-accounts, demo, reconnect due/reconnecting/failed/reconnected (U8 acc. 6; added as a coverage check)', () => {
     // The six steps exist as static fixtures; assert what the catalogue claims, and fail on the rest.
     const present = Object.keys(stepStates);
     for (const key of ['welcome', 'accounts-choose', 'ai-consent', 'ai-groq-env', 'permissions-default']) {
@@ -166,13 +176,30 @@ describe('ui-onboard: visual states, light and dark, 640 × 600 and 640 × 520 (
       assert.ok(Object.hasOwn(firstSyncStates, key), `missing first-sync fixture: ${key}`);
     }
     assert.ok(Object.hasOwn(reconnectStates, 'zero-accounts'), 'missing fixture: zero-accounts');
-    for (const key of ['demo', 'reconnect-due', 'reconnecting', 'reconnected']) {
+    for (const key of ['demo', 'reconnect-due', 'reconnecting', 'reconnected', 'permissions-denied']) {
       const found =
         Object.keys(reconnectStates).some(k => k.startsWith(key)) ||
         Object.keys(firstSyncStates).some(k => k.startsWith(key)) ||
+        Object.keys(demoStates).some(k => k.startsWith(key)) ||
         present.some(k => k.startsWith(key));
       assert.ok(found, `missing harness state: ${key}`);
     }
+    // What each new state draws, from the real components' markup.
+    assert.match(markup(demoStates['demo-loading']), /Loading demo mail\./);
+    assert.match(markup(demoStates['demo-loading']), /Try demo mail/);
+    const loaded = markup(demoStates['demo-loaded']);
+    assert.match(loaded, /Demo mail\. Remove it in Settings\./);
+    assert.match(loaded, /Demo mail loaded\. Remove it any time in Settings\./);
+    const due = markup(reconnectStates['reconnect-due']);
+    assert.match(due, /Gmail will ask you to reconnect tomorrow at /);
+    assert.match(due, /Reconnect now/);
+    assert.equal(markup(reconnectStates.reconnecting), markup(reconnectStates['reconnect-waiting']));
+    assert.match(markup(reconnectStates.reconnecting), /Waiting for Google in your browser/);
+    assert.match(markup(reconnectStates.reconnected), /Reconnected/);
+    const denied = markup(stepStates['permissions-denied']);
+    assert.match(denied, /macOS has blocked the microphone\. Turn it on for Aplos in System Settings/);
+    assert.match(denied, /Open System Settings/);
+    assert.doesNotMatch(markup(stepStates['permissions-default']), /blocked/);
   });
 });
 

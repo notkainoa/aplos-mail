@@ -7,8 +7,10 @@
  * The gallery (`../preview/main.tsx`) imports `reconnectStates` with the same shape as `stepStates`.
  */
 import type { JSX } from 'react';
-import { Pane } from '../../ui/surfaces';
+import { Pane, ToastStack } from '../../ui/surfaces';
 import { ReconnectSheet } from '../../ui/status/ReconnectSheet';
+import { StatusSlot } from '../../ui/status/StatusSlot';
+import type { SyncStatus } from '../../ui/props';
 import { ZeroAccountsView } from '../ZeroAccounts';
 import {
   initialReconnect,
@@ -56,6 +58,55 @@ function Backdrop({ children }: { children?: JSX.Element }): JSX.Element {
   );
 }
 
+/**
+ * The mail window's shell with the sidebar's footer slot beside the plain pane: where the status slot lives (DESIGN
+ * 7.1). The slot is the real `StatusSlot`; the rest of the sidebar belongs to the shell lane and is left out.
+ */
+export function SlotBackdrop({ slot, children }: { slot: JSX.Element; children?: JSX.Element }): JSX.Element {
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', background: 'var(--shell)' }}>
+      <aside
+        style={{
+          flex: 'none',
+          width: 'var(--sidebar-w)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-end',
+          padding: 'var(--space-2)',
+        }}
+      >
+        {slot}
+      </aside>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex' }}>
+        <Pane kind="main" label="Home">
+          {children ?? <></>}
+        </Pane>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * When Gmail will ask: tomorrow at 9:00 AM if that is within the 24 hours the slot waits for, otherwise tomorrow a
+ * little earlier in the day than now (so the copy still says "tomorrow" at any hour the capture runs).
+ */
+export function reconnectDueBy(now: Date = new Date()): string {
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const nineAm = tomorrow.getTime() + 9 * 3_600_000;
+  if (nineAm - now.getTime() <= 24 * 3_600_000 - 60_000) return new Date(nineAm).toISOString();
+  const sinceMidnight = now.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return new Date(tomorrow.getTime() + Math.max(60_000, sinceMidnight - 30 * 60_000)).toISOString();
+}
+
+/** The status slot with one status, as the shell draws it for a single account. */
+function slotState(status: SyncStatus): JSX.Element {
+  return (
+    <SlotBackdrop
+      slot={<StatusSlot status={status} account={{ address: ADDRESS, color: 'sky' }} onAction={noop} />}
+    />
+  );
+}
+
 function sheet(state: ReconnectState): JSX.Element {
   const view = sheetView(state);
   return (
@@ -74,9 +125,29 @@ function sheet(state: ReconnectState): JSX.Element {
 }
 
 export const reconnectStates: Record<string, StateEntry> = {
+  'reconnect-due': {
+    title: 'Status slot a day before reconnectBy: "Gmail will ask you to reconnect tomorrow…" (Reconnect now)',
+    render: () => slotState({ kind: 'ok', lastSyncedAt: new Date().toISOString(), reconnectBy: reconnectDueBy() }),
+  },
+  reconnecting: {
+    title: 'Reconnect sheet while waiting for Google (the same sheet as reconnect-waiting)',
+    render: () => sheet(sheetAfter('reconnect', [])),
+  },
   'reconnect-waiting': {
     title: 'Reconnect sheet: waiting for Google in the browser (Cancel)',
     render: () => sheet(sheetAfter('reconnect', [])),
+  },
+  reconnected: {
+    title: 'After a successful reconnect: the "Reconnected" toast over the main pane',
+    render: () => (
+      <Backdrop>
+        <ToastStack
+          toasts={[{ id: 'reconnected', kind: 'info', message: 'Reconnected', undoable: false, persistent: true }]}
+          onAction={noop}
+          onDismiss={noop}
+        />
+      </Backdrop>
+    ),
   },
   'reconnect-failed-denied': {
     title: 'Reconnect sheet: Google sign-in declined (Try again)',

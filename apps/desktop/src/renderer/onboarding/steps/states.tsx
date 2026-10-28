@@ -289,6 +289,10 @@ export const stepStates: Record<string, { title: string; render: () => JSX.Eleme
     title: 'Voice and permissions · allowed',
     render: () => permissions('granted', 'granted', true),
   },
+  'permissions-denied': {
+    title: 'Voice and permissions · microphone blocked by macOS (where to turn it on, Open System Settings)',
+    render: () => permissions('denied', 'notDetermined', false),
+  },
   'window-long-content': {
     title: 'Long step at the 640 × 520 minimum (F13)',
     height: 520,
