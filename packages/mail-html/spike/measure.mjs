@@ -4,8 +4,8 @@
 // Deleted when html-3 lands; the choice is recorded in DECISIONS.md.
 //
 // Usage (repo root): node packages/mail-html/spike/measure.mjs [--from <dir>] [--corpus <dir>]
-//   --from    a node_modules parent holding candidates that are not repo dependencies
-//             (e.g. a scratch dir outside the repo with `npm i htmlparser2`); default: the repo
+//   --from    a node_modules parent holding the candidates that are not repo dependencies
+//             (a scratch dir outside the repo with `npm i postcss css-tree`); the repo is searched first
 //   --corpus  the corpus folder (manifest.json + messages/); default packages/mail-html/corpus
 
 import { build } from 'esbuild';
@@ -22,7 +22,7 @@ function option(name, fallback) {
   return at > 0 ? resolve(process.argv[at + 1]) : fallback;
 }
 
-const from = option('--from', repo);
+const dirs = [join(repo, 'packages/mail-html'), repo, option('--from', repo)];
 const corpusDir = option('--corpus', join(repo, 'packages/mail-html/corpus'));
 const ALLOWED_LICENCES = new Set([
   'MIT',
@@ -44,8 +44,7 @@ const candidates = [
   {
     name: 'htmlparser2',
     kind: 'html',
-    entry:
-      "import { parseDocument } from 'htmlparser2'; import render from 'dom-serializer'; export { parseDocument, render };",
+    entry: "import { parseDocument } from 'htmlparser2'; export { parseDocument };",
   },
   {
     name: '@csstools/css-tokenizer',
@@ -55,13 +54,20 @@ const candidates = [
   },
   { name: 'postcss', kind: 'css', entry: "import postcss from 'postcss'; export default postcss;" },
   { name: 'css-tree', kind: 'css', entry: "import * as t from 'css-tree'; export default t;" },
+  {
+    name: 'htmlparser2',
+    label: 'chosen pair (htmlparser2 + @csstools/css-tokenizer)',
+    kind: 'package',
+    entry:
+      "import { parseDocument } from 'htmlparser2'; import { tokenize } from '@csstools/css-tokenizer'; export { parseDocument, tokenize };",
+  },
 ];
 
-function installed(name) {
-  return existsSync(join(from, 'node_modules', name, 'package.json'));
+function where(name) {
+  return dirs.find(dir => existsSync(join(dir, 'node_modules', name, 'package.json')));
 }
 
-async function bundleBytes(entry, minify) {
+async function bundleBytes(entry, from, minify) {
   try {
     const out = await build({
       stdin: { contents: entry, resolveDir: from, loader: 'js' },
@@ -81,6 +87,7 @@ async function bundleBytes(entry, minify) {
 
 // npm hoists every dependency here, so `node_modules/<name>/package.json` is the installed copy.
 function licences(name, seen = new Map()) {
+  const from = where(name);
   const pkg = JSON.parse(readFileSync(join(from, 'node_modules', name, 'package.json'), 'utf8'));
   if (seen.has(`${name}@${pkg.version}`)) return seen;
   const licence = typeof pkg.license === 'string' ? pkg.license : JSON.stringify(pkg.license);
@@ -100,7 +107,7 @@ function loadFirstMessages() {
 }
 
 async function importFrom(name) {
-  const require = createRequire(join(from, 'node_modules', '_'));
+  const require = createRequire(join(where(name), 'node_modules', '_'));
   return import(pathToFileURL(require.resolve(name)).href);
 }
 
@@ -158,6 +165,35 @@ async function cssCorrectness(messages) {
   });
 }
 
+// Best of five, because the shared machine's load swings single runs by 10x or more.
+function bestMs(fn, html) {
+  let best = Infinity;
+  for (let run = 0; run < 5; run++) {
+    const start = performance.now();
+    fn(html);
+    best = Math.min(best, performance.now() - start);
+  }
+  return best.toFixed(1);
+}
+
+const SPEED_INPUTS = [
+  ['1 MB of text', `<p>${'a'.repeat(1_000_000)}`],
+  ['1 MB of words', `<p>${'ab cd '.repeat(170_000)}`],
+  ['1,000 nested divs', '<div>'.repeat(1000)],
+  ['2,000 nested divs', '<div>'.repeat(2000)],
+];
+
+async function speed() {
+  const { parse } = await importFrom('parse5');
+  const { parseDocument } = await importFrom('htmlparser2');
+  console.log('parse time, best of 5 (ms):');
+  for (const [name, html] of SPEED_INPUTS) {
+    console.log(
+      `- ${name}: parse5 ${bestMs(parse, html)}, htmlparser2 ${bestMs(parseDocument, html)}`,
+    );
+  }
+}
+
 function summarise(rows) {
   const passed = rows.filter(row => row.same).length;
   const failed = rows.filter(row => !row.same).map(row => row.id);
@@ -165,22 +201,26 @@ function summarise(rows) {
 }
 
 async function main() {
-  console.log(`candidates from ${from}`);
+  console.log(`candidates from ${[...new Set(dirs)].join(' and ')}`);
   for (const candidate of candidates) {
-    if (!installed(candidate.name)) {
-      console.log(`- ${candidate.name}: not installed here, skipped`);
+    const from = where(candidate.name);
+    if (!from) {
+      console.log(`- ${candidate.name}: not installed, skipped`);
       continue;
     }
-    const plain = await bundleBytes(candidate.entry, false);
-    const minified = await bundleBytes(candidate.entry, true);
+    const plain = await bundleBytes(candidate.entry, from, false);
+    const minified = await bundleBytes(candidate.entry, from, true);
     const deps = [...licences(candidate.name)].map(([dep, licence]) => {
       const ok = ALLOWED_LICENCES.has(licence) ? '' : ' NOT ALLOWED';
       return `${dep} ${licence}${ok}`;
     });
-    console.log(`- ${candidate.name} (${candidate.kind}): ${plain} bytes, ${minified} minified`);
+    console.log(
+      `- ${candidate.label ?? candidate.name} (${candidate.kind}): ${plain} bytes, ${minified} minified`,
+    );
     console.log(`  licences: ${deps.join('; ')}`);
   }
 
+  await speed();
   const messages = loadFirstMessages();
   if (messages.length === 0) {
     console.log(`no corpus at ${corpusDir}; correctness skipped`);
@@ -189,10 +229,10 @@ async function main() {
   const parse5 = await importFrom('parse5');
   console.log(`correctness on the first ${messages.length} corpus messages:`);
   console.log(`- parse5: ${summarise(parse5Correctness(messages, parse5))}`);
-  if (installed('htmlparser2') && installed('dom-serializer')) {
+  if (where('htmlparser2') && where('dom-serializer')) {
     console.log(`- htmlparser2: ${summarise(await htmlparser2Correctness(messages, parse5))}`);
   }
-  if (installed('@csstools/css-tokenizer')) {
+  if (where('@csstools/css-tokenizer')) {
     const css = await cssCorrectness(messages);
     const lossless = css.filter(row => row.lossless).length;
     const urls = css.reduce((sum, row) => sum + row.found, 0);
