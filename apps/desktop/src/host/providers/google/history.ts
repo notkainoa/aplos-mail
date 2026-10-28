@@ -5,6 +5,7 @@ import {
   type LabelDelta,
   type MessageFacts,
   type PlannedStep,
+  type Quarantine,
   type RemoteDraftFact,
   type Removal,
   type ResetReason,
@@ -13,7 +14,7 @@ import {
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
 import { FLAG_LABELS, folderFacts, type GmailLabel } from './facts';
-import { passWrites, settleFailures } from './failures';
+import { isQuarantined, passWrites, readSchedule, settleFailures } from './failures';
 import {
   FIRST_WINDOW_KEY,
   INBOX_ROUND_MARK,
@@ -22,6 +23,7 @@ import {
   entriesFor,
   entryThread,
   fetchMetadata,
+  type FetchOutcome,
   type SyncRuntime,
 } from './sync';
 
@@ -64,13 +66,27 @@ const untouched = (state: SyncState, costUnits: number): StepResult => ({
   costUnits,
 });
 
-/** Newest Inbox page a missed-arrivals check lists: arrivals past it reach the device through the quiet resync. */
+/**
+ * Newest Inbox page a missed-arrivals check lists. Known limits, by design: arrivals past this page reach the device
+ * through the quiet resync or backfill and never notify; and an arrival that was quarantined (in a history poll or in
+ * this check) and is later fetched by the quarantine retry (`retry.ts`) or the resync never notifies either.
+ */
 const ARRIVAL_PAGE = 50;
+
+/** provider_memory: epoch ms of the last history pass that reached the head, kept while later passes have not. */
+export const HEAD_AT_KEY = 'history.headAt';
+
+/** What a missed-arrivals check fetched: the new Inbox mail, and the fetch it came from (for failure counting). */
+interface MissedArrivals {
+  arrivals: MessageFacts[];
+  fetched: FetchOutcome;
+  entries: string[];
+}
 
 /**
  * Inbox mail newer than `since` that this device lacks, fetched as metadata (G-B). One list page (5 units) and one
  * fetch per unknown thread, the same calls the resync would make; what the resync would also fetch but is not new
- * stays in the run memo for it. Undefined when a pause or refusal stopped the check (nothing is committed then).
+ * stays in the run memo for it. The caller decides what a stopped or partly failed fetch means.
  */
 async function missedArrivals(
   rt: SyncRuntime,
@@ -78,7 +94,7 @@ async function missedArrivals(
   ctx: AdapterContext,
   client: GmailClient,
   since: number,
-): Promise<MessageFacts[] | undefined> {
+): Promise<MissedArrivals> {
   const list = await client.call<{ messages?: { id: string; threadId: string }[] }>({
     method: 'gmail.messages.list',
     path: '/messages',
@@ -92,25 +108,70 @@ async function missedArrivals(
   const byThread = new Map<string, string[]>();
   for (const m of listed.filter(m => !known.has(m.id)))
     byThread.set(m.threadId, [...(byThread.get(m.threadId) ?? []), m.id]);
-  const entries = [...byThread].flatMap(([thread, ids]) =>
-    entriesFor(thread, ids, knownThreads.has(thread)),
-  );
+  // A quarantined arrival is left to its retry and the resync: fetching it here again would hold the cursor anew.
+  const schedule = readSchedule(ctx.memory);
+  const entries = [...byThread]
+    .flatMap(([thread, ids]) => entriesFor(thread, ids, knownThreads.has(thread)))
+    .filter(entry => !isQuarantined(schedule, entry));
   const fetched = await fetchMetadata(client, entries, {
     lane: step.lane,
     self: ctx.account.address,
     memo: rt.memo,
     now: ctx.clock.now(),
   });
-  if (fetched.stopped) return undefined;
-  return fetched.facts.filter(
+  const arrivals = fetched.facts.filter(
     f => f.internalDate > since && f.placements.some(p => p.folder === 'INBOX'),
   );
+  return { arrivals, fetched, entries };
 }
 
-const lastSeen = (memory: ReadonlyMap<string, string>): number | undefined => {
-  const at = Number(memory.get(LAST_SEEN_KEY));
-  return Number.isFinite(at) && memory.has(LAST_SEEN_KEY) ? at : undefined;
+const storedTime = (memory: ReadonlyMap<string, string>, key: string): number | undefined => {
+  const at = Number(memory.get(key));
+  return Number.isFinite(at) && memory.has(key) ? at : undefined;
 };
+
+/** What the P0 step after a reset delivers, or the result that ends it early. */
+type ArrivalsCheck =
+  | {
+      ok: true;
+      arrivals: MessageFacts[];
+      memory: Record<string, string | null>;
+      quarantine: Quarantine[];
+    }
+  | { ok: false; result: StepResult };
+
+/**
+ * The missed-arrivals check of a P0 step. All or nothing: a pause or refusal leaves the state untouched, and so does an
+ * arrival whose own fetch failed (a 500 or a failed batch part), which keeps the marker so the retry can still deliver
+ * it as new mail. Such a retry commits only the failure bookkeeping and waits one poll interval (`plan()`); an arrival that
+ * keeps failing is quarantined after `MAX_ATTEMPTS` like any fetch, so it cannot keep the cursor from being re-seeded.
+ */
+async function checkArrivals(
+  rt: SyncRuntime,
+  step: PlannedStep,
+  state: SyncState,
+  ctx: AdapterContext,
+  client: GmailClient,
+): Promise<ArrivalsCheck> {
+  const since = storedTime(ctx.memory, LAST_SEEN_KEY);
+  if (since === undefined) return { ok: true, arrivals: [], memory: {}, quarantine: [] };
+  const { arrivals, fetched, entries } = await missedArrivals(rt, step, ctx, client, since);
+  if (fetched.stopped) return { ok: false, result: untouched(state, client.spent) };
+  const memory = settleFailures(ctx, fetched, entries);
+  const { quarantine } = fetched;
+  if (!fetched.pending.length) return { ok: true, arrivals, memory, quarantine };
+  const retry: SyncState = { ...state, updatedAt: ctx.clock.now(), pending: fetched.pending };
+  return {
+    ok: false,
+    result: {
+      ...(Object.keys(memory).length ? { memory } : {}),
+      ...(quarantine.length ? { quarantine } : {}),
+      nextStates: [retry],
+      done: false,
+      costUnits: client.spent,
+    },
+  };
+}
 
 /** P0: `getProfile` for the history id first (so nothing that happens during the window is missed), then labels. */
 export async function cursorStep(
@@ -134,13 +195,16 @@ export async function cursorStep(
       lane: step.lane,
     });
     if (!profile.historyId) throw new Error('getProfile returned no historyId');
-    const since = lastSeen(ctx.memory);
-    const arrivals = since === undefined ? [] : await missedArrivals(rt, step, ctx, client, since);
-    if (!arrivals) return untouched(state, client.spent);
+    const check = await checkArrivals(rt, step, state, ctx, client);
+    if (!check.ok) return check.result;
+    const { arrivals, quarantine } = check;
+    const memory = { ...check.memory };
+    if (ctx.memory.has(LAST_SEEN_KEY)) memory[LAST_SEEN_KEY] = null;
     return {
       folders: folderFacts(labels.labels ?? []),
       ...(arrivals.length ? { upserts: arrivals } : {}),
-      ...(since !== undefined ? { memory: { [LAST_SEEN_KEY]: null } } : {}),
+      ...(Object.keys(memory).length ? { memory } : {}),
+      ...(quarantine.length ? { quarantine } : {}),
       nextStates: [
         {
           scope: 'history',
@@ -180,10 +244,40 @@ function resetStates(state: SyncState, ctx: AdapterContext): SyncState[] {
   ];
 }
 
-/** After the baseline a reset remembers when this device last saw the Inbox, for `missedArrivals`; before it, nothing. */
-function lastSeenWrite(state: SyncState, ctx: AdapterContext): Record<string, string> {
-  if (ctx.memory.get(FIRST_WINDOW_KEY) !== '1' || !state.updatedAt) return {};
-  return { [LAST_SEEN_KEY]: String(state.updatedAt) };
+/** A history state whose pass reached the head: every fetch in, no further page. */
+const atHead = (state: SyncState): boolean =>
+  !state.pending?.length && !/^pass:/.test(state.phase ?? '');
+
+/**
+ * When history last reached the head. A pass that did not (a fetch still pending, more pages) still moves `updatedAt`
+ * for the poll cadence, so the last head time is kept in `HEAD_AT_KEY` until a pass reaches the head again.
+ */
+function headAt(state: SyncState, memory: ReadonlyMap<string, string>): number | undefined {
+  return storedTime(memory, HEAD_AT_KEY) ?? (state.updatedAt || undefined);
+}
+
+/** The `HEAD_AT_KEY` write for a pass from `state` to `next`, or nothing when it stays as it is. */
+function headWrites(
+  state: SyncState,
+  next: SyncState,
+  memory: ReadonlyMap<string, string>,
+): Record<string, string | null> {
+  if (atHead(next)) return memory.has(HEAD_AT_KEY) ? { [HEAD_AT_KEY]: null } : {};
+  if (memory.has(HEAD_AT_KEY) || !atHead(state) || !state.updatedAt) return {};
+  return { [HEAD_AT_KEY]: String(state.updatedAt) };
+}
+
+/**
+ * After the baseline a reset remembers when history last reached the head, for `missedArrivals`; before it, nothing.
+ * Never a later time: mail that a stalled pass had not fetched yet must still count as missed.
+ */
+function lastSeenWrite(state: SyncState, ctx: AdapterContext): Record<string, string | null> {
+  const clear: Record<string, string | null> = ctx.memory.has(HEAD_AT_KEY)
+    ? { [HEAD_AT_KEY]: null }
+    : {};
+  const at = headAt(state, ctx.memory);
+  if (ctx.memory.get(FIRST_WINDOW_KEY) !== '1' || !at) return clear;
+  return { ...clear, [LAST_SEEN_KEY]: String(at) };
 }
 
 interface Pending {
@@ -580,6 +674,7 @@ export async function historyStep(
   // The fetched rows carry the current labels; their deltas from this page would only repeat them.
   const upserted = new Set(fetched.facts.map(f => f.remoteId));
   const next = nextHistoryState(state, page, records, fetched, passFetches, now);
+  Object.assign(memory, headWrites(state, next, ctx.memory));
   return {
     ...pageDeltas(changes, upserted),
     ...(fetched.facts.length ? { upserts: fetched.facts } : {}),

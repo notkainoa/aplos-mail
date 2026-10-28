@@ -322,6 +322,14 @@ const IMMEDIATE: ReadonlySet<PlanTrigger> = new Set([
   'reset',
 ]);
 
+/** When the next history poll is due: at once for an immediate trigger, else one jittered interval after the last. */
+function pollDue(history: SyncState, trigger: PlanTrigger, env: PlanInput['env']): number {
+  if (IMMEDIATE.has(trigger)) return env.now;
+  const interval = pollInterval(env);
+  const due = history.updatedAt + Math.round(interval * (1 + jitter(history.updatedAt)));
+  return Math.max(env.now, due);
+}
+
 /** A re-seeded cursor after a reset delivers missed Inbox arrivals as `incremental`; a first sync is a `baseline`. */
 function resetOrigin(
   history: SyncState | undefined,
@@ -340,12 +348,15 @@ export function plan(input: PlanInput): PlannedStep[] {
   const { states, trigger, env } = input;
   const history = stateOf(states, 'history');
   if (!history?.cursor) {
+    // A P0 whose missed-arrivals check met a failed fetch (`pending`) tries again at the poll cadence, never at once.
+    const retry = history?.pending?.length ? { notBefore: pollDue(history, trigger, env) } : {};
     return [
       {
         scope: 'history',
         lane: 'incremental',
         origin: resetOrigin(history, input.memory),
         trigger,
+        ...retry,
       },
     ];
   }
@@ -359,16 +370,12 @@ export function plan(input: PlanInput): PlannedStep[] {
       steps.push({ scope: 'window:inbox', lane: 'backfill', origin: 'backfill', trigger });
     else steps.push({ scope: 'window:inbox', lane: 'incremental', origin: 'baseline', trigger });
   }
-  const interval = pollInterval(env);
-  const due = IMMEDIATE.has(trigger)
-    ? env.now
-    : history.updatedAt + Math.round(interval * (1 + jitter(history.updatedAt)));
   steps.push({
     scope: 'history',
     lane: 'incremental',
     origin: 'incremental',
     trigger,
-    notBefore: Math.max(env.now, due),
+    notBefore: pollDue(history, trigger, env),
   });
   if (window?.phase === 'done') {
     const sent = stateOf(states, 'sent:recent');

@@ -10,6 +10,7 @@ import {
   MAX_RETRIES,
   RETRY_SCOPE,
   dueRetries,
+  exhaust,
   readSchedule,
   retryBackoff,
   scheduleWrite,
@@ -45,7 +46,7 @@ function backOff(
 ): void {
   const tries = schedule.items[entry].tries + 1;
   if (tries >= MAX_RETRIES) {
-    delete schedule.items[entry];
+    exhaust(schedule, entry);
     log.event('sync.gmail.request_refused', { error, attempt: tries });
     return;
   }
@@ -74,6 +75,8 @@ export async function retryStep(
     now: ctx.clock.now(),
   });
   settle(schedule, fetched, ctx.log);
+  // A retry that succeeds should also clear the engine's `sync_failures` row (a store write with `failure: null`), but
+  // `StepResult` has no field for that yet (a port change for eng-contract and prov-gov), so the row keeps its count.
   const again: Quarantine[] = fetched.failed.map(({ item, error }) => ({ item, error }));
   const quarantine = [...fetched.quarantine, ...again];
   return {

@@ -41,6 +41,11 @@ export interface RetryEntry {
 export interface RetrySchedule {
   pass: number;
   items: Record<string, RetryEntry>;
+  /**
+   * Entries whose retries ran out. A later quarantine of one (history refetched it) schedules nothing, so a poison
+   * message never earns fresh retries; a successful fetch of it takes it off this list.
+   */
+  exhausted: string[];
 }
 
 export const retryBackoff = (tries: number): number => BACKOFF_PASSES * 2 ** tries;
@@ -52,10 +57,14 @@ export function readSchedule(
 ): RetrySchedule {
   const raw = RETRY_KEY in pending ? pending[RETRY_KEY] : memory.get(RETRY_KEY);
   try {
-    const parsed = JSON.parse(raw ?? '') as RetrySchedule;
-    return { pass: Number(parsed.pass) || 0, items: parsed.items ?? {} };
+    const parsed = JSON.parse(raw ?? '') as Partial<RetrySchedule>;
+    return {
+      pass: Number(parsed.pass) || 0,
+      items: parsed.items ?? {},
+      exhausted: Array.isArray(parsed.exhausted) ? parsed.exhausted : [],
+    };
   } catch {
-    return { pass: 0, items: {} };
+    return { pass: 0, items: {}, exhausted: [] };
   }
 }
 
@@ -63,7 +72,14 @@ export function scheduleWrite(schedule: RetrySchedule): Record<string, string | 
   const keys = Object.keys(schedule.items);
   for (const key of keys.slice(0, Math.max(0, keys.length - RETRY_KEEP)))
     delete schedule.items[key];
-  return { [RETRY_KEY]: Object.keys(schedule.items).length ? JSON.stringify(schedule) : null };
+  const exhausted = schedule.exhausted.slice(-RETRY_KEEP);
+  const json = JSON.stringify({
+    pass: schedule.pass,
+    items: schedule.items,
+    ...(exhausted.length ? { exhausted } : {}),
+  });
+  const empty = !Object.keys(schedule.items).length && !exhausted.length;
+  return { [RETRY_KEY]: empty ? null : json };
 }
 
 /** Entries due now, oldest first, at most one batch. */
@@ -73,6 +89,16 @@ export function dueRetries(schedule: RetrySchedule): string[] {
     .sort(([, a], [, b]) => a.due - b.due)
     .slice(0, RETRY_BATCH)
     .map(([entry]) => entry);
+}
+
+/** The entry is quarantined: waiting for a retry, or out of retries. */
+export const isQuarantined = (schedule: RetrySchedule, entry: string): boolean =>
+  entry in schedule.items || schedule.exhausted.includes(entry);
+
+/** The entry's retries ran out: off the schedule, and remembered so a later quarantine gives it none. */
+export function exhaust(schedule: RetrySchedule, entry: string): void {
+  delete schedule.items[entry];
+  if (!schedule.exhausted.includes(entry)) schedule.exhausted.push(entry);
 }
 
 /** One history pass went by: counts toward every entry's back-off. A no-op while nothing is quarantined. */
@@ -110,11 +136,48 @@ function countWrites(
   return json === (memory.get(FAILURES_KEY) ?? null) ? {} : { [FAILURES_KEY]: json };
 }
 
+/** Counts one failure of `entry` (at most one per `COUNT_INTERVAL_MS`); true when it has now failed `MAX_ATTEMPTS`. */
+function countFailure(counts: Map<string, Count>, entry: string, now: number): boolean {
+  const prior = counts.get(entry);
+  const attempts = prior && now - prior.at < COUNT_INTERVAL_MS ? prior.n : (prior?.n ?? 0) + 1;
+  counts.delete(entry);
+  if (attempts >= MAX_ATTEMPTS) return true;
+  counts.set(entry, { n: attempts, at: prior && attempts === prior.n ? prior.at : now });
+  return false;
+}
+
+/**
+ * A fetch of these entries answered: a scheduled retry is moot and an exhausted entry is healthy again. True when the
+ * schedule changed.
+ */
+function clearRetries(schedule: RetrySchedule, outcome: FetchOutcome): boolean {
+  const answered = new Set([...outcome.byEntry.keys(), ...outcome.missing]);
+  const before = schedule.exhausted.length;
+  schedule.exhausted = schedule.exhausted.filter(entry => !answered.has(entry));
+  let changed = schedule.exhausted.length !== before;
+  for (const entry of answered) {
+    if (!(entry in schedule.items)) continue;
+    delete schedule.items[entry];
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * Schedules the first retry of a newly quarantined entry. One already scheduled keeps its tries and due pass, and one
+ * whose retries ran out stays out of them, so history refetching a poison message never resets its back-off.
+ */
+function scheduleRetry(schedule: RetrySchedule, entry: string): void {
+  if (isQuarantined(schedule, entry)) return;
+  schedule.items[entry] = { tries: 0, due: schedule.pass + retryBackoff(0) };
+}
+
 /**
  * Counts this fetch's own failures and forgets the entries of `attempted` that settled. An entry that has now failed
  * `MAX_ATTEMPTS` times leaves `pending` for `quarantine` (the engine records it and backs off), so one message that
- * always fails never holds the history cursor or an Inbox round in place. Updates `outcome` in place and returns the
- * provider_memory writes. The log line carries the classified error and the attempt count only, never content.
+ * always fails never holds the history cursor or an Inbox round in place. An answered entry leaves the retry schedule.
+ * Updates `outcome` in place and returns the provider_memory writes. The log line carries the classified error and the
+ * attempt count only, never content.
  */
 export function settleFailures(
   ctx: AdapterContext,
@@ -128,21 +191,17 @@ export function settleFailures(
   for (const entry of attempted) {
     if (!waiting.has(entry)) counts.delete(entry);
   }
-  const given = new Set<string>();
   const schedule = readSchedule(ctx.memory, pending);
+  const cleared = clearRetries(schedule, outcome);
+  const given = new Set<string>();
   for (const { entry, item, error } of outcome.failed) {
-    const prior = counts.get(entry);
-    const attempts = prior && now - prior.at < COUNT_INTERVAL_MS ? prior.n : (prior?.n ?? 0) + 1;
-    counts.delete(entry);
-    if (attempts < MAX_ATTEMPTS) {
-      counts.set(entry, { n: attempts, at: prior && attempts === prior.n ? prior.at : now });
-      continue;
-    }
+    if (!countFailure(counts, entry, now)) continue;
     given.add(entry);
-    schedule.items[entry] = { tries: 0, due: schedule.pass + retryBackoff(0) };
+    scheduleRetry(schedule, entry);
     outcome.quarantine.push({ item, error });
-    ctx.log.event('sync.gmail.request_refused', { error, attempt: attempts });
+    ctx.log.event('sync.gmail.request_refused', { error, attempt: MAX_ATTEMPTS });
   }
   if (given.size) outcome.pending = outcome.pending.filter(entry => !given.has(entry));
-  return { ...countWrites(counts, ctx.memory), ...(given.size ? scheduleWrite(schedule) : {}) };
+  const scheduled = cleared || given.size > 0;
+  return { ...countWrites(counts, ctx.memory), ...(scheduled ? scheduleWrite(schedule) : {}) };
 }
