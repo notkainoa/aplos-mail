@@ -1,0 +1,471 @@
+{
+  "about": "Cases where the oracles disagree; `expected` follows `side`. See disagreements.md.",
+  "cases": [
+    {
+      "id": "ordinal-yearly-20th-monday",
+      "tags": ["ordinal", "yearly", "disputed"],
+      "input": {
+        "start": {
+          "local": "2026-05-18T09:00:00",
+          "tzid": "America/Los_Angeles"
+        },
+        "end": {
+          "local": "2026-05-18T10:00:00",
+          "tzid": "America/Los_Angeles"
+        },
+        "allDay": false,
+        "rrule": "FREQ=YEARLY;BYDAY=20MO;COUNT=3",
+        "range": {
+          "from": "2026-01-01T00:00:00Z",
+          "to": "2030-01-01T00:00:00Z"
+        }
+      },
+      "side": "A",
+      "reading": "RFC 5545 §3.3.10: with FREQ=YEARLY and no BYMONTH, a BYDAY ordinal counts within the year (\"+20MO ... the 20th Monday within the YEARLY rule\"). Oracle B counts within DTSTART's month instead (documented in its header), so it finds no 20th Monday at all. The corpus takes A (the RFC).",
+      "expected": {
+        "ok": true,
+        "occurrences": [
+          {
+            "recurrenceId": "20260518T160000Z",
+            "start": "20260518T160000Z",
+            "end": "20260518T170000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20270517T160000Z",
+            "start": "20270517T160000Z",
+            "end": "20270517T170000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20280515T160000Z",
+            "start": "20280515T160000Z",
+            "end": "20280515T170000Z",
+            "overridden": false
+          }
+        ]
+      },
+      "A": [
+        {
+          "recurrenceId": "20260518T160000Z",
+          "start": "20260518T160000Z",
+          "end": "20260518T170000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20270517T160000Z",
+          "start": "20270517T160000Z",
+          "end": "20270517T170000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20280515T160000Z",
+          "start": "20280515T160000Z",
+          "end": "20280515T170000Z",
+          "overridden": false
+        }
+      ],
+      "B": []
+    },
+    {
+      "id": "ordinal-yearly-last-sunday-june-start",
+      "tags": ["ordinal", "yearly", "disputed", "dtstart"],
+      "input": {
+        "start": {
+          "local": "2026-06-28T10:00:00",
+          "tzid": "Europe/London"
+        },
+        "end": {
+          "local": "2026-06-28T11:00:00",
+          "tzid": "Europe/London"
+        },
+        "allDay": false,
+        "rrule": "FREQ=YEARLY;BYDAY=-1SU;COUNT=3",
+        "range": {
+          "from": "2026-01-01T00:00:00Z",
+          "to": "2030-01-01T00:00:00Z"
+        }
+      },
+      "side": "A",
+      "reading": "YEARLY;BYDAY=-1SU without BYMONTH is the last Sunday of the year (late December). B reads the ordinal within DTSTART's month and returns the last Sunday of June each year. A also drops the June DTSTART because the rule does not produce it (see the DTSTART note below). The corpus takes A.",
+      "expected": {
+        "ok": true,
+        "occurrences": [
+          {
+            "recurrenceId": "20261227T100000Z",
+            "start": "20261227T100000Z",
+            "end": "20261227T110000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20271226T100000Z",
+            "start": "20271226T100000Z",
+            "end": "20271226T110000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20281231T100000Z",
+            "start": "20281231T100000Z",
+            "end": "20281231T110000Z",
+            "overridden": false
+          }
+        ]
+      },
+      "A": [
+        {
+          "recurrenceId": "20261227T100000Z",
+          "start": "20261227T100000Z",
+          "end": "20261227T110000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20271226T100000Z",
+          "start": "20271226T100000Z",
+          "end": "20271226T110000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20281231T100000Z",
+          "start": "20281231T100000Z",
+          "end": "20281231T110000Z",
+          "overridden": false
+        }
+      ],
+      "B": [
+        {
+          "recurrenceId": "20260628T090000Z",
+          "start": "20260628T090000Z",
+          "end": "20260628T100000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20270627T090000Z",
+          "start": "20270627T090000Z",
+          "end": "20270627T100000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20280625T090000Z",
+          "start": "20280625T090000Z",
+          "end": "20280625T100000Z",
+          "overridden": false
+        }
+      ]
+    },
+    {
+      "id": "setpos-weekly-last-of-week",
+      "tags": ["bysetpos", "disputed"],
+      "input": {
+        "start": {
+          "local": "2026-01-05T09:00:00",
+          "tzid": "America/New_York"
+        },
+        "end": {
+          "local": "2026-01-05T09:30:00",
+          "tzid": "America/New_York"
+        },
+        "allDay": false,
+        "rrule": "FREQ=WEEKLY;BYDAY=MO,WE,FR;BYSETPOS=-1;COUNT=6",
+        "range": {
+          "from": "2026-01-01T00:00:00Z",
+          "to": "2028-01-01T00:00:00Z"
+        }
+      },
+      "side": "A",
+      "reading": "RFC 5545 §3.3.10 lets BYSETPOS apply to any frequency (\"within the set of recurrence instances\" of each interval); WEEKLY;BYDAY=MO,WE,FR;BYSETPOS=-1 is the Friday of each week. B applies BYSETPOS only for MONTHLY and YEARLY and so keeps all three days. The corpus takes A.",
+      "expected": {
+        "ok": true,
+        "occurrences": [
+          {
+            "recurrenceId": "20260109T140000Z",
+            "start": "20260109T140000Z",
+            "end": "20260109T143000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20260116T140000Z",
+            "start": "20260116T140000Z",
+            "end": "20260116T143000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20260123T140000Z",
+            "start": "20260123T140000Z",
+            "end": "20260123T143000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20260130T140000Z",
+            "start": "20260130T140000Z",
+            "end": "20260130T143000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20260206T140000Z",
+            "start": "20260206T140000Z",
+            "end": "20260206T143000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20260213T140000Z",
+            "start": "20260213T140000Z",
+            "end": "20260213T143000Z",
+            "overridden": false
+          }
+        ]
+      },
+      "A": [
+        {
+          "recurrenceId": "20260109T140000Z",
+          "start": "20260109T140000Z",
+          "end": "20260109T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260116T140000Z",
+          "start": "20260116T140000Z",
+          "end": "20260116T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260123T140000Z",
+          "start": "20260123T140000Z",
+          "end": "20260123T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260130T140000Z",
+          "start": "20260130T140000Z",
+          "end": "20260130T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260206T140000Z",
+          "start": "20260206T140000Z",
+          "end": "20260206T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260213T140000Z",
+          "start": "20260213T140000Z",
+          "end": "20260213T143000Z",
+          "overridden": false
+        }
+      ],
+      "B": [
+        {
+          "recurrenceId": "20260105T140000Z",
+          "start": "20260105T140000Z",
+          "end": "20260105T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260107T140000Z",
+          "start": "20260107T140000Z",
+          "end": "20260107T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260109T140000Z",
+          "start": "20260109T140000Z",
+          "end": "20260109T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260112T140000Z",
+          "start": "20260112T140000Z",
+          "end": "20260112T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260114T140000Z",
+          "start": "20260114T140000Z",
+          "end": "20260114T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260116T140000Z",
+          "start": "20260116T140000Z",
+          "end": "20260116T143000Z",
+          "overridden": false
+        }
+      ]
+    },
+    {
+      "id": "setpos-yearly-across-months",
+      "tags": ["bysetpos", "yearly", "disputed"],
+      "input": {
+        "start": {
+          "local": "2026-01-05T09:00:00",
+          "tzid": "America/New_York"
+        },
+        "end": {
+          "local": "2026-01-05T09:30:00",
+          "tzid": "America/New_York"
+        },
+        "allDay": false,
+        "rrule": "FREQ=YEARLY;BYMONTH=1,2;BYDAY=MO;BYSETPOS=1;COUNT=3",
+        "range": {
+          "from": "2026-01-01T00:00:00Z",
+          "to": "2030-01-01T00:00:00Z"
+        }
+      },
+      "side": "A",
+      "reading": "For YEARLY, BYSETPOS selects within the whole year's set (here every Monday of January and February), so BYSETPOS=1 is the first Monday of January only. B applies BYSETPOS month by month and also keeps the first Monday of February. The corpus takes A.",
+      "expected": {
+        "ok": true,
+        "occurrences": [
+          {
+            "recurrenceId": "20260105T140000Z",
+            "start": "20260105T140000Z",
+            "end": "20260105T143000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20270104T140000Z",
+            "start": "20270104T140000Z",
+            "end": "20270104T143000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20280103T140000Z",
+            "start": "20280103T140000Z",
+            "end": "20280103T143000Z",
+            "overridden": false
+          }
+        ]
+      },
+      "A": [
+        {
+          "recurrenceId": "20260105T140000Z",
+          "start": "20260105T140000Z",
+          "end": "20260105T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20270104T140000Z",
+          "start": "20270104T140000Z",
+          "end": "20270104T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20280103T140000Z",
+          "start": "20280103T140000Z",
+          "end": "20280103T143000Z",
+          "overridden": false
+        }
+      ],
+      "B": [
+        {
+          "recurrenceId": "20260105T140000Z",
+          "start": "20260105T140000Z",
+          "end": "20260105T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260202T140000Z",
+          "start": "20260202T140000Z",
+          "end": "20260202T143000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20270104T140000Z",
+          "start": "20270104T140000Z",
+          "end": "20270104T143000Z",
+          "overridden": false
+        }
+      ]
+    },
+    {
+      "id": "mday-yearly-no-bymonth",
+      "tags": ["bymonthday", "yearly", "disputed"],
+      "input": {
+        "start": {
+          "local": "2026-01-15T09:00:00",
+          "tzid": "America/New_York"
+        },
+        "end": {
+          "local": "2026-01-15T10:00:00",
+          "tzid": "America/New_York"
+        },
+        "allDay": false,
+        "rrule": "FREQ=YEARLY;BYMONTHDAY=15;COUNT=4",
+        "range": {
+          "from": "2026-01-01T00:00:00Z",
+          "to": "2028-01-01T00:00:00Z"
+        }
+      },
+      "side": "A",
+      "reading": "RFC 5545 §3.3.10's table marks BYMONTHDAY as \"Expand\" for YEARLY: without BYMONTH, YEARLY;BYMONTHDAY=15 is the 15th of every month of the year. B only uses DTSTART's month. The corpus takes A.",
+      "expected": {
+        "ok": true,
+        "occurrences": [
+          {
+            "recurrenceId": "20260115T140000Z",
+            "start": "20260115T140000Z",
+            "end": "20260115T150000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20260215T140000Z",
+            "start": "20260215T140000Z",
+            "end": "20260215T150000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20260315T130000Z",
+            "start": "20260315T130000Z",
+            "end": "20260315T140000Z",
+            "overridden": false
+          },
+          {
+            "recurrenceId": "20260415T130000Z",
+            "start": "20260415T130000Z",
+            "end": "20260415T140000Z",
+            "overridden": false
+          }
+        ]
+      },
+      "A": [
+        {
+          "recurrenceId": "20260115T140000Z",
+          "start": "20260115T140000Z",
+          "end": "20260115T150000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260215T140000Z",
+          "start": "20260215T140000Z",
+          "end": "20260215T150000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260315T130000Z",
+          "start": "20260315T130000Z",
+          "end": "20260315T140000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20260415T130000Z",
+          "start": "20260415T130000Z",
+          "end": "20260415T140000Z",
+          "overridden": false
+        }
+      ],
+      "B": [
+        {
+          "recurrenceId": "20260115T140000Z",
+          "start": "20260115T140000Z",
+          "end": "20260115T150000Z",
+          "overridden": false
+        },
+        {
+          "recurrenceId": "20270115T140000Z",
+          "start": "20270115T140000Z",
+          "end": "20270115T150000Z",
+          "overridden": false
+        }
+      ]
+    }
+  ]
+}
