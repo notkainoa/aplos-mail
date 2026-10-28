@@ -491,7 +491,7 @@ Each run writes a **content-free evidence file** (counts, timings, units per min
 
 ### 5.5 Live experiments register
 
-Experiments are named EX1-EX12 so they cannot be confused with plan 10's milestones E0-E8 (there is no EX9).
+Experiments are named EX1-EX14 so they cannot be confused with plan 10's milestones E0-E8 (there is no EX9).
 
 | # | Question | Source | Settled in |
 |---|---|---|---|
@@ -506,6 +506,8 @@ Experiments are named EX1-EX12 so they cannot be confused with plan 10's milesto
 | EX10 | Does a Graph upload-session send keep the `internetMessageId` | ARCH §5.2 [U] | PV10 |
 | EX11 | Does iCloud or Fastmail CalDAV send the RSVP reply when `PARTSTAT` is updated | not in research | PV9 |
 | EX12 | After a Testing-mode expiry, does a reconnect with `login_hint` and without `prompt=consent` return a new refresh token, and how old can a Gmail history cursor be and still answer? | `RC/protocols/proto-google.md` §8.1 (7-day expiry); ARCH §5.1 | PV5, first reconnect |
+| EX13 | Does Gmail send `Retry-After` on the per-user 403 `rateLimitExceeded` or on 429? The emulator shows 0.2.3 would finish slowly, not fail, if it did, so the field failure suggests it does not | Providers thread, Gmail emulator gate (STATUS 2026-10-27) | `prov-gmail`, first live run |
+| EX14 | Does a Testing-mode token response include `refresh_token_expires_in`? `reconnectBy` uses it when present, else grant time plus 7 days | Providers thread (STATUS 2026-10-27) | `prov-gov`, first live run |
 
 > **What this means:** Practice providers prove the logic quickly and cheaply. Only real accounts prove the real thing, so live checks are written down, run by the owner where mail would be sent, and never replaced by mocks.
 

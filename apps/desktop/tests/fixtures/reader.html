@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="UTF-8"><title>Aplos reader acceptance</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module">
 import React from 'react';
 import {createRoot} from 'react-dom/client';
-import '/src/renderer/styles.css';
+import '/src/renderer/legacy/styles.css';
 const image=color=>btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="72" height="36"><rect width="72" height="36" fill="${color}"/></svg>`);
 window.readerProbe={calls:[],fail:false};
 window.aplos={subscribe:()=>()=>{},invoke:async(method,payload)=>{
@@ -11,7 +11,7 @@ window.aplos={subscribe:()=>()=>{},invoke:async(method,payload)=>{
   if(window.readerProbe.fail)throw new Error('Synthetic inline download failed.');
   return {id:payload.attachmentId,name:'inline.svg',type:'image/svg+xml',size:130,data:image(payload.attachmentId==='first-image'?'#406b55':'#a47760')};
 }};
-const [{Reader},{prepareMessageBody},{defaultSettings}]=await Promise.all([import('/src/renderer/Reader.tsx'),import('/src/renderer/mailBody.ts'),import('/src/main/demo.ts')]);
+const [{Reader},{prepareMessageBody},{defaultSettings}]=await Promise.all([import('/src/renderer/legacy/Reader.tsx'),import('/src/renderer/legacy/mailBody.ts'),import('/src/main/demo.ts')]);
 const makeMessage=(id,attachmentId)=>({id,from:'synthetic@example.test',fromName:'Synthetic Sender',to:['reader@example.test'],date:'2026-10-14T18:00:00Z',text:'Fresh authored content. Older history.',html:'<p>Fresh authored content.</p><img alt="Inline illustration" src="cid:shared-image"><img alt="Remote illustration" src="https://tracking.example.test/pixel"><div class="gmail_quote"><p>Older quoted history.</p><blockquote><p>Nested older history.</p></blockquote></div><script>window.readerProbe.scriptExecuted=true;<\/script>',attachments:[{id:attachmentId,name:'inline.svg',type:'image/svg+xml',size:130,contentId:'shared-image',gmailAttachmentId:attachmentId,messageId:id}]});
 const messages=[makeMessage('first','first-image'),makeMessage('latest','latest-image')];
 const base={id:'reader-fixture',accountId:'fixture',subject:'Reader fidelity acceptance',summary:'Original synthetic MIME content.',messages,date:messages[1].date,unread:false,status:'new',importance:'important',bookmarked:false,replyStatus:'none'};

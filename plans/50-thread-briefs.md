@@ -16,6 +16,8 @@ You don't need to read the briefs. You need the launch checklist and the two lau
 
 > **What this means:** Six messages, one per thread. Paste each into a new thread and it can start with nothing else from you.
 
+**Model routing (owner, 2026-10-28; every thread):** simple, checkable work goes to the free OpenCode models first, then to Cursor Grok when its free allowance is available. Claude does the judgement, the UI, the reviews and the final checks. The tiers and rules are in roadmap section 5.1a.
+
 ## How to use this file
 
 Each brief sits in its own code block. Copy the whole block, exactly as it is, into a new T3 Code thread. Each brief is complete on its own: the thread sees nothing else except the repository. Shared sections (coordination, branches, workflows, quality, hard rules, the owner review loop) repeat in every brief on purpose.

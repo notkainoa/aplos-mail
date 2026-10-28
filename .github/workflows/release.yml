@@ -34,8 +34,8 @@ jobs:
             exit 1
           fi
       - run: npm ci
-      - run: npm run typecheck -w @aplos/desktop
-      - run: npm test -w @aplos/desktop
+      - run: npm run typecheck -w @aplos/desktop -w @aplos/engine -w @aplos/contract
+      - run: npm test -w @aplos/desktop -w @aplos/engine
       - name: Build, sign, notarize and publish a draft release
         # Missing secrets arrive as empty strings; release-build.mjs then makes an ad-hoc signed,
         # un-notarized build instead of failing. Signing needs CSC_LINK + CSC_KEY_PASSWORD;
