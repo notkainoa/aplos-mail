@@ -43,7 +43,7 @@ What Aplos stores, and what it sends where, is explained at https://aplos.email/
 
 ## If updates fail
 
-While this repository is private, an installed copy cannot reach the update feed. Settings > Updates shows "Couldn’t check" with a short error, and Help > Check for updates shows the same error in a dialog. This is expected and nothing is broken.
+While this repository is private, an installed copy cannot reach the update feed. Settings > Updates shows "Couldn’t check" with a short error, and Check for Updates in the Aplos Mail menu shows the same error in a dialog. This is expected and nothing is broken.
 
 To get a new build, download the new DMG from the release page and install it the same way as above. Drag the new app onto Applications and choose Replace.
 
