@@ -1,15 +1,26 @@
 // buttons-keys: Button, Kbd, Tooltip, Icon, key hints. Static markup, demo data and worst-case data.
-// Run: npx tsx --test apps/desktop/src/renderer/ui/buttons-keys/buttons-keys.test.tsx
+// Run from the repo root: npx tsx --tsconfig apps/desktop/tsconfig.json --test apps/desktop/src/renderer/ui/buttons-keys/buttons-keys.test.tsx
+// (npm test in apps/desktop runs src/renderer/ui/**/*.test.tsx too once the script lists them; see the report.)
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { ReactElement, ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createAppRegistry } from '../../commands';
 import { COMPONENTS, type IconName } from '../props';
+import { Switch } from '../controls/Switch';
 import { Button } from './Button';
 import { Icon, IconSetContext, LUCIDE_ICONS } from './Icon';
 import { Kbd, KeyCaps } from './Kbd';
-import { CommandKeysProvider, KeyHintsProvider, parseKeyText, revealVisible, showsInline } from './keyHints';
+import {
+  CommandKeysProvider,
+  KeyHintsProvider,
+  parseKeyText,
+  resolveShowKeys,
+  revealVisible,
+  showsInline,
+  useControlKeys,
+} from './keyHints';
 import { Tooltip, TooltipBubble } from './Tooltip';
 
 const registry = createAppRegistry();
@@ -315,6 +326,84 @@ test('Tooltip children: a Button needing a tooltip renders as the bare button un
   assert.match(markup, /^<button /);
   assert.doesNotMatch(markup, /role="tooltip"/);
   assert.match(markup, /aria-label="New message"/);
+});
+
+test('Button CSS: a button can shrink so its label ellipsises; filled+danger keeps readable ink', () => {
+  const css = readFileSync(new URL('./buttons-keys.css', import.meta.url), 'utf8');
+  const button = css.match(/\n\.ui-button \{[^}]*\}/)?.[0] ?? '';
+  assert.match(button, /flex:\s*0 1 auto/);
+  assert.match(button, /min-width:\s*0/);
+  assert.match(button, /max-width:\s*100%/);
+  assert.doesNotMatch(button, /flex:\s*none/);
+  // the danger colour is scoped to text and icon buttons; a bare [data-tone="danger"] rule would beat the filled colour
+  assert.doesNotMatch(css, /\.ui-button\[data-tone="danger"\]\s*[,{]/);
+  assert.match(css, /data-tone="danger"\]:is\(\[data-variant="text"\], \[data-variant="icon"\]\)/);
+  assert.match(css, /\.ui-tooltip\[data-instant="true"\]\s*\{\s*animation:\s*none/);
+  assert.match(css, /\.ui-button\[data-spinner="overlay"\] \.ui-button-spinner/);
+});
+
+test('Button: a 300-character label and an unbreakable email render in the ellipsising label span, untruncated in the DOM', () => {
+  const long = 'Quarterly '.repeat(30);
+  const email = 'a'.repeat(80) + '@example.com';
+  const markup = html(
+    <>
+      <Button variant="text" label={long} icon="reply" onPress={noop} />
+      <Button variant="filled" label={email} onPress={noop} />
+    </>,
+  );
+  assert.match(markup, /<span class="ui-button-label">Quarterly /);
+  assert.ok(markup.includes(email));
+  assert.doesNotMatch(markup, /title=/, 'the native title appears only after a clip is measured');
+});
+
+test('Button: filled with tone danger renders both attributes (the stylesheet keeps the ink readable)', () => {
+  const markup = html(<Button variant="filled" tone="danger" label="Delete event" onPress={noop} />);
+  assert.match(markup, /data-variant="filled"/);
+  assert.match(markup, /data-tone="danger"/);
+});
+
+test('Tooltip: a disabled reason is a permanent hidden description, so it is read on focus', () => {
+  const markup = html(
+    <Button variant="text" label="Remove" disabled disabledReason="This key comes from the environment." onPress={noop} />,
+  );
+  const describedby = markup.match(/aria-describedby="([^"]+)"/)?.[1];
+  assert.ok(describedby, 'the trigger points at the reason before any focus');
+  const span = markup.match(new RegExp(`<span id="${describedby}" class="ui-visually-hidden">([^<]*)</span>`));
+  assert.equal(span?.[1], 'This key comes from the environment.');
+  const sw = html(<Switch checked={false} label="Sync" disabled disabledReason="Reconnect first." onChange={noop} />);
+  assert.match(sw, /aria-describedby="[^"]+"/);
+  assert.match(sw, /ui-visually-hidden">Reconnect first\./);
+});
+
+test('Key hints: the shell resolves the mode with "all" winning over "held"', () => {
+  assert.equal(resolveShowKeys({ all: true, held: true }), 'all');
+  assert.equal(resolveShowKeys({ all: true, held: false }), 'all');
+  assert.equal(resolveShowKeys({ all: false, held: true }), 'held');
+  assert.equal(resolveShowKeys({ all: false, held: false }), 'tooltips');
+  // "all" keeps an inline hint on while the command key goes down: nothing unmounts, nothing shifts
+  const inline = (mode: 'tooltips' | 'held' | 'all') => inMode(mode, <Button variant="text" label="Done" commandId="mail.done" keyHint="hint" onPress={noop} />);
+  assert.match(inline(resolveShowKeys({ all: true, held: true })), /ui-button-keys/);
+});
+
+test('Key hints: CommandKeysProvider closes over the current context stack, so tooltips list only keys that work here', () => {
+  const calls: Array<readonly string[] | undefined> = [];
+  const describeStack = (id: string, stack?: readonly string[]) => {
+    calls.push(stack);
+    return registry.describeKeys(id, stack as never);
+  };
+  const Probe = () => <span>{useControlKeys('mail.done').map((cap) => cap.chord).join('|')}</span>;
+  const render = (stack?: readonly string[]) =>
+    text(
+      renderToStaticMarkup(
+        <CommandKeysProvider describe={describeStack} stack={stack as never}>
+          <Probe />
+        </CommandKeysProvider>,
+      ),
+    );
+  assert.equal(render(), 'E|→', 'without a stack every context is listed');
+  assert.equal(render(['global', 'list']), 'E', 'the All mail list has no arrow triage');
+  assert.equal(render(['global', 'list', 'home']), 'E|→', 'Home does');
+  assert.deepEqual(calls, [undefined, ['global', 'list'], ['global', 'list', 'home']]);
 });
 
 // Type-level: the helper accepts any ReactElement child.

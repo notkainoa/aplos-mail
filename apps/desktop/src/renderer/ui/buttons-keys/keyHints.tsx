@@ -2,11 +2,16 @@
 //
 // Two providers, both mounted once by the shell:
 // - KeyHintsProvider carries the app-wide mode ('tooltips' | 'held' | 'all') that props.ts exports as
-//   KeyHintsContextValue. Hover never changes it.
+//   KeyHintsContextValue. Hover never changes it. 'all' WINS over 'held': while "Show all key hints" is on the
+//   shell keeps 'all' even when ⌘ goes down (use resolveShowKeys), otherwise every inline keycap would unmount
+//   and the buttons would shrink the moment ⌘ is pressed.
 // - CommandKeysProvider carries the registry's `describeKeys` ("E", "J or ↓", "Hold R"), so a control that is
 //   given a `commandId` can print the real keycap. Without it, nothing is printed for a commandId; a literal
-//   `keys` still shows.
-import { createContext, createElement, useContext, type ReactNode } from 'react';
+//   `keys` still shows. The shell passes the CURRENT context stack (`stack`), so a tooltip only advertises keys
+//   that work on the current screen (arrow triage is Home, one by one and the reader, not the All mail list).
+//   Without a stack the registry lists every context's bindings, which is wrong on screen.
+import { createContext, createElement, useContext, useMemo, type ReactNode } from 'react';
+import type { ContextName } from '../../commands';
 import type { CommandId, KeyHint, KeyHintsContextValue, LiteralKey, ShortcutChord, ShowKeysMode } from '../props';
 
 const DEFAULT_HINTS: KeyHintsContextValue = { showKeys: 'tooltips' };
@@ -14,7 +19,12 @@ const DEFAULT_HINTS: KeyHintsContextValue = { showKeys: 'tooltips' };
 /** The app-wide key-hint mode. Default 'tooltips'. */
 export const KeyHintsContext = createContext<KeyHintsContextValue>(DEFAULT_HINTS);
 
-/** Provided once by the shell: `showKeys` is 'held' while ⌘ is down and 'all' with "Show all key hints". */
+/** The mode the shell provides: 'all' while "Show all key hints" is on (it wins over ⌘), else 'held' while ⌘ is down, else 'tooltips'. */
+export function resolveShowKeys(state: { all: boolean; held: boolean }): ShowKeysMode {
+  return state.all ? 'all' : state.held ? 'held' : 'tooltips';
+}
+
+/** Provided once by the shell; compute `showKeys` with resolveShowKeys so 'all' wins over 'held'. */
 export function KeyHintsProvider({ value, children }: { value: KeyHintsContextValue; children: ReactNode }) {
   return createElement(KeyHintsContext.Provider, { value }, children);
 }
@@ -24,15 +34,32 @@ export function useKeyHints(): KeyHintsContextValue {
   return useContext(KeyHintsContext);
 }
 
-/** `registry.describeKeys` or an equivalent: "E", "J or ↓", "Hold R"; '' when unbound. */
-export type DescribeKeys = (id: CommandId) => string;
+/** `registry.describeKeys` or an equivalent: "E", "J or ↓", "Hold R"; '' when unbound. `stack` is the current context stack; undefined means every context. */
+export type DescribeKeys = (id: CommandId, stack?: readonly ContextName[]) => string;
+
+/** What the controls call: `describeKeys` already closed over the current stack. */
+type DescribeCurrent = (id: CommandId) => string;
 
 /** Where keycap text comes from. Null until the shell provides the registry. */
-export const CommandKeysContext = createContext<DescribeKeys | null>(null);
+export const CommandKeysContext = createContext<DescribeCurrent | null>(null);
 
-/** Provided once by the shell next to KeyHintsProvider: `<CommandKeysProvider describe={(id) => registry.describeKeys(id)}>`. */
-export function CommandKeysProvider({ describe, children }: { describe: DescribeKeys; children: ReactNode }) {
-  return createElement(CommandKeysContext.Provider, { value: describe }, children);
+/**
+ * Provided once by the shell next to KeyHintsProvider:
+ * `<CommandKeysProvider describe={(id, stack) => registry.describeKeys(id, stack)} stack={contextStack}>`.
+ * Pass the current context stack and re-render the provider when it changes; without `stack` every context's
+ * bindings are listed ("E or →" on All mail, where → does nothing).
+ */
+export function CommandKeysProvider({
+  describe,
+  stack,
+  children,
+}: {
+  describe: DescribeKeys;
+  stack?: readonly ContextName[];
+  children: ReactNode;
+}) {
+  const value = useMemo<DescribeCurrent>(() => (id) => describe(id, stack), [describe, stack]);
+  return createElement(CommandKeysContext.Provider, { value }, children);
 }
 
 const ALTERNATIVE_SEPARATOR = ' or ';

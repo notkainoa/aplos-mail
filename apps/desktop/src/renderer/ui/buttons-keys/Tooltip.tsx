@@ -29,6 +29,8 @@ import { mergeRefs } from './mergeRefs';
 const OPEN_DELAY_MS = 500;
 /** Keep the bubble this far inside the window edge. */
 const EDGE_PX = 8;
+/** The gap between trigger and bubble (the stylesheet's --space-1 + --space-half). */
+const GAP_PX = 6;
 
 let lastClosedAt = 0;
 
@@ -42,13 +44,15 @@ interface BubbleProps {
   /** Keycaps after the label. */
   caps?: readonly ShortcutChord[];
   placement?: 'below' | 'above';
+  /** Opened inside the grace window after another tooltip closed: shown at once, without the reveal animation. */
+  instant?: boolean;
   /** Viewport point under (below) or over (above) which the bubble centres; null until measured. */
   anchor?: { x: number; y: number } | null;
   ref?: Ref<HTMLDivElement>;
 }
 
 /** The floating bubble itself, separate so it can be drawn and tested without a pointer. */
-export function TooltipBubble({ id, label, detail, caps = [], placement = 'below', anchor = null, ref }: BubbleProps) {
+export function TooltipBubble({ id, label, detail, caps = [], placement = 'below', instant = false, anchor = null, ref }: BubbleProps) {
   const style = anchor ? ({ '--tip-x': `${anchor.x}px`, '--tip-y': `${anchor.y}px` } as CSSProperties) : undefined;
   return (
     <div
@@ -57,6 +61,7 @@ export function TooltipBubble({ id, label, detail, caps = [], placement = 'below
       role="tooltip"
       className="ui-tooltip"
       data-placement={placement}
+      data-instant={instant ? 'true' : undefined}
       data-state={anchor ? 'open' : 'measuring'}
       style={style}
     >
@@ -81,9 +86,11 @@ type TriggerProps = {
 
 export function Tooltip({ label, detail, commandId, keys, children, placement = 'below', disabled = false }: TooltipProps) {
   const id = useId();
+  const reasonId = `${id}-reason`;
   const caps = useControlKeys(commandId, keys);
   const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [anchor, setAnchor] = useState<{ x: number; y: number; placement: 'below' | 'above' } | null>(null);
+  const [instant, setInstant] = useState(false);
   const openRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -106,12 +113,14 @@ export function Tooltip({ label, detail, commandId, keys, children, placement = 
     (immediate: boolean) => {
       if (disabled) return;
       clearTimer();
-      const reveal = () => {
+      const reveal = (inGrace: boolean) => {
         openRef.current = true;
+        setInstant(inGrace);
         setOpen(true);
       };
-      if (immediate || Date.now() - lastClosedAt < timing.revealGrace) reveal();
-      else timer.current = setTimeout(reveal, OPEN_DELAY_MS);
+      const inGrace = Date.now() - lastClosedAt < timing.revealGrace;
+      if (immediate || inGrace) reveal(inGrace);
+      else timer.current = setTimeout(() => reveal(false), OPEN_DELAY_MS);
     },
     [disabled, clearTimer],
   );
@@ -127,8 +136,16 @@ export function Tooltip({ label, detail, commandId, keys, children, placement = 
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') hide();
     };
+    // The bubble is placed once from the trigger's rect, so scrolling or resizing closes it rather than leaving it adrift.
+    const onMove = () => hide();
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
   }, [open, hide]);
 
   useLayoutEffect(() => {
@@ -138,7 +155,14 @@ export function Tooltip({ label, detail, commandId, keys, children, placement = 
     const half = width / 2;
     const centre = rect.left + rect.width / 2;
     const x = Math.min(Math.max(centre, half + EDGE_PX), Math.max(window.innerWidth - half - EDGE_PX, half + EDGE_PX));
-    setAnchor({ x, y: placement === 'above' ? rect.top : rect.bottom });
+    // Flip to the side with room: the bubble plus its gap must fit inside the window edge.
+    const needed = (bubbleRef.current?.offsetHeight ?? 0) + GAP_PX + EDGE_PX;
+    const roomBelow = window.innerHeight - rect.bottom;
+    const roomAbove = rect.top;
+    let side = placement;
+    if (side === 'below' && roomBelow < needed && roomAbove > roomBelow) side = 'above';
+    else if (side === 'above' && roomAbove < needed && roomBelow > roomAbove) side = 'below';
+    setAnchor({ x, y: side === 'above' ? rect.top : rect.bottom, placement: side });
   }, [open, placement, label, detail, caps.length]);
 
   const child = children as ReactElement<TriggerProps>;
@@ -146,7 +170,9 @@ export function Tooltip({ label, detail, commandId, keys, children, placement = 
 
   const trigger = cloneElement(child, {
     ref: mergeRefs<HTMLElement>(triggerRef, own.ref),
-    'aria-describedby': open ? id : own['aria-describedby'],
+    // A detail (the reason a control is disabled) is described permanently by a hidden twin, so it is read on focus
+    // and not one render later; the open bubble only describes a trigger that has no detail.
+    'aria-describedby': detail ? reasonId : open ? id : own['aria-describedby'],
     onPointerEnter: (event: PointerEvent<HTMLElement>) => {
       own.onPointerEnter?.(event);
       if (event.pointerType !== 'touch') show(false);
@@ -172,6 +198,11 @@ export function Tooltip({ label, detail, commandId, keys, children, placement = 
   return (
     <>
       {trigger}
+      {detail ? (
+        <span id={reasonId} className="ui-visually-hidden">
+          {detail}
+        </span>
+      ) : null}
       {open && typeof document !== 'undefined'
         ? createPortal(
             <TooltipBubble
@@ -180,7 +211,8 @@ export function Tooltip({ label, detail, commandId, keys, children, placement = 
               label={label}
               detail={detail}
               caps={caps}
-              placement={placement}
+              placement={anchor?.placement ?? placement}
+              instant={instant}
               anchor={anchor}
             />,
             document.body,

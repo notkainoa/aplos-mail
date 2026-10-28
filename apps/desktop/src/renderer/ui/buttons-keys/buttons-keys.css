@@ -65,7 +65,10 @@
   --btn-h: var(--control-md);
   position: relative;
   display: inline-flex;
-  flex: none;
+  /* a button never outgrows its container: the label shrinks and ellipsises, everything else keeps its size */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   justify-content: center;
   gap: calc(var(--space-1) + var(--space-half));
@@ -104,6 +107,7 @@
   outline-offset: var(--focus-gap);
 }
 .ui-button-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ui-button-keys { flex: none; }
 .ui-button-keys { display: inline-flex; align-items: center; margin-right: calc(-1 * var(--space-1)); }
 
 /* text */
@@ -113,12 +117,14 @@
 
 /* icon */
 .ui-button[data-variant="icon"] {
+  flex: none;
   width: var(--btn-h);
   padding: 0;
   color: var(--dim);
 }
 .ui-button[data-variant="icon"]:active { transform: scale(var(--press-scale-icon)); }
 .ui-button[data-variant="icon"][data-labelled="true"] {
+  flex: 0 1 auto;
   width: auto;
   padding: 0 var(--space-2);
   color: var(--ink-2);
@@ -135,6 +141,15 @@
   color: var(--accent-ink);
   box-shadow: inset 0 1px 0 var(--press-hi), inset 0 -1px 0 var(--press-lo);
 }
+.ui-button[data-variant="filled"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: transparent;
+  pointer-events: none;
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
 .ui-button[data-variant="filled"]:active { box-shadow: inset 0 1px 0 var(--press-lo), inset 0 -1px 0 var(--press-hi); }
 .ui-button[data-variant="filled"] .ui-kbd {
   background: color-mix(in srgb, var(--accent-ink) 16%, transparent);
@@ -142,8 +157,11 @@
 }
 
 /* tone */
-.ui-button[data-tone="danger"],
-.ui-button[data-tone="danger"] .ui-icon { color: var(--stamp-ink); }
+/* filled keeps --accent-ink: red text on the ink-blue fill would be unreadable */
+.ui-button[data-tone="danger"]:is([data-variant="text"], [data-variant="icon"]):not(:disabled):not([aria-disabled="true"]),
+.ui-button[data-tone="danger"]:is([data-variant="text"], [data-variant="icon"]):not(:disabled):not([aria-disabled="true"]) .ui-icon {
+  color: var(--stamp-ink);
+}
 
 /* states */
 .ui-button:disabled,
@@ -165,17 +183,25 @@
 }
 .ui-button[data-state="busy"] { cursor: progress; }
 
-/* the working indicator replaces the leading icon; it appears only after 150 ms (the component waits) */
+/* the working indicator appears only after 150 ms (the component waits) and never changes the button's width:
+   it takes the icon's place (same size), or, with no icon, overlays the centre while the label keeps its space */
 .ui-button-spinner {
   flex: none;
-  width: var(--icon-sm);
-  height: var(--icon-sm);
+  width: var(--icon);
+  height: var(--icon);
   border-radius: var(--radius-pill);
   border: var(--space-half) solid color-mix(in srgb, currentColor 25%, transparent);
   border-top-color: currentColor;
-  animation: ui-button-spin var(--dur-status) var(--ease-linear) infinite;
+  animation: ui-button-spin var(--dur-status) var(--ease-inout) infinite;
   animation-play-state: var(--play-status);
 }
+.ui-button[data-spinner="overlay"] .ui-button-spinner {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+.ui-button[data-spinner="overlay"] .ui-button-label,
+.ui-button[data-spinner="overlay"] .ui-button-keys { visibility: hidden; }
 @keyframes ui-button-spin { to { transform: rotate(1turn); } }
 
 @media (hover: hover) {
@@ -188,11 +214,12 @@
   .ui-button[data-variant="icon"][data-labelled="true"]:hover:not(:disabled):not([aria-disabled="true"]) .ui-icon {
     color: var(--ink);
   }
-  .ui-button[data-variant="filled"]:hover:not(:disabled):not([aria-disabled="true"]) {
-    background: color-mix(in srgb, var(--ink) 10%, var(--accent));
+  /* the DESIGN hover strength (--hover, ink 4 %, dark 5 %) laid over the accent */
+  .ui-button[data-variant="filled"]:hover:not(:disabled):not([aria-disabled="true"])::after {
+    background: var(--hover);
   }
-  .ui-button[data-tone="danger"][data-variant="text"]:hover:not(:disabled):not([aria-disabled="true"]),
-  .ui-button[data-tone="danger"][data-variant="text"]:hover:not(:disabled):not([aria-disabled="true"]) .ui-icon {
+  .ui-button[data-tone="danger"]:is([data-variant="text"], [data-variant="icon"]):hover:not(:disabled):not([aria-disabled="true"]),
+  .ui-button[data-tone="danger"]:is([data-variant="text"], [data-variant="icon"]):hover:not(:disabled):not([aria-disabled="true"]) .ui-icon {
     color: var(--stamp-ink);
   }
 }
@@ -218,6 +245,8 @@
   pointer-events: none;
   animation: ui-tooltip-in var(--dur-reveal-in) var(--ease-out) both;
 }
+/* opened inside the grace window after another closed: instant, no reveal */
+.ui-tooltip[data-instant="true"] { animation: none; }
 .ui-tooltip[data-placement="above"] {
   top: calc(var(--tip-y) - var(--space-1) - var(--space-half));
   translate: -50% -100%;
@@ -228,4 +257,16 @@
 .ui-tooltip-detail { color: var(--dim); overflow-wrap: anywhere; }
 @keyframes ui-tooltip-in {
   from { opacity: 0; transform: translateY(var(--move-reveal)) scale(var(--scale-reveal)); }
+}
+
+/* a description for assistive tech only (the reason a control is disabled); never seen */
+.ui-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

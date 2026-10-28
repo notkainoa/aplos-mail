@@ -12,6 +12,7 @@ export {
   KeyHintsContext,
   KeyHintsProvider,
   parseKeyText,
+  resolveShowKeys,
   revealVisible,
   showsInline,
   useControlKeys,

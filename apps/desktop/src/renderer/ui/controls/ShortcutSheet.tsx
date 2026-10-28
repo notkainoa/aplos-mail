@@ -2,6 +2,7 @@
 // three columns at a fixed height that scrolls, alternatives joined with "or", and columns that keep their
 // places while the filter narrows them. Esc clears the filter first, then closes; "?" again, the close button
 // and the scrim close too. Handles only its own widget's keys, and never while an IME is composing.
+import { createPortal } from 'react-dom';
 import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { Button } from '../buttons-keys/Button';
 import { KeyCaps } from '../buttons-keys/Kbd';
@@ -91,7 +92,7 @@ export function ShortcutSheet({ open, groups, columns, query, onQueryChange, onC
     }
   };
 
-  return (
+  const sheet = (
     <div
       className="ui-shortcut-sheet"
       data-state="open"
@@ -168,4 +169,6 @@ export function ShortcutSheet({ open, groups, columns, query, onQueryChange, onC
       </section>
     </div>
   );
+  // Portalled to <body> like the tooltip, so no positioned sibling or transformed ancestor (the dock) can cover or trap it.
+  return typeof document !== 'undefined' ? createPortal(sheet, document.body) : sheet;
 }

@@ -24,5 +24,9 @@ export function Switch({ checked, onChange, label, labelledBy, disabled = false,
     </button>
   );
   if (!explained) return control;
-  return <Tooltip label={disabledReason as string}>{control}</Tooltip>;
+  return (
+    <Tooltip label={label} detail={disabledReason}>
+      {control}
+    </Tooltip>
+  );
 }

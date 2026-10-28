@@ -1,6 +1,7 @@
 // controls: Switch, Checkbox, SwatchPicker, TextField, ShortcutSheet. Static markup, demo and worst-case data.
-// Run: npx tsx --tsconfig apps/desktop/tsconfig.json --test apps/desktop/src/renderer/ui/controls/controls.test.tsx
+// Run from the repo root: npx tsx --tsconfig apps/desktop/tsconfig.json --test apps/desktop/src/renderer/ui/controls/controls.test.tsx
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -322,4 +323,21 @@ test('sheetProps: groups, columns and parsed alternatives', () => {
   assert.equal(groups.length, 1);
   assert.deepEqual(groups[0].entries[0].alternatives, [{ chord: 'J' }, { chord: '↓' }]);
   assert.deepEqual(groups[0].entries[1].alternatives, [{ chord: 'R', hold: true }]);
+});
+
+test('controls CSS: unbreakable no-match query wraps, press scale follows the press motion, switch has no hover lightening', () => {
+  const css = readFileSync(new URL('./controls.css', import.meta.url), 'utf8');
+  assert.match(css.match(/\.ui-shortcut-sheet-empty \{[^}]*\}/)?.[0] ?? '', /overflow-wrap:\s*anywhere/);
+  for (const part of ['.ui-checkbox-box', '.ui-swatch-dot']) {
+    const rule = css.match(new RegExp(`\\${part} \\{[^}]*\\}`))?.[0] ?? '';
+    assert.match(rule, /transform var\(--dur-press-up\)/, `${part} transitions transform`);
+  }
+  assert.doesNotMatch(css, /\.ui-switch\[data-state="off"\]:hover/);
+});
+
+test('ShortcutSheet: a worst-case no-match query is echoed inside the empty line', () => {
+  const query = 'x'.repeat(200);
+  const markup = html(<ShortcutSheet {...sheetProps(buildSheet(registry))} open query={query} onQueryChange={noop} onClose={noop} />);
+  assert.match(markup, /ui-shortcut-sheet-empty/);
+  assert.ok(markup.includes(query));
 });
