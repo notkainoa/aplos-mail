@@ -29,6 +29,8 @@ export function failureCopy(failure: ErrorLineKind): string {
       return `Couldn’t send to ${failure.recipient}. Your draft is saved.`;
     case 'bodyFailed':
       return 'Couldn’t load this email.';
+    case 'listFailed':
+      return 'Couldn’t load this list.';
     case 'askFailed':
       return `${failure.provider} didn’t answer.`;
     case 'consentNeeded':

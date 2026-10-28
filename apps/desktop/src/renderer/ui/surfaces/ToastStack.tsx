@@ -1,8 +1,9 @@
 /**
  * ToastStack: up to three toasts, bottom-centre of the main pane, never under the dock (DESIGN 6, 7.13).
  * Newest on top. When more than three are waiting, the oldest plain toasts give way and are dismissed for good
- * (onDismiss), never hidden and brought back later. An Undo toast is never silently replaced: when Undo toasts
- * alone outnumber the room, the stack grows past three rather than drop one. The undo-send notice always keeps
+ * (onDismiss), never hidden and brought back later. An Undo toast and a persistent (failure) toast are never
+ * silently replaced: when those alone outnumber the room, the stack grows past three rather than drop one.
+ * The undo-send notice always keeps
  * its place. The stack itself is the persistent polite live region, so each new toast is read once; it never
  * steals focus.
  *
@@ -17,14 +18,14 @@ import { PartIcon, PartKeys, formatTime, keysFor } from './parts';
 const MAX_VISIBLE = 3;
 
 /**
- * The toasts to show, oldest first. While more than fit, the oldest plain toast gives way; Undo toasts are
- * never dropped, so a burst of them may exceed three.
+ * The toasts to show, oldest first. While more than fit, the oldest plain toast (neither undoable nor persistent)
+ * gives way; Undo and persistent toasts are never dropped, so a burst of them may exceed three.
  */
 export function visibleToasts(toasts: readonly ToastData[], reserved: number): ToastData[] {
   const room = Math.max(0, MAX_VISIBLE - reserved);
   const list = [...toasts];
   while (list.length > room) {
-    const plain = list.findIndex(toast => !toast.undoable);
+    const plain = list.findIndex(toast => !toast.undoable && !toast.persistent);
     if (plain === -1) break;
     list.splice(plain, 1);
   }

@@ -357,6 +357,26 @@ describe('ToastStack', () => {
     );
   });
 
+  it('never drops a persistent (failure) toast: only plain ones give way, oldest first', () => {
+    const list = [
+      t('f1', { persistent: true }),
+      t('p1'),
+      t('p2'),
+      t('u1', { undoable: true }),
+      t('f2', { persistent: true }),
+      t('p3'),
+    ];
+    assert.deepEqual(
+      visibleToasts(list, 0).map(x => x.id),
+      ['f1', 'u1', 'f2'],
+    );
+    const failures = [1, 2, 3, 4].map(n => t(`f${n}`, { persistent: true }));
+    assert.deepEqual(
+      visibleToasts([...failures, t('p')], 1).map(x => x.id),
+      ['f1', 'f2', 'f3', 'f4'],
+    );
+  });
+
   it('renders a polite stack and the undo-send notice inside it, counted in the three', () => {
     const html = render(
       <ToastStack
