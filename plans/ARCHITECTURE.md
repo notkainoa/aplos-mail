@@ -356,11 +356,11 @@ Thread rows built from one message carry `complete=0`. **Opening a thread** fetc
 
 **Rejected:** `https://mail.google.com/` for IMAP bulk sync and IDLE: a second code path and a "permanently delete all your email" consent line for the same restricted-scope cost (`RC/SYNTH-architecture.md` §3.2). Revisit only if live data after M3 shows quota still dominates (Decision 3).
 
-### 5.2 Microsoft Graph (ships dark until a client id exists)
+### 5.2 Microsoft Graph (round 2; ships dark until a client id exists)
 
 At most **4 requests in flight** per mailbox; an unordered `$batch` (at most 20 sub-requests) counts as 4; failed sub-requests retry after the largest `Retry-After`; a token bucket at 75% of 10,000 per 10 minutes (`RC/protocols/proto-others.md` §1.3, §7 #1). The visible window comes from a plain list query with light `$select`; each role folder then runs an **unfiltered** delta in the backfill lane with persisted `nextLink` checkpoints, because filters baked into the `deltaLink` probably hide older mail moved back in (M2 there). The cost of an unfiltered first round on a large folder is **[U]**, measured live in M8; correctness does not depend on it. Immutable ids stay. Delta polling: 30-60 s focused, 2-5 min in the background. Sends stay MIME through `/me/sendMail` to keep `internetMessageId`; mail over about 3 MB stays refused until an upload-session path is proven to keep the Message-ID **[U]**. AADSTS reasons are logged; `interaction_required` → `needsReauth`.
 
-### 5.3 IMAP: iCloud and generic hosts
+### 5.3 IMAP: iCloud and generic hosts (round 2)
 
 - **Connections:** two per account on the primary device, one elsewhere (§13). A holds IDLE on INBOX (restart per host: 25 min default, Yahoo 3 min); B is a priority command queue that releases between folders (`RC/protocols/proto-others.md` §2.3). Reconnect backoff depends on how long the connection survived.
 - **Capability ladder:** QRESYNC where advertised and allowed by the host table; else CONDSTORE `CHANGEDSINCE` plus a bounded expunge check; else windowed flag scans (newest 400 UIDs every 2 min, deep scan every 10). `STATUS` skips unchanged folders; non-INBOX folders rotate every 2-5 min.
@@ -369,7 +369,7 @@ At most **4 requests in flight** per mailbox; an unordered `$batch` (at most 20 
 - **iCloud host entry:** QRESYNC off (2021 evidence; Mailspring still disables it [S]) unless a scripted VANISHED probe passes in M7; tolerate `UID FETCH n:*`; append our own Sent copy (kept); one app-specific password for IMAP, SMTP and CalDAV, with the username rules in the preset copy (`RC/protocols/proto-others.md` §5).
 - Placements become `message_folders` rows (I4). Upgrade `imapflow` 2.4.3 → 2.9.x and stop swallowing its `error` event; pass `accessToken` for future OAuth hosts (I6).
 
-### 5.4 JMAP: Fastmail
+### 5.4 JMAP: Fastmail (round 2)
 
 One EventSource per account on `eventSourceUrl` (`types=Email,Mailbox,Thread,EmailDelivery`, `closeafter=no`, `ping=60`), a watchdog after two missed pings, throttled reconnect honouring `Retry-After`, reconnect on wake, `/changes` every 60 s as a floor (`RC/SYNTH-architecture.md` §3.5). Lists use `preview`; bodies are lazy. Drafts use `Email/set` with `$draft`; sends keep today's single-request `EmailSubmission`. The owner's API token stays the personal path; Fastmail OAuth registration is an external prerequisite (`RC/protocols/proto-others.md` §3.2).
 
@@ -383,7 +383,7 @@ One EventSource per account on `eventSourceUrl` (`types=Email,Mailbox,Thread,Ema
 
 Mail is IMAP (§5.3: CONDSTORE without QRESYNC, IDLE on INBOX, at most two connections on the primary device and one elsewhere, own Sent copy); calendars are CalDAV (§5.5); contacts CardDAV later. One app-specific password, stored once in the vault, serves all three; Apple offers third parties no OAuth (`RC/protocols/proto-others.md` §5). Live acceptance is in M7.
 
-> **What this means:** Gmail shows your inbox in seconds, and iCloud and Fastmail alert you to new mail instantly. Calendars stop redownloading everything and stop wiping meeting links.
+> **What this means:** Gmail shows your inbox in seconds. Google Calendar stops redownloading everything and stops wiping meeting links. iCloud, Fastmail and Outlook follow in round 2 on the same design.
 
 ## 6. Governor and the single retry layer
 
@@ -662,15 +662,15 @@ The roadmap (`plans/00-roadmap.md`) sets the schedule in days. Phase 0 (days 1-3
 
 **M6: outbox, drafts, timers (days 4-10, `eng-time`).** `submissions`, uncertain handling, Gmail and IMAP drafts, one timer loop, notification outbox. **Acceptance:** killing the engine before the marker, after the marker and after provider acceptance causes no duplicate and no silent loss (emulated provider, plus one real send to an owner-controlled address); an overdue send suspends.
 
-**M7: IMAP, iCloud, JMAP, CalDAV (days 5-13; `prov-imap`, `prov-jmap`, `prov-cal`).** Two-connection actors, host table, capability ladder, `imapflow` upgrade, EventSource, CalDAV sync tokens, recurrence module. **Acceptance (live, owner's iCloud and Fastmail):** new mail appears within seconds; an archive made on the phone arrives; iCloud stays at two connections or fewer per device role; a long sync never blocks triage. **Multi-provider daily-driver gate.**
+**M7: IMAP, iCloud, JMAP, CalDAV (round 2; `prov-imap`, `prov-jmap`, CalDAV part of `prov-cal`).** Deferred by the owner on 2026-10-27 (Gmail first). The recurrence module stays in round 1 with `prov-cal`. Two-connection actors, host table, capability ladder, `imapflow` upgrade, EventSource, CalDAV sync tokens. **Acceptance (live, owner's iCloud and Fastmail):** new mail appears within seconds; an archive made on the phone arrives; iCloud stays at two connections or fewer per device role; a long sync never blocks triage. **Multi-provider daily-driver gate.**
 
-**M8: Graph and Google Calendar (days 5-13; `prov-graph`, `prov-cal`).** Graph scheduler and unfiltered delta (dark until the owner's free Entra app exists), Google Calendar sync tokens and `patch`, Graph and JMAP drafts. **Acceptance:** emulator proof of Graph's 4-in-flight and 429 handling; live Calendar edits keep Meet links and RSVPs.
+**M8: Google Calendar (days 5-13; `prov-cal`), then Graph (round 2; `prov-graph`).** Google Calendar sync tokens and `patch` in round 1. Graph scheduler, unfiltered delta and Graph and JMAP drafts in round 2. **Acceptance:** live Calendar edits keep Meet links and RSVPs; in round 2, emulator proof of Graph's 4-in-flight and 429 handling.
 
 **M9: listener and diagnostics (days 4-12, `eng-host`).** A0 socket and HTTP bindings with tokens, OpenAPI golden test, MCP adapter (read, draft), browser preview on the tokenised binding, diagnostics bundle, queue inspector, Swift spike. **Acceptance:** unauthenticated, wrong-Host and wrong-Origin requests are refused; revocation is immediate; the OpenAPI diff test runs in CI.
 
 **M10: hardening (Phases 2 and 3, days 14-25).** Legacy folders deleted (days 14-17); fault injection (drops, 403/429 storms, corrupt page, disk full); second-Mac update test; a seven-day soak with sleep/wake and battery cycles, running in the background in Phase 3 (days 18-25). **Acceptance:** zero duplicate sends, zero ghost threads after a forced cursor expiry, flat memory over 24 hours, a clean update from 0.2.3 to the release candidate.
 
-**Top risks.** The weekly Gmail reconnect and the free Entra app (the only external prerequisites); a second cause behind the 403 (`prov-gmail` logs it from day 1); change-log bugs (replay test); unverified OOPIF keyboard routing (hand check, fallback); lanes colliding (Phase 0 restructure, exclusive paths, contract freeze); listener mistakes (§12.3 as acceptance plus a review before any LAN exposure).
+**Top risks.** The weekly Gmail reconnect (the only external prerequisite this round); a second cause behind the 403 (`prov-gmail` logs it from day 1); change-log bugs (replay test); unverified OOPIF keyboard routing (hand check, fallback); lanes colliding (Phase 0 restructure, exclusive paths, contract freeze); listener mistakes (§12.3 as acceptance plus a review before any LAN exposure).
 
 **After M10, only on triggers:** A1 (§2.6, 3.5-5 weeks); A2 host half (2-4 weeks) plus a phone client (months); CloudKit (2-4 weeks after profiles).
 
@@ -761,13 +761,12 @@ Each question has a recommended default. The plan uses the defaults unless you s
 
 ## External prerequisites (owner actions, not decisions)
 
-- Google, on day 1: create one or two throwaway Gmail accounts, add them to the project's test users, and confirm 6,000 units/min in the Cloud console. Every 7 days, reconnect Gmail for you and the test accounts.
-- Microsoft: register a free Entra public client (personal and work accounts, no publisher verification) before `prov-graph` can leave the dark state.
-- Optional, free: a Fastmail OAuth client and an iCloud app-specific password for live checks.
-- Groq: a separate free key for tests. For other providers, confirm no-training terms before they are mail-eligible.
+- Google, on day 1: create one or two throwaway Gmail accounts and add them to the project's test users. The 6,000 units/min per user limit was confirmed on 2026-10-27 (1,200,000/min for the project). Every 7 days, reconnect Gmail for you and the test accounts.
+- Round 2 only: a Microsoft Entra public client (personal and work accounts, no publisher verification; registering now needs an Azure sign-up with a card, so the owner decides then), and optionally a Fastmail OAuth client and an iCloud app-specific password.
+- Groq: a separate free key for tests (done 2026-10-27, Keychain item `aplos-groq-test`). For other providers, confirm no-training terms before they are mail-eligible.
 - Apple: a Developer ID provisioning profile with `keychain-access-groups` and CloudKit only when A1 or CloudKit is scheduled.
 
-> **What this means:** All free. Outlook stays switched off until the Entra app exists.
+> **What this means:** All free. This round is Gmail and Google Calendar; Outlook, iCloud and Fastmail come in round 2.
 
 ## Evidence index
 

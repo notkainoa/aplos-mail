@@ -12,7 +12,7 @@ The look is called Paper. DESIGN.md has the full spec, and `../mockups/index.htm
 
 ## What happens after you say go
 
-The Integrator and Engine threads start first. For two or three days the Engine thread sets the shared rules while the others prepare. Then about 25 lanes build at once. Features reach you for review from about day 7, with the main screens on demo mail around day 9, the new Aplos on your real mail around day 15, and you start using it daily around day 18. Main changes only when you merge, and agents never merge to main for you.
+The Integrator and Engine threads start first. For two or three days the Engine thread sets the shared rules while the others prepare. This round is Gmail and Google Calendar; Outlook, iCloud and Fastmail come in round 2. Then about 23 lanes build at once. Features reach you for review from about day 7, with the main screens on demo mail around day 9, the new Aplos on your real mail around day 15, and you start using it daily around day 18. Main changes only when you merge, and agents never merge to main for you.
 
 ## What's in here
 

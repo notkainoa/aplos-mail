@@ -462,7 +462,7 @@ Adversarial: one agent tries the worst orderings of close, reopen, retry, discon
 
 **Acceptance.**
 - **Kill-point matrix:** the engine child is killed at four named points per provider emulator (before the marker; after it and before bytes; after bytes and before acknowledgement; after acceptance and before the local commit). On restart there is never a duplicate delivery (the emulator counts) and never a silent loss: each ends `sent`, `failed` with a visible reason, or `uncertain` with the prompt. Kill points exist only in test builds; a release-bundle grep asserts their strings are absent.
-- One real send to an owner-controlled address on Gmail and one on iCloud, the owner killing the engine once mid-send (owner step; Sent folder counts and log events are the evidence; mocked Google never counts, AGENTS.md).
+- One real send to an owner-controlled address on Gmail (iCloud joins in round 2), the owner killing the engine once mid-send (owner step; Sent folder counts and log events are the evidence; mocked Google never counts, AGENTS.md).
 - Overdue: a fake-clock jump for the automated case; for the owner, a send scheduled 2 minutes out and the lid closed 10 minutes: on opening, the prompt appears and nothing went late.
 - Timer loop on a fake clock: earliest-deadline order, recompute after commit, 20 overdue items caught up in order, wake-ups per hour capped.
 - Notifications: 50 simulated syncs with a crash between written and posted yield exactly one notification per message.

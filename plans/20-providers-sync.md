@@ -8,22 +8,22 @@ Planning only, 2026-10-27, branch `revamp`. Nothing here is implemented and noth
 
 ## In plain English
 
-This plan covers how Aplos talks to Gmail, Outlook, iCloud, Fastmail and calendars.
+This plan covers how Aplos talks to Gmail, Outlook, iCloud, Fastmail and calendars. **This round builds only Gmail and Google Calendar** (owner, 2026-10-27). Outlook, iCloud, Fastmail and other IMAP accounts are round 2. Their sections below stay as the design for round 2, and the shared rules frozen in this round already fit them.
 
 Today Aplos cannot finish a real Gmail sync. Google limits how much work an app may do per person per minute, and Aplos asks for about ten minutes of work at once. Google refuses and Aplos starts over. Calendars also redownload every ten minutes, and renaming a Google event can wipe its meeting link.
 
-There is no quick fix before the rebuild. The Gmail lane builds the fix in from its first day. Aplos counts its own requests, waits when Google says wait, shows subjects first and downloads message text only when you open a conversation. Other lanes make iCloud and Fastmail deliver new mail within seconds and sync only changed calendar items. Outlook comes in switched off until you register a free Microsoft app.
+There is no quick fix before the rebuild. The Gmail lane builds the fix in from its first day. Aplos counts its own requests, waits when Google says wait, shows subjects first and downloads message text only when you open a conversation. Another lane makes Google Calendar sync only changed events and keep meeting links. Outlook, iCloud and Fastmail wait for round 2.
 
 The Google project stays in Testing mode, which costs nothing. Gmail then needs a reconnect every 7 days. Aplos warns you a day ahead, reconnects in one click and loses nothing. Opening Gmail to strangers needs a paid review, so it stays off the plan.
 
-Two decisions below are still open, and a few free tasks are yours, such as creating test Gmail accounts. Nothing syncs while your Mac sleeps.
+Two decisions below have defaults that apply unless you say otherwise. One free task is yours: creating test Gmail accounts. Nothing syncs while your Mac sleeps.
 
 ## Decisions for you
 
 Defaults apply unless you say otherwise. On 2026-10-27 you answered decisions 1, 2, 3, 4 and 7. The roadmap also settled that there is no 0.2.4, the domain is aplos.email, the Google project stays in Testing mode with a smooth weekly reconnect, nothing costs money and there is one repo. Decisions 5 and 6 are still open. The roadmap's own decisions N3 (how the reconnect warns you) and N4 (where live Gmail checks run) also touch this plan.
 
 1. **Google's review and the security check.** Answered 2026-10-27: no. Nothing that costs money, so no Google review, no CASA assessment and no demo video. Gmail stays in Testing mode with up to 100 listed test users and a reconnect every 7 days, made smooth (§4, PV5). Opening Gmail to strangers is a "later, if ever" item, written down in PV5.
-2. **Register the Microsoft app now, and for whom?** Answered 2026-10-27: register a free Entra app for personal and work accounts, test with your own Outlook.com, and skip Microsoft's publisher check. You register it in days 1 to 3 (roadmap §8.1). Until it exists, `prov-graph` ships switched off.
+2. **Register the Microsoft app now, and for whom?** Moved to round 2 on 2026-10-27 (Gmail first). When it comes: a free Entra app for personal and work accounts, tested with your own Outlook.com, no publisher check. Registering now needs an Azure sign-up with a card, so you decide then.
 3. **Which mailboxes may live checks use?** Answered 2026-10-27: throwaway test accounts only for automatic checks. Runs happen on this Mac at scheduled times, so no Google token sits on GitHub (roadmap N4). Anything on your own accounts, and every send, is a check you run by hand. Agents never send external mail.
 4. **Should Block and "skip Inbox" rules also be created inside Gmail?** Answered 2026-10-27: yes. Keep the Gmail filter permission (`gmail.settings.basic`). Rules are mirrored with a visible label and keep working while your Mac sleeps (§4, PV4).
 5. **How should Unsubscribe work?** When the sender supports one-click, Aplos sends it from your Mac after you confirm, and otherwise emails the sender or opens their page; always open the page; or off. **Default is the first.** It is one keystroke instead of a web form. Open.
@@ -32,10 +32,9 @@ Defaults apply unless you say otherwise. On 2026-10-27 you answered decisions 1,
 
 Outside tasks for you (not decisions). All are free. None blocks the lanes from starting.
 
-- Day 1: confirm the 6,000 units per minute limit in the Google Cloud console.
+- Done 2026-10-27: the limit is 6,000 units a minute per user and 1,200,000 a minute for the project.
 - Day 1: create one or two throwaway Gmail accounts and add them to the Google project's test users.
-- Days 1 to 3: register the free Microsoft Entra app (decision 2).
-- Days 1 to 3: create a throwaway iCloud and a throwaway Fastmail account if you want those checked live. Optional: a Fastmail OAuth client and an iCloud app-specific password.
+- Round 2 only: the Microsoft Entra app, and throwaway iCloud and Fastmail accounts.
 - Every 7 days: reconnect Gmail for yourself and the test accounts, about two minutes.
 - Days 14 to 16: about an hour of live checks on your own accounts, including one send to yourself.
 
@@ -47,14 +46,12 @@ Each PV milestone below maps to one lane, one phase and a range of days. Phase 0
 
 | Lane | Milestone content | Phase | Days |
 |---|---|---|---|
-| `prov-emu` | PV1a (Gmail emulator, fake clock, fault injector, scenario runner), PV1b (IMAP, JMAP, DAV and Graph fakes, conformance tier), §5.4 live runner, §5.5 experiments register | 0, 1 | 1-9: Gmail by 4, IMAP by 5, JMAP and DAV by 6, Graph by 7, live runner by 9 |
+| `prov-emu` | PV1a (Gmail emulator, fake clock, fault injector, scenario runner), the Google Calendar fake and conformance tier from PV1b, §5.4 live runner, §5.5 experiments register | 0, 1 | 1-9: Gmail by 4, Google Calendar by 6, live runner by 9 |
 | `prov-gov` | PV2 (governor, lanes, actors, classifier registry, lease); the free parts of PV5 (client resolution, scope manifest and its test, granted scopes); the weekly reconnect | 1 | 4-9: HTTP client and classifier base by 5, governor by 7, accounts and reconnect by 9 |
 | `prov-gmail` | PV3 with every former PV0 item (below) | 1, live in 2 | 4-12, emulator gate by 11; live runs 12-16 |
 | `prov-gmail-write` | PV4 (drafts, send transport, filters, unsubscribe) | 1 | 6-12 |
-| `prov-imap` | PV6 (IMAP, SMTP, iCloud, Yahoo, generic, IMAP drafts) | 1, live in 2 | 5-12; iCloud live 12-16 |
-| `prov-jmap` | PV7 (JMAP and Fastmail) | 1, live in 2 | 6-11; Fastmail live 12-16 |
-| `prov-cal` | PV8 (recurrence module, CalDAV) then PV9 (Google and Graph calendar, RSVP) | 1 | 5-13 |
-| `prov-graph` | PV10 (Microsoft Graph mail, dark) | 1 | 7-13; live once the Entra app exists |
+| `prov-cal` | PV8's recurrence module, then PV9's Google Calendar part with RSVP | 1 | 5-13 |
+| Round 2 | `prov-imap` (PV6), `prov-jmap` (PV7), `prov-graph` (PV10), CalDAV (rest of PV8), Graph calendar (rest of PV9), the IMAP, JMAP, DAV and Graph fakes (rest of PV1b) | later | not scheduled |
 | Phases 2 and 3 | PV11 (hardening and soak); live checks (§5.4); deleting old provider files with the Integrator | 2, 3 | live 12-16, delete 14-17, hardening and soak 15-25 |
 
 **Where the former PV0 items live.** The old PV0 was a hotfix. Every part that made it correct stays, inside the Gmail lanes, and the same emulator acceptance items apply. The day targets below sit inside `prov-gmail`'s days 4 to 12 and `prov-gov`'s days 4 to 9.
@@ -209,9 +206,11 @@ One table gives the lane, days, dependencies and effort for each milestone; each
 | PV10 | `prov-graph` | Microsoft Graph mail (dark) | M8b | Graph emulator; `eng-time` (Drafts, `SendPort`) | 7-13 | 10 | Emulator proof; live when the Entra app exists |
 | PV11 | Providers with the Integrator | Hardening and the final provider gate | M10 | Switch to the real engine done; `eng-host` diagnostics | Phases 2-3, days 15-25 | 5 | All defect tests pass; soak clean |
 
-**Capacity, honestly.** The column sums to about 115 agent-days across eight lanes. Plan 10's E2a no longer sits on this thread; the roadmap merged it into `eng-store`. The plan is feasible only because the lanes run in parallel on disjoint folders from day 4 to day 13, and the owner's review and the live passes (Gmail, iCloud, Fastmail, later Outlook) then become the limit. The critical path is the Gmail chain: `eng-store`'s real `store.commit` and change log (day 6), `prov-gmail` on the real store and, from day 7, the real governor, the emulator gate (day 11), scheduled live runs on the throwaway accounts (days 12 to 14), and the owner's hand check on their own Gmail (days 14 to 15). The workflow-channel and lease work packages of PV3 run on a second agent so the Gmail gate does not wait for them. **Cut order if the schedule slips:** PV10 live parts (dark anyway), PV9's Graph calendar, "this and following" edits (Decision 6), PV4's filters and unsubscribe, then PV7's WebSocket path. Nothing in the Gmail read path is cut. A provider that is not ready by day 16 ships switched off.
+**Round 1 scope (owner, 2026-10-27).** This round runs PV1a, the Google Calendar part of PV1b, PV2 to PV5, PV8's recurrence module, PV9's Google part and PV11. PV6, PV7, PV10, CalDAV and the Graph calendar are round 2. That removes three lanes and roughly 40 agent-days, which go to Gmail depth instead: more emulator scenarios, longer soak and earlier live runs.
 
-PV3 and PV6 are the long poles. `prov-gmail` starts on day 4 against its own unit pacer and plugs in the governor when `prov-gov` merges it (by day 7, day 9 at the latest).
+**Capacity, honestly (as first planned, all providers).** The column sums to about 115 agent-days across eight lanes. Plan 10's E2a no longer sits on this thread; the roadmap merged it into `eng-store`. The plan is feasible only because the lanes run in parallel on disjoint folders from day 4 to day 13, and the owner's review and the live passes (Gmail, iCloud, Fastmail, later Outlook) then become the limit. The critical path is the Gmail chain: `eng-store`'s real `store.commit` and change log (day 6), `prov-gmail` on the real store and, from day 7, the real governor, the emulator gate (day 11), scheduled live runs on the throwaway accounts (days 12 to 14), and the owner's hand check on their own Gmail (days 14 to 15). The workflow-channel and lease work packages of PV3 run on a second agent so the Gmail gate does not wait for them. **Cut order if the schedule slips:** PV10 live parts (dark anyway), PV9's Graph calendar, "this and following" edits (Decision 6), PV4's filters and unsubscribe, then PV7's WebSocket path. Nothing in the Gmail read path is cut. A provider that is not ready by day 16 ships switched off.
+
+PV3 is the long pole (PV6 was the other one, now round 2). `prov-gmail` starts on day 4 against its own unit pacer and plugs in the governor when `prov-gov` merges it (by day 7, day 9 at the latest).
 
 ### Gmail pacing and error handling (formerly PV0; now inside `prov-gmail` and `prov-gov`)
 
@@ -271,7 +270,7 @@ PV3 and PV6 are the long poles. `prov-gmail` starts on day 4 against its own uni
 **Work packages.** Fan out one agent for the Gmail emulator, one for the kit, one for the port and harness skeleton. Verify adversarially: a separate agent, given only the vendor docs and not the emulator, writes ten "this must be refused" requests and runs them; any request the emulator accepts is a fidelity bug.
 **Estimate.** 8 agent-days, days 1 to 4 (1 day of review).
 
-### PV1b: IMAP, Graph, JMAP and DAV fakes and the conformance tier
+### PV1b: IMAP, Graph, JMAP and DAV fakes and the conformance tier (round 1 builds only the Google Calendar fake and the conformance tier)
 
 **Goal.** The other providers' practice servers, each delivered just before the milestone that needs it (IMAP by day 5, JMAP and DAV by day 6, Graph by day 7), so they are not on PV3's path. Each reproduces its 0.2.3 adapter's field failure first.
 **Deliverables.**
@@ -370,7 +369,7 @@ PV3 and PV6 are the long poles. `prov-gmail` starts on day 4 against its own uni
 
 **Later, if ever.** Opening Gmail to people outside the 100-test-user list needs Google's restricted-scope review and a yearly CASA security assessment, and both cost money (`plans/40-platform-quality.md` §4A holds the old calendar, and roadmap §8.4 the decision). Both are off the active plan. Nothing here prevents it later: the scope manifest, the privacy page and the no-telemetry rule stay in place. Until then Aplos describes Gmail as available to invited testers.
 
-### PV6: IMAP, iCloud, Yahoo and generic hosts
+### PV6: IMAP, iCloud, Yahoo and generic hosts (round 2)
 
 **Goal.** Push and fast triage on IMAP; no whole-message downloads; no false deletions (ARCH §5.3, §5.6).
 **Deliverables.**
@@ -389,7 +388,7 @@ PV3 and PV6 are the long poles. `prov-gmail` starts on day 4 against its own uni
 **Work packages.** Fan out: connection actors and IDLE; capability ladder and host table; tiered fetch and gap cursor; threading; writes and drafts; imapflow upgrade. Verify adversarially: a reviewer tries to make Aplos delete mail by serving partial `SEARCH` results, a changed `UIDVALIDITY` and a dropped connection between `EXPUNGE` and its response.
 **Estimate.** 12-13 agent-days, days 5 to 12, plus the live pass (days 12 to 16).
 
-### PV7: JMAP and Fastmail
+### PV7: JMAP and Fastmail (round 2)
 
 **Goal.** Instant updates with no polling load, and a first sync that costs previews, not bodies (ARCH §5.4).
 **Deliverables.**
@@ -405,7 +404,7 @@ PV3 and PV6 are the long poles. `prov-gmail` starts on day 4 against its own uni
 **Work packages.** Fan out: push loop; preview-first sync; drafts; limits. Verify adversarially: kill the stream silently (no FIN) and assert the watchdog reconnects; swap `sessionState` mid-run.
 **Estimate.** 7-8 agent-days, days 6 to 11, parallel to PV6.
 
-### PV8: Recurrence module and CalDAV
+### PV8: Recurrence module and CalDAV (CalDAV is round 2)
 
 **Goal.** Calendars that sync only what changed and show repeating events correctly on every server (ARCH §5.5, ADR-20).
 **Deliverables.**
@@ -419,7 +418,7 @@ PV3 and PV6 are the long poles. `prov-gmail` starts on day 4 against its own uni
 **Work packages.** Fan out: recurrence spike and corpus; sync loop; redirect and quirks; occurrence edits. Verify adversarially: a reviewer generates random RRULEs and compares with both oracles over ten years; another feeds servers that ignore expand, return 507, and invalidate tokens.
 **Estimate.** 10 agent-days, days 5 to 9, parallel to PV6 and PV7.
 
-### PV9: Google Calendar, Graph calendar and RSVP
+### PV9: Google Calendar, Graph calendar and RSVP (Graph calendar is round 2)
 
 **Goal.** Editing a Google event never loses its Meet link or guests' answers, and replying yes or no works on every calendar.
 **Deliverables.**
@@ -432,7 +431,7 @@ PV3 and PV6 are the long poles. `prov-gmail` starts on day 4 against its own uni
 **Work packages.** Fan out: Google sync tokens; patch writer; RSVP across three protocols; Graph calendar delta. Verify adversarially: a reviewer diffs the event JSON before and after every write on the emulator, field by field.
 **Estimate.** 10 agent-days, days 9 to 13; the Graph calendar live parts wait for the Entra app.
 
-### PV10: Microsoft Graph mail (ships dark)
+### PV10: Microsoft Graph mail (round 2)
 
 **Goal.** Outlook that obeys Microsoft's limits and sees all mail, built and proved on the emulator now, live when a client id exists (ARCH §5.2).
 **Deliverables.**

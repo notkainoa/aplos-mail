@@ -822,7 +822,7 @@ The window that PR #21 introduces stays unmerged until it is reworked. This is i
   - Step titles are sans `heading`. More than about six controls on one step go behind "More options".
 - **Steps,** shown as short dashes:
   1. **Welcome.** One `display` line, "Mail and calendar, one letter at a time.", one sentence, "Aplos puts the email that needs you on top, sums each one up in a line, and keeps every action on a key.", and one filled button, "Add an account" (Return). There is no icon. A fresh install has **zero accounts and no demo data**; demo mail loads only from "Try demo mail" (`Demo/load`), skips the first-sync screen, and can later be reset or removed in Settings.
-  2. **Accounts.** Quiet rows for Google, Microsoft and other mail (IMAP, with iCloud's app-password path). You can add more than one.
+  2. **Accounts.** Quiet rows for Google, Microsoft and other mail (IMAP, with iCloud's app-password path). You can add more than one. Round 1 (owner, 2026-10-27) shows only the Google row; the others return in round 2.
      - Typing an address + Return discovers the provider and **focuses the next primary control** ("Continue with Google") [F12].
      - OAuth shows "Waiting for Google in your browser…" with Cancel.
      - A connect that finishes after you've moved on **never pulls you back**. It quietly updates the accounts list [F9].

@@ -53,7 +53,7 @@ Silence means the default. The owner's answers of 2026-10-27 settled or voided n
 
 **F. When does the code go public?** **Answered 2026-10-27: when the redesigned version is ready, at your call, in this repository.** Not before the secret and history scan and a LICENSE file.
 
-**G. May the test robot use test accounts and keys?** **Answered 2026-10-27: throwaway test accounts only.** One or two throwaway Gmail accounts listed as test users in the Google project, and a separate free Groq key; iCloud and Fastmail test accounts later if you have them. Live checks run on this Mac at scheduled times by default (roadmap N4), so no Google token sits on GitHub. Your real mailbox is used only in hand checks you run yourself.
+**G. May the test robot use test accounts and keys?** **Answered 2026-10-27: throwaway test accounts only.** One or two throwaway Gmail accounts listed as test users in the Google project, and a separate free Groq key (created 2026-10-27, kept in this Mac's Keychain as `aplos-groq-test`); iCloud and Fastmail test accounts in round 2. Live checks run on this Mac at scheduled times by default (roadmap N4), so no Google token sits on GitHub. Your real mailbox is used only in hand checks you run yourself.
 
 **H. How much may cloud testing (CI) cost?** **Answered 2026-10-27: nothing.** GitHub Actions stays inside the free minutes. Linux jobs run on pushes to `revamp`, and Mac jobs run on demand. A Mac minute bills as 10 Linux minutes on private repositories, so one 20-minute Mac run uses about 200 included minutes [U: check the account's allowance under Settings, Billing]. Lanes run their checks locally first.
 
@@ -67,7 +67,7 @@ Silence means the default. The owner's answers of 2026-10-27 settled or voided n
 
 **M. Which domain hosts the website and privacy page?** **Answered 2026-10-27: aplos.email,** already owned and already `apps/web` on Vercel. The privacy page goes there. You check Vercel's production branch on days 1-3.
 
-**N. May strangers download 0.2.4?** **Moot: there is no 0.2.4.** The Gmail fix is part of the rebuild. Gmail works for up to 100 test users you list and asks them to reconnect every 7 days. iCloud, Fastmail and other IMAP accounts work for anyone who has the app, and the site says so.
+**N. May strangers download 0.2.4?** **Moot: there is no 0.2.4.** The Gmail fix is part of the rebuild. Gmail works for up to 100 test users you list and asks them to reconnect every 7 days. Other accounts (iCloud, Fastmail, Outlook) arrive in round 2; until then the site names only Gmail and Google Calendar.
 
 ## 1. Scope and non-goals
 
@@ -426,7 +426,7 @@ The keyboard-from-inside-a-mail-frame behaviour (ARCH §10, marked [U]; the mail
 
 *Layer 2, live mail-provider smoke.* **One harness, two runners.** Plan 20 section 5.4 owns the live-provider harness (`apps/desktop/scripts/live/`, tiers R read-only, M mutating on test objects, S send owner-only, content-free evidence files in `verification/live/<date>-<provider>.md`) and says tiers M and S never run in CI. This plan does not build a second harness: `npm run smoke:live -- gmail|gcal|icloud|fastmail|graph` is a thin **runner over plan 20's tier R only**, in `scripts/smoke/` (the probes in `scripts/smoke/probes/` belong to the Providers thread). It schedules the probes, reuses their evidence format and adds `provider-status.json`. By decision G it runs on this Mac at scheduled times (launchd [I]), so no Google token sits on GitHub; running it on GitHub is possible only if the owner chooses to store a token there and refresh it weekly. It goes through the existing `MailProvider` adapters, so it can start as soon as `prov-gmail` has a read path:
 - **Gmail:** token refresh, profile, labels, one `messages.list` page, one metadata `messages.get`, `history.list`; about 30 units a night (ARCH §5.1). Records granted scopes and quota headroom.
-- **Calendar, iCloud IMAP and CalDAV, Fastmail JMAP:** login, list, status, capability read, one fetch, connection count.
+- **Google Calendar:** login, list, one sync-token fetch. iCloud IMAP and CalDAV and Fastmail JMAP join in round 2.
 - **Accounts.** **The owner's real mailbox is never used by automatic runs.** The runner signs in only to throwaway test accounts (one or two Gmail accounts listed as test users in the Google project; iCloud and Fastmail test accounts later if the owner has them). Runs against the owner's own account are by hand, from the Integrator's checklist on days 14-16.
 - **Writes** (plan 20's tier M) never run in CI; locally, with the owner's flag, only in dedicated test accounts, only on objects the test created (a label, a draft), always cleaned up. **Never send.** The owner may run a manual `--allow-send-to-self` locally.
 - **Cadence and secrets.** Scheduled on this Mac after the weekly reconnect, one account at a time, each run under 3,000 Gmail units a minute. Tokens live in the Mac's Keychain or environment, never in the repository, logs or artifacts. Logs hold hashed ids, units and latency, never subjects or bodies.
@@ -666,7 +666,7 @@ Sign-off                                S
 2. Q2 and `eng-host` share their first fused build, so the packaged engine and the new fuses are tested together and then on the local signed feed; the redesigned release carries both.
 3. Q3's slots land on days 1-3 so the other lanes can attach checks as they write them.
 4. Q6 runs in Phase 3 (days 18-25), after the release candidate, because going public is the owner's later call. It does not block the release.
-5. **If time is cut,** drop in this order, last first: the Q6 rehearsal, Q5B, the conditional spike, cross-provider conformance, SBOM and attestation, iCloud and Fastmail smoke, the `aplos-app://` change. Never drop Q0, Q1, Q2, Q5A, the secret scan or the CI self-test.
+5. **If time is cut,** drop in this order, last first: the Q6 rehearsal, Q5B, the conditional spike, cross-provider conformance, SBOM and attestation, the `aplos-app://` change. Never drop Q0, Q1, Q2, Q5A, the secret scan or the CI self-test.
 
 > **What this means:** The tidy-up goes first, on day 1, in one serial chain. Safety, CI and release work run in Phase 1 and 2, and the open-source work waits until after the release candidate, because going public is your later call.
 
@@ -774,7 +774,8 @@ In this order:
 
 All free.
 
-- **Days 1-3:** list one or two throwaway Gmail accounts as test users in the Google project and confirm 6,000 units per user per minute in the Cloud console; create a separate free Groq key for tests; check Vercel's production branch (Q5A); set up a free forwarding address on aplos.email (decision I) [U: the registrar's forwarding or Cloudflare Email Routing].
+- **Done 2026-10-27:** 6,000 units per user per minute confirmed; the separate free Groq test key is in the Keychain as `aplos-groq-test`.
+- **Days 1-3:** list one or two throwaway Gmail accounts as test users in the Google project; check Vercel's production branch (Q5A); set up a free forwarding address on aplos.email (decision I) [U: the registrar's forwarding or Cloudflare Email Routing].
 - **Second Mac time** for the first-launch, entitlement and update tests (Q0, Q2, Q7), when you offer it. Agents SSH there only when you ask.
 - **Weekly:** reconnect Gmail for yourself and the test accounts, about two minutes (Q4).
 - **GitHub plan check:** the included CI minutes (decision H).

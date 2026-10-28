@@ -253,7 +253,7 @@ ARCH adds behaviour that needs a screen DESIGN §7 does not draw. Each is named 
 | 4 | Submission states (ARCH §6.3, §7.1, §7.3) | In the `UndoTray` slot: "We could not confirm this was sent. Check Sent, or Send anyway." / "Missed its time while your Mac was off. Send now or Reschedule." / "Couldn't send until 2:14 PM. Your draft is saved." | `ui-reader` |
 | 5 | Draft edited elsewhere (ARCH §7.4) | Inline card: "This draft changed on another device." with "Keep mine", "Take theirs", "Keep both" | `ui-reader` |
 | 6 | Status vocabulary (ARCH §6.4) | StatusSlot copy per state (table in U5) | `ui-shell` |
-| 7 | iCloud and Fastmail add-account presets (`RC/protocols/proto-others.md` §5) | Preset copy for app-specific passwords and username rules | `ui-onboard` |
+| 7 | iCloud and Fastmail add-account presets (`RC/protocols/proto-others.md` §5), round 2 | Preset copy for app-specific passwords and username rules. In round 1 the account step offers Google only | `ui-onboard` |
 | 8 | **Zero-accounts state and demo controls** (PR #21 "start empty, demo only on request") | With no accounts the mail window shows one `EmptyLine`: "No mail yet." with filled "Add an account" and text "Try demo mail". Settings → Help gets "Load demo mail" or "Reset demo mail", and demo accounts can be removed like any account. Never shown while a first sync is running | `ui-onboard` |
 | 9 | **Show welcome again** (today's Settings entry; the F1 and F9 reproductions need it) | Settings → Help, "Show welcome": opens the onboarding window beside the mail window without changing anything | `ui-onboard` |
 | 10 | **First-sync honesty rules** (ARCH §5.1, §6.4; plan 20 `baseline_done_at`) | While an account is backfilling or paused, an empty Home shows `EmptyLine` "Your first mail is on its way." with the status slot's reason, never the inbox-zero block, which shows only with status `ok` and the baseline done (DESIGN §7.2, §7.14) | `ui-home`, `ui-onboard` |
@@ -575,7 +575,7 @@ Rules that keep it honest:
 - **First-sync screen** (§7.12 as refined above). `ProgressSegments` are neutral (done `--ink-2`, paused `--dusk`, failed `--stamp`), and when a step shows "n of 50" the motion sits on the checklist marker, not the bar. There is a row per account. The optional 30-second "Try the keys" drill is a mode of this same screen, so progress stays visible. One `role="status"` announces phases only, and bars are labelled. Failure reasons show the icon in `--stamp-ink` and the sentence in ink.
 - **Zero-accounts empty state, demo controls and "Show welcome"** (§4.5 rows 8 and 9).
 - **Weekly reconnect** (roadmap N3). Gmail asks for a reconnect every 7 days because the Google project stays in Testing mode. Three surfaces share one flow: the status-slot line a day ahead (`ui-shell`, U5), this lane's **reconnect sheet**, and the Settings account row (`ui-settings`, U7). The sheet opens Google's sign-in for the same account with `login_hint` in one click, shows plain progress ("Waiting for Google…", "Reconnected. Your mail is up to date."), and returns the owner to where they were. It does not resync and keeps queued local changes. Its copy never mentions Testing mode, verification or cost. Besides `needs-reauth`, the stand-in engine needs a scenario with `reconnectBy` inside 24 hours; `ui-onboard` asks for it in the Phase 0 gap list.
-- **Also:** iCloud and Fastmail preset copy (§4.5 row 7), and onboarding seeded or driven by the harness (F14).
+- **Also:** onboarding seeded or driven by the harness (F14).
 
 **The 14 findings.** DESIGN Appendix C maps F1-F14 to rules. Division of labour:
 
@@ -728,7 +728,7 @@ The UI gives the Engine thread the view-spec list, the frame host behaviour, the
 
 - Account status `{state, reason, resumeAt, reconnectBy}` in the ARCH §6.4 vocabulary, and first-sync checkpoint facts (connected, found as an **estimate when the provider gives one**, read n of the first-window total, `resumeAt`, reason code), set when the first window completes (`baseline_done_at`), aggregated by plan 10's `Setup/status` (§8.1 item 12) for U8's honest progress. The UI never needs a mailbox total.
 - Calendar fields for "this event or all events", RSVP, hidden and selected calendars, colours.
-- Preset copy for iCloud app-specific passwords and Fastmail tokens (`RC/protocols/proto-others.md` §5), and provider errors mapped to the plain copy of U5, so the UI never shows a raw error.
+- Provider errors mapped to the plain copy of U5, so the UI never shows a raw error.
 
 The UI gives plan 20 the status copy table, the harness scenarios for every status, and the live onboarding check (U8) as an acceptance vehicle.
 
