@@ -240,7 +240,7 @@ test('access tokens expire after 3599 s with a 401 authError', async () => {
   assert.equal(missing.status, 401);
 });
 
-test('origins the emulator does not serve are blocked, and Calendar answers 404 with a note', async () => {
+test('origins the emulator does not serve are blocked, and Calendar is served by the same emulator', async () => {
   const h = await setup();
   await assert.rejects(h.emu.fetch('https://api.groq.com/openai/v1/models'), (error: unknown) => {
     assert.ok(error instanceof TypeError);
@@ -251,8 +251,11 @@ test('origins the emulator does not serve are blocked, and Calendar answers 404 
   assert.deepEqual(h.emu.blockedOrigins, ['https://api.groq.com', 'http://gmail.googleapis.com']);
 
   const calendar = await result(await h.emu.fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', { headers: { authorization: `Bearer ${h.token}` } }));
-  assert.equal(calendar.status, 404);
-  assert.match(calendar.json.error.message, /Calendar fake is a separate emulator/);
+  // Calendar is routed (this token lacks the calendar scope) and logged under its own service.
+  assert.equal(calendar.status, 403);
+  assert.equal(calendar.json.error.errors[0].reason, 'insufficientPermissions');
+  assert.equal(h.emu.log.at(-1)!.service, 'gcal');
+  assert.equal(h.emu.log.at(-1)!.apiMethod, 'calendar.calendarList.list');
 });
 
 test('request log holds no subjects, bodies, addresses, tokens or queries', async () => {

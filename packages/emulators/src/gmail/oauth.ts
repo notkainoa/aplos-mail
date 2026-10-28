@@ -18,6 +18,11 @@ export const SCOPE = {
   mailFull: 'https://mail.google.com/',
   calendarList: 'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
   calendarEvents: 'https://www.googleapis.com/auth/calendar.events',
+  // Broader Calendar scopes that Google also accepts for the same calls.
+  calendarFull: 'https://www.googleapis.com/auth/calendar',
+  calendarReadonly: 'https://www.googleapis.com/auth/calendar.readonly',
+  calendarEventsReadonly: 'https://www.googleapis.com/auth/calendar.events.readonly',
+  calendarListFull: 'https://www.googleapis.com/auth/calendar.calendarlist',
 } as const;
 
 /** Google reports the short sign-in scopes in their long form. */

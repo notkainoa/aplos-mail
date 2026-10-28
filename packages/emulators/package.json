@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./gmail": "./src/gmail/index.ts",
+    "./gcal": "./src/gcal/index.ts",
     "./kit": "./src/kit/index.ts"
   },
   "scripts": {

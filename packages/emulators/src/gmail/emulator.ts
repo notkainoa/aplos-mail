@@ -12,12 +12,16 @@ import {
   dailyLimitError,
   delegationDenied,
   insufficientScopeError,
+  scopeChallenge,
   invalidFieldError,
   notFound,
   sendLimitError,
   throttleError,
   type DailyLimitKind,
 } from './errors';
+import { calendarAbuseError, calendarThrottleError } from '../gcal/errors';
+import { CalendarHub } from '../gcal/hub';
+import { calendarShapeOf, CAL_SCOPES_FOR, matchCalendarRoute } from '../gcal/routes';
 import { generateInto, type GenerateOptions } from './generate';
 import { Mailbox } from './mailbox';
 import { UnitMeter } from './meter';
@@ -26,13 +30,12 @@ import { nextPacificMidnight, pacificDay } from './pacific';
 import { errorReply, replyBody, replyFromResponse, toResponse, type Reply } from './reply';
 import { Random, mixSeed } from './rng';
 import { matchRoute, responseShapeOf, SCOPES_FOR, type RouteContext, type RouteMatch } from './routes';
-import type { DailyLimitState, GmailEmulator, GmailEmulatorOptions, GmailSettings, MeterHelpers } from './types';
+import type { DailyLimitState, GmailEmulator, GmailEmulatorOptions, GmailSettings, MeterHelpers, RetryAfterMode } from './types';
 import { applyFieldsMask, invalidFieldIn } from './fields';
 
 const GMAIL = 'https://gmail.googleapis.com';
 const EMULATED_ORIGINS = new Set([GMAIL, 'https://oauth2.googleapis.com', 'https://accounts.google.com', 'https://www.googleapis.com', 'https://openidconnect.googleapis.com']);
 const DEFAULT_USER: TestUserInput = { sub: '100000000000000000001', email: 'test.user@example.test', name: 'Test User' };
-const CALENDAR_NOTE = 'The Gmail emulator does not serve Google Calendar; the Calendar fake is a separate emulator.';
 
 interface ParsedRequest {
   method: string;
@@ -117,6 +120,7 @@ export class GmailEmulatorImpl implements GmailEmulator {
   readonly blockedOrigins: string[] = [];
   readonly oauth: OAuthServer;
   readonly meter: MeterHelpers;
+  readonly calendar: CalendarHub;
 
   private readonly seed: number;
   private readonly faults?: FaultHook;
@@ -146,6 +150,13 @@ export class GmailEmulatorImpl implements GmailEmulator {
       testingMode: options.testingMode ?? true,
       repeatConsentIssuesRefreshToken: options.repeatConsentIssuesRefreshToken ?? true,
       requirePkceAndState: options.requirePkceAndState ?? false,
+    });
+    this.calendar = new CalendarHub({
+      clock: this.clock,
+      seed: this.seed,
+      options: options.calendar ?? {},
+      account: who => this.account(who),
+      users: () => this.users(),
     });
     for (const user of options.users ?? [DEFAULT_USER]) this.addUser(user);
     this.meter = {
@@ -210,6 +221,10 @@ export class GmailEmulatorImpl implements GmailEmulator {
   private activeDaily(now: number): DailyLimitState | null {
     if (this.daily && now >= this.daily.resetsAt) this.daily = null;
     return this.daily;
+  }
+
+  setCalendarAbuse(on: boolean, options?: { forMs?: number }): void {
+    this.calendar.setAbuse(on, options);
   }
 
   sendsToday(who?: string): number {
@@ -280,7 +295,7 @@ export class GmailEmulatorImpl implements GmailEmulator {
         break;
       case 'https://www.googleapis.com':
         if (path === '/oauth2/v3/userinfo') return this.prepareSimple(req, 'oauth', 'oauth.userinfo', () => this.oauth.userinfo(req.headers.get('authorization')));
-        if (path.startsWith('/calendar/')) return this.prepareUnrouted(req, 'gmail', CALENDAR_NOTE);
+        if (path.startsWith('/calendar/')) return this.prepareCalendar(req);
         if (path.startsWith('/upload/gmail/v1/')) return this.prepareGmailRoute(req);
         break;
       case GMAIL:
@@ -288,6 +303,64 @@ export class GmailEmulatorImpl implements GmailEmulator {
         return this.prepareGmailRoute(req);
     }
     return this.prepareUnrouted(req, 'gmail');
+  }
+
+  /**
+   * The arrival checks for one Calendar call: credentials, fields mask, scope, anti-abuse (writes),
+   * then the per-user request budget. Calendar has no concurrency cap, but the slot still shows in
+   * the log's `inFlight` (kept apart from Gmail's, which Calendar traffic must not use up).
+   */
+  private prepareCalendar(req: ParsedRequest): Prepared {
+    const match = matchCalendarRoute(req.method, req.url.pathname);
+    if (!match) return this.prepareUnrouted(req, 'gcal');
+    const { route, params } = match;
+    const auth = this.oauth.checkBearer(req.headers.get('authorization'));
+    const account = auth.ok ? auth.user.sub : undefined;
+    const entry = this.newEntry(req, 'gcal', route.apiMethod, { account });
+    const prepared: Prepared = { entry };
+    entry.inFlight = (account ? this.takeSlot(`gcal:${account}`, prepared) : 0) + 1;
+    const meter = this.calendar.requests;
+    if (this.applyFault(prepared, req, 1, account, meter)) return prepared;
+
+    const now = entry.at;
+    const settings = this.calendar.settings;
+    const refuse = (error: ApiError, headers: Record<string, string> = {}, chargeIfConfigured = false): Prepared => {
+      prepared.immediate = errorReply(error, headers);
+      if (chargeIfConfigured && settings.chargeRefused && account) {
+        meter.charge(account, 1, now, false);
+        entry.units = 1;
+      }
+      return prepared;
+    };
+    if (!auth.ok) return refuse(authError(auth.reason === 'missing'), authChallenge(auth.reason === 'missing'));
+    const fieldsMask = req.url.searchParams.get('fields') ?? undefined;
+    const shape = calendarShapeOf(route.apiMethod);
+    const badField = fieldsMask && shape ? invalidFieldIn(fieldsMask, shape) : undefined;
+    if (badField !== undefined) return refuse(invalidFieldError(badField));
+    if (!CAL_SCOPES_FOR[route.scope].some(scope => auth.scopes.includes(scope))) return refuse(insufficientScopeError(route.apiMethod, 'calendar-json.googleapis.com'), scopeChallenge(CAL_SCOPES_FOR[route.scope][0]));
+    if (route.write && this.calendar.activeAbuse(now)) return refuse(calendarAbuseError());
+
+    const verdict = meter.check(auth.user.sub, 1, now, settings.requestsPerMinute);
+    if (!verdict.allowed) return refuse(calendarThrottleError(settings.throttleShape), this.retryAfterHeaders(verdict.retryAfterMs, now, settings.retryAfter), true);
+    meter.charge(auth.user.sub, 1, now);
+    entry.units = 1;
+
+    prepared.fieldsMask = fieldsMask;
+    prepared.run = async () => {
+      try {
+        return route.handler({
+          store: this.calendar.storeFor(auth.user.sub),
+          query: req.url.searchParams,
+          params,
+          headers: req.headers,
+          json: () => parseJson(req.body),
+        });
+      } catch (error) {
+        if (error instanceof ApiError) return errorReply(error);
+        throw error;
+      }
+    };
+    return prepared;
   }
 
   private prepareGmailRoute(req: ParsedRequest): Prepared {
@@ -303,7 +376,7 @@ export class GmailEmulatorImpl implements GmailEmulator {
   }
 
   /** Asks the fault hook; returns true when the fault already settles the request (respond, drop). */
-  private applyFault(prepared: Prepared, req: ParsedRequest, cost: number, account: string | undefined): boolean {
+  private applyFault(prepared: Prepared, req: ParsedRequest, cost: number, account: string | undefined, meter: UnitMeter = this.unitMeter): boolean {
     const entry = prepared.entry;
     const decision = this.faults?.intercept(
       { service: entry.service, apiMethod: entry.apiMethod, httpMethod: req.method, path: req.url.pathname, cost, account, seq: entry.seq } satisfies EmulatedRequest,
@@ -314,7 +387,7 @@ export class GmailEmulatorImpl implements GmailEmulator {
     entry.fault = decision.kind;
     if (decision.kind === 'respond') {
       if (decision.charge && account && cost) {
-        this.unitMeter.charge(account, cost, entry.at);
+        meter.charge(account, cost, entry.at);
         entry.units = cost;
       }
       return true;
@@ -356,8 +429,8 @@ export class GmailEmulatorImpl implements GmailEmulator {
     return before;
   }
 
-  private retryAfterHeaders(retryAfterMs: number, now: number): Record<string, string> {
-    switch (this.settings.retryAfter) {
+  private retryAfterHeaders(retryAfterMs: number, now: number, mode: RetryAfterMode = this.settings.retryAfter): Record<string, string> {
+    switch (mode) {
       case 'seconds':
         return { 'retry-after': String(Math.max(1, Math.ceil(retryAfterMs / 1000))) };
       case 'httpDate':
@@ -413,7 +486,7 @@ export class GmailEmulatorImpl implements GmailEmulator {
     if (badField !== undefined) return refuse(invalidFieldError(badField));
 
     if (this.activeDaily(now)) return refuse(dailyLimitError(this.daily!.kind));
-    if (!SCOPES_FOR[route.scope].some(scope => auth.scopes.includes(scope))) return refuse(insufficientScopeError(route.apiMethod));
+    if (!SCOPES_FOR[route.scope].some(scope => auth.scopes.includes(scope))) return refuse(insufficientScopeError(route.apiMethod), scopeChallenge(SCOPES_FOR[route.scope][0]));
 
     if (!isBatchPart && inFlightBefore >= limits.concurrency) return refuse(concurrencyError(), {}, true);
     if (route.send && this.sendsToday(user.sub) >= limits.sendLimitPerDay) {
