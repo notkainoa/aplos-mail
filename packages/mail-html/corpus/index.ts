@@ -161,7 +161,7 @@ function readFileEntry(record: ManifestEntry, origin: string, suffix: string): C
     classes: record.classes as AttackClass[],
     html: record.html === undefined ? undefined : read(record.html),
     text: record.text === undefined ? undefined : read(record.text),
-    cids: record.cids ?? [],
+    cids: (record.cids ?? []).map(cid => substitute(cid, vars)),
     findQuery: record.findQuery,
     expect: record.expect,
     canaryHost: host,

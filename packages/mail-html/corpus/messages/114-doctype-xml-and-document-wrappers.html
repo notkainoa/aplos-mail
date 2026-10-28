@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="{{CANARY}}/{{ID}}/stylesheet.xsl"?>
+<!DOCTYPE html SYSTEM "{{CANARY}}/{{ID}}/system.dtd" [ <!ENTITY ext SYSTEM "{{CANARY}}/{{ID}}/external-entity"> <!ENTITY local "expanded"> ]>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:base="{{CANARY}}/{{ID}}/xml-base/" manifest="{{CANARY}}/{{ID}}/cache.manifest" xmlns:xlink="http://www.w3.org/1999/xlink" background="{{CANARY}}/{{ID}}/html-background.gif" onload="fetch('{{CANARY}}/{{ID}}/html-onload')">
+<head profile="{{CANARY}}/{{ID}}/profile">
+<title>Document wrapper test</title>
+</head>
+<body xml:base="{{CANARY}}/{{ID}}/body-xml-base/" profile="{{CANARY}}/{{ID}}/body-profile">
+<p xml:base="{{CANARY}}/{{ID}}/p-xml-base/">Document wrapper test: the entities &ext; and &local; should show as text or nothing.</p>
+<img src="relative-after-xml-base.png" alt="" longdesc="{{CANARY}}/{{ID}}/longdesc">
+<blockquote cite="{{CANARY}}/{{ID}}/blockquote-cite">quoted</blockquote>
+<q cite="{{CANARY}}/{{ID}}/q-cite">q</q>
+<ins cite="{{CANARY}}/{{ID}}/ins-cite" datetime="2026-10-27">ins</ins><del cite="{{CANARY}}/{{ID}}/del-cite">del</del>
+<form accept-charset="utf-7" action="#"></form>
+<a href="#" itemprop="url" itemscope itemtype="{{CANARY}}/{{ID}}/schema-org-type">microdata</a>
+<div itemscope itemtype="{{CANARY}}/{{ID}}/event-type"><link itemprop="url" href="{{CANARY}}/{{ID}}/microdata-link"><meta itemprop="image" content="{{CANARY}}/{{ID}}/microdata-image"></div>
+<script type="application/ld+json">{"@context":"{{CANARY}}/{{ID}}/ld-context","@type":"EmailMessage","potentialAction":{"@type":"ViewAction","target":"{{CANARY}}/{{ID}}/ld-target"}}</script>
+</body></html>

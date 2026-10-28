@@ -422,5 +422,733 @@
     "expect": {
       "mustKeepText": ["Our logo is drawn as a vector"]
     }
+  },
+  {
+    "id": "046-form-autosubmit-script",
+    "title": "A form that submits itself",
+    "classes": ["form-autosubmit", "script-inline"],
+    "html": "messages/046-form-autosubmit-script.html",
+    "expect": {
+      "mustKeepText": ["Complete your registration"]
+    }
+  },
+  {
+    "id": "047-form-buttons-and-formaction",
+    "title": "Buttons and inputs that override where a form goes",
+    "classes": ["form-autosubmit", "ping-attr"],
+    "html": "messages/047-form-buttons-and-formaction.html",
+    "expect": {
+      "mustKeepText": ["Reply to confirm your seat"]
+    }
+  },
+  {
+    "id": "048-form-autofocus-phishing",
+    "title": "A fake sign-in form",
+    "classes": ["form-autosubmit", "event-handler", "hidden-content"],
+    "html": "messages/048-form-autofocus-phishing.html",
+    "expect": {
+      "mustKeepText": ["Your mailbox is almost full", "Sign in to keep your messages"]
+    }
+  },
+  {
+    "id": "049-iframe-basic",
+    "title": "Frames pointing at outside pages",
+    "classes": ["iframe-nested"],
+    "html": "messages/049-iframe-basic.html",
+    "expect": {
+      "mustKeepText": ["Embedded status page"]
+    }
+  },
+  {
+    "id": "050-frameset-frames",
+    "title": "Frameset documents",
+    "classes": ["iframe-nested", "mxss"],
+    "html": "messages/050-frameset-frames.html",
+    "expect": {
+      "mustKeepText": ["Frameset test message"]
+    }
+  },
+  {
+    "id": "051-iframe-srcdoc-nested",
+    "title": "Frames inside frames, with their own documents",
+    "classes": ["iframe-nested", "script-inline", "mxss"],
+    "html": "messages/051-iframe-srcdoc-nested.html",
+    "expect": {
+      "mustKeepText": ["Quarterly figures are attached"]
+    }
+  },
+  {
+    "id": "052-object-embed-applet",
+    "title": "Plugins and embedded objects",
+    "classes": ["object-embed"],
+    "html": "messages/052-object-embed-applet.html",
+    "expect": {
+      "mustKeepText": ["Interactive map of the walking trail"]
+    }
+  },
+  {
+    "id": "053-object-fallback-and-data-uri",
+    "title": "Objects whose fallback content or data is the payload",
+    "classes": ["object-embed", "data-url", "mxss"],
+    "html": "messages/053-object-fallback-and-data-uri.html",
+    "expect": {
+      "mustKeepText": ["Document viewer fallback"]
+    }
+  },
+  {
+    "id": "054-mxss-svg-style-namespace",
+    "title": "Markup that changes meaning when SVG and HTML rules meet",
+    "classes": ["mxss", "svg-other"],
+    "html": "messages/054-mxss-svg-style-namespace.html",
+    "expect": {
+      "mustKeepText": ["Spring bulb order form"]
+    }
+  },
+  {
+    "id": "055-mxss-math-mtext-mglyph",
+    "title": "MathML namespace confusion",
+    "classes": ["mxss"],
+    "html": "messages/055-mxss-math-mtext-mglyph.html",
+    "expect": {
+      "mustKeepText": ["Equation of the week"]
+    }
+  },
+  {
+    "id": "056-mxss-raw-text-elements",
+    "title": "Elements whose content is not parsed as markup",
+    "classes": ["mxss"],
+    "html": "messages/056-mxss-raw-text-elements.html",
+    "expect": {
+      "mustKeepText": ["Notes on the pond restoration"]
+    }
+  },
+  {
+    "id": "057-mxss-comment-tricks",
+    "title": "Comments that hide or reveal markup",
+    "classes": ["mxss"],
+    "html": "messages/057-mxss-comment-tricks.html",
+    "expect": {
+      "mustKeepText": ["Minutes of the previous meeting"]
+    }
+  },
+  {
+    "id": "058-mxss-foreign-content-breakout",
+    "title": "Tags that pull the parser out of SVG or MathML",
+    "classes": ["mxss", "svg-other"],
+    "html": "messages/058-mxss-foreign-content-breakout.html",
+    "expect": {
+      "mustKeepText": ["Planning permission update"]
+    }
+  },
+  {
+    "id": "059-mxss-select-form-table-nesting",
+    "title": "Nesting rules that move content around",
+    "classes": ["mxss", "form-autosubmit"],
+    "html": "messages/059-mxss-select-form-table-nesting.html",
+    "expect": {
+      "mustKeepText": ["Questionnaire for new members"]
+    }
+  },
+  {
+    "id": "060-mxss-attribute-breaking",
+    "title": "Attribute values and names crafted to break serialization",
+    "classes": ["mxss", "event-handler"],
+    "html": "messages/060-mxss-attribute-breaking.html",
+    "expect": {
+      "mustKeepText": ["Raffle ticket numbers"]
+    }
+  },
+  {
+    "id": "061-mxss-table-foster-parenting",
+    "title": "Content that tables push out of place",
+    "classes": ["mxss"],
+    "html": "messages/061-mxss-table-foster-parenting.html",
+    "expect": {
+      "mustKeepText": ["Allotment plot sizes"]
+    }
+  },
+  {
+    "id": "062-mxss-adoption-agency-and-reparse",
+    "title": "Misnested tags and text that becomes markup when re-parsed",
+    "classes": ["mxss"],
+    "html": "messages/062-mxss-adoption-agency-and-reparse.html",
+    "expect": {
+      "mustKeepText": [
+        "Notice about the fence repair",
+        "<img src=x onerror=alert(1)> should be shown as plain text"
+      ]
+    }
+  },
+  {
+    "id": "063-mxss-style-and-script-text-escape",
+    "title": "Style content that closes itself early",
+    "classes": ["mxss", "css-url"],
+    "html": "messages/063-mxss-style-and-script-text-escape.html",
+    "expect": {
+      "mustKeepText": ["Meal plan for the week"]
+    }
+  },
+  {
+    "id": "064-dom-clobbering",
+    "title": "Names and ids that overwrite page properties",
+    "classes": ["dom-clobbering", "postmessage-spoof"],
+    "html": "messages/064-dom-clobbering.html",
+    "expect": {
+      "mustKeepText": ["Please review the attached agenda"]
+    }
+  },
+  {
+    "id": "065-reporter-spoof-and-script-lookalikes",
+    "title": "Content that imitates the frame's own height-reporting script",
+    "classes": ["postmessage-spoof", "script-inline", "event-handler"],
+    "html": "messages/065-reporter-spoof-and-script-lookalikes.html",
+    "expect": {
+      "mustKeepText": ["Message size report"]
+    }
+  },
+  {
+    "id": "066-pixel-sizes-and-hiding-styles",
+    "title": "Tracking pixels hidden by size and style",
+    "classes": ["tracking-pixel", "hidden-content"],
+    "html": "messages/066-pixel-sizes-and-hiding-styles.html",
+    "expect": {
+      "trackersRemovedMin": 8,
+      "mustKeepText": ["Your weekly digest is ready", "Read the full story online"]
+    }
+  },
+  {
+    "id": "067-pixel-known-path-shapes",
+    "title": "Images whose address looks like a tracker",
+    "classes": ["tracking-pixel", "remote-image"],
+    "html": "messages/067-pixel-known-path-shapes.html",
+    "expect": {
+      "trackersRemovedMin": 11,
+      "mustKeepText": ["Order status update"],
+      "notes": "These carry sizes of 1x1 where the shape is not enough on its own; those that declare no size are listed in the second group and a URL-shape heuristic may or may not catch them, so trackersRemovedMin counts only the sized ones."
+    }
+  },
+  {
+    "id": "068-pixel-in-table-cells",
+    "title": "Tiny images in layout cells",
+    "classes": ["tracking-pixel", "benign-newsletter"],
+    "html": "messages/068-pixel-in-table-cells.html",
+    "expect": {
+      "mustKeepText": ["Table layout with spacer cells"],
+      "notes": "Spacer images in table layouts are common and ambiguous. The three beacon-path images are trackers; the two spacers on the shop host are layout and a sanitizer may reasonably drop or keep them, but neither may be fetched."
+    }
+  },
+  {
+    "id": "069-pixel-css-and-other-carriers",
+    "title": "Tracking without an img tag",
+    "classes": ["tracking-pixel", "css-url", "audio-video"],
+    "html": "messages/069-pixel-css-and-other-carriers.html",
+    "expect": {
+      "mustKeepText": ["Thanks for reading"]
+    }
+  },
+  {
+    "id": "070-hidden-preheader-and-text",
+    "title": "Hidden text that must stay text",
+    "classes": ["hidden-content", "benign-newsletter"],
+    "html": "messages/070-hidden-preheader-and-text.html",
+    "expect": {
+      "mustKeepText": [
+        "Preview: your autumn savings inside",
+        "Everything you need for the cold season",
+        "Unsubscribe"
+      ],
+      "notes": "Hidden text is not a leak. It must be kept as text (invisible), and a sanitizer must not turn it into visible content or into a URL fetch."
+    }
+  },
+  {
+    "id": "071-hidden-offscreen-and-instructions",
+    "title": "Text hidden off screen, including instructions aimed at AI helpers",
+    "classes": ["hidden-content", "find-text"],
+    "html": "messages/071-hidden-offscreen-and-instructions.html",
+    "expect": {
+      "mustKeepText": ["Lunch menu for Friday"],
+      "notes": "The off-screen text is an instruction aimed at an AI helper. It is not a leak, but it is hostile to the AI features: Ask and Summaries must treat message text as data. Reviewers should see it kept as text and never executed."
+    }
+  },
+  {
+    "id": "072-open-redirect-images",
+    "title": "Image links that bounce through a redirect",
+    "classes": ["open-redirect-image", "remote-image"],
+    "html": "messages/072-open-redirect-images.html",
+    "expect": {
+      "mustKeepText": ["Photos from the village fete"]
+    }
+  },
+  {
+    "id": "073-ssrf-image-address-forms",
+    "title": "Images addressed to this very machine in unusual notations",
+    "classes": ["ssrf-image", "remote-image"],
+    "html": "messages/073-ssrf-image-address-forms.html",
+    "expect": {
+      "mustKeepText": ["Where the photos live"],
+      "notes": "The canary listens on 127.0.0.1 only. Every address below resolves to loopback, so with images on the proxy must refuse each one and the canary must see nothing."
+    }
+  },
+  {
+    "id": "074-ssrf-image-ports-and-credentials",
+    "title": "Images with unusual ports, credentials and host spellings",
+    "classes": ["ssrf-image", "remote-image", "open-redirect-image"],
+    "html": "messages/074-ssrf-image-ports-and-credentials.html",
+    "expect": {
+      "mustKeepText": ["Mirror list for the photo archive"]
+    }
+  },
+  {
+    "id": "075-remote-newsletter-images",
+    "title": "Ordinary remote images in a newsletter",
+    "classes": ["remote-image", "benign-newsletter"],
+    "html": "messages/075-remote-newsletter-images.html",
+    "expect": {
+      "remoteImages": 5,
+      "trackersRemovedMin": 0,
+      "mustKeepText": ["Autumn recipe special", "Roasted squash soup"],
+      "notes": "Five ordinary sized images. A sanitizer should keep all five as remote images (sized placeholders with images off) and count none as trackers."
+    }
+  },
+  {
+    "id": "076-remote-srcset-and-picture",
+    "title": "Responsive image attributes",
+    "classes": ["remote-image", "tracking-pixel"],
+    "html": "messages/076-remote-srcset-and-picture.html",
+    "expect": {
+      "mustKeepText": ["Responsive images in a short note"]
+    }
+  },
+  {
+    "id": "077-remote-background-attributes",
+    "title": "Background images from old-style attributes",
+    "classes": ["remote-image", "css-url"],
+    "html": "messages/077-remote-background-attributes.html",
+    "expect": {
+      "mustKeepText": ["Old style letterhead"]
+    }
+  },
+  {
+    "id": "078-remote-image-other-carriers",
+    "title": "Poster, input image, image maps and legacy image attributes",
+    "classes": ["remote-image", "audio-video", "form-autosubmit"],
+    "html": "messages/078-remote-image-other-carriers.html",
+    "expect": {
+      "mustKeepText": ["Map of the market grounds"]
+    }
+  },
+  {
+    "id": "079-audio-video-sources",
+    "title": "Audio and video elements",
+    "classes": ["audio-video", "remote-image"],
+    "html": "messages/079-audio-video-sources.html",
+    "expect": {
+      "mustKeepText": ["Recording of the lecture"]
+    }
+  },
+  {
+    "id": "080-audio-video-playback-handlers",
+    "title": "Media that plays on its own and reports back",
+    "classes": ["audio-video", "event-handler"],
+    "html": "messages/080-audio-video-playback-handlers.html",
+    "expect": {
+      "mustKeepText": ["Voicemail transcript"]
+    }
+  },
+  {
+    "id": "081-ping-and-link-attributes",
+    "title": "Link attributes that report clicks or leak the referrer",
+    "classes": ["ping-attr", "popup-navigation"],
+    "html": "messages/081-ping-and-link-attributes.html",
+    "expect": {
+      "mustKeepText": ["Click the link to read more"]
+    }
+  },
+  {
+    "id": "082-meta-http-equiv-misc",
+    "title": "Meta tags that try to set cookies, loosen policy or switch encoding",
+    "classes": ["meta-misc", "storage-cookie"],
+    "html": "messages/082-meta-http-equiv-misc.html",
+    "expect": {
+      "mustKeepText": ["Settings confirmation"]
+    }
+  },
+  {
+    "id": "083-meta-charset-utf7-payload",
+    "title": "A UTF-7 payload under a charset switch",
+    "classes": ["meta-misc", "mxss", "malformed-encoding"],
+    "html": "messages/083-meta-charset-utf7-payload.html",
+    "expect": {
+      "mustKeepText": ["Greetings from the allotment"]
+    }
+  },
+  {
+    "id": "084-relative-url-probing",
+    "title": "Relative addresses that resolve inside the frame's own origin",
+    "classes": ["relative-url", "remote-image"],
+    "html": "messages/084-relative-url-probing.html",
+    "expect": {
+      "mustKeepText": ["Notes on relative addresses"],
+      "notes": "These never name the canary; they test that the protocol handler and the sanitizer treat relative URLs as untrusted. Only cid/<n> and img/<n> rewritten by the sanitizer may survive; any other relative address must be dropped, and the handler must answer 404 for anything it did not issue. Network leaks are not expected, so the check is on the sanitized output."
+    }
+  },
+  {
+    "id": "085-storage-and-cookie-scripts",
+    "title": "Scripts that try to remember things",
+    "classes": ["storage-cookie", "script-inline"],
+    "html": "messages/085-storage-and-cookie-scripts.html",
+    "expect": {
+      "mustKeepText": ["Cookie preferences"]
+    }
+  },
+  {
+    "id": "086-storage-via-handlers-and-urls",
+    "title": "Storage writes smuggled through handlers and links",
+    "classes": ["storage-cookie", "event-handler", "javascript-url"],
+    "html": "messages/086-storage-via-handlers-and-urls.html",
+    "expect": {
+      "mustKeepText": ["Reader survey"]
+    }
+  },
+  {
+    "id": "087-popup-links-and-targets",
+    "title": "Links that try to leave the frame",
+    "classes": ["popup-navigation", "ping-attr"],
+    "html": "messages/087-popup-links-and-targets.html",
+    "expect": {
+      "mustKeepText": ["Open the link to see the offer"]
+    }
+  },
+  {
+    "id": "088-popup-script-navigation",
+    "title": "Scripts that open windows, navigate the page above or reach the opener",
+    "classes": ["popup-navigation", "script-inline", "postmessage-spoof"],
+    "html": "messages/088-popup-script-navigation.html",
+    "expect": {
+      "mustKeepText": ["Please wait for the page to load"]
+    }
+  },
+  {
+    "id": "089-popup-click-overlay",
+    "title": "A page-sized link laid over the whole message",
+    "classes": ["popup-navigation", "css-layout-abuse"],
+    "html": "messages/089-popup-click-overlay.html",
+    "expect": {
+      "mustKeepText": ["Click anywhere to continue", "Important notice from the office"]
+    }
+  },
+  {
+    "id": "090-css-layout-abuse-and-dos",
+    "title": "Style rules that stretch, spin and blur the page",
+    "classes": ["css-layout-abuse", "resource-exhaustion"],
+    "html": "messages/090-css-layout-abuse-and-dos.html",
+    "expect": {
+      "mustKeepText": ["Layout stress test"]
+    }
+  },
+  {
+    "id": "091-quoted-gmail-style",
+    "title": "A reply with Gmail-style quoted history",
+    "classes": ["quoted-history", "benign-newsletter"],
+    "html": "messages/091-quoted-gmail-style.html",
+    "expect": {
+      "quotedCountMin": 1,
+      "mustKeepText": [
+        "Thanks, Saturday works for me",
+        "The plan for Saturday is to meet at the lake at ten"
+      ]
+    }
+  },
+  {
+    "id": "092-quoted-apple-mail-style",
+    "title": "A reply with Apple Mail-style quoted history",
+    "classes": ["quoted-history"],
+    "html": "messages/092-quoted-apple-mail-style.html",
+    "expect": {
+      "quotedCountMin": 1,
+      "mustKeepText": ["Sounds good to me", "The invoice is attached"]
+    }
+  },
+  {
+    "id": "093-quoted-outlook-style",
+    "title": "A reply with Outlook-style quoted history",
+    "classes": ["quoted-history", "benign-newsletter"],
+    "html": "messages/093-quoted-outlook-style.html",
+    "expect": {
+      "quotedCountMin": 1,
+      "mustKeepText": ["I have updated the schedule", "Please review the draft schedule"]
+    }
+  },
+  {
+    "id": "094-quoted-nested-and-hostile",
+    "title": "Deeply quoted history that carries its own tricks",
+    "classes": ["quoted-history", "tracking-pixel", "mxss"],
+    "html": "messages/094-quoted-nested-and-hostile.html",
+    "expect": {
+      "quotedCountMin": 3,
+      "trackersRemovedMin": 1,
+      "mustKeepText": ["Top level reply text", "Second level text", "Third level text"]
+    }
+  },
+  {
+    "id": "095-quoted-header-lines-only",
+    "title": "Reply headers in several languages and layouts",
+    "classes": ["quoted-history", "find-text"],
+    "html": "messages/095-quoted-header-lines-only.html",
+    "expect": {
+      "mustKeepText": ["Short answer on top"]
+    }
+  },
+  {
+    "id": "096-find-repeated-and-split-words",
+    "title": "Prose built to test the search highlighter",
+    "classes": ["find-text"],
+    "html": "messages/096-find-repeated-and-split-words.html",
+    "expect": {
+      "marksMin": 8,
+      "mustKeepText": ["The invoice was sent twice"]
+    }
+  },
+  {
+    "id": "097-find-unicode-and-case",
+    "title": "Search terms with accents, case folding and unusual characters",
+    "classes": ["find-text", "unicode-bidi"],
+    "html": "messages/097-find-unicode-and-case.html",
+    "expect": {
+      "marksMin": 4,
+      "mustKeepText": ["Café menu for the week"]
+    }
+  },
+  {
+    "id": "098-plain-text-message",
+    "title": "A plain text message with no HTML at all",
+    "classes": ["plain-text"],
+    "text": "messages/098-plain-text-message.txt",
+    "expect": {
+      "bodyKind": "text",
+      "mustKeepText": ["Hello Sam", "The key is under the green pot"]
+    }
+  },
+  {
+    "id": "099-plain-text-with-markup-lookalikes",
+    "title": "Plain text that contains HTML and script as literal characters",
+    "classes": ["plain-text", "mxss"],
+    "text": "messages/099-plain-text-with-markup-lookalikes.txt",
+    "expect": {
+      "bodyKind": "text",
+      "mustKeepText": [
+        "<script>alert(1)</script>",
+        "<img src=x onerror=alert(1)>",
+        "This must stay text"
+      ]
+    }
+  },
+  {
+    "id": "100-plain-text-urls-and-quotes",
+    "title": "Plain text with links, quoted lines and odd line endings",
+    "classes": ["plain-text", "quoted-history", "unicode-bidi"],
+    "text": "messages/100-plain-text-urls-and-quotes.txt",
+    "expect": {
+      "bodyKind": "text",
+      "quotedCountMin": 1,
+      "mustKeepText": ["Reply from the road"]
+    }
+  },
+  {
+    "id": "101-plain-text-alternative-with-html",
+    "title": "A multipart message whose text and HTML parts disagree",
+    "classes": ["plain-text", "benign-newsletter"],
+    "html": "messages/101-plain-text-alternative-with-html.html",
+    "text": "messages/101-plain-text-alternative-with-html.txt",
+    "expect": {
+      "bodyKind": "html",
+      "mustKeepText": ["The HTML part says hello", "Both parts carry the greeting"]
+    }
+  },
+  {
+    "id": "102-cid-inline-images",
+    "title": "Pictures attached inside the message",
+    "classes": ["cid-inline", "benign-newsletter"],
+    "html": "messages/102-cid-inline-images.html",
+    "cids": ["logo@mail.example", "photo1@mail.example", "photo2@mail.example"],
+    "expect": {
+      "remoteImages": 0,
+      "trackersRemovedMin": 0,
+      "mustKeepText": ["Photos from the open day"],
+      "notes": "Known cids rewrite to relative cid/<n> in the cids order (0, 1, 2). Unknown cids must not become network requests; they may be dropped or kept as a placeholder."
+    }
+  },
+  {
+    "id": "103-cid-in-css-and-svg",
+    "title": "Inline attachments referenced from CSS and SVG",
+    "classes": ["cid-inline", "css-url", "svg-other"],
+    "html": "messages/103-cid-in-css-and-svg.html",
+    "cids": ["hero@mail.example", "bg@mail.example"],
+    "expect": {
+      "mustKeepText": ["Inline attachments in styles"]
+    }
+  },
+  {
+    "id": "104-cid-weird-identifiers",
+    "title": "Content-IDs that look like paths, indexes or markup",
+    "classes": ["cid-inline", "relative-url"],
+    "html": "messages/104-cid-weird-identifiers.html",
+    "cids": [
+      "../../etc/passwd",
+      "1/../0",
+      "img/0",
+      "<angle@mail.example>",
+      "a b@mail.example",
+      "x\"onerror=\"fetch('{{CANARY}}/{{ID}}/cid-attr-break')"
+    ],
+    "expect": {
+      "mustKeepText": ["Odd content identifiers"],
+      "notes": "The cids list itself is hostile. The relative output must still be exactly cid/<n> for an index n; no cid text may reach an attribute or path unescaped."
+    }
+  },
+  {
+    "id": "105-benign-table-newsletter",
+    "title": "A classic table-based newsletter that must survive intact",
+    "classes": ["benign-newsletter", "remote-image"],
+    "html": "messages/105-benign-table-newsletter.html",
+    "expect": {
+      "remoteImages": 2,
+      "trackersRemovedMin": 0,
+      "mustKeepText": [
+        "The Lakeside Gazette",
+        "Winter swim club opens",
+        "Read more",
+        "Printed on recycled paper"
+      ],
+      "notes": "Typical bulletproof layout: centred wrapper table, font tags, bgcolor, inline styles, media queries and MSO conditional comments. The style block, tables, colours and text must survive; two sized images are ordinary remote images."
+    }
+  },
+  {
+    "id": "106-benign-receipt-with-table",
+    "title": "A receipt with a table of prices and buttons",
+    "classes": ["benign-newsletter"],
+    "html": "messages/106-benign-receipt-with-table.html",
+    "expect": {
+      "remoteImages": 0,
+      "trackersRemovedMin": 0,
+      "mustKeepText": ["Receipt 2026-1042", "Wool blanket", "Total", "View your order"]
+    }
+  },
+  {
+    "id": "107-benign-simple-letter",
+    "title": "A simple formatted letter",
+    "classes": ["benign-newsletter", "quoted-history"],
+    "html": "messages/107-benign-simple-letter.html",
+    "expect": {
+      "bodyKind": "html",
+      "trackersRemovedMin": 0,
+      "quotedCountMin": 0,
+      "mustKeepText": ["Dear neighbours", "Thank you for your patience", "Warm regards"]
+    }
+  },
+  {
+    "id": "108-benign-responsive-dark-mode",
+    "title": "Responsive and dark mode style rules",
+    "classes": ["benign-newsletter", "css-url"],
+    "html": "messages/108-benign-responsive-dark-mode.html",
+    "expect": {
+      "remoteImages": 0,
+      "mustKeepText": ["Responsive layout test", "Dark mode is supported"],
+      "notes": "Plain CSS must survive: media queries, custom properties without url(), attribute selectors, :root colour scheme, pseudo classes. Only url() values are at issue."
+    }
+  },
+  {
+    "id": "109-benign-mso-vml-conditional",
+    "title": "Outlook conditional comments and VML buttons",
+    "classes": ["benign-newsletter", "mxss", "remote-image"],
+    "html": "messages/109-benign-mso-vml-conditional.html",
+    "expect": {
+      "remoteImages": 0,
+      "mustKeepText": ["Outlook friendly button", "Plain fallback text"],
+      "notes": "The VML image src inside the conditional comment is a comment to browsers and must never be fetched. Visible text outside the comments must survive."
+    }
+  },
+  {
+    "id": "110-benign-link-footer",
+    "title": "A footer full of ordinary links and contact details",
+    "classes": ["benign-newsletter", "unicode-bidi"],
+    "html": "messages/110-benign-link-footer.html",
+    "expect": {
+      "mustKeepText": ["Visit us at 12 Quay Lane", "Opening hours", "Follow us"]
+    }
+  },
+  {
+    "id": "111-bidi-link-text-and-override",
+    "title": "Links whose displayed text lies about the real address",
+    "classes": ["unicode-bidi"],
+    "html": "messages/111-bidi-link-text-and-override.html",
+    "expect": {
+      "mustKeepText": ["Statement of account"]
+    }
+  },
+  {
+    "id": "112-homoglyph-and-idn-links",
+    "title": "Look-alike characters in link text and addresses",
+    "classes": ["unicode-bidi", "ssrf-image"],
+    "html": "messages/112-homoglyph-and-idn-links.html",
+    "expect": {
+      "mustKeepText": ["Please confirm your shop account"]
+    }
+  },
+  {
+    "id": "113-bidi-controls-and-rtl-prose",
+    "title": "Right to left prose that is legitimate, next to control characters that are not",
+    "classes": ["unicode-bidi", "benign-newsletter", "find-text"],
+    "html": "messages/113-bidi-controls-and-rtl-prose.html",
+    "expect": {
+      "marksMin": 1,
+      "mustKeepText": ["שלום עולם", "مرحبا بالعالم", "Plain English line"]
+    }
+  },
+  {
+    "id": "114-doctype-xml-and-document-wrappers",
+    "title": "Document-level wrappers with external references",
+    "classes": ["base-tag", "meta-misc", "mxss", "remote-image"],
+    "html": "messages/114-doctype-xml-and-document-wrappers.html",
+    "expect": {
+      "mustKeepText": ["Document wrapper test"]
+    }
+  },
+  {
+    "id": "115-nesting-moderate",
+    "title": "Two thousand nested containers around one paragraph",
+    "classes": ["deep-nesting", "benign-newsletter"],
+    "html": "messages/115-nesting-moderate.html",
+    "expect": {
+      "mustKeepText": ["Innermost paragraph of the nested message"],
+      "notes": "Small enough to ship as a file. The synthetic entries push the same shape to 100,000. A sanitizer with a depth cap may flatten, but the text must survive."
+    }
+  },
+  {
+    "id": "116-encoding-entity-edge-cases",
+    "title": "Numeric and named entities at their limits",
+    "classes": ["malformed-encoding"],
+    "html": "messages/116-encoding-entity-edge-cases.html",
+    "expect": {
+      "mustKeepText": ["Entity edge cases"]
+    }
+  },
+  {
+    "id": "117-encoding-control-characters",
+    "title": "Control characters in tags, attributes and text",
+    "classes": ["malformed-encoding", "mxss"],
+    "html": "messages/117-encoding-control-characters.html",
+    "expect": {
+      "mustKeepText": ["Control character message"]
+    }
+  },
+  {
+    "id": "118-encoding-bom-and-line-endings",
+    "title": "Byte order marks and every kind of line break",
+    "classes": ["malformed-encoding"],
+    "html": "messages/118-encoding-bom-and-line-endings.html",
+    "expect": {
+      "mustKeepText": ["Line ending message"]
+    }
   }
 ]

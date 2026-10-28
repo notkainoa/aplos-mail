@@ -1,0 +1,11 @@
+<p>The invoice was sent twice, so please ignore the second invoice. An Invoice is not a receipt, and INVOICE numbers are unique.</p>
+<p>Split across tags: <b>in</b>voice, inv<i>oice</i>, <span>invo</span><span>ice</span>, in<wbr>voice, in&shy;voice.</p>
+<p>Entities: inv&#111;ice, &#105;nvoice, invoice&nbsp;number, invoice&amp;co.</p>
+<p>Attributes must not match: <a href="{{CANARY}}/{{ID}}/invoice" title="invoice" data-invoice="invoice">a link titled invoice</a> and <img src="{{CANARY}}/{{ID}}/invoice.png" alt="invoice" width="20" height="20"></p>
+<style>.invoice { color: red; } /* invoice */</style>
+<script>var invoice = 1;</script>
+<textarea>invoice inside a textarea</textarea>
+<!-- invoice in a comment -->
+<p>Near misses: invoices, invoiced, noninvoice, invoic, nvoice.</p>
+<p style="content:'invoice'">Style text invoice</p>
+<p>Special characters in the query: (invoice) [invoice] invoice* invoice? invoice+ invoice. invoice\ ^invoice$</p>
