@@ -1,6 +1,6 @@
 # renderer/ui: the Paper components
 
-This folder holds the parts every screen is built from (plans/DESIGN.md §6). `props.ts` is the frozen props contract, artifact F9. It covers every component in DESIGN §6 plus twelve parts the freeze review found DESIGN §7 needs and one the UI-screens gap list asked for (75 in all; see "Added at the freeze review" and "Added for the UI-screens gap list" below). The `CommandRegistry` row of §6 lives in `renderer/commands/`, not here. Implementations come later, one file per component, under the family folders listed in `COMPONENTS` in `props.ts`.
+This folder holds the parts every screen is built from (plans/DESIGN.md §6). `props.ts` is the frozen props contract, artifact F9; it re-exports the per-family modules in `props/`, so imports stay `from "./props"`. It covers every component in DESIGN §6 plus twelve parts the freeze review found DESIGN §7 needs and one the UI-screens gap list asked for (75 in all; see "Added at the freeze review" and "Added for the UI-screens gap list" below). The `CommandRegistry` row of §6 lives in `renderer/commands/`, not here. Implementations come later, one file per component, under the family folders listed in `COMPONENTS` in `props.ts`.
 
 The design spec is `plans/DESIGN.md` ("Paper"). The visual target is `mockups/*.html`. DESIGN wins on rules, numbers and copy.
 

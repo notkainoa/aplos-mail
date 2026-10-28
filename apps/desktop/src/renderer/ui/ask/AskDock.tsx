@@ -81,6 +81,208 @@ function EmptyView({ empty, listId }: { empty: AskEmptyData; listId: string }) {
   );
 }
 
+/** The id of the empty view's option under the cursor, for the field's aria-activedescendant. */
+function activeOptionOf(
+  empty: AskEmptyData | undefined,
+  show: boolean,
+  emptyId: string,
+): string | undefined {
+  if (!show || !empty) return undefined;
+  const cursor = empty.cursorIndex;
+  const suggested = Math.min(3, empty.suggestions.length);
+  const total = suggested + empty.recents.length;
+  if (cursor === undefined || cursor < 0 || cursor >= total) return undefined;
+  return cursor < suggested ? `${emptyId}-s${cursor}` : `${emptyId}-r${cursor - suggested}`;
+}
+
+const RESIZE_KEYS = new Map<string, (size: number) => number>([
+  ['ArrowLeft', size => size + STEP],
+  ['ArrowRight', size => size - STEP],
+  ['Home', () => DOCK_MIN],
+  ['End', () => DOCK_MAX],
+]);
+
+/** The drag and keyboard handlers of the dock's left edge. */
+function useResize(size: number, onWidthChange: (width: number) => void) {
+  const drag = useRef<{ x: number; width: number } | null>(null);
+  return {
+    onPointerDown(event: PointerEvent<HTMLDivElement>) {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      drag.current = { x: event.clientX, width: size };
+    },
+    onPointerMove(event: PointerEvent<HTMLDivElement>) {
+      if (!drag.current) return;
+      // The dock sits on the right, so dragging its left edge leftwards makes it wider.
+      onWidthChange(clampWidth(drag.current.width + (drag.current.x - event.clientX)));
+    },
+    onPointerUp(event: PointerEvent<HTMLDivElement>) {
+      drag.current = null;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    },
+    onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+      const next = RESIZE_KEYS.get(event.key)?.(size);
+      if (next === undefined) return;
+      event.preventDefault();
+      onWidthChange(clampWidth(next));
+    },
+  };
+}
+
+const TABS = [
+  { id: 'ask', label: 'Ask' },
+  { id: 'today', label: 'Today' },
+] as const;
+
+/** The Ask | Today segmented control and the close button. */
+function DockHead({
+  baseId,
+  tab,
+  onTabChange,
+  onClose,
+}: Pick<AskDockProps, 'tab' | 'onTabChange' | 'onClose'> & { baseId: string }) {
+  function onTabsKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      onTabChange(tab === 'ask' ? 'today' : 'ask');
+    }
+  }
+  return (
+    <header className="ui-ask-dock__head">
+      <div
+        className="ui-ask-dock__tabs"
+        role="tablist"
+        aria-label="Ask or Today"
+        onKeyDown={onTabsKey}
+      >
+        {TABS.map(item => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            id={`${baseId}-tab-${item.id}`}
+            className="ui-ask-dock__tab"
+            aria-selected={tab === item.id}
+            aria-controls={tab === item.id ? `${baseId}-panel` : undefined}
+            tabIndex={tab === item.id ? 0 : -1}
+            onClick={() => onTabChange(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <Btn
+        variant="icon"
+        icon="close"
+        label="Close"
+        hint="Close Ask"
+        commandId="ask.toggleDock"
+        onPress={() => onClose()}
+      />
+    </header>
+  );
+}
+
+/** One queued follow-up: an editable card; ⌘Return sends it now. */
+function QueuedCard({
+  card,
+  sendNowKeys,
+  onChange,
+  onSendNow,
+}: {
+  card: AskDockProps['queued'][number];
+  sendNowKeys: string;
+  onChange: AskDockProps['onQueuedChange'];
+  onSendNow: AskDockProps['onSendQueuedNow'];
+}) {
+  return (
+    <div className="ui-ask-dock__queued" role="group" aria-label="Queued follow-up">
+      <div className="ui-ask-dock__queued-head">
+        <span>{`Queued · ${sendNowKeys} sends now`}</span>
+        <Btn variant="text" label="Send now" tabIndex={-1} onPress={() => onSendNow(card.id)} />
+      </div>
+      <textarea
+        className="ui-ask-dock__queued-text"
+        rows={1}
+        dir="auto"
+        aria-label="Queued follow-up"
+        value={card.text}
+        onChange={event => onChange(card.id, event.target.value)}
+        onKeyDown={event => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.metaKey && event.key === 'Enter') {
+            event.preventDefault();
+            onSendNow(card.id);
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+/** The queued cards and the field with its Stop and Ask buttons. */
+function DockFoot(props: AskDockProps & { activeOption: string | undefined; emptyId: string }) {
+  const { value, onChange, onSubmit, working, onStop, queued, dictation, fieldRef } = props;
+  const sendNowKeys = describeKeys('ask.sendNow');
+  function onFieldKey(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.nativeEvent.isComposing || event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    onSubmit(event.metaKey ? 'searchAll' : 'ask');
+  }
+  return (
+    <footer className="ui-ask-dock__foot">
+      {queued.map(card => (
+        <QueuedCard
+          key={card.id}
+          card={card}
+          sendNowKeys={sendNowKeys}
+          onChange={props.onQueuedChange}
+          onSendNow={props.onSendQueuedNow}
+        />
+      ))}
+      <div
+        className="ui-ask-dock__field"
+        data-dictating={dictation ? 'true' : undefined}
+        data-working={working ? 'true' : undefined}
+      >
+        <div className="ui-ask-dock__field-row">
+          <textarea
+            ref={fieldRef}
+            className="ui-ask-dock__input"
+            rows={1}
+            dir="auto"
+            aria-label="Ask"
+            placeholder="Ask about your mail or calendar"
+            aria-controls={props.activeOption ? props.emptyId : undefined}
+            aria-activedescendant={props.activeOption}
+            value={value}
+            onChange={event => onChange(event.target.value)}
+            onKeyDown={onFieldKey}
+          />
+          <span className="ui-ask-dock__acts">
+            {working ? (
+              <Btn
+                variant="text"
+                label="Stop"
+                hint="Stop the answer"
+                commandId="ask.stop"
+                onPress={() => onStop()}
+              />
+            ) : null}
+            <Btn
+              variant="icon"
+              icon="arrow-up"
+              label="Ask"
+              commandId="ask.submit"
+              onPress={() => onSubmit('ask')}
+            />
+          </span>
+        </div>
+        {dictation ? <DictationLine dictation={dictation} /> : null}
+      </div>
+    </footer>
+  );
+}
+
 /**
  * The Ask dock: a second pane, 360 px by default and resizable from 300 to 440 (DESIGN §6 AskDock, §7.7). Header: an
  * Ask | Today segmented control and a close button, no glyph. The field is never disabled: while an answer streams,
@@ -89,87 +291,14 @@ function EmptyView({ empty, listId }: { empty: AskEmptyData; listId: string }) {
  * Esc (stop, then clear, then close) and ↑/↓ over suggestions belong to the registry's ask context.
  */
 export function AskDock(props: AskDockProps) {
-  const {
-    tab,
-    onTabChange,
-    onClose,
-    width,
-    onWidthChange,
-    providerReady,
-    onOpenSettings,
-    conversation,
-    empty,
-    today,
-    value,
-    onChange,
-    onSubmit,
-    working,
-    onStop,
-    queued,
-    onQueuedChange,
-    onSendQueuedNow,
-    dictation,
-    fieldRef,
-  } = props;
+  const { tab, onTabChange, onClose, width, onWidthChange, providerReady, onOpenSettings } = props;
+  const { conversation, empty, today } = props;
   const baseId = useId();
-  const drag = useRef<{ x: number; width: number } | null>(null);
   const size = clampWidth(width);
+  const resize = useResize(size, onWidthChange);
   const emptyId = `${baseId}-empty`;
   const showEmpty = tab === 'ask' && providerReady && !conversation && Boolean(empty);
-  const cursor = showEmpty ? empty?.cursorIndex : undefined;
-  const total = empty ? Math.min(3, empty.suggestions.length) + empty.recents.length : 0;
-  let activeOption: string | undefined;
-  if (showEmpty && empty && cursor !== undefined && cursor >= 0 && cursor < total) {
-    const suggested = Math.min(3, empty.suggestions.length);
-    activeOption =
-      cursor < suggested ? `${emptyId}-s${cursor}` : `${emptyId}-r${cursor - suggested}`;
-  }
-  const sendNowKeys = describeKeys('ask.sendNow');
-
-  function onResizeDown(event: PointerEvent<HTMLDivElement>) {
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    drag.current = { x: event.clientX, width: size };
-  }
-  function onResizeMove(event: PointerEvent<HTMLDivElement>) {
-    if (!drag.current) return;
-    // The dock sits on the right, so dragging its left edge leftwards makes it wider.
-    onWidthChange(clampWidth(drag.current.width + (drag.current.x - event.clientX)));
-  }
-  function onResizeUp(event: PointerEvent<HTMLDivElement>) {
-    drag.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
-  }
-  function onResizeKey(event: KeyboardEvent<HTMLDivElement>) {
-    const next =
-      event.key === 'ArrowLeft'
-        ? size + STEP
-        : event.key === 'ArrowRight'
-          ? size - STEP
-          : event.key === 'Home'
-            ? DOCK_MIN
-            : event.key === 'End'
-              ? DOCK_MAX
-              : null;
-    if (next === null) return;
-    event.preventDefault();
-    onWidthChange(clampWidth(next));
-  }
-  function onTabsKey(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-      event.preventDefault();
-      onTabChange(tab === 'ask' ? 'today' : 'ask');
-    }
-  }
-  function onFieldKey(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.nativeEvent.isComposing || event.key !== 'Enter' || event.shiftKey) return;
-    event.preventDefault();
-    onSubmit(event.metaKey ? 'searchAll' : 'ask');
-  }
-
-  const tabs = [
-    { id: 'ask', label: 'Ask' },
-    { id: 'today', label: 'Today' },
-  ] as const;
+  const activeOption = activeOptionOf(empty, showEmpty, emptyId);
 
   return (
     <aside
@@ -187,44 +316,13 @@ export function AskDock(props: AskDockProps) {
         aria-valuemin={DOCK_MIN}
         aria-valuemax={DOCK_MAX}
         tabIndex={0}
-        onPointerDown={onResizeDown}
-        onPointerMove={onResizeMove}
-        onPointerUp={onResizeUp}
-        onPointerCancel={onResizeUp}
-        onKeyDown={onResizeKey}
+        onPointerDown={resize.onPointerDown}
+        onPointerMove={resize.onPointerMove}
+        onPointerUp={resize.onPointerUp}
+        onPointerCancel={resize.onPointerUp}
+        onKeyDown={resize.onKeyDown}
       />
-      <header className="ui-ask-dock__head">
-        <div
-          className="ui-ask-dock__tabs"
-          role="tablist"
-          aria-label="Ask or Today"
-          onKeyDown={onTabsKey}
-        >
-          {tabs.map(item => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              id={`${baseId}-tab-${item.id}`}
-              className="ui-ask-dock__tab"
-              aria-selected={tab === item.id}
-              aria-controls={tab === item.id ? `${baseId}-panel` : undefined}
-              tabIndex={tab === item.id ? 0 : -1}
-              onClick={() => onTabChange(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <Btn
-          variant="icon"
-          icon="close"
-          label="Close"
-          hint="Close Ask"
-          commandId="ask.toggleDock"
-          onPress={() => onClose()}
-        />
-      </header>
+      <DockHead baseId={baseId} tab={tab} onTabChange={onTabChange} onClose={onClose} />
       <div
         className="ui-ask-dock__body"
         role="tabpanel"
@@ -243,83 +341,7 @@ export function AskDock(props: AskDockProps) {
         {tab === 'ask' && providerReady && conversation ? conversation : null}
         {showEmpty && empty ? <EmptyView empty={empty} listId={emptyId} /> : null}
       </div>
-      {tab === 'ask' ? (
-        <footer className="ui-ask-dock__foot">
-          {queued.map(card => (
-            <div
-              key={card.id}
-              className="ui-ask-dock__queued"
-              role="group"
-              aria-label="Queued follow-up"
-            >
-              <div className="ui-ask-dock__queued-head">
-                <span>{`Queued · ${sendNowKeys} sends now`}</span>
-                <Btn
-                  variant="text"
-                  label="Send now"
-                  tabIndex={-1}
-                  onPress={() => onSendQueuedNow(card.id)}
-                />
-              </div>
-              <textarea
-                className="ui-ask-dock__queued-text"
-                rows={1}
-                dir="auto"
-                aria-label="Queued follow-up"
-                value={card.text}
-                onChange={event => onQueuedChange(card.id, event.target.value)}
-                onKeyDown={event => {
-                  if (event.nativeEvent.isComposing) return;
-                  if (event.metaKey && event.key === 'Enter') {
-                    event.preventDefault();
-                    onSendQueuedNow(card.id);
-                  }
-                }}
-              />
-            </div>
-          ))}
-          <div
-            className="ui-ask-dock__field"
-            data-dictating={dictation ? 'true' : undefined}
-            data-working={working ? 'true' : undefined}
-          >
-            <div className="ui-ask-dock__field-row">
-              <textarea
-                ref={fieldRef}
-                className="ui-ask-dock__input"
-                rows={1}
-                dir="auto"
-                aria-label="Ask"
-                placeholder="Ask about your mail or calendar"
-                aria-controls={activeOption ? emptyId : undefined}
-                aria-activedescendant={activeOption}
-                value={value}
-                onChange={event => onChange(event.target.value)}
-                onKeyDown={onFieldKey}
-              />
-              <span className="ui-ask-dock__acts">
-                {working ? (
-                  <Btn
-                    variant="text"
-                    label="Stop"
-                    hint="Stop the answer"
-                    commandId="ask.stop"
-                    onPress={() => onStop()}
-                  />
-                ) : null}
-                <Btn
-                  variant="icon"
-                  icon="arrow-up"
-                  label="Ask"
-                  commandId="ask.submit"
-                  onPress={() => onSubmit('ask')}
-                />
-              </span>
-            </div>
-            {dictation ? <DictationLine dictation={dictation} /> : null}
-          </div>
-        </footer>
-      ) : null}
+      {tab === 'ask' ? <DockFoot {...props} activeOption={activeOption} emptyId={emptyId} /> : null}
     </aside>
   );
 }

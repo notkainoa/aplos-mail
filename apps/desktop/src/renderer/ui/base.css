@@ -7,8 +7,8 @@
    - Increase Contrast and reduced motion are handled by the tokens themselves.
    - The caret is left to the platform: its blink is never altered. */
 
-@import './generated/tokens.css';
-@import '../../../assets/fonts/fonts.css';
+@import url('./generated/tokens.css');
+@import url('../../../assets/fonts/fonts.css');
 
 /* The root keeps the platform's font size, so 1rem stays 16px and follows the
    user's zoom and text size: every rem token is px/16 (DESIGN 11.6). Never set
@@ -138,7 +138,7 @@ table {
 
 /* +0.005em tracking on non-Retina displays (DESIGN 4.3): every --track-<role>
    adds --track-boost. */
-@media (max-resolution: 1.5dppx), (-webkit-max-device-pixel-ratio: 1.5) {
+@media (max-resolution: 1.5dppx) {
   :root {
     --track-boost: var(--track-boost-lowres);
   }

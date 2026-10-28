@@ -7,6 +7,8 @@ import { plugins } from './stylelint-plugin.mjs';
 export default {
   plugins: [fileURLToPath(new URL('./stylelint-plugin.mjs', import.meta.url))],
   rules: {
+    // Off by owner decision (owner-thread DECIDED 2026-10-28): BEM state selectors legitimately follow the base rule.
+    'no-descending-specificity': null,
     ...Object.fromEntries(plugins.map(({ ruleName }) => [ruleName, true])),
     // Component classes are kebab-case blocks with BEM elements and modifiers:
     // ui-list-row, ui-list-row__date, ui-button--filled.
