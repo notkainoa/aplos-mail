@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createDemo} from '../src/engine/demo';
-import {bookmarkLeavesList,isBookmark,isFollowUp,isHomeLow,isHomeNew,isReplyDue,shortDue,shortSender,threadInView} from '../src/shared/mailbox';
-import type {Thread} from '../src/shared/types';
+import {createDemo} from '@aplos/engine/legacy/demo';
+import {bookmarkLeavesList,isBookmark,isFollowUp,isHomeLow,isHomeNew,isReplyDue,shortDue,shortSender,threadInView} from '@aplos/contract/legacy/mailbox';
+import type {Thread} from '@aplos/contract/legacy/types';
 
 const demo=createDemo(new Date(2026,9,15,12));
 const byId=(id:string)=>demo.threads.find(thread=>thread.id===id)!;

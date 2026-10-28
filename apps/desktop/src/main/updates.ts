@@ -1,4 +1,4 @@
-import type {UpdateInfo,UpdateStatus} from '../shared/types';
+import type {UpdateInfo,UpdateStatus} from '@aplos/contract/legacy/types';
 
 /** The part of electron-updater's AppUpdater this app uses; tests pass a fake. */
 export interface Updater {

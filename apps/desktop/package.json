@@ -44,6 +44,8 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@aplos/contract": "*",
+    "@aplos/engine": "*",
     "@types/mailparser": "^3.4.0",
     "@types/node": "^24.0.0",
     "@types/nodemailer": "^7.0.0",

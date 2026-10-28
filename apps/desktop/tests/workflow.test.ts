@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyLog, compactLog, emptyWorkflowLog, keySchemeFor, mergeLogs, publishLog, sameLog, threadKey, workflowEdit, workflowPatch, type WorkflowEntry, type WorkflowLog } from '../src/engine/workflow';
+import { applyLog, compactLog, emptyWorkflowLog, keySchemeFor, mergeLogs, publishLog, sameLog, threadKey, workflowEdit, workflowPatch, type WorkflowEntry, type WorkflowLog } from '@aplos/engine/legacy/workflow';
 import { generateSyncCode, normalizeSyncCode, openWorkflow, sealWorkflow, WorkflowCryptoError } from '../src/main/workflow-crypto';
-import type { Message, Thread } from '../src/shared/types';
+import type { Message, Thread } from '@aplos/contract/legacy/types';
 
 const DAY=86_400_000,T0=Date.parse('2026-10-20T12:00:00Z');
 const mail=(id:string,date:string,extra:Partial<Message>={}):Message=>({id,from:'sam@example.test',fromName:'Sam',to:['alex@example.test'],date,text:'Hi',attachments:[],internetId:`<${id}@example.test>`,...extra});

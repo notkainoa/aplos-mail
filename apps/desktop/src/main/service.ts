@@ -6,18 +6,19 @@ import { createCustom, createGemini, createLmStudio, createOpenAI, createOpenCod
 import { createOllama } from './ollama';
 import { createClaude } from './anthropic';
 import { createAiKeys, type AiKeys } from './ai-keys';
-import type { ChatProvider } from '../engine/ports';
-import type { AskProviderId, AskServerId } from '../shared/ask';
+import type { ChatProvider } from '@aplos/engine/legacy/ports';
+import type { AskProviderId, AskServerId } from '@aplos/contract/legacy/ask';
 import { createGoogle, type GoogleAdapter } from './google';
 import { symbolRenderer } from './symbols';
 import { createStagedMemory } from './memory-stage';
-import type { MailProvider, ProviderEnvironment, ProviderKind } from '../engine/provider';
+import type { MailProvider, ProviderEnvironment, ProviderKind } from '@aplos/engine/legacy/provider';
 import { createMicrosoft } from './microsoft';
 import { createImap } from './imap';
 import { createJmap } from './jmap';
 import { createCalDav } from './caldav';
 import { createWorkflowSync } from './workflow-sync';
-import { createEngineService } from '../engine/service';
+import { createEngineService } from '@aplos/engine/legacy/service';
+import { appVersion } from '../shared/version';
 
 type Groq = ReturnType<typeof createGroq>;
 export interface ServiceOptions {
@@ -67,7 +68,7 @@ export async function createService(options:ServiceOptions) {
   const keys=await createAiKeys({dataDir:options.dataDir,encrypt:options.encrypt,decrypt:options.decrypt,env:options.env});
   const key=(id:AskProviderId)=>({apiKey:()=>keys.resolve(id)});
   return createEngineService({
-    store,staged,providers,brokenProviders,workflow,workflowError,now,keys,
+    appVersion,store,staged,providers,brokenProviders,workflow,workflowError,now,keys,
     groq:options.groq||createGroq(key('groq')),groqModel:options.groq?undefined:process.env.GROQ_MODEL,randomUUID,
     chats:{openai:createOpenAI(key('openai')),anthropic:createClaude(key('anthropic')),gemini:createGemini(key('gemini')),openrouter:createOpenRouter(key('openrouter')),'opencode-go':createOpenCodeGo(key('opencode-go')),...options.chats},
     serverChat:options.serverChat??servers(keys),symbols:symbolRenderer(options.symbolTool),

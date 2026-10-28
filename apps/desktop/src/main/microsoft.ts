@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import nodemailer from 'nodemailer';
-import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '../shared/types';
-import { ProviderError, calendarColor, type AppDataRecord, type CalendarInfo, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '../engine/provider';
+import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from '@aplos/contract/legacy/types';
+import { ProviderError, calendarColor, type AppDataRecord, type CalendarInfo, type ConnectRequest, type MailProvider, type ProviderCapabilities, type ProviderEnvironment, type RemoteThread, type SyncContext, type SyncResult, type ThreadFlags } from '@aplos/engine/legacy/provider';
 import { createVault } from './vault';
 import { bundledOAuth, oauthClient, releaseBuild } from './oauth-config';
 

@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AppState, Conversation } from '../src/shared/types';
+import type { AppState, Conversation } from '@aplos/contract/legacy/types';
 import { createService } from '../src/main/service';
 import { createGoogle } from '../src/main/google';
 import { createGroq, readChatStream } from '../src/main/groq';
-import { fitBudget, runAgent, type AgentTool, type ChatMessage } from '../src/engine/agent';
-import { createAskSession, createCiter } from '../src/engine/ask';
-import { localNow } from '../src/engine/proposals';
+import { fitBudget, runAgent, type AgentTool, type ChatMessage } from '@aplos/engine/legacy/agent';
+import { createAskSession, createCiter } from '@aplos/engine/legacy/ask';
+import { localNow } from '@aplos/engine/legacy/proposals';
 
 /** An SSE body delivered in awkward 7-byte pieces, as a slow network would. */
 function sse(chunks:unknown[],{done=true,crlf=false}={}){

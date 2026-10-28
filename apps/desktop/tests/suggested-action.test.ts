@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGroq, threadLinks } from '../src/main/groq';
 import { createDemo } from '../src/main/demo';
-import type { Thread } from '../src/shared/types';
+import type { Thread } from '@aplos/contract/legacy/types';
 
 const thread:Thread={id:'parcel',accountId:'personal',subject:'Your parcel and invoice',summary:'',date:'2026-10-14T10:00:00Z',unread:true,status:'new',importance:'important',bookmarked:false,replyStatus:'none',
   messages:[{id:'m1',from:'updates@parcel.example',fromName:'Parcel Trail',to:['me@example.test'],date:'2026-10-14T10:00:00Z',
@@ -71,7 +71,7 @@ test('demo actions point at links and files that exist in their threads',()=>{
 });
 
 test('one-key actions only use links a reader can see and are withdrawn from Spam and Trash',async()=>{
-  const { liveAction } = await import('../src/shared/mailbox');
+  const { liveAction } = await import('@aplos/contract/legacy/mailbox');
   const message=thread.messages[0];
   const hidden:Thread={...thread,messages:[{...message,text:'Plain part: https://plain-only.example/login',
     html:'<head><link href="https://head.example/x"></head><!-- <a href="https://comment.example/verify">Verify</a> --><p><a href="https://seen.example/ok">Open</a>'

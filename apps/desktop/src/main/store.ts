@@ -1,9 +1,9 @@
 import { DatabaseSync } from 'node:sqlite';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AppState } from '../shared/types';
-import type { SqlDatabase, SqlValue } from '../engine/sql';
-import { createMailStore, type MailStore, type OpChanges, type SaveExtras, type StoreDiff } from '../engine/store';
+import type { AppState } from '@aplos/contract/legacy/types';
+import type { SqlDatabase, SqlValue } from '@aplos/engine/legacy/sql';
+import { createMailStore, type MailStore, type OpChanges, type SaveExtras, type StoreDiff } from '@aplos/engine/legacy/store';
 
 export function openDatabase(path:string):SqlDatabase {
   const db=new DatabaseSync(path);

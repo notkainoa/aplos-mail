@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Account, AppState, CalendarEvent, CalendarInfo } from '../src/shared/types';
+import type { Account, AppState, CalendarEvent, CalendarInfo } from '@aplos/contract/legacy/types';
 import { createService } from '../src/main/service';
 import { createGoogle } from '../src/main/google';
 import { createGroq } from '../src/main/groq';
-import { allDayLanes, calendarIndex, eventsOnDay, layoutDay, mergeCalendars, shiftAnchor, viewDays, visibleEvents } from '../src/renderer/calendarLayout';
+import { allDayLanes, calendarIndex, eventsOnDay, layoutDay, mergeCalendars, shiftAnchor, viewDays, visibleEvents } from '../src/renderer/legacy/calendarLayout';
 
 const account=(id:string,color:string):Account=>({id,name:'Alex',email:`${id}@example.test`,color,provider:'google',connected:true,calendarConnected:true});
 const work=account('work','#718878'),home=account('home','#b38b71');

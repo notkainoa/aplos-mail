@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CalDavError, createCalDav } from '../src/main/caldav';
 import { applyFields, parseComponents, parseTime, readEvents, serialize, unfold, zonesOf } from '../src/main/ical';
-import type { Account, CalendarEvent } from '../src/shared/types';
+import type { Account, CalendarEvent } from '@aplos/contract/legacy/types';
 
 interface Req { url:string; method:string; headers:Record<string,string>; body?:string }
 type Handler=(req:Req)=>Response|Promise<Response>;
