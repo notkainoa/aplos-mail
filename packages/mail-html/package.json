@@ -9,8 +9,13 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "tsx --test \"tests/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@csstools/css-tokenizer": "4.0.2",
+    "domhandler": "6.0.1",
+    "htmlparser2": "12.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -18,10 +23,5 @@
     "parse5": "8.0.1",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
-  },
-  "dependencies": {
-    "@csstools/css-tokenizer": "4.0.2",
-    "domhandler": "6.0.1",
-    "htmlparser2": "12.0.0"
   }
 }
