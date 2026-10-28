@@ -3,7 +3,7 @@ name: aplos-design
 description: The Aplos Mail design system ("Paper") as rules an agent can follow. Load it before touching anything in apps/desktop/src/renderer or apps/web, before writing a component, screen, style, motion, key binding or user-facing string, and before reviewing UI work. It covers the principles, tokens, motion, input rules, components, Home's sections, how AI appears, voice and microcopy, forbidden patterns, where the mockups are and the definition of done.
 ---
 
-# aplos-design v1: Paper
+# aplos-design v1.1: Paper
 
 Paper is the internal name of Aplos Mail's design language. It never appears in the product. The product is **Aplos Mail**.
 
@@ -279,6 +279,48 @@ These never exist: `PostEdge`, `SkyScene`, `MarginRail`, `Flap`, `Letterhead`, a
 - R replies, E is Done, L is Later, ⌥↑ / ⌥↓ move a thread up or down a lane, Z is undo.
 - → / ← triage only on Home, one by one and the reader.
 - Tap acts on keydown; holding R or A upgrades the tap to dictation (250 ms).
+
+### Ownership: who does what
+
+- **Components own their timing and focus.** `Toast` picks 4 s or 8 s (undoable) and its fade from `motion.ts`, `Tooltip` its delays, `Spinner` its 150 ms wait. A screen never passes a duration and never moves focus to a toast, tooltip or status line.
+- **The shell owns the singletons.** It mounts the one `ToastStack`, the key-hint providers (`KeyHintsProvider`, `CommandKeysProvider`), the sheet host and the key listener. A screen never mounts its own `ToastStack`. It pushes `ToastData` with `pushToast` from `renderer/shell`.
+- **The registry owns behaviour.** A key, a click and a palette run all go through the same command handler, so the handler raises the toast, not the click. `Button commandId=…` only shows the keycap.
+
+### Command ids you will use most
+
+| Id | Key | Use |
+|---|---|---|
+| `mail.suggested` | Space | The suggested action (the filled button) |
+| `mail.reply` | R (hold: dictate) | Reply |
+| `mail.done` | E, → on Home/one-by-one/reader | Done |
+| `mail.later` | L, ← on Home/one-by-one/reader | Later |
+| `mail.setDate` | D | Set a date |
+| `mail.trash` | # | Trash |
+| `mail.remindIfNoReply` | R while its toast shows | Remind me if no reply |
+| `app.undo` | Z | Undo the newest operation or local change |
+| `app.palette` | ⌘K | The palette |
+
+The full list is `renderer/commands/catalog.ts`. Read a command's label and its `undo.label` (the confirmed toast text) from the registry; don't retype them.
+
+### Recipe: a toast with Undo (DESIGN 7.13)
+
+```tsx
+// Inside the mail.later handler, after the optimistic write:
+pushToast({
+  id: opId,                                   // one operation, one notice
+  kind: 'later',
+  message: registry.get('mail.later').undo.label, // "Moved to Later"
+  actions: [
+    { id: 'setDate', label: 'Set a date', commandId: 'mail.setDate' },
+    { id: 'undo', label: 'Undo', commandId: 'app.undo' },
+  ],
+  undoable: true,                             // 8 s life; Toast owns the timing
+});
+```
+
+- The wording follows the op queue: "Archiving…" while pending, then "Done · Undo Z". With a destination it reads "Moved to Later · Set a date D · Undo Z". Offline it reads "Saved here · will sync".
+- An Undo toast is never silently replaced. A second move adds a second toast; the stack holds three, oldest first out. Never filter out an earlier toast.
+- No toast for navigation, successful saves or sync ticks. Sends use the `UndoTray` at the message, not a toast, unless no thread is visible.
 
 ## 5. Home, AI, voice
 
