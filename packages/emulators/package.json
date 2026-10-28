@@ -1,0 +1,20 @@
+{
+  "name": "@aplos/emulators",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Test-only provider emulators, fake clock and fault kit for Aplos Mail. Never bundled into the app.",
+  "license": "UNLICENSED",
+  "exports": {
+    ".": "./src/index.ts",
+    "./gmail": "./src/gmail/index.ts",
+    "./kit": "./src/kit/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@aplos/contract": "*"
+  }
+}

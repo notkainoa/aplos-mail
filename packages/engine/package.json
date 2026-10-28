@@ -1,0 +1,25 @@
+{
+  "name": "@aplos/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Aplos Mail engine: the platform-neutral core, with no Node or Electron imports",
+  "license": "UNLICENSED",
+  "exports": {
+    "./legacy/*": "./src/legacy/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@aplos/contract": "*",
+    "fast-xml-parser": "^5.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.27.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

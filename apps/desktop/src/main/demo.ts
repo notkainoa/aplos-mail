@@ -1,1 +1,1 @@
-export { createDemo, defaultSettings } from '../engine/demo';
+export { createDemo, defaultSettings } from '@aplos/engine/legacy/demo';
