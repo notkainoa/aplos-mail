@@ -15,13 +15,22 @@
  *   is "Skip setup" and on first sync it opens Aplos. Tab order is the DOM order, which is the visual order.
  * - Focus (F12): on every step change and every internal state change the step names its main action, and the root
  *   moves focus there after the frame paints. A late engine answer never changes the focus key, so it never moves
- *   focus.
+ *   focus; first sync's engine-driven keys (Open Aplos turning on) move it only from nowhere or from the footer.
+ * - The handoff (`Window/finishOnboarding`): asked once at a time by the step machine. A refusal is drawn in the step
+ *   as a visible line with Try again (and announced once); Return, Esc, Open Aplos and Skip setup ask again too.
+ * - Reconnect from a failed first-sync row opens the reconnect sheet (`reconnect/ReconnectFlow`), one account at a
+ *   time; the screen's keys wait while it is open.
+ * - Keys follow the owner's settings (single-key shortcuts, remaps), read from `Settings.ui`.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { api, useAccounts } from '../data';
+import { api, useAccounts, useSettings } from '../data';
 import type { Account, Input, Output } from '../data';
-import { createAppRegistry, DEFAULT_KEY_PREFS, focusKindOf } from '../commands';
+import { createAppRegistry, focusKindOf } from '../commands';
 import type { CommandContext } from '../commands';
+import { WINDOW_COPY } from './copy';
+import { FirstSyncContainer } from './firstSync/FirstSyncContainer';
+import { ReconnectFlow } from './reconnect/ReconnectFlow';
+import { openReconnect, type ReconnectPorts } from './reconnect/reconnect.model';
 import type { TagColor } from '../ui/props';
 import {
   accountsEsc,
@@ -42,15 +51,20 @@ import {
 import {
   flowView,
   initialFlow,
+  keyPrefsFor,
   MAIN_LABEL,
   missingMethod,
   reduceFlow,
+  sessionSetupId,
+  shouldMoveFocus,
+  type ActiveFocus,
   type FlowEffect,
   type FlowEvent,
   type FocusTarget,
   type StepChrome,
   type StepId,
   type StepKeys,
+  type WindowNotice,
 } from './flow';
 import { AccountsStep, type AccountRowData } from './steps/Accounts';
 import { AiContainer, type AiPorts } from './steps/Ai';
@@ -59,10 +73,21 @@ import { Welcome } from './steps/Welcome';
 
 /** What the first-sync screen (`onboarding/firstSync/`) gets from the window. */
 export interface FirstSyncSlotProps {
-  /** Open Aplos: Return, Esc, "Continue anyway", or by itself on a clean finish. Ends setup once and hands over. */
+  /**
+   * Open Aplos: Return, Esc, "Continue anyway", or by itself on a clean finish. Ends setup once and hands over; after a
+   * failed handoff it asks again, so the screen calls it every time and never latches.
+   */
   readonly onOpen: () => void;
-  /** Reconnect one account from a failed row. */
+  /** Reconnect one account from a failed row: the window opens the reconnect sheet (one account at a time). */
   readonly onReconnect: (accountId: string) => void;
+  /** "Open Settings" after a sorting failure: hand over with Settings → AI open in the mail window. */
+  readonly onOpenSettings?: () => void;
+  /** The window's failed handoff, for the screen to draw visibly with Try again. */
+  readonly notice?: WindowNotice;
+  /** Tells the window the screen's focus target and when it changes (F12). */
+  readonly bindKeys?: (keys: StepKeys) => void;
+  /** A sheet is open over the screen: the screen's keys wait. */
+  readonly keysSuspended?: boolean;
 }
 
 /** The window-level calls. Defaults come from `renderer/data`; the preview and tests pass their own. */
@@ -70,13 +95,16 @@ export interface WindowPorts {
   setupBegin(input: Input<'Setup/begin'>): Promise<Output<'Setup/begin'>>;
   setupEnd(input: Input<'Setup/end'>): Promise<unknown>;
   demoLoad(): Promise<unknown>;
-  /** `Window/finishOnboarding`: main shows the mail window on `ready-to-show` and closes this one (F4). */
-  finish(): Promise<unknown>;
-  reconnect(input: Input<'Account/reconnect'>): Promise<unknown>;
+  /**
+   * `Window/finishOnboarding`: main shows the mail window on `ready-to-show` and closes this one (F4). `to` asks the
+   * mail window to open Settings → AI (first sync's "Open Settings").
+   */
+  finish(input?: { readonly to?: 'settings.ai' }): Promise<unknown>;
 }
 
 // REQUEST ui-shell: `Window/finishOnboarding` (and `Window/openOnboarding` for "Show welcome") are desktop methods that
-// `renderer/data`'s api does not expose yet.
+// `renderer/data`'s api does not expose yet. REQUEST contract: `Window/finishOnboarding` takes an optional
+// `{ to: 'settings.ai' }` so the mail window opens on Settings → AI.
 export const defaultWindowPorts: WindowPorts = {
   setupBegin: async input => api.setup.begin(input),
   setupEnd: async input => api.setup.end(input),
@@ -84,15 +112,16 @@ export const defaultWindowPorts: WindowPorts = {
   finish: async () => {
     throw missingMethod('Window/finishOnboarding');
   },
-  reconnect: async input => api.account.reconnect(input),
 };
 
 export interface OnboardingAppProps {
   /** 'first' = first run; 'review' = "Show welcome" from Settings beside the mail window. */
   readonly mode?: 'first' | 'review';
-  /** The first-sync screen, built in `onboarding/firstSync/`. */
-  readonly renderFirstSync: (props: FirstSyncSlotProps) => ReactNode;
+  /** The first-sync screen; defaults to `onboarding/firstSync/`'s container. */
+  readonly renderFirstSync?: (props: FirstSyncSlotProps) => ReactNode;
   readonly ports?: Partial<WindowPorts>;
+  /** The reconnect sheet's calls (first sync's Reconnect). */
+  readonly reconnectPorts?: Partial<ReconnectPorts>;
   readonly connectPorts?: Partial<ConnectPorts>;
   readonly aiPorts?: Partial<AiPorts>;
   readonly systemPorts?: Partial<SystemPorts>;
@@ -130,6 +159,13 @@ export function focusTarget(root: HTMLElement | null, target: FocusTarget, keepT
   return document.activeElement === el;
 }
 
+/** Where focus is, for `shouldMoveFocus`: nowhere, on the step's footer, or on a control the owner chose. */
+export function activeFocus(root: HTMLElement | null): ActiveFocus {
+  const active = document.activeElement;
+  if (!active || active === document.body || !active.isConnected) return 'none';
+  return root?.querySelector('footer')?.contains(active) ? 'footer' : 'elsewhere';
+}
+
 /** Scrolls the step's body back to its top. */
 export function showTop(root: HTMLElement | null): void {
   const body = root?.querySelector('main');
@@ -154,6 +190,8 @@ export function accountRows(accounts: readonly Account[]): AccountRowData[] {
 
 const noop = () => {};
 
+const defaultFirstSync = (slot: FirstSyncSlotProps) => <FirstSyncContainer {...slot} />;
+
 export function OnboardingApp(props: OnboardingAppProps) {
   const ports = useRef({ ...defaultWindowPorts, ...props.ports }).current;
   const connectPorts = useRef({ ...defaultConnectPorts, ...props.connectPorts }).current;
@@ -167,10 +205,21 @@ export function OnboardingApp(props: OnboardingAppProps) {
   const [acc, setAcc] = useState(() => initialAccounts(accounts.length > 0));
   const accRef = useRef(acc);
   const [status, setStatus] = useState<string | undefined>(undefined);
+  // The step where "Try demo mail" failed: its notice shows there only.
+  const [demoFailedAt, setDemoFailedAt] = useState<StepId | null>(null);
+  // The account whose reconnect sheet is open (first sync's Reconnect), one at a time.
+  const [reconnecting, setReconnecting] = useState<string | null>(null);
+  const reconnectingRef = useRef(reconnecting);
+  reconnectingRef.current = reconnecting;
   const setupId = useRef<string | undefined>(undefined);
   const rootRef = useRef<HTMLDivElement>(null);
+  const settings = useSettings();
+  const keyPrefs = keyPrefsFor(settings?.ui);
+  const keyPrefsRef = useRef(keyPrefs);
+  keyPrefsRef.current = keyPrefs;
 
-  /* Effects of the step machine: one Setup/end, then the handoff. */
+  /* Effects of the step machine: one Setup/end, then the handoff, whose answer goes back to the machine. */
+  const flowAnswer = useRef<(event: FlowEvent) => void>(noop);
   const runFlowEffects = useCallback(
     (effects: readonly FlowEffect[]) => {
       for (const effect of effects) {
@@ -179,11 +228,9 @@ export function OnboardingApp(props: OnboardingAppProps) {
           ports.setupEnd({ ...(id ? { setupId: id } : {}), reason: effect.reason }).catch(noop);
         } else {
           ports
-            .finish()
-            .then(() => setStatus(undefined))
-            .catch(() =>
-              setStatus("Aplos couldn't open your mail window. Press Return to try again."),
-            );
+            .finish(effect.to ? { to: effect.to } : undefined)
+            .then(() => flowAnswer.current({ type: 'handoffDone' }))
+            .catch(() => flowAnswer.current({ type: 'handoffFailed' }));
         }
       }
     },
@@ -196,7 +243,8 @@ export function OnboardingApp(props: OnboardingAppProps) {
       accRef.current = out.state;
       setAcc(out.state);
       for (const effect of out.effects) {
-        void runAccountsEffect(effect, connectPorts, onAccountsAnswer, setupId.current);
+        // A connect after the session ended (a demo or skip whose handoff failed) carries no setupId.
+        void runAccountsEffect(effect, connectPorts, onAccountsAnswer, sessionSetupId(flowRef.current, setupId.current));
       }
     },
     // onAccountsAnswer (below) forwards through a ref, so this callback never goes stale.
@@ -218,6 +266,7 @@ export function OnboardingApp(props: OnboardingAppProps) {
     },
     [applyAcc, runFlowEffects],
   );
+  flowAnswer.current = dispatchFlow;
 
   const answerRef = useRef<(event: AccountsEvent) => void>(noop);
   answerRef.current = (event: AccountsEvent) => {
@@ -279,8 +328,9 @@ export function OnboardingApp(props: OnboardingAppProps) {
     const target = keys.focus;
     requestAnimationFrame(() => {
       if (lastFocusKey.current !== keys.focusKey) return;
-      if (target) focusTarget(rootRef.current, target, newStep);
-      else if (newStep) showTop(rootRef.current);
+      if (target && shouldMoveFocus(newStep, keys.keepUserFocus === true, activeFocus(rootRef.current))) {
+        focusTarget(rootRef.current, target, newStep);
+      } else if (newStep) showTop(rootRef.current);
     });
   }, []);
 
@@ -289,30 +339,39 @@ export function OnboardingApp(props: OnboardingAppProps) {
     dispatchFlow({ type: 'esc' });
   }, [dispatchFlow]);
 
-  const registry = useMemo(() => createAppRegistry(), []);
+  const registry = useMemo(() => createAppRegistry(keyPrefsRef.current), []);
   useEffect(() => {
+    registry.configure(keyPrefsRef.current);
+    // The prefs object is rebuilt each render; the stored settings are what change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registry, settings?.ui]);
+  useEffect(() => {
+    // After a failed handoff Return asks for the mail window again, whatever the step's own main action is.
+    const handoffFailed = () => flowView(flowRef.current).handoffFailed;
     const detach = [
       registry.attach('onboarding.continue', {
-        when: () => Boolean(keysRef.current?.main),
-        run: () => keysRef.current?.main?.(),
+        when: () => handoffFailed() || Boolean(keysRef.current?.main),
+        run: () => (handoffFailed() ? dispatchFlow({ type: 'retryHandoff' }) : keysRef.current?.main?.()),
       }),
       registry.attach('onboarding.back', { run: handleEsc }),
       registry.attach('onboarding.skipSetup', { run: handleEsc }),
       registry.attach('onboarding.openAplos', { run: handleEsc }),
     ];
     return () => detach.forEach(off => off());
-  }, [registry, handleEsc]);
+  }, [registry, handleEsc, dispatchFlow]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
+      // The reconnect sheet is open: its keys are its own.
+      if (reconnectingRef.current !== null) return;
       const view = flowView(flowRef.current);
       const ctx: CommandContext = {
         stack: view.contexts,
         target: null,
         selection: [],
         conditions: { welcome: view.welcome },
-        prefs: DEFAULT_KEY_PREFS,
+        prefs: keyPrefsRef.current,
         focus: focusKindOf(event.target),
       };
       const resolution = registry.resolve(event, ctx);
@@ -336,11 +395,18 @@ export function OnboardingApp(props: OnboardingAppProps) {
   const onTryDemo = useCallback(() => {
     if (demoBusy.current) return;
     demoBusy.current = true;
-    setStatus('Loading demo mail.');
+    setDemoFailedAt(null);
+    setStatus(WINDOW_COPY.demoLoading);
     ports
       .demoLoad()
-      .then(() => dispatchFlow({ type: 'demoLoaded' }))
-      .catch(() => setStatus("Demo mail didn't load. Try again, or add an account."))
+      .then(() => {
+        setStatus(undefined);
+        dispatchFlow({ type: 'demoLoaded' });
+      })
+      .catch(() => {
+        setStatus(undefined);
+        setDemoFailedAt(flowRef.current.step);
+      })
       .finally(() => {
         demoBusy.current = false;
       });
@@ -348,11 +414,19 @@ export function OnboardingApp(props: OnboardingAppProps) {
 
   const view = flowView(flow);
   const mode = shownMode(acc, accounts.length);
+  // A failed handoff or demo load is drawn in the step (DESIGN 7.15) and announced once.
+  const notice: WindowNotice | undefined = view.handoffFailed
+    ? { text: WINDOW_COPY.handoffFailed, onRetry: () => dispatchFlow({ type: 'retryHandoff' }) }
+    : demoFailedAt === view.step && view.tryDemo && !hasDemo
+      ? { text: WINDOW_COPY.demoFailed, onRetry: onTryDemo }
+      : undefined;
+  const announced = notice?.text ?? status;
   const chrome: StepChrome = {
     ...(view.dashes ? { dashes: view.dashes } : {}),
     ...(view.tryDemo && !hasDemo ? { onTryDemo } : {}),
     onBack: handleEsc,
-    ...(status ? { status } : {}),
+    ...(announced ? { status: announced } : {}),
+    ...(notice ? { notice } : {}),
   };
 
   const connect = useCallback(
@@ -389,10 +463,11 @@ export function OnboardingApp(props: OnboardingAppProps) {
           return out.handled;
         },
       });
-    } else if (view.step === 'firstSync') {
-      bindKeys({ focusKey: 'firstSync' });
     }
+    // First sync names its own focus through `bindKeys` (FirstSyncSlotProps).
   });
+
+  const renderFirstSync = props.renderFirstSync ?? defaultFirstSync;
 
   return (
     <div className="onb-window" ref={rootRef}>
@@ -436,11 +511,23 @@ export function OnboardingApp(props: OnboardingAppProps) {
           {...(props.systemPorts ? { ports: props.systemPorts } : {})}
         />
       ) : (
-        props.renderFirstSync({
+        renderFirstSync({
           onOpen: () => dispatchFlow({ type: 'open' }),
-          onReconnect: accountId => void ports.reconnect({ accountId }).catch(noop),
+          onReconnect: accountId => setReconnecting(current => openReconnect(current, accountId)),
+          onOpenSettings: () => dispatchFlow({ type: 'openSettings' }),
+          ...(notice ? { notice } : {}),
+          bindKeys,
+          keysSuspended: reconnecting !== null,
         })
       )}
+      {reconnecting !== null ? (
+        <ReconnectFlow
+          key={reconnecting}
+          accountId={reconnecting}
+          onClose={() => setReconnecting(null)}
+          {...(props.reconnectPorts ? { ports: props.reconnectPorts } : {})}
+        />
+      ) : null}
     </div>
   );
 }

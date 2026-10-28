@@ -19,6 +19,8 @@ import type { CommandHandlers, CommandId } from '../../commands';
 import { toIsoDateTime, type SetupAccount, type SetupStatus } from '../../data';
 import type { ErrorLineKind, SyncAccount, SyncCheckpoint, TagColor } from '../../ui/props';
 import { aiSentence, isAdminBlock, needsReconnect, reasonSentence, type AnyReasonCode } from '../copy';
+import type { FocusTarget } from '../flow';
+import { DRILL_LIST_ID } from './drill.model';
 
 /* ───────────────────────── inputs ───────────────────────── */
 
@@ -136,6 +138,8 @@ export interface AccountMemory {
   readonly readOf: number;
   readonly sorted: number;
   readonly sortOf: number;
+  /** When the screen first saw a state it doesn't know (the engine's states are an open enum). */
+  readonly unknownSince?: number;
 }
 
 export interface FirstSyncMemory {
@@ -175,6 +179,24 @@ const ANNOUNCE: Record<FirstSyncPhase, string> = {
  * map-onboard UNCLEAR-10 asks for it to be pinned). A behaviour constant, not a motion.
  */
 export const AUTO_OPEN_DELAY_MS = 3200;
+
+/**
+ * How long an account may sit in a state the screen doesn't know before its row offers Try again. Until then the row
+ * shows nothing as running (never an endless "Connecting…").
+ */
+export const UNKNOWN_STATE_GRACE_MS = 30_000;
+
+/** The engine's account states this screen knows; anything else is drawn neutrally. */
+const KNOWN_STATES = new Set<string>([
+  'connecting',
+  'finding',
+  'reading',
+  'sorting',
+  'ready',
+  'paused',
+  'failed',
+  'notConnected',
+]);
 
 /* ───────────────────────── helpers ───────────────────────── */
 
@@ -221,8 +243,14 @@ export function pauseLede(
   resumeAt: number | undefined,
   now: number,
   newestIn: boolean,
+  aiProvider: string | null = null,
 ): string {
   const after = newestIn ? COPY.pauseAfterWindow : COPY.pauseBeforeWindow;
+  // An AI pause is the AI provider's, never Google's: "Groq asked us to slow down."
+  if (code !== undefined && code.startsWith('ai.')) {
+    const when = resumeAt !== undefined ? ` Resuming ${resumePhrase(resumeAt, now)}.` : '';
+    return `${aiSentence(code, aiProvider ? { aiProvider } : {})}${when} ${after}`;
+  }
   const ownWords =
     code !== undefined &&
     !code.startsWith('ai.') &&
@@ -313,21 +341,29 @@ function deriveAccount(
       : freshMemory(a.runId, prev ? [...prev.retired, prev.runId].slice(-MAX_RETIRED) : []);
 
   const notConnected = state === 'notConnected';
-  const stateFailed = state === 'failed';
   const err = latestError(status, a.accountId);
+  const code: AnyReasonCode | undefined = a.reasonCode ?? err?.reasonCode;
   const evidence =
     fw.done || fw.read > 0 || fw.found !== undefined || ['finding', 'reading', 'sorting', 'ready', 'paused'].includes(state);
+  // A state the screen doesn't know shows nothing as running; once it has lasted, the row offers Try again.
+  const unknown = !KNOWN_STATES.has(state);
+  const unknownSince = unknown ? (mem0.unknownSince ?? now) : undefined;
+  const unknownStuck =
+    unknown && unknownSince !== undefined && now - unknownSince >= UNKNOWN_STATE_GRACE_MS && !(mem0.readDone || fw.done);
+  const stateFailed = state === 'failed' || unknownStuck;
+  // Where the failure happened: the engine's error for this account when it has one (backfill is never part of this
+  // screen), else the account's own reason code: an AI code is the sorting pass, anything else is the account. The
+  // committed first window never decides it: an account can fail after its window is in (a sign-in that expired).
   const failPhase: 'connect' | 'firstWindow' | 'ai' | undefined = stateFailed
-    ? err && err.phase !== 'backfill'
+    ? err
       ? (err.phase as 'connect' | 'firstWindow' | 'ai')
-      : fw.done || mem0.readDone
+      : code !== undefined && code.startsWith('ai.')
         ? 'ai'
         : evidence || mem0.connectDone
           ? 'firstWindow'
           : 'connect'
     : undefined;
   const hardFailed = stateFailed && failPhase !== 'ai';
-  const code: AnyReasonCode | undefined = a.reasonCode ?? err?.reasonCode;
 
   const paused = !notConnected && !hardFailed && (state === 'paused' || (a.pausedUntil !== undefined && a.pausedUntil > now));
   const resumeAt = a.pausedUntil !== undefined && a.pausedUntil > now ? a.pausedUntil : undefined;
@@ -350,6 +386,8 @@ function deriveAccount(
       state !== 'connecting' &&
       // A failure the engine places after Connect is itself the sign that Connect happened.
       (evidence || paused || (stateFailed && failPhase !== 'connect')));
+  // Nothing runs in a state the screen doesn't know: the step it would be on waits instead of spinning.
+  const running: SyncCheckpoint['state'] = unknown ? 'pending' : 'current';
 
   // Read: n of the first window, never the mailbox.
   const read = counter({ shown: mem0.read, of: mem0.readOf }, fw.read, fw.total, readDone ? 'done-own' : 'no');
@@ -364,7 +402,7 @@ function deriveAccount(
         ? 'failed'
         : paused
           ? 'paused'
-          : 'current';
+          : running;
 
   // Find, and whether the read step has a total to count against yet.
   const readCountable = readDone || read.of > 0;
@@ -377,7 +415,7 @@ function deriveAccount(
         ? 'failed'
         : paused
           ? 'paused'
-          : 'current';
+          : running;
 
   const readState: SyncCheckpoint['state'] = readDone
     ? 'done'
@@ -387,7 +425,7 @@ function deriveAccount(
         ? 'failed'
         : paused
           ? 'paused'
-          : 'current';
+          : running;
 
   // Sort: only with a provider, stored consent and an AI block from the engine; omitted, never failed, otherwise.
   const ai = a.ai;
@@ -404,17 +442,25 @@ function deriveAccount(
   const sortEmpty = aiReady && !!ai && ai.total === 0 && readDone && state !== 'sorting' && !aiFailure;
   const sortShown = aiReady && !sortEmpty;
 
+  // Sorting shown complete stays complete, unless the engine later says there is more to sort than was shown sorted:
+  // a larger total, a cap or a failure [F10]. Then the pass shows its true count again ("Sorted 10 of 40").
+  const sortReopened =
+    mem0.sortDone && !!ai && (aiFailure || aiCapped || ai.total > mem0.sortOf) && ai.total > mem0.sorted;
+  const sortComplete =
+    !!ai && !aiFailure && !aiCapped && state !== 'sorting' && ai.sorted >= ai.total && ai.total > 0;
+
   let sortState: SyncCheckpoint['state'] = 'pending';
   let sort = { shown: mem0.sorted, of: mem0.sortOf };
   if (sortShown && ai) {
-    if (mem0.sortDone) sortState = 'done';
+    if (mem0.sortDone && !sortReopened) sortState = 'done';
+    // A finished pass stays finished when the account fails later (an expired sign-in after the window was in).
+    else if (readDone && !notConnected && sortComplete) sortState = 'done';
     else if (!readDone || notConnected || hardFailed) sortState = 'pending';
     else if (aiFailure) sortState = 'failed';
     else if (aiCapped) sortState = 'partial';
     else if (aiPaused) sortState = 'paused';
-    else if (state !== 'sorting' && ai.sorted >= ai.total && ai.total > 0) sortState = 'done';
     else if (state !== 'sorting' && (aiAccounted || state === 'ready')) sortState = 'partial';
-    else sortState = ai.total > 0 ? 'current' : 'pending';
+    else sortState = ai.total > 0 ? running : 'pending';
     sort = counter(
       { shown: mem0.sorted, of: mem0.sortOf },
       ai.sorted,
@@ -487,12 +533,13 @@ function deriveAccount(
     connectDone,
     findDone,
     readDone,
-    sortDone: mem0.sortDone || (sortShown && sortState === 'done'),
+    sortDone: sortShown ? sortState === 'done' : mem0.sortDone,
     found,
     read: read.shown,
     readOf: read.of,
     sorted: sort.shown,
     sortOf: sort.of,
+    ...(unknownSince !== undefined ? { unknownSince } : {}),
   };
 
   return {
@@ -530,8 +577,11 @@ const EMPTY_MEMORY: FirstSyncMemory = { accounts: {}, rows: {} };
 /** Builds the screen from one `Setup/status` and the view shown before it. */
 export function buildFirstSyncView(input: FirstSyncInput): FirstSyncView {
   const { status, now } = input;
+  // Memory is per setup session. A status that first arrives without a `setupId` and then with one is the same run;
+  // only a different id starts clean.
+  const prevId = input.previous?.memory.setupId;
   const prevMemory =
-    input.previous && (!status || input.previous.memory.setupId === status.setupId)
+    input.previous && (!status || prevId === undefined || status.setupId === undefined || prevId === status.setupId)
       ? input.previous.memory
       : EMPTY_MEMORY;
 
@@ -570,7 +620,8 @@ export function buildFirstSyncView(input: FirstSyncInput): FirstSyncView {
     accounts[a.accountId] = d.memory;
     rowMemo[a.accountId] = d.row;
   }
-  const memory: FirstSyncMemory = { setupId: status.setupId, accounts, rows: rowMemo };
+  const setupId = status.setupId ?? prevMemory.setupId;
+  const memory: FirstSyncMemory = { ...(setupId !== undefined ? { setupId } : {}), accounts, rows: rowMemo };
 
   if (rows.length === 0) {
     return finish({
@@ -628,7 +679,7 @@ export function buildFirstSyncView(input: FirstSyncInput): FirstSyncView {
     const first = [...pausedOnes].sort((x, y) => (x.resumeAt ?? Infinity) - (y.resumeAt ?? Infinity))[0];
     const newestIn = first.row.firstWindowIn;
     if (everyWindowIn) title = COPY.titleIn;
-    lede = pauseLede(first.pauseCode, first.resumeAt, now, newestIn);
+    lede = pauseLede(first.pauseCode, first.resumeAt, now, newestIn, input.aiProvider);
   }
 
   return finish({ outcome, rows, canOpen, phase, title, lede, memory });
@@ -705,6 +756,35 @@ export function shouldSendRetry(
   return !!row && row.action === 'retry';
 }
 
+/**
+ * Where focus goes on this screen and when it moves (F12). Entering first sync focuses the filled button when it is
+ * enabled, else "Continue anyway" (both in the footer, which never focuses itself); the key changes when the filled
+ * button turns on or changes its label, and on entering or leaving the drill, whose practice list takes focus so its
+ * letters and Space reach the drill rather than a button. These changes come from the engine, so the window moves
+ * focus only from nowhere or from the footer (`keepUserFocus`), never from a row's Try again the owner went to.
+ */
+export function firstSyncFocus(
+  view: FirstSyncView,
+  drillOpen: boolean,
+): { readonly focusKey: string; readonly focus: FocusTarget; readonly keepUserFocus: true } {
+  if (drillOpen) return { focusKey: 'firstSync:drill', focus: { kind: 'field', id: DRILL_LIST_ID }, keepUserFocus: true };
+  if (view.primary.enabled) {
+    return {
+      focusKey: `firstSync:${view.primary.label}`,
+      focus: { kind: 'button', label: view.primary.label },
+      keepUserFocus: true,
+    };
+  }
+  return {
+    focusKey: 'firstSync:waiting',
+    focus: { kind: 'button', label: CONTINUE_ANYWAY },
+    keepUserFocus: true,
+  };
+}
+
+/** The quiet text button shown while the filled button is not enabled yet. */
+export const CONTINUE_ANYWAY = 'Continue anyway';
+
 /** The callbacks the registry handlers call. */
 export interface FirstSyncKeyCallbacks {
   /** The current view (read at key time, so the handlers never go stale). */
@@ -741,6 +821,6 @@ export function firstSyncCommands(cb: FirstSyncKeyCallbacks): Record<CommandId, 
 /** Every string the screen shows for a view, for copy checks in tests (titles, ledes, buttons, the live region). */
 export function screenStrings(view: FirstSyncView): string[] {
   const out = [view.title, view.lede, view.primary.label, view.announcement];
-  if (view.continueAnyway) out.push('Continue anyway');
+  if (view.continueAnyway) out.push(CONTINUE_ANYWAY);
   return out.filter(Boolean);
 }

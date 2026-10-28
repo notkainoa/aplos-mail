@@ -9,6 +9,7 @@ import { useSettings } from '../../data';
 import type { Input, Output } from '../../data';
 import { backFooter, MAIN_LABEL, missingMethod, type StepChrome, type StepKeys } from '../flow';
 import { ChoiceRow, OnboardingStep } from '../../ui/onboarding';
+import { WindowNoticeLine } from '../WindowNotice';
 import { Button } from '../../ui/buttons-keys';
 import { Switch } from '../../ui/controls';
 
@@ -142,6 +143,7 @@ export function PermissionsStep(props: PermissionsStepProps) {
               })}
         />
       </div>
+      <WindowNoticeLine notice={chrome.notice} />
     </OnboardingStep>
   );
 }

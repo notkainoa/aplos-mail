@@ -13,6 +13,7 @@
  *   card asks before anything runs in the background. "Skip for now" writes nothing and never causes an error later.
  */
 import type { AiProvider, Consent, Input, Output, Settings } from '../../data';
+import { keySaveSentence } from '../copy';
 import type { FocusTarget } from '../flow';
 
 /** One model from `Ai/models`. */
@@ -159,10 +160,12 @@ export function testStatus(test: TestState | undefined): { text: string; tone: '
   return { text: "Didn't work", tone: 'attention' };
 }
 
-/** The sentence under the key field after a refused save. */
+/**
+ * The sentence under the key field after a failed save (`copy.ts`): a refused key names the chosen provider; any other
+ * failure says the key couldn't be saved on this Mac.
+ */
 export function keyFailureSentence(code: string | null, providerLabel: string): string {
-  if (code === 'auth.adminPolicy') return 'Your organisation has turned off saving keys.';
-  return `${shortName(providerLabel)} didn't take that key. Paste it again, or skip for now.`;
+  return keySaveSentence(code === 'unknown' ? undefined : code, shortName(providerLabel));
 }
 
 /* ---------- Models and settings ---------- */

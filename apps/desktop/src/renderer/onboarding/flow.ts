@@ -10,11 +10,16 @@
  *   account arrived (which decides whether first sync follows) even when the answer comes late.
  * - Every way the session ends asks for exactly one `Setup/end`, with the reason that ended it: `finished` (Finish
  *   setup with nothing to sync, or Open Aplos on first sync), `skipped` (Skip setup on Welcome), `demo` (Try demo
- *   mail), `closed` (the window closed at any moment) (F1, F2). After that nothing navigates, but a step that already
- *   asked for the mail window may ask again (Return, Esc), so a failed handoff never leaves the owner stuck.
+ *   mail), `closed` (the window closed at any moment) (F1, F2). After that nothing navigates. The handoff to the mail
+ *   window is asked for once at a time: while it is in flight nothing asks again; once it failed, the step's main
+ *   action, Esc, Open Aplos, Skip setup or the notice's Try again asks again, so a failed handoff never leaves the
+ *   owner stuck. A closed window asks for nothing.
+ * - Once a real account connected in this session, "Try demo mail" hides: demo mail would skip that account's first
+ *   sync.
  * - Esc goes back a step; on Welcome it is "Skip setup"; on first sync it opens Aplos (F8).
  */
 
+import { DEFAULT_KEY_PREFS, keyPrefsFromUi, type KeyPrefs, type UiKeyFields } from '../commands';
 import type { OnboardingFooter } from '../ui/props';
 
 /** The window's steps, in order. */
@@ -38,7 +43,13 @@ export interface FlowState {
   readonly hasDemo: boolean;
   /** Set once `Setup/end` was asked for; from then on nothing navigates. */
   readonly ended: EndReason | null;
+  /** The handoff to the mail window: not asked yet (or done), in flight, or failed and waiting for a retry. */
+  readonly handoff: HandoffPhase;
+  /** The handoff should open Settings → AI in the mail window (first sync's "Open Settings"). */
+  readonly handoffTo?: 'settings.ai';
 }
+
+export type HandoffPhase = 'idle' | 'pending' | 'failed';
 
 /** What the owner, the engine or the window did. */
 export type FlowEvent =
@@ -64,6 +75,14 @@ export type FlowEvent =
   | { readonly type: 'demoLoaded' }
   /** First sync's Open Aplos (Return, Esc, or by itself on a clean finish). */
   | { readonly type: 'open' }
+  /** First sync's "Open Settings" after a sorting failure: hand over, with Settings → AI open in the mail window. */
+  | { readonly type: 'openSettings' }
+  /** `Window/finishOnboarding` answered. */
+  | { readonly type: 'handoffDone' }
+  /** `Window/finishOnboarding` was refused: the step says so and offers Try again. */
+  | { readonly type: 'handoffFailed' }
+  /** Try again on the handoff notice. */
+  | { readonly type: 'retryHandoff' }
   /** The window is closing (red button, ⌘W, `pagehide`). */
   | { readonly type: 'close' };
 
@@ -71,8 +90,8 @@ export type FlowEvent =
 export type FlowEffect =
   /** Call `Setup/end {setupId, reason}` once. */
   | { readonly type: 'setupEnd'; readonly reason: EndReason }
-  /** Ask main to show the mail window (`Window/finishOnboarding`). */
-  | { readonly type: 'handoff' };
+  /** Ask main to show the mail window (`Window/finishOnboarding`), with Settings → AI open when `to` says so. */
+  | { readonly type: 'handoff'; readonly to?: 'settings.ai' };
 
 /** One step of the reducer. */
 export interface FlowResult {
@@ -88,6 +107,7 @@ export function initialFlow(opts: { hasDemo?: boolean; step?: StepId } = {}): Fl
     pendingConnectId: null,
     hasDemo: opts.hasDemo ?? false,
     ended: null,
+    handoff: 'idle',
   };
 }
 
@@ -101,13 +121,24 @@ const PREVIOUS: Readonly<Record<StepId, StepId | null>> = {
 
 const same = (state: FlowState): FlowResult => ({ state, effects: [] });
 
+const handoffEffect = (state: FlowState): FlowEffect =>
+  state.handoffTo ? { type: 'handoff', to: state.handoffTo } : { type: 'handoff' };
+
 /** End the session once and hand over to the mail window. */
 function finish(state: FlowState, reason: Exclude<EndReason, 'closed'>, patch: Partial<FlowState> = {}): FlowResult {
-  return {
-    state: { ...state, ...patch, ended: reason },
-    effects: [{ type: 'setupEnd', reason }, { type: 'handoff' }],
-  };
+  const next: FlowState = { ...state, ...patch, ended: reason, handoff: 'pending' };
+  return { state: next, effects: [{ type: 'setupEnd', reason }, handoffEffect(next)] };
 }
+
+/** The events that ask for the mail window again after a failed handoff. */
+const RETRIES: ReadonlySet<FlowEvent['type']> = new Set([
+  'next',
+  'esc',
+  'open',
+  'openSettings',
+  'skip',
+  'retryHandoff',
+]);
 
 /** Records a connected account; never moves the step (F9). */
 function recordConnect(state: FlowState, event: Extract<FlowEvent, { type: 'connectResolved' }>): FlowState {
@@ -126,23 +157,42 @@ export function reduceFlow(state: FlowState, event: FlowEvent): FlowResult {
     return state.ended ? same(state) : same({ ...state, pendingConnectId: event.connectId });
   }
 
+  // The handoff's answer. A closed window's state no longer matters; it is kept as it is.
+  if (event.type === 'handoffDone') {
+    return state.handoff === 'pending' ? same({ ...state, handoff: 'idle' }) : same(state);
+  }
+  if (event.type === 'handoffFailed') {
+    return state.handoff === 'pending' && state.ended !== 'closed' ? same({ ...state, handoff: 'failed' }) : same(state);
+  }
+
   if (state.ended) {
-    // The session is over. A window that asked for the mail window may ask again (a failed handoff must not strand
-    // the owner); a closed window asks for nothing.
-    const retry =
-      state.ended !== 'closed' && (event.type === 'next' || event.type === 'esc' || event.type === 'open');
-    return { state, effects: retry ? [{ type: 'handoff' }] : [] };
+    // The session is over. Once the handoff failed, any way of going on asks for the mail window again (a failed
+    // handoff must not strand the owner); while one is in flight nothing asks twice; a closed window asks for nothing.
+    if (state.ended === 'closed' || state.handoff !== 'failed' || !RETRIES.has(event.type)) return same(state);
+    const next: FlowState = {
+      ...state,
+      handoff: 'pending',
+      ...(event.type === 'openSettings' ? { handoffTo: 'settings.ai' as const } : {}),
+    };
+    return { state: next, effects: [handoffEffect(next)] };
   }
 
   switch (event.type) {
     case 'close':
       return { state: { ...state, ended: 'closed' }, effects: [{ type: 'setupEnd', reason: 'closed' }] };
     case 'demoLoaded':
-      return finish(state, 'demo', { hasDemo: true });
+      // A real account connected in this session keeps its first sync: the demo account is only recorded.
+      return state.connected.length > 0
+        ? same({ ...state, hasDemo: true })
+        : finish(state, 'demo', { hasDemo: true });
     case 'skip':
       return state.step === 'welcome' ? finish(state, 'skipped') : same(state);
     case 'open':
       return state.step === 'firstSync' ? finish(state, 'finished') : same(state);
+    case 'openSettings':
+      return state.step === 'firstSync' ? finish(state, 'finished', { handoffTo: 'settings.ai' }) : same(state);
+    case 'retryHandoff':
+      return same(state);
     case 'esc':
       if (state.step === 'welcome') return finish(state, 'skipped');
       if (state.step === 'firstSync') return finish(state, 'finished');
@@ -193,6 +243,8 @@ export interface FlowView {
   readonly welcome: boolean;
   /** The step-level main action to focus, when the step has no internal states (Welcome, permissions). */
   readonly focus?: FocusTarget;
+  /** The handoff to the mail window failed: the step shows the notice with Try again, and Return retries. */
+  readonly handoffFailed: boolean;
 }
 
 /** Step dashes: Welcome is 1 of 4 … permissions 4 of 4. */
@@ -219,7 +271,11 @@ export function flowView(state: FlowState): FlowView {
   return {
     step,
     dashes: dashesFor(step),
-    tryDemo: (step === 'welcome' || step === 'accounts') && !state.hasDemo && !state.ended,
+    tryDemo:
+      (step === 'welcome' || step === 'accounts') &&
+      !state.hasDemo &&
+      !state.ended &&
+      state.connected.length === 0,
     esc,
     contexts: step === 'firstSync' ? ['onboarding', 'firstSync'] : ['onboarding'],
     welcome: step === 'welcome',
@@ -229,7 +285,45 @@ export function flowView(state: FlowState): FlowView {
         : step === 'permissions'
           ? { kind: 'button', label: MAIN_LABEL.permissions }
           : undefined,
+    handoffFailed: state.ended !== null && state.ended !== 'closed' && state.handoff === 'failed',
   };
+}
+
+/**
+ * The `setupId` a new connect carries: the session's, until the session ended. A connect after a demo or a skipped
+ * setup (the handoff failed, so the window is still here) belongs to no session.
+ */
+export function sessionSetupId(state: FlowState, setupId: string | undefined): string | undefined {
+  return state.ended ? undefined : setupId;
+}
+
+/** A failure the window shows visibly in the step (and announces once): the words and, when it can be retried, how. */
+export interface WindowNotice {
+  readonly text: string;
+  readonly onRetry?: () => void;
+}
+
+/** The owner's key settings for the window's listeners: the single-key switch, remaps and hold time (WCAG 2.1.4). */
+export function keyPrefsFor(ui: UiKeyFields | undefined): KeyPrefs {
+  return ui ? keyPrefsFromUi(ui) : DEFAULT_KEY_PREFS;
+}
+
+/** Where focus is when a step's focus key changes. */
+export type ActiveFocus =
+  /** Nothing has focus (the body), or the focused control left the page. */
+  | 'none'
+  /** One of the step's own footer buttons (Continue anyway, Open Aplos, Back to progress). */
+  | 'footer'
+  /** A control the owner moved to: a row's Try again, a field, an open sheet. */
+  | 'elsewhere';
+
+/**
+ * Whether the window moves focus for a new focus key (F12). A new step always does. Within a step, a key change the
+ * engine caused (`keepUserFocus`, e.g. first sync's Open Aplos becoming enabled) moves focus only from nowhere or from
+ * the step's own footer, never away from a control the owner chose.
+ */
+export function shouldMoveFocus(newStep: boolean, keepUserFocus: boolean, active: ActiveFocus): boolean {
+  return newStep || !keepUserFocus || active !== 'elsewhere';
 }
 
 /** What the window gives every step: the dashes, the strip's demo button, Back, and a phase line to announce. */
@@ -240,8 +334,10 @@ export interface StepChrome {
   readonly onTryDemo?: () => void;
   /** Footer Back (Esc). Welcome's footer button is "Skip setup" instead. */
   readonly onBack: () => void;
-  /** A window-level sentence for the one visually hidden `role="status"` (a failed demo load or handoff). */
+  /** A window-level sentence for the one visually hidden `role="status"` (demo loading, a failed demo load or handoff). */
   readonly status?: string;
+  /** A failed demo load or handoff, drawn visibly in the step with Try again (DESIGN 7.15). */
+  readonly notice?: WindowNotice;
 }
 
 /**
@@ -254,6 +350,8 @@ export interface StepKeys {
   readonly focus?: FocusTarget;
   readonly main?: () => void;
   readonly esc?: () => boolean;
+  /** Focus-key changes within the step come from the engine: never pull focus from a control the owner chose. */
+  readonly keepUserFocus?: boolean;
 }
 
 /** The footer of every step after Welcome: dashes, the fixed note and Back (Esc, shown only with all key hints). */

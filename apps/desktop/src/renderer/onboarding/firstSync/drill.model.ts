@@ -5,6 +5,9 @@
  */
 import type { CommandId, SuggestionIcon } from '../../ui/props';
 
+/** DOM id of the practice list (one drill on screen at a time): the window focuses it on entering the drill (F12). */
+export const DRILL_LIST_ID = 'fs-drill-list';
+
 /** One practice letter. Invented names and subjects only. */
 export interface DrillLetter {
   readonly id: string;

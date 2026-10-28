@@ -8,6 +8,7 @@
  */
 import type { JSX } from 'react';
 import type { AiProvider, Consent } from '../../data';
+import { WINDOW_COPY } from '../copy';
 import type { StepChrome } from '../flow';
 import type { AccountsMode, ChooseNotice } from '../connect';
 import { AccountsStep, type AccountRowData } from './Accounts';
@@ -25,10 +26,11 @@ import { Welcome } from './Welcome';
 
 const noop = () => {};
 
-const chromeAt = (step: number, demo = false): StepChrome => ({
+const chromeAt = (step: number, demo = false, notice?: string): StepChrome => ({
   dashes: { step, of: 4 },
   onBack: noop,
   ...(demo ? { onTryDemo: noop } : {}),
+  ...(notice ? { notice: { text: notice, onRetry: noop }, status: notice } : {}),
 });
 
 /* ---------- Accounts ---------- */
@@ -42,11 +44,12 @@ function accounts(
     notice?: ChooseNotice;
     failure?: string;
     list?: readonly AccountRowData[];
+    windowNotice?: string;
   } = {},
 ): JSX.Element {
   return (
     <AccountsStep
-      chrome={chromeAt(2, true)}
+      chrome={chromeAt(2, true, over.windowNotice)}
       mode={mode}
       address={over.address ?? ''}
       notice={over.notice ?? null}
@@ -215,10 +218,11 @@ function permissions(
   microphone: PermissionState,
   notifications: PermissionState,
   openAtLogin: boolean,
+  notice?: string,
 ): JSX.Element {
   return (
     <PermissionsStep
-      chrome={chromeAt(4)}
+      chrome={chromeAt(4, false, notice)}
       microphone={microphone}
       notifications={notifications}
       openAtLogin={openAtLogin}
@@ -238,7 +242,21 @@ export const stepStates: Record<string, { title: string; render: () => JSX.Eleme
     title: 'Welcome',
     render: () => <Welcome chrome={chromeAt(1, true)} onAddAccount={noop} onSkip={noop} />,
   },
+  'welcome-handoff-failed': {
+    title: 'Welcome · Skip setup, the mail window did not open (Try again; review1)',
+    render: () => (
+      <Welcome chrome={chromeAt(1, false, WINDOW_COPY.handoffFailed)} onAddAccount={noop} onSkip={noop} />
+    ),
+  },
   'accounts-choose': { title: 'Accounts · choose', render: () => accounts('choose') },
+  'accounts-demo-failed': {
+    title: 'Accounts · demo mail did not load (Try again; review1)',
+    render: () => accounts('choose', { windowNotice: WINDOW_COPY.demoFailed }),
+  },
+  'accounts-failed-no-code': {
+    title: 'Accounts · sign-in refused without a reason (review1)',
+    render: () => accounts('failed', { address: JORDAN }),
+  },
   'accounts-typed': {
     title: 'Accounts · typed (Google found)',
     render: () => accounts('typed', { address: JORDAN }),
@@ -288,6 +306,14 @@ export const stepStates: Record<string, { title: string; render: () => JSX.Eleme
   'permissions-granted': {
     title: 'Voice and permissions · allowed',
     render: () => permissions('granted', 'granted', true),
+  },
+  'permissions-handoff-failed': {
+    title: 'Voice and permissions · Finish setup, the mail window did not open (Try again; review1)',
+    render: () => permissions('notDetermined', 'notDetermined', false, WINDOW_COPY.handoffFailed),
+  },
+  'ai-key-save-failed': {
+    title: 'AI · the key could not be saved on this Mac (review1)',
+    render: () => ai(aiState({ keyFailure: 'unknown' }), providerTable({ groqKey: 'none' })),
   },
   'permissions-denied': {
     title: 'Voice and permissions · microphone blocked by macOS (where to turn it on, Open System Settings)',

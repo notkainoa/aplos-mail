@@ -5,6 +5,7 @@
 import type { StepChrome } from '../flow';
 import { MAIN_LABEL } from '../flow';
 import { OnboardingStep } from '../../ui/onboarding';
+import { WindowNoticeLine } from '../WindowNotice';
 
 export const WELCOME_TITLE = 'Mail and calendar, one letter at a time.';
 export const WELCOME_LEDE =
@@ -43,6 +44,8 @@ export function Welcome({ chrome, onAddAccount, onSkip }: WelcomeProps) {
       }}
       {...(chrome.onTryDemo ? { onTryDemo: chrome.onTryDemo } : {})}
       {...(chrome.status ? { phaseStatus: chrome.status } : {})}
-    />
+    >
+      <WindowNoticeLine notice={chrome.notice} />
+    </OnboardingStep>
   );
 }

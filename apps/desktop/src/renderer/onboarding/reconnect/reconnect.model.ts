@@ -99,6 +99,25 @@ export function callFor(account: ReconnectAccount, now: number): ReconnectCall {
   return reconnectOffer(account, now)?.call ?? 'reconnect';
 }
 
+/**
+ * Which account's sheet is open after a Reconnect press: the one already open stays (one sheet at a time, so a second
+ * press never starts another browser flow); otherwise the pressed account's.
+ */
+export function openReconnect(current: string | null, accountId: string): string {
+  return current ?? accountId;
+}
+
+/**
+ * How long the flow waits for an account it can't find before it closes with `failed`. The list may simply not have
+ * arrived; a list that arrived without the account closes at once, and an empty one never leaves a sheet waiting.
+ */
+export const MISSING_ACCOUNT_WAIT_MS = 3_000;
+
+/** When a flow whose account isn't in the list closes: now (the list has accounts, not this one) or after the wait. */
+export function missingAccountClose(accountCount: number): 'now' | 'afterWait' {
+  return accountCount > 0 ? 'now' : 'afterWait';
+}
+
 /* ---------- The sheet's state machine ---------- */
 
 export type SheetPhase = 'idle' | 'waiting' | 'failed' | 'closed';

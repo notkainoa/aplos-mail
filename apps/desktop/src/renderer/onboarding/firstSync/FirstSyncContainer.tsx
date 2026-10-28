@@ -3,10 +3,14 @@
  * consent record, the settings and the clock, feeds `buildFirstSyncView`, keeps the drill's state, sends Try again
  * once per press (`Setup/retry`, idempotent [F5]), opens Aplos by itself only on a clean finish and never while the
  * drill is open, and attaches the screen's key handlers to the window's registry (Esc always opens Aplos [F8]).
+ *
+ * Every Open Aplos goes to the window: the window's step machine asks for the mail window once at a time and asks again
+ * after a failed handoff, so nothing here latches. The window's failed handoff is drawn on this screen (`notice`).
+ * The screen names its focus target to the window (F12), reads the owner's key settings (single-key shortcuts,
+ * remaps) and leaves the keys alone while the reconnect sheet is open over it.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  DEFAULT_KEY_PREFS,
   createAppRegistry,
   focusKindOf,
   type CommandContext,
@@ -14,12 +18,15 @@ import {
   type Registry,
 } from '../../commands';
 import { api, useAccounts, useConsent, useNow, useSettings, useSetupStatus } from '../../data';
+import { keyPrefsFor } from '../flow';
+import type { FirstSyncSlotProps } from '../OnboardingApp';
 import { FirstSync } from './FirstSync';
 import { DRILL_START, drillPick, drillReduce, type DrillKey, type DrillState } from './drill.model';
 import {
   AUTO_OPEN_DELAY_MS,
   buildFirstSyncView,
   firstSyncCommands,
+  firstSyncFocus,
   shouldSendRetry,
   type FirstSyncView,
 } from './model';
@@ -38,18 +45,20 @@ const PROVIDER_NAMES: Readonly<Record<string, string>> = {
   custom: 'your server',
 };
 
-export interface FirstSyncContainerProps {
-  /** Hand off to the mail window. Called at most once. */
-  readonly onOpen: () => void;
-  /** Open the reconnect sheet for an account whose sign-in or permission needs the owner. */
-  readonly onReconnect: (accountId: string) => void;
-  /** "Open Settings" after a sorting failure; omitted until the window can open Settings → AI. */
-  readonly onOpenSettings?: () => void;
+export interface FirstSyncContainerProps extends FirstSyncSlotProps {
   /** The onboarding window's registry; the screen attaches its first-sync and drill handlers to it. */
   readonly registry?: Registry;
 }
 
-export function FirstSyncContainer({ onOpen, onReconnect, onOpenSettings, registry }: FirstSyncContainerProps) {
+export function FirstSyncContainer({
+  onOpen,
+  onReconnect,
+  onOpenSettings,
+  notice,
+  bindKeys,
+  keysSuspended = false,
+  registry,
+}: FirstSyncContainerProps) {
   const status = useSetupStatus();
   const accounts = useAccounts();
   const consent = useConsent();
@@ -67,13 +76,9 @@ export function FirstSyncContainer({ onOpen, onReconnect, onOpenSettings, regist
 
   const [drill, setDrill] = useState<DrillState | null>(null);
 
-  // Open once, whatever asks first: Esc, Return, a button, or the clean finish.
-  const opened = useRef(false);
-  const open = () => {
-    if (opened.current) return;
-    opened.current = true;
-    onOpen();
-  };
+  // Esc, Return, a button or the clean finish: the window's step machine decides whether to ask for the mail window
+  // (once at a time, and again after a failed handoff), so a failed handoff never leaves these keys dead.
+  const open = () => onOpen();
 
   // Aplos opens by itself only on a clean finish, after "Your mail is ready" has shown, and not while the drill is open.
   useEffect(() => {
@@ -96,13 +101,28 @@ export function FirstSyncContainer({ onOpen, onReconnect, onOpenSettings, regist
 
   const drillKey = (key: DrillKey) => setDrill(d => (d ? drillReduce(d, key) : d));
 
+  // Focus (F12): the filled button or Continue anyway on entering, again when the button turns on, the drill's list.
+  const focus = firstSyncFocus(view, drill !== null);
+  useLayoutEffect(() => {
+    bindKeys?.(focus);
+  });
+
+  // The owner's key settings: the single-key switch and remaps apply to the drill's letters too (WCAG 2.1.4).
+  const prefs = keyPrefsFor(settings?.ui);
+
   // Keys come through the registry; the handlers read the latest view and drill at key time.
-  const latest = useRef({ view, drill, open, drillKey });
-  latest.current = { view, drill, open, drillKey };
+  const latest = useRef({ view, drill, open, drillKey, prefs, keysSuspended });
+  latest.current = { view, drill, open, drillKey, prefs, keysSuspended };
+  const own = useRef<Registry | null>(null);
+  useEffect(() => {
+    own.current?.configure(prefs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.ui]);
   useEffect(() => {
     // Without the window's registry the screen still owns Esc [F8]: it resolves keys through a registry of its own,
     // so a missing wiring can never leave Esc stuck. With the window's registry, the window's listener does this.
-    const target = registry ?? createAppRegistry();
+    const target = registry ?? createAppRegistry(latest.current.prefs);
+    own.current = registry ? null : target;
     const handlers = firstSyncCommands({
       view: () => latest.current.view,
       drillOpen: () => latest.current.drill !== null,
@@ -115,6 +135,8 @@ export function FirstSyncContainer({ onOpen, onReconnect, onOpenSettings, regist
     if (!registry) {
       const onKey = (event: KeyboardEvent) => {
         if (event.isComposing || event.defaultPrevented) return;
+        // The reconnect sheet is open over the screen: Esc and Return are the sheet's.
+        if (latest.current.keysSuspended) return;
         const stack: ContextName[] = latest.current.drill
           ? ['onboarding', 'firstSync', 'drill']
           : ['onboarding', 'firstSync'];
@@ -123,7 +145,7 @@ export function FirstSyncContainer({ onOpen, onReconnect, onOpenSettings, regist
           target: null,
           selection: [],
           conditions: {},
-          prefs: DEFAULT_KEY_PREFS,
+          prefs: latest.current.prefs,
           focus: focusKindOf(document.activeElement),
         };
         const hit = target.resolve(event, ctx);
@@ -139,6 +161,7 @@ export function FirstSyncContainer({ onOpen, onReconnect, onOpenSettings, regist
     return () => {
       unlisten();
       detach.forEach(d => d());
+      own.current = null;
     };
   }, [registry]);
 
@@ -155,6 +178,7 @@ export function FirstSyncContainer({ onOpen, onReconnect, onOpenSettings, regist
       onLeaveDrill={() => setDrill(null)}
       onDrillKey={drillKey}
       onDrillPick={index => setDrill(d => (d ? drillPick(d, index) : d))}
+      {...(notice ? { notice } : {})}
     />
   );
 }

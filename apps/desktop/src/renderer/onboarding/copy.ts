@@ -59,8 +59,43 @@ export function reasonSentence(code: AnyReasonCode | undefined, facts: ReasonFac
       : 'That was a different Google account. Choose the same account to reconnect.';
   }
   if (code && code.startsWith('ai.')) return aiSentence(code, facts);
-  return (code && account[code]) ?? 'Sync hit a problem. Try again.';
+  return (code && account[code]) ?? SYNC_FALLBACK;
 }
+
+const SYNC_FALLBACK = 'Sync hit a problem. Try again.';
+
+/**
+ * A new account's sign-in that did not finish (the Accounts step). Nothing synced yet, so a code Aplos has no sentence
+ * for (or no code at all) says the sign-in didn’t finish rather than "Sync hit a problem".
+ */
+export function connectSentence(code: AnyReasonCode | undefined, facts: ReasonFacts = {}): string {
+  const sentence = code && !code.startsWith('ai.') ? reasonSentence(code, facts) : SYNC_FALLBACK;
+  return sentence === SYNC_FALLBACK ? 'Google sign-in didn’t finish. Try again.' : sentence;
+}
+
+/**
+ * The line under the AI step's key field after `Ai/setKey` failed. `Ai/setKey` only stores the key on this Mac, so a
+ * failure is a local save failure unless the code says the key itself was refused; either way it names the provider
+ * the key was for, never another one.
+ */
+export function keySaveSentence(code: AnyReasonCode | null | undefined, provider: string): string {
+  if (isAdminBlock(code ?? undefined)) return 'Your organisation has turned off saving keys.';
+  if (code === 'ai.missingKey' || (code && code.startsWith('auth.'))) {
+    return `${provider} didn’t take that key. Paste it again, or skip for now.`;
+  }
+  return `Aplos couldn’t save your ${provider} key on this Mac. Paste it again, or skip for now.`;
+}
+
+/**
+ * The onboarding window's own lines: the demo load and the handoff to the mail window (drawn visibly in the step and
+ * announced once), and the zero-accounts state's "Add an account" when the setup window could not open.
+ */
+export const WINDOW_COPY = {
+  demoLoading: 'Loading demo mail.',
+  demoFailed: 'Demo mail didn’t load. Nothing changed.',
+  handoffFailed: 'Aplos couldn’t open your mail window. Nothing was lost.',
+  setupWindowFailed: 'Aplos couldn’t open the setup window. Try again.',
+} as const;
 
 /**
  * The sorting pass’s reason (DESIGN 7.12: "Couldn’t sort with Groq: the key was refused. Mail is ready;
@@ -68,6 +103,8 @@ export function reasonSentence(code: AnyReasonCode | undefined, facts: ReasonFac
  */
 export function aiSentence(code: AnyReasonCode | undefined, facts: ReasonFacts = {}): string {
   const name = facts.aiProvider ?? 'your AI provider';
+  // The name opens some sentences: "Your AI provider asked us to slow down."
+  const Name = name.charAt(0).toUpperCase() + name.slice(1);
   switch (code) {
     case 'ai.noProvider':
       return 'No AI provider is set up.';
@@ -76,13 +113,13 @@ export function aiSentence(code: AnyReasonCode | undefined, facts: ReasonFacts =
     case 'ai.unreachable':
       return `Couldn’t sort with ${name}: it didn’t answer.`;
     case 'ai.rateLimited':
-      return `${name} asked us to slow down.`;
+      return `${Name} asked us to slow down.`;
     case 'ai.dailyCap':
       return "Today’s AI limit is reached. Sorting resumes tomorrow.";
     case 'ai.noConsent':
       return 'Sorting waits until you allow it.';
     case 'ai.trainsOnInputs':
-      return `${name} may learn from what it’s sent, so Aplos doesn’t send it your mail.`;
+      return `${Name} may learn from what it’s sent, so Aplos doesn’t send it your mail.`;
     case 'ai.accountExcluded':
       return "This account’s mail isn’t used for AI.";
     default:

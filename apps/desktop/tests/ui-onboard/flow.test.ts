@@ -216,7 +216,13 @@ describe('close-at-any-moment matrix (plan 30 U8 acceptance 2; F1, F2)', () => {
   });
 
   test('a failed handoff can be retried with Return or Esc, without a second Setup/end', () => {
-    const out = runFlow([{ type: 'esc' }, { type: 'esc' }, { type: 'next' }]);
+    const out = runFlow([
+      { type: 'esc' },
+      { type: 'handoffFailed' },
+      { type: 'esc' },
+      { type: 'handoffFailed' },
+      { type: 'next' },
+    ]);
     assert.equal(ends(out.effects).length, 1);
     assert.equal(handoffs(out.effects).length, 3);
   });

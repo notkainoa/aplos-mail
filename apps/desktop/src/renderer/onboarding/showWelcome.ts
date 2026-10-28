@@ -3,6 +3,7 @@
  * window in review mode and changes nothing: the window's own `Setup/begin` and `Setup/end` keep a close from
  * leaving AI deferred (F1). In the browser preview there is no second window, so it goes to the onboarding route.
  */
+import { WINDOW_COPY } from './copy';
 import { missingMethod } from './flow';
 
 /** Where the browser preview shows the onboarding window (REQUEST ui-shell: this route does not exist yet). */
@@ -56,4 +57,9 @@ export async function openOnboardingWindow(
 /** Settings → Help, "Show welcome": the onboarding window in review mode, beside the mail window. */
 export function showWelcome(given: Partial<WelcomePorts> = {}): Promise<WelcomeResult> {
   return openOnboardingWindow('review', given);
+}
+
+/** The visible line after "Add an account" or Show welcome could not open the setup window; none otherwise. */
+export function welcomeFailureLine(result: WelcomeResult): string | undefined {
+  return result === 'failed' ? WINDOW_COPY.setupWindowFailed : undefined;
 }

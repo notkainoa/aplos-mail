@@ -23,6 +23,8 @@ import { ReconnectSheet } from '../../ui/status/ReconnectSheet';
 import {
   callFor,
   initialReconnect,
+  MISSING_ACCOUNT_WAIT_MS,
+  missingAccountClose,
   reduceReconnect,
   runReconnectEffect,
   sheetView,
@@ -80,10 +82,17 @@ export function ReconnectFlow({ accountId, onClose, ports: given }: ReconnectFlo
 
 /** The account is gone: report it once, draw nothing. */
 function Missing({ onClose, accounts }: { onClose: ReconnectFlowProps['onClose']; accounts: number }) {
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
-    // An empty list may just not have arrived; only a list that lacks the account means it is gone.
-    if (accounts > 0) onClose('failed');
-  }, [accounts, onClose]);
+    // An empty list may just not have arrived: wait a moment for it, but never leave the flow waiting for good.
+    if (missingAccountClose(accounts) === 'now') {
+      close.current('failed');
+      return;
+    }
+    const timer = setTimeout(() => close.current('failed'), MISSING_ACCOUNT_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [accounts]);
   return null;
 }
 

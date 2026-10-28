@@ -13,7 +13,9 @@ import { ProgressSegments } from '../../ui/status';
 import { Text } from '../../ui/surfaces';
 import { Drill } from './Drill';
 import { DRILL_COPY, type DrillKey, type DrillState } from './drill.model';
-import type { FirstSyncRow, FirstSyncView } from './model';
+import { CONTINUE_ANYWAY, type FirstSyncRow, type FirstSyncView } from './model';
+import type { WindowNotice } from '../flow';
+import { WindowNoticeLine } from '../WindowNotice';
 
 export interface FirstSyncProps {
   readonly view: FirstSyncView;
@@ -37,6 +39,8 @@ export interface FirstSyncProps {
   readonly onDrillKey: (key: DrillKey) => void;
   /** A practice row was clicked. */
   readonly onDrillPick: (index: number) => void;
+  /** The window's failed handoff, drawn visibly with Try again (DESIGN 7.15). */
+  readonly notice?: WindowNotice;
 }
 
 function AccountRow({
@@ -106,13 +110,14 @@ export function FirstSync(props: FirstSyncProps) {
             ))}
           </div>
           <Drill state={drill} now={now} onKey={props.onDrillKey} onPick={props.onDrillPick} />
+          <WindowNoticeLine notice={props.notice} />
         </OnboardingStep>
       </div>
     );
   }
 
   const buttons: StepButton[] = [];
-  if (view.continueAnyway) buttons.push({ label: 'Continue anyway', emphasis: 'text', onSelect: onOpen });
+  if (view.continueAnyway) buttons.push({ label: CONTINUE_ANYWAY, emphasis: 'text', onSelect: onOpen });
   buttons.push({
     label: view.primary.label,
     emphasis: 'filled',
@@ -154,6 +159,7 @@ export function FirstSync(props: FirstSyncProps) {
             <Button variant="text" icon="keyboard" label={DRILL_COPY.heading} onPress={onTryKeys} />
           </div>
         ) : null}
+        <WindowNoticeLine notice={props.notice} />
       </OnboardingStep>
     </div>
   );

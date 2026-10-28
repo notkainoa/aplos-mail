@@ -9,6 +9,7 @@ import type { SetupAccount, SetupStatus } from '../../data';
 import { FirstSync } from './FirstSync';
 import { drillPreset, type DrillState } from './drill.model';
 import { buildFirstSyncView, type AccountFacts } from './model';
+import { WINDOW_COPY } from '../copy';
 
 // The gallery runs under Vite, which loads the screen's layout CSS; node tests import this file too and skip it.
 if (import.meta.env) void import('./firstSync.css');
@@ -50,6 +51,8 @@ interface Scene {
   readonly aiProvider?: string | null;
   readonly consentStored?: boolean;
   readonly drill?: DrillState;
+  /** The window's failed handoff, drawn on the screen. */
+  readonly handoffFailed?: boolean;
 }
 
 const noop = () => undefined;
@@ -75,6 +78,7 @@ function render(scene: Scene): JSX.Element {
       onLeaveDrill={noop}
       onDrillKey={noop}
       onDrillPick={noop}
+      {...(scene.handoffFailed ? { notice: { text: WINDOW_COPY.handoffFailed, onRetry: noop } } : {})}
     />
   );
 }
@@ -265,6 +269,27 @@ export const firstSyncScenes: Record<string, { title: string; scene: Scene }> = 
   },
   'drill-step1': { title: 'Try the keys: step 1 (J/K)', scene: { status: twoReading, drill: drillPreset('step1') } },
   'drill-step3': { title: 'Try the keys: step 3 (E)', scene: { status: twoReading, drill: drillPreset('step3') } },
+  'handoff-failed': {
+    title: 'Open Aplos, the mail window did not open (Try again; review1)',
+    scene: { status: status([ready(ALEX.id, 40, 40)], { done: true }), handoffFailed: true },
+  },
+  'failed-after-window': {
+    title: 'Sign-in expired after the newest mail and sorting were in: Reconnect, never blames the AI (review1)',
+    scene: {
+      status: status([ready(ALEX.id, 40, 40, { state: 'failed', reasonCode: 'auth.expired' })], {
+        done: true,
+        errors: [{ accountId: ALEX.id, phase: 'backfill', reasonCode: 'auth.expired', at: at(9, 55) }],
+      }),
+    },
+  },
+  'ai-rate-limited': {
+    title: 'Paused: the AI provider asked to slow down (names Groq, never Google; review1)',
+    scene: {
+      status: status([
+        ready(ALEX.id, 12, 40, { state: 'paused', reasonCode: 'ai.rateLimited', pausedUntil: at(10, 20) }),
+      ]),
+    },
+  },
   'drill-done': { title: 'Try the keys: done', scene: { status: twoReading, drill: drillPreset('done') } },
 };
 

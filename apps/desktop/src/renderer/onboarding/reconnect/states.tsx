@@ -11,6 +11,7 @@ import { Pane, ToastStack } from '../../ui/surfaces';
 import { ReconnectSheet } from '../../ui/status/ReconnectSheet';
 import { StatusSlot } from '../../ui/status/StatusSlot';
 import type { SyncStatus } from '../../ui/props';
+import { WINDOW_COPY } from '../copy';
 import { ZeroAccountsView } from '../ZeroAccounts';
 import {
   initialReconnect,
@@ -170,6 +171,14 @@ export const reconnectStates: Record<string, StateEntry> = {
     render: () => (
       <Backdrop>
         <ZeroAccountsView onAddAccount={noop} onTryDemo={noop} />
+      </Backdrop>
+    ),
+  },
+  'zero-accounts-open-failed': {
+    title: 'Main pane, no accounts: Add an account could not open the setup window (review1)',
+    render: () => (
+      <Backdrop>
+        <ZeroAccountsView notice={WINDOW_COPY.setupWindowFailed} onAddAccount={noop} onTryDemo={noop} />
       </Backdrop>
     ),
   },

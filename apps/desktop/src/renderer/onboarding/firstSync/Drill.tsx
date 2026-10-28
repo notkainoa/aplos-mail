@@ -13,6 +13,7 @@ import type { TriageCommands } from '../../ui/props';
 import { Text } from '../../ui/surfaces';
 import {
   DRILL_COPY,
+  DRILL_LIST_ID,
   DRILL_STEPS,
   drillCount,
   drillLetter,
@@ -50,7 +51,7 @@ export interface DrillProps {
 export function Drill({ state, now, onKey, onPick }: DrillProps) {
   const uid = useId();
   const headId = `${uid}-head`;
-  const listId = `${uid}-list`;
+  const listId = DRILL_LIST_ID;
   const optionId = (id: string) => `${uid}-${id}`;
   const finished = state.step >= 4;
   const current = state.ids[state.cursor];

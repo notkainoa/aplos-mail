@@ -7,8 +7,9 @@
  */
 import type { AccountsMode, ChooseNotice } from '../connect';
 import { ACCOUNTS_LABELS, ADDRESS_FIELD_ID } from '../connect';
-import { reasonSentence } from '../copy';
+import { connectSentence } from '../copy';
 import { backFooter, type StepChrome } from '../flow';
+import { WindowNoticeLine } from '../WindowNotice';
 import { ChoiceRow, OnboardingStep } from '../../ui/onboarding';
 import { TextField } from '../../ui/controls';
 import { Text } from '../../ui/surfaces';
@@ -120,6 +121,8 @@ function GoogleChoice({ onChooseGoogle }: Pick<AccountsStepProps, 'onChooseGoogl
 export function AccountsStep(props: AccountsStepProps) {
   const { chrome, mode } = props;
   const footer = backFooter(chrome);
+  // A failed demo load or handoff, in every state of the step.
+  const windowNotice = <WindowNoticeLine notice={chrome.notice} />;
   const common = {
     titleId: 'onb-title',
     footer,
@@ -147,6 +150,7 @@ export function AccountsStep(props: AccountsStepProps) {
         <div className="onb-wide">
           <ProgressSegments variant="waiting" label="Waiting for sign-in" />
         </div>
+        {windowNotice}
       </OnboardingStep>
     );
   }
@@ -183,6 +187,7 @@ export function AccountsStep(props: AccountsStepProps) {
             />
           ))}
         </div>
+        {windowNotice}
       </OnboardingStep>
     );
   }
@@ -211,12 +216,13 @@ export function AccountsStep(props: AccountsStepProps) {
             status={{ text: 'Found', tone: 'ok' }}
           />
         </div>
+        {windowNotice}
       </OnboardingStep>
     );
   }
 
   if (mode === 'failed') {
-    const sentence = reasonSentence(props.failure ?? undefined, { address: props.address || undefined });
+    const sentence = connectSentence(props.failure ?? undefined, { address: props.address || undefined });
     return (
       <OnboardingStep
         {...common}
@@ -236,6 +242,7 @@ export function AccountsStep(props: AccountsStepProps) {
           keycap={false}
           failure={sentence}
         />
+        {windowNotice}
       </OnboardingStep>
     );
   }
@@ -258,6 +265,7 @@ export function AccountsStep(props: AccountsStepProps) {
         {...(notice ? { notice } : {})}
       />
       <GoogleChoice onChooseGoogle={props.onChooseGoogle} />
+      {windowNotice}
     </OnboardingStep>
   );
 }
