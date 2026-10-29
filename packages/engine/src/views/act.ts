@@ -161,7 +161,7 @@ function markUnread(f: ThreadFacts): Step[] {
 }
 
 /** Out of the Inbox: moved to the account's Archive where it has one (IMAP), else just no longer in the Inbox. */
-function archive(f: ThreadFacts): Step[] {
+export function archive(f: ThreadFacts): Step[] {
   const { inbox, archive: to } = f.roles;
   if (!inbox) return [];
   return f.messages
@@ -193,7 +193,7 @@ function trash(f: ThreadFacts): Step[] {
     .map(m => trashStep(m.remoteId, into, leaving(f, m, into)));
 }
 
-function spam(f: ThreadFacts): Step[] {
+export function spam(f: ThreadFacts): Step[] {
   const into = need(f.roles.spam, 'Spam');
   return f.messages
     .filter(m => !m.folders.includes(into))
@@ -201,7 +201,7 @@ function spam(f: ThreadFacts): Step[] {
 }
 
 /** Back to the Inbox: out of Trash and Spam, into the Inbox. */
-function restore(f: ThreadFacts): Step[] {
+export function restore(f: ThreadFacts): Step[] {
   const { inbox, trash: bin, spam: junk } = f.roles;
   const steps: Step[] = [];
   for (const m of f.messages) {
