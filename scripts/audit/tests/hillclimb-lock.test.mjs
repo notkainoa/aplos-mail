@@ -168,7 +168,9 @@ describe('two concurrent takers (real processes)', () => {
         child.stderr.on('data', chunk => {
           stderr += chunk;
         });
-        child.on('close', code => (code === 0 ? resolve() : reject(new Error(`${name}: ${stderr}`))));
+        child.on('close', code =>
+          code === 0 ? resolve() : reject(new Error(`${name}: ${stderr}`)),
+        );
         child.on('error', reject);
       });
     await Promise.all([run('a'), run('b')]);

@@ -179,9 +179,7 @@ export function validateConfig(raw) {
     allowedTestPaths: raw.allowedTestPaths
       ? needStringList(raw.allowedTestPaths, 'allowedTestPaths')
       : [],
-    allowDirectives: raw.allowDirectives
-      ? needDirectives(raw.allowDirectives)
-      : [],
+    allowDirectives: raw.allowDirectives ? needDirectives(raw.allowDirectives) : [],
     gates: needGateList(raw.gates),
     scorers: raw.scorers.map(needScorer),
     attempt,

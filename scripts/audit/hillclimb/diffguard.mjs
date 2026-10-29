@@ -117,8 +117,7 @@ export function validGlob(glob) {
 }
 
 const matchesAny = (path, globs) => globs.some(glob => matchGlob(path, glob));
-const nameMatches = (path, globs) =>
-  segments(path).some(segment => matchesAny(segment, globs));
+const nameMatches = (path, globs) => segments(path).some(segment => matchesAny(segment, globs));
 
 // Touched in ANY way = rejected, even when a target lists them under allowedPaths.
 // Directory globs are `**/`-anchored so they catch these roots nested under apps/desktop too;
@@ -338,7 +337,9 @@ export function checkDiff({
     if (permitted.has(name)) continue;
     const hit = addedLines.find(line => pattern.test(line));
     if (hit) {
-      reasons.push(`added line contains suppression directive "${name}": ${hit.trim().slice(0, 80)}`);
+      reasons.push(
+        `added line contains suppression directive "${name}": ${hit.trim().slice(0, 80)}`,
+      );
     }
   }
   for (const change of changes) {

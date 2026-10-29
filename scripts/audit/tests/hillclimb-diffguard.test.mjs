@@ -382,8 +382,7 @@ describe('checkDiff: normalised matching', () => {
 
 describe('checkDiff: suppression directives in added lines', () => {
   const changes = [M('src/a.ts')];
-  const scan = (added, extra = {}) =>
-    checkDiff({ ...base, changes, addedLines: added, ...extra });
+  const scan = (added, extra = {}) => checkDiff({ ...base, changes, addedLines: added, ...extra });
 
   it('rejects each known directive, case-insensitively', () => {
     for (const line of [
@@ -408,10 +407,7 @@ describe('checkDiff: suppression directives in added lines', () => {
   });
 
   it('honours allowDirectives for the named directive only', () => {
-    assert.equal(
-      scan(['// @ts-ignore'], { allowDirectives: ['ts-ignore'] }).ok,
-      true,
-    );
+    assert.equal(scan(['// @ts-ignore'], { allowDirectives: ['ts-ignore'] }).ok, true);
     const result = scan(['// @ts-ignore', '// eslint-disable-next-line'], {
       allowDirectives: ['ts-ignore'],
     });

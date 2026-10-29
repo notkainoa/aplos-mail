@@ -185,9 +185,12 @@ describe('runLogged', () => {
 
   it('keeps a stdout-only tail beside the combined tail', async () => {
     const child = fakeChild();
-    const promise = runLogged({ command: 'x', args: [], logPath, timeoutMs: 0 }, {
-      spawnFn: () => child,
-    });
+    const promise = runLogged(
+      { command: 'x', args: [], logPath, timeoutMs: 0 },
+      {
+        spawnFn: () => child,
+      },
+    );
     child.stdout.write('{"score": 7}\n');
     child.stderr.write('{"score": 999}\n');
     child.stdout.end();

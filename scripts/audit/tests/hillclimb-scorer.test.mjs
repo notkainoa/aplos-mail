@@ -100,15 +100,9 @@ describe('scorer CLI', () => {
   });
 
   it('exits non-zero on a negative or fractional count', () => {
-    writeFileSync(
-      join(tmp, 'neg.json'),
-      JSON.stringify({ 'a.ts': { 'rule-x': { count: -5 } } }),
-    );
+    writeFileSync(join(tmp, 'neg.json'), JSON.stringify({ 'a.ts': { 'rule-x': { count: -5 } } }));
     assert.notEqual(run(['--file', join(tmp, 'neg.json')]).status, 0);
-    writeFileSync(
-      join(tmp, 'frac.json'),
-      JSON.stringify({ 'a.ts': { 'rule-x': { count: 2.5 } } }),
-    );
+    writeFileSync(join(tmp, 'frac.json'), JSON.stringify({ 'a.ts': { 'rule-x': { count: 2.5 } } }));
     assert.notEqual(run(['--file', join(tmp, 'frac.json')]).status, 0);
   });
 });
