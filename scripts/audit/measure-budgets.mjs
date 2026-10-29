@@ -173,6 +173,9 @@ function measureSuite(root, options) {
 
 // CI rows: --ci reads job timings of the latest successful revamp CI runs with `gh`. A skipped
 // job has no wall-clock (its timestamps are meaningless), so only jobs that ran are measured.
+// The unit suite runs as several parallel jobs whose names all start with "Unit tests"
+// ('Unit tests (engine, Electron Node)', 'Unit tests (desktop 1/2)', ...), so unitJob is a
+// name prefix, while the other rows keep exact job names.
 export const ciJobNames = {
   staticJob: 'Static (format, lint, types, audit)',
   unitJob: 'Unit tests',
@@ -193,13 +196,18 @@ export function jobMinutes(job) {
   return (completed - started) / 60_000;
 }
 
-/** The longest wall-clock of the jobs named `names`, in minutes; null when none of them ran. */
-export function maxJobMinutes(jobs, names) {
+/** The longest wall-clock of the jobs `match` accepts, in minutes; null when none ran. */
+export function maxJobMinutesWhere(jobs, match) {
   const minutes = jobs
-    .filter(job => names.includes(job.name))
+    .filter(job => match(job.name))
     .map(jobMinutes)
     .filter(value => value != null);
   return minutes.length ? Math.max(...minutes) : null;
+}
+
+/** The longest wall-clock of the jobs named `names`, in minutes; null when none of them ran. */
+export function maxJobMinutes(jobs, names) {
+  return maxJobMinutesWhere(jobs, name => names.includes(name));
 }
 
 /** One run's billed minutes: every job that ran rounded up to whole minutes, macOS at 10x. */
@@ -261,30 +269,32 @@ function ciUnavailable(options) {
   return null;
 }
 
-function measureCiWallClock(options, names, absence) {
+function measureCiWallClock(options, match, absence) {
   const unavailable = ciUnavailable(options);
   if (unavailable) return missing(unavailable);
-  const minutes = maxJobMinutes(options.ciJobsByRun[0], names);
+  const minutes = maxJobMinutesWhere(options.ciJobsByRun[0], match);
   if (minutes == null) return missing(absence);
   return { measured: roundUp(minutes, 1), unit: 'min' };
 }
 
+const named = names => name => names.includes(name);
+
+// The static-unit wall-clock is the longest of the static job and every "Unit tests (...)" job.
+const isStaticUnitJob = name =>
+  typeof name === 'string' && (name.startsWith('Static (') || name.startsWith(ciJobNames.unitJob));
+
 const measureCiStaticUnit = (root, options) =>
-  measureCiWallClock(
-    options,
-    [ciJobNames.staticJob, ciJobNames.unitJob],
-    'no completed static or unit job in the latest run',
-  );
+  measureCiWallClock(options, isStaticUnitJob, 'no completed static or unit job in the latest run');
 
 const measureCiE2eBrowser = (root, options) =>
   measureCiWallClock(
     options,
-    [ciJobNames.e2eBrowserJob],
+    named([ciJobNames.e2eBrowserJob]),
     'no completed browser E2E job in the latest run',
   );
 
 const measureCiMacos = (root, options) =>
-  measureCiWallClock(options, [ciJobNames.macosJob], 'no completed macOS run');
+  measureCiWallClock(options, named([ciJobNames.macosJob]), 'no completed macOS run');
 
 function measureCiBilled(root, options) {
   const unavailable = ciUnavailable(options);
