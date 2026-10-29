@@ -42,6 +42,7 @@ export function PlanOutline({ plan, placement, selected, onSelect, onOpen }: Pla
       <span className="ui-plan-outline__title" dir="auto">
         {plan.title}
       </span>
+      {/* A whitespace text node in the flex button: nothing is drawn, and the visible text reads "Launch prep From mail". */}{' '}
       <span className="ui-plan-outline__from">
         <CalIcon name="mail" />
         From mail

@@ -284,8 +284,11 @@ test('ChoiceRow radio: aria-checked, Groq Default with its key source in mono, W
     />,
   );
   assert.match(out, /role="radio"[^>]*aria-checked="true"/);
-  assert.match(out, /aria-labelledby="groq-label"/);
-  assert.match(out, /aria-describedby="groq-detail"/);
+  assert.match(
+    out,
+    /aria-labelledby="groq-label groq-tag groq-detail"/,
+    'the name holds the visible words',
+  );
   assert.match(out, />Default</);
   assert.match(out, /Key found in the environment as <code>GROQ_API_KEY<\/code>/);
   assert.match(out, /Works · 0\.4 s/);

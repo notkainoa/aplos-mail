@@ -363,18 +363,18 @@ describe('Menu', () => {
     assert.equal(count(html, /data-color="(sky|hill)"/g), 4);
     assert.match(html, /data-active="true" data-detail="true"/);
     assert.match(textOf(html), /Google needs you to sign in again\. Reconnect/);
-    // The inline Reconnect is a pointer duplicate; keys reach it with → and the item names only its label.
+    // The inline Reconnect is a pointer duplicate; keys reach it with → and the item is named by its visible words and described by the key hint.
     assert.match(html, /aria-hidden="true" class="ui-menu__inline" data-tone="danger"/);
     assert.match(
       html,
-      /role="menuitem" aria-labelledby="([^"]+)-gmail-label" aria-describedby="\1-gmail-detail \1-gmail-hint"/,
+      /role="menuitem" aria-labelledby="([^"]+)-gmail-label \1-gmail-detail" aria-describedby="\1-gmail-hint"/,
     );
     assert.match(
       html,
       /class="ui-sr-only" id="[^"]+-gmail-hint">Press Right Arrow to reconnect\.</,
     );
     assert.match(html, /role="menu"[^>]*data-state="open"/);
-    assert.match(html, /ui-menu__aside">Synced</);
+    assert.match(html, /ui-menu__aside" id="[^"]+-fern-aside">Synced</);
     assert.ok(!html.includes('data-placed'), 'unplaced until measured');
     assertIdRefs(html);
     assertClean(html, ['alex.moreno@gmail.com', 'alex@fernworks.studio']);
@@ -432,9 +432,10 @@ describe('Menu', () => {
         onClose={noop}
       />,
     );
-    for (let d = 1; d <= 9; d++) assert.ok(html.includes(`<span class="ui-menu__num">${d}</span>`));
-    assert.ok(!html.includes('<span class="ui-menu__num">10</span>'));
-    assert.equal(count(html, '<span class="ui-menu__num"></span>'), 3);
+    for (let d = 1; d <= 9; d++)
+      assert.ok(html.includes(`<span class="ui-menu__num" aria-hidden="true">${d}</span>`));
+    assert.ok(!html.includes('<span class="ui-menu__num" aria-hidden="true">10</span>'));
+    assert.equal(count(html, '<span class="ui-menu__num" aria-hidden="true"></span>'), 3);
     assert.match(html, /<kbd class="ui-part-kbd">D<\/kbd>/);
     assert.match(html, /data-tone="danger"/);
     assert.match(html, /aria-disabled="true"/);

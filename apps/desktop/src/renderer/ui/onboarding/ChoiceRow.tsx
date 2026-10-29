@@ -50,6 +50,8 @@ export function ChoiceRow({
   const pickRef = useRef<HTMLDivElement>(null);
   const labelId = `${id}-label`;
   const detailId = `${id}-detail`;
+  const tagId = `${id}-tag`;
+  const statusId = `${id}-status`;
   const second: ReactNode = keySource ? keySourceLine(keySource) : detail;
   const hasSecond = second !== undefined && second !== null && second !== '';
 
@@ -65,14 +67,22 @@ export function ChoiceRow({
     </span>
   ) : null;
 
+  // Whitespace text nodes between the flex children draw nothing, but let a checker that joins the visible text
+  // (axe label-content-name-mismatch) read "Google Gmail" instead of "GoogleGmail", as the accessible name does.
   const text = (
     <span className="ui-choice-row__stack">
       <span className="ui-choice-row__line">
         <span className="ui-choice-row__name" id={labelId} dir="auto">
           {label}
         </span>
-        {tag ? <span className="ui-choice-row__tag">{tag}</span> : null}
+        {tag ? ' ' : null}
+        {tag ? (
+          <span className="ui-choice-row__tag" id={tagId}>
+            {tag}
+          </span>
+        ) : null}
       </span>
+      {hasSecond ? ' ' : null}
       {hasSecond ? (
         <span className="ui-choice-row__detail" id={detailId}>
           {detailDot ? (
@@ -87,7 +97,7 @@ export function ChoiceRow({
   const end = (
     <>
       {status ? (
-        <span className="ui-choice-row__status" data-tone={status.tone}>
+        <span className="ui-choice-row__status" data-tone={status.tone} id={statusId}>
           {status.tone === 'ok' ? (
             <OnbIcon name="check" />
           ) : status.tone === 'attention' ? (
@@ -100,7 +110,12 @@ export function ChoiceRow({
     </>
   );
 
-  const describedBy = hasSecond ? detailId : undefined;
+  // The name holds every visible word of the control (label, tag, detail and, inside a plain link, the status), so it
+  // contains the visible text (WCAG 2.5.3). Nothing is left to describe.
+  const nameOf = (withStatus: boolean): string =>
+    [labelId, tag ? tagId : '', hasSecond ? detailId : '', withStatus && status ? statusId : '']
+      .filter(Boolean)
+      .join(' ');
 
   // Roving tab stop: the chosen radio is the group's one tab stop, or the first when none is chosen.
   useEffect(() => {
@@ -120,8 +135,7 @@ export function ChoiceRow({
         <button
           type="button"
           className="ui-choice-row__link"
-          aria-labelledby={labelId}
-          aria-describedby={describedBy}
+          aria-labelledby={nameOf(false)}
           onClick={onPress}
         >
           {lead}
@@ -145,12 +159,12 @@ export function ChoiceRow({
         className="ui-choice-row"
         data-role="link"
         data-has-detail={hasSecond ? 'true' : 'false'}
-        aria-labelledby={labelId}
-        aria-describedby={describedBy}
+        aria-labelledby={nameOf(true)}
         onClick={onPress}
       >
         {lead}
         {text}
+        {status ? ' ' : null}
         <span className="ui-choice-row__end">
           {end}
           <span className="ui-choice-row__go">
@@ -190,8 +204,7 @@ export function ChoiceRow({
           role="radio"
           className="ui-choice-row__pick"
           aria-checked={Boolean(selected)}
-          aria-labelledby={labelId}
-          aria-describedby={describedBy}
+          aria-labelledby={nameOf(false)}
           tabIndex={selected ? 0 : -1}
           onClick={onPress}
           onKeyDown={onKeyDown}
