@@ -49,6 +49,19 @@ export function googleScopeParam(): string {
   return [...identityScopes, ...googleScopeManifest.map(entry => entry.scope)].join(' ');
 }
 
+/**
+ * The scopes a sign-in asks for: the identity scopes, every required scope, and the optional ones the caller picked.
+ * A scope the manifest lacks, or names as required, is a programming error and is refused before Google is asked.
+ */
+export function connectScopes(optional: readonly string[] = []): string[] {
+  const optionalKnown = new Set(googleScopeManifest.filter(e => !e.required).map(e => e.scope));
+  const unknown = optional.filter(scope => !optionalKnown.has(scope));
+  if (unknown.length)
+    throw new Error(`Not an optional scope in the manifest: ${unknown.join(' ')}`);
+  const required = googleScopeManifest.filter(entry => entry.required).map(entry => entry.scope);
+  return [...new Set([...identityScopes, ...required, ...optional])];
+}
+
 /** A token response's `scope` string as a list; Google separates scopes with spaces. */
 export function parseGrantedScopes(scope: unknown): string[] {
   if (typeof scope !== 'string') return [];
