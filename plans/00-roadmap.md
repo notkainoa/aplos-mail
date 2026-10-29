@@ -388,6 +388,46 @@ OpenCode and Cursor Grok are retired for this project (they were never used in p
 
 **Unchanged:** every test gate, the security reviews, the owner's feature review loop, and the hard rules.
 
+### 5.1c Hill climbing (owner, 2026-10-29)
+
+> **What this means:** agents improve code in rounds against automatic scores. Several attempts run in parallel, each is scored, and only a better one that breaks no gate is kept. SWE-2 makes most attempts for free; Claude judges taste and reviews the final result.
+
+**The loop.** For a target (a screen, a module or an AI prompt):
+1. Score the current code with the target's scorers and run its gates.
+2. Start N attempts in parallel, each in its own git worktree, with the brief, the current scores and the worst findings.
+3. Score every attempt. Keep the best one only if its combined score is higher and every gate still passes.
+4. Repeat from the new best. Stop after 2 rounds without gain or at the round limit (default 5 rounds of 4 attempts).
+5. The thread opens a normal PR from the result. It gets the usual Sonnet review (Opus in the named areas).
+
+**Gates** (must pass, never traded for score): the lane's tests, typecheck, the owners check, the security checks in the target's area, and no regression on any scorer marked `noRegress`.
+
+**Anti-gaming.** An attempt may only touch the target's allowed paths. The harness rejects any diff that touches scorers, gates, test expectations, baselines, budgets, suppression files (except to shrink them), mockups or DESIGN.md. AI prompt targets score on a dev set and must not regress on a held-out set the attempts never see.
+
+**Who makes the attempts** (owner's choice "C"):
+- SWE-2 for all non-UI targets, and for the mechanical UI checks: accessibility (axe), design lint, stylelint and contrast.
+- Sonnet for visual or taste work on screens (Opus for high-visibility screens), 2–3 attempts per round. A Sonnet taste judge scores screenshots against DESIGN.md and the matching mockup.
+- Visual changes to a screen happen before its READY-FOR-OWNER. After the owner approves, a hill climb may only change things that keep the approved look; anything visible goes back to the owner.
+
+**Scorers by area:**
+
+| Area | Existing | To add |
+|---|---|---|
+| UI | `lint:design`, `check:contrast`, `check:tokens`, `check:budgets` | axe (approved 2026-10-29), visual diff against `mockups/`, Sonnet taste judge |
+| Engine and providers | tests, typecheck, `bench:mailbox`, `check:budgets`, ESLint suppression count | coverage, mutation testing (Stryker), dead code (knip), layer rules (dependency-cruiser) |
+| AI features | `eval:groq`, `eval:ask` | dev and held-out splits |
+
+**Builders.**
+- Platform (`plat-ci`) builds the harness, `npm run hillclimb -- <target config>`, in `scripts/audit/hillclimb/`, plus the non-UI scorers.
+  - A target config lists its allowed paths, gates, weighted scorers (each a command that prints `{"score": n, "details": [...]}`), the model per attempt, attempts per round and the round limit.
+  - Attempts run headless: SWE-2 with `devin -p --model swe-2-high` in the attempt's worktree, Claude with `claude -p --model <model>`.
+  - It takes the shared check slot (`scripts/audit/slot.mjs`) so full suites never overlap.
+  - It prints a score table per round, no raw logs.
+- UI-core (`ui-foundation`) builds the UI scorers (axe, visual diff, taste judge) in `tests/visual/`.
+- Engine (`eng-ai`) adds the dev and held-out splits to the AI evals.
+- Each thread keeps its target configs in its own lane paths.
+
+**Where it runs.** Heavy rounds run on kainoas-linux-mba, because the Mac is loaded.
+
 ### 5.1b Machines (owner, 2026-10-28)
 
 > **What this means:** tests that only need a headless browser or Node run on the Linux box when it helps the Mac; anything needing macOS stays on the Mac.
