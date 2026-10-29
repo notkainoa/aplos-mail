@@ -344,7 +344,7 @@ export function deferred<T = void>() {
 export function connectResult(extra: Partial<ConnectResult> = {}): ConnectResult {
   return {
     identity: { subject: 'sub-1', address: ADDRESS },
-    grantedScopes: ['gmail.modify'],
+    grantedScopes: ['https://www.googleapis.com/auth/gmail.modify'],
     capabilities: {
       labels: true,
       folders: false,
