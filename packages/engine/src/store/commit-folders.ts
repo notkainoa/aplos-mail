@@ -20,14 +20,38 @@ function colorTag(value: string | null | undefined) {
 /** `accounts.settings` holds a plain JSON object of at most 16 KB, so a window cannot be handed anything else. */
 function settingsJson(value: Record<string, unknown> | undefined) {
   if (value === undefined) return undefined;
-  const proto =
-    value === null || typeof value !== 'object' ? undefined : Object.getPrototypeOf(value);
-  if (proto !== Object.prototype && proto !== null)
+  if (!isPlain(value))
     throw new StoreError('invalid', 'Account settings must be a plain JSON object');
   const json = serialize(value);
+  // What JSON silently drops or rewrites (undefined, NaN, functions, toJSON, Map) would read back as something else.
+  if (!sameJson(value, JSON.parse(json)))
+    throw new StoreError('invalid', 'Account settings must survive a JSON round trip unchanged');
   if (new TextEncoder().encode(json).length > MAX_SETTINGS_BYTES)
     throw new StoreError('invalid', 'Account settings are limited to 16 KB');
   return json;
+}
+
+function isPlain(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === null || typeof a !== 'object') return a === b;
+  if (Array.isArray(a))
+    return (
+      Array.isArray(b) && a.length === b.length && Array.from(a).every((v, i) => sameJson(v, b[i]))
+    );
+  if (!isPlain(a) || !isPlain(b)) return false;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every(k => sameJson(a[k], b[k]));
+}
+
+function notificationsFlag(value: boolean | undefined) {
+  if (value !== undefined && typeof value !== 'boolean')
+    throw new StoreError('invalid', 'notifications is true or false');
+  return value;
 }
 
 function serialize(value: unknown): string {
@@ -69,7 +93,7 @@ export function account(run: CommitRun, w: AccountWrite) {
   set('primary_lease_until', w.primaryLeaseUntil);
   set('primary_lease_device', w.primaryLeaseDevice);
   set('color_tag', colorTag(w.colorTag));
-  set('notifications', w.notifications);
+  set('notifications', notificationsFlag(w.notifications));
   set('settings', settingsJson(w.settings));
   const exists = run.q('SELECT 1 FROM accounts WHERE id = ?').get(w.id);
   if (exists) {

@@ -150,6 +150,8 @@ export class CommitRun implements WriteScope {
   readonly ingested = new Map<number, boolean>();
   /** Messages a `body` write stored in this commit: their threads re-run `laneFor`. */
   readonly bodied = new Set<number>();
+  /** Accounts an `accountRemove` deleted in this commit: a later write naming one is refused, not left to a raw FK error. */
+  readonly removedAccounts = new Set<string>();
   /** Messages this commit wrote, per account: what pending ops are replayed over. */
   private readonly touchedMessages = new Map<string, Set<number>>();
   private readonly changes = new Map<string, { type: string; id: string; op: 'u' | 'd' | '*' }>();
@@ -174,9 +176,17 @@ export class CommitRun implements WriteScope {
   }
 
   apply(w: StoreWrite) {
+    this.refuseRemoved(w);
     const handler = WRITE_HANDLERS.get(w.kind);
     if (handler) return handler(this, w as never);
     return this.extension(w as { kind: string });
+  }
+
+  private refuseRemoved(w: StoreWrite) {
+    const named = w as { kind?: unknown; accountId?: unknown; id?: unknown };
+    const id = named.kind === 'account' ? named.id : named.accountId;
+    if (typeof id === 'string' && this.removedAccounts.has(id))
+      throw new StoreError('notFound', `Account ${id} was removed earlier in this commit`);
   }
 
   /** Lane kinds (seam 2): the registered extension applies them inside this transaction. */

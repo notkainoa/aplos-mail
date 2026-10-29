@@ -8,16 +8,22 @@ import type { CommitRun } from './commit';
  * attachment file paths, which are queued for the host because the neutral engine cannot delete files.
  */
 
+const SENDING =
+  "SELECT 1 FROM submissions WHERE account_id = ? AND state IN ('sending', 'uncertain') LIMIT 1";
+
 export function accountRemove(run: CommitRun, w: AccountRemoveWrite) {
   const id = w.accountId;
   if (!run.q('SELECT 1 FROM accounts WHERE id = ?').get(id))
     throw new StoreError('notFound', `Account ${id} is not in the store`);
+  if (run.q(SENDING).get(id))
+    throw new StoreError('conflict', `Account ${id} has a message that is sending`);
   const folders = run
     .q('SELECT remote_id FROM folders WHERE account_id = ?')
     .all<{ remote_id: string }>(id);
   const calendars = run
     .q('SELECT remote_id FROM calendars WHERE account_id = ?')
     .all<{ remote_id: string }>(id);
+  const rules = run.q('SELECT id FROM sender_rules WHERE account_id = ?').all<{ id: number }>(id);
   queueFiles(run, id);
   run
     .q(
@@ -30,9 +36,13 @@ export function accountRemove(run: CommitRun, w: AccountRemoveWrite) {
   run.markId('Thread', id, '*');
   run.markId('Message', id, '*');
   run.markId('Event', id, '*');
+  run.markId('Draft', id, '*');
+  run.markId('Submission', id, '*');
+  for (const r of rules) run.markId('SenderRule', String(r.id), 'd');
   for (const f of folders) run.mark('Folder', id, f.remote_id, 'd');
   for (const c of calendars) run.mark('Calendar', id, c.remote_id, 'd');
   run.mark('Account', id, null, 'd');
+  run.removedAccounts.add(id);
 }
 
 function queueFiles(run: CommitRun, accountId: string) {

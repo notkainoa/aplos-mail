@@ -1,4 +1,9 @@
-import type { AttachmentStateWrite, AttachmentsWrite, BodyWrite } from './port';
+import {
+  StoreError,
+  type AttachmentStateWrite,
+  type AttachmentsWrite,
+  type BodyWrite,
+} from './port';
 import { PART, type CommitRun } from './commit';
 import { encodeBody } from './bodies';
 
@@ -57,7 +62,19 @@ export function attachments(run: CommitRun, w: AttachmentsWrite) {
   run.mark('Message', w.accountId, w.remoteId, 'u'); // Message.attachments
 }
 
+/** The path reaches the host's file delete, so it stays inside the attachments folder: relative, no `..`, no NUL. */
+function safePath(path: string | null | undefined) {
+  if (path === undefined || path === null) return;
+  const parts = typeof path === 'string' ? path.split(/[\\/]/) : [];
+  if (!path || path.includes('\0') || /^([\\/]|[a-zA-Z]:)/.test(path) || parts.includes('..'))
+    throw new StoreError(
+      'invalid',
+      'An attachment path is relative, inside the attachments folder',
+    );
+}
+
 export function attachmentState(run: CommitRun, w: AttachmentStateWrite) {
+  safePath(w.path);
   const m = run.messageRow(w.accountId, w.remoteId);
   if (!m) return run.missing(`Message ${w.remoteId}`);
   const done = run
@@ -66,6 +83,7 @@ export function attachmentState(run: CommitRun, w: AttachmentStateWrite) {
     )
     .run(w.state, Number(w.path !== undefined), w.path ?? null, m.id, w.remotePart).changes;
   if (!done) return run.missing(`Attachment ${w.remotePart} of ${w.remoteId}`);
+  if (typeof w.path === 'string') run.q('DELETE FROM file_removals WHERE path = ?').run(w.path);
   run.q('UPDATE messages SET rev = ? WHERE id = ?').run(run.seq, m.id);
   run.mark('Message', w.accountId, w.remoteId, 'u');
 }

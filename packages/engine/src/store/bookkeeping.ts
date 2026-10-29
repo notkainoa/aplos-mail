@@ -29,9 +29,14 @@ const GOVERNOR_COLUMNS: Record<keyof GovernorFields, string> = {
   blockedSince: 'blocked_since',
 };
 
+/** The `governor_state.account_id` of the project-wide budgets: no account row behind it. */
+const PROJECT = '*';
+
 export function governor(s: WriteScope, w: GovernorWrite) {
   if (!w.accountId || !w.budget)
     throw new StoreError('invalid', 'A governor write needs accountId and budget');
+  if (w.accountId !== PROJECT && !s.q('SELECT 1 FROM accounts WHERE id = ?').get(w.accountId))
+    throw new StoreError('notFound', `Account ${w.accountId} is not in the store`);
   const keys = Object.keys(w.patch) as (keyof GovernorFields)[];
   for (const k of keys)
     if (!(k in GOVERNOR_COLUMNS)) throw new StoreError('invalid', `Unknown governor field ${k}`);

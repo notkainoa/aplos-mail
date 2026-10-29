@@ -181,13 +181,19 @@ export interface AccountWrite {
  * Removes the account and everything it owns in one transaction (`Account/disconnect`): folders, threads, messages,
  * bodies, attachments, FTS rows, placements, workflow, ops, drafts, submissions, sync and governor state, correspondents,
  * calendars and events. Other accounts are untouched. Attachment files are queued in `file_removals` for the host
- * (`FileRemovedWrite` clears them). Refused with `notFound` for an unknown account.
+ * (`FileRemovedWrite` clears them). Refused with `notFound` for an unknown account and with `conflict` while one of its
+ * submissions is `sending` or `uncertain`. Later writes of the same commit that name the account are refused with
+ * `notFound`.
  */
 export interface AccountRemoveWrite {
   kind: 'accountRemove';
   accountId: string;
 }
-/** The host removed these attachment files after an `accountRemove`: drops their `file_removals` rows. No change row. */
+/**
+ * The host removed these attachment files after an `accountRemove`: drops their `file_removals` rows. No change row.
+ * The host's drain of the queue must skip any path an `attachments` row still references (a reconnect re-downloads
+ * into the same path; an `attachmentState` write that stores a path also takes it off the queue).
+ */
 export interface FileRemovedWrite {
   kind: 'fileRemoved';
   paths: string[];
@@ -810,7 +816,8 @@ export interface CompactResult {
 
 // ---------------------------------------------------------------- errors
 
-export type StoreErrorCode = 'notFound' | 'invalid';
+/** `conflict`: the store's state refuses the write (an account with a message sending cannot be removed). */
+export type StoreErrorCode = 'notFound' | 'invalid' | 'conflict';
 export class StoreError extends Error {
   constructor(
     readonly code: StoreErrorCode,

@@ -9,6 +9,7 @@ import {
   type StoreWrite,
 } from '../../src/store';
 import { ACCOUNT, T0, accountWrite, folderWrites, msg, tempDb, withStore } from './helpers';
+import { openSqlite } from '../../../../apps/desktop/src/host/sqlite';
 import { replay, snapshot } from './replay-helpers';
 
 const OTHER = 'acct-2';
@@ -111,7 +112,7 @@ test('the new account fields write an Account change row, so replaying the log r
 // ---------------------------------------------------------------- accountRemove
 
 /** Rows in every table the account owns, plus the raw-SQL tables other lanes write. */
-function seed(store: StorePort, file: ReturnType<typeof tempDb>, id: string) {
+function seed(store: StorePort, file: ReturnType<typeof tempDb>, id: string, again = '') {
   const own = <T extends { accountId?: string }>(w: T) =>
     w.accountId ? { ...w, accountId: id } : w;
   const writes: StoreWrite[] = [
@@ -177,7 +178,7 @@ function seed(store: StorePort, file: ReturnType<typeof tempDb>, id: string) {
       scope: 'triage',
     },
   );
-  store.commit({ opId: `seed-${id}`, origin: 'sync', writes });
+  store.commit({ opId: `seed-${id}${again}`, origin: 'sync', writes });
   const db = file.open();
   try {
     const mid = (r: string) =>
@@ -338,6 +339,180 @@ test('accountRemove works in the same commit as writes for other accounts and co
     });
     assert.equal(row(store)?.color_tag, 'sage');
     assert.equal(row(store, OTHER), undefined);
+  });
+});
+
+// ---------------------------------------------------------------- accountRemove refusals and change rows
+
+const conflict = (e: unknown) => e instanceof StoreError && e.code === 'conflict';
+const notFound = (e: unknown) => e instanceof StoreError && e.code === 'notFound';
+
+function rawRun(file: ReturnType<typeof tempDb>, sql: string, ...params: (string | number)[]) {
+  const db = file.open();
+  try {
+    db.prepare(sql).run(...params);
+  } finally {
+    db.close();
+  }
+}
+
+test('accountRemove is refused while one of the account messages is sending or uncertain', () => {
+  withStore((store, file) => {
+    seed(store, file, ACCOUNT);
+    seed(store, file, OTHER);
+    for (const state of ['sending', 'uncertain']) {
+      rawRun(file, 'UPDATE submissions SET state = ? WHERE account_id = ?', state, OTHER);
+      const before = snapshot(store);
+      const seq = store.seq();
+      assert.throws(() => remove(store, `rm-${state}`), conflict, state);
+      assert.equal(store.seq(), seq);
+      assert.deepEqual(snapshot(store), before, 'nothing was removed');
+    }
+    rawRun(file, "UPDATE submissions SET state = 'sent' WHERE account_id = ?", OTHER);
+    remove(store, 'rm-ok');
+    assert.equal(row(store, OTHER), undefined);
+  });
+});
+
+test('accountRemove writes change rows for drafts, submissions and each sender rule', () => {
+  withStore((store, file) => {
+    seed(store, file, ACCOUNT);
+    seed(store, file, OTHER);
+    rawRun(
+      file,
+      "INSERT INTO sender_rules(account_id, address_or_domain, action) VALUES(?, 'b.example', 'block')",
+      OTHER,
+    );
+    const ids = store.read(q =>
+      q
+        .all<{ id: number }>('SELECT id FROM sender_rules WHERE account_id = ?', OTHER)
+        .map(r => `SenderRule:${r.id}:d`),
+    );
+    assert.equal(ids.length, 2);
+    const since = store.seq();
+    remove(store, 'rm-rows');
+    const log = store.changesSince(since);
+    assert.equal(log.status, 'ok');
+    const got = log.status === 'ok' ? log.changes.map(c => `${c.type}:${c.id}:${c.op}`) : [];
+    for (const want of [...ids, `Draft:${OTHER}:*`, `Submission:${OTHER}:*`])
+      assert.ok(got.includes(want), want);
+  });
+});
+
+test('a path stored by attachmentState leaves the removal queue, so a reconnected account keeps its file', () => {
+  withStore((store, file) => {
+    seed(store, file, OTHER);
+    remove(store, 'rm-1');
+    assert.equal(store.read(q => q.all('SELECT path FROM file_removals')).length, 1);
+    seed(store, file, OTHER, '-again');
+    assert.equal(
+      store.read(q => q.get('SELECT 1 FROM file_removals')),
+      undefined,
+      'the reconnected account stored the same path again',
+    );
+  });
+});
+
+test('openStore refuses a connection with foreign keys off', () => {
+  const db = openSqlite(':memory:');
+  db.exec('PRAGMA foreign_keys=OFF');
+  assert.throws(() => openStore(db), /foreign_keys/);
+});
+
+test('writes after an accountRemove in the same commit are refused, and a governor needs its account', () => {
+  withStore((store, file) => {
+    seed(store, file, ACCOUNT);
+    seed(store, file, OTHER);
+    const state = snapshot(store);
+    const seq = store.seq();
+    const after: StoreWrite[] = [
+      { kind: 'governor', accountId: OTHER, budget: 'gmail', patch: { cooldownStep: 1 } },
+      { kind: 'syncState', accountId: OTHER, scope: 'mail', generation: 3 },
+      { ...msg('m9', 't9', 5), accountId: OTHER },
+      { kind: 'account', id: OTHER, displayName: 'Back' },
+    ];
+    after.forEach((w, i) =>
+      assert.throws(
+        () =>
+          store.commit({
+            opId: `same-${i}`,
+            origin: 'local',
+            writes: [{ kind: 'accountRemove', accountId: OTHER }, w],
+          }),
+        notFound,
+        w.kind,
+      ),
+    );
+    assert.equal(store.seq(), seq);
+    assert.deepEqual(snapshot(store), state);
+    const governors = () =>
+      store.read(q => q.get<{ c: number }>('SELECT count(*) AS c FROM governor_state')?.c);
+    const had = governors();
+    assert.throws(
+      () =>
+        store.commit({
+          opId: 'ghost',
+          origin: 'system',
+          writes: [{ kind: 'governor', accountId: 'ghost', budget: 'gmail', patch: {} }],
+        }),
+      notFound,
+    );
+    store.commit({
+      opId: 'project',
+      origin: 'system',
+      writes: [{ kind: 'governor', accountId: '*', budget: 'gmail', patch: { cooldownStep: 1 } }],
+    });
+    assert.equal(governors(), (had ?? 0) + 1, 'the project-wide budget needs no account');
+  });
+});
+
+test('notifications must be a boolean, settings must survive a JSON round trip, and the 16 KB limit counts bytes', () => {
+  withStore(store => {
+    store.commit({ opId: 'a', origin: 'sync', writes: [accountWrite] });
+    const cast = (v: unknown) => v as Record<string, unknown>;
+    const holey = { toJSON: () => ({ a: 1 }) };
+    const bad: Partial<AccountWrite>[] = [
+      { notifications: 7 as unknown as boolean },
+      { notifications: 'yes' as unknown as boolean },
+      { notifications: null as unknown as boolean },
+      { settings: cast({ toJSON: () => 1 }) },
+      { settings: cast(holey) },
+      { settings: { u: undefined } },
+      { settings: { n: Number.NaN } },
+      { settings: { f: () => 1 } },
+      { settings: { m: new Map([[1, 2]]) } },
+      { settings: { nested: { s: Symbol('x') } } },
+      { settings: { blob: '€'.repeat(5462) } }, // 16 386 bytes, 5 462 characters
+    ];
+    bad.forEach((w, i) => assert.throws(() => patch(store, `bad-${i}`, w), invalid, String(i)));
+    assert.equal(row(store)?.notifications, 1);
+    assert.equal(row(store)?.settings, '{}');
+    patch(store, 'ok', { settings: { blob: '€'.repeat(5400) }, notifications: false });
+    assert.equal(row(store)?.notifications, 0);
+  });
+});
+
+test('attachmentState paths must be relative, free of .. segments and NUL', () => {
+  withStore((store, file) => {
+    seed(store, file, ACCOUNT);
+    const set = (path: string) =>
+      store.commit({
+        opId: `p-${path}`,
+        origin: 'sync',
+        writes: [
+          {
+            kind: 'attachmentState',
+            accountId: ACCOUNT,
+            remoteId: 'm1',
+            remotePart: '2',
+            state: 'present',
+            path,
+          },
+        ],
+      });
+    for (const path of ['/etc/passwd', '../x', 'a/../../x', 'a\\..\\x', 'a\0b', ''])
+      assert.throws(() => set(path), invalid, JSON.stringify(path));
+    set('acct-1/dir/b..c.pdf');
   });
 });
 
