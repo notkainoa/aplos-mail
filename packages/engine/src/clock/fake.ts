@@ -27,6 +27,11 @@ const turn = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 export function fakeClock(start = Date.UTC(2026, 9, 28, 9)): FakeClock {
   let now = start;
   let order = 0;
+  /** Bumped by every clock call; a `flush` turn with no bump means every pending chain is asleep. */
+  let activity = 0;
+  /** `flush` calls still suspended, oldest first; the youngest waits for the rest to drain. */
+  const pending = new Set<number>();
+  let seq = 0;
   const timers = new Set<Entry>();
 
   const earliestDue = (until: number) => {
@@ -39,20 +44,52 @@ export function fakeClock(start = Date.UTC(2026, 9, 28, 9)): FakeClock {
         first = t;
     return first;
   };
+  /**
+   * Lets pending promise chains settle: turns until a full turn passes with no clock call, and, for
+   * overlapping flushes, until the older ones have drained, so a fire that awaits real work before
+   * re-arming is not missed by the next scan.
+   */
   const flush = async () => {
-    for (let i = 0; i < 3; i++) await turn();
+    const me = ++seq;
+    activity++;
+    pending.add(me);
+    try {
+      for (;;) {
+        const seen = activity;
+        await turn();
+        if (activity === seen && pending.values().next().value === me) return;
+      }
+    } finally {
+      pending.delete(me);
+    }
   };
+  /** Fires every timer due at or before `until`; returns the first error a `fire` threw. */
   const runDue = async (until: number, stepTime: boolean) => {
-    for (let t = earliestDue(until); t; t = earliestDue(until)) {
+    let failure: unknown;
+    for (;;) {
+      let t = earliestDue(until);
+      if (!t) {
+        // Nothing due yet: chains still settling may arm a late timer, so give them a turn first.
+        await flush();
+        t = earliestDue(until);
+        if (!t) return failure;
+      }
       timers.delete(t);
       if (stepTime) now = Math.max(now, t.at);
-      t.fire();
+      try {
+        t.fire();
+      } catch (error) {
+        // One throwing timer must not skip the rest: fire them all, then report the first error.
+        failure ??= error;
+      }
       await flush();
     }
   };
 
   const timer = (at: number, fire: () => void): Timer => {
-    const entry: Entry = { at, order: order++, fire };
+    activity++;
+    // A NaN target is already due on the real clock: it fires rather than comparing forever.
+    const entry: Entry = { at: Number.isNaN(at) ? now : at, order: order++, fire };
     timers.add(entry);
     return { cancel: () => void timers.delete(entry) };
   };
@@ -78,18 +115,23 @@ export function fakeClock(start = Date.UTC(2026, 9, 28, 9)): FakeClock {
       });
     },
     async advance(ms) {
+      // Advance only ever moves forward; a backward jump is `set`'s job.
+      if (!Number.isFinite(ms) || ms < 0) throw new RangeError('advance() needs a finite ms >= 0');
       // Work already queued arms its timers at the current time before time moves.
       await flush();
       const target = now + ms;
-      await runDue(target, true);
+      const failure = await runDue(target, true);
       now = target;
       await flush();
+      if (failure !== undefined) throw failure;
     },
     async set(at) {
+      if (!Number.isFinite(at)) throw new RangeError('set() needs a finite epoch ms');
       await flush();
       now = at;
-      await runDue(at, false);
+      const failure = await runDue(at, false);
       await flush();
+      if (failure !== undefined) throw failure;
     },
     flush,
     pending: () => timers.size,

@@ -2,13 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { LogRecord } from '@aplos/contract/log/events';
 import { createLogger } from '../../src/diag/log';
-import {
-  createTimerLoop,
-  fakeClock,
-  MIN_FIRE_GAP_MS,
-  systemClock,
-  type FakeClock,
-} from '../../src/clock/module';
+import { createTimerLoop, fakeClock, systemClock, type FakeClock } from '../../src/clock/module';
 import type { DeadlineSource } from '../../src/ports/time';
 
 const SEC = 1_000;
@@ -110,8 +104,8 @@ test('spin: a source that never moves its deadline fires at most once a second a
   assert.ok(drift() >= fires - 1, 'each stuck fire is logged');
 });
 
-test('spin: a source that inches its deadline forward by 1 ms still fires at most once a second', async () => {
-  const { clock, loop } = setup();
+test('spin: a source that inches its deadline is bounded by the shared wake budget', async () => {
+  const { clock, loop } = setup({ maxWakesPerHour: 60 });
   let fires = 0;
   let next = clock.now();
   loop.register({
@@ -124,7 +118,7 @@ test('spin: a source that inches its deadline forward by 1 ms still fires at mos
   });
   loop.start();
   await clock.advance(30 * SEC);
-  assert.ok(fires <= 31, `${fires} fires in 30 s`);
+  assert.ok(fires <= 61, `${fires} fires in 30 s`);
 });
 
 test('spin: a throwing source neither spins nor stops the others', async () => {
@@ -258,17 +252,18 @@ test('unregister and stop leave no timer behind; a second register replaces the 
   assert.equal(clock.pending(), 0);
 });
 
-test('a fire never runs before the gap after the same source fired', async () => {
+test("a source's deadlines each fire at their own time inside a second", async () => {
   const { clock, loop } = setup();
   const t0 = clock.now();
   const list = listSource('outbox', clock, [t0 + 100, t0 + 200, t0 + 300]);
   loop.register(list.source);
   loop.start();
   await clock.advance(5 * SEC);
-  const times = list.fired.map(f => f.firedAt);
-  assert.equal(list.fired.length, 3);
-  for (let i = 1; i < times.length; i++)
-    assert.ok(times[i] === times[i - 1] || times[i] - times[i - 1] >= MIN_FIRE_GAP_MS);
+  assert.deepEqual(
+    list.fired.map(f => f.firedAt),
+    [t0 + 100, t0 + 200, t0 + 300],
+    'a source that moves next() past now is not held to the stuck-source backoff',
+  );
 });
 
 test('the system clock never fires early and sleep honours abort', async () => {

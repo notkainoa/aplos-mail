@@ -7,7 +7,7 @@ import type {
   Timer,
 } from '../ports/time';
 
-/** A source fires at most once a second, however its deadline moves, so none can spin the loop. */
+/** The backoff a source that does not move `next()` past the fire's `now` waits before firing again. */
 export const MIN_FIRE_GAP_MS = 1_000;
 /** Timer wake-ups allowed per rolling hour before the loop spaces them out. */
 export const MAX_WAKES_PER_HOUR = 3_600;
@@ -34,7 +34,6 @@ interface Slot {
   source: DeadlineSource;
   /** The source's own `next()` at the last read. */
   next?: number;
-  lastFire?: number;
   /** Set when a fire left `next()` at or before its `now`: no earlier fire than this. */
   backoffUntil?: number;
   dirty: boolean;
@@ -57,18 +56,22 @@ export function createTimerLoop({
   let again = false;
   let started = false;
 
-  const due = (slot: Slot) => {
+  const due = (slot: Slot, now: number) => {
     if (slot.next === undefined) return undefined;
+    // A backoff written before a wall-clock jump backwards sits in the future. Clamping the stamp
+    // itself, once, keeps the hold a fixed absolute time; clamping the arithmetic would slide it
+    // forward with every read and the deadline would never arrive.
+    if (slot.backoffUntil !== undefined && slot.backoffUntil > now + MIN_FIRE_GAP_MS)
+      slot.backoffUntil = now + MIN_FIRE_GAP_MS;
     let at = slot.next;
-    if (slot.lastFire !== undefined) at = Math.max(at, slot.lastFire + MIN_FIRE_GAP_MS);
     if (slot.backoffUntil !== undefined) at = Math.max(at, slot.backoffUntil);
     return at;
   };
 
-  const earliest = () => {
+  const earliest = (now: number) => {
     let best: { slot: Slot; at: number } | undefined;
     for (const slot of slots.values()) {
-      const at = due(slot);
+      const at = due(slot, now);
       if (at !== undefined && (!best || at < best.at)) best = { slot, at };
     }
     return best;
@@ -77,7 +80,11 @@ export function createTimerLoop({
   const read = async (slot: Slot) => {
     slot.dirty = false;
     try {
-      slot.next = await slot.source.next();
+      const next = await slot.source.next();
+      // A deadline the loop cannot order (NaN, ±Infinity, a non-number) fails `<= now` and `> now`
+      // alike, so it would fire every pass with no backoff: it is unreadable, like a throw.
+      if (next !== undefined && !Number.isFinite(next)) throw new Error('non-finite deadline');
+      slot.next = next;
     } catch {
       // An unreadable source retries like a stuck one, never silently drops its deadlines.
       slot.next = clock.now();
@@ -89,13 +96,14 @@ export function createTimerLoop({
   const fire = async (slot: Slot) => {
     const now = clock.now();
     const deadline = slot.next ?? now;
-    slot.lastFire = now;
     log.event('timer.fired', { kind: 'deadline', lateMs: Math.max(0, now - deadline) });
     try {
       await slot.source.fire(now);
     } catch {
       // A failing fire is the source's bug; the backoff below keeps it from spinning.
     }
+    // Unregistered or replaced while its fire ran: the slot is orphaned and the source is not read again.
+    if (slots.get(slot.source.id) !== slot) return;
     await read(slot);
     if (slot.next !== undefined && slot.next <= now) {
       slot.backoffUntil = now + MIN_FIRE_GAP_MS;
@@ -104,14 +112,19 @@ export function createTimerLoop({
   };
 
   /** The wake budget: the earliest time another timer wake-up is allowed. */
+  const cap = Math.max(1, maxWakesPerHour);
   const wakeFloor = (now: number) => {
     while (wakes.length && wakes[0] <= now - HOUR_MS) wakes.shift();
-    return wakes.length < maxWakesPerHour ? now : wakes[0] + HOUR_MS;
+    // Stamps written before a wall-clock jump backwards sit in the future; they would freeze the budget.
+    while (wakes.length && wakes[wakes.length - 1] > now) wakes.pop();
+    return wakes.length < cap ? now : wakes[0] + HOUR_MS;
   };
 
   const arm = (at: number) => {
     if (armed?.at === at) return;
     armed?.timer.cancel();
+    // Clear before creating: a `clock.timer` throw must not leave a cancelled timer looking armed.
+    armed = undefined;
     const timer = clock.timer(at, () => {
       if (armed?.timer !== timer) return;
       armed = undefined;
@@ -125,13 +138,13 @@ export function createTimerLoop({
     for (;;) {
       for (const slot of slots.values()) if (slot.dirty) await read(slot);
       if (!started) return;
-      const next = earliest();
+      const now = clock.now();
+      const next = earliest(now);
       if (!next) {
         armed?.timer.cancel();
         armed = undefined;
         return;
       }
-      const now = clock.now();
       if (next.at > now) {
         arm(Math.max(next.at, wakeFloor(now)));
         return;
@@ -146,9 +159,20 @@ export function createTimerLoop({
       return;
     }
     running = (async () => {
+      let failed = false;
       do {
         again = false;
-        await pass();
+        try {
+          await pass();
+        } catch {
+          // A pass dying on a port throw (clock, log) must not reject `idle()` or stall the loop:
+          // log it and give this kick one retry; a persistent failure waits for the next kick.
+          log.event('engine.watchdog', { kind: 'timer_drift', lagMs: 0 });
+          if (!failed) {
+            failed = true;
+            again = true;
+          }
+        }
       } while (again && started);
     })().finally(() => {
       running = undefined;

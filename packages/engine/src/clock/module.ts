@@ -1,3 +1,4 @@
+import { isAbsent } from '../runtime/engine';
 import type { CommitExtension } from '../store/port';
 import type { EngineServices, LaneModule } from '../runtime/services';
 import { createTimerLoop, type TimerLoop } from './loop';
@@ -18,6 +19,8 @@ export const extensions: readonly CommitExtension[] = [];
 
 /** Builds the timer loop once the core services exist; runs first in the root's fixed order. */
 export function createModule(services: EngineServices): LaneModule {
+  // A host that injects `deadlines` (a test's own registry) owns it entirely: its lifecycle too.
+  if (!isAbsent(services.deadlines)) return {};
   const deadlines: TimerLoop = createTimerLoop({ clock: services.clock, log: services.log });
   return {
     services: { deadlines },

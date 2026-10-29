@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-29 — Timer loop: the 1 s backoff applies only to sources that do not move `next()`
+
+- **The F3 contract, not an every-fire cap.** `DeadlineSource.fire`'s contract is "must move `next()` past `now`, or the loop backs off 1 s and logs". `clock/loop.ts` originally also clamped every re-fire to `lastFire + 1 s`, which throttled a correct source that does move its deadline (eng-views' 50 ms ticker registered as `views`) to one fire a second. The per-fire clamp is removed; a stuck source still backs off through `backoffUntil`, and sustained spinning is bounded by the shared wake budget (`maxWakesPerHour`), which spaces out arms once a source exceeds it — the two contract-sanctioned rate limits.
+- **A host-injected `deadlines` wins.** `clock/module.ts` provides `services.deadlines` only when it is the `absent()` stand-in. A host or test that injects a registry through `EngineOptions.ports` owns it entirely, including lifecycle — the injected object may be a bare `DeadlineRegistry` with no `start`/`stop`.
+
 ## 2026-10-28 — Test mode: only on data made for the run, never in release builds
 
 - **Release builds compile test mode out.** `scripts/build-main.mjs` defines `__APLOS_TEST_MODE__` as false when `APLOS_RELEASE_BUILD=1` (`release:build`, `release:publish`), so a distributed app ignores `APLOS_TEST` and `APLOS_DATA_DIR` and behaves normally, which is what plan 40's `verify-hardening` checks. Local `npm run package` builds and development runs keep test mode, and agents verify packaged behaviour on those (freeze R2H-4).

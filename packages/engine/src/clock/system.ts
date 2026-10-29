@@ -18,17 +18,23 @@ export function systemClock(): Clock {
 function systemTimer(at: number, fire: () => void): Timer {
   let handle: ReturnType<typeof setTimeout> | undefined;
   let done = false;
+  const later = (ms: number) => {
+    handle = setTimeout(arm, ms);
+    // A deadline wait must never hold the process open.
+    (handle as { unref?: () => void }).unref?.();
+  };
   const arm = () => {
     const wait = at - Date.now();
-    if (wait <= 0) {
+    // `!(wait > 0)` covers NaN: an unorderable target is already due, never re-armed at ~0 ms.
+    if (!(wait > 0)) {
       done = true;
       fire();
       return;
     }
-    handle = setTimeout(arm, Math.min(wait, MAX_TIMEOUT_MS));
+    later(Math.min(wait, MAX_TIMEOUT_MS));
   };
   // Never fire synchronously inside `timer()`: the caller may still be setting up.
-  handle = setTimeout(arm, Math.max(0, Math.min(at - Date.now(), MAX_TIMEOUT_MS)));
+  later(Math.max(0, Math.min(at - Date.now(), MAX_TIMEOUT_MS)));
   return {
     cancel() {
       if (done) return;
