@@ -27,27 +27,41 @@ type ConnectArgs = Input<'Account/connect'>;
 export function newAccountFlow(deps: FlowDeps, args: ConnectArgs): ConnectFlow {
   if (args.provider !== 'google')
     throw new ContractError({ type: 'unsupported', message: GOOGLE_ONLY });
+  const address = args.address ?? args.loginHint;
   // Refused before any browser opens. A row still `starting` is a connect whose actor never started: a retry may finish it.
-  const earlier = args.address
-    ? accountWithIdentity(deps.store, 'google', args.address)
-    : undefined;
+  const earlier = address ? accountWithIdentity(deps.store, 'google', address) : undefined;
   refuseAdded(earlier);
   // A retry signs in under the id of the row that is waiting to start, so the host stores the credential there.
+  const retried = earlier ? storedIdentity(deps.store, earlier.id) : undefined;
   const accountId = earlier?.id ?? hexId(deps.randomBytes, 'a');
-  const address = args.address ?? args.loginHint;
-  const request: ConnectRequest = {
-    mode: 'new',
-    ...(args.loginHint ? { loginHint: args.loginHint } : {}),
-    ...(address ? { address } : {}),
-    ...(args.preset === 'gmail' ? { preset: 'gmail' as const } : {}),
-  };
   return {
     mode: 'new',
     accountId,
     key: `new:${address?.toLowerCase() ?? ''}`,
     kind: 'google',
-    request,
-    accept: result => acceptNewAccount(deps, accountId, args.name, result),
+    request: newAccountRequest(args, address, retried?.subject),
+    accept: result =>
+      earlier
+        ? acceptRetry(deps, accountId, result)
+        : acceptNewAccount(deps, accountId, args.name, result),
+  };
+}
+
+/**
+ * A retry overwrites the waiting row's credential, so the host must check whose account it is before it stores
+ * anything: the row's subject when it has one, else the requested address.
+ */
+function newAccountRequest(
+  args: ConnectArgs,
+  address: string | undefined,
+  expectedSubject: string | undefined,
+): ConnectRequest {
+  return {
+    mode: 'new',
+    ...(args.loginHint ? { loginHint: args.loginHint } : {}),
+    ...(address ? { address } : {}),
+    ...(expectedSubject ? { expectedSubject } : {}),
+    ...(args.preset === 'gmail' ? { preset: 'gmail' as const } : {}),
   };
 }
 
@@ -59,15 +73,10 @@ async function acceptNewAccount(
 ): Promise<{ accountId: string }> {
   refuseMissingScope(result);
   const { address, subject } = result.identity;
-  const existing = accountWithIdentity(deps.store, 'google', address, subject);
+  // Any match is refused, a waiting row too: the host stored this credential under the new id, not under that row's.
   // TODO(port): when the answer is refused below, the host has already stored the new credential in the vault under
   // `accountId` and the engine cannot discard it (no port call for that). Needs a `discardCredential` on the host.
-  refuseAdded(existing);
-  if (existing) {
-    const stored = storedIdentity(deps.store, existing.id);
-    if (stored) refuseOtherIdentity(stored, result);
-    return resume(deps, existing.id, result);
-  }
+  if (accountWithIdentity(deps.store, 'google', address, subject)) throw alreadyAdded();
   deps.store.commit({
     opId: `connect:${accountId}`,
     origin: 'system',
@@ -75,6 +84,26 @@ async function acceptNewAccount(
   });
   await deps.accounts.start(accountId);
   return { accountId };
+}
+
+/**
+ * The answer to a retry on the waiting row `accountId`: it must be that row's identity and no other row's, read again
+ * now. The row is already committed (its `connect:` opId replays as a no-op), so it is resumed, never committed.
+ */
+async function acceptRetry(
+  deps: FlowDeps,
+  accountId: string,
+  result: ConnectResult,
+): Promise<{ accountId: string }> {
+  const current = storedIdentity(deps.store, accountId);
+  if (!current) throw notFound();
+  // TODO(port): a refusal here leaves the credential the host already stored under `accountId` in the vault (the host
+  // checks the subject first, but a row with no subject has only the engine's address check). Needs `discardCredential`.
+  refuseOtherIdentity(current, result);
+  refuseMissingScope(result);
+  const { address, subject } = result.identity;
+  if (accountWithIdentity(deps.store, 'google', address, subject, accountId)) throw alreadyAdded();
+  return resume(deps, accountId, result);
 }
 
 /**
@@ -103,7 +132,11 @@ export function refuseMissingScope(result: ConnectResult): void {
 
 function refuseAdded(existing: { status: string } | undefined): void {
   if (!existing || existing.status === 'starting') return;
-  throw new ContractError({
+  throw alreadyAdded();
+}
+
+function alreadyAdded() {
+  return new ContractError({
     type: 'conflict',
     message: ALREADY_ADDED,
     reasonCode: 'account.exists',

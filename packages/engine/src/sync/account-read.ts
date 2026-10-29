@@ -78,17 +78,22 @@ export function storedIdentity(
   };
 }
 
-/** The account of this provider that already has the address or the provider's own subject, with its stored status. */
+/**
+ * The account of this provider that already has the address or the provider's own subject, with its stored status.
+ * `exceptId` leaves one account out (a retry asking whether any OTHER account holds the identity).
+ */
 export function accountWithIdentity(
   store: StorePort,
   provider: string,
   address: string,
   subject?: string,
+  exceptId?: string,
 ): { id: string; status: string } | undefined {
   return store.read(q =>
     q.get<{ id: string; status: string }>(
-      'SELECT id, status FROM accounts WHERE provider = ? AND (lower(address) = lower(?) OR (? IS NOT NULL AND remote_subject = ?))',
+      'SELECT id, status FROM accounts WHERE provider = ? AND id IS NOT ? AND (lower(address) = lower(?) OR (? IS NOT NULL AND remote_subject = ?))',
       provider,
+      exceptId ?? null,
       address,
       subject ?? null,
       subject ?? null,

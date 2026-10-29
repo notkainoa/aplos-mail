@@ -274,3 +274,124 @@ test('a sign-in the browser never finishes expires after ten minutes as failed, 
     t.cleanup();
   }
 });
+
+/** A new account whose row was committed but whose actor never started: the row waits as `starting`. */
+async function waitingRow(t: ReturnType<typeof setup>, subject: string, address: string) {
+  t.flags.failStart = true;
+  await handlers['Account/connect']({ provider: 'google', address }, t.ctx);
+  await tick();
+  t.pending.at(-1)!.resolve(answer(subject, address));
+  await tick();
+  t.flags.failStart = false;
+  t.calls.length = 0;
+  const row = (await handlers['Account/get']({}, t.ctx)).list.find(a => a.address === address);
+  assert.equal(row?.health.status.state, 'starting');
+  return row!.id;
+}
+
+function lastFailure(t: ReturnType<typeof setup>) {
+  const last = t.connectFrames().at(-1);
+  assert.ok(last?.frame === 'connect' && last.state === 'failed');
+  return last.reasonCode;
+}
+
+test('a retry for A answered by B is refused: the host is asked for A, nothing is resumed or started', async () => {
+  const t = setup();
+  try {
+    const x = await waitingRow(t, 'sub-a', 'a@gmail.com');
+    await handlers['Account/connect']({ provider: 'google', address: 'a@gmail.com' }, t.ctx);
+    await tick();
+    const retry = t.pending.at(-1)!;
+    assert.equal(retry.account, x);
+    assert.equal(retry.req.expectedSubject, 'sub-a', 'the host checks the identity before storing');
+    retry.resolve(answer('sub-b', 'b@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'auth.wrongAccount');
+    assert.deepEqual(t.calls, []);
+    const list = (await handlers['Account/get']({}, t.ctx)).list;
+    assert.deepEqual(
+      list.map(a => [a.id, a.address, a.health.status.state]),
+      [[x, 'a@gmail.com', 'starting']],
+    );
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a retry for A answered by B, who has a waiting row of their own, resumes neither row', async () => {
+  const t = setup();
+  try {
+    const x = await waitingRow(t, 'sub-a', 'a@gmail.com');
+    await waitingRow(t, 'sub-b', 'b@gmail.com');
+    await handlers['Account/connect']({ provider: 'google', address: 'a@gmail.com' }, t.ctx);
+    await tick();
+    assert.equal(t.pending.at(-1)!.account, x);
+    t.pending.at(-1)!.resolve(answer('sub-b', 'b@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'auth.wrongAccount');
+    assert.deepEqual(t.calls, []);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a retry on a waiting row with no stored subject sends the address and refuses another address', async () => {
+  const t = setup();
+  try {
+    const x = await waitingRow(t, 'sub-a', 'a@gmail.com');
+    t.db.prepare(`UPDATE accounts SET remote_subject = NULL WHERE id = ?`).run(x);
+    await handlers['Account/connect']({ provider: 'google', address: 'a@gmail.com' }, t.ctx);
+    await tick();
+    const retry = t.pending.at(-1)!;
+    assert.equal(retry.req.expectedSubject, undefined);
+    assert.equal(retry.req.address, 'a@gmail.com');
+    retry.resolve(answer('sub-b', 'b@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'auth.wrongAccount');
+    assert.deepEqual(t.calls, []);
+    await handlers['Account/connect']({ provider: 'google', address: 'a@gmail.com' }, t.ctx);
+    await tick();
+    t.pending.at(-1)!.resolve(answer('sub-a', 'A@gmail.com'));
+    await tick();
+    assert.deepEqual(t.calls, [`reconnected:${x}`, `start:${x}`]);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a sign-in under a fresh id that turns out to be a waiting row is refused, not resumed onto that row', async () => {
+  const t = setup();
+  try {
+    await waitingRow(t, 'sub-a', 'a@gmail.com');
+    await handlers['Account/connect']({ provider: 'google' }, t.ctx);
+    await tick();
+    t.pending.at(-1)!.resolve(answer('sub-a', 'a@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'account.exists');
+    assert.deepEqual(t.calls, []);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a retry on a waiting row and a reconnect of that row exclude each other', async () => {
+  const t = setup();
+  try {
+    const x = await waitingRow(t, 'sub-a', 'a@gmail.com');
+    const open = (e: unknown) => e instanceof ContractError && /already open/.test(sentence(e));
+    const retry = await handlers['Account/connect'](
+      { provider: 'google', address: 'a@gmail.com' },
+      t.ctx,
+    );
+    await assert.rejects(async () => handlers['Account/reconnect']({ accountId: x }, t.ctx), open);
+    await handlers['Account/cancelConnect'](retry, t.ctx);
+    await handlers['Account/reconnect']({ accountId: x }, t.ctx);
+    await assert.rejects(
+      async () =>
+        handlers['Account/connect']({ provider: 'google', address: 'a@gmail.com' }, t.ctx),
+      open,
+    );
+  } finally {
+    t.cleanup();
+  }
+});

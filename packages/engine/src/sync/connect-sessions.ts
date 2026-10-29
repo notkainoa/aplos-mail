@@ -26,7 +26,10 @@ export type AcceptOutcome = { accountId?: string } | void;
 export interface ConnectFlow {
   mode: Extract<Frame, { frame: 'connect' }>['mode'];
   accountId: string;
-  /** One live sign-in per key: the account for a reconnect or grant, the address (or none) for a new account. */
+  /**
+   * One live sign-in per key: the account for a reconnect or grant, the address (or none) for a new account. The
+   * sessions also hold `account:<accountId>`, so a retry on a waiting row and a reconnect of it exclude each other.
+   */
   key: string;
   kind: ProviderKind;
   request: ConnectRequest;
@@ -102,7 +105,8 @@ export class ConnectSessions {
 
   /** Starts the sign-in and returns its id at once; the first frame follows on the next turn. */
   begin(flow: ConnectFlow): { connectId: string } {
-    if (this.byKey.has(flow.key))
+    const keys = guardKeys(flow);
+    if (keys.some(key => this.byKey.has(key)))
       throw new ContractError({ type: 'conflict', message: ALREADY_OPEN });
     if (this.byId.size >= MAX_OPEN)
       throw new ContractError({ type: 'conflict', message: TOO_MANY_OPEN });
@@ -114,7 +118,7 @@ export class ConnectSessions {
       accepting: false,
     };
     this.byId.set(session.connectId, session);
-    this.byKey.set(flow.key, session);
+    for (const key of keys) this.byKey.set(key, session);
     this.deps.deadlines.changed(DEADLINE_ID);
     setTimeout(() => void this.run(session), 0);
     return { connectId: session.connectId };
@@ -172,7 +176,9 @@ export class ConnectSessions {
 
   private release(session: Session): void {
     this.byId.delete(session.connectId);
-    if (this.byKey.get(session.flow.key) === session) this.byKey.delete(session.flow.key);
+    for (const key of guardKeys(session.flow)) {
+      if (this.byKey.get(key) === session) this.byKey.delete(key);
+    }
   }
 
   private emit(
@@ -193,6 +199,11 @@ export class ConnectSessions {
       ...(reasonCode ? { reasonCode } : {}),
     });
   }
+}
+
+/** The flow's own key and its account's: two sign-ins never write the same account's credential at once. */
+function guardKeys(flow: ConnectFlow): string[] {
+  return [...new Set([flow.key, `account:${flow.accountId}`])];
 }
 
 const sessionsByEngine = new WeakMap<object, ConnectSessions>();
