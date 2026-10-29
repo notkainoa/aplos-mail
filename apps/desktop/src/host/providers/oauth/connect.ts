@@ -1,6 +1,7 @@
 // The Google adapter's `connect` (plan 20 PV5, D21, D25): sign-in through `flow.ts`, then every check that can
 // refuse the grant (a refresh token, the id_token, the same account on a reconnect, the mail scope) BEFORE the token
-// bundle is written to the vault. A refused or failed connect stores nothing and leaves an old bundle in place.
+// bundle is written to the vault. A refused or failed connect stores nothing and leaves an old bundle in place; a
+// grant refused for the wrong account or a missing mail scope is revoked, best effort.
 
 import type {
   AccountId,
@@ -11,10 +12,21 @@ import type {
 } from '@aplos/engine/ports';
 import type { ResolvedGoogleClient } from './client';
 import { connectError } from './connect-errors';
-import { runAuthorization, authParamsFor, type FlowClient, type FlowDeps } from './flow';
+import {
+  authParamsFor,
+  revokeGrant,
+  runAuthorization,
+  type FlowClient,
+  type FlowDeps,
+} from './flow';
 import { checkReconnectIdentity, checkRequiredScopes, grantFromTokenResponse } from './grant';
 import { identityFromIdToken, type GoogleIdentity } from './id-token';
-import { connectScopes, grantedFeatures, missingRequiredScopes } from './scopes';
+import {
+  connectScopes,
+  googleScopeManifest,
+  grantedFeatures,
+  missingRequiredScopes,
+} from './scopes';
 import type { GoogleTokenBundle, SecretVault } from './token-source';
 
 export type GoogleConnect = (req: ConnectRequest, ctx: ConnectContext) => Promise<ConnectResult>;
@@ -26,8 +38,16 @@ export interface GoogleConnectDeps extends FlowDeps {
   vault: SecretVault<GoogleTokenBundle>;
   /** The vault reference of an account's bundle. Default: the account id (as `GoogleTokenSource`). */
   refFor?: (account: AccountId) => string;
-  /** Optional manifest scopes to ask for besides the required ones. Default: none. */
+  /**
+   * Optional manifest scopes to ask for besides the required ones. Default: none for a new connect, every optional
+   * scope for `grantPermissions`.
+   */
   optionalScopes?: (req: ConnectRequest) => readonly string[];
+  /**
+   * The scopes the account's stored grant holds. Installed apps have no incremental auth, so a reconnect or re-grant
+   * asks for these optional scopes again, or the new grant would silently drop them.
+   */
+  grantedScopes?: (account: AccountId) => readonly string[] | undefined;
   /** Capabilities for a grant. Default: `googleCapabilities`. */
   capabilities?: (grantedScopes: readonly string[]) => Capabilities;
 }
@@ -78,17 +98,29 @@ function refreshTokenFrom(body: Record<string, unknown>): string {
   });
 }
 
-function checkIdentity(req: ConnectRequest, identity: GoogleIdentity): void {
-  const check = checkReconnectIdentity(req.expectedSubject, identity.subject);
-  if (check.ok) return;
-  throw connectError(check.kind, check.reason, { message: check.message });
+const optionalManifestScopes = googleScopeManifest.filter(e => !e.required).map(e => e.scope);
+
+/** New: the caller's optional scopes. Reconnect: those plus the ones held before. Re-grant: every optional scope. */
+function scopesFor(deps: GoogleConnectDeps, req: ConnectRequest, account: AccountId): string[] {
+  const asked = deps.optionalScopes?.(req);
+  if (req.mode === 'new') return connectScopes(asked ?? []);
+  const held = new Set(deps.grantedScopes?.(account) ?? []);
+  const kept = optionalManifestScopes.filter(scope => held.has(scope));
+  const wanted = asked ?? (req.mode === 'grantPermissions' ? optionalManifestScopes : []);
+  return connectScopes([...new Set([...kept, ...wanted])]);
 }
 
-function checkScopes(granted: readonly string[]): void {
+function identityRefusal(req: ConnectRequest, identity: GoogleIdentity) {
+  const check = checkReconnectIdentity(req.expectedSubject, identity.subject);
+  if (check.ok) return undefined;
+  return connectError(check.kind, check.reason, { message: check.message });
+}
+
+function scopeRefusal(granted: readonly string[]) {
   const check = checkRequiredScopes(granted);
-  if (check.ok) return;
+  if (check.ok) return undefined;
   const missingScopes = missingRequiredScopes(granted).map(entry => entry.scope);
-  throw connectError(check.kind, check.reason, {
+  return connectError(check.kind, check.reason, {
     method: 'oauth.token',
     extra: { missingScopes },
     message: check.message,
@@ -115,7 +147,7 @@ export function createGoogleConnect(deps: GoogleConnectDeps): GoogleConnect {
     requireExpectedSubject(req);
     const resolved = deps.resolveClient();
     const client = clientFor(resolved);
-    const scopes = connectScopes(deps.optionalScopes?.(req) ?? []);
+    const scopes = scopesFor(deps, req, ctx.accountId);
     const params = authParamsFor(req);
     const { body, receivedAt } = await runAuthorization(deps, { client, scopes, params }, ctx);
     const refreshToken = refreshTokenFrom(body);
@@ -123,14 +155,17 @@ export function createGoogleConnect(deps: GoogleConnectDeps): GoogleConnect {
       clientId: client.clientId,
       now: receivedAt,
     });
-    checkIdentity(req, identity);
     const grant = grantFromTokenResponse({
       now: receivedAt,
       testingMode: resolved.testingMode,
       response: body,
       clientId: client.clientId,
     });
-    checkScopes(grant.scopes);
+    const refused = identityRefusal(req, identity) ?? scopeRefusal(grant.scopes);
+    if (refused) {
+      await revokeGrant(deps, ctx, refreshToken);
+      throw refused;
+    }
     const credentialRef = deps.refFor ? deps.refFor(ctx.accountId) : ctx.accountId;
     await store(deps, credentialRef, { clientId: client.clientId, refreshToken }, ctx.signal);
     return {

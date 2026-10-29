@@ -2,7 +2,7 @@
 // consent URL handed to the host's `openExternal` (this module never starts a browser), and one governed code
 // exchange. Abortable through the caller's signal. No code, verifier, token or secret reaches an error or a log.
 
-import type { BoundGovernor, Clock, ConnectRequest } from '@aplos/engine/ports';
+import type { BoundGovernor, Clock, ConnectRequest, GovernedRequest } from '@aplos/engine/ports';
 import { ProviderError } from '@aplos/engine/ports';
 import type { HttpClient, HttpResponse } from '../shared/http';
 import {
@@ -19,6 +19,7 @@ import { googleTokenUrl } from './token-source';
 import { refusalError, transportError } from './token-errors';
 
 export const googleAuthUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
+export const googleRevokeUrl = 'https://oauth2.googleapis.com/revoke';
 
 export interface FlowDeps {
   /** One request, no retries (`shared/http.ts`); called only inside `governor.run`. */
@@ -28,6 +29,7 @@ export interface FlowDeps {
   random?: RandomSource;
   authUrl?: string;
   tokenUrl?: string;
+  revokeUrl?: string;
   /** Default 5 minutes. */
   callbackTimeoutMs?: number;
 }
@@ -170,6 +172,19 @@ async function postExchange(
   }
 }
 
+/** A token-endpoint call: no access token, never repeated by the governor (`write`). */
+function oauthTicket(method: string, cost: number, signal: AbortSignal): GovernedRequest {
+  return { budget: 'oauth', lane: 'interactive', kind: 'write', method, cost, auth: false, signal };
+}
+
+/**
+ * A free governed no-op with the exchange's own ticket: a cooldown, daily stop or config block on the token endpoint
+ * throws the governor's `PausedError` now, before the owner spends a consent and the single-use code on it.
+ */
+async function checkAdmission(ctx: FlowContext): Promise<void> {
+  await ctx.governor.run(oauthTicket('oauth.token', 0, ctx.signal), async () => undefined);
+}
+
 /**
  * The code is single-use, so the exchange is a `write`: the governor never repeats it. A refusal is classified by
  * the token module's rules, with the code, verifier and secret scrubbed from Google's text.
@@ -181,16 +196,7 @@ function exchangeCode(
   ctx: FlowContext,
 ): Promise<TokenExchange> {
   const secrets = [exchange.code, exchange.verifier, request.client.clientSecret ?? ''];
-  const ticket = {
-    budget: 'oauth',
-    lane: 'interactive',
-    kind: 'write',
-    method: 'oauth.token',
-    cost: 1,
-    auth: false,
-    signal: ctx.signal,
-  } as const;
-  return ctx.governor.run(ticket, async io => {
+  return ctx.governor.run(oauthTicket('oauth.token', 1, ctx.signal), async io => {
     const response = await postExchange(deps, request, exchange, io.signal);
     if (!response.ok) throw asConnect(refusalError(response, secrets));
     const body = parseBody(response);
@@ -211,6 +217,7 @@ export async function runAuthorization(
   ctx: FlowContext,
 ): Promise<TokenExchange> {
   throwIfAborted(ctx.signal);
+  await checkAdmission(ctx);
   const random = deps.random ?? nodeRandom;
   const pkce = createPkce(random);
   const state = createState(random);
@@ -226,5 +233,34 @@ export async function runAuthorization(
     throw asConnect(error);
   } finally {
     loopback.close();
+  }
+}
+
+async function postRevoke(deps: FlowDeps, token: string, signal: AbortSignal): Promise<boolean> {
+  try {
+    const response = await deps.http.request(deps.revokeUrl ?? googleRevokeUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token }),
+      signal,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Best effort: hands back a grant the connect refused (another account, the mail scope missing), so it does not sit
+ * in the owner's Google account or count against the refresh-token cap. Never throws and never logs; the governor
+ * sees a success either way, so a failed revoke changes no account state.
+ */
+export async function revokeGrant(deps: FlowDeps, ctx: FlowContext, token: string): Promise<void> {
+  try {
+    await ctx.governor.run(oauthTicket('oauth.revoke', 1, ctx.signal), io =>
+      postRevoke(deps, token, io.signal),
+    );
+  } catch {
+    /* refused before the call (a pause, a cancel): nothing to do */
   }
 }

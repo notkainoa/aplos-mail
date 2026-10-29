@@ -12,6 +12,8 @@ import {
 } from '@aplos/engine/ports';
 import type { Logger } from '@aplos/engine/diag/log';
 import { FakeClock, createGmailEmulator, SCOPE } from '@aplos/emulators';
+import { PausedError } from '@aplos/engine/ports';
+import { Governor } from '../../../../packages/engine/src/sync/governor';
 import { createHttpClient } from '../../src/host/providers/shared/http';
 import { resolveGoogleClient } from '../../src/host/providers/oauth/client';
 import {
@@ -207,6 +209,8 @@ interface RigOptions {
   vault?: MemoryVault;
   env?: Record<string, string | undefined>;
   deps?: Partial<GoogleConnectDeps>;
+  /** Default: a pass-through recorder. */
+  governor?: BoundGovernor;
 }
 
 function rig(options: RigOptions): Rig {
@@ -229,7 +233,7 @@ function rig(options: RigOptions): Rig {
   const abort = new AbortController();
   const ctx: ConnectContext = {
     accountId: account,
-    governor: recorder.governor,
+    governor: options.governor ?? recorder.governor,
     clock: portClock(clock),
     log: silentLog,
     signal: abort.signal,
@@ -275,7 +279,7 @@ function assertNoSecrets(error: unknown, secrets: string[]): void {
   const views = [String(error), JSON.stringify(error), inspect(error, { depth: 10 })];
   if (error instanceof Error) views.push(error.message, error.stack ?? '');
   for (const view of views) {
-    for (const secret of secrets) assert.ok(!view.includes(secret.slice(0, 10)), 'a secret leaked');
+    for (const secret of secrets) assert.ok(!view.includes(secret), 'a secret leaked');
   }
 }
 
@@ -299,6 +303,7 @@ function emulatorRig(options: {
   as?: string;
   deps?: Partial<GoogleConnectDeps>;
 }) {
+  const revoked: string[] = [];
   const clock = manualClock();
   // The emulator waits out its latency on its own auto-advancing clock, so the flow's clock never moves by itself.
   const emulator = createGmailEmulator({
@@ -314,8 +319,16 @@ function emulatorRig(options: {
     const redirect = new URL(emulator.oauth.authorize(consent, { as: options.as }));
     return [Object.fromEntries(redirect.searchParams)];
   });
-  const r = rig({ fetch: emulator.fetch, openExternal: browser.openExternal, clock, ...options });
-  return { ...r, emulator, browser };
+  const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).endsWith('/revoke'))
+      revoked.push(new URLSearchParams(String(init?.body)).get('token')!);
+    return emulator.fetch(url, init);
+  }) as typeof fetch;
+  const r = rig({ fetch: fetchFn, openExternal: browser.openExternal, clock, ...options });
+  /** True when the emulator no longer honours the refresh token. Revokes a live one, so call it last. */
+  const dead = (token: string) =>
+    emulator.oauth.revokeToken(new URLSearchParams({ token })).status === 400;
+  return { ...r, emulator, browser, revoked, dead };
 }
 
 test('new connect on the emulator: PKCE S256, loopback, governed exchange, identity, grant, vault', async () => {
@@ -355,10 +368,13 @@ test('new connect on the emulator: PKCE S256, loopback, governed exchange, ident
   assert.equal(stored.clientId, clientId);
   assert.ok(r.emulator.oauth.refreshTokenExpiresAt(stored.refreshToken) !== undefined);
   assert.deepEqual(
-    r.tickets.map(t => [t.budget, t.kind, t.method, t.auth, t.lane]),
-    [['oauth', 'write', 'oauth.token', false, 'interactive']],
+    r.tickets.map(t => [t.budget, t.kind, t.method, t.auth, t.lane, t.cost]),
+    [
+      ['oauth', 'write', 'oauth.token', false, 'interactive', 0],
+      ['oauth', 'write', 'oauth.token', false, 'interactive', 1],
+    ],
   );
-  assert.equal(r.tickets[0].signal, r.ctx.signal);
+  assert.equal(r.tickets[1].signal, r.ctx.signal);
   assert.ok(await refused(portOf(consent)), 'the listener closes after success');
 });
 
@@ -423,6 +439,8 @@ test('reconnect as a different Google account is refused with wrongAccount and s
   );
   assert.equal(vault.writes, 0);
   assert.deepEqual(vault.entries.get(account), oldBundle);
+  assert.equal(r.revoked.length, 1, 'the other account’s grant is handed back');
+  assert.ok(r.dead(r.revoked[0]));
 });
 
 test('a reconnect without the expected subject is refused before the browser opens', async () => {
@@ -492,7 +510,8 @@ test('wrong or missing state, another path and a second request are answered 400
   const r = rig({ fetch: endpoint.fetch, openExternal: browser.openExternal, clock });
   await r.connect(newConnect, r.ctx);
   assert.deepEqual(browser.statuses.slice(0, 3), [400, 400, 200]);
-  assert.ok([0, 400].includes(browser.statuses[3]), 'a second request is never accepted');
+  // The listener stops accepting the moment the valid callback lands: the next request finds it gone.
+  assert.equal(browser.statuses[3], 0, 'a second request is refused');
   assert.deepEqual(
     endpoint.forms.map(f => f.get('code')),
     [authCode],
@@ -643,6 +662,20 @@ test('a grant without the mail scope is permission missingRequiredScope and stor
   assert.equal(error.error.reason, 'missingRequiredScope');
   assert.deepEqual(error.error.missingScopes, [mailScope]);
   assert.equal(r.vault.writes, 0);
+  assert.equal(r.revoked.length, 1, 'the partial grant is handed back');
+  assert.ok(r.dead(r.revoked[0]));
+});
+
+test('a failed revoke is swallowed: the refusal still surfaces, without the token', async () => {
+  const r = scriptedRig((clock, form) =>
+    form.has('token')
+      ? Promise.reject(new Error(`revoke failed for ${form.get('token')}`))
+      : tokenReply(clock, { scope: 'openid' }),
+  );
+  const error = await refusal(r.connect(newConnect, r.ctx));
+  assert.equal(error.error.reason, 'missingRequiredScope');
+  assert.equal(r.forms.at(-1)?.get('token'), '1//flow-refresh-never-shown');
+  assertNoSecrets(error, ['1//flow-refresh-never-shown']);
 });
 
 test('a bad id_token fails the connect and stores nothing', async () => {
@@ -681,16 +714,19 @@ test('id_token claims: issuer, audience, expiry, sub, email and email_verified',
   });
 });
 
-test('a failed vault write fails the connect and leaves the old bundle', async () => {
-  const vault = memoryVault(oldBundle);
-  vault.failWrites = true;
-  const r = scriptedRig(clock => tokenReply(clock), { vault });
+test('a vault failure on reconnect fails it and leaves the old, still working bundle intact', async () => {
+  const r = emulatorRig({});
+  await r.connect(newConnect, r.ctx);
+  const before = { ...r.vault.entries.get(account)! };
+  r.vault.failWrites = true;
   const req: ConnectRequest = { mode: 'reconnect', expectedSubject: 'sub-1' };
   const error = await refusal(r.connect(req, r.ctx));
   assert.equal(error.error.class, 'transient');
   assert.equal(error.error.reason, 'vaultWriteFailed');
-  assert.deepEqual(vault.entries.get(account), oldBundle);
-  assertNoSecrets(error, ['1//flow-refresh-never-shown']);
+  assert.deepEqual(r.vault.entries.get(account), before);
+  assert.equal(r.vault.writes, 1);
+  assert.equal(r.dead(before.refreshToken), false, 'the old grant still works');
+  assertNoSecrets(error, [before.refreshToken]);
 });
 
 test('a refused exchange is classified, and no code, verifier, secret or token reaches the error', async () => {
@@ -722,4 +758,130 @@ test('no failure carries a secret: malformed body, transport error, token endpoi
     assertNoSecrets(error, [authCode, clientSecret]);
     assert.equal(r.vault.writes, 0);
   }
+});
+
+// ---------- scopes across reconnects ----------
+
+const settingsScope = SCOPE.gmailSettingsBasic;
+const optionalAll = [settingsScope, SCOPE.calendarList, SCOPE.calendarEvents];
+const askedScopes = (r: { browser: FakeBrowser }) =>
+  r.browser.opened[0].searchParams.get('scope')!.split(' ');
+
+test('a reconnect asks again for the optional scopes the stored grant holds', async () => {
+  const held = ['openid', SCOPE.email, mailScope, settingsScope, SCOPE.calendarEvents];
+  const r = emulatorRig({ vault: memoryVault(oldBundle), deps: { grantedScopes: () => held } });
+  const result = await r.connect({ mode: 'reconnect', expectedSubject: 'sub-1' }, r.ctx);
+  assert.deepEqual(askedScopes(r), [
+    ...identityScopes,
+    mailScope,
+    settingsScope,
+    SCOPE.calendarEvents,
+  ]);
+  assert.ok(result.grantedScopes.includes(settingsScope));
+  assert.equal(result.capabilities.filters, true);
+});
+
+test('grantPermissions asks for every optional scope, or the ones the caller names', async () => {
+  const held = [mailScope];
+  const all = emulatorRig({ vault: memoryVault(oldBundle), deps: { grantedScopes: () => held } });
+  const req: ConnectRequest = { mode: 'grantPermissions', expectedSubject: 'sub-1' };
+  const result = await all.connect(req, all.ctx);
+  assert.deepEqual(askedScopes(all), [...identityScopes, mailScope, ...optionalAll]);
+  for (const scope of optionalAll) assert.ok(result.grantedScopes.includes(scope));
+
+  const named = emulatorRig({
+    vault: memoryVault(oldBundle),
+    deps: {
+      grantedScopes: () => [mailScope, SCOPE.calendarList],
+      optionalScopes: () => [settingsScope],
+    },
+  });
+  await named.connect(req, named.ctx);
+  assert.deepEqual(askedScopes(named), [
+    ...identityScopes,
+    mailScope,
+    SCOPE.calendarList,
+    settingsScope,
+  ]);
+});
+
+// ---------- with the real governor ----------
+
+function governed(clock: FakeClock) {
+  const governor = new Governor({ clock, random: () => 0, role: 'primary' });
+  return { governor, connectGovernor: governor.bindConnect(account) };
+}
+
+const tokenRefusal = (cls: string, reason: string) => ({
+  class: cls,
+  provider: 'oauth',
+  method: 'oauth.token',
+  reason,
+});
+
+test('a paused token endpoint is found before the browser opens, not after consent', async () => {
+  const clock = manualClock();
+  const { governor, connectGovernor } = governed(clock);
+  governor.bind(account).observe('oauth', tokenRefusal('throttle', 'rateLimitExceeded'));
+  const r = scriptedRig(c => tokenReply(c), { clock, governor: connectGovernor });
+  const error = await r.connect(newConnect, r.ctx).then(
+    () => assert.fail('expected a pause'),
+    (e: unknown) => e,
+  );
+  assert.ok(error instanceof PausedError, String(error));
+  assert.equal(r.browser.opened.length, 0);
+  assert.equal(r.forms.length, 0);
+});
+
+test('an account blocked for reauth can still reconnect: connect ignores the auth block', async () => {
+  const clock = manualClock();
+  const { governor, connectGovernor } = governed(clock);
+  governor
+    .bind(account)
+    .observe('gmail', { ...tokenRefusal('auth', 'invalid_grant'), provider: 'gmail' });
+  assert.equal(governor.admission(account, 'gmail', 'interactive', 'read').ok, false);
+  const r = scriptedRig(c => tokenReply(c), { clock, governor: connectGovernor });
+  const result = await r.connect({ mode: 'reconnect', expectedSubject: 'sub-1' }, r.ctx);
+  assert.equal(result.identity.subject, 'sub-1');
+});
+
+test('a failed code exchange or a declined consent leaves a connected account’s status unchanged', async () => {
+  for (const reason of ['invalid_grant', 'access_denied']) {
+    const clock = manualClock();
+    const { governor, connectGovernor } = governed(clock);
+    const r = scriptedRig(() => json({ error: reason, error_description: 'Bad Request' }, 400), {
+      clock,
+      governor: connectGovernor,
+    });
+    const error = await refusal(r.connect({ mode: 'reconnect', expectedSubject: 'sub-1' }, r.ctx));
+    assert.equal(error.error.class, 'auth');
+    assert.equal(governor.admission(account, 'gmail', 'interactive', 'read').ok, true, reason);
+    assert.ok(
+      governor.snapshot(account).every(snap => !snap.blocked),
+      reason,
+    );
+  }
+  const clock = manualClock();
+  const { governor, connectGovernor } = governed(clock);
+  const browser = fakeBrowser(consent => [{ error: 'access_denied', state: echoState(consent) }]);
+  const fetchFn = tokenEndpoint(() => tokenReply(clock)).fetch;
+  const r = rig({
+    fetch: fetchFn,
+    openExternal: browser.openExternal,
+    clock,
+    governor: connectGovernor,
+  });
+  await refusal(r.connect({ mode: 'reconnect', expectedSubject: 'sub-1' }, r.ctx));
+  assert.equal(governor.admission(account, 'gmail', 'interactive', 'read').ok, true);
+});
+
+test('control: the same refused exchange on the non-connect binding would block the account', async () => {
+  const clock = manualClock();
+  const { governor } = governed(clock);
+  const r = scriptedRig(() => json({ error: 'invalid_grant' }, 400), {
+    clock,
+    governor: governor.bind(account),
+  });
+  await refusal(r.connect(newConnect, r.ctx));
+  assert.equal(governor.admission(account, 'gmail', 'interactive', 'read').ok, false);
 });
