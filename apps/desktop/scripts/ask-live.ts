@@ -7,7 +7,7 @@ import { createService } from '../src/main/service';
 import { createGoogle } from '../src/main/google';
 import { createGroq } from '../src/main/groq';
 import { defaultAskModel, parseAskModel } from '@aplos/contract/legacy/ask';
-import { askCases, parseSplit, selectCases } from './quality/splits';
+import { loadAskCases, parseSplit, pickOnly, scoreLine } from './quality/splits';
 
 /**
  * An explicit live check of Ask's agent loop against Groq on fresh original demo mail in a temporary
@@ -16,15 +16,19 @@ import { askCases, parseSplit, selectCases } from './quality/splits';
  * --split=dev|heldout|all picks the case set, --only=N picks a single case within it, --json prints
  * one final {"score": 0..1, "details": [...]} line on stdout for the hill-climb scorer.
  */
+// Under --json the only stdout line is the machine-readable score; everything else goes to stderr.
+const json = process.argv.includes('--json');
+if (json) console.log = console.error;
 loadDevEnv();
 const groq = createGroq();
 const model = process.argv.find(a => a.startsWith('--model='))?.slice(8) ?? defaultAskModel;
 if (!parseAskModel(model))
   throw new Error('Give --model as provider:model, e.g. groq:openai/gpt-oss-120b.');
 const split = parseSplit(process.argv);
-// Under --json the only stdout line is the machine-readable score; progress goes to stderr.
-const json = process.argv.includes('--json');
-if (json) console.log = console.error;
+const questions = pickOnly(
+  await loadAskCases(split),
+  process.argv.find(a => a.startsWith('--only='))?.slice(7),
+);
 const dataDir = await mkdtemp(join(tmpdir(), 'aplos-ask-live-'));
 const service = await createService({
   dataDir,
@@ -44,10 +48,6 @@ service.subscribe(event => {
   if (event.type === 'ai.progress' && p?.step?.tool === 'wait' && p.step.status === 'running')
     console.log(`  … ${p.step.label}`);
 });
-const questions = selectCases(askCases, split);
-const only = process.argv.find(a => a.startsWith('--only='))?.slice(7);
-if (only)
-  questions.splice(0, questions.length, ...questions.filter((_, i) => String(i + 1) === only));
 let failed = 0;
 const failures: { id: string; message: string }[] = [];
 try {
@@ -106,8 +106,14 @@ try {
   await rm(dataDir, { recursive: true, force: true });
 }
 if (json) {
-  const score = questions.length ? (questions.length - failed) / questions.length : 0;
-  const details = failures.slice(0, 5);
-  process.stdout.write(`${JSON.stringify({ score, details })}\n`);
+  const errors = new Map(failures.map(f => [f.id, f.message]));
+  const results = questions.map(q => ({
+    id: q.id,
+    passed: !errors.has(q.id),
+    error: errors.get(q.id),
+  }));
+  process.stdout.write(`${JSON.stringify(scoreLine(results))}\n`);
 }
-if (failed) process.exitCode = 1;
+// Under --json a printed score line is a successful scorer run; failing cases lower the score but
+// do not fail the run.
+if (failed && !json) process.exitCode = 1;
