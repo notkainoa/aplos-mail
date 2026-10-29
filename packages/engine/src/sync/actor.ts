@@ -31,6 +31,7 @@ import {
 } from '../ports';
 import { LANES } from './budgets';
 import { stepWrites } from './facts';
+import { peerClaimLive } from './lease';
 import { flushable, parseOpPayload, pendingOp, readOps, settleWrites, type OpRow } from './ops';
 import { readFailures, readMemory, readStates } from './persist';
 import { sameStatus, statusOfFailure, statusOfRefusal, type StatusView } from './status';
@@ -74,8 +75,19 @@ export interface ActorDeps {
   reconnectBy?: number;
   role: Role;
   onStatus: (runtime: AccountRuntime) => void;
-  /** The lease module's input from each workflow round (`sync/lease.ts`, not in this package). */
+  /** The copies each workflow round this actor ran delivered (only when `hostReadsWorkflow` is false). */
   onWorkflowCopies?: (copies: WorkflowCopy[]) => void;
+  /**
+   * The host's lease controller reads this account's workflow channel (`ActorHost`, ARCH 6.5): its round is the one
+   * channel reader, so the actor never runs the planned `workflow` step itself.
+   */
+  hostReadsWorkflow?: boolean;
+  /**
+   * The lease role as of now (the host's `controller.current().role`), asked on every turn: a primary whose claim ran
+   * out while the actor slept is secondary before the lease deadline's report reaches `setLease`. Undefined: the
+   * last role `setLease` gave.
+   */
+  leaseRole?: () => Role | undefined;
 }
 
 const laneRank = (lane: SyncLane) => LANES.indexOf(lane);
@@ -301,7 +313,8 @@ export class AccountActor {
       env,
       memory,
     });
-    const steps = planned.filter(step => this.allowed(step));
+    const role = this.currentRole();
+    const steps = planned.filter(step => this.allowed(step, role));
     const due = steps
       .filter(step => this.dueAt(step, now) <= now)
       .sort((a, b) => laneRank(a.lane) - laneRank(b.lane));
@@ -339,8 +352,31 @@ export class AccountActor {
     return Math.min(opsWake, ...steps.map(step => this.dueAt(step, now)));
   }
 
-  private allowed(step: PlannedStep): boolean {
-    return !(this.role === 'secondary' && PRIMARY_ONLY.has(step.lane) && step.scope !== 'workflow');
+  /** The role this turn plans with: the lease's live answer when the host has one. */
+  private currentRole(): Role {
+    return this.deps.leaseRole?.() ?? this.role;
+  }
+
+  private allowed(step: PlannedStep, role: Role): boolean {
+    if (step.scope === 'workflow') return this.workflowAllowed(role);
+    return role !== 'secondary' || !PRIMARY_ONLY.has(step.lane);
+  }
+
+  /**
+   * The workflow round: never when the host's lease round reads the channel (one reader per account). Otherwise it is
+   * not a background lane, but on a secondary that sees a live holder it is the primary's job (ARCH 6.5).
+   */
+  private workflowAllowed(role: Role): boolean {
+    if (this.deps.hostReadsWorkflow) return false;
+    return role !== 'secondary' || this.leaseFree();
+  }
+
+  /** No live lease holder that this device knows of: `holder` absent, or its claim gone by the lease's own rule. */
+  private leaseFree(): boolean {
+    const holder = this.runtime.lease?.holder;
+    if (holder === undefined) return true;
+    const until = this.runtime.lease?.until;
+    return until !== undefined && !peerClaimLive(until, this.deps.clock.now());
   }
 
   private dueAt(step: PlannedStep, now: number): number {
@@ -391,14 +427,7 @@ export class AccountActor {
       failures,
       baselineDone: this.runtime.baselineDoneAt !== undefined,
     });
-    if (step.origin === 'baseline' && result.progress) {
-      this.runtime.firstWindow = {
-        read: this.runtime.firstWindow.read + result.progress.read,
-        total: result.progress.total ?? this.runtime.firstWindow.total,
-        ...(result.progress.found !== undefined ? { found: result.progress.found } : {}),
-      };
-    }
-    if (step.lane === 'backfill') this.backfillRead += result.progress?.read ?? 0;
+    this.countProgress(step, result);
     const baselineDoneAt =
       this.runtime.baselineDoneAt ?? (result.baselineReached ? now : undefined);
     this.failure = undefined;
@@ -413,9 +442,11 @@ export class AccountActor {
       changes: step.origin === 'backfill' ? 'coarse' : 'fine',
       writes: [...writes, ...statusWrites],
     });
+    const firstBaseline = this.runtime.baselineDoneAt === undefined && baselineDoneAt !== undefined;
     if (baselineDoneAt !== undefined) this.runtime.baselineDoneAt = baselineDoneAt;
     this.runtime.lastSyncAt = now;
-    this.applyStatus(after);
+    // Subscribers hear of the baseline even when the status stays the same (the host's lease round waits for it).
+    if (!this.applyStatus(after) && firstBaseline) this.emit();
     if (result.reset) {
       this.log.event(`sync.${this.family()}.cursor_reset`, { reset: result.reset });
       this.setTrigger('reset');
@@ -425,6 +456,18 @@ export class AccountActor {
       this.heldUncertain = false;
       this.opsDirty = true;
     }
+  }
+
+  /** A step's progress: the first window's count (baseline) and the backfill's. */
+  private countProgress(step: PlannedStep, result: StepResult): void {
+    if (step.origin === 'baseline' && result.progress) {
+      this.runtime.firstWindow = {
+        read: this.runtime.firstWindow.read + result.progress.read,
+        total: result.progress.total ?? this.runtime.firstWindow.total,
+        ...(result.progress.found !== undefined ? { found: result.progress.found } : {}),
+      };
+    }
+    if (step.lane === 'backfill') this.backfillRead += result.progress?.read ?? 0;
   }
 
   private async workflowRound(state: SyncState, ctx: AdapterContext): Promise<StepResult> {
@@ -637,9 +680,10 @@ export class AccountActor {
     this.applyStatus(view);
   }
 
-  private applyStatus(view: StatusView): void {
+  /** True when the status changed (and subscribers were told). */
+  private applyStatus(view: StatusView): boolean {
     const before = this.view;
-    if (sameStatus(before, view)) return;
+    if (sameStatus(before, view)) return false;
     this.view = view;
     this.runtime.status = view.status;
     if (view.reasonCode) this.runtime.reasonCode = view.reasonCode;
@@ -655,6 +699,7 @@ export class AccountActor {
       ...(status.reason ? { reason: status.reason } : {}),
     });
     this.emit();
+    return true;
   }
 
   private emit(): void {

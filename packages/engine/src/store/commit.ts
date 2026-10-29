@@ -2,6 +2,7 @@ import { transaction, type SqlDatabase, type SqlStatement } from './sql';
 import { governor, providerMemory, syncFailure } from './bookkeeping';
 import { calendar, calendarDelete, event, eventDelete, eventHidden, eventSweep } from './calendar';
 import { account, folder, folderDelete } from './commit-folders';
+import { accountRemove, fileRemoved } from './commit-account-remove';
 import { message, messageDelete, placements, flags } from './commit-messages';
 import { thread, threadDelete, threadMerge, workflow } from './commit-threads';
 import { op, opSettle, applyEffect } from './commit-ops';
@@ -62,6 +63,8 @@ export interface CommitContext {
 /** The kinds `commit.ts` applies itself; no extension may claim one. */
 export const CORE_WRITE_KINDS: ReadonlySet<string> = new Set([
   'account',
+  'accountRemove',
+  'fileRemoved',
   'folder',
   'folderDelete',
   'message',
@@ -147,6 +150,8 @@ export class CommitRun implements WriteScope {
   readonly ingested = new Map<number, boolean>();
   /** Messages a `body` write stored in this commit: their threads re-run `laneFor`. */
   readonly bodied = new Set<number>();
+  /** Accounts an `accountRemove` deleted in this commit: a later write naming one is refused, not left to a raw FK error. */
+  readonly removedAccounts = new Set<string>();
   /** Messages this commit wrote, per account: what pending ops are replayed over. */
   private readonly touchedMessages = new Map<string, Set<number>>();
   private readonly changes = new Map<string, { type: string; id: string; op: 'u' | 'd' | '*' }>();
@@ -171,9 +176,17 @@ export class CommitRun implements WriteScope {
   }
 
   apply(w: StoreWrite) {
+    this.refuseRemoved(w);
     const handler = WRITE_HANDLERS.get(w.kind);
     if (handler) return handler(this, w as never);
     return this.extension(w as { kind: string });
+  }
+
+  private refuseRemoved(w: StoreWrite) {
+    const named = w as { kind?: unknown; accountId?: unknown; id?: unknown };
+    const id = named.kind === 'account' ? named.id : named.accountId;
+    if (typeof id === 'string' && this.removedAccounts.has(id))
+      throw new StoreError('notFound', `Account ${id} was removed earlier in this commit`);
   }
 
   /** Lane kinds (seam 2): the registered extension applies them inside this transaction. */
@@ -251,7 +264,7 @@ export class CommitRun implements WriteScope {
     this.markId(type, remoteId === null ? accountId : `${accountId}:${remoteId}`, op);
   }
   /** A change row by contract id, for extensions (which may not mark store types). */
-  markId(type: ChangeType, id: string, op: 'u' | 'd') {
+  markId(type: ChangeType, id: string, op: 'u' | 'd' | '*') {
     this.changes.set(`${type}\0${id}`, { type, id, op });
   }
 
@@ -415,6 +428,8 @@ export class CommitRun implements WriteScope {
 type Handler = (run: CommitRun, w: never) => void;
 const WRITE_HANDLERS: ReadonlyMap<string, Handler> = new Map<string, Handler>([
   ['account', account],
+  ['accountRemove', accountRemove],
+  ['fileRemoved', fileRemoved],
   ['folder', folder],
   ['folderDelete', folderDelete],
   ['message', message],

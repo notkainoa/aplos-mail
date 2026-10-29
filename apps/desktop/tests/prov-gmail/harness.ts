@@ -1,6 +1,6 @@
 /**
- * Shared rig for the prov-gmail tests: the Gmail emulator on a fake clock, a pass-through governor stub, a fake store
- * that commits StepResults the way the actor will, and a capturing logger. Holds no tests of its own; it is named
+ * Shared rig for the prov-gmail tests: the Gmail emulator on a fake clock, a pass-through governor stub, the engine's
+ * real store (`store-rig.ts`) fed StepResults the way the actor feeds it, and a capturing logger. Holds no tests of its own; it is named
  * `*.test.ts` only because the lane may add test files and nothing else under `tests/`.
  *
  * The governor stub stands in for prov-gov's governor until day 7 (plan 20 PV0 item 1): a sliding 60 s window with a
@@ -16,22 +16,16 @@ import {
   type AdapterContext,
   type BoundGovernor,
   type BudgetId,
-  type FolderFacts,
   type GovernedRequest,
-  type KnownLookup,
   type Logger,
-  type MessageFacts,
   type PlanEnv,
-  type PlannedStep,
   type PlanTrigger,
-  type Placement,
-  type RemoteDraftFact,
   type RequestIo,
   type RequestKind,
   type ScopeId,
   type StepResult,
   type SyncLane,
-  type SyncState,
+  type WorkflowCopy,
 } from '@aplos/engine/ports';
 import {
   FakeClock,
@@ -41,6 +35,7 @@ import {
   type GmailEmulatorOptions,
 } from '@aplos/emulators';
 import { GmailAdapter, type GoogleProviderOptions } from '../../src/host/providers/google/adapter';
+import { RigStore } from './store-rig';
 import { googleError } from '../../src/host/providers/google/classify';
 
 export const CLIENT_ID = 'prov-gmail-tests.apps.example.test';
@@ -308,161 +303,6 @@ export class StubGovernor implements BoundGovernor {
   }
 }
 
-// ---- store ----
-
-interface Row {
-  facts: MessageFacts;
-  /** Folder -> seen generation (null: written by history, open or search). */
-  folders: Map<string, number | null>;
-  seen: boolean;
-  flagged: boolean;
-}
-
-const ROUND_SCOPES = new Set<ScopeId>(['window:inbox', 'backfill:inbox', 'sent:recent']);
-
-export interface Commit {
-  at: number;
-  step: PlannedStep;
-  result: StepResult;
-}
-
-/** The actor's commit, cut down to what the adapter's facts mean (no SQL, no change log). */
-export class FakeStore implements KnownLookup {
-  readonly rows = new Map<string, Row>();
-  readonly states = new Map<ScopeId, SyncState>();
-  readonly memory = new Map<string, string>();
-  readonly folders = new Map<string, FolderFacts>();
-  readonly drafts = new Map<string, RemoteDraftFact>();
-  readonly tracked = new Set<string>();
-  /** Message id -> draft id of the copies this device wrote (`drafts.remote_message_id`). */
-  readonly ownDrafts = new Map<string, string>();
-  readonly commits: Commit[] = [];
-  readonly swept: string[] = [];
-  seq = 0;
-  baselineAt?: number;
-
-  async knownThreads(ids: string[]): Promise<ReadonlySet<string>> {
-    const all = new Set([...this.rows.values()].map(r => r.facts.remoteThreadId));
-    return new Set(ids.filter(id => all.has(id)));
-  }
-  async knownMessages(ids: string[]): Promise<ReadonlySet<string>> {
-    return new Set(ids.filter(id => this.rows.has(id)));
-  }
-  async trackedDraftIds(ids: string[]): Promise<ReadonlySet<string>> {
-    return new Set(ids.filter(id => this.tracked.has(id)));
-  }
-  async draftsByMessageId(ids: string[]): Promise<ReadonlyMap<string, string>> {
-    return new Map(
-      ids.filter(id => this.ownDrafts.has(id)).map(id => [id, this.ownDrafts.get(id)!]),
-    );
-  }
-  async threadMessages(threadId: string): Promise<{ remoteId: string; placements: Placement[] }[]> {
-    return [...this.rows.values()]
-      .filter(r => r.facts.remoteThreadId === threadId)
-      .map(r => ({
-        remoteId: r.facts.remoteId,
-        placements: [...r.folders.keys()].map(folder => ({ folder })),
-      }));
-  }
-  async placements(ids: string[]): Promise<ReadonlyMap<string, Placement[]>> {
-    return new Map(
-      ids
-        .filter(id => this.rows.has(id))
-        .map(id => [id, [...this.rows.get(id)!.folders.keys()].map(folder => ({ folder }))]),
-    );
-  }
-  async folderUids(): Promise<number[]> {
-    return [];
-  }
-  async eventEtags(): Promise<ReadonlyMap<string, string>> {
-    return new Map();
-  }
-
-  state(scope: ScopeId): SyncState {
-    return this.states.get(scope) ?? { scope, generation: 0, updatedAt: 0 };
-  }
-
-  commit(step: PlannedStep, result: StepResult, now: number): void {
-    this.commits.push({ at: now, step, result });
-    const own = result.nextStates.find(s => s.scope === step.scope);
-    const stamp = ROUND_SCOPES.has(step.scope) && own ? own.generation : null;
-    for (const f of result.folders ?? []) this.folders.set(f.remoteId, f);
-    this.commitUpserts(result, stamp);
-    this.commitPlacements(result, stamp);
-    this.commitDeltas(result);
-    for (const r of result.removals ?? []) this.rows.delete(r.remoteId);
-    for (const d of result.drafts ?? []) this.drafts.set(d.remoteDraftId, d);
-    if (result.scopeCovered) this.sweep(result.scopeCovered);
-    for (const s of result.nextStates) this.states.set(s.scope, s);
-    for (const [k, v] of Object.entries(result.memory ?? {})) {
-      if (v === null) this.memory.delete(k);
-      else this.memory.set(k, v);
-    }
-    if (result.baselineReached && this.baselineAt === undefined) this.baselineAt = now;
-  }
-
-  private commitUpserts(result: StepResult, stamp: number | null): void {
-    for (const facts of result.upserts ?? []) {
-      const before = this.rows.get(facts.remoteId);
-      const folders = new Map<string, number | null>();
-      for (const p of facts.placements)
-        folders.set(p.folder, stamp ?? before?.folders.get(p.folder) ?? null);
-      this.rows.set(facts.remoteId, {
-        facts,
-        folders,
-        seen: facts.flags.seen,
-        flagged: facts.flags.flagged,
-      });
-    }
-  }
-
-  private commitPlacements(result: StepResult, stamp: number | null): void {
-    for (const p of result.placements ?? []) {
-      const row = p.remoteId ? this.rows.get(p.remoteId) : undefined;
-      if (!row) continue;
-      if (!p.present) row.folders.delete(p.folder);
-      else {
-        const old = row.folders.get(p.folder);
-        row.folders.set(p.folder, stamp === null ? (old ?? null) : Math.max(old ?? stamp, stamp));
-      }
-    }
-  }
-
-  private commitDeltas(result: StepResult): void {
-    for (const d of result.labelDeltas ?? []) {
-      const row = this.rows.get(d.remoteId);
-      if (!row) continue;
-      for (const l of d.add) if (!row.folders.has(l)) row.folders.set(l, null);
-      for (const l of d.remove) row.folders.delete(l);
-    }
-    for (const d of result.flagDeltas ?? []) {
-      const row = d.remoteId ? this.rows.get(d.remoteId) : undefined;
-      if (!row) continue;
-      if (d.seen !== undefined) row.seen = d.seen;
-      if (d.flagged !== undefined) row.flagged = d.flagged;
-    }
-  }
-
-  private sweep({ bound, generation }: NonNullable<StepResult['scopeCovered']>): void {
-    for (const [id, row] of this.rows) {
-      const gen = row.folders.get(bound.folder);
-      const date = row.facts.internalDate;
-      if (gen === undefined || gen === null || gen >= generation) continue;
-      if (bound.since !== undefined && !(date > bound.since)) continue;
-      if (bound.until !== undefined && !(date < bound.until)) continue;
-      row.folders.delete(bound.folder);
-      this.swept.push(id);
-    }
-  }
-
-  /** Threads with at least one message in `folder`. */
-  threadsIn(folder: string): Set<string> {
-    return new Set(
-      [...this.rows.values()].filter(r => r.folders.has(folder)).map(r => r.facts.remoteThreadId),
-    );
-  }
-}
-
 // ---- logger ----
 
 export interface LogLine {
@@ -508,7 +348,7 @@ export interface Rig {
   emu: GmailEmulator;
   tokens: TokenStub;
   governor: StubGovernor;
-  store: FakeStore;
+  store: RigStore;
   log: CaptureLog;
   adapter: GmailAdapter;
   account: AdapterAccount;
@@ -516,6 +356,10 @@ export interface Rig {
   fetches: FetchRecord[];
   ctx(): AdapterContext;
   env(focused?: boolean): PlanEnv;
+  /** The `workflow` round's copies, the actor's `onWorkflowCopies` hook: feed them to a state channel's `ingest`. */
+  onWorkflowCopies?: (copies: WorkflowCopy[]) => void;
+  /** One `workflow` round as the actor runs it: the channel's round, copies delivered, as a `StepResult`. */
+  workflowRound(scope: ScopeId): Promise<StepResult>;
   /** Runs planned steps the way the actor will, until `until` holds, nothing is runnable, or a step stops short. */
   drive(opts?: {
     trigger?: PlanTrigger;
@@ -560,7 +404,6 @@ export async function rig(options: RigOptions = {}): Promise<Rig> {
     clock.now() + Number(session.response.expires_in) * 1000,
   );
   const governor = new StubGovernor(clock, tokens, options.target ?? 3_000, options.batch ?? 10);
-  const store = new FakeStore();
   const log = new CaptureLog();
   const fetches: FetchRecord[] = [];
   const spy: typeof fetch = async (input, init) => {
@@ -595,6 +438,7 @@ export async function rig(options: RigOptions = {}): Promise<Rig> {
     },
   };
   const adapter = new GmailAdapter(account, { fetch: spy, ...options.adapter });
+  const store = new RigStore(account, () => clock.now());
   const stopper = new AbortController();
   const r: Rig = {
     clock,
@@ -616,10 +460,15 @@ export async function rig(options: RigOptions = {}): Promise<Rig> {
       },
       log: log.with({ account: ACCOUNT_ID }),
       signal: stopper.signal,
-      lookup: store,
+      lookup: store.lookup,
       memory: store.memory,
-      generation: ++store.seq,
+      generation: store.seq,
     }),
+    async workflowRound(scope: ScopeId): Promise<StepResult> {
+      const round = await adapter.workflow!.round(store.state(scope), r.ctx());
+      r.onWorkflowCopies?.(round.copies);
+      return { nextStates: [round.nextState], done: true, costUnits: round.costUnits };
+    },
     env: (focused = true) => ({
       now: clock.now(),
       focused,
@@ -642,8 +491,13 @@ export async function rig(options: RigOptions = {}): Promise<Rig> {
           s => (s.notBefore ?? 0) <= clock.now() && (!opts.scopes || opts.scopes.includes(s.scope)),
         );
         if (!step) break;
-        const result = await adapter.syncStep(step, store.state(step.scope), r.ctx());
-        store.commit(step, result, clock.now());
+        const fence = store.seq;
+        // The `workflow` scope runs the channel's round, not `syncStep` — exactly as the actor does.
+        const result =
+          step.scope === 'workflow' && adapter.workflow
+            ? await r.workflowRound(step.scope)
+            : await adapter.syncStep(step, store.state(step.scope), r.ctx());
+        store.commit(step, result, clock.now(), fence);
         trigger = 'poll';
         if (!result.done) {
           ran++;

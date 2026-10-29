@@ -49,6 +49,32 @@ function describe(result) {
   return `SQLite ${result.version}, fts5 contentless_delete: ${result.fts5Delete ? 'yes' : 'no'}`;
 }
 
+/**
+ * The probe result out of a child's stdout. Other output can precede the result — a fresh
+ * checkout's electron package prints "Downloading Electron binary..." while it installs — so
+ * only the last non-empty line that starts with "{" is parsed. When no line looks like JSON
+ * the error names what the child printed.
+ */
+export function probeJson(stdout) {
+  const lines = String(stdout ?? '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+  const line = lines.findLast(candidate => candidate.startsWith('{'));
+  if (line === undefined) {
+    throw new Error(
+      `Electron Node probe printed no JSON line; its stdout was ${JSON.stringify(stdout)}`,
+    );
+  }
+  const result = JSON.parse(line);
+  if (typeof result?.version !== 'string' || typeof result?.fts5Delete !== 'boolean') {
+    throw new Error(
+      `Electron Node probe result needs a string version and a boolean fts5Delete; got ${JSON.stringify(line)}`,
+    );
+  }
+  return result;
+}
+
 // One-line JSON probe mode, launched inside Electron's Node:
 // ELECTRON_RUN_AS_NODE=1 electron scripts/audit/sqlite-floor.mjs --self
 function selfMode() {
@@ -73,7 +99,13 @@ function main() {
     process.exit(1);
   }
 
-  const electron = JSON.parse(run.stdout);
+  let electron;
+  try {
+    electron = probeJson(run.stdout);
+  } catch (error) {
+    console.error(`Electron Node probe failed: ${error.message}`);
+    process.exit(1);
+  }
   console.log(`Electron Node (via electron-node.mjs): ${describe(electron)}`);
 
   if (!electron.fts5Delete) {

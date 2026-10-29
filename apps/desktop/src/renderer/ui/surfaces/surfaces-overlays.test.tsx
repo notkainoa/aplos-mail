@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import type { ToastData } from '../props';
 import { Confirm, Dialog, Popover, Puck, Toast, ToastStack } from './index';
-import { visibleToasts } from './ToastStack';
+import { planToasts, visibleToasts } from './ToastStack';
 import {
   SUBJECT_300,
   EMAIL_80,
@@ -357,7 +357,8 @@ describe('ToastStack', () => {
     );
     assert.deepEqual(
       visibleToasts(list, 1).map(x => x.id),
-      ['1', '3'],
+      ['1', '3', '5'],
+      'the newest is never evicted, so the stack grows rather than lose it',
     );
     assert.deepEqual(
       visibleToasts([t('a'), t('b')], 0).map(x => x.id),
@@ -372,7 +373,7 @@ describe('ToastStack', () => {
     );
     assert.deepEqual(
       visibleToasts([...undos, t('p')], 1).map(x => x.id),
-      ['1', '2', '3', '4'],
+      ['1', '2', '3', '4', 'p'],
     );
   });
 
@@ -387,13 +388,60 @@ describe('ToastStack', () => {
     ];
     assert.deepEqual(
       visibleToasts(list, 0).map(x => x.id),
-      ['f1', 'u1', 'f2'],
+      ['f1', 'u1', 'f2', 'p3'],
     );
     const failures = [1, 2, 3, 4].map(n => t(`f${n}`, { persistent: true }));
     assert.deepEqual(
       visibleToasts([...failures, t('p')], 1).map(x => x.id),
-      ['f1', 'f2', 'f3', 'f4'],
+      ['f1', 'f2', 'f3', 'f4', 'p'],
     );
+  });
+
+  it('never evicts the newest toast: a plain notice after three Undo or failure toasts is shown', () => {
+    const list = [
+      t('u1', { undoable: true }),
+      t('f1', { persistent: true }),
+      t('u2', { undoable: true }),
+      t('moved'),
+    ];
+    const plan = planToasts(list, 0);
+    assert.deepEqual(
+      plan.shown.map(x => x.id),
+      ['u1', 'f1', 'u2', 'moved'],
+    );
+    assert.deepEqual(plan.dropped, []);
+    // An older plain toast is the one that goes, oldest first; the newest plain stays.
+    const mixed = planToasts([t('p1'), t('p2'), ...list], 0);
+    assert.deepEqual(
+      mixed.dropped.map(x => x.id),
+      ['p1', 'p2'],
+    );
+    assert.deepEqual(
+      mixed.shown.map(x => x.id),
+      ['u1', 'f1', 'u2', 'moved'],
+    );
+  });
+
+  it('caps the mounted toasts at six: the oldest Undo and failure toasts are hidden, not dismissed', () => {
+    const many = [1, 2, 3, 4, 5, 6, 7, 8].map(n => t(`f${n}`, { persistent: true }));
+    const plan = planToasts(many, 0);
+    assert.deepEqual(
+      plan.shown.map(x => x.id),
+      ['f3', 'f4', 'f5', 'f6', 'f7', 'f8'],
+    );
+    assert.deepEqual(plan.dropped, [], 'hidden ones are not dismissed');
+    assert.deepEqual(
+      planToasts(many, 1).shown.map(x => x.id),
+      ['f4', 'f5', 'f6', 'f7', 'f8'],
+      'the undo-send notice counts toward the six',
+    );
+    // When newer ones close, the hidden ones come back.
+    assert.deepEqual(
+      planToasts(many.slice(0, 7), 0).shown.map(x => x.id),
+      ['f2', 'f3', 'f4', 'f5', 'f6', 'f7'],
+    );
+    const html = render(<ToastStack toasts={many} onAction={noop} onDismiss={noop} />);
+    assert.equal(count(html, 'class="ui-toast"'), 6);
   });
 
   it('renders a polite stack and the undo-send notice inside it, counted in the three', () => {

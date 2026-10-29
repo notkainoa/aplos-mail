@@ -14,7 +14,7 @@ import {
 } from '@aplos/engine/ports';
 import { GmailClient, isStop, type GmailDeps, type GmailRequest } from './client';
 import { METADATA_HEADERS, messageFacts, type GmailMessage } from './facts';
-import { settleFailures } from './failures';
+import { RETRY_SCOPE, dueRetries, readSchedule, settleFailures } from './failures';
 
 /**
  * First sync P0-P5 (ARCH 5.1, plan 20 PV3) as pure planning plus bounded steps. Each step lists or fetches one chunk
@@ -322,6 +322,23 @@ const IMMEDIATE: ReadonlySet<PlanTrigger> = new Set([
   'reset',
 ]);
 
+/** When the next history poll is due: at once for an immediate trigger, else one jittered interval after the last. */
+function pollDue(history: SyncState, trigger: PlanTrigger, env: PlanInput['env']): number {
+  if (IMMEDIATE.has(trigger)) return env.now;
+  const interval = pollInterval(env);
+  const due = history.updatedAt + Math.round(interval * (1 + jitter(history.updatedAt)));
+  return Math.max(env.now, due);
+}
+
+/** A re-seeded cursor after a reset delivers missed Inbox arrivals as `incremental`; a first sync is a `baseline`. */
+function resetOrigin(
+  history: SyncState | undefined,
+  memory: ReadonlyMap<string, string>,
+): PlannedStep['origin'] {
+  if (history?.phase !== 'reset') return 'baseline';
+  return memory.has(LAST_SEEN_KEY) ? 'incremental' : 'resync';
+}
+
 /**
  * Pure: steps from committed state. The cursor comes first (P0); then the Inbox window (P1, continuing to 500 as P2);
  * the history poll at its cadence; and once the window is done, Sent (P3) and Inbox backfill (P5). P4 (body prefetch)
@@ -331,12 +348,15 @@ export function plan(input: PlanInput): PlannedStep[] {
   const { states, trigger, env } = input;
   const history = stateOf(states, 'history');
   if (!history?.cursor) {
+    // A P0 whose missed-arrivals check met a failed fetch (`pending`) tries again at the poll cadence, never at once.
+    const retry = history?.pending?.length ? { notBefore: pollDue(history, trigger, env) } : {};
     return [
       {
         scope: 'history',
         lane: 'incremental',
-        origin: history?.phase === 'reset' ? 'resync' : 'baseline',
+        origin: resetOrigin(history, input.memory),
         trigger,
+        ...retry,
       },
     ];
   }
@@ -350,16 +370,12 @@ export function plan(input: PlanInput): PlannedStep[] {
       steps.push({ scope: 'window:inbox', lane: 'backfill', origin: 'backfill', trigger });
     else steps.push({ scope: 'window:inbox', lane: 'incremental', origin: 'baseline', trigger });
   }
-  const interval = pollInterval(env);
-  const due = IMMEDIATE.has(trigger)
-    ? env.now
-    : history.updatedAt + Math.round(interval * (1 + jitter(history.updatedAt)));
   steps.push({
     scope: 'history',
     lane: 'incremental',
     origin: 'incremental',
     trigger,
-    notBefore: Math.max(env.now, due),
+    notBefore: pollDue(history, trigger, env),
   });
   if (window?.phase === 'done') {
     const sent = stateOf(states, 'sent:recent');
@@ -368,6 +384,9 @@ export function plan(input: PlanInput): PlannedStep[] {
     const backfill = stateOf(states, 'backfill:inbox');
     if (backfill && backfill.phase !== 'done')
       steps.push({ scope: 'backfill:inbox', lane: 'backfill', origin: 'backfill', trigger });
+    // A quarantined message due for another try (by sync passes, so never a tight loop); quiet, like backfill.
+    if (dueRetries(readSchedule(input.memory)).length)
+      steps.push({ scope: RETRY_SCOPE, lane: 'backfill', origin: 'backfill', trigger });
   }
   return steps;
 }
@@ -444,6 +463,14 @@ export const REGAINED_KEY = 'inbox.regained';
  * `baseline_done_at` or seed Sent and backfill, and the account would stay `syncing` with 50 threads (prov-gov-attack-04).
  */
 export const FIRST_WINDOW_KEY = 'inbox.firstWindow';
+
+/**
+ * provider_memory: epoch ms of the last history pass that worked, written when a cursor reset begins after the baseline
+ * and cleared by the P0 step that re-seeds the cursor. While it is set, that step is planned as `incremental` (the one
+ * origin the store's notification hook treats as new mail) and delivers the Inbox mail newer than this time that the
+ * device lacks (`missedArrivals`); the resync that follows is `resync` and stays quiet.
+ */
+export const LAST_SEEN_KEY = 'inbox.lastSeen';
 
 /** The date of an answered entry's listed message: its own, or a thread's newest message in the listed folder. */
 function listedDate(entry: string, facts: readonly MessageFacts[], folder: string): number {
