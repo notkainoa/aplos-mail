@@ -1,14 +1,19 @@
-import { createHash } from 'node:crypto';
 import {
   ProviderError,
   type AdapterContext,
-  type Logger,
   type SyncState,
   type WorkflowChannel,
   type WorkflowCopy,
 } from '@aplos/engine/ports';
 import { GmailClient, type GmailDeps } from './client';
-import { isDeviceId } from './workflow-merge';
+import {
+  APP_LABEL,
+  buildCopyMessage,
+  copyMessageId,
+  logSkipped,
+  parseCopyMessage,
+  remember,
+} from './workflow-message';
 
 /**
  * The Gmail workflow channel (plan 20 PV3, D17, D18; ARCH 6.5, 13.1; DECISIONS M29): Done, Later, todos, reminders and
@@ -17,7 +22,8 @@ import { isDeviceId } from './workflow-merge';
  * Electron coupling, and with their two defects fixed:
  * - D17: a round no longer full-fetches every copy. It is gated on `history.list?labelId=<app label>` (2 units) and
  *   downloads only message ids this process has not already read; a copy is immutable, so its id is enough.
- * - D18: the full read (first round of a process, a lost cursor) pages `messages.list` past 50 copies.
+ * - D18: the full read (first round of a process, a lost cursor) pages `messages.list` past 50 copies until Gmail says
+ *   there are no more; a read cut short by the page cap resumes next round and does not count as complete.
  * A stale or duplicate copy can never shadow a newer one, because nothing here picks "the newest copy": every copy ever
  * read is merged per key by a logical clock (`workflow-merge.ts`) and the merged view is kept for the process.
  *
@@ -28,9 +34,14 @@ import { isDeviceId } from './workflow-merge';
  *      history id, `pending` = ids to retry) and the units spent. Costs: no app label yet, 1 unit (`labels.list`, once
  *      per process when found); a round with no label change, 2 units (one `history.list`); a full read, 1 + 1 + 5 per
  *      100 copies + 60 per copy. Throws on a pause or a stop-class refusal, so the actor commits nothing and the next
- *      round resumes from the old cursor, skipping what this process already read.
- *    - `put(copy, ctx)` inserts one copy (`messages.insert`, 25, kind `write`, never re-sent). A repeated `put` of the
- *      same copy first looks for it by its content-derived Message-ID (5), so an uncertain insert lands once.
+ *      round resumes from the old cursor; copies it already downloaded are handed over then.
+ *    - A download that fails is retried through `pending` (a permanent failure at most 3 times, then given up and
+ *      logged). When more ids fail than `pending` holds, the round keeps its old cursor so none is skipped. A history
+ *      read longer than the page cap advances to the last record it read.
+ *    - `put(copy, ctx, { retry })` inserts one copy (`messages.insert`, 25, kind `write`, never re-sent). A repeated
+ *      `put` of the same copy in this process, or one the caller marks `retry` (a sealed copy it kept across a
+ *      restart), first looks for it by its content-derived Message-ID (5), so an uncertain insert lands once; a first
+ *      `put` pays nothing extra. A 404 from history or insert drops the cached label id and resolves it once more.
  *    - `compact(ids, ctx)` trashes superseded copies (`gmail.modify` cannot delete), 20 each, and refuses ids it never
  *      read as an Aplos copy, so user mail filed under the label is never touched.
  *
@@ -55,22 +66,40 @@ import { isDeviceId } from './workflow-merge';
  * Gmail account at the secondary budget. The adapter wires it (paced, like its other calls) in the lease PR.
  */
 
-export const APP_LABEL = 'Aplos Mail Data';
-export const MARKER_HEADER = 'X-Aplos-Workflow';
-export const MARKER_VALUE = '2';
-const DEVICE_HEADER = 'X-Aplos-Device';
-const BEGIN = '-----BEGIN APLOS WORKFLOW-----';
-const END = '-----END APLOS WORKFLOW-----';
+export { APP_LABEL };
+
 /**
- * The insert path the legacy transport used and the emulator serves. Google's discovery document lists
- * `messages.insert` as `POST users/{userId}/messages`; which one live Gmail accepts is an open live check.
+ * TODO(live): the insert path the legacy transport used and the emulator serves. Google's discovery document lists
+ * `messages.insert` as `POST users/{userId}/messages`; which one live Gmail accepts must be checked on the live runner
+ * before the channel ships, and the emulator fixed to match.
  */
 export const INSERT_PATH = '/messages/insert';
-const LIST_PAGE = 100;
-const MAX_LIST_PAGES = 20;
-const HISTORY_PAGE = 500;
-const MAX_HISTORY_PAGES = 20;
-const MAX_PENDING = 500;
+
+export interface TransportLimits {
+  listPage: number;
+  /** Pages one round lists before it hands back and resumes next round (100,000 copies at the default). */
+  listPages: number;
+  historyPage: number;
+  historyPages: number;
+  /** `SyncState.pending` holds at most this many ids. */
+  maxPending: number;
+  /** Tries a copy whose download fails permanently (not 404) gets before it is given up. */
+  partTries: number;
+}
+
+export const TRANSPORT_LIMITS: TransportLimits = {
+  listPage: 100,
+  listPages: 1_000,
+  historyPage: 500,
+  historyPages: 20,
+  maxPending: 500,
+  partTries: 3,
+};
+
+/** Bounds on what the transport remembers per process. */
+const CAP_SEEN = 50_000;
+const CAP_ATTEMPTED = 64;
+const CAP_FAILURES = 2_000;
 const LANE = 'enrichment' as const;
 const LABEL_FIELDS = 'labels(id,name,type)';
 const HISTORY_FIELDS =
@@ -86,7 +115,11 @@ interface GmailLabel {
 }
 
 interface HistoryPage {
-  history?: { messages?: { id?: string }[]; messagesAdded?: { message?: { id?: string } }[] }[];
+  history?: {
+    id?: string;
+    messages?: { id?: string }[];
+    messagesAdded?: { message?: { id?: string } }[];
+  }[];
   nextPageToken?: string;
   historyId?: string;
 }
@@ -97,10 +130,16 @@ interface RawMessage {
   raw?: string;
 }
 
-/** What a round decided to download, and the cursor the round ends on. */
+/** What a round decided to download, the cursor it ends on, and whether this was a complete read. */
 interface Changed {
   ids: string[];
-  cursor: string;
+  cursor?: string;
+  complete: boolean;
+}
+
+export interface PutOptions {
+  /** The caller may have put this exact copy before (in an earlier process): look for it first. */
+  retry?: boolean;
 }
 
 const isOurLabel = (l: GmailLabel) =>
@@ -108,79 +147,17 @@ const isOurLabel = (l: GmailLabel) =>
   typeof l.id === 'string' &&
   l.name?.toLowerCase() === APP_LABEL.toLowerCase();
 
-/** The copy's Message-ID, derived from its sealed bytes (random IV inside), so a re-sent `put` finds its own copy. */
-export function copyMessageId(data: string): string {
-  return `<wf-${createHash('sha256').update(data).digest('hex').slice(0, 40)}@aplos-mail.invalid>`;
-}
-
-const wrap = (text: string) => text.match(/.{1,76}/g)?.join('\r\n') ?? '';
-
-/** The RFC 822 copy: only the label, so it never shows as new mail; the sealed blob armoured in a text body. */
-export function buildCopyMessage(copy: WorkflowCopy, address: string): string {
-  // Everything that reaches a header or the armour is checked, so no value can end the block or add a header.
-  if (!isDeviceId(copy.deviceId)) throw new Error('Invalid device id for a workflow copy');
-  if (!/^[\w.-]+$/.test(copy.data)) throw new Error('A workflow copy must be sealed');
-  if (!Number.isSafeInteger(copy.writtenAt) || copy.writtenAt < 0)
-    throw new Error('Invalid write time for a workflow copy');
-  const lines = [
-    `From: Aplos Mail <${address}>`,
-    `To: ${address}`,
-    'Subject: Aplos sync data - do not edit',
-    `Date: ${new Date(copy.writtenAt).toUTCString()}`,
-    `Message-ID: ${copyMessageId(copy.data)}`,
-    'MIME-Version: 1.0',
-    `${MARKER_HEADER}: ${MARKER_VALUE}`,
-    `${DEVICE_HEADER}: ${copy.deviceId}`,
-    'Content-Type: text/plain; charset=us-ascii',
-    'Content-Transfer-Encoding: 7bit',
-    '',
-    'Aplos Mail keeps encrypted Done, Later and reminder data for this account here. Please leave it in place.',
-    '',
-    BEGIN,
-    wrap(copy.data),
-    END,
-    '',
-  ];
-  return lines.join('\r\n');
-}
-
-function headerMap(block: string): Map<string, string> {
-  const out = new Map<string, string>();
-  for (const line of block.replace(/\r?\n[ \t]+/g, ' ').split(/\r?\n/)) {
-    const colon = line.indexOf(':');
-    if (colon > 0) out.set(line.slice(0, colon).trim().toLowerCase(), line.slice(colon + 1).trim());
-  }
-  return out;
-}
-
-/** The sealed blob and device hint of an Aplos copy, or undefined for anything else (user mail, a foreign format). */
-export function parseCopyMessage(raw: string): { data: string; device: string } | undefined {
-  const split = /\r?\n\r?\n/.exec(raw);
-  if (!split) return undefined;
-  const headers = headerMap(raw.slice(0, split.index));
-  if (headers.get(MARKER_HEADER.toLowerCase()) !== MARKER_VALUE) return undefined;
-  const body = raw.slice(split.index + split[0].length);
-  const start = body.indexOf(BEGIN);
-  const end = body.indexOf(END, start + BEGIN.length);
-  if (start === -1 || end === -1) return undefined;
-  const data = body.slice(start + BEGIN.length, end).replace(/\s+/g, '');
-  if (!data) return undefined;
-  return { data, device: headers.get(DEVICE_HEADER.toLowerCase()) ?? '' };
-}
-
-/** A copy that is not usable, logged as a refused read with a reason code: no id, no content, no key material. */
-export function logSkipped(log: Logger, reason: string): void {
-  log.event('sync.gmail.request_refused', {
-    error: {
-      class: 'permanent',
-      provider: 'gmail',
-      method: 'gmail.messages.get',
-      reason: `workflowCopy.${reason}`,
-    },
-  });
-}
-
 const is404 = (error: unknown) => error instanceof ProviderError && error.error.status === 404;
+
+function historyIdsOf(res: HistoryPage, into: Set<string>): string | undefined {
+  let last: string | undefined;
+  for (const record of res.history ?? []) {
+    for (const m of record.messages ?? []) if (m.id) into.add(m.id);
+    for (const a of record.messagesAdded ?? []) if (a.message?.id) into.add(a.message.id);
+    if (record.id) last = record.id;
+  }
+  return last;
+}
 
 export class GmailWorkflowTransport implements WorkflowChannel {
   private labelId?: string;
@@ -188,18 +165,26 @@ export class GmailWorkflowTransport implements WorkflowChannel {
   private readonly seen = new Map<string, Seen>();
   /** False until a full read completed in this process: until then a round lists every copy. */
   private primed = false;
+  /** A full read in progress: the cursor taken before it started and where its listing resumes. */
+  private listing?: { cursor: string; pageToken?: string };
   /** Message-IDs `put` has sent at least once. */
-  private readonly attempted = new Set<string>();
+  private readonly attempted = new Map<string, true>();
+  /** Permanent download failures per id. */
+  private readonly failures = new Map<string, number>();
   /**
    * Copies downloaded but not yet handed out. A round that a pause cuts short throws, and its copies are already in
    * `seen`, so they wait here for the next round instead of being skipped for the rest of the process.
    */
   private readonly undelivered: WorkflowCopy[] = [];
+  private readonly limits: TransportLimits;
 
   constructor(
     private readonly deps: GmailDeps,
     private readonly address: string,
-  ) {}
+    limits: Partial<TransportLimits> = {},
+  ) {
+    this.limits = { ...TRANSPORT_LIMITS, ...limits };
+  }
 
   async round(
     state: SyncState,
@@ -211,36 +196,37 @@ export class GmailWorkflowTransport implements WorkflowChannel {
     const changed = await this.changedIds(client, state, label);
     const retry = (state.pending ?? []).filter(id => !this.seen.has(id));
     const failed = await this.fetchCopies(client, [...new Set([...changed.ids, ...retry])], ctx);
-    this.primed = true;
+    const overflow = failed.length > this.limits.maxPending;
+    if (changed.complete && !overflow) this.primed = true;
+    const cursor = overflow || !changed.complete ? state.cursor : changed.cursor;
     return {
       copies: this.undelivered.splice(0),
-      nextState: this.next(state, ctx, changed.cursor, failed),
+      nextState: this.next(state, ctx, cursor, failed),
       costUnits: client.spent,
     };
   }
 
-  async put(copy: WorkflowCopy, ctx: AdapterContext): Promise<string> {
+  async put(copy: WorkflowCopy, ctx: AdapterContext, options: PutOptions = {}): Promise<string> {
     const client = new GmailClient(this.deps, ctx);
     const label = await this.ensureLabel(client);
     const messageId = copyMessageId(copy.data);
-    if (this.attempted.has(messageId)) {
+    if (options.retry || this.attempted.has(messageId)) {
       const found = await this.findOwn(client, label, messageId);
       if (found) return found;
     }
-    this.attempted.add(messageId);
+    remember(this.attempted, messageId, true, CAP_ATTEMPTED);
     const raw = Buffer.from(buildCopyMessage(copy, this.address)).toString('base64url');
-    const created = await client.call<{ id?: string }>({
-      method: 'gmail.messages.insert',
-      path: INSERT_PATH,
-      query: { internalDateSource: 'receivedTime' },
-      httpMethod: 'POST',
-      body: { raw, labelIds: [label] },
-      kind: 'write',
-      lane: LANE,
-    });
-    if (!created?.id) throw new Error('messages.insert returned no id');
-    this.seen.set(created.id, 'copy');
-    return created.id;
+    let id: string;
+    try {
+      id = await this.insert(client, raw, label);
+    } catch (error) {
+      // A 404 was not applied: the label went away. Resolve it once more and try once more.
+      if (!is404(error)) throw error;
+      this.labelId = undefined;
+      id = await this.insert(client, raw, await this.ensureLabel(client));
+    }
+    this.see(id, 'copy');
+    return id;
   }
 
   async compact(remoteIds: string[], ctx: AdapterContext): Promise<void> {
@@ -251,9 +237,8 @@ export class GmailWorkflowTransport implements WorkflowChannel {
     }
   }
 
-  /** Whether `id` was read (or written) by this process as an Aplos copy; compaction trusts nothing else. */
-  isCopy(id: string): boolean {
-    return this.seen.get(id) === 'copy';
+  private see(id: string, what: Seen): void {
+    remember(this.seen, id, what, CAP_SEEN);
   }
 
   private next(
@@ -267,9 +252,23 @@ export class GmailWorkflowTransport implements WorkflowChannel {
       ...(cursor ? { cursor } : {}),
       generation: ctx.generation,
       updatedAt: ctx.clock.now(),
-      ...(failed.length ? { pending: failed.slice(0, MAX_PENDING) } : {}),
+      ...(failed.length ? { pending: failed.slice(0, this.limits.maxPending) } : {}),
       ...(state.phase ? { phase: state.phase } : {}),
     };
+  }
+
+  private async insert(client: GmailClient, raw: string, label: string): Promise<string> {
+    const created = await client.call<{ id?: string }>({
+      method: 'gmail.messages.insert',
+      path: INSERT_PATH,
+      query: { internalDateSource: 'receivedTime' },
+      httpMethod: 'POST',
+      body: { raw, labelIds: [label] },
+      kind: 'write',
+      lane: LANE,
+    });
+    if (!created?.id) throw new Error('messages.insert returned no id');
+    return created.id;
   }
 
   private async findLabel(client: GmailClient): Promise<string | undefined> {
@@ -312,38 +311,72 @@ export class GmailWorkflowTransport implements WorkflowChannel {
     try {
       return await this.historyIds(client, state.cursor, label);
     } catch (error) {
-      if (is404(error)) return this.fullList(client, label);
-      throw error;
+      if (!is404(error)) throw error;
     }
+    // The cursor expired, or the label id is stale (deleted and made again): resolve the label once, then read it all.
+    this.labelId = undefined;
+    this.listing = undefined;
+    this.primed = false;
+    const fresh = await this.findLabel(client);
+    if (!fresh) return { ids: [], complete: false };
+    return this.fullList(client, fresh);
   }
 
   private async historyIds(client: GmailClient, cursor: string, label: string): Promise<Changed> {
     const ids = new Set<string>();
     let pageToken: string | undefined;
     let latest = cursor;
-    for (let page = 0; page < MAX_HISTORY_PAGES; page++) {
+    let lastRecord: string | undefined;
+    for (let page = 0; page < this.limits.historyPages; page++) {
       const res = await client.call<HistoryPage>({
         method: 'gmail.history.list',
         path: '/history',
-        query: { startHistoryId: cursor, labelId: label, maxResults: HISTORY_PAGE, pageToken },
+        query: {
+          startHistoryId: cursor,
+          labelId: label,
+          maxResults: this.limits.historyPage,
+          pageToken,
+        },
         fields: HISTORY_FIELDS,
         lane: LANE,
       });
-      for (const record of res.history ?? []) {
-        for (const m of record.messages ?? []) if (m.id) ids.add(m.id);
-        for (const a of record.messagesAdded ?? []) if (a.message?.id) ids.add(a.message.id);
-      }
+      lastRecord = historyIdsOf(res, ids) ?? lastRecord;
       if (res.historyId) latest = res.historyId;
       pageToken = res.nextPageToken;
       if (!pageToken) break;
     }
-    // More pages than the cap: keep the old cursor so the next round reads on; seen ids are skipped.
-    if (pageToken) latest = cursor;
-    return { ids: [...ids].filter(id => !this.seen.has(id)), cursor: latest };
+    // More pages than the cap: the next round reads on from the last record read here.
+    if (pageToken) latest = lastRecord ?? cursor;
+    return { ids: [...ids].filter(id => !this.seen.has(id)), cursor: latest, complete: true };
   }
 
   /** D18: every copy under the label, past the first 50. The cursor is taken first, so nothing slips between. */
   private async fullList(client: GmailClient, label: string): Promise<Changed> {
+    const listing = this.listing ?? { cursor: await this.profileCursor(client) };
+    this.listing = listing;
+    const ids: string[] = [];
+    for (let page = 0; page < this.limits.listPages; page++) {
+      const res = await client.call<{ messages?: { id?: string }[]; nextPageToken?: string }>({
+        method: 'gmail.messages.list',
+        path: '/messages',
+        query: {
+          labelIds: [label],
+          maxResults: this.limits.listPage,
+          pageToken: listing.pageToken,
+        },
+        fields: 'messages(id),nextPageToken',
+        lane: LANE,
+      });
+      for (const m of res.messages ?? []) if (m.id && !this.seen.has(m.id)) ids.push(m.id);
+      listing.pageToken = res.nextPageToken;
+      if (!listing.pageToken) break;
+    }
+    if (listing.pageToken) return { ids, complete: false };
+    this.listing = undefined;
+    return { ids, cursor: listing.cursor, complete: true };
+  }
+
+  private async profileCursor(client: GmailClient): Promise<string> {
     const profile = await client.call<{ historyId?: string }>({
       method: 'gmail.getProfile',
       path: '/profile',
@@ -351,21 +384,7 @@ export class GmailWorkflowTransport implements WorkflowChannel {
       lane: LANE,
     });
     if (!profile.historyId) throw new Error('getProfile returned no historyId');
-    const ids: string[] = [];
-    let pageToken: string | undefined;
-    for (let page = 0; page < MAX_LIST_PAGES; page++) {
-      const res = await client.call<{ messages?: { id?: string }[]; nextPageToken?: string }>({
-        method: 'gmail.messages.list',
-        path: '/messages',
-        query: { labelIds: [label], maxResults: LIST_PAGE, pageToken },
-        fields: 'messages(id),nextPageToken',
-        lane: LANE,
-      });
-      for (const m of res.messages ?? []) if (m.id && !this.seen.has(m.id)) ids.push(m.id);
-      pageToken = res.nextPageToken;
-      if (!pageToken) break;
-    }
-    return { ids, cursor: profile.historyId };
+    return profile.historyId;
   }
 
   private async fetchCopies(
@@ -390,27 +409,44 @@ export class GmailWorkflowTransport implements WorkflowChannel {
       );
       parts.forEach((part, n) => {
         const id = chunk[n];
-        if (part.ok) return this.take(id, part.data, ctx);
-        if (part.error.error.status === 404 || part.error.error.class === 'permanent')
-          return this.seen.set(id, 'gone');
-        failed.push(id);
+        if (part.ok) this.take(id, part.data, ctx);
+        else if (this.failedPart(id, part.error, ctx)) failed.push(id);
       });
     }
     return failed;
   }
 
+  /** True when the id should be tried again: transient failures always, permanent ones up to `partTries`. */
+  private failedPart(id: string, error: ProviderError, ctx: AdapterContext): boolean {
+    if (error.error.status === 404) {
+      this.see(id, 'gone');
+      return false;
+    }
+    if (error.error.class !== 'permanent') return true;
+    const tries = (this.failures.get(id) ?? 0) + 1;
+    if (tries < this.limits.partTries) {
+      remember(this.failures, id, tries, CAP_FAILURES);
+      return true;
+    }
+    this.failures.delete(id);
+    this.see(id, 'gone');
+    logSkipped(ctx.log, 'unreadable');
+    return false;
+  }
+
   private take(id: string, message: RawMessage, ctx: AdapterContext): void {
+    this.failures.delete(id);
     const raw =
       typeof message.raw === 'string'
         ? Buffer.from(message.raw, 'base64url').toString('latin1')
         : '';
     const parsed = parseCopyMessage(raw);
     if (!parsed) {
-      this.seen.set(id, 'foreign');
+      this.see(id, 'foreign');
       logSkipped(ctx.log, 'foreign');
       return;
     }
-    this.seen.set(id, 'copy');
+    this.see(id, 'copy');
     this.undelivered.push({
       remoteId: id,
       deviceId: parsed.device,
@@ -432,7 +468,7 @@ export class GmailWorkflowTransport implements WorkflowChannel {
       lane: LANE,
     });
     const id = res.messages?.[0]?.id;
-    if (id) this.seen.set(id, 'copy');
+    if (id) this.see(id, 'copy');
     return id;
   }
 
@@ -449,6 +485,6 @@ export class GmailWorkflowTransport implements WorkflowChannel {
     } catch (error) {
       if (!is404(error)) throw error;
     }
-    this.seen.set(id, 'gone');
+    this.see(id, 'gone');
   }
 }

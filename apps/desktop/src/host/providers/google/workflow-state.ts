@@ -8,19 +8,22 @@ import type {
   WorkflowChannel,
   WorkflowCopy,
 } from '@aplos/engine/ports';
-import { logSkipped } from './workflow';
 import {
-  dominated,
   highWater,
   isDeviceId,
+  MAX_RECORDS,
   mergeInto,
   nextStamp,
   parsePayload,
+  RETENTION_MS,
+  settled,
+  supersededBy,
   type JsonValue,
   type Stamp,
   type WorkflowPayload,
   type WorkflowRecord,
 } from './workflow-merge';
+import { logSkipped, remember } from './workflow-message';
 import { channelKey, open, seal, type ChannelKey } from './workflow-seal';
 
 /**
@@ -29,6 +32,11 @@ import { channelKey, open, seal, type ChannelKey } from './workflow-seal';
  * records as a new sealed copy of the whole view. A copy that is not an Aplos copy, was sealed under another key or for
  * another account, is damaged or does not validate is skipped and logged by reason only; it never stops the round and
  * is never compacted away. When the data key is unavailable, copies are held and opened on a later call.
+ *
+ * Safety of the only readable copy: `write` leaves out settled records past the retention floor (`workflow-merge.ts`),
+ * refuses a view larger than readers accept, and opens and validates its own sealed copy before sending it; only a copy
+ * that passed that check can supersede others, and `compact` trashes only copies it supersedes. Per copy it remembers
+ * one flag (superseded or not), for at most `CAP_COPIES` copies.
  */
 
 export interface WorkflowEntry {
@@ -72,9 +80,13 @@ export interface WorkflowStateOptions {
   device: DeviceId;
   /** The account's address: sealed copies are bound to it. */
   address: string;
+  /** Readers' record cap; tests lower it. */
+  maxRecords?: number;
 }
 
 const ZERO: Stamp = { at: 0, gen: 0, device: '' };
+const CAP_COPIES = 10_000;
+const CAP_REJECTED = 10_000;
 const byKey = (a: WorkflowRecord, b: WorkflowRecord) =>
   a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 
@@ -87,19 +99,32 @@ export function createWorkflowStateChannel(options: WorkflowStateOptions): Workf
   return new StateChannel(options);
 }
 
+interface Published {
+  remoteId: string;
+  records: Map<string, WorkflowRecord>;
+  floor: number;
+}
+
 class StateChannel implements WorkflowStateChannel {
-  private readonly merged = new Map<string, WorkflowRecord>();
-  /** Opened copies by remote id: their records, for compaction. */
-  private readonly opened = new Map<string, WorkflowRecord[]>();
-  private readonly rejected = new Set<string>();
+  /** Every key's winner over every copy read, before retention filtering. */
+  private readonly winners = new Map<string, WorkflowRecord>();
+  /** The highest floor seen, and the keys carried by copies written at that floor. */
+  private floor = 0;
+  private floorKeys = new Set<string>();
+  /** Opened copies by remote id: whether the last validated write supersedes it. */
+  private readonly opened = new Map<string, boolean>();
+  private readonly rejected = new Map<string, true>();
   private readonly waiting = new Map<string, WorkflowCopy>();
   private high: Stamp = ZERO;
-  private published?: { remoteId: string; view: Map<string, WorkflowRecord> };
+  private published?: Published;
+  private readonly maxRecords: number;
 
-  constructor(private readonly options: WorkflowStateOptions) {}
+  constructor(private readonly options: WorkflowStateOptions) {
+    this.maxRecords = options.maxRecords ?? MAX_RECORDS;
+  }
 
   view(): WorkflowRecord[] {
-    return [...this.merged.values()].sort(byKey);
+    return [...this.winners.values()].filter(r => this.visible(r)).sort(byKey);
   }
 
   async read(state: SyncState, ctx: AdapterContext): Promise<WorkflowRead> {
@@ -120,21 +145,13 @@ class StateChannel implements WorkflowStateChannel {
     }
     const key = await this.key();
     if (!key) return { changed: [], skipped: 0, waiting: this.waiting.size };
-    const records: WorkflowRecord[] = [];
+    const before = new Map(this.view().map(r => [r.key, r]));
     let skipped = 0;
     for (const [id, copy] of this.waiting) {
       this.waiting.delete(id);
-      const payload = this.openCopy(copy, key, log);
-      if (!payload) {
-        this.rejected.add(id);
-        skipped++;
-        continue;
-      }
-      this.opened.set(id, payload.records);
-      records.push(...payload.records);
+      if (!this.take(id, copy, key, log)) skipped++;
     }
-    const changed = mergeInto(this.merged, records).sort(byKey);
-    this.high = highWater(records, this.high);
+    const changed = this.view().filter(r => before.get(r.key) !== r);
     return { changed, skipped, waiting: 0 };
   }
 
@@ -144,33 +161,94 @@ class StateChannel implements WorkflowStateChannel {
       throw new Error('The data key is unavailable, so workflow changes cannot be shared yet');
     const now = ctx.clock.now();
     const records = entries.map(entry => this.stamp(entry, now));
-    mergeInto(this.merged, records);
+    mergeInto(this.winners, records);
+    const floor = Math.max(this.floor, now - RETENTION_MS);
     const payload: WorkflowPayload = {
       v: 2,
       device: this.options.device,
       writtenAt: now,
-      records: this.view(),
+      floor,
+      records: this.view().filter(r => !(r.stamp.at <= floor && settled(r))),
     };
-    const data = seal(payload, key, this.options.address);
+    const data = this.sealChecked(payload, key);
+    const covered = [...this.opened.keys()];
     const remoteId = await this.options.transport.put(
       { deviceId: this.options.device, writtenAt: now, data },
       ctx,
     );
-    this.opened.set(remoteId, payload.records);
-    this.published = { remoteId, view: new Map(payload.records.map(r => [r.key, r])) };
+    this.adopt(payload);
+    for (const id of covered) if (this.opened.has(id)) this.opened.set(id, true);
+    remember(this.opened, remoteId, false, CAP_COPIES);
+    this.published = {
+      remoteId,
+      records: new Map(payload.records.map(r => [r.key, r])),
+      floor,
+    };
     return { remoteId, records };
   }
 
   async compact(ctx: AdapterContext): Promise<number> {
     const published = this.published;
-    if (!published) return 0;
+    if (!published || this.view().length > this.maxRecords) return 0;
     const superseded = [...this.opened.entries()]
-      .filter(([id, records]) => id !== published.remoteId && dominated(records, published.view))
+      .filter(([id, flag]) => flag && id !== published.remoteId)
       .map(([id]) => id);
     if (!superseded.length) return 0;
     await this.options.transport.compact(superseded, ctx);
     for (const id of superseded) this.opened.delete(id);
     return superseded.length;
+  }
+
+  /** Retention (`RETENTION_MS`): what a reader keeps given the highest floor it has seen. */
+  private visible(r: WorkflowRecord): boolean {
+    if (r.stamp.at > this.floor) return true;
+    return !settled(r) && this.floorKeys.has(r.key);
+  }
+
+  /** Records a copy's floor and keys, so every device filters by the same rule. */
+  private adopt(payload: WorkflowPayload): void {
+    const floor = payload.floor ?? 0;
+    if (floor < this.floor || floor === 0) return;
+    if (floor > this.floor) {
+      this.floor = floor;
+      this.floorKeys = new Set();
+    }
+    for (const r of payload.records) this.floorKeys.add(r.key);
+  }
+
+  /**
+   * Seals and then opens and validates the result exactly as a reader would; a copy that would not come back whole
+   * is never sent, so it can never supersede (and get compacted against) the copies that are readable.
+   */
+  private sealChecked(payload: WorkflowPayload, key: ChannelKey): string {
+    if (payload.records.length > this.maxRecords)
+      throw new Error('Too much workflow data to share; older entries must expire first');
+    const data = seal(payload, key, this.options.address);
+    const back = open(data, key, this.options.address);
+    const parsed = back.ok ? parsePayload(back.plain, this.maxRecords) : undefined;
+    if (parsed?.records.length !== payload.records.length)
+      throw new Error('The sealed workflow copy did not read back');
+    return data;
+  }
+
+  /** Opens and merges one copy; false when it was skipped. */
+  private take(id: string, copy: WorkflowCopy, key: ChannelKey, log: Logger): boolean {
+    const payload = this.openCopy(copy, key, log);
+    if (!payload) {
+      remember(this.rejected, id, true, CAP_REJECTED);
+      return false;
+    }
+    mergeInto(this.winners, payload.records);
+    this.high = highWater(payload.records, this.high);
+    this.adopt(payload);
+    const published = this.published;
+    remember(
+      this.opened,
+      id,
+      published ? supersededBy(payload.records, published) : false,
+      CAP_COPIES,
+    );
+    return true;
   }
 
   private stamp(entry: WorkflowEntry, now: number): WorkflowRecord {
@@ -190,7 +268,7 @@ class StateChannel implements WorkflowStateChannel {
       logSkipped(log, opened.reason);
       return undefined;
     }
-    const payload = parsePayload(opened.plain);
+    const payload = parsePayload(opened.plain, this.maxRecords);
     if (!payload) logSkipped(log, 'invalid');
     return payload;
   }

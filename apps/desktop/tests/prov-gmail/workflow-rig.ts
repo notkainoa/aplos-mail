@@ -7,10 +7,10 @@ import { createHash } from 'node:crypto';
 import type { AdapterContext, KeyProvider, SyncState } from '@aplos/engine/ports';
 import { GMAIL_COSTS } from '../../src/host/providers/google/costs';
 import {
-  APP_LABEL,
-  buildCopyMessage,
   GmailWorkflowTransport,
+  type TransportLimits,
 } from '../../src/host/providers/google/workflow';
+import { APP_LABEL, buildCopyMessage } from '../../src/host/providers/google/workflow-message';
 import type { WorkflowPayload } from '../../src/host/providers/google/workflow-merge';
 import { channelKey, seal } from '../../src/host/providers/google/workflow-seal';
 import {
@@ -44,6 +44,15 @@ export interface DeviceOptions {
   reverseLists?: boolean;
   /** Fails the response of the next `messages.insert` after Gmail applied it (an uncertain write). */
   dropNextInsert?: boolean;
+  /** Answers this many raw message downloads with `status` instead of passing them on. */
+  failGets?: { status: number; times: number };
+  /** Answers the next `history.list` / `messages.insert` with 404 without passing it on. */
+  history404?: boolean;
+  insert404?: boolean;
+  /** The governor's batch size (1 sends every download as its own request). */
+  batch?: number;
+  limits?: Partial<TransportLimits>;
+  maxRecords?: number;
 }
 
 export interface Device {
@@ -69,9 +78,41 @@ function reversedList(text: string): string {
   return JSON.stringify(json);
 }
 
+const errorReply = (status: number) =>
+  new Response(
+    JSON.stringify({
+      error: {
+        code: status,
+        message: 'injected',
+        errors: [{ reason: status === 404 ? 'notFound' : 'invalid' }],
+      },
+    }),
+    { status, headers: { 'content-type': 'application/json' } },
+  );
+
+/** A fault the options inject for this request, consumed as it is used. */
+function injected(url: URL, options: DeviceOptions): Response | undefined {
+  if (options.history404 && url.pathname.endsWith('/history')) {
+    options.history404 = false;
+    return errorReply(404);
+  }
+  if (options.insert404 && url.pathname.endsWith('/messages/insert')) {
+    options.insert404 = false;
+    return errorReply(404);
+  }
+  const raw = /\/messages\/[^/]+$/.test(url.pathname) && url.searchParams.get('format') === 'raw';
+  if (raw && options.failGets && options.failGets.times > 0) {
+    options.failGets.times--;
+    return errorReply(options.failGets.status);
+  }
+  return undefined;
+}
+
 function deviceFetch(r: Rig, options: DeviceOptions): typeof fetch {
   return async (input, init) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
+    const fault = injected(url, options);
+    if (fault) return fault;
     const response = await r.emu.fetch(input, init);
     if (url.pathname.endsWith('/messages/insert') && options.dropNextInsert) {
       options.dropNextInsert = false;
@@ -87,7 +128,7 @@ function deviceFetch(r: Rig, options: DeviceOptions): typeof fetch {
 }
 
 export function device(r: Rig, id: string, options: DeviceOptions = {}): Device {
-  const governor = new StubGovernor(r.clock, r.tokens);
+  const governor = new StubGovernor(r.clock, r.tokens, 3_000, options.batch ?? 10);
   const log = new CaptureLog();
   const transport = new GmailWorkflowTransport(
     {
@@ -97,6 +138,7 @@ export function device(r: Rig, id: string, options: DeviceOptions = {}): Device 
       closed: new AbortController().signal,
     },
     r.account.address,
+    options.limits,
   );
   const keys = keysOf(options.keySeed ?? 'shared');
   const channel = createWorkflowStateChannel({
@@ -104,6 +146,7 @@ export function device(r: Rig, id: string, options: DeviceOptions = {}): Device 
     keys,
     device: id,
     address: r.account.address,
+    ...(options.maxRecords ? { maxRecords: options.maxRecords } : {}),
   });
   const ctx = (): AdapterContext => ({
     ...r.ctx(),

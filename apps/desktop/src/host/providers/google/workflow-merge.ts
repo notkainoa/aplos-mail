@@ -30,8 +30,22 @@ export interface WorkflowPayload {
   v: 2;
   device: DeviceId;
   writtenAt: number;
+  /** The writer's retention watermark (see `RETENTION_MS`); absent means 0. */
+  floor?: number;
   records: WorkflowRecord[];
 }
+
+/**
+ * Retention, so the view cannot grow until every write is too large to seal. A writer's `floor` is the highest floor it
+ * has seen, raised to `writtenAt - RETENTION_MS`, and it leaves out every *settled* record stamped at or before it: a
+ * thread back to New or Done with nothing else set, or any non-thread record (a lease claim renews every round, so a
+ * live one is never that old). Readers keep, among records at or before the highest floor they have seen, only those
+ * that are not settled and that some copy written at that highest floor still carries; so a device that was offline
+ * longer than the retention cannot bring back an old Later that a newer, since-dropped Done had replaced. The rule is a
+ * function of the set of copies read, never of their order.
+ */
+export const RETENTION_MS = 180 * 86_400_000;
+export const THREAD_PREFIX = 'thread:';
 
 export const MAX_RECORDS = 50_000;
 const MAX_KEY = 300;
@@ -96,6 +110,16 @@ export function nextStamp(high: Stamp, now: number, device: DeviceId): Stamp {
   return { at, gen: at === high.at ? high.gen + 1 : 0, device };
 }
 
+/** A record that says nothing a fresh replica needs once old: see `RETENTION_MS`. */
+export function settled(record: WorkflowRecord): boolean {
+  if (!record.key.startsWith(THREAD_PREFIX)) return true;
+  const v = record.value;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  return Object.entries(v).every(([field, x]) =>
+    field === 'status' ? x === 'new' || x === 'done' : x === null || x === false,
+  );
+}
+
 const isCount = (v: unknown): v is number =>
   typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 
@@ -119,27 +143,32 @@ function parseRecord(raw: unknown): WorkflowRecord | undefined {
  * Validates an opened payload. Any malformed record rejects the whole copy: it was authenticated, so a bad record means
  * a newer format or a broken writer, and taking half of it would merge a view its writer never had.
  */
-export function parsePayload(raw: unknown): WorkflowPayload | undefined {
+export function parsePayload(raw: unknown, maxRecords = MAX_RECORDS): WorkflowPayload | undefined {
   const p = raw as Partial<WorkflowPayload> | null;
   if (!p || typeof p !== 'object' || p.v !== 2) return undefined;
   if (!isDeviceId(p.device) || !isCount(p.writtenAt) || !Array.isArray(p.records)) return undefined;
-  if (p.records.length > MAX_RECORDS) return undefined;
+  if (p.floor !== undefined && !isCount(p.floor)) return undefined;
+  if (p.records.length > maxRecords) return undefined;
   const records: WorkflowRecord[] = [];
   for (const item of p.records) {
     const record = parseRecord(item);
     if (!record) return undefined;
     records.push(record);
   }
-  return { v: 2, device: p.device, writtenAt: p.writtenAt, records };
+  return { v: 2, device: p.device, writtenAt: p.writtenAt, floor: p.floor ?? 0, records };
 }
 
-/** True when every record of `copy` is matched or beaten in `view`: dropping the copy loses nothing. */
-export function dominated(
+/**
+ * True when dropping a copy loses nothing that `published` (a copy this device wrote and read back) does not carry:
+ * every record is matched or beaten there, or is at or before its floor and was left out of it on purpose.
+ */
+export function supersededBy(
   copy: readonly WorkflowRecord[],
-  view: ReadonlyMap<string, WorkflowRecord>,
+  published: { records: ReadonlyMap<string, WorkflowRecord>; floor: number },
 ): boolean {
   return copy.every(r => {
-    const held = view.get(r.key);
-    return held !== undefined && compareRecord(held, r) >= 0;
+    const held = published.records.get(r.key);
+    if (held) return compareRecord(held, r) >= 0;
+    return r.stamp.at <= published.floor;
   });
 }

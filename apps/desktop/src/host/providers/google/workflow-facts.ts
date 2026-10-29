@@ -3,6 +3,7 @@ import type { CommitInput, WorkflowFields, WorkflowWrite } from '@aplos/engine/s
 import {
   canonical,
   compareStamp,
+  THREAD_PREFIX,
   type JsonValue,
   type Stamp,
   type WorkflowRecord,
@@ -14,9 +15,12 @@ import {
  * replayed round commits once (the store treats a known op id as a no-op). Only what M29 syncs travels: status, Later,
  * due date, reminder and whether it fired, reply status, todo and hidden-from-Home. Ranking, lanes, bookmarks and the
  * due source stay per device.
+ *
+ * A record is a whole snapshot of the synced fields: a field it does not carry is cleared (New, nothing else set), so a
+ * replica that applies only the latest record ends exactly where one that applied every record in turn does.
  */
 
-export const THREAD_PREFIX = 'thread:';
+export { THREAD_PREFIX };
 
 export type SyncedFields = Pick<
   WorkflowFields,
@@ -29,6 +33,18 @@ export type SyncedFields = Pick<
   | 'todo'
   | 'hiddenFromHome'
 >;
+
+/** What a synced field is when a record does not carry it. */
+const CLEARED: SyncedFields = {
+  status: 'new',
+  laterUntil: null,
+  dueDate: null,
+  reminderAt: null,
+  reminderFiredAt: null,
+  replyStatus: null,
+  todo: null,
+  hiddenFromHome: null,
+};
 
 const STATUSES: ReadonlySet<string> = new Set(['new', 'done', 'later']);
 const MAX_TEXT = 4_000;
@@ -108,7 +124,10 @@ function factFor(
     accountId: input.accountId,
     remoteThreadId,
     patch: {
+      ...CLEARED,
       ...patch,
+      // The due source is per device, but a cleared due date has none.
+      ...(patch.dueDate == null ? { dueSource: null } : {}),
       editedAt: record.stamp.at,
       editGen: record.stamp.gen,
       editDevice: record.stamp.device,
