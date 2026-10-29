@@ -34,6 +34,15 @@ const reasonMessages = new Map<string, string>([
     'vaultWriteFailed',
     'Aplos could not save the Google sign-in securely. Check the data directory and your keychain.',
   ],
+  [
+    'vaultDeleteFailed',
+    'Aplos could not remove a saved Google sign-in. Check the data directory and your keychain.',
+  ],
+  [
+    'vaultReadFailed',
+    'Aplos could not read its saved Google sign-ins. Check the data directory and your keychain.',
+  ],
+  ['badConsentUrl', 'Aplos would not open a sign-in page that is not Google’s.'],
 ]);
 
 const fallbackMessage = 'Google sign-in could not finish.';

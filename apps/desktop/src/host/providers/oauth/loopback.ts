@@ -1,6 +1,6 @@
 // The loopback redirect of the installed-app sign-in: a one-shot HTTP listener on 127.0.0.1 that accepts exactly
 // one callback carrying the expected `state`. Anything else (wrong or missing state, another path or method, a
-// request after the one accepted) is answered 400 and ignored. The listener closes on success, failure, abort and
+// `Host` other than this listener's own, a request after the one accepted) is answered 400 and ignored. The listener closes on success, failure, abort and
 // timeout. It never echoes the query back into the page.
 
 import { createHash, timingSafeEqual } from 'node:crypto';
@@ -36,6 +36,15 @@ function parsePath(rawUrl: string): URL | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Only `127.0.0.1:<port>` or `localhost:<port>`, the names the browser was sent to: a page that rebinds its own name
+ * to 127.0.0.1 (DNS rebinding) sends its own `Host` and is refused.
+ */
+export function loopbackHostAllowed(host: string | undefined, port: number): boolean {
+  const name = host?.toLowerCase();
+  return name === `${loopbackHost}:${port}` || name === `localhost:${port}`;
 }
 
 /** What one request gets. Pure, so the rules are testable without a socket. */
@@ -119,8 +128,11 @@ export async function openLoopback(options: LoopbackOptions): Promise<Loopback> 
     resolveOutcome = resolve;
   });
   const timer = new AbortController();
+  let port = 0;
   const server = createServer((req, res) => {
-    const decision = decideCallback(req.method, req.url, options.state, settled);
+    const decision = loopbackHostAllowed(req.headers.host, port)
+      ? decideCallback(req.method, req.url, options.state, settled)
+      : refused;
     reply(res, decision);
     if (decision.status !== 200) return;
     // The answer is written first; the listener stops taking connections now and drops the rest once it is sent.
@@ -137,6 +149,7 @@ export async function openLoopback(options: LoopbackOptions): Promise<Loopback> 
     resolveOutcome(result);
   }
   const address = await listen(server);
+  port = address.port;
   options.signal.addEventListener('abort', onAbort, { once: true });
   if (options.signal.aborted) onAbort();
   options.clock.sleep(options.timeoutMs ?? callbackTimeoutMs, timer.signal).then(
