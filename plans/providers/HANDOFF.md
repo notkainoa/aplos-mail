@@ -49,3 +49,7 @@ All of these are pushed, READY in STATUS, and wait for the Integrator (merge ord
 - Never `sleep` in the shell (blocked); wait with `until <cond>; do sleep N; done` in a foreground command under 600 s or in the background.
 - `git revert -q` can fail silently; check `git log`.
 - Routing used: Opus for token, OAuth, guard, sync-correctness fixes, workflow, lease; Sonnet for Sync/request, Account handlers, Gmail real store and every review. No free OpenCode models were used.
+
+## Update 2026-10-29 12:30
+
+#73 and #74 are merged. Open from providers: #71 (accounts, retry-identity fix), #75 (lease, revamp merged), #78 (connect wiring, `rv/prov-gov/connect-wiring`). Next after they merge: the engine composition root that calls `createGoogleHostConnect` (Integrator/engine), engine-side `discardCredential` calls on refused results (account-connect.ts TODOs, prov-gov file), workflow-round scheduling in the Gmail planner plus `lease` hooked to `ActorHost.claimLease/releaseLease`, workflow fact commits, then PV3/PV4 remainder from the list above. Live probes (Mac): revoke scope, workflow insert endpoint.
