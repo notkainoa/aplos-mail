@@ -14,7 +14,6 @@ import {
   findEntries,
   jobMinutes,
   maxJobMinutes,
-  maxJobMinutesWhere,
   measureRows,
   newestMinutes,
   createdSince,
@@ -219,19 +218,6 @@ describe('measure-budgets CI rows', () => {
     assert.equal(maxJobMinutes([], staticUnit), null);
   });
 
-  it('matches every "Unit tests (...)" job for the static-unit row', () => {
-    const jobs = [
-      ciJob(ciJobNames.staticJob, 140),
-      ciJob('Unit tests (engine, Electron Node)', 200),
-      ciJob('Unit tests (desktop 1/2)', 180),
-      ciJob('Unit tests (desktop 2/2)', 0, 'skipped'),
-      ciJob('Unit tests (packages)', 90),
-      ciJob(ciJobNames.e2eBrowserJob, 67),
-    ];
-    const match = name => name.startsWith('Static (') || name.startsWith('Unit tests');
-    assert.equal(maxJobMinutesWhere(jobs, match), 200 / 60);
-  });
-
   it('bills each job rounded up to whole minutes, macOS at 10x', () => {
     const jobs = [
       ciJob('Detect changes', 8), // 1
@@ -245,17 +231,14 @@ describe('measure-budgets CI rows', () => {
   it('measures ci.* rows from injected run data and skips without --ci or gh', async () => {
     const run = [
       ciJob(ciJobNames.staticJob, 140),
-      ciJob('Unit tests (engine, Electron Node)', 200),
-      ciJob('Unit tests (desktop 1/2)', 180),
-      ciJob('Unit tests (desktop 2/2)', 175),
-      ciJob('Unit tests (packages)', 90),
+      ciJob(ciJobNames.unitJob, 382),
       ciJob(ciJobNames.e2eBrowserJob, 67),
       ciJob(ciJobNames.macosJob, 0, 'skipped'),
     ];
     const options = { ci: true, ciRuns: [run, run] };
     const staticUnit = await measurers['ci.wall-clock-static-unit'](null, options);
     assert.equal(staticUnit.unit, 'min');
-    assert.equal(staticUnit.measured, 3.4);
+    assert.equal(staticUnit.measured, 6.4);
     const e2e = await measurers['ci.wall-clock-e2e-browser'](null, options);
     assert.equal(e2e.measured, 1.2);
     const macos = await measurers['ci.wall-clock-macos'](null, options);
@@ -275,18 +258,9 @@ describe('measure-budgets CI rows', () => {
       ciJob(ciJobNames.e2eBrowserJob, 0, 'skipped'),
     ];
     const older = [ciJob(ciJobNames.staticJob, 200), ciJob(ciJobNames.e2eBrowserJob, 90)];
-    assert.equal(
-      newestMinutes([newest, older], name => name === ciJobNames.e2eBrowserJob),
-      1.5,
-    );
-    assert.equal(
-      newestMinutes([newest, older], name => name === ciJobNames.staticJob),
-      100 / 60,
-    );
-    assert.equal(
-      newestMinutes([newest, older], name => name === ciJobNames.macosJob),
-      null,
-    );
+    assert.equal(newestMinutes([newest, older], [ciJobNames.e2eBrowserJob]), 1.5);
+    assert.equal(newestMinutes([newest, older], [ciJobNames.staticJob]), 100 / 60);
+    assert.equal(newestMinutes([newest, older], [ciJobNames.macosJob]), null);
     const e2e = await measurers['ci.wall-clock-e2e-browser'](null, {
       ci: true,
       ciRuns: [newest, older],

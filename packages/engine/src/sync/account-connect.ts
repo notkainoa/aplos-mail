@@ -3,7 +3,7 @@ import type { Input } from '@aplos/contract';
 import type { AccountActorHost, ConnectRequest, ConnectResult } from '../ports';
 import type { StorePort, StoreWrite } from '../store/port';
 import { accountWithIdentity, storedIdentity } from './account-read';
-import { hexId, type ConnectFlow } from './connect-sessions';
+import { discardCredential, hexId, type ConnectFlow } from './connect-sessions';
 import { hasRequiredScope, MISSING_MAIL_SCOPE } from './scopes';
 
 // The three sign-in flows behind `Account/connect|reconnect|grantPermissions`: what each asks the host for and what the
@@ -71,17 +71,21 @@ async function acceptNewAccount(
   name: string | undefined,
   result: ConnectResult,
 ): Promise<{ accountId: string }> {
-  refuseMissingScope(result);
-  const { address, subject } = result.identity;
-  // Any match is refused, a waiting row too: the host stored this credential under the new id, not under that row's.
-  // TODO(port): when the answer is refused below, the host has already stored the new credential in the vault under
-  // `accountId` and the engine cannot discard it (no port call for that). Needs a `discardCredential` on the host.
-  if (accountWithIdentity(deps.store, 'google', address, subject)) throw alreadyAdded();
-  deps.store.commit({
-    opId: `connect:${accountId}`,
-    origin: 'system',
-    writes: newAccountWrites(accountId, result, name),
-  });
+  try {
+    refuseMissingScope(result);
+    const { address, subject } = result.identity;
+    // Any match is refused, a waiting row too: the host stored this credential under the new id, not under that row's.
+    if (accountWithIdentity(deps.store, 'google', address, subject)) throw alreadyAdded();
+    deps.store.commit({
+      opId: `connect:${accountId}`,
+      origin: 'system',
+      writes: newAccountWrites(accountId, result, name),
+    });
+  } catch (error) {
+    // The host stored the credential under `accountId` before the engine could refuse the answer: hand it back.
+    discardCredential(deps.accounts, accountId, 'google', result.credentialRef);
+    throw error;
+  }
   await deps.accounts.start(accountId);
   return { accountId };
 }
@@ -95,14 +99,22 @@ async function acceptRetry(
   accountId: string,
   result: ConnectResult,
 ): Promise<{ accountId: string }> {
-  const current = storedIdentity(deps.store, accountId);
-  if (!current) throw notFound();
-  // TODO(port): a refusal here leaves the credential the host already stored under `accountId` in the vault (the host
-  // checks the subject first, but a row with no subject has only the engine's address check). Needs `discardCredential`.
-  refuseOtherIdentity(current, result);
-  refuseMissingScope(result);
-  const { address, subject } = result.identity;
-  if (accountWithIdentity(deps.store, 'google', address, subject, accountId)) throw alreadyAdded();
+  try {
+    const current = storedIdentity(deps.store, accountId);
+    if (!current) throw notFound();
+    // The host stored this grant under `accountId` before the engine could refuse it; the catch hands it back.
+    // Limit: a retry reuses the waiting row's id, which is a committed row, so the host's discardCredential keeps that
+    // ref and the refused grant stays in the vault. The host's address check (a new connect that names an address is
+    // held to it) refuses a different identity before anything is stored, which closes the usual case.
+    refuseOtherIdentity(current, result);
+    refuseMissingScope(result);
+    const { address, subject } = result.identity;
+    if (accountWithIdentity(deps.store, 'google', address, subject, accountId))
+      throw alreadyAdded();
+  } catch (error) {
+    discardCredential(deps.accounts, accountId, 'google', result.credentialRef);
+    throw error;
+  }
   return resume(deps, accountId, result);
 }
 
@@ -189,8 +201,8 @@ export function existingAccountFlow(
       // Read again: the account may have changed or gone while the browser was open.
       const current = storedIdentity(deps.store, accountId);
       if (!current) throw notFound();
-      // TODO(port): a refusal here leaves the credential the host already stored for the wrong grant in the vault;
-      // the engine has no port call to discard it. Needs a `discardCredential` on the host.
+      // No discard on a refused reconnect: the ref is the live account's own bundle, and the host deletes only refs
+      // it minted for a new connect.
       refuseOtherIdentity(current, result);
       refuseMissingScope(result);
       await deps.accounts.reconnected(accountId, result);
