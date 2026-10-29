@@ -22,6 +22,11 @@ export interface GoogleHostConnectDeps extends Omit<GoogleConnectDeps, 'resolveC
    * ordinary one, whose auth block would stop the reconnect that ends it.
    */
   governor?: ConnectGovernorSource;
+  /**
+   * Whether the engine store holds a committed row for this account id. A ref minted for an account that has one is
+   * a live credential and is never deleted (the engine checks the same rule; this keeps the host safe on its own).
+   */
+  accountIsCommitted?(accountId: string): boolean;
 }
 
 export interface GoogleHostConnect {
@@ -51,18 +56,20 @@ export function wellFormedRef(ref: unknown): ref is string {
   return printable(ref) && !/[/\\]/.test(ref) && !ref.includes('..');
 }
 
-/** Remembers the ref of every new connect that stored a bundle; a reconnect's ref is a live account's. */
-function minting(connect: GoogleConnect, minted: Set<string>): GoogleConnect {
+/** Remembers ref -> account id of every new connect that stored a bundle; a reconnect's ref is a live account's. */
+function minting(connect: GoogleConnect, minted: Map<string, string>): GoogleConnect {
   return async (req, ctx) => {
     const result = await connect(req, ctx);
-    if (req.mode === 'new') minted.add(result.credentialRef);
+    if (req.mode === 'new') minted.set(result.credentialRef, ctx.accountId);
     return result;
   };
 }
 
-function discarder(deps: GoogleHostConnectDeps, minted: ReadonlySet<string>) {
+function discarder(deps: GoogleHostConnectDeps, minted: Map<string, string>) {
   return async (ref: string): Promise<void> => {
-    if (!wellFormedRef(ref) || !minted.has(ref)) {
+    const owner = minted.get(ref);
+    // Minted by a new connect here, and the account it was minted for has no committed row since.
+    if (!wellFormedRef(ref) || owner === undefined || deps.accountIsCommitted?.(owner)) {
       throw connectError('permanent', 'notThisHostsCredential', { extra: { uncertain: false } });
     }
     try {
@@ -75,7 +82,7 @@ function discarder(deps: GoogleHostConnectDeps, minted: ReadonlySet<string>) {
 
 export function createGoogleHostConnect(deps: GoogleHostConnectDeps): GoogleHostConnect {
   const { clientInputs, governor, ...rest } = deps;
-  const minted = new Set<string>();
+  const minted = new Map<string, string>();
   const connect = createGoogleConnect({
     ...rest,
     resolveClient: () => resolveGoogleClient(clientInputs()),

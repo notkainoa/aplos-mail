@@ -15,7 +15,13 @@ import type {
 import { effectiveClearedFailures } from '../src/ports';
 import { stepWrites } from '../src/sync/facts';
 import type { StorePort } from '../src/store';
-import { FakeClock, FakeDeadlines, fakeLogger, portClock } from './sync-actor-helpers';
+import {
+  FakeClock,
+  FakeDeadlines,
+  fakeLogger,
+  portClock,
+  type LogLine,
+} from './sync-actor-helpers';
 
 /** A store that holds one committed account row (`committed`) and nothing else. */
 function storeWith(committed?: string): StorePort {
@@ -33,7 +39,7 @@ function storeWith(committed?: string): StorePort {
   return { commit() {}, read } as unknown as StorePort;
 }
 
-function hostWith(factory: ProviderFactory, committed?: string): ActorHost {
+function hostWith(factory: ProviderFactory, committed?: string, lines: LogLine[] = []): ActorHost {
   const clock = new FakeClock({ auto: false });
   return new ActorHost({
     store: storeWith(committed),
@@ -41,7 +47,7 @@ function hostWith(factory: ProviderFactory, committed?: string): ActorHost {
     providers: [factory],
     tokens: { cached: () => undefined, refresh: async () => ({ token: 'x', expiresAt: 0 }) },
     clock: portClock(clock),
-    log: fakeLogger(),
+    log: fakeLogger(lines),
     deadlines: new FakeDeadlines(),
     deviceId: 'device-a',
     env: () => ({ now: 0, focused: false, windowVisible: false, onBattery: false }),
@@ -300,4 +306,25 @@ test('stepWrites turns clearedFailures into failure:null writes after the quaran
     ['ok-1', null],
     ['ok-2', null],
   ]);
+});
+
+test('a failed factory discard is logged once, with the kind and no ref, and still rejects', async () => {
+  const lines: LogLine[] = [];
+  const host = hostWith(
+    fakeFactory({
+      discardCredential: async () => {
+        throw new Error('vault locked: secret-ref-123');
+      },
+    }),
+    undefined,
+    lines,
+  );
+  await assert.rejects(host.discardCredential('acct-1', 'google', 'secret-ref-123'));
+  const failed = lines.filter(l => l.fields.method === 'Account/discardCredential');
+  assert.deepEqual(
+    failed.map(l => l.fields.reason),
+    ['google.failed'],
+  );
+  assert.doesNotMatch(JSON.stringify(lines), /secret-ref-123/);
+  await host.dispose();
 });

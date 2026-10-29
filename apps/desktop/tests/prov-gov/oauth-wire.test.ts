@@ -244,8 +244,10 @@ function hostConnect(
   fetchFn: typeof fetch,
   open: (url: string) => Promise<void>,
   clock = manualClock(),
+  extra: { accountIsCommitted?: (id: string) => boolean } = {},
 ) {
   return createGoogleHostConnect({
+    ...extra,
     http: createHttpClient({ fetch: fetchFn, clock, userAgent: 'aplos-test' }),
     openExternal: open,
     clientInputs: () => ({
@@ -257,11 +259,14 @@ function hostConnect(
 }
 
 /** A host whose connects succeed, and a context for account `id`. */
-function connectingHost(vault: MemoryVault) {
+function connectingHost(
+  vault: MemoryVault,
+  extra: { accountIsCommitted?: (id: string) => boolean } = {},
+) {
   const clock = manualClock();
   const endpoint = tokenEndpoint(() => tokenReply(clock));
   const browser = fakeBrowser(withCode);
-  const host = hostConnect(vault, endpoint.fetch, browser.openExternal, clock);
+  const host = hostConnect(vault, endpoint.fetch, browser.openExternal, clock, extra);
   const base = scriptedRig(c => tokenReply(c), { clock }).ctx;
   const ctxFor = (id: string) => ({ ...base, accountId: id });
   return { host, ctxFor };
@@ -580,4 +585,19 @@ test('WIRE-host createGoogleHostConnect runs every connect on governor.bindConne
   assert.deepEqual(bound, [account]);
   assert.equal(result.credentialRef, account);
   assert.equal(vault.entries.get(account)?.refreshToken, newRefresh);
+});
+
+test('WIRE-b discardCredential refuses a minted ref once its account has a committed row', async () => {
+  const vault = memoryVault(oldBundle);
+  const committed = new Set<string>();
+  const { host, ctxFor } = connectingHost(vault, { accountIsCommitted: id => committed.has(id) });
+  const factory = createGoogleProvider({ fetch, ...host });
+  await factory.connect(newConnect, ctxFor('acct-new'));
+  committed.add('acct-new');
+  const error = await refusal(factory.discardCredential!('acct-new'));
+  assert.equal(error.error.reason, 'notThisHostsCredential');
+  assert.ok(vault.entries.has('acct-new'), 'a committed account’s bundle stays');
+  committed.delete('acct-new');
+  await factory.discardCredential!('acct-new');
+  assert.equal(vault.entries.has('acct-new'), false);
 });

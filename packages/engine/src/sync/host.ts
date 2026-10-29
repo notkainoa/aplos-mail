@@ -157,7 +157,11 @@ export class ActorHost implements AccountActorHost {
         message: 'This account type cannot remove a saved credential.',
       });
     }
-    await factory.discardCredential(ref);
+    // Every caller (the engine's refusal paths and the late-answer path) swallows the rejection, so it is logged here once.
+    await factory.discardCredential(ref).catch((error: unknown) => {
+      this.logDiscard(kind, 'failed');
+      throw error;
+    });
   }
 
   /** Only the provider kind and the outcome: no ref, no secret. */
@@ -177,7 +181,7 @@ export class ActorHost implements AccountActorHost {
   ): Promise<never> {
     if (ref !== undefined)
       await this.discardCredential(account, kind, ref).catch(() => {
-        this.logDiscard(kind, 'failed');
+        // Already logged by discardCredential; the abort reason is what surfaces.
       });
     throw reason;
   }
