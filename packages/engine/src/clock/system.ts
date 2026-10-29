@@ -2,10 +2,17 @@ import type { Clock, Timer } from '../ports/time';
 
 /** Node and browsers clamp longer timeouts to 1 ms; the timer re-arms instead. */
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+/**
+ * The longest single `setTimeout` the system clock arms. libuv timers run on the monotonic clock, which stops while the
+ * Mac sleeps: an 8 h wait with 7 h of sleep would fire 7 h late. Re-checking `Date.now()` every minute bounds that
+ * lateness to about a minute without any help from the host (`Engine.wake` makes it immediate).
+ */
+export const MAX_SYSTEM_WAIT_MS = 60_000;
 
 /**
  * The real clock over `Date.now` and `setTimeout` (F3 `Clock`). A timer re-checks `now()` when its timeout fires and
- * re-arms when early, so a long wait or drift never fires before `at`. A wall-clock jump is the host's `wake()`.
+ * re-arms when early, so a long wait or drift never fires before `at`. Each wait is capped at `MAX_SYSTEM_WAIT_MS`, so a
+ * wall-clock jump or a Mac sleep costs at most about that much lateness; the host's `wake()` makes it immediate.
  */
 export function systemClock(): Clock {
   return {
@@ -31,10 +38,10 @@ function systemTimer(at: number, fire: () => void): Timer {
       fire();
       return;
     }
-    later(Math.min(wait, MAX_TIMEOUT_MS));
+    later(Math.min(wait, MAX_TIMEOUT_MS, MAX_SYSTEM_WAIT_MS));
   };
   // Never fire synchronously inside `timer()`: the caller may still be setting up.
-  later(Math.max(0, Math.min(at - Date.now(), MAX_TIMEOUT_MS)));
+  later(Math.max(0, Math.min(at - Date.now(), MAX_TIMEOUT_MS, MAX_SYSTEM_WAIT_MS)));
   return {
     cancel() {
       if (done) return;

@@ -6,12 +6,14 @@ import { createTimerLoop, type TimerLoop } from './loop';
 export { fakeClock, type FakeClock } from './fake';
 export {
   createTimerLoop,
+  FIRE_TIMEOUT_MS,
   MAX_WAKES_PER_HOUR,
   MIN_FIRE_GAP_MS,
+  NEXT_TIMEOUT_MS,
   STOP_GRACE_MS,
   type TimerLoop,
 } from './loop';
-export { systemClock } from './system';
+export { MAX_SYSTEM_WAIT_MS, systemClock } from './system';
 
 /**
  * Seam 1: lane `eng-time`'s clock module, imported by the composition root (`src/index.ts`) from this fixed path. It

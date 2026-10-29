@@ -16,7 +16,12 @@ export const MIN_FIRE_GAP_MS = 1_000;
 export const MAX_WAKES_PER_HOUR = 100_000;
 /** How long `stop` waits for a fire already running before it lets the engine close anyway. */
 export const STOP_GRACE_MS = 10_000;
+/** How long one `fire` may run before the loop stops waiting for it and serves the other sources (it is logged). */
+export const FIRE_TIMEOUT_MS = 30_000;
+/** How long one `next` read may run before the loop stops waiting for it; a read is a local query, so far shorter. */
+export const NEXT_TIMEOUT_MS = 5_000;
 const HOUR_MS = 3_600_000;
+const TIMED_OUT = Symbol('timed out');
 
 /** The one engine timer loop (ARCH 7.5, F3 `DeadlineRegistry`). The engine runtime starts it and forwards host wakes. */
 export interface TimerLoop extends DeadlineRegistry {
@@ -43,6 +48,11 @@ interface Slot {
   /** Set when a fire left `next()` at or before its `now`: no earlier fire than this. */
   backoffUntil?: number;
   dirty: boolean;
+  /**
+   * A `fire` or `next` call the loop gave up waiting for has not settled yet. The slot is skipped (never read or fired
+   * again) until it settles, so a source never runs concurrently with itself; the settle marks it dirty and kicks.
+   */
+  inflight: boolean;
   /** Fire times in the last hour, oldest first from `head`: this source's own wake budget. */
   fires: number[];
   head: number;
@@ -64,6 +74,48 @@ export function createTimerLoop({
   let running: Promise<void> | undefined;
   let again = false;
   let started = false;
+
+  /** A log port that throws must not change what the loop does next: every loop log line goes through here. */
+  const note = (kind: 'timer_drift', lagMs: number) => {
+    try {
+      log.event('engine.watchdog', { kind, lagMs });
+    } catch {
+      // Diagnostics only.
+    }
+  };
+
+  /**
+   * Waits for `work` at most `ms` on the injected clock. The caller keeps `work` and decides what an abandoned call
+   * means; its late rejection is already handled here, so abandoning it never raises an unhandled rejection.
+   */
+  const within = async <T>(
+    work: Promise<T>,
+    ms: number,
+  ): Promise<Awaited<T> | typeof TIMED_OUT> => {
+    work.catch(() => {});
+    const abort = new AbortController();
+    const timedOut = (): typeof TIMED_OUT => TIMED_OUT;
+    const timeout = clock.sleep(ms, abort.signal).then(timedOut, timedOut);
+    try {
+      return await Promise.race([work, timeout]);
+    } finally {
+      abort.abort();
+    }
+  };
+
+  /** The call the loop gave up on settled (either way): the slot is free again, and its deadline is re-read. */
+  const abandon = (slot: Slot, work: Promise<unknown>) => {
+    work.then(
+      () => settle(slot),
+      () => settle(slot),
+    );
+  };
+  const settle = (slot: Slot) => {
+    slot.inflight = false;
+    if (slots.get(slot.source.id) !== slot) return;
+    slot.dirty = true;
+    if (started) kick();
+  };
 
   const due = (slot: Slot, now: number) => {
     if (slot.next === undefined) return undefined;
@@ -93,7 +145,7 @@ export function createTimerLoop({
   const earliest = (now: number, skip?: ReadonlySet<Slot>) => {
     let best: { slot: Slot; at: number } | undefined;
     for (const slot of slots.values()) {
-      if (skip?.has(slot)) continue;
+      if (skip?.has(slot) || slot.inflight) continue;
       const at = due(slot, now);
       if (at !== undefined && (!best || at < best.at)) best = { slot, at };
     }
@@ -103,8 +155,16 @@ export function createTimerLoop({
   /** Returns false when the source was unreadable (it is then already backed off). */
   const read = async (slot: Slot) => {
     slot.dirty = false;
+    slot.inflight = true;
+    let abandoned = false;
     try {
-      const next = await slot.source.next();
+      const work = (async () => slot.source.next())();
+      const next = await within(work, NEXT_TIMEOUT_MS);
+      if (next === TIMED_OUT) {
+        abandoned = true;
+        abandon(slot, work);
+        throw new Error('next timed out');
+      }
       // A deadline the loop cannot order (NaN, ±Infinity, a non-number) fails `<= now` and `> now`
       // alike, so it would fire every pass with no backoff: it is unreadable, like a throw.
       if (next !== undefined && !Number.isFinite(next)) throw new Error('non-finite deadline');
@@ -114,8 +174,10 @@ export function createTimerLoop({
       // An unreadable source retries like a stuck one, never silently drops its deadlines.
       slot.next = clock.now();
       slot.backoffUntil = clock.now() + MIN_FIRE_GAP_MS;
-      log.event('engine.watchdog', { kind: 'timer_drift', lagMs: MIN_FIRE_GAP_MS });
+      note('timer_drift', abandoned ? NEXT_TIMEOUT_MS : MIN_FIRE_GAP_MS);
       return false;
+    } finally {
+      if (!abandoned) slot.inflight = false;
     }
   };
 
@@ -123,19 +185,30 @@ export function createTimerLoop({
     const now = clock.now();
     const deadline = slot.next ?? now;
     slot.fires.push(now);
-    log.event('timer.fired', { kind: 'deadline', lateMs: Math.max(0, now - deadline) });
     try {
-      await slot.source.fire(now);
+      log.event('timer.fired', { kind: 'deadline', lateMs: Math.max(0, now - deadline) });
     } catch {
-      // A failing fire is the source's bug; the backoff below keeps it from spinning.
+      // Diagnostics only.
     }
+    slot.inflight = true;
+    // A failing fire is the source's bug; the backoff below keeps it from spinning.
+    const work = (async () => slot.source.fire(now))().catch(() => {});
+    if ((await within(work, FIRE_TIMEOUT_MS)) === TIMED_OUT) {
+      // Hung: serve the other sources. The slot stays out of play until the call really settles.
+      abandon(slot, work);
+      slot.backoffUntil = clock.now() + MIN_FIRE_GAP_MS;
+      note('timer_drift', FIRE_TIMEOUT_MS);
+      return;
+    }
+    slot.inflight = false;
     // Unregistered or replaced while its fire ran: the slot is orphaned and the source is not read again.
     if (slots.get(slot.source.id) !== slot) return;
     // An unreadable source keeps the backoff `read` just gave it, however much time the fire took.
     if (!(await read(slot))) return;
     if (slot.next !== undefined && slot.next <= now) {
+      // The hold is set before the log line: a log that throws must not turn the backoff into an immediate re-fire.
       slot.backoffUntil = now + MIN_FIRE_GAP_MS;
-      log.event('engine.watchdog', { kind: 'timer_drift', lagMs: MIN_FIRE_GAP_MS });
+      note('timer_drift', MIN_FIRE_GAP_MS);
     } else slot.backoffUntil = undefined;
   };
 
@@ -159,11 +232,13 @@ export function createTimerLoop({
   const pass = async () => {
     const fired = new Set<Slot>();
     for (;;) {
-      for (const slot of slots.values()) if (slot.dirty) await read(slot);
+      for (const slot of slots.values()) if (slot.dirty && !slot.inflight) await read(slot);
       if (!started) return;
       const now = clock.now();
       const ready = earliest(now, fired);
       if (ready && ready.at <= now) {
+        // Marked dirty while another source ran: its deadline is stale, so read it again before any fire.
+        if (ready.slot.dirty) continue;
         fired.add(ready.slot);
         await fire(ready.slot);
         continue;
@@ -192,7 +267,7 @@ export function createTimerLoop({
           } catch {
             // A pass dying on a port throw (clock, log) must not reject `idle()` or stall the loop:
             // log it and give this kick one retry; a persistent failure waits for the next kick.
-            log.event('engine.watchdog', { kind: 'timer_drift', lagMs: 0 });
+            note('timer_drift', 0);
             if (!failed) {
               failed = true;
               again = true;
@@ -215,8 +290,13 @@ export function createTimerLoop({
   };
 
   return {
+    /**
+     * Registering an id that is already registered replaces the first source. The replaced slot is orphaned: a fire
+     * already running is not read again, and the new source may fire while it still runs (callers that replace a
+     * source must make its fire safe to overlap).
+     */
     register(source) {
-      slots.set(source.id, { source, dirty: true, fires: [], head: 0 });
+      slots.set(source.id, { source, dirty: true, inflight: false, fires: [], head: 0 });
       if (started) kick();
       return () => {
         if (slots.get(source.id)?.source !== source) return;
