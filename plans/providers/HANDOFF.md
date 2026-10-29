@@ -9,22 +9,21 @@ Linux: `source ~/.nvm/nvm.sh && nvm use 24`. Worktrees under `~/.t3/worktrees/ap
 | PR | Branch | State |
 |---|---|---|
 | #53 governor, #56 Gmail adapter, #59 OAuth first slice, #38 live-run guard, #65 Sync/request, #67 guard follow-ups, #70 Gmail on the real store | | merged |
-| #69 GoogleTokenSource over the vault | `rv/prov-gov/token-source` | open, READY; token code, needs the Integrator's Opus review |
+| #69 GoogleTokenSource over the vault | `rv/prov-gov/token-source` | open, READY; Opus review fixes in |
 | #73 Gmail workflow channel | `rv/prov-gmail/workflow` | open, READY; sync+crypto code, Opus review |
 | #72 Google sign-in flow (PKCE loopback, id_token, vault after checks) | `rv/prov-gov/oauth-flow` | open, READY, stacked on #69 (retarget to revamp after #69 merges); OAuth code, Opus review |
 | #71 Account/* handlers | `rv/prov-gov/account` | open, READY; only blocked by the engine-size budget (engine moves it to a minified measure in #66) |
 
-## Local only (committed, not pushed, no PR yet)
+## Former local-only branches (now pushed as #73 and #75)
 
 - (done) workflow channel is PR #73 (open, READY). The lease branch below is based on it.
 - `rv/prov-gov/lease` in `rv-prov-lease` (Opus agent a49d5fd5 was running): `packages/engine/src/sync/lease.ts` (`decideLease` pure, `createLeaseController`), tests `packages/engine/tests/sync-lease.test.ts`, un-todo `gov-stack-attack` 05. Based on the workflow branch, so its PR must wait for the workflow PR (stack, base `rv/prov-gmail/workflow`, retarget later). Needs a Sonnet review of the diff, then an Opus final review by the Integrator (sync correctness).
 
-## Integrator findings in flight (answered by agents at 2026-10-29 ~05:30; verify they landed)
+## State at 2026-10-29 ~07:30
 
-- #69 (Opus review, FIX): non-JSON error bodies must not feed providerMessage (form-encoded secret echo), #private token fields, test-only tokenUrl. Agent aa018c23 (Opus) in `rv-prov-token`; then merge `rv/prov-gov/token-source` into `rv/prov-gov/oauth-flow` (#72).
-- #71 (Opus auth review): refuse a grant missing gmail.modify in all three accept paths (`permission.mailModify`), emit `waiting` inside the try, cap 3 sign-ins + 10-minute engine deadline, retried new account records the grant on the old id. Agent af63b7fa (Sonnet) in `rv-prov-account`.
+All of these are pushed, READY in STATUS, and wait for the Integrator (merge order #69, #72, #71, #73, #75). Integrator findings so far were answered at once on #69 (token redaction), #71 (scope refusal, session release), and the lease review fix landed in #73.
+- #69 token source (4d7bc8c), #72 sign-in flow (stacked on #69, retarget after merge), #71 Account/* (33e10b5), #73 Gmail workflow channel, #75 lease (stacked on #73, retarget after merge). Check each with `gh pr view N` before assuming; answer any REQUEST in STATUS first.
 - BINDING for the host Google connect wiring PR (will not merge without them): the host keeps the credential pending and saves it only after the engine accepts the identity (or compares `req.address` when there is no expectedSubject), and the `AbortSignal` reaches the loopback/browser flow through the port (needs the engine REQUEST at 2026-10-28 23:56).
-- Lease PR: `rv/prov-gov/lease` @ 5df4372 (stacked on #73, `Lane-Approved: prov-gmail` trailer for the un-todo of gov-stack-attack 05); Sonnet review agent a6eab3c4 was running; push, PR (base `rv/prov-gmail/workflow`), READY after its fixes.
 
 ## Open items, in order
 
