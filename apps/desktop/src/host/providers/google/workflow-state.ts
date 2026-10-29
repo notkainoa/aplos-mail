@@ -9,6 +9,8 @@ import type {
   WorkflowCopy,
 } from '@aplos/engine/ports';
 import {
+  compareRecord,
+  floorTrusted,
   highWater,
   isDeviceId,
   MAX_RECORDS,
@@ -34,9 +36,14 @@ import { channelKey, open, seal, type ChannelKey } from './workflow-seal';
  * is never compacted away. When the data key is unavailable, copies are held and opened on a later call.
  *
  * Safety of the only readable copy: `write` leaves out settled records past the retention floor (`workflow-merge.ts`),
- * refuses a view larger than readers accept, and opens and validates its own sealed copy before sending it; only a copy
- * that passed that check can supersede others, and `compact` trashes only copies it supersedes. Per copy it remembers
- * one flag (superseded or not), for at most `CAP_COPIES` copies.
+ * refuses a view larger than readers accept, and opens and validates its own sealed copy before sending it. Before the
+ * first `compact` against a written copy, it downloads that copy from Gmail (`readBack`) and opens it as a reader would;
+ * only a copy that came back whole, with a floor readers will honour, supersedes the copies it covers, and `compact`
+ * trashes only those, at most `COMPACT_BATCH` per call. Per copy it remembers one flag (superseded or not), for at most
+ * `CAP_COPIES` copies.
+ *
+ * A copy's floor counts only when Gmail's receive time for it allows it (`floorTrusted`), so a device whose clock runs
+ * months fast cannot hide everyone else's records; its own copies then never verify, so it never compacts either.
  */
 
 export interface WorkflowEntry {
@@ -74,8 +81,13 @@ export interface WorkflowStateChannel {
   view(): WorkflowRecord[];
 }
 
+/** The port's channel plus one download by id, for checking a written copy before compacting against it. */
+export interface WorkflowTransport extends WorkflowChannel {
+  readBack(remoteId: string, ctx: AdapterContext): Promise<WorkflowCopy | undefined>;
+}
+
 export interface WorkflowStateOptions {
-  transport: WorkflowChannel;
+  transport: WorkflowTransport;
   keys: KeyProvider;
   device: DeviceId;
   /** The account's address: sealed copies are bound to it. */
@@ -85,6 +97,8 @@ export interface WorkflowStateOptions {
 }
 
 const ZERO: Stamp = { at: 0, gen: 0, device: '' };
+/** Copies one `compact` trashes at most (20 units each); the rest go on later calls. */
+export const COMPACT_BATCH = 25;
 const CAP_COPIES = 10_000;
 const CAP_REJECTED = 10_000;
 const byKey = (a: WorkflowRecord, b: WorkflowRecord) =>
@@ -103,6 +117,19 @@ interface Published {
   remoteId: string;
   records: Map<string, WorkflowRecord>;
   floor: number;
+  /** Copies opened before the write: superseded once the written copy has been read back from Gmail. */
+  covered: string[];
+  verified: boolean;
+}
+
+/** True when an opened copy is exactly what was written: same floor, same records. */
+function sameAsPublished(payload: WorkflowPayload, published: Published): boolean {
+  if ((payload.floor ?? 0) !== published.floor) return false;
+  if (payload.records.length !== published.records.size) return false;
+  return payload.records.every(r => {
+    const held = published.records.get(r.key);
+    return held !== undefined && compareRecord(held, r) === 0;
+  });
 }
 
 class StateChannel implements WorkflowStateChannel {
@@ -179,13 +206,16 @@ class StateChannel implements WorkflowStateChannel {
       ctx,
     );
     mergeInto(this.winners, records);
-    this.adopt(payload);
-    for (const id of covered) if (this.opened.has(id)) this.opened.set(id, true);
+    this.adopt(payload, true);
+    // Nothing counts as superseded until this copy has been read back (`verify`).
+    for (const id of this.opened.keys()) this.opened.set(id, false);
     remember(this.opened, remoteId, false, CAP_COPIES);
     this.published = {
       remoteId,
       records: new Map(payload.records.map(r => [r.key, r])),
       floor,
+      covered,
+      verified: false,
     };
     return { remoteId, records };
   }
@@ -193,13 +223,56 @@ class StateChannel implements WorkflowStateChannel {
   async compact(ctx: AdapterContext): Promise<number> {
     const published = this.published;
     if (!published || this.view().length > this.maxRecords) return 0;
-    const superseded = [...this.opened.entries()]
-      .filter(([id, flag]) => flag && id !== published.remoteId)
-      .map(([id]) => id);
+    if (!published.verified && !(await this.verify(published, ctx))) return 0;
+    const superseded: string[] = [];
+    for (const [id, flag] of this.opened) {
+      if (superseded.length >= COMPACT_BATCH) break;
+      if (flag && id !== published.remoteId) superseded.push(id);
+    }
     if (!superseded.length) return 0;
     await this.options.transport.compact(superseded, ctx);
     for (const id of superseded) this.opened.delete(id);
     return superseded.length;
+  }
+
+  /**
+   * Downloads the written copy and opens it as another device would. Only when it comes back exactly as written, with
+   * a floor readers honour, do the copies it covers count as superseded; otherwise nothing is compacted against it.
+   */
+  private async verify(published: Published, ctx: AdapterContext): Promise<boolean> {
+    const key = await this.key();
+    if (!key) return false;
+    const copy = await this.options.transport.readBack(published.remoteId, ctx);
+    if (this.published !== published) return false;
+    const reason = copy ? this.readBackFailure(copy, published, key, ctx.log) : 'readBack';
+    if (reason) {
+      if (reason !== 'logged') logSkipped(ctx.log, reason);
+      this.distrust();
+      return false;
+    }
+    published.verified = true;
+    for (const id of published.covered) if (this.opened.has(id)) this.opened.set(id, true);
+    return true;
+  }
+
+  /** Why a read-back copy cannot be trusted (`logged` when `openCopy` already logged it), or undefined. */
+  private readBackFailure(
+    copy: WorkflowCopy,
+    published: Published,
+    key: ChannelKey,
+    log: Logger,
+  ): string | undefined {
+    const payload = this.openCopy(copy, key, log);
+    if (!payload) return 'logged';
+    if (!sameAsPublished(payload, published)) return 'readBack';
+    if (published.floor && !floorTrusted(published.floor, copy.writtenAt)) return 'clock';
+    return undefined;
+  }
+
+  /** The written copy did not verify: compact nothing against it, and forget what was judged against it. */
+  private distrust(): void {
+    this.published = undefined;
+    for (const id of this.opened.keys()) this.opened.set(id, false);
   }
 
   /** Retention (`RETENTION_MS`): what a reader keeps given the highest floor it has seen. */
@@ -208,9 +281,9 @@ class StateChannel implements WorkflowStateChannel {
     return !settled(r) && this.floorKeys.has(r.key);
   }
 
-  /** Records a copy's floor and keys, so every device filters by the same rule. */
-  private adopt(payload: WorkflowPayload): void {
-    const floor = payload.floor ?? 0;
+  /** Records a copy's floor and keys, so every device filters by the same rule; an untrusted floor counts as none. */
+  private adopt(payload: WorkflowPayload, trusted: boolean): void {
+    const floor = trusted ? (payload.floor ?? 0) : 0;
     if (floor < this.floor || floor === 0) return;
     if (floor > this.floor) {
       this.floor = floor;
@@ -243,7 +316,7 @@ class StateChannel implements WorkflowStateChannel {
     }
     mergeInto(this.winners, payload.records);
     this.high = highWater(payload.records, this.high);
-    this.adopt(payload);
+    this.adopt(payload, floorTrusted(payload.floor ?? 0, copy.writtenAt));
     const published = this.published;
     remember(
       this.opened,
@@ -271,7 +344,7 @@ class StateChannel implements WorkflowStateChannel {
 
   private async key(): Promise<ChannelKey | undefined> {
     const data = await this.options.keys.dataKey();
-    return data.kind === 'key' ? channelKey(data.key) : undefined;
+    return data.kind === 'key' ? channelKey(data.key, this.options.address) : undefined;
   }
 
   private openCopy(copy: WorkflowCopy, key: ChannelKey, log: Logger): WorkflowPayload | undefined {

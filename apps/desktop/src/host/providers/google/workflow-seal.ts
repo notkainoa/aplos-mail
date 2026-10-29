@@ -12,8 +12,8 @@ import { deflateRawSync, inflateRawSync } from 'node:zlib';
  * Sealing for the workflow channel (DECISIONS M29, ARCH 13.1), ported from `src/main/workflow-crypto.ts` without its sync
  * code and vault: the key is the engine's data key (`KeyProvider`, injected by the caller), stretched once with HKDF to
  * a channel key that seals nothing else. Format `APLOS-WF2.<kid>.<iv>.<ciphertext+tag>`, AES-256-GCM over the raw-
- * deflated JSON payload. The AAD is the header plus the account's address, so a copy lifted from another account (or a
- * header with a swapped kid or iv) fails authentication. `kid` is an HMAC of the channel key, so a copy sealed under a
+ * deflated JSON payload. The account's address is in the key derivation and in the AAD (with the header), so a copy
+ * lifted from another account (or a header with a swapped kid or iv) fails authentication. `kid` is an HMAC of the channel key, so a copy sealed under a
  * different key is told apart from a damaged one without revealing anything about either key.
  */
 
@@ -35,21 +35,24 @@ export interface ChannelKey {
 
 const b64 = (value: Buffer) => value.toString('base64url');
 
-/** The channel key derived from the 32-byte data key; never logged, never stored. */
-export function channelKey(dataKey: Uint8Array): ChannelKey {
+const normal = (address: string) => address.trim().toLowerCase();
+
+/**
+ * The channel key for one account, derived from the 32-byte data key with the account's address in the HKDF info, so
+ * each account has its own key and `kid` and two accounts' copies cannot be linked by it; never logged, never stored.
+ */
+export function channelKey(dataKey: Uint8Array, address: string): ChannelKey {
   if (dataKey.byteLength < 32)
     throw new Error('The data key is too short for the workflow channel');
-  const key = Buffer.from(
-    hkdfSync('sha256', dataKey, 'aplos-mail/workflow', 'workflow-channel/v2', 32),
-  );
+  const info = `workflow-channel/v2|${normal(address)}`;
+  const key = Buffer.from(hkdfSync('sha256', dataKey, 'aplos-mail/workflow', info, 32));
   const kid = b64(
     createHmac('sha256', key).update('aplos-wf2-kid').digest().subarray(0, KID_BYTES),
   );
   return { key, kid };
 }
 
-const aad = (header: string, binding: string) =>
-  Buffer.from(`${header}|${binding.trim().toLowerCase()}`);
+const aad = (header: string, binding: string) => Buffer.from(`${header}|${normal(binding)}`);
 
 /** Seals `payload` for the account `binding` (its address). Throws when the result would be refused by readers. */
 export function seal(payload: unknown, key: ChannelKey, binding: string): string {

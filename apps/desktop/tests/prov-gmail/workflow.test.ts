@@ -251,13 +251,14 @@ test('corrupted, foreign and undecryptable copies are skipped, logged without se
     .filter(l => l.event === 'sync.gmail.request_refused')
     .map(l => (l.fields.error as { reason: string }).reason)
     .sort();
+  // Another account's copy is under another channel key (the address is in the derivation), so it reads as wrongKey.
   assert.deepEqual(reasons, [
-    'workflowCopy.damaged',
     'workflowCopy.damaged',
     'workflowCopy.damaged',
     'workflowCopy.foreign',
     'workflowCopy.format',
     'workflowCopy.invalid',
+    'workflowCopy.wrongKey',
     'workflowCopy.wrongKey',
   ]);
   const logged = JSON.stringify(b.log.lines);
@@ -293,8 +294,8 @@ test('the wrong key, another account or a flipped bit never yields plaintext', (
     writtenAt: 1,
     records: [{ key: 'k', stamp: { at: 1, gen: 0, device: 'device-a' }, value: 'private words' }],
   };
-  const key = channelKey(testKey('shared'));
-  const other = channelKey(testKey('other'));
+  const key = channelKey(testKey('shared'), 'me@example.test');
+  const other = channelKey(testKey('other'), 'me@example.test');
   const sealed = seal(plain, key, 'me@example.test');
   assert.ok(!sealed.includes('private'), 'the sealed form carries no plaintext');
   assert.deepEqual(open(sealed, key, 'ME@example.test'), { ok: true, plain });
@@ -463,6 +464,7 @@ const noTransport = {
   round: () => Promise.reject(new Error('not used')),
   put: () => Promise.reject(new Error('not used')),
   compact: () => Promise.reject(new Error('not used')),
+  readBack: () => Promise.reject(new Error('not used')),
 };
 
 test('a failed put leaves nothing local-only in the view: a lease claim no peer can see never shows as held', async () => {

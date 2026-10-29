@@ -45,6 +45,17 @@ export interface WorkflowPayload {
  * function of the set of copies read, never of their order.
  */
 export const RETENTION_MS = 180 * 86_400_000;
+
+/**
+ * How far ahead of Gmail's clock a writer's floor may be. A floor counts only when it is at most `RETENTION_MS` minus
+ * this behind the time Gmail received its copy (`internalDate`), so a device whose clock runs fast cannot publish a
+ * floor above every honest stamp and hide them for good. The check uses the copy's own Gmail time, never a reader's
+ * clock, so every reader decides the same for the same copy.
+ */
+export const FLOOR_TOLERANCE_MS = 86_400_000;
+
+export const floorTrusted = (floor: number, receivedAt: number): boolean =>
+  floor <= receivedAt - RETENTION_MS + FLOOR_TOLERANCE_MS;
 export const THREAD_PREFIX = 'thread:';
 
 export const MAX_RECORDS = 50_000;

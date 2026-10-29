@@ -42,6 +42,8 @@ export interface DeviceOptions {
   skewMs?: number;
   /** Reverse every `messages.list` page, so this device downloads copies in the opposite order. */
   reverseLists?: boolean;
+  /** Rewrites the RFC 822 text of every `messages.insert` before Gmail stores it (a copy that lands damaged). */
+  mangleInsert?: (raw: string) => string;
   /** Fails the response of the next `messages.insert` after Gmail applied it (an uncertain write). */
   dropNextInsert?: boolean;
   /** Answers this many raw message downloads with `status` instead of passing them on. */
@@ -108,13 +110,25 @@ function injected(url: URL, options: DeviceOptions): Response | undefined {
   return undefined;
 }
 
+/** The insert request with its message passed through `mangle`. */
+function mangled(init: RequestInit | undefined, mangle: (raw: string) => string): RequestInit {
+  const body = JSON.parse(String(init?.body)) as { raw: string };
+  const raw = mangle(Buffer.from(body.raw, 'base64url').toString('latin1'));
+  return {
+    ...init,
+    body: JSON.stringify({ ...body, raw: Buffer.from(raw, 'latin1').toString('base64url') }),
+  };
+}
+
 function deviceFetch(r: Rig, options: DeviceOptions): typeof fetch {
   return async (input, init) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     const fault = injected(url, options);
     if (fault) return fault;
-    const response = await r.emu.fetch(input, init);
-    if (url.pathname.endsWith('/messages/insert') && options.dropNextInsert) {
+    const insert = url.pathname.endsWith('/messages/insert');
+    const sent = insert && options.mangleInsert ? mangled(init, options.mangleInsert) : init;
+    const response = await r.emu.fetch(input, sent);
+    if (insert && options.dropNextInsert) {
       options.dropNextInsert = false;
       throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
     }
@@ -204,11 +218,8 @@ export function sealedCopy(
   payload: WorkflowPayload,
   options: { keySeed?: string; address?: string } = {},
 ): { raw: string; data: string } {
-  const data = seal(
-    payload,
-    channelKey(testKey(options.keySeed ?? 'shared')),
-    options.address ?? r.account.address,
-  );
+  const address = options.address ?? r.account.address;
+  const data = seal(payload, channelKey(testKey(options.keySeed ?? 'shared'), address), address);
   const raw = buildCopyMessage(
     { deviceId: payload.device, writtenAt: payload.writtenAt, data },
     r.account.address,
