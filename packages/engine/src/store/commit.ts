@@ -2,6 +2,7 @@ import { transaction, type SqlDatabase, type SqlStatement } from './sql';
 import { governor, providerMemory, syncFailure } from './bookkeeping';
 import { calendar, calendarDelete, event, eventDelete, eventHidden, eventSweep } from './calendar';
 import { account, folder, folderDelete } from './commit-folders';
+import { accountRemove, fileRemoved } from './commit-account-remove';
 import { message, messageDelete, placements, flags } from './commit-messages';
 import { thread, threadDelete, threadMerge, workflow } from './commit-threads';
 import { op, opSettle, applyEffect } from './commit-ops';
@@ -62,6 +63,8 @@ export interface CommitContext {
 /** The kinds `commit.ts` applies itself; no extension may claim one. */
 export const CORE_WRITE_KINDS: ReadonlySet<string> = new Set([
   'account',
+  'accountRemove',
+  'fileRemoved',
   'folder',
   'folderDelete',
   'message',
@@ -251,7 +254,7 @@ export class CommitRun implements WriteScope {
     this.markId(type, remoteId === null ? accountId : `${accountId}:${remoteId}`, op);
   }
   /** A change row by contract id, for extensions (which may not mark store types). */
-  markId(type: ChangeType, id: string, op: 'u' | 'd') {
+  markId(type: ChangeType, id: string, op: 'u' | 'd' | '*') {
     this.changes.set(`${type}\0${id}`, { type, id, op });
   }
 
@@ -415,6 +418,8 @@ export class CommitRun implements WriteScope {
 type Handler = (run: CommitRun, w: never) => void;
 const WRITE_HANDLERS: ReadonlyMap<string, Handler> = new Map<string, Handler>([
   ['account', account],
+  ['accountRemove', accountRemove],
+  ['fileRemoved', fileRemoved],
   ['folder', folder],
   ['folderDelete', folderDelete],
   ['message', message],

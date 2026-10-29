@@ -4,6 +4,40 @@ import type { CommitRun } from './commit';
 
 // ------------------------------------------------------------ accounts and folders
 
+const MAX_COLOR_TAG = 40;
+const MAX_SETTINGS_BYTES = 16 * 1024;
+
+function colorTag(value: string | null | undefined) {
+  if (value === undefined || value === null) return value;
+  if (typeof value !== 'string' || !value || value.length > MAX_COLOR_TAG || /[\r\n]/.test(value))
+    throw new StoreError(
+      'invalid',
+      `colorTag is a one-line name of 1 to ${MAX_COLOR_TAG} characters`,
+    );
+  return value;
+}
+
+/** `accounts.settings` holds a plain JSON object of at most 16 KB, so a window cannot be handed anything else. */
+function settingsJson(value: Record<string, unknown> | undefined) {
+  if (value === undefined) return undefined;
+  const proto =
+    value === null || typeof value !== 'object' ? undefined : Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null)
+    throw new StoreError('invalid', 'Account settings must be a plain JSON object');
+  const json = serialize(value);
+  if (new TextEncoder().encode(json).length > MAX_SETTINGS_BYTES)
+    throw new StoreError('invalid', 'Account settings are limited to 16 KB');
+  return json;
+}
+
+function serialize(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    throw new StoreError('invalid', 'Account settings must be JSON');
+  }
+}
+
 /** Writes the account row: upsert by id, status fields split into their columns. */
 export function account(run: CommitRun, w: AccountWrite) {
   const now = run.now();
@@ -34,6 +68,9 @@ export function account(run: CommitRun, w: AccountWrite) {
   set('ai_allowed', w.aiAllowed);
   set('primary_lease_until', w.primaryLeaseUntil);
   set('primary_lease_device', w.primaryLeaseDevice);
+  set('color_tag', colorTag(w.colorTag));
+  set('notifications', w.notifications);
+  set('settings', settingsJson(w.settings));
   const exists = run.q('SELECT 1 FROM accounts WHERE id = ?').get(w.id);
   if (exists) {
     const keys = Object.keys(cols);
