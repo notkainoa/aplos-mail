@@ -9,8 +9,13 @@ import type {
 
 /** The backoff a source that does not move `next()` past the fire's `now` waits before firing again. */
 export const MIN_FIRE_GAP_MS = 1_000;
-/** Timer wake-ups allowed per rolling hour before the loop spaces them out. */
-export const MAX_WAKES_PER_HOUR = 3_600;
+/**
+ * Fires allowed per source per rolling hour before the loop spaces that source out. A runaway guard, not a pacer: it
+ * must admit eng-views' 50 ms tick (72,000 an hour), so only a source firing faster than that is ever held back.
+ */
+export const MAX_WAKES_PER_HOUR = 100_000;
+/** How long `stop` waits for a fire already running before it lets the engine close anyway. */
+export const STOP_GRACE_MS = 10_000;
 const HOUR_MS = 3_600_000;
 
 /** The one engine timer loop (ARCH 7.5, F3 `DeadlineRegistry`). The engine runtime starts it and forwards host wakes. */
@@ -19,7 +24,8 @@ export interface TimerLoop extends DeadlineRegistry {
   start(): void;
   /** Re-reads every source: the Mac woke, the network returned, or the wall clock jumped. */
   wake(): void;
-  stop(): void;
+  /** Stops arming at once; resolves when a fire already running has finished, or after `STOP_GRACE_MS`. */
+  stop(): Promise<void>;
   /** Resolves once no pass is running or queued (tests and quit). */
   idle(): Promise<void>;
 }
@@ -37,6 +43,9 @@ interface Slot {
   /** Set when a fire left `next()` at or before its `now`: no earlier fire than this. */
   backoffUntil?: number;
   dirty: boolean;
+  /** Fire times in the last hour, oldest first from `head`: this source's own wake budget. */
+  fires: number[];
+  head: number;
 }
 
 /**
@@ -50,7 +59,7 @@ export function createTimerLoop({
   maxWakesPerHour = MAX_WAKES_PER_HOUR,
 }: TimerLoopOptions): TimerLoop {
   const slots = new Map<DeadlineSourceId, Slot>();
-  const wakes: number[] = [];
+  const cap = Math.max(1, maxWakesPerHour);
   let armed: { at: number; timer: Timer } | undefined;
   let running: Promise<void> | undefined;
   let again = false;
@@ -65,18 +74,33 @@ export function createTimerLoop({
       slot.backoffUntil = now + MIN_FIRE_GAP_MS;
     let at = slot.next;
     if (slot.backoffUntil !== undefined) at = Math.max(at, slot.backoffUntil);
-    return at;
+    return Math.max(at, wakeFloor(slot, now));
   };
 
-  const earliest = (now: number) => {
+  /** The wake budget: the earliest time this source may fire again. One runaway source never delays another. */
+  const wakeFloor = (slot: Slot, now: number) => {
+    const { fires } = slot;
+    while (slot.head < fires.length && fires[slot.head] <= now - HOUR_MS) slot.head++;
+    // Stamps written before a wall-clock jump backwards sit in the future; they would freeze the budget.
+    while (fires.length > slot.head && fires[fires.length - 1] > now) fires.pop();
+    if (slot.head > 1024 && slot.head * 2 > fires.length) {
+      fires.splice(0, slot.head);
+      slot.head = 0;
+    }
+    return fires.length - slot.head < cap ? 0 : fires[slot.head] + HOUR_MS;
+  };
+
+  const earliest = (now: number, skip?: ReadonlySet<Slot>) => {
     let best: { slot: Slot; at: number } | undefined;
     for (const slot of slots.values()) {
+      if (skip?.has(slot)) continue;
       const at = due(slot, now);
       if (at !== undefined && (!best || at < best.at)) best = { slot, at };
     }
     return best;
   };
 
+  /** Returns false when the source was unreadable (it is then already backed off). */
   const read = async (slot: Slot) => {
     slot.dirty = false;
     try {
@@ -85,17 +109,20 @@ export function createTimerLoop({
       // alike, so it would fire every pass with no backoff: it is unreadable, like a throw.
       if (next !== undefined && !Number.isFinite(next)) throw new Error('non-finite deadline');
       slot.next = next;
+      return true;
     } catch {
       // An unreadable source retries like a stuck one, never silently drops its deadlines.
       slot.next = clock.now();
       slot.backoffUntil = clock.now() + MIN_FIRE_GAP_MS;
       log.event('engine.watchdog', { kind: 'timer_drift', lagMs: MIN_FIRE_GAP_MS });
+      return false;
     }
   };
 
   const fire = async (slot: Slot) => {
     const now = clock.now();
     const deadline = slot.next ?? now;
+    slot.fires.push(now);
     log.event('timer.fired', { kind: 'deadline', lateMs: Math.max(0, now - deadline) });
     try {
       await slot.source.fire(now);
@@ -104,20 +131,12 @@ export function createTimerLoop({
     }
     // Unregistered or replaced while its fire ran: the slot is orphaned and the source is not read again.
     if (slots.get(slot.source.id) !== slot) return;
-    await read(slot);
+    // An unreadable source keeps the backoff `read` just gave it, however much time the fire took.
+    if (!(await read(slot))) return;
     if (slot.next !== undefined && slot.next <= now) {
       slot.backoffUntil = now + MIN_FIRE_GAP_MS;
       log.event('engine.watchdog', { kind: 'timer_drift', lagMs: MIN_FIRE_GAP_MS });
     } else slot.backoffUntil = undefined;
-  };
-
-  /** The wake budget: the earliest time another timer wake-up is allowed. */
-  const cap = Math.max(1, maxWakesPerHour);
-  const wakeFloor = (now: number) => {
-    while (wakes.length && wakes[0] <= now - HOUR_MS) wakes.shift();
-    // Stamps written before a wall-clock jump backwards sit in the future; they would freeze the budget.
-    while (wakes.length && wakes[wakes.length - 1] > now) wakes.pop();
-    return wakes.length < cap ? now : wakes[0] + HOUR_MS;
   };
 
   const arm = (at: number) => {
@@ -128,28 +147,33 @@ export function createTimerLoop({
     const timer = clock.timer(at, () => {
       if (armed?.timer !== timer) return;
       armed = undefined;
-      wakes.push(clock.now());
       kick();
     });
     armed = { at, timer };
   };
 
+  /**
+   * One source fires at most once per pass: if its new deadline is already due again (time passed while it worked) it
+   * waits for a timer turn, so a source that only inches `next()` forward yields to the event loop and meets its budget.
+   */
   const pass = async () => {
+    const fired = new Set<Slot>();
     for (;;) {
       for (const slot of slots.values()) if (slot.dirty) await read(slot);
       if (!started) return;
       const now = clock.now();
+      const ready = earliest(now, fired);
+      if (ready && ready.at <= now) {
+        fired.add(ready.slot);
+        await fire(ready.slot);
+        continue;
+      }
       const next = earliest(now);
       if (!next) {
         armed?.timer.cancel();
         armed = undefined;
-        return;
-      }
-      if (next.at > now) {
-        arm(Math.max(next.at, wakeFloor(now)));
-        return;
-      }
-      await fire(next.slot);
+      } else arm(next.at);
+      return;
     }
   };
 
@@ -160,23 +184,30 @@ export function createTimerLoop({
     }
     running = (async () => {
       let failed = false;
-      do {
-        again = false;
-        try {
-          await pass();
-        } catch {
-          // A pass dying on a port throw (clock, log) must not reject `idle()` or stall the loop:
-          // log it and give this kick one retry; a persistent failure waits for the next kick.
-          log.event('engine.watchdog', { kind: 'timer_drift', lagMs: 0 });
-          if (!failed) {
-            failed = true;
-            again = true;
+      try {
+        do {
+          again = false;
+          try {
+            await pass();
+          } catch {
+            // A pass dying on a port throw (clock, log) must not reject `idle()` or stall the loop:
+            // log it and give this kick one retry; a persistent failure waits for the next kick.
+            log.event('engine.watchdog', { kind: 'timer_drift', lagMs: 0 });
+            if (!failed) {
+              failed = true;
+              again = true;
+            }
           }
-        }
-      } while (again && started);
-    })().finally(() => {
-      running = undefined;
-    });
+        } while (again && started);
+      } finally {
+        // Cleared in the same turn the last `again` is read: a `changed()` landing a microtask later starts a new run.
+        running = undefined;
+      }
+    })();
+  };
+
+  const idle = async () => {
+    while (running) await running;
   };
 
   const markAll = () => {
@@ -185,7 +216,7 @@ export function createTimerLoop({
 
   return {
     register(source) {
-      slots.set(source.id, { source, dirty: true });
+      slots.set(source.id, { source, dirty: true, fires: [], head: 0 });
       if (started) kick();
       return () => {
         if (slots.get(source.id)?.source !== source) return;
@@ -209,13 +240,17 @@ export function createTimerLoop({
       markAll();
       kick();
     },
-    stop() {
+    async stop() {
       started = false;
       armed?.timer.cancel();
       armed = undefined;
+      if (!running) return;
+      // A send mid-fire must settle before the host closes the store under it, but a hung one cannot block quit.
+      const abort = new AbortController();
+      const grace = clock.sleep(STOP_GRACE_MS, abort.signal).catch(() => {});
+      await Promise.race([idle(), grace]);
+      abort.abort();
     },
-    async idle() {
-      while (running) await running;
-    },
+    idle,
   };
 }

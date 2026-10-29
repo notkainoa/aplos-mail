@@ -4,7 +4,13 @@ import type { EngineServices, LaneModule } from '../runtime/services';
 import { createTimerLoop, type TimerLoop } from './loop';
 
 export { fakeClock, type FakeClock } from './fake';
-export { createTimerLoop, MAX_WAKES_PER_HOUR, MIN_FIRE_GAP_MS, type TimerLoop } from './loop';
+export {
+  createTimerLoop,
+  MAX_WAKES_PER_HOUR,
+  MIN_FIRE_GAP_MS,
+  STOP_GRACE_MS,
+  type TimerLoop,
+} from './loop';
 export { systemClock } from './system';
 
 /**
