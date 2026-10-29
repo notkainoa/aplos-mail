@@ -10,12 +10,13 @@ Linux: `source ~/.nvm/nvm.sh && nvm use 24`. Worktrees under `~/.t3/worktrees/ap
 |---|---|---|
 | #53 governor, #56 Gmail adapter, #59 OAuth first slice, #38 live-run guard, #65 Sync/request, #67 guard follow-ups, #70 Gmail on the real store | | merged |
 | #69 GoogleTokenSource over the vault | `rv/prov-gov/token-source` | open, READY; token code, needs the Integrator's Opus review |
+| #73 Gmail workflow channel | `rv/prov-gmail/workflow` | open, READY; sync+crypto code, Opus review |
 | #72 Google sign-in flow (PKCE loopback, id_token, vault after checks) | `rv/prov-gov/oauth-flow` | open, READY, stacked on #69 (retarget to revamp after #69 merges); OAuth code, Opus review |
 | #71 Account/* handlers | `rv/prov-gov/account` | open, READY; only blocked by the engine-size budget (engine moves it to a minified measure in #66) |
 
 ## Local only (committed, not pushed, no PR yet)
 
-- `rv/prov-gmail/workflow` in `rv-prov-wf` @ 8e9f72b merged with revamp: Gmail workflow channel (workflow.ts, -merge, -seal, -facts, -state) with the Sonnet review's 10 findings fixed (WF-1..WF-10). 155 prov-gmail tests pass. A full `npm run check` was started in the background (log `/tmp/wf-check.log`, ends with `exit N`). **Next: if exit 0, push and open the PR (base revamp), link it, post READY in STATUS.** Models: Opus 5.5 wrote and fixed, Sonnet 5.5 reviewed.
+- (done) workflow channel is PR #73 (open, READY). The lease branch below is based on it.
 - `rv/prov-gov/lease` in `rv-prov-lease` (Opus agent a49d5fd5 was running): `packages/engine/src/sync/lease.ts` (`decideLease` pure, `createLeaseController`), tests `packages/engine/tests/sync-lease.test.ts`, un-todo `gov-stack-attack` 05. Based on the workflow branch, so its PR must wait for the workflow PR (stack, base `rv/prov-gmail/workflow`, retarget later). Needs a Sonnet review of the diff, then an Opus final review by the Integrator (sync correctness).
 
 ## Open items, in order
