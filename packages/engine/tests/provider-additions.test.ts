@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { Governor } from '../src/sync/governor';
 import { ActorHost } from '../src/sync/host';
 import type {
+  AdapterAccount,
   ConnectRequest,
   ConnectResult,
   ProviderFactory,
@@ -12,13 +13,30 @@ import type {
   Quarantine,
 } from '../src/ports';
 import { effectiveClearedFailures } from '../src/ports';
+import { stepWrites } from '../src/sync/facts';
 import type { StorePort } from '../src/store';
 import { FakeClock, FakeDeadlines, fakeLogger, portClock } from './sync-actor-helpers';
 
-function hostWith(factory: ProviderFactory): ActorHost {
+/** A store that holds one committed account row (`committed`) and nothing else. */
+function storeWith(committed?: string): StorePort {
+  const row = {
+    provider: 'google',
+    address: 'owner@example.test',
+    capabilities: '{}',
+    granted_scopes: null,
+    baseline_done_at: null,
+    refresh_expires_at: null,
+    status: 'ok',
+  };
+  const read = (fn: (q: { get: (sql: string, id: string) => unknown }) => unknown) =>
+    fn({ get: (_sql, id) => (id === committed ? row : undefined) });
+  return { commit() {}, read } as unknown as StorePort;
+}
+
+function hostWith(factory: ProviderFactory, committed?: string): ActorHost {
   const clock = new FakeClock({ auto: false });
   return new ActorHost({
-    store: { commit() {} } as unknown as StorePort,
+    store: storeWith(committed),
     governor: new Governor({ clock, role: 'secondary', random: () => 0 }),
     providers: [factory],
     tokens: { cached: () => undefined, refresh: async () => ({ token: 'x', expiresAt: 0 }) },
@@ -116,14 +134,58 @@ test('discardCredential forwards the kind and ref to the provider factory', asyn
       },
     }),
   );
-  await host.discardCredential('google', 'vault:test');
+  await host.discardCredential('acct-1', 'google', 'vault:test');
   assert.deepEqual(discarded, ['vault:test']);
+  await host.dispose();
+});
+
+test("discardCredential never discards the ref the account's committed row may point at", async () => {
+  const discarded: string[] = [];
+  const host = hostWith(
+    fakeFactory({
+      discardCredential: async ref => {
+        discarded.push(ref);
+      },
+    }),
+    'acct-1',
+  );
+  await host.discardCredential('acct-1', 'google', 'acct-1');
+  assert.deepEqual(discarded, []);
+  // Another account without a committed row (a first-time connect) is still discarded.
+  await host.discardCredential('acct-2', 'google', 'vault:new');
+  assert.deepEqual(discarded, ['vault:new']);
+  await host.dispose();
+});
+
+test('a late result after the abort keeps an existing account credential and still rejects', async () => {
+  const discarded: string[] = [];
+  const controller = new AbortController();
+  const host = hostWith(
+    fakeFactory({
+      connect: async () => {
+        controller.abort(new Error('cancelled'));
+        return { credentialRef: 'acct-1' } as unknown as ConnectResult;
+      },
+      discardCredential: async ref => {
+        discarded.push(ref);
+      },
+    }),
+    'acct-1',
+  );
+  await assert.rejects(
+    host.connect('acct-1', 'google', { mode: 'reconnect', signal: controller.signal }),
+    /cancelled/,
+  );
+  assert.deepEqual(discarded, []);
   await host.dispose();
 });
 
 test('discardCredential fails closed when the factory cannot discard', async () => {
   const host = hostWith(fakeFactory());
-  await assert.rejects(host.discardCredential('google', 'vault:test'), /unavailable|cannot/i);
+  await assert.rejects(
+    host.discardCredential('acct-1', 'google', 'vault:test'),
+    /unavailable|cannot/i,
+  );
   await host.dispose();
 });
 
@@ -210,4 +272,32 @@ test('StepResult.clearedFailures and SearchResult.partial are optional and typed
   const search: SearchResult = { upserts: [], remoteThreadIds: [], partial: true, costUnits: 0 };
   assert.deepEqual(step.clearedFailures, ['m1']);
   assert.equal(search.partial, true);
+});
+
+test('stepWrites turns clearedFailures into failure:null writes after the quarantine writes, quarantine winning', () => {
+  const account = { id: 'acct-1', provider: 'google', address: 'a@b.test' } as AdapterAccount;
+  const error = { reason: 'bad' } as unknown as Quarantine['error'];
+  const result = {
+    nextStates: [],
+    done: false,
+    costUnits: 0,
+    clearedFailures: ['ok-1', 'poison', 'ok-2'],
+    quarantine: [{ item: 'poison', error }],
+  } as unknown as StepResult;
+  const writes = stepWrites(result, {
+    account,
+    step: { scope: 'window:inbox', lane: 'incremental', origin: 'incremental', trigger: 'poll' },
+    state: { scope: 'window:inbox', generation: 1, updatedAt: 0 },
+    now: 0,
+    failures: new Map(),
+    baselineDone: true,
+  });
+  const failures = writes.flatMap(w =>
+    w.kind === 'syncFailure' ? [[w.item, w.failure === null ? null : 'set']] : [],
+  );
+  assert.deepEqual(failures, [
+    ['poison', 'set'],
+    ['ok-1', null],
+    ['ok-2', null],
+  ]);
 });

@@ -102,12 +102,18 @@ export interface AccountActorHost extends ProviderPort {
   connect(account: AccountId, kind: ProviderKind, req: ConnectRequest): Promise<ConnectResult>;
   /**
    * Deletes a credential `connect` already stored when the engine refuses the result (wrong account, duplicate, or a
-   * late answer after `Account/cancelConnect`). `ref` is `ConnectResult.credentialRef` (or `ConnectRequest.secretRef`)
-   * and is never shared with an existing account (every attempt stores under a fresh ref, so this cannot delete a live
-   * credential); a ref that is not stored is not an error. It forwards to `ProviderFactory.discardCredential` for
-   * `kind`, and rejects (`unavailable`) when that factory has none, so a credential is never silently kept.
+   * late answer after `Account/cancelConnect`). `ref` is `ConnectResult.credentialRef` (or `ConnectRequest.secretRef`).
+   * `kind` is explicit because a first-time connect has no committed row to find the provider from.
+   *
+   * Ownership rule: the engine never discards for an account that already has a committed row, because the store keeps
+   * no credential ref to compare against and a reconnect may have stored under the account's own ref (Google does,
+   * `refFor(accountId)`). Such a call resolves without discarding and logs `kept`; it never deletes a live
+   * credential. So a reconnect must stage under a FRESH ref, or the engine keeps a verified late result; the host removes
+   * a superseded ref itself once the engine commits the new one. A ref that is not stored is not an error. Otherwise
+   * it forwards to `ProviderFactory.discardCredential` for `kind`, and rejects (`unavailable`) when that factory has
+   * none, so a credential is never silently kept.
    */
-  discardCredential?(kind: ProviderKind, ref: string): Promise<void>;
+  discardCredential?(account: AccountId, kind: ProviderKind, ref: string): Promise<void>;
   /**
    * Restores governor state, then plans from committed cursors. The outbox start rules are `SendPort`'s: a `sending` row
    * becomes `uncertain` and is settled by `findSent` before anything else; `queued` and `scheduled` rows (every row

@@ -134,14 +134,19 @@ export class ActorHost implements AccountActorHost {
         signal: controller.signal,
       });
       if (req.signal?.aborted)
-        await this.discardLate(kind, result.credentialRef, req.signal.reason);
+        await this.discardLate(account, kind, result.credentialRef, req.signal.reason);
       return result;
     } finally {
       req.signal?.removeEventListener('abort', abort);
     }
   }
 
-  async discardCredential(kind: ProviderKind, ref: string): Promise<void> {
+  async discardCredential(account: AccountId, kind: ProviderKind, ref: string): Promise<void> {
+    // The store keeps no credential ref, so an account with a committed row may own `ref` (Google reconnects reuse it).
+    if (readAccount(this.deps.store, account)) {
+      this.logDiscard(kind, 'kept');
+      return;
+    }
     const factory = this.factory(kind);
     if (!factory.discardCredential) {
       this.logDiscard(kind, 'unsupported');
@@ -154,7 +159,7 @@ export class ActorHost implements AccountActorHost {
   }
 
   /** Only the provider kind and the outcome: no ref, no secret. */
-  private logDiscard(kind: ProviderKind, outcome: 'unsupported' | 'failed'): void {
+  private logDiscard(kind: ProviderKind, outcome: 'unsupported' | 'failed' | 'kept'): void {
     this.deps.log.event('rpc.failed', {
       method: 'Account/discardCredential',
       reason: `${kind}.${outcome}`,
@@ -163,12 +168,13 @@ export class ActorHost implements AccountActorHost {
 
   /** A result that arrived after the abort: its credential goes (a failure is logged only), the abort reason surfaces. */
   private async discardLate(
+    account: AccountId,
     kind: ProviderKind,
     ref: string | undefined,
     reason: unknown,
   ): Promise<never> {
     if (ref !== undefined)
-      await this.discardCredential(kind, ref).catch(() => {
+      await this.discardCredential(account, kind, ref).catch(() => {
         this.logDiscard(kind, 'failed');
       });
     throw reason;

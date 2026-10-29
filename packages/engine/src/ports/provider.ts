@@ -385,8 +385,9 @@ export interface ConnectRequest {
   /**
    * Vault reference of an app password or API token; never the secret. A `reconnect` of an app-password or API-token
    * account (iCloud, generic IMAP, Fastmail) carries the NEW secret's reference, stored by the host before the call.
-   * Every connect attempt stores under a FRESH ref, never one an existing account already uses, so discarding a refused
-   * attempt (`AccountActorHost.discardCredential`) can never delete a live account's credential.
+   * A reconnect stages under a FRESH ref, never the one its account already uses (not `refFor(accountId)`): the engine
+   * never discards for an account with a committed row (`AccountActorHost.discardCredential`), so a late or refused
+   * attempt cannot delete a live credential, and the host removes the superseded ref after the engine commits the new one.
    */
   secretRef?: string;
   /** A second secret for the calendar half when the provider needs one (Fastmail: an API token for JMAP, an app password for CalDAV). */
@@ -394,8 +395,9 @@ export interface ConnectRequest {
   /**
    * `Account/cancelConnect` aborts this: the host stops its browser or loopback flow and `connect` rejects (the host's
    * `ConnectContext.signal` follows it), so a cancelled attempt never lingers and a reconnect cannot start a parallel
-   * flow. A result that still arrives after the abort is discarded by the engine (`AccountActorHost.discardCredential`)
-   * and `connect` rejects with the abort reason.
+   * flow. A host must store nothing after the signal aborts. A result that still arrives after the abort is discarded
+   * by the engine for a first-time connect (`AccountActorHost.discardCredential`; an existing account's credential is
+   * kept) and `connect` rejects with the abort reason.
    */
   signal?: AbortSignal;
 }
@@ -425,7 +427,10 @@ export interface ConnectResult {
    * `client` is the OAuth client id the grant belongs to (`accounts.oauth_client`, D21).
    */
   grant?: { grantedAt: number; refreshExpiresAt?: number; client?: string };
-  /** Vault reference of the stored token bundle (refresh token + client id, D21) or of the app password. */
+  /**
+   * Vault reference of the stored token bundle (refresh token + client id, D21) or of the app password. A reconnect
+   * returns a fresh ref, not the account's current one (see `ConnectRequest.secretRef`).
+   */
   credentialRef: string;
   /** Initial `provider_memory`: limits learned at connect (JMAP session, IMAP host table), capabilities detail. */
   memory?: Record<string, string>;
