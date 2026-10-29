@@ -39,7 +39,7 @@ import {
 } from './listActions';
 import type { ListConfig } from './listKinds';
 import { viewSpecOf } from './listKinds';
-import { absoluteIndex, LIST_WINDOW, rangeAround } from './listModel';
+import { absoluteIndex, confirmationIsStale, LIST_WINDOW, rangeAround } from './listModel';
 import { asListRow, targetOf, type ListRowData, type OpenKind } from './listRows';
 import { useIdCursor, type IdCursor } from './useIdCursor';
 
@@ -53,6 +53,11 @@ export interface MailListOptions {
   readonly deleteForever?: (ids: readonly string[]) => Promise<unknown>;
   /** A transient the screen has open on top of the list (the Later date picker): it owns the keys while it shows. */
   readonly modal?: ContextName | null;
+  /**
+   * The ids the screen actually draws, in order, when that is fewer than the whole window (Later draws only the groups
+   * it knows). The cursor and the keys then never land on a thread nobody can see. Default: every id of the window.
+   */
+  readonly drawnIds?: (view: ViewResult<unknown>) => readonly string[];
 }
 
 /** The sync states in which an empty list is not really empty. */
@@ -159,7 +164,7 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
   const empty = useEmptyState(accountId);
 
   const rowOf = useCallback((id: string) => asListRow(view.rows.get(id)), [view.rows]);
-  const cursor = useIdCursor(view.ids);
+  const cursor = useIdCursor(options.drawnIds ? options.drawnIds(view) : view.ids);
   useScrollToCursor(config, cursor.key);
   useFollowCursor(view, cursor.key);
 
@@ -171,6 +176,11 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
     onOpen,
     deleteForever,
   };
+
+  useEffect(() => {
+    // The rows it asked about are gone (the list emptied under it): nothing is left to confirm, and the dialog's keys go.
+    if (confirmation && confirmationIsStale(confirmation, cursor.ids)) setConfirmation(null);
+  }, [confirmation, cursor.ids]);
 
   const actions = useMemo(
     () =>

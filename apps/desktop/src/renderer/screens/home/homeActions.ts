@@ -21,7 +21,7 @@ import {
   type RowOf,
   type SectionKey,
 } from './homeModel';
-import { senderOf } from './homeRows';
+import { failurePhrase, senderOf } from './homeRows';
 import { UNDO_ACTION, undoHandler } from '../undoOperation';
 
 /** The live state an action reads when its key arrives. */
@@ -52,8 +52,8 @@ export interface HomeDeps {
   hold: { extend(ids?: readonly Id[]): void };
   /** Draws the commit (ghost, chip, edge); it also extends the hold, so only one of the two is called. */
   commit?(kind: CommitKind, holdIds: readonly Id[], rowId: ThreadId): void;
-  /** Who may press R: the thread a "Remind me if no reply" toast is offering, or null. */
-  offerReminder(id: ThreadId | null): void;
+  /** Who may press R: the thread a "Remind me if no reply" toast is offering (and that toast's id), or null. */
+  offerReminder(id: ThreadId | null, opId?: string): void;
   reminderOffer(): ThreadId | null;
   /** Opens the Later date presets for this thread (D on the cursor row, or "Set a date" on its Later toast). */
   openDatePicker(id: ThreadId): void;
@@ -87,7 +87,7 @@ export interface HomeActions {
   remind(id?: ThreadId): void;
   /** D on the cursor row, or "Set a date" on that thread's own Later toast: opens the date presets. */
   setDate(id?: ThreadId): void;
-  /** An operation was undone (its toast's Undo, or Z): its reminder offer, if it had one, is withdrawn. */
+  /** An operation was undone (its toast's Undo, or Z): its toast closes and its reminder offer, if it had one, is withdrawn. */
   undone(opId: string): void;
 }
 
@@ -117,6 +117,8 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
   let offeredOp: string | null = null;
 
   const undone = (opId: string): void => {
+    // Z undoes without the toast's own button, so the toast (and its live "Remind me if no reply") closes here.
+    deps.dismiss(opId);
     if (opId !== offeredOp) return;
     offeredOp = null;
     deps.offerReminder(null);
@@ -124,7 +126,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
 
   const offer = (opId: string | null, id: ThreadId | null): void => {
     offeredOp = opId;
-    deps.offerReminder(id);
+    deps.offerReminder(id, opId ?? undefined);
   };
 
   const around = (snapshot: HomeSnapshot) =>
@@ -214,13 +216,25 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
       actions: [{ id: 'always', label: always }, UNDO_ACTION],
       onAction: actionId => {
         if (actionId !== 'always') return undoHandler(opId)(actionId);
-        deps.act({
-          ids: [target.row.id],
-          action: { type: 'lane', lane: to, alsoForSender: true },
-        });
+        setRule(target.row.id, to);
       },
     });
     failOnReject(opId, receipt);
+  }
+
+  /** "Always do this for X": the same move, as a rule. A refusal says so instead of going unheard. */
+  function setRule(id: ThreadId, to: MovableLane): void {
+    const action = { type: 'lane', lane: to, alsoForSender: true } as const;
+    const { opId, receipt } = deps.act({ ids: [id], action });
+    receipt.catch(() =>
+      deps.push({
+        id: opId,
+        kind: 'info',
+        message: `Couldn’t ${failurePhrase(action)}.`,
+        undoable: false,
+        persistent: true,
+      }),
+    );
   }
 
   function trash(): void {

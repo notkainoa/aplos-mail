@@ -55,6 +55,14 @@ export function neighbourKeys(
   return ids.slice(Math.max(0, at - radius), at + radius + 1);
 }
 
+/** A confirmation none of whose threads is in the list any more has nothing left to ask about. */
+export function confirmationIsStale(
+  confirmation: { readonly ids: readonly string[] },
+  ids: readonly string[],
+): boolean {
+  return !confirmation.ids.some(id => ids.includes(id));
+}
+
 /**
  * The window of the whole view to hold in memory around the cursor: at most `size` rows, clamped to the view, with the
  * cursor row inside. Passed to `view.move` so a 10,000-row list never loads more than one window.

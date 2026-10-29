@@ -26,6 +26,7 @@ import {
   type DragState,
 } from './laterDrag';
 import { CLOSED, dayAfter, pickedUntil, pickerReducer } from './laterPicker';
+import { guarded } from './laterCommands';
 import { laterPresets, momentLabel, presetById, presetOptions } from './laterPresets';
 
 const section = (key: string, start: number, count: number): WindowSection => ({
@@ -313,4 +314,20 @@ test('while a row is lifted every target group is on screen, empty ones at 0, an
     withOverdue.map(group => group.key),
     ['overdue', 'today', 'week', 'someday'],
   );
+});
+
+test('guarded silences every verb while a row is lifted and passes them through otherwise', () => {
+  const calls: string[] = [];
+  let lifted = true;
+  const actions = guarded(
+    { done: () => calls.push('done'), openPicker: (key?: string) => calls.push(`picker:${key}`) },
+    () => lifted,
+  );
+  actions.done();
+  actions.openPicker('a');
+  assert.deepEqual(calls, [], 'E on the cursor during a drag does nothing');
+  lifted = false;
+  actions.done();
+  actions.openPicker('a');
+  assert.deepEqual(calls, ['done', 'picker:a']);
 });

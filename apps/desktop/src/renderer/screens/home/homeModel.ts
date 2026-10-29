@@ -4,7 +4,8 @@
  *
  * The cursor is a key (a thread id, or the Low band's), never an index, so a row arriving above it can not move it.
  */
-import type { ThreadId, ThreadRow } from '../../data';
+import type { ThreadId, ThreadRow, ViewRange } from '../../data';
+import { absoluteIndex, LIST_WINDOW, rangeAround } from '../lists/listModel';
 
 /** A section of rows as the engine keys them; `fromLater` is Back from Later, the bottom block of Do now. */
 export type SectionKey = 'do' | 'fromLater' | 'update' | 'follow';
@@ -261,4 +262,36 @@ export function suggestedCommand(row: ThreadRow, section: SectionKey): string {
 export function offersReminder(row: ThreadRow, section: SectionKey): boolean {
   const status = row.workflow.replyStatus;
   return section === 'follow' || status === 'awaitingReply' || status === 'needsReply';
+}
+
+// ---------------------------------------------------------------------------
+// Paging the window
+// ---------------------------------------------------------------------------
+
+/** Rows from the edge of the loaded window at which the cursor asks the engine for the next one. */
+export const PAGE_EDGE = 25;
+
+/** What the cursor knows about the loaded window of the whole `home` view. */
+export interface PageFacts {
+  /** Index of the window's first id in the whole view. */
+  readonly position: number;
+  /** Ids in the window. */
+  readonly loaded: number;
+  /** Rows in the whole view (the Low band's rows count: they sit in the window too). */
+  readonly total: number;
+  /** Index of the cursor row in the window, or -1 when it is not a loaded row. */
+  readonly at: number;
+}
+
+/**
+ * The window to ask for when the cursor nears the edge of the loaded rows, centred on the cursor like the lists
+ * (`rangeAround`), or null while a short view fits one window or the cursor is well inside it. Without this a view of
+ * more than one window never shows, or lets the keys reach, the sections after the first window.
+ */
+export function pageRequest(facts: PageFacts): ViewRange | null {
+  const { position, loaded, total, at } = facts;
+  if (total <= LIST_WINDOW || at < 0) return null;
+  const nearTop = position > 0 && at < PAGE_EDGE;
+  const nearEnd = position + loaded < total && loaded - 1 - at < PAGE_EDGE;
+  return nearTop || nearEnd ? rangeAround(absoluteIndex(position, at), total) : null;
 }

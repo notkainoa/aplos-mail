@@ -6,6 +6,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ThreadRow } from '../../data';
+import { LIST_WINDOW } from '../lists/listModel';
+import { primaryOf, senderOf, subjectOf, summaryOf } from './homeRows';
 import {
   LOW_KEY,
   buildItems,
@@ -19,6 +21,7 @@ import {
   neighbourIds,
   offersReminder,
   orderLayout,
+  pageRequest,
   settleCursor,
   stepCursor,
   stepLane,
@@ -352,4 +355,42 @@ test('fuzz: mail arriving during a triage burst never moves the row under the cu
       else assert.equal(keys.length, 0);
     }
   }
+});
+
+test('pageRequest asks for the window around the cursor only when a view is longer than one window and the cursor nears its edge', () => {
+  const total = 600;
+  const window = { position: 0, loaded: LIST_WINDOW, total };
+  assert.equal(pageRequest({ ...window, total: LIST_WINDOW, at: 199 }), null, 'one window fits');
+  assert.equal(pageRequest({ ...window, at: -1 }), null, 'the cursor is not a loaded row');
+  assert.equal(pageRequest({ ...window, at: 50 }), null, 'well inside');
+  assert.equal(pageRequest({ ...window, at: 5 }), null, 'near the top of the whole view');
+  const down = pageRequest({ ...window, at: 190 });
+  assert.deepEqual(
+    down,
+    { start: 90, end: 290 },
+    'near the end of the loaded rows: 200 around row 190',
+  );
+  const later = { position: 400, loaded: LIST_WINDOW, total };
+  assert.equal(pageRequest({ ...later, at: 190 }), null, 'the window already reaches the end');
+  assert.deepEqual(
+    pageRequest({ ...later, at: 10 }),
+    { start: 310, end: 510 },
+    'near the top: back up',
+  );
+  const centred = pageRequest({ ...later, at: 10 });
+  assert.ok(
+    centred &&
+      pageRequest({ position: centred.start, loaded: LIST_WINDOW, total, at: 100 }) === null,
+  );
+});
+
+test('a row with no sender name and no subject still reads something', () => {
+  const blank = { ...row({ id: 'b' }), subject: '', fromName: '', participants: [] } as ThreadRow;
+  assert.equal(senderOf(blank), 'No sender');
+  assert.equal(primaryOf(blank), 'No subject');
+  assert.equal(subjectOf(blank), 'No subject');
+  assert.deepEqual(summaryOf(blank), { state: 'absent', subject: 'No subject' });
+  const named = { ...blank, subject: '  Lunch ', fromName: 'Ada' } as ThreadRow;
+  assert.equal(senderOf(named), 'Ada');
+  assert.equal(primaryOf(named), 'Lunch');
 });

@@ -31,25 +31,46 @@ import { rowDomId } from './HomeList';
 export interface HomeDatePicker {
   readonly open: (id: ThreadId) => void;
   readonly isOpen: boolean;
+  /** Closes it, for a screen that stops showing it (the list emptied under it). */
+  readonly close: () => void;
   readonly element: ReactElement;
 }
 
-export function useHomeDatePicker(hold: HoldController): HomeDatePicker {
+/**
+ * The element the presets hang from: the row's own, or the fallback (the row under the cursor) when the row has left
+ * Home, as a Later toast's "Set a date" finds it. Null when neither is on screen, so nothing opens.
+ */
+export function pickerAnchor(
+  id: ThreadId,
+  find: (domId: string) => HTMLElement | null,
+  fallback: () => HTMLElement | null,
+): HTMLElement | null {
+  return find(rowDomId(id)) ?? fallback();
+}
+
+export function useHomeDatePicker(
+  hold: HoldController,
+  fallback: () => HTMLElement | null,
+): HomeDatePicker {
   const [picker, dispatch] = useReducer(pickerReducer, CLOSED);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const nowMs = useNow({ granularity: 'minute' });
   const weekStart = useSettings()?.ui.calendar?.weekStart ?? 1;
   const presets = useMemo(() => laterPresets(nowMs, weekStart), [nowMs, weekStart]);
-  const latest = useRef({ nowMs, presets });
+  const latest = useRef({ nowMs, presets, fallback });
   useEffect(() => {
-    latest.current = { nowMs, presets };
+    latest.current = { nowMs, presets, fallback };
   });
 
   const open = useCallback((id: ThreadId) => {
-    const { nowMs: now, presets: list } = latest.current;
-    setAnchor(document.getElementById(rowDomId(id)));
+    const { nowMs: now, presets: list, fallback: other } = latest.current;
+    const at = pickerAnchor(id, domId => document.getElementById(domId), other);
+    // Without an element to hang from the popover never places, and the key context would stay on with nothing shown.
+    if (!at) return;
+    setAnchor(at);
     dispatch({ type: 'open', id, today: toIsoDate(now), first: list[0]?.id ?? 'tomorrow' });
   }, []);
+  const close = useCallback(() => dispatch({ type: 'close' }), []);
 
   const move = (id: string, until: number | undefined, label: string) =>
     reschedule(
@@ -75,5 +96,5 @@ export function useHomeDatePicker(hold: HoldController): HomeDatePicker {
       nameOf={until => momentLabel(until, nowMs)}
     />
   );
-  return { open, isOpen: picker.open, element };
+  return { open, close, isOpen: picker.open, element };
 }

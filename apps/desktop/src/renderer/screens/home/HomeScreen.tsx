@@ -34,9 +34,10 @@ import { HomeOverlays } from './HomeOverlays';
 import type { HomeSnapshot, OpenHow } from './homeActions';
 import { homeRunContext } from './homeCommands';
 import { buildItems, orderLayout, type HomeLayout } from './homeModel';
-import { densityOf, senderOf } from './homeRows';
+import { densityOf, senderOf, subjectOf } from './homeRows';
 import { useHomeActions } from './useHomeActions';
 import { useHomeDatePicker } from './useHomeDatePicker';
+import { useFollowHomeCursor } from './useFollowHomeCursor';
 import { useHomeCursor } from './useHomeCursor';
 import { isGate, useHomeMotion } from './useHomeMotion';
 
@@ -75,6 +76,12 @@ function hasRows(layout: HomeLayout): boolean {
   return (
     layout.do.length + layout.fromLater.length + layout.update.length + layout.follow.length > 0
   );
+}
+
+/** Whether Home shows something other than its list: an empty state, the opening moment or a failure with nothing to show. */
+function listIsHidden(emptied: boolean, home: HomeData, layout: HomeLayout): boolean {
+  if (emptied || home.status === 'opening') return true;
+  return home.status === 'failed' && !hasRows(layout);
 }
 
 /** The pointer rests on a row: pin it (the hold waits until the pointer leaves). */
@@ -131,15 +138,23 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
 
   const rowOf = useCallback((id: ThreadId) => home.rows.get(id), [home.rows]);
   const layout = orderLayout(layoutOf(home), rowOf, hold.isHeld);
+  const empty = home.status === 'live' && home.total === 0 && home.low.count === 0;
+  const listHidden = listIsHidden(accounts.length === 0 || empty, home, layout);
   const cursor = useHomeCursor(buildItems(layout));
   useScrollToCursor(cursor.key);
+  useFollowHomeCursor(accountId, cursor.key, hold.isHeld);
 
   const snapshot = useRef<HomeSnapshot>({ items: [], key: null, rowOf, state: null });
   snapshot.current = { items: cursor.items, key: cursor.key, rowOf, state: home.state, accountId };
   const cursorRow = cursor.key === null ? undefined : home.rows.get(cursor.key);
   useCommandTarget(
     cursorRow
-      ? { kind: 'thread', id: cursorRow.id, title: senderOf(cursorRow), detail: cursorRow.subject }
+      ? {
+          kind: 'thread',
+          id: cursorRow.id,
+          title: senderOf(cursorRow),
+          detail: subjectOf(cursorRow),
+        }
       : null,
   );
 
@@ -167,7 +182,15 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     },
     [motionCommit],
   );
-  const datePicker = useHomeDatePicker(hold);
+  const datePicker = useHomeDatePicker(hold, () => {
+    const dom = activeDomId(snapshot.current.key);
+    return dom ? document.getElementById(dom) : null;
+  });
+  const closeDatePicker = datePicker.close;
+  useEffect(() => {
+    // The picker is drawn inside the list; with the list gone its key context must go too.
+    if (listHidden) closeDatePicker();
+  }, [listHidden, closeDatePicker]);
   const openLow = useCallback(() => setLowOpen(true), []);
   const openMore = useCallback(() => {
     const dom = activeDomId(snapshot.current.key);
@@ -188,7 +211,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   });
   keyState.current = { lowSheetOpen: lowOpen, remindOffer, target };
   useShellKeyLayer({
-    contexts: lowOpen ? ['lowImportance'] : datePicker.isOpen ? ['datePicker'] : [],
+    contexts: lowOpen ? ['lowImportance'] : datePicker.isOpen && !listHidden ? ['datePicker'] : [],
     conditions: { remindOffer },
   });
   const pointer = usePointerHold(hold);
@@ -207,7 +230,6 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     clearFromHome: () => actions.clearFromHome(),
   };
 
-  const empty = home.status === 'live' && home.total === 0 && home.low.count === 0;
   if (accounts.length === 0 || empty) {
     const settling = counts.hidden || SETTLING_STATES.includes(status?.status.state ?? '');
     const reason = status ? statusCopy(toSyncStatus(status))?.text : undefined;

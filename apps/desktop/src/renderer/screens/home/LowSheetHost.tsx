@@ -4,17 +4,19 @@
  * one operation (a selector over the section, at the state the owner saw), with one Undo toast.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, useView } from '../../data';
+import { api, useHold, useView, type HoldController } from '../../data';
 import type { Account, AccountId, ThreadId, ThreadRow, ViewResult } from '../../data';
 import { dismissToast, pushToast, useRegisterCommands } from '../../shell';
 import type { Density, ListRowProps, LowSheetGroup } from '../../ui/props';
 import { LowSheet } from '../../ui/list';
-import { stepKey } from '../lists/listModel';
+import { neighbourKeys, stepKey } from '../lists/listModel';
 import { useIdCursor } from '../lists/useIdCursor';
 import { UNDO_ACTION, undoHandler } from '../undoOperation';
 import { listRowProps, primaryOf } from './homeRows';
 
 const BINDING_ID = 'home-low-list';
+/** The hold scope of the sheet's list, apart from Home's own. */
+const HOLD_SCOPE = 'home-low';
 
 /** Props for `LowSheetHost`. */
 export interface LowSheetHostProps {
@@ -44,17 +46,22 @@ export function groupsOf(
   });
 }
 
-/** The sheet's cursor is a thread id, so mail arriving above it never moves the highlighted row. */
-function useSheetCursor(source: readonly string[]) {
+/**
+ * The sheet's cursor is a thread id, so mail arriving above it never moves the highlighted row; each step also holds
+ * the rows around it, so a re-rank does not reorder them behind the highlight (DESIGN 5 rule 6).
+ */
+function useSheetCursor(source: readonly string[], hold: HoldController) {
   const cursor = useIdCursor(source);
-  const latest = useRef(cursor);
+  const latest = useRef({ cursor, hold });
   useEffect(() => {
-    latest.current = cursor;
+    latest.current = { cursor, hold };
   });
   const table = useMemo(() => {
     const step = (delta: 1 | -1) => {
-      const { ids, key, setCursor } = latest.current;
-      setCursor(stepKey(ids, key, delta));
+      const { cursor: now, hold: gate } = latest.current;
+      const next = stepKey(now.ids, now.key, delta);
+      now.setCursor(next);
+      gate.extend(neighbourKeys(now.ids, next));
     };
     return {
       'lowImportance.next': { run: () => step(1) },
@@ -68,10 +75,14 @@ function useSheetCursor(source: readonly string[]) {
 /** The sheet over Home. */
 export function LowSheetHost(props: LowSheetHostProps) {
   const { accountId, density, accounts, onOpenThread, onClose } = props;
-  const view = useView({ kind: 'lowBySender' as const, ...(accountId ? { accountId } : {}) });
+  const hold = useHold(HOLD_SCOPE);
+  const view = useView(
+    { kind: 'lowBySender' as const, ...(accountId ? { accountId } : {}) },
+    { holdIds: hold.heldIds },
+  );
   const [armed, setArmed] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
-  const cursorId = useSheetCursor(view.ids);
+  const cursorId = useSheetCursor(view.ids, hold);
   const rowProps = (row: ThreadRow): ListRowProps =>
     listRowProps(row, {
       domId: lowDomId(row.id),

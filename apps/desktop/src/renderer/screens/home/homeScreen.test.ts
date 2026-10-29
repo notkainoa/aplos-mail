@@ -22,6 +22,8 @@ import { commandsForHome } from './homeCommands';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { buildItems, initialKey, orderLayout, type HomeLayout } from './homeModel';
 import { HomeScreen } from './HomeScreen';
+import { offerLives } from './useHomeActions';
+import { pickerAnchor } from './useHomeDatePicker';
 
 const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
 
@@ -464,4 +466,104 @@ test('the commit animates the row that was acted on, not the one under the curso
   } finally {
     world.connection.close();
   }
+});
+
+test('Z on a Done closes its toast and withdraws the reminder offer', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const follow = layoutOf(world.home.snapshot()).follow;
+    const a = follow[0];
+    if (!a) return;
+    const key = { current: a as string | null };
+    const { deps, offer } = depsOver(world, key);
+    const actions = createHomeActions(deps);
+    actions.done();
+    const toast = getToasts().find(t => t.kind === 'done');
+    assert.ok(toast);
+    assert.ok(
+      toast.actions?.some(action => action.id === 'remind'),
+      'it offers a reminder',
+    );
+    assert.equal(offer(), a);
+    actions.undone(toast.id);
+    assert.equal(
+      getToasts().find(t => t.id === toast.id),
+      undefined,
+      'the toast with its Remind button is gone',
+    );
+    assert.equal(offer(), null, 'and so is the offer');
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('a refused "Always do this for the sender" says so instead of going unheard', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const first = layoutOf(world.home.snapshot()).do[0]!;
+    const key = { current: first as string | null };
+    const { deps } = depsOver(world, key);
+    let refused = 0;
+    const actions = createHomeActions({
+      ...deps,
+      act: args => {
+        const sent = deps.act(args);
+        const rule = 'alsoForSender' in (args.action as object);
+        if (!rule) return sent;
+        refused++;
+        return { opId: 'op-refused', receipt: Promise.reject(new Error('no')) } as typeof sent;
+      },
+    });
+    actions.lane('down');
+    const toast = getToasts().find(t => t.message.startsWith('Moved to'));
+    runToastAction(toast!.id, 'always');
+    await nextTask();
+    assert.equal(refused, 1);
+    const failure = getToasts().find(t => t.id === 'op-refused');
+    assert.equal(failure?.message, 'Couldn’t move it.');
+    assert.equal(failure?.persistent, true);
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('the reminder offer lives exactly as long as its own toast', () => {
+  const toast = (id: string) => ({ id }) as never;
+  assert.equal(offerLives('op1', [toast('op0'), toast('op1')]), true);
+  assert.equal(offerLives('op1', [toast('op0')]), false, 'the toast closed');
+  assert.equal(offerLives(undefined, [toast('op1')]), false, 'no toast of its own');
+});
+
+test('the date presets hang from the row, else from the row under the cursor, else do not open', () => {
+  const row = { id: 'row' } as HTMLElement;
+  const letter = { id: 'letter' } as HTMLElement;
+  assert.equal(
+    pickerAnchor(
+      't1',
+      () => row,
+      () => letter,
+    ),
+    row,
+  );
+  assert.equal(
+    pickerAnchor(
+      't1',
+      () => null,
+      () => letter,
+    ),
+    letter,
+    'the row left Home',
+  );
+  assert.equal(
+    pickerAnchor(
+      't1',
+      id => (id === 'home-row-t1' ? null : row),
+      () => null,
+    ),
+    null,
+  );
 });

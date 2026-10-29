@@ -196,6 +196,33 @@ test('a row finished today reads "Done 9:41 AM"', () => {
   );
 });
 
+test('a Done row with no finish time reads a bare "Done", never a time it was not finished', () => {
+  const row = {
+    id: 'd',
+    accountId: 'a1',
+    subject: 'Receipt',
+    snippet: '',
+    fromName: 'Cedar Market',
+    participants: [],
+    lastDate: new Date(2026, 9, 28, 14, 7).getTime(),
+    unread: false,
+    hasAttachments: false,
+    workflow: { bookmarked: false, status: 'done', hiddenFromHome: false },
+    rank: { lane: 'do', importance: 'normal', dueBand: 3, source: 'heuristic' },
+    summary: { state: 'none' },
+  } as unknown as ThreadRow;
+  const props = listRowPropsFor(row, {
+    config: DONE_CONFIG,
+    domId: 'x',
+    density: 'comfortable',
+    cursor: false,
+    accounts: [],
+    handlers: { onSelect: () => undefined, onOpen: () => undefined, onAction: () => undefined },
+  });
+  assert.equal(props.doneAt, undefined);
+  assert.doesNotMatch(text(renderToStaticMarkup(createElement(ListRow, props))), /2:07|Done \d/);
+});
+
 test('an empty list is one plain sentence, and first sync is never called empty', () => {
   const calm = { settling: false };
   for (const [config, line] of [

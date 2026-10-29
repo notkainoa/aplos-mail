@@ -18,9 +18,10 @@ import { Reopenable } from '../lists/Reopenable';
 import { MailListView, Row, runRowAction } from '../lists/MailListView';
 import { rowDomId, useMailList, type MailListState } from '../lists/useMailList';
 import { reschedule } from './laterActions';
-import { useLaterKeys, type LaterActions } from './laterCommands';
+import { guarded, useLaterKeys, type LaterActions } from './laterCommands';
 import { dropTargets, headerDrop } from './laterDrag';
 import {
+  flatIds,
   keepEmptied,
   withDropZones,
   type LaterGroup,
@@ -69,7 +70,11 @@ function groupKeyOf(groups: readonly LaterGroup[]): (id: string) => LaterGroupKe
 function LaterBody(props: LaterScreenProps) {
   const [picker, dispatch] = useReducer(pickerReducer, CLOSED);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const list = useMailList(LATER_CONFIG, { ...props, modal: picker.open ? 'datePicker' : null });
+  const list = useMailList(LATER_CONFIG, {
+    ...props,
+    modal: picker.open ? 'datePicker' : null,
+    drawnIds: drawn => flatIds(groupsOf(drawn.ids, drawn.sections, drawn.position)),
+  });
   const nowMs = useNow({ granularity: 'minute' });
   const weekStart = useSettings()?.ui.calendar?.weekStart ?? 1;
   const presets = useMemo(() => laterPresets(nowMs, weekStart), [nowMs, weekStart]);
@@ -100,8 +105,9 @@ function LaterBody(props: LaterScreenProps) {
     latestPicker.current = openPicker;
   });
   const openLatestPicker = useCallback((key?: string) => latestPicker.current(key), []);
+  const lifted = useRef(false);
   const actions = useMemo<LaterActions>(
-    () => ({ ...list.actions, openPicker: openLatestPicker }),
+    () => guarded({ ...list.actions, openPicker: openLatestPicker }, () => lifted.current),
     [list.actions, openLatestPicker],
   );
   useLaterKeys(actions);
@@ -112,6 +118,7 @@ function LaterBody(props: LaterScreenProps) {
     targets,
     onDrop: drop => move(drop.id, drop.until, drop.label),
   });
+  lifted.current = drag.phase === 'lifted';
   const rowAction = (commandId: string, id: string) =>
     commandId === 'mail.setDate' ? openPicker(id) : runRowAction(list.actions, commandId, id);
 

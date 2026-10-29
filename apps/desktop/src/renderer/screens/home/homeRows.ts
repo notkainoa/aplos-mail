@@ -58,29 +58,38 @@ export function dateOf(row: ThreadRow): IsoDateTime {
   return toIsoDateTime(row.lastDate);
 }
 
-/** The sender column: the newest sender, or the subject's first words when the row has no name. */
+/** The subject, or the lists' fixed words when it is empty. */
+export function subjectOf(row: ThreadRow): string {
+  return row.subject.trim() || 'No subject';
+}
+
+/** The sender column: the newest sender, or the subject's first words when the row has no name; never blank. */
 export function senderOf(row: ThreadRow): string {
-  return row.fromName || row.participants.find(p => !p.me)?.name || row.subject;
+  const name = row.fromName || row.participants.find(p => !p.me)?.name || row.subject;
+  return name.trim() || 'No sender';
 }
 
 /** The main line of a row: the summary when it is ready, otherwise the subject (DESIGN 7.2 "No AI"). */
 export function primaryOf(row: ThreadRow): string {
   const { state, text } = row.summary;
-  return (state === 'ready' || state === 'stale') && text ? text : row.subject;
+  return (
+    ((state === 'ready' || state === 'stale') && text ? text : row.subject).trim() || 'No subject'
+  );
 }
 
 /** What the focus letter's summary slot shows: serif when written, the subject in SF otherwise. */
 export function summaryOf(row: ThreadRow): SummaryContent {
   const { state, text, provider, local } = row.summary;
-  if (state === 'pending') return { state: 'pending', subject: row.subject };
+  const subject = subjectOf(row);
+  if (state === 'pending') return { state: 'pending', subject };
   if ((state === 'ready' || state === 'stale') && text)
     return {
       state: 'ready',
       text,
-      subject: row.subject,
+      subject,
       provenance: { provider: provider ?? '', local: local === true },
     };
-  return { state: 'absent', subject: row.subject };
+  return { state: 'absent', subject };
 }
 
 const ICON_FOR_KIND: Readonly<Record<string, SuggestionIcon>> = {

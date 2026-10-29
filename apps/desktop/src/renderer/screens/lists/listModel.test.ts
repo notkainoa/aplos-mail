@@ -17,6 +17,7 @@ import {
 } from './listKinds';
 import {
   LIST_WINDOW,
+  confirmationIsStale,
   dateGroupLabel,
   groupByDate,
   neighbourKeys,
@@ -350,4 +351,10 @@ test('worst-case rows: long names, empty subjects, emoji, 500 rows', () => {
   assert.equal(stepKey(all, key, 1), 'w499');
   const range = rangeAround(499, 10_000);
   assert.ok(range.end - range.start <= LIST_WINDOW);
+});
+
+test('a confirmation is stale once none of its threads is in the list', () => {
+  assert.equal(confirmationIsStale({ ids: ['a'] }, []), true, 'the list emptied');
+  assert.equal(confirmationIsStale({ ids: ['a', 'b'] }, ['b', 'c']), false);
+  assert.equal(confirmationIsStale({ ids: ['a'] }, ['b']), true);
 });

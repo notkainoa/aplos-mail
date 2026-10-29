@@ -15,6 +15,21 @@ export interface LaterActions extends ListActions {
   openPicker(key?: string): void;
 }
 
+/**
+ * The actions with every verb silenced while `blocked()` says so. A row lifted for a drag is not the thread a key should
+ * act on: Done on the cursor and then a drop elsewhere would re-date a thread that is already Done.
+ */
+export function guarded<A extends object>(actions: A, blocked: () => boolean): A {
+  const entries = Object.entries(actions).map(([name, value]): [string, unknown] => [
+    name,
+    typeof value === 'function'
+      ? (...args: unknown[]) =>
+          blocked() ? undefined : (value as (...a: unknown[]) => unknown)(...args)
+      : value,
+  ]);
+  return Object.fromEntries(entries) as A;
+}
+
 function run(action: () => void): CommandHandlers {
   return { run: () => action() };
 }

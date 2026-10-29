@@ -9,10 +9,11 @@ import { api, undoStack, type HoldController, type ThreadId } from '../../data';
 import {
   dismissToast,
   pushToast,
-  UNDO_TOAST_MS,
   useRegisterCommands,
   useShellRegistry,
+  useToasts,
 } from '../../shell';
+import type { ToastData } from '../../ui/props';
 import type { CommitKind } from '../../ui/props';
 import {
   createHomeActions,
@@ -60,6 +61,11 @@ function statusOf(result: ReturnType<Registry['run']>): RunStatus {
   }
 }
 
+/** Whether the toast that offers the reminder is still on screen; an offer with no toast of its own never lives. */
+export function offerLives(opId: string | undefined, toasts: readonly ToastData[]): boolean {
+  return opId !== undefined && toasts.some(toast => toast.id === opId);
+}
+
 function undoLabelOf(registry: Registry, commandId: string, fallback: string): string {
   const entry = registry.get(commandId);
   return (entry?.kind === 'command' ? entry.spec.undo?.label : undefined) ?? fallback;
@@ -73,18 +79,18 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
     latest.current = inputs;
   });
   const offer = useRef<ThreadId | null>(null);
-  // A new object per offer, so a second Done that needs a reply restarts the clock even for the same thread.
-  const [current, setCurrent] = useState<{ readonly id: ThreadId } | null>(null);
+  // The offer lives as long as its own toast does: the toast owns the clock (it waits while hovered or focused).
+  const [current, setCurrent] = useState<{ readonly id: ThreadId; readonly opId?: string } | null>(
+    null,
+  );
   const remindOffer = current !== null;
+  const toasts = useToasts();
 
   useEffect(() => {
-    if (!current) return;
-    const timer = setTimeout(() => {
-      offer.current = null;
-      setCurrent(null);
-    }, UNDO_TOAST_MS);
-    return () => clearTimeout(timer);
-  }, [current]);
+    if (!current || offerLives(current.opId, toasts)) return;
+    offer.current = null;
+    setCurrent(null);
+  }, [current, toasts]);
 
   const actions = useMemo(() => {
     const now = () => latest.current;
@@ -96,9 +102,9 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
       dismiss: dismissToast,
       hold: { extend: ids => now().hold.extend(ids) },
       commit: (kind, ids, rowId) => now().commit(kind, ids, rowId),
-      offerReminder: id => {
+      offerReminder: (id, opId) => {
         offer.current = id;
-        setCurrent(id === null ? null : { id });
+        setCurrent(id === null ? null : { id, opId });
       },
       openDatePicker: id => now().openDatePicker(id),
       reminderOffer: () => offer.current,

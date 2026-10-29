@@ -90,7 +90,7 @@ function submissionLine(submission: Submission): string {
 export function dateMsOf(row: ListRowData, field: ListConfig['dateField']): number | undefined {
   if (isDraft(row)) return row.updatedAt;
   if (isSubmission(row)) return row.sentAt ?? row.notBefore;
-  if (field === 'doneAt') return row.workflow.doneAt ?? row.lastDate;
+  if (field === 'doneAt') return row.workflow.doneAt;
   return row.lastDate;
 }
 
@@ -148,6 +148,12 @@ function submissionProps(submission: Submission, context: ListRowContext): ListR
   };
 }
 
+/** When the thread was finished; absent when the engine does not say, so the stamp reads a bare "Done". */
+function doneStampOf(row: ThreadRow): ListRowProps['doneAt'] {
+  const at = row.workflow.doneAt;
+  return at === undefined ? undefined : toIsoDateTime(at);
+}
+
 function threadProps(row: ThreadRow, context: ListRowContext): ListRowProps {
   const { config } = context;
   const base = listRowProps(row, { ...context, layout: config.layout });
@@ -155,10 +161,9 @@ function threadProps(row: ThreadRow, context: ListRowContext): ListRowProps {
   return {
     ...base,
     sender: who.trim() || 'No sender',
-    primary: primaryOf(row).trim() || 'No subject',
+    primary: primaryOf(row),
     hoverActions: config.hoverActions,
-    doneAt:
-      config.layout === 'done' ? toIsoDateTime(row.workflow.doneAt ?? row.lastDate) : undefined,
+    doneAt: config.layout === 'done' ? doneStampOf(row) : undefined,
     laterUntil:
       config.layout === 'later' ? laterUntilOf(row, context.nowMs ?? Date.now()) : undefined,
   };
