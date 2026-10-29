@@ -52,10 +52,27 @@ export interface ActionProps {
   onPress: (anchor: HTMLElement) => void;
 }
 
-/** A span cannot take focus, so focus returned to it (a menu closing on its anchor) goes to the listbox it sits in. */
-function forwardFocusToListbox(el: HTMLElement | null): void {
+const FOCUSABLE_ANCESTOR =
+  '[tabindex], button, a[href], input, select, textarea, summary, [contenteditable="true"]';
+
+/** Where focus goes in place of a span: the listbox it sits in, else its nearest focusable ancestor. */
+export function focusTargetFor(el: HTMLElement): HTMLElement | null {
+  const parent = el.parentElement;
+  return (
+    parent?.closest<HTMLElement>('[role="listbox"]') ??
+    parent?.closest<HTMLElement>(FOCUSABLE_ANCESTOR) ??
+    null
+  );
+}
+
+/**
+ * A span cannot take focus (and must not: it is aria-hidden), so focus returned to it (a menu closing on its
+ * anchor) goes to the listbox it sits in, else the nearest focusable ancestor, instead of falling to body.
+ * Own `focus` on the node is the only hook a menu's `anchor.focus()` call can reach.
+ */
+export function forwardFocusToListbox(el: HTMLElement | null): void {
   if (!el) return;
-  el.focus = options => el.closest<HTMLElement>('[role="listbox"]')?.focus(options);
+  el.focus = options => focusTargetFor(el)?.focus(options);
 }
 
 /** Plain button: radius 8, press scale, focus ring; one filled per screen is the caller's job. */
