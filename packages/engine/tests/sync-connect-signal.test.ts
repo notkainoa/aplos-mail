@@ -91,6 +91,23 @@ function rig() {
   return { sessions, calls, discarded, deadlines, now, flow, accepted, states };
 }
 
+/** Whether a new sign-in for the same account can start (the first one freed its keys). */
+function beginWorks(r: ReturnType<typeof rig>): boolean {
+  try {
+    r.sessions.begin(r.flow());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A flow whose request carries the caller's own abort signal. */
+function flowWithOwnSignal(r: ReturnType<typeof rig>, own: AbortController): ConnectFlow {
+  const flow = r.flow();
+  flow.request = { ...flow.request, signal: own.signal };
+  return flow;
+}
+
 test('Account/cancelConnect aborts the signal the provider factory sees, on the request and the context', async () => {
   const r = rig();
   const { connectId } = r.sessions.begin(r.flow());
@@ -138,25 +155,44 @@ test('a cancelled sign-in keeps the account key until the host flow has settled'
     'a second flow cannot run beside the one winding down',
   );
   r.calls[0].answer.reject(new Error('cancelled'));
-  await until(() => {
-    try {
-      r.sessions.begin(r.flow());
-      return true;
-    } catch {
-      return false;
-    }
-  }, 'the key freed');
+  await until(() => beginWorks(r), 'the key freed');
 });
 
 test('a signal the request already carries stays in force next to the session’s own', async () => {
   const r = rig();
   const own = new AbortController();
-  const withOwn = r.flow();
-  withOwn.request = { ...withOwn.request, signal: own.signal };
-  r.sessions.begin(withOwn);
+  r.sessions.begin(flowWithOwnSignal(r, own));
   await until(() => r.calls.length === 1, 'the host connect');
   assert.equal(r.calls[0].req.signal?.aborted, false);
   own.abort();
   assert.equal(r.calls[0].req.signal?.aborted, true, 'the caller’s abort reaches the host flow');
   r.calls[0].answer.reject(new Error('aborted'));
+  await until(() => beginWorks(r), 'the key freed');
+});
+
+test('aborting only the request’s own signal ends the sign-in cancelled, not failed', async () => {
+  const r = rig();
+  const own = new AbortController();
+  r.sessions.begin(flowWithOwnSignal(r, own));
+  await until(() => r.calls.length === 1, 'the host connect');
+  own.abort();
+  assert.equal(r.calls[0].ctx.signal.aborted, true, 'the host flow is aborted');
+  assert.equal(r.calls[0].req.signal?.aborted, true);
+  assert.deepEqual(r.states(), ['waiting', 'cancelled']);
+  assert.equal(beginWorks(r), false, 'the key waits for the host flow to settle');
+  r.calls[0].answer.reject(new Error('aborted'));
+  await until(() => beginWorks(r), 'the key freed');
+  assert.deepEqual(r.states().slice(0, 2), ['waiting', 'cancelled'], 'never failed');
+  assert.equal(r.states().includes('failed'), false);
+});
+
+test('a request signal aborted before the sign-in runs cancels it without calling the host', async () => {
+  const r = rig();
+  const own = new AbortController();
+  r.sessions.begin(flowWithOwnSignal(r, own));
+  own.abort();
+  await until(() => r.states().length === 1, 'the cancelled frame');
+  assert.deepEqual(r.states(), ['cancelled']);
+  assert.equal(r.calls.length, 0);
+  assert.equal(beginWorks(r), true, 'the key is free at once');
 });
