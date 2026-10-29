@@ -7,17 +7,23 @@ import type { AccountId, AccountRuntime, Clock, DeviceId } from '../ports';
  * the same set (the channel merges records last-writer-wins and never interprets them):
  *
  * 1. A claim counts when it is well formed, written by the device its key names, and live: `until` is ahead of the
- *    reader's clock by more than `-LEASE_SKEW_MS` (another device's claim), or by more than `LEASE_ROUND_MS` (this
- *    device's own, so a holder gives up before anyone else can take over), and not absurdly far ahead (a broken
- *    clock). The skew margin stands in for a server clock: the channel carries only the writers' own clocks.
+ *    reader's clock by more than `-LEASE_SKEW_MS` (another device's claim), or by more than `LEASE_GIVE_UP_MS` (this
+ *    device's own, so a holder gives up before anyone else can take over), and neither `until` nor `pinnedAt` is
+ *    absurdly far ahead (a broken clock). The skew margin stands in for a server clock: the channel carries only the
+ *    writers' own clocks.
  * 2. Among live claims a pin wins, the latest `pinnedAt` first ("Use this Mac" is the owner's latest intent); then a
  *    claim that already holds (`holder: true`), so a primary keeps the lease while its claim is live (hysteresis); then
  *    the lower DeviceId. Ties at every step go to the lower DeviceId.
- * 3. A device is primary only when its own claim, as read from the channel, wins: it never promotes on a claim others
- *    have not been able to see. So two devices starting together both write a candidacy first and converge on the
- *    lower id the round after, and a failed write keeps the role the last written claim gives, until it expires.
+ * 3. A device is primary only when its own *published* claim wins: it never promotes on a claim others have not been
+ *    able to see, and its own record is always the last claim it wrote successfully (never a local-only one). So two
+ *    devices starting together both write a candidacy first and converge on the lower id the round after, and a
+ *    failed write keeps the role the last published claim gives, until that claim runs out.
  *
- * The lease is soft (ARCH 6.5): if two devices briefly both act as primary, AIMD and cooldowns absorb it.
+ * Handover: a holder that can no longer renew gives up `LEASE_GIVE_UP_MS` before its `until` (its own clock, and
+ * `next()` wakes it then); another device takes over at `until + LEASE_SKEW_MS` (its clock). That leaves no overlap for
+ * clocks within plus or minus 5 minutes of true time and a holder's tick up to one round late. Worst case, a vanished
+ * holder's lease passes on `LEASE_TTL_MS + LEASE_SKEW_MS` plus one round after its last renewal (41 minutes); a quit
+ * (`stop`) passes it on at the next round. The lease is soft (ARCH 6.5): a brief double primary is absorbed by AIMD.
  */
 
 /** ARCH 6.5: a 30-minute TTL. */
@@ -26,11 +32,13 @@ export const LEASE_TTL_MS = 30 * 60_000;
 export const LEASE_RENEW_MS = LEASE_TTL_MS / 3;
 /**
  * The clock difference between two devices the rule tolerates without a steal or an overlap: each device within
- * plus or minus 5 minutes of true time. A device offline longer than the TTL plus this margin loses the lease.
+ * plus or minus 5 minutes of true time.
  */
 export const LEASE_SKEW_MS = 10 * 60_000;
 /** How often `tick` reads the channel (one gated round: the channel's idle cost when nothing changed). */
 export const LEASE_ROUND_MS = 60_000;
+/** A holder stops counting its own claim this long before `until`: one round of tick lateness, plus one round. */
+export const LEASE_GIVE_UP_MS = 2 * LEASE_ROUND_MS;
 /** After a failed write, the next try waits this long (four tries fit in the slack before the claim expires). */
 export const LEASE_WRITE_RETRY_MS = 5 * 60_000;
 export const LEASE_PREFIX = 'lease:';
@@ -92,7 +100,9 @@ function isClaimValue(v: unknown): v is LeaseClaim {
 export function parseClaim(record: LeaseRecord): Claim | undefined {
   if (!record || typeof record.key !== 'string' || !record.key.startsWith(LEASE_PREFIX)) return;
   const device = record.key.slice(LEASE_PREFIX.length);
-  if (!DEVICE_RE.test(device) || record.stamp?.device !== device) return;
+  const stamp = record.stamp;
+  if (!DEVICE_RE.test(device) || !stamp || stamp.device !== device) return;
+  if (!isCount(stamp.at) || !isCount(stamp.gen)) return;
   const v = record.value;
   if (!isClaimValue(v)) return;
   return {
@@ -102,7 +112,7 @@ export function parseClaim(record: LeaseRecord): Claim | undefined {
     pinned: v.pinned,
     pinnedAt: v.pinnedAt,
     device,
-    stamp: record.stamp,
+    stamp: { at: stamp.at, gen: stamp.gen, device },
   };
 }
 
@@ -128,8 +138,9 @@ function claimsOf(records: readonly LeaseRecord[]): Map<DeviceId, Claim> {
 }
 
 function isLive(claim: Claim, self: DeviceId, now: number): boolean {
-  if (claim.until > now + LEASE_TTL_MS + LEASE_SKEW_MS) return false;
-  if (claim.device === self) return claim.until - LEASE_ROUND_MS > now;
+  const ceiling = now + LEASE_TTL_MS + LEASE_SKEW_MS;
+  if (claim.until > ceiling || claim.pinnedAt > ceiling) return false;
+  if (claim.device === self) return claim.until - LEASE_GIVE_UP_MS > now;
   return claim.until + LEASE_SKEW_MS > now;
 }
 
@@ -170,23 +181,29 @@ export interface LeaseDeps {
   channel: LeaseChannel;
   /** `ActorHost.leaseChanged`: called with every change of role, holder, expiry or pin. */
   report(account: AccountId, lease: Lease): void;
-  /** Awake and the account running; `tick` neither reads nor renews otherwise. */
+  /** Awake and the account running; otherwise `tick` neither reads nor renews, and this device acts as secondary. */
   active?: () => boolean;
 }
 
 export interface LeaseController {
-  /** "Use this Mac": pins this device; it becomes primary the round after the pinned claim is written. */
-  claim(): Promise<void>;
+  /**
+   * "Use this Mac": writes a pinned claim, then reads once more. Resolves `pinned: false` when a later pin elsewhere
+   * already won (the owner's latest intent); rejects, with the pin as it was, when the claim could not be written.
+   */
+  claim(): Promise<{ pinned: boolean }>;
   /** Back to automatic: drops this device's pin only, so a holder stays primary by the hysteresis rule. */
   release(): Promise<void>;
   /** One round: read, decide, renew when due; from the account actor's timer (`next()` as a `DeadlineSource`). */
   tick(): Promise<void>;
-  /** When `tick` next has work. */
+  /** Quit: best effort, publishes an expired claim so the lease passes on at the next round; then does nothing. */
+  stop(): Promise<void>;
+  /** When `tick` next has work (a primary's give-up time included). */
   next(): number;
+  /** The lease now: a primary whose published claim ran out is secondary even before the next tick. */
   current(): Lease;
 }
 
-/** `undefined` until the first read tells whether a live pinned claim of ours survived a restart. */
+/** `undefined` until the first read tells whether a pinned claim of ours survived a restart. */
 type Pin = { at: number } | null | undefined;
 
 function claimFor(decision: LeaseDecision, pin: Pin, now: number): LeaseClaim {
@@ -224,11 +241,25 @@ function leaseOf(decision: LeaseDecision, pin: Pin, written?: LeaseClaim): Lease
 const sameLease = (a: Lease, b: Lease) =>
   a.role === b.role && a.holder === b.holder && a.until === b.until && a.pinned === b.pinned;
 
+/** Our own record as the rule must see it: the last claim this process published, never a local-only one. */
+function withPublished(
+  raw: unknown,
+  device: DeviceId,
+  published: LeaseClaim | undefined,
+): LeaseRecord[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  if (!published) return raw as LeaseRecord[];
+  const key = leaseKey(device);
+  const others = (raw as LeaseRecord[]).filter(r => r?.key !== key);
+  return [...others, { key, stamp: { at: 0, gen: 0, device }, value: published }];
+}
+
 type Intent = 'pin' | 'unpin';
 
 interface RoundResult {
   read: boolean;
   wrote?: boolean;
+  decision?: LeaseDecision;
 }
 
 export function createLeaseController(deps: LeaseDeps): LeaseController {
@@ -236,6 +267,13 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
   let lease: Lease = { role: 'secondary', pinned: false };
   let pin: Pin;
   let pinDirty = false;
+  /** The last claim this process wrote successfully: our record as peers see it. */
+  let published: LeaseClaim | undefined;
+  /** A write failed: peers may hold something other than `published` (an uncertain write), so rewrite when allowed. */
+  let unsure = false;
+  /** The previous round asked for an immediate re-read; one in a row at most, so nothing spins. */
+  let immediate = false;
+  let stopped = false;
   let nextAt = 0;
   let retryAt = 0;
   let queue: Promise<unknown> = Promise.resolve();
@@ -253,17 +291,16 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     deps.report(account, { ...next });
   };
 
-  /** Without a fresh read the role is the last one, until this device's own claim runs out. */
+  const demote = () => report({ role: 'secondary', pinned: !!pin });
+
+  /** Without a fresh read the role is the last one, until this device's published claim runs out. */
   const expire = (now: number) => {
-    if (lease.role === 'primary' && (lease.until ?? 0) - LEASE_ROUND_MS <= now)
-      report({ role: 'secondary', pinned: !!pin });
+    if (lease.role === 'primary' && (lease.until ?? 0) - LEASE_GIVE_UP_MS <= now) demote();
   };
 
-  /** A pin survives a restart through our live claim; a later pin elsewhere replaces ours (the latest intent). */
+  /** A pin survives a restart through our claim; a later pin elsewhere replaces ours (the latest intent). */
   const adoptPin = (decision: LeaseDecision, now: number, intent?: Intent) => {
-    const own = decision.own;
-    if (pin === undefined)
-      pin = own?.pinned && isLive(own, device, now) ? { at: own.pinnedAt } : null;
+    if (pin === undefined) pin = decision.own?.pinned ? { at: decision.own.pinnedAt } : null;
     if (intent === 'pin') {
       pin = { at: Math.max(now, decision.pinHigh + 1) };
       pinDirty = true;
@@ -279,39 +316,52 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
   const write = async (claim: LeaseClaim, now: number): Promise<boolean> => {
     try {
       await channel.write([{ key: leaseKey(device), value: claim }]);
+      published = claim;
+      unsure = false;
       retryAt = 0;
       return true;
     } catch {
+      unsure = true;
       retryAt = now + LEASE_WRITE_RETRY_MS;
       return false;
     }
   };
 
+  const read = async (): Promise<LeaseRecord[] | undefined> => {
+    try {
+      return withPublished(await channel.read(), device, published);
+    } catch {
+      return undefined;
+    }
+  };
+
   const round = async (intent?: Intent): Promise<RoundResult> => {
     const now = clock.now();
+    const wasImmediate = immediate;
+    immediate = false;
     nextAt = now + LEASE_ROUND_MS;
-    let records: readonly LeaseRecord[];
-    try {
-      records = await channel.read();
-    } catch {
-      expire(now);
-      return { read: false };
-    }
+    expire(now);
+    const records = await read();
+    if (!records) return { read: false };
     const decision = decideLease(records, device, now);
     adoptPin(decision, now, intent);
     const claim = claimFor(decision, pin, now);
     const ownLive = decision.own !== undefined && isLive(decision.own, device, now);
-    const due = pinDirty || writeDue(decision.own, ownLive, claim, now);
+    const due = pinDirty || unsure || writeDue(decision.own, ownLive, claim, now);
     if (!due || (!intent && now < retryAt)) {
       report(leaseOf(decision, pin));
-      return { read: true };
+      return { read: true, decision };
     }
     const wrote = await write(claim, now);
     if (wrote) pinDirty = false;
     // A new candidacy or pin is decided on as soon as the channel shows it, not a whole round later.
-    if (wrote && (!ownLive || claim.pinned !== decision.own?.pinned)) nextAt = now;
+    const changed = !ownLive || claim.pinned !== decision.own?.pinned;
+    if (wrote && changed && !wasImmediate) {
+      nextAt = now;
+      immediate = true;
+    }
     report(leaseOf(decision, pin, wrote ? claim : undefined));
-    return { read: true, wrote };
+    return { read: true, wrote, decision };
   };
 
   /** `claim` and `release` answer the owner: a pin that could not be written is undone and reported as an error. */
@@ -326,20 +376,54 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     throw new Error('The lease could not be shared on the workflow channel');
   };
 
+  const claim = async () => {
+    if (stopped) return { pinned: false };
+    await change('pin');
+    // Re-read: a pin made elsewhere at the same moment may already have won.
+    const check = await round();
+    if (!check.read) return { pinned: !!pin };
+    return { pinned: !!pin && check.decision?.winner?.device === device };
+  };
+
+  const stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    const dead: LeaseClaim = {
+      v: 1,
+      holder: false,
+      until: 0,
+      pinned: !!pin,
+      pinnedAt: pin ? pin.at : 0,
+    };
+    if (published || lease.role === 'primary') await write(dead, clock.now());
+    demote();
+  };
+
   return {
-    claim: () => serial(() => change('pin')),
+    claim: () => serial(claim),
     release: () =>
       serial(async () => {
-        // Known to hold no pin: nothing to share.
-        if (pin !== null) await change('unpin');
+        // Stopped, or known to hold no pin: nothing to share.
+        if (!stopped && pin !== null) await change('unpin');
       }),
     tick: () =>
       serial(async () => {
-        if (deps.active && !deps.active()) return expire(clock.now());
+        if (stopped) return;
+        // Asleep or not running: no background work here, whatever the channel last said.
+        if (deps.active && !deps.active()) return demote();
         await round();
       }),
-    // A clock that jumped back since the last round makes the next round due now.
-    next: () => (nextAt > clock.now() + LEASE_ROUND_MS ? clock.now() : nextAt),
-    current: () => ({ ...lease }),
+    stop: () => serial(stop),
+    next: () => {
+      const now = clock.now();
+      // A clock that jumped back since the last round makes the next round due now.
+      if (nextAt > now + LEASE_ROUND_MS) return now;
+      const giveUp = lease.role === 'primary' ? (lease.until ?? 0) - LEASE_GIVE_UP_MS : Infinity;
+      return Math.min(nextAt, giveUp);
+    },
+    current: () => {
+      if (!stopped) expire(clock.now());
+      return { ...lease };
+    },
   };
 }

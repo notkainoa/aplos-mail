@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LEASE_RENEW_MS,
+  LEASE_GIVE_UP_MS,
   LEASE_ROUND_MS,
   LEASE_SKEW_MS,
   LEASE_TTL_MS,
@@ -29,11 +30,17 @@ class FakeChannel {
   readonly junk: LeaseRecord[] = [];
   private gen = 0;
 
-  put(device: string, key: string, value: unknown, at: number): void {
-    this.records.set(key, { key, stamp: { at, gen: ++this.gen, device }, value });
+  record(device: string, key: string, value: unknown, at: number): LeaseRecord {
+    return { key, stamp: { at, gen: ++this.gen, device }, value };
   }
-  view(): LeaseRecord[] {
-    return [...this.records.values(), ...this.junk];
+  put(device: string, key: string, value: unknown, at: number): void {
+    this.records.set(key, this.record(device, key, value, at));
+  }
+  /** What one device reads: the shared records, overlaid with what it merged locally but never sent. */
+  view(local: ReadonlyMap<string, LeaseRecord> = new Map()): LeaseRecord[] {
+    const merged = new Map(this.records);
+    for (const [key, record] of local) merged.set(key, record);
+    return [...merged.values(), ...this.junk];
   }
 }
 
@@ -49,7 +56,19 @@ interface Device {
   skew: number;
   offline: boolean;
   failWrites: boolean;
+  /** Fails like a channel that merges into its own view first and then fails the put (a local-only record). */
+  failAfterMerge: boolean;
+  /** Records merged locally by a failed put, visible to this device's reads only. */
+  local: Map<string, LeaseRecord>;
   failReads: boolean;
+  /** Replaces what `read` resolves with (a broken channel). */
+  readOverride?: () => unknown;
+  /** Garbles this device's own record on every read. */
+  mangleOwn: boolean;
+  /** Runs after a successful write, before it resolves. */
+  afterWrite?: () => Promise<unknown>;
+  /** How late this device's timer fires its rounds. */
+  lateMs: number;
   active: boolean;
   now(): number;
 }
@@ -69,7 +88,11 @@ class World {
       skew,
       offline: false,
       failWrites: false,
+      failAfterMerge: false,
+      local: new Map(),
       failReads: false,
+      mangleOwn: false,
+      lateMs: 0,
       active: true,
       now: () => this.t + d.skew,
       ctl: undefined as unknown as LeaseController,
@@ -84,27 +107,43 @@ class World {
         d.reports.push(lease);
       },
       channel: {
-        read: async () => {
-          if (d.failReads) throw new Error('read failed');
-          d.reads++;
-          return this.channel.view();
-        },
-        write: async entries => {
-          d.tries++;
-          if (d.failWrites) throw new Error('write failed');
-          d.writes++;
-          for (const e of entries) this.channel.put(id, e.key, e.value, d.now());
-        },
+        read: async () => this.read(d),
+        write: async entries => this.write(d, entries),
       },
     });
     this.devices.push(d);
     return d;
   }
 
+  private read(d: Device): readonly LeaseRecord[] {
+    if (d.failReads) throw new Error('read failed');
+    d.reads++;
+    if (d.readOverride) return d.readOverride() as LeaseRecord[];
+    const records = this.channel.view(d.local);
+    if (!d.mangleOwn) return records;
+    return records.map(r => (r.key === leaseKey(d.id) ? { ...r, value: 'garbled' } : r));
+  }
+
+  private async write(d: Device, entries: { key: string; value: LeaseClaim }[]): Promise<void> {
+    d.tries++;
+    if (d.failAfterMerge) {
+      for (const e of entries)
+        d.local.set(e.key, this.channel.record(d.id, e.key, e.value, d.now()));
+      throw new Error('put failed after the local merge');
+    }
+    if (d.failWrites) throw new Error('write failed');
+    d.writes++;
+    for (const e of entries) {
+      this.channel.put(d.id, e.key, e.value, d.now());
+      d.local.delete(e.key);
+    }
+    await d.afterWrite?.();
+  }
+
   /** Every online device whose round is due ticks, in order, until none is due at this instant. */
   async tickDue(): Promise<void> {
     for (let pass = 0; pass < 5; pass++) {
-      const due = this.devices.filter(d => !d.offline && d.ctl.next() <= d.now());
+      const due = this.devices.filter(d => !d.offline && d.ctl.next() + d.lateMs <= d.now());
       if (!due.length) return;
       for (const d of due) await d.ctl.tick();
     }
@@ -123,6 +162,9 @@ class World {
 
 const role = (d: Device) => d.ctl.current().role;
 const primaries = (w: World) => w.devices.filter(d => !d.offline && role(d) === 'primary');
+/** The role as last reported to the host (what the actor runs with), without `current()`'s own expiry check. */
+const reported = (d: Device) => d.reports.at(-1)?.role ?? 'secondary';
+const reportedPrimaries = (w: World) => w.devices.filter(d => reported(d) === 'primary');
 /** Role changes reported since report number `from`. */
 const roleFlips = (d: Device, from = 0) =>
   d.reports.filter((r, i) => i > from && r.role !== d.reports[i - 1].role).length;
@@ -445,7 +487,7 @@ test('write failures keep the previous role until expiry, and the claim retries 
   const until = a.ctl.current().until!;
   a.failWrites = true;
   const [tries, failedAt] = [a.tries, w.t];
-  await w.run(until - LEASE_ROUND_MS - w.t - 5_000, () => assert.equal(role(a), 'primary'));
+  await w.run(until - LEASE_GIVE_UP_MS - w.t - 5_000, () => assert.equal(role(a), 'primary'));
   await w.run(LEASE_ROUND_MS);
   assert.equal(role(a), 'secondary');
   // Not one write per round: one per retry interval once the renewal is due.
@@ -466,7 +508,7 @@ test('read failures keep the role until our own claim runs out', async () => {
   await w.run(5 * MINUTE);
   const until = a.ctl.current().until!;
   a.failReads = true;
-  await w.run(until - LEASE_ROUND_MS - w.t - 5_000, () => assert.equal(role(a), 'primary'));
+  await w.run(until - LEASE_GIVE_UP_MS - w.t - 5_000, () => assert.equal(role(a), 'primary'));
   await w.run(LEASE_ROUND_MS);
   assert.equal(role(a), 'secondary');
 });
@@ -544,4 +586,168 @@ test('claim() and tick() at the same moment run one after the other', async () =
   assert.deepEqual([role(b), b.ctl.current().pinned], ['primary', true]);
   await w.run(2 * LEASE_ROUND_MS);
   assert.deepEqual([role(a), role(b)], ['secondary', 'primary']);
+});
+
+// ---- review fixes: local-only claims, stale roles, quit, hostile input, pin races ----
+
+test('renewal failing for 100 min on a channel that merges before the put: never primary past the last published claim', async () => {
+  const w = new World();
+  const a = w.device('mac-a');
+  const b = w.device('mac-b');
+  await w.run(5 * MINUTE);
+  assert.equal(role(a), 'primary');
+  const until = a.ctl.current().until!;
+  a.failAfterMerge = true;
+  await w.run(100 * MINUTE, () => {
+    if (role(a) === 'primary' || reported(a) === 'primary')
+      assert.ok(a.now() < until - LEASE_GIVE_UP_MS, `still primary at ${(w.t - T0) / MINUTE} min`);
+    assert.ok(reportedPrimaries(w).length <= 1, `two primaries at ${(w.t - T0) / MINUTE} min`);
+  });
+  assert.ok(a.local.size > 0, 'the fake did leave a local-only claim');
+  assert.deepEqual([role(a), role(b)], ['secondary', 'primary']);
+});
+
+test('claim() that fails after the local merge rejects and leaves no pinned own claim in effect', async () => {
+  const w = new World();
+  const a = w.device('mac-a');
+  const b = w.device('mac-b');
+  await w.run(5 * MINUTE);
+  b.failAfterMerge = true;
+  await assert.rejects(b.ctl.claim());
+  assert.equal(b.ctl.current().pinned, false);
+  await w.run(10 * MINUTE, () => {
+    assert.equal(role(b), 'secondary', 'the local-only pinned claim never makes it primary');
+    assert.equal(b.ctl.current().pinned, false);
+  });
+  b.failAfterMerge = false;
+  await w.run(HOUR, () => assert.ok(reportedPrimaries(w).length <= 1));
+  assert.deepEqual([role(a), role(b), b.ctl.current().pinned], ['primary', 'secondary', false]);
+});
+
+for (const [holderSkew, otherSkew] of [
+  [-LEASE_SKEW_MS / 2, LEASE_SKEW_MS / 2],
+  [LEASE_SKEW_MS / 2, -LEASE_SKEW_MS / 2],
+]) {
+  test(`a holder whose timer fires a round late hands over without overlap at ${holderSkew / MINUTE} / ${otherSkew / MINUTE} min skew`, async () => {
+    // Every lateness up to a round, which also puts the holder's rounds at every phase against its claim's expiry.
+    for (let late = 5_000; late <= LEASE_ROUND_MS; late += 5_000) {
+      const w = new World();
+      const holder = w.device('mac-b', holderSkew);
+      await holder.ctl.tick();
+      await w.tickDue();
+      const other = w.device('mac-a', otherSkew);
+      await w.run(30 * MINUTE);
+      assert.equal(reported(holder), 'primary');
+      holder.failWrites = true;
+      holder.lateMs = late;
+      await w.run(
+        HOUR,
+        () =>
+          assert.ok(
+            reportedPrimaries(w).length <= 1,
+            `late ${late}: two primaries at ${(w.t - T0) / MINUTE} min`,
+          ),
+        1_000,
+      );
+      assert.deepEqual([reported(holder), reported(other)], ['secondary', 'primary']);
+    }
+  });
+}
+
+test('waking from sleep: current() is secondary once the published claim ran out, before any tick', async () => {
+  const w = new World();
+  const a = w.device('mac-a');
+  await w.run(5 * MINUTE);
+  const until = a.ctl.current().until!;
+  a.offline = true;
+  w.t = until - LEASE_GIVE_UP_MS + 1 - a.skew;
+  assert.equal(a.ctl.current().role, 'secondary');
+  assert.equal(reported(a), 'secondary', 'and the host is told');
+});
+
+test('an inactive primary stops acting as primary, so a pin elsewhere never makes two', async () => {
+  const w = new World();
+  const a = w.device('mac-a');
+  const b = w.device('mac-b');
+  await w.run(5 * MINUTE);
+  assert.equal(reported(a), 'primary');
+  a.active = false;
+  await w.run(2 * LEASE_ROUND_MS);
+  assert.equal(reported(a), 'secondary');
+  assert.deepEqual(await b.ctl.claim(), { pinned: true });
+  await w.run(HOUR, () => assert.ok(reportedPrimaries(w).length <= 1));
+  assert.deepEqual([reported(a), reported(b)], ['secondary', 'primary']);
+});
+
+test('stop() publishes an expired claim, so the lease passes on at the next round, not after the TTL', async () => {
+  const w = new World();
+  const a = w.device('mac-a');
+  const b = w.device('mac-b');
+  await w.run(5 * MINUTE);
+  assert.equal(role(a), 'primary');
+  await a.ctl.stop();
+  a.offline = true;
+  assert.equal(reported(a), 'secondary');
+  await w.run(3 * LEASE_ROUND_MS);
+  assert.equal(role(b), 'primary');
+  // Stopped: later calls do nothing.
+  const tries = a.tries;
+  await a.ctl.tick();
+  await a.ctl.release();
+  assert.deepEqual(await a.ctl.claim(), { pinned: false });
+  assert.equal(a.tries, tries);
+});
+
+test('decideLease: an absurd pinnedAt is ignored like an absurd until', () => {
+  const records = [
+    claim('mac-a', { until: live, holder: true }),
+    claim('mac-b', { until: live, pinned: true, pinnedAt: T0 + 10 * HOUR }),
+    claim('mac-c', { until: live, pinned: true, pinnedAt: Number.MAX_SAFE_INTEGER }),
+  ];
+  const d = decideLease(records, 'mac-a', T0);
+  assert.equal(d.winner?.device, 'mac-a');
+  assert.equal(d.pinHigh, 0);
+});
+
+test('an own claim that never reads back: one immediate retry, then one round at a time (no hot loop)', async () => {
+  const w = new World();
+  const a = w.device('mac-a');
+  a.mangleOwn = true;
+  await w.run(30 * MINUTE);
+  assert.ok(a.reads <= 30 + 3, `${a.reads} reads in 30 min`);
+  assert.ok(a.writes <= 30 / 10 + 3, `${a.writes} writes in 30 min`);
+});
+
+test('a read that resolves with something other than a list is a failed read, never a throw', async () => {
+  const w = new World();
+  const a = w.device('mac-a');
+  await w.run(5 * MINUTE);
+  const until = a.ctl.current().until!;
+  for (const junk of [null, undefined, {}, 'records', 42]) {
+    a.readOverride = () => junk;
+    await a.ctl.tick();
+  }
+  assert.equal(role(a), 'primary', 'kept until the published claim runs out');
+  a.readOverride = () => ({ records: [] });
+  await w.run(until - w.t);
+  assert.equal(reported(a), 'secondary');
+});
+
+test('a pin that loses a simultaneous-pin race resolves pinned: false', async () => {
+  const w = new World();
+  const a = w.device('mac-a');
+  const b = w.device('mac-b');
+  await w.run(5 * MINUTE);
+  let aClaim: Promise<{ pinned: boolean }> | undefined;
+  // mac-a pins just after mac-b's pinned claim lands, before mac-b re-reads.
+  b.afterWrite = async () => {
+    b.afterWrite = undefined;
+    aClaim = a.ctl.claim();
+    await aClaim;
+  };
+  assert.deepEqual(await b.ctl.claim(), { pinned: false });
+  assert.deepEqual(await aClaim, { pinned: true });
+  assert.equal(b.ctl.current().pinned, false);
+  await w.run(HOUR, () => assert.ok(reportedPrimaries(w).length <= 1));
+  assert.deepEqual([role(a), role(b)], ['primary', 'secondary']);
 });
