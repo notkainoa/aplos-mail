@@ -2,10 +2,26 @@
   "name": "eslint-suppressions-main",
   "allowedPaths": ["apps/desktop/src/main/**", "eslint-suppressions.json"],
   "gates": [
-    { "name": "lint", "command": "npm run lint", "timeoutSec": 900 },
-    { "name": "typecheck", "command": "npm run typecheck", "timeoutSec": 600 },
-    { "name": "test-audit", "command": "npm run test:audit", "timeoutSec": 300 },
-    { "name": "test", "command": "npm test", "timeoutSec": 1500 }
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "timeoutSec": 900
+    },
+    {
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "timeoutSec": 600
+    },
+    {
+      "name": "test",
+      "command": "npm test",
+      "timeoutSec": 1500
+    },
+    {
+      "name": "test-engine",
+      "command": "npm run test:engine",
+      "timeoutSec": 1500
+    }
   ],
   "scorers": [
     {
