@@ -132,7 +132,7 @@ function HomeFocus(): ReactElement {
             label="Back from Later"
             variant="sub"
             count={1}
-            action={{ label: 'Clear from Home', onSelect: noop }}
+            action={{ label: 'Clear from Home', commandId: 'home.clearFromHome', onSelect: noop }}
           />
           <ListRow
             {...row({

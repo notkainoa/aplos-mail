@@ -291,12 +291,9 @@ export function TimeGrid(props: CalendarGridProps) {
             All day
           </div>
           {perDay.map(({ day, allDay }, dayIndex) => (
-            <div
-              key={day}
-              role="gridcell"
-              className="ui-calendar-grid__allday-cell"
-              aria-label={`${dayTitle(day)}, all day`}
-            >
+            <div key={day} role="gridcell" className="ui-calendar-grid__allday-cell">
+              {/* The cell's name comes from its content, which holds the visible titles; a label would hide them. */}
+              <span className="ui-sr-only">{`${dayTitle(day)}, all day`}</span>
               {allDay.map(event => (
                 <div className="ui-calendar-grid__strip" key={event.id}>
                   {/* A multi-day entry shows on each day it covers, but only its first segment is the DOM target. */}
@@ -337,8 +334,8 @@ export function TimeGrid(props: CalendarGridProps) {
                 className="ui-calendar-grid__col"
                 data-today={isToday ? 'true' : undefined}
                 data-date={day}
-                aria-label={dayTitle(day)}
               >
+                <span className="ui-sr-only">{dayTitle(day)}</span>
                 <div
                   ref={el => {
                     trackRefs.current[dayIndex] = el;
