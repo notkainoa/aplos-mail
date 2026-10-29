@@ -64,19 +64,22 @@ function evictOldest(): void {
   }
 }
 
-/** Pushes a toast, or updates the live one with the same id in place; returns the id. */
+/** Pushes a toast, or updates the live one with the same id in place; returns the id. A live Undo toast is never replaced by a plain one: the push is refused and the Undo stays. */
 export function addToast(toast: PushedToast): string {
+  const existing = live.get(toast.id);
+  if (existing && isUndoToast(existing) && !isUndoToast(toast)) return toast.id;
   live.set(toast.id, toast);
   evictOldest();
   publish();
   return toast.id;
 }
 
-/** Rewords a live toast; a no-op once it has closed. */
+/** Rewords a live toast; a no-op once it has closed. Patching an Undo toast keeps it an Undo toast. */
 export function patchToast(id: string, patch: Patch): void {
   const toast = live.get(id);
   if (!toast) return;
-  live.set(id, { ...toast, ...patch, id });
+  const next: PushedToast = { ...toast, ...patch, id };
+  live.set(id, isUndoToast(toast) && !isUndoToast(next) ? { ...next, undoable: true } : next);
   publish();
 }
 
@@ -100,14 +103,26 @@ export function setToastCommandRunner(runner: ((commandId: string) => unknown) |
   runCommand = runner;
 }
 
-/** Runs the chosen action (its command, else the toast's `onAction`) and then closes the toast. */
+/** True when the registry's result says the command ran. */
+function commandRan(result: unknown): boolean {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    (result as { status?: unknown }).status === 'ran'
+  );
+}
+
+/** Runs the chosen action. A command action closes the toast only when the registry says the command ran (a refused or failed Undo keeps it); an `onAction` callback closes it after it returns. */
 export function runToastAction(id: string, actionId: string): void {
   const toast = live.get(id);
   if (!toast) return;
   const action = toast.actions?.find(a => a.id === actionId);
+  if (action?.commandId && runCommand) {
+    if (commandRan(runCommand(action.commandId))) dismissToastNow(id);
+    return;
+  }
   try {
-    if (action?.commandId && runCommand) runCommand(action.commandId);
-    else toast.onAction?.(actionId);
+    toast.onAction?.(actionId);
   } finally {
     dismissToastNow(id);
   }

@@ -24,10 +24,52 @@ export interface ShellKeyState {
   readonly prefs?: KeyPrefs;
 }
 
-/** The context a key runs in; `focusTarget` is the event's target. */
+/** The slice of an element the overlay scan reads (a real `Element` satisfies it). */
+interface ElementLike {
+  readonly parentElement?: ElementLike | null;
+  getAttribute?(name: string): string | null;
+}
+
+function hasClass(el: ElementLike, name: string): boolean {
+  return (el.getAttribute?.('class') ?? '').split(/\s+/).includes(name);
+}
+
+/** The key contexts one element declares: `data-keyctx` (comma separated) first, else the overlay its role and class show. */
+function contextsOfElement(el: ElementLike): ContextName[] {
+  const declared = el.getAttribute?.('data-keyctx');
+  if (declared) return declared.split(',').map(c => c.trim()) as ContextName[];
+  if (hasClass(el, 'ui-date-presets')) return ['datePicker'];
+  const role = el.getAttribute?.('role');
+  if (role === 'menu')
+    return el.parentElement && hasClass(el.parentElement, 'ui-date-presets') ? [] : ['menu'];
+  if (role === 'dialog') return [hasClass(el, 'ui-palette__panel') ? 'palette' : 'dialog'];
+  return [];
+}
+
+/**
+ * The modal contexts open around an element: its ancestors that are a menu, a date picker, a dialog or the palette (or
+ * that declare `data-keyctx`), outer to inner. The renderer's overlays carry a role and a class rather than a key
+ * context, so this reads those; a keydown inside an open overlay then reaches the overlay's keys and nothing behind it.
+ */
+export function overlayContexts(target: unknown): ContextName[] {
+  if (typeof target !== 'object' || target === null) return [];
+  const found: ContextName[] = [];
+  for (let el: ElementLike | null | undefined = target; el; el = el.parentElement) {
+    found.unshift(...contextsOfElement(el));
+  }
+  return found;
+}
+
+/** The overlay contexts around the event target and around the focused element (they differ when focus sits in a portal). */
+function domContexts(focusTarget: unknown): ContextName[] {
+  const active = typeof document === 'undefined' ? null : document.activeElement;
+  return [...overlayContexts(active), ...overlayContexts(focusTarget)];
+}
+
+/** The context a key runs in; `focusTarget` is the event's target. The overlays open around it join the stack. */
 export function shellKeyContext(state: ShellKeyState, focusTarget: unknown): CommandContext {
   return {
-    stack: buildStack(state.stack),
+    stack: buildStack([...state.stack, ...domContexts(focusTarget)]),
     target: state.target,
     selection: [],
     conditions: state.conditions,

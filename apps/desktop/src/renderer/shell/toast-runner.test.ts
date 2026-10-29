@@ -29,7 +29,7 @@ test('an Undo action reaches the registry through the runner, then the toast clo
   const registry = {
     run: (id: string, ctx: CommandContext) => {
       ran.push([id, ctx]);
-      return { status: 'ok' } as never;
+      return { status: 'ran', done: Promise.resolve() } as never;
     },
   };
   setToastCommandRunner(toastCommandRunner(registry, () => toastContext(['global', 'home'], null)));

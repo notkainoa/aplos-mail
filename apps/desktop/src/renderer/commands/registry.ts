@@ -468,8 +468,15 @@ export function contextLine(target: TargetSummary | null, selectionCount = 0): s
   return target.detail ? `For: ${target.title} · ${target.detail}` : `For: ${target.title}`;
 }
 
+/** The error's `name` (or its wire `type`): enough to see what failed, nothing a message could carry (it may hold mail text). */
+function errorKind(error: unknown): string {
+  if (error instanceof Error) return error.name;
+  const type = (error as { type?: unknown } | null)?.type;
+  return typeof type === 'string' ? type : typeof error;
+}
+
 function defaultOnError(error: unknown, commandId: CommandId): void {
-  console.error(`Command ${commandId} failed`, error);
+  console.error(`Command ${commandId} failed (${errorKind(error)})`);
 }
 
 type SpecEntry = { kind: 'command'; spec: CommandSpec } | { kind: 'control'; spec: ControlSpec };

@@ -6,28 +6,37 @@
 import { api, toIsoDateTime, useAccounts, useNow, useStatus, type StatusSlotState } from '../data';
 import type { StatusAction, SyncAccount } from '../ui/props';
 import { StatusSlot } from '../ui/status';
+import { DIAGNOSTICS_FAILED_COPY, RECONNECT_FAILED_COPY } from './failure-copy';
 import { navigate, openSheet, pushToast } from './index';
 import { reconnectMode, syncAccount, toSyncStatus } from './status-map';
 
 const DIAGNOSTICS_TOAST_ID = 'diagnostics-copied';
+const RETRY_FAILED_TOAST_ID = 'retry-failed';
 
 function ignore(): void {
   return undefined;
 }
 
+function notify(id: string, message: string): void {
+  pushToast({ id, kind: 'info', message, undoable: false });
+}
+
+/** A verb that throws before it returns a promise fails the same way as one that rejects. */
+function attempt(call: () => Promise<unknown>): Promise<unknown> {
+  return Promise.resolve().then(call);
+}
+
 function copyDiagnostics(): void {
-  api.diagnostics.copy().then(() => {
-    pushToast({
-      id: DIAGNOSTICS_TOAST_ID,
-      kind: 'info',
-      message: 'Diagnostics copied. They hold no mail.',
-      undoable: false,
-    });
-  }, ignore);
+  attempt(() => api.diagnostics.copy()).then(
+    () => notify(DIAGNOSTICS_TOAST_ID, 'Diagnostics copied. They hold no mail.'),
+    () => notify(DIAGNOSTICS_TOAST_ID, DIAGNOSTICS_FAILED_COPY),
+  );
 }
 
 function retryNow(state: StatusSlotState): void {
-  api.sync.request({ accountId: state.account?.id, force: true }).then(ignore, ignore);
+  attempt(() => api.sync.request({ accountId: state.account?.id, force: true })).then(ignore, () =>
+    notify(RETRY_FAILED_TOAST_ID, RECONNECT_FAILED_COPY),
+  );
 }
 
 /** Runs one slot verb for the account the slot is about. */

@@ -5,6 +5,7 @@
  */
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { createAppRegistry, type CommandHandlers, type Registry } from '../commands';
+import { undoStack } from '../data';
 
 /** Handlers keyed by command id. */
 export type CommandHandlerTable = Readonly<Record<string, CommandHandlers>>;
@@ -16,8 +17,24 @@ export interface ShellRegistry {
   register(handlers: CommandHandlerTable): () => void;
 }
 
-/** Wraps a registry in the shell's `register` API. */
+/** Handlers the shell attaches first, so the command works on every screen; a screen's own registration shadows it. */
+export const DEFAULT_HANDLERS: CommandHandlerTable = {
+  // Z and the toast's Undo: the newest change of either kind (an engine operation or a local one).
+  'app.undo': {
+    run: () => {
+      undoStack.undoLast();
+    },
+  },
+};
+
+/** Wraps a registry in the shell's `register` API, with the default handlers already attached. */
 export function shellRegistryFor(registry: Registry): ShellRegistry {
+  const shell = wrapRegistry(registry);
+  shell.register(DEFAULT_HANDLERS);
+  return shell;
+}
+
+function wrapRegistry(registry: Registry): ShellRegistry {
   return {
     registry,
     register(handlers) {

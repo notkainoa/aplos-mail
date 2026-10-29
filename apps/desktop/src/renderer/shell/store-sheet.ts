@@ -34,10 +34,28 @@ function focusedElement(): Opener {
     : null;
 }
 
+/** Where focus goes when the opener has unmounted: the account switcher's trigger, else the main pane. */
+function fallbackFocus(): Opener {
+  if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return null;
+  const switcher = document.querySelector<HTMLElement>('.ui-account-switcher');
+  if (switcher) return switcher;
+  const pane = document.querySelector<HTMLElement>('.ui-pane[data-kind="main"]');
+  if (pane && !pane.hasAttribute('tabindex')) pane.setAttribute('tabindex', '-1');
+  return pane;
+}
+
 function restoreFocus(): void {
   const target = opener;
   opener = null;
   if (target && target.isConnected !== false) target.focus();
+  else fallbackFocus()?.focus();
+}
+
+/** The error's `name` (or its wire `type`): enough to see what failed, nothing a provider or a message could carry. */
+function errorKind(error: unknown): string {
+  if (error instanceof Error) return error.name;
+  const type = (error as { type?: unknown } | null)?.type;
+  return typeof type === 'string' ? type : typeof error;
 }
 
 function runCancelHooks(replaced: OpenSheet): void {
@@ -46,7 +64,7 @@ function runCancelHooks(replaced: OpenSheet): void {
       hook(replaced);
     } catch (error) {
       // A failing cancel must not leave the old sheet open over the new one.
-      console.error('sheet cancel hook failed', error);
+      console.error(`sheet ${replaced.name} cancel hook failed (${errorKind(error)})`);
     }
   }
 }

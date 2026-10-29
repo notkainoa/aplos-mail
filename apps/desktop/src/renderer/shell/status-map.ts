@@ -47,7 +47,7 @@ export function toSyncStatus(state: StatusSlotState): SyncStatus {
       return {
         kind: 'paused',
         reason: DAILY_LIMIT_CODES.includes(state.reasonCode ?? '') ? 'dailyLimit' : 'throttle',
-        resumeAt: toIsoDateTime(status.until),
+        ...(isTime(status.until) ? { resumeAt: toIsoDateTime(status.until) } : {}),
       };
     case 'offline':
       return { kind: 'offline', changesWaiting: account?.pendingChanges ?? 0 };
@@ -58,6 +58,11 @@ export function toSyncStatus(state: StatusSlotState): SyncStatus {
     case 'error':
       return { kind: status.state };
   }
+}
+
+/** True for a usable epoch-ms time (a missing or NaN `until` would print "Invalid Date"). */
+function isTime(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 function isQuiet(state: string): boolean {

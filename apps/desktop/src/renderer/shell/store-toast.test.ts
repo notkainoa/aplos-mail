@@ -64,9 +64,25 @@ test('one operation, one notice: pushing a live id and updateToast change it in 
   updateToast('op', { kind: 'done', message: 'Done', undoable: true, persistent: false });
   assert.deepEqual(ids(), ['op', 'other']);
   assert.equal(getToasts()[0]?.message, 'Done');
-  pushToast({ ...plain('op'), message: 'Done again' });
+  pushToast({ ...plain('other'), message: 'Other again' });
   assert.deepEqual(ids(), ['op', 'other']);
-  assert.equal(getToasts()[0]?.message, 'Done again');
+  assert.equal(getToasts()[1]?.message, 'Other again');
+});
+
+test('a plain push with a live Undo toast id is refused and the Undo stays', () => {
+  pushToast(undo('u'));
+  pushToast({ ...plain('u'), message: 'Replaced' });
+  assert.equal(getToasts()[0]?.message, 'u');
+  assert.equal(getToasts()[0]?.undoable, true);
+  pushToast({ ...undo('u'), message: 'Moved to Later' });
+  assert.equal(getToasts()[0]?.message, 'Moved to Later');
+});
+
+test('patching an Undo toast keeps it undoable, even with a patch that drops the Undo action', () => {
+  pushToast(undo('u'));
+  updateToast('u', { message: 'Saved here', undoable: false, actions: [] });
+  assert.equal(getToasts()[0]?.message, 'Saved here');
+  assert.equal(getToasts()[0]?.undoable, true);
 });
 
 test('updateToast and dismissToast are no-ops for a closed toast', () => {
@@ -116,7 +132,10 @@ test('with three undo toasts open a persistent newcomer stays, and the stack exc
 
 test('runToastAction runs the command through the runner, or onAction, then closes the toast', () => {
   const ran: string[] = [];
-  setToastCommandRunner(commandId => ran.push(commandId));
+  setToastCommandRunner(commandId => {
+    ran.push(commandId);
+    return { status: 'ran' };
+  });
   pushToast(undo('u'));
   runToastAction('u', 'undo');
   assert.deepEqual(ran, ['app.undo']);
@@ -143,5 +162,20 @@ test('the toast closes even when its action throws', () => {
     },
   });
   assert.throws(() => runToastAction('t', 'x'), /boom/);
+  assert.deepEqual(ids(), []);
+});
+
+test('a command action keeps the toast unless the registry says the command ran', () => {
+  for (const status of ['unhandled', 'disabled', 'unknown', 'failed']) {
+    setToastCommandRunner(() => ({ status }));
+    pushToast(undo('u'));
+    runToastAction('u', 'undo');
+    assert.deepEqual(ids(), ['u'], status);
+  }
+  setToastCommandRunner(() => undefined);
+  runToastAction('u', 'undo');
+  assert.deepEqual(ids(), ['u']);
+  setToastCommandRunner(() => ({ status: 'ran' }));
+  runToastAction('u', 'undo');
   assert.deepEqual(ids(), []);
 });

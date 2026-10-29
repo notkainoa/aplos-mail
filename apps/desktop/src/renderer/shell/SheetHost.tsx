@@ -4,12 +4,13 @@
  * toast. The consent card is a Dialog. Failure copy is ours, picked from the frame's reason code; a provider's own text
  * never reaches the sheet.
  */
-import { useEffect, useRef, useState } from 'react';
-import { api, useAccounts, useConsent, useFrames, useSettings } from '../data';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { api, useAccounts, useAccountsLoaded, useConsent, useFrames, useSettings } from '../data';
 import { ConsentCard } from '../ui/onboarding';
 import { Dialog } from '../ui/surfaces';
 import { ReconnectSheet } from '../ui/status';
-import { closeSheet, pushToast, useSheet, type SheetArgs } from './index';
+import { RECONNECT_FAILED_COPY, SAVE_FAILED_COPY } from './failure-copy';
+import { closeSheet, pushToast, useRegisterCommands, useSheet, type SheetArgs } from './index';
 
 function ignore(): void {
   return undefined;
@@ -26,7 +27,7 @@ export function failureReason(reasonCode: string | undefined): string {
     case 'auth.timeout':
       return 'Sign-in timed out. Nothing changed.';
     default:
-      return 'Couldn’t reconnect. Your mail is safe here and local changes are kept.';
+      return RECONNECT_FAILED_COPY;
   }
 }
 
@@ -46,11 +47,30 @@ export function flowEnded(
   return latest.connectId === connectId && latest.state !== undefined && latest.state !== 'waiting';
 }
 
+/** The frame, unless it names another account than the sheet's: a frame for someone else's flow is ignored. */
+export function ownFrame<F extends { readonly connectId: string; readonly accountId?: string }>(
+  frame: F | undefined,
+  accountId: string,
+): F | undefined {
+  return frame && (frame.accountId === undefined || frame.accountId === accountId)
+    ? frame
+    : undefined;
+}
+
+/** True once accounts have loaded and the sheet's account is not among them (it was removed). */
+export function accountGone(
+  loaded: boolean,
+  accounts: readonly { readonly id: string }[],
+  accountId: string,
+): boolean {
+  return loaded && !accounts.some(a => a.id === accountId);
+}
+
 /** Starts the flow and follows its frames; returns the connect id once known. */
 function useReconnectFlow({ accountId, mode }: ReconnectArgs, attempt: number) {
   const [connectId, setConnectId] = useState('');
   const [refused, setRefused] = useState(false);
-  const last = useFrames('connect', { connectId }).last;
+  const last = ownFrame(useFrames('connect', { connectId }).last, accountId);
   const latest = useRef({ connectId, state: last?.state as string | undefined });
   useEffect(() => {
     latest.current = { connectId, state: last?.state };
@@ -60,16 +80,21 @@ function useReconnectFlow({ accountId, mode }: ReconnectArgs, attempt: number) {
     let started = '';
     setConnectId('');
     setRefused(false);
-    startFlow({ accountId, mode }).then(
-      result => {
-        started = result.connectId;
-        if (stale) void api.account.cancelConnect({ connectId: started }).catch(ignore);
-        else setConnectId(started);
-      },
-      () => {
-        if (!stale) setRefused(true);
-      },
-    );
+    // The start waits a microtask: StrictMode runs an effect, cleans it up and runs it again at once, and only the
+    // live run may open a flow (the first is stale by then and never starts one).
+    void Promise.resolve().then(() => {
+      if (stale) return;
+      startFlow({ accountId, mode }).then(
+        result => {
+          started = result.connectId;
+          if (stale) void api.account.cancelConnect({ connectId: started }).catch(ignore);
+          else setConnectId(started);
+        },
+        () => {
+          if (!stale) setRefused(true);
+        },
+      );
+    });
     return () => {
       stale = true;
       if (started && !flowEnded(latest.current, started))
@@ -79,12 +104,24 @@ function useReconnectFlow({ accountId, mode }: ReconnectArgs, attempt: number) {
   return { connectId, last, refused };
 }
 
+/** Return in the reconnect sheet: Try again when the flow failed, nothing otherwise. */
+export function reconnectDefault(failed: boolean, retry: () => void): () => void {
+  return () => {
+    if (failed) retry();
+  };
+}
+
 function ReconnectHost({ args }: { readonly args: ReconnectArgs }) {
   const accounts = useAccounts();
+  const loaded = useAccountsLoaded();
   const [attempt, setAttempt] = useState(0);
   const { connectId, last, refused } = useReconnectFlow(args, attempt);
   const address = accounts.find(a => a.id === args.accountId)?.address ?? '';
   const state = last?.state;
+  const gone = accountGone(loaded, accounts, args.accountId);
+  useEffect(() => {
+    if (gone) closeSheet();
+  }, [gone]);
   useEffect(() => {
     if (state === 'connected') {
       pushToast({
@@ -97,6 +134,12 @@ function ReconnectHost({ args }: { readonly args: ReconnectArgs }) {
     } else if (state === 'cancelled') closeSheet();
   }, [state, connectId]);
   const failed = refused || state === 'failed';
+  const retry = useCallback(() => setAttempt(n => n + 1), []);
+  const handlers = useMemo(
+    () => ({ 'sheet.default': { run: reconnectDefault(failed, retry) } }),
+    [failed, retry],
+  );
+  useRegisterCommands(handlers);
   return (
     <ReconnectSheet
       open
@@ -108,7 +151,7 @@ function ReconnectHost({ args }: { readonly args: ReconnectArgs }) {
         if (connectId) void api.account.cancelConnect({ connectId }).catch(ignore);
         closeSheet();
       }}
-      onRetry={() => setAttempt(n => n + 1)}
+      onRetry={retry}
     />
   );
 }
@@ -144,10 +187,28 @@ function ConsentHost({ args }: { readonly args: SheetArgs['consent'] }) {
   const model = args.model ?? consent?.model ?? summaries?.model ?? '';
   const allow = () => {
     if (!consent || !isKnownProvider(provider)) return;
-    api.consent
-      .grant({ scope: 'background', version: consent.currentVersion, provider, model })
-      .then(closeSheet, ignore);
+    Promise.resolve()
+      .then(() =>
+        api.consent.grant({
+          scope: 'background',
+          version: consent.currentVersion,
+          provider,
+          model,
+        }),
+      )
+      .then(closeSheet, () =>
+        pushToast({
+          id: 'consent-failed',
+          kind: 'info',
+          message: SAVE_FAILED_COPY,
+          undoable: false,
+        }),
+      );
   };
+  const allowRef = useRef(allow);
+  allowRef.current = allow;
+  const handlers = useMemo(() => ({ 'sheet.default': { run: () => allowRef.current() } }), []);
+  useRegisterCommands(handlers);
   return (
     <Dialog open title="Background summaries" size="md" onClose={closeSheet}>
       <ConsentCard
@@ -167,10 +228,27 @@ export function reconnectKey({ accountId, mode }: ReconnectArgs): string {
   return `${accountId}:${mode}`;
 }
 
+const SHEET_CANCEL_HANDLERS = { 'sheet.cancel': { run: () => closeSheet() } } as const;
+
+/** Esc anywhere in the window while a sheet is open: closes it (the key stack carries `sheet`, so nothing behind answers). */
+function SheetKeys() {
+  useRegisterCommands(SHEET_CANCEL_HANDLERS);
+  return null;
+}
+
 /** The open sheet, or nothing. */
 export function SheetHost() {
   const sheet = useSheet();
   if (!sheet) return null;
+  return (
+    <>
+      <SheetKeys />
+      <OpenSheetView sheet={sheet} />
+    </>
+  );
+}
+
+function OpenSheetView({ sheet }: { readonly sheet: NonNullable<ReturnType<typeof useSheet>> }) {
   if (sheet.name === 'reconnect') {
     return <ReconnectHost key={reconnectKey(sheet.args)} args={sheet.args} />;
   }
