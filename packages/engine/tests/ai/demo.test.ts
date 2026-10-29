@@ -6,7 +6,7 @@ import { DEMO_ACCOUNT_IDS } from '../../src/ai/demo/load';
 import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
 import type { Caller } from '../../src/methods/types';
-import { openStore, type StorePort } from '../../src/store';
+import { openStore, StoreError, type StorePort } from '../../src/store';
 import { manualClock } from '../runtime.helpers';
 import { ACCOUNT, T0, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 
@@ -16,10 +16,10 @@ import { ACCOUNT, T0, accountWrite, folderWrites, msg, tempDb } from '../store/h
  * refused-while-sending check.
  */
 
-async function demoEngine() {
+async function demoEngine(wrapStore: (store: StorePort) => StorePort = s => s) {
   const file = tempDb();
   const db = file.open();
-  const store = openStore(db, { now: () => T0, extensions: laneExtensions() });
+  const store = wrapStore(openStore(db, { now: () => T0, extensions: laneExtensions() }));
   const clock = manualClock();
   const records: LogRecord[] = [];
   const log = createLogger({ sink: { write: r => records.push(r) }, salt: 'demo-test', clock });
@@ -434,6 +434,121 @@ test('Demo/reset is refused while a demo account has a send out, and works after
     assert.equal(count(t.store, 'SELECT count(*) AS n FROM messages'), 20);
   } finally {
     await t.cleanup();
+  }
+});
+
+test('Demo/remove answers a typed conflict while a demo send is out, and the demo is untouched', async () => {
+  const t = await demoEngine();
+  try {
+    await t.window().call('Demo/load', {});
+    t.db.exec(
+      `INSERT INTO submissions(id, draft_id, account_id, internet_id, not_before, state)
+      VALUES('sub-1', 'draft-1', 'demo-work', '<x@demo.example>', 0, 'sending')`,
+    );
+    await assert.rejects(
+      t.window().call('Demo/remove', {}),
+      (e: unknown) =>
+        e instanceof ContractError &&
+        e.type === 'conflict' &&
+        e.message === "Demo accounts can't be removed while a message is sending.",
+    );
+    assert.equal(
+      count(t.store, "SELECT count(*) AS n FROM accounts WHERE provider = 'demo'"),
+      2,
+      'the demo was not removed',
+    );
+    assert.equal(count(t.store, 'SELECT count(*) AS n FROM messages'), 20);
+    t.db.exec("DELETE FROM submissions WHERE id = 'sub-1'");
+    await t.window().call('Demo/remove', {});
+    assert.equal(
+      count(t.store, "SELECT count(*) AS n FROM accounts WHERE provider = 'demo'"),
+      0,
+      'the refusal was only while the send was out',
+    );
+  } finally {
+    await t.cleanup();
+  }
+});
+
+/** A store whose `commit` throws on the next `armed.n` commits that are not the reset's remove commit. */
+const bombLoad = (
+  store: StorePort,
+  armed: { n: number },
+  fail: () => Error = () => new StoreError('invalid', 'planted reload failure'),
+): StorePort => ({
+  ...store,
+  commit: input => {
+    if (armed.n > 0 && input.writes.some(w => w.kind !== 'accountRemove')) {
+      armed.n--;
+      throw fail();
+    }
+    return store.commit(input);
+  },
+});
+
+test('Demo/reset retries a failed reload once and still lands the demo', async () => {
+  const armed = { n: 0 };
+  const t = await demoEngine(store => bombLoad(store, armed));
+  try {
+    const s = t.window();
+    await s.call('Demo/load', {});
+    armed.n = 1;
+    const reset = (await s.call('Demo/reset', {})) as { receipt: { opId: string } };
+    assert.equal(armed.n, 0, 'the first reload failed');
+    assert.equal(
+      count(t.store, 'SELECT count(*) AS n FROM commits WHERE op_id = ?', reset.receipt.opId),
+      1,
+      'the receipt names the commit the retry landed',
+    );
+    assert.equal(count(t.store, "SELECT count(*) AS n FROM accounts WHERE provider = 'demo'"), 2);
+    assert.equal(count(t.store, 'SELECT count(*) AS n FROM messages'), 20);
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('Demo/reset reports the empty demo when the reload keeps failing, and Demo/load restores it', async () => {
+  const armed = { n: 0 };
+  const t = await demoEngine(store => bombLoad(store, armed));
+  try {
+    const s = t.window();
+    await s.call('Demo/load', {});
+    armed.n = 2;
+    await assert.rejects(
+      s.call('Demo/reset', {}),
+      (e: unknown) =>
+        e instanceof ContractError &&
+        e.type === 'internal' &&
+        e.message === 'The demo is empty after a failed reset. Demo/load restores it.',
+    );
+    assert.equal(
+      count(t.store, "SELECT count(*) AS n FROM accounts WHERE provider = 'demo'"),
+      0,
+      'the remove committed and both reloads failed: no demo accounts are left',
+    );
+    await s.call('Demo/load', {});
+    assert.equal(count(t.store, 'SELECT count(*) AS n FROM messages'), 20);
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('Demo/reset does not retry what is not a failed commit: a refusal or a bug surfaces as itself', async () => {
+  for (const planted of [
+    new ContractError({ type: 'conflict', message: 'planted refusal' }),
+    new TypeError('planted bug'),
+  ]) {
+    const armed = { n: 0 };
+    const t = await demoEngine(store => bombLoad(store, armed, () => planted));
+    try {
+      const s = t.window();
+      await s.call('Demo/load', {});
+      armed.n = 5;
+      await assert.rejects(s.call('Demo/reset', {}));
+      assert.equal(armed.n, 4, `${planted.name}: the reload was attempted once, not retried`);
+    } finally {
+      await t.cleanup();
+    }
   }
 });
 
