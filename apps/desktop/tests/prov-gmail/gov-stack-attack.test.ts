@@ -8,7 +8,19 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import type {
+  AdapterContext,
+  Capabilities,
+  KnownLookup,
+  Logger,
+  SyncState,
+} from '@aplos/engine/ports';
+import { createLeaseController } from '../../../../packages/engine/src/sync/lease';
 import { GMAIL_BUDGET } from '../../src/host/providers/google/adapter';
+import { GMAIL_COSTS } from '../../src/host/providers/google/costs';
+import { GmailWorkflowTransport } from '../../src/host/providers/google/workflow';
+import { createWorkflowStateChannel } from '../../src/host/providers/google/workflow-state';
+import { keysOf } from './workflow-rig';
 import {
   ACCOUNT,
   MINUTE,
@@ -277,49 +289,129 @@ test('prov-gov-attack-04 baseline: a cursor reset before the first 50 threads st
   }
 });
 
-// Known and accepted until `sync/lease.ts` lands (plan 20 PV3): with no lease input both Macs run as primary. ARCH 6.5
-// calls the lease soft ("if two devices both act as primary, AIMD and cooldowns absorb it"), and a secondary default
-// with no lease would leave every Mac without backfill and prefetch (primary-only lanes). Kept as a todo so it turns
-// green, and is noticed, once the lease supplies the role.
-test(
-  'prov-gov-attack-05 two devices with no lease input stay under the combined primary + secondary target',
-  { todo: 'needs the primary-device lease (sync/lease.ts, PV3)' },
-  async t => {
-    const mail = mailWorld(2_000);
-    const macA = new Mac(mail, 'mac-a');
-    const macB = new Mac(mail, 'mac-b');
-    // No lease module yet: neither Mac is told its role, as on a real install today.
-    const a = await boot(macA);
-    const b = await boot(macB);
-    try {
-      const emuAt = mail.emu.log.length;
-      await a.host.start(ACCOUNT);
-      await b.host.start(ACCOUNT);
-      // Both first syncs run side by side for 20 minutes (window, then backfill).
-      const startedAt = mail.clock.now();
-      await runUntil(
-        mail.clock,
-        () => mail.clock.now() >= startedAt + 20 * MINUTE,
-        '20 minutes',
-        HOUR,
-        1_000,
-      );
-      const all = mail.emu.log.slice(emuAt);
-      const roles = [a.host.status(ACCOUNT)?.lease?.role, b.host.status(ACCOUNT)?.lease?.role];
-      const combined = peakWindow(all);
-      t.diagnostic(
-        `roles ${roles.join('/')}; combined peak ${combined}; refusals ${refusals(all).length}`,
-      );
-      const cap = GMAIL_BUDGET.target.primary + GMAIL_BUDGET.target.secondary;
-      assert.ok(
-        roles.includes('secondary') && combined <= cap,
-        `roles ${roles.join('/')} (no Mac runs as secondary), combined peak ${combined} vs ${cap}, refusals ${refusals(all).length}`,
-      );
-    } finally {
-      await a.kill();
-      await b.kill();
-      macA.cleanup();
-      macB.cleanup();
+// The lease (`sync/lease.ts`) supplies the role over the real workflow channel (`GmailWorkflowTransport` and
+// `WorkflowStateChannel` on the emulator). The Gmail adapter does not expose its channel yet, so the test wires each
+// Mac's lease controller itself, and starts the account as secondary, as the host does for an adapter with a channel.
+function leaseLoop(mac: Mac, engine: Awaited<ReturnType<typeof boot>>) {
+  const { mail } = mac;
+  const closed = new AbortController();
+  const transport = new GmailWorkflowTransport(
+    {
+      fetch: mac.fetch,
+      costs: GMAIL_COSTS,
+      userAgent: 'AplosMail-test (gzip)',
+      closed: closed.signal,
+    },
+    mail.address,
+  );
+  const channel = createWorkflowStateChannel({
+    transport,
+    keys: keysOf('gov-stack-lease'),
+    device: mac.id,
+    address: mail.address,
+  });
+  const governor = engine.governor;
+  const quiet: Logger = { event() {}, with: () => quiet, enabled: () => false };
+  const none = async () => new Set<string>();
+  const ctx: AdapterContext = {
+    account: {
+      id: ACCOUNT,
+      provider: 'google',
+      address: mail.address,
+      grantedScopes: [],
+      capabilities: {} as Capabilities,
+    },
+    governor: {
+      run: (req, fn) => governor.run(ACCOUNT, req, fn),
+      observe: (budget, error, scope) => governor.observe(ACCOUNT, budget, error, scope),
+      charge: (budget, amount) => governor.charge(ACCOUNT, budget, amount),
+      batchSize: budget => governor.batchSize(ACCOUNT, budget),
+    },
+    clock: {
+      now: () => mail.clock.now(),
+      sleep: (ms, signal) => mail.clock.sleep(ms, signal),
+      timer: () => ({ cancel() {} }),
+    },
+    log: quiet,
+    signal: closed.signal,
+    lookup: {
+      knownThreads: none,
+      knownMessages: none,
+      trackedDraftIds: none,
+      remoteDraftIds: async () => new Map(),
+    } as unknown as KnownLookup,
+    memory: new Map(),
+    generation: 0,
+  };
+  let state: SyncState = { scope: 'workflow', generation: 0, updatedAt: 0 };
+  const lease = createLeaseController({
+    account: ACCOUNT,
+    device: mac.id,
+    clock: mail.clock,
+    channel: {
+      async read() {
+        const read = await channel.read(state, ctx);
+        state = read.nextState;
+        return read.records;
+      },
+      write: entries => channel.write(entries, ctx),
+    },
+    report: (account, value) => engine.host.leaseChanged(account, value),
+  });
+  const running = (async () => {
+    while (!closed.signal.aborted) {
+      if (lease.next() <= mail.clock.now()) await lease.tick();
+      const wait = Math.max(1_000, lease.next() - mail.clock.now());
+      await mail.clock.sleep(wait, closed.signal).catch(() => {});
     }
-  },
-);
+  })();
+  return {
+    lease,
+    async stop() {
+      closed.abort();
+      await running;
+    },
+  };
+}
+
+test('prov-gov-attack-05 two devices sharing the lease stay under the combined primary + secondary target', async t => {
+  const mail = mailWorld(2_000);
+  const macA = new Mac(mail, 'mac-a');
+  const macB = new Mac(mail, 'mac-b');
+  const a = await boot(macA);
+  const b = await boot(macB);
+  const loops: { stop(): Promise<void> }[] = [];
+  try {
+    const emuAt = mail.emu.log.length;
+    // Both start at the same instant, as secondary until the lease says otherwise.
+    for (const engine of [a, b]) engine.host.leaseChanged(ACCOUNT, { role: 'secondary' });
+    await a.host.start(ACCOUNT);
+    await b.host.start(ACCOUNT);
+    loops.push(leaseLoop(macA, a), leaseLoop(macB, b));
+    // Both first syncs run side by side for 20 minutes (window, then backfill on the primary only).
+    const startedAt = mail.clock.now();
+    await runUntil(
+      mail.clock,
+      () => mail.clock.now() >= startedAt + 20 * MINUTE,
+      '20 minutes',
+      HOUR,
+      1_000,
+    );
+    const all = mail.emu.log.slice(emuAt);
+    const roles = [a.host.status(ACCOUNT)?.lease?.role, b.host.status(ACCOUNT)?.lease?.role];
+    const combined = peakWindow(all);
+    t.diagnostic(
+      `roles ${roles.join('/')}; combined peak ${combined}; refusals ${refusals(all).length}`,
+    );
+    const cap = GMAIL_BUDGET.target.primary + GMAIL_BUDGET.target.secondary;
+    assert.deepEqual(roles, ['primary', 'secondary'], 'the lower DeviceId holds the lease');
+    assert.equal(b.host.status(ACCOUNT)?.lease?.holder, 'mac-a');
+    assert.ok(combined <= cap, `combined peak ${combined} vs ${cap}`);
+  } finally {
+    for (const loop of loops) await loop.stop();
+    await a.kill();
+    await b.kill();
+    macA.cleanup();
+    macB.cleanup();
+  }
+});
