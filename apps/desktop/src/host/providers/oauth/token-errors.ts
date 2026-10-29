@@ -98,20 +98,31 @@ function refusalClass(status: number, reason: string): ErrorClass {
 /** A cut tail shorter than this is not treated as the start of a secret. */
 const minSecretTail = 4;
 
-function replaceAll(text: string, secrets: readonly string[]): string {
-  let clean = text;
-  for (const secret of secrets) if (secret) clean = clean.split(secret).join('[redacted]');
-  return clean;
+/**
+ * Every form a secret can take when a server or a proxy echoes the request back: as is, JSON-escaped (`\/`), and
+ * percent-encoded as the form body sent it (`URLSearchParams`) or as `encodeURIComponent` writes it.
+ */
+function secretForms(secrets: readonly string[]): string[] {
+  const forms = secrets
+    .filter(Boolean)
+    .flatMap(secret => [
+      secret,
+      secret.replaceAll('/', '\\/'),
+      encodeURIComponent(secret),
+      new URLSearchParams({ s: secret }).toString().slice(2),
+    ]);
+  return [...new Set(forms)].sort((a, b) => b.length - a.length);
 }
 
-/** The forms a secret takes in a raw JSON body: as is, and with `/` escaped. */
-function rawForms(secrets: readonly string[]): string[] {
-  return secrets.filter(Boolean).flatMap(secret => [secret, secret.replaceAll('/', '\\/')]);
+function replaceAll(text: string, secrets: readonly string[]): string {
+  let clean = text;
+  for (const form of secretForms(secrets)) clean = clean.split(form).join('[redacted]');
+  return clean;
 }
 
 /** A field already cut at 300 characters may end in the start of a secret; that tail goes too. */
 function dropSecretTail(text: string, secrets: readonly string[]): string {
-  for (const secret of secrets) {
+  for (const secret of secretForms(secrets)) {
     for (let n = Math.min(secret.length - 1, text.length); n >= minSecretTail; n--) {
       if (text.endsWith(secret.slice(0, n))) return text.slice(0, -n);
     }
@@ -124,19 +135,45 @@ export function scrubSecrets(text: string, secrets: readonly string[]): string {
   return dropSecretTail(replaceAll(text, secrets), secrets).slice(0, MAX_MESSAGE_LENGTH);
 }
 
+/** True for the token endpoint's own error shape, `{"error": "<code>", "error_description"?: "..."}`. */
+function isOAuthErrorBody(text: string): boolean {
+  try {
+    const body: unknown = JSON.parse(text);
+    return (
+      typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Said instead of a body that is not an OAuth error (an HTML page from a proxy can quote the request). */
+function fixedProviderMessage(status: number): string {
+  return `The token endpoint answered ${Math.floor(status / 100)}xx without an OAuth error.`;
+}
+
+/**
+ * `providerMessage` comes only from a parsed OAuth `error_description` (or `error`), scrubbed; any other body is
+ * replaced by a fixed sentence and never kept.
+ */
+function providerMessage(raw: string, status: number, secrets: readonly string[]): string {
+  if (!isOAuthErrorBody(raw)) return fixedProviderMessage(status);
+  const info = parseGoogleError(status, raw);
+  return scrubSecrets(info.oauthDescription ?? info.reason, secrets);
+}
+
 export function refusalError(
   response: HttpResponse,
   secrets: readonly string[],
 ): TokenRefreshError {
   // Scrub the raw body before the parser truncates it, then the parsed fields again.
-  const raw = replaceAll(response.text(), rawForms(secrets));
+  const raw = replaceAll(response.text(), secrets);
   const info = parseGoogleError(response.status, raw);
   const cls = refusalClass(response.status, info.reason);
-  const description = scrubSecrets(info.oauthDescription ?? info.message, secrets);
   const extra: Partial<ClassifiedError> = {
     status: response.status,
     ...(response.retryAfterMs !== undefined ? { retryAfterMs: response.retryAfterMs } : {}),
-    ...(description ? { providerMessage: description } : {}),
+    providerMessage: providerMessage(raw, response.status, secrets),
   };
   const scope = cls === 'config' ? 'project' : 'account';
   return tokenError(cls, scrubSecrets(info.reason, secrets), { extra, scope });
