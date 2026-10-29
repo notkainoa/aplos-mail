@@ -55,6 +55,13 @@ describe('composeBrief', () => {
     assert.match(brief, /Round 2 of/);
   });
 
+  it('tells the agent not to run the full gate suites itself', () => {
+    // The harness runs gates under the check lock; an agent running them in parallel
+    // would fight for the slot and could not be trusted anyway.
+    assert.match(brief, /Do NOT run the full gate suites yourself/);
+    assert.match(brief, /targeted checks/);
+  });
+
   it('contains no environment values', () => {
     // The brief only ever sees structured input; env must never leak into a prompt.
     process.env.HILLCLIMB_TEST_SECRET = 'hunter2-marker';
