@@ -1,6 +1,6 @@
 // The loopback redirect of the installed-app sign-in: a one-shot HTTP listener on 127.0.0.1 that accepts exactly
 // one callback carrying the expected `state`. Anything else (wrong or missing state, another path or method, a
-// request after the one accepted) is answered 400 and ignored. The listener closes on success, failure, abort and
+// `Host` other than this listener's own, a request after the one accepted) is answered 400 and ignored. The listener closes on success, failure, abort and
 // timeout. It never echoes the query back into the page.
 
 import { createHash, timingSafeEqual } from 'node:crypto';
@@ -36,6 +36,24 @@ function parsePath(rawUrl: string): URL | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Exactly `127.0.0.1:<port>` or `localhost:<port>`, as a browser sends them: a page that rebinds its own name to
+ * 127.0.0.1 (DNS rebinding) sends its own `Host` and is refused, and so is any other spelling (case, trailing dot,
+ * `[::1]`, another port).
+ */
+export function loopbackHostAllowed(host: string | undefined, port: number): boolean {
+  return host === `${loopbackHost}:${port}` || host === `localhost:${port}`;
+}
+
+/** The one `Host` header, from the raw headers: Node keeps only the first of duplicates in `headers.host`. */
+export function soleHostHeader(rawHeaders: readonly string[]): string | undefined {
+  const values: string[] = [];
+  for (let i = 0; i + 1 < rawHeaders.length; i += 2) {
+    if (rawHeaders[i].toLowerCase() === 'host') values.push(rawHeaders[i + 1]);
+  }
+  return values.length === 1 ? values[0] : undefined;
 }
 
 /** What one request gets. Pure, so the rules are testable without a socket. */
@@ -119,8 +137,11 @@ export async function openLoopback(options: LoopbackOptions): Promise<Loopback> 
     resolveOutcome = resolve;
   });
   const timer = new AbortController();
+  let port = 0;
   const server = createServer((req, res) => {
-    const decision = decideCallback(req.method, req.url, options.state, settled);
+    const decision = loopbackHostAllowed(soleHostHeader(req.rawHeaders), port)
+      ? decideCallback(req.method, req.url, options.state, settled)
+      : refused;
     reply(res, decision);
     if (decision.status !== 200) return;
     // The answer is written first; the listener stops taking connections now and drops the rest once it is sent.
@@ -137,6 +158,7 @@ export async function openLoopback(options: LoopbackOptions): Promise<Loopback> 
     resolveOutcome(result);
   }
   const address = await listen(server);
+  port = address.port;
   options.signal.addEventListener('abort', onAbort, { once: true });
   if (options.signal.aborted) onAbort();
   options.clock.sleep(options.timeoutMs ?? callbackTimeoutMs, timer.signal).then(
