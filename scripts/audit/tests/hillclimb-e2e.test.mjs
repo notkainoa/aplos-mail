@@ -14,6 +14,7 @@ import { withCheckSlot } from '../hillclimb/lock.mjs';
 import { runAgent } from '../hillclimb/agent.mjs';
 import { runGate, runScorer } from '../hillclimb/steps.mjs';
 import {
+  addedLines,
   addWorktree,
   attemptBranch,
   attemptDir,
@@ -22,6 +23,7 @@ import {
   currentHead,
   diffBetween,
   gitShow,
+  indexFlagViolations,
   linkNodeModules,
   removeWorktree,
   runRoot,
@@ -146,5 +148,88 @@ describe('hill-climb end to end', () => {
       .split('\n')
       .filter(Boolean);
     assert.deepEqual(branches, [best]);
+  });
+});
+
+describe('harness git plumbing (real repos)', () => {
+  const fresh = name => {
+    const dir = join(tmp, name);
+    mkdirSync(dir, { recursive: true });
+    return dir;
+  };
+  const init = dir => {
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: dir });
+  };
+
+  it('commitAll never stages a node_modules symlink, even under a dirs-only .gitignore', () => {
+    const r = fresh('wt-mods');
+    init(r);
+    writeFileSync(join(r, '.gitignore'), 'node_modules/\n'); // the old directories-only form
+    writeFileSync(join(r, 'package.json'), '{"name":"t","workspaces":[]}');
+    execFileSync('git', ['add', '-A'], { cwd: r });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'seed'], { cwd: r });
+    const wt = join(tmp, 'wt-mods-wt');
+    addWorktree(r, { dir: wt, branch: 'wt-mods-b', commit: currentHead(r) });
+    mkdirSync(join(r, 'node_modules'), { recursive: true });
+    linkNodeModules(r, wt); // creates wt/node_modules -> r/node_modules (a symlink)
+    writeFileSync(join(wt, 'a.txt'), 'change\n');
+    const head = commitAll(wt, 'attempt');
+    assert.ok(head, 'a commit was created');
+    assert.deepEqual(statusPorcelain(wt), [], 'symlink is not a leftover');
+    assert.equal(gitShow(wt, 'HEAD', 'node_modules'), null, 'symlink not committed');
+    assert.deepEqual(
+      diffBetween(wt, `${head}^`).map(c => c.path),
+      ['a.txt'],
+    );
+    removeWorktree(r, wt);
+  });
+
+  it('commitAll commits despite a failing repo pre-commit hook', () => {
+    const r = fresh('wt-hooks');
+    init(r);
+    // The hook must be committed so it exists inside the attempt worktree (a relative
+    // core.hooksPath resolves there, as scripts/hooks does in the real repo).
+    const hooks = join(r, 'hooks');
+    mkdirSync(hooks);
+    writeFileSync(join(hooks, 'pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    execFileSync('git', ['add', '-A'], { cwd: r });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'hook'], {
+      cwd: r,
+    });
+    execFileSync('git', ['config', 'core.hooksPath', 'hooks'], { cwd: r });
+    const wt = join(tmp, 'wt-hooks-wt');
+    addWorktree(r, { dir: wt, branch: 'wt-hooks-b', commit: currentHead(r) });
+    writeFileSync(join(wt, 'b.txt'), 'x\n');
+    // A plain commit would die in the hook; the harness commit must not.
+    assert.ok(commitAll(wt, 'attempt'));
+    assert.equal(gitShow(wt, 'HEAD', 'b.txt'), 'x\n');
+    removeWorktree(r, wt);
+  });
+
+  it('indexFlagViolations reports assume-unchanged and skip-worktree entries', () => {
+    const r = fresh('wt-flags');
+    init(r);
+    writeFileSync(join(r, 'a.txt'), 'a\n');
+    writeFileSync(join(r, 'b.txt'), 'b\n');
+    execFileSync('git', ['add', '-A'], { cwd: r });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'files'], { cwd: r });
+    assert.deepEqual(indexFlagViolations(r), []);
+    execFileSync('git', ['update-index', '--assume-unchanged', 'a.txt'], { cwd: r });
+    execFileSync('git', ['update-index', '--skip-worktree', 'b.txt'], { cwd: r });
+    assert.deepEqual(indexFlagViolations(r).sort(), ['a.txt', 'b.txt']);
+  });
+
+  it('addedLines returns only + lines of base..HEAD', () => {
+    const r = fresh('wt-added');
+    init(r);
+    writeFileSync(join(r, 'f.txt'), 'old line\n');
+    execFileSync('git', ['add', '-A'], { cwd: r });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'seed'], { cwd: r });
+    const base = currentHead(r);
+    writeFileSync(join(r, 'f.txt'), 'new line\nold line\n');
+    execFileSync('git', ['add', '-A'], { cwd: r });
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'work'], { cwd: r });
+    assert.deepEqual(addedLines(r, base), ['new line']);
   });
 });

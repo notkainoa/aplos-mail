@@ -36,10 +36,20 @@ export function git(args, cwd, options = {}) {
 
 export const currentHead = cwd => git(['rev-parse', 'HEAD'], cwd).trim();
 
-/** git worktree add -b <branch> <dir> <commit>; parent dirs are made first. */
+// The harness symlinks node_modules into every worktree it creates. A symlink is not a
+// directory, so a ".gitignore" entry of "node_modules/" (directories only) does NOT hide it
+// from `git add -A` — the attempt's commit would silently gain a symlink and the diff guard
+// would reject every attempt. Belt and suspenders: the repo .gitignore must use the bare
+// "node_modules" form AND the harness always excludes the name from add/status explicitly.
+const MODULES_EXCLUDE = ':(exclude,glob)**/node_modules';
+
+/** git worktree add -b <branch> <dir> <commit>, or --detach <dir> <commit> without a branch. */
 export function addWorktree(repoRoot, { dir, branch, commit }) {
   mkdirSync(dirname(dir), { recursive: true });
-  git(['worktree', 'add', '-b', branch, dir, commit], repoRoot);
+  const args = branch
+    ? ['worktree', 'add', '-b', branch, dir, commit]
+    : ['worktree', 'add', '--detach', dir, commit];
+  git(args, repoRoot);
   return dir;
 }
 
@@ -106,9 +116,11 @@ export function diffBetween(workdir, base) {
 }
 
 /** Porcelain entries as [{x, y, path, oldPath?}]. With -z each record is "XY <path>" in one
- * token; a rename or copy appends the old path as the next token. */
+ * token; a rename or copy appends the old path as the next token. node_modules is excluded
+ * explicitly so a linked symlink never counts as a leftover even when .gitignore uses the
+ * directories-only "node_modules/" form. */
 export function statusPorcelain(workdir) {
-  const output = git(['status', '--porcelain', '-z'], workdir);
+  const output = git(['status', '--porcelain', '-z', '--', '.', MODULES_EXCLUDE], workdir);
   const tokens = output.split('\0');
   const entries = [];
   let i = 0;
@@ -131,11 +143,41 @@ export function gitShow(workdir, ref, path) {
 }
 
 /**
+ * Tracked paths carrying assume-unchanged or skip-worktree bits. `git ls-files -v` tags each
+ * entry: uppercase means normal, a lowercase tag marks assume-unchanged and 'S' marks
+ * skip-worktree. An agent could set one to hide tampering from the committed diff, so any
+ * flagged path rejects the attempt.
+ */
+export function indexFlagViolations(workdir) {
+  const output = git(['ls-files', '-v'], workdir);
+  const flagged = [];
+  for (const line of output.split('\n')) {
+    if (!line) continue;
+    const tag = line[0];
+    if (tag === 'S' || (tag >= 'a' && tag <= 'z')) flagged.push(line.slice(2));
+  }
+  return flagged;
+}
+
+/**
+ * Lines added by base..HEAD as raw text (no '+' prefix), for the suppression-directive scan.
+ * `-U0` keeps context out of the diff; '+++' file headers are not content.
+ */
+export function addedLines(workdir, base) {
+  const output = git(['diff', '--no-color', '-U0', `${base}`, 'HEAD'], workdir);
+  const added = [];
+  for (const line of output.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) added.push(line.slice(1));
+  }
+  return added;
+}
+
+/**
  * Commits whatever the agent left (staged, modified, untracked) as one harness commit.
  * Returns the new HEAD sha, or null when the worktree was already clean.
  */
 export function commitAll(workdir, message) {
-  git(['add', '-A'], workdir);
+  git(['add', '-A', '--', '.', MODULES_EXCLUDE], workdir);
   if (statusPorcelain(workdir).length === 0) return null;
   git(
     [
@@ -143,7 +185,15 @@ export function commitAll(workdir, message) {
       `user.name=${AUTHOR.name}`,
       '-c',
       `user.email=${AUTHOR.email}`,
+      // The repo's own hooks (core.hooksPath=scripts/hooks) and any signing config belong to
+      // the user, not to a throwaway attempt commit: never run hooks, never sign.
+      '-c',
+      'core.hooksPath=/dev/null',
+      '-c',
+      'commit.gpgsign=false',
       'commit',
+      '--no-verify',
+      '--no-gpg-sign',
       '-qm',
       message,
     ],
