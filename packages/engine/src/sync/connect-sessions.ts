@@ -143,6 +143,34 @@ export class ConnectSessions {
   }
 
   private async run(session: Session): Promise<void> {
+    const unfollow = this.followRequestSignal(session);
+    try {
+      await this.runFlow(session);
+    } finally {
+      unfollow();
+    }
+  }
+
+  /**
+   * An abort signal the request already carries cancels the sign-in like `cancel` does: it ends `cancelled`, aborts the
+   * host's flow and frees the keys once that flow settles. Returns the listener's removal.
+   */
+  private followRequestSignal(session: Session): () => void {
+    const own = session.flow.request.signal;
+    if (!own) return () => {};
+    const onAbort = () => {
+      try {
+        this.cancel(session.connectId);
+      } catch {
+        // The frame bus is broken; `cancel` already released the session.
+      }
+    };
+    if (own.aborted) onAbort();
+    else own.addEventListener('abort', onAbort, { once: true });
+    return () => own.removeEventListener('abort', onAbort);
+  }
+
+  private async runFlow(session: Session): Promise<void> {
     const { signal } = session.controller;
     if (signal.aborted) return;
     try {
@@ -152,9 +180,8 @@ export class ConnectSessions {
       // The cancel and the deadline reach the host's browser and loopback flow (`ConnectRequest.signal`), and the host
       // discards a result that still arrives after them (`AccountActorHost.discardCredential`).
       session.hostStarted = true;
-      // An abort signal the request already carries stays in force next to the session's own.
-      const hostSignal = request.signal ? AbortSignal.any([request.signal, signal]) : signal;
-      const answered = this.accounts.connect(accountId, kind, { ...request, signal: hostSignal });
+      // The request's own signal reaches the host through the session's (`followRequestSignal`).
+      const answered = this.accounts.connect(accountId, kind, { ...request, signal });
       this.holdKeysUntilSettled(session, answered);
       this.discardLateAnswer(session, answered);
       const result = await untilAborted(answered, signal);

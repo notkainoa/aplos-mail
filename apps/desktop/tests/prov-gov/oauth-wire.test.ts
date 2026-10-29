@@ -165,10 +165,12 @@ test('WIRE-b a reconnect answered by an unknown subject is revoked, even with a 
 
 test('WIRE-b another subject that is an Aplos account, or with no knownSubject at all, is not revoked', async () => {
   const asked: string[] = [];
+  const signals: AbortSignal[] = [];
   const known = scriptedRig(clock => tokenReply(clock), {
     deps: {
-      knownSubject: sub => {
+      knownSubject: (sub, signal) => {
         asked.push(sub);
+        signals.push(signal);
         return sub === 'sub-1';
       },
     },
@@ -178,6 +180,7 @@ test('WIRE-b another subject that is an Aplos account, or with no knownSubject a
   );
   assert.equal(wrong.error.reason, 'wrongAccount');
   assert.deepEqual(asked, ['sub-1'], 'asked about the sub Google answered with');
+  assert.ok(signals[0] instanceof AbortSignal, 'the lookup can stop with the attempt');
   assert.deepEqual(revokedIn(known.forms), [], 'that account’s stored grant could die with it');
 
   const defaulted = scriptedRig(clock => tokenReply(clock));
