@@ -183,6 +183,8 @@ export interface LeaseDeps {
   report(account: AccountId, lease: Lease): void;
   /** Awake and the account running; otherwise `tick` neither reads nor renews, and this device acts as secondary. */
   active?: () => boolean;
+  /** The host's last reported lease, for a controller made on a restart; the first read supersedes it. */
+  initial?: Lease;
 }
 
 export interface LeaseController {
@@ -264,7 +266,9 @@ interface RoundResult {
 
 export function createLeaseController(deps: LeaseDeps): LeaseController {
   const { account, device, clock, channel } = deps;
-  let lease: Lease = { role: 'secondary', pinned: false };
+  // Seeded with the host's last reported lease so a controller made after a restart still knows it holds a live
+  // claim: `stop` publishes the dead claim off that (its own `published` covers only this process's writes).
+  let lease: Lease = deps.initial ? { ...deps.initial } : { role: 'secondary', pinned: false };
   let pin: Pin;
   let pinDirty = false;
   /** The last claim this process wrote successfully: our record as peers see it. */

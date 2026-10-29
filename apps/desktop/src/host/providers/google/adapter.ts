@@ -23,6 +23,7 @@ import type {
   SubmissionPayload,
   SyncState,
   ThreadOpenRef,
+  WorkflowChannel,
 } from '@aplos/engine/ports';
 import type { GoogleConnect } from '../oauth/connect';
 import { fetchAttachment, openThread } from './bodies';
@@ -34,6 +35,8 @@ import { applyOp, coalesceOps } from './ops';
 import { retryStep } from './retry';
 import { search } from './search';
 import { FactsMemo, listStep, plan, type SyncRuntime, type WindowCall } from './sync';
+import { GmailWorkflowTransport, type TransportLimits } from './workflow';
+import type { WorkflowTransport } from './workflow-state';
 
 /**
  * The google `ProviderFactory` and its per-account `ProviderAdapter` (plan 20 section 3.2): the read path of
@@ -53,6 +56,24 @@ export class NotInThisLaneError extends NotImplementedError {
   }
 }
 
+/**
+ * Wiring the workflow channel on (`GoogleProviderOptions.workflow`): the adapter owns the sealed-copy transport
+ * (`workflow.ts`) and plans its rounds; the merged state channel and the lease that rides it are the host's
+ * (`googleWorkflowChannel` in `workflow-host.ts`).
+ */
+export interface GoogleWorkflowOptions {
+  /** Transport bounds (`TRANSPORT_LIMITS` in `workflow.ts`); tests lower them. */
+  limits?: Partial<TransportLimits>;
+  /**
+   * The floor between two planned rounds — the channel's idle cadence. A gated read is ~2 units when nothing
+   * changed (`workflow.ts` header), so one round a minute is the default.
+   */
+  roundMs?: number;
+}
+
+/** `WORKFLOW_ROUND_MS`: the `workflow` scope's idle cadence (ARCH 6.5's lease round, plan 20 PV3). */
+export const WORKFLOW_ROUND_MS = 60_000;
+
 export interface GoogleProviderOptions {
   /** The host's HTTP client; the tests pass the emulator's. */
   fetch: typeof fetch;
@@ -70,6 +91,12 @@ export interface GoogleProviderOptions {
   connect?: GoogleConnect;
   /** `ProviderFactory.discardCredential`, from the same place; without it the factory has none (the engine fails closed). */
   discardCredential?: (ref: string) => Promise<void>;
+  /**
+   * Present to enable the workflow channel: `adapter.workflow` is the transport (`WorkflowChannel`) and `plan()`
+   * schedules its round. Off by default so callers without a lease host do not pay for channel reads — see
+   * `workflow-host.ts` for the host-side wiring.
+   */
+  workflow?: GoogleWorkflowOptions;
 }
 
 /**
@@ -104,6 +131,12 @@ export class GmailAdapter implements ProviderAdapter {
   private readonly closer = new AbortController();
   private readonly rt: SyncRuntime;
   private readonly pacer?: GmailPacer;
+  /** The paced workflow transport behind `workflowTransport()`, when the channel is wired on. */
+  private readonly transport?: WorkflowTransport;
+  private readonly workflowRoundMs: number;
+  /** The last time the *actor's* round ran (`adapter.workflow.round`), for the planned-step cadence. */
+  private lastWorkflowRound?: number;
+  readonly workflow?: WorkflowChannel;
 
   constructor(
     readonly account: AdapterAccount,
@@ -122,6 +155,26 @@ export class GmailAdapter implements ProviderAdapter {
       rounds: new Map(),
     };
     if (options.pace !== false) this.pacer = new GmailPacer();
+    this.workflowRoundMs = options.workflow?.roundMs ?? WORKFLOW_ROUND_MS;
+    if (options.workflow) {
+      const transport = new GmailWorkflowTransport(deps, account.address, options.workflow.limits);
+      this.transport = {
+        round: (state, ctx) => transport.round(state, this.paced(ctx)),
+        put: (copy, ctx) => transport.put(copy, this.paced(ctx)),
+        compact: (ids, ctx) => transport.compact(ids, this.paced(ctx)),
+        readBack: (id, ctx) => transport.readBack(id, this.paced(ctx)),
+      };
+      // The actor's rounds stamp the cadence clock; the state channel's reads (the lease's included) do not — its
+      // commits already move `sync_state.updated_at`, so keying the cadence off the row would starve the step.
+      this.workflow = {
+        round: async (state, ctx) => {
+          this.lastWorkflowRound = ctx.clock.now();
+          return transport.round(state, this.paced(ctx));
+        },
+        put: (copy, ctx) => transport.put(copy, this.paced(ctx)),
+        compact: (ids, ctx) => transport.compact(ids, this.paced(ctx)),
+      };
+    }
   }
 
   /** The context every call runs with: the actor's governor behind this account's pacer, while there is one. */
@@ -129,8 +182,38 @@ export class GmailAdapter implements ProviderAdapter {
     return this.pacer ? { ...ctx, governor: this.pacer.bind(ctx.governor, ctx.clock) } : ctx;
   }
 
+  /**
+   * The paced transport `createWorkflowStateChannel` wraps (the lease's records ride the merged channel; see
+   * `googleWorkflowChannel` in `workflow-host.ts`). Undefined unless `GoogleProviderOptions.workflow` was set.
+   */
+  workflowTransport(): WorkflowTransport | undefined {
+    return this.transport;
+  }
+
   plan(input: PlanInput): PlannedStep[] {
-    return plan(input);
+    const steps = plan(input);
+    const workflow = this.workflowStep(input);
+    return workflow ? [...steps, workflow] : steps;
+  }
+
+  /**
+   * The channel's own round (ARCH 6.5, plan 20 PV3): on the `workflow` scope, at its idle cadence — a gated read is
+   * ~2 units when nothing changed — so at most `roundMs` between the *actor's* rounds (`lastWorkflowRound`, or the
+   * committed row after a restart). The actor filters it out on a secondary that sees a live holder (`PlanInput`
+   * has no lease field, so the planner cannot); a pause or block makes no I/O because every call the round makes
+   * goes through `ctx.governor`.
+   */
+  private workflowStep(input: PlanInput): PlannedStep | undefined {
+    if (!this.workflow) return undefined;
+    const last =
+      this.lastWorkflowRound ?? input.states.find(s => s.scope === 'workflow')?.updatedAt;
+    return {
+      scope: 'workflow',
+      lane: 'enrichment',
+      origin: 'workflow',
+      ...(last ? { notBefore: last + this.workflowRoundMs } : {}),
+      trigger: input.trigger,
+    };
   }
 
   syncStep(step: PlannedStep, state: SyncState, actorCtx: AdapterContext): Promise<StepResult> {

@@ -4,6 +4,8 @@ import {
   type AccountActorHost,
   type AccountId,
   type AccountRuntime,
+  type AdapterAccount,
+  type AdapterContext,
   type Admission,
   type AttachmentRef,
   type BoundGovernor,
@@ -12,26 +14,59 @@ import {
   type ConnectResult,
   type GovernorPort,
   type KnownLookup,
+  type Logger,
   type OpenedThread,
   type ProviderAdapter,
   type ProviderFactory,
   type ProviderKind,
   type ScopeId,
   type ServerSearch,
+  type SyncState,
   type WorkflowCopy,
 } from '../ports';
 import { ProviderError } from '../ports/base';
 import { contractError } from '../runtime/errors';
 import { AccountActor, type Role } from './actor';
-import { openedWrites, messageWrite } from './facts';
+import { openedWrites, messageWrite, syncStateWrite } from './facts';
 import type { Governor } from './governor';
+import {
+  createLeaseController,
+  type LeaseChannel,
+  type LeaseController,
+  type LeaseRecord,
+} from './lease';
 import { storeLookup } from './lookup';
 import { hasRequiredScope } from './scopes';
 import { nextOpRetry, readFence } from './ops';
-import { governorWrite, readAccount, readGovernor, readMemory } from './persist';
+import { governorWrite, readAccount, readGovernor, readMemory, readStates } from './persist';
 
 /** What the host needs from a governor beyond `GovernorPort` (F3 has no way to express either; see the port gaps). */
 type GovernorExtras = Partial<Pick<Governor, 'bindConnect' | 'setBudgets'>>;
+
+/**
+ * What `ActorHostOptions.workflowChannel` returns for one account: the provider's workflow-state channel as the
+ * host uses it (prov-gmail's `WorkflowStateChannel`, `google/workflow-state.ts`). `read` is one gated channel
+ * round; the host feeds the records to `createLeaseController` and commits `nextState` as the `workflow` scope's
+ * `sync_state` row, so the actor's rounds and the lease's share one cursor. `write` seals and publishes records —
+ * only the lease's claims ever go through it. `ingest` merges the copies an actor workflow round fetched
+ * (`onWorkflowCopies`), so they reach the lease's view and the merged records `onWorkflowMerged` reports.
+ */
+export interface HostWorkflowChannel {
+  read(
+    state: SyncState,
+    ctx: AdapterContext,
+  ): Promise<{
+    records: readonly LeaseRecord[];
+    changed: readonly LeaseRecord[];
+    nextState: SyncState;
+    costUnits: number;
+  }>;
+  write(entries: readonly { key: string; value: unknown }[], ctx: AdapterContext): Promise<unknown>;
+  ingest(
+    copies: readonly WorkflowCopy[],
+    log: Logger,
+  ): Promise<{ changed: readonly LeaseRecord[] }>;
+}
 
 export interface ActorHostOptions {
   /** `eng-store`'s `KnownLookup`; until one exists the host reads the store itself (`storeLookup`). */
@@ -40,8 +75,21 @@ export interface ActorHostOptions {
   newId?: () => string;
   /** Jitter source (wake spread, step backoff). */
   random?: () => number;
-  /** The lease module's input from each workflow round (`sync/lease.ts`, a later package). */
+  /**
+   * The account's workflow-state channel, built over `adapter.workflow` (called only when the adapter exposes
+   * one). When it returns a channel, `claimLease`/`releaseLease` and every role report go through
+   * `createLeaseController` on it: claims publish as `lease:<deviceId>` records, `tick()` runs on the
+   * `lease:<account>` deadline, and `stop` publishes an expired claim on quit or disconnect. When the option or
+   * its result is absent, an adapter with `workflow` keeps the local claim/release behaviour.
+   */
+  workflowChannel?: (
+    account: AdapterAccount,
+    adapter: ProviderAdapter,
+  ) => HostWorkflowChannel | undefined;
+  /** The copies a workflow round delivered — after `ingest` merged them, when a channel exists. */
   onWorkflowCopies?: (account: AccountId, copies: WorkflowCopy[]) => void;
+  /** The records a channel merge moved (a round's `ingest`, a lease `read`): input for the workflow-facts commit. */
+  onWorkflowMerged?: (account: AccountId, changed: readonly LeaseRecord[]) => void;
 }
 
 interface Entry {
@@ -50,6 +98,14 @@ interface Entry {
   /** The account's mail budget: what `Sync/request` and the pause status ask. */
   budget: BudgetId;
   unregister: () => void;
+}
+
+interface LeaseEntry {
+  controller: LeaseController;
+  /** Unregisters the `lease:<account>` deadline source. */
+  unregister: () => void;
+  /** The `workflow` scope state the channel reads carry between rounds (the cursor the transport resumes on). */
+  state: SyncState;
 }
 
 /**
@@ -61,6 +117,10 @@ export class ActorHost implements AccountActorHost {
   private readonly actors = new Map<AccountId, Entry>();
   /** Lease input per account, kept across restarts of its actor. */
   private readonly leases = new Map<AccountId, NonNullable<AccountRuntime['lease']>>();
+  /** The lease controller per channel-backed account, dropped on 'restart', stopped on quit or disconnect. */
+  private readonly leaseCtl = new Map<AccountId, LeaseEntry>();
+  /** The lease a 'restart' left published, snapshotted before the drop: the next controller's `initial`. */
+  private readonly leaseSeed = new Map<AccountId, NonNullable<AccountRuntime['lease']>>();
   private readonly listeners = new Set<(account: AccountId, status: AccountRuntime) => void>();
   private readonly unsubscribe: () => void;
   private readonly unregister: (() => void)[] = [];
@@ -200,8 +260,14 @@ export class ActorHost implements AccountActorHost {
     governor.restore(account, readGovernor(store, account));
     const adapter = factory.open(row.account);
     // A provider with a workflow channel runs as secondary until the lease says otherwise; one without is primary.
+    const channel =
+      adapter.workflow === undefined
+        ? undefined
+        : this.options.workflowChannel?.(row.account, adapter);
     const role: Role =
-      this.leases.get(account)?.role ?? (adapter.workflow ? 'secondary' : 'primary');
+      this.leaseCtl.get(account)?.controller.current().role ??
+      this.leases.get(account)?.role ??
+      (adapter.workflow ? 'secondary' : 'primary');
     governor.setRole(account, role);
     const actor = new AccountActor({
       store,
@@ -221,9 +287,7 @@ export class ActorHost implements AccountActorHost {
       reconnectBy: row.refreshExpiresAt,
       role,
       onStatus: runtime => this.notify(account, runtime),
-      onWorkflowCopies: this.options.onWorkflowCopies
-        ? copies => this.options.onWorkflowCopies!(account, copies)
-        : undefined,
+      onWorkflowCopies: copies => this.workflowCopies(account, channel, copies),
     });
     const lease = this.leases.get(account);
     if (lease) actor.runtime.lease = { ...lease };
@@ -233,12 +297,29 @@ export class ActorHost implements AccountActorHost {
       fire: async () => actor.wake('poll'),
     });
     this.actors.set(account, { actor, adapter, budget: budgets[0].id, unregister });
+    if (channel && !this.leaseCtl.has(account)) this.startLease(account, channel);
     actor.start();
   }
 
-  async stop(account: AccountId, _why: 'disconnect' | 'quit' | 'restart'): Promise<void> {
+  async stop(account: AccountId, why: 'disconnect' | 'quit' | 'restart'): Promise<void> {
     const entry = this.actors.get(account);
     if (!entry) return;
+    const lease = this.leaseCtl.get(account);
+    if (lease) {
+      lease.unregister();
+      this.leaseCtl.delete(account);
+      if (why === 'restart') {
+        // A 'restart' drops only the deadline: the published claim keeps living until the restarted actor's new
+        // controller picks it up. Its seed is the lease as it stood now — a tick still pending on the dropped
+        // controller may demote `leases` once the actor is gone.
+        const seed = this.leases.get(account);
+        if (seed) this.leaseSeed.set(account, seed);
+      } else {
+        // Quit and disconnect publish an expired claim, so the lease passes on at the next round — written before
+        // the actor stops, while its context still reaches the network.
+        await lease.controller.stop().catch(() => {});
+      }
+    }
     this.actors.delete(account);
     entry.unregister();
     entry.actor.stop();
@@ -338,10 +419,17 @@ export class ActorHost implements AccountActorHost {
   }
 
   /**
-   * "Use this Mac". The pinned copy on the workflow channel is the lease module's (`sync/lease.ts`); until it lands,
-   * the pin takes effect on this device only and is recorded on the account row.
+   * "Use this Mac". On an account with a workflow channel the pinned claim is a `lease:<deviceId>` record the
+   * lease controller publishes and keeps claiming while awake; without a channel the pin is local only, recorded
+   * on the account row as before.
    */
   async claimLease(account: AccountId): Promise<void> {
+    const entry = this.leaseCtl.get(account);
+    if (entry) {
+      await entry.controller.claim();
+      this.deps.deadlines.changed(`lease:${account}`);
+      return;
+    }
     const until = this.deps.clock.now() + 30 * 60_000;
     this.deps.store.commit({
       opId: this.newId(),
@@ -364,6 +452,12 @@ export class ActorHost implements AccountActorHost {
   }
 
   async releaseLease(account: AccountId): Promise<void> {
+    const entry = this.leaseCtl.get(account);
+    if (entry) {
+      await entry.controller.release();
+      this.deps.deadlines.changed(`lease:${account}`);
+      return;
+    }
     const lease = this.leases.get(account);
     if (!lease?.pinned) return;
     this.leaseChanged(account, { ...lease, pinned: false });
@@ -448,6 +542,112 @@ export class ActorHost implements AccountActorHost {
     const factory = this.deps.providers.find(p => p.kind === kind);
     if (!factory) throw new Error(`no provider for ${kind}`);
     return factory;
+  }
+
+  // ---------------------------------------------------------------- the lease (ARCH 6.5)
+
+  /**
+   * The lease controller on this account's workflow channel: `tick()` runs as the `lease:<account>` deadline
+   * source, its reports arrive through `leaseChanged` like any other, and each round's `nextState` is committed
+   * as the `workflow` scope row so the actor's rounds and the lease's share one cursor.
+   */
+  private startLease(account: AccountId, channel: HostWorkflowChannel): void {
+    const entry: LeaseEntry = {
+      controller: undefined as unknown as LeaseController,
+      unregister: () => {},
+      state: this.workflowState(account),
+    };
+    entry.controller = createLeaseController({
+      account,
+      device: this.deps.deviceId,
+      clock: this.deps.clock,
+      channel: this.leaseChannel(account, entry, channel),
+      report: (acc, lease) => this.leaseChanged(acc, lease),
+      // While the actor is down (a 'restart' gap) the device acts as secondary: a tick demotes, never renews.
+      active: () => this.actors.has(account),
+      // The claim this device's previous controller published is still live; a quit must retire it too.
+      initial: this.leaseSeed.get(account) ?? this.leases.get(account),
+    });
+    entry.unregister = this.deps.deadlines.register({
+      id: `lease:${account}`,
+      next: async () => entry.controller.next(),
+      fire: () => entry.controller.tick(),
+    });
+    this.leaseCtl.set(account, entry);
+  }
+
+  /** `LeaseChannel` over the state channel: `read` is one gated round that also stores the cursor it ended on. */
+  private leaseChannel(
+    account: AccountId,
+    entry: LeaseEntry,
+    channel: HostWorkflowChannel,
+  ): LeaseChannel {
+    const ctx = () => this.actors.get(account)?.actor.context();
+    return {
+      read: async () => {
+        const read = await channel.read(entry.state, ctx() ?? this.noActor(account));
+        entry.state = read.nextState;
+        this.commitWorkflowState(account, read.nextState);
+        this.merged(account, read.changed);
+        return read.records;
+      },
+      write: entries => channel.write(entries, ctx() ?? this.noActor(account)),
+    };
+  }
+
+  /** A channel call while the account's actor is down (a 'restart' gap) simply fails that round. */
+  private noActor(account: AccountId): never {
+    throw new Error(`account ${account} is not started`);
+  }
+
+  /** The `workflow` scope state the channel reads resume on: the committed row, or the empty state. */
+  private workflowState(account: AccountId): SyncState {
+    return (
+      readStates(this.deps.store, account).find(s => s.scope === 'workflow') ?? {
+        scope: 'workflow',
+        generation: 0,
+        updatedAt: 0,
+      }
+    );
+  }
+
+  /** The round's `nextState`, as the `workflow` scope's `sync_state` row — the same write a step's commit makes. */
+  private commitWorkflowState(account: AccountId, next: SyncState): void {
+    try {
+      this.deps.store.commit({
+        opId: this.newId(),
+        origin: 'sync',
+        step: 'workflow',
+        writes: [syncStateWrite(account, next)],
+      });
+    } catch {
+      // The store is gone (shutdown); the next successful round commits a newer cursor anyway.
+    }
+  }
+
+  /** A round's copies: merged into the channel when there is one (so the lease and the facts see them), then on. */
+  private workflowCopies(
+    account: AccountId,
+    channel: HostWorkflowChannel | undefined,
+    copies: WorkflowCopy[],
+  ): void {
+    if (channel) {
+      void channel
+        .ingest(copies, this.deps.log.with({ account }))
+        .then(result => this.merged(account, result.changed))
+        .catch(() => {});
+    }
+    this.options.onWorkflowCopies?.(account, copies);
+  }
+
+  /** The records a merge moved, handed to the facts path; a hook failure never stops the host. */
+  private merged(account: AccountId, changed: readonly LeaseRecord[]): void {
+    if (!changed.length || !this.options.onWorkflowMerged) return;
+    try {
+      this.options.onWorkflowMerged(account, changed);
+    } catch {
+      // A failing subscriber never stops the host.
+    }
   }
 
   private bind(account: AccountId): BoundGovernor {

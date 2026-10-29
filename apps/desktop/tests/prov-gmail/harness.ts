@@ -25,6 +25,7 @@ import {
   type ScopeId,
   type StepResult,
   type SyncLane,
+  type WorkflowCopy,
 } from '@aplos/engine/ports';
 import {
   FakeClock,
@@ -355,6 +356,10 @@ export interface Rig {
   fetches: FetchRecord[];
   ctx(): AdapterContext;
   env(focused?: boolean): PlanEnv;
+  /** The `workflow` round's copies, the actor's `onWorkflowCopies` hook: feed them to a state channel's `ingest`. */
+  onWorkflowCopies?: (copies: WorkflowCopy[]) => void;
+  /** One `workflow` round as the actor runs it: the channel's round, copies delivered, as a `StepResult`. */
+  workflowRound(scope: ScopeId): Promise<StepResult>;
   /** Runs planned steps the way the actor will, until `until` holds, nothing is runnable, or a step stops short. */
   drive(opts?: {
     trigger?: PlanTrigger;
@@ -459,6 +464,11 @@ export async function rig(options: RigOptions = {}): Promise<Rig> {
       memory: store.memory,
       generation: store.seq,
     }),
+    async workflowRound(scope: ScopeId): Promise<StepResult> {
+      const round = await adapter.workflow!.round(store.state(scope), r.ctx());
+      r.onWorkflowCopies?.(round.copies);
+      return { nextStates: [round.nextState], done: true, costUnits: round.costUnits };
+    },
     env: (focused = true) => ({
       now: clock.now(),
       focused,
@@ -482,7 +492,11 @@ export async function rig(options: RigOptions = {}): Promise<Rig> {
         );
         if (!step) break;
         const fence = store.seq;
-        const result = await adapter.syncStep(step, store.state(step.scope), r.ctx());
+        // The `workflow` scope runs the channel's round, not `syncStep` — exactly as the actor does.
+        const result =
+          step.scope === 'workflow' && adapter.workflow
+            ? await r.workflowRound(step.scope)
+            : await adapter.syncStep(step, store.state(step.scope), r.ctx());
         store.commit(step, result, clock.now(), fence);
         trigger = 'poll';
         if (!result.done) {

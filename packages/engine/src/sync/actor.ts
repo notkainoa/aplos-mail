@@ -340,7 +340,19 @@ export class AccountActor {
   }
 
   private allowed(step: PlannedStep): boolean {
-    return !(this.role === 'secondary' && PRIMARY_ONLY.has(step.lane) && step.scope !== 'workflow');
+    if (this.role !== 'secondary') return true;
+    // The workflow round is not a background lane, but on a secondary that sees a live holder it is the primary's
+    // job; this device still gets the records through the lease's own read (ARCH 6.5).
+    if (step.scope === 'workflow') return this.leaseFree();
+    return !PRIMARY_ONLY.has(step.lane);
+  }
+
+  /** No live lease holder that this device knows of: `holder` absent, or the holder's claim already ran out. */
+  private leaseFree(): boolean {
+    const holder = this.runtime.lease?.holder;
+    if (holder === undefined) return true;
+    const until = this.runtime.lease?.until;
+    return until !== undefined && until <= this.deps.clock.now();
   }
 
   private dueAt(step: PlannedStep, now: number): number {

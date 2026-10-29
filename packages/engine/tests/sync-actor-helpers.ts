@@ -30,7 +30,7 @@ import type {
 } from '../src/ports';
 import { gmailBudget } from '../src/sync/budgets';
 import { Governor } from '../src/sync/governor';
-import { ActorHost } from '../src/sync/host';
+import { ActorHost, type ActorHostOptions } from '../src/sync/host';
 import { tempDb } from './store/helpers';
 
 export { FakeClock };
@@ -236,6 +236,8 @@ export function world(
     budgets?: BudgetSpec[];
     create?: boolean;
     random?: () => number;
+    deviceId?: string;
+    host?: ActorHostOptions;
   } = {},
 ): World {
   const clock = options.clock ?? new FakeClock({ auto: false });
@@ -297,10 +299,10 @@ export function world(
       clock: portClock(clock),
       log,
       deadlines,
-      deviceId: 'device-a',
+      deviceId: options.deviceId ?? 'device-a',
       env: () => env,
     },
-    { newId: () => `commit-${++ids}`, random: options.random ?? (() => 0) },
+    { newId: () => `commit-${++ids}`, random: options.random ?? (() => 0), ...options.host },
   );
   return {
     clock,
