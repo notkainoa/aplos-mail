@@ -434,7 +434,7 @@ test('a new account refused as a duplicate hands back the credential stored unde
   }
 });
 
-test('a retry answered by another identity hands back the credential stored under the waiting row', async () => {
+test('a retry answered by another identity asks the host to discard the credential stored under the waiting row (engine side only, see the note in account-connect.ts)', async () => {
   const t = setup();
   try {
     const x = await waitingRow(t, 'sub-a', 'a@gmail.com');
@@ -450,7 +450,7 @@ test('a retry answered by another identity hands back the credential stored unde
   }
 });
 
-test('a retried answer without the mail scope hands back the credential stored under the waiting row', async () => {
+test('a retried answer without the mail scope asks the host to discard the credential stored under the waiting row (engine side only, see the note in account-connect.ts)', async () => {
   const t = setup();
   try {
     const x = await waitingRow(t, 'sub-a', 'a@gmail.com');
@@ -465,7 +465,7 @@ test('a retried answer without the mail scope hands back the credential stored u
   }
 });
 
-test('a retried answer already held by another row hands back the credential stored under the waiting row', async () => {
+test('a retried answer already held by another row asks the host to discard the credential stored under the waiting row (engine side only, see the note in account-connect.ts)', async () => {
   const t = setup();
   try {
     const x = await waitingRow(t, 'sub-a', 'a@gmail.com');
