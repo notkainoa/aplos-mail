@@ -20,6 +20,7 @@ import {
   type ServerSearch,
   type WorkflowCopy,
 } from '../ports';
+import { contractError } from '../runtime/errors';
 import { AccountActor, type Role } from './actor';
 import { openedWrites, messageWrite } from './facts';
 import type { Governor } from './governor';
@@ -121,13 +122,62 @@ export class ActorHost implements AccountActorHost {
   ): Promise<ConnectResult> {
     const factory = this.factory(kind);
     const controller = new AbortController();
-    return factory.connect(req, {
-      accountId: account,
-      governor: this.connectGovernor(account),
-      clock: this.deps.clock,
-      log: this.deps.log.with({ account }),
-      signal: controller.signal,
+    const abort = () => controller.abort(req.signal?.reason);
+    if (req.signal?.aborted) abort();
+    else req.signal?.addEventListener('abort', abort, { once: true });
+    try {
+      const result = await factory.connect(req, {
+        accountId: account,
+        governor: this.connectGovernor(account),
+        clock: this.deps.clock,
+        log: this.deps.log.with({ account }),
+        signal: controller.signal,
+      });
+      if (req.signal?.aborted)
+        await this.discardLate(account, kind, result.credentialRef, req.signal.reason);
+      return result;
+    } finally {
+      req.signal?.removeEventListener('abort', abort);
+    }
+  }
+
+  async discardCredential(account: AccountId, kind: ProviderKind, ref: string): Promise<void> {
+    // The store keeps no credential ref, so an account with a committed row may own `ref` (Google reconnects reuse it).
+    if (readAccount(this.deps.store, account)) {
+      this.logDiscard(kind, 'kept');
+      return;
+    }
+    const factory = this.factory(kind);
+    if (!factory.discardCredential) {
+      this.logDiscard(kind, 'unsupported');
+      throw contractError({
+        type: 'unavailable',
+        message: 'This account type cannot remove a saved credential.',
+      });
+    }
+    await factory.discardCredential(ref);
+  }
+
+  /** Only the provider kind and the outcome: no ref, no secret. */
+  private logDiscard(kind: ProviderKind, outcome: 'unsupported' | 'failed' | 'kept'): void {
+    this.deps.log.event('rpc.failed', {
+      method: 'Account/discardCredential',
+      reason: `${kind}.${outcome}`,
     });
+  }
+
+  /** A result that arrived after the abort: its credential goes (a failure is logged only), the abort reason surfaces. */
+  private async discardLate(
+    account: AccountId,
+    kind: ProviderKind,
+    ref: string | undefined,
+    reason: unknown,
+  ): Promise<never> {
+    if (ref !== undefined)
+      await this.discardCredential(account, kind, ref).catch(() => {
+        this.logDiscard(kind, 'failed');
+      });
+    throw reason;
   }
 
   async start(account: AccountId): Promise<void> {
@@ -351,7 +401,7 @@ export class ActorHost implements AccountActorHost {
   async search(
     account: AccountId,
     query: ServerSearch,
-  ): Promise<{ remoteThreadIds: string[]; nextPageToken?: string }> {
+  ): Promise<{ remoteThreadIds: string[]; nextPageToken?: string; partial?: boolean }> {
     const entry = this.entry(account);
     if (!entry.adapter.search) return { remoteThreadIds: [] };
     const ctx = entry.actor.context();
@@ -364,9 +414,11 @@ export class ActorHost implements AccountActorHost {
       fenceSeq: fence,
       writes: result.upserts.map(m => messageWrite(account, ctx.account.address, m)),
     });
-    return result.nextPageToken !== undefined
-      ? { remoteThreadIds: result.remoteThreadIds, nextPageToken: result.nextPageToken }
-      : { remoteThreadIds: result.remoteThreadIds };
+    return {
+      remoteThreadIds: result.remoteThreadIds,
+      ...(result.nextPageToken !== undefined ? { nextPageToken: result.nextPageToken } : {}),
+      ...(result.partial !== undefined ? { partial: result.partial } : {}),
+    };
   }
 
   async attachment(account: AccountId, ref: AttachmentRef): Promise<AsyncIterable<Uint8Array>> {
