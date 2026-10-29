@@ -7,7 +7,7 @@ import type {
   WorkflowCopy,
 } from '../src/ports';
 import type { HostWorkflowChannel } from '../src/sync/host';
-import type { LeaseClaim, LeaseRecord } from '../src/sync/lease';
+import type { ClockOffset, LeaseClaim, LeaseRecord } from '../src/sync/lease';
 import { ACCOUNT, FakeAdapter, MINUTE, T0, settle, world, type disk } from './sync-actor-helpers';
 
 /**
@@ -34,12 +34,19 @@ export interface ChannelLog {
   inFlight: number;
   maxInFlight: number;
   writes: number;
+  /** Full compactions (a primary's) and own-only ones (a device the clock gate blocks). */
   compacts: number;
+  ownCompacts: number;
+  /** A compaction is running (it takes `compactMs` on the writer's clock). */
+  compacting: boolean;
+  compactMs?: number;
   states: SyncState[];
   /** What each write reports as this device's clock offset (undefined: not measured), when `serverNow` is absent. */
   clockOffsetMs?: number;
   /** The server's clock: each write then reports the writer's clock minus it, as Gmail's receive time shows it. */
   serverNow?: () => number;
+  /** A bracket each write reports instead, when set. */
+  offset?: ClockOffset;
 }
 
 export const channelLog = (): ChannelLog => ({
@@ -48,6 +55,8 @@ export const channelLog = (): ChannelLog => ({
   maxInFlight: 0,
   writes: 0,
   compacts: 0,
+  ownCompacts: 0,
+  compacting: false,
   states: [],
   clockOffsetMs: 0,
 });
@@ -94,14 +103,21 @@ export function remoteChannel(
           value: e.value,
         });
       }
-      const offset = log.serverNow ? ctx.clock.now() - log.serverNow() : log.clockOffsetMs;
-      return {
-        remoteId: `copy-${remote.gen}`,
-        ...(offset !== undefined ? { clockOffsetMs: offset } : {}),
-      };
+      const point = log.serverNow ? ctx.clock.now() - log.serverNow() : log.clockOffsetMs;
+      const clockOffset =
+        log.offset ?? (point !== undefined ? { lowMs: point, highMs: point } : undefined);
+      return { remoteId: `copy-${remote.gen}`, ...(clockOffset ? { clockOffset } : {}) };
     },
-    async compact() {
-      log.compacts++;
+    async compact(ctx, options) {
+      if (options?.ownOnly) log.ownCompacts++;
+      else log.compacts++;
+      if (!log.compactMs) return 0;
+      log.compacting = true;
+      try {
+        await ctx.clock.sleep(log.compactMs);
+      } finally {
+        log.compacting = false;
+      }
       return 0;
     },
   };

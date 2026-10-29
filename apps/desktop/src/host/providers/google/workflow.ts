@@ -13,7 +13,7 @@ import {
   parseCopyMessage,
   remember,
 } from './workflow-message';
-import type { WorkflowTransport } from './workflow-state';
+import type { SentWindow, WorkflowTransport } from './workflow-state';
 
 /**
  * The Gmail workflow channel (plan 20 PV3, D17, D18; ARCH 6.5, 13.1; DECISIONS M29): Done, Later, todos, reminders and
@@ -48,13 +48,16 @@ import type { WorkflowTransport } from './workflow-state';
  *      `COMPACT_BATCH` ids per call.
  *    - `readBack(id, ctx)` downloads one copy the way a round does (60 units), so a writer can check that the copy it
  *      put is readable from Gmail before it trashes anything that copy supersedes.
+ *    - `receivedAt(id, ctx)` reads Gmail's receive time for a copy (20 units), and `sentWindow(id)` gives this
+ *      device's clock just before the insert that made it went out (after any pacing wait) and just after it
+ *      returned: the lease's clock gate brackets the receive time with the two.
  *
  * 2. `WorkflowStateChannel` (`workflow-state.ts`) is what the engine side calls, `sync/lease.ts` (prov-gov) included:
  *    ```ts
  *    read(state, ctx): Promise<{ records; changed; skipped; nextState; costUnits }> // one gated round, opened and merged
  *    ingest(copies, log): Promise<{ changed; skipped }>   // copies from the actor's `onWorkflowCopies`
  *    write(entries: { key; value }[], ctx): Promise<{ remoteId; records }> // stamp, seal the whole view, put
- *    compact(ctx): Promise<number>                         // primary only: trash up to 25 copies the last write supersedes
+ *    compact(ctx, { ownOnly? }): Promise<number>           // primary (or own copies only): trash up to 25 superseded
  *    view(): WorkflowRecord[]                              // the merged records, sorted by key
  *    ```
  *    Records are `{ key, stamp: { at, gen, device }, value }`. Keys: `thread:<remote thread id>` for thread workflow
@@ -200,6 +203,8 @@ export class GmailWorkflowTransport implements WorkflowTransport {
   private listing?: { cursor: string; pageToken?: string };
   /** Message-IDs `put` has sent at least once. */
   private readonly attempted = new Map<string, true>();
+  /** The bracket of each insert this process made, by remote id (`sentWindow`). */
+  private readonly sent = new Map<string, SentWindow>();
   /** Permanent download failures per id. */
   private readonly failures = new Map<string, number>();
   /**
@@ -247,17 +252,23 @@ export class GmailWorkflowTransport implements WorkflowTransport {
     }
     remember(this.attempted, messageId, true, CAP_ATTEMPTED);
     const raw = Buffer.from(buildCopyMessage(copy, this.address)).toString('base64url');
-    let id: string;
+    let inserted: { id: string; window?: SentWindow };
     try {
-      id = await this.insert(client, raw, label);
+      inserted = await this.insert(client, raw, label, ctx);
     } catch (error) {
       // A 404 was not applied: the label went away. Resolve it once more and try once more.
       if (!is404(error)) throw error;
       this.labelId = undefined;
-      id = await this.insert(client, raw, await this.ensureLabel(client));
+      inserted = await this.insert(client, raw, await this.ensureLabel(client), ctx);
     }
-    this.see(id, 'copy');
-    return id;
+    if (inserted.window) remember(this.sent, inserted.id, inserted.window, CAP_ATTEMPTED);
+    this.see(inserted.id, 'copy');
+    return inserted.id;
+  }
+
+  /** This device's clock around the insert that made `remoteId` (see the header); undefined when none did. */
+  sentWindow(remoteId: string): SentWindow | undefined {
+    return this.sent.get(remoteId);
   }
 
   async compact(remoteIds: string[], ctx: AdapterContext): Promise<void> {
@@ -323,7 +334,14 @@ export class GmailWorkflowTransport implements WorkflowTransport {
     };
   }
 
-  private async insert(client: GmailClient, raw: string, label: string): Promise<string> {
+  /** One insert, and this device's clock when its request went out (the last try's) and when it returned. */
+  private async insert(
+    client: GmailClient,
+    raw: string,
+    label: string,
+    ctx: AdapterContext,
+  ): Promise<{ id: string; window?: SentWindow }> {
+    let from: number | undefined;
     const created = await client.call<{ id?: string }>({
       method: 'gmail.messages.insert',
       path: INSERT_PATH,
@@ -332,9 +350,13 @@ export class GmailWorkflowTransport implements WorkflowTransport {
       body: { raw, labelIds: [label] },
       kind: 'write',
       lane: LANE,
+      onSend: at => {
+        from = at;
+      },
     });
+    const to = ctx.clock.now();
     if (!created?.id) throw new Error('messages.insert returned no id');
-    return created.id;
+    return { id: created.id, ...(from !== undefined ? { window: { from, to } } : {}) };
   }
 
   private async findLabel(client: GmailClient): Promise<string | undefined> {

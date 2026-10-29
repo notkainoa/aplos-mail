@@ -1,3 +1,4 @@
+import { ContractError } from '@aplos/contract/contract-error';
 import { logCodePattern } from '@aplos/contract/log/events';
 import {
   PausedError,
@@ -31,8 +32,11 @@ import { AccountActor, type Role } from './actor';
 import { openedWrites, messageWrite, syncStateWrite } from './facts';
 import type { Governor } from './governor';
 import {
+  clockReading,
   createLeaseController,
-  LEASE_CLOCK_MAX_MS,
+  LEASE_RENEW_MS,
+  type ClockOffset,
+  type ClockReading,
   type LeaseChannel,
   type LeaseClaim,
   type LeaseController,
@@ -53,8 +57,10 @@ type GovernorExtras = Partial<Pick<Governor, 'bindConnect' | 'setBudgets'>>;
  * `workflow` step then): the host feeds the records to `createLeaseController`, hands the merge to
  * `onWorkflowMerged`, and is the one writer of the `workflow` scope's `sync_state` row, committed only when the
  * cursor moved. `write` seals and publishes records (only the lease's claims go through it) and reports this
- * device's clock offset from the server's receive time for the clock gate (`LeaseDeps.eligible`; absent: unknown).
- * `compact` trashes a bounded batch of copies the last write supersedes; the host calls it after a primary's renewal.
+ * device's clock offset from the server's receive time, bracketed by the insert, for the clock gate
+ * (`LeaseDeps.clockGate`; absent: unmeasurable). `compact` trashes a bounded batch of copies the last write
+ * supersedes (`ownOnly`: only this device's own copies); the host starts it after a primary's renewal, or after a
+ * blocked device's dead-claim write, outside the lease round.
  */
 export interface HostWorkflowChannel {
   read(
@@ -69,8 +75,8 @@ export interface HostWorkflowChannel {
   write(
     entries: readonly { key: string; value: unknown }[],
     ctx: AdapterContext,
-  ): Promise<{ clockOffsetMs?: number }>;
-  compact(ctx: AdapterContext): Promise<number>;
+  ): Promise<{ clockOffset?: ClockOffset }>;
+  compact(ctx: AdapterContext, options?: { ownOnly?: boolean }): Promise<number>;
 }
 
 /** How long a quit or disconnect waits for the dead-claim write before the actor stops anyway. */
@@ -144,8 +150,19 @@ interface LeaseEntry {
   unregister: () => void;
   /** The `workflow` scope state the channel reads resume on; the host is that row's only writer. */
   state: SyncState;
-  /** The clock gate's input: what the last write showed of this device's clock (undefined before any write). */
-  clock?: 'ok' | 'off' | 'unknown';
+  /** The clock gate's input: what the last write showed of this device's clock, and when (this device's clock). */
+  clock: ClockReading;
+  measuredAt?: number;
+  /** A compaction in flight: one at a time, and never inside the lease round (a quit's dead claim never waits on it). */
+  compacting?: Promise<void>;
+  /** Quit or disconnect has begun: no new compaction starts. */
+  retiring?: boolean;
+}
+
+/** The clock reading a 'restart' carries to the next controller, trusted while younger than `LEASE_RENEW_MS`. */
+interface ClockSeed {
+  reading: ClockReading;
+  at: number;
 }
 
 /**
@@ -161,6 +178,8 @@ export class ActorHost implements AccountActorHost {
   private readonly leaseCtl = new Map<AccountId, LeaseEntry>();
   /** The lease a 'restart' left published, snapshotted before the drop: the next controller's `initial`, used once. */
   private readonly leaseSeed = new Map<AccountId, NonNullable<AccountRuntime['lease']>>();
+  /** The clock reading a 'restart' left, for the next controller (`ClockSeed`). */
+  private readonly leaseClock = new Map<AccountId, ClockSeed>();
   /** "Use this Mac" or its release, asked before the controller could run it: applied at its first round. */
   private readonly leaseIntent = new Map<AccountId, LeaseIntent>();
   /** Accounts whose lease round waits for the baseline sync; poked when it is done. */
@@ -368,12 +387,14 @@ export class ActorHost implements AccountActorHost {
         // controller may demote `leases` once the actor is gone.
         const seed = this.leases.get(account);
         if (seed) this.leaseSeed.set(account, seed);
+        this.keepClock(account, lease);
       } else {
         await this.retireLease(account, lease);
       }
     }
     if (why !== 'restart') {
       this.leaseSeed.delete(account);
+      this.leaseClock.delete(account);
       this.leaseIntent.delete(account);
     }
     this.actors.delete(account);
@@ -389,6 +410,7 @@ export class ActorHost implements AccountActorHost {
    * (`until + LEASE_SKEW_MS`); a write stuck behind the budget is waited for `LEASE_STOP_WAIT_MS` at most.
    */
   private async retireLease(account: AccountId, lease: LeaseEntry): Promise<void> {
+    lease.retiring = true;
     const timer = new AbortController();
     const timeout = this.deps.clock
       .sleep(LEASE_STOP_WAIT_MS, timer.signal)
@@ -680,7 +702,9 @@ export class ActorHost implements AccountActorHost {
       controller: undefined as unknown as LeaseController,
       unregister: () => {},
       state: this.workflowState(account),
+      clock: 'unmeasured',
     };
+    this.seedClock(account, entry);
     // The seed is used once: after a later quit or disconnect, the current `leases` is what counts.
     const initial = this.leaseSeed.get(account) ?? this.leases.get(account);
     this.leaseSeed.delete(account);
@@ -694,7 +718,7 @@ export class ActorHost implements AccountActorHost {
       active: () => this.actors.has(account),
       // The claim this device's previous controller published is still live; a quit must retire it too.
       ...(initial ? { initial } : {}),
-      eligible: () => entry.clock === undefined || entry.clock === 'ok',
+      clockGate: () => entry.clock,
     });
     entry.unregister = this.deps.deadlines.register({
       id: `lease:${account}`,
@@ -726,6 +750,8 @@ export class ActorHost implements AccountActorHost {
       await this.runIntent(entry, intent);
     } catch (error) {
       this.logOnce(account, 'lease.intent', error);
+      // Refused (the clock gate): the owner's queued pin is dropped, never applied hours later on its own.
+      if (error instanceof ContractError) return;
       if (!this.leaseIntent.has(account)) this.leaseIntent.set(account, intent);
     }
   }
@@ -750,37 +776,68 @@ export class ActorHost implements AccountActorHost {
         const written = await this.logFailure(account, 'lease.write', () =>
           channel.write(entries, ctx()),
         );
-        this.checkClock(account, entry, written?.clockOffsetMs);
-        if (this.compactDue(entry, entries)) await this.compact(account, channel, ctx());
+        this.checkClock(account, entry, written?.clockOffset);
+        const mode = this.compactMode(entry, entries);
+        if (mode) this.startCompaction(account, entry, () => channel.compact(ctx(), mode));
         return written;
       },
     };
   }
 
-  /** The clock gate's measurement from one write; a clock off or unmeasured is logged once per account. */
-  private checkClock(account: AccountId, entry: LeaseEntry, offset: number | undefined): void {
-    if (offset === undefined) entry.clock = 'unknown';
-    else entry.clock = Math.abs(offset) > LEASE_CLOCK_MAX_MS ? 'off' : 'ok';
+  /** The clock gate's measurement from one write; a clock off or unmeasurable is logged once per account. */
+  private checkClock(account: AccountId, entry: LeaseEntry, offset: ClockOffset | undefined): void {
+    entry.clock = clockReading(offset);
+    entry.measuredAt = this.deps.clock.now();
     if (entry.clock !== 'ok') this.logReason(account, 'lease.clock', entry.clock);
   }
 
-  /** Compaction is the primary's job: after a renewal it published as the holder, with its clock trusted. */
-  private compactDue(entry: LeaseEntry, entries: { value: LeaseClaim }[]): boolean {
-    if (entry.clock !== 'ok' || !entries.some(e => e.value.holder)) return false;
-    return entry.controller.current().role === 'primary';
+  /**
+   * Who compacts after a write: the primary, everything its renewal supersedes; a device the clock gate blocks, only
+   * its own copies its dead claim supersedes (nobody else trashes them, and it never trashes another device's copy).
+   * A healthy secondary leaves it to the primary; a quit's dead claim never compacts.
+   */
+  private compactMode(
+    entry: LeaseEntry,
+    entries: { value: LeaseClaim }[],
+  ): { ownOnly: boolean } | undefined {
+    if (entry.retiring) return undefined;
+    if (entry.clock === 'off' || entry.clock === 'unmeasurable') return { ownOnly: true };
+    if (entry.clock !== 'ok' || !entries.some(e => e.value.holder)) return undefined;
+    return entry.controller.current().role === 'primary' ? { ownOnly: false } : undefined;
   }
 
-  /** One bounded `compact` (the channel trashes at most a batch per call); a failure never fails the lease write. */
-  private async compact(
-    account: AccountId,
-    channel: HostWorkflowChannel,
-    ctx: AdapterContext,
-  ): Promise<void> {
-    try {
-      await channel.compact(ctx);
-    } catch (error) {
-      this.logOnce(account, 'lease.compact', error);
-    }
+  /**
+   * One bounded `compact` (the channel trashes at most a batch per call), started outside the lease round so a quit's
+   * dead claim never queues behind it; one at a time, and a failure never fails the lease write.
+   */
+  private startCompaction(account: AccountId, entry: LeaseEntry, run: () => Promise<number>): void {
+    if (entry.compacting) return;
+    entry.compacting = (async () => {
+      try {
+        await run();
+      } catch (error) {
+        this.logOnce(account, 'lease.compact', error);
+      } finally {
+        entry.compacting = undefined;
+      }
+    })();
+  }
+
+  /** A 'restart' keeps the last measurement (and when it was taken) for the restarted actor's controller. */
+  private keepClock(account: AccountId, entry: LeaseEntry): void {
+    if (entry.clock === 'unmeasured' || entry.measuredAt === undefined) return;
+    this.leaseClock.set(account, { reading: entry.clock, at: entry.measuredAt });
+  }
+
+  /** The carried measurement, used once and only while fresh; otherwise the first round measures. */
+  private seedClock(account: AccountId, entry: LeaseEntry): void {
+    const seed = this.leaseClock.get(account);
+    this.leaseClock.delete(account);
+    if (!seed) return;
+    const age = this.deps.clock.now() - seed.at;
+    if (age < 0 || age >= LEASE_RENEW_MS) return;
+    entry.clock = seed.reading;
+    entry.measuredAt = seed.at;
   }
 
   /** Runs `fn`; a failure is logged once per reason and rethrown (the lease controller keeps its own handling). */

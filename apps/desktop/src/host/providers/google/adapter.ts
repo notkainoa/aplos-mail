@@ -162,6 +162,7 @@ export class GmailAdapter implements ProviderAdapter {
         compact: (ids, ctx) => transport.compact(ids, this.paced(ctx)),
         readBack: (id, ctx) => transport.readBack(id, this.paced(ctx)),
         receivedAt: (id, ctx) => transport.receivedAt(id, this.paced(ctx)),
+        sentWindow: id => transport.sentWindow(id),
       };
       this.workflow = this.transport;
     }
