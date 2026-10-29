@@ -20,9 +20,21 @@ const config = {
 
 const GOOD_CHANGE = [{ status: 'M', path: 'src/a.ts', oldMode: '100644', newMode: '100644' }];
 
-// script: { baselineScore, attempts: { <id>: { score, gateOk, scorerOk, changes, leftover, agentCode } } }
+// script: { baselineScore, baselineGateOk, baselineScorerOk,
+//           attempts: { <id>: { score, gateOk, scorerOk, changes, leftover, flagged,
+//                              addedLines, agentCode, breach } } }
 function fakes(script = {}) {
-  const calls = { prepared: [], removed: [], promoted: null, cleaned: false };
+  const calls = {
+    prepared: [],
+    evalPrepared: [],
+    evalRemoved: [],
+    gateDirs: [],
+    scorerDirs: [],
+    removed: [],
+    promoted: null,
+    cleaned: false,
+    intact: 0,
+  };
   const at = id => script.attempts?.[id] ?? {};
   const deps = {
     repoRoot: '/repo',
@@ -36,27 +48,53 @@ function fakes(script = {}) {
       ctx.dir = `/wt/${ctx.id}`;
       calls.prepared.push({ id: ctx.id, commit: ctx.commit });
     },
+    async prepareEval(ctx) {
+      ctx.evalDir = `/eval/${ctx.id}`;
+      calls.evalPrepared.push(ctx.id);
+      return ctx.evalDir;
+    },
+    async removeEval(ctx) {
+      calls.evalRemoved.push(ctx.id);
+    },
+    async verifyMainIntact(ctx) {
+      calls.intact++;
+      const breach = at(ctx.id).breach;
+      if (breach) throw new Error(breach);
+    },
     async runAttemptAgent(ctx) {
       const b = at(ctx.id);
       return { code: b.agentCode ?? 0, timedOut: b.agentTimedOut ?? false };
     },
     async finalizeAttempt(ctx) {
       const b = at(ctx.id);
+      ctx.head = `H-${ctx.id}`;
       return {
-        head: `H-${ctx.id}`,
+        head: ctx.head,
         changes: b.changes ?? GOOD_CHANGE,
+        addedLines: b.addedLines ?? [],
+        flagged: b.flagged ?? [],
         leftover: b.leftover ?? [],
       };
     },
     readOld: () => null,
     readNew: () => null,
     async runGate(_gate, dir) {
-      if (dir === '/repo') return { ok: true };
+      calls.gateDirs.push(dir);
+      if (basename(dir) === 'baseline') {
+        const ok = script.baselineGateOk ?? true;
+        return ok ? { ok: true } : { ok: false, reason: 'exit 1', failLine: 'lint blew up' };
+      }
       const okGate = at(basename(dir)).gateOk ?? true;
       return okGate ? { ok: true } : { ok: false, reason: 'exit 1', failLine: 'g failed' };
     },
     async runScorer(_scorer, dir) {
-      if (dir === '/repo') return { ok: true, score: script.baselineScore ?? 10, details: ['d'] };
+      calls.scorerDirs.push(dir);
+      if (basename(dir) === 'baseline') {
+        if (script.baselineScorerOk === false) {
+          return { ok: false, reason: 'last line is not JSON' };
+        }
+        return { ok: true, score: script.baselineScore ?? 10, details: ['d'] };
+      }
       const b = at(basename(dir));
       if (b.scorerOk === false) return { ok: false, reason: 'last line is not JSON' };
       return { ok: true, score: b.score ?? 10, details: [] };
@@ -117,14 +155,118 @@ describe('runHillClimb', () => {
     };
     const { deps, calls } = fakes({});
     // Baseline: s=10, t=10 (combined 20). Attempt: s dips to 8 but t=30 (combined 38) -> reject.
+    // ('/repo' covers the pre-eval-worktree baseline dir so this test fails on old code for
+    // the right reason only.)
     deps.runScorer = async (scorer, dir) => {
-      if (dir === '/repo') return { ok: true, score: 10, details: [] };
+      if (['baseline', 'repo'].includes(basename(dir))) {
+        return { ok: true, score: 10, details: [] };
+      }
       return { ok: true, score: scorer.name === 's' ? 8 : 30, details: [] };
     };
     const result = await runHillClimb(noRegress, deps);
     assert.match(result.rounds[0].attempts[0].verdict, /noRegress scorer s worsened/);
     assert.equal(result.endCombined, 20); // never kept
     assert.equal(calls.promoted.toSha, 'C0');
+  });
+
+  it('keeps the best SURVIVING candidate when the leader breaks noRegress', async () => {
+    const noRegress = {
+      ...config,
+      scorers: [
+        { name: 's', command: 't', weight: 1, noRegress: true, timeoutSec: 1 },
+        { name: 't', command: 't', weight: 1, noRegress: false, timeoutSec: 1 },
+      ],
+    };
+    const { deps } = fakes({});
+    // Baseline s=t=10. r1a1: s dips to 8, t=40 (combined 48) -> out. r1a2: s=10, t=12 -> kept.
+    deps.runScorer = async (scorer, dir) => {
+      const id = basename(dir);
+      if (['baseline', 'repo'].includes(id)) return { ok: true, score: 10, details: [] };
+      if (id === 'r1a1') return { ok: true, score: scorer.name === 's' ? 8 : 40, details: [] };
+      return { ok: true, score: scorer.name === 's' ? 10 : 12, details: [] };
+    };
+    const result = await runHillClimb({ ...noRegress, roundLimit: 1 }, deps);
+    const [a1, a2] = result.rounds[0].attempts;
+    assert.match(a1.verdict, /noRegress scorer s worsened/);
+    assert.equal(a2.verdict, 'kept');
+    assert.equal(result.endCombined, 22);
+  });
+
+  it('rejects a candidate whose combined score is not finite', async () => {
+    const { deps } = fakes({ attempts: { r1a1: { score: Number.POSITIVE_INFINITY } } });
+    const result = await runHillClimb({ ...config, roundLimit: 1 }, deps);
+    assert.match(result.rounds[0].attempts[0].verdict, /not finite/);
+  });
+
+  it('rejects an attempt flagged by assume-unchanged or skip-worktree bits', async () => {
+    const { deps } = fakes({
+      attempts: { r1a1: { score: 99, flagged: ['src/a.ts'] }, r1a2: { score: 11 } },
+    });
+    const result = await runHillClimb({ ...config, roundLimit: 1 }, deps);
+    assert.match(result.rounds[0].attempts[0].verdict, /index flags hide changes.*src\/a\.ts/);
+    assert.equal(result.rounds[0].attempts[1].verdict, 'kept');
+  });
+
+  it('rejects added suppression directives unless the config allows them', async () => {
+    const attempt = {
+      score: 30,
+      addedLines: ['const x = 1; // eslint-disable-next-line no-unused-vars'],
+    };
+    const { deps } = fakes({ attempts: { r1a1: attempt, r1a2: { score: 11 } } });
+    const result = await runHillClimb({ ...config, roundLimit: 1 }, deps);
+    assert.match(result.rounds[0].attempts[0].verdict, /rejected:.*eslint-disable/);
+
+    const allowed = { ...config, roundLimit: 1, allowDirectives: ['eslint-disable'] };
+    const { deps: deps2 } = fakes({ attempts: { r1a1: attempt } });
+    const result2 = await runHillClimb(allowed, deps2);
+    assert.equal(result2.rounds[0].attempts[0].verdict, 'kept');
+  });
+
+  it('aborts the whole run when the main checkout is touched (sandbox breach)', async () => {
+    const { deps, calls } = fakes({
+      attempts: {
+        r1a1: { breach: 'main checkout dirtied during the run (package.json): sandbox breach' },
+        r1a2: { score: 99 },
+      },
+    });
+    await assert.rejects(
+      runHillClimb({ ...config, roundLimit: 1 }, deps),
+      /aborting run.*sandbox breach/,
+    );
+    assert.equal(calls.promoted, null); // nothing is promoted after a breach
+    assert.equal(calls.cleaned, true); // but cleanup still ran
+  });
+
+  it('aborts with a clear error when the baseline gate fails', async () => {
+    const { deps, calls } = fakes({ baselineGateOk: false });
+    await assert.rejects(runHillClimb(config, deps), /baseline gate g failed.*exit 1/);
+    assert.equal(calls.prepared.length, 0); // no attempts were ever spawned
+    assert.equal(calls.promoted, null);
+    assert.equal(calls.cleaned, true);
+  });
+
+  it('aborts with a clear error when the baseline scorer is unusable', async () => {
+    const { deps } = fakes({ baselineScorerOk: false });
+    await assert.rejects(runHillClimb(config, deps), /baseline scorer s unusable.*not JSON/);
+  });
+
+  it('gates and scores the baseline in a clean eval worktree, not the repo', async () => {
+    const { deps, calls } = fakes({ attempts: { r1a1: { score: 20 } } });
+    await runHillClimb({ ...config, roundLimit: 1 }, deps);
+    assert.ok(calls.evalPrepared.includes('baseline'));
+    assert.ok(calls.evalRemoved.includes('baseline'));
+    // The repo checkout is never handed to a gate or scorer.
+    assert.ok(!calls.gateDirs.includes('/repo'));
+    assert.ok(!calls.scorerDirs.includes('/repo'));
+    assert.ok(calls.gateDirs.includes('/eval/baseline'));
+  });
+
+  it("runs each attempt's gates in a fresh eval worktree, not the agent dir", async () => {
+    const { deps, calls } = fakes({ attempts: { r1a1: { score: 20 }, r1a2: { score: 11 } } });
+    await runHillClimb({ ...config, roundLimit: 1 }, deps);
+    for (const dir of calls.gateDirs) assert.match(dir, /^\/eval\//);
+    for (const dir of calls.scorerDirs) assert.match(dir, /^\/eval\//);
+    assert.ok(calls.gateDirs.includes('/eval/r1a1'));
   });
 
   it('rejects an attempt that touches forbidden files', async () => {

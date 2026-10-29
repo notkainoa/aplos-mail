@@ -6,16 +6,22 @@
 // hillclimb/<name>/<runId>/best branch — squashed to one commit on the starting commit — and
 // prints its name. Never pushes, never opens a PR. --dry-run validates the config, scores the
 // baseline and prints the plan without starting any agent.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+//
+// THERE IS NO SANDBOX. Attempt agents and gate/scorer commands run with this user's
+// privileges — trusted agents and configs only. Cheap mitigations in place of a sandbox:
+// the run refuses to start on a dirty main checkout, and after every attempt verifies the
+// main checkout's HEAD and status are untouched; any change aborts the whole run.
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { briefFor, filteredEnv, runAgent } from './agent.mjs';
 import { evaluateScorers, runHillClimb } from './loop.mjs';
 import { loadConfig, resolveBrief } from './config.mjs';
-import { withCheckSlot } from './lock.mjs';
+import { releaseHeldSlots, withCheckSlot } from './lock.mjs';
 import { dryRunLines, roundTable, summaryLines } from './report.mjs';
 import { runGate, runScorer } from './steps.mjs';
 import {
+  addedLines,
   addWorktree,
   attemptBranch,
   attemptDir,
@@ -24,6 +30,7 @@ import {
   currentHead,
   diffBetween,
   gitShow,
+  indexFlagViolations,
   linkNodeModules,
   removeWorktree,
   runRoot,
@@ -50,6 +57,10 @@ export function parseArgs(argv) {
     else if (arg === '--run-id') {
       options.runId = args.shift();
       if (!options.runId) throw new Error('--run-id needs a value');
+      // The id lands in tmpdir names and branch names; keep it a safe slug.
+      if (!/^[a-z0-9][a-z0-9-]{0,40}$/.test(options.runId)) {
+        throw new Error('--run-id must match ^[a-z0-9][a-z0-9-]{0,40}$');
+      }
     } else throw new Error(`unknown argument ${arg}`);
   }
   return options;
@@ -74,6 +85,7 @@ const newRunId = () =>
  */
 function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
   const root = runRoot(runId);
+  const startCommit = currentHead(repoRoot);
   const cleanupAll = () =>
     cleanupRun(repoRoot, {
       runId,
@@ -81,12 +93,18 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       dirs: state.dirs,
       branches: state.branches,
     });
+  const track = child => {
+    state.procs.add(child);
+    const drop = () => state.procs.delete(child);
+    child.on('close', drop);
+    child.on('error', drop);
+  };
   return {
     repoRoot,
     runId,
     configPath: repoRelPath,
-    startCommit: currentHead(repoRoot),
-    withCheckSlot: fn => withCheckSlot(fn),
+    startCommit,
+    withCheckSlot: fn => withCheckSlot(fn, { timeoutMs: config.lockWaitMin * 60_000 }),
     logPath: (stepId, step) => join(artifactsDir, `${stepId}-${step}.log`),
     print: line => console.log(line),
     onRound: (round, scorerNames) => {
@@ -101,6 +119,16 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       state.branches.push(ctx.branch);
       linkNodeModules(repoRoot, ctx.dir);
     },
+    // A clean detached worktree checked out at a commit — where the baseline and every
+    // attempt are actually gated and scored, free of uncommitted leftovers, ignored files
+    // and index-flag tricks the agent's working tree could hide.
+    async prepareEval(ctx) {
+      ctx.evalDir = join(root, `${ctx.id}-eval`);
+      addWorktree(repoRoot, { dir: ctx.evalDir, commit: ctx.head });
+      state.dirs.push(ctx.evalDir);
+      linkNodeModules(repoRoot, ctx.evalDir);
+      return ctx.evalDir;
+    },
     async runAttemptAgent(ctx, briefText) {
       // The brief file sits next to the worktree, not inside it: inside, it would land in the
       // diff the guard analyses (and an agent could edit its own instructions mid-run).
@@ -112,27 +140,40 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
         workdir: ctx.dir,
         env: filteredEnv(),
         logPath: join(artifactsDir, `${ctx.id}-agent.log`),
-        onSpawn: child => {
-          state.procs.add(child);
-          child.on('close', () => state.procs.delete(child));
-        },
+        onSpawn: track,
       });
     },
     async finalizeAttempt(ctx) {
       commitAll(ctx.dir, `hillclimb ${config.name} ${ctx.id}`);
+      ctx.head = currentHead(ctx.dir);
       const changes = diffBetween(ctx.dir, ctx.baseCommit);
+      const added = addedLines(ctx.dir, ctx.baseCommit);
+      const flagged = indexFlagViolations(ctx.dir);
       const leftover = statusPorcelain(ctx.dir).map(entry => entry.path);
-      return { head: currentHead(ctx.dir), changes, leftover };
+      return { head: ctx.head, changes, addedLines: added, flagged, leftover };
     },
     readOld: (ctx, path) => gitShow(ctx.dir, ctx.baseCommit, path),
-    readNew: (ctx, path) => {
-      const file = join(ctx.dir, path);
-      return existsSync(file) ? readFileSync(file, 'utf8') : null;
-    },
-    runGate: (gate, workdir, logPath) => runGate(gate, { workdir, logPath }),
-    runScorer: (scorer, workdir, logPath) => runScorer(scorer, { workdir, logPath }),
+    // "New" contents always come from the attempt's COMMIT, never the working tree: whatever
+    // an agent left dirty, ignored or index-flagged cannot impersonate committed state.
+    readNew: (ctx, path) => gitShow(ctx.dir, ctx.head ?? 'HEAD', path),
+    runGate: (gate, workdir, logPath) => runGate(gate, { workdir, logPath, onSpawn: track }),
+    runScorer: (scorer, workdir, logPath) =>
+      runScorer(scorer, { workdir, logPath, onSpawn: track }),
     async removeAttempt(ctx) {
+      if (ctx.evalDir) removeWorktree(repoRoot, ctx.evalDir);
       if (ctx.dir) removeWorktree(repoRoot, ctx.dir);
+    },
+    async removeEval(ctx) {
+      if (ctx.evalDir) removeWorktree(repoRoot, ctx.evalDir);
+    },
+    async verifyMainIntact() {
+      if (currentHead(repoRoot) !== startCommit) {
+        throw new Error('main checkout HEAD moved during the run (sandbox breach)');
+      }
+      const dirty = statusPorcelain(repoRoot);
+      if (dirty.length) {
+        throw new Error(`main checkout dirtied during the run (${dirty[0].path}): sandbox breach`);
+      }
     },
     async promote({ fromSha, toSha, message }) {
       return squashToBest(repoRoot, { name: config.name, runId, fromSha, toSha, message });
@@ -149,6 +190,11 @@ async function main() {
   config.attempt.brief = resolveBrief(config.attempt.brief, repoRoot);
   if (options.rounds) config.roundLimit = options.rounds;
   if (options.attempts) config.attemptsPerRound = options.attempts;
+  // No sandbox: refuse to start on a dirty main checkout so the baseline can't be poisoned
+  // and later sandbox checks have a clean reference point.
+  if (statusPorcelain(repoRoot).length) {
+    throw new Error('main checkout is not clean — commit or stash before a hill-climb run');
+  }
   const runId = options.runId ?? newRunId();
   const artifactsDir = join(repoRoot, 'artifacts', 'hillclimb', runId);
   mkdirSync(artifactsDir, { recursive: true });
@@ -156,7 +202,8 @@ async function main() {
   const deps = realDeps({ config, repoRelPath, runId, artifactsDir, state });
 
   const onSignal = signal => {
-    // Kill live attempt process groups first so nothing keeps running in a deleted worktree.
+    // Kill live process groups first — agents, gates and scorers — so nothing keeps running
+    // in a deleted worktree or holds the check-slot lock.
     for (const child of state.procs) {
       try {
         process.kill(-child.pid, 'SIGKILL');
@@ -164,6 +211,7 @@ async function main() {
         // Already exited.
       }
     }
+    releaseHeldSlots();
     cleanupRun(repoRoot, {
       runId,
       name: config.name,
@@ -174,14 +222,39 @@ async function main() {
   };
   process.on('SIGINT', () => onSignal('SIGINT'));
   process.on('SIGTERM', () => onSignal('SIGTERM'));
+  process.on('SIGHUP', () => onSignal('SIGHUP'));
 
-  if (options.dryRun) {
-    const baseline = await evaluateScorers(repoRoot, config, deps, 'baseline');
-    for (const line of dryRunLines(config, baseline, repoRelPath)) console.log(line);
-    return;
+  try {
+    if (options.dryRun) {
+      // The dry-run baseline uses the same clean-worktree machinery as a real run.
+      const baseCtx = { id: 'baseline', head: deps.startCommit };
+      let baseline;
+      try {
+        const dir = await deps.prepareEval(baseCtx);
+        baseline = await evaluateScorers(dir, config, deps, 'baseline');
+      } finally {
+        await deps.removeEval(baseCtx);
+      }
+      if (baseline.scorerFail) {
+        const fail = baseline.scorerFail;
+        throw new Error(
+          `baseline scorer ${fail.name} unusable: ${fail.reason} (log ${fail.logPath})`,
+        );
+      }
+      for (const line of dryRunLines(config, baseline, repoRelPath)) console.log(line);
+      return;
+    }
+    const result = await runHillClimb(config, deps);
+    for (const line of summaryLines(result, artifactsDir)) console.log(line);
+  } finally {
+    // Whatever happened — kept, rejected, thrown — no worktree or branch outlives the run.
+    cleanupRun(repoRoot, {
+      runId,
+      name: config.name,
+      dirs: state.dirs,
+      branches: state.branches,
+    });
   }
-  const result = await runHillClimb(config, deps);
-  for (const line of summaryLines(result, artifactsDir)) console.log(line);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

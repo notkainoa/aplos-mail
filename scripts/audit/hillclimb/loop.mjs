@@ -72,6 +72,19 @@ async function runAttempt(ctx, config, best, deps) {
     combined: null,
     verdict: 'rejected: unfinished',
   };
+  // There is no sandbox: the agent and gate commands could reach back into the user's own
+  // checkout. Any change there rejects this attempt AND aborts the whole run — the sandbox
+  // has failed and nothing that follows is trustworthy.
+  const intact = async () => {
+    try {
+      await deps.verifyMainIntact?.(ctx);
+      return true;
+    } catch (error) {
+      rec.verdict = `rejected: ${trimReason(error.message)}`;
+      rec.abort = true;
+      return false;
+    }
+  };
   try {
     // The ctx tells deps where to seed the worktree (the round's best) and what "old" means.
     ctx.commit = best.commit;
@@ -92,7 +105,12 @@ async function runAttempt(ctx, config, best, deps) {
       rec.verdict = `rejected: agent exited ${agent.code ?? agent.signal}`;
       return rec;
     }
+    if (!(await intact())) return rec;
     const fin = await deps.finalizeAttempt(ctx);
+    if (fin.flagged?.length) {
+      rec.verdict = `rejected: index flags hide changes (${fin.flagged.slice(0, 3).join(', ')})`;
+      return rec;
+    }
     if (fin.leftover.length) {
       rec.verdict = `rejected: uncommitted changes remain (${fin.leftover.slice(0, 3).join(', ')})`;
       return rec;
@@ -102,6 +120,8 @@ async function runAttempt(ctx, config, best, deps) {
       changes: fin.changes,
       allowedPaths: config.allowedPaths,
       allowedTestPaths: config.allowedTestPaths,
+      allowDirectives: config.allowDirectives ?? [],
+      addedLines: fin.addedLines ?? [],
       configPath: deps.configPath ?? null,
       readOldFile: path => deps.readOld(ctx, path),
       readNewFile: path => deps.readNew(ctx, path),
@@ -111,7 +131,12 @@ async function runAttempt(ctx, config, best, deps) {
       return rec;
     }
     rec.head = fin.head;
-    const scored = await evaluate(ctx.dir, config, deps, ctx.id);
+    ctx.head = fin.head;
+    // Gates and scorers run in a FRESH worktree checked out at the attempt's commit — never
+    // the agent's working tree, where uncommitted leftovers, ignored files (.env, dist,
+    // coverage) and index flags could make tampered state pass the gates.
+    const evalDir = await deps.prepareEval(ctx);
+    const scored = await evaluate(evalDir, config, deps, ctx.id);
     rec.gates = scored.gatesOk ? 'pass' : 'fail';
     if (!scored.gatesOk) {
       const fail = scored.gateFail;
@@ -126,6 +151,7 @@ async function runAttempt(ctx, config, best, deps) {
     rec.scores = toMap(scored.scores);
     rec.scoreList = scored.scores;
     rec.combined = scored.combined;
+    if (!(await intact())) return rec;
     rec.verdict = 'candidate';
     return rec;
   } catch (error) {
@@ -137,85 +163,130 @@ async function runAttempt(ctx, config, best, deps) {
 }
 
 function judgeRound(attempts, best, config) {
-  const candidates = attempts
-    .filter(a => a.verdict === 'candidate')
-    .sort((a, b) => b.combined - a.combined);
-  const winner = candidates[0];
-  if (!winner) return { kept: null, gain: false };
-  const dipped = config.scorers.find(
-    scorer => scorer.noRegress && winner.scores[scorer.name] < best.scores[scorer.name],
-  );
-  let kept = null;
-  if (dipped) {
-    winner.verdict = `rejected: noRegress scorer ${dipped.name} worsened`;
-  } else if (winner.combined <= best.combined) {
-    winner.verdict = 'not kept: no gain over best';
-  } else {
-    winner.verdict = 'kept';
-    kept = winner;
+  const candidates = attempts.filter(a => a.verdict === 'candidate');
+  for (const candidate of candidates) {
+    if (!Number.isFinite(candidate.combined)) {
+      candidate.verdict = 'rejected: combined score is not finite';
+    }
   }
-  for (const other of candidates.slice(1)) other.verdict = 'not kept: lower score';
+  // noRegress applies to EVERY candidate first — the best of the survivors wins, so a
+  // dipping leader can no longer knock a valid second-best out of the round.
+  const survivors = candidates
+    .filter(a => a.verdict === 'candidate')
+    .sort((a, b) => b.combined - a.combined)
+    .filter(candidate => {
+      const dipped = config.scorers.find(scorer => {
+        if (!scorer.noRegress) return false;
+        const score = candidate.scores[scorer.name];
+        const base = best.scores[scorer.name];
+        return !Number.isFinite(score) || (Number.isFinite(base) && score < base);
+      });
+      if (dipped) candidate.verdict = `rejected: noRegress scorer ${dipped.name} worsened`;
+      return !dipped;
+    });
+  const winner = survivors[0];
+  let kept = null;
+  if (winner) {
+    if (!(winner.combined > best.combined)) {
+      winner.verdict = 'not kept: no gain over best';
+    } else {
+      winner.verdict = 'kept';
+      kept = winner;
+    }
+    for (const other of survivors.slice(1)) other.verdict = 'not kept: lower score';
+  }
   return { kept, gain: kept !== null };
 }
 
 /**
  * @param {object} config - validated target config
  * @param {object} deps - injected effects; see run.mjs for the real wiring:
- *   startCommit, configPath, prepareAttempt(ctx), runAttemptAgent(ctx, brief),
- *   finalizeAttempt(ctx) -> { head, changes, leftover }, readOld(ctx, path), readNew(ctx, path),
- *   removeAttempt(ctx), cleanup(), promote({fromSha, toSha, message}) -> {branch, sha},
+ *   startCommit, configPath, prepareAttempt(ctx), prepareEval(ctx), runAttemptAgent(ctx, brief),
+ *   finalizeAttempt(ctx) -> { head, changes, leftover, flagged, addedLines },
+ *   readOld(ctx, path), readNew(ctx, path), removeAttempt(ctx), removeEval(ctx),
+ *   verifyMainIntact(ctx), cleanup(), promote({fromSha, toSha, message}) -> {branch, sha},
  *   withCheckSlot(fn), runGate, runScorer, logPath(stepId, step), repoRoot, print(line)
  */
 export async function runHillClimb(config, deps) {
-  const { repoRoot, startCommit } = deps;
-  const baseline = await evaluate(repoRoot, config, deps, 'baseline');
-  deps.print?.(
-    `baseline: combined ${baseline.combined ?? 'n/a'}${baseline.gatesOk ? '' : ' (gates FAIL)'}`,
-  );
-  let best = {
-    commit: startCommit,
-    combined: baseline.combined ?? Number.NEGATIVE_INFINITY,
-    scores: baseline.scores ? toMap(baseline.scores) : {},
-    scoreList: baseline.scores ?? [],
-  };
-  const rounds = [];
-  let noGain = 0;
-  for (let round = 1; round <= config.roundLimit && noGain < config.stopAfterNoGain; round++) {
-    const indexes = Array.from({ length: config.attemptsPerRound }, (_, i) => i + 1);
-    const attempts = await pool(indexes, config.maxConcurrent, index =>
-      runAttempt({ id: `r${round}a${index}`, round, index }, config, best, deps),
-    );
-    const { kept, gain } = judgeRound(attempts, best, config);
-    if (gain) {
-      best = {
-        commit: kept.head,
-        combined: kept.combined,
-        scores: kept.scores,
-        scoreList: kept.scoreList,
-      };
-      noGain = 0;
-    } else {
-      noGain++;
+  const { startCommit } = deps;
+  try {
+    // The baseline is scored in a clean worktree at the start commit — the same machinery
+    // the attempts get — never in the user's checkout, where uncommitted changes would
+    // poison every comparison.
+    const baseCtx = { id: 'baseline', head: startCommit };
+    let baseline;
+    try {
+      const baseDir = await deps.prepareEval(baseCtx);
+      baseline = await evaluate(baseDir, config, deps, 'baseline');
+    } finally {
+      await deps.removeEval?.(baseCtx);
     }
-    rounds.push({ round, attempts, gain });
-    deps.onRound?.(
-      rounds.at(-1),
-      config.scorers.map(scorer => scorer.name),
+    deps.print?.(
+      `baseline: combined ${baseline.combined ?? 'n/a'}${baseline.gatesOk ? '' : ' (gates FAIL)'}`,
     );
+    if (!baseline.gatesOk) {
+      const fail = baseline.gateFail;
+      throw new Error(`baseline gate ${fail.name} failed: ${fail.reason} (log ${fail.logPath})`);
+    }
+    if (baseline.scorerFail) {
+      const fail = baseline.scorerFail;
+      throw new Error(
+        `baseline scorer ${fail.name} unusable: ${fail.reason} (log ${fail.logPath})`,
+      );
+    }
+    if (!Number.isFinite(baseline.combined)) {
+      throw new Error('baseline combined score is not finite — check scorer weights');
+    }
+    let best = {
+      commit: startCommit,
+      combined: baseline.combined,
+      scores: toMap(baseline.scores),
+      scoreList: baseline.scores,
+    };
+    const rounds = [];
+    let noGain = 0;
+    for (let round = 1; round <= config.roundLimit && noGain < config.stopAfterNoGain; round++) {
+      const indexes = Array.from({ length: config.attemptsPerRound }, (_, i) => i + 1);
+      const attempts = await pool(indexes, config.maxConcurrent, index =>
+        runAttempt({ id: `r${round}a${index}`, round, index }, config, best, deps),
+      );
+      const breach = attempts.find(a => a.abort);
+      if (breach) {
+        throw new Error(`aborting run: ${breach.verdict}`);
+      }
+      const { kept, gain } = judgeRound(attempts, best, config);
+      if (gain) {
+        best = {
+          commit: kept.head,
+          combined: kept.combined,
+          scores: kept.scores,
+          scoreList: kept.scoreList,
+        };
+        noGain = 0;
+      } else {
+        noGain++;
+      }
+      rounds.push({ round, attempts, gain });
+      deps.onRound?.(
+        rounds.at(-1),
+        config.scorers.map(scorer => scorer.name),
+      );
+    }
+    const promoted = await deps.promote({
+      fromSha: startCommit,
+      toSha: best.commit,
+      message: `hillclimb ${config.name} run ${deps.runId}: combined ${baseline.combined} -> ${best.combined}`,
+    });
+    return {
+      startCommit,
+      bestCommit: best.commit,
+      bestBranch: promoted.branch,
+      bestSha: promoted.sha,
+      baseline,
+      endCombined: best.combined,
+      rounds,
+    };
+  } finally {
+    await deps.cleanup?.();
   }
-  const promoted = await deps.promote({
-    fromSha: startCommit,
-    toSha: best.commit,
-    message: `hillclimb ${config.name} run ${deps.runId}: combined ${baseline.combined} -> ${best.combined}`,
-  });
-  await deps.cleanup?.();
-  return {
-    startCommit,
-    bestCommit: best.commit,
-    bestBranch: promoted.branch,
-    bestSha: promoted.sha,
-    baseline,
-    endCombined: best.combined,
-    rounds,
-  };
 }

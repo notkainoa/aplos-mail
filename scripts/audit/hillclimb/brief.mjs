@@ -1,6 +1,6 @@
 // Composes the brief each attempt agent receives: the configured brief plus the target name,
 // allowed paths, the forbidden paths in plain words, the current scores and worst findings,
-// and the working rules (small safe changes, run the gates, commit nothing). It only ever
+// and the working rules (small safe changes, targeted tests only, commit nothing). It only ever
 // contains this structured input — never environment values or file contents — so an agent
 // cannot learn a secret from its own prompt.
 import { SUPPRESSION_HINT } from './diffguard.mjs';
@@ -20,7 +20,7 @@ const FORBIDDEN_WORDS = [
 export const RULES = [
   'Make small, safe improvements. Keep behaviour identical; this is refactoring, not a rewrite.',
   'Stay strictly inside the allowed paths; the harness rejects the whole attempt if you touch anything forbidden.',
-  'Run the gates listed above locally before finishing.',
+  'Do NOT run the full gate suites yourself — the harness runs them under its own check lock; run only small, targeted checks on the files you touch.',
   'Commit nothing — the harness reviews and commits your changes itself.',
 ];
 
