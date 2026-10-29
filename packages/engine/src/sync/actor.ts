@@ -82,6 +82,12 @@ export interface ActorDeps {
    * channel reader, so the actor never runs the planned `workflow` step itself.
    */
   hostReadsWorkflow?: boolean;
+  /**
+   * The lease role as of now (the host's `controller.current().role`), asked on every turn: a primary whose claim ran
+   * out while the actor slept is secondary before the lease deadline's report reaches `setLease`. Undefined: the
+   * last role `setLease` gave.
+   */
+  leaseRole?: () => Role | undefined;
 }
 
 const laneRank = (lane: SyncLane) => LANES.indexOf(lane);
@@ -307,7 +313,8 @@ export class AccountActor {
       env,
       memory,
     });
-    const steps = planned.filter(step => this.allowed(step));
+    const role = this.currentRole();
+    const steps = planned.filter(step => this.allowed(step, role));
     const due = steps
       .filter(step => this.dueAt(step, now) <= now)
       .sort((a, b) => laneRank(a.lane) - laneRank(b.lane));
@@ -345,18 +352,23 @@ export class AccountActor {
     return Math.min(opsWake, ...steps.map(step => this.dueAt(step, now)));
   }
 
-  private allowed(step: PlannedStep): boolean {
-    if (step.scope === 'workflow') return this.workflowAllowed();
-    return this.role !== 'secondary' || !PRIMARY_ONLY.has(step.lane);
+  /** The role this turn plans with: the lease's live answer when the host has one. */
+  private currentRole(): Role {
+    return this.deps.leaseRole?.() ?? this.role;
+  }
+
+  private allowed(step: PlannedStep, role: Role): boolean {
+    if (step.scope === 'workflow') return this.workflowAllowed(role);
+    return role !== 'secondary' || !PRIMARY_ONLY.has(step.lane);
   }
 
   /**
    * The workflow round: never when the host's lease round reads the channel (one reader per account). Otherwise it is
    * not a background lane, but on a secondary that sees a live holder it is the primary's job (ARCH 6.5).
    */
-  private workflowAllowed(): boolean {
+  private workflowAllowed(role: Role): boolean {
     if (this.deps.hostReadsWorkflow) return false;
-    return this.role !== 'secondary' || this.leaseFree();
+    return role !== 'secondary' || this.leaseFree();
   }
 
   /** No live lease holder that this device knows of: `holder` absent, or its claim gone by the lease's own rule. */

@@ -407,3 +407,37 @@ test('a channel read whose merge fails keeps the copies it downloaded and merges
   );
   assert.ok(!b.methods(before).includes('gmail.messages.get'), 'not downloaded again');
 });
+
+test('a lease write reports this device clock offset from Gmail receive time, for the clock gate', async () => {
+  const r = await rig();
+  const slow = device(r, 'device-a', { skewMs: -12 * MINUTE });
+  const fine = device(r, 'device-b');
+  const off = await slow.channel.write([{ key: 'lease:device-a', value: { v: 1 } }], slow.ctx());
+  const ok = await fine.channel.write([{ key: 'lease:device-b', value: { v: 1 } }], fine.ctx());
+  assert.ok(Math.abs(off.clockOffsetMs! + 12 * MINUTE) < 5_000, `measured ${off.clockOffsetMs}`);
+  assert.ok(Math.abs(ok.clockOffsetMs!) < 5_000, `measured ${ok.clockOffsetMs}`);
+  assert.ok(fine.methods().includes('gmail.messages.get'), 'one minimal get for the receive time');
+});
+
+test('the primary compacts the copies its renewals supersede: the label stays small over an idle hour', async () => {
+  const mail = mailWorld(4);
+  const a = new Mac(mail, 'mac-a');
+  const engineA = await boot(a, undefined, { workflow: true });
+  const live = () =>
+    mail.emu.mailbox.select({ labelIds: [appLabel(mail)], q: '', includeSpamTrash: false }).length;
+  try {
+    await engineA.host.start(ACCOUNT);
+    await runUntil(
+      mail.clock,
+      () => leaseOf(engineA)?.role === 'primary',
+      'the lease',
+      10 * MINUTE,
+    );
+    await mail.clock.advance(60 * MINUTE);
+    assert.equal(leaseOf(engineA)?.role, 'primary');
+    assert.ok(live() <= 2, `${live()} copies under the label after an hour of renewals`);
+  } finally {
+    await settle(mail.clock, engineA.kill());
+    a.cleanup();
+  }
+});

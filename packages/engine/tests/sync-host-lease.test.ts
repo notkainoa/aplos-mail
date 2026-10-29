@@ -1,23 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  PausedError,
-  type PlanInput,
-  type PlannedStep,
-  type SyncState,
-  type SyncLane,
-  type WorkflowChannel,
-  type WorkflowCopy,
-} from '../src/ports';
+import { PausedError, type SyncState } from '../src/ports';
 import { ProviderError } from '../src/ports/base';
 import { gmailBudget } from '../src/sync/budgets';
-import { LEASE_SKEW_MS, LEASE_TTL_MS, type LeaseClaim, type LeaseRecord } from '../src/sync/lease';
+import { LEASE_SKEW_MS, LEASE_TTL_MS, type LeaseClaim } from '../src/sync/lease';
 import { LEASE_STOP_WAIT_MS, type HostWorkflowChannel } from '../src/sync/host';
 import {
   ACCOUNT,
   FakeAdapter,
   MINUTE,
-  T0,
   deferred,
   disk,
   governed,
@@ -26,187 +17,25 @@ import {
   until,
   world,
 } from './sync-actor-helpers';
+import {
+  remote,
+  claimOf,
+  channelLog,
+  remoteChannel,
+  baselineDone,
+  pump,
+  workflowStep,
+  channelWorld,
+  portChannel,
+  step,
+  fire,
+} from './sync-lease-rig';
 
 /**
  * The actor host's lease wiring (ARCH 6.5, plan 20 PV3): `createLeaseController` on the account's workflow channel,
  * its `tick()` on the `lease:<account>` deadline, claims and the pin through `claimLease`/`releaseLease`, the dead
  * claim a quit or disconnect publishes, and the workflow-round rules the actor applies to it.
  */
-
-/** The "mailbox" two devices' channels share: the merged workflow records, latest write per key. */
-interface Remote {
-  records: Map<string, LeaseRecord>;
-  gen: number;
-}
-
-const remote = (): Remote => ({ records: new Map(), gen: 0 });
-
-const byKey = (a: LeaseRecord, b: LeaseRecord) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
-const stampOf = (r: LeaseRecord) => `${r.stamp.at}:${r.stamp.gen}`;
-const claimOf = (remote: Remote, device: string) =>
-  remote.records.get(`lease:${device}`)?.value as LeaseClaim | undefined;
-
-/** What a `remoteChannel` saw: reads (and the most in flight at once), writes, and the states reads resumed on. */
-interface ChannelLog {
-  reads: number;
-  inFlight: number;
-  maxInFlight: number;
-  writes: number;
-  states: SyncState[];
-}
-
-const channelLog = (): ChannelLog => ({
-  reads: 0,
-  inFlight: 0,
-  maxInFlight: 0,
-  writes: 0,
-  states: [],
-});
-
-/**
- * A fake `WorkflowStateChannel` over the shared remote, stamped as `device`: `read` is one round (the whole view
- * plus the records this channel last reported as changed), `write` stamps and stores the entries.
- */
-function remoteChannel(
-  remote: Remote,
-  device: string,
-  log: ChannelLog = channelLog(),
-): HostWorkflowChannel {
-  const seen = new Map<string, string>();
-  return {
-    async read(state, ctx) {
-      log.reads++;
-      log.states.push(state);
-      log.inFlight++;
-      log.maxInFlight = Math.max(log.maxInFlight, log.inFlight);
-      await settle(2);
-      log.inFlight--;
-      const records = [...remote.records.values()].sort(byKey);
-      const changed = records.filter(r => seen.get(r.key) !== stampOf(r));
-      for (const r of records) seen.set(r.key, stampOf(r));
-      return {
-        records,
-        changed,
-        nextState: {
-          scope: 'workflow',
-          cursor: `wf-${ctx.generation}`,
-          generation: ctx.generation,
-          updatedAt: ctx.clock.now(),
-        },
-        costUnits: 2,
-      };
-    },
-    async write(entries, ctx) {
-      log.writes++;
-      for (const e of entries) {
-        remote.records.set(e.key, {
-          key: e.key,
-          stamp: { at: ctx.clock.now(), gen: ++remote.gen, device },
-          value: e.value,
-        });
-      }
-      return { remoteId: `copy-${remote.gen}` };
-    },
-  };
-}
-
-/** The account's baseline sync is done, as the account row records it (the lease rounds wait for it). */
-function baselineDone(w: ReturnType<typeof world>): void {
-  w.store.commit({
-    opId: `baseline-${w.clock.now()}`,
-    origin: 'system',
-    writes: [{ kind: 'account', id: ACCOUNT, baselineDoneAt: T0 }],
-  });
-}
-
-/** The timer loop's stand-in: moves the clock a second at a time and fires `lease:` when its `next()` is due. */
-async function pump(w: ReturnType<typeof world>, ms: number): Promise<void> {
-  const end = w.clock.now() + ms;
-  while (w.clock.now() < end) {
-    await w.clock.advance(1_000);
-    await settle(2);
-    const source = w.deadlines.sources.get(`lease:${ACCOUNT}`);
-    const next = await source?.next();
-    if (source && next !== undefined && next <= w.clock.now()) await source.fire(w.clock.now());
-  }
-}
-
-/** The `workflow` step as the Gmail adapter plans it: at most once a minute after the committed row. */
-const workflowStep = (input: PlanInput): PlannedStep => {
-  const last = input.states.find(s => s.scope === 'workflow')?.updatedAt;
-  return step(
-    'workflow',
-    'enrichment',
-    'workflow',
-    input.trigger,
-    last ? last + MINUTE : undefined,
-  );
-};
-
-/** One device with a channel on `rem`, its baseline done; the adapter's port round is counted in `rounds`. */
-function channelWorld(
-  d: ReturnType<typeof disk>,
-  rem: Remote,
-  log: ChannelLog,
-  rounds: string[],
-  options: { deviceId?: string; clock?: ReturnType<typeof world>['clock'] } = {},
-) {
-  const w = world(
-    d,
-    () => {
-      const adapter = new FakeAdapter(input => [workflowStep(input)], {});
-      adapter.workflow = portChannel(rounds);
-      return adapter;
-    },
-    {
-      ...options,
-      host: { workflowChannel: () => remoteChannel(rem, options.deviceId ?? 'device-a', log) },
-    },
-  );
-  baselineDone(w);
-  return w;
-}
-
-/** The port's `WorkflowChannel` (the adapter's transport); `round` is governed and counts its calls. */
-function portChannel(rounds: string[], copies: () => WorkflowCopy[] = () => []): WorkflowChannel {
-  return {
-    async round(state, ctx) {
-      await ctx.governor.run(
-        { budget: 'gmail', lane: 'enrichment', kind: 'read', method: 'fake.workflow', cost: 2 },
-        async () => {},
-      );
-      rounds.push(state.scope);
-      return {
-        copies: copies(),
-        nextState: {
-          scope: 'workflow',
-          generation: ctx.generation,
-          updatedAt: ctx.clock.now(),
-        },
-        costUnits: 2,
-      };
-    },
-    put: async () => 'copy-1',
-    compact: async () => {},
-  };
-}
-
-const step = (
-  scope: PlannedStep['scope'],
-  lane: SyncLane,
-  origin: PlannedStep['origin'],
-  trigger: PlannedStep['trigger'],
-  notBefore?: number,
-): PlannedStep => ({
-  scope,
-  lane,
-  origin,
-  trigger,
-  ...(notBefore !== undefined ? { notBefore } : {}),
-});
-
-const fire = (w: ReturnType<typeof world>, id = `lease:${ACCOUNT}`) =>
-  w.deadlines.sources.get(id)!.fire(w.clock.now());
 
 test('the lease rides the channel: a candidacy promotes the only device, claim pins it, release keeps it by hysteresis', async () => {
   const d = disk();

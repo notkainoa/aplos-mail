@@ -51,6 +51,16 @@ export function portClock(fake: FakeClock): Clock {
   };
 }
 
+/** A clock that reads `skewMs` off the one it wraps; sleeps and timers stay relative. */
+function skewed(clock: Clock, skewMs: number): Clock {
+  if (!skewMs) return clock;
+  return {
+    now: () => clock.now() + skewMs,
+    sleep: (ms, signal) => clock.sleep(ms, signal),
+    timer: (at, fire) => clock.timer(at - skewMs, fire),
+  };
+}
+
 /** Records registered deadline sources; the tests fire them by hand. */
 export class FakeDeadlines implements DeadlineRegistry {
   readonly sources = new Map<string, DeadlineSource>();
@@ -205,6 +215,8 @@ export const T0 = Date.UTC(2026, 9, 20, 16, 0, 0);
 
 export interface World {
   clock: FakeClock;
+  /** The host's clock: the shared fake clock plus this device's skew. */
+  now(): number;
   store: StorePort;
   governor: Governor;
   host: ActorHost;
@@ -238,6 +250,8 @@ export function world(
     random?: () => number;
     deviceId?: string;
     host?: ActorHostOptions;
+    /** This device's clock runs this far ahead of the shared fake clock (negative: behind); the host sees it. */
+    skewMs?: number;
   } = {},
 ): World {
   const clock = options.clock ?? new FakeClock({ auto: false });
@@ -296,7 +310,7 @@ export function world(
       governor,
       providers: [factory],
       tokens: { cached: () => undefined, refresh: async () => ({ token: 'unused', expiresAt: 0 }) },
-      clock: portClock(clock),
+      clock: skewed(portClock(clock), options.skewMs ?? 0),
       log,
       deadlines,
       deviceId: options.deviceId ?? 'device-a',
@@ -306,6 +320,7 @@ export function world(
   );
   return {
     clock,
+    now: () => clock.now() + (options.skewMs ?? 0),
     store,
     governor,
     host,

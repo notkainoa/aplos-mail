@@ -24,6 +24,21 @@ import type { AccountId, AccountRuntime, Clock, DeviceId } from '../ports';
  * clocks within plus or minus 5 minutes of true time and a holder's tick up to one round late. Worst case, a vanished
  * holder's lease passes on `LEASE_TTL_MS + LEASE_SKEW_MS` plus one round after its last renewal (41 minutes); a quit
  * (`stop`) passes it on at the next round. The lease is soft (ARCH 6.5): a brief double primary is absorbed by AIMD.
+ *
+ * Clock gate: the rule above holds only for clocks within `LEASE_CLOCK_MAX_MS` of true time. After each write the host
+ * compares the copy's `writtenAt` (this device's clock) with the server's receive time for it (`LeaseDeps.eligible`);
+ * a device further off, or whose offset could not be measured after a write, publishes a claim that never counts
+ * (`holder: false, until: 0`), stays secondary, and measures again with each `LEASE_RENEW_MS` rewrite of that claim.
+ *
+ * "Use this Mac" on device B overlaps the old primary A until A's next *successful* read shows B's pin: one round when
+ * A's reads work, but up to A's own give-up time (`until - LEASE_GIVE_UP_MS`, about 28 minutes after its last renewal)
+ * when A's reads fail or its data key is locked, since A then keeps the role its last published claim gives.
+ *
+ * Cost per device and account: one gated channel read a round (`LEASE_ROUND_MS`; about 2 Gmail units when nothing
+ * changed), and a claim rewrite every `LEASE_RENEW_MS` (or on a role or pin change). On Gmail a rewrite is one sealed
+ * whole-view copy (`messages.insert`, 25 units) plus the receive-time check (`messages.get` minimal, 20); the primary
+ * then compacts what the copy supersedes (one 60-unit read-back per written copy, 20 per copy trashed, at most 25 a
+ * call). About 120 + 6 x 45 = 390 units an hour per idle device, plus the primary's compaction.
  */
 
 /** ARCH 6.5: a 30-minute TTL. */
@@ -39,6 +54,8 @@ export const LEASE_SKEW_MS = 10 * 60_000;
 export const LEASE_ROUND_MS = 60_000;
 /** A holder stops counting its own claim this long before `until`: one round of tick lateness, plus one round. */
 export const LEASE_GIVE_UP_MS = 2 * LEASE_ROUND_MS;
+/** The clock gate: a device whose clock is further than this from the server's may not hold the lease. */
+export const LEASE_CLOCK_MAX_MS = 5 * 60_000;
 /** After a failed write, the next try waits this long (four tries fit in the slack before the claim expires). */
 export const LEASE_WRITE_RETRY_MS = 5 * 60_000;
 export const LEASE_PREFIX = 'lease:';
@@ -193,6 +210,12 @@ export interface LeaseDeps {
   active?: () => boolean;
   /** The host's last reported lease, for a controller made on a restart; the first read supersedes it. */
   initial?: Lease;
+  /**
+   * The clock gate (see the header): false once a write showed this device's clock is more than `LEASE_CLOCK_MAX_MS`
+   * from the server's, or could not show it. Then the controller publishes a claim that never counts and reports
+   * secondary. Absent: always eligible.
+   */
+  eligible?: () => boolean;
 }
 
 export interface LeaseController {
@@ -279,8 +302,9 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
   let lease: Lease = deps.initial ? { ...deps.initial } : { role: 'secondary', pinned: false };
   let pin: Pin;
   let pinDirty = false;
-  /** The last claim this process wrote successfully: our record as peers see it. */
+  /** The last claim this process wrote successfully: our record as peers see it, and when. */
   let published: LeaseClaim | undefined;
+  let publishedAt = 0;
   /** A write failed: peers may hold something other than `published` (an uncertain write), so rewrite when allowed. */
   let unsure = false;
   /** The previous round asked for an immediate re-read; one in a row at most, so nothing spins. */
@@ -329,6 +353,7 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     try {
       await channel.write([{ key: leaseKey(device), value: claim }]);
       published = claim;
+      publishedAt = now;
       unsure = false;
       retryAt = 0;
       return true;
@@ -347,6 +372,47 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     }
   };
 
+  const gated = () => deps.eligible !== undefined && !deps.eligible();
+
+  /** A claim that never counts: what an ineligible or quitting device publishes. */
+  const deadClaim = (): LeaseClaim => ({
+    v: 1,
+    holder: false,
+    until: 0,
+    pinned: !!pin,
+    pinnedAt: pin ? pin.at : 0,
+  });
+
+  /** The dead claim is rewritten when it changed or once per `LEASE_RENEW_MS` (each write re-measures the clock). */
+  const deadDue = (claim: LeaseClaim, now: number): boolean => {
+    if (pinDirty || unsure || !published || published.until !== 0) return true;
+    if (published.pinned !== claim.pinned || published.pinnedAt !== claim.pinnedAt) return true;
+    return now - publishedAt >= LEASE_RENEW_MS;
+  };
+
+  /** A round on a device the clock gate refuses: decided on the other claims only, so it is never primary. */
+  const gatedRound = async (
+    records: LeaseRecord[],
+    now: number,
+    intent?: Intent,
+  ): Promise<RoundResult> => {
+    const own = decideLease(records, device, now).own;
+    const others = records.filter(r => r?.key !== leaseKey(device));
+    const decision: LeaseDecision = {
+      ...decideLease(others, device, now),
+      ...(own ? { own } : {}),
+    };
+    adoptPin(decision, now, intent);
+    const claim = deadClaim();
+    let wrote: boolean | undefined;
+    if (deadDue(claim, now) && (intent || now >= retryAt)) {
+      wrote = await write(claim, now);
+      if (wrote) pinDirty = false;
+    }
+    report(leaseOf(decision, pin));
+    return { read: true, ...(wrote !== undefined ? { wrote } : {}), decision };
+  };
+
   const round = async (intent?: Intent): Promise<RoundResult> => {
     const now = clock.now();
     const wasImmediate = immediate;
@@ -355,6 +421,7 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     expire(now);
     const records = await read();
     if (!records) return { read: false };
+    if (gated()) return gatedRound(records, now, intent);
     const decision = decideLease(records, device, now);
     adoptPin(decision, now, intent);
     const claim = claimFor(decision, pin, now);
@@ -366,7 +433,14 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     }
     const wrote = await write(claim, now);
     if (wrote) pinDirty = false;
-    // A new candidacy or pin is decided on as soon as the channel shows it, not a whole round later.
+    // A new candidacy or pin is decided on as soon as the channel shows it, not a whole round later; a write that
+    // showed the clock is off is replaced by the dead claim at once.
+    if (gated()) {
+      demote();
+      if (!wasImmediate) nextAt = now;
+      immediate = !wasImmediate;
+      return { read: true, wrote, decision };
+    }
     const changed = !ownLive || claim.pinned !== decision.own?.pinned;
     if (wrote && changed && !wasImmediate) {
       nextAt = now;
@@ -400,14 +474,7 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
   const stop = async () => {
     if (stopped) return;
     stopped = true;
-    const dead: LeaseClaim = {
-      v: 1,
-      holder: false,
-      until: 0,
-      pinned: !!pin,
-      pinnedAt: pin ? pin.at : 0,
-    };
-    if (published || lease.role === 'primary') await write(dead, clock.now());
+    if (published || lease.role === 'primary') await write(deadClaim(), clock.now());
     demote();
   };
 

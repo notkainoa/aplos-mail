@@ -353,7 +353,10 @@ export async function boot(
   );
   const pumpStop = new AbortController();
   if (options.workflow) void pumpLease(clock, deadlines, pumpStop.signal);
-  if (lease)
+  // With the workflow channel the lease is the controller's: a primary asks for it ("Use this Mac") like the owner.
+  if (lease && options.workflow) {
+    if (lease === 'primary') await host.claimLease(ACCOUNT);
+  } else if (lease)
     host.leaseChanged(ACCOUNT, {
       role: lease,
       holder: lease === 'primary' ? mac.id : 'another-mac',

@@ -32,7 +32,9 @@ import { openedWrites, messageWrite, syncStateWrite } from './facts';
 import type { Governor } from './governor';
 import {
   createLeaseController,
+  LEASE_CLOCK_MAX_MS,
   type LeaseChannel,
+  type LeaseClaim,
   type LeaseController,
   type LeaseRecord,
 } from './lease';
@@ -50,7 +52,9 @@ type GovernorExtras = Partial<Pick<Governor, 'bindConnect' | 'setBudgets'>>;
  * round, and the lease controller's round is the account's only channel reader (the actor never runs its planned
  * `workflow` step then): the host feeds the records to `createLeaseController`, hands the merge to
  * `onWorkflowMerged`, and is the one writer of the `workflow` scope's `sync_state` row, committed only when the
- * cursor moved. `write` seals and publishes records; only the lease's claims go through it.
+ * cursor moved. `write` seals and publishes records (only the lease's claims go through it) and reports this
+ * device's clock offset from the server's receive time for the clock gate (`LeaseDeps.eligible`; absent: unknown).
+ * `compact` trashes a bounded batch of copies the last write supersedes; the host calls it after a primary's renewal.
  */
 export interface HostWorkflowChannel {
   read(
@@ -62,7 +66,11 @@ export interface HostWorkflowChannel {
     nextState: SyncState;
     costUnits: number;
   }>;
-  write(entries: readonly { key: string; value: unknown }[], ctx: AdapterContext): Promise<unknown>;
+  write(
+    entries: readonly { key: string; value: unknown }[],
+    ctx: AdapterContext,
+  ): Promise<{ clockOffsetMs?: number }>;
+  compact(ctx: AdapterContext): Promise<number>;
 }
 
 /** How long a quit or disconnect waits for the dead-claim write before the actor stops anyway. */
@@ -136,6 +144,8 @@ interface LeaseEntry {
   unregister: () => void;
   /** The `workflow` scope state the channel reads resume on; the host is that row's only writer. */
   state: SyncState;
+  /** The clock gate's input: what the last write showed of this device's clock (undefined before any write). */
+  clock?: 'ok' | 'off' | 'unknown';
 }
 
 /**
@@ -326,6 +336,7 @@ export class ActorHost implements AccountActorHost {
       onStatus: runtime => this.notify(account, runtime),
       onWorkflowCopies: copies => this.options.onWorkflowCopies?.(account, copies),
       hostReadsWorkflow: channel !== undefined,
+      leaseRole: () => this.leaseCtl.get(account)?.controller.current().role,
     });
     const lease = this.leases.get(account);
     if (lease) actor.runtime.lease = { ...lease };
@@ -475,8 +486,16 @@ export class ActorHost implements AccountActorHost {
     this.actors.get(account)?.actor.opsChanged();
   }
 
-  /** The lease module's input (`sync/lease.ts`): the role, holder and pin for one account. */
+  /**
+   * The lease module's input (`sync/lease.ts`): the role, holder and pin for one account. Ignored for an account whose
+   * lease controller runs here: only the controller's own reports move it (`applyLease`).
+   */
   leaseChanged(account: AccountId, lease: NonNullable<AccountRuntime['lease']>): void {
+    if (this.leaseCtl.has(account)) return;
+    this.applyLease(account, lease);
+  }
+
+  private applyLease(account: AccountId, lease: NonNullable<AccountRuntime['lease']>): void {
     this.leases.set(account, { ...lease });
     const entry = this.actors.get(account);
     if (entry) entry.actor.setLease(lease);
@@ -546,7 +565,7 @@ export class ActorHost implements AccountActorHost {
         },
       ],
     });
-    this.leaseChanged(account, {
+    this.applyLease(account, {
       role: 'primary',
       holder: this.deps.deviceId,
       until,
@@ -557,10 +576,12 @@ export class ActorHost implements AccountActorHost {
   private localRelease(account: AccountId): void {
     const lease = this.leases.get(account);
     if (!lease?.pinned) return;
-    this.leaseChanged(account, { ...lease, pinned: false });
+    this.applyLease(account, { ...lease, pinned: false });
   }
 
+  /** The runtime, with the lease as of now: a primary whose claim ran out reads secondary before the next tick. */
   status(account: AccountId): AccountRuntime | undefined {
+    this.leaseCtl.get(account)?.controller.current();
     return this.actors.get(account)?.actor.runtime;
   }
 
@@ -664,11 +685,12 @@ export class ActorHost implements AccountActorHost {
       device: this.deps.deviceId,
       clock: this.deps.clock,
       channel: this.leaseChannel(account, entry, channel),
-      report: (acc, lease) => this.leaseChanged(acc, lease),
+      report: (acc, lease) => this.applyLease(acc, lease),
       // While the actor is down (a 'restart' gap) the device acts as secondary: a tick demotes, never renews.
       active: () => this.actors.has(account),
       // The claim this device's previous controller published is still live; a quit must retire it too.
       ...(initial ? { initial } : {}),
+      eligible: () => entry.clock === undefined || entry.clock === 'ok',
     });
     entry.unregister = this.deps.deadlines.register({
       id: `lease:${account}`,
@@ -720,9 +742,41 @@ export class ActorHost implements AccountActorHost {
         this.merged(account, read.changed, read.records);
         return read.records;
       },
-      write: entries =>
-        this.logFailure(account, 'lease.write', () => channel.write(entries, ctx())),
+      write: async entries => {
+        const written = await this.logFailure(account, 'lease.write', () =>
+          channel.write(entries, ctx()),
+        );
+        this.checkClock(account, entry, written?.clockOffsetMs);
+        if (this.compactDue(entry, entries)) await this.compact(account, channel, ctx());
+        return written;
+      },
     };
+  }
+
+  /** The clock gate's measurement from one write; a clock off or unmeasured is logged once per account. */
+  private checkClock(account: AccountId, entry: LeaseEntry, offset: number | undefined): void {
+    if (offset === undefined) entry.clock = 'unknown';
+    else entry.clock = Math.abs(offset) > LEASE_CLOCK_MAX_MS ? 'off' : 'ok';
+    if (entry.clock !== 'ok') this.logReason(account, 'lease.clock', entry.clock);
+  }
+
+  /** Compaction is the primary's job: after a renewal it published as the holder, with its clock trusted. */
+  private compactDue(entry: LeaseEntry, entries: { value: LeaseClaim }[]): boolean {
+    if (entry.clock !== 'ok' || !entries.some(e => e.value.holder)) return false;
+    return entry.controller.current().role === 'primary';
+  }
+
+  /** One bounded `compact` (the channel trashes at most a batch per call); a failure never fails the lease write. */
+  private async compact(
+    account: AccountId,
+    channel: HostWorkflowChannel,
+    ctx: AdapterContext,
+  ): Promise<void> {
+    try {
+      await channel.compact(ctx);
+    } catch (error) {
+      this.logOnce(account, 'lease.compact', error);
+    }
   }
 
   /** Runs `fn`; a failure is logged once per reason and rethrown (the lease controller keeps its own handling). */
