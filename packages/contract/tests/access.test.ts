@@ -230,7 +230,7 @@ test('Demo/* are window-only and audited; a listener holding every scope is refu
     assert.throws(() => checkAccess(method, everything), ContractError, method);
     assert.doesNotThrow(() => checkAccess(method, window), method);
   }
-  // Reset deletes and rebuilds the demo accounts, as remove deletes them: both leave an audit line.
+  // Reset deletes and rebuilds the demo accounts, as remove deletes them: both are audited (any non-window call would be).
   for (const method of ['Demo/reset', 'Demo/remove'])
     assert.ok((tables.auditMethods as readonly string[]).includes(method), method);
 });
