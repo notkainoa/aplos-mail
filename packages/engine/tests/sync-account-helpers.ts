@@ -50,7 +50,8 @@ export function setup() {
   const calls: string[] = [];
   const pending: Pending[] = [];
   const statuses = new Map<string, AccountRuntime>();
-  const flags = { failStart: false, failWaiting: false };
+  const flags = { failStart: false, failWaiting: false, failDiscard: false };
+  const discards: { account: string; kind: string; ref: string }[] = [];
   const clock = { t: T0, now: () => clock.t };
   const sources: DeadlineSource[] = [];
   const accounts = {
@@ -64,6 +65,10 @@ export function setup() {
     },
     stop: async (id: string, why: string) => void calls.push(`stop:${id}:${why}`),
     reconnected: async (id: string) => void calls.push(`reconnected:${id}`),
+    discardCredential: async (account: string, kind: string, ref: string) => {
+      discards.push({ account, kind, ref });
+      if (flags.failDiscard) throw new Error('the vault is read-only');
+    },
     claimLease: async (id: string) => void calls.push(`claim:${id}`),
     releaseLease: async (id: string) => void calls.push(`release:${id}`),
     status: (id: string) => statuses.get(id),
@@ -107,6 +112,8 @@ export function setup() {
     pending,
     statuses,
     flags,
+    discards,
+    accounts,
     clock,
     sources,
     ctx,

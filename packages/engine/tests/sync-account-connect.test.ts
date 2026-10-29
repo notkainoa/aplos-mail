@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ContractError } from '@aplos/contract/contract-error';
 import { handlers } from '../src/methods/account';
-import type { ConnectResult } from '../src/ports';
+import type { AccountActorHost, ConnectResult } from '../src/ports';
 import { disposeConnectSessions } from '../src/sync/connect-sessions';
 import { T0 } from './store/helpers';
 import { answer, seed, setup, sentence, tick } from './sync-account-helpers';
@@ -391,6 +391,225 @@ test('a retry on a waiting row and a reconnect of that row exclude each other', 
         handlers['Account/connect']({ provider: 'google', address: 'a@gmail.com' }, t.ctx),
       open,
     );
+  } finally {
+    t.cleanup();
+  }
+});
+
+// A refused `new` connect leaves the credential the host already stored; the engine hands it back exactly once.
+
+const CREDENTIAL_REF = 'vault:secret-credential-ref';
+
+test('a refused new account hands its stored credential back to the host', async () => {
+  const t = setup();
+  try {
+    await handlers['Account/connect']({ provider: 'google', address: 'n@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(noMailScope('sub-n', 'n@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'permission.mailModify');
+    assert.deepEqual(t.discards, [
+      { account: t.pending[0].account, kind: 'google', ref: CREDENTIAL_REF },
+    ]);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a new account refused as a duplicate hands back the credential stored under its fresh id', async () => {
+  const t = setup();
+  try {
+    seed(t.store);
+    await handlers['Account/connect']({ provider: 'google' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(answer('sub-1', 'owner@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'account.exists');
+    assert.notEqual(t.pending[0].account, 'acct-1', 'the credential lived under the fresh id');
+    assert.deepEqual(t.discards, [
+      { account: t.pending[0].account, kind: 'google', ref: CREDENTIAL_REF },
+    ]);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a retry answered by another identity asks the host to discard the credential stored under the waiting row (engine side only, see the note in account-connect.ts)', async () => {
+  const t = setup();
+  try {
+    const x = await waitingRow(t, 'sub-a', 'a@gmail.com');
+    assert.deepEqual(t.discards, [], 'the accepted first answer kept its credential');
+    await handlers['Account/connect']({ provider: 'google', address: 'a@gmail.com' }, t.ctx);
+    await tick();
+    t.pending.at(-1)!.resolve(answer('sub-b', 'b@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'auth.wrongAccount');
+    assert.deepEqual(t.discards, [{ account: x, kind: 'google', ref: CREDENTIAL_REF }]);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a retried answer without the mail scope asks the host to discard the credential stored under the waiting row (engine side only, see the note in account-connect.ts)', async () => {
+  const t = setup();
+  try {
+    const x = await waitingRow(t, 'sub-a', 'a@gmail.com');
+    await handlers['Account/connect']({ provider: 'google', address: 'a@gmail.com' }, t.ctx);
+    await tick();
+    t.pending.at(-1)!.resolve(noMailScope('sub-a', 'a@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'permission.mailModify');
+    assert.deepEqual(t.discards, [{ account: x, kind: 'google', ref: CREDENTIAL_REF }]);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a retried answer already held by another row asks the host to discard the credential stored under the waiting row (engine side only, see the note in account-connect.ts)', async () => {
+  const t = setup();
+  try {
+    const x = await waitingRow(t, 'sub-a', 'a@gmail.com');
+    seed(t.store, 'acct-9', 'sub-a', 'elsewhere@gmail.com');
+    await handlers['Account/connect']({ provider: 'google', address: 'a@gmail.com' }, t.ctx);
+    await tick();
+    t.pending.at(-1)!.resolve(answer('sub-a', 'a@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'account.exists');
+    assert.deepEqual(t.discards, [{ account: x, kind: 'google', ref: CREDENTIAL_REF }]);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a late answer to a cancelled new sign-in hands its stored credential back', async () => {
+  const t = setup();
+  try {
+    const { connectId } = await handlers['Account/connect'](
+      { provider: 'google', address: 'c@gmail.com' },
+      t.ctx,
+    );
+    await tick();
+    await handlers['Account/cancelConnect']({ connectId }, t.ctx);
+    t.pending[0].resolve(answer('sub-c', 'c@gmail.com'));
+    await tick();
+    assert.deepEqual(
+      t.connectFrames().map(f => f.frame === 'connect' && f.state),
+      ['waiting', 'cancelled'],
+    );
+    assert.deepEqual(t.discards, [
+      { account: t.pending[0].account, kind: 'google', ref: CREDENTIAL_REF },
+    ]);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a late answer to an expired new sign-in hands its stored credential back', async () => {
+  const t = setup();
+  try {
+    await handlers['Account/connect']({ provider: 'google', address: 'n@gmail.com' }, t.ctx);
+    await tick();
+    const source = t.sources[0];
+    t.clock.t = T0 + 10 * 60_000;
+    await source.fire(t.clock.t);
+    assert.equal(lastFailure(t), 'auth.timeout');
+    t.pending[0].resolve(answer('sub-n', 'n@gmail.com'));
+    await tick();
+    assert.deepEqual(t.discards, [
+      { account: t.pending[0].account, kind: 'google', ref: CREDENTIAL_REF },
+    ]);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('refused reconnects never discard: the ref is the live account’s own bundle', async () => {
+  const t = setup();
+  try {
+    seed(t.store);
+    await handlers['Account/reconnect']({ accountId: 'acct-1' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(answer('sub-OTHER', 'someone@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'auth.wrongAccount');
+    await handlers['Account/grantPermissions']({ accountId: 'acct-1' }, t.ctx);
+    await tick();
+    t.pending[1].resolve(noMailScope('sub-1', 'owner@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'permission.mailModify');
+    assert.deepEqual(t.discards, [], 'a reconnect refusal keeps the live bundle');
+    // The port is real on this host: a refused NEW connect is handed back.
+    await handlers['Account/connect']({ provider: 'google', address: 'n@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[2].resolve(noMailScope('sub-n', 'n@gmail.com'));
+    await tick();
+    assert.deepEqual(t.discards, [
+      { account: t.pending[2].account, kind: 'google', ref: CREDENTIAL_REF },
+    ]);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('accepted answers never reach discardCredential', async () => {
+  const t = setup();
+  try {
+    // A refusal first, so the recording host proves it was asked when it should be.
+    await handlers['Account/connect']({ provider: 'google', address: 'n@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(noMailScope('sub-n', 'n@gmail.com'));
+    await tick();
+    assert.equal(t.discards.length, 1);
+    await handlers['Account/connect']({ provider: 'google', address: 's@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[1].resolve(answer('sub-s', 's@gmail.com'));
+    await tick();
+    seed(t.store);
+    await handlers['Account/reconnect']({ accountId: 'acct-1' }, t.ctx);
+    await tick();
+    t.pending[2].resolve(answer('sub-1', 'owner@gmail.com'));
+    await tick();
+    assert.equal(
+      t.discards.length,
+      1,
+      'a stored new account and a reconnect keep their credentials',
+    );
+    assert.deepEqual(t.calls, [`start:${t.pending[1].account}`, 'reconnected:acct-1']);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a discardCredential that throws changes nothing the user sees', async () => {
+  const t = setup();
+  try {
+    t.flags.failDiscard = true;
+    await handlers['Account/connect']({ provider: 'google', address: 'n@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(noMailScope('sub-n', 'n@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'permission.mailModify');
+    assert.equal(t.discards.length, 1, 'the host was still asked, once');
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a host without discardCredential refuses the same way', async () => {
+  const t = setup();
+  try {
+    await handlers['Account/connect']({ provider: 'google', address: 'a@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(noMailScope('sub-a', 'a@gmail.com'));
+    await tick();
+    assert.equal(t.discards.length, 1);
+    delete (t.accounts as Partial<AccountActorHost>).discardCredential;
+    await handlers['Account/connect']({ provider: 'google', address: 'b@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[1].resolve(noMailScope('sub-b', 'b@gmail.com'));
+    await tick();
+    assert.equal(lastFailure(t), 'permission.mailModify');
+    assert.equal(t.discards.length, 1, 'no port to call, and the refusal still landed');
   } finally {
     t.cleanup();
   }
