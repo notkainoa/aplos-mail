@@ -247,6 +247,7 @@ function hostConnect(
   extra: { accountIsCommitted?: (id: string) => boolean } = {},
 ) {
   return createGoogleHostConnect({
+    accountIsCommitted: () => false,
     ...extra,
     http: createHttpClient({ fetch: fetchFn, clock, userAgent: 'aplos-test' }),
     openExternal: open,
@@ -561,6 +562,7 @@ test('WIRE-host createGoogleHostConnect runs every connect on governor.bindConne
   const endpoint = tokenEndpoint(() => tokenReply(clock));
   const vault = memoryVault(oldBundle);
   const host = createGoogleHostConnect({
+    accountIsCommitted: () => false,
     http: createHttpClient({ fetch: endpoint.fetch, clock, userAgent: 'aplos-test' }),
     openExternal: browser.openExternal,
     clientInputs: () => ({ env: { APLOS_GOOGLE_CLIENT_ID: clientId }, bundled: {} }),
@@ -600,4 +602,15 @@ test('WIRE-b discardCredential refuses a minted ref once its account has a commi
   committed.delete('acct-new');
   await factory.discardCredential!('acct-new');
   assert.equal(vault.entries.has('acct-new'), false);
+});
+
+test('createGoogleHostConnect needs accountIsCommitted: leaving it out does not typecheck', () => {
+  // @ts-expect-error accountIsCommitted is required; an optional check would be silently off.
+  const missing: Parameters<typeof createGoogleHostConnect>[0] = {
+    http: createHttpClient({ fetch, clock: manualClock(), userAgent: 'aplos-test' }),
+    openExternal: async () => {},
+    clientInputs: () => ({ env: {}, bundled: {} }),
+    vault: memoryVault(oldBundle),
+  };
+  assert.ok(missing);
 });
