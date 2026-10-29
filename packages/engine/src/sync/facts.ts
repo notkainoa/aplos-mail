@@ -11,6 +11,7 @@ import type {
   StoreWrite,
   SyncState,
 } from '../ports';
+import { effectiveClearedFailures } from '../ports';
 import type { HeaderBits, MessageTarget, MessageWrite } from '../store/port';
 
 // Provider facts to store writes. Pure: the actor adds the account and step bookkeeping and commits the lot in one
@@ -332,6 +333,10 @@ function trailingWrites(result: StepResult, ctx: StepWriteContext): StoreWrite[]
         lastReason: q.error.reason,
       },
     });
+  }
+  // After the quarantine writes; items quarantined by this same step are skipped, so quarantine wins.
+  for (const item of effectiveClearedFailures(result)) {
+    writes.push({ kind: 'syncFailure', accountId: id, item, failure: null });
   }
   if (result.baselineReached && !ctx.baselineDone) {
     writes.push({ kind: 'account', id, baselineDoneAt: now });

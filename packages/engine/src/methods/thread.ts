@@ -1,12 +1,20 @@
-import { notImplemented, type AreaHandlers } from './types';
+import { viewEnv } from '../views/page';
+import { openThread } from '../views/open';
+import { readThreadRows } from '../views/rows';
+import { readWhy } from '../views/why';
+import type { AreaHandlers } from './types';
 
 /**
- * The `thread` area, owned by lane `eng-views`. Replace a stub with the real handler; never edit `index.ts`.
- * Arguments arrive validated; throw `ContractError` (`@aplos/contract/contract-error`) with the sentence the UI shows.
+ * The `thread` area, owned by lane `eng-views`: rows, triage commands with receipts, "why it's here" and the reader's
+ * open. Arguments arrive validated; `services.threadOps` (`views/commands.ts`) applies the commands.
  */
 export const handlers: AreaHandlers<'thread'> = {
-  'Thread/get': notImplemented('Thread/get'),
-  'Thread/act': notImplemented('Thread/act'),
-  'Thread/why': notImplemented('Thread/why'),
-  'Thread/open': notImplemented('Thread/open'),
+  'Thread/get': (args, ctx) => {
+    const { store, clock, views } = ctx.services;
+    const state = { dbEpoch: store.dbEpoch, seq: store.seq() };
+    return store.read(q => readThreadRows(q, args.ids, viewEnv(q, clock.now(), views.zone), state));
+  },
+  'Thread/act': (args, ctx) => ctx.services.threadOps.act(args, ctx.caller),
+  'Thread/why': (args, ctx) => ctx.services.store.read(q => readWhy(q, args.threadId)),
+  'Thread/open': (args, ctx) => openThread(ctx.services, args.threadId),
 };

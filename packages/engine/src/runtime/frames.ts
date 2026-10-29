@@ -47,27 +47,83 @@ export interface FrameHub extends FrameBus {
 /** Frames only the bus (`state`, `reset`) or main (`desktop`) sends. */
 const OWN_KINDS: ReadonlySet<string> = new Set(['state', 'reset', 'desktop']);
 
-/** The scope a broadcast frame needs; `state`, `reset` and `operation` carry no content and go to everyone. */
-const FRAME_SCOPE: Readonly<Record<string, string | undefined>> = {
-  window: 'read',
-  progress: 'ai',
-  'Draft/changed': 'draft',
-  connect: 'admin',
-  host: 'host',
-};
+type Scope = Caller['scopes'][number];
+
+/** Ask, polish and transcription need `ai`; remote search needs `read`; setup progress is an `admin` matter. */
+const PROGRESS_SCOPE: ReadonlyMap<string, Scope> = new Map<string, Scope>(
+  Object.entries({
+    ask: 'ai',
+    ai: 'ai',
+    transcribe: 'ai',
+    search: 'read',
+    setup: 'admin',
+  }),
+);
+
+const OPERATION_SCOPES: ReadonlySet<unknown> = new Set([
+  'read',
+  'triage',
+  'draft',
+  'send',
+  'ai',
+  'admin',
+]);
+
+/** An operation's recorded scope, or `undefined` for anything that is not one of the six known scope strings. */
+function knownScope(scope: unknown): Scope | undefined {
+  return OPERATION_SCOPES.has(scope) ? (scope as Scope) : undefined;
+}
 
 /**
- * What a connection's broadcasts may contain, by its caller (fail closed: a frame kind not listed here is withheld
- * from listeners). Windows and main see every broadcast; a listener client (socket, HTTP, MCP) never sees host events
- * (it can never hold the `host` scope), and sees Ask progress, drafts and account flows only when its grant has the scope.
+ * The scope a broadcast frame needs, `null` when it carries no content (`state` counts, `reset`), or `undefined` for a
+ * frame kind or source this table does not know, which no caller receives except main's control connection.
+ */
+function frameScope(frame: StampedFrame): Scope | null | undefined {
+  switch (frame.frame) {
+    case 'state':
+    case 'reset':
+      return null;
+    case 'window':
+      return 'read';
+    case 'Draft/changed':
+      return 'draft';
+    case 'connect':
+      return 'admin';
+    case 'progress':
+      return PROGRESS_SCOPE.get(frame.source);
+    case 'operation':
+      return knownScope(frame.operation?.scope);
+    default:
+      return undefined;
+  }
+}
+
+/** Host events a window needs to draw itself (parked banner, theme, clock); every other one is main's alone. */
+const CALLER_KINDS: ReadonlySet<string> = new Set(['window', 'listener', 'host']);
+const WINDOW_HOST_EVENTS: ReadonlySet<string> = new Set(['parked', 'appearance', 'clock']);
+
+function hostEventVisible(caller: Caller, type: string | undefined): boolean {
+  if (type === undefined) return false;
+  if (caller.kind === 'window') return WINDOW_HOST_EVENTS.has(type);
+  return caller.kind === 'host' && caller.scopes.includes('host');
+}
+
+/**
+ * What a connection's broadcasts may contain, by its caller. Fail closed for every kind of caller, main included: a
+ * frame kind, progress source or operation without a scope that this file does not know is withheld from everyone.
+ * `host` events go to main's control connection, except parked, appearance and clock, which windows also get
+ * (notify, badge, reminder, openExternal stay main's). Every other frame needs its scope: a window holds every
+ * grantable scope, a listener only its grant, main's control connection every known one. A targeted `emit` reply is
+ * not filtered at all.
  */
 export function frameFilter(caller: Caller): (frame: StampedFrame) => boolean {
   return frame => {
-    if (caller.kind !== 'listener') return true;
-    if (frame.frame === 'state' || frame.frame === 'reset' || frame.frame === 'operation')
-      return true;
-    const scope = FRAME_SCOPE[frame.frame];
-    return scope !== undefined && caller.scopes.includes(scope as Caller['scopes'][number]);
+    if (!CALLER_KINDS.has(caller.kind)) return false;
+    if (frame.frame === 'host') return hostEventVisible(caller, frame.event?.type);
+    const scope = frameScope(frame);
+    if (scope === null) return true;
+    if (scope === undefined) return false;
+    return caller.kind === 'host' || caller.scopes.includes(scope);
   };
 }
 

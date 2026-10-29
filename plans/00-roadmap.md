@@ -330,9 +330,9 @@ flowchart LR
 | Platform and website | `plat-ci`, `plat-release`, `web` | 3 | Opus for hardening and release security; Claude for the website; cheap models for CI plumbing |
 | Integrator | none; dependency and infrastructure merges, the full suite, the conformance burn-down, Phase 2 lead, the owner's review queue and digests | 1 plus reviewers | Opus for judgement; Haiku for test runs and summaries |
 
-### 5.1a Lean mode: the token budget (owner, 2026-10-28; replaces the earlier routing rules)
+### 5.1a Lean mode: the token budget (owner, 2026-10-28; SWE-2 routing 2026-10-29; replaces the earlier routing rules)
 
-> **What this means:** Sonnet does most of the work, free models write the simple code, and Opus is saved for a short list of hard calls. Agents read less, live shorter, and fewer of them run at once. Tests and one review per change keep quality where it was.
+> **What this means:** Devin's SWE-2 (free through November) writes most of the code, Sonnet runs the threads, does UI and reviews, and Opus is saved for a short list of hard calls. Agents read less, live shorter, and fewer of them run at once. Tests and one review per change keep quality where it was.
 
 **Why.** In the first 26 hours the revamp hit Claude's 5-hour limit three times. The causes, measured from the logs:
 - Opus made about 87% of the calls, because subagents inherit their parent's model and every parent was Opus.
@@ -346,11 +346,19 @@ flowchart LR
 
 | Tier | Model | Use for |
 |---|---|---|
-| Default | `claude-sonnet-5-5` | Thread orchestrators, all UI code, scoped features, every review |
-| Free | `opencode/glm-5.3-flash-free`, `opencode/deepseek-v4.1-flash-free` (`delegate_task` provider `opencode`) | Mechanical non-UI code from a written spec: tests from a test plan, fixtures, scripts, CI, file splits, lint and format fixes, searches, test-run summaries. Avoid `beam-free`, `mimo-*` and `nemotron-*` |
-| Cursor Grok | `grok-4.7`, when its free allowance is back | Same as free; fall back without retrying on a limit error |
+| Workhorse (free through November) | Devin `swe-2-high` (`delegate_task` provider `acpRegistry_devin`; `thought_level` `max` for harder items) | All non-UI code a subagent writes: scoped features from a lane card or spec, bug fixes with a repro, tests, fixtures, scripts, CI, refactors, file splits, lint fixes. Also codebase searches, plan reading, test-run summaries and first-pass reviews. Keep each task scoped and testable; it is weak at long open-ended terminal sessions |
+| Default Claude | `claude-sonnet-5-5` | Thread orchestrators, all UI code (renderer and site), the one Claude review per PR, and anything SWE-2 failed twice |
 | Opus (named cases only) | `claude-opus-5-5` | Contract changes; security code (send guard, live-run guard, sanitizer and frame, hardening, auth and tokens); the store's commit path and sync correctness; the final review of PRs in those areas. Nothing else |
-| Haiku | `claude-haiku-5-5` | Trivial checks when the free models are down |
+| Haiku | `claude-haiku-5-5` | Trivial checks when Devin is down |
+
+OpenCode and Cursor Grok are retired for this project (they were never used in practice). If Devin is down or rate-limited, fall back to Sonnet, not to free models.
+
+**SWE-2 is free, so spend it.** Claude usage stays lean; SWE-2 does not need to be:
+- Up to 6 SWE-2 subagents at once per thread (Claude subagents stay at 4), limited by machine load: run full `npm run check` suites one at a time.
+- SWE-2 may read whole plans and files; the lane-card reading limits below apply to Claude agents.
+- For a tricky item, run two SWE-2 attempts in separate worktrees and keep the better one.
+- Give SWE-2 a first-pass review (bugs, tests, lane rules) before the Claude review, so the Claude review is short.
+- Briefs for SWE-2 are complete and self-contained: goal, lane card path, owned paths, done criteria and test commands. It never sees `.env` or keys.
 
 **Context.**
 - **Lane cards.** Each lane has a lane card of at most one page in `plans/lanes/<lane>.md`: goal, owned paths, the exact plan sections and line ranges to read, done criteria and test commands. Agents read the card and only the sections it names, never whole plans. The 22,000-word DESIGN.md is read by section only.
@@ -361,13 +369,13 @@ flowchart LR
 **Structure.**
 - At most two layers: a thread runs its own subagents directly. No lane-lead orchestrators or delegates that spawn more delegates.
 - At most 3 building threads plus the Integrator at once, working down the critical path. The others are parked until their inputs exist.
-- At most 4 concurrent subagents per thread.
+- At most 4 concurrent Claude subagents per thread, plus up to 6 SWE-2 subagents.
 
 **Reviews.**
 - One Sonnet review per PR, of the diff only, plus passing tests.
 - An Opus adversarial review only for the Opus areas above.
 - No multi-round panels: a second review round only checks the fixes for the first round's findings.
-- Free-model code always gets the Sonnet review.
+- SWE-2 code always gets the Sonnet review (after its own SWE-2 first pass).
 
 **Polling.**
 - No agent polls.

@@ -1,22 +1,30 @@
 import type { CommitExtension } from '../store/port';
 import type { EngineServices, LaneModule } from '../runtime/services';
+import { createThreadOps, type ThreadOps } from './commands';
+import { createJournal } from './ops';
+import { createSenderOps, type SenderOps } from './sender-ops';
+import { senderRuleExtension } from './senders';
 import { createViewEngine, type ViewEngine } from './windows';
 
 declare module '../runtime/services' {
   interface EngineServices {
     /** The live windows (views-2): `View/*`, `Folder/get`, `Counts/get`, `SenderGroup/get`. */
     views: ViewEngine;
+    /** The commands (views-3): `Thread/act`, `Operation/undo|retry|get`. */
+    threadOps: ThreadOps;
+    /** The sender rules (views-4): `SenderRule/*`. */
+    senders: SenderOps;
   }
 }
 
 /**
  * Seam 1: lane `eng-views`'s module, imported by the composition root (`src/index.ts`) from this fixed path. It holds
- * the live windows (`ViewEngine`); `Thread/act`'s operations and sender rules join it in views-3 and views-4.
+ * the live windows (`ViewEngine`) and the commands (`ThreadOps`); and the sender rules (`SenderRule/*`, plus the ingest hook that applies them to new mail).
  */
 export const lane = 'eng-views';
 
 /** The lane's writers for its own tables (seam 2); the host passes every module's list to `openStore`. */
-export const extensions: readonly CommitExtension[] = [];
+export const extensions: readonly CommitExtension[] = [senderRuleExtension];
 
 /** Builds the lane's services once the core services exist; runs once, in the root's fixed order. */
 export function createModule(services: EngineServices): LaneModule {
@@ -28,5 +36,16 @@ export function createModule(services: EngineServices): LaneModule {
     deadlines: services.deadlines,
     randomBytes: services.randomBytes,
   });
-  return { services: { views }, stop: () => views.close() };
+  const deps = {
+    store: services.store,
+    clock: services.clock,
+    frames: services.frames,
+    accounts: () => services.accounts,
+    zone: views.zone,
+  };
+  // One journal, so a sender-rule commit is undone by `Operation/undo` like a `Thread/act`.
+  const journal = createJournal();
+  const threadOps = createThreadOps(deps, journal);
+  const senders = createSenderOps({ ...deps, journal });
+  return { services: { views, threadOps, senders }, stop: () => views.close() };
 }
