@@ -66,7 +66,13 @@ export function probeJson(stdout) {
       `Electron Node probe printed no JSON line; its stdout was ${JSON.stringify(stdout)}`,
     );
   }
-  return JSON.parse(line);
+  const result = JSON.parse(line);
+  if (typeof result?.version !== 'string' || typeof result?.fts5Delete !== 'boolean') {
+    throw new Error(
+      `Electron Node probe result needs a string version and a boolean fts5Delete; got ${JSON.stringify(line)}`,
+    );
+  }
+  return result;
 }
 
 // One-line JSON probe mode, launched inside Electron's Node:

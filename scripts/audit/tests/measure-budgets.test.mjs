@@ -16,6 +16,9 @@ import {
   maxJobMinutes,
   maxJobMinutesWhere,
   measureRows,
+  newestMinutes,
+  createdSince,
+  ciUnreadableReason,
   measurers,
   parseArgs,
   serialise,
@@ -249,20 +252,49 @@ describe('measure-budgets CI rows', () => {
       ciJob(ciJobNames.e2eBrowserJob, 67),
       ciJob(ciJobNames.macosJob, 0, 'skipped'),
     ];
-    const options = { ci: true, ciJobsByRun: [run, run] };
+    const options = { ci: true, ciRuns: [run, run] };
     const staticUnit = await measurers['ci.wall-clock-static-unit'](null, options);
     assert.equal(staticUnit.unit, 'min');
     assert.equal(staticUnit.measured, 3.4);
     const e2e = await measurers['ci.wall-clock-e2e-browser'](null, options);
     assert.equal(e2e.measured, 1.2);
     const macos = await measurers['ci.wall-clock-macos'](null, options);
-    assert.equal(macos.skip, 'no completed macOS run');
+    assert.equal(macos.skip, 'no completed macOS run in the last 30 days');
     const billed = await measurers['ci.billed-minutes'](null, options);
     assert.equal(billed.unit, 'minutes');
     assert.equal(billed.measured, 2 * billedMinutes(run));
     const off = await measurers['ci.billed-minutes'](null, {});
     assert.match(off.skip, /--ci/);
-    const noGh = await measurers['ci.billed-minutes'](null, { ci: true, ciJobsByRun: null });
-    assert.equal(noGh.skip, 'gh unavailable');
+    const noRuns = await measurers['ci.billed-minutes'](null, { ci: true, ciRuns: [] });
+    assert.equal(noRuns.skip, ciUnreadableReason);
+  });
+
+  it('wall-clock rows scan newest-first for the first run where the named jobs ran', async () => {
+    const newest = [
+      ciJob(ciJobNames.staticJob, 100),
+      ciJob(ciJobNames.e2eBrowserJob, 0, 'skipped'),
+    ];
+    const older = [ciJob(ciJobNames.staticJob, 200), ciJob(ciJobNames.e2eBrowserJob, 90)];
+    assert.equal(
+      newestMinutes([newest, older], name => name === ciJobNames.e2eBrowserJob),
+      1.5,
+    );
+    assert.equal(
+      newestMinutes([newest, older], name => name === ciJobNames.staticJob),
+      100 / 60,
+    );
+    assert.equal(
+      newestMinutes([newest, older], name => name === ciJobNames.macosJob),
+      null,
+    );
+    const e2e = await measurers['ci.wall-clock-e2e-browser'](null, {
+      ci: true,
+      ciRuns: [newest, older],
+    });
+    assert.equal(e2e.measured, 1.5);
+  });
+
+  it('createdSince is the date of the start of the window', () => {
+    assert.equal(createdSince(new Date('2026-10-29T12:00:00Z'), 30), '>=2026-09-29');
   });
 });
