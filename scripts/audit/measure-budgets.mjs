@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 // Budget measurement (plan 40 Q3 deliverable 6). Usage:
-//   node scripts/audit/measure-budgets.mjs [--record] [--tighten] [--only <id,...>] [--time-unit-suite]
-// Measures the rows owned by plat-ci (bundle and package sizes, unit-suite time) and compares each with
-// its budgets.json limit. An artifact that is absent is reported as "not measurable here" and never fails.
+//   node scripts/audit/measure-budgets.mjs [--record] [--tighten] [--only <id,...>] [--time-unit-suite] [--ci]
+// Measures the rows owned by plat-ci (bundle and package sizes, unit-suite time, CI wall-clock and billed
+// minutes) and compares each with its budgets.json limit. An artifact that is absent is reported as
+// "not measurable here" and never fails. --ci reads the ci.* rows from the successful revamp runs of the
+// CI workflow created in the last 30 days with `gh` (30 s limit per call): wall-clock rows use the newest
+// run in which the named jobs ran, ci.billed-minutes sums every job of every run in the window (the row is
+// per month). Without --ci each ci.* row is skipped; with --ci, if no run could be read at all, the failing
+// gh steps are printed and the exit code is 2.
 // Exit 1 when a measured row is over its limit. --record writes lastMeasured (today, UTC) for the rows it
 // measured, and a value only for a calibrate row with no value yet or, with --tighten, a tighten-only row
 // measured below its limit. Rows owned by anyone else are never touched.
@@ -143,6 +148,8 @@ export async function bundleEngine(srcDir, esbuild) {
     format: 'esm',
     mainFields: ['module', 'main'],
     target: 'es2022',
+    // The budget is for the bundle that ships, so it is measured minified like portability.test.ts does.
+    minify: true,
     write: false,
     logLevel: 'silent',
     external: ['node:*', 'electron', ...nodeModules, ...nodeModules.map(name => `${name}/*`)],
@@ -167,23 +174,191 @@ function measureSuite(root, options) {
   return { measured: roundUp((Date.now() - started) / 1000, 1), unit: 's' };
 }
 
+// CI rows: --ci reads job timings of the latest successful revamp CI runs with `gh`. A skipped
+// job has no wall-clock (its timestamps are meaningless), so only jobs that ran are measured.
+export const ciJobNames = {
+  staticJob: 'Static (format, lint, types, audit)',
+  unitJob: 'Unit tests',
+  e2eBrowserJob: 'Browser E2E (headless, loopback only)',
+  macosJob: 'Desktop on macOS (typecheck, test, build)',
+};
+
+// A billed macOS runner minute costs ten Linux minutes on the free allowance.
+const macosMinuteMultiplier = 10;
+const macosJobs = new Set([ciJobNames.macosJob]);
+
+/** A job's wall-clock in minutes from startedAt to completedAt; null when the job did not run. */
+export function jobMinutes(job) {
+  if (job?.conclusion !== 'success') return null;
+  const started = Date.parse(job.startedAt ?? '');
+  const completed = Date.parse(job.completedAt ?? '');
+  if (Number.isNaN(started) || Number.isNaN(completed)) return null;
+  return (completed - started) / 60_000;
+}
+
+/** The longest wall-clock of the jobs named `names`, in minutes; null when none of them ran. */
+export function maxJobMinutes(jobs, names) {
+  const minutes = jobs
+    .filter(job => names.includes(job.name))
+    .map(jobMinutes)
+    .filter(value => value != null);
+  return minutes.length ? Math.max(...minutes) : null;
+}
+
+/** One run's billed minutes: every job that ran rounded up to whole minutes, macOS at 10x. */
+export function billedMinutes(jobs) {
+  return jobs.reduce((sum, job) => {
+    const minutes = jobMinutes(job);
+    if (minutes == null) return sum;
+    return sum + Math.ceil(minutes) * (macosJobs.has(job.name) ? macosMinuteMultiplier : 1);
+  }, 0);
+}
+
+export const ciUnreadableReason = 'no CI runs could be read (see the gh messages above)';
+const ghTimeoutMs = 30_000;
+const ciWindowDays = 30;
+const ciRunLimit = 100;
+
+/**
+ * Runs `gh` and parses its JSON. Returns { value } or { problem } where the problem names the step
+ * and why it failed (gh missing, timed out, non-zero exit with its first stderr line, or non-JSON).
+ */
+function ghJson(step, args, cwd) {
+  const run = spawnSync('gh', args, { cwd, encoding: 'utf8', timeout: ghTimeoutMs });
+  if (run.error?.code === 'ETIMEDOUT') return { problem: `${step}: gh timed out after 30 s` };
+  if (run.error)
+    return { problem: `${step}: gh unavailable (${run.error.code ?? run.error.message})` };
+  if (run.status !== 0) {
+    const reason =
+      String(run.stderr ?? '')
+        .trim()
+        .split('\n')[0] || `exit ${run.status}`;
+    return { problem: `${step}: ${reason}` };
+  }
+  try {
+    return { value: JSON.parse(run.stdout) };
+  } catch {
+    return { problem: `${step}: gh printed no JSON` };
+  }
+}
+
+/** The `--created` filter for runs from the last `days` days: `>=YYYY-MM-DD`. */
+export function createdSince(now, days) {
+  return `>=${new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}`;
+}
+
+/**
+ * The jobs array of every successful revamp CI run created in the last 30 days (newest first, at most
+ * 100), as { runs, problems }. A run whose jobs cannot be read is left out and named in `problems`.
+ */
+function fetchCiRuns(root, now = new Date()) {
+  const problems = [];
+  const list = ghJson(
+    'gh run list',
+    ['run', 'list', '--branch', 'revamp', '--workflow', 'CI', '--status', 'success']
+      .concat(['--created', createdSince(now, ciWindowDays), '--limit', String(ciRunLimit)])
+      .concat(['--json', 'databaseId']),
+    root,
+  );
+  if (list.problem) return { runs: [], problems: [list.problem] };
+  if (!Array.isArray(list.value)) return { runs: [], problems: ['gh run list: unexpected output'] };
+  if (list.value.length === ciRunLimit) {
+    problems.push(
+      `gh run list: hit the ${ciRunLimit}-run limit; older runs in the window are not counted`,
+    );
+  }
+  const runs = [];
+  for (const entry of list.value) {
+    const view = ghJson(
+      `gh run view ${entry.databaseId}`,
+      ['run', 'view', String(entry.databaseId), '--json', 'jobs'],
+      root,
+    );
+    if (view.problem) problems.push(view.problem);
+    else if (Array.isArray(view.value?.jobs)) runs.push(view.value.jobs);
+    else problems.push(`gh run view ${entry.databaseId}: no jobs array`);
+  }
+  return { runs, problems };
+}
+
+/** The reason a ci.* row cannot be measured here, or null when it can. */
+function ciUnavailable(options) {
+  if (!options.ci) return 'pass --ci to read GitHub Actions runs';
+  if (!options.ciRuns?.length) return ciUnreadableReason;
+  return null;
+}
+
+/** The longest wall-clock of `names` in the newest run where any of those jobs ran; null when none did. */
+export function newestMinutes(runs, names) {
+  for (const jobs of runs) {
+    const minutes = maxJobMinutes(jobs, names);
+    if (minutes != null) return minutes;
+  }
+  return null;
+}
+
+function measureCiWallClock(options, names, absence) {
+  const unavailable = ciUnavailable(options);
+  if (unavailable) return missing(unavailable);
+  const minutes = newestMinutes(options.ciRuns, names);
+  if (minutes == null) return missing(absence);
+  return { measured: roundUp(minutes, 1), unit: 'min' };
+}
+
+const measureCiStaticUnit = (root, options) =>
+  measureCiWallClock(
+    options,
+    [ciJobNames.staticJob, ciJobNames.unitJob],
+    'no completed static or unit job in the last 30 days',
+  );
+
+const measureCiE2eBrowser = (root, options) =>
+  measureCiWallClock(
+    options,
+    [ciJobNames.e2eBrowserJob],
+    'no completed browser E2E job in the last 30 days',
+  );
+
+const measureCiMacos = (root, options) =>
+  measureCiWallClock(options, [ciJobNames.macosJob], 'no completed macOS run in the last 30 days');
+
+/** Billed minutes of all successful revamp CI runs created in the last 30 days (the row is per month). */
+function measureCiBilled(root, options) {
+  const unavailable = ciUnavailable(options);
+  if (unavailable) return missing(unavailable);
+  const total = options.ciRuns.reduce((sum, jobs) => sum + billedMinutes(jobs), 0);
+  return { measured: total, unit: 'minutes' };
+}
+
 export const measurers = {
   'size.engine-bundle': measureEngine,
   'size.renderer-bundle': measureRenderer,
   'size.app-bundle': measureApp,
   'size.app-zip': measureZip,
   'time.unit-suite': measureSuite,
+  'ci.wall-clock-static-unit': measureCiStaticUnit,
+  'ci.wall-clock-e2e-browser': measureCiE2eBrowser,
+  'ci.wall-clock-macos': measureCiMacos,
+  'ci.billed-minutes': measureCiBilled,
 };
 
 // Running
+
+const isCiRow = row => row.id.startsWith('ci.');
 
 /** Measures the chosen plat-ci rows. Returns [{ row, result }] where result is a measurement or a skip. */
 export async function measureRows(register, root, options = {}) {
   const only = options.only ?? null;
   const rows = register.rows.filter(row => row.owner === owner && row.id in measurers);
   const chosen = rows.filter(row => !only || only.includes(row.id));
+  const context = { ...options };
+  if (options.ci && context.ciRuns === undefined && chosen.some(isCiRow)) {
+    const fetched = fetchCiRuns(root);
+    context.ciRuns = fetched.runs;
+    for (const problem of fetched.problems) console.error(`ci: ${problem}`);
+  }
   const outcomes = [];
-  for (const row of chosen) outcomes.push({ row, result: await measurers[row.id](root, options) });
+  for (const row of chosen) outcomes.push({ row, result: await measurers[row.id](root, context) });
   return outcomes;
 }
 
@@ -209,10 +384,11 @@ const flags = {
   '--record': 'record',
   '--tighten': 'tighten',
   '--time-unit-suite': 'timeUnitSuite',
+  '--ci': 'ci',
 };
 
 export function parseArgs(argv) {
-  const options = { record: false, tighten: false, timeUnitSuite: false, only: null };
+  const options = { record: false, tighten: false, timeUnitSuite: false, ci: false, only: null };
   const args = [...argv];
   while (args.length > 0) {
     const arg = args.shift();
@@ -239,7 +415,10 @@ async function main() {
     writeFileSync(file, serialise(applyRecords(register, results, today, options)));
     console.log(`recorded ${Object.keys(results).length} row(s) in budgets.json`);
   }
-  process.exit(failing.length ? 1 : 0);
+  const unreadable =
+    options.ci && outcomes.some(({ result }) => result.skip === ciUnreadableReason);
+  if (unreadable) console.error('--ci was asked for but no CI runs could be read');
+  process.exit(unreadable ? 2 : failing.length ? 1 : 0);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
