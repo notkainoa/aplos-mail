@@ -147,3 +147,16 @@ test('a cancelled sign-in keeps the account key until the host flow has settled'
     }
   }, 'the key freed');
 });
+
+test('a signal the request already carries stays in force next to the session’s own', async () => {
+  const r = rig();
+  const own = new AbortController();
+  const withOwn = r.flow();
+  withOwn.request = { ...withOwn.request, signal: own.signal };
+  r.sessions.begin(withOwn);
+  await until(() => r.calls.length === 1, 'the host connect');
+  assert.equal(r.calls[0].req.signal?.aborted, false);
+  own.abort();
+  assert.equal(r.calls[0].req.signal?.aborted, true, 'the caller’s abort reaches the host flow');
+  r.calls[0].answer.reject(new Error('aborted'));
+});

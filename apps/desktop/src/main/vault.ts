@@ -78,8 +78,12 @@ export async function createVault<T>(options: VaultOptions): Promise<Vault<T>> {
       try {
         await persist();
       } catch (error) {
-        if (previous === undefined) entries.delete(id);
-        else entries.set(id, previous);
+        // Roll back only while the entry is still the value that failed to persist: a concurrent save that
+        // succeeded in the meantime must not be overwritten.
+        if (entries.get(id) === value) {
+          if (previous === undefined) entries.delete(id);
+          else entries.set(id, previous);
+        }
         throw error;
       }
     },
