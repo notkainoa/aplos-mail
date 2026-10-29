@@ -5,12 +5,13 @@ import {
   globSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
@@ -132,17 +133,33 @@ describe('test-shard partition', () => {
     assert.deepEqual(shards.flat().sort(), all);
   });
 
-  // The CI split names the workspaces with a test script explicitly: the desktop matrix job
-  // and the packages job's -w list. A new workspace with scripts.test fails here until ci.yml
-  // gains a job for it, so `npm test` coverage cannot silently drift from CI coverage.
+  // An expansion that does not go through test-shard.mjs: walk the workspace for anything that looks
+  // like a test file and require that a shard runs it. A test file that no glob in scripts.test
+  // matches (the 15 renderer/ui .test.tsx files were once in this state) fails here, by name.
+  it('no *.test.{ts,tsx,mjs} file in the desktop workspace is left out of every shard', () => {
+    const dir = join(root, 'apps', 'desktop');
+    const skip = new Set(['node_modules', 'dist', 'release', 'artifacts', '.vite']);
+    const walk = current =>
+      readdirSync(current, { withFileTypes: true }).flatMap(entry => {
+        if (skip.has(entry.name)) return [];
+        const path = join(current, entry.name);
+        return entry.isDirectory() ? walk(path) : [path];
+      });
+    const onDisk = walk(dir)
+      .map(path => relative(dir, path).split(sep).join('/'))
+      .filter(path => /\.test\.(ts|tsx|mjs)$/.test(path))
+      // Playwright specs (*.spec.ts) and the visual harness run elsewhere; they are not matched here.
+      .sort();
+    // shardFiles returns paths relative to the workspace directory.
+    const covered = new Set([shardFiles(dir, 1, 2), shardFiles(dir, 2, 2)].flat());
+    const left = onDisk.filter(path => !covered.has(path));
+    assert.deepEqual(left, [], `test files no shard runs: ${left.join(', ')}`);
+  });
+
+  // The CI split names the workspaces with a test script explicitly. This reads ci.yml itself: the
+  // desktop matrix must call test-shard.mjs for apps/desktop, and every other workspace with a test
+  // script must be named in a `npm test -w ...` line, so a new workspace fails here until it has a job.
   it('every workspace with scripts.test has a unit job in ci.yml', () => {
-    const tested = [
-      '@aplos/desktop',
-      '@aplos/engine',
-      '@aplos/contract',
-      '@aplos/contract-fixture',
-      '@aplos/emulators',
-    ];
     const rootPkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
     const withTests = globSync(rootPkg.workspaces, { cwd: root })
       .map(dir => join(root, dir, 'package.json'))
@@ -151,7 +168,22 @@ describe('test-shard partition', () => {
       .filter(pkg => typeof pkg?.scripts?.test === 'string')
       .map(pkg => pkg.name)
       .sort();
-    assert.deepEqual(withTests, [...tested].sort());
+    assert.ok(withTests.includes('@aplos/desktop'), 'found the desktop workspace');
+    const ci = readFileSync(join(root, '.github', 'workflows', 'ci.yml'), 'utf8');
+    const named = new Set(
+      [...ci.matchAll(/npm test((?:\s+-w\s+\S+)+)/g)].flatMap(match =>
+        [...match[1].matchAll(/-w\s+(\S+)/g)].map(workspaceMatch => workspaceMatch[1]),
+      ),
+    );
+    const sharded = /test-shard\.mjs\s+apps\/desktop\b/.test(ci);
+    const missing = withTests.filter(name =>
+      name === '@aplos/desktop' ? !sharded : !named.has(name),
+    );
+    assert.deepEqual(
+      missing,
+      [],
+      `workspaces with a test script but no unit job in ci.yml: ${missing.join(', ')}`,
+    );
   });
 });
 
