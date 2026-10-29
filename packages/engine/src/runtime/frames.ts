@@ -50,13 +50,15 @@ const OWN_KINDS: ReadonlySet<string> = new Set(['state', 'reset', 'desktop']);
 type Scope = Caller['scopes'][number];
 
 /** Ask, polish and transcription need `ai`; remote search needs `read`; setup progress is an `admin` matter. */
-const PROGRESS_SCOPE: Readonly<Record<string, Scope>> = {
-  ask: 'ai',
-  ai: 'ai',
-  transcribe: 'ai',
-  search: 'read',
-  setup: 'admin',
-};
+const PROGRESS_SCOPE: ReadonlyMap<string, Scope> = new Map<string, Scope>(
+  Object.entries({
+    ask: 'ai',
+    ai: 'ai',
+    transcribe: 'ai',
+    search: 'read',
+    setup: 'admin',
+  }),
+);
 
 /**
  * The scope a broadcast frame needs, `null` when it carries no content (`state` counts, `reset`), or `undefined` for a
@@ -74,7 +76,7 @@ function frameScope(frame: StampedFrame): Scope | null | undefined {
     case 'connect':
       return 'admin';
     case 'progress':
-      return PROGRESS_SCOPE[frame.source];
+      return PROGRESS_SCOPE.get(frame.source);
     case 'operation':
       return frame.operation?.scope as Scope | undefined;
     default:
@@ -83,9 +85,11 @@ function frameScope(frame: StampedFrame): Scope | null | undefined {
 }
 
 /** Host events a window needs to draw itself (parked banner, theme, clock); every other one is main's alone. */
+const CALLER_KINDS: ReadonlySet<string> = new Set(['window', 'listener', 'host']);
 const WINDOW_HOST_EVENTS: ReadonlySet<string> = new Set(['parked', 'appearance', 'clock']);
 
-function hostEventVisible(caller: Caller, type: string): boolean {
+function hostEventVisible(caller: Caller, type: string | undefined): boolean {
+  if (type === undefined) return false;
   if (caller.kind === 'window') return WINDOW_HOST_EVENTS.has(type);
   return caller.kind === 'host' && caller.scopes.includes('host');
 }
@@ -100,7 +104,8 @@ function hostEventVisible(caller: Caller, type: string): boolean {
  */
 export function frameFilter(caller: Caller): (frame: StampedFrame) => boolean {
   return frame => {
-    if (frame.frame === 'host') return hostEventVisible(caller, frame.event.type);
+    if (!CALLER_KINDS.has(caller.kind)) return false;
+    if (frame.frame === 'host') return hostEventVisible(caller, frame.event?.type);
     const scope = frameScope(frame);
     if (scope === null) return true;
     if (scope === undefined) return false;

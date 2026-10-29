@@ -4,7 +4,7 @@ import { Frame } from '@aplos/contract';
 import { STATE_COALESCE_MS } from '../src/index';
 import { accountWrite, folderWrites } from './store/helpers';
 import type { Caller } from '../src/methods/types';
-import { observeCommits } from '../src/runtime/frames';
+import { frameFilter, observeCommits, type StampedFrame } from '../src/runtime/frames';
 import { framesOf, testEngine } from './runtime.helpers';
 
 /** Main's control connection: the only caller that receives host events. */
@@ -263,4 +263,38 @@ test('a commit whose changes the log cannot list resets the windows instead of s
   });
   observed.commit({} as never);
   assert.deepEqual(sent, ['reset:cannotCalculateChanges']);
+});
+
+test('frameFilter fails closed: unknown caller kinds, missing fields and inherited source names reach nobody', () => {
+  const stamp = (frame: object) => ({ ...frame, dbEpoch: 1, seq: 1 }) as unknown as StampedFrame;
+  const everything: Caller['scopes'] = ['read', 'triage', 'draft', 'send', 'ai', 'admin', 'host'];
+  const callers: Caller[] = [
+    { kind: 'window', scopes: everything },
+    { kind: 'listener', via: 'socket', clientId: 'c1', scopes: everything },
+    { kind: 'host', scopes: everything },
+    { kind: 'robot' as never, scopes: everything },
+  ];
+  const sees = (caller: Caller, frame: object) => frameFilter(caller)(stamp(frame));
+  const [window, listener, main, robot] = callers as [Caller, Caller, Caller, Caller];
+  // A caller of no known kind sees nothing, even a state frame and even holding every scope.
+  assert.equal(sees(robot, { frame: 'state', types: {} }), false);
+  assert.equal(sees(robot, { frame: 'window', windowId: 'w' }), false);
+  // An operation frame with no operation at all, and a host frame with no event, are withheld, not thrown on.
+  assert.equal(sees(main, { frame: 'operation' }), false);
+  assert.equal(sees(main, { frame: 'host' }), false);
+  assert.equal(sees(window, { frame: 'host' }), false);
+  // Names that exist on every object are not progress sources.
+  for (const source of ['__proto__', 'constructor', 'toString', 'hasOwnProperty'])
+    assert.equal(
+      sees(main, { frame: 'progress', runId: 'r', source, kind: 'done' }),
+      false,
+      source,
+    );
+  // Windows get parked, appearance and clock; listeners and windows never get notify, badge, reminder or openExternal.
+  for (const type of ['parked', 'appearance', 'clock'])
+    assert.equal(sees(window, { frame: 'host', event: { type } }), true, type);
+  for (const type of ['notify', 'badge', 'reminder', 'openExternal'])
+    assert.equal(sees(window, { frame: 'host', event: { type } }), false, type);
+  assert.equal(sees(listener, { frame: 'host', event: { type: 'clock' } }), false);
+  assert.equal(sees(main, { frame: 'host', event: { type: 'notify' } }), true);
 });
