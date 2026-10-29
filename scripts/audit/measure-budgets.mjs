@@ -145,6 +145,8 @@ export async function bundleEngine(srcDir, esbuild) {
     format: 'esm',
     mainFields: ['module', 'main'],
     target: 'es2022',
+    // The budget is for the bundle that ships, so it is measured minified like portability.test.ts does.
+    minify: true,
     write: false,
     logLevel: 'silent',
     external: ['node:*', 'electron', ...nodeModules, ...nodeModules.map(name => `${name}/*`)],
