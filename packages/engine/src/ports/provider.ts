@@ -282,6 +282,11 @@ export interface StepResult {
   /** `provider_memory` writes; null deletes. */
   memory?: Record<string, string | null>;
   quarantine?: Quarantine[];
+  /**
+   * Clears the `sync_failures` rows of items that synced after a retry (`item` as in `Quarantine.item`). The store write is
+   * `SyncFailureWrite { failure: null }`; an item named here and in `quarantine` stays quarantined.
+   */
+  clearedFailures?: string[];
   costUnits: number;
 }
 
@@ -375,6 +380,12 @@ export interface ConnectRequest {
   secretRef?: string;
   /** A second secret for the calendar half when the provider needs one (Fastmail: an API token for JMAP, an app password for CalDAV). */
   calendarSecretRef?: string;
+  /**
+   * `Account/cancelConnect` aborts this: the host stops its browser or loopback flow and `connect` rejects (the host's
+   * `ConnectContext.signal` follows it), so a cancelled attempt never lingers and a reconnect cannot start a parallel
+   * flow. A result that still arrives after the abort is discarded by the engine (`AccountActorHost.discardCredential`).
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -446,6 +457,8 @@ export interface SearchResult {
   upserts: MessageFacts[];
   remoteThreadIds: string[];
   nextPageToken?: string;
+  /** True when the provider could only return part of the matches (a cap, a timeout, a limited-mode host). */
+  partial?: boolean;
   costUnits: number;
 }
 

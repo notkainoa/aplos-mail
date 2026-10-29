@@ -48,7 +48,7 @@ export interface ProviderPort {
   search(
     account: AccountId,
     query: ServerSearch,
-  ): Promise<{ remoteThreadIds: string[]; nextPageToken?: string }>;
+  ): Promise<{ remoteThreadIds: string[]; nextPageToken?: string; partial?: boolean }>;
   attachment(account: AccountId, ref: AttachmentRef): Promise<AsyncIterable<Uint8Array>>;
 }
 
@@ -96,9 +96,16 @@ export interface AccountActorHost extends ProviderPort {
   /**
    * Runs `connect` under the governor with an engine-assigned account id; `Account/connect|reconnect|grantPermissions`.
    * Its `ConnectContext.governor` ignores the account's `auth` block (the reconnect is what lifts it) but honours
-   * cooldowns, daily stops and `config` blocks.
+   * cooldowns, daily stops and `config` blocks. `req.signal` aborts the host's browser or loopback flow
+   * (`Account/cancelConnect`); the abort reaches the provider as `ConnectContext.signal`.
    */
   connect(account: AccountId, kind: ProviderKind, req: ConnectRequest): Promise<ConnectResult>;
+  /**
+   * Deletes a credential `connect` already stored when the engine refuses the result (wrong account, duplicate, or a
+   * late answer after `Account/cancelConnect`). `ref` is `ConnectResult.credentialRef` (or `ConnectRequest.secretRef`);
+   * a ref that is not stored is not an error.
+   */
+  discardCredential?(ref: string): Promise<void>;
   /**
    * Restores governor state, then plans from committed cursors. The outbox start rules are `SendPort`'s: a `sending` row
    * becomes `uncertain` and is settled by `findSent` before anything else; `queued` and `scheduled` rows (every row

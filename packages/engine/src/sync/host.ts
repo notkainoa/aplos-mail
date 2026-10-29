@@ -121,13 +121,18 @@ export class ActorHost implements AccountActorHost {
   ): Promise<ConnectResult> {
     const factory = this.factory(kind);
     const controller = new AbortController();
-    return factory.connect(req, {
-      accountId: account,
-      governor: this.connectGovernor(account),
-      clock: this.deps.clock,
-      log: this.deps.log.with({ account }),
-      signal: controller.signal,
-    });
+    const abort = () => controller.abort(req.signal?.reason);
+    if (req.signal?.aborted) abort();
+    else req.signal?.addEventListener('abort', abort, { once: true });
+    return factory
+      .connect(req, {
+        accountId: account,
+        governor: this.connectGovernor(account),
+        clock: this.deps.clock,
+        log: this.deps.log.with({ account }),
+        signal: controller.signal,
+      })
+      .finally(() => req.signal?.removeEventListener('abort', abort));
   }
 
   async start(account: AccountId): Promise<void> {
@@ -351,7 +356,7 @@ export class ActorHost implements AccountActorHost {
   async search(
     account: AccountId,
     query: ServerSearch,
-  ): Promise<{ remoteThreadIds: string[]; nextPageToken?: string }> {
+  ): Promise<{ remoteThreadIds: string[]; nextPageToken?: string; partial?: boolean }> {
     const entry = this.entry(account);
     if (!entry.adapter.search) return { remoteThreadIds: [] };
     const ctx = entry.actor.context();
@@ -364,9 +369,11 @@ export class ActorHost implements AccountActorHost {
       fenceSeq: fence,
       writes: result.upserts.map(m => messageWrite(account, ctx.account.address, m)),
     });
-    return result.nextPageToken !== undefined
-      ? { remoteThreadIds: result.remoteThreadIds, nextPageToken: result.nextPageToken }
-      : { remoteThreadIds: result.remoteThreadIds };
+    return {
+      remoteThreadIds: result.remoteThreadIds,
+      ...(result.nextPageToken !== undefined ? { nextPageToken: result.nextPageToken } : {}),
+      ...(result.partial !== undefined ? { partial: result.partial } : {}),
+    };
   }
 
   async attachment(account: AccountId, ref: AttachmentRef): Promise<AsyncIterable<Uint8Array>> {
