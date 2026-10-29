@@ -3,6 +3,7 @@ import type { Frame } from '@aplos/contract';
 import { PausedError, ProviderError } from '../ports/base';
 import type {
   AccountActorHost,
+  AccountId,
   Clock,
   ConnectRequest,
   ConnectResult,
@@ -45,6 +46,8 @@ interface Session {
   deadline: number;
   /** The provider answered and the engine is storing it: too late to cancel. */
   accepting: boolean;
+  /** The result's stored credential already went back to the host (at most once per result). */
+  discarded?: boolean;
   /** The account the sign-in ended up on, when the flow reports one other than its own. */
   storedAccountId?: string;
   /** The host's `connect` was called, and whether it has resolved or rejected since. */
@@ -149,11 +152,18 @@ export class ConnectSessions {
       // The cancel and the deadline reach the host's browser and loopback flow (`ConnectRequest.signal`), and the host
       // discards a result that still arrives after them (`AccountActorHost.discardCredential`).
       session.hostStarted = true;
-      const call = this.accounts.connect(accountId, kind, { ...request, signal });
-      this.holdKeysUntilSettled(session, call);
-      const result = await untilAborted(call, signal);
+      // An abort signal the request already carries stays in force next to the session's own.
+      const hostSignal = request.signal ? AbortSignal.any([request.signal, signal]) : signal;
+      const answered = this.accounts.connect(accountId, kind, { ...request, signal: hostSignal });
+      this.holdKeysUntilSettled(session, answered);
+      this.discardLateAnswer(session, answered);
+      const result = await untilAborted(answered, signal);
       // The answer can win the race and still be followed by a cancel before this line runs: the cancel stands.
-      if (result === ABORTED || signal.aborted) return;
+      if (result === ABORTED) return;
+      if (signal.aborted) {
+        this.discardResultOnce(session, result);
+        return;
+      }
       session.accepting = true;
       const outcome = await session.flow.accept(result);
       if (outcome?.accountId) session.storedAccountId = outcome.accountId;
@@ -164,6 +174,33 @@ export class ConnectSessions {
       this.release(session);
       this.tryEmit(session, 'failed', failureCode(error));
     }
+  }
+
+  /**
+   * A `new` answer that arrives after its session ended left a stored credential behind; it goes back as soon as the
+   * host produces it. Once `accept` has seen the result the flow owns the discard, so this never fires for it. A
+   * reconnect's ref is the account's own live bundle: only `new` answers are handed back.
+   */
+  private discardLateAnswer(session: Session, answered: Promise<ConnectResult>): void {
+    void answered.then(
+      result => {
+        if (session.controller.signal.aborted && !session.accepting)
+          this.discardResultOnce(session, result);
+      },
+      () => {},
+    );
+  }
+
+  /** At most once per result: the stored credential of a refused or late `new` answer goes back, best effort. */
+  private discardResultOnce(session: Session, result: ConnectResult): void {
+    if (session.flow.mode !== 'new' || session.discarded) return;
+    session.discarded = true;
+    discardCredential(
+      this.accounts,
+      session.flow.accountId,
+      session.flow.kind,
+      result.credentialRef,
+    );
   }
 
   private tryEmit(session: Session, state: 'failed', reasonCode: string): void {
@@ -274,6 +311,23 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T | 
       if (!signal.aborted) reject(error);
     });
   });
+}
+
+/**
+ * Best effort: hand back a credential the host already stored for a `new` connect result the engine refused or never
+ * accepted. Never throws and never changes the outcome the caller reports; a host without the port simply keeps it.
+ */
+export function discardCredential(
+  accounts: AccountActorHost,
+  accountId: AccountId,
+  kind: ProviderKind,
+  credentialRef: string,
+): void {
+  try {
+    void accounts.discardCredential?.(accountId, kind, credentialRef)?.catch(() => {});
+  } catch {
+    // The refusal or the cancel the caller reports is the outcome; a broken host changes nothing here.
+  }
 }
 
 export function hexId(randomBytes: (n: number) => Uint8Array, prefix: string): string {
