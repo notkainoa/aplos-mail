@@ -161,10 +161,24 @@ test('a real rename failure keeps the saved value, and the next save writes it a
     await nodeFs.mkdir(join(file, 'blocker'), { recursive: true });
     await assert.rejects(vault.set('a', { v: 5 }), unsaved);
     assert.deepEqual(vault.get('a'), { v: 1 });
+    await assert.rejects(
+      nodeFs.stat(`${file}.tmp`),
+      'no encrypted copy of the failed value is left behind',
+    );
     await rm(file, { recursive: true });
     await vault.set('b', { v: 3 });
     const reloaded = await open(dir);
     assert.deepEqual(reloaded.get('a'), { v: 1 });
     assert.deepEqual(reloaded.get('b'), { v: 3 });
   });
+});
+
+test('a vault file that is valid JSON but not a map of sealed entries is unreadable, not a crash', async () => {
+  for (const body of ['null', '[]', '"x"', '{"a": 1}']) {
+    await withDir(async dir => {
+      await nodeFs.mkdir(dir, { recursive: true });
+      await nodeFs.writeFile(join(dir, 'credentials.enc.json'), body);
+      await assert.rejects(open(dir), /could not be read/, body);
+    });
+  }
 });

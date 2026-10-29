@@ -7,6 +7,8 @@ export interface VaultFs {
   readFile(path: string, encoding: 'utf8'): Promise<string>;
   writeFile(path: string, data: string, options: { mode: number }): Promise<void>;
   rename(from: string, to: string): Promise<void>;
+  /** Optional: removes the temporary file after a failed write. */
+  unlink?(path: string): Promise<void>;
 }
 
 export interface VaultOptions {
@@ -47,13 +49,19 @@ const LOCKED = 'Saved account credentials could not be unlocked. Check your macO
 const UNENCRYPTABLE = 'Account credentials could not be encrypted. Check your macOS keychain.';
 const UNSAVED = 'Account credentials could not be saved securely. Check the data directory.';
 
+function isSealedMap(value: unknown): value is Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  return Object.values(value).every(entry => typeof entry === 'string');
+}
+
 async function readSealed(fs: VaultFs, path: string): Promise<Record<string, string>> {
   try {
-    return JSON.parse(await fs.readFile(path, 'utf8'));
+    const parsed: unknown = JSON.parse(await fs.readFile(path, 'utf8'));
+    if (isSealedMap(parsed)) return parsed;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
-    throw new Error(UNREADABLE);
   }
+  throw new Error(UNREADABLE);
 }
 
 function unseal<T>(decrypt: (value: Buffer) => string, sealed: string): T {
@@ -102,6 +110,8 @@ async function writeAtomically(fs: VaultFs, dataDir: string, path: string, text:
     await fs.writeFile(`${path}.tmp`, text, { mode: 0o600 });
     await fs.rename(`${path}.tmp`, path);
   } catch {
+    // A failed write must not leave an encrypted copy of a value that was reported as unsaved.
+    await fs.unlink?.(`${path}.tmp`).catch(() => {});
     throw new Error(UNSAVED);
   }
 }
