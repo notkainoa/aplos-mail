@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Budget measurement (plan 40 Q3 deliverable 6). Usage:
-//   node scripts/audit/measure-budgets.mjs [--record] [--tighten] [--only <id,...>] [--time-unit-suite]
-// Measures the rows owned by plat-ci (bundle and package sizes, unit-suite time) and compares each with
-// its budgets.json limit. An artifact that is absent is reported as "not measurable here" and never fails.
+//   node scripts/audit/measure-budgets.mjs [--record] [--tighten] [--only <id,...>] [--time-unit-suite] [--ci]
+// Measures the rows owned by plat-ci (bundle and package sizes, unit-suite time, CI wall-clock and billed
+// minutes) and compares each with its budgets.json limit. An artifact that is absent is reported as
+// "not measurable here" and never fails. --ci reads the ci.* rows from the latest successful revamp runs
+// of the CI workflow with `gh`; without it, or when gh is unavailable, each ci.* row is skipped.
 // Exit 1 when a measured row is over its limit. --record writes lastMeasured (today, UTC) for the rows it
 // measured, and a value only for a calibrate row with no value yet or, with --tighten, a tighten-only row
 // measured below its limit. Rows owned by anyone else are never touched.
@@ -167,23 +169,155 @@ function measureSuite(root, options) {
   return { measured: roundUp((Date.now() - started) / 1000, 1), unit: 's' };
 }
 
+// CI rows: --ci reads job timings of the latest successful revamp CI runs with `gh`. A skipped
+// job has no wall-clock (its timestamps are meaningless), so only jobs that ran are measured.
+export const ciJobNames = {
+  staticJob: 'Static (format, lint, types, audit)',
+  unitJob: 'Unit tests',
+  e2eBrowserJob: 'Browser E2E (headless, loopback only)',
+  macosJob: 'Desktop on macOS (typecheck, test, build)',
+};
+
+// A billed macOS runner minute costs ten Linux minutes on the free allowance.
+const macosMinuteMultiplier = 10;
+const macosJobs = new Set([ciJobNames.macosJob]);
+
+/** A job's wall-clock in minutes from startedAt to completedAt; null when the job did not run. */
+export function jobMinutes(job) {
+  if (job?.conclusion !== 'success') return null;
+  const started = Date.parse(job.startedAt ?? '');
+  const completed = Date.parse(job.completedAt ?? '');
+  if (Number.isNaN(started) || Number.isNaN(completed)) return null;
+  return (completed - started) / 60_000;
+}
+
+/** The longest wall-clock of the jobs named `names`, in minutes; null when none of them ran. */
+export function maxJobMinutes(jobs, names) {
+  const minutes = jobs
+    .filter(job => names.includes(job.name))
+    .map(jobMinutes)
+    .filter(value => value != null);
+  return minutes.length ? Math.max(...minutes) : null;
+}
+
+/** One run's billed minutes: every job that ran rounded up to whole minutes, macOS at 10x. */
+export function billedMinutes(jobs) {
+  return jobs.reduce((sum, job) => {
+    const minutes = jobMinutes(job);
+    if (minutes == null) return sum;
+    return sum + Math.ceil(minutes) * (macosJobs.has(job.name) ? macosMinuteMultiplier : 1);
+  }, 0);
+}
+
+/** Parsed stdout of a `gh` call; null when gh is missing, exits non-zero or prints non-JSON. */
+function ghJson(args, cwd) {
+  const run = spawnSync('gh', args, { cwd, encoding: 'utf8' });
+  if (run.error || run.status !== 0) return null;
+  try {
+    return JSON.parse(run.stdout);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The jobs array of each of the latest `limit` successful revamp CI runs, newest first.
+ * Null when gh is unavailable or unauthenticated, or a run's jobs cannot be read.
+ */
+function fetchCiRunJobs(root, limit = 5) {
+  const list = ghJson(
+    [
+      'run',
+      'list',
+      '--branch',
+      'revamp',
+      '--workflow',
+      'CI',
+      '--status',
+      'success',
+      '--limit',
+      String(limit),
+      '--json',
+      'databaseId',
+    ],
+    root,
+  );
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const runs = [];
+  for (const entry of list) {
+    const view = ghJson(['run', 'view', String(entry.databaseId), '--json', 'jobs'], root);
+    if (!Array.isArray(view?.jobs)) return null;
+    runs.push(view.jobs);
+  }
+  return runs;
+}
+
+/** The reason a ci.* row cannot be measured here, or null when it can. */
+function ciUnavailable(options) {
+  if (!options.ci) return 'pass --ci to read GitHub Actions runs';
+  if (options.ciJobsByRun == null) return 'gh unavailable';
+  return null;
+}
+
+function measureCiWallClock(options, names, absence) {
+  const unavailable = ciUnavailable(options);
+  if (unavailable) return missing(unavailable);
+  const minutes = maxJobMinutes(options.ciJobsByRun[0], names);
+  if (minutes == null) return missing(absence);
+  return { measured: roundUp(minutes, 1), unit: 'min' };
+}
+
+const measureCiStaticUnit = (root, options) =>
+  measureCiWallClock(
+    options,
+    [ciJobNames.staticJob, ciJobNames.unitJob],
+    'no completed static or unit job in the latest run',
+  );
+
+const measureCiE2eBrowser = (root, options) =>
+  measureCiWallClock(
+    options,
+    [ciJobNames.e2eBrowserJob],
+    'no completed browser E2E job in the latest run',
+  );
+
+const measureCiMacos = (root, options) =>
+  measureCiWallClock(options, [ciJobNames.macosJob], 'no completed macOS run');
+
+function measureCiBilled(root, options) {
+  const unavailable = ciUnavailable(options);
+  if (unavailable) return missing(unavailable);
+  const total = options.ciJobsByRun.reduce((sum, jobs) => sum + billedMinutes(jobs), 0);
+  return { measured: total, unit: 'minutes' };
+}
+
 export const measurers = {
   'size.engine-bundle': measureEngine,
   'size.renderer-bundle': measureRenderer,
   'size.app-bundle': measureApp,
   'size.app-zip': measureZip,
   'time.unit-suite': measureSuite,
+  'ci.wall-clock-static-unit': measureCiStaticUnit,
+  'ci.wall-clock-e2e-browser': measureCiE2eBrowser,
+  'ci.wall-clock-macos': measureCiMacos,
+  'ci.billed-minutes': measureCiBilled,
 };
 
 // Running
+
+const isCiRow = row => row.id.startsWith('ci.');
 
 /** Measures the chosen plat-ci rows. Returns [{ row, result }] where result is a measurement or a skip. */
 export async function measureRows(register, root, options = {}) {
   const only = options.only ?? null;
   const rows = register.rows.filter(row => row.owner === owner && row.id in measurers);
   const chosen = rows.filter(row => !only || only.includes(row.id));
+  const context = { ...options };
+  if (options.ci && context.ciJobsByRun === undefined && chosen.some(isCiRow)) {
+    context.ciJobsByRun = fetchCiRunJobs(root);
+  }
   const outcomes = [];
-  for (const row of chosen) outcomes.push({ row, result: await measurers[row.id](root, options) });
+  for (const row of chosen) outcomes.push({ row, result: await measurers[row.id](root, context) });
   return outcomes;
 }
 
@@ -209,10 +343,11 @@ const flags = {
   '--record': 'record',
   '--tighten': 'tighten',
   '--time-unit-suite': 'timeUnitSuite',
+  '--ci': 'ci',
 };
 
 export function parseArgs(argv) {
-  const options = { record: false, tighten: false, timeUnitSuite: false, only: null };
+  const options = { record: false, tighten: false, timeUnitSuite: false, ci: false, only: null };
   const args = [...argv];
   while (args.length > 0) {
     const arg = args.shift();
