@@ -24,6 +24,7 @@ import type {
   SyncState,
   ThreadOpenRef,
 } from '@aplos/engine/ports';
+import type { GoogleConnect } from '../oauth/connect';
 import { fetchAttachment, openThread } from './bodies';
 import { GmailPacer, PACER_TARGET, type GmailDeps } from './client';
 import { GMAIL_COSTS, type GmailCostTable } from './costs';
@@ -37,7 +38,7 @@ import { FactsMemo, listStep, plan, type SyncRuntime, type WindowCall } from './
 /**
  * The google `ProviderFactory` and its per-account `ProviderAdapter` (plan 20 section 3.2): the read path of
  * `prov-gmail`. Parts that belong to other lanes are explicit stubs that throw `NotInThisLaneError`, never silent
- * no-ops: connect (prov-gov's OAuth host), send and findSent (prov-gmail-write),
+ * no-ops: connect when the host passes none (prov-gov's `oauth/host-connect.ts`), send and findSent (prov-gmail-write),
  * drafts, filters, the workflow channel and calendar (left undefined; prov-gmail-write, prov-gmail workflow, prov-cal).
  */
 
@@ -65,6 +66,10 @@ export interface GoogleProviderOptions {
    * `prov-gov`'s governor, which applies `GMAIL_BUDGET` itself, is the one in `AdapterContext.governor`.
    */
   pace?: boolean;
+  /** prov-gov's sign-in (`createGoogleHostConnect(...).connect`). Without it, `connect` rejects `NotInThisLaneError`. */
+  connect?: GoogleConnect;
+  /** `ProviderFactory.discardCredential`, from the same place; without it the factory has none (the engine fails closed). */
+  discardCredential?: (ref: string) => Promise<void>;
 }
 
 /**
@@ -186,11 +191,14 @@ export class GmailAdapter implements ProviderAdapter {
 }
 
 export function createGoogleProvider(options: GoogleProviderOptions): ProviderFactory {
+  const { connect, discardCredential } = options;
   return {
     kind: 'google',
-    connect(_req: ConnectRequest, _ctx: ConnectContext): Promise<ConnectResult> {
+    connect(req: ConnectRequest, ctx: ConnectContext): Promise<ConnectResult> {
+      if (connect) return connect(req, ctx);
       return Promise.reject(new NotInThisLaneError('connect', 'prov-gov (host/providers/oauth)'));
     },
+    ...(discardCredential ? { discardCredential } : {}),
     budgets(): BudgetSpec[] {
       return [GMAIL_BUDGET];
     },

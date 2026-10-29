@@ -332,7 +332,7 @@ flowchart LR
 
 ### 5.1a Lean mode: the token budget (owner, 2026-10-28; SWE-2 routing 2026-10-29; replaces the earlier routing rules)
 
-> **What this means:** Devin's SWE-2 (free through November) writes most of the code, Sonnet runs the threads, does UI and reviews, and Opus is saved for a short list of hard calls. Agents read less, live shorter, and fewer of them run at once. Tests and one review per change keep quality where it was.
+> **What this means:** Devin's SWE-2 (free through November) takes the volume work, Sonnet runs the threads and does UI, tricky code and reviews, and Opus takes the hardest and riskiest calls. Quality comes first; SWE-2 is extra capacity, not a downgrade. Agents read less, live shorter, and fewer of them run at once. Tests and one review per change keep quality where it was.
 
 **Why.** In the first 26 hours the revamp hit Claude's 5-hour limit three times. The causes, measured from the logs:
 - Opus made about 87% of the calls, because subagents inherit their parent's model and every parent was Opus.
@@ -346,10 +346,12 @@ flowchart LR
 
 | Tier | Model | Use for |
 |---|---|---|
-| Workhorse (free through November) | Devin `swe-2-high` (`delegate_task` provider `acpRegistry_devin`; `thought_level` `max` for harder items) | All non-UI code a subagent writes: scoped features from a lane card or spec, bug fixes with a repro, tests, fixtures, scripts, CI, refactors, file splits, lint fixes. Also codebase searches, plan reading, test-run summaries and first-pass reviews. Keep each task scoped and testable; it is weak at long open-ended terminal sessions |
-| Default Claude | `claude-sonnet-5-5` | Thread orchestrators, all UI code (renderer and site), the one Claude review per PR, and anything SWE-2 failed twice |
-| Opus (named cases only) | `claude-opus-5-5` | Contract changes; security code (send guard, live-run guard, sanitizer and frame, hardening, auth and tokens); the store's commit path and sync correctness; the final review of PRs in those areas. Nothing else |
+| Volume (free through November) | Devin `swe-2-high` (`delegate_task` provider `acpRegistry_devin`; `thought_level` `max` for harder items) | Well-specified non-UI code a subagent writes: scoped features from a lane card, bug fixes with a repro, tests, fixtures, scripts, CI, file splits, lint fixes. Also codebase searches, plan reading, test-run summaries, first-pass reviews and extra parallel attempts. Keep each task scoped and testable; it is weak at long open-ended terminal sessions |
+| Sonnet | `claude-sonnet-5-5` | Thread orchestrators; all UI code (renderer and site); non-UI work with tricky logic, cross-module changes or unclear specs; the one Claude review per PR; and any task where SWE-2's result is not clearly as good |
+| Opus | `claude-opus-5-5` | Contract changes; security code (send guard, live-run guard, sanitizer and frame, hardening, auth and tokens); the store's commit path and sync correctness; the final review of PRs in those areas; high-visibility UI; and really hard work: architecture calls and subtle bugs Sonnet could not crack |
 | Haiku | `claude-haiku-5-5` | Trivial checks when Devin is down |
+
+**Quality comes first.** SWE-2 is extra capacity, not a downgrade: pick the model that gives the best result for each task. When unsure between SWE-2 and Sonnet, use Sonnet; when a SWE-2 result falls short, redo it on Sonnet rather than patching around it. The savings come from moving volume (mechanical code, tests, searches, reading, extra attempts and first-pass reviews) to SWE-2, not from moving judgment off Claude.
 
 OpenCode and Cursor Grok are retired for this project (they were never used in practice). If Devin is down or rate-limited, fall back to Sonnet, not to free models.
 
