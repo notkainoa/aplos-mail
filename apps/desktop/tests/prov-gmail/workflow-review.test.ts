@@ -38,7 +38,11 @@ function plantCopies(r: Rig, n: number, prefix = 'p'): void {
 /** The record keys inside a stored copy, opened with the shared test key. */
 function copyKeys(r: Rig, id: string): string[] {
   const parsed = parseCopyMessage(r.emu.mailbox.rawOf(id).toString('latin1'));
-  const opened = open(parsed!.data, channelKey(testKey('shared')), r.account.address);
+  const opened = open(
+    parsed!.data,
+    channelKey(testKey('shared'), r.account.address),
+    r.account.address,
+  );
   assert.ok(opened.ok);
   return (opened.plain as { records: WorkflowRecord[] }).records.map(x => x.key);
 }
@@ -74,7 +78,8 @@ test('WF-1 a write over the readers cap is refused and the readable copy is neve
 });
 
 test('WF-1 retention: settled records past 180 days leave new copies, and an older Later cannot come back', async () => {
-  const r = await rig();
+  // Refresh tokens that do not expire after 7 days, so half a year can pass on the shared clock (Gmail's too).
+  const r = await rig({ emulator: { testingMode: false } });
   // Another device's old copy: t1 is Later.
   const t0 = r.clock.now();
   const later = threadValue({ status: 'later', laterUntil: t0 + 365 * DAY });
@@ -89,8 +94,8 @@ test('WF-1 retention: settled records past 180 days leave new copies, and an old
   await a.round();
   await r.clock.advance(DAY);
   await a.channel.write([{ key: threadKey('t1'), value: done }], a.ctx());
-  // Half a year later on this device's clock (the emulated account's tokens would not last that long).
-  a.options.skewMs = RETENTION_MS + 10 * DAY;
+  // Half a year later, for Gmail as well: a floor ahead of Gmail's own clock would not count (WF2-4).
+  await r.clock.advance(RETENTION_MS + 10 * DAY);
   await a.round();
   await a.channel.write([{ key: threadKey('t2'), value: done }], a.ctx());
   assert.deepEqual(

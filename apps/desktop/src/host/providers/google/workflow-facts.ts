@@ -83,8 +83,10 @@ export function parseThreadValue(value: JsonValue): Partial<SyncedFields> | unde
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const out: Record<string, unknown> = {};
   for (const [key, v] of Object.entries(value)) {
+    // Own keys only: `toString`, `__proto__` and the like are field names a foreign writer can send, not checks.
+    if (!Object.hasOwn(CHECKS, key)) return undefined;
     const check = CHECKS[key as keyof SyncedFields];
-    if (!check || !check(v)) return undefined;
+    if (!check(v)) return undefined;
     out[key] = v;
   }
   return Object.keys(out).length ? (out as Partial<SyncedFields>) : undefined;

@@ -2,10 +2,9 @@ import {
   ProviderError,
   type AdapterContext,
   type SyncState,
-  type WorkflowChannel,
   type WorkflowCopy,
 } from '@aplos/engine/ports';
-import { GmailClient, type GmailDeps } from './client';
+import { GmailClient, type GmailDeps, type GmailRequest } from './client';
 import {
   APP_LABEL,
   buildCopyMessage,
@@ -14,6 +13,7 @@ import {
   parseCopyMessage,
   remember,
 } from './workflow-message';
+import type { WorkflowTransport } from './workflow-state';
 
 /**
  * The Gmail workflow channel (plan 20 PV3, D17, D18; ARCH 6.5, 13.1; DECISIONS M29): Done, Later, todos, reminders and
@@ -29,7 +29,8 @@ import {
  *
  * Two layers, both per account:
  *
- * 1. `GmailWorkflowTransport` implements the port's `WorkflowChannel` (`ports/provider.ts`) over sealed strings only:
+ * 1. `GmailWorkflowTransport` implements the port's `WorkflowChannel` (`ports/provider.ts`), plus `readBack`
+ *    (`WorkflowTransport` in `workflow-state.ts`), over sealed strings only:
  *    - `round(state, ctx)` returns the copies not read before, the next `workflow` scope state (`cursor` = the label's
  *      history id, `pending` = ids to retry) and the units spent. Costs: no app label yet, 1 unit (`labels.list`, once
  *      per process when found); a round with no label change, 2 units (one `history.list`); a full read, 1 + 1 + 5 per
@@ -43,14 +44,17 @@ import {
  *      restart), first looks for it by its content-derived Message-ID (5), so an uncertain insert lands once; a first
  *      `put` pays nothing extra. A 404 from history or insert drops the cached label id and resolves it once more.
  *    - `compact(ids, ctx)` trashes superseded copies (`gmail.modify` cannot delete), 20 each, and refuses ids it never
- *      read as an Aplos copy, so user mail filed under the label is never touched.
+ *      read as an Aplos copy, so user mail filed under the label is never touched. The state channel hands it at most
+ *      `COMPACT_BATCH` ids per call.
+ *    - `readBack(id, ctx)` downloads one copy the way a round does (60 units), so a writer can check that the copy it
+ *      put is readable from Gmail before it trashes anything that copy supersedes.
  *
  * 2. `WorkflowStateChannel` (`workflow-state.ts`) is what the engine side calls, `sync/lease.ts` (prov-gov) included:
  *    ```ts
  *    read(state, ctx): Promise<{ records; changed; skipped; nextState; costUnits }> // one gated round, opened and merged
  *    ingest(copies, log): Promise<{ changed; skipped }>   // copies from the actor's `onWorkflowCopies`
  *    write(entries: { key; value }[], ctx): Promise<{ remoteId; records }> // stamp, seal the whole view, put
- *    compact(ctx): Promise<number>                         // primary only: trash copies the last write supersedes
+ *    compact(ctx): Promise<number>                         // primary only: trash up to 25 copies the last write supersedes
  *    view(): WorkflowRecord[]                              // the merged records, sorted by key
  *    ```
  *    Records are `{ key, stamp: { at, gen, device }, value }`. Keys: `thread:<remote thread id>` for thread workflow
@@ -69,15 +73,19 @@ import {
 export { APP_LABEL };
 
 /**
- * TODO(live): the insert path the legacy transport used and the emulator serves. Google's discovery document lists
- * `messages.insert` as `POST users/{userId}/messages`; which one live Gmail accepts must be checked on the live runner
- * before the channel ships, and the emulator fixed to match.
+ * TODO(live): the insert path the legacy transport used and the emulator serves. Google's documentation and discovery
+ * document give `messages.insert` as `POST users/{userId}/messages`, so this path is probably wrong live (a 404 costs a
+ * label re-resolve and a second insert). It stays until the emulator (prov-emu's lane) serves the documented path too;
+ * the first live probe checks it before the channel ships, and the switch is this constant plus the emulator route.
  */
 export const INSERT_PATH = '/messages/insert';
 
 export interface TransportLimits {
   listPage: number;
-  /** Pages one round lists before it hands back and resumes next round (100,000 copies at the default). */
+  /**
+   * Pages one round lists before it hands back and resumes next round (200 copies at the default, about 12,000 units
+   * with their downloads), so a label full of copies is read over several rounds instead of one huge step.
+   */
   listPages: number;
   historyPage: number;
   historyPages: number;
@@ -89,7 +97,7 @@ export interface TransportLimits {
 
 export const TRANSPORT_LIMITS: TransportLimits = {
   listPage: 100,
-  listPages: 1_000,
+  listPages: 2,
   historyPage: 500,
   historyPages: 20,
   maxPending: 500,
@@ -159,7 +167,30 @@ function historyIdsOf(res: HistoryPage, into: Set<string>): string | undefined {
   return last;
 }
 
-export class GmailWorkflowTransport implements WorkflowChannel {
+const getRaw = (id: string): GmailRequest => ({
+  method: 'gmail.messages.get',
+  path: `/messages/${encodeURIComponent(id)}`,
+  format: 'raw',
+  fields: COPY_FIELDS,
+  lane: LANE,
+  item: id,
+});
+
+/** A downloaded message as a copy; `writtenAt` is Gmail's receive time (`internalDate`), not the writer's clock. */
+function copyOf(id: string, message: RawMessage): WorkflowCopy | undefined {
+  const raw =
+    typeof message.raw === 'string' ? Buffer.from(message.raw, 'base64url').toString('latin1') : '';
+  const parsed = parseCopyMessage(raw);
+  if (!parsed) return undefined;
+  return {
+    remoteId: id,
+    deviceId: parsed.device,
+    writtenAt: Number(message.internalDate ?? 0) || 0,
+    data: parsed.data,
+  };
+}
+
+export class GmailWorkflowTransport implements WorkflowTransport {
   private labelId?: string;
   /** Every id this process downloaded (or learned is gone): the D17 skip list. */
   private readonly seen = new Map<string, Seen>();
@@ -234,6 +265,18 @@ export class GmailWorkflowTransport implements WorkflowChannel {
     for (const id of remoteIds) {
       if (this.seen.get(id) !== 'copy') continue;
       await this.trash(client, id);
+    }
+  }
+
+  /** One copy downloaded by id, without handing it to a round; undefined when it is gone or not an Aplos copy. */
+  async readBack(remoteId: string, ctx: AdapterContext): Promise<WorkflowCopy | undefined> {
+    const client = new GmailClient(this.deps, ctx);
+    try {
+      const message = await client.call<RawMessage>(getRaw(remoteId));
+      return copyOf(remoteId, message);
+    } catch (error) {
+      if (is404(error)) return undefined;
+      throw error;
     }
   }
 
@@ -396,17 +439,7 @@ export class GmailWorkflowTransport implements WorkflowChannel {
     const size = client.batchSize();
     for (let i = 0; i < ids.length; i += size) {
       const chunk = ids.slice(i, i + size);
-      const parts = await client.batch<RawMessage>(
-        chunk.map(id => ({
-          method: 'gmail.messages.get',
-          path: `/messages/${encodeURIComponent(id)}`,
-          format: 'raw',
-          fields: COPY_FIELDS,
-          lane: LANE,
-          item: id,
-        })),
-        LANE,
-      );
+      const parts = await client.batch<RawMessage>(chunk.map(getRaw), LANE);
       parts.forEach((part, n) => {
         const id = chunk[n];
         if (part.ok) this.take(id, part.data, ctx);
@@ -436,23 +469,14 @@ export class GmailWorkflowTransport implements WorkflowChannel {
 
   private take(id: string, message: RawMessage, ctx: AdapterContext): void {
     this.failures.delete(id);
-    const raw =
-      typeof message.raw === 'string'
-        ? Buffer.from(message.raw, 'base64url').toString('latin1')
-        : '';
-    const parsed = parseCopyMessage(raw);
-    if (!parsed) {
+    const copy = copyOf(id, message);
+    if (!copy) {
       this.see(id, 'foreign');
       logSkipped(ctx.log, 'foreign');
       return;
     }
     this.see(id, 'copy');
-    this.undelivered.push({
-      remoteId: id,
-      deviceId: parsed.device,
-      writtenAt: Number(message.internalDate ?? 0) || 0,
-      data: parsed.data,
-    });
+    this.undelivered.push(copy);
   }
 
   private async findOwn(

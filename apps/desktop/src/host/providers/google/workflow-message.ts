@@ -29,9 +29,25 @@ function checkCopy(copy: WorkflowCopy): void {
     throw new Error('Invalid write time for a workflow copy');
 }
 
+/** RFC 5322 dot-atom text at a plain domain: no space, CR, LF or bracket can reach the From and To headers. */
+const ADDRESS_RE = /^[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+$/;
+
+function checkAddress(address: string): void {
+  if (!ADDRESS_RE.test(address)) throw new Error('Invalid account address for a workflow copy');
+}
+
+/**
+ * The cleartext device hint: a hash of the device id, so a device id that happens to be a host or user name never
+ * reaches the mailbox in the clear. Nothing reads it back as an id; the sealed payload carries the real one.
+ */
+export function deviceHint(deviceId: string): string {
+  return `d-${createHash('sha256').update(`aplos-wf-device:${deviceId}`).digest('hex').slice(0, 24)}`;
+}
+
 /** The RFC 822 copy: only the label, so it never shows as new mail. */
 export function buildCopyMessage(copy: WorkflowCopy, address: string): string {
   checkCopy(copy);
+  checkAddress(address);
   const lines = [
     `From: Aplos Mail <${address}>`,
     `To: ${address}`,
@@ -40,7 +56,7 @@ export function buildCopyMessage(copy: WorkflowCopy, address: string): string {
     `Message-ID: ${copyMessageId(copy.data)}`,
     'MIME-Version: 1.0',
     `${MARKER_HEADER}: ${MARKER_VALUE}`,
-    `${DEVICE_HEADER}: ${copy.deviceId}`,
+    `${DEVICE_HEADER}: ${deviceHint(copy.deviceId)}`,
     'Content-Type: text/plain; charset=us-ascii',
     'Content-Transfer-Encoding: 7bit',
     '',
