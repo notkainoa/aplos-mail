@@ -277,10 +277,11 @@ export function visible(col: string): string {
 export function splitId(
   q: StoreReader,
   id: string,
+  accounts?: readonly string[],
 ): { accountId: string; remoteId: string } | undefined {
   let best: string | undefined;
-  for (const { id: a } of q.all<{ id: string }>('SELECT id FROM accounts'))
-    if (id.startsWith(`${a}:`) && (!best || a.length > best.length)) best = a;
+  const known = accounts ?? q.all<{ id: string }>('SELECT id FROM accounts').map(a => a.id);
+  for (const a of known) if (id.startsWith(`${a}:`) && (!best || a.length > best.length)) best = a;
   return best === undefined ? undefined : { accountId: best, remoteId: id.slice(best.length + 1) };
 }
 

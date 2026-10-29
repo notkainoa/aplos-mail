@@ -1,5 +1,6 @@
 import type { SqlDatabase } from '../../src/store';
 import { openStore, type MessageWrite, type StorePort, type StoreWrite } from '../../src/store';
+import { laneExtensions } from '../../src/index';
 import { tempDb } from '../store/helpers';
 
 /*
@@ -215,7 +216,7 @@ export const bodyOf = (id: number) =>
 export function makeWorld(seed: number, now: number, threads = 120): World {
   const file = tempDb();
   const db = file.open();
-  const store = openStore(db, { now: () => now });
+  const store = openStore(db, { now: () => now, extensions: laneExtensions() });
   const r = rng(seed);
   store.commit({ opId: 'setup', origin: 'sync', writes: folderWrites() });
   let m = 0;

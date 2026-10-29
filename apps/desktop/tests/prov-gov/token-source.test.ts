@@ -6,7 +6,9 @@ import { FakeClock, createGmailEmulator, SCOPE } from '@aplos/emulators';
 import { createHttpClient } from '../../src/host/providers/shared/http';
 import {
   GoogleTokenSource,
+  googleTokenUrl,
   tokenSkewMs,
+  type GoogleTokenSourceOptions,
   type GoogleTokenBundle,
   type SecretVault,
 } from '../../src/host/providers/oauth/token-source';
@@ -53,17 +55,20 @@ type Script = (body: URLSearchParams) => Response | Promise<Response>;
 interface ScriptedFetch {
   fetch: typeof fetch;
   calls: URLSearchParams[];
+  urls: string[];
 }
 
 function scriptedFetch(...script: Script[]): ScriptedFetch {
   const calls: URLSearchParams[] = [];
-  const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
+  const urls: string[] = [];
+  const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
     const body = new URLSearchParams(String(init?.body ?? ''));
+    urls.push(String(url));
     calls.push(body);
     const next = script[Math.min(calls.length - 1, script.length - 1)];
     return next(body);
   }) as typeof fetch;
-  return { fetch: fetchFn, calls };
+  return { fetch: fetchFn, calls, urls };
 }
 
 function json(body: unknown, status = 200): Response {
@@ -122,10 +127,15 @@ async function failure(promise: Promise<unknown>): Promise<ProviderError> {
 
 /** Not the whole secret, and not its first 8 characters either (a secret cut at a length cap). */
 function assertNoSecrets(error: unknown, secrets: string[]): void {
-  const views = [String(error), JSON.stringify(error), inspect(error, { depth: 10 })];
+  const views = [
+    String(error),
+    JSON.stringify(error),
+    inspect(error, { depth: 10, showHidden: true }),
+  ];
   if (error instanceof Error) views.push(error.message, error.stack ?? '');
+  const forms = secrets.flatMap(secret => [secret, encodeURIComponent(secret)]);
   for (const view of views) {
-    for (const secret of secrets) assert.ok(!view.includes(secret.slice(0, 8)), 'a secret leaked');
+    for (const form of forms) assert.ok(!view.includes(form.slice(0, 8)), 'a secret leaked');
   }
 }
 
@@ -353,12 +363,20 @@ test('a caller that aborts a shared refresh does not cancel the other caller', a
 test('no token, refresh token or client secret appears in any thrown error', async () => {
   const secrets = [refreshToken, clientSecret, 'ya29.leaky'];
   const echo = `refresh_token=${refreshToken} client_secret=${clientSecret}`;
+  const encoded = new URLSearchParams({
+    refresh_token: refreshToken,
+    client_secret: clientSecret,
+  }).toString();
   const leakyNetwork: Script = () =>
     Promise.reject(new TypeError(`fetch failed for ${refreshToken}`, { cause: echo }));
   const scripts: Script[] = [
     oauthRefusal('invalid_grant', 400, echo),
     oauthRefusal(refreshToken, 400, echo),
     () => new Response(`<html>${echo}</html>`, { status: 502 }),
+    // A proxy or captive portal quoting the form-encoded request it blocked.
+    () => new Response(`<html><pre>POST /token\n${encoded}</pre></html>`, { status: 403 }),
+    () => new Response(`blocked: ${encoded}`, { status: 400 }),
+    oauthRefusal('invalid_grant', 400, encoded),
     () => new Response(`{"access_token":"ya29.leaky","expires_in":`, { status: 200 }),
     leakyNetwork,
   ];
@@ -367,6 +385,47 @@ test('no token, refresh token or client secret appears in any thrown error', asy
     const error = await failure(source.refresh(account, io()));
     assertNoSecrets(error, secrets);
   }
+});
+
+test('a body that is not an OAuth error never becomes providerMessage', async () => {
+  const page = '<html><body>Access denied by your network administrator</body></html>';
+  const { source } = setup([() => new Response(page, { status: 403 })]);
+  const error = await failure(source.refresh(account, io()));
+  assert.equal(
+    error.error.providerMessage,
+    'The token endpoint answered 4xx without an OAuth error.',
+  );
+  const oauth = setup([oauthRefusal('invalid_grant')]);
+  const parsed = await failure(oauth.source.refresh(account, io()));
+  assert.equal(parsed.error.providerMessage, 'Token has been expired or revoked.');
+});
+
+test('inspecting or serializing the token source shows no token', async () => {
+  const { source, vault } = setup([ok(), ok({ refresh_token: '1//rotated-unsaved' })]);
+  await source.refresh(account, io());
+  vault.failWrites = true;
+  const views = () => [JSON.stringify(source), inspect(source, { depth: 10, showHidden: true })];
+  for (const view of views()) {
+    assert.ok(!view.includes('ya29.access'), 'cached access token visible');
+    assert.ok(!view.includes(refreshToken), 'refresh token visible');
+  }
+  await failure(source.refresh(account, io()));
+  for (const view of views()) assert.ok(!view.includes('rotated-unsaved'), 'unsaved token visible');
+});
+
+test('the refresh always goes to Google’s token endpoint, whatever the options say', async () => {
+  const scripted = scriptedFetch(ok());
+  const clock = new FakeClock();
+  const http = createHttpClient({ fetch: scripted.fetch, clock, userAgent: 'aplos-test' });
+  const options = {
+    vault: memoryVault({ clientId, refreshToken }),
+    http,
+    clock,
+    client: () => ({ clientId, clientSecret }),
+    tokenUrl: 'https://token.attacker.example/token',
+  } as GoogleTokenSourceOptions;
+  await new GoogleTokenSource(options).refresh(account, io());
+  assert.deepEqual(scripted.urls, [googleTokenUrl]);
 });
 
 test('a secret cut by the 300-character cap leaves no part of itself behind', async () => {

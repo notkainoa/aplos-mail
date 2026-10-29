@@ -47,7 +47,6 @@ export interface GoogleTokenSourceOptions {
   client: () => OAuthClient;
   /** The vault reference of an account's bundle. Default: the account id. */
   refFor?: (account: AccountId) => string;
-  tokenUrl?: string;
 }
 
 export interface AccessToken {
@@ -125,19 +124,25 @@ function validBundle(value: GoogleTokenBundle | undefined): GoogleTokenBundle | 
 }
 
 export class GoogleTokenSource implements TokenSource {
-  private readonly cache = new Map<AccountId, CachedToken>();
-  private readonly inFlight = new Map<AccountId, Flight>();
+  // True private fields: tokens never show in `util.inspect`, `console.log` or `JSON.stringify` of the source.
+  readonly #cache = new Map<AccountId, CachedToken>();
+  readonly #inFlight = new Map<AccountId, Flight>();
   /** A rotated bundle the vault refused, used while the vault still holds `over` (so a reconnect wins). */
-  private readonly unsaved = new Map<AccountId, { bundle: GoogleTokenBundle; over: string }>();
+  readonly #unsaved = new Map<AccountId, { bundle: GoogleTokenBundle; over: string }>();
 
-  constructor(private readonly options: GoogleTokenSourceOptions) {}
+  readonly #options: GoogleTokenSourceOptions;
+
+  /** The endpoint is always Google's (`googleTokenUrl`): no option, setting or variable may send the secrets elsewhere. */
+  constructor(options: GoogleTokenSourceOptions) {
+    this.#options = options;
+  }
 
   /** Only a token from the grant the vault holds now, and not within the skew of its expiry. */
   cached(account: AccountId): AccessToken | undefined {
-    const hit = this.cache.get(account);
-    if (!hit || hit.expiresAt - tokenSkewMs <= this.options.clock.now()) return undefined;
+    const hit = this.#cache.get(account);
+    if (!hit || hit.expiresAt - tokenSkewMs <= this.#options.clock.now()) return undefined;
     if (!this.holdsGrant(account, hit.grant)) {
-      this.cache.delete(account);
+      this.#cache.delete(account);
       return undefined;
     }
     return { token: hit.token, expiresAt: hit.expiresAt };
@@ -146,14 +151,14 @@ export class GoogleTokenSource implements TokenSource {
   /** Concurrent calls for one account share one request; each caller's own signal ends only its own wait. */
   refresh(account: AccountId, io: RequestIo): Promise<AccessToken> {
     if (io.signal.aborted) return Promise.reject(cancelledError());
-    const flight = this.inFlight.get(account) ?? this.launch(account);
+    const flight = this.#inFlight.get(account) ?? this.launch(account);
     return this.join(account, flight, io.signal);
   }
 
   /** Drops what this process remembers for an account (disconnect). The vault is the caller's. */
   forget(account: AccountId): void {
-    this.cache.delete(account);
-    this.unsaved.delete(account);
+    this.#cache.delete(account);
+    this.#unsaved.delete(account);
   }
 
   private launch(account: AccountId): Flight {
@@ -167,18 +172,21 @@ export class GoogleTokenSource implements TokenSource {
     flight.promise.catch(() => {
       /* every caller gets the outcome through `join`; none may be left */
     });
-    this.inFlight.set(account, flight);
+    this.#inFlight.set(account, flight);
     return flight;
   }
 
   private land(account: AccountId, flight: Flight): void {
-    if (this.inFlight.get(account) === flight) this.inFlight.delete(account);
+    if (this.#inFlight.get(account) === flight) this.#inFlight.delete(account);
   }
 
   private join(account: AccountId, flight: Flight, signal: AbortSignal): Promise<AccessToken> {
     flight.waiters += 1;
     return new Promise<AccessToken>((resolve, reject) => {
+      let left = false;
       const leave = () => {
+        if (left) return;
+        left = true;
         signal.removeEventListener('abort', onAbort);
         flight.waiters -= 1;
       };
@@ -212,7 +220,7 @@ export class GoogleTokenSource implements TokenSource {
     try {
       return await this.refreshOnce(account, signal);
     } catch (error) {
-      this.cache.delete(account);
+      this.#cache.delete(account);
       throw error;
     }
   }
@@ -221,7 +229,7 @@ export class GoogleTokenSource implements TokenSource {
     const used = this.readCurrent(account);
     if (!used) throw tokenError('auth', 'noCredential');
     const secret = this.secretFor(used.bundle);
-    const startedAt = this.options.clock.now();
+    const startedAt = this.#options.clock.now();
     const response = await this.post(used.bundle, secret, signal);
     if (!response.ok) throw refusalError(response, [used.bundle.refreshToken, secret ?? '']);
     const reply = parseReply(response);
@@ -236,21 +244,21 @@ export class GoogleTokenSource implements TokenSource {
     // Checked and cached in one synchronous step, so a reconnect cannot slip in between.
     this.assertGrant(account, bundle);
     const token = { token: reply.accessToken, expiresAt: startedAt + reply.expiresInMs };
-    this.cache.set(account, { ...token, grant: grantId(bundle) });
+    this.#cache.set(account, { ...token, grant: grantId(bundle) });
     return token;
   }
 
   private ref(account: AccountId): string {
-    return this.options.refFor ? this.options.refFor(account) : account;
+    return this.#options.refFor ? this.#options.refFor(account) : account;
   }
 
   private current(account: AccountId): Current | undefined {
-    const stored = validBundle(this.options.vault.get(this.ref(account)));
-    const pending = this.unsaved.get(account);
+    const stored = validBundle(this.#options.vault.get(this.ref(account)));
+    const pending = this.#unsaved.get(account);
     if (pending && stored?.refreshToken === pending.over) {
       return { bundle: pending.bundle, stored: stored.refreshToken };
     }
-    this.unsaved.delete(account);
+    this.#unsaved.delete(account);
     return stored && { bundle: stored, stored: stored.refreshToken };
   }
 
@@ -278,7 +286,7 @@ export class GoogleTokenSource implements TokenSource {
 
   /** D21: the refresh token only works with the client it was granted to; any other client is refused unsent. */
   private secretFor(bundle: GoogleTokenBundle): string | undefined {
-    const client = this.options.client();
+    const client = this.#options.client();
     const id = client.clientId?.trim();
     if (!id) throw tokenError('config', 'noClient', { scope: 'project' });
     if (id !== bundle.clientId) throw tokenError('auth', 'clientMismatch');
@@ -297,7 +305,7 @@ export class GoogleTokenSource implements TokenSource {
     });
     if (secret) form.set('client_secret', secret);
     try {
-      return await this.options.http.request(this.options.tokenUrl ?? googleTokenUrl, {
+      return await this.#options.http.request(googleTokenUrl, {
         method: 'POST',
         headers: {
           'content-type': 'application/x-www-form-urlencoded',
@@ -332,17 +340,17 @@ export class GoogleTokenSource implements TokenSource {
   /** A refused write leaves the vault's bundle in place and keeps the new one in memory for the next try. */
   private async write(account: AccountId, next: GoogleTokenBundle, over: string): Promise<void> {
     try {
-      await this.options.vault.set(this.ref(account), next);
+      await this.#options.vault.set(this.ref(account), next);
     } catch {
-      if (this.storedToken(account) === over) this.unsaved.set(account, { bundle: next, over });
+      if (this.storedToken(account) === over) this.#unsaved.set(account, { bundle: next, over });
       throw tokenError('transient', 'vaultWriteFailed', { extra: { uncertain: false } });
     }
-    this.unsaved.delete(account);
+    this.#unsaved.delete(account);
   }
 
   private storedToken(account: AccountId): string | undefined {
     try {
-      return validBundle(this.options.vault.get(this.ref(account)))?.refreshToken;
+      return validBundle(this.#options.vault.get(this.ref(account)))?.refreshToken;
     } catch {
       return undefined;
     }
