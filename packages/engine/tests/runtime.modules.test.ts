@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ContractError } from '@aplos/contract/contract-error';
 import { createLogger } from '../src/diag/log';
-import { isAbsent, laneExtensions } from '../src/index';
+import { createEngine, isAbsent, laneExtensions } from '../src/index';
 import { buildEngine } from '../src/runtime/engine';
 import type { DeadlineRegistry } from '../src/ports';
 import type { LaneModuleSource } from '../src/runtime/services';
@@ -35,8 +35,10 @@ test('the root composes the four stub modules; ports the host left out answer un
   const t = await testEngine();
   try {
     const { accounts, deadlines, laneFor, frames } = t.engine.services;
-    assert.ok(isAbsent(accounts) && isAbsent(deadlines) && isAbsent(laneFor));
-    assert.ok(!isAbsent(frames));
+    assert.ok(isAbsent(accounts) && isAbsent(laneFor));
+    // eng-time's clock lane fills the `deadlines` stand-in with the real timer loop.
+    assert.ok(!isAbsent(deadlines) && !isAbsent(frames));
+    assert.doesNotThrow(() => deadlines.changed('nothing registered'), 'a real registry answers');
     assert.throws(
       () => accounts.status('a1'),
       (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
@@ -48,6 +50,17 @@ test('the root composes the four stub modules; ports the host left out answer un
     );
   } finally {
     await t.cleanup();
+  }
+});
+
+test('a registry the host injects wins over the clock lane, which leaves its lifecycle to the host', async () => {
+  const d = deps();
+  try {
+    const engine = await createEngine({ ...d.options, ports: { deadlines: registry } });
+    assert.equal(engine.services.deadlines, registry);
+    await engine.close();
+  } finally {
+    d.cleanup();
   }
 });
 

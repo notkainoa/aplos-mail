@@ -578,7 +578,7 @@ test('with the timer loop injected, the engine is one deadline source and runs w
     const source = sources.find(s => s.id === 'views')!;
     assert.ok(source, 'a window registers the views source');
     t.commit([patch(win.ids[0]!, { status: 'later' })]);
-    t.clock.advance(300);
+    await t.clock.advance(300);
     assert.equal(t.windowFrames(win.windowId).length, 0, 'nothing runs on its own clock timer');
     assert.equal(typeof (await source.next()), 'number');
     await source.fire(t.clock.now());
