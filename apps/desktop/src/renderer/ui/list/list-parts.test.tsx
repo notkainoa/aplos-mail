@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { before, describe, test } from 'node:test';
 import type { LowSheetGroup } from '../props';
 import { Chip, CommitChip, CommitEdge, EmptyLine, ErrorLine, LowBand, LowSheet } from './index';
+import { forwardFocusToListbox } from './internal/Action';
 import { ListKeyHintsContext } from './internal/keyHints';
 import { lowBandNames } from './LowBand';
 import { bannedIn, freezeClock, text, WORST } from './testkit.test';
@@ -470,6 +471,45 @@ describe('ErrorLine', () => {
       assert.equal(/role="alert"/.test(m), live);
     });
   }
+});
+
+describe('duplicate action focus', () => {
+  // No DOM in this suite: a stub node whose parent answers closest() by selector.
+  const stub = (listbox: unknown, focusable: unknown) => {
+    const parent = {
+      closest: (selector: string) => (selector.includes('listbox') ? listbox : focusable),
+    };
+    return { parentElement: parent, focus: undefined } as unknown as HTMLElement;
+  };
+  const target = () => {
+    const calls: unknown[] = [];
+    return { calls, focus: (options?: unknown) => calls.push(options) };
+  };
+
+  test('focus goes to the listbox it sits in', () => {
+    const box = target();
+    const other = target();
+    const span = stub(box, other);
+    forwardFocusToListbox(span);
+    span.focus({ preventScroll: true });
+    assert.deepEqual(box.calls, [{ preventScroll: true }]);
+    assert.deepEqual(other.calls, []);
+  });
+
+  test('outside a listbox, focus goes to the nearest focusable ancestor, not body', () => {
+    const near = target();
+    const span = stub(null, near);
+    forwardFocusToListbox(span);
+    span.focus();
+    assert.deepEqual(near.calls, [undefined]);
+  });
+
+  test('with nothing to focus it does nothing, and a null ref is ignored', () => {
+    const span = stub(null, null);
+    forwardFocusToListbox(span);
+    assert.doesNotThrow(() => span.focus());
+    assert.doesNotThrow(() => forwardFocusToListbox(null));
+  });
 });
 
 test('no banned phrase, glyph or exclamation mark rendered anywhere in the list parts', () => {

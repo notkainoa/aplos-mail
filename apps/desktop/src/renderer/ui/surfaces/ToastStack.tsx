@@ -1,9 +1,9 @@
 /**
  * ToastStack: up to three toasts, bottom-centre of the main pane, never under the dock (DESIGN 6, 7.13).
  * Newest on top. When more than three are waiting, the oldest plain toasts give way and are dismissed for good
- * (onDismiss), never hidden and brought back later. An Undo toast and a persistent (failure) toast are never
- * silently replaced: when those alone outnumber the room, the stack grows past three rather than drop one.
- * The undo-send notice always keeps
+ * (onDismiss), never hidden and brought back later. The newest toast, an Undo toast and a persistent (failure)
+ * toast are never silently replaced: when those alone outnumber the room, the stack grows past three rather
+ * than drop one (past six the oldest of them are hidden, still queued). The undo-send notice always keeps
  * its place. The stack itself is the persistent polite live region, so each new toast is read once; it never
  * steals focus.
  *
@@ -17,19 +17,39 @@ import { PartIcon, PartKeys, formatTime, keysFor } from './parts';
 
 const MAX_VISIBLE = 3;
 
+/** Most toasts (undo-send notice included) kept in the DOM; older Undo and failure toasts beyond it wait, hidden. */
+const MAX_MOUNTED = 6;
+
+export interface ToastPlan {
+  /** Toasts to render, oldest first. */
+  shown: ToastData[];
+  /** Plain toasts that gave way: dismissed for good (onDismiss). */
+  dropped: ToastData[];
+}
+
 /**
- * The toasts to show, oldest first. While more than fit, the oldest plain toast (neither undoable nor persistent)
- * gives way; Undo and persistent toasts are never dropped, so a burst of them may exceed three.
+ * Which toasts to show. While more than fit, the oldest plain toast (neither undoable nor persistent) that is not
+ * the newest gives way; the newest toast, Undo toasts and persistent toasts are never dropped, so a burst of them
+ * may exceed three. Past six mounted, the oldest of those are hidden (kept queued, not dismissed) until newer close.
  */
-export function visibleToasts(toasts: readonly ToastData[], reserved: number): ToastData[] {
+export function planToasts(toasts: readonly ToastData[], reserved: number): ToastPlan {
   const room = Math.max(0, MAX_VISIBLE - reserved);
   const list = [...toasts];
+  const dropped: ToastData[] = [];
   while (list.length > room) {
-    const plain = list.findIndex(toast => !toast.undoable && !toast.persistent);
+    const plain = list.findIndex(
+      (toast, i) => i < list.length - 1 && !toast.undoable && !toast.persistent,
+    );
     if (plain === -1) break;
-    list.splice(plain, 1);
+    dropped.push(...list.splice(plain, 1));
   }
-  return list;
+  const mounted = Math.max(1, MAX_MOUNTED - reserved);
+  return { shown: list.length > mounted ? list.slice(-mounted) : list, dropped };
+}
+
+/** The toasts to show, oldest first (see planToasts). */
+export function visibleToasts(toasts: readonly ToastData[], reserved: number): ToastData[] {
+  return planToasts(toasts, reserved).shown;
 }
 
 function UndoSendNotice({
@@ -106,11 +126,12 @@ export function ToastStack({
   onAction,
   onDismiss,
 }: ComponentPropsMap['ToastStack']) {
-  const shown = visibleToasts(toasts, undoSend ? 1 : 0);
+  const { shown, dropped: gaveWay } = planToasts(toasts, undoSend ? 1 : 0);
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
   // Plain toasts that gave way are removed for real, so they never come back later with a fresh timer.
-  const dropped = toasts.filter(toast => !shown.includes(toast)).map(toast => toast.id);
+  // Older Undo and failure toasts hidden past the cap are not: they stay queued and reappear.
+  const dropped = gaveWay.map(toast => toast.id);
   const droppedKey = dropped.join('\u0000');
   useEffect(() => {
     if (droppedKey) for (const id of droppedKey.split('\u0000')) dismiss.current(id);

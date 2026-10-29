@@ -7,10 +7,18 @@ import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   applyRecords,
+  billedMinutes,
+  ciJobNames,
   compare,
   directoryBytes,
   findEntries,
+  jobMinutes,
+  maxJobMinutes,
   measureRows,
+  newestMinutes,
+  createdSince,
+  ciUnreadableReason,
+  measurers,
   parseArgs,
   serialise,
 } from '../measure-budgets.mjs';
@@ -165,8 +173,10 @@ describe('measure-budgets run', () => {
       record: true,
       tighten: true,
       timeUnitSuite: false,
+      ci: false,
       only: ['a', 'b'],
     });
+    assert.equal(parseArgs(['--ci']).ci, true);
     assert.throws(() => parseArgs(['--nope']), /unknown argument/);
   });
 
@@ -176,5 +186,232 @@ describe('measure-budgets run', () => {
     });
     assert.equal(run.status, 0);
     assert.match(run.stdout, /time\.unit-suite\s+skipped\s+not measurable here/);
+  });
+});
+
+// A job of a `gh run view --json jobs` payload: `seconds` of wall-clock on a fixed start.
+const ciJob = (name, seconds, conclusion = 'success') => ({
+  name,
+  status: 'completed',
+  conclusion,
+  startedAt: '2026-10-28T10:00:00Z',
+  completedAt: new Date(Date.parse('2026-10-28T10:00:00Z') + seconds * 1000).toISOString(),
+});
+
+describe('measure-budgets CI rows', () => {
+  it('times a job that ran and treats a skipped job as not run', () => {
+    assert.equal(jobMinutes(ciJob('Unit tests', 90)), 1.5);
+    assert.equal(jobMinutes(ciJob(ciJobNames.macosJob, 0, 'skipped')), null);
+    assert.equal(jobMinutes({ name: 'no timestamps' }), null);
+  });
+
+  it('measures the longer of the named jobs, or nothing when none ran', () => {
+    const jobs = [
+      ciJob(ciJobNames.staticJob, 140),
+      ciJob(ciJobNames.unitJob, 382),
+      ciJob(ciJobNames.e2eBrowserJob, 67),
+      ciJob(ciJobNames.macosJob, 0, 'skipped'),
+    ];
+    const staticUnit = [ciJobNames.staticJob, ciJobNames.unitJob];
+    assert.equal(maxJobMinutes(jobs, staticUnit), 382 / 60);
+    assert.equal(maxJobMinutes(jobs, [ciJobNames.macosJob]), null);
+    assert.equal(maxJobMinutes([], staticUnit), null);
+  });
+
+  it('bills each job rounded up to whole minutes, macOS at 10x', () => {
+    const jobs = [
+      ciJob('Detect changes', 8), // 1
+      ciJob(ciJobNames.staticJob, 136), // 3
+      ciJob(ciJobNames.macosJob, 72), // 2 * 10
+      ciJob('Website (typecheck, build)', 0, 'skipped'), // never ran
+    ];
+    assert.equal(billedMinutes(jobs), 24);
+  });
+
+  it('measures ci.* rows from injected run data and skips without --ci or gh', async () => {
+    const run = [
+      ciJob(ciJobNames.staticJob, 140),
+      ciJob(ciJobNames.unitJob, 382),
+      ciJob(ciJobNames.e2eBrowserJob, 67),
+      ciJob(ciJobNames.macosJob, 0, 'skipped'),
+    ];
+    const ok = jobs => ({ conclusion: 'success', jobs });
+    const options = { ci: true, ciRuns: [ok(run), ok(run)], ciComplete: true };
+    const staticUnit = await measurers['ci.wall-clock-static-unit'](null, options);
+    assert.equal(staticUnit.unit, 'min');
+    assert.equal(staticUnit.measured, 6.4);
+    const e2e = await measurers['ci.wall-clock-e2e-browser'](null, options);
+    assert.equal(e2e.measured, 1.2);
+    const macos = await measurers['ci.wall-clock-macos'](null, options);
+    assert.equal(macos.skip, 'no completed macOS run in the last 30 days');
+    const billed = await measurers['ci.billed-minutes'](null, options);
+    assert.equal(billed.unit, 'minutes');
+    assert.equal(billed.measured, 2 * billedMinutes(run));
+    const off = await measurers['ci.billed-minutes'](null, {});
+    assert.match(off.skip, /--ci/);
+    const noRuns = await measurers['ci.billed-minutes'](null, { ci: true, ciRuns: [] });
+    assert.equal(noRuns.skip, ciUnreadableReason);
+  });
+
+  it('wall-clock rows scan newest-first for the first run where the named jobs ran', async () => {
+    const ok = jobs => ({ conclusion: 'success', jobs });
+    const newest = ok([
+      ciJob(ciJobNames.staticJob, 100),
+      ciJob(ciJobNames.e2eBrowserJob, 0, 'skipped'),
+    ]);
+    const older = ok([ciJob(ciJobNames.staticJob, 200), ciJob(ciJobNames.e2eBrowserJob, 90)]);
+    assert.equal(
+      newestMinutes([newest, older], name => name === ciJobNames.e2eBrowserJob),
+      1.5,
+    );
+    assert.equal(
+      newestMinutes([newest, older], name => name === ciJobNames.staticJob),
+      100 / 60,
+    );
+    assert.equal(
+      newestMinutes([newest, older], name => name === ciJobNames.macosJob),
+      null,
+    );
+    const e2e = await measurers['ci.wall-clock-e2e-browser'](null, {
+      ci: true,
+      ciRuns: [newest, older],
+    });
+    assert.equal(e2e.measured, 1.5);
+  });
+
+  it('static-unit takes the longest of the static job and every "Unit tests (...)" job', async () => {
+    const run = {
+      conclusion: 'success',
+      jobs: [
+        ciJob(ciJobNames.staticJob, 110),
+        ciJob('Unit tests (engine, Electron Node)', 151),
+        ciJob('Unit tests (desktop 1/2)', 139),
+        ciJob('Website (typecheck, build)', 400),
+      ],
+    };
+    const result = await measurers['ci.wall-clock-static-unit'](null, { ci: true, ciRuns: [run] });
+    assert.equal(result.measured, 2.6);
+  });
+
+  it('wall-clock rows ignore runs that did not succeed', () => {
+    const failed = { conclusion: 'failure', jobs: [ciJob(ciJobNames.staticJob, 600)] };
+    const green = { conclusion: 'success', jobs: [ciJob(ciJobNames.staticJob, 120)] };
+    assert.equal(
+      newestMinutes([failed, green], name => name === ciJobNames.staticJob),
+      2,
+    );
+  });
+
+  it('bills jobs that failed or were cancelled, not skipped or unfinished ones', () => {
+    const jobs = [
+      ciJob(ciJobNames.staticJob, 61, 'failure'), // 2
+      ciJob(ciJobNames.unitJob, 30, 'cancelled'), // 1
+      ciJob('Website (typecheck, build)', 0, 'skipped'),
+      {
+        name: 'running',
+        conclusion: '',
+        startedAt: '2026-10-28T10:00:00Z',
+        completedAt: '0001-01-01T00:00:00Z',
+      },
+    ];
+    assert.equal(billedMinutes(jobs), 3);
+  });
+
+  it('ci.billed-minutes is skipped, never partial, when the month was not fully read', async () => {
+    const run = { conclusion: 'success', jobs: [ciJob(ciJobNames.staticJob, 120)] };
+    const partial = await measurers['ci.billed-minutes'](null, {
+      ci: true,
+      ciRuns: [run],
+      ciComplete: false,
+      ciProblems: ['gh run view 7: gh timed out after 30 s'],
+    });
+    assert.match(partial.skip, /incomplete month.*gh run view 7: gh timed out/);
+    const wall = await measurers['ci.wall-clock-static-unit'](null, {
+      ci: true,
+      ciRuns: [run],
+      ciComplete: false,
+    });
+    assert.equal(wall.measured, 2);
+  });
+
+  it('createdSince is the date of the start of the window', () => {
+    assert.equal(createdSince(new Date('2026-10-29T12:00:00Z'), 30), '>=2026-09-29');
+  });
+});
+
+// A fake `gh` first on PATH answers by subcommand; FAKE_GH_MODE picks the scenario. The CLI is run for
+// real against the repo's budgets.json (read only: no --record), so the exit codes are the real ones.
+const fakeGh = `#!${process.execPath}
+const [sub, verb] = process.argv.slice(2);
+const mode = process.env.FAKE_GH_MODE;
+const jobs = [{ name: 'Static (format, lint, types, audit)', conclusion: 'success', startedAt: '2026-10-28T10:00:00Z', completedAt: '2026-10-28T10:02:00Z' }];
+if (sub === 'run' && verb === 'list') {
+  if (mode === 'list-fails') { console.error('HTTP 401: bad credentials'); process.exit(1); }
+  if (mode === 'empty') { console.log('[]'); process.exit(0); }
+  const count = 3;
+  console.log(JSON.stringify(Array.from({ length: count }, (_, i) => ({ databaseId: i + 1, conclusion: 'success', status: mode === 'running' && i === 0 ? 'in_progress' : 'completed' }))));
+} else if (sub === 'run' && verb === 'view') {
+  if (mode === 'view-fails' && process.argv[4] === '2') { console.error('HTTP 502'); process.exit(1); }
+  console.log(JSON.stringify({ jobs }));
+}
+`;
+
+const runWithFakeGh = (mode, extraArgs = []) => {
+  const dir = tempDir();
+  writeFileSync(join(dir, 'gh'), fakeGh, { mode: 0o755 });
+  return spawnSync(
+    process.execPath,
+    [script, '--ci', '--only', 'ci.billed-minutes,ci.wall-clock-static-unit', ...extraArgs],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, FAKE_GH_MODE: mode },
+    },
+  );
+};
+
+describe('measure-budgets --ci against a fake gh', () => {
+  it('measures a fully read month', () => {
+    const run = runWithFakeGh('ok');
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /ci\.billed-minutes\s+6 minutes/);
+    assert.match(run.stdout, /ci\.wall-clock-static-unit\s+2 min/);
+  });
+
+  it('skips billed minutes when the run list hit the cap', () => {
+    const run = runWithFakeGh('cap', ['--ci-run-limit', '3']);
+    assert.match(run.stdout, /ci\.billed-minutes\s+skipped.*incomplete month.*3-run limit/);
+    assert.match(run.stderr, /3-run limit/);
+  });
+
+  it('treats an in-progress run as an incomplete month', () => {
+    const run = runWithFakeGh('running');
+    assert.match(
+      run.stdout,
+      /ci\.billed-minutes\s+skipped.*run 1 still in_progress|gh run view 1: run still in_progress/,
+    );
+    assert.match(run.stdout, /ci\.wall-clock-static-unit\s+2 min/);
+  });
+
+  it('rejects a bad --ci-run-limit', () => {
+    assert.throws(() => parseArgs(['--ci-run-limit', '0']), /positive integer/);
+    assert.equal(parseArgs(['--ci-run-limit', '5']).ciRunLimit, 5);
+  });
+
+  it('skips billed minutes when one gh run view fails, naming the step', () => {
+    const run = runWithFakeGh('view-fails');
+    assert.match(run.stdout, /ci\.billed-minutes\s+skipped.*gh run view 2: HTTP 502/);
+    assert.match(run.stdout, /ci\.wall-clock-static-unit\s+2 min/);
+  });
+
+  it('exits 2 and names the step when gh run list fails', () => {
+    const run = runWithFakeGh('list-fails');
+    assert.equal(run.status, 2);
+    assert.match(run.stderr, /ci: gh run list: HTTP 401: bad credentials/);
+  });
+
+  it('exits 2 and names the step when the list is empty', () => {
+    const run = runWithFakeGh('empty');
+    assert.equal(run.status, 2);
+    assert.match(run.stderr, /ci: gh run list: no CI runs in the last 30 days/);
   });
 });

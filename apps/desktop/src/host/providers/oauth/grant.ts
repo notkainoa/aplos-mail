@@ -76,18 +76,30 @@ export function checkRequiredScopes(granted: readonly string[]): GrantCheck {
   };
 }
 
+const wrongAccount: GrantCheck = {
+  ok: false,
+  kind: 'auth',
+  reason: 'wrongAccount',
+  message: 'That is a different Google account. Sign in with the account you are reconnecting.',
+};
+
 /** A reconnect must return the same Google account; a different `sub` is refused and nothing is stored. */
 export function checkReconnectIdentity(
   expectedSubject: string | undefined,
   subject: string,
 ): GrantCheck {
   if (!expectedSubject || expectedSubject === subject) return { ok: true };
-  return {
-    ok: false,
-    kind: 'auth',
-    reason: 'wrongAccount',
-    message: 'That is a different Google account. Sign in with the account you are reconnecting.',
-  };
+  return wrongAccount;
+}
+
+/**
+ * Without a `sub` to compare (an account saved before subjects were kept), the requested address must be the
+ * id_token's email, lower-cased on both sides. Only sound because `id-token.ts` requires `email_verified === true`.
+ */
+export function checkExpectedAddress(expected: string | undefined, address: string): GrantCheck {
+  const wanted = expected?.trim().toLowerCase();
+  if (!wanted || wanted === address.toLowerCase()) return { ok: true };
+  return wrongAccount;
 }
 
 /**
