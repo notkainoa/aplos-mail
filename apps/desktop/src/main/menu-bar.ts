@@ -1,6 +1,7 @@
 import { app, dialog, Menu, type MenuItemConstructorOptions } from 'electron';
 import { command } from './windows';
 import { checkManually } from './updater';
+import { releaseBuild } from './oauth-config';
 
 function menus() {
   const item = (
@@ -65,7 +66,7 @@ function menus() {
         { role: 'zoomIn' },
         { role: 'zoomOut' },
         { role: 'togglefullscreen' },
-        ...(!app.isPackaged ? [{ role: 'toggleDevTools' } as MenuItemConstructorOptions] : []),
+        ...(!releaseBuild ? [{ role: 'toggleDevTools' } as MenuItemConstructorOptions] : []),
       ],
     },
     {

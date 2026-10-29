@@ -1,23 +1,27 @@
-import type { Logger } from '../diag/log';
-import type { Clock } from '../ports/time';
+import type { CommitExtension } from '../store/port';
+import type { EngineServices, LaneModule } from '../runtime/services';
 import { createTimerLoop, type TimerLoop } from './loop';
-import { systemClock } from './system';
 
 export { fakeClock, type FakeClock } from './fake';
 export { createTimerLoop, MAX_WAKES_PER_HOUR, MIN_FIRE_GAP_MS, type TimerLoop } from './loop';
 export { systemClock } from './system';
 
-/** What the engine runtime gets from `eng-time`'s clock lane: `EngineServices.clock` and `.deadlines`. */
-export interface ClockModule {
-  clock: Clock;
-  deadlines: TimerLoop;
-}
-
 /**
- * Builds the clock and the one timer loop. The runtime passes `clock` (a fake one in tests and the conformance
- * runner), calls `deadlines.start()` once every lane has registered, and `deadlines.wake()` on the host's wake.
+ * Seam 1: lane `eng-time`'s clock module, imported by the composition root (`src/index.ts`) from this fixed path. It
+ * builds the one timer loop over the injected `Clock` and provides `services.deadlines`; later modules register their
+ * sources with it, `start` runs after every lane is composed, and the host's wake becomes `deadlines.wake()`.
  */
-export function createClockModule(deps: { log: Logger; clock?: Clock }): ClockModule {
-  const clock = deps.clock ?? systemClock();
-  return { clock, deadlines: createTimerLoop({ clock, log: deps.log }) };
+export const lane = 'eng-time';
+
+/** The lane's writers for its own tables (seam 2); the host passes every module's list to `openStore`. */
+export const extensions: readonly CommitExtension[] = [];
+
+/** Builds the timer loop once the core services exist; runs first in the root's fixed order. */
+export function createModule(services: EngineServices): LaneModule {
+  const deadlines: TimerLoop = createTimerLoop({ clock: services.clock, log: services.log });
+  return {
+    services: { deadlines },
+    start: () => deadlines.start(),
+    stop: () => deadlines.stop(),
+  };
 }

@@ -472,3 +472,21 @@ Evidence:
 
 Not verified: a live provider accepting a real key from the Settings field (Test against real Groq/OpenAI/Claude etc.), and the macOS microphone prompt itself from the welcome (needs a person at the screen).
 
+
+## 2026-10-28 — Platform: Q2 Electron hardening (plan 40 Q2)
+
+- Fuses on (RunAsNode, NODE_OPTIONS and the Node inspector off; asar integrity and app-from-asar-only on), macOS 13 minimum, a separate ad-hoc entitlements file for `npm run package`; `verify-hardening --expect adhoc` passes 10/10 static rows on a local package.
+- `src/main/security.ts`: one guard for every webContents (navigation, redirects, subframes, window.open, `<webview>`, permission, device and display-media requests denied; the trusted window's microphone rule kept; links still open in the browser) and the release-only debug guard (exit 78, before the single-instance lock), proven on a release-define build for seven switch spellings.
+- Production renderer CSP without dev ports or inline script, set at build time.
+- `release-build.mjs` and the Release workflow verify before they upload; only a Developer ID release is ever uploaded; the workflow's checkout keeps no token.
+- Closed (#40, 2026-10-28): DevTools and the Toggle Developer Tools menu are gated on the release define, and release builds ignore `APLOS_TEST` and `APLOS_DATA_DIR` via `test-mode.ts`; the entitlement-removal experiment still needs the second Mac.
+## 2026-10-27/28 — Revamp F9: Paper design foundation (UI-core, ui-foundation)
+
+- **Tokens.** `renderer/ui/tokens.json` → `ui/generated/{tokens.css,motion.ts,contrast-pairs.json}`. The generator's `--check` mode passes. Contrast is checked for 268 pairs in light, dark and Increase Contrast, with one accepted exception: the resting field ring, DESIGN decision 20. The identity check runs 152 distances against DESIGN 12.4's reference list. The shell's Lab b* is −0.48 in light and −0.74 in dark. The five springs reproduce DESIGN 4.8 within 0.0014 per sample. Sizes are in rem.
+- **Design lint.** 11 rules (`tools/lint/design`), each with failing and passing fixtures. An adversarial "rule breaker" tried 30 evasions and all are caught. 45 tests.
+- **Skill.** `.claude/skills/aplos-design/SKILL.md` v1.1. A token-sync check runs against it. A fresh agent given only the skill built a toast with Undo that passed the lint.
+- **Components.** Frozen props for 75 components (`renderer/ui/props.ts`), with plain implementations of all of them. Each family was built, reviewed adversarially (break-ui data, hover shifts, DESIGN and mockup conformance) and fixed. 514 renderer tests.
+- **Commands.** Catalog, registry, pure resolver, hold tracker, key queue and the generated shortcut sheet. The property test runs 2,500 sequences.
+- **Data surface.** Signatures of the data hooks and shell, typed from `@aplos/contract` (freeze findings FR-1 and FR-21 fixed). A new dev entry (`renderer/main.tsx`) boots on the stand-in engine.
+- **Fonts.** Newsreader is bundled (OFL), with metric-matched New York and Georgia fallbacks.
+- **Not verified here.** The live engine. Real Gmail is out of scope until Phase 2 (WP5.6).

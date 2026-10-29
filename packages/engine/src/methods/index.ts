@@ -106,9 +106,19 @@ export async function dispatch(
   args: unknown,
   ctx: MethodContext,
 ): Promise<unknown> {
+  return dispatchWith(handlers, method, args, ctx);
+}
+
+/** `dispatch` over a given table with the same checks; the runtime uses it so tests can replace a handler. */
+export async function dispatchWith(
+  table: EngineHandlers,
+  method: string,
+  args: unknown,
+  ctx: MethodContext,
+): Promise<unknown> {
   if (!Object.prototype.hasOwnProperty.call(handlers, method))
     throw new ContractError({ type: 'unsupported', message: 'Unsupported application method.' });
   const denied = refusal(method as EngineMethodName, ctx.caller, args);
   if (denied) throw new ContractError({ type: 'forbidden', message: denied });
-  return (handlers[method as EngineMethodName] as Handler<EngineMethodName>)(args as never, ctx);
+  return (table[method as EngineMethodName] as Handler<EngineMethodName>)(args as never, ctx);
 }

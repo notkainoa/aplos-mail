@@ -1,0 +1,1250 @@
+/* The surfaces family (DESIGN 4.4-4.8, 6, 7.1, 7.13). Tokens only: every value is a var(--token), 0, a 1px
+   hairline or 100%. Hover lives under (hover: hover) and changes colour, fill, shadow, opacity or visibility only.
+   Motion is transform and opacity. Also holds the internal parts (button, keycap, overlay tooltip) shared with
+   the status family until buttons-keys lands. */
+
+/* ───────────── Internal parts ───────────── */
+
+.ui-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ui-part-icon {
+  width: var(--icon);
+  height: var(--icon);
+  flex: none;
+  stroke-width: var(--icon-stroke);
+}
+.ui-part-icon[data-size='sm'] {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.ui-part-icon[data-size='xs'] {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+
+.ui-part-keys,
+.ui-part-keys__group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  flex: none;
+}
+.ui-part-keys__or {
+  padding: 0 var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+.ui-part-keys[data-reveal='hint'] {
+  display: none;
+}
+:root[data-show-keys='all'] .ui-part-keys[data-reveal='hint'] {
+  display: inline-flex;
+}
+.ui-part-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--kbd);
+  height: var(--kbd);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--sunken);
+  color: var(--dim);
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+  flex: none;
+}
+
+.ui-part-button {
+  --btn-h: var(--control-md);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--space-1) + var(--space-half));
+  height: var(--btn-h);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  flex: none;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+.ui-part-button[data-size='sm'] {
+  --btn-h: var(--control-sm);
+}
+.ui-part-button[data-size='lg'] {
+  --btn-h: var(--control-lg);
+  padding: 0 var(--space-5);
+  font: var(--type-base);
+  font-weight: 500;
+  letter-spacing: var(--track-base);
+}
+.ui-part-button:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-part-button:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-part-button[data-variant='text'] .ui-part-icon {
+  color: var(--dim);
+}
+.ui-part-button[data-variant='icon'] {
+  width: var(--btn-h);
+  padding: 0;
+  color: var(--dim);
+}
+.ui-part-button[data-variant='icon']:active {
+  transform: scale(var(--press-scale-icon));
+}
+.ui-part-button[data-variant='icon'][data-labelled='true'] {
+  width: auto;
+  padding: 0 var(--space-2);
+  color: var(--ink-2);
+}
+.ui-part-button[data-variant='icon'][data-labelled='true'] .ui-part-icon {
+  color: var(--dim);
+}
+.ui-part-button[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--press);
+}
+.ui-part-button[data-variant='filled'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow:
+    inset 0 1px 0 var(--press-hi),
+    inset 0 calc(-1 * 1px) 0 var(--press-lo);
+}
+/* Hover is --hover laid over --accent (as the mockup does), never a new mixed colour. The overlay comes first
+   in tree order and the contents are positioned after it, so it sits under the label without a z-index. */
+.ui-part-button[data-variant='filled'] > * {
+  position: relative;
+}
+.ui-part-button[data-variant='filled']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--hover);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-hover) var(--ease-std);
+}
+.ui-part-button[data-variant='filled']:disabled::before,
+.ui-part-button[data-variant='filled'][aria-disabled='true']::before {
+  display: none;
+}
+.ui-part-button[data-variant='filled']:active {
+  box-shadow: inset 0 1px 0 var(--press-lo);
+}
+.ui-part-button[data-variant='filled'] .ui-part-kbd {
+  background: color-mix(in srgb, var(--accent-ink) 16%, transparent);
+  color: var(--accent-ink);
+}
+.ui-part-button[data-tone='danger'],
+.ui-part-button[data-tone='danger'] .ui-part-icon {
+  color: var(--stamp-ink);
+}
+.ui-part-button:disabled,
+.ui-part-button[aria-disabled='true'] {
+  color: var(--dim);
+}
+.ui-part-button:disabled {
+  pointer-events: none;
+}
+/* Soft-disabled keeps focus and takes no press feedback. */
+.ui-part-button[aria-disabled='true']:active {
+  transform: none;
+}
+.ui-part-button:disabled .ui-part-icon {
+  color: var(--faint);
+}
+.ui-part-button[data-variant='filled']:disabled,
+.ui-part-button[data-variant='filled'][aria-disabled='true'] {
+  background: var(--sunken);
+  color: var(--dim);
+  box-shadow: none;
+}
+.ui-part-button[data-variant='filled']:disabled .ui-part-kbd,
+.ui-part-button[data-variant='filled'][aria-disabled='true'] .ui-part-kbd {
+  background: var(--raised);
+  color: var(--dim);
+}
+@media (hover: hover) {
+  .ui-part-button[data-variant='text']:hover,
+  .ui-part-button[data-variant='icon']:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+  .ui-part-button[data-variant='text']:hover .ui-part-icon,
+  .ui-part-button[data-variant='icon'][data-labelled='true']:hover .ui-part-icon {
+    color: var(--ink);
+  }
+  .ui-part-button[data-tone='danger']:hover,
+  .ui-part-button[data-tone='danger']:hover .ui-part-icon {
+    color: var(--stamp-ink);
+  }
+  .ui-part-button[data-variant='filled']:hover::before {
+    opacity: 1;
+  }
+}
+.ui-part-button[data-variant='text']:active,
+.ui-part-button[data-variant='icon']:active {
+  background: var(--press);
+}
+
+/* Overlay tooltip: label + keys, opaque paper. It never moves layout; hover or keyboard focus shows it. */
+.ui-part-tipwrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+/* An icon button's wrapper never shrinks below its fixed square; only text beside it gives way. */
+.ui-part-tipwrap:has(> .ui-part-button[data-variant='icon']) {
+  flex: none;
+}
+.ui-part-tip {
+  position: absolute;
+  z-index: var(--z-tooltip);
+  top: calc(100% + var(--space-1));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  width: max-content;
+  max-width: calc(var(--menu-min) + var(--space-9));
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  box-shadow: var(--elev-float);
+  color: var(--ink);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity var(--dur-reveal-in) var(--ease-out);
+}
+.ui-part-tip[data-placement='above'] {
+  top: auto;
+  bottom: calc(100% + var(--space-1));
+}
+.ui-part-tip[data-placement='end'] {
+  top: 50%;
+  left: calc(100% + var(--space-2));
+  transform: translateY(-50%);
+}
+.ui-part-tip__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ui-part-tip__detail {
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+.ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
+  visibility: visible;
+  opacity: 1;
+}
+@media (hover: hover) {
+  .ui-part-tipwrap:hover > .ui-part-tip {
+    visibility: visible;
+    opacity: 1;
+  }
+  .ui-part-tipwrap:hover > [aria-expanded='true'] + .ui-part-tip {
+    visibility: hidden;
+    opacity: 0;
+  }
+}
+
+/* ───────────── Pane (shell.css .main / .dock / .toolbar) ───────────── */
+
+.ui-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin: var(--shell-pad) var(--shell-pad) var(--shell-pad) 0;
+  border-radius: var(--radius-lg);
+  background: var(--canvas);
+  box-shadow: var(--elev-pane);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-pane[data-kind='main'] {
+  flex: 1;
+}
+.ui-pane[data-kind='dock'] {
+  flex: none;
+  width: var(--dock-w);
+  overflow: hidden;
+}
+.ui-pane__head {
+  position: relative;
+  z-index: var(--z-sticky);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--pane-head);
+  padding: 0 var(--space-3);
+  transition: box-shadow var(--dur-hover) var(--ease-std);
+}
+.ui-pane__head[data-scrolled='true'] {
+  box-shadow: 0 var(--hairline) 0 var(--line);
+}
+.ui-pane__lead,
+.ui-pane__bulk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+/* Only the crumb shrinks; back / close keeps its place. */
+.ui-pane__lead > .ui-part-tipwrap {
+  flex: none;
+}
+.ui-pane__crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-1);
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+}
+.ui-pane__crumb-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-pane__crumb-pos {
+  flex: none;
+  color: var(--dim);
+  font-weight: 400;
+}
+.ui-pane__bulk-count {
+  margin: 0 var(--space-2) 0 var(--space-1);
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 600;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+}
+.ui-pane__tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.ui-pane__tools > .ui-part-tipwrap:last-child > .ui-part-tip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+/* The body scrolls; it is not a positioning context, so a ToastStack inside it sits on the pane and never scrolls. */
+.ui-pane__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-radius: inherit;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.ui-pane__head + .ui-pane__body {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* ───────────── PageHead, NavHead ───────────── */
+
+.ui-page-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) 0 var(--space-3);
+}
+.ui-page-head__date {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ui-page-head__date-label {
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+  white-space: nowrap;
+}
+.ui-page-head__date-range {
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  white-space: nowrap;
+}
+.ui-page-head__field {
+  flex: 1;
+  min-width: 0;
+}
+.ui-page-head__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.ui-nav-head {
+  display: flex;
+  align-items: center;
+  height: var(--control-sm);
+  margin-top: var(--space-5);
+  padding: 0 var(--space-2);
+  overflow: hidden;
+  color: var(--dim);
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ───────────── AccountSwitcher ───────────── */
+
+.ui-account-switcher__wrap {
+  display: flex;
+  flex: 1;
+}
+.ui-account-switcher {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  text-align: left;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std);
+}
+.ui-account-switcher:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-account-switcher:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-account-switcher[data-state='open'] {
+  background: var(--hover);
+}
+.ui-account-switcher__mono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-5);
+  height: var(--space-5);
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--ink);
+  font: var(--type-caption);
+  font-weight: 600;
+  letter-spacing: var(--track-caption);
+}
+.ui-account-switcher__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-account-switcher .ui-part-icon {
+  color: var(--dim);
+}
+@media (hover: hover) {
+  .ui-account-switcher:hover {
+    background: var(--hover);
+  }
+}
+
+/* ───────────── Text ───────────── */
+
+.ui-text {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+.ui-text[data-icon='true'] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ui-text[data-icon='true'] .ui-part-icon {
+  flex: none;
+  color: var(--dim);
+}
+.ui-text__body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-text[data-variant='display'] {
+  font: var(--type-display);
+  letter-spacing: var(--track-display);
+  text-wrap: balance;
+}
+.ui-text[data-variant='heading'] {
+  font: var(--type-heading);
+  letter-spacing: var(--track-heading);
+  text-wrap: balance;
+}
+.ui-text[data-variant='title'] {
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-text[data-variant='lede'] {
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  text-wrap: balance;
+}
+.ui-text[data-variant='label'] {
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+}
+.ui-text[data-variant='small'] {
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-text[data-variant='caption'] {
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
+.ui-text[data-tone='ink'] {
+  color: var(--ink);
+}
+.ui-text[data-tone='ink-2'] {
+  color: var(--ink-2);
+}
+.ui-text[data-tone='dim'] {
+  color: var(--dim);
+}
+
+/* ───────────── Floating: Menu, Popover (opaque --paper, --elev-float, `reveal`) ───────────── */
+
+.ui-menu,
+.ui-popover {
+  position: fixed;
+  left: var(--float-x);
+  top: var(--float-y);
+  /* --z-menu is being added to the layer tokens; until it lands, the existing popover layer holds. */
+  z-index: var(--z-menu, var(--z-popover));
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-float);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  animation: ui-reveal var(--dur-reveal-in) var(--ease-out) both;
+}
+.ui-menu:not([data-placed]),
+.ui-popover:not([data-placed]) {
+  position: relative;
+  left: auto;
+  top: auto;
+}
+@keyframes ui-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(var(--move-reveal)) scale(var(--scale-reveal));
+  }
+}
+/* `reveal` out: back toward the trigger while the surface stays mounted, inert, for --dur-reveal-out. */
+.ui-menu[data-state='leaving'],
+.ui-popover[data-state='leaving'] {
+  pointer-events: none;
+  animation: ui-reveal-out var(--dur-reveal-out) var(--ease-in) both;
+}
+@keyframes ui-reveal-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--move-reveal)) scale(var(--scale-reveal));
+  }
+}
+.ui-menu {
+  box-sizing: content-box; /* --menu-min is the width of the rows; the padding sits outside it */
+  min-width: var(--menu-min);
+  max-width: calc(var(--menu-min) * 2);
+  padding: var(--space-1);
+  outline: none;
+}
+.ui-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  cursor: default;
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+.ui-menu__item[data-detail='true'],
+.ui-menu__item:has(.ui-menu__inline) {
+  height: auto;
+  min-height: var(--control-md);
+  align-items: flex-start;
+  padding: var(--space-2);
+}
+.ui-menu__item .ui-part-icon {
+  color: var(--dim);
+}
+.ui-menu__item[data-active='true'] {
+  background: var(--puck);
+}
+.ui-menu__item[data-tone='danger'],
+.ui-menu__item[data-tone='danger'] .ui-part-icon {
+  color: var(--stamp-ink);
+}
+.ui-menu__item[aria-disabled='true'] {
+  color: var(--dim);
+}
+.ui-menu__item[aria-disabled='true'] .ui-part-icon {
+  color: var(--faint);
+}
+.ui-menu__num {
+  width: var(--space-4);
+  flex: none;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  text-align: center;
+}
+.ui-menu__item[data-active='true'] .ui-menu__num {
+  color: var(--ink);
+}
+.ui-menu__check {
+  display: inline-flex;
+  width: var(--icon);
+  flex: none;
+}
+.ui-menu__check .ui-part-icon {
+  color: var(--ink);
+}
+.ui-menu__swatches {
+  display: flex;
+  flex: none;
+}
+.ui-menu__item[data-detail='true'] .ui-menu__swatches,
+.ui-menu__item[data-detail='true'] > .ui-part-icon {
+  margin-top: var(--space-half);
+}
+.ui-menu__swatch {
+  display: block;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  flex: none;
+  border-radius: var(--radius-pill);
+}
+.ui-menu__swatch + .ui-menu__swatch {
+  margin-left: calc(-1 * var(--space-half));
+  box-shadow: calc(-1 * 1px) 0 0 var(--paper);
+}
+.ui-menu__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-half);
+  min-width: 0;
+}
+.ui-menu__item-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-menu__item[data-detail='true'] .ui-menu__item-label {
+  font-weight: 500;
+}
+.ui-menu__detail {
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  overflow-wrap: anywhere;
+}
+.ui-menu__inline {
+  height: var(--control-sm);
+  margin: var(--space-1) 0 0 calc(-1 * var(--space-2));
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  cursor: default;
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+.ui-menu__inline[data-tone='danger'] {
+  color: var(--stamp-ink);
+}
+.ui-menu__aside {
+  flex: none;
+  margin-left: auto;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-menu__item > .ui-part-keys {
+  margin-left: auto;
+}
+.ui-menu__aside + .ui-part-keys {
+  margin-left: var(--space-1);
+}
+.ui-menu__sep {
+  height: var(--hairline);
+  margin: var(--space-1) var(--space-2);
+  background: var(--line);
+}
+.ui-menu__label {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--dim);
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+}
+@media (hover: hover) {
+  .ui-menu__item:hover {
+    background: var(--hover);
+  }
+  .ui-menu__item[aria-disabled='true']:hover {
+    background: transparent;
+  }
+  .ui-menu__item[data-active='true']:hover {
+    background: var(--puck);
+  }
+  .ui-menu__inline:hover {
+    background: var(--hover);
+  }
+}
+
+.ui-popover {
+  max-width: calc(var(--menu-min) * 2);
+  padding: var(--space-4);
+  outline: none;
+}
+.ui-popover[data-role='tooltip'] {
+  pointer-events: none;
+}
+
+/* Swatch colours (accounts, labels, calendars), as marks only. */
+.ui-menu__swatch[data-color='sky'],
+.ui-puck__swatch[data-color='sky'] {
+  background: var(--tag-sky);
+}
+.ui-menu__swatch[data-color='hill'],
+.ui-puck__swatch[data-color='hill'] {
+  background: var(--tag-hill);
+}
+.ui-menu__swatch[data-color='stamp'],
+.ui-puck__swatch[data-color='stamp'] {
+  background: var(--tag-stamp);
+}
+.ui-menu__swatch[data-color='dusk'],
+.ui-puck__swatch[data-color='dusk'] {
+  background: var(--tag-dusk);
+}
+.ui-menu__swatch[data-color='sand'],
+.ui-puck__swatch[data-color='sand'] {
+  background: var(--tag-sand);
+}
+.ui-menu__swatch[data-color='ember'],
+.ui-puck__swatch[data-color='ember'] {
+  background: var(--tag-ember);
+}
+
+/* ───────────── Dialog, Confirm (--elev-dialog, radius 16, `settle`) ───────────── */
+
+.ui-dialog__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--scrim);
+}
+.ui-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius-xl);
+  background: var(--paper);
+  box-shadow: var(--elev-dialog);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  outline: none;
+  /* Fill backwards only: `both` would keep an identity transform on the dialog after the entrance, and that
+     transform makes the dialog the containing block of every fixed Menu and Popover inside it, so they opened
+     offset. The leaving animation below keeps `both`: it ends invisible. */
+  animation: ui-settle var(--dur-settle-in) var(--ease-out) backwards;
+}
+@keyframes ui-settle {
+  from {
+    opacity: 0;
+    transform: translateY(var(--move-settle)) scale(var(--scale-settle));
+  }
+}
+/* `settle` out: the dialog sinks and the scrim fades over --dur-settle-out; nothing in it takes input. */
+.ui-dialog__scrim[data-state='leaving'] {
+  pointer-events: none;
+  animation: ui-scrim-out var(--dur-settle-out) var(--ease-in) both;
+}
+.ui-dialog[data-state='leaving'] {
+  animation: ui-settle-out var(--dur-settle-out) var(--ease-in) both;
+}
+@keyframes ui-scrim-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ui-settle-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--move-settle)) scale(var(--scale-settle));
+  }
+}
+.ui-dialog[data-size='sm'] {
+  max-width: var(--toast-max);
+}
+.ui-dialog[data-size='md'] {
+  max-width: var(--palette-w);
+}
+.ui-dialog[data-size='lg'] {
+  max-width: calc(100% - var(--sidebar-w));
+  height: 100%;
+}
+.ui-dialog__head {
+  flex: none;
+  padding: var(--space-6) var(--space-6) 0;
+}
+.ui-dialog__title {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+  overflow-wrap: anywhere;
+}
+.ui-dialog__description {
+  margin: var(--space-1) 0 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  overflow-wrap: anywhere;
+}
+.ui-dialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4) var(--space-6) 0;
+}
+.ui-dialog__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-6) 0;
+}
+.ui-dialog > :last-child {
+  padding-bottom: var(--space-6);
+}
+
+.ui-confirm[data-presentation='inline'] {
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+.ui-confirm__question {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+  overflow-wrap: anywhere;
+}
+.ui-confirm__consequence {
+  margin: var(--space-1) 0 0;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  overflow-wrap: anywhere;
+}
+.ui-confirm__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-4) calc(-1 * var(--space-2)) 0;
+}
+.ui-confirm[data-presentation='dialog'] .ui-confirm__rows {
+  margin-top: 0;
+}
+.ui-confirm__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  text-align: left;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std);
+}
+.ui-confirm__row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-confirm__row > .ui-part-keys {
+  margin-left: auto;
+}
+.ui-confirm__row[data-primary='true'] {
+  background: var(--puck);
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-confirm__row[data-tone='danger'] {
+  color: var(--stamp-ink);
+}
+.ui-confirm__row:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-confirm__row:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+@media (hover: hover) {
+  .ui-confirm__row:hover {
+    background: var(--hover);
+  }
+  .ui-confirm__row[data-primary='true']:hover {
+    background: var(--puck);
+  }
+  .ui-confirm__row[data-tone='danger']:hover {
+    background: var(--stamp-tint);
+  }
+}
+
+/* ───────────── Puck: one shared thumb, translate + scaleX, never width ───────────── */
+
+.ui-puck {
+  position: relative;
+  display: flex;
+}
+.ui-puck[data-orientation='vertical'] {
+  flex-direction: column;
+}
+.ui-puck__thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--puck-w);
+  height: var(--puck-h);
+  transform: translate(var(--puck-x), var(--puck-y)) scaleX(var(--puck-sx));
+  transform-origin: 0 0;
+  pointer-events: none;
+  transition: transform var(--dur-slide) var(--spring-slide);
+}
+.ui-puck:not([data-ready]) > .ui-puck__thumb {
+  visibility: hidden;
+}
+/* First placement: land in place, no slide in from the corner. */
+.ui-puck[data-instant] > .ui-puck__thumb {
+  transition: none;
+}
+/* Cells follow the thumb in the DOM and are positioned, so they paint above it without a layer. */
+.ui-puck__cell {
+  position: relative;
+}
+.ui-puck__item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+.ui-puck__item:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-puck__item:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-puck__item:disabled {
+  color: var(--dim);
+}
+.ui-puck__item:disabled .ui-part-icon {
+  color: var(--faint);
+}
+.ui-puck__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* segmented: a --sunken track, a --paper thumb */
+.ui-puck[data-kind='segmented'] {
+  display: inline-flex;
+  padding: var(--space-half);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+}
+.ui-puck[data-kind='segmented'] > .ui-puck__thumb {
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  box-shadow: var(--elev-puck);
+}
+.ui-puck[data-kind='segmented'] .ui-puck__item {
+  height: var(--control-xs);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--dim);
+}
+.ui-puck[data-kind='segmented'] .ui-puck__item[data-selected='true'] {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-puck[data-kind='segmented']:not([data-ready]) .ui-puck__item[data-selected='true'] {
+  background: var(--paper);
+  box-shadow: var(--elev-puck);
+}
+
+/* selection: rows with a --puck fill (sidebar, Settings nav) */
+.ui-puck[data-kind='selection'] > .ui-puck__thumb {
+  border-radius: var(--radius-md);
+  background: var(--puck);
+}
+.ui-puck[data-kind='selection'] .ui-puck__cell {
+  display: flex;
+}
+.ui-puck[data-kind='selection'] .ui-puck__item {
+  flex: 1;
+  height: var(--control-sm);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--ink-2);
+  text-align: left;
+}
+.ui-puck[data-kind='selection'] .ui-puck__item .ui-part-icon {
+  color: var(--dim);
+}
+.ui-puck[data-kind='selection'] .ui-puck__item[data-selected='true'] {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-puck[data-kind='selection'] .ui-puck__item[data-selected='true'] .ui-part-icon {
+  color: var(--ink);
+}
+.ui-puck[data-kind='selection']:not([data-ready]) .ui-puck__item[data-selected='true'] {
+  background: var(--puck);
+}
+.ui-puck__count {
+  min-width: var(--space-5);
+  margin-left: auto;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  text-align: right;
+}
+.ui-puck__swatch {
+  display: block;
+  width: var(--space-3);
+  height: var(--space-3);
+  flex: none;
+  margin: 0 var(--space-half);
+  border-radius: var(--radius-xs);
+}
+@media (hover: hover) {
+  .ui-puck[data-kind='segmented'] .ui-puck__item:hover {
+    color: var(--ink);
+  }
+  .ui-puck[data-kind='selection'] .ui-puck__item:hover {
+    background: var(--hover);
+  }
+  .ui-puck[data-kind='selection'] .ui-puck__item:disabled:hover {
+    background: transparent;
+  }
+}
+
+/* ───────────── Toasts (opaque --paper, --elev-float, radius 12, up to 440 px) ───────────── */
+
+.ui-toast-stack {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-6);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: calc(100% - var(--space-6) * 2);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.ui-toast {
+  box-sizing: content-box; /* the sizes below are the content; the padding sits outside them */
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: var(--toast-max);
+  min-height: var(--control-lg);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-float);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  pointer-events: auto;
+  animation: ui-toast-in var(--dur-arrive) var(--ease-out) both;
+}
+.ui-toast[data-state='leaving'] {
+  animation: ui-toast-out var(--dur-toast-fade) var(--ease-in) both;
+}
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--move-arrive));
+  }
+}
+@keyframes ui-toast-out {
+  to {
+    opacity: 0;
+  }
+}
+.ui-toast__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--dim);
+}
+.ui-toast__icon[data-tone='hill'] {
+  color: var(--hill);
+}
+.ui-toast__icon[data-tone='dusk'] {
+  color: var(--dusk);
+}
+.ui-toast__message {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.ui-toast__action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  height: var(--control-sm);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+.ui-toast__message + .ui-toast__action {
+  margin-left: var(--space-2);
+}
+.ui-toast__action:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-toast__action:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-toast__drain {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--track);
+  background: var(--line-strong);
+  transform: scaleX(var(--drain));
+  transform-origin: 0 50%;
+}
+@media (hover: hover) {
+  .ui-toast__action:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+}

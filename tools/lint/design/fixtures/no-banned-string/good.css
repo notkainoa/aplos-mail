@@ -1,0 +1,12 @@
+/* Class names and comments may mention todo and airmail words; only content strings are copy. */
+.todo-list .hide-all {
+  color: var(--ink);
+}
+
+.later::before {
+  content: "Later";
+}
+
+.sep::after {
+  content: "\2022";
+}
