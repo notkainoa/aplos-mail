@@ -27,8 +27,10 @@ import type {
 import { fetchAttachment, openThread } from './bodies';
 import { GmailPacer, PACER_TARGET, type GmailDeps } from './client';
 import { GMAIL_COSTS, type GmailCostTable } from './costs';
+import { RETRY_SCOPE } from './failures';
 import { historyStep } from './history';
 import { applyOp, coalesceOps } from './ops';
+import { retryStep } from './retry';
 import { search } from './search';
 import { FactsMemo, listStep, plan, type SyncRuntime, type WindowCall } from './sync';
 
@@ -135,6 +137,8 @@ export class GmailAdapter implements ProviderAdapter {
       case 'sent:recent':
       case 'backfill:inbox':
         return listStep(this.rt, state, ctx);
+      case RETRY_SCOPE:
+        return retryStep(this.rt, step, state, ctx);
       case 'workflow':
         throw new NotInThisLaneError('syncStep(workflow)', 'prov-gmail workflow');
       default:
