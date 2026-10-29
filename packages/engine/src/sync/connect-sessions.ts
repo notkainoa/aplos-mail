@@ -1,10 +1,21 @@
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Frame } from '@aplos/contract';
 import { PausedError, ProviderError } from '../ports/base';
-import type { AccountActorHost, ConnectRequest, ConnectResult, ProviderKind } from '../ports';
+import type {
+  AccountActorHost,
+  Clock,
+  ConnectRequest,
+  ConnectResult,
+  DeadlineRegistry,
+  ProviderKind,
+} from '../ports';
 import type { FrameBus } from '../runtime/frames';
 import type { EngineServices } from '../runtime/services';
 
+// Lifecycle (for the prov-gov lane module that does not exist yet): `connectSessionsOf(services)` creates the engine's one
+// `ConnectSessions` on first use and registers its deadline source. The module's `LaneModule.stop` MUST call
+// `disposeConnectSessions(services)`, which aborts every waiting sign-in, unregisters the deadline source and clears the maps.
+//
 // Connect, reconnect and permission grants run in the background, one live sign-in per account. The caller gets a
 // `connectId` at once; `connect` frames report the outcome (freeze FR-23). A frame carries a copy key and never a
 // sentence, a token or a secret.
@@ -27,6 +38,8 @@ interface Session {
   connectId: string;
   flow: ConnectFlow;
   controller: AbortController;
+  /** Epoch ms after which the sign-in expires as failed (`auth.timeout`). */
+  deadline: number;
   /** The provider answered and the engine is storing it: too late to cancel. */
   accepting: boolean;
   /** The account the sign-in ended up on, when the flow reports one other than its own. */
@@ -36,21 +49,65 @@ interface Session {
 export const ALREADY_OPEN =
   'A sign-in for this account is already open. Finish it or cancel it first.';
 
+/** At most this many sign-ins wait at once; the next is refused. */
+export const MAX_OPEN = 3;
+/** The engine gives up on a sign-in the browser never finished. */
+export const SIGN_IN_DEADLINE_MS = 10 * 60_000;
+export const TOO_MANY_OPEN =
+  'Too many sign-ins are open. Finish or cancel one before starting another.';
+const DEADLINE_ID = 'connect';
+
+export interface ConnectSessionsDeps {
+  accounts: AccountActorHost;
+  frames: FrameBus;
+  randomBytes: (n: number) => Uint8Array;
+  clock: Pick<Clock, 'now'>;
+  deadlines: DeadlineRegistry;
+}
+
 export class ConnectSessions {
   private readonly byId = new Map<string, Session>();
   private readonly byKey = new Map<string, Session>();
 
-  constructor(
-    private readonly accounts: AccountActorHost,
-    private readonly frames: FrameBus,
-    private readonly randomBytes: (n: number) => Uint8Array,
-  ) {}
+  private readonly accounts: AccountActorHost;
+  private readonly frames: FrameBus;
+  private readonly randomBytes: (n: number) => Uint8Array;
+  private readonly unregister: () => void;
+
+  constructor(private readonly deps: ConnectSessionsDeps) {
+    this.accounts = deps.accounts;
+    this.frames = deps.frames;
+    this.randomBytes = deps.randomBytes;
+    this.unregister = deps.deadlines.register({
+      id: DEADLINE_ID,
+      next: async () => this.nextDeadline(),
+      fire: async now => this.expire(now),
+    });
+  }
+
+  private nextDeadline(): number | undefined {
+    const times = [...this.byId.values()].map(s => s.deadline);
+    return times.length ? Math.min(...times) : undefined;
+  }
+
+  /** Sign-ins whose browser never answered in time end as failed, and their controllers abort. */
+  private expire(now: number): void {
+    for (const session of [...this.byId.values()]) {
+      if (session.deadline > now || session.accepting) continue;
+      session.controller.abort();
+      this.release(session);
+      this.emit(session, 'failed', 'auth.timeout');
+    }
+  }
 
   /** Starts the sign-in and returns its id at once; the first frame follows on the next turn. */
   begin(flow: ConnectFlow): { connectId: string } {
     if (this.byKey.has(flow.key))
       throw new ContractError({ type: 'conflict', message: ALREADY_OPEN });
+    if (this.byId.size >= MAX_OPEN)
+      throw new ContractError({ type: 'conflict', message: TOO_MANY_OPEN });
     const session: Session = {
+      deadline: this.deps.clock.now() + SIGN_IN_DEADLINE_MS,
       connectId: hexId(this.randomBytes, 'c'),
       flow,
       controller: new AbortController(),
@@ -58,6 +115,7 @@ export class ConnectSessions {
     };
     this.byId.set(session.connectId, session);
     this.byKey.set(flow.key, session);
+    this.deps.deadlines.changed(DEADLINE_ID);
     setTimeout(() => void this.run(session), 0);
     return { connectId: session.connectId };
   }
@@ -75,8 +133,9 @@ export class ConnectSessions {
   private async run(session: Session): Promise<void> {
     const { signal } = session.controller;
     if (signal.aborted) return;
-    this.emit(session, 'waiting');
     try {
+      // Inside the try: a frame bus that throws must end in `failed` and a freed key, never a stuck session.
+      this.emit(session, 'waiting');
       const { accountId, kind, request } = session.flow;
       // TODO(port): `AccountActorHost.connect` takes no AbortSignal, so a cancel only drops the answer here; the host's
       // browser or loopback flow runs on until its own timeout. Needs a `signal` on the port or on `ConnectRequest`.
@@ -91,7 +150,15 @@ export class ConnectSessions {
     } catch (error) {
       if (signal.aborted) return;
       this.release(session);
-      this.emit(session, 'failed', failureCode(error));
+      this.tryEmit(session, 'failed', failureCode(error));
+    }
+  }
+
+  private tryEmit(session: Session, state: 'failed', reasonCode: string): void {
+    try {
+      this.emit(session, state, reasonCode);
+    } catch {
+      // The frame bus is broken; the session is already released, which is what matters.
     }
   }
 
@@ -100,6 +167,7 @@ export class ConnectSessions {
     for (const session of this.byId.values()) session.controller.abort();
     this.byId.clear();
     this.byKey.clear();
+    this.unregister();
   }
 
   private release(session: Session): void {
@@ -133,16 +201,22 @@ const sessionsByEngine = new WeakMap<object, ConnectSessions>();
 export function connectSessionsOf(services: EngineServices): ConnectSessions {
   let sessions = sessionsByEngine.get(services.accounts);
   if (!sessions) {
-    sessions = new ConnectSessions(services.accounts, services.frames, services.randomBytes);
+    sessions = new ConnectSessions({
+      accounts: services.accounts,
+      frames: services.frames,
+      randomBytes: services.randomBytes,
+      clock: services.clock,
+      deadlines: services.deadlines,
+    });
     sessionsByEngine.set(services.accounts, sessions);
   }
   return sessions;
 }
 
 /**
- * Aborts and forgets this engine's waiting sign-ins. NOTE: nothing calls it yet. The composition root
- * (`src/index.ts`, eng-contract's) has no prov-gov lane module, so there is no `LaneModule.stop` to hang it on; the
- * module that adds one (`sync/module.ts`) must call this from its `stop`.
+ * Aborts and forgets this engine's waiting sign-ins and unregisters their deadline source. NOTHING CALLS IT YET: the
+ * composition root (`src/index.ts`, eng-contract's) has no prov-gov lane module, so there is no `LaneModule.stop` to
+ * hang it on. The module that adds one (`sync/module.ts`, `createModule(services).stop`) must call this.
  */
 export function disposeConnectSessions(services: EngineServices): void {
   sessionsByEngine.get(services.accounts)?.dispose();

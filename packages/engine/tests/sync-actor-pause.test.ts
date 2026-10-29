@@ -14,6 +14,7 @@ import { opPayload } from '../src/sync/ops';
 import { readGovernor } from '../src/sync/persist';
 import {
   ACCOUNT,
+  ADDRESS,
   FakeAdapter,
   MINUTE,
   T0,
@@ -711,6 +712,29 @@ test('a pause on another budget backs the step off until it ends instead of spin
     assert.equal(calls, 1, 'the step is not run again while gcal is paused');
     await w.clock.advance(60_000);
     await until(() => calls === 2, 'the step after the pause');
+  } finally {
+    await w.kill();
+    d.cleanup();
+  }
+});
+
+test('reconnected refuses a grant without the mail scope: nothing stored, the auth block stays', async () => {
+  const d = disk();
+  const adapter = poller(() => {});
+  const w = world(d, () => adapter);
+  try {
+    const before = accountRow(w.store);
+    await assert.rejects(
+      w.host.reconnected(
+        ACCOUNT,
+        connectResult({
+          grantedScopes: ['openid'],
+          identity: { subject: 'sub-2', address: ADDRESS },
+        }),
+      ),
+      (e: unknown) => e instanceof ProviderError && e.error.reason === 'missingRequiredScope',
+    );
+    assert.deepEqual(accountRow(w.store), before);
   } finally {
     await w.kill();
     d.cleanup();

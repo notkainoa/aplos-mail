@@ -75,6 +75,13 @@ test('a stub rejects with notImplemented, and an unknown method with unsupported
   );
 });
 
+/** What a call with empty arguments comes to: the error it threw, or undefined. A built handler may fail or answer; only `forbidden` is the gate's. */
+const outcomeOf = (method: string, caller: MethodContext) =>
+  dispatch(method, {}, caller).then(
+    () => undefined,
+    (e: unknown) => e,
+  );
+
 test('dispatch denies by default: scope, host-only, uiOnly, secret and MCP are checked before any handler', async () => {
   const reader = as({ kind: 'listener', via: 'socket', clientId: 'c1', scopes: ['read'] });
   // A read-only listener can neither send nor reach main's own methods, whatever the transport checked.
@@ -83,21 +90,20 @@ test('dispatch denies by default: scope, host-only, uiOnly, secret and MCP are c
     forbidden,
   );
   await assert.rejects(dispatch('Mail/serve', {}, reader), forbidden);
-  await assert.rejects(dispatch('Account/get', {}, reader), reached, 'its own scope gets through');
+  assert.ok(!forbidden(await outcomeOf('Account/get', reader)), 'its own scope gets through');
   // Host methods need main's control connection even when a window claims the scope.
   await assert.rejects(
     dispatch('Notification/claim', {}, as({ kind: 'window', scopes: [...grantable, 'host'] })),
     forbidden,
   );
-  await assert.rejects(
-    dispatch('Notification/claim', {}, as({ kind: 'host', scopes: ['host'] })),
-    reached,
+  assert.ok(
+    !forbidden(await outcomeOf('Notification/claim', as({ kind: 'host', scopes: ['host'] }))),
   );
   // An admin listener still cannot reach a uiOnly (Data/export) or secret (Ai/setKey) method; a window can.
   const admin = as({ kind: 'listener', via: 'http', clientId: 'c1', scopes: grantable });
   for (const method of ['Data/export', 'Ai/setKey']) {
     await assert.rejects(dispatch(method, {}, admin), forbidden, method);
-    await assert.rejects(dispatch(method, {}, ctx), reached, method);
+    assert.ok(!forbidden(await outcomeOf(method, ctx)), method);
   }
   // A window without a scope is refused too: the grant, not the kind, carries permission.
   await assert.rejects(
@@ -109,14 +115,7 @@ test('dispatch denies by default: scope, host-only, uiOnly, secret and MCP are c
   const notTool = listenerMethods.find(m => !(mcpMethods as readonly string[]).includes(m))!;
   await assert.rejects(dispatch(notTool, {}, mcp), forbidden, notTool);
   // Every MCP tool is past the gate, whatever its handler does; the first one still a stub is reached and says so.
-  const outcomes = await Promise.all(
-    mcpMethods.map(m =>
-      dispatch(m, {}, mcp).then(
-        () => undefined,
-        (e: unknown) => e,
-      ),
-    ),
-  );
+  const outcomes = await Promise.all(mcpMethods.map(m => outcomeOf(m, mcp)));
   outcomes.forEach((outcome, i) => assert.ok(!forbidden(outcome), `${mcpMethods[i]} is reachable`));
   const stub = mcpMethods.find((_, i) => reached(outcomes[i]));
   assert.ok(stub, 'a stub MCP method is left to check');

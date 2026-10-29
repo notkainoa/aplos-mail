@@ -4,6 +4,7 @@ import type { AccountActorHost, ConnectRequest, ConnectResult } from '../ports';
 import type { StorePort, StoreWrite } from '../store/port';
 import { accountWithIdentity, storedIdentity } from './account-read';
 import { hexId, type ConnectFlow } from './connect-sessions';
+import { hasRequiredScope, MISSING_MAIL_SCOPE } from './scopes';
 
 // The three sign-in flows behind `Account/connect|reconnect|grantPermissions`: what each asks the host for and what the
 // engine stores when Google answers. Round 1 connects Google only.
@@ -27,8 +28,12 @@ export function newAccountFlow(deps: FlowDeps, args: ConnectArgs): ConnectFlow {
   if (args.provider !== 'google')
     throw new ContractError({ type: 'unsupported', message: GOOGLE_ONLY });
   // Refused before any browser opens. A row still `starting` is a connect whose actor never started: a retry may finish it.
-  if (args.address) refuseAdded(accountWithIdentity(deps.store, 'google', args.address));
-  const accountId = hexId(deps.randomBytes, 'a');
+  const earlier = args.address
+    ? accountWithIdentity(deps.store, 'google', args.address)
+    : undefined;
+  refuseAdded(earlier);
+  // A retry signs in under the id of the row that is waiting to start, so the host stores the credential there.
+  const accountId = earlier?.id ?? hexId(deps.randomBytes, 'a');
   const address = args.address ?? args.loginHint;
   const request: ConnectRequest = {
     mode: 'new',
@@ -52,6 +57,7 @@ async function acceptNewAccount(
   name: string | undefined,
   result: ConnectResult,
 ): Promise<{ accountId: string }> {
+  refuseMissingScope(result);
   const { address, subject } = result.identity;
   const existing = accountWithIdentity(deps.store, 'google', address, subject);
   // TODO(port): when the answer is refused below, the host has already stored the new credential in the vault under
@@ -83,6 +89,16 @@ async function resume(
   await deps.accounts.reconnected(accountId, result);
   await deps.accounts.start(accountId);
   return { accountId };
+}
+
+/** Before anything is saved or started: a grant without the mail scope never becomes an account or lifts a block. */
+export function refuseMissingScope(result: ConnectResult): void {
+  if (hasRequiredScope(result)) return;
+  throw new ContractError({
+    type: 'permission',
+    message: MISSING_MAIL_SCOPE,
+    reasonCode: 'permission.mailModify',
+  });
 }
 
 function refuseAdded(existing: { status: string } | undefined): void {
@@ -143,6 +159,7 @@ export function existingAccountFlow(
       // TODO(port): a refusal here leaves the credential the host already stored for the wrong grant in the vault;
       // the engine has no port call to discard it. Needs a `discardCredential` on the host.
       refuseOtherIdentity(current, result);
+      refuseMissingScope(result);
       await deps.accounts.reconnected(accountId, result);
     },
   };
