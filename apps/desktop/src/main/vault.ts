@@ -68,7 +68,11 @@ const UNREADABLE = 'Saved account credentials could not be read. Check the data 
 const LOCKED = 'Saved account credentials could not be unlocked. Check your macOS keychain.';
 const UNENCRYPTABLE = 'Account credentials could not be encrypted. Check your macOS keychain.';
 const UNSAVED = 'Account credentials could not be saved securely. Check the data directory.';
+const HALF_KEYCHAIN =
+  'Secure credential storage can only partly open saved account credentials. Restart Aplos Mail.';
 const WRITE_TIMEOUT_MS = 15_000;
+// Writes of the committed entries a queued repair tries before it leaves the vault dirty for the next turn.
+const REPAIR_ATTEMPTS = 3;
 // A directory cannot be flushed on Windows and on some file systems; there the rename is as durable as it gets.
 const UNSYNCABLE_DIR = new Set(['EISDIR', 'EINVAL', 'EPERM', 'ENOTSUP']);
 // `<file>.tmp` (older versions) or `<file>.<uuid>.tmp`.
@@ -100,6 +104,12 @@ async function syncDir(path: string): Promise<void> {
   }
 }
 
+/** Temporary files this process is still writing; a vault loading meanwhile must not remove them. */
+const writing = new Set<string>();
+
+/** A file call that did not settle in time; it may still settle (and take effect) later. */
+class TimedOut extends Error {}
+
 const nodeVaultFs: VaultFs = {
   mkdir: (path, options) => nodeFs.mkdir(path, options),
   readFile: (path, encoding) => nodeFs.readFile(path, encoding),
@@ -124,7 +134,7 @@ function bounded<R>(
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      reject(new Error('timed out'));
+      reject(new TimedOut('timed out'));
     }, ms);
     const settle = (succeeded: boolean, done: () => void) => {
       clearTimeout(timer);
@@ -153,13 +163,18 @@ async function listTemporaries(fs: VaultFs, path: string): Promise<string[]> {
   return names.filter(name => isTemporaryOf(file, name)).map(name => join(dirname(path), name));
 }
 
-/** Best effort: a crash mid-write can leave an encrypted temporary copy behind. Never the vault file itself. */
+/**
+ * Best effort: a crash mid-write can leave an encrypted temporary copy behind. Never the vault file itself, nor
+ * a temporary file this process is still writing. Another process writing the same vault at that moment would
+ * lose its write (it reports UNSAVED); the app's single-instance lock keeps a second process away.
+ */
 async function removeStaleTemporaries(target: Target): Promise<void> {
   if (!target.fs.unlink) return;
-  const stale = await bounded(
+  const found = await bounded(
     () => listTemporaries(target.fs, target.path),
     target.timeoutMs,
   ).catch(() => []);
+  const stale = found.filter(path => !writing.has(path));
   await Promise.all(stale.map(path => removeQuietly(target, path)));
 }
 
@@ -241,28 +256,30 @@ async function writeAtomically(
   const temporary = `${path}.${randomUUID()}.tmp`;
   // A failed write must not leave an encrypted copy of a value that was reported as unsaved.
   const discard = () => removeQuietly(target, temporary);
+  const forget = () => writing.delete(temporary);
+  const abandon = () => void discard().finally(forget);
+  writing.add(temporary);
   let renamed = false;
   try {
-    await bounded(() => fs.mkdir(dir, { recursive: true, mode: 0o700 }), timeoutMs);
-    await bounded(
-      () => writeNew(fs, temporary, text),
-      timeoutMs,
-      () => void discard(),
-    );
+    await bounded(() => fs.mkdir(dir, { recursive: true, mode: 0o700 }), timeoutMs, forget);
+    await bounded(() => writeNew(fs, temporary, text), timeoutMs, abandon);
     await bounded(
       () => fs.rename(temporary, path),
       timeoutMs,
       landed => {
         if (landed) onLateRename();
-        else void discard();
+        abandon();
       },
     );
     renamed = true;
+    forget();
     await bounded(async () => fs.syncDir?.(dir), timeoutMs);
     return 'saved';
-  } catch {
+  } catch (error) {
     if (renamed) return 'replaced';
     await discard();
+    // A call that timed out may still create the file; its late handler removes it and forgets the name.
+    if (!(error instanceof TimedOut)) forget();
     return 'unsaved';
   }
 }
@@ -276,12 +293,15 @@ function serialize<T>(entries: ReadonlyMap<string, Committed<T>>): string {
  * succeeds (it joins `committed`) or fails (it is dropped). Each write is the committed entries plus that one mutation,
  * so a failed value never reaches the disk through another entry's write. `get` answers the latest mutation still
  * waiting, so dropping a failed one falls back to whatever came before or after it, never undoing a later write.
- * A failed write that may still have put its file in place queues a repair: the committed entries written again.
+ * A failed write that may still have put its file in place marks the vault `dirty` (the disk may differ from
+ * `committed`) and queues a repair: the committed entries written again, up to REPAIR_ATTEMPTS times. While still
+ * dirty, the next set, delete or `flushVault` tries again before anything else; any successful write clears it.
  */
 class SealedVault<T> implements Vault<T> {
   readonly secure: boolean;
   private readonly pending = new Map<string, Mutation<T>[]>();
   private chain: Promise<void> = Promise.resolve();
+  private dirty = false;
 
   constructor(
     private readonly options: VaultOptions,
@@ -303,8 +323,14 @@ class SealedVault<T> implements Vault<T> {
 
   async delete(id: string): Promise<void> {
     // A waiting mutation may still fail, so a delete behind one is written even when `get` already answers undefined.
-    if (!this.pending.has(id) && !this.committed.has(id)) return;
-    await this.mutate({ id, value: undefined });
+    if (this.pending.has(id) || this.committed.has(id))
+      return this.mutate({ id, value: undefined });
+    if (this.dirty) await this.flush();
+  }
+
+  /** Waits for every queued write, then retries the repair if the disk may still differ from `committed`. */
+  flush(): Promise<void> {
+    return this.enqueue(() => this.restore(REPAIR_ATTEMPTS));
   }
 
   private mutate(mutation: Mutation<T>): Promise<void> {
@@ -326,19 +352,28 @@ class SealedVault<T> implements Vault<T> {
     return writeAtomically(this.target, text, () => this.repair());
   }
 
-  /** Puts exactly the committed entries back on the disk, over a failed write that landed anyway. */
+  /** A failed write landed anyway: the disk may differ from `committed` until a write of it succeeds. */
   private repair(): void {
-    void this.enqueue(async () => {
-      await this.write(serialize(this.committed));
-    });
+    this.dirty = true;
+    void this.flush();
+  }
+
+  /** Writes exactly the committed entries, up to `attempts` times, while the disk may differ from them. */
+  private async restore(attempts: number): Promise<void> {
+    for (let attempt = 0; attempt < attempts && this.dirty; attempt++) {
+      if ((await this.write(serialize(this.committed))) === 'saved') this.dirty = false;
+    }
   }
 
   private async persist(mutation: Mutation<T>, encrypt: (value: string) => Buffer): Promise<void> {
     try {
+      // One more try at a repair that failed, so the disk is right even when this mutation cannot be written.
+      await this.restore(1);
       const next = applied(this.committed, mutation, encrypt);
       const outcome = await this.write(serialize(next));
       if (outcome === 'saved') {
         this.committed = next;
+        this.dirty = false;
         return;
       }
       if (outcome === 'replaced') this.repair();
@@ -362,9 +397,14 @@ function writeTimeout(ms: number | undefined): number {
   return Math.min(ms, 2 ** 31 - 1);
 }
 
+/** For tests and shutdown: waits for queued writes and retries a repair the vault still owes the disk. */
+export async function flushVault<T>(vault: Vault<T>): Promise<void> {
+  if (vault instanceof SealedVault) await vault.flush();
+}
+
 export async function createVault<T>(options: VaultOptions): Promise<Vault<T>> {
   // With only one half of the keychain the vault would start empty and its first save would drop every entry.
-  if (Boolean(options.encrypt) !== Boolean(options.decrypt)) throw new Error(UNAVAILABLE);
+  if (Boolean(options.encrypt) !== Boolean(options.decrypt)) throw new Error(HALF_KEYCHAIN);
   const target: Target = {
     fs: options.fs ?? nodeVaultFs,
     path: join(options.dataDir, options.file ?? 'credentials.enc.json'),

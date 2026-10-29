@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createVault, type VaultFs } from '../src/main/vault';
+import { createVault, flushVault, type VaultFs } from '../src/main/vault';
 
 // A keychain that cannot encrypt the value `{"v":2}`, so saving it fails while any other value saves.
 const crypto = {
@@ -443,7 +443,7 @@ test('half a keychain refuses to start instead of saving over entries it cannot 
   await withDir(async dir => {
     await (await open(dir)).set('a', { v: 1 });
     const before = await nodeFs.readFile(vaultFile(dir));
-    const locked = /credential storage is unavailable/;
+    const locked = /can only partly open saved account credentials/;
     await assert.rejects(createVault({ dataDir: dir, encrypt: crypto.encrypt }), locked);
     await assert.rejects(createVault({ dataDir: dir, decrypt: crypto.decrypt }), locked);
     assert.deepEqual(await nodeFs.readFile(vaultFile(dir)), before);
@@ -466,5 +466,151 @@ test('a vault file with entries this keychain cannot open refuses to start and i
     };
     await assert.rejects(createVault({ dataDir: dir, ...otherKey }), /could not be unlocked/);
     assert.deepEqual(await nodeFs.readFile(vaultFile(dir)), before);
+  });
+});
+
+/**
+ * The real file system, except the next `dirs` directory flushes fail, each failure making the next
+ * `writesAfter` file writes (the repair's) fail, and the next `writes` file writes fail.
+ */
+function failingFs(
+  plan: { dirs: number; writes: number; writesAfter?: number },
+  overrides: Partial<VaultFs> = {},
+) {
+  const eio = () => Object.assign(new Error('I/O error'), { code: 'EIO' });
+  return realFs({
+    syncDir: async () => {
+      if (plan.dirs <= 0) return;
+      plan.dirs -= 1;
+      plan.writes += plan.writesAfter ?? 0;
+      throw eio();
+    },
+    writeFileSynced: async (path, data, mode) => {
+      if (plan.writes <= 0) return syncedWrite(path, data, mode);
+      plan.writes -= 1;
+      throw eio();
+    },
+    ...overrides,
+  });
+}
+
+const onDisk = async (dir: string) => {
+  const reloaded = await open(dir);
+  return { a: reloaded.get('a')?.v, b: reloaded.get('b')?.v, c: reloaded.get('c')?.v };
+};
+
+test('a repair that fails is retried until the committed entries are back on disk', async () => {
+  await withDir(async dir => {
+    const plan = { dirs: 0, writes: 0, writesAfter: 0 };
+    const vault = await createVault<{ v: number }>({
+      dataDir: dir,
+      ...crypto,
+      fs: failingFs(plan),
+    });
+    await vault.set('a', { v: 1 });
+    Object.assign(plan, { dirs: 1, writesAfter: 2 });
+    await assert.rejects(vault.set('a', { v: 4 }), unsaved);
+    await eventually(
+      async () => (await onDisk(dir)).a === 1,
+      'the third repair attempt restores a=1',
+    );
+    assert.equal(plan.writes, 0, 'two repair attempts failed first');
+  });
+});
+
+test('a repair that keeps failing is retried by the next save, even one that cannot be written', async () => {
+  await withDir(async dir => {
+    const plan = { dirs: 0, writes: 0, writesAfter: 0 };
+    const vault = await createVault<{ v: number }>({
+      dataDir: dir,
+      ...crypto,
+      fs: failingFs(plan),
+    });
+    await vault.set('a', { v: 1 });
+    Object.assign(plan, { dirs: 1, writesAfter: 3 });
+    await assert.rejects(vault.set('a', { v: 4 }), unsaved);
+    await eventually(async () => plan.writes === 0, 'every repair attempt ran');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(
+      await onDisk(dir),
+      { a: 4, b: undefined, c: undefined },
+      'the gap: until the next save',
+    );
+    assert.deepEqual(vault.get('a'), { v: 1 });
+    await assert.rejects(vault.set('c', { v: 2 }), /could not be encrypted/);
+    assert.deepEqual(await onDisk(dir), { a: 1, b: undefined, c: undefined });
+    await vault.set('b', { v: 3 });
+    assert.deepEqual(await onDisk(dir), { a: 1, b: 3, c: undefined });
+  });
+});
+
+test(
+  'a late rename of an older snapshot whose repair fails is repaired by the next delete',
+  { timeout: 10_000 },
+  async () => {
+    await withDir(async dir => {
+      const hang = gate();
+      const plan = { dirs: 0, writes: 0, hang: false };
+      const fs = failingFs(plan, {
+        rename: async (from, to) => {
+          if (!plan.hang) return nodeFs.rename(from, to);
+          plan.hang = false;
+          const held = `${from}.held`;
+          await nodeFs.link(from, held);
+          await hang.opened;
+          // The repair after this landing fails every time.
+          plan.writes = 3;
+          await nodeFs.rename(held, to);
+        },
+      });
+      const vault = await createVault<{ v: number }>({
+        dataDir: dir,
+        ...crypto,
+        fs,
+        writeTimeoutMs: 50,
+      });
+      await vault.set('a', { v: 1 });
+      plan.hang = true;
+      await assert.rejects(vault.set('a', { v: 7 }), unsaved);
+      await vault.set('b', { v: 3 });
+      hang.release();
+      await eventually(async () => plan.writes === 0, 'every repair attempt ran');
+      await new Promise(resolve => setTimeout(resolve, 20));
+      assert.deepEqual(
+        await onDisk(dir),
+        { a: 7, b: undefined, c: undefined },
+        'the acknowledged b is lost for now',
+      );
+      await vault.delete('nope');
+      assert.deepEqual(await onDisk(dir), { a: 1, b: 3, c: undefined });
+      await flushVault(vault);
+      assert.deepEqual(await temporaries(dir), []);
+    });
+  },
+);
+
+test('a vault loading in this process never removes a temporary file another vault is still writing', async () => {
+  await withDir(async dir => {
+    const hang = gate();
+    const written = gate();
+    const plan = { hang: false };
+    const fs = realFs({
+      writeFileSynced: async (path, data, mode) => {
+        await syncedWrite(path, data, mode);
+        if (!plan.hang) return;
+        plan.hang = false;
+        written.release();
+        await hang.opened;
+      },
+    });
+    const vault = await createVault<{ v: number }>({ dataDir: dir, ...crypto, fs });
+    await vault.set('a', { v: 1 });
+    plan.hang = true;
+    const saving = vault.set('a', { v: 5 });
+    await written.opened;
+    await open(dir);
+    hang.release();
+    await saving;
+    assert.deepEqual((await open(dir)).get('a'), { v: 5 });
   });
 });
