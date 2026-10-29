@@ -104,10 +104,43 @@ async function openCallback(state: string, deps: FlowDeps, ctx: FlowContext): Pr
   }
 }
 
-async function launch(deps: FlowDeps, url: string): Promise<void> {
+/** Only Google's consent page over TLS reaches the browser: no other host, scheme, port or userinfo. */
+export function checkConsentUrl(url: string): void {
+  let parsed: URL | undefined;
   try {
-    await deps.openExternal(url);
+    parsed = new URL(url);
   } catch {
+    parsed = undefined;
+  }
+  const google = new URL(googleAuthUrl);
+  const ok =
+    parsed !== undefined &&
+    parsed.protocol === 'https:' &&
+    parsed.host === google.host &&
+    parsed.username === '' &&
+    parsed.password === '';
+  if (!ok) throw connectError('permanent', 'badConsentUrl', { extra: { uncertain: false } });
+}
+
+/** Settles with `work`, or rejects as soon as `signal` aborts (a browser launch that never returns). */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortedError());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortedError());
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
+
+async function launch(deps: FlowDeps, url: string, signal: AbortSignal): Promise<void> {
+  checkConsentUrl(url);
+  try {
+    await untilAborted(
+      Promise.resolve().then(() => deps.openExternal(url)),
+      signal,
+    );
+  } catch {
+    if (signal.aborted) throw abortedError();
     throw connectError('transient', 'browserFailed', { extra: { uncertain: false } });
   }
 }
@@ -166,6 +199,8 @@ async function postExchange(
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
       body: exchangeForm(request.client, exchange),
+      // A redirect would carry the code, verifier and secret to another host.
+      redirect: 'error',
       signal,
     });
   } catch (error) {
@@ -226,7 +261,7 @@ export async function runAuthorization(
   try {
     const base = googleAuthUrl;
     const redirectUri = loopback.redirectUri;
-    await launch(deps, consentUrl({ base, request, redirectUri, state, pkce }));
+    await launch(deps, consentUrl({ base, request, redirectUri, state, pkce }), ctx.signal);
     const code = codeFrom(await loopback.outcome);
     throwIfAborted(ctx.signal);
     return await exchangeCode(deps, request, { code, verifier: pkce.verifier, redirectUri }, ctx);
@@ -243,6 +278,7 @@ async function postRevoke(deps: FlowDeps, token: string, signal: AbortSignal): P
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ token }),
+      redirect: 'error',
       signal,
     });
     return response.ok;
@@ -252,9 +288,10 @@ async function postRevoke(deps: FlowDeps, token: string, signal: AbortSignal): P
 }
 
 /**
- * Best effort: hands back a grant the connect refused (another account, the mail scope missing), so it does not sit
- * in the owner's Google account or count against the refresh-token cap. Never throws and never logs; the governor
- * sees a success either way, so a failed revoke changes no account state.
+ * Best effort: hands back a grant the connect refused as another Google user's (`connect.ts` decides which), so it
+ * does not sit in that account or count against the refresh-token cap. `ctx.signal` ends it (`connect.ts` joins the
+ * cancel and a short timeout), so a revoke never holds a refusal up. Never
+ * throws and never logs; the governor sees a success either way, so a failed revoke changes no account state.
  */
 export async function revokeGrant(deps: FlowDeps, ctx: FlowContext, token: string): Promise<void> {
   try {

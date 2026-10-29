@@ -1,7 +1,7 @@
 // The account identity from the `id_token` of an authorization-code exchange. The token came straight from Google's
 // token endpoint over TLS, in answer to our own request, so its signature is not checked (OpenID Connect Core
 // 3.1.3.7); its claims are: issuer, audience, expiry, a subject and an email that are present, and `email_verified`,
-// which must not be false (a token without it is accepted).
+// which must be the boolean `true`: a reconnect may match on the address alone, so an unverified one is never trusted.
 
 import { connectError } from './connect-errors';
 
@@ -41,6 +41,12 @@ function decodeClaims(token: unknown): Claims | undefined {
   }
 }
 
+/** The `sub` claim, decoded but NOT checked: only to tell whether a refused token is another user's. */
+export function subjectClaim(token: unknown): string | undefined {
+  const sub = decodeClaims(token)?.sub;
+  return nonEmpty(sub) ? sub : undefined;
+}
+
 /** The first claim that fails, by name only; never its value. */
 function failedClaim(claims: Claims, check: IdTokenCheck): string | undefined {
   if (typeof claims.iss !== 'string' || !googleIssuers.has(claims.iss)) return 'iss';
@@ -48,7 +54,7 @@ function failedClaim(claims: Claims, check: IdTokenCheck): string | undefined {
   if (typeof claims.exp !== 'number' || claims.exp * 1000 <= check.now) return 'exp';
   if (!nonEmpty(claims.sub)) return 'sub';
   if (!nonEmpty(claims.email)) return 'email';
-  if (claims.email_verified === false || claims.email_verified === 'false') return 'email_verified';
+  if (claims.email_verified !== true) return 'email_verified';
   return undefined;
 }
 
