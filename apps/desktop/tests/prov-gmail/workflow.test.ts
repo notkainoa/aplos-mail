@@ -465,6 +465,7 @@ const noTransport = {
   put: () => Promise.reject(new Error('not used')),
   compact: () => Promise.reject(new Error('not used')),
   readBack: () => Promise.reject(new Error('not used')),
+  receivedAt: () => Promise.reject(new Error('not used')),
 };
 
 test('a failed put leaves nothing local-only in the view: a lease claim no peer can see never shows as held', async () => {
