@@ -62,7 +62,7 @@ test('there is one file per engine area and nothing else besides the table and i
 
 test('a stub rejects with notImplemented, and an unknown method with unsupported', async () => {
   await assert.rejects(
-    dispatch('Thread/act', { opId: 'o1', ids: ['a1:t1'], action: { type: 'done' } }, ctx),
+    dispatch('Conversation/destroy', { id: 'c1' }, ctx),
     (e: unknown) => e instanceof NotImplementedError && e.type === 'notImplemented',
   );
   await assert.rejects(
@@ -83,7 +83,7 @@ test('dispatch denies by default: scope, host-only, uiOnly, secret and MCP are c
     forbidden,
   );
   await assert.rejects(dispatch('Mail/serve', {}, reader), forbidden);
-  await assert.rejects(dispatch('Thread/get', {}, reader), reached, 'its own scope gets through');
+  await assert.rejects(dispatch('Account/get', {}, reader), reached, 'its own scope gets through');
   // Host methods need main's control connection even when a window claims the scope.
   await assert.rejects(
     dispatch('Notification/claim', {}, as({ kind: 'window', scopes: [...grantable, 'host'] })),
