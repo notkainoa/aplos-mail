@@ -6,7 +6,7 @@ import { DEMO_ACCOUNT_IDS } from '../../src/ai/demo/load';
 import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
 import type { Caller } from '../../src/methods/types';
-import { openStore, type StorePort } from '../../src/store';
+import { openStore, StoreError, type StorePort } from '../../src/store';
 import { manualClock } from '../runtime.helpers';
 import { ACCOUNT, T0, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 
@@ -471,12 +471,16 @@ test('Demo/remove answers a typed conflict while a demo send is out, and the dem
 });
 
 /** A store whose `commit` throws on the next `armed.n` commits that are not the reset's remove commit. */
-const bombLoad = (store: StorePort, armed: { n: number }): StorePort => ({
+const bombLoad = (
+  store: StorePort,
+  armed: { n: number },
+  fail: () => Error = () => new StoreError('invalid', 'planted reload failure'),
+): StorePort => ({
   ...store,
   commit: input => {
     if (armed.n > 0 && input.writes.some(w => w.kind !== 'accountRemove')) {
       armed.n--;
-      throw new Error('planted reload failure');
+      throw fail();
     }
     return store.commit(input);
   },
@@ -526,6 +530,25 @@ test('Demo/reset reports the empty demo when the reload keeps failing, and Demo/
     assert.equal(count(t.store, 'SELECT count(*) AS n FROM messages'), 20);
   } finally {
     await t.cleanup();
+  }
+});
+
+test('Demo/reset does not retry what is not a failed commit: a refusal or a bug surfaces as itself', async () => {
+  for (const planted of [
+    new ContractError({ type: 'conflict', message: 'planted refusal' }),
+    new TypeError('planted bug'),
+  ]) {
+    const armed = { n: 0 };
+    const t = await demoEngine(store => bombLoad(store, armed, () => planted));
+    try {
+      const s = t.window();
+      await s.call('Demo/load', {});
+      armed.n = 5;
+      await assert.rejects(s.call('Demo/reset', {}));
+      assert.equal(armed.n, 4, `${planted.name}: the reload was attempted once, not retried`);
+    } finally {
+      await t.cleanup();
+    }
   }
 });
 

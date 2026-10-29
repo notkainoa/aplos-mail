@@ -95,8 +95,9 @@ export function resetDemo(store: StorePort, opId: string, now: number): DemoAppl
     try {
       return loadDemo(store, opId, now);
     } catch (error) {
-      // A ContractError loadDemo raises itself is a real refusal, not a failed commit: it stands.
-      if (error instanceof ContractError) throw error;
+      // Only a failed commit is worth a second try: a refusal loadDemo raises itself (a ContractError) or a
+      // programming error stands, instead of being retried and masked as an empty demo.
+      if (!(error instanceof StoreError)) throw error;
     }
   throw new ContractError({
     type: 'internal',
