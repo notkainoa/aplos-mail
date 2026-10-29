@@ -20,7 +20,7 @@
     "build": "tsc --noEmit && vite build && node scripts/build-main.mjs",
     "notices": "node scripts/notices.mjs --out dist/notices/THIRD_PARTY_NOTICES.txt --require-chromium",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test \"tests/*.test.ts\" \"tests/*/**/*.test.ts\" \"src/renderer/**/*.test.ts\" \"scripts/design/*.test.mjs\"",
+    "test": "tsx --test \"tests/*.test.ts\" \"tests/*/**/*.test.ts\" \"src/renderer/**/*.test.ts\" \"src/renderer/**/*.test.tsx\" \"scripts/design/*.test.mjs\"",
     "package": "npm run build && npm run notices && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir -c.mac.identity=- -c.mac.notarize=false -c.mac.entitlements=build/entitlements.adhoc.plist -c.mac.entitlementsInherit=build/entitlements.adhoc.plist",
     "start": "electron .",
     "verify:release": "node scripts/verify-release.mjs",
