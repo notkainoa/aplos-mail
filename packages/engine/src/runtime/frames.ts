@@ -60,6 +60,20 @@ const PROGRESS_SCOPE: ReadonlyMap<string, Scope> = new Map<string, Scope>(
   }),
 );
 
+const OPERATION_SCOPES: ReadonlySet<unknown> = new Set([
+  'read',
+  'triage',
+  'draft',
+  'send',
+  'ai',
+  'admin',
+]);
+
+/** An operation's recorded scope, or `undefined` for anything that is not one of the six known scope strings. */
+function knownScope(scope: unknown): Scope | undefined {
+  return OPERATION_SCOPES.has(scope) ? (scope as Scope) : undefined;
+}
+
 /**
  * The scope a broadcast frame needs, `null` when it carries no content (`state` counts, `reset`), or `undefined` for a
  * frame kind or source this table does not know, which no caller receives except main's control connection.
@@ -78,7 +92,7 @@ function frameScope(frame: StampedFrame): Scope | null | undefined {
     case 'progress':
       return PROGRESS_SCOPE.get(frame.source);
     case 'operation':
-      return frame.operation?.scope as Scope | undefined;
+      return knownScope(frame.operation?.scope);
     default:
       return undefined;
   }
