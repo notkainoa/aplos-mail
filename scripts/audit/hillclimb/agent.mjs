@@ -2,26 +2,34 @@
 // loop with timeout. The brief always travels through a file or stdin, never through shell
 // interpolation, so a brief containing quotes or `$()` cannot become shell syntax.
 //
-// Environment filtering exists because agents are untrusted code running with inherited
-// credentials otherwise: drop anything matching API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL and
-// every *_KEY, keep the boring rest (PATH, HOME, LANG, TMPDIR, NODE*, npm_config_* survive).
+// Environment filtering exists because agents are untrusted code: they must NOT inherit
+// credentials. A deny-list can never keep up with every name a secret might hide behind
+// (AWS_SESSION_TOKEN, SSH_AUTH_SOCK, DATABASE_URL, FOO_PAT, ...), so the filter is an
+// ALLOW-list of boring runtime variables — anything not listed is dropped. Agents that need
+// auth (claude, devin) use their own login from disk, not our env.
 import { spawn } from 'node:child_process';
 import { createWriteStream, readFileSync } from 'node:fs';
 
-const SECRET_NAME = /(API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i;
-const KEY_SUFFIX = /_KEY$/i;
-// Names that must survive even if a filter pattern grows broad later.
-const ALWAYS_KEEP = new Set(['PATH', 'HOME', 'LANG', 'TMPDIR']);
+const ENV_ALLOW_EXACT = new Set([
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'LANG',
+  'TERM',
+  'TMPDIR',
+  'TZ',
+  'CI',
+]);
+const ENV_ALLOW_PREFIX = ['LC_', 'NODE_', 'npm_config_', 'NPM_CONFIG_', 'DEVIN_', 'XDG_'];
 
 export function filteredEnv(env = process.env) {
   const out = {};
   for (const [name, value] of Object.entries(env)) {
-    if (ALWAYS_KEEP.has(name)) {
+    if (ENV_ALLOW_EXACT.has(name) || ENV_ALLOW_PREFIX.some(prefix => name.startsWith(prefix))) {
       out[name] = value;
-      continue;
     }
-    if (SECRET_NAME.test(name) || KEY_SUFFIX.test(name)) continue;
-    out[name] = value;
   }
   return out;
 }
@@ -63,11 +71,27 @@ export function buildAgentInvocation(attempt, { briefFile, briefText }) {
 /**
  * Runs one child with stdout+stderr appended to a single log stream. Kills the whole process
  * group on timeout (children of sh -c and agent CLIs die with their leader). Resolves with
- * { code, signal, timedOut, tail } where tail is the last `tailBytes` of combined output —
- * enough to pull a scorer's last line or a gate's first failure without holding whole logs.
+ * { code, signal, timedOut, tail, stdoutTail }: `tail` is the bounded end of COMBINED output
+ * (for gate failure lines) and `stdoutTail` stdout alone (the scorer's JSON contract lives
+ * on stdout only — a warning on stderr must never corrupt it).
+ *
+ * Waits for 'close', but a leader that exits while a grandchild still holds the pipes open
+ * would never close: on 'exit' a `graceMs` timer starts, after which the whole process
+ * group is killed and the leader's own exit result is returned.
  */
 export function runLogged(
-  { command, args, cwd, env, stdinText, timeoutMs, logPath, tailBytes = 256 * 1024, onSpawn },
+  {
+    command,
+    args,
+    cwd,
+    env,
+    stdinText,
+    timeoutMs,
+    logPath,
+    tailBytes = 256 * 1024,
+    graceMs = 2000,
+    onSpawn,
+  },
   { spawnFn = spawn } = {},
 ) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -80,17 +104,22 @@ export function runLogged(
     });
     onSpawn?.(child);
     let tail = '';
+    let stdoutTail = '';
     const capture = chunk => {
       tail = (tail + chunk.toString('utf8')).slice(-tailBytes);
       log.write(chunk);
     };
-    child.stdout.on('data', capture);
+    child.stdout.on('data', chunk => {
+      stdoutTail = (stdoutTail + chunk.toString('utf8')).slice(-tailBytes);
+      capture(chunk);
+    });
     child.stderr.on('data', capture);
     child.on('error', error => {
       log.end();
       rejectPromise(error);
     });
     let timedOut = false;
+    let done = false;
     const timer =
       timeoutMs > 0
         ? setTimeout(() => {
@@ -98,15 +127,39 @@ export function runLogged(
             killTree(child);
           }, timeoutMs)
         : null;
-    child.on('close', (code, signal) => {
+    let graceTimer = null;
+    const finish = (code, signal) => {
+      if (done) return;
+      done = true;
       if (timer) clearTimeout(timer);
+      if (graceTimer) clearTimeout(graceTimer);
       log.end();
-      resolvePromise({ code, signal, timedOut, tail });
+      resolvePromise({ code, signal, timedOut, tail, stdoutTail });
+    };
+    child.on('exit', (code, signal) => {
+      // Leader exited but 'close' may never come (a grandchild keeping the pipes open).
+      // Give stragglers a short grace, then reap the whole group.
+      graceTimer = setTimeout(() => {
+        killTree(child);
+        finish(code, signal);
+      }, graceMs);
     });
+    child.on('close', (code, signal) => finish(code, signal));
+    // Writing to a child that already died raises EPIPE on stdin — the 'close'/'error'
+    // handlers own the outcome, so stdin errors are informational only.
+    child.stdin.on('error', () => {});
     if (stdinText !== undefined) {
-      child.stdin.write(stdinText);
+      try {
+        child.stdin.write(stdinText);
+      } catch {
+        // stdin already gone; the exit path reports the child's real status.
+      }
     }
-    child.stdin.end();
+    try {
+      child.stdin.end();
+    } catch {
+      // Same: never let a dead pipe mask the exit result.
+    }
   });
 }
 

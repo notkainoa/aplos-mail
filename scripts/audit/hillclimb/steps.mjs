@@ -2,8 +2,9 @@
 // goes to per-step log files and is never printed raw. A scorer's contract: its LAST
 // non-empty stdout line is JSON {"score": <finite number, higher is better>, "details": []}.
 // A gate must exit 0. Any deviation (non-zero exit, timeout, missing/invalid JSON, non-finite
-// score) makes the attempt invalid with the reason reported.
-import { runLogged } from './agent.mjs';
+// score) makes the attempt invalid with the reason reported. Gates and scorers run the same
+// allow-listed environment as agents — suite commands must never see credentials either.
+import { filteredEnv, runLogged } from './agent.mjs';
 
 const lastNonEmpty = text =>
   text
@@ -46,15 +47,16 @@ export function firstFailLine(output) {
 }
 
 /** Runs a gate via `sh -c` in `workdir`; resolves { ok, failLine?, timedOut }. */
-export async function runGate(gate, { workdir, logPath, env, spawnFn }) {
+export async function runGate(gate, { workdir, logPath, env, spawnFn, onSpawn }) {
   const out = await runLogged(
     {
       command: 'sh',
       args: ['-c', gate.command],
       cwd: workdir,
-      env: env ?? process.env,
+      env: env ?? filteredEnv(),
       timeoutMs: gate.timeoutSec * 1000,
       logPath,
+      onSpawn,
     },
     { spawnFn },
   );
@@ -66,15 +68,16 @@ export async function runGate(gate, { workdir, logPath, env, spawnFn }) {
 }
 
 /** Runs a scorer via `sh -c`; resolves { ok, score, details } or { ok: false, reason }. */
-export async function runScorer(scorer, { workdir, logPath, env, spawnFn }) {
+export async function runScorer(scorer, { workdir, logPath, env, spawnFn, onSpawn }) {
   const out = await runLogged(
     {
       command: 'sh',
       args: ['-c', scorer.command],
       cwd: workdir,
-      env: env ?? process.env,
+      env: env ?? filteredEnv(),
       timeoutMs: scorer.timeoutSec * 1000,
       logPath,
+      onSpawn,
     },
     { spawnFn },
   );
@@ -84,7 +87,8 @@ export async function runScorer(scorer, { workdir, logPath, env, spawnFn }) {
       : `exit ${out.code ?? out.signal}`;
     return { ok: false, reason: why };
   }
-  const parsed = parseScorerOutput(out.tail);
+  // The JSON contract lives on stdout only; a stderr warning must not corrupt the parse.
+  const parsed = parseScorerOutput(out.stdoutTail ?? '');
   if (parsed.invalid) return { ok: false, reason: parsed.invalid };
   return { ok: true, score: parsed.score, details: parsed.details };
 }
