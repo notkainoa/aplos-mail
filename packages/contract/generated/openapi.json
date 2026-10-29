@@ -2920,6 +2920,7 @@
         "tags": ["demo"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
+        "x-aplos-ui-only": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -2961,6 +2962,8 @@
         "tags": ["demo"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
+        "x-aplos-audit": true,
+        "x-aplos-ui-only": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -3003,6 +3006,7 @@
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
+        "x-aplos-ui-only": true,
         "requestBody": {
           "required": true,
           "content": {

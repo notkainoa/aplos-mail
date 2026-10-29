@@ -221,3 +221,16 @@ test('the generated access tables agree with the registry', () => {
     assert.equal((tables.uiOnlyMethods as readonly string[]).includes(name), !!def.uiOnly, name);
   }
 });
+
+test('Demo/* are window-only and audited; a listener holding every scope is refused all three', () => {
+  const everything = tool(...appScopes.filter(scope => scope !== 'host'));
+  for (const method of ['Demo/load', 'Demo/reset', 'Demo/remove']) {
+    assert.ok(!(tables.listenerMethods as readonly string[]).includes(method), method);
+    assert.ok((tables.uiOnlyMethods as readonly string[]).includes(method), method);
+    assert.throws(() => checkAccess(method, everything), ContractError, method);
+    assert.doesNotThrow(() => checkAccess(method, window), method);
+  }
+  // Reset deletes and rebuilds the demo accounts, as remove deletes them: both leave an audit line.
+  for (const method of ['Demo/reset', 'Demo/remove'])
+    assert.ok((tables.auditMethods as readonly string[]).includes(method), method);
+});
