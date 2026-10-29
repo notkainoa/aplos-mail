@@ -1,0 +1,220 @@
+import assert from 'node:assert/strict';
+import { basename } from 'node:path';
+import { describe, it } from 'node:test';
+import { runHillClimb } from '../hillclimb/loop.mjs';
+
+// The loop's deps are all fakes; checkDiff itself is real, so diffguard cases here exercise
+// the actual guard against fabricated change lists.
+const config = {
+  name: 'demo',
+  allowedPaths: ['src/**'],
+  allowedTestPaths: [],
+  gates: [{ name: 'g', command: 'true', timeoutSec: 1 }],
+  scorers: [{ name: 's', command: 'true', weight: 1, noRegress: false, timeoutSec: 1 }],
+  attempt: { agent: 'command', brief: 'x', timeoutSec: 60, command: 'true' },
+  attemptsPerRound: 2,
+  roundLimit: 3,
+  stopAfterNoGain: 2,
+  maxConcurrent: 2,
+};
+
+const GOOD_CHANGE = [{ status: 'M', path: 'src/a.ts', oldMode: '100644', newMode: '100644' }];
+
+// script: { baselineScore, attempts: { <id>: { score, gateOk, scorerOk, changes, leftover, agentCode } } }
+function fakes(script = {}) {
+  const calls = { prepared: [], removed: [], promoted: null, cleaned: false };
+  const at = id => script.attempts?.[id] ?? {};
+  const deps = {
+    repoRoot: '/repo',
+    runId: 't1',
+    startCommit: 'C0',
+    configPath: null,
+    withCheckSlot: fn => fn(),
+    logPath: (id, step) => `/logs/${id}-${step}.log`,
+    print: () => {},
+    async prepareAttempt(ctx) {
+      ctx.dir = `/wt/${ctx.id}`;
+      calls.prepared.push({ id: ctx.id, commit: ctx.commit });
+    },
+    async runAttemptAgent(ctx) {
+      const b = at(ctx.id);
+      return { code: b.agentCode ?? 0, timedOut: b.agentTimedOut ?? false };
+    },
+    async finalizeAttempt(ctx) {
+      const b = at(ctx.id);
+      return {
+        head: `H-${ctx.id}`,
+        changes: b.changes ?? GOOD_CHANGE,
+        leftover: b.leftover ?? [],
+      };
+    },
+    readOld: () => null,
+    readNew: () => null,
+    async runGate(_gate, dir) {
+      if (dir === '/repo') return { ok: true };
+      const okGate = at(basename(dir)).gateOk ?? true;
+      return okGate ? { ok: true } : { ok: false, reason: 'exit 1', failLine: 'g failed' };
+    },
+    async runScorer(_scorer, dir) {
+      if (dir === '/repo') return { ok: true, score: script.baselineScore ?? 10, details: ['d'] };
+      const b = at(basename(dir));
+      if (b.scorerOk === false) return { ok: false, reason: 'last line is not JSON' };
+      return { ok: true, score: b.score ?? 10, details: [] };
+    },
+    async removeAttempt(ctx) {
+      calls.removed.push(ctx.id);
+    },
+    async promote({ fromSha, toSha }) {
+      calls.promoted = { fromSha, toSha };
+      return { branch: 'hillclimb/demo/t1/best', sha: 'BESTSHA' };
+    },
+    async cleanup() {
+      calls.cleaned = true;
+    },
+  };
+  return { deps, calls };
+}
+
+describe('runHillClimb', () => {
+  it('keeps an attempt with a strictly better combined score', async () => {
+    const { deps, calls } = fakes({ attempts: { r1a1: { score: 20 }, r1a2: { score: 15 } } });
+    const result = await runHillClimb(config, deps);
+    const [a1, a2] = result.rounds[0].attempts;
+    assert.equal(a1.verdict, 'kept');
+    assert.equal(a2.verdict, 'not kept: lower score');
+    assert.deepEqual(calls.promoted, { fromSha: 'C0', toSha: 'H-r1a1' });
+    assert.equal(result.endCombined, 20);
+    assert.equal(calls.cleaned, true);
+    for (const id of ['r1a1', 'r1a2', 'r2a1', 'r2a2', 'r3a1', 'r3a2']) {
+      assert.ok(calls.removed.includes(id), `worktree of ${id} removed`);
+    }
+  });
+
+  it('does not keep a tie', async () => {
+    const { deps } = fakes({ attempts: { r1a1: { score: 10 }, r1a2: { score: 9 } } });
+    const result = await runHillClimb(config, deps);
+    assert.equal(result.rounds[0].attempts[0].verdict, 'not kept: no gain over best');
+    assert.equal(result.rounds.length, 2); // two no-gain rounds stop the run
+  });
+
+  it('rejects an attempt whose gate fails', async () => {
+    const { deps } = fakes({
+      attempts: { r1a1: { score: 30, gateOk: false }, r1a2: { score: 11 } },
+    });
+    const result = await runHillClimb(config, deps);
+    const [a1] = result.rounds[0].attempts;
+    assert.equal(a1.gates, 'fail');
+    assert.match(a1.verdict, /rejected: gate g failed.*g failed/);
+  });
+
+  it('rejects a noRegress violation even when combined improves', async () => {
+    const noRegress = {
+      ...config,
+      scorers: [
+        { name: 's', command: 't', weight: 1, noRegress: true, timeoutSec: 1 },
+        { name: 't', command: 't', weight: 1, noRegress: false, timeoutSec: 1 },
+      ],
+    };
+    const { deps, calls } = fakes({});
+    // Baseline: s=10, t=10 (combined 20). Attempt: s dips to 8 but t=30 (combined 38) -> reject.
+    deps.runScorer = async (scorer, dir) => {
+      if (dir === '/repo') return { ok: true, score: 10, details: [] };
+      return { ok: true, score: scorer.name === 's' ? 8 : 30, details: [] };
+    };
+    const result = await runHillClimb(noRegress, deps);
+    assert.match(result.rounds[0].attempts[0].verdict, /noRegress scorer s worsened/);
+    assert.equal(result.endCombined, 20); // never kept
+    assert.equal(calls.promoted.toSha, 'C0');
+  });
+
+  it('rejects an attempt that touches forbidden files', async () => {
+    const { deps } = fakes({
+      attempts: {
+        r1a1: {
+          score: 99,
+          changes: [
+            ...GOOD_CHANGE,
+            { status: 'M', path: 'package.json', oldMode: '100644', newMode: '100644' },
+          ],
+        },
+        r1a2: { score: 11 },
+      },
+    });
+    const result = await runHillClimb(config, deps);
+    assert.match(result.rounds[0].attempts[0].verdict, /rejected:.*package\.json/);
+  });
+
+  it('rejects an attempt whose scorer output is unusable', async () => {
+    const { deps } = fakes({
+      attempts: { r1a1: { scorerOk: false }, r1a2: { score: 11 } },
+    });
+    const result = await runHillClimb(config, deps);
+    assert.match(result.rounds[0].attempts[0].verdict, /scorer s unusable.*not JSON/);
+  });
+
+  it('rejects an attempt that fails the agent step or leaves changes', async () => {
+    const { deps } = fakes({
+      attempts: {
+        r1a1: { agentCode: 137 },
+        r1a2: { leftover: ['src/left.ts'] },
+      },
+    });
+    const result = await runHillClimb(config, deps);
+    assert.match(result.rounds[0].attempts[0].verdict, /agent exited 137/);
+    assert.match(result.rounds[0].attempts[1].verdict, /uncommitted changes remain/);
+  });
+
+  it('stops after stopAfterNoGain consecutive fruitless rounds', async () => {
+    const { deps } = fakes({}); // everything scores the baseline 10: no gain ever
+    const result = await runHillClimb({ ...config, roundLimit: 9, stopAfterNoGain: 2 }, deps);
+    assert.equal(result.rounds.length, 2);
+  });
+
+  it('runs to roundLimit while every round gains', async () => {
+    const { deps } = fakes({
+      attempts: {
+        r1a1: { score: 20 },
+        r1a2: { score: 10 },
+        r2a1: { score: 30 },
+        r2a2: { score: 10 },
+        r3a1: { score: 40 },
+        r3a2: { score: 10 },
+      },
+    });
+    const result = await runHillClimb(config, deps);
+    assert.equal(result.rounds.length, 3);
+    assert.equal(result.endCombined, 40);
+  });
+
+  it('picks the best of several candidates', async () => {
+    const { deps } = fakes({
+      attempts: { r1a1: { score: 12 }, r1a2: { score: 25 } },
+    });
+    const result = await runHillClimb({ ...config, attemptsPerRound: 4 }, deps);
+    assert.equal(result.rounds[0].attempts.length, 4);
+    const kept = result.rounds[0].attempts.find(a => a.verdict === 'kept');
+    assert.equal(kept.id, 'r1a2');
+  });
+
+  it('seeds round 2 attempts from the kept commit', async () => {
+    const { deps, calls } = fakes({
+      attempts: {
+        r1a1: { score: 20 },
+        r1a2: { score: 10 },
+        r2a1: { score: 21 },
+        r2a2: { score: 10 },
+      },
+    });
+    await runHillClimb({ ...config, roundLimit: 2 }, deps);
+    const roundTwo = calls.prepared.filter(p => p.id.startsWith('r2'));
+    assert.ok(roundTwo.length > 0);
+    for (const p of roundTwo) assert.equal(p.commit, 'H-r1a1');
+  });
+
+  it('still promotes a no-improvement run into a best branch on the start commit', async () => {
+    const { deps, calls } = fakes({});
+    const result = await runHillClimb({ ...config, roundLimit: 1 }, deps);
+    assert.deepEqual(calls.promoted, { fromSha: 'C0', toSha: 'C0' });
+    assert.equal(result.bestBranch, 'hillclimb/demo/t1/best');
+  });
+});
