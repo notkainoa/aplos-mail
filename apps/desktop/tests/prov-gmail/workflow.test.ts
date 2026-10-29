@@ -464,3 +464,30 @@ const noTransport = {
   put: () => Promise.reject(new Error('not used')),
   compact: () => Promise.reject(new Error('not used')),
 };
+
+test('a failed put leaves nothing local-only in the view: a lease claim no peer can see never shows as held', async () => {
+  const { a, b } = await pair();
+  await a.channel.write(
+    [{ key: threadKey('t1'), value: threadValue({ status: 'done' }) }],
+    a.ctx(),
+  );
+  // Gmail refuses the insert outright (not an uncertain write): the copy never exists.
+  const put = a.transport.put.bind(a.transport);
+  a.transport.put = async () => {
+    throw new Error('insert refused');
+  };
+  await assert.rejects(
+    a.channel.write(
+      [{ key: 'lease:device-a', value: { until: 1_800_000, pinned: true } }],
+      a.ctx(),
+    ),
+  );
+  assert.equal(valueOf(a, 'lease:device-a'), undefined, 'the unsent claim is not in the view');
+  assert.deepEqual(valueOf(a, threadKey('t1')), { status: 'done' });
+  // The next successful write does not carry the failed record along either.
+  a.transport.put = put;
+  await a.channel.write([{ key: threadKey('t2'), value: threadValue({ todo: 'x' }) }], a.ctx());
+  await b.round();
+  assert.equal(valueOf(b, 'lease:device-a'), undefined);
+  assert.deepEqual(valueOf(b, threadKey('t2')), { todo: 'x' });
+});
