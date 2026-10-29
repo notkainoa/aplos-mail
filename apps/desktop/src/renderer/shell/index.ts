@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { addTargetSlot, getTarget, subscribeTarget } from './store-target';
 import type { TargetSlot } from './store-target';
+import type { RefObject } from 'react';
 import {
   getSheet,
   hideSheet,
@@ -141,22 +142,30 @@ export { registerSheetCancel, setSheetOpener };
  * the reader sets its thread ("Drew Bell · October illustrations"), the calendar the open
  * event, Settings the focused account row. The innermost focused setter wins; null clears.
  * Compared by value (kind, id, title, detail), so an inline object never re-renders the shell.
+ *
+ * `options.region` (additive) is the ref of the element the component draws. Of the setters, the one whose region
+ * is the deepest to contain the focused element wins; without a region (or with focus outside every region) the
+ * latest-mounted setter wins.
  */
-export function useCommandTarget(target: TargetSummary | null): void {
+export function useCommandTarget(
+  target: TargetSummary | null,
+  options?: { readonly region?: RefObject<HTMLElement | null> },
+): void {
   const slot = useRef<TargetSlot | null>(null);
+  const region = options?.region;
   useEffect(() => {
-    slot.current = addTargetSlot();
+    slot.current = addTargetSlot(region);
     return () => {
       slot.current?.remove();
       slot.current = null;
     };
-  }, []);
+  }, [region]);
   const { kind, id, title, detail } = target ?? {};
   useEffect(() => {
     slot.current?.set(
       kind && id !== undefined && title !== undefined ? { kind, id, title, detail } : null,
     );
-  }, [kind, id, title, detail]);
+  }, [region, kind, id, title, detail]);
 }
 
 /** The current command target, live; the shell puts it in every `CommandContext` and the palette's context line (`contextLine`). */

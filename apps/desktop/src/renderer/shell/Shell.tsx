@@ -5,7 +5,14 @@
  * reached, the FatalScreen in place of everything.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { api, useAccounts, useConnection, useCounts, useSettings } from '../data';
+import {
+  api,
+  useAccounts,
+  useAccountsLoaded,
+  useConnection,
+  useCounts,
+  useSettings,
+} from '../data';
 import { FatalScreen } from '../ui/status';
 import { Pane } from '../ui/surfaces';
 import type { PaneHeaderProps } from '../ui/props';
@@ -17,6 +24,7 @@ import { Sidebar } from './Sidebar';
 import { StatusHost } from './StatusHost';
 import { ToastHost } from './ToastHost';
 import { placeCounts, screenLabel, type PlaceId } from './nav';
+import { DIAGNOSTICS_FAILED_COPY, RESTART_FAILED_COPY } from './failure-copy';
 import { PlaceholderScreen } from './states';
 import { accountReconnectMode } from './status-map';
 import {
@@ -54,8 +62,6 @@ function paneHeader(dock: DockTab, setDock: (tab: DockTab) => void): PaneHeaderP
   };
 }
 
-const RESTART_FAILED_COPY = 'Couldn’t restart. Your mail is safe on this Mac.';
-
 function notify(id: string, message: string): void {
   pushToast({ id, kind: 'info', message, undoable: false });
 }
@@ -75,7 +81,7 @@ export function FatalHost({ kind }: { readonly kind: 'unreachable' | 'parked' })
     Promise.resolve()
       .then(() => api.diagnostics.copy())
       .then(() => notify('fatal-diagnostics', done))
-      .catch(() => notify('fatal-diagnostics', 'Couldn’t get the diagnostics.'));
+      .catch(() => notify('fatal-diagnostics', DIAGNOSTICS_FAILED_COPY));
   };
   return (
     <div className="aplos-shell">
@@ -136,14 +142,24 @@ export function ShellLayout(props: ShellLayoutProps) {
   );
 }
 
+/** True once accounts have loaded and the scoped account is not among them (an empty list included). */
+export function scopeIsStale(
+  scope: string | null,
+  accounts: readonly { readonly id: string }[],
+  loaded: boolean,
+): boolean {
+  return loaded && scope !== null && !accounts.some(a => a.id === scope);
+}
+
 function ShellFrame({ renderScreen }: ShellProps) {
   const screen = useAppRoute();
   const accounts = useAccounts();
+  const accountsLoaded = useAccountsLoaded();
   const scope = useAccountScope();
   useEffect(() => {
-    // A removed account cannot stay the scope: fall back to All accounts.
-    if (scope && accounts.length > 0 && !accounts.some(a => a.id === scope)) setAccountScope(null);
-  }, [scope, accounts]);
+    // A removed account cannot stay the scope: fall back to All accounts (also when none are left).
+    if (scopeIsStale(scope, accounts, accountsLoaded)) setAccountScope(null);
+  }, [scope, accounts, accountsLoaded]);
   const counts = useCounts(scope ?? undefined);
   const minimised = useSettings()?.ui.sidebarMinimised === true;
   const [dock, setDock] = useState<DockTab>('closed');
