@@ -4,7 +4,7 @@ import type { LogRecord } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { DEMO_ACCOUNT_IDS } from '../../src/ai/demo/load';
 import { createLogger } from '../../src/diag/log';
-import { createEngine } from '../../src/index';
+import { createEngine, laneExtensions } from '../../src/index';
 import type { Caller } from '../../src/methods/types';
 import { openStore, type StorePort } from '../../src/store';
 import { manualClock } from '../runtime.helpers';
@@ -19,7 +19,7 @@ import { ACCOUNT, T0, accountWrite, folderWrites, msg, tempDb } from '../store/h
 async function demoEngine() {
   const file = tempDb();
   const db = file.open();
-  const store = openStore(db, { now: () => T0 });
+  const store = openStore(db, { now: () => T0, extensions: laneExtensions() });
   const clock = manualClock();
   const records: LogRecord[] = [];
   const log = createLogger({ sink: { write: r => records.push(r) }, salt: 'demo-test', clock });
@@ -85,6 +85,28 @@ function rowsOf(store: StorePort, accountId: string) {
       thread_workflow: rows(
         'SELECT * FROM thread_workflow WHERE account_id = ? ORDER BY thread_id',
       ),
+      attachments: q
+        .all(
+          `SELECT a.* FROM attachments a JOIN messages m ON m.id = a.message_id
+          WHERE m.account_id = ? ORDER BY a.id`,
+          accountId,
+        )
+        .map(r => JSON.stringify(r)),
+      correspondents: rows('SELECT * FROM correspondents WHERE account_id = ? ORDER BY address'),
+      thread_folders: q
+        .all(
+          `SELECT tf.* FROM thread_folders tf JOIN folders f ON f.id = tf.folder_id
+          WHERE f.account_id = ? ORDER BY tf.folder_id, tf.last_date, tf.thread_id`,
+          accountId,
+        )
+        .map(r => JSON.stringify(r)),
+      // `draft`/`remoteDraft` and `submission` are eng-time kinds and its commit extension is not
+      // registered yet, so no write can plant these rows today; hashed anyway, empty for now.
+      drafts: rows('SELECT * FROM drafts WHERE account_id = ? ORDER BY id'),
+      ops: rows('SELECT * FROM ops WHERE account_id = ? ORDER BY seq'),
+      submissions: rows('SELECT * FROM submissions WHERE account_id = ? ORDER BY id'),
+      sync_state: rows('SELECT * FROM sync_state WHERE account_id = ? ORDER BY scope'),
+      sender_rules: rows('SELECT * FROM sender_rules WHERE account_id = ? ORDER BY id'),
     };
   });
 }
@@ -141,6 +163,45 @@ function plantReal(store: StorePort) {
         remoteThreadId: 'rt1',
         patch: { status: 'done', todo: 'A real todo' },
       },
+      {
+        kind: 'attachments',
+        accountId: ACCOUNT,
+        remoteId: 'r1',
+        list: [
+          {
+            remotePart: 'att-1',
+            name: 'real-notes.txt',
+            mime: 'text/plain',
+            size: 64,
+            inline: false,
+          },
+        ],
+      },
+      {
+        kind: 'syncState',
+        accountId: ACCOUNT,
+        scope: 'mail',
+        cursor: 'real-cursor',
+        generation: 1,
+      },
+      {
+        kind: 'op',
+        opId: 'real-op-1',
+        accountId: ACCOUNT,
+        opKind: 'flag',
+        targets: [`${ACCOUNT}:r4`],
+        payload: '{}',
+        effect: [{ kind: 'flags' as const, target: { remoteId: 'r4' }, flagged: true }],
+        scope: 'triage',
+      },
+      // A rule on a domain none of the planted senders uses: the row exists without touching workflow.
+      {
+        kind: 'senderRule',
+        op: 'put' as const,
+        accountId: ACCOUNT,
+        match: '@real-rules.example',
+        action: 'block' as const,
+      },
     ],
   });
 }
@@ -156,6 +217,9 @@ test('a fresh store has zero accounts and no demo data, and nothing loads by its
     assert.equal(count(t.store, 'SELECT count(*) AS n FROM threads'), 0);
     assert.equal(count(t.store, 'SELECT count(*) AS n FROM messages'), 0);
     assert.equal(count(t.store, "SELECT count(*) AS n FROM accounts WHERE provider = 'demo'"), 0);
+    const gone = (await t.window().call('Demo/remove', {})) as { opId: string };
+    assert.equal(gone.opId, 'demo-remove-noop', 'removing an absent demo commits nothing');
+    assert.equal(t.store.seq(), 0, 'no commit was written');
   } finally {
     await t.cleanup();
   }
@@ -220,7 +284,15 @@ test('Demo/load is idempotent: a second call adds nothing and bumps nothing', as
   const t = await demoEngine();
   try {
     const s = t.window();
-    const first = (await s.call('Demo/load', {})) as { accountIds: string[] };
+    const first = (await s.call('Demo/load', {})) as {
+      accountIds: string[];
+      receipt: { opId: string };
+    };
+    assert.equal(
+      count(t.store, 'SELECT count(*) AS n FROM commits WHERE op_id = ?', first.receipt.opId),
+      1,
+      'the receipt names the commit that applied the load',
+    );
     const seq = t.store.seq();
     const counts = Object.fromEntries(
       ['accounts', 'folders', 'threads', 'messages', 'bodies', 'attachments'].map(table => [
@@ -228,11 +300,79 @@ test('Demo/load is idempotent: a second call adds nothing and bumps nothing', as
         count(t.store, `SELECT count(*) AS n FROM ${table}`),
       ]),
     );
-    const second = (await s.call('Demo/load', {})) as { accountIds: string[] };
+    const second = (await s.call('Demo/load', {})) as {
+      accountIds: string[];
+      receipt: { opId: string };
+    };
     assert.deepEqual(second.accountIds, first.accountIds);
+    assert.equal(second.receipt.opId, 'demo-load-noop', 'a no-op load names no commit');
     assert.equal(t.store.seq(), seq, 'a no-op call writes no commit');
     for (const [table, n] of Object.entries(counts))
       assert.equal(count(t.store, `SELECT count(*) AS n FROM ${table}`), n, table);
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('Demo/load refuses while a real account holds a fixed demo id, leaving it unchanged', async () => {
+  const t = await demoEngine();
+  try {
+    const id = DEMO_ACCOUNT_IDS[0];
+    t.store.commit({
+      opId: 'real-takes-demo-id',
+      origin: 'sync',
+      writes: [
+        {
+          kind: 'account',
+          id,
+          provider: 'google',
+          address: 'real-owner@mail.example',
+          capabilities: { labels: true },
+          status: { state: 'ok' },
+        },
+      ],
+    });
+    await assert.rejects(t.window().call('Demo/load', {}), is('conflict'));
+    const row = t.store.read(q =>
+      q.get<{ provider: string; address: string }>(
+        'SELECT provider, address FROM accounts WHERE id = ?',
+        id,
+      ),
+    );
+    assert.equal(row?.provider, 'google');
+    assert.equal(row?.address, 'real-owner@mail.example');
+    assert.equal(count(t.store, 'SELECT count(*) AS n FROM accounts'), 1, 'no demo landed');
+    assert.equal(count(t.store, 'SELECT count(*) AS n FROM threads'), 0);
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('Demo/load repairs a partial demo: survivors are replaced and the full set returns', async () => {
+  const t = await demoEngine();
+  try {
+    await t.window().call('Demo/load', {});
+    t.store.commit({
+      opId: 'drop-personal',
+      origin: 'local',
+      writes: [{ kind: 'accountRemove', accountId: DEMO_ACCOUNT_IDS[1] }],
+    });
+    assert.equal(
+      count(t.store, "SELECT count(*) AS n FROM accounts WHERE provider = 'demo'"),
+      1,
+      'one demo account is gone',
+    );
+    const out = (await t.window().call('Demo/load', {})) as { accountIds: string[] };
+    assert.deepEqual(out.accountIds, [...DEMO_ACCOUNT_IDS]);
+    assert.equal(
+      count(t.store, 'SELECT count(*) AS n FROM threads WHERE account_id = ?', DEMO_ACCOUNT_IDS[0]),
+      9,
+    );
+    assert.equal(
+      count(t.store, 'SELECT count(*) AS n FROM threads WHERE account_id = ?', DEMO_ACCOUNT_IDS[1]),
+      10,
+    );
+    assert.equal(count(t.store, 'SELECT count(*) AS n FROM messages'), 20);
   } finally {
     await t.cleanup();
   }
@@ -247,11 +387,20 @@ test('Demo/reset returns the same account and contract ids, Demo/remove deletes 
     const s = t.window();
     await s.call('Demo/load', {});
     const before = Object.fromEntries(DEMO_ACCOUNT_IDS.map(id => [id, contractIds(t.store, id)]));
-    await s.call('Demo/reset', {});
+    const reset = (await s.call('Demo/reset', {})) as { receipt: { opId: string } };
+    assert.equal(
+      count(t.store, 'SELECT count(*) AS n FROM commits WHERE op_id = ?', reset.receipt.opId),
+      1,
+      'the reset receipt names the reload commit',
+    );
     for (const id of DEMO_ACCOUNT_IDS)
       assert.deepEqual(contractIds(t.store, id), before[id], `ids of ${id} stable`);
-    const ids = (await s.call('Demo/remove', {})) as unknown;
-    assert.ok(ids && typeof ids === 'object');
+    const removed = (await s.call('Demo/remove', {})) as { opId: string };
+    assert.equal(
+      count(t.store, 'SELECT count(*) AS n FROM commits WHERE op_id = ?', removed.opId),
+      1,
+      'the remove receipt names its commit',
+    );
     assert.equal(count(t.store, 'SELECT count(*) AS n FROM accounts'), 1, 'only the real one');
     assert.equal(
       count(t.store, 'SELECT count(*) AS n FROM threads WHERE account_id = ?', ACCOUNT),

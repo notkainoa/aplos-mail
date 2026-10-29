@@ -18,17 +18,18 @@ const receipt = (op: string, appliedState: State) => ({ opId: op, appliedState, 
 export const handlers: AreaHandlers<'demo'> = {
   'Demo/load': (_args, ctx) => {
     const id = opId(ctx.services, 'load');
-    const { accountIds, state } = loadDemo(ctx.services.store, id, ctx.services.clock.now());
-    return { accountIds, receipt: receipt(id, state) };
+    const applied = loadDemo(ctx.services.store, id, ctx.services.clock.now());
+    // `applied.opId` is the commit's own opId, or 'demo-load-noop' when nothing was committed.
+    return { accountIds: applied.accountIds, receipt: receipt(applied.opId, applied.state) };
   },
   'Demo/reset': (_args, ctx) => {
     const id = opId(ctx.services, 'reset');
-    const { accountIds, state } = resetDemo(ctx.services.store, id, ctx.services.clock.now());
-    return { accountIds, receipt: receipt(id, state) };
+    const applied = resetDemo(ctx.services.store, id, ctx.services.clock.now());
+    return { accountIds: applied.accountIds, receipt: receipt(applied.opId, applied.state) };
   },
   'Demo/remove': (_args, ctx) => {
     const id = opId(ctx.services, 'remove');
-    const state = removeDemo(ctx.services.store, id);
-    return receipt(id, state);
+    const applied = removeDemo(ctx.services.store, id);
+    return receipt(applied.opId, applied.state);
   },
 };

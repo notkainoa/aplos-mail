@@ -144,14 +144,14 @@ const rows: readonly Row[] = [
   {
     key: 'digest',
     slot: 'work',
-    from: { name: 'Field Notes', address: 'digest@fieldnotes.example' },
+    from: { name: 'Weekly Digest', address: 'digest@weekly.example' },
     subject: 'Three ideas for thoughtful teams',
     body: 'This week: make room for quiet work, write decisions down, and finish meetings with one clear next step. Read at your own pace.',
     seen: true,
     lane: 'low',
     importance: 'normal',
     hdr: { bulk: true, list: true, noreply: true },
-    unsubscribe: 'https://fieldnotes.example/leave',
+    unsubscribe: 'https://weekly.example/leave',
   },
   {
     key: 'workshop',
