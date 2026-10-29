@@ -103,9 +103,10 @@ async function acceptRetry(
     const current = storedIdentity(deps.store, accountId);
     if (!current) throw notFound();
     // The host stored this grant under `accountId` before the engine could refuse it; the catch hands it back.
-    // Limit: a retry reuses the waiting row's id, which is a committed row, so the host's discardCredential keeps that
-    // ref and the refused grant stays in the vault. The host's address check (a new connect that names an address is
-    // held to it) refuses a different identity before anything is stored, which closes the usual case.
+    // Limit: a retry stores under the waiting row's id, and that row is committed, so the engine never discards (host.ts
+    // `discardCredential` keeps it): a grant refused here, for lacking the mail scope or for an identity another row
+    // holds, stays in the vault under that id. A different identity is normally refused earlier, by the host's address
+    // check (a new connect that names an address is held to it) before anything is stored.
     refuseOtherIdentity(current, result);
     refuseMissingScope(result);
     const { address, subject } = result.identity;
