@@ -124,7 +124,7 @@ class StateChannel implements WorkflowStateChannel {
   }
 
   view(): WorkflowRecord[] {
-    return [...this.winners.values()].filter(r => this.visible(r)).sort(byKey);
+    return this.viewOf(this.winners);
   }
 
   async read(state: SyncState, ctx: AdapterContext): Promise<WorkflowRead> {
@@ -160,15 +160,17 @@ class StateChannel implements WorkflowStateChannel {
     if (!key)
       throw new Error('The data key is unavailable, so workflow changes cannot be shared yet');
     const now = ctx.clock.now();
-    const records = entries.map(entry => this.stamp(entry, now));
-    mergeInto(this.winners, records);
+    const records = this.stampAll(entries, now);
+    // Staged: nothing reaches the view until the copy is sent, so a failed put leaves no local-only record.
+    const staged = new Map(this.winners);
+    mergeInto(staged, records);
     const floor = Math.max(this.floor, now - RETENTION_MS);
     const payload: WorkflowPayload = {
       v: 2,
       device: this.options.device,
       writtenAt: now,
       floor,
-      records: this.view().filter(r => !(r.stamp.at <= floor && settled(r))),
+      records: this.viewOf(staged).filter(r => !(r.stamp.at <= floor && settled(r))),
     };
     const data = this.sealChecked(payload, key);
     const covered = [...this.opened.keys()];
@@ -176,6 +178,7 @@ class StateChannel implements WorkflowStateChannel {
       { deviceId: this.options.device, writtenAt: now, data },
       ctx,
     );
+    mergeInto(this.winners, records);
     this.adopt(payload);
     for (const id of covered) if (this.opened.has(id)) this.opened.set(id, true);
     remember(this.opened, remoteId, false, CAP_COPIES);
@@ -251,10 +254,19 @@ class StateChannel implements WorkflowStateChannel {
     return true;
   }
 
-  private stamp(entry: WorkflowEntry, now: number): WorkflowRecord {
-    const stamp = nextStamp(this.high, now, this.options.device);
-    this.high = stamp;
-    return { key: entry.key, stamp, value: entry.value };
+  private viewOf(winners: ReadonlyMap<string, WorkflowRecord>): WorkflowRecord[] {
+    return [...winners.values()].filter(r => this.visible(r)).sort(byKey);
+  }
+
+  /**
+   * Stamps a write's entries above everything seen. The clock moves on even if the put then fails (it only ever rises,
+   * and two writes in flight never share a stamp); the records themselves wait for the put.
+   */
+  private stampAll(entries: readonly WorkflowEntry[], now: number): WorkflowRecord[] {
+    return entries.map(entry => {
+      this.high = nextStamp(this.high, now, this.options.device);
+      return { key: entry.key, stamp: this.high, value: entry.value };
+    });
   }
 
   private async key(): Promise<ChannelKey | undefined> {
