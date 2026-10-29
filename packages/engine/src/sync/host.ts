@@ -20,6 +20,7 @@ import {
   type ServerSearch,
   type WorkflowCopy,
 } from '../ports';
+import { contractError } from '../runtime/errors';
 import { AccountActor, type Role } from './actor';
 import { openedWrites, messageWrite } from './facts';
 import type { Governor } from './governor';
@@ -124,15 +125,53 @@ export class ActorHost implements AccountActorHost {
     const abort = () => controller.abort(req.signal?.reason);
     if (req.signal?.aborted) abort();
     else req.signal?.addEventListener('abort', abort, { once: true });
-    return factory
-      .connect(req, {
+    try {
+      const result = await factory.connect(req, {
         accountId: account,
         governor: this.connectGovernor(account),
         clock: this.deps.clock,
         log: this.deps.log.with({ account }),
         signal: controller.signal,
-      })
-      .finally(() => req.signal?.removeEventListener('abort', abort));
+      });
+      if (req.signal?.aborted)
+        await this.discardLate(kind, result.credentialRef, req.signal.reason);
+      return result;
+    } finally {
+      req.signal?.removeEventListener('abort', abort);
+    }
+  }
+
+  async discardCredential(kind: ProviderKind, ref: string): Promise<void> {
+    const factory = this.factory(kind);
+    if (!factory.discardCredential) {
+      this.logDiscard(kind, 'unsupported');
+      throw contractError({
+        type: 'unavailable',
+        message: 'This account type cannot remove a saved credential.',
+      });
+    }
+    await factory.discardCredential(ref);
+  }
+
+  /** Only the provider kind and the outcome: no ref, no secret. */
+  private logDiscard(kind: ProviderKind, outcome: 'unsupported' | 'failed'): void {
+    this.deps.log.event('rpc.failed', {
+      method: 'Account/discardCredential',
+      reason: `${kind}.${outcome}`,
+    });
+  }
+
+  /** A result that arrived after the abort: its credential goes (a failure is logged only), the abort reason surfaces. */
+  private async discardLate(
+    kind: ProviderKind,
+    ref: string | undefined,
+    reason: unknown,
+  ): Promise<never> {
+    if (ref !== undefined)
+      await this.discardCredential(kind, ref).catch(() => {
+        this.logDiscard(kind, 'failed');
+      });
+    throw reason;
   }
 
   async start(account: AccountId): Promise<void> {

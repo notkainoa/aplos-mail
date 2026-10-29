@@ -102,10 +102,12 @@ export interface AccountActorHost extends ProviderPort {
   connect(account: AccountId, kind: ProviderKind, req: ConnectRequest): Promise<ConnectResult>;
   /**
    * Deletes a credential `connect` already stored when the engine refuses the result (wrong account, duplicate, or a
-   * late answer after `Account/cancelConnect`). `ref` is `ConnectResult.credentialRef` (or `ConnectRequest.secretRef`);
-   * a ref that is not stored is not an error.
+   * late answer after `Account/cancelConnect`). `ref` is `ConnectResult.credentialRef` (or `ConnectRequest.secretRef`)
+   * and is never shared with an existing account (every attempt stores under a fresh ref, so this cannot delete a live
+   * credential); a ref that is not stored is not an error. It forwards to `ProviderFactory.discardCredential` for
+   * `kind`, and rejects (`unavailable`) when that factory has none, so a credential is never silently kept.
    */
-  discardCredential?(ref: string): Promise<void>;
+  discardCredential?(kind: ProviderKind, ref: string): Promise<void>;
   /**
    * Restores governor state, then plans from committed cursors. The outbox start rules are `SendPort`'s: a `sending` row
    * becomes `uncertain` and is settled by `findSent` before anything else; `queued` and `scheduled` rows (every row

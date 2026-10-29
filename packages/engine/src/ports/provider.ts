@@ -250,6 +250,14 @@ export interface Quarantine {
   error: ClassifiedError;
 }
 
+/** The failures a step really clears: `clearedFailures` minus every item the same step quarantines (quarantine wins). */
+export function effectiveClearedFailures(
+  step: Pick<StepResult, 'clearedFailures' | 'quarantine'>,
+): string[] {
+  const quarantined = new Set((step.quarantine ?? []).map(q => q.item));
+  return (step.clearedFailures ?? []).filter(item => !quarantined.has(item));
+}
+
 /** Everything one bounded step learned, committed by the actor in one transaction with every `nextStates` row. */
 export interface StepResult {
   upserts?: MessageFacts[];
@@ -284,7 +292,8 @@ export interface StepResult {
   quarantine?: Quarantine[];
   /**
    * Clears the `sync_failures` rows of items that synced after a retry (`item` as in `Quarantine.item`). The store write is
-   * `SyncFailureWrite { failure: null }`; an item named here and in `quarantine` stays quarantined.
+   * `SyncFailureWrite { failure: null }`; an item named here and in `quarantine` stays quarantined. The rule is
+   * `effectiveClearedFailures`; the fact writer must call it rather than reading this field directly.
    */
   clearedFailures?: string[];
   costUnits: number;
@@ -376,6 +385,8 @@ export interface ConnectRequest {
   /**
    * Vault reference of an app password or API token; never the secret. A `reconnect` of an app-password or API-token
    * account (iCloud, generic IMAP, Fastmail) carries the NEW secret's reference, stored by the host before the call.
+   * Every connect attempt stores under a FRESH ref, never one an existing account already uses, so discarding a refused
+   * attempt (`AccountActorHost.discardCredential`) can never delete a live account's credential.
    */
   secretRef?: string;
   /** A second secret for the calendar half when the provider needs one (Fastmail: an API token for JMAP, an app password for CalDAV). */
@@ -383,7 +394,8 @@ export interface ConnectRequest {
   /**
    * `Account/cancelConnect` aborts this: the host stops its browser or loopback flow and `connect` rejects (the host's
    * `ConnectContext.signal` follows it), so a cancelled attempt never lingers and a reconnect cannot start a parallel
-   * flow. A result that still arrives after the abort is discarded by the engine (`AccountActorHost.discardCredential`).
+   * flow. A result that still arrives after the abort is discarded by the engine (`AccountActorHost.discardCredential`)
+   * and `connect` rejects with the abort reason.
    */
   signal?: AbortSignal;
 }
@@ -702,4 +714,10 @@ export interface ProviderFactory {
   /** Static for Gmail; from `provider_memory` (JMAP session, IMAP host table) elsewhere. Includes the calendar's budget. */
   budgets(account: AdapterAccount, memory: ReadonlyMap<string, string>): BudgetSpec[];
   open(account: AdapterAccount): ProviderAdapter;
+  /**
+   * Deletes a credential this factory's `connect` stored (or `ConnectRequest.secretRef` named) when the engine refuses
+   * the result. The factory owns the vault, so only it can; a ref that is not stored is not an error. A factory without
+   * this method cannot be discarded from: the host fails closed and rejects rather than keep an orphaned credential.
+   */
+  discardCredential?(ref: string): Promise<void>;
 }

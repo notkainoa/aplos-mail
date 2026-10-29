@@ -4,13 +4,14 @@ import assert from 'node:assert/strict';
 import { Governor } from '../src/sync/governor';
 import { ActorHost } from '../src/sync/host';
 import type {
-  AccountActorHost,
   ConnectRequest,
+  ConnectResult,
   ProviderFactory,
   SearchResult,
   StepResult,
   Quarantine,
 } from '../src/ports';
+import { effectiveClearedFailures } from '../src/ports';
 import type { StorePort } from '../src/store';
 import { FakeClock, FakeDeadlines, fakeLogger, portClock } from './sync-actor-helpers';
 
@@ -70,15 +71,131 @@ test('a signal already aborted before connect aborts the context at once', async
   await host.dispose();
 });
 
-test('discardCredential is an optional host method that takes the stored credential ref', async () => {
-  const discarded: string[] = [];
-  const host: Pick<AccountActorHost, 'discardCredential'> = {
-    discardCredential: async ref => {
-      discarded.push(ref);
+function fakeFactory(extra: Partial<ProviderFactory> = {}): ProviderFactory {
+  return {
+    kind: 'google',
+    connect: async () => RESULT,
+    budgets: () => [],
+    open: () => {
+      throw new Error('not used');
     },
+    ...extra,
   };
-  await host.discardCredential?.('vault:test');
+}
+
+const RESULT = { credentialRef: 'vault:new' } as unknown as ConnectResult;
+
+/** A signal that counts the abort listeners currently attached. */
+function countingSignal(signal: AbortSignal): { signal: AbortSignal; live: () => number } {
+  let live = 0;
+  const wrapper = new Proxy(signal, {
+    get(target, key) {
+      if (key === 'addEventListener')
+        return (...args: Parameters<AbortSignal['addEventListener']>) => {
+          live += 1;
+          target.addEventListener(...args);
+        };
+      if (key === 'removeEventListener')
+        return (...args: Parameters<AbortSignal['removeEventListener']>) => {
+          live -= 1;
+          target.removeEventListener(...args);
+        };
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return { signal: wrapper, live: () => live };
+}
+
+test('discardCredential forwards the kind and ref to the provider factory', async () => {
+  const discarded: string[] = [];
+  const host = hostWith(
+    fakeFactory({
+      discardCredential: async ref => {
+        discarded.push(ref);
+      },
+    }),
+  );
+  await host.discardCredential('google', 'vault:test');
   assert.deepEqual(discarded, ['vault:test']);
+  await host.dispose();
+});
+
+test('discardCredential fails closed when the factory cannot discard', async () => {
+  const host = hostWith(fakeFactory());
+  await assert.rejects(host.discardCredential('google', 'vault:test'), /unavailable|cannot/i);
+  await host.dispose();
+});
+
+test('a result that arrives after the abort is discarded and connect rejects', async () => {
+  const discarded: string[] = [];
+  const controller = new AbortController();
+  const host = hostWith(
+    fakeFactory({
+      connect: async () => {
+        controller.abort(new Error('cancelled'));
+        return RESULT;
+      },
+      discardCredential: async ref => {
+        discarded.push(ref);
+      },
+    }),
+  );
+  await assert.rejects(
+    host.connect('acct-1', 'google', { mode: 'new', signal: controller.signal }),
+    /cancelled/,
+  );
+  assert.deepEqual(discarded, ['vault:new']);
+  await host.dispose();
+});
+
+test('a failing discard after an abort still rejects with the abort reason', async () => {
+  const controller = new AbortController();
+  const host = hostWith(
+    fakeFactory({
+      connect: async () => {
+        controller.abort(new Error('cancelled'));
+        return RESULT;
+      },
+      discardCredential: async () => {
+        throw new Error('vault down');
+      },
+    }),
+  );
+  await assert.rejects(
+    host.connect('acct-1', 'google', { mode: 'new', signal: controller.signal }),
+    /cancelled/,
+  );
+  await host.dispose();
+});
+
+test('connect removes its abort listener when the factory throws synchronously', async () => {
+  const counted = countingSignal(new AbortController().signal);
+  const host = hostWith(
+    fakeFactory({
+      connect: () => {
+        throw new Error('boom');
+      },
+    }),
+  );
+  await assert.rejects(
+    host.connect('acct-1', 'google', { mode: 'new', signal: counted.signal }),
+    /boom/,
+  );
+  assert.equal(counted.live(), 0);
+  await host.dispose();
+});
+
+test('effectiveClearedFailures drops items that are also quarantined', () => {
+  const error = { kind: 'permanent' } as unknown as Quarantine['error'];
+  assert.deepEqual(
+    effectiveClearedFailures({
+      clearedFailures: ['a', 'b', 'c'],
+      quarantine: [{ item: 'b', error }],
+    }),
+    ['a', 'c'],
+  );
+  assert.deepEqual(effectiveClearedFailures({ quarantine: [] }), []);
 });
 
 test('StepResult.clearedFailures and SearchResult.partial are optional and typed', () => {
