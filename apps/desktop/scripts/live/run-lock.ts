@@ -20,6 +20,8 @@ export interface RunLock {
 export interface LockDeps {
   pid?: number;
   isAlive?(pid: number): boolean;
+  /** Hard-links a file to a new name that must not exist yet (fs link; tests replace it). */
+  link?(existing: string, newPath: string): Promise<void>;
 }
 
 /** True when a process with this PID exists (EPERM means it exists but belongs to someone else). */
@@ -70,11 +72,27 @@ async function tryCreate(path: string, pid: number): Promise<boolean> {
   return true;
 }
 
+type LinkFile = (existing: string, newPath: string) => Promise<void>;
+
+/**
+ * Puts a lock this run moved aside by mistake back in place. link, not rename: it never replaces a
+ * lock that yet another runner made meanwhile. If the link fails, the moved file is left where it
+ * is (the busy message names the lock folder), never deleted: it may be a live runner's lock.
+ */
+async function putBack(aside: string, path: string, relink: LinkFile): Promise<void> {
+  try {
+    await relink(aside, path);
+  } catch {
+    return;
+  }
+  await unlink(aside);
+}
+
 /**
  * Moves a dead runner's lock aside, then checks the moved file is still that dead lock. If another
  * runner took the lock over in between, its lock is put back and this run refuses: fail closed.
  */
-async function takeOver(path: string, deadPid: number): Promise<void> {
+async function takeOver(path: string, deadPid: number, relink: LinkFile): Promise<void> {
   const aside = `${path}.stale-${randomUUID()}`;
   try {
     await rename(path, aside);
@@ -84,9 +102,7 @@ async function takeOver(path: string, deadPid: number): Promise<void> {
   }
   const moved = await readPid(aside).catch(() => undefined);
   if (moved !== deadPid) {
-    // link, not rename: it never replaces a lock that yet another runner made meanwhile.
-    await link(aside, path).catch(() => undefined);
-    await unlink(aside);
+    await putBack(aside, path, relink);
     throw busy(path, 'it took the lock over just now');
   }
   await unlink(aside);
@@ -99,6 +115,7 @@ async function takeOver(path: string, deadPid: number): Promise<void> {
 export async function acquireRunLock(dir: string, deps: LockDeps = {}): Promise<RunLock> {
   const pid = deps.pid ?? process.pid;
   const isAlive = deps.isAlive ?? processIsAlive;
+  const relink = deps.link ?? link;
   const path = join(dir, LOCK_FILE);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -107,7 +124,7 @@ export async function acquireRunLock(dir: string, deps: LockDeps = {}): Promise<
     if (holder === 'gone') continue;
     if (holder === undefined) throw busy(path, 'its lockfile has no process id yet');
     if (holder === pid || isAlive(holder)) throw busy(path, `process ${holder}`);
-    await takeOver(path, holder);
+    await takeOver(path, holder, relink);
   }
   throw busy(path, 'the lock keeps changing hands');
 }

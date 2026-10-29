@@ -51,14 +51,37 @@ export function decodeRaw(raw: unknown): Buffer {
   return bytes;
 }
 
+/**
+ * The lines of the header block up to the first blank line, without their line endings. Every
+ * line ending in the block (the blank line's too) must be the same, all CRLF or all bare LF: a
+ * CRLF-only parser reads a bare LF as part of a line, so a mixed block could hide a header from
+ * one parser that the other delivers to. A CR is only taken off a line that an LF ends, so a
+ * trailing bare CR stays in the line and is refused by the caller.
+ */
+function headerLines(message: Buffer): string[] {
+  // latin1 keeps bytes one-to-one; a non-ASCII byte in a recipient header is refused when parsed.
+  const pieces = message.toString('latin1').split('\n');
+  const lines: string[] = [];
+  let crlf: boolean | undefined;
+  for (const [index, piece] of pieces.entries()) {
+    const terminated = index < pieces.length - 1;
+    const line = terminated && piece.endsWith('\r') ? piece.slice(0, -1) : piece;
+    if (terminated) {
+      const thisCrlf = line !== piece;
+      if (crlf !== undefined && crlf !== thisCrlf)
+        throw new UnparseableMessage('headers mix CRLF and bare LF line endings');
+      crlf = thisCrlf;
+    }
+    if (line === '') break;
+    lines.push(line);
+  }
+  return lines;
+}
+
 /** The header lines of the outer message, unfolded. Everything after the first blank line is body. */
 function outerHeaders(message: Buffer): { name: string; value: string }[] {
-  // latin1 keeps bytes one-to-one; a non-ASCII byte in a recipient header is refused when parsed.
-  const lines = message.toString('latin1').split('\n');
   const headers: { name: string; value: string }[] = [];
-  for (const rawLine of lines) {
-    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
-    if (line === '') break;
+  for (const line of headerLines(message)) {
     // A bare CR, a NUL or a whitespace-only line are read differently by different parsers.
     if (line.includes('\r') || line.includes('\0'))
       throw new UnparseableMessage('ambiguous line ending');
