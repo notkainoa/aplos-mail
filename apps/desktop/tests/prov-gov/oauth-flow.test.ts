@@ -134,7 +134,11 @@ test('reconnect: login_hint and the reconnect params, same sub accepted and the 
 
 test('reconnect as a different Google account is refused with wrongAccount and stores nothing', async () => {
   const vault = memoryVault(oldBundle);
-  const r = emulatorRig({ vault, as: 'other@example.test' });
+  const r = emulatorRig({
+    vault,
+    as: 'other@example.test',
+    deps: { knownSubject: () => false },
+  });
   const req: ConnectRequest = {
     mode: 'reconnect',
     loginHint: 'owner@example.test',
@@ -380,10 +384,12 @@ test('a grant without the mail scope is permission missingRequiredScope and stor
 });
 
 test('a failed revoke is swallowed: the refusal still surfaces, without the token', async () => {
-  const r = scriptedRig((clock, form) =>
-    form.has('token')
-      ? Promise.reject(new Error(`revoke failed for ${form.get('token')}`))
-      : tokenReply(clock),
+  const r = scriptedRig(
+    (clock, form) =>
+      form.has('token')
+        ? Promise.reject(new Error(`revoke failed for ${form.get('token')}`))
+        : tokenReply(clock),
+    { deps: { knownSubject: () => false } },
   );
   const error = await refusal(r.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, r.ctx));
   assert.equal(error.error.reason, 'wrongAccount');

@@ -2,7 +2,8 @@
 // refuse the grant (a refresh token, the id_token, the same account on a reconnect, the mail scope) BEFORE the token
 // bundle is written to the vault. A refused, failed or cancelled connect stores nothing and leaves an old bundle in
 // place. A refused grant is revoked (best effort) only when it provably belongs to another Google user than the
-// account being reconnected; otherwise its unused refresh token is just dropped (it was never stored).
+// account being reconnected AND that user is no account Aplos holds (`knownSubject`); otherwise its unused refresh
+// token is just dropped (it was never stored).
 //
 // TODO(live): whether Google's revoke ends one token or the whole grant for the user and client needs a live probe.
 // Until then a grant that may be the same user's (any new connect, a same-subject reconnect) is never revoked: if the
@@ -68,6 +69,13 @@ export interface GoogleConnectDeps extends FlowDeps {
   grantedScopes?: (account: AccountId) => readonly string[] | undefined;
   /** Capabilities for a grant. Default: `googleCapabilities`. */
   capabilities?: (grantedScopes: readonly string[]) => Capabilities;
+  /**
+   * Whether a Google `sub` is an account Aplos holds (the engine store's `remote_subject`). A foreign grant is revoked
+   * only when its sub is NOT known: the usual foreign sub is the owner picking another of their accounts in Google's
+   * chooser, often one already in Aplos, whose stored grant a whole-grant revoke would end. Default: every sub is
+   * known, so nothing is ever revoked. A throw counts as known.
+   */
+  knownSubject?: (subject: string) => boolean | Promise<boolean>;
 }
 
 /**
@@ -233,7 +241,10 @@ async function undo(
   previous: GoogleTokenBundle | undefined,
 ): Promise<void> {
   try {
-    if (vault.get(ref)?.refreshToken !== bundle.refreshToken) return;
+    // Only our own write is taken back: a bundle replaced since (a rotation by the token source) is left in place.
+    const current = vault.get(ref);
+    if (current?.refreshToken !== bundle.refreshToken || current.clientId !== bundle.clientId)
+      return;
     if (previous) await vault.set(ref, previous);
     else await vault.delete(ref);
   } catch {
@@ -273,16 +284,26 @@ async function store(
 }
 
 /**
- * Provably another Google user than the account being reconnected: the id_token's `sub` (decoded, unchecked, so a
- * token refused for another claim counts too) is not the expected one. Only with an `expectedSubject`: an address
- * mismatch on a row saved without a subject may be the owner's own renamed or alias account. Never for a new
- * connect: its user may already be an account in Aplos (the engine refuses the duplicate after sign-in).
+ * The `sub` of a grant provably another Google user's than the account being reconnected: the id_token's `sub`
+ * (decoded, unchecked, so a token refused for another claim counts too) is not the expected one. Only with an
+ * `expectedSubject`: an address mismatch on a row saved without a subject may be the owner's own renamed or alias
+ * account. Never for a new connect: its user may already be an account in Aplos (the engine refuses the duplicate).
  */
-function foreignGrant(attempt: Attempt, body: Record<string, unknown>): boolean {
+function foreignSubject(attempt: Attempt, body: Record<string, unknown>): string | undefined {
   const expected = attempt.req.expectedSubject;
-  if (attempt.req.mode === 'new' || !nonEmpty(expected)) return false;
+  if (attempt.req.mode === 'new' || !nonEmpty(expected)) return undefined;
   const subject = subjectClaim(body.id_token);
-  return subject !== undefined && subject !== expected;
+  return subject !== undefined && subject !== expected ? subject : undefined;
+}
+
+/** Unknown to Aplos, so no credential it holds can share the grant. Default and on any failure: known. */
+async function unknownToAplos(deps: GoogleConnectDeps, subject: string): Promise<boolean> {
+  if (!deps.knownSubject) return false;
+  try {
+    return (await deps.knownSubject(subject)) === false;
+  } catch {
+    return false;
+  }
 }
 
 /** A revoke never holds the refusal up for long: at most this, and not past a cancel. */
@@ -307,7 +328,8 @@ async function revokeIfForeign(
   exchange: TokenExchange,
 ): Promise<void> {
   const token = grantTokenOf(exchange.body);
-  if (!token || !foreignGrant(attempt, exchange.body)) return;
+  const subject = foreignSubject(attempt, exchange.body);
+  if (!token || !subject || !(await unknownToAplos(deps, subject))) return;
   const { signal, done } = revokeSignal(attempt.flow);
   try {
     await revokeGrant(deps, { ...attempt.flow, signal }, token);

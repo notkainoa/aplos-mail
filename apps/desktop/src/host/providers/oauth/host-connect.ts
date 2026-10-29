@@ -12,6 +12,7 @@ export interface ConnectGovernorSource {
   bindConnect(account: AccountId): BoundGovernor;
 }
 
+/** `knownSubject` comes from the engine store at the composition root (an account row with that `remote_subject`). */
 export interface GoogleHostConnectDeps extends Omit<GoogleConnectDeps, 'resolveClient'> {
   /** The environment, the Settings client and the bundled one, read again at each connect. */
   clientInputs(): GoogleClientInputs;

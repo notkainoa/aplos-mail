@@ -125,26 +125,34 @@ test('WIRE-a an address match needs email_verified === true; a new connect that 
 // ---------- (b) only a grant provably another user's is revoked; discardCredential ----------
 
 const reconnectSub1: ConnectRequest = { mode: 'reconnect', expectedSubject: 'sub-1' };
+/** The composition root's answer for a sub no Aplos account has. */
+const unknownSubjects = { deps: { knownSubject: async () => false } };
 
-test('WIRE-b a reconnect answered by another subject is revoked, even with a bad id_token or no refresh token', async () => {
-  const foreign = scriptedRig(clock => tokenReply(clock));
+test('WIRE-b a reconnect answered by an unknown subject is revoked, even with a bad id_token or no refresh token', async () => {
+  const foreign = scriptedRig(clock => tokenReply(clock), unknownSubjects);
   const wrong = await refusal(
     foreign.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, foreign.ctx),
   );
   assert.equal(wrong.error.reason, 'wrongAccount');
   assert.deepEqual(revokedIn(foreign.forms), [newRefresh]);
 
-  const bad = scriptedRig(clock =>
-    tokenReply(clock, { id_token: idToken(claims(clock, { sub: 'sub-9', aud: 'someone-else' })) }),
+  const bad = scriptedRig(
+    clock =>
+      tokenReply(clock, {
+        id_token: idToken(claims(clock, { sub: 'sub-9', aud: 'someone-else' })),
+      }),
+    unknownSubjects,
   );
   assert.equal((await refusal(bad.connect(reconnectSub1, bad.ctx))).error.reason, 'invalidIdToken');
   assert.deepEqual(revokedIn(bad.forms), [newRefresh]);
 
-  const noRefresh = scriptedRig(clock =>
-    tokenReply(clock, {
-      refresh_token: undefined,
-      id_token: idToken(claims(clock, { sub: 'sub-9' })),
-    }),
+  const noRefresh = scriptedRig(
+    clock =>
+      tokenReply(clock, {
+        refresh_token: undefined,
+        id_token: idToken(claims(clock, { sub: 'sub-9' })),
+      }),
+    unknownSubjects,
   );
   const error = await refusal(noRefresh.connect(reconnectSub1, noRefresh.ctx));
   assert.equal(error.error.reason, 'noRefreshToken');
@@ -153,6 +161,34 @@ test('WIRE-b a reconnect answered by another subject is revoked, even with a bad
     [newAccess],
     'the access token takes its grant with it',
   );
+});
+
+test('WIRE-b another subject that is an Aplos account, or with no knownSubject at all, is not revoked', async () => {
+  const asked: string[] = [];
+  const known = scriptedRig(clock => tokenReply(clock), {
+    deps: {
+      knownSubject: sub => {
+        asked.push(sub);
+        return sub === 'sub-1';
+      },
+    },
+  });
+  const wrong = await refusal(
+    known.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, known.ctx),
+  );
+  assert.equal(wrong.error.reason, 'wrongAccount');
+  assert.deepEqual(asked, ['sub-1'], 'asked about the sub Google answered with');
+  assert.deepEqual(revokedIn(known.forms), [], 'that account’s stored grant could die with it');
+
+  const defaulted = scriptedRig(clock => tokenReply(clock));
+  await refusal(defaulted.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, defaulted.ctx));
+  assert.deepEqual(revokedIn(defaulted.forms), [], 'default: every sub is known');
+
+  const throwing = scriptedRig(clock => tokenReply(clock), {
+    deps: { knownSubject: () => Promise.reject(new Error('store closed')) },
+  });
+  await refusal(throwing.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, throwing.ctx));
+  assert.deepEqual(revokedIn(throwing.forms), [], 'a failed lookup counts as known');
 });
 
 test('WIRE-b a same-subject refusal makes no revoke call: bad id_token, no refresh token, missing scope', async () => {
@@ -264,8 +300,10 @@ test('WIRE-b discardCredential deletes only a ref this host’s new connect mint
 
 /** A rig whose revoke endpoint never answers, and a wrong-account reconnect on it. */
 function hangingRevoke() {
-  const r = scriptedRig((clock, form) =>
-    form.has('token') ? new Promise<Response>(() => undefined) : tokenReply(clock),
+  const r = scriptedRig(
+    (clock, form) =>
+      form.has('token') ? new Promise<Response>(() => undefined) : tokenReply(clock),
+    unknownSubjects,
   );
   const outcome = r.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, r.ctx);
   outcome.catch(() => undefined);
@@ -482,7 +520,7 @@ test('WIRE-hardening every token-endpoint POST refuses redirects; an access toke
     redirects.push(init?.redirect);
     return endpoint.fetch(url, init);
   }) as typeof fetch;
-  const r = scriptedRig(() => tokenReply(clock), { clock, fetch: recording });
+  const r = scriptedRig(() => tokenReply(clock), { clock, fetch: recording, ...unknownSubjects });
   await refusal(r.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, r.ctx));
   assert.deepEqual(redirects, ['error', 'error'], 'the exchange and the revoke');
 
