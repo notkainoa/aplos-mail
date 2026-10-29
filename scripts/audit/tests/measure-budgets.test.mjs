@@ -348,20 +348,20 @@ const jobs = [{ name: 'Static (format, lint, types, audit)', conclusion: 'succes
 if (sub === 'run' && verb === 'list') {
   if (mode === 'list-fails') { console.error('HTTP 401: bad credentials'); process.exit(1); }
   if (mode === 'empty') { console.log('[]'); process.exit(0); }
-  const count = mode === 'cap' ? 300 : 3;
-  console.log(JSON.stringify(Array.from({ length: count }, (_, i) => ({ databaseId: i + 1, conclusion: 'success' }))));
+  const count = 3;
+  console.log(JSON.stringify(Array.from({ length: count }, (_, i) => ({ databaseId: i + 1, conclusion: 'success', status: mode === 'running' && i === 0 ? 'in_progress' : 'completed' }))));
 } else if (sub === 'run' && verb === 'view') {
   if (mode === 'view-fails' && process.argv[4] === '2') { console.error('HTTP 502'); process.exit(1); }
   console.log(JSON.stringify({ jobs }));
 }
 `;
 
-const runWithFakeGh = mode => {
+const runWithFakeGh = (mode, extraArgs = []) => {
   const dir = tempDir();
   writeFileSync(join(dir, 'gh'), fakeGh, { mode: 0o755 });
   return spawnSync(
     process.execPath,
-    [script, '--ci', '--only', 'ci.billed-minutes,ci.wall-clock-static-unit'],
+    [script, '--ci', '--only', 'ci.billed-minutes,ci.wall-clock-static-unit', ...extraArgs],
     {
       encoding: 'utf8',
       env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, FAKE_GH_MODE: mode },
@@ -378,9 +378,23 @@ describe('measure-budgets --ci against a fake gh', () => {
   });
 
   it('skips billed minutes when the run list hit the cap', () => {
-    const run = runWithFakeGh('cap');
-    assert.match(run.stdout, /ci\.billed-minutes\s+skipped.*incomplete month.*300-run limit/);
-    assert.match(run.stderr, /300-run limit/);
+    const run = runWithFakeGh('cap', ['--ci-run-limit', '3']);
+    assert.match(run.stdout, /ci\.billed-minutes\s+skipped.*incomplete month.*3-run limit/);
+    assert.match(run.stderr, /3-run limit/);
+  });
+
+  it('treats an in-progress run as an incomplete month', () => {
+    const run = runWithFakeGh('running');
+    assert.match(
+      run.stdout,
+      /ci\.billed-minutes\s+skipped.*run 1 still in_progress|gh run view 1: run still in_progress/,
+    );
+    assert.match(run.stdout, /ci\.wall-clock-static-unit\s+2 min/);
+  });
+
+  it('rejects a bad --ci-run-limit', () => {
+    assert.throws(() => parseArgs(['--ci-run-limit', '0']), /positive integer/);
+    assert.equal(parseArgs(['--ci-run-limit', '5']).ciRunLimit, 5);
   });
 
   it('skips billed minutes when one gh run view fails, naming the step', () => {
