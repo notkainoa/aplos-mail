@@ -27,7 +27,11 @@ function deps() {
 const registry: DeadlineRegistry = { register: () => () => {}, changed: () => {} };
 
 test('the root composes the four stub modules; ports the host left out answer unavailable', async () => {
-  assert.deepEqual(laneExtensions(), []);
+  // eng-views registers the sender-rule writer; the other lanes' modules are still empty.
+  assert.deepEqual(
+    laneExtensions().map(extension => extension.lane),
+    ['eng-views'],
+  );
   const t = await testEngine();
   try {
     const { accounts, deadlines, laneFor, frames } = t.engine.services;

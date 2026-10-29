@@ -48,6 +48,7 @@ const DEFAULT_PAGE = 1000;
  */
 export function openStore(db: SqlDatabase, options: OpenStoreOptions = {}): StorePort {
   const now = options.now ?? Date.now;
+  requireForeignKeys(db);
   const extensions = registerExtensions(options.extensions);
   const random = options.randomBytes ?? (n => globalThis.crypto.getRandomValues(new Uint8Array(n)));
   const { to } = migrate(db, options.migrations ?? MIGRATIONS, {
@@ -139,6 +140,15 @@ export function openStore(db: SqlDatabase, options: OpenStoreOptions = {}): Stor
     },
     close: () => db.close(),
   };
+}
+
+/** The cascades behind `accountRemove` and every other delete are foreign keys: without them rows are orphaned silently. */
+function requireForeignKeys(db: SqlDatabase) {
+  const on = db.prepare('PRAGMA foreign_keys').get<{ foreign_keys: number }>()?.foreign_keys;
+  if (on !== 1)
+    throw new Error(
+      'openStore needs PRAGMA foreign_keys=ON on the connection (the host opener sets it)',
+    );
 }
 
 function hex(bytes: Uint8Array) {

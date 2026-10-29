@@ -84,12 +84,16 @@ jobs:
       - run: npm run typecheck
       - run: npm audit --omit=dev --audit-level=high
 
-  unit:
-    name: Unit tests
+  # The unit suite is split across parallel jobs to stay under the static+unit wall-clock
+  # budget: Electron-Node suites in one job, the desktop workspace sharded by test file,
+  # and the remaining workspaces together. Names all start with "Unit tests" because
+  # scripts/audit/measure-budgets.mjs takes the longest of them for ci.wall-clock-static-unit.
+  unit-engine:
+    name: Unit tests (engine, Electron Node)
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -104,8 +108,44 @@ jobs:
       - run: node node_modules/electron/install.js
       - run: npm run check:sqlite
       - run: npm run test:engine
-      # Runs under system Node.
-      - run: npm test
+
+  unit-desktop:
+    name: Unit tests (desktop ${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # Runs under system Node. test-shard.mjs re-expands the workspace's own test globs and
+      # runs a deterministic shard, so the shards together run exactly what npm test runs.
+      - run: node scripts/audit/test-shard.mjs apps/desktop '${{ matrix.shard }}' --run
+
+  unit-packages:
+    name: Unit tests (packages)
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # Runs under system Node. The engine suite also runs under Electron's Node in the
+      # engine job — the same double coverage the old combined job had.
+      - run: npm test -w @aplos/engine -w @aplos/contract -w @aplos/contract-fixture -w @aplos/emulators
 
   e2e-browser:
     name: Browser E2E (headless, loopback only)
