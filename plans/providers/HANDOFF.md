@@ -1,29 +1,44 @@
-# Providers thread: handoff (lean mode, Linux, written 2026-10-28 evening)
+# Providers thread: handoff (lean mode, Linux, written 2026-10-29 ~04:30)
 
-> **What this means:** the governor is merged. The Gmail adapter, the OAuth first slice and the live-run guard fixes are all pushed with PRs and waiting on the Integrator. The next building work is blocked on other threads' PRs (#46 runtime seam, #54 real store), so a fresh thread starts by reading STATUS, not by coding.
+> **What this means:** the second Linux session built the whole prov-gov second half and the prov-gmail real-store/workflow work. Everything is either merged, open with the Integrator, or committed locally in a worktree waiting for a push and PR. A fresh thread starts by reading new STATUS lines, then finishes the open items below.
 
-Older handoff (long Mac version): `plans/providers/HANDOFF-2026-10-28-mac.md`. Lane cards: `plans/lanes/prov-gov.md`, `prov-gmail.md` on revamp. Linux: `source ~/.nvm/nvm.sh && nvm use 24`; worktrees under `~/.t3/worktrees/aplos-mail/` (`rv-prov-gov`, `rv-prov-gmail`, `rv-prov-emu`; make fresh ones from `origin` if they are gone). `check:sqlite` cannot run on Linux (needs the Electron binary): say so in the PR, the Integrator runs it.
+Linux: `source ~/.nvm/nvm.sh && nvm use 24`. Worktrees under `~/.t3/worktrees/aplos-mail/` (a new worktree needs `cp -a ../rv-prov-gov/node_modules ./node_modules`; copying keeps the relative workspace links). **STATUS posting:** `/tmp/status-post.sh "<line>"` appends to origin/revamp from the throwaway worktree `rv-prov-status` (recreate: `git worktree add --detach ../rv-prov-status origin/revamp`, then fetch/checkout/append/commit/`git push origin HEAD:revamp`). Full `npm run check` takes 10-25 min on this box when it is loaded: run it in the background with `timeout: 3600000` and wait with an `until grep -q '^exit' log` loop (`t3_background_wait` returns at once). `check:sqlite` cannot run on Linux. The wake-up notices from background agents arrive as task notifications.
 
 ## PRs
 
-| PR | Branch @ SHA | State |
+| PR | Branch | State |
 |---|---|---|
-| #53 prov-gov governor, actor, host, shared HTTP | merged (e037fcc) | Opus review done; deferred findings in the PR comment (extra-budget costs not gated, overlapping block class lost on restart, logger lacks status and `target_changed`, config fix does not wake sleeping actors) |
-| #56 prov-gmail adapter, emulator only | `rv/prov-gmail/adapter` @ 3861379 | READY. Sonnet review (9 findings) and fix-check done, all fixed with tests (`apps/desktop/tests/prov-gmail/review2-*.test.ts`). Fails owners:check only because OWNERS.md lacks its rows (requested) |
-| #59 prov-gov OAuth first slice | `rv/prov-gov/oauth` | `host/providers/oauth/{scopes,client,grant}.ts`, 11 tests. Same OWNERS gap (`apps/desktop/tests/prov-gov/**`) |
-| #38 prov-emu live-run guard | `rv/prov-emu/live` @ a349b7c | READY after the Integrator's 4 Musts and 5 Shoulds (Opus). Waits for its re-review of the fixes. No live run happens before it merges |
+| #53 governor, #56 Gmail adapter, #59 OAuth first slice, #38 live-run guard, #65 Sync/request, #67 guard follow-ups, #70 Gmail on the real store | | merged |
+| #69 GoogleTokenSource over the vault | `rv/prov-gov/token-source` | open, READY; token code, needs the Integrator's Opus review |
+| #72 Google sign-in flow (PKCE loopback, id_token, vault after checks) | `rv/prov-gov/oauth-flow` | open, READY, stacked on #69 (retarget to revamp after #69 merges); OAuth code, Opus review |
+| #71 Account/* handlers | `rv/prov-gov/account` | open, READY; only blocked by the engine-size budget (engine moves it to a minified measure in #66) |
 
-## Next actions
+## Local only (committed, not pushed, no PR yet)
 
-1. Read new STATUS lines (`git diff` since 2026-10-28 22:30 on origin/revamp). Answer any Integrator finding on #38 (Opus, security code), #56 or #59.
-2. When the OWNERS rows land, re-run `npm run check` on #56 and #59 (merge `origin/revamp` first) and post the result.
-3. **prov-gmail on the real store:** when #54 merges, move `google/sync.ts` and friends off the stand-in store onto `store.commit`; keep the quarantine, failure-count (`failures.ts`) and re-seeded backfill behaviour. Known gaps to close then: nothing retries a quarantined message; `SearchResult` has no partial flag (needs an eng-contract change, so an incomplete search throws); Inbox mail fetched after a history reset arrives through backfill and never notifies.
-4. **prov-gov rest:** `TokenSource` over the vault (Opus review, token code), `methods/account.ts` and `methods/sync.ts` (needs #46 merged), `sync/lease.ts` (lease over the workflow channel; un-todos `gov-stack-attack` 05). Reconnect acceptance: queued changes survive, zero resync, on the Gmail emulator.
-5. **prov-gmail PV3 remainder:** `workflow.ts` (D17, D18), P4 prefetch through `openThread(..., 'prefetch')`, Logger wiring (add `status` and method to `governor.paused`, emit `governor.target_changed`), G10 once eng-contract answers; then PV4 send/drafts/filters, prov-cal GoogleCalendarAdapter, day-2 port gaps (`plans/providers/port-gaps-day2.md` on the thread branch), feature-1 owner loop, the owner's day-9 sign-in, live gates (Mac only, via the Integrator).
+- `rv/prov-gmail/workflow` in `rv-prov-wf` @ 8e9f72b merged with revamp: Gmail workflow channel (workflow.ts, -merge, -seal, -facts, -state) with the Sonnet review's 10 findings fixed (WF-1..WF-10). 155 prov-gmail tests pass. A full `npm run check` was started in the background (log `/tmp/wf-check.log`, ends with `exit N`). **Next: if exit 0, push and open the PR (base revamp), link it, post READY in STATUS.** Models: Opus 5.5 wrote and fixed, Sonnet 5.5 reviewed.
+- `rv/prov-gov/lease` in `rv-prov-lease` (Opus agent a49d5fd5 was running): `packages/engine/src/sync/lease.ts` (`decideLease` pure, `createLeaseController`), tests `packages/engine/tests/sync-lease.test.ts`, un-todo `gov-stack-attack` 05. Based on the workflow branch, so its PR must wait for the workflow PR (stack, base `rv/prov-gmail/workflow`, retarget later). Needs a Sonnet review of the diff, then an Opus final review by the Integrator (sync correctness).
 
-## Rules that bit this session
+## Open items, in order
 
-- Lane PRs stacked on an unmerged PR show other lanes' files in owners:check; base them on the lower branch, then retarget.
-- Never delete a branch before `gh pr view` says its PR is open: the Integrator squash-merges and deletes branches on its own schedule.
-- Pre-commit hooks run ESLint with complexity <= 25; a commit that fails the hook does not happen (check `git log` after committing).
-- Sonnet for work and review; Opus only for governor and sync correctness, auth and tokens, the send and live-run guards. Free OpenCode models were not used this session.
+1. Finish the two local branches above (check, push, PR, Sonnet review for lease, READY in STATUS).
+2. Answer Integrator findings on #69, #71, #72 at once (token/OAuth fixes go to Opus).
+3. **Wire connect into the adapter** (`google/adapter.ts`, prov-gmail-owned): `connect?: GoogleConnect` in `GoogleProviderOptions`, fall back to the NotInThisLaneError stub; the host must pass `governor.bindConnect(account)` and a `grantedScopes(accountId)` dep. `connect.ts` has a copy of the test rig's capabilities; replace with the adapter's real set.
+4. Workflow wiring: the adapter planner does not schedule workflow rounds yet; workflow facts are not committed (a round result has no field for them, engine must commit); lease.ts must call the channel. Open design item: each Mac has its own data key, so two Macs cannot read each other's sealed copies; `Workflow/enable` pairing must share a key (engine `methods/workflow.ts`, prov-gmail owns it).
+5. Live checks (Mac only, via the Integrator, `plans/LIVE-RUNS.md`, tier R first): the workflow insert endpoint (`TODO(live)` on `INSERT_PATH`: `/messages/insert` vs `POST users/me/messages`), the prompt=consent behaviour on reconnect.
+6. When the engine thread lands the additive port changes (posted as REQUEST in STATUS at 2026-10-28 23:56: `AbortSignal` on `AccountActorHost.connect`, `discardCredential`, `StepResult` clear-failure plus my mapping in `sync/facts.ts`, `AccountWrite` colour/notifications/settings/removal, `SearchResult` partial flag), finish: remove the `TODO(port)` marks in `sync/account-connect.ts` / `connect-sessions.ts`, implement `Account/set` colour+notifications and the data removal in `Account/disconnect`, un-todo test `RV-4` in prov-gmail, call `disposeConnectSessions` from the prov-gov module `stop`.
+7. PV3 rest: P4 prefetch through `openThread(..., 'prefetch')`, Logger wiring (`status` and method on `governor.paused`, `governor.target_changed`, a catalog event for skipped workflow copies), G10 `progress.read` once eng-contract answers; then PV4 send/drafts/filters, prov-cal GoogleCalendarAdapter, day-2 port gaps (`plans/providers/port-gaps-day2.md`), feature-1 owner loop, the owner's day-9 sign-in.
+8. Deferred findings worth knowing: #53's list (extra-budget costs not gated, overlapping block class lost on restart, logger lacks status, config fix does not wake sleeping actors); `main/vault.ts` restores the old value when a write fails and can overwrite a reconnect that landed in between (needs compare-and-set; plan 10 / platform); workflow view has one uncapped per-process map; stale doc comments in `provider.ts` (`loginHint` says select_account; `ConnectResult.grant` says reconnectBy = grant+7d but `grant.ts` subtracts an 18 h margin).
+
+## Decisions made this session (also in DECISIONS.md or the PRs)
+
+- Reconnect and new connect always send `prompt=consent access_type=offline` (Integrator's #59 review); a bundled Desktop-client secret is allowed, API keys are not.
+- `reconnectBy` carries an 18 h margin (at most half the lifetime).
+- Workflow retention: 180 days for cleared thread records and old lease records.
+- Engine budget: engine thread moved the portability test to the minified bundle (400,000 minified).
+
+## Rules that bit
+
+- Subagent worktrees have no node_modules: copy it from `rv-prov-gov` before they start.
+- Never `sleep` in the shell (blocked); wait with `until <cond>; do sleep N; done` in a foreground command under 600 s or in the background.
+- `git revert -q` can fail silently; check `git log`.
+- Routing used: Opus for token, OAuth, guard, sync-correctness fixes, workflow, lease; Sonnet for Sync/request, Account handlers, Gmail real store and every review. No free OpenCode models were used.
