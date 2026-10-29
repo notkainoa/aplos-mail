@@ -21,15 +21,16 @@ import { refusalError, transportError } from './token-errors';
 export const googleAuthUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const googleRevokeUrl = 'https://oauth2.googleapis.com/revoke';
 
+/**
+ * The endpoints are always Google's fixed URLs (`googleAuthUrl`, `googleTokenUrl`, `googleRevokeUrl`): no option,
+ * setting or variable may send a code, verifier, token or secret elsewhere. Tests reroute at the transport (`http`).
+ */
 export interface FlowDeps {
   /** One request, no retries (`shared/http.ts`); called only inside `governor.run`. */
   http: HttpClient;
   /** Opens the consent URL in the owner's browser (Electron's `shell.openExternal`). */
   openExternal(url: string): Promise<void> | void;
   random?: RandomSource;
-  authUrl?: string;
-  tokenUrl?: string;
-  revokeUrl?: string;
   /** Default 5 minutes. */
   callbackTimeoutMs?: number;
 }
@@ -161,7 +162,7 @@ async function postExchange(
   signal: AbortSignal,
 ): Promise<HttpResponse> {
   try {
-    return await deps.http.request(deps.tokenUrl ?? googleTokenUrl, {
+    return await deps.http.request(googleTokenUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
       body: exchangeForm(request.client, exchange),
@@ -223,7 +224,7 @@ export async function runAuthorization(
   const state = createState(random);
   const loopback = await openCallback(state, deps, ctx);
   try {
-    const base = deps.authUrl ?? googleAuthUrl;
+    const base = googleAuthUrl;
     const redirectUri = loopback.redirectUri;
     await launch(deps, consentUrl({ base, request, redirectUri, state, pkce }));
     const code = codeFrom(await loopback.outcome);
@@ -238,7 +239,7 @@ export async function runAuthorization(
 
 async function postRevoke(deps: FlowDeps, token: string, signal: AbortSignal): Promise<boolean> {
   try {
-    const response = await deps.http.request(deps.revokeUrl ?? googleRevokeUrl, {
+    const response = await deps.http.request(googleRevokeUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ token }),
