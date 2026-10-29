@@ -1,6 +1,6 @@
 import { ContractError } from '@aplos/contract/contract-error';
 import type { State } from '@aplos/contract';
-import type { StorePort } from '../../store/port';
+import { StoreError, type StorePort } from '../../store/port';
 import { DEMO_ACCOUNTS, demoWrites } from './data';
 
 /**
@@ -68,7 +68,12 @@ export function loadDemo(store: StorePort, opId: string, now: number): DemoAppli
   };
 }
 
-/** `Demo/reset`: refused while a demo account has a send out, else remove and load again. */
+/**
+ * `Demo/reset`: refused while a demo account has a send out, else remove and load again. Two commits, never
+ * one — the store refuses a write naming an account removed earlier in the same commit — so a failure in
+ * between leaves no demo accounts: the reload is retried once, and a second failure throws `internal`
+ * saying the demo is empty and `Demo/load` restores it.
+ */
 export function resetDemo(store: StorePort, opId: string, now: number): DemoApplied {
   const sending = store.read(
     q =>
@@ -84,18 +89,41 @@ export function resetDemo(store: StorePort, opId: string, now: number): DemoAppl
       message: 'A demo message is being sent. Try again when it has gone out.',
     });
   removeDemo(store, `${opId}-remove`);
-  // The reload carries this call's own opId, so the receipt names a commit that really happened.
-  return loadDemo(store, opId, now);
+  // The reload carries this call's own opId, so the receipt names a commit that really happened. It is the
+  // second of reset's two commits; a failure after the remove leaves the demo empty, so it gets one retry.
+  for (let attempt = 0; attempt < 2; attempt++)
+    try {
+      return loadDemo(store, opId, now);
+    } catch (error) {
+      // A ContractError loadDemo raises itself is a real refusal, not a failed commit: it stands.
+      if (error instanceof ContractError) throw error;
+    }
+  throw new ContractError({
+    type: 'internal',
+    message: 'The demo is empty after a failed reset. Demo/load restores it.',
+  });
 }
 
-/** `Demo/remove`: every demo account and its mail; real accounts are untouched by `accountRemove`. */
+/**
+ * `Demo/remove`: every demo account and its mail; real accounts are untouched by `accountRemove`. The store's
+ * `conflict` — a demo submission is `sending` or `uncertain` — becomes the typed `conflict` the UI shows.
+ */
 export function removeDemo(store: StorePort, opId: string): { opId: string; state: State } {
   const ids = demoAccountIds(store);
   if (!ids.length) return { opId: DEMO_REMOVE_NOOP, state: state(store) };
-  const result = store.commit({
-    opId,
-    origin: 'local',
-    writes: ids.map(accountId => ({ kind: 'accountRemove' as const, accountId })),
-  });
-  return { opId, state: { dbEpoch: result.dbEpoch, seq: result.seq } };
+  try {
+    const result = store.commit({
+      opId,
+      origin: 'local',
+      writes: ids.map(accountId => ({ kind: 'accountRemove' as const, accountId })),
+    });
+    return { opId, state: { dbEpoch: result.dbEpoch, seq: result.seq } };
+  } catch (error) {
+    if (error instanceof StoreError && error.code === 'conflict')
+      throw new ContractError({
+        type: 'conflict',
+        message: "Demo accounts can't be removed while a message is sending.",
+      });
+    throw error;
+  }
 }
