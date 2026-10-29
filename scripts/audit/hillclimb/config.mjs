@@ -14,6 +14,7 @@ export const defaults = {
   gateTimeoutSec: 300,
   scorerTimeoutSec: 300,
   attemptTimeoutSec: 1800,
+  lockWaitMin: 180, // matches lock.mjs defaultTimeoutMs (3 h)
 };
 
 export const agents = ['swe-2', 'claude', 'command'];
@@ -32,6 +33,7 @@ const TOP_KEYS = new Set([
   'roundLimit',
   'stopAfterNoGain',
   'maxConcurrent',
+  'lockWaitMin',
 ]);
 const GATE_KEYS = new Set(['name', 'command', 'timeoutSec']);
 const SCORER_KEYS = new Set(['name', 'command', 'weight', 'noRegress', 'timeoutSec']);
@@ -50,10 +52,10 @@ function needString(value, where, { empty = false } = {}) {
   return value;
 }
 
-function needTimeout(value, where, fallback) {
+function needTimeout(value, where, fallback, unit = 'seconds') {
   if (value === undefined) return fallback;
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    throw new ConfigError(`${where} must be a positive number of seconds`);
+    throw new ConfigError(`${where} must be a positive number of ${unit}`);
   }
   return value;
 }
@@ -195,6 +197,7 @@ export function validateConfig(raw) {
       defaults.stopAfterNoGain,
     ),
     maxConcurrent: needPositiveInt(raw.maxConcurrent, 'maxConcurrent', defaults.maxConcurrent),
+    lockWaitMin: needTimeout(raw.lockWaitMin, 'lockWaitMin', defaults.lockWaitMin, 'minutes'),
   };
   // Sanity check the globs now, not mid-run when an attempt is rejected for the wrong
   // reason — with the same matcher the diff guard uses, so a valid glob here is a valid

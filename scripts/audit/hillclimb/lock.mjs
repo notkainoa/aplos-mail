@@ -3,13 +3,23 @@
 // every gate/scorer runs inside withCheckSlot. The lock is a directory created with fs.mkdir,
 // which is atomic on every filesystem we run on; a `pid` file inside marks the holder.
 // Attempt agents do NOT hold the slot — only the scoring/gating phases do.
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export const LOCK_NAME = 'aplos-check-slot.lock';
 export const defaultPollMs = 2000;
-export const defaultTimeoutMs = 30 * 60 * 1000;
+// Queued gate suites can wait a long while behind another run on this machine; 3 hours
+// covers a full queue, and the target config's lockWaitMin can stretch it further.
+export const defaultTimeoutMs = 3 * 60 * 60 * 1000;
 export const defaultStaleMs = 60 * 60 * 1000;
 
 export function lockDir(base = tmpdir()) {
@@ -17,6 +27,43 @@ export function lockDir(base = tmpdir()) {
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Lock dirs this process currently holds, so a signal handler can release them on its way
+// out instead of leaving a stale lock for the next run.
+const held = new Set();
+
+/** Release every slot we still hold — for SIGINT/SIGTERM/SIGHUP handlers. */
+export function releaseHeldSlots() {
+  for (const dir of [...held]) releaseIfOurs(dir);
+  held.clear();
+}
+
+// A lock dir is only ever removed when its pid file still names this process: if a peer
+// stole our (stale) dir and made a fresh one, its pid is not ours and must not be deleted.
+function releaseIfOurs(dir) {
+  try {
+    if (Number(readFileSync(join(dir, 'pid'), 'utf8').trim()) === process.pid) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  } catch {
+    // No readable pid file — not ours to remove.
+  }
+}
+
+/**
+ * Atomically moves a stale lock dir aside. rename(2) is atomic, so exactly one contender
+ * wins even when several processes judge the lock stale at once; the loser sees ENOENT.
+ */
+export function takeStaleLock(dir) {
+  const aside = `${dir}.stale-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    renameSync(dir, aside);
+  } catch {
+    return false; // already moved aside or recreated by another taker
+  }
+  rmSync(aside, { recursive: true, force: true });
+  return true;
+}
 
 function holderAlive(dir) {
   let pid;
@@ -29,9 +76,10 @@ function holderAlive(dir) {
   if (!Number.isInteger(pid) || pid <= 0) return null;
   try {
     process.kill(pid, 0);
-    return true; // exists (EPERM also lands here: alive, just not ours)
-  } catch {
-    return false;
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but is not ours to signal: alive, not stale.
+    return error.code === 'EPERM';
   }
 }
 
@@ -49,7 +97,9 @@ function isStale(dir, staleMs, now) {
 /**
  * Runs `fn` holding the exclusive slot. Waits with `pollMs` polling, gives up after
  * `timeoutMs`, and takes over a lock whose holder pid is dead or that is older than
- * `staleMs`. The slot is released in a finally so a throwing `fn` cannot wedge the machine.
+ * `staleMs` — by renaming it aside, never by deleting the directory in place (a peer that
+ * re-created the slot between our staleness check and the delete would lose its live lock).
+ * The slot is released in a finally, and only while its pid file still names this process.
  */
 export async function withCheckSlot(fn, options = {}) {
   const dir = options.dir ?? lockDir();
@@ -65,7 +115,7 @@ export async function withCheckSlot(fn, options = {}) {
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
       if (isStale(dir, staleMs, now)) {
-        rmSync(dir, { recursive: true, force: true });
+        takeStaleLock(dir);
         continue; // lost races just hit EEXIST again on the next pass
       }
       if (now() > deadline) {
@@ -76,9 +126,11 @@ export async function withCheckSlot(fn, options = {}) {
   }
   try {
     writeFileSync(join(dir, 'pid'), String(process.pid));
+    held.add(dir);
     return await fn();
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    releaseIfOurs(dir);
+    held.delete(dir);
   }
 }
 

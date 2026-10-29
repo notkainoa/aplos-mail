@@ -122,6 +122,14 @@ describe('validateConfig', () => {
     bad({ allowDirectives: [42] }, 'allowDirectives');
   });
 
+  it('accepts a lockWaitMin override and rejects bad values', () => {
+    assert.equal(validateConfig({ ...good, lockWaitMin: 600 }).lockWaitMin, 600);
+    assert.equal(validateConfig({ ...good }).lockWaitMin, 180);
+    bad({ lockWaitMin: 0 }, 'lockWaitMin');
+    bad({ lockWaitMin: -5 }, 'lockWaitMin');
+    bad({ lockWaitMin: 'forever' }, 'lockWaitMin');
+  });
+
   it('rejects non-object configs', () => {
     assert.throws(() => validateConfig(null), /object/);
     assert.throws(() => validateConfig([1, 2]), /object/);
