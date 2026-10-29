@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Budget measurement (plan 40 Q3 deliverable 6). Usage:
-//   node scripts/audit/measure-budgets.mjs [--record] [--tighten] [--only <id,...>] [--time-unit-suite] [--ci]
+//   node scripts/audit/measure-budgets.mjs [--record] [--tighten] [--only <id,...>] [--time-unit-suite] [--ci [--ci-run-limit <n>]]
 // Measures the rows owned by plat-ci (bundle and package sizes, unit-suite time, CI wall-clock and billed
 // minutes) and compares each with its budgets.json limit. An artifact that is absent is reported as
 // "not measurable here" and never fails. --ci reads the ci.* rows from the revamp runs of the CI workflow
@@ -268,16 +268,16 @@ export function createdSince(now, days) {
 
 /**
  * Every revamp CI run created in the last 30 days (any outcome: failed and cancelled runs bill too,
- * newest first, at most ciRunLimit), as { runs: [{ conclusion, jobs }], problems, complete }.
+ * newest first, at most `limit`, default ciRunLimit), as { runs: [{ conclusion, jobs }], problems, complete }.
  * `complete` is false when the list hit the cap or any gh step failed, so a caller must not treat the
  * runs as the whole month. Each failing step is named in `problems`.
  */
-export function fetchCiRuns(root, now = new Date()) {
+export function fetchCiRuns(root, now = new Date(), limit = ciRunLimit) {
   const list = ghJson(
     'gh run list',
     ['run', 'list', '--branch', 'revamp', '--workflow', 'CI']
-      .concat(['--created', createdSince(now, ciWindowDays), '--limit', String(ciRunLimit)])
-      .concat(['--json', 'databaseId,conclusion']),
+      .concat(['--created', createdSince(now, ciWindowDays), '--limit', String(limit)])
+      .concat(['--json', 'databaseId,conclusion,status']),
     root,
   );
   if (list.problem) return { runs: [], problems: [list.problem], complete: false };
@@ -288,14 +288,18 @@ export function fetchCiRuns(root, now = new Date()) {
     return { runs: [], problems: ['gh run list: no CI runs in the last 30 days'], complete: false };
   }
   const problems = [];
-  if (list.value.length >= ciRunLimit) {
+  if (list.value.length >= limit) {
     problems.push(
-      `gh run list: hit the ${ciRunLimit}-run limit; older runs in the window are not counted`,
+      `gh run list: hit the ${limit}-run limit; older runs in the window are not counted`,
     );
   }
   const runs = [];
   for (const entry of list.value) {
     const step = `gh run view ${entry.databaseId}`;
+    if (entry.status !== 'completed') {
+      problems.push(`${step}: run still ${entry.status ?? 'unfinished'}, its jobs are not final`);
+      continue;
+    }
     const view = ghJson(step, ['run', 'view', String(entry.databaseId), '--json', 'jobs'], root);
     if (view.problem) problems.push(view.problem);
     else if (Array.isArray(view.value?.jobs))
@@ -397,7 +401,7 @@ export async function measureRows(register, root, options = {}) {
   const chosen = rows.filter(row => !only || only.includes(row.id));
   const context = { ...options };
   if (options.ci && context.ciRuns === undefined && chosen.some(isCiRow)) {
-    const fetched = fetchCiRuns(root);
+    const fetched = fetchCiRuns(root, new Date(), options.ciRunLimit);
     context.ciRuns = fetched.runs;
     context.ciComplete = fetched.complete;
     context.ciProblems = fetched.problems;
@@ -433,12 +437,22 @@ const flags = {
   '--ci': 'ci',
 };
 
+// A smaller run cap for tests, so the cap path does not spawn hundreds of processes.
+const numberFlags = { '--ci-run-limit': 'ciRunLimit' };
+
+function parseLimit(flag, value) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1) throw new Error(`${flag} needs a positive integer`);
+  return number;
+}
+
 export function parseArgs(argv) {
   const options = { record: false, tighten: false, timeUnitSuite: false, ci: false, only: null };
   const args = [...argv];
   while (args.length > 0) {
     const arg = args.shift();
     if (arg in flags) options[flags[arg]] = true;
+    else if (arg in numberFlags) options[numberFlags[arg]] = parseLimit(arg, args.shift());
     else if (arg === '--only') options.only = (args.shift() ?? '').split(',').filter(Boolean);
     else throw new Error(`unknown argument ${arg}`);
   }
