@@ -1,0 +1,384 @@
+// Pure-function tests for the hill-climb scorers (roadmap 5.1c): the parsing and scoring maths
+// run against inline fixtures of each tool's real output, so the heavy tools never run here.
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, symlinkSync, readlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { c8Args, scoreFiles, summaryFiles, testCommand } from '../hillclimb/scorers/coverage.mjs';
+import {
+  mutatePatterns,
+  parseArgsMutation,
+  reportMutants,
+  renderRunConfig,
+  sampleMutants,
+  scoreMutation,
+} from '../hillclimb/scorers/mutation.mjs';
+import {
+  reportFromRun as knipReport,
+  scoreKnip,
+  scoredFindings,
+} from '../hillclimb/scorers/knip.mjs';
+import {
+  reportFromRun as depcruiseReport,
+  scoreDepcruise,
+  scoredViolations,
+} from '../hillclimb/scorers/depcruise.mjs';
+import { fixWorkspaceLinks, runnerArgs } from '../hillclimb/scorers/stryker-run.mjs';
+import { ScorerError, emitScore, inScope, parseArgs } from '../hillclimb/scorers/util.mjs';
+
+test('util parseArgs: repeatable values, numbers, strings and errors', () => {
+  const options = parseArgs(['--scope', 'a/**', '--scope', 'b/**', '--timeout-sec', '5'], {
+    values: { '--scope': 'scope' },
+    numbers: { '--timeout-sec': { key: 'timeoutSec', default: 60 } },
+    strings: { '--runner': { key: 'runner', default: 'node', oneOf: ['node', 'x'] } },
+  });
+  assert.deepEqual(options.scope, ['a/**', 'b/**']);
+  assert.equal(options.timeoutSec, 5);
+  assert.equal(options.runner, 'node');
+  assert.throws(() => parseArgs(['--bogus'], {}), ScorerError);
+  assert.throws(
+    () =>
+      parseArgs(['--timeout-sec', 'nan'], {
+        numbers: { '--timeout-sec': { key: 't', default: 1 } },
+      }),
+    ScorerError,
+  );
+  assert.throws(
+    () =>
+      parseArgs(['--runner', 'y'], {
+        strings: { '--runner': { key: 'r', default: 'node', oneOf: ['node'] } },
+      }),
+    ScorerError,
+  );
+  assert.throws(() => parseArgs(['--scope'], { values: { '--scope': 's' } }), ScorerError);
+});
+
+test('util inScope: empty scope matches all, glob semantics match the boundary rule', () => {
+  assert.equal(inScope('a/b.ts', []), true);
+  assert.equal(inScope('packages/engine/src/x.ts', ['packages/engine/src/**']), true);
+  assert.equal(inScope('packages/engine/src', ['packages/engine/src/**']), true);
+  assert.equal(inScope('packages/engine/src/x.ts', ['packages/engine/src']), false);
+  assert.equal(inScope('apps/web/src/x.ts', ['packages/**']), false);
+});
+
+test('util emitScore writes one JSON line, capped at 10 details of 200 chars', () => {
+  const writes = [];
+  const original = process.stdout.write.bind(process.stdout);
+  process.stdout.write = chunk => writes.push(chunk);
+  try {
+    emitScore(
+      -7,
+      Array.from({ length: 12 }, (_, i) => `line ${i} ` + 'x'.repeat(300)),
+    );
+  } finally {
+    process.stdout.write = original;
+  }
+  assert.equal(writes.length, 1);
+  const line = JSON.parse(writes[0]);
+  assert.equal(line.score, -7);
+  assert.equal(line.details.length, 10);
+  assert.equal(line.details[0].length, 200);
+  assert.throws(() => emitScore(Number.POSITIVE_INFINITY, []), ScorerError);
+});
+
+// --- coverage -------------------------------------------------------------
+
+test('coverage summaryFiles: per-file rows sorted, total skipped, abs paths made relative', () => {
+  const summary = {
+    total: { lines: { covered: 8, total: 13, pct: 61.5 } },
+    '/root/src/b.ts': { lines: { covered: 3, total: 10, pct: 30 } },
+    '/root/src/a.ts': { lines: { covered: 5, total: 5, pct: 100 } },
+  };
+  assert.deepEqual(summaryFiles(summary, '/root'), [
+    { file: 'src/a.ts', covered: 5, total: 5, pct: 100 },
+    { file: 'src/b.ts', covered: 3, total: 10, pct: 30 },
+  ]);
+});
+
+test('coverage scoreFiles: weighted line percent, worst file first', () => {
+  const { score, details } = scoreFiles([
+    { file: 'src/a.ts', covered: 9, total: 10, pct: 90 },
+    { file: 'src/b.ts', covered: 1, total: 10, pct: 10 },
+    { file: 'src/empty.ts', covered: 0, total: 0, pct: 100 },
+  ]);
+  assert.equal(score, 50);
+  assert.deepEqual(details, ['src/b.ts 10.0% (1/10)', 'src/a.ts 90.0% (9/10)']);
+  assert.equal(scoreFiles([]).score, 0);
+});
+
+test('coverage testCommand and c8Args shape', () => {
+  assert.deepEqual(testCommand('node', ['t1.test.ts']).slice(1), [
+    '--import',
+    'tsx',
+    '--test',
+    't1.test.ts',
+  ]);
+  const electron = testCommand('electron-node', ['t.test.ts']);
+  assert.match(electron[1], /electron-node\.mjs$/);
+  const args = c8Args({
+    scopes: ['packages/engine/src/**'],
+    runner: 'node',
+    files: ['t.test.ts'],
+    reportDir: '/r',
+  });
+  assert.ok(args.includes('--all'));
+  assert.ok(args.includes('--include'));
+  assert.ok(args.includes('packages/engine/src/**'));
+  assert.ok(args.includes('--exclude'));
+  assert.ok(args.includes('**/tests/**'));
+});
+
+// --- mutation -------------------------------------------------------------
+
+const loc = (sl, sc, el = sl, ec = sc + 1) => ({
+  start: { line: sl, column: sc },
+  end: { line: el, column: ec },
+});
+const mutant = (fileName, line, column, mutatorName = 'Mut', status = 'Survived') => ({
+  fileName,
+  mutatorName,
+  status,
+  location: loc(line, column),
+});
+
+test('mutation sampleMutants: deterministic even stride over sorted mutants', () => {
+  const mutants = [
+    mutant('b.ts', 5, 0),
+    mutant('a.ts', 9, 0),
+    mutant('a.ts', 1, 0),
+    mutant('a.ts', 1, 4),
+  ];
+  const all = sampleMutants(mutants, 10);
+  assert.deepEqual(
+    all.map(m => `${m.fileName}:${m.location.start.line}:${m.location.start.column}`),
+    ['a.ts:1:0', 'a.ts:1:4', 'a.ts:9:0', 'b.ts:5:0'],
+  );
+  const capped = sampleMutants(mutants, 2);
+  assert.equal(capped.length, 2);
+  assert.deepEqual(capped, sampleMutants(mutants, 2));
+  // Stride floor(i * 4 / 2) picks indexes 0 and 2 of the sorted list.
+  assert.equal(capped[0].location.start.line, 1);
+  assert.equal(capped[1].location.start.line, 9);
+});
+
+test('mutation mutatePatterns: 1-based line, 0-based column ranges; touching ranges merge', () => {
+  assert.deepEqual(mutatePatterns([mutant('src/a.ts', 0, 2, 'Mut', 'x')]), ['src/a.ts:1:2-1:3']);
+  const merged = mutatePatterns([
+    mutant('src/a.ts', 0, 0, 'Mut', 'x'),
+    mutant('src/a.ts', 0, 1, 'Mut', 'x'),
+    mutant('src/b.ts', 2, 0, 'Mut', 'x'),
+  ]);
+  assert.deepEqual(merged, ['src/a.ts:1:0-1:2', 'src/b.ts:3:0-3:1']);
+});
+
+test('mutation scoreMutation: killed+timeout over valid; survivors listed first', () => {
+  const mutants = [
+    mutant('src/a.ts', 0, 0, 'BlockStatement', 'Killed'),
+    mutant('src/a.ts', 1, 0, 'EqualityOperator', 'Survived'),
+    mutant('src/a.ts', 2, 0, 'ArithmeticOperator', 'Timeout'),
+    mutant('src/a.ts', 3, 0, 'ConditionalExpression', 'NoCoverage'),
+    mutant('src/a.ts', 4, 0, 'Broken', 'CompileError'),
+    mutant('src/a.ts', 5, 0, 'IgnoredMutant', 'Ignored'),
+  ];
+  const { score, details } = scoreMutation(mutants);
+  assert.equal(score, 50); // 2 of 4 valid mutants killed
+  assert.deepEqual(details, [
+    'src/a.ts:2 EqualityOperator (survived)',
+    'src/a.ts:4 ConditionalExpression (nocoverage)',
+    'src/a.ts:5 Broken (compileerror)',
+  ]);
+  assert.equal(scoreMutation([]).score, 0);
+});
+
+test('mutation reportMutants flattens the report files map', () => {
+  const report = {
+    files: {
+      'src/a.ts': { mutants: [{ id: '1', status: 'Killed' }] },
+      'src/b.ts': {
+        mutants: [
+          { id: '2', status: 'Survived' },
+          { id: '3', status: 'Killed' },
+        ],
+      },
+    },
+  };
+  assert.deepEqual(
+    reportMutants(report).map(m => `${m.fileName}#${m.id}`),
+    ['src/a.ts#1', 'src/b.ts#2', 'src/b.ts#3'],
+  );
+});
+
+test('mutation parseArgs requires --scope and --tests', () => {
+  assert.throws(() => parseArgsMutation(['--tests', 'tests/**']), /needs --scope/);
+  assert.throws(() => parseArgsMutation(['--scope', 'src/**']), /needs --tests/);
+  const ok = parseArgsMutation(['--scope', 'src/**', '--tests', 'tests/**', '--max-mutants', '30']);
+  assert.equal(ok.maxMutants, 30);
+  assert.equal(ok.runner, 'node');
+});
+
+test('mutation renderRunConfig layers mutate ranges, command and report on the base config', () => {
+  const config = renderRunConfig({
+    mutate: ['src/a.ts:1:0-1:2'],
+    tests: ['tests/a.test.ts'],
+    runner: 'node',
+    reportFile: '/tmp/report.json',
+  });
+  assert.match(config, /mutate: \[\s*"src\/a\.ts:1:0-1:2"\s*\]/);
+  assert.match(
+    config,
+    /commandRunner: \{ command: ".*stryker-run\.mjs --runner node tests\/a\.test\.ts" \}/,
+  );
+  assert.match(config, /jsonReporter: \{ fileName: "\/tmp\/report\.json" \}/);
+  assert.match(config, /import base from "..\/..\/..\/stryker\.config\.mjs"/);
+});
+
+// --- knip -----------------------------------------------------------------
+
+const knipIssue = (
+  file,
+  { files = [], exports = [], dependencies = [], devDependencies = [] } = {},
+) => ({
+  file,
+  files: files.map(name => ({ name })),
+  exports: exports.map(name => ({ name })),
+  dependencies: dependencies.map(name => ({ name })),
+  devDependencies: devDependencies.map(name => ({ name })),
+});
+
+test('knip scoredFindings: files 3, exports 1, dependencies 3; scope filters', () => {
+  const issues = [
+    knipIssue('apps/web/src/dead.ts', { files: ['dead.ts'] }),
+    knipIssue('apps/web/package.json', { dependencies: ['leftpad'], devDependencies: ['other'] }),
+    knipIssue('apps/web/src/a.ts', { exports: ['unused1', 'unused2'] }),
+    knipIssue('packages/engine/src/x.ts', { exports: ['nope'] }),
+  ];
+  const all = scoredFindings(issues, []);
+  assert.deepEqual(
+    all.map(r => `${r.file}:${r.weight}`),
+    [
+      'apps/web/src/dead.ts:3',
+      'apps/web/package.json:6',
+      'apps/web/src/a.ts:2',
+      'packages/engine/src/x.ts:1',
+    ],
+  );
+  const scoped = scoredFindings(issues, ['apps/web/**']);
+  assert.equal(scoped.length, 3);
+});
+
+test('knip scoreKnip: score is -(weights), worst file first', () => {
+  const rows = [
+    { file: 'b.ts', files: 0, exports: 2, dependencies: 0, weight: 2 },
+    { file: 'a.ts', files: 1, exports: 0, dependencies: 0, weight: 3 },
+  ];
+  const { score, details } = scoreKnip(rows);
+  assert.equal(score, -5);
+  assert.deepEqual(details, [
+    'a.ts: 1 unused file (weight 3)',
+    'b.ts: 2 unused exports (weight 2)',
+  ]);
+});
+
+test('knip reportFromRun parses JSON after leading log noise and fails on no report', () => {
+  const report = { issues: [knipIssue('x.ts', { files: ['x.ts'] })] };
+  const run = { status: 1, stdout: `knip v6\n${JSON.stringify(report)}`, stderr: '' };
+  assert.equal(knipReport(run).issues.length, 1);
+  assert.throws(
+    () => knipReport({ status: 2, stdout: '', stderr: 'bad config\nmore' }),
+    /bad config/,
+  );
+});
+
+// --- depcruise --------------------------------------------------------------
+
+const violation = (from, to, name, severity, type = 'dependency') => ({
+  type,
+  from,
+  to,
+  rule: { name, severity },
+});
+
+test('depcruise scoredViolations: errors 3, warnings 1, cycles 2; scope filters from', () => {
+  const violations = [
+    violation('packages/engine/src/a.ts', 'node:fs', 'engine-core-no-node', 'error'),
+    violation(
+      'packages/engine/src/x.ts',
+      'packages/engine/src/y.ts',
+      'no-circular-engine',
+      'error',
+      'cycle',
+    ),
+    violation('packages/x/a.ts', 'apps/web/z.ts', 'packages-no-apps', 'warn'),
+    violation('other/a.ts', 'x', 'whatever', 'error'),
+  ];
+  const rows = scoredViolations(violations, ['packages/**']);
+  assert.deepEqual(
+    rows.map(r => `${r.rule.name}:${r.weight}`),
+    ['engine-core-no-node:3', 'no-circular-engine:2', 'packages-no-apps:1'],
+  );
+});
+
+test('depcruise scoreDepcruise: score is -(weights), details are from -> to (rule)', () => {
+  const rows = scoredViolations(
+    [
+      violation('b.ts', 'node:fs', 'engine-core-no-node', 'error'),
+      violation('a.ts', 'c.ts', 'no-circular-engine', 'error', 'cycle'),
+    ],
+    [],
+  );
+  const { score, details } = scoreDepcruise(rows);
+  assert.equal(score, -5);
+  assert.deepEqual(details, [
+    'b.ts -> node:fs (engine-core-no-node)',
+    'a.ts -> c.ts (no-circular-engine)',
+  ]);
+});
+
+test('depcruise reportFromRun parses JSON after noise and fails on no report', () => {
+  const report = { summary: { violations: [] } };
+  assert.deepEqual(
+    depcruiseReport({ status: 0, stdout: JSON.stringify(report), stderr: '' }).summary.violations,
+    [],
+  );
+  assert.throws(() => depcruiseReport({ status: 1, stdout: '', stderr: 'nope' }), /nope/);
+});
+
+// --- stryker-run -----------------------------------------------------------
+
+test('stryker-run fixWorkspaceLinks points @aplos links at the sandbox tree', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hillclimb-stryrun-'));
+  const real = join(root, 'real');
+  const sandbox = join(root, 'sandbox');
+  mkdirSync(join(real, 'node_modules', '@aplos'), { recursive: true });
+  mkdirSync(join(real, 'node_modules', 'leftpad'), { recursive: true });
+  mkdirSync(join(real, 'packages', 'engine'), { recursive: true });
+  mkdirSync(join(real, 'apps', 'desktop'), { recursive: true });
+  symlinkSync('../../packages/engine', join(real, 'node_modules', '@aplos', 'engine'));
+  symlinkSync('../../apps/desktop', join(real, 'node_modules', '@aplos', 'desktop'));
+  mkdirSync(join(sandbox, 'packages', 'engine'), { recursive: true });
+  mkdirSync(join(sandbox, 'apps', 'desktop'), { recursive: true });
+  symlinkSync(join(real, 'node_modules'), join(sandbox, 'node_modules'));
+
+  assert.equal(fixWorkspaceLinks(sandbox), true);
+  assert.equal(
+    readlinkSync(join(sandbox, 'node_modules', 'leftpad')),
+    join(real, 'node_modules', 'leftpad'),
+  );
+  assert.equal(
+    readlinkSync(join(sandbox, 'node_modules', '@aplos', 'engine')),
+    join('..', '..', 'packages', 'engine'),
+  );
+  assert.equal(fixWorkspaceLinks(sandbox), false); // already a real directory now
+
+  const plain = join(root, 'plain');
+  mkdirSync(plain, { recursive: true });
+  assert.equal(fixWorkspaceLinks(plain), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('stryker-run runnerArgs: node and electron-node runners', () => {
+  assert.deepEqual(runnerArgs('node', ['a.test.ts']), ['--import', 'tsx', '--test', 'a.test.ts']);
+  const electron = runnerArgs('electron-node', ['a.test.ts']);
+  assert.match(electron[0], /scripts[\\/]audit[\\/]electron-node\.mjs$/);
+});

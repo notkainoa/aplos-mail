@@ -1,0 +1,96 @@
+{
+  "$schema": "https://unpkg.com/knip@6.42.1/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/**/*.mjs", "tools/**/*.{mjs,ts}", "tests/**/*.{ts,mts}", "*.{mjs,cjs}"],
+      "project": ["scripts/**/*.mjs", "tools/**/*.{mjs,ts}", "tests/**/*.{ts,mts}"],
+      "ignoreDependencies": [
+        "tsx",
+        "typescript",
+        "c8",
+        "knip",
+        "dependency-cruiser",
+        "@stryker-mutator/core",
+        "@stryker-mutator/instrumenter"
+      ],
+      "ignoreUnresolved": ["@stryker-mutator/command-runner"]
+    },
+    "apps/desktop": {
+      "entry": [
+        "index.html",
+        "src/main/electron.ts",
+        "src/main/engine-process.ts",
+        "src/main/preload.ts",
+        "src/main/server.ts",
+        "src/renderer/main.tsx",
+        "scripts/**/*.{ts,mts,mjs,cjs}",
+        "tests/**/*.ts",
+        "vite.config.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx,mts,cts,css}",
+        "scripts/**/*.{ts,mts,mjs,cjs}",
+        "tests/**/*.{ts,mts}"
+      ],
+      "ignore": ["**/legacy/**"]
+    },
+    "apps/web": {
+      "entry": [
+        "index.html",
+        "privacy/index.html",
+        "download/index.html",
+        "vite.config.ts",
+        "scripts/**/*.mjs"
+      ],
+      "project": ["src/**/*.{ts,tsx,js,jsx}", "scripts/**/*.mjs"]
+    },
+    "packages/engine": {
+      "entry": [
+        "src/index.ts",
+        "src/ports.ts",
+        "src/store/index.ts",
+        "src/store/*.ts",
+        "src/diag/*.ts",
+        "src/legacy/*.ts",
+        "tests/**/*.ts",
+        "bench/**/*.ts",
+        "scripts/**/*.{ts,mjs}"
+      ],
+      "project": ["src/**/*.ts", "tests/**/*.ts", "bench/**/*.ts"],
+      "ignore": ["**/legacy/**"]
+    },
+    "packages/contract": {
+      "entry": [
+        "src/index.ts",
+        "src/access.ts",
+        "src/allowlists.ts",
+        "src/contract-error.ts",
+        "src/legacy-methods.ts",
+        "src/rules.ts",
+        "src/client/index.ts",
+        "src/log/*.ts",
+        "src/legacy/*.ts",
+        "generated/**/*",
+        "scripts/**/*.{ts,mjs}",
+        "tests/**/*.ts"
+      ],
+      "project": ["src/**/*.ts", "generated/**/*", "tests/**/*.ts"],
+      "ignore": ["**/legacy/**"]
+    },
+    "packages/contract-fixture": {
+      "entry": ["src/index.ts", "src/control.ts", "tests/**/*.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
+    "packages/emulators": {
+      "entry": [
+        "src/index.ts",
+        "src/gmail/index.ts",
+        "src/gcal/index.ts",
+        "src/kit/index.ts",
+        "tests/**/*.ts",
+        "scripts/**/*.{ts,mjs}"
+      ],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    }
+  }
+}
