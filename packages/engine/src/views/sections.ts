@@ -291,23 +291,26 @@ const SENDER_ROW = `json_array(${"t.account_id || ':' || t.remote_id"},
   coalesce((SELECT json_extract(p.value, '$.address') FROM json_each(t.participants) p
     WHERE lower(coalesce(json_extract(p.value, '$.address'), '')) <> lower((SELECT address FROM accounts ac WHERE ac.id = t.account_id))
     LIMIT 1), ${SENDER_NAME}),
-  ${SENDER_NAME})`;
+  ${SENDER_NAME}, t.list_unsub IS NOT NULL)`;
 
-interface Group {
+export interface Group {
   address: string;
   name: string;
   threadIds: string[];
+  /** Some thread of the sender carries a List-Unsubscribe link. */
+  unsubscribe: boolean;
 }
 
 /** The Low band's threads grouped by sender, senders in order of their newest thread (bounded, computed whole). */
-function lowGroups(q: StoreReader, accountId?: string): Group[] {
+export function lowGroups(q: StoreReader, accountId?: string): Group[] {
   const run = lowRun(accountId);
   const rows: Run = { cursors: run.cursors.map(c => ({ ...c, id: SENDER_ROW })) };
   const groups = new Map<string, Group>();
   for (const raw of runPage(q, rows, MATERIALIZED_LIMIT)) {
-    const [id, address, name] = JSON.parse(raw) as [string, string, string];
-    const g = groups.get(address) ?? { address, name, threadIds: [] };
+    const [id, address, name, unsub] = JSON.parse(raw) as [string, string, string, number];
+    const g = groups.get(address) ?? { address, name, threadIds: [], unsubscribe: false };
     g.threadIds.push(id);
+    g.unsubscribe ||= unsub === 1;
     groups.set(address, g);
   }
   return [...groups.values()];
