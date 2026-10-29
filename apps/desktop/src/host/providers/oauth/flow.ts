@@ -288,9 +288,9 @@ async function postRevoke(deps: FlowDeps, token: string, signal: AbortSignal): P
 }
 
 /**
- * Best effort: hands back a grant the connect refused (another account, the mail scope missing, a bad id_token, a
- * cancel after the exchange), so it does not sit in the owner's Google account or count against the refresh-token
- * cap. `ctx.signal` should be one the cancel does not abort, or a refusal caused by the cancel revokes nothing. Never
+ * Best effort: hands back a grant the connect refused as another Google user's (`connect.ts` decides which), so it
+ * does not sit in that account or count against the refresh-token cap. `ctx.signal` should be one a cancel does not
+ * abort, or a refusal that lands with a cancel revokes nothing. Never
  * throws and never logs; the governor sees a success either way, so a failed revoke changes no account state.
  */
 export async function revokeGrant(deps: FlowDeps, ctx: FlowContext, token: string): Promise<void> {

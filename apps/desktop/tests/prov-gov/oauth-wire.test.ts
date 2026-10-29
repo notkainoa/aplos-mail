@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { inspect } from 'node:util';
 import type { BoundGovernor, ConnectRequest, GovernedRequest } from '@aplos/engine/ports';
+import type { FakeClock } from '@aplos/emulators';
 import { Governor } from '../../../../packages/engine/src/sync/governor';
 import { NotInThisLaneError, createGoogleProvider } from '../../src/host/providers/google/adapter';
 import { checkConsentUrl, googleAuthUrl } from '../../src/host/providers/oauth/flow';
@@ -116,17 +117,31 @@ test('WIRE-a an address match needs email_verified === true; a new connect that 
   assert.equal(other.vault.writes, 0);
 });
 
-// ---------- (b) every refusal after the exchange revokes; discardCredential ----------
+// ---------- (b) only a grant provably another user's is revoked; discardCredential ----------
 
-test('WIRE-b a bad id_token and a missing refresh token both revoke the grant', async () => {
-  const bad = scriptedRig(clock =>
-    tokenReply(clock, { id_token: idToken(claims(clock, { aud: 'someone-else' })) }),
+const reconnectSub1: ConnectRequest = { mode: 'reconnect', expectedSubject: 'sub-1' };
+
+test('WIRE-b a reconnect answered by another subject is revoked, even with a bad id_token or no refresh token', async () => {
+  const foreign = scriptedRig(clock => tokenReply(clock));
+  const wrong = await refusal(
+    foreign.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, foreign.ctx),
   );
-  assert.equal((await refusal(bad.connect(newConnect, bad.ctx))).error.reason, 'invalidIdToken');
+  assert.equal(wrong.error.reason, 'wrongAccount');
+  assert.deepEqual(revokedIn(foreign.forms), [newRefresh]);
+
+  const bad = scriptedRig(clock =>
+    tokenReply(clock, { id_token: idToken(claims(clock, { sub: 'sub-9', aud: 'someone-else' })) }),
+  );
+  assert.equal((await refusal(bad.connect(reconnectSub1, bad.ctx))).error.reason, 'invalidIdToken');
   assert.deepEqual(revokedIn(bad.forms), [newRefresh]);
 
-  const noRefresh = scriptedRig(clock => tokenReply(clock, { refresh_token: undefined }));
-  const error = await refusal(noRefresh.connect(newConnect, noRefresh.ctx));
+  const noRefresh = scriptedRig(clock =>
+    tokenReply(clock, {
+      refresh_token: undefined,
+      id_token: idToken(claims(clock, { sub: 'sub-9' })),
+    }),
+  );
+  const error = await refusal(noRefresh.connect(reconnectSub1, noRefresh.ctx));
   assert.equal(error.error.reason, 'noRefreshToken');
   assert.deepEqual(
     revokedIn(noRefresh.forms),
@@ -135,24 +150,52 @@ test('WIRE-b a bad id_token and a missing refresh token both revoke the grant', 
   );
 });
 
-test('WIRE-b a cancel that lands as the exchange returns stores nothing and still revokes', async () => {
+test('WIRE-b a same-subject refusal makes no revoke call: bad id_token, no refresh token, missing scope', async () => {
+  const replies = [
+    (clock: FakeClock) =>
+      tokenReply(clock, { id_token: idToken(claims(clock, { aud: 'someone-else' })) }),
+    (clock: FakeClock) => tokenReply(clock, { refresh_token: undefined }),
+    (clock: FakeClock) => tokenReply(clock, { scope: 'openid' }),
+  ];
+  for (const reply of replies) {
+    const vault = memoryVault(oldBundle);
+    const r = scriptedRig(reply, { vault });
+    await refusal(r.connect(reconnectSub1, r.ctx));
+    assert.deepEqual(revokedIn(r.forms), []);
+    assert.deepEqual(vault.entries.get(account), oldBundle);
+  }
+});
+
+test('WIRE-b a new connect is never revoked, not even for another address or a bad id_token', async () => {
+  const replies = [
+    (clock: FakeClock) => tokenReply(clock),
+    (clock: FakeClock) =>
+      tokenReply(clock, { id_token: idToken(claims(clock, { sub: 'sub-9', aud: 'x' })) }),
+  ];
+  for (const reply of replies) {
+    const r = scriptedRig(reply);
+    await refusal(r.connect({ mode: 'new', address: 'else@example.test' }, r.ctx));
+    assert.deepEqual(revokedIn(r.forms), []);
+    assert.equal(r.vault.writes, 0);
+  }
+});
+
+test('WIRE-b a cancel as the exchange returns, or a vault failure, stores nothing and revokes nothing', async () => {
   const controller = new AbortController();
   const r = scriptedRig(clock => tokenReply(clock), { governor: abortAfterExchange(controller) });
   r.ctx.signal = controller.signal;
-  const error = await refusal(r.connect(newConnect, r.ctx));
+  const error = await refusal(r.connect(reconnectSub1, r.ctx));
   assert.equal(error.error.reason, 'aborted');
   assert.equal(r.vault.writes, 0);
-  assert.deepEqual(revokedIn(r.forms), [newRefresh]);
-});
+  assert.deepEqual(revokedIn(r.forms), []);
 
-test('WIRE-b a vault failure after the exchange revokes the new grant and keeps the old bundle', async () => {
   const vault = memoryVault(oldBundle);
   vault.failWrites = true;
-  const r = scriptedRig(clock => tokenReply(clock), { vault });
-  const error = await refusal(r.connect({ mode: 'reconnect', expectedSubject: 'sub-1' }, r.ctx));
-  assert.equal(error.error.reason, 'vaultWriteFailed');
+  const failed = scriptedRig(clock => tokenReply(clock), { vault });
+  const write = await refusal(failed.connect(reconnectSub1, failed.ctx));
+  assert.equal(write.error.reason, 'vaultWriteFailed');
   assert.deepEqual(vault.entries.get(account), oldBundle);
-  assert.deepEqual(revokedIn(r.forms), [newRefresh]);
+  assert.deepEqual(revokedIn(failed.forms), []);
 });
 
 function hostConnect(
@@ -189,7 +232,7 @@ test('WIRE-b the factory’s discardCredential deletes the vault entry; without 
 
 // ---------- (c) a cancel during the vault write ----------
 
-test('WIRE-c a cancel during vault.set on a new connect deletes what it wrote and revokes', async () => {
+test('WIRE-c a cancel during vault.set on a new connect deletes what it wrote', async () => {
   const vault = memoryVault();
   const r = scriptedRig(clock => tokenReply(clock), { vault });
   vault.duringSet = () => r.abort.abort();
@@ -197,7 +240,7 @@ test('WIRE-c a cancel during vault.set on a new connect deletes what it wrote an
   assert.equal(error.error.reason, 'aborted');
   assert.equal(vault.writes, 1);
   assert.equal(vault.entries.has(account), false);
-  assert.deepEqual(revokedIn(r.forms), [newRefresh]);
+  assert.deepEqual(revokedIn(r.forms), []);
 });
 
 test('WIRE-c a cancel during vault.set on a reconnect puts the old bundle back', async () => {
@@ -210,7 +253,7 @@ test('WIRE-c a cancel during vault.set on a reconnect puts the old bundle back',
   const error = await refusal(r.connect({ mode: 'reconnect', expectedSubject: 'sub-1' }, r.ctx));
   assert.equal(error.error.reason, 'aborted');
   assert.deepEqual(vault.entries.get(account), oldBundle);
-  assert.deepEqual(revokedIn(r.forms), [newRefresh]);
+  assert.deepEqual(revokedIn(r.forms), []);
 });
 
 // ---------- (d) the consent URL and the loopback Host header ----------
@@ -316,7 +359,7 @@ test('WIRE-e the request’s signal cancels a pending exchange; one that lands a
   const error = await refusal(within(r.connect({ ...newConnect, signal: late.signal }, r.ctx)));
   assert.equal(error.error.reason, 'aborted');
   assert.equal(r.vault.writes, 0);
-  assert.deepEqual(revokedIn(r.forms), [newRefresh]);
+  assert.deepEqual(revokedIn(r.forms), []);
 });
 
 // ---------- the #69 hardening ----------
@@ -326,15 +369,14 @@ test('WIRE-hardening every token-endpoint POST refuses redirects; an access toke
   const clock = manualClock();
   const endpoint = tokenEndpoint(form => {
     if (form.has('token')) return new Response('', { status: 200 });
-    const refresh = form.get('grant_type') === 'refresh_token';
-    return refresh ? tokenReply(clock) : tokenReply(clock, { scope: 'openid' });
+    return tokenReply(clock);
   });
   const recording = ((url: string | URL | Request, init?: RequestInit) => {
     redirects.push(init?.redirect);
     return endpoint.fetch(url, init);
   }) as typeof fetch;
-  const r = scriptedRig(() => tokenReply(clock, { scope: 'openid' }), { clock, fetch: recording });
-  await refusal(r.connect(newConnect, r.ctx));
+  const r = scriptedRig(() => tokenReply(clock), { clock, fetch: recording });
+  await refusal(r.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, r.ctx));
   assert.deepEqual(redirects, ['error', 'error'], 'the exchange and the revoke');
 
   const vault = memoryVault({ clientId, refreshToken: newRefresh });

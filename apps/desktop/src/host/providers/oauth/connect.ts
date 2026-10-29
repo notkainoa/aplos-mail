@@ -1,13 +1,19 @@
 // The Google adapter's `connect` (plan 20 PV5, D21, D25): sign-in through `flow.ts`, then every check that can
 // refuse the grant (a refresh token, the id_token, the same account on a reconnect, the mail scope) BEFORE the token
 // bundle is written to the vault. A refused, failed or cancelled connect stores nothing and leaves an old bundle in
-// place, and every grant refused after the code exchange is revoked, best effort.
+// place. A refused grant is revoked (best effort) only when it provably belongs to another Google user than the
+// account being reconnected; otherwise its unused refresh token is just dropped (it was never stored).
+//
+// TODO(live): whether Google's revoke ends one token or the whole grant for the user and client needs a live probe.
+// Until then a grant that may be the same user's (any new connect, a same-subject reconnect) is never revoked: if the
+// revoke ends the whole grant, it would also kill a credential Aplos holds for that user.
 //
 // Refs: the bundle goes under `refFor(accountId)`, the one ref `GoogleTokenSource` reads, not a fresh ref per attempt.
 // The engine keeps no credential ref and tells the factory nothing when it commits a reconnect, so a bundle under a
 // fresh ref could never be found again. Instead nothing is written until every check here has passed, and a cancel
 // that lands during the write takes it back out (the previous bundle restored, or the new entry deleted).
 
+import { ProviderError } from '@aplos/engine/ports';
 import type {
   AccountId,
   Capabilities,
@@ -33,7 +39,7 @@ import {
   grantFromTokenResponse,
   type Grant,
 } from './grant';
-import { identityFromIdToken, type GoogleIdentity } from './id-token';
+import { identityFromIdToken, subjectClaim, type GoogleIdentity } from './id-token';
 import {
   connectScopes,
   googleScopeManifest,
@@ -218,23 +224,19 @@ async function write(
   }
 }
 
-/**
- * Takes a cancelled write back out: the previous bundle again, or no entry. True when the vault no longer holds the
- * new bundle (so revoking it cannot leave the vault with a dead grant).
- */
+/** Takes a cancelled write back out: the previous bundle again, or no entry. Best effort. */
 async function undo(
   vault: CredentialVault<GoogleTokenBundle>,
   ref: string,
   bundle: GoogleTokenBundle,
   previous: GoogleTokenBundle | undefined,
-): Promise<boolean> {
+): Promise<void> {
   try {
-    if (vault.get(ref)?.refreshToken !== bundle.refreshToken) return true;
+    if (vault.get(ref)?.refreshToken !== bundle.refreshToken) return;
     if (previous) await vault.set(ref, previous);
     else await vault.delete(ref);
-    return true;
   } catch {
-    return false;
+    /* the grant is the account's own (it passed every check), so a bundle left behind still works */
   }
 }
 
@@ -250,27 +252,45 @@ function readPrevious(
   }
 }
 
-type Stored = 'stored' | 'undone' | 'kept';
-
-/** A cancel before the write stores nothing; one that lands during it undoes it (`undone`, or `kept` if that failed). */
+/** A cancel before the write stores nothing; one that lands during it takes the write back out. */
 async function store(
   deps: GoogleConnectDeps,
   attempt: Attempt,
   bundle: GoogleTokenBundle,
-): Promise<Stored> {
+): Promise<void> {
   const { signal } = attempt.flow;
   if (signal.aborted) throw abortedError();
   const previous = readPrevious(deps.vault, attempt.ref);
   await write(deps.vault, attempt.ref, bundle);
-  if (!signal.aborted) return 'stored';
-  return (await undo(deps.vault, attempt.ref, bundle, previous)) ? 'undone' : 'kept';
+  if (!signal.aborted) return;
+  await undo(deps.vault, attempt.ref, bundle, previous);
+  throw abortedError();
 }
 
-/** On its own signal: a cancel caused the refusal, and must not stop the revoke that follows it. */
-function revokeRefused(deps: GoogleConnectDeps, attempt: Attempt, token: string | undefined) {
-  if (!token) return Promise.resolve();
+/**
+ * Provably another Google user than the account being reconnected: refused as `wrongAccount`, or an id_token
+ * refused for another reason whose `sub` (decoded, unchecked) is not the expected one. Never for a new connect: its
+ * user may already be an account in Aplos (the engine refuses the duplicate after sign-in).
+ */
+function foreignGrant(attempt: Attempt, body: Record<string, unknown>, error: unknown): boolean {
+  if (attempt.req.mode === 'new') return false;
+  if (error instanceof ProviderError && error.error.reason === 'wrongAccount') return true;
+  const expected = attempt.req.expectedSubject;
+  const subject = subjectClaim(body.id_token);
+  return nonEmpty(expected) && subject !== undefined && subject !== expected;
+}
+
+/** On its own signal: a cancel must not stop the revoke of a grant it refused. */
+async function revokeIfForeign(
+  deps: GoogleConnectDeps,
+  attempt: Attempt,
+  exchange: TokenExchange,
+  error: unknown,
+): Promise<void> {
+  const token = grantTokenOf(exchange.body);
+  if (!token || !foreignGrant(attempt, exchange.body, error)) return;
   const ctx = { ...attempt.flow, signal: new AbortController().signal };
-  return revokeGrant(deps, ctx, token);
+  await revokeGrant(deps, ctx, token);
 }
 
 function resultFor(deps: GoogleConnectDeps, attempt: Attempt, accepted: Accepted): ConnectResult {
@@ -288,25 +308,20 @@ function resultFor(deps: GoogleConnectDeps, attempt: Attempt, accepted: Accepted
   };
 }
 
-/** After the code exchange: accept and store, or revoke the grant on every refusal (and on a cancel) and rethrow. */
+/** After the code exchange: accept and store, or drop the grant (revoking it only when foreign) and rethrow. */
 async function finishConnect(
   deps: GoogleConnectDeps,
   attempt: Attempt,
   exchange: TokenExchange,
 ): Promise<ConnectResult> {
-  const grantToken = grantTokenOf(exchange.body);
-  let accepted: Accepted;
-  let stored: Stored;
   try {
-    accepted = acceptExchange(attempt, exchange);
-    stored = await store(deps, attempt, accepted.bundle);
+    const accepted = acceptExchange(attempt, exchange);
+    await store(deps, attempt, accepted.bundle);
+    return resultFor(deps, attempt, accepted);
   } catch (error) {
-    await revokeRefused(deps, attempt, grantToken);
+    await revokeIfForeign(deps, attempt, exchange, error);
     throw error;
   }
-  if (stored === 'stored') return resultFor(deps, attempt, accepted);
-  if (stored === 'undone') await revokeRefused(deps, attempt, grantToken);
-  throw abortedError();
 }
 
 export function createGoogleConnect(deps: GoogleConnectDeps): GoogleConnect {

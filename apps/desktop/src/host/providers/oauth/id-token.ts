@@ -41,6 +41,12 @@ function decodeClaims(token: unknown): Claims | undefined {
   }
 }
 
+/** The `sub` claim, decoded but NOT checked: only to tell whether a refused token is another user's. */
+export function subjectClaim(token: unknown): string | undefined {
+  const sub = decodeClaims(token)?.sub;
+  return nonEmpty(sub) ? sub : undefined;
+}
+
 /** The first claim that fails, by name only; never its value. */
 function failedClaim(claims: Claims, check: IdTokenCheck): string | undefined {
   if (typeof claims.iss !== 'string' || !googleIssuers.has(claims.iss)) return 'iss';

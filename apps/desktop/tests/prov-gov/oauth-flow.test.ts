@@ -372,18 +372,21 @@ test('a grant without the mail scope is permission missingRequiredScope and stor
   assert.equal(error.error.reason, 'missingRequiredScope');
   assert.deepEqual(error.error.missingScopes, [mailScope]);
   assert.equal(r.vault.writes, 0);
-  assert.equal(r.revoked.length, 1, 'the partial grant is handed back');
-  assert.ok(r.dead(r.revoked[0]));
+  assert.equal(
+    r.revoked.length,
+    0,
+    'a new connect’s user may be an account Aplos holds: never revoked',
+  );
 });
 
 test('a failed revoke is swallowed: the refusal still surfaces, without the token', async () => {
   const r = scriptedRig((clock, form) =>
     form.has('token')
       ? Promise.reject(new Error(`revoke failed for ${form.get('token')}`))
-      : tokenReply(clock, { scope: 'openid' }),
+      : tokenReply(clock),
   );
-  const error = await refusal(r.connect(newConnect, r.ctx));
-  assert.equal(error.error.reason, 'missingRequiredScope');
+  const error = await refusal(r.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, r.ctx));
+  assert.equal(error.error.reason, 'wrongAccount');
   assert.equal(r.forms.at(-1)?.get('token'), '1//flow-refresh-never-shown');
   assertNoSecrets(error, ['1//flow-refresh-never-shown']);
 });
