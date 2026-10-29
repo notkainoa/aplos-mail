@@ -137,11 +137,19 @@ function claimsOf(records: readonly LeaseRecord[]): Map<DeviceId, Claim> {
   return claims;
 }
 
+/**
+ * Whether another device's claim running to `until` still counts at `now` on this device's clock (rule 1): honoured
+ * until `until + LEASE_SKEW_MS`. Every place that asks "is that holder gone?" uses this one boundary.
+ */
+export function peerClaimLive(until: number, now: number): boolean {
+  return until + LEASE_SKEW_MS > now;
+}
+
 function isLive(claim: Claim, self: DeviceId, now: number): boolean {
   const ceiling = now + LEASE_TTL_MS + LEASE_SKEW_MS;
   if (claim.until > ceiling || claim.pinnedAt > ceiling) return false;
   if (claim.device === self) return claim.until - LEASE_GIVE_UP_MS > now;
-  return claim.until + LEASE_SKEW_MS > now;
+  return peerClaimLive(claim.until, now);
 }
 
 const lowerId = (a: Claim, b: Claim) => (a.device < b.device ? a : b);

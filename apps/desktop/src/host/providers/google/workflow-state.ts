@@ -174,9 +174,11 @@ class StateChannel implements WorkflowStateChannel {
     if (!key) return { changed: [], skipped: 0, waiting: this.waiting.size };
     const before = new Map(this.view().map(r => [r.key, r]));
     let skipped = 0;
+    // A copy leaves `waiting` only once taken: a throw part way keeps the rest for the next call (the transport
+    // has already marked them seen, so no later round downloads them again).
     for (const [id, copy] of this.waiting) {
-      this.waiting.delete(id);
       if (!this.take(id, copy, key, log)) skipped++;
+      this.waiting.delete(id);
     }
     const changed = this.view().filter(r => before.get(r.key) !== r);
     return { changed, skipped, waiting: 0 };

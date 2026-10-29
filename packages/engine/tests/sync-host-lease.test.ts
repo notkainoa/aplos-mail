@@ -2,18 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PausedError,
+  type PlanInput,
   type PlannedStep,
+  type SyncState,
   type SyncLane,
   type WorkflowChannel,
   type WorkflowCopy,
 } from '../src/ports';
+import { ProviderError } from '../src/ports/base';
 import { gmailBudget } from '../src/sync/budgets';
-import { LEASE_TTL_MS, type LeaseClaim, type LeaseRecord } from '../src/sync/lease';
-import type { HostWorkflowChannel } from '../src/sync/host';
+import { LEASE_SKEW_MS, LEASE_TTL_MS, type LeaseClaim, type LeaseRecord } from '../src/sync/lease';
+import { LEASE_STOP_WAIT_MS, type HostWorkflowChannel } from '../src/sync/host';
 import {
   ACCOUNT,
   FakeAdapter,
   MINUTE,
+  T0,
+  deferred,
   disk,
   governed,
   settle,
@@ -41,15 +46,41 @@ const stampOf = (r: LeaseRecord) => `${r.stamp.at}:${r.stamp.gen}`;
 const claimOf = (remote: Remote, device: string) =>
   remote.records.get(`lease:${device}`)?.value as LeaseClaim | undefined;
 
+/** What a `remoteChannel` saw: reads (and the most in flight at once), writes, and the states reads resumed on. */
+interface ChannelLog {
+  reads: number;
+  inFlight: number;
+  maxInFlight: number;
+  writes: number;
+  states: SyncState[];
+}
+
+const channelLog = (): ChannelLog => ({
+  reads: 0,
+  inFlight: 0,
+  maxInFlight: 0,
+  writes: 0,
+  states: [],
+});
+
 /**
  * A fake `WorkflowStateChannel` over the shared remote, stamped as `device`: `read` is one round (the whole view
- * plus the records this channel last reported as changed), `write` stamps and stores the entries, `ingest` takes
- * copies whose `data` is a JSON list of records.
+ * plus the records this channel last reported as changed), `write` stamps and stores the entries.
  */
-function remoteChannel(remote: Remote, device: string): HostWorkflowChannel {
+function remoteChannel(
+  remote: Remote,
+  device: string,
+  log: ChannelLog = channelLog(),
+): HostWorkflowChannel {
   const seen = new Map<string, string>();
   return {
-    async read(_state, ctx) {
+    async read(state, ctx) {
+      log.reads++;
+      log.states.push(state);
+      log.inFlight++;
+      log.maxInFlight = Math.max(log.maxInFlight, log.inFlight);
+      await settle(2);
+      log.inFlight--;
       const records = [...remote.records.values()].sort(byKey);
       const changed = records.filter(r => seen.get(r.key) !== stampOf(r));
       for (const r of records) seen.set(r.key, stampOf(r));
@@ -66,6 +97,7 @@ function remoteChannel(remote: Remote, device: string): HostWorkflowChannel {
       };
     },
     async write(entries, ctx) {
+      log.writes++;
       for (const e of entries) {
         remote.records.set(e.key, {
           key: e.key,
@@ -75,17 +107,64 @@ function remoteChannel(remote: Remote, device: string): HostWorkflowChannel {
       }
       return { remoteId: `copy-${remote.gen}` };
     },
-    async ingest(copies) {
-      const changed: LeaseRecord[] = [];
-      for (const copy of copies) {
-        for (const record of JSON.parse(copy.data) as LeaseRecord[]) {
-          remote.records.set(record.key, record);
-          changed.push(record);
-        }
-      }
-      return { changed };
-    },
   };
+}
+
+/** The account's baseline sync is done, as the account row records it (the lease rounds wait for it). */
+function baselineDone(w: ReturnType<typeof world>): void {
+  w.store.commit({
+    opId: `baseline-${w.clock.now()}`,
+    origin: 'system',
+    writes: [{ kind: 'account', id: ACCOUNT, baselineDoneAt: T0 }],
+  });
+}
+
+/** The timer loop's stand-in: moves the clock a second at a time and fires `lease:` when its `next()` is due. */
+async function pump(w: ReturnType<typeof world>, ms: number): Promise<void> {
+  const end = w.clock.now() + ms;
+  while (w.clock.now() < end) {
+    await w.clock.advance(1_000);
+    await settle(2);
+    const source = w.deadlines.sources.get(`lease:${ACCOUNT}`);
+    const next = await source?.next();
+    if (source && next !== undefined && next <= w.clock.now()) await source.fire(w.clock.now());
+  }
+}
+
+/** The `workflow` step as the Gmail adapter plans it: at most once a minute after the committed row. */
+const workflowStep = (input: PlanInput): PlannedStep => {
+  const last = input.states.find(s => s.scope === 'workflow')?.updatedAt;
+  return step(
+    'workflow',
+    'enrichment',
+    'workflow',
+    input.trigger,
+    last ? last + MINUTE : undefined,
+  );
+};
+
+/** One device with a channel on `rem`, its baseline done; the adapter's port round is counted in `rounds`. */
+function channelWorld(
+  d: ReturnType<typeof disk>,
+  rem: Remote,
+  log: ChannelLog,
+  rounds: string[],
+  options: { deviceId?: string; clock?: ReturnType<typeof world>['clock'] } = {},
+) {
+  const w = world(
+    d,
+    () => {
+      const adapter = new FakeAdapter(input => [workflowStep(input)], {});
+      adapter.workflow = portChannel(rounds);
+      return adapter;
+    },
+    {
+      ...options,
+      host: { workflowChannel: () => remoteChannel(rem, options.deviceId ?? 'device-a', log) },
+    },
+  );
+  baselineDone(w);
+  return w;
 }
 
 /** The port's `WorkflowChannel` (the adapter's transport); `round` is governed and counts its calls. */
@@ -137,6 +216,7 @@ test('the lease rides the channel: a candidacy promotes the only device, claim p
   const w = world(d, () => adapter, {
     host: { workflowChannel: () => remoteChannel(rem, 'device-a') },
   });
+  baselineDone(w);
   try {
     await w.host.start(ACCOUNT);
     assert.ok(w.deadlines.sources.has(`lease:${ACCOUNT}`), 'the lease deadline source registered');
@@ -181,6 +261,7 @@ test('a second device reads the pinned claim, stays secondary under its target, 
     },
     { host: { workflowChannel: () => remoteChannel(rem, 'device-a') } },
   );
+  baselineDone(a);
   const dB = disk();
   const b = world(
     dB,
@@ -195,6 +276,7 @@ test('a second device reads the pinned claim, stays secondary under its target, 
       host: { workflowChannel: () => remoteChannel(rem, 'device-b') },
     },
   );
+  baselineDone(b);
   try {
     await a.host.start(ACCOUNT);
     await b.host.start(ACCOUNT);
@@ -230,6 +312,7 @@ test('a quit or disconnect publishes the dead claim; a restart keeps it and the 
     },
     { host: { workflowChannel: () => remoteChannel(rem, 'device-a') } },
   );
+  baselineDone(a);
   try {
     await a.host.start(ACCOUNT);
     await fire(a);
@@ -295,65 +378,45 @@ test('an adapter with a workflow port but no channel keeps the local claim and r
   }
 });
 
-test('merged records reach onWorkflowMerged — from the lease read and from a round ingesting copies', async () => {
+test('every channel read reports its merge and the whole view to onWorkflowMerged', async () => {
   const d = disk();
   const rem = remote();
-  const merged: LeaseRecord[][] = [];
-  const delivered: WorkflowCopy[][] = [];
+  const merged: { changed: string[]; view: string[] }[] = [];
   rem.records.set('thread:t-1', {
     key: 'thread:t-1',
     stamp: { at: 1, gen: 0, device: 'device-x' },
     value: { status: 'done' },
   });
-  const rounds: string[] = [];
-  const adapter = new FakeAdapter(
-    input =>
-      rounds.length === 0 ? [step('workflow', 'enrichment', 'workflow', input.trigger)] : [],
-    {},
-  );
-  adapter.workflow = portChannel(rounds, () => [
-    {
-      deviceId: 'device-x',
-      writtenAt: 2,
-      data: JSON.stringify([
-        {
-          key: 'thread:t-2',
-          stamp: { at: 2, gen: 0, device: 'device-x' },
-          value: { status: 'snoozed' },
-        },
-      ]),
-    },
-  ]);
+  const adapter = new FakeAdapter(() => [], {});
+  adapter.workflow = portChannel([]);
   const w = world(d, () => adapter, {
     host: {
       workflowChannel: () => remoteChannel(rem, 'device-a'),
-      onWorkflowMerged: (_account, changed) => merged.push([...changed]),
-      onWorkflowCopies: (_account, copies) => delivered.push(copies),
+      onWorkflowMerged: (_account, changed, view) =>
+        merged.push({ changed: changed.map(r => r.key), view: view.map(r => r.key) }),
     },
   });
+  baselineDone(w);
   try {
     await w.host.start(ACCOUNT);
-    // The lease's first read reports the seeded record as changed.
     await fire(w);
     await settle();
-    assert.ok(
-      merged.flat().some(r => r.key === 'thread:t-1'),
-      'the lease read merged the seeded record',
-    );
-    // The actor's workflow round delivers its copies to the channel's ingest and to the subscriber.
-    await until(() => rounds.length === 1, 'the workflow round');
-    await until(() => merged.flat().some(r => r.key === 'thread:t-2'), 'the round copies merged');
-    assert.ok(delivered.length >= 1, 'the round copies were delivered to the subscriber');
-    assert.equal(delivered[0][0].deviceId, 'device-x');
+    assert.ok(merged[0].changed.includes('thread:t-1'), 'the first read merged the seeded record');
+    // A read that moved nothing still reports, with the view a subscriber retries deferred records from.
+    await w.clock.advance(MINUTE);
+    await fire(w);
+    await settle();
+    const last = merged.at(-1)!;
+    assert.ok(!last.changed.includes('thread:t-1'));
+    assert.ok(last.view.includes('thread:t-1'));
   } finally {
     await w.kill();
     d.cleanup();
   }
 });
 
-test('a secondary that sees a live holder runs no workflow round; once it ends the round runs and charges', async () => {
+test("without a channel, a secondary's workflow round waits until the holder's claim is gone by the lease's own rule", async () => {
   const d = disk();
-  const rem = remote();
   const rounds: string[] = [];
   const adapter = new FakeAdapter(
     input => {
@@ -384,22 +447,20 @@ test('a secondary that sees a live holder runs no workflow round; once it ends t
     },
   );
   adapter.workflow = portChannel(rounds);
-  const w = world(d, () => adapter, {
-    host: { workflowChannel: () => remoteChannel(rem, 'device-a') },
-  });
+  const w = world(d, () => adapter);
   try {
     // A live holder elsewhere: the workflow round is the primary's job.
-    w.host.leaseChanged(ACCOUNT, {
-      role: 'secondary',
-      holder: 'device-b',
-      until: w.clock.now() + 30 * MINUTE,
-    });
+    const holderUntil = w.clock.now() + 30 * MINUTE;
+    w.host.leaseChanged(ACCOUNT, { role: 'secondary', holder: 'device-b', until: holderUntil });
     await w.host.start(ACCOUNT);
     await until(() => adapter.calls.length === 1, 'the history step');
     await settle(20);
     assert.equal(rounds.length, 0, 'no workflow round while another device holds the lease');
-    // The claim runs out: this device may run the round itself (and win the lease on it).
-    await w.clock.advance(30 * MINUTE);
+    // Past `until` but inside the skew margin, lease.ts still honours the claim: so does the actor.
+    await w.clock.advance(30 * MINUTE + MINUTE);
+    await settle(20);
+    assert.equal(rounds.length, 0, 'the claim still counts until until + LEASE_SKEW_MS');
+    await w.clock.advance(holderUntil + LEASE_SKEW_MS - w.clock.now() + MINUTE);
     await until(() => rounds.length === 1, 'the workflow round after the claim ended');
     assert.ok(
       w.governor.inspect(ACCOUNT, 'gmail').used >= 2,
@@ -411,9 +472,8 @@ test('a secondary that sees a live holder runs no workflow round; once it ends t
   }
 });
 
-test('a PausedError from the round holds the scope until it ends, with no retry while paused', async () => {
+test('without a channel, a PausedError from the round holds the scope until it ends, with no retry while paused', async () => {
   const d = disk();
-  const rem = remote();
   const attempts: number[] = [];
   const adapter = new FakeAdapter(
     input =>
@@ -442,9 +502,7 @@ test('a PausedError from the round holds the scope until it ends, with no retry 
     put: async () => 'x',
     compact: async () => {},
   };
-  const w = world(d, () => adapter, {
-    host: { workflowChannel: () => remoteChannel(rem, 'device-a') },
-  });
+  const w = world(d, () => adapter);
   try {
     await w.host.start(ACCOUNT);
     await until(() => attempts.length === 1, 'the first (refused) round');
@@ -455,6 +513,259 @@ test('a PausedError from the round holds the scope until it ends, with no retry 
     assert.ok(attempts[1] >= attempts[0] + 5 * MINUTE);
   } finally {
     await w.kill();
+    d.cleanup();
+  }
+});
+
+test('one channel reader: over 10 idle minutes the primary reads the channel at most once a minute, the actor never', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  const rounds: string[] = [];
+  const w = channelWorld(d, rem, log, rounds);
+  try {
+    await w.host.start(ACCOUNT);
+    await pump(w, 2 * MINUTE);
+    assert.equal(w.host.status(ACCOUNT)!.lease?.role, 'primary');
+    const before = log.reads + rounds.length;
+    await pump(w, 10 * MINUTE);
+    const total = log.reads + rounds.length - before;
+    assert.ok(total <= 10, `${total} channel reads in 10 idle minutes`);
+    assert.ok(total >= 9, 'the lease round still reads every minute');
+    assert.equal(rounds.length, 0, "the actor's planned workflow step never reads the channel");
+  } finally {
+    await w.kill();
+    d.cleanup();
+  }
+});
+
+test('the lease round waits for the baseline sync, then reads alone', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  const rounds: string[] = [];
+  const gate = deferred();
+  const adapter = new FakeAdapter(
+    input => {
+      const steps = [workflowStep(input)];
+      if (!input.states.some(s => s.scope === 'window:inbox'))
+        steps.push(step('window:inbox', 'incremental', 'baseline', input.trigger));
+      return steps;
+    },
+    {
+      'window:inbox': async (s, _state, ctx) => {
+        await gate.promise;
+        await governed(ctx, s, 1);
+        return {
+          nextStates: [{ scope: 'window:inbox', generation: 0, updatedAt: 0 }],
+          done: true,
+          costUnits: 1,
+          baselineReached: true,
+        };
+      },
+    },
+  );
+  adapter.workflow = portChannel(rounds);
+  const w = world(d, () => adapter, {
+    host: { workflowChannel: () => remoteChannel(rem, 'device-a', log) },
+  });
+  try {
+    await w.host.start(ACCOUNT);
+    await until(() => adapter.calls.length === 1, 'the baseline step');
+    const source = w.deadlines.sources.get(`lease:${ACCOUNT}`)!;
+    assert.equal(await source.next(), undefined, 'no lease deadline during the baseline');
+    await fire(w);
+    await settle();
+    assert.equal(log.reads + rounds.length, 0, 'no channel read during the baseline');
+    const changes = w.deadlines.changes.length;
+    gate.resolve();
+    await until(() => w.host.status(ACCOUNT)?.baselineDoneAt !== undefined, 'the baseline');
+    await settle();
+    assert.ok(
+      w.deadlines.changes.slice(changes).includes(`lease:${ACCOUNT}`),
+      'the baseline pokes the held lease deadline',
+    );
+    await pump(w, 2 * MINUTE);
+    assert.ok(log.reads >= 1);
+    assert.equal(log.maxInFlight, 1, 'never two channel reads at once');
+    assert.equal(rounds.length, 0);
+    assert.equal(w.host.status(ACCOUNT)!.lease?.role, 'primary');
+  } finally {
+    await w.kill();
+    d.cleanup();
+  }
+});
+
+test('the workflow cursor has one writer and is committed only when it moved', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  const rounds: string[] = [];
+  const base = remoteChannel(rem, 'device-a', log);
+  const script: Partial<SyncState>[] = [
+    { cursor: 'c1', pending: ['p1'] },
+    { cursor: 'c1', pending: ['p1'] },
+  ];
+  const channel: HostWorkflowChannel = {
+    ...base,
+    async read(state, ctx) {
+      const read = await base.read(state, ctx);
+      const next = script.shift() ?? { cursor: 'c1' };
+      return {
+        ...read,
+        nextState: {
+          scope: 'workflow',
+          generation: ctx.generation,
+          updatedAt: ctx.clock.now(),
+          ...next,
+        },
+      };
+    },
+  };
+  const w = world(
+    d,
+    () => {
+      const adapter = new FakeAdapter(input => [workflowStep(input)], {});
+      adapter.workflow = portChannel(rounds);
+      return adapter;
+    },
+    { host: { workflowChannel: () => channel } },
+  );
+  baselineDone(w);
+  const commits: string[] = [];
+  const commit = w.store.commit.bind(w.store);
+  w.store.commit = input => {
+    for (const write of input.writes)
+      if (write.kind === 'syncState' && write.scope === 'workflow')
+        commits.push(`${write.cursor}:${(write.pending ?? []).join(',')}`);
+    return commit(input);
+  };
+  try {
+    await w.host.start(ACCOUNT);
+    await pump(w, 6 * MINUTE);
+    assert.ok(log.reads >= 5);
+    assert.deepEqual(
+      commits,
+      ['c1:p1', 'c1:'],
+      'one commit per cursor change, none for idle reads',
+    );
+    assert.deepEqual(log.states[1].pending, ['p1'], 'each read resumes on the last one');
+    assert.equal(rounds.length, 0, 'the actor never writes the row');
+    assert.equal(stateOf(w.store, 'workflow')?.cursor, 'c1');
+  } finally {
+    await w.kill();
+    d.cleanup();
+  }
+});
+
+test('"Use this Mac" before start is queued: secondary until the own claim reads back; a release while stopped reaches the channel', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  const w = channelWorld(d, rem, log, []);
+  try {
+    await w.host.claimLease(ACCOUNT);
+    assert.equal(log.writes, 0, 'nothing written before start');
+    await w.host.start(ACCOUNT);
+    assert.equal(w.host.status(ACCOUNT)!.lease?.role, 'secondary', 'no primary before a read');
+    assert.equal(w.governor.inspect(ACCOUNT, 'gmail').target, gmailBudget.target.secondary);
+    await fire(w);
+    await settle();
+    assert.equal(claimOf(rem, 'device-a')?.pinned, true, 'the queued pin published');
+    assert.equal(w.host.status(ACCOUNT)!.lease?.role, 'primary');
+    assert.equal(w.host.status(ACCOUNT)!.lease?.pinned, true);
+
+    await w.host.stop(ACCOUNT, 'restart');
+    await w.host.releaseLease(ACCOUNT);
+    assert.equal(claimOf(rem, 'device-a')?.pinned, true, 'nothing written while stopped');
+    await w.host.start(ACCOUNT);
+    await fire(w);
+    await settle();
+    assert.equal(claimOf(rem, 'device-a')?.pinned, false, 'the queued release reached the channel');
+    assert.equal(w.host.status(ACCOUNT)!.lease?.pinned, false);
+  } finally {
+    await w.kill();
+    d.cleanup();
+  }
+});
+
+test('the restart seed is used once: a quit and a later start do not bring back a stale primary', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  const w = channelWorld(d, rem, log, []);
+  try {
+    await w.host.start(ACCOUNT);
+    await fire(w);
+    await fire(w);
+    await settle();
+    assert.equal(w.host.status(ACCOUNT)!.lease?.role, 'primary');
+    await w.host.stop(ACCOUNT, 'restart');
+    await w.host.start(ACCOUNT);
+    await w.host.stop(ACCOUNT, 'quit');
+    assert.equal(claimOf(rem, 'device-a')?.until, 0, 'the quit retired the claim');
+    const writes = log.writes;
+    await w.host.start(ACCOUNT);
+    assert.equal(w.host.status(ACCOUNT)!.lease?.role, 'secondary');
+    await w.host.stop(ACCOUNT, 'quit');
+    assert.equal(log.writes, writes, 'a controller that never held a claim publishes nothing');
+  } finally {
+    await w.kill();
+    d.cleanup();
+  }
+});
+
+test('channel failures are logged once per reason; a quit waits for the dead claim at most LEASE_STOP_WAIT_MS', async () => {
+  const d = disk();
+  const rem = remote();
+  const channel = remoteChannel(rem, 'device-a');
+  const adapter = new FakeAdapter(() => [], {});
+  adapter.workflow = portChannel([]);
+  const v = world(d, () => adapter, { host: { workflowChannel: () => channel } });
+  baselineDone(v);
+  const lines = (method: string) =>
+    v.logs.filter(l => l.event === 'rpc.failed' && l.fields.method === method);
+  try {
+    await v.host.start(ACCOUNT);
+    await fire(v);
+    await fire(v);
+    await settle();
+    assert.equal(v.host.status(ACCOUNT)!.lease?.role, 'primary');
+    const read = channel.read;
+    channel.read = async () => {
+      throw new ProviderError({
+        class: 'transient',
+        provider: 'gmail',
+        method: 'gmail.history.list',
+        reason: 'backendError',
+      });
+    };
+    for (let i = 0; i < 3; i++) {
+      await v.clock.advance(MINUTE);
+      await fire(v);
+    }
+    assert.deepEqual(
+      lines('lease.read').map(l => l.fields.reason),
+      ['backendError'],
+      'three failed reads, one line',
+    );
+    channel.read = read;
+    channel.write = () => new Promise(() => {});
+    let stopped = false;
+    void v.host.stop(ACCOUNT, 'quit').then(() => {
+      stopped = true;
+    });
+    await settle();
+    assert.equal(stopped, false, 'the quit waits for the dead claim');
+    await v.clock.advance(LEASE_STOP_WAIT_MS);
+    await settle();
+    assert.equal(stopped, true, 'but not longer than LEASE_STOP_WAIT_MS');
+    assert.deepEqual(
+      lines('lease.stop').map(l => l.fields.reason),
+      ['timeout'],
+    );
+  } finally {
+    await v.kill();
     d.cleanup();
   }
 });

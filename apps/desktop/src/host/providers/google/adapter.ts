@@ -131,11 +131,9 @@ export class GmailAdapter implements ProviderAdapter {
   private readonly closer = new AbortController();
   private readonly rt: SyncRuntime;
   private readonly pacer?: GmailPacer;
-  /** The paced workflow transport behind `workflowTransport()`, when the channel is wired on. */
+  /** The paced workflow transport behind `workflow` and `workflowTransport()`, when the channel is wired on. */
   private readonly transport?: WorkflowTransport;
   private readonly workflowRoundMs: number;
-  /** The last time the *actor's* round ran (`adapter.workflow.round`), for the planned-step cadence. */
-  private lastWorkflowRound?: number;
   readonly workflow?: WorkflowChannel;
 
   constructor(
@@ -164,16 +162,7 @@ export class GmailAdapter implements ProviderAdapter {
         compact: (ids, ctx) => transport.compact(ids, this.paced(ctx)),
         readBack: (id, ctx) => transport.readBack(id, this.paced(ctx)),
       };
-      // The actor's rounds stamp the cadence clock; the state channel's reads (the lease's included) do not — its
-      // commits already move `sync_state.updated_at`, so keying the cadence off the row would starve the step.
-      this.workflow = {
-        round: async (state, ctx) => {
-          this.lastWorkflowRound = ctx.clock.now();
-          return transport.round(state, this.paced(ctx));
-        },
-        put: (copy, ctx) => transport.put(copy, this.paced(ctx)),
-        compact: (ids, ctx) => transport.compact(ids, this.paced(ctx)),
-      };
+      this.workflow = this.transport;
     }
   }
 
@@ -198,15 +187,15 @@ export class GmailAdapter implements ProviderAdapter {
 
   /**
    * The channel's own round (ARCH 6.5, plan 20 PV3): on the `workflow` scope, at its idle cadence — a gated read is
-   * ~2 units when nothing changed — so at most `roundMs` between the *actor's* rounds (`lastWorkflowRound`, or the
-   * committed row after a restart). The actor filters it out on a secondary that sees a live holder (`PlanInput`
-   * has no lease field, so the planner cannot); a pause or block makes no I/O because every call the round makes
-   * goes through `ctx.governor`.
+   * ~2 units when nothing changed — so at most one round per `roundMs` after the committed row. The actor runs it
+   * only when it is the channel's one reader: never when the host's lease round reads the channel
+   * (`googleWorkflowChannel`), and not on a secondary that sees a live holder (`PlanInput` has no lease field, so the
+   * planner cannot tell). A pause or block makes no I/O because every call the round makes goes through
+   * `ctx.governor`.
    */
   private workflowStep(input: PlanInput): PlannedStep | undefined {
     if (!this.workflow) return undefined;
-    const last =
-      this.lastWorkflowRound ?? input.states.find(s => s.scope === 'workflow')?.updatedAt;
+    const last = input.states.find(s => s.scope === 'workflow')?.updatedAt;
     return {
       scope: 'workflow',
       lane: 'enrichment',

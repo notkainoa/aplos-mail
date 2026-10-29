@@ -17,7 +17,6 @@ import {
   type ProviderFactory,
   type RequestIo,
   type TokenSource,
-  type WorkflowCopy,
 } from '@aplos/engine/ports';
 import { openStore, type StorePort } from '@aplos/engine/store';
 import {
@@ -270,8 +269,6 @@ interface Engine {
   host: ActorHost;
   deadlines: Deadlines;
   commits: CommitRecord[];
-  /** The copies each actor workflow round delivered (`onWorkflowCopies`) — one entry per round the actor ran. */
-  workflowRounds: WorkflowCopy[][];
   kill(): Promise<void>;
 }
 
@@ -315,7 +312,6 @@ export async function boot(
     return raw.commit(input);
   };
   const governor = new Governor({ clock, tokens: mac.vault, random: () => 0, role: 'secondary' });
-  const workflowRounds: WorkflowCopy[][] = [];
   const provider = createGoogleProvider({
     fetch: mac.fetch,
     pace: false,
@@ -351,7 +347,6 @@ export async function boot(
               lookup: account => storeLookup(raw, account),
               log: quietLog,
             }),
-            onWorkflowCopies: (_account, copies) => workflowRounds.push(copies),
           }
         : {}),
     },
@@ -394,7 +389,6 @@ export async function boot(
     host,
     deadlines,
     commits,
-    workflowRounds,
     async kill() {
       pumpStop.abort();
       await host.dispose();

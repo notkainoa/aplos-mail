@@ -20,13 +20,18 @@ import { createWorkflowStateChannel, type WorkflowStateChannel } from './workflo
  * - `googleWorkflowChannel` is `ActorHostOptions.workflowChannel`: it builds the `WorkflowStateChannel`
  *   (`workflow-state.ts`) over the adapter's paced `GmailWorkflowTransport`, so `ActorHost.claimLease/releaseLease`,
  *   every role report and the lease's own rounds go through `createLeaseController` on the sealed-copy channel.
- *   The account starts as secondary until the lease's first read decides, and the host commits each read's
- *   `nextState` as the `workflow` scope row.
- * - `googleWorkflowMerged` is `ActorHostOptions.onWorkflowMerged`: it turns the `thread:` records a merge moved —
- *   the actor's workflow round `ingest`, or the lease's read — into `WorkflowWrite`s (`workflow-facts.ts`) and
- *   commits them. `StepResult` has no field for workflow facts (a port gap: `ports/provider.ts`), so they cannot
- *   ride the round's own commit; this handler commits them in a following transaction, keyed by their content op id
- *   (`workflowOpId`), which makes a replayed merge a store no-op.
+ *   The lease's round is then the account's one channel reader (the actor skips its planned `workflow` step); the
+ *   account starts as secondary until that round decides, and the host commits the `workflow` scope row when a
+ *   read moved the cursor.
+ * - `googleWorkflowMerged` is `ActorHostOptions.onWorkflowMerged`: after every channel read it turns the `thread:`
+ *   records the merge moved into `WorkflowWrite`s (`workflow-facts.ts`) and commits them. `StepResult` has no field
+ *   for workflow facts (a port gap: `ports/provider.ts`), so they cannot ride the round's own commit; this handler
+ *   commits them in a following transaction, keyed by their content op id (`workflowOpId`), which makes a replayed
+ *   merge a store no-op. A record whose thread is not stored yet (a fresh device's first read sees Done and Later for
+ *   threads the backfill has not reached) is kept by key in a bounded per-account pending set and offered again on
+ *   every later read once the store has moved, with its value taken from the read's merged view (the source of
+ *   truth), until it applies or leaves the view. The set lives in memory; after a restart the first read is a full
+ *   one and reports the whole view as changed, which rebuilds it.
  *
  * The account opts in through `GoogleProviderOptions.workflow` (`adapter.ts`); both halves are inert until then.
  */
@@ -72,40 +77,114 @@ export interface GoogleWorkflowFactsDeps {
   log?: Logger;
 }
 
+/** Thread keys one account keeps waiting for their thread; past this the newest deferrals are dropped (logged). */
+export const MAX_PENDING_FACTS = 5_000;
+
+/** Per account: the deferred `thread:` keys, the store seq they were last tried at, and the commit queue. */
+interface PendingFacts {
+  keys: Set<string>;
+  triedAt: number;
+  /** The set overflowed once (logged once). */
+  full: boolean;
+  queue: Promise<void>;
+}
+
 /**
- * `ActorHostOptions.onWorkflowMerged` for Gmail accounts: commits the changed `thread:` records as `WorkflowWrite`s.
- * The lookup is async, so the commit lands in a following transaction — the port gap in the header means it can
- * never join the round's own commit; the content-derived op id keeps a re-delivered merge idempotent.
+ * `ActorHostOptions.onWorkflowMerged` for Gmail accounts: commits the changed `thread:` records as `WorkflowWrite`s,
+ * and retries the deferred ones (see the header). The lookup is async, so the commit lands in a following
+ * transaction — the port gap in the header means it can never join the round's own commit; the content-derived op id
+ * keeps a re-delivered merge idempotent. Calls run one at a time per account.
  */
 export function googleWorkflowMerged(
   deps: GoogleWorkflowFactsDeps,
-): (account: AccountId, changed: readonly MergedWorkflowRecord[]) => void {
-  return (account, changed) => {
-    void commitFacts(deps, account, changed).catch(() => {
-      // No catalog event names this path and the catalog is not this lane's to extend: log the closest fit.
-      deps.log?.event('rpc.failed', { method: 'gmail.workflowFacts', reason: 'commit' });
-    });
+): (
+  account: AccountId,
+  changed: readonly MergedWorkflowRecord[],
+  view: readonly MergedWorkflowRecord[],
+) => void {
+  const pending = new Map<AccountId, PendingFacts>();
+  return (account, changed, view) => {
+    const state = pending.get(account) ?? {
+      keys: new Set(),
+      triedAt: -1,
+      full: false,
+      queue: Promise.resolve(),
+    };
+    pending.set(account, state);
+    state.queue = state.queue
+      .then(() => commitFacts(deps, account, state, { changed, view }))
+      .catch(() => {
+        // Retried at the next read, whether or not the store moved.
+        state.triedAt = -1;
+        // No catalog event names this path and the catalog is not this lane's to extend: log the closest fit.
+        deps.log?.event('rpc.failed', { method: 'gmail.workflowFacts', reason: 'commit' });
+      });
   };
+}
+
+/** The thread records to try now: every changed one, plus the deferred ones (from the view) once the store moved. */
+function candidates(
+  state: PendingFacts,
+  merge: { changed: readonly MergedWorkflowRecord[]; view: readonly MergedWorkflowRecord[] },
+  seq: number,
+): Map<string, WorkflowRecord> {
+  const out = new Map<string, WorkflowRecord>();
+  const add = (r: MergedWorkflowRecord) =>
+    out.set(r.key, { key: r.key, stamp: r.stamp, value: r.value as JsonValue });
+  if (state.keys.size && seq !== state.triedAt) {
+    const current = new Map(merge.view.map(r => [r.key, r]));
+    for (const key of state.keys) {
+      const record = current.get(key);
+      // Gone from the view (retention): nothing will ever apply it.
+      if (record) add(record);
+      else state.keys.delete(key);
+    }
+  }
+  for (const r of merge.changed) if (r.key.startsWith(THREAD_PREFIX)) add(r);
+  return out;
 }
 
 async function commitFacts(
   deps: GoogleWorkflowFactsDeps,
   account: AccountId,
-  changed: readonly MergedWorkflowRecord[],
+  state: PendingFacts,
+  merge: { changed: readonly MergedWorkflowRecord[]; view: readonly MergedWorkflowRecord[] },
 ): Promise<void> {
-  const records: WorkflowRecord[] = changed
-    .filter(r => r.key.startsWith(THREAD_PREFIX))
-    .map(r => ({ key: r.key, stamp: r.stamp, value: r.value as JsonValue }));
+  const seq = deps.store.seq();
+  const records = [...candidates(state, merge, seq).values()];
   if (!records.length) return;
+  // Held until the commit lands: a failed lookup or commit leaves them to the next read.
+  hold(deps, state, records);
   const ids = records.map(r => r.key.slice(THREAD_PREFIX.length));
+  const known = await deps.lookup(account).knownThreads(ids);
   const facts = workflowFacts({
     accountId: account,
     records,
-    known: await deps.lookup(account).knownThreads(ids),
+    known,
     local: localStamps(deps.store, account, ids),
   });
   const commit = workflowCommit(account, facts);
   if (commit) deps.store.commit(commit);
+  state.triedAt = deps.store.seq();
+  // Applied (or refused) for a stored thread: done. The rest wait for their thread.
+  for (const r of records)
+    if (known.has(r.key.slice(THREAD_PREFIX.length))) state.keys.delete(r.key);
+}
+
+/** Adds the records' keys to the pending set, up to `MAX_PENDING_FACTS`; an overflow is logged once. */
+function hold(
+  deps: GoogleWorkflowFactsDeps,
+  state: PendingFacts,
+  records: readonly WorkflowRecord[],
+): void {
+  let dropped = false;
+  for (const r of records) {
+    if (state.keys.has(r.key) || state.keys.size < MAX_PENDING_FACTS) state.keys.add(r.key);
+    else dropped = true;
+  }
+  if (!dropped || state.full) return;
+  state.full = true;
+  deps.log?.event('rpc.failed', { method: 'gmail.workflowFacts', reason: 'pendingFull' });
 }
 
 /** The stored edit stamp (`edited_at`, `edit_gen`, `edit_device`) per remote thread id, for `FactsInput.local`. */
