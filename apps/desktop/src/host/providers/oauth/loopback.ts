@@ -39,12 +39,21 @@ function parsePath(rawUrl: string): URL | undefined {
 }
 
 /**
- * Only `127.0.0.1:<port>` or `localhost:<port>`, the names the browser was sent to: a page that rebinds its own name
- * to 127.0.0.1 (DNS rebinding) sends its own `Host` and is refused.
+ * Exactly `127.0.0.1:<port>` or `localhost:<port>`, as a browser sends them: a page that rebinds its own name to
+ * 127.0.0.1 (DNS rebinding) sends its own `Host` and is refused, and so is any other spelling (case, trailing dot,
+ * `[::1]`, another port).
  */
 export function loopbackHostAllowed(host: string | undefined, port: number): boolean {
-  const name = host?.toLowerCase();
-  return name === `${loopbackHost}:${port}` || name === `localhost:${port}`;
+  return host === `${loopbackHost}:${port}` || host === `localhost:${port}`;
+}
+
+/** The one `Host` header, from the raw headers: Node keeps only the first of duplicates in `headers.host`. */
+export function soleHostHeader(rawHeaders: readonly string[]): string | undefined {
+  const values: string[] = [];
+  for (let i = 0; i + 1 < rawHeaders.length; i += 2) {
+    if (rawHeaders[i].toLowerCase() === 'host') values.push(rawHeaders[i + 1]);
+  }
+  return values.length === 1 ? values[0] : undefined;
 }
 
 /** What one request gets. Pure, so the rules are testable without a socket. */
@@ -130,7 +139,7 @@ export async function openLoopback(options: LoopbackOptions): Promise<Loopback> 
   const timer = new AbortController();
   let port = 0;
   const server = createServer((req, res) => {
-    const decision = loopbackHostAllowed(req.headers.host, port)
+    const decision = loopbackHostAllowed(soleHostHeader(req.rawHeaders), port)
       ? decideCallback(req.method, req.url, options.state, settled)
       : refused;
     reply(res, decision);

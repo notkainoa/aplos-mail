@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { request as httpRequest } from 'node:http';
+import { createConnection } from 'node:net';
 import { inspect } from 'node:util';
 import type { BoundGovernor, ConnectRequest, GovernedRequest } from '@aplos/engine/ports';
 import type { FakeClock } from '@aplos/emulators';
@@ -11,6 +11,7 @@ import { Governor } from '../../../../packages/engine/src/sync/governor';
 import { NotInThisLaneError, createGoogleProvider } from '../../src/host/providers/google/adapter';
 import { checkConsentUrl, googleAuthUrl } from '../../src/host/providers/oauth/flow';
 import { createGoogleHostConnect } from '../../src/host/providers/oauth/host-connect';
+import { revokeTimeoutMs } from '../../src/host/providers/oauth/connect';
 import { loopbackHostAllowed, openLoopback } from '../../src/host/providers/oauth/loopback';
 import { createHttpClient } from '../../src/host/providers/shared/http';
 import { GoogleTokenSource } from '../../src/host/providers/oauth/token-source';
@@ -87,7 +88,7 @@ test('WIRE-a reconnect with only an address: the same address in another case is
   assert.notEqual(vault.entries.get(account)?.refreshToken, oldBundle.refreshToken);
 });
 
-test('WIRE-a reconnect with only an address: another account is wrongAccount, stores nothing, revoked', async () => {
+test('WIRE-a reconnect with only an address: another account is wrongAccount, stores nothing, not revoked', async () => {
   const vault = memoryVault(oldBundle);
   const r = emulatorRig({ vault, as: 'other@example.test' });
   const error = await refusal(
@@ -96,7 +97,11 @@ test('WIRE-a reconnect with only an address: another account is wrongAccount, st
   assert.equal(error.error.reason, 'wrongAccount');
   assert.equal(vault.writes, 0);
   assert.deepEqual(vault.entries.get(account), oldBundle);
-  assert.equal(r.revoked.length, 1);
+  assert.equal(
+    r.revoked.length,
+    0,
+    'a row without a subject may be the owner’s renamed or alias account',
+  );
 });
 
 test('WIRE-a an address match needs email_verified === true; a new connect that names an address is held to it', async () => {
@@ -202,9 +207,10 @@ function hostConnect(
   vault: MemoryVault,
   fetchFn: typeof fetch,
   open: (url: string) => Promise<void>,
+  clock = manualClock(),
 ) {
   return createGoogleHostConnect({
-    http: createHttpClient({ fetch: fetchFn, clock: manualClock(), userAgent: 'aplos-test' }),
+    http: createHttpClient({ fetch: fetchFn, clock, userAgent: 'aplos-test' }),
     openExternal: open,
     clientInputs: () => ({
       env: { APLOS_GOOGLE_CLIENT_ID: clientId, APLOS_GOOGLE_CLIENT_SECRET: clientSecret },
@@ -214,20 +220,80 @@ function hostConnect(
   });
 }
 
-test('WIRE-b the factory’s discardCredential deletes the vault entry; without the host there is none', async () => {
+/** A host whose connects succeed, and a context for account `id`. */
+function connectingHost(vault: MemoryVault) {
+  const clock = manualClock();
+  const endpoint = tokenEndpoint(() => tokenReply(clock));
+  const browser = fakeBrowser(withCode);
+  const host = hostConnect(vault, endpoint.fetch, browser.openExternal, clock);
+  const base = scriptedRig(c => tokenReply(c), { clock }).ctx;
+  const ctxFor = (id: string) => ({ ...base, accountId: id });
+  return { host, ctxFor };
+}
+
+test('WIRE-b discardCredential deletes only a ref this host’s new connect minted, never a live or guessed one', async () => {
   const vault = memoryVault(oldBundle);
-  vault.entries.set('acct-new', { clientId, refreshToken: '1//late' });
-  const host = hostConnect(vault, fetch, async () => undefined);
+  const { host, ctxFor } = connectingHost(vault);
   const factory = createGoogleProvider({ fetch, ...host });
+  const notOurs = async (ref: string) => {
+    const error = await refusal(factory.discardCredential!(ref));
+    assert.equal(error.error.reason, 'notThisHostsCredential', ref);
+  };
+  // The live bundle of a committed account, by its guessable ref, and malformed spellings of it.
+  for (const ref of [account, `../${account}`, `x/${account}`, `x\\${account}`, '', 'a\u0000b'])
+    await notOurs(ref);
+  assert.deepEqual(vault.entries.get(account), oldBundle);
+
+  // A reconnect's ref is the account's own, live one: never minted.
+  await factory.connect({ mode: 'reconnect', expectedSubject: 'sub-1' }, ctxFor(account));
+  await notOurs(account);
+  assert.ok(vault.entries.has(account));
+
+  const result = await factory.connect(newConnect, ctxFor('acct-new'));
+  assert.equal(result.credentialRef, 'acct-new');
   await factory.discardCredential!('acct-new');
   assert.deepEqual(vault.deletes, ['acct-new']);
   assert.equal(vault.entries.has('acct-new'), false);
-  assert.deepEqual(vault.entries.get(account), oldBundle, 'another account’s bundle is untouched');
-  await factory.discardCredential!('never-stored');
+  assert.ok(vault.entries.has(account), 'another account’s bundle is untouched');
+  await factory.discardCredential!('acct-new');
 
   const bare = createGoogleProvider({ fetch });
   assert.equal(bare.discardCredential, undefined, 'fails closed in the engine');
   await assert.rejects(bare.connect(newConnect, {} as never), NotInThisLaneError);
+});
+
+/** A rig whose revoke endpoint never answers, and a wrong-account reconnect on it. */
+function hangingRevoke() {
+  const r = scriptedRig((clock, form) =>
+    form.has('token') ? new Promise<Response>(() => undefined) : tokenReply(clock),
+  );
+  const outcome = r.connect({ mode: 'reconnect', expectedSubject: 'sub-9' }, r.ctx);
+  outcome.catch(() => undefined);
+  const revoking = async () => {
+    while (!r.forms.some(f => f.has('token'))) await new Promise(resolve => setImmediate(resolve));
+  };
+  return { r, outcome, revoking };
+}
+
+test('WIRE-b a revoke that hangs is cut by the cancel, and otherwise after 5 s', async () => {
+  const cancelled = hangingRevoke();
+  await within(cancelled.revoking());
+  cancelled.r.abort.abort();
+  assert.equal((await refusal(within(cancelled.outcome))).error.reason, 'wrongAccount');
+
+  const slow = hangingRevoke();
+  await within(slow.revoking());
+  await slow.r.clock.advance(revokeTimeoutMs - 1);
+  const early = await Promise.race([
+    slow.outcome.then(
+      () => 'settled',
+      () => 'settled',
+    ),
+    new Promise(resolve => setImmediate(() => resolve('pending'))),
+  ]);
+  assert.equal(early, 'pending');
+  await slow.r.clock.advance(1);
+  assert.equal((await refusal(within(slow.outcome))).error.reason, 'wrongAccount');
 });
 
 // ---------- (c) a cancel during the vault write ----------
@@ -256,6 +322,27 @@ test('WIRE-c a cancel during vault.set on a reconnect puts the old bundle back',
   assert.deepEqual(revokedIn(r.forms), []);
 });
 
+test('WIRE-c a vault.set that rejects after a partial persist is undone; a cancel during it reports aborted', async () => {
+  const fresh = memoryVault();
+  fresh.failAfterWrite = true;
+  const r = scriptedRig(clock => tokenReply(clock), { vault: fresh });
+  assert.equal((await refusal(r.connect(newConnect, r.ctx))).error.reason, 'vaultWriteFailed');
+  assert.equal(fresh.entries.has(account), false, 'the half-written entry is deleted');
+
+  const vault = memoryVault(oldBundle);
+  vault.failAfterWrite = true;
+  const re = scriptedRig(clock => tokenReply(clock), { vault });
+  vault.duringSet = () => {
+    vault.duringSet = undefined;
+    vault.failAfterWrite = false;
+    re.abort.abort();
+    throw new Error('persist failed');
+  };
+  const error = await refusal(re.connect(reconnectSub1, re.ctx));
+  assert.equal(error.error.reason, 'aborted');
+  assert.deepEqual(vault.entries.get(account), oldBundle, 'the old bundle is back');
+});
+
 // ---------- (d) the consent URL and the loopback Host header ----------
 
 test('WIRE-d only https://accounts.google.com reaches openExternal', () => {
@@ -278,18 +365,23 @@ test('WIRE-d only https://accounts.google.com reaches openExternal', () => {
   }
 });
 
-function getWithHost(port: number, path: string, host: string): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const req = httpRequest({ host: '127.0.0.1', port, path, headers: { host } }, res => {
-      res.resume();
-      res.once('end', () => resolve(res.statusCode ?? 0));
+/** A hand-written GET with exactly these `Host` lines (none, one or several); the status, or 0 with no answer. */
+function rawGet(port: number, path: string, hosts: string[]): Promise<number> {
+  return new Promise(resolve => {
+    let reply = '';
+    const socket = createConnection({ port, host: '127.0.0.1' }, () => {
+      const lines = [`GET ${path} HTTP/1.1`, ...hosts.map(h => `Host: ${h}`), 'Connection: close'];
+      socket.write(`${lines.join('\r\n')}\r\n\r\n`);
     });
-    req.once('error', reject);
-    req.end();
+    socket.on('data', chunk => {
+      reply += String(chunk);
+    });
+    socket.once('error', () => resolve(0));
+    socket.once('close', () => resolve(Number(/^HTTP\/1\.1 (\d{3})/.exec(reply)?.[1] ?? 0)));
   });
 }
 
-test('WIRE-d the loopback refuses a callback whose Host is not 127.0.0.1 or localhost on its port', async () => {
+test('WIRE-d the loopback refuses every Host but exactly 127.0.0.1:<port> or localhost:<port>', async () => {
   const loopback = await openLoopback({
     state: 'the-state',
     clock: manualClock(),
@@ -297,14 +389,29 @@ test('WIRE-d the loopback refuses a callback whose Host is not 127.0.0.1 or loca
   });
   const { port } = loopback.address;
   const path = '/?code=one&state=the-state';
-  assert.equal(await getWithHost(port, path, `evil.test:${port}`), 400);
-  assert.equal(await getWithHost(port, path, '127.0.0.1:1'), 400);
-  assert.equal(await getWithHost(port, path, `localhost:${port}`), 200);
+  const refusedHosts = [
+    [`evil.test:${port}`],
+    [`127.0.0.1.evil.com:${port}`],
+    [`127.0.0.1.:${port}`],
+    [`localhost.:${port}`],
+    [`[::1]:${port}`],
+    [`LOCALHOST:${port}`],
+    [`127.0.0.1:${port + 1}`],
+    ['127.0.0.1'],
+    [],
+    [`127.0.0.1:${port}`, `evil.test:${port}`],
+    [`127.0.0.1:${port}`, `127.0.0.1:${port}`],
+  ];
+  for (const hosts of refusedHosts) {
+    const status = await rawGet(port, path, hosts);
+    assert.notEqual(status, 200, hosts.join(' + ') || '(no Host)');
+    assert.notEqual(status, 0, 'the listener is still open');
+  }
+  assert.equal(await rawGet(port, path, [`localhost:${port}`]), 200);
   assert.deepEqual(await loopback.outcome, { kind: 'code', code: 'one' });
   assert.equal(loopbackHostAllowed(`127.0.0.1:${port}`, port), true);
-  assert.equal(loopbackHostAllowed(`LOCALHOST:${port}`, port), true);
+  assert.equal(loopbackHostAllowed(`LOCALHOST:${port}`, port), false);
   assert.equal(loopbackHostAllowed(undefined, port), false);
-  assert.equal(loopbackHostAllowed('127.0.0.1', port), false);
   loopback.close();
 });
 

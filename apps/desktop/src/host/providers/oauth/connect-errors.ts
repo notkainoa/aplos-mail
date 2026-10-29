@@ -42,6 +42,7 @@ const reasonMessages = new Map<string, string>([
     'vaultReadFailed',
     'Aplos could not read its saved Google sign-ins. Check the data directory and your keychain.',
   ],
+  ['notThisHostsCredential', 'Aplos will only remove a Google sign-in it has just saved.'],
   ['badConsentUrl', 'Aplos would not open a sign-in page that is not Google’s.'],
 ]);
 

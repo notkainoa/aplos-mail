@@ -52,6 +52,8 @@ export interface MemoryVault extends CredentialVault<GoogleTokenBundle> {
   writes: number;
   deletes: string[];
   failWrites: boolean;
+  /** `set` keeps the entry in memory and then rejects (a persist that failed part-way). */
+  failAfterWrite: boolean;
   /** Runs inside `set`, after the entry is in memory and before the write settles (`main/vault.ts` order). */
   duringSet?: () => void;
 }
@@ -63,12 +65,14 @@ export function memoryVault(initial?: GoogleTokenBundle): MemoryVault {
     writes: 0,
     deletes: [],
     failWrites: false,
+    failAfterWrite: false,
     get: ref => vault.entries.get(ref),
     async set(ref, value) {
       if (vault.failWrites) throw new Error(`disk full while saving ${value.refreshToken}`);
       vault.writes += 1;
       vault.entries.set(ref, { ...value });
       vault.duringSet?.();
+      if (vault.failAfterWrite) throw new Error(`persist failed for ${value.refreshToken}`);
     },
     async delete(ref) {
       vault.deletes.push(ref);

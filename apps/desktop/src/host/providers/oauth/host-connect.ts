@@ -25,7 +25,11 @@ export interface GoogleHostConnectDeps extends Omit<GoogleConnectDeps, 'resolveC
 
 export interface GoogleHostConnect {
   connect: GoogleConnect;
-  /** `ProviderFactory.discardCredential`: deletes a bundle a connect stored when the engine refused the result. */
+  /**
+   * `ProviderFactory.discardCredential`: deletes a bundle a NEW connect of this host stored in this process, when the
+   * engine refused the result. Any other ref (a reconnect's, which is a live account's; one from before a restart; a
+   * guessed or malformed one) is refused and nothing is deleted.
+   */
   discardCredential(ref: string): Promise<void>;
 }
 
@@ -37,20 +41,46 @@ function withConnectGovernor(
   return (req, ctx) => connect(req, { ...ctx, governor: source.bindConnect(ctx.accountId) });
 }
 
+const printable = (ref: string) =>
+  [...ref].every(ch => ch.charCodeAt(0) > 0x1f && ch.charCodeAt(0) !== 0x7f);
+
+/** Non-empty, bounded, printable, and nothing a path or key scheme could read as another entry. */
+export function wellFormedRef(ref: unknown): ref is string {
+  if (typeof ref !== 'string' || ref.length === 0 || ref.length > 256) return false;
+  return printable(ref) && !/[/\\]/.test(ref) && !ref.includes('..');
+}
+
+/** Remembers the ref of every new connect that stored a bundle; a reconnect's ref is a live account's. */
+function minting(connect: GoogleConnect, minted: Set<string>): GoogleConnect {
+  return async (req, ctx) => {
+    const result = await connect(req, ctx);
+    if (req.mode === 'new') minted.add(result.credentialRef);
+    return result;
+  };
+}
+
+function discarder(deps: GoogleHostConnectDeps, minted: ReadonlySet<string>) {
+  return async (ref: string): Promise<void> => {
+    if (!wellFormedRef(ref) || !minted.has(ref)) {
+      throw connectError('permanent', 'notThisHostsCredential', { extra: { uncertain: false } });
+    }
+    try {
+      await deps.vault.delete(ref);
+    } catch {
+      throw connectError('transient', 'vaultDeleteFailed', { extra: { uncertain: false } });
+    }
+  };
+}
+
 export function createGoogleHostConnect(deps: GoogleHostConnectDeps): GoogleHostConnect {
   const { clientInputs, governor, ...rest } = deps;
+  const minted = new Set<string>();
   const connect = createGoogleConnect({
     ...rest,
     resolveClient: () => resolveGoogleClient(clientInputs()),
   });
   return {
-    connect: withConnectGovernor(connect, governor),
-    discardCredential: async ref => {
-      try {
-        await deps.vault.delete(ref);
-      } catch {
-        throw connectError('transient', 'vaultDeleteFailed', { extra: { uncertain: false } });
-      }
-    },
+    connect: withConnectGovernor(minting(connect, minted), governor),
+    discardCredential: discarder(deps, minted),
   };
 }

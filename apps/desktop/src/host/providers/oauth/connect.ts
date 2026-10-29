@@ -13,7 +13,6 @@
 // fresh ref could never be found again. Instead nothing is written until every check here has passed, and a cancel
 // that lands during the write takes it back out (the previous bundle restored, or the new entry deleted).
 
-import { ProviderError } from '@aplos/engine/ports';
 import type {
   AccountId,
   Capabilities,
@@ -212,19 +211,21 @@ function acceptExchange(attempt: Attempt, exchange: TokenExchange): Accepted {
   return { identity, grant, bundle: { clientId, refreshToken } };
 }
 
+/** False when `set` rejected: the vault may still have persisted part of it, so the caller undoes it either way. */
 async function write(
   vault: CredentialVault<GoogleTokenBundle>,
   ref: string,
   bundle: GoogleTokenBundle,
-) {
+): Promise<boolean> {
   try {
     await vault.set(ref, bundle);
+    return true;
   } catch {
-    throw connectError('transient', 'vaultWriteFailed', { extra: { uncertain: false } });
+    return false;
   }
 }
 
-/** Takes a cancelled write back out: the previous bundle again, or no entry. Best effort. */
+/** Takes a cancelled or failed write back out: the previous bundle again, or no entry. Best effort. */
 async function undo(
   vault: CredentialVault<GoogleTokenBundle>,
   ref: string,
@@ -252,7 +253,10 @@ function readPrevious(
   }
 }
 
-/** A cancel before the write stores nothing; one that lands during it takes the write back out. */
+/**
+ * A cancel before the write stores nothing. A cancel that lands during it, or a write that fails (possibly after a
+ * partial persist), is taken back out; a cancel is reported as `aborted` even when the write also failed.
+ */
 async function store(
   deps: GoogleConnectDeps,
   attempt: Attempt,
@@ -261,36 +265,55 @@ async function store(
   const { signal } = attempt.flow;
   if (signal.aborted) throw abortedError();
   const previous = readPrevious(deps.vault, attempt.ref);
-  await write(deps.vault, attempt.ref, bundle);
-  if (!signal.aborted) return;
+  const written = await write(deps.vault, attempt.ref, bundle);
+  if (written && !signal.aborted) return;
   await undo(deps.vault, attempt.ref, bundle, previous);
-  throw abortedError();
+  if (signal.aborted) throw abortedError();
+  throw connectError('transient', 'vaultWriteFailed', { extra: { uncertain: false } });
 }
 
 /**
- * Provably another Google user than the account being reconnected: refused as `wrongAccount`, or an id_token
- * refused for another reason whose `sub` (decoded, unchecked) is not the expected one. Never for a new connect: its
- * user may already be an account in Aplos (the engine refuses the duplicate after sign-in).
+ * Provably another Google user than the account being reconnected: the id_token's `sub` (decoded, unchecked, so a
+ * token refused for another claim counts too) is not the expected one. Only with an `expectedSubject`: an address
+ * mismatch on a row saved without a subject may be the owner's own renamed or alias account. Never for a new
+ * connect: its user may already be an account in Aplos (the engine refuses the duplicate after sign-in).
  */
-function foreignGrant(attempt: Attempt, body: Record<string, unknown>, error: unknown): boolean {
-  if (attempt.req.mode === 'new') return false;
-  if (error instanceof ProviderError && error.error.reason === 'wrongAccount') return true;
+function foreignGrant(attempt: Attempt, body: Record<string, unknown>): boolean {
   const expected = attempt.req.expectedSubject;
+  if (attempt.req.mode === 'new' || !nonEmpty(expected)) return false;
   const subject = subjectClaim(body.id_token);
-  return nonEmpty(expected) && subject !== undefined && subject !== expected;
+  return subject !== undefined && subject !== expected;
 }
 
-/** On its own signal: a cancel must not stop the revoke of a grant it refused. */
+/** A revoke never holds the refusal up for long: at most this, and not past a cancel. */
+export const revokeTimeoutMs = 5_000;
+
+/** The attempt's signal, also aborted after `revokeTimeoutMs`; `done` disarms the timer. */
+function revokeSignal(flow: FlowContext): { signal: AbortSignal; done: () => void } {
+  const timeout = new AbortController();
+  const timer = new AbortController();
+  flow.clock.sleep(revokeTimeoutMs, timer.signal).then(
+    () => timeout.abort(),
+    () => {
+      /* disarmed */
+    },
+  );
+  return { signal: AbortSignal.any([flow.signal, timeout.signal]), done: () => timer.abort() };
+}
+
 async function revokeIfForeign(
   deps: GoogleConnectDeps,
   attempt: Attempt,
   exchange: TokenExchange,
-  error: unknown,
 ): Promise<void> {
   const token = grantTokenOf(exchange.body);
-  if (!token || !foreignGrant(attempt, exchange.body, error)) return;
-  const ctx = { ...attempt.flow, signal: new AbortController().signal };
-  await revokeGrant(deps, ctx, token);
+  if (!token || !foreignGrant(attempt, exchange.body)) return;
+  const { signal, done } = revokeSignal(attempt.flow);
+  try {
+    await revokeGrant(deps, { ...attempt.flow, signal }, token);
+  } finally {
+    done();
+  }
 }
 
 function resultFor(deps: GoogleConnectDeps, attempt: Attempt, accepted: Accepted): ConnectResult {
@@ -319,7 +342,7 @@ async function finishConnect(
     await store(deps, attempt, accepted.bundle);
     return resultFor(deps, attempt, accepted);
   } catch (error) {
-    await revokeIfForeign(deps, attempt, exchange, error);
+    await revokeIfForeign(deps, attempt, exchange);
     throw error;
   }
 }
