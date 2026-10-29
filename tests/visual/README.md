@@ -29,7 +29,8 @@ Run from the repo root. The npm script names (`test:visual`) are plat-ci's to wi
 | `visual.spec.ts` | Screenshot compare, light and dark |
 | `hover.spec.ts` | Hover never changes layout (DESIGN 5 rule 17) |
 | `dom.spec.ts` | DOM assertions (DESIGN 12.5) |
-| `known-defects.ts` | Component defects found by the harness that belong to another lane; each is an expected failure with its reason |
+| `axe.spec.ts` | axe-core accessibility check, every state, both themes and sizes |
+| `known-defects.ts` | Component defects found by the harness that belong to another lane, each with its reason (`KNOWN_DEFECTS` as expected failures, `axeKnownDefects` for axe) |
 | `__golden__/1440x900/` | The committed golden set |
 | `support/` | The gallery opener, the ΔE comparison and shared paths |
 
@@ -121,9 +122,29 @@ Per state, light and dark:
 
 One test plants a violation of each kind and requires the audit to name it.
 
+## Accessibility (axe)
+
+`axe.spec.ts` opens every state in light and dark, at both sizes, and runs `@axe-core/playwright`
+(dev-only, pinned) with the tags `wcag2a`, `wcag2aa`, `wcag21a` and `wcag21aa`.
+
+- A `serious` or `critical` violation fails the state.
+- `moderate` and `minor` ones do not fail. Every finding of any impact prints one tab-separated line,
+  `AXE <size> <state> <theme> <impact|known> <rule> <nodes> <first target | message>`, so a run can be
+  tallied with `grep '^AXE' log`.
+- A rule is let through only by `axeKnownDefects` in `known-defects.ts`: state id, then axe rule id,
+  then the reason (which lane owns the cause, or which token pair the design already approves in
+  `contrast-pairs.json`). The entry covers that rule in that state in both themes and sizes, and no rule
+  is switched off for the whole run. Delete the entry when the cause is fixed. A run prints an
+  `AXE-STALE` line for an entry whose rule did not appear, so a fixed cause shows up.
+- Fix the markup (names, roles, landmarks, focus order), never the colours, to make a state pass.
+
+```
+npx playwright test -c tests/visual/playwright.config.ts axe
+```
+
 ## Not here yet
 
-- Motion filmstrips (DESIGN 12.5) and axe: separate work packages.
+- Motion filmstrips (DESIGN 12.5): a separate work package.
 - The not-Avec checks that need a whole screen (Lab b* of the shell, single reading column): they
   run on Home and the reader once those screens exist.
 - The full matrix of about 90 states and the Electron window (the onboarding window is a 640 x 600
