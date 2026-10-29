@@ -88,6 +88,8 @@ export type StoreWrite = CoreWrite | RemoteDraftWrite | ExtensionWrite;
 
 export type CoreWrite =
   | AccountWrite
+  | AccountRemoveWrite
+  | FileRemovedWrite
   | FolderWrite
   | FolderDeleteWrite
   | MessageWrite
@@ -164,6 +166,37 @@ export interface AccountWrite {
   aiAllowed?: boolean;
   primaryLeaseUntil?: number | null;
   primaryLeaseDevice?: string | null;
+  /** `Account.colorTag`: a colour token name, 1 to 40 characters on one line. `null` goes back to the hash colour. */
+  colorTag?: string | null;
+  /** `Account.notifications`, the per-account switch; a new account starts on. */
+  notifications?: boolean;
+  /**
+   * `accounts.settings`: a plain JSON object (at most 16 KB serialized) of per-account preferences. A present value
+   * replaces the whole object; absent keeps it.
+   */
+  settings?: Record<string, unknown>;
+}
+
+/**
+ * Removes the account and everything it owns in one transaction (`Account/disconnect`): folders, threads, messages,
+ * bodies, attachments, FTS rows, placements, workflow, ops, drafts, submissions, sync and governor state, correspondents,
+ * calendars and events. Other accounts are untouched. Attachment files are queued in `file_removals` for the host
+ * (`FileRemovedWrite` clears them). Refused with `notFound` for an unknown account and with `conflict` while one of its
+ * submissions is `sending` or `uncertain`. Later writes of the same commit that name the account are refused with
+ * `notFound`.
+ */
+export interface AccountRemoveWrite {
+  kind: 'accountRemove';
+  accountId: string;
+}
+/**
+ * The host removed these attachment files after an `accountRemove`: drops their `file_removals` rows. No change row.
+ * The host's drain of the queue must skip any path an `attachments` row still references (a reconnect re-downloads
+ * into the same path; an `attachmentState` write that stores a path also takes it off the queue).
+ */
+export interface FileRemovedWrite {
+  kind: 'fileRemoved';
+  paths: string[];
 }
 
 /** What `folders.role` stores (F3 re-exports it); the `category.*` roles are Gmail's tabs, read by `laneFor`. */
@@ -783,7 +816,8 @@ export interface CompactResult {
 
 // ---------------------------------------------------------------- errors
 
-export type StoreErrorCode = 'notFound' | 'invalid';
+/** `conflict`: the store's state refuses the write (an account with a message sending cannot be removed). */
+export type StoreErrorCode = 'notFound' | 'invalid' | 'conflict';
 export class StoreError extends Error {
   constructor(
     readonly code: StoreErrorCode,
