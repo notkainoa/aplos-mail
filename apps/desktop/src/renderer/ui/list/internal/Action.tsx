@@ -49,7 +49,13 @@ export interface ActionProps {
   pressed?: boolean;
   expanded?: boolean;
   controls?: string;
-  onPress: (anchor: HTMLButtonElement) => void;
+  onPress: (anchor: HTMLElement) => void;
+}
+
+/** A span cannot take focus, so focus returned to it (a menu closing on its anchor) goes to the listbox it sits in. */
+function forwardFocusToListbox(el: HTMLElement | null): void {
+  if (!el) return;
+  el.focus = options => el.closest<HTMLElement>('[role="listbox"]')?.focus(options);
 }
 
 /** Plain button: radius 8, press scale, focus ring; one filled per screen is the caller's job. */
@@ -75,29 +81,12 @@ export function Action({
   const showKeys = useShowKeys();
   const hintInline = !keycap && !!hintKey && showsInline(keyHint, showKeys);
   const hintBadge = !keycap && !hintInline && !!hintKey && showKeys === 'held';
-  const handle = (event: MouseEvent<HTMLButtonElement>) => {
+  const handle = (event: MouseEvent<HTMLElement>) => {
     event.stopPropagation();
     if (!disabled) onPress(event.currentTarget);
   };
-  return (
-    <button
-      type="button"
-      className="ui-list-btn"
-      data-variant={variant}
-      data-size={size}
-      data-tone={tone === 'danger' ? 'danger' : undefined}
-      data-label-hidden={labelHidden ? 'true' : undefined}
-      aria-label={iconOnly ? label : undefined}
-      title={tooltip ?? label}
-      tabIndex={duplicate ? -1 : undefined}
-      aria-hidden={duplicate ? true : undefined}
-      aria-pressed={pressed}
-      aria-expanded={expanded}
-      aria-controls={controls}
-      disabled={disabled}
-      onClick={handle}
-      onDoubleClick={event => event.stopPropagation()}
-    >
+  const content = (
+    <>
       {icon ? <Icon name={icon} /> : null}
       {variant === 'icon' || labelHidden ? null : (
         <span className="ui-list-btn__label">{label}</span>
@@ -105,6 +94,38 @@ export function Action({
       {keycap ? <Keycap chord={keycap} /> : null}
       {hintInline && hintKey ? <Keycap chord={hintKey} reveal="hint" /> : null}
       {hintBadge && hintKey ? <Keycap chord={hintKey} reveal="badge" /> : null}
+    </>
+  );
+  const common = {
+    className: 'ui-list-btn',
+    'data-variant': variant,
+    'data-size': size,
+    'data-tone': tone === 'danger' ? 'danger' : undefined,
+    'data-label-hidden': labelHidden ? 'true' : undefined,
+    'aria-label': iconOnly ? label : undefined,
+    title: tooltip ?? label,
+    onClick: handle,
+    onDoubleClick: (event: MouseEvent) => event.stopPropagation(),
+  };
+  // A pointer duplicate is a span, not a button: a button with tabindex -1 is still focusable, so axe (and a screen
+  // reader's virtual cursor) treats it as interactive content inside an option or listbox (nested-interactive,
+  // aria-required-children). A span with a click handler is neither focusable nor announced; the key does the work.
+  if (duplicate)
+    return (
+      <span {...common} ref={forwardFocusToListbox} aria-hidden="true">
+        {content}
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      {...common}
+      aria-pressed={pressed}
+      aria-expanded={expanded}
+      aria-controls={controls}
+      disabled={disabled}
+    >
+      {content}
     </button>
   );
 }

@@ -199,13 +199,16 @@ export function keysFor(commandId?: CommandId, literal?: LiteralKey): readonly s
 export function PartKeys({
   chords,
   reveal = 'always',
+  id,
 }: {
   chords: readonly string[];
   reveal?: 'always' | 'hint';
+  /** So an `aria-labelledby` can name the keys the caller shows. */
+  id?: string;
 }) {
   if (chords.length === 0) return null;
   return (
-    <span className="ui-part-keys" data-reveal={reveal}>
+    <span id={id} className="ui-part-keys" data-reveal={reveal}>
       {chords.map((chord, i) => (
         <span key={chord} className="ui-part-keys__group">
           {i > 0 ? <span className="ui-part-keys__or">or</span> : null}

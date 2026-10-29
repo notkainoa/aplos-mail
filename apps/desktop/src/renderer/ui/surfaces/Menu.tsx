@@ -18,6 +18,13 @@ import {
   usePresence,
 } from './parts';
 
+/**
+ * A whitespace text node. The item and its text column are flex containers, which draw no whitespace, but a checker
+ * that joins the visible text (axe label-content-name-mismatch) then reads "ReplyR" and cannot find it in the
+ * accessible name "Reply R". Layout is unchanged.
+ */
+const SPACE = ' ';
+
 type ItemEntry = Extract<MenuEntry, { kind: 'item' }>;
 
 function Swatches({ swatch }: { swatch: TagColor | readonly TagColor[] }) {
@@ -162,14 +169,18 @@ export function Menu(props: ComponentPropsMap['Menu']) {
         const labelId = `${domId(entry.id)}-label`;
         const detailId = entry.detail ? `${domId(entry.id)}-detail` : undefined;
         const hintId = entry.inlineAction ? `${domId(entry.id)}-hint` : undefined;
-        const describedBy = [detailId, hintId].filter(Boolean).join(' ') || undefined;
+        const asideId = entry.aside ? `${domId(entry.id)}-aside` : undefined;
+        const chords = keysFor(entry.commandId);
+        const keysId = chords.length > 0 ? `${domId(entry.id)}-keys` : undefined;
+        // The name holds every visible word (label, detail, aside, keys), so it contains the visible text (WCAG 2.5.3).
+        const nameIds = [labelId, detailId, asideId, keysId].filter(Boolean).join(' ');
         return (
           <div
             key={entry.id}
             id={domId(entry.id)}
             role={picker ? 'menuitemradio' : 'menuitem'}
-            aria-labelledby={labelId}
-            aria-describedby={describedBy}
+            aria-labelledby={nameIds}
+            aria-describedby={hintId}
             aria-checked={checked}
             aria-disabled={entry.disabled ? true : undefined}
             className="ui-menu__item"
@@ -181,9 +192,15 @@ export function Menu(props: ComponentPropsMap['Menu']) {
             }}
             onClick={() => choose(entry.id)}
           >
-            {numbered ? <span className="ui-menu__num">{digit ?? ''}</span> : null}
+            {numbered ? (
+              <span className="ui-menu__num" aria-hidden="true">
+                {digit ?? ''}
+              </span>
+            ) : null}
             {picker ? (
-              <span className="ui-menu__check">{checked ? <PartIcon name="check" /> : null}</span>
+              <span className="ui-menu__check" aria-hidden="true">
+                {checked ? <PartIcon name="check" /> : null}
+              </span>
             ) : null}
             {entry.icon ? <PartIcon name={entry.icon} /> : null}
             {entry.swatch ? <Swatches swatch={entry.swatch} /> : null}
@@ -192,9 +209,12 @@ export function Menu(props: ComponentPropsMap['Menu']) {
                 {entry.label}
               </span>
               {entry.detail ? (
-                <span className="ui-menu__detail" id={detailId}>
-                  {entry.detail}
-                </span>
+                <>
+                  {SPACE}
+                  <span className="ui-menu__detail" id={detailId}>
+                    {entry.detail}
+                  </span>
+                </>
               ) : null}
               {entry.inlineAction ? (
                 <>
@@ -218,8 +238,16 @@ export function Menu(props: ComponentPropsMap['Menu']) {
                 </>
               ) : null}
             </span>
-            {entry.aside ? <span className="ui-menu__aside">{entry.aside}</span> : null}
-            <PartKeys chords={keysFor(entry.commandId)} />
+            {entry.aside ? (
+              <>
+                {SPACE}
+                <span className="ui-menu__aside" id={asideId}>
+                  {entry.aside}
+                </span>
+              </>
+            ) : null}
+            {chords.length > 0 ? SPACE : null}
+            <PartKeys chords={chords} id={keysId} />
           </div>
         );
       })}

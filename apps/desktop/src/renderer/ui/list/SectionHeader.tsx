@@ -50,8 +50,9 @@ export function SectionHeader({
             icon={action.icon}
             tooltip={tooltipText(action.label, action.commandId, action.keys)}
             hintKey={actionKey}
-            // A pointer duplicate only when a key does the same; otherwise (Unsubscribe) it stays reachable.
-            duplicate={inListbox && actionKey !== ''}
+            // A pointer duplicate when a key or a registry command (⌘K) does the same; otherwise (a screen's own
+            // action, such as Unsubscribe) it stays reachable.
+            duplicate={inListbox && (actionKey !== '' || action.commandId !== undefined)}
             onPress={() => action.onSelect()}
           />
         </span>
