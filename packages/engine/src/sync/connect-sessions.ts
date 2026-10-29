@@ -152,7 +152,9 @@ export class ConnectSessions {
       // The cancel and the deadline reach the host's browser and loopback flow (`ConnectRequest.signal`), and the host
       // discards a result that still arrives after them (`AccountActorHost.discardCredential`).
       session.hostStarted = true;
-      const answered = this.accounts.connect(accountId, kind, { ...request, signal });
+      // An abort signal the request already carries stays in force next to the session's own.
+      const hostSignal = request.signal ? AbortSignal.any([request.signal, signal]) : signal;
+      const answered = this.accounts.connect(accountId, kind, { ...request, signal: hostSignal });
       this.holdKeysUntilSettled(session, answered);
       this.discardLateAnswer(session, answered);
       const result = await untilAborted(answered, signal);
