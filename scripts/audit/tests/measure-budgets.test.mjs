@@ -260,9 +260,18 @@ describe('measure-budgets CI rows', () => {
       ciJob(ciJobNames.e2eBrowserJob, 0, 'skipped'),
     ]);
     const older = ok([ciJob(ciJobNames.staticJob, 200), ciJob(ciJobNames.e2eBrowserJob, 90)]);
-    assert.equal(newestMinutes([newest, older], [ciJobNames.e2eBrowserJob]), 1.5);
-    assert.equal(newestMinutes([newest, older], [ciJobNames.staticJob]), 100 / 60);
-    assert.equal(newestMinutes([newest, older], [ciJobNames.macosJob]), null);
+    assert.equal(
+      newestMinutes([newest, older], name => name === ciJobNames.e2eBrowserJob),
+      1.5,
+    );
+    assert.equal(
+      newestMinutes([newest, older], name => name === ciJobNames.staticJob),
+      100 / 60,
+    );
+    assert.equal(
+      newestMinutes([newest, older], name => name === ciJobNames.macosJob),
+      null,
+    );
     const e2e = await measurers['ci.wall-clock-e2e-browser'](null, {
       ci: true,
       ciRuns: [newest, older],
@@ -270,10 +279,27 @@ describe('measure-budgets CI rows', () => {
     assert.equal(e2e.measured, 1.5);
   });
 
+  it('static-unit takes the longest of the static job and every "Unit tests (...)" job', async () => {
+    const run = {
+      conclusion: 'success',
+      jobs: [
+        ciJob(ciJobNames.staticJob, 110),
+        ciJob('Unit tests (engine, Electron Node)', 151),
+        ciJob('Unit tests (desktop 1/2)', 139),
+        ciJob('Website (typecheck, build)', 400),
+      ],
+    };
+    const result = await measurers['ci.wall-clock-static-unit'](null, { ci: true, ciRuns: [run] });
+    assert.equal(result.measured, 2.6);
+  });
+
   it('wall-clock rows ignore runs that did not succeed', () => {
     const failed = { conclusion: 'failure', jobs: [ciJob(ciJobNames.staticJob, 600)] };
     const green = { conclusion: 'success', jobs: [ciJob(ciJobNames.staticJob, 120)] };
-    assert.equal(newestMinutes([failed, green], [ciJobNames.staticJob]), 2);
+    assert.equal(
+      newestMinutes([failed, green], name => name === ciJobNames.staticJob),
+      2,
+    );
   });
 
   it('bills jobs that failed or were cancelled, not skipped or unfinished ones', () => {
