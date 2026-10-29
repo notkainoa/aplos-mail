@@ -62,6 +62,16 @@ describe('scoreSuppressions', () => {
     );
     assert.equal(scoreSuppressions(many).details.length, 10);
   });
+
+  it('throws on counts that are not non-negative integers', () => {
+    for (const bad of [-1, 1.5, '3', null]) {
+      assert.throws(
+        () => scoreSuppressions({ 'a.ts': { 'rule-x': { count: bad } } }),
+        /non-negative integer/,
+        JSON.stringify(bad),
+      );
+    }
+  });
 });
 
 describe('scorer CLI', () => {
@@ -87,6 +97,19 @@ describe('scorer CLI', () => {
   it('exits non-zero on malformed JSON', () => {
     writeFileSync(join(tmp, 'bad.json'), '{oops');
     assert.notEqual(run(['--file', join(tmp, 'bad.json')]).status, 0);
+  });
+
+  it('exits non-zero on a negative or fractional count', () => {
+    writeFileSync(
+      join(tmp, 'neg.json'),
+      JSON.stringify({ 'a.ts': { 'rule-x': { count: -5 } } }),
+    );
+    assert.notEqual(run(['--file', join(tmp, 'neg.json')]).status, 0);
+    writeFileSync(
+      join(tmp, 'frac.json'),
+      JSON.stringify({ 'a.ts': { 'rule-x': { count: 2.5 } } }),
+    );
+    assert.notEqual(run(['--file', join(tmp, 'frac.json')]).status, 0);
   });
 });
 

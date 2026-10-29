@@ -6,9 +6,9 @@
 // --file picks the suppressions JSON (default ./eslint-suppressions.json) so tests use fixtures.
 // Prints {"score": <number>, "details": [...]} as the last stdout line, per the scorer contract.
 import { readFileSync } from 'node:fs';
-import { matchesGlob } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { matchGlob } from '../diffguard.mjs';
 
 export function parseArgs(argv) {
   const options = { file: 'eslint-suppressions.json', scopes: [] };
@@ -29,17 +29,20 @@ const missing = flag => {
 /**
  * Sums suppressions in a parsed { file: { rule: { count } } } object, counting only file keys
  * matching one of `scopes` (all when empty). Returns { score, details } with the ten worst
- * rules first as "<rule>: <total> in <n> files".
+ * rules first as "<rule>: <total> in <n> files". Every count must be an integer >= 0 — a
+ * negative or fractional count is tampering, so it throws rather than scoring.
  */
 export function scoreSuppressions(data, scopes = []) {
-  const inScope = file => scopes.length === 0 || scopes.some(glob => matchesGlob(file, glob));
+  const inScope = file => scopes.length === 0 || scopes.some(glob => matchGlob(file, glob));
   let total = 0;
   const byRule = new Map();
   for (const [file, rules] of Object.entries(data)) {
     if (!inScope(file)) continue;
     for (const [rule, entry] of Object.entries(rules)) {
       const count = entry?.count;
-      if (!Number.isFinite(count)) continue;
+      if (!Number.isInteger(count) || count < 0) {
+        throw new Error(`${file}: count for ${rule} must be a non-negative integer`);
+      }
       total += count;
       const agg = byRule.get(rule) ?? { count: 0, files: 0 };
       agg.count += count;

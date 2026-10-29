@@ -4,7 +4,7 @@
 // safety rules the harness is built around.
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { matchesGlob } from 'node:path';
+import { SUPPRESSION_DIRECTIVES, validGlob } from './diffguard.mjs';
 
 export const defaults = {
   attemptsPerRound: 4,
@@ -24,6 +24,7 @@ const TOP_KEYS = new Set([
   'name',
   'allowedPaths',
   'allowedTestPaths',
+  'allowDirectives',
   'gates',
   'scorers',
   'attempt',
@@ -70,6 +71,18 @@ function needStringList(value, where, { min = 0 } = {}) {
     throw new ConfigError(`${where} must be an array of at least ${min} glob(s)`);
   }
   return value.map((entry, i) => needString(entry, `${where}[${i}]`));
+}
+
+function needDirectives(value) {
+  const list = needStringList(value, 'allowDirectives');
+  for (const name of list) {
+    if (!(name in SUPPRESSION_DIRECTIVES)) {
+      throw new ConfigError(
+        `allowDirectives: unknown directive "${name}" (known: ${Object.keys(SUPPRESSION_DIRECTIVES).join(', ')})`,
+      );
+    }
+  }
+  return list;
 }
 
 function needGate(entry, i) {
@@ -164,6 +177,9 @@ export function validateConfig(raw) {
     allowedTestPaths: raw.allowedTestPaths
       ? needStringList(raw.allowedTestPaths, 'allowedTestPaths')
       : [],
+    allowDirectives: raw.allowDirectives
+      ? needDirectives(raw.allowDirectives)
+      : [],
     gates: needGateList(raw.gates),
     scorers: raw.scorers.map(needScorer),
     attempt,
@@ -180,17 +196,15 @@ export function validateConfig(raw) {
     ),
     maxConcurrent: needPositiveInt(raw.maxConcurrent, 'maxConcurrent', defaults.maxConcurrent),
   };
-  // Sanity check the globs now, not mid-run when an attempt is rejected for the wrong reason.
+  // Sanity check the globs now, not mid-run when an attempt is rejected for the wrong
+  // reason — with the same matcher the diff guard uses, so a valid glob here is a valid
+  // glob there.
   for (const [where, globs] of [
     ['allowedPaths', config.allowedPaths],
     ['allowedTestPaths', config.allowedTestPaths],
   ]) {
     for (const glob of globs) {
-      try {
-        matchesGlob('x', glob);
-      } catch {
-        throw new ConfigError(`${where}: invalid glob "${glob}"`);
-      }
+      if (!validGlob(glob)) throw new ConfigError(`${where}: invalid glob "${glob}"`);
     }
   }
   return config;

@@ -113,6 +113,15 @@ describe('validateConfig', () => {
     bad({ maxConcurrent: 'many' }, 'maxConcurrent');
   });
 
+  it('accepts named allowDirectives and rejects unknown ones', () => {
+    const config = validateConfig({ ...good, allowDirectives: ['ts-ignore', 'c8-ignore'] });
+    assert.deepEqual(config.allowDirectives, ['ts-ignore', 'c8-ignore']);
+    assert.equal(validateConfig({ ...good }).allowDirectives.length, 0);
+    bad({ allowDirectives: 'ts-ignore' }, 'allowDirectives');
+    bad({ allowDirectives: ['eslint'] }, 'unknown directive');
+    bad({ allowDirectives: [42] }, 'allowDirectives');
+  });
+
   it('rejects non-object configs', () => {
     assert.throws(() => validateConfig(null), /object/);
     assert.throws(() => validateConfig([1, 2]), /object/);

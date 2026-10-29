@@ -8,11 +8,12 @@ import { SUPPRESSION_HINT } from './diffguard.mjs';
 const FORBIDDEN_WORDS = [
   'scripts/audit/ and tools/lint/ (the harness and lint tooling that score you)',
   'the target config file',
-  'budgets.json, eslint.config.*, stylelint*, tsconfig*.json, package.json, package-lock.json in any workspace',
+  'config and dotfile names: *.config.*, budgets.json, stylelint*, tsconfig*.json(c), package.json, package-lock.json, .npmrc, .prettierrc*, .eslintrc*, .stylelintrc*, .editorconfig, Makefile, *.lock, .node-version, .nvmrc, in any workspace',
   'any file whose name contains baseline, snapshot or golden, and anything under __snapshots__/',
   '.github/, mockups/, plans/, .husky/, scripts/hooks/ and every .git* file',
   'existing test files (*.test.*, *.spec.*, tests/, __tests__/) unless the config lists them under allowedTestPaths',
   SUPPRESSION_HINT,
+  'suppression-by-comment directives in added lines (eslint-disable, @ts-ignore, @ts-nocheck, @ts-expect-error, istanbul/c8 ignore, stylelint-disable, prettier-ignore) unless the config allows them',
   'symlinks, gitlinks and executable-bit changes',
 ];
 

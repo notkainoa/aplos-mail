@@ -4,8 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
-import { checkDiff, isShrinkOnly, isTestPath } from '../hillclimb/diffguard.mjs';
-import { diffBetween } from '../hillclimb/worktree.mjs';
+import { checkDiff, isShrinkOnly, isTestPath, matchGlob } from '../hillclimb/diffguard.mjs';
+import { addedLines, diffBetween } from '../hillclimb/worktree.mjs';
 
 const ALLOWED = ['src/**', 'eslint-suppressions.json'];
 const base = { allowedPaths: ALLOWED, allowedTestPaths: [] };
@@ -226,12 +226,24 @@ describe('isShrinkOnly', () => {
     );
   });
 
-  it('rejects malformed JSON and non-numeric counts', () => {
+  it('rejects malformed JSON and non-integer or negative counts on both sides', () => {
     assert.match(isShrinkOnly(oldFile, '{nope').reason, /does not parse/);
     assert.match(isShrinkOnly('{nope', '{}').reason, /does not parse/);
-    assert.match(shrink({ 'a.ts': { 'rule-x': { count: 'many' } } }).reason, /not a finite number/);
     assert.match(isShrinkOnly('[]', '{}').reason, /not a JSON object/);
     assert.match(shrink({ 'a.ts': 'nope' }).reason, /not an object/);
+    for (const bad of ['many', -1, 1.5, null, {}]) {
+      assert.match(
+        shrink({ 'a.ts': { 'rule-x': { count: bad } } }).reason,
+        /not a non-negative integer/,
+        `new count ${JSON.stringify(bad)}`,
+      );
+    }
+    // The old side is held to the same rule, even for rules the new file keeps.
+    const badOld = JSON.stringify({ 'a.ts': { 'rule-x': { count: -3 } } });
+    assert.match(
+      isShrinkOnly(badOld, JSON.stringify({ 'a.ts': { 'rule-x': { count: 1 } } })).reason,
+      /old count.*not a non-negative integer/,
+    );
   });
 
   it('treats a missing old file as empty, so any content is an addition', () => {
@@ -285,6 +297,129 @@ describe('checkDiff: suppressions files', () => {
   });
 });
 
+describe('matchGlob', () => {
+  it('matches leading dots that node:path.matchesGlob misses', () => {
+    for (const [path, glob] of [
+      ['.env', '*'],
+      ['a/.env', 'a/*'],
+      ['src/.x', 'src/**'],
+      ['.baseline', '*baseline*'],
+      ['.gitignore', '.git*'],
+    ]) {
+      assert.equal(matchGlob(path, glob), true, `${glob} vs ${path}`);
+    }
+  });
+
+  it('is case-insensitive and supports ?, classes and braces', () => {
+    assert.equal(matchGlob('Makefile', 'makefile'), true);
+    assert.equal(matchGlob('src/Ab.TS', 'src/*.ts'), true);
+    assert.equal(matchGlob('b', '[!a]'), true);
+    assert.equal(matchGlob('x/y.ts', '{x,z}/**'), true);
+    assert.equal(matchGlob('deep/x', '**/x'), true);
+    assert.equal(matchGlob('x', '**/x'), true);
+  });
+});
+
+describe('checkDiff: normalised matching', () => {
+  const loose = { allowedPaths: ['**'], allowedTestPaths: [] };
+
+  it('rejects forbidden paths in any case', () => {
+    for (const path of ['Scripts/Audit/x.mjs', 'PACKAGE.JSON', 'Tools/Lint/y.mjs', 'PLANS/z.md']) {
+      const result = checkDiff({ ...loose, changes: [M(path)] });
+      assert.equal(result.ok, false, path);
+    }
+  });
+
+  it('rejects dotfiles that a POSIX matcher would miss — by name rule, not just scope', () => {
+    for (const path of ['.baseline', 'src/.goldenx.ts', 'x/.npmrc']) {
+      const result = checkDiff({ ...loose, changes: [A(path)] });
+      assert.equal(result.ok, false, path);
+      assert.match(result.reasons.join(' '), /forbidden/, path);
+    }
+  });
+
+  it('matches dotfiles inside allowedPaths', () => {
+    const result = checkDiff({ ...base, changes: [A('src/.hidden/x.ts')] });
+    assert.equal(result.ok, true);
+  });
+
+  it('normalises backslashes, unicode and case before matching', () => {
+    assert.equal(checkDiff({ ...loose, changes: [A('scripts\\audit\\evil.mjs')] }).ok, false);
+    // NFD é must equal the NFC glob literal
+    const nfc = checkDiff({ allowedPaths: ['src/café/**'], changes: [A('src/cafe\u0301/x.ts')] });
+    assert.equal(nfc.ok, true);
+  });
+
+  it('rejects absolute paths and ".." segments', () => {
+    for (const path of ['/etc/passwd', 'C:/windows/x', 'src/../package.json', '..\\evil']) {
+      const result = checkDiff({ ...loose, changes: [A(path)] });
+      assert.equal(result.ok, false, path);
+      assert.match(result.reasons.join(' '), /unsafe path/);
+    }
+  });
+
+  it('rejects the extended forbidden config/dotfile names', () => {
+    for (const path of [
+      'x/.npmrc',
+      '.prettierrc.json',
+      '.eslintrc.js',
+      '.stylelintrc',
+      '.editorconfig',
+      'tsconfig.app.jsonc',
+      'vitest.config.ts',
+      'jest.config.js',
+      'Makefile',
+      'packages/eng/yarn.lock',
+      '.node-version',
+      '.nvmrc',
+      'src/app.config.ts',
+    ]) {
+      const result = checkDiff({ ...loose, changes: [M(path)] });
+      assert.equal(result.ok, false, path);
+    }
+  });
+});
+
+describe('checkDiff: suppression directives in added lines', () => {
+  const changes = [M('src/a.ts')];
+  const scan = (added, extra = {}) =>
+    checkDiff({ ...base, changes, addedLines: added, ...extra });
+
+  it('rejects each known directive, case-insensitively', () => {
+    for (const line of [
+      '  // eslint-disable-next-line no-console',
+      'const x = foo(); // @TS-IGNORE',
+      '// @ts-nocheck',
+      '// @ts-expect-error: hmm',
+      '/* istanbul ignore next */',
+      '// c8 ignore start',
+      '/* stylelint-disable-line */',
+      '<!-- prettier-ignore -->',
+    ]) {
+      const result = scan([line]);
+      assert.equal(result.ok, false, line);
+      assert.match(result.reasons.join(' '), /suppression directive/);
+    }
+  });
+
+  it('ignores context and clean added lines', () => {
+    assert.equal(scan(['const a = 1;', 'suppress warnings elsewhere']).ok, true);
+    assert.equal(scan([], {}).ok, true);
+  });
+
+  it('honours allowDirectives for the named directive only', () => {
+    assert.equal(
+      scan(['// @ts-ignore'], { allowDirectives: ['ts-ignore'] }).ok,
+      true,
+    );
+    const result = scan(['// @ts-ignore', '// eslint-disable-next-line'], {
+      allowDirectives: ['ts-ignore'],
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.reasons.join(' '), /eslint-disable/);
+  });
+});
+
 describe('isTestPath', () => {
   it('matches the spec shapes', () => {
     for (const [path, expected] of [
@@ -328,5 +463,27 @@ describe('checkDiff: real git integration', () => {
     assert.equal(result.ok, false);
     assert.match(result.reasons.join(' '), /eslint\.config\.mjs/);
     assert.match(result.reasons.join(' '), /executable bit/);
+  });
+
+  it('feeds real added diff lines into the directive scan', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hillclimb-dir-'));
+    const git2 = args => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 1;\n');
+    git2(['init', '-q']);
+    git2(['add', '-A']);
+    git2(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init']);
+    const baseSha = git2(['rev-parse', 'HEAD']).trim();
+    writeFileSync(join(dir, 'src', 'a.ts'), '// eslint-disable-next-line\nexport const a = 1;\n');
+    git2(['add', '-A']);
+    git2(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'work']);
+    const result = checkDiff({
+      ...base,
+      changes: diffBetween(dir, baseSha),
+      addedLines: addedLines(dir, baseSha),
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.reasons.join(' '), /eslint-disable/);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
