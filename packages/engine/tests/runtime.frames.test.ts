@@ -281,6 +281,13 @@ test('frameFilter fails closed: unknown caller kinds, missing fields and inherit
   assert.equal(sees(robot, { frame: 'window', windowId: 'w' }), false);
   // An operation frame with no operation at all, and a host frame with no event, are withheld, not thrown on.
   assert.equal(sees(main, { frame: 'operation' }), false);
+  for (const scope of [null, 7, 'bogus', '', {}])
+    assert.equal(
+      sees(main, { frame: 'operation', operation: { id: 'o', scope } }),
+      false,
+      String(scope),
+    );
+  assert.equal(sees(main, { frame: 'operation', operation: { id: 'o', scope: 'send' } }), true);
   assert.equal(sees(main, { frame: 'host' }), false);
   assert.equal(sees(window, { frame: 'host' }), false);
   // Names that exist on every object are not progress sources.
