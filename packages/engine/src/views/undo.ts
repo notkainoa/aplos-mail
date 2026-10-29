@@ -82,6 +82,7 @@ function planUndo(q: StoreReader, rec: OpRecord, rows: OpRow[], undoOpId: string
         remoteThreadId: t.remoteThreadId,
         patch: t.before,
       });
+  plan.writes.push(...(rec.restore ?? []));
   return plan;
 }
 
@@ -146,6 +147,7 @@ export function undoOperation(
     createdAt: deps.clock.now(),
     threads: [],
     steps: plan.fresh,
+    restore: undefined,
     undoable: false,
     undone: undefined,
   });

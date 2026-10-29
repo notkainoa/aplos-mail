@@ -4,8 +4,11 @@ import { Frame } from '@aplos/contract';
 import { STATE_COALESCE_MS } from '../src/index';
 import { accountWrite, folderWrites } from './store/helpers';
 import type { Caller } from '../src/methods/types';
-import { observeCommits } from '../src/runtime/frames';
+import { frameFilter, observeCommits, type StampedFrame } from '../src/runtime/frames';
 import { framesOf, testEngine } from './runtime.helpers';
+
+/** Main's control connection: the only caller that receives host events. */
+const MAIN: Caller = { kind: 'host', scopes: ['host', 'read'] };
 
 test('commits leave as one coalesced state frame, stamped with dbEpoch and seq', async () => {
   const t = await testEngine();
@@ -36,7 +39,7 @@ test('commits leave as one coalesced state frame, stamped with dbEpoch and seq',
 test('every frame is stamped and one connection never sees seq go backwards', async () => {
   const t = await testEngine();
   try {
-    const s = t.engine.connect();
+    const s = t.engine.connect(MAIN);
     const frames = framesOf(s);
     const { store, frames: bus } = t.engine.services;
     bus.emit({ frame: 'host', event: { type: 'badge', count: 1 } });
@@ -96,9 +99,9 @@ test('a frame for one connection reaches only it, and a closed connection gets n
     },
   });
   try {
-    const a = t.engine.connect();
-    const b = t.engine.connect();
-    const closed = t.engine.connect();
+    const a = t.engine.connect(MAIN);
+    const b = t.engine.connect(MAIN);
+    const closed = t.engine.connect(MAIN);
     const [fa, fb, fc] = [framesOf(a), framesOf(b), framesOf(closed)];
     closed.close();
     await a.call('Thread/get', { ids: [] });
@@ -121,12 +124,12 @@ test('a frame for one connection reaches only it, and a closed connection gets n
 test("a listener's bug does not stop delivery, and frames are copies", async () => {
   const t = await testEngine();
   try {
-    const a = t.engine.connect();
+    const a = t.engine.connect(MAIN);
     a.subscribe(() => {
       throw new Error('listener bug');
     });
     const seen = framesOf(a);
-    const other = framesOf(t.engine.connect());
+    const other = framesOf(t.engine.connect(MAIN));
     t.engine.services.frames.emit({ frame: 'host', event: { type: 'badge', count: 1 } });
     assert.equal(seen.length, 1);
     (seen[0] as { seq: number }).seq = 999;
@@ -165,7 +168,8 @@ test('broadcasts are filtered by caller: a listener never sees host, draft, Ask 
       main: framesOf(t.engine.connect(main)),
     };
     const emit = t.engine.services.frames.emit;
-    emit({ frame: 'host', event: { kind: 'badge', count: 1 } } as never);
+    emit({ frame: 'host', event: { type: 'badge', count: 1 } });
+    emit({ frame: 'host', event: { type: 'appearance', theme: 'dark' } });
     emit({ frame: 'Draft/changed', draftId: 'd1', revision: 1, conflict: false });
     emit({ frame: 'progress', runId: 'r1', source: 'ask', kind: 'text', delta: 'hi' });
     emit({ frame: 'connect', connectId: 'k1', mode: 'connect', state: 'waiting' } as never);
@@ -173,8 +177,54 @@ test('broadcasts are filtered by caller: a listener never sees host, draft, Ask 
     const kinds = (name: keyof typeof seen) => seen[name].map(f => f.frame);
     assert.deepEqual(kinds('reader'), ['reset']);
     assert.deepEqual(kinds('asker'), ['progress', 'reset']);
-    assert.deepEqual(kinds('main'), ['host', 'Draft/changed', 'progress', 'connect', 'reset']);
+    assert.deepEqual(kinds('main'), [
+      'host',
+      'host',
+      'Draft/changed',
+      'progress',
+      'connect',
+      'reset',
+    ]);
+    // A window gets the appearance event, not the badge: only parked, appearance and clock are its own.
     assert.deepEqual(kinds('window'), ['host', 'Draft/changed', 'progress', 'connect', 'reset']);
+    const windowHost = seen.window.filter(f => f.frame === 'host');
+    assert.deepEqual(
+      windowHost.map(f => f.frame === 'host' && f.event.type),
+      ['appearance'],
+    );
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('operation and progress frames need their own scope, and unknown ones are withheld from everyone, main included', async () => {
+  const t = await testEngine();
+  try {
+    const base = { kind: 'listener', via: 'socket', clientId: 'c' } as const;
+    const triager: Caller = { ...base, scopes: ['read', 'triage'] };
+    const searcher: Caller = { ...base, scopes: ['read'] };
+    const main: Caller = { kind: 'host', scopes: ['host'] };
+    const seen = {
+      triager: framesOf(t.engine.connect(triager)),
+      searcher: framesOf(t.engine.connect(searcher)),
+      main: framesOf(t.engine.connect(main)),
+    };
+    const emit = t.engine.services.frames.emit;
+    const operation = (scope?: string) =>
+      ({ frame: 'operation', operation: { id: 'o1', scope } }) as never;
+    emit(operation('triage'));
+    emit(operation('send'));
+    emit(operation());
+    emit({ frame: 'progress', runId: 'r1', source: 'search', kind: 'done' });
+    emit({ frame: 'progress', runId: 'r2', source: 'telepathy', kind: 'done' } as never);
+    const shown = (name: keyof typeof seen) =>
+      seen[name].map(f =>
+        f.frame === 'operation' ? `operation:${f.operation.scope ?? '-'}` : f.frame,
+      );
+    assert.deepEqual(shown('triager'), ['operation:triage', 'progress']);
+    assert.deepEqual(shown('searcher'), ['progress']);
+    // Main sees every known frame; an operation without a scope and an unknown source are nobody's.
+    assert.deepEqual(shown('main'), ['operation:triage', 'operation:send', 'progress']);
   } finally {
     await t.cleanup();
   }
@@ -213,4 +263,38 @@ test('a commit whose changes the log cannot list resets the windows instead of s
   });
   observed.commit({} as never);
   assert.deepEqual(sent, ['reset:cannotCalculateChanges']);
+});
+
+test('frameFilter fails closed: unknown caller kinds, missing fields and inherited source names reach nobody', () => {
+  const stamp = (frame: object) => ({ ...frame, dbEpoch: 1, seq: 1 }) as unknown as StampedFrame;
+  const everything: Caller['scopes'] = ['read', 'triage', 'draft', 'send', 'ai', 'admin', 'host'];
+  const callers: Caller[] = [
+    { kind: 'window', scopes: everything },
+    { kind: 'listener', via: 'socket', clientId: 'c1', scopes: everything },
+    { kind: 'host', scopes: everything },
+    { kind: 'robot' as never, scopes: everything },
+  ];
+  const sees = (caller: Caller, frame: object) => frameFilter(caller)(stamp(frame));
+  const [window, listener, main, robot] = callers as [Caller, Caller, Caller, Caller];
+  // A caller of no known kind sees nothing, even a state frame and even holding every scope.
+  assert.equal(sees(robot, { frame: 'state', types: {} }), false);
+  assert.equal(sees(robot, { frame: 'window', windowId: 'w' }), false);
+  // An operation frame with no operation at all, and a host frame with no event, are withheld, not thrown on.
+  assert.equal(sees(main, { frame: 'operation' }), false);
+  assert.equal(sees(main, { frame: 'host' }), false);
+  assert.equal(sees(window, { frame: 'host' }), false);
+  // Names that exist on every object are not progress sources.
+  for (const source of ['__proto__', 'constructor', 'toString', 'hasOwnProperty'])
+    assert.equal(
+      sees(main, { frame: 'progress', runId: 'r', source, kind: 'done' }),
+      false,
+      source,
+    );
+  // Windows get parked, appearance and clock; listeners and windows never get notify, badge, reminder or openExternal.
+  for (const type of ['parked', 'appearance', 'clock'])
+    assert.equal(sees(window, { frame: 'host', event: { type } }), true, type);
+  for (const type of ['notify', 'badge', 'reminder', 'openExternal'])
+    assert.equal(sees(window, { frame: 'host', event: { type } }), false, type);
+  assert.equal(sees(listener, { frame: 'host', event: { type: 'clock' } }), false);
+  assert.equal(sees(main, { frame: 'host', event: { type: 'notify' } }), true);
 });
