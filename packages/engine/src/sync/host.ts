@@ -20,11 +20,13 @@ import {
   type ServerSearch,
   type WorkflowCopy,
 } from '../ports';
+import { ProviderError } from '../ports/base';
 import { contractError } from '../runtime/errors';
 import { AccountActor, type Role } from './actor';
 import { openedWrites, messageWrite } from './facts';
 import type { Governor } from './governor';
 import { storeLookup } from './lookup';
+import { hasRequiredScope } from './scopes';
 import { nextOpRetry, readFence } from './ops';
 import { governorWrite, readAccount, readGovernor, readMemory } from './persist';
 
@@ -252,6 +254,14 @@ export class ActorHost implements AccountActorHost {
 
   async reconnected(account: AccountId, result: ConnectResult): Promise<void> {
     const { store, governor } = this.deps;
+    // Nothing is stored and the auth block stays when the grant lacks the mail scope (D5): the engine checks first too.
+    if (!hasRequiredScope(result))
+      throw new ProviderError({
+        class: 'permission',
+        provider: 'oauth',
+        method: 'oauth.reconnect',
+        reason: 'missingRequiredScope',
+      });
     store.commit({
       opId: this.newId(),
       origin: 'system',
