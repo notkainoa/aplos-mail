@@ -445,6 +445,29 @@ describe('scratch-sweep.mjs', () => {
       assert.equal(existsSync(stale), true);
     });
 
+    it('--delete together with --dry-run reports and removes nothing (dry-run is a veto)', async () => {
+      const pid = await deadPid();
+      const { root } = fixture();
+      const stale = join(root, 'aplos-scratch-vet0-abc123');
+      mkdirSync(stale);
+      writeFileSync(
+        join(stale, scratchMarkerName),
+        JSON.stringify({ pid, startedAt: 'gone', createdAt: 1 }),
+      );
+      aged(stale, 24);
+      aged(join(stale, scratchMarkerName), 24);
+      for (const args of [
+        ['--delete', '--dry-run'],
+        ['--dry-run', '--delete'],
+        ['--yes', '--dry-run'],
+      ]) {
+        const result = cli(['--dir', root, ...args]);
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(result.stdout, /rerun with --delete/);
+        assert.equal(existsSync(stale), true, args.join(' '));
+      }
+    });
+
     it('rejects unsafe arguments with exit 2 and one stderr line', () => {
       const { root } = fixture();
       const link = join(root, 'dir-link');

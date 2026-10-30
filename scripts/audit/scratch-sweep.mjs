@@ -143,7 +143,12 @@ function removeVerified(path, remove, lstat) {
 export function sweepStaleScratch(options = {}) {
   const dir = options.dir ?? tmpdir();
   const maxAgeHours = Math.max(1, options.maxAgeHours ?? defaultMaxAgeHours);
-  const del = options.delete ?? (options.dryRun === undefined ? false : !options.dryRun);
+  // --dry-run is a veto: `--delete --dry-run` must report, never remove. Legacy callers that only
+  // pass dryRun: false still delete.
+  const del =
+    options.delete === undefined
+      ? options.dryRun === false
+      : options.delete === true && options.dryRun !== true;
   const remove = options.remove ?? rmSync;
   const lstat = options.lstat ?? lstatSync;
   const ctx = {
@@ -263,7 +268,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
   const result = sweepStaleScratch(options);
   const mb = (result.bytesFreedApprox / (1024 * 1024)).toFixed(1);
-  if (!options.delete) {
+  if (!options.delete || options.dryRun) {
     console.log(
       `scratch-sweep: ${result.removed.length} stale dir(s) (~${mb} MB); rerun with --delete to remove`,
     );
