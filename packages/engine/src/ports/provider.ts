@@ -686,7 +686,11 @@ export interface ProviderAdapter {
    * `Email/set`), is `write` and never re-sent, and an uncertain create is recognised by `DraftUpload.internetId`.
    */
   saveDraft?(draft: DraftUpload, ctx: AdapterContext): Promise<DraftSaveResult>;
-  /** Idempotent: an absent draft is success. */
+  /**
+   * Idempotent: an absent draft is success. It must also do nothing when the target is no longer a draft (no `$draft`
+   * keyword, not in Drafts): a send that used the remote draft (`SendReceipt.draftConsumed`) can leave the same entity
+   * as the sent message (JMAP keeps the `Email` id), and deleting it would delete the sent mail.
+   */
   deleteDraft?(remoteDraftId: string, ctx: AdapterContext): Promise<void>;
   /**
    * Never retried (`kind: 'send'`). Throws `NotSentError` or `PausedError` only with proof; anything else means uncertain.
