@@ -4,7 +4,14 @@ import { NotSentError, PausedError, ProviderError, type Admission } from '../por
 import type { SendReceipt, SubmissionPayload } from '../ports/provider';
 import type { DeadlineSource } from '../ports/time';
 import { dueSubmissions, type DueSubmission, type StoreReader } from '../store';
-import { NO_BYTES_COPY, OVERDUE_COPY, PAUSE_POLL_MS, transition, type OutboxCtx } from './context';
+import {
+  NO_BYTES_COPY,
+  OVERDUE_COPY,
+  PAUSE_POLL_MS,
+  transition,
+  UNRETRYABLE,
+  type OutboxCtx,
+} from './context';
 import { applyStartRule, checkSent, lostSending } from './start';
 import {
   extraOf,
@@ -105,6 +112,8 @@ function problemOf(error: ClassifiedError, now: number): SubmissionProblem {
       at: now,
       ...(error.resumeAt !== undefined ? { until: error.resumeAt } : {}),
     };
+  const own = UNRETRYABLE[error.class];
+  if (own) return { ...own, at: now };
   return {
     reasonCode: error.class === 'auth' ? 'auth.expired' : 'net.offline',
     message: 'Your message was not sent. Check your connection, then try again.',
@@ -126,15 +135,18 @@ function payloadOf(ctx: OutboxCtx, row: SubmissionRow, mime: Uint8Array): Submis
     q.get<{
       remote_draft_id: string | null;
       remote_message_id: string | null;
+      remote_internet_id: string | null;
       synced_revision: number | null;
       provider: string;
     }>(
-      `SELECT d.remote_draft_id, d.remote_message_id, d.synced_revision, a.provider
+      `SELECT d.remote_draft_id, d.remote_message_id, d.remote_internet_id, d.synced_revision, a.provider
        FROM drafts d JOIN accounts a ON a.id = d.account_id WHERE d.id = ?`,
       row.draft_id,
     ),
   );
-  if (!draft?.remote_draft_id) return payload;
+  // The remote copy leaves only under its own Message-ID, which `prepareSend` reused for this row when the copy was
+  // synced at this revision. Any other draft would send under an id `findSent` could never find (a second copy).
+  if (!draft?.remote_draft_id || draft.remote_internet_id !== row.internet_id) return payload;
   payload.remoteDraftId = draft.remote_draft_id;
   // DECISION (time-2): Graph (`microsoft`) keeps a message's id across edits and the store has no change-key column
   // for the submission, so the id alone cannot prove the remote copy is the pinned revision. For those accounts the

@@ -5,15 +5,19 @@ import {
   fail,
   hex,
   NO_BYTES_COPY,
+  NO_RETRY_COPY,
   transition,
+  UNRETRYABLE_CODES,
   type OutboxCtx,
 } from './context';
 import {
   buildEnvelope,
   buildMime,
   checkAddress,
+  isMessageId,
   MimeError,
   newMessageId,
+  withDate,
   type MimeAttachment,
 } from './mime';
 import {
@@ -116,12 +120,15 @@ interface DraftRow {
   data: string;
   address: string;
   display_name: string | null;
+  remote_internet_id: string | null;
+  synced_revision: number | null;
   [k: string]: string | number | null;
 }
 
 function readDraft(q: StoreReader, id: string) {
   return q.get<DraftRow>(
-    `SELECT d.id, d.account_id, d.thread_id, d.revision, d.data, a.address, a.display_name
+    `SELECT d.id, d.account_id, d.thread_id, d.revision, d.data, d.remote_internet_id, d.synced_revision,
+            a.address, a.display_name
      FROM drafts d JOIN accounts a ON a.id = d.account_id WHERE d.id = ?`,
     id,
   );
@@ -190,6 +197,33 @@ function attachmentsOf(ctx: OutboxCtx, fields: DraftFields): MimeAttachment[] {
 
 const domainOf = (address: string) => address.slice(address.lastIndexOf('@') + 1);
 
+const WRONG_SENDER =
+  "Send from this account's own address. Sending as another address is not supported yet.";
+
+/**
+ * The sender: the account's own address, whatever the draft says. The contract wants a send-as identity of the account
+ * (compose.ts), but the engine stores none yet (`account-read.ts` lists the account address as the only identity), so
+ * any other `from` is refused; its display name is kept.
+ */
+function senderOf(draft: DraftRow, fields: DraftFields): { address: string; name?: string } {
+  const own = { address: draft.address, name: draft.display_name ?? undefined };
+  if (!fields.from) return own;
+  if (fields.from.address.trim().toLowerCase() !== draft.address.trim().toLowerCase())
+    fail('validation', WRONG_SENDER, { path: ['action', 'draftId'] });
+  return { address: draft.address, name: fields.from.name ?? own.name };
+}
+
+/**
+ * The Message-ID this send goes out under. A draft whose synced copy is this revision already carries one (the copy is
+ * uploaded with it, and `drafts.send` sends that copy), so the row reuses it: `findSent` then looks for the id that
+ * really left. Otherwise a fresh one, pinned from here on.
+ */
+function messageIdOf(ctx: OutboxCtx, draft: DraftRow, sender: string): string {
+  const remote = draft.remote_internet_id;
+  if (remote && draft.synced_revision === draft.revision && isMessageId(remote)) return remote;
+  return newMessageId(ctx.random, domainOf(checkAddress(sender)));
+}
+
 function undoSeconds(ctx: OutboxCtx) {
   const value = ctx.settings?.().undoSendSeconds;
   return typeof value === 'number' && value >= 0 && value <= 60 ? value : DEFAULT_UNDO_SEND_SECONDS;
@@ -218,15 +252,16 @@ function prepareSend(
   const { fields } = draft;
   if (!fields.to.length && !fields.cc.length && !fields.bcc.length)
     fail('validation', 'Add at least one recipient.', { path: ['action', 'draftId'] });
-  const from = fields.from ?? {
-    address: draft.row.address,
-    name: draft.row.display_name ?? undefined,
-  };
+  const from = senderOf(draft.row, fields);
+  // The Date is when the message is meant to leave (the undo window's end, or the chosen time), not when it was composed.
+  const undoAt = now + undoSeconds(ctx) * 1_000;
+  const later = action.notBefore !== undefined && action.notBefore > undoAt;
+  const notBefore = later ? action.notBefore! : undoAt;
   let mime: Uint8Array;
   let envelope: SubmissionMeta['envelope'];
   let internetId: string;
   try {
-    internetId = newMessageId(ctx.random, domainOf(checkAddress(from.address)));
+    internetId = messageIdOf(ctx, draft.row, from.address);
     envelope = buildEnvelope(from, fields);
     mime = buildMime({
       from,
@@ -235,7 +270,7 @@ function prepareSend(
       subject: fields.subject,
       html: fields.html,
       messageId: internetId,
-      date: now,
+      date: notBefore,
       ...reply,
       attachments: attachmentsOf(ctx, fields),
       randomBytes: ctx.random,
@@ -244,8 +279,6 @@ function prepareSend(
     if (error instanceof MimeError) return fail('validation', error.message);
     throw error;
   }
-  const undoAt = now + undoSeconds(ctx) * 1_000;
-  const later = action.notBefore !== undefined && action.notBefore > undoAt;
   const meta: SubmissionMeta = {
     subject: fields.subject,
     toNames: [...fields.to, ...fields.cc].slice(0, 20).map(a => a.name || a.address),
@@ -263,7 +296,7 @@ function prepareSend(
     revision: draft.row.revision,
     state: later ? 'scheduled' : 'queued',
     queuedAt: now,
-    notBefore: later ? action.notBefore! : undoAt,
+    notBefore,
     meta,
   };
 }
@@ -322,6 +355,21 @@ function moveFor(action: RowAction, row: SubmissionRow, now: number) {
 }
 
 /**
+ * A reschedule or Send now changes when the message leaves, so its Date changes with it: the same bytes with a new first
+ * header line, hence the same Message-ID. It rides in the move's own commit, which only a waiting row can pass: once the
+ * `sending` marker is committed the move loses and the bytes were never touched.
+ */
+function redated<T extends { notBefore?: number }>(row: SubmissionRow, set: T): T {
+  if (set.notBefore === undefined || !row.mime) return set;
+  try {
+    return { ...set, mime: withDate(row.mime, set.notBefore) };
+  } catch (error) {
+    if (error instanceof MimeError) return set;
+    throw error;
+  }
+}
+
+/**
  * Send anyway, and cancel of an `uncertain` row, wait for the owner to be asked: a check still pending could find the
  * message, and cancelling would unlock the draft for a second Message-ID while the first one is out.
  */
@@ -337,6 +385,8 @@ function checkProblem(action: RowAction, row: SubmissionRow) {
   )
     fail('stateMismatch', action.type === 'cancel' ? STILL_CHECKING_CANCEL : STILL_CHECKING);
   if (action.type === 'retry' && reason === 'send.noBytes') fail('stateMismatch', NO_BYTES_COPY);
+  if (action.type === 'retry' && reason !== undefined && UNRETRYABLE_CODES.has(reason))
+    fail('stateMismatch', NO_RETRY_COPY);
 }
 
 function act(ctx: OutboxCtx, opId: string, action: RowAction): SetResult {
@@ -348,7 +398,10 @@ function act(ctx: OutboxCtx, opId: string, action: RowAction): SetResult {
     fail('stateMismatch', REVISION_CHANGED);
   const now = ctx.clock.now();
   if (action.type === 'reschedule' && action.notBefore < now) fail('validation', PAST_TIME);
-  const { to, set } = moveFor(action, row, now);
+  const move = moveFor(action, row, now);
+  const { to } = move;
+  const set =
+    action.type === 'sendNow' || action.type === 'reschedule' ? redated(row, move.set) : move.set;
   // The same demand inside the commit: a check scheduled after the read above makes it lose.
   const guard = needsChecksDone(action, row) ? { ifChecksDone: true as const } : {};
   let seq: number;

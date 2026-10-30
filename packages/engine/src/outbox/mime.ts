@@ -191,9 +191,18 @@ function foldedHeader(line: string): string {
 const LOCAL_PART = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+$/;
 const DOMAIN = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 
+/**
+ * What the URL parser would read as something other than a host name: a path, query, fragment, port, userinfo or
+ * escape, and the controls and blanks it silently strips. Refused before the IDNA step, which would drop everything
+ * after them (`evil.com/bank.com` would become `evil.com`).
+ */
+// eslint-disable-next-line no-control-regex -- the controls are exactly what is refused
+const NOT_A_HOST = /[/?#\\:@%\s\x00-\x1f\x7f]/;
+
 /** A domain as it goes on the wire: ASCII as is, anything else as punycode (the URL parser's IDNA step). */
 function wireDomain(domain: string): string {
   if (isPlainAscii(domain)) return domain;
+  if (NOT_A_HOST.test(domain)) return '';
   try {
     return new URL(`http://${domain}`).hostname;
   } catch {
@@ -244,6 +253,9 @@ function msgId(value: string | undefined): string | undefined {
   return value !== undefined && MSG_ID.test(value) ? value : undefined;
 }
 
+/** Whether `value` is a well-formed `<...>` Message-ID, one that is safe to write into a header. */
+export const isMessageId = (value: string) => msgId(value) !== undefined;
+
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -253,6 +265,22 @@ export function rfc5322Date(ms: number): string {
   const d = new Date(ms);
   const time = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
   return `${DAYS[d.getUTCDay()]}, ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()} ${time} +0000`;
+}
+
+/**
+ * The same message dated `ms`: only the first header line (`Date:` is always first, see `topHeaders`) is replaced, so
+ * the Message-ID, the other headers, the body and the attachments stay byte for byte as they were pinned.
+ */
+export function withDate(mime: Uint8Array, ms: number): Uint8Array {
+  const prefix = new TextEncoder().encode('Date: ');
+  const eol = mime.indexOf(0x0d);
+  const isDated = prefix.every((byte, i) => mime[i] === byte) && mime[eol + 1] === 0x0a;
+  if (!isDated) throw new MimeError('This message could not be re-dated.');
+  const line = new TextEncoder().encode(`Date: ${rfc5322Date(ms)}`);
+  const out = new Uint8Array(line.length + mime.length - eol);
+  out.set(line);
+  out.set(mime.subarray(eol), line.length);
+  return out;
 }
 
 function header(name: string, value: string): string {

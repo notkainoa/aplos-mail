@@ -454,12 +454,14 @@ test('the pinned revision: the remote draft is named only when its synced copy i
     w.draft('synced', fields(), {
       remoteDraftId: 'rd-1',
       remoteMessageId: 'rm-1',
+      remoteInternetId: '<remote-1@mail.example>',
       syncedRevision: 1,
     });
     w.draft('stale', fields(), {
       revision: 2,
       remoteDraftId: 'rd-2',
       remoteMessageId: 'rm-2',
+      remoteInternetId: '<remote-2@mail.example>',
       syncedRevision: 1,
     });
     w.draft('local');
@@ -479,7 +481,7 @@ test('the pinned revision: the remote draft is named only when its synced copy i
       undefined,
       'a newer local revision sends the pinned MIME',
     );
-    assert.equal(by('stale').remoteDraftId, 'rd-2');
+    assert.equal(by('stale').remoteDraftId, undefined, 'its Message-ID is not the remote copy');
     assert.equal(by('local').baseRemoteMessageId, undefined);
     assert.equal(by('local').remoteDraftId, undefined);
   }));

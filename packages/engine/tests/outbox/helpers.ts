@@ -24,6 +24,8 @@ export const MIN = 60 * SEC;
 export interface Step {
   /** Default `ok`. `lost`: throws a plain Error (outcome unknown). `hang`: never settles (the app dies meanwhile). */
   result?: 'ok' | 'notSent' | 'paused' | 'sendLimit' | 'lost' | 'hang';
+  /** The `ClassifiedError` class a `notSent` step throws (default `transient`). */
+  notSentClass?: string;
   /** Whether the server accepted the bytes (default: only for `ok`). */
   delivered?: boolean;
   until?: number;
@@ -72,7 +74,8 @@ export function countingSend(clock: FakeClock) {
       if (step.delivered ?? result === 'ok') deliver(payload);
       if (result === 'ok')
         return { acceptedAt: clock.now(), remoteMessageId: `r-${payload.submissionId}` };
-      if (result === 'notSent') throw new NotSentError(classified('transient'));
+      if (result === 'notSent')
+        throw new NotSentError(classified(step.notSentClass ?? 'transient'));
       if (result === 'paused')
         throw new PausedError(_account, 'gmail', 'throttle', 'rateLimitExceeded', step.until);
       if (result === 'sendLimit')
@@ -247,16 +250,17 @@ export function outboxWorld(
       revision?: number;
       remoteDraftId?: string;
       remoteMessageId?: string;
+      remoteInternetId?: string;
       syncedRevision?: number;
     } = {},
   ) => {
     const db = file.open();
     db.prepare(
-      `INSERT INTO drafts(id, account_id, revision, data, remote_draft_id, remote_message_id, synced_revision, updated_at)
-       VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO drafts(id, account_id, revision, data, remote_draft_id, remote_message_id, remote_internet_id, synced_revision, updated_at)
+       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET revision = excluded.revision, data = excluded.data,
          remote_draft_id = excluded.remote_draft_id, remote_message_id = excluded.remote_message_id,
-         synced_revision = excluded.synced_revision`,
+         remote_internet_id = excluded.remote_internet_id, synced_revision = excluded.synced_revision`,
     ).run(
       id,
       ACCOUNT,
@@ -264,6 +268,7 @@ export function outboxWorld(
       JSON.stringify(f),
       extra.remoteDraftId ?? null,
       extra.remoteMessageId ?? null,
+      extra.remoteInternetId ?? null,
       extra.syncedRevision ?? null,
       clock.now(),
     );

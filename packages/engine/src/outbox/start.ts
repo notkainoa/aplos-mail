@@ -1,5 +1,12 @@
 import type { FindSentResult } from '../ports/provider';
-import { MAX_CHECKS, RECHECK_MS, transition, UNCERTAIN_COPY, type OutboxCtx } from './context';
+import {
+  CLOCK_SKEW_MARGIN_MS,
+  MAX_CHECKS,
+  RECHECK_MS,
+  transition,
+  UNCERTAIN_COPY,
+  type OutboxCtx,
+} from './context';
 import {
   extraOf,
   LIVE_STATES,
@@ -98,7 +105,8 @@ export async function checkSent(ctx: OutboxCtx, id: string): Promise<void> {
   if (!row || row.state !== 'uncertain') return;
   const extra = extraOf(row);
   // A wall clock set back after the marker must not push `since` past the message it is looking for.
-  const since = Math.min(row.attempt_at ?? extra.queuedAt, ctx.clock.now());
+  const attempt = Math.min(row.attempt_at ?? extra.queuedAt, ctx.clock.now());
+  const since = attempt - CLOCK_SKEW_MARGIN_MS;
   const result = await findSent(ctx, row.account_id, row.internet_id, since);
   const now = ctx.clock.now();
   const guard = row.attempt_at !== null ? { ifAttemptAt: row.attempt_at } : {};

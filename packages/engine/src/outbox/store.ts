@@ -84,6 +84,8 @@ export interface SubmissionPatch {
   checkAt?: number | null;
   /** Drops the pinned MIME: only once `sent` is committed. */
   dropMime?: true;
+  /** The same message re-dated by a reschedule or Send now (same Message-ID); the move's state guard keeps it off a `sending` row. */
+  mime?: Uint8Array;
 }
 
 export type SubmissionWrite =
@@ -277,6 +279,7 @@ function columnTerms(set: SubmissionPatch): { sql: string[]; params: SqlValue[] 
   if (set.remoteThreadId !== undefined) put('remote_thread_id', set.remoteThreadId);
   if (set.problem !== undefined) put('error_until', set.problem?.until ?? null);
   if (set.dropMime) sql.push('mime = NULL');
+  else if (set.mime !== undefined) put('mime', set.mime);
   return { sql, params };
 }
 

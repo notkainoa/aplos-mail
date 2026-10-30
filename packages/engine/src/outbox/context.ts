@@ -39,6 +39,11 @@ export const DEFAULT_UNDO_SEND_SECONDS = 10;
 /** `findSent` runs at once, then once more after this, then the owner is asked (ARCH 7.1). */
 export const RECHECK_MS = 60_000;
 export const MAX_CHECKS = 2;
+/**
+ * `findSent` looks from this long before the attempt, not from the attempt itself: the provider stamps a message with
+ * its own clock, which can run behind ours, and a search that starts too late never finds what left.
+ */
+export const CLOCK_SKEW_MARGIN_MS = 5 * 60_000;
 /** How often a send held by a budget closed with no end time asks for admission again. */
 export const PAUSE_POLL_MS = 30_000;
 
@@ -48,6 +53,34 @@ export const NO_BYTES_COPY =
   'This message could not be prepared. Cancel it, then open the draft and send it again.';
 export const OVERDUE_COPY =
   'This was due while your Mac was off. Send it now, or choose a new time.';
+
+/**
+ * Not-sent classes that fail the same way every time, with their own reason code and the sentence that tells the owner
+ * what to do. A `Retry` of one is refused (`NO_RETRY_COPY`); only Cancel, then a fixed draft or account, helps.
+ */
+export const UNRETRYABLE: Readonly<Record<string, { reasonCode: string; message: string }>> = {
+  permanent: {
+    reasonCode: 'send.permanent',
+    message: 'The provider refused this message. Check the address and the content.',
+  },
+  permission: {
+    reasonCode: 'send.permission',
+    message: 'Aplos is not allowed to send from this account. Reconnect it in Settings.',
+  },
+  anti_abuse: {
+    reasonCode: 'send.anti_abuse',
+    message: 'The provider paused sending because it looked unusual. Try again later.',
+  },
+  config: {
+    reasonCode: 'send.config',
+    message: 'Sending is not set up correctly for this account.',
+  },
+};
+export const UNRETRYABLE_CODES: ReadonlySet<string> = new Set(
+  Object.values(UNRETRYABLE).map(p => p.reasonCode),
+);
+export const NO_RETRY_COPY =
+  'Sending again would fail the same way. Cancel this message, fix the cause, then send the draft again.';
 
 export function hex(bytes: Uint8Array) {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');

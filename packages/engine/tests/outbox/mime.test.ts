@@ -474,3 +474,24 @@ test('newMessageId: 128 random bits at the sender domain, different every time',
   assert.notEqual(a, b);
   assert.match(newMessageId(), /^<[0-9a-f]{32}@aplos\.local>$/);
 });
+
+test('a domain the URL parser would cut short is refused before it becomes punycode', () => {
+  const bad = [
+    'a@evil.com/bänk.com',
+    'a@evil.com#bänk.com',
+    'a@evil.com?bänk.com',
+    'a@evil.com\\bänk.com',
+    'a@evil.com:8080/bänk.com',
+    'a@ev\til.bänk.com',
+    'a@ev\nil.bänk.com',
+    'a@evil.com bänk.com',
+    'a@ev%69l.bänk.com',
+    'a@evil.com\u0000bänk.com',
+    'a@ev\til.com',
+  ];
+  for (const address of bad) {
+    assert.throws(() => checkAddress(address), MimeError, JSON.stringify(address));
+    assert.throws(() => buildMime(input({ to: [{ address }] })), MimeError);
+  }
+  assert.equal(checkAddress('a@bänk.com'), 'a@xn--bnk-qla.com');
+});
