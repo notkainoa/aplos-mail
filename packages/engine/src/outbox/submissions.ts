@@ -22,6 +22,7 @@ import {
 } from './mime';
 import {
   extraOf,
+  hadAttempt,
   liveSubmissionOf,
   problemOf,
   readSubmission,
@@ -122,13 +123,14 @@ interface DraftRow {
   display_name: string | null;
   remote_internet_id: string | null;
   synced_revision: number | null;
+  provider: string;
   [k: string]: string | number | null;
 }
 
 function readDraft(q: StoreReader, id: string) {
   return q.get<DraftRow>(
     `SELECT d.id, d.account_id, d.thread_id, d.revision, d.data, d.remote_internet_id, d.synced_revision,
-            a.address, a.display_name
+            a.address, a.display_name, a.provider
      FROM drafts d JOIN accounts a ON a.id = d.account_id WHERE d.id = ?`,
     id,
   );
@@ -216,12 +218,31 @@ function senderOf(draft: DraftRow, fields: DraftFields): { address: string; name
 /**
  * The Message-ID this send goes out under. A draft whose synced copy is this revision already carries one (the copy is
  * uploaded with it, and `drafts.send` sends that copy), so the row reuses it: `findSent` then looks for the id that
- * really left. Otherwise a fresh one, pinned from here on.
+ * really left. Otherwise a fresh one, pinned from here on. Ids are per revision, never shared across them:
+ * - `microsoft` never reuses (Graph keeps a draft's Message-ID across edits and `payloadOf` never sends a Microsoft
+ *   remote draft, so revision R+1 could share R's id after R went uncertain, was cancelled or actually left);
+ * - any other provider skips an id that an earlier submission of ANOTHER revision of this draft already used.
  */
-function messageIdOf(ctx: OutboxCtx, draft: DraftRow, sender: string): string {
+function messageIdOf(ctx: OutboxCtx, q: StoreReader, draft: DraftRow, sender: string): string {
   const remote = draft.remote_internet_id;
-  if (remote && draft.synced_revision === draft.revision && isMessageId(remote)) return remote;
+  if (
+    remote &&
+    draft.provider !== 'microsoft' &&
+    draft.synced_revision === draft.revision &&
+    isMessageId(remote) &&
+    !usedByOtherRevision(q, draft, remote)
+  )
+    return remote;
   return newMessageId(ctx.random, domainOf(checkAddress(sender)));
+}
+
+function usedByOtherRevision(q: StoreReader, draft: DraftRow, internetId: string) {
+  return !!q.get(
+    'SELECT 1 FROM submissions WHERE internet_id = ? AND NOT (draft_id = ? AND revision = ?) LIMIT 1',
+    internetId,
+    draft.id,
+    draft.revision,
+  );
 }
 
 function undoSeconds(ctx: OutboxCtx) {
@@ -261,7 +282,7 @@ function prepareSend(
   let envelope: SubmissionMeta['envelope'];
   let internetId: string;
   try {
-    internetId = messageIdOf(ctx, draft.row, from.address);
+    internetId = ctx.store.read(q => messageIdOf(ctx, q, draft.row, from.address));
     envelope = buildEnvelope(from, fields);
     mime = buildMime({
       from,
@@ -357,10 +378,12 @@ function moveFor(action: RowAction, row: SubmissionRow, now: number) {
 /**
  * A reschedule or Send now changes when the message leaves, so its Date changes with it: the same bytes with a new first
  * header line, hence the same Message-ID. It rides in the move's own commit, which only a waiting row can pass: once the
- * `sending` marker is committed the move loses and the bytes were never touched.
+ * `sending` marker is committed the move loses and the bytes were never touched. A row that has had an attempt is never
+ * re-dated: its bytes may already have left (Send anyway re-queues an `uncertain` one), and a retry must go out as the
+ * same bytes under the same Message-ID, not as a different message.
  */
 function redated<T extends { notBefore?: number }>(row: SubmissionRow, set: T): T {
-  if (set.notBefore === undefined || !row.mime) return set;
+  if (set.notBefore === undefined || !row.mime || hadAttempt(row)) return set;
   try {
     return { ...set, mime: withDate(row.mime, set.notBefore) };
   } catch (error) {

@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import type { DraftFields } from '@aplos/contract';
 import type { LogRecord } from '@aplos/contract/log/events';
 import type { SubmissionAction } from '@aplos/contract';
@@ -38,6 +39,10 @@ export interface Step {
 /** The counting fake `SendPort` (plan 10 E6): every delivery per Message-ID is counted, across engine instances. */
 export function countingSend(clock: FakeClock) {
   const deliveries = new Map<string, number>();
+  /** The server's Sent folder: Message-ID -> when it arrived. Only a message that really left is in it. */
+  const sent = new Map<string, number>();
+  /** The server's Drafts folder: Message-ID -> remote draft id. A draft copy is not a sent message, same id or not. */
+  const drafts = new Map<string, string>();
   const payloads: SubmissionPayload[] = [];
   const calls: { op: 'send' | 'findSent'; internetId: string; at: number; since?: number }[] = [];
   /** `findSent` reports a delivery only from this time on (a search index that lags). */
@@ -52,6 +57,9 @@ export function countingSend(clock: FakeClock) {
   let onAdmission: (() => void) | undefined;
   const deliver = (p: SubmissionPayload) => {
     deliveries.set(p.internetId, (deliveries.get(p.internetId) ?? 0) + 1);
+    sent.set(p.internetId, clock.now());
+    // `drafts.send` consumes the draft it sends; a plain `messages.send` leaves any draft copy where it was.
+    if (p.remoteDraftId) drafts.delete(p.internetId);
     payloads.push(p);
   };
   const classified = (cls: string) => ({
@@ -87,7 +95,9 @@ export function countingSend(clock: FakeClock) {
       calls.push({ op: 'findSent', internetId, at: clock.now(), since });
       if (findHold) await findHold;
       if (findFails) throw new Error('offline');
-      return deliveries.has(internetId) && clock.now() >= visibleAt
+      // Sent only (the SendPort rule): a draft carrying the same Message-ID is never a match.
+      const arrived = sent.get(internetId);
+      return arrived !== undefined && arrived >= since && clock.now() >= visibleAt
         ? { kind: 'found', remoteMessageId: `found-${internetId}` }
         : { kind: 'absent', checkedAt: clock.now() };
     },
@@ -96,6 +106,8 @@ export function countingSend(clock: FakeClock) {
     port,
     script,
     deliveries,
+    sent,
+    drafts,
     payloads,
     calls,
     setAdmission: (a: Admission) => {
@@ -103,6 +115,14 @@ export function countingSend(clock: FakeClock) {
     },
     onAdmission: (fn: (() => void) | undefined) => {
       onAdmission = fn;
+    },
+    /** A draft upload: the draft copy now exists under this Message-ID, unsent. */
+    uploadDraft: (internetId: string, remoteDraftId = `rd-${internetId}`) => {
+      drafts.set(internetId, remoteDraftId);
+    },
+    /** A message in Sent that did not come through `send` (another device, an earlier session). */
+    seedSent: (internetId: string, at: number) => {
+      sent.set(internetId, at);
     },
     hideDeliveriesUntil: (at: number) => {
       visibleAt = at;
@@ -273,6 +293,8 @@ export function outboxWorld(
       clock.now(),
     );
     db.close();
+    // The synced copy exists on the server too, under the Message-ID it was uploaded with.
+    if (extra.remoteInternetId) server.uploadDraft(extra.remoteInternetId, extra.remoteDraftId);
     return { id, revision: extra.revision ?? 1 };
   };
 
@@ -365,5 +387,24 @@ export async function inWorld(
     await fn(w);
   } finally {
     w.cleanup();
+  }
+}
+
+/** Message-IDs are per revision: no two submissions of different revisions of one draft share an id. */
+export function assertIdsPerRevision(w: World, draftId: string) {
+  const rows = w.first.store.read(q =>
+    q.all<{ revision: number; internet_id: string }>(
+      'SELECT revision, internet_id FROM submissions WHERE draft_id = ?',
+      draftId,
+    ),
+  );
+  const owner = new Map<string, number>();
+  for (const r of rows) {
+    const prior = owner.get(r.internet_id);
+    assert.ok(
+      prior === undefined || prior === r.revision,
+      `Message-ID ${r.internet_id} was used by revision ${prior} and revision ${r.revision}`,
+    );
+    owner.set(r.internet_id, r.revision);
   }
 }
