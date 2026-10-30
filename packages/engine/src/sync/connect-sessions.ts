@@ -3,6 +3,7 @@ import type { Frame } from '@aplos/contract';
 import { PausedError, ProviderError } from '../ports/base';
 import type {
   AccountActorHost,
+  AccountId,
   Clock,
   ConnectRequest,
   ConnectResult,
@@ -45,8 +46,13 @@ interface Session {
   deadline: number;
   /** The provider answered and the engine is storing it: too late to cancel. */
   accepting: boolean;
+  /** The result's stored credential already went back to the host (at most once per result). */
+  discarded?: boolean;
   /** The account the sign-in ended up on, when the flow reports one other than its own. */
   storedAccountId?: string;
+  /** The host's `connect` was called, and whether it has resolved or rejected since. */
+  hostStarted: boolean;
+  hostSettled: boolean;
 }
 
 export const ALREADY_OPEN =
@@ -98,7 +104,7 @@ export class ConnectSessions {
     for (const session of [...this.byId.values()]) {
       if (session.deadline > now || session.accepting) continue;
       session.controller.abort();
-      this.release(session);
+      this.abandon(session);
       this.emit(session, 'failed', 'auth.timeout');
     }
   }
@@ -116,6 +122,8 @@ export class ConnectSessions {
       flow,
       controller: new AbortController(),
       accepting: false,
+      hostStarted: false,
+      hostSettled: false,
     };
     this.byId.set(session.connectId, session);
     for (const key of keys) this.byKey.set(key, session);
@@ -129,23 +137,60 @@ export class ConnectSessions {
     const session = this.byId.get(connectId);
     if (!session || session.accepting) return false;
     session.controller.abort();
-    this.release(session);
+    this.abandon(session);
     this.emit(session, 'cancelled');
     return true;
   }
 
   private async run(session: Session): Promise<void> {
+    const unfollow = this.followRequestSignal(session);
+    try {
+      await this.runFlow(session);
+    } finally {
+      unfollow();
+    }
+  }
+
+  /**
+   * An abort signal the request already carries cancels the sign-in like `cancel` does: it ends `cancelled`, aborts the
+   * host's flow and frees the keys once that flow settles. Returns the listener's removal.
+   */
+  private followRequestSignal(session: Session): () => void {
+    const own = session.flow.request.signal;
+    if (!own) return () => {};
+    const onAbort = () => {
+      try {
+        this.cancel(session.connectId);
+      } catch {
+        // The frame bus is broken; `cancel` already released the session.
+      }
+    };
+    if (own.aborted) onAbort();
+    else own.addEventListener('abort', onAbort, { once: true });
+    return () => own.removeEventListener('abort', onAbort);
+  }
+
+  private async runFlow(session: Session): Promise<void> {
     const { signal } = session.controller;
     if (signal.aborted) return;
     try {
       // Inside the try: a frame bus that throws must end in `failed` and a freed key, never a stuck session.
       this.emit(session, 'waiting');
       const { accountId, kind, request } = session.flow;
-      // TODO(port): `AccountActorHost.connect` takes no AbortSignal, so a cancel only drops the answer here; the host's
-      // browser or loopback flow runs on until its own timeout. Needs a `signal` on the port or on `ConnectRequest`.
-      const result = await untilAborted(this.accounts.connect(accountId, kind, request), signal);
+      // The cancel and the deadline reach the host's browser and loopback flow (`ConnectRequest.signal`), and the host
+      // discards a result that still arrives after them (`AccountActorHost.discardCredential`).
+      session.hostStarted = true;
+      // The request's own signal reaches the host through the session's (`followRequestSignal`).
+      const answered = this.accounts.connect(accountId, kind, { ...request, signal });
+      this.holdKeysUntilSettled(session, answered);
+      this.discardLateAnswer(session, answered);
+      const result = await untilAborted(answered, signal);
       // The answer can win the race and still be followed by a cancel before this line runs: the cancel stands.
-      if (result === ABORTED || signal.aborted) return;
+      if (result === ABORTED) return;
+      if (signal.aborted) {
+        this.discardResultOnce(session, result);
+        return;
+      }
       session.accepting = true;
       const outcome = await session.flow.accept(result);
       if (outcome?.accountId) session.storedAccountId = outcome.accountId;
@@ -156,6 +201,33 @@ export class ConnectSessions {
       this.release(session);
       this.tryEmit(session, 'failed', failureCode(error));
     }
+  }
+
+  /**
+   * A `new` answer that arrives after its session ended left a stored credential behind; it goes back as soon as the
+   * host produces it. Once `accept` has seen the result the flow owns the discard, so this never fires for it. A
+   * reconnect's ref is the account's own live bundle: only `new` answers are handed back.
+   */
+  private discardLateAnswer(session: Session, answered: Promise<ConnectResult>): void {
+    void answered.then(
+      result => {
+        if (session.controller.signal.aborted && !session.accepting)
+          this.discardResultOnce(session, result);
+      },
+      () => {},
+    );
+  }
+
+  /** At most once per result: the stored credential of a refused or late `new` answer goes back, best effort. */
+  private discardResultOnce(session: Session, result: ConnectResult): void {
+    if (session.flow.mode !== 'new' || session.discarded) return;
+    session.discarded = true;
+    discardCredential(
+      this.accounts,
+      session.flow.accountId,
+      session.flow.kind,
+      result.credentialRef,
+    );
   }
 
   private tryEmit(session: Session, state: 'failed', reasonCode: string): void {
@@ -176,6 +248,28 @@ export class ConnectSessions {
 
   private release(session: Session): void {
     this.byId.delete(session.connectId);
+    this.releaseKeys(session);
+  }
+
+  /**
+   * A cancelled or expired sign-in stops counting as open at once, but keeps its keys until the host's flow has
+   * settled (`holdKeysUntilSettled`), so a new sign-in for the same account cannot run beside the one winding down.
+   * A host that never settles after the abort keeps the account's key until engine stop (`dispose`).
+   */
+  private abandon(session: Session): void {
+    this.byId.delete(session.connectId);
+    if (!session.hostStarted || session.hostSettled) this.releaseKeys(session);
+  }
+
+  private holdKeysUntilSettled(session: Session, call: Promise<unknown>): void {
+    const settled = () => {
+      session.hostSettled = true;
+      if (session.controller.signal.aborted) this.releaseKeys(session);
+    };
+    call.then(settled, settled);
+  }
+
+  private releaseKeys(session: Session): void {
     for (const key of guardKeys(session.flow)) {
       if (this.byKey.get(key) === session) this.byKey.delete(key);
     }
@@ -244,6 +338,23 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T | 
       if (!signal.aborted) reject(error);
     });
   });
+}
+
+/**
+ * Best effort: hand back a credential the host already stored for a `new` connect result the engine refused or never
+ * accepted. Never throws and never changes the outcome the caller reports; a host without the port simply keeps it.
+ */
+export function discardCredential(
+  accounts: AccountActorHost,
+  accountId: AccountId,
+  kind: ProviderKind,
+  credentialRef: string,
+): void {
+  try {
+    void accounts.discardCredential?.(accountId, kind, credentialRef)?.catch(() => {});
+  } catch {
+    // The refusal or the cancel the caller reports is the outcome; a broken host changes nothing here.
+  }
 }
 
 export function hexId(randomBytes: (n: number) => Uint8Array, prefix: string): string {

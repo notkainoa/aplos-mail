@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { before, describe, test } from 'node:test';
 import type { LowSheetGroup } from '../props';
 import { Chip, CommitChip, CommitEdge, EmptyLine, ErrorLine, LowBand, LowSheet } from './index';
+import { forwardFocusToListbox } from './internal/Action';
 import { ListKeyHintsContext } from './internal/keyHints';
 import { lowBandNames } from './LowBand';
 import { bannedIn, freezeClock, text, WORST } from './testkit.test';
@@ -65,6 +66,28 @@ describe('LowBand and LowSheet', () => {
     );
     assert.match(big, /data-cursor="true"/);
     assert.match(text(big), /^Low importance 9,999$/);
+  });
+
+  test('moreSenders adds senders the caller did not pass to "and N more"; default unchanged', () => {
+    const band = (senders: string[], moreSenders?: number) =>
+      render(
+        <LowBand
+          id="low"
+          senders={senders}
+          moreSenders={moreSenders}
+          count={40}
+          cursor={false}
+          density="comfortable"
+          commandId="mail.open"
+          onOpen={noop}
+        />,
+      );
+    assert.match(text(band(['A', 'B', 'C'], 12)), /^Low importance A, B, C and 12 more 40$/);
+    assert.match(text(band(['A', 'B', 'C', 'D'], 12)), /^Low importance A, B, C and 13 more 40$/);
+    assert.match(text(band(['A'], 5)), /^Low importance A and 5 more 40$/);
+    assert.match(text(band(['A', 'B', 'C'], 0)), /^Low importance A, B and C 40$/);
+    assert.match(text(band(['A', 'B', 'C', 'D'])), /^Low importance A, B, C and 1 more 40$/);
+    assert.match(text(band([], 5)), /^Low importance 40$/);
   });
 
   const groups: LowSheetGroup[] = [
@@ -339,6 +362,10 @@ describe('ErrorLine', () => {
       'Groq didn’t answer. Retry Use another provider',
     ],
     [
+      { kind: 'listFailed', placement: 'column', onAction: noop },
+      'Couldn’t load this list. Try again',
+    ],
+    [
       { kind: 'consentNeeded', placement: 'settings', onAction: noop },
       'Background summaries are paused until you agree to the new provider. Review',
     ],
@@ -444,6 +471,45 @@ describe('ErrorLine', () => {
       assert.equal(/role="alert"/.test(m), live);
     });
   }
+});
+
+describe('duplicate action focus', () => {
+  // No DOM in this suite: a stub node whose parent answers closest() by selector.
+  const stub = (listbox: unknown, focusable: unknown) => {
+    const parent = {
+      closest: (selector: string) => (selector.includes('listbox') ? listbox : focusable),
+    };
+    return { parentElement: parent, focus: undefined } as unknown as HTMLElement;
+  };
+  const target = () => {
+    const calls: unknown[] = [];
+    return { calls, focus: (options?: unknown) => calls.push(options) };
+  };
+
+  test('focus goes to the listbox it sits in', () => {
+    const box = target();
+    const other = target();
+    const span = stub(box, other);
+    forwardFocusToListbox(span);
+    span.focus({ preventScroll: true });
+    assert.deepEqual(box.calls, [{ preventScroll: true }]);
+    assert.deepEqual(other.calls, []);
+  });
+
+  test('outside a listbox, focus goes to the nearest focusable ancestor, not body', () => {
+    const near = target();
+    const span = stub(null, near);
+    forwardFocusToListbox(span);
+    span.focus();
+    assert.deepEqual(near.calls, [undefined]);
+  });
+
+  test('with nothing to focus it does nothing, and a null ref is ignored', () => {
+    const span = stub(null, null);
+    forwardFocusToListbox(span);
+    assert.doesNotThrow(() => span.focus());
+    assert.doesNotThrow(() => forwardFocusToListbox(null));
+  });
 });
 
 test('no banned phrase, glyph or exclamation mark rendered anywhere in the list parts', () => {

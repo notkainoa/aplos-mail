@@ -332,7 +332,7 @@ flowchart LR
 
 ### 5.1a Lean mode: the token budget (owner, 2026-10-28; SWE-2 routing 2026-10-29; replaces the earlier routing rules)
 
-> **What this means:** Devin's SWE-2 (free through November) writes most of the code, Sonnet runs the threads, does UI and reviews, and Opus is saved for a short list of hard calls. Agents read less, live shorter, and fewer of them run at once. Tests and one review per change keep quality where it was.
+> **What this means:** Devin's SWE-2 (free through November) takes the volume work, Sonnet runs the threads and does UI, tricky code and reviews, and Opus takes the hardest and riskiest calls. Quality comes first; SWE-2 is extra capacity, not a downgrade. Agents read less, live shorter, and fewer of them run at once. Tests and one review per change keep quality where it was.
 
 **Why.** In the first 26 hours the revamp hit Claude's 5-hour limit three times. The causes, measured from the logs:
 - Opus made about 87% of the calls, because subagents inherit their parent's model and every parent was Opus.
@@ -346,10 +346,12 @@ flowchart LR
 
 | Tier | Model | Use for |
 |---|---|---|
-| Workhorse (free through November) | Devin `swe-2-high` (`delegate_task` provider `acpRegistry_devin`; `thought_level` `max` for harder items) | All non-UI code a subagent writes: scoped features from a lane card or spec, bug fixes with a repro, tests, fixtures, scripts, CI, refactors, file splits, lint fixes. Also codebase searches, plan reading, test-run summaries and first-pass reviews. Keep each task scoped and testable; it is weak at long open-ended terminal sessions |
-| Default Claude | `claude-sonnet-5-5` | Thread orchestrators, all UI code (renderer and site), the one Claude review per PR, and anything SWE-2 failed twice |
-| Opus (named cases only) | `claude-opus-5-5` | Contract changes; security code (send guard, live-run guard, sanitizer and frame, hardening, auth and tokens); the store's commit path and sync correctness; the final review of PRs in those areas. Nothing else |
+| Volume (free through November) | Devin `swe-2-high` (`delegate_task` provider `acpRegistry_devin`; `thought_level` `max` for harder items) | Well-specified non-UI code a subagent writes: scoped features from a lane card, bug fixes with a repro, tests, fixtures, scripts, CI, file splits, lint fixes. Also codebase searches, plan reading, test-run summaries, first-pass reviews and extra parallel attempts. Keep each task scoped and testable; it is weak at long open-ended terminal sessions |
+| Sonnet | `claude-sonnet-5-5` | Thread orchestrators; all UI code (renderer and site); non-UI work with tricky logic, cross-module changes or unclear specs; the one Claude review per PR; and any task where SWE-2's result is not clearly as good |
+| Opus | `claude-opus-5-5` | Contract changes; security code (send guard, live-run guard, sanitizer and frame, hardening, auth and tokens); the store's commit path and sync correctness; the final review of PRs in those areas; high-visibility UI; and really hard work: architecture calls and subtle bugs Sonnet could not crack |
 | Haiku | `claude-haiku-5-5` | Trivial checks when Devin is down |
+
+**Quality comes first.** SWE-2 is extra capacity, not a downgrade: pick the model that gives the best result for each task. When unsure between SWE-2 and Sonnet, use Sonnet; when a SWE-2 result falls short, redo it on Sonnet rather than patching around it. The savings come from moving volume (mechanical code, tests, searches, reading, extra attempts and first-pass reviews) to SWE-2, not from moving judgment off Claude.
 
 OpenCode and Cursor Grok are retired for this project (they were never used in practice). If Devin is down or rate-limited, fall back to Sonnet, not to free models.
 
@@ -385,6 +387,46 @@ OpenCode and Cursor Grok are retired for this project (they were never used in p
 **Measurement.** `python3 plans/tools/token-report.py` prints tokens by model and by thread since a given time. The daily digest includes one line from it. If Opus goes above 25% of calls, or the average context goes above 120,000 tokens, the orchestrator tightens routing the same day.
 
 **Unchanged:** every test gate, the security reviews, the owner's feature review loop, and the hard rules.
+
+### 5.1c Hill climbing (owner, 2026-10-29)
+
+> **What this means:** agents improve code in rounds against automatic scores. Several attempts run in parallel, each is scored, and only a better one that breaks no gate is kept. SWE-2 makes most attempts for free; Claude judges taste and reviews the final result.
+
+**The loop.** For a target (a screen, a module or an AI prompt):
+1. Score the current code with the target's scorers and run its gates.
+2. Start N attempts in parallel, each in its own git worktree, with the brief, the current scores and the worst findings.
+3. Score every attempt. Keep the best one only if its combined score is higher and every gate still passes.
+4. Repeat from the new best. Stop after 2 rounds without gain or at the round limit (default 5 rounds of 4 attempts).
+5. The thread opens a normal PR from the result. It gets the usual Sonnet review (Opus in the named areas).
+
+**Gates** (must pass, never traded for score): the lane's tests, typecheck, the owners check, the security checks in the target's area, and no regression on any scorer marked `noRegress`.
+
+**Anti-gaming.** An attempt may only touch the target's allowed paths. The harness rejects any diff that touches scorers, gates, test expectations, baselines, budgets, suppression files (except to shrink them), mockups or DESIGN.md. AI prompt targets score on a dev set and must not regress on a held-out set the attempts never see.
+
+**Who makes the attempts** (owner's choice "C"):
+- SWE-2 for all non-UI targets, and for the mechanical UI checks: accessibility (axe), design lint, stylelint and contrast.
+- Sonnet for visual or taste work on screens (Opus for high-visibility screens), 2–3 attempts per round. A Sonnet taste judge scores screenshots against DESIGN.md and the matching mockup.
+- Visual changes to a screen happen before its READY-FOR-OWNER. After the owner approves, a hill climb may only change things that keep the approved look; anything visible goes back to the owner.
+
+**Scorers by area:**
+
+| Area | Existing | To add |
+|---|---|---|
+| UI | `lint:design`, `check:contrast`, `check:tokens`, `check:budgets` | axe (approved 2026-10-29), visual diff against `mockups/`, Sonnet taste judge |
+| Engine and providers | tests, typecheck, `bench:mailbox`, `check:budgets`, ESLint suppression count | coverage, mutation testing (Stryker), dead code (knip), layer rules (dependency-cruiser) |
+| AI features | `eval:groq`, `eval:ask` | dev and held-out splits |
+
+**Builders.**
+- Platform (`plat-ci`) builds the harness, `npm run hillclimb -- <target config>`, in `scripts/audit/hillclimb/`, plus the non-UI scorers.
+  - A target config lists its allowed paths, gates, weighted scorers (each a command that prints `{"score": n, "details": [...]}`), the model per attempt, attempts per round and the round limit.
+  - Attempts run headless: SWE-2 with `devin -p --model swe-2-high` in the attempt's worktree, Claude with `claude -p --model <model>`.
+  - It takes the shared check slot (`scripts/audit/slot.mjs`) so full suites never overlap.
+  - It prints a score table per round, no raw logs.
+- UI-core (`ui-foundation`) builds the UI scorers (axe, visual diff, taste judge) in `tests/visual/`.
+- Engine (`eng-ai`) adds the dev and held-out splits to the AI evals.
+- Each thread keeps its target configs in its own lane paths.
+
+**Where it runs.** Heavy rounds run on kainoas-linux-mba, because the Mac is loaded.
 
 ### 5.1b Machines (owner, 2026-10-28)
 

@@ -122,6 +122,23 @@ test('the status slot picks the most urgent account in the recorded order', asyn
   );
 });
 
+test('with several accounts due to reconnect, the status slot names the earliest deadline', async () => {
+  const [work, personal] = await demoAccounts();
+  assert.ok(work && personal);
+  const now = defaultNow;
+  const due = (a: Account, reconnectBy: number): Account => ({
+    ...a,
+    demo: false,
+    health: { ...a.health, reconnectBy, status: { state: 'ok' } },
+  });
+  const later = due(work, now + 20 * 3_600_000);
+  const sooner = due(personal, now + 2 * 3_600_000);
+  assert.equal(pickStatus([later, sooner], undefined, now)!.account!.id, personal.id);
+  assert.equal(pickStatus([sooner, later], undefined, now)!.account!.id, personal.id);
+  const outside = due(work, now + 30 * 3_600_000);
+  assert.equal(pickStatus([outside, later], undefined, now)!.account!.id, later.id);
+});
+
 test('counts hide while any account in scope is in its first sync', async () => {
   const [work, personal] = await demoAccounts();
   const counts: Counts = {

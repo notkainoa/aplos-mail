@@ -38,6 +38,12 @@ export interface SecretVault<T> {
   set(ref: string, value: T): Promise<void>;
 }
 
+/** What connect needs besides: taking a write back out (a cancel during it, the engine refusing the result). */
+export interface CredentialVault<T> extends SecretVault<T> {
+  /** A ref that is not stored is not an error. */
+  delete(ref: string): Promise<void>;
+}
+
 export interface GoogleTokenSourceOptions {
   vault: SecretVault<GoogleTokenBundle>;
   /** One request, no retries (`shared/http.ts`). */
@@ -50,12 +56,21 @@ export interface GoogleTokenSourceOptions {
 }
 
 export interface AccessToken {
-  token: string;
+  /** Not enumerable: a spread, `JSON.stringify` or `util.inspect` of the object never shows it. */
+  readonly token: string;
   expiresAt: number;
 }
 
+export function accessToken(token: string, expiresAt: number): AccessToken {
+  const value = { expiresAt } as AccessToken;
+  Object.defineProperty(value, 'token', { value: token, enumerable: false });
+  return value;
+}
+
 /** `grant` fingerprints the bundle the token came from; the refresh token itself is never kept here. */
-interface CachedToken extends AccessToken {
+interface CachedToken {
+  token: string;
+  expiresAt: number;
   grant: string;
 }
 
@@ -145,7 +160,7 @@ export class GoogleTokenSource implements TokenSource {
       this.#cache.delete(account);
       return undefined;
     }
-    return { token: hit.token, expiresAt: hit.expiresAt };
+    return accessToken(hit.token, hit.expiresAt);
   }
 
   /** Concurrent calls for one account share one request; each caller's own signal ends only its own wait. */
@@ -199,7 +214,7 @@ export class GoogleTokenSource implements TokenSource {
       flight.promise.then(
         token => {
           leave();
-          resolve({ ...token });
+          resolve(accessToken(token.token, token.expiresAt));
         },
         (error: unknown) => {
           leave();
@@ -243,9 +258,9 @@ export class GoogleTokenSource implements TokenSource {
     checkReplyScopes(reply);
     // Checked and cached in one synchronous step, so a reconnect cannot slip in between.
     this.assertGrant(account, bundle);
-    const token = { token: reply.accessToken, expiresAt: startedAt + reply.expiresInMs };
-    this.#cache.set(account, { ...token, grant: grantId(bundle) });
-    return token;
+    const expiresAt = startedAt + reply.expiresInMs;
+    this.#cache.set(account, { token: reply.accessToken, expiresAt, grant: grantId(bundle) });
+    return accessToken(reply.accessToken, expiresAt);
   }
 
   private ref(account: AccountId): string {
@@ -312,6 +327,8 @@ export class GoogleTokenSource implements TokenSource {
           accept: 'application/json',
         },
         body: form,
+        // A redirect would carry the refresh token and secret to another host.
+        redirect: 'error',
         signal,
       });
     } catch (error) {

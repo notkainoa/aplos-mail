@@ -301,12 +301,15 @@ export function createHooks(layer: DataLayer): DataRuntime {
   const readSession = () => session.session;
   const readConnection = () => session.connection;
   const readAccounts = () => session.accounts;
+  const readAccountsLoaded = () => session.accountsLoaded;
   const readSetup = () => session.setup;
   const readSettings = () => session.settings;
   const readConsent = () => session.consent;
 
   function useStatus(accountId?: AccountId) {
     useEffect(() => session.want('accounts'), []);
+    // The minute clock is a dependency, so the 24 h reconnect window is re-evaluated as time passes.
+    const minute = useNow({ granularity: 'minute' });
     const read = useMemo(
       () =>
         memoSnapshot(
@@ -314,7 +317,7 @@ export function createHooks(layer: DataLayer): DataRuntime {
           () => pickStatus(session.accounts, accountId, layer.clock.now()),
           sameJson,
         ),
-      [accountId],
+      [accountId, minute],
     );
     return useSyncExternalStore(sessionSub, read, read);
   }
@@ -385,6 +388,7 @@ export function createHooks(layer: DataLayer): DataRuntime {
     useSession: () => useSingleton('session', readSession),
     useConnection: () => useSyncExternalStore(sessionSub, readConnection, readConnection),
     useAccounts: () => useSingleton('accounts', readAccounts),
+    useAccountsLoaded: () => useSingleton('accounts', readAccountsLoaded),
     useStatus,
     useCounts,
     useAgenda,

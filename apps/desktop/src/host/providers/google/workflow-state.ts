@@ -43,7 +43,15 @@ import { channelKey, open, seal, type ChannelKey } from './workflow-seal';
  * `CAP_COPIES` copies.
  *
  * A copy's floor counts only when Gmail's receive time for it allows it (`floorTrusted`), so a device whose clock runs
- * months fast cannot hide everyone else's records; its own copies then never verify, so it never compacts either.
+ * months fast cannot hide everyone else's records; its own copies then never verify for a full compaction.
+ * `compact(ctx, { ownOnly: true })` (a device the lease's clock gate blocks) trashes only copies this device wrote. It
+ * may use a copy whose floor Gmail's time does not honour (a clock days fast), but then trashes an own copy only when
+ * every record that copy holds is in the new copy, equal or with a later stamp: a fast floor leaves out settled
+ * records honest readers still keep, and a copy still holding one is never trashed.
+ *
+ * Clock offset (the lease's clock gate): each write brackets Gmail's receive time for its copy with this device's
+ * clock just before the insert went out and just after it returned (`WorkflowTransport.sentWindow`, so pacing waits
+ * and sealing are outside the bracket; without it, the time around the whole `put`), and reports both ends.
  */
 
 export interface WorkflowEntry {
@@ -71,19 +79,45 @@ export interface WorkflowWritten {
   remoteId: string;
   /** The records this write stamped. */
   records: WorkflowRecord[];
+  /**
+   * This device's clock minus Gmail's receive time for the copy (ms), bracketed: `lowMs` from just before the insert,
+   * `highMs` from just after it. Absent when it could not be measured (the check failed, or the put found a copy an
+   * earlier insert made), which the gate treats as unmeasurable.
+   */
+  clockOffset?: { lowMs: number; highMs: number };
 }
 
 export interface WorkflowStateChannel {
   read(state: SyncState, ctx: AdapterContext): Promise<WorkflowRead>;
   ingest(copies: readonly WorkflowCopy[], log: Logger): Promise<WorkflowIngest>;
   write(entries: readonly WorkflowEntry[], ctx: AdapterContext): Promise<WorkflowWritten>;
-  compact(ctx: AdapterContext): Promise<number>;
+  compact(ctx: AdapterContext, options?: CompactOptions): Promise<number>;
   view(): WorkflowRecord[];
 }
 
-/** The port's channel plus one download by id, for checking a written copy before compacting against it. */
+export interface CompactOptions {
+  /** Trash only copies this device wrote (a device the lease's clock gate blocks). */
+  ownOnly?: boolean;
+}
+
+/** This device's clock just before an insert went out and just after it returned. */
+export interface SentWindow {
+  from: number;
+  to: number;
+}
+
+/**
+ * The port's channel plus one download by id, for checking a written copy before compacting against it, and the
+ * server's receive time for a copy, for the lease's clock gate.
+ */
 export interface WorkflowTransport extends WorkflowChannel {
   readBack(remoteId: string, ctx: AdapterContext): Promise<WorkflowCopy | undefined>;
+  receivedAt(remoteId: string, ctx: AdapterContext): Promise<number | undefined>;
+  /**
+   * The bracket of the insert that made `remoteId` in this process; undefined when the last `put` found the copy
+   * instead of inserting it. Absent: the channel brackets the whole `put`.
+   */
+  sentWindow?(remoteId: string): SentWindow | undefined;
 }
 
 export interface WorkflowStateOptions {
@@ -100,6 +134,8 @@ const ZERO: Stamp = { at: 0, gen: 0, device: '' };
 /** Copies one `compact` trashes at most (20 units each); the rest go on later calls. */
 export const COMPACT_BATCH = 25;
 const CAP_COPIES = 10_000;
+/** Own copies remembered with their records; an own copy past this is simply never trashed by an own-only compaction. */
+const CAP_OWN = 256;
 const CAP_REJECTED = 10_000;
 const byKey = (a: WorkflowRecord, b: WorkflowRecord) =>
   a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
@@ -120,11 +156,20 @@ interface Published {
   /** Copies opened before the write: superseded once the written copy has been read back from Gmail. */
   covered: string[];
   verified: boolean;
+  /**
+   * Gmail's receive time for the read-back copy honours its floor. False only when an own-only compaction accepted
+   * the copy anyway (a clock days off: the floor check fails, yet the copy is provably this device's own and whole).
+   */
+  floorTrusted?: boolean;
 }
 
-/** True when an opened copy is exactly what was written: same floor, same records. */
-function sameAsPublished(payload: WorkflowPayload, published: Published): boolean {
-  if ((payload.floor ?? 0) !== published.floor) return false;
+/** True when an opened copy is exactly what was written: this device's, same floor, same records. */
+function sameAsPublished(
+  payload: WorkflowPayload,
+  published: Published,
+  device: DeviceId,
+): boolean {
+  if (payload.device !== device || (payload.floor ?? 0) !== published.floor) return false;
   if (payload.records.length !== published.records.size) return false;
   return payload.records.every(r => {
     const held = published.records.get(r.key);
@@ -140,6 +185,8 @@ class StateChannel implements WorkflowStateChannel {
   private floorKeys = new Set<string>();
   /** Opened copies by remote id: whether the last validated write supersedes it. */
   private readonly opened = new Map<string, boolean>();
+  /** Opened copies this device wrote (this process or an earlier one), with their records: what `ownOnly` may trash. */
+  private readonly own = new Map<string, readonly WorkflowRecord[]>();
   private readonly rejected = new Map<string, true>();
   private readonly waiting = new Map<string, WorkflowCopy>();
   private high: Stamp = ZERO;
@@ -174,9 +221,11 @@ class StateChannel implements WorkflowStateChannel {
     if (!key) return { changed: [], skipped: 0, waiting: this.waiting.size };
     const before = new Map(this.view().map(r => [r.key, r]));
     let skipped = 0;
+    // A copy leaves `waiting` only once taken: a throw part way keeps the rest for the next call (the transport
+    // has already marked them seen, so no later round downloads them again).
     for (const [id, copy] of this.waiting) {
-      this.waiting.delete(id);
       if (!this.take(id, copy, key, log)) skipped++;
+      this.waiting.delete(id);
     }
     const changed = this.view().filter(r => before.get(r.key) !== r);
     return { changed, skipped, waiting: 0 };
@@ -201,10 +250,13 @@ class StateChannel implements WorkflowStateChannel {
     };
     const data = this.sealChecked(payload, key);
     const covered = [...this.opened.keys()];
+    const before = ctx.clock.now();
     const remoteId = await this.options.transport.put(
       { deviceId: this.options.device, writtenAt: now, data },
       ctx,
     );
+    const after = ctx.clock.now();
+    remember(this.own, remoteId, payload.records, CAP_OWN);
     mergeInto(this.winners, records);
     this.adopt(payload, true);
     // Nothing counts as superseded until this copy has been read back (`verify`).
@@ -217,40 +269,92 @@ class StateChannel implements WorkflowStateChannel {
       covered,
       verified: false,
     };
-    return { remoteId, records };
+    const clockOffset = await this.clockOffset(remoteId, { from: before, to: after }, ctx);
+    return { remoteId, records, ...(clockOffset ? { clockOffset } : {}) };
   }
 
-  async compact(ctx: AdapterContext): Promise<number> {
+  /**
+   * The insert's bracket minus Gmail's receive time for the copy just put; undefined when the copy was not inserted
+   * by this put or the check fails (never throws).
+   */
+  private async clockOffset(
+    remoteId: string,
+    put: SentWindow,
+    ctx: AdapterContext,
+  ): Promise<WorkflowWritten['clockOffset']> {
+    const transport = this.options.transport;
+    const window = transport.sentWindow ? transport.sentWindow(remoteId) : put;
+    if (!window) return undefined;
+    try {
+      const received = await transport.receivedAt(remoteId, ctx);
+      if (received === undefined) return undefined;
+      return { lowMs: window.from - received, highMs: window.to - received };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async compact(ctx: AdapterContext, options: CompactOptions = {}): Promise<number> {
     const published = this.published;
     if (!published || this.view().length > this.maxRecords) return 0;
-    if (!published.verified && !(await this.verify(published, ctx))) return 0;
+    const ownOnly = options.ownOnly === true;
+    if (!published.verified && !(await this.verify(published, ctx, ownOnly))) return 0;
+    if (!ownOnly && published.floorTrusted === false) return 0;
     const superseded: string[] = [];
     for (const [id, flag] of this.opened) {
       if (superseded.length >= COMPACT_BATCH) break;
+      if (ownOnly && !this.ownTrashable(id, published)) continue;
       if (flag && id !== published.remoteId) superseded.push(id);
     }
     if (!superseded.length) return 0;
     await this.options.transport.compact(superseded, ctx);
-    for (const id of superseded) this.opened.delete(id);
+    for (const id of superseded) {
+      this.opened.delete(id);
+      this.own.delete(id);
+    }
     return superseded.length;
+  }
+
+  /**
+   * An own copy an own-only compaction may trash: one this device wrote, and, when the new copy's floor is not one
+   * readers honour, only if the new copy holds every record it holds, equal or with a later stamp (nothing it alone
+   * still carries is lost).
+   */
+  private ownTrashable(id: string, published: Published): boolean {
+    const records = this.own.get(id);
+    if (!records) return false;
+    if (published.floorTrusted !== false) return true;
+    return records.every(r => {
+      const held = published.records.get(r.key);
+      return held !== undefined && compareRecord(held, r) >= 0;
+    });
   }
 
   /**
    * Downloads the written copy and opens it as another device would. Only when it comes back exactly as written, with
    * a floor readers honour, do the copies it covers count as superseded; otherwise nothing is compacted against it.
+   * For an own-only compaction a floor Gmail's time does not honour is no bar (the copy is this device's own, sealed
+   * and read back whole), but the copy stays unusable for a full compaction (`floorTrusted: false`), and each own copy
+   * it would trash must be matched record by record (`ownTrashable`).
    */
-  private async verify(published: Published, ctx: AdapterContext): Promise<boolean> {
+  private async verify(
+    published: Published,
+    ctx: AdapterContext,
+    ownOnly: boolean,
+  ): Promise<boolean> {
     const key = await this.key();
     if (!key) return false;
     const copy = await this.options.transport.readBack(published.remoteId, ctx);
     if (this.published !== published) return false;
     const reason = copy ? this.readBackFailure(copy, published, key, ctx.log) : 'readBack';
-    if (reason) {
+    const ownDespiteClock = reason === 'clock' && ownOnly;
+    if (reason && !ownDespiteClock) {
       if (reason !== 'logged') logSkipped(ctx.log, reason);
       this.distrust();
       return false;
     }
     published.verified = true;
+    published.floorTrusted = !ownDespiteClock;
     for (const id of published.covered) if (this.opened.has(id)) this.opened.set(id, true);
     return true;
   }
@@ -264,7 +368,7 @@ class StateChannel implements WorkflowStateChannel {
   ): string | undefined {
     const payload = this.openCopy(copy, key, log);
     if (!payload) return 'logged';
-    if (!sameAsPublished(payload, published)) return 'readBack';
+    if (!sameAsPublished(payload, published, this.options.device)) return 'readBack';
     if (published.floor && !floorTrusted(published.floor, copy.writtenAt)) return 'clock';
     return undefined;
   }
@@ -315,6 +419,7 @@ class StateChannel implements WorkflowStateChannel {
       return false;
     }
     mergeInto(this.winners, payload.records);
+    if (payload.device === this.options.device) remember(this.own, id, payload.records, CAP_OWN);
     this.high = highWater(payload.records, this.high);
     this.adopt(payload, floorTrusted(payload.floor ?? 0, copy.writtenAt));
     const published = this.published;

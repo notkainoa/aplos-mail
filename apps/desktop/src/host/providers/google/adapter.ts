@@ -23,7 +23,9 @@ import type {
   SubmissionPayload,
   SyncState,
   ThreadOpenRef,
+  WorkflowChannel,
 } from '@aplos/engine/ports';
+import type { GoogleConnect } from '../oauth/connect';
 import { fetchAttachment, openThread } from './bodies';
 import { GmailPacer, PACER_TARGET, type GmailDeps } from './client';
 import { GMAIL_COSTS, type GmailCostTable } from './costs';
@@ -33,11 +35,13 @@ import { applyOp, coalesceOps } from './ops';
 import { retryStep } from './retry';
 import { search } from './search';
 import { FactsMemo, listStep, plan, type SyncRuntime, type WindowCall } from './sync';
+import { GmailWorkflowTransport, type TransportLimits } from './workflow';
+import type { WorkflowTransport } from './workflow-state';
 
 /**
  * The google `ProviderFactory` and its per-account `ProviderAdapter` (plan 20 section 3.2): the read path of
  * `prov-gmail`. Parts that belong to other lanes are explicit stubs that throw `NotInThisLaneError`, never silent
- * no-ops: connect (prov-gov's OAuth host), send and findSent (prov-gmail-write),
+ * no-ops: connect when the host passes none (prov-gov's `oauth/host-connect.ts`), send and findSent (prov-gmail-write),
  * drafts, filters, the workflow channel and calendar (left undefined; prov-gmail-write, prov-gmail workflow, prov-cal).
  */
 
@@ -52,6 +56,24 @@ export class NotInThisLaneError extends NotImplementedError {
   }
 }
 
+/**
+ * Wiring the workflow channel on (`GoogleProviderOptions.workflow`): the adapter owns the sealed-copy transport
+ * (`workflow.ts`) and plans its rounds; the merged state channel and the lease that rides it are the host's
+ * (`googleWorkflowChannel` in `workflow-host.ts`).
+ */
+export interface GoogleWorkflowOptions {
+  /** Transport bounds (`TRANSPORT_LIMITS` in `workflow.ts`); tests lower them. */
+  limits?: Partial<TransportLimits>;
+  /**
+   * The floor between two planned rounds — the channel's idle cadence. A gated read is ~2 units when nothing
+   * changed (`workflow.ts` header), so one round a minute is the default.
+   */
+  roundMs?: number;
+}
+
+/** `WORKFLOW_ROUND_MS`: the `workflow` scope's idle cadence (ARCH 6.5's lease round, plan 20 PV3). */
+export const WORKFLOW_ROUND_MS = 60_000;
+
 export interface GoogleProviderOptions {
   /** The host's HTTP client; the tests pass the emulator's. */
   fetch: typeof fetch;
@@ -65,6 +87,16 @@ export interface GoogleProviderOptions {
    * `prov-gov`'s governor, which applies `GMAIL_BUDGET` itself, is the one in `AdapterContext.governor`.
    */
   pace?: boolean;
+  /** prov-gov's sign-in (`createGoogleHostConnect(...).connect`). Without it, `connect` rejects `NotInThisLaneError`. */
+  connect?: GoogleConnect;
+  /** `ProviderFactory.discardCredential`, from the same place; without it the factory has none (the engine fails closed). */
+  discardCredential?: (ref: string) => Promise<void>;
+  /**
+   * Present to enable the workflow channel: `adapter.workflow` is the transport (`WorkflowChannel`) and `plan()`
+   * schedules its round. Off by default so callers without a lease host do not pay for channel reads — see
+   * `workflow-host.ts` for the host-side wiring.
+   */
+  workflow?: GoogleWorkflowOptions;
 }
 
 /**
@@ -99,6 +131,10 @@ export class GmailAdapter implements ProviderAdapter {
   private readonly closer = new AbortController();
   private readonly rt: SyncRuntime;
   private readonly pacer?: GmailPacer;
+  /** The paced workflow transport behind `workflow` and `workflowTransport()`, when the channel is wired on. */
+  private readonly transport?: WorkflowTransport;
+  private readonly workflowRoundMs: number;
+  readonly workflow?: WorkflowChannel;
 
   constructor(
     readonly account: AdapterAccount,
@@ -117,6 +153,19 @@ export class GmailAdapter implements ProviderAdapter {
       rounds: new Map(),
     };
     if (options.pace !== false) this.pacer = new GmailPacer();
+    this.workflowRoundMs = options.workflow?.roundMs ?? WORKFLOW_ROUND_MS;
+    if (options.workflow) {
+      const transport = new GmailWorkflowTransport(deps, account.address, options.workflow.limits);
+      this.transport = {
+        round: (state, ctx) => transport.round(state, this.paced(ctx)),
+        put: (copy, ctx) => transport.put(copy, this.paced(ctx)),
+        compact: (ids, ctx) => transport.compact(ids, this.paced(ctx)),
+        readBack: (id, ctx) => transport.readBack(id, this.paced(ctx)),
+        receivedAt: (id, ctx) => transport.receivedAt(id, this.paced(ctx)),
+        sentWindow: id => transport.sentWindow(id),
+      };
+      this.workflow = this.transport;
+    }
   }
 
   /** The context every call runs with: the actor's governor behind this account's pacer, while there is one. */
@@ -124,8 +173,38 @@ export class GmailAdapter implements ProviderAdapter {
     return this.pacer ? { ...ctx, governor: this.pacer.bind(ctx.governor, ctx.clock) } : ctx;
   }
 
+  /**
+   * The paced transport `createWorkflowStateChannel` wraps (the lease's records ride the merged channel; see
+   * `googleWorkflowChannel` in `workflow-host.ts`). Undefined unless `GoogleProviderOptions.workflow` was set.
+   */
+  workflowTransport(): WorkflowTransport | undefined {
+    return this.transport;
+  }
+
   plan(input: PlanInput): PlannedStep[] {
-    return plan(input);
+    const steps = plan(input);
+    const workflow = this.workflowStep(input);
+    return workflow ? [...steps, workflow] : steps;
+  }
+
+  /**
+   * The channel's own round (ARCH 6.5, plan 20 PV3): on the `workflow` scope, at its idle cadence — a gated read is
+   * ~2 units when nothing changed — so at most one round per `roundMs` after the committed row. The actor runs it
+   * only when it is the channel's one reader: never when the host's lease round reads the channel
+   * (`googleWorkflowChannel`), and not on a secondary that sees a live holder (`PlanInput` has no lease field, so the
+   * planner cannot tell). A pause or block makes no I/O because every call the round makes goes through
+   * `ctx.governor`.
+   */
+  private workflowStep(input: PlanInput): PlannedStep | undefined {
+    if (!this.workflow) return undefined;
+    const last = input.states.find(s => s.scope === 'workflow')?.updatedAt;
+    return {
+      scope: 'workflow',
+      lane: 'enrichment',
+      origin: 'workflow',
+      ...(last ? { notBefore: last + this.workflowRoundMs } : {}),
+      trigger: input.trigger,
+    };
   }
 
   syncStep(step: PlannedStep, state: SyncState, actorCtx: AdapterContext): Promise<StepResult> {
@@ -186,11 +265,14 @@ export class GmailAdapter implements ProviderAdapter {
 }
 
 export function createGoogleProvider(options: GoogleProviderOptions): ProviderFactory {
+  const { connect, discardCredential } = options;
   return {
     kind: 'google',
-    connect(_req: ConnectRequest, _ctx: ConnectContext): Promise<ConnectResult> {
+    connect(req: ConnectRequest, ctx: ConnectContext): Promise<ConnectResult> {
+      if (connect) return connect(req, ctx);
       return Promise.reject(new NotInThisLaneError('connect', 'prov-gov (host/providers/oauth)'));
     },
+    ...(discardCredential ? { discardCredential } : {}),
     budgets(): BudgetSpec[] {
       return [GMAIL_BUDGET];
     },

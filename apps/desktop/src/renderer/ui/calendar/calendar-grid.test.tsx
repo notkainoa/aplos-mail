@@ -271,7 +271,7 @@ test('CalendarGrid agenda full: days with the comma title, only days with entrie
   assert.match(out, /Thursday, October 29, 2026/);
   assert.doesNotMatch(out, /Saturday, October 31, 2026/);
   assert.match(out, /role="region"/);
-  assert.match(out, /From mail|found in mail/);
+  assert.match(out, /From mail|from mail/);
 });
 
 test('CalendarGrid worst case: hundreds of entries in one slot, CJK and RTL titles, counts, no crash', () => {

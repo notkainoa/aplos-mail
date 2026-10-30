@@ -43,8 +43,10 @@ export function EventBlock(props: EventBlockProps) {
   const density = densityOf(event);
   const showTime = density === 'full' || (density === 'one' && placement.wide);
   const time = rangeOf(event.start, event.end);
-  const detail =
-    placement.wide && event.place && density === 'full' ? `${time} · ${event.place}` : time;
+  const showPlace = placement.wide && !!event.place && density === 'full';
+  const detail = showPlace ? `${time} · ${event.place}` : time;
+  // The name holds every visible word: when the place is drawn, it is in the label too (WCAG 2.5.3).
+  const label = showPlace ? `${eventLabel(event)}, ${event.place}` : eventLabel(event);
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
     if (e.nativeEvent.isComposing) return;
@@ -68,7 +70,7 @@ export function EventBlock(props: EventBlockProps) {
       data-unanswered={event.unanswered ? 'true' : undefined}
       data-locked={locked ? 'true' : undefined}
       aria-pressed={selected}
-      aria-label={eventLabel(event)}
+      aria-label={label}
       tabIndex={-1}
       style={{ '--cal': calVar(event.calendar.color) } as CSSProperties}
       onClick={onSelect}
@@ -78,6 +80,9 @@ export function EventBlock(props: EventBlockProps) {
       <span className="ui-event-block__title" dir="auto">
         {event.title}
       </span>
+      {/* A whitespace text node: the block is a flex column that draws none, but the visible text then reads
+          "Dental 9:30" like the label, which axe label-content-name-mismatch needs. */}
+      {showTime ? ' ' : null}
       {showTime ? <span className="ui-event-block__time">{detail}</span> : null}
     </button>
   );

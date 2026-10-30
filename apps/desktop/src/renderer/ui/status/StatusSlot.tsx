@@ -131,10 +131,17 @@ export function syncedLine(lastSyncedAt: string, now: Date = new Date()): string
   return `Synced at ${formatTime(lastSyncedAt)}`;
 }
 
+/** DESIGN 7.1: a healthy account shows nothing, and "Synced 2 min ago" only on hover, so it is the title. */
+function hoverLine(status: SyncStatus, now: Date): string | undefined {
+  if (status.kind !== 'ok' || !status.lastSyncedAt) return undefined;
+  return syncedLine(status.lastSyncedAt, now);
+}
+
 export function StatusSlot({
   status,
   account,
   multipleAccounts,
+  now,
   onAction,
 }: ComponentPropsMap['StatusSlot']) {
   const delayed = status.kind === 'starting' || (status.kind === 'syncing' && !status.firstWindow);
@@ -149,7 +156,9 @@ export function StatusSlot({
     return () => clearTimeout(t);
   }, [delayed, status.kind]);
 
-  const copy = statusCopy(status);
+  const clock = now ? new Date(now) : new Date();
+  const copy = statusCopy(status, clock);
+  const hover = copy === null ? hoverLine(status, clock) : undefined;
   const action = copy?.action;
   const ticking =
     status.kind === 'backfilling' ||
@@ -159,6 +168,7 @@ export function StatusSlot({
     <div
       className="ui-status-slot"
       role="status"
+      title={hover}
       data-status={status.kind}
       data-tone={copy?.attention ? 'attention' : undefined}
       data-state={copy === null ? 'empty' : revealed ? 'shown' : 'waiting'}
