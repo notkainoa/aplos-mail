@@ -16,7 +16,8 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { after, describe, it } from 'node:test';
+import { after, afterEach, describe, it } from 'node:test';
+import { HARD_EXIT_PRELUDE, killTrackedChildren, trackChild } from './hillclimb-children.mjs';
 import { parseArgs, realDeps, scrubProcessEnv } from '../hillclimb/run.mjs';
 
 describe('parseArgs --run-id', () => {
@@ -186,14 +187,19 @@ describe('run.mjs as a subprocess', () => {
     return { repo, scriptDir, git, slot };
   };
 
+  // A failing test must not leave a run.mjs child behind (it would hold node:test's pipes).
+  afterEach(killTrackedChildren);
+
   const spawnRun = (repo, scriptDir, slot, extra = []) =>
-    spawn(
-      process.execPath,
-      [join(scriptDir, 'run.mjs'), join(repo, 'config.json'), '--run-id', 'sig-t', ...extra],
-      {
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: slot },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
+    trackChild(
+      spawn(
+        process.execPath,
+        [join(scriptDir, 'run.mjs'), join(repo, 'config.json'), '--run-id', 'sig-t', ...extra],
+        {
+          env: { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: slot },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      ),
     );
 
   // Conventional exit codes are 128 + signal number: SIGINT 130, SIGTERM 143, SIGHUP 129.
@@ -326,10 +332,12 @@ describe('run.mjs as a subprocess', () => {
       await deps.cleanup();
       console.log('RESULT ' + JSON.stringify(out));
     `;
-    const child = spawn('node', ['--input-type=module', '-e', script], {
-      env: { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: slot },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = trackChild(
+      spawn('node', ['--input-type=module', '-e', HARD_EXIT_PRELUDE + script], {
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: slot },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
+    );
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => (stdout += chunk));

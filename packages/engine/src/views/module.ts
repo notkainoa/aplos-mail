@@ -42,6 +42,7 @@ export function createModule(services: EngineServices): LaneModule {
     frames: services.frames,
     accounts: () => services.accounts,
     zone: views.zone,
+    deadlines: services.deadlines,
   };
   // One journal, so a sender-rule commit is undone by `Operation/undo` like a `Thread/act`.
   const journal = createJournal();

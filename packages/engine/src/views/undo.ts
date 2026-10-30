@@ -4,6 +4,7 @@ import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller } from '../methods/types';
 import type { StoreReader, StoreWrite } from '../store';
 import {
+  deadlinesChanged,
   invertStep,
   localWrite,
   opsChanged,
@@ -153,6 +154,7 @@ export function undoOperation(
   });
   const operation = deps.store.read(q => readOperation(q, rec.opId, rec, deps.store.dbEpoch));
   if (operation) deps.frames.emit({ frame: 'operation', operation });
+  deadlinesChanged(deps, plan.writes);
   opsChanged(
     deps,
     plan.fresh.map(s => s.accountId),

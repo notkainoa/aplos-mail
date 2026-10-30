@@ -1,0 +1,9 @@
+[
+  "packages/emulators/tests/live-attack.test.ts",
+  "packages/emulators/tests/live-evidence.test.ts",
+  "packages/emulators/tests/live-followups.test.ts",
+  "packages/emulators/tests/live-merge-gate.test.ts",
+  "packages/emulators/tests/live-review-runner.test.ts",
+  "packages/emulators/tests/live-run.test.ts",
+  "packages/emulators/tests/live-vault.test.ts"
+]
