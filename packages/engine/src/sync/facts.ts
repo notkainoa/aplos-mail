@@ -196,9 +196,10 @@ function draftWrite(accountId: AccountId, self: string, d: RemoteDraftFact): Sto
   if (d.remoteThreadId !== undefined) write.remoteThreadId = d.remoteThreadId;
   if (d.internetId !== undefined) write.internetId = d.internetId;
   if (d.removed) write.removed = true;
-  // A body over the draft limit is never stored (the engine leaves such a draft snippet-only), so it is not carried.
-  if (d.html !== undefined && d.html.length <= REMOTE_BODY_LIMIT) write.html = d.html;
-  if (d.text !== undefined && d.text.length <= REMOTE_BODY_LIMIT) write.text = d.text;
+  // A body over the draft limit is never stored, but the engine must still see that one was offered (it then leaves the
+  // draft snippet-only instead of falling back to another source), so it is cut one character past the limit.
+  if (d.html !== undefined) write.html = d.html.slice(0, REMOTE_BODY_LIMIT + 1);
+  if (d.text !== undefined) write.text = d.text.slice(0, REMOTE_BODY_LIMIT + 1);
   if (d.supersedes?.length) write.supersedes = d.supersedes;
   if (d.message) {
     const {

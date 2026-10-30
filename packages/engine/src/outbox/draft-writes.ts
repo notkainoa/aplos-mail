@@ -637,6 +637,8 @@ const bodies = new WeakMap<RemoteDraftWrite, string | undefined>();
 function bodyOf(w: RemoteDraftWrite): string | undefined {
   if (bodies.has(w)) return bodies.get(w);
   const found = candidates(w);
+  // A source over the limit means the provider's real body is too big to keep: never settle for another source then.
+  if (found.some(c => c.over)) return void bodies.set(w, undefined);
   const snippet = w.message?.snippet;
   const body = found.find(c => !c.blank) ?? (snippet ? undefined : found[0]);
   const html = body && !body.over && body.html.length <= REMOTE_BODY_MAX ? body.html : undefined;
@@ -732,10 +734,36 @@ function isEcho(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta) {
  * the fingerprint of what the provider holds. A provider keeps a draft's Message-ID across edits, so the Message-ID alone
  * does not tell a phone edit from our own copy. No body, attachments or a body over the limit: no proof.
  */
-function holdsOurContent(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta, base: DraftFields) {
-  if (meta.fingerprint === undefined || !completes(w)) return false;
+function holdsOurContent(
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  meta: DraftMeta,
+  base: DraftFields,
+  own: string,
+) {
+  return hasFingerprint(w, row, base, meta.fingerprint, own);
+}
+
+/**
+ * Does the fact's delivered content hash to `fingerprint`? The comparison fills in what a fact cannot show from the
+ * local draft (attachments, signature, from), so it is a proof only when none of that is in play: a draft with
+ * attachments or a sign-off, a copy that says it has attachments, or a sender other than the account's own address
+ * (`own`) could differ from ours without the hash noticing, and gets no proof (a conflict is the safe direction). No
+ * fingerprint, or no body: no proof.
+ */
+function hasFingerprint(
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  base: DraftFields,
+  fingerprint: string | undefined,
+  own: string,
+) {
+  if (fingerprint === undefined || !completes(w)) return false;
+  if (keepsMine(base) || w.message?.hasAttachments === true) return false;
+  const from = w.message?.from?.address;
+  if (from === undefined || from.trim().toLowerCase() !== own.trim().toLowerCase()) return false;
   const theirs = theirsFields(row.account_id, messageOf(w), base);
-  return fingerprintOf(theirs.fields) === meta.fingerprint;
+  return fingerprintOf(theirs.fields) === fingerprint;
 }
 
 /**
@@ -745,26 +773,43 @@ function holdsOurContent(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta, ba
  * JMAP and IMAP clients keep it across edits), so the same replacement with other content is another device's edit and
  * goes the ordinary way. A removal that supersedes something is not handled here: it is a removal.
  */
-function supersedesOwn(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta, fields: DraftFields) {
+function supersedesOwn(
+  tx: CommitExtensionTx,
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  meta: DraftMeta,
+  fields: DraftFields,
+) {
   if (w.removed || !w.supersedes?.length || w.internetId === undefined) return false;
   const wrote = meta.wrote ?? [];
   const replaces = w.supersedes.some(id => id === row.remote_message_id || wrote.includes(id));
   if (!replaces) return false;
-  return explainedByAttempt(w, row, meta) || holdsOurContent(w, row, meta, fields);
+  const own = tx.get<{ address: string }>(
+    'SELECT address FROM accounts WHERE id = ?',
+    row.account_id,
+  )?.address;
+  if (own === undefined) return false;
+  return (
+    explainedByAttempt(w, row, meta, fields, own) || holdsOurContent(w, row, meta, fields, own)
+  );
 }
 
 /**
- * The running (or unanswered) upload explains one move of the base: from the message id it was made against to the
- * copy that replaces it. Once the base has moved, the attempt has used its move; a later fact under the same
- * Message-ID (a phone edit that keeps it) needs its content to prove it is ours.
+ * The running (or unanswered) upload's echo: the same Message-ID and content that hashes to what the upload sends. The
+ * Message-ID alone proves nothing (a phone edit can keep it, and a retry of the same revision reuses it), so there is
+ * no "one move per attempt" rule to get wrong: a fact whose content differs, or that delivers no body, is never
+ * explained by the upload and goes the ordinary way (a conflict is the safe direction).
  */
-function explainedByAttempt(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta) {
+function explainedByAttempt(
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  meta: DraftMeta,
+  base: DraftFields,
+  own: string,
+) {
   const attempt = meta.uploading;
   if (!attempt || attempt.internetId !== w.internetId) return false;
-  const base = attempt.base;
-  return (
-    typeof base === 'string' && base === row.remote_message_id && !!w.supersedes?.includes(base)
-  );
+  return hasFingerprint(w, row, base, attempt.fingerprint, own);
 }
 
 /** The echo of our own upload under a new message id: the row's base moves to it, nothing else changes. */
@@ -896,7 +941,7 @@ function markChangedElsewhere(
 function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   const { fields, meta } = parseData(row.data);
   // First: our own upload's Message-ID makes `isEcho` true too, but only this moves the base to the new message id.
-  if (w.remoteMessageId !== row.remote_message_id && supersedesOwn(w, row, meta, fields))
+  if (w.remoteMessageId !== row.remote_message_id && supersedesOwn(tx, w, row, meta, fields))
     return advanceBase(tx, row, meta, w);
   if (isEcho(w, row, meta)) return;
   // A send of this draft (or one that just went out) removes or changes its copy itself. A change made meanwhile cannot
