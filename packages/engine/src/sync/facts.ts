@@ -40,14 +40,27 @@ function headerBits(facts: MessageFacts, self: string): HeaderBits {
   return bits;
 }
 
+/** RFC 8058 section 3.1: the whole `List-Unsubscribe-Post` value is exactly this, case-sensitive; surrounding space is not part of it. */
+const ONE_CLICK_POST = 'List-Unsubscribe=One-Click';
+
+/** One-click only for the exact value: extra text, another case or several values never count. */
+function oneClickPost(post: string | undefined): boolean {
+  return post !== undefined && post.trim() === ONE_CLICK_POST;
+}
+
+/** A longer header is ignored whole (same limit as the host executor); the sender controls this text. */
+const MAX_UNSUBSCRIBE_HEADER = 8_192;
+
+/** One `<uri>`; no `<` inside, so a run of `<` cannot make the scan quadratic and an entry with `<` is skipped, as the executor does. */
+const URI_ENTRY = /<([^<>]*)>/g;
+
 /** `List-Unsubscribe: <https://...>, <mailto:...>` and RFC 8058 one-click. */
 function unsubscribe(facts: MessageFacts): MessageWrite['listUnsubscribe'] {
   const header = facts.list.listUnsubscribe;
-  if (!header) return undefined;
-  const urls = [...header.matchAll(/<([^>]+)>/g)].map(m => m[1].trim()).filter(Boolean);
+  if (!header || header.length > MAX_UNSUBSCRIBE_HEADER) return undefined;
+  const urls = [...header.matchAll(URI_ENTRY)].map(m => m[1].trim()).filter(Boolean);
   if (!urls.length) return undefined;
-  const oneClick = /List-Unsubscribe=One-Click/i.test(facts.list.listUnsubscribePost ?? '');
-  return oneClick ? { urls, oneClick } : { urls };
+  return oneClickPost(facts.list.listUnsubscribePost) ? { urls, oneClick: true } : { urls };
 }
 
 /** One message's metadata. `seenGen` only for list rounds; history, open and search leave the stamp alone. */
