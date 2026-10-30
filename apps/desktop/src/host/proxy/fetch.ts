@@ -3,7 +3,13 @@ import https from 'node:https';
 import type { LookupFunction } from 'node:net';
 import type { ImageProxy, ImageRefusal, ProxiedImage } from '@aplos/engine/ports';
 import { readImageHeader, sniffMime, SNIFF_BYTES } from './image-type';
-import { proxyLimits, tokenBudget, type LimitOverrides, type ProxyLimits } from './limits';
+import {
+  createSemaphore,
+  proxyLimits,
+  tokenBudget,
+  type LimitOverrides,
+  type ProxyLimits,
+} from './limits';
 import { pinTarget, systemResolver, type PinnedTarget, type Resolver } from './resolve';
 
 /**
@@ -20,7 +26,8 @@ export const REQUEST_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   Connection: 'close',
 });
 
-const MAX_HEADER_BYTES = 16 * 1024;
+/** Half Node's default: an image host's response headers are a few hundred bytes. */
+const MAX_HEADER_BYTES = 8 * 1024;
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 
 export interface UpstreamResponse {
@@ -133,6 +140,7 @@ async function readImage(
   response: UpstreamResponse,
   limits: ProxyLimits,
   signal: AbortSignal,
+  spend: (bytes: number) => boolean,
 ): Promise<ProxiedImage> {
   if ((response.contentLength ?? 0) > limits.maxBytes) return refusal('size');
   const chunks: Uint8Array[] = [];
@@ -142,6 +150,7 @@ async function readImage(
     signal.throwIfAborted();
     total += chunk.byteLength;
     if (total > limits.maxBytes) return refusal('size');
+    if (!spend(chunk.byteLength)) return refusal('budget');
     chunks.push(chunk);
     if (!sniffed && total >= SNIFF_BYTES) {
       if (!sniffMime(joined(chunks, total))) return refusal('type');
@@ -173,15 +182,22 @@ export function createImageProxy(options: ImageProxyOptions = {}): HostImageProx
   const resolve = options.resolve ?? systemResolver;
   const connect = options.connect ?? nodeConnector;
   const budget = tokenBudget(limits);
+  const slots = createSemaphore(limits.maxInFlight);
 
-  async function request(target: PinnedTarget, signal: AbortSignal): Promise<Step> {
-    const response = await connect(target, signal);
+  /** One hop in a slot: a hostile mail's hundred URLs queue here instead of buffering a hundred bodies at once. */
+  async function request(target: PinnedTarget, token: string, signal: AbortSignal): Promise<Step> {
+    const release = await slots.acquire(signal);
     try {
-      if (REDIRECTS.has(response.status)) return redirectStep(response, target.url);
-      if (response.status < 200 || response.status > 299) return refusal('http');
-      return await readImage(response, limits, signal);
+      const response = await connect(target, signal);
+      try {
+        if (REDIRECTS.has(response.status)) return redirectStep(response, target.url);
+        if (response.status < 200 || response.status > 299) return refusal('http');
+        return await readImage(response, limits, signal, bytes => budget.spendBytes(token, bytes));
+      } finally {
+        response.close();
+      }
     } finally {
-      response.close();
+      release();
     }
   }
 
@@ -191,11 +207,13 @@ export function createImageProxy(options: ImageProxyOptions = {}): HostImageProx
       signal.throwIfAborted();
       if (hop > limits.maxRedirects) return refusal('redirects');
       if (!budget.take(token)) return refusal('budget');
-      const pin = await pinTarget(url, limits.ports, resolve);
+      const pin = await pinTarget(url, limits.ports, resolve, signal);
       if (!pin.ok) return refusal(hop === 0 ? pin.reason : 'redirects');
       signal.throwIfAborted();
-      const step = await request(pin.target, signal);
+      const step = await request(pin.target, token, signal);
       if (step.kind !== 'redirect') return step;
+      // A secure page's image must not fall back to plain http, where anyone on the path can swap it.
+      if (pin.target.secure && step.location.protocol !== 'https:') return refusal('redirects');
       url = step.location;
     }
   }

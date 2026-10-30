@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import type { ImageRefusal } from '@aplos/engine/ports';
 import { classifyAddress, ipv4Number } from './classify';
+import { createSemaphore } from './limits';
 
 /**
  * URL checks and the single DNS lookup. A URL is parsed once by the WHATWG parser (which folds decimal, octal, hex and
@@ -14,7 +15,7 @@ export interface ResolvedAddress {
 }
 
 /** Every address for a name, in the order the system prefers. Injected by tests; never consulted for IP literals. */
-export type Resolver = (host: string) => Promise<ResolvedAddress[]>;
+export type Resolver = (host: string, signal?: AbortSignal) => Promise<ResolvedAddress[]>;
 
 export interface PinnedTarget {
   url: URL;
@@ -41,8 +42,34 @@ interface ParsedTarget {
 
 const DEFAULT_PORTS: Record<string, number> = { 'http:': 80, 'https:': 443 };
 
+/** Lookups in flight at once: `getaddrinfo` runs on libuv's four-thread pool, which a slow DNS must not fill. */
+export const MAX_LOOKUPS = 2;
+
+type Lookup = (host: string) => Promise<ResolvedAddress[]>;
+
+const getaddrinfo: Lookup = host => lookup(host, { all: true, order: 'verbatim' });
+
+/**
+ * A resolver around one lookup: at most `limit` calls in flight, the rest queued. A slot frees when its lookup
+ * settles, not when its caller gives up, so abandoned lookups still count against the pool.
+ */
+export function createSystemResolver(
+  run: Lookup = getaddrinfo,
+  limit: number = MAX_LOOKUPS,
+): Resolver {
+  const slots = createSemaphore(limit);
+  return async (host, signal) => {
+    const release = await slots.acquire(signal);
+    try {
+      return await run(host);
+    } finally {
+      release();
+    }
+  };
+}
+
 /** The system resolver: one `getaddrinfo` call returning every answer, in the order the system gives them. */
-export const systemResolver: Resolver = host => lookup(host, { all: true, order: 'verbatim' });
+export const systemResolver: Resolver = createSystemResolver();
 
 function refused(reason: ImageRefusal): PinResult {
   return { ok: false, reason };
@@ -62,6 +89,18 @@ function localName(host: string): boolean {
   return name === 'localhost' || name.endsWith('.localhost');
 }
 
+/** Suffixes of names only a private network can answer; split-horizon DNS could point them at internal hosts. */
+const PRIVATE_SUFFIXES = ['local', 'internal', 'lan', 'home.arpa'];
+
+/** A name with no dot is a search-domain shortcut (`intranet`), and a private suffix is an internal name. */
+function privateName(host: string): boolean {
+  const name = host.replace(/\.$/, '');
+  return (
+    !name.includes('.') ||
+    PRIVATE_SUFFIXES.some(suffix => name === suffix || name.endsWith(`.${suffix}`))
+  );
+}
+
 /**
  * Checks everything that needs no network: scheme (`scheme`, also for unparseable URLs), credentials in the authority
  * (`address`: userinfo never reaches an image host), port (`port`), and the host's shape.
@@ -79,6 +118,7 @@ export function parseTarget(
   const literal = host.startsWith('[') || ipv4Number(host) !== null;
   // The WHATWG parser already folded or rejected numeric hosts; never hand a numeric-looking name to getaddrinfo.
   if (!host || localName(host) || (!literal && /^[0-9.]+$/.test(host))) return 'address';
+  if (!literal && privateName(host)) return 'address';
   return { url, host, literal, port };
 }
 
@@ -97,8 +137,12 @@ function pinned(parsed: ParsedTarget, address: string, family: 4 | 6): PinnedTar
 }
 
 /** Resolves once and refuses when any answer is refused; connects to the first answer, as the system ordered them. */
-async function pinName(parsed: ParsedTarget, resolve: Resolver): Promise<PinResult> {
-  const answers = await resolve(parsed.host);
+async function pinName(
+  parsed: ParsedTarget,
+  resolve: Resolver,
+  signal?: AbortSignal,
+): Promise<PinResult> {
+  const answers = await resolve(parsed.host, signal);
   if (!Array.isArray(answers) || answers.length === 0) return refused('address');
   const verdicts = answers.map(answer => classifyAddress(String(answer?.address)));
   const first = verdicts[0];
@@ -114,10 +158,11 @@ export async function pinTarget(
   input: string | URL,
   ports: readonly number[],
   resolve: Resolver,
+  signal?: AbortSignal,
 ): Promise<PinResult> {
   const parsed = parseTarget(input, ports);
   if (typeof parsed === 'string') return refused(parsed);
-  if (!parsed.literal) return pinName(parsed, resolve);
+  if (!parsed.literal) return pinName(parsed, resolve, signal);
   const verdict = classifyAddress(parsed.host);
   if (!verdict.allowed) return refused('address');
   return { ok: true, target: pinned(parsed, verdict.address, verdict.family) };

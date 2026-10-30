@@ -2,17 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import http from 'node:http';
+import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import tls from 'node:tls';
 import type { ImageRefusal, ProxiedImage } from '@aplos/engine/ports';
 import {
   createImageProxy,
   nodeConnector,
-  REQUEST_HEADERS,
   requestOptions,
   type Connector,
 } from '../../src/host/proxy/fetch';
 import type { PinnedTarget, Resolver } from '../../src/host/proxy/resolve';
+import { makeFixtures, type Credentials, type Fixtures } from './tls-fixtures';
 
 /**
  * The real Node transport against servers on 127.0.0.1. The classifier stays strict: the fake resolver answers a
@@ -44,25 +45,61 @@ function toLocal(port: number, seen: PinnedTarget[] = []): Connector {
 interface Seen {
   method?: string;
   url?: string;
-  headers: string[];
+  /** Every header exactly as it arrived, name and value, in order. */
+  headers: string[][];
   host?: string;
+}
+
+/** What the proxy must send, written out here so a changed `REQUEST_HEADERS` cannot change the expectation. */
+const EXPECTED_HEADERS = [
+  ['Host', 'img.example'],
+  ['User-Agent', 'Mozilla/5.0'],
+  ['Accept', 'image/png,image/jpeg,image/gif,image/webp'],
+  ['Accept-Encoding', 'identity'],
+  ['Connection', 'close'],
+];
+
+function seen(req: http.IncomingMessage): Seen {
+  const headers: string[][] = [];
+  for (let i = 0; i < req.rawHeaders.length; i += 2)
+    headers.push([req.rawHeaders[i], req.rawHeaders[i + 1]]);
+  return { method: req.method, url: req.url, headers, host: req.headers.host };
+}
+
+function listening(server: http.Server | https.Server, requests: Seen[]) {
+  server.listen(0, '127.0.0.1');
+  const ready = once(server, 'listening');
+  const close = () => {
+    server.closeAllConnections();
+    return new Promise(done => server.close(done));
+  };
+  return ready.then(() => ({
+    port: (server.address() as AddressInfo).port,
+    requests,
+    close,
+  }));
 }
 
 async function serve(handler: http.RequestListener) {
   const requests: Seen[] = [];
   const server = http.createServer((req, res) => {
-    const names = req.rawHeaders.filter((_, i) => i % 2 === 0).map(n => n.toLowerCase());
-    requests.push({ method: req.method, url: req.url, headers: names, host: req.headers.host });
+    requests.push(seen(req));
     handler(req, res);
   });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const { port } = server.address() as AddressInfo;
-  const close = () => {
-    server.closeAllConnections();
-    return new Promise(done => server.close(done));
-  };
-  return { port, requests, close };
+  return listening(server, requests);
+}
+
+/** An HTTPS server with the given credentials; handshakes that fail are counted, requests that arrive are kept. */
+async function serveTls(credentials: Credentials) {
+  const requests: Seen[] = [];
+  const server = https.createServer(credentials, (req, res) => {
+    requests.push(seen(req));
+    res.end(IMAGE);
+  });
+  let rejected = 0;
+  server.on('tlsClientError', () => (rejected += 1));
+  const started = await listening(server, requests);
+  return { ...started, rejected: () => rejected };
 }
 
 const run = (signal = new AbortController().signal) => ({ token: 't1', signal });
@@ -79,12 +116,11 @@ test('the request on the wire is a GET with only Host and the fixed headers, nev
       const result = await proxy.fetch('http://img.example/a.png?x=1#frag', run());
       assert.equal(result.kind, 'image');
     }
-    const expected = ['host', ...Object.keys(REQUEST_HEADERS).map(n => n.toLowerCase())];
-    for (const seen of server.requests) {
-      assert.equal(seen.method, 'GET');
-      assert.equal(seen.url, '/a.png?x=1');
-      assert.equal(seen.host, 'img.example');
-      assert.deepEqual(seen.headers, expected);
+    for (const request of server.requests) {
+      assert.equal(request.method, 'GET');
+      assert.equal(request.url, '/a.png?x=1');
+      assert.equal(request.host, 'img.example');
+      assert.deepEqual(request.headers, EXPECTED_HEADERS, 'exactly these, no Cookie or Referer');
     }
     assert.equal(server.requests.length, 2);
   } finally {
@@ -107,7 +143,13 @@ test('request options pin the socket to the checked address and answer any looku
   assert.equal(options.host, PUBLIC);
   assert.equal(options.servername, 'img.example');
   assert.equal(options.agent, false);
-  assert.deepEqual(options.headers, { Host: 'img.example', ...REQUEST_HEADERS });
+  assert.deepEqual(options.headers, Object.fromEntries(EXPECTED_HEADERS));
+  assert.equal(options.method, 'GET');
+  assert.equal(options.setHost, false);
+  assert.equal(options.rejectUnauthorized, undefined, 'certificate checks stay at the default');
+  assert.equal(options.checkServerIdentity, undefined);
+  assert.equal(options.ca, undefined);
+  assert.equal(options.maxHeaderSize, 8 * 1024);
   const lookup = options.lookup as unknown as (
     host: string,
     opts: { all?: boolean },
@@ -275,3 +317,212 @@ test('the production connector never reaches loopback, by name, literal or port'
     await server.close();
   }
 });
+
+// --- Certificates are really checked -------------------------------------------------------------------------------
+
+let fixtures: Fixtures | undefined;
+try {
+  fixtures = makeFixtures();
+} catch {
+  fixtures = undefined;
+}
+const needsOpenssl = fixtures ? {} : { skip: 'the openssl command line is not available' };
+
+/** Trusts `ca` for the duration of `body`, on top of the system roots. Process-wide, so tests here run one at a time. */
+async function trusting<T>(ca: string, body: () => Promise<T>): Promise<T> {
+  const original = tls.getCACertificates('default');
+  tls.setDefaultCACertificates([...original, ca]);
+  try {
+    return await body();
+  } finally {
+    tls.setDefaultCACertificates(original);
+  }
+}
+
+/** Remembers why each connection failed, so a test can tell a certificate error from any other failure. */
+function recording(inner: Connector, codes: string[]): Connector {
+  return async (target, signal) => {
+    try {
+      return await inner(target, signal);
+    } catch (error) {
+      codes.push(String((error as { code?: string }).code));
+      throw error;
+    }
+  };
+}
+
+test(
+  'an HTTPS server with a certificate the trusted CA signed for the name is fetched',
+  needsOpenssl,
+  async () => {
+    const fx = fixtures as Fixtures;
+    const server = await serveTls(fx.good);
+    try {
+      await trusting(fx.ca, async () => {
+        const codes: string[] = [];
+        const proxy = createImageProxy({
+          resolve,
+          connect: recording(toLocal(server.port), codes),
+        });
+        const result = await proxy.fetch('https://img.example/a.png', run());
+        assert.equal(result.kind, 'image');
+        assert.deepEqual(codes, []);
+      });
+      assert.equal(server.requests.length, 1);
+      assert.deepEqual(server.requests[0].headers, EXPECTED_HEADERS);
+    } finally {
+      await server.close();
+    }
+  },
+);
+
+const BAD_CERTIFICATES: [string, (fx: Fixtures) => Credentials, string][] = [
+  ['a self-signed certificate', fx => fx.selfSigned, 'DEPTH_ZERO_SELF_SIGNED_CERT'],
+  ['a certificate from a CA nobody trusts', fx => fx.unknownCa, 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'],
+  ['a trusted certificate for another name', fx => fx.wrongName, 'ERR_TLS_CERT_ALTNAME_INVALID'],
+];
+
+for (const [label, pick, code] of BAD_CERTIFICATES)
+  test(`${label} is refused with a TLS error, and no request is sent`, needsOpenssl, async () => {
+    const fx = fixtures as Fixtures;
+    const server = await serveTls(pick(fx));
+    try {
+      await trusting(fx.ca, async () => {
+        const codes: string[] = [];
+        const proxy = createImageProxy({
+          resolve,
+          connect: recording(toLocal(server.port), codes),
+        });
+        assert.deepEqual(await proxy.fetch('https://img.example/a.png', run()), refusedAs('http'));
+        assert.deepEqual(codes, [code]);
+      });
+      assert.equal(server.requests.length, 0, 'the request never left the client');
+    } finally {
+      await server.close();
+    }
+  });
+
+test(
+  'an IP literal is checked against the address itself, so a name-only certificate fails',
+  needsOpenssl,
+  async () => {
+    const fx = fixtures as Fixtures;
+    const server = await serveTls(fx.good);
+    try {
+      await trusting(fx.ca, async () => {
+        const codes: string[] = [];
+        const proxy = createImageProxy({
+          resolve,
+          connect: recording(toLocal(server.port), codes),
+        });
+        assert.deepEqual(await proxy.fetch(`https://${PUBLIC}/a.png`, run()), refusedAs('http'));
+        assert.deepEqual(codes, ['ERR_TLS_CERT_ALTNAME_INVALID']);
+      });
+      assert.equal(server.requests.length, 0);
+    } finally {
+      await server.close();
+    }
+  },
+);
+
+// --- Oversized response headers ----------------------------------------------------------------------------------
+
+test('a response whose header block is over the limit is refused, and a modest one is not', async () => {
+  const server = await serve((req, res) => {
+    const size = req.url === '/big' ? 12 * 1024 : 2 * 1024;
+    res.setHeader('X-Padding', 'a'.repeat(size));
+    res.end(IMAGE);
+  });
+  try {
+    const codes: string[] = [];
+    const proxy = createImageProxy({ resolve, connect: recording(toLocal(server.port), codes) });
+    assert.equal((await proxy.fetch('http://img.example/small', run())).kind, 'image');
+    assert.deepEqual(await proxy.fetch('http://img.example/big', run()), refusedAs('http'));
+    assert.deepEqual(codes, ['HPE_HEADER_OVERFLOW']);
+  } finally {
+    await server.close();
+  }
+});
+
+// --- Fetches in flight --------------------------------------------------------------------------------------------
+
+const until = async (done: () => boolean) => {
+  for (let i = 0; i < 200 && !done(); i += 1) await new Promise(r => setTimeout(r, 5));
+  assert.ok(done(), 'condition not reached in time');
+};
+
+/** A server that holds every response open until the test lets it go; it counts how many are open at once. */
+async function slowServer() {
+  const held: http.ServerResponse[] = [];
+  let open = 0;
+  let peak = 0;
+  const server = await serve((_req, res) => {
+    open += 1;
+    peak = Math.max(peak, open);
+    held.push(res);
+    res.on('close', () => (open -= 1));
+  });
+  return {
+    ...server,
+    held,
+    open: () => open,
+    peak: () => peak,
+    releaseAll: () => held.splice(0).forEach(res => res.end(IMAGE)),
+  };
+}
+
+test('six slow fetches run at once and the rest wait their turn', { timeout: 10000 }, async () => {
+  const server = await slowServer();
+  try {
+    const proxy = createImageProxy({ resolve, connect: toLocal(server.port) });
+    const all = Array.from({ length: 14 }, (_, i) => proxy.fetch(`http://img.example/${i}`, run()));
+    await until(() => server.held.length === 6);
+    await new Promise(r => setTimeout(r, 100));
+    assert.equal(server.held.length, 6, 'the seventh has not connected');
+    for (let round = 0; round < 3 && server.requests.length < 14; round += 1) {
+      server.releaseAll();
+      await until(() => server.held.length > 0 || server.requests.length === 14);
+    }
+    server.releaseAll();
+    const results = await Promise.all(all);
+    assert.ok(results.every(result => result.kind === 'image'));
+    assert.equal(server.requests.length, 14);
+    assert.equal(server.peak(), 6);
+  } finally {
+    await server.close();
+  }
+});
+
+test(
+  'a waiting fetch can be aborted without connecting or leaking its slot',
+  { timeout: 10000 },
+  async () => {
+    const server = await slowServer();
+    try {
+      const proxy = createImageProxy({
+        resolve,
+        connect: toLocal(server.port),
+        limits: { maxInFlight: 1 },
+      });
+      const first = proxy.fetch('http://img.example/a', run());
+      await until(() => server.held.length === 1);
+      const controller = new AbortController();
+      const waiting = proxy.fetch('http://img.example/b', run(controller.signal));
+      setTimeout(() => controller.abort(), 30);
+      await assert.rejects(waiting, { name: 'AbortError' });
+      assert.equal(server.requests.length, 1, 'the aborted one never connected');
+      const third = proxy.fetch('http://img.example/c', run());
+      server.releaseAll();
+      assert.equal((await first).kind, 'image');
+      await until(() => server.held.length === 1);
+      server.releaseAll();
+      assert.equal((await third).kind, 'image');
+      assert.deepEqual(
+        server.requests.map(request => request.url),
+        ['/a', '/c'],
+      );
+    } finally {
+      await server.close();
+    }
+  },
+);
