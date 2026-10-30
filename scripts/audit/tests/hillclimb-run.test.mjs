@@ -98,6 +98,34 @@ describe('realDeps', () => {
 // A REAL run.mjs subprocess inside a throwaway repo: the harness sources are mirrored to
 // <repo>/scripts/audit/hillclimb/ so run.mjs resolves the temp repo as its root, and
 // TMPDIR is pointed inside the temp dir so the run root and check-slot lock are isolated.
+const sleepMs = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/** Polls `condition` every 50 ms until it holds or `ceilingMs` passes (then fails with `message`). */
+async function waitFor(condition, ceilingMs, message) {
+  const until = Date.now() + ceilingMs;
+  while (Date.now() < until) {
+    if (condition()) return;
+    await sleepMs(50);
+  }
+  assert.ok(condition(), message);
+}
+
+/** Resolves with `promise`, or kills `child` (whole group is not needed: it is run.mjs itself) and fails. */
+async function withCeiling(promise, ceilingMs, message, child) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(message));
+    }, ceilingMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 describe('run.mjs as a subprocess', () => {
   const harnessSrc = dirname(fileURLToPath(new URL('../hillclimb/run.mjs', import.meta.url)));
   const tmp = mkdtempSync(join(tmpdir(), 'hillclimb-sub-'));
@@ -159,12 +187,16 @@ describe('run.mjs as a subprocess', () => {
     const child = spawnRun(repo, scriptDir, slot);
     const slotDir = join(slot, 'aplos-check-slot.lock');
     const runRootDir = join(slot, 'hillclimb-sig-t');
-    for (let i = 0; i < 300 && !existsSync(slotDir); i++) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    assert.ok(existsSync(slotDir), 'check-slot lock never appeared (gate never ran)');
+    // Wait for conditions, not for fixed delays: a loaded machine can take a minute to get the
+    // gate started and a few seconds to finish cleanup. 60 s ceilings, 50 ms polls.
+    await waitFor(
+      () => existsSync(slotDir),
+      60_000,
+      'check-slot lock never appeared (gate never ran)',
+    );
+    const closed = new Promise(resolve => child.on('close', (...a) => resolve(a)));
     child.kill('SIGTERM');
-    const [code] = await new Promise(resolve => child.on('close', (...a) => resolve(a)));
+    const [code] = await withCeiling(closed, 60_000, 'run.mjs did not exit after SIGTERM', child);
     assert.equal(code, 143);
     assert.equal(existsSync(slotDir), false, 'check-slot lock left behind');
     assert.equal(existsSync(runRootDir), false, 'run root left behind');

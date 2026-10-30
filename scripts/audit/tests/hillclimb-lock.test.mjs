@@ -295,7 +295,7 @@ describe('stale-takeover TOCTOU (real processes)', () => {
 describe('atomic publish (real processes)', () => {
   it('a reader never observes a PERSISTENT lock dir without readable pid and token', async () => {
     // Two children hammer the slot while a third watches. An incomplete listing that
-    // still stands after a 2 ms re-check is a real mid-publish or half-deleted lock —
+    // still stands after a 50 ms re-check is a real mid-publish or half-deleted lock —
     // the stage+rename publish and rename-aside release can never produce one. A
     // transiently empty listing of a just-renamed dir is an APFS enumeration artifact
     // (proven: it resolves on the immediate next read), so instant observations are
@@ -325,7 +325,9 @@ describe('atomic publish (real processes)', () => {
       for (let i = 0; i < 200000 && !fs.existsSync(${JSON.stringify(stop)}); i++) {
         const names = list();
         if (names === null || names === 'pid,token') continue;
-        const until = Date.now() + 2;
+        // 50 ms, not 2: under load a reader can be descheduled between two syscalls of a
+        // healthy publish; a violation must persist across a window far longer than that.
+        const until = Date.now() + 50;
         let last = names;
         while (Date.now() < until) {
           const again = list();
