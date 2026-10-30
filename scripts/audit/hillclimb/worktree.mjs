@@ -505,6 +505,11 @@ function verifyLinkSet(workdir, linked, ctx) {
     }
   }
   const workReal = realpathSync(workdir);
+  const inside = (linkPath, real) => {
+    if (real !== workReal && !real.startsWith(`${workReal}${sep}`)) {
+      throw new Error(`workspace link ${linkPath} escapes the worktree -> ${real}`);
+    }
+  };
   for (const linkPath of ctx.wsLinks) {
     let real;
     try {
@@ -512,9 +517,30 @@ function verifyLinkSet(workdir, linked, ctx) {
     } catch {
       throw new Error(`workspace link ${linkPath} does not resolve`);
     }
-    if (real !== workReal && !real.startsWith(`${workReal}${sep}`)) {
-      throw new Error(`workspace link ${linkPath} escapes the worktree -> ${real}`);
+    inside(linkPath, real);
+  }
+  // Links the populate pass never made — planted after checkout or left under a
+  // pre-existing dir — get the same containment check at every package-resolution
+  // position (container top level and inside @scope dirs), whatever their name is.
+  const sweep = dir => {
+    for (const name of readdirSync(dir)) {
+      const linkPath = join(dir, name);
+      const lst = lstatSync(linkPath);
+      if (lst.isSymbolicLink()) {
+        let real;
+        try {
+          real = realpathSync(linkPath);
+        } catch {
+          throw new Error(`package link ${linkPath} does not resolve`);
+        }
+        inside(linkPath, real);
+      } else if (name.startsWith('@') && lst.isDirectory()) {
+        sweep(linkPath);
+      }
     }
+  };
+  for (const root of linked) {
+    sweep(join(workdir, root, 'node_modules'));
   }
 }
 

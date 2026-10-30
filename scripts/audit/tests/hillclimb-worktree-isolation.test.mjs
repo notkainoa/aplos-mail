@@ -164,6 +164,28 @@ describe('linkNodeModules fail-closed verification', () => {
     removeWorktree(r.dir, wt);
   });
 
+  it('throws on a workspace link planted after checkout that escapes', () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(
+      join(r.dir, 'package.json'),
+      '{"name":"t","private":true,"workspaces":["packages/*"]}\n',
+    );
+    mkdirSync(join(r.dir, 'packages', 'x'), { recursive: true });
+    writeFileSync(join(r.dir, 'packages', 'x', 'package.json'), '{"name":"@aplos/x"}\n');
+    r.commit('ws');
+    mkdirSync(join(r.dir, 'node_modules', '@aplos'), { recursive: true });
+    const wt = join(tmp, 'wt-planted-ws');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    // Planted uncommitted, under a dir populate will not replace: the verify sweep must
+    // still find it — a link here resolves packages for the whole worktree.
+    const scope = join(wt, 'node_modules', '@aplos');
+    mkdirSync(scope, { recursive: true });
+    symlinkSync(tmp, join(scope, 'x'), 'junction'); // resolves outside the worktree
+    assert.throws(() => linkNodeModules(r.dir, wt), /escapes the worktree/);
+    removeWorktree(r.dir, wt);
+  });
+
   it('linkWorkspace refuses a workspace dir the worktree lacks', () => {
     const r = freshRepo();
     const wt = join(tmp, 'wt-missing-ws');
