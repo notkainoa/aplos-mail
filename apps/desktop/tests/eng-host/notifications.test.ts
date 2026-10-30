@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Frame, NotificationItem } from '@aplos/contract';
-import { runNotificationLoop, type NotificationLoopSession } from '../../src/host/notifications';
+import {
+  retryDelay,
+  runNotificationLoop,
+  type NotificationLoopSession,
+  type RetryTimers,
+} from '../../src/host/notifications';
 
 const item = (n: number): NotificationItem => ({
   id: `mail:acct:m${n}`,
@@ -63,6 +68,28 @@ function fakeEngine(initial: NotificationItem[] = []) {
     queue,
     emit: (frame: Frame) => listeners.forEach(l => l(frame)),
     listeners: () => listeners.size,
+  };
+}
+
+/** Timers that only run when the test says so. */
+function fakeTimers() {
+  const pending = new Map<number, { run: () => void; ms: number }>();
+  let next = 1;
+  const timers: RetryTimers = {
+    set: (run, ms) => {
+      pending.set(next, { run, ms });
+      return next++;
+    },
+    clear: handle => void pending.delete(handle as number),
+  };
+  return {
+    timers,
+    pending,
+    fire() {
+      const [id, timer] = [...pending][0]!;
+      pending.delete(id);
+      timer.run();
+    },
   };
 }
 
@@ -274,4 +301,90 @@ test('stop() unsubscribes and stops a run in flight', async () => {
   e.emit(notifyFrame());
   await settle();
   assert.equal(e.log.length, before, 'no call after stop');
+});
+
+test('retryDelay doubles from 5 s and stops at 5 min', () => {
+  assert.deepEqual(
+    [1, 2, 3, 4, 5, 6, 7, 8, 20].map(retryDelay),
+    [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000, 300_000, 300_000],
+  );
+});
+
+test('a failed claim is retried once on a timer, longer each time, and a success resets the delay', async () => {
+  const e = fakeEngine();
+  const t = fakeTimers();
+  let fail = true;
+  e.hooks.claim = () => {
+    if (fail) throw new Error('engine busy');
+    return { items: [item(7)] };
+  };
+  const posted: string[] = [];
+  const stop = runNotificationLoop(e.session, i => (posted.push(i.id), 'posted'), {
+    timers: t.timers,
+  });
+  await settle();
+  assert.deepEqual(
+    [...t.pending.values()].map(x => x.ms),
+    [5_000],
+  );
+  t.fire();
+  await settle();
+  assert.equal(e.claims.length, 2);
+  assert.deepEqual(
+    [...t.pending.values()].map(x => x.ms),
+    [10_000],
+    'one timer, doubled',
+  );
+  fail = false;
+  t.fire();
+  await settle();
+  assert.deepEqual(posted, ['mail:acct:m7']);
+  assert.equal(t.pending.size, 0, 'no timer after a good claim');
+  fail = true;
+  e.emit(notifyFrame());
+  await settle();
+  assert.deepEqual(
+    [...t.pending.values()].map(x => x.ms),
+    [5_000],
+    'the delay started over',
+  );
+  stop();
+});
+
+test('a notify cancels the pending retry, and stop() clears it', async () => {
+  const e = fakeEngine();
+  const t = fakeTimers();
+  let fail = true;
+  e.hooks.claim = () => {
+    if (fail) throw new Error('engine busy');
+    return { items: [] };
+  };
+  const stop = runNotificationLoop(e.session, () => 'posted', { timers: t.timers });
+  await settle();
+  assert.equal(t.pending.size, 1);
+  fail = false;
+  e.emit(notifyFrame());
+  await settle();
+  assert.equal(t.pending.size, 0, 'the run that worked took the retry away');
+  fail = true;
+  e.emit(notifyFrame());
+  await settle();
+  assert.equal(t.pending.size, 1);
+  stop();
+  assert.equal(t.pending.size, 0);
+});
+
+test('a retry that fires after stop() claims nothing', async () => {
+  const e = fakeEngine();
+  const t = fakeTimers();
+  e.hooks.claim = () => {
+    throw new Error('engine busy');
+  };
+  const stop = runNotificationLoop(e.session, () => 'posted', { timers: t.timers });
+  await settle();
+  const run = [...t.pending.values()][0]!.run;
+  stop();
+  run();
+  await settle();
+  assert.equal(e.claims.length, 1);
 });

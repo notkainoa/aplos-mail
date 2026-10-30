@@ -267,6 +267,37 @@ test('prov-gmail-drafts boundary blanking only touches declared boundaries: look
   assert.notEqual(canonicalMime(mime('AAA', 'one')), canonicalMime(mime('AAA', 'two')));
 });
 
+test('prov-gmail-drafts boundary blanking: a delimiter on its own line is blanked, look-alike lines and text are not', () => {
+  const mime = (b: string, lines: string[]) =>
+    Buffer.from(
+      [
+        'Subject: x',
+        `Content-Type: multipart/alternative; boundary="${b}"`,
+        '',
+        `--${b}`,
+        'Content-Type: text/plain',
+        '',
+        ...lines,
+        `--${b}--`,
+        '',
+      ].join('\r\n'),
+    );
+  const plain = ['line one', 'line two'];
+  // The real delimiters are on their own lines: with another boundary the message is the same.
+  assert.equal(canonicalMime(mime('AAA', plain)), canonicalMime(mime('CCC', plain)));
+  assert.ok(!canonicalMime(mime('AAA', plain)).includes('--AAA'), 'delimiter lines are blanked');
+  // Look-alikes inside the body stay as they are: they are text, not delimiters.
+  for (const lookAlike of ['quoted --AAA text', '--AAAX', ' --AAA', '--AAA-', 'x--AAA']) {
+    const lines = ['line one', lookAlike, 'line two'];
+    assert.ok(canonicalMime(mime('AAA', lines)).includes(lookAlike), `${lookAlike} kept`);
+    assert.notEqual(
+      canonicalMime(mime('AAA', lines)),
+      canonicalMime(mime('AAA', ['line one', lookAlike.replace('AAA', 'CCC'), 'line two'])),
+      `${lookAlike} is not treated as a boundary`,
+    );
+  }
+});
+
 // ---- PORT GAP 4: a conflict on the create path names no draft ----
 
 test('prov-gmail-drafts PORT GAP 4: a conflict on the create path carries no remoteDraftId (pinned until the port moves)', async () => {
