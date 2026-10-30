@@ -263,6 +263,8 @@ export interface BootOptions {
   workflow?: boolean;
   /** This Mac's clock runs this far ahead of the emulator's (negative: behind); only the engine host sees it. */
   skewMs?: number;
+  /** How often the stand-in timer loop wakes (250 ms); a day-long run may wake less often. */
+  leaseTickMs?: number;
 }
 
 interface Engine {
@@ -282,10 +284,11 @@ async function pumpLease(
   deadlines: Deadlines,
   signal: AbortSignal,
   skewMs: number,
+  tickMs: number,
 ): Promise<void> {
   while (!signal.aborted) {
     try {
-      await clock.sleep(250, signal);
+      await clock.sleep(tickMs, signal);
     } catch {
       return;
     }
@@ -356,7 +359,14 @@ export async function boot(
     },
   );
   const pumpStop = new AbortController();
-  if (options.workflow) void pumpLease(clock, deadlines, pumpStop.signal, options.skewMs ?? 0);
+  if (options.workflow)
+    void pumpLease(
+      clock,
+      deadlines,
+      pumpStop.signal,
+      options.skewMs ?? 0,
+      options.leaseTickMs ?? 250,
+    );
   // With the workflow channel the lease is the controller's: a primary asks for it ("Use this Mac") like the owner.
   if (lease && options.workflow) {
     if (lease === 'primary') await host.claimLease(ACCOUNT);

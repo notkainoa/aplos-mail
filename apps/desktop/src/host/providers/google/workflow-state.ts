@@ -25,6 +25,7 @@ import {
   type WorkflowPayload,
   type WorkflowRecord,
 } from './workflow-merge';
+import { digestCovers, digestOf, OwnDigests, type CopyDigest } from './workflow-digest';
 import { logSkipped, remember } from './workflow-message';
 import { channelKey, open, seal, type ChannelKey } from './workflow-seal';
 
@@ -47,11 +48,14 @@ import { channelKey, open, seal, type ChannelKey } from './workflow-seal';
  * `compact(ctx, { ownOnly: true })` (a device the lease's clock gate blocks) trashes only copies this device wrote. It
  * may use a copy whose floor Gmail's time does not honour (a clock days fast), but then trashes an own copy only when
  * every record that copy holds is in the new copy, equal or with a later stamp: a fast floor leaves out settled
- * records honest readers still keep, and a copy still holding one is never trashed.
+ * records honest readers still keep, and a copy still holding one is never trashed. Of its own copies it remembers a
+ * digest only (per key the stamp and a value hash, `workflow-digest.ts`), for at most `CAP_OWN` copies and
+ * `OWN_ENTRY_COPIES` full views' worth of records.
  *
  * Clock offset (the lease's clock gate): each write brackets Gmail's receive time for its copy with this device's
  * clock just before the insert went out and just after it returned (`WorkflowTransport.sentWindow`, so pacing waits
- * and sealing are outside the bracket; without it, the time around the whole `put`), and reports both ends.
+ * and sealing are outside the bracket; without it, the time around the whole `put`), and reports both ends. `probe`
+ * checks the last copy put again (one 20-unit get, no new copy), for a gate whose checks kept failing.
  */
 
 export interface WorkflowEntry {
@@ -92,6 +96,8 @@ export interface WorkflowStateChannel {
   ingest(copies: readonly WorkflowCopy[], log: Logger): Promise<WorkflowIngest>;
   write(entries: readonly WorkflowEntry[], ctx: AdapterContext): Promise<WorkflowWritten>;
   compact(ctx: AdapterContext, options?: CompactOptions): Promise<number>;
+  /** The clock offset from the last copy this process put, measured again (no new copy); empty when none or failed. */
+  probe(ctx: AdapterContext): Promise<{ clockOffset?: WorkflowWritten['clockOffset'] }>;
   view(): WorkflowRecord[];
 }
 
@@ -134,8 +140,10 @@ const ZERO: Stamp = { at: 0, gen: 0, device: '' };
 /** Copies one `compact` trashes at most (20 units each); the rest go on later calls. */
 export const COMPACT_BATCH = 25;
 const CAP_COPIES = 10_000;
-/** Own copies remembered with their records; an own copy past this is simply never trashed by an own-only compaction. */
+/** Own copies remembered by digest; an own copy past this is simply never trashed by an own-only compaction. */
 const CAP_OWN = 256;
+/** The records the own digests hold at most, in full views (`maxRecords`): the newest two copies always fit. */
+const OWN_ENTRY_COPIES = 2;
 const CAP_REJECTED = 10_000;
 const byKey = (a: WorkflowRecord, b: WorkflowRecord) =>
   a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
@@ -152,6 +160,8 @@ export function createWorkflowStateChannel(options: WorkflowStateOptions): Workf
 interface Published {
   remoteId: string;
   records: Map<string, WorkflowRecord>;
+  /** The same records as a digest, for matching own copies (`ownTrashable`). */
+  digest: CopyDigest;
   floor: number;
   /** Copies opened before the write: superseded once the written copy has been read back from Gmail. */
   covered: string[];
@@ -185,16 +195,19 @@ class StateChannel implements WorkflowStateChannel {
   private floorKeys = new Set<string>();
   /** Opened copies by remote id: whether the last validated write supersedes it. */
   private readonly opened = new Map<string, boolean>();
-  /** Opened copies this device wrote (this process or an earlier one), with their records: what `ownOnly` may trash. */
-  private readonly own = new Map<string, readonly WorkflowRecord[]>();
+  /** Opened copies this device wrote (this process or an earlier one), by digest: what `ownOnly` may trash. */
+  private readonly own: OwnDigests;
   private readonly rejected = new Map<string, true>();
   private readonly waiting = new Map<string, WorkflowCopy>();
   private high: Stamp = ZERO;
   private published?: Published;
+  /** The last copy put and the bracket around it, kept even when it did not verify (`probe`). */
+  private lastPut?: { remoteId: string; window: SentWindow };
   private readonly maxRecords: number;
 
   constructor(private readonly options: WorkflowStateOptions) {
     this.maxRecords = options.maxRecords ?? MAX_RECORDS;
+    this.own = new OwnDigests(CAP_OWN, OWN_ENTRY_COPIES * this.maxRecords);
   }
 
   view(): WorkflowRecord[] {
@@ -256,7 +269,8 @@ class StateChannel implements WorkflowStateChannel {
       ctx,
     );
     const after = ctx.clock.now();
-    remember(this.own, remoteId, payload.records, CAP_OWN);
+    const digest = digestOf(payload.records);
+    this.own.remember(remoteId, digest);
     mergeInto(this.winners, records);
     this.adopt(payload, true);
     // Nothing counts as superseded until this copy has been read back (`verify`).
@@ -265,12 +279,21 @@ class StateChannel implements WorkflowStateChannel {
     this.published = {
       remoteId,
       records: new Map(payload.records.map(r => [r.key, r])),
+      digest,
       floor,
       covered,
       verified: false,
     };
-    const clockOffset = await this.clockOffset(remoteId, { from: before, to: after }, ctx);
+    this.lastPut = { remoteId, window: { from: before, to: after } };
+    const clockOffset = await this.clockOffset(remoteId, this.lastPut.window, ctx);
     return { remoteId, records, ...(clockOffset ? { clockOffset } : {}) };
+  }
+
+  async probe(ctx: AdapterContext): Promise<{ clockOffset?: WorkflowWritten['clockOffset'] }> {
+    const last = this.lastPut;
+    if (!last) return {};
+    const clockOffset = await this.clockOffset(last.remoteId, last.window, ctx);
+    return clockOffset ? { clockOffset } : {};
   }
 
   /**
@@ -321,13 +344,9 @@ class StateChannel implements WorkflowStateChannel {
    * still carries is lost).
    */
   private ownTrashable(id: string, published: Published): boolean {
-    const records = this.own.get(id);
-    if (!records) return false;
-    if (published.floorTrusted !== false) return true;
-    return records.every(r => {
-      const held = published.records.get(r.key);
-      return held !== undefined && compareRecord(held, r) >= 0;
-    });
+    const digest = this.own.get(id);
+    if (!digest) return false;
+    return published.floorTrusted !== false || digestCovers(published.digest, digest);
   }
 
   /**
@@ -419,7 +438,7 @@ class StateChannel implements WorkflowStateChannel {
       return false;
     }
     mergeInto(this.winners, payload.records);
-    if (payload.device === this.options.device) remember(this.own, id, payload.records, CAP_OWN);
+    if (payload.device === this.options.device) this.own.remember(id, digestOf(payload.records));
     this.high = highWater(payload.records, this.high);
     this.adopt(payload, floorTrusted(payload.floor ?? 0, copy.writtenAt));
     const published = this.published;
