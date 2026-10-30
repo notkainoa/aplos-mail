@@ -98,6 +98,34 @@ describe('realDeps', () => {
 // A REAL run.mjs subprocess inside a throwaway repo: the harness sources are mirrored to
 // <repo>/scripts/audit/hillclimb/ so run.mjs resolves the temp repo as its root, and
 // TMPDIR is pointed inside the temp dir so the run root and check-slot lock are isolated.
+const sleepMs = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/** Polls `condition` every 50 ms until it holds or `ceilingMs` passes (then fails with `message`). */
+async function waitFor(condition, ceilingMs, message) {
+  const until = Date.now() + ceilingMs;
+  while (Date.now() < until) {
+    if (condition()) return;
+    await sleepMs(50);
+  }
+  assert.ok(condition(), message);
+}
+
+/** Resolves with `promise`, or kills `child` and fails with `message` after `ceilingMs`. */
+async function withCeiling(promise, ceilingMs, message, child) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(message));
+    }, ceilingMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 describe('run.mjs as a subprocess', () => {
   const harnessSrc = dirname(fileURLToPath(new URL('../hillclimb/run.mjs', import.meta.url)));
   const tmp = mkdtempSync(join(tmpdir(), 'hillclimb-sub-'));
@@ -149,12 +177,19 @@ describe('run.mjs as a subprocess', () => {
   ]) {
     it(`${signal} mid-gate kills the process group, releases the slot, removes worktrees`, async () => {
       const marker = join(tmp, `${signal.toLowerCase()}-gate-finished`);
+      const started = join(tmp, `${signal.toLowerCase()}-gate-started`);
       const { repo, scriptDir, git, slot } = seedRun(`${signal.toLowerCase()}-gate`, {
         name: 'sig',
         allowedPaths: ['**'],
         // The gate sleeps inside the check slot: the signal lands with the slot held
         // and the gate's process group alive — exactly the state cleanup has to drain.
-        gates: [{ name: 'g', command: `sleep ${sleeper}; touch ${marker}`, timeoutSec: 60 }],
+        gates: [
+          {
+            name: 'g',
+            command: `touch ${started}; sleep ${sleeper}; touch ${marker}`,
+            timeoutSec: 60,
+          },
+        ],
         scorers: [
           { name: 's', command: 'echo {"score":1,"details":[]}', weight: 1, timeoutSec: 10 },
         ],
@@ -167,18 +202,39 @@ describe('run.mjs as a subprocess', () => {
       const child = spawnRun(repo, scriptDir, slot);
       const slotDir = join(slot, 'aplos-check-slot.lock');
       const runRootDir = join(slot, 'hillclimb-sig-t');
-      for (let i = 0; i < 300 && !existsSync(slotDir); i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      assert.ok(existsSync(slotDir), `check-slot lock never appeared under ${signal}`);
+      // Conditions, not fixed delays: a loaded machine can take a minute to start the gate and
+      // seconds to finish cleanup (60 s ceilings, 50 ms polls).
+      await waitFor(
+        () => existsSync(slotDir),
+        60_000,
+        `check-slot lock never appeared under ${signal}`,
+      );
+      // The lock exists before the gate process does: signal only once the gate really runs, so
+      // the test exercises the group kill and not the (separate) spawn-in-flight window.
+      await waitFor(() => existsSync(started), 60_000, `gate never started under ${signal}`);
+      const closed = new Promise(resolve => child.on('close', (...a) => resolve(a)));
       child.kill(signal);
-      const [exit] = await new Promise(resolve => child.on('close', (...a) => resolve(a)));
+      const [exit] = await withCeiling(
+        closed,
+        60_000,
+        `run.mjs did not exit after ${signal}`,
+        child,
+      );
       assert.equal(exit, code, `${signal} exit code`);
       assert.equal(existsSync(slotDir), false, 'check-slot lock left behind');
       assert.equal(existsSync(runRootDir), false, 'run root left behind');
-      assert.throws(
-        () => execFileSync('pgrep', ['-f', `sleep ${sleeper}`]),
-        /Command failed|exit code 1/,
+      // SIGKILL is delivered at once but the process can linger in the table for a moment on a
+      // loaded machine: poll for it to vanish instead of asserting at the first instant.
+      await waitFor(
+        () => {
+          try {
+            execFileSync('pgrep', ['-f', `sleep ${sleeper}`]);
+            return false;
+          } catch {
+            return true;
+          }
+        },
+        15_000,
         'gate process group survived the kill',
       );
       assert.equal(existsSync(marker), false, 'gate completed despite the kill');
@@ -250,7 +306,8 @@ describe('run.mjs as a subprocess', () => {
     let stderr = '';
     child.stdout.on('data', chunk => (stdout += chunk));
     child.stderr.on('data', chunk => (stderr += chunk));
-    const [code] = await new Promise(resolve => child.on('close', (...a) => resolve(a)));
+    const closed = new Promise(resolve => child.on('close', (...a) => resolve(a)));
+    const [code] = await withCeiling(closed, 120_000, 'realDeps child did not finish', child);
     assert.equal(code, 0, `realDeps child failed: ${stderr}`);
     const line = stdout.trim().split('\n').at(-1);
     assert.ok(line.startsWith('RESULT '), `no result line: ${stdout}`);

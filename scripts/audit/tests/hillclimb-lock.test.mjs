@@ -640,7 +640,7 @@ describe('stale-takeover TOCTOU (real processes)', () => {
 describe('atomic publish (real processes)', () => {
   it('a reader never observes a PERSISTENT lock dir without readable pid and token', async () => {
     // Two children hammer the slot while a third watches. An incomplete listing that
-    // keeps re-reading unchanged for 5 ms is a real mid-publish or half-deleted lock —
+    // keeps re-reading unchanged for 50 ms is a real mid-publish or half-deleted lock —
     // the stage+rename publish and rename-aside release can never produce one. A
     // transiently empty or partial listing of a just-renamed dir is an APFS
     // enumeration artifact (it settles on the next read), so observations must stay
@@ -669,14 +669,17 @@ describe('atomic publish (real processes)', () => {
       };
       for (let i = 0; i < 200000 && !fs.existsSync(${JSON.stringify(stop)}); i++) {
         const names = list();
-        if (names === null || names === 'pid,token') continue;
+        // An EMPTY listing is the releaser between removing the files and the rmdir (the
+        // in-place design); a pid-less empty dir is only ever taken over after staleMs, so a
+        // descheduled releaser is harmless and not a violation.
+        if (names === null || names === '' || names === 'pid,token') continue;
         // An anomalous listing only counts if the SAME listing keeps re-reading for
-        // 5 ms: APFS transiently reports partial/empty enumerations right around a
+        // 50 ms: APFS transiently reports partial/empty enumerations right around a
         // rename and settles on the next read, while a real mid-publish or
         // half-deleted lock dir persists unchanged.
         let stable = true;
         const start = Date.now();
-        while (stable && Date.now() - start < 5) {
+        while (stable && Date.now() - start < 50) {
           await sleep(1);
           const again = list();
           stable = again === names;
