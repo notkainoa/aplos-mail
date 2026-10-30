@@ -13,7 +13,7 @@ import {
   type Connector,
 } from '../../src/host/proxy/fetch';
 import type { PinnedTarget, Resolver } from '../../src/host/proxy/resolve';
-import { makeFixtures, type Credentials, type Fixtures } from './tls-fixtures';
+import { makeFixtures, opensslAvailable, type Credentials, type Fixtures } from './tls-fixtures';
 
 /**
  * The real Node transport against servers on 127.0.0.1. The classifier stays strict: the fake resolver answers a
@@ -320,12 +320,11 @@ test('the production connector never reaches loopback, by name, literal or port'
 
 // --- Certificates are really checked -------------------------------------------------------------------------------
 
-let fixtures: Fixtures | undefined;
-try {
-  fixtures = makeFixtures();
-} catch {
-  fixtures = undefined;
-}
+// Skip ONLY when the `openssl` command line is missing, and never in CI (it has one): any other failure to make the
+// fixtures (an unsupported flag, a full temp dir) must fail the file loudly instead of silently dropping the TLS tests.
+const haveOpenssl = opensslAvailable();
+if (!haveOpenssl && process.env.CI) throw new Error('openssl is required in CI for the TLS tests');
+const fixtures: Fixtures | undefined = haveOpenssl ? makeFixtures() : undefined;
 const needsOpenssl = fixtures ? {} : { skip: 'the openssl command line is not available' };
 
 /** Trusts `ca` for the duration of `body`, on top of the system roots. Process-wide, so tests here run one at a time. */
