@@ -9,3 +9,4 @@ release/
 coverage/
 artifacts/
 .vercel
+.stryker-tmp/
