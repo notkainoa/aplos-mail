@@ -192,16 +192,21 @@ test('a vault file that is valid JSON but not a map of sealed entries is unreada
   }
 });
 
-/** What the default file system does: a fresh file, written, flushed and closed. */
+/**
+ * What the default file system does (a fresh file, written and closed) minus the flush to the disk: a real
+ * flush can outlast HUNG_MS while other test files run, which would fail a save that should succeed.
+ */
 async function syncedWrite(path: string, data: string, mode: number) {
   const handle = await nodeFs.open(path, 'wx', mode);
   try {
     await handle.writeFile(data, 'utf8');
-    await handle.sync();
   } finally {
     await handle.close();
   }
 }
+
+/** The write timeout of tests that hang a file call on purpose. */
+const HUNG_MS = 250;
 
 /** The real file system with every optional call, except the ones `overrides` replaces. */
 function realFs(overrides: Partial<VaultFs> = {}): VaultFs {
@@ -380,7 +385,7 @@ test(
         dataDir: dir,
         ...crypto,
         fs,
-        writeTimeoutMs: 50,
+        writeTimeoutMs: HUNG_MS,
       });
       await vault.set('a', { v: 1 });
       plan.hang = true;
@@ -421,7 +426,7 @@ test(
         dataDir: dir,
         ...crypto,
         fs,
-        writeTimeoutMs: 50,
+        writeTimeoutMs: HUNG_MS,
       });
       await vault.set('a', { v: 1 });
       plan.hang = true;
@@ -567,7 +572,7 @@ test(
         dataDir: dir,
         ...crypto,
         fs,
-        writeTimeoutMs: 50,
+        writeTimeoutMs: HUNG_MS,
       });
       await vault.set('a', { v: 1 });
       plan.hang = true;
@@ -612,5 +617,123 @@ test('a vault loading in this process never removes a temporary file another vau
     hang.release();
     await saving;
     assert.deepEqual((await open(dir)).get('a'), { v: 5 });
+  });
+});
+
+/** A file call held by the test: `reached` opens when the call starts, `release` lets it go on. */
+function hold() {
+  const reached = gate();
+  const released = gate();
+  const done = gate();
+  return { reached, released, done };
+}
+
+/**
+ * The real file system, except renames and directory flushes the test queued a `hold` for: such a rename takes
+ * its source at once but replaces the vault file only once released (it then opens `done`).
+ */
+function heldFs() {
+  const renames: ReturnType<typeof hold>[] = [];
+  const dirSyncs: ReturnType<typeof hold>[] = [];
+  const fs = realFs({
+    rename: async (from, to) => {
+      const held = renames.shift();
+      if (!held) return nodeFs.rename(from, to);
+      const copy = `${from}.held`;
+      await nodeFs.link(from, copy);
+      held.reached.release();
+      await held.released.opened;
+      await nodeFs.rename(copy, to);
+      held.done.release();
+    },
+    syncDir: async () => {
+      const held = dirSyncs.shift();
+      if (!held) return;
+      held.reached.release();
+      await held.released.opened;
+      held.done.release();
+    },
+  });
+  const holdRename = () => {
+    const held = hold();
+    renames.push(held);
+    return held;
+  };
+  const holdDirSync = () => {
+    const held = hold();
+    dirSyncs.push(held);
+    return held;
+  };
+  return { fs, holdRename, holdDirSync };
+}
+
+async function heldVault(dir: string) {
+  const held = heldFs();
+  const vault = await createVault<{ v: number }>({
+    dataDir: dir,
+    ...crypto,
+    fs: held.fs,
+    writeTimeoutMs: HUNG_MS,
+  });
+  await vault.set('a', { v: 1 });
+  return { vault, ...held };
+}
+
+test(
+  'a late rename that lands while a later save flushes the directory is still repaired',
+  { timeout: 10_000 },
+  async () => {
+    await withDir(async dir => {
+      const { vault, holdRename, holdDirSync } = await heldVault(dir);
+      const late = holdRename();
+      await assert.rejects(vault.set('a', { v: 7 }), unsaved);
+      const flushing = holdDirSync();
+      const saving = vault.set('b', { v: 3 });
+      await flushing.reached.opened;
+      // b is renamed into place; now the failed a=7 lands over it.
+      late.released.release();
+      await late.done.opened;
+      flushing.released.release();
+      await saving;
+      await flushVault(vault);
+      assert.deepEqual(await onDisk(dir), { a: 1, b: 3, c: undefined });
+      assert.deepEqual(vault.get('a'), { v: 1 });
+      assert.deepEqual(vault.get('b'), { v: 3 });
+    });
+  },
+);
+
+test(
+  'a late rename that lands while a repair flushes the directory is repaired again',
+  { timeout: 10_000 },
+  async () => {
+    await withDir(async dir => {
+      const { vault, holdRename, holdDirSync } = await heldVault(dir);
+      const first = holdRename();
+      await assert.rejects(vault.set('a', { v: 7 }), unsaved);
+      const second = holdRename();
+      await assert.rejects(vault.set('a', { v: 8 }), unsaved);
+      await vault.set('b', { v: 3 });
+      const repairing = holdDirSync();
+      first.released.release();
+      // The repair of a=7 renames the committed entries into place; now a=8 lands over them.
+      await repairing.reached.opened;
+      second.released.release();
+      await second.done.opened;
+      repairing.released.release();
+      await flushVault(vault);
+      assert.deepEqual(await onDisk(dir), { a: 1, b: 3, c: undefined });
+      assert.deepEqual(vault.get('a'), { v: 1 });
+      await vault.set('c', { v: 5 });
+      assert.deepEqual(await onDisk(dir), { a: 1, b: 3, c: 5 });
+    });
+  },
+);
+
+test('a hung read fails the load instead of hanging it', { timeout: 10_000 }, async () => {
+  await withDir(async dir => {
+    const fs = realFs({ readFile: () => new Promise<string>(() => {}) });
+    const loading = createVault({ dataDir: dir, ...crypto, fs, writeTimeoutMs: HUNG_MS });
+    await assert.rejects(loading, /could not be read/);
   });
 });

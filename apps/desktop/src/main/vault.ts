@@ -25,7 +25,7 @@ export interface VaultOptions {
   file?: string;
   /** Default: `node:fs/promises`, with every write flushed to the disk before it counts as saved. */
   fs?: VaultFs;
-  /** How long one file call of a save may take before the save fails. Default: 15 s. */
+  /** How long one file call of a load or save may take before it fails. Default: 15 s. */
   writeTimeoutMs?: number;
 }
 
@@ -183,9 +183,11 @@ function isSealedMap(value: unknown): value is Record<string, string> {
   return Object.values(value).every(entry => typeof entry === 'string');
 }
 
-async function readSealed(fs: VaultFs, path: string): Promise<Record<string, string>> {
+async function readSealed(target: Target): Promise<Record<string, string>> {
+  const { fs, path, timeoutMs } = target;
   try {
-    const parsed: unknown = JSON.parse(await fs.readFile(path, 'utf8'));
+    // A hung read fails the load (UNREADABLE) instead of keeping the app from starting.
+    const parsed: unknown = JSON.parse(await bounded(() => fs.readFile(path, 'utf8'), timeoutMs));
     if (isSealedMap(parsed)) return parsed;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
@@ -203,12 +205,11 @@ function unseal<T>(decrypt: (value: Buffer) => string, sealed: string): T {
 
 /** Every entry, or LOCKED when any one cannot be opened: the first save would otherwise drop it. */
 async function load<T>(
-  fs: VaultFs,
-  path: string,
+  target: Target,
   decrypt: (value: Buffer) => string,
 ): Promise<Map<string, Committed<T>>> {
   const entries = new Map<string, Committed<T>>();
-  for (const [id, sealed] of Object.entries(await readSealed(fs, path))) {
+  for (const [id, sealed] of Object.entries(await readSealed(target))) {
     entries.set(id, { value: unseal<T>(decrypt, sealed), sealed });
   }
   return entries;
@@ -295,13 +296,16 @@ function serialize<T>(entries: ReadonlyMap<string, Committed<T>>): string {
  * waiting, so dropping a failed one falls back to whatever came before or after it, never undoing a later write.
  * A failed write that may still have put its file in place marks the vault `dirty` (the disk may differ from
  * `committed`) and queues a repair: the committed entries written again, up to REPAIR_ATTEMPTS times. While still
- * dirty, the next set, delete or `flushVault` tries again before anything else; any successful write clears it.
+ * dirty, the next set, delete or `flushVault` tries again before anything else. A successful write clears it only
+ * if no failed write landed while it ran: one that landed after its rename left the disk wrong again.
  */
 class SealedVault<T> implements Vault<T> {
   readonly secure: boolean;
   private readonly pending = new Map<string, Mutation<T>[]>();
   private chain: Promise<void> = Promise.resolve();
   private dirty = false;
+  // Failed writes that may have put their file in place (a late rename, a failed directory flush), ever.
+  private lateRenames = 0;
 
   constructor(
     private readonly options: VaultOptions,
@@ -348,12 +352,17 @@ class SealedVault<T> implements Vault<T> {
     return operation;
   }
 
-  private write(text: string): Promise<Outcome> {
-    return writeAtomically(this.target, text, () => this.repair());
+  /** Writes `text`; a save clears `dirty` unless a failed write landed meanwhile, maybe after this one's rename. */
+  private async write(text: string): Promise<Outcome> {
+    const landedBefore = this.lateRenames;
+    const outcome = await writeAtomically(this.target, text, () => this.repair());
+    if (outcome === 'saved' && this.lateRenames === landedBefore) this.dirty = false;
+    return outcome;
   }
 
   /** A failed write landed anyway: the disk may differ from `committed` until a write of it succeeds. */
   private repair(): void {
+    this.lateRenames += 1;
     this.dirty = true;
     void this.flush();
   }
@@ -361,7 +370,7 @@ class SealedVault<T> implements Vault<T> {
   /** Writes exactly the committed entries, up to `attempts` times, while the disk may differ from them. */
   private async restore(attempts: number): Promise<void> {
     for (let attempt = 0; attempt < attempts && this.dirty; attempt++) {
-      if ((await this.write(serialize(this.committed))) === 'saved') this.dirty = false;
+      await this.write(serialize(this.committed));
     }
   }
 
@@ -373,7 +382,6 @@ class SealedVault<T> implements Vault<T> {
       const outcome = await this.write(serialize(next));
       if (outcome === 'saved') {
         this.committed = next;
-        this.dirty = false;
         return;
       }
       if (outcome === 'replaced') this.repair();
@@ -412,9 +420,5 @@ export async function createVault<T>(options: VaultOptions): Promise<Vault<T>> {
   };
   if (!options.decrypt) return new SealedVault<T>(options, target, new Map());
   await removeStaleTemporaries(target);
-  return new SealedVault<T>(
-    options,
-    target,
-    await load<T>(target.fs, target.path, options.decrypt),
-  );
+  return new SealedVault<T>(options, target, await load<T>(target, options.decrypt));
 }
