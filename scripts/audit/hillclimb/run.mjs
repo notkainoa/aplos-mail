@@ -11,7 +11,7 @@
 // privileges — trusted agents and configs only. Cheap mitigations in place of a sandbox:
 // the run refuses to start on a dirty main checkout, and after every attempt verifies the
 // main checkout's HEAD and status are untouched; any change aborts the whole run.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentEnv, briefFor, evalEnv, runAgent } from './agent.mjs';
@@ -100,7 +100,7 @@ export function scrubProcessEnv(env = process.env) {
  * attempt agent spawned with a secret-free environment. `state` tracks dirs and branches so
  * cleanup (normal or signal) can remove them.
  */
-function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
+export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
   const root = runRoot(runId);
   const startCommit = currentHead(repoRoot);
   const cleanupAll = () =>
@@ -298,7 +298,13 @@ async function main() {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// realpath both sides: invoked as `node /var/.../run.mjs` on macOS, argv[1] keeps the
+// symlinked spelling while import.meta.url carries the resolved one — comparing raw
+// strings would skip main() entirely and exit 0 having done nothing.
+if (
+  process.argv[1] &&
+  realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))
+) {
   main().catch(error => {
     console.error(`hillclimb: ${error.message}`);
     process.exit(2);
