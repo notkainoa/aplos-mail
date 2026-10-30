@@ -2,8 +2,8 @@
  * A neutral RFC 5322 / MIME writer for the outbox (time-2): TextEncoder and Uint8Array only, its own base64 and
  * quoted-printable, CRLF line ends and lines of at most 76 characters in every body part. Header injection is
  * impossible: every header value has CR and LF stripped, and an address containing them (or anything else outside a
- * plain `local@domain`) is refused, in the headers and in the SMTP envelope alike. Bcc never appears in the headers;
- * it is only in the envelope. Non-ASCII text is RFC 2047 or RFC 2231 encoded; a non-ASCII domain is sent as punycode.
+ * plain `local@domain`) is refused, in the headers and in the SMTP envelope alike. Bcc never appears in a sent message's
+ * headers (only in the envelope); a draft copy may carry it. Non-ASCII text is RFC 2047 or RFC 2231 encoded; a non-ASCII domain is sent as punycode.
  */
 
 export interface MimeAddress {
@@ -23,6 +23,8 @@ export interface MimeInput {
   from: MimeAddress;
   to: readonly MimeAddress[];
   cc: readonly MimeAddress[];
+  /** A draft copy only: a sent message never carries Bcc (the envelope does). */
+  bcc?: readonly MimeAddress[];
   subject: string;
   html: string;
   /** `<id@host>`, generated once per submission. */
@@ -291,6 +293,7 @@ function topHeaders(input: MimeInput): string[] {
   const out = [header('Date', rfc5322Date(input.date)), header('From', formatAddress(input.from))];
   if (input.to.length) out.push(header('To', input.to.map(formatAddress).join(', ')));
   if (input.cc.length) out.push(header('Cc', input.cc.map(formatAddress).join(', ')));
+  if (input.bcc?.length) out.push(header('Bcc', input.bcc.map(formatAddress).join(', ')));
   out.push(header('Subject', unstructured(input.subject)));
   const id = msgId(input.messageId);
   if (!id) throw new MimeError('This message has no valid Message-ID.');

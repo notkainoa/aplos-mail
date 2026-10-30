@@ -136,7 +136,7 @@ function readDraft(q: StoreReader, id: string) {
   );
 }
 
-function parseFields(row: DraftRow): DraftFields {
+export function parseFields(row: { data: string }): DraftFields {
   try {
     return JSON.parse(row.data) as DraftFields;
   } catch {
@@ -150,7 +150,11 @@ function remotePart(accountId: string, contractId: string | undefined) {
   return contractId?.startsWith(prefix) ? contractId.slice(prefix.length) : undefined;
 }
 
-function threadOf(q: StoreReader, draft: DraftRow, fields: DraftFields) {
+export function threadOf(
+  q: StoreReader,
+  draft: Pick<DraftRow, 'account_id' | 'thread_id'>,
+  fields: DraftFields,
+) {
   const remote =
     draft.thread_id !== null
       ? q.get<{ remote_id: string }>('SELECT remote_id FROM threads WHERE id = ?', draft.thread_id)
@@ -162,7 +166,11 @@ function threadOf(q: StoreReader, draft: DraftRow, fields: DraftFields) {
 }
 
 /** In-Reply-To and References from the replied message's stored headers; omitted when the store lacks them. */
-function replyHeaders(q: StoreReader, draft: DraftRow, fields: DraftFields) {
+export function replyHeaders(
+  q: StoreReader,
+  draft: Pick<DraftRow, 'account_id'>,
+  fields: DraftFields,
+) {
   if (fields.mode !== 'reply' && fields.mode !== 'replyAll') return {};
   const remoteId = remotePart(draft.account_id, fields.replyToMessageId);
   if (remoteId === undefined) return {};
@@ -185,7 +193,10 @@ function replyHeaders(q: StoreReader, draft: DraftRow, fields: DraftFields) {
   return { inReplyTo: msg.internet_id, references };
 }
 
-function attachmentsOf(ctx: OutboxCtx, fields: DraftFields): MimeAttachment[] {
+export function attachmentsOf(
+  ctx: Pick<OutboxCtx, 'blobs'>,
+  fields: DraftFields,
+): MimeAttachment[] {
   return fields.attachments.map(a => {
     const bytes = a.blobId !== undefined ? ctx.blobs?.get(a.blobId) : undefined;
     if (!bytes)
@@ -197,7 +208,7 @@ function attachmentsOf(ctx: OutboxCtx, fields: DraftFields): MimeAttachment[] {
   });
 }
 
-const domainOf = (address: string) => address.slice(address.lastIndexOf('@') + 1);
+export const domainOf = (address: string) => address.slice(address.lastIndexOf('@') + 1);
 
 const WRONG_SENDER =
   "Send from this account's own address. Sending as another address is not supported yet.";
@@ -207,7 +218,10 @@ const WRONG_SENDER =
  * (compose.ts), but the engine stores none yet (`account-read.ts` lists the account address as the only identity), so
  * any other `from` is refused; its display name is kept.
  */
-function senderOf(draft: DraftRow, fields: DraftFields): { address: string; name?: string } {
+export function senderOf(
+  draft: Pick<DraftRow, 'address' | 'display_name'>,
+  fields: DraftFields,
+): { address: string; name?: string } {
   const own = { address: draft.address, name: draft.display_name ?? undefined };
   if (!fields.from) return own;
   if (fields.from.address.trim().toLowerCase() !== draft.address.trim().toLowerCase())

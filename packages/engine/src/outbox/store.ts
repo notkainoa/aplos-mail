@@ -1,8 +1,8 @@
 import type { Submission } from '@aplos/contract';
-import type { CommitExtension, CommitExtensionTx, SqlValue, StoreReader } from '../store';
+import type { CommitExtensionTx, SqlValue, StoreReader } from '../store';
 
 /**
- * The outbox's writer for `submissions` (seam 2): every state change goes through `store.commit` as a `submission`
+ * The outbox's writer for `submissions` (seam 2, registered by `extension.ts`): every state change goes through `store.commit` as a `submission`
  * write, applied here inside the commit transaction. Each transition is a compare-and-set on the row's current state
  * (`UPDATE ... WHERE id = ? AND state IN (...)`), so an undo racing the timer's `sending` commit, or two engines on one
  * store, can never both win: the loser's commit throws `SubmissionConflict` and rolls back whole.
@@ -338,17 +338,10 @@ function move(tx: CommitExtensionTx, w: Extract<SubmissionWrite, { op: 'move' }>
   }
 }
 
-function apply(write: { kind: string }, tx: CommitExtensionTx) {
+/** Applies one `submission` write inside the commit; `extension.ts` routes the lane's kinds here and to the drafts. */
+export function applySubmission(write: { kind: string }, tx: CommitExtensionTx) {
   const w = write as SubmissionWrite;
   if (w.op === 'create') return create(tx, w.row);
   if (w.op === 'move') return move(tx, w);
   throw new Error(`Unknown submission write ${String((w as { op?: unknown }).op)}`);
 }
-
-/** Pass to `openStore({ extensions })`. Stateless, so one value serves every store. */
-export const outboxExtension: CommitExtension = {
-  lane: 'eng-time',
-  kinds: ['submission'],
-  changeTypes: ['Submission', 'Draft'],
-  apply,
-};

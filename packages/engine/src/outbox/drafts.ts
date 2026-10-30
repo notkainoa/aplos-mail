@@ -1,0 +1,212 @@
+import type { Draft, DraftFields, Receipt, State, SubmissionAction } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
+import { sha256Hex } from '../diag/sha256';
+import type { StoreWrite } from '../store';
+import { queueRemoval, type DraftsCtx } from './draft-sync';
+import {
+  DraftConflict,
+  fingerprintOf,
+  liveOf,
+  readDraftRow,
+  toDraft,
+  type DraftRow,
+} from './draft-state';
+import type { DraftChoice } from './draft-writes';
+
+/**
+ * `Draft/get|set|destroy|resolve`: the owner's commands on the local drafts (ARCH 7.4). A save is a compare-and-set on
+ * `revision` inside the commit, so of two saves on one base exactly one wins and the other is told `stateMismatch`.
+ * A draft with a live send is locked (FR-7): nothing here changes it, and discarding it first cancels a send that has
+ * not started. The upload to the provider is `draft-sync.ts`'s; a save only decides when it is due.
+ */
+
+export interface DraftSetInput {
+  id?: string;
+  baseRevision?: number;
+  fields: DraftFields;
+  /** The editor is closing: upload now. */
+  close?: boolean;
+}
+
+export interface DraftService {
+  get(ids: readonly string[]): { state: State; list: Draft[]; notFound: string[] };
+  set(opId: string, input: DraftSetInput): { draft: Draft; receipt: Receipt };
+  destroy(opId: string, id: string): Receipt;
+  resolve(
+    opId: string,
+    id: string,
+    choice: DraftChoice,
+  ): { draft: Draft; copyId?: string; receipt: Receipt };
+}
+
+/** What the drafts need from the send state machine: cancel a send that has not started. */
+export interface SendCanceller {
+  set(opId: string, action: SubmissionAction): unknown;
+}
+
+const CHANGED = 'This draft changed in another window. Reopen it before editing.';
+const GONE = 'This draft no longer exists.';
+const ON_ITS_WAY = 'This message is on its way. Undo or cancel the send to edit it.';
+const SENDING = 'This message is sending now.';
+const UNCONFIRMED =
+  'We are checking whether this message was sent. Wait for that before discarding it.';
+const NO_CHOICE = 'This draft has no other version to choose.';
+const NOT_ARRIVED = 'The other version has not arrived yet. Try again in a moment.';
+
+function fail(type: string, message: string): never {
+  throw new ContractError({ type, message });
+}
+
+/** An id the same opId always makes again, so a replayed create answers with the draft it made. */
+function idFor(opId: string, tag: string) {
+  return `dr_${sha256Hex(`${tag}:${opId}`).slice(0, 24)}`;
+}
+
+function replayed(ctx: DraftsCtx, opId: string) {
+  return !!ctx.store.read(q => q.get('SELECT 1 FROM commits WHERE op_id = ?', opId));
+}
+
+function receiptOf(ctx: DraftsCtx, opId: string): Receipt {
+  return {
+    opId,
+    appliedState: { dbEpoch: ctx.store.dbEpoch, seq: ctx.store.seq() },
+    undoable: false,
+  };
+}
+
+function readOne(ctx: DraftsCtx, id: string): Draft | undefined {
+  return ctx.store.read(q => {
+    const row = readDraftRow(q, id);
+    return row ? toDraft(row, liveOf(q, id)?.id) : undefined;
+  });
+}
+
+function liveSentence(state: string | undefined) {
+  return state === 'sending' ? SENDING : ON_ITS_WAY;
+}
+
+/** The sentence and type of a lost compare-and-set. */
+function conflictError(error: DraftConflict): never {
+  switch (error.reason) {
+    case 'missing':
+      return fail('notFound', GONE);
+    case 'live':
+      return fail(
+        error.live === 'sending' ? 'conflict' : 'stateMismatch',
+        liveSentence(error.live),
+      );
+    case 'noTheirs':
+      return fail('unavailable', NOT_ARRIVED);
+    default:
+      return fail('stateMismatch', CHANGED);
+  }
+}
+
+function commit(ctx: DraftsCtx, opId: string, write: StoreWrite): number {
+  try {
+    const { seq } = ctx.store.commit({ opId, origin: 'local', writes: [write] });
+    return seq;
+  } catch (error) {
+    if (error instanceof DraftConflict) return conflictError(error);
+    throw error;
+  }
+}
+
+function requireAccount(ctx: DraftsCtx, accountId: string) {
+  const known = ctx.store.read(q => q.get('SELECT 1 FROM accounts WHERE id = ?', accountId));
+  if (!known) fail('notFound', 'This account is not connected.');
+}
+
+function setDraft(ctx: DraftsCtx, opId: string, input: DraftSetInput) {
+  const id = input.id ?? idFor(opId, 'create');
+  if (replayed(ctx, opId)) return answerSet(ctx, opId, id);
+  const { fields } = input;
+  requireAccount(ctx, fields.accountId);
+  const current = ctx.store.read(q => readDraftRow(q, id));
+  if (current && current.account_id !== fields.accountId)
+    fail('validation', 'A draft cannot move to another account.');
+  commit(ctx, opId, {
+    kind: 'draft',
+    op: 'save',
+    id,
+    accountId: fields.accountId,
+    ...(input.baseRevision !== undefined ? { baseRevision: input.baseRevision } : {}),
+    fields,
+    fingerprint: fingerprintOf(fields),
+    at: ctx.clock.now(),
+    ...(input.close ? { close: true as const } : {}),
+  });
+  ctx.deadlines.changed('drafts');
+  return answerSet(ctx, opId, id);
+}
+
+function answerSet(ctx: DraftsCtx, opId: string, id: string) {
+  const draft = readOne(ctx, id);
+  if (!draft) return fail('notFound', GONE);
+  return { draft, receipt: receiptOf(ctx, opId) };
+}
+
+// ---------------------------------------------------------------- destroy
+
+/** A send that has not started is cancelled; one that is sending or unconfirmed blocks the discard. */
+function cancelSend(ctx: DraftsCtx, canceller: SendCanceller, opId: string, id: string) {
+  const live = ctx.store.read(q => liveOf(q, id));
+  if (!live) return;
+  if (live.state === 'sending') fail('conflict', SENDING);
+  if (live.state === 'uncertain') fail('conflict', UNCONFIRMED);
+  const waiting = live.state === 'queued' || live.state === 'scheduled';
+  canceller.set(`${opId}:cancel`, {
+    type: waiting ? 'undo' : 'cancel',
+    submissionId: live.id,
+  });
+}
+
+function destroyDraft(ctx: DraftsCtx, canceller: SendCanceller, opId: string, id: string) {
+  if (replayed(ctx, opId)) return receiptOf(ctx, opId);
+  const row: DraftRow | undefined = ctx.store.read(q => readDraftRow(q, id));
+  if (!row) return fail('notFound', GONE);
+  cancelSend(ctx, canceller, opId, id);
+  commit(ctx, opId, { kind: 'draftDelete', id });
+  if (row.remote_draft_id) queueRemoval(ctx, row.account_id, row.remote_draft_id);
+  ctx.announced.delete(id);
+  return receiptOf(ctx, opId);
+}
+
+// ---------------------------------------------------------------- resolve
+
+function resolveDraft(ctx: DraftsCtx, opId: string, id: string, choice: DraftChoice) {
+  const before = readOne(ctx, id);
+  if (!before) return fail('notFound', GONE);
+  if (replayed(ctx, opId)) return answerResolve(ctx, opId, id, before);
+  if (!before.conflict) fail('stateMismatch', NO_CHOICE);
+  const copyId = idFor(opId, 'copy');
+  commit(ctx, opId, { kind: 'draft', op: 'resolve', id, choice, at: ctx.clock.now(), copyId });
+  ctx.deadlines.changed('drafts');
+  return answerResolve(ctx, opId, id, before, copyId);
+}
+
+function answerResolve(ctx: DraftsCtx, opId: string, id: string, before: Draft, copyId?: string) {
+  // "Take theirs" on a draft the other device deleted discards it: the answer is the draft as it was.
+  const draft = readOne(ctx, id) ?? before;
+  const made = copyId !== undefined && readOne(ctx, copyId) !== undefined;
+  return { draft, ...(made ? { copyId } : {}), receipt: receiptOf(ctx, opId) };
+}
+
+// ---------------------------------------------------------------- service
+
+export function createDraftService(ctx: DraftsCtx, canceller: SendCanceller): DraftService {
+  return {
+    get(ids) {
+      const state = { dbEpoch: ctx.store.dbEpoch, seq: ctx.store.seq() };
+      const found = ids.map(id => [id, readOne(ctx, id)] as const);
+      return {
+        state,
+        list: found.flatMap(([, draft]) => (draft ? [draft] : [])),
+        notFound: found.filter(([, draft]) => !draft).map(([id]) => id),
+      };
+    },
+    set: (opId, input) => setDraft(ctx, opId, input),
+    destroy: (opId, id) => destroyDraft(ctx, canceller, opId, id),
+    resolve: (opId, id, choice) => resolveDraft(ctx, opId, id, choice),
+  };
+}
