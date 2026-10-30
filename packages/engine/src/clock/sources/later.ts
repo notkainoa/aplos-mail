@@ -139,7 +139,7 @@ export function createLater({ store, clock, frames, zone }: LaterDeps): LaterSer
 
   const source: DeadlineSource = {
     id: 'later',
-    // The recheck is the loop's only way to learn of a Later set while it sleeps (nothing calls `changed` yet).
+    // The views lane calls `changed` after a Later is set; the recheck is the fallback for a write that bypasses it.
     next: async () =>
       Math.min(
         store.read(q => q.get<{ at: number | null }>(NEXT, through(q, clock.now()))?.at) ??
