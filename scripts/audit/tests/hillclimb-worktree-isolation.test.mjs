@@ -12,6 +12,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   readdirSync,
   rmSync,
@@ -436,6 +437,51 @@ describe('file linking strategy (clone-first)', () => {
     assert.equal(stats.cloned, 0);
     assert.equal(stats.hardlinked, 12);
     assert.match(line, /hardlinked 12 files \(tripwire only\)/);
+    removeWorktree(r.dir, wt);
+  });
+
+  it('mirrors a package symlink verbatim — a dangling one must not refuse the worktree', () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(join(r.dir, 'package.json'), '{"name":"t","private":true}\n');
+    r.commit('seed');
+    const mods = join(r.dir, 'node_modules');
+    mkdirSync(join(mods, 'dep'), { recursive: true });
+    writeFileSync(join(mods, 'dep', 'real.js'), 'x\n');
+    // A dangling symlink inside a package dir: clone AND hardlink both fail ENOENT
+    // on it — under the refuse-on-failure rule this one link would kill the whole
+    // worktree. It is recreated verbatim instead.
+    symlinkSync('nonexistent-target.js', join(mods, 'dep', 'dangling.js'));
+    // And a resolvable relative link stays a link too, not a copied file.
+    symlinkSync('real.js', join(mods, 'dep', 'alias.js'));
+    const wt = join(tmp, 'wt-dangling');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    linkNodeModules(r.dir, wt);
+    const dangling = join(wt, 'node_modules', 'dep', 'dangling.js');
+    assert.ok(lstatSync(dangling).isSymbolicLink(), 'dangling link not mirrored verbatim');
+    assert.equal(readlinkSync(dangling), 'nonexistent-target.js');
+    const alias = join(wt, 'node_modules', 'dep', 'alias.js');
+    assert.ok(lstatSync(alias).isSymbolicLink(), 'package link became a file copy');
+    assert.equal(readlinkSync(alias), 'real.js');
+    removeWorktree(r.dir, wt);
+  });
+
+  it('refuses a package link whose literal target lands in the main checkout source', () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(join(r.dir, 'package.json'), '{"name":"t","private":true}\n');
+    mkdirSync(join(r.dir, 'packages', 'engine'), { recursive: true });
+    writeFileSync(join(r.dir, 'packages', 'engine', 'x.js'), 'x\n');
+    r.commit('seed');
+    const mods = join(r.dir, 'node_modules');
+    mkdirSync(join(mods, 'dep'), { recursive: true });
+    writeFileSync(join(mods, 'dep', 'real.js'), 'x\n');
+    // An absolute link straight at the main checkout's source tree — recreating it
+    // verbatim would wire the worktree at main's sources.
+    symlinkSync(join(r.dir, 'packages', 'engine', 'x.js'), join(mods, 'dep', 'evil.js'));
+    const wt = join(tmp, 'wt-srclink');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    assert.throws(() => linkNodeModules(r.dir, wt), /main checkout source|escapes/);
     removeWorktree(r.dir, wt);
   });
 

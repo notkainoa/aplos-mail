@@ -21,7 +21,7 @@ import {
   symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { findModuleChanges, snapshotModuleTrees } from './modulescan.mjs';
 
 export const AUTHOR = { name: 'Kainoa Newton', email: 'k@kainoa.me' };
@@ -259,7 +259,8 @@ function linkBinDir(mainBin, linkBin, ctx) {
  * write scan reports content writes after the fact; chmod/chown/utimes it cannot see).
  * A failed hardlink THROWS — the harness refuses the worktree — because the previous
  * last resort, a plain symlink into the main checkout, resolved reads AND writes back
- * into the shared tree.
+ * into the shared tree. A symlink SOURCE is exempt from all of this: it is mirrored
+ * verbatim, never cloned or hardlinked.
  */
 const CLONE_UNSUPPORTED = new Set(['ENOTSUP', 'EXDEV', 'EOPNOTSUPP', 'EINVAL', 'ENOSYS']);
 // Strict clone first (Linux ioctl), then the best-effort form — macOS's copyfile(3)
@@ -271,6 +272,29 @@ const CLONE_RETRY_LIMIT = 8;
 
 const linkFile = (mainPath, linkPath, ctx) => {
   ctx.stats.files++;
+  if (lstatSync(mainPath).isSymbolicLink()) {
+    // A package-internal symlink can be neither cloned (copyFile of a dangling link
+    // fails ENOENT) nor safely hardlinked (link(2) dereferences on some filesystems,
+    // silently sharing the TARGET's inode with main) — mirror it verbatim instead.
+    // Then the same rule the verify sweep applies decides: a link whose literal
+    // target points into the main checkout's source tree is refused — recreating it
+    // would wire the worktree straight at main's sources. A dangling link resolves
+    // nowhere, so the literal target text is what gets judged; a relative target is
+    // interpreted from the link's own directory and stays inside the worktree.
+    const target = readlinkSync(mainPath);
+    const logical = isAbsolute(target) ? resolve(target) : resolve(dirname(linkPath), target);
+    for (const candidate of [logical, realOrSelf(logical)]) {
+      const rel = relative(ctx.repoReal, candidate);
+      if (rel === '' || (!rel.startsWith('..') && !rel.split(sep).includes('node_modules'))) {
+        throw new Error(
+          `node_modules link ${mainPath} resolves into the main checkout source -> ${target} — refusing the worktree`,
+        );
+      }
+    }
+    symlinkSync(target, linkPath);
+    ctx.stats.symlinked++;
+    return;
+  }
   if (!ctx.stats.cloneBroken) {
     const flags = ctx.cloneFlag === undefined ? CLONE_FLAGS : [ctx.cloneFlag];
     let exhausted = true;
