@@ -69,7 +69,8 @@ export const UNRETRYABLE: Readonly<Record<string, { reasonCode: string; message:
   },
   anti_abuse: {
     reasonCode: 'send.anti_abuse',
-    message: 'The provider paused sending because it looked unusual. Try again later.',
+    message:
+      'The provider paused sending because it looked unusual. Wait a while, then cancel this message and send it again.',
   },
   config: {
     reasonCode: 'send.config',

@@ -139,7 +139,7 @@ const CLASSES: [string, string, string, boolean][] = [
   [
     'anti_abuse',
     'send.anti_abuse',
-    'The provider paused sending because it looked unusual. Try again later.',
+    'The provider paused sending because it looked unusual. Wait a while, then cancel this message and send it again.',
     false,
   ],
   ['config', 'send.config', 'Sending is not set up correctly for this account.', false],
