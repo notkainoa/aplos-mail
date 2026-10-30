@@ -59,7 +59,15 @@ describe('composeBrief', () => {
     // The harness runs gates under the check lock; an agent running them in parallel
     // would fight for the slot and could not be trusted anyway.
     assert.match(brief, /Do NOT run the full gate suites yourself/);
+    assert.match(brief, /check lock/);
     assert.match(brief, /targeted checks/);
+  });
+
+  it("warns the agent it runs with the harness user's privileges", () => {
+    // No sandbox: the agent must be told to stay inside its own worktree.
+    assert.match(brief, /harness user's privileges/);
+    assert.match(brief, /no sandbox/);
+    assert.match(brief, /never touch other checkouts/);
   });
 
   it('contains no environment values', () => {

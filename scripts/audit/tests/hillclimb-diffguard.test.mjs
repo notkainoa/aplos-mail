@@ -358,6 +358,14 @@ describe('checkDiff: normalised matching', () => {
     }
   });
 
+  it('rejects non-canonical path forms (./, //, trailing slash, lone dot)', () => {
+    for (const path of ['./src/a.ts', 'src//a.ts', 'src/a.ts/', 'src/./a.ts', '.']) {
+      const result = checkDiff({ ...loose, changes: [A(path)] });
+      assert.equal(result.ok, false, path);
+      assert.match(result.reasons.join(' '), /unsafe path/);
+    }
+  });
+
   it('rejects the extended forbidden config/dotfile names', () => {
     for (const path of [
       'x/.npmrc',

@@ -307,10 +307,17 @@ function endsOf(change) {
 }
 
 // A path that escapes the tree or plays normalisation tricks is rejected outright: after
-// backslash->slash conversion, ".." segments and absolute forms are never legitimate here.
+// backslash->slash conversion, ".." segments, absolute forms and non-canonical shapes
+// ("./x", "a//b", "a/b/") are never legitimate here — git never emits them either, so their
+// presence means a hand-built change list is trying to look different from what it is.
 function unsafeReason(path) {
-  if (path.startsWith('/') || /^[a-zA-Z]:\//.test(path)) return 'an absolute path';
-  if (path.split('/').includes('..')) return 'a ".." segment';
+  if (path.startsWith('/') || /^[a-zA-Z]:\//.test(path)) {
+    return 'an absolute path';
+  }
+  const parts = path.split('/');
+  if (parts.includes('..')) return 'a ".." segment';
+  if (parts.includes('.')) return 'a "." segment';
+  if (parts.some(part => part === '')) return 'a non-normal form (empty segment)';
   return null;
 }
 

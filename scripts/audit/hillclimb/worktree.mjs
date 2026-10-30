@@ -2,7 +2,15 @@
 // os.tmpdir() branched from the current best commit, with node_modules symlinked back to the
 // main checkout so attempts need no reinstall. The user's own checkout is never touched.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 
@@ -255,4 +263,42 @@ export function cleanupRun(
 /** Repo-relative path of the attempt worktree's temp dir — useful in logs only. */
 export function relativeDir(repoRoot, dir) {
   return relative(repoRoot, dir);
+}
+
+// Attempt agents and gates run with the harness user's privileges — no sandbox — and every
+// eval worktree symlinks node_modules back into the main checkout, so the main checkout is
+// reachable from untrusted code. statusPorcelain deliberately excludes node_modules, which
+// means tampering there is invisible to it; the snapshot therefore records its mtime too.
+function modulesMtime(repoRoot) {
+  try {
+    return statSync(join(repoRoot, 'node_modules')).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/** Point-in-time state of the main checkout to compare against later. */
+export function mainSnapshot(repoRoot) {
+  return {
+    head: currentHead(repoRoot),
+    dirty: statusPorcelain(repoRoot).length,
+    modulesMtime: modulesMtime(repoRoot),
+  };
+}
+
+/**
+ * Throws when the main checkout moved since `snapshot`: HEAD changed, tracked files were
+ * touched, or node_modules was written through a worktree symlink.
+ */
+export function assertMainIntact(repoRoot, snapshot) {
+  if (currentHead(repoRoot) !== snapshot.head) {
+    throw new Error('main checkout HEAD moved during the run (sandbox breach)');
+  }
+  const dirty = statusPorcelain(repoRoot);
+  if (dirty.length) {
+    throw new Error(`main checkout dirtied during the run (${dirty[0].path}): sandbox breach`);
+  }
+  if (modulesMtime(repoRoot) !== snapshot.modulesMtime) {
+    throw new Error('main checkout node_modules touched during the run (sandbox breach)');
+  }
 }

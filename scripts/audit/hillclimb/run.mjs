@@ -23,6 +23,7 @@ import { runGate, runScorer } from './steps.mjs';
 import {
   addedLines,
   addWorktree,
+  assertMainIntact,
   attemptBranch,
   attemptDir,
   cleanupRun,
@@ -32,6 +33,7 @@ import {
   gitShow,
   indexFlagViolations,
   linkNodeModules,
+  mainSnapshot,
   removeWorktree,
   runRoot,
   squashToBest,
@@ -86,6 +88,8 @@ const newRunId = () =>
 function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
   const root = runRoot(runId);
   const startCommit = currentHead(repoRoot);
+  // Snapshot the user's checkout once — every verifyMainIntact compares against this.
+  const snapshot = mainSnapshot(repoRoot);
   const cleanupAll = () =>
     cleanupRun(repoRoot, {
       runId,
@@ -167,13 +171,7 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       if (ctx.evalDir) removeWorktree(repoRoot, ctx.evalDir);
     },
     async verifyMainIntact() {
-      if (currentHead(repoRoot) !== startCommit) {
-        throw new Error('main checkout HEAD moved during the run (sandbox breach)');
-      }
-      const dirty = statusPorcelain(repoRoot);
-      if (dirty.length) {
-        throw new Error(`main checkout dirtied during the run (${dirty[0].path}): sandbox breach`);
-      }
+      assertMainIntact(repoRoot, snapshot);
     },
     async promote({ fromSha, toSha, message }) {
       return squashToBest(repoRoot, { name: config.name, runId, fromSha, toSha, message });
