@@ -51,6 +51,26 @@ async function bundle(entry: string, mode: Mode, minify: boolean): Promise<strin
 
 const secrets = [...KILL_POINTS, KILL_ENV];
 
+/**
+ * Identifiers of the kill-point machinery. A minified bundle must not contain them at all (they are canaries: they would
+ * only survive if a declaration or a call site did). An unminified bundle keeps the dead text of a folded call site
+ * (`if (false) killpoint(KP.X)`, `false ? killableSend(...)`), so there only their declarations must be gone.
+ */
+const CANARIES = ['killableSend', 'installKillHook', 'killpoint'];
+const DECLARATIONS = [
+  'function killableSend',
+  'function installKillHook',
+  'function killpoint',
+  'var KP =',
+  'const KP =',
+  'var hook',
+  'let hook',
+];
+
+function declared(code: string): string[] {
+  return DECLARATIONS.filter(d => code.includes(d));
+}
+
 function present(code: string): string[] {
   return secrets.filter(s => code.includes(s));
 }
@@ -73,7 +93,23 @@ for (const [name, entry] of [
       const release = await bundle(entry, 'release', minify);
       assert.ok(release.length > 100_000, 'a real bundle, not an empty one');
       assert.deepEqual(present(release), [], 'no kill-point name and no environment variable');
+      if (minify)
+        assert.deepEqual(
+          CANARIES.filter(c => release.includes(c)),
+          [],
+          'no identifier',
+        );
+      else assert.deepEqual(declared(release), [], 'no declaration, only dead call-site text');
     });
+
+test('positive control for the identifier greps: the test child has the declarations and the canaries', async () => {
+  const unminified = await bundle(CHILD, 'test', false);
+  assert.ok(declared(unminified).length >= 3, 'the declaration greps can see declarations');
+  assert.deepEqual(
+    CANARIES.filter(c => !unminified.includes(c)),
+    [],
+  );
+});
 
 test('the release define is the one build-main.mjs sets', () => {
   const source = readFileSync(join(root, 'apps', 'desktop', 'scripts', 'build-main.mjs'), 'utf8');

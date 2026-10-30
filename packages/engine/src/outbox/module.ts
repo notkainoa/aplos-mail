@@ -19,7 +19,7 @@ import { createDraftService, type DraftService } from './drafts';
 import { outboxExtension } from './extension';
 import { killableSend } from './killpoints';
 import { outboxSource } from './runner';
-import { applyStartRule, recheckUncertain } from './start';
+import { applyStartRule, pullInChecks, recheckUncertain } from './start';
 import { getSubmissions, setSubmission, type SetResult } from './submissions';
 
 export type { BlobSource, OutboxDeps } from './context';
@@ -185,6 +185,7 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
     wake() {
       ctx.paused.clear();
       applyStartRule(ctx);
+      pullInChecks(ctx);
       if (draftsCtx) wakeDrafts(draftsCtx);
       ctx.deadlines.changed('outbox');
     },

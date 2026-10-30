@@ -26,13 +26,23 @@ interface Row {
   /** Does the fake accept the bytes when a life calls `send`? */
   deliver: boolean;
   find: Find;
-  state: 'sent' | 'uncertain' | 'suspended';
+  state: 'sent' | 'uncertain' | 'suspended' | 'failed';
   deliveries: 0 | 1;
   /** `send` calls in total, across every life. */
   sendCalls: 0 | 1;
   downtimeMs?: number;
-  /** The reason code when the row asks the owner. */
+  /** The reason code when the row asks the owner or failed. */
   reason?: string;
+  /** `findSent` calls in total, across every life. */
+  findCalls?: number;
+  /** The server accepts the bytes and the answer is lost (`send` throws). */
+  answerLost?: boolean;
+  /** The search index shows a delivery this long after it arrived. */
+  indexLagMs?: number;
+  /** The server's clock minus the engine's. */
+  serverClockOffsetMs?: number;
+  /** `send` refuses with a `NotSentError` of this class. */
+  refuse?: string;
 }
 
 /** The expected end of a send that reached the server, by what `findSent` does afterwards. */
@@ -132,11 +142,105 @@ function rows(): Row[] {
     downtimeMs: 10 * 60_000,
     reason: 'send.overdue',
   });
+  out.push(...clockRows(), ...checkRows());
   return out;
 }
 
+const HOUR = 60 * 60_000;
+
+/**
+ * The wall clock moves while the app is quit, between the send's first `findSent` (absent, the second due 60 s later) and
+ * the relaunch. Back an hour: the second check must not wait for the old due time, an hour away. Forward a day: it is due
+ * at once, runs once, and a message the index has by then is found.
+ */
+function clockRows(): Row[] {
+  const base = { killAt: 'quit', find: 'lags', sendCalls: 1, findCalls: 2 } as const;
+  return [
+    {
+      ...base,
+      deliver: false,
+      find: 'finds',
+      state: 'uncertain',
+      deliveries: 0,
+      downtimeMs: -HOUR,
+    },
+    {
+      ...base,
+      deliver: true,
+      answerLost: true,
+      state: 'uncertain',
+      deliveries: 1,
+      downtimeMs: -HOUR,
+    },
+    {
+      ...base,
+      deliver: false,
+      find: 'finds',
+      state: 'uncertain',
+      deliveries: 0,
+      downtimeMs: 24 * HOUR,
+    },
+    {
+      ...base,
+      deliver: true,
+      answerLost: true,
+      state: 'sent',
+      deliveries: 1,
+      downtimeMs: 24 * HOUR,
+    },
+  ];
+}
+
+/** What the two checks and the five-minute margin are for, and a send the provider refuses outright. */
+function checkRows(): Row[] {
+  const lagging = {
+    deliver: true,
+    find: 'finds',
+    indexLagMs: 30_000,
+    downtimeMs: -15_000,
+  } as const;
+  const reached = { state: 'sent', deliveries: 1, sendCalls: 1 } as const;
+  return [
+    // The index shows the message 30 s after it arrived: absent at the first check, found only by the 60 s recheck.
+    { ...lagging, killAt: 'after-accept', ...reached, findCalls: 2 },
+    { ...lagging, killAt: 'after-bytes', ...reached, findCalls: 2 },
+    // The server's clock is two minutes behind ours: found only because `since` starts five minutes before the attempt.
+    {
+      killAt: 'after-accept',
+      deliver: true,
+      find: 'finds',
+      serverClockOffsetMs: -2 * 60_000,
+      ...reached,
+      findCalls: 1,
+    },
+    // The provider refuses before accepting anything: failed with a reason, not uncertain, and never searched.
+    {
+      killAt: 'none',
+      deliver: false,
+      find: 'finds',
+      refuse: 'permanent',
+      state: 'failed',
+      deliveries: 0,
+      sendCalls: 1,
+      findCalls: 0,
+      reason: 'send.permanent',
+    },
+  ];
+}
+
+const NOTES: [keyof Row, (r: Row) => string][] = [
+  ['answerLost', () => 'answer lost'],
+  ['indexLagMs', r => `index lags ${r.indexLagMs! / 1000} s`],
+  ['serverClockOffsetMs', r => `server clock ${r.serverClockOffsetMs! / 60_000} min`],
+  ['refuse', r => `refused ${r.refuse}`],
+  ['downtimeMs', r => `down ${r.downtimeMs! / 60_000} min`],
+];
+
 const label = (r: Row) =>
-  `${[r.killAt].flat().join(' > ')} | server ${r.deliver ? 'accepts' : 'drops'} | findSent ${r.find}`;
+  [
+    `${[r.killAt].flat().join(' > ')} | server ${r.deliver ? 'accepts' : 'drops'} | findSent ${r.find}`,
+    ...NOTES.filter(([key]) => r[key]).map(([, text]) => text(r)),
+  ].join(' | ');
 
 const report: string[] = [];
 
@@ -149,6 +253,10 @@ describe('kill-point matrix', { concurrency: 6 }, () => {
         deliver: row.deliver,
         find: row.find,
         ...(row.downtimeMs ? { downtimeMs: row.downtimeMs } : {}),
+        ...(row.answerLost ? { answerLost: true } : {}),
+        ...(row.indexLagMs ? { indexLagMs: row.indexLagMs } : {}),
+        ...(row.serverClockOffsetMs ? { serverClockOffsetMs: row.serverClockOffsetMs } : {}),
+        ...(row.refuse ? { refuse: row.refuse } : {}),
       });
       report.push(
         `${label(row).padEnd(78)} -> ${r.submission.state.padEnd(9)} deliveries ${r.deliveries}, send calls ${r.sendCalls}, findSent calls ${r.findCalls}`,
@@ -157,6 +265,7 @@ describe('kill-point matrix', { concurrency: 6 }, () => {
       assert.equal(r.submission.state, row.state);
       assert.equal(r.deliveries, row.deliveries);
       assert.equal(r.sendCalls, row.sendCalls);
+      if (row.findCalls !== undefined) assert.equal(r.findCalls, row.findCalls);
       if (row.state === 'uncertain') assert.equal(r.submission.problem?.message, UNCERTAIN_COPY);
       if (row.reason) assert.equal(r.submission.problem?.reasonCode, row.reason);
       assert.equal(r.signals.length, [row.killAt].flat().length);

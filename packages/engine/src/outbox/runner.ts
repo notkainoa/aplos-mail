@@ -15,7 +15,7 @@ import {
   type OutboxCtx,
 } from './context';
 import { KP, killpoint } from './killpoints';
-import { applyStartRule, checkSent, lostSending } from './start';
+import { applyStartRule, checkSent, lostSending, pullInChecks } from './start';
 import {
   extraOf,
   readSubmission,
@@ -453,6 +453,7 @@ function startSends(ctx: OutboxCtx, due: DueSubmission[], now: number) {
 /** The deadline source's `fire`. */
 export async function fireOutbox(ctx: OutboxCtx, now: number): Promise<void> {
   if (lostSending(ctx).length) applyStartRule(ctx, now);
+  pullInChecks(ctx, now);
   const { due, overdue } = ctx.store.read(q => dueSubmissions(q, now));
   for (const row of overdue) suspend(ctx, row, now);
   startChecks(ctx, now);

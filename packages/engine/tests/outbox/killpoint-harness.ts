@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -53,6 +53,16 @@ const SEND_DUE = T0 + 10 * SEC;
 /** A life that is killed needs to reach its point (the send is due after 10 s); one that is not runs past both checks. */
 const KILLED_RUN_MS = 30 * SEC;
 const QUIET_RUN_MS = 120 * SEC;
+/** A life that quits between the two checks: the send is due at 10 s, the second check at 70 s. */
+const QUIT_RUN_MS = 40 * SEC;
+/** A life, and a whole scenario, that outlasts these is hung (a spinning engine), not slow: it fails with a message. */
+const LIFE_BUDGET_MS = 15 * SEC;
+const SCENARIO_BUDGET_MS = 20 * SEC;
+/** The most clock steps one life takes; the longest scenario (six hours) takes a few hundred. */
+const MAX_STEPS = 1_000;
+const MAX_SETTLE_ROUNDS = 3;
+/** How long a life runs, by its kill step; a killed life runs only until it reaches its point. */
+const LIFE_MS: Partial<Record<KillStep, number>> = { none: QUIET_RUN_MS, quit: QUIT_RUN_MS };
 const CHILD = join(import.meta.dirname, 'killpoint-child.ts');
 const FAKE_PORT = join(import.meta.dirname, 'killpoint-fake.ts');
 
@@ -94,15 +104,33 @@ export async function driveEngine(run: RunSpec): Promise<Submission[]> {
     log,
     blobs: { get: () => undefined },
   });
+  const progress = { steps: 0, at: 0 };
+  const states = () =>
+    store
+      .read(q => q.all<{ state: string }>('SELECT state FROM submissions ORDER BY id'))
+      .map(r => r.state)
+      .join(',');
+  // A life that spins instead of settling fails with where it was, not by hanging the suite.
+  let timer: NodeJS.Timeout | undefined;
+  const hung = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `did not settle: state=${states()} after ${progress.steps} steps, fake +${progress.at} ms, ${LIFE_BUDGET_MS} ms wall clock`,
+          ),
+        ),
+      LIFE_BUDGET_MS,
+    );
+  });
   outbox.start();
   loop.start();
-  // Fine steps while the checks run (they are due at once and after 60 s), minutes after that.
-  for (let at = 0; at < run.runMs;) {
-    const step = at < 3 * 60 * SEC ? 5 * SEC : 60 * SEC;
-    await clock.advance(step);
-    await settle(clock, loop, outbox);
-    at += step;
+  try {
+    await Promise.race([hung, advanceThrough(run, clock, loop, outbox, progress)]);
+  } finally {
+    clearTimeout(timer);
   }
+  // Only a life that settled is closed: closing a spinning one waits on a clock that never moves. Its process exits.
   const ids = store.read(q => q.all<{ id: string }>('SELECT id FROM submissions ORDER BY id'));
   const found = outbox.service.get(ids.map(r => r.id)).list;
   loop.stop();
@@ -111,12 +139,30 @@ export async function driveEngine(run: RunSpec): Promise<Submission[]> {
   return found;
 }
 
+async function advanceThrough(
+  run: RunSpec,
+  clock: FakeClock,
+  loop: { idle(): Promise<void> },
+  outbox: { idle(): Promise<void> },
+  progress: { steps: number; at: number },
+) {
+  // Fine steps while the checks run (they are due at once and after 60 s), minutes after that.
+  while (progress.at < run.runMs) {
+    if (progress.steps++ >= MAX_STEPS)
+      throw new Error(`did not settle: more than ${MAX_STEPS} steps`);
+    const step = progress.at < 3 * 60 * SEC ? 5 * SEC : 60 * SEC;
+    await clock.advance(step);
+    await settle(clock, loop, outbox);
+    progress.at += step;
+  }
+}
+
 async function settle(
   clock: FakeClock,
   loop: { idle(): Promise<void> },
   outbox: { idle(): Promise<void> },
 ) {
-  for (let i = 0; i < 3; i++) {
+  for (let round = 0; round < MAX_SETTLE_ROUNDS; round++) {
     await clock.flush();
     await loop.idle();
     await outbox.idle();
@@ -177,8 +223,11 @@ function seed(dbPath: string): { id: string; internetId: string } {
 
 // ---------------------------------------------------------------- the scenario
 
-/** `none`: a life that is not killed and runs to its end (the prompt shows, then the app is quit and restarted). */
-export type KillStep = KillPoint | 'none';
+/**
+ * `none`: a life that is not killed and runs to its end (the prompt shows, then the app is quit and restarted).
+ * `quit`: a life that is not killed either, but quit 40 s in: the send's first `findSent` has run and the second is not due.
+ */
+export type KillStep = KillPoint | 'none' | 'quit';
 
 export interface KillScenario {
   /** The kill point of each engine life before the last, in order: one entry per child process. */
@@ -189,7 +238,18 @@ export interface KillScenario {
   deliver?: boolean;
   /** The counting fake only: what `findSent` says after a delivery (default `finds`). */
   find?: 'finds' | 'lags' | 'throws';
-  /** Fake time between one life's end and the next life's start (default 20 s). Past 5 minutes the overdue rule applies. */
+  /** The counting fake only: the index shows a delivery this long after it arrived (see `FakeConfig.indexLagMs`). */
+  indexLagMs?: number;
+  /** The counting fake only: the server's clock minus the engine's (see `FakeConfig.serverClockOffsetMs`). */
+  serverClockOffsetMs?: number;
+  /** The counting fake only: the server accepts the bytes, then `send` throws (see `FakeConfig.answerLost`). */
+  answerLost?: boolean;
+  /** The counting fake only: `send` refuses with a `NotSentError` of this class (provably not sent). */
+  refuse?: string;
+  /**
+   * Fake time between one life's end and the next life's start (default 20 s). Past 5 minutes the overdue rule applies.
+   * Negative: the wall clock is set back while the app is quit (the next life starts earlier than the last one ended).
+   */
   downtimeMs?: number;
   /** How long the last life runs; the default (3 minutes) passes the 60 s recheck. */
   recoverMs?: number;
@@ -213,39 +273,93 @@ export interface KillResult {
 interface ChildEnd {
   code: number | null;
   signal: NodeJS.Signals | null;
+  stdout: string;
   stderr: string;
 }
 
-function runChild(point: KillStep, run: RunSpec): Promise<ChildEnd> {
+function runChild(point: KillStep, run: RunSpec, children: Set<ChildProcess>): Promise<ChildEnd> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', 'tsx', CHILD], {
       cwd: join(import.meta.dirname, '..', '..', '..', '..'),
       env: { ...process.env, [KILL_ENV]: point, [RUN_ENV]: JSON.stringify(run) },
-      stdio: ['ignore', 'ignore', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
+    children.add(child);
+    let stdout = '';
     let stderr = '';
+    child.stdout.on('data', chunk => (stdout += String(chunk)));
     child.stderr.on('data', chunk => (stderr += String(chunk)));
     child.on('error', reject);
-    child.on('exit', (code, signal) => resolve({ code, signal, stderr }));
+    child.on('exit', (code, signal) => {
+      children.delete(child);
+      resolve({ code, signal, stdout, stderr });
+    });
   });
+}
+
+/** Set by the first hung scenario: the rest of the suite fails at once instead of waiting out its own budget. */
+let hungScenario: string | undefined;
+
+/** The rows' states as a hung scenario left them, read from its store file (the spinning child is already dead). */
+function stateOf(dbPath: string): string {
+  try {
+    const db = openSqlite(dbPath);
+    const rows = db.prepare('SELECT state FROM submissions ORDER BY id').all() as {
+      state: string;
+    }[];
+    db.close();
+    return rows.map(r => r.state).join(',');
+  } catch (error) {
+    return `unreadable (${String(error)})`;
+  }
 }
 
 /** Runs one scenario end to end and returns what the restarted engine and the server say. */
 export async function runKillScenario(scenario: KillScenario): Promise<KillResult> {
+  if (hungScenario) throw new Error(`not run: an earlier scenario hung (${hungScenario})`);
   const dir = mkdtempSync(join(tmpdir(), 'aplos-kill-'));
+  const children = new Set<ChildProcess>();
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      for (const child of children) child.kill('SIGKILL');
+      hungScenario = `state=${stateOf(join(dir, 'mail.db'))}`;
+      reject(
+        new Error(
+          `did not settle: ${hungScenario} after ${SCENARIO_BUDGET_MS} ms wall clock (kill step ${JSON.stringify(scenario.killAt)})`,
+        ),
+      );
+    }, SCENARIO_BUDGET_MS);
+  });
   try {
-    return await runIn(dir, scenario);
+    return await Promise.race([runIn(dir, scenario, children), late]);
   } finally {
+    clearTimeout(timer);
+    for (const child of children) child.kill('SIGKILL');
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-async function runIn(dir: string, s: KillScenario): Promise<KillResult> {
+async function runIn(
+  dir: string,
+  s: KillScenario,
+  children: Set<ChildProcess>,
+): Promise<KillResult> {
   const dbPath = join(dir, 'mail.db');
   const logPath = join(dir, 'server.jsonl');
   const port: PortSpec = s.port ?? {
     module: FAKE_PORT,
-    config: { logPath, deliver: s.deliver ?? true, find: s.find ?? 'finds' },
+    config: {
+      logPath,
+      deliver: s.deliver ?? true,
+      find: s.find ?? 'finds',
+      ...(s.indexLagMs !== undefined ? { indexLagMs: s.indexLagMs } : {}),
+      ...(s.serverClockOffsetMs !== undefined
+        ? { serverClockOffsetMs: s.serverClockOffsetMs }
+        : {}),
+      ...(s.refuse !== undefined ? { refuse: s.refuse } : {}),
+      ...(s.answerLost ? { answerLost: true } : {}),
+    },
   };
   const sent = seed(dbPath);
   const points = typeof s.killAt === 'string' ? [s.killAt] : s.killAt;
@@ -253,19 +367,27 @@ async function runIn(dir: string, s: KillScenario): Promise<KillResult> {
   let clockStart = T0;
   const signals: KillResult['signals'] = [];
   for (const point of points) {
-    const runMs = point === 'none' ? QUIET_RUN_MS : KILLED_RUN_MS;
-    const end = await runChild(point, { dbPath, clockStart, runMs, port });
-    const wanted = point === 'none' ? null : 'SIGKILL';
+    const runMs = LIFE_MS[point] ?? KILLED_RUN_MS;
+    const end = await runChild(point, { dbPath, clockStart, runMs, port }, children);
+    const quiet = point === 'none' || point === 'quit';
+    const wanted = quiet ? null : 'SIGKILL';
     assert.equal(
       end.signal,
       wanted,
       `kill point ${point} ended with exit ${end.code}, signal ${end.signal}: ${end.stderr.slice(-600)}`,
     );
-    if (point === 'none') assert.equal(end.code, 0);
+    if (quiet) assert.equal(end.code, 0);
     signals.push(end.signal);
     clockStart += runMs + downtime;
   }
-  const list = await driveEngine({ dbPath, clockStart, runMs: s.recoverMs ?? 180 * SEC, port });
+  // The last life runs in a child too: an engine that spins is killed with its process, never hangs the suite.
+  const runMs = s.recoverMs ?? 180 * SEC;
+  const last = await runChild('none', { dbPath, clockStart, runMs, port }, children);
+  assert.ok(
+    last.code === 0,
+    `the restarted engine failed (exit ${last.code}): ${last.stderr.slice(-600)}`,
+  );
+  const list = JSON.parse(last.stdout) as Submission[];
   const submission = list.find(x => x.id === sent.id);
   assert.ok(submission, 'the submission row is still there after the restart');
   const fake = s.port === undefined;
@@ -300,7 +422,10 @@ export function assertSendInvariant(r: KillResult): void {
   );
   if (s.state === 'sent')
     assert.equal(r.deliveries, 1, '`sent` without a delivery is a lost message');
-  if (s.state === 'uncertain') assert.equal(s.problem?.message, UNCERTAIN_COPY);
+  if (s.state === 'uncertain') {
+    assert.equal(s.problem?.reasonCode, 'send.uncertain');
+    assert.equal(s.problem?.message, UNCERTAIN_COPY);
+  }
   if (s.state === 'failed' || s.state === 'suspended')
     assert.ok(s.problem?.message, `${s.state} must say why`);
   if (s.state === 'failed') assert.equal(r.deliveries, 0, '`failed` on a message the server has');

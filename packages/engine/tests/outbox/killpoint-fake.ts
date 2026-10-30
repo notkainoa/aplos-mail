@@ -1,4 +1,5 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { NotSentError } from '../../src/ports/base';
 import type { SendPort } from '../../src/ports/engine';
 import type { Clock } from '../../src/ports/time';
 
@@ -24,6 +25,20 @@ export interface FakeConfig {
    * ten minutes after it arrived (past both of the engine's checks). `throws`: the provider is unreachable.
    */
   find?: 'finds' | 'lags' | 'throws';
+  /**
+   * The search index shows a message this long after it was delivered (engine clock), whatever `find` says. `30_000`
+   * with a 60 s recheck: absent at the first check, found at the second.
+   */
+  indexLagMs?: number;
+  /**
+   * The server's clock minus the engine's, in ms (`-120_000`: the server is two minutes behind). A delivered message is
+   * stamped with the server's clock, and `findSent` only looks at messages stamped at or after `since`.
+   */
+  serverClockOffsetMs?: number;
+  /** The server accepts the bytes but the answer is lost: `send` delivers, then throws (outcome unknown to the engine). */
+  answerLost?: boolean;
+  /** `send` refuses with a `NotSentError` of this class (provably not sent) and delivers nothing. */
+  refuse?: string;
 }
 
 export interface PortEnv {
@@ -35,6 +50,8 @@ export interface LogLine {
   op: 'send' | 'deliver' | 'findSent';
   internetId: string;
   at: number;
+  /** `deliver` only: the arrival time on the server's clock. */
+  serverAt?: number;
   /** `findSent` only: what it answered. */
   answer?: 'found' | 'absent' | 'threw';
 }
@@ -62,21 +79,35 @@ export function deliveryCounts(logPath: string): Map<string, number> {
 }
 
 export function createSendPort(env: PortEnv): SendPort {
-  const { logPath, deliver = true, find = 'finds' } = env.config as unknown as FakeConfig;
+  const config = env.config as unknown as FakeConfig;
+  const { logPath, deliver = true, find = 'finds', refuse, answerLost = false } = config;
   const { clock } = env;
+  const offset = config.serverClockOffsetMs ?? 0;
+  const lag = config.indexLagMs ?? (find === 'lags' ? INDEX_LAG_MS : 0);
   return {
     admission: () => ({ ok: true }),
     async send(_account, payload) {
       const at = clock.now();
       record(logPath, { op: 'send', internetId: payload.internetId, at });
+      if (refuse)
+        throw new NotSentError({
+          class: refuse,
+          provider: 'gmail',
+          method: 'send',
+          reason: refuse,
+        });
       if (!deliver) throw new Error('socket hang up');
-      record(logPath, { op: 'deliver', internetId: payload.internetId, at });
+      record(logPath, { op: 'deliver', internetId: payload.internetId, at, serverAt: at + offset });
+      if (answerLost) throw new Error('connection reset');
       return { acceptedAt: at, remoteMessageId: `r-${payload.submissionId}` };
     },
     async findSent(_account, internetId, since) {
       const at = clock.now();
       const arrived = readLog(logPath).find(l => l.op === 'deliver' && l.internetId === internetId);
-      const visible = arrived !== undefined && arrived.at >= since && indexed(find, arrived.at, at);
+      const visible =
+        arrived !== undefined &&
+        (arrived.serverAt ?? arrived.at) >= since &&
+        (lag === 0 || at >= arrived.at + lag);
       const answer = find === 'throws' ? 'threw' : visible ? 'found' : 'absent';
       record(logPath, { op: 'findSent', internetId, at, answer });
       if (answer === 'threw') throw new Error('offline');
@@ -85,8 +116,4 @@ export function createSendPort(env: PortEnv): SendPort {
         : { kind: 'absent', checkedAt: at };
     },
   };
-}
-
-function indexed(find: FakeConfig['find'], arrivedAt: number, now: number) {
-  return find === 'lags' ? now >= arrivedAt + INDEX_LAG_MS : true;
 }

@@ -16,7 +16,7 @@ function dieNow(): never {
 
 function armed(): KillPoint | undefined {
   const name = process.env[KILL_ENV];
-  if (name === 'none') return undefined;
+  if (name === 'none' || name === 'quit') return undefined;
   const point = KILL_POINTS.find(p => p === name);
   if (!point) throw new Error(`unknown kill point ${String(name)}`);
   return point;
@@ -28,7 +28,9 @@ async function main() {
   installKillHook(name => {
     if (name === point) dieNow();
   });
-  await driveEngine(run);
+  const list = await driveEngine(run);
+  // The last life's answer; a killed life never gets here.
+  process.stdout.write(JSON.stringify(list));
 }
 
 main().then(
