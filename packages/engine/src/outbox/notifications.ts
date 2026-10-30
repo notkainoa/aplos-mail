@@ -295,15 +295,21 @@ interface ClaimedRow {
 }
 
 /**
- * Plain, one-line text for an OS banner: control characters become spaces, format characters (bidi overrides and
- * isolates, zero-width, BOM, soft hyphen) are removed, whitespace collapses. The clamp counts code points, so a
- * surrogate pair is never split.
+ * The characters stripped from banner text: soft hyphen, zero-width space, LRM/RLM, bidi embeddings and overrides,
+ * word joiner and the invisible operators and isolates (U+2060-2069), BOM, and the tag characters. Not all of `\p{Cf}`:
+ * ZWNJ/ZWJ (U+200C/D) and the Arabic number signs (U+0600-0605) are needed to spell Persian, Indic and Arabic text.
+ */
+const HIDDEN = /[\u00AD\u200B\u200E\u200F\u202A-\u202E\u2060-\u2069\uFEFF\u{E0000}-\u{E007F}]+/gu;
+
+/**
+ * Plain, one-line text for an OS banner: control characters become spaces, `HIDDEN` characters are removed,
+ * whitespace collapses. The clamp counts code points, so a surrogate pair is never split.
  */
 const flat = (s: string | null | undefined, max: number) =>
   [
     ...(s ?? '')
       .replace(/\p{Cc}+/gu, ' ')
-      .replace(/\p{Cf}+/gu, '')
+      .replace(HIDDEN, '')
       .replace(/\s+/g, ' ')
       .trim(),
   ]
