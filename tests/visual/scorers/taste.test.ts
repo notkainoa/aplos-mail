@@ -1,0 +1,195 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import {
+  askJudge,
+  buildPrompt,
+  cacheKey,
+  criterionIds,
+  dataStatesOf,
+  judgeState,
+  loadRubric,
+  median,
+  medianCriteria,
+  mockupStateQuery,
+  parseAnswer,
+  parseMockupRef,
+  stateScore,
+  summarise,
+  type Judge,
+} from './taste-score';
+
+const IDS = ['restraint', 'hierarchy', 'accent', 'rhythm'];
+
+function answerText(score: number, findings: string[] = ['Home: row gap drifts']): string {
+  const criteria = Object.fromEntries(IDS.map(id => [id, score]));
+  return `Here you go.\n${JSON.stringify({ criteria, findings })}`;
+}
+
+function scratch(): { dir: string; image: string; cache: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'taste-test-'));
+  const image = join(dir, 'a.png');
+  writeFileSync(image, 'not really a png');
+  return { dir, image, cache: join(dir, 'cache') };
+}
+
+function input(judge: Judge, over: Partial<Parameters<typeof judgeState>[0]> = {}) {
+  const { image, cache } = scratch();
+  return {
+    stateId: 'home-full',
+    title: 'Home',
+    rubric: 'rubric',
+    criteria: IDS,
+    model: 'm',
+    images: [{ label: 'SHOT light', path: image }],
+    runs: 1,
+    judge,
+    cacheDir: cache,
+    ...over,
+  };
+}
+
+test('the shipped rubric is short and lists its criteria', () => {
+  const rubric = loadRubric(join(import.meta.dirname, 'taste.rubric.md'));
+  assert.ok(rubric.split('\n').length <= 60);
+  const ids = criterionIds(rubric);
+  for (const id of ['restraint', 'hierarchy', 'accent', 'rhythm', 'copy', 'ornament', 'parity'])
+    assert.ok(ids.includes(id), id);
+});
+
+test('the prompt names every image path, every criterion and the strict shape', () => {
+  const prompt = buildPrompt({
+    rubric: 'RUBRIC TEXT',
+    criteria: IDS,
+    stateId: 'home-full',
+    title: 'Home',
+    images: [{ label: 'SHOT light', path: '/abs/a.png' }],
+    referenceNote: 'no reference mockup is attached',
+  });
+  for (const part of [
+    'RUBRIC TEXT',
+    '/abs/a.png',
+    '"accent": 0-10 or null',
+    'no reference mockup',
+    'Do not reward text length',
+  ])
+    assert.ok(prompt.includes(part), part);
+});
+
+test('parseAnswer takes the last usable JSON object and clamps', () => {
+  const text = `{"criteria": {"restraint": 1}} thinking... {"criteria": {"restraint": 12, "hierarchy": 7.5, "accent": -3, "rhythm": null, "bogus": 4}, "findings": ["  a ", "", 5]}`;
+  const answer = parseAnswer(text, IDS);
+  assert.deepEqual(answer.criteria, { restraint: 10, hierarchy: 7.5, accent: 0, rhythm: null });
+  assert.deepEqual(answer.findings, ['a']);
+});
+
+test('parseAnswer rejects prose, broken JSON and answers that score under half the criteria', () => {
+  assert.throws(() => parseAnswer('I think it looks nice.', IDS));
+  assert.throws(() => parseAnswer('{"criteria": {"restraint": 5,', IDS));
+  assert.throws(() => parseAnswer('{"criteria": {"restraint": 5}}', IDS));
+  assert.doesNotThrow(() =>
+    parseAnswer('```json\n{"criteria": {"restraint": 5, "accent": 6}}\n```', IDS),
+  );
+});
+
+test('median and state score maths', () => {
+  assert.equal(median([3, 1, 2]), 2);
+  assert.equal(median([1, 2, 3, 10]), 2.5);
+  const merged = medianCriteria([
+    { criteria: { a: 2, b: null }, findings: [] },
+    { criteria: { a: 8, b: null }, findings: [] },
+    { criteria: { a: 4, b: 6 }, findings: [] },
+  ]);
+  assert.deepEqual(merged, { a: 4, b: 6 });
+  assert.equal(stateScore({ a: 8, b: 6, c: null }), 70);
+  assert.ok(Number.isNaN(stateScore({ a: null })));
+});
+
+test('a malformed answer is retried once, then the state is a failure', async () => {
+  let calls = 0;
+  const flaky: Judge = async () => (++calls === 1 ? 'oops' : answerText(8));
+  const asked = await askJudge(flaky, 'p', IDS);
+  assert.equal(asked.calls, 2);
+  assert.equal(stateScore(asked.answer.criteria), 80);
+
+  calls = 0;
+  const broken: Judge = async () => (calls++, 'still nope');
+  await assert.rejects(askJudge(broken, 'p', IDS));
+  assert.equal(calls, 2);
+});
+
+test('judgeState takes the median over runs, caches, and a rerun costs nothing', async () => {
+  const scores = [4, 9, 6];
+  let calls = 0;
+  const judge: Judge = async () => answerText(scores[calls++] as number, [`finding ${calls}`]);
+  const options = input(judge, { runs: 3 });
+  const first = await judgeState(options);
+  assert.equal(first.ok, true);
+  assert.equal(first.score, 60);
+  assert.equal(first.calls, 3);
+  assert.equal(first.cacheHits, 0);
+  assert.equal(readdirSync(options.cacheDir).length, 3);
+
+  const second = await judgeState(options);
+  assert.equal(second.score, 60);
+  assert.equal(second.calls, 0);
+  assert.equal(second.cacheHits, 3);
+  assert.equal(calls, 3);
+
+  writeFileSync(options.images[0]!.path, 'a different picture');
+  const changed = await judgeState(options);
+  assert.equal(changed.cacheHits, 0);
+});
+
+test('the cache key changes with every input', () => {
+  const base = { imageHashes: ['a'], rubric: 'r', model: 'm', promptVersion: 'v', run: 0 };
+  const keys = new Set([
+    cacheKey(base),
+    cacheKey({ ...base, imageHashes: ['b'] }),
+    cacheKey({ ...base, rubric: 'r2' }),
+    cacheKey({ ...base, model: 'm2' }),
+    cacheKey({ ...base, promptVersion: 'v2' }),
+    cacheKey({ ...base, run: 1 }),
+  ]);
+  assert.equal(keys.size, 6);
+  assert.equal(cacheKey(base), cacheKey({ ...base }));
+});
+
+test('failures are counted, listed first, and never thrown or cached', async () => {
+  const down: Judge = async () => {
+    throw new Error('claude exit 1: not logged in');
+  };
+  const failed = await judgeState(input(down));
+  assert.equal(failed.ok, false);
+  assert.match(failed.error ?? '', /not logged in/);
+
+  const good = await judgeState(input(async () => answerText(5, ['Later: low contrast'])));
+  const better = await judgeState({
+    ...input(async () => answerText(9, ['Done: fine'])),
+    stateId: 'done',
+  });
+  const summary = summarise([good, failed, better], ['home-full: no mockup reference (x)']);
+  assert.equal(summary.score, 70);
+  assert.equal(summary.failures, 1);
+  assert.deepEqual(summary.details, [
+    'home-full: judge-failed claude exit 1: not logged in',
+    'home-full: Later: low contrast',
+    'done: Done: fine',
+    'home-full: no mockup reference (x)',
+  ]);
+});
+
+test('mockup references: file and state parsing, and the state query', () => {
+  assert.deepEqual(parseMockupRef('empty.html (inbox zero)'), {
+    file: 'empty.html',
+    state: 'inbox zero',
+  });
+  assert.equal(parseMockupRef('nonsense'), null);
+  const declared = dataStatesOf('<html data-states="inbox-zero, first-mail">');
+  assert.deepEqual(declared, ['inbox-zero', 'first-mail']);
+  assert.equal(mockupStateQuery('default', declared), '');
+  assert.equal(mockupStateQuery('inbox zero', declared), 'inbox-zero');
+  assert.equal(mockupStateQuery('status', declared), null);
+});
