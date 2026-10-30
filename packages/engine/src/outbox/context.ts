@@ -51,6 +51,10 @@ export const UNCERTAIN_COPY = 'We could not confirm this was sent. Check Sent, o
 /** A failed row with no kept bytes: only Cancel clears it (Retry would fail again), then the draft can be sent. */
 export const NO_BYTES_COPY =
   'This message could not be prepared. Cancel it, then open the draft and send it again.';
+/** Not sent because the account must sign in again: retryable once it has (the reason code stays `auth.expired`). */
+export const AUTH_COPY =
+  'Aplos needs you to sign in to this account again. Reconnect it in Settings.';
+export const OFFLINE_COPY = 'Your message was not sent. Check your connection, then try again.';
 export const OVERDUE_COPY =
   'This was due while your Mac was off. Send it now, or choose a new time.';
 
