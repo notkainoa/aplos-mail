@@ -191,6 +191,56 @@ test('register over a hung id: the new source waits for the old call to settle, 
   }
 });
 
+test('dispose then register over a hung id: the new source waits for the old call to settle, then fires once', async () => {
+  for (const disposeAfterTimeout of [false, true]) {
+    const { clock, loop } = setup();
+    const t0 = clock.now();
+    const gate = hung();
+    const off = loop.register({
+      id: 'sync:a',
+      next: async () => t0 + SEC,
+      fire: () => gate.promise,
+    });
+    loop.start();
+    await clock.advance(2 * SEC);
+    if (disposeAfterTimeout) await clock.advance(FIRE_TIMEOUT_MS);
+    off();
+    let fires = 0;
+    loop.register({
+      id: 'sync:a',
+      next: async () => (fires > 0 ? undefined : t0 + SEC),
+      fire: async () => void fires++,
+    });
+    await clock.advance(FIRE_TIMEOUT_MS + 5 * SEC);
+    assert.equal(fires, 0, `new source ran beside the hung call (late=${disposeAfterTimeout})`);
+    gate.resolve();
+    await clock.flush();
+    await clock.advance(5 * SEC);
+    assert.equal(fires, 1, 'fires once after the old call settled');
+    await loop.stop();
+  }
+});
+
+test('stop clears the unsettled-call guard, and a late settle after stop does nothing', async () => {
+  const { clock, loop } = setup();
+  const t0 = clock.now();
+  const gate = hung();
+  let reads = 0;
+  loop.register({
+    id: 'sync:a',
+    next: async () => (reads++, t0 + SEC),
+    fire: () => gate.promise,
+  });
+  loop.start();
+  await clock.advance(FIRE_TIMEOUT_MS + 2 * SEC);
+  await loop.stop();
+  const before = reads;
+  gate.resolve();
+  await clock.flush();
+  assert.equal(reads, before, 'a settle after stop does not read or kick');
+  assert.equal(clock.pending(), 0);
+});
+
 test('a within() that throws does not leave the slot inflight forever', async () => {
   const base = fakeClock();
   let failSleep = false;
@@ -339,4 +389,39 @@ test('Engine.wake is a no-op when the host injected a registry without wake', as
   } finally {
     await t.cleanup();
   }
+});
+
+test('a clock whose sleep always throws is logged as a wait failure and does not spin', async () => {
+  const base = fakeClock();
+  const clock: FakeClock = {
+    ...base,
+    sleep() {
+      throw new Error('sleep unavailable');
+    },
+  };
+  const records: LogRecord[] = [];
+  const loop = createTimerLoop({
+    clock,
+    log: createLogger({ sink: { write: r => records.push(r) }, salt: 's', clock, level: 'debug' }),
+  });
+  const t0 = clock.now();
+  let reads = 0;
+  let fires = 0;
+  loop.register({
+    id: 'jobs',
+    next: async () => (reads++, t0),
+    fire: async () => void fires++,
+  });
+  loop.start();
+  await clock.advance(SEC);
+  await loop.idle();
+  assert.ok(reads < 10, `next() read ${reads} times in one second`);
+  assert.ok(fires < 10, `fire() ran ${fires} times in one second`);
+  const lags = records
+    .filter(r => r.event === 'engine.watchdog')
+    .map(r => (r.data as { lagMs: number }).lagMs);
+  assert.ok(lags.length > 0);
+  assert.ok(!lags.includes(FIRE_TIMEOUT_MS), 'a failed wait is not logged as the fire timeout');
+  assert.ok(!lags.includes(NEXT_TIMEOUT_MS), 'a failed wait is not logged as the next timeout');
+  await loop.stop();
 });

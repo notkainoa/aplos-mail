@@ -51,3 +51,26 @@ test('a throwing wake does not throw out of the emitter', () => {
   assert.doesNotThrow(() => power.emit('unlock-screen'));
   assert.equal(wakes(), 2);
 });
+
+test('a rejecting async wake is swallowed, not an unhandled rejection', async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const power = new EventEmitter();
+    let wakes = 0;
+    watchPowerResume(power, {
+      wake: async () => {
+        wakes++;
+        throw new Error('engine closed');
+      },
+    });
+    assert.doesNotThrow(() => power.emit('resume'));
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(wakes, 1);
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
