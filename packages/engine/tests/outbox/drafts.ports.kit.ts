@@ -68,6 +68,7 @@ export interface Fact {
   to?: { address: string; name?: string }[];
   snippet?: string;
   hasAttachments?: boolean;
+  from?: { address: string };
 }
 
 /** What history reports when another device saves a draft. */
@@ -91,6 +92,7 @@ export function fact(w: World, remoteDraftId: string, messageId: string, f: Fact
           remoteId: messageId,
           remoteThreadId: 'phone-thread',
           to: f.to ?? [{ address: 'jordan@mail.example' }],
+          from: f.from ?? { address: 'owner@mail.example' },
           cc: [],
           subject: f.subject ?? 'From the phone',
           snippet: f.snippet ?? 'only a snippet',
