@@ -1009,6 +1009,27 @@ Both Reconnect actions open the reconnect sheet (§7.1). "Aplos needs a moment."
 | "Making room for your mail…" / "Aplos needs a moment." | (no loading screen) / "Aplos can't reach its mail engine." |
 | "Couldn't summarize this email · Groq isn't set up" | (nothing; the subject shows) |
 
+### Shell, list and failure copy (added 2026-10-30 with ui-shell and ui-home)
+
+These strings already ship in the shell and the list screens and were approved with their pictures. This table makes them spec. Each follows the rules above: what happened, what is safe, what to do. None of them shows a provider's or the engine's own text.
+
+| Where | Copy |
+|---|---|
+| A list could not load | "Couldn’t load this list." with the button "Try again" |
+| A write was refused | "Couldn’t " + the action: "mark it done", "move to Later", "move to Trash", "move it". Also "Couldn’t move it." and "Couldn’t save that. Nothing changed." |
+| Delete or discard refused | "Couldn’t delete that. It is still here." / "Couldn’t discard the draft. It is still saved." |
+| Engine unreachable | "Aplos can’t reach its mail engine." |
+| Restart failed | "Couldn’t restart. Your mail is safe on this Mac." |
+| Diagnostics | "Diagnostics copied" / "Diagnostics copied. They hold no mail." / "Diagnostics exported" / "Couldn’t get the diagnostics." |
+| Reconnect sheet | "That was a different account. Sign in with the same one." / "Sign-in was cancelled. Nothing changed." / "Sign-in timed out. Nothing changed." / "Couldn’t reconnect. Your mail is safe here and local changes are kept." |
+| Confirms | "Delete this email forever?" with "Delete forever"; "Discard this draft?" with "Discard" |
+| Quiet confirmations (toasts) | "Bookmarked", "Bookmark removed", "Reminder set", "Restored", "Deleted forever", "Draft discarded", "Moved to Home" |
+| Spam's quick action | "Not spam" (replaces "Restore" there; Trash keeps "Restore") |
+| Missing values in a row | "No sender", "No recipient", "No subject" |
+| An empty list | "No mail here yet." |
+| Later row action | "Change date" |
+| Place not built yet | "<Place> isn’t in this build yet." (remove when every place exists) |
+
 These phrases are on the lint ban list (§12.2): "Swipe through them", "Hold to talk", "Hide all", "Todo", "Be here now", "Sent with", "Ask me anything", "magic", "AI-powered".
 
 > **What this means:** Every phrase that echoed Avec is replaced, and the app uses plain wording instead of an assistant's voice.
