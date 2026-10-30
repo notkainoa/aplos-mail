@@ -37,12 +37,14 @@ the scorer always starts its own server on a free port. The default port 4427 is
 
 **Safety**: screenshots are attempt-authored and the taste judge reads on-screen text, so nothing a
 scorer spawns inherits `process.env`. `env.ts` (`scorerEnv`) builds an allow-list: PATH, HOME, TMPDIR,
-LANG, LC_ALL, TERM, XDG_{CONFIG,DATA,CACHE}_HOME, USER, LOGNAME, SHELL, TASTE_MODEL, CLAUDE_* (judge only),
+LANG, LC_ALL, TERM, XDG_{CONFIG,DATA,CACHE}_HOME, USER, LOGNAME, SHELL, TASTE_MODEL, CLAUDE_CONFIG_DIR (judge only; login works from HOME alone, no other CLAUDE_* is passed),
 and for Vite NODE_ENV and npm_config_cache; never a name ending `_API_KEY`, `_TOKEN` or `_SECRET`, never
 NODE_OPTIONS. Each judge call copies its PNGs into a fresh `aplos-taste-*` temp dir (removed afterwards),
 runs there with `--restricted --tools Read --allowedTools 'Read(//<dir>/**)'` and Bash, Edit, Write,
 NotebookEdit, WebFetch and WebSearch denied. The judge's findings are cut to 8 lines of 300 characters,
-without ANSI or control characters.
+without ANSI or control characters (cached entries are cleaned the same way when read; `--runs K` merges at most 8
+findings overall). Each `claude` child leads its own process group: on a timeout or error the group gets SIGTERM
+and, after about 2 s, SIGKILL, so helpers it spawned cannot outlive the call.
 
 ```
 npx tsx tests/visual/scorers/axe.score.ts                        # every state, both themes, 1440x900

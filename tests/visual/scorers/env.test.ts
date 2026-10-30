@@ -52,17 +52,22 @@ test('names are matched exactly and case-sensitively', () => {
   assert.deepEqual(env, { PATH: '/ok' });
 });
 
-test('CLAUDE_ variables pass, except secret-looking ones, and the prefix is case-sensitive', () => {
+test('only CLAUDE_CONFIG_DIR of the CLAUDE_ variables passes, and the name is exact and case-sensitive', () => {
   const env = scorerEnv({
     CLAUDE_CONFIG_DIR: '/c',
     CLAUDE_BIN: '/bin/claude',
     CLAUDE_CODE_OAUTH_TOKEN: 'k',
+    CLAUDE_CODE_ENTRYPOINT: 'cli',
+    CLAUDE_CODE_SESSION_ID: 'id',
+    CLAUDE_CODE_MESSAGING_TOKEN: 'k',
     CLAUDE_API_KEY: 'k',
     CLAUDE_WEBHOOK_SECRET: 'k',
+    CLAUDECODE: '1',
+    CLAUDE_CONFIG_DIR2: '/x',
     claude_config_dir: '/lower',
-    MY_CLAUDE_THING: '1',
+    MY_CLAUDE_CONFIG_DIR: '1',
   });
-  assert.deepEqual(env, { CLAUDE_CONFIG_DIR: '/c', CLAUDE_BIN: '/bin/claude' });
+  assert.deepEqual(env, { CLAUDE_CONFIG_DIR: '/c' });
 });
 
 test('the secret suffix rule ignores case and also applies to extra names', () => {
