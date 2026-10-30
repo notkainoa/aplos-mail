@@ -672,6 +672,6 @@ test('prov-gmail parts owned by other lanes are typed not-in-this-lane stubs', a
   );
   assert.equal(adapter.workflow, undefined);
   assert.equal(adapter.calendar, undefined);
-  assert.equal(adapter.rules, undefined);
+  assert.ok(adapter.rules, "rules is prov-gmail-write's filter mirror, not a stub");
   assert.equal(adapter.saveDraft, undefined);
 });
