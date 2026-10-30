@@ -21,6 +21,8 @@ export const DRAFT_REMOVE_MAX_MS = 3_600_000;
 /** A removal the provider refuses for good is asked again this much later. */
 export const DRAFT_REMOVE_PERMANENT_MS = 86_400_000;
 /** The longest body a remote draft may bring: the local save's own limit (`text(1_000_000)`), counted on the stored body. */
+/** How many unanswered creates a draft offers as `supersedes`. */
+const EARLIER_KEEP = 5;
 export const REMOTE_BODY_MAX = 1_000_000;
 /** Message ids and remote ids this device wrote, kept to recognise their echo in history. */
 const WROTE_KEEP = 20;
@@ -58,6 +60,12 @@ export interface DraftMeta {
   uploading?: { internetId: string; revision: number; base?: string | null };
   /** Message-IDs and remote message ids this device uploaded: their echo in history is not a remote edit. */
   wrote?: string[];
+  /**
+   * Message-IDs of earlier creates of this draft that were never answered (a new revision replaced the attempt). The next
+   * create offers them as `DraftUpload.supersedes`, so a provider that finds one of those copies replaces it instead of
+   * leaving a second remote draft. Cleared when a create is answered.
+   */
+  earlier?: string[];
   problem?: { reasonCode: string; message: string; at: number };
   conflict?: DraftConflictState;
   /** How many other-device versions were seen (`Draft.conflict.theirsRevision`). */
@@ -137,6 +145,11 @@ export function patched(meta: DraftMeta, patch: MetaPatch): DraftMeta {
 }
 
 /** Keeps the newest ids only. */
+/** The unanswered creates' Message-IDs to offer as `supersedes` (the newest few, each once). */
+export function earlierWith(meta: DraftMeta, ...ids: string[]): string[] {
+  return [...new Set([...(meta.earlier ?? []), ...ids])].slice(-EARLIER_KEEP);
+}
+
 export function remembered(meta: DraftMeta, ...ids: string[]): string[] {
   return [...(meta.wrote ?? []), ...ids].slice(-WROTE_KEEP);
 }

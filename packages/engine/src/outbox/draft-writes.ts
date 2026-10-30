@@ -14,6 +14,7 @@ import {
   parseData,
   patched,
   remembered,
+  earlierWith,
   REMOTE_BODY_MAX,
   theirsFields,
   type DraftMeta,
@@ -292,6 +293,7 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
     fingerprint: w.partial ? null : w.fingerprint,
     uploading: null,
     problem: null,
+    earlier: null,
     wrote: remembered(meta, w.internetId, w.remoteMessageId),
     changedElsewhere: null,
     dueAt: idle ? null : (meta.dueAt ?? w.at),
@@ -395,6 +397,7 @@ function retry(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'retry' }>) {
       fingerprint: null,
       uploading: null,
       wrote: remembered(meta, ...old),
+      ...(row.remote_draft_id === null && old.length ? { earlier: earlierWith(meta, ...old) } : {}),
       dueAt: meta.dueAt ?? w.at,
     }),
   );

@@ -199,7 +199,7 @@ export function fakeDrafts(server: CountingSend) {
   const removeExpected: (string | undefined)[] = [];
   /** Calls the guard turned into a no-op: the draft held another message id. */
   const removeGuarded: string[] = [];
-  const state = { ignoreExpected: false };
+  const state = { ignoreExpected: false, honourSupersedes: false };
   const script: DraftStep[] = [];
   /** What each `remove` call does (the same steps as `script`; `ok` is the default). */
   const removeScript: DraftStep[] = [];
@@ -254,7 +254,13 @@ export function fakeDrafts(server: CountingSend) {
       if (upload.remoteDraftId && !known) return { kind: 'gone' };
       if (known && upload.baseRemoteMessageId && known.messageId !== upload.baseRemoteMessageId)
         return { kind: 'conflict', remoteMessageId: known.messageId };
-      const remoteDraftId = upload.remoteDraftId ?? `rd${++counter}`;
+      // A create that names earlier Message-IDs replaces the copy carrying one (a provider that honours `supersedes`).
+      const replaced = upload.remoteDraftId
+        ? undefined
+        : state.honourSupersedes
+          ? [...remote.entries()].find(([, r]) => upload.supersedes?.includes(r.internetId))?.[0]
+          : undefined;
+      const remoteDraftId = upload.remoteDraftId ?? replaced ?? `rd${++counter}`;
       const messageId = `msg${++counter}`;
       remote.set(remoteDraftId, {
         messageId,

@@ -554,6 +554,15 @@ export interface DraftUpload {
    * `conflict`, so a 5 s idle save never overwrites a phone edit that history has not reported yet.
    */
   baseRemoteMessageId?: string;
+  /**
+   * Only on a create (no `remoteDraftId`): the Message-IDs of this draft's earlier creates that were never answered (a
+   * newer revision replaced the attempt, and the reply may have been lost after the copy landed). Before creating, look
+   * for a draft carrying one of them; when one is found, REPLACE it with this upload (the result names its
+   * `remoteDraftId`) instead of creating a second remote draft. Optional and additive: an adapter that ignores it keeps
+   * today's behaviour (a duplicate remote draft can remain until the owner removes it, never a loss). Never delete a
+   * found copy that differs from what this upload would write unless the lookup proves its Message-ID is one of these.
+   */
+  supersedes?: string[];
   /** Graph's `changeKey` of the last synced copy, sent as the precondition where the message id does not change on edit. */
   baseChangeKey?: string;
 }
@@ -731,7 +740,10 @@ export interface ProviderAdapter {
    * delete ONLY IF the draft still holds it (Gmail: the draft's `message.id` equals it; JMAP: the `Email` id; Graph: the
    * message `id`). If the draft holds a different one (it was edited or replaced on another device, or became a sent
    * message) do NOTHING and resolve: the owner's discard must not destroy a newer version or a sent mail. A missing draft
-   * is success. When it is omitted the engine knows no id: behave as before.
+   * is success. When it is omitted the engine knows no id (a copy it never read a message id for): the engine's call is the
+   * old unguarded one, but an adapter may and should refuse to delete without a guard when the delete cannot be undone
+   * (Gmail does nothing and the copy stays, which history then reports as another device's draft: an orphan, never a
+   * loss). Either way it resolves.
    */
   deleteDraft?(
     remoteDraftId: string,
