@@ -22,6 +22,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isReleaseBundle } from './build-options.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -111,7 +112,7 @@ for (const bundle of ['electron.cjs', 'engine.cjs']) {
   } catch {
     // Missing: reported below like a non-release bundle.
   }
-  if (!/\bvar releaseBuild = true;/.test(source)) {
+  if (!isReleaseBundle(source)) {
     console.error(
       `release-build: dist/main/${bundle} is missing or was not built with APLOS_RELEASE_BUILD=1; run npm run release:build (or APLOS_RELEASE_BUILD=1 npm run build) first.`,
     );
