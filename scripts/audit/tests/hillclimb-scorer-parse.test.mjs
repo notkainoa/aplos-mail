@@ -28,6 +28,7 @@ import {
   scoreMutation,
 } from '../hillclimb/scorers/mutation.mjs';
 import {
+  owningManifests,
   reportFromRun as knipReport,
   scoreKnip,
   scoredFindings,
@@ -438,4 +439,47 @@ test('stryker-run runnerArgs: node and electron-node runners', () => {
   assert.deepEqual(runnerArgs('node', ['a.test.ts']), ['--import', 'tsx', '--test', 'a.test.ts']);
   const electron = runnerArgs('electron-node', ['a.test.ts']);
   assert.match(electron[0], /scripts[\\/]audit[\\/]electron-node\.mjs$/);
+});
+
+// --- knip manifests ---------------------------------------------------------------
+
+test('knip owningManifests: scoped files map to their owning package.json', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hillclimb-manifests-'));
+  try {
+    mkdirSync(join(dir, 'packages', 'engine', 'src'), { recursive: true });
+    mkdirSync(join(dir, 'packages', 'emulators', 'src'), { recursive: true });
+    writeFileSync(join(dir, 'package.json'), '{}\n');
+    writeFileSync(join(dir, 'packages', 'engine', 'package.json'), '{}\n');
+    writeFileSync(join(dir, 'packages', 'emulators', 'package.json'), '{}\n');
+    assert.deepEqual(
+      owningManifests(
+        ['packages/engine/src/a.ts', 'packages/engine/src/deep/b.ts', 'packages/emulators/c.ts'],
+        dir,
+      ),
+      ['packages/emulators/package.json', 'packages/engine/package.json'],
+    );
+    assert.deepEqual(owningManifests(['scripts/tool.mjs'], dir), ['package.json']);
+    assert.deepEqual(owningManifests([], dir), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('knip scoredFindings counts dependency findings on a scoped manifest', () => {
+  const issues = [
+    knipIssue('packages/engine/package.json', { dependencies: ['leftpad'] }),
+    knipIssue('packages/engine/src/x.ts', { exports: ['unused'] }),
+  ];
+  // Scope the source tree plus its owning manifest, as main() does.
+  const scopes = ['packages/engine/src/**', 'packages/engine/package.json'];
+  const rows = scoredFindings(issues, scopes);
+  assert.deepEqual(
+    rows.map(r => `${r.file}:${r.weight}`),
+    ['packages/engine/package.json:3', 'packages/engine/src/x.ts:1'],
+  );
+  // Without the manifest the dependency finding is invisible to the same scope.
+  assert.deepEqual(
+    scoredFindings(issues, ['packages/engine/src/**']).map(r => r.file),
+    ['packages/engine/src/x.ts'],
+  );
 });

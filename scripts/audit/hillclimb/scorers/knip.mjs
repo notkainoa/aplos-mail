@@ -3,16 +3,25 @@
 // that land inside --scope: unused files 3, unused exports 1, unused dependencies 3.
 // score = -(weighted findings). knip always runs over the whole repo — an unused export is only
 // unused when nothing anywhere imports it — and the scope restricts which findings count.
+// Unused-dependency findings sit on the owning workspace's package.json, not on the scoped
+// files, so each owning manifest joins the report scope.
 // details = the worst-offending files first.
+// By default knip runs with --production so test files cannot count as users of an export
+// (an export only a test imports is still dead production code); --include-tests scores the
+// test-inclusive graph instead.
 // Typical runtime: ~10-20 s over the whole monorepo.
-//   node scripts/audit/hillclimb/scorers/knip.mjs [--scope <glob>]... [--timeout-sec <n, default 120>]
-import { join } from 'node:path';
+//   node scripts/audit/hillclimb/scorers/knip.mjs [--scope <glob>]... [--include-tests]
+//     [--timeout-sec <n, default 120>]
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import {
   ScorerError,
   emitScore,
   inScope,
   parseArgs,
+  refuseTampering,
   repoRoot,
+  requireScopeMatch,
   runCli,
   runLogged,
 } from './util.mjs';
@@ -26,9 +35,39 @@ export const dependencyWeight = 3;
 export function parseArgsKnip(argv) {
   return parseArgs(argv, {
     values: { '--scope': 'scope' },
+    flags: { '--include-tests': 'includeTests' },
     numbers: { '--timeout-sec': { key: 'timeoutSec', default: 120 } },
     strings: { '--cwd': { key: 'cwd', default: repoRoot } },
   });
+}
+
+/**
+ * The package.json files owning `files` (repo-relative paths under `root`): for each file the
+ * nearest ancestor directory containing a package.json. Unused-dependency findings are
+ * reported on the manifest, not on the files that declared the dependencies, so a scoped run
+ * must count the manifests of the scoped files.
+ */
+export function owningManifests(files, root = repoRoot) {
+  const manifests = new Set();
+  const cache = new Map();
+  for (const file of files) {
+    let dir = dirname(file);
+    const chain = [];
+    let owner;
+    while (owner === undefined) {
+      if (cache.has(dir)) {
+        owner = cache.get(dir);
+      } else {
+        chain.push(dir);
+        if (existsSync(join(root, dir, 'package.json'))) owner = dir;
+        else if (dir === '.' || dir === '') owner = null;
+        else dir = dirname(dir);
+      }
+    }
+    for (const visited of chain) cache.set(visited, owner);
+    if (owner) manifests.add(owner === '.' ? 'package.json' : `${owner}/package.json`);
+  }
+  return [...manifests].sort();
 }
 
 /**
@@ -90,7 +129,14 @@ export function reportFromRun(run) {
 
 async function main(argv) {
   const options = parseArgsKnip(argv);
-  const run = runLogged('knip', [process.execPath, knipBin, '--reporter', 'json'], {
+  // The scope must name real files and carry no knip-honoured JSDoc tags before knip runs:
+  // an empty match would print 0 (the penalty score's maximum), and a @public/@internal tag
+  // would mark an export used without any importer.
+  const scopeFiles = requireScopeMatch(options.scope, options.cwd);
+  refuseTampering(scopeFiles, 'knip', options.cwd);
+  const args = [knipBin, '--reporter', 'json'];
+  if (!options.includeTests) args.push('--production');
+  const run = runLogged('knip', [process.execPath, ...args], {
     cwd: options.cwd,
     timeoutMs: options.timeoutSec * 1000,
   });
@@ -98,7 +144,8 @@ async function main(argv) {
     throw new ScorerError(`knip timed out after ${options.timeoutSec} s`);
   if (run.error) throw new ScorerError(`knip failed to start: ${run.error.message}`);
   const report = reportFromRun(run);
-  const { score, details } = scoreKnip(scoredFindings(report.issues ?? [], options.scope));
+  const reportScopes = [...options.scope, ...owningManifests(scopeFiles, options.cwd)];
+  const { score, details } = scoreKnip(scoredFindings(report.issues ?? [], reportScopes));
   emitScore(score, details);
 }
 
