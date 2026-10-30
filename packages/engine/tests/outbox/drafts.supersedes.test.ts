@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { DraftFields } from '@aplos/contract';
+import { DraftFields as DraftFieldsSchema, type DraftFields } from '@aplos/contract';
+import { DRAFT_CONTENT_FIELDS } from '../../src/outbox/draft-state';
 import { ACCOUNT, fields, gate, SEC, type World } from './helpers';
 import {
   CAP,
+  create,
   edit,
   fact,
   read,
@@ -363,6 +365,63 @@ test('supersedes: a finished upload with an attachment gets no proof from the la
     fact(w, s.remoteDraftId, 'msg-new', echoOf(s));
     assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId, 'the base did not move');
   }));
+
+test('supersedes: a Bcc-only phone edit is not our copy', () =>
+  world(async w => {
+    const { s, ours } = await lostUpdate(w);
+    fact(w, s.remoteDraftId, 'msg-d', { ...ours, bcc: [{ address: 'hidden@mail.example' }] });
+    assert.equal(
+      row(w, s.draft.id)!.remote_message_id,
+      s.messageId,
+      'a changed Bcc is a phone edit',
+    );
+  }));
+
+test('supersedes: a copy that cannot show Bcc gets no proof (absent is not empty)', () =>
+  world(async w => {
+    const { s, ours } = await lostUpdate(w);
+    fact(w, s.remoteDraftId, 'msg-d', { ...ours, omitBcc: true });
+    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
+  }));
+
+test('supersedes: a finished upload (last synced fingerprint) with a Bcc-only difference is not ours either', () =>
+  world(async w => {
+    const s = await synced(w);
+    fact(w, s.remoteDraftId, 'msg-new', {
+      ...echoOf(s),
+      bcc: [{ address: 'hidden@mail.example' }],
+    });
+    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
+  }));
+
+test('a local Bcc is part of the uploaded copy', () =>
+  world(async w => {
+    const bcc = [{ address: 'hidden@mail.example' }];
+    create(w, fields({ bcc }));
+    await wait(w, 5 * SEC);
+    const mime = new TextDecoder().decode(w.remoteDrafts.saves.at(-1)!.mime);
+    assert.match(mime, /^Bcc: .*hidden@mail\.example/im);
+  }));
+
+test('closed world: every draft field is classified, and a field that is neither shown nor carried cannot become provable by accident', () => {
+  const classified = Object.keys(DRAFT_CONTENT_FIELDS).sort();
+  assert.deepEqual(
+    classified,
+    Object.keys(DraftFieldsSchema.shape).sort(),
+    'a new field must be classified',
+  );
+  const notShown = Object.entries(DRAFT_CONTENT_FIELDS)
+    .filter(([, how]) => how === 'notShown')
+    .map(([name]) => name)
+    .sort();
+  // Adding to this list is a decision: such a field gives no proof unless it is empty on this device.
+  assert.deepEqual(notShown, ['attachments', 'signature', 'signatureSource']);
+  const shown = Object.entries(DRAFT_CONTENT_FIELDS)
+    .filter(([, how]) => how === 'shown')
+    .map(([name]) => name)
+    .sort();
+  assert.deepEqual(shown, ['bcc', 'cc', 'from', 'html', 'subject', 'to']);
+});
 
 test('supersedes: without those, the same content from our own address still moves the base', () =>
   world(async w => {

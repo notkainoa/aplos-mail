@@ -278,11 +278,47 @@ export function theirsFields(
 }
 
 /**
+ * How a remote copy relates to each content field of a draft, in ONE place. A copy is taken as this device's own upload
+ * (a fingerprint proof) only when it SHOWS every `shown` field, and every `notShown` field is empty on this device: a
+ * field the copy cannot show would be filled in from the local draft and make a foreign edit of it look like ours.
+ * Typed against `DraftFields`, so a new draft field does not compile until it is classified here; a test pins the same
+ * list against the contract's schema.
+ *   - `shown`: the copy carries it and the comparison reads it (`to`, `cc`, `bcc` when the provider can show it,
+ *     `subject`, `html`, and `from`, which must be the account's own address).
+ *   - `carried`: the draft's identity (account, mode, thread, reply target); a provider edit cannot change it.
+ *   - `notShown`: the copy cannot show it (attachments, sign-off): no proof unless it is empty here.
+ */
+export const DRAFT_CONTENT_FIELDS = {
+  accountId: 'carried',
+  mode: 'carried',
+  threadId: 'carried',
+  replyToMessageId: 'carried',
+  from: 'shown',
+  to: 'shown',
+  cc: 'shown',
+  bcc: 'shown',
+  subject: 'shown',
+  html: 'shown',
+  attachments: 'notShown',
+  signature: 'notShown',
+  signatureSource: 'notShown',
+} as const satisfies Record<keyof DraftFields, 'shown' | 'carried' | 'notShown'>;
+
+/** The fields a copy must show to count as this device's upload (every key of `DRAFT_CONTENT_FIELDS` that is `shown`). */
+export type ShownField = {
+  [K in keyof typeof DRAFT_CONTENT_FIELDS]: (typeof DRAFT_CONTENT_FIELDS)[K] extends 'shown'
+    ? K
+    : never;
+}[keyof typeof DRAFT_CONTENT_FIELDS];
+
+/**
  * Did these fields keep something from this device's draft that the other copy does not hold? `theirsFields` carries the
  * attachments and the sign-off over, and a provider's metadata has neither, so such a copy is not the draft.
  */
-export function keepsMine(fields: Pick<DraftFields, 'attachments' | 'signature'>): boolean {
-  return fields.attachments.length > 0 || fields.signature;
+export function keepsMine(
+  fields: Pick<DraftFields, 'attachments' | 'signature'> & { signatureSource?: unknown },
+): boolean {
+  return fields.attachments.length > 0 || fields.signature || fields.signatureSource !== undefined;
 }
 
 // ---------------------------------------------------------------- announcements

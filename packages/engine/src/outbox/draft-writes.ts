@@ -7,6 +7,7 @@ import {
   DraftConflict,
   fingerprintOf,
   keepsMine,
+  type ShownField,
   liveOf,
   LIVE_SQL,
   needsUpload,
@@ -14,12 +15,12 @@ import {
   parseData,
   patched,
   remembered,
-  REMOTE_BODY_MAX,
   theirsFields,
   type DraftMeta,
   type DraftRow,
   type MetaPatch,
 } from './draft-state';
+import { bodyOf, completes, messageOf } from './draft-body';
 
 /**
  * The drafts' writers for the eng-time extension (seam 2): every change to a draft goes through `store.commit` as one of
@@ -589,72 +590,6 @@ export function applyDraftDelete(write: { kind: string }, tx: CommitExtensionTx)
 
 // ---------------------------------------------------------------- remote facts
 
-type RemoteMessage = NonNullable<RemoteDraftWrite['message']>;
-type MessageWithBody = RemoteMessage & { html?: string };
-
-function paragraphs(text: string) {
-  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return escaped
-    .split(/\r?\n\r?\n/)
-    .map(p => `<p>${p.replace(/\r?\n/g, '<br>')}</p>`)
-    .join('');
-}
-
-interface Candidate {
-  html: string;
-  blank: boolean;
-  /** Over the limit: not escaped or kept, only remembered so that it still counts as the body on offer. */
-  over?: boolean;
-}
-
-/** Escaping only grows a text, so a source already over the limit is dropped before any work is done on it. */
-function candidate(body: string, build: (body: string) => string = b => b): Candidate {
-  if (body.length > REMOTE_BODY_MAX) return { html: '', blank: false, over: true };
-  return { html: build(body), blank: body === '' };
-}
-
-/** The bodies the fact offers, best first: top-level `html`, then `text`, then an `html` on the message. */
-function candidates(w: RemoteDraftWrite): Candidate[] {
-  const found: Candidate[] = [];
-  if (w.html !== undefined) found.push(candidate(w.html));
-  if (w.text !== undefined) found.push(candidate(w.text, paragraphs));
-  const inMessage = (w.message as MessageWithBody | undefined)?.html;
-  if (inMessage !== undefined) found.push(candidate(inMessage));
-  return found;
-}
-
-const bodies = new WeakMap<RemoteDraftWrite, string | undefined>();
-
-/**
- * The draft's body when the provider delivered a usable one, as it would be stored. An empty body next to a snippet that
- * says there is text is a provider that sent nothing, not an empty draft; a body over the local limit (counted after
- * escaping and wrapping) is left out, so the draft stays snippet-only and a remote draft cannot hold more than a local
- * save may. Worked out once per fact: it is asked for several times.
- */
-function bodyOf(w: RemoteDraftWrite): string | undefined {
-  if (bodies.has(w)) return bodies.get(w);
-  const found = candidates(w);
-  // A source over the limit means the provider's real body is too big to keep: never settle for another source then.
-  if (found.some(c => c.over)) return void bodies.set(w, undefined);
-  const snippet = w.message?.snippet;
-  const body = found.find(c => !c.blank) ?? (snippet ? undefined : found[0]);
-  const html = body && !body.over && body.html.length <= REMOTE_BODY_MAX ? body.html : undefined;
-  bodies.set(w, html);
-  return html;
-}
-
-/** Does this fact make the draft complete: a usable body and no attachments (those are not delivered)? */
-function completes(w: RemoteDraftWrite) {
-  return bodyOf(w) !== undefined && w.message?.hasAttachments !== true;
-}
-
-/** The write's metadata in the shape `theirsFields` reads, with the usable body when there is one. */
-function messageOf(w: RemoteDraftWrite) {
-  const { html: _offered, ...message } = (w.message ?? {}) as MessageWithBody;
-  const html = bodyOf(w);
-  return html === undefined ? message : { ...message, html };
-}
-
 function remoteThreadId(w: RemoteDraftWrite) {
   return w.remoteThreadId === undefined ? undefined : `${w.accountId}:${w.remoteThreadId}`;
 }
@@ -742,12 +677,29 @@ function holdsOurContent(
 }
 
 /**
- * Does the fact's delivered content hash to `fingerprint`? The comparison fills in what a fact cannot show from the
- * local draft (attachments, signature, from), so it is a proof only when none of that is in play: a draft with
- * attachments or a sign-off, a copy that says it has attachments, or a sender other than the account's own address
- * (`own`) could differ from ours without the hash noticing, and gets no proof (a conflict is the safe direction). No
- * fingerprint, or no body: no proof.
+ * Closed world (see `DRAFT_CONTENT_FIELDS`): can this copy show everything the fingerprint covers? Each `shown` field
+ * must be on the copy (a Bcc the provider cannot show is not an empty Bcc), the sender must be the account's own
+ * address, and each `notShown` field must be empty here and not reported by the copy (attachments).
  */
+function showsEveryField(w: RemoteDraftWrite, base: DraftFields, own: string) {
+  const m = w.message;
+  if (!m) return false;
+  const shown: Record<ShownField, boolean> = {
+    from: m.from !== undefined && m.from.address.trim().toLowerCase() === own.trim().toLowerCase(),
+    to: m.to !== undefined,
+    cc: m.cc !== undefined,
+    bcc: m.bcc !== undefined,
+    subject: m.subject !== undefined,
+    html: bodyOf(w) !== undefined,
+  };
+  const emptyHere = !keepsMine(base) && m.hasAttachments !== true;
+  return Object.values(shown).every(Boolean) && emptyHere;
+}
+
+/**
+ * Does the fact's delivered content hash to `fingerprint`? Only a copy that shows every field (`showsEveryField`) can
+ * prove it: the comparison fills in the rest from the local draft, so anything else could differ from ours without the
+ * hash noticing. No fingerprint, or no body: no proof; no proof is a conflict, the safe direction. */
 function hasFingerprint(
   w: RemoteDraftWrite,
   row: DraftRow,
@@ -756,9 +708,7 @@ function hasFingerprint(
   own: string,
 ) {
   if (fingerprint === undefined || !completes(w)) return false;
-  if (keepsMine(base) || w.message?.hasAttachments === true) return false;
-  const from = w.message?.from?.address;
-  if (from === undefined || from.trim().toLowerCase() !== own.trim().toLowerCase()) return false;
+  if (!showsEveryField(w, base, own)) return false;
   const theirs = theirsFields(row.account_id, messageOf(w), base);
   return fingerprintOf(theirs.fields) === fingerprint;
 }

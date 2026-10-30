@@ -201,6 +201,7 @@ function draftMime(ctx: DraftsCtx, row: UploadRow, fields: DraftFields, internet
     from: senderOf(row, fields),
     to: writable(fields.to),
     cc: writable(fields.cc),
+    bcc: writable(fields.bcc),
     subject: fields.subject,
     html: fields.html,
     messageId: internetId,
