@@ -64,10 +64,14 @@ function pickEnv(env, extraNames) {
 
 /** Environment for gates and scorers running attempt-modified code: runtime names only. */
 export function evalEnv(env = process.env) {
-  return pickEnv(env, []);
+  // SCORER_ISOLATED=1 is SET by the harness, never inherited: UI scorers (tests/visual) then ignore
+  // APLOS_VISUAL_PORT and start their own server, instead of trusting whatever answers on a port
+  // that may belong to another worktree's dev server. (APLOS_VISUAL_PORT itself is not on the
+  // allow-list, so it never reaches a gate or scorer anyway.)
+  return { ...pickEnv(env, []), SCORER_ISOLATED: '1' };
 }
 
-/** Environment for attempt agents: evalEnv plus the CLI login-discovery variables. */
+/** Environment for attempt agents: the runtime names plus the CLI login-discovery variables (no SCORER_ISOLATED: agents do not run scorers). */
 export function agentEnv(env = process.env) {
   return pickEnv(env, AGENT_ONLY_ENV_NAMES);
 }

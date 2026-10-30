@@ -18,6 +18,7 @@ import type {
   PlannedStep,
   ProviderAdapter,
   ProviderFactory,
+  RulesAdapter,
   SearchResult,
   SendReceipt,
   ServerSearch,
@@ -33,6 +34,7 @@ import { GmailPacer, PACER_TARGET, type GmailDeps } from './client';
 import { GMAIL_COSTS, type GmailCostTable } from './costs';
 import { deleteDraftCopy, saveDraftCopy } from './drafts';
 import { RETRY_SCOPE } from './failures';
+import { gmailRules } from './filters';
 import { historyStep } from './history';
 import { applyOp, coalesceOps } from './ops';
 import { retryStep } from './retry';
@@ -45,8 +47,9 @@ import type { WorkflowTransport } from './workflow-state';
  * The google `ProviderFactory` and its per-account `ProviderAdapter` (plan 20 section 3.2): the read path of
  * `prov-gmail`. Parts that belong to other lanes are explicit stubs that throw `NotInThisLaneError`, never silent
  * no-ops: connect when the host passes none (prov-gov's `oauth/host-connect.ts`), send and findSent (prov-gmail-write),
- * filters, the workflow channel and calendar (left undefined; prov-gmail-write, prov-gmail workflow, prov-cal).
- * `saveDraft` and `deleteDraft` are prov-gmail-write's drafts API (drafts.ts).
+ * the workflow channel and calendar (left undefined; prov-gmail workflow, prov-cal).
+ * `rules` is prov-gmail-write's sender-rule mirror on `users.settings.filters` (filters.ts); `saveDraft` and
+ * `deleteDraft` are its drafts API (drafts.ts).
  */
 
 export class NotInThisLaneError extends NotImplementedError {
@@ -139,6 +142,8 @@ export class GmailAdapter implements ProviderAdapter {
   private readonly transport?: WorkflowTransport;
   private readonly workflowRoundMs: number;
   readonly workflow?: WorkflowChannel;
+  /** The sender-rules mirror (prov-gmail-write): the account's granted scopes decide what it answers. */
+  readonly rules: RulesAdapter;
 
   constructor(
     readonly account: AdapterAccount,
@@ -157,6 +162,12 @@ export class GmailAdapter implements ProviderAdapter {
       rounds: new Map(),
     };
     if (options.pace !== false) this.pacer = new GmailPacer();
+    const rules = gmailRules(deps);
+    this.rules = {
+      list: ctx => rules.list(this.paced(ctx)),
+      create: (rule, ctx) => rules.create(rule, this.paced(ctx)),
+      delete: (remoteId, ctx) => rules.delete(remoteId, this.paced(ctx)),
+    };
     this.workflowRoundMs = options.workflow?.roundMs ?? WORKFLOW_ROUND_MS;
     if (options.workflow) {
       const transport = new GmailWorkflowTransport(deps, account.address, options.workflow.limits);

@@ -63,6 +63,8 @@ export interface ChannelLog {
   offset?: ClockOffset;
   /** Called per write, ahead of everything above: its bracket, or undefined (the check failed). */
   nextOffset?: () => ClockOffset | undefined;
+  /** Probes of the last copy's receive time (`HostWorkflowChannel.probe`); each reads the bracket as a write does. */
+  probes: number;
 }
 
 export const channelLog = (): ChannelLog => ({
@@ -77,6 +79,7 @@ export const channelLog = (): ChannelLog => ({
   attempts: 0,
   states: [],
   clockOffsetMs: 0,
+  probes: 0,
 });
 
 /**
@@ -150,6 +153,11 @@ export function remoteChannel(
       }
       return log.trashes ?? 0;
     },
+    async probe(ctx) {
+      log.probes++;
+      const clockOffset = offsetOf(log, ctx);
+      return clockOffset ? { clockOffset } : {};
+    },
   };
 }
 
@@ -190,15 +198,19 @@ export function baselineDone(w: ReturnType<typeof world>): void {
 }
 
 /**
- * The timer loop's stand-in: moves the shared clock a second at a time and fires each world's `lease:` source when
- * its `next()` is due by that world's own clock.
+ * The timer loop's stand-in: moves the shared clock `stepMs` (a second) at a time and fires each world's `lease:`
+ * source when its `next()` is due by that world's own clock.
  */
-export async function pump(w: ReturnType<typeof world> | ReturnType<typeof world>[], ms: number) {
+export async function pump(
+  w: ReturnType<typeof world> | ReturnType<typeof world>[],
+  ms: number,
+  stepMs = 1_000,
+) {
   const worlds = Array.isArray(w) ? w : [w];
   const clock = worlds[0].clock;
   const end = clock.now() + ms;
   while (clock.now() < end) {
-    await clock.advance(1_000);
+    await clock.advance(stepMs);
     await settle(2);
     for (const v of worlds) {
       const source = v.deadlines.sources.get(`lease:${ACCOUNT}`);

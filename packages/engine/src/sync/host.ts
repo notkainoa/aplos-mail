@@ -41,6 +41,7 @@ import {
   unmeasuredGate,
   type ClockGate,
   type ClockOffset,
+  type ClockReading,
   type LeaseChannel,
   type LeaseClaim,
   type LeaseController,
@@ -81,6 +82,8 @@ export interface HostWorkflowChannel {
     ctx: AdapterContext,
   ): Promise<{ clockOffset?: ClockOffset }>;
   compact(ctx: AdapterContext, options?: { ownOnly?: boolean }): Promise<number>;
+  /** The clock offset from the last copy written, checked again without a new copy (`LeaseChannel.probe`). */
+  probe?(ctx: AdapterContext): Promise<{ clockOffset?: ClockOffset }>;
 }
 
 /** How long a quit or disconnect waits for the dead-claim write before the actor stops anyway. */
@@ -156,6 +159,11 @@ interface LeaseEntry {
   state: SyncState;
   /** The clock gate's input: what the writes showed of this device's clock (`measureClock`). */
   gate: ClockGate;
+  /**
+   * The gate as it stood before an owner's "Use this Mac" lifted its block (`ownerGate`), until a write measures the
+   * clock again: a pin whose read or write then fails puts it back (`settleOwnerLift`), so the lift never outlives it.
+   */
+  ownerLift?: ClockGate;
   /**
    * A compaction in flight: one at a time, never inside the lease round, and aborted (between trash calls and in the
    * governor's queue) when a quit begins, so it never holds the lane the dead claim needs.
@@ -565,8 +573,12 @@ export class ActorHost implements AccountActorHost {
   }
 
   private async runIntent(entry: LeaseEntry, intent: LeaseIntent): Promise<void> {
-    if (intent === 'pin') await entry.controller.claim();
-    else await entry.controller.release();
+    if (intent === 'unpin') return entry.controller.release();
+    try {
+      await entry.controller.claim();
+    } finally {
+      this.settleOwnerLift(entry);
+    }
   }
 
   /** At `start`, for an account that turned out to have no channel: the intent queued before it, applied locally. */
@@ -721,11 +733,7 @@ export class ActorHost implements AccountActorHost {
       ...(initial ? { initial } : {}),
       clockGate: () => gateReading(entry.gate, this.deps.clock.now()),
       remeasure: () => needsMeasure(entry.gate, this.deps.clock.now()),
-      ownerClock: () => {
-        const now = this.deps.clock.now();
-        entry.gate = ownerGate(entry.gate, now);
-        return gateReading(entry.gate, now);
-      },
+      ownerClock: () => this.ownerClock(entry),
     });
     entry.unregister = this.deps.deadlines.register({
       id: `lease:${account}`,
@@ -792,20 +800,60 @@ export class ActorHost implements AccountActorHost {
           this.startCompaction(account, entry, async signal => channel.compact(ctx(signal), mode));
         return written;
       },
+      ...(channel.probe ? { probe: () => this.probeClock(account, channel, ctx()) } : {}),
     };
+  }
+
+  /** Whether the receive-time check measures again (ok or off) on the last copy; it never moves the gate itself. */
+  private async probeClock(
+    account: AccountId,
+    channel: HostWorkflowChannel,
+    ctx: AdapterContext,
+  ): Promise<boolean> {
+    try {
+      const probed = await channel.probe!(ctx);
+      return clockReading(probed.clockOffset) !== 'unmeasurable';
+    } catch (error) {
+      this.logOnce(account, 'lease.probe', error);
+      return false;
+    }
+  }
+
+  /** The gate an owner's pin may use: a block lifted on one fresh ok reading, the gate before it kept to re-arm. */
+  private ownerClock(entry: LeaseEntry): ClockReading {
+    const now = this.deps.clock.now();
+    const lifted = ownerGate(entry.gate, now);
+    if (lifted !== entry.gate) {
+      entry.ownerLift ??= entry.gate;
+      entry.gate = lifted;
+    }
+    return gateReading(entry.gate, now);
+  }
+
+  /**
+   * After an owner's claim: a lift that no write has measured since (the pin's read or write failed, or it was never
+   * sent) is undone, so the block's two-reading rule still guards the automatic claims that follow.
+   */
+  private settleOwnerLift(entry: LeaseEntry): void {
+    if (entry.ownerLift) entry.gate = entry.ownerLift;
+    entry.ownerLift = undefined;
   }
 
   /** The clock gate's measurement from one write; a clock off or unmeasurable is logged once per account. */
   private checkClock(account: AccountId, entry: LeaseEntry, offset: ClockOffset | undefined): void {
-    entry.gate = measureClock(entry.gate, offset, this.deps.clock.now());
     const measured = clockReading(offset);
+    // The pin's own write landed: a lift stands or falls by its reading, and is undone when it measured nothing.
+    if (entry.ownerLift && measured === 'unmeasurable') entry.gate = entry.ownerLift;
+    entry.ownerLift = undefined;
+    entry.gate = measureClock(entry.gate, offset, this.deps.clock.now());
     if (measured !== 'ok') this.logReason(account, 'lease.clock', measured);
   }
 
   /**
-   * Who compacts after a write: the primary, everything its renewal supersedes; a device the clock gate blocks, only
-   * its own copies its dead claim supersedes (nobody else trashes them, and it never trashes another device's copy).
-   * A healthy secondary leaves it to the primary; a quit's dead claim never compacts.
+   * Who compacts after a write: the primary, everything its renewal supersedes; a device the clock gate blocks, or
+   * whose clock no write has proven (`unmeasured`: its checks keep failing), only its own copies its claim supersedes
+   * (nobody else trashes them, and it never trashes another device's copy). A healthy secondary leaves it to the
+   * primary; a quit's dead claim never compacts.
    */
   private compactMode(
     entry: LeaseEntry,
@@ -813,8 +861,8 @@ export class ActorHost implements AccountActorHost {
   ): { ownOnly: boolean } | undefined {
     if (entry.retiring) return undefined;
     const reading = gateReading(entry.gate, this.deps.clock.now());
-    if (reading === 'off') return { ownOnly: true };
-    if (reading !== 'ok' || !entries.some(e => e.value.holder)) return undefined;
+    if (reading !== 'ok') return { ownOnly: true };
+    if (!entries.some(e => e.value.holder)) return undefined;
     return entry.controller.current().role === 'primary' ? { ownOnly: false } : undefined;
   }
 
@@ -841,7 +889,7 @@ export class ActorHost implements AccountActorHost {
 
   /** A 'restart' keeps the clock gate for the restarted actor's controller (`gateReading` ages an ok reading out). */
   private keepClock(account: AccountId, entry: LeaseEntry): void {
-    this.leaseClock.set(account, entry.gate);
+    this.leaseClock.set(account, entry.ownerLift ?? entry.gate);
   }
 
   /** Runs `fn`; a failure is logged once per reason and rethrown (the lease controller keeps its own handling). */
