@@ -549,6 +549,55 @@ describe('mainCheckoutIntact (main-checkout drift)', () => {
   });
 });
 
+describe('root swap by symlink to another baselined root', () => {
+  const twoRoots = () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules*\n');
+    writeFileSync(
+      join(r.dir, 'package.json'),
+      '{"name":"t","private":true,"workspaces":["packages/*"]}\n',
+    );
+    mkdirSync(join(r.dir, 'packages', 'foo'), { recursive: true });
+    writeFileSync(join(r.dir, 'packages', 'foo', 'package.json'), '{"name":"foo"}\n');
+    r.commit('workspace fixture');
+    const mods = join(r.dir, 'node_modules');
+    const xmods = join(r.dir, 'packages', 'foo', 'node_modules');
+    mkdirSync(join(mods, 'dep'), { recursive: true });
+    writeFileSync(join(mods, 'dep', 'x.js'), 'x\n');
+    mkdirSync(join(xmods, 'dep2'), { recursive: true });
+    writeFileSync(join(xmods, 'dep2', 'y.js'), 'y\n');
+    return { r, mods, xmods, snap: snapshotModuleTrees([mods, xmods]) };
+  };
+
+  it('a root replaced by a symlink to the OTHER root is a hit, in both orders', () => {
+    // The symlinked path now resolves to an inode that IS baselined — under another path.
+    {
+      const { mods, xmods, snap } = twoRoots();
+      renameSync(xmods, `${xmods}.old`);
+      symlinkSync(mods, xmods);
+      assert.ok(findModuleChanges([mods, xmods], snap).includes(xmods), 'workspace root -> root');
+    }
+    {
+      const { mods, xmods, snap } = twoRoots();
+      renameSync(mods, `${mods}.old`);
+      symlinkSync(xmods, mods);
+      assert.ok(findModuleChanges([mods, xmods], snap).includes(mods), 'root -> workspace root');
+    }
+  });
+
+  it('the same inode under a second path is baselined once and checked per path', () => {
+    const { r, mods, snap } = twoRoots();
+    const alias = join(r.dir, 'alias-modules');
+    symlinkSync(mods, alias);
+    snapshotModuleTrees([alias], snap); // an alias deliberately watched as well
+    assert.deepEqual(findModuleChanges([mods, alias], snap), []);
+    // An alias that was never baselined is a hit even though its inode is known.
+    const stranger = join(r.dir, 'stranger-modules');
+    symlinkSync(mods, stranger);
+    assert.deepEqual(findModuleChanges([stranger], snap), [stranger]);
+  });
+});
+
 describe('dedicated-clone preflight (assertDedicatedClone)', () => {
   it('accepts a normal clone and refuses a linked worktree', () => {
     const r = freshRepo();

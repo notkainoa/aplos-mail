@@ -174,10 +174,13 @@ export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       ctx.evalDir = join(root, `${ctx.id}-eval`);
       addWorktree(repoRoot, { dir: ctx.evalDir, commit: ctx.head });
       state.dirs.push(ctx.evalDir);
-      ctx.moduleRoots = [...new Set([...(ctx.moduleRoots ?? []), ...linkModules(ctx.evalDir)])];
+      const evalRoots = linkModules(ctx.evalDir);
+      ctx.moduleRoots = [...new Set([...(ctx.moduleRoots ?? []), ...evalRoots])];
       // Newly watched roots are baselined NOW — before the eval worktree's gates and
-      // scorers run — so a write-through into them is evidence like any other.
-      if (ctx.moduleSnapshot) snapshotModuleTrees(ctx.moduleRoots, ctx.moduleSnapshot);
+      // scorers run — so a write-through into them is evidence like any other. ONLY the new
+      // eval roots: the roots watched since before the agent ran must never be passed again
+      // (a post-run baseline is exactly how a swapped root would be adopted).
+      if (ctx.moduleSnapshot) snapshotModuleTrees(evalRoots, ctx.moduleSnapshot);
       return ctx.evalDir;
     },
     async runAttemptAgent(ctx, briefText) {

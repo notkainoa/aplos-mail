@@ -132,8 +132,14 @@ export function snapshotModuleTrees(roots, into = null) {
       throw new Error(`cannot snapshot node_modules root ${root}: not a directory`);
     }
     const key = `${st.dev}:${st.ino}`;
-    if (snap.roots.has(key)) continue;
-    snap.roots.set(key, root);
+    // A root is identified by inode AND by the path(s) it was baselined under: two paths can
+    // resolve to one inode, and an inode known under path A says nothing about path B.
+    const known = snap.roots.get(key);
+    if (known) {
+      known.add(root);
+      continue;
+    }
+    snap.roots.set(key, new Set([root]));
     scanModuleTree(root, {
       seen: new Set(snap.dirs.keys()),
       dir: (dir, dst, dkey, names) => {
@@ -168,8 +174,9 @@ export function snapshotModuleTrees(roots, into = null) {
  * restored still differs by size, a rename with the directory mtime restored still
  * differs by names), entries appearing or vanishing mid-walk, and watched dirs or
  * roots that can no longer be walked at all. A watched root that is missing, no
- * longer a directory, never baselined, or swapped under its own path (mv + recreate,
- * rm + mkdir — a new inode under an unchanged name) is itself a hit: the audit must
+ * longer a directory, never baselined under this path, or swapped under its own path (mv +
+ * recreate, rm + mkdir — a new inode under an unchanged name — or a symlink to ANOTHER
+ * baselined root, a known inode under the wrong name) is itself a hit: the audit must
  * never adopt a post-run inode as if it were the original tree. Bounded at
  * WRITE_SCAN_LIMIT hits: the first few are all a rejection reason needs.
  */
@@ -213,7 +220,12 @@ export function findModuleChanges(roots, snap, { relativeTo = null } = {}) {
     } catch {
       // Removed or unreadable — reported below.
     }
-    if (!rootSt?.isDirectory() || !snap.roots.has(`${rootSt.dev}:${rootSt.ino}`)) {
+    // The root's inode must be baselined AND under THIS path: replacing node_modules (or a
+    // workspace's) with a symlink to another baselined root keeps a known inode but is a swap.
+    const baselined = rootSt?.isDirectory()
+      ? snap.roots.get(`${rootSt.dev}:${rootSt.ino}`)
+      : undefined;
+    if (!baselined?.has(root)) {
       push(root);
       continue;
     }
