@@ -2,12 +2,12 @@ import type { Frame, Input, Output, EngineMethodName } from '@aplos/contract';
 import { createLogger } from '../../src/diag/log';
 import { createEngine, type Engine, type EngineOptions } from '../../src/index';
 import type { MessageWrite, StorePort, StoreWrite } from '../../src/store';
-import { manualClock } from '../runtime.helpers';
+import { fakeClock } from '../../src/clock/module';
 import { BIG_NOW } from './big';
 import { makeWorld } from './world';
 
 /*
- * A real engine over a store, a manual clock and the views lane, for the window tests. `commit` writes the way a sync
+ * A real engine over a store, the engine's fake clock and the views lane, for the window tests. `commit` writes the way a sync
  * or a `Thread/act` does; `advance` lets engine time pass so ticks, coalescing and hold lapses run.
  */
 
@@ -18,7 +18,7 @@ export async function openEngine(
   options: Partial<EngineOptions> = {},
   start = BIG_NOW,
 ) {
-  const clock = manualClock(start);
+  const clock = fakeClock(start);
   const log = createLogger({ sink: { write: () => undefined }, salt: 'views-test', clock });
   const engine: Engine = await createEngine({ store, clock, log, ...options });
   const session = engine.connect();
@@ -43,7 +43,7 @@ export async function openEngine(
     views: engine.services.views,
     /** Lets `ms` of engine time pass in 10 ms steps, so ticks fire in order. */
     async advance(ms: number) {
-      for (let t = 0; t < ms; t += 10) clock.advance(Math.min(10, ms - t));
+      for (let t = 0; t < ms; t += 10) await clock.advance(Math.min(10, ms - t));
     },
     close: () => engine.close(),
   };

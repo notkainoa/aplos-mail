@@ -44,6 +44,11 @@ export interface Engine extends EngineConnection {
   /** A session as an Electron window (every scope), or as `caller`: main, or a listener client with its grant. */
   connect(caller?: Caller): EngineSession;
   readonly services: EngineServices;
+  /**
+   * The host's power-resume (or network, or clock-change) hook: re-reads every deadline now instead of at the next
+   * capped timer turn. A no-op before the timer loop exists, with a host-injected registry that has no `wake`, or after `close`.
+   */
+  wake(): void;
   /** Closes every connection and stops the lane modules in reverse order. */
   close(): Promise<void>;
 }
@@ -133,6 +138,10 @@ export async function buildEngine(
       );
       open.add(session);
       return session;
+    },
+    wake() {
+      if (closed || isAbsent(services.deadlines)) return;
+      (services.deadlines as { wake?: () => void }).wake?.();
     },
     async close() {
       if (closed) return;
