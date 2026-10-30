@@ -311,12 +311,17 @@ test('N1: sending a draft whose text never arrived says so honestly', () =>
     assert.doesNotMatch(sentence, /Try again in a moment/);
   }));
 
-test('N1: a draft whose text never arrived is not reported as synced', () =>
+test('N1: a draft whose text never arrived reports incomplete: true, and loses the flag when the body arrives', () =>
   world(async w => {
     phone(w, 'phone-1', 'pm-1', { subject: 'Written on the phone' });
-    assert.equal(read(w, PHONE_ID).sync, 'failed');
-    phone(w, 'phone-1', 'pm-1', { subject: 'Written on the phone', html: '<p>Full</p>' });
+    assert.equal(read(w, PHONE_ID).incomplete, true);
     assert.equal(read(w, PHONE_ID).sync, 'synced');
+    phone(w, 'phone-1', 'pm-1', { subject: 'Written on the phone', html: '<p>Full</p>' });
+    assert.equal(read(w, PHONE_ID).incomplete, undefined);
+    assert.equal(read(w, PHONE_ID).sync, 'synced');
+    // A local draft never carries the flag.
+    const mine = service(w).set(next(), { fields: fields({ subject: 'Mine' }) });
+    assert.equal(mine.draft.incomplete, undefined);
   }));
 
 test('N1: discarding a draft whose text never arrived forgets the local row and leaves the provider’s copy alone', () =>
