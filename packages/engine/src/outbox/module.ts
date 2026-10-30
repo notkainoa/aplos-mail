@@ -17,6 +17,7 @@ import {
 } from './draft-sync';
 import { createDraftService, type DraftService } from './drafts';
 import { outboxExtension } from './extension';
+import { killableSend } from './killpoints';
 import { outboxSource } from './runner';
 import { applyStartRule, recheckUncertain } from './start';
 import { getSubmissions, setSubmission, type SetResult } from './submissions';
@@ -119,8 +120,14 @@ function alsoDrafts(deadlines: DeadlineRegistry, sendChanged: () => void): Deadl
 export function createOutboxModule(deps: OutboxDeps): OutboxModule {
   const random = deps.randomBytes ?? (n => globalThis.crypto.getRandomValues(new Uint8Array(n)));
   const hooks: { draftsCtx?: DraftsCtx } = {};
+  // Test builds only: the kill points inside the provider call wrap the port (see killpoints.ts).
+  const send =
+    typeof __APLOS_TEST_MODE__ === 'undefined' || __APLOS_TEST_MODE__
+      ? killableSend(deps.send)
+      : deps.send;
   const ctx: OutboxCtx = {
     ...deps,
+    send,
     deadlines: deps.drafts
       ? alsoDrafts(deps.deadlines, () => hooks.draftsCtx && sentChanged(hooks.draftsCtx))
       : deps.deadlines,

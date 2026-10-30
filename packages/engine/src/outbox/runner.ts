@@ -14,6 +14,7 @@ import {
   UNRETRYABLE,
   type OutboxCtx,
 } from './context';
+import { KP, killpoint } from './killpoints';
 import { applyStartRule, checkSent, lostSending } from './start';
 import {
   extraOf,
@@ -328,9 +329,16 @@ async function sendOne(ctx: OutboxCtx, due: DueSubmission) {
   const payload = payloadOf(ctx, row, row.mime);
   ctx.inflight.add(row.id);
   try {
+    if (typeof __APLOS_TEST_MODE__ === 'undefined' || __APLOS_TEST_MODE__)
+      killpoint(KP.BEFORE_MARKER);
     if (!commitMarker(ctx, row, attemptAt)) return;
+    if (typeof __APLOS_TEST_MODE__ === 'undefined' || __APLOS_TEST_MODE__)
+      killpoint(KP.AFTER_MARKER);
     const a: Attempt = { row, waiting: due.state, attemptAt, started: ctx.clock.now() };
-    await settle(ctx, a, await deliver(ctx, row, payload));
+    const outcome = await deliver(ctx, row, payload);
+    if ((typeof __APLOS_TEST_MODE__ === 'undefined' || __APLOS_TEST_MODE__) && outcome.ok)
+      killpoint(KP.AFTER_ACCEPT);
+    await settle(ctx, a, outcome);
   } finally {
     ctx.inflight.delete(row.id);
   }
