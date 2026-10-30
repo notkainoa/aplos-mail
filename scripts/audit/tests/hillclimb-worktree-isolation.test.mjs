@@ -186,6 +186,95 @@ describe('linkNodeModules fail-closed verification', () => {
     removeWorktree(r.dir, wt);
   });
 
+  it("throws on a .bin shim planted in the worktree resolving into main's source tree", () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(
+      join(r.dir, 'package.json'),
+      '{"name":"t","private":true,"workspaces":["packages/*"]}\n',
+    );
+    mkdirSync(join(r.dir, 'packages', 'engine', 'bin'), { recursive: true });
+    writeFileSync(join(r.dir, 'packages', 'engine', 'package.json'), '{"name":"@aplos/engine"}\n');
+    writeFileSync(join(r.dir, 'packages', 'engine', 'bin', 'cli.js'), '#!/usr/bin/env node\n');
+    r.commit('ws');
+    mkdirSync(join(r.dir, 'node_modules'), { recursive: true });
+    writeFileSync(join(r.dir, 'node_modules', 'dep.txt'), 'x\n');
+    const wt = join(tmp, 'wt-bin-evil');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    // A shim planted where the old sweep never looked: inside .bin, aimed at the main
+    // checkout's SOURCE tree — read-side espionage and a write-through path in one.
+    const bin = join(wt, 'node_modules', '.bin');
+    mkdirSync(bin, { recursive: true });
+    symlinkSync(join(r.dir, 'packages', 'engine', 'bin', 'cli.js'), join(bin, 'evil-tool'));
+    assert.throws(() => linkNodeModules(r.dir, wt), /escapes the worktree/);
+    removeWorktree(r.dir, wt);
+  });
+
+  it("throws on a nested package link resolving into main's source tree", () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(
+      join(r.dir, 'package.json'),
+      '{"name":"t","private":true,"workspaces":["packages/*"]}\n',
+    );
+    mkdirSync(join(r.dir, 'packages', 'engine'), { recursive: true });
+    writeFileSync(join(r.dir, 'packages', 'engine', 'package.json'), '{"name":"@aplos/engine"}\n');
+    r.commit('ws');
+    mkdirSync(join(r.dir, 'node_modules'), { recursive: true });
+    writeFileSync(join(r.dir, 'node_modules', 'dep.txt'), 'x\n');
+    const wt = join(tmp, 'wt-nested-evil');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    // Buried under a package's own node_modules — below the old sweep's top level.
+    const nested = join(wt, 'node_modules', 'deep', 'node_modules');
+    mkdirSync(nested, { recursive: true });
+    symlinkSync(join(r.dir, 'packages', 'engine'), join(nested, 'evil'), 'junction');
+    assert.throws(() => linkNodeModules(r.dir, wt), /escapes the worktree/);
+    removeWorktree(r.dir, wt);
+  });
+
+  it('allows a link resolving inside a linked main node_modules tree', () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(join(r.dir, 'package.json'), '{"name":"t","private":true}\n');
+    r.commit('seed');
+    const mods = join(r.dir, 'node_modules');
+    mkdirSync(mods, { recursive: true });
+    writeFileSync(join(mods, 'real.js'), 'x\n');
+    const wt = join(tmp, 'wt-abslink');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    // The allow-list in action: a link resolving into the REAL main node_modules tree
+    // this worktree linked from is deliberate — the shape a verbatim-copied absolute
+    // shim keeps — not an escape into main's source dirs.
+    mkdirSync(join(wt, 'node_modules'), { recursive: true });
+    symlinkSync(join(realpathSync(mods), 'real.js'), join(wt, 'node_modules', 'keep'));
+    linkNodeModules(r.dir, wt);
+    assert.equal(
+      realpathSync(join(wt, 'node_modules', 'keep')),
+      realpathSync(join(mods, 'real.js')),
+      'resolves inside the linked main node_modules — allowed',
+    );
+    removeWorktree(r.dir, wt);
+  });
+
+  it('allows a dangling link whose logical target stays inside the worktree', () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(join(r.dir, 'package.json'), '{"name":"t","private":true}\n');
+    r.commit('seed');
+    mkdirSync(join(r.dir, 'node_modules'), { recursive: true });
+    writeFileSync(join(r.dir, 'node_modules', 'dep.txt'), 'x\n');
+    const wt = join(tmp, 'wt-dangle');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    // Mirrors a dangling shim copied verbatim from main: the logical target never
+    // leaves the worktree, so the link is harmless — and must not fail the verify.
+    const bin = join(wt, 'node_modules', '.bin');
+    mkdirSync(bin, { recursive: true });
+    symlinkSync(join('..', 'gone-pkg', 'bin', 'tool'), join(bin, 'gone'));
+    linkNodeModules(r.dir, wt);
+    assert.ok(lstatSync(join(bin, 'gone')).isSymbolicLink());
+    removeWorktree(r.dir, wt);
+  });
+
   it('linkWorkspace refuses a workspace dir the worktree lacks', () => {
     const r = freshRepo();
     const wt = join(tmp, 'wt-missing-ws');

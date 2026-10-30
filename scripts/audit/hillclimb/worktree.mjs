@@ -485,7 +485,10 @@ export const lastLinkStats = () => lastLink;
  *  - no committed node_modules path may exist in the worktree (checkout would keep it
  *    silently — a symlink among them could resolve back into the main checkout);
  *  - no linked node_modules dir may be a symlink (a whole-dir link writes through);
- *  - every workspace link must resolve to a target inside the worktree itself.
+ *  - every workspace link must resolve to a target inside the worktree itself;
+ *  - every other symlink anywhere under a linked node_modules — .bin shims and nested
+ *    package links included — must resolve inside the worktree or inside the real main
+ *    node_modules trees this worktree linked from.
  */
 function verifyLinkSet(workdir, linked, ctx) {
   const committed = git(['ls-files', '-z'], workdir)
@@ -519,23 +522,70 @@ function verifyLinkSet(workdir, linked, ctx) {
     }
     inside(linkPath, real);
   }
-  // Links the populate pass never made — planted after checkout or left under a
-  // pre-existing dir — get the same containment check at every package-resolution
-  // position (container top level and inside @scope dirs), whatever their name is.
+  // The deliberate exceptions to "inside the worktree": links the mirror copies from
+  // the main tree verbatim — an absolute .bin shim, an absolute link a hardlink kept —
+  // still resolve into the REAL main node_modules trees this worktree linked from, and
+  // that is where they pointed all along. The allow-list is exactly those trees: a
+  // link into the main checkout's SOURCE dirs (packages/, apps/, anything outside
+  // node_modules) or anywhere else outside the worktree refuses the worktree.
+  const moduleRoots = [];
+  for (const root of linked) {
+    try {
+      moduleRoots.push(realpathSync(join(ctx.repoReal, root, 'node_modules')));
+    } catch {
+      // The linked tree vanished mid-verify — nothing may resolve inside it anyway.
+    }
+  }
+  const literalRoots = [
+    resolve(workdir),
+    ...linked.map(root => resolve(join(ctx.repoReal, root, 'node_modules'))),
+  ];
+  const under = (path, roots) => roots.some(r => path === r || path.startsWith(`${r}${sep}`));
+  const contained = (linkPath, real) => {
+    if (under(real, [workReal]) || under(real, moduleRoots)) return;
+    // The logical target of a dangling link is a literal path: judge it against the
+    // literal spellings too — an unresolved path can carry an un-realpath'ed prefix.
+    if (under(real, literalRoots)) return;
+    throw new Error(
+      `node_modules link ${linkPath} escapes the worktree and the linked module roots -> ${real}`,
+    );
+  };
+  // Where a link points when its target exists; for a dangling one, where it WOULD
+  // point — a copied dangling shim still gets the containment check on its logical
+  // target rather than a free pass.
+  const linkTarget = linkPath => {
+    try {
+      return realpathSync(linkPath);
+    } catch {
+      let base;
+      try {
+        base = realpathSync(dirname(linkPath));
+      } catch {
+        base = resolve(dirname(linkPath));
+      }
+      return resolve(base, readlinkSync(linkPath));
+    }
+  };
+  // Every symlink anywhere under a linked node_modules gets the containment check —
+  // container top level, @scope dirs, .bin shims, package contents and nested
+  // node_modules alike — so a link the populate pass never made (planted after
+  // checkout or left under a pre-existing dir) cannot resolve outside the worktree
+  // or the allowed main module trees. Real dirs only: following a dir link would
+  // sweep its target's subtree, which is not a package-resolution position.
+  const seen = new Set();
   const sweep = dir => {
     for (const name of readdirSync(dir)) {
       const linkPath = join(dir, name);
       const lst = lstatSync(linkPath);
       if (lst.isSymbolicLink()) {
-        let real;
-        try {
-          real = realpathSync(linkPath);
-        } catch {
-          throw new Error(`package link ${linkPath} does not resolve`);
+        contained(linkPath, linkTarget(linkPath));
+      } else if (lst.isDirectory()) {
+        const st = statSync(linkPath);
+        const key = `${st.dev}:${st.ino}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          sweep(linkPath);
         }
-        inside(linkPath, real);
-      } else if (name.startsWith('@') && lst.isDirectory()) {
-        sweep(linkPath);
       }
     }
   };
