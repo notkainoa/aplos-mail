@@ -52,3 +52,45 @@ fails to open counts as one critical finding (`state-failed-to-open`). Details r
 
 `common.ts` (output, args, state list, shots dir), `axe-score.ts` (pure scoring maths), `server.ts`
 (starts and stops the Vite gallery), `common.test.ts` (unit tests).
+
+## taste-judge scorer
+
+`taste.score.ts` has Claude Sonnet judge screenshots against `taste.rubric.md` (a 55-line distillation of
+DESIGN sections 3, 4 and 9 and the aplos-design skill) and the matching mockup, rendered like
+`mockups/shoot.cjs` (`?shot=1&theme=...&state=...`; a reference is skipped, and noted in details, when
+the mockup has no such state). Needs a logged-in `claude` (`CLAUDE_BIN` overrides the binary, `TASTE_MODEL`
+the model). Extra arguments: `--samples N` keeps the first N states, `--runs K` asks K times per state and
+takes the median per criterion. Default states are listed in `taste.sample.json` (8); `--state` replaces them.
+
+One call per state and run covers both themes (4 images with the reference). Score per state is 10 x the mean
+of the criteria the judge scored (it may answer `null` for one that cannot be assessed); overall is the mean
+over states. Details read `state: finding`, lowest states first, judge failures first. A failed state is listed
+and left out of the mean; if every state fails the scorer exits 1. Results are cached in
+`artifacts/visual/judge-cache/` by sha256 of the image bytes, rubric, model, prompt version and run index, so an
+unchanged screenshot costs nothing; stderr reports the hit count. Numbers are for comparing versions, not absolute.
+Files: `taste-score.ts` (pure: prompt, parsing, maths, cache), `taste.test.ts` (fake judge, no network).
+
+## visual-diff scorer (`mockup-diff.score.ts`)
+
+How close is each implementation state to its mockup in layout and style? Per state and theme it shoots
+the gallery state, renders `mockups/<file>.html?shot=1&theme=<theme>&state=<state>` headlessly at the same
+viewport (clock frozen, animations off, fonts awaited, the mockup's own state bar hidden), crops both to
+the same region (shell states: the whole window; pane states: the gallery pane against the mockup's
+`.main`; onboarding window states: the 640 x 600 window) and compares them, not pixel by pixel because
+the demo data differs:
+
+`score = 100 x (0.6 x colourSimilarity + 0.4 x structure)`. `colourSimilarity = max(0, 1 - meanDeltaE / 40)`,
+the mean CIEDE2000 between the per-cell mean colours on an 8 px grid. `structure` is the mean Pearson
+correlation of the column and row sums of luminance gradient magnitude (the ink profile). Overall is the
+mean over compared states and themes. Details read `state theme score% worst x,y,w,h` (worst first; the
+rectangle is the 4 x 4 cell block with the largest mean ΔE, in pixels of the compared region).
+
+```
+npx tsx tests/visual/scorers/mockup-diff.score.ts [--size 1440x900] [--state prefix] [--theme light|dark|both] [--reuse]
+```
+
+`mockup-diff.exclude.json` maps a state id to the reason its mockup is not comparable (several states share
+a page that shows another state, a mockup page that does not exist, overlays). States whose mockup label is
+not one of the page's states are also skipped and logged. Overlays for humans (implementation | mockup |
+heatmap) go to `artifacts/visual/mockup-diff/<size>/<state>.<theme>.png`. Maths and unit tests:
+`mockup-diff-score.ts`, `mockup-diff.test.ts`.
