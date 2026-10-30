@@ -45,7 +45,7 @@ function freshRepo() {
   mkdirSync(dir, { recursive: true });
   const g = (args, options) =>
     execFileSync('git', args, { cwd: dir, encoding: 'utf8', ...options });
-  g(['init', '-q']);
+  g(['init', '-q', '-b', 'main']);
   g(['config', 'user.name', 't']);
   g(['config', 'user.email', 't@t']);
   writeFileSync(join(dir, 'f.txt'), 'base\n');
@@ -249,10 +249,22 @@ describe('snapshotGitDir', () => {
     assert.notEqual(snapshotGitDir(r.dir), s0, 'added info/attributes');
     rmSync(join(r.dir, '.git', 'info', 'attributes'));
 
+    // Only main + revamp are hashed: a sibling thread committing to its own branch
+    // mid-attempt is normal progress, not a breach — the snapshot must not move.
     r.g(['update-ref', 'refs/heads/evil', 'HEAD']);
-    assert.notEqual(snapshotGitDir(r.dir), s0, 'new non-hillclimb ref');
+    assert.equal(snapshotGitDir(r.dir), s0, 'unrelated refs are outside the snapshot');
     r.g(['update-ref', '-d', 'refs/heads/evil']);
-    assert.equal(snapshotGitDir(r.dir), s0, 'ref deleted again');
+
+    r.g(['update-ref', 'refs/heads/revamp', 'HEAD']);
+    assert.notEqual(snapshotGitDir(r.dir), s0, 'revamp appeared');
+    r.g(['update-ref', '-d', 'refs/heads/revamp']);
+    assert.equal(snapshotGitDir(r.dir), s0, 'revamp restored');
+
+    const mainTip = r.g(['rev-parse', 'refs/heads/main']).trim();
+    r.g(['commit', '--allow-empty', '-qm', 'moved']);
+    assert.notEqual(snapshotGitDir(r.dir), s0, 'main moved');
+    r.g(['update-ref', 'refs/heads/main', mainTip]);
+    assert.equal(snapshotGitDir(r.dir), s0, 'main restored');
 
     // The harness's own branches move constantly and must not trip the check.
     r.g(['update-ref', 'refs/heads/hillclimb/demo/r1/a1', 'HEAD']);

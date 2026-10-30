@@ -367,11 +367,13 @@ export function relativeDir(repoRoot, dir) {
 }
 
 /**
- * A hash of everything an attempt could poison to make LATER harness git calls misbehave:
- * the shared git dir's config, hooks/ entry names + contents, info/ contents, the HEADs
- * (the checkout's and this worktree's), the worktree's own config.worktree and every ref
- * except the harness's own hillclimb/* branches (which legitimately move as attempts are
- * committed and removed). Recomputing after the attempt must reproduce the same digest.
+ * A hash of the small slice of shared git state an attempt could poison to make LATER
+ * harness git calls misbehave: the common dir's config, hooks/ and info/ contents, this
+ * worktree's own HEAD and config.worktree, and exactly the long-lived refs
+ * refs/heads/main + refs/heads/revamp. Every other ref is deliberately excluded: sibling
+ * worktrees (other harness threads) legitimately commit during a run, and hashing their
+ * refs would read ordinary progress as a breach. The main checkout's own HEAD is already
+ * covered by the explicit currentHead check in mainCheckoutIntact.
  */
 export function snapshotGitDir(cwd) {
   const hash = createHash('sha256');
@@ -407,13 +409,12 @@ export function snapshotGitDir(cwd) {
   feedFile('config', join(commonDir, 'config'));
   feedTree(join(commonDir, 'hooks'));
   feedTree(join(commonDir, 'info'));
-  feedFile('HEAD', join(commonDir, 'HEAD'));
   feedFile('worktree-HEAD', join(gitDir, 'HEAD'));
   feedFile('config.worktree', join(gitDir, 'config.worktree'));
-  const refs = git(['for-each-ref', '--format=%(refname) %(objectname)'], cwd)
-    .split('\n')
-    .filter(line => line && !line.startsWith('refs/heads/hillclimb/'))
-    .join('\n');
+  const refs = git(
+    ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads/main', 'refs/heads/revamp'],
+    cwd,
+  ).trim();
   feed('refs', refs);
   return hash.digest('hex');
 }
